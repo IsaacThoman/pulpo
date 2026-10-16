@@ -1,0 +1,6 @@
+Selected inference commit: 939a15f4
+Host release run: 182 tests in 15 suites passed after 0.482 seconds.
+Build: 33.84 seconds, Apple Swift 6.4 / arm64-apple-macosx27.0.0.
+Suites: AccentCompletionTests, SuggesterTests, SpellCorrectorTests, LiteralValidationTests, ContextVisibilityTests, SuggestionStripTests, SuggestionFreshnessTests, BackoffNormalizationTests, LanguageModelConfidenceTests, FastPathEquivalenceTests, KeyboardEngineTests, AccuracyEditingTests, EditingRegressionTests, EmojiSuggesterTests, EmojiSelectionTests.
+Benchmark final: 1 test passed after 0.227 seconds. All 80 slot outputs and raw timing samples are retained in selected/*.json.
+Existing warnings: TouchModel Sendable closure conversion; unused WordDeletion expression.
