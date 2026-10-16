@@ -1,0 +1,321 @@
+{
+  "sourceReport": "candidate-development.json",
+  "cases": 27,
+  "checks": 52410,
+  "failedGates": 75,
+  "failurePatterns": [
+    "initial/suggestion-2: interior 0.98,0.02 routed to UIButton",
+    "initial/suggestion-2: interior 0.98,0.15 routed to UIButton",
+    "initial/suggestion-2: interior 0.98,0.5 routed to UIButton",
+    "initial/suggestion-2: interior 0.98,0.85 routed to UIButton",
+    "initial/suggestion-2: interior 0.98,0.98 routed to UIButton"
+  ],
+  "perCase": [
+    {
+      "checks": 1788,
+      "dockAvailable": false,
+      "id": "dev-en-320-full",
+      "keyWidth": 320,
+      "keyboardHeight": 244,
+      "failedGatePatternIndices": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "checks": 1788,
+      "dockAvailable": false,
+      "id": "dev-en-320-left",
+      "keyWidth": 320,
+      "keyboardHeight": 244,
+      "failedGatePatternIndices": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "checks": 1788,
+      "dockAvailable": false,
+      "id": "dev-en-320-right",
+      "keyWidth": 320,
+      "keyboardHeight": 244,
+      "failedGatePatternIndices": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "checks": 1840,
+      "dockAvailable": true,
+      "id": "dev-en-402-full",
+      "keyWidth": 402,
+      "keyboardHeight": 244,
+      "failedGatePatternIndices": []
+    },
+    {
+      "checks": 2061,
+      "dockAvailable": true,
+      "id": "dev-en-402-left",
+      "keyWidth": 332,
+      "keyboardHeight": 244,
+      "failedGatePatternIndices": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "checks": 2061,
+      "dockAvailable": true,
+      "id": "dev-en-402-right",
+      "keyWidth": 332,
+      "keyboardHeight": 244,
+      "failedGatePatternIndices": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "checks": 2048,
+      "dockAvailable": false,
+      "id": "dev-en-690-full",
+      "keyWidth": 690,
+      "keyboardHeight": 244,
+      "failedGatePatternIndices": []
+    },
+    {
+      "checks": 2048,
+      "dockAvailable": false,
+      "id": "dev-en-690-left",
+      "keyWidth": 690,
+      "keyboardHeight": 244,
+      "failedGatePatternIndices": []
+    },
+    {
+      "checks": 2048,
+      "dockAvailable": false,
+      "id": "dev-en-690-right",
+      "keyWidth": 690,
+      "keyboardHeight": 244,
+      "failedGatePatternIndices": []
+    },
+    {
+      "checks": 1788,
+      "dockAvailable": false,
+      "id": "dev-es-320-full",
+      "keyWidth": 320,
+      "keyboardHeight": 244,
+      "failedGatePatternIndices": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "checks": 1788,
+      "dockAvailable": false,
+      "id": "dev-es-320-left",
+      "keyWidth": 320,
+      "keyboardHeight": 244,
+      "failedGatePatternIndices": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "checks": 1788,
+      "dockAvailable": false,
+      "id": "dev-es-320-right",
+      "keyWidth": 320,
+      "keyboardHeight": 244,
+      "failedGatePatternIndices": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "checks": 1840,
+      "dockAvailable": true,
+      "id": "dev-es-402-full",
+      "keyWidth": 402,
+      "keyboardHeight": 244,
+      "failedGatePatternIndices": []
+    },
+    {
+      "checks": 2061,
+      "dockAvailable": true,
+      "id": "dev-es-402-left",
+      "keyWidth": 332,
+      "keyboardHeight": 244,
+      "failedGatePatternIndices": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "checks": 2061,
+      "dockAvailable": true,
+      "id": "dev-es-402-right",
+      "keyWidth": 332,
+      "keyboardHeight": 244,
+      "failedGatePatternIndices": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "checks": 2048,
+      "dockAvailable": false,
+      "id": "dev-es-690-full",
+      "keyWidth": 690,
+      "keyboardHeight": 244,
+      "failedGatePatternIndices": []
+    },
+    {
+      "checks": 2048,
+      "dockAvailable": false,
+      "id": "dev-es-690-left",
+      "keyWidth": 690,
+      "keyboardHeight": 244,
+      "failedGatePatternIndices": []
+    },
+    {
+      "checks": 2048,
+      "dockAvailable": false,
+      "id": "dev-es-690-right",
+      "keyWidth": 690,
+      "keyboardHeight": 244,
+      "failedGatePatternIndices": []
+    },
+    {
+      "checks": 1788,
+      "dockAvailable": false,
+      "id": "dev-bilingual-320-full",
+      "keyWidth": 320,
+      "keyboardHeight": 244,
+      "failedGatePatternIndices": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "checks": 1788,
+      "dockAvailable": false,
+      "id": "dev-bilingual-320-left",
+      "keyWidth": 320,
+      "keyboardHeight": 244,
+      "failedGatePatternIndices": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "checks": 1788,
+      "dockAvailable": false,
+      "id": "dev-bilingual-320-right",
+      "keyWidth": 320,
+      "keyboardHeight": 244,
+      "failedGatePatternIndices": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "checks": 1840,
+      "dockAvailable": true,
+      "id": "dev-bilingual-402-full",
+      "keyWidth": 402,
+      "keyboardHeight": 244,
+      "failedGatePatternIndices": []
+    },
+    {
+      "checks": 2061,
+      "dockAvailable": true,
+      "id": "dev-bilingual-402-left",
+      "keyWidth": 332,
+      "keyboardHeight": 244,
+      "failedGatePatternIndices": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "checks": 2061,
+      "dockAvailable": true,
+      "id": "dev-bilingual-402-right",
+      "keyWidth": 332,
+      "keyboardHeight": 244,
+      "failedGatePatternIndices": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "checks": 2048,
+      "dockAvailable": false,
+      "id": "dev-bilingual-690-full",
+      "keyWidth": 690,
+      "keyboardHeight": 244,
+      "failedGatePatternIndices": []
+    },
+    {
+      "checks": 2048,
+      "dockAvailable": false,
+      "id": "dev-bilingual-690-left",
+      "keyWidth": 690,
+      "keyboardHeight": 244,
+      "failedGatePatternIndices": []
+    },
+    {
+      "checks": 2048,
+      "dockAvailable": false,
+      "id": "dev-bilingual-690-right",
+      "keyWidth": 690,
+      "keyboardHeight": 244,
+      "failedGatePatternIndices": []
+    }
+  ]
+}

@@ -1,0 +1,270 @@
+{
+  "checks": 148314,
+  "failedGates": 9,
+  "failurePatterns": [
+    "production keyboard exceeds host height envelope"
+  ],
+  "perCase": [
+    {
+      "id": "dev-en-320-full",
+      "keyboardHeight": 244,
+      "hostEnvelope": [
+        320,
+        300
+      ],
+      "failedGatePatternIndices": []
+    },
+    {
+      "id": "dev-en-320-left",
+      "keyboardHeight": 244,
+      "hostEnvelope": [
+        320,
+        300
+      ],
+      "failedGatePatternIndices": []
+    },
+    {
+      "id": "dev-en-320-right",
+      "keyboardHeight": 244,
+      "hostEnvelope": [
+        320,
+        300
+      ],
+      "failedGatePatternIndices": []
+    },
+    {
+      "id": "dev-en-402-full",
+      "keyboardHeight": 244,
+      "hostEnvelope": [
+        402,
+        300
+      ],
+      "failedGatePatternIndices": []
+    },
+    {
+      "id": "dev-en-402-left",
+      "keyboardHeight": 244,
+      "hostEnvelope": [
+        402,
+        300
+      ],
+      "failedGatePatternIndices": []
+    },
+    {
+      "id": "dev-en-402-right",
+      "keyboardHeight": 244,
+      "hostEnvelope": [
+        402,
+        300
+      ],
+      "failedGatePatternIndices": []
+    },
+    {
+      "id": "dev-en-690-full",
+      "keyboardHeight": 244,
+      "hostEnvelope": [
+        690,
+        240
+      ],
+      "failedGatePatternIndices": [
+        0
+      ]
+    },
+    {
+      "id": "dev-en-690-left",
+      "keyboardHeight": 244,
+      "hostEnvelope": [
+        690,
+        240
+      ],
+      "failedGatePatternIndices": [
+        0
+      ]
+    },
+    {
+      "id": "dev-en-690-right",
+      "keyboardHeight": 244,
+      "hostEnvelope": [
+        690,
+        240
+      ],
+      "failedGatePatternIndices": [
+        0
+      ]
+    },
+    {
+      "id": "dev-es-320-full",
+      "keyboardHeight": 244,
+      "hostEnvelope": [
+        320,
+        300
+      ],
+      "failedGatePatternIndices": []
+    },
+    {
+      "id": "dev-es-320-left",
+      "keyboardHeight": 244,
+      "hostEnvelope": [
+        320,
+        300
+      ],
+      "failedGatePatternIndices": []
+    },
+    {
+      "id": "dev-es-320-right",
+      "keyboardHeight": 244,
+      "hostEnvelope": [
+        320,
+        300
+      ],
+      "failedGatePatternIndices": []
+    },
+    {
+      "id": "dev-es-402-full",
+      "keyboardHeight": 244,
+      "hostEnvelope": [
+        402,
+        300
+      ],
+      "failedGatePatternIndices": []
+    },
+    {
+      "id": "dev-es-402-left",
+      "keyboardHeight": 244,
+      "hostEnvelope": [
+        402,
+        300
+      ],
+      "failedGatePatternIndices": []
+    },
+    {
+      "id": "dev-es-402-right",
+      "keyboardHeight": 244,
+      "hostEnvelope": [
+        402,
+        300
+      ],
+      "failedGatePatternIndices": []
+    },
+    {
+      "id": "dev-es-690-full",
+      "keyboardHeight": 244,
+      "hostEnvelope": [
+        690,
+        240
+      ],
+      "failedGatePatternIndices": [
+        0
+      ]
+    },
+    {
+      "id": "dev-es-690-left",
+      "keyboardHeight": 244,
+      "hostEnvelope": [
+        690,
+        240
+      ],
+      "failedGatePatternIndices": [
+        0
+      ]
+    },
+    {
+      "id": "dev-es-690-right",
+      "keyboardHeight": 244,
+      "hostEnvelope": [
+        690,
+        240
+      ],
+      "failedGatePatternIndices": [
+        0
+      ]
+    },
+    {
+      "id": "dev-bilingual-320-full",
+      "keyboardHeight": 244,
+      "hostEnvelope": [
+        320,
+        300
+      ],
+      "failedGatePatternIndices": []
+    },
+    {
+      "id": "dev-bilingual-320-left",
+      "keyboardHeight": 244,
+      "hostEnvelope": [
+        320,
+        300
+      ],
+      "failedGatePatternIndices": []
+    },
+    {
+      "id": "dev-bilingual-320-right",
+      "keyboardHeight": 244,
+      "hostEnvelope": [
+        320,
+        300
+      ],
+      "failedGatePatternIndices": []
+    },
+    {
+      "id": "dev-bilingual-402-full",
+      "keyboardHeight": 244,
+      "hostEnvelope": [
+        402,
+        300
+      ],
+      "failedGatePatternIndices": []
+    },
+    {
+      "id": "dev-bilingual-402-left",
+      "keyboardHeight": 244,
+      "hostEnvelope": [
+        402,
+        300
+      ],
+      "failedGatePatternIndices": []
+    },
+    {
+      "id": "dev-bilingual-402-right",
+      "keyboardHeight": 244,
+      "hostEnvelope": [
+        402,
+        300
+      ],
+      "failedGatePatternIndices": []
+    },
+    {
+      "id": "dev-bilingual-690-full",
+      "keyboardHeight": 244,
+      "hostEnvelope": [
+        690,
+        240
+      ],
+      "failedGatePatternIndices": [
+        0
+      ]
+    },
+    {
+      "id": "dev-bilingual-690-left",
+      "keyboardHeight": 244,
+      "hostEnvelope": [
+        690,
+        240
+      ],
+      "failedGatePatternIndices": [
+        0
+      ]
+    },
+    {
+      "id": "dev-bilingual-690-right",
+      "keyboardHeight": 244,
+      "hostEnvelope": [
+        690,
+        240
+      ],
+      "failedGatePatternIndices": [
+        0
+      ]
+    }
+  ]
+}
