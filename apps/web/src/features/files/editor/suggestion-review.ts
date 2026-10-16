@@ -132,11 +132,17 @@ export function useSuggestionReview(editor: Editor, onResolved?: () => void) {
       // around an inline one; they only take the card over once the pointer stays.
       else hoverSoon(id)
     }
-    // Clicking or tapping a suggestion picks it at once. A touch never travels to the card, so
-    // tapping anything else is as good as leaving.
+    // Clicking a suggestion picks it at once. A touch never travels to the card, so a tap picks
+    // whatever it lands on; that waits for its click, which comes once the caret is placed and not
+    // after a swipe to scroll. (WebKit gives clicks from taps the pointer type "mouse".)
+    let pointerType = 'mouse'
     const press = (event: PointerEvent) => {
+      pointerType = event.pointerType
       const id = suggestionIdOf(event)
-      if (id || event.pointerType !== 'mouse') hoverNow(id)
+      if (id && pointerType === 'mouse') hoverNow(id)
+    }
+    const tap = (event: MouseEvent) => {
+      if (pointerType !== 'mouse') hoverNow(suggestionIdOf(event))
     }
     // Moving onto the card keeps the suggestion. React runs the card's onPointerEnter before this
     // mouseleave, so starting the timer here would hide the card under the pointer.
@@ -145,10 +151,12 @@ export function useSuggestionReview(editor: Editor, onResolved?: () => void) {
     }
     dom.addEventListener('mouseover', over)
     dom.addEventListener('pointerdown', press)
+    dom.addEventListener('click', tap)
     dom.addEventListener('mouseleave', leave)
     return () => {
       dom.removeEventListener('mouseover', over)
       dom.removeEventListener('pointerdown', press)
+      dom.removeEventListener('click', tap)
       dom.removeEventListener('mouseleave', leave)
       window.clearTimeout(hoverTimer.current)
     }
