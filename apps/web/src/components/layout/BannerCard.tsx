@@ -35,7 +35,7 @@ export function BannerCard({ type, content, onDismiss, className }: {
   return (
     <div
       role={type === 'error' ? 'alert' : 'status'}
-      className={cn('flex w-full items-start gap-3 rounded-xl border px-3.5 py-2.5 text-sm shadow-lg shadow-black/5 dark:shadow-black/30', tone.card, className)}
+      className={cn('flex w-full items-start gap-3 rounded-xl border px-3.5 py-2.5 text-sm', tone.card, className)}
     >
       <span className={cn('mt-px flex size-5 shrink-0 items-center justify-center rounded-full', tone.badge)}>
         <Icon className="size-3.5" aria-hidden />
