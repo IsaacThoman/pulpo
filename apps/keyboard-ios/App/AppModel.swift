@@ -38,19 +38,31 @@ final class AppModel {
   }
   let dictation: DictationService
   private let settingsStore = SettingsStore()
-  private let sessionStore = SessionStore()
+  private let sessionStore: SessionStore
+  private let accountDefaults: UserDefaults?
+  private let accountURLSession: URLSession
+  @ObservationIgnored private var accountGeneration = UUID()
+  @ObservationIgnored private var signInAttempt: UUID?
+  @ObservationIgnored private var latestRefresh: UUID?
+  /// Optional diagnostic seam: event names only, never credentials or account contents.
+  @ObservationIgnored var accountEvent: ((String) -> Void)?
   @ObservationIgnored private var appearanceObservers: [DarwinNotifications.Observation] = []
 
   static let setupGuideSeenKey = "setupGuideSeen"
   /// When the app last saw the installed keyboard appear without Full Access.
   static let limitedKeyboardSeenKey = "limitedKeyboardSeenAt"
 
-  init() {
+  init(sessionStore: SessionStore = SessionStore(), accountDefaults: UserDefaults? = AppGroup.defaults,
+       accountURLSession: URLSession = .shared, accountEvent: ((String) -> Void)? = nil) {
+    self.accountEvent = accountEvent
+    self.sessionStore = sessionStore
+    self.accountDefaults = accountDefaults
+    self.accountURLSession = accountURLSession
     Diagnostics.record("app", "launch")
     // Installed at launch: the host app's name arrives shortly after the keyboard opens us.
     HostAppObserver.shared.start()
     settings = SettingsStore().load()
-    let stored = SessionStore().load()
+    let stored = sessionStore.load()
     session = stored
     dictation = DictationService()
     dictation.sessionProvider = { [weak self] in self?.session }
@@ -176,31 +188,79 @@ final class AppModel {
     #endif
   }
 
-  func signIn(instance: String, email: String, password: String, twoFactorCode: String?) async throws {
-    let url = try PulpoClient.normalizeInstance(instance, allowLocalhost: instanceAllowsLocalhost)
-    let client = PulpoClient(instance: url)
-    let config = try await client.config()
-    let label = "Pulpo Keyboard on \(UIDevice.current.name)"
-    let response = try await client.login(email: email, password: password, twoFactorCode: twoFactorCode, deviceLabel: label)
-    let stored = StoredSession(instance: url, token: response.session.token, user: response.user, dictationAvailable: config.capabilities.dictation)
-    sessionStore.save(stored)
-    session = stored
-    publishAccount()
+  /// Authorize before launching a Task so a synchronous dismissal can revoke even unstarted work.
+  func beginSignIn() -> UUID {
+    let attempt = UUID()
+    accountGeneration = UUID()
+    signInAttempt = attempt
+    return attempt
+  }
+
+  func cancelSignIn(_ attempt: UUID) {
+    guard signInAttempt == attempt else { return }
+    signInAttempt = nil
+    accountGeneration = UUID()
+  }
+
+  func signIn(instance: String, email: String, password: String, twoFactorCode: String?, attempt: UUID? = nil) async throws {
+    if Task.isCancelled {
+      if let attempt { cancelSignIn(attempt) }
+      throw CancellationError()
+    }
+    let attempt = attempt ?? beginSignIn()
+    defer { if signInAttempt == attempt { signInAttempt = nil } }
+    func checkAuthority() throws {
+      try Task.checkCancellation()
+      guard signInAttempt == attempt else { throw CancellationError() }
+    }
+    try checkAuthority()
+    do {
+      let url = try PulpoClient.normalizeInstance(instance, allowLocalhost: instanceAllowsLocalhost)
+      let client = PulpoClient(instance: url, session: accountURLSession)
+      let config = try await client.config()
+      try checkAuthority()
+      let label = "Pulpo Keyboard on \(UIDevice.current.name)"
+      let response = try await client.login(email: email, password: password, twoFactorCode: twoFactorCode, deviceLabel: label)
+      try checkAuthority()
+      let stored = StoredSession(instance: url, token: response.session.token, user: response.user, dictationAvailable: config.capabilities.dictation)
+      guard sessionStore.save(stored) else {
+        throw PulpoError(status: 0, code: "session_storage", message: "Couldn't save your sign-in on this device. Try again.")
+      }
+      accountEvent?("save")
+      // A recording/upload belongs to the session that started it, never its replacement.
+      if dictation.phase != .idle || dictation.isEngineRunning { dictation.cancel() }
+      accountGeneration = UUID()
+      session = stored
+      publishAccount()
+    } catch {
+      try checkAuthority()
+      throw error
+    }
   }
 
   /// Re-reads whether dictation is enabled on the instance and that the session still works.
   func refreshAccount() async {
     guard var current = session else { return }
-    let client = PulpoClient(instance: current.instance, token: current.token)
+    let generation = accountGeneration
+    let beganDuringSignIn = signInAttempt != nil
+    let refresh = UUID()
+    latestRefresh = refresh
+    func isAuthorized() -> Bool {
+      !Task.isCancelled && !beganDuringSignIn && accountGeneration == generation && latestRefresh == refresh && signInAttempt == nil
+        && session?.instance == current.instance && session?.token == current.token
+    }
+    let client = PulpoClient(instance: current.instance, token: current.token, session: accountURLSession)
     do {
       async let config = client.config()
       async let user = client.me()
       current.dictationAvailable = try await config.capabilities.dictation
       current.user = try await user
-      sessionStore.save(current)
+      guard isAuthorized(), sessionStore.save(current) else { return }
+      accountEvent?("save")
       session = current
       publishAccount()
     } catch let error as PulpoError where error.isUnauthorized {
+      guard isAuthorized() else { return }
       signOut(remote: false)
     } catch {
       // Offline: keep the cached account.
@@ -208,11 +268,20 @@ final class AppModel {
   }
 
   func signOut(remote: Bool = true) {
+    accountGeneration = UUID()
+    signInAttempt = nil
+    latestRefresh = nil
+    if dictation.phase != .idle || dictation.isEngineRunning { dictation.cancel() }
     if remote, let current = session {
-      let client = PulpoClient(instance: current.instance, token: current.token)
-      Task { try? await client.logout() }
+      let client = PulpoClient(instance: current.instance, token: current.token, session: accountURLSession)
+      accountEvent?("logoutStarted")
+      Task {
+        defer { accountEvent?("logoutFinished") }
+        try? await client.logout()
+      }
     }
     sessionStore.clear()
+    accountEvent?("clear")
     session = nil
     publishAccount()
   }
@@ -221,7 +290,8 @@ final class AppModel {
     let snapshot = session.map {
       AccountSnapshot(signedIn: true, displayName: $0.user.name, instanceHost: $0.instance.host(), dictationAvailable: $0.dictationAvailable)
     } ?? .signedOut
-    snapshot.save()
+    snapshot.save(defaults: accountDefaults)
+    accountEvent?("publish")
   }
 
   // MARK: Learned words

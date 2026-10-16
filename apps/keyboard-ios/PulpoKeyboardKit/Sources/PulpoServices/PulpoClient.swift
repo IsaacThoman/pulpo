@@ -39,6 +39,12 @@ public struct PulpoError: Error, Equatable, LocalizedError, Sendable {
   public let code: String
   public let message: String
 
+  public init(status: Int, code: String, message: String) {
+    self.status = status
+    self.code = code
+    self.message = message
+  }
+
   public var errorDescription: String? { message }
   public var isUnauthorized: Bool { status == 401 && code != "two_factor_required" }
   public var needsTwoFactor: Bool { code == "two_factor_required" }

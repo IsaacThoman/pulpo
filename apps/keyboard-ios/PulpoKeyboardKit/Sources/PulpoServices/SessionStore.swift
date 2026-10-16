@@ -41,7 +41,13 @@ public final class SessionStore: @unchecked Sendable {
   @discardableResult
   public func save(_ session: StoredSession) -> Bool {
     guard let data = try? JSONEncoder().encode(session) else { return false }
-    SecItemDelete(query as CFDictionary)
+    let attributes: [String: Any] = [
+      kSecValueData as String: data,
+      kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+    ]
+    let updated = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
+    if updated == errSecSuccess { return true }
+    guard updated == errSecItemNotFound else { return false }
     var item = query
     item[kSecValueData as String] = data
     item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly

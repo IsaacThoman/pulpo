@@ -4,19 +4,14 @@ import SwiftUI
 struct SignInView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.dismiss) private var dismiss
-  @State private var instance = PulpoClient.defaultInstance.host() ?? "pulpo.baby"
-  @State private var email = ""
-  @State private var password = ""
-  @State private var code = ""
-  @State private var needsCode = false
-  @State private var working = false
-  @State private var error: String?
+  @State private var attempt = SignInAttempt()
+  @FocusState private var codeFocused: Bool
 
   var body: some View {
     NavigationStack {
       Form {
         Section {
-          TextField("Server", text: $instance)
+          TextField("Server", text: $attempt.instance)
             .textContentType(.URL)
             .keyboardType(.URL)
             .textInputAutocapitalization(.never)
@@ -26,23 +21,26 @@ struct SignInView: View {
           Text("Use pulpo.baby or your own Pulpo server.")
         }
         Section {
-          TextField("Email", text: $email)
+          TextField("Email", text: $attempt.email)
             .textContentType(.username)
             .keyboardType(.emailAddress)
             .textInputAutocapitalization(.never)
             .autocorrectionDisabled()
             .accessibilityIdentifier("email")
-          SecureField("Password", text: $password)
+          SecureField("Password", text: $attempt.password)
             .textContentType(.password)
             .accessibilityIdentifier("password")
-          if needsCode {
-            TextField("Authentication Code", text: $code)
+          if attempt.needsCode {
+            TextField("Authentication Code", text: $attempt.code)
               .textContentType(.oneTimeCode)
               .keyboardType(.numberPad)
               .accessibilityIdentifier("code")
+              .focused($codeFocused)
+            Button("Use Email and Password") { attempt.backToCredentials() }
+              .accessibilityIdentifier("sign-in-back")
           }
         }
-        if let error {
+        if let error = attempt.error {
           Section {
             // Primary text keeps the message readable; the symbol carries the color.
             Label {
@@ -57,17 +55,17 @@ struct SignInView: View {
         }
         Section {
           Button {
-            Task { await signIn() }
+            attempt.submit(using: model) { dismiss() }
           } label: {
             HStack {
               Text("Sign In")
-              if working {
+              if attempt.working {
                 Spacer()
                 ProgressView()
               }
             }
           }
-          .disabled(working || email.isEmpty || password.isEmpty)
+          .disabled(attempt.working || attempt.email.isEmpty || attempt.password.isEmpty)
           .accessibilityIdentifier("submit-sign-in")
         }
       }
@@ -75,27 +73,19 @@ struct SignInView: View {
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
-          Button("Cancel") { dismiss() }
+          Button("Cancel") {
+            attempt.cancel()
+            dismiss()
+          }
         }
       }
     }
-  }
-
-  private func signIn() async {
-    working = true
-    error = nil
-    defer { working = false }
-    do {
-      try await model.signIn(instance: instance, email: email, password: password, twoFactorCode: needsCode ? code : nil)
-      dismiss()
-    } catch let failure as PulpoError where failure.needsTwoFactor {
-      needsCode = true
-      error = needsCode && !code.isEmpty ? failure.message : nil
-    } catch {
-      self.error = error.localizedDescription
-    }
-    if let error {
-      AccessibilityNotification.Announcement("Couldn't sign in. \(error)").post()
+    .onDisappear { attempt.cancel() }
+    .onChange(of: attempt.needsCode) { _, needsCode in codeFocused = needsCode }
+    .onChange(of: attempt.error) { _, error in
+      if let error {
+        AccessibilityNotification.Announcement("Couldn't sign in. \(error)").post()
+      }
     }
   }
 }
