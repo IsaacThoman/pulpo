@@ -1,0 +1,234 @@
+[
+  {
+    "mode": "en_US",
+    "prefix": "hel",
+    "target": "hello",
+    "frequencyRankWithinExactPrefix": 13,
+    "frequencyTiesCaveat": "Lexical tie break for diagnostic only; heap tie ordering unspecified",
+    "top12": [
+      [
+        "help",
+        163
+      ],
+      [
+        "held",
+        158
+      ],
+      [
+        "helped",
+        148
+      ],
+      [
+        "helping",
+        136
+      ],
+      [
+        "helps",
+        133
+      ],
+      [
+        "hell",
+        127
+      ],
+      [
+        "he'll",
+        124
+      ],
+      [
+        "helicopter",
+        124
+      ],
+      [
+        "helmet",
+        120
+      ],
+      [
+        "helpful",
+        119
+      ],
+      [
+        "helicopters",
+        114
+      ],
+      [
+        "Helen",
+        112
+      ]
+    ],
+    "targetFrequency": 111
+  },
+  {
+    "mode": "en_es",
+    "prefix": "hel",
+    "target": "hello",
+    "frequencyRankWithinExactPrefix": 18,
+    "frequencyTiesCaveat": "Lexical tie break for diagnostic only; heap tie ordering unspecified",
+    "top12": [
+      [
+        "help",
+        163
+      ],
+      [
+        "held",
+        158
+      ],
+      [
+        "helped",
+        148
+      ],
+      [
+        "helping",
+        136
+      ],
+      [
+        "helps",
+        133
+      ],
+      [
+        "hell",
+        127
+      ],
+      [
+        "helado",
+        126
+      ],
+      [
+        "he'll",
+        124
+      ],
+      [
+        "helicopter",
+        124
+      ],
+      [
+        "helicóptero",
+        124
+      ],
+      [
+        "helmet",
+        120
+      ],
+      [
+        "helpful",
+        119
+      ]
+    ],
+    "targetFrequency": 111
+  },
+  {
+    "mode": "en_es",
+    "prefix": "hol",
+    "target": "hola",
+    "frequencyRankWithinExactPrefix": 15,
+    "frequencyTiesCaveat": "Lexical tie break for diagnostic only; heap tie ordering unspecified",
+    "top12": [
+      [
+        "hold",
+        146
+      ],
+      [
+        "holding",
+        138
+      ],
+      [
+        "holds",
+        136
+      ],
+      [
+        "holiday",
+        134
+      ],
+      [
+        "hole",
+        133
+      ],
+      [
+        "holandés",
+        125
+      ],
+      [
+        "holy",
+        125
+      ],
+      [
+        "holidays",
+        124
+      ],
+      [
+        "holes",
+        123
+      ],
+      [
+        "Holanda",
+        119
+      ],
+      [
+        "Hollywood",
+        119
+      ],
+      [
+        "Holmes",
+        119
+      ]
+    ],
+    "targetFrequency": 114
+  },
+  {
+    "mode": "es",
+    "prefix": "maña",
+    "target": "mañana",
+    "frequencyRankWithinExactPrefix": 1,
+    "frequencyTiesCaveat": "Lexical tie break for diagnostic only; heap tie ordering unspecified",
+    "top12": [
+      [
+        "mañana",
+        154
+      ],
+      [
+        "mañanas",
+        119
+      ],
+      [
+        "manantiales",
+        106
+      ],
+      [
+        "manantial",
+        103
+      ],
+      [
+        "mánager",
+        99
+      ],
+      [
+        "manada",
+        98
+      ],
+      [
+        "manadas",
+        94
+      ],
+      [
+        "manatí",
+        77
+      ],
+      [
+        "mañanitas",
+        69
+      ],
+      [
+        "manan",
+        67
+      ],
+      [
+        "manaba",
+        64
+      ],
+      [
+        "mañas",
+        63
+      ]
+    ],
+    "targetFrequency": 154
+  }
+]

@@ -1,0 +1,12 @@
+{
+  "baseline": {
+    "rawSHA256": "62493963fed79f31cb14ce2287d55a499bff0441794e8fd32a10426b83df6fa6",
+    "verifiedCharactersSaved": 90,
+    "verifiedUsefulActions": 36
+  },
+  "candidate": {
+    "rawSHA256": "64643a20bdf7cf216ebdfb995cbd3b4337fbb6b62d57bcbc5f61a584951e8600",
+    "verifiedCharactersSaved": 90,
+    "verifiedUsefulActions": 36
+  }
+}

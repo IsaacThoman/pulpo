@@ -1,0 +1,7 @@
+{
+  "apps/keyboard-ios/audits/prefix-completion-r55/DESIGN.md": "2903719a80530f320d9a557c6ad161aacddaaf970f4e2455616ab74364c4153a",
+  "apps/keyboard-ios/audits/prefix-completion-r55/PUBLIC-CONTRACT.md": "23480152670cef318ee1273846879ceca520ef3a8817bf4db593cc73d79235b6",
+  "apps/keyboard-ios/audits/prefix-completion-r55/development.json": "ba77c1ac74119687d90a2ba383a4df4b1f19d57f70409f74e7a40198271006cd",
+  "apps/keyboard-ios/audits/prefix-completion-r55/main.swift": "0abff38eddeb739a8dc720f8fb344fb9477ef76dca5e02265982428f0c262d72",
+  "apps/keyboard-ios/audits/prefix-completion-r55/run.py": "39a6022d1ccfc25a0c8de64977738894dc93738e56c0bb5e2e3ac70dc69f2832"
+}

@@ -1,0 +1,43 @@
+diff --git a/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Correction/SpellCorrector.swift b/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Correction/SpellCorrector.swift
+index 6de87129..1fa9a1f8 100644
+--- a/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Correction/SpellCorrector.swift
++++ b/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Correction/SpellCorrector.swift
+@@ -216,7 +216,7 @@ public final class SpellCorrector {
+   }
+ 
+   /// The most frequent words below the matched prefixes, best first.
+-  public func completions(of prefixes: [(node: Int, cost: Double)], limit: Int, excluding minimumLength: Int) -> [SpellMatch] {
++  public func completions(of prefixes: [(node: Int, cost: Double)], limit: Int, excluding minimumLength: Int, maximumExpansions: Int = 4_000) -> [SpellMatch] {
+     var heap = BinaryHeap<(priority: Double, node: Int, word: Int?, cost: Double)> { $0.priority > $1.priority }
+     for prefix in prefixes {
+       let node = lexicon.node(prefix.node)
+@@ -225,7 +225,7 @@ public final class SpellCorrector {
+     var found: [SpellMatch] = []
+     var seen = Set<Int>()
+     var expansions = 0
+-    while let top = heap.pop(), found.count < limit, expansions < 4_000 {
++    while let top = heap.pop(), found.count < limit, expansions < maximumExpansions {
+       expansions += 1
+       if let word = top.word {
+         if seen.insert(word).inserted { found.append(SpellMatch(id: word, cost: top.cost)) }
+diff --git a/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Correction/Suggester.swift b/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Correction/Suggester.swift
+index b997f087..9edaaf7e 100644
+--- a/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Correction/Suggester.swift
++++ b/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Correction/Suggester.swift
+@@ -151,6 +151,16 @@ public final class Suggester {
+       let logP = model.logProbability(of: display, id: match.id, in: context)
+       add(Candidate(text: display, id: match.id, cost: match.cost, score: logP - match.cost - Self.completionPenalty, isCompletion: true))
+     }
++    if !typedKey.isEmpty, let node = lexicon.node(forKey: typedKey.utf8) {
++      for match in corrector.completions(of: [(node.index, 0)], limit: 8,
++                                         excluding: typedKey.utf8.count, maximumExpansions: 128) {
++        guard lexicon.flags(match.id).intersection([.neverSuggest, .notAWord]).isEmpty else { continue }
++        let display = lexicon.display(match.id)
++        let logP = model.logProbability(of: display, id: match.id, in: context)
++        add(Candidate(text: display, id: match.id, cost: 0,
++                      score: logP - Self.completionPenalty, isCompletion: true))
++      }
++    }
+     // Unigram-only trie pruning can omit a less frequent word that is strongly
+     // predicted by the sentence. Add matching contextual continuations directly.
+     func addCompletion(_ display: String, id: Int?) {
