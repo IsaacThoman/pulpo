@@ -1,0 +1,54 @@
+import Foundation
+
+struct Row: Codable {
+  let id: String
+  let family: String
+  let stratum: String
+  let kind: String
+  let query: String
+  let acceptable: [String]
+  let maxRank: Int?
+  let reference: String?
+  let note: String
+}
+
+@main struct Measure {
+  static func main() throws {
+    let args = CommandLine.arguments
+    let catalog = try EmojiCatalog.load(url: URL(fileURLWithPath: args[1]))
+    let start = ContinuousClock.now
+    let search = EmojiSuggester(catalog: catalog)
+    let indexDuration = start.duration(to: .now)
+    let rows = try JSONDecoder().decode([Row].self, from: Data(contentsOf: URL(fileURLWithPath: args[2])))
+    let available = Set(catalog.categories.flatMap(\.emoji).map(\.value))
+    let nFixture = EmojiSuggester(catalog: try JSONDecoder().decode(EmojiCatalog.self, from: Data(#"{"version":"1","categories":[{"id":"fixture","name":"Fixture","emoji":[{"e":"☀️","n":"ano","v":1},{"e":"🌙","n":"año","v":1}]}]}"#.utf8)))
+    var outputs: [[String: Any]] = []
+    for row in rows {
+      let fixture = row.kind == "distinct" ? nFixture : search
+      let values = fixture.search(row.query).map(\.value)
+      let rank = values.firstIndex(where: { row.acceptable.contains($0) }).map { $0 + 1 }
+      let reference = row.reference.map { fixture.search($0).map(\.value) }
+      let passed: Any
+      switch row.kind {
+      case "useful": passed = rank.map { $0 <= (row.maxRank ?? 8) } ?? false
+      case "empty": passed = values.isEmpty
+      case "equivalent": passed = values == reference
+      case "distinct": passed = values != reference
+      default: passed = NSNull()
+      }
+      outputs.append([
+        "id": row.id, "family": row.family, "stratum": row.stratum, "kind": row.kind,
+        "query": row.query, "values": values, "resultCount": values.count,
+        "acceptable": row.acceptable, "unavailable": row.acceptable.filter { !available.contains($0) },
+        "firstAcceptableRank": rank as Any? ?? NSNull(),
+        "usefulTop3": rank.map { $0 <= 3 } ?? false,
+        "acceptableTop8": values.prefix(8).filter { row.acceptable.contains($0) }.count,
+        "passed": passed, "referenceValues": reference as Any? ?? NSNull(),
+        "stripValues": EmojiSearch.results(for: EmojiSearchQuery(row.query), suggester: search, history: nil).map(\.value),
+      ])
+    }
+    let result = try JSONSerialization.data(withJSONObject: outputs, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
+    try result.write(to: URL(fileURLWithPath: args[3]))
+    print("rows=\(rows.count) indexBuild=\(indexDuration)")
+  }
+}

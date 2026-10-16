@@ -1,0 +1,60 @@
+R27 emoji search UX contract v1
+Frozen before relevant source inspection. Base: 5e5153664a97b5aafe4995efc47836470043cb1b.
+
+Scope: explicit emoji-panel search only; no contextual suggestion, keyboard engine,
+word dictionaries, swipe, or language-mode policy changes. Search should be local
+and independent of surrounding text, learned words, recents, and network access.
+Do not claim mode coverage from a content label: inspect the actual call site and
+exercise EN/ES/bilingual settings through the real API if it takes language. If
+search has no mode input, report shared language-independent search and keep
+those three content strata distinct from mode testing.
+
+Observable semantics:
+- Trim surrounding whitespace; empty/whitespace explicit search yields no hits
+  (the panel may separately browse categories). Unknown literal text yields no
+  hits. A nonempty result alone is never evidence of usefulness.
+- Case and canonical Unicode composition must not change ordered results.
+  Acute/grave/circumflex/diaeresis vowel variants may be treated as accent-free
+  for search convenience, symmetrically for query and indexed text. Spanish n
+  and ñ stay distinct. No blanket diacritic stripping, transliteration, typo
+  correction, stemming, or phonetic matching is required.
+- Words separated by whitespace are conjunctive: every token must find literal
+  evidence within that emoji's own name/keywords (different keywords allowed).
+  Order and repeated whitespace do not matter. Existing literal substring or
+  prefix behavior for individual tokens is retained unless evidence rejects it.
+  Punctuation is literal, not an instruction to broaden or erase the query.
+- One-character queries retain baseline behavior and ordering; do not invent
+  a new short-query gate. Two-character literal searches must not invent typo
+  expansion. A query containing an emoji alone is a literal search, not a
+  command to echo it. These controls freeze baseline sequences where no semantic
+  relevance oracle is given. No additions to production resources just to pass
+  development or hidden targets.
+
+Usefulness and decision:
+A useful row needs one explicitly acceptable emoji in the first 8 results;
+report first acceptable rank, acceptable count in first 8, and result count.
+Also report first-3 usefulness. Keep the entire raw ordered result list.
+Acceptable sets acknowledge multiple plausible visual expressions; they are
+frozen before measurement, never expanded after seeing results. Missing catalog
+emoji remain unavailable and count as unavailable, not silently excluded.
+Variants of one target/query family are correlated; show family-level and row
+counts separately. Baseline success must not become failure, controls must hold,
+and every changed raw row (including fail-to-fail) must be inspected for ranking
+cost, misleading results, or lost valid alternatives. Candidate must improve at
+least two distinct development target families and two independent fresh target
+families without useful-row regressions or control violations to recommend it.
+This is a small local benchmark, not general superiority or Gboard evidence.
+No Gboard comparison without actual measured comparable queries.
+
+Blind protocol:
+Independent author reads EXACT contract.txt, schema.json, development.json bytes
+and SHA256 values. Author seals target/phrase-disjoint fresh cases before reading
+production source, candidate, or results. Reuse only generic controls. Include
+balanced EN, ES, mixed-language useful queries; case, NFC/NFD, vowel-accent,
+ñ-preservation, literal punctuation, short, privacy/empty/no-results controls.
+Freeze explicit acceptable sets and rank criteria per schema. Author sends only
+hash/path/count metadata before reveal. Candidate source is frozen with hashes,
+then a different independent reviewer reviews source/contract/dev evidence and
+counterexamples WITHOUT hidden payload. Only after review, reveal payload once;
+run baseline/candidate unchanged. No post-reveal tuning. On rejection preserve
+candidate as inactive audit evidence and restore production exactly.

@@ -1,0 +1,15 @@
+{
+  "label": "NEW informed diagnostic after R27 reveal; not a blind usefulness benchmark",
+  "queries": 16,
+  "resourceCandidate": "0d46d60b",
+  "measureSource": "measure.swift.txt",
+  "executedExistingOptimizedBinariesOnly": true,
+  "newBuilds": 0,
+  "sourceEdits": 0,
+  "newSealedInputsAccessed": false,
+  "binarySha256": {
+    "baseline": "c4db85c895f837633d16fa1a0945a0f4fc704e04ffa6f37b93af3f26fb0d0861",
+    "candidate": "49087082d9475f03647e824b31169697d502cad4438d892eea6231a9a78b69b5"
+  },
+  "limits": "No new fresh gain, native, latency or mode-policy claim. Functional results only; no binary/cache retained."
+}

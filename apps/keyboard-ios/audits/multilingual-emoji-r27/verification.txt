@@ -1,0 +1,34 @@
+R27 verification (all build caches, downloaded XML, and executables in /tmp)
+
+Candidate 0d46d60b, frozen manifest84cbd5721d7522802f342974cafac3fc1e529a3845f88b3ef4c53e043db52812:
+python3 -m unittest discover -s apps/keyboard-ios/scripts -p test_emoji_keywords.py
+  Exit0,4 tests passed.
+swift test --package-path apps/keyboard-ios/PulpoKeyboardKit --scratch-path /tmp/pulpo-r27-swift-build --filter Emoji
+  Exit0,63 tests in7 suites passed.
+swift test -c release --no-parallel --package-path apps/keyboard-ios/PulpoKeyboardKit --scratch-path /tmp/pulpo-r27-swift-build
+  Exit0,442 core tests in65 suites passed with existing5 known issues;3 service tests passed.
+Earlier debug-default full run interrupted(exit130) after suggestion/swipe timing failures.
+
+After exact restoration to5e515366:
+swift test -c release --no-parallel --package-path apps/keyboard-ios/PulpoKeyboardKit --scratch-path /tmp/pulpo-r27-swift-build
+  Exit0,439 core tests in64 suites passed with same5 known issues;3 service tests passed.
+python3 -m unittest discover -s apps/keyboard-ios/scripts -p test_emoji_keywords.py
+  Exit0,3 original tests passed.
+git diff --exit-code 5e515366 -- apps/keyboard-ios/LanguageData apps/keyboard-ios/PulpoKeyboardKit apps/keyboard-ios/scripts
+  Exit0, no production differences.
+
+No known-issue additions, thresholds/allowances changes, or retained product-test changes.
+Existing five issues: two own-state ambiguity cases, hel->hello inEN/BI and hol->hola inBI.
+No simulator/emulator/device use, physical deployment, push or merge.
+
+One sealed measurement/version, optimized executables from frozen measure.swift:
+baseline binary SHA256 c4db85c895f837633d16fa1a0945a0f4fc704e04ffa6f37b93af3f26fb0d0861
+candidate binary SHA256 49087082d9475f03647e824b31169697d502cad4438d892eea6231a9a78b69b5
+Baseline sources/resource from parent5e515366 copied to /tmp/pulpo-r27-baseline before edits.
+Sources: EmojiCatalog.swift + EmojiSearch.swift; candidate additionally EmojiPickerSearch.swift.
+swiftc -O -o <scratch>/measure <those_sources> audits/multilingual-emoji-r27/measure.swift
+<baseline_binary> <baseline_emoji.json> fresh.json baseline-fresh.json
+<candidate_binary> <candidate_emoji.json> fresh.json candidate-fresh.json
+python3 compare.py baseline-fresh.json candidate-fresh.json
+All paths relative to apps/keyboard-ios unless explicit. Raw fixture limitation and all failures
+remain documented in report.md; no post-reveal measurement repair or oracle adjustment.

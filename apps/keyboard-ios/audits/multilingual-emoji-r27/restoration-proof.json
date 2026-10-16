@@ -1,0 +1,41 @@
+{
+  "base": "5e5153664a97b5aafe4995efc47836470043cb1b",
+  "candidate": "0d46d60b213b337b9f597d8eceddfa803ecf7590",
+  "restored": "0721ed2b",
+  "scopes": [
+    "apps/keyboard-ios/LanguageData",
+    "apps/keyboard-ios/PulpoKeyboardKit",
+    "apps/keyboard-ios/scripts"
+  ],
+  "netDiffEmpty": true,
+  "files": {
+    "apps/keyboard-ios/LanguageData/README.md": {
+      "baselineAndRestoredSha256": "e26b18eb267447214f7881aa86387f9dc2cf6c579c2c08fa108bb09bc70bbf2e",
+      "candidateSha256": "ac25bc389402c09f839d0a4d9e5ba3a0bcf3d7c1af7980b5ffcc238a2d94db87"
+    },
+    "apps/keyboard-ios/LanguageData/emoji.json": {
+      "baselineAndRestoredSha256": "2085015d3bd75b7046aecd244b1961230b37fd25ac8aca475c7bc4afabba8117",
+      "candidateSha256": "fe2c8a292b877c267080c1741b80f9467d1a57917a83f9b7a0d6b8ff6dad7886"
+    },
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Emoji/EmojiCatalog.swift": {
+      "baselineAndRestoredSha256": "c7f929ada6398c9c849e1b764e7bdacc3aca6956f3444fa74953db43cea5468e",
+      "candidateSha256": "20c862bbe7da6be14616cafb7206ebc8f8ad104a1b810ea805ce328c3675033d"
+    },
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Emoji/EmojiPickerSearch.swift": {
+      "baselineAndRestoredSha256": null,
+      "candidateSha256": "ea765010f633f10b863fbb9ecb577fa15ae280e149ddb8bd16c6022cdacdfb09"
+    },
+    "apps/keyboard-ios/PulpoKeyboardKit/Tests/KeyboardCoreTests/EmojiPickerSearchTests.swift": {
+      "baselineAndRestoredSha256": null,
+      "candidateSha256": "786b28e1f2afc32d36c7dc16343eb7906a005cbc90cace09f44b275bf04803b7"
+    },
+    "apps/keyboard-ios/scripts/build_language_data.py": {
+      "baselineAndRestoredSha256": "cd71e260bf311878c90960b6401c53019c84ccea2117f5075706ad6da30a7647",
+      "candidateSha256": "00da8c3e47899fc1df0af8a31801b556e8136c67eb709eace65158456c63d14e"
+    },
+    "apps/keyboard-ios/scripts/test_emoji_keywords.py": {
+      "baselineAndRestoredSha256": "897087018b96b47f84d31ecd873c3163b38eb96571dcfb0aa711cba7a39b82dc",
+      "candidateSha256": "40c3ce3da0a3b30544d1b4c25ba975dd883e402e5da112f6086f55fe0a6b4188"
+    }
+  }
+}
