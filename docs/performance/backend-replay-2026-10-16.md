@@ -8,7 +8,7 @@ This review identified two bounded improvements: avoid decoding acknowledged res
 
 The query remains `XRANGE - + COUNT 10000`: Redis work, transferred history, and ioredis string materialization remain proportional to the retained stream. This change reduces JavaScript allocation and JSON decoding; it does not implement cursor-based Redis reads or repair gaps in trimmed replay history.
 
-The response owner resolver previously retained every lookup promise for the API process's lifetime. It now keeps at most 4,096 entries, expires entries after five minutes on access, and refreshes least recently used ordering. Concurrent lookups still share one promise. Missing/failed lookups are retried, and an evicted lookup finishing later cannot remove a replacement. Expiration uses no periodic timer. Cache eviction can cause additional indexed ownership queries under high cardinality; ownership and authorization decisions are unchanged.
+The response owner resolver previously retained every lookup promise for the API process's lifetime. It now keeps at most 4,096 entries, expires entries after five minutes on access, and refreshes least recently used ordering. Concurrent lookups still share one promise. Missing/failed lookups are retried, and an evicted lookup finishing later cannot remove a replacement. Event/snapshot handlers contain and log lookup failures through the existing realtime task wrapper; a later publication retries the lookup. Expiration uses no periodic timer. Cache eviction can cause additional indexed ownership queries under high cardinality; ownership and authorization decisions are unchanged.
 
 ## Measurements
 
@@ -29,7 +29,7 @@ After 50,000 unique synthetic owner lookups, forced-GC retained heap fell from a
 
 ## Reproduction and validation
 
-Use installed workspace dependencies and a disposable Redis service on localhost port 56389. The driver rejects other endpoints, creates unique expiring fixture keys, and removes those keys when it finishes.
+Use installed workspace dependencies and a disposable Redis service on localhost port 56389. Both drivers validate the effective application configuration before importing connection-owning modules, including rejection of preview rewrites and URL connection overrides. The main driver creates unique expiring fixture keys and removes those keys when it finishes.
 
 ```sh
 REDIS_URL=redis://127.0.0.1:56389 \
@@ -39,22 +39,24 @@ node --expose-gc --import tsx scripts/benchmarks/response-replay.ts
 
 npm exec -w @pulpo/server -- vitest run \
   src/responses/events.test.ts src/realtime/socket.test.ts \
-  src/realtime/composer-opt-out.test.ts src/realtime/chat-started.integration.test.ts
+  src/realtime/composer-opt-out.test.ts src/realtime/chat-started.integration.test.ts \
+  src/realtime/response-routing.integration.test.ts
+npx vitest run scripts/benchmarks/response-replay-safety.test.ts
 ```
 
 Replay fixtures contain 1,000 or 10,000 events, with a 256-byte text delta except for a 64 KiB completed output item every 100 events. The driver compares the exact previous implementation with the current production function, asserts identical returned events, alternates implementation order, discards three warmups each, and retains 15 samples each. CPU measurements include only the Node benchmark process. Field-byte counts include UTF-8 stream IDs/fields and exclude RESP framing; both implementations request identical Redis data. No model, generation worker, authenticated API request, or production dataset is used.
 
 The optional cache probe runs 50,000 unique synthetic ownership lookups in each fresh Node process, forces GC while the resolver remains globally rooted, and compares retained JavaScript heap over five alternating samples. This isolates cache retention, not total API RSS. The optional compaction probe invokes the existing trimming implementation once per size with no provider. The optional fanout probe uses two real Socket.IO servers and Redis-streams adapters with the same Pub/Sub relay topology as the application; authentication and database routing are outside that harness.
 
-Focused regressions cover replay ordering/filtering, legacy/corrupt sequence fields, relevant JSON failures, empty/null entries, concurrent ownership lookup sharing, LRU eviction, expiration, missing/failed lookup retries, and replacement races. Existing composer isolation and reconnect recovery tests are included.
+Focused regressions cover replay ordering/filtering, legacy/corrupt sequence fields, relevant JSON failures, empty/null entries, concurrent ownership lookup sharing, LRU eviction, expiration, missing/failed lookup retries, and replacement races. Real Socket.IO subscriber tests cover established-stream cache expiry, a failed ownership lookup, contained logging and successful next-publication routing for both events and completed snapshots, including account isolation. Existing composer isolation and reconnect recovery tests are included. Pure endpoint tests verify effective preview rewrites and connection overrides are rejected without creating clients.
 
-Validation passed: server TypeScript build, focused lint for the changed server sources/tests and benchmark drivers, and all 25 tests in the four focused suites above. The full replay, fresh-process retention, compaction and two-server fanout diagnostics completed successfully with their equality/recovery assertions.
+Validation passed: server TypeScript build, focused lint for the changed server sources/tests and benchmark drivers, all 27 tests in the five focused server suites above, and eight endpoint safety tests. The full replay, fresh-process retention, compaction and two-server fanout diagnostics completed successfully with their equality/recovery assertions. Review follow-ups add caller error containment and driver configuration guards; the measured decoding/cache algorithms are unchanged and were not retimed under concurrent native builds.
 
 ## Remaining findings
 
 ### Pub/Sub fanout repeats durable broadcasts across API instances
 
-In [socket.ts:307](../../apps/server/src/realtime/socket.ts#L307), every API instance subscribes to application channels, including response events, snapshots, composer changes, administrative usage and state changes. Their handlers broadcast through the Redis-streams adapter with ordinary `.emit` ([response events at line 332](../../apps/server/src/realtime/socket.ts#L332), snapshots at line 339). With N API instances, one application message can therefore become N adapter broadcasts and N client deliveries, with up to N² adapter ingestion work. Client sequence filtering may discard repeated response events after delivery; it cannot remove the server, adapter and network cost.
+In [socket.ts:307](../../apps/server/src/realtime/socket.ts#L307), every API instance subscribes to application channels, including response events, snapshots, composer changes, administrative usage and state changes. Their handlers broadcast through the Redis-streams adapter with ordinary `.emit` ([response events at line 333](../../apps/server/src/realtime/socket.ts#L333), snapshots at line 341). With N API instances, one application message can therefore become N adapter broadcasts and N client deliveries, with up to N² adapter ingestion work. Client sequence filtering may discard repeated response events after delivery; it cannot remove the server, adapter and network cost.
 
 Simply adding `.local` would bypass adapter publication, including the durable recovery offset and missed-packet history. The installed `socket.io-adapter` `ClusterAdapter.broadcast` only calls `publishAndReturnOffset` for nonlocal broadcasts; `RedisStreamsAdapter.restoreSession` reads the adapter stream. The existing `chat.started` handler intentionally uses `.local.volatile` because its semantics exclude recovery replay. Extending that choice to durable events would change reconnect behavior.
 

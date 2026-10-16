@@ -1,8 +1,11 @@
 /** Fresh-process heap sample, invoked by response-replay.ts. */
 import assert from 'node:assert/strict'
 import { setTimeout as delay } from 'node:timers/promises'
-import { createResponseOwnerResolver } from '../../apps/server/src/realtime/socket.js'
+import { getConfig } from '../../apps/server/src/config.js'
+import { assertReplayBenchmarkEndpoint } from './response-replay-safety.js'
 
+assertReplayBenchmarkEndpoint(getConfig().REDIS_URL)
+const { createResponseOwnerResolver } = await import('../../apps/server/src/realtime/socket.js')
 assert(global.gc, 'Run with --expose-gc')
 const implementation = process.argv[2]
 assert(implementation === 'baseline' || implementation === 'optimized')

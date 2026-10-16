@@ -326,14 +326,16 @@ export async function createSocketServer(httpServer: HttpServer) {
       io.to('admin:usage').emit('admin.usage.upsert', JSON.parse(message))
     } else if (channel === 'pulpo:response-events') {
       const event = JSON.parse(message) as { responseId: string }
-      void ownerFor(event.responseId).then((owner) => {
+      runSocketTask('response.event', async () => {
+        const owner = await ownerFor(event.responseId)
         let rooms = io.to(`response:${event.responseId}`)
         if (owner) rooms = rooms.to(`chat:${owner.chatId}`).to(`user:${owner.userId}`)
         rooms.emit('response.event', event as never)
       })
     } else if (channel === 'pulpo:response-snapshots') {
       const snapshot = JSON.parse(message) as ResponseSnapshot
-      void ownerFor(snapshot.responseId).then((owner) => {
+      runSocketTask('response.snapshot', async () => {
+        const owner = await ownerFor(snapshot.responseId)
         let rooms = io.to(`response:${snapshot.responseId}`)
         if (owner) rooms = rooms.to(`chat:${owner.chatId}`).to(`user:${owner.userId}`)
         rooms.emit('response.snapshot', snapshot)

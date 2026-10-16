@@ -19,9 +19,10 @@ import type { ResponseEvent } from '@pulpo/contracts'
 import type { Server as SocketServer } from 'socket.io'
 import type { Socket as ClientSocket } from 'socket.io-client'
 import type { Redis } from 'ioredis'
+import { getConfig } from '../../apps/server/src/config.js'
+import { assertReplayBenchmarkEndpoint } from './response-replay-safety.js'
 
-const url = new URL(process.env.REDIS_URL ?? '')
-assert(['127.0.0.1', 'localhost'].includes(url.hostname) && url.port === '56389', 'Use the disposable Redis benchmark endpoint on port 56389')
+assertReplayBenchmarkEndpoint(getConfig().REDIS_URL)
 const { redis } = await import('../../apps/server/src/redis.js')
 const { queryClient } = await import('../../apps/server/src/database/client.js')
 const { readResponseEvents } = await import('../../apps/server/src/responses/events.js')
