@@ -1018,17 +1018,19 @@ export const useChat = create<ChatState>()((set, get) => ({
   responseChatIds: {},
 
   replaceSummaries: (rows) => set((state) => {
-    const currentById = new Map(state.chats.map((chat) => [chat.id, chat]))
+    // Keep the first chat per ID, matching the linear lookup this index replaces.
+    const currentById = new Map<string, Chat>()
+    for (const chat of state.chats) if (!currentById.has(chat.id)) currentById.set(chat.id, chat)
     const serverChats = rows.map((row) => ({
       ...toChat(row, currentById.get(row.id), state.responseSequences, state.streamingIds),
       awaitingSummary: false,
     }))
     const serverIds = new Set(serverChats.map((chat) => chat.id))
     const activeTemporary = state.activeTemporaryChatId
-      ? currentById.get(state.activeTemporaryChatId)
+      ? state.chats.find((chat) => chat.id === state.activeTemporaryChatId && chat.temporary)
       : undefined
     const localOnly = state.chats.filter((chat) => (
-      (chat.provisional || chat.awaitingSummary || (activeTemporary?.temporary && chat.id === activeTemporary.id))
+      (chat.provisional || chat.awaitingSummary || chat.id === activeTemporary?.id)
       && !serverIds.has(chat.id)
     ))
     const chats = [...localOnly, ...serverChats]

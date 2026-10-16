@@ -122,6 +122,18 @@ describe('chat order', () => {
     expect(idReads).toBeLessThan(count * 10)
   })
 
+  it('refreshes a duplicated chat ID from its first local copy', () => {
+    const first = chat('dup', { messages: [{ id: 'first', role: 'assistant', content: 'First', done: true, timestamp: 1 }] })
+    const second = chat('dup', { messages: [{ id: 'second', role: 'assistant', content: 'Second', done: true, timestamp: 2 }] })
+    useChat.setState({ chats: [first, second], activeTemporaryChatId: null, streamingIds: [], responseChatIds: {} })
+    useChat.getState().replaceSummaries([{
+      id: 'dup', title: 'Refreshed', modelId: 'test-model', pinned: false, folderId: null,
+      createdAt: new Date(1_000).toISOString(), updatedAt: new Date(2_000).toISOString(),
+      activeResponseId: null, activeBranchLeafId: null,
+    }])
+    expect(useChat.getState().chats.map((item) => item.messages)).toEqual([first.messages])
+  })
+
   it('does not move a chat when it receives new activity', () => {
     expect(looseOrder()).toEqual(['a', 'b', 'c'])
     useChat.setState((state) => ({
