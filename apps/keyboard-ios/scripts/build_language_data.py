@@ -152,8 +152,9 @@ def conversation_training_texts(paths):
 
 
 def build(args):
+  locale = getattr(args, 'locale', 'en_US')
   words, shortcuts = parse_wordlist(args.wordlist)
-  extra = parse_extra_words(ROOT / 'scripts' / 'extra_words.tsv')
+  extra = parse_extra_words(ROOT / 'scripts' / 'extra_words.tsv') if locale == 'en_US' else {}
   for word, freq in extra.items():
     entry = words.setdefault(word, {'freq': freq, 'flags': 'extra', 'offensive': False})
     entry['freq'] = max(entry['freq'], freq)
@@ -188,7 +189,7 @@ def build(args):
       if len(parts) < 3:
         continue
       text = parts[2]
-      if SKIPPED_NAMES.intersection(TOKEN.findall(text)):
+      if locale == 'en_US' and SKIPPED_NAMES.intersection(TOKEN.findall(text)):
         continue
       sentences += 1
       for clause_index, tokens in enumerate(sentence_tokens(text)):
@@ -421,7 +422,8 @@ def build(args):
     same_key = normalize_key(source) == normalize_key(target)
     if source_entry is None or source_entry.get('not_a_word') or (same_key and target_entry and target_entry['freq'] > source_entry['freq']):
       shortcut_lines.append(f'{normalize_key(source)}\t{target}')
-  for line in (ROOT / 'scripts' / 'extra_shortcuts.tsv').read_text(encoding='utf-8').splitlines():
+  extra_shortcuts = (ROOT / 'scripts' / 'extra_shortcuts.tsv').read_text(encoding='utf-8') if locale == 'en_US' else ''
+  for line in extra_shortcuts.splitlines():
     if line.strip() and not line.startswith('#'):
       shortcut_lines.append(line)
 
@@ -533,7 +535,7 @@ def build(args):
     sections.append((b'VWRD', validation_payload(validation_words)))
   meta = {
     'version': FORMAT_VERSION,
-    'locale': 'en_US',
+    'locale': locale,
     'wordCount': count,
     'unigramIntercept': intercept,
     'unigramSlope': slope,
@@ -541,7 +543,8 @@ def build(args):
     'trigramHistories': len(trigram_keys),
     'messageTrainingCount': message_count,
     'conversationTrainingCount': conversation_count,
-    'sources': ['AOSP LatinIME en_US wordlist (Apache-2.0)', 'Tatoeba English sentences (CC-BY 2.0 FR)'],
+    'sources': [f'AOSP LatinIME {locale} wordlist (Apache-2.0)',
+                f'Tatoeba {locale} sentences (CC-BY 2.0 FR)'],
   }
   if args.messages:
     meta['sources'].append('Almeida & Hidalgo, SMS Spam Collection, UCI, DOI 10.24432/C5CC84 (CC BY 4.0); deduplicated ham training partition')
@@ -562,7 +565,7 @@ def build(args):
   out = bytearray(b'PKD1' + struct.pack('<II', FORMAT_VERSION, len(sections)) + table)
   out += b'\0' * ((-len(out)) % 8)
   out += payload
-  output = ROOT / 'LanguageData' / 'en_US.pkdict'
+  output = getattr(args, 'output', None) or ROOT / 'LanguageData' / f'{locale}.pkdict'
   output.parent.mkdir(parents=True, exist_ok=True)
   # Replace the file atomically: an open keyboard/test process may still have the
   # previous dictionary memory-mapped while a developer rebuilds language data.

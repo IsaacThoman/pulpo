@@ -58,11 +58,24 @@ struct HomeView: View {
 
         if model.keyboardEnabled, !model.fullAccess {
           Section {
-            Label("Until Full Access is on, Pulpo Keyboard uses its default settings and changes here don't reach it.", systemImage: "info.circle")
+            Label("Until Full Access is on, changes here don't reach the installed keyboard. You can still choose its language from EN or ES above the keys.", systemImage: "info.circle")
               .font(.subheadline)
               .foregroundStyle(.secondary)
               .accessibilityIdentifier("settings-need-full-access")
           }
+        }
+
+        Section {
+          Picker("Typing Language", selection: $model.settings.language) {
+            ForEach(KeyboardLanguage.allCases, id: \.self) { language in
+              Text(language.title).tag(language)
+            }
+          }
+          .accessibilityIdentifier("typing-language")
+        } header: {
+          Text("Language")
+        } footer: {
+          Text("Spelling, suggestions and slide typing run on this iPhone. English + Español accepts both languages without switching. Touch and hold a letter for accents or ñ. Change language from EN or ES above the keys. This does not change dictation or translate text.")
         }
 
         Section("Typing") {
@@ -137,7 +150,7 @@ struct HomeView: View {
 
         Section("About") {
           LabeledContent("Version", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0")
-          Text("English dictionary from the Android Open Source Project (Apache 2.0). Next-word statistics derived from Tatoeba sentences (CC-BY 2.0 FR). Emoji data from Unicode.")
+          Text("English and Spanish dictionaries from the Android Open Source Project (Apache 2.0). Next-word statistics derived from Tatoeba sentences (CC-BY 2.0 FR). Emoji data from Unicode.")
             .font(.footnote)
             .foregroundStyle(.secondary)
         }
@@ -177,6 +190,18 @@ struct HomeView: View {
       }
       .fullScreenCover(isPresented: Binding(get: { model.route == .dictation }, set: { if !$0 { model.route = nil } })) {
         DictationSessionView()
+      }
+    }
+    .onChange(of: path) { _, screens in
+      // The in-app keyboard can update shared preferences while the settings
+      // screen's model remains alive behind the preview.
+      if screens.isEmpty { model.refreshStatus() }
+    }
+    .onChange(of: model.route) { _, route in
+      if route == .settings {
+        path = []
+        model.refreshStatus()
+        model.route = nil
       }
     }
   }

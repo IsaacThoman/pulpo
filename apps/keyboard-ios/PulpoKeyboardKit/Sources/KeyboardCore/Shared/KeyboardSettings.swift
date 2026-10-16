@@ -1,6 +1,7 @@
 import Foundation
 
 public struct KeyboardSettings: Codable, Equatable, Sendable {
+  public var language: KeyboardLanguage = .english
   public var autocorrect = true
   public var autoCapitalization = true
   public var doubleSpacePeriod = true
@@ -23,6 +24,8 @@ public struct KeyboardSettings: Codable, Equatable, Sendable {
     // Missing keys keep their defaults so older stored settings still decode.
     let container = try decoder.container(keyedBy: CodingKeys.self)
     let defaults = KeyboardSettings()
+    let storedLanguage = try? container.decode(String.self, forKey: .language)
+    language = storedLanguage.flatMap(KeyboardLanguage.init(rawValue:)) ?? defaults.language
     autocorrect = try container.decodeIfPresent(Bool.self, forKey: .autocorrect) ?? defaults.autocorrect
     autoCapitalization = try container.decodeIfPresent(Bool.self, forKey: .autoCapitalization) ?? defaults.autoCapitalization
     doubleSpacePeriod = try container.decodeIfPresent(Bool.self, forKey: .doubleSpacePeriod) ?? defaults.doubleSpacePeriod

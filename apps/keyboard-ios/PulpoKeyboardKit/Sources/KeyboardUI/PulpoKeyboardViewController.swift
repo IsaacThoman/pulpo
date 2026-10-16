@@ -38,6 +38,7 @@ nonisolated private final class ViewRelease: @unchecked Sendable {
 /// The keyboard extension's principal class. The extension target subclasses it so
 /// `NSExtensionPrincipalClass` resolves inside the extension module.
 open class PulpoKeyboardViewController: UIInputViewController, KeyboardHost {
+  public func setTypingLanguage(_ language: String) { primaryLanguage = language }
   private(set) var controller: KeyboardController?
   private var proxyDocument: ProxyDocument?
   private var heightConstraint: NSLayoutConstraint?

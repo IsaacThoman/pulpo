@@ -14,7 +14,7 @@ keyboard extensions get a small memory budget (roughly 50–70 MB) and must star
 | `PulpoKeyboardKit/Sources/PulpoServices` | Pulpo API client (login, account, dictation upload) and Keychain session storage. App only. |
 | `Extension/` | The keyboard extension (`com.isaacthoman.pulpo.keyboard.extension`). |
 | `App/` | The companion app: setup, sign-in, settings, Try It, and the dictation recorder. |
-| `LanguageData/` | Generated dictionary (`en_US.pkdict`) and emoji catalog (`emoji.json`). |
+| `LanguageData/` | English, Spanish and bilingual dictionaries and emoji catalog (`emoji.json`). |
 | `UITests/` | Simulator UI tests, including Settings automation that enables the keyboard. |
 | `scripts/` | Data build script and a stub Pulpo server for dictation tests. |
 
@@ -145,7 +145,15 @@ the next dictation starts without leaving the current app. The session token sta
 the app's Keychain; the keyboard extension never makes network requests.
 
 **Full Access** is needed for dictation, haptics, and reading shared settings. Without
-it the keyboard still types, corrects, predicts and swipes using defaults.
+it the keyboard still types, corrects, predicts and swipes using defaults, with a
+language choice saved locally in the keyboard.
+
+Choose English (the default), Español, or English + Español in Typing Language
+settings, or tap EN/ES above the keys to switch while typing. Bilingual mode
+accepts both vocabularies; Spanish mode gives stronger Spanish-only suggestions.
+Accents and ñ are available by holding a letter. All three modes work offline;
+the choice does not change dictation. Source attribution, reproducible data builds,
+bundle costs and known ranking limits are in [the multilingual data notes](LanguageData/MULTILINGUAL.md).
 
 ## Tests
 

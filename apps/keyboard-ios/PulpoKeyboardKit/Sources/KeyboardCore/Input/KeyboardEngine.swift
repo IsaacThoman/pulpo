@@ -34,8 +34,8 @@ public enum KeyboardPage: Equatable, Sendable {
 /// suggestions, smart punctuation and swipe insertion.
 public final class KeyboardEngine {
   public let document: TextDocument
-  public let suggester: Suggester?
-  public let glide: GlideDecoder?
+  public private(set) var suggester: Suggester?
+  public private(set) var glide: GlideDecoder?
   /// A supported-glyph index, prepared off the typing thread by the host. It can
   /// land between a bar refresh and a tap; it changes what may be offered next,
   /// not what the displayed choices would do to the text, so they stay current.
@@ -229,6 +229,21 @@ public final class KeyboardEngine {
   }
 
   var personal: PersonalDictionary? { suggester?.model.personal }
+
+  /// Replaces static language data without editing text or losing personal
+  /// learning. Old strip choices/undo paths belong to the previous model.
+  public func useLanguageStack(_ stack: LanguageStack) {
+    save(inBackground: true)
+    suggester = stack.suggester
+    glide = stack.glide
+    lastEdit = .none
+    correctionBeforeGlide = nil
+    deletedGlide = nil
+    spaceSlip = nil
+    rejectedGlides.removeAll()
+    rejected.removeAll()
+    invalidateSuggestionContext()
+  }
   var before: String { expectedContext ?? document.documentContextBeforeInput ?? "" }
 
   // MARK: Characters

@@ -1,5 +1,8 @@
 # English dictionary sources
 
+Spanish and English + Español typing resources, source attribution, checksums,
+reproduction and limitations are documented in [MULTILINGUAL.md](MULTILINGUAL.md).
+
 The compiled `en_US.pkdict` contains 160,767 entries, 40,000 bounded trigram histories,
 and interpolated conversational bigrams and trigrams. It was built on October 13, 2026 using the
 following inputs. Source text and downloaded archives are not checked in.

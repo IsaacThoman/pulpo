@@ -165,10 +165,12 @@ public final class KeyboardRootView: UIView {
 public final class KeyboardController: NSObject {
   public let rootView: KeyboardRootView
   public let engine: KeyboardEngine
-  let stack: LanguageStack?
+  private(set) var stack: LanguageStack?
   private weak var host: KeyboardHost?
   private var settings: KeyboardSettings
-  private let settingsStore = SettingsStore()
+  private var settingsStore: SettingsStore
+  private var loadedLanguage: KeyboardLanguage
+  private var reportedLanguage: KeyboardLanguage?
   private var account = AccountSnapshot.signedOut
   private let bridge = DictationBridge()
   private var dictationObserver: DarwinNotifications.Observation?
@@ -226,17 +228,24 @@ public final class KeyboardController: NSObject {
   /// One language stack per process. iOS builds a new controller for every
   /// presentation; sharing keeps the parsed learned words and warmed caches, and
   /// gives overlapping instances one set of learned words to save.
-  private static var sharedStack: (stack: LanguageStack, personalURL: URL?)?
+  private static var sharedStack: (stack: LanguageStack, personalURL: URL?, language: KeyboardLanguage)?
 
-  private static func languageStack(personalURL: URL?, touchURL: URL?) -> LanguageStack? {
+  private static func languageStack(language: KeyboardLanguage, personalURL: URL?, touchURL: URL?) -> LanguageStack? {
     if let shared = sharedStack, shared.personalURL == personalURL {
       shared.stack.personal.reloadIfChangedOnDisk()
       shared.stack.touch.reloadIfChangedOnDisk()
-      return shared.stack
+      if shared.language == language { return shared.stack }
     }
-    guard let url = KeyboardResources.url("en_US", "pkdict"),
-          let stack = try? LanguageStack(dictionaryURL: url, personalURL: personalURL, touchURL: touchURL) else { return nil }
-    sharedStack = (stack, personalURL)
+    guard let url = KeyboardResources.url(language.rawValue, "pkdict") else { return nil }
+    let stack: LanguageStack
+    do {
+      if let previous = sharedStack, previous.personalURL == personalURL {
+        stack = try LanguageStack(dictionaryURL: url, sharing: previous.stack)
+      } else {
+        stack = try LanguageStack(dictionaryURL: url, personalURL: personalURL, touchURL: touchURL)
+      }
+    } catch { return nil }
+    sharedStack = (stack, personalURL, language)
     return stack
   }
 
@@ -246,13 +255,21 @@ public final class KeyboardController: NSObject {
   public init(host: KeyboardHost) {
     let initStart = PerfLog.begin()
     self.host = host
-    settings = SettingsStore().load()
+    settingsStore = Self.settingsStore(for: host)
+    settings = settingsStore.load()
+    loadedLanguage = settings.language
     let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
     // Probing the App Group writes a file; do it once.
     let writable = AppGroup.isWritable
     let stackStart = PerfLog.begin()
-    stack = Self.languageStack(personalURL: AppGroup.personalDictionaryURL(fallback: support, writable: writable),
+    stack = Self.languageStack(language: settings.language, personalURL: AppGroup.personalDictionaryURL(fallback: support, writable: writable),
                                touchURL: AppGroup.touchModelURL(fallback: support, writable: writable))
+    if stack == nil, settings.language != .english {
+      settings.language = .english
+      loadedLanguage = .english
+      stack = Self.languageStack(language: .english, personalURL: AppGroup.personalDictionaryURL(fallback: support, writable: writable),
+                                 touchURL: AppGroup.touchModelURL(fallback: support, writable: writable))
+    }
     PerfLog.end("init.stack", stackStart)
     engine = KeyboardEngine(document: host.document, suggester: stack?.suggester, glide: stack?.glide, settings: settings)
     let emojiDefaults = writable ? (AppGroup.defaults ?? .standard) : .standard
@@ -271,6 +288,7 @@ public final class KeyboardController: NSObject {
     rootView.bar.onForget = { [weak self] in self?.forget($0) }
     rootView.bar.onMicrophone = { [weak self] in self?.startDictation() }
     rootView.bar.onSettings = { [weak self] in self?.host?.openApp(URL(string: "\(AppGroup.urlScheme)://settings")!) }
+    rootView.bar.onLanguage = { [weak self] language in self?.chooseLanguage(language) }
     rootView.bar.onUndo = { [weak self] in self?.undoWordDeletion() }
     rootView.search.onBack = { [weak self] in self?.endEmojiSearch(showingPanel: true) }
     rootView.search.onSelect = { [weak self] in self?.insertSearchResult($0) }
@@ -318,7 +336,9 @@ public final class KeyboardController: NSObject {
     // The app can clear learned words while this process stays alive.
     stack?.personal.reloadIfChangedOnDisk()
     stack?.touch.reloadIfChangedOnDisk()
+    if let host { settingsStore = Self.settingsStore(for: host) }
     settings = settingsStore.load()
+    if settings.language != loadedLanguage { replaceLanguage(settings.language) }
     engine.settings = settings
     KeyboardFeedback.current = haptics
     haptics.enabled = settings.haptics && host?.hasFullAccess == true
@@ -343,6 +363,43 @@ public final class KeyboardController: NSObject {
       DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in self?.rootView.keys.debugShowPreview(key) }
     }
     #endif
+  }
+
+  private static func settingsStore(for host: KeyboardHost) -> SettingsStore {
+    // App Group preferences require Full Access. A keyboard-local language
+    // choice remains usable and persistent even when the group is unavailable.
+    host.hasFullAccess || host.isInsideApp ? SettingsStore() : SettingsStore(defaults: .standard)
+  }
+
+  private func chooseLanguage(_ language: KeyboardLanguage) {
+    guard language != loadedLanguage else { return }
+    guard replaceLanguage(language) else {
+      rootView.bar.showNotice("This language dictionary is unavailable.")
+      return
+    }
+    settings.language = language
+    settingsStore.save(settings)
+    engine.settings = settings
+    wordDeletionUndo = nil
+    deletionPreview = nil
+    sync()
+  }
+
+  @discardableResult
+  private func replaceLanguage(_ language: KeyboardLanguage) -> Bool {
+    guard let previous = stack, let url = KeyboardResources.url(language.rawValue, "pkdict"),
+          let replacement = try? LanguageStack(dictionaryURL: url, sharing: previous) else {
+      settings.language = loadedLanguage
+      return false
+    }
+    engine.useLanguageStack(replacement)
+    stack = replacement
+    loadedLanguage = language
+    if let shared = Self.sharedStack, shared.stack.personal === previous.personal {
+      Self.sharedStack = (replacement, shared.personalURL, language)
+    }
+    updateGeometry()
+    return true
   }
 
   public func hostDidDisappear() {
@@ -427,6 +484,11 @@ public final class KeyboardController: NSObject {
   // MARK: Rendering
 
   private func sync() {
+    rootView.bar.setLanguage(loadedLanguage)
+    if reportedLanguage != loadedLanguage {
+      host?.setTypingLanguage(loadedLanguage.primaryLanguage)
+      reportedLanguage = loadedLanguage
+    }
     if isSearching {
       if layoutKey != "emojiSearch" {
         layoutKey = "emojiSearch"
