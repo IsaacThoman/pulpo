@@ -131,13 +131,18 @@ public final class KeyboardRootView: UIView {
     EmojiFont.releaseCurrent()
   }
 
-  /// Keep the lower bar edge forgiving for the top row, and forward unused bar
-  /// background or empty suggestion slots rather than letting them swallow taps.
+  /// Forward unused bar background or empty suggestion slots to the top row.
+  /// Enabled controls keep their whole touch area, including the lower bar edge.
   /// The one-handed side controls keep their own strip.
   public override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
     let target = super.hitTest(point, with: event)
     guard target != nil, showsKeys, mode == .emojiSearch || !bar.isShowingNotice else { return target }
     if !sidePanel.isHidden, sidePanel.frame.contains(point) { return target }
+    var ancestor = target
+    while let view = ancestor, view !== self {
+      if let control = view as? UIControl, control.isEnabled { return target }
+      ancestor = view.superview
+    }
     let row: UIView = mode == .keys ? bar : search
     if point.y >= row.frame.maxY - 7, point.y < row.frame.maxY { return keys }
     if let target, target === bar || target === self { return keys }

@@ -121,10 +121,11 @@ final class EmojiSearchLayoutTests: XCTestCase {
     }
     XCTAssertFalse(identifiers.contains("key-return"))
     XCTAssertFalse(identifiers.contains("key-numbers"))
-    // The search row's lower edge stays forgiving for the top row, like the bar's.
+    // The back button keeps its lower edge; tapping it must not type q.
     let q = root.keys.keyViews.first { $0.key.identifier == "key-q" }!
     let point = CGPoint(x: root.keys.convert(q.frame, to: root).midX, y: root.search.frame.maxY - 3)
-    XCTAssertTrue(root.hitTest(point, with: nil) === root.keys)
+    let back = root.search.subviews.first { $0.accessibilityIdentifier == "emoji-search-back" }!
+    XCTAssertTrue(root.hitTest(point, with: nil) === back)
   }
 
   private func save(_ view: UIView, name: String) {
