@@ -1,9 +1,118 @@
-# Keyboard quality audit — October 14, 2026
+# Keyboard quality audit — October 15–16, 2026
 
 The user's real-use feedback exposed a gap in the earlier synthetic evaluations.
 Recorded human gestures score far below generated center paths. Current evidence
 supports specific improvements, not an overall real-use lead over Gboard. Gboard
 on iOS, multilingual input, and physical-device latency remain unmeasured.
+
+## Continued independent sweeps, October 15–16
+
+The continuation started at `433e54ad`, preserving the user's icon change while
+bringing this worktree onto PR #782. Three independent agents froze protocols in
+isolated worktrees before inspecting implementation or earlier audit findings.
+The complete protocols and limitations are in `audits/accuracy-sweep.md` and
+`audits/ux-sweep.md`; multilingual work and a second dictation destination sweep
+are still being integrated. They are not counted as validated features here.
+
+### Editing, cancellation, and accessible controls
+
+The accuracy sweep fixed two state-ordering bugs: dictation now reconciles pending
+host edits before choosing first-word capitalization, and rejected stale
+suggestions preserve the space-slip and deleted-swipe evidence needed by later
+edits. Fourteen previously failing assertions pass. Its original frozen 196-case
+benchmark had **identical outcomes before and after** and did not meet its
+acceptance threshold. In particular, sentence-initial `Zevra → Zebra` remains a
+known preservation failure; no general accuracy gain is claimed for those fixes.
+
+The UX sweep authorizes permission, transcription, and return callbacks by an
+individual recording attempt, cancels obsolete uploads, and retains the request
+identity needed to acknowledge cancellation to the keyboard. Preparation and
+transcription now offer Cancel. A separate review found a deferred host-opening
+fallback that still needed authorization; `HostReturnFlow` now checks before
+that deferred open. Nine lifecycle tests and eight production-flow tests cover
+these authorization boundaries. Already-issued system opens cannot be retracted.
+Service/bridge, permission-dialog, production upload, and device-return behavior
+still require integration checks; helper tests alone do not establish them.
+
+Emoji repeat-delete now ends on drag-out, hiding, removal, window detachment,
+and keyboard disappearance, including synchronous dismissal inside a delete
+callback. Accessibility activation deletes once without starting a repeat. Space
+offers accessible cursor steps, disabled Return exposes its unavailable state,
+and empty number-pad spacers are absent from accessibility navigation. **All seven
+new UIKit regression methods pass on iPhone 17 / iOS 27.0**. Actual VoiceOver rotor
+behavior and physical target usability are not measured by those methods.
+
+### New paired typing and rapid Shift probes
+
+`audits/paired-typing-probe.json` freezes 20 development and 80 verification cases
+before their first measurement. `PairedTypingProbeTests` commits actual centered
+key taps after `and ` and reports intended typo recovery separately from exact
+literal preservation. Cases include valid ambiguous words, unfamiliar names,
+internal capitals, and technical identifiers. These curated intended outputs are
+not a population accuracy estimate; contractions and accepted spelling variants
+can have other reasonable interpretations.
+
+On the first verification, Pulpo recovered **36/40** intended typo targets and
+preserved **36/40** literal controls. It exposed an actual Shift bug: separate
+capital letters typed within 350 ms could turn on Caps Lock despite intervening
+letters (`GitHub → GitHUB`, `PyTorch → PyTORCH`). The paired set was then declared
+spent for tuning. A new six-word development set and eight-word verification set
+were frozen in `audits/shift-sequence-probe.json` before the general fix.
+
+The fix ends the Shift double-tap sequence after intervening edits; review extended
+it to page changes and accepted external caret, selection, and field changes.
+Own-edit acknowledgments and lag retain the sequence, and intentional Caps Lock
+remains active. Before that review extension, fresh verification at 80/120/200 ms
+per character improved from **12/24 to 24/24** checks. A check requires both exact
+committed casing and no unintended Caps Lock; some baseline outputs were correct
+but left Caps Lock active. Four additional navigation-interruption assertions
+failed before the extension and pass after it. The unchanged 24-case verification
+also remains green, now with an explicit acceptance assertion. This last rerun is
+regression evidence, not a new holdout.
+
+Re-evaluating the spent paired probe after the Shift fix gives **36/40** intended
+typo targets and **38/40** literal controls; remaining changes are `cant → can’t`
+and `wont → won’t`. No word-specific casing exception or dictionary edit was used.
+
+### Fresh Gboard comparison and limits
+
+The Android tools were installed for a Google Play Android API 37 emulator,
+1080×2400 at density 420. Gboard is **17.2.2.895242737-preload-arm64-v8a**, version
+code **175753754**. The existing native harness used its real QWERTY keyboard,
+non-personalized field, and verified key geometry. Every spelling row returned a
+nonempty suggestion strip. This remains **Gboard Android versus Pulpo iOS core**,
+not Gboard iOS or a physical-device comparison.
+
+The older 60-case spelling probe scores Pulpo **60/60**, Gboard **54/60**; the older
+40-case next-word probe scores Pulpo **27/40**, Gboard **31/40** top-three. On the
+new frozen paired probe, Gboard recovers **29/40** intended typo targets and
+preserves **33/40** exact literals. The engine runner and live Android harness
+do not impose identical key timing, so these observations do not compare latency,
+fast-typing performance, or overall keyboard quality. Raw per-case reports, device
+screenshots, APKs, and SDK downloads remain outside Git.
+
+### Parent verification and unresolved evidence
+
+The first integrated batch passes **356 core tests plus three service tests** in
+Release, with the same two tracked own-state/proxy-lag ambiguities. After the
+navigation extension, **100 focused engine/context/suggestion/Shift tests pass**.
+The initial simulator baseline passed 62 typing, touch, and controller tests;
+the seven new UX methods pass independently after integration. A broader native
+run was interrupted during Xcode result finalization; its installed-picker check
+failed because the system keyboard remained active/off-screen. The six installed
+extension tests likewise failed during keyboard activation. They are **not**
+counted as passed extension validation; simulator hardware-keyboard setup is
+under investigation. All 22 existing Python tooling tests pass.
+
+A new 200-seed editor fuzz run starting at 782000, 300 operations per seed, first
+crashed in its own host oracle. The generator intentionally samples cursor
+fractions slightly above one; the host failed to clamp them. The harness fix and
+large-document replay regression now allow **60,002 operations** to complete with
+shrinking. Both baseline and integrated follow-up report the same eight invariant
+violations: two pending/stale double spaces, one capitalization miss, two
+composition desynchronizations, one literal-suggestion mismatch, and two
+hidden-context word deletions. Several recreate an own state and remain ambiguous
+with delayed proxy reports; these are unresolved evidence, not a zero-failure run.
 
 ## Blind sweep loop: round 1
 
