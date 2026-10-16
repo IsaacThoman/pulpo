@@ -10,6 +10,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./code-preview": {
+      "types": "./dist/code-preview.d.ts",
+      "import": "./dist/code-preview.js"
+    },
     "./doc-schema": {
       "types": "./dist/doc-schema/index.d.ts",
       "import": "./dist/doc-schema/index.js"

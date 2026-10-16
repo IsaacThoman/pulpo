@@ -31,6 +31,8 @@ declare class PulpoAttachmentPreviewModule extends NativeModule {
   ): Promise<void>
   updatePreviewImage(id: string, uri: string, previewOnly: boolean): Promise<boolean>
   previewFile(uri: string, title: string): Promise<void>
+  /** Runs a local HTML file in a sandboxed web view; `contentSecurityPolicy` must carry the `sandbox` directive. */
+  previewWebDocument(uri: string, title: string, contentSecurityPolicy: string): Promise<void>
 }
 
 export default requireOptionalNativeModule<PulpoAttachmentPreviewModule>('PulpoAttachmentPreview')

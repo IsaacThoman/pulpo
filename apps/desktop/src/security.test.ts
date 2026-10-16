@@ -41,7 +41,9 @@ describe('desktop security helpers', () => {
     const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8')
     const header = (conf: string) => /location = \/sandbox\.html \{[^}]*add_header Content-Security-Policy "([^"]+)"/.exec(conf)?.[1]
     const meta = (html: string) => /http-equiv="Content-Security-Policy"\s+content="([^"]+)"/.exec(html)?.[1]
+    const constant = (source: string) => /export const SANDBOX_CSP = "([^"]+)"/.exec(source)?.[1]
     const withoutSandbox = SANDBOX_CSP.replace(/^sandbox [^;]+; /, '')
+    expect(constant(read('../../../packages/contracts/src/sandbox.ts'))).toBe(SANDBOX_CSP)
     expect(header(read('../../../deploy/nginx-static.conf'))).toBe(SANDBOX_CSP)
     expect(header(read('../../../deploy/nginx.conf'))).toBe(SANDBOX_CSP)
     expect(meta(read('../../web/sandbox.html'))).toBe(withoutSandbox)

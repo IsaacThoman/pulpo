@@ -3,7 +3,6 @@ import {
   isSandboxInboundMessage,
   isSandboxOutboundMessage,
   previewFileName,
-  previewKindForFile,
   previewKindForLanguage,
   previewTitle,
 } from './code-preview'
@@ -27,20 +26,6 @@ describe('previewKindForLanguage', () => {
   it('treats XML that is an SVG drawing as SVG', () => {
     expect(previewKindForLanguage('xml', '<?xml version="1.0"?>\n<svg xmlns="http://www.w3.org/2000/svg"/>')).toBe('svg')
     expect(previewKindForLanguage('xml', '<feed></feed>')).toBeNull()
-  })
-})
-
-describe('previewKindForFile', () => {
-  it.each([
-    ['index.html', '', 'html'],
-    ['page.HTM', '', 'html'],
-    ['App.jsx', '', 'jsx'],
-    ['Widget.tsx', '', 'jsx'],
-    ['logo.svg', '', 'svg'],
-    ['export', 'text/html', 'html'],
-    ['notes.txt', 'text/plain', null],
-  ] as const)('maps %s (%s) to %s', (name, mimeType, expected) => {
-    expect(previewKindForFile(name, mimeType)).toBe(expected)
   })
 })
 
