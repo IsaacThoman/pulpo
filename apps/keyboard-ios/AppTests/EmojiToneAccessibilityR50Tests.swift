@@ -34,7 +34,7 @@ final class EmojiToneAccessibilityR50Tests: XCTestCase {
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
     defer { defaults.removePersistentDomain(forName: suite); controller.hostDidDisappear() }
     let history = EmojiHistory(defaults: defaults)
-    let catalog = try EmojiCatalog.load(url: XCTUnwrap(KeyboardResources.url("emoji", "json")))
+    let catalog = try EmojiCatalog.load(url: XCTUnwrap(KeyboardResources.url("emoji", "json"))).filtered { EmojiPanelView.drawsAsOneGlyph($0.value) }
     let thumb = try XCTUnwrap(catalog.categories.flatMap(\.emoji).first { $0.value == "👍" })
     history.setPreferred("👍🏽", for: thumb)
     history.use("👍🏻"); history.use("👍🏿")
