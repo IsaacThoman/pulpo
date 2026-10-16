@@ -23,6 +23,7 @@ final class CompactInstalledInteractionTests: XCTestCase {
     let container = app.descendants(matching: .any).matching(identifier: "inputView").firstMatch
     XCTAssertTrue(container.waitForExistence(timeout: 3))
     let frame = container.frame
+    let emptyFieldValue = field.value as? String
     let style = KeyboardStyle.current(dark: false, landscape: frame.width > 500, inset: true)
     func tap(_ point: CGPoint) {
       app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: point.x, dy: point.y)).tap()
@@ -30,8 +31,10 @@ final class CompactInstalledInteractionTests: XCTestCase {
     // Language is immediately before the 46-point microphone and 2-point inset.
     tap(CGPoint(x: frame.maxX - 46 - 2 - 24, y: frame.minY + style.barHeight * 0.94))
     let spanish = app.buttons["Español"].firstMatch
-    XCTAssertTrue(spanish.waitForExistence(timeout: 4), "Installed lower-language tap did not expose its menu; remote menu AX may be unavailable")
-    XCTAssertEqual(field.value as? String, "", "Language tap typed into the host")
+    let menuAccessible = spanish.waitForExistence(timeout: 4)
+    snapshot("installed-language-after-lower-tap")
+    XCTAssertEqual(field.value as? String, emptyFieldValue, "Language tap typed into the host")
+    XCTAssertTrue(menuAccessible, "Installed lower-language tap did not expose its menu; remote menu AX may be unavailable")
     spanish.tap()
     let grid = KeysView(layout: KeyboardLayout.make(page: .letters, traits: InputTraits(), needsGlobe: false, digitHints: false), style: style)
     grid.frame = CGRect(x: 0, y: 0, width: frame.width, height: style.keysHeight)
