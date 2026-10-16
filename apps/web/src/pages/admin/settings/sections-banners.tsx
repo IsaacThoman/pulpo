@@ -5,7 +5,7 @@ import { Pencil, Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Field, Section, SelectField, TextAreaField, Toggle } from '@/components/admin/kit'
-import { bannerToneClassName } from '@/components/layout/banner-tone'
+import { BannerCard } from '@/components/layout/BannerCard'
 import { apiRequest } from '@/lib/api'
 import { formatDateTime } from '@/lib/format'
 import { cn } from '@/lib/utils'
@@ -111,7 +111,7 @@ export function BannersSection() {
     <div>
       <Section
         title={editingId ? ui("Edit banner") : ui("New banner")}
-        hint={ui("Banners appear at the top of the app for every user while they are active.")}
+        hint={ui("Banners appear at the top of the app for every user while they are active. Links like [status page](https://example.com) or bare URLs become clickable.")}
       >
         <TextAreaField label={ui("Message")} value={draft.content} onChange={(content) => update({ content })} rows={2} />
         <SelectField
@@ -136,8 +136,8 @@ export function BannersSection() {
         {draft.content.trim() && (
           <div>
             <div className="mb-2 text-xs text-muted-foreground">{ui("Preview")}</div>
-            <div className={cn('flex min-h-9 items-center justify-center rounded-md px-4 py-2 text-center text-xs', bannerToneClassName(draft.type))}>
-              {draft.content.trim()}
+            <div className="rounded-lg bg-muted/50 p-4">
+              <BannerCard type={draft.type} content={draft.content.trim()} onDismiss={draft.dismissible ? () => undefined : undefined} className="mx-auto max-w-2xl" />
             </div>
           </div>
         )}

@@ -2423,7 +2423,7 @@ const esUi: Record<string, string> = {
   "Could not save the banner.": "No se pudo guardar el banner.",
   "Edit banner": "Editar banner",
   "New banner": "Nuevo banner",
-  "Banners appear at the top of the app for every user while they are active.": "Los banners aparecen en la parte superior de la aplicación para todos los usuarios mientras están activos.",
+  "Banners appear at the top of the app for every user while they are active. Links like [status page](https://example.com) or bare URLs become clickable.": "Los banners aparecen en la parte superior de la aplicación para todos los usuarios mientras están activos. Los enlaces como [página de estado](https://example.com) o las URL sueltas se pueden pulsar.",
   "Style": "Estilo",
   "Dismissible": "Descartable",
   "Users can hide the banner. Each device remembers the dismissal.": "Los usuarios pueden ocultar el banner. Cada dispositivo recuerda que se descartó.",
