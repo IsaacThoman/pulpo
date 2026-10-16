@@ -3,5 +3,6 @@
   "sha256": "c9b6e19365547fc039e300f6e52baad50989d8029a9df017f85b284adae35ab5",
   "count": 6,
   "author": "independent r24_sealed_author; no source/audits/device access",
-  "revealed": false
+  "revealed": true,
+  "revealedAfterCommit": "8f962784"
 }

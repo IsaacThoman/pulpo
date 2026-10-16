@@ -1,0 +1,57 @@
+{
+  "classification": "EXPOSED DEVELOPMENT ONLY; candidate-only unchanged original probe at actual AX5",
+  "tasks": [
+    {
+      "id": "en-field-roundtrip",
+      "expectedDocument": "Hello\nworld\nOk",
+      "actualDocument": "Hello\nWorld\nOk",
+      "documentPassed": false,
+      "expectedSelectionUTF16": [
+        14,
+        0
+      ],
+      "actualSelectionUTF16": "unavailable via XCTest AX",
+      "semanticOutcome": "document comparison only; UI screenshots outside Git"
+    },
+    {
+      "id": "es-selection-language",
+      "expectedDocument": "Sol",
+      "actualDocument": "Hola familiasol",
+      "documentPassed": false,
+      "expectedSelectionUTF16": [
+        3,
+        0
+      ],
+      "actualSelectionUTF16": "unavailable via XCTest AX",
+      "semanticOutcome": "selection not established; appended rather than replaced"
+    },
+    {
+      "id": "bi-search-roundtrip",
+      "expectedDocument": "Hola team ok",
+      "actualDocument": "Hola team ok",
+      "documentPassed": true,
+      "expectedSelectionUTF16": [
+        12,
+        0
+      ],
+      "actualSelectionUTF16": "unavailable via XCTest AX",
+      "semanticOutcome": "document comparison only; UI screenshots outside Git"
+    },
+    {
+      "id": "en-clear-search",
+      "expectedDocument": "Hi",
+      "actualDocument": "Hi",
+      "documentPassed": true,
+      "expectedSelectionUTF16": [
+        2,
+        0
+      ],
+      "actualSelectionUTF16": "unavailable via XCTest AX",
+      "semanticOutcome": "document comparison only; UI screenshots outside Git"
+    }
+  ],
+  "documentPasses": 2,
+  "documentMisses": 2,
+  "selectionPassClaim": false,
+  "noNewBlindGainClaim": true
+}

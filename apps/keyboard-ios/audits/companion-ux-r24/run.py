@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Serialized R24 simulator checks. Raw artifacts stay outside the checkout."""
 import argparse
+import hashlib
 import os
 from pathlib import Path
 import subprocess
@@ -10,11 +11,15 @@ import time
 UUID = '1EDC5D9A-7E25-432A-B5B1-9A8B702306A7'
 ROOT = Path(__file__).resolve().parents[4]
 p = argparse.ArgumentParser()
-p.add_argument('phase', choices=['live', 'regression', 'exposed'])
+p.add_argument('phase', choices=['live', 'regression', 'exposed', 'heldout'])
+p.add_argument('--heldout', type=Path)
 p.add_argument('--source', type=Path, default=ROOT)
 p.add_argument('--output', type=Path, required=True)
 p.add_argument('--derived-data', type=Path, default=Path('/tmp/pulpo-r24/native'))
 a = p.parse_args()
+if a.phase == 'heldout':
+    if not a.heldout or hashlib.sha256(a.heldout.read_bytes()).hexdigest() != 'c9b6e19365547fc039e300f6e52baad50989d8029a9df017f85b284adae35ab5':
+        p.error('heldout requires the original sealed corpus with its frozen SHA256')
 a.output.mkdir(parents=True, exist_ok=True)
 ready = a.output / 'ready'
 ready.unlink(missing_ok=True)
@@ -27,10 +32,14 @@ selectors = {
  'regression': ['PulpoKeyboardAppTests/CompanionWorkflowR24Tests',
                 'PulpoKeyboardAppTests/DraftEditorTests', 'PulpoKeyboardUITests/CompanionUXR24Tests'],
  'exposed': ['PulpoKeyboardAppTests/BroadExposedR24Tests'],
+ 'heldout': ['PulpoKeyboardUITests/HeldoutCompanionR24Tests'],
 }[a.phase]
 env = dict(os.environ, TEST_RUNNER_PK_R24_LIVE_DIR=str(a.output),
            TEST_RUNNER_PK_R24_REPORT=str(a.output / 'exposed-prefixes.json'),
            TEST_RUNNER_PK_SCREENSHOT_DIR=str(a.output))
+if a.phase == 'heldout':
+    env['TEST_RUNNER_PK_R24_HELDOUT'] = str(a.heldout)
+    env['TEST_RUNNER_PK_R24_HELDOUT_REPORT'] = str(a.output / 'report.json')
 cmd = ['xcodebuild', '-project', str(a.source / 'apps/keyboard-ios/PulpoKeyboard.xcodeproj'),
        '-scheme', 'PulpoKeyboard', '-destination', f'platform=iOS Simulator,id={UUID}',
        '-derivedDataPath', str(a.derived_data), '-resultBundlePath', str(a.output) + '.xcresult',

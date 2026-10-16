@@ -1,1061 +1,340 @@
-[
-  {
-    "id" : "R17-HO-01",
-    "languageAndUI" : "unexecuted; UITextView + production PreviewHost.document literal prefix only; no engine or language-control claim",
-    "starting_state" : {
-      "document" : "send the note.",
-      "language" : {
-        "active_typing_language" : "en",
-        "app_ui_locale" : "en",
-        "enabled_typing_languages" : [
-          "en"
-        ]
-      },
-      "selection_utf16" : {
-        "end" : 13,
-        "start" : 9
-      },
-      "ui" : {
-        "editor_focused" : true,
-        "keyboard" : "visible",
-        "language_control_value" : "en",
-        "selection_highlight_visible" : true,
-        "surface" : "try_it",
-        "unexpected_alert_or_error" : false
-      }
+{
+  "source": "../editing-ux-r17/broad-heldout-authored.json",
+  "sourceSHA256": "ec2dca24e445fa2d9993d9b8dfd516f76859cf8b49a2c182cb824ea6a1421d02",
+  "classification": "EXPOSED DEVELOPMENT ONLY; historically all six unexecuted in R17",
+  "baselineAndCandidate": "same prefix outcomes; 5 literal actions executed per version, exact document and selection match all 5",
+  "completeUIWorkflows": 0,
+  "unexecutedActionsPerVersion": 22,
+  "languageAndUI": "unexecuted in native prefixes; no effective-language claim",
+  "cases": [
+    {
+      "id": "R17-HO-01",
+      "stages": [
+        {
+          "index": 0,
+          "action": {
+            "text": "draft",
+            "type": "type_text"
+          },
+          "status": "executed-native-prefix",
+          "document": "send the draft.",
+          "selection_utf16": {
+            "end": 14,
+            "start": 14
+          },
+          "documentPassed": true,
+          "selectionPassed": true,
+          "expectedDocument": "send the draft.",
+          "expectedSelectionUTF16": {
+            "end": 14,
+            "start": 14
+          }
+        },
+        {
+          "index": 1,
+          "action": {
+            "destination": "document_start",
+            "type": "move_caret"
+          },
+          "status": "unavailable-or-unexecuted",
+          "reason": "No real UI binding in this native prefix fixture for move_caret; no simulated navigation/selection substituted"
+        },
+        {
+          "index": 2,
+          "action": {
+            "text": "Please ",
+            "type": "type_text"
+          },
+          "status": "unavailable-or-unexecuted",
+          "reason": "unexecuted after unavailable semantic action"
+        },
+        {
+          "index": 3,
+          "action": {
+            "destination": "document_end",
+            "type": "move_caret"
+          },
+          "status": "unavailable-or-unexecuted",
+          "reason": "unexecuted after unavailable semantic action"
+        }
+      ]
     },
-    "steps" : [
-      {
-        "action" : {
-          "text" : "draft",
-          "type" : "type_text"
-        },
-        "document" : "send the draft.",
-        "documentPassed" : true,
-        "expected" : {
-          "document" : "send the draft.",
-          "language" : {
-            "active_typing_language" : "en",
-            "app_ui_locale" : "en",
-            "enabled_typing_languages" : [
-              "en"
-            ]
+    {
+      "id": "R17-HO-02",
+      "stages": [
+        {
+          "index": 0,
+          "action": {
+            "key": "Backspace",
+            "type": "press_key"
           },
-          "selection_utf16" : {
-            "end" : 14,
-            "start" : 14
+          "status": "executed-native-prefix",
+          "document": "Hola, Lucía.Nos vemos.",
+          "selection_utf16": {
+            "end": 12,
+            "start": 12
           },
-          "ui" : {
-            "editor_focused" : true,
-            "keyboard" : "visible",
-            "language_control_value" : "en",
-            "selection_highlight_visible" : false,
-            "surface" : "try_it",
-            "unexpected_alert_or_error" : false
+          "documentPassed": true,
+          "selectionPassed": true,
+          "expectedDocument": "Hola, Lucía.Nos vemos.",
+          "expectedSelectionUTF16": {
+            "end": 12,
+            "start": 12
           }
         },
-        "index" : 0,
-        "selection_utf16" : {
-          "end" : 14,
-          "start" : 14
-        },
-        "selectionPassed" : true,
-        "status" : "executed-native-prefix"
-      },
-      {
-        "action" : {
-          "destination" : "document_start",
-          "type" : "move_caret"
-        },
-        "expected" : {
-          "document" : "send the draft.",
-          "language" : {
-            "active_typing_language" : "en",
-            "app_ui_locale" : "en",
-            "enabled_typing_languages" : [
-              "en"
-            ]
+        {
+          "index": 1,
+          "action": {
+            "text": " ",
+            "type": "type_text"
           },
-          "selection_utf16" : {
-            "end" : 0,
-            "start" : 0
+          "status": "executed-native-prefix",
+          "document": "Hola, Lucía. Nos vemos.",
+          "selection_utf16": {
+            "end": 13,
+            "start": 13
           },
-          "ui" : {
-            "editor_focused" : true,
-            "keyboard" : "visible",
-            "language_control_value" : "en",
-            "selection_highlight_visible" : false,
-            "surface" : "try_it",
-            "unexpected_alert_or_error" : false
+          "documentPassed": true,
+          "selectionPassed": true,
+          "expectedDocument": "Hola, Lucía. Nos vemos.",
+          "expectedSelectionUTF16": {
+            "end": 13,
+            "start": 13
           }
         },
-        "index" : 1,
-        "reason" : "No real UI binding in this native prefix fixture for move_caret; no simulated navigation\/selection substituted",
-        "status" : "unavailable-or-unexecuted"
-      },
-      {
-        "action" : {
-          "text" : "Please ",
-          "type" : "type_text"
-        },
-        "expected" : {
-          "document" : "Please send the draft.",
-          "language" : {
-            "active_typing_language" : "en",
-            "app_ui_locale" : "en",
-            "enabled_typing_languages" : [
-              "en"
-            ]
+        {
+          "index": 2,
+          "action": {
+            "end_utf16": 22,
+            "start_utf16": 13,
+            "type": "select_range"
           },
-          "selection_utf16" : {
-            "end" : 7,
-            "start" : 7
-          },
-          "ui" : {
-            "editor_focused" : true,
-            "keyboard" : "visible",
-            "language_control_value" : "en",
-            "selection_highlight_visible" : false,
-            "surface" : "try_it",
-            "unexpected_alert_or_error" : false
-          }
+          "status": "unavailable-or-unexecuted",
+          "reason": "No real UI binding in this native prefix fixture for select_range; no simulated navigation/selection substituted"
         },
-        "index" : 2,
-        "reason" : "unexecuted after unavailable semantic action",
-        "status" : "unavailable-or-unexecuted"
-      },
-      {
-        "action" : {
-          "destination" : "document_end",
-          "type" : "move_caret"
-        },
-        "expected" : {
-          "document" : "Please send the draft.",
-          "language" : {
-            "active_typing_language" : "en",
-            "app_ui_locale" : "en",
-            "enabled_typing_languages" : [
-              "en"
-            ]
+        {
+          "index": 3,
+          "action": {
+            "text": "Hasta mañana",
+            "type": "type_text"
           },
-          "selection_utf16" : {
-            "end" : 22,
-            "start" : 22
-          },
-          "ui" : {
-            "editor_focused" : true,
-            "keyboard" : "visible",
-            "language_control_value" : "en",
-            "selection_highlight_visible" : false,
-            "surface" : "try_it",
-            "unexpected_alert_or_error" : false
-          }
-        },
-        "index" : 3,
-        "reason" : "unexecuted after unavailable semantic action",
-        "status" : "unavailable-or-unexecuted"
-      }
-    ]
-  },
-  {
-    "id" : "R17-HO-02",
-    "languageAndUI" : "unexecuted; UITextView + production PreviewHost.document literal prefix only; no engine or language-control claim",
-    "starting_state" : {
-      "document" : "Hola, Lucía.\nNos vemos.",
-      "language" : {
-        "active_typing_language" : "es",
-        "app_ui_locale" : "en",
-        "enabled_typing_languages" : [
-          "es"
-        ]
-      },
-      "selection_utf16" : {
-        "end" : 13,
-        "start" : 13
-      },
-      "ui" : {
-        "editor_focused" : true,
-        "keyboard" : "visible",
-        "language_control_value" : "es",
-        "selection_highlight_visible" : false,
-        "surface" : "try_it",
-        "unexpected_alert_or_error" : false
-      }
+          "status": "unavailable-or-unexecuted",
+          "reason": "unexecuted after unavailable semantic action"
+        }
+      ]
     },
-    "steps" : [
-      {
-        "action" : {
-          "key" : "Backspace",
-          "type" : "press_key"
-        },
-        "document" : "Hola, Lucía.Nos vemos.",
-        "documentPassed" : true,
-        "expected" : {
-          "document" : "Hola, Lucía.Nos vemos.",
-          "language" : {
-            "active_typing_language" : "es",
-            "app_ui_locale" : "en",
-            "enabled_typing_languages" : [
-              "es"
-            ]
+    {
+      "id": "R17-HO-03",
+      "stages": [
+        {
+          "index": 0,
+          "action": {
+            "text": "a las doce",
+            "type": "type_text"
           },
-          "selection_utf16" : {
-            "end" : 12,
-            "start" : 12
+          "status": "executed-native-prefix",
+          "document": "Plan 📌: comer a las doce.",
+          "selection_utf16": {
+            "end": 25,
+            "start": 25
           },
-          "ui" : {
-            "editor_focused" : true,
-            "keyboard" : "visible",
-            "language_control_value" : "es",
-            "selection_highlight_visible" : false,
-            "surface" : "try_it",
-            "unexpected_alert_or_error" : false
+          "documentPassed": true,
+          "selectionPassed": true,
+          "expectedDocument": "Plan 📌: comer a las doce.",
+          "expectedSelectionUTF16": {
+            "end": 25,
+            "start": 25
           }
         },
-        "index" : 0,
-        "selection_utf16" : {
-          "end" : 12,
-          "start" : 12
-        },
-        "selectionPassed" : true,
-        "status" : "executed-native-prefix"
-      },
-      {
-        "action" : {
-          "text" : " ",
-          "type" : "type_text"
-        },
-        "document" : "Hola, Lucía. Nos vemos.",
-        "documentPassed" : true,
-        "expected" : {
-          "document" : "Hola, Lucía. Nos vemos.",
-          "language" : {
-            "active_typing_language" : "es",
-            "app_ui_locale" : "en",
-            "enabled_typing_languages" : [
-              "es"
-            ]
+        {
+          "index": 1,
+          "action": {
+            "key": "ArrowLeft",
+            "type": "press_key"
           },
-          "selection_utf16" : {
-            "end" : 13,
-            "start" : 13
+          "status": "unavailable-or-unexecuted",
+          "reason": "No real UI binding in this native prefix fixture for press_key; no simulated navigation/selection substituted"
+        },
+        {
+          "index": 2,
+          "action": {
+            "key": "ArrowRight",
+            "type": "press_key"
           },
-          "ui" : {
-            "editor_focused" : true,
-            "keyboard" : "visible",
-            "language_control_value" : "es",
-            "selection_highlight_visible" : false,
-            "surface" : "try_it",
-            "unexpected_alert_or_error" : false
-          }
+          "status": "unavailable-or-unexecuted",
+          "reason": "unexecuted after unavailable semantic action"
         },
-        "index" : 1,
-        "selection_utf16" : {
-          "end" : 13,
-          "start" : 13
-        },
-        "selectionPassed" : true,
-        "status" : "executed-native-prefix"
-      },
-      {
-        "action" : {
-          "end_utf16" : 22,
-          "start_utf16" : 13,
-          "type" : "select_range"
-        },
-        "expected" : {
-          "document" : "Hola, Lucía. Nos vemos.",
-          "language" : {
-            "active_typing_language" : "es",
-            "app_ui_locale" : "en",
-            "enabled_typing_languages" : [
-              "es"
-            ]
+        {
+          "index": 3,
+          "action": {
+            "text": " juntos",
+            "type": "type_text"
           },
-          "selection_utf16" : {
-            "end" : 22,
-            "start" : 13
-          },
-          "ui" : {
-            "editor_focused" : true,
-            "keyboard" : "visible",
-            "language_control_value" : "es",
-            "selection_highlight_visible" : true,
-            "surface" : "try_it",
-            "unexpected_alert_or_error" : false
-          }
-        },
-        "index" : 2,
-        "reason" : "No real UI binding in this native prefix fixture for select_range; no simulated navigation\/selection substituted",
-        "status" : "unavailable-or-unexecuted"
-      },
-      {
-        "action" : {
-          "text" : "Hasta mañana",
-          "type" : "type_text"
-        },
-        "expected" : {
-          "document" : "Hola, Lucía. Hasta mañana.",
-          "language" : {
-            "active_typing_language" : "es",
-            "app_ui_locale" : "en",
-            "enabled_typing_languages" : [
-              "es"
-            ]
-          },
-          "selection_utf16" : {
-            "end" : 25,
-            "start" : 25
-          },
-          "ui" : {
-            "editor_focused" : true,
-            "keyboard" : "visible",
-            "language_control_value" : "es",
-            "selection_highlight_visible" : false,
-            "surface" : "try_it",
-            "unexpected_alert_or_error" : false
-          }
-        },
-        "index" : 3,
-        "reason" : "unexecuted after unavailable semantic action",
-        "status" : "unavailable-or-unexecuted"
-      }
-    ]
-  },
-  {
-    "id" : "R17-HO-03",
-    "languageAndUI" : "unexecuted; UITextView + production PreviewHost.document literal prefix only; no engine or language-control claim",
-    "starting_state" : {
-      "document" : "Plan 📌: comer at noon.",
-      "language" : {
-        "active_typing_language" : "es",
-        "app_ui_locale" : "en",
-        "enabled_typing_languages" : [
-          "en",
-          "es"
-        ]
-      },
-      "selection_utf16" : {
-        "end" : 22,
-        "start" : 15
-      },
-      "ui" : {
-        "editor_focused" : true,
-        "keyboard" : "visible",
-        "language_control_value" : "es",
-        "selection_highlight_visible" : true,
-        "surface" : "try_it",
-        "unexpected_alert_or_error" : false
-      }
+          "status": "unavailable-or-unexecuted",
+          "reason": "unexecuted after unavailable semantic action"
+        }
+      ]
     },
-    "steps" : [
-      {
-        "action" : {
-          "text" : "a las doce",
-          "type" : "type_text"
-        },
-        "document" : "Plan 📌: comer a las doce.",
-        "documentPassed" : true,
-        "expected" : {
-          "document" : "Plan 📌: comer a las doce.",
-          "language" : {
-            "active_typing_language" : "es",
-            "app_ui_locale" : "en",
-            "enabled_typing_languages" : [
-              "en",
-              "es"
-            ]
+    {
+      "id": "R17-HO-04",
+      "stages": [
+        {
+          "index": 0,
+          "action": {
+            "text": "Mi",
+            "type": "type_text"
           },
-          "selection_utf16" : {
-            "end" : 25,
-            "start" : 25
+          "status": "executed-native-prefix",
+          "document": "Mi idea.",
+          "selection_utf16": {
+            "end": 2,
+            "start": 2
           },
-          "ui" : {
-            "editor_focused" : true,
-            "keyboard" : "visible",
-            "language_control_value" : "es",
-            "selection_highlight_visible" : false,
-            "surface" : "try_it",
-            "unexpected_alert_or_error" : false
+          "documentPassed": true,
+          "selectionPassed": true,
+          "expectedDocument": "Mi idea.",
+          "expectedSelectionUTF16": {
+            "end": 2,
+            "start": 2
           }
         },
-        "index" : 0,
-        "selection_utf16" : {
-          "end" : 25,
-          "start" : 25
-        },
-        "selectionPassed" : true,
-        "status" : "executed-native-prefix"
-      },
-      {
-        "action" : {
-          "key" : "ArrowLeft",
-          "type" : "press_key"
-        },
-        "expected" : {
-          "document" : "Plan 📌: comer a las doce.",
-          "language" : {
-            "active_typing_language" : "es",
-            "app_ui_locale" : "en",
-            "enabled_typing_languages" : [
-              "en",
-              "es"
-            ]
+        {
+          "index": 1,
+          "action": {
+            "type": "activate_onboarding_next"
           },
-          "selection_utf16" : {
-            "end" : 24,
-            "start" : 24
-          },
-          "ui" : {
-            "editor_focused" : true,
-            "keyboard" : "visible",
-            "language_control_value" : "es",
-            "selection_highlight_visible" : false,
-            "surface" : "try_it",
-            "unexpected_alert_or_error" : false
-          }
+          "status": "unavailable-or-unexecuted",
+          "reason": "No real UI binding in this native prefix fixture for activate_onboarding_next; no simulated navigation/selection substituted"
         },
-        "index" : 1,
-        "reason" : "No real UI binding in this native prefix fixture for press_key; no simulated navigation\/selection substituted",
-        "status" : "unavailable-or-unexecuted"
-      },
-      {
-        "action" : {
-          "key" : "ArrowRight",
-          "type" : "press_key"
-        },
-        "expected" : {
-          "document" : "Plan 📌: comer a las doce.",
-          "language" : {
-            "active_typing_language" : "es",
-            "app_ui_locale" : "en",
-            "enabled_typing_languages" : [
-              "en",
-              "es"
-            ]
+        {
+          "index": 2,
+          "action": {
+            "type": "activate_onboarding_back"
           },
-          "selection_utf16" : {
-            "end" : 25,
-            "start" : 25
-          },
-          "ui" : {
-            "editor_focused" : true,
-            "keyboard" : "visible",
-            "language_control_value" : "es",
-            "selection_highlight_visible" : false,
-            "surface" : "try_it",
-            "unexpected_alert_or_error" : false
-          }
+          "status": "unavailable-or-unexecuted",
+          "reason": "unexecuted after unavailable semantic action"
         },
-        "index" : 2,
-        "reason" : "unexecuted after unavailable semantic action",
-        "status" : "unavailable-or-unexecuted"
-      },
-      {
-        "action" : {
-          "text" : " juntos",
-          "type" : "type_text"
-        },
-        "expected" : {
-          "document" : "Plan 📌: comer a las doce juntos.",
-          "language" : {
-            "active_typing_language" : "es",
-            "app_ui_locale" : "en",
-            "enabled_typing_languages" : [
-              "en",
-              "es"
-            ]
+        {
+          "index": 3,
+          "action": {
+            "type": "focus_editor_without_repositioning"
           },
-          "selection_utf16" : {
-            "end" : 32,
-            "start" : 32
-          },
-          "ui" : {
-            "editor_focused" : true,
-            "keyboard" : "visible",
-            "language_control_value" : "es",
-            "selection_highlight_visible" : false,
-            "surface" : "try_it",
-            "unexpected_alert_or_error" : false
-          }
+          "status": "unavailable-or-unexecuted",
+          "reason": "unexecuted after unavailable semantic action"
         },
-        "index" : 3,
-        "reason" : "unexecuted after unavailable semantic action",
-        "status" : "unavailable-or-unexecuted"
-      }
-    ]
-  },
-  {
-    "id" : "R17-HO-04",
-    "languageAndUI" : "unexecuted; UITextView + production PreviewHost.document literal prefix only; no engine or language-control claim",
-    "starting_state" : {
-      "document" : "Tu idea.",
-      "language" : {
-        "active_typing_language" : "es",
-        "app_ui_locale" : "en",
-        "enabled_typing_languages" : [
-          "es"
-        ]
-      },
-      "selection_utf16" : {
-        "end" : 2,
-        "start" : 0
-      },
-      "ui" : {
-        "editor_focused" : true,
-        "keyboard" : "visible",
-        "language_control_value" : "es",
-        "onboarding_step" : "try_it",
-        "selection_highlight_visible" : true,
-        "surface" : "try_it",
-        "unexpected_alert_or_error" : false
-      }
+        {
+          "index": 4,
+          "action": {
+            "text": " nueva",
+            "type": "type_text"
+          },
+          "status": "unavailable-or-unexecuted",
+          "reason": "unexecuted after unavailable semantic action"
+        }
+      ]
     },
-    "steps" : [
-      {
-        "action" : {
-          "text" : "Mi",
-          "type" : "type_text"
-        },
-        "document" : "Mi idea.",
-        "documentPassed" : true,
-        "expected" : {
-          "document" : "Mi idea.",
-          "language" : {
-            "active_typing_language" : "es",
-            "app_ui_locale" : "en",
-            "enabled_typing_languages" : [
-              "es"
-            ]
+    {
+      "id": "R17-HO-05",
+      "stages": [
+        {
+          "index": 0,
+          "action": {
+            "type": "open_settings"
           },
-          "selection_utf16" : {
-            "end" : 2,
-            "start" : 2
+          "status": "unavailable-or-unexecuted",
+          "reason": "No real UI binding in this native prefix fixture for open_settings; no simulated navigation/selection substituted"
+        },
+        {
+          "index": 1,
+          "action": {
+            "language": "es",
+            "type": "choose_active_typing_language"
           },
-          "ui" : {
-            "editor_focused" : true,
-            "keyboard" : "visible",
-            "language_control_value" : "es",
-            "onboarding_step" : "try_it",
-            "selection_highlight_visible" : false,
-            "surface" : "try_it",
-            "unexpected_alert_or_error" : false
-          }
+          "status": "unavailable-or-unexecuted",
+          "reason": "unexecuted after unavailable semantic action"
         },
-        "index" : 0,
-        "selection_utf16" : {
-          "end" : 2,
-          "start" : 2
-        },
-        "selectionPassed" : true,
-        "status" : "executed-native-prefix"
-      },
-      {
-        "action" : {
-          "type" : "activate_onboarding_next"
-        },
-        "expected" : {
-          "document" : "Mi idea.",
-          "language" : {
-            "active_typing_language" : "es",
-            "app_ui_locale" : "en",
-            "enabled_typing_languages" : [
-              "es"
-            ]
+        {
+          "index": 2,
+          "action": {
+            "type": "close_settings_to_try_it"
           },
-          "selection_utf16" : {
-            "end" : 2,
-            "start" : 2
-          },
-          "ui" : {
-            "editor_focused" : false,
-            "keyboard" : "hidden",
-            "language_control_value" : null,
-            "onboarding_step" : "immediately_after_try_it",
-            "selection_highlight_visible" : false,
-            "surface" : "onboarding_next",
-            "unexpected_alert_or_error" : false
-          }
+          "status": "unavailable-or-unexecuted",
+          "reason": "unexecuted after unavailable semantic action"
         },
-        "index" : 1,
-        "reason" : "No real UI binding in this native prefix fixture for activate_onboarding_next; no simulated navigation\/selection substituted",
-        "status" : "unavailable-or-unexecuted"
-      },
-      {
-        "action" : {
-          "type" : "activate_onboarding_back"
-        },
-        "expected" : {
-          "document" : "Mi idea.",
-          "language" : {
-            "active_typing_language" : "es",
-            "app_ui_locale" : "en",
-            "enabled_typing_languages" : [
-              "es"
-            ]
+        {
+          "index": 3,
+          "action": {
+            "type": "focus_editor_without_repositioning"
           },
-          "selection_utf16" : {
-            "end" : 2,
-            "start" : 2
-          },
-          "ui" : {
-            "editor_focused" : false,
-            "keyboard" : "hidden",
-            "language_control_value" : "es",
-            "onboarding_step" : "try_it",
-            "selection_highlight_visible" : false,
-            "surface" : "try_it",
-            "unexpected_alert_or_error" : false
-          }
+          "status": "unavailable-or-unexecuted",
+          "reason": "unexecuted after unavailable semantic action"
         },
-        "index" : 2,
-        "reason" : "unexecuted after unavailable semantic action",
-        "status" : "unavailable-or-unexecuted"
-      },
-      {
-        "action" : {
-          "type" : "focus_editor_without_repositioning"
-        },
-        "expected" : {
-          "document" : "Mi idea.",
-          "language" : {
-            "active_typing_language" : "es",
-            "app_ui_locale" : "en",
-            "enabled_typing_languages" : [
-              "es"
-            ]
+        {
+          "index": 4,
+          "action": {
+            "text": "Inés",
+            "type": "type_text"
           },
-          "selection_utf16" : {
-            "end" : 2,
-            "start" : 2
-          },
-          "ui" : {
-            "editor_focused" : true,
-            "keyboard" : "visible",
-            "language_control_value" : "es",
-            "onboarding_step" : "try_it",
-            "selection_highlight_visible" : false,
-            "surface" : "try_it",
-            "unexpected_alert_or_error" : false
-          }
-        },
-        "index" : 3,
-        "reason" : "unexecuted after unavailable semantic action",
-        "status" : "unavailable-or-unexecuted"
-      },
-      {
-        "action" : {
-          "text" : " nueva",
-          "type" : "type_text"
-        },
-        "expected" : {
-          "document" : "Mi nueva idea.",
-          "language" : {
-            "active_typing_language" : "es",
-            "app_ui_locale" : "en",
-            "enabled_typing_languages" : [
-              "es"
-            ]
-          },
-          "selection_utf16" : {
-            "end" : 8,
-            "start" : 8
-          },
-          "ui" : {
-            "editor_focused" : true,
-            "keyboard" : "visible",
-            "language_control_value" : "es",
-            "onboarding_step" : "try_it",
-            "selection_highlight_visible" : false,
-            "surface" : "try_it",
-            "unexpected_alert_or_error" : false
-          }
-        },
-        "index" : 4,
-        "reason" : "unexecuted after unavailable semantic action",
-        "status" : "unavailable-or-unexecuted"
-      }
-    ]
-  },
-  {
-    "id" : "R17-HO-05",
-    "languageAndUI" : "unexecuted; UITextView + production PreviewHost.document literal prefix only; no engine or language-control claim",
-    "starting_state" : {
-      "document" : "Call Ana at 4.",
-      "language" : {
-        "active_typing_language" : "en",
-        "app_ui_locale" : "en",
-        "enabled_typing_languages" : [
-          "en",
-          "es"
-        ]
-      },
-      "selection_utf16" : {
-        "end" : 8,
-        "start" : 5
-      },
-      "ui" : {
-        "editor_focused" : true,
-        "keyboard" : "visible",
-        "language_control_value" : "en",
-        "selection_highlight_visible" : true,
-        "surface" : "try_it",
-        "unexpected_alert_or_error" : false
-      }
+          "status": "unavailable-or-unexecuted",
+          "reason": "unexecuted after unavailable semantic action"
+        }
+      ]
     },
-    "steps" : [
-      {
-        "action" : {
-          "type" : "open_settings"
-        },
-        "expected" : {
-          "document" : "Call Ana at 4.",
-          "language" : {
-            "active_typing_language" : "en",
-            "app_ui_locale" : "en",
-            "enabled_typing_languages" : [
-              "en",
-              "es"
-            ]
+    {
+      "id": "R17-HO-06",
+      "stages": [
+        {
+          "index": 0,
+          "action": {
+            "key": "ArrowLeft",
+            "modifiers": [
+              "Shift"
+            ],
+            "type": "press_key"
           },
-          "selection_utf16" : {
-            "end" : 8,
-            "start" : 5
-          },
-          "ui" : {
-            "editor_focused" : false,
-            "keyboard" : "hidden",
-            "language_control_value" : "en",
-            "selection_highlight_visible" : false,
-            "surface" : "settings",
-            "unexpected_alert_or_error" : false
-          }
+          "status": "unavailable-or-unexecuted",
+          "reason": "No real UI binding in this native prefix fixture for press_key; no simulated navigation/selection substituted"
         },
-        "index" : 0,
-        "reason" : "No real UI binding in this native prefix fixture for open_settings; no simulated navigation\/selection substituted",
-        "status" : "unavailable-or-unexecuted"
-      },
-      {
-        "action" : {
-          "language" : "es",
-          "type" : "choose_active_typing_language"
-        },
-        "expected" : {
-          "document" : "Call Ana at 4.",
-          "language" : {
-            "active_typing_language" : "es",
-            "app_ui_locale" : "en",
-            "enabled_typing_languages" : [
-              "en",
-              "es"
-            ]
+        {
+          "index": 1,
+          "action": {
+            "key": "ArrowLeft",
+            "modifiers": [
+              "Shift"
+            ],
+            "type": "press_key"
           },
-          "selection_utf16" : {
-            "end" : 8,
-            "start" : 5
-          },
-          "ui" : {
-            "editor_focused" : false,
-            "keyboard" : "hidden",
-            "language_control_value" : "es",
-            "selection_highlight_visible" : false,
-            "surface" : "settings",
-            "unexpected_alert_or_error" : false
-          }
+          "status": "unavailable-or-unexecuted",
+          "reason": "unexecuted after unavailable semantic action"
         },
-        "index" : 1,
-        "reason" : "unexecuted after unavailable semantic action",
-        "status" : "unavailable-or-unexecuted"
-      },
-      {
-        "action" : {
-          "type" : "close_settings_to_try_it"
-        },
-        "expected" : {
-          "document" : "Call Ana at 4.",
-          "language" : {
-            "active_typing_language" : "es",
-            "app_ui_locale" : "en",
-            "enabled_typing_languages" : [
-              "en",
-              "es"
-            ]
+        {
+          "index": 2,
+          "action": {
+            "text": "yes",
+            "type": "type_text"
           },
-          "selection_utf16" : {
-            "end" : 8,
-            "start" : 5
-          },
-          "ui" : {
-            "editor_focused" : false,
-            "keyboard" : "hidden",
-            "language_control_value" : "es",
-            "selection_highlight_visible" : false,
-            "surface" : "try_it",
-            "unexpected_alert_or_error" : false
-          }
+          "status": "unavailable-or-unexecuted",
+          "reason": "unexecuted after unavailable semantic action"
         },
-        "index" : 2,
-        "reason" : "unexecuted after unavailable semantic action",
-        "status" : "unavailable-or-unexecuted"
-      },
-      {
-        "action" : {
-          "type" : "focus_editor_without_repositioning"
-        },
-        "expected" : {
-          "document" : "Call Ana at 4.",
-          "language" : {
-            "active_typing_language" : "es",
-            "app_ui_locale" : "en",
-            "enabled_typing_languages" : [
-              "en",
-              "es"
-            ]
+        {
+          "index": 3,
+          "action": {
+            "key": "ArrowRight",
+            "type": "press_key"
           },
-          "selection_utf16" : {
-            "end" : 8,
-            "start" : 5
-          },
-          "ui" : {
-            "editor_focused" : true,
-            "keyboard" : "visible",
-            "language_control_value" : "es",
-            "selection_highlight_visible" : true,
-            "surface" : "try_it",
-            "unexpected_alert_or_error" : false
-          }
+          "status": "unavailable-or-unexecuted",
+          "reason": "unexecuted after unavailable semantic action"
         },
-        "index" : 3,
-        "reason" : "unexecuted after unavailable semantic action",
-        "status" : "unavailable-or-unexecuted"
-      },
-      {
-        "action" : {
-          "text" : "Inés",
-          "type" : "type_text"
-        },
-        "expected" : {
-          "document" : "Call Inés at 4.",
-          "language" : {
-            "active_typing_language" : "es",
-            "app_ui_locale" : "en",
-            "enabled_typing_languages" : [
-              "en",
-              "es"
-            ]
+        {
+          "index": 4,
+          "action": {
+            "key": "Backspace",
+            "type": "press_key"
           },
-          "selection_utf16" : {
-            "end" : 9,
-            "start" : 9
-          },
-          "ui" : {
-            "editor_focused" : true,
-            "keyboard" : "visible",
-            "language_control_value" : "es",
-            "selection_highlight_visible" : false,
-            "surface" : "try_it",
-            "unexpected_alert_or_error" : false
-          }
-        },
-        "index" : 4,
-        "reason" : "unexecuted after unavailable semantic action",
-        "status" : "unavailable-or-unexecuted"
-      }
-    ]
-  },
-  {
-    "id" : "R17-HO-06",
-    "languageAndUI" : "unexecuted; UITextView + production PreviewHost.document literal prefix only; no engine or language-control claim",
-    "starting_state" : {
-      "document" : "We say sí.",
-      "language" : {
-        "active_typing_language" : "en",
-        "app_ui_locale" : "en",
-        "enabled_typing_languages" : [
-          "en",
-          "es"
-        ]
-      },
-      "selection_utf16" : {
-        "end" : 9,
-        "start" : 9
-      },
-      "ui" : {
-        "editor_focused" : true,
-        "keyboard" : "visible",
-        "language_control_value" : "en",
-        "selection_highlight_visible" : false,
-        "surface" : "try_it",
-        "unexpected_alert_or_error" : false
-      }
-    },
-    "steps" : [
-      {
-        "action" : {
-          "key" : "ArrowLeft",
-          "modifiers" : [
-            "Shift"
-          ],
-          "type" : "press_key"
-        },
-        "expected" : {
-          "document" : "We say sí.",
-          "language" : {
-            "active_typing_language" : "en",
-            "app_ui_locale" : "en",
-            "enabled_typing_languages" : [
-              "en",
-              "es"
-            ]
-          },
-          "selection_utf16" : {
-            "end" : 9,
-            "start" : 8
-          },
-          "ui" : {
-            "editor_focused" : true,
-            "keyboard" : "visible",
-            "language_control_value" : "en",
-            "selection_highlight_visible" : true,
-            "surface" : "try_it",
-            "unexpected_alert_or_error" : false
-          }
-        },
-        "index" : 0,
-        "reason" : "No real UI binding in this native prefix fixture for press_key; no simulated navigation\/selection substituted",
-        "status" : "unavailable-or-unexecuted"
-      },
-      {
-        "action" : {
-          "key" : "ArrowLeft",
-          "modifiers" : [
-            "Shift"
-          ],
-          "type" : "press_key"
-        },
-        "expected" : {
-          "document" : "We say sí.",
-          "language" : {
-            "active_typing_language" : "en",
-            "app_ui_locale" : "en",
-            "enabled_typing_languages" : [
-              "en",
-              "es"
-            ]
-          },
-          "selection_utf16" : {
-            "end" : 9,
-            "start" : 7
-          },
-          "ui" : {
-            "editor_focused" : true,
-            "keyboard" : "visible",
-            "language_control_value" : "en",
-            "selection_highlight_visible" : true,
-            "surface" : "try_it",
-            "unexpected_alert_or_error" : false
-          }
-        },
-        "index" : 1,
-        "reason" : "unexecuted after unavailable semantic action",
-        "status" : "unavailable-or-unexecuted"
-      },
-      {
-        "action" : {
-          "text" : "yes",
-          "type" : "type_text"
-        },
-        "expected" : {
-          "document" : "We say yes.",
-          "language" : {
-            "active_typing_language" : "en",
-            "app_ui_locale" : "en",
-            "enabled_typing_languages" : [
-              "en",
-              "es"
-            ]
-          },
-          "selection_utf16" : {
-            "end" : 10,
-            "start" : 10
-          },
-          "ui" : {
-            "editor_focused" : true,
-            "keyboard" : "visible",
-            "language_control_value" : "en",
-            "selection_highlight_visible" : false,
-            "surface" : "try_it",
-            "unexpected_alert_or_error" : false
-          }
-        },
-        "index" : 2,
-        "reason" : "unexecuted after unavailable semantic action",
-        "status" : "unavailable-or-unexecuted"
-      },
-      {
-        "action" : {
-          "key" : "ArrowRight",
-          "type" : "press_key"
-        },
-        "expected" : {
-          "document" : "We say yes.",
-          "language" : {
-            "active_typing_language" : "en",
-            "app_ui_locale" : "en",
-            "enabled_typing_languages" : [
-              "en",
-              "es"
-            ]
-          },
-          "selection_utf16" : {
-            "end" : 11,
-            "start" : 11
-          },
-          "ui" : {
-            "editor_focused" : true,
-            "keyboard" : "visible",
-            "language_control_value" : "en",
-            "selection_highlight_visible" : false,
-            "surface" : "try_it",
-            "unexpected_alert_or_error" : false
-          }
-        },
-        "index" : 3,
-        "reason" : "unexecuted after unavailable semantic action",
-        "status" : "unavailable-or-unexecuted"
-      },
-      {
-        "action" : {
-          "key" : "Backspace",
-          "type" : "press_key"
-        },
-        "expected" : {
-          "document" : "We say yes",
-          "language" : {
-            "active_typing_language" : "en",
-            "app_ui_locale" : "en",
-            "enabled_typing_languages" : [
-              "en",
-              "es"
-            ]
-          },
-          "selection_utf16" : {
-            "end" : 10,
-            "start" : 10
-          },
-          "ui" : {
-            "editor_focused" : true,
-            "keyboard" : "visible",
-            "language_control_value" : "en",
-            "selection_highlight_visible" : false,
-            "surface" : "try_it",
-            "unexpected_alert_or_error" : false
-          }
-        },
-        "index" : 4,
-        "reason" : "unexecuted after unavailable semantic action",
-        "status" : "unavailable-or-unexecuted"
-      }
-    ]
-  }
-]
+          "status": "unavailable-or-unexecuted",
+          "reason": "unexecuted after unavailable semantic action"
+        }
+      ]
+    }
+  ]
+}

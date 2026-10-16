@@ -1,0 +1,16 @@
+{
+  "childTasks": 3,
+  "tokenCurrencyCost": "unavailable from tooling",
+  "derivedAndArchiveKiB": {
+    "native": 441348,
+    "baseline-native": 413416,
+    "baseline-source": 65528
+  },
+  "totalTestMethods": 27,
+  "passedMethods": 18,
+  "failedMethods": 9,
+  "skippedMethods": 0,
+  "xcresultDurationSecondsTotal": 467.836,
+  "durationLimit": "xcresult durations include launch overhead but exclude some compilation; not latency benchmarks",
+  "runtimeOverhead": "not benchmarked; one Dynamic Type opt-in and companion scroll reflow; no bundle/learning-data changes"
+}
