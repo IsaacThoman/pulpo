@@ -108,26 +108,25 @@ enum HostReturn {
     bundle.hasPrefix("com.isaacthoman.pulpo.keyboard")
   }
 
-  enum Method: String {
-    case workspace, urlScheme = "url-scheme", none
-  }
+  typealias Method = HostReturnFlow.Method
 
   /// Reopens `bundle`. Tries LaunchServices first, which brings any app back exactly as
   /// it was, then a known URL scheme. Reports whether the app actually left the foreground.
-  static func open(_ bundle: String, completion: @escaping (Method) -> Void) {
-    if openWithWorkspace(bundle) {
-      confirmLeft { left in
-        if left { return completion(.workspace) }
-        openScheme(bundle, completion: completion)
-      }
-      return
-    }
-    openScheme(bundle, completion: completion)
+  /// Authorization is checked again before a deferred URL fallback; cancellation
+  /// cannot retract an open that was already issued while the attempt was current.
+  static func open(_ bundle: String, isAuthorized: @escaping () -> Bool, completion: @escaping (Method) -> Void) {
+    HostReturnFlow.open(
+      isAuthorized: isAuthorized,
+      openWorkspace: { openWithWorkspace(bundle) },
+      confirmLeft: confirmLeft,
+      openScheme: { openScheme(bundle, completion: $0) },
+      completion: completion
+    )
   }
 
-  private static func openScheme(_ bundle: String, completion: @escaping (Method) -> Void) {
-    guard let app = catalog[bundle], let url = URL(string: app.url) else { return completion(.none) }
-    UIApplication.shared.open(url, options: [:]) { opened in completion(opened ? .urlScheme : .none) }
+  private static func openScheme(_ bundle: String, completion: @escaping (Bool) -> Void) {
+    guard let app = catalog[bundle], let url = URL(string: app.url) else { return completion(false) }
+    UIApplication.shared.open(url, options: [:]) { opened in completion(opened) }
   }
 
   /// `LSApplicationWorkspace` is private; the call is skipped if it isn't there.

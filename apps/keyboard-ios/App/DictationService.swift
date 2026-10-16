@@ -155,7 +155,9 @@ final class DictationService {
         Diagnostics.record("app", "return", ["outcome": bundle == nil ? "no-host" : "not-recording", "observer": HostAppObserver.shared.isAvailable, "recordingMs": Int(recordingAfter * 1000), "waitedMs": Int(waited * 1000)])
         return
       }
-      HostReturn.open(bundle) { method in
+      HostReturn.open(bundle, isAuthorized: { [weak self] in
+        self?.lifecycle.isCurrent(attempt, at: .recording) == true
+      }) { method in
         guard self.lifecycle.isCurrent(attempt, at: .recording) else { return }
         self.returnState = method == .none ? .failed : .returned(HostReturn.name(for: bundle))
         Diagnostics.record("app", "return", ["outcome": method == .none ? "failed" : "returned", "method": method.rawValue, "host": bundle, "recordingMs": Int(recordingAfter * 1000), "hostMs": Int(waited * 1000)])
