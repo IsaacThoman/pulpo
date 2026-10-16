@@ -1,0 +1,21 @@
+{
+  "timeUTC": "2026-10-16T05:46:19.397930+00:00",
+  "base": "8c7d00a2",
+  "candidate": "one: tracked new word, explicit-space-only, whitespace/start boundary, no initial selection",
+  "development": {
+    "uniqueUnambiguousCases": 33,
+    "timings": 4,
+    "before": 80,
+    "after": 124,
+    "denominator": 132,
+    "regressions": 0,
+    "ambiguousUnique": 2
+  },
+  "sha256": {
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Input/KeyboardEngine.swift": "302df5ac3701755d15781e9b6738485d8b5dae309eba2e667bf145cf03536a26",
+    "apps/keyboard-ios/PulpoKeyboardKit/Tests/KeyboardCoreTests/BoundaryCorrectionSweepTests.swift": "68fdd0b48af4e2d8cf7e6b4f1fcce069451cc10d2f43423a68382ff0c5590bee",
+    "apps/keyboard-ios/audits/r14-boundary-correction/dev.json": "07032e43c58342c17c0f92cf3e299db3ea5a66ca85c1710bfb4df4fff3f9359e"
+  },
+  "sealedHeldoutSHA256": "d83521fb1263e755bc30e5a536245ac3b0732fca9a0068cd6c0f3d8acaf96320",
+  "limitations": "Does not correct words started after punctuation without whitespace or in a selection. Observable whole-word vs prefix-fragment/codename ambiguity remains; both development diagnostics change. No source or expected-output tuning after held-out reveal."
+}

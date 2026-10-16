@@ -1,0 +1,395 @@
+[
+  {
+    "id": "en-before",
+    "language": "en",
+    "category": "fresh",
+    "intent": "Insert the complete word the before existing meeting; surrounding text must survive.",
+    "initial": "join meeting today",
+    "caret": 5,
+    "typed": "teh ",
+    "expected": "join the meeting today"
+  },
+  {
+    "id": "en-leading",
+    "language": "en",
+    "category": "fresh",
+    "intent": "Insert the complete word with before existing friends.",
+    "initial": "friends arrive soon",
+    "caret": 0,
+    "typed": "wiht ",
+    "expected": "with friends arrive soon"
+  },
+  {
+    "id": "en-punct",
+    "language": "en",
+    "category": "fresh",
+    "intent": "Insert because after colon before existing delays.",
+    "initial": "reason: delays remain",
+    "caret": 8,
+    "typed": "becuase ",
+    "expected": "reason: because delays remain"
+  },
+  {
+    "id": "en-long",
+    "language": "en",
+    "category": "fresh",
+    "intent": "Insert separate adjective before rooms.",
+    "initial": "use rooms upstairs",
+    "caret": 4,
+    "typed": "seperate ",
+    "expected": "use separate rooms upstairs"
+  },
+  {
+    "id": "es-before",
+    "language": "es",
+    "category": "fresh",
+    "intent": "Insert mañana before existing temprano.",
+    "initial": "salimos temprano luego",
+    "caret": 8,
+    "typed": "manana ",
+    "expected": "salimos mañana temprano luego"
+  },
+  {
+    "id": "es-leading",
+    "language": "es",
+    "category": "fresh",
+    "intent": "Insert también before existing podemos.",
+    "initial": "podemos ir",
+    "caret": 0,
+    "typed": "tambien ",
+    "expected": "también podemos ir"
+  },
+  {
+    "id": "es-question",
+    "language": "es",
+    "category": "fresh",
+    "intent": "Insert dónde after opening question before existing queda.",
+    "initial": "¿queda la plaza?",
+    "caret": 1,
+    "typed": "donde ",
+    "expected": "¿dónde queda la plaza?"
+  },
+  {
+    "id": "bi-en",
+    "language": "bilingual",
+    "category": "fresh",
+    "intent": "Insert English the before existing informe in mixed prose.",
+    "initial": "send informe mañana",
+    "caret": 5,
+    "typed": "teh ",
+    "expected": "send the informe mañana"
+  },
+  {
+    "id": "bi-es",
+    "language": "bilingual",
+    "category": "fresh",
+    "intent": "Insert Spanish también before existing ready in mixed prose.",
+    "initial": "estoy ready today",
+    "caret": 6,
+    "typed": "tambien ",
+    "expected": "estoy también ready today"
+  },
+  {
+    "id": "en-end",
+    "language": "en",
+    "category": "ordinary",
+    "intent": "Append ordinary misspelled word with no following text.",
+    "initial": "join ",
+    "caret": 5,
+    "typed": "teh ",
+    "expected": "join the "
+  },
+  {
+    "id": "es-end",
+    "language": "es",
+    "category": "ordinary",
+    "intent": "Append accent-requiring word at document end.",
+    "initial": "salimos ",
+    "caret": 8,
+    "typed": "manana ",
+    "expected": "salimos mañana "
+  },
+  {
+    "id": "fragment-middle",
+    "language": "en",
+    "category": "fragment",
+    "intent": "Insert a fragment in unfinished technical name; retain exact keystrokes including space.",
+    "initial": "call acount() now",
+    "caret": 7,
+    "typed": "xy ",
+    "expected": "call acxy ount() now"
+  },
+  {
+    "id": "fragment-correctable",
+    "language": "en",
+    "category": "fragment",
+    "intent": "Insert literal fragment teh inside an identifier; do not replace fragment with the.",
+    "initial": "use myvalue here",
+    "caret": 6,
+    "typed": "teh ",
+    "expected": "use myteh value here"
+  },
+  {
+    "id": "fragment-start",
+    "language": "en",
+    "category": "ambiguous",
+    "intent": "Typing teh at start of existing word could be new prose or an identifier prefix. Observe with no accuracy credit.",
+    "initial": "token remains",
+    "caret": 0,
+    "typed": "teh ",
+    "expected": "teh token remains",
+    "ambiguous": true
+  },
+  {
+    "id": "fragment-es",
+    "language": "es",
+    "category": "fragment",
+    "intent": "Insert exact fragment in a username; accents are unwanted.",
+    "initial": "nombre usuario aquí",
+    "caret": 9,
+    "typed": "manana ",
+    "expected": "nombre usmanana uario aquí"
+  },
+  {
+    "id": "literal-version",
+    "language": "en",
+    "category": "literal",
+    "intent": "Type a version identifier before prose; preserve punctuation/digits.",
+    "initial": "use package now",
+    "caret": 4,
+    "typed": "v2.1 ",
+    "expected": "use v2.1 package now"
+  },
+  {
+    "id": "literal-url",
+    "language": "en",
+    "category": "literal",
+    "intent": "Insert an exact URL before prose.",
+    "initial": "see details below",
+    "caret": 4,
+    "typed": "https://teh.dev ",
+    "expected": "see https://teh.dev details below"
+  },
+  {
+    "id": "literal-email",
+    "language": "en",
+    "category": "literal",
+    "intent": "Insert email address literally.",
+    "initial": "ask tomorrow",
+    "caret": 4,
+    "typed": "teh@example.org ",
+    "expected": "ask teh@example.org tomorrow"
+  },
+  {
+    "id": "literal-path",
+    "language": "en",
+    "category": "literal",
+    "intent": "Insert exact path before prose.",
+    "initial": "open later please",
+    "caret": 5,
+    "typed": "src/teh.swift ",
+    "expected": "open src/teh.swift later please"
+  },
+  {
+    "id": "literal-code",
+    "language": "en",
+    "category": "literal",
+    "intent": "Insert snake-case identifier.",
+    "initial": "set next value",
+    "caret": 4,
+    "typed": "teh_value ",
+    "expected": "set teh_value next value"
+  },
+  {
+    "id": "literal-ambiguous",
+    "language": "en",
+    "category": "ambiguous",
+    "intent": "The exact project codename teh is intended; indistinguishable from ordinary typo from these keys alone.",
+    "initial": "use build today",
+    "caret": 4,
+    "typed": "teh ",
+    "expected": "use teh build today",
+    "ambiguous": true
+  },
+  {
+    "id": "selection-word",
+    "language": "en",
+    "category": "selection",
+    "intent": "Replace an entire selected adjective with a new complete word and preserve following noun.",
+    "initial": "use old rooms",
+    "caret": 4,
+    "typed": "seperate ",
+    "expected": "use separate  rooms",
+    "selectionLength": 3
+  },
+  {
+    "id": "selection-part",
+    "language": "en",
+    "category": "selection",
+    "intent": "Replace selected middle letters of identifier with literal fragment.",
+    "initial": "use myoldvalue now",
+    "caret": 6,
+    "typed": "teh ",
+    "expected": "use myteh value now",
+    "selectionLength": 3
+  },
+  {
+    "id": "selection-suffix",
+    "language": "es",
+    "category": "selection",
+    "intent": "Replace selected full word plus space, leaving following suffix intact.",
+    "initial": "sale hoy temprano",
+    "caret": 5,
+    "typed": "manana ",
+    "expected": "sale mañana temprano",
+    "selectionLength": 4
+  },
+  {
+    "id": "private",
+    "language": "en",
+    "category": "privacy",
+    "intent": "In password field retain exact input and suffix.",
+    "initial": "key tail",
+    "caret": 4,
+    "typed": "teh ",
+    "expected": "key teh tail",
+    "field": "password"
+  },
+  {
+    "id": "email-field",
+    "language": "en",
+    "category": "privacy",
+    "intent": "Email field disables prose correction.",
+    "initial": "send tail",
+    "caret": 5,
+    "typed": "teh ",
+    "expected": "send teh tail",
+    "field": "email"
+  },
+  {
+    "id": "url-field",
+    "language": "en",
+    "category": "privacy",
+    "intent": "URL field retains literal string.",
+    "initial": "open tail",
+    "caret": 5,
+    "typed": "teh ",
+    "expected": "open teh tail",
+    "field": "url"
+  },
+  {
+    "id": "number-field",
+    "language": "en",
+    "category": "privacy",
+    "intent": "Number field must retain typed literal.",
+    "initial": "123 tail",
+    "caret": 4,
+    "typed": "teh ",
+    "expected": "123 teh tail",
+    "field": "number"
+  },
+  {
+    "id": "move-away",
+    "language": "en",
+    "category": "caret",
+    "intent": "Type typo then move into a separate existing word and insert a literal fragment; no correction across caret movement.",
+    "initial": "use tail next",
+    "caret": 4,
+    "typed": "teh",
+    "expected": "use tehtax il next",
+    "operations": [
+      {
+        "kind": "move",
+        "offset": 2
+      },
+      {
+        "kind": "type",
+        "text": "x "
+      }
+    ]
+  },
+  {
+    "id": "move-start",
+    "language": "en",
+    "category": "caret",
+    "intent": "Move after completed input to document end, then type a fresh word.",
+    "initial": "use tail",
+    "caret": 4,
+    "typed": "ok ",
+    "expected": "use ok tail the ",
+    "operations": [
+      {
+        "kind": "move",
+        "offset": 4
+      },
+      {
+        "kind": "type",
+        "text": " teh "
+      }
+    ]
+  },
+  {
+    "id": "undo-fresh",
+    "language": "en",
+    "category": "undo",
+    "intent": "Backspace immediately after correction restores the typed word and removes the separator, preserving the original following meeting. The resulting joined text is intentional until space is retyped.",
+    "initial": "join meeting",
+    "caret": 5,
+    "typed": "teh ",
+    "expected": "join tehmeeting",
+    "operations": [
+      {
+        "kind": "undo"
+      }
+    ]
+  },
+  {
+    "id": "flush-mid",
+    "language": "en",
+    "category": "delayed",
+    "intent": "Host catches up between letters; new whole word still intended before suffix.",
+    "initial": "join meeting",
+    "caret": 5,
+    "typed": "te",
+    "expected": "join the meeting",
+    "operations": [
+      {
+        "kind": "flush"
+      },
+      {
+        "kind": "type",
+        "text": "h "
+      }
+    ]
+  },
+  {
+    "id": "newline",
+    "language": "en",
+    "category": "fresh",
+    "intent": "Insert whole word on new line before existing word.",
+    "initial": "notes\nmeeting ends",
+    "caret": 6,
+    "typed": "teh ",
+    "expected": "notes\nthe meeting ends"
+  },
+  {
+    "id": "suffix-punct",
+    "language": "en",
+    "category": "fresh",
+    "intent": "Insert whole word before parenthesized existing content.",
+    "initial": "join (meeting) now",
+    "caret": 5,
+    "typed": "teh ",
+    "expected": "join the (meeting) now"
+  },
+  {
+    "id": "emoji-prefix",
+    "language": "en",
+    "category": "fresh",
+    "intent": "Insert a complete word after emoji and space; Unicode caret offsets.",
+    "initial": "🙂 meeting today",
+    "caret": 2,
+    "typed": "teh ",
+    "expected": "🙂 the meeting today"
+  }
+]

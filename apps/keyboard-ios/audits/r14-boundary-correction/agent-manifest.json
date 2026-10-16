@@ -1,0 +1,64 @@
+{
+  "dev-baseline": {
+    "sha256": "48208153a0a6cd4fa3f9a4a5d80ee6825572df0a532c4405eba88d3e279348f2",
+    "rows": 140,
+    "scored": 132,
+    "privacyLearningZero": true
+  },
+  "dev-candidate": {
+    "sha256": "4ebd6cc80ce03a762d50910fa5d532ee701d2fd8102a23cb4d7a1ee7f5e75959",
+    "rows": 140,
+    "scored": 132,
+    "privacyLearningZero": true
+  },
+  "heldout-baseline": {
+    "sha256": "5aa2d445cc5503f0d2bc3dd13c85bce8d5fa4fc19725507c890448ea11b3b990",
+    "rows": 144,
+    "scored": 132,
+    "privacyLearningZero": true
+  },
+  "heldout-candidate": {
+    "sha256": "c71705409f6abc29d615bfcbd005da975ea545e31ba166479ce28cd9103b839a",
+    "rows": 144,
+    "scored": 132,
+    "privacyLearningZero": true
+  },
+  "sourceSHA256": {
+    "baseline": "3f0987051ff0f176a5e1ef6396d415b0f8fe0fc2088735c75fef87f75158de97",
+    "candidate": "302df5ac3701755d15781e9b6738485d8b5dae309eba2e667bf145cf03536a26"
+  },
+  "tasks": {
+    "author": "node:delegated-task:command%3Amcp%3Afc0f37c7-e014-4f6b-982d-9f2b1f1dd36b%3Adelegate-task%3Apr782-r14-sealed-author-v1",
+    "review": "node:delegated-task:command%3Amcp%3Afc0f37c7-e014-4f6b-982d-9f2b1f1dd36b%3Adelegate-task%3Apr782-r14-source-review-v1"
+  },
+  "resultDirectory": "/tmp/pulpo-r14-results",
+  "recordedUTC": "2026-10-16T05:48:45.801553+00:00",
+  "independentReviewSHA256": "7f036a989e6e19d29e8bdc4832a1270badb0d76342dd28d778f91b7661ad61e5",
+  "finalRecordedUTC": "2026-10-16T05:53:34.263105+00:00",
+  "nativeRuntime": "unavailable: explicit no-device constraint; generic build-for-testing succeeded three times",
+  "decision": "reject; baseline source restored; review found swipe-trigger mismatch; heldout unavailable/core gates fail",
+  "checks": {
+    "coreCandidate": "failed: 439 tests, six issues including five known; four partial-word oracle events in one unexpected failing test",
+    "coreRestoredBaseline": "passed full release serial suite",
+    "sourceReviewRegression": "passed focused BoundaryCorrectionReviewTests",
+    "languageData": "5 passed",
+    "multilingualData": "6 passed",
+    "validationWords": "4 passed",
+    "nativeBuildForTesting": "three passed, generic iOS Simulator; no runtime/device",
+    "diffCheck": "passed"
+  },
+  "versionedArtifactSHA256": {
+    "apps/keyboard-ios/PulpoKeyboardKit/Tests/KeyboardCoreTests/BoundaryCorrectionReviewTests.swift": "368abf812c53350cbb12a44cbedf7ef424bb00652ed6d06a0ff0ce63413d5e9d",
+    "apps/keyboard-ios/PulpoKeyboardKit/Tests/KeyboardCoreTests/BoundaryCorrectionSweepTests.swift": "68fdd0b48af4e2d8cf7e6b4f1fcce069451cc10d2f43423a68382ff0c5590bee",
+    "apps/keyboard-ios/UITests/BoundaryCorrectionControllerTests.swift": "18b797de789b6273764c4f672cec29bcdc1a44b05bfd094e354ceb8f5140e778",
+    "apps/keyboard-ios/audits/r14-boundary-correction/audit.md": "95c11cd91c84d4dcd015d1a7a44ecde46f1fb7b0cef47bcc83b7e928366bcff6",
+    "apps/keyboard-ios/audits/r14-boundary-correction/dev-report.json": "71b6ba889cf6bd9556aa2fdbba986d20c5efe1f51a044e441ca9e03f050ddabb",
+    "apps/keyboard-ios/audits/r14-boundary-correction/dev.json": "07032e43c58342c17c0f92cf3e299db3ea5a66ca85c1710bfb4df4fff3f9359e",
+    "apps/keyboard-ios/audits/r14-boundary-correction/freeze.json": "9a0b8bc5c6c063d8a377f7d1b810eaf47b8fc75a6177c15d2635730ad8db3d15",
+    "apps/keyboard-ios/audits/r14-boundary-correction/heldout-report.json": "7a6cac05e92d251a61365db2c6eef570d69d8e7a523c2970aaff6718e39ffe22",
+    "apps/keyboard-ios/audits/r14-boundary-correction/heldout.json": "d83521fb1263e755bc30e5a536245ac3b0732fca9a0068cd6c0f3d8acaf96320",
+    "apps/keyboard-ios/audits/r14-boundary-correction/protocol.md": "49672225702a3ea7c71253edf7633349695de9c4685ff08d65bae69fd7b1855b",
+    "apps/keyboard-ios/audits/r14-boundary-correction/report.py": "90792944c0a7b417eeb029b232607a71a09f5c92bcb1d5035b68a5a4731bc267",
+    "apps/keyboard-ios/audits/r14-boundary-correction/source-review.md": "7f036a989e6e19d29e8bdc4832a1270badb0d76342dd28d778f91b7661ad61e5"
+  }
+}
