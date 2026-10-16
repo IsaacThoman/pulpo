@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "status": "preflight; freeze only with approved final contract",
+  "format": "array of unique {id, description, actions}; each case uses fresh directory",
+  "execution": "each named actor is a real separate worker process containing one dictionary and touch instance; sequential commands are acknowledged on stdout, async writes remain production async; barrier operations use test-only dylib and bounded pipe waits",
+  "operations": {
+    "new": {"actor":"new unique string","memory":"optional Bool, default false"},
+    "learn": {"actor":"existing","word":"nonempty String <=40 characters","after":"optional String|null","pinned":"optional Bool"},
+    "pin": {"actor":"existing","word":"nonempty String <=40 characters"},
+    "forget": {"actor":"existing","word":"nonempty String <=40 characters"},
+    "touch": {"actor":"existing","word":"ASCII a-z length2..40","dx":"finite Double -1..1","dy":"finite Double -1..1","repeat":"Int1..200"},
+    "transient": {"actor":"existing","words":"array String"},
+    "save": {"actor":"existing","store":"dictionary|touch|both","expected":"optional Bool"},
+    "background": {"actor":"existing","store":"dictionary|touch|both"},
+    "reload": {"actor":"existing","store":"dictionary|touch|both"},
+    "clear": {"actor":"existing","store":"dictionary|touch|both","expected":"Bool"},
+    "arm": {"actor":"existing","gate":"beforeLock|beforeRename|failRename"},
+    "waitGate": {"actor":"armed existing; pipe deadline5s"},
+    "release": {"actor":"gated existing"},
+    "stop": {"actor":"gated existing; SIGSTOP plus waitpid WUNTRACED acknowledgement"},
+    "resume": {"actor":"stopped existing"},
+    "kill": {"actor":"existing; SIGKILL plus waitpid acknowledgement"},
+    "check": {"actor":"existing","field":"count|known|blocked|pair|history|total|dirty|touchWeight|offsetX|offsetY","expected":"type per field; numeric touch uses tolerance1e-9","word":"required count/known/blocked/pair; ascii lower letter offsetX/Y","after":"required pair/history"}
+  },
+  "requiredChecks": "every case has >=1 check and every claimed save/clear outcome must be checked",
+  "barrierRules": "do not send synchronous mutating command that stops at gate and then expect its ack; arm -> background -> waitGate permits independent actions; beforeRename has transaction lock held, clear must returnfalse until released/terminated; beforeLock permits clear success before stale commit validation; failRename is a one-attempt precommit error, next save retries",
+  "capabilityLimits": "no controller/UI/native iOS suspension, no raw keystrokes/ranking/language mode; spellings alone do not establish EN/ES/bilingual stacks; no sleeps/clock ordering; unavailable barriers recorded separately not passed"
+}

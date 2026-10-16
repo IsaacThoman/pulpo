@@ -1,0 +1,109 @@
+{
+  "version": 3,
+  "status": "approval input; no product implementation yet; binding contract v3 and public-api-v3.md",
+  "format": "array of unique {id, description, actions}; each case uses fresh directory",
+  "execution": "each named actor is a real separate worker process containing one dictionary and touch instance; sequential commands are acknowledged on stdout, async writes remain production async; barrier operations use test-only dylib and bounded pipe waits",
+  "operations": {
+    "new": {
+      "actor": "new unique string",
+      "memory": "optional Bool, default false",
+      "expected": "{dictionary:result,touch:result}; mandatory; fresh successful read requires bothok"
+    },
+    "learn": {
+      "actor": "existing",
+      "word": "nonempty String <=40 characters",
+      "after": "optional String|null",
+      "pinned": "optional Bool",
+      "expected": "{accepted:Bool,result:result}; mandatory; falseinvalid allows intentional malformed/overbyte inputs"
+    },
+    "pin": {
+      "actor": "existing",
+      "word": "nonempty String <=40 characters",
+      "expected": "{accepted:Bool,result:result}; mandatory; falseinvalid allows intentional malformed/overbyte inputs"
+    },
+    "forget": {
+      "actor": "existing",
+      "word": "nonempty String <=40 characters",
+      "expected": "{accepted:Bool,result:result}; mandatory; falseinvalid allows intentional malformed/overbyte inputs"
+    },
+    "touch": {
+      "actor": "existing",
+      "word": "String; normal ASCII a-z length2..40; intentional invalidinput allowed onlyexpectedfalse/invalid",
+      "dx": "finite Double -1..1",
+      "dy": "finite Double -1..1",
+      "expected": "{accepted:Bool,result:result}; mandatory; falseinvalid allows intentional malformed/overbyte inputs"
+    },
+    "transient": {
+      "actor": "existing",
+      "words": "array String"
+    },
+    "save": {
+      "actor": "existing",
+      "store": "dictionary|touch|both",
+      "expected": "{completed:Bool,dictionary?:result,touch?:result}; storeselectiondefinesrequiredresultfields"
+    },
+    "background": {
+      "actor": "existing",
+      "store": "dictionary|touch|both",
+      "expected": "{enqueued:true}; mandatory; onlyenqueue, notcompletion"
+    },
+    "reload": {
+      "actor": "existing",
+      "store": "dictionary|touch|both",
+      "expected": "{dictionary?:{result:result,changed?:Bool},touch?:{result:result,changed?:Bool}}; selectiondefinesrequiredstores; resultmandatory"
+    },
+    "clear": {
+      "actor": "existing",
+      "store": "dictionary|touch|both",
+      "expected": "{completed:Bool,result:result}; mandatory"
+    },
+    "arm": {
+      "actor": "existing",
+      "gate": "beforeTransaction|beforeCommit|failCommit|failAdmission|afterCommitBeforeAck|reportCommitError",
+      "expected": "{armed:true}"
+    },
+    "waitGate": {
+      "actor": "armed existing; pipe deadline5s"
+    },
+    "release": {
+      "actor": "gated existing"
+    },
+    "stop": {
+      "actor": "gated existing; SIGSTOP plus waitpid WUNTRACED acknowledgement"
+    },
+    "resume": {
+      "actor": "stopped existing"
+    },
+    "kill": {
+      "actor": "existing; SIGKILL plus waitpid acknowledgement"
+    },
+    "check": {
+      "actor": "existing",
+      "field": "count|known|blocked|pair|history|total|dirty|touchWeight|offsetX|offsetY",
+      "expected": "type per field; numeric touch uses tolerance1e-9",
+      "word": "required count/known/blocked/pair; ascii lower letter offsetX/Y",
+      "after": "required pair/history"
+    },
+    "send": {
+      "actor": "existing",
+      "action": "nested learn|pin|forget|touch|clear|save|reload; no actor/expected fields; exactlyonependingreplyperactor"
+    },
+    "receive": {
+      "actor": "previous send; reply deadline5s",
+      "expected": "resultobjectrequiredbythependingnestedoperation"
+    }
+  },
+  "requiredChecks": "Everycase>=1publicquerycheck; allresultbearingactionsexplicitlyasserted; freshreadchecksrequireconfirmedokconstructor/reload, neverdefaultempty. Max40cases/240actionspercase; strings <=16384UTF8bytes inJSON toboundintentionalinvalidtests; ordinaryadmissionlimitscontract256bytes/40graphemes.",
+  "barrierRules": "Onearmperprocess. arm->background or arm->send; waitGateacknowledgesbarrierwithin5s. beforeTransactionholdsnoglobal; beforeCommit/afterCommitBeforeAckholdglobalandlocal, secondclearbusy. reportCommitErrorisnonblockingfaultafterrealCOMMIT; healthyreconciliationmustconfirmok andcountonce. failCommitprecommitrollback; failAdmissioninsertrejected. Everygatefailure/timeoutunavailable. Noordinaryactorcommandwhileawaitingreplyexceptreceive; runnerrelease/stop/resume/killallowed. Everylivegateandreplymustfinishorreachedactorbe killedbeforecaseend.",
+  "capabilityLimits": "no controller/UI/native iOS suspension, no raw keystrokes/ranking/language mode; spellings alone do not establish EN/ES/bilingual stacks; no sleeps/clock ordering; unavailable barriers recorded separately not passed",
+  "resultEnum": [
+    "ok",
+    "busy",
+    "capacity",
+    "invalid",
+    "io",
+    "uncertain",
+    "cleanup"
+  ],
+  "expectedRules": "Expectedobjectfieldsetsvalidatedbyoperation. Allactualvaluescheckedwithtypeexactness; reloadchangedmayomitbutresultcannot. Everyresultbearingactionhasexplicitexpected. Acceptedtrueandcompletedtrue requireok. Failure requiresnonok. Checks readinmemory andneverinferobservation. Byteinvalidactionsallowedwithexpectedinvalid, nevertruncate. Everytouchisoneword. No repeats hiddeninworker."
+}
