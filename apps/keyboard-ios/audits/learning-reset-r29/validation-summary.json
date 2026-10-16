@@ -1,0 +1,73 @@
+{
+  "agent_token_or_service_cost": "not exposed by T3 task metadata",
+  "debug_root": {
+    "additional_issue_type": "timing threshold failures",
+    "additional_issues": 4,
+    "build_seconds": 2.45,
+    "core_run_seconds": 150.4,
+    "core_suites": 64,
+    "core_test_functions": 439,
+    "exit_code": 1,
+    "known_issues": 5,
+    "log_temp_path": "/tmp/pulpo-r29-full-suite.txt",
+    "services_pass": 3,
+    "services_tests": 3
+  },
+  "development_final_run": {
+    "exit_code": 1,
+    "fail": 4,
+    "issues": 7,
+    "pass": 4,
+    "test_functions": 8
+  },
+  "existing_persistence_suite": {
+    "build_seconds": 7.22,
+    "issues": 0,
+    "pass": 3,
+    "run_seconds": 0.008,
+    "tests": 3
+  },
+  "failed_commands": [
+    "initial rg queried nonexistent Core/Shared/Tests directories (exit 2)",
+    "initial chained path lookup for Text/TextNormalizer.swift (exit 1; implementation found in Dictionary/Lexicon.swift)",
+    "6-probe development swift test run (exit 1; 4 contract failures)",
+    "8-probe development swift test run (exit 1; 4 contract failures)",
+    "Debug full swift test (exit 1; 4 timing failures plus 5 known issues)"
+  ],
+  "heldout": {
+    "checks": 133,
+    "executions": 18,
+    "fail": 7,
+    "failed_checks": 24,
+    "invalid_schedules": 0,
+    "pass": 11,
+    "repeats": 0,
+    "unavailable_schedules": 0,
+    "unique_schedules": 18,
+    "unsupported_coverage_categories_retained_separately": 8
+  },
+  "native_device_test_count": 0,
+  "production_unchanged": true,
+  "release_root": {
+    "additional_issues": 0,
+    "build_seconds": 40.1,
+    "core_run_seconds": 5.553,
+    "core_suites": 64,
+    "core_test_functions": 439,
+    "exit_code": 0,
+    "known_issues": 5,
+    "log_temp_path": "/tmp/pulpo-r29-release-suite.txt",
+    "services_pass": 3,
+    "services_tests": 3
+  },
+  "separate_process": {
+    "available_recorded_executions": 3,
+    "exploratory_executions": 1,
+    "recorded_executions": 3,
+    "reset_survives_count": 0,
+    "unique_schedules": 1
+  },
+  "source_candidate": null,
+  "temporary_raw_logs_retained_outside_git": true,
+  "unavailable_native_cases": "not attempted; no simulator assigned or needed for this storage-only audit"
+}

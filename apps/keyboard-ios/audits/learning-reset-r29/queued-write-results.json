@@ -1,0 +1,85 @@
+{
+  "earlier_exploratory_repetition": 1,
+  "recorded_repetitions": 3,
+  "runs": [
+    {
+      "after_completed_clear": {
+        "known": [],
+        "total": 0
+      },
+      "after_preclear_background_write_finishes": {
+        "known": [
+          "durableold",
+          "queuedold"
+        ],
+        "total": 2
+      },
+      "attempt": 1,
+      "available": true,
+      "elapsed_seconds": 0.063,
+      "gate": "before Foundation atomic replacement syscall",
+      "reset_survives": false,
+      "retained_writer_reload_after_own_late_save": {
+        "changed": false,
+        "known": [
+          "durableold",
+          "queuedold"
+        ],
+        "total": 2
+      }
+    },
+    {
+      "after_completed_clear": {
+        "known": [],
+        "total": 0
+      },
+      "after_preclear_background_write_finishes": {
+        "known": [
+          "durableold",
+          "queuedold"
+        ],
+        "total": 2
+      },
+      "attempt": 2,
+      "available": true,
+      "elapsed_seconds": 0.016,
+      "gate": "before Foundation atomic replacement syscall",
+      "reset_survives": false,
+      "retained_writer_reload_after_own_late_save": {
+        "changed": false,
+        "known": [
+          "durableold",
+          "queuedold"
+        ],
+        "total": 2
+      }
+    },
+    {
+      "after_completed_clear": {
+        "known": [],
+        "total": 0
+      },
+      "after_preclear_background_write_finishes": {
+        "known": [
+          "durableold",
+          "queuedold"
+        ],
+        "total": 2
+      },
+      "attempt": 3,
+      "available": true,
+      "elapsed_seconds": 0.017,
+      "gate": "before Foundation atomic replacement syscall",
+      "reset_survives": false,
+      "retained_writer_reload_after_own_late_save": {
+        "changed": false,
+        "known": [
+          "durableold",
+          "queuedold"
+        ],
+        "total": 2
+      }
+    }
+  ],
+  "unique_schedules": 1
+}
