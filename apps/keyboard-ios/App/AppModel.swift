@@ -325,6 +325,7 @@ final class AppModel {
       showSetupGuide = false
       route = .account
     case "settings":
+      showSetupGuide = false
       route = .settings
     default:
       // The keyboard sends people here when Full Access is missing.
