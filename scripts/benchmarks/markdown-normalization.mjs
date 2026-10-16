@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { readFile, writeFile } from 'node:fs/promises'
 import { stripTypeScriptTypes } from 'node:module'
 import os from 'node:os'
@@ -18,8 +19,10 @@ async function loadSource(source, name) {
   return import(`data:text/javascript;base64,${Buffer.from(`${javascript}\n//# sourceURL=${name}`).toString('base64')}`)
 }
 
-const before = await loadSource(execFileSync('git', ['show', `${baseline}:${sourcePath}`], { cwd: root, encoding: 'utf8' }), 'markdown-before.js')
-const after = await loadSource(await readFile(new URL(`../../${sourcePath}`, import.meta.url), 'utf8'), 'markdown-after.js')
+const beforeSource = execFileSync('git', ['show', `${baseline}:${sourcePath}`], { cwd: root, encoding: 'utf8' })
+const afterSource = await readFile(new URL(`../../${sourcePath}`, import.meta.url), 'utf8')
+const before = await loadSource(beforeSource, 'markdown-before.js')
+const after = await loadSource(afterSource, 'markdown-after.js')
 const repeatTo = (unit, characters) => unit.repeat(Math.ceil(characters / unit.length)).slice(0, characters)
 const plain = repeatTo('Pulpo keeps your conversations available while you explore a new idea.\n\n', 32_768)
 const unicode = repeatTo('🦑 Café naïve — 数学の説明: x² + y². Ελληνικά e\u0301.\n\n', 32_768)
@@ -52,7 +55,7 @@ function preprocess(implementation, source, platform) {
   )
 }
 
-// Compare outputs over every streaming prefix too, not just completed fixtures.
+// Compare outputs over selected streaming prefixes, not just completed fixtures.
 let equivalenceChecks = 0
 for (const { input } of cases) {
   for (const platform of ['mobile', 'web']) {
@@ -130,6 +133,10 @@ const report = {
   timestamp: new Date().toISOString(), baseline,
   baselineCommit: execFileSync('git', ['rev-parse', baseline], { cwd: root, encoding: 'utf8' }).trim(),
   checkoutCommit: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim(),
+  sourceSha256: {
+    before: createHash('sha256').update(beforeSource).digest('hex'),
+    after: createHash('sha256').update(afterSource).digest('hex'),
+  },
   environment: { node: process.version, os: `${os.type()} ${os.release()}`, architecture: os.arch(), cpu: os.cpus()[0]?.model },
   method: 'Same-process Node JS preprocessing; 3 warmups, alternating before/after sample order, independently calibrated iterations, full mobile normalization pipeline. Repeated warm identical-string measurements are a microbenchmark lower bound; no native rendering, browser layout or end-to-end latency is measured.',
   samples, equivalenceChecks, results,
