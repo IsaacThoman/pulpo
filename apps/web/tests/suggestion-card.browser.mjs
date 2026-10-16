@@ -111,15 +111,27 @@ try {
     assert.ok(cardBottom <= frameBottom, `${button} shows the card of ${id}`)
   }
 
-  // In a long suggestion the card goes under the line pointed at, not after the last line.
+  // A long suggestion's card goes under its last line when there is room for it in view, and
+  // otherwise under the line pointed at.
+  await open()
   const long = suggestion('long')
-  await long.scrollIntoViewIfNeeded()
-  const longBox = await long.boundingBox()
-  assert.ok(longBox.height > 150, 'the long suggestion spans several lines')
-  await page.mouse.move(longBox.x + 40, longBox.y + 10, { steps: 6 })
-  await page.locator('[data-suggestion-card="long"]').waitFor()
-  const longCard = await card.boundingBox()
-  assert.ok(longCard.y - longBox.y < 50, 'the card is under the first line')
+  const hoverLong = async (top) => {
+    await page.mouse.move(5, 5)
+    await card.waitFor({ state: 'detached' })
+    await page.evaluate((top) => {
+      const scroller = document.querySelector('[data-scroller]')
+      scroller.scrollTop += document.querySelector('[data-suggestion-id="long"]').getBoundingClientRect().top - top
+    }, top)
+    const box = await long.boundingBox()
+    await page.mouse.move(box.x + 40, box.y + 10, { steps: 6 })
+    await page.locator('[data-suggestion-card="long"]').waitFor()
+    return { box, card: await card.boundingBox() }
+  }
+  const inView = await hoverLong(150)
+  assert.ok(inView.box.height > 150, 'the long suggestion spans several lines')
+  assert.ok(inView.card.y > inView.box.y + inView.box.height - 10, 'with room, the card is under the last line')
+  const runningOff = await hoverLong(450)
+  assert.ok(runningOff.card.y - runningOff.box.y < 50, 'without room, the card is under the first line')
 
   // The shortcut accepts the suggestion at the cursor.
   await open()

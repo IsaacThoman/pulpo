@@ -3,30 +3,32 @@ import type { EditorView } from '@tiptap/pm/view'
 
 /** How far below the text the card sits. */
 const CARD_GAP = 6
-/** The card goes under a hunk's last line unless that is further than this below the line looked at. */
+/** Without room under a hunk's last line, the card goes under the line looked at if this far above it. */
 const CARD_REACH = 80
-/** Room kept for the card when scrolling to a suggestion. */
+/** Room kept for the card under a suggestion. */
 const CARD_ROOM = 96
 /** Room kept between a suggestion scrolled to and the edges. */
 const REVEAL_MARGIN = 16
-
-/**
- * Where a hunk's card goes, in viewport coordinates: under the hunk, or in a long one under the
- * line at `anchor` (where the pointer or cursor is), so it shows near where the user looks.
- */
-export function cardSpot(view: EditorView, hunk: SuggestionHunk, anchor: number | null): { top: number; left: number } {
-  const start = view.coordsAtPos(hunk.from, 1)
-  const end = view.coordsAtPos(hunk.to, -1)
-  const last = Math.max(start.bottom, end.bottom)
-  const line = anchor === null ? last : view.coordsAtPos(Math.min(Math.max(anchor, hunk.from), hunk.to)).bottom
-  return { top: (last - line > CARD_REACH ? line : last) + CARD_GAP, left: start.left }
-}
 
 function scrollParent(element: Element): Element | null {
   for (let parent = element.parentElement; parent; parent = parent.parentElement) {
     if (/auto|scroll/.test(getComputedStyle(parent).overflowY) && parent.scrollHeight > parent.clientHeight) return parent
   }
   return null
+}
+
+/**
+ * Where a hunk's card goes, in viewport coordinates: under the hunk. When that is out of view,
+ * in a long hunk it goes under the line at `anchor` (where the pointer or cursor is) instead, so
+ * it shows near where the user looks without covering text they can see the end of.
+ */
+export function cardSpot(view: EditorView, hunk: SuggestionHunk, anchor: number | null): { top: number; left: number } {
+  const start = view.coordsAtPos(hunk.from, 1)
+  const end = view.coordsAtPos(hunk.to, -1)
+  const last = Math.max(start.bottom, end.bottom)
+  const visibleBottom = Math.min(scrollParent(view.dom)?.getBoundingClientRect().bottom ?? Infinity, window.innerHeight)
+  const line = anchor === null || last + CARD_ROOM <= visibleBottom ? last : view.coordsAtPos(Math.min(Math.max(anchor, hunk.from), hunk.to)).bottom
+  return { top: (last - line > CARD_REACH ? line : last) + CARD_GAP, left: start.left }
 }
 
 /**
