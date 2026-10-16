@@ -74,35 +74,12 @@ final class PreviewDocumentLifecycleCounterchecks: XCTestCase {
     weak var releasedInput: PreviewInputView?
     weak var releasedEngine: KeyboardEngine?
     let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
-    let document: TextDocument = autoreleasepool {
-      let host = PreviewHost(textView: editor, openURL: { _ in })
-      let controller = KeyboardController(host: host, dictationBridge: nil)
-      let input = PreviewInputView(controller: controller)
-      // Give the real UIKit hierarchy a complete window/layout/remove cycle,
-      // rather than assuming an unpresented self-sizing input is released.
-      let window = UIWindow(windowScene: scene)
-      window.rootViewController = UIViewController()
-      window.makeKeyAndVisible()
-      input.frame = CGRect(x: 0, y: 0, width: window.bounds.width,
-        height: input.intrinsicContentSize.height)
-      window.rootViewController!.view.addSubview(input)
-      window.layoutIfNeeded()
-      input.layoutIfNeeded()
-      releasedHost = host
-      releasedController = controller
-      releasedInput = input
-      releasedEngine = controller.engine
-      XCTAssertTrue(controller.engine.document is TextViewDocument)
-      XCTAssertTrue(controller.engine.document === host.document)
-      controller.engine.document.insertText("?")
-      XCTAssertEqual(editor.text, "cobalt kite?")
-      controller.engine.document.deleteBackward()
-      XCTAssertEqual(editor.text, "cobalt kite")
-      input.removeFromSuperview()
-      window.rootViewController = nil
-      window.isHidden = true
-      return withExtendedLifetime(input) { controller.engine.document }
-    }
+    let probes = ReleasedConsumers()
+    let document = makeStandaloneDocument(editor: editor, scene: scene, probes: probes)
+    releasedHost = probes.host
+    releasedController = probes.controller
+    releasedInput = probes.input
+    releasedEngine = probes.engine
 
     XCTAssertNil(releasedHost, "The host must deallocate before draining deferred UIKit work")
     // PreviewInputView builds a UIKit hierarchy and owns controller -> engine.
@@ -126,6 +103,51 @@ final class PreviewDocumentLifecycleCounterchecks: XCTestCase {
           releasedEngine == nil, releasedHost == nil else { return }
     withExtendedLifetime((document, editor)) {
       assertInert(document, oldEditor: editor)
+    }
+  }
+
+  private final class ReleasedConsumers {
+    weak var host: PreviewHost?
+    weak var controller: KeyboardController?
+    weak var input: PreviewInputView?
+    weak var engine: KeyboardEngine?
+  }
+
+  // Keep construction in a distinct stack frame: weak assertions must not
+  // observe owners extended by a debug build's inlined closure lifetime.
+  @inline(never)
+  private func makeStandaloneDocument(
+    editor: UITextView, scene: UIWindowScene, probes: ReleasedConsumers
+  ) -> TextDocument {
+    autoreleasepool {
+      let host = PreviewHost(textView: editor, openURL: { _ in })
+      let controller = KeyboardController(host: host, dictationBridge: nil)
+      let input = PreviewInputView(controller: controller)
+      // Give the real UIKit hierarchy a complete window/layout/remove cycle,
+      // rather than assuming an unpresented self-sizing input is released.
+      let window = UIWindow(windowScene: scene)
+      window.rootViewController = UIViewController()
+      window.makeKeyAndVisible()
+      input.frame = CGRect(x: 0, y: 0, width: window.bounds.width,
+        height: input.intrinsicContentSize.height)
+      window.rootViewController!.view.addSubview(input)
+      window.layoutIfNeeded()
+      input.layoutIfNeeded()
+      probes.host = host
+      probes.controller = controller
+      probes.input = input
+      probes.engine = controller.engine
+      XCTAssertTrue(controller.engine.document is TextViewDocument)
+      XCTAssertTrue(controller.engine.document === host.document)
+      controller.engine.document.insertText("?")
+      XCTAssertEqual(editor.text, "cobalt kite?")
+      controller.engine.document.deleteBackward()
+      XCTAssertEqual(editor.text, "cobalt kite")
+      input.removeFromSuperview()
+      window.rootViewController = nil
+      window.isHidden = true
+      RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+      return withExtendedLifetime(input) { controller.engine.document }
     }
   }
 

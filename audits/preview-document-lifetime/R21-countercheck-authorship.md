@@ -37,3 +37,10 @@ Objections and remaining validation: this relaxes the fixture's immediate consum
 The round-2 standalone run remained red: exit 65, 8.40 seconds wall time, one failed test with three weak input/controller/engine assertions, no crash, host deallocated. The bounded drain did not establish deferred retention as the cause. Its later standalone document checks remained unexecuted.
 
 The implementation agent now adds a real temporary UIWindow and lays out the complete input/controller hierarchy at the window width and intrinsic height, then removes the input and releases the window owner normally. All weak assertions and the bounded deadline remain. This is a fixture control for the earlier unpresented self-sizing hierarchy assumption; it is not a production cleanup or evidence of a diagnosed retaining path. No controller state or view hierarchy is dismantled internally, and no source changes were made. The fixture remains informed development evidence, not fresh heldout evidence. Freeze before rerunning.
+
+
+## Round 4: bound fixture-local ARC lifetimes
+
+The window/layout control still failed (exit65, 7.79s; the same three consumer probes remained nonnil, host nil). A native appearance-transition warning also appeared while the temporary window owner was removed synchronously. This remains red and does not diagnose a product retaining path.
+
+Creation now runs in a separate `@inline(never)` factory frame with an autorelease pool and a weak-probe object. The test retains only its returned actual document and old editor; all original weak assertions remain. This controls conservative Debug-build closure/local ARC lifetimes without changing product code or manually releasing product state. A short run-loop turn after hiding the window completes its queued transition. This final fixture control is frozen before execution; it remains informed development, not fresh evidence. If it fails, do not weaken the probes or expand production scope to force consumer destruction.
