@@ -26,6 +26,23 @@ struct AccuracyEditingTests {
     #expect(document.text == "Hello againA note. please ")
   }
 
+  @Test(arguments: ["Mireya", "Zayden", "GitHub"])
+  func transcriptReconciliationPreservesLiteralCapitals(name: String) {
+    let (engine, document) = Fixtures.engine()
+    document.insertText("ask ")
+    engine.insertTranscript(name)
+    #expect(document.text == "ask " + name)
+  }
+
+  @Test func transcriptReconciliationPreservesKnownOwnEditLag() {
+    let (engine, document) = Fixtures.engine("a ")
+    document.contextBeforeOverride = document.text
+    engine.type("note")
+    engine.insertTranscript("Hello again")
+    #expect(document.text == "a note hello again")
+    #expect(engine.externalContextChanges == 0)
+  }
+
   @Test(arguments: [false, true])
   func ignoredStaleChoicesPreserveSpaceSlipEvidence(lastLetter: Bool) throws {
     let prefix = lastLetter ? "It has " : "I "

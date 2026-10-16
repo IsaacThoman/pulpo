@@ -451,6 +451,9 @@ public final class KeyboardEngine {
   public func insertTranscript(_ transcript: String) {
     var text = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.isEmpty else { return }
+    // Casing depends on the insertion point just as spacing does. A host clear,
+    // paste or cursor move may arrive before its text-change callback.
+    reconcilePendingHostChanges()
     if !atSentenceStart(before), let firstWord = text.split(separator: " ").first.map(String.init),
        firstWord != "I", let lexicon = suggester?.model.lexicon {
       let lowered = firstWord.lowercased()
@@ -678,8 +681,6 @@ public final class KeyboardEngine {
   // MARK: Suggestions and swipes
 
   public func select(_ suggestion: Suggestion) {
-    spaceSlip = nil
-    deletedGlide = nil
     // Host edits can precede their text-change callback. Reconcile displayed
     // choices before trusting their generation, preserving known own-edit lag.
     if suggestion.sourceContext != nil { reconcileBeforeSelection() }
@@ -688,6 +689,9 @@ public final class KeyboardEngine {
       return
     }
     guard suggestion.sourceContext == nil || suggestion.sourceContext == suggestionContext else { return }
+    // An obsolete tap must also leave evidence for the next edit untouched.
+    spaceSlip = nil
+    deletedGlide = nil
     let context = previousWord()
     let needsCase = shift.isActive && composing.isEmpty
     // Editing before existing whitespace must not leave a double space.
@@ -1409,8 +1413,10 @@ public final class KeyboardEngine {
           policy.showsSuggestions, !cursorInsideWord, expectedSelection == nil,
           before == offered.before, expectedAfterContext == offered.after,
           document.documentIdentifier == offered.documentID else { return }
+    if !offered.appends, !before.hasSuffix(offered.query) { return }
+    spaceSlip = nil
+    deletedGlide = nil
     if !offered.appends {
-      guard before.hasSuffix(offered.query) else { return }
       for _ in offered.query { deleteDocumentBackward() }
     }
     pendingLearning = nil
