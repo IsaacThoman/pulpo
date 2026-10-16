@@ -11,8 +11,8 @@ import {
 import { useNetworkOffline } from '../../../providers/useNetworkOffline';
 import * as Clipboard from 'expo-clipboard';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { MAX_SIGNED_IN_ACCOUNTS, type PasskeyList, type PasskeySummary, type TwoFactorEnrollment, type TwoFactorStatus, type User } from '@pulpo/contracts';
-import { useQuery } from '@tanstack/react-query';
+import { MAX_SIGNED_IN_ACCOUNTS, type PasskeyList, type PasskeySummary, type TrashItem, type TwoFactorEnrollment, type TwoFactorStatus, type User } from '@pulpo/contracts';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Button as SwiftUIButton,
   Form as SwiftUIForm,
@@ -42,6 +42,9 @@ import type { RootStackParamList, SettingsSection } from '../navigation';
 import { apiRequest, mobileApi } from '../../../api/client';
 import { useSessionStore } from '../../../store/session';
 import { useRealtimeStore } from '../../../providers/realtimeStore';
+import { cacheNamespace } from '../../../data/database';
+import { queryKeys } from '../../../data/queries';
+import { deleteTrashedFiles, fetchTrashedFiles, restoreTrashedFiles, trashDeletesLabel, trashedFileIcon, trashedFilesQueryKey } from '../../../features/trash/trashedFiles';
 import { canUseNativePasskeys, createPkceRequest, nativeRegister, openPasskeyEnrollment, PasskeyCancelledError } from '../../../auth/passkeys';
 
 const relative = (timestamp: number) => {
@@ -317,7 +320,7 @@ const settingsSections: { id: SettingsDestination; title: string; detail: string
   { id: 'interface', title: 'Interface', detail: 'Chat order, reasoning, haptics, and offline storage', icon: 'rectangle.3.group' },
   { id: 'personalization', title: 'Personalization', detail: 'Speech and voice preferences', icon: 'sparkles' },
   { id: 'data', title: 'Data Controls', detail: 'Storage and deletion', icon: 'externaldrive' },
-  { id: 'trash', title: 'Trash', detail: 'Retention, restore, permanent deletion', icon: 'trash' },
+  { id: 'trash', title: 'Trash', detail: 'Deleted chats and files, retention', icon: 'trash' },
 ];
 
 export function MemberSettingsScreen({ navigation }: NativeStackScreenProps<RootStackParamList, 'Settings'>) {
@@ -436,31 +439,76 @@ const chatOrderOptions = [{ value: 'default', label: 'Default' }, { value: 'rece
 const chatOrderDetail = 'Default keeps your manual order. Recent lists unfiled chats by last activity.';
 
 const retentionLabels: Record<string, string> = { instant: 'No retention', '24h': '24 hours', '7d': '7 days', '30d': '30 days', '90d': '90 days', indefinite: 'Indefinitely' };
+const retentionFooter = 'Chats and files are permanently removed after this period. Files stay at least 24 hours.';
+type TrashedChat = { id: string; title: string; deletedAt: number | null; purgeAt: number | null };
+
+/**
+ * One trash for chats and Files items. Chats come from the chat store, so they can be restored
+ * offline; Files items load from the server and need a connection.
+ */
 export function TrashScreen({ navigation }: NativeStackScreenProps<RootStackParamList, 'Trash'>) {
   const theme = useAppTheme();
+  const queryClient = useQueryClient();
+  const instanceUrl = useSessionStore((state) => state.instanceUrl);
+  const userId = useSessionStore((state) => state.user?.id);
+  const namespace = userId ? cacheNamespace(instanceUrl, userId) : 'anonymous';
   const storedChats = usePrototypeStore((state) => state.chats);
-  const chats = useMemo(() => storedChats.filter((chat) => chat.deletedAt !== null), [storedChats]);
+  const chats: TrashedChat[] = useMemo(() => storedChats.filter((chat) => chat.deletedAt !== null), [storedChats]);
+  const filesQuery = useQuery({ queryKey: trashedFilesQueryKey(namespace), queryFn: fetchTrashedFiles, enabled: Boolean(userId) });
+  const files = useMemo(() => filesQuery.data ?? [], [filesQuery.data]);
   const retention = usePrototypeStore((state) => state.preferences.trashRetention);
   const setPreference = usePrototypeStore((state) => state.setPreference);
   const restore = usePrototypeStore((state) => state.restoreChat);
   const remove = usePrototypeStore((state) => state.permanentlyDeleteChat);
-  const empty = usePrototypeStore((state) => state.emptyTrash);
-  const confirmEmpty = useCallback(() => Alert.alert('Empty trash?', 'This cannot be undone.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete all', style: 'destructive', onPress: empty }]), [empty]);
+  const emptyChats = usePrototypeStore((state) => state.emptyTrash);
+  const total = chats.length + files.length;
+  const changeFiles = useCallback(async (action: () => Promise<unknown>, failure: string) => {
+    try {
+      await action();
+    } catch (error) {
+      Alert.alert(failure, error instanceof Error ? error.message : 'Try again when you are online.');
+    } finally {
+      // Restored folders reappear in the sidebar.
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: trashedFilesQueryKey(namespace) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.folders(namespace) }),
+      ]);
+    }
+  }, [namespace, queryClient]);
+  const empty = useCallback(() => {
+    if (chats.length) emptyChats();
+    if (files.length) void changeFiles(() => deleteTrashedFiles(files.map((item) => item.id)), 'Could not empty the trash');
+  }, [changeFiles, chats.length, emptyChats, files]);
+  const confirmEmpty = useCallback(() => Alert.alert('Empty trash?', 'Everything in the trash will be permanently deleted. This cannot be undone.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete all', style: 'destructive', onPress: empty }]), [empty]);
+  const chatDetail = (chat: TrashedChat) => `Trashed ${relative(chat.deletedAt!)} ago · ${trashDeletesLabel(chat.purgeAt)}`;
+  const fileDetail = (item: TrashItem) => `Trashed ${relative(Date.parse(item.trashedAt))} ago · ${trashDeletesLabel(item.purgeAt)}${item.kind === 'blob' ? ` · ${formatBytes(item.sizeBytes)}` : ''}`;
+  const chatActions = (chat: TrashedChat) => Alert.alert(chat.title, chatDetail(chat), [{ text: 'Restore', onPress: () => restore(chat.id) }, { text: 'Delete permanently', style: 'destructive', onPress: () => remove(chat.id) }, { text: 'Cancel', style: 'cancel' }]);
+  const fileActions = (item: TrashItem) => Alert.alert(item.name, `${fileDetail(item)}${item.kind === 'folder' ? '\nIts contents are restored or deleted with it.' : ''}`, [
+    { text: 'Restore', onPress: () => void changeFiles(() => restoreTrashedFiles([item.id]), 'Could not restore') },
+    { text: 'Delete permanently', style: 'destructive', onPress: () => void changeFiles(() => deleteTrashedFiles([item.id]), 'Could not delete') },
+    { text: 'Cancel', style: 'cancel' },
+  ]);
+  const emptyDetail = filesQuery.isError ? 'Trashed files could not be loaded. Check your connection and open Trash again.' : 'Deleted chats and files will appear here when retention is enabled.';
   useLayoutEffect(() => {
     if (Platform.OS !== 'ios') return;
-    navigation.setOptions({ headerRight: chats.length ? () => <RNButton title="Empty" color={theme.red} onPress={confirmEmpty} /> : undefined });
-  }, [chats.length, confirmEmpty, navigation, theme.red]);
-  if (Platform.OS === 'ios') return <SwiftUIHost modifiers={[tint(theme.blue)]} style={styles.flex}><SwiftUIForm>
-    <SwiftUISection title="Retention" footer={<SwiftUIText modifiers={[foregroundStyle('secondary')]}>Chats are permanently removed after this period.</SwiftUIText>}>
-      <NativeChoiceRow title="Keep trashed chats" value={retention} options={[{ value: 'instant', label: 'No retention' }, { value: '24h', label: '24 hours' }, { value: '7d', label: '7 days' }, { value: '30d', label: '30 days' }, { value: '90d', label: '90 days' }, { value: 'indefinite', label: 'Indefinitely' }] as const} onChange={(value) => setPreference('trashRetention', value)} />
-    </SwiftUISection>
-    <SwiftUISection title="Trashed chats">
-      {chats.length === 0 ? <SwiftUIVStack alignment="center" spacing={8}><SwiftUIImage systemName="trash" size={28} /><SwiftUIText modifiers={[font({ textStyle: 'headline' })]}>Trash is empty</SwiftUIText><SwiftUIText modifiers={[foregroundStyle('secondary'), font({ textStyle: 'footnote' })]}>Deleted chats will appear here when retention is enabled.</SwiftUIText></SwiftUIVStack> : chats.map((chat) => <SwiftUIButton key={chat.id} modifiers={[buttonStyle('plain'), foregroundStyle('primary')]} onPress={() => Alert.alert(chat.title, `Trashed ${relative(chat.deletedAt!)} ago${chat.purgeAt ? `\nDeletes in ${Math.max(1, Math.ceil((chat.purgeAt - Date.now()) / 86_400_000))} days` : '\nKept indefinitely'}`, [{ text: 'Restore', onPress: () => restore(chat.id) }, { text: 'Delete permanently', style: 'destructive', onPress: () => remove(chat.id) }, { text: 'Cancel', style: 'cancel' }])}><SwiftUIHStack spacing={12}><SwiftUIImage systemName="bubble.left" size={17} /><SwiftUIVStack alignment="leading" spacing={2}><SwiftUIText>{chat.title}</SwiftUIText><SwiftUIText modifiers={[foregroundStyle('secondary'), font({ textStyle: 'footnote' })]}>{`Trashed ${relative(chat.deletedAt!)} ago · ${chat.purgeAt ? `deletes in ${Math.max(1, Math.ceil((chat.purgeAt - Date.now()) / 86_400_000))}d` : 'kept indefinitely'}`}</SwiftUIText></SwiftUIVStack><SwiftUISpacer /><SwiftUIImage systemName="ellipsis.circle" size={16} /></SwiftUIHStack></SwiftUIButton>)}
-    </SwiftUISection>
-  </SwiftUIForm></SwiftUIHost>;
-  return <Screen><PageHeader title="Trash" subtitle={`${chats.length} recoverable chat${chats.length === 1 ? '' : 's'}`} onBack={() => navigation.goBack()} right={chats.length ? <GlassIconButton icon="trash.slash" label="Empty trash" onPress={() => Alert.alert('Empty trash?', 'This cannot be undone.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete all', style: 'destructive', onPress: empty }])} /> : undefined} />
-    <SectionTitle>Retention</SectionTitle><Card><ListRow title="Keep trashed chats" detail="Chats are permanently removed after this period." value={retentionLabels[retention]} last onPress={() => showActions('Trash retention', ['instant', '24h', '7d', '30d', '90d', 'indefinite'].map((value) => ({ label: retentionLabels[value], selected: retention === value, onPress: () => setPreference('trashRetention', value as typeof retention) })))} /></Card>
-    {chats.length === 0 ? <EmptyState icon="trash" title="Trash is empty" detail="Deleted chats will appear here when retention is enabled." /> : <><SectionTitle>Trashed chats</SectionTitle><Card>{chats.map((chat, index) => <ListRow key={chat.id} icon="bubble.left" iconColor={theme.red} title={chat.title} detail={`Trashed ${relative(chat.deletedAt!)} ago · ${chat.purgeAt ? `deletes in ${Math.max(1, Math.ceil((chat.purgeAt - Date.now()) / 86_400_000))}d` : 'kept indefinitely'}`} last={index === chats.length - 1} onPress={() => Alert.alert(chat.title, `Trashed ${relative(chat.deletedAt!)} ago${chat.purgeAt ? `\nDeletes in ${relative(Date.now() - (chat.purgeAt - Date.now()))}` : '\nKept indefinitely'}`, [{ text: 'Restore', onPress: () => restore(chat.id) }, { text: 'Delete permanently', style: 'destructive', onPress: () => remove(chat.id) }, { text: 'Cancel', style: 'cancel' }])} />)}</Card></>}
+    navigation.setOptions({ headerRight: total ? () => <RNButton title="Empty" color={theme.red} onPress={confirmEmpty} /> : undefined });
+  }, [total, confirmEmpty, navigation, theme.red]);
+  if (Platform.OS === 'ios') {
+    const nativeRow = (key: string, icon: string, title: string, detail: string, onPress: () => void) => <SwiftUIButton key={key} modifiers={[buttonStyle('plain'), foregroundStyle('primary')]} onPress={onPress}><SwiftUIHStack spacing={12}><SwiftUIImage systemName={icon as never} size={17} /><SwiftUIVStack alignment="leading" spacing={2}><SwiftUIText>{title}</SwiftUIText><SwiftUIText modifiers={[foregroundStyle('secondary'), font({ textStyle: 'footnote' })]}>{detail}</SwiftUIText></SwiftUIVStack><SwiftUISpacer /><SwiftUIImage systemName="ellipsis.circle" size={16} /></SwiftUIHStack></SwiftUIButton>;
+    return <SwiftUIHost modifiers={[tint(theme.blue)]} style={styles.flex}><SwiftUIForm>
+      <SwiftUISection title="Retention" footer={<SwiftUIText modifiers={[foregroundStyle('secondary')]}>{retentionFooter}</SwiftUIText>}>
+        <NativeChoiceRow title="Keep trashed items" value={retention} options={[{ value: 'instant', label: 'No retention' }, { value: '24h', label: '24 hours' }, { value: '7d', label: '7 days' }, { value: '30d', label: '30 days' }, { value: '90d', label: '90 days' }, { value: 'indefinite', label: 'Indefinitely' }] as const} onChange={(value) => setPreference('trashRetention', value)} />
+      </SwiftUISection>
+      {total === 0 ? <SwiftUISection><SwiftUIVStack alignment="center" spacing={8}><SwiftUIImage systemName="trash" size={28} /><SwiftUIText modifiers={[font({ textStyle: 'headline' })]}>Trash is empty</SwiftUIText><SwiftUIText modifiers={[foregroundStyle('secondary'), font({ textStyle: 'footnote' })]}>{emptyDetail}</SwiftUIText></SwiftUIVStack></SwiftUISection> : null}
+      {chats.length ? <SwiftUISection title="Chats">{chats.map((chat) => nativeRow(chat.id, 'bubble.left', chat.title, chatDetail(chat), () => chatActions(chat)))}</SwiftUISection> : null}
+      {files.length ? <SwiftUISection title="Files">{files.map((item) => nativeRow(item.id, trashedFileIcon(item), item.name, fileDetail(item), () => fileActions(item)))}</SwiftUISection> : null}
+    </SwiftUIForm></SwiftUIHost>;
+  }
+  return <Screen><PageHeader title="Trash" subtitle={`${total} recoverable item${total === 1 ? '' : 's'}`} onBack={() => navigation.goBack()} right={total ? <GlassIconButton icon="trash.slash" label="Empty trash" onPress={confirmEmpty} /> : undefined} />
+    <SectionTitle>Retention</SectionTitle><Card><ListRow title="Keep trashed items" detail={retentionFooter} value={retentionLabels[retention]} last onPress={() => showActions('Trash retention', ['instant', '24h', '7d', '30d', '90d', 'indefinite'].map((value) => ({ label: retentionLabels[value], selected: retention === value, onPress: () => setPreference('trashRetention', value as typeof retention) })))} /></Card>
+    {total === 0 ? <EmptyState icon="trash" title="Trash is empty" detail={emptyDetail} /> : null}
+    {chats.length ? <><SectionTitle>Chats</SectionTitle><Card>{chats.map((chat, index) => <ListRow key={chat.id} icon="bubble.left" iconColor={theme.red} title={chat.title} detail={chatDetail(chat)} last={index === chats.length - 1} onPress={() => chatActions(chat)} />)}</Card></> : null}
+    {files.length ? <><SectionTitle>Files</SectionTitle><Card>{files.map((item, index) => <ListRow key={item.id} icon={trashedFileIcon(item)} iconColor={theme.red} title={item.name} detail={fileDetail(item)} last={index === files.length - 1} onPress={() => fileActions(item)} />)}</Card></> : null}
   </Screen>;
 }
 

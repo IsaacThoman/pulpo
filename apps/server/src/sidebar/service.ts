@@ -29,7 +29,7 @@ const listPosition = (ids: readonly string[], column: typeof chats.id | typeof f
   sql`case ${column} ${sql.join(ids.map((id, index) => sql`when ${id}::uuid then ${index}::int`), sql` `)} end`
 
 /** Without Files, the sidebar shows only folders and shortcuts to folders and chats. */
-const shownWithoutFiles = (node: FileNode) =>
+export const shownWithoutFiles = (node: FileNode) =>
   node.kind === 'folder' || (node.kind === 'shortcut' && (node.target?.kind === 'folder' || node.target?.kind === 'chat'))
 
 /** Live folders under `rootIds` (inclusive), each listed once. */

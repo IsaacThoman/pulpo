@@ -10,6 +10,7 @@ export * from './admin-analytics.js'
 import type { ComposerAck, ComposerSnapshot, ComposerWrite } from './composer.js'
 import type { DocAck, DocClosedEvent, DocJoinInput, DocJoinResult, DocUpdateMessage } from './files.js'
 import { fileAccessModeSchema } from './files.js'
+import { DEFAULT_TRASH_RETENTION, trashRetentionSchema } from './trash.js'
 export * from './composer.js'
 import { z } from 'zod'
 import { DEFAULT_MAX_INLINE_IMAGES, MAX_CONFIGURABLE_INLINE_IMAGES, MAX_MESSAGE_ATTACHMENTS } from './attachment-limits.js'
@@ -903,6 +904,7 @@ export const sidebarPinsSchema = z.object({
   billing: z.boolean().default(false),
   friends: z.boolean().default(false),
   apiKeys: z.boolean().default(false),
+  trash: z.boolean().default(false),
 })
 export type SidebarPins = z.infer<typeof sidebarPinsSchema>
 
@@ -1576,7 +1578,7 @@ export const managementAccountSettingsSchema = z.object({
   leaderboardColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).default('#10b981'),
   localChatLimit: z.number().int().min(0).max(500).default(50),
   localAttachmentCacheMb: z.number().int().min(0).max(2_048).default(50),
-  trashRetention: z.enum(['instant', '24h', '7d', '30d', '90d', 'indefinite']).default('30d'),
+  trashRetention: trashRetentionSchema.default(DEFAULT_TRASH_RETENTION),
   automaticChatExpiration: automaticChatExpirationSchema.default('24h'),
   newChatAutoExpire: newChatAutoExpireSchema,
   chatSortMode: chatSortModeSchema.default('default'),
@@ -2030,3 +2032,4 @@ export interface ServerToClientEvents {
 
 export * from "./shelf.js"
 export * from "./files.js"
+export * from "./trash.js"

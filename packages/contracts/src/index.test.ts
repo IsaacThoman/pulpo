@@ -411,8 +411,8 @@ describe('shared contracts', () => {
   })
 
   it('defaults and validates account sidebar pins', () => {
-    expect(sidebarPinsSchema.parse({})).toEqual({ searchChats: true, files: true, usage: false, billing: false, friends: false, apiKeys: false })
-    expect(sidebarPinsSchema.parse({ usage: true })).toEqual({ searchChats: true, files: true, usage: true, billing: false, friends: false, apiKeys: false })
+    expect(sidebarPinsSchema.parse({})).toEqual({ searchChats: true, files: true, usage: false, billing: false, friends: false, apiKeys: false, trash: false })
+    expect(sidebarPinsSchema.parse({ usage: true })).toEqual({ searchChats: true, files: true, usage: true, billing: false, friends: false, apiKeys: false, trash: false })
     expect(sidebarPinsSchema.safeParse({ friends: 'no' }).success).toBe(false)
   })
 
@@ -515,7 +515,7 @@ describe('shared contracts', () => {
       nickname: '', animationSpeed: 1, showPromptSuggestions: true, showResponseCost: false, favoriteModelIds: null, agentModes: {},
       agentCostLimitEnabled: true, agentCostLimitMicros: 1_000_000,
       instructionPresetSelections: {},
-      sidebarPins: { searchChats: true, files: true, usage: false, billing: false, friends: false, apiKeys: false },
+      sidebarPins: { searchChats: true, files: true, usage: false, billing: false, friends: false, apiKeys: false, trash: false },
     })
     expect(managementAccountSettingsSchema.parse({ username: 'pulpo_user', newChatAutoExpire: false }).newChatAutoExpire).toBe(false)
     expect(managementAccountSettingsSchema.parse({ username: 'pulpo_user', showPromptSuggestions: false }).showPromptSuggestions).toBe(false)

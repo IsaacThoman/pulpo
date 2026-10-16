@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest'
+import { sql } from 'drizzle-orm'
 import { PgDialect } from 'drizzle-orm/pg-core'
 import {
   DEFAULT_TRASH_RETENTION,
-  expiredChatTrashValues,
+  filePurgeAtFor,
+  fileTrashRetentionSql,
+  trashedChatValues,
   normalChatExpiryCondition,
   parseTrashRetention,
   purgeAtFor,
@@ -30,14 +33,29 @@ describe('trash retention', () => {
     expect(purgeAtFor(deletedAt, 'indefinite')).toBeNull()
   })
 
+  it('keeps Files items at least a day under the same setting', () => {
+    expect(filePurgeAtFor(deletedAt, 'instant')?.toISOString()).toBe('2026-01-02T00:00:00.000Z')
+    expect(filePurgeAtFor(deletedAt, '24h')?.toISOString()).toBe('2026-01-02T00:00:00.000Z')
+    expect(filePurgeAtFor(deletedAt, '90d')?.toISOString()).toBe('2026-04-01T00:00:00.000Z')
+    expect(filePurgeAtFor(deletedAt, 'indefinite')).toBeNull()
+  })
+
+  it('reads Files retention from preferences in SQL, defaulting to 30 days', () => {
+    const query = new PgDialect().sqlToQuery(fileTrashRetentionSql(sql`prefs.values`))
+    expect(query.sql).toContain("interval '86400000 milliseconds'")
+    expect(query.sql).toContain('null::interval')
+    expect(query.sql).toMatch(/else interval '2592000000 milliseconds' end\)$/)
+    expect(query.params).toEqual([...trashRetentionValues])
+  })
+
   it('keeps expired chats recoverable unless retention is instant', () => {
-    expect(expiredChatTrashValues(deletedAt, '7d')).toEqual({
+    expect(trashedChatValues(deletedAt, '7d')).toEqual({
       deletedAt,
       expiresAt: null,
       purgeStartedAt: null,
       updatedAt: deletedAt,
     })
-    expect(expiredChatTrashValues(deletedAt, 'instant').purgeStartedAt).toBe(deletedAt)
+    expect(trashedChatValues(deletedAt, 'instant').purgeStartedAt).toBe(deletedAt)
   })
 
   it('guards delayed expiry jobs against cancellation and rescheduling', () => {

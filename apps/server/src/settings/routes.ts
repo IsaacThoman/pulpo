@@ -7,7 +7,7 @@ import { db } from '../database/client.js'
 import { applicationSettings, userPreferences, users } from '../database/schema.js'
 import { AppError } from '../lib/errors.js'
 import { publishStateChange } from '../responses/events.js'
-import { embeddingQueue, maintenanceQueue } from '../jobs.js'
+import { embeddingQueue, queueTrashPurge } from '../jobs.js'
 import { DEFAULT_TRASH_RETENTION, parseTrashRetention, trashRetentionValues } from '../chats/trash.js'
 import { normalizedPreferencePatch, preferencesWithModelDefaults } from './model-preferences.js'
 import { automaticChatExpirationValues, parseAutomaticChatExpiration } from '../chats/expiration.js'
@@ -123,9 +123,7 @@ export async function registerSettingsRoutes(app: FastifyInstance): Promise<void
     })
     if (stateRevision !== undefined) await publishStateChange({ userId: user.id, revision: stateRevision })
     if ('trashRetention' in patch && parseTrashRetention(patch.trashRetention) !== previousTrashRetention) {
-      await maintenanceQueue.add('purge-chats', { type: 'purge-chats', payload: { userId: user.id } }, {
-        jobId: `purge-chats-settings-${user.id}-${Date.now()}`,
-      })
+      await queueTrashPurge(user.id, 'settings')
     }
     if ('memoryEnabled' in patch && patch.memoryEnabled !== previousMemoryEnabled) {
       const enabled = patch.memoryEnabled === true

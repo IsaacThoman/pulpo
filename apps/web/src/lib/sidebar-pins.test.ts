@@ -10,7 +10,7 @@ describe('sidebar pins', () => {
 
   it('keeps Search chats and Files visible for preferences saved before they were hideable', () => {
     expect(normalizeSidebarPins({ usage: true, billing: false, friends: false, apiKeys: false }))
-      .toEqual({ searchChats: true, files: true, usage: true, billing: false, friends: false, apiKeys: false })
+      .toEqual({ searchChats: true, files: true, usage: true, billing: false, friends: false, apiKeys: false, trash: false })
     expect(normalizeSidebarPins({ ...DEFAULT_SIDEBAR_PINS, files: false }).files).toBe(false)
     expect(normalizeSidebarPins('garbage')).toEqual(DEFAULT_SIDEBAR_PINS)
   })

@@ -1961,6 +1961,7 @@ export function Sidebar({
           {billingEnabled && sidebarPins.billing && iconBtn(t('sidebar.billing'), () => go('/billing'), <CreditCard className="size-4" />)}
           {sidebarPins.friends && iconBtn(t('sidebar.friends'), () => go('/friends'), <UsersRound className="size-4" />, pendingSocialCount)}
           {apiKeysEnabled && sidebarPins.apiKeys && iconBtn(t('sidebar.apiKeys'), () => go('/api-keys'), <KeyRound className="size-4" />)}
+          {sidebarPins.trash && iconBtn(t('sidebar.trash'), () => go('/trash'), <Trash2 className="size-4" />)}
           {filesEnabled && <FilesNavMenu point={filesMenuPoint} onClose={() => setFilesMenuPoint(null)} go={go} />}
         </div>
 
@@ -2079,6 +2080,7 @@ export function Sidebar({
             <AccountSwitcherMenuItems open={accountMenuOpen} />
             {accountNavItem('searchChats', t('sidebar.searchChats'), onOpenSearch, <Search />)}
             {filesEnabled && accountNavItem('files', t('sidebar.files'), '/files', <FolderIcon />)}
+            {accountNavItem('trash', t('sidebar.trash'), '/trash', <Trash2 />)}
             {accountNavItem('usage', t('sidebar.usage'), '/usage', <BarChart3 />)}
             {accountNavItem('friends', t('sidebar.friends'), '/friends', <UsersRound />, pendingSocialCount)}
             {apiKeysEnabled && accountNavItem('apiKeys', t('sidebar.apiKeys'), '/api-keys', <KeyRound />)}

@@ -1024,7 +1024,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
         {iconTip(ui("List view"), <Button variant="ghost" size="icon-sm" aria-pressed={view === 'list'} aria-label={ui("List view")} className={cn(view === 'list' && 'bg-accent text-foreground')} onClick={() => changeView('list')}><List /></Button>)}
         {iconTip(ui("Grid view"), <Button variant="ghost" size="icon-sm" aria-pressed={view === 'grid'} aria-label={ui("Grid view")} className={cn(view === 'grid' && 'bg-accent text-foreground')} onClick={() => changeView('grid')}><LayoutGrid /></Button>)}
       </div>
-      {iconTip(ui("Trash"), <Button asChild variant="ghost" size="icon-sm" aria-label={ui("Trash")}><Link to="/files/trash"><Trash2 /></Link></Button>)}
+      {iconTip(ui("Trash"), <Button asChild variant="ghost" size="icon-sm" aria-label={ui("Trash")}><Link to="/trash"><Trash2 /></Link></Button>)}
       {newMenu}
     </>
   )

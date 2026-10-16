@@ -1,4 +1,5 @@
-import { and, eq, inArray, isNotNull, isNull, lte, sql } from 'drizzle-orm'
+import { and, eq, inArray, isNotNull, isNull, lte, sql, type SQL, type SQLWrapper } from 'drizzle-orm'
+import { DEFAULT_TRASH_RETENTION, MIN_FILE_TRASH_RETENTION_MS, TRASH_RETENTION_VALUES, type TrashRetention } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import { attachments, chats, queuedMessages, responses, userPreferences, users } from '../database/schema.js'
 import { getBlobStore } from '../storage/index.js'
@@ -7,9 +8,8 @@ import { publishStateChange, requestCancellation } from '../responses/events.js'
 import { scheduleChatIndex } from '../episodic-memory/queue.js'
 import { finalizeRequestAnalytics } from '../analytics/capture.js'
 
-export const trashRetentionValues = ['instant', '24h', '7d', '30d', '90d', 'indefinite'] as const
-export type TrashRetention = typeof trashRetentionValues[number]
-export const DEFAULT_TRASH_RETENTION: TrashRetention = '30d'
+export const trashRetentionValues = TRASH_RETENTION_VALUES
+export { DEFAULT_TRASH_RETENTION, type TrashRetention }
 
 const retentionMs: Record<TrashRetention, number | null> = {
   instant: 0,
@@ -31,7 +31,32 @@ export function purgeAtFor(deletedAt: Date, retention: TrashRetention): Date | n
   return duration === null ? null : new Date(deletedAt.getTime() + duration)
 }
 
-export function expiredChatTrashValues(now: Date, retention: TrashRetention) {
+/** Files items follow the same setting but stay at least a day, so a misclick never loses uploads. */
+function fileRetentionMs(retention: TrashRetention): number | null {
+  const duration = retentionMs[retention]
+  return duration === null ? null : Math.max(duration, MIN_FILE_TRASH_RETENTION_MS)
+}
+
+export function filePurgeAtFor(trashedAt: Date, retention: TrashRetention): Date | null {
+  const duration = fileRetentionMs(retention)
+  return duration === null ? null : new Date(trashedAt.getTime() + duration)
+}
+
+/**
+ * SQL for how long an account keeps trashed Files items, given its preferences JSON: an interval,
+ * or null when they are kept indefinitely. Matches `filePurgeAtFor`.
+ */
+export function fileTrashRetentionSql(preferences: SQLWrapper): SQL {
+  const interval = (retention: TrashRetention) => {
+    const duration = fileRetentionMs(retention)
+    return duration === null ? sql`null::interval` : sql.raw(`interval '${duration} milliseconds'`)
+  }
+  const cases = trashRetentionValues.map((retention) => sql`when ${retention} then ${interval(retention)}`)
+  return sql`(case (${preferences})->>'trashRetention' ${sql.join(cases, sql` `)} else ${interval(DEFAULT_TRASH_RETENTION)} end)`
+}
+
+/** Column values that move a chat to the trash, or straight to purging with instant retention. */
+export function trashedChatValues(now: Date, retention: TrashRetention) {
   return {
     deletedAt: now,
     expiresAt: null,
@@ -156,7 +181,7 @@ export async function expireNormalChat(
   expectedExpiresAt?: Date,
 ): Promise<boolean> {
   const retention = await getTrashRetention(userId)
-  const [marked] = await db.update(chats).set(expiredChatTrashValues(now, retention))
+  const [marked] = await db.update(chats).set(trashedChatValues(now, retention))
     .where(normalChatExpiryCondition(chatId, userId, now, expectedExpiresAt))
     .returning({ id: chats.id })
   if (!marked) return false

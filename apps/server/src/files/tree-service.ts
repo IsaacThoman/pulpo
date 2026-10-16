@@ -2,7 +2,7 @@ import { and, asc, desc, eq, inArray, isNotNull, isNull, lt, ne, sql } from 'dri
 import { FILE_TREE_MAX_DEPTH, isMarkdownName, nextAvailableName, type FileColor, type FileIcon, type FileListing, type FileNode, type FileNodeKind, type FileSystemRole, type StateInvalidationScope } from '@pulpo/contracts'
 import { assertStorageCapacity } from '../attachments/storage-quota.js'
 import { db } from '../database/client.js'
-import { chats, fileNodes, fileVersions } from '../database/schema.js'
+import { chats, fileNodes, fileVersions, userPreferences } from '../database/schema.js'
 import { bumpAccountRevisions, publishScopedStateChanges, type AccountRevisionChange } from '../friends/sync.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
@@ -12,12 +12,12 @@ import { convertDocToBlobInTx } from './conversion.js'
 import { publishDocsClosed } from './doc-events.js'
 import { chatsFolderIdOf, chatToFileNode, liveChatIds, listFolderChats, moveChatsInTx } from './chat-items.js'
 import { recoverChats, trashChats } from '../chats/trash-service.js'
+import { fileTrashRetentionSql } from '../chats/trash.js'
 import { toFileNodes } from './shortcuts.js'
 import { topSortOrder } from './order.js'
 
 type DatabaseTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
 
-export const FILE_TRASH_RETENTION_MS = 30 * 86_400_000
 export const PENDING_FILE_UPLOAD_TTL_MS = 86_400_000
 
 export function toFileNode(row: FileNodeRow): FileNode {
@@ -404,7 +404,7 @@ export async function listTrash(userId: string): Promise<FileNode[]> {
     isNotNull(fileNodes.trashedAt),
     eq(fileNodes.trashRootId, fileNodes.id),
   )).orderBy(desc(fileNodes.trashedAt))
-  return rows.map(toFileNode)
+  return toFileNodes(db, userId, rows)
 }
 
 /**
@@ -462,21 +462,29 @@ export async function emptyTrash(userId: string): Promise<void> {
   }).then((docIds) => publishDocsClosed(docIds, 'deleted'))
 }
 
-/** Maintenance: drop uploads that were never confirmed and trash past its retention window. */
-export async function cleanupFiles(now = new Date()): Promise<void> {
+/**
+ * Maintenance: drop uploads that were never confirmed and trash past the account's retention
+ * setting (all accounts, or just `userId` after it changes its setting).
+ */
+export async function cleanupFiles(now = new Date(), userId?: string): Promise<void> {
   const abandoned = await db.select({ id: fileNodes.id, userId: fileNodes.ownerUserId }).from(fileNodes).where(and(
     eq(fileNodes.status, 'pending'),
     lt(fileNodes.createdAt, new Date(now.getTime() - PENDING_FILE_UPLOAD_TTL_MS)),
+    userId ? eq(fileNodes.ownerUserId, userId) : undefined,
   )).limit(500)
-  const expired = await db.select({ id: fileNodes.id, userId: fileNodes.ownerUserId }).from(fileNodes).where(and(
-    eq(fileNodes.trashRootId, fileNodes.id),
-    lt(fileNodes.trashedAt, new Date(now.getTime() - FILE_TRASH_RETENTION_MS)),
-  )).limit(500)
+  // Retention is filtered in SQL so items kept indefinitely never crowd expired ones out of the batch.
+  const expired = await db.select({ id: fileNodes.id, userId: fileNodes.ownerUserId }).from(fileNodes)
+    .leftJoin(userPreferences, eq(userPreferences.userId, fileNodes.ownerUserId))
+    .where(and(
+      eq(fileNodes.trashRootId, fileNodes.id),
+      userId ? eq(fileNodes.ownerUserId, userId) : undefined,
+      sql`${fileNodes.trashedAt} + ${fileTrashRetentionSql(userPreferences.values)} <= ${now.toISOString()}::timestamptz`,
+    )).limit(500)
   const byUser = new Map<string, string[]>()
   for (const row of [...abandoned, ...expired]) byUser.set(row.userId, [...byUser.get(row.userId) ?? [], row.id])
-  for (const [userId, ids] of byUser) {
+  for (const [owner, ids] of byUser) {
     // One account's storage failure must not block cleanup for the others.
-    await mutateFileTree(userId, (tx) => purgeNodesInTx(tx, userId, ids))
+    await mutateFileTree(owner, (tx) => purgeNodesInTx(tx, owner, ids))
       .then((docIds) => publishDocsClosed(docIds, 'deleted'))
       .catch(() => undefined)
   }

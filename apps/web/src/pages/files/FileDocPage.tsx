@@ -289,7 +289,7 @@ function OpenDoc({ userId, docId, view }: { userId: string; docId: string; view:
           <TriangleAlert className="size-4 shrink-0" />
           <span className="min-w-0 flex-1">{problem ?? notice}</span>
           {status.state === 'error' && <Button size="sm" variant="outline" onClick={() => window.location.reload()}>{ui("Reload")}</Button>}
-          {status.state === 'closed' && <Button asChild size="sm" variant="outline"><Link to={status.reason === 'trashed' ? '/files/trash' : parentPath}>{status.reason === 'trashed' ? ui("Open trash") : ui("Back to My files")}</Link></Button>}
+          {status.state === 'closed' && <Button asChild size="sm" variant="outline"><Link to={status.reason === 'trashed' ? '/trash' : parentPath}>{status.reason === 'trashed' ? ui("Open trash") : ui("Back to My files")}</Link></Button>}
         </div>
       )}
 

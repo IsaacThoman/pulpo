@@ -15,6 +15,7 @@ import { analyticsQueue, generationQueue, maintenanceQueue, payloadRetentionQueu
 import { sweepRequestAnalytics } from './analytics/capture.js'
 import { RECENT_ROLLUP_HOURS, refreshAnalyticsRollups } from './analytics/rollups.js'
 import { compactDoc } from './files/doc-store.js'
+import { cleanupFiles } from './files/tree-service.js'
 import { purgeExpiredDetailedPayloads } from './logging/detailed-payload-retention.js'
 import { processGeneration } from './responses/worker.js'
 import { createExport, rebuildDailyRollups, runCleanup, scrubPersistedResponseBinaryContext } from './maintenance.js'
@@ -113,6 +114,8 @@ const maintenanceWorker = new Worker<MaintenanceJob>('maintenance', async (job) 
     const userId = typeof job.data.payload?.userId === 'string' ? job.data.payload.userId : undefined
     await markExpiredChatsForPurge(new Date(), userId)
     await purgePendingChats(userId)
+    // A changed retention setting applies to Files items in the trash right away too.
+    if (userId) await cleanupFiles(new Date(), userId)
   }
   if (job.data.type === 'expire-temporary-chat') {
     const chatId = typeof job.data.payload?.chatId === 'string' ? job.data.payload.chatId : ''
