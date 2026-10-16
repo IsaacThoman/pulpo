@@ -55,7 +55,8 @@ struct TouchCompatibilityTests {
     // reference within the word would instead let later samples drift farther.
     let total = 41.0 * 0.45
     let global = total / (41 + 24)
-    #expect(abs(model.offset(UInt8(ascii: "a")).x - (total + 12 * global) / (41 + 12)) < 1e-12)
+    #expect(abs(model.snapshot.keys[0][0] - total) < 1e-12)
+    #expect(abs(model.offset(UInt8(ascii: "a")).x - min(0.4, (total + 12 * global) / (41 + 12))) < 1e-12)
     #expect(abs(model.offset(UInt8(ascii: "q")).x - global) < 1e-12)
     #expect(model.weight == 41)
   }
