@@ -95,8 +95,8 @@ screenshots, APKs, and SDK downloads remain outside Git.
 ### Parent verification and unresolved evidence
 
 The first integrated batch passed **356 core tests plus three service tests**.
-The language/destination/completion batch now passes **404 core tests in 56 suites plus
-three service tests** in Release. Five known issues are tracked: two existing
+The latest integrated batch passes **418 core tests in 59 suites plus three
+service tests** in Release. Five known issues are tracked: two existing
 own-state/proxy-lag ambiguities and three prefix-completion misses. All **28 Python
 tooling tests** pass, including deterministic multilingual data checks.
 
@@ -104,7 +104,12 @@ On iPhone 17 / iOS 27.0, an integrated focused run passed **27 methods**: three
 language checks, 16 dictation-destination controller checks, seven new UX checks,
 and one installed-keyboard geometry check. This run preceded the final language
 spacing fix; that fix and the final private-field checks pass the Release core
-suite. The initial baseline also passed 62 typing, touch, and controller methods.
+suite. A subsequent broader integrated run at the published `00ea6257` state
+passes **96/96 native methods**, with no failures or skips. It includes the final
+language spacing and accent ranking fixes, ordinary delete gestures, typing,
+touch routing, language flows, dictation destination checks, and installed taps
+and swipes. The initial baseline also passed 62 typing, touch, and controller
+methods.
 
 The headless simulator had its hardware keyboard attached, hiding every software
 keyboard. `scripts/simulator_keyboard.py` now disables that setting on a specific
@@ -133,6 +138,9 @@ violations: two pending/stale double spaces, one capitalization miss, two
 composition desynchronizations, one literal-suggestion mismatch, and two
 hidden-context word deletions. Several recreate an own state and remain ambiguous
 with delayed proxy reports; these are unresolved evidence, not a zero-failure run.
+The final 418-test branch reruns the same 60,002 operations with shrinking and
+reproduces the same eight violations/categories, with no nondeterministic seeds.
+That rerun is regression evidence, not a fresh holdout or a fuzz improvement.
 
 ### Fresh selected-range deletion regression
 
@@ -149,7 +157,21 @@ and a zero-word gesture changes nothing. Three of four new scenarios failed
 before the fix; all four and 88 existing focused tests pass. This is production
 engine evidence plus inspected controller reachability, not a measured frequency
 or a completed real host-selection gesture test. See
-`audits/external-edit-fresh-sweep.md`; hidden-context/proxy edge review continues.
+`audits/external-edit-fresh-sweep.md`.
+
+Follow-up review reproduced another over-delete when a newly reported selection
+arrives with both surrounding contexts withheld. The reconciliation guard now
+considers changed selection evidence even without surrounding text; existing
+own-edit history checks remain in force. Both fresh hidden-context cases failed
+before the refinement and pass after it, along with a delayed own-selection echo
+control. The targeted six-suite run passes **94 tests**. A new actual-controller
+regression covers the gesture, host selection callbacks, one delete primitive,
+and the visible Undo button in both optimistic proxy modes. It passes on
+iPhone 17 / iOS 27.0. The follow-up run passes **22/22 native
+methods**, including that controller regression, ordinary delete/touch routing,
+automatic correction, and a real long-press ¿/¡ entry test in Spanish and bilingual
+mode. No failures or skips. This follows the earlier 96-method run and overlaps
+its coverage; the counts are not 118 unique tests.
 
 ### English, Spanish, and bilingual input
 
@@ -185,6 +207,33 @@ provenance: choosing a suggestion, changing language, then typing comma produced
 and ends the Shift tap sequence. Fourteen parameterized cases pass; nine
 assertions failed before the fix. Full details are in `audits/multilingual-sweep.md`.
 A separate blind sweep is measuring multilingual memory and latency costs.
+
+### Spanish opening punctuation and capitalization
+
+A further blind sweep froze `audits/spanish-entry-ux-sweep-protocol.md` before
+source inspection. It adds ¿/¡ to the existing opening-punctuation set, preserving
+a sentence boundary before those marks. Twenty-four development combinations
+previously lost automatic Shift and inserted a lowercase letter; all now pass.
+Mid-sentence `Dime, ¿cómo` stays lowercase. All four frozen held-out **core** task
+groups pass, including shared-language switching and deliberate Caps Lock; native
+alternate gestures and visible mode feedback were not proven by that agent.
+
+Independent review retains this narrow rule and adds 66 typed-entry sequences
+across three modes plus 12 transcript sequences. Manual Shift-off after the opener
+permits lowercase; doing it before an opener rederives automatic Shift, matching
+the existing quote/bracket policy. Closing quotes, newlines, and ASCII ellipses
+retain existing boundaries; Unicode ellipsis is still unsupported. The shared
+helper also changes transcript casing after ¿/¡. It does **not** remove the
+pre-existing unwanted space inserted there by `insertText(spacing:)`; a separate
+blind inserted-text sweep is investigating spacing. No dictionary or layout edit
+is included. Full evidence and the agent's interrupted/debug timing runs remain
+in `audits/spanish-entry-ux-sweep.md`; final parent Release and native checks are
+reported above. The final parent Release run passes **418 core + 3 service tests**
+with the same five known issues, including the new boundary regressions. The
+native follow-up verifies both punctuation alternates by holding and dragging
+from their actual keys, returning to letters, and producing `¿Hola` / `¡Hola` in
+Spanish and bilingual modes. It does not establish full native/VoiceOver protocol
+acceptance.
 
 ### Explicit accents in suggestion ranking
 
