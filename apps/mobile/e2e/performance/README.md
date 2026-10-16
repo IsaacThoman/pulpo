@@ -131,6 +131,19 @@ measures a tiny `getValue` queued behind maintenance.
 See `IMPLEMENTATION.md` for implementation details, measurements, validation
 coverage, and native/device limitations.
 
+## Optimistic branch preparation
+
+The October 16 branch-control audit adds `branch-metadata-entry.tsx` and
+`branch-metadata-fixture.ts`. The standalone entry compares the actual optimistic
+branch preparation with its frozen `08b2b232` baseline in the same Release Hermes
+process, checks full output equality, and uses three warmups plus nine alternating
+samples. Its output is `Documents/branch-metadata-results.json`; failures write
+`branch-metadata-error.txt`. Android emits ordered
+`PULPO_BRANCH_PERF_<offset>:` logcat chunks as well. This measures JavaScript
+preparation, excluding React/native rendering and network. The corresponding Node
+driver is `scripts/benchmarks/mobile-branch-metadata.ts`; see
+`docs/performance/mobile-branches-2026-10-16.md` for methodology and results.
+
 ## Focused iOS UI tests
 
 `PerformanceUITests.swift` contains the native interaction checks. After installing the
