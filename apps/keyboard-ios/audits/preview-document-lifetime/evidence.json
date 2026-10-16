@@ -62,5 +62,253 @@
   "limits": [
     "No attribution of historical R17 crashes without their stacks.",
     "R17 six broader UX heldout cases remain unexecuted."
-  ]
+  ],
+  "baseline-v2": {
+    "commandExit": 65,
+    "elapsedSeconds": 10.12,
+    "passed": 1,
+    "failed": 2,
+    "skipped": 0,
+    "runtimeWarnings": [],
+    "signal": "SIGABRT",
+    "lifecycleCrashMethods": [
+      "testRetainedInputEngineDocumentIsInertAfterRepresentableDismantle",
+      "testRetainedInputEngineDocumentIsInertAfterSwitchToSystemKeyboard"
+    ],
+    "firstCrashingRead": "documentContextBeforeInput",
+    "weakHostWasNil": true,
+    "runnerRestarts": 2,
+    "allMethodChecksCompleted": false,
+    "fixtureAssertionFailures": 2
+  },
+  "baseline-v3": {
+    "commandExit": 65,
+    "elapsedSeconds": 9.6,
+    "passed": 1,
+    "failed": 2,
+    "skipped": 0,
+    "runtimeWarnings": [],
+    "signal": "SIGABRT",
+    "lifecycleCrashMethods": [
+      "testRetainedInputEngineDocumentIsInertAfterRepresentableDismantle",
+      "testRetainedInputEngineDocumentIsInertAfterSwitchToSystemKeyboard"
+    ],
+    "firstCrashingRead": "documentContextBeforeInput",
+    "weakHostWasNil": true,
+    "runnerRestarts": 2,
+    "allMethodChecksCompleted": false,
+    "fixtureAssertionFailures": 0,
+    "crashStacks": [
+      {
+        "processID": 24191,
+        "signal": "SIGABRT",
+        "frames": [
+          {
+            "symbol": "swift_unownedRetainStrong",
+            "sourceFile": null,
+            "sourceLine": null
+          },
+          {
+            "symbol": "TextViewDocument.textView.getter",
+            "sourceFile": "KeyboardPreview.swift",
+            "sourceLine": 49
+          },
+          {
+            "symbol": "TextViewDocument.documentContextBeforeInput.getter",
+            "sourceFile": "KeyboardPreview.swift",
+            "sourceLine": 52
+          },
+          {
+            "symbol": "PreviewDocumentLifetimeTests.testRetainedInputEngineDocumentIsInertAfterRepresentableDismantle()",
+            "sourceFile": "PreviewDocumentLifetimeTests.swift",
+            "sourceLine": 123
+          },
+          {
+            "symbol": "@objc PreviewDocumentLifetimeTests.testRetainedInputEngineDocumentIsInertAfterRepresentableDismantle()",
+            "sourceFile": "/<compiler-generated>",
+            "sourceLine": null
+          }
+        ]
+      },
+      {
+        "processID": 24209,
+        "signal": "SIGABRT",
+        "frames": [
+          {
+            "symbol": "swift_unownedRetainStrong",
+            "sourceFile": null,
+            "sourceLine": null
+          },
+          {
+            "symbol": "TextViewDocument.textView.getter",
+            "sourceFile": "KeyboardPreview.swift",
+            "sourceLine": 49
+          },
+          {
+            "symbol": "TextViewDocument.documentContextBeforeInput.getter",
+            "sourceFile": "KeyboardPreview.swift",
+            "sourceLine": 52
+          },
+          {
+            "symbol": "PreviewDocumentLifetimeTests.testRetainedInputEngineDocumentIsInertAfterSwitchToSystemKeyboard()",
+            "sourceFile": "PreviewDocumentLifetimeTests.swift",
+            "sourceLine": 149
+          },
+          {
+            "symbol": "@objc PreviewDocumentLifetimeTests.testRetainedInputEngineDocumentIsInertAfterSwitchToSystemKeyboard()",
+            "sourceFile": "/<compiler-generated>",
+            "sourceLine": null
+          }
+        ]
+      }
+    ]
+  },
+  "finalFixtureCommit": "35a47dbb",
+  "independentCounterchecksCommit": "58773d4d",
+  "candidateSourceCommit": "92059ca3",
+  "candidateAppInitial": {
+    "commandExit": 65,
+    "elapsedSeconds": 18.51,
+    "selectedTarget": "PulpoKeyboardAppTests",
+    "passed": 14,
+    "failed": 1,
+    "skipped": 0,
+    "runtimeWarnings": [],
+    "crashes": 0,
+    "draftEditorPassed": 9,
+    "primaryLifecyclePassed": 3,
+    "independentPassed": 2,
+    "failedMethod": "testStandaloneDocumentSurvivesInputControllerEngineAndHostRelease",
+    "failedAssertions": [
+      "weak input nil",
+      "weak controller nil",
+      "weak engine nil"
+    ],
+    "hostDeallocated": true,
+    "standalonePostReleaseReadsExecuted": false,
+    "status": "Preserved failing result; investigate native deferred retention without changing source or weakening assertions."
+  },
+  "review": {
+    "taskRequestId": "pr782-r21-source-review-v1",
+    "candidateSourceCommit": "92059ca3",
+    "result": "Approve narrow source change; no blocking correctness or ownership objections. Source-only review; native results evaluated separately.",
+    "limitations": [
+      "Production dismantle entry is invoked deterministically; automatic SwiftUI teardown timing not established.",
+      "Mounted fixtures are unfocused; actual UIKit retention duration not measured.",
+      "Queued pre-dismantle delegate callback may drain before removal; explicit post-release queued operations cover late access."
+    ]
+  },
+  "candidateUI": {
+    "commandExit": 0,
+    "elapsedSeconds": 118.15,
+    "passed": 6,
+    "failed": 0,
+    "skipped": 0,
+    "runtimeWarnings": [],
+    "selection": [
+      "PulpoKeyboardUITests/DraftNavigationTests",
+      "PulpoKeyboardUITests/PreviewDismissalTests",
+      "PulpoKeyboardUITests/KeyboardLanguageTests/testHostSettingsAndKeyboardShareLanguageSelection",
+      "PulpoKeyboardUITests/SetupGuideTests/testInAppPreviewDoesNotConfirmFullAccess"
+    ],
+    "r17BroaderUXHeldoutExecuted": false
+  },
+  "correctedStandaloneFixtureCommit": "88261014",
+  "candidate-standalone-v2": {
+    "commandExit": 65,
+    "elapsedSeconds": 8.4,
+    "fixtureCommit": "88261014",
+    "passed": 0,
+    "failed": 1,
+    "skipped": 0,
+    "runtimeWarnings": [],
+    "failedAssertions": [
+      "weak input nil",
+      "weak controller nil",
+      "weak engine nil"
+    ],
+    "hostDeallocated": true,
+    "standaloneDocumentChecksExecuted": false,
+    "crashes": 0
+  },
+  "candidate-standalone-v3": {
+    "commandExit": 65,
+    "elapsedSeconds": 7.79,
+    "fixtureCommit": "6b69906e",
+    "passed": 0,
+    "failed": 1,
+    "skipped": 0,
+    "runtimeWarnings": [],
+    "failedAssertions": [
+      "weak input nil",
+      "weak controller nil",
+      "weak engine nil"
+    ],
+    "hostDeallocated": true,
+    "standaloneDocumentChecksExecuted": false,
+    "crashes": 0
+  },
+  "candidate-standalone-v4": {
+    "commandExit": 65,
+    "elapsedSeconds": 7.9,
+    "fixtureCommit": "026968d2",
+    "passed": 0,
+    "failed": 1,
+    "skipped": 0,
+    "runtimeWarnings": [],
+    "failedAssertions": [
+      "weak input nil",
+      "weak controller nil",
+      "weak engine nil"
+    ],
+    "hostDeallocated": true,
+    "standaloneDocumentChecksExecuted": false,
+    "crashes": 0
+  },
+  "acceptanceStatus": "Primary lifetime regression fixed; overall acceptance incomplete because standalone consumer-release countercheck remains red. No tests disabled or production workaround.",
+  "candidateAppFinal": {
+    "commandExit": 65,
+    "elapsedSeconds": 16.38,
+    "selectedTarget": "PulpoKeyboardAppTests",
+    "fixtureCommit": "026968d2",
+    "passed": 14,
+    "failed": 1,
+    "skipped": 0,
+    "runtimeWarnings": [],
+    "crashes": 0,
+    "draftEditorPassed": 9,
+    "primaryLifetimePassed": 3,
+    "independentPassed": 2,
+    "independentFailed": 1,
+    "failedMethod": "testStandaloneDocumentSurvivesInputControllerEngineAndHostRelease",
+    "failedAssertionCount": 3,
+    "hostDeallocated": true,
+    "standaloneDocumentChecksExecuted": false,
+    "logWarning": "Unbalanced calls to begin/end appearance transitions for temporary fixture UIViewController."
+  },
+  "costs": {
+    "serializedXcodebuildRuns": 9,
+    "xcodebuildWallSecondsTotal": 215.27,
+    "delegatedTasks": 3,
+    "exactTokenUsage": null,
+    "dollarCost": null,
+    "notes": "Wall time includes builds/test startup, not authoring/review/inspection overhead. Token and dollar metering unavailable. No performance or UX latency claim."
+  },
+  "sourceFreeze": {
+    "apps/keyboard-ios/App/KeyboardPreview.swift": "d80fa8944fbde856ea5718818b7ded73254ffcc5f1b5561b1cdeec6c6d63c98a",
+    "apps/keyboard-ios/AppTests/PreviewDocumentLifetimeTests.swift": "ae8afa79ade4744034eb0bce02cbfacc66532bb434b516c77d3e80bb7ceaea06",
+    "apps/keyboard-ios/AppTests/PreviewDocumentLifecycleCounterchecks.swift": "7ae832753b25100b6fdedae7b37b60e8978e25bd900f729c2fdd2d2240470fb0"
+  },
+  "r17CursorMethodChanged": false,
+  "disabledTests": [],
+  "release": {
+    "device": "7E1D7979-7307-4C53-8466-BB41154B383C",
+    "hardwareKeyboardEnabled": true,
+    "deviceCloseSucceeded": true,
+    "shutdown": false,
+    "agentDeviceSessionCreated": false,
+    "pr782LinkedAndConfirmed": true,
+    "prWatching": false,
+    "pushOrDeploy": false
+  }
 }
