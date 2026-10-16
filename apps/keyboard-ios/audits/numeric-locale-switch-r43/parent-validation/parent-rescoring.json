@@ -1,0 +1,49 @@
+{
+  "artifactHashesVerified": 133,
+  "results": {
+    "baseline-normal-verdict.json": {
+      "exit": 1,
+      "sha256": "7865ef163c7fa4ecb9e75f0be6639a426d26c4c99b6586002423f44ae95d7707",
+      "summary": {
+        "total": 12,
+        "passed": 8,
+        "failed": 4,
+        "unchanged": 0,
+        "completion": 0.6666666666666666
+      }
+    },
+    "baseline-optimized-verdict.json": {
+      "exit": 1,
+      "sha256": "7865ef163c7fa4ecb9e75f0be6639a426d26c4c99b6586002423f44ae95d7707",
+      "summary": {
+        "total": 12,
+        "passed": 8,
+        "failed": 4,
+        "unchanged": 0,
+        "completion": 0.6666666666666666
+      }
+    },
+    "candidate-normal-verdict.json": {
+      "exit": 0,
+      "sha256": "8381fb80817f86d7dd574e6783b8394696ef220aa98cc4d6f196b6cfd10afb54",
+      "summary": {
+        "total": 12,
+        "passed": 12,
+        "failed": 0,
+        "unchanged": 0,
+        "completion": 1.0
+      }
+    },
+    "candidate-optimized-verdict.json": {
+      "exit": 0,
+      "sha256": "8381fb80817f86d7dd574e6783b8394696ef220aa98cc4d6f196b6cfd10afb54",
+      "summary": {
+        "total": 12,
+        "passed": 12,
+        "failed": 0,
+        "unchanged": 0,
+        "completion": 1.0
+      }
+    }
+  }
+}

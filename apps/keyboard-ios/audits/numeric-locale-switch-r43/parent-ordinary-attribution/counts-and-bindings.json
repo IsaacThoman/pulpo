@@ -1,0 +1,121 @@
+{
+  "scope": "historical ordinary event-count attribution only; no app/build/device or stable packet change",
+  "runs": {
+    "baseline": {
+      "ref": "b5451e42",
+      "eventStream": "/tmp/pulpo-r43-v1/core-baseline.events.jsonl",
+      "eventStreamObservedSHA256": "f136714aacd402fa18ae429aae6ebe0fdf172d816ea27b4d17a781bf6fc5a286",
+      "archivedOrdinaryValidationSHA256": "62609e39048a92ade9a16fb0bf7c97d9d426023c78a490aa87486566735044d7",
+      "archivedRunEndedAndIssuesExactlyMatch": true,
+      "runEndedMessages": [
+        {
+          "symbol": "passWithKnownIssue",
+          "text": "Test run with 445 tests in 66 suites passed after 11.600 seconds with 5 known issues."
+        }
+      ],
+      "runStartedCount": 1,
+      "runEndedCount": 1,
+      "issueCount": 5,
+      "allIssuesKnown": true,
+      "buildDescription": "/tmp/pulpo-r43-v1/core-baseline-native/arm64-apple-macosx/release/description.json",
+      "buildDescriptionObservedSHA256": "72759d01434db88e9811ca4ff632f24c785f28364d63c3f4c91c7dccbee9db5a",
+      "sourceFileInventory": {
+        "KeyboardCoreTests": {
+          "sourceFiles": 67,
+          "matchesGitFileInventory": true,
+          "compiler": "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+          "sourceRoot": "/Users/isaacthoman/.t3/worktrees/pulpo/t3-b262ad7a",
+          "sourceFilesSHA256": "4f13db7bb3821de184c14c78ad530f3d54fb0ab516a25d8c3bbf66c7657a4926"
+        },
+        "PulpoServicesTests": {
+          "sourceFiles": 1,
+          "matchesGitFileInventory": true,
+          "compiler": "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+          "sourceRoot": "/Users/isaacthoman/.t3/worktrees/pulpo/t3-b262ad7a",
+          "sourceFilesSHA256": "a05c469ed37860909243233a2198d0122d6b3ee7835c9a69b10ce33feaeb12c5"
+        }
+      },
+      "modules": {
+        "KeyboardCoreTests": {
+          "functionDefinitions": 442,
+          "suites": 65,
+          "functionStarted": 423,
+          "functionEnded": 423,
+          "functionSkipped": 19
+        },
+        "PulpoServicesTests": {
+          "functionDefinitions": 3,
+          "suites": 1,
+          "functionStarted": 3,
+          "functionEnded": 3,
+          "functionSkipped": 0
+        }
+      }
+    },
+    "candidate": {
+      "ref": "6781665e",
+      "eventStream": "/tmp/pulpo-r43-v1/core-candidate.events.jsonl",
+      "eventStreamObservedSHA256": "1697955d919962fc888762cee7ed9a0c891fc5d9f7f0b52b95e7b52ec15cd838",
+      "archivedOrdinaryValidationSHA256": "62609e39048a92ade9a16fb0bf7c97d9d426023c78a490aa87486566735044d7",
+      "archivedRunEndedAndIssuesExactlyMatch": true,
+      "runEndedMessages": [
+        {
+          "symbol": "passWithKnownIssue",
+          "text": "Test run with 448 tests in 68 suites passed after 10.299 seconds with 5 known issues."
+        }
+      ],
+      "runStartedCount": 1,
+      "runEndedCount": 1,
+      "issueCount": 5,
+      "allIssuesKnown": true,
+      "buildDescription": "/tmp/pulpo-r43-v1/core-candidate/arm64-apple-macosx/release/description.json",
+      "buildDescriptionObservedSHA256": "fb9110f85e23f044cf937e6dac9fbcafad963bd2097038a610988fad47879fd5",
+      "sourceFileInventory": {
+        "KeyboardCoreTests": {
+          "sourceFiles": 69,
+          "matchesGitFileInventory": true,
+          "compiler": "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+          "sourceRoot": "/Users/isaacthoman/.t3/worktrees/pulpo/t3-b262ad7a",
+          "sourceFilesSHA256": "ee2b86b1defba7d068fc4912aa069ee448dc5201f7d4388131b0fa052ae5edb6"
+        },
+        "PulpoServicesTests": {
+          "sourceFiles": 1,
+          "matchesGitFileInventory": true,
+          "compiler": "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+          "sourceRoot": "/Users/isaacthoman/.t3/worktrees/pulpo/t3-b262ad7a",
+          "sourceFilesSHA256": "a05c469ed37860909243233a2198d0122d6b3ee7835c9a69b10ce33feaeb12c5"
+        }
+      },
+      "modules": {
+        "KeyboardCoreTests": {
+          "functionDefinitions": 445,
+          "suites": 67,
+          "functionStarted": 426,
+          "functionEnded": 426,
+          "functionSkipped": 19
+        },
+        "PulpoServicesTests": {
+          "functionDefinitions": 3,
+          "suites": 1,
+          "functionStarted": 3,
+          "functionEnded": 3,
+          "functionSkipped": 0
+        }
+      }
+    }
+  },
+  "candidateAddedFunctionIDs": [
+    "KeyboardCoreTests.NumericLocaleLayoutTests/decimalEntryKeepsLocaleSeparatorAndRequiredSwitcherTogether()/NumericLocaleLayoutTests.swift:12:4",
+    "KeyboardCoreTests.NumericLocaleLayoutTests/missingOrMalformedSeparatorFallsBackWithoutChangingOtherPads()/NumericLocaleLayoutTests.swift:32:4",
+    "KeyboardCoreTests.RequiredNumericControlsTests/decimalFieldKeepsRegionEntryAndRequiredKeyboardSwitchVisible()/RequiredNumericControlsTests.swift:6:4"
+  ],
+  "candidateRemovedFunctionIDs": [],
+  "serviceFunctionIDsIdentical": true,
+  "serviceFunctionIDs": [
+    "PulpoServicesTests.PulpoClientTests/explainsNetworkFailuresByCause()/PulpoClientTests.swift:23:4",
+    "PulpoServicesTests.PulpoClientTests/normalizesInstanceAddresses()/PulpoClientTests.swift:6:4",
+    "PulpoServicesTests.PulpoClientTests/readsPulpoErrorEnvelopes()/PulpoClientTests.swift:15:4"
+  ],
+  "noNativePrivacyTestIDs": true,
+  "identicalNineteenCoreSkipIDs": true
+}

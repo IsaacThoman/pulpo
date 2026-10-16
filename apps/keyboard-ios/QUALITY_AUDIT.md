@@ -8,6 +8,16 @@ unmeasured. Small deterministic Spanish and bilingual checks are reported below.
 
 ## Continued independent sweeps, October 15–16
 
+Decimal entry now follows the system region, independently of typing language,
+and retains a globe when the host requests one. The final hosted workload
+improves 8→12/12 workflows, with four gains and zero losses; earlier rejected
+packets remain failed. Parent integration passes 448 Core definitions plus three
+Services with the same five known issues, and both focused UIKit methods pass.
+Actual installed OS switching, live region transitions and physical behavior
+remain unverified; landscape keeps its existing short vertical targets. Exact
+denominators and the separate historical Core/Services count clarification are in
+`audits/numeric-locale-switch-r43/parent-disposition.md`.
+
 Parent review held the R33 reset-storage candidate for a compatibility correction:
 its global 40-letter touch cap also rejects memory-only models that previously
 learned longer aligned words. An immutable public-API replay retains five cases,

@@ -1,0 +1,34 @@
+{
+  "caret-normal.json": {
+    "bytes": 499,
+    "sha256": "aead9f848ce0621980315069e9967f57601826de0c9b26a426b93cebdacce15c"
+  },
+  "caret-optimized.json": {
+    "bytes": 499,
+    "sha256": "aead9f848ce0621980315069e9967f57601826de0c9b26a426b93cebdacce15c"
+  },
+  "device-release.json": {
+    "bytes": 452,
+    "sha256": "f0068f170077ceb38dc3aa77224ab2087ce200c1fe7bccf5585c6d7671ef5463"
+  },
+  "native-summary.json": {
+    "bytes": 1022,
+    "sha256": "fcd1834f4c0f3e1029d4b0d449ed1f1921c24d40091f9821ab7e57cadc79b747"
+  },
+  "native-tests.json": {
+    "bytes": 2488,
+    "sha256": "c68045dd533023b978e004ea660b3ad0845c1642443025a766ba1e3e856d5e3d"
+  },
+  "parent-rescoring.json": {
+    "bytes": 1239,
+    "sha256": "eccecff4a57ed5c75ff4013b65b3d14bf0308a86a71045ff618a7709ed5219e4"
+  },
+  "parent-validation.json": {
+    "bytes": 2875,
+    "sha256": "218485536373ee74583b8173074b69d59ffdb7c965c9d3b723630d36c9e7175b"
+  },
+  "swift-events.jsonl.gz": {
+    "bytes": 79709,
+    "sha256": "6b5d0ce591d55401698f21e256f70eedfa7d9ab98f9abce0f6f43be0276a71c7"
+  }
+}
