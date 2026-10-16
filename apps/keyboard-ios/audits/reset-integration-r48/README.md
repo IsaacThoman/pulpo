@@ -35,7 +35,15 @@ A new source-blind author and independent validator use only the approved
 `domain-review/public-domain-v3.md`, clean Foundation reference and declared
 author protocol. No new paired product execution has occurred. All required
 runner/schema/oracle/relational mechanics must be checked and frozen before
-that single execution. The rejected original map, versioned corrections,
+that single execution. The first authored bundle was rejected **before product
+execution** for an unspecified default-policy assumption and two unavailable
+observation accounting errors. Its exact 1,961-check bundle and independent
+664-probe-per-mode review are retained in `fresh-author-v1/` and
+`fresh-validator-v1/`; they are not product results. A separately versioned
+author correction preserves the 18 families, establishes policy explicitly and
+remains subject to independent review. The paired executor separately prepares
+and binds both binaries before a final gate freeze permits one attempt per
+version. Its mechanical review is also pending. The rejected original map, versioned corrections,
 35/36 exposed calibration and separate nine diagnostics remain unchanged.
 
 `composition-provenance.json` maps the 25 imported commits and source checks.
