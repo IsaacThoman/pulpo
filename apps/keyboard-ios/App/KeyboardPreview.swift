@@ -63,7 +63,7 @@ final class TextViewDocument: TextDocument {
 /// A text view that types with the in-app keyboard.
 struct PreviewTextView: UIViewRepresentable {
   @Binding var text: String
-  var focused: Bool
+  @Binding var focused: Bool
   var keyboardType: UIKeyboardType = .default
   let openURL: (URL) -> Void
 
@@ -83,11 +83,13 @@ struct PreviewTextView: UIViewRepresentable {
     textView.inputView = input
     context.coordinator.host = host
     context.coordinator.controller = controller
-    controller.hostWillAppear()
     return textView
   }
 
   func updateUIView(_ textView: UITextView, context: Context) {
+    // SwiftUI recreates the representable as text and focus change. Delegates
+    // must write through the current bindings, including after dismissal.
+    context.coordinator.parent = self
     if textView.keyboardType != keyboardType {
       textView.keyboardType = keyboardType
       textView.autocapitalizationType = keyboardType == .default ? .sentences : .none
@@ -99,7 +101,12 @@ struct PreviewTextView: UIViewRepresentable {
       context.coordinator.controller?.documentDidChange()
     }
     if focused, !textView.isFirstResponder {
-      DispatchQueue.main.async { textView.becomeFirstResponder() }
+      DispatchQueue.main.async { [weak textView, weak coordinator = context.coordinator] in
+        guard coordinator?.parent.focused == true else { return }
+        textView?.becomeFirstResponder()
+      }
+    } else if !focused, textView.isFirstResponder {
+      textView.resignFirstResponder()
     }
   }
 
@@ -110,6 +117,16 @@ struct PreviewTextView: UIViewRepresentable {
 
     init(_ parent: PreviewTextView) {
       self.parent = parent
+    }
+
+    func textViewDidBeginEditing(_ textView: UITextView) {
+      if !parent.focused { parent.focused = true }
+      controller?.hostWillAppear()
+    }
+
+    func textViewDidEndEditing(_ textView: UITextView) {
+      if parent.focused { parent.focused = false }
+      controller?.hostDidDisappear()
     }
 
     func textViewDidChange(_ textView: UITextView) {

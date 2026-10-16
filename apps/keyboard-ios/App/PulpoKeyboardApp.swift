@@ -170,7 +170,7 @@ struct HomeView: View {
           clearedLearnedWords = true
         }
       } message: {
-        Text("Pulpo Keyboard forgets the words it learned from your typing.")
+        Text("Pulpo Keyboard forgets the words and touch adjustments it learned from your typing. Your language and keyboard settings stay as they are.")
       }
       .confirmationDialog("Reset keyboard settings?", isPresented: $confirmReset, titleVisibility: .visible) {
         Button("Reset Settings", role: .destructive) { model.resetSettings() }

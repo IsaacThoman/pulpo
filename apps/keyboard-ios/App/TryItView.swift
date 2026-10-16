@@ -8,6 +8,7 @@ struct TryItView: View {
   @State private var usePreview = !ProcessInfo.processInfo.arguments.contains("-PKSystemKeyboard")
   @State private var field = FieldKind.text
   @State private var showTips = false
+  @State private var previewFocused = true
   @FocusState private var systemFocused: Bool
 
   /// Field types to try the keyboard's layouts with.
@@ -43,7 +44,7 @@ struct TryItView: View {
       .accessibilityIdentifier("field-kind")
 
       if usePreview {
-        PreviewTextView(text: $text, focused: true, keyboardType: field.keyboardType) { model.handle($0) }
+        PreviewTextView(text: $text, focused: $previewFocused, keyboardType: field.keyboardType) { model.handle($0) }
           .frame(minHeight: 140, maxHeight: 220)
       } else {
         TextField("Type here", text: $text, axis: .vertical)
@@ -77,8 +78,20 @@ struct TryItView: View {
     .background(Color(.systemGroupedBackground))
     .navigationTitle("Try It")
     .navigationBarTitleDisplayMode(.inline)
+    .onChange(of: usePreview) { _, preview in
+      previewFocused = preview
+      systemFocused = !preview
+    }
     .toolbar {
       ToolbarItemGroup(placement: .topBarTrailing) {
+        Button {
+          previewFocused = false
+          systemFocused = false
+        } label: {
+          Label("Hide Keyboard", systemImage: "keyboard.chevron.compact.down")
+        }
+        .accessibilityIdentifier("hide-keyboard")
+        .disabled(usePreview ? !previewFocused : !systemFocused)
         Button {
           showTips = true
         } label: {
