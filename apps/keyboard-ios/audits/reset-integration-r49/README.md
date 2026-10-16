@@ -16,9 +16,16 @@ These are bounded mechanics checks, not hostile-concurrency or product acceptanc
 
 After that approval, a new source-blind author started from only the approved
 public-domain-v3 document, clean Foundation reference, `author-protocol.md` and
-the exact reviewed runner. Fresh inputs, oracles and evaluator are not yet
-available. No R49 product build or execution has occurred. Independent semantic
-review and a new binary/environment/input/source freeze are still required.
+the exact reviewed runner. Its immutable v1 bundle now declares 15 families,
+45 instances, 452 ordered actions, 320 relations and 772 aggregate checks,
+including 80 learning calls (49 expected accepted, 31 intentionally invalid).
+The 68 synthetic adversaries pass in normal and optimized Python. These are
+author-supplied preexecution results, not product outcomes. Parent verified all
+27 manifest artifact hashes and all 28 archive members opaquely, keeping the
+fresh payload unopened. `fresh-author-v1/` retains the archive and metadata.
+Independent semantic/evaluator and novelty review is running. No R49 product
+build or execution has occurred; that approval and a new
+binary/environment/input/source freeze are still required.
 
 Product and ordinary-test files remain byte-identical to the merged `82165e7f`
 reference that passed R48's source, ordinary and native gates. Their limits,

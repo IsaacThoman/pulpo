@@ -1,0 +1,32 @@
+{
+  "files": {
+    "PublicDomainReference.swift": "860e4098efcf1d38825458c4791c5398a7e37c626ba23dc91392e7f60629516b",
+    "README.md": "47c173bbeb234e04886265b352b35f7382de57a060fdc11cc99ce6aa1c9ae70d",
+    "ReferenceMain.swift": "3cf1b7c4a6dedcae9a12f66d5440b1ee003efe3db92ef56a8bc65b98c75198e2",
+    "Runner.swift": "8f50f13ef8fcddc51d3521e6311992ebae2778f5635957f381f6a392ff61e4a1",
+    "adversarial-cases.json": "4973a2dcbcb8043b44b6934ffa393a2b8e2cff45fc0b3fae37ee7a067c8f33e0",
+    "adversarial-results.json": "9055e32fdd4694c6807458b421d104cf0a4de42e75aef1af43906d9321ef8bc7",
+    "author-protocol.md": "4f774c5d419d9f95f243cb0791db58b6cc6ce52a10c5c9c2b9129fae65159c42",
+    "author-validation.json": "f8d9f89444b5976adb56c0835d3e0741788c3b07a2e0d40b38c3f825e342476f",
+    "author.py": "c4b007fe192a410756fcc855c487d11bdc8932e62a3226af52e244e57df79b4f",
+    "environment-template.json": "c6dd071f6854e420e08178407125db08fa5897011bdc34d48d744873a4594981",
+    "evaluate.py": "4819e7bec3c90eb24b8b34e0e581e52f580b6b8cae1614cdbb94540df600e12d",
+    "expectations.json": "dc63f643ea7dd6f7a61df60663c1fa78580bcb9adb4d1b0ca4a68fab2d4a0ed1",
+    "fixtures-schema.json": "d077ddab27dd1c0b4ccc4b372972db97425d18248f994c5464598305ae163be5",
+    "fixtures.json": "9f49a1fa017e07f989c19518329e1a48b16e1e76c9c2d7826f5a55c301212912",
+    "make_adversaries.py": "d6ebf09d3c5458b01cdd7478c2386763bbb334245f1b3c83a43eccf816375950",
+    "make_schema.py": "6f31249802f1220c4fe7f1717a9f12a8d0f1192a7c2ca9c9ed1e7a72c03b489f",
+    "make_synthetic.py": "2a44e2139ca15426d03936e4cec5df5585219908ebfc6413854085bdbe6ac1ce",
+    "public-domain-v3.md": "986bbb9faefefd211c8f954c5d0fcd66ad1cd42e10008e69a354a7bc964dbef9",
+    "reference-assumptions.md": "767e70b4218e847f2a871bcb7dadff42d9c596c8d1e63a0852151c0aa58ac131",
+    "reference-requests.json": "a54790476c9c48e8153df8b151186300f7d6d69c77106e9c67c7d31539c20ee1",
+    "reference.json": "0431ce88a659611358b35d0672337137544149ab79709641c36b2dcb4a4343eb",
+    "runtime-binding.json": "d54449f756834a2f2c02445b8e1acf06a12dd768b6e439c38282f1c6546f0f4c",
+    "schema.json": "4fdcaa1cd0f094897d68b753a67805dbf97b1a5adfad695db106aa1dfa208db9",
+    "seal_manifest.py": "ce25b354d49830114f46ce7237933f196fb5a88908a2a6bdb267d55cf67d6d2c",
+    "synthetic-raw.json": "cd1e9a67af46bea947d3a8494aee72dae17df8e051733bae332af9565b4e1814",
+    "test_evaluator.py": "082004bb8f055496725ba93b2353fcfe60bce4762cde444e07a08630d3d6a2b4",
+    "verify_author.py": "3fb9ff7a642c72509a3d0a5626208eb47fafcf929073ce6cf30368de8770e7d9"
+  },
+  "format": "pulpo-r49-author-manifest-v1"
+}

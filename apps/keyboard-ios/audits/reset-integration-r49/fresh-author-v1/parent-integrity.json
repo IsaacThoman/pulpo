@@ -1,0 +1,9 @@
+{
+  "scope": "Opaque hash and complete regular-file inventory verification only; parent fresh payload unopened",
+  "manifestArtifactsVerified": 27,
+  "archiveFilesVerified": 28,
+  "archiveSHA256": "bfa62181addfade8b2e0011c059b7608941cddf4c53e9876294071b412f15fe4",
+  "runnerUnchanged": true,
+  "productExecutions": 0,
+  "semanticReview": "Running independently /root/r49_fresh_validator"
+}

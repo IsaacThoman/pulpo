@@ -1,0 +1,66 @@
+{
+  "approval_state": "Awaiting independent semantic/evaluator review and parent final paired binary/environment/source/input freeze; no product outputs have been revealed.",
+  "archive_bytes": 78202,
+  "archive_path": "/tmp/pulpo-r49-fresh-author-v1/author-bundle.tar.gz",
+  "archive_scope": "All manifest-listed author artifacts plus author-manifest.json; metadata.json is external to avoid self-reference. Foundation executable excluded.",
+  "archive_sha256": "bfa62181addfade8b2e0011c059b7608941cddf4c53e9876294071b412f15fe4",
+  "bindings": {
+    "PublicDomainReference.swift": "860e4098efcf1d38825458c4791c5398a7e37c626ba23dc91392e7f60629516b",
+    "Runner.swift": "8f50f13ef8fcddc51d3521e6311992ebae2778f5635957f381f6a392ff61e4a1",
+    "author-manifest.json": "8fa0b0af6ede9ed34cf07c8aebc3b5a651ebb8a10cc5d2da840c48173e23245a",
+    "author-protocol.md": "4f774c5d419d9f95f243cb0791db58b6cc6ce52a10c5c9c2b9129fae65159c42",
+    "evaluate.py": "4819e7bec3c90eb24b8b34e0e581e52f580b6b8cae1614cdbb94540df600e12d",
+    "expectations.json": "dc63f643ea7dd6f7a61df60663c1fa78580bcb9adb4d1b0ca4a68fab2d4a0ed1",
+    "fixtures-schema.json": "d077ddab27dd1c0b4ccc4b372972db97425d18248f994c5464598305ae163be5",
+    "fixtures.json": "9f49a1fa017e07f989c19518329e1a48b16e1e76c9c2d7826f5a55c301212912",
+    "public-domain-v3.md": "986bbb9faefefd211c8f954c5d0fcd66ad1cd42e10008e69a354a7bc964dbef9",
+    "reference.json": "0431ce88a659611358b35d0672337137544149ab79709641c36b2dcb4a4343eb",
+    "schema.json": "4fdcaa1cd0f094897d68b753a67805dbf97b1a5adfad695db106aa1dfa208db9"
+  },
+  "bundle_directory": "/tmp/pulpo-r49-fresh-author-v1",
+  "counts": {
+    "accepted_calls": 49,
+    "center_calls": 26,
+    "checks": 772,
+    "expected_invalid_calls": 31,
+    "families": 15,
+    "instance_roles": {
+      "canonical": 15,
+      "local": 15,
+      "persistent": 15
+    },
+    "instances": 45,
+    "learn_calls": 80,
+    "normalize_calls": 14,
+    "operation_types": {
+      "center": 26,
+      "construct": 45,
+      "learn": 80,
+      "normalize": 14,
+      "observe": 72,
+      "reload": 45,
+      "reopen": 18,
+      "save": 80,
+      "setLearning": 72
+    },
+    "operations": 452,
+    "relations": 320,
+    "synthetic_adversarial_cases": 68,
+    "synthetic_adversarial_executions": 136
+  },
+  "delegation": false,
+  "format": "pulpo-r49-author-metadata-v1",
+  "frozen": true,
+  "manifest_entries": 27,
+  "manifest_path": "/tmp/pulpo-r49-fresh-author-v1/author-manifest.json",
+  "product_executions": 0,
+  "runtime": {
+    "Foundation_runtime": "Version 27.0.1 (Build 26A434)",
+    "product_execution": false,
+    "reference_execution": "Foundation-only approved public normalization/alignment implementation",
+    "swift": "swift-driver version: 1.168.6 Apple Swift version 6.4 (swiftlang-6.4.0.34.1 clang-2100.3.34.1)",
+    "target": "arm64-apple-macosx27.0.0"
+  },
+  "source_output_blind": true,
+  "status": "sealed_for_independent_review"
+}
