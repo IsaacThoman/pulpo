@@ -1018,16 +1018,18 @@ export const useChat = create<ChatState>()((set, get) => ({
   responseChatIds: {},
 
   replaceSummaries: (rows) => set((state) => {
+    const currentById = new Map(state.chats.map((chat) => [chat.id, chat]))
     const serverChats = rows.map((row) => ({
-      ...toChat(row, state.chats.find((chat) => chat.id === row.id), state.responseSequences, state.streamingIds),
+      ...toChat(row, currentById.get(row.id), state.responseSequences, state.streamingIds),
       awaitingSummary: false,
     }))
+    const serverIds = new Set(serverChats.map((chat) => chat.id))
     const activeTemporary = state.activeTemporaryChatId
-      ? state.chats.find((chat) => chat.id === state.activeTemporaryChatId && chat.temporary)
+      ? currentById.get(state.activeTemporaryChatId)
       : undefined
     const localOnly = state.chats.filter((chat) => (
-      (chat.provisional || chat.awaitingSummary || chat.id === activeTemporary?.id)
-      && !serverChats.some((serverChat) => serverChat.id === chat.id)
+      (chat.provisional || chat.awaitingSummary || (activeTemporary?.temporary && chat.id === activeTemporary.id))
+      && !serverIds.has(chat.id)
     ))
     const chats = [...localOnly, ...serverChats]
     const tracking = mergeSummaryResponseTracking(
