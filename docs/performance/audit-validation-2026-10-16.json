@@ -1,0 +1,625 @@
+{
+  "baseline": "08b2b2328789243f6706452663893f5084e70fa9",
+  "environment": "Apple M5 Pro arm64, 48 GB, Darwin 27.0.0, Node 26.12.0; isolated PostgreSQL17/vector + Redis; loopback API3319",
+  "apiMethod": "Current combined implementation only, not old/new. One discarded warmup and three retained sequential runs per case. Full HTTP request and historyLimit=500 request use identity encoding; timing includes loopback headers and body consumption. DB, DTO, branch and stringify probes are independent full-history operations, not components summing to HTTP time. No competing builds/tests/benchmarks.",
+  "api": [
+    {
+      "kind": "plain",
+      "turns": 10,
+      "messages": 20,
+      "warmup": {
+        "dbMs": 10.258916,
+        "dtoMs": 0.46783300000004147,
+        "branchMs": 0.02020900000002257,
+        "stringifyMs": 0.013582999999982803,
+        "ttfbMs": 8.657167000000015,
+        "httpMs": 9.234916999999996,
+        "bytes": 22380,
+        "responseBytes": 21887,
+        "pagedMs": 4.229166000000021,
+        "pagedBytes": 22515
+      },
+      "runs": [
+        {
+          "dbMs": 0.769375000000025,
+          "dtoMs": 0.07645800000000236,
+          "branchMs": 0.007790999999997439,
+          "stringifyMs": 0.010457999999971435,
+          "ttfbMs": 2.880540999999994,
+          "httpMs": 2.942457999999988,
+          "bytes": 22380,
+          "responseBytes": 21887,
+          "pagedMs": 3.0811669999999935,
+          "pagedBytes": 22515
+        },
+        {
+          "dbMs": 0.7336250000000177,
+          "dtoMs": 0.06729200000000901,
+          "branchMs": 0.007416000000034728,
+          "stringifyMs": 0.009749999999996817,
+          "ttfbMs": 2.5864159999999856,
+          "httpMs": 2.6610000000000014,
+          "bytes": 22380,
+          "responseBytes": 21887,
+          "pagedMs": 2.7840830000000096,
+          "pagedBytes": 22515
+        },
+        {
+          "dbMs": 0.5704170000000204,
+          "dtoMs": 0.06254200000000765,
+          "branchMs": 0.008207999999967797,
+          "stringifyMs": 0.009124999999983174,
+          "ttfbMs": 2.468666999999982,
+          "httpMs": 2.52800000000002,
+          "bytes": 22380,
+          "responseBytes": 21887,
+          "pagedMs": 3.1236660000000143,
+          "pagedBytes": 22515
+        }
+      ]
+    },
+    {
+      "kind": "plain",
+      "turns": 100,
+      "messages": 200,
+      "warmup": {
+        "dbMs": 1.4906250000000227,
+        "dtoMs": 0.441833000000031,
+        "branchMs": 0.07120800000001282,
+        "stringifyMs": 0.13045800000003283,
+        "ttfbMs": 4.973042000000021,
+        "httpMs": 5.294958000000008,
+        "bytes": 220203,
+        "responseBytes": 219709,
+        "pagedMs": 5.130125000000021,
+        "pagedBytes": 220338
+      },
+      "runs": [
+        {
+          "dbMs": 1.2947090000000117,
+          "dtoMs": 0.36299999999999955,
+          "branchMs": 0.06066700000002356,
+          "stringifyMs": 0.08108299999997826,
+          "ttfbMs": 4.070249999999987,
+          "httpMs": 4.243499999999983,
+          "bytes": 220203,
+          "responseBytes": 219709,
+          "pagedMs": 4.829000000000008,
+          "pagedBytes": 220338
+        },
+        {
+          "dbMs": 1.2673750000000155,
+          "dtoMs": 0.3952089999999657,
+          "branchMs": 0.05579099999999926,
+          "stringifyMs": 0.10333400000001802,
+          "ttfbMs": 3.809624999999926,
+          "httpMs": 3.961207999999999,
+          "bytes": 220203,
+          "responseBytes": 219709,
+          "pagedMs": 4.223582999999962,
+          "pagedBytes": 220338
+        },
+        {
+          "dbMs": 1.1604590000000599,
+          "dtoMs": 0.34962500000006,
+          "branchMs": 0.04062499999997726,
+          "stringifyMs": 0.08520799999996598,
+          "ttfbMs": 3.46712500000001,
+          "httpMs": 3.638458000000014,
+          "bytes": 220203,
+          "responseBytes": 219709,
+          "pagedMs": 4.230167000000051,
+          "pagedBytes": 220338
+        }
+      ]
+    },
+    {
+      "kind": "plain",
+      "turns": 500,
+      "messages": 1000,
+      "warmup": {
+        "dbMs": 3.466916000000083,
+        "dtoMs": 2.469832999999994,
+        "branchMs": 0.16541700000004766,
+        "stringifyMs": 0.4318749999999909,
+        "ttfbMs": 11.363249999999994,
+        "httpMs": 12.190832999999998,
+        "bytes": 1100603,
+        "responseBytes": 1100109,
+        "pagedMs": 18.257624999999962,
+        "pagedBytes": 1100738
+      },
+      "runs": [
+        {
+          "dbMs": 3.0907909999999674,
+          "dtoMs": 1.4532090000000153,
+          "branchMs": 0.17033300000002782,
+          "stringifyMs": 0.5301670000000058,
+          "ttfbMs": 10.05620900000008,
+          "httpMs": 10.654209000000037,
+          "bytes": 1100603,
+          "responseBytes": 1100109,
+          "pagedMs": 12.151708999999983,
+          "pagedBytes": 1100738
+        },
+        {
+          "dbMs": 4.2134170000000495,
+          "dtoMs": 1.4493330000000242,
+          "branchMs": 0.1674160000000029,
+          "stringifyMs": 0.37487499999997453,
+          "ttfbMs": 8.735291999999959,
+          "httpMs": 9.551541999999927,
+          "bytes": 1100603,
+          "responseBytes": 1100109,
+          "pagedMs": 11.006416000000058,
+          "pagedBytes": 1100738
+        },
+        {
+          "dbMs": 3.134625000000028,
+          "dtoMs": 1.4898339999999735,
+          "branchMs": 0.1801669999999831,
+          "stringifyMs": 0.5504160000000411,
+          "ttfbMs": 9.426375000000007,
+          "httpMs": 9.758041000000048,
+          "bytes": 1100603,
+          "responseBytes": 1100109,
+          "pagedMs": 11.888665999999944,
+          "pagedBytes": 1100738
+        }
+      ]
+    },
+    {
+      "kind": "plain",
+      "turns": 1000,
+      "messages": 2000,
+      "warmup": {
+        "dbMs": 6.303416999999968,
+        "dtoMs": 3.2535839999999325,
+        "branchMs": 0.3579579999999396,
+        "stringifyMs": 1.2979159999999865,
+        "ttfbMs": 17.853541000000064,
+        "httpMs": 18.77212499999996,
+        "bytes": 2201107,
+        "responseBytes": 2200612,
+        "pagedMs": 11.549833000000035,
+        "pagedBytes": 1101135
+      },
+      "runs": [
+        {
+          "dbMs": 5.422708000000057,
+          "dtoMs": 2.619833000000085,
+          "branchMs": 0.3370420000001104,
+          "stringifyMs": 1.0693340000000262,
+          "ttfbMs": 15.484749999999963,
+          "httpMs": 16.179874999999925,
+          "bytes": 2201107,
+          "responseBytes": 2200612,
+          "pagedMs": 11.022249999999985,
+          "pagedBytes": 1101135
+        },
+        {
+          "dbMs": 5.26829100000009,
+          "dtoMs": 2.557542000000012,
+          "branchMs": 0.33512500000006185,
+          "stringifyMs": 0.9210419999999431,
+          "ttfbMs": 14.08137499999998,
+          "httpMs": 14.840417000000002,
+          "bytes": 2201107,
+          "responseBytes": 2200612,
+          "pagedMs": 11.841125000000034,
+          "pagedBytes": 1101135
+        },
+        {
+          "dbMs": 5.36545799999999,
+          "dtoMs": 2.6621249999999463,
+          "branchMs": 0.3487079999999878,
+          "stringifyMs": 1.032833000000096,
+          "ttfbMs": 13.644957999999974,
+          "httpMs": 14.305791,
+          "bytes": 2201107,
+          "responseBytes": 2200612,
+          "pagedMs": 11.655417000000057,
+          "pagedBytes": 1101135
+        }
+      ]
+    },
+    {
+      "kind": "plain",
+      "turns": 2500,
+      "messages": 5000,
+      "warmup": {
+        "dbMs": 17.044291000000044,
+        "dtoMs": 6.724375000000009,
+        "branchMs": 2.3349589999999125,
+        "stringifyMs": 1.7658749999999372,
+        "ttfbMs": 34.56458299999997,
+        "httpMs": 36.59754099999998,
+        "bytes": 5507107,
+        "responseBytes": 5506612,
+        "pagedMs": 13.563957999999957,
+        "pagedBytes": 1102633
+      },
+      "runs": [
+        {
+          "dbMs": 15.553332999999952,
+          "dtoMs": 7.806290999999987,
+          "branchMs": 0.7664590000000544,
+          "stringifyMs": 1.7524590000000444,
+          "ttfbMs": 34.18383399999993,
+          "httpMs": 35.995000000000005,
+          "bytes": 5507107,
+          "responseBytes": 5506612,
+          "pagedMs": 15.940124999999966,
+          "pagedBytes": 1102633
+        },
+        {
+          "dbMs": 22.13833299999999,
+          "dtoMs": 9.55645800000002,
+          "branchMs": 1.3512499999999363,
+          "stringifyMs": 2.027249999999981,
+          "ttfbMs": 38.39920899999993,
+          "httpMs": 39.61029200000007,
+          "bytes": 5507107,
+          "responseBytes": 5506612,
+          "pagedMs": 15.868583999999828,
+          "pagedBytes": 1102633
+        },
+        {
+          "dbMs": 15.17274999999995,
+          "dtoMs": 9.689916999999923,
+          "branchMs": 1.3433749999999236,
+          "stringifyMs": 2.2735419999999067,
+          "ttfbMs": 33.706916999999976,
+          "httpMs": 35.53904200000011,
+          "bytes": 5507107,
+          "responseBytes": 5506612,
+          "pagedMs": 14.280750000000126,
+          "pagedBytes": 1102633
+        }
+      ]
+    },
+    {
+      "kind": "plain",
+      "turns": 5000,
+      "messages": 10000,
+      "warmup": {
+        "dbMs": 29.4552920000001,
+        "dtoMs": 16.497082999999975,
+        "branchMs": 4.84050000000002,
+        "stringifyMs": 3.599583000000166,
+        "ttfbMs": 65.15137500000014,
+        "httpMs": 68.64900000000011,
+        "bytes": 11017108,
+        "responseBytes": 11016613,
+        "pagedMs": 20.150333000000046,
+        "pagedBytes": 1102634
+      },
+      "runs": [
+        {
+          "dbMs": 29.628375000000005,
+          "dtoMs": 16.921749999999975,
+          "branchMs": 3.621958000000177,
+          "stringifyMs": 3.672125000000051,
+          "ttfbMs": 65.66704200000004,
+          "httpMs": 70.15729199999987,
+          "bytes": 11017108,
+          "responseBytes": 11016613,
+          "pagedMs": 19.80291599999987,
+          "pagedBytes": 1102634
+        },
+        {
+          "dbMs": 33.191499999999905,
+          "dtoMs": 16.9375,
+          "branchMs": 4.181250000000091,
+          "stringifyMs": 4.534040999999888,
+          "ttfbMs": 64.13308400000005,
+          "httpMs": 67.14470899999992,
+          "bytes": 11017108,
+          "responseBytes": 11016613,
+          "pagedMs": 19.69950000000017,
+          "pagedBytes": 1102634
+        },
+        {
+          "dbMs": 31.292999999999893,
+          "dtoMs": 15.203916000000163,
+          "branchMs": 2.3769999999999527,
+          "stringifyMs": 3.880374999999958,
+          "ttfbMs": 63.73891700000013,
+          "httpMs": 66.60504200000014,
+          "bytes": 11017108,
+          "responseBytes": 11016613,
+          "pagedMs": 19.714083999999957,
+          "pagedBytes": 1102634
+        }
+      ]
+    },
+    {
+      "kind": "plain",
+      "turns": 10000,
+      "messages": 20000,
+      "warmup": {
+        "dbMs": 71.5646670000001,
+        "dtoMs": 35.72783400000003,
+        "branchMs": 7.9686669999998685,
+        "stringifyMs": 8.86179200000015,
+        "ttfbMs": 133.8067920000001,
+        "httpMs": 141.7312089999998,
+        "bytes": 22037111,
+        "responseBytes": 22036615,
+        "pagedMs": 38.016333999999915,
+        "pagedBytes": 1102637
+      },
+      "runs": [
+        {
+          "dbMs": 67.84708300000011,
+          "dtoMs": 39.727499999999964,
+          "branchMs": 9.242416999999932,
+          "stringifyMs": 8.825624999999945,
+          "ttfbMs": 135.1225000000004,
+          "httpMs": 142.47408300000006,
+          "bytes": 22037111,
+          "responseBytes": 22036615,
+          "pagedMs": 39.91558299999997,
+          "pagedBytes": 1102637
+        },
+        {
+          "dbMs": 72.21587499999987,
+          "dtoMs": 42.19637499999999,
+          "branchMs": 10.378875000000335,
+          "stringifyMs": 10.58324999999968,
+          "ttfbMs": 142.17679099999987,
+          "httpMs": 147.30225000000019,
+          "bytes": 22037111,
+          "responseBytes": 22036615,
+          "pagedMs": 36.975958000000446,
+          "pagedBytes": 1102637
+        },
+        {
+          "dbMs": 68.03466600000002,
+          "dtoMs": 40.18387500000017,
+          "branchMs": 11.123957999999675,
+          "stringifyMs": 10.709584000000177,
+          "ttfbMs": 137.2351249999997,
+          "httpMs": 142.2410420000001,
+          "bytes": 22037111,
+          "responseBytes": 22036615,
+          "pagedMs": 36.3979589999999,
+          "pagedBytes": 1102637
+        }
+      ]
+    },
+    {
+      "kind": "plain",
+      "turns": 20000,
+      "messages": 40000,
+      "warmup": {
+        "dbMs": 126.00395800000024,
+        "dtoMs": 77.04774999999972,
+        "branchMs": 22.696750000000065,
+        "stringifyMs": 18.904124999999567,
+        "ttfbMs": 266.9696249999997,
+        "httpMs": 291.7532919999999,
+        "bytes": 44107112,
+        "responseBytes": 44106616,
+        "pagedMs": 67.15599999999995,
+        "pagedBytes": 1104136
+      },
+      "runs": [
+        {
+          "dbMs": 128.52774999999974,
+          "dtoMs": 88.37495900000022,
+          "branchMs": 26.663332999999966,
+          "stringifyMs": 23.65208399999983,
+          "ttfbMs": 294.9905410000001,
+          "httpMs": 318.32154100000025,
+          "bytes": 44107112,
+          "responseBytes": 44106616,
+          "pagedMs": 60.364707999999155,
+          "pagedBytes": 1104136
+        },
+        {
+          "dbMs": 128.7922499999995,
+          "dtoMs": 82.05533400000058,
+          "branchMs": 23.52666700000009,
+          "stringifyMs": 19.301040999999714,
+          "ttfbMs": 280.6047499999995,
+          "httpMs": 298.20329199999924,
+          "bytes": 44107112,
+          "responseBytes": 44106616,
+          "pagedMs": 63.10637499999939,
+          "pagedBytes": 1104136
+        },
+        {
+          "dbMs": 128.73729099999946,
+          "dtoMs": 82.74337500000001,
+          "branchMs": 25.01275000000078,
+          "stringifyMs": 19.44958300000053,
+          "ttfbMs": 279.4069159999999,
+          "httpMs": 309.5947500000002,
+          "bytes": 44107112,
+          "responseBytes": 44106616,
+          "pagedMs": 66.14616699999988,
+          "pagedBytes": 1104136
+        }
+      ]
+    },
+    {
+      "kind": "rich",
+      "turns": 1000,
+      "messages": 2000,
+      "warmup": {
+        "dbMs": 8.02612499999941,
+        "dtoMs": 3.5107920000000377,
+        "branchMs": 1.519333000000188,
+        "stringifyMs": 1.0612499999997453,
+        "ttfbMs": 15.92041700000027,
+        "httpMs": 16.84887499999968,
+        "bytes": 2632107,
+        "responseBytes": 2631613,
+        "pagedMs": 12.419750000000022,
+        "pagedBytes": 1316635
+      },
+      "runs": [
+        {
+          "dbMs": 6.250208000000384,
+          "dtoMs": 3.0187499999992724,
+          "branchMs": 1.252249999999549,
+          "stringifyMs": 0.9533750000000509,
+          "ttfbMs": 14.982125000000451,
+          "httpMs": 15.69104200000038,
+          "bytes": 2632107,
+          "responseBytes": 2631613,
+          "pagedMs": 12.520959000000403,
+          "pagedBytes": 1316635
+        },
+        {
+          "dbMs": 6.0636249999997744,
+          "dtoMs": 2.6919589999997697,
+          "branchMs": 1.1747079999995549,
+          "stringifyMs": 0.992750000000342,
+          "ttfbMs": 14.71941699999934,
+          "httpMs": 15.479666999999608,
+          "bytes": 2632107,
+          "responseBytes": 2631613,
+          "pagedMs": 12.495249999999942,
+          "pagedBytes": 1316635
+        },
+        {
+          "dbMs": 6.08429200000046,
+          "dtoMs": 2.625500000000102,
+          "branchMs": 1.1834579999995185,
+          "stringifyMs": 0.9913329999999405,
+          "ttfbMs": 14.421125000000757,
+          "httpMs": 15.228209000000788,
+          "bytes": 2632107,
+          "responseBytes": 2631613,
+          "pagedMs": 11.725625000000036,
+          "pagedBytes": 1316635
+        }
+      ]
+    },
+    {
+      "kind": "large",
+      "turns": 100,
+      "messages": 200,
+      "warmup": {
+        "dbMs": 26.434833000000253,
+        "dtoMs": 1.2072500000003856,
+        "branchMs": 0.05179200000020501,
+        "stringifyMs": 9.916083000000071,
+        "ttfbMs": 43.249291000000085,
+        "httpMs": 53.48408299999937,
+        "bytes": 30522304,
+        "responseBytes": 30521810,
+        "pagedMs": 44.385583000000224,
+        "pagedBytes": 30522439
+      },
+      "runs": [
+        {
+          "dbMs": 20.879667000000154,
+          "dtoMs": 0.48712500000056025,
+          "branchMs": 0.05774999999994179,
+          "stringifyMs": 6.276749999999993,
+          "ttfbMs": 35.464874999999665,
+          "httpMs": 45.43104200000016,
+          "bytes": 30522304,
+          "responseBytes": 30521810,
+          "pagedMs": 44.10870899999918,
+          "pagedBytes": 30522439
+        },
+        {
+          "dbMs": 21.406707999999526,
+          "dtoMs": 0.612250000000131,
+          "branchMs": 0.05333299999983865,
+          "stringifyMs": 7.12395800000013,
+          "ttfbMs": 36.00816599999962,
+          "httpMs": 45.858249999999316,
+          "bytes": 30522304,
+          "responseBytes": 30521810,
+          "pagedMs": 43.616916999999376,
+          "pagedBytes": 30522439
+        },
+        {
+          "dbMs": 20.596958000000086,
+          "dtoMs": 0.5022079999998823,
+          "branchMs": 0.0532919999996011,
+          "stringifyMs": 6.492874999999913,
+          "ttfbMs": 34.92662500000006,
+          "httpMs": 44.95912500000031,
+          "bytes": 30522304,
+          "responseBytes": 30521810,
+          "pagedMs": 46.62866600000052,
+          "pagedBytes": 30522439
+        }
+      ]
+    }
+  ],
+  "browserMethod": "Production Chromium153.0.8010.12, existing real API/Socket.IO virtual transcript harness, one run per case. Concurrent native build activity: correctness evidence only, all latency/memory/resource measurements omitted. Synthetic60delta stream plus reader anchor check.",
+  "browserCorrectness": [
+    {
+      "kind": "plain",
+      "turns": 10,
+      "messages": 20,
+      "errors": [],
+      "failedRequests": [],
+      "draftCorrect": true,
+      "concurrentDraftCorrect": true,
+      "cachedDraftCorrect": true,
+      "readingAnchorShiftPx": 0,
+      "receivedTicks": 60,
+      "bottomGapPx": 0
+    },
+    {
+      "kind": "plain",
+      "turns": 5000,
+      "messages": 10000,
+      "errors": [],
+      "failedRequests": [],
+      "draftCorrect": true,
+      "concurrentDraftCorrect": true,
+      "cachedDraftCorrect": true,
+      "readingAnchorShiftPx": 0,
+      "receivedTicks": 60,
+      "bottomGapPx": 0
+    },
+    {
+      "kind": "plain",
+      "turns": 20000,
+      "messages": 40000,
+      "errors": [],
+      "failedRequests": [],
+      "draftCorrect": true,
+      "concurrentDraftCorrect": true,
+      "cachedDraftCorrect": true,
+      "readingAnchorShiftPx": 0,
+      "receivedTicks": 60,
+      "bottomGapPx": 0
+    },
+    {
+      "kind": "rich",
+      "turns": 1000,
+      "messages": 2000,
+      "errors": [],
+      "failedRequests": [],
+      "draftCorrect": true,
+      "concurrentDraftCorrect": true,
+      "cachedDraftCorrect": true,
+      "readingAnchorShiftPx": 0,
+      "receivedTicks": 60,
+      "bottomGapPx": 0
+    },
+    {
+      "kind": "large",
+      "turns": 100,
+      "messages": 200,
+      "errors": [],
+      "failedRequests": [],
+      "draftCorrect": true,
+      "concurrentDraftCorrect": true,
+      "cachedDraftCorrect": true,
+      "readingAnchorShiftPx": 0,
+      "receivedTicks": 60,
+      "bottomGapPx": 0
+    }
+  ]
+}

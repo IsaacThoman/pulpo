@@ -2,6 +2,14 @@ import { describe, expect, it } from 'vitest'
 import { linkMarkdownImages, normalizeMathDelimiters, unwrapBoxedMinipages } from './markdown.js'
 
 describe('normalizeMathDelimiters', () => {
+  it('preserves plain Unicode prose and code when no transform can match', () => {
+    const markdown = '🦑 Café e\u0301 — 数学. **Bold** and `code`.\n\n```ts\nconst x = 1\n```\n'
+    expect(normalizeMathDelimiters(markdown)).toBe(markdown)
+    expect(normalizeMathDelimiters(markdown, { displayMathStyle: 'multiline', maxInlineMathLength: 24 })).toBe(markdown)
+    expect(unwrapBoxedMinipages(markdown)).toBe(markdown)
+    expect(linkMarkdownImages(markdown)).toBe(markdown)
+  })
+
   it('preserves paired single-dollar inline math', () => {
     const markdown = String.raw`$F_{AB} = -A_x = 199$ lb; $100.5\sqrt{2} \approx 142.1$ lb; and $x$.`
 
@@ -105,6 +113,33 @@ $$a \\[2pt] b$$
 `)
   })
 
+  it('preserves escape parity for display delimiters after backslash runs', () => {
+    for (let opening = 1; opening <= 24; opening += 1) {
+      for (let closing = 1; closing <= 24; closing += 1) {
+        const prefix = '\\'.repeat(opening)
+        const suffix = '\\'.repeat(closing)
+        const markdown = `Before ${prefix}[x${suffix}] after`
+        const expected = opening % 2 === 1 && closing % 2 === 1
+          ? `Before ${prefix.slice(1)}\n$$x${suffix.slice(1)}$$\n after`
+          : markdown
+        expect(normalizeMathDelimiters(markdown)).toBe(expected)
+      }
+    }
+  })
+
+  it('keeps escaped nested delimiters and an unterminated trailing block intact', () => {
+    const markdown = String.raw`Before \[a \\[literal] \[b\] c\] after \[unfinished \\]`
+    expect(normalizeMathDelimiters(markdown))
+      .toBe('Before \n' + String.raw`$$a \\[literal] \[b\] c$$` + '\n' + String.raw` after \[unfinished \\]`)
+  })
+
+  it('handles long backslash runs and their trailing display delimiter', () => {
+    const escapes = '\\'.repeat(128 * 1024)
+    expect(normalizeMathDelimiters(escapes)).toBe(escapes)
+    expect(normalizeMathDelimiters(`${escapes}\\[x\\]`)).toBe(`${escapes}\n$$x$$\n`)
+    expect(normalizeMathDelimiters(`${escapes}\\[unfinished`)).toBe(`${escapes}\\[unfinished`)
+  })
+
   it('leaves an unclosed outer display block untouched', () => {
     const markdown = String.raw`\[ a \[ b \]`
 
@@ -174,5 +209,10 @@ describe('linkMarkdownImages', () => {
   it('leaves code and escaped exclamation marks alone', () => {
     const markdown = '`![a](u)`\n\n```md\n![b](u)\n```\n\n\\![c](u)'
     expect(linkMarkdownImages(markdown)).toBe(markdown)
+  })
+
+  it('rewrites image openers before their link destination streams in', () => {
+    expect(linkMarkdownImages('Chart: ![alt')).toBe('Chart: [🖼 alt')
+    expect(linkMarkdownImages('![]')).toBe('[🖼 Image]')
   })
 })
