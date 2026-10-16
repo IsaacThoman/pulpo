@@ -165,6 +165,28 @@ describe.skipIf(!enabled)('agent document changes', () => {
     expect(ydocToMarkdown(await loadYDoc(plan), 'proposed')).toBe('Alpha')
   })
 
+  it('makes suggestions reviewable again when the owner undoes an editor review', async () => {
+    const folder = await files.folder('Projects')
+    const plan = await files.doc('Plan.md', folder, 'Owner text')
+    await files.attach({ [folder]: 'suggest' })
+    await edit('Projects/Plan.md', () => 'Owner revised text')
+    const replica = await loadYDoc(plan)
+    const suggested = ydocToNode(replica)
+    const review = resolveSuggestions(new Transform(suggested), () => true, 'accept').doc
+    const send = async (node: typeof suggested) => {
+      const vector = Y.encodeStateVector(replica)
+      applyNodeToYDoc(replica, node)
+      await appendDocUpdate({ nodeId: plan, ownerUserId: files.userId, actorUserId: files.userId, update: Y.encodeStateAsUpdate(replica, vector), origin: 'client' })
+    }
+    await send(review)
+    expect((await listFileChanges(files.userId, files.responseId)).changes[0]).toMatchObject({ status: 'accepted', pendingSuggestions: 0 })
+    await send(suggested)
+    const [restored] = (await listFileChanges(files.userId, files.responseId)).changes
+    expect(restored).toMatchObject({ status: 'pending', pendingSuggestions: 1 })
+    await reviewFileChange(files.userId, restored!.id, 'reject')
+    expect(ydocToMarkdown(await loadYDoc(plan))).toBe('Owner text')
+  })
+
   it('keeps each reply\'s suggestions to a document apart', async () => {
     const projects = await files.folder('Projects')
     const plan = await files.doc('Plan.md', projects, 'Alpha\n\nBeta')

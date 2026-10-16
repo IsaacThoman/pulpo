@@ -62,9 +62,9 @@ export function convertToDoc(id: string): Promise<FileNode> {
   return apiRequest<FileNode>(`/api/files/${id}/convert`, { method: 'POST' })
 }
 
-/** Saves a document as a .md file, with the latest edits folded in by the server. */
-export async function downloadDocMarkdown(node: Pick<FileNode, 'id' | 'name'>): Promise<void> {
-  const { markdown } = await apiRequest<{ name: string; markdown: string }>(`/api/files/${node.id}/markdown`)
+/** An open editor exports its local snapshot, including offline edits; the browser fetches others. */
+export async function downloadDocMarkdown(node: Pick<FileNode, 'id' | 'name'>, snapshot?: string): Promise<void> {
+  const markdown = snapshot ?? (await apiRequest<{ name: string; markdown: string }>(`/api/files/${node.id}/markdown`)).markdown
   const url = URL.createObjectURL(new Blob([markdown], { type: 'text/markdown;charset=utf-8' }))
   const anchor = document.createElement('a')
   anchor.href = url
