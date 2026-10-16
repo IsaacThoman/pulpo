@@ -80,6 +80,8 @@ values. Gzip uses a zero timestamp; original JSON/protocol/audit/source bytes we
 copied without rewriting. No libraries, executable clients, downloaded corpora,
 build caches, logs, screenshots or xcresults are versioned. Captured diagnostic
 hash metadata refers to external libraries/binaries only to identify that run.
+The scoped whitespace attribute preserves the patch's original blank context
+line (one space), which Git otherwise diagnoses when a patch is added as text.
 
 This diagnostic is exposed post-review evidence, **not blind or fresh heldout**.
 Any narrower experiment must be separate, use these cases only as development
