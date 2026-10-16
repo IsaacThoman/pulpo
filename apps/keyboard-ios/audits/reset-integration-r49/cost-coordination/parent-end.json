@@ -1,0 +1,21 @@
+{
+  "action": "END",
+  "grantID": "r46-cost-20261016-124739-v1",
+  "endedAt": "2026-10-16T12:51:07.557407+00:00",
+  "measurementSession": 99534,
+  "driverExit": 1,
+  "processesCompleted": 28,
+  "actualBatchStarted": "2026-10-16T12:49:09.331790+00:00",
+  "actualBatchEnded": "2026-10-16T12:49:45.186877+00:00",
+  "actualBatchSeconds": 35.855087,
+  "reportedCostVerdict": "UNAVAILABLE",
+  "reportedQuietVerdict": "UNAVAILABLE",
+  "reportedQuietFailure": "external contention: unavailable (no subset)",
+  "reportedMemoryGateFailures": {
+    "medianAbsoluteExtraBytes": 2605056,
+    "buildDeltaExtraBytes": 2457600,
+    "allowanceBytes": 2097152
+  },
+  "measurementProcessTerminated": true,
+  "release": "All previously authorized normal work may resume. This grant is spent; no cost retry/restart/subset/threshold/source tuning authorized. Timing unavailable and underlying memory gate failures stay preserved; no feature adoption."
+}
