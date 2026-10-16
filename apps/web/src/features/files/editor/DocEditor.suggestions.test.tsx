@@ -280,8 +280,11 @@ describe('DocEditor suggestions', () => {
     const before = ids()
     editor().commands.setTextSelection(listSuggestions(editor().state.doc)[0]!.from + 1)
     fireEvent.keyDown(element()!, { key: 'Backspace', ctrlKey: true, altKey: true, repeat: true })
-    fireEvent.keyDown(element()!, { key: 'Backspace', ctrlKey: true, altKey: true, modifierAltGraph: true })
     fireEvent.keyDown(element()!, { key: 'Enter', ctrlKey: true, altKey: true, shiftKey: true })
+    // Windows sends AltGr as Ctrl-Alt.
+    fireEvent.keyDown(element()!, { key: 'AltGraph', code: 'AltRight', ctrlKey: true, altKey: true })
+    fireEvent.keyDown(element()!, { key: 'Backspace', ctrlKey: true, altKey: true })
+    fireEvent.keyUp(element()!, { key: 'AltGraph', code: 'AltRight' })
     expect(ids()).toEqual(before)
     // Once resolved, the held keys' repeats leave the next suggestion alone.
     fireEvent.keyDown(element()!, { key: 'Backspace', ctrlKey: true, altKey: true })
@@ -294,25 +297,25 @@ describe('DocEditor suggestions', () => {
     await waitFor(() => expect(viewer.element()?.querySelector('.pulpo-suggestion-insert')).toBeTruthy())
     const viewerIds = () => listSuggestions(viewer.editor().state.doc).map((hunk) => hunk.id)
     const shown = viewerIds()
-    viewer.editor().commands.setTextSelection(listSuggestions(viewer.editor().state.doc)[0]!.from + 1)
-    fireEvent.keyDown(viewer.element()!, { key: 'Enter', ctrlKey: true, altKey: true })
+    const next = viewer.view.getByRole('button', { name: 'Next suggestion' })
+    fireEvent.click(next)
+    await viewer.view.findByRole('dialog', { name: 'Suggestion' })
+    next.focus()
+    fireEvent.keyDown(next, { key: 'Enter', ctrlKey: true, altKey: true })
     expect(viewerIds()).toEqual(shown)
   })
 
-  it('keeps a line break before the suggestion rejected with the shortcut', async () => {
-    const { element, editor } = mount(serverWith([
-      { type: 'paragraph', content: [
-        { type: 'text', text: 'First line' },
-        { type: 'hardBreak' },
-        { type: 'text', text: 'new words', marks: [insertMark('added')] },
-        { type: 'text', text: ' tail' },
-      ] },
-    ]))
+  it('takes the shortcuts with Ctrl-Alt reported as AltGraph, as Firefox does, and away from suggestions', async () => {
+    const server = suggestingServer()
+    const { element, editor } = mount(server)
     await waitFor(() => expect(element()?.querySelector('.pulpo-suggestion-insert')).toBeTruthy())
-    editor().commands.setTextSelection(listSuggestions(editor().state.doc)[0]!.from)
-    fireEvent.keyDown(element()!, { key: 'Backspace', ctrlKey: true, altKey: true })
-    const paragraph = editor().state.doc.firstChild!
-    expect(paragraph.content.content.map((node) => node.isText ? node.text : node.type.name)).toEqual(['First line', 'hardBreak', ' tail'])
+    const [first, ...rest] = listSuggestions(editor().state.doc)
+    editor().commands.setTextSelection(first!.from + 1)
+    fireEvent.keyDown(element()!, { key: 'Enter', ctrlKey: true, altKey: true, modifierAltGraph: true })
+    expect(listSuggestions(editor().state.doc).map((hunk) => hunk.id)).toEqual(rest.map((hunk) => hunk.id))
+    // With no suggestion at the cursor the keys do nothing, rather than Backspace deleting.
+    editor().commands.setTextSelection(1)
+    expect(fireEvent.keyDown(element()!, { key: 'Backspace', ctrlKey: true, altKey: true })).toBe(false)
   })
 
   it('leaves focus on a control outside the review when resolving', async () => {

@@ -173,18 +173,25 @@ try {
     editor.view.focus()
     editor.commands.setTextSelection(editor.view.posAtDOM(editor.view.dom.querySelector('[data-suggestion-id="afterbreak"]'), 0))
   })
-  await page.keyboard.down('ControlOrMeta')
-  await page.keyboard.down('Alt')
-  await page.keyboard.down('Backspace')
-  await page.keyboard.down('Backspace')
-  await page.keyboard.up('Backspace')
-  await page.keyboard.up('Alt')
-  await page.keyboard.up('ControlOrMeta')
-  const lines = await page.evaluate(() => {
+  const holdReject = async () => {
+    await page.keyboard.down('ControlOrMeta')
+    await page.keyboard.down('Alt')
+    await page.keyboard.down('Backspace')
+    await page.keyboard.down('Backspace')
+    await page.keyboard.up('Backspace')
+    await page.keyboard.up('Alt')
+    await page.keyboard.up('ControlOrMeta')
+  }
+  const lines = () => page.evaluate(() => {
     const line = [...document.querySelectorAll('.pulpo-doc-editor p')].find((paragraph) => paragraph.textContent.startsWith('Line one'))
     return { text: line.textContent, breaks: line.querySelectorAll('br:not(.ProseMirror-trailingBreak)').length, adjacent: Boolean(line.querySelector('[data-suggestion-id="adjacent"]')) }
   })
-  assert.deepEqual(lines, { text: 'Line onehere tail.', breaks: 1, adjacent: true })
+  await holdReject()
+  assert.deepEqual(await lines(), { text: 'Line onehere tail.', breaks: 1, adjacent: true })
+  // With no suggestion left at the cursor, the keys leave the line break alone too.
+  await page.keyboard.press('ControlOrMeta+Alt+Backspace')
+  await holdReject()
+  assert.deepEqual(await lines(), { text: 'Line one tail.', breaks: 1, adjacent: false })
 
   // On a touch screen, tapping another suggestion moves the card at once.
   const touch = await browser.newPage({ viewport: { width: 1000, height: 600 }, hasTouch: true })

@@ -26,7 +26,9 @@ export function cardSpot(view: EditorView, hunk: SuggestionHunk, anchor: number 
   const start = view.coordsAtPos(hunk.from, 1)
   const end = view.coordsAtPos(hunk.to, -1)
   const last = Math.max(start.bottom, end.bottom)
-  const visibleBottom = Math.min(scrollParent(view.dom)?.getBoundingClientRect().bottom ?? Infinity, window.innerHeight)
+  // The visual viewport leaves out an on-screen keyboard.
+  const viewport = window.visualViewport
+  const visibleBottom = Math.min(scrollParent(view.dom)?.getBoundingClientRect().bottom ?? Infinity, viewport ? viewport.offsetTop + viewport.height : window.innerHeight)
   const line = anchor === null || last + CARD_ROOM <= visibleBottom ? last : view.coordsAtPos(Math.min(Math.max(anchor, hunk.from), hunk.to)).bottom
   return { top: (last - line > CARD_REACH ? line : last) + CARD_GAP, left: start.left }
 }

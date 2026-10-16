@@ -4,7 +4,7 @@ import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import { Plugin, PluginKey, Selection, type EditorState } from '@tiptap/pm/state'
 import { Extension, useEditorState, type Editor } from '@tiptap/react'
 import { ui, uit } from '@/i18n/ui'
-import { hasPrimaryModifier } from '../browser/shortcuts'
+import { hasPrimaryModifier, isAppleShortcut } from '../browser/shortcuts'
 import { SUGGESTION_REVIEW_META } from './suggestion-typing'
 
 const hunkCache = new WeakMap<ProseMirrorNode, SuggestionHunk[]>()
@@ -66,11 +66,12 @@ export function describeHunk(hunk: Pick<SuggestionHunk, 'inserted' | 'deleted'>)
 const HOVER_GRACE_MS = 250
 
 /**
- * The card's shortcuts: Mod-Alt-Enter accepts and Mod-Alt-Backspace rejects. Not with AltGr, which
- * Windows reports as Ctrl-Alt: someone typing ą or € may still hold it when they press Backspace.
+ * The card's shortcuts: Mod-Alt-Enter accepts and Mod-Alt-Backspace rejects. Not while AltGr is held
+ * (`altGraph`), which Windows sends as Ctrl-Alt: someone typing ą or € may still hold it when they
+ * press Backspace.
  */
-export function suggestionShortcut(event: globalThis.KeyboardEvent): SuggestionAction | null {
-  if (!event.altKey || event.shiftKey || !hasPrimaryModifier(event) || event.getModifierState('AltGraph')) return null
+export function suggestionShortcut(event: globalThis.KeyboardEvent, altGraph: boolean): SuggestionAction | null {
+  if (!event.altKey || event.shiftKey || !hasPrimaryModifier(event) || altGraph) return null
   return event.key === 'Enter' ? 'accept' : event.key === 'Backspace' ? 'reject' : null
 }
 
@@ -155,6 +156,8 @@ export function useSuggestionReview(editor: Editor, onResolved?: () => void) {
   const hoverTimer = useRef<number | undefined>(undefined)
   // The hunk whose card is showing, for the pointer handlers.
   const shownId = useRef<string | null>(null)
+  // Whether AltGr is held. Firefox reports any Ctrl-Alt as AltGraph, so this goes by the key.
+  const altGraph = useRef(false)
 
   useEffect(() => {
     const ids = hunks.map((hunk) => hunk.id).join(',')
@@ -216,6 +219,25 @@ export function useSuggestionReview(editor: Editor, onResolved?: () => void) {
     if (dismissedId && dismissedId !== cursorId) setDismissedId(null)
   }, [cursorId, dismissedId])
 
+  useEffect(() => {
+    // The shortcuts use Cmd on Apple platforms, so their right Option key is no AltGr to avoid.
+    if (isAppleShortcut()) return
+    const track = (event: globalThis.KeyboardEvent) => {
+      if (event.code === 'AltRight') altGraph.current = event.type === 'keydown'
+    }
+    const release = () => {
+      altGraph.current = false
+    }
+    window.addEventListener('keydown', track, true)
+    window.addEventListener('keyup', track, true)
+    window.addEventListener('blur', release)
+    return () => {
+      window.removeEventListener('keydown', track, true)
+      window.removeEventListener('keyup', track, true)
+      window.removeEventListener('blur', release)
+    }
+  }, [])
+
   const pointed = hover ? hunks.find((hunk) => hunk.id === hover.id) : undefined
   const hovered = hover && pointed && hoverHolds(hover, pointed, cursorId, cursorPos) ? pointed : undefined
   const atCursor = cursorId === dismissedId ? undefined : hunks.find((hunk) => hunk.id === cursorId)
@@ -266,11 +288,12 @@ export function useSuggestionReview(editor: Editor, onResolved?: () => void) {
       setDismissedId(cursorNow)
       return true
     }
-    const action = suggestionShortcut(event)
+    const action = suggestionShortcut(event, altGraph.current)
+    if (!action || !editor.isEditable) return false
+    // The keys do nothing else: held down, they would go on to the next suggestion, and with none
+    // at the cursor, Backspace would delete a line break before it.
     const target = hoveredNow ?? cursorNow
-    if (!action || !target || !editor.isEditable) return false
-    // Holding the keys down would go on to resolve the next suggestion.
-    if (!event.repeat) resolve((ref) => ref.id === target, action)
+    if (target && !event.repeat) resolve((ref) => ref.id === target, action)
     return true
   }
   useLayoutEffect(() => {
