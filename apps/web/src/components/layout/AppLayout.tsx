@@ -229,7 +229,6 @@ export function AppLayout() {
             !adminChatView && sidebarCollapsed && 'desktop-sidebar-collapsed',
           )}
         >
-          <BannerBar />
           {!adminChatView && <button
             className="mobile-sidebar-opener absolute left-2 top-2 z-[21] size-8 cursor-pointer items-center justify-center rounded-lg hover:bg-accent"
             onClick={() => setMobileOpen((open) => !open)}
@@ -275,7 +274,8 @@ export function AppLayout() {
             onWidthChange={changeSidebarWidth}
           />}
           <SidePanelLayout mobile={mobile} full={panelFull} enabled={!adminChatView}>
-            <main className={cn('app-main min-w-0 flex-1 overflow-hidden', panelFull && 'hidden')}>
+            <main className={cn('app-main relative min-w-0 flex-1 overflow-hidden', panelFull && 'hidden')}>
+              <BannerBar />
               <Suspense fallback={<div className="h-full bg-background" aria-label={ui("Loading view")} />}>
                 <Outlet />
               </Suspense>

@@ -9,7 +9,7 @@ import { registerRestoreUploadRoutes } from './restore-upload-routes.js'
 import { and, desc, eq, gt, inArray, isNull, lt, ne, or, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { agentSettingsSchema, backupSettingsTestInputSchema, backupSettingsUpdateSchema, dictationSettingsSchema, episodicMemorySettingsSchema, episodicMemoryStatisticsRangeSchema, personalizationSettingsSchema, secretRevealInputSchema, webToolProviderSchema, webToolsSettingsSchema } from '@pulpo/contracts'
+import { agentSettingsSchema, backupSettingsTestInputSchema, bannerCreateInputSchema, bannerUpdateInputSchema, bannerWindowIsValid, backupSettingsUpdateSchema, dictationSettingsSchema, episodicMemorySettingsSchema, episodicMemoryStatisticsRangeSchema, personalizationSettingsSchema, secretRevealInputSchema, webToolProviderSchema, webToolsSettingsSchema } from '@pulpo/contracts'
 import { requireAdmin } from '../auth/service.js'
 import { requireSecretRevealAuth } from '../auth/sensitive-action.js'
 import { db } from '../database/client.js'
@@ -439,10 +439,7 @@ export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise
 
   app.post('/api/admin/banners', async (request, reply) => {
     const admin = requireAdmin(request)
-    const input = z.object({
-      type: z.enum(['info', 'warning', 'error']).default('info'), content: z.string().trim().min(1).max(2_000),
-      dismissible: z.boolean().default(true), startsAt: z.iso.datetime().nullable().default(null), endsAt: z.iso.datetime().nullable().default(null),
-    }).parse(request.body)
+    const input = bannerCreateInputSchema.parse(request.body)
     const [created] = await db.insert(banners).values({ id: newId(), ...input, startsAt: input.startsAt ? new Date(input.startsAt) : null, endsAt: input.endsAt ? new Date(input.endsAt) : null }).returning()
     await db.insert(auditEvents).values({ id: newId(), actorUserId: admin.id, action: 'banner.create', targetType: 'banner', targetId: created!.id })
     reply.code(201)
@@ -452,10 +449,12 @@ export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise
   app.patch('/api/admin/banners/:id', async (request) => {
     const admin = requireAdmin(request)
     const { id } = request.params as { id: string }
-    const input = z.object({
-      type: z.enum(['info', 'warning', 'error']).optional(), content: z.string().trim().min(1).max(2_000).optional(),
-      dismissible: z.boolean().optional(), startsAt: z.iso.datetime().nullable().optional(), endsAt: z.iso.datetime().nullable().optional(),
-    }).parse(request.body)
+    const input = bannerUpdateInputSchema.parse(request.body)
+    const [existing] = await db.select({ startsAt: banners.startsAt, endsAt: banners.endsAt }).from(banners).where(eq(banners.id, id))
+    if (!existing) throw notFound('Banner')
+    const startsAt = input.startsAt === undefined ? existing.startsAt?.toISOString() : input.startsAt
+    const endsAt = input.endsAt === undefined ? existing.endsAt?.toISOString() : input.endsAt
+    if (!bannerWindowIsValid(startsAt, endsAt)) throw new AppError(400, 'invalid_banner_window', 'Banner must end after it starts')
     const [updated] = await db.update(banners).set({
       ...input,
       startsAt: input.startsAt === undefined ? undefined : input.startsAt ? new Date(input.startsAt) : null,
