@@ -7,20 +7,62 @@ const mocks = vi.hoisted(() => ({
   set: vi.fn(),
   publish: vi.fn(),
   events: [] as string[],
+  xrange: vi.fn(),
 }))
 vi.mock('../database/client.js', () => ({ db: { update: () => ({ set: mocks.set }) } }))
 vi.mock('../redis.js', () => ({ redis: {
   publish: mocks.publish,
+  xrange: mocks.xrange,
   pipeline: () => ({
     xadd: vi.fn(), expire: vi.fn(),
     publish: (_channel: string, value: string) => mocks.events.push(value), exec: vi.fn(),
   }),
 } }))
 vi.mock('../config.js', () => ({ getConfig: () => ({ RESPONSE_EVENT_RETENTION_SECONDS: 3600 }) }))
-const { createResponseEventPublisher, publishSnapshot } = await import('./events.js')
+const { createResponseEventPublisher, publishSnapshot, readResponseEvents } = await import('./events.js')
 const at = (seconds: number) => new Date(Date.UTC(2026, 8, 6, 0, 0, seconds))
 const event = (type: string, payload: unknown, seconds: number): ResponseEvent => ({
   responseId: 'response-1', sequence: seconds, type, payload, emittedAt: at(seconds).toISOString(),
+})
+
+describe('response event replay', () => {
+  const entry = (sequence: number, fields?: string[]) => [`${sequence}-0`, fields ?? [
+    'sequence', String(sequence), 'event', JSON.stringify(event('response.output_text.delta', { delta: 'text' }, sequence)),
+  ]]
+
+  it('returns only newer events in stream order and does not decode acknowledged payloads', async () => {
+    mocks.xrange.mockResolvedValue([
+      entry(1, ['event', 'invalid old JSON', 'sequence', '1']),
+      entry(2), entry(3), entry(4),
+    ])
+    const result = await readResponseEvents('response-1', 2)
+    expect(result.map((value) => value.sequence)).toEqual([3, 4])
+    expect(mocks.xrange).toHaveBeenCalledWith('pulpo:response:response-1:events', '-', '+', 'COUNT', 10_000)
+  })
+
+  it('falls back to payload sequences for missing, noncanonical and unsafe stored sequences', async () => {
+    const serialized = JSON.stringify(event('test', {}, 3))
+    mocks.xrange.mockResolvedValue([
+      entry(1, ['event', serialized]),
+      ...['', '-1', '1.5', '01', 'NaN', '9007199254740992'].map((value) => entry(1, ['sequence', value, 'event', serialized])),
+      entry(2, ['sequence', '4', 'event', JSON.stringify(event('test', {}, 1))]),
+    ])
+    expect(await readResponseEvents('response-1', 2)).toHaveLength(7)
+  })
+
+  it('retains JSON errors for relevant entries and legacy entries without a valid sequence', async () => {
+    mocks.xrange.mockResolvedValue([entry(3, ['sequence', '3', 'event', 'invalid JSON'])])
+    await expect(readResponseEvents('response-1', 2)).rejects.toBeInstanceOf(SyntaxError)
+    mocks.xrange.mockResolvedValue([entry(1, ['event', 'invalid JSON'])])
+    await expect(readResponseEvents('response-1', 2)).rejects.toBeInstanceOf(SyntaxError)
+  })
+
+  it('handles empty streams and absent or null event payloads', async () => {
+    mocks.xrange.mockResolvedValue([])
+    expect(await readResponseEvents('response-1', 0)).toEqual([])
+    mocks.xrange.mockResolvedValue([entry(1, ['sequence', '1']), entry(2, ['event', 'null'])])
+    expect(await readResponseEvents('response-1', 0)).toEqual([])
+  })
 })
 
 beforeEach(() => {
