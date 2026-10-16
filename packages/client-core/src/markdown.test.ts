@@ -210,4 +210,9 @@ describe('linkMarkdownImages', () => {
     const markdown = '`![a](u)`\n\n```md\n![b](u)\n```\n\n\\![c](u)'
     expect(linkMarkdownImages(markdown)).toBe(markdown)
   })
+
+  it('rewrites image openers before their link destination streams in', () => {
+    expect(linkMarkdownImages('Chart: ![alt')).toBe('Chart: [🖼 alt')
+    expect(linkMarkdownImages('![]')).toBe('[🖼 Image]')
+  })
 })
