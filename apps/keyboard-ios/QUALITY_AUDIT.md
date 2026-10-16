@@ -625,6 +625,17 @@ rows and measures correction slots rather than new useful-completion savings.
 The candidate is rejected; exact original and diagnostic evidence is retained in
 `audits/completion-punctuation-r22/` outside source/test discovery.
 
+R25 stops before any production candidate: its experimental ownership oracle
+rejects safe double-space separator formatting even though every inherited letter
+survives. The original production sources and entire fuzzer are byte-restored.
+Baseline development remains **47/87 per timing**, six unavailable cases per
+timing; the four timings repeat the same tasks. All 53 added child functions are
+archived inactive, not added to the parent's 439-function suite. Seventy-one of
+92 legacy inputs lack original caret oracles; a strict fresh decoder and the
+unchanged negative domain control are preserved. Both R16 and R25 sealed payloads
+remain unread/unexecuted, so there is no candidate or fresh gain. See
+`audits/r25-context-proof/README.md` for exact artifacts and restoration proof.
+
 The subsequent R24 companion change makes an open editor follow live system text
 size and lets installed-keyboard guidance wrap and scroll fully above the
 keyboard. Parent checks pass **17 distinct native methods / 18 executions** with
