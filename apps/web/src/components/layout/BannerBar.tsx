@@ -1,22 +1,43 @@
 import { useEffect, useState } from 'react'
-import { X } from 'lucide-react'
+import type { Banner } from '@pulpo/contracts'
 import { apiRequest } from '@/lib/api'
-import { cn } from '@/lib/utils'
 import { useAuth } from '@/stores/auth'
 import { isDesktopRuntime } from '@/lib/runtime'
-import { ui } from '@/i18n/ui'
+import { BannerCard } from './BannerCard'
+import { dismissBanner, pruneDismissedBannerIds, readDismissedBannerIds } from './banner-dismissals'
 
-interface Banner { id: string; type: string; content: string; dismissible: boolean }
-
+/**
+ * Floats active admin banners over the top of the main column, just below page headers.
+ * z-25 keeps them above the chat header (z-20) and under the mobile drawer backdrop (z-30).
+ */
 export function BannerBar() {
   const [banners, setBanners] = useState<Banner[]>([])
   const instanceReady = useAuth((state) => state.instanceReady)
   const networkReady = !isDesktopRuntime() || instanceReady
   useEffect(() => {
     if (!networkReady) return
-    void apiRequest<{ data: Banner[] }>('/api/banners').then((result) => setBanners(result.data)).catch(() => undefined)
+    void apiRequest<{ data: Banner[] }>('/api/banners').then((result) => {
+      pruneDismissedBannerIds(result.data.map((banner) => banner.id))
+      const dismissed = readDismissedBannerIds()
+      setBanners(result.data.filter((banner) => !banner.dismissible || !dismissed.has(banner.id)))
+    }).catch(() => undefined)
   }, [networkReady])
-  return <div className="absolute inset-x-0 top-0 z-30 space-y-px">{banners.map((banner) => <div key={banner.id} className={cn('flex min-h-9 items-center justify-center gap-3 px-4 py-2 text-center text-xs', banner.type === 'error' ? 'bg-destructive text-destructive-foreground' : banner.type === 'warning' ? 'bg-amber-500 text-black' : 'bg-primary text-primary-foreground')}>
-    <span>{banner.content}</span>{banner.dismissible && <button aria-label={ui("Dismiss banner")} onClick={() => setBanners((items) => items.filter((item) => item.id !== banner.id))}><X className="size-3.5" /></button>}
-  </div>)}</div>
+  const dismiss = (id: string) => {
+    dismissBanner(id)
+    setBanners((items) => items.filter((item) => item.id !== id))
+  }
+  if (banners.length === 0) return null
+  return (
+    <div className="site-banners pointer-events-none absolute inset-x-0 top-14 z-[25] flex flex-col items-center gap-2 px-3">
+      {banners.map((banner) => (
+        <BannerCard
+          key={banner.id}
+          type={banner.type}
+          content={banner.content}
+          onDismiss={banner.dismissible ? () => dismiss(banner.id) : undefined}
+          className="site-banner-enter pointer-events-auto max-w-2xl"
+        />
+      ))}
+    </div>
+  )
 }

@@ -11,6 +11,7 @@ import {
   Ticket,
   Mic,
   BrainCircuit,
+  Megaphone,
 } from 'lucide-react'
 import { AuthenticationSection, GeneralSection, InterfaceSection } from './sections-general'
 import { DatabaseSection } from './sections-data'
@@ -21,6 +22,7 @@ import { PersonalizationSection } from './sections-personalization'
 import { InviteCodesSection } from './sections-invites'
 import { DictationSection } from './sections-dictation'
 import { EpisodicMemorySection } from './sections-episodic-memory'
+import { BannersSection } from './sections-banners'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/stores/auth'
 import { ui } from '@/i18n/ui'
@@ -30,6 +32,7 @@ const SECTIONS = [
   { id: 'auth', label: "Authentication", icon: Lock, component: AuthenticationSection },
   { id: 'interface', label: "Interface", icon: LayoutGrid, component: InterfaceSection },
   { id: 'personalization', label: "Personalization", icon: Sparkles, component: PersonalizationSection },
+  { id: 'banners', label: "Banners", icon: Megaphone, component: BannersSection },
   { id: 'ocr', label: "OCR", icon: FileSearch, component: OcrSection },
   { id: 'dictation', label: "Dictation", icon: Mic, component: DictationSection },
   { id: 'agent', label: "Agent", icon: Bot, component: AgentSection },
