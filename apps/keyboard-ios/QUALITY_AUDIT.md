@@ -42,8 +42,10 @@ acceptance. The full failed round is retained without retuning or rerunning;
 whole-feature publication remains pending. See `audits/reset-integration-r48/`.
 The separately versioned R49 runner passes 28 supplied and five independent
 Foundation-only filesystem probes. A new source-blind author has sealed 15
-families, 45 instances and 452 actions; independent preexecution review found
-missing observed-call/status accounting and is completing its full report.
+families, 45 instances and 452 actions; independent preexecution review rejects
+the exact v1 for missing observed-call/status accounting. A separately versioned
+reporting correction preserves every case/oracle and is under new independent
+review; the original rejection remains retained.
 No R49 product build or execution has occurred. See `audits/reset-integration-r49/`.
 
 Account sign-in cancellation now revokes pending publication before task start
