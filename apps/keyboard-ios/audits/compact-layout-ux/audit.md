@@ -57,3 +57,37 @@ One independent author also performs two read-only reviews. Exact agent/token, m
 Total recorded build/test command time is approximately 8.8 minutes from output-file creation/update times; timing metadata is approximate and includes overlapping infrastructure effects, not a human-effort estimate. All commands finalize with diagnostics collection disabled; none requires termination for a finalization stall.
 
 Simulator ownership is released after these serialized commands finish. iPhone18Pro 7E1D7979-7307-4C53-8466-BB41154B383C remains booted with Pulpo enabled and Full Access set by setup. The test ends after Spanish menu selection and Q input. iPhone17 and E1C6B89D are never driven. No physical device is used, nothing is pushed, no parent checkout is edited, and no background simulator command remains active. PR782 is registered with the thread and is not watched.
+
+## Parent integration verification
+
+The parent first runs the exact two real lower-control methods against published
+`9ae111aa` production: **0/2 pass**, with finalized failures opening the language
+menu and dictation UI. The test fixture is copied before production integration
+and retained externally as `/tmp/pulpo-compact-current-baseline.fixture.swift`.
+The finalized result is `/tmp/pulpo-compact-current-baseline.xcresult` (exit65).
+
+After importing the frozen candidate, a separate iPhone17 simulator
+(`1EDC5D9A-7E25-432A-B5B1-9A8B702306A7`, iOS27) passes **76/76 native methods**,
+zero skips, failures or runtime warnings, in the finalized
+`/tmp/pulpo-compact-parent-integrated.xcresult` (exit0, approximately 271 seconds).
+Both matrix methods, both real lower-control preview methods and the installed
+lower-language-menu/Spanish typing method pass together. The same command also
+covers key/Shift touch, alternate strips and typing, one-handed geometry and
+preview workflow, emoji search, installed tapping/swiping, language switching,
+unused-bar typing, phone input, draft navigation and dismissal/refocus. This
+overlaps previous runs; counts are not additive.
+
+The parent independently compares all per-case JSON objects, including IDs,
+checks, failures, control identities, key widths, root/host geometry and safe-area
+insets: **27 development and 12 fresh reports exactly equal** the retained final
+agent reports. Totals remain 151,608 and 69,004 implemented assertion gates,
+respectively, with zero failures. This replay supplies integration evidence,
+not new blind gains. The broader frozen fresh prose acceptance remains
+**incomplete**, for the runner limitations described above.
+
+The parent installed-menu success supplements the agent's original combined
+82/83 outcome and four subsequent isolated successes; it does not erase the
+original failed method or establish its cause. Core, scripts and dictionary bytes
+are unchanged by this UI-only batch; the published 438 core + three service and
+28 tooling checks are inherited evidence, not newly rerun here. No physical-device,
+VoiceOver, audio-capture or complete Dynamic Type acceptance is claimed.

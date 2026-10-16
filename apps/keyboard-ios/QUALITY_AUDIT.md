@@ -499,6 +499,28 @@ methods, phone entry and setup-status preview behavior. These overlap the agent'
 script and dictionary trees remain unchanged from published `e1865f3f`.
 See `audits/setup-settings-native-sweep.md` and `audits/try-it-draft-followup.md`.
 
+### Compact controls and suggestion boundaries
+
+Enabled bar controls now retain their UIKit hit targets at their lower edge;
+previously the bottom seven points could type a letter instead of opening
+language, microphone, Settings, Undo or search Back. Suggestion slots also end
+at the language control's actual leading edge, removing a two-point overlap.
+Empty/disabled slots and unused bar background still forward into the key grid.
+
+The parent reproduces both real lower-control failures on published `9ae111aa`
+(0/2 pass), then finalizes **76/76 native methods passing** on the integrated
+candidate, including installed language selection/typing, installed geometry and
+swiping, touch/Shift/alternates, search, one-handed layouts, phone input and draft
+navigation/dismissal. All 27 development and 12 fresh per-case matrix reports
+exactly match retained agent outputs: 151,608 and 69,004 implemented assertion
+gates, zero failures. These are correlated geometry/action checks, not independent
+users or complete execution of each frozen prose journey; broader fresh
+acceptance remains incomplete. The agent's original 82/83 combined run retains
+an unexplained installed-menu failure despite subsequent isolated and parent
+successes. Core/scripts/assets are unchanged. See
+`audits/compact-layout-ux/audit.md` for source review, red/green evidence,
+test-host corrections and simulator/accessibility limits.
+
 ### Rejected technical-token expansion
 
 The first technical-text candidate makes every whitespace token containing a
