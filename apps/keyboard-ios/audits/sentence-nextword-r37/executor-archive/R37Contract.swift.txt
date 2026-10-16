@@ -1,0 +1,223 @@
+import Foundation
+import CoreFoundation
+@testable import KeyboardCore
+
+struct R37Failure: Error, CustomStringConvertible {
+  let description: String
+  init(_ description: String) { self.description = description }
+}
+
+/// Deliberately small, fail-closed interpreter for the immutable public schema.
+/// All schema nodes are interpreted before JSONDecoder or any model/document creation.
+struct R37Schema {
+  let root: [String: Any]
+  func validate(_ value: Any, against node: [String: Any]? = nil, path: String = "$") throws {
+    let rule = node ?? root
+    func fail(_ why: String) throws -> Never { throw R37Failure("\(path): \(why)") }
+    if let ref = rule["$ref"] as? String {
+      guard ref.hasPrefix("#/$defs/"), let defs = root["$defs"] as? [String: Any],
+            let target = defs[String(ref.dropFirst(8))] as? [String: Any] else { try fail("unsupported schema reference") }
+      try validate(value, against: target, path: path)
+      return
+    }
+    if let alternatives = rule["oneOf"] as? [[String: Any]] {
+      let matches = alternatives.filter { (try? validate(value, against: $0, path: path)) != nil }.count
+      guard matches == 1 else { try fail("expected exactly one action schema, matched \(matches)") }
+    }
+    func same(_ lhs: Any, _ rhs: Any) -> Bool {
+      // Distinguish JSON booleans from numbers and preserve exact Unicode bytes.
+      guard let a = try? JSONSerialization.data(withJSONObject: lhs, options: [.fragmentsAllowed, .sortedKeys]),
+            let b = try? JSONSerialization.data(withJSONObject: rhs, options: [.fragmentsAllowed, .sortedKeys]) else { return false }
+      return a == b
+    }
+    if let exact = rule["const"], !same(value, exact) { try fail("invalid constant") }
+    if let values = rule["enum"] as? [Any], !values.contains(where: { same(value, $0) }) { try fail("invalid enum") }
+    if let type = rule["type"] as? String {
+      switch type {
+      case "object":
+        guard let object = value as? [String: Any], let properties = rule["properties"] as? [String: Any],
+              rule["additionalProperties"] as? Bool == false else { try fail("expected closed object") }
+        for key in rule["required"] as? [String] ?? [] where object[key] == nil { try fail("missing \(key)") }
+        for (key, child) in object {
+          guard let childRule = properties[key] as? [String: Any] else { try fail("unknown field \(key)") }
+          try validate(child, against: childRule, path: "\(path).\(key)")
+        }
+      case "array":
+        guard let array = value as? [Any], let item = rule["items"] as? [String: Any] else { try fail("expected array") }
+        if let min = rule["minItems"] as? Int, array.count < min { try fail("too few items") }
+        if let max = rule["maxItems"] as? Int, array.count > max { try fail("too many items") }
+        if rule["uniqueItems"] as? Bool == true {
+          for i in array.indices { for j in 0..<i where same(array[i], array[j]) { try fail("duplicate item") } }
+        }
+        for (i, child) in array.enumerated() { try validate(child, against: item, path: "\(path)[\(i)]") }
+      case "string":
+        guard let text = value as? String else { try fail("expected string") }
+        if let min = rule["minLength"] as? Int, text.unicodeScalars.count < min { try fail("string too short") }
+      case "boolean":
+        guard let number = value as? NSNumber, CFGetTypeID(number) == CFBooleanGetTypeID() else { try fail("expected boolean") }
+      case "integer":
+        guard let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(),
+              number.doubleValue.isFinite, number.doubleValue.rounded() == number.doubleValue,
+              number.doubleValue <= Double(Int.max), number.doubleValue >= 0 else { try fail("expected nonnegative bounded integer") }
+        if let min = rule["minimum"] as? Int, number.doubleValue < Double(min) { try fail("below minimum") }
+        if let max = rule["maximum"] as? Int, number.doubleValue > Double(max) { try fail("above maximum") }
+      default: try fail("unsupported schema type \(type)")
+      }
+    }
+  }
+}
+
+struct R37Input: Decodable {
+  let schemaVersion: Int
+  let cohort: String
+  let cases: [R37Case]
+  let equivalences: [R37Equivalence]
+  static let modes = ["en_US", "es", "en_es"]
+  static func load(data: Data, schema: Data) throws -> R37Input {
+    guard let root = try JSONSerialization.jsonObject(with: schema) as? [String: Any] else { throw R37Failure("schema must be object") }
+    let json = try JSONSerialization.jsonObject(with: data)
+    try R37DuplicateKeyScanner(data: data).check()
+    try R37Schema(root: root).validate(json)
+    let input = try JSONDecoder().decode(Self.self, from: data)
+    var ids = Set<String>()
+    for row in input.cases {
+      guard ids.insert(row.id).inserted else { throw R37Failure("duplicate case id \(row.id)") }
+      // Reject seams that split a grapheme, including combining marks / ZWJ / CRLF.
+      let full = row.prefix + row.selected + row.suffix
+      let chars = Array(full)
+      guard chars.count == row.prefix.count + row.selected.count + row.suffix.count,
+            r37Exact(String(chars.prefix(row.prefix.count)), row.prefix),
+            r37Exact(String(chars.dropFirst(row.prefix.count).prefix(row.selected.count)), row.selected) else {
+        throw R37Failure("\(row.id): prefix/selection/suffix must meet on Character boundaries")
+      }
+      if row.route == "completion" {
+        guard !row.typed.isEmpty else { throw R37Failure("\(row.id): completion requires typed") }
+      } else if !row.typed.isEmpty { throw R37Failure("\(row.id): typed only for completion") }
+      for mode in modes {
+        let gold = row.acceptableByMode[mode]!
+        if row.oracle == "scored" {
+          guard (1...6).contains(gold.count), gold.allSatisfy({ !$0.contains(where: \.isWhitespace) }) else { throw R37Failure("\(row.id): scored requires 1–6 exact single words per mode") }
+        } else if !gold.isEmpty { throw R37Failure("\(row.id): nonasserting rows require empty sets") }
+      }
+      if row.route != "control" {
+        guard row.selected.isEmpty, row.prefix.hasSuffix(" "), row.actions.count == 1,
+              row.actions[0].action == "observe", row.actions[0].expect == nil else {
+          throw R37Failure("\(row.id): primary/completion routes require empty selection, ASCII-space prefix and sole observe action")
+        }
+      } else {
+        guard row.oracle == "control", row.actions.allSatisfy({ $0.expect != nil }) else {
+          throw R37Failure("\(row.id): controls require a complete expected document/range/primitive count on every action")
+        }
+      }
+      var preflightDocument = full
+      var captureCount = 0
+      for action in row.actions {
+        if action.action == "hostMove" { try r37Bounds(preflightDocument, caret: action.caret!, selection: action.selectionLength!) }
+        if action.action == "replayCapturedSlot", action.capture! >= captureCount { throw R37Failure("\(row.id): capture index not established by an earlier observe") }
+        if action.action == "observe", row.route == "control" {
+          guard let count = action.expect?.slotCount else { throw R37Failure("\(row.id): control observe requires exact slotCount for preflight capture bounds") }
+          captureCount += count
+        }
+        if action.action == "hostReplace" {
+          try r37Bounds(action.document!, caret: action.caret!, selection: action.selectionLength!)
+        }
+        if let expected = action.expect {
+          try r37Bounds(expected.document, caret: expected.caret, selection: expected.selectionLength)
+          preflightDocument = expected.document
+        }
+      }
+    }
+    for pair in input.equivalences {
+      guard ids.contains(pair.left), ids.contains(pair.right), pair.left != pair.right else { throw R37Failure("equivalence IDs must name distinct existing cases") }
+    }
+    if input.cohort == "fresh" {
+      guard input.cases.count == 72, input.cases.allSatisfy({ $0.oracle != "control" && $0.route == "nextword" }) else { throw R37Failure("fresh requires 72 nextword prompts, preserving 216 mode rows") }
+      let families = Dictionary(grouping: input.cases, by: \.familyId)
+      guard families.count == 36 else { throw R37Failure("fresh requires 36 families") }
+      for label in ["en", "es", "mixed"] {
+        guard families.values.filter({ $0.allSatisfy { $0.contentLabel == label } }).count == 12 else { throw R37Failure("fresh requires 12 families per content label") }
+      }
+      for rows in families.values {
+        guard rows.count == 2, rows[0].prefix.split(whereSeparator: \.isWhitespace).last.map(String.init) == rows[1].prefix.split(whereSeparator: \.isWhitespace).last.map(String.init),
+              !r37Exact(rows[0].prefix, rows[1].prefix) else { throw R37Failure("fresh family requires two distinct prompts sharing last word") }
+      }
+    }
+    return input
+  }
+}
+struct R37Case: Decodable {
+  let id, familyId, contentLabel, prefix, selected, suffix, route, typed, oracle, rationale: String
+  let acceptableByMode: [String: [String]]
+  let actions: [R37Action]
+}
+struct R37Action: Decodable {
+  let action: String
+  let text, mode, document, policy: String?
+  let caret, selectionLength, index, capture: Int?
+  let callback, newDocumentID, predictions, learnWords: Bool?
+  let expect: R37Expectation?
+}
+struct R37Expectation: Decodable {
+  let document: String
+  let caret, selectionLength, primitiveCount: Int
+  let slotCount, personalCount: Int?
+  let personalDirty: Bool?
+}
+func r37Exact(_ a: String, _ b: String) -> Bool { a.utf8.elementsEqual(b.utf8) }
+func r37Bounds(_ text: String, caret: Int, selection: Int) throws {
+  guard caret >= 0, selection >= 0, caret <= text.count, selection <= text.count - caret else { throw R37Failure("Character range out of bounds: \(caret)+\(selection) / \(text.count)") }
+}
+
+struct R37Equivalence: Decodable { let left, right: String }
+
+/// Foundation accepts repeated keys; reject that ambiguity before decoding.
+private struct R37DuplicateKeyScanner {
+  let data: Data
+  func check() throws {
+    let bytes = Array(data)
+    var cursor = 0
+    func whitespace() { while cursor < bytes.count && [UInt8(9), 10, 13, 32].contains(bytes[cursor]) { cursor += 1 } }
+    func quoted() throws -> String {
+      let start = cursor
+      cursor += 1
+      while cursor < bytes.count {
+        let byte = bytes[cursor]
+        cursor += 1
+        if byte == 92 { cursor += 1 }
+        else if byte == 34 { return try JSONDecoder().decode(String.self, from: Data(bytes[start..<cursor])) }
+      }
+      throw R37Failure("unterminated JSON string")
+    }
+    func value() throws {
+      whitespace()
+      guard cursor < bytes.count else { throw R37Failure("missing JSON value") }
+      switch bytes[cursor] {
+      case 123:
+        cursor += 1; whitespace()
+        if bytes[cursor] == 125 { cursor += 1; return }
+        var keys = Set<Data>()
+        while true {
+          whitespace()
+          let key = try quoted()
+          guard keys.insert(Data(key.utf8)).inserted else { throw R37Failure("duplicate JSON key \(key)") }
+          whitespace(); cursor += 1 // Colon, already checked by JSONSerialization.
+          try value(); whitespace()
+          if bytes[cursor] == 125 { cursor += 1; return }
+          cursor += 1
+        }
+      case 91:
+        cursor += 1; whitespace()
+        if bytes[cursor] == 93 { cursor += 1; return }
+        while true {
+          try value(); whitespace()
+          if bytes[cursor] == 93 { cursor += 1; return }
+          cursor += 1
+        }
+      case 34: _ = try quoted()
+      default:
+        while cursor < bytes.count && ![UInt8(9), 10, 13, 32, 44, 93, 125].contains(bytes[cursor]) { cursor += 1 }
+      }
+    }
+    try value()
+  }
+}

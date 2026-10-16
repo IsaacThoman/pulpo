@@ -1,0 +1,271 @@
+{
+  "schemaVersion": 1,
+  "cohort": "development",
+  "cases": [
+    {
+      "id": "en-modal",
+      "familyId": "polite verb continuation",
+      "contentLabel": "en",
+      "prefix": "Could you please ",
+      "selected": "",
+      "suffix": "",
+      "route": "nextword",
+      "typed": "",
+      "acceptableByMode": {
+        "en_US": [],
+        "es": [],
+        "en_es": []
+      },
+      "oracle": "ambiguous",
+      "rationale": "Exposed development; original en_US acceptable set [\"help\", \"send\", \"check\", \"tell\"]. Nonasserting cross-mode replay: no three-mode gold was supplied.",
+      "actions": [
+        {
+          "action": "observe"
+        }
+      ]
+    },
+    {
+      "id": "en-prep-like",
+      "familyId": "to preceded by like",
+      "contentLabel": "en",
+      "prefix": "I would like to ",
+      "selected": "",
+      "suffix": "",
+      "route": "nextword",
+      "typed": "",
+      "acceptableByMode": {
+        "en_US": [],
+        "es": [],
+        "en_es": []
+      },
+      "oracle": "ambiguous",
+      "rationale": "Exposed development; original en_US acceptable set [\"see\", \"know\", \"visit\", \"have\"]. Nonasserting cross-mode replay: no three-mode gold was supplied.",
+      "actions": [
+        {
+          "action": "observe"
+        }
+      ]
+    },
+    {
+      "id": "en-prep-going",
+      "familyId": "to preceded by going",
+      "contentLabel": "en",
+      "prefix": "They are going to ",
+      "selected": "",
+      "suffix": "",
+      "route": "nextword",
+      "typed": "",
+      "acceptableByMode": {
+        "en_US": [],
+        "es": [],
+        "en_es": []
+      },
+      "oracle": "ambiguous",
+      "rationale": "Exposed development; original en_US acceptable set [\"be\", \"the\", \"visit\", \"make\"]. Nonasserting cross-mode replay: no three-mode gold was supplied.",
+      "actions": [
+        {
+          "action": "observe"
+        }
+      ]
+    },
+    {
+      "id": "es-obligation",
+      "familyId": "que after obligation",
+      "contentLabel": "es",
+      "prefix": "Mañana tengo que ",
+      "selected": "",
+      "suffix": "",
+      "route": "nextword",
+      "typed": "",
+      "acceptableByMode": {
+        "en_US": [],
+        "es": [],
+        "en_es": []
+      },
+      "oracle": "ambiguous",
+      "rationale": "Exposed development; original es acceptable set [\"ir\", \"hacer\", \"salir\", \"trabajar\"]. Nonasserting cross-mode replay: no three-mode gold was supplied.",
+      "actions": [
+        {
+          "action": "observe"
+        }
+      ]
+    },
+    {
+      "id": "es-relative",
+      "familyId": "same que in relative clause",
+      "contentLabel": "es",
+      "prefix": "Esta es la casa que ",
+      "selected": "",
+      "suffix": "",
+      "route": "nextword",
+      "typed": "",
+      "acceptableByMode": {
+        "en_US": [],
+        "es": [],
+        "en_es": []
+      },
+      "oracle": "ambiguous",
+      "rationale": "Exposed development; original es acceptable set [\"quiero\", \"tiene\", \"está\", \"compramos\"]. Nonasserting cross-mode replay: no three-mode gold was supplied.",
+      "actions": [
+        {
+          "action": "observe"
+        }
+      ]
+    },
+    {
+      "id": "es-prep",
+      "familyId": "Spanish local frame",
+      "contentLabel": "es",
+      "prefix": "Vamos a hablar de ",
+      "selected": "",
+      "suffix": "",
+      "route": "nextword",
+      "typed": "",
+      "acceptableByMode": {
+        "en_US": [],
+        "es": [],
+        "en_es": []
+      },
+      "oracle": "ambiguous",
+      "rationale": "Exposed development; original es acceptable set [\"la\", \"los\", \"eso\", \"nuestro\"]. Nonasserting cross-mode replay: no three-mode gold was supplied.",
+      "actions": [
+        {
+          "action": "observe"
+        }
+      ]
+    },
+    {
+      "id": "bi-english-tail",
+      "familyId": "Spanish opening with English local frame",
+      "contentLabel": "mixed",
+      "prefix": "Mañana we need to ",
+      "selected": "",
+      "suffix": "",
+      "route": "nextword",
+      "typed": "",
+      "acceptableByMode": {
+        "en_US": [],
+        "es": [],
+        "en_es": []
+      },
+      "oracle": "ambiguous",
+      "rationale": "Exposed development; original en_es acceptable set [\"get\", \"be\", \"make\", \"go\"]. Nonasserting cross-mode replay: no three-mode gold was supplied.",
+      "actions": [
+        {
+          "action": "observe"
+        }
+      ]
+    },
+    {
+      "id": "bi-spanish-tail",
+      "familyId": "English opening with Spanish local frame",
+      "contentLabel": "mixed",
+      "prefix": "After lunch tenemos que ",
+      "selected": "",
+      "suffix": "",
+      "route": "nextword",
+      "typed": "",
+      "acceptableByMode": {
+        "en_US": [],
+        "es": [],
+        "en_es": []
+      },
+      "oracle": "ambiguous",
+      "rationale": "Exposed development; original en_es acceptable set [\"ir\", \"hacer\", \"salir\", \"hablar\"]. Nonasserting cross-mode replay: no three-mode gold was supplied.",
+      "actions": [
+        {
+          "action": "observe"
+        }
+      ]
+    },
+    {
+      "id": "bi-english-tail2",
+      "familyId": "English local frame after Spanish opener",
+      "contentLabel": "mixed",
+      "prefix": "Por favor could you ",
+      "selected": "",
+      "suffix": "",
+      "route": "nextword",
+      "typed": "",
+      "acceptableByMode": {
+        "en_US": [],
+        "es": [],
+        "en_es": []
+      },
+      "oracle": "ambiguous",
+      "rationale": "Exposed development; original en_es acceptable set [\"please\", \"help\", \"send\", \"tell\"]. Nonasserting cross-mode replay: no three-mode gold was supplied.",
+      "actions": [
+        {
+          "action": "observe"
+        }
+      ]
+    },
+    {
+      "id": "bi-spanish-tail2",
+      "familyId": "Spanish local frame after English opener",
+      "contentLabel": "mixed",
+      "prefix": "Next week vamos a ",
+      "selected": "",
+      "suffix": "",
+      "route": "nextword",
+      "typed": "",
+      "acceptableByMode": {
+        "en_US": [],
+        "es": [],
+        "en_es": []
+      },
+      "oracle": "ambiguous",
+      "rationale": "Exposed development; original en_es acceptable set [\"ver\", \"hacer\", \"tener\", \"ir\"]. Nonasserting cross-mode replay: no three-mode gold was supplied.",
+      "actions": [
+        {
+          "action": "observe"
+        }
+      ]
+    },
+    {
+      "id": "completion-en-control",
+      "familyId": "completion continuity control",
+      "contentLabel": "en",
+      "prefix": "Could you please ",
+      "selected": "",
+      "suffix": "",
+      "route": "completion",
+      "typed": "sen",
+      "acceptableByMode": {
+        "en_US": [],
+        "es": [],
+        "en_es": []
+      },
+      "oracle": "ambiguous",
+      "rationale": "Exposed development; original en_US acceptable set [\"send\"]. Nonasserting cross-mode replay: no three-mode gold was supplied.",
+      "actions": [
+        {
+          "action": "observe"
+        }
+      ]
+    },
+    {
+      "id": "completion-es-control",
+      "familyId": "completion continuity control",
+      "contentLabel": "es",
+      "prefix": "Mañana tengo que ",
+      "selected": "",
+      "suffix": "",
+      "route": "completion",
+      "typed": "tra",
+      "acceptableByMode": {
+        "en_US": [],
+        "es": [],
+        "en_es": []
+      },
+      "oracle": "ambiguous",
+      "rationale": "Exposed development; original es acceptable set [\"trabajar\"]. Nonasserting cross-mode replay: no three-mode gold was supplied.",
+      "actions": [
+        {
+          "action": "observe"
+        }
+      ]
+    }
+  ],
+  "equivalences": []
+}

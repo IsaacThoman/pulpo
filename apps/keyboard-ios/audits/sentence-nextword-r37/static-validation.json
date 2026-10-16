@@ -1,0 +1,9 @@
+{
+  "staticSchema": "pass",
+  "supportedActions": 11,
+  "strictRejections": 15,
+  "smokeModeRows": 39,
+  "developmentModeRows": 36,
+  "pythonSyntax": "pass",
+  "engineExecution": false
+}

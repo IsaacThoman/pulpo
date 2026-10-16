@@ -1,0 +1,42 @@
+import Foundation
+
+final class PilotDocument: TextDocument {
+  var text: String
+  init(_ text: String) { self.text = text }
+  var documentContextBeforeInput: String? { text }
+  var documentContextAfterInput: String? { "" }
+  var selectedText: String? { nil }
+  var hasText: Bool { !text.isEmpty }
+  func insertText(_ value: String) { text += value }
+  func deleteBackward() { if !text.isEmpty { text.removeLast() } }
+}
+
+let args = CommandLine.arguments
+let dataRoot = URL(fileURLWithPath: args[1])
+let input = try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: args[2]))) as! [String: Any]
+var output: [[String: Any]] = []
+for row in input["cases"] as! [[String: Any]] {
+  for mode in ["en_US", "es", "en_es"] {
+    let stack = try LanguageStack(dictionaryURL: dataRoot.appendingPathComponent(mode + ".pkdict"), personalURL: nil)
+    var settings = KeyboardSettings()
+    settings.language = KeyboardLanguage(rawValue: mode)!
+    settings.learnWords = false; settings.autoCapitalization = false; settings.smartPunctuation = false
+    let doc = PilotDocument(row["prefix"] as! String)
+    let engine = KeyboardEngine(document: doc, suggester: stack.suggester, glide: stack.glide, settings: settings)
+    engine.documentDidChange()
+    let choices = engine.suggestions
+    let context = engine.languageContext()
+    var result: [String: Any] = ["id": row["id"]!, "mode": mode, "prefix": doc.text,
+      "slots": choices.slots.map { ["text": $0.text, "kind": String(describing: $0.kind),
+        "isAutocorrection": $0.isAutocorrection, "sourceContext": $0.sourceContext?.uuidString ?? "nil"] as [String: Any] },
+      "history": context.history as Any? ?? NSNull(), "trigram": context.trigram as Any? ?? NSNull(),
+      "component": context.predictionComponent as Any? ?? NSNull(),
+      "diagnosticModelTop12": stack.model.predictions(in: context, limit: 12).map { ["word": $0.word, "logProbability": $0.logProbability] as [String: Any] }]
+    if let words = row["acceptable"] as? [String] { result["acceptable"] = words; result["hit"] = choices.slots.contains { words.contains($0.text) } }
+    if choices.slots.count > 1 { let selected = choices.slots[1]; engine.select(selected); result["actualCenterAcceptance"] = doc.text }
+    output.append(result)
+  }
+}
+let encoded = try JSONSerialization.data(withJSONObject: output, options: [.sortedKeys, .prettyPrinted])
+try encoded.write(to: URL(fileURLWithPath: args[3]))
+print("Wrote \(output.count) actual engine development rows")

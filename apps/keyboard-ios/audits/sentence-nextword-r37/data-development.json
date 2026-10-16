@@ -1,0 +1,16 @@
+{
+  "baselineSHA256": "93d2d22d58e7e753771dd0e29b19036d74a5ec7aeafba703724c24a93e581237",
+  "candidateSHA256": "f1808737de20615df588284e3ee7b81e9b8f1f15028c8c94a915e022291ed0d5",
+  "baselineBytes": 27391648,
+  "candidateBytes": 27866728,
+  "addedBytes": 475080,
+  "allOriginalNonMetadataSectionsIdentical": true,
+  "optionalSections": {
+    "BMEM": 392087,
+    "BCHI": 2420,
+    "BCOF": 4844,
+    "BCID": 59340,
+    "BCSC": 14835,
+    "BCBO": 1210
+  }
+}

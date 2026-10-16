@@ -1,0 +1,17 @@
+{
+  "stage": "negative development full-trace execution snapshot; NOT fresh seal",
+  "recordedUTC": "2026-10-16T08:29:56.528396+00:00",
+  "artifactSHA256": {
+    "public-contract.md": "71c1315d469a0961e762108c84bd5be8871e308bde76f86929464612c86b9085",
+    "public-schema.json": "f4de9aba21d6352bd7bd728e7ec1d32cdf5716abc1b81b11f26c7c3e6a1e455b",
+    "public-api-map.json": "6aa7d24deb4117bc157d95054cc591d45bef46cf1deb751d6f533d649664d4eb",
+    "compare.py": "c19550e89c30cc2d8cf2f1b1a06b470b20398fd87be2ce2053ae9d06cddc9dba",
+    "r37_validate.py": "a2547f56c2c17f6a32ee07296d332ad358c9b41b53ef402febcae37806f894c2",
+    "independent-development-input.json": "067ea095aebebf5ca66542e041b7f87cad3b30ac74f6c5590d8bf2e3fd1ec6a2"
+  },
+  "executorSHA256": {
+    "R37Contract.swift": "ae5f9669db0838db3bccfbb3bdbf4c1f210773f265c8f842da543e7947203d3c",
+    "R37Document.swift": "5a4577f55d0c67137466ed371f4964c91c6a77d37f154634dadd9fa59f8be1e9",
+    "R37ExecutorTests.swift": "b33011e1479e6a2f0c0b3837e6ccbc07ad143b88711f8dd402366c693fcbc285"
+  }
+}

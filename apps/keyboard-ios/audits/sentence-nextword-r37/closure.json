@@ -1,0 +1,58 @@
+{
+  "disposition": "rejected-development-utility-production-restored",
+  "baselineCommit": "975c5f838db2c511a099136fda28d908b71dda6d",
+  "candidateFeatureCommits": [],
+  "productionFeatureActive": false,
+  "noAccuracyGainClaim": true,
+  "finalFreshRowsAuthored": 0,
+  "finalFreshRowsExecuted": 0,
+  "finalFreshRevealOccurred": false,
+  "finalFreshFamiliesPlanned": 36,
+  "finalFreshPromptsPlanned": 72,
+  "finalFreshRowsPlannedPerVersion": 216,
+  "freshGatesRelaxed": false,
+  "development": {
+    "fallbackPrompts": 16,
+    "fallbackRowsPerVersion": 48,
+    "fallbackBIbaselineHits": 10,
+    "fallbackV1BIhits": 10,
+    "fallbackV2BIhits": 10,
+    "independentFamilies": 18,
+    "independentPrompts": 36,
+    "independentRowsPerVersion": 108,
+    "independentBIbaselineHits": 12,
+    "independentBIV2hits": 12,
+    "independentBIactivations": 0,
+    "strictPrimaryRowsPerVersion": 156,
+    "strictAcceptanceBranchesPerVersion": 468,
+    "strictPrimaryMechanicalFailures": 0,
+    "top3GainsAllModes": 0,
+    "top3LossesAllModes": 0
+  },
+  "smoke": {
+    "rows": 39,
+    "actions": 141,
+    "supportedActionTypes": 11,
+    "failures": 0
+  },
+  "assetAdditionalBytes": {
+    "v1": 475080,
+    "v2": 835392
+  },
+  "unmeasuredGates": [
+    "extra active storage complete accounting",
+    "postwarm RSS",
+    "30 sequential mode switches and oldstack release",
+    "30 paired warm repetitions per prompt alternating order",
+    "p50/p95/p99 and cold cost comparison",
+    "full ordinary core/services suite",
+    "native realbar acceptance language privatepolicy smoke",
+    "independent final source/runner/compare review and data freeze"
+  ],
+  "deviceAssigned": false,
+  "deviceDriven": false,
+  "pushMergeDeployPerformed": false,
+  "protectedPathEdits": false,
+  "temporaryExecutorArchivedExplicitly": true,
+  "note": "Rejected on development usefulness; final216rowfresh workload remains unspent. Sourceblind development authorship and allmode repetitions are not population accuracy."
+}

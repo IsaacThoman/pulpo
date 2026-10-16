@@ -1,0 +1,481 @@
+{
+  "cases": [
+    {
+      "id": "r37-v2-dev-en-01-a",
+      "familyId": "r37-v2-dev-en-01",
+      "contentLabel": "en",
+      "prefix": "The soup tastes too ",
+      "acceptable": [
+        "salty",
+        "sweet",
+        "bland",
+        "spicy",
+        "sour",
+        "bitter"
+      ],
+      "rationale": "A taste assessment naturally continues with an excessive flavor adjective.",
+      "oracle": "scored"
+    },
+    {
+      "id": "r37-v2-dev-en-01-b",
+      "familyId": "r37-v2-dev-en-01",
+      "contentLabel": "en",
+      "prefix": "The suitcase weighs too ",
+      "acceptable": [
+        "much"
+      ],
+      "rationale": "An assessment of excessive weight naturally continues with the quantity word much.",
+      "oracle": "scored"
+    },
+    {
+      "id": "r37-v2-dev-en-02-a",
+      "familyId": "r37-v2-dev-en-02",
+      "contentLabel": "en",
+      "prefix": "This charger works with ",
+      "acceptable": [
+        "phones",
+        "tablets",
+        "laptops",
+        "Android",
+        "iPhones"
+      ],
+      "rationale": "The compatibility statement can name supported devices or a supported platform.",
+      "oracle": "scored"
+    },
+    {
+      "id": "r37-v2-dev-en-02-b",
+      "familyId": "r37-v2-dev-en-02",
+      "contentLabel": "en",
+      "prefix": "This charger comes with ",
+      "acceptable": [
+        "a",
+        "an",
+        "two"
+      ],
+      "rationale": "The included-accessories statement can introduce an item or a count of items.",
+      "oracle": "scored"
+    },
+    {
+      "id": "r37-v2-dev-en-03-a",
+      "familyId": "r37-v2-dev-en-03",
+      "contentLabel": "en",
+      "prefix": "The bread smells like ",
+      "acceptable": [
+        "garlic",
+        "cinnamon",
+        "butter"
+      ],
+      "rationale": "The sensory comparison can identify a recognizable food aroma.",
+      "oracle": "scored"
+    },
+    {
+      "id": "r37-v2-dev-en-03-b",
+      "familyId": "r37-v2-dev-en-03",
+      "contentLabel": "en",
+      "prefix": "The plan sounds like ",
+      "acceptable": [
+        "fun",
+        "trouble",
+        "work"
+      ],
+      "rationale": "The evaluation can describe the anticipated experience of a plan.",
+      "oracle": "scored"
+    },
+    {
+      "id": "r37-v2-dev-en-04-a",
+      "familyId": "r37-v2-dev-en-04",
+      "contentLabel": "en",
+      "prefix": "The lid fits on ",
+      "acceptable": [
+        "the",
+        "this",
+        "that"
+      ],
+      "rationale": "The spatial fit statement can introduce the container that the lid fits.",
+      "oracle": "scored"
+    },
+    {
+      "id": "r37-v2-dev-en-04-b",
+      "familyId": "r37-v2-dev-en-04",
+      "contentLabel": "en",
+      "prefix": "The meeting is on ",
+      "acceptable": [
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday"
+      ],
+      "rationale": "The scheduling statement can give a weekday, preserving its normal capitalization.",
+      "oracle": "scored"
+    },
+    {
+      "id": "r37-v2-dev-en-05-a",
+      "familyId": "r37-v2-dev-en-05",
+      "contentLabel": "en",
+      "prefix": "I paid in ",
+      "acceptable": [
+        "cash",
+        "advance",
+        "full",
+        "installments"
+      ],
+      "rationale": "The payment report can specify its medium, timing, completeness, or payment arrangement.",
+      "oracle": "scored"
+    },
+    {
+      "id": "r37-v2-dev-en-05-b",
+      "familyId": "r37-v2-dev-en-05",
+      "contentLabel": "en",
+      "prefix": "The seedlings grew in ",
+      "acceptable": [
+        "soil",
+        "sand",
+        "water",
+        "pots"
+      ],
+      "rationale": "The growth report can identify a growing medium or containers.",
+      "oracle": "scored"
+    },
+    {
+      "id": "r37-v2-dev-en-06-a",
+      "familyId": "r37-v2-dev-en-06",
+      "contentLabel": "en",
+      "prefix": "The room serves as ",
+      "acceptable": [
+        "a",
+        "an",
+        "our"
+      ],
+      "rationale": "The functional description can introduce the role assigned to a room.",
+      "oracle": "scored"
+    },
+    {
+      "id": "r37-v2-dev-en-06-b",
+      "familyId": "r37-v2-dev-en-06",
+      "contentLabel": "en",
+      "prefix": "The towels are as ",
+      "acceptable": [
+        "soft",
+        "fluffy",
+        "absorbent",
+        "warm"
+      ],
+      "rationale": "The degree comparison can begin with a suitable towel-quality adjective.",
+      "oracle": "scored"
+    },
+    {
+      "id": "r37-v2-dev-es-01-a",
+      "familyId": "r37-v2-dev-es-01",
+      "contentLabel": "es",
+      "prefix": "El envío llegará el ",
+      "acceptable": [
+        "lunes",
+        "martes",
+        "miércoles",
+        "jueves",
+        "viernes",
+        "sábado"
+      ],
+      "rationale": "El artículo introduce un día de llegada; los días se escriben en minúscula y conservan sus tildes.",
+      "oracle": "scored"
+    },
+    {
+      "id": "r37-v2-dev-es-01-b",
+      "familyId": "r37-v2-dev-es-01",
+      "contentLabel": "es",
+      "prefix": "El paquete contiene el ",
+      "acceptable": [
+        "libro",
+        "cable",
+        "recibo",
+        "cargador"
+      ],
+      "rationale": "El artículo introduce un objeto masculino singular contenido en el paquete.",
+      "oracle": "scored"
+    },
+    {
+      "id": "r37-v2-dev-es-02-a",
+      "familyId": "r37-v2-dev-es-02",
+      "contentLabel": "es",
+      "prefix": "Me alegra que ",
+      "acceptable": [
+        "vengas",
+        "estés",
+        "hayas"
+      ],
+      "rationale": "La expresión de emoción admite una continuación en subjuntivo, incluida una forma compuesta iniciada por hayas.",
+      "oracle": "scored"
+    },
+    {
+      "id": "r37-v2-dev-es-02-b",
+      "familyId": "r37-v2-dev-es-02",
+      "contentLabel": "es",
+      "prefix": "Todavía tengo que ",
+      "acceptable": [
+        "pagar",
+        "comprar",
+        "esperar",
+        "terminar"
+      ],
+      "rationale": "La necesidad personal pendiente se expresa con tener que seguido de infinitivo.",
+      "oracle": "scored"
+    },
+    {
+      "id": "r37-v2-dev-es-03-a",
+      "familyId": "r37-v2-dev-es-03",
+      "contentLabel": "es",
+      "prefix": "El cuaderno es de ",
+      "acceptable": [
+        "papel",
+        "cartón",
+        "María"
+      ],
+      "rationale": "La descripción puede indicar el material del cuaderno o su propietaria.",
+      "oracle": "scored"
+    },
+    {
+      "id": "r37-v2-dev-es-03-b",
+      "familyId": "r37-v2-dev-es-03",
+      "contentLabel": "es",
+      "prefix": "El tren sale de ",
+      "acceptable": [
+        "Madrid",
+        "Barcelona",
+        "Valencia",
+        "Sevilla"
+      ],
+      "rationale": "La información del trayecto puede nombrar una ciudad de origen.",
+      "oracle": "scored"
+    },
+    {
+      "id": "r37-v2-dev-es-04-a",
+      "familyId": "r37-v2-dev-es-04",
+      "contentLabel": "es",
+      "prefix": "El gato duerme bajo ",
+      "acceptable": [
+        "la",
+        "una",
+        "el",
+        "un"
+      ],
+      "rationale": "La preposición espacial puede introducir el mueble u objeto bajo el que duerme el gato.",
+      "oracle": "scored"
+    },
+    {
+      "id": "r37-v2-dev-es-04-b",
+      "familyId": "r37-v2-dev-es-04",
+      "contentLabel": "es",
+      "prefix": "El presupuesto sigue bajo ",
+      "acceptable": [
+        "revisión",
+        "control"
+      ],
+      "rationale": "El estado administrativo del presupuesto puede expresarse con bajo revisión o bajo control.",
+      "oracle": "scored"
+    },
+    {
+      "id": "r37-v2-dev-es-05-a",
+      "familyId": "r37-v2-dev-es-05",
+      "contentLabel": "es",
+      "prefix": "A veces me río por ",
+      "acceptable": [
+        "nervios",
+        "vergüenza"
+      ],
+      "rationale": "La explicación de la risa puede expresar una causa emocional.",
+      "oracle": "scored"
+    },
+    {
+      "id": "r37-v2-dev-es-05-b",
+      "familyId": "r37-v2-dev-es-05",
+      "contentLabel": "es",
+      "prefix": "Las fresas cuestan dos euros por ",
+      "acceptable": [
+        "kilo",
+        "caja",
+        "bandeja"
+      ],
+      "rationale": "La información del precio puede precisar la unidad de venta.",
+      "oracle": "scored"
+    },
+    {
+      "id": "r37-v2-dev-es-06-a",
+      "familyId": "r37-v2-dev-es-06",
+      "contentLabel": "es",
+      "prefix": "Estoy buscando algo ",
+      "acceptable": [
+        "barato",
+        "ligero",
+        "práctico",
+        "pequeño"
+      ],
+      "rationale": "El pronombre indefinido puede recibir un adjetivo que describa una cualidad deseada.",
+      "oracle": "scored"
+    },
+    {
+      "id": "r37-v2-dev-es-06-b",
+      "familyId": "r37-v2-dev-es-06",
+      "contentLabel": "es",
+      "prefix": "El arroz está algo ",
+      "acceptable": [
+        "duro",
+        "seco",
+        "frío",
+        "pasado"
+      ],
+      "rationale": "El adverbio de grado algo puede modificar un adjetivo que describa el estado del arroz.",
+      "oracle": "scored"
+    },
+    {
+      "id": "r37-v2-dev-mixed-01-a",
+      "familyId": "r37-v2-dev-mixed-01",
+      "contentLabel": "mixed",
+      "prefix": "That train ticket cuesta demasiado ",
+      "acceptable": [
+        "dinero"
+      ],
+      "rationale": "The English subject and Spanish price predicate support demasiado dinero as an excessive-cost statement.",
+      "oracle": "scored"
+    },
+    {
+      "id": "r37-v2-dev-mixed-01-b",
+      "familyId": "r37-v2-dev-mixed-01",
+      "contentLabel": "mixed",
+      "prefix": "The station está demasiado ",
+      "acceptable": [
+        "lejos",
+        "cerca"
+      ],
+      "rationale": "The English subject and Spanish location predicate support an adverb of distance after demasiado.",
+      "oracle": "scored"
+    },
+    {
+      "id": "r37-v2-dev-mixed-02-a",
+      "familyId": "r37-v2-dev-mixed-02",
+      "contentLabel": "mixed",
+      "prefix": "Según el mapa we're almost ",
+      "acceptable": [
+        "there",
+        "home",
+        "halfway"
+      ],
+      "rationale": "The Spanish map reference frames an English report of progress toward a destination.",
+      "oracle": "scored"
+    },
+    {
+      "id": "r37-v2-dev-mixed-02-b",
+      "familyId": "r37-v2-dev-mixed-02",
+      "contentLabel": "mixed",
+      "prefix": "Con tanto ruido I'm almost ",
+      "acceptable": [
+        "deaf",
+        "shouting"
+      ],
+      "rationale": "The Spanish noise context frames an English description of its effect on hearing or speaking.",
+      "oracle": "scored"
+    },
+    {
+      "id": "r37-v2-dev-mixed-03-a",
+      "familyId": "r37-v2-dev-mixed-03",
+      "contentLabel": "mixed",
+      "prefix": "Según la etiqueta it's made of ",
+      "acceptable": [
+        "cotton",
+        "wool",
+        "silk",
+        "linen"
+      ],
+      "rationale": "The Spanish label reference frames an English statement naming a textile material.",
+      "oracle": "scored"
+    },
+    {
+      "id": "r37-v2-dev-mixed-03-b",
+      "familyId": "r37-v2-dev-mixed-03",
+      "contentLabel": "mixed",
+      "prefix": "Para mí that's a lot of ",
+      "acceptable": [
+        "money",
+        "work",
+        "food"
+      ],
+      "rationale": "The Spanish personal perspective frames an English assessment of a large quantity.",
+      "oracle": "scored"
+    },
+    {
+      "id": "r37-v2-dev-mixed-04-a",
+      "familyId": "r37-v2-dev-mixed-04",
+      "contentLabel": "mixed",
+      "prefix": "I found la llave debajo de ",
+      "acceptable": [
+        "la",
+        "una",
+        "el",
+        "un"
+      ],
+      "rationale": "An English discovery predicate takes a Spanish object and spatial phrase introducing a location.",
+      "oracle": "scored"
+    },
+    {
+      "id": "r37-v2-dev-mixed-04-b",
+      "familyId": "r37-v2-dev-mixed-04",
+      "contentLabel": "mixed",
+      "prefix": "We're visiting Madrid antes de ",
+      "acceptable": [
+        "volver",
+        "salir",
+        "regresar"
+      ],
+      "rationale": "An English travel statement takes a Spanish temporal phrase that can introduce an infinitive.",
+      "oracle": "scored"
+    },
+    {
+      "id": "r37-v2-dev-mixed-05-a",
+      "familyId": "r37-v2-dev-mixed-05",
+      "contentLabel": "mixed",
+      "prefix": "I saved room para el ",
+      "acceptable": [
+        "postre"
+      ],
+      "rationale": "The English meal idiom and Spanish purpose phrase naturally anticipate dessert.",
+      "oracle": "scored"
+    },
+    {
+      "id": "r37-v2-dev-mixed-05-b",
+      "familyId": "r37-v2-dev-mixed-05",
+      "contentLabel": "mixed",
+      "prefix": "I arrived justo cuando el ",
+      "acceptable": [
+        "tren",
+        "autobús",
+        "taxi"
+      ],
+      "rationale": "The English arrival report and Spanish time clause can introduce a vehicle as the subject of the following event.",
+      "oracle": "scored"
+    },
+    {
+      "id": "r37-v2-dev-mixed-06-a",
+      "familyId": "r37-v2-dev-mixed-06",
+      "contentLabel": "mixed",
+      "prefix": "En esta pantalla I can see how ",
+      "acceptable": [
+        "many",
+        "much"
+      ],
+      "rationale": "The Spanish display context frames an English embedded question about a visible count or amount.",
+      "oracle": "scored"
+    },
+    {
+      "id": "r37-v2-dev-mixed-06-b",
+      "familyId": "r37-v2-dev-mixed-06",
+      "contentLabel": "mixed",
+      "prefix": "Con esta receta I know how ",
+      "acceptable": [
+        "to"
+      ],
+      "rationale": "The Spanish recipe context frames an English statement of procedural knowledge using how to.",
+      "oracle": "scored"
+    }
+  ]
+}

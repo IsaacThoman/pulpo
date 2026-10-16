@@ -1,0 +1,134 @@
+{
+  "source": "/Users/isaacthoman/.t3/worktrees/pulpo/t3-d95cfec9/apps/keyboard-ios/audits/sentence-nextword-r37/development-intents-v2.json",
+  "sourceSHA256": "0f8bc87dd2cca71ea8670f251e3b0c1e6dc5d11267f6fe1fdac7b6c3f07ec570",
+  "outputSHA256": "992f5e42303412da9283306eaff823c132150711e66089c8eb6df123080535df",
+  "mapping": [
+    {
+      "id": "en-modal",
+      "suppliedMode": "en_US",
+      "suppliedAcceptable": [
+        "help",
+        "send",
+        "check",
+        "tell"
+      ],
+      "convertedOracle": "ambiguous"
+    },
+    {
+      "id": "en-prep-like",
+      "suppliedMode": "en_US",
+      "suppliedAcceptable": [
+        "see",
+        "know",
+        "visit",
+        "have"
+      ],
+      "convertedOracle": "ambiguous"
+    },
+    {
+      "id": "en-prep-going",
+      "suppliedMode": "en_US",
+      "suppliedAcceptable": [
+        "be",
+        "the",
+        "visit",
+        "make"
+      ],
+      "convertedOracle": "ambiguous"
+    },
+    {
+      "id": "es-obligation",
+      "suppliedMode": "es",
+      "suppliedAcceptable": [
+        "ir",
+        "hacer",
+        "salir",
+        "trabajar"
+      ],
+      "convertedOracle": "ambiguous"
+    },
+    {
+      "id": "es-relative",
+      "suppliedMode": "es",
+      "suppliedAcceptable": [
+        "quiero",
+        "tiene",
+        "está",
+        "compramos"
+      ],
+      "convertedOracle": "ambiguous"
+    },
+    {
+      "id": "es-prep",
+      "suppliedMode": "es",
+      "suppliedAcceptable": [
+        "la",
+        "los",
+        "eso",
+        "nuestro"
+      ],
+      "convertedOracle": "ambiguous"
+    },
+    {
+      "id": "bi-english-tail",
+      "suppliedMode": "en_es",
+      "suppliedAcceptable": [
+        "get",
+        "be",
+        "make",
+        "go"
+      ],
+      "convertedOracle": "ambiguous"
+    },
+    {
+      "id": "bi-spanish-tail",
+      "suppliedMode": "en_es",
+      "suppliedAcceptable": [
+        "ir",
+        "hacer",
+        "salir",
+        "hablar"
+      ],
+      "convertedOracle": "ambiguous"
+    },
+    {
+      "id": "bi-english-tail2",
+      "suppliedMode": "en_es",
+      "suppliedAcceptable": [
+        "please",
+        "help",
+        "send",
+        "tell"
+      ],
+      "convertedOracle": "ambiguous"
+    },
+    {
+      "id": "bi-spanish-tail2",
+      "suppliedMode": "en_es",
+      "suppliedAcceptable": [
+        "ver",
+        "hacer",
+        "tener",
+        "ir"
+      ],
+      "convertedOracle": "ambiguous"
+    },
+    {
+      "id": "completion-en-control",
+      "suppliedMode": "en_US",
+      "suppliedAcceptable": [
+        "send"
+      ],
+      "convertedOracle": "ambiguous"
+    },
+    {
+      "id": "completion-es-control",
+      "suppliedMode": "es",
+      "suppliedAcceptable": [
+        "trabajar"
+      ],
+      "convertedOracle": "ambiguous"
+    }
+  ],
+  "restriction": "Original single-mode gold is retained, not extrapolated or scored as three authored mode sets."
+}

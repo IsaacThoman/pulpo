@@ -1,0 +1,163 @@
+{
+  "unexecuted": true,
+  "cases": [
+    {
+      "id": "en-modal",
+      "mode": "en_US",
+      "prefix": "Could you please ",
+      "acceptableDevelopmentContinuations": [
+        "help",
+        "send",
+        "check",
+        "tell"
+      ],
+      "family": "polite verb continuation",
+      "route": "next-word"
+    },
+    {
+      "id": "en-prep-like",
+      "mode": "en_US",
+      "prefix": "I would like to ",
+      "acceptableDevelopmentContinuations": [
+        "see",
+        "know",
+        "visit",
+        "have"
+      ],
+      "family": "to preceded by like",
+      "route": "next-word"
+    },
+    {
+      "id": "en-prep-going",
+      "mode": "en_US",
+      "prefix": "They are going to ",
+      "acceptableDevelopmentContinuations": [
+        "be",
+        "the",
+        "visit",
+        "make"
+      ],
+      "family": "to preceded by going",
+      "route": "next-word"
+    },
+    {
+      "id": "es-obligation",
+      "mode": "es",
+      "prefix": "Mañana tengo que ",
+      "acceptableDevelopmentContinuations": [
+        "ir",
+        "hacer",
+        "salir",
+        "trabajar"
+      ],
+      "family": "que after obligation",
+      "route": "next-word"
+    },
+    {
+      "id": "es-relative",
+      "mode": "es",
+      "prefix": "Esta es la casa que ",
+      "acceptableDevelopmentContinuations": [
+        "quiero",
+        "tiene",
+        "está",
+        "compramos"
+      ],
+      "family": "same que in relative clause",
+      "route": "next-word"
+    },
+    {
+      "id": "es-prep",
+      "mode": "es",
+      "prefix": "Vamos a hablar de ",
+      "acceptableDevelopmentContinuations": [
+        "la",
+        "los",
+        "eso",
+        "nuestro"
+      ],
+      "family": "Spanish local frame",
+      "route": "next-word"
+    },
+    {
+      "id": "bi-english-tail",
+      "mode": "en_es",
+      "prefix": "Mañana we need to ",
+      "acceptableDevelopmentContinuations": [
+        "get",
+        "be",
+        "make",
+        "go"
+      ],
+      "family": "Spanish opening with English local frame",
+      "route": "next-word"
+    },
+    {
+      "id": "bi-spanish-tail",
+      "mode": "en_es",
+      "prefix": "After lunch tenemos que ",
+      "acceptableDevelopmentContinuations": [
+        "ir",
+        "hacer",
+        "salir",
+        "hablar"
+      ],
+      "family": "English opening with Spanish local frame",
+      "route": "next-word"
+    },
+    {
+      "id": "bi-english-tail2",
+      "mode": "en_es",
+      "prefix": "Por favor could you ",
+      "acceptableDevelopmentContinuations": [
+        "please",
+        "help",
+        "send",
+        "tell"
+      ],
+      "family": "English local frame after Spanish opener",
+      "route": "next-word"
+    },
+    {
+      "id": "bi-spanish-tail2",
+      "mode": "en_es",
+      "prefix": "Next week vamos a ",
+      "acceptableDevelopmentContinuations": [
+        "ver",
+        "hacer",
+        "tener",
+        "ir"
+      ],
+      "family": "Spanish local frame after English opener",
+      "route": "next-word"
+    },
+    {
+      "id": "completion-en-control",
+      "mode": "en_US",
+      "prefix": "Could you please ",
+      "typed": "sen",
+      "acceptableDevelopmentContinuations": [
+        "send"
+      ],
+      "family": "completion continuity control",
+      "route": "completion"
+    },
+    {
+      "id": "completion-es-control",
+      "mode": "es",
+      "prefix": "Mañana tengo que ",
+      "typed": "tra",
+      "acceptableDevelopmentContinuations": [
+        "trabajar"
+      ],
+      "family": "completion continuity control",
+      "route": "completion"
+    }
+  ],
+  "clarification": "Pre-ranking correction of content label en to actual mode en_US; original bytes preserved. All cases should additionally be observed in all three real modes; primary semantic judgments follow explicitly authored mode-specific sets.",
+  "executionModes": [
+    "en_US",
+    "es",
+    "en_es"
+  ]
+}

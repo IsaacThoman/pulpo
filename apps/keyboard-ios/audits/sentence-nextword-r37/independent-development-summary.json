@@ -1,0 +1,21 @@
+{
+  "cohort": "independently authored exposed development, NOT final fresh72",
+  "allRows": 108,
+  "rowsPerMode": 36,
+  "familyCount": 18,
+  "BIbaselineHits": 12,
+  "BIcandidateHits": 12,
+  "BIgains": 0,
+  "BIlosses": 0,
+  "BIactivated": 0,
+  "BIchanged": 0,
+  "allModeLosses": [],
+  "allChanged": [],
+  "monolingualOutputsUnchanged": true,
+  "activationDiagnostics": {
+    "exactTrigramBypass": 25,
+    "nonsharedOrUnknownHistoryBypass": 11,
+    "missingAmbiguousHintBypass": 0,
+    "active": 0
+  }
+}

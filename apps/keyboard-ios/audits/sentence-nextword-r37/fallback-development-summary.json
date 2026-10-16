@@ -1,0 +1,285 @@
+{
+  "cohort": "exposed development; not fresh",
+  "rows": 48,
+  "BIrows": 16,
+  "baselineHits": 10,
+  "candidateHits": 10,
+  "gains": 0,
+  "losses": 0,
+  "active": 4,
+  "changed": 3,
+  "BIresults": [
+    {
+      "id": "article-en",
+      "baseline": [
+        "lot",
+        "la",
+        "los"
+      ],
+      "candidate": [
+        "good",
+        "lot",
+        "great"
+      ],
+      "component": 0,
+      "trigram": null,
+      "baselineHit": false,
+      "candidateHit": false
+    },
+    {
+      "id": "prep-es",
+      "baseline": [
+        "nadar",
+        "hacer",
+        "vivir"
+      ],
+      "candidate": [
+        "nadar",
+        "hacer",
+        "vivir"
+      ],
+      "component": null,
+      "trigram": 5391,
+      "baselineHit": true,
+      "candidateHit": true
+    },
+    {
+      "id": "negative-en",
+      "baseline": [
+        "reason",
+        "idea",
+        "sense"
+      ],
+      "candidate": [
+        "reason",
+        "idea",
+        "sense"
+      ],
+      "component": null,
+      "trigram": 2046,
+      "baselineHit": true,
+      "candidateHit": true
+    },
+    {
+      "id": "negative-es",
+      "baseline": [
+        "he",
+        "ha",
+        "se"
+      ],
+      "candidate": [
+        "he",
+        "ha",
+        "se"
+      ],
+      "component": null,
+      "trigram": 71771,
+      "baselineHit": false,
+      "candidateHit": false
+    },
+    {
+      "id": "object-en",
+      "baseline": [
+        "what",
+        "about",
+        "more"
+      ],
+      "candidate": [
+        "what",
+        "about",
+        "more"
+      ],
+      "component": null,
+      "trigram": 65987,
+      "baselineHit": true,
+      "candidateHit": true
+    },
+    {
+      "id": "clitic-es",
+      "baseline": [
+        "dio",
+        "dijo",
+        "pidió"
+      ],
+      "candidate": [
+        "dio",
+        "dijo",
+        "pidió"
+      ],
+      "component": null,
+      "trigram": 19908,
+      "baselineHit": false,
+      "candidateHit": false
+    },
+    {
+      "id": "subject-en",
+      "baseline": [
+        "visto",
+        "is",
+        "was"
+      ],
+      "candidate": [
+        "was",
+        "is",
+        "said"
+      ],
+      "component": 470,
+      "trigram": null,
+      "baselineHit": true,
+      "candidateHit": true
+    },
+    {
+      "id": "auxiliary-es",
+      "baseline": [
+        "tenido",
+        "visto",
+        "is"
+      ],
+      "candidate": [
+        "tenido",
+        "visto",
+        "is"
+      ],
+      "component": null,
+      "trigram": 35911,
+      "baselineHit": true,
+      "candidateHit": true
+    },
+    {
+      "id": "era-en",
+      "baseline": [
+        "un",
+        "of",
+        "una"
+      ],
+      "candidate": [
+        "un",
+        "of",
+        "una"
+      ],
+      "component": null,
+      "trigram": null,
+      "baselineHit": true,
+      "candidateHit": true
+    },
+    {
+      "id": "copula-es",
+      "baseline": [
+        "más",
+        "muy",
+        "of"
+      ],
+      "candidate": [
+        "más",
+        "muy",
+        "of"
+      ],
+      "component": null,
+      "trigram": 71814,
+      "baselineHit": true,
+      "candidateHit": true
+    },
+    {
+      "id": "sin-en",
+      "baseline": [
+        "in",
+        "to",
+        "against"
+      ],
+      "candidate": [
+        "in",
+        "to",
+        "against"
+      ],
+      "component": 1028,
+      "trigram": null,
+      "baselineHit": false,
+      "candidateHit": false
+    },
+    {
+      "id": "without-es",
+      "baseline": [
+        "duda",
+        "embargo",
+        "to"
+      ],
+      "candidate": [
+        "duda",
+        "embargo",
+        "to"
+      ],
+      "component": null,
+      "trigram": 52419,
+      "baselineHit": false,
+      "candidateHit": false
+    },
+    {
+      "id": "mix-article",
+      "baseline": [
+        "lot",
+        "la",
+        "los"
+      ],
+      "candidate": [
+        "good",
+        "lot",
+        "great"
+      ],
+      "component": 0,
+      "trigram": null,
+      "baselineHit": false,
+      "candidateHit": false
+    },
+    {
+      "id": "mix-prep",
+      "baseline": [
+        "nadar",
+        "hacer",
+        "vivir"
+      ],
+      "candidate": [
+        "nadar",
+        "hacer",
+        "vivir"
+      ],
+      "component": null,
+      "trigram": 5391,
+      "baselineHit": true,
+      "candidateHit": true
+    },
+    {
+      "id": "mix-negative",
+      "baseline": [
+        "reason",
+        "idea",
+        "sense"
+      ],
+      "candidate": [
+        "reason",
+        "idea",
+        "sense"
+      ],
+      "component": null,
+      "trigram": 2046,
+      "baselineHit": true,
+      "candidateHit": true
+    },
+    {
+      "id": "mix-auxiliary",
+      "baseline": [
+        "tenido",
+        "visto",
+        "is"
+      ],
+      "candidate": [
+        "tenido",
+        "visto",
+        "is"
+      ],
+      "component": null,
+      "trigram": 35911,
+      "baselineHit": true,
+      "candidateHit": true
+    }
+  ]
+}

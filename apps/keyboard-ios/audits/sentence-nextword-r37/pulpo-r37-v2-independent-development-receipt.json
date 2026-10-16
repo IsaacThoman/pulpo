@@ -1,0 +1,41 @@
+{
+  "datasetPath": "/tmp/pulpo-r37-v2-independent-development.json",
+  "sha256": "b332024370cebd65dbedcdd0e1077ab0dc0f6955401a844c7d767779bd482389",
+  "createdAtUtc": "2026-10-16T08:26:01.281201Z",
+  "purpose": "DEVELOPMENT only; never the final fresh72",
+  "caseCount": 36,
+  "familyCount": 18,
+  "familiesByContentLabel": {
+    "en": 6,
+    "es": 6,
+    "mixed": 6
+  },
+  "casesByContentLabel": {
+    "en": 12,
+    "es": 12,
+    "mixed": 12
+  },
+  "oracleCounts": {
+    "scored": 36,
+    "ambiguous": 0
+  },
+  "selfAttestation": {
+    "authoredFrom": "Only the public behavior contract supplied in this task and independent linguistic judgment.",
+    "repositorySourceSeen": false,
+    "modelOrResourceSeen": false,
+    "existingAuditSeen": false,
+    "existingOutputOrResultSeen": false,
+    "oldBenchmarkOrHeldPayloadSeen": false,
+    "sourceModelsOutputsNeverSeenDuringAuthorship": true,
+    "engineOrModelExecuted": false,
+    "compiled": false,
+    "deviceTouched": false,
+    "protectedPathsTouched": false,
+    "committedPushedOrDeployed": false,
+    "subagentsUsed": false,
+    "implementationTailoring": false,
+    "outputDerivedGuesses": false,
+    "empiricalClaim": false,
+    "validation": "Structural checks of the newly authored data only; no engine execution or empirical evaluation."
+  }
+}

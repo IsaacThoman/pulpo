@@ -1,0 +1,32 @@
+{
+  "recordedUTC": "2026-10-16T08:34:09.392228+00:00",
+  "baselineCommit": "975c5f838db2c511a099136fda28d908b71dda6d",
+  "method": "reverse exact owned v2 patch, archive/remove temporary executor files",
+  "baselineSHA256": {
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Dictionary/LanguageModel.swift": "5e493289b992eaeb5f0c8233f6b6b80c070f48437f693b5efa4bc2cc4e1871a4",
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Dictionary/Lexicon.swift": "5751a26a1cff378015344a384d3f24d3eae9808312249a836984ea8914334d14",
+    "apps/keyboard-ios/scripts/build_multilingual_data.py": "67ef58a826561b0e60581eede2a52fd6a3382d9682379a1e9a875d40b8d14a8d",
+    "apps/keyboard-ios/LanguageData/en_US.pkdict": "168c21378b29aa7fd37838aed910d64348b5267389abfd2dacd0598247cf1e64",
+    "apps/keyboard-ios/LanguageData/es.pkdict": "66a256a487f451812ec53920b2a5f2dea9aafb77fbf8e50240a0b87d2729e7fb",
+    "apps/keyboard-ios/LanguageData/en_es.pkdict": "93d2d22d58e7e753771dd0e29b19036d74a5ec7aeafba703724c24a93e581237",
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Input/KeyboardEngine.swift": "3f0987051ff0f176a5e1ef6396d415b0f8fe0fc2088735c75fef87f75158de97",
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Correction/Suggester.swift": "0608da9f8a2308ff71aaadf5cd2a59eaad856871ea299f56ec9b2200e14a3d65",
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Correction/SpellCorrector.swift": "525630cd2f29ef9739d98f7ea62827e04ee090140591d384527022a085030f31",
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Dictionary/LanguageStack.swift": "3b82d4ec23919f948fc3bad18252e67bb6ca709bccc68363ea794d985b90ae01",
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Glide/GlideDecoder.swift": "5191f844388cd823a22ba9e2b79615440e678a7125ed209aee6820fc9ce01805",
+    "apps/keyboard-ios/scripts/test_multilingual_data.py": "9f417b7b7e848746bd0d25861b62826601a646f9149e8b9a18960ce19250a57a"
+  },
+  "absentTemporaryPaths": [
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Dictionary/BilingualBackoff.swift",
+    "apps/keyboard-ios/scripts/build_bilingual_backoff.py",
+    "apps/keyboard-ios/PulpoKeyboardKit/Tests/KeyboardCoreTests/R37Contract.swift",
+    "apps/keyboard-ios/PulpoKeyboardKit/Tests/KeyboardCoreTests/R37Document.swift",
+    "apps/keyboard-ios/PulpoKeyboardKit/Tests/KeyboardCoreTests/R37ExecutorTests.swift"
+  ],
+  "allOrdinaryTestAndFuzzerSourcesChanged": false,
+  "restoredMultilingualTests": {
+    "exitCode": 0,
+    "testCount": 6,
+    "command": "python3 -m unittest discover -s apps/keyboard-ios/scripts -p test_multilingual_data.py"
+  }
+}
