@@ -68,7 +68,7 @@ selected older answer, empty input, input immutability, and large version groups
 A 4,000-response test counts parent-field reads to guard against repeated
 whole-array scans without relying on a wall-clock threshold. Existing optimistic
 send, branch selection, cancellation, stale-detail, and deletion tests exercise
-the integration path. Mobile type checking and all 32 focused tests passed.
+the integration path. Mobile type checking and all 41 focused tests passed.
 
 `apps/mobile/e2e/performance/branch-metadata-entry.tsx` runs the same fixture,
 original function, equality checks, and alternating measurements in Release
@@ -77,3 +77,35 @@ the bundle in a temporary app copy, and install only on a disposable simulator
 or emulator. Results are written to `Documents/branch-metadata-results.json`;
 Android also emits ordered `PULPO_BRANCH_PERF_<offset>:` chunks. Verify
 `hermes: true` and `dev: false` before interpreting native-runtime timings.
+
+
+## Release Hermes comparison on iOS
+
+A fresh Release binary was built after Expo prebuild and CocoaPods installation,
+then the standalone branch entry bundle was installed in a temporary copy on a
+disposable iPhone 18 Pro simulator, iOS 27.0, running on the same M5 Pro host.
+The recorded runtime reports `hermes: true`, `dev: false`, React Native 0.86.2.
+The host ran no concurrent builds, test suites, or other benchmarks during this
+measurement. The fixture, complete output equality checks, three warmups and
+nine alternating samples match the Node experiment; the native harness pauses
+30 ms between samples. These results characterize simulator Release Hermes,
+not a physical iPhone or Android device.
+
+| Fixture | Responses | Before median | After median |
+| --- | ---: | ---: | ---: |
+| Linear | 100 | 1.119 ms | 0.952 ms |
+| Linear | 1,000 | 41.019 ms | 8.730 ms |
+| Linear | 5,000 | 938.517 ms | 53.024 ms |
+| Linear | 10,000 | 3,415.513 ms | 109.909 ms |
+| Mixed parents, edits, regenerations, legacy inputs | 1,000 | 47.577 ms | 9.317 ms |
+| Mixed parents, edits, regenerations, legacy inputs | 5,000 | 817.236 ms | 46.668 ms |
+| Versions of one prompt | 300 | 123.083 ms | 1.938 ms |
+
+The 10,000-response preparation improves about 31× inside Hermes, but 110 ms
+remains a meaningful synchronous JS task. This is not evidence of a frame-budget
+or tap-latency guarantee. The small 100-response case is close, while the scaling
+benefit grows with history size. The [raw iOS report](mobile-branches-ios-2026-10-16.json)
+retains every sample; its p95 is again only the maximum of nine values. Android
+Release Hermes runtime measurements remain unverified because disposable
+emulators did not boot on this host. Shared source tests/type checking cover
+both mobile platforms; no Android-specific timing claim is made.
