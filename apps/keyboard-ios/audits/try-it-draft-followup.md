@@ -86,3 +86,54 @@ No physical-device run, app suspension/memory-pressure test, permission-recovery
 Cleanup only: selected Installed Keyboard and focused the empty field, visually confirmed actual Pulpo keys/EN through the system keyboard surface (`cleanup-installed.png`) to restore the installed-keyboard heartbeat after setup tests. No iOS permission switch was changed. A final attempted back action used a ref absent from the current diff frame and was rejected; the last saved app screen is the empty installed-mode Try It view (`cleanup-installed.txt`), **not** a verified home-screen return. Earlier cleanup selector quoting errors were corrected before focusing the real installed editor. These are harness errors, not app failures.
 
 The pinned agent-device session was then **closed successfully**, and `device_close` for only the assigned iPhone 17 returned success with `shutdown:false`. Ownership is released; simulator remains booted. No sweep-owned xcodebuild remains active. Parent/other devices, root checkout, and QUALITY_AUDIT were untouched. No push, deployment, PR-content change, or merge. PR782 linking succeeded and `list_thread_pull_requests` confirmed it, not watching. `git diff --check` passed. Only source, tests, project test-target configuration and Markdown audit are committed; no raw xcresults/build logs/images are in Git.
+
+## Parent integration and detached-editor verification protocol
+
+The parent imports the reviewed candidate through `a33ea24f`, after independently
+reviewing text/range restoration, dismissal intent, memory lifetime and stale
+callbacks. The full independent Settings workflows and process-boundary numeric
+caret checks remain incomplete; parent reruns will be exposed regression evidence.
+
+Before any additional production edit, review freezes a focused lifecycle check:
+retain the actual editor/coordinator/controller and SwiftUI hosting controller,
+hold a real KeysView delete contact, detach only the editor without invoking
+representable teardown, deliver the late end-editing callback, and observe the
+old editor through the repeat deadline. A replacement window sharing the draft
+checks that old text/range/focus/URL callbacks remain inert. Natural UIKit cleanup
+must remain enabled; a passing natural detach must be retained as positive evidence
+rather than disabling callbacks to manufacture a bug. Only an executed failure
+can justify changing the end-editing guard. The author adds tests first; no new
+production change has yet been selected.
+
+The first parent native command finalizes with one failed method, but stops at
+its precondition: the hosted unit-test editor is focused while its input view has
+zero key width. No initial delete or repeat occurs, so this is a fixture failure,
+not a lifecycle reproduction. Test-only `8c7d00a2` first requests normal keyboard
+presentation/layout, then, if unpresented, lays out the same real PreviewInputView
+using its actual UIWindow width and intrinsic height. It does not reparent the
+keyboard, fake appearance, or suppress native end-editing callbacks; geometry,
+hit testing and attached delete/repeat preconditions fail fast.
+
+After disabling the hardware keyboard on only the assigned simulator through the
+repository host helper, the parent reruns the native case. It **passes 1/1** with a
+finalized result bundle, zero failures and no reported runtime warnings. Natural
+UIKit detachment stops the already-running repeat before dismantling; the
+replacement draft's text/range/focus/URL checks also pass. No additional production
+cleanup change is justified by this observation. This verifies this concrete
+natural detach path, not every possible delayed callback ordering. The broader
+focused parent regression run completes with **34/34 methods passing**, zero
+failures/skips and no summary runtime warnings, in a finalized result bundle on
+the assigned iPhone 17 / iOS 27.0. It includes all nine hosted editor methods,
+two actual draft-navigation methods, two dismissal/refocus methods, all four
+language methods, all fifteen typing methods, the phone-field method, and the
+setup-status preview regression. The 393.6-second run uses the same compiled
+production source and test fixture as the isolated check; artifact-only commits
+added during execution do not change that app binary. These checks overlap the
+agent's 14 and the parent's isolated one; they are not 49 distinct checks.
+The package core, script and dictionary trees remain unchanged from published
+`e1865f3f`. Earlier independent-workflow, process-caret and physical-device limits
+remain open. No raw native result bundle is committed.
+
+The parent retries T3 device listing/opening for its newly released iPhone 17;
+both still report command exit code 127. It uses native XCTest on that assigned UUID.
+The 18 Pro is assigned to a separate compact-layout sweep and is not touched here.

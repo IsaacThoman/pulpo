@@ -448,8 +448,9 @@ English text field. Both are retained; a new independently authored technical-te
 sweep is investigating the exposed literal bug. No per-word exception or dictionary
 change is included. A separate structural check finds 57 bilingual entries with
 both suppression and glide flags, but has not demonstrated a returned, displayed,
-or committed suppressed output. A separate contract-preserving investigation is
-running; exact typed and personally learned vocabulary remain intentional cases.
+or committed suppressed output. The separate investigation below rejects a compiler candidate after observing
+ordinary Spanish swipe losses; exact typed and personally learned vocabulary
+remain intentional cases.
 
 Independent review verifies counts, hashes, sealed-author provenance and target
 exclusions, and corrects the failure ID in the audit. Parent replays match every
@@ -463,6 +464,83 @@ above-limit timing controls now produce failed gates. Full Release passes
 same five known issues. Timing is host core inference only; frozen cold process
 provenance is incomplete and later launch evidence is explicitly supplementary.
 See `audits/swipe-eligibility-r10/audit.md` for every result and failed gate.
+
+### Preview dismissal and memory-only draft continuity
+
+The settings sweep adds Hide Keyboard and reliable explicit refocus in both
+preview and installed modes, and clarifies that clearing learned words also
+clears tap adaptation. Independent review confirms its later draft-loss failure
+is pre-existing: navigating through Settings discarded Try It's local state.
+The follow-up hoists one draft into the companion scene's memory, preserving
+text, UTF-16 caret/selection, field kind and keyboard mode. Clear resets text and
+range together. Dismissal intent is separate, and Settings return does not force
+the keyboard open. No draft persistence is added.
+
+Both input modes use the same native editor bridge. It restores text before a
+bounded range and optional focus, and guards detached/dismantled editors against
+stale text/range/focus/URL callbacks. The agent's finalized runs pass 12 focused
+regressions and two independently authored native component methods. Exact
+independent strings/ranges were not exercised through the whole Settings route;
+the numeric process-boundary caret assertion also remains incomplete. The visible
+sentinel does disappear after real process relaunch, with source inspection
+showing no draft persistence. Earlier H2/H3 and physical-device checks stay open.
+
+Parent review adds a held-delete lifecycle check without changing production:
+real attached repeat, natural editor detachment before dismantling, then a
+replacement sharing the draft. Its first run fails a zero-width input-view fixture
+precondition, not the lifecycle oracle. After laying out the real input view at
+its host window dimensions, a finalized native rerun passes: detachment stops
+repeat, and stale callbacks preserve replacement text/range/focus/URLs. The
+broader parent regression run passes **34/34 native methods** in a finalized
+result bundle, with zero failures/skips or summary runtime warnings. It includes
+nine hosted editor methods, actual navigation/dismissal, all language/typing
+methods, phone entry and setup-status preview behavior. These overlap the agent's
+14 and the isolated parent check; they are not additive unique coverage. The core,
+script and dictionary trees remain unchanged from published `e1865f3f`.
+See `audits/setup-settings-native-sweep.md` and `audits/try-it-draft-followup.md`.
+
+### Rejected technical-token expansion
+
+The first technical-text candidate makes every whitespace token containing a
+slash, backslash or dot, or beginning `--`, literal. It improves the original
+bilingual-only corpus (48/68 → 63/68 development; 27/40 → 30/40 held-out), but its
+ordinary counterbench is weak: seven of eight held-out ordinary cases insert
+before a following word where correction was already suppressed.
+
+A separately frozen, exposed review diagnostic runs 56 cases against unchanged
+baseline/candidate source. Exact documents improve 37/56 → 44/56 overall, but four
+previously passing ordinary cases regress: `a/teh` stops correcting to `a/the` in
+English/bilingual, and `útil/inportante` stops correcting to `útil/importante` in
+Spanish/bilingual. ASCII ellipses and unspaced sentence dots lose spelling
+correction too. Eight flawed capitalization oracles remain failures on both;
+separate case-insensitive spelling coverage drops 48/48 → 36/48, without folding
+accents. The parent rejects the broad predicate and preserves production.
+
+The original corpus, metadata-only held-out schema revision, paired reports and
+all diagnostic oracles/results remain unchanged. They are reproducible evidence,
+not a fresh gain or proof of broad preservation. A new narrower experiment uses
+these exposed cases as development controls and a new independent held-out set.
+See `audits/technical-text-r11/audit.md`.
+
+### Rejected bilingual glide-suppression change
+
+A contract-targeted sweep reproduces 57 bilingual entries carrying both source
+suppression and glide flags. A compiler candidate clears those glide bits and
+removes the corresponding returned/committed/slotted targets on its frozen cases.
+Mechanical validation, independent held-out provenance, unchanged monolingual
+assets, and synthetic literal/pre-learned/privacy gates are sound.
+
+The parent rejects the candidate because it makes ordinary Spanish swipes worse:
+`lo` becomes `look`/`loo`, `mes` becomes `mess`, `chino` becomes `ciñó`/`vino`, and
+`cajones` becomes `vagones`. Removed spellings also include `ya`, `mango` and
+`mariposa`. The neutral-control set excludes these conflicting spellings, so its
+unchanged score does not establish neutral-sense preservation. Exact typing and
+pre-learning are workarounds, not unchanged swipe UX. Source flags do not encode
+contextual senses; a technically consistent global suppression rule does not
+prove a useful accuracy improvement. The existing compiler and bilingual asset
+remain unchanged. Frozen protocol, inputs, harness and paired outputs are retained
+with an explicit rejection, not promoted as a successful product policy. See
+`audits/suppression-consistency-r12/audit.md`.
 
 ## Blind sweep loop: round 1
 
