@@ -88,14 +88,28 @@ final class LearningResetResultUITests: XCTestCase {
     XCTAssertTrue(failure.staticTexts["Couldn’t clear learned words. Please try again."].exists)
     XCTAssertTrue(failure.buttons["OK"].isHittable)
     try record(caseKey + "-failure", in: directory)
-    XCTAssertEqual(PersonalDictionary(url: dictionaryURL).count(of: "r41Café"), 1, "This precommit fault must retain the seeded word")
-    XCTAssertEqual(TouchModel(url: touchURL).weight, 3)
+    // Fresh readers cannot read through this real lock/open fault. Their
+    // default empty projection is unavailable, not evidence of data removal.
+    let unreadable = PersonalDictionary(url: dictionaryURL)
+    let unreadableTouch = TouchModel(url: touchURL)
+    let fault: LearningPersistenceResult = caseKey == "io-on" ? .io : .busy
+    XCTAssertEqual(unreadable.persistenceResult, fault)
+    XCTAssertEqual(unreadableTouch.persistenceResult, fault)
+    XCTAssertEqual(personal.count(of: "r41Café"), 1)
+    XCTAssertEqual(touch.weight, 3)
     failure.buttons["OK"].tap()
     XCTAssertEqual(toggle.value as? String, learning ? "1" : "0")
 
     try write(["nonce": config.nonce], to: directory.appendingPathComponent(caseKey + ".release.json"))
     let released = try waitFor(Ready.self, at: directory.appendingPathComponent(caseKey + ".released.json"), timeout: 15)
     try require(!released.active && released.error == nil && released.nonce == config.nonce && released.caseKey == caseKey, "Host failed to restore the real store boundary")
+
+    let retained = PersonalDictionary(url: dictionaryURL)
+    let retainedTouch = TouchModel(url: touchURL)
+    XCTAssertEqual(retained.persistenceResult, .ok)
+    XCTAssertEqual(retainedTouch.persistenceResult, .ok)
+    XCTAssertEqual(retained.count(of: "r41Café"), 1, "This precommit fault must retain the durable seed after release")
+    XCTAssertEqual(retainedTouch.weight, 3)
 
     // Retry the same public UI operation; no result/cache/model injection.
     try confirmClear()

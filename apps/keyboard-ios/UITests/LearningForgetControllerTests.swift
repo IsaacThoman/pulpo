@@ -96,7 +96,7 @@ final class LearningForgetControllerTests: XCTestCase {
     XCTAssertEqual(actions, 1); XCTAssertEqual(cancels, 1); XCTAssertEqual(stops, 1)
     let dismiss = try button("notice-dismiss", in: message)
     XCTAssertEqual(dismiss.accessibilityLabel, "Dismiss")
-    XCTAssertTrue(dismiss.isAccessibilityElement)
+    // Native AX visibility/hittability is checked in LearningForgetResultUITests.
     dismiss.sendActions(for: .touchUpInside)
     XCTAssertFalse(bar.isShowingNotice)
     XCTAssertEqual(personal.persistenceResult, .busy, "Dismiss must not retry")
@@ -110,6 +110,7 @@ final class LearningForgetControllerTests: XCTestCase {
     XCTAssertTrue(PersonalDictionary(url: url).isBlocked(suggestion.text))
     XCTAssertEqual(PersonalDictionary(url: url).count(of: suggestion.text), 0)
     XCTAssertFalse(bar.isShowingNotice)
+    RunLoop.main.run(until: Date().addingTimeInterval(0.03)) // Production bar updates are scheduled.
     XCTAssertFalse(bar.suggestions.contains { $0.text == suggestion.text })
     XCTAssertEqual(host.proxy.host, originalDocument)
     XCTAssertEqual(host.proxy.reported, originalReported)
