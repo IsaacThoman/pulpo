@@ -17,8 +17,15 @@ vi.hoisted(() => {
 vi.mock('@/stores/auth', () => ({
   useAuth: (selector: (state: unknown) => unknown) => selector({ user: { id: 'user' }, filesEnabled: true }),
 }))
-vi.mock('@/features/side-panel/agent', () => ({ usePublishFilesView: () => undefined }))
-vi.mock('@/features/side-panel/AgentActions', () => ({ AgentMenuItems: () => null, SplitViewButton: () => null }))
+vi.mock('@/features/side-panel/agent', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/features/side-panel/agent')>(),
+  usePublishFilesView: () => undefined,
+}))
+vi.mock('@/features/side-panel/AgentActions', async (importOriginal) => ({
+  OpenChatToLeftItem: (await importOriginal<typeof import('@/features/side-panel/AgentActions')>()).OpenChatToLeftItem,
+  AgentMenuItems: () => null,
+  SplitViewButton: () => null,
+}))
 vi.mock('@/features/side-panel/PanelControls', () => ({ PanelWindowButtons: () => null }))
 const resolveFileSuggestion = vi.hoisted(() => vi.fn(async () => null))
 vi.mock('@/features/files/api', async (importOriginal) => ({
@@ -231,6 +238,29 @@ describe('chats in Files', () => {
     fireEvent.contextMenu(await screen.findByRole('option', { name: /Trip/ }))
     fireEvent.click(await screen.findByRole('menuitem', { name: /^Duplicate/ }))
     expect(chatActions.duplicateChats).toHaveBeenCalledWith([{ id: 'trip', title: 'Trip' }])
+  })
+
+  it('opens a chat to the left from its menu, moving the folder into the panel', async () => {
+    showFiles()
+    fireEvent.contextMenu(await screen.findByRole('option', { name: /Trip/ }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: /^Open to the left/ }))
+    expect(useSidePanel.getState().content).toEqual({ kind: 'folder', id: null })
+    expect(screen.getByTestId('location').textContent).toBe('/c/trip')
+  })
+
+  it('opens a chat to the left with Alt-click', async () => {
+    showFiles()
+    fireEvent.click(await screen.findByRole('option', { name: /Trip/ }), { altKey: true })
+    expect(useSidePanel.getState().content).toEqual({ kind: 'folder', id: null })
+    expect(screen.getByTestId('location').textContent).toBe('/c/trip')
+  })
+
+  it('leaves a chat in the panel to Open, which already shows it to the left', async () => {
+    useSidePanel.setState({ content: { kind: 'folder', id: null } })
+    showFiles(true)
+    fireEvent.contextMenu(await screen.findByRole('option', { name: /Trip/ }))
+    expect(await screen.findByRole('menuitem', { name: 'Copy share link' })).toBeTruthy()
+    expect(screen.queryByRole('menuitem', { name: /^Open to the left/ })).toBeNull()
   })
 
   it('calls trashing a chat deleting it when trashed chats are deleted right away', async () => {

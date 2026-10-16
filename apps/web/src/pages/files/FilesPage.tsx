@@ -82,8 +82,8 @@ import {
 import { readFileSort, sortFileNodes, toggleFileSort, uniqueChildName, writeFileSort, type FileSort, type FileSortKey } from '@/features/files/browser/sort'
 import { hasPrimaryModifier, isAppleShortcut, isEditableTarget, shortcutLabel } from '@/features/files/browser/shortcuts'
 import { useSidePanel, type PanelContent } from '@/features/side-panel/store'
-import { AgentMenuItems, SplitViewButton } from '@/features/side-panel/AgentActions'
-import { usePublishFilesView, type FilesViewPlace } from '@/features/side-panel/agent'
+import { AgentMenuItems, OpenChatToLeftItem, SplitViewButton } from '@/features/side-panel/AgentActions'
+import { splitView, usePublishFilesView, type FilesViewPlace } from '@/features/side-panel/agent'
 import { PanelWindowButtons } from '@/features/side-panel/PanelControls'
 import { openBeside, panelContentPath, useMainNavigate } from '@/features/side-panel/use-panel-actions'
 import { SelectionAction } from '@/features/files/browser/SelectionAction'
@@ -672,10 +672,13 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
       if (renamingId === node.id || drag.consumeClick()) return
       // Touch has no double-click or hover, so a tap opens, as in mobile file browsers.
       if (lastPointerType.current === 'touch') { open(node); return }
-      // Alt/Option-click opens an item in the other view, like "Open to the right" in editors.
-      if (event.altKey && node.kind !== 'chat') {
+      // Alt/Option-click opens an item in the other view, like "Open to the right" in editors. A chat
+      // opens to the left, with this folder moved beside it; in the panel, chats already open there.
+      const opens = resolveShortcut(node)
+      if (event.altKey && (opens.kind === 'chat' ? !panel && splitAvailable : opens.kind !== 'shortcut')) {
         setSelection(selectOnly(node.id))
-        openElsewhere(nodeContent(node))
+        if (opens.kind === 'chat') splitView(place.view, goMain, opens.id)
+        else openElsewhere(nodeContent(opens))
         return
       }
       setSelection(clickSelect(selection, order, node.id, { toggle: hasPrimaryModifier(event), range: event.shiftKey }))
@@ -753,6 +756,8 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
           <ElsewhereIcon /> {elsewhereLabel}<DropdownMenuShortcut>{elsewhereShortcut}</DropdownMenuShortcut>
         </DropdownMenuItem>
       )}
+      {/* In the panel, Open already shows a chat beside it. */}
+      {single && resolveShortcut(single).kind === 'chat' && !panel && <OpenChatToLeftItem chatId={resolveShortcut(single).id} shortcut={elsewhereShortcut} />}
       {suggestionRootItem && (
         <>
           <DropdownMenuItem onSelect={() => void resolveSuggestion(suggestionRootItem, 'accept')}><Check /> {ui("Accept suggestion")}</DropdownMenuItem>

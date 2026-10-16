@@ -14,6 +14,7 @@
     "test:attachment-scroll": "node tests/attachment-scroll.browser.mjs",
     "test:table-preview": "node tests/table-preview.browser.mjs",
     "test:sidebar-animation": "node tests/sidebar-animation.browser.mjs",
+    "test:suggestion-card": "node tests/suggestion-card.browser.mjs",
     "capture:landing": "node scripts/capture-landing-screenshots.mjs"
   },
   "dependencies": {
