@@ -1,0 +1,390 @@
+{
+  "r23-audit.md": {
+    "kind": "git-blob",
+    "commit": "8231c233",
+    "path": "apps/keyboard-ios/audits/preview-document-lifetime/r23-audit.md",
+    "sourceSha256": "b35fced7276b845450fe6a69dd6459ec6f39663dcff590e3c047fc74c3132a3c",
+    "retainedUncompressedBytes": 10206,
+    "retainedUncompressedSha256": "b35fced7276b845450fe6a69dd6459ec6f39663dcff590e3c047fc74c3132a3c"
+  },
+  "r23-evidence.json": {
+    "kind": "git-blob",
+    "commit": "8231c233",
+    "path": "apps/keyboard-ios/audits/preview-document-lifetime/r23-evidence.json",
+    "sourceSha256": "fc4ec5a2a3e925e269510abde53cc36a412ffdc4c9a645053aa6e063538bedac",
+    "retainedUncompressedBytes": 7916,
+    "retainedUncompressedSha256": "fc4ec5a2a3e925e269510abde53cc36a412ffdc4c9a645053aa6e063538bedac"
+  },
+  "r23-protocol.md": {
+    "kind": "git-blob",
+    "commit": "8231c233",
+    "path": "apps/keyboard-ios/audits/preview-document-lifetime/r23-protocol.md",
+    "sourceSha256": "028ba35b2ac3b6005baf90784793cf049437efa1936c6f7fab604ab0b818e72f",
+    "retainedUncompressedBytes": 2472,
+    "retainedUncompressedSha256": "028ba35b2ac3b6005baf90784793cf049437efa1936c6f7fab604ab0b818e72f"
+  },
+  "fixtures/PreviewConsumerOwnershipTests.capture.swift.txt": {
+    "kind": "git-blob",
+    "commit": "4f23dcf1",
+    "path": "apps/keyboard-ios/AppTests/PreviewConsumerOwnershipTests.swift",
+    "sourceSha256": "0660c5afdee25e68a6f39d4eb1c8127e5d4d040415127dd498d1a5157408c468",
+    "retainedUncompressedBytes": 7327,
+    "retainedUncompressedSha256": "0660c5afdee25e68a6f39d4eb1c8127e5d4d040415127dd498d1a5157408c468"
+  },
+  "fixtures/PreviewDocumentLifecycleCounterchecks.capture.swift.txt": {
+    "kind": "git-blob",
+    "commit": "4f23dcf1",
+    "path": "apps/keyboard-ios/AppTests/PreviewDocumentLifecycleCounterchecks.swift",
+    "sourceSha256": "bc6bd42c29e3f51e360d6717c89756165be43ef1f0d4a0fbaa93ed900fac597f",
+    "retainedUncompressedBytes": 10483,
+    "retainedUncompressedSha256": "bc6bd42c29e3f51e360d6717c89756165be43ef1f0d4a0fbaa93ed900fac597f"
+  },
+  "fixtures/PreviewConsumerOwnershipTests.final.swift.txt": {
+    "kind": "git-blob",
+    "commit": "42b1fa40",
+    "path": "apps/keyboard-ios/AppTests/PreviewConsumerOwnershipTests.swift",
+    "sourceSha256": "ab5d83a717639c5d7f72e9c6692f4eb40f415f20902e112641a2632ea5f65f21",
+    "retainedUncompressedBytes": 6603,
+    "retainedUncompressedSha256": "ab5d83a717639c5d7f72e9c6692f4eb40f415f20902e112641a2632ea5f65f21"
+  },
+  "fixtures/PreviewDocumentLifecycleCounterchecks.final.swift.txt": {
+    "kind": "git-blob",
+    "commit": "42b1fa40",
+    "path": "apps/keyboard-ios/AppTests/PreviewDocumentLifecycleCounterchecks.swift",
+    "sourceSha256": "7ae832753b25100b6fdedae7b37b60e8978e25bd900f729c2fdd2d2240470fb0",
+    "retainedUncompressedBytes": 9374,
+    "retainedUncompressedSha256": "7ae832753b25100b6fdedae7b37b60e8978e25bd900f729c2fdd2d2240470fb0"
+  },
+  "evidence/candidate-pointer-and-content-methods.txt.gz": {
+    "kind": "line-excerpt",
+    "path": "/tmp/pulpo-r23-evidence/candidate-pointer-lldb.txt",
+    "sourceSha256": "2d45733fc495c75f532fb23406f0475e8c7f725728bec5ce21f65b09b8ef69a5",
+    "sourceBytes": 4607,
+    "sourceLineCount": 76,
+    "lineRangesInclusive": [
+      [
+        17,
+        76
+      ]
+    ],
+    "transformation": "concatenate exact ranges in listed order; no text normalization",
+    "retainedUncompressedBytes": 3723,
+    "retainedUncompressedSha256": "59b9a2e39d9551fb8e9090d869f26a7e757d902a78accca650406a1314716a18"
+  },
+  "evidence/candidate-probe.txt": {
+    "kind": "line-excerpt",
+    "path": "/tmp/pulpo-r23-evidence/probe.txt",
+    "sourceSha256": "9b3e1f3b7c33cc0b10786c69ea61ba092353502ddcea37c12067a296a7b38c71",
+    "sourceBytes": 124,
+    "sourceLineCount": 6,
+    "lineRangesInclusive": [
+      [
+        1,
+        6
+      ]
+    ],
+    "transformation": "concatenate exact ranges in listed order; no text normalization",
+    "retainedUncompressedBytes": 124,
+    "retainedUncompressedSha256": "9b3e1f3b7c33cc0b10786c69ea61ba092353502ddcea37c12067a296a7b38c71"
+  },
+  "evidence/strong-layout-and-ivar-offsets.txt": {
+    "kind": "line-excerpt",
+    "path": "/tmp/pulpo-r23-evidence/uikit-ownership-layout2.log",
+    "sourceSha256": "98575c5811ee937e552b7bf1093bc094bf6c4436a65b34b10b48a26e63a08fdd",
+    "sourceBytes": 4465,
+    "sourceLineCount": 79,
+    "lineRangesInclusive": [
+      [
+        22,
+        55
+      ]
+    ],
+    "transformation": "concatenate exact ranges in listed order; no text normalization",
+    "retainedUncompressedBytes": 745,
+    "retainedUncompressedSha256": "ffc4d7b789db7770cb09f20471b689a80cfecbc38195a3b9197e825095282c25"
+  },
+  "evidence/input-initializer-and-destructor.txt.gz": {
+    "kind": "line-excerpt",
+    "path": "/tmp/pulpo-r23-evidence/uikit-layout2-lldb.txt",
+    "sourceSha256": "7cfb2128692571cfb88f3f069033c0b14cb13fd28f4a1efcdd9c27b92d3b60d0",
+    "sourceBytes": 10572,
+    "sourceLineCount": 169,
+    "lineRangesInclusive": [
+      [
+        21,
+        164
+      ]
+    ],
+    "transformation": "concatenate exact ranges in listed order; no text normalization",
+    "retainedUncompressedBytes": 8177,
+    "retainedUncompressedSha256": "eec48baf7f65d6d52790ee7f15eed2713e65de92545f78e2ee66368d82c63329"
+  },
+  "evidence/plain-uikit-strong-incoming-reference.txt": {
+    "kind": "line-excerpt",
+    "path": "/tmp/pulpo-r23-evidence/pure-uikit-trace.txt",
+    "sourceSha256": "801c1c17a9ab99f7952a17728ec3e1a0f9d64ce6f66a81a69634d1034a8d36c0",
+    "sourceBytes": 2396,
+    "sourceLineCount": 34,
+    "lineRangesInclusive": [
+      [
+        1,
+        11
+      ]
+    ],
+    "transformation": "concatenate exact ranges in listed order; no text normalization",
+    "retainedUncompressedBytes": 556,
+    "retainedUncompressedSha256": "5a48bf711158fff72c2d61b9a9acf8d44a2add8628239a9f16a578190fdaf7b4"
+  },
+  "evidence/plain-uikit-closed-pointer.txt": {
+    "kind": "line-excerpt",
+    "path": "/tmp/pulpo-r23-evidence/pure-uikit-lldb.txt",
+    "sourceSha256": "1794739f9a1264fef1ee21050ed73b1ccc43ac5929404ed583c708014efdaaab",
+    "sourceBytes": 11934,
+    "sourceLineCount": 285,
+    "lineRangesInclusive": [
+      [
+        17,
+        25
+      ]
+    ],
+    "transformation": "concatenate exact ranges in listed order; no text normalization",
+    "retainedUncompressedBytes": 463,
+    "retainedUncompressedSha256": "89292b904d570fb385232a5a241a6299e6e258c1e9f244fe8776b1052604fa91"
+  },
+  "evidence/preview-strong-incoming-reference.txt": {
+    "kind": "line-excerpt",
+    "path": "/tmp/pulpo-r23-evidence/input-trace.txt",
+    "sourceSha256": "8cf84b5fcb9591f2734eb88c963653373df1820c61fc4ddbbc6c71546bbb92a9",
+    "sourceBytes": 40711,
+    "sourceLineCount": 340,
+    "lineRangesInclusive": [
+      [
+        1,
+        8
+      ],
+      [
+        335,
+        335
+      ]
+    ],
+    "transformation": "concatenate exact ranges in listed order; no text normalization",
+    "retainedUncompressedBytes": 528,
+    "retainedUncompressedSha256": "680902b640c191e7aa38da834196fc401b0de46d759206c41f26de393ffd3162"
+  },
+  "evidence/baseline-living-host-failures.txt": {
+    "kind": "line-excerpt",
+    "path": "/tmp/pulpo-r23-evidence/baseline-living-host-comparator.log",
+    "sourceSha256": "5f8e0020c522feec975d32af8180c9de51dbdcad1eb8e9dff99a38eb868e876e",
+    "sourceBytes": 72306,
+    "sourceLineCount": 312,
+    "lineRangesInclusive": [
+      [
+        285,
+        294
+      ]
+    ],
+    "transformation": "concatenate exact ranges in listed order; no text normalization",
+    "retainedUncompressedBytes": 1595,
+    "retainedUncompressedSha256": "169558db9d9ce703bf8dce39c7ae8fde0f87c83e84a2d18dc3e4131ec019ddcf"
+  },
+  "evidence/candidate-living-host-failures.txt": {
+    "kind": "line-excerpt",
+    "path": "/tmp/pulpo-r23-evidence/candidate-living-host-comparator.log",
+    "sourceSha256": "20339d396299fd37213ed2efe91c2c7345dfbdfb75cf405d08b19cff6fa0aca6",
+    "sourceBytes": 69187,
+    "sourceLineCount": 287,
+    "lineRangesInclusive": [
+      [
+        260,
+        269
+      ]
+    ],
+    "transformation": "concatenate exact ranges in listed order; no text normalization",
+    "retainedUncompressedBytes": 1595,
+    "retainedUncompressedSha256": "c14a875df97bf6cd35ad681762b0ea4231b8caba1c3663160314e622f81c76cc"
+  },
+  "evidence/final-method-results-and-assertions.txt": {
+    "kind": "line-excerpt",
+    "path": "/tmp/pulpo-r23-evidence/final-app-tests.log",
+    "sourceSha256": "ebf5cc0037f4adaff432fa5fb90f6ad5c95092c9dc195156b133b67fd9809493",
+    "sourceBytes": 101908,
+    "sourceLineCount": 529,
+    "lineRangesInclusive": [
+      [
+        227,
+        227
+      ],
+      [
+        233,
+        233
+      ],
+      [
+        281,
+        281
+      ],
+      [
+        304,
+        304
+      ],
+      [
+        336,
+        336
+      ],
+      [
+        341,
+        341
+      ],
+      [
+        375,
+        375
+      ],
+      [
+        377,
+        377
+      ],
+      [
+        379,
+        379
+      ],
+      [
+        381,
+        381
+      ],
+      [
+        383,
+        383
+      ],
+      [
+        386,
+        386
+      ],
+      [
+        388,
+        389
+      ],
+      [
+        391,
+        392
+      ],
+      [
+        394,
+        394
+      ],
+      [
+        396,
+        399
+      ],
+      [
+        428,
+        429
+      ],
+      [
+        448,
+        451
+      ],
+      [
+        453,
+        454
+      ],
+      [
+        456,
+        459
+      ],
+      [
+        461,
+        461
+      ],
+      [
+        464,
+        464
+      ],
+      [
+        466,
+        466
+      ],
+      [
+        468,
+        468
+      ],
+      [
+        470,
+        470
+      ],
+      [
+        473,
+        473
+      ],
+      [
+        475,
+        475
+      ],
+      [
+        477,
+        481
+      ],
+      [
+        483,
+        483
+      ],
+      [
+        486,
+        486
+      ],
+      [
+        489,
+        489
+      ],
+      [
+        492,
+        492
+      ],
+      [
+        494,
+        494
+      ],
+      [
+        496,
+        496
+      ],
+      [
+        498,
+        498
+      ]
+    ],
+    "transformation": "concatenate exact ranges in listed order; no text normalization",
+    "retainedUncompressedBytes": 9882,
+    "retainedUncompressedSha256": "733a604bee8978dd1ee32f6b0fb9cf2d6be7da04f58e07a049024e4da9f051f7"
+  },
+  "evidence/final-app-tests-summary.json": {
+    "kind": "whole-small-result-metadata",
+    "path": "/tmp/pulpo-r23-evidence/final-app-tests-summary.json",
+    "sourceSha256": "25f8037630b600394534277b03498fd8218d547b11d11fb30245d225015c9bd1",
+    "sourceBytes": 5895,
+    "retainedUncompressedBytes": 5895,
+    "retainedUncompressedSha256": "25f8037630b600394534277b03498fd8218d547b11d11fb30245d225015c9bd1"
+  },
+  "evidence/final-app-tests.json": {
+    "kind": "whole-small-result-metadata",
+    "path": "/tmp/pulpo-r23-evidence/final-app-tests.json",
+    "sourceSha256": "cc0cfa4c6dd0fe70f585047ec5278ad98e1862f4e88f416c713fcb55902c347e",
+    "sourceBytes": 575,
+    "retainedUncompressedBytes": 575,
+    "retainedUncompressedSha256": "cc0cfa4c6dd0fe70f585047ec5278ad98e1862f4e88f416c713fcb55902c347e"
+  },
+  "evidence/baseline-living-host-comparator-summary.json": {
+    "kind": "whole-small-result-metadata",
+    "path": "/tmp/pulpo-r23-evidence/baseline-living-host-comparator-summary.json",
+    "sourceSha256": "6cdd336f7e4cf7f3659d7fec525ca9fef7a4a6259b3f187c439ab867635f983b",
+    "sourceBytes": 1619,
+    "retainedUncompressedBytes": 1619,
+    "retainedUncompressedSha256": "6cdd336f7e4cf7f3659d7fec525ca9fef7a4a6259b3f187c439ab867635f983b"
+  },
+  "evidence/candidate-living-host-comparator-summary.json": {
+    "kind": "whole-small-result-metadata",
+    "path": "/tmp/pulpo-r23-evidence/candidate-living-host-comparator-summary.json",
+    "sourceSha256": "d615e827729b82bf51057f9453a7a64bd4f94640f9d752db2be0787a7594daa1",
+    "sourceBytes": 1619,
+    "retainedUncompressedBytes": 1619,
+    "retainedUncompressedSha256": "d615e827729b82bf51057f9453a7a64bd4f94640f9d752db2be0787a7594daa1"
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "label": "final-app-tests",
+  "command": [
+    "xcodebuild",
+    "-project",
+    "apps/keyboard-ios/PulpoKeyboard.xcodeproj",
+    "-scheme",
+    "PulpoKeyboard",
+    "-destination",
+    "platform=iOS Simulator,id=7E1D7979-7307-4C53-8466-BB41154B383C",
+    "-derivedDataPath",
+    "/tmp/pulpo-r23-build",
+    "-parallel-testing-enabled",
+    "NO",
+    "-collect-test-diagnostics",
+    "never",
+    "-resultBundlePath",
+    "/tmp/pulpo-r23-evidence/final-app-tests.xcresult",
+    "-only-testing:PulpoKeyboardAppTests",
+    "test"
+  ],
+  "exit": 65,
+  "wallSeconds": 34.95
+}

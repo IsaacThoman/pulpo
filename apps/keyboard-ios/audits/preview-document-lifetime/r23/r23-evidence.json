@@ -1,0 +1,266 @@
+{
+  "schemaVersion": 1,
+  "scope": "R23 consumer ownership diagnosis; R21 frozen result preserved unchanged",
+  "protocolCommit": "00515cab",
+  "captureFixtureCommit": "4f23dcf1",
+  "finalFixtureCommit": "42b1fa40",
+  "productionSourceChanged": false,
+  "device": "7E1D7979-7307-4C53-8466-BB41154B383C",
+  "runtime": {
+    "os": "iOS Simulator 27.0",
+    "build": "24A434",
+    "architecture": "arm64",
+    "UIKitCoreUUID": "E9CBEBE9-BFEE-3385-AF52-D32C606E46BE"
+  },
+  "ownership": {
+    "inputType": "PreviewInputView : UIInputView",
+    "strongCycle": [
+      "UIInputView._leftContentView / _rightContentView",
+      "_UIInputViewContent._inputView",
+      "same UIInputView"
+    ],
+    "appConsumers": [
+      "PreviewInputView.controller",
+      "KeyboardController.engine",
+      "KeyboardEngine.document"
+    ],
+    "hostDeallocated": true,
+    "metadata": {
+      "UIInputView": {
+        "superclassBytes": 416,
+        "strongLayoutHex": [
+          "11",
+          "12",
+          "b6"
+        ],
+        "weakLayoutHex": [],
+        "leftContentOffset": 440,
+        "rightContentOffset": 448
+      },
+      "_UIInputViewContent": {
+        "superclassBytes": 416,
+        "strongLayoutHex": [
+          "21"
+        ],
+        "weakLayoutHex": [],
+        "inputViewOffset": 432
+      }
+    },
+    "closedPointerCapture": {
+      "syntheticProcess": 67042,
+      "input": "0x116b74000",
+      "left": "0x11809c380",
+      "leftInput": "0x116b74000",
+      "right": "0x11809c540",
+      "rightInput": "0x116b74000"
+    },
+    "nativeInitializer": "-[_UIInputViewContent initWithFrame:inputView:] +128 calls objc_storeStrong",
+    "privateOwnerMutation": false,
+    "limits": [
+      "Other raw reference paths do not independently establish strong ownership.",
+      "No claim that every app leak is excluded.",
+      "Observed runtime cycle is not an Apple-confirmed bug or documented intended lifetime."
+    ]
+  },
+  "baselineComparison": {
+    "adapterFileFrom": "f17109e7",
+    "candidateRestoredByteForByte": true,
+    "hostKeptAliveForProcess": true,
+    "bothInputControllerEngineNilAssertionsFailed": true,
+    "standaloneAcceptanceCase": false
+  },
+  "nativeRuns": [
+    {
+      "label": "baseline-living-host-comparator",
+      "commandExit": 65,
+      "wallSeconds": 9.1,
+      "passed": 0,
+      "failed": 1,
+      "skipped": 0,
+      "runtimeWarnings": []
+    },
+    {
+      "label": "candidate-closed-cycle-capture",
+      "commandExit": 65,
+      "wallSeconds": 12.03,
+      "passed": 0,
+      "failed": 1,
+      "skipped": 0,
+      "runtimeWarnings": []
+    },
+    {
+      "label": "candidate-living-host-comparator",
+      "commandExit": 65,
+      "wallSeconds": 8.63,
+      "passed": 0,
+      "failed": 1,
+      "skipped": 0,
+      "runtimeWarnings": []
+    },
+    {
+      "label": "candidate-targeted-pointer-capture",
+      "commandExit": 65,
+      "wallSeconds": 14.67,
+      "passed": 0,
+      "failed": 1,
+      "skipped": 0,
+      "runtimeWarnings": []
+    },
+    {
+      "label": "final-app-tests",
+      "commandExit": 65,
+      "wallSeconds": 34.95,
+      "passed": 20,
+      "failed": 8,
+      "skipped": 0,
+      "runtimeWarnings": []
+    },
+    {
+      "label": "lldb-capture",
+      "commandExit": 65,
+      "wallSeconds": 62.75,
+      "passed": 0,
+      "failed": 1,
+      "skipped": 0,
+      "runtimeWarnings": []
+    },
+    {
+      "label": "ownership-capture",
+      "commandExit": 65,
+      "wallSeconds": 30.58,
+      "passed": 0,
+      "failed": 1,
+      "skipped": 0,
+      "runtimeWarnings": []
+    },
+    {
+      "label": "ownership-controls",
+      "commandExit": 65,
+      "wallSeconds": 12.27,
+      "passed": 2,
+      "failed": 3,
+      "skipped": 0,
+      "runtimeWarnings": []
+    },
+    {
+      "label": "pure-uikit-capture",
+      "commandExit": 65,
+      "wallSeconds": 30.82,
+      "passed": 0,
+      "failed": 1,
+      "skipped": 0,
+      "runtimeWarnings": []
+    },
+    {
+      "label": "responder-controls",
+      "commandExit": 65,
+      "wallSeconds": 13.15,
+      "passed": 0,
+      "failed": 3,
+      "skipped": 0,
+      "runtimeWarnings": []
+    },
+    {
+      "label": "uikit-ownership-layout",
+      "commandExit": 65,
+      "wallSeconds": 17.54,
+      "passed": 0,
+      "failed": 1,
+      "skipped": 0,
+      "runtimeWarnings": []
+    },
+    {
+      "label": "uikit-ownership-layout2",
+      "commandExit": 65,
+      "wallSeconds": 10.33,
+      "passed": 0,
+      "failed": 1,
+      "skipped": 0,
+      "runtimeWarnings": []
+    },
+    {
+      "label": "unchanged-standalone",
+      "commandExit": 65,
+      "wallSeconds": 16.92,
+      "passed": 0,
+      "failed": 1,
+      "skipped": 0,
+      "runtimeWarnings": []
+    }
+  ],
+  "final": {
+    "totalMethods": 28,
+    "passed": 20,
+    "failed": 8,
+    "skipped": 0,
+    "failedAssertions": 16,
+    "crashes": 0,
+    "runtimeWarnings": [],
+    "originalAppTests": {
+      "total": 19,
+      "passed": 18,
+      "failed": 1,
+      "draftPassed": 9,
+      "r17CursorFrozenPassed": 1,
+      "cursorBoundaryPassed": 3,
+      "primaryLifetimePassed": 3,
+      "independentPassed": 2,
+      "independentFailed": 1
+    },
+    "newOwnershipControls": {
+      "total": 9,
+      "passed": 2,
+      "failed": 7,
+      "passingMethods": [
+        "testPlainViewReleases",
+        "testControllerWithoutInputReleases"
+      ]
+    },
+    "standaloneDocumentChecksExecuted": false,
+    "acceptance": "INCOMPLETE: original standalone consumer release still fails; later document checks UNEXECUTED. New diagnostic controls remain enabled and red.",
+    "r17SixBroaderUXHeldouts": "NOT RUN",
+    "correctedAcceptanceFixtureProposed": false
+  },
+  "costs": {
+    "serializedXcodebuildInvocations": 13,
+    "xcodebuildWallSecondsSum": 273.74,
+    "nativeDiagnosticAttachAttempts": 6,
+    "targetedLeaksInvocations": 4,
+    "offlineFrameworkInspectionAttempts": 1,
+    "independentReviewTasks": 1,
+    "exactTokens": null,
+    "dollars": null,
+    "notes": "Wall sum includes native build/test and bounded capture waits, excluding authoring, review and separate debugger/heap invocation wall time; raw result tools and metadata queries unmetered. Six LLDB attaches include four incomplete expression/symbol attempts and two successful metadata/pointer captures. No performance claim."
+  },
+  "sha256": {
+    "apps/keyboard-ios/App/KeyboardPreview.swift": "dc182bebd3b98add90faa021185465eaf6b652f2523179eef8b747ea431cdf0c",
+    "apps/keyboard-ios/AppTests/PreviewDocumentLifecycleCounterchecks.swift": "7ae832753b25100b6fdedae7b37b60e8978e25bd900f729c2fdd2d2240470fb0",
+    "apps/keyboard-ios/AppTests/PreviewDocumentLifetimeTests.swift": "ae8afa79ade4744034eb0bce02cbfacc66532bb434b516c77d3e80bb7ceaea06",
+    "apps/keyboard-ios/AppTests/PreviewConsumerOwnershipTests.swift": "ab5d83a717639c5d7f72e9c6692f4eb40f415f20902e112641a2632ea5f65f21"
+  },
+  "release": {
+    "hardwareKeyboardEnabled": true,
+    "deviceClosedWithoutShutdown": true,
+    "agentDeviceSessionOpened": false,
+    "pushOrDeploy": false,
+    "pr782LinkedAndConfirmed": true,
+    "watching": false
+  },
+  "review": {
+    "nativeTask": "/root/r23_ownership_review",
+    "status": "Approved narrow diagnosis and no-source-change conclusion; no source/test blocker",
+    "verified": [
+      "Known candidate pointer cycle with strong/weak metadata and objc_storeStrong",
+      "Pure UIKit controls and releasing UIView/controller controls",
+      "Production/original countercheck unchanged",
+      "Living-host baseline/candidate comparator both fail same three consumer assertions",
+      "Final 28 methods:20pass8fail16nilassertions; later standalone document checks UNEXECUTED"
+    ],
+    "acceptanceApproved": false,
+    "limits": [
+      "Does not exclude every possible app leak",
+      "Does not establish every OS/physical device behavior or Apple-confirmed bug",
+      "No corrected standalone acceptance fixture proposed"
+    ]
+  }
+}

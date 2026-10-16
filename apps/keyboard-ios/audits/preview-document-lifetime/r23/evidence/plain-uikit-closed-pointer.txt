@@ -1,0 +1,9 @@
+(lldb) expression -l objc++ -O -- [(id)0x000000010aca8780 valueForKey:@"_leftContentView"]
+<_UIInputViewContent: 0x10ad1e840; frame = (0 0; 200 300); layer = <CALayer: 0x10acbba50>>
+
+(lldb) expression -l objc++ -O -- [[(id)0x000000010aca8780 valueForKey:@"_leftContentView"] _ivarDescription]
+<_UIInputViewContent: 0x10ad1e840>:
+in _UIInputViewContent:
+	_contentHeight (double): 0
+	_contentWidth (double): 0
+	_inputView (UIInputView*): <UIInputView: 0x10aca8780>

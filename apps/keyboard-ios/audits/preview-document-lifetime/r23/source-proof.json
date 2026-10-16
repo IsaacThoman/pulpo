@@ -1,0 +1,28 @@
+{
+  "startingCommit": "6ad8d719",
+  "finalCommit": "8231c233",
+  "originalCountercheckCommit": "74a4af2d",
+  "productionDiffEmpty": true,
+  "originalAppTests": {
+    "apps/keyboard-ios/AppTests/CursorEditingR17Tests.swift": "199050a5f64b778801d059d50cb6908cdaa67caaa83e562514fa142c82a4129b",
+    "apps/keyboard-ios/AppTests/DraftEditorTests.swift": "90b26c0e9c9ead92129e8660d16efb8d23bdb12302ca11ce90514ba0a1699b01",
+    "apps/keyboard-ios/AppTests/PreviewCursorBoundaryTests.swift": "c1f8d75c6b7bb82bc35716c7f63bed971c4c1cf9df0c6ba8b79fbe276d7f37dd",
+    "apps/keyboard-ios/AppTests/PreviewDocumentLifecycleCounterchecks.swift": "7ae832753b25100b6fdedae7b37b60e8978e25bd900f729c2fdd2d2240470fb0",
+    "apps/keyboard-ios/AppTests/PreviewDocumentLifetimeTests.swift": "ae8afa79ade4744034eb0bce02cbfacc66532bb434b516c77d3e80bb7ceaea06"
+  },
+  "livingHostComparisonSource": {
+    "f17109e7": {
+      "path": "apps/keyboard-ios/App/KeyboardPreview.swift",
+      "sha256": "63daa208cf17b68112b9afa5173a436ad3003aceb37971202d74f7051b0de395"
+    },
+    "8231c233": {
+      "path": "apps/keyboard-ios/App/KeyboardPreview.swift",
+      "sha256": "dc182bebd3b98add90faa021185465eaf6b652f2523179eef8b747ea431cdf0c"
+    }
+  },
+  "rootAtCuration": {
+    "head": "688e9e8f0e398c99f134e5a827aff4e628ab9d2d",
+    "keyboardPreviewSha256": "bd6315f921090fc5ee16014afe0500759126b628b7fdd23b755da4c7b317ec33",
+    "note": "Current root independently added adjustsFontForContentSizeCategory=true; source equality proof concerns R23 starting/final archival commits."
+  }
+}

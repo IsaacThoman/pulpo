@@ -1,0 +1,10 @@
+/Users/isaacthoman/.t3/worktrees/pulpo/t3-408e8272/apps/keyboard-ios/AppTests/PreviewConsumerOwnershipTests.swift:85: error: -[PulpoKeyboardAppTests.PreviewConsumerOwnershipTests testPreviewInputReleaseWithHostKeptAliveForBaselineComparison] : XCTAssertNil failed: "<PulpoKeyboard.PreviewInputView: 0x118f70000; baseClass = UIInputView; frame = (0 0; 0 295); layer = <CALayer: 0x118ef2940>>"
+/Users/isaacthoman/.t3/worktrees/pulpo/t3-408e8272/apps/keyboard-ios/AppTests/PreviewConsumerOwnershipTests.swift:85: error: -[PulpoKeyboardAppTests.PreviewConsumerOwnershipTests testPreviewInputReleaseWithHostKeptAliveForBaselineComparison] : XCTAssertNil failed: "<KeyboardUI.KeyboardController: 0x108ee9800>"
+/Users/isaacthoman/.t3/worktrees/pulpo/t3-408e8272/apps/keyboard-ios/AppTests/PreviewConsumerOwnershipTests.swift:85: error: -[PulpoKeyboardAppTests.PreviewConsumerOwnershipTests testPreviewInputReleaseWithHostKeptAliveForBaselineComparison] : XCTAssertNil failed: "KeyboardCore.KeyboardEngine"
+Test Case '-[PulpoKeyboardAppTests.PreviewConsumerOwnershipTests testPreviewInputReleaseWithHostKeptAliveForBaselineComparison]' failed (2.124 seconds).
+Test Suite 'PreviewConsumerOwnershipTests' failed at 2026-10-16 02:41:14.124.
+	 Executed 1 test, with 3 failures (0 unexpected) in 2.124 (2.125) seconds
+Test Suite 'PulpoKeyboardAppTests.xctest' failed at 2026-10-16 02:41:14.124.
+	 Executed 1 test, with 3 failures (0 unexpected) in 2.124 (2.125) seconds
+Test Suite 'Selected tests' failed at 2026-10-16 02:41:14.125.
+	 Executed 1 test, with 3 failures (0 unexpected) in 2.124 (2.126) seconds
