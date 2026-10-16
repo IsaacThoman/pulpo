@@ -223,7 +223,8 @@ export function useSuggestionReview(editor: Editor, onResolved?: () => void) {
     // The shortcuts use Cmd on Apple platforms, so their right Option key is no AltGr to avoid.
     if (isAppleShortcut()) return
     const track = (event: globalThis.KeyboardEvent) => {
-      if (event.code === 'AltRight') altGraph.current = event.type === 'keydown'
+      // The right Alt key is AltGr on layouts that have one, and plain Alt elsewhere.
+      if (event.code === 'AltRight') altGraph.current = event.type === 'keydown' && event.key === 'AltGraph'
     }
     const release = () => {
       altGraph.current = false

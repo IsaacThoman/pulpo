@@ -313,6 +313,11 @@ describe('DocEditor suggestions', () => {
     editor().commands.setTextSelection(first!.from + 1)
     fireEvent.keyDown(element()!, { key: 'Enter', ctrlKey: true, altKey: true, modifierAltGraph: true })
     expect(listSuggestions(editor().state.doc).map((hunk) => hunk.id)).toEqual(rest.map((hunk) => hunk.id))
+    // A right Alt key that is no AltGr, as on US layouts, is Alt.
+    editor().commands.setTextSelection(listSuggestions(editor().state.doc)[0]!.from + 1)
+    fireEvent.keyDown(element()!, { key: 'Alt', code: 'AltRight', altKey: true })
+    fireEvent.keyDown(element()!, { key: 'Enter', ctrlKey: true, altKey: true })
+    expect(listSuggestions(editor().state.doc).map((hunk) => hunk.id)).toEqual(rest.slice(1).map((hunk) => hunk.id))
     // With no suggestion at the cursor the keys do nothing, rather than Backspace deleting.
     editor().commands.setTextSelection(1)
     expect(fireEvent.keyDown(element()!, { key: 'Backspace', ctrlKey: true, altKey: true })).toBe(false)
