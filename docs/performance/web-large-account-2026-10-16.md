@@ -54,6 +54,22 @@ integration path.
 The focused web selection passes **119 tests across eight files**, including the Markdown
 and branch suites. Changed web/benchmark files also pass lint and diff whitespace checks.
 
+The full web suite subsequently passed **1,281 tests across 207 files**. Its first run exposed
+an existing dictation-test isolation race: unmount asynchronously saves the previous test's
+composer draft, while the next test clears IndexedDB outside the serialized draft-write queue.
+A pending cleanup write can land after that clear, restoring `hello from dictation` in the
+next test even though cancellation uploads nothing. The unchanged dictation file passed 15
+isolated repetitions. A temporary, in-memory diagnostic using baseline `08b2b232` chat-store
+code, 40 ms draft-put latency and a 100 ms pause after clearing storage reproduced the exact
+failure: an empty table became a table containing the previous transcript. The same diagnostic
+reproduced on the implementation. These timing perturbations were diagnostic only.
+
+The test setup now awaits the existing serialized `deleteComposerDraft(userId, 'new')` before
+clearing its storage. That orders reset after prior cleanup writes; no assertion changed and
+no sleep was added. With the same injected timing, the baseline dictation suite then passed
+all eight tests. The normal full web suite also passed under concurrent native-build activity.
+Production dictation and persistence code were not changed.
+
 ## Remaining findings
 
 - **Sidebar rendering remains proportional to the visible tree's total row count.**

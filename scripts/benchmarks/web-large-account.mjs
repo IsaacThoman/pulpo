@@ -17,6 +17,7 @@ const baseline = baselineIndex < 0 ? undefined : process.argv[baselineIndex + 1]
 assert(baselineIndex < 0 || baseline, '--baseline requires a commit')
 const baselineStore = baseline && execFileSync('git', ['show', `${baseline}:apps/web/src/stores/chat.ts`], { cwd: repo, encoding: 'utf8' })
 const results = []
+let baselineApplied = false
 let browser, server
 try {
   await writeFile(path.join(temporary, 'index.html'), '<script type="module" src="./fixture.ts"></script>')
@@ -72,10 +73,15 @@ window.benchReady = true
     root: temporary, configFile: path.join(web, 'vite.config.ts'), logLevel: 'error',
     plugins: baseline ? [{
       name: 'baseline-production-store', enforce: 'pre',
-      transform(_code, id) { if (id === path.join(web, 'src/stores/chat.ts')) return baselineStore },
+      transform(_code, id) {
+        if (id !== path.join(web, 'src/stores/chat.ts')) return
+        baselineApplied = true
+        return baselineStore
+      },
     }] : [],
     build: { outDir, rollupOptions: { input: path.join(temporary, 'index.html') } },
   })
+  assert(!baseline || baselineApplied, 'The baseline production store was not substituted')
   server = await preview({ root: temporary, configFile: path.join(web, 'vite.config.ts'), logLevel: 'error', build: { outDir }, preview: { host: '127.0.0.1', port: 0 } })
   browser = await chromium.launch()
   const page = await browser.newPage()
