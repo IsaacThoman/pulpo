@@ -1,0 +1,428 @@
+{
+  "dev": {
+    "exact": {
+      "numerator": 128,
+      "denominator": 128
+    },
+    "byLanguage": {
+      "spanish": {
+        "numerator": 64,
+        "denominator": 64
+      },
+      "bilingual": {
+        "numerator": 32,
+        "denominator": 32
+      },
+      "english": {
+        "numerator": 32,
+        "denominator": 32
+      }
+    },
+    "byProfile": {
+      "320-ideal": {
+        "numerator": 32,
+        "denominator": 32
+      },
+      "390-ideal": {
+        "numerator": 32,
+        "denominator": 32
+      },
+      "390-jitter": {
+        "numerator": 32,
+        "denominator": 32
+      },
+      "430-jitter": {
+        "numerator": 32,
+        "denominator": 32
+      }
+    },
+    "exactDictionaryMember": {
+      "numerator": 128,
+      "denominator": 128
+    },
+    "validGlideEligible": {
+      "numerator": 128,
+      "denominator": 128
+    },
+    "apiFour": {
+      "numerator": 128,
+      "denominator": 128
+    },
+    "visibleThree": {
+      "numerator": 128,
+      "denominator": 128
+    },
+    "accentCaseFoldedDocumentDiagnostic": {
+      "numerator": 128,
+      "denominator": 128
+    },
+    "literals": {
+      "numerator": 8,
+      "denominator": 8
+    },
+    "literalByLanguage": {
+      "spanish": {
+        "numerator": 3,
+        "denominator": 3
+      },
+      "bilingual": {
+        "numerator": 3,
+        "denominator": 3
+      },
+      "english": {
+        "numerator": 2,
+        "denominator": 2
+      }
+    },
+    "oovIDs": [],
+    "variantFailureIDs": [],
+    "failures": [],
+    "literalFailures": [],
+    "warmGestureMS": {
+      "n": 128,
+      "median": 1.586583,
+      "p95": 2.398791,
+      "maximum": 2.6675
+    },
+    "warmSetupMS": {
+      "n": 128,
+      "median": 0.0015415,
+      "p95": 0.005917,
+      "maximum": 0.018375
+    }
+  },
+  "heldout": {
+    "exact": {
+      "numerator": 124,
+      "denominator": 128
+    },
+    "byLanguage": {
+      "spanish": {
+        "numerator": 60,
+        "denominator": 64
+      },
+      "bilingual": {
+        "numerator": 32,
+        "denominator": 32
+      },
+      "english": {
+        "numerator": 32,
+        "denominator": 32
+      }
+    },
+    "byProfile": {
+      "320-ideal": {
+        "numerator": 31,
+        "denominator": 32
+      },
+      "390-ideal": {
+        "numerator": 31,
+        "denominator": 32
+      },
+      "390-jitter": {
+        "numerator": 31,
+        "denominator": 32
+      },
+      "430-jitter": {
+        "numerator": 31,
+        "denominator": 32
+      }
+    },
+    "exactDictionaryMember": {
+      "numerator": 128,
+      "denominator": 128
+    },
+    "validGlideEligible": {
+      "numerator": 128,
+      "denominator": 128
+    },
+    "apiFour": {
+      "numerator": 128,
+      "denominator": 128
+    },
+    "visibleThree": {
+      "numerator": 128,
+      "denominator": 128
+    },
+    "accentCaseFoldedDocumentDiagnostic": {
+      "numerator": 124,
+      "denominator": 128
+    },
+    "literals": {
+      "numerator": 7,
+      "denominator": 8
+    },
+    "literalByLanguage": {
+      "spanish": {
+        "numerator": 3,
+        "denominator": 3
+      },
+      "bilingual": {
+        "numerator": 3,
+        "denominator": 3
+      },
+      "english": {
+        "numerator": 1,
+        "denominator": 2
+      }
+    },
+    "oovIDs": [],
+    "variantFailureIDs": [],
+    "failures": [
+      {
+        "case": {
+          "id": "r10h011",
+          "kind": "swipe",
+          "language": "spanish",
+          "target": "silla",
+          "context": "Tenemos otra visita. Hace falta una ",
+          "expectedDocument": "Tenemos otra visita. Hace falta una silla "
+        },
+        "observations": [
+          {
+            "candidates": [
+              "sola",
+              "silla",
+              "sillas",
+              "aula"
+            ],
+            "document": "Tenemos otra visita. Hace falta una sola ",
+            "exact": false,
+            "gestureMS": 1.728125,
+            "id": "r10h011",
+            "language": "spanish",
+            "phantomSpace": true,
+            "profile": "320-ideal",
+            "rawDocument": "Tenemos otra visita. Hace falta una sola",
+            "setupMS": 0.001292,
+            "visible": [
+              "silla",
+              "sola",
+              "sillas"
+            ],
+            "words": [
+              {
+                "display": "silla",
+                "flags": 2,
+                "frequency": 131
+              }
+            ]
+          },
+          {
+            "candidates": [
+              "sola",
+              "silla",
+              "sillas",
+              "aula"
+            ],
+            "document": "Tenemos otra visita. Hace falta una sola ",
+            "exact": false,
+            "gestureMS": 1.502375,
+            "id": "r10h011",
+            "language": "spanish",
+            "phantomSpace": true,
+            "profile": "390-ideal",
+            "rawDocument": "Tenemos otra visita. Hace falta una sola",
+            "setupMS": 0.001083,
+            "visible": [
+              "silla",
+              "sola",
+              "sillas"
+            ],
+            "words": [
+              {
+                "display": "silla",
+                "flags": 2,
+                "frequency": 131
+              }
+            ]
+          },
+          {
+            "candidates": [
+              "sola",
+              "silla",
+              "sillas",
+              "aula"
+            ],
+            "document": "Tenemos otra visita. Hace falta una sola ",
+            "exact": false,
+            "gestureMS": 1.480375,
+            "id": "r10h011",
+            "language": "spanish",
+            "phantomSpace": true,
+            "profile": "390-jitter",
+            "rawDocument": "Tenemos otra visita. Hace falta una sola",
+            "setupMS": 0.000959,
+            "visible": [
+              "silla",
+              "sola",
+              "sillas"
+            ],
+            "words": [
+              {
+                "display": "silla",
+                "flags": 2,
+                "frequency": 131
+              }
+            ]
+          },
+          {
+            "candidates": [
+              "sola",
+              "silla",
+              "sillas",
+              "aula"
+            ],
+            "document": "Tenemos otra visita. Hace falta una sola ",
+            "exact": false,
+            "gestureMS": 1.480291,
+            "id": "r10h011",
+            "language": "spanish",
+            "phantomSpace": true,
+            "profile": "430-jitter",
+            "rawDocument": "Tenemos otra visita. Hace falta una sola",
+            "setupMS": 0.001,
+            "visible": [
+              "silla",
+              "sola",
+              "sillas"
+            ],
+            "words": [
+              {
+                "display": "silla",
+                "flags": 2,
+                "frequency": 131
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "literalFailures": [
+      {
+        "case": {
+          "id": "r10h037",
+          "kind": "literal",
+          "language": "english",
+          "context": "The export is ready. Save it to ",
+          "literal": "/tmp/notes.txt ",
+          "expectedDocument": "The export is ready. Save it to /tmp/notes.txt "
+        },
+        "observation": {
+          "document": "The export is ready. Save it to /tmp/notes.text ",
+          "exact": false,
+          "id": "r10h037"
+        }
+      }
+    ],
+    "warmGestureMS": {
+      "n": 128,
+      "median": 1.4457084999999998,
+      "p95": 2.062292,
+      "maximum": 2.480166
+    },
+    "warmSetupMS": {
+      "n": 128,
+      "median": 0.001125,
+      "p95": 0.003,
+      "maximum": 0.004291
+    }
+  },
+  "targetDisjointness": {
+    "devHeldout": 0,
+    "devOldR7": 0,
+    "heldoutOldR7": 0
+  },
+  "coldMS": {
+    "spanish": {
+      "constructionMS": {
+        "n": 3,
+        "median": 0.265709,
+        "p95": 0.272542,
+        "maximum": 0.272542
+      },
+      "setupMS": {
+        "n": 3,
+        "median": 0.040916,
+        "p95": 0.042833,
+        "maximum": 0.042833
+      },
+      "firstGestureMS": {
+        "n": 3,
+        "median": 1.949,
+        "p95": 2.070958,
+        "maximum": 2.070958
+      },
+      "firstInferenceMS": {
+        "n": 3,
+        "median": 1.989916,
+        "p95": 2.113791,
+        "maximum": 2.113791
+      }
+    },
+    "bilingual": {
+      "constructionMS": {
+        "n": 3,
+        "median": 1.200708,
+        "p95": 1.220334,
+        "maximum": 1.220334
+      },
+      "setupMS": {
+        "n": 3,
+        "median": 0.044334,
+        "p95": 0.044458,
+        "maximum": 0.044458
+      },
+      "firstGestureMS": {
+        "n": 3,
+        "median": 2.958708,
+        "p95": 2.968167,
+        "maximum": 2.968167
+      },
+      "firstInferenceMS": {
+        "n": 3,
+        "median": 3.001167,
+        "p95": 3.012625,
+        "maximum": 3.012625
+      }
+    },
+    "english": {
+      "constructionMS": {
+        "n": 3,
+        "median": 1.146209,
+        "p95": 1.179709,
+        "maximum": 1.179709
+      },
+      "setupMS": {
+        "n": 3,
+        "median": 0.044708,
+        "p95": 0.060375,
+        "maximum": 0.060375
+      },
+      "firstGestureMS": {
+        "n": 3,
+        "median": 1.230417,
+        "p95": 1.331125,
+        "maximum": 1.331125
+      },
+      "firstInferenceMS": {
+        "n": 3,
+        "median": 1.275125,
+        "p95": 1.3915,
+        "maximum": 1.3915
+      }
+    }
+  },
+  "inputSHA256": {
+    "dev": "0641ee7d069b8e82c2f862eb32316bc2cddfc0510ac248bb0c89f95ab3a3c547",
+    "heldout": "ab7466440909dd944f52ae1880fb36f58f9b8c7ff11600a6b9a84e7d02b9427a"
+  },
+  "acceptance": {
+    "productionCandidate": false,
+    "accuracyImprovement": false,
+    "literalHeldoutGate": false,
+    "relativeTimingGate": "not measured; no candidate",
+    "absoluteWarmGate": "baseline only: pass",
+    "absoluteColdGate": "baseline only: pass"
+  }
+}

@@ -1,0 +1,188 @@
+{
+  "classification": "post-reveal development-only timing diagnostic; not a replacement frozen baseline",
+  "command": [
+    "swift",
+    "test",
+    "--package-path",
+    "apps/keyboard-ios/PulpoKeyboardKit",
+    "-c",
+    "release",
+    "--skip-build",
+    "--filter",
+    "SwipeEligibilityRound10Tests.frozenSweep"
+  ],
+  "processFreshness": "nine separate swift test launches, exact single-test filter; OS disk caches may be warm",
+  "samples": [
+    {
+      "language": "spanish",
+      "invocationPID": 38857,
+      "returncode": 0,
+      "exactFilter": "SwipeEligibilityRound10Tests.frozenSweep",
+      "stdoutSHA256": "cf1a389e5a8e52cfd5b72ea5fc25e9aab1c75066460e29977aa3e9573ab23f4c",
+      "testEvidence": [
+        "\u25c7 Test frozenSweep() started.",
+        "\u2714 Test frozenSweep() passed after 0.003 seconds.",
+        "\u2714 Test run with 1 test in 1 suite passed after 0.003 seconds."
+      ],
+      "cold": {
+        "constructionMS": 0.252791,
+        "firstGestureMS": 1.894333,
+        "firstInferenceMS": 1.933625,
+        "language": "spanish",
+        "setupMS": 0.039292
+      }
+    },
+    {
+      "language": "spanish",
+      "invocationPID": 38899,
+      "returncode": 0,
+      "exactFilter": "SwipeEligibilityRound10Tests.frozenSweep",
+      "stdoutSHA256": "cf1a389e5a8e52cfd5b72ea5fc25e9aab1c75066460e29977aa3e9573ab23f4c",
+      "testEvidence": [
+        "\u25c7 Test frozenSweep() started.",
+        "\u2714 Test frozenSweep() passed after 0.003 seconds.",
+        "\u2714 Test run with 1 test in 1 suite passed after 0.003 seconds."
+      ],
+      "cold": {
+        "constructionMS": 0.245875,
+        "firstGestureMS": 1.875792,
+        "firstInferenceMS": 1.914584,
+        "language": "spanish",
+        "setupMS": 0.038792
+      }
+    },
+    {
+      "language": "spanish",
+      "invocationPID": 38939,
+      "returncode": 0,
+      "exactFilter": "SwipeEligibilityRound10Tests.frozenSweep",
+      "stdoutSHA256": "cf1a389e5a8e52cfd5b72ea5fc25e9aab1c75066460e29977aa3e9573ab23f4c",
+      "testEvidence": [
+        "\u25c7 Test frozenSweep() started.",
+        "\u2714 Test frozenSweep() passed after 0.003 seconds.",
+        "\u2714 Test run with 1 test in 1 suite passed after 0.003 seconds."
+      ],
+      "cold": {
+        "constructionMS": 0.258125,
+        "firstGestureMS": 1.983667,
+        "firstInferenceMS": 2.02575,
+        "language": "spanish",
+        "setupMS": 0.042083
+      }
+    },
+    {
+      "language": "bilingual",
+      "invocationPID": 39346,
+      "returncode": 0,
+      "exactFilter": "SwipeEligibilityRound10Tests.frozenSweep",
+      "stdoutSHA256": "bb12f85bce25a46a7795a76f40f87297b8d3cc49cbd47e0fb6ab160f96809726",
+      "testEvidence": [
+        "\u25c7 Test frozenSweep() started.",
+        "\u2714 Test frozenSweep() passed after 0.005 seconds.",
+        "\u2714 Test run with 1 test in 1 suite passed after 0.005 seconds."
+      ],
+      "cold": {
+        "constructionMS": 1.139167,
+        "firstGestureMS": 2.641875,
+        "firstInferenceMS": 2.680792,
+        "language": "bilingual",
+        "setupMS": 0.038917
+      }
+    },
+    {
+      "language": "bilingual",
+      "invocationPID": 39386,
+      "returncode": 0,
+      "exactFilter": "SwipeEligibilityRound10Tests.frozenSweep",
+      "stdoutSHA256": "7debec97e55c877e66c8c9c470727f8b28b239f3e0d11d2664f09d29c2873e1c",
+      "testEvidence": [
+        "\u25c7 Test frozenSweep() started.",
+        "\u2714 Test frozenSweep() passed after 0.004 seconds.",
+        "\u2714 Test run with 1 test in 1 suite passed after 0.005 seconds."
+      ],
+      "cold": {
+        "constructionMS": 1.192833,
+        "firstGestureMS": 2.513875,
+        "firstInferenceMS": 2.55725,
+        "language": "bilingual",
+        "setupMS": 0.043375
+      }
+    },
+    {
+      "language": "bilingual",
+      "invocationPID": 39426,
+      "returncode": 0,
+      "exactFilter": "SwipeEligibilityRound10Tests.frozenSweep",
+      "stdoutSHA256": "bb12f85bce25a46a7795a76f40f87297b8d3cc49cbd47e0fb6ab160f96809726",
+      "testEvidence": [
+        "\u25c7 Test frozenSweep() started.",
+        "\u2714 Test frozenSweep() passed after 0.005 seconds.",
+        "\u2714 Test run with 1 test in 1 suite passed after 0.005 seconds."
+      ],
+      "cold": {
+        "constructionMS": 1.162041,
+        "firstGestureMS": 2.525917,
+        "firstInferenceMS": 2.571959,
+        "language": "bilingual",
+        "setupMS": 0.046042
+      }
+    },
+    {
+      "language": "english",
+      "invocationPID": 39466,
+      "returncode": 0,
+      "exactFilter": "SwipeEligibilityRound10Tests.frozenSweep",
+      "stdoutSHA256": "cf1a389e5a8e52cfd5b72ea5fc25e9aab1c75066460e29977aa3e9573ab23f4c",
+      "testEvidence": [
+        "\u25c7 Test frozenSweep() started.",
+        "\u2714 Test frozenSweep() passed after 0.003 seconds.",
+        "\u2714 Test run with 1 test in 1 suite passed after 0.003 seconds."
+      ],
+      "cold": {
+        "constructionMS": 1.085709,
+        "firstGestureMS": 1.211,
+        "firstInferenceMS": 1.249,
+        "language": "english",
+        "setupMS": 0.038
+      }
+    },
+    {
+      "language": "english",
+      "invocationPID": 39507,
+      "returncode": 0,
+      "exactFilter": "SwipeEligibilityRound10Tests.frozenSweep",
+      "stdoutSHA256": "cf1a389e5a8e52cfd5b72ea5fc25e9aab1c75066460e29977aa3e9573ab23f4c",
+      "testEvidence": [
+        "\u25c7 Test frozenSweep() started.",
+        "\u2714 Test frozenSweep() passed after 0.003 seconds.",
+        "\u2714 Test run with 1 test in 1 suite passed after 0.003 seconds."
+      ],
+      "cold": {
+        "constructionMS": 1.135791,
+        "firstGestureMS": 1.227541,
+        "firstInferenceMS": 1.27275,
+        "language": "english",
+        "setupMS": 0.045209
+      }
+    },
+    {
+      "language": "english",
+      "invocationPID": 39548,
+      "returncode": 0,
+      "exactFilter": "SwipeEligibilityRound10Tests.frozenSweep",
+      "stdoutSHA256": "cf1a389e5a8e52cfd5b72ea5fc25e9aab1c75066460e29977aa3e9573ab23f4c",
+      "testEvidence": [
+        "\u25c7 Test frozenSweep() started.",
+        "\u2714 Test frozenSweep() passed after 0.003 seconds.",
+        "\u2714 Test run with 1 test in 1 suite passed after 0.003 seconds."
+      ],
+      "cold": {
+        "constructionMS": 1.119417,
+        "firstGestureMS": 1.150208,
+        "firstInferenceMS": 1.193333,
+        "language": "english",
+        "setupMS": 0.043125
+      }
+    }
+  ]
+}

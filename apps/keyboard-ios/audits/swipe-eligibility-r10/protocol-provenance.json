@@ -1,0 +1,8 @@
+{
+  "originalAuthorProtocolCommit": "3db4cef5",
+  "originalAuthorProtocolSHA256": "ac3f5fb7458a966169f15d060fe060fc5483dbd7b674b1e705516953e21fc0f9",
+  "authorBaseCommit": "3db4cef5dd97e3c978074c789bcf18d3ac1004d5",
+  "runnerBoundaryClarificationCommit": "7430e59f",
+  "frozenRunnerProtocolSHA256": "a48fccd53df2806481e5b039be5c463aafc7cc1199d7b9e43b55f8a20a098467",
+  "explanation": "The author checkout used the original protocol. Before baseline, code inspection clarified engine.insertGlide owed-space semantics and the normal engine.insertSpace delimiter. Input schema and expected full documents were unchanged. Independent-author noninspection compliance is attested by the author task; no human-participant independence is claimed."
+}
