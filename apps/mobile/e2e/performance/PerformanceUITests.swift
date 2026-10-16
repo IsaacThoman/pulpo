@@ -97,6 +97,25 @@ final class PerformanceUITests: XCTestCase {
 
   }
 
+  func testReaderDetachesFromStreamingReply() {
+    continueAfterFailure = false
+    let app = XCUIApplication(bundleIdentifier: "com.isaacthoman.pulpo")
+    app.launch()
+    XCTAssertTrue(app.buttons["Open chats"].waitForExistence(timeout: 30))
+    app.buttons["Open chats"].tap()
+    app.staticTexts["Performance 1000 turns"].firstMatch.tap()
+    let latest = app.descendants(matching: .any).matching(identifier: "chat-message-00000000-0000-4000-8000-000000000100-response-999").firstMatch
+    XCTAssertTrue(latest.waitForExistence(timeout: 10))
+    app.descendants(matching: .any).matching(identifier: "Fixture stream").firstMatch.tap()
+    Thread.sleep(forTimeInterval: 2)
+    // The streaming row is still visible at the tail; anchoring must not use it.
+    let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
+    start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 0, dy: 60)), withVelocity: .slow, thenHoldForDuration: 0)
+    let position = latest.frame.minY
+    Thread.sleep(forTimeInterval: 2)
+    XCTAssertEqual(latest.frame.minY, position, accuracy: 3, "A short swipe away from a streaming reply must detach")
+  }
+
   func testLargeMarkdownSelection() {
     continueAfterFailure = false
     let app = XCUIApplication(bundleIdentifier: "com.isaacthoman.pulpo")
