@@ -1,0 +1,291 @@
+{
+  "schemaVersion": 1,
+  "scope": "Parent integration of exposed native settings/navigation checks; no new blind efficacy evaluation",
+  "integrationCommit": "e6871a16",
+  "productionSourceFreezeSHA256": "98eec4e026bd1530bb57ec6527c49b70338134b4cf72acf345d4afd90ef7d420",
+  "sources": {
+    "apps/keyboard-ios/App/PulpoKeyboardApp.swift": {
+      "bytes": 15592,
+      "sha256": "98eec4e026bd1530bb57ec6527c49b70338134b4cf72acf345d4afd90ef7d420",
+      "equalsIntegrationCommit": true
+    },
+    "apps/keyboard-ios/UITests/SettingsUsabilitySweepTests.swift": {
+      "bytes": 4585,
+      "sha256": "eaef5a11e05e1919a70e1a6b44139c051b74179060ccf17808a56742d4a6c57b",
+      "equalsIntegrationCommit": true
+    },
+    "apps/keyboard-ios/UITests/DraftNavigationTests.swift": {
+      "bytes": 2459,
+      "sha256": "102e22530e3e76442e377ef7db765f6e1a68cd7e2d7479dce4e6cdce4ee7b506",
+      "equalsIntegrationCommit": true
+    },
+    "apps/keyboard-ios/UITests/PreviewDismissalTests.swift": {
+      "bytes": 1809,
+      "sha256": "d018f2e11e4d69fee7d3e088700891469bbd54d49ea5b1c268e1adb7ebd88575",
+      "equalsIntegrationCommit": true
+    },
+    "apps/keyboard-ios/UITests/Support.swift": {
+      "bytes": 5186,
+      "sha256": "8542398caf69c3a84f5f0f2f538f9524fc21af13c6c206053164d3a0ec667dc2",
+      "equalsIntegrationCommit": true
+    },
+    "apps/keyboard-ios/benchmarks/settings-usability-sweep/SettingsUsabilityContractTests.swift": {
+      "bytes": 4708,
+      "sha256": "3596cb734804ad48d101938bbd8447b21e45aa996473c5c18c22f111bf050b45",
+      "equalsIntegrationCommit": true
+    }
+  },
+  "runs": [
+    {
+      "label": "largest",
+      "resultBundle": "/tmp/pulpo-r28-parent-largest.xcresult",
+      "contentSize": {
+        "value": "accessibility-extra-extra-extra-large (AX5)",
+        "provenance": "Actual system size supplied by parent; xcresult summary does not encode Dynamic Type category."
+      },
+      "summary": {
+        "result": "Passed",
+        "totalTestCount": 1,
+        "passedTests": 1,
+        "failedTests": 0,
+        "skippedTests": 0,
+        "expectedFailures": 0,
+        "runtimeWarnings": [],
+        "startTime": 1792136463.926,
+        "finishTime": 1792136500.526
+      },
+      "testReportWallSeconds": 36.6,
+      "methods": [
+        {
+          "id": "SettingsUsabilitySweepTests/testQuickSettingsReachesExistingControlsWithoutChangingValues()",
+          "durationSeconds": 28.600693941116333,
+          "result": "Passed"
+        }
+      ],
+      "structuredStdoutSHA256": {
+        "summary": "5aae342571b26f881ae0a8919d94bd90cfb4160e41c6db64d1b48a4cb584583d",
+        "tests": "a4f5d5f2f523b7d3d627a63ec2b84d6a9453f043e02c7b7cb98f124ab826b7f3"
+      },
+      "selectionArguments": [
+        "-only-testing:PulpoKeyboardUITests/SettingsUsabilitySweepTests/testQuickSettingsReachesExistingControlsWithoutChangingValues"
+      ]
+    },
+    {
+      "label": "return",
+      "resultBundle": "/tmp/pulpo-r28-parent-return.xcresult",
+      "contentSize": {
+        "value": "large",
+        "provenance": "Actual system size supplied by parent; xcresult summary does not encode Dynamic Type category."
+      },
+      "summary": {
+        "result": "Passed",
+        "totalTestCount": 6,
+        "passedTests": 6,
+        "failedTests": 0,
+        "skippedTests": 0,
+        "expectedFailures": 0,
+        "runtimeWarnings": [],
+        "startTime": 1792136587.192,
+        "finishTime": 1792136735.558
+      },
+      "testReportWallSeconds": 148.366,
+      "methods": [
+        {
+          "id": "DraftNavigationTests/testSettingsRoundTripKeepsDraftAndDismissedReturnStaysHidden()",
+          "durationSeconds": 25.49890697002411,
+          "result": "Passed"
+        },
+        {
+          "id": "DraftNavigationTests/testSwitchingModesAndReturningKeepsTextFieldKindAndDismissal()",
+          "durationSeconds": 22.482115983963013,
+          "result": "Passed"
+        },
+        {
+          "id": "PreviewDismissalTests/testHideAndRefocusPreviewPreservesTextAndClearBinding()",
+          "durationSeconds": 14.93150508403778,
+          "result": "Passed"
+        },
+        {
+          "id": "PreviewDismissalTests/testInstalledFieldCanHideAndRefocusWithoutLosingText()",
+          "durationSeconds": 13.656340956687927,
+          "result": "Passed"
+        },
+        {
+          "id": "SettingsUsabilitySweepTests/testLearningOffSurvivesJumpsClearAndRelaunch()",
+          "durationSeconds": 40.503653049468994,
+          "result": "Passed"
+        },
+        {
+          "id": "SettingsUsabilitySweepTests/testQuickSettingsReachesExistingControlsWithoutChangingValues()",
+          "durationSeconds": 27.260118007659912,
+          "result": "Passed"
+        }
+      ],
+      "structuredStdoutSHA256": {
+        "summary": "500c05dfd2fbeff6ad956a19d7b4053aaef14bd432b553bf7a7764a8ffaae565",
+        "tests": "edb0eb85575ef003d60f139c897ac08b99952964f4c3964d945fed67aac4e965"
+      },
+      "selectionArguments": [
+        "-only-testing:PulpoKeyboardUITests/SettingsUsabilitySweepTests",
+        "-only-testing:PulpoKeyboardUITests/DraftNavigationTests",
+        "-only-testing:PulpoKeyboardUITests/PreviewDismissalTests"
+      ]
+    }
+  ],
+  "aggregate": {
+    "distinctMethods": 6,
+    "executions": 7,
+    "passedExecutions": 7,
+    "failedExecutions": 0,
+    "skippedExecutions": 0,
+    "expectedFailures": 0,
+    "runtimeWarnings": [],
+    "testReportWallSeconds": 184.966,
+    "methodDurationsSecondsSum": 172.93333399295807,
+    "duplicateMethod": "SettingsUsabilitySweepTests/testQuickSettingsReachesExistingControlsWithoutChangingValues()",
+    "groups": {
+      "newSettingsMethods": 2,
+      "existingDraftNavigationMethods": 2,
+      "existingPreviewDismissalMethods": 2
+    }
+  },
+  "device": {
+    "uuid": "7E1D7979-7307-4C53-8466-BB41154B383C",
+    "name": "iPhone 18 Pro",
+    "viewportPoints": [
+      402,
+      874
+    ],
+    "platform": "iOS Simulator",
+    "osVersion": "27.0",
+    "osBuild": "24A434",
+    "architecture": "arm64",
+    "hostMacOS": "27.0.1",
+    "deviceListFailedExit": 127,
+    "deviceOpenFailedExit": 127,
+    "agentDeviceSessionCreated": false
+  },
+  "visualEvidence": {
+    "reviewer": "Parent coordinator",
+    "inspection": "Parent viewed actual AX5 menu screenshot and final One-Handed Keyboard, Right screenshot. Curation hashed existing files and read associated AX text; it did not perform a device inspection.",
+    "artifacts": [
+      {
+        "path": "/tmp/pulpo-r28-parent-largest-artifacts/quick-settings-final.png",
+        "bytes": 467793,
+        "sha256": "88d0ad5230f13193d1424ef2a2504572dfd4bc33c2b2e46e29f9fa76872810d2",
+        "copiedToRepository": false
+      },
+      {
+        "path": "/tmp/pulpo-r28-parent-largest-artifacts/quick-settings-final.txt",
+        "bytes": 6776,
+        "sha256": "1eb6ae3074e2a580903ac45c5d124fb10aa04e4aa93771fb33301763b050e77c",
+        "copiedToRepository": false
+      },
+      {
+        "path": "/tmp/pulpo-r28-parent-largest-artifacts/quick-settings-menu.png",
+        "bytes": 461334,
+        "sha256": "6ed5c9c93ca1910c5fff2291f61759f1120493931053e2b39d5076c6922ae1e7",
+        "copiedToRepository": false
+      },
+      {
+        "path": "/tmp/pulpo-r28-parent-largest-artifacts/quick-settings-menu.txt",
+        "bytes": 7394,
+        "sha256": "ac520bfb6ff747f056a3dbf403fcfb7e352e0a837d52aad5e1f73160400199be",
+        "copiedToRepository": false
+      }
+    ],
+    "persistenceLimit": "Local /tmp artifacts and xcresults may expire; no image binaries copied."
+  },
+  "historicalFrozenBenchmark": {
+    "cases": 5,
+    "actions": 99,
+    "baselinePassedActions": 99,
+    "candidatePassedActions": 99,
+    "baselinePassedCases": 5,
+    "candidatePassedCases": 5,
+    "menuInvocationCapability": false,
+    "baselineScrollGestures": 163,
+    "candidateScrollGestures": 162,
+    "changedRecords": 1,
+    "interpretation": "Single-run one-gesture variation only; no gain attributed. This parent integration does not add blind cases or actions.",
+    "exactReadbackDiagnostic": {
+      "readbacksPerVersion": 24,
+      "baselineExact": 24,
+      "candidateExact": 24,
+      "classification": "Stronger post-reveal label diagnostic, separate from frozen substring-based score."
+    }
+  },
+  "release": {
+    "provenance": "Parent coordinator reported restoration and successful device_close; not queried or changed by curation.",
+    "parentTemporarilyDisabledHardwareKeyboardForNavigationTyping": true,
+    "hardwareKeyboardRestoredEnabled": true,
+    "hardwareRestorationVia": "Repository helper script",
+    "contentSizeRestored": "large",
+    "deviceCloseShutdown": false,
+    "deviceCloseSucceeded": true,
+    "activeNativeJobs": 0,
+    "historicalChildHardwareKeyboard": "Never changed during child settings-only runs; preserved original statement refers to those runs, not this parent navigation integration."
+  },
+  "priorCoreValidation": {
+    "coreTests": 441,
+    "serviceTests": 3,
+    "knownCoreIssues": 5,
+    "provenance": "Parent-reported earlier validation predates app-only R28 integration; not rerun here and not evidence of learning-reset correctness.",
+    "buildConfiguration": "Release"
+  },
+  "limits": [
+    "Exposed native regression checks, not blind menu discoverability or accuracy gains.",
+    "Only assigned402x874 simulator; no smallest-supported-device, physical-device or Gboard claim.",
+    "No VoiceOver focus-transfer verification; AX labels are not that test.",
+    "Navigation/dismissal checks cover their literal assertions, not exhaustive numeric-field, caret or selected-range behavior.",
+    "Learning-Off/clear checks cover UI settings and acknowledgement; no seeded dictionary/touch-store reset readback or whole-reset correctness claim.",
+    "Installed-field test uses XCTest typing; not a remote extension key-accuracy proof.",
+    "No production audio, recording, upload/network or privacy-field experiment.",
+    "Structured runtimeWarnings lists are empty; successful raw logs were not read, so no comprehensive clean-log claim.",
+    "Source fingerprints establish current bytes equal e6871a16; full build-time fingerprint transcript not retained.",
+    "Comparator strictness counterchecks are parent-reported separate helper validation; they do not add native executions or frozen efficacy gains."
+  ],
+  "curation": {
+    "newBuilds": 0,
+    "newTestExecutions": 0,
+    "deviceOperations": 0,
+    "successfulRawLogsRead": false,
+    "sourceOrHistoricalNotesChanged": false,
+    "commitRequested": false,
+    "recordedAtUTC": "2026-10-16T07:54:36.924797+00:00"
+  },
+  "helperValidation": {
+    "hardeningCommit": "9085b46b",
+    "provenance": "Parent independently reran comparator on a temporary copy; metadata curator did not repeat it.",
+    "modes": [
+      "normal",
+      "python3 -O"
+    ],
+    "originalReportByteIdenticalInBothModes": true,
+    "originalReportSHA256": "464288adbf7a49e30ad098a8d426e075ddb6edc730cdc3bdc1361f408795e734",
+    "tamperVariants": [
+      "passed string false",
+      "dropped baseline case",
+      "wrong target",
+      "inconsistent case aggregate"
+    ],
+    "tamperExecutions": 8,
+    "tamperRejections": 8,
+    "rejectedBeforeReportRewrite": true,
+    "nativeReplaysAdded": 0,
+    "productionSourceFreezeChanged": false
+  },
+  "commands": {
+    "structuredReads": [
+      "xcrun xcresulttool get test-results summary --path <resultBundle>",
+      "xcrun xcresulttool get test-results tests --path <resultBundle>"
+    ],
+    "equivalentNativeTemplate": "xcodebuild -project apps/keyboard-ios/PulpoKeyboard.xcodeproj -scheme PulpoKeyboard -destination platform=iOS Simulator,id=7E1D7979-7307-4C53-8466-BB41154B383C -derivedDataPath apps/keyboard-ios/build/DerivedData -parallel-testing-enabled NO -collect-test-diagnostics never -resultBundlePath <resultBundle> <selectionArgumentsForRun> test",
+    "provenance": "Equivalent template with parent-confirmed default Debug scheme, DerivedData path and selectors; not a retained original full launcher transcript. No successful raw log read.",
+    "nativeConfiguration": {
+      "configurationArgumentPassed": false,
+      "effectiveTestConfiguration": "Debug",
+      "evidence": "project.yml test config is Debug; parent verified generated scheme TestAction buildConfiguration Debug."
+    }
+  }
+}

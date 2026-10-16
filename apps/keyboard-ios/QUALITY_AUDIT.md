@@ -679,6 +679,22 @@ proved broken, and tap reset has only analogous source evidence. No product fix
 is included; `audits/learning-reset-r29/` retains the baseline schedules and
 ownership/observation limits while a separate implementation round continues.
 
+R28 adds a native **Find Setting** toolbar menu linking to the existing Language,
+One-Handed and Privacy & Learning rows. Parent integration passes **six distinct
+native methods / seven executions** with no failures, skips or runtime warnings:
+the shortcut at normal and largest system text size, learning Off through jumps,
+clear acknowledgement and relaunch, and four existing draft/navigation/dismissal
+checks. The tested production hash matches the pre-reveal freeze. On the assigned
+402×874 iPhone 18 Pro, the menu reaches each row in two taps without manual
+scrolling; this is exposed feature validation, not blind discovery evidence.
+The frozen executor cannot invoke the new menu. Its five workflows retain all
+99 commands and 24 exact label readbacks, passing on both versions. The sole
+changed command takes nine baseline scrolls versus eight candidate scrolls (total
+163→162), which is single-run variation, not a measured utility gain. Historical
+observations, negatives and parent results remain in
+`benchmarks/settings-usability-sweep/`. Smaller screens, VoiceOver navigation and
+seeded learning-store clearing remain unverified by this sweep.
+
 ### Rejected technical-token expansion
 
 The first technical-text candidate makes every whitespace token containing a
