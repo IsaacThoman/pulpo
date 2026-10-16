@@ -30,6 +30,9 @@ for (const c of fixture.cases.filter((c: any) => select.includes(`${c.kind}:${c.
   const failedRequests: any[] = []
   page.on('response', r => { if (r.status() >= 400) failedRequests.push({ url: r.url(), status: r.status() }) })
   await page.addInitScript(() => {
+    // The authenticated app now loads enough chunks to fill the default 250
+    // resource entries before its history prefetch. Keep those requests visible.
+    performance.setResourceTimingBufferSize(5_000)
     const w = window as any
     w.__name = (value: unknown) => value
     w.bench = { longTasks: [], events: [], frames: [], writes: [], phase: 'load' }
@@ -109,7 +112,14 @@ for (const c of fixture.cases.filter((c: any) => select.includes(`${c.kind}:${c.
     if (process.env.BENCH_VIRTUAL && result.streamIntegrity.bottomGap > 4) throw new Error(`Streaming left a bottom gap of ${result.streamIntegrity.bottomGap}px`)
     await page.waitForTimeout(1000)
     if (process.env.BENCH_VALIDATE_LAYOUT) {
-      await page.evaluate(() => { const el = document.querySelector('[data-radix-scroll-area-viewport]')!; el.scrollTop -= 2000; (window as any).bench.phase = 'reading-stream' })
+      const readingViewport = page.locator('[data-radix-scroll-area-viewport]').filter({ has: page.locator('[data-message-id]') })
+      const bounds = await readingViewport.boundingBox()
+      if (!bounds) throw new Error('Missing reading viewport')
+      // Bottom following distinguishes reader gestures from virtualizer scroll
+      // corrections. Use actual wheel input to enter reading mode.
+      await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + Math.min(200, bounds.height / 2))
+      await page.mouse.wheel(0, -2000)
+      await page.evaluate(() => { (window as any).bench.phase = 'reading-stream' })
       await page.waitForTimeout(250)
       const anchor = await page.evaluate(() => { const top = document.querySelector('[data-radix-scroll-area-viewport]')!.getBoundingClientRect().top; const rows = [...document.querySelectorAll<HTMLElement>('[data-message-id]')]; const row = rows.find(el => el.getBoundingClientRect().top >= top + 48) ?? rows.find(el => el.getBoundingClientRect().bottom > top + 48)!; return { id: row.dataset.messageId!, y: row.getBoundingClientRect().y } })
       for (let i = 61; i <= 70; i++) {
