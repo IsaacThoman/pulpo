@@ -630,6 +630,7 @@ public final class KeyboardEngine {
   public struct WordDeletion: Equatable, Sendable {
     public let removed: String
     let remaining: String
+    let after: String
     let documentID: UUID?
   }
 
@@ -639,8 +640,13 @@ public final class KeyboardEngine {
   @discardableResult
   public func deleteWordsBackward(_ count: Int, originalContext: String? = nil) -> WordDeletion? {
     reconcilePendingHostChanges()
+    guard count > 0 else { return nil }
     let start = before
-    let length = Self.wordDeletionSuffix(of: start, words: count).count
+    // A host can select text after the gesture began. Like ordinary Backspace,
+    // remove that range once; further primitives would erase unrelated prefix
+    // text, and the gesture's old context cannot describe what was selected.
+    let selected = expectedSelection
+    let length = selected == nil ? Self.wordDeletionSuffix(of: start, words: count).count : 1
     guard length > 0 else { return nil }
     pendingLearning = nil
     correctionBeforeGlide = nil
@@ -651,17 +657,17 @@ public final class KeyboardEngine {
     lastEdit = .none
     finishEdit(deriveComposing: true)
     let remaining = before
-    var removed = String(start.suffix(length))
-    if let original = originalContext, original.count > remaining.count, original.hasPrefix(remaining) {
+    var removed = selected ?? String(start.suffix(length))
+    if selected == nil, let original = originalContext, original.count > remaining.count, original.hasPrefix(remaining) {
       removed = String(original.dropFirst(remaining.count))
     }
-    return WordDeletion(removed: removed, remaining: remaining, documentID: document.documentIdentifier)
+    return WordDeletion(removed: removed, remaining: remaining, after: expectedAfterContext, documentID: document.documentIdentifier)
   }
 
   /// Whether `deletion` can still be undone: same document, cursor unmoved.
   public func canUndo(_ deletion: WordDeletion) -> Bool {
     deletion.documentID == document.documentIdentifier && before == deletion.remaining
-      && expectedSelection == nil
+      && expectedAfterContext == deletion.after && expectedSelection == nil
   }
 
   /// Puts back the text a delete-key swipe removed. Returns false, changing
