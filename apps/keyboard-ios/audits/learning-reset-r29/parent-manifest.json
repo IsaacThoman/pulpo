@@ -1,0 +1,99 @@
+{
+  "originalCommit": "57848923",
+  "originalFiles": {
+    "audit.md": {
+      "bytes": 13183,
+      "sha256": "7e233b8e161aea428e472510f7ba329d317f2d684c6ba7be5f8e1f76a329eaa7"
+    },
+    "development-contract.md": {
+      "bytes": 3235,
+      "sha256": "823325cbd3f50565a084d66f8335894647681a209550cadd88c31d7c3ccc6228"
+    },
+    "development-probes.swift.txt": {
+      "bytes": 4680,
+      "sha256": "90a96a7005d30521737c1df37afea3fad32ad70fe81f15404b5bebfc44837a98"
+    },
+    "development-results.json": {
+      "bytes": 3030,
+      "sha256": "ecbdb9bb668b86fd5e971b0a20220db07672af5cc24695d59c5af8c7b1ceab25"
+    },
+    "executable-contract.md": {
+      "bytes": 5841,
+      "sha256": "11ac09e43a14d669452a4ab268371e06d47e889f24f973259fe8b9c5bea72731"
+    },
+    "heldout-authorship.json": {
+      "bytes": 3877,
+      "sha256": "3415a75b9bdcbc9902701d46680c1c01cdbc96b03d0174851c8223b1ce7058d2"
+    },
+    "heldout-results.json.gz": {
+      "bytes": 939,
+      "sha256": "7c760f3b1584652a625e56faaad511a8509e631eb9deb9740ad95c15c1485d08"
+    },
+    "heldout-seal.json": {
+      "bytes": 645,
+      "sha256": "75a84d828896f040b83c5c197b5af2014bcda36a114b3585b6e470572f06f234"
+    },
+    "heldout-summary.json": {
+      "bytes": 1772,
+      "sha256": "43fd87e53522eeefe2638e7ab1e7f711ac0f734a6ec1d776829374ce5be5c4bc"
+    },
+    "heldout.json.gz": {
+      "bytes": 3190,
+      "sha256": "a67acd3ef83e57df47928a700c485f784bc9c48a8bd6b02fce3a81d20008cd65"
+    },
+    "queued-write-check.py": {
+      "bytes": 2845,
+      "sha256": "7a238cbbf4ea6e5955e3831afe77f6a4857d994a5d4ed7ec4d4c1fed72b102c2"
+    },
+    "queued-write-gate.c": {
+      "bytes": 1488,
+      "sha256": "7408b420f70bd4c497a35b20baf48f416bf55d3719b8d3b915ef9a57a80591cc"
+    },
+    "queued-write-results.json": {
+      "bytes": 1924,
+      "sha256": "407663b08258f8ad285b4b8b62d95675d83033ce51397aee4b1084c7b957757d"
+    },
+    "queued-write-worker.swift": {
+      "bytes": 1483,
+      "sha256": "eca778facc10f47624825d6f32943f68fdedf5740cca9b87ee3e14c944cc06d4"
+    },
+    "schedule-runner.swift": {
+      "bytes": 4148,
+      "sha256": "2f985aec3512d20464f07b1d7540c68529028ad5c340a7d047930a036741a31a"
+    },
+    "source-freeze.json": {
+      "bytes": 3376,
+      "sha256": "5e5c239dfe05d0a5f50869fcf86a1f0ced35d449f9a16121976f7e96259ebd44"
+    },
+    "source-review.md": {
+      "bytes": 11102,
+      "sha256": "f52af714c3d476071d54c7612a7b97a022707471f18ec9ffaaa061afadb0a930"
+    },
+    "validate-schedules.py": {
+      "bytes": 3600,
+      "sha256": "60e575a90a776505da905e76f77160db588f50938498af735ea3e2c37eb1f25a"
+    },
+    "validation-summary.json": {
+      "bytes": 2190,
+      "sha256": "042a07b06187023d3bcc26395715feee897c9977360583d281a36a9912da20a4"
+    }
+  },
+  "parentFiles": {
+    "parent-README.md": {
+      "bytes": 7182,
+      "sha256": "f962e9bcfbdfbedb2caa1bb0f5910915c139ba9e4a8bd31fd00a0c33f832b1c9"
+    },
+    "parent-result.json": {
+      "bytes": 4513,
+      "sha256": "20830f34ec03690e289e03c4cc765624f7cbc13cb34deacf2ee9fc00709be19f"
+    },
+    "parent-provenance.json": {
+      "bytes": 926,
+      "sha256": "1b94f5d88ebbe157ce3c87968cd71f5724d14e94257665e08f06cb898ff9c23e"
+    },
+    "parent-verify.py": {
+      "bytes": 6846,
+      "sha256": "a5255577fdf08d42c46f31cb6ea39c3a877064783ba4f49df38351f8cfd69174"
+    }
+  }
+}
