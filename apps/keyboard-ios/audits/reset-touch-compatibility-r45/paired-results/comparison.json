@@ -1,0 +1,339 @@
+{
+  "decision": "REJECT frozen NEW boundary round; no source/oracle/runner retune or rerun",
+  "freezeCommit": "a8820168",
+  "versions": {
+    "original-a9e": {
+      "families": 24,
+      "familiesPassed": 16,
+      "instances": 34,
+      "instancesPassed": 25,
+      "counts": {
+        "check": 652,
+        "error": 0,
+        "fail": 24,
+        "pass": 628,
+        "unavailable": 0
+      },
+      "completePass": false,
+      "busyRetries": 0,
+      "publicationErrors": [],
+      "failedChecks": [
+        {
+          "family": "f02_long_dense_memory",
+          "instance": "memory",
+          "mode": "memory",
+          "id": "step.0.acceptance",
+          "status": "fail",
+          "expected": "true",
+          "actual": false
+        },
+        {
+          "family": "f02_long_dense_memory",
+          "instance": "memory",
+          "mode": "memory",
+          "id": "step.0.weight",
+          "status": "fail",
+          "expected": "finite weight strictly increases",
+          "actual": "Full exact object retained in raw results."
+        },
+        {
+          "family": "f02_long_dense_memory",
+          "instance": "memory",
+          "mode": "memory",
+          "id": "step.0.control.acceptance",
+          "status": "fail",
+          "expected": "true",
+          "actual": false
+        },
+        {
+          "family": "f03_long_sparse_memory",
+          "instance": "memory",
+          "mode": "memory",
+          "id": "step.0.acceptance",
+          "status": "fail",
+          "expected": "true",
+          "actual": false
+        },
+        {
+          "family": "f03_long_sparse_memory",
+          "instance": "memory",
+          "mode": "memory",
+          "id": "step.0.weight",
+          "status": "fail",
+          "expected": "finite weight strictly increases",
+          "actual": "Full exact object retained in raw results."
+        },
+        {
+          "family": "f03_long_sparse_memory",
+          "instance": "memory",
+          "mode": "memory",
+          "id": "step.0.weight.control",
+          "status": "fail",
+          "expected": "weight equals fixed equivalent ordered local control",
+          "actual": "Full exact object retained in raw results."
+        },
+        {
+          "family": "f03_long_sparse_memory",
+          "instance": "memory",
+          "mode": "memory",
+          "id": "step.0.offsets.control",
+          "status": "fail",
+          "expected": "offsets equal fixed equivalent ordered local control",
+          "actual": "Full exact object retained in raw results."
+        },
+        {
+          "family": "f05_expansion_duplication",
+          "instance": "memory",
+          "mode": "memory",
+          "id": "step.0.normalization",
+          "status": "fail",
+          "expected": "fixed independent normalized text",
+          "actual": "\u00dfab"
+        },
+        {
+          "family": "f05_expansion_duplication",
+          "instance": "persistent",
+          "mode": "persistent",
+          "id": "step.0.normalization",
+          "status": "fail",
+          "expected": "fixed independent normalized text",
+          "actual": "\u00dfab"
+        },
+        {
+          "family": "f06_expansion_corrected_spelling",
+          "instance": "memory",
+          "mode": "memory",
+          "id": "step.0.normalization",
+          "status": "fail",
+          "expected": "fixed independent normalized text",
+          "actual": "\u00dfux"
+        },
+        {
+          "family": "f18_long_sparse_exact_forty",
+          "instance": "persistent",
+          "mode": "persistent",
+          "id": "step.0.acceptance",
+          "status": "fail",
+          "expected": "true",
+          "actual": false
+        },
+        {
+          "family": "f18_long_sparse_exact_forty",
+          "instance": "persistent",
+          "mode": "persistent",
+          "id": "step.0.weight",
+          "status": "fail",
+          "expected": "finite weight strictly increases",
+          "actual": "Full exact object retained in raw results."
+        },
+        {
+          "family": "f18_long_sparse_exact_forty",
+          "instance": "persistent",
+          "mode": "persistent",
+          "id": "step.0.weight.control",
+          "status": "fail",
+          "expected": "weight equals fixed equivalent ordered local control",
+          "actual": "Full exact object retained in raw results."
+        },
+        {
+          "family": "f18_long_sparse_exact_forty",
+          "instance": "persistent",
+          "mode": "persistent",
+          "id": "step.0.offsets.control",
+          "status": "fail",
+          "expected": "offsets equal fixed equivalent ordered local control",
+          "actual": "Full exact object retained in raw results."
+        },
+        {
+          "family": "f18_long_sparse_exact_forty",
+          "instance": "persistent",
+          "mode": "persistent",
+          "id": "roundtrip.reopen.control.weight",
+          "status": "fail",
+          "expected": "reopened weight equals local ordered control",
+          "actual": "Full exact object retained in raw results."
+        },
+        {
+          "family": "f18_long_sparse_exact_forty",
+          "instance": "persistent",
+          "mode": "persistent",
+          "id": "roundtrip.reopen.control.offsets",
+          "status": "fail",
+          "expected": "reopened offsets equal local ordered control",
+          "actual": "Full exact object retained in raw results."
+        },
+        {
+          "family": "f19_long_sparse_one",
+          "instance": "persistent",
+          "mode": "persistent",
+          "id": "step.0.acceptance",
+          "status": "fail",
+          "expected": "true",
+          "actual": false
+        },
+        {
+          "family": "f19_long_sparse_one",
+          "instance": "persistent",
+          "mode": "persistent",
+          "id": "step.0.weight",
+          "status": "fail",
+          "expected": "finite weight strictly increases",
+          "actual": "Full exact object retained in raw results."
+        },
+        {
+          "family": "f19_long_sparse_one",
+          "instance": "persistent",
+          "mode": "persistent",
+          "id": "step.0.weight.control",
+          "status": "fail",
+          "expected": "weight equals fixed equivalent ordered local control",
+          "actual": "Full exact object retained in raw results."
+        },
+        {
+          "family": "f19_long_sparse_one",
+          "instance": "persistent",
+          "mode": "persistent",
+          "id": "step.0.offsets.control",
+          "status": "fail",
+          "expected": "offsets equal fixed equivalent ordered local control",
+          "actual": "Full exact object retained in raw results."
+        },
+        {
+          "family": "f19_long_sparse_one",
+          "instance": "persistent",
+          "mode": "persistent",
+          "id": "roundtrip.reopen.control.weight",
+          "status": "fail",
+          "expected": "reopened weight equals local ordered control",
+          "actual": "Full exact object retained in raw results."
+        },
+        {
+          "family": "f19_long_sparse_one",
+          "instance": "persistent",
+          "mode": "persistent",
+          "id": "roundtrip.reopen.control.offsets",
+          "status": "fail",
+          "expected": "reopened offsets equal local ordered control",
+          "actual": "Full exact object retained in raw results."
+        },
+        {
+          "family": "f22_expansion_exact_forty",
+          "instance": "persistent",
+          "mode": "persistent",
+          "id": "step.0.normalization",
+          "status": "fail",
+          "expected": "fixed independent normalized text",
+          "actual": "\u00df\u00df\u00df\u00df\u00df\u00df\u00df\u00df\u00df\u00df\u00df\u00df\u00df\u00df\u00df\u00df\u00df\u00df\u00dfab"
+        },
+        {
+          "family": "f23_expansion_oversize_rejection",
+          "instance": "persistent",
+          "mode": "persistent",
+          "id": "step.1.normalization",
+          "status": "fail",
+          "expected": "fixed independent normalized text",
+          "actual": "\u00df\u00df\u00df\u00df\u00df\u00df\u00df\u00df\u00df\u00df\u00df\u00df\u00df\u00df\u00df\u00df\u00df\u00df\u00df\u00df\u00df"
+        }
+      ]
+    },
+    "derived": {
+      "families": 24,
+      "familiesPassed": 20,
+      "instances": 34,
+      "instancesPassed": 29,
+      "counts": {
+        "check": 652,
+        "error": 0,
+        "fail": 5,
+        "pass": 647,
+        "unavailable": 0
+      },
+      "completePass": false,
+      "busyRetries": 0,
+      "publicationErrors": [],
+      "failedChecks": [
+        {
+          "family": "f05_expansion_duplication",
+          "instance": "memory",
+          "mode": "memory",
+          "id": "step.0.normalization",
+          "status": "fail",
+          "expected": "fixed independent normalized text",
+          "actual": "\u00dfab"
+        },
+        {
+          "family": "f05_expansion_duplication",
+          "instance": "persistent",
+          "mode": "persistent",
+          "id": "step.0.normalization",
+          "status": "fail",
+          "expected": "fixed independent normalized text",
+          "actual": "\u00dfab"
+        },
+        {
+          "family": "f06_expansion_corrected_spelling",
+          "instance": "memory",
+          "mode": "memory",
+          "id": "step.0.normalization",
+          "status": "fail",
+          "expected": "fixed independent normalized text",
+          "actual": "\u00dfux"
+        },
+        {
+          "family": "f22_expansion_exact_forty",
+          "instance": "persistent",
+          "mode": "persistent",
+          "id": "step.0.normalization",
+          "status": "fail",
+          "expected": "fixed independent normalized text",
+          "actual": "\u00df\u00df\u00df\u00df\u00df\u00df\u00df\u00df\u00df\u00df\u00df\u00df\u00df\u00df\u00df\u00df\u00df\u00df\u00dfab"
+        },
+        {
+          "family": "f23_expansion_oversize_rejection",
+          "instance": "persistent",
+          "mode": "persistent",
+          "id": "step.1.normalization",
+          "status": "fail",
+          "expected": "fixed independent normalized text",
+          "actual": "\u00df\u00df\u00df\u00df\u00df\u00df\u00df\u00df\u00df\u00df\u00df\u00df\u00df\u00df\u00df\u00df\u00df\u00df\u00df\u00df\u00df"
+        }
+      ]
+    }
+  },
+  "pairedCheckKeys": 652,
+  "repairedCheckCount": 19,
+  "repairedChecks": [
+    "f02_long_dense_memory/memory/step.0.acceptance",
+    "f02_long_dense_memory/memory/step.0.weight",
+    "f02_long_dense_memory/memory/step.0.control.acceptance",
+    "f03_long_sparse_memory/memory/step.0.acceptance",
+    "f03_long_sparse_memory/memory/step.0.weight",
+    "f03_long_sparse_memory/memory/step.0.weight.control",
+    "f03_long_sparse_memory/memory/step.0.offsets.control",
+    "f18_long_sparse_exact_forty/persistent/step.0.acceptance",
+    "f18_long_sparse_exact_forty/persistent/step.0.weight",
+    "f18_long_sparse_exact_forty/persistent/step.0.weight.control",
+    "f18_long_sparse_exact_forty/persistent/step.0.offsets.control",
+    "f18_long_sparse_exact_forty/persistent/roundtrip.reopen.control.weight",
+    "f18_long_sparse_exact_forty/persistent/roundtrip.reopen.control.offsets",
+    "f19_long_sparse_one/persistent/step.0.acceptance",
+    "f19_long_sparse_one/persistent/step.0.weight",
+    "f19_long_sparse_one/persistent/step.0.weight.control",
+    "f19_long_sparse_one/persistent/step.0.offsets.control",
+    "f19_long_sparse_one/persistent/roundtrip.reopen.control.weight",
+    "f19_long_sparse_one/persistent/roundtrip.reopen.control.offsets"
+  ],
+  "newLossCount": 0,
+  "newLosses": [],
+  "sharedFailureCount": 5,
+  "sharedFailures": [
+    "f05_expansion_duplication/memory/step.0.normalization",
+    "f05_expansion_duplication/persistent/step.0.normalization",
+    "f06_expansion_corrected_spelling/memory/step.0.normalization",
+    "f22_expansion_exact_forty/persistent/step.0.normalization",
+    "f23_expansion_oversize_rejection/persistent/step.1.normalization"
+  ],
+  "interpretation": "Independent postreveal adjudication confirms five shared oracle/public-map normalization-domain failures, not new guard-induced losses or a learning-algorithm defect. REJECT this frozen blind round; 19 correlated check repairs across four independent family instances only, no population accuracy claim. No retune or rerun.",
+  "independentAdjudication": "../postreveal-adjudication.md",
+  "independentAdjudicationSHA256": "7bd35c23863eef0092fdb42852fd1d92db98e07fb40a718a418b5c503bf64730"
+}
