@@ -1,0 +1,21 @@
+{
+  "originalAuditCommit": "c56e0a0528989232047fbaa6bdcca17fe7908774",
+  "foreignAuditFiles": 108,
+  "evidenceHashesVerified": 107,
+  "baselineSourceHashesVerified": 6,
+  "passedCasesPerArm": 9,
+  "failedCasesPerArm": 3,
+  "casesPerArm": 12,
+  "sameFailedTestIDs": [
+    "PublicBehaviorR53V2NativeTests/testBI04()",
+    "PublicBehaviorR53V2NativeTests/testEN04()",
+    "PublicBehaviorR53V2NativeTests/testES04()"
+  ],
+  "sourcePromotion": false,
+  "parentBehavioralReruns": false,
+  "disposition": "REJECT_SOURCE_PROMOTION",
+  "productionParent": "ac6099fcf628c3ac291a5a54c804d321d53cd0dd",
+  "rootImport": "724fadb8aa757ef549d66c44f7edb011f967937b",
+  "rootDiffAuditOnly": true,
+  "limitation": "Identical settings accessibility binding failures prevented the complete frozen acceptance gate. Partial native observations and development passes do not establish an accepted improvement. No candidate production or active fixture imported."
+}
