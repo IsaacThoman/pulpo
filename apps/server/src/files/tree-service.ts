@@ -43,7 +43,7 @@ export function toFileNode(row: FileNodeRow): FileNode {
 }
 
 export const systemFolderLocked = () =>
-  new AppError(400, 'file_system_folder', 'This folder is built in and cannot be renamed, moved, trashed, or recolored')
+  new AppError(400, 'file_system_folder', 'This folder is built in and cannot be renamed, moved, trashed, or given an icon')
 
 /** Changes to Files that also move or trash chats must refresh chat lists too. */
 const CHAT_SCOPES: StateInvalidationScope[] = ['files', 'folders', 'chats']
@@ -412,7 +412,16 @@ export async function restoreFileNodes(userId: string, ids: string[], destinatio
     // Checked first: recovering chats is not part of this transaction.
     if (destination) await assertDestination(tx, userId, destination.parentId)
     const restored: FileNode[] = []
-    for (const id of await topLevelIds(tx, userId, [...nodeIds])) restored.push(toFileNode(await restoreNodeInTx(tx, userId, id, destination)))
+    const topLevel = await topLevelIds(tx, userId, [...nodeIds])
+    for (const id of topLevel) restored.push(toFileNode(await restoreNodeInTx(tx, userId, id, destination)))
+    // Items trashed on their own before a folder above them was are not restored with that folder.
+    // Listed too, they go back into it, outer ones first so inner ones find their folders live.
+    const inner = [...nodeIds].filter((id) => !topLevel.includes(id))
+    const depths = new Map(await Promise.all(inner.map(async (id) => [id, (await chainIds(tx, userId, id)).length] as const)))
+    for (const id of inner.sort((a, b) => depths.get(a)! - depths.get(b)!)) {
+      const [row] = await tx.select({ trashedAt: fileNodes.trashedAt }).from(fileNodes).where(eq(fileNodes.id, id))
+      if (row?.trashedAt) restored.push(toFileNode(await restoreNodeInTx(tx, userId, id)))
+    }
     if (chatIds.length) {
       const chatsFolderId = await chatsFolderIdOf(tx, userId)
       const recovered = await recoverChats(userId, chatIds)

@@ -213,11 +213,17 @@ export interface FileFolderLayout {
   positions: Record<string, FileGridPosition>
 }
 
+/**
+ * What the Trash goes by: clients show it as a built-in folder at the top of My files, though it is
+ * not stored in Files. Its place there is kept with the other items' places.
+ */
+export const TRASH_FOLDER_ID = 'trash'
+
 /** Changes to a folder's grid arrangement; a null position forgets that item's place. */
 export const updateFileFolderLayoutSchema = z.object({
   folderId: z.uuid().nullable(),
   snapToGrid: z.boolean().optional(),
-  positions: z.record(z.uuid(), fileGridPositionSchema.nullable())
+  positions: z.record(z.union([z.uuid(), z.literal(TRASH_FOLDER_ID)]), fileGridPositionSchema.nullable())
     .refine((positions) => Object.keys(positions).length <= 5_000, { message: 'Too many positions' })
     .optional(),
 })

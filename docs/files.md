@@ -24,7 +24,7 @@ The header's **Open in main view** button (maximize icon, Cmd/Ctrl+Shift+Enter) 
 
 ## Grid view
 
-Grid view is a canvas: items can be dragged anywhere, and the view scrolls both ways to reach them. Each folder's arrangement (`file_folder_layouts`: item positions and **Snap to grid**, toggled from the background right-click menu) is stored on the server (`GET`/`PATCH /api/files/layout`), so it follows the user across devices and between the page and the panel. With snapping on, items land in the free cell nearest where they are dropped; turning it on snaps everything. Items without a saved place fill the first free cells row by row; the first rearrangement saves every current place so nothing shifts later. Positions of items that leave a folder are dropped on its next save. List view keeps sorting by column.
+Grid view is a canvas: items can be dragged anywhere, and the view scrolls both ways to reach them. Each folder's arrangement (`file_folder_layouts`: item positions and **Snap to grid**, toggled from the background right-click menu) is stored on the server (`GET`/`PATCH /api/files/layout`), so it follows the user across devices and between the page and the panel. With snapping on, items land in the free cell nearest where they are dropped; turning it on snaps everything. Items without a saved place fill the first free cells row by row; the first rearrangement saves every current place so nothing shifts later. Positions of items that leave a folder are dropped on its next save. The Trash's place at the top of My files is kept under the key `trash`. List view keeps sorting by column.
 
 ## Agent files
 

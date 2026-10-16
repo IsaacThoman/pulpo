@@ -1,10 +1,10 @@
-import type { FileColor, FileNode } from '@pulpo/contracts'
+import { TRASH_FOLDER_ID, type FileColor, type FileNode } from '@pulpo/contracts'
 
 /**
  * The trash is a built-in folder at the top of My files, browsed like any other. Files views
  * address it, and the trashed folders inside it, with these references in place of a folder id.
  */
-export const TRASH_FOLDER_ID = 'trash'
+export { TRASH_FOLDER_ID }
 const TRASHED_FOLDER_PREFIX = 'trash:'
 
 /** Where a Files view is in the trash: the trash itself (`folderId` null) or a trashed folder. Null outside it. */

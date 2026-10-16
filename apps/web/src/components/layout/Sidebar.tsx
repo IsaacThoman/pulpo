@@ -1054,13 +1054,16 @@ function SpaceMenuContent({ folderId, onNewChat, onNewFolder, onUpload, go }: {
   const filesEnabled = useAuth((state) => state.filesEnabled)
   const clip = useFileClipboard((state) => state.clip)
   const ops = useFileOperations()
+  const trashOps = useTrashOperations()
   const recentOrder = useSettings((state) => state.chatSortMode === 'recent')
   const setSetting = useSettings((state) => state.set)
   const paste = async () => {
     if (!clip) return
     if (clip.mode === 'cut') {
       useFileClipboard.setState({ clip: null })
-      await ops.move(clip.nodes, folderId)
+      // Items cut in the trash are restored here.
+      if (clip.nodes.some((node) => node.trashedAt)) await trashOps.restore(clip.nodes, { parentId: folderId })
+      else await ops.move(clip.nodes, folderId)
     } else {
       await ops.copy(clip.nodes, folderId)
     }

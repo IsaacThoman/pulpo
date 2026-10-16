@@ -151,6 +151,25 @@ describe.skipIf(!enabled)('account trash', () => {
     expect(chat).toMatchObject({ deletedAt: null, folderId: destination.id })
   })
 
+  it('brings back items trashed on their own inside a folder when both are restored', async () => {
+    const projects = await createFolder(userId, { parentId: null, name: 'Projects' })
+    const drafts = await createFolder(userId, { parentId: projects.id, name: 'Drafts' })
+    const plan = await insertBlob('plan.txt', drafts.id)
+    const loose = await insertBlob('loose.txt', projects.id)
+    // Trashed one by one, innermost first, so each has its own entry.
+    await trashFileNodes(userId, [plan])
+    await trashFileNodes(userId, [drafts.id])
+    await trashFileNodes(userId, [projects.id])
+    const destination = await createFolder(userId, { parentId: null, name: 'Inbox' })
+
+    const restored = await restoreTrashItems(userId, [plan, projects.id, drafts.id], { files: true }, { parentId: destination.id })
+    expect(restored.map((node) => [node.id, node.parentId])).toEqual([[projects.id, destination.id], [drafts.id, projects.id], [plan, drafts.id]])
+    const rows = await db.select().from(fileNodes).where(eq(fileNodes.ownerUserId, userId))
+    expect(rows.filter((row) => row.trashedAt)).toEqual([])
+    expect(rows.find((row) => row.id === loose)).toMatchObject({ parentId: projects.id, trashedAt: null })
+    expect((await listAccountTrash(userId, { files: true })).items).toEqual([])
+  })
+
   it('checks the destination before restoring anything', async () => {
     const gone = await createFolder(userId, { parentId: null, name: 'Gone' })
     await trashFileNodes(userId, [gone.id])
