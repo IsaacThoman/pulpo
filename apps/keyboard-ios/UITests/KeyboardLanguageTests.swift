@@ -50,6 +50,26 @@ final class KeyboardLanguageTests: PreviewTypingTestCase {
     waitForText("Gracias ")
   }
 
+  func testSpanishOpeningPunctuationAlternatesKeepTheNextLetterCapitalized() {
+    for language in ["Español", "English + Español"] {
+      choose(language)
+      for (base, inverted) in [("?", "¿"), ("!", "¡")] {
+        clearText()
+        app.key("key-numbers").tap()
+        let key = app.key("key-\(base)")
+        XCTAssertTrue(key.waitForExistence(timeout: 3))
+        let start = key.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        // Both two-option strips fit to the right at the preview's full width.
+        let alternate = start.withOffset(CGVector(dx: key.frame.width * 1.05, dy: -8))
+        start.press(forDuration: 0.8, thenDragTo: alternate)
+        waitForText(inverted)
+        app.key("key-letters").tap()
+        app.typeOnPreview("hola")
+        waitForText(inverted + "Hola")
+      }
+    }
+  }
+
   func testHostSettingsAndKeyboardShareLanguageSelection() {
     choose("Español")
     app.key("keyboard-language").tap()
