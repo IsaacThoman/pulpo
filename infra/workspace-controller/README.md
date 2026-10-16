@@ -161,6 +161,12 @@ connections can bypass IPv4-only enforcement. The host rules close these gaps
 and include two-workspace connectivity checks. VLAN firewall rules remain
 a separate infrastructure requirement.
 
+Workspace internet access goes through the Smokescreen egress proxy, and all pod
+egress leaves through a WireGuard tunnel with a kill switch; see
+[workspace egress](../workspace-egress/README.md). Set
+`PULPO_WORKSPACE_EGRESS_PROXY_URL` to the proxy Service's fixed `http://IP:port`;
+workspaces then get proxy variables and no DNS resolver.
+
 For local development, leave agent mode disabled and use the fake controller
 in server integration tests. A full local run requires a kind or k3d cluster
 with an available sandbox runtime; ordinary Docker Compose does not mount the
