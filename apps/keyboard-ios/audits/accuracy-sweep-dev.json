@@ -1,0 +1,536 @@
+[
+  {
+    "kind": "correction",
+    "family": "omit",
+    "input": "meeing",
+    "target": "meeting"
+  },
+  {
+    "kind": "correction",
+    "family": "transpose",
+    "input": "meeitng",
+    "target": "meeting"
+  },
+  {
+    "kind": "correction",
+    "family": "repeat",
+    "input": "meetting",
+    "target": "meeting"
+  },
+  {
+    "kind": "correction",
+    "family": "replace",
+    "input": "meexing",
+    "target": "meeting"
+  },
+  {
+    "kind": "swipe",
+    "family": "ideal",
+    "target": "meeting"
+  },
+  {
+    "kind": "swipe",
+    "family": "jitter",
+    "target": "meeting"
+  },
+  {
+    "kind": "swipe",
+    "family": "sparse",
+    "target": "meeting"
+  },
+  {
+    "kind": "correction",
+    "family": "omit",
+    "input": "tomorow",
+    "target": "tomorrow"
+  },
+  {
+    "kind": "correction",
+    "family": "transpose",
+    "input": "tomorrow",
+    "target": "tomorrow"
+  },
+  {
+    "kind": "correction",
+    "family": "repeat",
+    "input": "tomorrrow",
+    "target": "tomorrow"
+  },
+  {
+    "kind": "correction",
+    "family": "replace",
+    "input": "tomoxrow",
+    "target": "tomorrow"
+  },
+  {
+    "kind": "swipe",
+    "family": "ideal",
+    "target": "tomorrow"
+  },
+  {
+    "kind": "swipe",
+    "family": "jitter",
+    "target": "tomorrow"
+  },
+  {
+    "kind": "swipe",
+    "family": "sparse",
+    "target": "tomorrow"
+  },
+  {
+    "kind": "correction",
+    "family": "omit",
+    "input": "mesage",
+    "target": "message"
+  },
+  {
+    "kind": "correction",
+    "family": "transpose",
+    "input": "mesasge",
+    "target": "message"
+  },
+  {
+    "kind": "correction",
+    "family": "repeat",
+    "input": "messsage",
+    "target": "message"
+  },
+  {
+    "kind": "correction",
+    "family": "replace",
+    "input": "mesxage",
+    "target": "message"
+  },
+  {
+    "kind": "swipe",
+    "family": "ideal",
+    "target": "message"
+  },
+  {
+    "kind": "swipe",
+    "family": "jitter",
+    "target": "message"
+  },
+  {
+    "kind": "swipe",
+    "family": "sparse",
+    "target": "message"
+  },
+  {
+    "kind": "correction",
+    "family": "omit",
+    "input": "thaks",
+    "target": "thanks"
+  },
+  {
+    "kind": "correction",
+    "family": "transpose",
+    "input": "thakns",
+    "target": "thanks"
+  },
+  {
+    "kind": "correction",
+    "family": "repeat",
+    "input": "thannks",
+    "target": "thanks"
+  },
+  {
+    "kind": "correction",
+    "family": "replace",
+    "input": "thaxks",
+    "target": "thanks"
+  },
+  {
+    "kind": "swipe",
+    "family": "ideal",
+    "target": "thanks"
+  },
+  {
+    "kind": "swipe",
+    "family": "jitter",
+    "target": "thanks"
+  },
+  {
+    "kind": "swipe",
+    "family": "sparse",
+    "target": "thanks"
+  },
+  {
+    "kind": "correction",
+    "family": "omit",
+    "input": "cofee",
+    "target": "coffee"
+  },
+  {
+    "kind": "correction",
+    "family": "transpose",
+    "input": "cofefe",
+    "target": "coffee"
+  },
+  {
+    "kind": "correction",
+    "family": "repeat",
+    "input": "cofffee",
+    "target": "coffee"
+  },
+  {
+    "kind": "correction",
+    "family": "replace",
+    "input": "cofxee",
+    "target": "coffee"
+  },
+  {
+    "kind": "swipe",
+    "family": "ideal",
+    "target": "coffee"
+  },
+  {
+    "kind": "swipe",
+    "family": "jitter",
+    "target": "coffee"
+  },
+  {
+    "kind": "swipe",
+    "family": "sparse",
+    "target": "coffee"
+  },
+  {
+    "kind": "correction",
+    "family": "omit",
+    "input": "proect",
+    "target": "project"
+  },
+  {
+    "kind": "correction",
+    "family": "transpose",
+    "input": "proejct",
+    "target": "project"
+  },
+  {
+    "kind": "correction",
+    "family": "repeat",
+    "input": "projject",
+    "target": "project"
+  },
+  {
+    "kind": "correction",
+    "family": "replace",
+    "input": "proxect",
+    "target": "project"
+  },
+  {
+    "kind": "swipe",
+    "family": "ideal",
+    "target": "project"
+  },
+  {
+    "kind": "swipe",
+    "family": "jitter",
+    "target": "project"
+  },
+  {
+    "kind": "swipe",
+    "family": "sparse",
+    "target": "project"
+  },
+  {
+    "kind": "correction",
+    "family": "omit",
+    "input": "plese",
+    "target": "please"
+  },
+  {
+    "kind": "correction",
+    "family": "transpose",
+    "input": "plesae",
+    "target": "please"
+  },
+  {
+    "kind": "correction",
+    "family": "repeat",
+    "input": "pleaase",
+    "target": "please"
+  },
+  {
+    "kind": "correction",
+    "family": "replace",
+    "input": "plexse",
+    "target": "please"
+  },
+  {
+    "kind": "swipe",
+    "family": "ideal",
+    "target": "please"
+  },
+  {
+    "kind": "swipe",
+    "family": "jitter",
+    "target": "please"
+  },
+  {
+    "kind": "swipe",
+    "family": "sparse",
+    "target": "please"
+  },
+  {
+    "kind": "correction",
+    "family": "omit",
+    "input": "arond",
+    "target": "around"
+  },
+  {
+    "kind": "correction",
+    "family": "transpose",
+    "input": "aronud",
+    "target": "around"
+  },
+  {
+    "kind": "correction",
+    "family": "repeat",
+    "input": "arouund",
+    "target": "around"
+  },
+  {
+    "kind": "correction",
+    "family": "replace",
+    "input": "aroxnd",
+    "target": "around"
+  },
+  {
+    "kind": "swipe",
+    "family": "ideal",
+    "target": "around"
+  },
+  {
+    "kind": "swipe",
+    "family": "jitter",
+    "target": "around"
+  },
+  {
+    "kind": "swipe",
+    "family": "sparse",
+    "target": "around"
+  },
+  {
+    "kind": "correction",
+    "family": "omit",
+    "input": "diner",
+    "target": "dinner"
+  },
+  {
+    "kind": "correction",
+    "family": "transpose",
+    "input": "dinenr",
+    "target": "dinner"
+  },
+  {
+    "kind": "correction",
+    "family": "repeat",
+    "input": "dinnner",
+    "target": "dinner"
+  },
+  {
+    "kind": "correction",
+    "family": "replace",
+    "input": "dinxer",
+    "target": "dinner"
+  },
+  {
+    "kind": "swipe",
+    "family": "ideal",
+    "target": "dinner"
+  },
+  {
+    "kind": "swipe",
+    "family": "jitter",
+    "target": "dinner"
+  },
+  {
+    "kind": "swipe",
+    "family": "sparse",
+    "target": "dinner"
+  },
+  {
+    "kind": "correction",
+    "family": "omit",
+    "input": "quikly",
+    "target": "quickly"
+  },
+  {
+    "kind": "correction",
+    "family": "transpose",
+    "input": "quikcly",
+    "target": "quickly"
+  },
+  {
+    "kind": "correction",
+    "family": "repeat",
+    "input": "quicckly",
+    "target": "quickly"
+  },
+  {
+    "kind": "correction",
+    "family": "replace",
+    "input": "quixkly",
+    "target": "quickly"
+  },
+  {
+    "kind": "swipe",
+    "family": "ideal",
+    "target": "quickly"
+  },
+  {
+    "kind": "swipe",
+    "family": "jitter",
+    "target": "quickly"
+  },
+  {
+    "kind": "swipe",
+    "family": "sparse",
+    "target": "quickly"
+  },
+  {
+    "kind": "safety",
+    "family": "literal",
+    "input": "Mireya"
+  },
+  {
+    "kind": "safety",
+    "family": "literal",
+    "input": "Zayden"
+  },
+  {
+    "kind": "safety",
+    "family": "literal",
+    "input": "Kyro"
+  },
+  {
+    "kind": "safety",
+    "family": "literal",
+    "input": "Nivaan"
+  },
+  {
+    "kind": "safety",
+    "family": "literal",
+    "input": "Qorix"
+  },
+  {
+    "kind": "safety",
+    "family": "literal",
+    "input": "iPhone"
+  },
+  {
+    "kind": "safety",
+    "family": "literal",
+    "input": "GitHub"
+  },
+  {
+    "kind": "safety",
+    "family": "literal",
+    "input": "AB12"
+  },
+  {
+    "kind": "safety",
+    "family": "literal",
+    "input": "alex@example.com"
+  },
+  {
+    "kind": "safety",
+    "family": "literal",
+    "input": "https://pulpo.dev"
+  },
+  {
+    "kind": "safety",
+    "family": "valid",
+    "input": "form"
+  },
+  {
+    "kind": "safety",
+    "family": "valid",
+    "input": "from"
+  },
+  {
+    "kind": "safety",
+    "family": "valid",
+    "input": "were"
+  },
+  {
+    "kind": "safety",
+    "family": "valid",
+    "input": "where"
+  },
+  {
+    "kind": "safety",
+    "family": "valid",
+    "input": "quite"
+  },
+  {
+    "kind": "safety",
+    "family": "valid",
+    "input": "quiet"
+  },
+  {
+    "kind": "safety",
+    "family": "valid",
+    "input": "public"
+  },
+  {
+    "kind": "safety",
+    "family": "valid",
+    "input": "pubic"
+  },
+  {
+    "kind": "safety",
+    "family": "valid",
+    "input": "trail"
+  },
+  {
+    "kind": "safety",
+    "family": "valid",
+    "input": "trial"
+  },
+  {
+    "kind": "prediction",
+    "context": "thank",
+    "target": "you"
+  },
+  {
+    "kind": "prediction",
+    "context": "see you",
+    "target": "soon"
+  },
+  {
+    "kind": "prediction",
+    "context": "good",
+    "target": "morning"
+  },
+  {
+    "kind": "prediction",
+    "context": "how are",
+    "target": "you"
+  },
+  {
+    "kind": "editing",
+    "family": "stale",
+    "before": "meetng",
+    "after": "meetngX"
+  },
+  {
+    "kind": "editing",
+    "family": "cursor",
+    "before": "please",
+    "after": "pleXase"
+  },
+  {
+    "kind": "editing",
+    "family": "boundary",
+    "before": "hello",
+    "after": "hello "
+  },
+  {
+    "kind": "editing",
+    "family": "literal",
+    "before": "Mireya",
+    "after": "Mireya"
+  }
+]
