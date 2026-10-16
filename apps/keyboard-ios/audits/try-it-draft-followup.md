@@ -1,0 +1,18 @@
+# PR782 Try It draft continuity follow-up
+
+## Protocol frozen before implementation
+
+Baseline: `7f6def76`, after cherry-picking reviewed settings commits `b4090f3a`, `1d7c51d1`, `dd61eda6`, `b091ea83` as `3e06e6e1`, `324bbfae`, `7ab9598c`, `7f6def76`. Prior H4 (empty draft after Keyboard Settings navigation) is now a development case. This follow-up makes no fresh held-out or independent-author claim. Inputs are synthetic; no user text/accounts/services.
+
+Acceptance fixed before production edits:
+
+- D1 Settings round trip: type `hola`, open Keyboard Settings from the preview language menu, re-enter Try It. Preserve exact text. Hide/refocus before navigating back and returning; preserve text without automatically reopening a dismissed keyboard. Actual Settings route and ordinary navigation must both retain the same draft.
+- D2 UTF-16 editing: recreate the native editor with `A👩🏽‍💻 café 🇪🇸 Z`, first with a caret after the first emoji and then with a selected `café`. Restore text before range and before optional focus; insertion must land at that caret or replace only the selection, preserving emoji and suffix. Exercise focused restoration as well as dismissed restoration. Invalid/stale/overflowing ranges must remain bounded to the restored text; valid UTF-16 ranges must remain exact.
+- D3 Clear: clear while dismissed with a nonzero selected range, navigate away/back and switch editor mode. Text stays empty, selection is `{0,0}`, keyboard stays dismissed; subsequent typing is usable. Clear is explicit and clears memory state, with no disk persistence.
+- D4 Preview/installed switching: retain the same draft and UTF-16 selection through both directions; the installed editor uses the system input view. Dismissed intent survives mode changes; focused switching remains editable. Also retain selected field kind and mode across Settings navigation.
+- D5 Teardown: hold a removed editor's delegate and enqueue a focus/selection refresh, dismantle it, create its replacement, then deliver old callbacks. Old text, range, focus and URL callbacks must not overwrite or act on the live draft. Lifecycle disappearance must still run.
+- Regressions: existing two PreviewDismissalTests, shared language/settings routing, and preview-not-confirming-installed-setup. No changes to dictionary, ranking, extension editing, permission inference, or dictation destination code.
+
+Tests are frozen in `UITests/DraftNavigationTests.swift` and `AppTests/DraftEditorTests.swift` before implementation. AppTests uses the real UIViewRepresentable/UITextView in a hosted SwiftUI view and will be wired as a native app-hosted XCTest target. UI tests cover actual companion navigation. Native range tests avoid relying on remote extension accessibility or unsupported emoji injection by XCTest. Unit/bridge checks alone do not count as physical-device or installed-extension interaction proof.
+
+Only iPhone 17 `1EDC5D9A-7E25-432A-B5B1-9A8B702306A7` is owned. Never touch the parent's 18 Pro, Android 5554, unrelated E1C6B89D, parent audit QUALITY_AUDIT, or root checkout. No push/deploy. Project generation and DerivedData are isolated to this worktree; artifacts stay under `/tmp/pulpo-draft-followup-*`. Device tools attempted: device_list reported host failure and device_open failed, both `Device list failed: The device command failed (exit code 127).`; documented pinned agent-device/simctl fallback is authorized. Successful build logs will not be read. Every test command must finish and produce a valid result bundle to count as a completed gate; terminal method results from a stalled runner are partial evidence only. No overlapping build/project regeneration while a test command is alive.
