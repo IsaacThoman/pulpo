@@ -1,0 +1,157 @@
+{
+  "baseline": "e6871a164cfbc2eca4d0b3da700364a55e4e4dcb",
+  "candidate": "96a28b98e154077da10f5dbe1f7e968020b2f9fb",
+  "normativeSHA256": "bebb6034c35bfb576e39f033013ac560a24d15f5128fc2490199b08cb66d5d01",
+  "fixture": {
+    "e": "r34-fixture-copper",
+    "n": "copper lantern",
+    "v": 1,
+    "k": [
+      "beacon"
+    ],
+    "s": "ñavoru"
+  },
+  "canonicalQueryTokens": [
+    "ñ"
+  ],
+  "projectedReservationTokens": [
+    "n"
+  ],
+  "englishReservationWitnesses": [
+    "lantern",
+    "copperlantern",
+    "beacon"
+  ],
+  "englishEnvelope": [
+    "r34-fixture-copper"
+  ],
+  "localizedEligibleBeforeExclusion": [
+    "r34-fixture-copper"
+  ],
+  "localizedAfterEnvelopeExclusion": [],
+  "adjudication": "The exact v5 policy requires exclusion of the whole English envelope. Non-ASCII one-letter MAY add; it does not promise this target. Frozen required candidate smoke nevertheless fails and stays failed.",
+  "frozenFailingRows": [
+    {
+      "id": "nonascii-single-0",
+      "query": "ñ",
+      "baseline": [],
+      "candidate": [],
+      "requiredAcceptable": [
+        "r34-fixture-copper"
+      ],
+      "transition": "fail-to-fail",
+      "candidateErrors": [
+        "no explicit acceptable target within maxRank"
+      ]
+    },
+    {
+      "id": "nonascii-single-1",
+      "query": "Ñ",
+      "baseline": [],
+      "candidate": [],
+      "requiredAcceptable": [
+        "r34-fixture-copper"
+      ],
+      "transition": "fail-to-fail",
+      "candidateErrors": [
+        "no explicit acceptable target within maxRank"
+      ]
+    },
+    {
+      "id": "nonascii-single-2",
+      "query": "ñ",
+      "baseline": [],
+      "candidate": [],
+      "requiredAcceptable": [
+        "r34-fixture-copper"
+      ],
+      "transition": "fail-to-fail",
+      "candidateErrors": [
+        "no explicit acceptable target within maxRank"
+      ]
+    }
+  ],
+  "independentMeasuredRows": [
+    {
+      "actual": [],
+      "cap": 1,
+      "fixture": "copper lantern",
+      "query": "ñ",
+      "baseline": [],
+      "expectedV5": [],
+      "pass": true
+    },
+    {
+      "actual": [],
+      "cap": 48,
+      "fixture": "copper lantern",
+      "query": "ñ",
+      "baseline": [],
+      "expectedV5": [],
+      "pass": true
+    },
+    {
+      "actual": [],
+      "cap": 60,
+      "fixture": "copper lantern",
+      "query": "ñ",
+      "baseline": [],
+      "expectedV5": [],
+      "pass": true
+    },
+    {
+      "actual": [],
+      "cap": 1,
+      "fixture": "copper lantern",
+      "query": "Ñ",
+      "baseline": [],
+      "expectedV5": [],
+      "pass": true
+    },
+    {
+      "actual": [],
+      "cap": 48,
+      "fixture": "copper lantern",
+      "query": "Ñ",
+      "baseline": [],
+      "expectedV5": [],
+      "pass": true
+    },
+    {
+      "actual": [],
+      "cap": 60,
+      "fixture": "copper lantern",
+      "query": "Ñ",
+      "baseline": [],
+      "expectedV5": [],
+      "pass": true
+    },
+    {
+      "actual": [],
+      "cap": 1,
+      "fixture": "copper lantern",
+      "query": "ñ",
+      "baseline": [],
+      "expectedV5": [],
+      "pass": true
+    },
+    {
+      "actual": [],
+      "cap": 48,
+      "fixture": "copper lantern",
+      "query": "ñ",
+      "baseline": [],
+      "expectedV5": [],
+      "pass": true
+    },
+    {
+      "actual": [],
+      "cap": 60,
+      "fixture": "copper lantern",
+      "query": "ñ",
+      "baseline": [],
+      "expectedV5": [],
+      "pass": true
+    }
+  ]
+}

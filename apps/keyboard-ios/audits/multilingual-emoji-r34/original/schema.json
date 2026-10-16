@@ -1,0 +1,67 @@
+{
+  "version": 2,
+  "requiredTopLevel": [
+    "version",
+    "families",
+    "cases"
+  ],
+  "caseRequired": [
+    "id",
+    "family",
+    "action",
+    "query",
+    "acceptable",
+    "maxRank",
+    "role"
+  ],
+  "actions": [
+    "search",
+    "wrapper",
+    "fixture"
+  ],
+  "roles": [
+    "useful",
+    "control"
+  ],
+  "optionalCommon": [
+    "stratum",
+    "forbidden",
+    "equivalentTo",
+    "expectEmpty"
+  ],
+  "searchParameters": [
+    "limit",
+    "preferred"
+  ],
+  "wrapperParameters": [
+    "limit",
+    "recents",
+    "tones"
+  ],
+  "fixtureParameters": [
+    "entries",
+    "spanishAliases",
+    "limit",
+    "preferred"
+  ],
+  "fixtureEntryRequired": [
+    "emoji",
+    "name",
+    "keywords"
+  ],
+  "fixtureEntryOptional": [
+    "tones"
+  ],
+  "fixtureAliasRequired": [
+    "emoji",
+    "name"
+  ],
+  "limits": {
+    "directDefault": 48,
+    "directCeiling": 60,
+    "queryCharacters": 80,
+    "wrapperQueryCharacters": 40
+  },
+  "notes": "No language/context/typo operators. Search direct uses shipped catalog and optional bounded integer preferences; wrapper uses EmojiSearchQuery and optional recents+tone map base->variant. Fixture constructs decoded catalog with injected optional s, ignores aliases for absent values, then direct search. Empty acceptable allowed only with expectEmpty true and role control. maxRank is positive <=60. equivalentTo requires identical ordered output; forbidden prohibits any listed output. All supported actions/parameters must be exercised before seal. Contextual suggestions, lookup, invalid JSON, duplicate catalog bases, nonempty wrapper limits>60 and raw buffer truncation semantics are outside blind schema, separately audited. Unique base values required in fixtures. Unavailable never passes.",
+  "grammarAuthority": "Exact field types, bounds and reference rules are specified normatively in api-map.md; this descriptor is read together with that map, never alone."
+}

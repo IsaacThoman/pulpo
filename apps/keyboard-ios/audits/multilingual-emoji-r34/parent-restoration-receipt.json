@@ -1,0 +1,89 @@
+{
+  "baseline": "e6871a164cfbc2eca4d0b3da700364a55e4e4dcb",
+  "candidate": "96a28b98e154077da10f5dbe1f7e968020b2f9fb",
+  "restoration": "35a18150323ec03ebe41c6bcea0d1b2eeea9385f",
+  "finalAuditCommit": "cfe31d4c",
+  "repositoryTopLevel": "/private/tmp/pulpo-r34-e6871a16",
+  "restorationDiffOutsideAudit": [],
+  "finalChangedPaths": [
+    "apps/keyboard-ios/audits/multilingual-emoji-r34/R34NativeDocumentTests.swift.txt",
+    "apps/keyboard-ios/audits/multilingual-emoji-r34/R34NativeInteractionTests.swift.txt",
+    "apps/keyboard-ios/audits/multilingual-emoji-r34/api-map.md",
+    "apps/keyboard-ios/audits/multilingual-emoji-r34/blind-seal-metadata.json",
+    "apps/keyboard-ios/audits/multilingual-emoji-r34/candidate-smoke-summary.json",
+    "apps/keyboard-ios/audits/multilingual-emoji-r34/candidate-source.patch",
+    "apps/keyboard-ios/audits/multilingual-emoji-r34/candidate-source.sha256",
+    "apps/keyboard-ios/audits/multilingual-emoji-r34/closure.json",
+    "apps/keyboard-ios/audits/multilingual-emoji-r34/compare.py",
+    "apps/keyboard-ios/audits/multilingual-emoji-r34/compat.swift",
+    "apps/keyboard-ios/audits/multilingual-emoji-r34/compatibility-summary.json",
+    "apps/keyboard-ios/audits/multilingual-emoji-r34/contract.md",
+    "apps/keyboard-ios/audits/multilingual-emoji-r34/exclusion-check.py",
+    "apps/keyboard-ios/audits/multilingual-emoji-r34/exposed-development.json",
+    "apps/keyboard-ios/audits/multilingual-emoji-r34/measure.swift",
+    "apps/keyboard-ios/audits/multilingual-emoji-r34/native-baseline-summary.json",
+    "apps/keyboard-ios/audits/multilingual-emoji-r34/native-exposed-inputs.json",
+    "apps/keyboard-ios/audits/multilingual-emoji-r34/native-interaction-summary.json",
+    "apps/keyboard-ios/audits/multilingual-emoji-r34/orchestration.json",
+    "apps/keyboard-ios/audits/multilingual-emoji-r34/perf-queries.json",
+    "apps/keyboard-ios/audits/multilingual-emoji-r34/performance.py",
+    "apps/keyboard-ios/audits/multilingual-emoji-r34/protocol-review-v1.md",
+    "apps/keyboard-ios/audits/multilingual-emoji-r34/protocol-review-v2.md",
+    "apps/keyboard-ios/audits/multilingual-emoji-r34/protocol-review-v3.md",
+    "apps/keyboard-ios/audits/multilingual-emoji-r34/protocol-review-v4.md",
+    "apps/keyboard-ios/audits/multilingual-emoji-r34/protocol-review-v5.md",
+    "apps/keyboard-ios/audits/multilingual-emoji-r34/protocol-smoke-summary.json",
+    "apps/keyboard-ios/audits/multilingual-emoji-r34/protocol-smoke.md",
+    "apps/keyboard-ios/audits/multilingual-emoji-r34/protocol-v2-unicode-witness.json",
+    "apps/keyboard-ios/audits/multilingual-emoji-r34/protocol-v2-unicode-witness.swift",
+    "apps/keyboard-ios/audits/multilingual-emoji-r34/protocol-v3-unicode-witness.json",
+    "apps/keyboard-ios/audits/multilingual-emoji-r34/protocol-v3-unicode-witness.swift",
+    "apps/keyboard-ios/audits/multilingual-emoji-r34/protocol-v4-hashes.sha256",
+    "apps/keyboard-ios/audits/multilingual-emoji-r34/protocol-v4-unicode-witness.json",
+    "apps/keyboard-ios/audits/multilingual-emoji-r34/protocol-v4-unicode-witness.swift",
+    "apps/keyboard-ios/audits/multilingual-emoji-r34/protocol-v5-domain-witness.json",
+    "apps/keyboard-ios/audits/multilingual-emoji-r34/protocol-v5-domain-witness.swift",
+    "apps/keyboard-ios/audits/multilingual-emoji-r34/protocol-v5-hashes.sha256",
+    "apps/keyboard-ios/audits/multilingual-emoji-r34/report.md",
+    "apps/keyboard-ios/audits/multilingual-emoji-r34/review-v3-artifacts/projection-probe.json",
+    "apps/keyboard-ios/audits/multilingual-emoji-r34/review-v3-artifacts/projection-probe.swift",
+    "apps/keyboard-ios/audits/multilingual-emoji-r34/runner.swift",
+    "apps/keyboard-ios/audits/multilingual-emoji-r34/schema.json",
+    "apps/keyboard-ios/audits/multilingual-emoji-r34/smoke-runner.py",
+    "apps/keyboard-ios/audits/multilingual-emoji-r34/source-counterexample.json",
+    "apps/keyboard-ios/audits/multilingual-emoji-r34/source-review.md",
+    "apps/keyboard-ios/audits/multilingual-emoji-r34/validate.py",
+    "apps/keyboard-ios/audits/multilingual-emoji-r34/verification.txt"
+  ],
+  "workerTrackedAndUntrackedStatus": "",
+  "method": "Read-only git show/diff/status; no API, benchmark, test, build, device, binary or sealed payload execution.",
+  "sourceSnapshots": {
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Emoji/EmojiCatalog.swift": {
+      "baseline": "snapshots/baseline/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Emoji/EmojiCatalog.swift.txt",
+      "candidate": "snapshots/candidate/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Emoji/EmojiCatalog.swift.txt"
+    },
+    "apps/keyboard-ios/PulpoKeyboardKit/Tests/KeyboardCoreTests/LocalizedEmojiSearchTests.swift": {
+      "candidate": "snapshots/candidate/apps/keyboard-ios/PulpoKeyboardKit/Tests/KeyboardCoreTests/LocalizedEmojiSearchTests.swift.txt"
+    },
+    "apps/keyboard-ios/LanguageData/emoji.json": {
+      "baseline": "snapshots/baseline/apps/keyboard-ios/LanguageData/emoji.json.gz",
+      "candidate": "snapshots/candidate/apps/keyboard-ios/LanguageData/emoji.json.gz"
+    },
+    "apps/keyboard-ios/LanguageData/README.md": {
+      "baseline": "snapshots/baseline/apps/keyboard-ios/LanguageData/README.md.txt",
+      "candidate": "snapshots/candidate/apps/keyboard-ios/LanguageData/README.md.txt"
+    },
+    "apps/keyboard-ios/scripts/build_language_data.py": {
+      "baseline": "snapshots/baseline/apps/keyboard-ios/scripts/build_language_data.py.txt",
+      "candidate": "snapshots/candidate/apps/keyboard-ios/scripts/build_language_data.py.txt"
+    },
+    "apps/keyboard-ios/scripts/test_emoji_keywords.py": {
+      "baseline": "snapshots/baseline/apps/keyboard-ios/scripts/test_emoji_keywords.py.txt",
+      "candidate": "snapshots/candidate/apps/keyboard-ios/scripts/test_emoji_keywords.py.txt"
+    },
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Emoji/EmojiSearch.swift": {
+      "baseline": "snapshots/baseline/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Emoji/EmojiSearch.swift.txt",
+      "candidate": "snapshots/candidate/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Emoji/EmojiSearch.swift.txt"
+    }
+  }
+}

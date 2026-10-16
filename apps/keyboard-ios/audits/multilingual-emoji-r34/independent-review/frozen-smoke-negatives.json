@@ -1,0 +1,223 @@
+{
+  "summary": {
+    "baseline": {
+      "executionValid": true,
+      "executionErrors": [],
+      "allRowsPass": false,
+      "useful": {
+        "denominator": 0,
+        "passing": 0,
+        "unavailable": 0,
+        "uniqueAcceptedAlternatives": [],
+        "familiesWithAcceptedUsefulRow": []
+      },
+      "controls": {
+        "denominator": 147,
+        "passing": 82,
+        "unavailable": 0
+      }
+    },
+    "candidate": {
+      "executionValid": true,
+      "executionErrors": [],
+      "allRowsPass": false,
+      "useful": {
+        "denominator": 0,
+        "passing": 0,
+        "unavailable": 0,
+        "uniqueAcceptedAlternatives": [],
+        "familiesWithAcceptedUsefulRow": []
+      },
+      "controls": {
+        "denominator": 147,
+        "passing": 144,
+        "unavailable": 0
+      }
+    }
+  },
+  "failedRows": [
+    {
+      "id": "nonascii-single-0",
+      "family": "exposed-orthography",
+      "role": "control",
+      "stratum": null,
+      "action": "fixture",
+      "inputQuery": "ñ",
+      "acceptable": [
+        "r34-fixture-copper"
+      ],
+      "forbidden": [],
+      "baseline": {
+        "available": true,
+        "pass": false,
+        "errors": [
+          "no explicit acceptable target within maxRank"
+        ],
+        "values": [],
+        "baseValues": [],
+        "query": "ñ",
+        "targetRanks": [
+          {
+            "target": "r34-fixture-copper",
+            "rank": null
+          }
+        ],
+        "bestTargetRank": null,
+        "maxRank": 60,
+        "acceptedAlternatives": [],
+        "forbiddenHits": [],
+        "expectEmpty": false,
+        "emptySatisfied": true,
+        "equivalence": null
+      },
+      "candidate": {
+        "available": true,
+        "pass": false,
+        "errors": [
+          "no explicit acceptable target within maxRank"
+        ],
+        "values": [],
+        "baseValues": [],
+        "query": "ñ",
+        "targetRanks": [
+          {
+            "target": "r34-fixture-copper",
+            "rank": null
+          }
+        ],
+        "bestTargetRank": null,
+        "maxRank": 60,
+        "acceptedAlternatives": [],
+        "forbiddenHits": [],
+        "expectEmpty": false,
+        "emptySatisfied": true,
+        "equivalence": null
+      },
+      "rawArraysChanged": false,
+      "arraysComparable": true,
+      "transition": "fail-to-fail"
+    },
+    {
+      "id": "nonascii-single-1",
+      "family": "exposed-orthography",
+      "role": "control",
+      "stratum": null,
+      "action": "fixture",
+      "inputQuery": "Ñ",
+      "acceptable": [
+        "r34-fixture-copper"
+      ],
+      "forbidden": [],
+      "baseline": {
+        "available": true,
+        "pass": false,
+        "errors": [
+          "no explicit acceptable target within maxRank"
+        ],
+        "values": [],
+        "baseValues": [],
+        "query": "Ñ",
+        "targetRanks": [
+          {
+            "target": "r34-fixture-copper",
+            "rank": null
+          }
+        ],
+        "bestTargetRank": null,
+        "maxRank": 60,
+        "acceptedAlternatives": [],
+        "forbiddenHits": [],
+        "expectEmpty": false,
+        "emptySatisfied": true,
+        "equivalence": null
+      },
+      "candidate": {
+        "available": true,
+        "pass": false,
+        "errors": [
+          "no explicit acceptable target within maxRank"
+        ],
+        "values": [],
+        "baseValues": [],
+        "query": "Ñ",
+        "targetRanks": [
+          {
+            "target": "r34-fixture-copper",
+            "rank": null
+          }
+        ],
+        "bestTargetRank": null,
+        "maxRank": 60,
+        "acceptedAlternatives": [],
+        "forbiddenHits": [],
+        "expectEmpty": false,
+        "emptySatisfied": true,
+        "equivalence": null
+      },
+      "rawArraysChanged": false,
+      "arraysComparable": true,
+      "transition": "fail-to-fail"
+    },
+    {
+      "id": "nonascii-single-2",
+      "family": "exposed-orthography",
+      "role": "control",
+      "stratum": null,
+      "action": "fixture",
+      "inputQuery": "ñ",
+      "acceptable": [
+        "r34-fixture-copper"
+      ],
+      "forbidden": [],
+      "baseline": {
+        "available": true,
+        "pass": false,
+        "errors": [
+          "no explicit acceptable target within maxRank"
+        ],
+        "values": [],
+        "baseValues": [],
+        "query": "ñ",
+        "targetRanks": [
+          {
+            "target": "r34-fixture-copper",
+            "rank": null
+          }
+        ],
+        "bestTargetRank": null,
+        "maxRank": 60,
+        "acceptedAlternatives": [],
+        "forbiddenHits": [],
+        "expectEmpty": false,
+        "emptySatisfied": true,
+        "equivalence": null
+      },
+      "candidate": {
+        "available": true,
+        "pass": false,
+        "errors": [
+          "no explicit acceptable target within maxRank"
+        ],
+        "values": [],
+        "baseValues": [],
+        "query": "ñ",
+        "targetRanks": [
+          {
+            "target": "r34-fixture-copper",
+            "rank": null
+          }
+        ],
+        "bestTargetRank": null,
+        "maxRank": 60,
+        "acceptedAlternatives": [],
+        "forbiddenHits": [],
+        "expectEmpty": false,
+        "emptySatisfied": true,
+        "equivalence": null
+      },
+      "rawArraysChanged": false,
+      "arraysComparable": true,
+      "transition": "fail-to-fail"
+    }
+  ]
+}

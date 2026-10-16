@@ -8,6 +8,15 @@ unmeasured. Small deterministic Spanish and bilingual checks are reported below.
 
 ## Continued independent sweeps, October 15–16
 
+The canonical Spanish emoji experiment in `audits/multilingual-emoji-r34/`
+was also rejected before blind reveal. Its source conforms to the approved
+conservative reservation policy, but that policy conflicts with three required
+controls: the candidate passes 144/147, with all three failures retained. All
+7,374 exposed compatibility rows preserve the legacy English prefix; the 552
+changed arrays have no semantic utility labels. The inactive source/resource
+snapshots and complete raw evidence are retained; production is restored, all
+110 blind rows remain unrun, and runtime/memory cost admission is unavailable.
+
 The sentence-local bilingual next-word experiments in
 `audits/sentence-nextword-r37/` were rejected before a final fresh workload.
 Two implemented source-conditioned backoffs earned zero gains in both a

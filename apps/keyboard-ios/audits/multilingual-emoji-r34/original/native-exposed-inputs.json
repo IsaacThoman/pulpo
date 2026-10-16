@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "query": "vicuna",
+      "acceptable": [
+        "🦙"
+      ],
+      "role": "control"
+    },
+    {
+      "query": "teclado",
+      "acceptable": [
+        "⌨️"
+      ],
+      "role": "control"
+    },
+    {
+      "query": "keyboard teclado",
+      "acceptable": [
+        "⌨️"
+      ],
+      "role": "control"
+    }
+  ]
+}

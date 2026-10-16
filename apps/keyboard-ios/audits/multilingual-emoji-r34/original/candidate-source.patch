@@ -1,0 +1,457 @@
+diff --git a/apps/keyboard-ios/LanguageData/README.md b/apps/keyboard-ios/LanguageData/README.md
+index 97d59d7f..826bae2e 100644
+--- a/apps/keyboard-ios/LanguageData/README.md
++++ b/apps/keyboard-ios/LanguageData/README.md
+@@ -160,3 +160,26 @@ prefixes follow exact matches; catalog order breaks ties. Case and accents are
+ folded for lookup, compounds also support spellings such as `thumbsup`, and
+ queries need at least three characters. Emoji suggestions are explicitly chosen
+ alternatives and do not change spelling-correction probabilities or decisions.
++
++Spanish explicit emoji search also includes CLDR 48 speech names (`s`), from the
++same pinned revision `acd6d88ae493633240e19a87a721076a8a75c310` (Unicode License v3):
++
++| Source | SHA-256 |
++| --- | --- |
++| [`common/annotations/es.xml`](https://raw.githubusercontent.com/unicode-org/cldr/acd6d88ae493633240e19a87a721076a8a75c310/common/annotations/es.xml) | `fe8384e9cd2ee0998eb00ddf5549272eb5b56739e539ef33fedcd727fce5026a` |
++| [`common/annotationsDerived/es.xml`](https://raw.githubusercontent.com/unicode-org/cldr/acd6d88ae493633240e19a87a721076a8a75c310/common/annotationsDerived/es.xml) | `ea9b3abc0a2c73a815faec1034764b6a503d14638ad4fb9556d8a7341838672c` |
++
++Pass both files through repeated `--emoji-spanish-annotations` arguments when
++building the catalog. The importer takes only `tts` speech names, joins sequences
++ignoring VS16, rejects conflicting names/non-Spanish inputs, and retains only
++existing base emoji. All original English fields and ordering stay intact.
++There are 1,914 names; nine Unicode 18 entries have no CLDR48 Spanish name.
++
++Explicit search accepts Spanish and mixed English/Spanish word prefixes, with
++vowel accents folded and ñ distinct. Tokens are unique and canonical before
++localized ranking/caps. Existing English matches remain first, and contextual
++suggestions remain English. A conservative English reservation can leave unused
++slots or suppress a localized match at tight caps; it makes the localized subset
++stable when inherited English phrase ordering changes. ASCII one-letter searches,
++recents and tone behavior retain their existing policy. No growing query cache or
++network lookup is used. The R34 audit records the exact policy and acceptance gates.
+diff --git a/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Emoji/EmojiCatalog.swift b/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Emoji/EmojiCatalog.swift
+index 2ff275ce..18aad8a1 100644
+--- a/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Emoji/EmojiCatalog.swift
++++ b/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Emoji/EmojiCatalog.swift
+@@ -9,17 +9,20 @@ public struct Emoji: Decodable, Equatable, Hashable, Sendable {
+   public let tones: [String]?
+   /// English Unicode CLDR annotations, when present in the catalog.
+   public let keywords: [String]?
++  /// Optional Unicode CLDR Spanish speech name, used only by explicit search.
++  public let spanishName: String?
+ 
+   enum CodingKeys: String, CodingKey {
+-    case value = "e", name = "n", version = "v", tones = "t", keywords = "k"
++    case value = "e", name = "n", version = "v", tones = "t", keywords = "k", spanishName = "s"
+   }
+ 
+-  public init(value: String, name: String, version: Double, tones: [String]?, keywords: [String]? = nil) {
++  public init(value: String, name: String, version: Double, tones: [String]?, keywords: [String]? = nil, spanishName: String? = nil) {
+     self.value = value
+     self.name = name
+     self.version = version
+     self.tones = tones
+     self.keywords = keywords
++    self.spanishName = spanishName
+   }
+ }
+ 
+@@ -50,7 +53,7 @@ public struct EmojiCatalog: Decodable, Sendable {
+   }
+ }
+ 
+-/// An immutable, bounded English name and keyword index for the suggestion bar.
++/// Immutable English contextual suggestions and Spanish-aware picker search.
+ /// Build once after filtering the catalog for glyph support, then share it across
+ /// keystrokes. It returns base emoji so the caller can apply the person's tone.
+ public struct EmojiSuggester: Sendable {
+@@ -68,6 +71,17 @@ public struct EmojiSuggester: Sendable {
+   /// Every value, including skin-tone variants, to its base emoji.
+   private let byValue: [String: Int]
+   private let index: [Term]
++  private struct Vocabulary: Sendable {
++    let english: [String]
++    let spanish: [String]
++    let reservation: [String]
++  }
++  private struct SpanishWord: Sendable {
++    let word: String
++    let ids: [Int]
++  }
++  private let vocabulary: [Vocabulary]
++  private let spanishIndex: [SpanishWord]
+   private static let locale = Locale(identifier: "en_US_POSIX")
+   private static let minimumLength = 3
+   private static let maximumLength = 80
+@@ -85,6 +99,9 @@ public struct EmojiSuggester: Sendable {
+     }
+     self.byValue = byValue
+     var matches: [String: [Int: Int]] = [:]
++    let hasSpanish = emoji.contains { $0.spanishName != nil }
++    var vocabulary: [Vocabulary] = []
++    var spanishPostings: [String: [Int]] = [:]
+ 
+     func add(_ term: String, id: Int, rank: Int) {
+       guard term.count >= Self.minimumLength, term.count <= Self.maximumLength,
+@@ -94,6 +111,15 @@ public struct EmojiSuggester: Sendable {
+ 
+     for (id, entry) in emoji.enumerated() {
+       let name = Self.normalized(entry.name)
++      var english: Set<String> = []
++      func remember(_ term: String) {
++        guard hasSpanish else { return }
++        english.insert(term)
++        let words = term.split(separator: " ").map(String.init)
++        english.formUnion(words)
++        english.insert(words.joined())
++      }
++      remember(name)
+       add(name, id: id, rank: 0)
+       let words = name.split(separator: " ").map(String.init)
+       if words.count > 1 {
+@@ -107,10 +133,19 @@ public struct EmojiSuggester: Sendable {
+       }
+       for keyword in entry.keywords ?? [] {
+         let term = Self.normalized(keyword)
++        remember(term)
+         add(term, id: id, rank: 80)
+         if term.contains(" ") { add(term.replacingOccurrences(of: " ", with: ""), id: id, rank: 90) }
+       }
++      if hasSpanish {
++        let spanish = Self.spanishTokens(entry.spanishName ?? "")
++        for word in spanish { spanishPostings[word, default: []].append(id) }
++        vocabulary.append(Vocabulary(english: Array(english), spanish: spanish,
++          reservation: Array(Set(english.map(Self.reservationKey)))))
++      }
+     }
++    self.vocabulary = vocabulary
++    spanishIndex = spanishPostings.keys.sorted().map { SpanishWord(word: $0, ids: spanishPostings[$0]!) }
+     // Keep complete terms once, with bounded postings. Prefixes are located by
+     // binary search instead of retaining a separate array for every keystroke.
+     index = matches.keys.sorted().map { key in
+@@ -173,7 +208,10 @@ public struct EmojiSuggester: Sendable {
+ 
+   public static let maximumSearchResults = 60
+ 
+-  /// Matches for the emoji picker's search field. Unlike `suggestions`, any
++  /// Matches for the emoji picker's search field. Spanish and mixed token
++  /// prefixes add a canonical tranche after the unchanged English results, with
++  /// conservative capacity reserved to keep localization stable under caps.
++  /// Unlike `suggestions`, any
+   /// query searches from its first letter, because the person asked to search:
+   /// names, name words, compact names, CLDR keywords and their prefixes. A
+   /// phrase continues names in order ("red hea"). When too few names continue
+@@ -181,6 +219,68 @@ public struct EmojiSuggester: Sendable {
+   /// them ("heart red"). Complete terms rank before prefixes. `preferred`
+   /// gives recent or popular emoji a small lead (1-2) over equally good matches.
+   public func search(_ query: String, limit: Int = 48, preferring preferred: [String: Int] = [:]) -> [Emoji] {
++    let legacy = englishSearch(query, limit: limit, preferring: preferred)
++    let count = min(limit, Self.maximumSearchResults)
++    guard !spanishIndex.isEmpty, count > 0, legacy.count < count,
++          query.count <= Self.maximumLength else { return legacy }
++    let tokens = Self.spanishTokens(query)
++    guard !tokens.isEmpty else { return legacy }
++    if tokens.count == 1, tokens[0].utf8.count == 1,
++       let letter = tokens[0].utf8.first, (97...122).contains(letter) { return legacy }
++
++    // Only entries with a Spanish word prefix can add an interpretation. This
++    // immutable posting list is bounded by catalog words, never by past queries.
++    var candidates: Set<Int> = []
++    for token in tokens {
++      var low = 0, high = spanishIndex.count
++      while low < high {
++        let middle = (low + high) / 2
++        if spanishIndex[middle].word < token { low = middle + 1 } else { high = middle }
++      }
++      for position in low..<spanishIndex.count {
++        guard spanishIndex[position].word.hasPrefix(token) else { break }
++        candidates.formUnion(spanishIndex[position].ids)
++      }
++    }
++    guard !candidates.isEmpty else { return legacy }
++    let englishTokens = tokens.map(Self.normalized)
++    candidates = candidates.filter { id in
++      tokens.indices.allSatisfy { n in
++        vocabulary[id].spanish.contains { $0.hasPrefix(tokens[n]) }
++          || vocabulary[id].english.contains { $0.hasPrefix(englishTokens[n]) }
++      }
++    }
++    guard !candidates.isEmpty else { return legacy }
++
++    // Reserve the SAME capacity for every canonical token set, even if an
++    // inherited English phrase/punctuation interpretation changes its occupancy.
++    // Projection is deliberately coarse and supplies no actual match eligibility.
++    let projected = tokens.map(Self.reservationKey)
++    let required = Set(projected).subtracting(Self.ignoredWords).sorted {
++      $0.utf8.count != $1.utf8.count ? $0.utf8.count > $1.utf8.count : $0 < $1
++    }
++    guard !projected.contains(""), !required.isEmpty else { return legacy }
++    var reserved: Set<Int> = []
++    for id in vocabulary.indices {
++      if required.allSatisfy({ token in vocabulary[id].reservation.contains { $0.contains(token) } }) {
++        reserved.insert(id)
++        if reserved.count >= count { return legacy }
++      }
++    }
++    candidates.subtract(reserved)
++    let ranked = candidates.map { id -> (Int, Int, Int, Int) in
++      let words = vocabulary[id]
++      let completions = tokens.indices.filter {
++        !words.spanish.contains(tokens[$0]) && !words.english.contains(englishTokens[$0])
++      }.count
++      return (words.spanish == tokens ? 0 : 1, completions, words.spanish.count, id)
++    }.sorted { $0 < $1 }
++    return legacy + ranked.prefix(count - reserved.count).map { emoji[$0.3] }
++  }
++
++  /// The original English picker policy. Keep its phrase order, posting bounds,
++  /// normalization and recent/popular ordering independent of localized aliases.
++  private func englishSearch(_ query: String, limit: Int, preferring preferred: [String: Int]) -> [Emoji] {
+     let count = min(limit, Self.maximumSearchResults)
+     guard count > 0, query.count <= Self.maximumLength else { return [] }
+     let key = Self.normalized(query)
+@@ -215,6 +315,52 @@ public struct EmojiSuggester: Sendable {
+ 
+   private static let maximumWordCandidates = 800
+ 
++  private static func isBaseLetter(_ scalar: Unicode.Scalar) -> Bool {
++    guard CharacterSet.letters.contains(scalar) else { return false }
++    switch scalar.properties.generalCategory {
++    case .uppercaseLetter, .lowercaseLetter, .titlecaseLetter, .modifierLetter, .otherLetter: return true
++    default: return false
++    }
++  }
++
++  /// Vowel accents fold; consonant marks (including ñ) remain orthographic.
++  /// Use both runtime classifications: Foundation's letter set includes marks,
++  /// while Swift can recognize newer letters Foundation does not yet admit.
++  private static func spanishTokens(_ text: String) -> [String] {
++    var tokens: Set<String> = [], word = "", followsVowel = false
++    func finish() {
++      if !word.isEmpty { tokens.insert(word.precomposedStringWithCanonicalMapping) }
++      word = ""; followsVowel = false
++    }
++    for scalar in text.lowercased(with: locale).decomposedStringWithCanonicalMapping.unicodeScalars {
++      switch scalar.properties.generalCategory {
++      case .nonspacingMark, .spacingMark, .enclosingMark:
++        if !word.isEmpty && !followsVowel { word.unicodeScalars.append(scalar) }
++      default:
++        if isBaseLetter(scalar) {
++          word.unicodeScalars.append(scalar)
++          followsVowel = "aeiou".unicodeScalars.contains(scalar)
++        } else { finish() }
++      }
++    }
++    finish()
++    return tokens.sorted()
++  }
++
++  private static func reservationKey(_ text: String) -> String {
++    // Almost all normalized English terms are already lowercase ASCII. Keeping
++    // that common case avoids a second Foundation fold during construction.
++    if text.utf8.allSatisfy({ $0 < 128 }) {
++      return String(decoding: text.utf8.compactMap { byte -> UInt8? in
++        if (97...122).contains(byte) { return byte }
++        if (65...90).contains(byte) { return byte + 32 }
++        return nil
++      }, as: UTF8.self)
++    }
++    let folded = text.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: locale)
++    return String(String.UnicodeScalarView(folded.decomposedStringWithCanonicalMapping.unicodeScalars.filter(isBaseLetter)))
++  }
++
+   /// The words of an emoji's name and keywords, as the index normalizes them.
+   private static func searchWords(of entry: Emoji) -> Set<String> {
+     var words: Set<String> = []
+diff --git a/apps/keyboard-ios/PulpoKeyboardKit/Tests/KeyboardCoreTests/LocalizedEmojiSearchTests.swift b/apps/keyboard-ios/PulpoKeyboardKit/Tests/KeyboardCoreTests/LocalizedEmojiSearchTests.swift
+new file mode 100644
+index 00000000..a4529b1d
+--- /dev/null
++++ b/apps/keyboard-ios/PulpoKeyboardKit/Tests/KeyboardCoreTests/LocalizedEmojiSearchTests.swift
+@@ -0,0 +1,66 @@
++import Foundation
++import Testing
++@testable import KeyboardCore
++
++@Suite struct LocalizedEmojiSearchTests {
++  private func catalog(_ entries: [[String: Any]]) throws -> EmojiCatalog {
++    try JSONDecoder().decode(EmojiCatalog.self, from: JSONSerialization.data(withJSONObject:
++      ["version": "fixture", "categories": [["id": "fixture", "name": "Fixture", "emoji": entries]]]))
++  }
++
++  @Test func spanishAndMixedSearchKeepContextualSuggestionsEnglish() throws {
++    let entries: [[String: Any]] = [
++      ["e": "⌨️", "n": "keyboard", "v": 1, "k": ["computer"], "s": "teclado"],
++      ["e": "🚲", "n": "bicycle", "v": 1, "s": "bicicleta"],
++    ]
++    let index = EmojiSuggester(catalog: try catalog(entries))
++    #expect(index.search("teclado").map(\.value) == ["⌨️"])
++    #expect(index.search("computer tecl").map(\.value) == ["⌨️"])
++    #expect(index.search("teclado bicycle").isEmpty)
++    #expect(index.search(":TECLÁDO:").map(\.value) == ["⌨️"])
++    #expect(index.suggestions(for: "teclado").isEmpty)
++    #expect(index.suggestions(for: "keyboard").map(\.value) == ["⌨️"])
++    #expect(index.search("keyboard").map(\.value) == ["⌨️"])
++  }
++
++  @Test func consonantMarksRemainDistinctWithoutChangingEnglishAliases() throws {
++    let index = EmojiSuggester(catalog: try catalog([
++      ["e": "🧶", "n": "vicuña", "v": 1, "k": ["são", "piña"], "s": "lanera"],
++      ["e": "🪡", "n": "needle", "v": 1, "s": "lañera"],
++    ]))
++    for query in ["lanera", "LANÉRA", "lane\u{301}ra"] { #expect(index.search(query).map(\.value) == ["🧶"]) }
++    for query in ["lañera", "LAÑERA", "lan\u{303}era"] { #expect(index.search(query).map(\.value) == ["🪡"]) }
++    for query in ["vicuna", "VICUÑA", "vicun\u{303}a", "sao", "SÃO", "pina", "PIN\u{303}A"] {
++      #expect(index.search(query, limit: 8).map(\.value).contains("🧶"))
++    }
++  }
++
++  @Test func overfullSearchKeepsTheSameLocalizedPicksAfterReorderingAndRepeating() throws {
++    let glyphs = ["😀", "😃", "😄", "😁", "😆", "😅", "🤣", "😂", "🙂", "🙃", "🫠", "🫫", "😉", "😊", "😇", "🥰", "😍", "🤩", "😘", "😗", "☺️", "😚", "😙", "🥲", "😋", "😛", "😜", "🤪", "😝", "🤑", "🤗", "🤭", "🫢", "🫣", "🤫", "🤔", "🫡", "🤐", "🤨", "😐", "😑", "😶", "🫥", "😶‍🌫️", "😏", "😒", "🙄", "😬", "😮‍💨"]
++    let index = EmojiSuggester(catalog: try catalog(glyphs.enumerated().map { i, value in
++      ["e": value, "n": "fixture \(i)", "v": 1,
++       "s": i == 47 ? "nube violeta" : (i == 48 ? "violeta nube" : "nube violeta extra\(i)")]
++    }))
++    for cap in [1, 48, 60] {
++      let original = index.search("nube violeta", limit: cap).map(\.value)
++      #expect(original.count == min(cap, glyphs.count))
++      for query in ["violeta nube", "nube violeta violeta", ":NUBE: violeta", "violeta nube nube"] {
++        #expect(index.search(query, limit: cap).map(\.value) == original)
++      }
++    }
++  }
++
++  @Test func legacyCatalogsLimitsAndShortPrefixesStayCompatible() throws {
++    let entries: [[String: Any]] = [
++      ["e": "👑", "n": "queen", "v": 1, "s": "quimera"],
++      ["e": "⚡️", "n": "zap", "v": 1, "s": "queso"],
++    ]
++    let current = EmojiSuggester(catalog: try catalog(entries))
++    let old = EmojiSuggester(catalog: try catalog(entries.map { $0.filter { $0.key != "s" } }))
++    for query in ["q", "z", ":q:", "q q", "", "::", "-", String(repeating: "q", count: 81)] {
++      #expect(current.search(query).map(\.value) == old.search(query).map(\.value))
++    }
++    for limit in [-1, 0] { #expect(current.search("quimera", limit: limit).isEmpty) }
++    #expect(current.search("queso").map(\.value) == ["⚡️"])
++  }
++}
+diff --git a/apps/keyboard-ios/scripts/build_language_data.py b/apps/keyboard-ios/scripts/build_language_data.py
+index ac364ccb..8c396bf8 100644
+--- a/apps/keyboard-ios/scripts/build_language_data.py
++++ b/apps/keyboard-ios/scripts/build_language_data.py
+@@ -636,7 +636,39 @@ def add_emoji_keywords(catalog, annotation_paths):
+   return catalog
+ 
+ 
+-def build_emoji(path, annotation_paths=()):
++def add_spanish_emoji_names(catalog, paths):
++  """Join CLDR Spanish speech names only, preserving all legacy catalog fields.
++
++  Both base and derived annotations may be supplied. Keywords do not enter the
++  English index. VS16 is presentation, not a different catalog sequence.
++  """
++  names = {}
++  for path in paths:
++    root = ET.parse(path).getroot()
++    identity = root.find('./identity/language')
++    if identity is None or identity.get('type') != 'es':
++      raise ValueError(f'Expected Spanish CLDR annotations: {path}')
++    for annotation in root.findall('./annotations/annotation'):
++      if annotation.get('type') != 'tts':
++        continue
++      sequence = annotation.get('cp', '').replace('\ufe0f', '')
++      name = (annotation.text or '').strip()
++      if not sequence or not name or name in {'↑↑↑', '∅∅∅'}:
++        continue
++      if sequence in names and names[sequence] != name:
++        raise ValueError(f'Conflicting Spanish CLDR speech names for {sequence}')
++      names[sequence] = name
++  for category in catalog['categories']:
++    for emoji in category['emoji']:
++      name = names.get(emoji['e'].replace('\ufe0f', ''))
++      if name:
++        emoji['s'] = name
++      else:
++        emoji.pop('s', None)
++  return catalog
++
++
++def build_emoji(path, annotation_paths=(), spanish_annotation_paths=()):
+   group = None
+   ordered = []
+   by_base = {}
+@@ -679,6 +711,8 @@ def build_emoji(path, annotation_paths=()):
+   catalog = {'version': version, 'categories': categories}
+   if annotation_paths:
+     add_emoji_keywords(catalog, annotation_paths)
++  if spanish_annotation_paths:
++    add_spanish_emoji_names(catalog, spanish_annotation_paths)
+   output = ROOT / 'LanguageData' / 'emoji.json'
+   output.write_text(json.dumps(catalog, ensure_ascii=False, separators=(',', ':')), encoding='utf-8')
+   print(f'{output.name}: Emoji {version}, {sum(len(c["emoji"]) for c in categories)} emoji, {output.stat().st_size / 1e3:.0f} KB')
+@@ -691,6 +725,8 @@ def main():
+   parser.add_argument('--emoji', required=True)
+   parser.add_argument('--emoji-annotations', type=Path, action='append', default=[],
+                       help='Optional Unicode CLDR English annotations XML; repeat for annotationsDerived/en.xml.')
++  parser.add_argument('--emoji-spanish-annotations', type=Path, action='append', default=[],
++                      help='Optional CLDR Spanish speech names; repeat for annotationsDerived/es.xml.')
+   parser.add_argument('--messages', help='Optional UCI SMSSpamCollection file for conversational n-grams (ham only; stable 20%% holdout).')
+   parser.add_argument('--conversations', action='append', default=[], help='Optional Topical-Chat training JSON. Never pass validation/test splits.')
+   parser.add_argument('--validation-wordlist', type=Path, default=ROOT / 'LanguageData' / 'en_US.validwords.txt',
+@@ -698,7 +734,7 @@ def main():
+   parser.add_argument('--max-successors', type=int, default=48)
+   args = parser.parse_args()
+   build(args)
+-  build_emoji(args.emoji, args.emoji_annotations)
++  build_emoji(args.emoji, args.emoji_annotations, args.emoji_spanish_annotations)
+ 
+ 
+ if __name__ == '__main__':
+diff --git a/apps/keyboard-ios/scripts/test_emoji_keywords.py b/apps/keyboard-ios/scripts/test_emoji_keywords.py
+index 97244792..3c611535 100644
+--- a/apps/keyboard-ios/scripts/test_emoji_keywords.py
++++ b/apps/keyboard-ios/scripts/test_emoji_keywords.py
+@@ -3,7 +3,7 @@ import tempfile
+ import unittest
+ from pathlib import Path
+ 
+-from build_language_data import add_emoji_keywords, emoji_annotation_keywords
++from build_language_data import add_emoji_keywords, emoji_annotation_keywords, add_spanish_emoji_names
+ 
+ 
+ class EmojiKeywordTests(unittest.TestCase):
+@@ -47,5 +47,34 @@ class EmojiKeywordTests(unittest.TestCase):
+         emoji_annotation_keywords([source])
+ 
+ 
++class SpanishEmojiNamesTests(unittest.TestCase):
++  def test_only_speech_names_join_existing_bases_without_changing_english(self):
++    with tempfile.TemporaryDirectory() as directory:
++      source = Path(directory) / 'es.xml'
++      source.write_text('<ldml><identity><language type="es"/></identity><annotations>'
++        '<annotation cp="☀️">calor | verano</annotation>'
++        '<annotation cp="☀️" type="tts">sol</annotation>'
++        '<annotation cp="🐙" type="tts">pulpo</annotation>'
++        '</annotations></ldml>')
++      original = {'version': '1', 'categories': [{'emoji': [{'e': '☀', 'n': 'sun', 'v': 1, 'k': ['bright']}, {'e': '🫪', 'n': 'new', 'v': 18}]}]}
++      changed = add_spanish_emoji_names(copy.deepcopy(original), [source])
++      self.assertEqual(changed['categories'][0]['emoji'][0]['s'], 'sol')
++      self.assertNotIn('s', changed['categories'][0]['emoji'][1])
++      for e in changed['categories'][0]['emoji']: e.pop('s', None)
++      self.assertEqual(changed, original)
++
++  def test_conflicting_or_non_spanish_speech_names_are_rejected(self):
++    with tempfile.TemporaryDirectory() as directory:
++      source = Path(directory) / 'es.xml'
++      source.write_text('<ldml><identity><language type="en"/></identity></ldml>')
++      with self.assertRaisesRegex(ValueError, 'Spanish CLDR'):
++        add_spanish_emoji_names({'categories': []}, [source])
++      source.write_text('<ldml><identity><language type="es"/></identity><annotations>'
++        '<annotation cp="☀" type="tts">sol</annotation>'
++        '<annotation cp="☀️" type="tts">estrella</annotation></annotations></ldml>')
++      with self.assertRaisesRegex(ValueError, 'Conflicting'):
++        add_spanish_emoji_names({'categories': []}, [source])
++
++
+ if __name__ == '__main__':
+   unittest.main()

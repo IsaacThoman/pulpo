@@ -1,0 +1,78 @@
+{
+  "baseline": "e6871a164cfbc2eca4d0b3da700364a55e4e4dcb",
+  "candidate": "96a28b98e154077da10f5dbe1f7e968020b2f9fb",
+  "hashes": {
+    "baseline:apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Emoji/EmojiCatalog.swift": "c7f929ada6398c9c849e1b764e7bdacc3aca6956f3444fa74953db43cea5468e",
+    "baseline:apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Emoji/EmojiSearch.swift": "10258fab0b30f82d17be2a6358b68fe93b1d3930e0b0bd3d32c159579be781a2",
+    "baseline:apps/keyboard-ios/LanguageData/emoji.json": "2085015d3bd75b7046aecd244b1961230b37fd25ac8aca475c7bc4afabba8117",
+    "candidate:apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Emoji/EmojiCatalog.swift": "2962b6cb3048268f25aa34ca73ee9f663e136521a10e40e70078a982d3339ece",
+    "candidate:apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Emoji/EmojiSearch.swift": "10258fab0b30f82d17be2a6358b68fe93b1d3930e0b0bd3d32c159579be781a2",
+    "candidate:apps/keyboard-ios/LanguageData/emoji.json": "d201157dd725d8e8af6ef91ed56aee867bf52dc0d3cb314e649a8614b3876edd",
+    "contract.md": "bebb6034c35bfb576e39f033013ac560a24d15f5128fc2490199b08cb66d5d01",
+    "api-map.md": "0f8fa0472cb429e6019656a99755bc5f91f24e280d34915312c2ffca0960cfa9",
+    "schema.json": "3d764e105588c0f8da40f82313b6b3885e1a05cbad175fae9915deba1e74397a",
+    "runner.swift": "8e261e7f67e2f2024a27a74e37941de1a8a432b3eb7562743bdbd22a9f1e672c",
+    "compare.py": "7a7283ff9992b97438579306df6f729a8ce7bd08723673ff82c188c732f64b87",
+    "smoke-runner.py": "25e05b5c2828e3a89fffd02f86a7c0d91e6bed0f65ab4038282a47cf3b973ad2",
+    "validate.py": "1e925b4e18b9803bb55be8c871aa4be81e443fe8f5482ee3b3554f81aa2e3418",
+    "protocol-review-v5.md": "bfa7d79c44286fa1a078cf9a4f463f61a34b29dddc8a742cc55f5fec14c3c753",
+    "/tmp/pulpo-r34-perf/compat-baseline.json": "31f6691facd967070ef8eccc182b9279cdf6231fa42cf5d05bbdf6f3e733245f",
+    "/tmp/pulpo-r34-perf/compat-candidate.json": "28a8cd3f5901811fed7268e0123060dd52c02d1e276b21ea6eef8d0d6cbde5c6",
+    "/tmp/pulpo-r34-candidate-smoke/candidate-oracle-report.json": "1ff995bcd54b8e6621b7c25fba59e10386b5b3434b7b9a8a05a72a232743d2a9",
+    "/tmp/r34-source-review/independent.swift": "d26d436a3306e2b73442278263a048fd96720a77a552b64c3fbbe9ad9592b000",
+    "/tmp/r34-source-review/review.py": "867ae31b101e49b6cc587b4fbe5c8840f9192a796581b7ab6f8e50040a2e9fe0",
+    "/tmp/r34-source-review/check.py": "416a96709bb385a8dc262aaa49fa770d8bd15589780a34aee6d009a888aadbe9",
+    "/tmp/r34-source-review/independent-summary.json": "948bb07b2fe547006c55044367d25fdbb55dddb772722c7b0dbd4447b015a3d3",
+    "/tmp/r34-source-review/independent-controls.json": "9295b681fbd07c2695ded4901d46faa35d8d02e37a10bfab147782ef3e3693ac",
+    "/tmp/r34-source-review/baseline/compat.json": "31f6691facd967070ef8eccc182b9279cdf6231fa42cf5d05bbdf6f3e733245f",
+    "/tmp/r34-source-review/candidate/compat.json": "28a8cd3f5901811fed7268e0123060dd52c02d1e276b21ea6eef8d0d6cbde5c6",
+    "/tmp/r34-source-review/source-counterexample.json": "eb41a8c4e2b85b0babf0567961bdaa763af2d765ee20d874ddc862bd8311eaff",
+    "/tmp/r34-source-review/frozen-smoke-negatives.json": "83169199534470de4e4bdc444ba166ca5073ab2feaf48e083fac04fec1afe380"
+  },
+  "static": {
+    "englishSearchBodyUnchanged": true,
+    "contextualBodyUnchanged": true,
+    "historyBodyUnchanged": true,
+    "normalizationBodyUnchanged": true,
+    "searchWordsBodyUnchanged": true,
+    "collectBodyUnchanged": true,
+    "searchWrapperUnchanged": true
+  },
+  "resource": {
+    "legacyFieldsAndArrayOrderEqual": true,
+    "legacyKeyOrderEqual": true,
+    "entries": 1923,
+    "uniqueBases": 1923,
+    "spanishNames": 1914,
+    "missingNames": [
+      "cracking face",
+      "leftwards thumb sign",
+      "rightwards thumb sign",
+      "monarch butterfly",
+      "pickle",
+      "lighthouse",
+      "meteor",
+      "eraser",
+      "net with handle"
+    ],
+    "baselineBytes": 242085,
+    "candidateBytes": 286829,
+    "extraBytes": 44744
+  },
+  "pairedCompatibility": {
+    "rows": 7374,
+    "changedRows": 552,
+    "violations": [],
+    "semanticUtility": "UNAVAILABLE: no useful target oracles; additions are mechanical only"
+  },
+  "frozenSmoke": {
+    "rows": 147,
+    "candidatePassingControls": 144,
+    "failures": [
+      "nonascii-single-0",
+      "nonascii-single-1",
+      "nonascii-single-2"
+    ],
+    "newRegressionRows": 0
+  }
+}

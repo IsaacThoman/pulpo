@@ -1,0 +1,265 @@
+{
+  "failures" : [
+    {
+      "canonical" : [
+        "𐗀"
+      ],
+      "englishProjection" : [
+        ""
+      ],
+      "projections" : [
+        "𐗀"
+      ],
+      "query" : "𐗀",
+      "scalar" : "U+105C0"
+    },
+    {
+      "canonical" : [
+        "a𐗀b"
+      ],
+      "englishProjection" : [
+        "ab"
+      ],
+      "projections" : [
+        "a𐗀b"
+      ],
+      "query" : "a𐗀b",
+      "scalar" : "U+105C0"
+    },
+    {
+      "canonical" : [
+        "c𐗀b"
+      ],
+      "englishProjection" : [
+        "cb"
+      ],
+      "projections" : [
+        "c𐗀b"
+      ],
+      "query" : "c𐗀b",
+      "scalar" : "U+105C0"
+    },
+    {
+      "canonical" : [
+        "𐗁"
+      ],
+      "englishProjection" : [
+        ""
+      ],
+      "projections" : [
+        "𐗁"
+      ],
+      "query" : "𐗁",
+      "scalar" : "U+105C1"
+    },
+    {
+      "canonical" : [
+        "a𐗁b"
+      ],
+      "englishProjection" : [
+        "ab"
+      ],
+      "projections" : [
+        "a𐗁b"
+      ],
+      "query" : "a𐗁b",
+      "scalar" : "U+105C1"
+    },
+    {
+      "canonical" : [
+        "c𐗁b"
+      ],
+      "englishProjection" : [
+        "cb"
+      ],
+      "projections" : [
+        "c𐗁b"
+      ],
+      "query" : "c𐗁b",
+      "scalar" : "U+105C1"
+    },
+    {
+      "canonical" : [
+        "𐗂"
+      ],
+      "englishProjection" : [
+        ""
+      ],
+      "projections" : [
+        "𐗂"
+      ],
+      "query" : "𐗂",
+      "scalar" : "U+105C2"
+    },
+    {
+      "canonical" : [
+        "a𐗂b"
+      ],
+      "englishProjection" : [
+        "ab"
+      ],
+      "projections" : [
+        "a𐗂b"
+      ],
+      "query" : "a𐗂b",
+      "scalar" : "U+105C2"
+    },
+    {
+      "canonical" : [
+        "c𐗂b"
+      ],
+      "englishProjection" : [
+        "cb"
+      ],
+      "projections" : [
+        "c𐗂b"
+      ],
+      "query" : "c𐗂b",
+      "scalar" : "U+105C2"
+    },
+    {
+      "canonical" : [
+        "𐗃"
+      ],
+      "englishProjection" : [
+        ""
+      ],
+      "projections" : [
+        "𐗃"
+      ],
+      "query" : "𐗃",
+      "scalar" : "U+105C3"
+    },
+    {
+      "canonical" : [
+        "a𐗃b"
+      ],
+      "englishProjection" : [
+        "ab"
+      ],
+      "projections" : [
+        "a𐗃b"
+      ],
+      "query" : "a𐗃b",
+      "scalar" : "U+105C3"
+    },
+    {
+      "canonical" : [
+        "c𐗃b"
+      ],
+      "englishProjection" : [
+        "cb"
+      ],
+      "projections" : [
+        "c𐗃b"
+      ],
+      "query" : "c𐗃b",
+      "scalar" : "U+105C3"
+    },
+    {
+      "canonical" : [
+        "𐗄"
+      ],
+      "englishProjection" : [
+        ""
+      ],
+      "projections" : [
+        "𐗄"
+      ],
+      "query" : "𐗄",
+      "scalar" : "U+105C4"
+    },
+    {
+      "canonical" : [
+        "a𐗄b"
+      ],
+      "englishProjection" : [
+        "ab"
+      ],
+      "projections" : [
+        "a𐗄b"
+      ],
+      "query" : "a𐗄b",
+      "scalar" : "U+105C4"
+    },
+    {
+      "canonical" : [
+        "c𐗄b"
+      ],
+      "englishProjection" : [
+        "cb"
+      ],
+      "projections" : [
+        "c𐗄b"
+      ],
+      "query" : "c𐗄b",
+      "scalar" : "U+105C4"
+    },
+    {
+      "canonical" : [
+        "𐗅"
+      ],
+      "englishProjection" : [
+        ""
+      ],
+      "projections" : [
+        "𐗅"
+      ],
+      "query" : "𐗅",
+      "scalar" : "U+105C5"
+    },
+    {
+      "canonical" : [
+        "a𐗅b"
+      ],
+      "englishProjection" : [
+        "ab"
+      ],
+      "projections" : [
+        "a𐗅b"
+      ],
+      "query" : "a𐗅b",
+      "scalar" : "U+105C5"
+    },
+    {
+      "canonical" : [
+        "c𐗅b"
+      ],
+      "englishProjection" : [
+        "cb"
+      ],
+      "projections" : [
+        "c𐗅b"
+      ],
+      "query" : "c𐗅b",
+      "scalar" : "U+105C5"
+    },
+    {
+      "canonical" : [
+        "𐗆"
+      ],
+      "englishProjection" : [
+        ""
+      ],
+      "projections" : [
+        "𐗆"
+      ],
+      "query" : "𐗆",
+      "scalar" : "U+105C6"
+    },
+    {
+      "canonical" : [
+        "a𐗆b"
+      ],
+      "englishProjection" : [
+        "ab"
+      ],
+      "projections" : [
+        "a𐗆b"
+      ],
+      "query" : "a𐗆b",
+      "scalar" : "U+105C6"
+    }
+  ],
+  "tested" : 194900
+}

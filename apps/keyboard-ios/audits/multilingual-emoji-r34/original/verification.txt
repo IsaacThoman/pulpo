@@ -1,0 +1,48 @@
+Baseline: e6871a164cfbc2eca4d0b3da700364a55e4e4dcb
+Candidate: 96a28b98e154077da10f5dbe1f7e968020b2f9fb
+Restoration: 35a18150323ec03ebe41c6bcea0d1b2eeea9385f
+
+swift test -c release --package-path apps/keyboard-ios/PulpoKeyboardKit
+  baseline /tmp/pulpo-r34-baseline-core.log:441core,3service,5known;exit0
+  candidate /tmp/pulpo-r34-candidate-core.log:445core,3service,5known;exit0
+  restored /tmp/pulpo-r34-restored-core.log:441core,3service,5known;exit0
+python3 -m unittest discover -s apps/keyboard-ios/scripts -p test_emoji_keywords.py
+  baseline3,candidate5,restored3;all exit0
+
+Full preproduction all-action baseline protocol:147rows,136assertions,125invalid rejects;PASS
+Candidate rerun:exit1;144/147control oracles pass;nonascii-single-0/1/2 remainFAIL
+  All raw rows /tmp/pulpo-r34-candidate-smoke/candidate-output.json
+  All oracle results /tmp/pulpo-r34-candidate-smoke/candidate-oracle-report.json
+Source/admission review:source conforms v5;admission REJECT. No retuning.
+
+Native builds:baseline /tmp/pulpo-r34-native-baseline,candidate /tmp/pulpo-r34-native-candidate
+  xcodebuild build-for-testing -project apps/keyboard-ios/PulpoKeyboard.xcodeproj
+    -scheme PulpoKeyboard -destination platform=iOS Simulator,id=7E1D7979-7307-4C53-8466-BB41154B383C
+    -derivedDataPath PATH -parallel-testing-enabled NO -collect-test-diagnostics never CODE_SIGNING_ALLOWED=NO
+  All baseline/candidate build commands exit0; successful logs not read.
+  First manual simctl boot returned149:Unable to boot device in current state:Booted.
+  Device tools list/open raw:Device list failed:The device command failed(exit code127).
+
+Native test-without-building, same UUID/serialization/diagnostics flags:
+  /tmp/pulpo-r34-native-baseline-safety.xcresult:5pass,0fail,0skip
+  /tmp/pulpo-r34-native-small.xcresult:3pass,0fail,0skip
+  /tmp/pulpo-r34-native-large.xcresult:3pass,0fail,0skip
+  Candidate filters:
+    PulpoKeyboardUITests/R34NativeInteractionTests
+    PulpoKeyboardUITests/EmojiSearchTests/testSwitchingFieldsEndsSearch
+    PulpoKeyboardAppTests/R34NativeDocumentTests/testSelectedUnicodePrivateTraitsAndSearchOwnership
+  Summaries read via xcresulttool get test-results summary --format json.
+  Actual content_size small/large changed by UUID-pinned simctl before corresponding tests.
+  Executed native source matched frozen .swift.txt bytes; removed temporary native .swift files.
+  No native cold-cost tests executed; no UI wall time substituted.
+
+Final device restoration:
+  simctl install assignedUUID baselineDerived/Build/Products/Debug-iphonesimulator/PulpoKeyboard.app;exit0
+  python3 apps/keyboard-ios/scripts/simulator_keyboard.py assignedUUID --enable-hardware;exit0,true
+  simctl ui assignedUUID content_size large;exit0;readback large
+  Installed resourceSHA2562085015d3bd75b7046aecd244b1961230b37fd25ac8aca475c7bc4afabba8117 verified
+  device_close shutdown:false succeeded;no shutdown
+
+All15 candidate-source.sha256 paths verified against immutable candidate commit after restoration.
+Both R31/R34 seal digests unchanged,machine-only check,no payload display/behavioral run.
+Final production diff against e6871a16 empty. No push,merge,physical deploy,parent source edits.

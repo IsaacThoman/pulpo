@@ -1,0 +1,41 @@
+{
+  "parentThreadId": "4d6b01bc-798c-4054-9c1c-79fe4f81d9f6",
+  "roundThreadId": "thread:delegated-task:command%3Amcp%3A97ec53a7-e99b-4d43-a966-0955dfe63c18%3Adelegate-task%3Apr782-round34-canonical-compatible-emoji",
+  "provider": "codex",
+  "model": "gpt-6.1-sol",
+  "overrides": false,
+  "tasks": [
+    {
+      "clientRequestId": "r34-contract-review-v1",
+      "taskId": "node:delegated-task:command%3Amcp%3A4c2eb774-2a94-445b-99d4-b220bcd30cdb%3Adelegate-task%3Ar34-contract-review-v1"
+    },
+    {
+      "clientRequestId": "r34-contract-review-v2",
+      "taskId": "node:delegated-task:command%3Amcp%3A4c2eb774-2a94-445b-99d4-b220bcd30cdb%3Adelegate-task%3Ar34-contract-review-v2"
+    },
+    {
+      "clientRequestId": "r34-contract-review-v3",
+      "taskId": "node:delegated-task:command%3Amcp%3A4c2eb774-2a94-445b-99d4-b220bcd30cdb%3Adelegate-task%3Ar34-contract-review-v3"
+    },
+    {
+      "clientRequestId": "r34-contract-review-v4",
+      "taskId": "node:delegated-task:command%3Amcp%3A4c2eb774-2a94-445b-99d4-b220bcd30cdb%3Adelegate-task%3Ar34-contract-review-v4"
+    },
+    {
+      "clientRequestId": "r34-contract-review-v5",
+      "taskId": "node:delegated-task:command%3Amcp%3A4c2eb774-2a94-445b-99d4-b220bcd30cdb%3Adelegate-task%3Ar34-contract-review-v5"
+    },
+    {
+      "clientRequestId": "r34-protocol-engineering-v1",
+      "taskId": "node:delegated-task:command%3Amcp%3A4c2eb774-2a94-445b-99d4-b220bcd30cdb%3Adelegate-task%3Ar34-protocol-engineering-v1"
+    },
+    {
+      "clientRequestId": "r34-blind-author-v1",
+      "taskId": "node:delegated-task:command%3Amcp%3A4c2eb774-2a94-445b-99d4-b220bcd30cdb%3Adelegate-task%3Ar34-blind-author-v1"
+    },
+    {
+      "clientRequestId": "r34-source-review-v1",
+      "taskId": "node:delegated-task:command%3Amcp%3A4c2eb774-2a94-445b-99d4-b220bcd30cdb%3Adelegate-task%3Ar34-source-review-v1"
+    }
+  ]
+}

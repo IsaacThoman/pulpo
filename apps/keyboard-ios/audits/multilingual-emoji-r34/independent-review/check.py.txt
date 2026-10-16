@@ -1,0 +1,35 @@
+import json,pathlib,hashlib,re
+out=pathlib.Path('/tmp/r34-source-review')
+load=lambda p:json.loads(p.read_text())
+result={'compiler':'swiftc -O; macOS host only; not cost/native evidence','independentCompatibility':{},'fixtureControls':{},'violations':[]}
+for tag in ['baseline','candidate']:
+ actual=load(out/tag/'compat.json'); prior=load(pathlib.Path('/tmp/pulpo-r34-perf')/f'compat-{tag}.json')
+ errors=[a['query']for a,b in zip(actual,prior)if a!=b]
+ result['independentCompatibility'][tag]={'rows':len(actual),'identicalToMainPairedOutput':actual==prior,'mismatchedQueries':errors}
+ assert actual==prior
+base=load(out/'baseline'/'compat.json'); cand=load(out/'candidate'/'compat.json')
+for a,c in zip(base,cand):
+ assert c['search'][:len(a['search'])]==a['search']
+ assert a['suggestions']==c['suggestions'] and a['exactSuggestions']==c['exactSuggestions']
+ assert len(c['search'])<=48 and len(c['search'])==len(set(c['search']))
+ letters=re.findall('[A-Za-z]',a['query'])
+ if letters and len(set(x.lower()for x in letters))==1 and all(x.isascii()and (not x.isalnum()or x.isalpha())for x in a['query']):
+  assert a['search']==c['search']
+bs=load(out/'baseline'/'controls.json'); cs=load(out/'candidate'/'controls.json')
+rows=[]
+for b,c in zip(bs,cs):
+ assert {k:v for k,v in b.items()if k!='actual'}=={k:v for k,v in c.items()if k!='actual'}
+ cap=c['cap']; actual=c['actual']; fixture=c['fixture']
+ if fixture in ['copper lantern','copper']:
+  expected=[] if c['query']=='navoru' or (fixture=='copper lantern' and c['query'] in ['ñ','Ñ','ñ']) else ['r34-fixture-copper']
+ else:
+  expected=b['actual']+[f'local-{i}'for i in range(max(0,cap-c['reservationCount']))]
+ if actual!=expected: result['violations'].append({'row':c,'baseline':b['actual'],'expected':expected})
+ assert len(actual)<=cap and len(set(actual))==len(actual)
+ assert actual[:len(b['actual'])]==b['actual']
+ rows.append({**c,'baseline':b['actual'],'expectedV5':expected,'pass':actual==expected})
+result['fixtureControls']={'rows':len(rows),'passing':sum(r['pass']for r in rows),'suppressionRows':sum(r['fixture']=='copper lantern'and r['query']in['ñ','Ñ','ñ']for r in rows),'controlsOnly':'No semantic utility inference'}
+(out/'independent-controls.json').write_text(json.dumps(rows,ensure_ascii=False,indent=2)+'\n')
+(out/'independent-summary.json').write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n')
+print(json.dumps(result,ensure_ascii=False,indent=2))
+assert not result['violations']
