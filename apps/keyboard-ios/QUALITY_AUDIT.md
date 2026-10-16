@@ -40,6 +40,11 @@ and 175 unexecuted actions in each version. Six correlated local check repairs
 and zero new failed IDs do not establish persistent durability or whole-feature
 acceptance. The full failed round is retained without retuning or rerunning;
 whole-feature publication remains pending. See `audits/reset-integration-r48/`.
+The separately versioned R49 runner passes 28 supplied and five independent
+Foundation-only filesystem probes. A new source-blind author has sealed 15
+families, 45 instances and 452 actions; independent preexecution review found
+missing observed-call/status accounting and is completing its full report.
+No R49 product build or execution has occurred. See `audits/reset-integration-r49/`.
 
 Account sign-in cancellation now revokes pending publication before task start
 and after network suspension; obsolete refreshes cannot restore a signed-out
