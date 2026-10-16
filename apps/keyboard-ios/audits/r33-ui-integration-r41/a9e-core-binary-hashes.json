@@ -1,0 +1,6 @@
+{
+  "apps/keyboard-ios/PulpoKeyboardKit/.build/release/KeyboardCoreTests.xctest/Contents/MacOS/KeyboardCoreTests": "500790ac6a3a1a6e0d55f75d5ab6e1a04a11c17357bbbad5c5ce6edff40d4d77",
+  "apps/keyboard-ios/PulpoKeyboardKit/.build/release/PulpoServicesTests.xctest.dSYM/Contents/Resources/DWARF/PulpoServicesTests": "cee130dc3d3e0cebe5d1380b5031a03b9a073291c0baeaeae7f8e61268c96d4f",
+  "apps/keyboard-ios/PulpoKeyboardKit/.build/release/PulpoServicesTests.xctest/Contents/MacOS/PulpoServicesTests": "37739b8bb9cba487d86c3dd3ea66e090141a797c3208c28a0253f04e32de994a",
+  "apps/keyboard-ios/PulpoKeyboardKit/.build/release/KeyboardCoreTests.xctest.dSYM/Contents/Resources/DWARF/KeyboardCoreTests": "6aea977959b33bc85c04248fe7925e1504829ece09687f7d2fed5f16077bd2c3"
+}

@@ -1,0 +1,67 @@
+{
+  "label": "baseline-v5",
+  "exit": 65,
+  "gateExit": 0,
+  "totalTestCount": 7,
+  "passedTests": 0,
+  "failedTests": 7,
+  "skippedTests": 0,
+  "testFailures": [
+    {
+      "failureText": "XCTAssertFalse failed",
+      "targetName": "PulpoKeyboardUITests",
+      "testIdentifier": 6,
+      "testIdentifierString": "SuggestionForgetFeedbackTests/testConfirmedSuccessDismissesOfferBeforeRefreshingSuggestions()",
+      "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/SuggestionForgetFeedbackTests/testConfirmedSuccessDismissesOfferBeforeRefreshingSuggestions",
+      "testName": "testConfirmedSuccessDismissesOfferBeforeRefreshingSuggestions()"
+    },
+    {
+      "failureText": "XCTAssertTrue failed - The original confirmation must not hide failure feedback",
+      "targetName": "PulpoKeyboardUITests",
+      "testIdentifier": 7,
+      "testIdentifierString": "SuggestionForgetFeedbackTests/testFailureNoticeSurvivesOriginalRemoveActionAndPreservesSuggestion()",
+      "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/SuggestionForgetFeedbackTests/testFailureNoticeSurvivesOriginalRemoveActionAndPreservesSuggestion",
+      "testName": "testFailureNoticeSurvivesOriginalRemoveActionAndPreservesSuggestion()"
+    },
+    {
+      "failureText": "XCTUnwrap failed: expected non-nil value of type \"Suggestion\"",
+      "targetName": "PulpoKeyboardUITests",
+      "testIdentifier": 1,
+      "testIdentifierString": "LearningForgetControllerTests/testRealCanonicalSQLiteBusyShowsNoticeAndExplicitRetryConfirmsRemoval()",
+      "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/LearningForgetControllerTests/testRealCanonicalSQLiteBusyShowsNoticeAndExplicitRetryConfirmsRemoval",
+      "testName": "testRealCanonicalSQLiteBusyShowsNoticeAndExplicitRetryConfirmsRemoval()"
+    },
+    {
+      "failureText": "failed - Real failure did not show the failure result alert",
+      "targetName": "PulpoKeyboardUITests",
+      "testIdentifier": 3,
+      "testIdentifierString": "LearningResetResultUITests/testRealLockContentionShowsFailureThenRetrySucceedsLearningOff()",
+      "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/LearningResetResultUITests/testRealLockContentionShowsFailureThenRetrySucceedsLearningOff",
+      "testName": "testRealLockContentionShowsFailureThenRetrySucceedsLearningOff()"
+    },
+    {
+      "failureText": "failed - Real failure did not show the failure result alert",
+      "targetName": "PulpoKeyboardUITests",
+      "testIdentifier": 4,
+      "testIdentifierString": "LearningResetResultUITests/testRealLockContentionShowsFailureThenRetrySucceedsLearningOn()",
+      "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/LearningResetResultUITests/testRealLockContentionShowsFailureThenRetrySucceedsLearningOn",
+      "testName": "testRealLockContentionShowsFailureThenRetrySucceedsLearningOn()"
+    },
+    {
+      "failureText": "failed - Actual controller did not retain failure notice",
+      "targetName": "PulpoKeyboardUITests",
+      "testIdentifier": 2,
+      "testIdentifierString": "LearningForgetResultUITests/testRealPreviewForgetNoticeIsReadableDismissibleAndRetryable()",
+      "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/LearningForgetResultUITests/testRealPreviewForgetNoticeIsReadableDismissibleAndRetryable",
+      "testName": "testRealPreviewForgetNoticeIsReadableDismissibleAndRetryable()"
+    },
+    {
+      "failureText": "failed - Real failure did not show the failure result alert",
+      "targetName": "PulpoKeyboardUITests",
+      "testIdentifier": 5,
+      "testIdentifierString": "LearningResetResultUITests/testRealStorageOpenFailureShowsFailureThenRetrySucceeds()",
+      "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/LearningResetResultUITests/testRealStorageOpenFailureShowsFailureThenRetrySucceeds",
+      "testName": "testRealStorageOpenFailureShowsFailureThenRetrySucceeds()"
+    }
+  ]
+}

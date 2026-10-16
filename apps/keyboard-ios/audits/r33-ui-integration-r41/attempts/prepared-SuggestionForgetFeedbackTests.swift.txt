@@ -1,0 +1,56 @@
+// Proposed focused native regression; INACTIVE, NOT COMPILED OR RUN HERE.
+import UIKit
+import XCTest
+@testable import KeyboardUI
+
+@MainActor
+final class SuggestionForgetFeedbackTests: XCTestCase {
+  func testFailureNoticeSurvivesOriginalRemoveActionAndPreservesSuggestion() throws {
+    let bar = SuggestionBarView(style: KeyboardStyle(modern: true, dark: false, landscape: false))
+    let suggestion = Suggestion(text: "beautiful", kind: .completion)
+    bar.setSuggestions([suggestion])
+    var attempts = 0
+    bar.onForget = { requested in
+      attempts += 1
+      XCTAssertEqual(requested, suggestion)
+      bar.showNotice("Couldn't confirm removal. Try again.")
+    }
+    bar.offerToForget(suggestion)
+    let notice = try XCTUnwrap(bar.subviews.first { $0.accessibilityIdentifier == "notice" })
+    let remove = try XCTUnwrap(notice.subviews.compactMap { $0 as? UIButton }
+      .first { $0.accessibilityIdentifier == "notice-action" })
+    remove.sendActions(for: .touchUpInside)
+    XCTAssertEqual(attempts, 1)
+    XCTAssertTrue(bar.isShowingNotice, "The original confirmation must not hide failure feedback")
+    XCTAssertEqual(notice.subviews.compactMap { $0 as? UILabel }.first?.text,
+      "Couldn't confirm removal. Try again.")
+    XCTAssertTrue(remove.isHidden, "The old Remove action must be replaced, not retained under the message")
+    XCTAssertEqual(bar.suggestions, [suggestion])
+    let dismiss = try XCTUnwrap(notice.subviews.compactMap { $0 as? UIButton }
+      .first { $0.accessibilityIdentifier == "notice-dismiss" })
+    XCTAssertEqual(dismiss.accessibilityLabel, "Dismiss")
+    dismiss.sendActions(for: .touchUpInside)
+    XCTAssertFalse(bar.isShowingNotice)
+    XCTAssertEqual(attempts, 1, "Dismissing failure must never retry a storage operation")
+    XCTAssertEqual(bar.suggestions, [suggestion])
+    bar.onForget = nil // Break the test-only bar→callback→bar capture.
+  }
+
+  func testConfirmedSuccessDismissesOfferBeforeRefreshingSuggestions() throws {
+    let bar = SuggestionBarView(style: KeyboardStyle(modern: true, dark: false, landscape: false))
+    let suggestion = Suggestion(text: "beautiful", kind: .completion)
+    bar.setSuggestions([suggestion])
+    bar.onForget = { _ in
+      XCTAssertFalse(bar.isShowingNotice)
+      bar.setSuggestions([])
+    }
+    bar.offerToForget(suggestion)
+    let notice = try XCTUnwrap(bar.subviews.first { $0.accessibilityIdentifier == "notice" })
+    let remove = try XCTUnwrap(notice.subviews.compactMap { $0 as? UIButton }
+      .first { $0.accessibilityIdentifier == "notice-action" })
+    remove.sendActions(for: .touchUpInside)
+    XCTAssertFalse(bar.isShowingNotice)
+    XCTAssertTrue(bar.suggestions.isEmpty)
+    bar.onForget = nil
+  }
+}

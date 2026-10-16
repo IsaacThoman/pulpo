@@ -1,0 +1,70 @@
+{
+  "deviceUsed": false,
+  "files": {
+    "LearningResetResultUITests.swift.txt": {
+      "bytes": 6841,
+      "sha256": "ee205d3fa6962c6dbe4daa03200843c52db5510a0eb10fae0f8b57c2fbdb2799"
+    },
+    "README.md": {
+      "bytes": 9618,
+      "sha256": "644188608623872c4fd44a66a8d2c636f54636be94a0a695b2e2b8aef2a97a44"
+    },
+    "host_fault_gate.py": {
+      "bytes": 8827,
+      "sha256": "584a18f8855f189b3a708d25bfc4584870a13990b04ea4e63539993bcd884d18"
+    },
+    "native-result-tests.patch": {
+      "bytes": 7072,
+      "sha256": "59730a9db8534e6974aad5bd5ef657ed5a00fec8168dd9ab6e08470c282d29f5"
+    },
+    "ordinary-ui-expectation-migration.patch": {
+      "bytes": 741,
+      "sha256": "83a43ef32c8861b7939ce6c8a3aeae7c4f27f4ee5dbe0bcd0e79021290c94097"
+    }
+  },
+  "methods": 3,
+  "nativeBuilt": false,
+  "ordinaryExpectationMigrations": 1,
+  "preparedInputs": [
+    {
+      "path": "/tmp/pulpo-r33-ui-integration/settings-result.patch",
+      "sha256": "95471d41b1da7d2ee039990d07eb968d68a8ed8549d1ba3274925a09c9192cb2"
+    },
+    {
+      "path": "/tmp/pulpo-r33-ui-integration/settings-disposition.md",
+      "sha256": "9e93a46b19fadb349585c8499b7db8efc012981723c200006a25cccadcbf04de"
+    }
+  ],
+  "pythonSyntaxChecked": true,
+  "reviewedSourceSnapshotsNotIntegrationFreeze": [
+    {
+      "checkout": "root",
+      "path": "apps/keyboard-ios/App/PulpoKeyboardApp.swift",
+      "sha256": "98eec4e026bd1530bb57ec6527c49b70338134b4cf72acf345d4afd90ef7d420"
+    },
+    {
+      "checkout": "root",
+      "path": "apps/keyboard-ios/UITests/SettingsUsabilitySweepTests.swift",
+      "sha256": "eaef5a11e05e1919a70e1a6b44139c051b74179060ccf17808a56742d4a6c57b"
+    },
+    {
+      "checkout": "root",
+      "path": "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Shared/AppGroup.swift",
+      "sha256": "831015d4ae7c54a7ac38fb687334cf72647c6a9d7b3b640001891c7af3e51cd3"
+    },
+    {
+      "checkout": "child",
+      "path": "apps/keyboard-ios/App/AppModel.swift",
+      "sha256": "c9707901f8803489b0f01188932c298337fa80d785385cdd5c978d3c6b9d1bbd"
+    },
+    {
+      "checkout": "child",
+      "path": "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Shared/LearnedDataPersistence.swift",
+      "sha256": "df13bc9d260aaeef6f817796d8ee7abda56500eabb328cb4dfa0d8b6ef3493fd"
+    }
+  ],
+  "rootModified": false,
+  "sealedPayloadsRead": false,
+  "status": "prepared-unexecuted",
+  "swiftCompiled": false
+}

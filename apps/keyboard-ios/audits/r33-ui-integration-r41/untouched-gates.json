@@ -1,0 +1,6 @@
+{
+  "apps/keyboard-ios/UITests/ControllerHarnessTests.swift": "b62a4b4282f8443553152935f78a090b07dc8f89c2be4430045fc3ea1b6c0f4e",
+  "apps/keyboard-ios/AppTests/PreviewDocumentLifecycleCounterchecks.swift": "7ae832753b25100b6fdedae7b37b60e8978e25bd900f729c2fdd2d2240470fb0",
+  "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Shared/AppGroup.swift": "831015d4ae7c54a7ac38fb687334cf72647c6a9d7b3b640001891c7af3e51cd3",
+  "frozenSettingsBenchmarkChanged": false
+}

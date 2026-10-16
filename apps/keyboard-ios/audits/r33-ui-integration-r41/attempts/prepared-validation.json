@@ -1,0 +1,17 @@
+{
+  "patchDryRunPassed": true,
+  "temporaryApplicationPassed": true,
+  "checks": [
+    {
+      "path": "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardUI/KeyboardController.swift",
+      "appliedCandidateHashMatches": true,
+      "workerSourceUnchanged": true
+    },
+    {
+      "path": "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardUI/SuggestionBarView.swift",
+      "appliedCandidateHashMatches": true,
+      "workerSourceUnchanged": true
+    }
+  ],
+  "buildOrNativeExecuted": false
+}

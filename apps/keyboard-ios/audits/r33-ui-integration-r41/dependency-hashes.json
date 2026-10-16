@@ -1,0 +1,38 @@
+{
+  "apps/keyboard-ios/App/AppModel.swift": {
+    "dependencySHA256": "c9707901f8803489b0f01188932c298337fa80d785385cdd5c978d3c6b9d1bbd",
+    "exact2357": true
+  },
+  "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Dictionary/PersonalDictionary.swift": {
+    "dependencySHA256": "0a980eeb6f6d7615f34d61d70ed728c32a40160f32c249de0aa2920afc0d394b",
+    "exact2357": true
+  },
+  "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Geometry/TouchModel.swift": {
+    "dependencySHA256": "fc5f3d9f9f6fdd57d8aa7c4e61556ef29284339ccd3f045c22404701b08e06ef",
+    "exact2357": true
+  },
+  "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Shared/LearnedDataPersistence.swift": {
+    "dependencySHA256": "df13bc9d260aaeef6f817796d8ee7abda56500eabb328cb4dfa0d8b6ef3493fd",
+    "exact2357": true
+  },
+  "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardUI/KeyboardController.swift": {
+    "dependencySHA256": "3b4e7997dd7a7429da4737e68045725c14381c7881424d0cb91e50c6744755b8",
+    "exact2357": true
+  },
+  "apps/keyboard-ios/PulpoKeyboardKit/Tests/KeyboardCoreTests/LearningPersistenceSupport.swift": {
+    "dependencySHA256": "afedbf1c9490b502441e40c0329f7a288e4815c9cbd91a20f7b98145be31af55",
+    "exact2357": true
+  },
+  "apps/keyboard-ios/PulpoKeyboardKit/Tests/KeyboardCoreTests/LearningPersistenceTests.swift": {
+    "dependencySHA256": "e342d7d1c89a9e2895eb9f91a013a701c6e7559cb76fb2eba6ee95e84356f3ee",
+    "exact2357": true
+  },
+  "apps/keyboard-ios/PulpoKeyboardKit/Tests/KeyboardCoreTests/PersonalDictionaryPersistenceTests.swift": {
+    "dependencySHA256": "6e61233f1576e0c01ab1c8c499a274afef7d0a5088320c8ae5de693fe7f49dd0",
+    "exact2357": true
+  },
+  "apps/keyboard-ios/PulpoKeyboardKit/Tests/KeyboardCoreTests/TouchModelTests.swift": {
+    "dependencySHA256": "217c4b7dfa049df83f952502b18cb1f10b5f09292193466fe408d5c588991f0e",
+    "exact2357": true
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "head": "5de06a604b30c488088b3fd5bb9b75fc0cf5f25d",
+  "files": {
+    "App/AppModel.swift": "c9707901f8803489b0f01188932c298337fa80d785385cdd5c978d3c6b9d1bbd",
+    "App/PulpoKeyboardApp.swift": "1ff4b34077ad63148acb3ae97c7d1465dd391aec6784276e580b9383f66a5617",
+    "PulpoKeyboardKit/Sources/KeyboardUI/KeyboardController.swift": "b62134d9dcfbba4b37a1e1c8d6ef14062057b69026312b8078ca675d2877d54b",
+    "PulpoKeyboardKit/Sources/KeyboardUI/SuggestionBarView.swift": "ec1c5a7aadf8a51dff940855a7fbbc941f987e5a208363622c0323cf07105400",
+    "PulpoKeyboardKit/Sources/KeyboardCore/Dictionary/PersonalDictionary.swift": "0bac71e413ea3c99f8972dd6cae10685e76adbd0b0537f587b589768b00a8d28",
+    "PulpoKeyboardKit/Sources/KeyboardCore/Shared/LearnedDataPersistence.swift": "213dcf5810e5fffb33921827b563b31feb3eb7d2ac32c026aa9f694e028ef235",
+    "UITests/LearningForgetControllerTests.swift": "85c5acc972bcdb29d1f01da3be472ce863e4638568890fed9bacafe51b7dc05f",
+    "UITests/LearningForgetResultUITests.swift": "bb1f80a463a55c7465a2a355aee9cd24eb5fac49a2f074071c9e2353e2fbc761",
+    "UITests/LearningResetResultUITests.swift": "7589b1c2b4f2b1bee8cada54af2928710e07f20c2fee56a7769930c03f200ea5",
+    "UITests/LearningClearScopeUITests.swift": "713cc6a895af0a9bd1c9678c622bf2f7527dcd25b1fcc1cb7d32d0857d5634af",
+    "UITests/LearningMessageReadability.swift": "a8ecd59b9e5dfeebcdaa2b7eef8b0e56a97ebdd0cbafba8edc46d719cead59c1",
+    "UITests/SuggestionForgetFeedbackTests.swift": "df3d87411856f986b5bfa4c1cdc0de1e1080c1cbef049d3e178f74b404ef0e04",
+    "UITests/SettingsUsabilitySweepTests.swift": "c82f5f13f1e91fdd71e8feed835bbcf62e814f2ed19b779aec95dac82187075f"
+  },
+  "binaries": {
+    "/tmp/pulpo-r41-validation/DerivedData/Build/Products/Debug-iphonesimulator/PulpoKeyboard.app/PulpoKeyboard": "b95f165c365262a8449216dd02fb966658acf66759c759021b518ba9ec174171",
+    "/tmp/pulpo-r41-validation/DerivedData/Build/Products/Debug-iphonesimulator/PulpoKeyboard.app/PlugIns/PulpoKeyboardAppTests.xctest/PulpoKeyboardAppTests": "259a351327586885422ff3650323d42b56ed3da5c244c3753ca70650f1bad8d3",
+    "/tmp/pulpo-r41-validation/DerivedData/Build/Products/Debug-iphonesimulator/PulpoKeyboardUITests-Runner.app/PlugIns/PulpoKeyboardUITests.xctest/PulpoKeyboardUITests": "b5264e5242f10014fdc2b5189f48a1bbb518e8eefd153ff3711e05251f35baef"
+  }
+}

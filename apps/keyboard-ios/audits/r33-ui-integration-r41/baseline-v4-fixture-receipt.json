@@ -1,0 +1,13 @@
+{
+  "purpose": "R41-owned-test-store",
+  "disposable": true,
+  "deviceUDID": "F3191384-9F35-4AC4-A739-37E6C7C8D584",
+  "groupContainer": "/Users/isaacthoman/Library/Developer/CoreSimulator/Devices/F3191384-9F35-4AC4-A739-37E6C7C8D584/data/Containers/Shared/AppGroup/A2CF3AED-BFBB-4435-AA7E-2843935ED633",
+  "initialStoreFiles": {
+    "PersonalDictionary.json.learning-v2.sqlite.writer.0": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "PersonalDictionary.json.learning-v2.sqlite": "823786b4f5139c2f508a7acb9d074821aa014a7338fb6b157d98cf44044e617c",
+    "PersonalDictionary.json.learning-v2.sqlite.lock": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "PersonalDictionary.json.learning-v2.sqlite.initialized": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "origin": "Same R41-only device; all files created by earlier recorded R41 runs"
+}

@@ -1,0 +1,15 @@
+{
+  "files": {
+    "apps/keyboard-ios/App/PulpoKeyboardApp.swift": "1ff4b34077ad63148acb3ae97c7d1465dd391aec6784276e580b9383f66a5617",
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardUI/KeyboardController.swift": "b62134d9dcfbba4b37a1e1c8d6ef14062057b69026312b8078ca675d2877d54b",
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardUI/SuggestionBarView.swift": "ec1c5a7aadf8a51dff940855a7fbbc941f987e5a208363622c0323cf07105400",
+    "apps/keyboard-ios/UITests/LearningForgetControllerTests.swift": "fcd10e4c2934057cea54bacb5e80776e6ffdce508de89d7a26a49a40fa8b22a1",
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Dictionary/PersonalDictionary.swift": "0a980eeb6f6d7615f34d61d70ed728c32a40160f32c249de0aa2920afc0d394b",
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Shared/LearnedDataPersistence.swift": "df13bc9d260aaeef6f817796d8ee7abda56500eabb328cb4dfa0d8b6ef3493fd"
+  },
+  "binaries": {
+    "/tmp/pulpo-r41-validation/DerivedData/Build/Products/Debug-iphonesimulator/PulpoKeyboard.app/PulpoKeyboard": "c722e2cb3dcc6f61f275f423429cce833d9ad809819c2793e787883e61a069a0",
+    "/tmp/pulpo-r41-validation/DerivedData/Build/Products/Debug-iphonesimulator/PulpoKeyboard.app/PlugIns/PulpoKeyboardAppTests.xctest/PulpoKeyboardAppTests": "259a351327586885422ff3650323d42b56ed3da5c244c3753ca70650f1bad8d3",
+    "/tmp/pulpo-r41-validation/DerivedData/Build/Products/Debug-iphonesimulator/PulpoKeyboardUITests-Runner.app/PlugIns/PulpoKeyboardUITests.xctest/PulpoKeyboardUITests": "725c3c19109845b99e60f5761201ad8c4d4eb166ede0e1351b4a70bb86540913"
+  }
+}

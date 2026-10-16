@@ -1,0 +1,134 @@
+import Foundation
+import XCTest
+
+/// Informed production-UI result checks with a real host-held group-store fault.
+/// No AppModel hooks, result overrides or persistence implementation substitutes.
+@MainActor
+final class LearningResetResultUITests: XCTestCase {
+  private let app = XCUIApplication()
+  private struct Config: Decodable { let root: String; let nonce: String }
+  private struct Ready: Decodable {
+    let nonce: String
+    let caseKey: String
+    let active: Bool
+    let error: String?
+  }
+  private let sharedSuccess = "Shared learned words and touch adjustments have been cleared. "
+  private let enabledCopy = "Pulpo Keyboard starts learning again as you type."
+  private let disabledCopy = "Learn New Words is off, so nothing new will be learned."
+
+  func testRealLockContentionShowsFailureThenRetrySucceedsLearningOn() throws {
+    try exercise(caseKey: "busy-on", learning: true)
+  }
+  func testRealLockContentionShowsFailureThenRetrySucceedsLearningOff() throws {
+    try exercise(caseKey: "busy-off", learning: false)
+  }
+  func testRealStorageOpenFailureShowsFailureThenRetrySucceeds() throws {
+    try exercise(caseKey: "io-on", learning: true)
+  }
+
+  private func exercise(caseKey: String, learning: Bool) throws {
+    continueAfterFailure = false
+    let configURL = URL(fileURLWithPath: "/tmp/pulpo-r33-settings-reset-native-control.json")
+    let config = try JSONDecoder().decode(Config.self, from: Data(contentsOf: configURL))
+    let directory = URL(fileURLWithPath: config.root, isDirectory: true)
+    let expectedCopy = sharedSuccess + (learning ? enabledCopy : disabledCopy)
+    defer {
+      // The host also restores on its own bounded active timeout/termination.
+      try? write(["nonce": config.nonce], to: directory.appendingPathComponent(caseKey + ".release.json"))
+      app.terminate()
+    }
+    app.launchArguments = ["-PKResetSettings"] // Deliberately no -PKResetLearning.
+    app.launch()
+    try openPrivacy()
+    let toggle = app.switches.matching(NSPredicate(format: "label BEGINSWITH %@", "Learn New Words,")).firstMatch
+    XCTAssertEqual(toggle.value as? String, "1")
+    if !learning {
+      let nativeSwitch = toggle.switches.firstMatch
+      XCTAssertTrue(nativeSwitch.exists && nativeSwitch.isHittable)
+      nativeSwitch.tap()
+    }
+    XCTAssertEqual(toggle.value as? String, learning ? "1" : "0")
+
+    // Establish public, successful initialization before touching any lock path.
+    try confirmClear()
+    try expectSuccess() // Common setup for old and result-aware UI; arm the real fault in both.
+    app.alerts.buttons["OK"].tap()
+
+    try write(["nonce": config.nonce, "caseKey": caseKey], to: directory.appendingPathComponent(caseKey + ".request.json"))
+    let readyURL = directory.appendingPathComponent(caseKey + ".active.json")
+    let ready = try waitFor(Ready.self, at: readyURL, timeout: 15)
+    XCTAssertEqual(ready.nonce, config.nonce)
+    XCTAssertEqual(ready.caseKey, caseKey)
+    XCTAssertNil(ready.error)
+    try require(ready.active && ready.nonce == config.nonce && ready.caseKey == caseKey, "Real storage fault was not armed")
+
+    try confirmClear()
+    let failure = app.alerts["Couldn’t Clear Learned Words"]
+    try require(failure.waitForExistence(timeout: 5), "Real failure did not show the failure result alert")
+    XCTAssertFalse(app.alerts["Learned Words Cleared"].exists)
+    XCTAssertTrue(failure.staticTexts["Couldn’t clear learned words. Please try again."].exists)
+    XCTAssertTrue(failure.buttons["OK"].isHittable)
+    try record(caseKey + "-failure", in: directory)
+    failure.buttons["OK"].tap()
+    XCTAssertEqual(toggle.value as? String, learning ? "1" : "0")
+
+    try write(["nonce": config.nonce], to: directory.appendingPathComponent(caseKey + ".release.json"))
+    let released = try waitFor(Ready.self, at: directory.appendingPathComponent(caseKey + ".released.json"), timeout: 15)
+    try require(!released.active && released.error == nil && released.nonce == config.nonce && released.caseKey == caseKey, "Host failed to restore the real store boundary")
+
+    // Retry the same public UI operation; no result/cache/model injection.
+    try confirmClear()
+    try expectSuccess(expectedCopy)
+    XCTAssertFalse(app.alerts["Couldn’t Clear Learned Words"].exists)
+    try record(caseKey + "-success", in: directory)
+    app.alerts.buttons["OK"].tap()
+    XCTAssertEqual(toggle.value as? String, learning ? "1" : "0")
+  }
+
+  private func openPrivacy() throws {
+    let find = app.buttons["find-setting"]
+    try require(find.waitForExistence(timeout: 5), "Root settings navigation unavailable")
+    find.tap()
+    app.buttons["Privacy & Learning"].tap()
+    try require(app.buttons["clear-learned-words"].isHittable, "Clear control unavailable")
+  }
+  private func confirmClear() throws {
+    app.buttons["clear-learned-words"].tap()
+    let confirm = app.sheets.buttons["Clear Learned Words"]
+    try require(confirm.waitForExistence(timeout: 3) && confirm.isHittable, "Native confirmation unavailable")
+    confirm.tap()
+  }
+  private func expectSuccess(_ expectedCopy: String? = nil) throws {
+    let success = app.alerts["Learned Words Cleared"]
+    try require(success.waitForExistence(timeout: 5), "Uncontended clear did not show confirmed success")
+    if let expectedCopy { XCTAssertTrue(success.staticTexts[expectedCopy].exists) }
+    XCTAssertTrue(success.buttons["OK"].isHittable)
+  }
+  private func require(_ condition: Bool, _ message: String) throws {
+    guard condition else {
+      XCTFail(message)
+      throw NSError(domain: "R33NativeFixture", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
+    }
+  }
+  private func write(_ value: [String: String], to url: URL) throws {
+    try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]).write(to: url, options: .atomic)
+  }
+  private func waitFor<T: Decodable>(_ type: T.Type, at url: URL, timeout: TimeInterval) throws -> T {
+    let end = Date().addingTimeInterval(timeout)
+    while Date() < end {
+      if let data = try? Data(contentsOf: url), let value = try? JSONDecoder().decode(T.self, from: data) { return value }
+      RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+    }
+    throw NSError(domain: "R33NativeFixture", code: 2, userInfo: [NSLocalizedDescriptionKey: "Fixture barrier unavailable: " + url.lastPathComponent])
+  }
+  private func record(_ name: String, in directory: URL) throws {
+    let screenshot = XCUIScreen.main.screenshot()
+    let attachment = XCTAttachment(screenshot: screenshot)
+    attachment.name = name
+    attachment.lifetime = .keepAlways
+    add(attachment)
+    try screenshot.pngRepresentation.write(to: directory.appendingPathComponent(name + ".png"))
+    try app.debugDescription.write(to: directory.appendingPathComponent(name + ".txt"), atomically: true, encoding: .utf8)
+  }
+}

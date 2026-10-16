@@ -1,0 +1,855 @@
+{
+  "candidate-v2-native": [
+    {
+      "name": "testOriginalLiteralPrefixesWithoutRepairingOracles()",
+      "nodeIdentifier": "BroadExposedR24Tests/testOriginalLiteralPrefixesWithoutRepairingOracles()",
+      "result": "Passed"
+    },
+    {
+      "name": "testLiveSystemTextSizeRetainsDraftSelectionAndFocus()",
+      "nodeIdentifier": "CompanionDynamicTypeR24Tests/testLiveSystemTextSizeRetainsDraftSelectionAndFocus()",
+      "result": "Skipped"
+    },
+    {
+      "name": "testSelectedMultilingualDraftAcrossSmallViewportModesFieldsAndRefocus()",
+      "nodeIdentifier": "CompanionWorkflowR24Tests/testSelectedMultilingualDraftAcrossSmallViewportModesFieldsAndRefocus()",
+      "result": "Passed"
+    },
+    {
+      "name": "testFrozenCases()",
+      "nodeIdentifier": "CursorEditingR17Tests/testFrozenCases()",
+      "result": "Passed"
+    },
+    {
+      "name": "testClearResetsRangeAndRemainsEmptyAfterRecreationAndModeChange()",
+      "nodeIdentifier": "DraftEditorTests/testClearResetsRangeAndRemainsEmptyAfterRecreationAndModeChange()",
+      "result": "Passed"
+    },
+    {
+      "name": "testDetachedEditorEndEditingStopsHeldDeleteBeforeDismantling()",
+      "nodeIdentifier": "DraftEditorTests/testDetachedEditorEndEditingStopsHeldDeleteBeforeDismantling()",
+      "result": "Passed"
+    },
+    {
+      "name": "testEmojiCaretAndSelectedRangeSurviveRecreationBeforeEditing()",
+      "nodeIdentifier": "DraftEditorTests/testEmojiCaretAndSelectedRangeSurviveRecreationBeforeEditing()",
+      "result": "Passed"
+    },
+    {
+      "name": "testFocusedSwitchingRetainsEmojiSelectionAndCanReplaceIt()",
+      "nodeIdentifier": "DraftEditorTests/testFocusedSwitchingRetainsEmojiSelectionAndCanReplaceIt()",
+      "result": "Passed"
+    },
+    {
+      "name": "testIndependentClearOfSelectedCombiningTextOnce()",
+      "nodeIdentifier": "DraftEditorTests/testIndependentClearOfSelectedCombiningTextOnce()",
+      "result": "Passed"
+    },
+    {
+      "name": "testIndependentCombiningEmojiSelectionAndArabicCaretOnce()",
+      "nodeIdentifier": "DraftEditorTests/testIndependentCombiningEmojiSelectionAndArabicCaretOnce()",
+      "result": "Passed"
+    },
+    {
+      "name": "testInvalidAndOverflowingRangesStayWithinUTF16Text()",
+      "nodeIdentifier": "DraftEditorTests/testInvalidAndOverflowingRangesStayWithinUTF16Text()",
+      "result": "Passed"
+    },
+    {
+      "name": "testRemovedEditorCallbacksCannotChangeReplacementDraftOrFocus()",
+      "nodeIdentifier": "DraftEditorTests/testRemovedEditorCallbacksCannotChangeReplacementDraftOrFocus()",
+      "result": "Passed"
+    },
+    {
+      "name": "testSwitchingNativeAndPreviewRetainsRangeAndDoesNotForceFocus()",
+      "nodeIdentifier": "DraftEditorTests/testSwitchingNativeAndPreviewRetainsRangeAndDoesNotForceFocus()",
+      "result": "Passed"
+    },
+    {
+      "name": "testBackwardAndForwardMovementPreserveWholeClusters()",
+      "nodeIdentifier": "PreviewCursorBoundaryTests/testBackwardAndForwardMovementPreserveWholeClusters()",
+      "result": "Passed"
+    },
+    {
+      "name": "testExtremeOffsetsClampWithoutArithmeticOverflow()",
+      "nodeIdentifier": "PreviewCursorBoundaryTests/testExtremeOffsetsClampWithoutArithmeticOverflow()",
+      "result": "Passed"
+    },
+    {
+      "name": "testSelectionStartAndZeroOffsetKeepExistingCollapseContract()",
+      "nodeIdentifier": "PreviewCursorBoundaryTests/testSelectionStartAndZeroOffsetKeepExistingCollapseContract()",
+      "result": "Passed"
+    },
+    {
+      "name": "testDirectHostReleaseLeavesRetainedInputControllerEngineAndDocumentInert()",
+      "nodeIdentifier": "PreviewDocumentLifecycleCounterchecks/testDirectHostReleaseLeavesRetainedInputControllerEngineAndDocumentInert()",
+      "result": "Passed"
+    },
+    {
+      "name": "testInvalidationIsInertWhileHostAndSelectedEditorRemainAlive()",
+      "nodeIdentifier": "PreviewDocumentLifecycleCounterchecks/testInvalidationIsInertWhileHostAndSelectedEditorRemainAlive()",
+      "result": "Passed"
+    },
+    {
+      "name": "testStandaloneDocumentSurvivesInputControllerEngineAndHostRelease()",
+      "nodeIdentifier": "PreviewDocumentLifecycleCounterchecks/testStandaloneDocumentSurvivesInputControllerEngineAndHostRelease()",
+      "result": "Failed"
+    },
+    {
+      "name": "testLiveHostDocumentPreservesReadsAndEdits()",
+      "nodeIdentifier": "PreviewDocumentLifetimeTests/testLiveHostDocumentPreservesReadsAndEdits()",
+      "result": "Passed"
+    },
+    {
+      "name": "testRetainedInputEngineDocumentIsInertAfterRepresentableDismantle()",
+      "nodeIdentifier": "PreviewDocumentLifetimeTests/testRetainedInputEngineDocumentIsInertAfterRepresentableDismantle()",
+      "result": "Passed"
+    },
+    {
+      "name": "testRetainedInputEngineDocumentIsInertAfterSwitchToSystemKeyboard()",
+      "nodeIdentifier": "PreviewDocumentLifetimeTests/testRetainedInputEngineDocumentIsInertAfterSwitchToSystemKeyboard()",
+      "result": "Passed"
+    },
+    {
+      "name": "testLongRandomizedControllerRun()",
+      "nodeIdentifier": "ControllerFuzzTests/testLongRandomizedControllerRun()",
+      "result": "Skipped"
+    },
+    {
+      "name": "testShortRandomizedControllerSequencesKeepTapInvariants()",
+      "nodeIdentifier": "ControllerFuzzTests/testShortRandomizedControllerSequencesKeepTapInvariants()",
+      "result": "Passed"
+    },
+    {
+      "name": "testChoicesFromEarlierTextCursorFieldOrPolicyNeverApply()",
+      "nodeIdentifier": "ControllerHarnessTests/testChoicesFromEarlierTextCursorFieldOrPolicyNeverApply()",
+      "result": "Passed"
+    },
+    {
+      "name": "testDismissalWithdrawsTheForgetOffer()",
+      "nodeIdentifier": "ControllerHarnessTests/testDismissalWithdrawsTheForgetOffer()",
+      "result": "Passed"
+    },
+    {
+      "name": "testDisplayedEmojiAppliesWhileTheHostLagsBehindTheTap()",
+      "nodeIdentifier": "ControllerHarnessTests/testDisplayedEmojiAppliesWhileTheHostLagsBehindTheTap()",
+      "result": "Passed"
+    },
+    {
+      "name": "testDisplayedWordAppliesWhileTheHostLagsBehindTheTap()",
+      "nodeIdentifier": "ControllerHarnessTests/testDisplayedWordAppliesWhileTheHostLagsBehindTheTap()",
+      "result": "Passed"
+    },
+    {
+      "name": "testDuplicatedBatchedAndSilentReportsKeepTheDisplayedWord()",
+      "nodeIdentifier": "ControllerHarnessTests/testDuplicatedBatchedAndSilentReportsKeepTheDisplayedWord()",
+      "result": "Passed"
+    },
+    {
+      "name": "testEmojiIndexArrivingBeforeTheTapKeepsTheDisplayedWord()",
+      "nodeIdentifier": "ControllerHarnessTests/testEmojiIndexArrivingBeforeTheTapKeepsTheDisplayedWord()",
+      "result": "Passed"
+    },
+    {
+      "name": "testForgetOfferSurvivesBarRefreshes()",
+      "nodeIdentifier": "ControllerHarnessTests/testForgetOfferSurvivesBarRefreshes()",
+      "result": "Passed"
+    },
+    {
+      "name": "testLateReportOfAnEarlierKeyKeepsTheDisplayedEmoji()",
+      "nodeIdentifier": "ControllerHarnessTests/testLateReportOfAnEarlierKeyKeepsTheDisplayedEmoji()",
+      "result": "Passed"
+    },
+    {
+      "name": "testNewHarnessClearsUnsavedPinnedLiteralsAndTapCalibration()",
+      "nodeIdentifier": "ControllerHarnessTests/testNewHarnessClearsUnsavedPinnedLiteralsAndTapCalibration()",
+      "result": "Passed"
+    },
+    {
+      "name": "testNewHostSelectionDuringWordDeleteGestureAndVisibleUndoPreserveSurroundingText()",
+      "nodeIdentifier": "ControllerHarnessTests/testNewHostSelectionDuringWordDeleteGestureAndVisibleUndoPreserveSurroundingText()",
+      "result": "Passed"
+    },
+    {
+      "name": "testOnlyForgettableWordsCanBeHeld()",
+      "nodeIdentifier": "ControllerHarnessTests/testOnlyForgettableWordsCanBeHeld()",
+      "result": "Passed"
+    },
+    {
+      "name": "testRapidFieldSwitchesKeepEachFieldsChoicesApart()",
+      "nodeIdentifier": "ControllerHarnessTests/testRapidFieldSwitchesKeepEachFieldsChoicesApart()",
+      "result": "Passed"
+    },
+    {
+      "name": "testTraitChangesThatKeepThePolicyKeepTheDisplayedWord()",
+      "nodeIdentifier": "ControllerHarnessTests/testTraitChangesThatKeepThePolicyKeepTheDisplayedWord()",
+      "result": "Passed"
+    },
+    {
+      "name": "testSettingsRoundTripKeepsDraftAndDismissedReturnStaysHidden()",
+      "nodeIdentifier": "DraftNavigationTests/testSettingsRoundTripKeepsDraftAndDismissedReturnStaysHidden()",
+      "result": "Passed"
+    },
+    {
+      "name": "testSwitchingModesAndReturningKeepsTextFieldKindAndDismissal()",
+      "nodeIdentifier": "DraftNavigationTests/testSwitchingModesAndReturningKeepsTextFieldKindAndDismissal()",
+      "result": "Passed"
+    },
+    {
+      "name": "testSharedScopeConfirmationIsReadableAndCanBeCancelled()",
+      "nodeIdentifier": "LearningClearScopeUITests/testSharedScopeConfirmationIsReadableAndCanBeCancelled()",
+      "result": "Failed"
+    },
+    {
+      "name": "testRealCanonicalSQLiteBusyShowsNoticeAndExplicitRetryConfirmsRemoval()",
+      "nodeIdentifier": "LearningForgetControllerTests/testRealCanonicalSQLiteBusyShowsNoticeAndExplicitRetryConfirmsRemoval()",
+      "result": "Passed"
+    },
+    {
+      "name": "testRealPreviewForgetNoticeIsReadableDismissibleAndRetryable()",
+      "nodeIdentifier": "LearningForgetResultUITests/testRealPreviewForgetNoticeIsReadableDismissibleAndRetryable()",
+      "result": "Passed"
+    },
+    {
+      "name": "testRealLockContentionShowsFailureThenRetrySucceedsLearningOff()",
+      "nodeIdentifier": "LearningResetResultUITests/testRealLockContentionShowsFailureThenRetrySucceedsLearningOff()",
+      "result": "Passed"
+    },
+    {
+      "name": "testRealLockContentionShowsFailureThenRetrySucceedsLearningOn()",
+      "nodeIdentifier": "LearningResetResultUITests/testRealLockContentionShowsFailureThenRetrySucceedsLearningOn()",
+      "result": "Passed"
+    },
+    {
+      "name": "testRealStorageOpenFailureShowsFailureThenRetrySucceeds()",
+      "nodeIdentifier": "LearningResetResultUITests/testRealStorageOpenFailureShowsFailureThenRetrySucceeds()",
+      "result": "Passed"
+    },
+    {
+      "name": "testLearningOffSurvivesJumpsClearAndRelaunch()",
+      "nodeIdentifier": "SettingsUsabilitySweepTests/testLearningOffSurvivesJumpsClearAndRelaunch()",
+      "result": "Passed"
+    },
+    {
+      "name": "testQuickSettingsReachesExistingControlsWithoutChangingValues()",
+      "nodeIdentifier": "SettingsUsabilitySweepTests/testQuickSettingsReachesExistingControlsWithoutChangingValues()",
+      "result": "Passed"
+    },
+    {
+      "name": "testConfirmedSuccessDismissesOfferBeforeRefreshingSuggestions()",
+      "nodeIdentifier": "SuggestionForgetFeedbackTests/testConfirmedSuccessDismissesOfferBeforeRefreshingSuggestions()",
+      "result": "Passed"
+    },
+    {
+      "name": "testFailureNoticeSurvivesOriginalRemoveActionAndPreservesSuggestion()",
+      "nodeIdentifier": "SuggestionForgetFeedbackTests/testFailureNoticeSurvivesOriginalRemoveActionAndPreservesSuggestion()",
+      "result": "Passed"
+    }
+  ],
+  "latest-native": [
+    {
+      "name": "testOriginalLiteralPrefixesWithoutRepairingOracles()",
+      "nodeIdentifier": "BroadExposedR24Tests/testOriginalLiteralPrefixesWithoutRepairingOracles()",
+      "result": "Passed"
+    },
+    {
+      "name": "testLiveSystemTextSizeRetainsDraftSelectionAndFocus()",
+      "nodeIdentifier": "CompanionDynamicTypeR24Tests/testLiveSystemTextSizeRetainsDraftSelectionAndFocus()",
+      "result": "Skipped"
+    },
+    {
+      "name": "testSelectedMultilingualDraftAcrossSmallViewportModesFieldsAndRefocus()",
+      "nodeIdentifier": "CompanionWorkflowR24Tests/testSelectedMultilingualDraftAcrossSmallViewportModesFieldsAndRefocus()",
+      "result": "Passed"
+    },
+    {
+      "name": "testFrozenCases()",
+      "nodeIdentifier": "CursorEditingR17Tests/testFrozenCases()",
+      "result": "Passed"
+    },
+    {
+      "name": "testClearResetsRangeAndRemainsEmptyAfterRecreationAndModeChange()",
+      "nodeIdentifier": "DraftEditorTests/testClearResetsRangeAndRemainsEmptyAfterRecreationAndModeChange()",
+      "result": "Passed"
+    },
+    {
+      "name": "testDetachedEditorEndEditingStopsHeldDeleteBeforeDismantling()",
+      "nodeIdentifier": "DraftEditorTests/testDetachedEditorEndEditingStopsHeldDeleteBeforeDismantling()",
+      "result": "Passed"
+    },
+    {
+      "name": "testEmojiCaretAndSelectedRangeSurviveRecreationBeforeEditing()",
+      "nodeIdentifier": "DraftEditorTests/testEmojiCaretAndSelectedRangeSurviveRecreationBeforeEditing()",
+      "result": "Passed"
+    },
+    {
+      "name": "testFocusedSwitchingRetainsEmojiSelectionAndCanReplaceIt()",
+      "nodeIdentifier": "DraftEditorTests/testFocusedSwitchingRetainsEmojiSelectionAndCanReplaceIt()",
+      "result": "Passed"
+    },
+    {
+      "name": "testIndependentClearOfSelectedCombiningTextOnce()",
+      "nodeIdentifier": "DraftEditorTests/testIndependentClearOfSelectedCombiningTextOnce()",
+      "result": "Passed"
+    },
+    {
+      "name": "testIndependentCombiningEmojiSelectionAndArabicCaretOnce()",
+      "nodeIdentifier": "DraftEditorTests/testIndependentCombiningEmojiSelectionAndArabicCaretOnce()",
+      "result": "Passed"
+    },
+    {
+      "name": "testInvalidAndOverflowingRangesStayWithinUTF16Text()",
+      "nodeIdentifier": "DraftEditorTests/testInvalidAndOverflowingRangesStayWithinUTF16Text()",
+      "result": "Passed"
+    },
+    {
+      "name": "testRemovedEditorCallbacksCannotChangeReplacementDraftOrFocus()",
+      "nodeIdentifier": "DraftEditorTests/testRemovedEditorCallbacksCannotChangeReplacementDraftOrFocus()",
+      "result": "Passed"
+    },
+    {
+      "name": "testSwitchingNativeAndPreviewRetainsRangeAndDoesNotForceFocus()",
+      "nodeIdentifier": "DraftEditorTests/testSwitchingNativeAndPreviewRetainsRangeAndDoesNotForceFocus()",
+      "result": "Passed"
+    },
+    {
+      "name": "testBackwardAndForwardMovementPreserveWholeClusters()",
+      "nodeIdentifier": "PreviewCursorBoundaryTests/testBackwardAndForwardMovementPreserveWholeClusters()",
+      "result": "Passed"
+    },
+    {
+      "name": "testExtremeOffsetsClampWithoutArithmeticOverflow()",
+      "nodeIdentifier": "PreviewCursorBoundaryTests/testExtremeOffsetsClampWithoutArithmeticOverflow()",
+      "result": "Passed"
+    },
+    {
+      "name": "testSelectionStartAndZeroOffsetKeepExistingCollapseContract()",
+      "nodeIdentifier": "PreviewCursorBoundaryTests/testSelectionStartAndZeroOffsetKeepExistingCollapseContract()",
+      "result": "Passed"
+    },
+    {
+      "name": "testDirectHostReleaseLeavesRetainedInputControllerEngineAndDocumentInert()",
+      "nodeIdentifier": "PreviewDocumentLifecycleCounterchecks/testDirectHostReleaseLeavesRetainedInputControllerEngineAndDocumentInert()",
+      "result": "Passed"
+    },
+    {
+      "name": "testInvalidationIsInertWhileHostAndSelectedEditorRemainAlive()",
+      "nodeIdentifier": "PreviewDocumentLifecycleCounterchecks/testInvalidationIsInertWhileHostAndSelectedEditorRemainAlive()",
+      "result": "Passed"
+    },
+    {
+      "name": "testStandaloneDocumentSurvivesInputControllerEngineAndHostRelease()",
+      "nodeIdentifier": "PreviewDocumentLifecycleCounterchecks/testStandaloneDocumentSurvivesInputControllerEngineAndHostRelease()",
+      "result": "Failed"
+    },
+    {
+      "name": "testLiveHostDocumentPreservesReadsAndEdits()",
+      "nodeIdentifier": "PreviewDocumentLifetimeTests/testLiveHostDocumentPreservesReadsAndEdits()",
+      "result": "Passed"
+    },
+    {
+      "name": "testRetainedInputEngineDocumentIsInertAfterRepresentableDismantle()",
+      "nodeIdentifier": "PreviewDocumentLifetimeTests/testRetainedInputEngineDocumentIsInertAfterRepresentableDismantle()",
+      "result": "Passed"
+    },
+    {
+      "name": "testRetainedInputEngineDocumentIsInertAfterSwitchToSystemKeyboard()",
+      "nodeIdentifier": "PreviewDocumentLifetimeTests/testRetainedInputEngineDocumentIsInertAfterSwitchToSystemKeyboard()",
+      "result": "Passed"
+    },
+    {
+      "name": "testLongRandomizedControllerRun()",
+      "nodeIdentifier": "ControllerFuzzTests/testLongRandomizedControllerRun()",
+      "result": "Skipped"
+    },
+    {
+      "name": "testShortRandomizedControllerSequencesKeepTapInvariants()",
+      "nodeIdentifier": "ControllerFuzzTests/testShortRandomizedControllerSequencesKeepTapInvariants()",
+      "result": "Passed"
+    },
+    {
+      "name": "testChoicesFromEarlierTextCursorFieldOrPolicyNeverApply()",
+      "nodeIdentifier": "ControllerHarnessTests/testChoicesFromEarlierTextCursorFieldOrPolicyNeverApply()",
+      "result": "Passed"
+    },
+    {
+      "name": "testDismissalWithdrawsTheForgetOffer()",
+      "nodeIdentifier": "ControllerHarnessTests/testDismissalWithdrawsTheForgetOffer()",
+      "result": "Passed"
+    },
+    {
+      "name": "testDisplayedEmojiAppliesWhileTheHostLagsBehindTheTap()",
+      "nodeIdentifier": "ControllerHarnessTests/testDisplayedEmojiAppliesWhileTheHostLagsBehindTheTap()",
+      "result": "Passed"
+    },
+    {
+      "name": "testDisplayedWordAppliesWhileTheHostLagsBehindTheTap()",
+      "nodeIdentifier": "ControllerHarnessTests/testDisplayedWordAppliesWhileTheHostLagsBehindTheTap()",
+      "result": "Passed"
+    },
+    {
+      "name": "testDuplicatedBatchedAndSilentReportsKeepTheDisplayedWord()",
+      "nodeIdentifier": "ControllerHarnessTests/testDuplicatedBatchedAndSilentReportsKeepTheDisplayedWord()",
+      "result": "Passed"
+    },
+    {
+      "name": "testEmojiIndexArrivingBeforeTheTapKeepsTheDisplayedWord()",
+      "nodeIdentifier": "ControllerHarnessTests/testEmojiIndexArrivingBeforeTheTapKeepsTheDisplayedWord()",
+      "result": "Passed"
+    },
+    {
+      "name": "testForgetOfferSurvivesBarRefreshes()",
+      "nodeIdentifier": "ControllerHarnessTests/testForgetOfferSurvivesBarRefreshes()",
+      "result": "Passed"
+    },
+    {
+      "name": "testLateReportOfAnEarlierKeyKeepsTheDisplayedEmoji()",
+      "nodeIdentifier": "ControllerHarnessTests/testLateReportOfAnEarlierKeyKeepsTheDisplayedEmoji()",
+      "result": "Passed"
+    },
+    {
+      "name": "testNewHarnessClearsUnsavedPinnedLiteralsAndTapCalibration()",
+      "nodeIdentifier": "ControllerHarnessTests/testNewHarnessClearsUnsavedPinnedLiteralsAndTapCalibration()",
+      "result": "Passed"
+    },
+    {
+      "name": "testNewHostSelectionDuringWordDeleteGestureAndVisibleUndoPreserveSurroundingText()",
+      "nodeIdentifier": "ControllerHarnessTests/testNewHostSelectionDuringWordDeleteGestureAndVisibleUndoPreserveSurroundingText()",
+      "result": "Passed"
+    },
+    {
+      "name": "testOnlyForgettableWordsCanBeHeld()",
+      "nodeIdentifier": "ControllerHarnessTests/testOnlyForgettableWordsCanBeHeld()",
+      "result": "Passed"
+    },
+    {
+      "name": "testRapidFieldSwitchesKeepEachFieldsChoicesApart()",
+      "nodeIdentifier": "ControllerHarnessTests/testRapidFieldSwitchesKeepEachFieldsChoicesApart()",
+      "result": "Passed"
+    },
+    {
+      "name": "testTraitChangesThatKeepThePolicyKeepTheDisplayedWord()",
+      "nodeIdentifier": "ControllerHarnessTests/testTraitChangesThatKeepThePolicyKeepTheDisplayedWord()",
+      "result": "Passed"
+    },
+    {
+      "name": "testSettingsRoundTripKeepsDraftAndDismissedReturnStaysHidden()",
+      "nodeIdentifier": "DraftNavigationTests/testSettingsRoundTripKeepsDraftAndDismissedReturnStaysHidden()",
+      "result": "Passed"
+    },
+    {
+      "name": "testSwitchingModesAndReturningKeepsTextFieldKindAndDismissal()",
+      "nodeIdentifier": "DraftNavigationTests/testSwitchingModesAndReturningKeepsTextFieldKindAndDismissal()",
+      "result": "Passed"
+    },
+    {
+      "name": "testSharedScopeConfirmationIsReadableAndCanBeCancelled()",
+      "nodeIdentifier": "LearningClearScopeUITests/testSharedScopeConfirmationIsReadableAndCanBeCancelled()",
+      "result": "Failed"
+    },
+    {
+      "name": "testRealCanonicalSQLiteBusyShowsNoticeAndExplicitRetryConfirmsRemoval()",
+      "nodeIdentifier": "LearningForgetControllerTests/testRealCanonicalSQLiteBusyShowsNoticeAndExplicitRetryConfirmsRemoval()",
+      "result": "Failed"
+    },
+    {
+      "name": "testRealPreviewForgetNoticeIsReadableDismissibleAndRetryable()",
+      "nodeIdentifier": "LearningForgetResultUITests/testRealPreviewForgetNoticeIsReadableDismissibleAndRetryable()",
+      "result": "Passed"
+    },
+    {
+      "name": "testRealLockContentionShowsFailureThenRetrySucceedsLearningOff()",
+      "nodeIdentifier": "LearningResetResultUITests/testRealLockContentionShowsFailureThenRetrySucceedsLearningOff()",
+      "result": "Passed"
+    },
+    {
+      "name": "testRealLockContentionShowsFailureThenRetrySucceedsLearningOn()",
+      "nodeIdentifier": "LearningResetResultUITests/testRealLockContentionShowsFailureThenRetrySucceedsLearningOn()",
+      "result": "Passed"
+    },
+    {
+      "name": "testRealStorageOpenFailureShowsFailureThenRetrySucceeds()",
+      "nodeIdentifier": "LearningResetResultUITests/testRealStorageOpenFailureShowsFailureThenRetrySucceeds()",
+      "result": "Passed"
+    },
+    {
+      "name": "testLearningOffSurvivesJumpsClearAndRelaunch()",
+      "nodeIdentifier": "SettingsUsabilitySweepTests/testLearningOffSurvivesJumpsClearAndRelaunch()",
+      "result": "Passed"
+    },
+    {
+      "name": "testQuickSettingsReachesExistingControlsWithoutChangingValues()",
+      "nodeIdentifier": "SettingsUsabilitySweepTests/testQuickSettingsReachesExistingControlsWithoutChangingValues()",
+      "result": "Passed"
+    },
+    {
+      "name": "testConfirmedSuccessDismissesOfferBeforeRefreshingSuggestions()",
+      "nodeIdentifier": "SuggestionForgetFeedbackTests/testConfirmedSuccessDismissesOfferBeforeRefreshingSuggestions()",
+      "result": "Passed"
+    },
+    {
+      "name": "testFailureNoticeSurvivesOriginalRemoveActionAndPreservesSuggestion()",
+      "nodeIdentifier": "SuggestionForgetFeedbackTests/testFailureNoticeSurvivesOriginalRemoveActionAndPreservesSuggestion()",
+      "result": "Passed"
+    }
+  ],
+  "latest-v2-normal": [
+    {
+      "name": "testSelectedMultilingualDraftAcrossSmallViewportModesFieldsAndRefocus()",
+      "nodeIdentifier": "CompanionWorkflowR24Tests/testSelectedMultilingualDraftAcrossSmallViewportModesFieldsAndRefocus()",
+      "result": "Passed"
+    },
+    {
+      "name": "testSettingsRoundTripKeepsDraftAndDismissedReturnStaysHidden()",
+      "nodeIdentifier": "DraftNavigationTests/testSettingsRoundTripKeepsDraftAndDismissedReturnStaysHidden()",
+      "result": "Passed"
+    },
+    {
+      "name": "testSwitchingModesAndReturningKeepsTextFieldKindAndDismissal()",
+      "nodeIdentifier": "DraftNavigationTests/testSwitchingModesAndReturningKeepsTextFieldKindAndDismissal()",
+      "result": "Passed"
+    },
+    {
+      "name": "testSharedScopeConfirmationIsReadableAndCanBeCancelled()",
+      "nodeIdentifier": "LearningClearScopeUITests/testSharedScopeConfirmationIsReadableAndCanBeCancelled()",
+      "result": "Passed"
+    },
+    {
+      "name": "testRealCanonicalSQLiteBusyShowsNoticeAndExplicitRetryConfirmsRemoval()",
+      "nodeIdentifier": "LearningForgetControllerTests/testRealCanonicalSQLiteBusyShowsNoticeAndExplicitRetryConfirmsRemoval()",
+      "result": "Passed"
+    },
+    {
+      "name": "testRealPreviewForgetNoticeIsReadableDismissibleAndRetryable()",
+      "nodeIdentifier": "LearningForgetResultUITests/testRealPreviewForgetNoticeIsReadableDismissibleAndRetryable()",
+      "result": "Passed"
+    },
+    {
+      "name": "testRealLockContentionShowsFailureThenRetrySucceedsLearningOff()",
+      "nodeIdentifier": "LearningResetResultUITests/testRealLockContentionShowsFailureThenRetrySucceedsLearningOff()",
+      "result": "Passed"
+    },
+    {
+      "name": "testRealLockContentionShowsFailureThenRetrySucceedsLearningOn()",
+      "nodeIdentifier": "LearningResetResultUITests/testRealLockContentionShowsFailureThenRetrySucceedsLearningOn()",
+      "result": "Passed"
+    },
+    {
+      "name": "testRealStorageOpenFailureShowsFailureThenRetrySucceeds()",
+      "nodeIdentifier": "LearningResetResultUITests/testRealStorageOpenFailureShowsFailureThenRetrySucceeds()",
+      "result": "Passed"
+    },
+    {
+      "name": "testLearningOffSurvivesJumpsClearAndRelaunch()",
+      "nodeIdentifier": "SettingsUsabilitySweepTests/testLearningOffSurvivesJumpsClearAndRelaunch()",
+      "result": "Passed"
+    },
+    {
+      "name": "testQuickSettingsReachesExistingControlsWithoutChangingValues()",
+      "nodeIdentifier": "SettingsUsabilitySweepTests/testQuickSettingsReachesExistingControlsWithoutChangingValues()",
+      "result": "Passed"
+    },
+    {
+      "name": "testConfirmedSuccessDismissesOfferBeforeRefreshingSuggestions()",
+      "nodeIdentifier": "SuggestionForgetFeedbackTests/testConfirmedSuccessDismissesOfferBeforeRefreshingSuggestions()",
+      "result": "Passed"
+    },
+    {
+      "name": "testFailureNoticeSurvivesOriginalRemoveActionAndPreservesSuggestion()",
+      "nodeIdentifier": "SuggestionForgetFeedbackTests/testFailureNoticeSurvivesOriginalRemoveActionAndPreservesSuggestion()",
+      "result": "Passed"
+    }
+  ],
+  "latest-v2-ax": [
+    {
+      "name": "testSelectedMultilingualDraftAcrossSmallViewportModesFieldsAndRefocus()",
+      "nodeIdentifier": "CompanionWorkflowR24Tests/testSelectedMultilingualDraftAcrossSmallViewportModesFieldsAndRefocus()",
+      "result": "Passed"
+    },
+    {
+      "name": "testSettingsRoundTripKeepsDraftAndDismissedReturnStaysHidden()",
+      "nodeIdentifier": "DraftNavigationTests/testSettingsRoundTripKeepsDraftAndDismissedReturnStaysHidden()",
+      "result": "Failed"
+    },
+    {
+      "name": "testSwitchingModesAndReturningKeepsTextFieldKindAndDismissal()",
+      "nodeIdentifier": "DraftNavigationTests/testSwitchingModesAndReturningKeepsTextFieldKindAndDismissal()",
+      "result": "Failed"
+    },
+    {
+      "name": "testSharedScopeConfirmationIsReadableAndCanBeCancelled()",
+      "nodeIdentifier": "LearningClearScopeUITests/testSharedScopeConfirmationIsReadableAndCanBeCancelled()",
+      "result": "Failed"
+    },
+    {
+      "name": "testRealCanonicalSQLiteBusyShowsNoticeAndExplicitRetryConfirmsRemoval()",
+      "nodeIdentifier": "LearningForgetControllerTests/testRealCanonicalSQLiteBusyShowsNoticeAndExplicitRetryConfirmsRemoval()",
+      "result": "Passed"
+    },
+    {
+      "name": "testRealPreviewForgetNoticeIsReadableDismissibleAndRetryable()",
+      "nodeIdentifier": "LearningForgetResultUITests/testRealPreviewForgetNoticeIsReadableDismissibleAndRetryable()",
+      "result": "Passed"
+    },
+    {
+      "name": "testRealLockContentionShowsFailureThenRetrySucceedsLearningOff()",
+      "nodeIdentifier": "LearningResetResultUITests/testRealLockContentionShowsFailureThenRetrySucceedsLearningOff()",
+      "result": "Passed"
+    },
+    {
+      "name": "testRealLockContentionShowsFailureThenRetrySucceedsLearningOn()",
+      "nodeIdentifier": "LearningResetResultUITests/testRealLockContentionShowsFailureThenRetrySucceedsLearningOn()",
+      "result": "Passed"
+    },
+    {
+      "name": "testRealStorageOpenFailureShowsFailureThenRetrySucceeds()",
+      "nodeIdentifier": "LearningResetResultUITests/testRealStorageOpenFailureShowsFailureThenRetrySucceeds()",
+      "result": "Passed"
+    },
+    {
+      "name": "testLearningOffSurvivesJumpsClearAndRelaunch()",
+      "nodeIdentifier": "SettingsUsabilitySweepTests/testLearningOffSurvivesJumpsClearAndRelaunch()",
+      "result": "Passed"
+    },
+    {
+      "name": "testQuickSettingsReachesExistingControlsWithoutChangingValues()",
+      "nodeIdentifier": "SettingsUsabilitySweepTests/testQuickSettingsReachesExistingControlsWithoutChangingValues()",
+      "result": "Passed"
+    },
+    {
+      "name": "testConfirmedSuccessDismissesOfferBeforeRefreshingSuggestions()",
+      "nodeIdentifier": "SuggestionForgetFeedbackTests/testConfirmedSuccessDismissesOfferBeforeRefreshingSuggestions()",
+      "result": "Passed"
+    },
+    {
+      "name": "testFailureNoticeSurvivesOriginalRemoveActionAndPreservesSuggestion()",
+      "nodeIdentifier": "SuggestionForgetFeedbackTests/testFailureNoticeSurvivesOriginalRemoveActionAndPreservesSuggestion()",
+      "result": "Passed"
+    }
+  ],
+  "a9e-normal": [
+    {
+      "name": "testSelectedMultilingualDraftAcrossSmallViewportModesFieldsAndRefocus()",
+      "nodeIdentifier": "CompanionWorkflowR24Tests/testSelectedMultilingualDraftAcrossSmallViewportModesFieldsAndRefocus()",
+      "result": "Passed"
+    },
+    {
+      "name": "testSettingsRoundTripKeepsDraftAndDismissedReturnStaysHidden()",
+      "nodeIdentifier": "DraftNavigationTests/testSettingsRoundTripKeepsDraftAndDismissedReturnStaysHidden()",
+      "result": "Passed"
+    },
+    {
+      "name": "testSwitchingModesAndReturningKeepsTextFieldKindAndDismissal()",
+      "nodeIdentifier": "DraftNavigationTests/testSwitchingModesAndReturningKeepsTextFieldKindAndDismissal()",
+      "result": "Passed"
+    },
+    {
+      "name": "testSharedScopeConfirmationIsReadableAndCanBeCancelled()",
+      "nodeIdentifier": "LearningClearScopeUITests/testSharedScopeConfirmationIsReadableAndCanBeCancelled()",
+      "result": "Passed"
+    },
+    {
+      "name": "testRealCanonicalSQLiteBusyShowsNoticeAndExplicitRetryConfirmsRemoval()",
+      "nodeIdentifier": "LearningForgetControllerTests/testRealCanonicalSQLiteBusyShowsNoticeAndExplicitRetryConfirmsRemoval()",
+      "result": "Passed"
+    },
+    {
+      "name": "testRealPreviewForgetNoticeIsReadableDismissibleAndRetryable()",
+      "nodeIdentifier": "LearningForgetResultUITests/testRealPreviewForgetNoticeIsReadableDismissibleAndRetryable()",
+      "result": "Passed"
+    },
+    {
+      "name": "testRealLockContentionShowsFailureThenRetrySucceedsLearningOff()",
+      "nodeIdentifier": "LearningResetResultUITests/testRealLockContentionShowsFailureThenRetrySucceedsLearningOff()",
+      "result": "Passed"
+    },
+    {
+      "name": "testRealLockContentionShowsFailureThenRetrySucceedsLearningOn()",
+      "nodeIdentifier": "LearningResetResultUITests/testRealLockContentionShowsFailureThenRetrySucceedsLearningOn()",
+      "result": "Passed"
+    },
+    {
+      "name": "testRealStorageOpenFailureShowsFailureThenRetrySucceeds()",
+      "nodeIdentifier": "LearningResetResultUITests/testRealStorageOpenFailureShowsFailureThenRetrySucceeds()",
+      "result": "Passed"
+    },
+    {
+      "name": "testLearningOffSurvivesJumpsClearAndRelaunch()",
+      "nodeIdentifier": "SettingsUsabilitySweepTests/testLearningOffSurvivesJumpsClearAndRelaunch()",
+      "result": "Passed"
+    },
+    {
+      "name": "testQuickSettingsReachesExistingControlsWithoutChangingValues()",
+      "nodeIdentifier": "SettingsUsabilitySweepTests/testQuickSettingsReachesExistingControlsWithoutChangingValues()",
+      "result": "Passed"
+    },
+    {
+      "name": "testConfirmedSuccessDismissesOfferBeforeRefreshingSuggestions()",
+      "nodeIdentifier": "SuggestionForgetFeedbackTests/testConfirmedSuccessDismissesOfferBeforeRefreshingSuggestions()",
+      "result": "Passed"
+    },
+    {
+      "name": "testFailureNoticeSurvivesOriginalRemoveActionAndPreservesSuggestion()",
+      "nodeIdentifier": "SuggestionForgetFeedbackTests/testFailureNoticeSurvivesOriginalRemoveActionAndPreservesSuggestion()",
+      "result": "Passed"
+    }
+  ],
+  "a9e-ax5": [
+    {
+      "name": "testSelectedMultilingualDraftAcrossSmallViewportModesFieldsAndRefocus()",
+      "nodeIdentifier": "CompanionWorkflowR24Tests/testSelectedMultilingualDraftAcrossSmallViewportModesFieldsAndRefocus()",
+      "result": "Passed"
+    },
+    {
+      "name": "testSettingsRoundTripKeepsDraftAndDismissedReturnStaysHidden()",
+      "nodeIdentifier": "DraftNavigationTests/testSettingsRoundTripKeepsDraftAndDismissedReturnStaysHidden()",
+      "result": "Passed"
+    },
+    {
+      "name": "testSwitchingModesAndReturningKeepsTextFieldKindAndDismissal()",
+      "nodeIdentifier": "DraftNavigationTests/testSwitchingModesAndReturningKeepsTextFieldKindAndDismissal()",
+      "result": "Passed"
+    },
+    {
+      "name": "testSharedScopeConfirmationIsReadableAndCanBeCancelled()",
+      "nodeIdentifier": "LearningClearScopeUITests/testSharedScopeConfirmationIsReadableAndCanBeCancelled()",
+      "result": "Failed"
+    },
+    {
+      "name": "testRealCanonicalSQLiteBusyShowsNoticeAndExplicitRetryConfirmsRemoval()",
+      "nodeIdentifier": "LearningForgetControllerTests/testRealCanonicalSQLiteBusyShowsNoticeAndExplicitRetryConfirmsRemoval()",
+      "result": "Passed"
+    },
+    {
+      "name": "testRealPreviewForgetNoticeIsReadableDismissibleAndRetryable()",
+      "nodeIdentifier": "LearningForgetResultUITests/testRealPreviewForgetNoticeIsReadableDismissibleAndRetryable()",
+      "result": "Passed"
+    },
+    {
+      "name": "testRealLockContentionShowsFailureThenRetrySucceedsLearningOff()",
+      "nodeIdentifier": "LearningResetResultUITests/testRealLockContentionShowsFailureThenRetrySucceedsLearningOff()",
+      "result": "Passed"
+    },
+    {
+      "name": "testRealLockContentionShowsFailureThenRetrySucceedsLearningOn()",
+      "nodeIdentifier": "LearningResetResultUITests/testRealLockContentionShowsFailureThenRetrySucceedsLearningOn()",
+      "result": "Passed"
+    },
+    {
+      "name": "testRealStorageOpenFailureShowsFailureThenRetrySucceeds()",
+      "nodeIdentifier": "LearningResetResultUITests/testRealStorageOpenFailureShowsFailureThenRetrySucceeds()",
+      "result": "Passed"
+    },
+    {
+      "name": "testLearningOffSurvivesJumpsClearAndRelaunch()",
+      "nodeIdentifier": "SettingsUsabilitySweepTests/testLearningOffSurvivesJumpsClearAndRelaunch()",
+      "result": "Passed"
+    },
+    {
+      "name": "testQuickSettingsReachesExistingControlsWithoutChangingValues()",
+      "nodeIdentifier": "SettingsUsabilitySweepTests/testQuickSettingsReachesExistingControlsWithoutChangingValues()",
+      "result": "Passed"
+    },
+    {
+      "name": "testConfirmedSuccessDismissesOfferBeforeRefreshingSuggestions()",
+      "nodeIdentifier": "SuggestionForgetFeedbackTests/testConfirmedSuccessDismissesOfferBeforeRefreshingSuggestions()",
+      "result": "Passed"
+    },
+    {
+      "name": "testFailureNoticeSurvivesOriginalRemoveActionAndPreservesSuggestion()",
+      "nodeIdentifier": "SuggestionForgetFeedbackTests/testFailureNoticeSurvivesOriginalRemoveActionAndPreservesSuggestion()",
+      "result": "Passed"
+    }
+  ],
+  "a9e-scope-coordinate-ax5": [
+    {
+      "name": "testSharedScopeConfirmationIsReadableAndCanBeCancelled()",
+      "nodeIdentifier": "LearningClearScopeUITests/testSharedScopeConfirmationIsReadableAndCanBeCancelled()",
+      "result": "Passed"
+    }
+  ],
+  "a9e-coordinate-normal": [
+    {
+      "name": "testSharedScopeConfirmationIsReadableAndCanBeCancelled()",
+      "nodeIdentifier": "LearningClearScopeUITests/testSharedScopeConfirmationIsReadableAndCanBeCancelled()",
+      "result": "Passed"
+    },
+    {
+      "name": "testRealCanonicalSQLiteBusyShowsNoticeAndExplicitRetryConfirmsRemoval()",
+      "nodeIdentifier": "LearningForgetControllerTests/testRealCanonicalSQLiteBusyShowsNoticeAndExplicitRetryConfirmsRemoval()",
+      "result": "Passed"
+    },
+    {
+      "name": "testRealPreviewForgetNoticeIsReadableDismissibleAndRetryable()",
+      "nodeIdentifier": "LearningForgetResultUITests/testRealPreviewForgetNoticeIsReadableDismissibleAndRetryable()",
+      "result": "Passed"
+    },
+    {
+      "name": "testRealLockContentionShowsFailureThenRetrySucceedsLearningOff()",
+      "nodeIdentifier": "LearningResetResultUITests/testRealLockContentionShowsFailureThenRetrySucceedsLearningOff()",
+      "result": "Passed"
+    },
+    {
+      "name": "testRealLockContentionShowsFailureThenRetrySucceedsLearningOn()",
+      "nodeIdentifier": "LearningResetResultUITests/testRealLockContentionShowsFailureThenRetrySucceedsLearningOn()",
+      "result": "Passed"
+    },
+    {
+      "name": "testRealStorageOpenFailureShowsFailureThenRetrySucceeds()",
+      "nodeIdentifier": "LearningResetResultUITests/testRealStorageOpenFailureShowsFailureThenRetrySucceeds()",
+      "result": "Passed"
+    },
+    {
+      "name": "testConfirmedSuccessDismissesOfferBeforeRefreshingSuggestions()",
+      "nodeIdentifier": "SuggestionForgetFeedbackTests/testConfirmedSuccessDismissesOfferBeforeRefreshingSuggestions()",
+      "result": "Passed"
+    },
+    {
+      "name": "testFailureNoticeSurvivesOriginalRemoveActionAndPreservesSuggestion()",
+      "nodeIdentifier": "SuggestionForgetFeedbackTests/testFailureNoticeSurvivesOriginalRemoveActionAndPreservesSuggestion()",
+      "result": "Passed"
+    }
+  ],
+  "a9e-coordinate-ax5": [
+    {
+      "name": "testSharedScopeConfirmationIsReadableAndCanBeCancelled()",
+      "nodeIdentifier": "LearningClearScopeUITests/testSharedScopeConfirmationIsReadableAndCanBeCancelled()",
+      "result": "Passed"
+    },
+    {
+      "name": "testRealCanonicalSQLiteBusyShowsNoticeAndExplicitRetryConfirmsRemoval()",
+      "nodeIdentifier": "LearningForgetControllerTests/testRealCanonicalSQLiteBusyShowsNoticeAndExplicitRetryConfirmsRemoval()",
+      "result": "Passed"
+    },
+    {
+      "name": "testRealPreviewForgetNoticeIsReadableDismissibleAndRetryable()",
+      "nodeIdentifier": "LearningForgetResultUITests/testRealPreviewForgetNoticeIsReadableDismissibleAndRetryable()",
+      "result": "Passed"
+    },
+    {
+      "name": "testRealLockContentionShowsFailureThenRetrySucceedsLearningOff()",
+      "nodeIdentifier": "LearningResetResultUITests/testRealLockContentionShowsFailureThenRetrySucceedsLearningOff()",
+      "result": "Passed"
+    },
+    {
+      "name": "testRealLockContentionShowsFailureThenRetrySucceedsLearningOn()",
+      "nodeIdentifier": "LearningResetResultUITests/testRealLockContentionShowsFailureThenRetrySucceedsLearningOn()",
+      "result": "Passed"
+    },
+    {
+      "name": "testRealStorageOpenFailureShowsFailureThenRetrySucceeds()",
+      "nodeIdentifier": "LearningResetResultUITests/testRealStorageOpenFailureShowsFailureThenRetrySucceeds()",
+      "result": "Passed"
+    },
+    {
+      "name": "testConfirmedSuccessDismissesOfferBeforeRefreshingSuggestions()",
+      "nodeIdentifier": "SuggestionForgetFeedbackTests/testConfirmedSuccessDismissesOfferBeforeRefreshingSuggestions()",
+      "result": "Passed"
+    },
+    {
+      "name": "testFailureNoticeSurvivesOriginalRemoveActionAndPreservesSuggestion()",
+      "nodeIdentifier": "SuggestionForgetFeedbackTests/testFailureNoticeSurvivesOriginalRemoveActionAndPreservesSuggestion()",
+      "result": "Passed"
+    }
+  ]
+}

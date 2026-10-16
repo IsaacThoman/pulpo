@@ -1,0 +1,19 @@
+{
+  "label": "a9e-ax5",
+  "exit": 65,
+  "gateExit": 0,
+  "totalTestCount": 13,
+  "passedTests": 12,
+  "failedTests": 1,
+  "skippedTests": 0,
+  "testFailures": [
+    {
+      "failureText": "Failed to unable to perform Swipe up on ScrollView at {{76.0, 59.0}, {240.0, 419.3}}: visible frame is empty, which may happen if the element is offscreen.",
+      "targetName": "PulpoKeyboardUITests",
+      "testIdentifier": 4,
+      "testIdentifierString": "LearningClearScopeUITests/testSharedScopeConfirmationIsReadableAndCanBeCancelled()",
+      "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/LearningClearScopeUITests/testSharedScopeConfirmationIsReadableAndCanBeCancelled",
+      "testName": "testSharedScopeConfirmationIsReadableAndCanBeCancelled()"
+    }
+  ]
+}

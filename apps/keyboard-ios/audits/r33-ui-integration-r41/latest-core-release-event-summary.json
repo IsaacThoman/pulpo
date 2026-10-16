@@ -1,0 +1,74 @@
+{
+  "sourceDependency": "4fa9b1e7b39cb1e5db835eeb3c4b111f6540c566",
+  "integrationCommit": "e89886c698cbb276d99e03c6cd9d1abc1b8b2c89",
+  "discoveredFunctions": {
+    "PulpoServicesTests": 3,
+    "KeyboardCoreTests": 457
+  },
+  "endedFunctions": {
+    "PulpoServicesTests": 3,
+    "KeyboardCoreTests": 438
+  },
+  "skipped": [
+    "KeyboardCoreTests.BlindInputStressTests/frozenInputStressAudit()/BlindInputStressTests.swift:57:4",
+    "KeyboardCoreTests.EngineFuzzTests/longRandomizedEditingRun()/EngineFuzzTests.swift:101:4",
+    "KeyboardCoreTests.GlideCalibrationTests/calibrate()/GlideCalibrationTests.swift:104:4",
+    "KeyboardCoreTests.GlideTuningTests/compareSpatialParameters()/GlideTuningTests.swift:8:4",
+    "KeyboardCoreTests.HumanSwipeAuditTests/decodeRecordedHumanSwipes()/HumanSwipeAuditTests.swift:45:4",
+    "KeyboardCoreTests.HumanSwipeContextTests/decodeRecordedSwipesInContext()/HumanSwipeContextTests.swift:215:4",
+    "KeyboardCoreTests.HumanSwipeContextTests/decodeCleanControlPaths()/HumanSwipeContextTests.swift:220:4",
+    "KeyboardCoreTests.KeyboardQualityTests/evaluateExternalPredictionHoldout()/KeyboardQualityTests.swift:78:4",
+    "KeyboardCoreTests.KeyboardQualityTests/evaluateContextualSwipesOnUnseenMessages()/KeyboardQualityTests.swift:104:4",
+    "KeyboardCoreTests.KeyboardQualityTests/evaluateCleanTypingOnUnseenContexts()/KeyboardQualityTests.swift:130:4",
+    "KeyboardCoreTests.KeyboardQualityTests/auditQuality()/KeyboardQualityTests.swift:169:4",
+    "KeyboardCoreTests.KeystrokeSavingsBenchmarkTests/measureKeystrokeSavings()/KeystrokeSavingsBenchmarkTests.swift:361:4",
+    "KeyboardCoreTests.PairedTypingProbeTests/evaluateFrozenPairedTypingProbe()/PairedTypingProbeTests.swift:28:4",
+    "KeyboardCoreTests.PerformanceBenchmarkTests/measureKeyboardResponsiveness()/PerformanceBenchmarkTests.swift:291:4",
+    "KeyboardCoreTests.ShiftSequenceTests/evaluateFrozenRapidCasingVerification()/ShiftSequenceTests.swift:6:4",
+    "KeyboardCoreTests.SwipeBenchmarkTests/decodeBenchmarkPaths()/SwipeBenchmarkTests.swift:20:4",
+    "KeyboardCoreTests.SwipeWorkflowTests/replayRecordedRecovery()/SwipeWorkflowTests.swift:603:4",
+    "KeyboardCoreTests.SwipeWorkflowTests/reportScenarios()/SwipeWorkflowTests.swift:679:4",
+    "KeyboardCoreTests.TapCorrectionBenchmarkTests/replayFrozenTapBenchmark()/TapCorrectionBenchmarkTests.swift:285:4"
+  ],
+  "issues": [
+    {
+      "testID": "KeyboardCoreTests.EngineFuzzRegressionTests/hostRevertToARecentOwnStateIsAKnownAmbiguity(_:)/EngineFuzzRegressionTests.swift:215:4",
+      "known": true,
+      "isFailure": false
+    },
+    {
+      "testID": "KeyboardCoreTests.EngineFuzzRegressionTests/hostRevertToARecentOwnStateIsAKnownAmbiguity(_:)/EngineFuzzRegressionTests.swift:215:4",
+      "known": true,
+      "isFailure": false
+    },
+    {
+      "testID": "KeyboardCoreTests.MultilingualTests/frozenAcceptanceBenchmark(resource:)/MultilingualTests.swift:9:4",
+      "known": true,
+      "isFailure": false
+    },
+    {
+      "testID": "KeyboardCoreTests.MultilingualTests/frozenAcceptanceBenchmark(resource:)/MultilingualTests.swift:9:4",
+      "known": true,
+      "isFailure": false
+    },
+    {
+      "testID": "KeyboardCoreTests.MultilingualTests/frozenAcceptanceBenchmark(resource:)/MultilingualTests.swift:9:4",
+      "known": true,
+      "isFailure": false
+    }
+  ],
+  "runEndedMessages": [
+    [
+      {
+        "symbol": "pass",
+        "text": "Test run with 3 tests in 1 suite passed after 0.001 seconds."
+      }
+    ],
+    [
+      {
+        "symbol": "passWithKnownIssue",
+        "text": "Test run with 457 tests in 66 suites passed after 47.168 seconds with 5 known issues."
+      }
+    ]
+  ]
+}

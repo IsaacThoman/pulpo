@@ -1,0 +1,1066 @@
+{
+  "classification": "EXPOSED owner UI integration; R33 storage UNADMITTED",
+  "base": "00b46dd57626ff389a17e0079a69f30a4b55e8fb",
+  "dependencyVersions": [
+    {
+      "source": "2357e19156e79edc9842a3b9626d9ab18b3f6f36",
+      "copyCommit": "403a87ba"
+    },
+    {
+      "source": "4fa9b1e7b39cb1e5db835eeb3c4b111f6540c566",
+      "copyCommit": "e89886c6"
+    },
+    {
+      "source": "a9e6ecfc895263721f14b8635dab8c3e87162839",
+      "copyCommit": "9059b94a"
+    }
+  ],
+  "productionUICommit": "c156797b",
+  "commits": [
+    {
+      "hash": "b94f3b1eefcd3d9172417d513f64caea301939d2",
+      "summary": "test(keyboard): drag within the native confirmation viewport"
+    },
+    {
+      "hash": "5de06a604b30c488088b3fd5bb9b75fc0cf5f25d",
+      "summary": "test(keyboard): verify native scrolling at accessibility sizes"
+    },
+    {
+      "hash": "9059b94a031cee434b012073f4e96caf21521583",
+      "summary": "chore(keyboard): stage the encoding four R33 dependency"
+    },
+    {
+      "hash": "f3c410fc3488f6269995d574a6451ce2511d43d6",
+      "summary": "test(keyboard): confirm durable reads and native popover dismissal"
+    },
+    {
+      "hash": "e89886c698cbb276d99e03c6cd9d1abc1b8b2c89",
+      "summary": "chore(keyboard): refresh unadmitted R33 integration dependency"
+    },
+    {
+      "hash": "561a6621b99a65550611f1e452d6a254cff81893",
+      "summary": "test(keyboard): query the complete shared scope accessibility label"
+    },
+    {
+      "hash": "508840da3b40c6f74aa083258293b8a9138631e6",
+      "summary": "test(keyboard): reset the owned forget fixture between runs"
+    },
+    {
+      "hash": "82d1f1644d2b0a6a1f854f758795b47e416bf6d9",
+      "summary": "test(keyboard): observe unavailable storage after releasing faults"
+    },
+    {
+      "hash": "244566f6b3727a07ab652aa63f2ff60e9995ea59",
+      "summary": "test(keyboard): cover native learning removal failures and retry"
+    },
+    {
+      "hash": "c156797b406182ad83329177804d67d40fc53ad8",
+      "summary": "fix(keyboard): surface unconfirmed learning removals"
+    },
+    {
+      "hash": "403a87ba7bb88eaf806946a8025109b0dcfa13a0",
+      "summary": "chore(keyboard): stage unadmitted R33 integration dependency"
+    }
+  ],
+  "nativeRuns": {
+    "a9e-scope-coordinate-ax5-summary.json": {
+      "result": "Passed",
+      "totalTestCount": 1,
+      "passedTests": 1,
+      "failedTests": 0,
+      "skippedTests": 0,
+      "expectedFailures": 0,
+      "testFailures": []
+    },
+    "a9e-coordinate-ax5-summary.json": {
+      "result": "Passed",
+      "totalTestCount": 8,
+      "passedTests": 8,
+      "failedTests": 0,
+      "skippedTests": 0,
+      "expectedFailures": 0,
+      "testFailures": []
+    },
+    "latest-native-summary.json": {
+      "result": "Failed",
+      "totalTestCount": 49,
+      "passedTests": 44,
+      "failedTests": 3,
+      "skippedTests": 2,
+      "expectedFailures": 0,
+      "testFailures": [
+        {
+          "failureText": "XCTAssertNil failed: \"<PulpoKeyboard.PreviewInputView: 0x12bf6e300; baseClass = UIInputView; frame = (0 0; 393 295); backgroundColor = UIExtendedSRGBColorSpace 0.878431 0.882353 0.909804 1; layer = <CALayer: 0x12bef5b90>>\"",
+          "targetName": "PulpoKeyboardAppTests",
+          "testIdentifier": 19,
+          "testIdentifierString": "PreviewDocumentLifecycleCounterchecks/testStandaloneDocumentSurvivesInputControllerEngineAndHostRelease()",
+          "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests/PreviewDocumentLifecycleCounterchecks/testStandaloneDocumentSurvivesInputControllerEngineAndHostRelease",
+          "testName": "testStandaloneDocumentSurvivesInputControllerEngineAndHostRelease()"
+        },
+        {
+          "failureText": "XCTAssertTrue failed",
+          "targetName": "PulpoKeyboardUITests",
+          "testIdentifier": 41,
+          "testIdentifierString": "LearningForgetControllerTests/testRealCanonicalSQLiteBusyShowsNoticeAndExplicitRetryConfirmsRemoval()",
+          "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/LearningForgetControllerTests/testRealCanonicalSQLiteBusyShowsNoticeAndExplicitRetryConfirmsRemoval",
+          "testName": "testRealCanonicalSQLiteBusyShowsNoticeAndExplicitRetryConfirmsRemoval()"
+        },
+        {
+          "failureText": "XCTAssertTrue failed",
+          "targetName": "PulpoKeyboardUITests",
+          "testIdentifier": 40,
+          "testIdentifierString": "LearningClearScopeUITests/testSharedScopeConfirmationIsReadableAndCanBeCancelled()",
+          "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/LearningClearScopeUITests/testSharedScopeConfirmationIsReadableAndCanBeCancelled",
+          "testName": "testSharedScopeConfirmationIsReadableAndCanBeCancelled()"
+        }
+      ]
+    },
+    "core-release-xcresult-summary.json": {
+      "result": "Passed",
+      "totalTestCount": 458,
+      "passedTests": 438,
+      "failedTests": 0,
+      "skippedTests": 19,
+      "expectedFailures": 1,
+      "testFailures": []
+    },
+    "baseline-v5-summary.json": {
+      "result": "Failed",
+      "totalTestCount": 7,
+      "passedTests": 0,
+      "failedTests": 7,
+      "skippedTests": 0,
+      "expectedFailures": 0,
+      "testFailures": [
+        {
+          "failureText": "XCTAssertFalse failed",
+          "targetName": "PulpoKeyboardUITests",
+          "testIdentifier": 6,
+          "testIdentifierString": "SuggestionForgetFeedbackTests/testConfirmedSuccessDismissesOfferBeforeRefreshingSuggestions()",
+          "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/SuggestionForgetFeedbackTests/testConfirmedSuccessDismissesOfferBeforeRefreshingSuggestions",
+          "testName": "testConfirmedSuccessDismissesOfferBeforeRefreshingSuggestions()"
+        },
+        {
+          "failureText": "XCTAssertTrue failed - The original confirmation must not hide failure feedback",
+          "targetName": "PulpoKeyboardUITests",
+          "testIdentifier": 7,
+          "testIdentifierString": "SuggestionForgetFeedbackTests/testFailureNoticeSurvivesOriginalRemoveActionAndPreservesSuggestion()",
+          "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/SuggestionForgetFeedbackTests/testFailureNoticeSurvivesOriginalRemoveActionAndPreservesSuggestion",
+          "testName": "testFailureNoticeSurvivesOriginalRemoveActionAndPreservesSuggestion()"
+        },
+        {
+          "failureText": "XCTUnwrap failed: expected non-nil value of type \"Suggestion\"",
+          "targetName": "PulpoKeyboardUITests",
+          "testIdentifier": 1,
+          "testIdentifierString": "LearningForgetControllerTests/testRealCanonicalSQLiteBusyShowsNoticeAndExplicitRetryConfirmsRemoval()",
+          "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/LearningForgetControllerTests/testRealCanonicalSQLiteBusyShowsNoticeAndExplicitRetryConfirmsRemoval",
+          "testName": "testRealCanonicalSQLiteBusyShowsNoticeAndExplicitRetryConfirmsRemoval()"
+        },
+        {
+          "failureText": "failed - Real failure did not show the failure result alert",
+          "targetName": "PulpoKeyboardUITests",
+          "testIdentifier": 3,
+          "testIdentifierString": "LearningResetResultUITests/testRealLockContentionShowsFailureThenRetrySucceedsLearningOff()",
+          "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/LearningResetResultUITests/testRealLockContentionShowsFailureThenRetrySucceedsLearningOff",
+          "testName": "testRealLockContentionShowsFailureThenRetrySucceedsLearningOff()"
+        },
+        {
+          "failureText": "failed - Real failure did not show the failure result alert",
+          "targetName": "PulpoKeyboardUITests",
+          "testIdentifier": 4,
+          "testIdentifierString": "LearningResetResultUITests/testRealLockContentionShowsFailureThenRetrySucceedsLearningOn()",
+          "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/LearningResetResultUITests/testRealLockContentionShowsFailureThenRetrySucceedsLearningOn",
+          "testName": "testRealLockContentionShowsFailureThenRetrySucceedsLearningOn()"
+        },
+        {
+          "failureText": "failed - Actual controller did not retain failure notice",
+          "targetName": "PulpoKeyboardUITests",
+          "testIdentifier": 2,
+          "testIdentifierString": "LearningForgetResultUITests/testRealPreviewForgetNoticeIsReadableDismissibleAndRetryable()",
+          "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/LearningForgetResultUITests/testRealPreviewForgetNoticeIsReadableDismissibleAndRetryable",
+          "testName": "testRealPreviewForgetNoticeIsReadableDismissibleAndRetryable()"
+        },
+        {
+          "failureText": "failed - Real failure did not show the failure result alert",
+          "targetName": "PulpoKeyboardUITests",
+          "testIdentifier": 5,
+          "testIdentifierString": "LearningResetResultUITests/testRealStorageOpenFailureShowsFailureThenRetrySucceeds()",
+          "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/LearningResetResultUITests/testRealStorageOpenFailureShowsFailureThenRetrySucceeds",
+          "testName": "testRealStorageOpenFailureShowsFailureThenRetrySucceeds()"
+        }
+      ]
+    },
+    "baseline-ui-summary.json": {
+      "result": "Failed",
+      "totalTestCount": 5,
+      "passedTests": 0,
+      "failedTests": 5,
+      "skippedTests": 0,
+      "expectedFailures": 0,
+      "testFailures": [
+        {
+          "failureText": "XCTAssertFalse failed",
+          "targetName": "PulpoKeyboardUITests",
+          "testIdentifier": 4,
+          "testIdentifierString": "SuggestionForgetFeedbackTests/testConfirmedSuccessDismissesOfferBeforeRefreshingSuggestions()",
+          "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/SuggestionForgetFeedbackTests/testConfirmedSuccessDismissesOfferBeforeRefreshingSuggestions",
+          "testName": "testConfirmedSuccessDismissesOfferBeforeRefreshingSuggestions()"
+        },
+        {
+          "failureText": "XCTAssertTrue failed - The original confirmation must not hide failure feedback",
+          "targetName": "PulpoKeyboardUITests",
+          "testIdentifier": 5,
+          "testIdentifierString": "SuggestionForgetFeedbackTests/testFailureNoticeSurvivesOriginalRemoveActionAndPreservesSuggestion()",
+          "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/SuggestionForgetFeedbackTests/testFailureNoticeSurvivesOriginalRemoveActionAndPreservesSuggestion",
+          "testName": "testFailureNoticeSurvivesOriginalRemoveActionAndPreservesSuggestion()"
+        },
+        {
+          "failureText": "failed - Real failure did not show the failure result alert",
+          "targetName": "PulpoKeyboardUITests",
+          "testIdentifier": 1,
+          "testIdentifierString": "LearningResetResultUITests/testRealLockContentionShowsFailureThenRetrySucceedsLearningOff()",
+          "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/LearningResetResultUITests/testRealLockContentionShowsFailureThenRetrySucceedsLearningOff",
+          "testName": "testRealLockContentionShowsFailureThenRetrySucceedsLearningOff()"
+        },
+        {
+          "failureText": "failed: caught error: \"Error Domain=R33NativeFixture Code=2 \"Fixture barrier unavailable: busy-on.active.json\" UserInfo={NSLocalizedDescription=Fixture barrier unavailable: busy-on.active.json}\"",
+          "targetName": "PulpoKeyboardUITests",
+          "testIdentifier": 2,
+          "testIdentifierString": "LearningResetResultUITests/testRealLockContentionShowsFailureThenRetrySucceedsLearningOn()",
+          "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/LearningResetResultUITests/testRealLockContentionShowsFailureThenRetrySucceedsLearningOn",
+          "testName": "testRealLockContentionShowsFailureThenRetrySucceedsLearningOn()"
+        },
+        {
+          "failureText": "failed - Real failure did not show the failure result alert",
+          "targetName": "PulpoKeyboardUITests",
+          "testIdentifier": 3,
+          "testIdentifierString": "LearningResetResultUITests/testRealStorageOpenFailureShowsFailureThenRetrySucceeds()",
+          "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/LearningResetResultUITests/testRealStorageOpenFailureShowsFailureThenRetrySucceeds",
+          "testName": "testRealStorageOpenFailureShowsFailureThenRetrySucceeds()"
+        }
+      ]
+    },
+    "baseline-v3-ui-summary.json": {
+      "result": "Failed",
+      "totalTestCount": 6,
+      "passedTests": 0,
+      "failedTests": 6,
+      "skippedTests": 0,
+      "expectedFailures": 0,
+      "testFailures": [
+        {
+          "failureText": "XCTAssertFalse failed",
+          "targetName": "PulpoKeyboardUITests",
+          "testIdentifier": 5,
+          "testIdentifierString": "SuggestionForgetFeedbackTests/testConfirmedSuccessDismissesOfferBeforeRefreshingSuggestions()",
+          "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/SuggestionForgetFeedbackTests/testConfirmedSuccessDismissesOfferBeforeRefreshingSuggestions",
+          "testName": "testConfirmedSuccessDismissesOfferBeforeRefreshingSuggestions()"
+        },
+        {
+          "failureText": "XCTAssertTrue failed - The original confirmation must not hide failure feedback",
+          "targetName": "PulpoKeyboardUITests",
+          "testIdentifier": 6,
+          "testIdentifierString": "SuggestionForgetFeedbackTests/testFailureNoticeSurvivesOriginalRemoveActionAndPreservesSuggestion()",
+          "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/SuggestionForgetFeedbackTests/testFailureNoticeSurvivesOriginalRemoveActionAndPreservesSuggestion",
+          "testName": "testFailureNoticeSurvivesOriginalRemoveActionAndPreservesSuggestion()"
+        },
+        {
+          "failureText": "XCTUnwrap failed: expected non-nil value of type \"DictationBridge\"",
+          "targetName": "PulpoKeyboardUITests",
+          "testIdentifier": 1,
+          "testIdentifierString": "LearningForgetControllerTests/testRealCanonicalSQLiteBusyShowsNoticeAndExplicitRetryConfirmsRemoval()",
+          "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/LearningForgetControllerTests/testRealCanonicalSQLiteBusyShowsNoticeAndExplicitRetryConfirmsRemoval",
+          "testName": "testRealCanonicalSQLiteBusyShowsNoticeAndExplicitRetryConfirmsRemoval()"
+        },
+        {
+          "failureText": "failed - Real failure did not show the failure result alert",
+          "targetName": "PulpoKeyboardUITests",
+          "testIdentifier": 2,
+          "testIdentifierString": "LearningResetResultUITests/testRealLockContentionShowsFailureThenRetrySucceedsLearningOff()",
+          "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/LearningResetResultUITests/testRealLockContentionShowsFailureThenRetrySucceedsLearningOff",
+          "testName": "testRealLockContentionShowsFailureThenRetrySucceedsLearningOff()"
+        },
+        {
+          "failureText": "failed - Real failure did not show the failure result alert",
+          "targetName": "PulpoKeyboardUITests",
+          "testIdentifier": 3,
+          "testIdentifierString": "LearningResetResultUITests/testRealLockContentionShowsFailureThenRetrySucceedsLearningOn()",
+          "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/LearningResetResultUITests/testRealLockContentionShowsFailureThenRetrySucceedsLearningOn",
+          "testName": "testRealLockContentionShowsFailureThenRetrySucceedsLearningOn()"
+        },
+        {
+          "failureText": "failed - Real failure did not show the failure result alert",
+          "targetName": "PulpoKeyboardUITests",
+          "testIdentifier": 4,
+          "testIdentifierString": "LearningResetResultUITests/testRealStorageOpenFailureShowsFailureThenRetrySucceeds()",
+          "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/LearningResetResultUITests/testRealStorageOpenFailureShowsFailureThenRetrySucceeds",
+          "testName": "testRealStorageOpenFailureShowsFailureThenRetrySucceeds()"
+        }
+      ]
+    },
+    "candidate-controller-v3-summary.json": {
+      "result": "Passed",
+      "totalTestCount": 1,
+      "passedTests": 1,
+      "failedTests": 0,
+      "skippedTests": 0,
+      "expectedFailures": 0,
+      "testFailures": []
+    },
+    "baseline-v4-ui-summary.json": {
+      "result": "Failed",
+      "totalTestCount": 7,
+      "passedTests": 0,
+      "failedTests": 7,
+      "skippedTests": 0,
+      "expectedFailures": 0,
+      "testFailures": [
+        {
+          "failureText": "XCTAssertFalse failed",
+          "targetName": "PulpoKeyboardUITests",
+          "testIdentifier": 6,
+          "testIdentifierString": "SuggestionForgetFeedbackTests/testConfirmedSuccessDismissesOfferBeforeRefreshingSuggestions()",
+          "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/SuggestionForgetFeedbackTests/testConfirmedSuccessDismissesOfferBeforeRefreshingSuggestions",
+          "testName": "testConfirmedSuccessDismissesOfferBeforeRefreshingSuggestions()"
+        },
+        {
+          "failureText": "XCTAssertTrue failed - The original confirmation must not hide failure feedback",
+          "targetName": "PulpoKeyboardUITests",
+          "testIdentifier": 7,
+          "testIdentifierString": "SuggestionForgetFeedbackTests/testFailureNoticeSurvivesOriginalRemoveActionAndPreservesSuggestion()",
+          "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/SuggestionForgetFeedbackTests/testFailureNoticeSurvivesOriginalRemoveActionAndPreservesSuggestion",
+          "testName": "testFailureNoticeSurvivesOriginalRemoveActionAndPreservesSuggestion()"
+        },
+        {
+          "failureText": "XCTAssertTrue failed",
+          "targetName": "PulpoKeyboardUITests",
+          "testIdentifier": 1,
+          "testIdentifierString": "LearningForgetControllerTests/testRealCanonicalSQLiteBusyShowsNoticeAndExplicitRetryConfirmsRemoval()",
+          "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/LearningForgetControllerTests/testRealCanonicalSQLiteBusyShowsNoticeAndExplicitRetryConfirmsRemoval",
+          "testName": "testRealCanonicalSQLiteBusyShowsNoticeAndExplicitRetryConfirmsRemoval()"
+        },
+        {
+          "failureText": "failed - Real failure did not show the failure result alert",
+          "targetName": "PulpoKeyboardUITests",
+          "testIdentifier": 3,
+          "testIdentifierString": "LearningResetResultUITests/testRealLockContentionShowsFailureThenRetrySucceedsLearningOff()",
+          "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/LearningResetResultUITests/testRealLockContentionShowsFailureThenRetrySucceedsLearningOff",
+          "testName": "testRealLockContentionShowsFailureThenRetrySucceedsLearningOff()"
+        },
+        {
+          "failureText": "failed - Real failure did not show the failure result alert",
+          "targetName": "PulpoKeyboardUITests",
+          "testIdentifier": 4,
+          "testIdentifierString": "LearningResetResultUITests/testRealLockContentionShowsFailureThenRetrySucceedsLearningOn()",
+          "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/LearningResetResultUITests/testRealLockContentionShowsFailureThenRetrySucceedsLearningOn",
+          "testName": "testRealLockContentionShowsFailureThenRetrySucceedsLearningOn()"
+        },
+        {
+          "failureText": "failed - Actual controller did not retain failure notice",
+          "targetName": "PulpoKeyboardUITests",
+          "testIdentifier": 2,
+          "testIdentifierString": "LearningForgetResultUITests/testRealPreviewForgetNoticeIsReadableDismissibleAndRetryable()",
+          "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/LearningForgetResultUITests/testRealPreviewForgetNoticeIsReadableDismissibleAndRetryable",
+          "testName": "testRealPreviewForgetNoticeIsReadableDismissibleAndRetryable()"
+        },
+        {
+          "failureText": "failed - Real failure did not show the failure result alert",
+          "targetName": "PulpoKeyboardUITests",
+          "testIdentifier": 5,
+          "testIdentifierString": "LearningResetResultUITests/testRealStorageOpenFailureShowsFailureThenRetrySucceeds()",
+          "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/LearningResetResultUITests/testRealStorageOpenFailureShowsFailureThenRetrySucceeds",
+          "testName": "testRealStorageOpenFailureShowsFailureThenRetrySucceeds()"
+        }
+      ]
+    },
+    "latest-v2-ax-summary.json": {
+      "result": "Failed",
+      "totalTestCount": 13,
+      "passedTests": 10,
+      "failedTests": 3,
+      "skippedTests": 0,
+      "expectedFailures": 0,
+      "testFailures": [
+        {
+          "failureText": "Failed to tap \"try-it\" Any: No matches found for first query match sequence: `Descendants matching type Any` -> `Elements matching predicate '\"try-it\" IN identifiers'`, given input App element pid: 41048",
+          "targetName": "PulpoKeyboardUITests",
+          "testIdentifier": 2,
+          "testIdentifierString": "DraftNavigationTests/testSettingsRoundTripKeepsDraftAndDismissedReturnStaysHidden()",
+          "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/DraftNavigationTests/testSettingsRoundTripKeepsDraftAndDismissedReturnStaysHidden",
+          "testName": "testSettingsRoundTripKeepsDraftAndDismissedReturnStaysHidden()"
+        },
+        {
+          "failureText": "XCTAssertLessThanOrEqual failed: (\"2172.666666666667\") is greater than (\"494.33333333333326\")",
+          "targetName": "PulpoKeyboardUITests",
+          "testIdentifier": 4,
+          "testIdentifierString": "LearningClearScopeUITests/testSharedScopeConfirmationIsReadableAndCanBeCancelled()",
+          "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/LearningClearScopeUITests/testSharedScopeConfirmationIsReadableAndCanBeCancelled",
+          "testName": "testSharedScopeConfirmationIsReadableAndCanBeCancelled()"
+        },
+        {
+          "failureText": "Failed to tap \"try-it\" Any: No matches found for first query match sequence: `Descendants matching type Any` -> `Elements matching predicate '\"try-it\" IN identifiers'`, given input App element pid: 43159",
+          "targetName": "PulpoKeyboardUITests",
+          "testIdentifier": 3,
+          "testIdentifierString": "DraftNavigationTests/testSwitchingModesAndReturningKeepsTextFieldKindAndDismissal()",
+          "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/DraftNavigationTests/testSwitchingModesAndReturningKeepsTextFieldKindAndDismissal",
+          "testName": "testSwitchingModesAndReturningKeepsTextFieldKindAndDismissal()"
+        }
+      ]
+    },
+    "a9e-scope-probe-summary.json": {
+      "result": "Failed",
+      "totalTestCount": 1,
+      "passedTests": 0,
+      "failedTests": 1,
+      "skippedTests": 0,
+      "expectedFailures": 0,
+      "testFailures": [
+        {
+          "failureText": "XCTAssertLessThanOrEqual failed: (\"2172.666666666667\") is greater than (\"494.33333333333326\")",
+          "targetName": "PulpoKeyboardUITests",
+          "testIdentifier": 1,
+          "testIdentifierString": "LearningClearScopeUITests/testSharedScopeConfirmationIsReadableAndCanBeCancelled()",
+          "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/LearningClearScopeUITests/testSharedScopeConfirmationIsReadableAndCanBeCancelled",
+          "testName": "testSharedScopeConfirmationIsReadableAndCanBeCancelled()"
+        }
+      ]
+    },
+    "latest-v2-normal-summary.json": {
+      "result": "Passed",
+      "totalTestCount": 13,
+      "passedTests": 13,
+      "failedTests": 0,
+      "skippedTests": 0,
+      "expectedFailures": 0,
+      "testFailures": []
+    },
+    "a9e-normal-summary.json": {
+      "result": "Passed",
+      "totalTestCount": 13,
+      "passedTests": 13,
+      "failedTests": 0,
+      "skippedTests": 0,
+      "expectedFailures": 0,
+      "testFailures": []
+    },
+    "a9e-coordinate-normal-summary.json": {
+      "result": "Passed",
+      "totalTestCount": 8,
+      "passedTests": 8,
+      "failedTests": 0,
+      "skippedTests": 0,
+      "expectedFailures": 0,
+      "testFailures": []
+    },
+    "candidate-native-summary.json": {
+      "result": "Failed",
+      "totalTestCount": 46,
+      "passedTests": 40,
+      "failedTests": 5,
+      "skippedTests": 1,
+      "expectedFailures": 0,
+      "testFailures": [
+        {
+          "failureText": "XCTAssertNil failed: \"<PulpoKeyboard.PreviewInputView: 0x127443700; baseClass = UIInputView; frame = (0 0; 393 295); backgroundColor = UIExtendedSRGBColorSpace 0.878431 0.882353 0.909804 1; layer = <CALayer: 0x127290c60>>\"",
+          "targetName": "PulpoKeyboardAppTests",
+          "testIdentifier": 19,
+          "testIdentifierString": "PreviewDocumentLifecycleCounterchecks/testStandaloneDocumentSurvivesInputControllerEngineAndHostRelease()",
+          "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests/PreviewDocumentLifecycleCounterchecks/testStandaloneDocumentSurvivesInputControllerEngineAndHostRelease",
+          "testName": "testStandaloneDocumentSurvivesInputControllerEngineAndHostRelease()"
+        },
+        {
+          "failureText": "XCTAssertTrue failed",
+          "targetName": "PulpoKeyboardUITests",
+          "testIdentifier": 38,
+          "testIdentifierString": "LearningForgetControllerTests/testRealCanonicalSQLiteBusyShowsNoticeAndExplicitRetryConfirmsRemoval()",
+          "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/LearningForgetControllerTests/testRealCanonicalSQLiteBusyShowsNoticeAndExplicitRetryConfirmsRemoval",
+          "testName": "testRealCanonicalSQLiteBusyShowsNoticeAndExplicitRetryConfirmsRemoval()"
+        },
+        {
+          "failureText": "XCTAssertEqual failed: (\"0\") is not equal to (\"1\") - This precommit fault must retain the seeded word",
+          "targetName": "PulpoKeyboardUITests",
+          "testIdentifier": 40,
+          "testIdentifierString": "LearningResetResultUITests/testRealLockContentionShowsFailureThenRetrySucceedsLearningOff()",
+          "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/LearningResetResultUITests/testRealLockContentionShowsFailureThenRetrySucceedsLearningOff",
+          "testName": "testRealLockContentionShowsFailureThenRetrySucceedsLearningOff()"
+        },
+        {
+          "failureText": "XCTAssertEqual failed: (\"0\") is not equal to (\"1\") - This precommit fault must retain the seeded word",
+          "targetName": "PulpoKeyboardUITests",
+          "testIdentifier": 41,
+          "testIdentifierString": "LearningResetResultUITests/testRealLockContentionShowsFailureThenRetrySucceedsLearningOn()",
+          "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/LearningResetResultUITests/testRealLockContentionShowsFailureThenRetrySucceedsLearningOn",
+          "testName": "testRealLockContentionShowsFailureThenRetrySucceedsLearningOn()"
+        },
+        {
+          "failureText": "XCTAssertEqual failed: (\"0\") is not equal to (\"1\") - This precommit fault must retain the seeded word",
+          "targetName": "PulpoKeyboardUITests",
+          "testIdentifier": 42,
+          "testIdentifierString": "LearningResetResultUITests/testRealStorageOpenFailureShowsFailureThenRetrySucceeds()",
+          "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/LearningResetResultUITests/testRealStorageOpenFailureShowsFailureThenRetrySucceeds",
+          "testName": "testRealStorageOpenFailureShowsFailureThenRetrySucceeds()"
+        }
+      ]
+    },
+    "baseline-controller-v6-summary.json": {
+      "result": "Failed",
+      "totalTestCount": 1,
+      "passedTests": 0,
+      "failedTests": 1,
+      "skippedTests": 0,
+      "expectedFailures": 0,
+      "testFailures": [
+        {
+          "failureText": "XCTAssertTrue failed",
+          "targetName": "PulpoKeyboardUITests",
+          "testIdentifier": 1,
+          "testIdentifierString": "LearningForgetControllerTests/testRealCanonicalSQLiteBusyShowsNoticeAndExplicitRetryConfirmsRemoval()",
+          "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/LearningForgetControllerTests/testRealCanonicalSQLiteBusyShowsNoticeAndExplicitRetryConfirmsRemoval",
+          "testName": "testRealCanonicalSQLiteBusyShowsNoticeAndExplicitRetryConfirmsRemoval()"
+        }
+      ]
+    },
+    "candidate-v2-native-summary.json": {
+      "result": "Failed",
+      "totalTestCount": 49,
+      "passedTests": 45,
+      "failedTests": 2,
+      "skippedTests": 2,
+      "expectedFailures": 0,
+      "testFailures": [
+        {
+          "failureText": "XCTAssertNil failed: \"<PulpoKeyboard.PreviewInputView: 0x12aa9a080; baseClass = UIInputView; frame = (0 0; 393 295); backgroundColor = UIExtendedSRGBColorSpace 0.878431 0.882353 0.909804 1; layer = <CALayer: 0x12a8cebe0>>\"",
+          "targetName": "PulpoKeyboardAppTests",
+          "testIdentifier": 19,
+          "testIdentifierString": "PreviewDocumentLifecycleCounterchecks/testStandaloneDocumentSurvivesInputControllerEngineAndHostRelease()",
+          "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests/PreviewDocumentLifecycleCounterchecks/testStandaloneDocumentSurvivesInputControllerEngineAndHostRelease",
+          "testName": "testStandaloneDocumentSurvivesInputControllerEngineAndHostRelease()"
+        },
+        {
+          "failureText": "Invalid query - string identifier 'Clears learned words and touch adjustments shared with this app. Learning stored only inside a keyboard without shared access can’t be cleared here. Your language and keyboard settings stay as they are.' exceeds maximum length of 128 characters. You can work around this limitation by constructing a query with a custom NSPredicate that specifies the property (label, title, value, placeholderValue, or identifier) to match against. (NSInternalInconsistencyException)",
+          "targetName": "PulpoKeyboardUITests",
+          "testIdentifier": 40,
+          "testIdentifierString": "LearningClearScopeUITests/testSharedScopeConfirmationIsReadableAndCanBeCancelled()",
+          "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/LearningClearScopeUITests/testSharedScopeConfirmationIsReadableAndCanBeCancelled",
+          "testName": "testSharedScopeConfirmationIsReadableAndCanBeCancelled()"
+        }
+      ]
+    },
+    "a9e-ax5-summary.json": {
+      "result": "Failed",
+      "totalTestCount": 13,
+      "passedTests": 12,
+      "failedTests": 1,
+      "skippedTests": 0,
+      "expectedFailures": 0,
+      "testFailures": [
+        {
+          "failureText": "Failed to unable to perform Swipe up on ScrollView at {{76.0, 59.0}, {240.0, 419.3}}: visible frame is empty, which may happen if the element is offscreen.",
+          "targetName": "PulpoKeyboardUITests",
+          "testIdentifier": 4,
+          "testIdentifierString": "LearningClearScopeUITests/testSharedScopeConfirmationIsReadableAndCanBeCancelled()",
+          "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/LearningClearScopeUITests/testSharedScopeConfirmationIsReadableAndCanBeCancelled",
+          "testName": "testSharedScopeConfirmationIsReadableAndCanBeCancelled()"
+        }
+      ]
+    }
+  },
+  "nativeCommandOutcomes": {
+    "latest-native-outcome.json": {
+      "label": "latest-native",
+      "exit": 65,
+      "gateExit": 0,
+      "totalTestCount": 49,
+      "passedTests": 44,
+      "failedTests": 3,
+      "skippedTests": 2,
+      "testFailures": [
+        {
+          "failureText": "XCTAssertNil failed: \"<PulpoKeyboard.PreviewInputView: 0x12bf6e300; baseClass = UIInputView; frame = (0 0; 393 295); backgroundColor = UIExtendedSRGBColorSpace 0.878431 0.882353 0.909804 1; layer = <CALayer: 0x12bef5b90>>\"",
+          "targetName": "PulpoKeyboardAppTests",
+          "testIdentifier": 19,
+          "testIdentifierString": "PreviewDocumentLifecycleCounterchecks/testStandaloneDocumentSurvivesInputControllerEngineAndHostRelease()",
+          "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests/PreviewDocumentLifecycleCounterchecks/testStandaloneDocumentSurvivesInputControllerEngineAndHostRelease",
+          "testName": "testStandaloneDocumentSurvivesInputControllerEngineAndHostRelease()"
+        },
+        {
+          "failureText": "XCTAssertTrue failed",
+          "targetName": "PulpoKeyboardUITests",
+          "testIdentifier": 41,
+          "testIdentifierString": "LearningForgetControllerTests/testRealCanonicalSQLiteBusyShowsNoticeAndExplicitRetryConfirmsRemoval()",
+          "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/LearningForgetControllerTests/testRealCanonicalSQLiteBusyShowsNoticeAndExplicitRetryConfirmsRemoval",
+          "testName": "testRealCanonicalSQLiteBusyShowsNoticeAndExplicitRetryConfirmsRemoval()"
+        },
+        {
+          "failureText": "XCTAssertTrue failed",
+          "targetName": "PulpoKeyboardUITests",
+          "testIdentifier": 40,
+          "testIdentifierString": "LearningClearScopeUITests/testSharedScopeConfirmationIsReadableAndCanBeCancelled()",
+          "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/LearningClearScopeUITests/testSharedScopeConfirmationIsReadableAndCanBeCancelled",
+          "testName": "testSharedScopeConfirmationIsReadableAndCanBeCancelled()"
+        }
+      ]
+    },
+    "baseline-v5-outcome.json": {
+      "label": "baseline-v5",
+      "exit": 65,
+      "gateExit": 0,
+      "totalTestCount": 7,
+      "passedTests": 0,
+      "failedTests": 7,
+      "skippedTests": 0,
+      "testFailures": [
+        {
+          "failureText": "XCTAssertFalse failed",
+          "targetName": "PulpoKeyboardUITests",
+          "testIdentifier": 6,
+          "testIdentifierString": "SuggestionForgetFeedbackTests/testConfirmedSuccessDismissesOfferBeforeRefreshingSuggestions()",
+          "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/SuggestionForgetFeedbackTests/testConfirmedSuccessDismissesOfferBeforeRefreshingSuggestions",
+          "testName": "testConfirmedSuccessDismissesOfferBeforeRefreshingSuggestions()"
+        },
+        {
+          "failureText": "XCTAssertTrue failed - The original confirmation must not hide failure feedback",
+          "targetName": "PulpoKeyboardUITests",
+          "testIdentifier": 7,
+          "testIdentifierString": "SuggestionForgetFeedbackTests/testFailureNoticeSurvivesOriginalRemoveActionAndPreservesSuggestion()",
+          "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/SuggestionForgetFeedbackTests/testFailureNoticeSurvivesOriginalRemoveActionAndPreservesSuggestion",
+          "testName": "testFailureNoticeSurvivesOriginalRemoveActionAndPreservesSuggestion()"
+        },
+        {
+          "failureText": "XCTUnwrap failed: expected non-nil value of type \"Suggestion\"",
+          "targetName": "PulpoKeyboardUITests",
+          "testIdentifier": 1,
+          "testIdentifierString": "LearningForgetControllerTests/testRealCanonicalSQLiteBusyShowsNoticeAndExplicitRetryConfirmsRemoval()",
+          "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/LearningForgetControllerTests/testRealCanonicalSQLiteBusyShowsNoticeAndExplicitRetryConfirmsRemoval",
+          "testName": "testRealCanonicalSQLiteBusyShowsNoticeAndExplicitRetryConfirmsRemoval()"
+        },
+        {
+          "failureText": "failed - Real failure did not show the failure result alert",
+          "targetName": "PulpoKeyboardUITests",
+          "testIdentifier": 3,
+          "testIdentifierString": "LearningResetResultUITests/testRealLockContentionShowsFailureThenRetrySucceedsLearningOff()",
+          "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/LearningResetResultUITests/testRealLockContentionShowsFailureThenRetrySucceedsLearningOff",
+          "testName": "testRealLockContentionShowsFailureThenRetrySucceedsLearningOff()"
+        },
+        {
+          "failureText": "failed - Real failure did not show the failure result alert",
+          "targetName": "PulpoKeyboardUITests",
+          "testIdentifier": 4,
+          "testIdentifierString": "LearningResetResultUITests/testRealLockContentionShowsFailureThenRetrySucceedsLearningOn()",
+          "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/LearningResetResultUITests/testRealLockContentionShowsFailureThenRetrySucceedsLearningOn",
+          "testName": "testRealLockContentionShowsFailureThenRetrySucceedsLearningOn()"
+        },
+        {
+          "failureText": "failed - Actual controller did not retain failure notice",
+          "targetName": "PulpoKeyboardUITests",
+          "testIdentifier": 2,
+          "testIdentifierString": "LearningForgetResultUITests/testRealPreviewForgetNoticeIsReadableDismissibleAndRetryable()",
+          "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/LearningForgetResultUITests/testRealPreviewForgetNoticeIsReadableDismissibleAndRetryable",
+          "testName": "testRealPreviewForgetNoticeIsReadableDismissibleAndRetryable()"
+        },
+        {
+          "failureText": "failed - Real failure did not show the failure result alert",
+          "targetName": "PulpoKeyboardUITests",
+          "testIdentifier": 5,
+          "testIdentifierString": "LearningResetResultUITests/testRealStorageOpenFailureShowsFailureThenRetrySucceeds()",
+          "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/LearningResetResultUITests/testRealStorageOpenFailureShowsFailureThenRetrySucceeds",
+          "testName": "testRealStorageOpenFailureShowsFailureThenRetrySucceeds()"
+        }
+      ]
+    },
+    "a9e-coordinate-ax5-outcome.json": {
+      "label": "a9e-coordinate-ax5",
+      "exit": 0,
+      "gateExit": 0,
+      "totalTestCount": 8,
+      "passedTests": 8,
+      "failedTests": 0,
+      "skippedTests": 0,
+      "testFailures": []
+    },
+    "latest-v2-normal-outcome.json": {
+      "label": "latest-v2-normal",
+      "exit": 0,
+      "gateExit": 0,
+      "totalTestCount": 13,
+      "passedTests": 13,
+      "failedTests": 0,
+      "skippedTests": 0,
+      "testFailures": []
+    },
+    "a9e-normal-outcome.json": {
+      "label": "a9e-normal",
+      "exit": 0,
+      "gateExit": 0,
+      "totalTestCount": 13,
+      "passedTests": 13,
+      "failedTests": 0,
+      "skippedTests": 0,
+      "testFailures": []
+    },
+    "a9e-coordinate-normal-outcome.json": {
+      "label": "a9e-coordinate-normal",
+      "exit": 0,
+      "gateExit": 0,
+      "totalTestCount": 8,
+      "passedTests": 8,
+      "failedTests": 0,
+      "skippedTests": 0,
+      "testFailures": []
+    },
+    "latest-v2-ax-outcome.json": {
+      "label": "latest-v2-ax",
+      "exit": 65,
+      "gateExit": 0,
+      "totalTestCount": 13,
+      "passedTests": 10,
+      "failedTests": 3,
+      "skippedTests": 0,
+      "testFailures": [
+        {
+          "failureText": "Failed to tap \"try-it\" Any: No matches found for first query match sequence: `Descendants matching type Any` -> `Elements matching predicate '\"try-it\" IN identifiers'`, given input App element pid: 41048",
+          "targetName": "PulpoKeyboardUITests",
+          "testIdentifier": 2,
+          "testIdentifierString": "DraftNavigationTests/testSettingsRoundTripKeepsDraftAndDismissedReturnStaysHidden()",
+          "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/DraftNavigationTests/testSettingsRoundTripKeepsDraftAndDismissedReturnStaysHidden",
+          "testName": "testSettingsRoundTripKeepsDraftAndDismissedReturnStaysHidden()"
+        },
+        {
+          "failureText": "XCTAssertLessThanOrEqual failed: (\"2172.666666666667\") is greater than (\"494.33333333333326\")",
+          "targetName": "PulpoKeyboardUITests",
+          "testIdentifier": 4,
+          "testIdentifierString": "LearningClearScopeUITests/testSharedScopeConfirmationIsReadableAndCanBeCancelled()",
+          "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/LearningClearScopeUITests/testSharedScopeConfirmationIsReadableAndCanBeCancelled",
+          "testName": "testSharedScopeConfirmationIsReadableAndCanBeCancelled()"
+        },
+        {
+          "failureText": "Failed to tap \"try-it\" Any: No matches found for first query match sequence: `Descendants matching type Any` -> `Elements matching predicate '\"try-it\" IN identifiers'`, given input App element pid: 43159",
+          "targetName": "PulpoKeyboardUITests",
+          "testIdentifier": 3,
+          "testIdentifierString": "DraftNavigationTests/testSwitchingModesAndReturningKeepsTextFieldKindAndDismissal()",
+          "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/DraftNavigationTests/testSwitchingModesAndReturningKeepsTextFieldKindAndDismissal",
+          "testName": "testSwitchingModesAndReturningKeepsTextFieldKindAndDismissal()"
+        }
+      ]
+    },
+    "candidate-v2-native-outcome.json": {
+      "label": "candidate-v2-native",
+      "exit": 65,
+      "gateExit": 0,
+      "totalTestCount": 49,
+      "passedTests": 45,
+      "failedTests": 2,
+      "skippedTests": 2,
+      "testFailures": [
+        {
+          "failureText": "XCTAssertNil failed: \"<PulpoKeyboard.PreviewInputView: 0x12aa9a080; baseClass = UIInputView; frame = (0 0; 393 295); backgroundColor = UIExtendedSRGBColorSpace 0.878431 0.882353 0.909804 1; layer = <CALayer: 0x12a8cebe0>>\"",
+          "targetName": "PulpoKeyboardAppTests",
+          "testIdentifier": 19,
+          "testIdentifierString": "PreviewDocumentLifecycleCounterchecks/testStandaloneDocumentSurvivesInputControllerEngineAndHostRelease()",
+          "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests/PreviewDocumentLifecycleCounterchecks/testStandaloneDocumentSurvivesInputControllerEngineAndHostRelease",
+          "testName": "testStandaloneDocumentSurvivesInputControllerEngineAndHostRelease()"
+        },
+        {
+          "failureText": "Invalid query - string identifier 'Clears learned words and touch adjustments shared with this app. Learning stored only inside a keyboard without shared access can’t be cleared here. Your language and keyboard settings stay as they are.' exceeds maximum length of 128 characters. You can work around this limitation by constructing a query with a custom NSPredicate that specifies the property (label, title, value, placeholderValue, or identifier) to match against. (NSInternalInconsistencyException)",
+          "targetName": "PulpoKeyboardUITests",
+          "testIdentifier": 40,
+          "testIdentifierString": "LearningClearScopeUITests/testSharedScopeConfirmationIsReadableAndCanBeCancelled()",
+          "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/LearningClearScopeUITests/testSharedScopeConfirmationIsReadableAndCanBeCancelled",
+          "testName": "testSharedScopeConfirmationIsReadableAndCanBeCancelled()"
+        }
+      ]
+    },
+    "a9e-ax5-outcome.json": {
+      "label": "a9e-ax5",
+      "exit": 65,
+      "gateExit": 0,
+      "totalTestCount": 13,
+      "passedTests": 12,
+      "failedTests": 1,
+      "skippedTests": 0,
+      "testFailures": [
+        {
+          "failureText": "Failed to unable to perform Swipe up on ScrollView at {{76.0, 59.0}, {240.0, 419.3}}: visible frame is empty, which may happen if the element is offscreen.",
+          "targetName": "PulpoKeyboardUITests",
+          "testIdentifier": 4,
+          "testIdentifierString": "LearningClearScopeUITests/testSharedScopeConfirmationIsReadableAndCanBeCancelled()",
+          "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/LearningClearScopeUITests/testSharedScopeConfirmationIsReadableAndCanBeCancelled",
+          "testName": "testSharedScopeConfirmationIsReadableAndCanBeCancelled()"
+        }
+      ]
+    }
+  },
+  "finalFocusedReplay": {
+    "a9e-coordinate-normal": {
+      "label": "a9e-coordinate-normal",
+      "exit": 0,
+      "gateExit": 0,
+      "totalTestCount": 8,
+      "passedTests": 8,
+      "failedTests": 0,
+      "skippedTests": 0,
+      "testFailures": []
+    },
+    "a9e-coordinate-ax5": {
+      "label": "a9e-coordinate-ax5",
+      "exit": 0,
+      "gateExit": 0,
+      "totalTestCount": 8,
+      "passedTests": 8,
+      "failedTests": 0,
+      "skippedTests": 0,
+      "testFailures": []
+    }
+  },
+  "firstBroaderA9eReplay": {
+    "a9e-normal": {
+      "label": "a9e-normal",
+      "exit": 0,
+      "gateExit": 0,
+      "totalTestCount": 13,
+      "passedTests": 13,
+      "failedTests": 0,
+      "skippedTests": 0,
+      "testFailures": []
+    },
+    "a9e-ax5": {
+      "label": "a9e-ax5",
+      "exit": 65,
+      "gateExit": 0,
+      "totalTestCount": 13,
+      "passedTests": 12,
+      "failedTests": 1,
+      "skippedTests": 0,
+      "testFailures": [
+        {
+          "failureText": "Failed to unable to perform Swipe up on ScrollView at {{76.0, 59.0}, {240.0, 419.3}}: visible frame is empty, which may happen if the element is offscreen.",
+          "targetName": "PulpoKeyboardUITests",
+          "testIdentifier": 4,
+          "testIdentifierString": "LearningClearScopeUITests/testSharedScopeConfirmationIsReadableAndCanBeCancelled()",
+          "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/LearningClearScopeUITests/testSharedScopeConfirmationIsReadableAndCanBeCancelled",
+          "testName": "testSharedScopeConfirmationIsReadableAndCanBeCancelled()"
+        }
+      ]
+    }
+  },
+  "finalCore": {
+    "sourceDependency": "a9e6ecfc895263721f14b8635dab8c3e87162839",
+    "integrationCommit": "9059b94a",
+    "discoveredFunctions": {
+      "PulpoServicesTests": 3,
+      "KeyboardCoreTests": 460
+    },
+    "endedFunctions": {
+      "PulpoServicesTests": 3,
+      "KeyboardCoreTests": 441
+    },
+    "skipped": [
+      "KeyboardCoreTests.BlindInputStressTests/frozenInputStressAudit()/BlindInputStressTests.swift:57:4",
+      "KeyboardCoreTests.EngineFuzzTests/longRandomizedEditingRun()/EngineFuzzTests.swift:101:4",
+      "KeyboardCoreTests.GlideCalibrationTests/calibrate()/GlideCalibrationTests.swift:104:4",
+      "KeyboardCoreTests.GlideTuningTests/compareSpatialParameters()/GlideTuningTests.swift:8:4",
+      "KeyboardCoreTests.HumanSwipeAuditTests/decodeRecordedHumanSwipes()/HumanSwipeAuditTests.swift:45:4",
+      "KeyboardCoreTests.HumanSwipeContextTests/decodeRecordedSwipesInContext()/HumanSwipeContextTests.swift:215:4",
+      "KeyboardCoreTests.HumanSwipeContextTests/decodeCleanControlPaths()/HumanSwipeContextTests.swift:220:4",
+      "KeyboardCoreTests.KeyboardQualityTests/evaluateExternalPredictionHoldout()/KeyboardQualityTests.swift:78:4",
+      "KeyboardCoreTests.KeyboardQualityTests/evaluateContextualSwipesOnUnseenMessages()/KeyboardQualityTests.swift:104:4",
+      "KeyboardCoreTests.KeyboardQualityTests/evaluateCleanTypingOnUnseenContexts()/KeyboardQualityTests.swift:130:4",
+      "KeyboardCoreTests.KeyboardQualityTests/auditQuality()/KeyboardQualityTests.swift:169:4",
+      "KeyboardCoreTests.KeystrokeSavingsBenchmarkTests/measureKeystrokeSavings()/KeystrokeSavingsBenchmarkTests.swift:361:4",
+      "KeyboardCoreTests.PairedTypingProbeTests/evaluateFrozenPairedTypingProbe()/PairedTypingProbeTests.swift:28:4",
+      "KeyboardCoreTests.PerformanceBenchmarkTests/measureKeyboardResponsiveness()/PerformanceBenchmarkTests.swift:291:4",
+      "KeyboardCoreTests.ShiftSequenceTests/evaluateFrozenRapidCasingVerification()/ShiftSequenceTests.swift:6:4",
+      "KeyboardCoreTests.SwipeBenchmarkTests/decodeBenchmarkPaths()/SwipeBenchmarkTests.swift:20:4",
+      "KeyboardCoreTests.SwipeWorkflowTests/replayRecordedRecovery()/SwipeWorkflowTests.swift:603:4",
+      "KeyboardCoreTests.SwipeWorkflowTests/reportScenarios()/SwipeWorkflowTests.swift:679:4",
+      "KeyboardCoreTests.TapCorrectionBenchmarkTests/replayFrozenTapBenchmark()/TapCorrectionBenchmarkTests.swift:285:4"
+    ],
+    "issues": [
+      {
+        "testID": "KeyboardCoreTests.EngineFuzzRegressionTests/hostRevertToARecentOwnStateIsAKnownAmbiguity(_:)/EngineFuzzRegressionTests.swift:215:4",
+        "known": true,
+        "isFailure": false
+      },
+      {
+        "testID": "KeyboardCoreTests.EngineFuzzRegressionTests/hostRevertToARecentOwnStateIsAKnownAmbiguity(_:)/EngineFuzzRegressionTests.swift:215:4",
+        "known": true,
+        "isFailure": false
+      },
+      {
+        "testID": "KeyboardCoreTests.MultilingualTests/frozenAcceptanceBenchmark(resource:)/MultilingualTests.swift:9:4",
+        "known": true,
+        "isFailure": false
+      },
+      {
+        "testID": "KeyboardCoreTests.MultilingualTests/frozenAcceptanceBenchmark(resource:)/MultilingualTests.swift:9:4",
+        "known": true,
+        "isFailure": false
+      },
+      {
+        "testID": "KeyboardCoreTests.MultilingualTests/frozenAcceptanceBenchmark(resource:)/MultilingualTests.swift:9:4",
+        "known": true,
+        "isFailure": false
+      }
+    ],
+    "runEndedMessages": [
+      [
+        {
+          "symbol": "pass",
+          "text": "Test run with 3 tests in 1 suite passed after 0.001 seconds."
+        }
+      ],
+      [
+        {
+          "symbol": "passWithKnownIssue",
+          "text": "Test run with 460 tests in 66 suites passed after 31.920 seconds with 5 known issues."
+        }
+      ]
+    ]
+  },
+  "prior4fa9Core": {
+    "sourceDependency": "4fa9b1e7b39cb1e5db835eeb3c4b111f6540c566",
+    "integrationCommit": "e89886c698cbb276d99e03c6cd9d1abc1b8b2c89",
+    "discoveredFunctions": {
+      "PulpoServicesTests": 3,
+      "KeyboardCoreTests": 457
+    },
+    "endedFunctions": {
+      "PulpoServicesTests": 3,
+      "KeyboardCoreTests": 438
+    },
+    "skipped": [
+      "KeyboardCoreTests.BlindInputStressTests/frozenInputStressAudit()/BlindInputStressTests.swift:57:4",
+      "KeyboardCoreTests.EngineFuzzTests/longRandomizedEditingRun()/EngineFuzzTests.swift:101:4",
+      "KeyboardCoreTests.GlideCalibrationTests/calibrate()/GlideCalibrationTests.swift:104:4",
+      "KeyboardCoreTests.GlideTuningTests/compareSpatialParameters()/GlideTuningTests.swift:8:4",
+      "KeyboardCoreTests.HumanSwipeAuditTests/decodeRecordedHumanSwipes()/HumanSwipeAuditTests.swift:45:4",
+      "KeyboardCoreTests.HumanSwipeContextTests/decodeRecordedSwipesInContext()/HumanSwipeContextTests.swift:215:4",
+      "KeyboardCoreTests.HumanSwipeContextTests/decodeCleanControlPaths()/HumanSwipeContextTests.swift:220:4",
+      "KeyboardCoreTests.KeyboardQualityTests/evaluateExternalPredictionHoldout()/KeyboardQualityTests.swift:78:4",
+      "KeyboardCoreTests.KeyboardQualityTests/evaluateContextualSwipesOnUnseenMessages()/KeyboardQualityTests.swift:104:4",
+      "KeyboardCoreTests.KeyboardQualityTests/evaluateCleanTypingOnUnseenContexts()/KeyboardQualityTests.swift:130:4",
+      "KeyboardCoreTests.KeyboardQualityTests/auditQuality()/KeyboardQualityTests.swift:169:4",
+      "KeyboardCoreTests.KeystrokeSavingsBenchmarkTests/measureKeystrokeSavings()/KeystrokeSavingsBenchmarkTests.swift:361:4",
+      "KeyboardCoreTests.PairedTypingProbeTests/evaluateFrozenPairedTypingProbe()/PairedTypingProbeTests.swift:28:4",
+      "KeyboardCoreTests.PerformanceBenchmarkTests/measureKeyboardResponsiveness()/PerformanceBenchmarkTests.swift:291:4",
+      "KeyboardCoreTests.ShiftSequenceTests/evaluateFrozenRapidCasingVerification()/ShiftSequenceTests.swift:6:4",
+      "KeyboardCoreTests.SwipeBenchmarkTests/decodeBenchmarkPaths()/SwipeBenchmarkTests.swift:20:4",
+      "KeyboardCoreTests.SwipeWorkflowTests/replayRecordedRecovery()/SwipeWorkflowTests.swift:603:4",
+      "KeyboardCoreTests.SwipeWorkflowTests/reportScenarios()/SwipeWorkflowTests.swift:679:4",
+      "KeyboardCoreTests.TapCorrectionBenchmarkTests/replayFrozenTapBenchmark()/TapCorrectionBenchmarkTests.swift:285:4"
+    ],
+    "issues": [
+      {
+        "testID": "KeyboardCoreTests.EngineFuzzRegressionTests/hostRevertToARecentOwnStateIsAKnownAmbiguity(_:)/EngineFuzzRegressionTests.swift:215:4",
+        "known": true,
+        "isFailure": false
+      },
+      {
+        "testID": "KeyboardCoreTests.EngineFuzzRegressionTests/hostRevertToARecentOwnStateIsAKnownAmbiguity(_:)/EngineFuzzRegressionTests.swift:215:4",
+        "known": true,
+        "isFailure": false
+      },
+      {
+        "testID": "KeyboardCoreTests.MultilingualTests/frozenAcceptanceBenchmark(resource:)/MultilingualTests.swift:9:4",
+        "known": true,
+        "isFailure": false
+      },
+      {
+        "testID": "KeyboardCoreTests.MultilingualTests/frozenAcceptanceBenchmark(resource:)/MultilingualTests.swift:9:4",
+        "known": true,
+        "isFailure": false
+      },
+      {
+        "testID": "KeyboardCoreTests.MultilingualTests/frozenAcceptanceBenchmark(resource:)/MultilingualTests.swift:9:4",
+        "known": true,
+        "isFailure": false
+      }
+    ],
+    "runEndedMessages": [
+      [
+        {
+          "symbol": "pass",
+          "text": "Test run with 3 tests in 1 suite passed after 0.001 seconds."
+        }
+      ],
+      [
+        {
+          "symbol": "passWithKnownIssue",
+          "text": "Test run with 457 tests in 66 suites passed after 47.168 seconds with 5 known issues."
+        }
+      ]
+    ]
+  },
+  "matched2357": {
+    "barSettingsAndPreview": "baseline-v5 vs candidate-v2-native, six valid matched UI controls",
+    "controller": "baseline-controller-v6 vs candidate-controller-v3, identical then-current test hash; red1/1 vs green1/1",
+    "baselineV5Controller": "unavailable setup from a previous explicit block, not a product red"
+  },
+  "limits": [
+    "R33 independent/blind/native whole-feature admission remains parent-owned",
+    "Parent committed a separately reviewed R45 noURL TouchModel length correction; read-only compatibility inference only, no R45 import/native run/admission",
+    "No native uncertain/cleanup injection",
+    "No spoken VoiceOver evidence; post() alone is not spoken-output evidence",
+    "Notice retains existing fixed14pt font; text visibility/hit testing does not prove Dynamic Type scaling",
+    "All22 AppTests at this base were included; separate R35 account tests and full installed/audio UITests catalog were not imported",
+    "Two existing native opt-in skips in broad49 and19 existing core opt-in skips remain",
+    "Initial baseline/v3/v4 and first a9e scope diagnostic lack separate test-bundle binary hashes; source/xcresults retained, later matched/final replays include binary hashes"
+  ],
+  "policy": {
+    "successfulRawLogsRead": false,
+    "R33SealsReadAuthoredOrRun": false,
+    "workerDirtyFilesUsed": false,
+    "productionResultOverrides": false,
+    "productionAppGroupConstantChanged": false,
+    "newProductionTestSeams": false,
+    "quietWindowReserved": false,
+    "performanceClaim": false,
+    "pushedMergedOrPhysicalDeployed": false
+  },
+  "nativeSourceBindings": {
+    "candidate-v2-native": "2357e191",
+    "latest-native": "4fa9b1e7",
+    "latest-v2-normal": "4fa9b1e7",
+    "latest-v2-ax": "4fa9b1e7",
+    "a9e-normal": "a9e6ecfc",
+    "a9e-ax5": "a9e6ecfc",
+    "a9e-scope-coordinate-ax5": "a9e6ecfc",
+    "a9e-coordinate-normal": "a9e6ecfc",
+    "a9e-coordinate-ax5": "a9e6ecfc"
+  },
+  "deviceRelease": {
+    "ownedDeviceUUID": "F3191384-9F35-4AC4-A739-37E6C7C8D584",
+    "shutdownExit": 0,
+    "deleteExit": 0,
+    "absentFromSimulatorInventory": true,
+    "contentSizeBeforeDelete": "large",
+    "allFinalFaultCasesRestored": true,
+    "faultControlAbsent": true,
+    "iphone17": {
+      "UUID": "1EDC5D9A-7E25-432A-B5B1-9A8B702306A7",
+      "untouchedByThisTask": true,
+      "originalLargeAndHardwareKeyboardFalseUntouched": true,
+      "baselineInstallUntouched": true,
+      "initialBinarySHA256": "a8b67f308102099b38e23c48c02c674c6f7101e77354df3f978ea6d8f0bdbff3",
+      "finalObservedBinarySHA256": "a8b67f308102099b38e23c48c02c674c6f7101e77354df3f978ea6d8f0bdbff3",
+      "binaryStillMatches": true,
+      "unknownUserStoresOrSessionsModified": false
+    },
+    "otherDevicesModified": false,
+    "productionAppGroupConstantChanged": false
+  },
+  "finalFocusedSameSourceAndBinary": true,
+  "finalFocusedSourceCommit": "b94f3b1eefcd3d9172417d513f64caea301939d2",
+  "finalR45SourceCompatibility": {
+    "classification": "Read-only source compatibility inference; no import or native R45 claim",
+    "integratedDependency": "a9e6ecfc895263721f14b8635dab8c3e87162839",
+    "separateParentCorrection": "c2442112ae37625a848b0da981e7cb61dc24fd76",
+    "file": "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Geometry/TouchModel.swift",
+    "oldSHA256": "fc5f3d9f9f6fdd57d8aa7c4e61556ef29284339ccd3f045c22404701b08e06ef",
+    "newSHA256": "696843c4f16b2132715558fbf67d2b7560344a51f3916dafca5b08ea0b0ff443",
+    "delta": "diff --git a/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Geometry/TouchModel.swift b/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Geometry/TouchModel.swift\nindex 0bf21f04..6db94287 100644\n--- a/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Geometry/TouchModel.swift\n+++ b/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Geometry/TouchModel.swift\n@@ -106,7 +106,7 @@ public final class TouchModel {\n     guard isLearning else { persistenceResult = .invalid; return false }\n     let keyed = word.keyed\n     let target = Array(TextNormalizer.key(intended).utf8)\n-    guard target.count == keyed.bytes.count, target.count >= 2, target.count <= 40 else { persistenceResult = .invalid; return false }\n+    guard target.count == keyed.bytes.count, target.count >= 2 else { persistenceResult = .invalid; return false }\n     var samples: [TouchSample] = []\n     for (index, byte) in target.enumerated() {\n       guard byte >= 97, byte <= 122, let tap = keyed.taps[index], let center = geometry.center(byte) else { continue }\n",
+    "assessment": "Only the unconditional target byte-count upper bound is removed in this file. Existing short-word UI/fault fixtures exercise unchanged guard outcomes. Parent owns R45 core/source/blind admission and final merged integration binding. Other parent branch changes were not imported.",
+    "nativeR45Execution": false
+  },
+  "firstBroaderA9eSameSourceAndBinary": true
+}

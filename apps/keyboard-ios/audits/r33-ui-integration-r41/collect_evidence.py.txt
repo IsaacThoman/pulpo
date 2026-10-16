@@ -1,0 +1,67 @@
+#!/usr/bin/env python3
+"""Summarize retained structured outcomes. Never interpret redirected raw logs."""
+import collections, hashlib, json, pathlib, subprocess
+ROOT=pathlib.Path(__file__).resolve().parents[4]
+OUT=pathlib.Path(__file__).resolve().parent
+RAW=pathlib.Path('/tmp/pulpo-r41-validation')
+
+# Run only after the native sessions finish and the owned device is released.
+records={}
+outcomes={}
+for path in RAW.glob('*summary.json'):
+    j=json.loads(path.read_text())
+    if 'totalTestCount' in j:
+        records[path.name]={k:j.get(k) for k in ['result','totalTestCount','passedTests','failedTests','skippedTests','expectedFailures','testFailures']}
+    (OUT/path.name).write_bytes(path.read_bytes())
+for pattern in ['*source-binary-hashes.json','*fixture-receipt.json','*gate-session.json','*core-binary-hashes.json','device-release.json','iphone17-preserved.json','owned-fixture-format-transition.json','final-owned-fixture-inventory.json']:
+    for path in RAW.glob(pattern):(OUT/path.name).write_bytes(path.read_bytes())
+for path in RAW.glob('*Tests-v*.swift.txt'):(OUT/'attempts'/path.name).write_bytes(path.read_bytes())
+
+for path in RAW.glob('*outcome.json'):
+    value=json.loads(path.read_text());outcomes[path.name]=value
+    (OUT/path.name).write_bytes(path.read_bytes())
+for path in RAW.glob('*category.json'):(OUT/path.name).write_bytes(path.read_bytes())
+gates={}
+for path in RAW.glob('*gate-session.json'):
+    root=pathlib.Path(json.loads(path.read_text())['root'])
+    gates[path.name]={p.name:json.loads(p.read_text()) for p in root.glob('*.json') if p.is_file()}
+(OUT/'native-gate-markers.json').write_text(json.dumps(gates,indent=2)+'\n')
+statuses={}
+for label in ['candidate-v2-native','latest-native','latest-v2-normal','latest-v2-ax','a9e-normal','a9e-ax5','a9e-scope-coordinate-ax5','a9e-coordinate-normal','a9e-coordinate-ax5']:
+    bundle=RAW/(label+'.xcresult')
+    if not (bundle/'Info.plist').exists():continue
+    value=json.loads(subprocess.check_output(['xcrun','xcresulttool','get','test-results','tests','--path',str(bundle),'--compact'],text=True))
+    (RAW/(label+'-tests.json')).write_text(json.dumps(value)+'\n')
+    leaves=[]
+    def walk(node):
+        if isinstance(node,dict):
+            if node.get('nodeType')=='Test Case':
+                leaves.append({k:node.get(k) for k in ['name','nodeIdentifier','result']})
+            for v in node.values():
+                if isinstance(v,(dict,list)):walk(v)
+        elif isinstance(node,list):
+            for v in node:walk(v)
+    walk(value);statuses[label]=leaves
+(OUT/'executed-native-tests.json').write_text(json.dumps(statuses,indent=2)+'\n')
+
+commits=[{'hash':line.split(' ',1)[0],'summary':line.split(' ',1)[1]} for line in subprocess.check_output(['git','log','--format=%H %s','00b46dd5..HEAD'],cwd=ROOT,text=True).splitlines()]
+report={'classification':'EXPOSED owner UI integration; R33 storage UNADMITTED','base':'00b46dd57626ff389a17e0079a69f30a4b55e8fb','dependencyVersions':[{'source':'2357e19156e79edc9842a3b9626d9ab18b3f6f36','copyCommit':'403a87ba'},{'source':'4fa9b1e7b39cb1e5db835eeb3c4b111f6540c566','copyCommit':'e89886c6'},{'source':'a9e6ecfc895263721f14b8635dab8c3e87162839','copyCommit':'9059b94a'}],'productionUICommit':'c156797b','commits':commits,'nativeRuns':records,'nativeCommandOutcomes':outcomes,'finalFocusedReplay':{label:outcomes.get(label+'-outcome.json') for label in ['a9e-coordinate-normal','a9e-coordinate-ax5']},'firstBroaderA9eReplay':{label:outcomes.get(label+'-outcome.json') for label in ['a9e-normal','a9e-ax5']},'finalCore':json.loads((RAW/'a9e-core-release-event-summary.json').read_text()),'prior4fa9Core':json.loads((RAW/'latest-core-release-event-summary.json').read_text()),'matched2357':{'barSettingsAndPreview':'baseline-v5 vs candidate-v2-native, six valid matched UI controls','controller':'baseline-controller-v6 vs candidate-controller-v3, identical then-current test hash; red1/1 vs green1/1','baselineV5Controller':'unavailable setup from a previous explicit block, not a product red'},'limits':['R33 independent/blind/native whole-feature admission remains parent-owned','Parent committed a separately reviewed R45 noURL TouchModel length correction; read-only compatibility inference only, no R45 import/native run/admission','No native uncertain/cleanup injection','No spoken VoiceOver evidence; post() alone is not spoken-output evidence','Notice retains existing fixed14pt font; text visibility/hit testing does not prove Dynamic Type scaling','All22 AppTests at this base were included; separate R35 account tests and full installed/audio UITests catalog were not imported','Two existing native opt-in skips in broad49 and19 existing core opt-in skips remain','Initial baseline/v3/v4 and first a9e scope diagnostic lack separate test-bundle binary hashes; source/xcresults retained, later matched/final replays include binary hashes'],'policy':{'successfulRawLogsRead':False,'R33SealsReadAuthoredOrRun':False,'workerDirtyFilesUsed':False,'productionResultOverrides':False,'productionAppGroupConstantChanged':False,'newProductionTestSeams':False,'quietWindowReserved':False,'performanceClaim':False,'pushedMergedOrPhysicalDeployed':False},'nativeSourceBindings':{label:('a9e6ecfc' if label.startswith('a9e') else '4fa9b1e7' if label.startswith('latest') else '2357e191') for label in statuses},'deviceRelease':json.loads((RAW/'device-release.json').read_text())}
+normal=json.loads((RAW/'a9e-coordinate-normal-source-binary-hashes.json').read_text())
+ax=json.loads((RAW/'a9e-coordinate-ax5-source-binary-hashes.json').read_text())
+assert normal==ax, 'Final focused normal/AX source/binary receipts differ'
+report['finalFocusedSameSourceAndBinary']=True
+assert json.loads((RAW/'a9e-normal-source-binary-hashes.json').read_text())==json.loads((RAW/'a9e-ax5-source-binary-hashes.json').read_text())
+report['firstBroaderA9eSameSourceAndBinary']=True
+report['finalFocusedSourceCommit']=normal['head']
+report['finalR45SourceCompatibility']=json.loads((OUT/'r45-source-compatibility.json').read_text())
+(OUT/'validation.json').write_text(json.dumps(report,indent=2,ensure_ascii=False)+'\n')
+
+# Cryptographic artifact inventory only; no log contents are exposed/interpreted.
+manifest={str(p):{'bytes':p.stat().st_size,'sha256':hashlib.sha256(p.read_bytes()).hexdigest()} for p in RAW.iterdir() if p.is_file()}
+for session in RAW.glob('*gate-session.json'):
+    root=pathlib.Path(json.loads(session.read_text())['root'])
+    if root.exists():
+        for p in root.iterdir():
+            if p.is_file():manifest[str(p)]={'bytes':p.stat().st_size,'sha256':hashlib.sha256(p.read_bytes()).hexdigest()}
+(OUT/'raw-artifact-manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
+print('Structured evidence collected',len(records),'summaries; raw manifest',len(manifest),'artifacts')

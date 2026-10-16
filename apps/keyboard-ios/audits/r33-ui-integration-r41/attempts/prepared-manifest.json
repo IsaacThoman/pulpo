@@ -1,0 +1,15 @@
+{
+  "sourceCheckout": "/Users/isaacthoman/.t3/worktrees/pulpo/t3-75300fc6",
+  "scope": "Derived parent integration UI proposal only; no worker/ROOT source edits or persistence edits",
+  "files": {
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardUI/KeyboardController.swift": {
+      "baselineSHA256": "3b4e7997dd7a7429da4737e68045725c14381c7881424d0cb91e50c6744755b8",
+      "candidateSHA256": "b62134d9dcfbba4b37a1e1c8d6ef14062057b69026312b8078ca675d2877d54b"
+    },
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardUI/SuggestionBarView.swift": {
+      "baselineSHA256": "200058d705495b59d93991b652c7915cad3e711a9f134393836f5a602d31fc0e",
+      "candidateSHA256": "ec1c5a7aadf8a51dff940855a7fbbc941f987e5a208363622c0323cf07105400"
+    }
+  },
+  "patchSHA256": "f9fe9fb811dc414ebb8151914ee637c9c20d1c54ae58418d7357ce91794af6e9"
+}

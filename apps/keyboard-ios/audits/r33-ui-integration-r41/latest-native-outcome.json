@@ -1,0 +1,35 @@
+{
+  "label": "latest-native",
+  "exit": 65,
+  "gateExit": 0,
+  "totalTestCount": 49,
+  "passedTests": 44,
+  "failedTests": 3,
+  "skippedTests": 2,
+  "testFailures": [
+    {
+      "failureText": "XCTAssertNil failed: \"<PulpoKeyboard.PreviewInputView: 0x12bf6e300; baseClass = UIInputView; frame = (0 0; 393 295); backgroundColor = UIExtendedSRGBColorSpace 0.878431 0.882353 0.909804 1; layer = <CALayer: 0x12bef5b90>>\"",
+      "targetName": "PulpoKeyboardAppTests",
+      "testIdentifier": 19,
+      "testIdentifierString": "PreviewDocumentLifecycleCounterchecks/testStandaloneDocumentSurvivesInputControllerEngineAndHostRelease()",
+      "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests/PreviewDocumentLifecycleCounterchecks/testStandaloneDocumentSurvivesInputControllerEngineAndHostRelease",
+      "testName": "testStandaloneDocumentSurvivesInputControllerEngineAndHostRelease()"
+    },
+    {
+      "failureText": "XCTAssertTrue failed",
+      "targetName": "PulpoKeyboardUITests",
+      "testIdentifier": 41,
+      "testIdentifierString": "LearningForgetControllerTests/testRealCanonicalSQLiteBusyShowsNoticeAndExplicitRetryConfirmsRemoval()",
+      "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/LearningForgetControllerTests/testRealCanonicalSQLiteBusyShowsNoticeAndExplicitRetryConfirmsRemoval",
+      "testName": "testRealCanonicalSQLiteBusyShowsNoticeAndExplicitRetryConfirmsRemoval()"
+    },
+    {
+      "failureText": "XCTAssertTrue failed",
+      "targetName": "PulpoKeyboardUITests",
+      "testIdentifier": 40,
+      "testIdentifierString": "LearningClearScopeUITests/testSharedScopeConfirmationIsReadableAndCanBeCancelled()",
+      "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/LearningClearScopeUITests/testSharedScopeConfirmationIsReadableAndCanBeCancelled",
+      "testName": "testSharedScopeConfirmationIsReadableAndCanBeCancelled()"
+    }
+  ]
+}

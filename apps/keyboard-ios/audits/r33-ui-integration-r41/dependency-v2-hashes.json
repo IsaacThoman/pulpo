@@ -1,0 +1,15 @@
+{
+  "oldExactDependency": "2357e19156e79edc9842a3b9626d9ab18b3f6f36",
+  "newExactDependency": "4fa9b1e7b39cb1e5db835eeb3c4b111f6540c566",
+  "classification": "INTEGRATION DEPENDENCY ONLY, UNADMITTED R33",
+  "files": {
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Dictionary/PersonalDictionary.swift": "191be9a52b4f9ba13d882b8aff0b6edf198e9bd6b2d1e8a758c8a74deeb32994",
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Shared/LearnedDataPersistence.swift": "b8b677359f055c29f3b325a31a664974101740499c9ede3df86adafe72a97390",
+    "apps/keyboard-ios/PulpoKeyboardKit/Tests/KeyboardCoreTests/LearningPersistenceTests.swift": "92120a12af70db5d686c6007ef9e5b935b8b02983475e0af81aacef1b1f1cf06"
+  },
+  "unchangedUI": {
+    "apps/keyboard-ios/App/PulpoKeyboardApp.swift": "1ff4b34077ad63148acb3ae97c7d1465dd391aec6784276e580b9383f66a5617",
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardUI/KeyboardController.swift": "b62134d9dcfbba4b37a1e1c8d6ef14062057b69026312b8078ca675d2877d54b",
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardUI/SuggestionBarView.swift": "ec1c5a7aadf8a51dff940855a7fbbc941f987e5a208363622c0323cf07105400"
+  }
+}

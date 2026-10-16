@@ -1,0 +1,35 @@
+{
+  "label": "latest-v2-ax",
+  "exit": 65,
+  "gateExit": 0,
+  "totalTestCount": 13,
+  "passedTests": 10,
+  "failedTests": 3,
+  "skippedTests": 0,
+  "testFailures": [
+    {
+      "failureText": "Failed to tap \"try-it\" Any: No matches found for first query match sequence: `Descendants matching type Any` -> `Elements matching predicate '\"try-it\" IN identifiers'`, given input App element pid: 41048",
+      "targetName": "PulpoKeyboardUITests",
+      "testIdentifier": 2,
+      "testIdentifierString": "DraftNavigationTests/testSettingsRoundTripKeepsDraftAndDismissedReturnStaysHidden()",
+      "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/DraftNavigationTests/testSettingsRoundTripKeepsDraftAndDismissedReturnStaysHidden",
+      "testName": "testSettingsRoundTripKeepsDraftAndDismissedReturnStaysHidden()"
+    },
+    {
+      "failureText": "XCTAssertLessThanOrEqual failed: (\"2172.666666666667\") is greater than (\"494.33333333333326\")",
+      "targetName": "PulpoKeyboardUITests",
+      "testIdentifier": 4,
+      "testIdentifierString": "LearningClearScopeUITests/testSharedScopeConfirmationIsReadableAndCanBeCancelled()",
+      "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/LearningClearScopeUITests/testSharedScopeConfirmationIsReadableAndCanBeCancelled",
+      "testName": "testSharedScopeConfirmationIsReadableAndCanBeCancelled()"
+    },
+    {
+      "failureText": "Failed to tap \"try-it\" Any: No matches found for first query match sequence: `Descendants matching type Any` -> `Elements matching predicate '\"try-it\" IN identifiers'`, given input App element pid: 43159",
+      "targetName": "PulpoKeyboardUITests",
+      "testIdentifier": 3,
+      "testIdentifierString": "DraftNavigationTests/testSwitchingModesAndReturningKeepsTextFieldKindAndDismissal()",
+      "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/DraftNavigationTests/testSwitchingModesAndReturningKeepsTextFieldKindAndDismissal",
+      "testName": "testSwitchingModesAndReturningKeepsTextFieldKindAndDismissal()"
+    }
+  ]
+}

@@ -1,0 +1,178 @@
+#!/usr/bin/env python3
+"""Host-side real App Group lock faults; never launches/builds/drives an app."""
+import argparse
+import fcntl
+import hashlib
+import json
+import os
+from pathlib import Path
+import plistlib
+import signal
+import stat
+import tempfile
+import time
+import uuid
+
+CONTROL = Path('/tmp/pulpo-r33-settings-reset-native-control.json')
+GROUP = 'group.com.isaacthoman.pulpo.keyboard'
+CASES = ('busy-on', 'busy-off', 'io-on')
+STOP = False
+
+
+def atomic(path, value):
+    tmp = path.with_name(path.name + '.writing')
+    tmp.write_text(json.dumps(value, sort_keys=True) + '\n')
+    tmp.replace(path)
+
+
+def identity(path):
+    info = path.lstat()
+    if not stat.S_ISREG(info.st_mode):
+        raise RuntimeError('Expected regular, nonsymlink lock: ' + str(path))
+    return info.st_dev, info.st_ino
+
+
+def read_marker(path, nonce, case=None):
+    if not path.exists():
+        return False
+    value = json.loads(path.read_text())
+    if value.get('nonce') != nonce or (case is not None and value.get('caseKey') != case):
+        raise RuntimeError('Mismatched marker: ' + str(path))
+    return True
+
+
+def interrupt(signum, frame):
+    global STOP
+    STOP = True  # Defer interruption until outside rename/restoration transitions.
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--group-container', required=True, type=Path,
+                        help='Explicit simulator App Group directory, not application container')
+    parser.add_argument('--fixture-receipt', required=True, type=Path,
+                        help='Parent-created receipt establishing disposable test-store ownership')
+    parser.add_argument('--idle-seconds', type=float, default=300)
+    parser.add_argument('--active-seconds', type=float, default=120)
+    args = parser.parse_args()
+    if not (0 < args.idle_seconds <= 600 and 0 < args.active_seconds <= 180):
+        raise RuntimeError('Timeout outside bounded fixture range')
+    group = args.group_container.resolve(strict=True)
+    metadata = group / '.com.apple.mobile_container_manager.metadata.plist'
+    with metadata.open('rb') as stream:
+        info = plistlib.load(stream)
+    if info.get('MCMMetadataIdentifier') != GROUP:
+        raise RuntimeError('Not the requested App Group container')
+    receipt = json.loads(args.fixture_receipt.read_text())
+    if (receipt.get('purpose') != 'R41-owned-test-store' or receipt.get('disposable') is not True
+            or receipt.get('groupContainer') != str(group)
+            or not isinstance(receipt.get('deviceUDID'), str) or not receipt['deviceUDID']):
+        raise RuntimeError('Missing explicit disposable fixture ownership binding')
+    # Exact initial inventory, before publishing control / any public UI clear.
+    names = ('PersonalDictionary.json', 'TouchModel.json')
+    actual = {}
+    for entry in group.iterdir():
+        if any(entry.name.startswith(name) for name in names):
+            identity(entry)
+            actual[entry.name] = hashlib.sha256(entry.read_bytes()).hexdigest()
+    if receipt.get('initialStoreFiles') != actual:
+        raise RuntimeError('Unknown/changed initial learned store; abort without clearing')
+    if CONTROL.exists():
+        raise RuntimeError('Control file exists; inspect prior helper/session before retry')
+    lock = group / 'PersonalDictionary.json.learning-v2.sqlite.lock'
+    nonce = str(uuid.uuid4())
+    root = Path(tempfile.mkdtemp(prefix='pulpo-r33-settings-native-'))
+    atomic(root / 'session.json', {'nonce': nonce, 'group': str(group), 'lock': str(lock),
+                                 'cases': list(CASES), 'metadataIdentifier': GROUP,
+                                 'fixtureReceiptSHA256': hashlib.sha256(args.fixture_receipt.read_bytes()).hexdigest(),
+                                 'deviceUDID': receipt['deviceUDID']})
+    # Exclusive control publication: never overwrite a concurrent gate's config.
+    fd = os.open(CONTROL, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, 'w') as stream:
+        json.dump({'root': str(root), 'nonce': nonce}, stream)
+        stream.write('\n')
+    print(str(root), flush=True)
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        signal.signal(sig, interrupt)
+    completed = set()
+    end = time.monotonic() + args.idle_seconds
+    try:
+        while len(completed) < len(CASES):
+            if STOP:
+                raise RuntimeError('Termination requested')
+            if time.monotonic() > end:
+                raise RuntimeError('Timed out waiting for fixture requests')
+            for case in CASES:
+                if case in completed or not read_marker(root / (case + '.request.json'), nonce, case):
+                    continue
+                fault_fd = None
+                backup = lock.with_name(lock.name + '.r33-' + nonce + '.backup')
+                moved = False
+                directory_id = None
+                before = None
+                error = None
+                try:
+                    before = identity(lock)  # Created only by initial public clear.
+                    fault_fd = os.open(lock, os.O_RDWR | os.O_NOFOLLOW)
+                    if (os.fstat(fault_fd).st_dev, os.fstat(fault_fd).st_ino) != before:
+                        raise RuntimeError('Lock changed while opening')
+                    fcntl.flock(fault_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    if identity(lock) != before:
+                        raise RuntimeError('Lock changed before fault activation')
+                    if case == 'io-on':
+                        if backup.exists():
+                            raise RuntimeError('Recovery backup already exists')
+                        lock.rename(backup)
+                        moved = True
+                        lock.mkdir(mode=0o700)  # Real open(O_RDWR) EISDIR, not a result override.
+                        entry = lock.lstat()
+                        directory_id = (entry.st_dev, entry.st_ino)
+                    atomic(root / (case + '.active.json'), {
+                        'nonce': nonce, 'caseKey': case, 'active': True,
+                        'lockDevice': before[0], 'lockInode': before[1],
+                        'fault': 'directory-at-lock-path' if moved else 'held-flock'})
+                    active_end = time.monotonic() + args.active_seconds
+                    while not read_marker(root / (case + '.release.json'), nonce):
+                        if STOP:
+                            raise RuntimeError('Termination requested; restoring boundary')
+                        if time.monotonic() > active_end:
+                            raise RuntimeError('Active fault timed out; restoring boundary')
+                        time.sleep(0.02)
+                except BaseException as exc:
+                    error = type(exc).__name__ + ': ' + str(exc)
+                finally:
+                    try:
+                        if moved:
+                            # Never remove unknown replacements or any database/data file.
+                            if lock.exists():
+                                entry = lock.lstat()
+                                if (not stat.S_ISDIR(entry.st_mode) or
+                                        (entry.st_dev, entry.st_ino) != directory_id):
+                                    raise RuntimeError('Unexpected lock replacement; inspect recovery backup')
+                                lock.rmdir()  # Refuses a nonempty directory.
+                            if identity(backup) != before:
+                                raise RuntimeError('Recovery backup identity changed')
+                            backup.rename(lock)
+                        if before is not None and identity(lock) != before:
+                            raise RuntimeError('Original lock inode not restored')
+                    except BaseException as exc:
+                        error = (error + '; ' if error else '') + 'RESTORATION: ' + str(exc)
+                    finally:
+                        if fault_fd is not None:
+                            os.close(fault_fd)  # Releases exclusive flock only after restoration.
+                    atomic(root / (case + '.released.json'), {
+                        'nonce': nonce, 'caseKey': case, 'active': False, 'error': error})
+                if error:
+                    raise RuntimeError(case + ': ' + error)
+                completed.add(case)
+                end = time.monotonic() + args.idle_seconds
+            time.sleep(0.02)
+        atomic(root / 'complete.json', {'nonce': nonce, 'completed': sorted(completed)})
+    finally:
+        # Keep all session evidence; remove only our exact control binding.
+        if CONTROL.exists() and json.loads(CONTROL.read_text()).get('nonce') == nonce:
+            CONTROL.unlink()
+
+
+if __name__ == '__main__':
+    main()

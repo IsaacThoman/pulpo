@@ -1,0 +1,17 @@
+{
+  "apps/keyboard-ios/App/PulpoKeyboardApp.swift": {
+    "productionUICommit": "c156797b",
+    "currentSHA256": "1ff4b34077ad63148acb3ae97c7d1465dd391aec6784276e580b9383f66a5617",
+    "byteIdentical": true
+  },
+  "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardUI/KeyboardController.swift": {
+    "productionUICommit": "c156797b",
+    "currentSHA256": "b62134d9dcfbba4b37a1e1c8d6ef14062057b69026312b8078ca675d2877d54b",
+    "byteIdentical": true
+  },
+  "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardUI/SuggestionBarView.swift": {
+    "productionUICommit": "c156797b",
+    "currentSHA256": "ec1c5a7aadf8a51dff940855a7fbbc941f987e5a208363622c0323cf07105400",
+    "byteIdentical": true
+  }
+}

@@ -1,0 +1,62 @@
+{
+  "classification": "Native captured AX geometry; spoken VoiceOver unproved",
+  "observations": [
+    {
+      "label": "a9e-ax5",
+      "case": "busy-on",
+      "AXFile": "/var/folders/7m/wy76p9x11tj7n0lw8vpl0ysw0000gn/T/pulpo-r33-settings-native-an2n_20d/busy-on-failure.txt",
+      "AXSHA256": "8c0c66c1b2fcb408478d9dab1e0599ad56bc44270440265cb171b3dc0a0cb283",
+      "exactErrorFrame": [
+        48.0,
+        389.7,
+        297.0,
+        232.7
+      ],
+      "hittableOKFromNativeTestFrame": [
+        34.0,
+        649.7,
+        325.0,
+        125.3
+      ],
+      "completeErrorAboveAction": true
+    },
+    {
+      "label": "a9e-ax5",
+      "case": "busy-off",
+      "AXFile": "/var/folders/7m/wy76p9x11tj7n0lw8vpl0ysw0000gn/T/pulpo-r33-settings-native-an2n_20d/busy-off-failure.txt",
+      "AXSHA256": "d6eea8f704b4f24ba4d67a72359c5d2c286db5b230bbbf488dd524c88547cc5f",
+      "exactErrorFrame": [
+        48.0,
+        389.7,
+        297.0,
+        232.7
+      ],
+      "hittableOKFromNativeTestFrame": [
+        34.0,
+        649.7,
+        325.0,
+        125.3
+      ],
+      "completeErrorAboveAction": true
+    },
+    {
+      "label": "a9e-ax5",
+      "case": "io-on",
+      "AXFile": "/var/folders/7m/wy76p9x11tj7n0lw8vpl0ysw0000gn/T/pulpo-r33-settings-native-an2n_20d/io-on-failure.txt",
+      "AXSHA256": "8bb95a035de0ee4036f50c696f94d11af228af62ffb874b03adf84272517454d",
+      "exactErrorFrame": [
+        48.0,
+        389.7,
+        297.0,
+        232.7
+      ],
+      "hittableOKFromNativeTestFrame": [
+        34.0,
+        649.7,
+        325.0,
+        125.3
+      ],
+      "completeErrorAboveAction": true
+    }
+  ]
+}
