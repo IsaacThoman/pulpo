@@ -1,0 +1,5 @@
+# Parent integration receipt (pre-reveal)
+
+Parent confirms R28/parent will add Settings error alert. Concrete patch `/tmp/pulpo-r33-ui-integration/settings-result.patch`, SHA256 `95471d41b1da7d2ee039990d07eb968d68a8ed8549d1ba3274925a09c9192cb2`, against parent HomeView SHA `98eec4e026bd1530bb57ec6527c49b70338134b4cf72acf345d4afd90ef7d420`. Patch consumes Bool, success only on true, otherwise learningResetError with exact failure fallback. Copy limits success to shared data, excludes keyboard-only data without shared access. R33 verified patch hash only. NOT installed or validated in this checkout. Actual failure/retry and ordinary native Settings remain parent release blockers.
+
+Parent UX reviewer is preparing explicit Forget feedback in SuggestionBarView/KeyboardController, preserving suggestion on failure without dictation state changes. R33 narrow true-only refresh guard remains. No integration/validation receipt yet. No device or quiet window assigned. These dependencies do not authorize this child to edit owner views or use other agents devices.

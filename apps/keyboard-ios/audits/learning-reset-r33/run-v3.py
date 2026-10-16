@@ -25,19 +25,46 @@ def matches(actual,expected):
  if isinstance(expected,dict): return isinstance(actual,dict) and all(k in actual and matches(actual[k],v) for k,v in expected.items())
  return type(actual) is type(expected) and actual==expected
 
+def busy_only(value):
+ if not isinstance(value,dict): return False
+ results=[]
+ def visit(v):
+  if isinstance(v,dict):
+   for k,item in v.items():
+    if k=='result' or k in {'dictionary','touch'} and isinstance(item,str): results.append(item)
+    elif isinstance(item,dict): visit(item)
+ visit(value)
+ return bool(results) and 'busy' in results and all(v in {'ok','busy'} for v in results)
+
+def contains_busy(value):
+ return isinstance(value,dict) and any(v=='busy' or contains_busy(v) for v in value.values())
+
+def await_expected(actor, command, actual, expectation, initial=False):
+ retries=[]; deadline=time.monotonic()+5
+ while busy_only(actual) and not contains_busy(expectation) and not matches(actual,expectation):
+  retries.append({'command':command,'actual':actual})
+  if len(retries)>=5000 or time.monotonic()>=deadline: raise TimeoutError('confirmed-busy retry deadline')
+  if initial:
+   response=actor.command({'op':'reload','store':'both'})
+   actual={k:response[k]['result'] for k in ('dictionary','touch')}
+  else: actual=actor.command(command)
+ return actual,retries
+
 def run_case(c,worker,dylib):
  actors={}; checks=[]; events=[]; unavailable=None; start=time.monotonic_ns()
  with tempfile.TemporaryDirectory(prefix='pulpo-r33-') as directory:
   try:
    for index,a in enumerate(c['actions']):
-    n=a['actor']; op=a['op']; actual=True; t=time.monotonic_ns()
+    n=a['actor']; op=a['op']; actual=True; retries=[]; t=time.monotonic_ns()
     if op=='new':
      actors[n]=Actor(worker,dylib,directory,a.get('memory',False)); actual=actors[n].initial
+     actual,retries=await_expected(actors[n],{'op':'new'},actual,a['expected'],True)
     else:
      actor=actors[n]
      if op=='send':
-      actor.p.stdin.write(json.dumps(a['action'],ensure_ascii=False)+'\n'); actor.p.stdin.flush()
-     elif op=='receive': actual=actor.read()
+      actor.last_sent=a['action']; actor.p.stdin.write(json.dumps(a['action'],ensure_ascii=False)+'\n'); actor.p.stdin.flush()
+     elif op=='receive':
+      actual=actor.read(); actual,retries=await_expected(actor,actor.last_sent,actual,a['expected'])
      elif op=='waitGate':
       if not select.select([actor.notify_r],[],[],5)[0]: raise TimeoutError('gate barrier deadline')
       if os.read(actor.notify_r,1)!=b'G': raise RuntimeError('invalid gate byte')
@@ -51,9 +78,11 @@ def run_case(c,worker,dylib):
       if not os.WIFSTOPPED(status): raise RuntimeError('stop not acknowledged')
      elif op=='resume': os.kill(actor.p.pid,signal.SIGCONT)
      elif op=='kill': actor.p.kill(); actor.p.wait(timeout=5)
-     else: actual=actor.command(a)
+     else:
+      actual=actor.command(a)
+      if op not in {'check','background','arm','transient'} and 'expected' in a: actual,retries=await_expected(actor,a,actual,a['expected'])
     elapsed=(time.monotonic_ns()-t)/1e6
-    events.append({'index':index,'op':op,'actor':n,'actual':actual,'milliseconds':elapsed})
+    events.append({'index':index,'op':op,'actor':n,'actual':actual,'milliseconds':elapsed,'confirmedBusyRetries':retries})
     if 'expected' in a:
      expected=a['expected']; ok=matches(actual,expected)
      if a.get('field') in {'touchWeight','offsetX','offsetY'}: ok=type(actual) in (int,float) and abs(actual-expected)<=1e-9

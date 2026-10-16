@@ -21,7 +21,19 @@ import Foundation
    queries.append(time { for _ in 0..<100 { _=personal.count(of:"r33perf\(i)"); _=personal.isKnown("r33perf\(i)") } })
    if i % 20 == 19 { commits.append(time { personal.save() }) }
   }
+  precondition(personal.totalCount == 20200)
+  var capacity: [Double] = []
+  for _ in 0..<260 { capacity.append(time { personal.learn("r33perf0", after: "history0") }) }
+  personal.save()
+  #if BASELINE
+  let storage = url
+  #else
+  let storage = LearnedDataPersistence.storageURL(for: url)
+  #endif
+  let files = try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: [.fileSizeKey])
+  let bytes = try files.reduce(0) { try $0 + ($1.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0) }
+  let databaseBytes = try storage.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
   let clear=time { personal.clear() }
-  print(String(data:try JSONSerialization.data(withJSONObject:["wordMilliseconds":stats(words),"hundredQueriesMilliseconds":stats(queries),"commitMilliseconds":stats(commits),"dictionaryClearMilliseconds":clear],options:[.prettyPrinted,.sortedKeys]),encoding:.utf8)!)
+  print(String(data:try JSONSerialization.data(withJSONObject:["wordMilliseconds":stats(words),"hundredQueriesMilliseconds":stats(queries),"commitMilliseconds":stats(commits),"dictionaryClearMilliseconds":clear,"capacityWordMilliseconds":stats(capacity),"authorityBytes":databaseBytes,"familyBytes":bytes,"familyFiles":files.count],options:[.prettyPrinted,.sortedKeys]),encoding:.utf8)!)
  }
 }

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Static result/schema/control validation. Never executes Core or prints payload."""
-import hashlib, json, math, pathlib, sys
+import hashlib, json, math, pathlib, sys, unicodedata
 RESULTS={'ok','busy','capacity','invalid','io','uncertain','cleanup'}
 CONTROL={'waitGate','release','stop','resume','kill'}
 FIELDS={'count','known','blocked','pair','history','total','dirty','touchWeight','offsetX','offsetY'}
@@ -109,5 +109,26 @@ def validate(cases):
   need(queries>0,'no public query oracle')
   need(all(not s['live'] or not s['gated'] and not s['stopped'] and s['pending'] is None for s in actors.values()),'unfinished control state')
  return counts
+def validate_novelty(cases):
+ exclusions=json.loads(pathlib.Path(__file__).with_name('r29-exclusion-hashes.json').read_text())
+ banned=set(exclusions['normalizedTargetHashes']); shapes=set(exclusions['operationShapeHashes'])
+ def norm(s): return ''.join(x for x in unicodedata.normalize('NFKD',s.lower()) if unicodedata.category(x)!='Mn' and x not in "'’")
+ def visit(value):
+  if isinstance(value,dict):
+   for key,item in value.items():
+    if key in {'word','after'} and isinstance(item,str): need(hashlib.sha256(norm(item).encode()).hexdigest() not in banned,'R29 target/history overlap')
+    elif key=='words' and isinstance(item,list):
+     for w in item: need(hashlib.sha256(norm(w).encode()).hexdigest() not in banned,'R29 transient overlap')
+    else: visit(item)
+  elif isinstance(value,list):
+   for item in value: visit(item)
+ for case in cases:
+  visit(case['actions'])
+  shape=hashlib.sha256(json.dumps([a['op'] for a in case['actions']],separators=(',',':')).encode()).hexdigest()
+  need(shape not in shapes,'R29 identical operation shape')
+ return {'novelCases':len(cases),'targetAndShapeExclusions':True}
+
 if __name__=='__main__':
- data=pathlib.Path(sys.argv[1]).read_bytes(); report=validate(json.loads(data)); report['sha256']=hashlib.sha256(data).hexdigest(); print(json.dumps(report,sort_keys=True))
+ data=pathlib.Path(sys.argv[1]).read_bytes(); cases=json.loads(data); report=validate(cases)
+ if '--novel' in sys.argv: report.update(validate_novelty(cases))
+ report['sha256']=hashlib.sha256(data).hexdigest(); print(json.dumps(report,sort_keys=True))
