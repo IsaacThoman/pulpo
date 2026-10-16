@@ -29,4 +29,11 @@ describe('iOS Markdown measurement cache prebuild patch', () => {
       .toThrow(/update withPulpoMarkdownCache/)
     expect(() => patchMeasurementCache('class MeasurementCache {};')).toThrow(/update withPulpoMarkdownCache/)
   })
+
+  it('explains how to recover from a header patched by a different plugin version', () => {
+    const stale = patchMeasurementCache(original).replace('8 * 1024 * 1024', '16 * 1024 * 1024')
+    expect(() => patchMeasurementCache(stale)).toThrow(/different Pulpo patch; reinstall react-native-enriched-markdown/)
+    expect(() => patchMeasurementCache(original.replace('kMaxEntries = 512', 'kMaxEntries = 1024')))
+      .not.toThrow(/reinstall/)
+  })
 })

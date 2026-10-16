@@ -66,7 +66,12 @@ const digest = (source) => createHash('sha256').update(source).digest('hex');
 function originalMeasurementCacheSource(source) {
   const original = source.replace(PATCHED_SET, ORIGINAL_SET).replace(PATCHED_FIELDS, ORIGINAL_FIELDS);
   if (digest(original) !== UPSTREAM_SHA256) {
-    throw new Error(`react-native-enriched-markdown's ${HEADER} changed; update withPulpoMarkdownCache and its native tests before prebuilding.`);
+    // node_modules keeps an earlier plugin version's patch until the package is reinstalled;
+    // `npm install` does not restore modified files, so say how to recover.
+    const stalePatch = original.includes('// Pulpo:') || original.includes('kMaxMarkdownBytes');
+    throw new Error(stalePatch
+      ? `react-native-enriched-markdown's ${HEADER} contains a different Pulpo patch; reinstall react-native-enriched-markdown (for example \`npm ci\`) to restore the upstream header, or update withPulpoMarkdownCache and its native tests before prebuilding.`
+      : `react-native-enriched-markdown's ${HEADER} changed; update withPulpoMarkdownCache and its native tests before prebuilding.`);
   }
   return original;
 }
