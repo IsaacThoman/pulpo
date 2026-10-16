@@ -1,0 +1,8 @@
+{
+  "compiler": "Apple Swift version 6.4 (swiftlang-6.4.0.34.1 clang-2100.3.34.1)\nTarget: arm64-apple-macosx27.0.0",
+  "architecture": "arm64",
+  "productSourceSHA256": "5489d04cd2f18ceda4f8d2a7113fcdaf3b377e3aeaf35b3a2a26eb1ba01dcded",
+  "runnerSHA256": "2718e44462cf19625484ef2b82b40771475ef5c546c2cf034523fc7de6730255",
+  "fixturesSHA256": "51a67006cb4218dac7143160c72d83f54d3b5a65a805960532c7ed8f7065d4b0",
+  "versionLabel": "original-a9e"
+}

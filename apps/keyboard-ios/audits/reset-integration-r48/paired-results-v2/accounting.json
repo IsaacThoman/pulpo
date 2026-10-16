@@ -1,0 +1,89 @@
+{
+  "disposition": "REJECT_FROZEN_ROUND",
+  "limitations": [
+    "Both evaluators exit 1 in normal and optimized mode; child exit 0 is not a pass.",
+    "193 unavailable actions and 175 unexecuted actions per version prevent persistent/family acceptance.",
+    "Six correlated check repairs do not establish six independent gains.",
+    "Independent postreveal root-cause and outcome reviews pending; frozen inputs/source/runner remain unchanged."
+  ],
+  "newFailedCheckIDs": [],
+  "postrevealTuning": false,
+  "productAttemptsPerVersion": 1,
+  "productRerun": false,
+  "repairedCheckIDs": [
+    "long_sparse/local/step0/projectionDiffersFrom",
+    "long_sparse/local/step0/return",
+    "long_sparse/local/step0/status",
+    "sample_cap/local/step1/projectionDiffersFrom",
+    "sample_cap/local/step1/return",
+    "sample_cap/local/step1/status"
+  ],
+  "versions": {
+    "integrated-82165": {
+      "actualAccounting": {
+        "actualLearnInvocations": 38,
+        "executedActions": 200,
+        "observedAcceptedLearnCalls": 32,
+        "observedExpectedInvalidRejections": 6,
+        "unavailableActions": 193,
+        "unexecutedActions": 175,
+        "unexpectedStatuses": 0
+      },
+      "denominators": {
+        "expectedAcceptedLearnCalls": 63,
+        "expectedRejectedLearnCalls": 13,
+        "families": 18,
+        "geometryCalls": 26,
+        "individualChecks": 2285,
+        "instances": 36,
+        "learnCalls": 76,
+        "modelOperations": 331,
+        "normalizationCalls": 18,
+        "operations": 375,
+        "persistentReopens": 18,
+        "relations": 49
+      },
+      "failedChecks": 1317,
+      "invokedInventoryErrors": 18,
+      "normalOptimizedByteEqual": true,
+      "passedChecks": 968,
+      "passedFamilies": 0,
+      "rawSHA256": "c20168897ecd39260ff984537848095e1b1027d183f21954616cbc34a2454542",
+      "retainedStoreBytes": 516096,
+      "retainedStoreFiles": 54
+    },
+    "original-a9e": {
+      "actualAccounting": {
+        "actualLearnInvocations": 38,
+        "executedActions": 200,
+        "observedAcceptedLearnCalls": 30,
+        "observedExpectedInvalidRejections": 6,
+        "unavailableActions": 193,
+        "unexecutedActions": 175,
+        "unexpectedStatuses": 2
+      },
+      "denominators": {
+        "expectedAcceptedLearnCalls": 63,
+        "expectedRejectedLearnCalls": 13,
+        "families": 18,
+        "geometryCalls": 26,
+        "individualChecks": 2285,
+        "instances": 36,
+        "learnCalls": 76,
+        "modelOperations": 331,
+        "normalizationCalls": 18,
+        "operations": 375,
+        "persistentReopens": 18,
+        "relations": 49
+      },
+      "failedChecks": 1323,
+      "invokedInventoryErrors": 18,
+      "normalOptimizedByteEqual": true,
+      "passedChecks": 962,
+      "passedFamilies": 0,
+      "rawSHA256": "db36f7446482a6934881ae60e64b7f96382b80493aae92be620e126aad14a084",
+      "retainedStoreBytes": 516096,
+      "retainedStoreFiles": 54
+    }
+  }
+}
