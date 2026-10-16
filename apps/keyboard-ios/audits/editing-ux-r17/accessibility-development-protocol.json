@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "frozenBeforeRelevantSource": true,
+  "language": "English + Español",
+  "document": "Hola team",
+  "selectionUTF16": [9,0],
+  "scenario": "Largest Dynamic Type Try It controls and tips",
+  "actions": ["Launch with UICTContentSizeCategoryAccessibilityXXXL", "Choose bilingual via keyboard", "type hola team", "open Tips", "read visible instructions", "dismiss", "choose Email and then Text", "append space ok"],
+  "expectedDocument": "Hola team ok",
+  "expectedSelectionUTF16": [12,0],
+  "expectedUI": "Mode and field choices have readable non-overlapping labels and remain tappable; Tips can be read and dismissed without losing draft",
+  "limitations": ["Process preferred-content-size launch override; not a system settings or VoiceOver session", "Selection via AX unavailable"]
+}

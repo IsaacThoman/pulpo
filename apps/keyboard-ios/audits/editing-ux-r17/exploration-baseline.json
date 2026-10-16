@@ -1,0 +1,141 @@
+{
+  "version": 1,
+  "base": "8aeb5998",
+  "run1": {
+    "status": "failed",
+    "reason": "harness used key-letters inside picker; task en-clear-search unreached; selected Spanish replacement and first task screenshot retained outside Git"
+  },
+  "run2": {
+    "status": "completed",
+    "observations": [
+      {
+        "id": "en-before-kind",
+        "document": "Hello\nWorld",
+        "selectionUTF16": null,
+        "selectionStatus": "unavailable via XCTest accessibility",
+        "ui": [
+          "SegmentedControl, <address>, {{16.0, 175.0}, {370.0, 31.0}}, identifier: 'field-kind'",
+          "World, Keyboard Focused",
+          "Button, <address>, {{306.0, 579.0}, {48.0, 44.0}}, identifier: 'keyboard-language', label: 'Typing language, English'",
+          "Key, <address>, {{6.8, 631.0}, {33.0, 43.0}}, identifier: 'key-q', label: 'q'"
+        ]
+      },
+      {
+        "id": "en-field-roundtrip",
+        "document": "Hello\nWorld\nOk",
+        "selectionUTF16": null,
+        "selectionStatus": "unavailable via XCTest accessibility",
+        "ui": [
+          "SegmentedControl, <address>, {{16.0, 175.0}, {370.0, 31.0}}, identifier: 'field-kind'",
+          "Ok, Keyboard Focused",
+          "Button, <address>, {{306.0, 579.0}, {48.0, 44.0}}, identifier: 'keyboard-language', label: 'Typing language, English'",
+          "Key, <address>, {{6.8, 631.0}, {33.0, 43.0}}, identifier: 'key-q', label: 'q'"
+        ]
+      },
+      {
+        "id": "es-edit-menu",
+        "document": "Hola familia",
+        "selectionUTF16": null,
+        "selectionStatus": "unavailable via XCTest accessibility",
+        "ui": [
+          "SegmentedControl, <address>, {{16.0, 175.0}, {370.0, 31.0}}, identifier: 'field-kind'",
+          "TextView, <address>, {{16.0, 218.0}, {370.0, 220.0}}, identifier: 'preview-text', label: 'Type here', value: Hola familia, Keyboard Focused",
+          "MenuItem, <address>, {{95.3, 267.7}, {96.3, 44.0}}, label: 'Select All'",
+          "StaticText, <address>, {{111.3, 280.7}, {64.3, 18.0}}, label: 'Select All'",
+          "Button, <address>, {{306.0, 579.0}, {48.0, 44.0}}, identifier: 'keyboard-language', label: 'Typing language, Español'",
+          "Key, <address>, {{6.8, 631.0}, {33.0, 43.0}}, identifier: 'key-q', label: 'q'"
+        ]
+      },
+      {
+        "id": "es-selected",
+        "document": "Hola familia",
+        "selectionUTF16": null,
+        "selectionStatus": "unavailable via XCTest accessibility",
+        "ui": [
+          "SegmentedControl, <address>, {{16.0, 175.0}, {370.0, 31.0}}, identifier: 'field-kind'",
+          "TextView, <address>, {{16.0, 218.0}, {370.0, 220.0}}, identifier: 'preview-text', label: 'Type here', value: Hola familia, Keyboard Focused",
+          "Button, <address>, {{306.0, 579.0}, {48.0, 44.0}}, identifier: 'keyboard-language', label: 'Typing language, Español'",
+          "Key, <address>, {{6.8, 631.0}, {33.0, 43.0}}, identifier: 'key-q', label: 'Q'"
+        ]
+      },
+      {
+        "id": "es-selection-language",
+        "document": "Sol",
+        "selectionUTF16": null,
+        "selectionStatus": "unavailable via XCTest accessibility",
+        "ui": [
+          "SegmentedControl, <address>, {{16.0, 175.0}, {370.0, 31.0}}, identifier: 'field-kind'",
+          "TextView, <address>, {{16.0, 218.0}, {370.0, 220.0}}, identifier: 'preview-text', label: 'Type here', value: Sol, Keyboard Focused",
+          "Button, <address>, {{306.0, 579.0}, {48.0, 44.0}}, identifier: 'keyboard-language', label: 'Typing language, English + Español'",
+          "Key, <address>, {{6.8, 631.0}, {33.0, 43.0}}, identifier: 'key-q', label: 'q'"
+        ]
+      },
+      {
+        "id": "bi-query",
+        "document": "Hola team ",
+        "selectionUTF16": null,
+        "selectionStatus": "unavailable via XCTest accessibility",
+        "ui": [
+          "SegmentedControl, <address>, {{16.0, 175.0}, {370.0, 31.0}}, identifier: 'field-kind'",
+          "TextView, <address>, {{16.0, 218.0}, {370.0, 220.0}}, identifier: 'preview-text', label: 'Type here', value: Hola team , Keyboard Focused",
+          "SearchField, <address>, {{36.0, 585.0}, {136.0, 32.0}}, identifier: 'emoji-search-field', label: 'Search emoji', value: red heart",
+          "Key, <address>, {{6.8, 631.0}, {33.0, 43.0}}, identifier: 'key-q', label: 'q'"
+        ]
+      },
+      {
+        "id": "bi-picker",
+        "document": "Hola team ",
+        "selectionUTF16": null,
+        "selectionStatus": "unavailable via XCTest accessibility",
+        "ui": [
+          "SegmentedControl, <address>, {{16.0, 175.0}, {370.0, 31.0}}, identifier: 'field-kind'",
+          "TextView, <address>, {{16.0, 218.0}, {370.0, 220.0}}, identifier: 'preview-text', label: 'Type here', value: Hola team , Keyboard Focused",
+          "Other, <address>, {{0.0, 579.0}, {402.0, 261.0}}, identifier: 'emoji-panel'",
+          "Button, <address>, {{4.0, 800.0}, {50.0, 40.0}}, identifier: 'emoji-abc', label: 'ABC'"
+        ]
+      },
+      {
+        "id": "bi-search-roundtrip",
+        "document": "Hola team ok",
+        "selectionUTF16": null,
+        "selectionStatus": "unavailable via XCTest accessibility",
+        "ui": [
+          "SegmentedControl, <address>, {{16.0, 175.0}, {370.0, 31.0}}, identifier: 'field-kind'",
+          "TextView, <address>, {{16.0, 218.0}, {370.0, 220.0}}, identifier: 'preview-text', label: 'Type here', value: Hola team ok, Keyboard Focused",
+          "Button, <address>, {{306.0, 579.0}, {48.0, 44.0}}, identifier: 'keyboard-language', label: 'Typing language, English + Español'",
+          "Key, <address>, {{6.8, 631.0}, {33.0, 43.0}}, identifier: 'key-q', label: 'q'"
+        ]
+      },
+      {
+        "id": "en-clear-search",
+        "document": "",
+        "selectionUTF16": null,
+        "selectionStatus": "unavailable via XCTest accessibility",
+        "ui": [
+          "SegmentedControl, <address>, {{16.0, 175.0}, {370.0, 31.0}}, identifier: 'field-kind'",
+          "TextView, <address>, {{16.0, 218.0}, {370.0, 220.0}}, identifier: 'preview-text', label: 'Type here', Keyboard Focused",
+          "SearchField, <address>, {{36.0, 585.0}, {136.0, 32.0}}, identifier: 'emoji-search-field', label: 'Search emoji', value: pizza",
+          "Key, <address>, {{6.8, 631.0}, {33.0, 43.0}}, identifier: 'key-q', label: 'q'"
+        ]
+      },
+      {
+        "id": "en-clear-search-typed",
+        "document": "Hi",
+        "selectionUTF16": null,
+        "selectionStatus": "unavailable via XCTest accessibility",
+        "ui": [
+          "SegmentedControl, <address>, {{16.0, 175.0}, {370.0, 31.0}}, identifier: 'field-kind'",
+          "TextView, <address>, {{16.0, 218.0}, {370.0, 220.0}}, identifier: 'preview-text', label: 'Type here', value: Hi, Keyboard Focused",
+          "Button, <address>, {{306.0, 579.0}, {48.0, 44.0}}, identifier: 'keyboard-language', label: 'Typing language, English'",
+          "Key, <address>, {{6.8, 631.0}, {33.0, 43.0}}, identifier: 'key-q', label: 'q'"
+        ]
+      }
+    ]
+  },
+  "assessment": {
+    "en-field-roundtrip": "frozen document expectation mismatch: actual World vs expected world; no product change proposed",
+    "es-selection-language": "full-document pass; exact selection unavailable",
+    "bi-search-roundtrip": "full-document pass; exact selection unavailable",
+    "en-clear-search": "full-document pass; exact selection unavailable"
+  }
+}

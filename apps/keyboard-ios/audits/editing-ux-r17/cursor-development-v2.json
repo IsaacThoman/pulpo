@@ -1,0 +1,10 @@
+{
+ "version":2,"reason":"Real cursor gesture produced invalid UTF-16; v1 displacement expectations retained as misses, not rewritten",
+ "contract":"PreviewHost character offsets must move by complete extended grapheme clusters, clamp at document boundaries, collapse selected range using its start as the existing adapter does, preserve full document",
+ "cases":[
+  {"id":"en-pizza-left-two","language":"en","document":"A🍕b","selectionUTF16":[4,0],"offset":-2,"insert":"x","expectedDocument":"Ax🍕b","expectedSelectionUTF16":[2,0]},
+  {"id":"es-combining-left","language":"es","document":"café!","selectionUTF16":[5,0],"offset":-1,"insert":"X","expectedDocument":"cafXé!","expectedSelectionUTF16":[4,0]},
+  {"id":"bi-emoji-right","language":"en-es","document":"hi 👩🏽‍💻 hola","selectionUTF16":[3,0],"offset":1,"insert":"X","expectedDocument":"hi 👩🏽‍💻X hola","expectedSelectionUTF16":[11,0]},
+  {"id":"en-left-boundary","language":"en","document":"abc","selectionUTF16":[1,0],"offset":-8,"insert":"X","expectedDocument":"Xabc","expectedSelectionUTF16":[1,0]}
+ ]
+}

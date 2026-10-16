@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "initialRun": {
+    "status": "failed",
+    "error": "JSON serialization could not convert malformed UTF16 document to UTF8",
+    "emojiOutcome": "not serializable in initial recorder; retained by UTF16-safe rerun"
+  },
+  "utf16SafeRerun": {
+    "status": "completed",
+    "cases": [
+      {
+        "before": "Ab",
+        "document": "XAb",
+        "exactDocumentUTF16": [
+          88,
+          65,
+          98
+        ],
+        "id": "en-cursor-ascii",
+        "selection": "unavailable via AX",
+        "language": "English",
+        "ui": "Visible preview keyboard; actual long-press space + left drag; no installed extension claim"
+      },
+      {
+        "before": "A🍕b",
+        "document": "A�x�b",
+        "exactDocumentUTF16": [
+          65,
+          55356,
+          120,
+          57173,
+          98
+        ],
+        "id": "es-cursor-emoji",
+        "selection": "unavailable via AX",
+        "language": "Español",
+        "ui": "Visible preview keyboard; actual long-press space + left drag; no installed extension claim"
+      }
+    ]
+  },
+  "v1Assessment": "Both exact frozen displacement expectations miss. ASCII moved two characters; emoji document is corrupt, splitting surrogate pair. No v1 expected document was rewritten."
+}
