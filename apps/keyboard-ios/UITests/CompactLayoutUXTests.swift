@@ -51,7 +51,7 @@ final class CompactLayoutUXTests: XCTestCase {
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
     if let output = ProcessInfo.processInfo.environment["PK_COMPACT_REPORT"] {
-      try encoder.encode(reports).write(to: URL(fileURLWithPath: output))
+      try encoder.encode(reports).write(to: URL(fileURLWithPath: output.replacingOccurrences(of: "{phase}", with: phase)))
     }
     let failures = reports.flatMap { report in report.failures.map { "\(report.id): \($0)" } }
     print("COMPACT_UX \(phase): cases=\(reports.count) checks=\(reports.reduce(0) { $0 + $1.checks }) failed=\(failures.count)")
