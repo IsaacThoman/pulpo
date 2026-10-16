@@ -1,0 +1,51 @@
+{
+  "commit": "4fa9b1e7b39cb1e5db835eeb3c4b111f6540c566",
+  "baseline": "305a8893",
+  "sources": [
+    {
+      "path": "apps/keyboard-ios/App/AppModel.swift",
+      "sha256": "c9707901f8803489b0f01188932c298337fa80d785385cdd5c978d3c6b9d1bbd",
+      "snapshot": "AppModel.swift"
+    },
+    {
+      "path": "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Dictionary/PersonalDictionary.swift",
+      "sha256": "191be9a52b4f9ba13d882b8aff0b6edf198e9bd6b2d1e8a758c8a74deeb32994",
+      "snapshot": "PersonalDictionary.swift"
+    },
+    {
+      "path": "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Geometry/TouchModel.swift",
+      "sha256": "fc5f3d9f9f6fdd57d8aa7c4e61556ef29284339ccd3f045c22404701b08e06ef",
+      "snapshot": "TouchModel.swift"
+    },
+    {
+      "path": "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Shared/LearnedDataPersistence.swift",
+      "sha256": "b8b677359f055c29f3b325a31a664974101740499c9ede3df86adafe72a97390",
+      "snapshot": "LearnedDataPersistence.swift"
+    },
+    {
+      "path": "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardUI/KeyboardController.swift",
+      "sha256": "3b4e7997dd7a7429da4737e68045725c14381c7881424d0cb91e50c6744755b8",
+      "snapshot": "KeyboardController.swift"
+    },
+    {
+      "path": "apps/keyboard-ios/PulpoKeyboardKit/Tests/KeyboardCoreTests/LearningPersistenceSupport.swift",
+      "sha256": "afedbf1c9490b502441e40c0329f7a288e4815c9cbd91a20f7b98145be31af55",
+      "snapshot": "LearningPersistenceSupport.swift"
+    },
+    {
+      "path": "apps/keyboard-ios/PulpoKeyboardKit/Tests/KeyboardCoreTests/LearningPersistenceTests.swift",
+      "sha256": "92120a12af70db5d686c6007ef9e5b935b8b02983475e0af81aacef1b1f1cf06",
+      "snapshot": "LearningPersistenceTests.swift"
+    },
+    {
+      "path": "apps/keyboard-ios/audits/learning-reset-r33/contract-preflight-v3.md",
+      "sha256": "a517f4b627b3575a99d0959240a0a6bd3a0dd2781c7d763c52214fe714799ccd",
+      "snapshot": "contract-preflight-v3.md"
+    },
+    {
+      "path": "apps/keyboard-ios/audits/learning-reset-r33/public-api-v3.md",
+      "sha256": "85289af4b0993e78250b0d223d28aa4568ca0488036dd0356f1818c8c701997e",
+      "snapshot": "public-api-v3.md"
+    }
+  ]
+}

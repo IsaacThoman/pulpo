@@ -1,0 +1,24 @@
+{
+  "baseline": "305a8893911b7ba54186110ea9f0b919c9d6382e",
+  "built": false,
+  "candidate": "a9e6ecfc895263721f14b8635dab8c3e87162839",
+  "devicesUsed": false,
+  "finalSourceSnapshotCount": 14,
+  "findings": [
+    {
+      "execution": "not executed; direct source path",
+      "line": 109,
+      "path": "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Geometry/TouchModel.swift",
+      "scope": "public nil-URL model; installed dictionary reachability not established",
+      "severity": "P2",
+      "title": "Preserve memory-only long-word touch learning"
+    }
+  ],
+  "repositoryModified": false,
+  "reviewSHA256": "3d4b0eac6cf64a21ff2b8fef03879383b5a4dd95e1f6d612b4892e38648e12e0",
+  "reviewType": "source-only",
+  "sealedPayloadsRead": false,
+  "sourceSnapshotManifestSHA256": "f74ae3ccf3b694f1ffba290f990934cddc6a6a5d01a70a1a231221c30f9d77fc",
+  "status": "one-P2-contract-compatibility-blocker",
+  "workerOutputsRead": false
+}

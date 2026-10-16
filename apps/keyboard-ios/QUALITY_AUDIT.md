@@ -8,6 +8,15 @@ unmeasured. Small deterministic Spanish and bilingual checks are reported below.
 
 ## Continued independent sweeps, October 15–16
 
+Parent review held the R33 reset-storage candidate for a compatibility correction:
+its global 40-letter touch cap also rejects memory-only models that previously
+learned longer aligned words. An immutable public-API replay retains five cases,
+with three adaptation regressions, including a 41-letter target with only 40
+actual taps. The full source review and paired source/output bytes are in
+`audits/reset-storage-parent-review/`. This is separate from the original frozen
+storage workload and does not rewrite its result. A new correction round and
+the latest native failure-feedback UI integration remain pending.
+
 Account sign-in cancellation now revokes pending publication before task start
 and after network suspension; obsolete refreshes cannot restore a signed-out
 account or sign out its replacement. The unchanged reviewed candidate passes

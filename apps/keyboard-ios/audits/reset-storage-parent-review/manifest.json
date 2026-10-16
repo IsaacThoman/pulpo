@@ -1,0 +1,150 @@
+{
+  "README.md": {
+    "bytes": 3721,
+    "sha256": "5574479469aa7628da2decdfe6b242b3fc39f2e6f81b4ef8f80019862dbca36e"
+  },
+  "public-api-witness/baseline-sources.tar.gz": {
+    "bytes": 124139,
+    "sha256": "4413f0f9df78878d27920061635c59bf244a88a099cc24881e40ea89795238ec"
+  },
+  "public-api-witness/baseline.json": {
+    "bytes": 308,
+    "sha256": "344e7ff6e5bf5d09d334a329afd48277a271eec66b7d3e2b940e20242f320d81"
+  },
+  "public-api-witness/candidate-sources.tar.gz": {
+    "bytes": 136003,
+    "sha256": "c8ab3cfff516c400a183420ad6f1238dc8571cea078f4fc7dced6969bee026ff"
+  },
+  "public-api-witness/candidate.json": {
+    "bytes": 305,
+    "sha256": "7fe8daf9f30d47c23c65930d6e0a594e5b537a3bc19836fd5a498915aa937704"
+  },
+  "public-api-witness/comparison.json": {
+    "bytes": 1954,
+    "sha256": "b531bfcda950deb8f56a2d91ee5d31f8ee5caa29173b0ab84b415ab5a7abb5a3"
+  },
+  "public-api-witness/intent-before-execution.json": {
+    "bytes": 910,
+    "sha256": "3fa3fc25c8db8769143cd9e5f3fb41ab4ee13f75a873f5b63c6addf0981d8014"
+  },
+  "public-api-witness/main.swift.txt": {
+    "bytes": 738,
+    "sha256": "97fc487ebd76aa6ff4befc7f7896a16fea1bd406975c177630f354e3ddc3ce26"
+  },
+  "source-review/AppGroup.swift": {
+    "bytes": 5002,
+    "sha256": "831015d4ae7c54a7ac38fb687334cf72647c6a9d7b3b640001891c7af3e51cd3"
+  },
+  "source-review/AppModel.swift": {
+    "bytes": 10146,
+    "sha256": "c9707901f8803489b0f01188932c298337fa80d785385cdd5c978d3c6b9d1bbd"
+  },
+  "source-review/InputTraits.swift": {
+    "bytes": 3230,
+    "sha256": "018d9125d75d032c6f71ed58028bb506c26ea5240245510d4d621f489b2cf790"
+  },
+  "source-review/KeyboardController.swift": {
+    "bytes": 49504,
+    "sha256": "3b4e7997dd7a7429da4737e68045725c14381c7881424d0cb91e50c6744755b8"
+  },
+  "source-review/LanguageStack.swift": {
+    "bytes": 1805,
+    "sha256": "3b82d4ec23919f948fc3bad18252e67bb6ca709bccc68363ea794d985b90ae01"
+  },
+  "source-review/LearnedDataPersistence.swift": {
+    "bytes": 41927,
+    "sha256": "213dcf5810e5fffb33921827b563b31feb3eb7d2ac32c026aa9f694e028ef235"
+  },
+  "source-review/LearningPersistenceSupport.swift": {
+    "bytes": 1279,
+    "sha256": "afedbf1c9490b502441e40c0329f7a288e4815c9cbd91a20f7b98145be31af55"
+  },
+  "source-review/LearningPersistenceTests.swift": {
+    "bytes": 18797,
+    "sha256": "0c6ae46f3b5f4206a3ff09cfae8f9296ecb5439dbb86bdefb8617a46b310ef0d"
+  },
+  "source-review/Lexicon.swift": {
+    "bytes": 18727,
+    "sha256": "5751a26a1cff378015344a384d3f24d3eae9808312249a836984ea8914334d14"
+  },
+  "source-review/PersonalDictionary.swift": {
+    "bytes": 21725,
+    "sha256": "0bac71e413ea3c99f8972dd6cae10685e76adbd0b0537f587b589768b00a8d28"
+  },
+  "source-review/SpellCorrector.swift": {
+    "bytes": 14455,
+    "sha256": "525630cd2f29ef9739d98f7ea62827e04ee090140591d384527022a085030f31"
+  },
+  "source-review/TouchModel.swift": {
+    "bytes": 7256,
+    "sha256": "fc5f3d9f9f6fdd57d8aa7c4e61556ef29284339ccd3f045c22404701b08e06ef"
+  },
+  "source-review/baseline-TouchModel.swift.txt": {
+    "bytes": 6814,
+    "sha256": "5fa3c3e595c959581a771c1f502a1cccbd103f247b54bf367c1d073220936549"
+  },
+  "source-review/contract-preflight-v3.md": {
+    "bytes": 25008,
+    "sha256": "a517f4b627b3575a99d0959240a0a6bd3a0dd2781c7d763c52214fe714799ccd"
+  },
+  "source-review/prior-4fa9/AppModel.swift": {
+    "bytes": 10146,
+    "sha256": "c9707901f8803489b0f01188932c298337fa80d785385cdd5c978d3c6b9d1bbd"
+  },
+  "source-review/prior-4fa9/KeyboardController.swift": {
+    "bytes": 49504,
+    "sha256": "3b4e7997dd7a7429da4737e68045725c14381c7881424d0cb91e50c6744755b8"
+  },
+  "source-review/prior-4fa9/LearnedDataPersistence.swift": {
+    "bytes": 41733,
+    "sha256": "b8b677359f055c29f3b325a31a664974101740499c9ede3df86adafe72a97390"
+  },
+  "source-review/prior-4fa9/LearningPersistenceSupport.swift": {
+    "bytes": 1279,
+    "sha256": "afedbf1c9490b502441e40c0329f7a288e4815c9cbd91a20f7b98145be31af55"
+  },
+  "source-review/prior-4fa9/LearningPersistenceTests.swift": {
+    "bytes": 16021,
+    "sha256": "92120a12af70db5d686c6007ef9e5b935b8b02983475e0af81aacef1b1f1cf06"
+  },
+  "source-review/prior-4fa9/PersonalDictionary.swift": {
+    "bytes": 20458,
+    "sha256": "191be9a52b4f9ba13d882b8aff0b6edf198e9bd6b2d1e8a758c8a74deeb32994"
+  },
+  "source-review/prior-4fa9/TouchModel.swift": {
+    "bytes": 7256,
+    "sha256": "fc5f3d9f9f6fdd57d8aa7c4e61556ef29284339ccd3f045c22404701b08e06ef"
+  },
+  "source-review/prior-4fa9/contract-preflight-v3.md": {
+    "bytes": 25008,
+    "sha256": "a517f4b627b3575a99d0959240a0a6bd3a0dd2781c7d763c52214fe714799ccd"
+  },
+  "source-review/prior-4fa9/public-api-v3.md": {
+    "bytes": 3548,
+    "sha256": "85289af4b0993e78250b0d223d28aa4568ca0488036dd0356f1818c8c701997e"
+  },
+  "source-review/prior-4fa9/source-snapshots.json": {
+    "bytes": 2221,
+    "sha256": "f1be04bf0553e47093fccd8da7096328f28f52873cad71ad802856594f21c843"
+  },
+  "source-review/public-api-v3.md": {
+    "bytes": 3548,
+    "sha256": "85289af4b0993e78250b0d223d28aa4568ca0488036dd0356f1818c8c701997e"
+  },
+  "source-review/review-result.json": {
+    "bytes": 943,
+    "sha256": "9c332c1b790ca5aa6e09a130192021dee9c4cc5707346f0a714c7a7dbb3cd0c7"
+  },
+  "source-review/review.md": {
+    "bytes": 16569,
+    "sha256": "3d4b0eac6cf64a21ff2b8fef03879383b5a4dd95e1f6d612b4892e38648e12e0"
+  },
+  "source-review/source-snapshots.json": {
+    "bytes": 3587,
+    "sha256": "f74ae3ccf3b694f1ffba290f990934cddc6a6a5d01a70a1a231221c30f9d77fc"
+  },
+  "verify.py": {
+    "bytes": 3270,
+    "sha256": "404d6880beabef33923dd041cf982c847ab8ed552735ef0e96d9128594162c4c"
+  }
+}
