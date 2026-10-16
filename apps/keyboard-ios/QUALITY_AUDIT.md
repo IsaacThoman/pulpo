@@ -24,8 +24,18 @@ learned longer aligned words. An immutable public-API replay retains five cases,
 with three adaptation regressions, including a 41-letter target with only 40
 actual taps. The full source review and paired source/output bytes are in
 `audits/reset-storage-parent-review/`. This is separate from the original frozen
-storage workload and does not rewrite its result. A new correction round and
-the latest native failure-feedback UI integration remain pending.
+storage workload and does not rewrite its result. The one-line R45 compatibility
+correction and R41 result-aware UI are now staged together in R48, with original
+history preserved. Merged source review, 475 Core definitions plus three Services
+(same five known issues), 11 data checks, 25 normal native methods and eight
+same-binary AX5 reset methods pass. The first Release UI attempt remains 21/25:
+four fixtures require Debug-only reset arguments. Five/two priority warnings in
+the passing normal/AX5 runs remain recorded, without an input-thread stall or
+iOS latency bound being established. R45's separate 647/652 boundary result
+remains rejected for five shared normalization-oracle failures. A new independently
+reviewed R48 public domain is approved; fresh authorship/validation is underway
+and no new paired product execution has occurred. Whole-feature publication
+remains pending. See `audits/reset-integration-r48/`.
 
 Account sign-in cancellation now revokes pending publication before task start
 and after network suspension; obsolete refreshes cannot restore a signed-out
