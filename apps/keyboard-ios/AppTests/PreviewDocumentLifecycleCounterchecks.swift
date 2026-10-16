@@ -4,6 +4,7 @@ import KeyboardUI
 @testable import PulpoKeyboard
 
 /// R21: independently authored against f17109e7, before candidate source reveal.
+/// Standalone release timing corrected after evaluation; see the authorship audit.
 @MainActor
 final class PreviewDocumentLifecycleCounterchecks: XCTestCase {
   func testDirectHostReleaseLeavesRetainedInputControllerEngineAndDocumentInert() throws {
@@ -89,13 +90,27 @@ final class PreviewDocumentLifecycleCounterchecks: XCTestCase {
       return withExtendedLifetime(input) { controller.engine.document }
     }
 
+    XCTAssertNil(releasedHost, "The host must deallocate before draining deferred UIKit work")
+    // PreviewInputView builds a UIKit hierarchy and owns controller -> engine.
+    // Allow deferred UIKit/layout work to finish without retaining those owners.
+    // Each weak-probe evaluation and run-loop slice gets its own autorelease pool.
+    let deadline = ProcessInfo.processInfo.systemUptime + 2
+    while autoreleasepool(invoking: {
+      releasedInput != nil || releasedController != nil ||
+        releasedEngine != nil || releasedHost != nil
+    }), ProcessInfo.processInfo.systemUptime < deadline {
+      autoreleasepool {
+        RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+      }
+    }
+
     XCTAssertNil(releasedInput)
     XCTAssertNil(releasedController)
     XCTAssertNil(releasedEngine)
     XCTAssertNil(releasedHost, "A standalone document must not own its former host")
     guard releasedInput == nil, releasedController == nil,
           releasedEngine == nil, releasedHost == nil else { return }
-    withExtendedLifetime(document) {
+    withExtendedLifetime((document, editor)) {
       assertInert(document, oldEditor: editor)
     }
   }
