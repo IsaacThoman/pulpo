@@ -1,0 +1,14 @@
+{
+  "base": "46a92b564fc77d22137a09a3395f5cd28e3b38da",
+  "cases": 144,
+  "conflictsSelected": 12,
+  "availableFreshConflicts": 56,
+  "hashes": {
+    "/tmp/pulpo-r12-53439f72/dev.json": "8241da59a5c4beb740faf751b58a403d7ad2021d9e896a57e947dc4fbf4c984d",
+    "/tmp/pulpo-r12-53439f72/exclusions.json": "064645c11c0f43b5e6a9dcbefc570527629cc9bdaba6ca21f04adeb6502b8381",
+    "/Users/isaacthoman/.t3/worktrees/pulpo/t3-53439f72/apps/keyboard-ios/audits/suppression-consistency-r12/protocol.md": "2745f7f20eedcb31a189d449acd0d48abda26662da5b4a17bc006130bb4f165b",
+    "/Users/isaacthoman/.t3/worktrees/pulpo/t3-53439f72/apps/keyboard-ios/LanguageData/en_US.pkdict": "168c21378b29aa7fd37838aed910d64348b5267389abfd2dacd0598247cf1e64",
+    "/Users/isaacthoman/.t3/worktrees/pulpo/t3-53439f72/apps/keyboard-ios/LanguageData/es.pkdict": "66a256a487f451812ec53920b2a5f2dea9aafb77fbf8e50240a0b87d2729e7fb",
+    "/Users/isaacthoman/.t3/worktrees/pulpo/t3-53439f72/apps/keyboard-ios/LanguageData/en_es.pkdict": "93d2d22d58e7e753771dd0e29b19036d74a5ec7aeafba703724c24a93e581237"
+  }
+}

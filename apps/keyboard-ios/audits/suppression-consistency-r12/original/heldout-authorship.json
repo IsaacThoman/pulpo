@@ -1,0 +1,106 @@
+{
+  "role": "independent sealed held-out author",
+  "selection_seed": "pulpo-r12-independent-heldout-20261016-53439f72-v1",
+  "seed_declared_before_target_selection": true,
+  "selection_algorithm": {
+    "conflicts": "First 12 casefold-distinct remaining en_es flags&3==3 entries sorted by SHA256(seed + :conflict: + exact spelling), with spelling as tie-breaker.",
+    "neutral": "For each language in en_US, es, en_es order: first six unused lowercase ASCII length 4..10 exact shared EN/ES entries with flags&2 and no flags&33 in both; sort by SHA256(seed + :neutral: + language + : + spelling), with spelling tie-breaker.",
+    "synthetic": "Per language, increment counter from zero; SHA256(seed + :personal: + language + : + decimal counter); map first eight bytes alternately to bcdfghjklmnprstvz and aeiou; accept first two unused and casefold-absent across every metadata dictionary."
+  },
+  "heldout_path": "/tmp/pulpo-r12-53439f72/heldout-author/heldout.json",
+  "heldout_sha256": "65a4381ab8db65207e5008f6d0292017f976b8d4854e2bd7e217f89e1c569b04",
+  "counts": {
+    "rows": 144,
+    "unique_targets_casefolded": 36,
+    "conflict_targets": 12,
+    "neutral_targets": 18,
+    "synthetic_personal_targets": 6,
+    "by_language": {
+      "en_US": 48,
+      "es": 48,
+      "en_es": 48
+    },
+    "by_kind": {
+      "conflict": 36,
+      "learnedConflict": 36,
+      "literal": 36,
+      "neutral": 18,
+      "personal": 6,
+      "privacy": 6,
+      "secure": 6
+    },
+    "by_language_and_kind": {
+      "en_US": {
+        "conflict": 12,
+        "learnedConflict": 12,
+        "literal": 12,
+        "neutral": 6,
+        "personal": 2,
+        "privacy": 2,
+        "secure": 2
+      },
+      "es": {
+        "conflict": 12,
+        "learnedConflict": 12,
+        "literal": 12,
+        "neutral": 6,
+        "personal": 2,
+        "privacy": 2,
+        "secure": 2
+      },
+      "en_es": {
+        "conflict": 12,
+        "learnedConflict": 12,
+        "literal": 12,
+        "neutral": 6,
+        "personal": 2,
+        "privacy": 2,
+        "secure": 2
+      }
+    }
+  },
+  "read_provenance": [
+    {
+      "path": "/Users/isaacthoman/.t3/worktrees/pulpo/t3-53439f72/apps/keyboard-ios/audits/suppression-consistency-r12/protocol.md",
+      "sha256": "2745f7f20eedcb31a189d449acd0d48abda26662da5b4a17bc006130bb4f165b",
+      "bytes": 4420
+    },
+    {
+      "path": "/tmp/pulpo-r12-53439f72/exclusions.json",
+      "sha256": "064645c11c0f43b5e6a9dcbefc570527629cc9bdaba6ca21f04adeb6502b8381",
+      "bytes": 2475
+    },
+    {
+      "path": "/tmp/pulpo-r12-53439f72/metadata.json",
+      "sha256": "be5589a3167b2374ab56336bc21e8f0aade0e3fa0e9782e03e455cfd34b1cd2e",
+      "bytes": 32276901
+    }
+  ],
+  "exclusions_validation": {
+    "source_entries": 188,
+    "source_unique_casefolded": 188,
+    "selected_target_overlap_casefolded": 0,
+    "casefold_unique_selected_targets": 36,
+    "neutral_groups_mutually_disjoint": true,
+    "target_categories_mutually_disjoint": true,
+    "synthetic_unknown_in_all_metadata_casefolded": true,
+    "protocol_development_synthetic_controls_also_excluded": true,
+    "all_assertions_passed": true
+  },
+  "conflict_metadata_exact_spelling_absence_by_language": {
+    "en_US": 0,
+    "es": 0,
+    "en_es": 0
+  },
+  "independence": {
+    "permitted_inputs_only": true,
+    "ranking_or_compiler_implementation_read": false,
+    "development_inputs_or_outputs_read": false,
+    "proposed_fixes_read": false,
+    "parent_implementation_history_inspected": false,
+    "inference_run": false,
+    "git_or_other_checkout_edits": false,
+    "targets_or_context_content_returned_to_implementer": false,
+    "seal": "Do not reveal heldout.json until implementer freezes at most one candidate or explicit no-change decision with source/resource hashes."
+  }
+}

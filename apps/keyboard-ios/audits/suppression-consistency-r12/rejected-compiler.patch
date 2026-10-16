@@ -1,0 +1,16 @@
+diff --git a/apps/keyboard-ios/scripts/build_multilingual_data.py b/apps/keyboard-ios/scripts/build_multilingual_data.py
+index d5e5e454..1805328e 100644
+--- a/apps/keyboard-ios/scripts/build_multilingual_data.py
++++ b/apps/keyboard-ios/scripts/build_multilingual_data.py
+@@ -132,6 +132,11 @@ def merge_dictionaries(english, spanish):
+       flags &= ~FLAG_NOT_A_WORD
+     suppressed = any(value & FLAG_NEVER_SUGGEST and not value & FLAG_NOT_A_WORD
+                      for _, value in variants)
++    if suppressed:
++      # Match the monolingual compiler: offensive suppression also excludes
++      # bundled glide candidates. Typed literals and personally learned glide
++      # entries use separate runtime paths and remain available.
++      flags &= ~FLAG_GLIDE
+     if not suppressed and any(not value & FLAG_NEVER_SUGGEST for _, value in variants):
+       flags &= ~FLAG_NEVER_SUGGEST
+     entries.append((normalize_key(word), -max(f for f, _ in variants), word, flags))

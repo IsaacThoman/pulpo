@@ -1,0 +1,23 @@
+{
+  "decision": "one candidate selected on frozen development; no further production changes after held-out reveal",
+  "timestamp": "2026-10-16T05:29:18.058933+00:00",
+  "developmentBehaviorGate": true,
+  "developmentTimingGate": true,
+  "heldoutSealed": {
+    "path": "/tmp/pulpo-r12-53439f72/heldout-author/heldout.json",
+    "sha256": "65a4381ab8db65207e5008f6d0292017f976b8d4854e2bd7e217f89e1c569b04",
+    "cases": 144
+  },
+  "hashes": {
+    "apps/keyboard-ios/scripts/build_multilingual_data.py": "b641b8d0f463d51f1a3bf56fe68450e39a6a3fa1040a124892222a3e9adb46d7",
+    "apps/keyboard-ios/scripts/test_multilingual_data.py": "73e01e75803f0c796284f5f689c8c33974dfa47f82d46609ce5dd840086010ba",
+    "apps/keyboard-ios/LanguageData/MULTILINGUAL.md": "5c0c4494e545495fecb14c4916f485bbae3f8e7a5acea52ce0666b77ee867a31",
+    "apps/keyboard-ios/LanguageData/en_US.pkdict": "168c21378b29aa7fd37838aed910d64348b5267389abfd2dacd0598247cf1e64",
+    "apps/keyboard-ios/LanguageData/es.pkdict": "66a256a487f451812ec53920b2a5f2dea9aafb77fbf8e50240a0b87d2729e7fb",
+    "apps/keyboard-ios/LanguageData/en_es.pkdict": "62d70c17513c7d84403942815c391a93bbf0dac004992bd98f0f2b4d31d7f210",
+    "/tmp/pulpo-r12-53439f72/Runner.swift": "585b271840f1d9ad312fbba717b0751f622e72e7e5d20a6b9e8a9380f1fa88d7",
+    "/tmp/pulpo-r12-53439f72/dev.json": "8241da59a5c4beb740faf751b58a403d7ad2021d9e896a57e947dc4fbf4c984d",
+    "/tmp/pulpo-r12-53439f72/dev-paths.json": "3004e17cfb95f7191a427e5646ff8a573b5ee666300ed9f9b2d16c4b3267c45b",
+    "/tmp/pulpo-r12-53439f72/dev-comparison.json": "753e7f15df32c03d26ef56f530990db701c71783adaef0d68004b4487255a6c2"
+  }
+}
