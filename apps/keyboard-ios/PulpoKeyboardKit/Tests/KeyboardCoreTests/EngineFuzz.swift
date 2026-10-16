@@ -610,7 +610,9 @@ final class FuzzRun {
       external(delivery, preBefore, preAfter, preSelection)
     case let .moveCursor(fraction, delivery):
       time += 0.4
-      host.cursor = Int((Double(host.chars.count) * fraction).rounded(.down))
+      // The generator samples slightly beyond 1 so the document's end is
+      // reachable after rounding. A real host clamps a drag to its text bounds.
+      host.cursor = max(0, min(host.chars.count, Int((Double(host.chars.count) * fraction).rounded(.down))))
       host.selection = 0
       host.commit()
       external(delivery, preBefore, preAfter, preSelection)
