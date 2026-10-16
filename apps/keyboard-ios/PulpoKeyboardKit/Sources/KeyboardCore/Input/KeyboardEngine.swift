@@ -259,7 +259,7 @@ public final class KeyboardEngine {
   static let sentenceEnders: Set<Character> = [".", "!", "?"]
   /// Closing quotes and brackets can follow a sentence's end: `He said “Hi.” Then`.
   static let sentenceClosers: Set<Character> = [")", "]", "}", "\"", "'", "\u{201D}", "\u{2019}"]
-  static let sentenceOpeners: Set<Character> = ["(", "[", "{", "\"", "'", "\u{201C}", "\u{2018}"]
+  static let sentenceOpeners: Set<Character> = ["(", "[", "{", "\"", "'", "\u{201C}", "\u{2018}", "¿", "¡"]
   static let autocorrectSeparators: Set<Character> = [".", ",", "!", "?", ";", ":", ")", "\"", "\u{201D}"]
   static let spaceSwapPunctuation: Set<Character> = [".", ",", "!", "?", ";", ":"]
   /// Roughly the few hundred most frequent words: "you", "like", "from", "good".
@@ -1291,7 +1291,8 @@ public final class KeyboardEngine {
 
   func atSentenceStart(_ text: String) -> Bool {
     var trimmed = Substring(text)
-    // Opening quotes and brackets belong to the sentence they start: “Hello, Hi. (See
+    // Opening quotes, brackets and Spanish punctuation preserve the sentence
+    // boundary before them; an opener alone does not begin a new sentence.
     while let last = trimmed.last, Self.sentenceOpeners.contains(last) {
       if (last == "\"" || last == "'") && !Self.endsInOpeningQuote(String(trimmed.suffix(2))) { break }
       trimmed = trimmed.dropLast()
