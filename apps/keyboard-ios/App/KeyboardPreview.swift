@@ -99,6 +99,7 @@ struct PreviewTextView: UIViewRepresentable {
   func makeUIView(context: Context) -> UITextView {
     let textView = UITextView()
     textView.font = .preferredFont(forTextStyle: .body)
+    textView.adjustsFontForContentSizeCategory = true
     textView.backgroundColor = .secondarySystemGroupedBackground
     textView.layer.cornerRadius = 12
     textView.textContainerInset = UIEdgeInsets(top: 12, left: 8, bottom: 12, right: 8)

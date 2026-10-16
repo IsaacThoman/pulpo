@@ -1,0 +1,34 @@
+{
+  "rounds": [
+    {
+      "reviewer": "r24_source_review",
+      "phase": "baseline",
+      "findings": [
+        "Non-scrollable VStack might truncate guidance; actual UI needed",
+        "Short ASCII end-caret checks did not verify nonempty selected Unicode replacement",
+        "VoiceOver and enabled controls unproven",
+        "Initial final assertion only checked preexisting Hola, could pass without appended text"
+      ]
+    },
+    {
+      "reviewer": "r24_candidate_review",
+      "phase": "candidate-before-freeze",
+      "blockers": [],
+      "findings": [
+        "Native font change and scroll wrapping directly address real red repros",
+        "Selected full Home/Tips/settings navigation not proven",
+        "Isolated live Editor test omits TryIt outer nested scrolling",
+        "Guidance raw ScrollView frame may include keyboard-occluded area",
+        "ContinueSetup minimum layout frame must be inside label to ensure touch region",
+        "VoiceOver remains unvalidated"
+      ],
+      "responses": [
+        "Moved ContinueSetup minHeight into Text label with contentShape",
+        "Added actual TryItView native 320x568 multilingual selected-range mode/field/focus fixture",
+        "Added real multiline inner/outer scroll + Tips + final typing case",
+        "Tightened guidance scrolling to keyboard inputView top; initial overpermissive frame assertion retained in audit",
+        "No claim to real VoiceOver, full selected Home route, physical small phone, or disabled keyboard branch"
+      ]
+    }
+  ]
+}

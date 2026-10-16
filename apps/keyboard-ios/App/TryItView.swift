@@ -40,42 +40,51 @@ struct TryItView: View {
   }
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 12) {
-      Picker("Keyboard", selection: $draft.usePreview) {
-        Text("In-App Preview").tag(true)
-        Text("Installed Keyboard").tag(false)
-      }
-      .pickerStyle(.segmented)
-      .accessibilityIdentifier("keyboard-mode")
+    ScrollView {
+      VStack(alignment: .leading, spacing: 12) {
+        Picker("Keyboard", selection: $draft.usePreview) {
+          Text("In-App Preview").tag(true)
+          Text("Installed Keyboard").tag(false)
+        }
+        .pickerStyle(.segmented)
+        .accessibilityIdentifier("keyboard-mode")
 
-      Picker("Field", selection: $draft.field) {
-        ForEach(FieldKind.allCases) { Text($0.rawValue).tag($0) }
-      }
-      .pickerStyle(.segmented)
-      .accessibilityIdentifier("field-kind")
+        Picker("Field", selection: $draft.field) {
+          ForEach(FieldKind.allCases) { Text($0.rawValue).tag($0) }
+        }
+        .pickerStyle(.segmented)
+        .accessibilityIdentifier("field-kind")
 
-      PreviewTextView(text: $draft.text, selection: $draft.selection, focused: $focused,
-        keyboardType: draft.field.keyboardType, usePreview: draft.usePreview) { model.handle($0) }
-        .frame(minHeight: 140, maxHeight: 220)
-      if !draft.usePreview {
-        if model.keyboardEnabled {
-          Text("If another keyboard shows up, touch and hold \u{1F310} and choose Pulpo Keyboard.")
-            .font(.footnote)
-            .foregroundStyle(.secondary)
-        } else {
-          VStack(alignment: .leading, spacing: 6) {
-            Text("Pulpo Keyboard isn't turned on yet. The In-App Preview works without it.")
+        PreviewTextView(text: $draft.text, selection: $draft.selection, focused: $focused,
+          keyboardType: draft.field.keyboardType, usePreview: draft.usePreview) { model.handle($0) }
+          .frame(minHeight: 140, maxHeight: 220)
+        if !draft.usePreview {
+          if model.keyboardEnabled {
+            Text("If another keyboard shows up, touch and hold \u{1F310} and choose Pulpo Keyboard.")
               .font(.footnote)
               .foregroundStyle(.secondary)
-            Button("Continue Setup") { model.showSetupGuide = true }
-              .font(.footnote.weight(.semibold))
+              .fixedSize(horizontal: false, vertical: true)
+          } else {
+            VStack(alignment: .leading, spacing: 6) {
+              Text("Pulpo Keyboard isn't turned on yet. The In-App Preview works without it.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+              Button {
+                model.showSetupGuide = true
+              } label: {
+                Text("Continue Setup")
+                  .font(.footnote.weight(.semibold))
+                  .frame(minHeight: 44)
+                  .contentShape(Rectangle())
+              }
               .accessibilityIdentifier("try-it-setup")
+            }
           }
         }
       }
-      Spacer(minLength: 0)
+      .padding()
     }
-    .padding()
     .background(Color(.systemGroupedBackground))
     .navigationTitle("Try It")
     .navigationBarTitleDisplayMode(.inline)

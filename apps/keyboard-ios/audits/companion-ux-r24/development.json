@@ -1,0 +1,61 @@
+{
+  "stage": "fresh-development-frozen-before-implementation-inspection",
+  "baseline": "0d5394c2aed76e55fb9db46291ebbec44e25f6f2",
+  "cases": [
+    {
+      "id": "dev-01",
+      "task": "Largest system Dynamic Type: navigate Try It, Tips, Settings and back; all destination controls remain operable; preserve multilingual draft",
+      "document": "Hola 🍕 team\nmañana",
+      "selectionUTF16": [
+        5,
+        2
+      ]
+    },
+    {
+      "id": "dev-02",
+      "task": "Focused editor: preview/full mode switch, dismiss and refocus, select/reinsert; preserve exact draft and selection through navigation",
+      "document": "café hello 👩🏽‍💻",
+      "selectionUTF16": [
+        0,
+        4
+      ]
+    },
+    {
+      "id": "dev-03",
+      "task": "Switch typing language English -> Español -> bilingual from settings; return to editor with retained draft and visible current choice",
+      "document": "reunión at noon",
+      "selectionUTF16": [
+        14,
+        0
+      ]
+    },
+    {
+      "id": "dev-04",
+      "task": "Switch field kinds including secure/restricted, return to ordinary text; document and allowed controls reflect each field; no crash",
+      "document": "Hola 42",
+      "selectionUTF16": [
+        7,
+        0
+      ]
+    },
+    {
+      "id": "dev-05",
+      "task": "One-handed left/right/full settings at largest Dynamic Type; navigation and typing remain reachable; preserve draft",
+      "document": "sí ok",
+      "selectionUTF16": [
+        5,
+        0
+      ]
+    },
+    {
+      "id": "dev-06",
+      "task": "Clear and Tips/Settings round trip after multilingual emoji-search; final document accurately reflects explicit edits; inspect accessibility names and control dimensions",
+      "document": "hola 🍕",
+      "selectionUTF16": [
+        7,
+        0
+      ]
+    }
+  ],
+  "oracle": "Preserve exact document/selection unless explicit action edits it. Semantic controls absent in product stay unavailable, not product failures. Font size alone is not a defect. Real VoiceOver requires actual system execution."
+}
