@@ -1,0 +1,10 @@
+{
+  "archive": "/tmp/pulpo-r49-fresh-validator-v1/review-bundle.tar.gz",
+  "archive_sha256": "1def3064fb115f2d25f4d305b68b0810062a4b9423db2eb51bb8a2f2cad8ecd7",
+  "manifest_sha256": "509cf68be05db5b55630fc421dc8ce3a3cb0755c5bc6fea38a746af0df8429f8",
+  "receipt_sha256": "32647adc01cfd4b2650d54d1a2e8fe89a50bfeaadacfaa32f3ebb913567a5e01",
+  "review_sha256": "e9ea8521bb872ab6537c589b94cbb5f25e02f15997ae5f4ea23fa6fe30bac463",
+  "manifest_files": 62,
+  "archive_bytes": 12659262,
+  "warning": "Contains private fresh payload and synthetic/reference evidence; parent should retain archive unopened except approved metadata/report. Exact v1 rejected; no product execution authorized."
+}

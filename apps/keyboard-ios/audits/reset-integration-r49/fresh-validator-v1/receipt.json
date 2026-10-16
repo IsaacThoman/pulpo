@@ -1,0 +1,11 @@
+{
+  "format": "pulpo-r49-independent-review-receipt-v1",
+  "verdict": "REJECT_PREEXECUTION_ACCOUNTING_CORRECTION_REQUIRED",
+  "review_sha256": "e9ea8521bb872ab6537c589b94cbb5f25e02f15997ae5f4ea23fa6fe30bac463",
+  "review_json_sha256": "b4a90c4f277820d6b585b7afcb555a3e5a15e65d5a51f3abd2a9a81180bbff68",
+  "reference_recomputed_sha256": "0431ce88a659611358b35d0672337137544149ab79709641c36b2dcb4a4343eb",
+  "Foundation_only_executable_sha256": "9b683b4d2c4ea38bf6249766b0943e41e717f283bf350665728dd6edbcc82e6e",
+  "frozen_inputs": "author archive bfa62181addfade8b2e0011c059b7608941cddf4c53e9876294071b412f15fe4",
+  "product_executions": 0,
+  "execution_approval": false
+}

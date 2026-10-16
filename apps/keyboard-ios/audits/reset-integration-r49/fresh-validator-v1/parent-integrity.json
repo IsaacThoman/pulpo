@@ -1,0 +1,16 @@
+{
+  "purpose": "Opaque artifact hashes plus approved metadata/report only; private review archive retained unopened at parent level",
+  "verifiedManifestArtifacts": 62,
+  "archiveSHA256": "1def3064fb115f2d25f4d305b68b0810062a4b9423db2eb51bb8a2f2cad8ecd7",
+  "archiveBytes": 12659262,
+  "verdict": "REJECT_PREEXECUTION_ACCOUNTING_CORRECTION_REQUIRED",
+  "semanticActionsReviewed": 452,
+  "relationsReviewed": 320,
+  "aggregateChecksTraced": 772,
+  "independentProbesPerMode": 851,
+  "normalOptimizedAgreement": true,
+  "exactDuplicateSessionPrograms": 0,
+  "exposedGeometryControls": 26,
+  "productExecutions": 0,
+  "next": "Separate immutable author-v2 reporting-only correction then new independent review; no product build/run yet"
+}

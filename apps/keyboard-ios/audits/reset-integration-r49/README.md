@@ -23,9 +23,22 @@ The 68 synthetic adversaries pass in normal and optimized Python. These are
 author-supplied preexecution results, not product outcomes. Parent verified all
 27 manifest artifact hashes and all 28 archive members opaquely, keeping the
 fresh payload unopened. `fresh-author-v1/` retains the archive and metadata.
-Independent semantic/evaluator and novelty review is running. No R49 product
-build or execution has occurred; that approval and a new
-binary/environment/input/source freeze are still required.
+Independent review **rejects this exact v1 before product execution** for missing
+observed-call, verified-learn-outcome and unexpected-status accounting. Existing
+failure exits remain correct; no false behavioral pass is alleged. All 452
+action oracles and 320 relations pass semantic review; all 772 aggregate checks
+are traced. The reviewer passes 851 independent probes in each Python mode and
+finds zero exact duplicate session programs (26 geometry controls are exposed).
+`fresh-validator-v1/` preserves the complete rejection and private evidence archive.
+The evaluator's diagnostic `failure_count` is not a failed-aggregate numerator.
+
+A separately versioned preexecution accounting correction is underway. Fixtures,
+runner, reference and all behavioral oracles must remain byte-identical; only
+reporting and its verification artifacts change. The fresh payload remains
+unopened at parent level. No R49 product build or execution has occurred; new
+independent approval and a binary/environment/input/source freeze are still
+required. The v1 configuration is retained as unexecuted proposed mechanics,
+not execution approval.
 
 Product and ordinary-test files remain byte-identical to the merged `82165e7f`
 reference that passed R48's source, ordinary and native gates. Their limits,
