@@ -1,0 +1,14 @@
+{
+  "classification": "Immutable authored preexecution bundle; independent review pending",
+  "payloadOpenedByParent": false,
+  "productExecutions": 0,
+  "archiveSHA256": "97db0a1909c9a7757a3606158b3f4aed36eff7a75d0d02ed7dd5939fc21ef6d2",
+  "manifestSHA256": "99453fe2ce6002844a774afcd8bd70bf9098fe9664c1296484581df71f1da441",
+  "declaredFamilies": 18,
+  "declaredInstances": 36,
+  "declaredOperations": 321,
+  "declaredRelations": 49,
+  "declaredChecks": 1961,
+  "independentValidator": "/root/r48_boundary_validator",
+  "limits": "Author declarations and synthetic tests are not product results or final semantic/executor acceptance."
+}

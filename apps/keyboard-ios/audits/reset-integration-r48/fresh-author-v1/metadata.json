@@ -1,0 +1,43 @@
+{
+  "format": "pulpo-r48-author-metadata-v1",
+  "version": "author-review-v1",
+  "status": "immutable author materials for independent review; no product execution",
+  "denominators": {
+    "families": 18,
+    "instances": 36,
+    "operations": 321,
+    "relations": 49,
+    "modelOperations": 277,
+    "normalizationCalls": 18,
+    "geometryCalls": 26,
+    "learnCalls": 76,
+    "expectedAcceptedLearnCalls": 63,
+    "expectedRejectedLearnCalls": 13,
+    "persistentReopens": 18,
+    "individualChecks": 1961
+  },
+  "syntheticProbes": 34,
+  "syntheticModes": [
+    "python3",
+    "python3 -O"
+  ],
+  "independentFoundationReference": "pass",
+  "inertDeclarationOnlyTypecheck": "pass",
+  "productRuns": 0,
+  "repositoryReadFiles": 3,
+  "languageModelResourceModes": 0,
+  "reviewEntryPoints": [
+    "SPEC.md",
+    "fixtures.json",
+    "Runner.swift",
+    "evaluate.py",
+    "schema.json",
+    "accounting.json",
+    "attestation.json",
+    "preexecution-checks.json"
+  ],
+  "immutableArchive": "author-review-v1.tar.gz",
+  "manifest": "SHA256SUMS.json",
+  "parentPayloadOpened": false,
+  "scope": "public TouchModel compatibility; correlated family checks; no population accuracy claim"
+}
