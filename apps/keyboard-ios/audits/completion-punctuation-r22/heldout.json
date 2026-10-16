@@ -1,0 +1,148 @@
+{
+  "cases": [
+    {
+      "id": "r22-h01",
+      "before": "bring a ",
+      "prefix": "napki",
+      "suffix": ", please.",
+      "target": "napkin",
+      "expectedAfter": "bring a napkin, please.",
+      "expectedCaret": 14,
+      "category": "ordinary",
+      "steps": []
+    },
+    {
+      "id": "r22-h02",
+      "before": "use the ",
+      "prefix": "kettl",
+      "suffix": ";\nthen wait.",
+      "target": "kettle",
+      "expectedAfter": "use the kettle;\nthen wait.",
+      "expectedCaret": 14,
+      "category": "ordinary",
+      "steps": []
+    },
+    {
+      "id": "r22-h03",
+      "before": "pick a ",
+      "prefix": "pillo",
+      "suffix": ": soft",
+      "target": "pillow",
+      "expectedAfter": "pick a pillow: soft",
+      "expectedCaret": 13,
+      "category": "ordinary",
+      "steps": []
+    },
+    {
+      "id": "r22-h04",
+      "before": "trae la ",
+      "prefix": "cuchar",
+      "suffix": ".",
+      "target": "cuchara",
+      "expectedAfter": "trae la cuchara.",
+      "expectedCaret": 15,
+      "category": "ordinary",
+      "steps": []
+    },
+    {
+      "id": "r22-h05",
+      "before": "(elige la ",
+      "prefix": "almohad",
+      "suffix": "!)",
+      "target": "almohada",
+      "expectedAfter": "(elige la almohada!)",
+      "expectedCaret": 18,
+      "category": "ordinary",
+      "steps": []
+    },
+    {
+      "id": "r22-h06",
+      "before": "[una ",
+      "prefix": "zanahori",
+      "suffix": "] next",
+      "target": "zanahoria",
+      "expectedAfter": "[una zanahoria] next",
+      "expectedCaret": 14,
+      "category": "ordinary",
+      "steps": []
+    },
+    {
+      "id": "r22-h07",
+      "before": "choose ",
+      "prefix": "carro",
+      "suffix": ".NET",
+      "target": "carrot",
+      "expectedAfter": "choose carrot .NET",
+      "expectedCaret": 14,
+      "category": "safety",
+      "steps": []
+    },
+    {
+      "id": "r22-h08",
+      "before": "use a ",
+      "prefix": "cushio",
+      "suffix": ":)",
+      "target": "cushion",
+      "expectedAfter": "use a cushion :)",
+      "expectedCaret": 14,
+      "category": "safety",
+      "steps": []
+    },
+    {
+      "id": "r22-h09",
+      "before": "pick a ",
+      "prefix": "spoo",
+      "suffix": "!important",
+      "target": "spoon",
+      "expectedAfter": "pick a spoon !important",
+      "expectedCaret": 13,
+      "category": "safety",
+      "steps": []
+    },
+    {
+      "id": "r22-h10",
+      "before": "elige la ",
+      "prefix": "cortin",
+      "suffix": " \n  verde",
+      "target": "cortina",
+      "expectedAfter": "elige la cortina \n  verde",
+      "expectedCaret": 16,
+      "category": "safety",
+      "steps": []
+    },
+    {
+      "id": "r22-h11",
+      "before": "usa la ",
+      "prefix": "servillet",
+      "suffix": "\"azul\"",
+      "target": "servilleta",
+      "expectedAfter": "usa la servilleta \"azul\"",
+      "expectedCaret": 18,
+      "category": "safety",
+      "steps": []
+    },
+    {
+      "id": "r22-h12",
+      "before": "quiero una ",
+      "prefix": "naranj",
+      "suffix": "",
+      "target": "naranja",
+      "expectedAfter": "quiero una naranja ",
+      "expectedCaret": 19,
+      "category": "safety",
+      "steps": [
+        {
+          "action": "insert",
+          "value": "x",
+          "after": "quiero una naranja x",
+          "caret": 20
+        },
+        {
+          "action": "backspace",
+          "after": "quiero una naranja ",
+          "caret": 19
+        }
+      ]
+    }
+  ]
+}

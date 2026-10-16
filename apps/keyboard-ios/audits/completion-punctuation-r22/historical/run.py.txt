@@ -1,0 +1,20 @@
+#!/usr/bin/env python3
+"""Capture command summaries in memory; retain no raw logs, corpora or xcresults."""
+import argparse,json,os,pathlib,re,subprocess,time
+p=argparse.ArgumentParser();p.add_argument('--input');p.add_argument('--output');p.add_argument('--summary',required=True);p.add_argument('--sealed',action='store_true');p.add_argument('--full',action='store_true');a=p.parse_args()
+env=os.environ.copy()
+if a.input:env.update(R22_INPUT=str(pathlib.Path(a.input).resolve()),R22_OUTPUT=str(pathlib.Path(a.output).resolve()))
+command=['swift','test','--package-path','apps/keyboard-ios/PulpoKeyboardKit','--scratch-path','/tmp/r22-build','-c','release','--no-parallel']
+if not a.full:command+=['--filter','CompletionPunctuationR22Tests/replay']
+t=time.monotonic();r=subprocess.run(command,env=env,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
+lines=r.stdout.splitlines();summary=dict(command=command,wallSeconds=time.monotonic()-t,exitCode=r.returncode,
+ buildSeconds=[float(v) for v in re.findall(r'Build complete! \(([0-9.]+) sec\)',r.stdout)],
+ testSummary=[s for s in lines if 'Test run with' in s or 'Suite PulpoServices' in s],
+ knownIssues=[s for s in lines if 'known issue' in s.lower()],
+ errors=[s for s in lines if 'error:' in s or 'failed' in s.lower()])
+if not a.sealed:summary['replaySummary']=[s for s in lines if s.startswith('R22 rows=')]
+pathlib.Path(a.summary).write_text(json.dumps(summary,indent=2)+'\n')
+if a.sealed: print(json.dumps(dict(exitCode=r.returncode,wallSeconds=summary['wallSeconds'],sealed=True)))
+else:print(json.dumps(summary,indent=2))
+if r.returncode: print('\n'.join(lines[-65:]))
+raise SystemExit(r.returncode)

@@ -1,0 +1,28 @@
+{
+  "command": [
+    "swift",
+    "test",
+    "--package-path",
+    "apps/keyboard-ios/PulpoKeyboardKit",
+    "--scratch-path",
+    "/tmp/r22-build",
+    "-c",
+    "release",
+    "--no-parallel",
+    "--filter",
+    "CompletionPunctuationR22Tests/replay"
+  ],
+  "wallSeconds": 41.589272916,
+  "exitCode": 0,
+  "buildSeconds": [
+    38.38
+  ],
+  "testSummary": [
+    "\u2714 Test run with 1 test in 1 suite passed after 2.092 seconds."
+  ],
+  "knownIssues": [],
+  "errors": [],
+  "replaySummary": [
+    "R22 rows=555 displayed=200 accepted=80 fullPass=80"
+  ]
+}

@@ -1,0 +1,231 @@
+import Foundation
+import Testing
+@testable import KeyboardCore
+
+/// Opt-in, exact synthetic document replays. Missing displayed targets remain misses.
+struct CompletionPunctuationR22Tests {
+  struct Step: Codable { var action: String; var value: String?; var after: String; var caret: Int }
+  struct Input: Codable {
+    var id: String; var before: String; var prefix: String; var suffix: String; var target: String
+    var expectedAfter: String; var expectedCaret: Int?; var category: String; var steps: [Step]?
+    var autoCapitalization: Bool?; var literalPrefix: String?
+  }
+  struct Corpus: Decodable { var cases: [Input] }
+  struct State: Codable {
+    var document: String; var caret: Int; var selection: Int; var composing: String
+    var shift: String; var lastEdit: String; var phantom: Bool
+  }
+  struct Outcome: Codable {
+    var action: String; var expected: String; var expectedCaret: Int; var state: State; var exact: Bool
+  }
+  struct Row: Codable {
+    var id: String; var stack: String; var mode: String; var category: String
+    var target: String; var targetInLexicon: Bool; var suggestions: [String]
+    var displayed: Bool; var accepted: Bool; var fullPass: Bool
+    var selected: State?; var outcomes: [Outcome]; var suffixPreserved: Bool
+    var literal: State?; var literalDisplayed: Bool; var literalExact: Bool; var literalUndo: Bool
+    var autoCommit: State; var autoBackspace: State; var autocorrection: String?; var privateDocument: String
+    var autoCase: State?; var autoCaseExact: Bool; var staleSelectionSafe: Bool; var staleCaretSafe: Bool; var privateSlots: Int; var privatePersonalCount: Int
+    var deletionUndo: Bool; var personalCount: Int; var firstMicroseconds: Double; var selectMicroseconds: Double?
+  }
+
+  /// Applies primitives in FIFO order on flush; proxy reads remain behind while queued.
+  final class Host: TextDocument {
+    let base = FuzzHost()
+    var queued = false
+    var pending: [String?] = []
+    var documentIdentifier: UUID? { base.documentIdentifier }
+    var documentContextBeforeInput: String? { base.documentContextBeforeInput }
+    var documentContextAfterInput: String? { base.documentContextAfterInput }
+    var selectedText: String? { base.selectedText }
+    var hasText: Bool { base.hasText }
+    func insertText(_ text: String) { if queued { pending.append(text) } else { base.insertText(text) } }
+    func deleteBackward() { if queued { pending.append(nil) } else { base.deleteBackward() } }
+    func flush() {
+      for edit in pending { if let edit { base.insertText(edit) } else { base.deleteBackward() } }
+      pending.removeAll()
+    }
+  }
+
+  @Test func displayedCompletionKeepsExistingSuffixAndCaret() throws {
+    for (suffix, separator) in [(". 🤍", ""), (", thanks.", ""), ("); done", ""),
+                                (".NET", " "), (":)", " "), ("!important", " "),
+                                ("(later)", " "), ("\"later\"", " "), ("\nnext", "")] {
+      let stem = "Please confirm my "
+      let (engine, document) = Fixtures.engine(stem + "appo" + suffix)
+      document.moveCursor(to: stem.count + 4)
+      engine.documentDidChange()
+      let shown = try #require(engine.suggestions.slots.first { $0.text == "appointment" })
+      engine.select(shown)
+      let expected = stem + "appointment" + separator + suffix
+      #expect(document.text == expected)
+      #expect(document.text.distance(from: document.text.startIndex, to: document.cursor) == stem.count + 11 + separator.count)
+      #expect(document.documentContextAfterInput == suffix)
+      if let deletion = engine.deleteWordsBackward(1) {
+        #expect(engine.undo(deletion))
+        #expect(document.text == expected)
+      } else { Issue.record("Accepted word must be deletable") }
+    }
+  }
+
+  @Test func punctuationTypedAfterDisplayedSelectionKeepsItsExistingBehavior() throws {
+    let (engine, document) = Fixtures.engine("Please confirm my appo")
+    let shown = try #require(engine.suggestions.slots.first { $0.text == "appointment" })
+    engine.select(shown)
+    #expect(document.text == "Please confirm my appointment ")
+    engine.insertCharacter(",")
+    #expect(document.text == "Please confirm my appointment,")
+    engine.deleteBackward()
+    #expect(document.text == "Please confirm my appointment")
+  }
+
+  @Test func replay() throws {
+    let env = ProcessInfo.processInfo.environment
+    guard let input = env["R22_INPUT"], let output = env["R22_OUTPUT"] else { return }
+    let items = try JSONDecoder().decode(Corpus.self, from: Data(contentsOf: URL(fileURLWithPath: input))).cases
+    var rows: [Row] = []
+    for language in KeyboardLanguage.allCases {
+      let lexicon = try Lexicon(url: Fixtures.languageData.appendingPathComponent(language.rawValue + ".pkdict"))
+      for item in items {
+        for mode in ["immediate", "queued", "ownLag", "acknowledged", "reentrant"] {
+          func fresh(autoCase: Bool? = nil, secure: Bool = false) -> (KeyboardEngine, Host, PersonalDictionary) {
+            let host = Host()
+            host.base.set(text: item.before + item.suffix, cursor: item.before.count)
+            let personal = PersonalDictionary(url: nil)
+            let model = LanguageModel(lexicon: lexicon, personal: personal)
+            let suggester = Suggester(model: model, corrector: SpellCorrector(lexicon: lexicon))
+            var settings = KeyboardSettings(); settings.language = language; settings.autoCapitalization = autoCase ?? item.autoCapitalization ?? false
+            let engine = KeyboardEngine(document: host, suggester: suggester, glide: GlideDecoder(model: model), settings: settings)
+            engine.clock = { 100.0 }
+            if secure { engine.traits.isSecure = true }
+            engine.documentDidChange()
+            if mode == "queued" { host.queued = true }
+            if mode == "ownLag" || mode == "acknowledged" { host.base.startLag(100) }
+            if mode == "reentrant" { host.base.reentrant = { [weak engine] in engine?.documentDidChange() } }
+            for character in item.prefix { engine.insertCharacter(String(character)) }
+            // Echo the final optimistic state before selection in the acknowledged case.
+            if mode == "acknowledged" { host.base.lag = 0; engine.documentDidChange() }
+            return (engine, host, personal)
+          }
+          func state(_ engine: KeyboardEngine, _ host: Host) -> State {
+            host.flush()
+            return State(document: host.base.text, caret: host.base.cursor, selection: host.base.selection,
+                         composing: engine.composingText, shift: String(describing: engine.shift),
+                         lastEdit: String(describing: engine.lastEdit), phantom: engine.phantomSpace)
+          }
+          func exact(_ state: State, _ text: String, _ caret: Int) -> Bool {
+            state.document.utf8.elementsEqual(text.utf8) && state.caret == caret && state.selection == 0
+          }
+          func acknowledge(_ engine: KeyboardEngine, _ host: Host) {
+            host.flush(); host.queued = false; host.base.lag = 0; engine.documentDidChange()
+          }
+          let (engine, host, personal) = fresh()
+          let start = DispatchTime.now().uptimeNanoseconds
+          let offered = engine.suggestions
+          let suggestions = offered.slots
+          let first = Double(DispatchTime.now().uptimeNanoseconds - start) / 1_000
+          var selected: State?; var accepted = false; var outcomes: [Outcome] = []; var undo = false
+          var selectTime: Double?
+          let expectedCaret = item.expectedCaret ?? (item.expectedAfter.count - item.suffix.count)
+          if let shown = suggestions.first(where: { $0.text == item.target }) {
+            let selectStart = DispatchTime.now().uptimeNanoseconds
+            engine.select(shown)
+            selectTime = Double(DispatchTime.now().uptimeNanoseconds - selectStart) / 1_000
+            selected = state(engine, host)
+            accepted = exact(selected!, item.expectedAfter, expectedCaret)
+            // Acknowledgment must preserve document, caret and composing/automatic-space state.
+            acknowledge(engine, host)
+            let reconciled = state(engine, host)
+            outcomes.append(Outcome(action: "acknowledge", expected: item.expectedAfter, expectedCaret: expectedCaret,
+                                    state: reconciled, exact: exact(reconciled, item.expectedAfter, expectedCaret)))
+            var deletionToken: KeyboardEngine.WordDeletion?
+            for step in item.steps ?? [] {
+              switch step.action {
+              case "insert": engine.insertCharacter(step.value ?? "")
+              case "space": engine.insertSpace()
+              case "backspace": engine.deleteBackward()
+              case "reconcile": engine.reconcileHostChanges()
+              case "deleteWord": deletionToken = engine.deleteWordsBackward(1)
+              case "undo": if let deletionToken { _ = engine.undo(deletionToken) }
+              default: Issue.record("Unknown action \(step.action)")
+              }
+              let actual = state(engine, host)
+              outcomes.append(Outcome(action: step.action, expected: step.after, expectedCaret: step.caret,
+                                      state: actual, exact: exact(actual, step.after, step.caret)))
+            }
+            // Restore selected document only through a real selection on a fresh engine.
+            let (undoEngine, undoHost, _) = fresh()
+            if let real = undoEngine.suggestions.slots.first(where: { $0.text == item.target }) {
+              undoEngine.select(real); acknowledge(undoEngine, undoHost)
+              let acceptedState = state(undoEngine, undoHost)
+              if let deletion = undoEngine.deleteWordsBackward(1) {
+                undo = undoEngine.undo(deletion) && exact(state(undoEngine, undoHost), acceptedState.document, acceptedState.caret)
+              }
+            }
+          }
+          engine.save()
+          let (literalEngine, literalHost, _) = fresh()
+          var literal: State?; var literalExact = false; var literalUndo = false
+          if let shown = literalEngine.suggestions.slots.first(where: { $0.kind == .literal }) {
+            literalEngine.select(shown); literal = state(literalEngine, literalHost)
+            // The literal uses the SAME frozen separator decision as the chosen word, while preserving typed bytes.
+            let separatorCount = expectedCaret - item.before.count - item.target.count
+            let typedLiteral = item.literalPrefix ?? item.prefix
+            let expectedLiteral = item.before + typedLiteral + String(repeating: " ", count: max(0, separatorCount)) + item.suffix
+            literalExact = exact(literal!, expectedLiteral, item.before.count + typedLiteral.count + max(0, separatorCount))
+            acknowledge(literalEngine, literalHost)
+            if let deletion = literalEngine.deleteWordsBackward(1) {
+              literalUndo = literalEngine.undo(deletion) && exact(state(literalEngine, literalHost), literal!.document, literal!.caret)
+            }
+          }
+          let (autoEngine, autoHost, _) = fresh()
+          autoEngine.insertSpace()
+          let autoCommit = state(autoEngine, autoHost)
+          acknowledge(autoEngine, autoHost)
+          autoEngine.deleteBackward()
+          let autoBackspace = state(autoEngine, autoHost)
+          autoHost.base.reentrant = nil
+          let (capsEngine, capsHost, _) = fresh(autoCase: true)
+          var caps: State?
+          if let shown = capsEngine.suggestions.slots.first(where: { $0.text == item.target }) {
+            capsEngine.select(shown); caps = state(capsEngine, capsHost)
+          }
+          var staleSelectionSafe = true
+          var staleCaretSafe = true
+          for selection in [false, true] {
+            let (staleEngine, staleHost, _) = fresh()
+            if let shown = staleEngine.suggestions.slots.first(where: { $0.text == item.target }) {
+              acknowledge(staleEngine, staleHost)
+              staleHost.base.cursor = 0
+              if selection { staleHost.base.selection = min(2, staleHost.base.chars.count) }
+              let previous = staleHost.base.current
+              staleEngine.select(shown) // Host change has no callback yet.
+              let unchanged = staleHost.base.current == previous
+              if selection { staleSelectionSafe = unchanged } else { staleCaretSafe = unchanged }
+            }
+            staleHost.base.reentrant = nil
+          }
+          let (privateEngine, privateHost, privatePersonal) = fresh(secure: true)
+          let privateSlots = privateEngine.suggestions.slots.count
+          privateEngine.insertSpace(); privateEngine.deleteBackward(); privateEngine.save(); privateHost.flush()
+          let fullPass = accepted && outcomes.allSatisfy(\.exact) && undo
+          rows.append(Row(id: item.id, stack: language.rawValue, mode: mode, category: item.category,
+                          target: item.target, targetInLexicon: lexicon.id(of: item.target) != nil,
+                          suggestions: suggestions.map { "\($0.kind)|\($0.text)|\($0.isAutocorrection)" },
+                          displayed: suggestions.contains { $0.text == item.target }, accepted: accepted, fullPass: fullPass,
+                          selected: selected, outcomes: outcomes,
+                          suffixPreserved: selected.map { String($0.document.dropFirst($0.caret)).utf8.elementsEqual(item.suffix.utf8) } ?? false,
+                          literal: literal, literalDisplayed: literal != nil, literalExact: literalExact, literalUndo: literalUndo,
+                          autoCommit: autoCommit, autoBackspace: autoBackspace, autocorrection: offered.autocorrection, privateDocument: privateHost.base.text,
+                          autoCase: caps, autoCaseExact: caps.map { exact($0, item.expectedAfter, expectedCaret) } ?? false,
+                          staleSelectionSafe: staleSelectionSafe, staleCaretSafe: staleCaretSafe, privateSlots: privateSlots, privatePersonalCount: privatePersonal.totalCount,
+                          deletionUndo: undo, personalCount: personal.totalCount, firstMicroseconds: first, selectMicroseconds: selectTime))
+          host.base.reentrant = nil; literalHost.base.reentrant = nil; capsHost.base.reentrant = nil; privateHost.base.reentrant = nil
+        }
+      }
+    }
+    let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+    try encoder.encode(rows).write(to: URL(fileURLWithPath: output))
+    print("R22 rows=\(rows.count) displayed=\(rows.filter(\.displayed).count) accepted=\(rows.filter(\.accepted).count) fullPass=\(rows.filter(\.fullPass).count)")
+  }
+}

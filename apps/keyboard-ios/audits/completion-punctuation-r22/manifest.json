@@ -1,0 +1,298 @@
+{
+  "decision": "REJECT; artifact-only, no production or compiled test import",
+  "rootCheckpoint": "5e5153664a97b5aafe4995efc47836470043cb1b",
+  "sourceWorktree": "/private/tmp/pulpo-r22-completion-punctuation",
+  "commits": [
+    "31299362",
+    "e5c29269",
+    "cb0e0fb3",
+    "8b1bd5f6"
+  ],
+  "baselineCommit": "967e5c4bc1018a00623a5c4b7e75bcbe509b4c4b",
+  "artifacts": [
+    {
+      "path": "agent-audit.md",
+      "logicalPath": "agent-audit.md",
+      "sha256": "8409e9d4f178f08bc8b8d53410907c8a718d62db3bb400b179d298c1a03e9754",
+      "originalPath": "apps/keyboard-ios/audits/completion-punctuation-r22/audit.md"
+    },
+    {
+      "path": "baseline.txt",
+      "logicalPath": "baseline.txt",
+      "sha256": "3c5587738a72dd1b615b729040c511ed90b099ec8b86f27888cf37b17a0ecf96",
+      "originalPath": "apps/keyboard-ios/audits/completion-punctuation-r22/baseline.txt"
+    },
+    {
+      "path": "candidate-freeze.json",
+      "logicalPath": "candidate-freeze.json",
+      "sha256": "a687c8dc050cf7fa3c20eef24cd0da7f5655778a49934eb4f5627b24ff436e76",
+      "originalPath": "apps/keyboard-ios/audits/completion-punctuation-r22/candidate-freeze.json"
+    },
+    {
+      "path": "historical/compare.py.txt",
+      "logicalPath": "compare.py",
+      "sha256": "ef67c85ff7f74e6343bef5d32ffae34614114895c608592cdfbcc86c4c70fb6d",
+      "originalPath": "apps/keyboard-ios/audits/completion-punctuation-r22/compare.py"
+    },
+    {
+      "path": "controls-baseline-execution.json",
+      "logicalPath": "controls-baseline-execution.json",
+      "sha256": "8060d8a94a8a54878dd2ecf76f3d9c229902b2d1743549140d208e8c9e178e6e",
+      "originalPath": "apps/keyboard-ios/audits/completion-punctuation-r22/controls-baseline-execution.json"
+    },
+    {
+      "path": "controls-candidate-execution.json",
+      "logicalPath": "controls-candidate-execution.json",
+      "sha256": "aae2f512229ca1ac430ef61510209481b6a83beebb6df0fcac606115bc5ce782",
+      "originalPath": "apps/keyboard-ios/audits/completion-punctuation-r22/controls-candidate-execution.json"
+    },
+    {
+      "path": "controls-final-baseline-execution.json",
+      "logicalPath": "controls-final-baseline-execution.json",
+      "sha256": "60148f2c7609508b2ab8afc292f39eda0243b8099608154d912652d42cd55425",
+      "originalPath": "apps/keyboard-ios/audits/completion-punctuation-r22/controls-final-baseline-execution.json"
+    },
+    {
+      "path": "controls-final-candidate-execution.json",
+      "logicalPath": "controls-final-candidate-execution.json",
+      "sha256": "25bd7715dbc0907352a2a780c6ca04cb3023480e55462ce539650e7ee650bb03",
+      "originalPath": "apps/keyboard-ios/audits/completion-punctuation-r22/controls-final-candidate-execution.json"
+    },
+    {
+      "path": "controls-final-paired.json.gz",
+      "logicalPath": "controls-final-paired.json",
+      "sha256": "a9b12f0aefcb32b940474ffa64c6ba186b860497373a5c3cf8d04891c12244d7",
+      "originalPath": "apps/keyboard-ios/audits/completion-punctuation-r22/controls-final-paired.json",
+      "decompressedSHA256": "316d0285e8d814490f5d36cd50796fec3ae899979e1dd9d0aab5a5b969a1f355"
+    },
+    {
+      "path": "controls-initial-caret-oracle-paired.json.gz",
+      "logicalPath": "controls-initial-caret-oracle-paired.json",
+      "sha256": "92aba5dec81ecaf67d585d96ef60ae923b3d857435cdb2553fa040d671585c14",
+      "originalPath": "apps/keyboard-ios/audits/completion-punctuation-r22/controls-initial-caret-oracle-paired.json",
+      "decompressedSHA256": "aa420ea930b68114e48dda89002a166dd2d8d0ddba3587bf3ca5454cd1526740"
+    },
+    {
+      "path": "controls.json",
+      "logicalPath": "controls.json",
+      "sha256": "5f9eedb5d6f528790ab0ba91e9c4c5182d3a38d4fdb313f3cccdb8f21b2c0f7d",
+      "originalPath": "apps/keyboard-ios/audits/completion-punctuation-r22/controls.json"
+    },
+    {
+      "path": "costs.json",
+      "logicalPath": "costs.json",
+      "sha256": "fa15bf21fd57e839c0238bf431ea23e820236f67b65c3bc70e23a6de00752862",
+      "originalPath": "apps/keyboard-ios/audits/completion-punctuation-r22/costs.json"
+    },
+    {
+      "path": "development-amendments.md",
+      "logicalPath": "development-amendments.md",
+      "sha256": "c307565c68ac82aaa70f0f1db66f44504834d33b49f439466345b67926ce3b9a",
+      "originalPath": "apps/keyboard-ios/audits/completion-punctuation-r22/development-amendments.md"
+    },
+    {
+      "path": "development-baseline-execution.json",
+      "logicalPath": "development-baseline-execution.json",
+      "sha256": "7dd5e18797a6930c6d2c8a1f76c9697bf938423aba7e0d149f2c1927b6953f65",
+      "originalPath": "apps/keyboard-ios/audits/completion-punctuation-r22/development-baseline-execution.json"
+    },
+    {
+      "path": "development-candidate-execution.json",
+      "logicalPath": "development-candidate-execution.json",
+      "sha256": "3c75b8fdd9ea4ac2ae8388dd770ea9702c08a2f8ebbed0c403dc238dacc02ca6",
+      "originalPath": "apps/keyboard-ios/audits/completion-punctuation-r22/development-candidate-execution.json"
+    },
+    {
+      "path": "development-paired.json.gz",
+      "logicalPath": "development-paired.json",
+      "sha256": "b349f8aeba5dff5bd6e18c4a3a184e45b87aedc75213b6d2f50c517c5c73357e",
+      "originalPath": "apps/keyboard-ios/audits/completion-punctuation-r22/development-paired.json",
+      "decompressedSHA256": "ac61338ebce71c7fcfa6e18cce91652f9e0bc43f0aecad8842133966ffae373c"
+    },
+    {
+      "path": "development.json",
+      "logicalPath": "development.json",
+      "sha256": "f0c21f20fb137ba5f088ac54739948019f16e964d494f26e8d5fe11120fc17e5",
+      "originalPath": "apps/keyboard-ios/audits/completion-punctuation-r22/development.json"
+    },
+    {
+      "path": "historical/evaluate.py.txt",
+      "logicalPath": "evaluate.py",
+      "sha256": "260c9655e77572181d0811ef1ac2a6ec48296141c03f48975db0cfb02c704342",
+      "originalPath": "apps/keyboard-ios/audits/completion-punctuation-r22/evaluate.py"
+    },
+    {
+      "path": "exclusions.json.gz",
+      "logicalPath": "exclusions.json",
+      "sha256": "9d6a4f12ac64789190285a9befab2eddad97758d97cc3da55bcb2b41e10cc6b0",
+      "originalPath": "apps/keyboard-ios/audits/completion-punctuation-r22/exclusions.json",
+      "decompressedSHA256": "15741750b3c0ea4596865eafef62461c1cd0b37662bb46d1899e7cf4fb238f1f"
+    },
+    {
+      "path": "extended-controls.json",
+      "logicalPath": "extended-controls.json",
+      "sha256": "e2240969316946bafcc7d98ac8b9bcee04f210c0407f4255949e425d84fac614",
+      "originalPath": "apps/keyboard-ios/audits/completion-punctuation-r22/extended-controls.json"
+    },
+    {
+      "path": "final-verification.json",
+      "logicalPath": "final-verification.json",
+      "sha256": "d5790fe515e8e28d47e30aca32b786c3ec9997d5f038f4bfce5ae7445fc2b45b",
+      "originalPath": "apps/keyboard-ios/audits/completion-punctuation-r22/final-verification.json"
+    },
+    {
+      "path": "full-regressions.json",
+      "logicalPath": "full-regressions.json",
+      "sha256": "acbda8fffd8e7d6df2f51913eafd30a65b4dab1ffa58e9a7a1e80282ff79914f",
+      "originalPath": "apps/keyboard-ios/audits/completion-punctuation-r22/full-regressions.json"
+    },
+    {
+      "path": "heldout-authorship.md",
+      "logicalPath": "heldout-authorship.md",
+      "sha256": "c3e411b56796973d09c95ca0861dc1bae427c77796a472a422c99d628f15b062",
+      "originalPath": "apps/keyboard-ios/audits/completion-punctuation-r22/heldout-authorship.md"
+    },
+    {
+      "path": "heldout-baseline-execution.json",
+      "logicalPath": "heldout-baseline-execution.json",
+      "sha256": "775232b1440c56d8bba744b687a499cfc4b0b68e8c177f8e9335181d4baa4aaf",
+      "originalPath": "apps/keyboard-ios/audits/completion-punctuation-r22/heldout-baseline-execution.json"
+    },
+    {
+      "path": "heldout-candidate-execution.json",
+      "logicalPath": "heldout-candidate-execution.json",
+      "sha256": "d8172e967b41777e685359d1be12fb10028f215a892b40b5418c78a485f03469",
+      "originalPath": "apps/keyboard-ios/audits/completion-punctuation-r22/heldout-candidate-execution.json"
+    },
+    {
+      "path": "heldout-paired.json.gz",
+      "logicalPath": "heldout-paired.json",
+      "sha256": "7d940413eede68b011d99450880a68828adc3ddcf7d2056b6ff871bdd1806eba",
+      "originalPath": "apps/keyboard-ios/audits/completion-punctuation-r22/heldout-paired.json",
+      "decompressedSHA256": "b5805e4442f96be5afaedc702c68fe4d6abd021490f7af3b28d39e403ec9b6bf"
+    },
+    {
+      "path": "heldout.json",
+      "logicalPath": "heldout.json",
+      "sha256": "8f2f103888fd6426e69c554b064252645eb5da1735faa14b8e08b477884a1686",
+      "originalPath": "apps/keyboard-ios/audits/completion-punctuation-r22/heldout.json"
+    },
+    {
+      "path": "protocol.md",
+      "logicalPath": "protocol.md",
+      "sha256": "e3d2f3f7ed80094b1805a9640c94805548809b8de39bc7be32718128e02b97b1",
+      "originalPath": "apps/keyboard-ios/audits/completion-punctuation-r22/protocol.md"
+    },
+    {
+      "path": "historical/run.py.txt",
+      "logicalPath": "run.py",
+      "sha256": "dd00eca6fe32c6d0a64f57daf509448614106573567d065825f4279234ba1ffa",
+      "originalPath": "apps/keyboard-ios/audits/completion-punctuation-r22/run.py"
+    },
+    {
+      "path": "sealed-author-attestation.json",
+      "logicalPath": "sealed-author-attestation.json",
+      "sha256": "374e0e186580f53bc9ed434af82e0de58540c2de33520e3e6dea0fcd37987c0b",
+      "originalPath": "apps/keyboard-ios/audits/completion-punctuation-r22/sealed-author-attestation.json"
+    },
+    {
+      "path": "source-review-controls.json",
+      "logicalPath": "source-review-controls.json",
+      "sha256": "557ecdba5a1aa60ebb61f06c2e20f182e439f253564a2183a602f8f63d6b07ba",
+      "originalPath": "apps/keyboard-ios/audits/completion-punctuation-r22/source-review-controls.json"
+    },
+    {
+      "path": "source-review-results.json.gz",
+      "logicalPath": "source-review-results.json",
+      "sha256": "de72a8879bea7ca76cb9c37acd9a05febba51e0466e19291a05340024a35e64c",
+      "originalPath": "apps/keyboard-ios/audits/completion-punctuation-r22/source-review-results.json",
+      "decompressedSHA256": "895d4d15dde2e73c933e5a17aa6527eb2e861d5d42eb770b0509c55f4b53cf8b"
+    },
+    {
+      "path": "source-review.md",
+      "logicalPath": "source-review.md",
+      "sha256": "517e9d6cfed61af4f3f301ecd151596bc438a9198b11ce9635693d987206faac",
+      "originalPath": "apps/keyboard-ios/audits/completion-punctuation-r22/source-review.md"
+    },
+    {
+      "path": "CompletionPunctuationR22Tests.swift.txt",
+      "logicalPath": "CompletionPunctuationR22Tests.swift.txt",
+      "sha256": "d87e035a42b547d048f834af66eb24469d98b09f1983f17b51e044876d3beb77",
+      "originalPath": "apps/keyboard-ios/PulpoKeyboardKit/Tests/KeyboardCoreTests/CompletionPunctuationR22Tests.swift"
+    },
+    {
+      "path": "baseline-KeyboardEngine.swift.txt.gz",
+      "logicalPath": "baseline-KeyboardEngine.swift.txt",
+      "sha256": "b9d2b3ab06d61132b5ace1018ec108bd788db5b25fa4ce83cd50488f89938b55",
+      "originalPath": "967e5c4b:apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Input/KeyboardEngine.swift",
+      "decompressedSHA256": "3f0987051ff0f176a5e1ef6396d415b0f8fe0fc2088735c75fef87f75158de97"
+    },
+    {
+      "path": "rejected-policy.patch.gz",
+      "logicalPath": "rejected-policy.patch",
+      "sha256": "1bf77018706b1ce6ece0999cf8cfb75d170976a983714249e21fd3f189905218",
+      "originalPath": "git diff 967e5c4b..e5c29269 -- apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Input/KeyboardEngine.swift",
+      "decompressedSHA256": "5f151cc2497fc5f63b7e1eb9fcef62f2441afc3e0d1b0ed336bdda5be60666db"
+    },
+    {
+      "path": "post-review/Client.swift.txt",
+      "logicalPath": "post-review/Client.swift.txt",
+      "sha256": "f3d9ebec1bc7245f2b20d256bd2d88ee540d1f1947cad6402886700e6259a5e4",
+      "originalPath": "/tmp/pulpo-r22-review-diagnostic/Client.swift"
+    },
+    {
+      "path": "post-review/cases.json",
+      "logicalPath": "post-review/cases.json",
+      "sha256": "0db992360a6ff85b7111b5fba63d4002df52484411abccc6d3d8ce193bc5ecbc",
+      "originalPath": "/tmp/pulpo-r22-review-diagnostic/cases.json"
+    },
+    {
+      "path": "post-review/protocol.txt",
+      "logicalPath": "post-review/protocol.txt",
+      "sha256": "bf585ed74e86c301409cb125f7eff4a85d4143972984c1a63e73abe56fde1f92",
+      "originalPath": "/tmp/pulpo-r22-review-diagnostic/protocol.txt"
+    },
+    {
+      "path": "post-review/freeze.json",
+      "logicalPath": "post-review/freeze.json",
+      "sha256": "19210b5ec87a7ef7f66233f0577dad703449de55e612fe34d44df0f7b87c2890",
+      "originalPath": "/tmp/pulpo-r22-review-diagnostic/freeze.json"
+    },
+    {
+      "path": "post-review/hashes.json",
+      "logicalPath": "post-review/hashes.json",
+      "sha256": "a7f1ec99da1fc7d779f5ce7089c9550747a4e50f1fd0b820cd221fd5ecd4dcd9",
+      "originalPath": "/tmp/pulpo-r22-review-diagnostic/hashes.json"
+    },
+    {
+      "path": "post-review/baseline.json",
+      "logicalPath": "post-review/baseline.json",
+      "sha256": "a1b9b543a17f4e324e0a0e7f53ef5e7de080b7f671ae51104c98308d4471c825",
+      "originalPath": "/tmp/pulpo-r22-review-diagnostic/baseline.json"
+    },
+    {
+      "path": "post-review/candidate.json",
+      "logicalPath": "post-review/candidate.json",
+      "sha256": "831424cc3f88cf825ceee3f1f84d3ba1ef1700d40b0e83e0406dba6d5c63d073",
+      "originalPath": "/tmp/pulpo-r22-review-diagnostic/candidate.json"
+    },
+    {
+      "path": "post-review/summary.json",
+      "logicalPath": "post-review/summary.json",
+      "sha256": "7cffe6352eb22b7d35439950ea88ad31d78736c23c90cf15b2a1956360f654cf",
+      "originalPath": "/tmp/pulpo-r22-review-diagnostic/summary.json"
+    },
+    {
+      "path": "post-review/commands.txt",
+      "logicalPath": "post-review/commands.txt",
+      "sha256": "e3bf7d86df2ea3eba3d97c5518f07fb67dc7a6c38c8c2d5d29094ef4baf37439",
+      "originalPath": "/tmp/pulpo-r22-review-diagnostic/commands.txt"
+    },
+    {
+      "path": "post-review/stored-row-review.json",
+      "logicalPath": "post-review/stored-row-review.json",
+      "sha256": "abe0b717b793d22a1dc59cc614a1816988bf72ad0624e2afb5f1da4186fec094",
+      "originalPath": "/tmp/pulpo-r22-review-diagnostic/stored-row-review.json"
+    }
+  ]
+}

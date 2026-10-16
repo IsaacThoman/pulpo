@@ -1,0 +1,247 @@
+{
+  "cases": [
+    {
+      "id": "literal-control-0",
+      "before": "we saw ",
+      "prefix": "LuMi",
+      "suffix": ",",
+      "target": "LuMi",
+      "expectedAfter": "we saw LuMi,",
+      "expectedCaret": 11,
+      "category": "literal"
+    },
+    {
+      "id": "literal-control-1",
+      "before": "we saw ",
+      "prefix": "Merovia",
+      "suffix": ".",
+      "target": "Merovia",
+      "expectedAfter": "we saw Merovia.",
+      "expectedCaret": 14,
+      "category": "literal"
+    },
+    {
+      "id": "literal-control-2",
+      "before": "we saw ",
+      "prefix": "lám",
+      "suffix": ".",
+      "target": "lám",
+      "expectedAfter": "we saw lám.",
+      "expectedCaret": 10,
+      "category": "literal"
+    },
+    {
+      "id": "literal-control-3",
+      "before": "we saw ",
+      "prefix": "eBay",
+      "suffix": "!important",
+      "target": "eBay",
+      "expectedAfter": "we saw eBay !important",
+      "expectedCaret": 12,
+      "category": "literal"
+    },
+    {
+      "id": "literal-control-4",
+      "before": "we saw ",
+      "prefix": "kithcen",
+      "suffix": ", thanks.",
+      "target": "kithcen",
+      "expectedAfter": "we saw kithcen, thanks.",
+      "expectedCaret": 14,
+      "category": "literal"
+    },
+    {
+      "id": "literal-control-5",
+      "before": "we saw ",
+      "prefix": "abierts",
+      "suffix": ".",
+      "target": "abierts",
+      "expectedAfter": "we saw abierts.",
+      "expectedCaret": 14,
+      "category": "literal"
+    },
+    {
+      "id": "literal-control-6",
+      "before": "we saw ",
+      "prefix": "fir",
+      "suffix": ":)",
+      "target": "fir",
+      "expectedAfter": "we saw fir :)",
+      "expectedCaret": 11,
+      "category": "literal"
+    },
+    {
+      "id": "literal-control-7",
+      "before": "we saw ",
+      "prefix": "snake_case",
+      "suffix": ".",
+      "target": "snake_case",
+      "expectedAfter": "we saw snake_case.",
+      "expectedCaret": 17,
+      "category": "literal"
+    },
+    {
+      "id": "literal-control-8",
+      "before": "we saw ",
+      "prefix": "hello@example.com",
+      "suffix": ".",
+      "target": "hello@example.com",
+      "expectedAfter": "we saw hello@example.com.",
+      "expectedCaret": 24,
+      "category": "literal"
+    },
+    {
+      "id": "literal-control-9",
+      "before": "we saw ",
+      "prefix": "0xBEEF",
+      "suffix": ".",
+      "target": "0xBEEF",
+      "expectedAfter": "we saw 0xBEEF.",
+      "expectedCaret": 13,
+      "category": "literal"
+    },
+    {
+      "id": "source-review-comma-curly-quote",
+      "before": "book an ",
+      "prefix": "appoi",
+      "suffix": ",” next",
+      "target": "appointment",
+      "expectedAfter": "book an appointment,” next",
+      "expectedCaret": 19,
+      "category": "ordinary",
+      "steps": []
+    },
+    {
+      "id": "source-review-comma-straight-quote",
+      "before": "book an ",
+      "prefix": "appoi",
+      "suffix": ",\" next",
+      "target": "appointment",
+      "expectedAfter": "book an appointment,\" next",
+      "expectedCaret": 19,
+      "category": "ordinary",
+      "steps": []
+    },
+    {
+      "id": "source-review-comma-curly-quote-end",
+      "before": "book an ",
+      "prefix": "appoi",
+      "suffix": ",”",
+      "target": "appointment",
+      "expectedAfter": "book an appointment,”",
+      "expectedCaret": 19,
+      "category": "ordinary",
+      "steps": []
+    },
+    {
+      "id": "source-review-period-curly-quote",
+      "before": "book an ",
+      "prefix": "appoi",
+      "suffix": ".” next",
+      "target": "appointment",
+      "expectedAfter": "book an appointment.” next",
+      "expectedCaret": 19,
+      "category": "ordinary",
+      "steps": []
+    },
+    {
+      "id": "source-review-question-exclamation",
+      "before": "book an ",
+      "prefix": "appoi",
+      "suffix": "?! next",
+      "target": "appointment",
+      "expectedAfter": "book an appointment?! next",
+      "expectedCaret": 19,
+      "category": "ordinary",
+      "steps": []
+    },
+    {
+      "id": "source-review-dot-net",
+      "before": "book an ",
+      "prefix": "appoi",
+      "suffix": ".NET",
+      "target": "appointment",
+      "expectedAfter": "book an appointment .NET",
+      "expectedCaret": 20,
+      "category": "safety",
+      "steps": []
+    },
+    {
+      "id": "source-review-smile",
+      "before": "book an ",
+      "prefix": "appoi",
+      "suffix": ":)",
+      "target": "appointment",
+      "expectedAfter": "book an appointment :)",
+      "expectedCaret": 20,
+      "category": "safety",
+      "steps": []
+    },
+    {
+      "id": "source-review-wink",
+      "before": "book an ",
+      "prefix": "appoi",
+      "suffix": ";-)",
+      "target": "appointment",
+      "expectedAfter": "book an appointment ;-)",
+      "expectedCaret": 20,
+      "category": "safety",
+      "steps": []
+    },
+    {
+      "id": "source-review-important",
+      "before": "book an ",
+      "prefix": "appoi",
+      "suffix": "!important",
+      "target": "appointment",
+      "expectedAfter": "book an appointment !important",
+      "expectedCaret": 20,
+      "category": "safety",
+      "steps": []
+    },
+    {
+      "id": "source-review-opening-quote",
+      "before": "book an ",
+      "prefix": "appoi",
+      "suffix": "“later”",
+      "target": "appointment",
+      "expectedAfter": "book an appointment “later”",
+      "expectedCaret": 20,
+      "category": "safety",
+      "steps": []
+    },
+    {
+      "id": "source-review-ambiguous-closing-quote",
+      "before": "book an ",
+      "prefix": "appoi",
+      "suffix": "” later",
+      "target": "appointment",
+      "expectedAfter": "book an appointment ” later",
+      "expectedCaret": 20,
+      "category": "safety",
+      "steps": []
+    },
+    {
+      "id": "source-review-mixed-run-word",
+      "before": "book an ",
+      "prefix": "appoi",
+      "suffix": "!”later",
+      "target": "appointment",
+      "expectedAfter": "book an appointment !”later",
+      "expectedCaret": 20,
+      "category": "safety",
+      "steps": []
+    },
+    {
+      "id": "source-review-leading-newline",
+      "before": "book an ",
+      "prefix": "appoi",
+      "suffix": "\nnext",
+      "target": "appointment",
+      "expectedAfter": "book an appointment\nnext",
+      "expectedCaret": 19,
+      "category": "safety",
+      "steps": []
+    }
+  ]
+}

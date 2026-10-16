@@ -1,0 +1,9 @@
+{
+  "classification": "post-review exposed diagnostic; no blind gain claim",
+  "count": 11,
+  "hashes": {
+    "cases.json": "0db992360a6ff85b7111b5fba63d4002df52484411abccc6d3d8ce193bc5ecbc",
+    "protocol.txt": "bf585ed74e86c301409cb125f7eff4a85d4143972984c1a63e73abe56fde1f92"
+  },
+  "clientSHA256": "f3d9ebec1bc7245f2b20d256bd2d88ee540d1f1947cad6402886700e6259a5e4"
+}

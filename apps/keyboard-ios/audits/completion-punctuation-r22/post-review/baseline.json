@@ -1,0 +1,529 @@
+[
+  {
+    "available" : true,
+    "caret" : 13,
+    "exact" : false,
+    "expected" : "save archive, next",
+    "id" : "ordinary-comma",
+    "output" : "save archive , next",
+    "selection" : 0,
+    "slots" : [
+      "correction|archives|false",
+      "literal|archive|false",
+      "correction|archived|false"
+    ],
+    "stack" : "en_US",
+    "suffixPreserved" : true
+  },
+  {
+    "available" : true,
+    "caret" : 11,
+    "exact" : true,
+    "expected" : "mv archive .. ",
+    "id" : "parent-directory-operand",
+    "output" : "mv archive .. ",
+    "selection" : 0,
+    "slots" : [
+      "correction|archives|false",
+      "literal|archive|false",
+      "correction|archived|false"
+    ],
+    "stack" : "en_US",
+    "suffixPreserved" : true
+  },
+  {
+    "available" : true,
+    "caret" : 11,
+    "exact" : true,
+    "expected" : "mv archive .",
+    "id" : "current-directory-operand",
+    "output" : "mv archive .",
+    "selection" : 0,
+    "slots" : [
+      "correction|archives|false",
+      "literal|archive|false",
+      "correction|archived|false"
+    ],
+    "stack" : "en_US",
+    "suffixPreserved" : true
+  },
+  {
+    "available" : true,
+    "caret" : 10,
+    "exact" : true,
+    "expected" : "say hello ):",
+    "id" : "reverse-emoticon",
+    "output" : "say hello ):",
+    "selection" : 0,
+    "slots" : [
+      "correction|help|false",
+      "literal|hello|false",
+      "correction|hell|false"
+    ],
+    "stack" : "en_US",
+    "suffixPreserved" : true
+  },
+  {
+    "available" : true,
+    "caret" : 10,
+    "exact" : true,
+    "expected" : "say hello :)",
+    "id" : "standard-emoticon-control",
+    "output" : "say hello :)",
+    "selection" : 0,
+    "slots" : [
+      "correction|help|false",
+      "literal|hello|false",
+      "correction|hell|false"
+    ],
+    "stack" : "en_US",
+    "suffixPreserved" : true
+  },
+  {
+    "available" : true,
+    "caret" : 10,
+    "exact" : false,
+    "expected" : "say hello.” next",
+    "id" : "period-quote-control",
+    "output" : "say hello .” next",
+    "selection" : 0,
+    "slots" : [
+      "correction|help|false",
+      "literal|hello|false",
+      "correction|hell|false"
+    ],
+    "stack" : "en_US",
+    "suffixPreserved" : true
+  },
+  {
+    "available" : true,
+    "caret" : 10,
+    "exact" : false,
+    "expected" : "say hello,” next",
+    "id" : "comma-quote-known-miss",
+    "output" : "say hello ,” next",
+    "selection" : 0,
+    "slots" : [
+      "correction|help|false",
+      "literal|hello|false",
+      "correction|hell|false"
+    ],
+    "stack" : "en_US",
+    "suffixPreserved" : true
+  },
+  {
+    "available" : true,
+    "caret" : 9,
+    "exact" : true,
+    "expected" : "say hello .NET",
+    "id" : "existing-space-control",
+    "output" : "say hello .NET",
+    "selection" : 0,
+    "slots" : [
+      "correction|help|false",
+      "literal|hello|false",
+      "correction|hell|false"
+    ],
+    "stack" : "en_US",
+    "suffixPreserved" : true
+  },
+  {
+    "available" : true,
+    "caret" : 13,
+    "exact" : true,
+    "expected" : "save archive , next",
+    "id" : "smart-spacing-off-control",
+    "output" : "save archive , next",
+    "selection" : 0,
+    "slots" : [
+      "correction|archives|false",
+      "literal|archive|false",
+      "correction|archived|false"
+    ],
+    "stack" : "en_US",
+    "suffixPreserved" : true
+  },
+  {
+    "available" : true,
+    "caret" : 10,
+    "exact" : false,
+    "expected" : "say hello.. next",
+    "id" : "two-dot-prose-policy",
+    "output" : "say hello .. next",
+    "selection" : 0,
+    "slots" : [
+      "correction|help|false",
+      "literal|hello|false",
+      "correction|hell|false"
+    ],
+    "stack" : "en_US",
+    "suffixPreserved" : true
+  },
+  {
+    "available" : true,
+    "caret" : 12,
+    "exact" : true,
+    "expected" : "write range ... 5",
+    "id" : "range-operator-token",
+    "output" : "write range ... 5",
+    "selection" : 0,
+    "slots" : [
+      "correction|ranges|false",
+      "literal|range|false",
+      "correction|orange|false"
+    ],
+    "stack" : "en_US",
+    "suffixPreserved" : true
+  },
+  {
+    "available" : true,
+    "caret" : 13,
+    "exact" : false,
+    "expected" : "save archive, next",
+    "id" : "ordinary-comma",
+    "output" : "save archive , next",
+    "selection" : 0,
+    "slots" : [
+      "correction|archivo|false",
+      "literal|archive|false",
+      "correction|archivos|false"
+    ],
+    "stack" : "es",
+    "suffixPreserved" : true
+  },
+  {
+    "available" : true,
+    "caret" : 11,
+    "exact" : true,
+    "expected" : "mv archive .. ",
+    "id" : "parent-directory-operand",
+    "output" : "mv archive .. ",
+    "selection" : 0,
+    "slots" : [
+      "correction|archivo|false",
+      "literal|archive|false",
+      "correction|archivos|false"
+    ],
+    "stack" : "es",
+    "suffixPreserved" : true
+  },
+  {
+    "available" : true,
+    "caret" : 11,
+    "exact" : true,
+    "expected" : "mv archive .",
+    "id" : "current-directory-operand",
+    "output" : "mv archive .",
+    "selection" : 0,
+    "slots" : [
+      "correction|archivo|false",
+      "literal|archive|false",
+      "correction|archivos|false"
+    ],
+    "stack" : "es",
+    "suffixPreserved" : true
+  },
+  {
+    "available" : true,
+    "caret" : 10,
+    "exact" : true,
+    "expected" : "say hello ):",
+    "id" : "reverse-emoticon",
+    "output" : "say hello ):",
+    "selection" : 0,
+    "slots" : [
+      "literal|hello|false",
+      "correction|bello|true",
+      "correction|ello|false"
+    ],
+    "stack" : "es",
+    "suffixPreserved" : true
+  },
+  {
+    "available" : true,
+    "caret" : 10,
+    "exact" : true,
+    "expected" : "say hello :)",
+    "id" : "standard-emoticon-control",
+    "output" : "say hello :)",
+    "selection" : 0,
+    "slots" : [
+      "literal|hello|false",
+      "correction|bello|true",
+      "correction|ello|false"
+    ],
+    "stack" : "es",
+    "suffixPreserved" : true
+  },
+  {
+    "available" : true,
+    "caret" : 10,
+    "exact" : false,
+    "expected" : "say hello.” next",
+    "id" : "period-quote-control",
+    "output" : "say hello .” next",
+    "selection" : 0,
+    "slots" : [
+      "literal|hello|false",
+      "correction|bello|true",
+      "correction|ello|false"
+    ],
+    "stack" : "es",
+    "suffixPreserved" : true
+  },
+  {
+    "available" : true,
+    "caret" : 10,
+    "exact" : false,
+    "expected" : "say hello,” next",
+    "id" : "comma-quote-known-miss",
+    "output" : "say hello ,” next",
+    "selection" : 0,
+    "slots" : [
+      "literal|hello|false",
+      "correction|bello|true",
+      "correction|ello|false"
+    ],
+    "stack" : "es",
+    "suffixPreserved" : true
+  },
+  {
+    "available" : true,
+    "caret" : 9,
+    "exact" : true,
+    "expected" : "say hello .NET",
+    "id" : "existing-space-control",
+    "output" : "say hello .NET",
+    "selection" : 0,
+    "slots" : [
+      "literal|hello|false",
+      "correction|bello|true",
+      "correction|ello|false"
+    ],
+    "stack" : "es",
+    "suffixPreserved" : true
+  },
+  {
+    "available" : true,
+    "caret" : 13,
+    "exact" : true,
+    "expected" : "save archive , next",
+    "id" : "smart-spacing-off-control",
+    "output" : "save archive , next",
+    "selection" : 0,
+    "slots" : [
+      "correction|archivo|false",
+      "literal|archive|false",
+      "correction|archivos|false"
+    ],
+    "stack" : "es",
+    "suffixPreserved" : true
+  },
+  {
+    "available" : true,
+    "caret" : 10,
+    "exact" : false,
+    "expected" : "say hello.. next",
+    "id" : "two-dot-prose-policy",
+    "output" : "say hello .. next",
+    "selection" : 0,
+    "slots" : [
+      "literal|hello|false",
+      "correction|bello|true",
+      "correction|ello|false"
+    ],
+    "stack" : "es",
+    "suffixPreserved" : true
+  },
+  {
+    "available" : true,
+    "caret" : 12,
+    "exact" : true,
+    "expected" : "write range ... 5",
+    "id" : "range-operator-token",
+    "output" : "write range ... 5",
+    "selection" : 0,
+    "slots" : [
+      "literal|range|false",
+      "correction|rango|true"
+    ],
+    "stack" : "es",
+    "suffixPreserved" : true
+  },
+  {
+    "available" : true,
+    "caret" : 13,
+    "exact" : false,
+    "expected" : "save archive, next",
+    "id" : "ordinary-comma",
+    "output" : "save archive , next",
+    "selection" : 0,
+    "slots" : [
+      "correction|archivo|false",
+      "literal|archive|false",
+      "correction|archives|false"
+    ],
+    "stack" : "en_es",
+    "suffixPreserved" : true
+  },
+  {
+    "available" : true,
+    "caret" : 11,
+    "exact" : true,
+    "expected" : "mv archive .. ",
+    "id" : "parent-directory-operand",
+    "output" : "mv archive .. ",
+    "selection" : 0,
+    "slots" : [
+      "correction|archivo|false",
+      "literal|archive|false",
+      "correction|archives|false"
+    ],
+    "stack" : "en_es",
+    "suffixPreserved" : true
+  },
+  {
+    "available" : true,
+    "caret" : 11,
+    "exact" : true,
+    "expected" : "mv archive .",
+    "id" : "current-directory-operand",
+    "output" : "mv archive .",
+    "selection" : 0,
+    "slots" : [
+      "correction|archivo|false",
+      "literal|archive|false",
+      "correction|archives|false"
+    ],
+    "stack" : "en_es",
+    "suffixPreserved" : true
+  },
+  {
+    "available" : true,
+    "caret" : 10,
+    "exact" : true,
+    "expected" : "say hello ):",
+    "id" : "reverse-emoticon",
+    "output" : "say hello ):",
+    "selection" : 0,
+    "slots" : [
+      "correction|help|false",
+      "literal|hello|false",
+      "correction|hell|false"
+    ],
+    "stack" : "en_es",
+    "suffixPreserved" : true
+  },
+  {
+    "available" : true,
+    "caret" : 10,
+    "exact" : true,
+    "expected" : "say hello :)",
+    "id" : "standard-emoticon-control",
+    "output" : "say hello :)",
+    "selection" : 0,
+    "slots" : [
+      "correction|help|false",
+      "literal|hello|false",
+      "correction|hell|false"
+    ],
+    "stack" : "en_es",
+    "suffixPreserved" : true
+  },
+  {
+    "available" : true,
+    "caret" : 10,
+    "exact" : false,
+    "expected" : "say hello.” next",
+    "id" : "period-quote-control",
+    "output" : "say hello .” next",
+    "selection" : 0,
+    "slots" : [
+      "correction|help|false",
+      "literal|hello|false",
+      "correction|hell|false"
+    ],
+    "stack" : "en_es",
+    "suffixPreserved" : true
+  },
+  {
+    "available" : true,
+    "caret" : 10,
+    "exact" : false,
+    "expected" : "say hello,” next",
+    "id" : "comma-quote-known-miss",
+    "output" : "say hello ,” next",
+    "selection" : 0,
+    "slots" : [
+      "correction|help|false",
+      "literal|hello|false",
+      "correction|hell|false"
+    ],
+    "stack" : "en_es",
+    "suffixPreserved" : true
+  },
+  {
+    "available" : true,
+    "caret" : 9,
+    "exact" : true,
+    "expected" : "say hello .NET",
+    "id" : "existing-space-control",
+    "output" : "say hello .NET",
+    "selection" : 0,
+    "slots" : [
+      "correction|help|false",
+      "literal|hello|false",
+      "correction|hell|false"
+    ],
+    "stack" : "en_es",
+    "suffixPreserved" : true
+  },
+  {
+    "available" : true,
+    "caret" : 13,
+    "exact" : true,
+    "expected" : "save archive , next",
+    "id" : "smart-spacing-off-control",
+    "output" : "save archive , next",
+    "selection" : 0,
+    "slots" : [
+      "correction|archivo|false",
+      "literal|archive|false",
+      "correction|archives|false"
+    ],
+    "stack" : "en_es",
+    "suffixPreserved" : true
+  },
+  {
+    "available" : true,
+    "caret" : 10,
+    "exact" : false,
+    "expected" : "say hello.. next",
+    "id" : "two-dot-prose-policy",
+    "output" : "say hello .. next",
+    "selection" : 0,
+    "slots" : [
+      "correction|help|false",
+      "literal|hello|false",
+      "correction|hell|false"
+    ],
+    "stack" : "en_es",
+    "suffixPreserved" : true
+  },
+  {
+    "available" : true,
+    "caret" : 12,
+    "exact" : true,
+    "expected" : "write range ... 5",
+    "id" : "range-operator-token",
+    "output" : "write range ... 5",
+    "selection" : 0,
+    "slots" : [
+      "correction|rango|false",
+      "literal|range|false",
+      "correction|ranges|false"
+    ],
+    "stack" : "en_es",
+    "suffixPreserved" : true
+  }
+]

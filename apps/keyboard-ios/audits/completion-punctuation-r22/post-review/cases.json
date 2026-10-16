@@ -1,0 +1,80 @@
+[
+  {
+    "id": "ordinary-comma",
+    "before": "save ",
+    "prefix": "archive",
+    "suffix": ", next",
+    "expected": "save archive, next"
+  },
+  {
+    "id": "parent-directory-operand",
+    "before": "mv ",
+    "prefix": "archive",
+    "suffix": ".. ",
+    "expected": "mv archive .. "
+  },
+  {
+    "id": "current-directory-operand",
+    "before": "mv ",
+    "prefix": "archive",
+    "suffix": ".",
+    "expected": "mv archive ."
+  },
+  {
+    "id": "reverse-emoticon",
+    "before": "say ",
+    "prefix": "hello",
+    "suffix": "):",
+    "expected": "say hello ):"
+  },
+  {
+    "id": "standard-emoticon-control",
+    "before": "say ",
+    "prefix": "hello",
+    "suffix": ":)",
+    "expected": "say hello :)"
+  },
+  {
+    "id": "period-quote-control",
+    "before": "say ",
+    "prefix": "hello",
+    "suffix": ".” next",
+    "expected": "say hello.” next"
+  },
+  {
+    "id": "comma-quote-known-miss",
+    "before": "say ",
+    "prefix": "hello",
+    "suffix": ",” next",
+    "expected": "say hello,” next"
+  },
+  {
+    "id": "existing-space-control",
+    "before": "say ",
+    "prefix": "hello",
+    "suffix": " .NET",
+    "expected": "say hello .NET"
+  },
+  {
+    "id": "smart-spacing-off-control",
+    "before": "save ",
+    "prefix": "archive",
+    "suffix": ", next",
+    "expected": "save archive , next",
+    "smart": false
+  },
+  {
+    "id": "two-dot-prose-policy",
+    "before": "say ",
+    "prefix": "hello",
+    "suffix": ".. next",
+    "expected": "say hello.. next"
+  },
+  {
+    "id": "range-operator-token",
+    "before": "write ",
+    "prefix": "range",
+    "suffix": "... 5",
+    "expected": "write range ... 5"
+  }
+]

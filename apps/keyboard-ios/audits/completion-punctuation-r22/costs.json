@@ -1,0 +1,334 @@
+{
+  "executions": {
+    "heldout-candidate-execution.json": {
+      "command": [
+        "swift",
+        "test",
+        "--package-path",
+        "apps/keyboard-ios/PulpoKeyboardKit",
+        "--scratch-path",
+        "/tmp/r22-build",
+        "-c",
+        "release",
+        "--no-parallel",
+        "--filter",
+        "CompletionPunctuationR22Tests/replay"
+      ],
+      "wallSeconds": 41.033134958,
+      "exitCode": 0,
+      "buildSeconds": [
+        39.08
+      ],
+      "testSummary": [
+        "\u2714 Test run with 1 test in 1 suite passed after 0.848 seconds."
+      ],
+      "knownIssues": [],
+      "errors": []
+    },
+    "development-candidate-execution.json": {
+      "command": [
+        "swift",
+        "test",
+        "--package-path",
+        "apps/keyboard-ios/PulpoKeyboardKit",
+        "--scratch-path",
+        "/tmp/r22-build",
+        "-c",
+        "release",
+        "--no-parallel",
+        "--filter",
+        "CompletionPunctuationR22Tests/replay"
+      ],
+      "wallSeconds": 41.518549584,
+      "exitCode": 0,
+      "buildSeconds": [
+        38.16
+      ],
+      "testSummary": [
+        "\u2714 Test run with 1 test in 1 suite passed after 2.101 seconds."
+      ],
+      "knownIssues": [],
+      "errors": [],
+      "replaySummary": [
+        "R22 rows=555 displayed=200 accepted=200 fullPass=200"
+      ]
+    },
+    "controls-baseline-execution.json": {
+      "command": [
+        "swift",
+        "test",
+        "--package-path",
+        "apps/keyboard-ios/PulpoKeyboardKit",
+        "--scratch-path",
+        "/tmp/r22-build",
+        "-c",
+        "release",
+        "--no-parallel",
+        "--filter",
+        "CompletionPunctuationR22Tests/replay"
+      ],
+      "wallSeconds": 40.629629167000004,
+      "exitCode": 0,
+      "buildSeconds": [
+        38.24
+      ],
+      "testSummary": [
+        "\u2714 Test run with 1 test in 1 suite passed after 1.256 seconds."
+      ],
+      "knownIssues": [],
+      "errors": [],
+      "replaySummary": [
+        "R22 rows=345 displayed=185 accepted=70 fullPass=70"
+      ]
+    },
+    "heldout-baseline-execution.json": {
+      "command": [
+        "swift",
+        "test",
+        "--package-path",
+        "apps/keyboard-ios/PulpoKeyboardKit",
+        "--scratch-path",
+        "/tmp/r22-build",
+        "-c",
+        "release",
+        "--no-parallel",
+        "--filter",
+        "CompletionPunctuationR22Tests/replay"
+      ],
+      "wallSeconds": 38.139058791000004,
+      "exitCode": 0,
+      "buildSeconds": [
+        36.19
+      ],
+      "testSummary": [
+        "\u2714 Test run with 1 test in 1 suite passed after 0.832 seconds."
+      ],
+      "knownIssues": [],
+      "errors": []
+    },
+    "development-baseline-execution.json": {
+      "command": [
+        "swift",
+        "test",
+        "--package-path",
+        "apps/keyboard-ios/PulpoKeyboardKit",
+        "--scratch-path",
+        "/tmp/r22-build",
+        "-c",
+        "release",
+        "--no-parallel",
+        "--filter",
+        "CompletionPunctuationR22Tests/replay"
+      ],
+      "wallSeconds": 41.589272916,
+      "exitCode": 0,
+      "buildSeconds": [
+        38.38
+      ],
+      "testSummary": [
+        "\u2714 Test run with 1 test in 1 suite passed after 2.092 seconds."
+      ],
+      "knownIssues": [],
+      "errors": [],
+      "replaySummary": [
+        "R22 rows=555 displayed=200 accepted=80 fullPass=80"
+      ]
+    },
+    "controls-final-baseline-execution.json": {
+      "command": [
+        "swift",
+        "test",
+        "--package-path",
+        "apps/keyboard-ios/PulpoKeyboardKit",
+        "--scratch-path",
+        "/tmp/r22-build",
+        "-c",
+        "release",
+        "--no-parallel",
+        "--filter",
+        "CompletionPunctuationR22Tests/replay"
+      ],
+      "wallSeconds": 39.7133205,
+      "exitCode": 0,
+      "buildSeconds": [
+        37.37
+      ],
+      "testSummary": [
+        "\u2714 Test run with 1 test in 1 suite passed after 1.217 seconds."
+      ],
+      "knownIssues": [],
+      "errors": [],
+      "replaySummary": [
+        "R22 rows=345 displayed=185 accepted=70 fullPass=70"
+      ]
+    },
+    "controls-candidate-execution.json": {
+      "command": [
+        "swift",
+        "test",
+        "--package-path",
+        "apps/keyboard-ios/PulpoKeyboardKit",
+        "--scratch-path",
+        "/tmp/r22-build",
+        "-c",
+        "release",
+        "--no-parallel",
+        "--filter",
+        "CompletionPunctuationR22Tests/replay"
+      ],
+      "wallSeconds": 40.528114875,
+      "exitCode": 0,
+      "buildSeconds": [
+        38.09
+      ],
+      "testSummary": [
+        "\u2714 Test run with 1 test in 1 suite passed after 1.258 seconds."
+      ],
+      "knownIssues": [],
+      "errors": [],
+      "replaySummary": [
+        "R22 rows=345 displayed=185 accepted=155 fullPass=155"
+      ]
+    },
+    "controls-final-candidate-execution.json": {
+      "command": [
+        "swift",
+        "test",
+        "--package-path",
+        "apps/keyboard-ios/PulpoKeyboardKit",
+        "--scratch-path",
+        "/tmp/r22-build",
+        "-c",
+        "release",
+        "--no-parallel",
+        "--filter",
+        "CompletionPunctuationR22Tests/replay"
+      ],
+      "wallSeconds": 38.689216459,
+      "exitCode": 0,
+      "buildSeconds": [
+        36.35
+      ],
+      "testSummary": [
+        "\u2714 Test run with 1 test in 1 suite passed after 1.238 seconds."
+      ],
+      "knownIssues": [],
+      "errors": [],
+      "replaySummary": [
+        "R22 rows=345 displayed=185 accepted=170 fullPass=170"
+      ]
+    },
+    "full-regressions.json": {
+      "command": [
+        "swift",
+        "test",
+        "--package-path",
+        "apps/keyboard-ios/PulpoKeyboardKit",
+        "--scratch-path",
+        "/tmp/r22-build",
+        "-c",
+        "release",
+        "--no-parallel"
+      ],
+      "wallSeconds": 40.092596,
+      "exitCode": 0,
+      "buildSeconds": [
+        28.8
+      ],
+      "testSummary": [
+        "\u2714 Test run with 3 tests in 1 suite passed after 0.001 seconds.",
+        "\u2501 Test run with 441 tests in 65 suites passed after 10.177 seconds with 5 known issues."
+      ],
+      "knownIssues": [
+        "\u2501 Test hostRevertToARecentOwnStateIsAKnownAmbiguity(_:) recorded a known issue with 1 argument repro \u2192 wordDeleteWrong (seed 440) at EngineFuzzRegressionTests.swift:219:7: Expectation failed: result.violations.isEmpty",
+        "\u2501 Test hostRevertToARecentOwnStateIsAKnownAmbiguity(_:) recorded a known issue with 1 argument repro \u2192 composingDesync (seed 227) at EngineFuzzRegressionTests.swift:219:7: Expectation failed: result.violations.isEmpty",
+        "\u2501 Test hostRevertToARecentOwnStateIsAKnownAmbiguity(_:) with 2 test cases passed after 0.001 seconds with 2 known issues.",
+        "\u2501 Suite EngineFuzzRegressionTests passed after 0.050 seconds with 2 known issues.",
+        "\u2501 Test frozenAcceptanceBenchmark(resource:) recorded a known issue with 1 argument resource \u2192 \"en_US\" at MultilingualTests.swift:34:11: Expectation failed: offered",
+        "\u2501 Test frozenAcceptanceBenchmark(resource:) recorded a known issue with 1 argument resource \u2192 \"en_es\" at MultilingualTests.swift:34:11: Expectation failed: offered",
+        "\u2501 Test frozenAcceptanceBenchmark(resource:) recorded a known issue with 1 argument resource \u2192 \"en_es\" at MultilingualTests.swift:34:11: Expectation failed: offered",
+        "\u2501 Test frozenAcceptanceBenchmark(resource:) with 3 test cases passed after 0.020 seconds with 3 known issues.",
+        "\u2501 Suite MultilingualTests passed after 0.039 seconds with 3 known issues.",
+        "\u2501 Test run with 441 tests in 65 suites passed after 10.177 seconds with 5 known issues."
+      ],
+      "errors": [
+        "\u25c7 Test failedAttemptCannotResumeAfterDelayedPermission() started.",
+        "\u2714 Test failedAttemptCannotResumeAfterDelayedPermission() passed after 0.001 seconds.",
+        "\u2501 Test hostRevertToARecentOwnStateIsAKnownAmbiguity(_:) recorded a known issue with 1 argument repro \u2192 wordDeleteWrong (seed 440) at EngineFuzzRegressionTests.swift:219:7: Expectation failed: result.violations.isEmpty",
+        "\u2501 Test hostRevertToARecentOwnStateIsAKnownAmbiguity(_:) recorded a known issue with 1 argument repro \u2192 composingDesync (seed 227) at EngineFuzzRegressionTests.swift:219:7: Expectation failed: result.violations.isEmpty",
+        "\u2501 Test frozenAcceptanceBenchmark(resource:) recorded a known issue with 1 argument resource \u2192 \"en_US\" at MultilingualTests.swift:34:11: Expectation failed: offered",
+        "\u2501 Test frozenAcceptanceBenchmark(resource:) recorded a known issue with 1 argument resource \u2192 \"en_es\" at MultilingualTests.swift:34:11: Expectation failed: offered",
+        "\u2501 Test frozenAcceptanceBenchmark(resource:) recorded a known issue with 1 argument resource \u2192 \"en_es\" at MultilingualTests.swift:34:11: Expectation failed: offered"
+      ],
+      "replaySummary": []
+    },
+    "early-development-candidate-summary": {
+      "command": [
+        "swift",
+        "test",
+        "--package-path",
+        "apps/keyboard-ios/PulpoKeyboardKit",
+        "--scratch-path",
+        "/tmp/r22-build",
+        "-c",
+        "release",
+        "--no-parallel",
+        "--filter",
+        "CompletionPunctuationR22Tests"
+      ],
+      "wallSeconds": 30.572019,
+      "exitCode": 0,
+      "buildSeconds": [
+        27.41
+      ],
+      "testSummary": [
+        "\u2714 Test run with 1 test in 1 suite passed after 2.173 seconds."
+      ],
+      "knownIssues": [],
+      "errors": [],
+      "replaySummary": [
+        "R22 rows=555 displayed=200 accepted=200 fullPass=200"
+      ]
+    }
+  },
+  "measuredExecutionWallSeconds": 392.5049122500001,
+  "measuredCompileSeconds": 358.07000000000005,
+  "additionalObservedCompileSeconds": 27.44,
+  "unmeasured": "First development compile and independent review build, setup/orchestration, agent time/cost. Aggregate is not total task cost.",
+  "timing": {
+    "baseline": {
+      "firstMicroseconds": {
+        "max": 2086.583,
+        "median": 568.2085,
+        "n": 180,
+        "p95": 1855.125
+      },
+      "selectMicroseconds": {
+        "max": 44.5,
+        "median": 11.667,
+        "n": 90,
+        "p95": 18.916
+      }
+    },
+    "candidate": {
+      "firstMicroseconds": {
+        "max": 2065.042,
+        "median": 586.2085,
+        "n": 180,
+        "p95": 1861
+      },
+      "selectMicroseconds": {
+        "max": 42.458,
+        "median": 12.0,
+        "n": 90,
+        "p95": 21.791
+      }
+    }
+  },
+  "limits": "Ordered host-only release microbenchmarks. Initial suggestions exclude lexicon mapping, engine construction and entire typing workflow; select excludes queued-host flush. Includes mixed host modes. No rendering, finger travel, UIKit, native proxy, device latency, power, memory or human usefulness measurement. No speedup, KSR, total latency, binary-size or monetary-cost claim.",
+  "sourceCost": "16 added source lines, 1 removed; no dictionary/assets or persistent state added; scans only an initial closing punctuation run.",
+  "devices": 0,
+  "deployments": 0,
+  "pushes": 0,
+  "independentAgents": 2
+}
