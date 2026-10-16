@@ -5,7 +5,7 @@ describe('account model preferences', () => {
   it('adds clean defaults to older preference records', () => {
     expect(preferencesWithModelDefaults({ theme: 'dark' })).toEqual({
       imageGeneration: { enabled: false, modelId: null }, speech: { modelId: null, models: {} }, theme: 'dark', animationSpeed: 1, automaticChatExpiration: '24h', newChatAutoExpire: false, chatSortMode: 'default', fileDoubleClickAction: 'open',
-      sidebarPins: { searchChats: true, files: true, usage: false, billing: false, friends: false, apiKeys: false }, trashColor: null,
+      sidebarPins: { searchChats: true, files: true, usage: false, billing: false, friends: false, apiKeys: false }, trashColor: 'red',
       agentModes: {}, instructionPresetSelections: {}, modelWarningDismissals: {}, defaultModelId: null, favoriteModelIds: null, providerOrder: [],
     })
   })
@@ -44,7 +44,8 @@ describe('account model preferences', () => {
     expect(preferencesWithModelDefaults({ fileDoubleClickAction: 'preview' }).fileDoubleClickAction).toBe('open')
     expect(preferencesWithModelDefaults({}).fileDoubleClickAction).toBe('open')
     expect(preferencesWithModelDefaults({ trashColor: 'blue' }).trashColor).toBe('blue')
-    expect(preferencesWithModelDefaults({ trashColor: 'magenta' }).trashColor).toBeNull()
+    expect(preferencesWithModelDefaults({ trashColor: 'magenta' }).trashColor).toBe('red')
+    expect(preferencesWithModelDefaults({ trashColor: null }).trashColor).toBeNull()
   })
 
   it('normalizes only supplied model preference fields in a patch', () => {

@@ -63,9 +63,12 @@ describe('AppearanceDialog', () => {
 
   it('offers only a color for built-in folders, and keeps the trash color as a setting', () => {
     const archive: FileNode = { ...folder, id: 'a1', name: 'Archive', systemRole: 'archive', color: null }
-    useSettings.setState({ trashColor: null })
     render(<AppearanceDialog />)
-    act(() => editAppearance([archive, trashFolderNode('Trash', null)]))
+    act(() => editAppearance([trashFolderNode('Trash', useSettings.getState().trashColor)]))
+    // Red is the trash's own color, chosen until changed.
+    expect(screen.getByRole('button', { name: 'Red' }).getAttribute('aria-pressed')).toBe('true')
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }))
+    act(() => editAppearance([archive, trashFolderNode('Trash', 'red')]))
     expect(screen.getByText('Choose a color.')).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Rocket' })).toBeNull()
 

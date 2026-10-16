@@ -29,9 +29,6 @@ export function folderPath(ref: string | null): string {
   return ref ? `/files/f/${ref}` : '/files'
 }
 
-/** The trash's color when the user has not chosen one. */
-export const TRASH_DEFAULT_COLOR: FileColor = 'red'
-
 /** The trash as an item of My files, in the color the user chose for it (setting `trashColor`). */
 export function trashFolderNode(name: string, color: FileColor | null): FileNode {
   const epoch = new Date(0).toISOString()

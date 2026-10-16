@@ -4,7 +4,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { PROFILE_CHANGE_EVENT } from '@/lib/profile-events'
 import { runtimeProfileKey } from '@/lib/runtime'
-import { trashColorSchema, type FileColor, type ModelWarningDismissals, type SidebarPins } from '@pulpo/contracts'
+import { DEFAULT_TRASH_COLOR, trashColorSchema, type FileColor, type ModelWarningDismissals, type SidebarPins } from '@pulpo/contracts'
 import {
   applyAnimationSpeed,
   DEFAULT_ANIMATION_SPEED,
@@ -66,7 +66,7 @@ export interface SettingsState {
   sidebarPins: SidebarPins
   chatSortMode: ChatSortMode
   fileDoubleClickAction: FileDoubleClickAction
-  /** The Trash folder's color in Files; null shows its default red. */
+  /** The Trash folder's color in Files, red unless changed; null shows it uncolored. */
   trashColor: FileColor | null
   /** Per-model composer preset selections. */
   generation: Record<string, GenerationPrefs>
@@ -111,7 +111,7 @@ export const DEFAULT_SETTINGS = {
   sidebarPins: DEFAULT_SIDEBAR_PINS,
   chatSortMode: 'default' as ChatSortMode,
   fileDoubleClickAction: 'open' as FileDoubleClickAction,
-  trashColor: null as FileColor | null,
+  trashColor: DEFAULT_TRASH_COLOR as FileColor | null,
   generation: {},
 }
 
@@ -148,7 +148,7 @@ export const useSettings = create<SettingsState>()(
           language: normalizeLanguage(saved.language),
           animationSpeed: normalizeAnimationSpeed(saved.animationSpeed),
           sidebarPins: normalizeSidebarPins(saved.sidebarPins),
-          trashColor: trashColorSchema.catch(null).parse(saved.trashColor ?? null),
+          trashColor: trashColorSchema.catch(DEFAULT_TRASH_COLOR).parse(saved.trashColor),
         }
       },
     }

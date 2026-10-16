@@ -9,7 +9,7 @@ export * from './usage-cost.js'
 export * from './admin-analytics.js'
 import type { ComposerAck, ComposerSnapshot, ComposerWrite } from './composer.js'
 import type { DocAck, DocClosedEvent, DocJoinInput, DocJoinResult, DocUpdateMessage } from './files.js'
-import { fileAccessModeSchema, fileColorSchema } from './files.js'
+import { fileAccessModeSchema, fileColorSchema, type FileColor } from './files.js'
 import { DEFAULT_TRASH_RETENTION, trashRetentionSchema } from './trash.js'
 export * from './composer.js'
 import { z } from 'zod'
@@ -1575,8 +1575,9 @@ export type ChatSortMode = z.infer<typeof chatSortModeSchema>
 /** What double-clicking a file on the files page does: open it in place, or beside the folder. */
 export const fileDoubleClickActionSchema = z.enum(['open', 'openBeside'])
 export type FileDoubleClickAction = z.infer<typeof fileDoubleClickActionSchema>
-/** The color of the Trash folder in Files; null shows its own red. */
+/** The color of the Trash folder in Files: red unless changed; null shows it uncolored. */
 export const trashColorSchema = fileColorSchema.nullable()
+export const DEFAULT_TRASH_COLOR: FileColor = 'red'
 export const ANIMATION_SPEED_MIN = 0.01
 export const ANIMATION_SPEED_MAX = 5
 export const DEFAULT_ANIMATION_SPEED = 1
@@ -1621,7 +1622,7 @@ export const managementAccountSettingsSchema = z.object({
   newChatAutoExpire: newChatAutoExpireSchema,
   chatSortMode: chatSortModeSchema.default('default'),
   fileDoubleClickAction: fileDoubleClickActionSchema.default('open'),
-  trashColor: trashColorSchema.default(null),
+  trashColor: trashColorSchema.default(DEFAULT_TRASH_COLOR),
   defaultModelId: z.string().max(120).nullable().default(null),
   generation: z.record(z.string(), z.record(z.string(), z.string())).default({}),
   /** Null follows the instance's new-account default favorites. */
