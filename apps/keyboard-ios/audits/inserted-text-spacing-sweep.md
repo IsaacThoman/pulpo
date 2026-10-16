@@ -65,3 +65,47 @@ The sweep test deliberately records all exact mismatches rather than asserting e
 - `git diff --check` passes.
 
 The implementation and driver are now frozen for held-out evaluation. No held-out file or results have been reopened or executed since initial authoring.
+## Held-out reveal and retention
+
+Implementation freeze: `acf5cf6210341c37b7e3c2d1fd48edba808e792b`. Only after that commit, create a detached baseline checkout at `ac441b01` and execute the held-out driver there and in the patched checkout. Inspect their exact outputs together once. Neither run changed the driver, task input, expected output, dictionary, or implementation. No held-out tuning followed.
+
+14/22 → 19/22 exact; five gains, zero regressions, one unavailable task in both versions. The unavailable task counts as a non-pass in both denominators. All held-out outcomes:
+
+| Task | Frozen expected | Baseline actual | Patched actual | Result |
+| --- | --- | --- | --- | --- |
+| H01 | `"buenos días"` | `"buenos días"` | `"buenos días"` | pass |
+| H02 | `"one two"` | `"one two"` | `"one two"` | pass |
+| H03 | `"{value}"` | `"{value}"` | `"{value}"` | pass |
+| H04 | `"‘yes’"` | `"‘yes’"` | `"‘yes’"` | pass |
+| H05 | `"yes?"` | `"yes ?"` | `"yes?"` | gain |
+| H06 | `"yes;"` | `"yes ;"` | `"yes;"` | gain |
+| H07 | `"first, second"` | `"first, second"` | `"first, second"` | pass |
+| H08 | `"first\n\nsecond"` | `"first\n\nsecond"` | `"first\n\nsecond"` | pass |
+| H09 | `"first second third"` | `"first second third"` | `"first second third"` | pass |
+| H10 | `"first second third"` | `"first secondthird"` | `"first secondthird"` | unchanged failure |
+| H11 | `"say [yes] now"` | `"say [yes] now"` | `"say [yes] now"` | pass |
+| H12 | `"first second\nthird"` | `"first second\nthird"` | `"first second\nthird"` | pass |
+| H13 | `"first second!"` | `"first second!"` | `"first second!"` | pass |
+| H14 | `"bueno amigo"` | `"bue"` | `"bue"` | unavailable (unchanged) |
+| H15 | `"hola mundo bonito"` | `"hola mundo bonito"` | `"hola mundo bonito"` | pass |
+| H16 | `"¿ready ya?"` | `"¿ ready ya?"` | `"¿ready ya?"` | gain |
+| H17 | `"hello amigo today"` | `"hello amigo today"` | `"hello amigo today"` | pass |
+| H18 | `"hola)"` | `"hola )"` | `"hola)"` | gain |
+| H19 | `"first 🎉 next"` | `"first🎉next"` | `"first🎉next"` | unchanged failure |
+| H20 | `"literal!"` | `"literal!"` | `"literal!"` | pass |
+| H21 | `"hello..."` | `"hello ..."` | `"hello..."` | gain |
+| H22 | `"prefix middle suffix"` | `"prefix middle suffix"` | `"prefix middle suffix"` | pass |
+
+H14 cannot accept the requested `bueno` because actual visible choices are `bue | buen | buena`; the task stops there rather than fabricating a suggestion or choosing another target. H15's real swipe decoder returns `mundo`. H10 still joins inserted `second` to right-side `third`. H19 still joins panel emoji to adjacent text. These remain future sweep evidence, not newly passing cases.
+
+The five held-out gains are H05 (question mark), H06 (semicolon), H16 (bilingual inverted question opener), H18 (closing parenthesis after mode switch), and H21 (ellipsis). The fix meets the predeclared narrow acceptance and is retained. The scope is external-text leading spacing; suggestion and swipe acceptance are controls, not claimed gains.
+
+## Costs and limits
+
+Host: Apple Swift 6.4, arm64 macOS target; debug SwiftPM production-core tests. The patch adds bounded character/delimiter checks to external insertion, with no model lookup, extra file I/O, language-cache work, or per-word exception. No measured device latency, energy, memory, or UIKit interaction claim is made.
+
+The development baseline driver took 0.144 s test runtime; patched development plus focused assertions took 0.183 s. Held-out baseline took 0.122 s and patch took 0.129 s. These short host task runs include stack setup and do not establish a performance delta; concurrent build activity also makes the comparison unsuitable as a latency benchmark. The relevant regression run cost 26.495 s; the broad baseline cost 216.277 s and exposed timing failures under parallel load. A fresh detached baseline checkout/build was needed to keep the current frozen implementation intact during held-out comparison. No external service or paid evaluation API was used.
+
+No simulator ownership was available and none was taken. Core tests exercise production engine behavior through an in-memory synchronous document, not a real app's asynchronous UITextDocumentProxy. Existing context-visibility, stale-suggestion, selection guard, host-lag/editing, language-switch, and fuzz regressions provide related coverage but do not certify every host. Synthetic swipes do not prove physical gesture accuracy. Frozen casing/whitespace expectations are narrow user tasks; raw snippets and transcript preprocessing are not interchangeable. Paired ambiguous straight quotes and every Unicode punctuation convention are not exhaustively evaluated.
+
+This sweep does not resolve right-side insertion spacing, transcript trimming, emoji panel spacing, unavailable completions, known host-revert ambiguity, or baseline timing failures. Relevant regression tests passed, but the full broad suite is explicitly not reported as green. Future sweeps should author and commit new tasks before inspection; these development/held-out cases are now exposed regression evidence and must not be reused as a fresh blind evaluation.
