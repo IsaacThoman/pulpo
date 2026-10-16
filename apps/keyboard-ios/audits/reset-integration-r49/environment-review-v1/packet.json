@@ -1,0 +1,14 @@
+{
+  "verdict": "APPROVE_EXACT_PREPARATION_ENVIRONMENT_ADAPTER_V1",
+  "archive": "/tmp/pulpo-r49-environment-review-v1/review-bundle.tar.gz",
+  "archive_sha256": "cab5edff8efb4c6d913bbc20e0208de4e691b3be78021e323b2e62991c667b7b",
+  "manifest_sha256": "45274fdb32890be6cb02cfe0f4060086cbae40fcccfbb39d1bd8b8ec6954c07f",
+  "receipt_sha256": "36662254531c6d81f5b9972d9f4f6552e95e8dfc000ae2c1e9807ab8e8c936ea",
+  "review_sha256": "71cebb0423bf196d5e954df0a2150a38543f8b7be8a3eb7baa2e4d78c2e9c16f",
+  "manifest_files": 341,
+  "archive_bytes": 9138767,
+  "private_payload_notice": "Includes private sealed author payload and synthetic raw evidence. Parent retains unopened except report/metadata.",
+  "product_builds": 0,
+  "product_executions": 0,
+  "active_local_validation_processes": 0
+}

@@ -1,0 +1,32 @@
+{
+  "verdict": "APPROVE_EXACT_PREPARATION_ENVIRONMENT_ADAPTER_V1",
+  "driver_sha256": "b2f9e5f1db43b848ce6afc8896434729ba1277dc696cbf3fd83c6bfce8463ea8",
+  "config_sha256": "8f5c6691e905199d6fb352f7f8aae708f1e96f8bbb6dd52c8531dafcdb8789d9",
+  "proposal_sha256": "9221fc22780b7927c189e0edf12bb828c20e4515b017216ce774295e8b239a18",
+  "diff_sha256": "00657292b6185676707c8ea4dfe961627107f4ed0378594f467e485f2e358046",
+  "author_archive_sha256": "5388ca0fa079ee9103fd1ff1c0d630e8de153bc4a3e0e268efe5707c46cb39eb",
+  "author_manifest_sha256": "f76d1a671ecb51ab1bd7fb3838649ff8e4fd131f1f93bddf6bf6828f6abfeca4",
+  "evaluator_sha256": "fd1c9260abb1a021ec164faa3ca55d3428a24d4f4478b84a7d6ba3a128294195",
+  "semantic_review_report_sha256": "844b00cd30c0d46d37f1940168b3969bab1753f1080353c227c1cbfdcd628462",
+  "semantic_review_receipt_sha256": "6b48a33d2a896522fa71e30bf55b0f13f20c26fd8da9cce0b12e46a79ff6f07f",
+  "approved_execution_map_sha256": "14f046bbf75367d8554993b20e27073a221fa7e4a7889a6cd6c0cc27e2256170",
+  "modes": [
+    "normal",
+    "optimized"
+  ],
+  "inert_prepared_variants_per_mode": 2,
+  "adapted_synthetic_evaluator_passes": 4,
+  "legacy_environment_strict_rejections": 4,
+  "prework_guard_cases_per_mode": 15,
+  "real_compiles": 0,
+  "real_product_archives_read": 0,
+  "product_executions": 0,
+  "repository_mutations": 0,
+  "author_mutations": 0,
+  "unchanged_execution_body": true,
+  "source_manifest_canonical_bytes_verified": true,
+  "all_ledger_environment_hashes_true": true,
+  "remaining_blocking_findings": [],
+  "approval_scope": "Parent prepare only, then independent final five-gate binary/source/input/evaluator/environment freeze before ONE pair.",
+  "active_local_validation_processes": 0
+}
