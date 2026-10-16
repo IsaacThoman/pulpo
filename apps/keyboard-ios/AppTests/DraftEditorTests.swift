@@ -1,6 +1,7 @@
 import SwiftUI
 import UIKit
 import XCTest
+@testable import KeyboardUI
 @testable import PulpoKeyboard
 
 @MainActor
@@ -170,6 +171,88 @@ final class DraftEditorTests: XCTestCase {
     settle()
     XCTAssertEqual(state.text, "replacement 🐙")
     XCTAssertEqual(state.selection, NSRange(location: 4, length: 0))
+    XCTAssertFalse(state.focused)
+    XCTAssertFalse(live.isFirstResponder)
+    XCTAssertTrue(state.urls.isEmpty)
+  }
+
+  private final class HeldContact: UITouch {
+    let point: CGPoint
+    private let time = ProcessInfo.processInfo.systemUptime
+    init(point: CGPoint) { self.point = point; super.init() }
+    override func location(in view: UIView?) -> CGPoint { point }
+    override var timestamp: TimeInterval { time }
+  }
+
+  func testDetachedEditorEndEditingStopsHeldDeleteBeforeDismantling() throws {
+    state.text = "old editor " + String(repeating: "abcdefghij", count: 8) + "!"
+    state.selection = NSRange(location: (state.text as NSString).length, length: 0)
+    state.focused = true
+    let removed = try mount()
+    XCTAssertTrue(removed.isFirstResponder)
+    let delegate = try XCTUnwrap(removed.delegate as? PreviewTextView.Coordinator)
+    let host = try XCTUnwrap(delegate.host)
+    let controller = try XCTUnwrap(delegate.controller)
+    let keys = controller.rootView.keys
+    defer { keys.cancelAllTouches() }
+    keys.layoutIfNeeded()
+    let key = try XCTUnwrap(keys.keyViews.first { $0.key.action == .delete })
+    XCTAssertGreaterThan(key.frame.width, 0)
+    let contact = HeldContact(point: CGPoint(x: key.frame.midX, y: key.frame.midY))
+    let original = removed.text
+    keys.touchesBegan([contact], with: nil)
+    let afterTouchDown = removed.text
+    XCTAssertNotEqual(afterTouchDown, original, "The real delete contact must edit its attached editor")
+    let repeatDeadline = Date().addingTimeInterval(1)
+    while removed.text == afterTouchDown, Date() < repeatDeadline {
+      RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+    }
+    guard removed.text != afterTouchDown else {
+      XCTFail("The held contact must repeat while attached before testing cleanup")
+      return
+    }
+
+    // Keep the original SwiftUI owner mounted: removing just its UIKit editor
+    // creates the detached-before-dismantle interval. Do not suppress any native
+    // delegate callbacks that UIKit itself delivers while detaching.
+    removed.removeFromSuperview()
+    XCTAssertNil(removed.window)
+    XCTAssertTrue(delegate.controller === controller)
+    XCTAssertTrue(host.textView === removed)
+    delegate.textViewDidEndEditing(removed)
+    let afterEndEditing = removed.text
+    RunLoop.main.run(until: Date().addingTimeInterval(0.3))
+    XCTAssertEqual(removed.text, afterEndEditing, "A detached editor must stop the already-running delete repeat")
+    XCTAssertTrue(delegate.controller === controller, "The cleanup oracle must precede representable dismantling")
+
+    // A second window supplies a real replacement editor without dismantling
+    // the retained original SwiftUI owner. Both bind to the same scene draft.
+    let replacementWindow = UIWindow(windowScene: try XCTUnwrap(window.windowScene))
+    defer { replacementWindow.rootViewController = nil; replacementWindow.isHidden = true }
+    let replacement = "replacement 🐙 café"
+    let selection = (replacement as NSString).range(of: "café")
+    state.text = replacement
+    state.selection = selection
+    state.focused = false
+    replacementWindow.rootViewController = UIHostingController(rootView: Editor(state: state))
+    replacementWindow.makeKeyAndVisible()
+    settle()
+    let live = try XCTUnwrap(findEditor(replacementWindow.rootViewController!.view))
+    XCTAssertNil(removed.window)
+    XCTAssertTrue(delegate.controller === controller)
+    removed.text = "stale"
+    removed.selectedRange = NSRange(location: 0, length: 0)
+    delegate.textViewDidChange(removed)
+    delegate.textViewDidChangeSelection(removed)
+    delegate.textViewDidBeginEditing(removed)
+    delegate.textViewDidEndEditing(removed)
+    host.openApp(URL(string: "pulpokeyboard://settings")!)
+    keys.touchesEnded([contact], with: nil)
+    settle()
+    XCTAssertEqual(state.text, replacement)
+    XCTAssertEqual(state.selection, selection)
+    XCTAssertEqual(live.text, replacement)
+    XCTAssertEqual(live.selectedRange, selection)
     XCTAssertFalse(state.focused)
     XCTAssertFalse(live.isFirstResponder)
     XCTAssertTrue(state.urls.isEmpty)
