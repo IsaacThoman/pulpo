@@ -47,6 +47,17 @@ changed arrays have no semantic utility labels. The inactive source/resource
 snapshots and complete raw evidence are retained; production is restored, all
 110 blind rows remain unrun, and runtime/memory cost admission is unavailable.
 
+The subsequent R40 experiment in `audits/multilingual-emoji-r40/` is also
+rejected and restored. Independent review found an embedded-NUL ASCII tokenizer
+path that differs from its required Foundation normalization; the parent
+independently reproduced the minimal result mismatch from immutable source.
+Three additional frozen ranking expectations are incompatible with their own
+prefix rule and remain failed, without retuning. The archive retains the source,
+decisive failed observations and original hash references; larger full sweeps
+remain outside Git. Exposed utility gains do not establish blind acceptance,
+and no fresh author, native or runtime/memory cost batch ran. A new versioned
+correction round is active.
+
 The sentence-local bilingual next-word experiments in
 `audits/sentence-nextword-r37/` were rejected before a final fresh workload.
 Two implemented source-conditioned backoffs earned zero gains in both a

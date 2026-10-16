@@ -1,0 +1,43 @@
+{
+  "baseline": {
+    "buildExit": 0,
+    "runExit": 0,
+    "rawSHA256": "e5f051aa19f5614d23052bcd80e779a8d541f52c9044a5394aea72ab1ff42baa",
+    "binarySHA256": "a9435413de19af0fa30989cd4a20929f426d5ee2b96a534af1a2569bfd1cc2c0",
+    "observation": {
+      "foundationLowercaseUTF8": [
+        97
+      ],
+      "queryUTF8": [
+        65,
+        0,
+        66
+      ],
+      "results": []
+    },
+    "normativePass": true
+  },
+  "candidate": {
+    "buildExit": 0,
+    "runExit": 0,
+    "rawSHA256": "8d7b0affce41ad65beaf6d56d4c691aeeecea1dfe6ea5071f9ebb313d35a316e",
+    "binarySHA256": "de63f7311d8c6143890ec6a33973deac09dab72d0c26eba439e647dbbd1c69db",
+    "observation": {
+      "foundationLowercaseUTF8": [
+        97
+      ],
+      "queryUTF8": [
+        65,
+        0,
+        66
+      ],
+      "results": [
+        "L"
+      ]
+    },
+    "normativePass": false
+  },
+  "scope": "one exposed minimal case; actual immutable EmojiCatalog.swift, Foundation calibration on macOS; not native iOS, timing or full-round verification",
+  "platform": "macOS-27.0.1-arm64-arm-64bit",
+  "swiftVersion": "Apple Swift version 6.4 (swiftlang-6.4.0.34.1 clang-2100.3.34.1)\nTarget: arm64-apple-macosx27.0.0"
+}

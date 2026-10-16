@@ -1,0 +1,15 @@
+{
+  "scope": "Exposed parent minimal source witness, not blind/native/cost validation",
+  "expectedNormativeResults": [],
+  "clientSHA256": "f9c915e6be8fed91e0ae9c3b13f10bb55c27f8cd7c244b94f5dd055096086a76",
+  "versions": {
+    "baseline": {
+      "commit": "00e2a0e7a283bc4a780b02f847ea9d82dfe9e5ae",
+      "sourceSHA256": "c7f929ada6398c9c849e1b764e7bdacc3aca6956f3444fa74953db43cea5468e"
+    },
+    "candidate": {
+      "commit": "8369f266cb9ad58e9ca9b76a9f50dd0cfca3c7b0",
+      "sourceSHA256": "2b751e639b6ba88fe521d5e5f459c77b0f0d15934a8b27b1768f2345c2fb2e87"
+    }
+  }
+}

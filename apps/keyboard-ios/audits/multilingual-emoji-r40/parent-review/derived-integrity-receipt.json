@@ -1,0 +1,152 @@
+{
+  "classification": "derived verifier integrity probes, not runtime replay",
+  "checks": 18,
+  "passesExpected": 4,
+  "rejectionsExpected": 14,
+  "records": [
+    {
+      "name": "standalone-portable-env",
+      "optimized": false,
+      "exit": 0,
+      "stdout": "{\"baselineChecked\": false, \"inactivePatchPaths\": 5, \"originalAuditFiles\": 154, \"productionPatchApplied\": false, \"retainedHashes\": 153, \"verifiedSourceFiles\": 6}",
+      "stderr": "",
+      "inputFilesUnchanged": true
+    },
+    {
+      "name": "standalone-before-images-and-git-check",
+      "optimized": false,
+      "exit": 0,
+      "stdout": "{\"baselineChecked\": true, \"inactivePatchPaths\": 5, \"originalAuditFiles\": 154, \"productionPatchApplied\": false, \"retainedHashes\": 153, \"verifiedSourceFiles\": 6}",
+      "stderr": "",
+      "inputFilesUnchanged": true
+    },
+    {
+      "name": "corrupted-retained-candidate",
+      "optimized": false,
+      "exit": 1,
+      "stdout": "",
+      "stderr": "ERROR: retained hash mismatch: candidate-source/apps/keyboard-ios/LanguageData/README.md.txt",
+      "inputFilesUnchanged": true
+    },
+    {
+      "name": "changed-before-image",
+      "optimized": false,
+      "exit": 1,
+      "stdout": "",
+      "stderr": "ERROR: baseline before-image mismatch: apps/keyboard-ios/LanguageData/README.md",
+      "inputFilesUnchanged": true
+    },
+    {
+      "name": "missing-before-image",
+      "optimized": false,
+      "exit": 1,
+      "stdout": "",
+      "stderr": "ERROR: baseline before-image mismatch: apps/keyboard-ios/LanguageData/README.md",
+      "inputFilesUnchanged": true
+    },
+    {
+      "name": "must-be-absent-new-file-present",
+      "optimized": false,
+      "exit": 1,
+      "stdout": "",
+      "stderr": "ERROR: baseline file must be absent: apps/keyboard-ios/PulpoKeyboardKit/Tests/KeyboardCoreTests/EmojiLocalizedSearchTests.swift",
+      "inputFilesUnchanged": true
+    },
+    {
+      "name": "symlinked-candidate-archive",
+      "optimized": false,
+      "exit": 1,
+      "stdout": "",
+      "stderr": "ERROR: symlink rejected: /private/var/folders/7m/wy76p9x11tj7n0lw8vpl0ysw0000gn/T/r40-derived-probes-znwgvrmq/original-packet/candidate-source/apps/keyboard-ios/LanguageData/README.md.txt",
+      "inputFilesUnchanged": true
+    },
+    {
+      "name": "mutated-unsafe-manifest",
+      "optimized": false,
+      "exit": 1,
+      "stdout": "",
+      "stderr": "ERROR: retained hash mismatch: candidate-source-manifest.json",
+      "inputFilesUnchanged": true
+    },
+    {
+      "name": "git-subdirectory-baseline-root",
+      "optimized": false,
+      "exit": 1,
+      "stdout": "",
+      "stderr": "ERROR: --baseline-root must be the actual repository toplevel",
+      "inputFilesUnchanged": true
+    },
+    {
+      "name": "standalone-portable-env",
+      "optimized": true,
+      "exit": 0,
+      "stdout": "{\"baselineChecked\": false, \"inactivePatchPaths\": 5, \"originalAuditFiles\": 154, \"productionPatchApplied\": false, \"retainedHashes\": 153, \"verifiedSourceFiles\": 6}",
+      "stderr": "",
+      "inputFilesUnchanged": true
+    },
+    {
+      "name": "standalone-before-images-and-git-check",
+      "optimized": true,
+      "exit": 0,
+      "stdout": "{\"baselineChecked\": true, \"inactivePatchPaths\": 5, \"originalAuditFiles\": 154, \"productionPatchApplied\": false, \"retainedHashes\": 153, \"verifiedSourceFiles\": 6}",
+      "stderr": "",
+      "inputFilesUnchanged": true
+    },
+    {
+      "name": "corrupted-retained-candidate",
+      "optimized": true,
+      "exit": 1,
+      "stdout": "",
+      "stderr": "ERROR: retained hash mismatch: candidate-source/apps/keyboard-ios/LanguageData/README.md.txt",
+      "inputFilesUnchanged": true
+    },
+    {
+      "name": "changed-before-image",
+      "optimized": true,
+      "exit": 1,
+      "stdout": "",
+      "stderr": "ERROR: baseline before-image mismatch: apps/keyboard-ios/LanguageData/README.md",
+      "inputFilesUnchanged": true
+    },
+    {
+      "name": "missing-before-image",
+      "optimized": true,
+      "exit": 1,
+      "stdout": "",
+      "stderr": "ERROR: baseline before-image mismatch: apps/keyboard-ios/LanguageData/README.md",
+      "inputFilesUnchanged": true
+    },
+    {
+      "name": "must-be-absent-new-file-present",
+      "optimized": true,
+      "exit": 1,
+      "stdout": "",
+      "stderr": "ERROR: baseline file must be absent: apps/keyboard-ios/PulpoKeyboardKit/Tests/KeyboardCoreTests/EmojiLocalizedSearchTests.swift",
+      "inputFilesUnchanged": true
+    },
+    {
+      "name": "symlinked-candidate-archive",
+      "optimized": true,
+      "exit": 1,
+      "stdout": "",
+      "stderr": "ERROR: symlink rejected: /private/var/folders/7m/wy76p9x11tj7n0lw8vpl0ysw0000gn/T/r40-derived-probes-znwgvrmq/original-packet/candidate-source/apps/keyboard-ios/LanguageData/README.md.txt",
+      "inputFilesUnchanged": true
+    },
+    {
+      "name": "mutated-unsafe-manifest",
+      "optimized": true,
+      "exit": 1,
+      "stdout": "",
+      "stderr": "ERROR: retained hash mismatch: candidate-source-manifest.json",
+      "inputFilesUnchanged": true
+    },
+    {
+      "name": "git-subdirectory-baseline-root",
+      "optimized": true,
+      "exit": 1,
+      "stdout": "",
+      "stderr": "ERROR: --baseline-root must be the actual repository toplevel",
+      "inputFilesUnchanged": true
+    }
+  ]
+}

@@ -1,0 +1,99 @@
+{
+  "audit": {
+    "files": 154,
+    "bytes": 3625632,
+    "all153RetainedHashesMatch": true,
+    "manifestSHA256": "612254887af05a186ee3b38b652041a851fd06df271e9d3e5ac24e908da04569"
+  },
+  "source": {
+    "sixInactiveCandidateFilesChecked": 6,
+    "allRestoredBeforeImagesMatch": true,
+    "restorationAndFinalCommitNonAuditDiffEmpty": true,
+    "finalAuditPaths": 154,
+    "gitApplyCheckPassedPatchNotApplied": true,
+    "workingTreeClean": true,
+    "candidateManifestSHA256": "f21ddaf446a1a50ac2b4bf72128a1f8fc57c394c7b3fc2e1aadd8692d12a1590",
+    "candidatePatchSHA256": "83fa2282dad28996c341e0641de83a01985dddaf1206c9be533e1de878be872d"
+  },
+  "decisiveStoredRows": {
+    "reviewArtifactsHashChecked": 33,
+    "tokenizerRecordedChecks": 71805,
+    "rawMismatchesIndependentlyCounted": 307,
+    "allMismatchQueriesContainNUL": true,
+    "publicRawFailuresChecked": 3,
+    "publicOriginalDenominator": 1134,
+    "minimalCap1ActualBaseline": [],
+    "minimalCap1ActualCandidate": [
+      "L"
+    ],
+    "strictSmokeRecordedDenominator": 569,
+    "strictSmokeRecordedPassing": 566,
+    "strictSmokeRawFailuresChecked": 3,
+    "unavailable": 0,
+    "fullRawSweepsNotRetainedInArchive": true
+  },
+  "retainedSummaryFields": {
+    "development-intents-summary.json": [
+      "classification",
+      "summary",
+      "familyUtility",
+      "regressions",
+      "rawReport",
+      "rawReportSHA256"
+    ],
+    "compatibility-summary.json": [
+      "rows",
+      "failures",
+      "changedRawArrays",
+      "mechanicalOnlyNoUtilityLabels",
+      "addedOccurrences",
+      "changedRawPath",
+      "changedRawSHA256",
+      "baselineSHA256",
+      "candidateSHA256"
+    ],
+    "independent-source-review/summary.json": [
+      "sourceVerdict",
+      "admissionVerdict",
+      "baseline",
+      "candidate",
+      "restorationCommit",
+      "sourceFinding",
+      "compatibility",
+      "default48EmptyPreferenceAll7374MatchesArchivedBaselineAndCandidate",
+      "independentControls",
+      "tokenizer",
+      "metadata",
+      "resource",
+      "actualCandidateSmoke",
+      "rankingAdjudication",
+      "freshAuthorAdmitted",
+      "costNativeBlindPerformed",
+      "productionEditedByReviewer"
+    ],
+    "independent-source-review/compat-summary.json": [
+      "queries",
+      "caps",
+      "preferenceMaps",
+      "pairedRows",
+      "failures",
+      "changedRawArraysAcrossAll9Configurations",
+      "mechanicalOccurrencesAddedAcrossAll9Configurations",
+      "EnglishIndexExact"
+    ]
+  },
+  "frozenVerifierCorruptionWitness": [
+    {
+      "optimized": false,
+      "exit": 1,
+      "stdout": "",
+      "stderrTail": "AssertionError: apps/keyboard-ios/LanguageData/README.md"
+    },
+    {
+      "optimized": true,
+      "exit": 0,
+      "stdout": "{\"verifiedSourceFiles\": 6, \"inactivePatch\": true, \"baselineChecked\": false, \"productionPatchApplied\": false}",
+      "stderrTail": ""
+    }
+  ]
+}

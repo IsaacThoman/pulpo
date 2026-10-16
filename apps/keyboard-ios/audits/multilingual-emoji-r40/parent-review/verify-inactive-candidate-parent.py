@@ -1,0 +1,172 @@
+"""Derived R40 archive/source integrity checks; never applies a patch or runs a benchmark.
+
+Point --packet (or R40_PACKET) at the original multilingual-emoji-r40 audit.
+Optional --check-baseline checks exact restored before-images and git apply --check.
+"""
+import argparse
+import gzip
+import hashlib
+import io
+import json
+import os
+from pathlib import Path, PurePosixPath
+import re
+import subprocess
+import sys
+
+MANIFEST_SHA = 'f21ddaf446a1a50ac2b4bf72128a1f8fc57c394c7b3fc2e1aadd8692d12a1590'
+AUDIT_SHA = '612254887af05a186ee3b38b652041a851fd06df271e9d3e5ac24e908da04569'
+PATCH_SHA = '83fa2282dad28996c341e0641de83a01985dddaf1206c9be533e1de878be872d'
+BASELINE = '00e2a0e7a283bc4a780b02f847ea9d82dfe9e5ae'
+CANDIDATE = '8369f266cb9ad58e9ca9b76a9f50dd0cfca3c7b0'
+PATHS = {
+    'apps/keyboard-ios/LanguageData/README.md',
+    'apps/keyboard-ios/LanguageData/emoji.json',
+    'apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Emoji/EmojiCatalog.swift',
+    'apps/keyboard-ios/PulpoKeyboardKit/Tests/KeyboardCoreTests/EmojiLocalizedSearchTests.swift',
+    'apps/keyboard-ios/scripts/build_language_data.py',
+    'apps/keyboard-ios/scripts/test_emoji_spanish_names.py',
+}
+RESOURCE = 'apps/keyboard-ios/LanguageData/emoji.json'
+
+
+def require(condition, message):
+    if not condition:
+        raise ValueError(message)
+
+
+def sha(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def safe_path(root, name):
+    require(type(name) is str and name != '' and '\\' not in name and ':' not in name,
+            'invalid relative path: ' + repr(name))
+    parts = name.split('/')
+    require(not PurePosixPath(name).is_absolute() and all(p not in ('', '.', '..') for p in parts),
+            'unsafe relative path: ' + repr(name))
+    result = root.joinpath(*parts)
+    current = root
+    for part in parts:
+        current = current / part
+        require(not current.is_symlink(), 'symlink rejected: ' + str(current))
+    require(result.resolve().is_relative_to(root.resolve()), 'path escapes root: ' + name)
+    return result
+
+
+def exact_read(root, name):
+    path = safe_path(root, name)
+    require(path.is_file(), 'missing retained file: ' + name)
+    return path.read_bytes()
+
+
+def json_object(data):
+    def unique(pairs):
+        out = {}
+        for key, value in pairs:
+            require(key not in out, 'duplicate JSON key: ' + key)
+            out[key] = value
+        return out
+    return json.loads(data, object_pairs_hook=unique,
+                      parse_constant=lambda x: (_ for _ in ()).throw(ValueError('invalid JSON constant: ' + x)))
+
+
+def git_top(path):
+    run = subprocess.run(['git', '-C', str(path), 'rev-parse', '--show-toplevel'],
+                         capture_output=True, text=True)
+    require(run.returncode == 0, 'cannot locate repository toplevel; provide --baseline-root for a standalone tree')
+    return Path(run.stdout.strip()).resolve()
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--packet', type=Path, default=os.environ.get('R40_PACKET'))
+    parser.add_argument('--check-baseline', action='store_true')
+    parser.add_argument('--baseline-root', type=Path,
+                        help='explicit repository toplevel or standalone before-image tree')
+    args = parser.parse_args()
+    require(args.packet is not None, 'supply --packet or R40_PACKET')
+    require(args.check_baseline or args.baseline_root is None, '--baseline-root requires --check-baseline')
+    packet = args.packet.resolve()
+    require(packet.is_dir(), 'packet directory unavailable')
+    audit = exact_read(packet, 'audit-files.sha256')
+    require(sha(audit) == AUDIT_SHA, 'original audit manifest hash mismatch')
+    retained = set()
+    for line in audit.decode('utf-8').splitlines():
+        match = re.fullmatch(r'([0-9a-f]{64})  (.+)', line)
+        require(match is not None, 'invalid audit manifest line')
+        expected, name = match.groups()
+        require(name not in retained, 'duplicate retained path: ' + name)
+        retained.add(name)
+        require(sha(exact_read(packet, name)) == expected, 'retained hash mismatch: ' + name)
+    require(len(retained) == 153, 'retained manifest must contain exactly 153 paths')
+    # Later parent notes may coexist; only the original 154-file packet is bound here.
+
+    raw_manifest = exact_read(packet, 'candidate-source-manifest.json')
+    require(sha(raw_manifest) == MANIFEST_SHA, 'candidate manifest hash mismatch')
+    manifest = json_object(raw_manifest)
+    require(manifest['baseline'] == BASELINE and manifest['candidate'] == CANDIDATE,
+            'source commit binding mismatch')
+    require(manifest['patch'] == 'candidate-source.patch' and manifest['patchSHA256'] == PATCH_SHA,
+            'patch binding mismatch')
+    require(manifest['resourceStoredSeparately'] is True, 'resource storage binding mismatch')
+    entries = manifest['files']
+    require(type(entries) is list and len(entries) == 6, 'expected exactly six candidate files')
+    names = [entry['path'] for entry in entries]
+    require(len(set(names)) == 6 and set(names) == PATHS, 'candidate source inventory mismatch')
+    patch = safe_path(packet, 'candidate-source.patch')
+    patch_data = exact_read(packet, 'candidate-source.patch')
+    require(sha(patch_data) == PATCH_SHA, 'inactive patch hash mismatch')
+    patch_names = []
+    for line in patch_data.decode('utf-8').splitlines():
+        if line.startswith('diff --git '):
+            match = re.fullmatch(r'diff --git a/(\S+) b/(\S+)', line)
+            require(match is not None and match[1] == match[2], 'unsupported patch header')
+            safe_path(packet, match[1])
+            patch_names.append(match[1])
+    require(len(patch_names) == 5 and set(patch_names) == PATHS - {RESOURCE},
+            'expected exact five non-resource patch paths')
+    for entry in entries:
+        name = entry['path']
+        expected_archive = 'candidate-source/' + name + ('.gz' if name == RESOURCE else '.txt')
+        require(entry['archive'] == expected_archive, 'source archive binding mismatch: ' + name)
+        require(type(entry['bytes']) is int and entry['bytes'] >= 0, 'invalid source size: ' + name)
+        data = exact_read(packet, expected_archive)
+        if name == RESOURCE:
+            with gzip.GzipFile(fileobj=io.BytesIO(data)) as stream:
+                data = stream.read(entry['bytes'] + 1)
+        require(len(data) == entry['bytes'] and sha(data) == entry['sha256'],
+                'candidate source hash/size mismatch: ' + name)
+
+    if args.check_baseline:
+        baseline_root = args.baseline_root.resolve() if args.baseline_root else git_top(packet)
+        require(baseline_root.is_dir(), 'baseline root unavailable')
+        # Explicit standalone trees are allowed; never silently accept a Git subdirectory.
+        if args.baseline_root:
+            probe = subprocess.run(['git', '-C', str(baseline_root), 'rev-parse', '--show-toplevel'],
+                                   capture_output=True, text=True)
+            if probe.returncode == 0:
+                require(Path(probe.stdout.strip()).resolve() == baseline_root,
+                        '--baseline-root must be the actual repository toplevel')
+        for entry in entries:
+            source = safe_path(baseline_root, entry['path'])
+            expected = entry['baselineSHA256']
+            if expected is None:
+                require(not source.exists(), 'baseline file must be absent: ' + entry['path'])
+            else:
+                require(source.is_file() and sha(source.read_bytes()) == expected,
+                        'baseline before-image mismatch: ' + entry['path'])
+        checked = subprocess.run(['git', 'apply', '--check', str(patch)], cwd=baseline_root,
+                                 capture_output=True, text=True)
+        require(checked.returncode == 0, 'git apply --check failed: ' + checked.stderr.strip())
+    print(json.dumps({'retainedHashes': 153, 'originalAuditFiles': 154,
+                      'verifiedSourceFiles': 6, 'inactivePatchPaths': 5,
+                      'baselineChecked': args.check_baseline, 'productionPatchApplied': False}, sort_keys=True))
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except (ValueError, OSError, KeyError, TypeError, UnicodeError, EOFError) as error:
+        print('ERROR: ' + str(error), file=sys.stderr)
+        sys.exit(1)
