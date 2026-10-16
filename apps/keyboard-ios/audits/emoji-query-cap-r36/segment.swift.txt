@@ -1,0 +1,5 @@
+import Foundation
+
+// Runtime segmentation only: no query implementation, operations or expected-state model.
+let values = try JSONDecoder().decode([String].self, from: FileHandle.standardInput.readDataToEndOfFile())
+FileHandle.standardOutput.write(try JSONEncoder().encode(values.map { $0.count }))

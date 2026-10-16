@@ -18,13 +18,18 @@ public struct EmojiSearchQuery: Equatable, Sendable {
   /// space in a row adds nothing, and any other whitespace counts as a space.
   public mutating func append(_ typed: String) {
     for character in typed {
+      let addition: Character
       if character.isWhitespace {
         guard let last = text.last, last != " " else { continue }
-        text.append(" ")
+        addition = " "
       } else {
-        text.append(character)
+        addition = character
       }
-      if text.count >= Self.maximumLength { break }
+      // Concatenation can extend the final grapheme (an accent, tone or joiner)
+      // without using another character. Check the resulting whole string.
+      let candidate = text + String(addition)
+      guard candidate.count <= Self.maximumLength else { break }
+      text = candidate
     }
   }
 

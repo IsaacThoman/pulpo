@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
-"""Compare every literal R36 checkpoint; does not run source or follow stored paths."""
+"""Compare every R36 checkpoint using an independent Swift segmentation-only helper."""
 import argparse
+import hashlib
 import json
 from pathlib import Path
+import subprocess
+import tempfile
 
 
 def require(value, message):
@@ -49,8 +52,36 @@ def validate_fixture(fixture, smoke=False):
             require(set(action) == fields and type(action.get('expected')) is str, 'Action fields/expectation')
 
 
-def observations(fixture, observed):
-    require(type(observed) is dict and set(observed) == {'version', 'cases'}, 'Observed top-level fields')
+def character_counts(fixture, *versions):
+    values = set()
+    for case in fixture['cases']:
+        values.add(case['expectedInitial'])
+        values.update(action['expected'] for action in case['actions'])
+    for observed in versions:
+        for case in observed['cases']:
+            values.update(state['text'] for state in case['states'])
+    values = sorted(values)
+    helper = Path(__file__).resolve().with_name('segment.swift.txt')
+    with tempfile.TemporaryDirectory(prefix='r36-segmentation-') as directory:
+        source = Path(directory) / 'main.swift'
+        binary = Path(directory) / 'segment'
+        source.write_bytes(helper.read_bytes())
+        result = subprocess.run(['xcrun', 'swiftc', '-O', str(source), '-o', str(binary)], capture_output=True)
+        if result.returncode:
+            raise ValueError('Segmentation helper build failed: ' + result.stderr.decode(errors='replace'))
+        result = subprocess.run([str(binary)], input=json.dumps(values, ensure_ascii=False).encode(), capture_output=True)
+        if result.returncode:
+            raise ValueError('Segmentation helper failed: ' + result.stderr.decode(errors='replace'))
+        counts = json.loads(result.stdout)
+    require(type(counts) is list and len(counts) == len(values)
+            and all(type(v) is int and v >= 0 for v in counts), 'Segmentation helper output')
+    return dict(zip(values, counts))
+
+
+def observations(fixture, observed, fixture_sha256, counts=None):
+    require(type(observed) is dict and set(observed) == {'version', 'inputSHA256', 'cases'}, 'Observed top-level fields')
+    require(type(fixture_sha256) is str and len(fixture_sha256) == 64
+            and observed['inputSHA256'] == fixture_sha256, 'Input-byte binding')
     require(type(observed['version']) is int and observed['version'] == 1, 'Observed version')
     require(type(observed['cases']) is list and len(observed['cases']) == len(fixture['cases']), 'Missing/extra observed cases')
     result = []
@@ -67,15 +98,23 @@ def observations(fixture, observed):
             require(type(state['scalars']) is list and all(type(v) is int for v in state['scalars'])
                     and state['scalars'] == list(map(ord, state['text'])), 'Observed scalar binding')
             expected = action['expected']
+            if counts is not None:
+                require(counts[state['text']] == state['characters'], 'Observed grapheme-count binding')
+                require(counts[expected] <= 40, 'Impossible over-capacity literal oracle')
             passed = state['scalars'] == list(map(ord, expected)) and state['characters'] <= 40
             result.append({'id': case['id'], 'family': case['family'], 'step': step, 'op': action['op'],
                            'expected': expected, 'observed': state, 'passed': passed})
     return result
 
 
-def compare(fixture, baseline, candidate):
+def compare(fixture, baseline, candidate, fixture_sha256):
     validate_fixture(fixture)
-    before, after = observations(fixture, baseline), observations(fixture, candidate)
+    # Validate all observation shapes before preparing segmentation input.
+    observations(fixture, baseline, fixture_sha256)
+    observations(fixture, candidate, fixture_sha256)
+    counts = character_counts(fixture, baseline, candidate)
+    before = observations(fixture, baseline, fixture_sha256, counts)
+    after = observations(fixture, candidate, fixture_sha256, counts)
     counts = {key: 0 for key in ('pass-to-pass', 'pass-to-fail', 'fail-to-pass', 'fail-to-fail')}
     rows = []
     for old, new in zip(before, after):
@@ -86,6 +125,8 @@ def compare(fixture, baseline, candidate):
     def passed_cases(states):
         return sum(all(s['passed'] for s in states if s['id'] == case['id']) for case in fixture['cases'])
     return {'cases': len(fixture['cases']), 'checkpoints': len(rows), 'transitions': counts,
+            'inputSHA256': fixture_sha256,
+            'segmentationHelperSHA256': hashlib.sha256(Path(__file__).resolve().with_name('segment.swift.txt').read_bytes()).hexdigest(),
             'baselinePassedCases': passed_cases(before), 'candidatePassedCases': passed_cases(after),
             'unavailableCheckpointsDropped': 0, 'rows': rows,
             'acceptance': all(s['passed'] for s in after) and counts['pass-to-fail'] == 0,
@@ -99,6 +140,6 @@ if __name__ == '__main__':
     parser.add_argument('candidate', type=Path)
     parser.add_argument('output', type=Path)
     args = parser.parse_args()
-    report = compare(load(args.fixture), load(args.baseline), load(args.candidate))
+    report = compare(load(args.fixture), load(args.baseline), load(args.candidate), hashlib.sha256(args.fixture.read_bytes()).hexdigest())
     args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + '\n')
     print(json.dumps({key: value for key, value in report.items() if key != 'rows'}))

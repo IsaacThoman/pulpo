@@ -1,0 +1,44 @@
+{
+  "classification": "Independent pre-reveal source/executor review; exposed developer receipts only",
+  "approvedHashes": {
+    "EmojiSearch.swift": "b31bb9dfd4f0eaca8e7c71e5d5779d43a2e60649067b9a78ac6b0b12bc5b7d47",
+    "EmojiSearchTests.swift": "d99a1bb75cc5d6b655ee00891eba6cf0f42b133707ace42773cd272f64730f99",
+    "measure.swift.txt": "24c9e26c0c0ad892703aa473b33a085e51397a0e36e0f232a610825c0e4e30b7",
+    "compare.py": "28898b498ace829f00af3e479e05f5896a828d24d0c267454d4f5925d166cc78",
+    "segment.swift.txt": "582209914cd601dd855478b72e75e186c430885e665226296a12e0e909ee94c4",
+    "contract.md": "83e53e1cf51c34475b9dbab283a15f8fabc48b70d046f8b1f20ec475f2ae6c43",
+    "schema.json": "d648a8e11f09c4eeff093fc07bdd6330cea7f52e6f5d00a204b50e5e019eb92e"
+  },
+  "independentlyRecomputedDeveloperReceipts": {
+    "scoring-smoke": {
+      "checkpoints": 228,
+      "baselinePassedCheckpoints": 228,
+      "candidatePassedCheckpoints": 228,
+      "transitions": {
+        "pass-to-pass": 228,
+        "pass-to-fail": 0,
+        "fail-to-pass": 0,
+        "fail-to-fail": 0
+      },
+      "baselineOverCapacityStates": 0,
+      "inputSHA256": "905589958a73579e7b0861645fe77bc98b6e8dcca698c5d7220f3232a40daa01"
+    },
+    "overflow-control": {
+      "checkpoints": 60,
+      "baselinePassedCheckpoints": 24,
+      "candidatePassedCheckpoints": 60,
+      "transitions": {
+        "pass-to-pass": 24,
+        "pass-to-fail": 0,
+        "fail-to-pass": 36,
+        "fail-to-fail": 0
+      },
+      "baselineOverCapacityStates": 24,
+      "inputSHA256": "51bfed16327ed34ba0d60fe290494e99f8d1d2e1e134313cbcc33e4d6a37be1c"
+    }
+  },
+  "fullGate": "Parent-reported442core/65suites10.339s+3services0.001s, five unchanged known issues; no independent rerun",
+  "sealedPayloadRead": false,
+  "sourceOrRootEdits": false,
+  "coreBuildsOrDevices": false
+}

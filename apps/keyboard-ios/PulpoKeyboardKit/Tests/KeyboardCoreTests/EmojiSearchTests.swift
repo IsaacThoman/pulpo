@@ -46,8 +46,38 @@ struct EmojiSearchTests {
   }
 
   @Test func queryStopsAtItsMaximumLength() {
-    let query = EmojiSearchQuery(String(repeating: "a", count: 100))
+    var query = EmojiSearchQuery(String(repeating: "a", count: 100))
     #expect(query.text.count == EmojiSearchQuery.maximumLength)
+    let full = query.text
+    query.append("more")
+    query.append(" ")
+    #expect(query.text == full)
+    query.deleteBackward()
+    query.append("bc")
+    #expect(query.text == String(repeating: "a", count: 39) + "b")
+    query.deleteWordsBackward(1)
+    #expect(query.isEmpty)
+    query.append("red heart")
+    #expect(query.text == "red heart")
+  }
+
+  @Test(arguments: [
+    ("a", "\u{301}", "a\u{301}"),
+    ("👩", "\u{200D}🚀", "👩‍🚀"),
+    ("🇦", "🇧", "🇦🇧"),
+    (" ", "\u{301}", " \u{301}"),
+    ("👋", "🏽", "👋🏽"),
+  ])
+  func queryCanExtendItsFinalUnicodeCharacterAtTheLimit(last: String, continuation: String, expected: String) {
+    let prefix = String(repeating: "x", count: 39)
+    var query = EmojiSearchQuery(prefix + last)
+    query.append(continuation)
+    #expect(query.text.unicodeScalars.elementsEqual((prefix + expected).unicodeScalars))
+    #expect(query.text.count == EmojiSearchQuery.maximumLength)
+    query.append("z")
+    #expect(query.text.unicodeScalars.elementsEqual((prefix + expected).unicodeScalars))
+    query.deleteBackward()
+    #expect(query.text == prefix)
   }
 
   // MARK: Matching

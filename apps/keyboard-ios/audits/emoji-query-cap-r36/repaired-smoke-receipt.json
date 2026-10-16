@@ -1,0 +1,46 @@
+{
+  "classification": "Exposed repeated developer smoke, not blind or independent utility",
+  "initialPacketCommit": "e59d5bf1",
+  "inputSHA256": "7aa08649f2f1bd9e2a38968a511d77c9a7cb217f027eab3510c822f4a08343c8",
+  "checkpointsPerVersion": 19,
+  "passedPerVersion": [
+    19,
+    19
+  ],
+  "operations": [
+    "append",
+    "backspace",
+    "clear",
+    "deleteWords",
+    "init"
+  ],
+  "inputBindingAndRuntimeSegmentation": true,
+  "fullScoringInterfaceSmoke": {
+    "generatedCases": 12,
+    "uniqueScenarioTemplates": 1,
+    "checkpointsPerVersion": 228,
+    "passToPass": 228
+  },
+  "overflowScoringControl": {
+    "generatedCases": 12,
+    "uniqueScenarioTemplates": 1,
+    "checkpointsPerVersion": 60,
+    "passToPass": 24,
+    "failToPass": 36,
+    "passToFail": 0,
+    "failToFail": 0,
+    "observedOverflowIsFailureNotInvalid": true
+  },
+  "files": {
+    "/tmp/pulpo-r36-parent/smoke-baseline-bound.json": "a946f1f7a736722f0e52f1c97cf2c5928d27763fc3b816ea67aef18e77d9fad5",
+    "/tmp/pulpo-r36-parent/smoke-candidate-bound.json": "a946f1f7a736722f0e52f1c97cf2c5928d27763fc3b816ea67aef18e77d9fad5",
+    "/tmp/pulpo-r36-parent/scoring-smoke.json": "905589958a73579e7b0861645fe77bc98b6e8dcca698c5d7220f3232a40daa01",
+    "/tmp/pulpo-r36-parent/scoring-smoke-baseline.json": "b78d12ae14c2378f38ab51477f65105a3ac0f5eb7ae7db6ac43d7fd08709b2c7",
+    "/tmp/pulpo-r36-parent/scoring-smoke-candidate.json": "b78d12ae14c2378f38ab51477f65105a3ac0f5eb7ae7db6ac43d7fd08709b2c7",
+    "/tmp/pulpo-r36-parent/scoring-smoke-comparison.json": "ce4bedf6a1b0502cdc1bee996bdc1b12c3c3970020b30fd139b92114945dc3a8",
+    "/tmp/pulpo-r36-parent/overflow-control.json": "51bfed16327ed34ba0d60fe290494e99f8d1d2e1e134313cbcc33e4d6a37be1c",
+    "/tmp/pulpo-r36-parent/overflow-control-baseline.json": "87115caf030e70deeb206c6a453d0d3917fba073ec617e8e26016240f3f37df9",
+    "/tmp/pulpo-r36-parent/overflow-control-candidate.json": "0628f1dde1c6ace5a0abae382a1fc10ec64f2f58e09dd28e28ad3e4d9d685527",
+    "/tmp/pulpo-r36-parent/overflow-control-comparison.json": "1c6ee7746221f1ba2a33eea5b4768d99176c9a48ce1858b052374a368d845fee"
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "baselineCommit": "975c5f83",
+  "candidateNotYetRevealed": true,
+  "releaseCoreGate": {
+    "coreFunctions": 442,
+    "suites": 65,
+    "coreSeconds": 10.339,
+    "serviceFunctions": 3,
+    "serviceSeconds": 0.001,
+    "knownCoreIssues": 5,
+    "newAllowances": 0
+  },
+  "baselineNormalRegression": {
+    "functions": 2,
+    "unicodeArgumentCases": 5,
+    "assertionFailures": 13,
+    "compiled": true,
+    "commandExit": 1
+  },
+  "candidateCommandExit": 0,
+  "commands": {
+    "baselineRegression": "swift test -c release --package-path apps/keyboard-ios/PulpoKeyboardKit --filter 'EmojiSearchTests/queryStopsAtItsMaximumLength|EmojiSearchTests/queryCanExtendItsFinalUnicodeCharacterAtTheLimit'",
+    "candidateGate": "npm run keyboard:test"
+  },
+  "temporaryOutputHashes": {
+    "/tmp/pulpo-r36-parent/normal-baseline.txt": "b0fcb1a27c3701c6e966a6fb9f2bbe0f8edabfe325a62a688f937ecbd06b87d2",
+    "/tmp/pulpo-r36-parent/full-core-services.txt": "efdafde0cade87f2d9713f0d395b7ce12dcf1f3ea18dace7c8ab687fc70eefd0"
+  },
+  "toolchain": "Apple Swift version 6.4 (swiftlang-6.4.0.34.1 clang-2100.3.34.1)\nTarget: arm64-apple-macosx27.0.0",
+  "scope": "macOS Release core/public API; no native app/device/performance/retrieval claim"
+}
