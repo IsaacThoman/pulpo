@@ -29,3 +29,17 @@ Inspect and exercise D1–D6 first. Select only reproducible, worthwhile product
 ### Evidence and reporting
 
 Keep screenshots, transient harnesses and build output outside Git, under `/tmp/pulpo-settings-native-evidence` where applicable. Record exact protocol/implementation commits, commands, actual results and limitations here. Device tools attempted first: `device_list` reported iOS available but host failure `Device list failed: The device command failed (exit code 127).`; `device_open` returned the same error. Use the user-supplied pinned agent-device launcher/config/session fallback. Never read build logs unless the build command indicates an error.
+
+## Development inspection and candidate selection
+
+Protocol commit: `b4090f3a`. Initial native `build-for-testing` succeeded (exit 0), using the isolated project generated in this checkout and `/tmp/pulpo-settings-native-build`; successful build log not read.
+
+D2/D3 live preview: opened Try It, selected Español from EN, and observed the ES label and Spanish initial suggestions. Companion settings is available through the language menu. Source inspection confirms shared `SettingsStore` for companion/Full Access and a persistent extension-local store without Full Access. No claim of cross-container synchronization when Full Access is off.
+
+D1/D4: setup uses real enabled-keyboard state and last installed-keyboard appearance, with distinct unknown/on/off permission states. Opening Settings does not itself confirm permission. Existing native setup/privacy and permission tests selected for development execution; remote extension AX absence may block their key-based assertions. No production permission change selected from source inspection alone.
+
+D5: both destructive operations require confirmation. `clearLearnedWords()` clears the personal dictionary and learned touch adjustments, while settings reset resets preferences and one-handed mode. Language is unaffected by learning clear. The learning-clear dialog omitted touch adjustments, so its description understated the destructive scope.
+
+D6 reproduced visually and in the AX snapshot: Try It offers Tips/Clear but no keyboard-dismiss action; the preview is passed a constant `focused: true` and re-requests first responder on subsequent updates. Evidence: `/tmp/pulpo-settings-native-evidence/development-preview-before.png`. Device screenshot tool failed (`Device screenshot failed.`); screenshot captured with assigned-UDID `simctl io` instead.
+
+**Selection frozen before held-out evaluation:** (1) add an accessible Hide Keyboard action for both preview and installed-field modes, make preview focus bidirectional and current-binding-safe, and forward actual preview appear/disappear lifecycle; (2) accurately describe learned touch adjustments and preserved language/settings in the learning-clear confirmation. No selected change to permission inference, language stores, learning algorithms, keyboard layout, or excluded subsystems. Held-out H1–H4 will be evaluated once after implementation selection. Native failures and unexecuted acceptance will be reported explicitly.
