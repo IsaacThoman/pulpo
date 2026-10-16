@@ -1,0 +1,13 @@
+{
+  "scope": "inert generated Swift sources only; compilation only; no built binary invoked; no product/Core sources or author workload read",
+  "driverSHA256": "38626b5c3d0fabd61f82fbe9c75c45b6b5297c95eb262f60f379ba5dae3151d0",
+  "configSHA256": "d18d7e34999d19969741e2d510e4d1761fb7c0a09781cd71537e649dc250903c",
+  "preparedSHA256": "25a381dd5ac83a7b40b6ca1dcd2f3a64717a91fc22962533b41fccffa0be0b3a",
+  "work": "/private/tmp/pulpo-r48-inert-prepare-heqwy5fs",
+  "builds": 2,
+  "productExecutions": 0,
+  "exactSixEnvironmentFields": true,
+  "runnerOnlyClientSources": true,
+  "successfulBuildLogsRead": false,
+  "stdout": "{\"stage\": \"prepared\", \"versions\": 2, \"allBuildsPass\": true, \"productExecutions\": 0, \"preparedSHA256\": \"25a381dd5ac83a7b40b6ca1dcd2f3a64717a91fc22962533b41fccffa0be0b3a\"}\n"
+}
