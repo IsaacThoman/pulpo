@@ -22,11 +22,21 @@ final class LearningClearScopeUITests: XCTestCase {
     let confirm = sheet.buttons["Clear Learned Words"]
     let cancel = sheet.buttons["Cancel"]
     XCTAssertTrue(confirm.isHittable)
-    XCTAssertTrue(cancel.isHittable)
     XCTAssertLessThanOrEqual(message.frame.maxY, confirm.frame.minY)
     XCTAssertGreaterThan(message.frame.width, 0)
     snapshot("r41-shared-clear-confirmation")
-    cancel.tap()
+    try app.debugDescription.write(toFile: "/tmp/pulpo-r41-validation/shared-scope-confirmation-ax.txt", atomically: true, encoding: .utf8)
+    try XCUIScreen.main.screenshot().pngRepresentation.write(to: URL(fileURLWithPath: "/tmp/pulpo-r41-validation/shared-scope-confirmation.png"))
+    if cancel.exists && cancel.isHittable {
+      cancel.tap()
+    } else {
+      // iOS 27 presents the existing confirmation as a popover; its native
+      // outside dismissal region replaces a separate visible Cancel button.
+      let outside = app.otherElements["PopoverDismissRegion"]
+      XCTAssertTrue(outside.exists)
+      outside.coordinate(withNormalizedOffset: CGVector(dx: 0.05, dy: 0.5)).tap()
+    }
+    XCTAssertFalse(sheet.exists)
     XCTAssertFalse(app.alerts["Learned Words Cleared"].exists)
     XCTAssertFalse(app.alerts["Couldn’t Clear Learned Words"].exists)
   }

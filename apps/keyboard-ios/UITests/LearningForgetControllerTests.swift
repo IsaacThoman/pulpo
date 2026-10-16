@@ -108,8 +108,17 @@ final class LearningForgetControllerTests: XCTestCase {
     try button("notice-action", in: message).sendActions(for: .touchUpInside)
     XCTAssertEqual(personal.persistenceResult, .ok)
     XCTAssertTrue(personal.isBlocked(suggestion.text))
-    XCTAssertTrue(PersonalDictionary(url: url).isBlocked(suggestion.text))
-    XCTAssertEqual(PersonalDictionary(url: url).count(of: suggestion.text), 0)
+    // The controller schedules a real background save after confirmed forget.
+    // Retry only unavailable reads; never repeat the removal operation.
+    let deadline = Date().addingTimeInterval(5)
+    var confirmed = PersonalDictionary(url: url)
+    while confirmed.persistenceResult == .busy && Date() < deadline {
+      RunLoop.main.run(until: Date().addingTimeInterval(0.002))
+      confirmed = PersonalDictionary(url: url)
+    }
+    XCTAssertEqual(confirmed.persistenceResult, .ok)
+    XCTAssertTrue(confirmed.isBlocked(suggestion.text))
+    XCTAssertEqual(confirmed.count(of: suggestion.text), 0)
     XCTAssertFalse(bar.isShowingNotice)
     RunLoop.main.run(until: Date().addingTimeInterval(0.03)) // Production bar updates are scheduled.
     XCTAssertFalse(bar.suggestions.contains { $0.text == suggestion.text })
