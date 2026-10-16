@@ -84,6 +84,9 @@ final class KeyboardLanguageTests: PreviewTypingTestCase {
     let preview = app.key("try-it")
     for _ in 0..<5 where !preview.isHittable { app.swipeDown() }
     preview.tap()
+    // Returning from Settings restores the draft without forcing the keyboard
+    // open. Explicitly focus before checking the keyboard's language label.
+    app.textViews["preview-text"].tap()
     let language = app.key("keyboard-language")
     XCTAssertTrue(language.waitForExistence(timeout: 5))
     XCTAssertTrue(language.label.contains("English + Español"))
