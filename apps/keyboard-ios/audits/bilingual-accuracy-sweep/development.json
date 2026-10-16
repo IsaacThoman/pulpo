@@ -1,0 +1,380 @@
+[
+  {
+    "id": "dev-001",
+    "category": "typo-recovery",
+    "modes": [
+      "en",
+      "bi"
+    ],
+    "typed": "teh ",
+    "desired": "the "
+  },
+  {
+    "id": "dev-002",
+    "category": "typo-recovery",
+    "modes": [
+      "en",
+      "bi"
+    ],
+    "typed": "recieve ",
+    "desired": "receive "
+  },
+  {
+    "id": "dev-003",
+    "category": "typo-recovery",
+    "modes": [
+      "en",
+      "bi"
+    ],
+    "typed": "becuase ",
+    "desired": "because "
+  },
+  {
+    "id": "dev-004",
+    "category": "typo-recovery",
+    "modes": [
+      "en",
+      "bi"
+    ],
+    "typed": "tomorow ",
+    "desired": "tomorrow "
+  },
+  {
+    "id": "dev-005",
+    "category": "typo-recovery",
+    "modes": [
+      "en",
+      "bi"
+    ],
+    "typed": "freind ",
+    "desired": "friend "
+  },
+  {
+    "id": "dev-006",
+    "category": "typo-recovery",
+    "modes": [
+      "en",
+      "bi"
+    ],
+    "typed": "definately ",
+    "desired": "definitely "
+  },
+  {
+    "id": "dev-007",
+    "category": "typo-recovery",
+    "modes": [
+      "es",
+      "bi"
+    ],
+    "typed": "gracais ",
+    "desired": "gracias "
+  },
+  {
+    "id": "dev-008",
+    "category": "typo-recovery",
+    "modes": [
+      "es",
+      "bi"
+    ],
+    "typed": "manana ",
+    "desired": "mañana "
+  },
+  {
+    "id": "dev-009",
+    "category": "typo-recovery",
+    "modes": [
+      "es",
+      "bi"
+    ],
+    "typed": "tambine ",
+    "desired": "también "
+  },
+  {
+    "id": "dev-010",
+    "category": "typo-recovery",
+    "modes": [
+      "es",
+      "bi"
+    ],
+    "typed": "despuees ",
+    "desired": "después "
+  },
+  {
+    "id": "dev-011",
+    "category": "typo-recovery",
+    "modes": [
+      "es",
+      "bi"
+    ],
+    "typed": "porqe ",
+    "desired": "porque "
+  },
+  {
+    "id": "dev-012",
+    "category": "typo-recovery",
+    "modes": [
+      "es",
+      "bi"
+    ],
+    "typed": "necesitp ",
+    "desired": "necesito "
+  },
+  {
+    "id": "dev-013",
+    "category": "typo-recovery",
+    "modes": [
+      "bi"
+    ],
+    "typed": "Please trae aguua ",
+    "desired": "Please trae agua "
+  },
+  {
+    "id": "dev-014",
+    "category": "typo-recovery",
+    "modes": [
+      "bi"
+    ],
+    "typed": "Necesito more coffe ",
+    "desired": "Necesito more coffee "
+  },
+  {
+    "id": "dev-015",
+    "category": "typo-recovery",
+    "modes": [
+      "bi"
+    ],
+    "typed": "Thanks por la aydua ",
+    "desired": "Thanks por la ayuda "
+  },
+  {
+    "id": "dev-016",
+    "category": "typo-recovery",
+    "modes": [
+      "bi"
+    ],
+    "typed": "Vamos to the libary ",
+    "desired": "Vamos to the library "
+  },
+  {
+    "id": "dev-017",
+    "category": "clean-literal",
+    "modes": [
+      "en",
+      "bi"
+    ],
+    "typed": "Marlowe ",
+    "desired": "Marlowe "
+  },
+  {
+    "id": "dev-018",
+    "category": "clean-literal",
+    "modes": [
+      "en",
+      "bi"
+    ],
+    "typed": "I'll ",
+    "desired": "I'll "
+  },
+  {
+    "id": "dev-019",
+    "category": "clean-literal",
+    "modes": [
+      "en",
+      "bi"
+    ],
+    "typed": "we're ",
+    "desired": "we're "
+  },
+  {
+    "id": "dev-020",
+    "category": "clean-literal",
+    "modes": [
+      "en",
+      "bi"
+    ],
+    "typed": "form ",
+    "desired": "form "
+  },
+  {
+    "id": "dev-021",
+    "category": "clean-literal",
+    "modes": [
+      "en",
+      "bi"
+    ],
+    "typed": "quiet ",
+    "desired": "quiet "
+  },
+  {
+    "id": "dev-022",
+    "category": "clean-literal",
+    "modes": [
+      "en",
+      "bi"
+    ],
+    "typed": "Hello, WORLD! ",
+    "desired": "Hello, WORLD! "
+  },
+  {
+    "id": "dev-023",
+    "category": "clean-literal",
+    "modes": [
+      "es",
+      "bi"
+    ],
+    "typed": "Íñigo ",
+    "desired": "Íñigo "
+  },
+  {
+    "id": "dev-024",
+    "category": "clean-literal",
+    "modes": [
+      "es",
+      "bi"
+    ],
+    "typed": "Lucía ",
+    "desired": "Lucía "
+  },
+  {
+    "id": "dev-025",
+    "category": "clean-literal",
+    "modes": [
+      "es",
+      "bi"
+    ],
+    "typed": "sí ",
+    "desired": "sí "
+  },
+  {
+    "id": "dev-026",
+    "category": "clean-literal",
+    "modes": [
+      "es",
+      "bi"
+    ],
+    "typed": "si ",
+    "desired": "si "
+  },
+  {
+    "id": "dev-027",
+    "category": "clean-literal",
+    "modes": [
+      "es",
+      "bi"
+    ],
+    "typed": "año ",
+    "desired": "año "
+  },
+  {
+    "id": "dev-028",
+    "category": "clean-literal",
+    "modes": [
+      "es",
+      "bi"
+    ],
+    "typed": "¡Qué tal! ",
+    "desired": "¡Qué tal! "
+  },
+  {
+    "id": "dev-029",
+    "category": "clean-literal",
+    "modes": [
+      "bi"
+    ],
+    "typed": "Meet Sofía en Boston. ",
+    "desired": "Meet Sofía en Boston. "
+  },
+  {
+    "id": "dev-030",
+    "category": "clean-literal",
+    "modes": [
+      "bi"
+    ],
+    "typed": "El build is ready. ",
+    "desired": "El build is ready. "
+  },
+  {
+    "id": "dev-031",
+    "category": "clean-literal",
+    "modes": [
+      "bi"
+    ],
+    "typed": "No, gracias! ",
+    "desired": "No, gracias! "
+  },
+  {
+    "id": "dev-032",
+    "category": "clean-literal",
+    "modes": [
+      "bi"
+    ],
+    "typed": "tú and you ",
+    "desired": "tú and you "
+  },
+  {
+    "id": "dev-033",
+    "category": "editor",
+    "modes": [
+      "en",
+      "es",
+      "bi"
+    ],
+    "typed": "hello,world ",
+    "desired": "hello,world "
+  },
+  {
+    "id": "dev-034",
+    "category": "editor",
+    "modes": [
+      "en",
+      "es",
+      "bi"
+    ],
+    "typed": "foo.bar ",
+    "desired": "foo.bar "
+  },
+  {
+    "id": "dev-035",
+    "category": "editor",
+    "modes": [
+      "en",
+      "es",
+      "bi"
+    ],
+    "typed": "x@y.io ",
+    "desired": "x@y.io "
+  },
+  {
+    "id": "dev-036",
+    "category": "editor",
+    "modes": [
+      "en",
+      "es",
+      "bi"
+    ],
+    "typed": "v2.7 ",
+    "desired": "v2.7 "
+  },
+  {
+    "id": "dev-037",
+    "category": "editor",
+    "modes": [
+      "en",
+      "es",
+      "bi"
+    ],
+    "typed": "foo_bar ",
+    "desired": "foo_bar "
+  },
+  {
+    "id": "dev-038",
+    "category": "editor",
+    "modes": [
+      "en",
+      "es",
+      "bi"
+    ],
+    "typed": "https://pulpo.dev ",
+    "desired": "https://pulpo.dev "
+  }
+]
