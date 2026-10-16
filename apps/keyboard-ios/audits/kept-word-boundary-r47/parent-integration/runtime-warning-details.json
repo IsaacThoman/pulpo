@@ -1,0 +1,38 @@
+[
+  {
+    "documentLocationInCreatingWorkspace": {
+      "concreteTypeName": "DVTTextDocumentLocation",
+      "url": ""
+    },
+    "issueType": "Uncategorized",
+    "message": "Thread running at User-initiated quality-of-service class waiting on a lower QoS thread running at Utility quality-of-service class. Investigate ways to avoid priority inversions",
+    "testCaseName": "EmojiToneAccessibilityR50Tests.testMountedToneActionsInsertionReopenRecentsAndReuse()"
+  },
+  {
+    "documentLocationInCreatingWorkspace": {
+      "concreteTypeName": "DVTTextDocumentLocation",
+      "url": "file:///Users/isaacthoman/.t3/worktrees/pulpo/t3-a3218df3/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Shared/LearnedDataPersistence.swift#EndingLineNumber=679&StartingLineNumber=679"
+    },
+    "issueType": "Uncategorized",
+    "message": "Thread running at User-initiated quality-of-service class waiting on a lower QoS thread running at Utility quality-of-service class. Investigate ways to avoid priority inversions",
+    "testCaseName": "LearningForgetControllerTests.testRealCanonicalSQLiteBusyShowsNoticeAndExplicitRetryConfirmsRemoval()"
+  },
+  {
+    "documentLocationInCreatingWorkspace": {
+      "concreteTypeName": "DVTTextDocumentLocation",
+      "url": ""
+    },
+    "issueType": "Uncategorized",
+    "message": "Thread running at User-initiated quality-of-service class waiting on a lower QoS thread running at Utility quality-of-service class. Investigate ways to avoid priority inversions",
+    "testCaseName": "EmojiToneAccessibilityR50Tests.testMountedToneActionsInsertionReopenRecentsAndReuse()"
+  },
+  {
+    "documentLocationInCreatingWorkspace": {
+      "concreteTypeName": "DVTTextDocumentLocation",
+      "url": "file:///Users/isaacthoman/.t3/worktrees/pulpo/t3-a3218df3/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Shared/LearnedDataPersistence.swift#EndingLineNumber=679&StartingLineNumber=679"
+    },
+    "issueType": "Uncategorized",
+    "message": "Thread running at User-initiated quality-of-service class waiting on a lower QoS thread running at Utility quality-of-service class. Investigate ways to avoid priority inversions",
+    "testCaseName": "LearningForgetControllerTests.testRealCanonicalSQLiteBusyShowsNoticeAndExplicitRetryConfirmsRemoval()"
+  }
+]

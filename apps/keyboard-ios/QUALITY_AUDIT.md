@@ -8,6 +8,22 @@ unmeasured. Small deterministic Spanish and bilingual checks are reported below.
 
 ## Continued independent sweeps, October 15–16
 
+Kept-word taps now contribute to adaptation when an owned, valid typed word ends
+with an accepted emoji or other external boundary. Exact scalar/document ownership
+guards exclude restored, changed, unavailable and technical contexts; query edits
+do not teach the document. The original new blind pair passes 5,065 correlated
+checks across 49 cases/342 rows per version, zero unavailable, with twelve
+positive roots and exact full-state Space parity. This measures adaptation
+bookkeeping, not human accuracy. Parent imports the exact admitted Engine and
+passes 491 Core definitions/472 executed/19 existing opt-in skips plus three
+Services, with the same five known issues. Nine focused native methods pass,
+including all 39 R47 payloads exactly equal to the original branch's native
+payloads. Two existing priority warnings belong to the emoji accessibility and
+forget-controller methods; the R47 method has none. Independent source review
+approves composition with current reset persistence and companion UX. The owned
+fresh simulator is deleted. See
+`audits/kept-word-boundary-r47/parent-integration/parent-disposition.json`.
+
 Decimal entry now follows the system region, independently of typing language,
 and retains a globe when the host requests one. The final hosted workload
 improves 8→12/12 workflows, with four gains and zero losses; earlier rejected
@@ -72,6 +88,16 @@ Parent verifies all 92 artifact hashes and that its entire app/project/resources
 tests exactly match the executed R50 candidate, reusing that scoped runtime
 evidence without an extra test run. Existing priority warnings remain recorded.
 See `audits/companion-emoji-r50/parent-disposition.json`.
+
+R46's Foundation-only Spanish emoji candidate passes its source and exposed
+development controls, but is rejected before native or blind authoring. Its one
+28-process batch executes all 206,472 queries; timing/quiet are unavailable from
+host contention, and both retained-memory medians exceed the frozen 2 MiB
+allowance (2,605,056 and 2,457,600 bytes extra). All raw samples and failures are
+retained without retry, subset selection or threshold tuning. Production is
+restored and the unused owned simulator deleted. Compact original rejection
+records and the complete external-audit reference are in
+`audits/multilingual-emoji-r46/parent-retention.json`.
 
 Account sign-in cancellation now revokes pending publication before task start
 and after network suspension; obsolete refreshes cannot restore a signed-out

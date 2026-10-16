@@ -1,0 +1,18 @@
+{
+  "at": "2026-10-16T12:52:20.866501+00:00",
+  "beforeState": "Shutdown",
+  "deleteExitCode": 0,
+  "deleteStderr": "",
+  "deleteStdout": "",
+  "deletedVerified": true,
+  "hardwareKeyboardIntentChanged": false,
+  "hardwareRestoration": "unchanged; no mutation ever performed",
+  "legibilityRestoration": "unchanged; app never installed",
+  "legibilitySettingChanged": false,
+  "nativeBuildOrRun": false,
+  "neverBootedOrDriven": true,
+  "otherDevicesMutated": false,
+  "runtime": "com.apple.CoreSimulator.SimRuntime.iOS-27-0",
+  "shutdown": "already Shutdown; no shutdown call needed",
+  "uuid": "FBB47FDD-9910-4347-B8F1-979FCF3F8741"
+}

@@ -69,8 +69,8 @@ the hash-bound full duplicate review archive remains external as documented.
 `paired-results-v3/` retains all raw outputs, evaluator reports, the
 spent marker and every final synthetic store file; no product rerun occurred.
 
-Product and ordinary-test files remain byte-identical to the merged `82165e7f`
-reference that passed R48's source, ordinary and native gates. Their limits,
+At the R49 freeze, product and ordinary-test files were byte-identical to the
+merged `82165e7f` reference that passed R48's source, ordinary and native gates. Their limits,
 including five normal/two AX5 runtime priority warnings, remain attached.
 `parent-disposition.json` accepts the bounded integrated source for the PR using
 these separate gates. R49 exercises TouchModel compatibility, not reset/forget;
@@ -78,4 +78,7 @@ the original R33 cross-process storage gates, unchanged storage bytes and parent
 native fault/retry evidence remain separately attributed. Inaccessible fallback
 erasure, iOS suspension/crash durability and population accuracy remain unproven.
 The later R50 UI import is byte-identical across the entire app/project/resources/
-tests to its already executed candidate; Core files still match `82165e7f`.
+tests to its already executed candidate; Core files at that stage still matched
+`82165e7f`. The subsequent R47 Engine import has its own source, ordinary and
+native composition evidence in `../kept-word-boundary-r47/parent-integration/`;
+it does not rewrite this round's exact source bindings or blind result.

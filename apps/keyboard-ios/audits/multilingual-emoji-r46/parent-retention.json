@@ -1,0 +1,28 @@
+{
+  "status": "REJECTED; candidate restored, no adoption",
+  "sourceTaskFinalCommit": "f573b2c11d32e5f1e3453f0135d8811bdee6b3b5",
+  "originalFullAuditDirectory": "/Users/isaacthoman/.t3/worktrees/pulpo/t3-e6428ae4/apps/keyboard-ios/audits/multilingual-emoji-r46",
+  "originalFullAuditIndexSHA256": "76d145968aafbc9387f8af16c61ccafb81f17fde49d79236391119ce46be059b",
+  "originalAuditOnlyDiffVerified": true,
+  "parentRetention": "Compact complete rejection/report/restoration/candidate/cost-analysis records copied exact here; full112raw artifacts+allsource/protocol/devcontrols remain in original committed isolated audit. Relative links in copied originalreport refer to that full directory. No old protectedpayloads copied.",
+  "files": {
+    "report.md": "4fd131e9ce48b44dae847c2de40782505b37ff033262a6f2705bfb196cc2ea1f",
+    "closure.json": "b2c2af71b579e5978c9882de089ff7eaa738818af8f1a5203051005fa8116afe",
+    "restoration.json": "52ad52394c84502ae501964b718a5271a63c940e2652bbe713775dd1748a2b4a",
+    "rejected-candidate-archive.json": "8b09c4f6f7c1e1290cc1c38d107c36a73e9d696ebad5864daf1f2b0b6c513af2",
+    "rejected-candidate-source.tar.gz": "ecb20ef0c287723111ce16d0763dd0c978834d2831c55537e2acea48758a4282",
+    "rejected-candidate-production.patch": "d0e10be521482cefb7999de9e3cf78cb9b023bb6ecc819f481681abe77d57509",
+    "overall-ready.json": "3053831a8f32a9c5e345ef440719df3c4a0d1e2d2f36383529644a89bad3a1c0",
+    "cost/freeze.json": "6f7e0783f2702644632d7208702ce686dce541b2f3d0f085901096637ad96ded",
+    "cost/protocol.json": "dbf0575932a0031104ed4759cc8fcf1297892a80f8030919d44dc1f74baf4281",
+    "cost/plan.json": "dc3fcbb57e645ec86a660d958d4788dce8ec524f08b6551a6e778b1781fb9358",
+    "cost/outcome-review-v1/verdict.json": "d48a3e79e1b98731de5b3417121ff52a8552e09df89e9eb29c976ab181ce4e75",
+    "cost/runs/r46-cost-20261016-124739-v1/analysis.json": "c13b8dd72ecdb5d094654b98ef6e9b7152b3ee626de56a9119a88d09309044c9",
+    "cost/runs/r46-cost-20261016-124739-v1/run.json": "17e48bdf225c0f44036cd151a8f91ff74a5c8bb90c93c4a2bbed8bcd83ea6ce2",
+    "native/cleanup.json": "05b6b699bb028dc68bb75f4839486e7890cf655c51695f4dd7d716bdf4a2f0c7"
+  },
+  "memoryGatesRemainFalse": true,
+  "timingQuietUnavailable": true,
+  "nativeAndBlindNotRun": true,
+  "noRerun": true
+}

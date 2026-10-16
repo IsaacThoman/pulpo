@@ -1,0 +1,29 @@
+{
+  "argv": [
+    "xcodebuild",
+    "test-without-building",
+    "-project",
+    "/Users/isaacthoman/.t3/worktrees/pulpo/t3-a3218df3/apps/keyboard-ios/PulpoKeyboard.xcodeproj",
+    "-scheme",
+    "PulpoKeyboard",
+    "-configuration",
+    "Debug",
+    "-destination",
+    "platform=iOS Simulator,id=01513E04-AE35-41B7-B773-5D1DFEB0E8FC",
+    "-derivedDataPath",
+    "/tmp/pulpo-r47-parent-validation/DerivedData",
+    "-parallel-testing-enabled",
+    "NO",
+    "-collect-test-diagnostics",
+    "never",
+    "-resultBundlePath",
+    "/tmp/pulpo-r47-parent-validation/focused-native.xcresult",
+    "-only-testing:PulpoKeyboardAppTests/ExternalTextTouchR47Tests",
+    "-only-testing:PulpoKeyboardAppTests/EmojiToneAccessibilityR50Tests",
+    "-only-testing:PulpoKeyboardAppTests/NativeContentTypePrivacyR38Tests",
+    "-only-testing:PulpoKeyboardAppTests/NativeContentTypeCalibrationR38Tests",
+    "-only-testing:PulpoKeyboardUITests/LearningForgetControllerTests",
+    "-only-testing:PulpoKeyboardUITests/NumericKeyboardControllerTests"
+  ],
+  "started": "2026-10-16T12:59:23.103018+00:00"
+}

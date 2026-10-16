@@ -1,0 +1,51 @@
+{
+  "archive": "rejected-candidate-source.tar.gz",
+  "archiveSHA256": "ecb20ef0c287723111ce16d0763dd0c978834d2831c55537e2acea48758a4282",
+  "archivedBeforeRestoring": true,
+  "at": "2026-10-16T12:53:04.997870+00:00",
+  "baseline": "5e17ab9c1898deea101dbeb0011c7c13520648dd",
+  "candidate": "d17d668799382ac0204931b0a530d6ffef090ed4",
+  "candidateStatus": "REJECTED BEFORE NATIVE/BLIND because required cost admission unavailable and retained memory gates false",
+  "noSourceRetuning": true,
+  "originalCandidateCommitPreserved": true,
+  "patch": "rejected-candidate-production.patch",
+  "patchSHA256": "d0e10be521482cefb7999de9e3cf78cb9b023bb6ecc819f481681abe77d57509",
+  "sixSourceFiles": [
+    {
+      "bytes": 19448,
+      "dependencySHA256": "2b751e639b6ba88fe521d5e5f459c77b0f0d15934a8b27b1768f2345c2fb2e87",
+      "path": "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Emoji/EmojiCatalog.swift",
+      "sha256": "d69c56ffbf4f654767107b7b4d1cee61d31f64ae8dc7f5e2e6a4759bbc1f0510"
+    },
+    {
+      "bytes": 8800,
+      "dependencySHA256": "d3d70b49e6740c712f9823e085ae92a6bd749e2ba859acd244ac96a0438152b7",
+      "path": "apps/keyboard-ios/PulpoKeyboardKit/Tests/KeyboardCoreTests/EmojiLocalizedSearchTests.swift",
+      "sha256": "31c572c4cc6345987e4fa6f61c10c39ec3fe4048d58b4ae50ff65d66c55b37a8"
+    },
+    {
+      "bytes": 286829,
+      "dependencySHA256": "d201157dd725d8e8af6ef91ed56aee867bf52dc0d3cb314e649a8614b3876edd",
+      "path": "apps/keyboard-ios/LanguageData/emoji.json",
+      "sha256": "d201157dd725d8e8af6ef91ed56aee867bf52dc0d3cb314e649a8614b3876edd"
+    },
+    {
+      "bytes": 13050,
+      "dependencySHA256": "9d286ff18e26a5b77a097f6be3a5730843237cf1ff4eabd8315d7514190b85fc",
+      "path": "apps/keyboard-ios/LanguageData/README.md",
+      "sha256": "9d286ff18e26a5b77a097f6be3a5730843237cf1ff4eabd8315d7514190b85fc"
+    },
+    {
+      "bytes": 32694,
+      "dependencySHA256": "81c3fac53a348482b36fec69cba8cb42778aef4cbee9df314079ca64580cc956",
+      "path": "apps/keyboard-ios/scripts/build_language_data.py",
+      "sha256": "81c3fac53a348482b36fec69cba8cb42778aef4cbee9df314079ca64580cc956"
+    },
+    {
+      "bytes": 2613,
+      "dependencySHA256": "582ceb7418892d0ef3dc692f7ae42b7b24b4f0f32b9676ab8f2549297aaef621",
+      "path": "apps/keyboard-ios/scripts/test_emoji_spanish_names.py",
+      "sha256": "582ceb7418892d0ef3dc692f7ae42b7b24b4f0f32b9676ab8f2549297aaef621"
+    }
+  ]
+}

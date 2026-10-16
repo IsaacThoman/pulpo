@@ -1,0 +1,56 @@
+{
+  "verdict": "ACCEPT_R47_CURRENT_PARENT_COMPOSITION",
+  "recordedUTC": "2026-10-16T13:03:28.496641+00:00",
+  "sourceHead": "b0b6d667905f42be60fe9e883936bf7c5bdc762e",
+  "publishedParent": "9ff451f4",
+  "EngineExactR47v5": "7666863e423b124fb2191ae44076b680e5d53d005c401dda9cd4c60489185cd2",
+  "sourceReviewSHA256": "8c3954619016464197dfa98d8268acf7e9a3850421d2cb3ec4ca91eac85025ea",
+  "ordinary": {
+    "coreDefinitions": 491,
+    "coreExecuted": 472,
+    "coreExistingOptInSkips": 19,
+    "services": 3,
+    "knownIssues": 5,
+    "newAllowance": false,
+    "exit": 0
+  },
+  "native": {
+    "discovered": 9,
+    "passed": 9,
+    "failed": 0,
+    "skipped": 0,
+    "expectedFailures": 0,
+    "runtimeWarnings": 2,
+    "warningTestMethods": [
+      "EmojiToneAccessibilityR50Tests",
+      "LearningForgetControllerTests"
+    ],
+    "R47MethodRuntimeWarnings": 0,
+    "R47Attachments": 39,
+    "originalPayloadsExactlyEqual": 39,
+    "successfulLogsRead": false,
+    "buildExit": 0,
+    "buildWarnings": 159,
+    "buildWarningsComparableToPriorIncrementalBuild": false
+  },
+  "historicalFreshGate": {
+    "inputSHA256": "b5a5de21b8fd091ad905b60d1a09bb64946dd3b36b861ccc46cd441ae1c4a0f0",
+    "freezeSHA256": "24d9b0670cccf1e00453c8fa0299fa2e71b8589f68db31697a3f72a9a096d729",
+    "checks": 5065,
+    "cases": 49,
+    "rowsPerVariant": 342,
+    "unavailable": 0,
+    "postRevealRerun": false,
+    "scope": "OriginalR47basee503 branch; currentparentintegration adds separate ordinary/native evidence, not a new blind score"
+  },
+  "ownedDevice": "01513E04-AE35-41B7-B773-5D1DFEB0E8FC",
+  "deviceDeletedAbsenceVerified": true,
+  "logsAndBinariesExternal": "/tmp/pulpo-r47-parent-validation",
+  "limits": [
+    "Touchparity/ownership and fullstate preservation are not populationhumanaccuracy/Gboard evidence",
+    "R33prioritywarnings preserved without inputthreadstall/latency attribution",
+    "Native route uses real controllers/UIViews/UITextView with controlledsyntheticcontacts; no physicalfinger/installedextension/VOspeech claim",
+    "R39candidate remains rejected/restored; R51transcript changes absent",
+    "Support changes three new Booleanhostcontrols+grapheme-awaremockcursor; no allowance/test weakening"
+  ]
+}

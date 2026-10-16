@@ -1,0 +1,51 @@
+{
+  "at": "2026-10-16T12:53:05.199980+00:00",
+  "baseline": "5e17ab9c1898deea101dbeb0011c7c13520648dd",
+  "candidateArchive": "rejected-candidate-archive.json",
+  "files": [
+    {
+      "baselineExists": true,
+      "bytes": 12834,
+      "exact": true,
+      "path": "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Emoji/EmojiCatalog.swift",
+      "sha256": "c7f929ada6398c9c849e1b764e7bdacc3aca6956f3444fa74953db43cea5468e"
+    },
+    {
+      "baselineExists": false,
+      "exact": true,
+      "path": "apps/keyboard-ios/PulpoKeyboardKit/Tests/KeyboardCoreTests/EmojiLocalizedSearchTests.swift",
+      "restoredAbsent": true
+    },
+    {
+      "baselineExists": true,
+      "bytes": 242085,
+      "exact": true,
+      "path": "apps/keyboard-ios/LanguageData/emoji.json",
+      "sha256": "2085015d3bd75b7046aecd244b1961230b37fd25ac8aca475c7bc4afabba8117"
+    },
+    {
+      "baselineExists": true,
+      "bytes": 10384,
+      "exact": true,
+      "path": "apps/keyboard-ios/LanguageData/README.md",
+      "sha256": "e26b18eb267447214f7881aa86387f9dc2cf6c579c2c08fa108bb09bc70bbf2e"
+    },
+    {
+      "baselineExists": true,
+      "bytes": 30650,
+      "exact": true,
+      "path": "apps/keyboard-ios/scripts/build_language_data.py",
+      "sha256": "cd71e260bf311878c90960b6401c53019c84ccea2117f5075706ad6da30a7647"
+    },
+    {
+      "baselineExists": false,
+      "exact": true,
+      "path": "apps/keyboard-ios/scripts/test_emoji_spanish_names.py",
+      "restoredAbsent": true
+    }
+  ],
+  "newPostRestoreWorkload": "NOTRUN per failed-cost closure instruction; exact git byte/absence verification suffices for identity",
+  "onlyProductionScope": "six authorized owned paths",
+  "productionDiffFromBaseline": [],
+  "status": "EXACT BASELINE RESTORED"
+}
