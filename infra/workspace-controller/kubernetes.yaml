@@ -178,8 +178,6 @@ data:
   config.yaml: |
     port: 4750
     network: ip4
-    # Resolve directly through the egress tunnel, not the LAN's DNS server.
-    resolver_addresses: ["1.1.1.1:53", "9.9.9.9:53"]
     # Smokescreen already denies RFC 1918, CGNAT, loopback, link-local and
     # multicast after resolution. Add the remaining special-purpose ranges.
     deny_ranges:
@@ -211,6 +209,11 @@ spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
       priorityClassName: pulpo-workspace-controller
+      # Resolve through public resolvers via the egress tunnel, not the LAN's
+      # DNS server. Smokescreen's resolver_addresses accepts only one address.
+      dnsPolicy: None
+      dnsConfig:
+        nameservers: ["1.1.1.1", "9.9.9.9"]
       containers:
         - name: proxy
           image: ghcr.io/your-org/pulpo-workspace-egress-proxy@sha256:REPLACE_WITH_PROXY_DIGEST
@@ -236,6 +239,8 @@ spec:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
             capabilities:
               drop: ["ALL"]
       securityContext:

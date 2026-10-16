@@ -12,7 +12,8 @@ FROM gcr.io/distroless/static-debian12:nonroot
 LABEL org.opencontainers.image.title="Pulpo workspace egress proxy" \
       org.opencontainers.image.description="Smokescreen HTTP(S) proxy for Pulpo agent workspaces"
 COPY --from=build /out/smokescreen /usr/local/bin/smokescreen
-USER nonroot
+# Numeric, so runAsNonRoot can verify it.
+USER 65532:65532
 EXPOSE 4750
 ENTRYPOINT ["/usr/local/bin/smokescreen"]
 CMD ["--config-file=/etc/smokescreen/config.yaml"]

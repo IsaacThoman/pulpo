@@ -43,7 +43,7 @@ case "${1:-}" in
         ;;
     status)
         ip -4 rule show | grep -E '^742[01]:' || echo 'ip rules: not installed'
-        ip -4 route show table "$ROUTE_TABLE" | grep . || echo "route table $ROUTE_TABLE: empty (tunnel down)"
+        ip -4 route show table "$ROUTE_TABLE" 2>/dev/null | grep . || echo "route table $ROUTE_TABLE: empty (tunnel down)"
         /usr/sbin/nft list table inet "$TABLE" 2>/dev/null || echo "nft table $TABLE: not installed"
         ;;
     *)
