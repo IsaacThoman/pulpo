@@ -1,0 +1,16 @@
+{
+  "sourceCommit": "79398ca5d3c184849ea724f4cf2d5bf817da9ddd",
+  "ownProductDeltaFromImportedTip": [
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Geometry/TouchModel.swift"
+  ],
+  "appModelOutsideClearSectionByteEqualParent": true,
+  "appModelOutsideClearSHA256": "e6b675b1e8dbe2c96760f3e7f6a178444558d84ba61a926660158d1a641a4e2c",
+  "differencesFromOriginalA9eSources": [
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Emoji/EmojiSearch.swift",
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Geometry/TouchModel.swift",
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Input/InputTraits.swift",
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/PulpoServices/PulpoClient.swift",
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/PulpoServices/SessionStore.swift"
+  ],
+  "explanation": "Parent5e17 contains later EmojiSearch/InputTraits/PulpoServices changes absent from original R33a9e. These remain from parent and were not edited by R45. Exact imported overlapping R33 source matches a9e; do not interpret preimplementation shorthand as entire tree equality."
+}
