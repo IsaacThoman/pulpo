@@ -171,9 +171,15 @@ UI tests run on a simulator:
 
 ```bash
 cd apps/keyboard-ios
+# Headless simulators can report an attached hardware keyboard and hide all
+# software keyboards. Target only the test simulator (use its actual UDID).
+python3 scripts/simulator_keyboard.py YOUR_SIMULATOR_UDID
 xcodebuild -project PulpoKeyboard.xcodeproj -scheme PulpoKeyboard \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test
 ```
+
+The preparation helper uses CoreSimulator on the Mac and does not ship in the
+app. Add `--enable-hardware` to restore the simulator's hardware keyboard.
 
 `KeyboardSetupTests` enables the keyboard with Full Access through the Settings app
 (run it once per simulator first). `TypingTests` types, swipes, long-presses and picks
