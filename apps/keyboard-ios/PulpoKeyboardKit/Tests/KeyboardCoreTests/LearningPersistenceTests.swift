@@ -3,6 +3,47 @@ import Testing
 @testable import KeyboardCore
 
 struct LearningPersistenceTests {
+  @Test func memoryLongHistoriesPruneTheSamePairsAndQueryIndexes() {
+    for length in [30, 257] {
+      let value = PersonalDictionary(url: nil)
+      let prefix = String(repeating: "h", count: length - 5)
+      for i in 0..<20001 {
+        #expect(value.learn("r33memory", after: prefix + String(format: "%05d", i)))
+      }
+      var retained = 0
+      for i in 0..<20001 {
+        let history = prefix + String(format: "%05d", i)
+        retained += value.historyCount(history)
+        #expect(value.pairCount(history, "r33memory") == value.historyCount(history))
+      }
+      #expect(retained == 18000)
+      #expect(value.totalCount == 20001)
+      #expect(value.historyCount(prefix + "20000") == 0)
+      #expect(value.persistenceResult == .ok)
+    }
+  }
+
+  @Test func stablePairGrammarValidatesEscapesAndQuarantinesUnshippedFormat() throws {
+    try domain { url, _ in
+      let pairs = ["r33a\u{0897}\u{1F}r33stable": 1]
+      try JSONEncoder().encode(PersonalDictionary.Snapshot(pairEncoding: 4, pairs: pairs)).write(to: url)
+      let value = PersonalDictionary(url: url)
+      #expect(value.persistenceResult == .ok)
+      #expect(value.pairCount("r33a\u{0897}", "r33stable") == 1)
+      try finishLearning(value)
+    }
+    for (encoding, key) in [(3, "4:r33a\u{0897}\u{1F}r33stable"), (4, "r33bad\\q\u{1F}r33stable"), (4, "r33bad\u{1F}r33stable\\"), (4, "r33bad\u{1F}extra\u{1F}r33stable")] {
+      try domain { url, touchURL in
+        let bytes = try JSONEncoder().encode(PersonalDictionary.Snapshot(pairEncoding: encoding, pairs: [key: 1]))
+        try bytes.write(to: url)
+        #expect(PersonalDictionary(url: url).persistenceResult == .invalid)
+        #expect(TouchModel(url: touchURL).persistenceResult == .invalid)
+        #expect(LearnedDataPersistence.clear(dictionaryURL: url, touchURL: touchURL) == .invalid)
+        #expect(try Data(contentsOf: url) == bytes)
+      }
+    }
+  }
+
   @Test func canonicalHistoriesPreservePairsAcrossMergeMigrationAndForget() throws {
     let variants = [("r33caf\u{E9}", "r33cafe\u{301}"), ("r33\u{AC00}", "r33\u{1100}\u{1161}")]
     for (composed, decomposed) in variants {
@@ -49,7 +90,7 @@ struct LearningPersistenceTests {
   @Test func pairEncodingPreservesCombiningAndControlBoundaries() throws {
     try domain { url, _ in
       let value = PersonalDictionary(url: url)
-      let pairs = [("r33a", "\u{301}r33target"), ("r33\r", "\nr33target"), ("r33\u{1F}", "\u{1F}r33target"), ("r33\u{200D}", "\u{301}r33target"), ("\u{301}r33history", "r33target")]
+      let pairs = [("r33a", "\u{301}r33target"), ("r33\r", "\nr33target"), ("r33\u{1F}", "\u{1F}r33target"), ("r33\u{200D}", "\u{301}r33target"), ("\u{301}r33history", "r33target"), ("r33\\history", "\\r33target"), ("r33\\\u{1F}history", "r33\u{1F}\\target")]
       for (history, target) in pairs { #expect(value.learn(target, after: history)) }
       try finishLearning(value)
       let read = PersonalDictionary(url: url)

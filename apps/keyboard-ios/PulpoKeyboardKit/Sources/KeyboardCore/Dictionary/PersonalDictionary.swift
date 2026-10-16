@@ -82,12 +82,12 @@ public final class PersonalDictionary {
     reloadIfChangedOnDisk()
   }
 
-  var snapshot: Snapshot { Snapshot(pairEncoding: 3, words: words, pairs: pairs, blocked: Array(blocked).sorted()) }
+  var snapshot: Snapshot { Snapshot(pairEncoding: 4, words: words, pairs: pairs, blocked: Array(blocked).sorted()) }
 
   private func adopt(_ value: LearningPayload?) -> Bool {
     guard case let .dictionary(snapshot) = value else { return false }
     guard snapshot != self.snapshot else { return false }
-    if snapshot.pairEncoding == 3 {
+    if snapshot.pairEncoding == 4 {
       pairs = snapshot.pairs
     } else {
       guard let converted = try? Self.canonicalPairs(snapshot.pairs, encoding: snapshot.pairEncoding) else { return false }
@@ -100,34 +100,67 @@ public final class PersonalDictionary {
     return true
   }
 
-  /// Character counts preserve Swift String's canonical Unicode equality.
-  /// The control separator prevents a target's leading combining marks from
-  /// joining the history's last Character. Length still disambiguates embedded
-  /// separators, so arbitrary bounded component strings remain lossless.
+  /// Escape only ASCII backslash and the component separator, preserving Swift
+  /// String canonical equality without storing a runtime's grapheme count. The
+  /// parser covers memory histories too; durable limits belong at admission.
   static func pairKey(_ history: String, _ target: String) -> String {
-    "\(history.count):" + history + "\u{1F}" + target
+    func needsEscape(_ value: String) -> Bool { value.utf8.contains { $0 == 92 || $0 == 31 } }
+    if !needsEscape(history) && !needsEscape(target) { return history + "\u{1F}" + target }
+    var bytes: [UInt8] = []
+    func append(_ value: String) {
+      for byte in value.utf8 {
+        if byte == 92 || byte == 31 { bytes.append(92) }
+        bytes.append(byte)
+      }
+    }
+    append(history); bytes.append(31); append(target)
+    return String(decoding: bytes, as: UTF8.self)
   }
   static func splitPair(_ key: String, encoding: Int) -> (history: String, target: String)? {
+    let bytes = key.utf8
     if encoding == 1 {
       let parts = key.split(separator: "\u{1F}", maxSplits: 1, omittingEmptySubsequences: false)
       guard parts.count == 2 else { return nil }
       return (String(parts[0]), String(parts[1]))
     }
-    guard (2...3).contains(encoding), let colon = key.utf8.firstIndex(of: 58) else { return nil }
-    let bytes = key.utf8
-    let lengthText = String(decoding: bytes[..<colon], as: UTF8.self)
-    guard !lengthText.isEmpty, lengthText.count <= 3, lengthText.allSatisfy(\.isNumber),
-          let length = Int(lengthText), lengthText == String(length), length <= 256 else { return nil }
-    let start = bytes.index(after: colon)
-    if encoding == 3 {
-      guard let content = String(bytes: bytes[start...], encoding: .utf8),
-            let boundary = content.index(content.startIndex, offsetBy: length, limitedBy: content.endIndex),
-            boundary < content.endIndex, content[boundary] == "\u{1F}" else { return nil }
-      return (String(content[..<boundary]), String(content[content.index(after: boundary)...]))
+    if encoding == 2 {
+      guard let colon = bytes.firstIndex(of: 58) else { return nil }
+      let text = String(decoding: bytes[..<colon], as: UTF8.self)
+      guard !text.isEmpty, text.count <= 3, let length = Int(text),
+            text == String(length), length >= 0, length <= 256 else { return nil }
+      let start = bytes.index(after: colon)
+      guard let end = bytes.index(start, offsetBy: length, limitedBy: bytes.endIndex),
+            let history = String(bytes: bytes[start..<end], encoding: .utf8),
+            let target = String(bytes: bytes[end...], encoding: .utf8) else { return nil }
+      return (history, target)
     }
-    guard let end = bytes.index(start, offsetBy: length, limitedBy: bytes.endIndex),
-          let history = String(bytes: bytes[start..<end], encoding: .utf8),
-          let target = String(bytes: bytes[end...], encoding: .utf8) else { return nil }
+    // Encoding 3 was a rejected, unshipped development format. Its unversioned
+    // Character count cannot safely identify components after Unicode changes.
+    // Never guess a split or silently discard these preserved invalid bytes.
+    guard encoding == 4 else { return nil }
+    if !bytes.contains(92) {
+      guard let separator = bytes.firstIndex(of: 31) else { return nil }
+      let next = bytes.index(after: separator)
+      guard !bytes[next...].contains(31),
+            let history = String(bytes: bytes[..<separator], encoding: .utf8),
+            let target = String(bytes: bytes[next...], encoding: .utf8) else { return nil }
+      return (history, target)
+    }
+    var fields: [[UInt8]] = [[]]
+    var escaped = false
+    for byte in bytes {
+      if escaped {
+        guard byte == 92 || byte == 31 else { return nil }
+        fields[fields.count - 1].append(byte); escaped = false
+      } else if byte == 92 { escaped = true }
+      else if byte == 31 {
+        guard fields.count == 1 else { return nil }
+        fields.append([])
+      } else { fields[fields.count - 1].append(byte) }
+    }
+    guard !escaped, fields.count == 2,
+          let history = String(bytes: fields[0], encoding: .utf8),
+          let target = String(bytes: fields[1], encoding: .utf8) else { return nil }
     return (history, target)
   }
 
@@ -187,7 +220,7 @@ public final class PersonalDictionary {
     }
     successors = [:]
     for (pair, count) in pairs {
-      if let parts = Self.splitPair(pair, encoding: 3) { successors[parts.history, default: [:]][parts.target] = count }
+      if let parts = Self.splitPair(pair, encoding: 4) { successors[parts.history, default: [:]][parts.target] = count }
     }
     rebuildHistoryTotals()
   }
@@ -294,7 +327,7 @@ public final class PersonalDictionary {
       if let entry = words.removeValue(forKey: form) { totalCount -= entry.count }
     }
     pairs = pairs.filter { pair, _ in
-      let target = Self.splitPair(pair, encoding: 3)?.target ?? ""
+      let target = Self.splitPair(pair, encoding: 4)?.target ?? ""
       return TextNormalizer.key(target) != key
     }
     for history in successors.keys {
@@ -347,13 +380,15 @@ public final class PersonalDictionary {
     }
     let pairLimit = Self.maximumPairs * 9 / 10
     if pairs.count > pairLimit {
-      // Decode once per pair, preserving the legacy tie order without parsing
-      // strings at every comparison during a word-boundary capacity prune.
+      // Preserve the legacy tie order; ordinary unescaped keys already are
+      // that exact string. Decode exceptional keys once, outside comparisons.
       let ranked = pairs.map { pair in
-        let bytes = pair.key.utf8
-        let start = bytes.index(after: bytes.firstIndex(of: 58)!)
-        // Encoding 3's suffix already is the exact legacy tie string.
-        return (key: pair.key, value: pair.value, order: String(decoding: bytes[start...], as: UTF8.self))
+        let order: String
+        if pair.key.utf8.contains(92) {
+          let parts = Self.splitPair(pair.key, encoding: 4)!
+          order = parts.history + "\u{1F}" + parts.target
+        } else { order = pair.key }
+        return (key: pair.key, value: pair.value, order: order)
       }.sorted {
         if $0.value != $1.value { return $0.value > $1.value }
         return $0.order != $1.order ? $0.order < $1.order : $0.key < $1.key
@@ -361,7 +396,7 @@ public final class PersonalDictionary {
       for entry in ranked[pairLimit...] {
         let pair = entry.key, count = entry.value
         pairs.removeValue(forKey: pair)
-        guard let parts = Self.splitPair(pair, encoding: 3) else { continue }
+        guard let parts = Self.splitPair(pair, encoding: 4) else { continue }
         let history = parts.history
         successors[history]?.removeValue(forKey: parts.target)
         if successors[history]?.isEmpty == true {
