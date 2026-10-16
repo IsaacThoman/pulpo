@@ -3,6 +3,41 @@ import Testing
 @testable import KeyboardCore
 
 struct KeyboardEngineTests {
+  /// R16's rejected policy confused an observable caret move with a context
+  /// window change, then corrected an inherited word at the new destination.
+  @Test(arguments: KeyboardLanguage.allCases)
+  func repeatedSuffixHostMoveDoesNotCorrectInheritedWord(language: KeyboardLanguage) throws {
+    let document = MockDocument("old tailold tehtail")
+    document.documentIdentifier = UUID()
+    document.moveCursor(to: 4)
+    let stack = try LanguageStack(dictionaryURL: Fixtures.languageData.appendingPathComponent(language.rawValue + ".pkdict"), personalURL: nil)
+    var settings = KeyboardSettings()
+    settings.language = language
+    let engine = KeyboardEngine(document: document, suggester: stack.suggester, glide: stack.glide, settings: settings)
+    var traits = InputTraits()
+    traits.capitalization = .none
+    engine.traits = traits
+    var time = 100.0
+    engine.clock = { time }
+    engine.documentDidChange()
+    for letter in "teh" {
+      time += 0.04
+      engine.type(String(letter))
+      engine.documentDidChange()
+    }
+    let inheritedPrefix = "old tehtailold teh"
+    #expect(document.text == inheritedPrefix + "tail")
+    // Move the real caret without a callback; both live contexts are readable.
+    document.moveCursor(to: inheritedPrefix.count)
+    #expect(document.documentContextBeforeInput == inheritedPrefix)
+    #expect(document.documentContextAfterInput == "tail")
+    let deletions = document.deletions
+    engine.insertSpace()
+    #expect(document.deletions == deletions, "Space must never delete inherited text at the moved caret")
+    #expect(document.text == inheritedPrefix + " tail")
+    #expect(document.text.distance(from: document.text.startIndex, to: document.cursor) == inheritedPrefix.count + 1)
+  }
+
   @Test func capitalizesTheStartOfSentences() {
     let (engine, document) = Fixtures.engine()
     #expect(engine.shift == .once(automatic: true))
