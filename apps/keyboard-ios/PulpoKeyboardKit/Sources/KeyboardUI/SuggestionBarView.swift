@@ -193,7 +193,9 @@ final class SuggestionBarView: UIView {
     language.frame = CGRect(x: bounds.width - micWidth - languageWidth - 2, y: 0, width: languageWidth, height: bounds.height)
     settings.frame = CGRect(x: 4, y: 0, width: 44, height: bounds.height)
     let inset: CGFloat = microphoneVisible ? 6 : 0
-    let available = bounds.width - micWidth - languageWidth - inset
+    // End the slots where the language control begins. Deriving this from the
+    // laid-out accessory also accounts for its trailing margin when mic is hidden.
+    let available = max(0, language.frame.minX - inset)
     let slotWidth = available / 3
     for (index, slot) in slots.enumerated() {
       slot.frame = CGRect(x: inset + CGFloat(index) * slotWidth, y: 2, width: slotWidth, height: bounds.height - 4)
@@ -206,7 +208,7 @@ final class SuggestionBarView: UIView {
     }
     CATransaction.commit()
     notice.frame = bounds
-    let content = CGRect(x: 0, y: 0, width: available, height: bounds.height)
+    let content = CGRect(x: inset, y: 0, width: available, height: bounds.height)
     deletionLabel.frame = content.insetBy(dx: 16, dy: 0)
     let undoSize = undo.sizeThatFits(CGSize(width: content.width, height: bounds.height))
     let undoHeight = min(bounds.height - 8, max(30, undoSize.height))
