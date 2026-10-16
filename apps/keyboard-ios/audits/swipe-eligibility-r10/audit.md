@@ -56,7 +56,7 @@ four and visible three in **128/128** observations. There are **zero OOV** and
 **zero case/accent-only variant failures** in either split. All remain in the
 primary denominators; nothing was dropped or reclassified as success.
 
-All four failed swipe observations are `r10h013`, target `silla`, in all four
+All four failed swipe observations are `r10h011`, target `silla`, in all four
 profiles. Expected raw document ends `Hace falta una silla`; actual ends
 `Hace falta una sola`. Returned candidates are `sola`, `silla`, `sillas`, `aula`.
 The target has frequency 131, flags 2; it is present and eligible, not a compiler
@@ -167,3 +167,27 @@ All new files are test/audit artifacts, roughly 180 KB total. Runtime asset size
 cost is **zero bytes**; no generated binary or raw corpus is committed. No
 production candidate or compiler change should be cherry-picked from this round.
 The independent review response is recorded in `review-response.md`.
+
+## Parent integration review and result validation
+
+Independent parent review verifies every exact score, full-document separator
+oracle, input/freeze hashes, target exclusions and sealed-author chronology. It
+corrects the audit's failed-case ID to `r10h011`; the original reports and summary
+already use that ID and remain unchanged. The noninspection claim remains agent
+attestation, not a guarantee against every previously revealed test.
+
+The parent hardens `summarize.py` to require the exact frozen case/profile set,
+case-bound language, boolean score/phantom state, complete unique literal rows,
+recomputed literal scores, finite nonnegative timings, and three cold observations
+per language. Validation uses explicit errors that remain active under Python
+optimization. Fourteen tampered datasets are rejected even with `python -O`;
+original summary bytes stay identical. Warm/cold and literal gate verdicts are
+now derived from those measurements rather than hardcoded; valid above-limit
+reports produce failed timing gates. This changes report validation, not the
+frozen protocol, inputs, production code, or scores. Parent replays of both exposed
+splits exactly match every original raw/final document, separator state, dictionary
+metadata, returned candidate, visible slot and score after excluding timings.
+These are regression reruns, not fresh held-out improvements. The integrated full
+Release command passes with the two new benchmark functions included (438 core
+functions in 64 suites plus three service tests); five existing known issues
+remain. No native rerun is needed for these core-test/audit-only additions.
