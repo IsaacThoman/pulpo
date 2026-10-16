@@ -405,8 +405,10 @@ private final class LearningCoordinator: @unchecked Sendable {
             let epoch = row[4].string, UUID(uuidString: epoch) != nil,
             let status = row[6].integer, (0...2).contains(status) else { throw LearningPersistenceResult.invalid }
       if kind == 0 {
-        guard let key = row[5].string, !key.isEmpty, key.utf8.count <= 256,
-              key == TextNormalizer.key(key) else { throw LearningPersistenceResult.invalid }
+        // This is the writer's opaque normalization result, not another input
+        // to the normalizer. Lowercasing before compatibility decomposition can
+        // legitimately produce capitals, so normalization is not idempotent.
+        guard let key = row[5].string, !key.isEmpty, key.utf8.count <= 256 else { throw LearningPersistenceResult.invalid }
       } else { guard case .null = row[5] else { throw LearningPersistenceResult.invalid } }
       if status == 0 && epoch != epochs[Int(kind)].epoch { throw LearningPersistenceResult.invalid }
       let group = "\(slot):\(kind)"

@@ -3,6 +3,22 @@ import Testing
 @testable import KeyboardCore
 
 struct LearningPersistenceTests {
+  @Test func validCompatibilityKeysDoNotPoisonReopenedAuthority() throws {
+    for word in ["r33\u{1D2C}", "r33\u{1D49C}", "r33\u{1D2E}"] {
+      try domain { url, touchURL in
+        var writer: PersonalDictionary? = PersonalDictionary(url: url)
+        #expect(writer!.learn(word, after: "r33compatibilityHistory", pinned: true))
+        // Release an owner with an admitted but unsaved token. Its durable key
+        // still must be structurally valid for a new coordinator's observation.
+        writer = nil
+        let next = PersonalDictionary(url: url)
+        #expect(next.persistenceResult == .ok)
+        #expect(TouchModel(url: touchURL).persistenceResult == .ok)
+        #expect(LearnedDataPersistence.clear(dictionaryURL: url, touchURL: touchURL) == .ok)
+      }
+    }
+  }
+
   @Test func memoryLongHistoriesPruneTheSamePairsAndQueryIndexes() {
     for length in [30, 257] {
       let value = PersonalDictionary(url: nil)
