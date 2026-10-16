@@ -1,0 +1,54 @@
+--- original/verify.py
++++ derived/verify.py
+@@ -3,11 +3,13 @@
+ from collections import Counter
+ import hashlib
+ import json
++import os
+ from pathlib import Path
+ import subprocess
+ import sys
+ 
+-HERE = Path(__file__).resolve().parent
++# Derived audit helper: explicit immutable packet location; no report/oracle mutation.
++HERE = Path(os.environ.get('R42_PACKET', str(Path(__file__).resolve().parent))).resolve()
+ ORIGINAL = HERE / 'original-r35'
+ 
+ def require(ok, reason):
+@@ -63,6 +65,16 @@
+             if op=='reload': require(set(tasks)==waited and not requests, 'reload before settlement')
+         require(checks and not requests and set(tasks)==waited, 'fixture final settlement')
+ 
++def check_state_types(value, snapshot, context):
++    fields = {'name', 'host', 'dictation', 'signedIn'} if snapshot else {'name', 'host', 'token', 'dictation'}
++    require(type(value) is dict and set(value) == fields, context+' state fields')
++    for key in ('name', 'host') if snapshot else ('name', 'host', 'token'):
++        require(value[key] is None or type(value[key]) is str, context+' '+key+' type')
++    require(type(value['dictation']) is bool, context+' dictation Boolean')
++    if snapshot:
++        require(type(value['signedIn']) is bool, context+' signedIn Boolean')
++
++
+ def audit_rows(rows, fixtures):
+     require([r['id'] for r in rows]==[f['id'] for f in fixtures], 'complete ordered inventory')
+     result=[]
+@@ -76,6 +88,9 @@
+         require([(c['id'],c['expected']) for c in row['checks']]==expected_checks, tag+' full check inventory')
+         failed=[]
+         for c in row['checks']:
++            check_state_types(c['memory'], False, tag+' memory')
++            check_state_types(c['persisted'], False, tag+' persisted')
++            check_state_types(c['snapshot'], True, tag+' snapshot')
+             e=c['expected']; snapshot=dict(name=e['name'],host=e['host'],dictation=e['dictation'],signedIn=e['name'] is not None)
+             actual=c['memory']==e and c['persisted']==e and c['snapshot']==snapshot
+             require(type(c['pass']) is bool and c['pass']==actual, tag+' reported state verdict')
+@@ -86,6 +101,9 @@
+         require(set(row['tasks'])==tasks, tag+' task inventory')
+         require({e['task']:e['outcome'] for e in events if 'task' in e and 'outcome' in e}==row['tasks'], tag+' task outcomes')
+         dispositions=row['httpDispositions']
++        for disposition in dispositions:
++            for flag in ('reserved', 'released', 'cancelled'):
++                require(type(disposition[flag]) is bool, tag+' disposition '+flag+' Boolean')
+         require([d['sequence'] for d in dispositions]==list(range(len(dispositions))), tag+' issuance sequence')
+         require(all(d['released'] or d['cancelled'] for d in dispositions), tag+' unaccounted request')
+         require(row['httpIssued']==['request '+d['method']+' '+d['host']+d['path'] for d in dispositions],tag+' issuance trace')

@@ -8,6 +8,17 @@ unmeasured. Small deterministic Spanish and bilingual checks are reported below.
 
 ## Continued independent sweeps, October 15–16
 
+Account sign-in cancellation now revokes pending publication before task start
+and after network suspension; obsolete refreshes cannot restore a signed-out
+account or sign out its replacement. The unchanged reviewed candidate passes
+six parent native account/presentation methods and three service tests. Its
+original frozen common workload improves 14→23 passing cases out of 23; the
+additional unavailable baseline case remains unavailable. Actual exposed UI
+Cancel, two-factor Back/focus, sheet-chrome dismissal and retry evidence includes
+the largest system text size. Earlier native/gesture failures, the unrelated
+preview lifetime failure and broader audio/storage limits remain preserved in
+`audits/account-lifecycle-r42/parent-disposition.md`.
+
 UIKit privacy mapping now recognizes the actual raw values for all 24 categories
 already declared private, adding 22 missing names while preserving legacy aliases
 and ordinary fields. Parent reproduced 550 failing baseline assertions, then

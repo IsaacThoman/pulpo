@@ -1,0 +1,31 @@
+{
+  "verdict": "ACCEPT_BOUNDED_UNCHANGED_CANCEL_REFRESH",
+  "recordedUTC": "2026-10-16T09:43:23.242149+00:00",
+  "reviewedWorkerHead": "4c65b3a4adf7eafdd2049114be186ccd2bd9eda2",
+  "sourceCommit": "7c2694fb286b7d03945123de489568cfc51f142f",
+  "nativeOrAppExecutionPerformed": false,
+  "projectFilesModified": false,
+  "originalSourceGitBindingsVerified": {
+    "baseline": 199,
+    "candidate": 206
+  },
+  "historicalUnchangedBindingsVerified": 134,
+  "preservedArtifactBindingsVerified": 57,
+  "finalArtifactBindingsVerified": 104,
+  "originalNormalOptimizedVerificationEqual": true,
+  "derivedNormalOptimizedOriginalVerdictEqual": true,
+  "derivedNewNegativeProbes": 21,
+  "reviewSHA256": "adae7b7638b15461e348dc9aea3e45d892ce6e9c8c39c2bfefa2d9bf6eb6da15",
+  "derivedReceipt": "/tmp/pulpo-r42-parent-hardening/receipt.json",
+  "derivedReceiptSHA256": "b780a50c2dff69930e9257187763c44882ccb6d2075e00811111779a116691f3",
+  "artifacts": {
+    "production-and-tests.diff": "8885934c0b82941fd91ab61f8bee41c73a0f3693abcc2af7c0202824678c4740",
+    "additional-probes.json": "4f28fa4600ae2800d020b682ac472da037f16b45a5d5c331359a2eb7625bdaa5",
+    "verification-optimized.json": "39101ba3aea2ce261b3ff4de9c460212284e7e26cda924000c9e9ca85f0eef6e",
+    "probes-optimized.json": "af511e22454e265b89a271b4f97695d3868b27d6d6a2ea5821b37e300c2ba52e",
+    "source-and-context-check.json": "adb2a178686ee58cef0e74ffafd2c612e2866d16b747c695f96c2e28fdbd2a23",
+    "probes-normal.json": "af511e22454e265b89a271b4f97695d3868b27d6d6a2ea5821b37e300c2ba52e",
+    "verification-normal.json": "39101ba3aea2ce261b3ff4de9c460212284e7e26cda924000c9e9ca85f0eef6e",
+    "REVIEW.md": "adae7b7638b15461e348dc9aea3e45d892ce6e9c8c39c2bfefa2d9bf6eb6da15"
+  }
+}

@@ -1,0 +1,32 @@
+[
+  {
+    "probe": "missing-row",
+    "rejected": true,
+    "reason": "complete ordered inventory"
+  },
+  {
+    "probe": "lying-check",
+    "rejected": true,
+    "reason": "heldout-01 reported state verdict"
+  },
+  {
+    "probe": "wrong-count",
+    "rejected": true,
+    "reason": "heldout-01 exact counts"
+  },
+  {
+    "probe": "wrong-input",
+    "rejected": true,
+    "reason": "heldout-01 exact inputs"
+  },
+  {
+    "probe": "missing-check",
+    "rejected": true,
+    "reason": "heldout-01 full check inventory"
+  },
+  {
+    "probe": "unsettled-task",
+    "rejected": true,
+    "reason": "heldout-01 unsettled work"
+  }
+]
