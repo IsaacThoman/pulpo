@@ -22,11 +22,15 @@ final class LearningClearScopeUITests: XCTestCase {
     let confirm = sheet.buttons["Clear Learned Words"]
     let cancel = sheet.buttons["Cancel"]
     XCTAssertTrue(confirm.isHittable)
-    XCTAssertLessThanOrEqual(message.frame.maxY, confirm.frame.minY)
     XCTAssertGreaterThan(message.frame.width, 0)
     snapshot("r41-shared-clear-confirmation")
     try app.debugDescription.write(toFile: "/tmp/pulpo-r41-validation/shared-scope-confirmation-ax.txt", atomically: true, encoding: .utf8)
     try XCUIScreen.main.screenshot().pngRepresentation.write(to: URL(fileURLWithPath: "/tmp/pulpo-r41-validation/shared-scope-confirmation.png"))
+    try assertLearningMessageReadable(message, in: sheet, action: confirm) { phase in
+      snapshot("r41-shared-clear-" + phase)
+      try XCUIScreen.main.screenshot().pngRepresentation.write(to: URL(fileURLWithPath: "/tmp/pulpo-r41-validation/shared-scope-" + phase + ".png"))
+      try app.debugDescription.write(toFile: "/tmp/pulpo-r41-validation/shared-scope-" + phase + "-ax.txt", atomically: true, encoding: .utf8)
+    }
     if cancel.exists && cancel.isHittable {
       cancel.tap()
     } else {

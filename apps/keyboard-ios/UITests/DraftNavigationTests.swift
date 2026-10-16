@@ -2,11 +2,16 @@ import XCTest
 
 @MainActor
 final class DraftNavigationTests: PreviewTypingTestCase {
-  private func returnToTryIt() {
+  private func returnToTryIt(preview: Bool = true) {
     let link = app.key("try-it")
-    for _ in 0..<5 where !link.isHittable { app.swipeDown() }
+    // AX5 Settings rows can require more than five native swipes. Keep the
+    // same actual navigation and all draft assertions; handle virtualization.
+    for _ in 0..<40 where !link.isHittable { app.swipeDown() }
+    // At the top, a tall header can leave Try It below the initial viewport.
+    for _ in 0..<20 where !link.isHittable { app.swipeUp() }
+    XCTAssertTrue(link.exists && link.isHittable)
     link.tap()
-    XCTAssertTrue(app.textViews["preview-text"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.textViews[preview ? "preview-text" : "system-text"].waitForExistence(timeout: 5))
   }
 
   func testSettingsRoundTripKeepsDraftAndDismissedReturnStaysHidden() {
@@ -46,7 +51,7 @@ final class DraftNavigationTests: PreviewTypingTestCase {
     XCTAssertEqual(installed.value as? String, before)
     XCTAssertFalse(app.buttons["hide-keyboard"].isEnabled)
     app.navigationBars.buttons.element(boundBy: 0).tap()
-    app.key("try-it").tap()
+    returnToTryIt(preview: false)
     XCTAssertTrue(installed.waitForExistence(timeout: 3))
     XCTAssertEqual(installed.value as? String, before)
     XCTAssertTrue(app.buttons["Email"].isSelected)

@@ -143,7 +143,13 @@ final class LearningResetResultUITests: XCTestCase {
   private func expectSuccess(_ expectedCopy: String? = nil) throws {
     let success = app.alerts["Learned Words Cleared"]
     try require(success.waitForExistence(timeout: 5), "Uncontended clear did not show confirmed success")
-    if let expectedCopy { XCTAssertTrue(success.staticTexts[expectedCopy].exists) }
+    if let expectedCopy {
+      let message = success.staticTexts.matching(NSPredicate(format: "label == %@", expectedCopy)).firstMatch
+      XCTAssertTrue(message.exists)
+      try assertLearningMessageReadable(message, in: success, action: success.buttons["OK"]) { phase in
+        snapshot("r41-clear-success-" + phase)
+      }
+    }
     XCTAssertTrue(success.buttons["OK"].isHittable)
   }
   private func require(_ condition: Bool, _ message: String) throws {
