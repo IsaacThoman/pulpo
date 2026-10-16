@@ -35,7 +35,7 @@ export function BannerCard({ type, content, onDismiss, className }: {
   return (
     <div
       role={type === 'error' ? 'alert' : 'status'}
-      className={cn('flex w-full items-start gap-2.5 rounded-xl border px-3.5 py-2.5 text-sm', tone.card, className)}
+      className={cn('flex w-fit max-w-full items-start gap-2.5 rounded-xl border px-3.5 py-2.5 text-sm', tone.card, className)}
     >
       {/* Centers the 16px icon on the 22px first line of copy. */}
       <Icon className={cn('mt-[3px] size-4 shrink-0', tone.iconColor)} aria-hidden />
