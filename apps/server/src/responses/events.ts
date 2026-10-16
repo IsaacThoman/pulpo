@@ -50,12 +50,25 @@ export async function publishResponseEvent(event: ResponseEvent): Promise<void> 
 
 export async function readResponseEvents(responseId: string, afterSequence: number): Promise<ResponseEvent[]> {
   const entries = await redis.xrange(eventKey(responseId), '-', '+', 'COUNT', 10_000)
-  return entries
-    .map(([, fields]: [string, string[]]) => {
-      const record = Object.fromEntries(Array.from({ length: fields.length / 2 }, (_, index) => [fields[index * 2], fields[index * 2 + 1]]))
-      return JSON.parse(record.event ?? 'null') as ResponseEvent | null
-    })
-    .filter((event: ResponseEvent | null): event is ResponseEvent => event !== null && event.sequence > afterSequence)
+  const events: ResponseEvent[] = []
+  for (const [, fields] of entries) {
+    let storedSequence: string | undefined
+    let serialized: string | undefined
+    for (let index = 0; index < fields.length; index += 2) {
+      if (fields[index] === 'sequence') storedSequence = fields[index + 1]
+      if (fields[index] === 'event') serialized = fields[index + 1]
+    }
+    // Streams use timestamp IDs, so XRANGE still reads retained history. Avoid
+    // decoding acknowledged payloads; legacy entries without a valid sequence
+    // field continue through the original payload-based filter.
+    if (storedSequence !== undefined && /^(0|[1-9]\d*)$/.test(storedSequence)) {
+      const sequence = Number(storedSequence)
+      if (Number.isSafeInteger(sequence) && sequence <= afterSequence) continue
+    }
+    const event = JSON.parse(serialized ?? 'null') as ResponseEvent | null
+    if (event !== null && event.sequence > afterSequence) events.push(event)
+  }
+  return events
 }
 
 export async function publishSnapshot(snapshot: ResponseSnapshot): Promise<void> {

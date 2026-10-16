@@ -54,6 +54,8 @@ visible and the input stays above it.
 
 `testLatestViewportAndOlderHistory` verifies that the latest response mounts,
 scrolling loads older rows, and streaming leaves an older visible row in place.
+`testReaderDetachesFromStreamingReply` swipes a short distance away while the
+streaming row is still visible and checks the transcript stops following.
 `testGalleryFromLatestTurn` opens and closes a gallery from both short and bottom-anchored long transcripts. `testLargeMarkdownSelection` checks cold and warm reopening of a 1,500-paragraph
 native Markdown response, including its visible tail. Native Markdown accessibility
 elements are queried as `any`, rather than assuming they are `staticText`.

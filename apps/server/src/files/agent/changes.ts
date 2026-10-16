@@ -103,7 +103,7 @@ async function docSuggestionState(nodeId: string, change: FileChangeRow): Promis
     const doc = ydocToNode(await loadYDoc(nodeId))
     const hunks = listSuggestions(doc).filter((hunk) => hunk.changeId === change.id).length
     const before = (change.before as { markdown?: unknown } | null)?.markdown
-    return { hunks, resolvedAs: typeof before === 'string' && baseMarkdown(doc) === before ? 'rejected' : 'accepted' }
+    return { hunks, resolvedAs: hunks ? 'pending' : typeof before === 'string' && baseMarkdown(doc) === before ? 'rejected' : 'accepted' }
   } catch {
     return undefined
   }
@@ -165,9 +165,9 @@ export async function listFileChanges(userId: string, responseId: string): Promi
   const keptKeys = new Set(kept.map((row) => row.key))
   const summaries = await Promise.all(rows.map((row) => summarize(userId, row, keptKeys)))
   for (const summary of summaries) {
-    if (summary.status !== 'pending' || summary.pendingSuggestions !== 0 || !summary.resolvedAs) continue
+    if (summary.pendingSuggestions === undefined || !summary.resolvedAs || summary.status === summary.resolvedAs) continue
     await db.update(fileChanges).set({ status: summary.resolvedAs, updatedAt: new Date() })
-      .where(and(eq(fileChanges.id, summary.id), eq(fileChanges.status, 'pending')))
+      .where(and(eq(fileChanges.id, summary.id), eq(fileChanges.status, summary.status)))
     summary.status = summary.resolvedAs
   }
   const changes: FileChangeSummary[] = summaries.map(({ resolvedAs: _resolvedAs, ...summary }) => summary)
