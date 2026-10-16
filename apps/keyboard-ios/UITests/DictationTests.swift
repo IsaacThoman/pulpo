@@ -10,7 +10,7 @@ final class DictationTests: XCTestCase {
     return !data.isEmpty
   }
 
-  func testDictationInsertsTheTranscript() throws {
+  func testDictationConfirmsTheTranscriptInUnidentifiedPreview() throws {
     try XCTSkipUnless(stubAvailable(), "Start scripts/stub_pulpo_server.py first")
     let app = XCUIApplication()
     app.launchArguments = ["-PKPreview", "-PKResetLearning", "-PKResetSettings"]
@@ -25,6 +25,11 @@ final class DictationTests: XCTestCase {
     sleep(2)
     snapshot("dictation-recording")
     done.tap()
+    let insert = app.descendants(matching: .any).matching(identifier: "dictation-action").firstMatch
+    XCTAssertTrue(insert.waitForExistence(timeout: 10), "An unidentified preview requires explicit insertion confirmation")
+    XCTAssertEqual(app.previewText, "So ", "No transcript should insert before confirmation")
+    XCTAssertEqual(insert.label, "Insert Here")
+    insert.tap()
     let deadline = Date().addingTimeInterval(10)
     while Date() < deadline, !app.previewText.contains("Pulpo dictation") { usleep(200_000) }
     XCTAssertEqual(app.previewText, "So hello from Pulpo dictation.")

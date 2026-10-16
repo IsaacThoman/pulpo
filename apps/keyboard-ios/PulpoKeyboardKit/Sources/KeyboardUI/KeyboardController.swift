@@ -172,7 +172,11 @@ public final class KeyboardController: NSObject {
   private var loadedLanguage: KeyboardLanguage
   private var reportedLanguage: KeyboardLanguage?
   private var account = AccountSnapshot.signedOut
-  private let bridge = DictationBridge()
+  private let bridge: DictationBridge?
+  private var dictationInsertionGuard: DictationInsertionGuard?
+  private var dictationOriginRequest: UUID?
+  private var dictationPanelRequest: UUID?
+  private var dictationDestinationRevision: UInt64 = 0
   private var dictationObserver: DarwinNotifications.Observation?
   private var levelLink: CADisplayLink?
   private var connectTimeout: Timer?
@@ -252,9 +256,10 @@ public final class KeyboardController: NSObject {
   /// Diagnostics rewrite a small file; keep that off the typing thread, in order.
   private static let diagnosticsQueue = DispatchQueue(label: "com.isaacthoman.pulpo.keyboard.diagnostics", qos: .utility)
 
-  public init(host: KeyboardHost) {
+  public init(host: KeyboardHost, dictationBridge: DictationBridge? = DictationBridge()) {
     let initStart = PerfLog.begin()
     self.host = host
+    bridge = dictationBridge
     settingsStore = Self.settingsStore(for: host)
     settings = settingsStore.load()
     loadedLanguage = settings.language
@@ -298,8 +303,7 @@ public final class KeyboardController: NSObject {
       self.chooseOneHanded(self.rootView.oneHanded.flipped)
     }
     rootView.oneHanded = oneHandedStore.load()
-    rootView.dictation.onStop = { [weak self] in self?.stopDictation() }
-    rootView.dictation.onCancel = { [weak self] in self?.cancelDictation() }
+    rootView.dictation.onCancel = { [weak self] in self?.finishDictation() }
     dictationObserver = DarwinNotifications.observe(DictationBridge.stateNotification) { [weak self] in
       MainActor.assumeIsolated { self?.dictationStateChanged() }
     }
@@ -405,6 +409,7 @@ public final class KeyboardController: NSObject {
   public func hostDidDisappear() {
     let start = PerfLog.begin()
     isVisible = false
+    documentWillChange()
     pendingEmojiPresentation = false
     // An offer to forget a word belongs to what was on screen.
     rootView.bar.hideNotice()
@@ -433,6 +438,9 @@ public final class KeyboardController: NSObject {
     let start = PerfLog.begin()
     defer { PerfLog.end("documentDidChange", start) }
     let traits = host?.inputTraits ?? InputTraits()
+    // Even a did-change callback can carry the previous proxy snapshot. Any
+    // reported host edit ends continuous observation of the original caret.
+    documentWillChange()
     let identifier = host?.document.documentIdentifier
     let otherDocument = identifier != nil && searchDocument != nil && identifier != searchDocument
     if isSearching, traits != engine.traits || otherDocument {
@@ -446,6 +454,14 @@ public final class KeyboardController: NSObject {
     }
     engine.documentDidChange()
     sync()
+    refreshTranscriptRecoveryIfNeeded()
+  }
+
+  /// A host callback can precede its updated proxy snapshot. Matching stale text
+  /// must not authorize asynchronous insertion while the host is changing.
+  public func documentWillChange() {
+    dictationDestinationRevision &+= 1
+    dictationInsertionGuard?.invalidate()
   }
 
   /// Contacts' names and the person's text replacements, from `UILexicon`.
@@ -776,8 +792,16 @@ public final class KeyboardController: NSObject {
       showDictationRequirement("Dictation is off", detail: "Dictation isn't enabled on \(account.instanceHost ?? "your Pulpo instance").", action: nil, path: nil)
       return
     }
+    guard !dictationDestination.isPrivate else {
+      showDictationRequirement("Choose a non-private field", detail: "Dictation can't insert into a private field.", action: nil, path: nil)
+      return
+    }
     let request = UUID()
+    dictationOriginRequest = request
+    dictationInsertionGuard = DictationInsertionGuard(origin: dictationDestination)
     bridge.pendingRequest = request
+    bindDictationControls(to: request)
+    rootView.dictation.onAction = nil
     rootView.dictation.set(.connecting)
     rootView.bar.setMicrophoneActive(true)
     if host?.isInsideApp == true || bridge.readState().isStandingBy() {
@@ -806,6 +830,9 @@ public final class KeyboardController: NSObject {
   }
 
   private func showDictationRequirement(_ title: String, detail: String, action: String?, path: String?) {
+    dictationPanelRequest = nil
+    rootView.dictation.onStop = nil
+    rootView.dictation.onCancel = { [weak self] in self?.finishDictation() }
     rootView.dictation.set(.message(title: title, detail: detail, action: action))
     rootView.dictation.onAction = { [weak self] in
       guard let path else { return }
@@ -813,22 +840,39 @@ public final class KeyboardController: NSObject {
     }
   }
 
-  private func stopDictation() {
-    guard let bridge, let request = bridge.pendingRequest else { return finishDictation() }
+  private func bindDictationControls(to request: UUID) {
+    dictationPanelRequest = request
+    rootView.dictation.onStop = { [weak self] in self?.stopDictation(request: request) }
+    rootView.dictation.onCancel = { [weak self] in self?.cancelDictation(request: request) }
+  }
+
+  private func stopDictation(request: UUID) {
+    guard isVisible, let bridge, bridge.pendingRequest == request else { return }
+    let state = bridge.readState()
+    guard state.requestID == request, state.phase == .recording else { return }
     bridge.send(DictationCommand(kind: .stop, requestID: request))
     rootView.dictation.set(.transcribing)
     stopLevelUpdates()
   }
 
-  private func cancelDictation() {
-    if let bridge, let request = bridge.pendingRequest {
-      bridge.send(DictationCommand(kind: .cancel, requestID: request))
-      bridge.pendingRequest = nil
+  private func cancelDictation(request: UUID) {
+    guard isVisible else { return }
+    guard let bridge, bridge.pendingRequest == request else {
+      if dictationPanelRequest == request { finishDictation() }
+      return
     }
+    bridge.send(DictationCommand(kind: .cancel, requestID: request))
+    bridge.pendingRequest = nil
     finishDictation()
   }
 
   private func finishDictation() {
+    dictationInsertionGuard = nil
+    dictationOriginRequest = nil
+    dictationPanelRequest = nil
+    rootView.dictation.onStop = nil
+    rootView.dictation.onCancel = { [weak self] in self?.finishDictation() }
+    rootView.dictation.onAction = nil
     emojiSearch = nil
     connectTimeout?.invalidate()
     stopLevelUpdates()
@@ -849,13 +893,14 @@ public final class KeyboardController: NSObject {
     guard isVisible, let bridge else { return }
     guard let request = bridge.pendingRequest else {
       // Nothing pending: never leave the panel waiting on a request that's gone.
-      if rootView.mode == .dictation, rootView.dictation.state == .transcribing || rootView.dictation.state == .connecting {
+      if rootView.mode == .dictation, dictationPanelRequest != nil || rootView.dictation.state == .transcribing || rootView.dictation.state == .connecting {
         finishDictation()
       }
       return
     }
     let state = bridge.readState()
     guard state.requestID == request else { return }
+    bindDictationControls(to: request)
     connectTimeout?.invalidate()
     switch state.phase {
     case .recording:
@@ -868,7 +913,14 @@ public final class KeyboardController: NSObject {
       stopLevelUpdates()
     case .finished:
       if !bridge.wasDelivered(request), let text = state.transcript {
+        guard dictationOriginRequest == request,
+              dictationInsertionGuard?.allowsAutomaticInsertion(at: dictationDestination) == true,
+              host?.hasFullAccess == true else {
+          showTranscriptRecovery(request: request, updatedAt: state.updatedAt)
+          return
+        }
         bridge.markDelivered(request)
+        engine.traits = host?.inputTraits ?? InputTraits()
         engine.insertTranscript(text)
       }
       bridge.pendingRequest = nil
@@ -876,12 +928,76 @@ public final class KeyboardController: NSObject {
     case .failed:
       stopLevelUpdates()
       bridge.pendingRequest = nil
+      dictationInsertionGuard = nil
+      dictationOriginRequest = nil
+      dictationPanelRequest = nil
+      rootView.mode = .dictation
+      rootView.dictation.onStop = nil
+      rootView.dictation.onCancel = { [weak self] in self?.finishDictation() }
       rootView.dictation.set(.message(title: "Couldn't transcribe", detail: state.errorMessage, action: "Try Again"))
       rootView.dictation.onAction = { [weak self] in self?.startDictation() }
     case .idle:
       bridge.pendingRequest = nil
       finishDictation()
     }
+  }
+
+  private var dictationDestination: DictationDestination {
+    DictationDestination(document: engine.document, traits: host?.inputTraits ?? InputTraits())
+  }
+
+  private func refreshTranscriptRecoveryIfNeeded() {
+    guard isVisible, let bridge, let request = bridge.pendingRequest else { return }
+    let state = bridge.readState()
+    guard state.requestID == request, state.phase == .finished,
+          state.transcript != nil, !bridge.wasDelivered(request) else { return }
+    showTranscriptRecovery(request: request, updatedAt: state.updatedAt)
+  }
+
+  private func showTranscriptRecovery(request: UUID, updatedAt: Date) {
+    dictationInsertionGuard?.invalidate()
+    stopLevelUpdates()
+    rootView.mode = .dictation
+    bindDictationControls(to: request)
+    rootView.bar.setMicrophoneActive(false)
+    let destination = dictationDestination
+    let revision = dictationDestinationRevision
+    let detail: String
+    if host?.hasFullAccess != true {
+      detail = "Your transcript is waiting. Allow Full Access to insert it. Cancel discards it."
+    } else if destination.isPrivate {
+      detail = "Your transcript is waiting. Choose a non-private field to insert it. Cancel discards it."
+    } else if destination.hasSelection {
+      detail = "Your transcript is waiting. Place the cursor without selecting text, then insert it. Cancel discards it."
+    } else {
+      detail = "Check the field and cursor, then insert your transcript here. Cancel discards it."
+    }
+    let canInsert = destination.allowsConfirmation && host?.hasFullAccess == true
+    rootView.dictation.set(.message(title: "Transcript ready", detail: detail, action: canInsert ? "Insert Here" : nil))
+    rootView.dictation.onAction = canInsert ? { [weak self] in
+      self?.confirmTranscriptInsertion(request: request, updatedAt: updatedAt, destination: destination, revision: revision)
+    } : nil
+  }
+
+  private func confirmTranscriptInsertion(request: UUID, updatedAt: Date, destination: DictationDestination, revision: UInt64) {
+    guard isVisible, let bridge, bridge.pendingRequest == request else { return }
+    let state = bridge.readState()
+    guard state.requestID == request, state.phase == .finished,
+          state.updatedAt == updatedAt, let text = state.transcript,
+          !bridge.wasDelivered(request) else {
+      dictationStateChanged()
+      return
+    }
+    guard revision == dictationDestinationRevision, destination == dictationDestination,
+          destination.allowsConfirmation, host?.hasFullAccess == true else {
+      showTranscriptRecovery(request: request, updatedAt: state.updatedAt)
+      return
+    }
+    bridge.markDelivered(request)
+    bridge.pendingRequest = nil
+    engine.traits = host?.inputTraits ?? InputTraits()
+    engine.insertTranscript(text)
+    finishDictation()
   }
 
   private func startLevelUpdates() {

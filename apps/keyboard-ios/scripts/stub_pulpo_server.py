@@ -40,6 +40,18 @@ class Handler(BaseHTTPRequestHandler):
     return self.rfile.read(length) if length else b''
 
   def do_GET(self):
+    if self.path == '/stub/dictation':
+      # A public destination: Safari's address field may have private URL traits.
+      data = b'''<!doctype html><html lang="en"><meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>Dictation destination</title><label for="destination">Dictation destination</label>
+        <textarea id="destination" aria-label="Dictation destination" autocomplete="off"
+          style="display:block;width:90%;height:120px;font-size:18px"></textarea></html>'''
+      self.send_response(200)
+      self.send_header('content-type', 'text/html; charset=utf-8')
+      self.send_header('content-length', str(len(data)))
+      self.end_headers()
+      self.wfile.write(data)
+      return
     if self.path == '/api/mobile/config':
       return self.send_json(200, {
         'mobileApiVersion': 1,

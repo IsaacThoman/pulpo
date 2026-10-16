@@ -20,12 +20,10 @@ final class BounceDictationTests: XCTestCase {
 
     let safari = XCUIApplication(bundleIdentifier: "com.apple.mobilesafari")
     safari.launch()
-    let address = safari.textFields.firstMatch
-    if !address.waitForExistence(timeout: 5) { safari.buttons["URL"].firstMatch.tap() }
-    if !safari.keyboards.firstMatch.waitForExistence(timeout: 2) {
-      let bar = safari.textFields.firstMatch.exists ? safari.textFields.firstMatch : safari.buttons["Address"].firstMatch
-      bar.tap()
-    }
+    safari.open(URL(string: "http://127.0.0.1:8091/stub/dictation")!)
+    let destination = safari.textViews["Dictation destination"]
+    XCTAssertTrue(destination.waitForExistence(timeout: 8), "The public test field didn't load")
+    destination.tap()
     for _ in 0..<4 {
       if safari.key("key-q").waitForExistence(timeout: 2) { break }
       let globe = safari.buttons["Next keyboard"].firstMatch
@@ -48,10 +46,18 @@ final class BounceDictationTests: XCTestCase {
     snapshot("bounce-keyboard-recording")
     done.tap()
 
+    // Leaving the host loses continuous destination observation. Review the
+    // returned field before explicitly inserting the waiting transcript.
+    let insert = safari.key("dictation-action")
+    XCTAssertTrue(insert.waitForExistence(timeout: 10), "The host round trip should require destination confirmation")
+    XCTAssertEqual(insert.label, "Insert Here")
+    XCTAssertFalse((destination.value as? String ?? "").contains("Pulpo dictation"), "Insertion must wait for confirmation")
+    insert.tap()
+
     let deadline = Date().addingTimeInterval(10)
     var value = ""
     while Date() < deadline {
-      value = safari.textFields.firstMatch.value as? String ?? ""
+      value = destination.value as? String ?? ""
       if value.contains("Pulpo dictation") { break }
       usleep(300_000)
     }

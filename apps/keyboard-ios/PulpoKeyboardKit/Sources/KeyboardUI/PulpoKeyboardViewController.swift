@@ -127,6 +127,16 @@ open class PulpoKeyboardViewController: UIInputViewController, KeyboardHost {
     controller?.didReceiveMemoryWarning()
   }
 
+  open override func textWillChange(_ textInput: UITextInput?) {
+    super.textWillChange(textInput)
+    controller?.documentWillChange()
+  }
+
+  open override func selectionWillChange(_ textInput: UITextInput?) {
+    super.selectionWillChange(textInput)
+    controller?.documentWillChange()
+  }
+
   open override func textDidChange(_ textInput: UITextInput?) {
     super.textDidChange(textInput)
     controller?.documentDidChange()
