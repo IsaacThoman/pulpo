@@ -44,9 +44,15 @@ The separately versioned R49 runner passes 28 supplied and five independent
 Foundation-only filesystem probes. A new source-blind author has sealed 15
 families, 45 instances and 452 actions; independent preexecution review rejects
 the exact v1 for missing observed-call/status accounting. A separately versioned
-reporting correction preserves every case/oracle and is under new independent
-review; the original rejection remains retained.
-No R49 product build or execution has occurred. See `audits/reset-integration-r49/`.
+reporting correction preserves every case/oracle and passed independent review;
+the original rejection remains retained. After a separately reviewed preparation
+metadata adapter, both binaries built and all five gates were frozen before one
+pair. The candidate passes all 772 aggregate checks across 45 instances and 15
+families, with all 452 actions fired and zero unavailable evidence. The original
+comparison fails; its 15 diagnostic messages are not a failed-check numerator.
+Normal and optimized evaluation of the same raw outputs agree. Independent
+complete outcome accounting remains pending; no rerun or post-reveal tuning
+occurred. See `audits/reset-integration-r49/`.
 
 Account sign-in cancellation now revokes pending publication before task start
 and after network suspension; obsolete refreshes cannot restore a signed-out

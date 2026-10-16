@@ -32,19 +32,33 @@ finds zero exact duplicate session programs (26 geometry controls are exposed).
 `fresh-validator-v1/` preserves the complete rejection and private evidence archive.
 The evaluator's diagnostic `failure_count` is not a failed-aggregate numerator.
 
-The separately versioned author-v2 accounting correction is sealed and under a
-new independent review. Parent verified all 52 archived files opaquely and exact
+The separately versioned author-v2 accounting correction passed independent
+review before execution. Parent verified all 52 archived files opaquely and exact
 byte preservation of fixtures, expectations, reference, runner, raw schema and
 approved public documents. The author reports all 68 original synthetic cases
 and 28 new accounting witnesses pass in both modes (192 executions). Reporting
 now separates planned counts from observed call/outcome/status ledgers, with
-strict-invalid observations labeled unknown. Those are proposed mechanics until
-the independent review completes. `fresh-author-v2/` retains the immutable bundle.
+strict-invalid observations labeled unknown. The independent reviewer verified
+all 772 aggregate checks, 1,151 independent probes and 96 supplied probes in each
+Python mode. `fresh-author-v2/` and `fresh-validator-v2/` retain the exact materials.
 
-The fresh payload remains unopened at parent level. No R49 product build or
-execution has occurred; independent approval and a new
-binary/environment/input/source freeze are still required. Both versioned
-configurations are unexecuted proposed mechanics, not execution approval.
+Before compilation, parent found that the inherited driver's flat environment
+did not match the reviewed nested R49 contract. The preparation-only adapter
+passed independent inert review; execution, extraction and once-only handling
+remain byte-identical. `environment-review-v1/` retains that approval and all
+earlier failed mechanics remain unchanged.
+
+Both standalone Release binaries then built successfully; successful build logs
+remain unread. Commit `aababf4f` froze their actual binary, environment, source,
+input and evaluator hashes with all five gate receipts before one paired run.
+Each product ran once, exited zero and left its working directory empty. The
+unchanged evaluator passes the candidate's 772 aggregate checks across 45
+instances and 15 families, with all 452 actions fired and no unavailable action
+or relation. The comparison fails with 15 diagnostic messages; these messages
+are not a failed-check numerator. Normal and optimized evaluation of the same
+raw outputs agree byte-for-byte. Independent complete outcome accounting is
+pending. `paired-results-v3/` retains all raw outputs, evaluator reports, the
+spent marker and every final synthetic store file; no product rerun occurred.
 
 Product and ordinary-test files remain byte-identical to the merged `82165e7f`
 reference that passed R48's source, ordinary and native gates. Their limits,
