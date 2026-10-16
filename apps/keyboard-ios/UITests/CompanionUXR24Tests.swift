@@ -36,7 +36,11 @@ final class CompanionUXR24Tests: PreviewTypingTestCase {
       app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: 394, dy: keyboardTop - 30))
         .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: 394, dy: 240)))
     }
-    XCTAssertLessThanOrEqual(guidance.frame.maxY, keyboardTop + 2)
+    let keyboardAfterScroll = app.key("inputView")
+    XCTAssertTrue(keyboardAfterScroll.exists)
+    XCTAssertGreaterThan(keyboardAfterScroll.frame.height, 0)
+    XCTAssertLessThan(keyboardAfterScroll.frame.minY, app.frame.maxY)
+    XCTAssertLessThanOrEqual(guidance.frame.maxY, keyboardAfterScroll.frame.minY + 2)
     try capture("guidance-readable-end")
   }
 

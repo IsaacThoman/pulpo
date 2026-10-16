@@ -579,9 +579,19 @@ primary lifetime tests, two independent lifetime checks and eighteen dictation
 destination methods, with no runtime crash. The remaining standalone release
 countercheck still retains input/controller/engine after host release; later
 document checks remain unexecuted. Its final fixture replay is **3/4**. Retaining
-cause and full frozen lifecycle acceptance are unresolved; the failing assertions
-remain enabled and R23 owns that investigation. Source review finds no new
-retention edge in the narrow crash fix. These overlapping counts are not additive.
+cause is now narrowed by R23: on iOS Simulator 27.0 build 24A434, live pointers,
+strong ivar metadata and framework stores establish a UIInputView →
+_UIInputViewContent → same input cycle. Plain UIKit controls reproduce it without
+Pulpo consumers. R23 changes no production source; its diagnostic run is **20/28**
+methods (original AppTests **18/19**, new controls **2/9**), with sixteen failed nil
+assertions and no runtime crash. Full frozen lifecycle acceptance remains
+incomplete and the original failing assertions remain enabled; later standalone
+document checks are unexecuted. This does not establish intended UIKit lifetime,
+an Apple-confirmed bug, every app retainer or physical-device behavior. Source
+review finds no new retention edge in the narrow crash fix. Diagnostic fixtures
+are archived outside discovery; targeted native excerpts and hashes are retained
+under `audits/preview-document-lifetime/r23/`. These overlapping counts are not
+additive.
 
 The source-only R16/R18/R19 candidates remain rejected and archived outside test
 discovery. R16 has a concrete moved-caret inherited-text corruption; its 36 sealed
@@ -596,6 +606,38 @@ and causally fails the rejected engine in EN/bilingual. Parent Release **439 cor
 tooling are unchanged. See `audits/editing-ux-r17-parent.md`,
 `audits/preview-document-lifetime/audit.md`, `audits/r16-parent-protection.md` and
 the R16/R18/R19 artifact directories for exact scope, failed attempts and costs.
+
+R20's right-insertion policy also remains rejected. Its bilingual-only exact
+documents improve **23→35/40** development and **15→28/35** scored heldout, with
+one additional ambiguous heldout. The old `Hello againA` expectation conflicts
+with the proposed separator contract and is not by itself worse UX. Separate
+controls reveal actual punctuation degradation even on already-failing rows:
+`Bring fresh,supplies` becomes `Bring fresh ,supplies`, and `Bring fresh?!supplies`
+becomes `Bring fresh? !supplies`. Every recorded primitive and unavailable row is
+preserved in `audits/right-insertion-r20/`; no production change is imported.
+
+R22's punctuation-selection policy improves its original repeated-timing matrices
+but fails an independently frozen exposed diagnostic: **21→18/33**, nine gains
+and twelve losses across the three actual language stacks. Previously preserved
+separators disappear in `mv archive .. `, `mv archive .`, `say hello ):`, and
+`write range ... 5`. The original heldout **40→90/180** retains ninety unavailable
+rows and measures correction slots rather than new useful-completion savings.
+The candidate is rejected; exact original and diagnostic evidence is retained in
+`audits/completion-punctuation-r22/` outside source/test discovery.
+
+The subsequent R24 companion change makes an open editor follow live system text
+size and lets installed-keyboard guidance wrap and scroll fully above the
+keyboard. Parent checks pass **17 distinct native methods / 18 executions** with
+zero skips: live 17→53pt text resizing with selected Unicode text/focus preserved,
+all nine current draft tests, a small host-viewport selected editing workflow,
+actual largest-type guidance/multiline scrolling, normal Settings/navigation and
+dismissal/refocus, plus one strengthened post-scroll keyboard-frame replay.
+Production hashes still match the pre-reveal freeze. These are demonstrated UX
+fixes, not fresh blind workflow gains: no complete original/fresh six-case broad
+workflow passed. Original unavailable cases, selected-text fixture failure and
+exploratory oracle misses remain in `audits/companion-ux-r24/`; parent evidence is
+in `parent-integration.md`. VoiceOver, the disabled-keyboard setup action and
+physical usability remain unproven. The separate retention failure remains open.
 
 ### Rejected technical-token expansion
 
