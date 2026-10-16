@@ -179,7 +179,6 @@ const esES = {
     pinned: 'Fijados',
     searchChats: 'Buscar',
     settings: 'Ajustes',
-    trash: 'Papelera',
     usage: 'Uso',
     admin: 'Administración',
     adminPanel: 'Panel de administración',

@@ -173,7 +173,6 @@ const enUS = {
     pinned: 'Pinned',
     searchChats: 'Search',
     settings: 'Settings',
-    trash: 'Trash',
     usage: 'Usage',
     admin: 'Admin',
     adminPanel: 'Admin panel',

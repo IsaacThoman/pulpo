@@ -904,7 +904,6 @@ export const sidebarPinsSchema = z.object({
   billing: z.boolean().default(false),
   friends: z.boolean().default(false),
   apiKeys: z.boolean().default(false),
-  trash: z.boolean().default(false),
 })
 export type SidebarPins = z.infer<typeof sidebarPinsSchema>
 
