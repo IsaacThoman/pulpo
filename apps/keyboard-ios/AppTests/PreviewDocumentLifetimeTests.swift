@@ -105,11 +105,17 @@ final class PreviewDocumentLifetimeTests: XCTestCase {
     XCTAssertEqual(input.controller.engine.document.selectedText, "café")
     // Keep the actual old input/controller/engine/document, never the host.
     coordinator.textViewDidChangeSelection(old)
+    // Invoke the production dismantle entry point deterministically. Retaining
+    // UIKit views can defer SwiftUI's automatic dismantling in this test host.
+    PreviewTextView.dismantleUIView(old, coordinator: coordinator)
     window.rootViewController = UIViewController()
     settle()
     XCTAssertNil(coordinator.host)
     XCTAssertNil(coordinator.controller)
-    XCTAssertNil(host, "A strong host in the fixture would conceal the lifetime bug")
+    guard host == nil else {
+      XCTFail("A strong host in the fixture would conceal the lifetime bug")
+      return
+    }
     state.text = "replacement 🧪 safe"
     state.selection = NSRange(location: 0, length: 11)
     let replacement = try mount()
@@ -127,7 +133,10 @@ final class PreviewDocumentLifetimeTests: XCTestCase {
     settle()
     XCTAssertNil(coordinator.host)
     XCTAssertNil(coordinator.controller)
-    XCTAssertNil(host)
+    guard host == nil else {
+      XCTFail("Switching to the system keyboard must release the original host")
+      return
+    }
     XCTAssertNil(old.inputView)
     // Same editor, newly installed preview host: stale document must not rebind.
     state.preview = true

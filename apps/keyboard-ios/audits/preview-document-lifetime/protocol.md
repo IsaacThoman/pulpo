@@ -39,3 +39,20 @@ attempted first. Both returned the raw error
 Use repository XCTest/CoreSimulator fallback, serial
 `-parallel-testing-enabled NO -collect-test-diagnostics never`.
 Raw logs/xcresults stay in /tmp; version only small fixture/evidence/audit.
+
+## v2 fixture correction, still before production changes
+
+Initial v1 run exit 65: live control passed; dismantle fixture had 12 assertion
+failures because retaining UIKit views deferred automatic SwiftUI dismantling;
+the host/controller were still alive. Those stale writes do not prove a
+post-deallocation bug. The switch fixture did prove weak-host nil, then aborted
+on its first before-input read with an unowned-reference fatal error. XCTest
+restarted and executed 0 additional tests. The finalized summary reports 1 pass,
+2 failures, 0 skips, but the crash method did not complete its remaining checks.
+
+v2 explicitly invokes the unchanged production `dismantleUIView` entry point
+on the real mounted editor/coordinator before replacing its window owner. It
+tests deterministic production cleanup, not automatic SwiftUI teardown timing.
+Both lifecycle fixtures now stop immediately if the weak host remains alive,
+so their milestone cannot falsely claim deallocation. All acceptance
+expectations remain identical. Freeze v2 before rerunning baseline/source edit.
