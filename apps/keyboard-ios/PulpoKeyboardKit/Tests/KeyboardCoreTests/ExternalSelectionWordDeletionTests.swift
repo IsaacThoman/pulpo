@@ -10,13 +10,15 @@ struct ExternalSelectionWordDeletionTests {
     var cursor: Int
     var selectionLength = 0
     var deletions = 0
+    var hidesContext = false
+    var selectionSnapshot: String?
 
     init(_ text: String) { self.text = text; cursor = text.count }
     private var characters: [Character] { Array(text) }
-    var documentContextBeforeInput: String? { String(characters.prefix(cursor)) }
-    var documentContextAfterInput: String? { String(characters.dropFirst(cursor + selectionLength)) }
+    var documentContextBeforeInput: String? { hidesContext ? nil : String(characters.prefix(cursor)) }
+    var documentContextAfterInput: String? { hidesContext ? nil : String(characters.dropFirst(cursor + selectionLength)) }
     var selectedText: String? {
-      selectionLength == 0 ? nil : String(characters.dropFirst(cursor).prefix(selectionLength))
+      selectionSnapshot ?? (selectionLength == 0 ? nil : String(characters.dropFirst(cursor).prefix(selectionLength)))
     }
     var hasText: Bool { !text.isEmpty }
 
@@ -96,5 +98,39 @@ struct ExternalSelectionWordDeletionTests {
     #expect(engine.deleteWordsBackward(0) == nil)
     #expect(host.text == "chosen tail")
     #expect(host.deletions == 0)
+  }
+
+  @Test(arguments: [false, true])
+  func liveSelectionWithWithheldContextIsReconciledBeforeItsCallback(initiallyHidden: Bool) throws {
+    let host = Host("prefix chosen suffix")
+    host.hidesContext = initiallyHidden
+    let engine = KeyboardEngine(document: host, suggester: nil, glide: nil)
+    engine.documentDidChange()
+    host.cursor = 7
+    host.selectionLength = 6
+    host.hidesContext = true
+    // The live selection is available; the text/selection callback has not arrived.
+    let deletion = try #require(engine.deleteWordsBackward(1))
+    #expect(host.text == "prefix  suffix")
+    #expect(host.deletions == 1)
+    #expect(deletion.removed == "chosen")
+    #expect(engine.undo(deletion))
+    #expect(host.text == "prefix chosen suffix")
+  }
+
+  @Test func delayedOwnSelectionSnapshotInHiddenContextPreservesWordDeletion() throws {
+    let host = Host("chosen tail")
+    host.cursor = 0
+    host.selectionLength = 6
+    host.hidesContext = true
+    let engine = KeyboardEngine(document: host, suggester: nil, glide: nil)
+    engine.documentDidChange()
+    // Keep reporting the selection our own insertion has already replaced.
+    host.selectionSnapshot = "chosen"
+    engine.insertText("hello")
+    let deletion = try #require(engine.deleteWordsBackward(1))
+    #expect(host.text == " tail")
+    #expect(host.deletions == 5)
+    #expect(deletion.removed == "hello")
   }
 }
