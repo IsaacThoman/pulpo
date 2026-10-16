@@ -1,0 +1,147 @@
+{
+  "format": "pulpo-r48-author-sha256-v2",
+  "version": "author-review-v2",
+  "predecessorArchiveSHA256": "97db0a1909c9a7757a3606158b3f4aed36eff7a75d0d02ed7dd5939fc21ef6d2",
+  "files": [
+    {
+      "path": "InertKeyboardCore.swift",
+      "bytes": 1314,
+      "sha256": "99ca7a02b8fbe0e53bf52fa2b7d40901ecb2742a772990f34a2d0b81458746ad"
+    },
+    {
+      "path": "KeyboardCore.abi.json",
+      "bytes": 149,
+      "sha256": "4277ac6b49f8511196028a5ac20f5b1b1dfa754c24615d34068089f0b1739728"
+    },
+    {
+      "path": "PublicDomainReference.swift",
+      "bytes": 2303,
+      "sha256": "860e4098efcf1d38825458c4791c5398a7e37c626ba23dc91392e7f60629516b"
+    },
+    {
+      "path": "README.md",
+      "bytes": 1055,
+      "sha256": "6c1989fa85320f1016b062f02b262cde75e7faa4c45cd1859039d484dba3cc88"
+    },
+    {
+      "path": "Runner.swift",
+      "bytes": 8585,
+      "sha256": "2718e44462cf19625484ef2b82b40771475ef5c546c2cf034523fc7de6730255"
+    },
+    {
+      "path": "SPEC.md",
+      "bytes": 14479,
+      "sha256": "1632cbc293b7c2b29ce9333c0788d21422e443c0b6a1806ccaafee0d4a04b6c4"
+    },
+    {
+      "path": "accounting.json",
+      "bytes": 135186,
+      "sha256": "310c4f2bb3c2ef177388c6b3ccc61393ef01d650b4f004b5a88cd96b1521e1ad"
+    },
+    {
+      "path": "attestation.json",
+      "bytes": 2243,
+      "sha256": "f1a33837dd42f1eb14f9b8fd0b128d91526f3b022ffff355362efa982930f6aa"
+    },
+    {
+      "path": "author-environment.json",
+      "bytes": 574,
+      "sha256": "88cd790c32dc937b48c56fa980225e76a976c22247f38e3ce17ce4b62a15731e"
+    },
+    {
+      "path": "build_fixtures.py",
+      "bytes": 3059,
+      "sha256": "246f861f1640b98b3f7e0360fba4e3d9e3abcccba790a472dc499f271c8f72fa"
+    },
+    {
+      "path": "correction-history.json",
+      "bytes": 1596,
+      "sha256": "e70babc9c4150bec76bb12c332245519f74ccbe1bec56cc60ea77f645c4df6b7"
+    },
+    {
+      "path": "design.json",
+      "bytes": 25186,
+      "sha256": "93177d919a8cde43680a3608a6feef5bb4ee81bf52a08ed7c471fed7c0cd2297"
+    },
+    {
+      "path": "evaluate.py",
+      "bytes": 26118,
+      "sha256": "45d84a3eccbac829cabef6f4cc087ee656582edaf39029f51a0a9e23fd96f663"
+    },
+    {
+      "path": "fixtures.json",
+      "bytes": 232582,
+      "sha256": "51a67006cb4218dac7143160c72d83f54d3b5a65a805960532c7ed8f7065d4b0"
+    },
+    {
+      "path": "make_schema.py",
+      "bytes": 5366,
+      "sha256": "8cd0c39679f211cc2fe3f67b5bcd52945bad725fa133c3150b6b1a4e6ab08087"
+    },
+    {
+      "path": "metadata.json",
+      "bytes": 1556,
+      "sha256": "fcddfb3dfd6a6338181f4ece3623df2a3a6f7cff6ddfc287e2c0d31f25daab24"
+    },
+    {
+      "path": "operation-manifest.json",
+      "bytes": 107338,
+      "sha256": "83c5358423e342c557b13748daf0111c07436805e6c9cfa4e112602b2e3cfae7"
+    },
+    {
+      "path": "preexecution-checks.json",
+      "bytes": 1432,
+      "sha256": "a8cddee9adac096c0095f16c09db804d9b2cbb7226f0de8a1b785fce4f4d8da8"
+    },
+    {
+      "path": "reference-main.swift",
+      "bytes": 1467,
+      "sha256": "0dafa7b9bd382e97d7d25d4f1c2e78914557a720c0ef836b88bd83cdcc268289"
+    },
+    {
+      "path": "reference-values.json",
+      "bytes": 19683,
+      "sha256": "3af6a187298d7b54f6e0f3e57a5d886394af22d79cce5050159031c4cf3151ae"
+    },
+    {
+      "path": "reference.swift",
+      "bytes": 3770,
+      "sha256": "2773e6d17b00555ad41bf432a964021f0b2dbe21ef92dfe08c2d31e987be44be"
+    },
+    {
+      "path": "review-report-v1.json",
+      "bytes": 4974,
+      "sha256": "dcd5839c5fb4e082aeec5abc7ef481c00fb9e72cface25049452a9dc2d999391"
+    },
+    {
+      "path": "review-report-v1.md",
+      "bytes": 1980,
+      "sha256": "81b1a705be772ce1a93ce39a6285cc9bfd8878dc701124ac47c15bdc1c386a8c"
+    },
+    {
+      "path": "schema.json",
+      "bytes": 35636,
+      "sha256": "2ff4eb4d061fb2beea29e9be502e1eaf00abcd3a00d90fdc4c4ee97ee75e7185"
+    },
+    {
+      "path": "seal_fixtures.py",
+      "bytes": 5441,
+      "sha256": "aa7335d71b85d2f90e817d8b90c9ee9f38dd16da48043a6f7f2502af81fdd147"
+    },
+    {
+      "path": "selfcheck-normal.json",
+      "bytes": 7762,
+      "sha256": "0a34c1ec207b8c9b7fe73e3bf9d9123f82f5da28605a18f55a031e3a62c0f59e"
+    },
+    {
+      "path": "selfcheck-optimized.json",
+      "bytes": 7762,
+      "sha256": "0a34c1ec207b8c9b7fe73e3bf9d9123f82f5da28605a18f55a031e3a62c0f59e"
+    },
+    {
+      "path": "selfcheck.py",
+      "bytes": 11084,
+      "sha256": "616afb2de5a0346937a2515845f2e1e5a5d02f1a90c8adb04e81badafda948f0"
+    }
+  ]
+}

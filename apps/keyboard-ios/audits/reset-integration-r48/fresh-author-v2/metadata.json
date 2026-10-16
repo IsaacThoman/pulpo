@@ -1,0 +1,56 @@
+{
+  "format": "pulpo-r48-author-metadata-v2",
+  "version": "author-review-v2",
+  "status": "immutable successor for independent review; zero product executions",
+  "predecessor": "author-review-v1 retained unchanged",
+  "addressedReviewFindingIDs": [
+    "R48V1-SEM-01",
+    "R48V1-ACCOUNT-02",
+    "R48V1-ACCOUNT-03"
+  ],
+  "denominators": {
+    "families": 18,
+    "instances": 36,
+    "operations": 375,
+    "relations": 49,
+    "modelOperations": 331,
+    "normalizationCalls": 18,
+    "geometryCalls": 26,
+    "learnCalls": 76,
+    "expectedAcceptedLearnCalls": 63,
+    "expectedRejectedLearnCalls": 13,
+    "persistentReopens": 18,
+    "individualChecks": 2285
+  },
+  "explicitPolicyActionCounts": {
+    "initialSetup": 36,
+    "reopenSetup": 18,
+    "allPolicySetters": 58
+  },
+  "syntheticProbes": 44,
+  "syntheticModes": [
+    "python3",
+    "python3 -O"
+  ],
+  "independentFoundationReference": "pass; literal values unchanged",
+  "inertDeclarationOnlyTypecheck": "pass",
+  "productRuns": 0,
+  "repositoryReadFiles": 3,
+  "additionalIndependentReportReads": 2,
+  "languageModelResourceModes": 0,
+  "reviewEntryPoints": [
+    "correction-history.json",
+    "SPEC.md",
+    "fixtures.json",
+    "Runner.swift",
+    "evaluate.py",
+    "schema.json",
+    "accounting.json",
+    "attestation.json",
+    "preexecution-checks.json"
+  ],
+  "immutableArchive": "author-review-v2.tar.gz",
+  "manifest": "SHA256SUMS.json",
+  "parentPayloadOpened": false,
+  "scope": "public TouchModel compatibility; correlated family checks; no population accuracy claim"
+}
