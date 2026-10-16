@@ -1,0 +1,494 @@
+import Testing
+
+struct R25ConservationOracleTests {
+  private typealias Oracle = R25ConservationOracle
+  private typealias Snapshot = Oracle.Snapshot
+  private typealias Primitive = Oracle.Primitive
+  private typealias Action = Oracle.Action
+
+  /// Synthetic host driver, with no engine or language data. Faults can replace
+  /// actual snapshots, so these are oracle negative controls, not candidate tests.
+  private struct Host {
+    var actual: Snapshot
+    var oracle: Oracle
+    var queued: [(Action, [Primitive])] = []
+
+    init(prefix: String = "old ", suffix: String = "suffix", selection: String = "") {
+      actual = Snapshot(text: prefix + selection + suffix, caret: prefix.count,
+                        selectionLength: selection.count)
+      oracle = Oracle(actual: actual)
+    }
+
+    @discardableResult
+    mutating func apply(_ action: Action, _ primitives: [Primitive]) -> Oracle.Verdict {
+      let before = actual
+      var steps: [Oracle.Step] = []
+      for primitive in primitives {
+        let previous = actual
+        actual = Oracle.applying(primitive, to: actual)!
+        steps.append(Oracle.Step(primitive: primitive, before: previous, after: actual))
+      }
+      return oracle.observe(Oracle.Trace(action: action, before: before, steps: steps, after: actual))
+    }
+
+    mutating func type(_ word: String) {
+      for character in word {
+        let result = apply(.letter(character), [.insert(String(character))])
+        #expect(result.failures.isEmpty)
+      }
+    }
+
+    mutating func hostChange(_ state: Snapshot) {
+      actual = state
+      oracle.hostChanged(to: actual)
+    }
+
+    mutating func enqueue(_ action: Action, _ primitives: [Primitive]) {
+      // Issuing commands and optimistic reports cannot advance actual ownership.
+      queued.append((action, primitives))
+    }
+
+    mutating func flush() -> [Oracle.Verdict] {
+      let pending = queued
+      queued = []
+      return pending.map { action, primitives in apply(action, primitives) }
+    }
+
+    func replacement(of word: String, with corrected: String, split: Bool = false) -> [Primitive] {
+      Array(repeating: .deleteBackward, count: word.count)
+        + (split ? [.insert(corrected), .insert(" ")] : [.insert(corrected + " ")])
+    }
+  }
+
+  @Test(arguments: [false, true])
+  func acceptsExactBoundedReplacementAndSeparator(split: Bool) {
+    var host = Host()
+    host.type("abc")
+    #expect(host.oracle.owned == Oracle.OwnedSpan(prefix: "old ", word: "abc", suffix: "suffix"))
+    let result = host.apply(.explicitSpace, host.replacement(of: "abc", with: "abcd", split: split))
+    #expect(result.permitsSpaceReplacement)
+    #expect(host.actual == Snapshot(text: "old abcd suffix", caret: 9))
+    #expect(host.oracle.owned == nil)
+  }
+
+  @Test func acceptsDocumentStartAndAlphabeticOrNumericInheritedSuffix() {
+    for suffix in ["suffix", "42", " tail", "", "🙂尾"] {
+      var host = Host(prefix: "", suffix: suffix)
+      host.type("abc")
+      #expect(host.apply(.explicitSpace, host.replacement(of: "abc", with: "xyz")).permitsSpaceReplacement)
+    }
+  }
+
+  @Test func acceptsUnicodeGraphemesAndIndependentlyAuthoredCapitalization() {
+    var host = Host(prefix: "👨‍👩‍👧‍👦 cafe\u{301}\n", suffix: "尾🙂")
+    let first = host.apply(.letter("a"), [.insert("A")])
+    #expect(first.failures.isEmpty)
+    host.type("b\u{301}c")
+    #expect(host.oracle.owned?.word == "Ab\u{301}c")
+    let result = host.apply(.explicitSpace, host.replacement(of: "Ab\u{301}c", with: "Ábc"))
+    #expect(result.permitsSpaceReplacement)
+    #expect(host.actual == Snapshot(text: "👨‍👩‍👧‍👦 cafe\u{301}\nÁbc 尾🙂", caret: 11))
+  }
+
+  @Test func wrongTapOutputCannotEstablishOwnership() {
+    var host = Host(prefix: "", suffix: "tail")
+    _ = host.apply(.letter("a"), [.insert("z")])
+    host.type("bc")
+    #expect(host.oracle.owned == nil)
+    #expect(!host.apply(.explicitSpace, host.replacement(of: "zbc", with: "xyz")).permitsSpaceReplacement)
+  }
+
+  @Test func rejectsCorruptPrefixDeletionEvenWhenFinalDocumentIsRepaired() {
+    var host = Host()
+    host.type("abc")
+    let primitives = Array(repeating: Primitive.deleteBackward, count: 4) + [.insert(" xyz ")]
+    let result = host.apply(.explicitSpace, primitives)
+    #expect(host.actual == Snapshot(text: "old xyz suffix", caret: 8))
+    #expect(!result.permitsSpaceReplacement)
+    #expect(result.failures.contains { $0.contains("lower bound") })
+    #expect(result.failures.contains { $0.contains("inherited prefix") })
+  }
+
+  @Test func rejectsPartialWordReplacementRatherThanWeakeningStricterGuard() {
+    var host = Host()
+    host.type("abc")
+    let result = host.apply(.explicitSpace, [.deleteBackward, .insert("z ")])
+    #expect(!result.permitsSpaceReplacement)
+    #expect(result.failures.contains { $0.contains("exactly the owned word") })
+  }
+
+  @Test func rejectsInterleavedDeleteAndInsertEvenWithCorrectFinalState() {
+    var host = Host()
+    host.type("abc")
+    let result = host.apply(.explicitSpace, [
+      .deleteBackward, .deleteBackward, .deleteBackward,
+      .insert("x"), .deleteBackward, .insert("xyz "),
+    ])
+    #expect(host.actual == Snapshot(text: "old xyz suffix", caret: 8))
+    #expect(!result.permitsSpaceReplacement)
+    #expect(result.failures.contains { $0.contains("delete after") })
+  }
+
+  @Test(arguments: ["", "xyz", "xyz  ", "xyz\n", " "])
+  func rejectsMissingOrGenericSeparators(output: String) {
+    var host = Host()
+    host.type("abc")
+    let result = host.apply(.explicitSpace, Array(repeating: .deleteBackward, count: 3) + [.insert(output)])
+    #expect(!result.permitsSpaceReplacement)
+    #expect(!result.failures.isEmpty)
+  }
+
+  @Test func rejectsSuffixCaretAndSelectionChangesInActualSnapshots() {
+    for badFinal in [
+      Snapshot(text: "old xyz suffiX", caret: 8),
+      Snapshot(text: "old xyz suffix", caret: 9),
+      Snapshot(text: "old xyz suffix", caret: 8, selectionLength: 1),
+    ] {
+      var host = Host()
+      host.type("abc")
+      let before = host.actual
+      var state = before
+      var steps: [Oracle.Step] = []
+      for primitive in host.replacement(of: "abc", with: "xyz") {
+        let after = Oracle.applying(primitive, to: state)!
+        steps.append(Oracle.Step(primitive: primitive, before: state, after: after))
+        state = after
+      }
+      steps[steps.count - 1].after = badFinal
+      let result = host.oracle.observe(.init(action: .explicitSpace, before: before, steps: steps, after: badFinal))
+      #expect(!result.permitsSpaceReplacement)
+      #expect(result.failures.contains { $0.contains("actual host edit") })
+    }
+  }
+
+  @Test func rejectsTransientSuffixCorruptionEvenWhenItIsRestored() {
+    var host = Host()
+    host.type("abc")
+    let before = host.actual
+    let intermediate = Snapshot(text: "old abcsuffiX", caret: 7)
+    let final = Snapshot(text: "old xyz suffix", caret: 8)
+    let result = host.oracle.observe(.init(action: .explicitSpace, before: before, steps: [
+      .init(primitive: .deleteBackward, before: before, after: intermediate),
+      .init(primitive: .insert("xyz "), before: intermediate, after: final),
+    ], after: final))
+    #expect(!result.permitsSpaceReplacement)
+    #expect(!result.failures.isEmpty)
+  }
+
+  @Test func rejectsCanonicalNormalizationOfInheritedPrefix() {
+    var host = Host(prefix: "cafe\u{301} ")
+    host.type("abc")
+    let before = host.actual
+    let changed = Snapshot(text: "café abcsuffix", caret: 8)
+    // Swift String equality alone would silently treat these prefixes as equal.
+    #expect(before.text == changed.text)
+    #expect(before != changed)
+    let result = host.oracle.observe(.init(action: .explicitSpace, before: before, steps: [], after: changed))
+    #expect(!result.permitsSpaceReplacement)
+    #expect(!result.failures.isEmpty)
+  }
+
+  @Test func genericSwipePunctuationReturnAndExternalTextNeverGetException() {
+    let actions: [Action] = [.swipe, .punctuation, .returnKey, .insertText, .hostSync, .other]
+    for action in actions {
+      var host = Host()
+      host.type("abc")
+      let result = host.apply(action, host.replacement(of: "abc", with: "xyz"))
+      #expect(result.exception == .none)
+      #expect(!result.permitsSpaceReplacement)
+      #expect(host.oracle.owned == nil)
+    }
+  }
+
+  @Test func swipeWithoutSpaceCannotCreateTypedOwnership() {
+    var host = Host()
+    _ = host.apply(.swipe, [.insert("abc")])
+    #expect(host.oracle.owned == nil)
+    #expect(!host.apply(.explicitSpace, host.replacement(of: "abc", with: "xyz")).permitsSpaceReplacement)
+  }
+
+  @Test(arguments: ["inherited", "9", "'", "path/", "("])
+  func inheritedMidwordAndNonWhitespaceOriginsNeverGetException(prefix: String) {
+    var host = Host(prefix: prefix)
+    host.type("abc")
+    #expect(host.oracle.owned == nil)
+    #expect(!host.apply(.explicitSpace, host.replacement(of: "abc", with: "xyz")).permitsSpaceReplacement)
+  }
+
+  @Test func selectedOriginCannotAcquireOwnershipAfterSelectionIsConsumed() {
+    var host = Host(selection: "selected")
+    host.type("abc")
+    #expect(host.actual.selectionLength == 0)
+    #expect(host.oracle.owned == nil)
+    #expect(!host.apply(.explicitSpace, host.replacement(of: "abc", with: "xyz")).permitsSpaceReplacement)
+  }
+
+  @Test func selectionAtCommitAndHostSyncRevokePreviouslyValidOwnership() {
+    var host = Host()
+    host.type("abc")
+    host.hostChange(Snapshot(text: host.actual.text, caret: host.actual.caret, selectionLength: 2))
+    #expect(host.oracle.owned == nil)
+    #expect(!host.apply(.explicitSpace, host.replacement(of: "abc", with: "xyz")).permitsSpaceReplacement)
+
+    var sync = Host()
+    sync.type("abc")
+    _ = sync.apply(.hostSync, [])
+    #expect(sync.oracle.owned == nil)
+    #expect(!sync.apply(.explicitSpace, sync.replacement(of: "abc", with: "xyz")).permitsSpaceReplacement)
+  }
+
+  @Test func actualHostChangesIncludingIdenticalReplacementsAndMoveAwayBackRevokeOwnership() {
+    for change in [Snapshot(text: "old abcsuffix", caret: 7),
+                   Snapshot(text: "new abcsuffix", caret: 7),
+                   Snapshot(text: "old abcsuffiX", caret: 7),
+                   Snapshot(text: "old abcsuffix", caret: 0)] {
+      var host = Host()
+      host.type("abc")
+      host.hostChange(change)
+      host.hostChange(Snapshot(text: "old abcsuffix", caret: 7))
+      #expect(!host.apply(.explicitSpace, host.replacement(of: "abc", with: "xyz")).permitsSpaceReplacement)
+    }
+  }
+
+  @Test func unreportedActualHostChangeCannotUseOldOwnership() {
+    var host = Host()
+    host.type("abc")
+    host.actual = Snapshot(text: "new abcsuffix", caret: 7)
+    let result = host.apply(.explicitSpace, host.replacement(of: "abc", with: "xyz"))
+    #expect(!result.permitsSpaceReplacement)
+    #expect(result.failures.contains("actual document discontinuity"))
+  }
+
+  @Test func oldOwnReportsDoNotChangeActualOwnershipOrResurrectIt() {
+    var host = Host()
+    let initial = host.actual
+    host.type("a")
+    let oldOwn = host.actual
+    host.type("bc")
+    // Report age is deliberately irrelevant: the harness may deliver these at
+    // +2 seconds/key or reentrantly between primitive writes, never as host edits.
+    for reported in [initial, oldOwn, Snapshot(text: "unrelated", caret: 3)] {
+      host.oracle.proxyReported(reported)
+      #expect(host.oracle.owned?.word == "abc")
+    }
+    host.oracle.proxyReported(nil)
+    #expect(host.apply(.explicitSpace, host.replacement(of: "abc", with: "xyz")).permitsSpaceReplacement)
+
+    var revoked = Host()
+    revoked.type("abc")
+    let own = revoked.actual
+    revoked.hostChange(own)
+    revoked.oracle.proxyReported(own)
+    #expect(revoked.oracle.owned == nil)
+    #expect(!revoked.apply(.explicitSpace, revoked.replacement(of: "abc", with: "xyz")).permitsSpaceReplacement)
+  }
+
+  @Test func earlierOwnReportsDuringPrimitiveApplicationDoNotBecomeActualStates() {
+    var host = Host()
+    let initial = host.actual
+    host.type("abc")
+    let before = host.actual
+    var steps: [Oracle.Step] = []
+    for primitive in host.replacement(of: "abc", with: "xyz") {
+      let previous = host.actual
+      host.actual = Oracle.applying(primitive, to: previous)!
+      steps.append(.init(primitive: primitive, before: previous, after: host.actual))
+      // Reentrant earlier-own delivery during a multi-primitive rewrite.
+      host.oracle.proxyReported(initial)
+      host.oracle.proxyReported(previous)
+    }
+    let result = host.oracle.observe(.init(action: .explicitSpace, before: before,
+                                           steps: steps, after: host.actual))
+    #expect(result.permitsSpaceReplacement)
+    #expect(host.oracle.actual == host.actual)
+  }
+
+  @Test func queuedCorruptDeletionIsCheckedAfterPhysicalApplication() {
+    var host = Host()
+    for character in "abc" {
+      host.enqueue(.letter(character), [.insert(String(character))])
+    }
+    host.enqueue(.explicitSpace, Array(repeating: .deleteBackward, count: 4) + [.insert(" xyz ")])
+    #expect(host.oracle.owned == nil)
+    let results = host.flush()
+    #expect(results.last?.permitsSpaceReplacement == false)
+    #expect(results.last?.failures.contains { $0.contains("lower bound") } == true)
+    #expect(host.actual == Snapshot(text: "old xyz suffix", caret: 8))
+  }
+
+  @Test func queuedWritesDoNotOwnReportedTextUntilActuallyAppliedInOrder() {
+    var host = Host()
+    let initial = host.actual
+    for character in "abc" {
+      host.enqueue(.letter(character), [.insert(String(character))])
+    }
+    host.oracle.proxyReported(Snapshot(text: "old abcsuffix", caret: 7))
+    #expect(host.actual == initial)
+    #expect(host.oracle.owned == nil)
+    host.enqueue(.explicitSpace, host.replacement(of: "abc", with: "xyz"))
+    let results = host.flush()
+    #expect(results.count == 4)
+    #expect(results.allSatisfy { $0.failures.isEmpty })
+    #expect(results.last?.permitsSpaceReplacement == true)
+    #expect(host.actual == Snapshot(text: "old xyz suffix", caret: 8))
+    #expect(host.queued.isEmpty)
+  }
+
+  @Test func queuedGenericActionRetainsItsOriginalProvenance() {
+    var host = Host()
+    for character in "abc" {
+      host.enqueue(.letter(character), [.insert(String(character))])
+    }
+    host.enqueue(.swipe, host.replacement(of: "abc", with: "xyz"))
+    let results = host.flush()
+    #expect(results.last?.permitsSpaceReplacement == false)
+    #expect(host.oracle.owned == nil)
+  }
+
+  @Test func skippedTapsAndOptimisticOnlyReportsCannotAcquireOwnership() {
+    var host = Host()
+    for character in "abc" {
+      _ = host.apply(.letter(character), [])
+    }
+    host.oracle.proxyReported(Snapshot(text: "old abcsuffix", caret: 7))
+    #expect(host.oracle.owned == nil)
+    let result = host.apply(.explicitSpace, [.deleteBackward, .insert("xyz ")])
+    #expect(!result.permitsSpaceReplacement)
+  }
+
+  @Test func acceptsExactUndoAndRejectsRetainedSeparator() {
+    for retainSeparator in [false, true] {
+      var host = Host()
+      host.type("abc")
+      #expect(host.apply(.explicitSpace, host.replacement(of: "abc", with: "xyz")).permitsSpaceReplacement)
+      let output = retainSeparator ? "abc " : "abc"
+      let result = host.apply(.backspace, Array(repeating: .deleteBackward, count: 4) + [.insert(output)])
+      if retainSeparator {
+        #expect(result.exception == .none)
+        #expect(!result.failures.isEmpty)
+      } else {
+        #expect(result.exception == .exactUndo)
+        #expect(result.failures.isEmpty)
+        #expect(host.actual == Snapshot(text: "old abcsuffix", caret: 7))
+      }
+      #expect(host.oracle.owned == nil)
+    }
+  }
+
+  @Test func undoCannotCrossPrefixOrUseChangedHostDestination() {
+    var host = Host()
+    host.type("abc")
+    _ = host.apply(.explicitSpace, host.replacement(of: "abc", with: "xyz"))
+    let result = host.apply(.backspace, Array(repeating: .deleteBackward, count: 5) + [.insert(" abc")])
+    #expect(result.exception == .none)
+    #expect(result.failures.contains { $0.contains("lower bound") })
+
+    var moved = Host()
+    moved.type("abc")
+    _ = moved.apply(.explicitSpace, moved.replacement(of: "abc", with: "xyz"))
+    moved.hostChange(Snapshot(text: "other", caret: 5))
+    #expect(moved.apply(.backspace, [.deleteBackward]).exception == .none)
+  }
+
+  @Test func invalidCoordinatesAndIncompleteTracesFailClosed() {
+    var oracle = Oracle(actual: Snapshot(text: "x", caret: 1))
+    let result = oracle.observe(.init(action: .explicitSpace,
+                                      before: Snapshot(text: "x", caret: 2), steps: [],
+                                      after: Snapshot(text: "x", caret: 1)))
+    #expect(!result.failures.isEmpty)
+    #expect(oracle.owned == nil)
+
+    var host = Host()
+    host.type("abc")
+    let incomplete = host.oracle.observe(.init(action: .explicitSpace, before: host.actual, steps: [],
+                                              after: Snapshot(text: "old xyz suffix", caret: 8)))
+    #expect(!incomplete.permitsSpaceReplacement)
+    #expect(!incomplete.failures.isEmpty)
+  }
+  @Test(arguments: ["two words", "can't", "x2!", "🙂", "a, b"])
+  func acceptsGeneralNonemptyReplacementDomain(corrected: String) {
+    var host = Host()
+    host.type("abc")
+    #expect(host.apply(.explicitSpace, host.replacement(of: "abc", with: corrected)).permitsSpaceReplacement)
+    let undo = host.apply(.backspace, Array(repeating: .deleteBackward, count: corrected.count + 1) + [.insert("abc")])
+    #expect(undo.exception == .exactUndo)
+    #expect(undo.failures.isEmpty)
+  }
+
+  @Test(arguments: [("a", "A"), ("A", "a"), ("ß", "SS"), ("İ", "i\u{307}"), ("é", "É")])
+  func directTapUnicodeMappingsAreIndependentOfShift(pair: (String, String)) {
+    var host = Host()
+    let result = host.apply(.letter(pair.0.first!), [.insert(pair.1)])
+    #expect(result.failures.isEmpty)
+    #expect(host.oracle.owned?.word == pair.1)
+    #expect(host.apply(.explicitSpace, host.replacement(of: pair.1, with: "replacement")).permitsSpaceReplacement)
+  }
+
+  @Test func canonicallyEquivalentButNotScalarExactTapCannotOwn() {
+    var host = Host()
+    _ = host.apply(.letter("é"), [.insert("e\u{301}")])
+    #expect(host.oracle.owned == nil)
+  }
+
+  @Test func identicalHostReplacementChangesEveryPhysicalIdentity() {
+    var host = Host()
+    host.type("abc")
+    let oldIDs = host.oracle.physicalIdentities
+    host.hostChange(host.actual)
+    #expect(Set(oldIDs).isDisjoint(with: host.oracle.physicalIdentities))
+    #expect(host.oracle.owned == nil)
+  }
+
+  @Test func inheritedIDsSurviveTapsReplacementAndExactUndo() {
+    var host = Host()
+    let original = host.oracle.physicalIdentities
+    host.type("abc")
+    #expect(Array(host.oracle.physicalIdentities.prefix(4)) == Array(original.prefix(4)))
+    #expect(Array(host.oracle.physicalIdentities.suffix(6)) == Array(original.suffix(6)))
+    _ = host.apply(.explicitSpace, host.replacement(of: "abc", with: "two words"))
+    _ = host.apply(.backspace, Array(repeating: .deleteBackward, count: 10) + [.insert("abc")])
+    #expect(Array(host.oracle.physicalIdentities.prefix(4)) == Array(original.prefix(4)))
+    #expect(Array(host.oracle.physicalIdentities.suffix(6)) == Array(original.suffix(6)))
+  }
+
+  @Test func resegmentationAtInheritedBoundaryCannotOwn() {
+    var host = Host(prefix: "", suffix: "\u{301}tail")
+    let inherited = host.oracle.physicalIdentities
+    _ = host.apply(.letter("a"), [.insert("a")])
+    #expect(host.oracle.owned == nil)
+    #expect(!host.oracle.physicalIdentities.contains(inherited[0]))
+  }
+
+  @Test func shiftPreservesOwnedPhysicalWordWithoutAuthorizingIt() {
+    var host = Host()
+    host.type("a")
+    _ = host.apply(.modifier, [])
+    _ = host.apply(.letter("b"), [.insert("B")])
+    #expect(host.oracle.owned?.word == "aB")
+    #expect(host.apply(.explicitSpace, host.replacement(of: "aB", with: "xyz")).permitsSpaceReplacement)
+  }
+
+  @Test func wrongTriggersWithInheritedLetterSuffixAreFailures() {
+    for action: Action in [.punctuation, .returnKey, .swipe, .insertText, .other, .hostSync] {
+      var host = Host()
+      host.type("abc")
+      let verdict = host.apply(action, host.replacement(of: "abc", with: "xyz"))
+      #expect(verdict.failures.contains { $0.contains("lacks explicit-space") })
+    }
+  }
+
+  @Test func wrongTriggerCannotHideTemporaryDeletionByRepairingOutput() {
+    var host = Host()
+    host.type("abc")
+    let verdict = host.apply(.swipe, [.deleteBackward, .insert("c")])
+    #expect(host.actual == Snapshot(text: "old abcsuffix", caret: 7))
+    #expect(!verdict.failures.isEmpty)
+  }
+
+  @Test func userDeletionIsNotAutomaticRewrite() {
+    var host = Host()
+    host.type("abc")
+    #expect(host.apply(.userDeletion, [.deleteBackward, .deleteBackward]).failures.isEmpty)
+  }
+
+}

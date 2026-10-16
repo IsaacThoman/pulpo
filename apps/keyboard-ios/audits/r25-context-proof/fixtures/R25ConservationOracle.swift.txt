@@ -1,0 +1,389 @@
+import Foundation
+
+/// Test-only provenance oracle. Deliberately imports no engine, tokenizer, dictionary,
+/// composing state, correction result, proxy expectation, or production ownership helper.
+/// All offsets are Swift Character counts; string conservation is Unicode-scalar exact.
+struct R25ConservationOracle {
+  struct Snapshot: Equatable {
+    var text: String
+    var caret: Int
+    var selectionLength: Int = 0
+
+    var isValid: Bool {
+      caret >= 0 && selectionLength >= 0 && caret <= text.count
+        && selectionLength <= text.count - caret
+    }
+
+    var before: String { String(text.prefix(caret)) }
+    var after: String { String(text.dropFirst(caret + selectionLength)) }
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+      sameText(lhs.text, rhs.text) && lhs.caret == rhs.caret
+        && lhs.selectionLength == rhs.selectionLength
+    }
+  }
+
+  enum Primitive: Equatable {
+    case deleteBackward
+    case insert(String)
+  }
+
+  /// Capture immediately around a PHYSICALLY APPLIED primitive, not around its
+  /// enqueue/optimistic report. Queued adapters must retain the originating action.
+  struct Step {
+    var primitive: Primitive
+    var before: Snapshot
+    var after: Snapshot
+  }
+
+  enum Action {
+    /// The direct physical key label, fixed before dispatch. Unicode casing is a
+    /// relation on that label; no production Shift/composition state authorizes it.
+    case letter(Character)
+    case explicitSpace
+    case backspace
+    case punctuation
+    case returnKey
+    case swipe
+    case insertText
+    case hostSync
+    case userDeletion
+    /// User Shift changes do not move a physical character or establish ownership.
+    case modifier
+    /// Conservative fallback for every action not explicitly modeled above.
+    case other
+  }
+
+  struct Trace {
+    var action: Action
+    var before: Snapshot
+    var steps: [Step]
+    var after: Snapshot
+  }
+
+  struct OwnedSpan: Equatable {
+    var prefix: String
+    var word: String
+    var suffix: String
+
+    var snapshot: Snapshot {
+      Snapshot(text: prefix + word + suffix, caret: (prefix + word).count)
+    }
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+      sameText(lhs.prefix, rhs.prefix) && sameText(lhs.word, rhs.word)
+        && sameText(lhs.suffix, rhs.suffix)
+    }
+  }
+
+  enum Exception: Equatable {
+    case none
+    case explicitSpaceReplacement
+    case exactUndo
+  }
+
+  struct Verdict {
+    var exception: Exception = .none
+    var failures: [String] = []
+    var permitsSpaceReplacement: Bool {
+      exception == .explicitSpaceReplacement && failures.isEmpty
+    }
+  }
+
+  private struct Undo {
+    var span: OwnedSpan
+    var corrected: String
+    var snapshot: Snapshot
+  }
+
+  private(set) var actual: Snapshot
+  private(set) var owned: OwnedSpan?
+  private var undo: Undo?
+
+  // IDs survive only scalar-exact, unresegmented physical characters. A repaired
+  // string never recovers an ID lost to deletion. All host replacements reset IDs.
+  private struct Cell {
+    var id: Int
+    var text: String
+  }
+  private var cells: [Cell] = []
+  private var nextID = 0
+  private var ownedIDs: [Int] = []
+  var physicalIdentities: [Int] { cells.map(\.id) }
+
+  private mutating func fresh(_ text: String) -> [Cell] {
+    text.map { character in
+      defer { nextID += 1 }
+      return Cell(id: nextID, text: String(character))
+    }
+  }
+
+  private mutating func applyIdentities(_ step: Step) {
+    let leftCount = step.before.caret
+    let rightStart = leftCount + step.before.selectionLength
+    var left = Array(cells.prefix(leftCount))
+    let right = Array(cells.dropFirst(rightStart))
+    var inserted = ""
+    switch step.primitive {
+    case let .insert(text): inserted = text
+    case .deleteBackward:
+      if step.before.selectionLength == 0, !left.isEmpty { left.removeLast() }
+    }
+    let candidate = left + fresh(inserted) + right
+    let after = Array(step.after.text).map(String.init)
+    if candidate.count == after.count,
+       zip(candidate, after).allSatisfy({ Self.sameText($0.0.text, $0.1) }) {
+      cells = candidate
+      return
+    }
+    // Grapheme joining can change either insertion boundary. Preserve only IDs
+    // whose complete graphemes are unchanged outside that newly segmented region.
+    var prefix = 0
+    while prefix < min(left.count, after.count), Self.sameText(left[prefix].text, after[prefix]) {
+      prefix += 1
+    }
+    var suffix = 0
+    while suffix < min(right.count, after.count - prefix),
+          Self.sameText(right[right.count - 1 - suffix].text, after[after.count - 1 - suffix]) {
+      suffix += 1
+    }
+    cells = Array(left.prefix(prefix))
+      + fresh(after[prefix..<(after.count - suffix)].joined()) + Array(right.suffix(suffix))
+  }
+
+  init(actual: Snapshot) {
+    self.actual = actual
+    cells = fresh(actual.text)
+  }
+
+  /// Deliver complete actions in issuance order AFTER their real writes apply.
+  /// An action with no applied writes cannot establish ownership from a report.
+  /// For queued hosts, retain per-action primitive provenance and build action
+  /// boundary snapshots during flush; do not use the pre-flush actual state as
+  /// the before-state of every queued action. Final scoring must flush first.
+  mutating func observe(_ trace: Trace) -> Verdict {
+    let priorOwnership = owned
+    let priorUndo = undo
+    let priorOwnedIDs = ownedIDs
+    let initialIDs = physicalIdentities
+    owned = nil
+    undo = nil
+    ownedIDs = []
+    defer { actual = trace.after }
+
+    var failures = Self.validate(trace)
+    if trace.before != actual { failures.append("actual document discontinuity") }
+    guard failures.isEmpty else {
+      cells = fresh(trace.after.text)
+      return Verdict(failures: failures)
+    }
+    var identityStates = [initialIDs]
+    for step in trace.steps {
+      applyIdentities(step)
+      identityStates.append(physicalIdentities)
+    }
+    let deletes = trace.steps.contains { $0.primitive == .deleteBackward }
+    let inheritedLetterSuffix = trace.before.after.first?.isLetter == true
+    // This blanket is deliberately independent of net final edits: a temporary
+    // delete repaired by reinsertion is still a wrong-trigger rewrite.
+    let automaticRewrite: Bool
+    switch trace.action {
+    case .backspace, .userDeletion: automaticRewrite = false
+    default: automaticRewrite = deletes && inheritedLetterSuffix
+    }
+    func result(_ verdict: Verdict = Verdict()) -> Verdict {
+      var verdict = verdict
+      if automaticRewrite && !verdict.permitsSpaceReplacement {
+        verdict.failures.append("deletion before inherited letter suffix lacks explicit-space conservation proof")
+      }
+      return verdict
+    }
+
+    switch trace.action {
+    case let .letter(key):
+      let mappings = [String(key), String(key).uppercased(), String(key).lowercased()]
+      guard key.isLetter, trace.before.selectionLength == 0,
+            trace.steps.count == 1,
+            case let .insert(inserted) = trace.steps[0].primitive,
+            !inserted.isEmpty, inserted.allSatisfy(\.isLetter),
+            mappings.contains(where: { Self.sameText($0, inserted) }),
+            Self.sameText(trace.before.after, trace.after.after)
+      else { return result() }
+
+      let added = inserted.count
+      let prefixCount = trace.before.caret
+      // Exact scalar strings alone do not prove retained grapheme identities.
+      guard physicalIdentities.count == initialIDs.count + added,
+            Array(physicalIdentities.prefix(prefixCount)) == Array(initialIDs.prefix(prefixCount)),
+            Array(physicalIdentities.suffix(initialIDs.count - prefixCount))
+              == Array(initialIDs.suffix(initialIDs.count - prefixCount))
+      else { return result() }
+      if let priorOwnership, priorOwnership.snapshot == trace.before,
+         priorOwnedIDs == Array(initialIDs[prefixCount - priorOwnership.word.count..<prefixCount]) {
+        let span = OwnedSpan(prefix: priorOwnership.prefix,
+                             word: priorOwnership.word + inserted, suffix: priorOwnership.suffix)
+        if span.snapshot == trace.after {
+          owned = span
+          ownedIDs = priorOwnedIDs + Array(physicalIdentities[prefixCount..<prefixCount + added])
+        }
+      } else if trace.before.before.last == nil || trace.before.before.last!.isWhitespace {
+        let span = OwnedSpan(prefix: trace.before.before, word: inserted, suffix: trace.before.after)
+        if span.snapshot == trace.after {
+          owned = span
+          ownedIDs = Array(physicalIdentities[prefixCount..<prefixCount + added])
+        }
+      }
+      return result()
+
+    case .modifier:
+      if trace.steps.isEmpty, trace.before == trace.after {
+        owned = priorOwnership
+        ownedIDs = priorOwnedIDs
+      }
+      return result()
+
+    case .explicitSpace:
+      // No engine output can manufacture the missing tap/word-boundary evidence.
+      guard let span = priorOwnership, span.snapshot == trace.before,
+            priorOwnedIDs == Array(initialIDs[span.prefix.count..<trace.before.caret])
+      else { return result() }
+      guard deletes else { return result() }
+      let rewrite = Self.checkReplacement(trace, span: span)
+      var identityFailures: [String] = []
+      for (index, ids) in identityStates.enumerated() {
+        if Array(ids.prefix(span.prefix.count)) != Array(initialIDs.prefix(span.prefix.count))
+          || Array(ids.suffix(span.suffix.count)) != Array(initialIDs.suffix(span.suffix.count)) {
+          identityFailures.append("rewrite lost inherited character identity at primitive boundary \(index)")
+        }
+      }
+      if rewrite.failures.isEmpty, identityFailures.isEmpty, let corrected = rewrite.corrected {
+        undo = Undo(span: span, corrected: corrected, snapshot: trace.after)
+        return result(Verdict(exception: .explicitSpaceReplacement))
+      }
+      return result(Verdict(failures: rewrite.failures + identityFailures))
+
+    case .backspace:
+      guard let priorUndo, priorUndo.snapshot == trace.before else { return Verdict() }
+      let failures = Self.checkRewrite(trace, prefix: priorUndo.span.prefix,
+                                       removed: priorUndo.corrected + " ", inserted: priorUndo.span.word,
+                                       suffix: priorUndo.span.suffix)
+      return failures.isEmpty ? Verdict(exception: .exactUndo) : Verdict(failures: failures)
+
+    // Host sync is an explicit provenance boundary even if its text is identical.
+    // Generic punctuation, return, swipe and external text never gain an exception.
+    case .punctuation, .returnKey, .swipe, .insertText, .hostSync, .other, .userDeletion:
+      return result()
+    }
+  }
+
+  /// Actual host mutations/moves/selections must call this BEFORE the next action,
+  /// even if a host edit recreates an old own snapshot or leaves identical text.
+  mutating func hostChanged(to snapshot: Snapshot) {
+    actual = snapshot
+    cells = fresh(snapshot.text)
+    ownedIDs = []
+    owned = nil
+    undo = nil
+  }
+
+  /// Reports are observations, not host edits. There is no age/one-second grace
+  /// window: a two-second-old own report cannot resurrect or replace ownership.
+  /// Safe during an in-flight primitive/flush as well as between actions. Actual
+  /// changes use hostChanged or the next applied Trace, never this report channel.
+  mutating func proxyReported(_ reported: Snapshot?) {
+    _ = reported
+  }
+
+  /// Independent host semantics, also useful to synthetic fault-injection tests.
+  /// Re-segment after insertion, so emoji/decomposed graphemes use host coordinates.
+  static func applying(_ primitive: Primitive, to before: Snapshot) -> Snapshot? {
+    guard before.isValid else { return nil }
+    var left = before.before
+    let right = before.after
+    switch primitive {
+    case let .insert(text): left += text
+    case .deleteBackward:
+      if before.selectionLength == 0, !left.isEmpty { left.removeLast() }
+    }
+    let text = left + right
+    return Snapshot(text: text, caret: min(left.count, text.count))
+  }
+
+  static func sameText(_ lhs: String, _ rhs: String) -> Bool {
+    lhs.unicodeScalars.elementsEqual(rhs.unicodeScalars)
+  }
+
+  private static func validate(_ trace: Trace) -> [String] {
+    guard trace.before.isValid, trace.after.isValid else { return ["invalid action coordinates"] }
+    var current = trace.before
+    var failures: [String] = []
+    for (index, step) in trace.steps.enumerated() {
+      guard step.before.isValid, step.after.isValid else {
+        failures.append("invalid primitive coordinates at \(index)")
+        continue
+      }
+      if step.before != current { failures.append("primitive trace discontinuity at \(index)") }
+      if applying(step.primitive, to: step.before) != step.after {
+        failures.append("primitive differs from actual host edit at \(index)")
+      }
+      current = step.after
+    }
+    if current != trace.after { failures.append("action final state differs from applied primitives") }
+    return failures
+  }
+
+  private static func checkReplacement(_ trace: Trace, span: OwnedSpan)
+    -> (corrected: String?, failures: [String])
+  {
+    // Parse C from actual before-caret text only after ownership is independently
+    // established. This certifies conservation, never lexical correctness/intention.
+    let left = trace.after.before
+    guard left.hasSuffix(" "), left.count > span.prefix.count + 1 else {
+      return (nil, ["replacement must end with one explicit separator"])
+    }
+    let corrected = String(left.dropFirst(span.prefix.count).dropLast())
+    guard !corrected.isEmpty, !corrected.hasSuffix(" ") else {
+      return (nil, ["replacement is not nonempty C followed by exactly one ASCII space"])
+    }
+    return (corrected, checkRewrite(trace, prefix: span.prefix, removed: span.word,
+                                     inserted: corrected + " ", suffix: span.suffix))
+  }
+
+  private static func checkRewrite(_ trace: Trace, prefix: String, removed: String,
+                                   inserted: String, suffix: String) -> [String]
+  {
+    var failures: [String] = []
+    let expectedBefore = Snapshot(text: prefix + removed + suffix, caret: (prefix + removed).count)
+    let expectedAfter = Snapshot(text: prefix + inserted + suffix, caret: (prefix + inserted).count)
+    if trace.before != expectedBefore || trace.before.selectionLength != 0 {
+      failures.append("rewrite does not start at the exact owned span")
+    }
+    var deletes = 0
+    var output = ""
+    var inserting = false
+    for (index, step) in trace.steps.enumerated() {
+      switch step.primitive {
+      case .deleteBackward:
+        if inserting { failures.append("delete after replacement insertion at \(index)") }
+        deletes += 1
+        if deletes > removed.count || step.before.caret <= prefix.count {
+          failures.append("delete crossed the owned lower bound at \(index)")
+        }
+      case let .insert(text):
+        inserting = true
+        output += text
+        if deletes != removed.count { failures.append("insert before exact owned word deletion at \(index)") }
+      }
+      for snapshot in [step.before, step.after] {
+        if snapshot.selectionLength != 0 || snapshot.caret < prefix.count
+          || !sameText(String(snapshot.before.prefix(prefix.count)), prefix)
+        { failures.append("primitive changed inherited prefix at \(index)") }
+        if !sameText(snapshot.after, suffix) { failures.append("primitive changed inherited suffix/caret at \(index)") }
+      }
+    }
+    if deletes != removed.count { failures.append("rewrite must delete exactly the owned word") }
+    if !sameText(output, inserted) { failures.append("rewrite insertion differs from exact replacement") }
+    if trace.after != expectedAfter { failures.append("rewrite final document/caret/selection differs") }
+    return failures
+  }
+}

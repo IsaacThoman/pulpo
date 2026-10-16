@@ -1,0 +1,105 @@
+{
+  "decision": "REJECT_BEFORE_PRODUCTION",
+  "reason": "Independent oracle domain/generalization and required baseline gate unaccepted; no allowances or retuning.",
+  "productionCandidate": null,
+  "candidateFreeze": false,
+  "heldoutRevealed": false,
+  "heldoutExecuted": false,
+  "baselineSourceCommit": "23454942",
+  "developmentFreezeCommit": "ca39a9f1",
+  "contractSha256": "79ccef3f6d12c39cdd6b8289b3319aa1aa4b4346c17d1ba2d0d09ccab2422644",
+  "scopeFailure": {
+    "seed": 11,
+    "operation": 137,
+    "key": "r25Conservation@pending",
+    "action": "explicit Space",
+    "classification": "oracle domain mismatch: ordinary double-space-period deletes only a fresh separator; inherited text survives",
+    "before": {
+      "text": "Tegucig d",
+      "caret": 8,
+      "selectionLength": 0
+    },
+    "primitives": [
+      {
+        "kind": "deleteBackward",
+        "after": {
+          "text": "Tegucigd",
+          "caret": 7,
+          "selectionLength": 0
+        }
+      },
+      {
+        "kind": "insert",
+        "text": ". ",
+        "after": {
+          "text": "Tegucig. d",
+          "caret": 9,
+          "selectionLength": 0
+        }
+      }
+    ]
+  },
+  "schemaFinding": {
+    "original": "Missing required expectedCaret decoded/scored as a wildcard.",
+    "resolution": "Strict fresh-case decoder now requires expectedCaret; explicit legacy development path accepts only SHA256-identical frozen historical bytes and retains the 71 document-only expectations. No case or expected output changed.",
+    "doesNotResolveScopeGate": true
+  },
+  "fresh": {
+    "r25Cases": 36,
+    "scored": 30,
+    "diagnostic": 6,
+    "plannedTimingRows": 144,
+    "executedRows": 0,
+    "scoredTimingOpportunities": 120,
+    "gains": null,
+    "losses": null,
+    "unavailable": "Entire fresh evaluation blocked before candidate; sealed payload remains unread/unexecuted by implementer.",
+    "seal": "6a497c16237d5de26e09759b08707dfa3fe54a80b3239e8c266e9e01633016a9",
+    "path": "/private/tmp/pulpo-r25-sealed/heldout.json"
+  },
+  "r16": {
+    "cases": 36,
+    "seal": "8f2b71322b863befb8673d486a1fe31de33ec8d0adef2bd02bfe868fdde3942b",
+    "independentValidatorSealVerified": true,
+    "reused": false,
+    "reason": "Incompatible with new full-caret contract; payload remains undisclosed and keyboard unexecuted."
+  },
+  "development": {
+    "cases": 92,
+    "scored": 87,
+    "diagnostic": 5,
+    "timings": 4,
+    "baselineRows": 368,
+    "baselineScored": 188,
+    "baselineScoredDenominator": 348,
+    "baselineUnavailable": 24,
+    "baselineDiagnosticPassed": 20,
+    "baselineDiagnosticDenominator": 20,
+    "candidateRows": 0,
+    "candidateGains": null,
+    "candidateLosses": null
+  },
+  "limits": [
+    "No production candidate, source review of a candidate, current-context candidate proof, candidate timing outcomes or heldout lexical accuracy exists.",
+    "R16 P1 protection passed on BASELINE in actual EN/ES/bilingual stacks and all four timings; this is not evidence for a new fix.",
+    "No native build/runtime/device/push/deploy; UIKit/native UX/performance unavailable."
+  ],
+  "restoredValidation": {
+    "configuration": "release",
+    "command": "swift test --package-path apps/keyboard-ios/PulpoKeyboardKit -c release --scratch-path /private/tmp/pulpo-r25-sweep-build",
+    "exitCode": 0,
+    "coreTests": 491,
+    "coreSuites": 68,
+    "coreSeconds": 5.196,
+    "knownIssues": 5,
+    "serviceTests": 3,
+    "serviceSuites": 1,
+    "serviceSeconds": 0.001,
+    "totalTests": 494,
+    "shortFuzzPassed": true,
+    "productionUnchanged": true,
+    "fuzzerFullyRestored": true,
+    "candidateAcceptance": false,
+    "note": "Restoration/protection validation only. Rejected integration gate remains rejected; its inactive original tests/patch preserve all failures."
+  }
+}

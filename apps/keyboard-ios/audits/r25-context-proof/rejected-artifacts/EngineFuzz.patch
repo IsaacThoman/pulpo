@@ -1,0 +1,165 @@
+diff --git a/apps/keyboard-ios/PulpoKeyboardKit/Tests/KeyboardCoreTests/EngineFuzz.swift b/apps/keyboard-ios/PulpoKeyboardKit/Tests/KeyboardCoreTests/EngineFuzz.swift
+index 6a7e2484..ee2a5d04 100644
+--- a/apps/keyboard-ios/PulpoKeyboardKit/Tests/KeyboardCoreTests/EngineFuzz.swift
++++ b/apps/keyboard-ios/PulpoKeyboardKit/Tests/KeyboardCoreTests/EngineFuzz.swift
+@@ -236,6 +236,11 @@ final class FuzzHost: TextDocument {
+   var emptyAsNil = false
+   var reentrant: (() -> Void)?
+   var log: [Primitive] = []
++  /// Physical snapshots captured around the actual host mutation, after callbacks.
++  var appliedSteps: [R25ConservationOracle.Step] = []
++  var actualSnapshot: R25ConservationOracle.Snapshot {
++    .init(text: text, caret: cursor, selectionLength: selection)
++  }
+
+   init() { commit() }
+
+@@ -285,13 +290,16 @@ final class FuzzHost: TextDocument {
+
+   func insertText(_ inserted: String) {
+     reentrant?()
++    let before = actualSnapshot
+     log.append(.insert(inserted))
+     replace(with: inserted)
++    appliedSteps.append(.init(primitive: .insert(inserted), before: before, after: actualSnapshot))
+     commit()
+   }
+
+   func deleteBackward() {
+     reentrant?()
++    let before = actualSnapshot
+     log.append(.delete)
+     if selection > 0 {
+       chars.removeSubrange(cursor..<(cursor + selection))
+@@ -300,6 +308,7 @@ final class FuzzHost: TextDocument {
+       chars.remove(at: cursor - 1)
+       cursor -= 1
+     }
++    appliedSteps.append(.init(primitive: .deleteBackward, before: before, after: actualSnapshot))
+     commit()
+   }
+
+@@ -401,6 +410,10 @@ final class FuzzRun {
+   var ops: [FuzzOp] = []
+   var skipped = 0
+   var fingerprint: UInt64 = 0xcbf2_9ce4_8422_2325
++  var conservationOracle = R25ConservationOracle(actual: .init(text: "", caret: 0))
++  private(set) var conservationVerdict = R25ConservationOracle.Verdict()
++  private(set) var conservationTrace: R25ConservationOracle.Trace?
++  private(set) var conservationOp: FuzzOp?
+   var opIndex = 0
+   var slowOpThreshold = 1.0
+
+@@ -420,6 +433,7 @@ final class FuzzRun {
+     engine.traits = config.field.traits
+     engine.page = engine.traits.keyboard == .numbersAndPunctuation ? .numbers : .letters
+     engine.documentDidChange()
++    conservationOracle.hostChanged(to: host.actualSnapshot)
+     captures.append(Capture(version: version, state: trueState(), slots: engine.suggestions.slots))
+   }
+
+@@ -447,6 +461,23 @@ final class FuzzRun {
+      "\(settings.autocorrect)\(settings.predictions)\(settings.smartPunctuation)\(settings.autoCapitalization)"]
+   }
+
++  /// Fixed from the input event before dispatch. No production Shift, composition,
++  /// correction result, output, proxy freshness or pending status authorizes a tap.
++  func conservationAction(_ op: FuzzOp) -> R25ConservationOracle.Action {
++    switch op {
++    case let .letter(key, _, _): return .letter(key)
++    case .space: return .explicitSpace
++    case .backspace: return .backspace
++    case .deleteWord: return .userDeletion
++    case .key: return .punctuation
++    case .returnKey: return .returnKey
++    case .swipe, .garbageSwipe: return .swipe
++    case .emoji, .textKey, .transcript: return .insertText
++    case .shiftTap, .shiftDoubleTap, .shiftDown, .shiftUp: return .modifier
++    default: return .other
++    }
++  }
++
+   /// What `KeyboardController.documentDidChange` does on a host callback.
+   func controllerCallback() {
+     let traits = trueField.traits
+@@ -459,6 +490,8 @@ final class FuzzRun {
+     if host.lag == 0, !host.hidden { pendingExternal = false }
+     if host.hidden { invalidateChain() }
+     engine.documentDidChange()
++    conservationOracle.proxyReported(host.hidden ? nil : .init(
++      text: String(host.reported.text), caret: host.reported.cursor, selectionLength: host.reported.selection))
+   }
+
+   func invalidateChain() {
+@@ -507,6 +540,8 @@ final class FuzzRun {
+     defer { opIndex += 1 }
+     let preBefore = host.trueBefore, preAfter = host.trueAfter, preSelection = host.trueSelection
+     let preText = host.text
++    let actualBefore = host.actualSnapshot
++    let oracleAction = conservationAction(op)
+     let preShift = engine.shift
+     let preTotal = personal.totalCount
+     let truthful = hostTruthful
+@@ -515,6 +550,7 @@ final class FuzzRun {
+     let preSuggestions = captures.last?.slots ?? []
+     let preLearns = policy.learns || pendingField
+     host.log.removeAll()
++    host.appliedSteps.removeAll()
+     var stale: (capture: Capture, suggestion: Suggestion)?
+     var tapped: Suggestion?
+     var glideCalled = false
+@@ -699,6 +735,26 @@ final class FuzzRun {
+       record("slowOp", "\(op) took \(elapsed)s", truthful: truthful, pending: pending)
+     }
+
++    // Host edits reset every identity even for identical replacement. Their callback
++    // writes still receive independent physical validation under hostSync provenance.
++    switch op {
++    case .paste, .moveCursor, .select, .replaceAll, .deleteRange, .typeAfter, .fieldSwitch:
++      let start = host.appliedSteps.first?.before ?? host.actualSnapshot
++      conservationOracle.hostChanged(to: start)
++      observeConservation(op: op, action: .hostSync, before: start, truthful: truthful, pending: pending)
++    case .ack, .deliver, .lag, .reentrant, .hide, .window:
++      if host.appliedSteps.isEmpty, actualBefore == host.actualSnapshot {
++        conservationOp = op
++        conservationVerdict = .init()
++        conservationTrace = nil
++      } else {
++        observeConservation(op: op, action: .other, before: actualBefore, truthful: truthful, pending: pending)
++      }
++    default:
++      observeConservation(op: op, action: skippedOp ? .other : oracleAction, before: actualBefore,
++                          truthful: truthful, pending: pending)
++    }
++
+     if op.isKeyboardEdit || glideCalled {
+       let net = net(preBefore: Array(preBefore), hadSelection: !preSelection.isEmpty)
+       if net.edited, host.text != preText { version += 1 }
+@@ -729,6 +785,18 @@ final class FuzzRun {
+     fingerprint = (fingerprint ^ UInt64(host.cursor)) &* 0x100_0000_01b3
+   }
+
++  func observeConservation(op: FuzzOp, action: R25ConservationOracle.Action, before: R25ConservationOracle.Snapshot,
++                           truthful: Bool, pending: Bool) {
++    let trace = R25ConservationOracle.Trace(action: action, before: before,
++                                           steps: host.appliedSteps, after: host.actualSnapshot)
++    conservationOp = op
++    conservationTrace = trace
++    conservationVerdict = conservationOracle.observe(trace)
++    for failure in conservationVerdict.failures {
++      record("r25Conservation", "\(op): \(failure)", truthful: truthful, pending: pending)
++    }
++  }
++
+   /// `hostDidDisappear` (KeysView cancels touches, releasing a held shift) then `hostWillAppear`.
+   func hideAndShow() {
+     if shiftHeld {
+@@ -903,7 +971,7 @@ final class FuzzRun {
+       {
+         fail("partialWordReplacement", "replacement started inside a word")
+       }
+-      if isTerminator, net.removedText.contains(where: \.isLetter), let next = preAfter.first, next.isLetter || next.isNumber {
++      if isTerminator, net.removedText.contains(where: \.isLetter), let next = preAfter.first, next.isLetter || next.isNumber, !(isSpace && conservationVerdict.permitsSpaceReplacement) {
+         fail("partialWordReplacement", "corrected in the middle of a word", tag: "midWord")
+       }
+       if !preSelection.isEmpty {

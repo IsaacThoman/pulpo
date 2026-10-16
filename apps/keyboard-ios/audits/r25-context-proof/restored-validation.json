@@ -1,0 +1,18 @@
+{
+  "configuration": "release",
+  "command": "swift test --package-path apps/keyboard-ios/PulpoKeyboardKit -c release --scratch-path /private/tmp/pulpo-r25-sweep-build",
+  "exitCode": 0,
+  "coreTests": 491,
+  "coreSuites": 68,
+  "coreSeconds": 5.196,
+  "knownIssues": 5,
+  "serviceTests": 3,
+  "serviceSuites": 1,
+  "serviceSeconds": 0.001,
+  "totalTests": 494,
+  "shortFuzzPassed": true,
+  "productionUnchanged": true,
+  "fuzzerFullyRestored": true,
+  "candidateAcceptance": false,
+  "note": "Restoration/protection validation only. Rejected integration gate remains rejected; its inactive original tests/patch preserve all failures."
+}

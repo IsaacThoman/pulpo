@@ -1,0 +1,13 @@
+{
+  "base": "23454942",
+  "r16Final": "81d0091c",
+  "r16Candidate": "1b6fc872",
+  "r16Restore": "9c78d3bc",
+  "developmentCases": 92,
+  "note": "R14/R16 evidence all development only; sealed R16 payload unread/unexecuted. No production implementation inspection in R25 before this development freeze.",
+  "sha256": {
+    "contract.txt": "79ccef3f6d12c39cdd6b8289b3319aa1aa4b4346c17d1ba2d0d09ccab2422644",
+    "development.json": "23a662b494695a3d3a0606ed19df6535f9318e742b78cfd1957539cba7493511",
+    "exclusions.json": "5e6c17fa6de46c59df9097dea6115238bbcf247763a37bb71e0a880a5d56a615"
+  }
+}
