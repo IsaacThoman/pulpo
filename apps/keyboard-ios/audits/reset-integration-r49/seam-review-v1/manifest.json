@@ -1,0 +1,19 @@
+{
+  "format": "pulpo-r49-independent-seam-review-v1",
+  "scope": "review/helper/probe evidence; executable hashes in receipt only",
+  "files": {
+    "assemble-normal.json": "d746a872f797262157f1c2b1a45fbc97f099e075c6b110eac496cadf20a34d5e",
+    "assemble-optimized.json": "d746a872f797262157f1c2b1a45fbc97f099e075c6b110eac496cadf20a34d5e",
+    "bindings-normal.json": "cc953e9ab62c315dea42c4fa6f95ee870c2a3d26a6a63520ea1c6d8c0ed445dd",
+    "bindings-optimized.json": "cc953e9ab62c315dea42c4fa6f95ee870c2a3d26a6a63520ea1c6d8c0ed445dd",
+    "check-bindings.py": "d6d863800194bbaa5c08156bc6e141db4e5d86f90a6d8eb9ec5f47fda6c2e004",
+    "commands.json": "f2e65f03b0737dd7a854fef259967ab55785b35b77b40ca485db49fa9b484ac7",
+    "countercheck-stdout.json": "6ccb1236b4181133bbd30b422c651a1d3536a1d82b2a133299fb7017d4f736be",
+    "independent-probe-stdout.json": "0439cd559238d4331c86947e161baee3aed8efe652cfa22b2f3b3dd7e9837e30",
+    "receipt.json": "376fbe2e422cd8c178c087b4406d16f43e8e523f0dbea3541c50d282bca21d17",
+    "review.md": "9918dd0be6c6b8c360e6e93e1ec0440ece079cc925e0a04566e5b9a5c79e60a0",
+    "sources/Counterchecks.swift": "88d50f30af1bf64587eecf7791ae1ab9e2a8ff42d5e126ef219e96126196aaba",
+    "sources/Inventory.swift": "0320de42701762981d383050c3d2e26d162b57ffc23bb80486b7e4c26a402b41",
+    "sources/Probes.swift": "f14e6dfdea119dacdbc2d1630a17f6d32b8c835beef5a497780703ff533f08af"
+  }
+}
