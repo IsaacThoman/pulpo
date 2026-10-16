@@ -666,6 +666,7 @@ public final class KeyboardController: NSObject {
   }
 
   private func resetDeleteGesture() {
+    rootView.keys.cancelDeleteTouches()
     deferredDelete = false
     deleteStartContext = nil
     deleteGestureOrigin = nil

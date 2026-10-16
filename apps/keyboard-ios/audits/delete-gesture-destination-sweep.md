@@ -88,3 +88,43 @@ indistinguishable from known delayed own states cannot establish a different
 destination. Long-context window classification remains the engine's existing
 policy. This focused sweep does not claim exhaustive frozen-case acceptance or
 zero errors, and makes no dictionary, ranking, settings, dictation or spacing edits.
+
+## Independent follow-up: overlapping delete contacts
+
+Independent review found an introduced gap in the first controller guard:
+`KeysView` permitted two simultaneous delete contacts, while the controller owned
+one origin. Down A, down B, up A cleared B's origin, so B's repeat/swipe stopped.
+There was also stale-contact risk: cancelling the controller's origin on a field
+switch did not stop the old contact's repeat timer. A new delete in B could create
+an origin that an old timer callback then reused. The single-contact native tests
+did not exercise this contact ownership boundary.
+
+The follow-up gives each new delete press sole ownership of delete tracking.
+Before the new tracking is inserted, `KeysView` finishes the previous valid press
+through the existing DeleteEnded delegate, then retires its contact and timer.
+This ordering preserves a deferred correction Undo before the second intentional
+Backspace deletes the next character: corrected `And the ` becomes `And te` after
+the two presses. If the old destination expired, controller validation rejects
+that deferred action while the new tracking does not yet exist, so cancellation
+cannot consume the fresh press.
+
+Destination invalidation silently removes only delete contacts and timers; letter
+and modifier contacts remain intact. Retired contacts become inert, so late moves
+or lifts cannot end the new press. Repeat scheduling checks exact tracking identity
+both before and after delegation, including cancellation during a repeat callback.
+Accessibility delete follows the same previous-press ordering.
+
+`DeleteContactOwnershipControllerTests` was added before the production follow-up
+in `fcf4161a`. Its six methods drive actual `KeysView.touchesBegan`, `touchesMoved`
+and `touchesEnded` through the production controller and proxy; they do not merely
+invoke controller delegates. Coverage includes overlapping swipe and real repeat
+timer, rapid two-delete taps in either release order, deferred two-press ordering,
+an old contact's late events after field switch and a fresh press, and preservation
+of an unrelated letter contact. The stale-contact case covers observed and silent
+field switches, with both ordinary and deferred old presses. Undo is exercised
+through the actual bar button.
+
+The source and new test passed iPhone SDK syntax parsing. No simulator operation
+was performed by this sweep, and the new contact tests have not been executed here.
+Executable native red/green validation remains root-owned; a tests-first commit
+and source-traced failure are not reported as an executed native red run.

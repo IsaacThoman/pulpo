@@ -385,6 +385,9 @@ final class KeysView: UIView {
     // Committing a space can return from symbols to letters; hit-test that layout.
     guard let index = keyIndex(at: point) else { return }
     let key = keyViews[index].key
+    // A fresh delete press owns its hold/swipe. Its touch-down action still
+    // runs, while older delete contacts cannot end or reuse the new gesture.
+    if key.action == .delete { finishPreviousDeleteContact() }
     let tracking = Tracking(touch: touch, keyIndex: index, key: key, start: point)
     trackings[ObjectIdentifier(touch)] = tracking
     switch key.action {
@@ -397,7 +400,9 @@ final class KeysView: UIView {
       tracking.mode = .delete
       keyViews[index].isPressed = true
       delegate?.keysView(self, touchDown: key)
-      tracking.timer = schedule(after: 0.45) { [weak self] in self?.repeatDelete(tracking) }
+      if trackings[ObjectIdentifier(touch)] === tracking {
+        tracking.timer = schedule(after: 0.45) { [weak self] in self?.repeatDelete(tracking) }
+      }
       return
     case .page:
       delegate?.keysView(self, touchDown: key)
@@ -614,11 +619,12 @@ final class KeysView: UIView {
   }
 
   private func repeatDelete(_ tracking: Tracking) {
-    guard trackings[ObjectIdentifier(tracking.touch)] != nil, tracking.mode == .delete else { return }
+    guard trackings[ObjectIdentifier(tracking.touch)] === tracking, tracking.mode == .delete else { return }
     tracking.repeats += 1
     // After a short run of characters, delete whole words, like the system keyboard.
     let wholeWord = tracking.repeats > 14
     delegate?.keysViewRepeatDelete(self, wholeWord: wholeWord)
+    guard trackings[ObjectIdentifier(tracking.touch)] === tracking else { return }
     tracking.timer = schedule(after: wholeWord ? 0.24 : 0.085) { [weak self] in self?.repeatDelete(tracking) }
   }
 
@@ -733,6 +739,29 @@ final class KeysView: UIView {
     return created
   }
 
+  private func finishPreviousDeleteContact() {
+    guard trackings.values.contains(where: { $0.initialKey.action == .delete }) else { return }
+    // Keep the earlier press's deferred action before the new touch-down. A
+    // destination-invalidated action is rejected by the controller here.
+    if trackings.values.contains(where: { $0.mode == .deleteSwipe && $0.deleteWords > 0 }) {
+      delegate?.keysView(self, previewWordDeletion: 0)
+    }
+    delegate?.keysViewDeleteEnded(self)
+    cancelDeleteTouches()
+  }
+
+  /// Retires only delete contacts, without sending a terminal delegate action.
+  /// Used when their destination expires, or a newer delete press takes over.
+  func cancelDeleteTouches() {
+    let cancelled = trackings.filter { $0.value.initialKey.action == .delete }
+    for (identifier, tracking) in cancelled {
+      tracking.timer?.invalidate()
+      tracking.committed = true
+      trackings.removeValue(forKey: identifier)
+      if keyViews.indices.contains(tracking.keyIndex) { keyViews[tracking.keyIndex].isPressed = false }
+    }
+  }
+
   func cancelAllTouches() {
     let cancelled = Array(trackings.values)
     for tracking in cancelled { tracking.timer?.invalidate() }
@@ -765,6 +794,7 @@ final class KeysView: UIView {
 
   func activateForAccessibility(_ view: KeyView) {
     guard view.isEnabled, view.key.action != .text("") else { return }
+    if view.key.action == .delete { finishPreviousDeleteContact() }
     delegate?.keysView(self, touchDown: view.key)
     if view.key.action == .shift { delegate?.keysViewShiftUp(self); return }
     if case .page = view.key.action { return }

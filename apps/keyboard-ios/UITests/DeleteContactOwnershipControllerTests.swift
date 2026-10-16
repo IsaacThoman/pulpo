@@ -104,31 +104,33 @@ final class DeleteContactOwnershipControllerTests: XCTestCase {
 
   func testInvalidatedOldContactCannotEndOrSwipeTheNewFieldsGesture() throws {
     for deferred in [false, true] {
-      let h = ControllerHarness(text: deferred ? "" : "old field!", waitsForEmoji: false)
-      let keys = h.controller.rootView.keys
-      defer { keys.cancelAllTouches() }
-      if deferred { h.type("and teh "); XCTAssertTrue(h.engine.deleteUndoesLastEdit) }
-      let older = try contact(h)
-      keys.touchesBegan([older], with: nil)
-      h.settle()
-      h.proxy.identifier = UUID()
-      h.proxy.hostChanges { $0 = SimulatedProxy.State("one two three!") }
-      h.deliver(callbacks: [.textWill, .textDid])
-      let newer = try contact(h)
-      keys.touchesBegan([newer], with: nil)
-      h.settle()
-      let sent = h.proxy.sentEdits
-      older.point.x -= keys.pitch.width * 2
-      keys.touchesMoved([older], with: nil)
-      keys.touchesEnded([older], with: nil)
-      XCTAssertEqual(h.proxy.sentEdits, sent)
-      newer.point.x -= keys.pitch.width
-      keys.touchesMoved([newer], with: nil)
-      keys.touchesEnded([newer], with: nil)
-      h.settle()
-      XCTAssertEqual(h.proxy.host.string, "one two ")
-      try undo(h)
-      XCTAssertEqual(h.proxy.host.string, "one two three!")
+      for callbacks in [false, true] {
+        let h = ControllerHarness(text: deferred ? "" : "old field!", waitsForEmoji: false)
+        let keys = h.controller.rootView.keys
+        defer { keys.cancelAllTouches() }
+        if deferred { h.type("and teh "); XCTAssertTrue(h.engine.deleteUndoesLastEdit) }
+        let older = try contact(h)
+        keys.touchesBegan([older], with: nil)
+        h.settle()
+        h.proxy.identifier = UUID()
+        h.proxy.hostChanges { $0 = SimulatedProxy.State("one two three!") }
+        h.deliver(callbacks: callbacks ? [.textWill, .textDid] : [])
+        let newer = try contact(h)
+        keys.touchesBegan([newer], with: nil)
+        h.settle()
+        let sent = h.proxy.sentEdits
+        older.point.x -= keys.pitch.width * 2
+        keys.touchesMoved([older], with: nil)
+        keys.touchesEnded([older], with: nil)
+        XCTAssertEqual(h.proxy.sentEdits, sent)
+        newer.point.x -= keys.pitch.width
+        keys.touchesMoved([newer], with: nil)
+        keys.touchesEnded([newer], with: nil)
+        h.settle()
+        XCTAssertEqual(h.proxy.host.string, "one two ")
+        try undo(h)
+        XCTAssertEqual(h.proxy.host.string, "one two three!")
+      }
     }
   }
 
