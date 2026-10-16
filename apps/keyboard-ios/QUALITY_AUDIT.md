@@ -521,6 +521,40 @@ successes. Core/scripts/assets are unchanged. See
 `audits/compact-layout-ux/audit.md` for source review, red/green evidence,
 test-host corrections and simulator/accessibility limits.
 
+### Further rejected accuracy candidates
+
+R14 explores correction of a newly typed word before existing text. Its candidate
+improves 20→31/33 development and 9→15/33 independent held-out scored tasks;
+four host-report timings repeat those examples rather than adding independent
+language samples. Six held-out tasks per timing remain unavailable because of
+an offset-contract error. Independent review finds that the purported explicit
+Space exception also triggers during a swipe, and the existing core fuzz gate
+fails. The latter is an oracle conflict, not demonstrated suffix corruption.
+Production is restored byte-for-byte; the candidate is rejected. Archived
+fixtures and paired evidence live under `audits/r14-boundary-correction/`.
+
+R15's narrower anchored-path policy improves its frozen held-out exact documents
+79→99/132, with no passing-case losses there: ten templates gain in English and
+bilingual, with no Spanish-only gain. Additional parent review then finds four
+ordinary-intent losses across those two modes: `say //teh` and
+`/tmp/file;teh` stay literal instead of correcting `teh`. Those strings can also
+denote paths, but the strict ordinary-regression gate is not relaxed after the
+reveal. The parent rejects publication and keeps production unchanged. Frozen
+metrics, the earlier reviewer recommendation to retain, and all twelve subsequent
+diagnostic observations remain visible together under
+`audits/technical-preservation-r15/` and
+`audits/technical-preservation-r15-parent/`.
+
+A separate parent native baseline command finalizes 3/5 methods passing with 54
+assertion failures in the two path methods, reproducing corruption across the
+three actual language modes with settled and queued/optimistic hosts. All 24
+ordinary correction/Undo and accepted host-change control scenarios pass. The
+rejected candidate is never run natively. Its proposed controller fixture is
+archived outside test discovery, as are the other candidate-specific fixtures;
+these red reproductions are not a claim that the published regression suite
+passes them. New isolated rounds use all exposed examples only as development
+controls and obtain fresh independent inputs.
+
 ### Rejected technical-token expansion
 
 The first technical-text candidate makes every whitespace token containing a
