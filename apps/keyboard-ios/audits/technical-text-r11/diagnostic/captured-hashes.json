@@ -1,0 +1,12 @@
+{
+  "/tmp/pulpo-r11-review-diagnostic/cases.json": "637cac3e4d052b348b366e917edbcb8be4e1247b67af7c4bb8b96267bc0c546f",
+  "/tmp/pulpo-r11-review-diagnostic/protocol.txt": "31c9d86edd84bfe2aae0dc2e4eb8233e5e7852bb85492b9da9868379d800c625",
+  "/tmp/pulpo-r11-review-diagnostic/Client.swift": "35bc3550b32f1b505bd4e31a57aa87132e71150d6f9e4758fc1a93cdf052790b",
+  "/tmp/pulpo-r11-review-diagnostic/baseline-client": "0705919501d500e19e64cdd9492cb7ceba33c799901bb261626f38098a8d2b02",
+  "/tmp/pulpo-r11-review-diagnostic/candidate-client": "d0e14800aca78c7668f60e16847b54b35b4457cc07ee82ddfad6e757a96c9342",
+  "/tmp/pulpo-r11-review-diagnostic/baseline.json": "092598637c6911cee0a355a12cb6db9b0337621a7e7cc77c326dbdea05e3341b",
+  "/tmp/pulpo-r11-review-diagnostic/candidate.json": "389c9ae44d3780c2cef651673daacbaec06935d07306688919ebcbfbb271081f",
+  "/tmp/pulpo-r11-review-diagnostic/summary.json": "03f8365d33cbce2b92d83f64155d87e7a4456f7aac0fdb0d3e1038ac1979c88a",
+  "/tmp/pulpo-r11-baseline/apps/keyboard-ios/PulpoKeyboardKit/.build/out/Products/Release/libKeyboardCore.a": "5c9f187f73e45a7fe7ad199f2ed4207feea8256bb4179e3632818210813372fe",
+  "/Users/isaacthoman/.t3/worktrees/pulpo/t3-131c283c/apps/keyboard-ios/PulpoKeyboardKit/.build/out/Products/Release/libKeyboardCore.a": "a98eb3ee6287695509e3f341b38d89294f2d724a512c74cbbb7e75562e294300"
+}

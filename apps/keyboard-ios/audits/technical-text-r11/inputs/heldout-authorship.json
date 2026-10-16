@@ -1,0 +1,52 @@
+{
+  "status": "FROZEN",
+  "frozenAtUtc": "2026-10-16T05:30:02.888792+00:00",
+  "authorWorktree": "/tmp/pulpo-r11-heldout-author/worktree",
+  "counts": {
+    "cases": 40,
+    "language": {
+      "en": 20,
+      "es": 20
+    },
+    "bilingual": 40,
+    "category": {
+      "commands": 4,
+      "identifiers": 4,
+      "intent": 6,
+      "network": 6,
+      "ordinary": 8,
+      "paths": 8,
+      "policy": 4
+    },
+    "field": {
+      "email": 1,
+      "plain": 36,
+      "secure": 2,
+      "url": 1
+    },
+    "intention": {
+      "literal": 29,
+      "ordinary": 11
+    },
+    "metadataOnlyIntentionMappings": 11,
+    "targetOrOracleChanges": 0,
+    "removedCases": 0,
+    "staticInvalidCases": 0,
+    "benchmarkRuns": 0,
+    "engineRuns": 0
+  },
+  "runtimeRepresentability": "unassessed; no execution authorized",
+  "unavailableControls": "unassessed; retain every case in denominator",
+  "staticIssues": [],
+  "authorship": "Prior independently authored draft retained; this freeze changes only intention enum metadata from correction to ordinary. No targets or oracles were added, revised, or removed.",
+  "readScope": "Only authorized draft, source protocol, exclusions, and own authorship artifacts; no implementation/audits/dev.json/results/candidate/existing corpora reads.",
+  "inputs": {
+    "/tmp/pulpo-r11-heldout-author/heldout.draft.json": "267569fc428a987c1c669cbefd9eab3bee4fde3667d871c4aee2021fc14efab8",
+    "/tmp/pulpo-r11-technical-dev/protocol.txt": "b6513140eaef137efacae60ede9d4c0112eefe11e6ba670e2e8bb07f029bb902",
+    "/tmp/pulpo-r11-technical-dev/exclusions.json": "64560d937c89aafd5ece21f54bdf3f75a93c950d9ed9c334ec08b6717953495c"
+  },
+  "artifacts": {
+    "/tmp/pulpo-r11-heldout-author/heldout.json": "e09f79099e2079245b37a24fccf730025eb978fd333b1ea8b26da19edaa79e89",
+    "/tmp/pulpo-r11-heldout-author/protocol.freeze.txt": "d68ed6b7da5681a2b0403f23a1b44acf0d2f63a42e927403dafef0fdee60bc20"
+  }
+}

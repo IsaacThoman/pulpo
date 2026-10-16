@@ -1,0 +1,107 @@
+import Foundation
+import Testing
+@testable import KeyboardCore
+
+struct TechnicalTokenPolicyTests {
+  // Published R10 failure: regression coverage, not fresh heldout evidence.
+  @Test(arguments: KeyboardLanguage.allCases)
+  func publishedPathKeepsItsExtension(language: KeyboardLanguage) throws {
+    let (engine, document) = try engine("The export is ready. Save it to ", language: language)
+    engine.type("/tmp/notes.txt ")
+    #expect(document.text == "The export is ready. Save it to /tmp/notes.txt ")
+  }
+
+  @Test(arguments: KeyboardLanguage.allCases)
+  func whitespaceReturnsToOrdinaryCorrection(language: KeyboardLanguage) throws {
+    let (engine, document) = try engine("Use ", language: language)
+    engine.type("/var/log/audit.txt ")
+    if language == .spanish {
+      engine.type("es inportante. ")
+      #expect(document.text == "Use /var/log/audit.txt es importante. ")
+    } else {
+      engine.type("and teh report is wierd. ")
+      #expect(document.text == "Use /var/log/audit.txt and the report is weird. ")
+    }
+  }
+
+  @Test(arguments: KeyboardLanguage.allCases)
+  func suffixFromAnExternalCursorMoveStaysLiteral(language: KeyboardLanguage) throws {
+    let (engine, document) = try engine("Attach report. when ready", language: language)
+    document.moveCursor(to: "Attach report.".count)
+    // No host callback: the space commit must reconcile the moved cursor.
+    engine.type("txt ")
+    #expect(document.text == "Attach report.txt  when ready")
+    #expect(document.documentContextAfterInput == " when ready")
+  }
+
+  @Test(arguments: KeyboardLanguage.allCases)
+  func aSelectedFilenameIsReplacedWithoutTouchingItsSuffix(language: KeyboardLanguage) throws {
+    let stack = try stack(language)
+    let document = SelectedFile()
+    let engine = KeyboardEngine(document: document, suggester: stack.suggester, glide: stack.glide)
+    engine.documentDidChange()
+    engine.type("draft.txt ")
+    #expect(document.text == "File: draft.txt is ready.")
+    #expect(document.documentContextAfterInput == "is ready.")
+  }
+
+  @Test(arguments: KeyboardLanguage.allCases)
+  func privateFieldStillBlocksCorrectionsAndLearning(language: KeyboardLanguage) throws {
+    for field in ["secure", "email", "url", "oneTimeCode"] {
+      let stack = try stack(language)
+      let document = MockDocument("value ")
+      let engine = KeyboardEngine(document: document, suggester: stack.suggester, glide: stack.glide)
+      var traits = InputTraits()
+      if field == "secure" { traits.isSecure = true }
+      if field == "email" { traits.keyboard = .email }
+      if field == "url" { traits.keyboard = .url }
+      if field == "oneTimeCode" { traits.contentType = field }
+      engine.traits = traits
+      engine.documentDidChange()
+      engine.type("teh manana /var/log/audit.txt ")
+      engine.save()
+      #expect(document.text == "value teh manana /var/log/audit.txt ")
+      #expect(stack.personal.totalCount == 0)
+      #expect(stack.touch.weight == 0)
+      #expect(engine.suggestions.slots.isEmpty)
+    }
+  }
+
+  private func stack(_ language: KeyboardLanguage) throws -> LanguageStack {
+    try LanguageStack(dictionaryURL: Fixtures.languageData.appendingPathComponent(language.rawValue + ".pkdict"), personalURL: nil)
+  }
+
+  private func engine(_ text: String, language: KeyboardLanguage) throws -> (KeyboardEngine, MockDocument) {
+    let stack = try stack(language)
+    let document = MockDocument(text)
+    var settings = KeyboardSettings()
+    settings.language = language
+    let engine = KeyboardEngine(document: document, suggester: stack.suggester, glide: stack.glide, settings: settings)
+    engine.documentDidChange()
+    return (engine, document)
+  }
+
+  private final class SelectedFile: TextDocument {
+    var text = "File: old.txtis ready."
+    var cursor = "File: ".count
+    var selection = "old.txt".count
+    var documentContextBeforeInput: String? { String(text.prefix(cursor)) }
+    var documentContextAfterInput: String? { String(text.dropFirst(cursor + selection)) }
+    var selectedText: String? { selection > 0 ? String(text.dropFirst(cursor).prefix(selection)) : nil }
+    var hasText: Bool { !text.isEmpty }
+    func insertText(_ inserted: String) {
+      text = String(text.prefix(cursor)) + inserted + String(text.dropFirst(cursor + selection))
+      cursor += inserted.count
+      selection = 0
+    }
+    func deleteBackward() {
+      if selection > 0 {
+        text = String(text.prefix(cursor)) + String(text.dropFirst(cursor + selection))
+        selection = 0
+      } else if cursor > 0 {
+        text = String(text.prefix(cursor - 1)) + String(text.dropFirst(cursor))
+        cursor -= 1
+      }
+    }
+  }
+}

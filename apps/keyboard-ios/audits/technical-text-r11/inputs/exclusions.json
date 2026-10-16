@@ -1,0 +1,417 @@
+{
+  "devTargets": [
+    {
+      "id": "p01",
+      "before": "Please archive this at ",
+      "typed": "/var/log/audit.txt ",
+      "expected": "Please archive this at /var/log/audit.txt "
+    },
+    {
+      "id": "p02",
+      "before": "Guarda el informe en ",
+      "typed": "/home/ana/resumen.txt ",
+      "expected": "Guarda el informe en /home/ana/resumen.txt "
+    },
+    {
+      "id": "p03",
+      "before": "Open the draft file ",
+      "typed": "./draft.md ",
+      "expected": "Open the draft file ./draft.md "
+    },
+    {
+      "id": "p04",
+      "before": "Abre el archivo ",
+      "typed": "../datos/mes.csv ",
+      "expected": "Abre el archivo ../datos/mes.csv "
+    },
+    {
+      "id": "p05",
+      "before": "The script lives at ",
+      "typed": "src/widgets/teh.js ",
+      "expected": "The script lives at src/widgets/teh.js "
+    },
+    {
+      "id": "p06",
+      "before": "La ruta exacta es ",
+      "typed": "~/proyectos/recivir.py ",
+      "expected": "La ruta exacta es ~/proyectos/recivir.py "
+    },
+    {
+      "id": "p07",
+      "before": "Attach ",
+      "typed": "meeting.txt ",
+      "expected": "Attach meeting.txt "
+    },
+    {
+      "id": "p08",
+      "before": "Adjunta ",
+      "typed": "resumen.txt ",
+      "expected": "Adjunta resumen.txt "
+    },
+    {
+      "id": "p09",
+      "before": "Use the extension ",
+      "typed": ".txt ",
+      "expected": "Use the extension .txt "
+    },
+    {
+      "id": "p10",
+      "before": "Usa la extensión ",
+      "typed": ".yaml ",
+      "expected": "Usa la extensión .yaml "
+    },
+    {
+      "id": "p11",
+      "before": "The filename is ",
+      "typed": "report.final.txt ",
+      "expected": "The filename is report.final.txt "
+    },
+    {
+      "id": "p12",
+      "before": "El fichero se llama ",
+      "typed": "café.txt ",
+      "expected": "El fichero se llama café.txt "
+    },
+    {
+      "id": "p13",
+      "before": "The folder is ",
+      "typed": "/srv/teh/ ",
+      "expected": "The folder is /srv/teh/ "
+    },
+    {
+      "id": "p14",
+      "before": "La carpeta es ",
+      "typed": "/opt/manana/ ",
+      "expected": "La carpeta es /opt/manana/ "
+    },
+    {
+      "id": "p15",
+      "before": "Windows location: ",
+      "typed": "C:\\Users\\maya\\teh.txt ",
+      "expected": "Windows location: C:\\Users\\maya\\teh.txt "
+    },
+    {
+      "id": "p16",
+      "before": "Usa la ruta ",
+      "typed": "C:\\datos\\recivir.csv ",
+      "expected": "Usa la ruta C:\\datos\\recivir.csv "
+    },
+    {
+      "id": "n01",
+      "before": "Visit ",
+      "typed": "teh.dev ",
+      "expected": "Visit teh.dev "
+    },
+    {
+      "id": "n02",
+      "before": "Visita ",
+      "typed": "recivir.es ",
+      "expected": "Visita recivir.es "
+    },
+    {
+      "id": "n03",
+      "before": "Open ",
+      "typed": "https://teh.example/api ",
+      "expected": "Open https://teh.example/api "
+    },
+    {
+      "id": "n04",
+      "before": "Abre ",
+      "typed": "https://manana.example/datos ",
+      "expected": "Abre https://manana.example/datos "
+    },
+    {
+      "id": "n05",
+      "before": "Email ",
+      "typed": "teh@sample.dev ",
+      "expected": "Email teh@sample.dev "
+    },
+    {
+      "id": "n06",
+      "before": "Escribe a ",
+      "typed": "recivir@ejemplo.es ",
+      "expected": "Escribe a recivir@ejemplo.es "
+    },
+    {
+      "id": "n07",
+      "before": "The host is ",
+      "typed": "cache.internal ",
+      "expected": "The host is cache.internal "
+    },
+    {
+      "id": "n08",
+      "before": "El dominio es ",
+      "typed": "café.example ",
+      "expected": "El dominio es café.example "
+    },
+    {
+      "id": "i01",
+      "before": "The key is ",
+      "typed": "teh_value ",
+      "expected": "The key is teh_value "
+    },
+    {
+      "id": "i02",
+      "before": "La clave es ",
+      "typed": "recivir_datos ",
+      "expected": "La clave es recivir_datos "
+    },
+    {
+      "id": "i03",
+      "before": "Call ",
+      "typed": "getTehValue ",
+      "expected": "Call getTehValue "
+    },
+    {
+      "id": "i04",
+      "before": "Usa ",
+      "typed": "leerManana ",
+      "expected": "Usa leerManana "
+    },
+    {
+      "id": "i05",
+      "before": "Set ",
+      "typed": "TEH_MODE ",
+      "expected": "Set TEH_MODE "
+    },
+    {
+      "id": "i06",
+      "before": "Establece ",
+      "typed": "MANANA_ID ",
+      "expected": "Establece MANANA_ID "
+    },
+    {
+      "id": "i07",
+      "before": "The version is ",
+      "typed": "teh42 ",
+      "expected": "The version is teh42 "
+    },
+    {
+      "id": "i08",
+      "before": "El identificador es ",
+      "typed": "recivir2 ",
+      "expected": "El identificador es recivir2 "
+    },
+    {
+      "id": "c01",
+      "before": "Run ",
+      "typed": "git status ",
+      "expected": "Run git status "
+    },
+    {
+      "id": "c02",
+      "before": "Ejecuta ",
+      "typed": "npm run build ",
+      "expected": "Ejecuta npm run build "
+    },
+    {
+      "id": "c03",
+      "before": "Type ",
+      "typed": "cat ./teh.txt ",
+      "expected": "Type cat ./teh.txt "
+    },
+    {
+      "id": "c04",
+      "before": "Escribe ",
+      "typed": "python ./recivir.py ",
+      "expected": "Escribe python ./recivir.py "
+    },
+    {
+      "id": "c05",
+      "before": "The command is ",
+      "typed": "--recieve ",
+      "expected": "The command is --recieve "
+    },
+    {
+      "id": "c06",
+      "before": "El argumento es ",
+      "typed": "--manana ",
+      "expected": "El argumento es --manana "
+    },
+    {
+      "id": "c07",
+      "before": "Use ",
+      "typed": "$TEH_DIR ",
+      "expected": "Use $TEH_DIR "
+    },
+    {
+      "id": "c08",
+      "before": "Usa ",
+      "typed": "`recivir` ",
+      "expected": "Usa `recivir` "
+    },
+    {
+      "id": "o01",
+      "before": "I saw ",
+      "typed": "teh ",
+      "expected": "I saw the "
+    },
+    {
+      "id": "o02",
+      "before": "Please say ",
+      "typed": "helo ",
+      "expected": "Please say hello "
+    },
+    {
+      "id": "o03",
+      "before": "I stayed ",
+      "typed": "becuase ",
+      "expected": "I stayed because "
+    },
+    {
+      "id": "o04",
+      "before": "We will ",
+      "typed": "recieve ",
+      "expected": "We will receive "
+    },
+    {
+      "id": "o05",
+      "before": "Podemos ",
+      "typed": "recivir ",
+      "expected": "Podemos recibir "
+    },
+    {
+      "id": "o06",
+      "before": "Esto es ",
+      "typed": "inportante ",
+      "expected": "Esto es importante "
+    },
+    {
+      "id": "o07",
+      "before": "Nos vemos ",
+      "typed": "manana ",
+      "expected": "Nos vemos mañana "
+    },
+    {
+      "id": "o08",
+      "before": "Me gusta el ",
+      "typed": "cafe ",
+      "expected": "Me gusta el café "
+    },
+    {
+      "id": "o09",
+      "before": "Read /srv/report.txt and check ",
+      "typed": "teh ",
+      "expected": "Read /srv/report.txt and check the "
+    },
+    {
+      "id": "o10",
+      "before": "Abre datos.csv y luego puedes ",
+      "typed": "recivir ",
+      "expected": "Abre datos.csv y luego puedes recibir "
+    },
+    {
+      "id": "o11",
+      "before": "The note says. We will ",
+      "typed": "recieve ",
+      "expected": "The note says. We will receive "
+    },
+    {
+      "id": "o12",
+      "before": "La nota dice. Nos vemos ",
+      "typed": "manana ",
+      "expected": "La nota dice. Nos vemos mañana "
+    },
+    {
+      "id": "o13",
+      "before": "Look at this: ",
+      "typed": "teh ",
+      "expected": "Look at this: the "
+    },
+    {
+      "id": "o14",
+      "before": "Aquí está: ",
+      "typed": "inportante ",
+      "expected": "Aquí está: importante "
+    },
+    {
+      "id": "o15",
+      "before": "That is (",
+      "typed": "teh ",
+      "expected": "That is (the "
+    },
+    {
+      "id": "o16",
+      "before": "Es (",
+      "typed": "inportante ",
+      "expected": "Es (importante "
+    },
+    {
+      "id": "b01",
+      "before": "Replace ",
+      "typed": "./teh.txt ",
+      "expected": "Replace ./teh.txt when done."
+    },
+    {
+      "id": "b02",
+      "before": "Consulta ",
+      "typed": "recivir.es ",
+      "expected": "Consulta recivir.es y vuelve."
+    },
+    {
+      "id": "b03",
+      "before": "File: ",
+      "typed": "draft.txt ",
+      "expected": "File: draft.txt is ready."
+    },
+    {
+      "id": "b04",
+      "before": "I want ",
+      "typed": "teh ",
+      "expected": "I want the report."
+    },
+    {
+      "id": "b05",
+      "before": "Archivo: ",
+      "typed": "mañana.txt ",
+      "expected": "Archivo: mañana.txt para hoy."
+    },
+    {
+      "id": "b06",
+      "before": "The Spanish key is ",
+      "typed": "mañana_id ",
+      "expected": "The Spanish key is mañana_id "
+    },
+    {
+      "id": "b07",
+      "before": "Quiero ",
+      "typed": "recibir ",
+      "expected": "Quiero recibir "
+    },
+    {
+      "id": "b08",
+      "before": "Please say ",
+      "typed": "hello ",
+      "expected": "Please say hello "
+    },
+    {
+      "id": "b09",
+      "before": "Secret: ",
+      "typed": "teh ",
+      "expected": "Secret: teh "
+    },
+    {
+      "id": "b10",
+      "before": "Secreto: ",
+      "typed": "manana ",
+      "expected": "Secreto: manana "
+    },
+    {
+      "id": "b11",
+      "before": "Address: ",
+      "typed": "teh ",
+      "expected": "Address: teh "
+    },
+    {
+      "id": "b12",
+      "before": "Web: ",
+      "typed": "manana ",
+      "expected": "Web: manana "
+    }
+  ],
+  "publishedR10": [
+    "The export is ready. Save it to /tmp/notes.txt ",
+    "silla -> sola"
+  ],
+  "rule": "Do not reuse targets or merely substitute paths while keeping an identical case; author independent semantic contexts, tokens, expected outcomes. No implementation inspection."
+}

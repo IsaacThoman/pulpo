@@ -1,0 +1,113 @@
+import Foundation
+import Testing
+@testable import KeyboardCore
+
+/// Opt-in external corpus runner. A successful test means the report was written,
+/// not that its accuracy or safety gates passed. Corpus and reports stay outside Git.
+struct TechnicalEntryBenchmarkTests {
+  struct Case: Decodable {
+    let id, category, language: String
+    let bilingual: Bool
+    let before, selected, after, typed, expected, field, intention, accentIntent: String
+  }
+
+  struct Outcome: Codable {
+    let id, category, language, output, expected: String
+    let correct: Bool
+    let rawOutput: String
+    let literalAdapterMatches: Bool
+    let learnedCount: Int
+    let keyMilliseconds: [Double]
+  }
+
+  @Test func replayExternalFrozenCases() throws {
+    let environment = ProcessInfo.processInfo.environment
+    guard let path = environment["PK_TECHNICAL_CASES"] else { return }
+    let report = try #require(environment["PK_TECHNICAL_REPORT"])
+    let cases = try JSONDecoder().decode([Case].self, from: Data(contentsOf: URL(fileURLWithPath: path)))
+    var outcomes: [Outcome] = []
+    for item in cases {
+      var outputs: [String] = []
+      var times: [Double] = []
+      var learnedCount = 0
+      for correcting in [true, false] {
+        let language: KeyboardLanguage = item.bilingual ? .bilingual : item.language == "es" ? .spanish : .english
+        // Fresh mapped lexicon, personal dictionary, touch model, and document.
+        let stack = try LanguageStack(dictionaryURL: Fixtures.languageData.appendingPathComponent(language.rawValue + ".pkdict"), personalURL: nil)
+        var settings = KeyboardSettings()
+        settings.language = language
+        settings.autocorrect = correcting
+        var traits = InputTraits()
+        switch item.field {
+        case "plain": break
+        case "secure": traits.isSecure = true
+        case "email": traits.keyboard = .email
+        case "url": traits.keyboard = .url
+        default: throw UnsupportedField(value: item.field)
+        }
+        let document = SelectionDocument(item)
+        let engine = KeyboardEngine(document: document, suggester: stack.suggester, glide: stack.glide, settings: settings)
+        engine.traits = traits
+        engine.documentDidChange()
+        for character in item.typed {
+          let start = ProcessInfo.processInfo.systemUptime
+          // Same dispatch as KeyboardController: space is insertSpace, while
+          // letter/symbol keys and alternate accents use insertCharacter.
+          if character == " " { engine.insertSpace(tap: KeyPoint(x: 5, y: 3)) }
+          else if character == "\n" { engine.insertReturn() }
+          else {
+            let key = String(character).lowercased()
+            if character.isUppercase, !engine.shift.isActive { engine.shiftDown(); engine.shiftUp() }
+            let point = character.isLetter && key.utf8.count == 1 ? key.utf8.first.flatMap(LetterGeometry.qwerty.center) : nil
+            engine.insertCharacter(key, tap: point)
+          }
+          _ = engine.suggestions
+          if correcting { times.append((ProcessInfo.processInfo.systemUptime - start) * 1_000) }
+        }
+        engine.save()
+        outputs.append(document.text)
+        if correcting { learnedCount = stack.personal.totalCount }
+      }
+      outcomes.append(Outcome(id: item.id, category: item.category, language: item.language,
+                              output: outputs[0], expected: item.expected, correct: outputs[0] == item.expected,
+                              rawOutput: outputs[1], literalAdapterMatches: outputs[1] == item.before + item.typed + item.after,
+                              learnedCount: learnedCount, keyMilliseconds: times))
+    }
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+    try encoder.encode(outcomes).write(to: URL(fileURLWithPath: report), options: .atomic)
+    print("TECHNICAL_ENTRY: \(outcomes.filter(\.correct).count)/\(outcomes.count) exact; \(report)")
+  }
+
+  private struct UnsupportedField: Error { let value: String }
+
+  /// Models actual selected-text replacement, unlike a selection-only snapshot.
+  private final class SelectionDocument: TextDocument {
+    var text: String
+    var cursor, selection: Int
+    let documentIdentifier: UUID? = UUID()
+    init(_ item: Case) {
+      text = item.before + item.selected + item.after
+      cursor = item.before.count
+      selection = item.selected.count
+    }
+    var documentContextBeforeInput: String? { String(text.prefix(cursor)) }
+    var documentContextAfterInput: String? { String(text.dropFirst(cursor + selection)) }
+    var selectedText: String? { selection == 0 ? nil : String(text.dropFirst(cursor).prefix(selection)) }
+    var hasText: Bool { !text.isEmpty }
+    func insertText(_ value: String) {
+      text = String(text.prefix(cursor)) + value + String(text.dropFirst(cursor + selection))
+      cursor += value.count
+      selection = 0
+    }
+    func deleteBackward() {
+      if selection > 0 {
+        text = String(text.prefix(cursor)) + String(text.dropFirst(cursor + selection))
+        selection = 0
+      } else if cursor > 0 {
+        text = String(text.prefix(cursor - 1)) + String(text.dropFirst(cursor))
+        cursor -= 1
+      }
+    }
+  }
+}

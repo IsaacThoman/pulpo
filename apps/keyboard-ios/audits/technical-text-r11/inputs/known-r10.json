@@ -1,0 +1,16 @@
+[
+  {
+    "id": "known-r10",
+    "category": "known-regression",
+    "language": "en",
+    "bilingual": false,
+    "before": "The export is ready. Save it to ",
+    "selected": "",
+    "after": "",
+    "typed": "/tmp/notes.txt ",
+    "expected": "The export is ready. Save it to /tmp/notes.txt ",
+    "field": "plain",
+    "intention": "literal",
+    "accentIntent": "ASCII path literal; no accents intended"
+  }
+]
