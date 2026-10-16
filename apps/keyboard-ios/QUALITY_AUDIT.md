@@ -8,6 +8,17 @@ unmeasured. Small deterministic Spanish and bilingual checks are reported below.
 
 ## Continued independent sweeps, October 15–16
 
+A bounded exact-prefix retrieval supplement was rejected in R55. It changes
+28 candidate lists across 108 exposed development rows, but no visible bar,
+target top-eight membership, automatic choice, fired action, resulting text or
+caret. Both versions provide 36 verified selections saving 90 characters;
+18 requested completion selections and three whole-token literal branches stay
+unavailable. Parent rehashes both raw reports and verifies every counted useful
+selection fired with the expected full text/caret. The cohort lacks several
+promotion controls and supplies no blind or population accuracy claim. Production
+is restored, no fresh author was spent, and the three existing prefix misses
+remain known. See `audits/prefix-completion-r55/README.md`.
+
 Kept-word taps now contribute to adaptation when an owned, valid typed word ends
 with an accepted emoji or other external boundary. Exact scalar/document ownership
 guards exclude restored, changed, unavailable and technical contexts; query edits

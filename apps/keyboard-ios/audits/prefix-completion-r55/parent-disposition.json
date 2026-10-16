@@ -1,0 +1,27 @@
+{
+  "verdict": "REJECT_NO_VISIBLE_DEVELOPMENT_GAIN",
+  "recordedUTC": "2026-10-16T13:22:14.235182+00:00",
+  "originalAuditOnlyCommit": "2a3997daba950e8c08b1ceaec42b7c430bd74a92",
+  "importedAuditCommit": "7603b108",
+  "currentProductionExactPublished": "ababd98ff5998f7a257f7e4d279a91512eac70e7",
+  "parentChecks": [
+    "original netdiff audit only",
+    "decoded rawSHA256 bothmatch",
+    "compare.py onexistingraw",
+    "verify.py onexistingraw",
+    "production andordinarytesttrees byteexactpublished"
+  ],
+  "parentProductExecutions": 0,
+  "comparisonSHA256": "cd5cd67440f1bc68a50db03c8839e107d92f4794b758a72deb697de05d708a57",
+  "verificationSHA256": "2e3b2ecff09f636cfc56208bc8398bde9eb4ff2e1f2cd959a4a14d3553252da7",
+  "candidateListsChanged": 28,
+  "visibleUtilityGains": 0,
+  "rows": 108,
+  "verifiedSelectionsPerVariant": 36,
+  "verifiedSavedCharactersPerVariant": 90,
+  "completionBranchesUnavailablePerVariant": 18,
+  "literalBranchesUnavailablePerVariant": 3,
+  "freshAuthor": "NOTSTARTED",
+  "promotion": "NOTATTEMPTED;runnerlimitsretained",
+  "noCodeImported": true
+}
