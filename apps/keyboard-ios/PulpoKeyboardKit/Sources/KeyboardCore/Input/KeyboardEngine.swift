@@ -95,6 +95,8 @@ public final class KeyboardEngine {
     /// replaced by `inserted`; `composing` is what to resume after an undo.
     case joinedSpaceSlip(original: String, inserted: String, separator: String, composing: TypedWord)
     case acceptedSuggestion(autoSpace: Bool)
+    /// Automatic spacing kept without the previous language model's undo or alternatives.
+    case automaticSpace(respace: Bool)
     case glided(Glide)
   }
 
@@ -236,7 +238,13 @@ public final class KeyboardEngine {
     save(inBackground: true)
     suggester = stack.suggester
     glide = stack.glide
-    lastEdit = .none
+    switch lastEdit {
+    case .acceptedSuggestion(autoSpace: true): lastEdit = .automaticSpace(respace: false)
+    case let .glided(glide) where glide.spaced: lastEdit = .automaticSpace(respace: true)
+    case .automaticSpace: break
+    default: lastEdit = .none
+    }
+    lastShiftTap = -1
     correctionBeforeGlide = nil
     deletedGlide = nil
     spaceSlip = nil
@@ -289,6 +297,10 @@ public final class KeyboardEngine {
     if case let .glided(glide) = lastEdit, glide.spaced, Self.spaceSwapPunctuation.contains(first), policy.smartSpacing, before.hasSuffix(glide.text) {
       deleteDocumentBackward()
       respace = true
+    }
+    if case let .automaticSpace(restoreSpace) = lastEdit, Self.spaceSwapPunctuation.contains(first), policy.smartSpacing, before.hasSuffix(" ") {
+      deleteDocumentBackward()
+      respace = restoreSpace
     }
 
     let slip = spaceSlip
