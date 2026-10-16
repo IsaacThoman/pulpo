@@ -37,6 +37,7 @@ final class PreviewDismissalTests: PreviewTypingTestCase {
     waitForExpectations(timeout: 3)
     XCTAssertEqual(field.value as? String, before)
     field.tap()
-    XCTAssertTrue(app.buttons["hide-keyboard"].waitForExistence(timeout: 3))
+    expectation(for: NSPredicate(format: "enabled == true"), evaluatedWith: app.buttons["hide-keyboard"])
+    waitForExpectations(timeout: 3)
   }
 }
