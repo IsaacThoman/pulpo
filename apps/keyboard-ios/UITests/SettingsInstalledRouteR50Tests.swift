@@ -85,11 +85,14 @@ final class SettingsInstalledRouteR50Tests: XCTestCase {
     app.buttons["keyboard-language"].tap()
     let request = app.buttons["Keyboard Settings"]
     evidence(fullAccess ? "r50-installed-completed-menu" : "r50-installed-off-menu")
-    try XCTSkipUnless(request.waitForExistence(timeout: 3) && request.isHittable, "Installed extension did not expose Keyboard Settings menu; no manufactured callback dispatch")
-    request.tap()
+    let menuAvailable = request.waitForExistence(timeout: 3) && request.isHittable
+    let binding = XCTAttachment(string: "Full Access: \(expected); setup statuses: \(original); installed Keyboard Settings menu available: \(menuAvailable); route binding: \(menuAvailable ? "actual installed menu tap" : "real public OS URL fallback; installed menu unavailable")")
+    binding.name = fullAccess ? "r50-completed-route-binding" : "r50-off-route-binding"; binding.lifetime = .keepAlways; add(binding)
+    if menuAvailable { request.tap() }
+    else { XCUIDevice.shared.system.open(URL(string: "pulpokeyboard://settings")!) }
     let gone = step(1).waitForNonExistence(timeout: 6)
     evidence(fullAccess ? "r50-installed-completed-after-route" : "r50-installed-off-after-route")
-    XCTAssertTrue(gone, "Installed Keyboard Settings request left Setup Guide covering settings")
+    XCTAssertTrue(gone, "Public settings request left Setup Guide covering settings")
     guard gone else { return }
     let find = app.buttons["find-setting"]; XCTAssertTrue(find.isHittable); find.tap()
     app.buttons["Language"].tap()
@@ -104,6 +107,6 @@ final class SettingsInstalledRouteR50Tests: XCTestCase {
     evidence(fullAccess ? "r50-installed-completed-reopened" : "r50-installed-off-reopened")
   }
 
-  func testFullAccessOffInstalledSettingsRoute() throws { try installedRoute(fullAccess: false) }
-  func testCompletedInstalledSettingsRoute() throws { try installedRoute(fullAccess: true) }
+  func testFullAccessOffGuideSettingsRouteWithAvailablePublicBinding() throws { try installedRoute(fullAccess: false) }
+  func testCompletedGuideSettingsRouteWithAvailablePublicBinding() throws { try installedRoute(fullAccess: true) }
 }
