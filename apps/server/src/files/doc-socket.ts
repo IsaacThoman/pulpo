@@ -17,14 +17,15 @@ export const MAX_AWARENESS_BYTES = 16_384
 export const docRoom = (docId: string) => `doc:${docId}`
 
 const bytes = z.instanceof(Uint8Array)
+const docIdSchema = z.uuid().transform((id) => id.toLowerCase())
 const joinSchema = z.object({
-  docId: z.uuid(),
+  docId: docIdSchema,
   stateVector: bytes,
   awarenessClientId: z.number().int().nonnegative().max(0xffffffff),
   schemaVersion: z.number().int(),
 })
-const messageSchema = z.object({ docId: z.uuid(), update: bytes })
-const leaveSchema = z.object({ docId: z.uuid() })
+const messageSchema = z.object({ docId: docIdSchema, update: bytes })
+const leaveSchema = z.object({ docId: docIdSchema })
 
 /** Per-socket budget covering both message count and bytes, refilled continuously. */
 export class TokenBucket {
@@ -37,9 +38,10 @@ export class TokenBucket {
     private readonly bytesPerSecond: number,
     private readonly burstSeconds = 2,
     private readonly now: () => number = Date.now,
+    private readonly byteCapacity = bytesPerSecond * burstSeconds,
   ) {
     this.messages = messagesPerSecond * burstSeconds
-    this.bytes = bytesPerSecond * burstSeconds
+    this.bytes = byteCapacity
     this.updatedAt = now()
   }
 
@@ -48,7 +50,7 @@ export class TokenBucket {
     const elapsed = Math.max(0, now - this.updatedAt) / 1_000
     this.updatedAt = now
     this.messages = Math.min(this.messagesPerSecond * this.burstSeconds, this.messages + elapsed * this.messagesPerSecond)
-    this.bytes = Math.min(this.bytesPerSecond * this.burstSeconds, this.bytes + elapsed * this.bytesPerSecond)
+    this.bytes = Math.min(this.byteCapacity, this.bytes + elapsed * this.bytesPerSecond)
     if (this.messages < 1 || this.bytes < byteLength) return false
     this.messages -= 1
     this.bytes -= byteLength
@@ -74,10 +76,13 @@ export function bindDocSocket(socket: PulpoSocket): void {
   const adminChatAccess = Boolean(socket.data.adminChatAccess)
   // Awareness client ids per joined doc, so peers can drop this socket's cursor when it leaves.
   const awarenessIds = new Map<string, number>()
-  const budget = new TokenBucket(40, 2_000_000)
+  // Keep the latest intent even after a successful join, so an older async read cannot undo it.
+  const joins = new Map<string, symbol>()
+  const budget = new TokenBucket(40, 2_000_000, 2, Date.now, MAX_DOC_UPDATE_BYTES)
   const member = (docId: string) => socket.rooms.has(docRoom(docId))
 
   const leave = (docId: string) => {
+    joins.delete(docId)
     const clientId = awarenessIds.get(docId)
     awarenessIds.delete(docId)
     if (!member(docId)) return
@@ -87,17 +92,33 @@ export function bindDocSocket(socket: PulpoSocket): void {
 
   socket.on('doc.join', (raw, ack) => {
     if (typeof ack !== 'function') return
+    let requestedDocId: string | undefined
+    let request: symbol | undefined
     void (async () => {
       const parsed = joinSchema.safeParse(raw)
       if (!parsed.success) return ack({ ok: false, error: 'not_found' })
       const input = parsed.data
-      if (adminChatAccess || !await filesFeatureEnabled()) return ack({ ok: false, error: 'unauthorized' })
-      if (input.schemaVersion !== DOC_SCHEMA_VERSION) return ack({ ok: false, error: 'schema_outdated' })
+      requestedDocId = input.docId
+      request = Symbol()
+      joins.set(input.docId, request)
+      const current = () => socket.connected && joins.get(input.docId) === request
+      const deny = (error: DocSyncError) => {
+        if (current()) leave(input.docId)
+        ack({ ok: false, error })
+      }
+      if (adminChatAccess || !await filesFeatureEnabled()) return deny('unauthorized')
+      if (input.schemaVersion !== DOC_SCHEMA_VERSION) return deny('schema_outdated')
       const access = await resolveFileAccess(db, userId, input.docId)
-      if (!access || access.node.kind !== 'doc' || access.node.trashedAt) return ack({ ok: false, error: 'not_found' })
+      if (!access || access.node.kind !== 'doc' || access.node.trashedAt) return deny('not_found')
+      if (!current()) return ack({ ok: false, error: 'not_found' })
       // Join before reading so any update committed after the read still reaches this socket.
       await socket.join(docRoom(input.docId))
       const merged = await loadDocUpdate(input.docId)
+      if (!current() || !member(input.docId)) {
+        // A leave can race the adapter's asynchronous join. Do not remove a newer join's room.
+        if (!joins.has(input.docId)) leave(input.docId)
+        return ack({ ok: false, error: 'not_found' })
+      }
       let update: Uint8Array
       try {
         update = Y.diffUpdate(merged, input.stateVector)
@@ -108,6 +129,7 @@ export function bindDocSocket(socket: PulpoSocket): void {
       ack({ ok: true, update, stateVector: Y.encodeStateVectorFromUpdate(merged) })
       socket.to(docRoom(input.docId)).emit('doc.awareness-query', { docId: input.docId })
     })().catch((error: unknown) => {
+      if (requestedDocId && joins.get(requestedDocId) === request) leave(requestedDocId)
       console.error('[realtime] doc.join failed', error)
       ack({ ok: false, error: syncError(error) })
     })
@@ -121,7 +143,11 @@ export function bindDocSocket(socket: PulpoSocket): void {
       const { docId, update } = parsed.data
       if (!member(docId)) return ack({ ok: false, error: 'unauthorized' })
       if (!budget.take(update.byteLength)) return ack({ ok: false, error: 'rate_limited' })
-      await appendDocUpdate({ nodeId: docId, actorUserId: socket.data.actorUser.id, update, origin: 'client' })
+      if (adminChatAccess || !await filesFeatureEnabled()) {
+        leave(docId)
+        return ack({ ok: false, error: 'unauthorized' })
+      }
+      await appendDocUpdate({ nodeId: docId, ownerUserId: userId, actorUserId: socket.data.actorUser.id, update, origin: 'client' })
       socket.to(docRoom(docId)).emit('doc.update', { docId, update })
       ack({ ok: true })
     })().catch((error: unknown) => {
@@ -145,7 +171,7 @@ export function bindDocSocket(socket: PulpoSocket): void {
   })
 
   socket.on('disconnecting', () => {
-    for (const docId of [...awarenessIds.keys()]) leave(docId)
+    for (const docId of new Set([...joins.keys(), ...awarenessIds.keys()])) leave(docId)
   })
 }
 

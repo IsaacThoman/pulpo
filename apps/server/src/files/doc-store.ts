@@ -9,12 +9,14 @@ import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { resolveFileAccess, type FileNodeRow } from './access.js'
 import { docTooLarge, initialDocState, MAX_DOC_STATE_BYTES } from './doc-state.js'
-import { assertDestination, assertNameAvailable, availableName, mutateFileTree, toFileNode } from './tree-service.js'
+import { assertDestination, assertNameAvailable, availableName, lockFileTree, mutateFileTree, toFileNode } from './tree-service.js'
 import { topSortOrder } from './order.js'
 
 type DatabaseTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
 
-export const MAX_DOC_UPDATE_BYTES = 1_000_000
+// A reconnect can upload the entire offline document, and a paste is one transaction.
+// Both must be able to send any document the store already supports.
+export const MAX_DOC_UPDATE_BYTES = MAX_DOC_STATE_BYTES
 // Re-exported for callers that import document limits from the store.
 export { docTooLarge, initialDocState, MAX_DOC_STATE_BYTES }
 
@@ -71,6 +73,8 @@ export async function scheduleDocCompaction(nodeId: string, delay = COMPACT_DELA
 
 export interface DocUpdateInput {
   nodeId: string
+  /** Revalidates a socket writer under the tree lock, including trash/conversion races. */
+  ownerUserId?: string
   actorUserId: string | null
   update: Uint8Array
   origin: DocUpdateOrigin
@@ -112,7 +116,14 @@ export async function scheduleCompactionAfterUpdate(nodeId: string, pendingUpdat
 
 /** Durably records one Yjs update. Callers broadcast it only after this resolves. */
 export async function appendDocUpdate(input: DocUpdateInput): Promise<void> {
-  const pending = await db.transaction((tx) => appendDocUpdateInTx(tx, input))
+  const pending = await db.transaction(async (tx) => {
+    if (input.ownerUserId) {
+      await lockFileTree(tx, input.ownerUserId)
+      const access = await resolveFileAccess(tx, input.ownerUserId, input.nodeId)
+      if (!access || access.node.kind !== 'doc' || access.node.trashedAt || access.node.status !== 'ready') throw notFound('Document')
+    }
+    return appendDocUpdateInTx(tx, input)
+  })
   await scheduleCompactionAfterUpdate(input.nodeId, pending)
 }
 
@@ -139,6 +150,11 @@ export async function loadYDoc(nodeId: string): Promise<Y.Doc> {
 /** Worker: folds logged updates into the snapshot, then deletes exactly the rows it folded. */
 export async function compactDoc(nodeId: string): Promise<void> {
   await db.transaction(async (tx) => {
+    const [node] = await tx.select({ ownerUserId: fileNodes.ownerUserId }).from(fileNodes).where(eq(fileNodes.id, nodeId))
+    if (!node) return
+    // Tree mutations can lock the node before deleting/converting its document. Match their
+    // tree → document → node order so compaction cannot deadlock a rename or subtree purge.
+    await lockFileTree(tx, node.ownerUserId)
     const [doc] = await tx.select().from(fileDocs).where(eq(fileDocs.nodeId, nodeId)).for('update')
     if (!doc) return
     const rows = await tx.select({ seq: fileDocUpdates.seq, update: fileDocUpdates.update }).from(fileDocUpdates)

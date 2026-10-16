@@ -209,7 +209,9 @@ export const Markdown = memo(function Markdown({
   const normalized = useMemo(() => normalizeMathDelimiters(unwrapBoxedMinipages(rendered), { displayMathStyle: 'multiline' }), [rendered])
   const mergedComponents = useMemo(() => components ? { ...markdownComponents, ...components } : markdownComponents, [components])
 
-  return (
+  // Incoming chunks update `latest` before the 100 ms display tick. Reuse the element while
+  // its displayed content is unchanged so ReactMarkdown does not parse the same text again.
+  return useMemo(() => (
     <div className="markdown-content min-w-0 max-w-full [overflow-wrap:anywhere]">
       <ReactMarkdown
         remarkPlugins={breaks ? BREAKS_REMARK_PLUGINS : REMARK_PLUGINS}
@@ -220,5 +222,5 @@ export const Markdown = memo(function Markdown({
         {normalized}
       </ReactMarkdown>
     </div>
-  )
+  ), [normalized, breaks, caret, mergedComponents, urlTransform])
 })
