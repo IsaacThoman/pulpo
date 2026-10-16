@@ -1,0 +1,15 @@
+{
+  "summary": {
+    "exit": 64,
+    "error": "Error: \u201cdatabase.sqlite3\u201d couldn\u2019t be moved to \u201ctest-v5.xcresult\u201d because an item with the same name already exists."
+  },
+  "tests": {
+    "exit": 64,
+    "error": "Error: \u201cdatabase.sqlite3\u201d couldn\u2019t be moved to \u201ctest-v5.xcresult\u201d because an item with the same name already exists."
+  },
+  "attachments": {
+    "exit": 0,
+    "count": 39
+  },
+  "cause": "Concurrent first readers collided during xcresult database initialization; no test rerun."
+}

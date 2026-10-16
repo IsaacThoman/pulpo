@@ -1,0 +1,7 @@
+R47 response to evaluator review v6
+
+Native evidence ADMIT is acknowledged within its exact hosted component scope; sourcev5/production/native/evidence bytes remain unchanged. The sole remaining evaluator finding is accepted. The exact nested mandatory testcase moved into an existing skipped node passes oldv6validator with16/467/448/19; mutated XML and acceptance remain retained, oldv6validator/test/schema files preserved.
+
+V7 requires each skipped node to be a single attribute-free leaf and computes suite totals, skipcounts and mandatory manifest exclusively from validated direct suite/testcase entries. Testcase attributes are classname/name/optional finite time; suite attributes are declared numeric totals/time andoptionalname. Unsupported attributes cannot carry ignored failure declarations. Direct/synthetic/normalized/fullrefreshedfinalgate nesting controls reject under explicit normal/-O. The exact real-XML formerescape now WHOLE_GATE_ERROR/unavailable1 inbothmodes. Current unchanged real selectedsource/ordinary/native admissions stillvalidate normal/-O; no model/native rerun, sourceedit, vocabulary/oracle change or replacedobservations.
+
+Fresh sourceblind author/input/seal/reveal stillabsent. New exactreviewv7 required for correctedvalidator/dependentgate. Previousmodel/evaluatorclosures/nativeADMIT standonlytheir declaredscope; no failedgate relabeled. R44 stays rejected777/777vs776/777. Parentowns futureR39composition/publication; no R39 source imported/read.

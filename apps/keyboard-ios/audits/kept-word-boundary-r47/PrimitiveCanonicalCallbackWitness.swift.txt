@@ -1,0 +1,41 @@
+import Foundation
+final class WitnessDocument: TextDocument {
+  var text = ""
+  var documentIdentifier: UUID? = UUID(uuidString: "00000000-0000-0000-0000-000000000001")
+  var callback: (() -> Void)?
+  var documentContextBeforeInput: String? { text }
+  var documentContextAfterInput: String? { "" }
+  var selectedText: String? { nil }
+  var hasText: Bool { !text.isEmpty }
+  func insertText(_ value: String) {
+    if value == "🎉", let callback {
+      let original = text
+      text = text.precomposedStringWithCanonicalMapping; callback()
+      text = original; callback()
+    }
+    text += value
+  }
+  func deleteBackward() { if !text.isEmpty { text.removeLast() } }
+}
+@main struct Witness {
+  static func main() throws {
+    var rows: [[String: Any]] = []
+    for route in ["space", "external", "observed-primitive-roundtrip"] {
+      let stack = try LanguageStack(dictionaryURL: URL(fileURLWithPath: CommandLine.arguments[1]).appendingPathComponent("es.pkdict"), personalURL: nil, touchURL: nil)
+      let doc = WitnessDocument()
+      var settings = KeyboardSettings(); settings.autoCapitalization = false; settings.autocorrect = false
+      let engine = KeyboardEngine(document: doc, suggester: stack.suggester, glide: stack.glide, settings: settings)
+      engine.clock = { 0 }; engine.documentDidChange()
+      for c in "cafe\u{0301}" {
+        let label = String(c)
+        let center = label.utf8.count == 1 ? stack.corrector.geometry.center(label.utf8.first!) : nil
+        engine.insertCharacter(label, tap: center.map { KeyPoint(x: $0.x + 0.08, y: $0.y + 0.1) })
+      }
+      let validBefore = stack.suggester.isValid("cafe\u{0301}")
+      if route == "observed-primitive-roundtrip" { doc.callback = { engine.documentDidChange() } }
+      if route == "space" { engine.insertSpace() } else { engine.insertText("🎉") }
+      rows.append(["route":route,"validBefore":validBefore,"text":doc.text,"cursor":doc.text.count,"selection":0,"wordCount":stack.personal.count(of:"café"),"weight":stack.touch.weight,"offsets":stack.touch.offsets.map { [$0.x,$0.y] }])
+    }
+    try JSONSerialization.data(withJSONObject: rows, options:[.sortedKeys,.prettyPrinted]).write(to:URL(fileURLWithPath:CommandLine.arguments[2]))
+  }
+}

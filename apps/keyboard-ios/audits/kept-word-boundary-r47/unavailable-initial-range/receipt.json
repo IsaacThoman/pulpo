@@ -1,0 +1,28 @@
+{
+  "input": "d3ecb514d58ea10da43ceb136dc685d23d28211391c111712b6ecef02eabac06",
+  "executables": {
+    "baseline": "f832a60e689a0dff519b6a4f1d7acf9632d46eb1366c4161cf95fdac915bed1c",
+    "candidate": "70b09b9c7490c5f12ee64c43179a06ee633aa0782ae1000d9cbeeeb79fcda8f4"
+  },
+  "resources": {
+    "en_US.pkdict": "168c21378b29aa7fd37838aed910d64348b5267389abfd2dacd0598247cf1e64",
+    "en_es.pkdict": "93d2d22d58e7e753771dd0e29b19036d74a5ec7aeafba703724c24a93e581237",
+    "es.pkdict": "66a256a487f451812ec53920b2a5f2dea9aafb77fbf8e50240a0b87d2729e7fb"
+  },
+  "process": {
+    "baseline": {
+      "exit": -5,
+      "stderr": "Swift/ErrorType.swift:254: Fatal error: Error raised at top level: Error Domain=invalid initial coordinates Code=1 \"(null)\"\n",
+      "stdout": "",
+      "started": "2026-10-16T10:51:20.161186+00:00",
+      "finished": "2026-10-16T10:51:20.245178+00:00"
+    },
+    "candidate": {
+      "exit": -5,
+      "stderr": "Swift/ErrorType.swift:254: Fatal error: Error raised at top level: Error Domain=invalid initial coordinates Code=1 \"(null)\"\n",
+      "stdout": "",
+      "started": "2026-10-16T10:51:20.245201+00:00",
+      "finished": "2026-10-16T10:51:20.324328+00:00"
+    }
+  }
+}

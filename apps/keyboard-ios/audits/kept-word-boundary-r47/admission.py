@@ -1,0 +1,299 @@
+#!/usr/bin/env python3
+"""R47 audit evidence bindings. Reads retained artifacts; never runs a model/build.
+
+See admission-schema.md. PASS here means structured binding validation only.
+"""
+import argparse
+import gzip
+import hashlib
+import importlib.util
+import io
+import json
+import math
+import pathlib
+import sys
+import tarfile
+
+AUDIT = 'apps/keyboard-ios/audits/kept-word-boundary-r47/'
+IOS = 'apps/keyboard-ios/'
+PACKAGE = IOS + 'PulpoKeyboardKit/'
+CORE = PACKAGE + 'Sources/KeyboardCore/'
+FOCUSED = PACKAGE + 'Tests/KeyboardCoreTests/ExternalTextTouchR47Tests.swift'
+SUPPORT = PACKAGE + 'Tests/KeyboardCoreTests/Support.swift'
+PROJECT = IOS + 'PulpoKeyboard.xcodeproj/project.pbxproj'
+KINDS = ('source-controls', 'ordinary', 'native')
+RESOURCE_NAMES = {'en_US.pkdict', 'es.pkdict', 'en_es.pkdict'}
+LANGUAGES = ('en_US', 'es', 'en_es')
+ROUTES = ('space', 'picker', 'search', 'alternate-space', 'alternate-picker', 'alternate-search', 'url')
+
+
+def need(ok, message):
+    if not ok:
+        raise ValueError(message)
+
+
+def digest(value):
+    return type(value) is str and len(value) == 64 and all(c in '0123456789abcdef' for c in value)
+
+
+def sha(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def safe(root, name):
+    need(type(name) is str and name and pathlib.PurePosixPath(name).as_posix() == name
+         and not pathlib.Path(name).is_absolute() and '..' not in pathlib.Path(name).parts,
+         'canonical relative artifact/source path')
+    target = (root / name).resolve()
+    target.relative_to(root.resolve())
+    return target
+
+
+def hashes(root, names):
+    return {name: sha(safe(root, name).read_bytes()) for name in sorted(names)}
+
+
+def source_names(root, kind):
+    need(kind in KINDS, 'admission kind')
+    def swift(directory):
+        return {p.relative_to(root).as_posix() for p in (root / directory).rglob('*.swift')}
+    core = swift(CORE)
+    need(bool(core), 'missing Core sources')
+    if kind == 'source-controls':
+        return core | {FOCUSED, SUPPORT}
+    package = swift(PACKAGE + 'Sources/') | {PACKAGE + 'Package.swift'}
+    if kind == 'ordinary':
+        return package | swift(PACKAGE + 'Tests/')
+    return package | swift(IOS + 'App/') | swift(IOS + 'AppTests/') | swift(IOS + 'Extension/') | {IOS + 'project.yml', PROJECT}
+
+
+def sources(root, kind):
+    return hashes(root, source_names(root, kind))
+
+
+def resources(root):
+    names = {p.name for p in (root / (IOS + 'LanguageData')).glob('*.pkdict')}
+    need(names == RESOURCE_NAMES, 'exact current EN/ES/BI resource set')
+    return {name: sha(safe(root, IOS + 'LanguageData/' + name).read_bytes()) for name in sorted(names)}
+
+
+def descriptor(root, name, encoding='raw'):
+    data = safe(root, name).read_bytes()
+    need(encoding in ('raw', 'gzip'), 'artifact encoding')
+    result = {'path': name, 'sha256': sha(data), 'encoding': encoding}
+    if encoding == 'gzip':
+        result['decodedSHA256'] = sha(gzip.decompress(data))
+    return result
+
+
+def artifact(root, desc, files=None, hash_only=False):
+    need(type(desc) is dict and desc.get('encoding') in ('raw', 'gzip'), 'artifact descriptor')
+    keys = {'path', 'sha256', 'encoding'} | ({'decodedSHA256'} if desc['encoding'] == 'gzip' else set())
+    need(set(desc) == keys and digest(desc['sha256']), 'complete artifact descriptor')
+    data = safe(root, desc['path']).read_bytes()
+    need(sha(data) == desc['sha256'], 'artifact digest mismatch: ' + desc['path'])
+    if files is not None:
+        need(files.get(desc['path']) == desc['sha256'], 'artifact missing from final freeze: ' + desc['path'])
+    if desc['encoding'] == 'gzip':
+        data = gzip.decompress(data)
+        need(digest(desc['decodedSHA256']) and sha(data) == desc['decodedSHA256'], 'decoded artifact digest mismatch')
+    # Successful logs are only hashed; callers cannot inspect their contents.
+    return None if hash_only else data
+
+
+def decoded_digest(desc):
+    return desc.get('decodedSHA256', desc['sha256'])
+
+
+def load_json(data):
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            need(key not in result, 'duplicate JSON field: ' + key)
+            result[key] = value
+        return result
+    def invalid(value):
+        raise ValueError('nonfinite JSON value: ' + value)
+    return json.loads(data, object_pairs_hook=unique, parse_constant=invalid)
+
+
+def process(record):
+    need(type(record) is dict and type(record.get('exit')) is int and record['exit'] == 0
+         and record.get('status') == 'PASS', 'typed PASS/exit 0 provenance')
+    for field in ('error', 'stderr'):
+        if field in record:
+            need(type(record[field]) is str and not record[field], 'failed provenance ' + field)
+    if 'unavailable' in record:
+        need(type(record['unavailable']) is bool and not record['unavailable'], 'unavailable provenance')
+
+
+def provenance(record, expected_sources, expected_resources):
+    process(record)
+    need(record.get('sources') == expected_sources == record.get('sourcesAfter'), 'provenance current before/after source mismatch')
+    need(record.get('resources') == expected_resources, 'provenance EN/ES/BI resource mismatch')
+
+
+def xml_metrics(data):
+    # The existing validator is import-safe and owns the mandatory 16-name list.
+    spec = importlib.util.spec_from_file_location('r47_source_controls', pathlib.Path(__file__).with_name('validate-source-controls.py'))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    result = module.validate_xml(data)
+    need(result['allDefinitions'] == 467 and result['executed'] == 448 and result['skipped'] == 19,
+         'complete ordinary XML accounting: 467 retained/448 declared/19 skipped')
+    return result
+
+
+def finite(value):
+    return type(value) in (int, float) and math.isfinite(value)
+
+
+def native_metrics(summary, attachments):
+    need(type(summary) is dict and summary.get('result') == 'Passed' and 'testResult' not in summary, 'structured native Passed result')
+    for key, expected in {'totalTestCount': 1, 'passedTests': 1, 'failedTests': 0, 'skippedTests': 0, 'expectedFailures': 0}.items():
+        need(type(summary.get(key)) is int and summary[key] == expected, 'native summary count: ' + key)
+    need(summary.get('testFailures') == [], 'native summary failure observations')
+    need(type(attachments) is list and len(attachments) == 39, '39 native JSON attachments')
+    indexed = {}
+    for item in attachments:
+        need(type(item) is dict and set(item) == {'name', 'payload'}, 'native attachment envelope')
+        name, row = item['name'], item['payload']
+        need(type(name) is str and name not in indexed and type(row) is dict, 'unique native attachment')
+        second = name.startswith('r47-second-')
+        keys = {'language', 'route', 'text', 'weight', 'offsets', 'previousCount', 'pair'} | ({'wordCount', 'selfPair'} if second else {'count', 'alternate'})
+        need(set(row) == keys and row['language'] in LANGUAGES and row['route'] in ROUTES, 'native attachment payload schema')
+        need(name == ('r47-second-' if second else 'r47-') + row['language'] + '-' + row['route'], 'native attachment attribution')
+        need(type(row['text']) is str and finite(row['weight']) and row['weight'] >= 0, 'native text/weight')
+        need(type(row['offsets']) is list and len(row['offsets']) == 26
+             and all(type(pair) is list and len(pair) == 2 and all(finite(v) for v in pair) for pair in row['offsets']), 'native full finite offsets')
+        for key in ({'wordCount', 'selfPair'} if second else {'count'}) | {'previousCount', 'pair'}:
+            need(type(row[key]) is int and row[key] >= 0, 'native integer counts')
+        if not second:
+            need(type(row['alternate']) is bool and row['alternate'] == row['route'].startswith('alternate-'), 'native alternate route')
+        indexed[name] = row
+    expected_names = {'r47-' + lang + '-' + route for lang in LANGUAGES for route in ROUTES}
+    expected_names |= {'r47-second-' + lang + '-' + route for lang in LANGUAGES for route in ROUTES if route != 'url'}
+    need(set(indexed) == expected_names, 'complete 21 first/18 second native manifest')
+    for lang in LANGUAGES:
+        previous = 'good' if lang == 'en_US' else 'buena'
+        for route in ROUTES:
+            alternate = route.startswith('alternate-')
+            word = 'café' if alternate else 'music' if lang == 'en_US' else 'mundo'
+            row = indexed['r47-' + lang + '-' + route]
+            suffix = '.com' if route == 'url' else ' ' if route.endswith('space') else '🎉'
+            prefix = previous + ' ' + word
+            samples = 3 if alternate else len(word)
+            need(row['text'] == prefix + suffix, 'native retained first text')
+            need(row['weight'] == (0 if route == 'url' else len(previous) + samples), 'native first weight')
+            need(row['count'] == row['previousCount'] == row['pair'] == (0 if route == 'url' else 1), 'native first word/pair counts')
+            if route == 'url':
+                need(row['offsets'] == [[0, 0] for _ in range(26)], 'native URL full zero')
+                continue
+            reference = indexed['r47-' + lang + '-' + ('alternate-space' if alternate else 'space')]
+            need(row['offsets'] == reference['offsets'], 'native first full Space offsets')
+            second = indexed['r47-second-' + lang + '-' + route]
+            separator = ' ' if route.endswith('space') else '🎉🎉 '
+            need(second['text'] == prefix + separator + word + suffix, 'native retained second text')
+            need(second['weight'] == row['weight'] + samples and second['wordCount'] == 2
+                 and second['previousCount'] == second['pair'] == 1, 'native second contribution/counts')
+            reference = indexed['r47-second-' + lang + '-' + ('alternate-space' if alternate else 'space')]
+            need(second['offsets'] == reference['offsets'] and second['selfPair'] == reference['selfPair'], 'native second full Space offsets/pair')
+    return {'tests': 1, 'passed': 1, 'failed': 0, 'skipped': 0, 'attachments': 39, 'first': 21, 'second': 18,
+            'languages': list(LANGUAGES), 'routes': list(ROUTES)}
+
+
+def source_archive(data, expected):
+    with tarfile.open(fileobj=io.BytesIO(data), mode='r:') as archive:
+        observed = {}
+        for member in archive.getmembers():
+            if member.isdir():
+                continue
+            need(member.isfile() and member.name not in observed and member.name in expected, 'native archive exact regular source entries')
+            observed[member.name] = sha(archive.extractfile(member).read())
+    need(observed == expected, 'native archived source mismatch (including generated project)')
+
+
+def verify(record, root, expected_resources=None, files=None):
+    need(type(record) is dict and set(record) == {'version', 'kind', 'status', 'exit', 'sources', 'resources', 'artifacts', 'metrics'}, 'normalized admission schema')
+    need(type(record['version']) is int and record['version'] == 1 and record['kind'] in KINDS, 'admission version/kind')
+    process(record)
+    expected = sources(root, record['kind'])
+    current_resources = resources(root)
+    need(expected_resources is None or expected_resources == current_resources, 'final/current resource mismatch')
+    need(record['sources'] == expected and record['resources'] == current_resources, 'admission current source/resource mismatch')
+    if files is not None:
+        need(all(files.get(path) == value for path, value in expected.items()), 'admission source absent from final freeze')
+        need(all(files.get(IOS + 'LanguageData/' + path) == value for path, value in current_resources.items()), 'resource absent from final freeze')
+    artifacts = record['artifacts']
+    required = {'xml', 'testBinary', 'run', 'build', 'sourceArchive'} if record['kind'] != 'native' else {'summary', 'attachments', 'testBinary', 'appBinary', 'run', 'build', 'sourceArchive', 'buildLog', 'runLog'}
+    need(type(artifacts) is dict and set(artifacts) == required, 'complete admission artifact roles')
+    data = {role: artifact(root, desc, files, hash_only=role in ('buildLog', 'runLog')) for role, desc in artifacts.items()}
+    run, build = load_json(data['run']), load_json(data['build'])
+    # A full swift-test invocation can supply both build and run provenance.
+    provenance_sources = sources(root, 'ordinary') if record['kind'] == 'source-controls' else expected
+    for receipt in (run, build):
+        provenance(receipt, provenance_sources, current_resources)
+    source_archive(data['sourceArchive'], provenance_sources)
+    if record['kind'] != 'native':
+        for receipt in (run, build):
+            need(receipt.get('binarySHA256') == decoded_digest(artifacts['testBinary']), 'provenance test binary mismatch')
+            need(receipt.get('XMLSHA256') == decoded_digest(artifacts['xml']), 'provenance XML mismatch')
+        metrics = xml_metrics(data['xml'])
+    else:
+        for receipt in (run, build):
+            need(receipt.get('binaries') == {'host': decoded_digest(artifacts['appBinary']), 'test': decoded_digest(artifacts['testBinary'])}, 'native host/test binary mismatch')
+            need(receipt.get('builtResources') == current_resources, 'native built EN/ES/BI resources')
+        need(run.get('buildLogSHA256') == artifacts['buildLog']['sha256'] and run.get('logSHA256') == artifacts['runLog']['sha256'], 'native log binding')
+        need(run.get('buildSHA256') == artifacts['build']['sha256'], 'native run/build binding')
+        for role in ('summary', 'attachments'):
+            need(run.get(role + 'SHA256') == decoded_digest(artifacts[role]), 'native run/' + role + ' binding')
+        metrics = native_metrics(load_json(data['summary']), load_json(data['attachments']))
+    # Compare canonical JSON so booleans/floats cannot stand in for metric integers.
+    need(json.dumps(record['metrics'], sort_keys=True, allow_nan=False) == json.dumps(metrics, sort_keys=True, allow_nan=False), 'recomputed admission metrics mismatch')
+    return metrics
+
+
+def produce(root, kind, artifacts):
+    """Normalize real retained descriptors only after validating their bindings."""
+    record = {'version': 1, 'kind': kind, 'status': 'PASS', 'exit': 0,
+              'sources': sources(root, kind), 'resources': resources(root), 'artifacts': artifacts,
+              'metrics': xml_metrics(artifact(root, artifacts['xml'])) if kind != 'native' else
+              native_metrics(load_json(artifact(root, artifacts['summary'])), load_json(artifact(root, artifacts['attachments'])))}
+    verify(record, root)
+    return record
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--root', type=pathlib.Path, default=pathlib.Path(__file__).resolve().parents[4])
+    commands = parser.add_subparsers(dest='command', required=True)
+    describe = commands.add_parser('describe')
+    describe.add_argument('path')
+    describe.add_argument('--encoding', choices=('raw', 'gzip'), default='raw')
+    make = commands.add_parser('produce')
+    make.add_argument('kind', choices=KINDS)
+    make.add_argument('artifacts', type=pathlib.Path, help='JSON object mapping artifact roles to descriptors')
+    make.add_argument('output', type=pathlib.Path)
+    check = commands.add_parser('verify')
+    check.add_argument('admission', type=pathlib.Path)
+    args = parser.parse_args()
+    try:
+        if args.command == 'describe':
+            print(json.dumps(descriptor(args.root, args.path, args.encoding), sort_keys=True))
+        elif args.command == 'produce':
+            result = produce(args.root, args.kind, load_json(args.artifacts.read_bytes()))
+            # Never overwrite an old failed admission/evidence record.
+            with args.output.open('x') as target:
+                target.write(json.dumps(result, indent=2, allow_nan=False) + '\n')
+            print(json.dumps({'bindingValidation': 'PASS', 'kind': args.kind, 'output': str(args.output)}))
+        else:
+            metrics = verify(load_json(args.admission.read_bytes()), args.root)
+            print(json.dumps({'bindingValidation': 'PASS', 'metrics': metrics}, sort_keys=True))
+    except Exception as error:
+        print(json.dumps({'status': 'WHOLE_GATE_ERROR', 'error': str(error)}))
+        return 1
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

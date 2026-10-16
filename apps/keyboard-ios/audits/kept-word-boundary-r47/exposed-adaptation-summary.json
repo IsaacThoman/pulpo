@@ -1,0 +1,125 @@
+{
+  "scope": "Exposed historical development input re-executed on R47; not fresh/blind/committed/human accuracy. Controlled training labels; probes nearest drawn key decoded, intended never forced. All9 probes retained.",
+  "probes": [
+    {
+      "id": "development-adaptation-en_US-external-correction-enabled",
+      "index": 107,
+      "intended": "time",
+      "decoded": "gkmd",
+      "baselineCost": 6.263999999999999,
+      "candidateCost": 4.016233092221405,
+      "baselineOffer": null,
+      "candidateOffer": "time"
+    },
+    {
+      "id": "development-adaptation-en_US-external-correction-enabled",
+      "index": 109,
+      "intended": "sweet",
+      "decoded": "zsddg",
+      "baselineCost": 9.64,
+      "candidateCost": 5.9222898029964535,
+      "baselineOffer": null,
+      "candidateOffer": null
+    },
+    {
+      "id": "development-adaptation-en_US-external-correction-enabled",
+      "index": 111,
+      "intended": "bring",
+      "decoded": "bfknv",
+      "baselineCost": 5.064,
+      "candidateCost": 2.816233092221406,
+      "baselineOffer": null,
+      "candidateOffer": "bring"
+    },
+    {
+      "id": "development-adaptation-es-external-correction-enabled",
+      "index": 107,
+      "intended": "casa",
+      "decoded": "caza",
+      "baselineCost": 1.6880000000000002,
+      "candidateCost": 0.9530283553875235,
+      "baselineOffer": null,
+      "candidateOffer": null
+    },
+    {
+      "id": "development-adaptation-es-external-correction-enabled",
+      "index": 109,
+      "intended": "solo",
+      "decoded": "zlll",
+      "baselineCost": 6.263999999999999,
+      "candidateCost": 3.973381118280241,
+      "baselineOffer": null,
+      "candidateOffer": "solo"
+    },
+    {
+      "id": "development-adaptation-es-external-correction-enabled",
+      "index": 111,
+      "intended": "noche",
+      "decoded": "nlcbd",
+      "baselineCost": 5.064,
+      "candidateCost": 2.816233092221406,
+      "baselineOffer": null,
+      "candidateOffer": "noche"
+    },
+    {
+      "id": "development-adaptation-en_es-external-correction-enabled",
+      "index": 107,
+      "intended": "time",
+      "decoded": "gkmd",
+      "baselineCost": 6.263999999999999,
+      "candidateCost": 4.05908506616257,
+      "baselineOffer": null,
+      "candidateOffer": "time"
+    },
+    {
+      "id": "development-adaptation-en_es-external-correction-enabled",
+      "index": 109,
+      "intended": "casa",
+      "decoded": "caza",
+      "baselineCost": 1.6880000000000002,
+      "candidateCost": 0.9530283553875235,
+      "baselineOffer": null,
+      "candidateOffer": null
+    },
+    {
+      "id": "development-adaptation-en_es-external-correction-enabled",
+      "index": 111,
+      "intended": "noche",
+      "decoded": "nlcbd",
+      "baselineCost": 5.064,
+      "candidateCost": 2.816233092221406,
+      "baselineOffer": null,
+      "candidateOffer": "noche"
+    }
+  ],
+  "trainingParity": [
+    {
+      "language": "en_US",
+      "candidateExternalWeight": 160,
+      "candidateSpaceWeight": 160,
+      "baselineSpaceWeight": 160,
+      "fullExactMatch": true,
+      "wordEvents": 32
+    },
+    {
+      "language": "es",
+      "candidateExternalWeight": 160,
+      "candidateSpaceWeight": 160,
+      "baselineSpaceWeight": 160,
+      "fullExactMatch": true,
+      "wordEvents": 32
+    },
+    {
+      "language": "en_es",
+      "candidateExternalWeight": 160,
+      "candidateSpaceWeight": 160,
+      "baselineSpaceWeight": 160,
+      "fullExactMatch": true,
+      "wordEvents": 32
+    }
+  ],
+  "costImprovements": 9,
+  "newIntendedOffers": 6,
+  "nonTouchPreservationRows": 672,
+  "rowsPerVariant": 672
+}

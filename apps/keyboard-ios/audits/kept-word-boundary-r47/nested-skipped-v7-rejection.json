@@ -1,0 +1,20 @@
+[
+  {
+    "mode": "normal",
+    "exit": 1,
+    "result": {
+      "status": "WHOLE_GATE_ERROR",
+      "unavailable": 1,
+      "error": "supported leaf skipped evidence"
+    }
+  },
+  {
+    "mode": "-O",
+    "exit": 1,
+    "result": {
+      "status": "WHOLE_GATE_ERROR",
+      "unavailable": 1,
+      "error": "supported leaf skipped evidence"
+    }
+  }
+]

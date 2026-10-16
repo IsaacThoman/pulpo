@@ -1,0 +1,73 @@
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\"hostStatuses\":{\"local\":{\"status\":\"failed\",\"detail\":\"Device list failed: The device command failed (exit code 127).\"}},\"hosts\":[{\"id\":\"local\",\"kind\":\"local\",\"label\":\"This machine\",\"platforms\":[{\"platform\":\"ios\",\"available\":true},{\"platform\":\"android\",\"available\":true}],\"tools\":{\"hub\":{\"requiredVersion\":\"0.15.3\",\"installedVersions\":[\"0.15.3\"],\"runningVersion\":\"0.15.3\"},\"agent\":{\"requiredVersion\":\"0.21.25\",\"installedVersions\":[\"0.21.25\"],\"runningVersion\":\"0.21.25\"}},\"hubInstalled\":true,\"agentDeviceInstalled\":true}],\"devices\":[{\"hostId\":\"local\",\"id\":\"7E1D7979-7307-4C53-8466-BB41154B383C\",\"platform\":\"ios\",\"name\":\"iPhone 18 Pro\",\"version\":\"iOS 27.0\",\"booted\":false,\"physical\":false},{\"hostId\":\"local\",\"id\":\"1EDC5D9A-7E25-432A-B5B1-9A8B702306A7\",\"platform\":\"ios\",\"name\":\"iPhone 17\",\"version\":\"iOS 27.0\",\"booted\":true,\"physical\":false}],\"open\":[]}"
+    }
+  ],
+  "structuredContent": {
+    "hostStatuses": {
+      "local": {
+        "status": "failed",
+        "detail": "Device list failed: The device command failed (exit code 127)."
+      }
+    },
+    "hosts": [
+      {
+        "id": "local",
+        "kind": "local",
+        "label": "This machine",
+        "platforms": [
+          {
+            "platform": "ios",
+            "available": true
+          },
+          {
+            "platform": "android",
+            "available": true
+          }
+        ],
+        "tools": {
+          "hub": {
+            "requiredVersion": "0.15.3",
+            "installedVersions": [
+              "0.15.3"
+            ],
+            "runningVersion": "0.15.3"
+          },
+          "agent": {
+            "requiredVersion": "0.21.25",
+            "installedVersions": [
+              "0.21.25"
+            ],
+            "runningVersion": "0.21.25"
+          }
+        },
+        "hubInstalled": true,
+        "agentDeviceInstalled": true
+      }
+    ],
+    "devices": [
+      {
+        "hostId": "local",
+        "id": "7E1D7979-7307-4C53-8466-BB41154B383C",
+        "platform": "ios",
+        "name": "iPhone 18 Pro",
+        "version": "iOS 27.0",
+        "booted": false,
+        "physical": false
+      },
+      {
+        "hostId": "local",
+        "id": "1EDC5D9A-7E25-432A-B5B1-9A8B702306A7",
+        "platform": "ios",
+        "name": "iPhone 17",
+        "version": "iOS 27.0",
+        "booted": true,
+        "physical": false
+      }
+    ],
+    "open": []
+  },
+  "isError": false
+}

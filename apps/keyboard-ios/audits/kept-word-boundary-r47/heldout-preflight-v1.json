@@ -1,0 +1,21 @@
+{
+  "scope": "schema and relational-plan preflight only; no Engine/model invocation",
+  "inputSHA256": "b5a5de21b8fd091ad905b60d1a09bb64946dd3b36b861ccc46cd441ae1c4a0f0",
+  "cases": 49,
+  "rowsPerVariant": 342,
+  "languages": {
+    "en_US": 22,
+    "es": 14,
+    "en_es": 13
+  },
+  "roles": {
+    "positive": 12,
+    "zero": 36,
+    "preserve": 1
+  },
+  "relations": {
+    "parity": 12,
+    "hold": 90
+  },
+  "status": "PASS"
+}

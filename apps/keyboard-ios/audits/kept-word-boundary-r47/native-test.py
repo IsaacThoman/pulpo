@@ -1,0 +1,44 @@
+#!/usr/bin/env python3
+"""Serial exact-device test of the already built source; success logs stay unread."""
+import datetime, gzip, hashlib, json, pathlib, subprocess, sys
+
+audit = pathlib.Path(__file__).resolve().parent
+root = audit.parents[3]
+uuid, attempt, version = sys.argv[1:4]
+protected = {'1EDC5D9A-7E25-432A-B5B1-9A8B702306A7', '7E1D7979-7307-4C53-8466-BB41154B383C', 'E1C6B89D-922E-41AC-8148-4C81C57BEE64', '0FD9B95B-D450-4276-A110-ECA608AB48E7'}
+if uuid in protected or not attempt.isalnum() or not version.isalnum():
+    raise SystemExit('invalid owned device/attempt')
+owned = json.loads((audit / 'owned-device.json').read_text())
+if owned['uuid'] != uuid or owned['runtime'] != 'com.apple.CoreSimulator.SimRuntime.iOS-27-0':
+    raise SystemExit('device does not match this task ownership receipt')
+sha = lambda p: hashlib.sha256(p.read_bytes()).hexdigest()
+build_path = audit / ('native-build-' + version + '-receipt.json')
+build = json.loads(build_path.read_text())
+current = lambda: {p: sha(root / p) for p in build['sources']}
+resources = {p.name: sha(p) for p in (root / 'apps/keyboard-ios/LanguageData').glob('*.pkdict')}
+base = pathlib.Path('/tmp/pulpo-r47-native')
+app = base / 'DerivedData/Build/Products/Release-iphonesimulator/PulpoKeyboard.app'
+binaries = {'host': app / 'PulpoKeyboard', 'test': app / 'PlugIns/PulpoKeyboardAppTests.xctest/PulpoKeyboardAppTests'}
+observed = {k: sha(p) for k, p in binaries.items()}
+bundled = {p.name: sha(p) for p in app.glob('PlugIns/PulpoKeyboardExtension.appex/*.pkdict')}
+if build['exit'] != 0 or build['sources'] != current() or build['sourcesAfter'] != current() or build['binaries'] != observed or build['resources'] != resources or bundled != resources:
+    raise SystemExit('stale source/binary/resource build; no native execution')
+xctestrun = next((base / 'DerivedData/Build/Products').glob('*.xctestrun'))
+result = base / ('test-' + attempt + '.xcresult')
+log = base / ('test-' + attempt + '.log')
+if result.exists() or log.exists():
+    raise SystemExit('attempt already exists; preserve it')
+command = ['xcodebuild', 'test-without-building', '-xctestrun', str(xctestrun), '-destination', 'platform=iOS Simulator,id=' + uuid, '-resultBundlePath', str(result), '-parallel-testing-enabled', 'NO', '-collect-test-diagnostics', 'never', '-only-testing:PulpoKeyboardAppTests/ExternalTextTouchR47Tests']
+receipt = {'command': command, 'uuid': uuid, 'version': version, 'started': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'sources': current(), 'resources': resources, 'builtResources': bundled, 'binaries': observed, 'xctestrunSHA256': sha(xctestrun), 'buildReceiptSHA256': sha(build_path)}
+with log.open('w') as stream:
+    process = subprocess.run(command, stdout=stream, stderr=stream)
+receipt.update(exit=process.returncode, finished=datetime.datetime.now(datetime.timezone.utc).isoformat(), sourcesAfter=current())
+receipt['status'] = 'PASS' if process.returncode == 0 and receipt['sources'] == receipt['sourcesAfter'] else 'WHOLE_GATE_ERROR'
+receipt['binariesAfter'] = {k: sha(p) for k, p in binaries.items()}
+(audit / ('native-run-' + attempt + '.json')).write_text(json.dumps(receipt, indent=2) + '\n')
+(audit / ('native-log-' + attempt + '.gz')).write_bytes(gzip.compress(log.read_bytes(), mtime=0))
+(audit / ('native-xctestrun-' + attempt + '.plist')).write_bytes(xctestrun.read_bytes())
+print('native process exit', process.returncode, 'result', result)
+if process.returncode:
+    print(log.read_text()[-16000:])
+sys.exit(process.returncode)

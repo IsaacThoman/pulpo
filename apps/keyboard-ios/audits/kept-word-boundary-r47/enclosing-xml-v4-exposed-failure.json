@@ -1,0 +1,12 @@
+[
+  {
+    "mutation": "enclosing-errors",
+    "acceptedBeforeFix": true,
+    "XMLSHA256": "8763d6b76378c66e035973c06fbfc4b4c7fb31545d88f65c11d7bbc2b24f1284"
+  },
+  {
+    "mutation": "enclosing-failures",
+    "acceptedBeforeFix": true,
+    "XMLSHA256": "3a6ab15ab2192ed24409a15cec0fe2f8604525322688666a8a27e181bd5fc37c"
+  }
+]

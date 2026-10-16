@@ -1,0 +1,1 @@
+{"rejected": ["wrong-sealed-input-with-complete-files", "empty-source-files", "omitted-evaluator-file", "omitted-source-file", "omitted-build-receipt", "wrong-resource-binding", "missing-review-evidence", "suite-level-error", "nan-test-time", "inconsistent-suite-total", "mandatory-skip", "missing-mandatory-definition"], "rejectedCount": 12, "syntheticFreezeGood": "PASS"}

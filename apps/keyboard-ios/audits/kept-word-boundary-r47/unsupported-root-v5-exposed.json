@@ -1,0 +1,10 @@
+[
+  {
+    "mutation": "unsupported-root-errors",
+    "acceptedBeforeFix": true
+  },
+  {
+    "mutation": "unsupported-root-failures",
+    "acceptedBeforeFix": true
+  }
+]

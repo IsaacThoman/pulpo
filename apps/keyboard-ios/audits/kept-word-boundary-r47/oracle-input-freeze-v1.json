@@ -1,0 +1,10 @@
+{
+  "apps/keyboard-ios/audits/kept-word-boundary-r47/heldout.json": "b5a5de21b8fd091ad905b60d1a09bb64946dd3b36b861ccc46cd441ae1c4a0f0",
+  "apps/keyboard-ios/audits/kept-word-boundary-r47/author-notes.md": "538c5805b945e2238a43f73ddec643cc7bcf22398defb04d0d2b97e2daac94e8",
+  "apps/keyboard-ios/audits/kept-word-boundary-r47/heldout-preflight-v1.json": "786bbf23177ce4dcef01431fa728e34c26f67ab7f1cb927ce0675e9c288228f7",
+  "apps/keyboard-ios/audits/kept-word-boundary-r47/CONTRACT.md": "f871c65add14a98a80edd3ef347224b16d95981b8fe0f6d5857ebfc7cc9d07c0",
+  "apps/keyboard-ios/audits/kept-word-boundary-r47/PROTOCOL.md": "95d7ff891055517fb9996ffc44ad396a15be959fca5ca1a71458d0e00ea56a1c",
+  "apps/keyboard-ios/audits/kept-word-boundary-r47/AUTHOR-BRIEF.md": "4f0d284206f2f55f3a213d95f1eea34c6ef7bf4ea03db419e4ae8437801d437a",
+  "apps/keyboard-ios/audits/kept-word-boundary-r47/check.py": "0c4d05b9a2a05c38bb0d9b45067ac59b957e47a5d6da9ced24b91e14649f01d2",
+  "apps/keyboard-ios/audits/kept-word-boundary-r47/seal.py": "9dd8eb51daafad742f998322c170b584c1b688046af241259b77831590704864"
+}

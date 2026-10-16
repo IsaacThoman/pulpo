@@ -1,0 +1,157 @@
+{
+  "version": 1,
+  "kind": "native",
+  "status": "PASS",
+  "exit": 0,
+  "sources": {
+    "apps/keyboard-ios/App/AppModel.swift": "2a6ab21bddaa51e0092f0908b530978ded33e20de51fc3ebe18d1155c497e8d3",
+    "apps/keyboard-ios/App/DictationService.swift": "cf7d748e4933cf488098d5e97ad087c065cf8e48968c0b810cf63737d5bacc40",
+    "apps/keyboard-ios/App/DictationSessionView.swift": "c8571a315e891ad8b5ef721777df1043a662248c40dd2716e10fabaf0ab5f3ab",
+    "apps/keyboard-ios/App/HostReturn.swift": "06e5ac151ebd8d82a8414aaf4127a9e10d53f2555cc35bd49965696539dcf910",
+    "apps/keyboard-ios/App/KeyboardPreview.swift": "bd6315f921090fc5ee16014afe0500759126b628b7fdd23b755da4c7b317ec33",
+    "apps/keyboard-ios/App/PrivacyView.swift": "f1c7088d5643cd444b45672dea337a3ff6c1d79a0c65065fb5a68c8fbf1bf80f",
+    "apps/keyboard-ios/App/PulpoKeyboardApp.swift": "98eec4e026bd1530bb57ec6527c49b70338134b4cf72acf345d4afd90ef7d420",
+    "apps/keyboard-ios/App/SetupGuideView.swift": "7feb8507cff83e027ffe1a0f69ed52c0740c99acb96ab9b1a4363ce0226ace17",
+    "apps/keyboard-ios/App/SignInAttempt.swift": "8f5fcd4c952083006ca6cc38e38912cf7615e643723adbbbc16bf1ca420afd21",
+    "apps/keyboard-ios/App/SignInView.swift": "74c748ace8489515f1e353584a95ced86fb3c54e2f2f445d66d36b0012729305",
+    "apps/keyboard-ios/App/TipsView.swift": "ad01a06511fd487126f575abc873b82b12446d243141bea925716c25c99989ed",
+    "apps/keyboard-ios/App/TryItView.swift": "7b544419e1441145001d3f91376af5283608cc1ce9a422871312abb282258c96",
+    "apps/keyboard-ios/AppTests/AccountLifecycleR35Tests.swift": "8555f183bc48d035541d4f3931157ee40d58aab35ba2f701af706be851a9d17a",
+    "apps/keyboard-ios/AppTests/BroadExposedR24Tests.swift": "e250bfdc684ee7810c2517fb6646d7280991773d190866a0b74a3048ce985ab5",
+    "apps/keyboard-ios/AppTests/CompanionDynamicTypeR24Tests.swift": "43933f0fb97688944dc3ac560f653bd1f8ad70d5c5075710e8489d0f6f3dcfe0",
+    "apps/keyboard-ios/AppTests/CompanionWorkflowR24Tests.swift": "5a3e37459ca0a08c69540ff6905fc7f1298f37aed916487d4568a6ee5ea918aa",
+    "apps/keyboard-ios/AppTests/CursorEditingR17Tests.swift": "199050a5f64b778801d059d50cb6908cdaa67caaa83e562514fa142c82a4129b",
+    "apps/keyboard-ios/AppTests/DraftEditorTests.swift": "90b26c0e9c9ead92129e8660d16efb8d23bdb12302ca11ce90514ba0a1699b01",
+    "apps/keyboard-ios/AppTests/ExternalTextTouchR47Tests.swift": "48d80c3193b63068596ff87bf32d70dde85a9c8ae85a0978b79df4c7497c0971",
+    "apps/keyboard-ios/AppTests/NativeContentTypeCalibrationR38Tests.swift": "063ce59fcd6f6a79438b13adec7c543b9da3e9a2fff0ef718fd3e58aad8efd2d",
+    "apps/keyboard-ios/AppTests/NativeContentTypePrivacyR38Tests.swift": "b87a55680f1ca8c20209fe3391f32774547818f0a428b7f4d1d09c0268f8fb58",
+    "apps/keyboard-ios/AppTests/PreviewCursorBoundaryTests.swift": "c1f8d75c6b7bb82bc35716c7f63bed971c4c1cf9df0c6ba8b79fbe276d7f37dd",
+    "apps/keyboard-ios/AppTests/PreviewDocumentLifecycleCounterchecks.swift": "7ae832753b25100b6fdedae7b37b60e8978e25bd900f729c2fdd2d2240470fb0",
+    "apps/keyboard-ios/AppTests/PreviewDocumentLifetimeTests.swift": "ae8afa79ade4744034eb0bce02cbfacc66532bb434b516c77d3e80bb7ceaea06",
+    "apps/keyboard-ios/Extension/KeyboardViewController.swift": "bf3043b1ae67c6ee0702ae475247eefb53fc76aca701d5cda54dac86f5e603e8",
+    "apps/keyboard-ios/PulpoKeyboard.xcodeproj/project.pbxproj": "5690d21b21887b6d9d15a645ae3a9f627637e877cdf84aea16abb6df3c51d092",
+    "apps/keyboard-ios/PulpoKeyboardKit/Package.swift": "379c461020874de324f62c3cdb3ed4feeca9f42e125f31b0e1bed6c4f6c3c309",
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Correction/SpellCorrector.swift": "525630cd2f29ef9739d98f7ea62827e04ee090140591d384527022a085030f31",
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Correction/Suggester.swift": "0608da9f8a2308ff71aaadf5cd2a59eaad856871ea299f56ec9b2200e14a3d65",
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Dictionary/LanguageModel.swift": "5e493289b992eaeb5f0c8233f6b6b80c070f48437f693b5efa4bc2cc4e1871a4",
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Dictionary/LanguageStack.swift": "3b82d4ec23919f948fc3bad18252e67bb6ca709bccc68363ea794d985b90ae01",
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Dictionary/Lexicon.swift": "5751a26a1cff378015344a384d3f24d3eae9808312249a836984ea8914334d14",
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Dictionary/MappedFile.swift": "c792e2586c41b6942c1d58df226e0374e0ec0d1300c1ddd3f373d90a12eea48a",
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Dictionary/PersonalDictionary.swift": "14b82c066d714063a895b20640e0e45bdc56f895f2ba005cd7b07d6de4cbedde",
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Emoji/EmojiCatalog.swift": "c7f929ada6398c9c849e1b764e7bdacc3aca6956f3444fa74953db43cea5468e",
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Emoji/EmojiSearch.swift": "b31bb9dfd4f0eaca8e7c71e5d5779d43a2e60649067b9a78ac6b0b12bc5b7d47",
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Geometry/LetterGeometry.swift": "99b3513dbaa433f4e83f7a7d35aadda518844331b60fda4bfe00d921708da188",
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Geometry/TouchModel.swift": "5fa3c3e595c959581a771c1f502a1cccbd103f247b54bf367c1d073220936549",
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Glide/GlideDecoder.swift": "5191f844388cd823a22ba9e2b79615440e678a7125ed209aee6820fc9ce01805",
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Input/InputTraits.swift": "b51ff8291e2fc6a64f2244a7ddf198d4a49fde79443bffca500b4d2b317d2b61",
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Input/KeyboardEngine.swift": "7666863e423b124fb2191ae44076b680e5d53d005c401dda9cd4c60489185cd2",
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Layout/KeyboardLayout.swift": "0001873a89ec6e02351c8f2847d68e1dcd921af80e61d7df02d19aa6e8e1554c",
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Shared/AppGroup.swift": "831015d4ae7c54a7ac38fb687334cf72647c6a9d7b3b640001891c7af3e51cd3",
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Shared/Diagnostics.swift": "3711557ae0bc5fe322e41ed0db8ba261aba8ff2c8e6ad6d8ca8ad0f5920c4c10",
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Shared/DictationBridge.swift": "0d5a623a442a608b746c7b8ef6f5ca53b84599dc8e2794dbe85794221a942153",
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Shared/DictationInsertionGuard.swift": "581187f2d5d16a357760248fcc52072a6bdf6ba23fc41a1b193feebcb95f5da3",
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Shared/DictationRequestLifecycle.swift": "0e5391cfa5a2c6227a9f3c347b72d6a0d571088e2bf6e71ad85b8b0e25b6af0c",
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Shared/HostReturnFlow.swift": "7b527dd87da068a883e3d3a634802d8237c79d4fa4789ef65ce376e9d9de6148",
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Shared/KeyboardLanguage.swift": "a1b37b484c9f72247d3b5c89cca121f930b7f996d70b8563cac3cefca99e036c",
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Shared/KeyboardSettings.swift": "2c4172096221f7c72f913d73f0b4444b0f6e7aeb45eefccb20731fe10565e44b",
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Shared/OneHanded.swift": "8bbabe4e09e7e2149ad16ead453a1d6edd6da5e735e74b72105840541486ed4e",
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardUI/DictationPanelView.swift": "ace83a1dce3ee349e3225e975857cd7b9b5c9ee5250b65340f81956e2417fb8f",
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardUI/EmojiFont.swift": "e14013832840e3d0fe6fc8088bf9b2ba0109f278cae445b04ff1318fc17ce028",
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardUI/EmojiPanelView.swift": "9b3899e6559aa00659c5aaa7e86651012349a44ff8dda4b39f6ed999191b201d",
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardUI/EmojiSearchBarView.swift": "a18fc210bb193375277cfadd26bc95604fca8db01b468479ca975f51105d0dab",
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardUI/KeyPopupView.swift": "ff58891a535b40037887cc7d730f57199cd889489960fdabb7f586498a18844d",
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardUI/KeyView.swift": "d023b1d88ef8b2847a8f6b681eb600ece6ef2e8c83cc2602449e3c6b81d6d7f7",
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardUI/KeyboardController.swift": "e37cf878c95e122448f5c22f3bef8d1dea99d2284edab79b8b06922b0777f621",
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardUI/KeyboardHost.swift": "e8b46cb05a13b07742769fadf9ade504904b21f2729f31e0f96b485706c87190",
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardUI/KeyboardStyle.swift": "dedbbfab962843daad57ff3b79871eae4984216bd4bc72f0e84f9d56111502f1",
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardUI/KeyboardUI.swift": "e3de8bed6e6f360076fbc29b522e0461e0ff94bf1c9edfde1803c6c92be610da",
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardUI/KeysView.swift": "671ea47eba2716cf6ae3e57777d677264c428836c31ab1113c0f0ded59f2cb7a",
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardUI/OneHandedPanelView.swift": "adab75e310cd0d062d3b123ccb0fa45b86a8b7f5099b6f7a8c25c5b209cb94bb",
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardUI/PerfLog.swift": "57b577d0bbd4e8ee54b22d2256472d1c327afbd03c3422150f37ed570b4303c6",
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardUI/PulpoKeyboardViewController.swift": "e856f759588aaa498dd42d6ee2549ed28bbda1f05bd1d082ec31abb471c4e256",
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardUI/SuggestionBarView.swift": "200058d705495b59d93991b652c7915cad3e711a9f134393836f5a602d31fc0e",
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/PulpoServices/PulpoClient.swift": "48c1dd94ab21728d3a2d2d343f94e70be6eeae7c6d1edd8d904c63df3aef7498",
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/PulpoServices/SessionStore.swift": "f76c74488415aad3c579612bc67bae159b941ca57873712c956ba179b001dac2",
+    "apps/keyboard-ios/project.yml": "7aa710296a5cd0c0037d58f5167696d2c34d57b9ebab242b5ac92c1bf2049881"
+  },
+  "resources": {
+    "en_US.pkdict": "168c21378b29aa7fd37838aed910d64348b5267389abfd2dacd0598247cf1e64",
+    "en_es.pkdict": "93d2d22d58e7e753771dd0e29b19036d74a5ec7aeafba703724c24a93e581237",
+    "es.pkdict": "66a256a487f451812ec53920b2a5f2dea9aafb77fbf8e50240a0b87d2729e7fb"
+  },
+  "artifacts": {
+    "summary": {
+      "path": "apps/keyboard-ios/audits/kept-word-boundary-r47/native-summary-v5.json",
+      "sha256": "c22078caeb490d1b66c0105882007e80d156567cfe0c2a41be78b666264af6ac",
+      "encoding": "raw"
+    },
+    "attachments": {
+      "path": "apps/keyboard-ios/audits/kept-word-boundary-r47/native-attachments-v5.json",
+      "sha256": "d4fdccc02e5bba5525dcd38d7e01d7c92f32bc33164390e4b45eed952e73aa29",
+      "encoding": "raw"
+    },
+    "testBinary": {
+      "path": "apps/keyboard-ios/audits/kept-word-boundary-r47/binaries/native-v5-test.gz",
+      "sha256": "46bb1b2b995c286415fa29d62949c57ac7876f214b9f318e460c4e8d2ee66e88",
+      "encoding": "gzip",
+      "decodedSHA256": "5b0e871dd9db51f01b3994100e0542d56a2ed8672626e7cd65b52705a3b5c7ae"
+    },
+    "appBinary": {
+      "path": "apps/keyboard-ios/audits/kept-word-boundary-r47/binaries/native-v5-host.gz",
+      "sha256": "d4305717b89a41c004b94bc1579164df567772f8b12fc39512efe872b1fb0267",
+      "encoding": "gzip",
+      "decodedSHA256": "4e59c2d586cf47991700e7bcd19cbbc075cc1be94c4992540b8b065d50665b69"
+    },
+    "run": {
+      "path": "apps/keyboard-ios/audits/kept-word-boundary-r47/native-complete-run-v5.json",
+      "sha256": "eba0d46df711a696025bb229b3caa00116bb9ecb8212b8fad6929c23f5f66207",
+      "encoding": "raw"
+    },
+    "build": {
+      "path": "apps/keyboard-ios/audits/kept-word-boundary-r47/native-build-v5-receipt.json",
+      "sha256": "b0e056494b2f83247220c00c754a332096c6224c3cc875030927d62a686005e0",
+      "encoding": "raw"
+    },
+    "sourceArchive": {
+      "path": "apps/keyboard-ios/audits/kept-word-boundary-r47/snapshots/native-v5-sources.tar.gz",
+      "sha256": "67b557719f7d4c3c429e395547726f9717d7a3ad1266e1886cf39fb19c35e769",
+      "encoding": "gzip",
+      "decodedSHA256": "6052ccab1fd7551290c377e0a9fec920e7a1b7423603d03cdf936de52f530c9b"
+    },
+    "buildLog": {
+      "path": "apps/keyboard-ios/audits/kept-word-boundary-r47/build-v5.log.gz",
+      "sha256": "e119c331385508704b9605d4b48051128a7ff5a04462d101a3367f78d7be13e9",
+      "encoding": "gzip",
+      "decodedSHA256": "2157092a5fefa358d2a0209a40ab64d999176bdca77e4a08d2a9b787c18e075d"
+    },
+    "runLog": {
+      "path": "apps/keyboard-ios/audits/kept-word-boundary-r47/native-log-v5.gz",
+      "sha256": "1165f2013a5a8723c6900d9eac7bda5604b76c1f3b8ff3b8e9b9865d484f02f7",
+      "encoding": "gzip",
+      "decodedSHA256": "60b1af7a0bd273a07900bbce95e81a2f2b68743a8909b865b6e89fb88fa50031"
+    }
+  },
+  "metrics": {
+    "tests": 1,
+    "passed": 1,
+    "failed": 0,
+    "skipped": 0,
+    "attachments": 39,
+    "first": 21,
+    "second": 18,
+    "languages": [
+      "en_US",
+      "es",
+      "en_es"
+    ],
+    "routes": [
+      "space",
+      "picker",
+      "search",
+      "alternate-space",
+      "alternate-picker",
+      "alternate-search",
+      "url"
+    ]
+  }
+}

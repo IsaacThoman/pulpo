@@ -1,0 +1,29 @@
+#!/usr/bin/env python3
+"""Mandatory actual-Engine fixture gate for host states outside JSON capabilities."""
+import hashlib,json,pathlib,sys,xml.etree.ElementTree as ET
+p=pathlib.Path(__file__).resolve().parent;root=p.parents[3]
+required={
+'primitiveMustRetainIdentityAndExactScalarText(control:)',
+'pendingCorrectionStillLearnsExactlyOnce()', 'spacingUsesTheEffectiveBoundary()',
+'continuationsNeverTeachThePrefix(suffix:)', 'onlyConfirmedOwnedSuffixDeletionKeepsEligibility(control:)',
+'sparseOwnedSlotsMatchSpaceWithoutInventingPoints()', 'spanishKeepsExistingAccentTapAlignment(word:)',
+'liveNullableIdentityMustStayContinuous(control:)', 'emojiKeepsTheSameTapsAsSpace(language:)',
+'taplessPrefixCannotShiftTheSuffixTaps()', 'ineligibleOrUnownedTapsStayExcluded(control:)',
+'caretBeforeWordContinuationCannotAcceptFragment(tail:)', 'hostCreatedSameSpellingDoesNotOwnTheOldTaps()',
+'observedScalarReplacementCannotReviveOldTaps(control:)', 'newlyLearnedUnknownWordDoesNotValidateItsOwnTaps()',
+'uncertainHostAcceptanceDoesNotTeach(control:)'}
+def need(ok,msg):
+ if not ok:raise ValueError(msg)
+sha=lambda x:hashlib.sha256(x.read_bytes()).hexdigest()
+try:
+ xml=pathlib.Path(sys.argv[1]);binary=pathlib.Path(sys.argv[2]);exitcode=int(sys.argv[3])
+ need(exitcode==0,'source controls process failure')
+ tree=ET.parse(xml);cases=[x for x in tree.findall('.//testcase') if x.get('classname')=='KeyboardCoreTests.ExternalTextTouchR47Tests']
+ need(len(cases)==len(required) and {x.get('name') for x in cases}==required,'complete mandatory fixture manifest')
+ need(all(len(list(x))==0 for x in cases),'source control failure/skip/unavailable')
+ files=[*root.glob('apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/**/*.swift'),root/'apps/keyboard-ios/PulpoKeyboardKit/Tests/KeyboardCoreTests/ExternalTextTouchR47Tests.swift',root/'apps/keyboard-ios/PulpoKeyboardKit/Tests/KeyboardCoreTests/Support.swift']
+ result={'status':'PASS','exit':exitcode,'definitions':len(cases),'required':sorted(required),'XMLSHA256':sha(xml),'binarySHA256':sha(binary),'sources':{str(f.relative_to(root)):sha(f) for f in sorted(files)},'resources':{f.name:sha(f) for f in sorted((root/'apps/keyboard-ios/LanguageData').glob('*.pkdict'))},'scope':'actual Engine hosted in serial macOS Swift Testing Release; no native/installed-extension/human claim; parameter subcases are correlated within definitions'}
+except Exception as error:result={'status':'WHOLE_GATE_ERROR','unavailable':1,'error':str(error)}
+pathlib.Path(sys.argv[4]).write_text(json.dumps(result,indent=2)+'\n')
+print(json.dumps({k:v for k,v in result.items() if k not in ('sources','resources','required')}))
+sys.exit(0 if result['status']=='PASS' else 1)

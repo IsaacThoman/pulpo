@@ -1,0 +1,16 @@
+{
+  "baseline": {
+    "exit": -5,
+    "stderr": "Swift/ErrorType.swift:254: Fatal error: Error raised at top level: Error Domain=unavailable-right-join/0: unsupported insertion endpoint inside joined right-hand grapheme Code=1 \"(null)\"\n",
+    "stdout": "",
+    "started": "2026-10-16T10:51:19.906283+00:00",
+    "finished": "2026-10-16T10:51:19.990056+00:00"
+  },
+  "candidate": {
+    "exit": -5,
+    "stderr": "Swift/ErrorType.swift:254: Fatal error: Error raised at top level: Error Domain=unavailable-right-join/0: unsupported insertion endpoint inside joined right-hand grapheme Code=1 \"(null)\"\n",
+    "stdout": "",
+    "started": "2026-10-16T10:51:19.990103+00:00",
+    "finished": "2026-10-16T10:51:20.072280+00:00"
+  }
+}

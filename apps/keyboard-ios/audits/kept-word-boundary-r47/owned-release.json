@@ -1,0 +1,31 @@
+{
+  "uuid": "7BA07CA0-19C9-4152-AEF4-F6D140B72C03",
+  "time": "2026-10-16T11:54:24.573025+00:00",
+  "preferencesChanged": false,
+  "restore": "No device or global preferences changed",
+  "commands": [
+    {
+      "command": [
+        "xcrun",
+        "simctl",
+        "shutdown",
+        "7BA07CA0-19C9-4152-AEF4-F6D140B72C03"
+      ],
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "xcrun",
+        "simctl",
+        "delete",
+        "7BA07CA0-19C9-4152-AEF4-F6D140B72C03"
+      ],
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    }
+  ],
+  "absent": true
+}

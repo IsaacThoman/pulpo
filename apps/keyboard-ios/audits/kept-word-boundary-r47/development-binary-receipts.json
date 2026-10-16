@@ -1,0 +1,20 @@
+[
+  {
+    "name": "baseline-v1",
+    "binarySHA256": "f832a60e689a0dff519b6a4f1d7acf9632d46eb1366c4161cf95fdac915bed1c",
+    "executorSHA256": "ce912556ddec4bc33e16fc2ae4d0967bc5c096fb4ed9efc4d017738ae9adfa14",
+    "engineSHA256": "3f0987051ff0f176a5e1ef6396d415b0f8fe0fc2088735c75fef87f75158de97"
+  },
+  {
+    "name": "candidate-v1",
+    "binarySHA256": "70b09b9c7490c5f12ee64c43179a06ee633aa0782ae1000d9cbeeeb79fcda8f4",
+    "executorSHA256": "ce912556ddec4bc33e16fc2ae4d0967bc5c096fb4ed9efc4d017738ae9adfa14",
+    "engineSHA256": "23a0ae71dbe8e7db527927cccf5b2f626925da2a4ce41ea51926583be5da1e6e"
+  },
+  {
+    "name": "old-witness-v1",
+    "binarySHA256": "d24e2364b375e1844c2074c8fb8d82d88e75287c402cf2d7138775875f782691",
+    "executorSHA256": "ce912556ddec4bc33e16fc2ae4d0967bc5c096fb4ed9efc4d017738ae9adfa14",
+    "engineSHA256": "375a9f28f8be902857c1d61dc8f59ca7fbaeaa7e7dec24a7f6e2503ba23eefee"
+  }
+]

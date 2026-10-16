@@ -1,0 +1,16 @@
+{
+  "baseline": {
+    "exit": -5,
+    "stderr": "Swift/ErrorType.swift:254: Fatal error: Error raised at top level: Error Domain=invalid host coordinates Code=1 \"(null)\"\n",
+    "stdout": "",
+    "started": "2026-10-16T10:51:20.416043+00:00",
+    "finished": "2026-10-16T10:51:20.503103+00:00"
+  },
+  "candidate": {
+    "exit": -5,
+    "stderr": "Swift/ErrorType.swift:254: Fatal error: Error raised at top level: Error Domain=invalid host coordinates Code=1 \"(null)\"\n",
+    "stdout": "",
+    "started": "2026-10-16T10:51:20.503135+00:00",
+    "finished": "2026-10-16T10:51:20.582953+00:00"
+  }
+}

@@ -1,0 +1,157 @@
+import UIKit
+import XCTest
+@testable import KeyboardUI
+@testable import PulpoKeyboard
+
+/// Hosted UIKit/component coverage; controlled taps are synthetic, not human data.
+@MainActor
+final class ExternalTextTouchR47Tests: XCTestCase {
+  func testActualPickerAndSearchKeepTappedWords() throws {
+    for language in ["en_US", "es", "en_es"] {
+      var ordinaryOffsets: [KeyPoint]?
+      var alternateOffsets: [KeyPoint]?
+      var ordinarySecondOffsets: [KeyPoint]?
+      var alternateSecondOffsets: [KeyPoint]?
+      for route in ["space", "picker", "search", "alternate-space", "alternate-picker", "alternate-search", "url"] {
+        let stack = try LanguageStack(dictionaryURL: XCTUnwrap(KeyboardResources.url(language, "pkdict")), personalURL: nil, touchURL: nil)
+        let editor = UITextView()
+        editor.autocapitalizationType = .none
+        editor.keyboardType = route == "url" ? .URL : .default
+        editor.text = ""
+        let host = PreviewHost(textView: editor) { _ in XCTFail("Unexpected navigation") }
+        let controller = KeyboardController(host: host, dictationBridge: nil)
+        controller.engine.useLanguageStack(stack)
+        controller.engine.settings.autoCapitalization = false
+        controller.engine.settings.autocorrect = false
+        controller.engine.settings.learnWords = true
+        controller.rootView.frame = CGRect(x: 0, y: 0, width: 390, height: 300)
+        controller.rootView.layoutIfNeeded()
+        let alternate = route.hasPrefix("alternate-")
+        let routeKind = route.replacingOccurrences(of: "alternate-", with: "")
+        let word = alternate ? "café" : language == "en_US" ? "music" : "mundo"
+        let previous = language == "en_US" ? "good" : "buena"
+        // A prior ordinary word supplies nonzero history and observable pair context.
+        func typeWord(_ value: String, alternate: Bool = false) throws {
+          for c in value {
+            if alternate && c == "é" {
+              controller.keysView(controller.rootView.keys, insertAlternate: "é", for: Key(action: .character("e"), label: "e"))
+            } else {
+              let point = try XCTUnwrap(geometry.center(String(c).utf8.first!))
+              controller.keysView(controller.rootView.keys, activate: Key(action: .character(String(c)), label: String(c)), at: CGPoint(x: (point.x + 0.1) * pitch.width, y: (point.y + 0.2) * pitch.height))
+            }
+          }
+        }
+        let geometry = stack.corrector.geometry
+        let pitch = controller.rootView.keys.pitch
+        XCTAssertGreaterThan(pitch.width, 0)
+        try typeWord(previous)
+        controller.keysView(controller.rootView.keys, activate: Key(action: .space, label: "space"), at: .zero)
+        let previousWeight = stack.touch.weight
+        XCTAssertEqual(previousWeight, routeKind == "url" ? 0 : Double(previous.count))
+        try typeWord(word, alternate: alternate)
+        let prefix = previous + " " + word
+        XCTAssertEqual(editor.text, prefix)
+        XCTAssertEqual(stack.touch.weight, previousWeight)
+        let catalog = try EmojiCatalog.load(url: XCTUnwrap(KeyboardResources.url("emoji", "json")))
+        controller.emojiResourcesLoaded(catalog: catalog, suggester: EmojiSuggester(catalog: catalog))
+        func accept(currentPrefix: String, currentWeight: Double) throws {
+          if routeKind == "url" {
+            let layout = KeyboardLayout.make(page: .letters, traits: host.inputTraits, needsGlobe: false, digitHints: false)
+            let dotcom = try XCTUnwrap(layout.rows.flatMap(\.keys).first { $0.action == .text(".com") })
+            controller.keysView(controller.rootView.keys, activate: dotcom, at: .zero)
+          } else if routeKind == "space" {
+            controller.keysView(controller.rootView.keys, activate: Key(action: .space, label: "space"), at: .zero)
+          } else {
+            controller.keysView(controller.rootView.keys, activate: Key(action: .emoji, label: "emoji"), at: .zero)
+            let panel = try XCTUnwrap(controller.rootView.emoji)
+            if routeKind == "picker" {
+              // Real UICollectionView selection -> picker insert -> controller delegate.
+              let collection = try XCTUnwrap(panel.subviews.compactMap { $0 as? UICollectionView }.first)
+              var chosen: IndexPath?
+              for section in 0..<panel.numberOfSections(in: collection) {
+                for item in 0..<panel.collectionView(collection, numberOfItemsInSection: section) {
+                  let index = IndexPath(item: item, section: section)
+                  let cell = panel.collectionView(collection, cellForItemAt: index)
+                  if cell.accessibilityIdentifier == "emoji-🎉" { chosen = index }
+                }
+              }
+              panel.collectionView(collection, didSelectItemAt: try XCTUnwrap(chosen))
+            } else {
+              controller.emojiPanelSearch(panel)
+              XCTAssertEqual(controller.rootView.mode, .emojiSearch)
+              // Search keys must edit the query, preserving document-word taps.
+              for c in "party" {
+                controller.keysView(controller.rootView.keys, activate: Key(action: .character(String(c)), label: String(c)), at: .zero)
+              }
+              XCTAssertEqual(editor.text, currentPrefix)
+              XCTAssertEqual(controller.rootView.search.query, "party")
+              XCTAssertEqual(stack.touch.weight, currentWeight)
+              XCTAssertTrue(controller.rootView.search.results.contains { $0.value == "🎉" })
+              func descendants(_ view: UIView) -> [UIView] { view.subviews.flatMap { [$0] + descendants($0) } }
+              let result = try XCTUnwrap(descendants(controller.rootView.search).compactMap { $0 as? EmojiResultControl }.first { $0.result.value == "🎉" })
+              result.sendActions(for: .touchUpInside)
+            }
+          }
+        }
+        try accept(currentPrefix: prefix, currentWeight: previousWeight)
+        let expected = prefix + (routeKind == "url" ? ".com" : routeKind == "space" ? " " : "🎉")
+        XCTAssertEqual(editor.text, expected)
+        XCTAssertEqual(editor.selectedRange, NSRange(location: expected.utf16.count, length: 0))
+        XCTAssertEqual(stack.personal.count(of: word), routeKind == "url" ? 0 : 1)
+        let evidence: [String: Any] = ["language": language, "route": route, "text": editor.text!, "weight": stack.touch.weight, "count": stack.personal.count(of: word), "offsets": stack.touch.offsets.map { [$0.x, $0.y] }, "previousCount": stack.personal.count(of: previous), "pair": stack.personal.pairCount(previous, word), "alternate": alternate]
+        let attachment = XCTAttachment(data: try JSONSerialization.data(withJSONObject: evidence, options: [.sortedKeys]), uniformTypeIdentifier: "public.json")
+        attachment.name = "r47-\(language)-\(route)"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        XCTAssertEqual(stack.touch.weight, previousWeight + (routeKind == "url" ? 0 : Double(alternate ? 3 : word.count)), "\(language)/\(route)")
+        if routeKind == "space" {
+          if alternate { alternateOffsets = stack.touch.offsets } else { ordinaryOffsets = stack.touch.offsets }
+        }
+        if routeKind == "picker" || routeKind == "search" { XCTAssertEqual(stack.touch.offsets, alternate ? alternateOffsets : ordinaryOffsets) }
+        let learnedWeight = stack.touch.weight
+        let learnedOffsets = stack.touch.offsets
+        let pair = stack.personal.pairCount(previous, word)
+        XCTAssertEqual(pair, routeKind == "url" ? 0 : 1)
+        controller.documentDidChange()
+        controller.documentDidChange()
+        XCTAssertEqual(stack.touch.weight, learnedWeight)
+        XCTAssertEqual(stack.touch.offsets, learnedOffsets)
+        XCTAssertEqual(stack.personal.pairCount(previous, word), pair)
+        XCTAssertEqual(stack.personal.count(of: word), routeKind == "url" ? 0 : 1)
+        if routeKind == "picker" || routeKind == "search" {
+          if routeKind == "search" { try XCTUnwrap(controller.rootView.search.onBack)() }
+          let panel = try XCTUnwrap(controller.rootView.emoji)
+          controller.emojiPanel(panel, insert: "🎉")
+          controller.emojiPanelClose(panel)
+          controller.keysView(controller.rootView.keys, activate: Key(action: .space, label: "space"), at: .zero)
+          XCTAssertEqual(editor.text, prefix + "🎉🎉 ")
+          XCTAssertEqual(stack.touch.weight, learnedWeight)
+          XCTAssertEqual(stack.personal.count(of: word), 1)
+          XCTAssertEqual(stack.touch.offsets, learnedOffsets)
+          XCTAssertEqual(stack.personal.pairCount(previous, word), pair)
+
+        }
+        if routeKind != "url" {
+          let secondPrefix = editor.text! + word
+          try typeWord(word, alternate: alternate)
+          try accept(currentPrefix: secondPrefix, currentWeight: learnedWeight)
+          XCTAssertEqual(stack.touch.weight, learnedWeight + Double(alternate ? 3 : word.count))
+          XCTAssertEqual(stack.personal.count(of: word), 2)
+          XCTAssertEqual(stack.personal.count(of: previous), 1)
+          XCTAssertEqual(stack.personal.pairCount(previous, word), pair)
+          if routeKind == "space" {
+            if alternate { alternateSecondOffsets = stack.touch.offsets } else { ordinarySecondOffsets = stack.touch.offsets }
+          } else {
+            XCTAssertEqual(stack.touch.offsets, alternate ? alternateSecondOffsets : ordinarySecondOffsets)
+          }
+          let second: [String: Any] = ["language": language, "route": route, "text": editor.text!, "weight": stack.touch.weight, "offsets": stack.touch.offsets.map { [$0.x, $0.y] }, "wordCount": stack.personal.count(of: word), "previousCount": stack.personal.count(of: previous), "pair": stack.personal.pairCount(previous, word), "selfPair": stack.personal.pairCount(word, word)]
+          let secondAttachment = XCTAttachment(data: try JSONSerialization.data(withJSONObject: second, options: [.sortedKeys]), uniformTypeIdentifier: "public.json")
+          secondAttachment.name = "r47-second-\(language)-\(route)"
+          secondAttachment.lifetime = .keepAlways
+          add(secondAttachment)
+        }
+
+      }
+    }
+  }
+}

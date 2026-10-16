@@ -1,0 +1,35 @@
+import Foundation
+final class PollingDocument: TextDocument {
+  var text = ""
+  var documentIdentifier: UUID? = UUID(uuidString: "00000000-0000-0000-0000-000000000001")
+  var documentContextBeforeInput: String? { text }
+  var documentContextAfterInput: String? { "" }
+  var selectedText: String? { nil }
+  var hasText: Bool { !text.isEmpty }
+  func insertText(_ value: String) { text += value }
+  func deleteBackward() { if !text.isEmpty { text.removeLast() } }
+}
+@main struct Witness {
+  static func main() throws {
+    var rows: [[String: Any]] = []
+    for route in ["space", "external", "observed-poll-replacement"] {
+      let stack = try LanguageStack(dictionaryURL: URL(fileURLWithPath: CommandLine.arguments[1]).appendingPathComponent("en_US.pkdict"), personalURL: nil, touchURL: nil)
+      let doc = PollingDocument()
+      var settings = KeyboardSettings(); settings.autoCapitalization = false; settings.autocorrect = false
+      let engine = KeyboardEngine(document: doc, suggester: stack.suggester, glide: stack.glide, settings: settings)
+      engine.clock = { 0 }; engine.documentDidChange()
+      for c in "music" {
+        let label = String(c), center = stack.corrector.geometry.center(String(c).utf8.first!)!
+        engine.insertCharacter(label, tap: KeyPoint(x: center.x + 0.08, y: center.y + 0.1))
+      }
+      let validBefore = stack.suggester.isValid("music")
+      if route == "observed-poll-replacement" {
+        doc.text = "xmusic"; engine.reconcileHostChanges()
+        doc.text = "music"; engine.documentDidChange()
+      }
+      if route == "space" { engine.insertSpace() } else { engine.insertText("🎉") }
+      rows.append(["route": route, "validBefore": validBefore, "text": doc.text, "cursor": doc.text.count, "selection": 0, "wordCount": stack.personal.count(of: "music"), "weight": stack.touch.weight, "offsets": stack.touch.offsets.map { [$0.x, $0.y] }])
+    }
+    try JSONSerialization.data(withJSONObject: rows, options: [.sortedKeys, .prettyPrinted]).write(to: URL(fileURLWithPath: CommandLine.arguments[2]))
+  }
+}

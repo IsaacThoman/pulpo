@@ -1,0 +1,9 @@
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "No device 7BA07CA0-19C9-4152-AEF4-F6D140B72C03 on host local. Call device_list for current ids."
+    }
+  ],
+  "isError": true
+}

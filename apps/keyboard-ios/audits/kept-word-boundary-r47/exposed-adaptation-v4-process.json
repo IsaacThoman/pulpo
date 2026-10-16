@@ -1,0 +1,33 @@
+{
+  "baseline": {
+    "command": [
+      "/tmp/pulpo-r47-baseline-v2/runner",
+      "/Users/isaacthoman/.t3/worktrees/pulpo/t3-a7c83449/apps/keyboard-ios/audits/kept-word-boundary-r47/exposed-adaptation-input.json",
+      "/Users/isaacthoman/.t3/worktrees/pulpo/t3-a7c83449/apps/keyboard-ios/LanguageData",
+      "/Users/isaacthoman/.t3/worktrees/pulpo/t3-a7c83449/apps/keyboard-ios/audits/kept-word-boundary-r47/exposed-adaptation-baseline-v4.json"
+    ],
+    "exit": 0,
+    "stderr": "",
+    "inputSHA256": "885d082d347420050c7e48b7cef73b429bb0807513874a06fccbbe3687fc7ac7",
+    "binarySHA256": "9439efbce99bfe76efab889af00fb6301e0f54ca0de32fa486dc20160f422ae1",
+    "outputSHA256": "df34e97746bab898dbf218ad1b2c79aa707df2e16519e58825cb960d04120909"
+  },
+  "candidate": {
+    "command": [
+      "/tmp/pulpo-r47-candidate-v4/runner",
+      "/Users/isaacthoman/.t3/worktrees/pulpo/t3-a7c83449/apps/keyboard-ios/audits/kept-word-boundary-r47/exposed-adaptation-input.json",
+      "/Users/isaacthoman/.t3/worktrees/pulpo/t3-a7c83449/apps/keyboard-ios/LanguageData",
+      "/Users/isaacthoman/.t3/worktrees/pulpo/t3-a7c83449/apps/keyboard-ios/audits/kept-word-boundary-r47/exposed-adaptation-candidate-v4.json"
+    ],
+    "exit": 0,
+    "stderr": "",
+    "inputSHA256": "885d082d347420050c7e48b7cef73b429bb0807513874a06fccbbe3687fc7ac7",
+    "binarySHA256": "220f67457b4193a2aa1368843593d1f1dfbf7440c037dab5ff4b547e3724d850",
+    "outputSHA256": "de3168970398712d695ab6d4463cafb9879815c2f95b48fcf8e19899f26650ec"
+  },
+  "scope": "Same historical exposed input, not blind or human accuracy; prior complete outputs exactly reproduced.",
+  "baselineRows": 672,
+  "candidateRows": 672,
+  "baselineExactHistoricalEquality": true,
+  "candidateExactHistoricalEquality": true
+}

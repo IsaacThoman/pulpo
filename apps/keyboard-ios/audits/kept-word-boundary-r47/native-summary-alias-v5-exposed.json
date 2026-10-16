@@ -1,0 +1,30 @@
+{
+  "scope": "SYNTHETIC discriminator mutation only; never native result/admission",
+  "actualResult": "Passed",
+  "syntheticResult": "Failed",
+  "syntheticTestResult": "Passed",
+  "acceptedBeforeFix": true,
+  "returnedMetrics": {
+    "tests": 1,
+    "passed": 1,
+    "failed": 0,
+    "skipped": 0,
+    "attachments": 39,
+    "first": 21,
+    "second": 18,
+    "languages": [
+      "en_US",
+      "es",
+      "en_es"
+    ],
+    "routes": [
+      "space",
+      "picker",
+      "search",
+      "alternate-space",
+      "alternate-picker",
+      "alternate-search",
+      "url"
+    ]
+  }
+}

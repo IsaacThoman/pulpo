@@ -1,0 +1,29 @@
+{
+  "process": {
+    "baseline": {
+      "exit": 0,
+      "stderr": "",
+      "stdout": "",
+      "started": "2026-10-16T12:42:39.193944+00:00",
+      "finished": "2026-10-16T12:42:39.255495+00:00"
+    },
+    "candidate": {
+      "exit": 0,
+      "stderr": "",
+      "stdout": "",
+      "started": "2026-10-16T12:42:39.255520+00:00",
+      "finished": "2026-10-16T12:42:39.315472+00:00"
+    }
+  },
+  "input": "b5a5de21b8fd091ad905b60d1a09bb64946dd3b36b861ccc46cd441ae1c4a0f0",
+  "executables": {
+    "baseline": "9439efbce99bfe76efab889af00fb6301e0f54ca0de32fa486dc20160f422ae1",
+    "candidate": "a0041b21153d69f125d9c4f64edc8b1436875bd6e6b2a629ef850f832068b710"
+  },
+  "resources": {
+    "en_US.pkdict": "168c21378b29aa7fd37838aed910d64348b5267389abfd2dacd0598247cf1e64",
+    "en_es.pkdict": "93d2d22d58e7e753771dd0e29b19036d74a5ec7aeafba703724c24a93e581237",
+    "es.pkdict": "66a256a487f451812ec53920b2a5f2dea9aafb77fbf8e50240a0b87d2729e7fb"
+  },
+  "freezeSHA256": "24d9b0670cccf1e00453c8fa0299fa2e71b8589f68db31697a3f72a9a096d729"
+}

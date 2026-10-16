@@ -1,0 +1,186 @@
+import Foundation
+
+final class AuditDocument: TextDocument {
+  var text: String
+  var cursor: Int
+  var length = 0
+  var hidden = false
+  var hiddenBefore = false
+  var hiddenAfter = false
+  var beforeOverride: String?
+  var decline = false
+  var queued = false
+  var queue: [String] = []
+  var willInsert: (() -> Void)?
+  var edits = 0
+  var identity = 1
+  func rotateIdentity() { identity += 1; documentIdentifier = UUID(uuidString: String(format: "00000000-0000-0000-0000-%012d", identity)) }
+
+  var failure: String?
+  var coordinatesValid: Bool { cursor >= 0 && length >= 0 && cursor + length <= text.count }
+  var documentIdentifier: UUID? = UUID(uuidString: "00000000-0000-0000-0000-000000000001")
+  init(_ text: String, _ cursor: Int) { self.text = text; self.cursor = cursor }
+  var chars: [Character] { Array(text) }
+  var documentContextBeforeInput: String? { hidden || hiddenBefore ? nil : beforeOverride ?? String(chars.prefix(cursor)) }
+  var documentContextAfterInput: String? { hidden || hiddenAfter ? nil : String(chars.dropFirst(cursor + length)) }
+  var selectedText: String? { length == 0 ? nil : String(chars.dropFirst(cursor).prefix(length)) }
+  var hasText: Bool { !text.isEmpty }
+  func insertText(_ value: String) {
+    edits += 1
+    let callback = willInsert; willInsert = nil; callback?()
+    guard !decline else { return }
+    if queued { queue.append(value); return }
+    apply(value)
+  }
+  func apply(_ value: String) {
+    guard coordinatesValid else { failure = "invalid document coordinates"; return }
+    let prefix = String(chars.prefix(cursor)) + value
+    let suffix = String(chars.dropFirst(cursor + length))
+    let result = prefix + suffix
+    let endpoint = prefix.count
+    guard result.prefix(endpoint).unicodeScalars.elementsEqual(prefix.unicodeScalars),
+          result.dropFirst(endpoint).unicodeScalars.elementsEqual(suffix.unicodeScalars) else {
+      failure = "unsupported insertion endpoint inside joined right-hand grapheme"
+      return
+    }
+    text = result; cursor = endpoint; length = 0
+  }
+  func deleteBackward() {
+    if length > 0 { insertText("") }
+    else if cursor > 0 { cursor -= 1; length = 1; insertText("") }
+  }
+}
+struct Operation: Codable {
+  let op: String
+  var text: String?; var taps: Bool?; var dx: Double?; var dy: Double?
+  var spacing: Bool?; var cursor: Int?; var selection: Int?; var hidden: Bool?; var newDocument: Bool?
+  var keyboard: String?; var contentType: String?; var secure: Bool?
+  var learns: Bool?; var autocorrect: Bool?; var touchLearning: Bool?
+  var intended: String?
+  var hiddenBefore: Bool?; var hiddenAfter: Bool?; var beforeOverride: String?
+  var clearOverride: Bool?; var decline: Bool?; var queued: Bool?; var callback: Bool?
+  var transition: String?
+}
+struct Scenario: Codable {
+  let id: String; let language: String; let initial: String; let cursor: Int
+  let watch: [String]; let pairs: [[String]]; let ops: [Operation]
+  // Expectations are consumed independently; executor never reads them.
+}
+struct Input: Codable { let version: Int; let cases: [Scenario] }
+func run(_ input: Input, resources: URL) throws -> [[String: Any]] {
+  guard input.version == 1 else { throw NSError(domain: "version", code: 1) }
+  var rows: [[String: Any]] = []
+  for scenario in input.cases {
+    let stack = try LanguageStack(dictionaryURL: resources.appendingPathComponent(scenario.language + ".pkdict"), personalURL: nil, touchURL: nil)
+    let doc = AuditDocument(scenario.initial, scenario.cursor)
+    var settings = KeyboardSettings(); settings.autoCapitalization = false; settings.autocorrect = false; settings.doubleSpacePeriod = false
+    guard doc.coordinatesValid else { throw NSError(domain: "invalid initial coordinates", code: 1) }
+    let engine = KeyboardEngine(document: doc, suggester: stack.suggester, glide: stack.glide, settings: settings)
+    engine.documentDidChange()
+    for (index, op) in scenario.ops.enumerated() {
+      var extra: [String: Any] = [:]
+      switch op.op {
+      case "type":
+        for c in op.text! {
+          let bytes = Array(TextNormalizer.key(String(c)).utf8)
+          let center = bytes.count == 1 ? stack.corrector.geometry.center(bytes[0]) : nil
+          let tap = (op.taps ?? true) ? center.map { KeyPoint(x: $0.x + (op.dx ?? 0), y: $0.y + (op.dy ?? 0)) } : nil
+          // Key label is declared by input. No decoded choice is overwritten.
+          engine.insertCharacter(String(c), tap: tap)
+        }
+      case "space": engine.insertSpace()
+      case "external":
+        if let transition = op.transition {
+          doc.willInsert = {
+            switch transition {
+            case "identity": doc.rotateIdentity()
+            case "identity-callback": doc.rotateIdentity(); engine.documentDidChange()
+            case "private": engine.traits.isSecure = true
+            case "selection": doc.length = min(1, doc.text.count - doc.cursor)
+            default: doc.failure = "unsupported primitive transition"
+            }
+          }
+        }
+        engine.insertText(op.text!, spacing: op.spacing ?? false)
+      case "document":
+        if let hidden = op.hidden { doc.hidden = hidden }
+        if let hidden = op.hiddenBefore { doc.hiddenBefore = hidden }
+        if let hidden = op.hiddenAfter { doc.hiddenAfter = hidden }
+        if let value = op.beforeOverride { doc.beforeOverride = value }
+        if op.clearOverride == true { doc.beforeOverride = nil }
+        if let value = op.decline { doc.decline = value }
+        if let value = op.queued { doc.queued = value }
+        if op.callback == true { engine.documentDidChange() }
+      case "flush":
+        let values = doc.queue; doc.queue = []
+        for value in values { doc.apply(value) }
+        if op.callback == true { engine.documentDidChange() }
+      case "snapshot": break
+      case "delete": engine.deleteBackward()
+      case "host":
+        if let text = op.text { doc.text = text }
+        if let cursor = op.cursor { doc.cursor = cursor }
+        doc.length = op.selection ?? 0
+        if let hidden = op.hidden { doc.hidden = hidden }
+        if op.newDocument == true { doc.rotateIdentity() }
+        guard doc.coordinatesValid else { throw NSError(domain: "invalid host coordinates", code: 1) }
+        if op.callback != false { engine.documentDidChange() }
+      case "field":
+        var traits = InputTraits(); traits.capitalization = .none
+        switch op.keyboard ?? "standard" {
+        case "standard": traits.keyboard = .standard
+        case "url": traits.keyboard = .url
+        case "email": traits.keyboard = .email
+        case "numberPad": traits.keyboard = .numberPad
+        default: throw NSError(domain: "keyboard", code: 1)
+        }
+        traits.contentType = op.contentType; traits.isSecure = op.secure ?? false
+        engine.traits = traits
+        engine.documentDidChange()
+      case "settings":
+        if let learns = op.learns { engine.settings.learnWords = learns }
+        if let autocorrect = op.autocorrect { engine.settings.autocorrect = autocorrect }
+        if let learning = op.touchLearning { stack.touch.isLearning = learning }
+      case "callback": engine.documentDidChange()
+      case "reset":
+        doc.text = ""; doc.cursor = 0; doc.length = 0; doc.hidden = false; doc.rotateIdentity()
+        engine.documentDidChange()
+      case "probe":
+        let intended = op.intended!
+        let points = try TextNormalizer.key(intended).utf8.map { byte -> KeyPoint in
+          guard let c = stack.corrector.geometry.center(byte) else { throw NSError(domain: "probe", code: 1) }
+          return KeyPoint(x: c.x + (op.dx ?? 0), y: c.y + (op.dy ?? 0))
+        }
+        let decoded = String(bytes: points.compactMap { stack.corrector.geometry.nearestLetter(to: $0) }, encoding: .utf8)!
+        let typed = TypedWord(text: decoded, taps: points.map { Optional($0) })
+        extra["intended"] = intended; extra["decoded"] = decoded
+        extra["cost"] = stack.corrector.cost(of: typed, against: intended)
+        // Separate legitimate probe, real engine/key routing from nearest centers.
+        for (c, point) in zip(decoded, points) { engine.insertCharacter(String(c), tap: point) }
+        extra["autocorrection"] = engine.suggestions.autocorrection ?? NSNull()
+        extra["slots"] = engine.suggestions.slots.map(\.text)
+      default: throw NSError(domain: "operation", code: 1)
+      }
+      if let failure = doc.failure { throw NSError(domain: "\(scenario.id)/\(index): \(failure)", code: 1) }
+      guard doc.coordinatesValid else { throw NSError(domain: "invalid resulting coordinates", code: 1) }
+      var row: [String: Any] = ["id": scenario.id, "language": scenario.language, "index": index, "op": op.op,
+        "text": doc.text, "cursor": doc.cursor, "selection": doc.length,
+        "weight": stack.touch.weight, "offsets": stack.touch.offsets.map { [$0.x, $0.y] },
+        "total": stack.personal.totalCount, "counts": Dictionary(uniqueKeysWithValues: scenario.watch.map { ($0, stack.personal.count(of: $0)) }),
+        "pairs": scenario.pairs.map { stack.personal.pairCount($0[0], $0[1]) },
+        "valid": Dictionary(uniqueKeysWithValues: scenario.watch.map { ($0, stack.suggester.isValid($0)) }),
+        "learns": engine.policy.learns, "identity": doc.identity, "edits": doc.edits]
+      row.merge(extra) { _, new in new }
+      rows.append(row)
+    }
+  }
+  return rows
+}
+@main struct Main {
+  static func main() throws {
+    let args = CommandLine.arguments
+    let input = try JSONDecoder().decode(Input.self, from: Data(contentsOf: URL(fileURLWithPath: args[1])))
+    let rows = try run(input, resources: URL(fileURLWithPath: args[2]))
+    try JSONSerialization.data(withJSONObject: rows, options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: args[3]))
+  }
+}
