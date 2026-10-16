@@ -171,6 +171,10 @@ final class LearningSession {
 private final class LearningCoordinator: @unchecked Sendable {
   private final class Weak { weak var value: LearningCoordinator?; init(_ value: LearningCoordinator) { self.value = value } }
   private static let registryLock = NSLock()
+  // Fixed stripes also share local exclusion for uncached slotless readers at
+  // registry capacity, without an unbounded path-to-lock cache. Collisions only
+  // cause explicit nonblocking busy backpressure between unrelated domains.
+  private static let transactionLocks = (0..<32).map { _ in NSLock() }
   nonisolated(unsafe) private static var registry: [String: Weak] = [:]
   static func find(_ domain: LearningDomain, standalone: URL? = nil, kind: LearningKind? = nil) -> LearningCoordinator? {
     guard registryLock.try() else { return nil }
@@ -216,7 +220,7 @@ private final class LearningCoordinator: @unchecked Sendable {
   private let allowsAdmission: Bool
   private var dataVersion: Int64?
   private var authorityID: String?
-  private let mutex = NSLock()
+  private let mutex: NSLock
   private let schedulerLock = NSLock()
   private var scheduled = false
   private var again = false
@@ -233,6 +237,7 @@ private final class LearningCoordinator: @unchecked Sendable {
 
   private init(_ domain: LearningDomain, standalone: URL?, kind: LearningKind?, allowsAdmission: Bool) {
     self.domain = domain; self.standalone = standalone; standaloneKind = kind; self.allowsAdmission = allowsAdmission
+    mutex = Self.transactionLocks[Int(domain.database.path.hashValue.magnitude % UInt(Self.transactionLocks.count))]
   }
   deinit { if slotFD >= 0 { close(slotFD) } }
 
@@ -733,7 +738,9 @@ private final class LearningSQL {
       let slot = Int32(index + 1)
       switch value {
       case let .int(value): try check(sqlite3_bind_int64(statement, slot, value))
-      case let .text(value): try check(sqlite3_bind_text(statement, slot, value, -1, transient))
+      case let .text(value):
+        guard let length = Int32(exactly: value.utf8.count) else { throw LearningPersistenceResult.capacity }
+        try check(sqlite3_bind_text(statement, slot, value, length, transient))
       case let .data(value):
         try value.withUnsafeBytes { bytes in try check(sqlite3_bind_blob(statement, slot, bytes.baseAddress, Int32(bytes.count), transient)) }
       case .null: try check(sqlite3_bind_null(statement, slot))

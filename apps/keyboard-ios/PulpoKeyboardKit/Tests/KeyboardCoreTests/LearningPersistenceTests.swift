@@ -3,6 +3,52 @@ import Testing
 @testable import KeyboardCore
 
 struct LearningPersistenceTests {
+  @Test func embeddedNullKeysKeepDistinctForgetAndRetryIdentities() throws {
+    try domain { url, _ in
+      let first = PersonalDictionary(url: url), second = PersonalDictionary(url: url)
+      let a = "r33null\u{0}alpha", b = "r33null\u{0}beta", leading = "\u{0}r33leading"
+      #expect(first.learn(a, after: "r33nullHistory", pinned: true))
+      #expect(first.pin(b))
+      #expect(first.pin(leading))
+      #expect(second.forget("r33null"))
+      try finishLearning(first)
+      try finishLearning(first)
+      let read = PersonalDictionary(url: url)
+      #expect(read.persistenceResult == .ok)
+      #expect(read.count(of: a) == 1 && read.count(of: b) == 1 && read.count(of: leading) == 1)
+      #expect(read.pairCount("r33nullHistory", a) == 1)
+      #expect(first.learn(a, after: "r33nullHistory"))
+      #expect(first.learn(b, after: "r33nullHistory"))
+      #expect(second.forget(a))
+      try finishLearning(first)
+      let final = PersonalDictionary(url: url)
+      #expect(final.persistenceResult == .ok)
+      #expect(final.count(of: a) == 0 && final.count(of: b) == 2)
+      #expect(final.pairCount("r33nullHistory", a) == 0)
+      #expect(final.pairCount("r33nullHistory", b) == 1)
+    }
+  }
+
+  @Test func registryCapacityStillAllowsSlotlessReadAndCombinedReset() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("r33-registry-\(UUID())")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    var retained: [PersonalDictionary] = []
+    for i in 0..<34 {
+      retained.append(PersonalDictionary(url: root.appendingPathComponent("\(i)/PersonalDictionary.json")))
+    }
+    let url = root.appendingPathComponent("33/PersonalDictionary.json")
+    let extra = PersonalDictionary(url: url)
+    #expect(extra.persistenceResult == .ok)
+    #expect(!retained.last!.pin("r33capacity"))
+    #expect(retained.last!.persistenceResult == .capacity)
+    #expect(LearnedDataPersistence.clear(dictionaryURL: url, touchURL: url.deletingLastPathComponent().appendingPathComponent("TouchModel.json")) == .ok)
+    #expect(!extra.reloadIfChangedOnDisk())
+    #expect(extra.persistenceResult == .ok)
+    #expect(extra.totalCount == 0)
+    withExtendedLifetime(retained) {}
+  }
+
   private func domain(_ body: (URL, URL) throws -> Void) throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("learning-v2-\(UUID())")
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
