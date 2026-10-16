@@ -69,7 +69,11 @@ public final class KeyboardEngine {
   }
   public private(set) var policy: InputPolicy
   public private(set) var shift: ShiftState = .off
-  public var page: KeyboardPage = .letters
+  public var page: KeyboardPage = .letters {
+    didSet {
+      if page != oldValue { lastShiftTap = -1 }
+    }
+  }
   /// Computed on first read after an edit, so keystrokes never wait on suggestions.
   public var suggestions: SuggestionSet {
     if suggestionsStale { refreshSuggestions() }
@@ -982,6 +986,7 @@ public final class KeyboardEngine {
     let visibilityChanged = availabilityChanged && !matchesExpected &&
       !recentObservedOwnContexts.contains(where: { $0.context == observed })
     if identifier != expectedDocumentIdentifier || privacyChanged || visibilityChanged {
+      lastShiftTap = -1
       expectedDocumentIdentifier = identifier
       if expectedContext != nil { externalContextChanges += 1 }
       invalidateSuggestionContext()
@@ -1029,6 +1034,9 @@ public final class KeyboardEngine {
         expectedAfterContext = after
         expectedSelection = selection
         if !windowShift {
+          // Only an accepted external change interrupts Shift taps. Own-edit
+          // lag and sliding context windows above preserve the sequence.
+          lastShiftTap = -1
           invalidateSuggestionContext()
           externalContextChanges += 1
           recentOwnContexts.removeAll()
