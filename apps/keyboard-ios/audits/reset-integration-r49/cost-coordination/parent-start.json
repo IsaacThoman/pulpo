@@ -1,0 +1,26 @@
+{
+  "action": "START",
+  "authorizedBy": "parent",
+  "grantID": "r46-cost-20261016-124739-v1",
+  "grantedAt": "2026-10-16T12:47:39.134877+00:00",
+  "expiresAt": "2026-10-16T13:22:39.134877+00:00",
+  "freezeSHA256": "6f7e0783f2702644632d7208702ce686dce541b2f3d0f085901096637ad96ded",
+  "freshMeasurementTask": true,
+  "exclusiveQuietHost": true,
+  "allOtherR46WorkersHold": true,
+  "uninterruptedSerialBatch": true,
+  "parentEvidence": "/Users/isaacthoman/.t3/worktrees/pulpo/t3-a3218df3/apps/keyboard-ios/audits/reset-integration-r49/cost-coordination/parent-start.json",
+  "taskIDBinding": "R46 must add only taskID from its newly returned delegate_task before frozen driver starts; retain this parent original and derived grant; no other field changes",
+  "overallReadySHA256": "3053831a8f32a9c5e345ef440719df3c4a0d1e2d2f36383529644a89bad3a1c0",
+  "acknowledgements": {
+    "root": "All compilation and product model runs completed; only light existing-file accounting/docs/hash work; no devices or active sessions",
+    "R46": "Overall READY77d769c4 allchildren terminal no processes; own unbooted16Plus native deferred",
+    "R47": "Explicit subtree IDLE/HOLD ACK; allchildren terminal; native device deleted; terminal handoff",
+    "R51": "Thread durable positions193/204: native exited65, bothworkers ACK no processes/nochildren; fullsubtree HOLD",
+    "nativeOutcomeReviewer": "Explicit IDLE/HOLD ACK; existing-file light Python accounting only",
+    "R50": "Terminal task no pendingchildren; owneddevice deleted"
+  },
+  "scope": "One unchanged fixed28process batch2warmups+12measured pervariant7374queries/process; no retries/subsets/restarts/thresholdretune",
+  "controlLimits": "Exclusive means all known delegated/root heavy work held; independent frozen hostCPU/preflight/monitor determines actual quiet validity. Unknown hostbackground load never waived.",
+  "release": "Hold until explicit parent END after terminal/no active measurement; expiry prevents extending grant or new samples without new disposition. Report interruption/expiry/incomplete honestly; no retries."
+}
