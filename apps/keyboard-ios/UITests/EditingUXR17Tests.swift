@@ -2,12 +2,21 @@ import XCTest
 
 @MainActor
 final class EditingUXR17Tests: PreviewTypingTestCase {
+  private func writeObservations(_ observations: Any, name: String) throws {
+    let requested = ProcessInfo.processInfo.environment["PK_R17_REPORT"]
+    let directory = requested.map { URL(fileURLWithPath: $0).deletingLastPathComponent() }
+      ?? FileManager.default.temporaryDirectory.appendingPathComponent("pulpo-r17")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    try JSONSerialization.data(withJSONObject: observations, options: [.prettyPrinted, .sortedKeys])
+      .write(to: directory.appendingPathComponent(name))
+  }
+
   func testBlindExploration() throws {
     var observations: [[String: String]] = []
     func capture(_ id: String) {
       observations.append(["id": id, "document": app.previewText, "ui": app.debugDescription, "selection": "unavailable via XCTest accessibility"])
       snapshot("r17-\(id)")
-      try? JSONSerialization.data(withJSONObject: observations, options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: "/tmp/pulpo-r17/exploration.json"))
+      try? writeObservations(observations, name: "exploration.json")
     }
     app.typeOnPreview("hello\nworld")
     capture("en-before-kind")
@@ -54,8 +63,7 @@ final class EditingUXR17Tests: PreviewTypingTestCase {
     else if app.key("key-letters").exists { app.key("key-letters").tap() }
     app.typeOnPreview("hi")
     capture("en-clear-search-typed")
-    let data = try JSONSerialization.data(withJSONObject: observations, options: [.prettyPrinted, .sortedKeys])
-    try data.write(to: URL(fileURLWithPath: "/tmp/pulpo-r17/exploration.json"))
+    try writeObservations(observations, name: "exploration.json")
   }
   func testBlindAccessibilityExploration() throws {
     app.terminate()
@@ -70,7 +78,7 @@ final class EditingUXR17Tests: PreviewTypingTestCase {
     app.buttons["try-it-tips"].tap()
     snapshot("r17-accessibility-tips")
     observations.append(["id":"accessibility-tips", "document":app.previewText, "ui":app.debugDescription])
-    try JSONSerialization.data(withJSONObject: observations, options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: "/tmp/pulpo-r17/accessibility-exploration.json"))
+    try writeObservations(observations, name: "accessibility-exploration.json")
   }
 
   func testBlindCursorExploration() throws {
@@ -99,7 +107,7 @@ final class EditingUXR17Tests: PreviewTypingTestCase {
       let uiUnits = Array(app.debugDescription.utf16)
       observations.append(["id":emoji ? "es-cursor-emoji" : "en-cursor-ascii", "before":before, "document":String(decoding: units, as: UTF16.self), "exactDocumentUTF16":units, "selection":"unavailable via AX", "ui":String(decoding: uiUnits, as: UTF16.self)])
       snapshot(emoji ? "r17-cursor-emoji" : "r17-cursor-ascii")
-      try JSONSerialization.data(withJSONObject: observations, options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: "/tmp/pulpo-r17/cursor-exploration.json"))
+      try writeObservations(observations, name: "cursor-exploration.json")
     }
   }
 

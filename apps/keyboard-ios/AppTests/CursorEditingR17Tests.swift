@@ -63,7 +63,9 @@ final class CursorEditingR17Tests: XCTestCase {
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
     if let path = ProcessInfo.processInfo.environment["PK_R17_REPORT"] {
-      try encoder.encode(outcomes).write(to: URL(fileURLWithPath: path))
+      let destination = URL(fileURLWithPath: path)
+      try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+      try encoder.encode(outcomes).write(to: destination)
     }
     for row in outcomes {
       XCTAssertTrue(row.documentPassed, "\(row.id): exact document differs; UTF16=\(row.exactDocumentUTF16)")
