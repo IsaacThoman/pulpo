@@ -1,0 +1,6 @@
+PulpoKeyboard.xcodeproj/
+build/
+PulpoKeyboardKit/.build/
+PulpoKeyboardKit/.swiftpm/
+scripts/__pycache__/
+*.pyc
