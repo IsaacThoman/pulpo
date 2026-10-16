@@ -469,7 +469,13 @@ public final class KeyboardEngine {
       composing = TypedWord(text: "")
     }
     var output = text
-    if spacing || phantomSpace, let previous = before.last, !previous.isWhitespace, !"([{\u{201C}\u{2018}/@#".contains(previous) {
+    // External text can supply its own separator or begin with punctuation
+    // that attaches to the preceding word. Opening delimiters attach to the
+    // following text instead, including Spanish inverted punctuation.
+    if spacing || phantomSpace,
+       let first = text.first, !first.isWhitespace, !".,!?;:)]}\u{201D}\u{2019}…".contains(first),
+       let previous = before.last, !previous.isWhitespace,
+       !"([{\u{201C}\u{2018}¿¡/@#".contains(previous), !Self.endsInOpeningQuote(before) {
       output = " " + output
     }
     phantomSpace = false
