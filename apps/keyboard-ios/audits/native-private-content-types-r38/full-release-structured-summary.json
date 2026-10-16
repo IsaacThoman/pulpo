@@ -1,0 +1,26 @@
+{
+  "exitCode": 0,
+  "reports": [
+    {
+      "file": "pulpo-r38-release-results-swift-testing.xml",
+      "suites": [
+        {
+          "name": "TestResults",
+          "errors": "0",
+          "tests": "3",
+          "failures": "0",
+          "skipped": "0",
+          "time": "0.000838666"
+        },
+        {
+          "name": "TestResults",
+          "errors": "0",
+          "tests": "426",
+          "failures": "0",
+          "skipped": "19",
+          "time": "5.07920725"
+        }
+      ]
+    }
+  ]
+}

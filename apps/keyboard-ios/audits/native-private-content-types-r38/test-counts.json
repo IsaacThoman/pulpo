@@ -1,0 +1,10 @@
+{
+  "debugKnownIssueLocations": [
+    "MultilingualTests.swift:34 (3 existing)",
+    "EngineFuzzRegressionTests.swift:219 (2 existing)"
+  ],
+  "existingSkippedCoreDefinitions": 19,
+  "coreDefinitions": 445,
+  "coreExecutedDefinitions": 426,
+  "serviceDefinitions": 3
+}

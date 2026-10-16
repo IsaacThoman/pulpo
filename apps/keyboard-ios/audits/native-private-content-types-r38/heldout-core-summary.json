@@ -1,0 +1,44 @@
+{
+  "platform": "core",
+  "counts": {
+    "gain": 30,
+    "transitions": 1272,
+    "baselineTransitionsPassed": 603,
+    "candidateTransitionsPassed": 1260,
+    "transitionsWithMappingAndWordLearningGain": 573,
+    "transitionsWithMappingAndTouchLearningGain": 543,
+    "commonPass": 21,
+    "commonFailure": 3,
+    "baselineChallengesFired": 39,
+    "baselineExplicitExpectedRefusals": 33,
+    "candidateChallengesFired": 39,
+    "candidateExplicitExpectedRefusals": 36,
+    "baselineAcceptedChallenges": 6,
+    "directGuardUnauthorizedAcceptancesFixed": 3,
+    "candidateAcceptedChallenges": 3
+  },
+  "languages": {
+    "en_US": {
+      "gain": 10,
+      "commonPass": 7,
+      "commonFailure": 1
+    },
+    "es": {
+      "gain": 10,
+      "commonPass": 7,
+      "commonFailure": 1
+    },
+    "en_es": {
+      "gain": 10,
+      "commonPass": 7,
+      "commonFailure": 1
+    }
+  },
+  "baselineFailureCount": 5850,
+  "candidateFailureCount": 12,
+  "limitations": [
+    "Direct guard challenges are not controller/audio acceptance.",
+    "Unavailable automatic insertion earns no refusal/safety credit.",
+    "Transition gain counts overlap within cases; they are not independent samples."
+  ]
+}

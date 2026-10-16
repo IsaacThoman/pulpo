@@ -1,0 +1,76 @@
+// Generate a temporary AppTests copy using prepare-native-wrapper.py. Fixed
+// embedded JSON works on physical devices without accessing a host filesystem.
+// Explicit environment paths override embedded inputs for simulator workflows.
+#if canImport(UIKit)
+import Foundation
+import UIKit
+import XCTest
+import KeyboardUI
+@testable import PulpoKeyboard
+
+@MainActor
+final class R38BehaviorNativeTests: XCTestCase {
+  private static let casesBase64 = "__R38_CASES_BASE64__"
+  private static let calibrationBase64 = "__R38_CALIBRATION_BASE64__"
+
+  private func input(environment: String, embedded: String, bundleName: String) throws -> Data {
+    if let path = ProcessInfo.processInfo.environment[environment], !path.isEmpty {
+      return try Data(contentsOf: URL(fileURLWithPath: path))
+    }
+    if !embedded.hasPrefix("__R38_"), let data = Data(base64Encoded: embedded) { return data }
+    for bundle in [Bundle(for: Self.self), Bundle.main] {
+      if let url = bundle.url(forResource: bundleName, withExtension: "json") {
+        return try Data(contentsOf: url)
+      }
+    }
+    throw R38Error("Missing \(bundleName): generate the wrapper with embedded JSON or set \(environment) to a device-accessible file")
+  }
+
+  private func languageDataURL() throws -> URL {
+    if let path = ProcessInfo.processInfo.environment["R38_LANGUAGE_DATA_PATH"], !path.isEmpty {
+      return URL(fileURLWithPath: path, isDirectory: true)
+    }
+    // Dictionaries live in the embedded keyboard extension bundle. The app's
+    // main bundle intentionally has none; use the production resource resolver.
+    let english = try XCTUnwrap(KeyboardResources.url("en_US", "pkdict"))
+    let directory = english.deletingLastPathComponent()
+    for language in R38BehaviorRunner.languages {
+      let resource = try XCTUnwrap(KeyboardResources.url(language, "pkdict"))
+      guard resource.deletingLastPathComponent().standardizedFileURL == directory.standardizedFileURL else {
+        throw R38Error("Keyboard resources must share a directory: \(language)")
+      }
+    }
+    return directory
+  }
+
+  func testDevelopmentBehavior() throws {
+    let label = ProcessInfo.processInfo.environment["R38_RESULT_LABEL"] ?? "development"
+    let output: Data
+    do {
+      let cases = try input(environment: "R38_CASES_PATH", embedded: Self.casesBase64, bundleName: "r38-behavior-cases")
+      let calibration = try input(environment: "R38_CALIBRATION_PATH", embedded: Self.calibrationBase64, bundleName: "r38-calibration-baseline")
+      let runner = try R38BehaviorRunner(calibrationData: calibration, languageDataURL: languageDataURL())
+      output = try runner.run(casesData: cases, label: label)
+    } catch {
+      output = try JSONSerialization.data(withJSONObject: [
+        "version": 1, "runner": "R38-development-behavior", "platform": "native", "label": label,
+        "passed": false, "failureCount": 1, "failures": [String(describing: error)], "results": [],
+      ], options: [.prettyPrinted, .sortedKeys])
+    }
+    let outputURL: URL
+    if let path = ProcessInfo.processInfo.environment["R38_OUTPUT_PATH"], !path.isEmpty {
+      outputURL = URL(fileURLWithPath: path)
+    } else {
+      outputURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        .appendingPathComponent("r38-behavior-native.json")
+    }
+    try output.write(to: outputURL, options: .atomic)
+    let attachment = XCTAttachment(data: output, uniformTypeIdentifier: "public.json")
+    attachment.name = "r38-behavior-native-\(label)"
+    attachment.lifetime = .keepAlways
+    add(attachment)
+    let result = try JSONSerialization.jsonObject(with: output) as! [String: Any]
+    XCTAssertEqual(result["failureCount"] as? Int, 0, "R38 failures retained at \(outputURL.path): \(result["failures"] ?? [])")
+  }
+}
+#endif

@@ -1,0 +1,428 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "development-deliberate-errors",
+      "intent": "Intentional failures; verify continued execution and cleared capture",
+      "languages": {
+        "en_US": {
+          "initialText": "",
+          "selection": [
+            0,
+            0
+          ],
+          "field": {
+            "id": "none",
+            "route": "native",
+            "keyboard": "standard",
+            "secure": false
+          },
+          "steps": [
+            {
+              "op": "destination",
+              "expect": {
+                "text": "",
+                "selection": [
+                  0,
+                  0
+                ]
+              }
+            },
+            {
+              "op": "choose",
+              "expect": {
+                "text": "",
+                "selection": [
+                  0,
+                  0
+                ]
+              }
+            },
+            {
+              "op": "invalidateGuard",
+              "expect": {
+                "text": "",
+                "selection": [
+                  0,
+                  0
+                ]
+              }
+            },
+            {
+              "op": "type",
+              "text": "hello",
+              "expect": {
+                "text": "hello",
+                "selection": [
+                  5,
+                  0
+                ]
+              }
+            },
+            {
+              "op": "capture",
+              "text": "hello",
+              "kind": "literal",
+              "expect": {
+                "text": "hello",
+                "selection": [
+                  5,
+                  0
+                ]
+              }
+            },
+            {
+              "op": "capture",
+              "text": "r38-never-offered-choice",
+              "kind": "completion",
+              "expect": {
+                "text": "hello",
+                "selection": [
+                  5,
+                  0
+                ]
+              }
+            },
+            {
+              "op": "choose",
+              "expect": {
+                "text": "hello",
+                "selection": [
+                  5,
+                  0
+                ]
+              }
+            },
+            {
+              "op": "host",
+              "text": "😀",
+              "selection": [
+                1,
+                0
+              ],
+              "newIdentity": false,
+              "expect": {
+                "text": "hello",
+                "selection": [
+                  5,
+                  0
+                ]
+              }
+            },
+            {
+              "op": "insert",
+              "text": "!",
+              "expect": {
+                "text": "hello!",
+                "selection": [
+                  6,
+                  0
+                ]
+              }
+            },
+            {
+              "op": "automatic",
+              "text": "blocked",
+              "expect": {
+                "text": "hello!",
+                "selection": [
+                  6,
+                  0
+                ]
+              }
+            },
+            {
+              "op": "insert",
+              "text": "?",
+              "expect": {
+                "text": "hello!?",
+                "selection": [
+                  7,
+                  0
+                ]
+              }
+            }
+          ]
+        },
+        "es": {
+          "initialText": "",
+          "selection": [
+            0,
+            0
+          ],
+          "field": {
+            "id": "none",
+            "route": "native",
+            "keyboard": "standard",
+            "secure": false
+          },
+          "steps": [
+            {
+              "op": "destination",
+              "expect": {
+                "text": "",
+                "selection": [
+                  0,
+                  0
+                ]
+              }
+            },
+            {
+              "op": "choose",
+              "expect": {
+                "text": "",
+                "selection": [
+                  0,
+                  0
+                ]
+              }
+            },
+            {
+              "op": "invalidateGuard",
+              "expect": {
+                "text": "",
+                "selection": [
+                  0,
+                  0
+                ]
+              }
+            },
+            {
+              "op": "type",
+              "text": "hola",
+              "expect": {
+                "text": "hola",
+                "selection": [
+                  4,
+                  0
+                ]
+              }
+            },
+            {
+              "op": "capture",
+              "text": "hola",
+              "kind": "literal",
+              "expect": {
+                "text": "hola",
+                "selection": [
+                  4,
+                  0
+                ]
+              }
+            },
+            {
+              "op": "capture",
+              "text": "r38-never-offered-choice",
+              "kind": "completion",
+              "expect": {
+                "text": "hola",
+                "selection": [
+                  4,
+                  0
+                ]
+              }
+            },
+            {
+              "op": "choose",
+              "expect": {
+                "text": "hola",
+                "selection": [
+                  4,
+                  0
+                ]
+              }
+            },
+            {
+              "op": "host",
+              "text": "😀",
+              "selection": [
+                1,
+                0
+              ],
+              "newIdentity": false,
+              "expect": {
+                "text": "hola",
+                "selection": [
+                  4,
+                  0
+                ]
+              }
+            },
+            {
+              "op": "insert",
+              "text": "!",
+              "expect": {
+                "text": "hola!",
+                "selection": [
+                  5,
+                  0
+                ]
+              }
+            },
+            {
+              "op": "automatic",
+              "text": "blocked",
+              "expect": {
+                "text": "hola!",
+                "selection": [
+                  5,
+                  0
+                ]
+              }
+            },
+            {
+              "op": "insert",
+              "text": "?",
+              "expect": {
+                "text": "hola!?",
+                "selection": [
+                  6,
+                  0
+                ]
+              }
+            }
+          ]
+        },
+        "en_es": {
+          "initialText": "",
+          "selection": [
+            0,
+            0
+          ],
+          "field": {
+            "id": "none",
+            "route": "native",
+            "keyboard": "standard",
+            "secure": false
+          },
+          "steps": [
+            {
+              "op": "destination",
+              "expect": {
+                "text": "",
+                "selection": [
+                  0,
+                  0
+                ]
+              }
+            },
+            {
+              "op": "choose",
+              "expect": {
+                "text": "",
+                "selection": [
+                  0,
+                  0
+                ]
+              }
+            },
+            {
+              "op": "invalidateGuard",
+              "expect": {
+                "text": "",
+                "selection": [
+                  0,
+                  0
+                ]
+              }
+            },
+            {
+              "op": "type",
+              "text": "hello",
+              "expect": {
+                "text": "hello",
+                "selection": [
+                  5,
+                  0
+                ]
+              }
+            },
+            {
+              "op": "capture",
+              "text": "hello",
+              "kind": "literal",
+              "expect": {
+                "text": "hello",
+                "selection": [
+                  5,
+                  0
+                ]
+              }
+            },
+            {
+              "op": "capture",
+              "text": "r38-never-offered-choice",
+              "kind": "completion",
+              "expect": {
+                "text": "hello",
+                "selection": [
+                  5,
+                  0
+                ]
+              }
+            },
+            {
+              "op": "choose",
+              "expect": {
+                "text": "hello",
+                "selection": [
+                  5,
+                  0
+                ]
+              }
+            },
+            {
+              "op": "host",
+              "text": "😀",
+              "selection": [
+                1,
+                0
+              ],
+              "newIdentity": false,
+              "expect": {
+                "text": "hello",
+                "selection": [
+                  5,
+                  0
+                ]
+              }
+            },
+            {
+              "op": "insert",
+              "text": "!",
+              "expect": {
+                "text": "hello!",
+                "selection": [
+                  6,
+                  0
+                ]
+              }
+            },
+            {
+              "op": "automatic",
+              "text": "blocked",
+              "expect": {
+                "text": "hello!",
+                "selection": [
+                  6,
+                  0
+                ]
+              }
+            },
+            {
+              "op": "insert",
+              "text": "?",
+              "expect": {
+                "text": "hello!?",
+                "selection": [
+                  7,
+                  0
+                ]
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

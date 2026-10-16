@@ -1,0 +1,23 @@
+{
+  "en_US": {
+    "path": "apps/keyboard-ios/LanguageData/en_US.pkdict",
+    "bytes": 12964440,
+    "sha256": "168c21378b29aa7fd37838aed910d64348b5267389abfd2dacd0598247cf1e64",
+    "gitBlob": "a9e73548472fcaca567496d0a3fc8e16ccd0c4da",
+    "unchangedFromBaseline": true
+  },
+  "es": {
+    "path": "apps/keyboard-ios/LanguageData/es.pkdict",
+    "bytes": 15277240,
+    "sha256": "66a256a487f451812ec53920b2a5f2dea9aafb77fbf8e50240a0b87d2729e7fb",
+    "gitBlob": "8e1623a62ef10eae981d9ae85e39e57e8d56e0ea",
+    "unchangedFromBaseline": true
+  },
+  "en_es": {
+    "path": "apps/keyboard-ios/LanguageData/en_es.pkdict",
+    "bytes": 27391648,
+    "sha256": "93d2d22d58e7e753771dd0e29b19036d74a5ec7aeafba703724c24a93e581237",
+    "gitBlob": "cf392a67214074de0459946df053baab31e4402e",
+    "unchangedFromBaseline": true
+  }
+}

@@ -1,0 +1,716 @@
+{
+  "version": 1,
+  "review": "R38 second independent blind static oracle reviewer",
+  "status": "nonvalidated",
+  "sealed": false,
+  "blockerCount": 6,
+  "blockerCountUnit": "distinct unresolved root findings; affected steps include dependencies",
+  "counts": {
+    "cases": 18,
+    "variants": 54,
+    "steps": 1266,
+    "validatedStaticCases": 13,
+    "nonvalidatedCases": 5,
+    "validatedStaticSteps": 1197,
+    "nonvalidatedSteps": 69,
+    "blockers": 6,
+    "schemaErrors": 0,
+    "conditionalArithmeticErrors": 0,
+    "conditionalAssertionErrors": 0,
+    "languageCorrelationErrors": 0,
+    "duplicateJSONKeys": 0,
+    "nativeNamedIDsIncludingNone": 46,
+    "privateNativeIDs": 24,
+    "normalNativeIDsIncludingNone": 22,
+    "explicitLegacyAliasIDs": 24,
+    "customExactValues": 11,
+    "captureRequests": 6,
+    "offeredChoicePresenceVerifiedByExecution": 0,
+    "nonemptyAutomaticAcceptedChallenges": 0,
+    "productionExecutions": 0,
+    "corrections": 0
+  },
+  "inputFiles": {
+    "contract": {
+      "filename": "apps/keyboard-ios/audits/native-private-content-types-r38/contract.md",
+      "sha256": "5b3f36bd029e740cd0c5f19074896f663f71078fcf533229294a81816297b5f6"
+    },
+    "heldout": {
+      "filename": "/tmp/pulpo-r38-blind/heldout.json",
+      "sha256": "b4de5b05115d049fe2a8a4d71301b41d38f4b06dcdcacb9828104045cfa6b60e"
+    },
+    "authorship": {
+      "filename": "/tmp/pulpo-r38-blind/authorship.md",
+      "sha256": "ea5fbfed31b852dd04f1608a114d41ce90e7dd16e37e305444d77843b31dc721"
+    }
+  },
+  "outputReport": {
+    "filename": "/tmp/pulpo-r38-blind/oracle-review.md",
+    "sha256": "36f992e0fc1ecd8dbc5885063e34937f3f6fdb330ecc074d03919aa16d265411"
+  },
+  "originalRetainedUnchanged": true,
+  "authorshipRetainedUnchanged": true,
+  "reviewedJSONCreated": false,
+  "corrections": [],
+  "operationCounts": {
+    "destination": 36,
+    "type": 162,
+    "space": 234,
+    "delete": 153,
+    "field": 357,
+    "insert": 93,
+    "host": 150,
+    "capture": 6,
+    "choose": 6,
+    "guardOrigin": 27,
+    "automatic": 21,
+    "confirm": 18,
+    "invalidateGuard": 3
+  },
+  "fieldOccurrenceCounts": {
+    "native": 297,
+    "custom": 39,
+    "legacy": 75
+  },
+  "nativePrivateStandardAndNumberPadCombinationsByLocale": {
+    "en_US": 48,
+    "es": 48,
+    "en_es": 48
+  },
+  "caseDispositions": [
+    {
+      "id": "r38-native-private-01",
+      "variants": 3,
+      "steps": 105,
+      "validatedSteps": 105,
+      "nonvalidatedSteps": 0,
+      "status": "validated-static"
+    },
+    {
+      "id": "r38-native-private-02",
+      "variants": 3,
+      "steps": 105,
+      "validatedSteps": 105,
+      "nonvalidatedSteps": 0,
+      "status": "validated-static"
+    },
+    {
+      "id": "r38-native-private-03",
+      "variants": 3,
+      "steps": 105,
+      "validatedSteps": 105,
+      "nonvalidatedSteps": 0,
+      "status": "validated-static"
+    },
+    {
+      "id": "r38-native-private-04",
+      "variants": 3,
+      "steps": 105,
+      "validatedSteps": 105,
+      "nonvalidatedSteps": 0,
+      "status": "validated-static"
+    },
+    {
+      "id": "r38-native-private-05",
+      "variants": 3,
+      "steps": 105,
+      "validatedSteps": 105,
+      "nonvalidatedSteps": 0,
+      "status": "validated-static"
+    },
+    {
+      "id": "r38-native-private-06",
+      "variants": 3,
+      "steps": 105,
+      "validatedSteps": 105,
+      "nonvalidatedSteps": 0,
+      "status": "validated-static"
+    },
+    {
+      "id": "r38-native-normal-exceptions",
+      "variants": 3,
+      "steps": 66,
+      "validatedSteps": 66,
+      "nonvalidatedSteps": 0,
+      "status": "validated-static"
+    },
+    {
+      "id": "r38-normal-learning-control",
+      "variants": 3,
+      "steps": 18,
+      "validatedSteps": 3,
+      "nonvalidatedSteps": 15,
+      "status": "nonvalidated"
+    },
+    {
+      "id": "r38-custom-exact-opaque",
+      "variants": 3,
+      "steps": 33,
+      "validatedSteps": 33,
+      "nonvalidatedSteps": 0,
+      "status": "validated-static"
+    },
+    {
+      "id": "r38-explicit-legacy-aliases",
+      "variants": 3,
+      "steps": 291,
+      "validatedSteps": 291,
+      "nonvalidatedSteps": 0,
+      "status": "validated-static"
+    },
+    {
+      "id": "r38-secure-trait-transitions",
+      "variants": 3,
+      "steps": 27,
+      "validatedSteps": 27,
+      "nonvalidatedSteps": 0,
+      "status": "validated-static"
+    },
+    {
+      "id": "r38-captured-stale-unrelated-normal",
+      "variants": 3,
+      "steps": 15,
+      "validatedSteps": 9,
+      "nonvalidatedSteps": 6,
+      "status": "nonvalidated"
+    },
+    {
+      "id": "r38-captured-stale-late-private",
+      "variants": 3,
+      "steps": 18,
+      "validatedSteps": 12,
+      "nonvalidatedSteps": 6,
+      "status": "nonvalidated"
+    },
+    {
+      "id": "r38-keyboard-classification-independent",
+      "variants": 3,
+      "steps": 45,
+      "validatedSteps": 45,
+      "nonvalidatedSteps": 0,
+      "status": "validated-static"
+    },
+    {
+      "id": "r38-private-unicode-edit-conservation",
+      "variants": 3,
+      "steps": 30,
+      "validatedSteps": 12,
+      "nonvalidatedSteps": 18,
+      "status": "nonvalidated"
+    },
+    {
+      "id": "r38-guard-late-private-and-invalidate",
+      "variants": 3,
+      "steps": 24,
+      "validatedSteps": 24,
+      "nonvalidatedSteps": 0,
+      "status": "validated-static"
+    },
+    {
+      "id": "r38-guard-context-identity-selection",
+      "variants": 3,
+      "steps": 30,
+      "validatedSteps": 30,
+      "nonvalidatedSteps": 0,
+      "status": "validated-static"
+    },
+    {
+      "id": "r38-guard-origin-and-confirmation-routes",
+      "variants": 3,
+      "steps": 39,
+      "validatedSteps": 15,
+      "nonvalidatedSteps": 24,
+      "status": "nonvalidated"
+    }
+  ],
+  "blockers": [
+    {
+      "id": "B01",
+      "title": "Normal enabled-autocorrection commit has no exact spelling/caret guarantee",
+      "reason": "Case 8 commits an invented word with space while all normal plain features, including autocorrection and replacements, remain enabled. The frozen contract neither names a lexicon nor guarantees those words survive a normal boundary commit unchanged. The full literal text/caret at step 2 and subsequent dependent text are internally arithmetically consistent but cannot be validated as the uniquely required behavior. This also prevents admission of the positive learning control as written.",
+      "resolution": "Reject the unproved oracle. Obtain an independent contract-only deterministic normal commit rule before choosing an oracle; do not infer it from implementation, smoke, calibration, baseline, or candidate behavior.",
+      "affectedSteps": [
+        {
+          "case": "r38-normal-learning-control",
+          "language": "en_US",
+          "step": 2
+        },
+        {
+          "case": "r38-normal-learning-control",
+          "language": "en_US",
+          "step": 3
+        },
+        {
+          "case": "r38-normal-learning-control",
+          "language": "en_US",
+          "step": 4
+        },
+        {
+          "case": "r38-normal-learning-control",
+          "language": "en_US",
+          "step": 5
+        },
+        {
+          "case": "r38-normal-learning-control",
+          "language": "en_US",
+          "step": 6
+        },
+        {
+          "case": "r38-normal-learning-control",
+          "language": "es",
+          "step": 2
+        },
+        {
+          "case": "r38-normal-learning-control",
+          "language": "es",
+          "step": 3
+        },
+        {
+          "case": "r38-normal-learning-control",
+          "language": "es",
+          "step": 4
+        },
+        {
+          "case": "r38-normal-learning-control",
+          "language": "es",
+          "step": 5
+        },
+        {
+          "case": "r38-normal-learning-control",
+          "language": "es",
+          "step": 6
+        },
+        {
+          "case": "r38-normal-learning-control",
+          "language": "en_es",
+          "step": 2
+        },
+        {
+          "case": "r38-normal-learning-control",
+          "language": "en_es",
+          "step": 3
+        },
+        {
+          "case": "r38-normal-learning-control",
+          "language": "en_es",
+          "step": 4
+        },
+        {
+          "case": "r38-normal-learning-control",
+          "language": "en_es",
+          "step": 5
+        },
+        {
+          "case": "r38-normal-learning-control",
+          "language": "en_es",
+          "step": 6
+        }
+      ],
+      "affectedStepCount": 15
+    },
+    {
+      "id": "B02",
+      "title": "Exact normal dictionary count and total-count units are unspecified",
+      "reason": "The contract requires real fresh-stack readbacks and normal positive controls, but does not define count increment, aggregation, token normalization, or bilingual total-count semantics. Case 8 assumes exactly one for both the named word and total after one normal commit in each of en_US, es and en_es. Positive touch learning is a contract-supported control intent; the exact integer values are an unadmitted semantic assumption, explicitly acknowledged in authorship. Private absence and unchanged existing counts are sound policy requirements once a valid normal readback is established.",
+      "resolution": "Reject exact 1 readbacks pending a pre-reveal contract-only rule. Do not change expectations to observed implementation values. The schema offers no positive-integer predicate for dictionary counts.",
+      "affectedSteps": [
+        {
+          "case": "r38-normal-learning-control",
+          "language": "en_US",
+          "step": 2
+        },
+        {
+          "case": "r38-normal-learning-control",
+          "language": "en_US",
+          "step": 3
+        },
+        {
+          "case": "r38-normal-learning-control",
+          "language": "en_US",
+          "step": 5
+        },
+        {
+          "case": "r38-normal-learning-control",
+          "language": "en_US",
+          "step": 6
+        },
+        {
+          "case": "r38-normal-learning-control",
+          "language": "es",
+          "step": 2
+        },
+        {
+          "case": "r38-normal-learning-control",
+          "language": "es",
+          "step": 3
+        },
+        {
+          "case": "r38-normal-learning-control",
+          "language": "es",
+          "step": 5
+        },
+        {
+          "case": "r38-normal-learning-control",
+          "language": "es",
+          "step": 6
+        },
+        {
+          "case": "r38-normal-learning-control",
+          "language": "en_es",
+          "step": 2
+        },
+        {
+          "case": "r38-normal-learning-control",
+          "language": "en_es",
+          "step": 3
+        },
+        {
+          "case": "r38-normal-learning-control",
+          "language": "en_es",
+          "step": 5
+        },
+        {
+          "case": "r38-normal-learning-control",
+          "language": "en_es",
+          "step": 6
+        }
+      ],
+      "affectedStepCount": 12
+    },
+    {
+      "id": "B03",
+      "title": "Captured stale-choice refusal is not specified",
+      "reason": "The schema defines capture of an offered real choice and choose of that captured choice, with explicit failure on missing capture. It does not state an identity/context binding rule, stale-choice rejection behavior, or a rule that a previously offered literal choice is discarded after a private-field transition. Privacy disabling predictions does not by itself uniquely specify how an explicitly chosen stored literal behaves. Cases 12 and 13 require a no-op choose after host replacement, and their following inserts rely on unchanged selection. Those are plausible requirements but are not uniquely derivable from this frozen contract.",
+      "resolution": "Reject both no-op choose oracles rather than guessing stale-choice semantics. Any admitted rule must be specified independently before reveal. Runtime capture must still select an actually offered matching kind/text, retain its actual identity, fail explicitly when absent, and never manufacture a choice.",
+      "affectedSteps": [
+        {
+          "case": "r38-captured-stale-unrelated-normal",
+          "language": "en_US",
+          "step": 4
+        },
+        {
+          "case": "r38-captured-stale-unrelated-normal",
+          "language": "en_US",
+          "step": 5
+        },
+        {
+          "case": "r38-captured-stale-unrelated-normal",
+          "language": "es",
+          "step": 4
+        },
+        {
+          "case": "r38-captured-stale-unrelated-normal",
+          "language": "es",
+          "step": 5
+        },
+        {
+          "case": "r38-captured-stale-unrelated-normal",
+          "language": "en_es",
+          "step": 4
+        },
+        {
+          "case": "r38-captured-stale-unrelated-normal",
+          "language": "en_es",
+          "step": 5
+        },
+        {
+          "case": "r38-captured-stale-late-private",
+          "language": "en_US",
+          "step": 5
+        },
+        {
+          "case": "r38-captured-stale-late-private",
+          "language": "en_US",
+          "step": 6
+        },
+        {
+          "case": "r38-captured-stale-late-private",
+          "language": "es",
+          "step": 5
+        },
+        {
+          "case": "r38-captured-stale-late-private",
+          "language": "es",
+          "step": 6
+        },
+        {
+          "case": "r38-captured-stale-late-private",
+          "language": "en_es",
+          "step": 5
+        },
+        {
+          "case": "r38-captured-stale-late-private",
+          "language": "en_es",
+          "step": 6
+        }
+      ],
+      "affectedStepCount": 12
+    },
+    {
+      "id": "B04",
+      "title": "Private-origin permanence after return to normal is unspecified without invalidation",
+      "reason": "Case 18 captures in private then switches to normal without invalidateGuard. The contract requires nonprivate, matching stable ID/contexts, no selection and no invalidation; it explicitly makes caller invalidation persistent. It does not unambiguously specify whether origin privacy itself permanently disqualifies that guard after current traits become normal. The assumed refusal at steps 2 and 3 is therefore not validated. If the opposite interpretation permitted core insertion, the single shared document oracle would also diverge from unavailable native automatic. Steps 4 through 6 inherit the unproved document state until the host reset at step 7. Case 16 explicitly invalidates and is unaffected.",
+      "resolution": "Reject this permanence expectation pending a contract-only origin-versus-current privacy definition. Do not add an invalidateGuard silently, because that would change the challenge.",
+      "affectedSteps": [
+        {
+          "case": "r38-guard-origin-and-confirmation-routes",
+          "language": "en_US",
+          "step": 2
+        },
+        {
+          "case": "r38-guard-origin-and-confirmation-routes",
+          "language": "en_US",
+          "step": 3
+        },
+        {
+          "case": "r38-guard-origin-and-confirmation-routes",
+          "language": "en_US",
+          "step": 4
+        },
+        {
+          "case": "r38-guard-origin-and-confirmation-routes",
+          "language": "en_US",
+          "step": 5
+        },
+        {
+          "case": "r38-guard-origin-and-confirmation-routes",
+          "language": "en_US",
+          "step": 6
+        },
+        {
+          "case": "r38-guard-origin-and-confirmation-routes",
+          "language": "es",
+          "step": 2
+        },
+        {
+          "case": "r38-guard-origin-and-confirmation-routes",
+          "language": "es",
+          "step": 3
+        },
+        {
+          "case": "r38-guard-origin-and-confirmation-routes",
+          "language": "es",
+          "step": 4
+        },
+        {
+          "case": "r38-guard-origin-and-confirmation-routes",
+          "language": "es",
+          "step": 5
+        },
+        {
+          "case": "r38-guard-origin-and-confirmation-routes",
+          "language": "es",
+          "step": 6
+        },
+        {
+          "case": "r38-guard-origin-and-confirmation-routes",
+          "language": "en_es",
+          "step": 2
+        },
+        {
+          "case": "r38-guard-origin-and-confirmation-routes",
+          "language": "en_es",
+          "step": 3
+        },
+        {
+          "case": "r38-guard-origin-and-confirmation-routes",
+          "language": "en_es",
+          "step": 4
+        },
+        {
+          "case": "r38-guard-origin-and-confirmation-routes",
+          "language": "en_es",
+          "step": 5
+        },
+        {
+          "case": "r38-guard-origin-and-confirmation-routes",
+          "language": "en_es",
+          "step": 6
+        }
+      ],
+      "affectedStepCount": 15
+    },
+    {
+      "id": "B05",
+      "title": "Successful insertTranscript exact spacing is unspecified",
+      "reason": "Case 18 nonempty confirmation at steps 6 and 11 asserts exact transcript insertion with no automatic prefix/suffix spacing. The contract defines insert as insertText spacing:false, but defines confirm via insertTranscript and gives no transcript spacing rule. Confirmation guard permission and its explicit core/native accepted route are supported; exact resulting text/caret are not uniquely derivable, especially appending 7 to a sentence. Dependent text at steps 12 and 13 remains blocked. The host reset at step 7 establishes its own exact document independently.",
+      "resolution": "Reject these exact successful transcript text oracles pending a pre-reveal contract-only insertion rule. Do not repair by measuring production behavior.",
+      "affectedSteps": [
+        {
+          "case": "r38-guard-origin-and-confirmation-routes",
+          "language": "en_US",
+          "step": 6
+        },
+        {
+          "case": "r38-guard-origin-and-confirmation-routes",
+          "language": "en_US",
+          "step": 11
+        },
+        {
+          "case": "r38-guard-origin-and-confirmation-routes",
+          "language": "en_US",
+          "step": 12
+        },
+        {
+          "case": "r38-guard-origin-and-confirmation-routes",
+          "language": "en_US",
+          "step": 13
+        },
+        {
+          "case": "r38-guard-origin-and-confirmation-routes",
+          "language": "es",
+          "step": 6
+        },
+        {
+          "case": "r38-guard-origin-and-confirmation-routes",
+          "language": "es",
+          "step": 11
+        },
+        {
+          "case": "r38-guard-origin-and-confirmation-routes",
+          "language": "es",
+          "step": 12
+        },
+        {
+          "case": "r38-guard-origin-and-confirmation-routes",
+          "language": "es",
+          "step": 13
+        },
+        {
+          "case": "r38-guard-origin-and-confirmation-routes",
+          "language": "en_es",
+          "step": 6
+        },
+        {
+          "case": "r38-guard-origin-and-confirmation-routes",
+          "language": "en_es",
+          "step": 11
+        },
+        {
+          "case": "r38-guard-origin-and-confirmation-routes",
+          "language": "en_es",
+          "step": 12
+        },
+        {
+          "case": "r38-guard-origin-and-confirmation-routes",
+          "language": "en_es",
+          "step": 13
+        }
+      ],
+      "affectedStepCount": 12
+    },
+    {
+      "id": "B06",
+      "title": "Apostrophe in type is outside the declared letter-tap semantics",
+      "reason": "Case 15 step 1 in every language sends an ASCII apostrophe through type. The schema describes type as keywise letters with centered taps and spaces via insertSpace; literal nonletters are explicitly available through insert. No punctuation tap or fallback behavior for type is declared. The JSON shape is valid and ideal literal UTF16 arithmetic is correct, but this payload is semantically unadmitted under the stated capabilities. Steps 2 through 6 depend on it; host at step 7 resets the document.",
+      "resolution": "Reject the undeclared operation behavior. A pre-reveal rewrite could explicitly use the already-declared literal insert operation for punctuation with retained intermediate full oracles, but splitting operations would be a substantive scenario edit; no correction is fabricated here.",
+      "affectedSteps": [
+        {
+          "case": "r38-private-unicode-edit-conservation",
+          "language": "en_US",
+          "step": 1
+        },
+        {
+          "case": "r38-private-unicode-edit-conservation",
+          "language": "en_US",
+          "step": 2
+        },
+        {
+          "case": "r38-private-unicode-edit-conservation",
+          "language": "en_US",
+          "step": 3
+        },
+        {
+          "case": "r38-private-unicode-edit-conservation",
+          "language": "en_US",
+          "step": 4
+        },
+        {
+          "case": "r38-private-unicode-edit-conservation",
+          "language": "en_US",
+          "step": 5
+        },
+        {
+          "case": "r38-private-unicode-edit-conservation",
+          "language": "en_US",
+          "step": 6
+        },
+        {
+          "case": "r38-private-unicode-edit-conservation",
+          "language": "es",
+          "step": 1
+        },
+        {
+          "case": "r38-private-unicode-edit-conservation",
+          "language": "es",
+          "step": 2
+        },
+        {
+          "case": "r38-private-unicode-edit-conservation",
+          "language": "es",
+          "step": 3
+        },
+        {
+          "case": "r38-private-unicode-edit-conservation",
+          "language": "es",
+          "step": 4
+        },
+        {
+          "case": "r38-private-unicode-edit-conservation",
+          "language": "es",
+          "step": 5
+        },
+        {
+          "case": "r38-private-unicode-edit-conservation",
+          "language": "es",
+          "step": 6
+        },
+        {
+          "case": "r38-private-unicode-edit-conservation",
+          "language": "en_es",
+          "step": 1
+        },
+        {
+          "case": "r38-private-unicode-edit-conservation",
+          "language": "en_es",
+          "step": 2
+        },
+        {
+          "case": "r38-private-unicode-edit-conservation",
+          "language": "en_es",
+          "step": 3
+        },
+        {
+          "case": "r38-private-unicode-edit-conservation",
+          "language": "en_es",
+          "step": 4
+        },
+        {
+          "case": "r38-private-unicode-edit-conservation",
+          "language": "en_es",
+          "step": 5
+        },
+        {
+          "case": "r38-private-unicode-edit-conservation",
+          "language": "en_es",
+          "step": 6
+        }
+      ],
+      "affectedStepCount": 18
+    }
+  ],
+  "runtimeEvidence": {
+    "executed": false,
+    "actualOfferedChoicesVerified": false,
+    "realStackReadbackImplementationInspected": false,
+    "nativeResolverInspected": false,
+    "productionOrNativeOutputRead": false,
+    "allOperationsSmoke": "separate public development prerequisite; unobserved",
+    "controllerAcceptanceClaimed": false,
+    "nonemptyAutomaticInsertionClaimed": false
+  },
+  "schemaErrors": [],
+  "conditionalArithmeticErrors": [],
+  "conditionalAssertionErrors": [],
+  "languageCorrelationErrors": []
+}
