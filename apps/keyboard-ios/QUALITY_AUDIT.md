@@ -8,6 +8,14 @@ unmeasured. Small deterministic Spanish and bilingual checks are reported below.
 
 ## Continued independent sweeps, October 15–16
 
+The sentence-local bilingual next-word experiments in
+`audits/sentence-nextword-r37/` were rejected before a final fresh workload.
+Two implemented source-conditioned backoffs earned zero gains in both a
+36-prompt independent development cohort and a 16-prompt exposed cohort, each
+executed in all three language modes. Their exact inactive patches, all paired
+outputs and two changed failed outputs are retained. Production and resource
+bytes were restored; no next-word improvement or native/cost admission is claimed.
+
 The continuation started at `433e54ad`, preserving the user's icon change while
 bringing this worktree onto PR #782. Three independent agents froze protocols in
 isolated worktrees before inspecting implementation or earlier audit findings.
