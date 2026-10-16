@@ -61,6 +61,9 @@ final class InstalledKeyboardGeometryTests: XCTestCase {
     waitForText("")
     for key in ["key-t", "key-e", "key-h", "key-space"] { try tap(key) }
     waitForText("The ")
+    if ProcessInfo.processInfo.operatingSystemVersion.majorVersion < 26 {
+      throw XCTSkip("Multi-point touch synthesis doesn't reach keyboard extensions before iOS 26")
+    }
     try TouchPath.swipe(through: "keyboard".map { try point("key-\($0)") })
     waitForText("The keyboard")
     snapshot("installed-geometry-after-swipe")

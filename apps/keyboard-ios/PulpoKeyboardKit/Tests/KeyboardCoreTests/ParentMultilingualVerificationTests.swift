@@ -8,6 +8,7 @@ struct ParentMultilingualVerificationTests {
   struct Corpus: Decodable {
     var literalWords: [String]
     var codeSwitchSentences: [String]
+    var privacy: [String]
   }
 
   private func corpus() throws -> Corpus {
@@ -56,5 +57,40 @@ struct ParentMultilingualVerificationTests {
       #expect(document.text == message + " ", "\(message) → \(document.text)")
     }
     #expect(stack.personal.totalCount == 0)
+  }
+
+  @Test(arguments: KeyboardLanguage.allCases)
+  func privateFieldsStayUnlearnedWhileModelsChange(language: KeyboardLanguage) throws {
+    let stack = try LanguageStack(dictionaryURL: Fixtures.languageData.appendingPathComponent(language.rawValue + ".pkdict"), personalURL: nil)
+    let next: KeyboardLanguage = language == .spanish ? .bilingual : .spanish
+    let replacement = try LanguageStack(dictionaryURL: Fixtures.languageData.appendingPathComponent(next.rawValue + ".pkdict"), sharing: stack)
+    for kind in try corpus().privacy {
+      var traits = InputTraits()
+      switch kind {
+      case "email": traits.keyboard = .email
+      case "url": traits.keyboard = .url
+      case "secure": traits.isSecure = true
+      case "oneTimeCode": traits.contentType = "oneTimeCode"
+      default: Issue.record("Unsupported frozen private field: \(kind)"); continue
+      }
+      var settings = KeyboardSettings()
+      settings.language = language
+      settings.autoCapitalization = false
+      // Learning is enabled globally; the field policy must prevent it.
+      settings.learnWords = true
+      let document = MockDocument()
+      let engine = KeyboardEngine(document: document, suggester: stack.suggester, glide: stack.glide, settings: settings)
+      engine.traits = traits
+      engine.documentDidChange()
+      engine.type("zqprivateñword ")
+      engine.useLanguageStack(replacement)
+      engine.settings.language = next
+      engine.type("zqprivateword ")
+      engine.save()
+      #expect(document.text == "zqprivateñword zqprivateword ")
+      #expect(stack.personal.totalCount == 0)
+      #expect(!stack.personal.hasUnsavedChanges)
+      #expect(stack.touch.weight == 0)
+    }
   }
 }
