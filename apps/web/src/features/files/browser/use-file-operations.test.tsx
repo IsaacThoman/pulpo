@@ -15,6 +15,7 @@ const api = vi.hoisted(() => ({
   trashFileNodes: vi.fn(async (ids: string[]) => ids),
   restoreFileNodes: vi.fn(async () => []),
   updateFileNode: vi.fn(async (id: string, input: { name: string }) => ({ id, name: `${input.name} (2)` })),
+  moveFileNodes: vi.fn(async (moves: Array<{ id: string; parentId: string | null }>) => moves.map((move) => ({ id: move.id, name: 'Notes.md' }))),
 }))
 vi.mock('@/stores/auth', () => ({ useAuth: (select: (state: unknown) => unknown) => select({ user: { id: 'user' } }) }))
 vi.mock('../api', async (importOriginal) => ({ ...await importOriginal<typeof import('../api')>(), ...api }))
@@ -65,6 +66,24 @@ describe('trashing from Files', () => {
     expect(toasts()[1]).toMatchObject({ message: 'Deleted 2 items', undo: expect.any(Function) })
     await act(() => toasts()[1]!.undo!())
     expect(api.restoreFileNodes).toHaveBeenCalledWith(['notes'])
+  })
+})
+
+describe('moving in Files', () => {
+  it('moves without a toast, as the sidebar does', async () => {
+    const ops = operations()
+    await act(() => ops.move([doc], 'folder'))
+    expect(api.moveFileNodes).toHaveBeenCalledWith([{ id: 'notes', parentId: 'folder' }])
+    expect(toasts()).toEqual([])
+  })
+
+  it('says when a name changed to keep both copies, and undoes it', async () => {
+    api.moveFileNodes.mockResolvedValueOnce([{ id: 'notes', name: 'Notes (2).md' }])
+    const ops = operations()
+    await act(() => ops.move([doc], 'folder'))
+    expect(toasts()).toEqual([expect.objectContaining({ message: 'Moved "Notes.md" and kept both copies', undo: expect.any(Function) })])
+    await act(() => toasts()[0]!.undo!())
+    expect(api.moveFileNodes).toHaveBeenLastCalledWith([{ id: 'notes', parentId: null, name: 'Notes.md' }])
   })
 })
 

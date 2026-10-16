@@ -267,4 +267,18 @@ describe('nested and block suggestions', () => {
     await waitFor(() => expect(view.queryByRole('toolbar', { name: 'Suggestions' })).toBeNull())
     await waitFor(() => expect(ydocToMarkdown(server.doc, 'proposed')).toBe('Keep me\n\nOld words and mine'))
   })
+
+  it('treats typing inside a suggested insertion as a revision of that proposal', async () => {
+    const { view, element, editor } = mount(serverWith([
+      { type: 'paragraph', content: [
+        { type: 'text', text: 'Intro ' },
+        { type: 'text', text: 'proposed', marks: [insertMark('inserted')] },
+      ] },
+    ]))
+    await waitFor(() => expect(element()?.querySelector('.pulpo-suggestion-insert')).toBeTruthy())
+    const hunk = listSuggestions(editor().state.doc)[0]!
+    editor().chain().setTextSelection(hunk.from + 2).insertContent('MY WORDS').run()
+    fireEvent.click(view.getByRole('button', { name: /Reject all/ }))
+    expect(editor().state.doc.textContent).toBe('Intro ')
+  })
 })

@@ -2,8 +2,9 @@
 import { act, cleanup, createEvent, fireEvent, render, screen, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, useLocation } from 'react-router-dom'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { useSidePanel } from '@/features/side-panel/store'
 import type { FileNode, SidebarState } from '@pulpo/contracts'
 import type { Chat } from '@/lib/types'
 import type { ItemDropZone } from '@/features/files/browser/use-item-drag'
@@ -144,11 +145,16 @@ function dataTransfer() {
   }
 }
 
-function mount() {
+function CurrentPath() {
+  return <output data-testid="path">{useLocation().pathname}</output>
+}
+
+function mount(path = '/') {
   render(<QueryClientProvider client={new QueryClient()}>
     <TooltipProvider>
-      <MemoryRouter>
+      <MemoryRouter initialEntries={[path]}>
         <Sidebar collapsed={false} mobile={false} mobileOpen={false} onToggle={vi.fn()} onNavigate={vi.fn()} onOpenSearch={vi.fn()} onOpenSettings={vi.fn()} />
+        <CurrentPath />
       </MemoryRouter>
     </TooltipProvider>
   </QueryClientProvider>)
@@ -181,6 +187,7 @@ afterEach(() => {
   cleanup()
   restoreLayout()
   vi.clearAllMocks()
+  useSidePanel.setState({ content: null, lastContent: null })
 })
 
 const fileRow = () => screen.getByRole('button', { name: 'Notes.md' }).parentElement!
@@ -371,7 +378,7 @@ describe('dropping items dragged from Files', () => {
   it('files them into a folder from its middle, and beside it from its edges', () => {
     const nodes = [fromFiles('n1')]
     dropFromFiles(nodes, folderRow('f2'), 285)
-    expect(sidebarActions.moveSidebarSelection).toHaveBeenCalledWith(['n1'], 'f2', { unpin: true, nodes })
+    expect(sidebarActions.moveSidebarSelection).toHaveBeenCalledWith(['n1'], 'f2', { unpin: true })
     dropFromFiles(nodes, folderRow('f2'), 271)
     expect(sidebarActions.orderSidebarItems).toHaveBeenCalledWith('chats', ['a', 'f1', 'b', 'doc-1', 'n1', 'f2', 's-proj', 'c'], nodes)
     dropFromFiles(nodes, folderRow('projects'), 329)
@@ -381,7 +388,7 @@ describe('dropping items dragged from Files', () => {
   it('files them into an open folder from the bottom edge of its header too', () => {
     const nodes = [fromFiles('n1')]
     dropFromFiles(nodes, folderRow('f2'), 299)
-    expect(sidebarActions.moveSidebarSelection).toHaveBeenCalledWith(['n1'], 'f2', { unpin: true, nodes })
+    expect(sidebarActions.moveSidebarSelection).toHaveBeenCalledWith(['n1'], 'f2', { unpin: true })
     expect(sidebarActions.orderSidebarItems).not.toHaveBeenCalled()
   })
 
@@ -463,6 +470,22 @@ describe('menus of folders, files, and chats', () => {
     fireEvent.click(within(chatRow('a')).getByRole('button', { name: /chat$/ }))
     expect(sidebarActions.trashSidebarSelection).toHaveBeenCalledWith(['a'])
     act(() => { fireEvent.keyUp(window, { key: 'Shift' }) })
+  })
+
+  it('opens a chat to the left of the file in the main view, which moves into the panel', async () => {
+    const fileId = '0b0e5d1c-6a3f-4e0a-9c55-2f7d8e9a1b2c'
+    cleanup()
+    mount(`/files/d/${fileId}`)
+    fireEvent.contextMenu(chatRow('a'), { clientX: 20, clientY: 60 })
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Open to the left' }))
+    expect(useSidePanel.getState().content).toEqual({ kind: 'file', id: fileId })
+    expect(await screen.findByText('/c/a')).toBeTruthy()
+  })
+
+  it('offers no "Open to the left" beside a chat, where it would only open the chat', async () => {
+    fireEvent.contextMenu(chatRow('a'), { clientX: 20, clientY: 60 })
+    expect(await screen.findByRole('menuitem', { name: 'Rename' })).toBeTruthy()
+    expect(screen.queryByRole('menuitem', { name: 'Open to the left' })).toBeNull()
   })
 
   it('duplicates a chat from its menu', async () => {

@@ -75,6 +75,26 @@ describe.skipIf(!enabled)('collaborative document storage', () => {
     expect(doc?.pendingUpdates).toBe(0)
   })
 
+  it('saves a large Unicode paste and an offline document under the supported state limit', async () => {
+    const node = await createDoc(userId, { parentId: null })
+    const client = await loaded(node.id)
+    const content = '界'.repeat(1_500_000)
+    const update = typeInto(client, content)
+    expect(update.byteLength).toBeGreaterThan(4_100_000)
+    await appendDocUpdate({ nodeId: node.id, ownerUserId: userId, actorUserId: userId, update, origin: 'client' })
+    expect((await readDocMarkdown(userId, node.id)).markdown).toBe(content)
+  })
+
+  it('revalidates socket ownership and trash state under the tree lock', async () => {
+    const node = await createDoc(userId, { parentId: null })
+    const client = await loaded(node.id)
+    const input = { nodeId: node.id, ownerUserId: userId, actorUserId: userId, update: typeInto(client, 'late'), origin: 'client' as const }
+    await expect(appendDocUpdate({ ...input, ownerUserId: randomUUID() })).rejects.toMatchObject({ code: 'not_found' })
+    await trashFileNode(userId, node.id)
+    await expect(appendDocUpdate(input)).rejects.toMatchObject({ code: 'not_found' })
+    expect(ydocToMarkdown(await loaded(node.id))).toBe('')
+  })
+
   it('shrinks state when deleted content is compacted', async () => {
     const node = await createDoc(userId, { parentId: null })
     const client = await loaded(node.id)
