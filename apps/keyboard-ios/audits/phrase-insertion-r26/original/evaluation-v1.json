@@ -1,0 +1,72 @@
+{
+  "freezeCommit": "f3921a48b78d77aa650983e7113fd44e7d94642d",
+  "revealedAtUTC": "2026-10-16T07:07:07.100895+00:00",
+  "heldoutSHA256": "54e4728dd6e4003c032d9c52d7867b03ad3b908d44e1ac60a3da2fd8de9a2740",
+  "caseCount": 40,
+  "matrix": [
+    "en_US",
+    "es",
+    "en_es"
+  ],
+  "allFrozenHashesMatchBeforeReveal": true,
+  "sourceAndRunnerTuningAfterReveal": false,
+  "expectationEditsAfterReveal": false,
+  "baselineRunsRequested": 1,
+  "candidateRunsRequested": 1,
+  "completedAtUTC": "2026-10-16T07:07:53.887900+00:00",
+  "allFrozenHashesMatchAfterEvaluation": true,
+  "baselineCommandExit": 0,
+  "candidateCommandExit": 0,
+  "pairedSummary": {
+    "cases": 40,
+    "executionsPerVersion": 120,
+    "asserted": 105,
+    "ambiguous": 15,
+    "baselineExact": 48,
+    "candidateExact": 93,
+    "gains": 45,
+    "regressions": 0,
+    "changedFailures": [
+      [
+        "r26-h39",
+        "en_US"
+      ],
+      [
+        "r26-h39",
+        "en_es"
+      ],
+      [
+        "r26-h39",
+        "es"
+      ]
+    ],
+    "baselineUnavailable": 9,
+    "candidateUnavailable": 9,
+    "replayFailures": 0,
+    "conservationFailures": 0
+  },
+  "fullDenominator": 120,
+  "nativeUnsupportedFailuresRemainInFullDenominator": 9,
+  "nativeUndoUnavailableAlsoMarkedAmbiguousByAuthor": true,
+  "artifacts": {
+    "development-paired-v1.json": "031759b0366618e0bc6080c88ddb3581b57af49eca6df1d2a9e8f04df6e5afbd",
+    "heldout-v1.json": "54e4728dd6e4003c032d9c52d7867b03ad3b908d44e1ac60a3da2fd8de9a2740",
+    "heldout-paired-v1.json": "e5d58df500328baedd095f1cc4a221c3c42fd24bde85187f8dc777cf300abc94"
+  },
+  "evidencePackaging": "Final prefreeze development candidate results were re-paired after detection that an earlier paired file still held prior exploratory snapshots. No keyboard rerun or oracle/source/runner edit after reveal. Standalone result serializations removed only after structural equality with canonical paired rows; all original fields retained.",
+  "postRevealIndependentDisposition": "retain for narrow engine contract/parent runtime review; no demonstrated required safety/ordinary veto; native unproven",
+  "noveltyCaveat": "h26 caf\u00e9 host prefix overlaps a later focused source probe, not R5/R20 or payload/right targets; original row retained",
+  "analyticalSensitivityExcludingH26": {
+    "fullExecutions": 117,
+    "baselineExact": 48,
+    "candidateExact": 90,
+    "gains": 42,
+    "regressions": 0
+  },
+  "removedScratchBaselineBuild": true,
+  "postRevealArtifacts": {
+    "post-reveal-review-v1.md": "a4cc2c64e7c36e7a01826dab92ee50c69f8d041051906126cf71b2c1db1a7d98",
+    "novelty-review-v1.json": "1fc0ad76ad4b1b8e2fe23998eb3986c3e2381dceb9944c4fb69540a85441fd17",
+    "all-misses-v1.json": "968285ad82db1c3ef138a8f0bba9f13bf1d0ab12dfe776eeb2b60fa15e0ecc0c"
+  }
+}

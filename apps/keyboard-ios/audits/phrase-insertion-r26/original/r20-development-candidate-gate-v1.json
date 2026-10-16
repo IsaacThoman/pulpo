@@ -1,0 +1,19 @@
+{
+  "command": [
+    "swift",
+    "test",
+    "-c",
+    "release",
+    "--package-path",
+    "/Users/isaacthoman/.t3/worktrees/pulpo/t3-b87a270b/apps/keyboard-ios/PulpoKeyboardKit",
+    "--filter",
+    "RightInsertionR26LegacyTests"
+  ],
+  "exit": 0,
+  "wallSeconds": 2.119,
+  "diagnostics": [
+    "Build complete! (0.20 sec)",
+    "R26 legacy exact 92/120; ambiguous 0; unavailable 0; conservation failures 0",
+    "✔ Test run with 1 test in 1 suite passed after 0.886 seconds."
+  ]
+}

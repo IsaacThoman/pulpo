@@ -1,0 +1,19 @@
+{
+  "command": [
+    "swift",
+    "test",
+    "-c",
+    "release",
+    "--package-path",
+    "/tmp/pulpo-r26-baseline-b87a270b/apps/keyboard-ios/PulpoKeyboardKit",
+    "--filter",
+    "PhraseInsertionR26LegacyR5Tests"
+  ],
+  "exit": 0,
+  "wallSeconds": 1.837,
+  "diagnostics": [
+    "Build complete! (0.19 sec)",
+    "R26 R5 exact 56/66; unavailable 3",
+    "✔ Test run with 1 test in 1 suite passed after 0.574 seconds."
+  ]
+}

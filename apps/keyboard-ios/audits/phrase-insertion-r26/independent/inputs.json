@@ -1,0 +1,37 @@
+[
+  {
+    "id": "delete-silent",
+    "stage": "delete",
+    "callback": false
+  },
+  {
+    "id": "delete-callback",
+    "stage": "delete",
+    "callback": true
+  },
+  {
+    "id": "punctuation-silent",
+    "stage": "punctuation",
+    "callback": false
+  },
+  {
+    "id": "punctuation-callback",
+    "stage": "punctuation",
+    "callback": true
+  },
+  {
+    "id": "marker-silent",
+    "stage": "marker",
+    "callback": false
+  },
+  {
+    "id": "marker-callback",
+    "stage": "marker",
+    "callback": true
+  },
+  {
+    "id": "uninterrupted",
+    "stage": "none",
+    "callback": false
+  }
+]

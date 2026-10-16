@@ -1,0 +1,12 @@
+{
+  "baselineCommit": "74a4af2d",
+  "baselineEngineSHA256": "3f0987051ff0f176a5e1ef6396d415b0f8fe0fc2088735c75fef87f75158de97",
+  "contractSHA256": "ab28b53b3059c11f026ab118c11bd3442b370b4e8e5e39483a5e83fe75c3d942",
+  "schemaSHA256": "f40561d0ca25b83ba6dd1041fa03162ce2c40380ed6dfe7b8c72c16d530a8615",
+  "contractAndSchemaAuthorCopyByteComparison": true,
+  "sealedHeldoutSHA256": "54e4728dd6e4003c032d9c52d7867b03ad3b908d44e1ac60a3da2fd8de9a2740",
+  "heldoutRead": false,
+  "ordering": "Contract/schema written and hashes verified by independent source reviewer against unchanged baseline before production edits. Independent author received those exact bytes, returned verified hashes before authoring, then delivered exact copies; cmp verified before candidate freeze. This specification commit is made after exploratory implementation began; immutability is established by earlier tool/agent receipts, not by claiming its Git timestamp preceded source changes.",
+  "testOracleChangeAcceptedBeforeImplementation": "AccuracyEditingTests.pendingCursorMovePrecedesTranscriptCapitalization only, preserves historical result in comment and old R20 evidence; adds full suffix/caret/no-deletion checks.",
+  "developmentEvolution": "Initial 86 development rows; before freeze corrected one hostMove offset invalid only for shorter baseline; made 2 shape-ambiguous tokens explicitly unscored; appended 3 source-derived ownership controls. No heldout read or changes."
+}

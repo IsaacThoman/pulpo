@@ -1,0 +1,205 @@
+import CryptoKit
+import Foundation
+import Testing
+@testable import KeyboardCore
+
+/// Exact synthetic documents; never loads the sealed suite implicitly.
+@Suite(.serialized)
+struct RightInsertionR26LegacyTests {
+  struct Case: Decodable {
+    let id: String
+    let category: String
+    let api: String
+    let prefix: String
+    let selected: String
+    let suffix: String
+    let input: String
+    let expected: String
+    let caret: Int
+    let context: String?
+    let field: String?
+    let followup: String?
+    let availability: String?
+    let rationale: String?
+    let smartPunctuation: Bool?
+    let deleteAfter: Bool?
+    let queuedSecondInput: String?
+  }
+  struct SuiteFile: Decodable { let schema: Int; let cases: [Case] }
+  struct Primitive: Codable {
+    let kind: String
+    let text: String
+    let cursor: Int
+    let selected: String
+    let removed: String
+  }
+  struct Result: Encodable {
+    let id: String
+    let category: String
+    let api: String
+    let language: String
+    let dictionarySHA256: String
+    let dictionary: String
+    let modelMode: String
+    let expected: String
+    let actual: String
+    let expectedCaret: Int
+    let actualCaret: Int
+    let exact: Bool
+    let oracleDefined: Bool
+    let conserved: Bool
+    let completed: Bool
+    let nativeDelivery: String
+    let primitives: [Primitive]
+    let notes: [String]
+  }
+
+  /// Physical range replacement plus a separately delayed proxy snapshot.
+  /// Queued commands are applied in order, with callbacks before/after each edit.
+  final class Host: TextDocument {
+    let documentIdentifier: UUID? = UUID()
+    var text: String
+    var cursor: Int
+    var selectionLength: Int
+    let context: String
+    var pending: [(String, String)] = []
+    var primitives: [Primitive] = []
+    var callback: (() -> Void)?
+    var protectedPrefix: String
+    var protectedSuffix: String
+    var conserved = true
+    init(_ c: Case) {
+      text = c.prefix + c.selected + c.suffix
+      cursor = c.prefix.count
+      selectionLength = c.selected.count
+      context = c.context ?? "full"
+      protectedPrefix = c.prefix
+      protectedSuffix = c.suffix
+    }
+    var chars: [Character] { Array(text) }
+    var documentContextBeforeInput: String? {
+      ["hidden-before", "hidden-both"].contains(context) ? nil : String(chars.prefix(cursor))
+    }
+    var documentContextAfterInput: String? {
+      ["hidden-after", "hidden-both"].contains(context) ? nil : String(chars.dropFirst(cursor + selectionLength))
+    }
+    var selectedText: String? {
+      selectionLength == 0 ? nil : String(chars.dropFirst(cursor).prefix(selectionLength))
+    }
+    var hasText: Bool { !text.isEmpty }
+    func insertText(_ text: String) { request("insert", text) }
+    func deleteBackward() { request("delete", "") }
+    func request(_ kind: String, _ value: String) {
+      if context == "queued" { pending.append((kind, value)) }
+      else { apply(kind, value) }
+    }
+    func apply(_ kind: String, _ value: String) {
+      callback?()
+      let selected = selectedText ?? ""
+      let oldCursor = cursor
+      var removed = selected
+      if kind == "insert" {
+        text = String(chars.prefix(cursor)) + value + String(chars.dropFirst(cursor + selectionLength))
+        cursor += value.count
+      } else if selectionLength > 0 {
+        text = String(chars.prefix(cursor)) + String(chars.dropFirst(cursor + selectionLength))
+      } else if cursor > 0 {
+        removed = String(chars[cursor - 1])
+        text = String(chars.prefix(cursor - 1)) + String(chars.dropFirst(cursor))
+        cursor -= 1
+      }
+      selectionLength = 0
+      primitives.append(Primitive(kind: kind, text: value, cursor: oldCursor, selected: selected, removed: removed))
+      conserved = conserved && text.hasPrefix(protectedPrefix) && text.hasSuffix(protectedSuffix)
+        && cursor >= protectedPrefix.count && cursor <= text.count - protectedSuffix.count
+      callback?()
+    }
+    func flush() {
+      let commands = pending
+      pending.removeAll()
+      for (kind, value) in commands { apply(kind, value) }
+    }
+  }
+
+  @Test func frozenDocuments() throws {
+    let env = ProcessInfo.processInfo.environment
+    guard let suite = env["PULPO_R26_SUITE"], let output = env["PULPO_R26_RESULTS"] else { return }
+    let file = try JSONDecoder().decode(SuiteFile.self, from: Data(contentsOf: URL(fileURLWithPath: suite)))
+    #expect(file.schema == 1)
+    var results: [Result] = []
+    for language in KeyboardLanguage.allCases {
+    for c in file.cases {
+      let host = Host(c)
+      // R20 is fully disclosed. Replay EACH original oracle in all actual modes.
+      let dictionary = language.rawValue + ".pkdict"
+      let hash = SHA256.hash(data: try Data(contentsOf: Fixtures.languageData.appendingPathComponent(dictionary))).map { String(format: "%02x", $0) }.joined()
+      let stack = try LanguageStack(dictionaryURL: Fixtures.languageData.appendingPathComponent(language.rawValue + ".pkdict"), personalURL: nil)
+      var settings = KeyboardSettings()
+      settings.language = language
+      if let smart = c.smartPunctuation { settings.smartPunctuation = smart }
+      let engine = KeyboardEngine(document: host, suggester: stack.suggester, glide: stack.glide, settings: settings)
+      var traits = InputTraits()
+      traits.capitalization = .none
+      if c.field == "private" { traits.isSecure = true }
+      if c.field == "restricted" { traits.keyboard = .url }
+      engine.traits = traits
+      engine.clock = { 100 }
+      if c.context != "fresh" { engine.documentDidChange() }
+      if host.context == "queued" { host.callback = { engine.documentDidChange() } }
+      var completed = true
+      var notes: [String] = []
+      if c.availability == "unavailable" {
+        completed = false
+        notes.append("Frozen author marked route unavailable; no substitute action")
+      } else { switch c.api {
+      case "transcript": engine.insertTranscript(c.input)
+      case "spaced": engine.insertText(c.input, spacing: true)
+      case "raw": engine.insertText(c.input, spacing: false)
+      case "literal": engine.type(c.input)
+      case "emoji":
+        // Same engine call as BOTH panel and search; UIKit callback itself unavailable on macOS.
+        engine.insertText(c.input)
+        notes.append("Panel/search production engine route only; native callback not executed")
+      default:
+        completed = false
+        notes.append("Unsupported frozen API: " + c.api)
+      } }
+      if let second = c.queuedSecondInput, completed {
+        engine.insertText(second, spacing: true)
+        notes.append("Second external insertion requested before queued host delivery")
+      }
+      host.flush()
+      if let followup = c.followup, completed {
+        engine.type(followup)
+        host.flush()
+        notes.append("Followup used actual engine key methods and dictionary")
+      }
+      if c.deleteAfter == true, completed {
+        engine.deleteBackward()
+        host.flush()
+        notes.append("Actual engine backspace, not native Undo")
+      }
+      if let rationale = c.rationale { notes.append(rationale) }
+      if let availability = c.availability { notes.append("Author availability annotation: " + availability) }
+      let native: String
+      if c.api == "transcript", c.field == "private" || !c.selected.isEmpty {
+        native = "unavailable: controller dictation destination guard rejects private/selected fields"
+      } else { native = "unverified: no UIKit/device execution" }
+      results.append(Result(id: c.id, category: c.category, api: c.api, language: language.rawValue, dictionarySHA256: hash, dictionary: dictionary, modelMode: engine.settings.language.rawValue, expected: c.expected,
+                            actual: host.text, expectedCaret: c.caret, actualCaret: host.cursor,
+                            exact: c.availability != "ambiguous" && completed && host.text == c.expected && host.cursor == c.caret,
+                            oracleDefined: c.availability != "ambiguous",
+                            conserved: host.conserved, completed: completed, nativeDelivery: native,
+                            primitives: host.primitives, notes: notes))
+    }
+    }
+    #expect(results.count == file.cases.count * 3)
+    for c in file.cases { #expect(Set(results.filter { $0.id == c.id }.map(\.language)) == Set(["en_US", "es", "en_es"])) }
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+    try encoder.encode(results).write(to: URL(fileURLWithPath: output))
+    print("R26 legacy exact \(results.filter(\.exact).count)/\(results.filter(\.oracleDefined).count); ambiguous \(results.filter { !$0.oracleDefined }.count); unavailable \(results.filter { !$0.completed }.count); conservation failures \(results.filter { !$0.conserved }.count)")
+    // Aspirational expectations remain failures in structured output, not softened assertions.
+    #expect(results.allSatisfy { $0.conserved })
+  }
+}

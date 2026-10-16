@@ -1,0 +1,506 @@
+[
+  {
+    "caret" : 12,
+    "document" : "Bring fresh,supplies",
+    "events" : [
+      {
+        "after" : "Bring freshsupplies",
+        "before" : "Bring supplies",
+        "caret" : 11,
+        "kind" : "insert",
+        "value" : "fresh"
+      },
+      {
+        "after" : "Bring fresh,supplies",
+        "before" : "Bring freshsupplies",
+        "caret" : 12,
+        "kind" : "insert",
+        "value" : ","
+      }
+    ],
+    "id" : "delete-silent",
+    "language" : "en_US"
+  },
+  {
+    "caret" : 12,
+    "document" : "Bring fresh,supplies",
+    "events" : [
+      {
+        "after" : "Bring freshsupplies",
+        "before" : "Bring supplies",
+        "caret" : 11,
+        "kind" : "insert",
+        "value" : "fresh"
+      },
+      {
+        "after" : "Bring fresh,supplies",
+        "before" : "Bring freshsupplies",
+        "caret" : 12,
+        "kind" : "insert",
+        "value" : ","
+      }
+    ],
+    "id" : "delete-callback",
+    "language" : "en_US"
+  },
+  {
+    "caret" : 7,
+    "document" : "FOREIGNsupplies",
+    "events" : [
+      {
+        "after" : "Bring freshsupplies",
+        "before" : "Bring supplies",
+        "caret" : 11,
+        "kind" : "insert",
+        "value" : "fresh"
+      },
+      {
+        "after" : "Bring fresh,supplies",
+        "before" : "Bring freshsupplies",
+        "caret" : 12,
+        "kind" : "insert",
+        "value" : ","
+      },
+      {
+        "after" : "FOREIGNsupplies",
+        "before" : "Bring fresh,supplies",
+        "caret" : 7,
+        "kind" : "hostReplace",
+        "value" : ""
+      }
+    ],
+    "id" : "punctuation-silent",
+    "language" : "en_US"
+  },
+  {
+    "caret" : 7,
+    "document" : "FOREIGNsupplies",
+    "events" : [
+      {
+        "after" : "Bring freshsupplies",
+        "before" : "Bring supplies",
+        "caret" : 11,
+        "kind" : "insert",
+        "value" : "fresh"
+      },
+      {
+        "after" : "Bring fresh,supplies",
+        "before" : "Bring freshsupplies",
+        "caret" : 12,
+        "kind" : "insert",
+        "value" : ","
+      },
+      {
+        "after" : "FOREIGNsupplies",
+        "before" : "Bring fresh,supplies",
+        "caret" : 7,
+        "kind" : "hostReplace",
+        "value" : ""
+      }
+    ],
+    "id" : "punctuation-callback",
+    "language" : "en_US"
+  },
+  {
+    "caret" : 12,
+    "document" : "Bring fresh,supplies",
+    "events" : [
+      {
+        "after" : "Bring freshsupplies",
+        "before" : "Bring supplies",
+        "caret" : 11,
+        "kind" : "insert",
+        "value" : "fresh"
+      },
+      {
+        "after" : "Bring fresh,supplies",
+        "before" : "Bring freshsupplies",
+        "caret" : 12,
+        "kind" : "insert",
+        "value" : ","
+      }
+    ],
+    "id" : "marker-silent",
+    "language" : "en_US"
+  },
+  {
+    "caret" : 12,
+    "document" : "Bring fresh,supplies",
+    "events" : [
+      {
+        "after" : "Bring freshsupplies",
+        "before" : "Bring supplies",
+        "caret" : 11,
+        "kind" : "insert",
+        "value" : "fresh"
+      },
+      {
+        "after" : "Bring fresh,supplies",
+        "before" : "Bring freshsupplies",
+        "caret" : 12,
+        "kind" : "insert",
+        "value" : ","
+      }
+    ],
+    "id" : "marker-callback",
+    "language" : "en_US"
+  },
+  {
+    "caret" : 12,
+    "document" : "Bring fresh,supplies",
+    "events" : [
+      {
+        "after" : "Bring freshsupplies",
+        "before" : "Bring supplies",
+        "caret" : 11,
+        "kind" : "insert",
+        "value" : "fresh"
+      },
+      {
+        "after" : "Bring fresh,supplies",
+        "before" : "Bring freshsupplies",
+        "caret" : 12,
+        "kind" : "insert",
+        "value" : ","
+      }
+    ],
+    "id" : "uninterrupted",
+    "language" : "en_US"
+  },
+  {
+    "caret" : 12,
+    "document" : "Bring fresh,supplies",
+    "events" : [
+      {
+        "after" : "Bring freshsupplies",
+        "before" : "Bring supplies",
+        "caret" : 11,
+        "kind" : "insert",
+        "value" : "fresh"
+      },
+      {
+        "after" : "Bring fresh,supplies",
+        "before" : "Bring freshsupplies",
+        "caret" : 12,
+        "kind" : "insert",
+        "value" : ","
+      }
+    ],
+    "id" : "delete-silent",
+    "language" : "es"
+  },
+  {
+    "caret" : 12,
+    "document" : "Bring fresh,supplies",
+    "events" : [
+      {
+        "after" : "Bring freshsupplies",
+        "before" : "Bring supplies",
+        "caret" : 11,
+        "kind" : "insert",
+        "value" : "fresh"
+      },
+      {
+        "after" : "Bring fresh,supplies",
+        "before" : "Bring freshsupplies",
+        "caret" : 12,
+        "kind" : "insert",
+        "value" : ","
+      }
+    ],
+    "id" : "delete-callback",
+    "language" : "es"
+  },
+  {
+    "caret" : 7,
+    "document" : "FOREIGNsupplies",
+    "events" : [
+      {
+        "after" : "Bring freshsupplies",
+        "before" : "Bring supplies",
+        "caret" : 11,
+        "kind" : "insert",
+        "value" : "fresh"
+      },
+      {
+        "after" : "Bring fresh,supplies",
+        "before" : "Bring freshsupplies",
+        "caret" : 12,
+        "kind" : "insert",
+        "value" : ","
+      },
+      {
+        "after" : "FOREIGNsupplies",
+        "before" : "Bring fresh,supplies",
+        "caret" : 7,
+        "kind" : "hostReplace",
+        "value" : ""
+      }
+    ],
+    "id" : "punctuation-silent",
+    "language" : "es"
+  },
+  {
+    "caret" : 7,
+    "document" : "FOREIGNsupplies",
+    "events" : [
+      {
+        "after" : "Bring freshsupplies",
+        "before" : "Bring supplies",
+        "caret" : 11,
+        "kind" : "insert",
+        "value" : "fresh"
+      },
+      {
+        "after" : "Bring fresh,supplies",
+        "before" : "Bring freshsupplies",
+        "caret" : 12,
+        "kind" : "insert",
+        "value" : ","
+      },
+      {
+        "after" : "FOREIGNsupplies",
+        "before" : "Bring fresh,supplies",
+        "caret" : 7,
+        "kind" : "hostReplace",
+        "value" : ""
+      }
+    ],
+    "id" : "punctuation-callback",
+    "language" : "es"
+  },
+  {
+    "caret" : 12,
+    "document" : "Bring fresh,supplies",
+    "events" : [
+      {
+        "after" : "Bring freshsupplies",
+        "before" : "Bring supplies",
+        "caret" : 11,
+        "kind" : "insert",
+        "value" : "fresh"
+      },
+      {
+        "after" : "Bring fresh,supplies",
+        "before" : "Bring freshsupplies",
+        "caret" : 12,
+        "kind" : "insert",
+        "value" : ","
+      }
+    ],
+    "id" : "marker-silent",
+    "language" : "es"
+  },
+  {
+    "caret" : 12,
+    "document" : "Bring fresh,supplies",
+    "events" : [
+      {
+        "after" : "Bring freshsupplies",
+        "before" : "Bring supplies",
+        "caret" : 11,
+        "kind" : "insert",
+        "value" : "fresh"
+      },
+      {
+        "after" : "Bring fresh,supplies",
+        "before" : "Bring freshsupplies",
+        "caret" : 12,
+        "kind" : "insert",
+        "value" : ","
+      }
+    ],
+    "id" : "marker-callback",
+    "language" : "es"
+  },
+  {
+    "caret" : 12,
+    "document" : "Bring fresh,supplies",
+    "events" : [
+      {
+        "after" : "Bring freshsupplies",
+        "before" : "Bring supplies",
+        "caret" : 11,
+        "kind" : "insert",
+        "value" : "fresh"
+      },
+      {
+        "after" : "Bring fresh,supplies",
+        "before" : "Bring freshsupplies",
+        "caret" : 12,
+        "kind" : "insert",
+        "value" : ","
+      }
+    ],
+    "id" : "uninterrupted",
+    "language" : "es"
+  },
+  {
+    "caret" : 12,
+    "document" : "Bring fresh,supplies",
+    "events" : [
+      {
+        "after" : "Bring freshsupplies",
+        "before" : "Bring supplies",
+        "caret" : 11,
+        "kind" : "insert",
+        "value" : "fresh"
+      },
+      {
+        "after" : "Bring fresh,supplies",
+        "before" : "Bring freshsupplies",
+        "caret" : 12,
+        "kind" : "insert",
+        "value" : ","
+      }
+    ],
+    "id" : "delete-silent",
+    "language" : "en_es"
+  },
+  {
+    "caret" : 12,
+    "document" : "Bring fresh,supplies",
+    "events" : [
+      {
+        "after" : "Bring freshsupplies",
+        "before" : "Bring supplies",
+        "caret" : 11,
+        "kind" : "insert",
+        "value" : "fresh"
+      },
+      {
+        "after" : "Bring fresh,supplies",
+        "before" : "Bring freshsupplies",
+        "caret" : 12,
+        "kind" : "insert",
+        "value" : ","
+      }
+    ],
+    "id" : "delete-callback",
+    "language" : "en_es"
+  },
+  {
+    "caret" : 7,
+    "document" : "FOREIGNsupplies",
+    "events" : [
+      {
+        "after" : "Bring freshsupplies",
+        "before" : "Bring supplies",
+        "caret" : 11,
+        "kind" : "insert",
+        "value" : "fresh"
+      },
+      {
+        "after" : "Bring fresh,supplies",
+        "before" : "Bring freshsupplies",
+        "caret" : 12,
+        "kind" : "insert",
+        "value" : ","
+      },
+      {
+        "after" : "FOREIGNsupplies",
+        "before" : "Bring fresh,supplies",
+        "caret" : 7,
+        "kind" : "hostReplace",
+        "value" : ""
+      }
+    ],
+    "id" : "punctuation-silent",
+    "language" : "en_es"
+  },
+  {
+    "caret" : 7,
+    "document" : "FOREIGNsupplies",
+    "events" : [
+      {
+        "after" : "Bring freshsupplies",
+        "before" : "Bring supplies",
+        "caret" : 11,
+        "kind" : "insert",
+        "value" : "fresh"
+      },
+      {
+        "after" : "Bring fresh,supplies",
+        "before" : "Bring freshsupplies",
+        "caret" : 12,
+        "kind" : "insert",
+        "value" : ","
+      },
+      {
+        "after" : "FOREIGNsupplies",
+        "before" : "Bring fresh,supplies",
+        "caret" : 7,
+        "kind" : "hostReplace",
+        "value" : ""
+      }
+    ],
+    "id" : "punctuation-callback",
+    "language" : "en_es"
+  },
+  {
+    "caret" : 12,
+    "document" : "Bring fresh,supplies",
+    "events" : [
+      {
+        "after" : "Bring freshsupplies",
+        "before" : "Bring supplies",
+        "caret" : 11,
+        "kind" : "insert",
+        "value" : "fresh"
+      },
+      {
+        "after" : "Bring fresh,supplies",
+        "before" : "Bring freshsupplies",
+        "caret" : 12,
+        "kind" : "insert",
+        "value" : ","
+      }
+    ],
+    "id" : "marker-silent",
+    "language" : "en_es"
+  },
+  {
+    "caret" : 12,
+    "document" : "Bring fresh,supplies",
+    "events" : [
+      {
+        "after" : "Bring freshsupplies",
+        "before" : "Bring supplies",
+        "caret" : 11,
+        "kind" : "insert",
+        "value" : "fresh"
+      },
+      {
+        "after" : "Bring fresh,supplies",
+        "before" : "Bring freshsupplies",
+        "caret" : 12,
+        "kind" : "insert",
+        "value" : ","
+      }
+    ],
+    "id" : "marker-callback",
+    "language" : "en_es"
+  },
+  {
+    "caret" : 12,
+    "document" : "Bring fresh,supplies",
+    "events" : [
+      {
+        "after" : "Bring freshsupplies",
+        "before" : "Bring supplies",
+        "caret" : 11,
+        "kind" : "insert",
+        "value" : "fresh"
+      },
+      {
+        "after" : "Bring fresh,supplies",
+        "before" : "Bring freshsupplies",
+        "caret" : 12,
+        "kind" : "insert",
+        "value" : ","
+      }
+    ],
+    "id" : "uninterrupted",
+    "language" : "en_es"
+  }
+]

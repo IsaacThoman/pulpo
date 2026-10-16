@@ -1,0 +1,24 @@
+diff --git a/apps/keyboard-ios/PulpoKeyboardKit/Tests/KeyboardCoreTests/AccuracyEditingTests.swift b/apps/keyboard-ios/PulpoKeyboardKit/Tests/KeyboardCoreTests/AccuracyEditingTests.swift
+index 1b8277b5..2a95b668 100644
+--- a/apps/keyboard-ios/PulpoKeyboardKit/Tests/KeyboardCoreTests/AccuracyEditingTests.swift
++++ b/apps/keyboard-ios/PulpoKeyboardKit/Tests/KeyboardCoreTests/AccuracyEditingTests.swift
+@@ -21,9 +21,18 @@ struct AccuracyEditingTests {
+ 
+   @Test func pendingCursorMovePrecedesTranscriptCapitalization() {
+     let (engine, document) = Fixtures.engine("A note. please ")
++    #expect(document.text == "A note. please ")
+     document.moveCursor(to: 0)  // No callback before dictation arrives.
++    #expect(document.cursor == document.text.startIndex)
+     engine.insertTranscript("Hello again")
+-    #expect(document.text == "Hello againA note. please ")
++    // R26 explicitly gives transcripts phrase boundaries. The old exact API
++    // result was "Hello againA note. please "; its capital H remains required.
++    #expect(document.text == "Hello again A note. please ")
++    #expect(document.text.hasPrefix("Hello again "))
++    #expect(String(document.text[document.cursor...]) == "A note. please ")
++    #expect(document.text.distance(from: document.text.startIndex, to: document.cursor) == 12)
++    #expect(document.selectedText == nil)
++    #expect(document.deletions == 0)
+   }
+ 
+   @Test(arguments: ["Mireya", "Zayden", "GitHub"])

@@ -1,0 +1,2 @@
+# Preserve unified-diff blank context lines byte-for-byte in inactive evidence.
+fixtures/*.patch -whitespace

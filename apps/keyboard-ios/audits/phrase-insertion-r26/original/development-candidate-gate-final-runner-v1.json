@@ -1,0 +1,19 @@
+{
+  "command": [
+    "swift",
+    "test",
+    "-c",
+    "release",
+    "--package-path",
+    "apps/keyboard-ios/PulpoKeyboardKit",
+    "--filter",
+    "PhraseInsertionR26Tests.frozenDocuments"
+  ],
+  "exit": 0,
+  "wallSeconds": 1.454,
+  "diagnostics": [
+    "Build complete! (0.23 sec)",
+    "R26 exact 243/258; ambiguous 9; unavailable 9; conservation failures 0; bounds failures 0",
+    "✔ Test run with 1 test in 1 suite passed after 0.204 seconds."
+  ]
+}
