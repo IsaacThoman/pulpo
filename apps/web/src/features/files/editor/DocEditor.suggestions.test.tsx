@@ -50,6 +50,15 @@ function serverWith(content: unknown[]): FakeServer {
 
 const insertMark = (id: string) => ({ type: 'suggestionInsert', attrs: { id, changeId: 'change-2' } })
 
+/** A press of the pointer, which jsdom has no PointerEvent for. */
+function press(element: Element, pointerType: 'mouse' | 'touch') {
+  const event = new MouseEvent('pointerdown', { bubbles: true })
+  Object.defineProperty(event, 'pointerType', { value: pointerType })
+  act(() => {
+    element.dispatchEvent(event)
+  })
+}
+
 /** Longer than the card's grace period after the pointer leaves its suggestion. */
 const pastGrace = () => new Promise((resolve) => setTimeout(resolve, 400))
 /** Lets React render what the last change led to, so an assertion that nothing showed means something. */
@@ -387,17 +396,34 @@ describe('DocEditor suggestions', () => {
     expect(view.queryByRole('dialog', { name: 'Suggestion' })).toBeNull()
   })
 
-  it('moves the card at once to a suggestion the cursor is put in, as a tap does', async () => {
+  it('moves the card at once to a suggestion clicked or tapped, and hides it for a tap elsewhere', async () => {
+    const server = suggestingServer()
+    const { view, element, editor } = mount(server)
+    await waitFor(() => expect(element()?.querySelector('.pulpo-suggestion-insert')).toBeTruthy())
+    const [first, second] = listSuggestions(editor().state.doc)
+    const card = () => view.queryByRole('dialog', { name: 'Suggestion' })?.textContent
+    fireEvent.mouseOver(element()!.querySelector(`[data-suggestion-id="${first!.id}"]`)!)
+    await view.findByRole('dialog', { name: 'Suggestion' })
+    // A tap's mouse events follow its pointer events.
+    press(element()!.querySelector(`[data-suggestion-id="${second!.id}"]`)!, 'touch')
+    fireEvent.mouseOver(element()!.querySelector(`[data-suggestion-id="${second!.id}"]`)!)
+    expect(card()).toContain(describeHunk(second!))
+    press(element()!.querySelector(`[data-suggestion-id="${first!.id}"]`)!, 'mouse')
+    expect(card()).toContain(describeHunk(first!))
+    press(element()!.querySelector('h1')!, 'touch')
+    expect(card()).toBeUndefined()
+  })
+
+  it('keeps the hovered card while the cursor moves into another suggestion, as an edit by someone else can make it', async () => {
     const server = suggestingServer()
     const { view, element, editor } = mount(server)
     await waitFor(() => expect(element()?.querySelector('.pulpo-suggestion-insert')).toBeTruthy())
     const [first, second] = listSuggestions(editor().state.doc)
     fireEvent.mouseOver(element()!.querySelector(`[data-suggestion-id="${first!.id}"]`)!)
-    act(() => editor().commands.setTextSelection(first!.from + 1))
     await view.findByRole('dialog', { name: 'Suggestion' })
-    fireEvent.mouseOver(element()!.querySelector(`[data-suggestion-id="${second!.id}"]`)!)
     act(() => editor().commands.setTextSelection(second!.from + 1))
-    await waitFor(() => expect(view.getByRole('dialog', { name: 'Suggestion' }).textContent).toContain(describeHunk(second!)), { timeout: 100 })
+    await pastGrace()
+    expect(view.getByRole('dialog', { name: 'Suggestion' }).textContent).toContain(describeHunk(first!))
   })
 
   it('steps through suggestions from the review bar', async () => {

@@ -111,19 +111,12 @@ function pointerPos(editor: Editor, event: MouseEvent): number | null {
   }
 }
 
-/**
- * The hunk under the pointer, how far into it the pointer reached it, and the hunk the cursor was
- * in then.
- */
-type Hover = { id: string; offset: number | null; cursorId: string | null }
+/** The hunk under the pointer, and how far into it the pointer reached it. */
+type Hover = { id: string; offset: number | null }
 
-/**
- * Whether the pointer's suggestion `hunk` is still the one looked at: until the cursor moves into
- * another suggestion, as tapping it on a touch screen does, which is then the newer of the two. A
- * cursor at its end, where a suggestion after or around it goes on, is still at it.
- */
-function hoverHolds(hover: Hover, hunk: SuggestionHunk, cursorId: string | null, cursorPos: number | null): boolean {
-  return cursorId === null || cursorId === hover.cursorId || cursorId === hover.id || cursorPos === hunk.to
+/** The suggestion an event's target is in. */
+function suggestionIdOf(event: Event): string | null {
+  return (event.target as Element | null)?.closest?.('[data-suggestion-id]')?.getAttribute('data-suggestion-id') ?? null
 }
 
 /**
@@ -173,6 +166,13 @@ export function useSuggestionReview(editor: Editor, onResolved?: () => void) {
     window.clearTimeout(hoverTimer.current)
     hoverTimer.current = window.setTimeout(() => setHover(next), HOVER_GRACE_MS)
   }, [])
+  /** Hovers `next`, or nothing, at once. */
+  const hoverNow = useCallback((next: Hover | null) => {
+    window.clearTimeout(hoverTimer.current)
+    // Before React shows the card, so the pointer moving straight on is handled as leaving it.
+    shownId.current = next?.id ?? null
+    setHover(next)
+  }, [])
   const releaseHover = useCallback(() => hoverSoon(null), [hoverSoon])
   const clearHover = () => {
     window.clearTimeout(hoverTimer.current)
@@ -181,25 +181,26 @@ export function useSuggestionReview(editor: Editor, onResolved?: () => void) {
 
   useEffect(() => {
     const dom = editor.view.dom
-    const over = (event: MouseEvent) => {
-      const id = (event.target as Element | null)?.closest?.('[data-suggestion-id]')?.getAttribute('data-suggestion-id') ?? null
-      if (id && id === shownId.current) {
-        keepHover()
-        return
-      }
+    /** The suggestion the pointer is on, if any, and where. */
+    const pointedAt = (event: MouseEvent): Hover | null => {
+      const id = suggestionIdOf(event)
       const hunk = id ? docSuggestions(editor.state.doc).find((item) => item.id === id) : undefined
       const pos = hunk ? pointerPos(editor, event) : null
-      const next = id ? { id, offset: hunk && pos !== null ? pos - hunk.from : null, cursorId: cursorHunkId(editor.state) } : null
-      if (next && !shownId.current) {
-        keepHover()
-        // Before React shows the card, so the pointer moving straight on is handled as leaving it.
-        shownId.current = next.id
-        setHover(next)
-      } else {
-        // On the way to the card the pointer may cross other suggestions, or the block suggestion
-        // around an inline one; they only take the card over once the pointer stays.
-        hoverSoon(next)
-      }
+      return id ? { id, offset: hunk && pos !== null ? pos - hunk.from : null } : null
+    }
+    const over = (event: MouseEvent) => {
+      const id = suggestionIdOf(event)
+      if (id && id === shownId.current) keepHover()
+      else if (id && !shownId.current) hoverNow(pointedAt(event))
+      // On the way to the card the pointer may cross other suggestions, or the block suggestion
+      // around an inline one; they only take the card over once the pointer stays.
+      else hoverSoon(pointedAt(event))
+    }
+    // Clicking or tapping a suggestion picks it at once. A touch never travels to the card, so
+    // tapping anything else is as good as leaving.
+    const press = (event: PointerEvent) => {
+      const next = pointedAt(event)
+      if (next || event.pointerType !== 'mouse') hoverNow(next)
     }
     // Moving onto the card keeps the suggestion. React runs the card's onPointerEnter before this
     // mouseleave, so starting the timer here would hide the card under the pointer.
@@ -207,13 +208,15 @@ export function useSuggestionReview(editor: Editor, onResolved?: () => void) {
       if (!(event.relatedTarget as Element | null)?.closest?.('[data-suggestion-card]')) releaseHover()
     }
     dom.addEventListener('mouseover', over)
+    dom.addEventListener('pointerdown', press)
     dom.addEventListener('mouseleave', leave)
     return () => {
       dom.removeEventListener('mouseover', over)
+      dom.removeEventListener('pointerdown', press)
       dom.removeEventListener('mouseleave', leave)
       window.clearTimeout(hoverTimer.current)
     }
-  }, [editor, cursorHunkId, keepHover, hoverSoon, releaseHover])
+  }, [editor, keepHover, hoverSoon, hoverNow, releaseHover])
 
   useEffect(() => {
     if (dismissedId && dismissedId !== cursorId) setDismissedId(null)
@@ -239,8 +242,7 @@ export function useSuggestionReview(editor: Editor, onResolved?: () => void) {
     }
   }, [])
 
-  const pointed = hover ? hunks.find((hunk) => hunk.id === hover.id) : undefined
-  const hovered = hover && pointed && hoverHolds(hover, pointed, cursorId, cursorPos) ? pointed : undefined
+  const hovered = hover ? hunks.find((hunk) => hunk.id === hover.id) : undefined
   const atCursor = cursorId === dismissedId ? undefined : hunks.find((hunk) => hunk.id === cursorId)
   const active = hovered || atCursor || null
   // The card goes under the line looked at in a long hunk: the one pointed at, or the cursor's.
@@ -281,8 +283,7 @@ export function useSuggestionReview(editor: Editor, onResolved?: () => void) {
   const handleKey = (event: globalThis.KeyboardEvent): boolean => {
     if (event.isComposing) return false
     const cursorNow = cursorHunkId(editor.state)
-    const pointedNow = hover ? docSuggestions(editor.state.doc).find((hunk) => hunk.id === hover.id) : undefined
-    const hoveredNow = hover && pointedNow && hoverHolds(hover, pointedNow, cursorNow, editor.state.selection.from) ? hover.id : null
+    const hoveredNow = hover && docSuggestions(editor.state.doc).some((hunk) => hunk.id === hover.id) ? hover.id : null
     if (event.key === 'Escape') {
       if (!hoveredNow && (!cursorNow || cursorNow === dismissedId)) return false
       clearHover()

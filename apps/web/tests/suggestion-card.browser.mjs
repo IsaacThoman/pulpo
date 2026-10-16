@@ -1,7 +1,7 @@
 // Run with: npm run test:suggestion-card -w @pulpo/web
-// Install the browser once with: npx playwright install chromium
+// Install the browsers once with: npx playwright install chromium webkit
 import assert from 'node:assert/strict'
-import { chromium } from 'playwright'
+import { chromium, webkit } from 'playwright'
 import { createServer } from 'vite'
 
 const root = new URL('..', import.meta.url).pathname
@@ -155,6 +155,8 @@ try {
   await open()
   await suggestion('swap', '.pulpo-suggestion-insert').click()
   await card.waitFor()
+  // The card shows as the click starts; the cursor lands in the suggestion a little later.
+  await page.waitForFunction(() => document.querySelector('.pulpo-doc-editor').editor.state.selection.from > 1)
   await page.keyboard.press('Escape')
   await card.waitFor({ state: 'detached' })
   await page.keyboard.press('ArrowRight')
@@ -193,16 +195,27 @@ try {
   await holdReject()
   assert.deepEqual(await lines(), { text: 'Line one tail.', breaks: 1, adjacent: false })
 
-  // On a touch screen, tapping another suggestion moves the card at once.
-  const touch = await browser.newPage({ viewport: { width: 1000, height: 600 }, hasTouch: true })
-  touch.on('pageerror', (error) => errors.push(error.message))
-  await touch.goto(`${server.resolvedUrls.local[0]}tests/suggestion-card/index.html`)
-  const touchCard = touch.getByRole('dialog', { name: 'Suggestion' })
-  await touch.locator('[data-suggestion-id="swap"].pulpo-suggestion-insert').first().tap()
-  await touchCard.getByText('Replace “stinky” with “awesome”', { exact: true }).waitFor()
-  await touch.locator('[data-suggestion-id="inner"]').first().tap()
-  await touchCard.getByText('Add “brave”', { exact: true }).waitFor({ timeout: 150 })
-  await touch.close()
+  // On a touch screen, tapping a suggestion moves the card to it at once, wherever in the word the
+  // caret lands (Safari puts it at a word's edge), and tapping plain text hides it.
+  for (const engine of [chromium, webkit]) {
+    const touchBrowser = engine === chromium ? browser : await webkit.launch()
+    const touch = await touchBrowser.newPage({ viewport: { width: 390, height: 700 }, hasTouch: true })
+    touch.on('pageerror', (error) => errors.push(error.message))
+    await touch.goto(`${server.resolvedUrls.local[0]}tests/suggestion-card/index.html`)
+    const touchCard = touch.getByRole('dialog', { name: 'Suggestion' })
+    const tap = async (locator, across) => {
+      const box = await locator.boundingBox()
+      await touch.touchscreen.tap(box.x + box.width * across, box.y + box.height / 2)
+    }
+    await tap(touch.locator('[data-suggestion-id="swap"].pulpo-suggestion-insert').first(), 0.5)
+    await touchCard.getByText('Replace “stinky” with “awesome”', { exact: true }).waitFor()
+    await tap(touch.locator('[data-suggestion-id="inner"]').first(), 0.85)
+    await touchCard.getByText('Add “brave”', { exact: true }).waitFor({ timeout: 150 })
+    await touch.getByText('A second paragraph under the first.').tap()
+    await touchCard.waitFor({ state: 'detached', timeout: 150 })
+    await touch.close()
+    if (touchBrowser !== browser) await touchBrowser.close()
+  }
 
   assert.deepEqual(errors, [])
   console.log('suggestion card stays reachable while hovered')
