@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { IndexeddbPersistence } from 'y-indexeddb'
 import * as Y from 'yjs'
+import { DOC_FRAGMENT_NAME } from '@pulpo/client-core/doc-schema'
 import { localAccountKey } from '@/lib/local-first/database'
 import { docCacheName } from '@/lib/local-first/doc-cache'
 import { useRealtimeSocket } from '@/lib/realtime-socket'
@@ -10,6 +11,8 @@ import { SocketIOYProvider, type DocSyncStatus } from './socket-provider'
 export interface DocSession {
   doc: Y.Doc
   provider: SocketIOYProvider
+  /** Set before the editor mounts, so its default empty paragraph is never mistaken for cache. */
+  hasCachedContent?: boolean
 }
 
 export interface PresencePeer {
@@ -29,6 +32,7 @@ export function useDocSession(userId: string, docId: string): {
 } {
   const socket = useRealtimeSocket((state) => state.socket)
   const [session, setSession] = useState<DocSession | null>(null)
+  const [ready, setReady] = useState(false)
   const [status, setStatus] = useState<DocSyncStatus>({ state: 'connecting' })
   const [peers, setPeers] = useState<PresencePeer[]>([])
 
@@ -36,7 +40,10 @@ export function useDocSession(userId: string, docId: string): {
     const doc = new Y.Doc()
     const persistence = new IndexeddbPersistence(docCacheName(localAccountKey(userId), docId), doc)
     const provider = new SocketIOYProvider(docId, doc, [persistence])
-    const unsubscribe = provider.onStatus(setStatus)
+    const unsubscribe = provider.onStatus((next) => {
+      setStatus(next)
+      if (next.state === 'synced') setReady(true)
+    })
     let active = true
     const updatePeers = () => {
       const next: PresencePeer[] = []
@@ -51,13 +58,17 @@ export function useDocSession(userId: string, docId: string): {
     const onAwareness = () => queueMicrotask(() => { if (active) updatePeers() })
     provider.awareness.on('change', onAwareness)
     let joinedBeforeCache = false
-    const start = () => { if (active) setSession({ doc, provider }) }
+    const start = () => { if (active) setSession({ doc, provider, hasCachedContent: doc.getXmlFragment(DOC_FRAGMENT_NAME).length > 0 }) }
     // Joining after the cached copy loads lets the handshake upload any edits made offline.
     const timer = window.setTimeout(() => { joinedBeforeCache = true; start() }, LOCAL_CACHE_WAIT_MS)
     void persistence.whenSynced.then(() => {
       if (!active) return
       window.clearTimeout(timer)
-      if (joinedBeforeCache) provider.resync()
+      setReady(true)
+      if (joinedBeforeCache) {
+        start()
+        provider.resync()
+      }
       else start()
     })
     return () => {
@@ -69,6 +80,7 @@ export function useDocSession(userId: string, docId: string): {
       void persistence.destroy()
       doc.destroy()
       setSession(null)
+      setReady(false)
       setPeers([])
       setStatus({ state: 'connecting' })
     }
@@ -78,7 +90,9 @@ export function useDocSession(userId: string, docId: string): {
     session?.provider.attach(socket)
   }, [session, socket])
 
-  return { session, status, peers }
+  // The timeout starts networking independently of IndexedDB, but an editor must not create
+  // default content until at least one source has loaded. A late empty cache stays empty.
+  return { session: ready ? session : null, status, peers }
 }
 
 function samePeers(left: PresencePeer[], right: PresencePeer[]): boolean {
