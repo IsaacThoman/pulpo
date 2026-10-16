@@ -5,9 +5,9 @@ export function isAppleShortcut(): boolean {
 }
 
 /** Platform-style hint for a menu item, e.g. ⌘⇧N on macOS and Ctrl+Shift+N elsewhere. */
-export function shortcutLabel(key: string, modifiers: { mod?: boolean; shift?: boolean } = {}): string {
-  if (isApple) return `${modifiers.mod ? '⌘' : ''}${modifiers.shift ? '⇧' : ''}${key}`
-  return [modifiers.mod && 'Ctrl', modifiers.shift && 'Shift', key].filter(Boolean).join('+')
+export function shortcutLabel(key: string, modifiers: { mod?: boolean; alt?: boolean; shift?: boolean } = {}): string {
+  if (isApple) return `${modifiers.mod ? '⌘' : ''}${modifiers.alt ? '⌥' : ''}${modifiers.shift ? '⇧' : ''}${key}`
+  return [modifiers.mod && 'Ctrl', modifiers.alt && 'Alt', modifiers.shift && 'Shift', key].filter(Boolean).join('+')
 }
 
 /** Cmd on Apple platforms, Ctrl elsewhere. */
