@@ -1,0 +1,1686 @@
+{
+  "format": "pulpo-r49-outcome-portable-manifest-v1",
+  "exclusions": [
+    "archive-sha256.json",
+    "full-review.tar.gz",
+    "manifest.json"
+  ],
+  "files": {
+    "aggregate-ledger.json": {
+      "bytes": 652030,
+      "sha256": "c15aa22b74cebdb122669100bec4779e2fe29ce2ddb453aec98f27c3a53dec8f"
+    },
+    "audit.py": {
+      "bytes": 11089,
+      "sha256": "7568fe1ba52445627b214634038fcb17d5da153c9db4488e5f193f04a4043614"
+    },
+    "commands.sh": {
+      "bytes": 572,
+      "sha256": "a722bc8d79682251dfafd9df9401af22119977f737ad468e0eef4ceec6bb063c"
+    },
+    "evidence/audit/README.md": {
+      "bytes": 4592,
+      "sha256": "0e96b388714d1ed2091d25406a383df455af63b45cf195f149118e0ca238d8a0"
+    },
+    "evidence/audit/author-protocol.md": {
+      "bytes": 4320,
+      "sha256": "4f774c5d419d9f95f243cb0791db58b6cc6ce52a10c5c9c2b9129fae65159c42"
+    },
+    "evidence/audit/contract-before-new-round.md": {
+      "bytes": 3953,
+      "sha256": "aeb830c95f208af53f6c73c4db8df64244c7a1eb764ba9797c2534c211d4e683"
+    },
+    "evidence/audit/cost-coordination/parent-start.json": {
+      "bytes": 2088,
+      "sha256": "37fbcae6f3b019ccf29dc81d3b56a887028cde2aa31370221b5a93572373e2e1"
+    },
+    "evidence/audit/environment-adapter-v1/driver-after.py.txt": {
+      "bytes": 15077,
+      "sha256": "b2f9e5f1db43b848ce6afc8896434729ba1277dc696cbf3fd83c6bfce8463ea8"
+    },
+    "evidence/audit/environment-adapter-v1/driver-before.py.txt": {
+      "bytes": 13652,
+      "sha256": "38626b5c3d0fabd61f82fbe9c75c45b6b5297c95eb262f60f379ba5dae3151d0"
+    },
+    "evidence/audit/environment-adapter-v1/driver.diff": {
+      "bytes": 4147,
+      "sha256": "00657292b6185676707c8ea4dfe961627107f4ed0378594f467e485f2e358046"
+    },
+    "evidence/audit/environment-adapter-v1/proposal.json": {
+      "bytes": 1079,
+      "sha256": "9221fc22780b7927c189e0edf12bb828c20e4515b017216ce774295e8b239a18"
+    },
+    "evidence/audit/environment-review-v1/SHA256SUMS.json": {
+      "bytes": 59488,
+      "sha256": "45274fdb32890be6cb02cfe0f4060086cbae40fcccfbb39d1bd8b8ec6954c07f"
+    },
+    "evidence/audit/environment-review-v1/execution-map.json": {
+      "bytes": 1538,
+      "sha256": "812e9162ba920d8fc3078c9c464b7f8aaeec90d5c388b5c1a7b14faad70d6442"
+    },
+    "evidence/audit/environment-review-v1/packet.json": {
+      "bytes": 785,
+      "sha256": "2802d909a46046dd6bb2c6a27aff0c7a78403225c592672276462efdec36ffbe"
+    },
+    "evidence/audit/environment-review-v1/parent-integrity.json": {
+      "bytes": 210,
+      "sha256": "d26bd2a28cb70ffb56585acd68e8a786317cc9bbd741d8ef295969b70e8b5c3e"
+    },
+    "evidence/audit/environment-review-v1/receipt.json": {
+      "bytes": 820,
+      "sha256": "36662254531c6d81f5b9972d9f4f6552e95e8dfc000ae2c1e9807ab8e8c936ea"
+    },
+    "evidence/audit/environment-review-v1/review-bundle.tar.gz": {
+      "bytes": 9138767,
+      "sha256": "cab5edff8efb4c6d913bbc20e0208de4e691b3be78021e323b2e62991c667b7b"
+    },
+    "evidence/audit/environment-review-v1/review.json": {
+      "bytes": 1716,
+      "sha256": "9adb4fca8cbb6a119e533e5018387d38b89c6794a1a38eda2f8abcde911622f5"
+    },
+    "evidence/audit/environment-review-v1/review.md": {
+      "bytes": 11115,
+      "sha256": "71cebb0423bf196d5e954df0a2150a38543f8b7be8a3eb7baa2e4d78c2e9c16f"
+    },
+    "evidence/audit/execution-freeze-v3.json": {
+      "bytes": 10105,
+      "sha256": "57fa7966b4d0f56424a2f1f4509ed0c29f7b93e8947eb79f7be79c5b3a577f90"
+    },
+    "evidence/audit/filesystem-seam-v1/Inventory.swift.txt": {
+      "bytes": 5921,
+      "sha256": "0320de42701762981d383050c3d2e26d162b57ffc23bb80486b7e4c26a402b41"
+    },
+    "evidence/audit/filesystem-seam-v1/MECHANICS.md": {
+      "bytes": 6219,
+      "sha256": "22149f81b37cee9e71c7c3095ef874ed3b08c0059b894ef211e8b92f0bf4fdf2"
+    },
+    "evidence/audit/filesystem-seam-v1/Runner.diff": {
+      "bytes": 9864,
+      "sha256": "50b7f279b5c5bb1d617b6570a9a71e2066a2bb8489e91fdfab10cb951e7b85ce"
+    },
+    "evidence/audit/filesystem-seam-v1/Runner.swift.txt": {
+      "bytes": 13356,
+      "sha256": "8f50f13ef8fcddc51d3521e6311992ebae2778f5635957f381f6a392ff61e4a1"
+    },
+    "evidence/audit/filesystem-seam-v1/SHA256SUMS.json": {
+      "bytes": 2382,
+      "sha256": "06fc96207b3643eb721e760d5bf472b56c7b8f1e2a5931b5ccc3dfa69d19e4b5"
+    },
+    "evidence/audit/filesystem-seam-v1/attestation.json": {
+      "bytes": 1013,
+      "sha256": "b681475aabfba0f56a49633f921e0c9ac11c8ee688fe5e676af8790d8d845584"
+    },
+    "evidence/audit/filesystem-seam-v1/environment.json": {
+      "bytes": 444,
+      "sha256": "bfb2d19825ff70bda426a73c01f8fddec2c756c05dc1eabf4f7f5a2d10d396ae"
+    },
+    "evidence/audit/filesystem-seam-v1/metadata.json": {
+      "bytes": 1010,
+      "sha256": "7ba320be583a6b43ed49ad90a92f37fe75f0aaad5d1ed7055fbd54ab99573263"
+    },
+    "evidence/audit/filesystem-seam-v1/portable-manifest.json": {
+      "bytes": 1787,
+      "sha256": "48cc545c4cd4f86114d8c0b9e4bc4ebb3d835d0a16c1892ef15766e2ac570d86"
+    },
+    "evidence/audit/filesystem-seam-v1/preflight.json": {
+      "bytes": 1663,
+      "sha256": "32cc558d7f4300b1b70cdfd4c6746cfe24d14f9d28499572b0580a2accbbd6cc"
+    },
+    "evidence/audit/filesystem-seam-v1/probe-stdout.json": {
+      "bytes": 4732,
+      "sha256": "4f5e48d52a3b7184046710fbe2db0fc9b00848410bab5b520531e212d0cf797b"
+    },
+    "evidence/audit/filesystem-seam-v1/r49-filesystem-seam-v1.tar.gz": {
+      "bytes": 98556,
+      "sha256": "81a7328260a64758ac287078e6b0d07cfb0f56d2226c43dd7615789e867d95cb"
+    },
+    "evidence/audit/fresh-author-v1/author-bundle.tar.gz": {
+      "bytes": 78202,
+      "sha256": "bfa62181addfade8b2e0011c059b7608941cddf4c53e9876294071b412f15fe4"
+    },
+    "evidence/audit/fresh-author-v1/author-manifest.json": {
+      "bytes": 2592,
+      "sha256": "8fa0b0af6ede9ed34cf07c8aebc3b5a651ebb8a10cc5d2da840c48173e23245a"
+    },
+    "evidence/audit/fresh-author-v1/metadata.json": {
+      "bytes": 2935,
+      "sha256": "f34abf2df11b59cbd588311e880ce15e8baad247d9603bac30afd6c71734a7ff"
+    },
+    "evidence/audit/fresh-author-v1/parent-integrity.json": {
+      "bytes": 390,
+      "sha256": "3d255e08f17d7bd330aa0ad4a8d830d9e4b4585fb349d3a95e6e791595cc300d"
+    },
+    "evidence/audit/fresh-author-v2/author-bundle.tar.gz": {
+      "bytes": 1263577,
+      "sha256": "5388ca0fa079ee9103fd1ff1c0d630e8de153bc4a3e0e268efe5707c46cb39eb"
+    },
+    "evidence/audit/fresh-author-v2/author-manifest.json": {
+      "bytes": 4918,
+      "sha256": "f76d1a671ecb51ab1bd7fb3838649ff8e4fd131f1f93bddf6bf6828f6abfeca4"
+    },
+    "evidence/audit/fresh-author-v2/metadata.json": {
+      "bytes": 4477,
+      "sha256": "a02ade0d67ce8225d9c3ad2cf643b9427b6ab8e5071cc76d80df4bbb12dc8edb"
+    },
+    "evidence/audit/fresh-author-v2/parent-integrity.json": {
+      "bytes": 698,
+      "sha256": "4f282b583e46478175c73cf49c88761bf5d95836d807899e95d48bf8f6c371e8"
+    },
+    "evidence/audit/fresh-author-v2/v2-preservation-proof.json": {
+      "bytes": 1469,
+      "sha256": "86e9af736a3457552e92888410ce60d46f5e37eda9f7fab8a5566fbf079b586f"
+    },
+    "evidence/audit/fresh-validator-v1/SHA256SUMS.json": {
+      "bytes": 9015,
+      "sha256": "509cf68be05db5b55630fc421dc8ce3a3cb0755c5bc6fea38a746af0df8429f8"
+    },
+    "evidence/audit/fresh-validator-v1/packet.json": {
+      "bytes": 683,
+      "sha256": "3f4fe832a48c6bf33adfbc93428935dc82e044e856b1631df61be1d2610b67a9"
+    },
+    "evidence/audit/fresh-validator-v1/parent-integrity.json": {
+      "bytes": 736,
+      "sha256": "89e898130174653c9c6a47f7f1669cf2d8115b03405c26f91f2a1d3f919fe443"
+    },
+    "evidence/audit/fresh-validator-v1/receipt.json": {
+      "bytes": 672,
+      "sha256": "32647adc01cfd4b2650d54d1a2e8fe89a50bfeaadacfaa32f3ebb913567a5e01"
+    },
+    "evidence/audit/fresh-validator-v1/review-bundle.tar.gz": {
+      "bytes": 12659262,
+      "sha256": "1def3064fb115f2d25f4d305b68b0810062a4b9423db2eb51bb8a2f2cad8ecd7"
+    },
+    "evidence/audit/fresh-validator-v1/review.md": {
+      "bytes": 15714,
+      "sha256": "e9ea8521bb872ab6537c589b94cbb5f25e02f15997ae5f4ea23fa6fe30bac463"
+    },
+    "evidence/audit/fresh-validator-v2/SHA256SUMS.json": {
+      "bytes": 12623,
+      "sha256": "23dc4d75147af883b87c913b3eda63f12e9e77b30d22ed4e12fcc94209a0a245"
+    },
+    "evidence/audit/fresh-validator-v2/execution-map.json": {
+      "bytes": 2850,
+      "sha256": "14f046bbf75367d8554993b20e27073a221fa7e4a7889a6cd6c0cc27e2256170"
+    },
+    "evidence/audit/fresh-validator-v2/packet.json": {
+      "bytes": 879,
+      "sha256": "f9818917f2592247e77fa4eb47246afafc6946651161d51d61393e59896e4f8f"
+    },
+    "evidence/audit/fresh-validator-v2/parent-integrity.json": {
+      "bytes": 357,
+      "sha256": "3ff1ff8a3a1880603cbd208c31eeb93d87e4fc3c72f7b2af8f006d33cd026864"
+    },
+    "evidence/audit/fresh-validator-v2/receipt.json": {
+      "bytes": 904,
+      "sha256": "6b48a33d2a896522fa71e30bf55b0f13f20c26fd8da9cce0b12e46a79ff6f07f"
+    },
+    "evidence/audit/fresh-validator-v2/review-bundle.tar.gz": {
+      "bytes": 25584482,
+      "sha256": "32a4d51a3ce066f4e185ac2ec67a61a91d385b96632cd6b8f5409822ad0ea5d1"
+    },
+    "evidence/audit/fresh-validator-v2/review.md": {
+      "bytes": 16701,
+      "sha256": "844b00cd30c0d46d37f1940168b3969bab1753f1080353c227c1cbfdcd628462"
+    },
+    "evidence/audit/paired-config-v1.json": {
+      "bytes": 11692,
+      "sha256": "0935ddd812e5319b4247a6133a7fab2509275c2f3c6e1d8cadae0514f3b80947"
+    },
+    "evidence/audit/paired-config-v2.json": {
+      "bytes": 14066,
+      "sha256": "98bd3e6a5a37a81bffdba083049f81337bbf44408605d30e1feecf5866d0ffdf"
+    },
+    "evidence/audit/paired-config-v3.json": {
+      "bytes": 14210,
+      "sha256": "8f5c6691e905199d6fb352f7f8aae708f1e96f8bbb6dd52c8531dafcdb8789d9"
+    },
+    "evidence/audit/paired-executor.py": {
+      "bytes": 15077,
+      "sha256": "b2f9e5f1db43b848ce6afc8896434729ba1277dc696cbf3fd83c6bfce8463ea8"
+    },
+    "evidence/audit/paired-results-v3/RUN-STARTED": {
+      "bytes": 65,
+      "sha256": "f89523bf1f8fe47333b8a131a2a97c5ae04b3641f3d0f7c54602468fb5b0c992"
+    },
+    "evidence/audit/paired-results-v3/artifact-hashes.json": {
+      "bytes": 2453,
+      "sha256": "5656a047c45b1d89ca48edcfd8b7fd3b09476b189e934c71796ece65deeb8f1a"
+    },
+    "evidence/audit/paired-results-v3/candidate/environment.json": {
+      "bytes": 689,
+      "sha256": "5fd6d1d662d4bad820096d74abf2870f5a436588e56bd3a0edc988c582b7bc2b"
+    },
+    "evidence/audit/paired-results-v3/candidate/evaluation-normal.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/audit/paired-results-v3/candidate/evaluation-normal.stdout": {
+      "bytes": 98285,
+      "sha256": "e985995f6ea9162b72b19ce8cf4d74786710c1f5bd0a54ddbb11b3da899aa448"
+    },
+    "evidence/audit/paired-results-v3/candidate/evaluation-optimized.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/audit/paired-results-v3/candidate/evaluation-optimized.stdout": {
+      "bytes": 98285,
+      "sha256": "e985995f6ea9162b72b19ce8cf4d74786710c1f5bd0a54ddbb11b3da899aa448"
+    },
+    "evidence/audit/paired-results-v3/candidate/raw.json.gz": {
+      "bytes": 27161,
+      "sha256": "9388f16a90d1f6590a0ed2259115468e4d11c0a1395b3f24e6c16662f2fa6944"
+    },
+    "evidence/audit/paired-results-v3/candidate/runner.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/audit/paired-results-v3/candidate/runner.stdout": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/audit/paired-results-v3/candidate/source-manifest.json": {
+      "bytes": 3844,
+      "sha256": "95bb869e4b1b13e6e79c8097e68d51619ef14545db64c6fe6f97be60f7b95421"
+    },
+    "evidence/audit/paired-results-v3/candidate-synthetic-store.tar.gz": {
+      "bytes": 16552,
+      "sha256": "4a7f620e6b909a71d4bf5b9ffbdee93e268e9bdb86a25b26578573224c64e0ab"
+    },
+    "evidence/audit/paired-results-v3/comparison/environment.json": {
+      "bytes": 690,
+      "sha256": "a88f71a9555bee1e7312a91ed79005dfdd3fd76af5f32627a396415b282fac4c"
+    },
+    "evidence/audit/paired-results-v3/comparison/evaluation-normal.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/audit/paired-results-v3/comparison/evaluation-normal.stdout": {
+      "bytes": 98984,
+      "sha256": "27c570f21dbe2b06e331cbd93e0af9ed31ed97eb4215c9379793f7a3cfaf9b7a"
+    },
+    "evidence/audit/paired-results-v3/comparison/evaluation-optimized.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/audit/paired-results-v3/comparison/evaluation-optimized.stdout": {
+      "bytes": 98984,
+      "sha256": "27c570f21dbe2b06e331cbd93e0af9ed31ed97eb4215c9379793f7a3cfaf9b7a"
+    },
+    "evidence/audit/paired-results-v3/comparison/raw.json.gz": {
+      "bytes": 26740,
+      "sha256": "aa92d4b1164dd08db651252324421c0163b5a309195d18afd7cbad5b68998c84"
+    },
+    "evidence/audit/paired-results-v3/comparison/runner.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/audit/paired-results-v3/comparison/runner.stdout": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/audit/paired-results-v3/comparison/source-manifest.json": {
+      "bytes": 3844,
+      "sha256": "5489d04cd2f18ceda4f8d2a7113fcdaf3b377e3aeaf35b3a2a26eb1ba01dcded"
+    },
+    "evidence/audit/paired-results-v3/comparison-synthetic-store.tar.gz": {
+      "bytes": 16389,
+      "sha256": "cde79d9c3e541befd9e8e0fa33667974f9e97751744c419e09e5b0d20473ebce"
+    },
+    "evidence/audit/paired-results-v3/evaluations.json": {
+      "bytes": 1629,
+      "sha256": "3179b3b7e62ad0ec98148f04098eae0340008e4ce02c7b2a5c8db1cba605e389"
+    },
+    "evidence/audit/paired-results-v3/execution.json": {
+      "bytes": 1465,
+      "sha256": "369c9d855a830708aabe89054469f2fea88f654deb0c162db60e612f676e5a17"
+    },
+    "evidence/audit/paired-results-v3/synthetic-store-manifest.json": {
+      "bytes": 20012,
+      "sha256": "d71d9614fe49de21ad72b310b2e71b2e8a3fc1df2dbdcfdcc527a2d04d9b20d4"
+    },
+    "evidence/audit/paired-source-identities.json": {
+      "bytes": 10227,
+      "sha256": "bea8801c153c07440d84311e854bbcce87ef466e85d307653e53bbe3b65fa8d9"
+    },
+    "evidence/audit/paired-sources/integrated-82165.tar.gz": {
+      "bytes": 82754,
+      "sha256": "b8992e4b0dbcd449a21593ec7e5faba7eb81c4f1f2aedbcf77722b9808991f39"
+    },
+    "evidence/audit/paired-sources/original-a9e.tar.gz": {
+      "bytes": 82106,
+      "sha256": "ef098147cedd404516ecb36dfb64c9a48c2c7863ef79ee40b0579524bd86878f"
+    },
+    "evidence/audit/preexecution-v3/artifact-hashes.json": {
+      "bytes": 993,
+      "sha256": "a1053a4efb9491b4dff61bfbb4e8ca173047d38aecad9bbb63d2d6e8488a28bd"
+    },
+    "evidence/audit/preexecution-v3/candidate/environment.json": {
+      "bytes": 689,
+      "sha256": "5fd6d1d662d4bad820096d74abf2870f5a436588e56bd3a0edc988c582b7bc2b"
+    },
+    "evidence/audit/preexecution-v3/candidate/source-manifest.json": {
+      "bytes": 3844,
+      "sha256": "95bb869e4b1b13e6e79c8097e68d51619ef14545db64c6fe6f97be60f7b95421"
+    },
+    "evidence/audit/preexecution-v3/candidate-binary.tar.gz": {
+      "bytes": 569196,
+      "sha256": "a93dcc4ffb277bfd83ac2dacd9a4bc5463e968c47c3c0be59b765d2ddeeedd61"
+    },
+    "evidence/audit/preexecution-v3/candidate-build-attestation.json": {
+      "bytes": 389,
+      "sha256": "79994147fd86dcc845b7c0e591d5c95b0930d37656a53a2275e44a4e77ced54a"
+    },
+    "evidence/audit/preexecution-v3/comparison/environment.json": {
+      "bytes": 690,
+      "sha256": "a88f71a9555bee1e7312a91ed79005dfdd3fd76af5f32627a396415b282fac4c"
+    },
+    "evidence/audit/preexecution-v3/comparison/source-manifest.json": {
+      "bytes": 3844,
+      "sha256": "5489d04cd2f18ceda4f8d2a7113fcdaf3b377e3aeaf35b3a2a26eb1ba01dcded"
+    },
+    "evidence/audit/preexecution-v3/comparison-binary.tar.gz": {
+      "bytes": 567767,
+      "sha256": "3a4c656fd0b1cd759384dd51313467f586baeec1aacc19213bc6923addceead6"
+    },
+    "evidence/audit/preexecution-v3/comparison-build-attestation.json": {
+      "bytes": 390,
+      "sha256": "a3042a435f83ef0c3a8323cca940815dfd9ccc754e6cfdce0a4cc9372fa905ee"
+    },
+    "evidence/audit/preexecution-v3/config.json": {
+      "bytes": 14210,
+      "sha256": "8f5c6691e905199d6fb352f7f8aae708f1e96f8bbb6dd52c8531dafcdb8789d9"
+    },
+    "evidence/audit/preexecution-v3/prepared.json": {
+      "bytes": 2449,
+      "sha256": "dde262ca2add9c88654ed2abd6aa84f30ce42f199e091137851fa3b810b3cb38"
+    },
+    "evidence/audit/reused-gates/identity.json": {
+      "bytes": 2417,
+      "sha256": "1c3a3ecf99372725abdf287ba026e218014522c5171cfc02ea6cfe1a7ed7a691"
+    },
+    "evidence/audit/reused-gates/native-integration.md": {
+      "bytes": 11855,
+      "sha256": "f12e9a1013e641efe02b9c5b1d4152a6e115171e921f86196ad21157e61957f5"
+    },
+    "evidence/audit/reused-gates/ordinary-core-services.json": {
+      "bytes": 3385,
+      "sha256": "7e21013a80cbc5873ebdf720c74e78d8f7cfa28340c92714fb655dd967b67e27"
+    },
+    "evidence/audit/reused-gates/paired-driver-review.json": {
+      "bytes": 2237,
+      "sha256": "7a83d8202c4d7f44ad879819a722323e5d82eef09c3c9def34c4c973bffc756f"
+    },
+    "evidence/audit/reused-gates/source-composition.json": {
+      "bytes": 1200,
+      "sha256": "24e0d338ee2e6e283e98cb7274c5559bb7047054d7687c2620bffc6fd690c2ae"
+    },
+    "evidence/audit/seam-review-v1/countercheck-stdout.json": {
+      "bytes": 1056,
+      "sha256": "6ccb1236b4181133bbd30b422c651a1d3536a1d82b2a133299fb7017d4f736be"
+    },
+    "evidence/audit/seam-review-v1/full-review.tar.gz": {
+      "bytes": 13911,
+      "sha256": "657bcbafcb9dd382458bb3062cf1bb12c930907c036887e8766e3c85a7c837c4"
+    },
+    "evidence/audit/seam-review-v1/independent-probe-stdout.json": {
+      "bytes": 4732,
+      "sha256": "0439cd559238d4331c86947e161baee3aed8efe652cfa22b2f3b3dd7e9837e30"
+    },
+    "evidence/audit/seam-review-v1/manifest.json": {
+      "bytes": 1398,
+      "sha256": "6343dd606d86c0494ce6d6693a40c82239e082d0aa515f98325b7ed4649ae4ff"
+    },
+    "evidence/audit/seam-review-v1/portable-manifest.json": {
+      "bytes": 940,
+      "sha256": "56ad55d557df4f3b183e1d49127d2e34b8cb0875763b5e64e8bd1f23b1cd851c"
+    },
+    "evidence/audit/seam-review-v1/receipt.json": {
+      "bytes": 1483,
+      "sha256": "376fbe2e422cd8c178c087b4406d16f43e8e523f0dbea3541c50d282bca21d17"
+    },
+    "evidence/audit/seam-review-v1/review.md": {
+      "bytes": 9020,
+      "sha256": "9918dd0be6c6b8c360e6e93e1ec0440ece079cc925e0a04566e5b9a5c79e60a0"
+    },
+    "evidence/stores/candidate/actual_sample_boundary.persistent/PersonalDictionary.json.learning-v2.sqlite": {
+      "bytes": 28672,
+      "sha256": "59cce459d8871f54a5ca350d568233033866752f80ab3c2d58863d2e82df2a43"
+    },
+    "evidence/stores/candidate/actual_sample_boundary.persistent/PersonalDictionary.json.learning-v2.sqlite.initialized": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/candidate/actual_sample_boundary.persistent/PersonalDictionary.json.learning-v2.sqlite.lock": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/candidate/actual_sample_boundary.persistent/PersonalDictionary.json.learning-v2.sqlite.writer.0": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/candidate/compatibility_uppercase.persistent/PersonalDictionary.json.learning-v2.sqlite": {
+      "bytes": 28672,
+      "sha256": "74fa8447990301c4521b692847820b1fa7a65b5fb65af379e19f4b5ff171db59"
+    },
+    "evidence/stores/candidate/compatibility_uppercase.persistent/PersonalDictionary.json.learning-v2.sqlite.initialized": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/candidate/compatibility_uppercase.persistent/PersonalDictionary.json.learning-v2.sqlite.lock": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/candidate/compatibility_uppercase.persistent/PersonalDictionary.json.learning-v2.sqlite.writer.0": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/candidate/complete_alphabet.persistent/PersonalDictionary.json.learning-v2.sqlite": {
+      "bytes": 28672,
+      "sha256": "4ec186d76edea990747cc2af37572cac8350ec12c0f83a1beab38a2c5cc20c9b"
+    },
+    "evidence/stores/candidate/complete_alphabet.persistent/PersonalDictionary.json.learning-v2.sqlite.initialized": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/candidate/complete_alphabet.persistent/PersonalDictionary.json.learning-v2.sqlite.lock": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/candidate/complete_alphabet.persistent/PersonalDictionary.json.learning-v2.sqlite.writer.0": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/candidate/extra_taps.persistent/PersonalDictionary.json.learning-v2.sqlite": {
+      "bytes": 28672,
+      "sha256": "03ef585c581830e40cb4a4f5db0d9cc62d561ef81788dba5ec8ed6faea5279d3"
+    },
+    "evidence/stores/candidate/extra_taps.persistent/PersonalDictionary.json.learning-v2.sqlite.initialized": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/candidate/extra_taps.persistent/PersonalDictionary.json.learning-v2.sqlite.lock": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/candidate/extra_taps.persistent/PersonalDictionary.json.learning-v2.sqlite.writer.0": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/candidate/grapheme_marks.persistent/PersonalDictionary.json.learning-v2.sqlite": {
+      "bytes": 28672,
+      "sha256": "6ce1b1e295ad6d6ad17ee261485963188bc5553014a77f88f58eba35a906c0b9"
+    },
+    "evidence/stores/candidate/grapheme_marks.persistent/PersonalDictionary.json.learning-v2.sqlite.initialized": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/candidate/grapheme_marks.persistent/PersonalDictionary.json.learning-v2.sqlite.lock": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/candidate/grapheme_marks.persistent/PersonalDictionary.json.learning-v2.sqlite.writer.0": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/candidate/ignored_nonletters.persistent/PersonalDictionary.json.learning-v2.sqlite": {
+      "bytes": 28672,
+      "sha256": "08c6f4ad70238dbcdf88d14e13f8f3a7a14d29decd3c40638983262fec284270"
+    },
+    "evidence/stores/candidate/ignored_nonletters.persistent/PersonalDictionary.json.learning-v2.sqlite.initialized": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/candidate/ignored_nonletters.persistent/PersonalDictionary.json.learning-v2.sqlite.lock": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/candidate/ignored_nonletters.persistent/PersonalDictionary.json.learning-v2.sqlite.writer.0": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/candidate/learning_policy.persistent/PersonalDictionary.json.learning-v2.sqlite": {
+      "bytes": 28672,
+      "sha256": "ab21b135e5602087ac39fe8999fd1b047aa5a85986b8db8092c4f8d915b4b1db"
+    },
+    "evidence/stores/candidate/learning_policy.persistent/PersonalDictionary.json.learning-v2.sqlite.initialized": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/candidate/learning_policy.persistent/PersonalDictionary.json.learning-v2.sqlite.lock": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/candidate/learning_policy.persistent/PersonalDictionary.json.learning-v2.sqlite.writer.0": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/candidate/length_and_no_samples.persistent/PersonalDictionary.json.learning-v2.sqlite": {
+      "bytes": 28672,
+      "sha256": "23b7516d1c873804171a5ff6c858d801e4ec6afb9d96fd15ddb59628df09efde"
+    },
+    "evidence/stores/candidate/length_and_no_samples.persistent/PersonalDictionary.json.learning-v2.sqlite.initialized": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/candidate/length_and_no_samples.persistent/PersonalDictionary.json.learning-v2.sqlite.lock": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/candidate/length_and_no_samples.persistent/PersonalDictionary.json.learning-v2.sqlite.writer.0": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/candidate/ligature_expansion.persistent/PersonalDictionary.json.learning-v2.sqlite": {
+      "bytes": 28672,
+      "sha256": "0c75fe7ba6017dd63edd3312e4e72ba1dadf127bed4cf2535703a976e6fd0f11"
+    },
+    "evidence/stores/candidate/ligature_expansion.persistent/PersonalDictionary.json.learning-v2.sqlite.initialized": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/candidate/ligature_expansion.persistent/PersonalDictionary.json.learning-v2.sqlite.lock": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/candidate/ligature_expansion.persistent/PersonalDictionary.json.learning-v2.sqlite.writer.0": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/candidate/long_sparse_target.persistent/PersonalDictionary.json.learning-v2.sqlite": {
+      "bytes": 28672,
+      "sha256": "ce1f6fc65ca2a7a0fca87a7df6b6906f16722059c2400aa3fe1a7cfae92f7e3a"
+    },
+    "evidence/stores/candidate/long_sparse_target.persistent/PersonalDictionary.json.learning-v2.sqlite.initialized": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/candidate/long_sparse_target.persistent/PersonalDictionary.json.learning-v2.sqlite.lock": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/candidate/long_sparse_target.persistent/PersonalDictionary.json.learning-v2.sqlite.writer.0": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/candidate/missing_sparse.persistent/PersonalDictionary.json.learning-v2.sqlite": {
+      "bytes": 28672,
+      "sha256": "2146cd2d867f9457ee7be4d459c66122d17fe9c46b888d3126e69ba6981e7463"
+    },
+    "evidence/stores/candidate/missing_sparse.persistent/PersonalDictionary.json.learning-v2.sqlite.initialized": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/candidate/missing_sparse.persistent/PersonalDictionary.json.learning-v2.sqlite.lock": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/candidate/missing_sparse.persistent/PersonalDictionary.json.learning-v2.sqlite.writer.0": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/candidate/removed_apostrophe.persistent/PersonalDictionary.json.learning-v2.sqlite": {
+      "bytes": 28672,
+      "sha256": "cbeadb98ef045442b6911af9e8109979a382bbff82b6635ead5b909b9f2d3e54"
+    },
+    "evidence/stores/candidate/removed_apostrophe.persistent/PersonalDictionary.json.learning-v2.sqlite.initialized": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/candidate/removed_apostrophe.persistent/PersonalDictionary.json.learning-v2.sqlite.lock": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/candidate/removed_apostrophe.persistent/PersonalDictionary.json.learning-v2.sqlite.writer.0": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/candidate/target_geometry.persistent/PersonalDictionary.json.learning-v2.sqlite": {
+      "bytes": 28672,
+      "sha256": "7ea0183a20eb2d4bfe4562ee66d84316d372d0bcbd401cd4e824480c26879101"
+    },
+    "evidence/stores/candidate/target_geometry.persistent/PersonalDictionary.json.learning-v2.sqlite.initialized": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/candidate/target_geometry.persistent/PersonalDictionary.json.learning-v2.sqlite.lock": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/candidate/target_geometry.persistent/PersonalDictionary.json.learning-v2.sqlite.writer.0": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/candidate/transactional_invalid.persistent/PersonalDictionary.json.learning-v2.sqlite": {
+      "bytes": 28672,
+      "sha256": "89c4f64268549368e1d43be109093118f43be29fbf77550cf4d95ee51c42d3e1"
+    },
+    "evidence/stores/candidate/transactional_invalid.persistent/PersonalDictionary.json.learning-v2.sqlite.initialized": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/candidate/transactional_invalid.persistent/PersonalDictionary.json.learning-v2.sqlite.lock": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/candidate/transactional_invalid.persistent/PersonalDictionary.json.learning-v2.sqlite.writer.0": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/candidate/utf8_origin_duplication.persistent/PersonalDictionary.json.learning-v2.sqlite": {
+      "bytes": 28672,
+      "sha256": "9ae76834fd1615677018feb699dd6ddedb3a2fec6021b8f0d1044272ccb08a1e"
+    },
+    "evidence/stores/candidate/utf8_origin_duplication.persistent/PersonalDictionary.json.learning-v2.sqlite.initialized": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/candidate/utf8_origin_duplication.persistent/PersonalDictionary.json.learning-v2.sqlite.lock": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/candidate/utf8_origin_duplication.persistent/PersonalDictionary.json.learning-v2.sqlite.writer.0": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/comparison/actual_sample_boundary.persistent/PersonalDictionary.json.learning-v2.sqlite": {
+      "bytes": 28672,
+      "sha256": "60c1e84ad15668e42d66266d4eba2713d55cf8cc15db913d9b2ff0123e6ebc91"
+    },
+    "evidence/stores/comparison/actual_sample_boundary.persistent/PersonalDictionary.json.learning-v2.sqlite.initialized": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/comparison/actual_sample_boundary.persistent/PersonalDictionary.json.learning-v2.sqlite.lock": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/comparison/actual_sample_boundary.persistent/PersonalDictionary.json.learning-v2.sqlite.writer.0": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/comparison/compatibility_uppercase.persistent/PersonalDictionary.json.learning-v2.sqlite": {
+      "bytes": 28672,
+      "sha256": "387fc369f01f5c16ebcfa70032db78207eb31d3ceeeda4ae717da5224756b95d"
+    },
+    "evidence/stores/comparison/compatibility_uppercase.persistent/PersonalDictionary.json.learning-v2.sqlite.initialized": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/comparison/compatibility_uppercase.persistent/PersonalDictionary.json.learning-v2.sqlite.lock": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/comparison/compatibility_uppercase.persistent/PersonalDictionary.json.learning-v2.sqlite.writer.0": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/comparison/complete_alphabet.persistent/PersonalDictionary.json.learning-v2.sqlite": {
+      "bytes": 28672,
+      "sha256": "4324d0a8b3444545109236049633d9003130451b3fb148369fb353771e04eed7"
+    },
+    "evidence/stores/comparison/complete_alphabet.persistent/PersonalDictionary.json.learning-v2.sqlite.initialized": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/comparison/complete_alphabet.persistent/PersonalDictionary.json.learning-v2.sqlite.lock": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/comparison/complete_alphabet.persistent/PersonalDictionary.json.learning-v2.sqlite.writer.0": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/comparison/extra_taps.persistent/PersonalDictionary.json.learning-v2.sqlite": {
+      "bytes": 28672,
+      "sha256": "668680d4887fdf9cce5c984b29883056d9cc5ae34c5c514d626ea50f8988b70a"
+    },
+    "evidence/stores/comparison/extra_taps.persistent/PersonalDictionary.json.learning-v2.sqlite.initialized": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/comparison/extra_taps.persistent/PersonalDictionary.json.learning-v2.sqlite.lock": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/comparison/extra_taps.persistent/PersonalDictionary.json.learning-v2.sqlite.writer.0": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/comparison/grapheme_marks.persistent/PersonalDictionary.json.learning-v2.sqlite": {
+      "bytes": 28672,
+      "sha256": "40361b0fa349f8c0202863814243c2ea4d5d6525dbd50fdf7ed5d51d2f943a8d"
+    },
+    "evidence/stores/comparison/grapheme_marks.persistent/PersonalDictionary.json.learning-v2.sqlite.initialized": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/comparison/grapheme_marks.persistent/PersonalDictionary.json.learning-v2.sqlite.lock": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/comparison/grapheme_marks.persistent/PersonalDictionary.json.learning-v2.sqlite.writer.0": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/comparison/ignored_nonletters.persistent/PersonalDictionary.json.learning-v2.sqlite": {
+      "bytes": 28672,
+      "sha256": "4faffa7ecd860d2d4f50416908264533047b237f47479cf0069ce21c52e75d33"
+    },
+    "evidence/stores/comparison/ignored_nonletters.persistent/PersonalDictionary.json.learning-v2.sqlite.initialized": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/comparison/ignored_nonletters.persistent/PersonalDictionary.json.learning-v2.sqlite.lock": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/comparison/ignored_nonletters.persistent/PersonalDictionary.json.learning-v2.sqlite.writer.0": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/comparison/learning_policy.persistent/PersonalDictionary.json.learning-v2.sqlite": {
+      "bytes": 28672,
+      "sha256": "97b9c36301dec73cd09fcbd0ec2c54256244e7d53e153ce3bd0fe8f7debd1bd1"
+    },
+    "evidence/stores/comparison/learning_policy.persistent/PersonalDictionary.json.learning-v2.sqlite.initialized": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/comparison/learning_policy.persistent/PersonalDictionary.json.learning-v2.sqlite.lock": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/comparison/learning_policy.persistent/PersonalDictionary.json.learning-v2.sqlite.writer.0": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/comparison/length_and_no_samples.persistent/PersonalDictionary.json.learning-v2.sqlite": {
+      "bytes": 28672,
+      "sha256": "ae9ff00eb68bb7678606bcd4561384078a12427342b528a9dc001c4a202b6261"
+    },
+    "evidence/stores/comparison/length_and_no_samples.persistent/PersonalDictionary.json.learning-v2.sqlite.initialized": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/comparison/length_and_no_samples.persistent/PersonalDictionary.json.learning-v2.sqlite.lock": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/comparison/length_and_no_samples.persistent/PersonalDictionary.json.learning-v2.sqlite.writer.0": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/comparison/ligature_expansion.persistent/PersonalDictionary.json.learning-v2.sqlite": {
+      "bytes": 28672,
+      "sha256": "64a1781ae1ac52f144691b9f425866f950fef141c9111da56393f203fab8017e"
+    },
+    "evidence/stores/comparison/ligature_expansion.persistent/PersonalDictionary.json.learning-v2.sqlite.initialized": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/comparison/ligature_expansion.persistent/PersonalDictionary.json.learning-v2.sqlite.lock": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/comparison/ligature_expansion.persistent/PersonalDictionary.json.learning-v2.sqlite.writer.0": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/comparison/long_sparse_target.persistent/PersonalDictionary.json.learning-v2.sqlite": {
+      "bytes": 28672,
+      "sha256": "fff9562c050cd95ea953dca74180814b0bfcf002737f632c7ee8f7e8e1a85dcc"
+    },
+    "evidence/stores/comparison/long_sparse_target.persistent/PersonalDictionary.json.learning-v2.sqlite.initialized": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/comparison/long_sparse_target.persistent/PersonalDictionary.json.learning-v2.sqlite.lock": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/comparison/missing_sparse.persistent/PersonalDictionary.json.learning-v2.sqlite": {
+      "bytes": 28672,
+      "sha256": "7a76643ffbfe0d69f9347bf294595042bd55b6172c64a6584299c57934108e7c"
+    },
+    "evidence/stores/comparison/missing_sparse.persistent/PersonalDictionary.json.learning-v2.sqlite.initialized": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/comparison/missing_sparse.persistent/PersonalDictionary.json.learning-v2.sqlite.lock": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/comparison/missing_sparse.persistent/PersonalDictionary.json.learning-v2.sqlite.writer.0": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/comparison/removed_apostrophe.persistent/PersonalDictionary.json.learning-v2.sqlite": {
+      "bytes": 28672,
+      "sha256": "b7ea335ebfa8a460a51e08bcc02387da12b55ea8383bf844579ec985191d4ec9"
+    },
+    "evidence/stores/comparison/removed_apostrophe.persistent/PersonalDictionary.json.learning-v2.sqlite.initialized": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/comparison/removed_apostrophe.persistent/PersonalDictionary.json.learning-v2.sqlite.lock": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/comparison/removed_apostrophe.persistent/PersonalDictionary.json.learning-v2.sqlite.writer.0": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/comparison/target_geometry.persistent/PersonalDictionary.json.learning-v2.sqlite": {
+      "bytes": 28672,
+      "sha256": "2534fd885fd1ffd7e6176f6a4cd9c3535a0977ca175cf58a7636ce636ecfd933"
+    },
+    "evidence/stores/comparison/target_geometry.persistent/PersonalDictionary.json.learning-v2.sqlite.initialized": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/comparison/target_geometry.persistent/PersonalDictionary.json.learning-v2.sqlite.lock": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/comparison/target_geometry.persistent/PersonalDictionary.json.learning-v2.sqlite.writer.0": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/comparison/transactional_invalid.persistent/PersonalDictionary.json.learning-v2.sqlite": {
+      "bytes": 28672,
+      "sha256": "10745e8ebbc34c0f4f1333c9431c6f9ab228169df016d7f439f7338812502dc7"
+    },
+    "evidence/stores/comparison/transactional_invalid.persistent/PersonalDictionary.json.learning-v2.sqlite.initialized": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/comparison/transactional_invalid.persistent/PersonalDictionary.json.learning-v2.sqlite.lock": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/comparison/transactional_invalid.persistent/PersonalDictionary.json.learning-v2.sqlite.writer.0": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/comparison/utf8_origin_duplication.persistent/PersonalDictionary.json.learning-v2.sqlite": {
+      "bytes": 28672,
+      "sha256": "67b8e794c1ca067baa705e9575fc11fbaebcb6ea60719820c3e3c9547d3648cf"
+    },
+    "evidence/stores/comparison/utf8_origin_duplication.persistent/PersonalDictionary.json.learning-v2.sqlite.initialized": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/comparison/utf8_origin_duplication.persistent/PersonalDictionary.json.learning-v2.sqlite.lock": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/stores/comparison/utf8_origin_duplication.persistent/PersonalDictionary.json.learning-v2.sqlite.writer.0": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/work/RUN-STARTED": {
+      "bytes": 65,
+      "sha256": "f89523bf1f8fe47333b8a131a2a97c5ae04b3641f3d0f7c54602468fb5b0c992"
+    },
+    "evidence/work/author/ACCOUNTING-V2.md": {
+      "bytes": 7184,
+      "sha256": "1bd159719dcf70893c978bef6f18b3b3eb53c968da68c948f0fe671c4ece770b"
+    },
+    "evidence/work/author/CHANGELOG.md": {
+      "bytes": 4180,
+      "sha256": "6b4c57697e84f9f18347f8964a9ea72ab6d050068f6ff33493075172d44eb337"
+    },
+    "evidence/work/author/PublicDomainReference.swift": {
+      "bytes": 2303,
+      "sha256": "860e4098efcf1d38825458c4791c5398a7e37c626ba23dc91392e7f60629516b"
+    },
+    "evidence/work/author/README.md": {
+      "bytes": 8680,
+      "sha256": "30153c372b203a9731ba852ef7c71819adc40a31528ca53debfab1ac2432cec1"
+    },
+    "evidence/work/author/ReferenceMain.swift": {
+      "bytes": 1705,
+      "sha256": "3cf1b7c4a6dedcae9a12f66d5440b1ee003efe3db92ef56a8bc65b98c75198e2"
+    },
+    "evidence/work/author/Runner.swift": {
+      "bytes": 13356,
+      "sha256": "8f50f13ef8fcddc51d3521e6311992ebae2778f5635957f381f6a392ff61e4a1"
+    },
+    "evidence/work/author/accounting-countertruth.json": {
+      "bytes": 3112738,
+      "sha256": "4dddb54752842765421c00f2705aa99cbeceae72804e07e5d50f3fdfaa1c96eb"
+    },
+    "evidence/work/author/accounting-results.json": {
+      "bytes": 7016387,
+      "sha256": "5713e2b85d2f3028881e277a6c34dec8d19405e2d0c13c88ade6405ec3be05ee"
+    },
+    "evidence/work/author/accounting-witnesses.json": {
+      "bytes": 13328,
+      "sha256": "272bb8ccd0d1dbda272f6add35b83c5bf98b8fcda9b0b234a4958cdc806d2721"
+    },
+    "evidence/work/author/accounting_truth.py": {
+      "bytes": 4880,
+      "sha256": "6cc14f93a6b92b7f6a89f6a29e46ebe16409f1b0cccfdd0b6694eabb2f60378b"
+    },
+    "evidence/work/author/add_accounting.py": {
+      "bytes": 5628,
+      "sha256": "e19e4d7104afa9beb1fdf80057e59c6553c05451e03db85cd15fe1737355438e"
+    },
+    "evidence/work/author/adversarial-cases.json": {
+      "bytes": 25045,
+      "sha256": "4973a2dcbcb8043b44b6934ffa393a2b8e2cff45fc0b3fae37ee7a067c8f33e0"
+    },
+    "evidence/work/author/adversarial-results.json": {
+      "bytes": 8573145,
+      "sha256": "6aa190a0bab1cf1f36387a2fd671b449dc401734faf769d93ecc3d29b224a1cf"
+    },
+    "evidence/work/author/author-manifest.json": {
+      "bytes": 4918,
+      "sha256": "f76d1a671ecb51ab1bd7fb3838649ff8e4fd131f1f93bddf6bf6828f6abfeca4"
+    },
+    "evidence/work/author/author-protocol.md": {
+      "bytes": 4320,
+      "sha256": "4f774c5d419d9f95f243cb0791db58b6cc6ce52a10c5c9c2b9129fae65159c42"
+    },
+    "evidence/work/author/author-validation.json": {
+      "bytes": 299,
+      "sha256": "f8d9f89444b5976adb56c0835d3e0741788c3b07a2e0d40b38c3f825e342476f"
+    },
+    "evidence/work/author/author.py": {
+      "bytes": 8933,
+      "sha256": "c4b007fe192a410756fcc855c487d11bdc8932e62a3226af52e244e57df79b4f"
+    },
+    "evidence/work/author/environment-template.json": {
+      "bytes": 527,
+      "sha256": "c6dd071f6854e420e08178407125db08fa5897011bdc34d48d744873a4594981"
+    },
+    "evidence/work/author/evaluate.py": {
+      "bytes": 18302,
+      "sha256": "fd1c9260abb1a021ec164faa3ca55d3428a24d4f4478b84a7d6ba3a128294195"
+    },
+    "evidence/work/author/expectations.json": {
+      "bytes": 159819,
+      "sha256": "dc63f643ea7dd6f7a61df60663c1fa78580bcb9adb4d1b0ca4a68fab2d4a0ed1"
+    },
+    "evidence/work/author/fixtures-schema.json": {
+      "bytes": 10496,
+      "sha256": "d077ddab27dd1c0b4ccc4b372972db97425d18248f994c5464598305ae163be5"
+    },
+    "evidence/work/author/fixtures.json": {
+      "bytes": 138752,
+      "sha256": "9f49a1fa017e07f989c19518329e1a48b16e1e76c9c2d7826f5a55c301212912"
+    },
+    "evidence/work/author/make_accounting_witnesses.py": {
+      "bytes": 3014,
+      "sha256": "0f213e9544a7403d438bcf2c6c206bbf5bef10b0a7fa3ca17c146b1bd9297ab6"
+    },
+    "evidence/work/author/make_adversaries.py": {
+      "bytes": 7180,
+      "sha256": "d6ebf09d3c5458b01cdd7478c2386763bbb334245f1b3c83a43eccf816375950"
+    },
+    "evidence/work/author/make_diff.py": {
+      "bytes": 2451,
+      "sha256": "8a940a48f371fb7c713b6d7d49936919e0d193a7a1de87373a0178af569f2ed9"
+    },
+    "evidence/work/author/make_report_schema.py": {
+      "bytes": 3497,
+      "sha256": "5224eed728b277e640827df44f2ca8e61e37d6fbe43cb95cbf77adc004d5fb6c"
+    },
+    "evidence/work/author/make_schema.py": {
+      "bytes": 3495,
+      "sha256": "6f31249802f1220c4fe7f1717a9f12a8d0f1192a7c2ca9c9ed1e7a72c03b489f"
+    },
+    "evidence/work/author/make_synthetic.py": {
+      "bytes": 3814,
+      "sha256": "2a44e2139ca15426d03936e4cec5df5585219908ebfc6413854085bdbe6ac1ce"
+    },
+    "evidence/work/author/public-domain-v3.md": {
+      "bytes": 12366,
+      "sha256": "986bbb9faefefd211c8f954c5d0fcd66ad1cd42e10008e69a354a7bc964dbef9"
+    },
+    "evidence/work/author/reference-assumptions.md": {
+      "bytes": 5334,
+      "sha256": "767e70b4218e847f2a871bcb7dadff42d9c596c8d1e63a0852151c0aa58ac131"
+    },
+    "evidence/work/author/reference-requests.json": {
+      "bytes": 66248,
+      "sha256": "a54790476c9c48e8153df8b151186300f7d6d69c77106e9c67c7d31539c20ee1"
+    },
+    "evidence/work/author/reference.json": {
+      "bytes": 65365,
+      "sha256": "0431ce88a659611358b35d0672337137544149ab79709641c36b2dcb4a4343eb"
+    },
+    "evidence/work/author/report-schema-results.json": {
+      "bytes": 164,
+      "sha256": "092a92853b25b20d5c9faf7dd8dda7fdb9278dbccea501c27e0130a6f8c4a586"
+    },
+    "evidence/work/author/report-schema.json": {
+      "bytes": 17948,
+      "sha256": "9d7212356abfee22be7e01c9249f9ac776fbd7df7bd38c4ad2126aea1d315898"
+    },
+    "evidence/work/author/runtime-binding.json": {
+      "bytes": 338,
+      "sha256": "d54449f756834a2f2c02445b8e1acf06a12dd768b6e439c38282f1c6546f0f4c"
+    },
+    "evidence/work/author/schema.json": {
+      "bytes": 14055,
+      "sha256": "4fdcaa1cd0f094897d68b753a67805dbf97b1a5adfad695db106aa1dfa208db9"
+    },
+    "evidence/work/author/seal_manifest.py": {
+      "bytes": 557,
+      "sha256": "5fdb18d1b02f3698e96b173ff4396e8e70ee6bdb8ee1a10fb8e5b2538d546858"
+    },
+    "evidence/work/author/synthetic-raw.json": {
+      "bytes": 1075694,
+      "sha256": "cd1e9a67af46bea947d3a8494aee72dae17df8e051733bae332af9565b4e1814"
+    },
+    "evidence/work/author/test_accounting.py": {
+      "bytes": 4036,
+      "sha256": "9144a3811e59ce87f664d228b127e1c4d878ed8f36e5234cf12aa7fa6b86ac45"
+    },
+    "evidence/work/author/test_evaluator.py": {
+      "bytes": 3390,
+      "sha256": "082004bb8f055496725ba93b2353fcfe60bce4762cde444e07a08630d3d6a2b4"
+    },
+    "evidence/work/author/test_report_schema.py": {
+      "bytes": 2744,
+      "sha256": "14029e441dafc857b6119c95a691850dd1d4c72e587a8a4197144af77489898f"
+    },
+    "evidence/work/author/v1-author-manifest.json": {
+      "bytes": 2592,
+      "sha256": "8fa0b0af6ede9ed34cf07c8aebc3b5a651ebb8a10cc5d2da840c48173e23245a"
+    },
+    "evidence/work/author/v1-author-metadata.json": {
+      "bytes": 2935,
+      "sha256": "f34abf2df11b59cbd588311e880ce15e8baad247d9603bac30afd6c71734a7ff"
+    },
+    "evidence/work/author/v1-evaluate.py.txt": {
+      "bytes": 13613,
+      "sha256": "4819e7bec3c90eb24b8b34e0e581e52f580b6b8cae1614cdbb94540df600e12d"
+    },
+    "evidence/work/author/v1-independent-packet.json": {
+      "bytes": 683,
+      "sha256": "3f4fe832a48c6bf33adfbc93428935dc82e044e856b1631df61be1d2610b67a9"
+    },
+    "evidence/work/author/v1-independent-receipt.json": {
+      "bytes": 672,
+      "sha256": "32647adc01cfd4b2650d54d1a2e8fe89a50bfeaadacfaa32f3ebb913567a5e01"
+    },
+    "evidence/work/author/v1-independent-review.md": {
+      "bytes": 15714,
+      "sha256": "e9ea8521bb872ab6537c589b94cbb5f25e02f15997ae5f4ea23fa6fe30bac463"
+    },
+    "evidence/work/author/v1-v2-files.json": {
+      "bytes": 11509,
+      "sha256": "9cff62add18a2fe6b2f9b95f40cb397f6d64f3cd017725b9d1d4fdebac3c5145"
+    },
+    "evidence/work/author/v1-v2.diff": {
+      "bytes": 19279548,
+      "sha256": "27ce439cba5bb5e05016c4774b2cea76b357c0789c1ac9522d80f3d9982d80fd"
+    },
+    "evidence/work/author/v2-preservation-proof.json": {
+      "bytes": 1469,
+      "sha256": "86e9af736a3457552e92888410ce60d46f5e37eda9f7fab8a5566fbf079b586f"
+    },
+    "evidence/work/author/verify_author.py": {
+      "bytes": 4186,
+      "sha256": "3fb9ff7a642c72509a3d0a5626208eb47fafcf929073ce6cf30368de8770e7d9"
+    },
+    "evidence/work/author/verify_v2_preservation.py": {
+      "bytes": 2268,
+      "sha256": "68b34e061798136902dd5f4ed24295ea53a3189e5d4a1ac241402b79ed2e3928"
+    },
+    "evidence/work/candidate/PulpoKeyboardKit/Package.swift": {
+      "bytes": 242,
+      "sha256": "8ae80fd90770bbeb75ba7d8f207a35cd8ec0c6b76e2fefbd74e24dd6af5be24e"
+    },
+    "evidence/work/candidate/PulpoKeyboardKit/Sources/KeyboardCore/Correction/SpellCorrector.swift": {
+      "bytes": 14455,
+      "sha256": "525630cd2f29ef9739d98f7ea62827e04ee090140591d384527022a085030f31"
+    },
+    "evidence/work/candidate/PulpoKeyboardKit/Sources/KeyboardCore/Correction/Suggester.swift": {
+      "bytes": 38445,
+      "sha256": "0608da9f8a2308ff71aaadf5cd2a59eaad856871ea299f56ec9b2200e14a3d65"
+    },
+    "evidence/work/candidate/PulpoKeyboardKit/Sources/KeyboardCore/Dictionary/LanguageModel.swift": {
+      "bytes": 5990,
+      "sha256": "5e493289b992eaeb5f0c8233f6b6b80c070f48437f693b5efa4bc2cc4e1871a4"
+    },
+    "evidence/work/candidate/PulpoKeyboardKit/Sources/KeyboardCore/Dictionary/LanguageStack.swift": {
+      "bytes": 1805,
+      "sha256": "3b82d4ec23919f948fc3bad18252e67bb6ca709bccc68363ea794d985b90ae01"
+    },
+    "evidence/work/candidate/PulpoKeyboardKit/Sources/KeyboardCore/Dictionary/Lexicon.swift": {
+      "bytes": 18727,
+      "sha256": "5751a26a1cff378015344a384d3f24d3eae9808312249a836984ea8914334d14"
+    },
+    "evidence/work/candidate/PulpoKeyboardKit/Sources/KeyboardCore/Dictionary/MappedFile.swift": {
+      "bytes": 1374,
+      "sha256": "c792e2586c41b6942c1d58df226e0374e0ec0d1300c1ddd3f373d90a12eea48a"
+    },
+    "evidence/work/candidate/PulpoKeyboardKit/Sources/KeyboardCore/Dictionary/PersonalDictionary.swift": {
+      "bytes": 21725,
+      "sha256": "0bac71e413ea3c99f8972dd6cae10685e76adbd0b0537f587b589768b00a8d28"
+    },
+    "evidence/work/candidate/PulpoKeyboardKit/Sources/KeyboardCore/Emoji/EmojiCatalog.swift": {
+      "bytes": 12834,
+      "sha256": "c7f929ada6398c9c849e1b764e7bdacc3aca6956f3444fa74953db43cea5468e"
+    },
+    "evidence/work/candidate/PulpoKeyboardKit/Sources/KeyboardCore/Emoji/EmojiSearch.swift": {
+      "bytes": 3937,
+      "sha256": "b31bb9dfd4f0eaca8e7c71e5d5779d43a2e60649067b9a78ac6b0b12bc5b7d47"
+    },
+    "evidence/work/candidate/PulpoKeyboardKit/Sources/KeyboardCore/Geometry/LetterGeometry.swift": {
+      "bytes": 2280,
+      "sha256": "99b3513dbaa433f4e83f7a7d35aadda518844331b60fda4bfe00d921708da188"
+    },
+    "evidence/work/candidate/PulpoKeyboardKit/Sources/KeyboardCore/Geometry/TouchModel.swift": {
+      "bytes": 7236,
+      "sha256": "696843c4f16b2132715558fbf67d2b7560344a51f3916dafca5b08ea0b0ff443"
+    },
+    "evidence/work/candidate/PulpoKeyboardKit/Sources/KeyboardCore/Glide/GlideDecoder.swift": {
+      "bytes": 26892,
+      "sha256": "5191f844388cd823a22ba9e2b79615440e678a7125ed209aee6820fc9ce01805"
+    },
+    "evidence/work/candidate/PulpoKeyboardKit/Sources/KeyboardCore/Input/InputTraits.swift": {
+      "bytes": 3872,
+      "sha256": "b51ff8291e2fc6a64f2244a7ddf198d4a49fde79443bffca500b4d2b317d2b61"
+    },
+    "evidence/work/candidate/PulpoKeyboardKit/Sources/KeyboardCore/Input/KeyboardEngine.swift": {
+      "bytes": 69750,
+      "sha256": "3f0987051ff0f176a5e1ef6396d415b0f8fe0fc2088735c75fef87f75158de97"
+    },
+    "evidence/work/candidate/PulpoKeyboardKit/Sources/KeyboardCore/Layout/KeyboardLayout.swift": {
+      "bytes": 11442,
+      "sha256": "0001873a89ec6e02351c8f2847d68e1dcd921af80e61d7df02d19aa6e8e1554c"
+    },
+    "evidence/work/candidate/PulpoKeyboardKit/Sources/KeyboardCore/Shared/AppGroup.swift": {
+      "bytes": 5002,
+      "sha256": "831015d4ae7c54a7ac38fb687334cf72647c6a9d7b3b640001891c7af3e51cd3"
+    },
+    "evidence/work/candidate/PulpoKeyboardKit/Sources/KeyboardCore/Shared/Diagnostics.swift": {
+      "bytes": 1695,
+      "sha256": "3711557ae0bc5fe322e41ed0db8ba261aba8ff2c8e6ad6d8ca8ad0f5920c4c10"
+    },
+    "evidence/work/candidate/PulpoKeyboardKit/Sources/KeyboardCore/Shared/DictationBridge.swift": {
+      "bytes": 6608,
+      "sha256": "0d5a623a442a608b746c7b8ef6f5ca53b84599dc8e2794dbe85794221a942153"
+    },
+    "evidence/work/candidate/PulpoKeyboardKit/Sources/KeyboardCore/Shared/DictationInsertionGuard.swift": {
+      "bytes": 1645,
+      "sha256": "581187f2d5d16a357760248fcc52072a6bdf6ba23fc41a1b193feebcb95f5da3"
+    },
+    "evidence/work/candidate/PulpoKeyboardKit/Sources/KeyboardCore/Shared/DictationRequestLifecycle.swift": {
+      "bytes": 2153,
+      "sha256": "0e5391cfa5a2c6227a9f3c347b72d6a0d571088e2bf6e71ad85b8b0e25b6af0c"
+    },
+    "evidence/work/candidate/PulpoKeyboardKit/Sources/KeyboardCore/Shared/HostReturnFlow.swift": {
+      "bytes": 1000,
+      "sha256": "7b527dd87da068a883e3d3a634802d8237c79d4fa4789ef65ce376e9d9de6148"
+    },
+    "evidence/work/candidate/PulpoKeyboardKit/Sources/KeyboardCore/Shared/KeyboardLanguage.swift": {
+      "bytes": 707,
+      "sha256": "a1b37b484c9f72247d3b5c89cca121f930b7f996d70b8563cac3cefca99e036c"
+    },
+    "evidence/work/candidate/PulpoKeyboardKit/Sources/KeyboardCore/Shared/KeyboardSettings.swift": {
+      "bytes": 3324,
+      "sha256": "2c4172096221f7c72f913d73f0b4444b0f6e7aeb45eefccb20731fe10565e44b"
+    },
+    "evidence/work/candidate/PulpoKeyboardKit/Sources/KeyboardCore/Shared/LearnedDataPersistence.swift": {
+      "bytes": 41927,
+      "sha256": "213dcf5810e5fffb33921827b563b31feb3eb7d2ac32c026aa9f694e028ef235"
+    },
+    "evidence/work/candidate/PulpoKeyboardKit/Sources/KeyboardCore/Shared/OneHanded.swift": {
+      "bytes": 2011,
+      "sha256": "8bbabe4e09e7e2149ad16ead453a1d6edd6da5e735e74b72105840541486ed4e"
+    },
+    "evidence/work/candidate/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Correction/SpellCorrector.swift": {
+      "bytes": 14455,
+      "sha256": "525630cd2f29ef9739d98f7ea62827e04ee090140591d384527022a085030f31"
+    },
+    "evidence/work/candidate/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Correction/Suggester.swift": {
+      "bytes": 38445,
+      "sha256": "0608da9f8a2308ff71aaadf5cd2a59eaad856871ea299f56ec9b2200e14a3d65"
+    },
+    "evidence/work/candidate/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Dictionary/LanguageModel.swift": {
+      "bytes": 5990,
+      "sha256": "5e493289b992eaeb5f0c8233f6b6b80c070f48437f693b5efa4bc2cc4e1871a4"
+    },
+    "evidence/work/candidate/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Dictionary/LanguageStack.swift": {
+      "bytes": 1805,
+      "sha256": "3b82d4ec23919f948fc3bad18252e67bb6ca709bccc68363ea794d985b90ae01"
+    },
+    "evidence/work/candidate/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Dictionary/Lexicon.swift": {
+      "bytes": 18727,
+      "sha256": "5751a26a1cff378015344a384d3f24d3eae9808312249a836984ea8914334d14"
+    },
+    "evidence/work/candidate/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Dictionary/MappedFile.swift": {
+      "bytes": 1374,
+      "sha256": "c792e2586c41b6942c1d58df226e0374e0ec0d1300c1ddd3f373d90a12eea48a"
+    },
+    "evidence/work/candidate/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Dictionary/PersonalDictionary.swift": {
+      "bytes": 21725,
+      "sha256": "0bac71e413ea3c99f8972dd6cae10685e76adbd0b0537f587b589768b00a8d28"
+    },
+    "evidence/work/candidate/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Emoji/EmojiCatalog.swift": {
+      "bytes": 12834,
+      "sha256": "c7f929ada6398c9c849e1b764e7bdacc3aca6956f3444fa74953db43cea5468e"
+    },
+    "evidence/work/candidate/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Emoji/EmojiSearch.swift": {
+      "bytes": 3937,
+      "sha256": "b31bb9dfd4f0eaca8e7c71e5d5779d43a2e60649067b9a78ac6b0b12bc5b7d47"
+    },
+    "evidence/work/candidate/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Geometry/LetterGeometry.swift": {
+      "bytes": 2280,
+      "sha256": "99b3513dbaa433f4e83f7a7d35aadda518844331b60fda4bfe00d921708da188"
+    },
+    "evidence/work/candidate/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Geometry/TouchModel.swift": {
+      "bytes": 7236,
+      "sha256": "696843c4f16b2132715558fbf67d2b7560344a51f3916dafca5b08ea0b0ff443"
+    },
+    "evidence/work/candidate/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Glide/GlideDecoder.swift": {
+      "bytes": 26892,
+      "sha256": "5191f844388cd823a22ba9e2b79615440e678a7125ed209aee6820fc9ce01805"
+    },
+    "evidence/work/candidate/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Input/InputTraits.swift": {
+      "bytes": 3872,
+      "sha256": "b51ff8291e2fc6a64f2244a7ddf198d4a49fde79443bffca500b4d2b317d2b61"
+    },
+    "evidence/work/candidate/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Input/KeyboardEngine.swift": {
+      "bytes": 69750,
+      "sha256": "3f0987051ff0f176a5e1ef6396d415b0f8fe0fc2088735c75fef87f75158de97"
+    },
+    "evidence/work/candidate/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Layout/KeyboardLayout.swift": {
+      "bytes": 11442,
+      "sha256": "0001873a89ec6e02351c8f2847d68e1dcd921af80e61d7df02d19aa6e8e1554c"
+    },
+    "evidence/work/candidate/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Shared/AppGroup.swift": {
+      "bytes": 5002,
+      "sha256": "831015d4ae7c54a7ac38fb687334cf72647c6a9d7b3b640001891c7af3e51cd3"
+    },
+    "evidence/work/candidate/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Shared/Diagnostics.swift": {
+      "bytes": 1695,
+      "sha256": "3711557ae0bc5fe322e41ed0db8ba261aba8ff2c8e6ad6d8ca8ad0f5920c4c10"
+    },
+    "evidence/work/candidate/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Shared/DictationBridge.swift": {
+      "bytes": 6608,
+      "sha256": "0d5a623a442a608b746c7b8ef6f5ca53b84599dc8e2794dbe85794221a942153"
+    },
+    "evidence/work/candidate/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Shared/DictationInsertionGuard.swift": {
+      "bytes": 1645,
+      "sha256": "581187f2d5d16a357760248fcc52072a6bdf6ba23fc41a1b193feebcb95f5da3"
+    },
+    "evidence/work/candidate/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Shared/DictationRequestLifecycle.swift": {
+      "bytes": 2153,
+      "sha256": "0e5391cfa5a2c6227a9f3c347b72d6a0d571088e2bf6e71ad85b8b0e25b6af0c"
+    },
+    "evidence/work/candidate/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Shared/HostReturnFlow.swift": {
+      "bytes": 1000,
+      "sha256": "7b527dd87da068a883e3d3a634802d8237c79d4fa4789ef65ce376e9d9de6148"
+    },
+    "evidence/work/candidate/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Shared/KeyboardLanguage.swift": {
+      "bytes": 707,
+      "sha256": "a1b37b484c9f72247d3b5c89cca121f930b7f996d70b8563cac3cefca99e036c"
+    },
+    "evidence/work/candidate/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Shared/KeyboardSettings.swift": {
+      "bytes": 3324,
+      "sha256": "2c4172096221f7c72f913d73f0b4444b0f6e7aeb45eefccb20731fe10565e44b"
+    },
+    "evidence/work/candidate/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Shared/LearnedDataPersistence.swift": {
+      "bytes": 41927,
+      "sha256": "213dcf5810e5fffb33921827b563b31feb3eb7d2ac32c026aa9f694e028ef235"
+    },
+    "evidence/work/candidate/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Shared/OneHanded.swift": {
+      "bytes": 2011,
+      "sha256": "8bbabe4e09e7e2149ad16ead453a1d6edd6da5e735e74b72105840541486ed4e"
+    },
+    "evidence/work/candidate/client/.build/release/BoundaryRunner": {
+      "bytes": 1776080,
+      "sha256": "33eddbe9ace209a853adcc0aa3e1e1a02a0286db2c89ad9c4928abfb3318c26b"
+    },
+    "evidence/work/candidate/client/Package.swift": {
+      "bytes": 356,
+      "sha256": "83c4b2e43c9a692ee0af4c9d7897287a3ca2df8b4eeaf9f681397947333aee1e"
+    },
+    "evidence/work/candidate/client/Sources/BoundaryRunner/Runner.swift": {
+      "bytes": 13356,
+      "sha256": "8f50f13ef8fcddc51d3521e6311992ebae2778f5635957f381f6a392ff61e4a1"
+    },
+    "evidence/work/candidate/environment.json": {
+      "bytes": 689,
+      "sha256": "5fd6d1d662d4bad820096d74abf2870f5a436588e56bd3a0edc988c582b7bc2b"
+    },
+    "evidence/work/candidate/evaluation-normal.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/work/candidate/evaluation-normal.stdout": {
+      "bytes": 98285,
+      "sha256": "e985995f6ea9162b72b19ce8cf4d74786710c1f5bd0a54ddbb11b3da899aa448"
+    },
+    "evidence/work/candidate/evaluation-optimized.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/work/candidate/evaluation-optimized.stdout": {
+      "bytes": 98285,
+      "sha256": "e985995f6ea9162b72b19ce8cf4d74786710c1f5bd0a54ddbb11b3da899aa448"
+    },
+    "evidence/work/candidate/raw.json": {
+      "bytes": 1518343,
+      "sha256": "8e0e9495d7c416c74b7bd234717a2c28a243626d2dbd2ffdb53222fad0da5141"
+    },
+    "evidence/work/candidate/runner.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/work/candidate/runner.stdout": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/work/candidate/source-manifest.json": {
+      "bytes": 3844,
+      "sha256": "95bb869e4b1b13e6e79c8097e68d51619ef14545db64c6fe6f97be60f7b95421"
+    },
+    "evidence/work/comparison/PulpoKeyboardKit/Package.swift": {
+      "bytes": 242,
+      "sha256": "8ae80fd90770bbeb75ba7d8f207a35cd8ec0c6b76e2fefbd74e24dd6af5be24e"
+    },
+    "evidence/work/comparison/PulpoKeyboardKit/Sources/KeyboardCore/Correction/SpellCorrector.swift": {
+      "bytes": 14455,
+      "sha256": "525630cd2f29ef9739d98f7ea62827e04ee090140591d384527022a085030f31"
+    },
+    "evidence/work/comparison/PulpoKeyboardKit/Sources/KeyboardCore/Correction/Suggester.swift": {
+      "bytes": 38445,
+      "sha256": "0608da9f8a2308ff71aaadf5cd2a59eaad856871ea299f56ec9b2200e14a3d65"
+    },
+    "evidence/work/comparison/PulpoKeyboardKit/Sources/KeyboardCore/Dictionary/LanguageModel.swift": {
+      "bytes": 5990,
+      "sha256": "5e493289b992eaeb5f0c8233f6b6b80c070f48437f693b5efa4bc2cc4e1871a4"
+    },
+    "evidence/work/comparison/PulpoKeyboardKit/Sources/KeyboardCore/Dictionary/LanguageStack.swift": {
+      "bytes": 1805,
+      "sha256": "3b82d4ec23919f948fc3bad18252e67bb6ca709bccc68363ea794d985b90ae01"
+    },
+    "evidence/work/comparison/PulpoKeyboardKit/Sources/KeyboardCore/Dictionary/Lexicon.swift": {
+      "bytes": 18727,
+      "sha256": "5751a26a1cff378015344a384d3f24d3eae9808312249a836984ea8914334d14"
+    },
+    "evidence/work/comparison/PulpoKeyboardKit/Sources/KeyboardCore/Dictionary/MappedFile.swift": {
+      "bytes": 1374,
+      "sha256": "c792e2586c41b6942c1d58df226e0374e0ec0d1300c1ddd3f373d90a12eea48a"
+    },
+    "evidence/work/comparison/PulpoKeyboardKit/Sources/KeyboardCore/Dictionary/PersonalDictionary.swift": {
+      "bytes": 21725,
+      "sha256": "0bac71e413ea3c99f8972dd6cae10685e76adbd0b0537f587b589768b00a8d28"
+    },
+    "evidence/work/comparison/PulpoKeyboardKit/Sources/KeyboardCore/Emoji/EmojiCatalog.swift": {
+      "bytes": 12834,
+      "sha256": "c7f929ada6398c9c849e1b764e7bdacc3aca6956f3444fa74953db43cea5468e"
+    },
+    "evidence/work/comparison/PulpoKeyboardKit/Sources/KeyboardCore/Emoji/EmojiSearch.swift": {
+      "bytes": 3672,
+      "sha256": "10258fab0b30f82d17be2a6358b68fe93b1d3930e0b0bd3d32c159579be781a2"
+    },
+    "evidence/work/comparison/PulpoKeyboardKit/Sources/KeyboardCore/Geometry/LetterGeometry.swift": {
+      "bytes": 2280,
+      "sha256": "99b3513dbaa433f4e83f7a7d35aadda518844331b60fda4bfe00d921708da188"
+    },
+    "evidence/work/comparison/PulpoKeyboardKit/Sources/KeyboardCore/Geometry/TouchModel.swift": {
+      "bytes": 7256,
+      "sha256": "fc5f3d9f9f6fdd57d8aa7c4e61556ef29284339ccd3f045c22404701b08e06ef"
+    },
+    "evidence/work/comparison/PulpoKeyboardKit/Sources/KeyboardCore/Glide/GlideDecoder.swift": {
+      "bytes": 26892,
+      "sha256": "5191f844388cd823a22ba9e2b79615440e678a7125ed209aee6820fc9ce01805"
+    },
+    "evidence/work/comparison/PulpoKeyboardKit/Sources/KeyboardCore/Input/InputTraits.swift": {
+      "bytes": 3230,
+      "sha256": "018d9125d75d032c6f71ed58028bb506c26ea5240245510d4d621f489b2cf790"
+    },
+    "evidence/work/comparison/PulpoKeyboardKit/Sources/KeyboardCore/Input/KeyboardEngine.swift": {
+      "bytes": 69750,
+      "sha256": "3f0987051ff0f176a5e1ef6396d415b0f8fe0fc2088735c75fef87f75158de97"
+    },
+    "evidence/work/comparison/PulpoKeyboardKit/Sources/KeyboardCore/Layout/KeyboardLayout.swift": {
+      "bytes": 10445,
+      "sha256": "de9260fa5622d5bcc8b2aae20a9a139495ff94f20b6b5de359fe04575842465d"
+    },
+    "evidence/work/comparison/PulpoKeyboardKit/Sources/KeyboardCore/Shared/AppGroup.swift": {
+      "bytes": 5002,
+      "sha256": "831015d4ae7c54a7ac38fb687334cf72647c6a9d7b3b640001891c7af3e51cd3"
+    },
+    "evidence/work/comparison/PulpoKeyboardKit/Sources/KeyboardCore/Shared/Diagnostics.swift": {
+      "bytes": 1695,
+      "sha256": "3711557ae0bc5fe322e41ed0db8ba261aba8ff2c8e6ad6d8ca8ad0f5920c4c10"
+    },
+    "evidence/work/comparison/PulpoKeyboardKit/Sources/KeyboardCore/Shared/DictationBridge.swift": {
+      "bytes": 6608,
+      "sha256": "0d5a623a442a608b746c7b8ef6f5ca53b84599dc8e2794dbe85794221a942153"
+    },
+    "evidence/work/comparison/PulpoKeyboardKit/Sources/KeyboardCore/Shared/DictationInsertionGuard.swift": {
+      "bytes": 1645,
+      "sha256": "581187f2d5d16a357760248fcc52072a6bdf6ba23fc41a1b193feebcb95f5da3"
+    },
+    "evidence/work/comparison/PulpoKeyboardKit/Sources/KeyboardCore/Shared/DictationRequestLifecycle.swift": {
+      "bytes": 2153,
+      "sha256": "0e5391cfa5a2c6227a9f3c347b72d6a0d571088e2bf6e71ad85b8b0e25b6af0c"
+    },
+    "evidence/work/comparison/PulpoKeyboardKit/Sources/KeyboardCore/Shared/HostReturnFlow.swift": {
+      "bytes": 1000,
+      "sha256": "7b527dd87da068a883e3d3a634802d8237c79d4fa4789ef65ce376e9d9de6148"
+    },
+    "evidence/work/comparison/PulpoKeyboardKit/Sources/KeyboardCore/Shared/KeyboardLanguage.swift": {
+      "bytes": 707,
+      "sha256": "a1b37b484c9f72247d3b5c89cca121f930b7f996d70b8563cac3cefca99e036c"
+    },
+    "evidence/work/comparison/PulpoKeyboardKit/Sources/KeyboardCore/Shared/KeyboardSettings.swift": {
+      "bytes": 3324,
+      "sha256": "2c4172096221f7c72f913d73f0b4444b0f6e7aeb45eefccb20731fe10565e44b"
+    },
+    "evidence/work/comparison/PulpoKeyboardKit/Sources/KeyboardCore/Shared/LearnedDataPersistence.swift": {
+      "bytes": 41927,
+      "sha256": "213dcf5810e5fffb33921827b563b31feb3eb7d2ac32c026aa9f694e028ef235"
+    },
+    "evidence/work/comparison/PulpoKeyboardKit/Sources/KeyboardCore/Shared/OneHanded.swift": {
+      "bytes": 2011,
+      "sha256": "8bbabe4e09e7e2149ad16ead453a1d6edd6da5e735e74b72105840541486ed4e"
+    },
+    "evidence/work/comparison/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Correction/SpellCorrector.swift": {
+      "bytes": 14455,
+      "sha256": "525630cd2f29ef9739d98f7ea62827e04ee090140591d384527022a085030f31"
+    },
+    "evidence/work/comparison/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Correction/Suggester.swift": {
+      "bytes": 38445,
+      "sha256": "0608da9f8a2308ff71aaadf5cd2a59eaad856871ea299f56ec9b2200e14a3d65"
+    },
+    "evidence/work/comparison/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Dictionary/LanguageModel.swift": {
+      "bytes": 5990,
+      "sha256": "5e493289b992eaeb5f0c8233f6b6b80c070f48437f693b5efa4bc2cc4e1871a4"
+    },
+    "evidence/work/comparison/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Dictionary/LanguageStack.swift": {
+      "bytes": 1805,
+      "sha256": "3b82d4ec23919f948fc3bad18252e67bb6ca709bccc68363ea794d985b90ae01"
+    },
+    "evidence/work/comparison/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Dictionary/Lexicon.swift": {
+      "bytes": 18727,
+      "sha256": "5751a26a1cff378015344a384d3f24d3eae9808312249a836984ea8914334d14"
+    },
+    "evidence/work/comparison/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Dictionary/MappedFile.swift": {
+      "bytes": 1374,
+      "sha256": "c792e2586c41b6942c1d58df226e0374e0ec0d1300c1ddd3f373d90a12eea48a"
+    },
+    "evidence/work/comparison/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Dictionary/PersonalDictionary.swift": {
+      "bytes": 21725,
+      "sha256": "0bac71e413ea3c99f8972dd6cae10685e76adbd0b0537f587b589768b00a8d28"
+    },
+    "evidence/work/comparison/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Emoji/EmojiCatalog.swift": {
+      "bytes": 12834,
+      "sha256": "c7f929ada6398c9c849e1b764e7bdacc3aca6956f3444fa74953db43cea5468e"
+    },
+    "evidence/work/comparison/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Emoji/EmojiSearch.swift": {
+      "bytes": 3672,
+      "sha256": "10258fab0b30f82d17be2a6358b68fe93b1d3930e0b0bd3d32c159579be781a2"
+    },
+    "evidence/work/comparison/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Geometry/LetterGeometry.swift": {
+      "bytes": 2280,
+      "sha256": "99b3513dbaa433f4e83f7a7d35aadda518844331b60fda4bfe00d921708da188"
+    },
+    "evidence/work/comparison/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Geometry/TouchModel.swift": {
+      "bytes": 7256,
+      "sha256": "fc5f3d9f9f6fdd57d8aa7c4e61556ef29284339ccd3f045c22404701b08e06ef"
+    },
+    "evidence/work/comparison/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Glide/GlideDecoder.swift": {
+      "bytes": 26892,
+      "sha256": "5191f844388cd823a22ba9e2b79615440e678a7125ed209aee6820fc9ce01805"
+    },
+    "evidence/work/comparison/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Input/InputTraits.swift": {
+      "bytes": 3230,
+      "sha256": "018d9125d75d032c6f71ed58028bb506c26ea5240245510d4d621f489b2cf790"
+    },
+    "evidence/work/comparison/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Input/KeyboardEngine.swift": {
+      "bytes": 69750,
+      "sha256": "3f0987051ff0f176a5e1ef6396d415b0f8fe0fc2088735c75fef87f75158de97"
+    },
+    "evidence/work/comparison/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Layout/KeyboardLayout.swift": {
+      "bytes": 10445,
+      "sha256": "de9260fa5622d5bcc8b2aae20a9a139495ff94f20b6b5de359fe04575842465d"
+    },
+    "evidence/work/comparison/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Shared/AppGroup.swift": {
+      "bytes": 5002,
+      "sha256": "831015d4ae7c54a7ac38fb687334cf72647c6a9d7b3b640001891c7af3e51cd3"
+    },
+    "evidence/work/comparison/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Shared/Diagnostics.swift": {
+      "bytes": 1695,
+      "sha256": "3711557ae0bc5fe322e41ed0db8ba261aba8ff2c8e6ad6d8ca8ad0f5920c4c10"
+    },
+    "evidence/work/comparison/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Shared/DictationBridge.swift": {
+      "bytes": 6608,
+      "sha256": "0d5a623a442a608b746c7b8ef6f5ca53b84599dc8e2794dbe85794221a942153"
+    },
+    "evidence/work/comparison/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Shared/DictationInsertionGuard.swift": {
+      "bytes": 1645,
+      "sha256": "581187f2d5d16a357760248fcc52072a6bdf6ba23fc41a1b193feebcb95f5da3"
+    },
+    "evidence/work/comparison/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Shared/DictationRequestLifecycle.swift": {
+      "bytes": 2153,
+      "sha256": "0e5391cfa5a2c6227a9f3c347b72d6a0d571088e2bf6e71ad85b8b0e25b6af0c"
+    },
+    "evidence/work/comparison/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Shared/HostReturnFlow.swift": {
+      "bytes": 1000,
+      "sha256": "7b527dd87da068a883e3d3a634802d8237c79d4fa4789ef65ce376e9d9de6148"
+    },
+    "evidence/work/comparison/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Shared/KeyboardLanguage.swift": {
+      "bytes": 707,
+      "sha256": "a1b37b484c9f72247d3b5c89cca121f930b7f996d70b8563cac3cefca99e036c"
+    },
+    "evidence/work/comparison/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Shared/KeyboardSettings.swift": {
+      "bytes": 3324,
+      "sha256": "2c4172096221f7c72f913d73f0b4444b0f6e7aeb45eefccb20731fe10565e44b"
+    },
+    "evidence/work/comparison/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Shared/LearnedDataPersistence.swift": {
+      "bytes": 41927,
+      "sha256": "213dcf5810e5fffb33921827b563b31feb3eb7d2ac32c026aa9f694e028ef235"
+    },
+    "evidence/work/comparison/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Shared/OneHanded.swift": {
+      "bytes": 2011,
+      "sha256": "8bbabe4e09e7e2149ad16ead453a1d6edd6da5e735e74b72105840541486ed4e"
+    },
+    "evidence/work/comparison/client/.build/release/BoundaryRunner": {
+      "bytes": 1775472,
+      "sha256": "d7a08b0463ad4342561c85952200310df7ed3b8785ea5424ec8de53e6ef545c8"
+    },
+    "evidence/work/comparison/client/Package.swift": {
+      "bytes": 357,
+      "sha256": "d609eb5cfd321bd2a007f89d4e6ee707a5a2184b2bd7aa32b6c4b80892f7afe1"
+    },
+    "evidence/work/comparison/client/Sources/BoundaryRunner/Runner.swift": {
+      "bytes": 13356,
+      "sha256": "8f50f13ef8fcddc51d3521e6311992ebae2778f5635957f381f6a392ff61e4a1"
+    },
+    "evidence/work/comparison/environment.json": {
+      "bytes": 690,
+      "sha256": "a88f71a9555bee1e7312a91ed79005dfdd3fd76af5f32627a396415b282fac4c"
+    },
+    "evidence/work/comparison/evaluation-normal.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/work/comparison/evaluation-normal.stdout": {
+      "bytes": 98984,
+      "sha256": "27c570f21dbe2b06e331cbd93e0af9ed31ed97eb4215c9379793f7a3cfaf9b7a"
+    },
+    "evidence/work/comparison/evaluation-optimized.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/work/comparison/evaluation-optimized.stdout": {
+      "bytes": 98984,
+      "sha256": "27c570f21dbe2b06e331cbd93e0af9ed31ed97eb4215c9379793f7a3cfaf9b7a"
+    },
+    "evidence/work/comparison/raw.json": {
+      "bytes": 1506512,
+      "sha256": "838712e87834418f0a19fb3ede4ea757145992df3545050ca1546556022eb33a"
+    },
+    "evidence/work/comparison/runner.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/work/comparison/runner.stdout": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/work/comparison/source-manifest.json": {
+      "bytes": 3844,
+      "sha256": "5489d04cd2f18ceda4f8d2a7113fcdaf3b377e3aeaf35b3a2a26eb1ba01dcded"
+    },
+    "evidence/work/config.json": {
+      "bytes": 14210,
+      "sha256": "8f5c6691e905199d6fb352f7f8aae708f1e96f8bbb6dd52c8531dafcdb8789d9"
+    },
+    "evidence/work/evaluations.json": {
+      "bytes": 1629,
+      "sha256": "3179b3b7e62ad0ec98148f04098eae0340008e4ce02c7b2a5c8db1cba605e389"
+    },
+    "evidence/work/execution.json": {
+      "bytes": 1465,
+      "sha256": "369c9d855a830708aabe89054469f2fea88f654deb0c162db60e612f676e5a17"
+    },
+    "evidence/work/prepared.json": {
+      "bytes": 2449,
+      "sha256": "dde262ca2add9c88654ed2abd6aa84f30ce42f199e091137851fa3b810b3cb38"
+    },
+    "git-provenance.json": {
+      "bytes": 8586,
+      "sha256": "c0e938b9e9336fec901eb8a207793881f2b8b57a268ed8545b932976528d6368"
+    },
+    "integrity-checks.json": {
+      "bytes": 1630623,
+      "sha256": "97f6879ec81cfacb8ac3cfe13327a40af331789ce9e7c4f5a73261c339d8cd50"
+    },
+    "operation-evidence.json": {
+      "bytes": 2873248,
+      "sha256": "3a55d317551bf74d304fd6f9aa482e218ba8673d9b3391a5467339588858a1fa"
+    },
+    "package.py": {
+      "bytes": 1685,
+      "sha256": "25b71f20092ea4cb51ee446b5dd133448422e0fea5fa313d10bcbfd549eea066"
+    },
+    "paired-outcome.json": {
+      "bytes": 317178,
+      "sha256": "497c2bfae9d5f4604136111c824c9e3747bfcce257edade468a877e9dac5135f"
+    },
+    "receipt.json": {
+      "bytes": 1624,
+      "sha256": "a07821654f75e9447ba7cae978626a7dcce6db3859d9e77da25d8878a720d5d9"
+    },
+    "report.md": {
+      "bytes": 12222,
+      "sha256": "e14bfe600276f2ffe402aee720cc93004c889e55d76a8f0dee98ffd7f992b5a2"
+    },
+    "store-ledger.json": {
+      "bytes": 37403,
+      "sha256": "c36d65467784ecd9d8c6180d61bcd191043f5e6de9f233d3d6cf150300e64b1e"
+    }
+  }
+}

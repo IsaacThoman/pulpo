@@ -1,0 +1,7 @@
+{
+  "fullReviewArchive": "/tmp/pulpo-r49-outcome-review-v1/full-review.tar.gz",
+  "sha256": "83556c671c09c8f1977ce90d648772f9ac4f17930eedc042acd23d5b12e10449",
+  "bytes": 49921142,
+  "manifestSHA256": "2f2c113a129b661e26ed17205dfd64897da5e4c3f0bcda701de9d520b12e0c52",
+  "retention": "Full duplicate source/binary/author evidence archive remains external; all new derived ledgers/programs/report/receipt retained here. Original inputs/raw/stores/binaries/gates already retained in sibling directories. No successful build log read."
+}

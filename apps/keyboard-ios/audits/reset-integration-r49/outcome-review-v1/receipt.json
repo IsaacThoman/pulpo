@@ -1,0 +1,48 @@
+{
+  "format": "pulpo-r49-independent-frozen-outcome-receipt-v1",
+  "verdict": "ACCEPT_EXACT_FROZEN_R49_OUTCOME_ACCOUNTING",
+  "scope": "One exact paired fresh public-API compatibility workload only; not whole-feature or population admission",
+  "report_sha256": "e14bfe600276f2ffe402aee720cc93004c889e55d76a8f0dee98ffd7f992b5a2",
+  "freeze_sha256": "57fa7966b4d0f56424a2f1f4509ed0c29f7b93e8947eb79f7be79c5b3a577f90",
+  "raw_sha256": {
+    "comparison": "838712e87834418f0a19fb3ede4ea757145992df3545050ca1546556022eb33a",
+    "candidate": "8e0e9495d7c416c74b7bd234717a2c28a243626d2dbd2ffdb53222fad0da5141"
+  },
+  "integrity_checks": 898,
+  "all_integrity_checks_pass": true,
+  "comparison": {
+    "passing_aggregates": 761,
+    "denominator": 772,
+    "failed_actions": 4,
+    "failed_relations": 7,
+    "diagnostic_messages": 15,
+    "passing_families": 13,
+    "families": 15,
+    "passing_instances": 40,
+    "instances": 45
+  },
+  "candidate": {
+    "passing_aggregates": 772,
+    "denominator": 772,
+    "failed_actions": 0,
+    "failed_relations": 0,
+    "diagnostic_messages": 0,
+    "passing_families": 15,
+    "families": 15,
+    "passing_instances": 45,
+    "instances": 45
+  },
+  "repairs": 11,
+  "losses": 0,
+  "common_failures": 0,
+  "correlated_repaired_families": 2,
+  "product_attempts_per_variant": 1,
+  "additional_product_runs": 0,
+  "builds": 0,
+  "successful_build_logs_read": false,
+  "store_directories_rehashed": 30,
+  "prior_rejections_preserved": true,
+  "all_writes_under": "/tmp/pulpo-r49-outcome-review-v1",
+  "heavy_work_hold_respected": true,
+  "remaining_blocking_accounting_objections": []
+}
