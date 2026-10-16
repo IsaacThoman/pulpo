@@ -38,12 +38,13 @@ final class LearningForgetControllerTests: XCTestCase {
     controller.hostWillAppear()
     defer { controller.hostDidDisappear() }
     controller.rootView.frame = CGRect(x: 0, y: 0, width: 402, height: controller.preferredHeight)
+    let personal = try XCTUnwrap(controller.stack?.personal)
+    XCTAssertTrue(personal.clear(), "Reset this owned fixture, including any previous explicit block")
     controller.engine.refreshSuggestions()
     controller.documentDidChange()
     RunLoop.main.run(until: Date().addingTimeInterval(0.03))
     let bar = controller.rootView.bar
     let suggestion = try XCTUnwrap(bar.suggestions.first { $0.text == "beautiful" })
-    let personal = try XCTUnwrap(controller.stack?.personal)
     XCTAssertTrue(personal.pin(suggestion.text))
     XCTAssertTrue(personal.save())
     let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
