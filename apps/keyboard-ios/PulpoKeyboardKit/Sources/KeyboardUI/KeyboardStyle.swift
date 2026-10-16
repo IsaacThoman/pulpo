@@ -53,7 +53,7 @@ struct KeyboardStyle: Equatable {
 
   var background: UIColor {
     switch (modern, dark) {
-    case (true, false): Self.rgb(224, 225, 232)
+    case (true, false): Self.rgb(226, 227, 232)
     case (true, true): Self.rgb(32, 32, 32)
     case (false, false): Self.rgb(208, 211, 218)
     case (false, true): Self.rgb(43, 43, 43)
@@ -84,10 +84,12 @@ struct KeyboardStyle: Equatable {
   }
 
   var label: UIColor { dark ? .white : .black }
+  var predictionLabel: UIColor { dark ? Self.rgb(171, 171, 171) : Self.rgb(80, 80, 80) }
   var secondaryLabel: UIColor { dark ? UIColor(white: 1, alpha: 0.55) : UIColor(white: 0, alpha: 0.45) }
   var divider: UIColor { dark ? UIColor(white: 1, alpha: 0.16) : UIColor(white: 0, alpha: 0.12) }
   var keyShadow: UIColor { dark ? UIColor(white: 0, alpha: 0.6) : UIColor(red: 0.53, green: 0.54, blue: 0.56, alpha: 1) }
   var accent: UIColor { UIColor.systemBlue }
+  var pressedAccent: UIColor { UIColor.systemBlue.withBrightnessMultiplier(0.8) }
   var trail: UIColor { dark ? UIColor(red: 0.45, green: 0.66, blue: 1, alpha: 0.9) : UIColor(red: 0.16, green: 0.45, blue: 0.95, alpha: 0.85) }
   var popup: UIColor { modern && !dark ? .white : inputKey }
 
@@ -95,14 +97,26 @@ struct KeyboardStyle: Equatable {
 
   private var textWeight: UIFont.Weight { bold ? .semibold : .regular }
 
-  var lowercaseLetterFont: UIFont { .systemFont(ofSize: landscape ? 21 : 23, weight: textWeight) }
-  var uppercaseLetterFont: UIFont { .systemFont(ofSize: landscape ? 19.5 : 21.5, weight: textWeight) }
+  var lowercaseLetterFont: UIFont { .systemFont(ofSize: landscape ? 21 : (modern ? 24 : 23), weight: textWeight) }
+  var uppercaseLetterFont: UIFont { .systemFont(ofSize: landscape ? 19.5 : (modern ? 22 : 21.5), weight: textWeight) }
   var symbolFont: UIFont { .systemFont(ofSize: landscape ? 20 : 22, weight: textWeight) }
   var functionFont: UIFont { .systemFont(ofSize: modern ? 18 : 16, weight: textWeight) }
+  var symbolPageFont: UIFont { .systemFont(ofSize: modern ? 14 : 16, weight: textWeight) }
   var popupFont: UIFont { .systemFont(ofSize: 34, weight: textWeight) }
   var hintFont: UIFont { .systemFont(ofSize: 10, weight: bold ? .bold : .medium) }
   var suggestionFont: UIFont { .systemFont(ofSize: 17, weight: textWeight) }
   var suggestionEmphasisFont: UIFont { .systemFont(ofSize: 17, weight: bold ? .bold : .semibold) }
   var symbolConfiguration: UIImage.SymbolConfiguration { UIImage.SymbolConfiguration(pointSize: modern ? 19 : 18, weight: bold ? .semibold : .regular) }
+}
+
+private extension UIColor {
+  func withBrightnessMultiplier(_ multiplier: CGFloat) -> UIColor {
+    UIColor { traits in
+      let color = self.resolvedColor(with: traits)
+      var hue: CGFloat = 0, saturation: CGFloat = 0, brightness: CGFloat = 0, alpha: CGFloat = 0
+      guard color.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha) else { return color }
+      return UIColor(hue: hue, saturation: saturation, brightness: brightness * multiplier, alpha: alpha)
+    }
+  }
 }
 #endif

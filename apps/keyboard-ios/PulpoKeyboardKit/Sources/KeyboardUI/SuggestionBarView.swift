@@ -298,7 +298,7 @@ final class SlotControl: UIControl {
     }
     showsEmoji = suggestion.kind == .emoji
     label.text = suggestion.text
-    label.textColor = style.label
+    label.textColor = suggestion.kind == .prediction && !suggestion.isAutocorrection ? style.predictionLabel : style.label
     accessibilityValue = suggestion.isAutocorrection ? "autocorrection" : nil
   }
 

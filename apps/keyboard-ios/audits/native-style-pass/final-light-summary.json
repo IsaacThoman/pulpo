@@ -1,0 +1,49 @@
+{
+  "devicesAndConfigurations" : [
+    {
+      "device" : {
+        "architecture" : "arm64",
+        "deviceId" : "E057DAC7-63E1-465B-8292-150399886747",
+        "deviceName" : "Pulpo Native Style",
+        "modelName" : "iPhone 16",
+        "osBuildNumber" : "24A434",
+        "osVersion" : "27.0",
+        "platform" : "iOS Simulator"
+      },
+      "expectedFailures" : 0,
+      "failedTests" : 0,
+      "passedTests" : 51,
+      "skippedTests" : 0,
+      "testPlanConfiguration" : {
+        "configurationId" : "1",
+        "configurationName" : "Test Scheme Action"
+      }
+    }
+  ],
+  "environmentDescription" : "PulpoKeyboard · Built with macOS 27.0.1",
+  "expectedFailures" : 0,
+  "failedTests" : 0,
+  "finishTime" : 1792172493.496,
+  "passedTests" : 51,
+  "result" : "Passed",
+  "runtimeWarnings" : [
+
+  ],
+  "skippedTests" : 0,
+  "startTime" : 1792172395.057,
+  "statistics" : [
+
+  ],
+  "testFailures" : [
+
+  ],
+  "title" : "Test - PulpoKeyboard",
+  "topInsights" : [
+    {
+      "category" : "Longest Test Runs",
+      "impact" : "97% of duration",
+      "text" : "2 longest test runs with outlier durations exceeding 28.29s (three standard deviations)"
+    }
+  ],
+  "totalTestCount" : 51
+}

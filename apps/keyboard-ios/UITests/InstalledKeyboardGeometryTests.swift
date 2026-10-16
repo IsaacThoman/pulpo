@@ -23,6 +23,11 @@ final class InstalledKeyboardGeometryTests: XCTestCase {
     let pulpo = app.cells.matching(NSPredicate(format: "label BEGINSWITH %@", "Pulpo Keyboard")).firstMatch
     XCTAssertTrue(pulpo.waitForExistence(timeout: 3))
     pulpo.tap()
+    // iOS 27 can leave the mode menu over the newly selected extension. A
+    // coordinate aimed at Q would then hit the menu rather than the grid.
+    if pulpo.exists { field.tap() }
+    let menuDismissed = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: pulpo)
+    XCTAssertEqual(XCTWaiter.wait(for: [menuDismissed], timeout: 4), .completed)
 
     // The system owns the input container and its dock. Anchor to its actual
     // frame, then use Pulpo's production grid geometry for the content above it.

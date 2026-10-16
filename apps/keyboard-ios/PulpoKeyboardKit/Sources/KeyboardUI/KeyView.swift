@@ -10,7 +10,13 @@ final class KeyView: UIView {
   private let hint = UILabel()
   private(set) var style: KeyboardStyle
 
-  var isPressed = false { didSet { if isPressed != oldValue { applyColors() } } }
+  var isPressed = false {
+    didSet {
+      guard isPressed != oldValue else { return }
+      if key.action == .delete { applyContent() }
+      applyColors()
+    }
+  }
   var isEnabled = true {
     didSet {
       if isEnabled { accessibilityTraits.remove(.notEnabled) } else { accessibilityTraits.insert(.notEnabled) }
@@ -19,7 +25,15 @@ final class KeyView: UIView {
   }
   var shift: ShiftState = .off { didSet { if shift != oldValue { applyContent() } } }
   /// Blanks labels while the space bar works as a trackpad.
-  var isDimmed = false { didSet { label.alpha = isDimmed ? 0 : 1; symbol.alpha = isDimmed ? 0 : 1; hint.alpha = isDimmed ? 0 : 1 } }
+  var isDimmed = false {
+    didSet {
+      guard isDimmed != oldValue else { return }
+      label.alpha = isDimmed ? 0 : 1
+      symbol.alpha = isDimmed ? 0 : 1
+      hint.alpha = isDimmed ? 0 : 1
+      applyColors()
+    }
+  }
 
   init(key: Key, style: KeyboardStyle) {
     self.key = key
@@ -73,7 +87,7 @@ final class KeyView: UIView {
     let pressed: UIColor
     if isReturnHighlighted, isEnabled {
       base = style.accent
-      pressed = style.pressedFunctionKey
+      pressed = style.pressedAccent
     } else if key.style == .input {
       base = style.inputKey
       pressed = style.pressedInputKey
@@ -81,9 +95,11 @@ final class KeyView: UIView {
       base = style.functionKey
       pressed = style.pressedFunctionKey
     }
-    face.backgroundColor = (isPressed ? pressed : base).cgColor
+    // iOS keeps faint, unpressed caps under the space-bar trackpad.
+    face.backgroundColor = (isPressed && !isDimmed ? pressed : base).cgColor
+    face.opacity = isDimmed ? 0.5 : 1
     if case .text("") = key.action { face.backgroundColor = UIColor.clear.cgColor; face.shadowOpacity = 0 }
-    let foreground: UIColor = isReturnHighlighted && isEnabled && !isPressed ? .white : style.label
+    let foreground: UIColor = isReturnHighlighted && isEnabled ? .white : style.label
     label.textColor = isEnabled ? foreground : style.secondaryLabel
     symbol.tintColor = isEnabled ? foreground : style.secondaryLabel
     CATransaction.commit()
@@ -108,7 +124,7 @@ final class KeyView: UIView {
       accessibilityLabel = "shift"
       accessibilityValue = shift == .locked ? "caps lock" : shift.isActive ? "on" : "off"
     case .delete:
-      name = "delete.left"
+      name = isPressed ? "delete.left.fill" : "delete.left"
       accessibilityLabel = "delete"
     case .nextKeyboard:
       name = "globe"
@@ -131,7 +147,8 @@ final class KeyView: UIView {
       accessibilityLabel = key.label
     case .page, .text:
       label.text = key.label
-      label.font = key.label.count > 3 ? style.functionFont : (key.label == "123" || key.label == "ABC" || key.label == "#+=" ? style.functionFont : style.symbolFont)
+      label.font = key.label == "#+=" ? style.symbolPageFont :
+        (key.label.count > 3 || key.label == "123" || key.label == "ABC" ? style.functionFont : style.symbolFont)
       accessibilityLabel = key.label
     }
     if let name {
