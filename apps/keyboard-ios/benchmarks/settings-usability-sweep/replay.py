@@ -6,11 +6,12 @@ Serializes runs, restores this device's original content size, retains all outco
 """
 import argparse
 import fcntl
-import hashlib
 import json
 from pathlib import Path
 import shutil
 import subprocess
+
+from compare import frozen_fixture
 
 DEVICE = '7E1D7979-7307-4C53-8466-BB41154B383C'
 PACKET = Path(__file__).resolve().parent
@@ -28,11 +29,8 @@ def main():
     OUTPUT.mkdir(exist_ok=True)
     with (OUTPUT / 'replay.lock').open('w') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
-        receipt = json.loads((PACKET / 'seal-receipt.json').read_text())
+        frozen_fixture(PACKET)  # Always-on hash and full frozen-interface validation.
         executor = PACKET / 'SettingsUsabilityContractTests.swift'
-        for original, expected in receipt['frozen_sha256'].items():
-            assert hashlib.sha256((PACKET / Path(original).name).read_bytes()).hexdigest() == expected
-        assert hashlib.sha256((PACKET / 'heldout.json').read_bytes()).hexdigest() == receipt['sealed_sha256']
         target = checkout / 'apps/keyboard-ios/UITests/SettingsUsabilityContractTests.swift'
         created = not target.exists()
         if target.exists() and target.read_bytes() != executor.read_bytes():
