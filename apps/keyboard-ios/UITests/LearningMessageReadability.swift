@@ -17,7 +17,12 @@ func assertLearningMessageReadable(_ message: XCUIElement, in container: XCUIEle
     XCTAssertLessThanOrEqual(viewport.frame.maxY, action.frame.minY + 2)
     for _ in 0..<24 where message.frame.maxY > viewport.frame.maxY + 2 {
       let before = message.frame.maxY
-      viewport.swipeUp()
+      // iOS 27 reports an empty visibleFrame for this system popover scroll
+      // view despite its visible AX frame. Drag inside that actual frame;
+      // retain the same content-progress and complete-message assertions.
+      let start = viewport.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.8))
+      let end = viewport.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2))
+      start.press(forDuration: 0.05, thenDragTo: end)
       guard message.frame.height > 0 && message.frame.maxY < before - 0.5 else {
         XCTFail("Native message viewport did not scroll toward the complete copy")
         throw NSError(domain: "R41Readability", code: 1)
