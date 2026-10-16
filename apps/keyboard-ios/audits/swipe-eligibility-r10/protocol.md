@@ -6,8 +6,15 @@ literal safety scenarios. Every expected result is the **full document**, includ
 the original context and the engine's trailing gesture separator. Expected spelling
 and accents are exact; case/accent-folded matches are diagnostics only.
 
-Run each gesture through KeyboardEngine's actual gesture begin/append/end and
-commit workflow with bundled language assets. Four deterministic profiles per case:
+Run each sampled gesture through KeyboardEngine.insertGlide with bundled language
+assets. Code inspection before baseline establishes that sampling is a controller
+concern; the core has no begin/append/end API. Its trailing space is owed via
+phantomSpace, rather than immediately inserted. Capture the raw document and owed
+space, then call the normal engine.insertSpace delimiter to materialize it. Primary
+success requires both raw document == context + target with phantomSpace == true,
+and final document == expectedDocument. No scorer-side space insertion or trimming.
+This boundary clarification is frozen before any baseline inference.
+Four deterministic profiles per case:
 320pt ideal, 390pt ideal, 390pt small fixed sinusoidal jitter, 430pt small fixed
 sinusoidal jitter (maximum 0.12 key widths). Freeze the implemented generator before
 baseline and never tune it to a target. No context-dependent target hints. Literal
