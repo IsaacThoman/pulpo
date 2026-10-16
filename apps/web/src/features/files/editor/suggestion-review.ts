@@ -82,7 +82,16 @@ export function useSuggestionReview(editor: Editor, onResolved?: () => void) {
     equalityFn: (a, b) => b !== null && a.hunks === b.hunks && a.cursorId === b.cursorId,
   })
   const [hoverId, setHoverId] = useState<string | null>(null)
+  const previousHunks = useRef(hunks.map((hunk) => hunk.id).join(','))
   const leaveTimer = useRef<number | undefined>(undefined)
+
+  useEffect(() => {
+    const ids = hunks.map((hunk) => hunk.id).join(',')
+    if (previousHunks.current === ids) return
+    previousHunks.current = ids
+    // Undo/redo and typing can also remove or restore suggestions, without using a review button.
+    onResolved?.()
+  }, [hunks, onResolved])
 
   const keepHover = useCallback(() => window.clearTimeout(leaveTimer.current), [])
   const releaseHover = useCallback(() => {
@@ -133,7 +142,6 @@ export function useSuggestionReview(editor: Editor, onResolved?: () => void) {
     if (!tr.docChanged) return
     setHoverId(null)
     editor.view.dispatch(tr)
-    onResolved?.()
   }
 
   return { hunks, active, go, resolve, keepHover, releaseHover }
