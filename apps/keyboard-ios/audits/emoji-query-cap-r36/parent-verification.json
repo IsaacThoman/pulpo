@@ -1,0 +1,93 @@
+{
+  "scope": "Parent archive verification, no benchmark/API/native rerun",
+  "sourceFreeze": "1e84fc39",
+  "frozenFiles": 13,
+  "cases": 16,
+  "checkpoints": 123,
+  "improvedCases": 7,
+  "comparisonByteIdentical": true,
+  "standaloneWithoutGitPasses": 2,
+  "checks": [
+    {
+      "mode": "normal",
+      "case": "standalone-original",
+      "accepted": true
+    },
+    {
+      "mode": "optimized",
+      "case": "standalone-original",
+      "accepted": true
+    },
+    {
+      "mode": "normal",
+      "case": "count",
+      "accepted": false
+    },
+    {
+      "mode": "optimized",
+      "case": "count",
+      "accepted": false
+    },
+    {
+      "mode": "normal",
+      "case": "missing-state",
+      "accepted": false
+    },
+    {
+      "mode": "optimized",
+      "case": "missing-state",
+      "accepted": false
+    },
+    {
+      "mode": "normal",
+      "case": "typed-flag",
+      "accepted": false
+    },
+    {
+      "mode": "optimized",
+      "case": "typed-flag",
+      "accepted": false
+    },
+    {
+      "mode": "normal",
+      "case": "input-binding",
+      "accepted": false
+    },
+    {
+      "mode": "optimized",
+      "case": "input-binding",
+      "accepted": false
+    },
+    {
+      "mode": "normal",
+      "case": "manifest-size-bool",
+      "accepted": false
+    },
+    {
+      "mode": "optimized",
+      "case": "manifest-size-bool",
+      "accepted": false
+    },
+    {
+      "mode": "normal",
+      "case": "manifest-path",
+      "accepted": false
+    },
+    {
+      "mode": "optimized",
+      "case": "manifest-path",
+      "accepted": false
+    }
+  ],
+  "semanticTamperHashesRebound": [
+    "candidate-outcomes.json",
+    "run-receipt.json",
+    "manifest.json"
+  ],
+  "externalHistoricalPathsFollowed": false,
+  "queryCoreOrObserverCompiled": false,
+  "onlyCompilation": "Frozen standalone Foundation segmentation helper",
+  "devices": 0,
+  "existingFrozenFilesModified": false,
+  "syntaxCheck": "pass"
+}

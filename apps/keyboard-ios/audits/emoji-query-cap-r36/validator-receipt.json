@@ -1,0 +1,53 @@
+{
+  "verdict": "VALID",
+  "validatedUTC": "2026-10-16T08:22:07.351847+00:00",
+  "bindings": {
+    "contractSHA256": "83e53e1cf51c34475b9dbab283a15f8fabc48b70d046f8b1f20ec475f2ae6c43",
+    "schemaSHA256": "d648a8e11f09c4eeff093fc07bdd6330cea7f52e6f5d00a204b50e5e019eb92e",
+    "payloadSHA256": "83fc761dcfbd04f9dc8ebc8de411b8ebc3cafe335d4fef310bcf98d4ff8c1338",
+    "authorReceiptSHA256": "d7260b3116b83ba7bcf9bce1c0aeab1b96ab81a1cf6eb7adf2c408a2fbb75d40"
+  },
+  "cases": 16,
+  "distinctFamilyLabels": 16,
+  "initialCheckpoints": 16,
+  "actionCheckpoints": 107,
+  "totalCheckpoints": 123,
+  "operationCoverage": {
+    "init": 16,
+    "append": 54,
+    "backspace": 20,
+    "clear": 11,
+    "deleteWords": 22
+  },
+  "strictSchemaAndUniqueCaseIDs": "pass",
+  "allLiteralOracleTransitionsReviewed": 123,
+  "oracleIssues": [],
+  "oracleAmbiguities": 0,
+  "runtimeLiteralValidation": {
+    "expectedCheckpointCountChecks": 123,
+    "inputAndExpectedLiteralRecords": 193,
+    "allLiteralScalarSequencesPreserved": true,
+    "extraDeclarativeConcatenationProbes": 23,
+    "extraProbePasses": 23,
+    "runtime": "Apple Swift 6.4 / arm64-apple-macosx27.0.0",
+    "scope": "Standalone String/Character literal segmentation/properties/scalars/concatenation counts only; no stateful query implementation"
+  },
+  "reviewerNotesPath": "/tmp/pulpo-r36-validator-notes.txt",
+  "reviewerNotesSHA256": "bd384b9bd24023f32f00f0c96f63c36e96b8756e2b6d5f09af5b6bc509ca313a",
+  "readScope": [
+    "approved contract.md",
+    "approved schema.json",
+    "sealed payload",
+    "author receipt",
+    "own temporary literal probes/results"
+  ],
+  "candidateSourceSeen": false,
+  "appCoreOrReferenceQueryImplementationSeenOrExecuted": false,
+  "driverDevelopmentSmokeOrBenchmarkResultsSeen": false,
+  "rootWrites": 0,
+  "GitOperations": 0,
+  "deviceOperations": 0,
+  "appBuilds": 0,
+  "payloadRewritten": false,
+  "limits": "Oracle correctness only. Sixteen family labels are not independent people or accuracy observations. No baseline/candidate/catalog/native/resource acceptance."
+}

@@ -1,0 +1,637 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "r36-b01",
+      "family": "capacity-stop-recovery",
+      "initial": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "expectedInitial": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "actions": [
+        {
+          "op": "append",
+          "value": "YŹ",
+          "expected": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxY"
+        },
+        {
+          "op": "append",
+          "value": "́",
+          "expected": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxÝ"
+        },
+        {
+          "op": "append",
+          "value": "!",
+          "expected": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxÝ"
+        },
+        {
+          "op": "backspace",
+          "expected": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        },
+        {
+          "op": "append",
+          "value": "Z",
+          "expected": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxZ"
+        },
+        {
+          "op": "clear",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "r36-b02",
+      "family": "initial-overflow-whole-cluster",
+      "initial": "abababababababababababababababababababab🇳🇿after",
+      "expectedInitial": "abababababababababababababababababababab",
+      "actions": [
+        {
+          "op": "backspace",
+          "expected": "abababababababababababababababababababa"
+        },
+        {
+          "op": "append",
+          "value": "🇳🇿",
+          "expected": "abababababababababababababababababababa🇳🇿"
+        },
+        {
+          "op": "append",
+          "value": "?",
+          "expected": "abababababababababababababababababababa🇳🇿"
+        },
+        {
+          "op": "deleteWords",
+          "count": 1,
+          "expected": ""
+        },
+        {
+          "op": "append",
+          "value": " \tstart\r\nend",
+          "expected": "start end"
+        }
+      ]
+    },
+    {
+      "id": "r36-b03",
+      "family": "whitespace-canonicalization",
+      "initial": "\t\n\r  ",
+      "expectedInitial": "",
+      "actions": [
+        {
+          "op": "append",
+          "value": " \talpha  beta\r\n",
+          "expected": "alpha beta "
+        },
+        {
+          "op": "append",
+          "value": "\n\tgamma",
+          "expected": "alpha beta gamma"
+        },
+        {
+          "op": "backspace",
+          "expected": "alpha beta gamm"
+        },
+        {
+          "op": "deleteWords",
+          "count": 1,
+          "expected": "alpha beta"
+        },
+        {
+          "op": "deleteWords",
+          "count": 2,
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "r36-b04",
+      "family": "marked-space-is-not-delimiter",
+      "initial": "oak reed ",
+      "expectedInitial": "oak reed ",
+      "actions": [
+        {
+          "op": "append",
+          "value": "́",
+          "expected": "oak reed ́"
+        },
+        {
+          "op": "deleteWords",
+          "count": 1,
+          "expected": "oak"
+        },
+        {
+          "op": "append",
+          "value": " ",
+          "expected": "oak "
+        },
+        {
+          "op": "append",
+          "value": "́",
+          "expected": "oak ́"
+        },
+        {
+          "op": "backspace",
+          "expected": "oak"
+        },
+        {
+          "op": "deleteWords",
+          "count": 0,
+          "expected": "oak"
+        },
+        {
+          "op": "clear",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "r36-b05",
+      "family": "chunk-boundary-non-equivalence",
+      "initial": "a ́b",
+      "expectedInitial": "a b",
+      "actions": [
+        {
+          "op": "clear",
+          "expected": ""
+        },
+        {
+          "op": "append",
+          "value": "a ",
+          "expected": "a "
+        },
+        {
+          "op": "append",
+          "value": "́",
+          "expected": "a ́"
+        },
+        {
+          "op": "append",
+          "value": "b",
+          "expected": "a ́b"
+        },
+        {
+          "op": "deleteWords",
+          "count": 1,
+          "expected": ""
+        },
+        {
+          "op": "append",
+          "value": "a ́b",
+          "expected": "a b"
+        },
+        {
+          "op": "deleteWords",
+          "count": 1,
+          "expected": "a"
+        }
+      ]
+    },
+    {
+      "id": "r36-b06",
+      "family": "literal-word-units-and-count-bounds",
+      "initial": "  red, blue-green 🧭  ",
+      "expectedInitial": "red, blue-green 🧭 ",
+      "actions": [
+        {
+          "op": "deleteWords",
+          "count": 0,
+          "expected": "red, blue-green 🧭 "
+        },
+        {
+          "op": "deleteWords",
+          "count": -1000,
+          "expected": "red, blue-green 🧭 "
+        },
+        {
+          "op": "deleteWords",
+          "count": 1,
+          "expected": "red, blue-green"
+        },
+        {
+          "op": "append",
+          "value": " 42 /?! ",
+          "expected": "red, blue-green 42 /?! "
+        },
+        {
+          "op": "deleteWords",
+          "count": 2,
+          "expected": "red, blue-green"
+        },
+        {
+          "op": "deleteWords",
+          "count": 1000,
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "r36-b07",
+      "family": "empty-inertness-and-reuse",
+      "initial": "",
+      "expectedInitial": "",
+      "actions": [
+        {
+          "op": "backspace",
+          "expected": ""
+        },
+        {
+          "op": "deleteWords",
+          "count": -1,
+          "expected": ""
+        },
+        {
+          "op": "deleteWords",
+          "count": 3,
+          "expected": ""
+        },
+        {
+          "op": "append",
+          "value": "  ",
+          "expected": ""
+        },
+        {
+          "op": "append",
+          "value": "zero",
+          "expected": "zero"
+        },
+        {
+          "op": "clear",
+          "expected": ""
+        },
+        {
+          "op": "clear",
+          "expected": ""
+        },
+        {
+          "op": "append",
+          "value": "\nnew\n",
+          "expected": "new "
+        },
+        {
+          "op": "backspace",
+          "expected": "new"
+        },
+        {
+          "op": "clear",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "r36-b08",
+      "family": "combining-order-at-capacity",
+      "initial": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaae",
+      "expectedInitial": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaae",
+      "actions": [
+        {
+          "op": "append",
+          "value": "́",
+          "expected": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaé"
+        },
+        {
+          "op": "append",
+          "value": "̧",
+          "expected": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaȩ́"
+        },
+        {
+          "op": "backspace",
+          "expected": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "op": "append",
+          "value": "ȩ́",
+          "expected": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaȩ́"
+        },
+        {
+          "op": "clear",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "r36-b09",
+      "family": "regional-indicator-parity",
+      "initial": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🇨",
+      "expectedInitial": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🇨",
+      "actions": [
+        {
+          "op": "append",
+          "value": "🇦",
+          "expected": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🇨🇦"
+        },
+        {
+          "op": "append",
+          "value": "🇳",
+          "expected": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🇨🇦🇳"
+        },
+        {
+          "op": "append",
+          "value": "🇿",
+          "expected": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🇨🇦🇳🇿"
+        },
+        {
+          "op": "append",
+          "value": "🇺",
+          "expected": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🇨🇦🇳🇿"
+        },
+        {
+          "op": "backspace",
+          "expected": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🇨🇦"
+        },
+        {
+          "op": "append",
+          "value": " ",
+          "expected": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🇨🇦 "
+        },
+        {
+          "op": "append",
+          "value": "🇸",
+          "expected": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🇨🇦 "
+        },
+        {
+          "op": "deleteWords",
+          "count": 1,
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "r36-b10",
+      "family": "joiner-chain-at-capacity",
+      "initial": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx👩",
+      "expectedInitial": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx👩",
+      "actions": [
+        {
+          "op": "append",
+          "value": "‍",
+          "expected": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx👩‍"
+        },
+        {
+          "op": "append",
+          "value": "🔬",
+          "expected": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx👩‍🔬"
+        },
+        {
+          "op": "append",
+          "value": "!",
+          "expected": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx👩‍🔬"
+        },
+        {
+          "op": "backspace",
+          "expected": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        },
+        {
+          "op": "append",
+          "value": "🧑‍🚀",
+          "expected": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🧑‍🚀"
+        },
+        {
+          "op": "backspace",
+          "expected": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        },
+        {
+          "op": "deleteWords",
+          "count": 1,
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "r36-b11",
+      "family": "modifier-and-selector-preservation",
+      "initial": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx👍",
+      "expectedInitial": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx👍",
+      "actions": [
+        {
+          "op": "append",
+          "value": "🏽",
+          "expected": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx👍🏽"
+        },
+        {
+          "op": "append",
+          "value": "️",
+          "expected": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx👍🏽️"
+        },
+        {
+          "op": "backspace",
+          "expected": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        },
+        {
+          "op": "append",
+          "value": "🙂",
+          "expected": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🙂"
+        },
+        {
+          "op": "backspace",
+          "expected": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        },
+        {
+          "op": "backspace",
+          "expected": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        },
+        {
+          "op": "clear",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "r36-b12",
+      "family": "normalization-and-capacity-interaction",
+      "initial": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "expectedInitial": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "actions": [
+        {
+          "op": "append",
+          "value": "\r",
+          "expected": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx "
+        },
+        {
+          "op": "append",
+          "value": "\n",
+          "expected": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx "
+        },
+        {
+          "op": "append",
+          "value": "́",
+          "expected": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx ́"
+        },
+        {
+          "op": "append",
+          "value": "\t",
+          "expected": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx ́"
+        },
+        {
+          "op": "backspace",
+          "expected": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        },
+        {
+          "op": "append",
+          "value": "\t \nend",
+          "expected": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx "
+        },
+        {
+          "op": "deleteWords",
+          "count": 1,
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "r36-b13",
+      "family": "hangul-jamo-boundary",
+      "initial": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxᄀ",
+      "expectedInitial": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxᄀ",
+      "actions": [
+        {
+          "op": "append",
+          "value": "ᅡ",
+          "expected": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx가"
+        },
+        {
+          "op": "append",
+          "value": "ᆨ",
+          "expected": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx각"
+        },
+        {
+          "op": "append",
+          "value": "q",
+          "expected": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx각"
+        },
+        {
+          "op": "backspace",
+          "expected": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        },
+        {
+          "op": "append",
+          "value": "각",
+          "expected": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx각"
+        },
+        {
+          "op": "backspace",
+          "expected": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        },
+        {
+          "op": "clear",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "r36-b14",
+      "family": "indic-conjunct-boundary",
+      "initial": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxक",
+      "expectedInitial": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxक",
+      "actions": [
+        {
+          "op": "append",
+          "value": "्",
+          "expected": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxक्"
+        },
+        {
+          "op": "append",
+          "value": "ष",
+          "expected": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxक्ष"
+        },
+        {
+          "op": "append",
+          "value": "ि",
+          "expected": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxक्षि"
+        },
+        {
+          "op": "backspace",
+          "expected": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        },
+        {
+          "op": "append",
+          "value": "y",
+          "expected": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxy"
+        },
+        {
+          "op": "deleteWords",
+          "count": 0,
+          "expected": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxy"
+        },
+        {
+          "op": "clear",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "r36-b15",
+      "family": "non-whitespace-format-characters",
+      "initial": "a​b c",
+      "expectedInitial": "a​b c",
+      "actions": [
+        {
+          "op": "deleteWords",
+          "count": 1,
+          "expected": "a​b"
+        },
+        {
+          "op": "backspace",
+          "expected": "a​"
+        },
+        {
+          "op": "append",
+          "value": "⁠d",
+          "expected": "a​⁠d"
+        },
+        {
+          "op": "deleteWords",
+          "count": 1,
+          "expected": ""
+        },
+        {
+          "op": "append",
+          "value": "﻿z",
+          "expected": "﻿z"
+        },
+        {
+          "op": "backspace",
+          "expected": "﻿"
+        },
+        {
+          "op": "deleteWords",
+          "count": 1,
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "id": "r36-b16",
+      "family": "stop-before-later-joining-character",
+      "initial": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\ŕ",
+      "expectedInitial": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "actions": [
+        {
+          "op": "append",
+          "value": "\ŕ",
+          "expected": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        },
+        {
+          "op": "append",
+          "value": "́",
+          "expected": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx́"
+        },
+        {
+          "op": "backspace",
+          "expected": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        },
+        {
+          "op": "append",
+          "value": "x",
+          "expected": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        },
+        {
+          "op": "deleteWords",
+          "count": -1000,
+          "expected": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        },
+        {
+          "op": "clear",
+          "expected": ""
+        }
+      ]
+    }
+  ]
+}

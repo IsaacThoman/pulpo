@@ -671,7 +671,7 @@ in `audits/multilingual-emoji-r31/`; no R31 production change is imported.
 
 Two small normal guards protect those observable regressions. Both pass current
 source; isolated frozen candidates compile then fail with twelve R26 and six R27
-assertions. The current parent Release gate passes **441 core functions / 65 suites
+assertions. That parent Release gate passes **441 core functions / 65 suites
 and three service functions**, with the same five known issues. See
 `audits/parent-regressions-r26-r27.md`. Derived audit-verifier repairs also make
 repository path checks nonvacuous and retain integrity checks under Python `-O`;
@@ -702,6 +702,26 @@ changed command takes nine baseline scrolls versus eight candidate scrolls (tota
 observations, negatives and parent results remain in
 `benchmarks/settings-usability-sweep/`. Smaller screens, VoiceOver navigation and
 seeded learning-store clearing remain unverified by this sweep.
+
+R36 fixes the emoji query buffer's 40-Character limit across repeated appends. The
+old loop could grow a full query to 41, then 42 Characters, and could stop partway
+through an incoming joined emoji. The new loop checks the concatenated whole
+string before accepting each incoming Character, preserving final grapheme
+extensions and the existing whitespace/deletion semantics. Two normal regression
+functions fail with 13 assertions on baseline; the candidate passes **442 core
+functions / 65 suites and three service functions**, with the same five known
+issues and no new allowance.
+
+After independent domain, source/executor and sealed-oracle review, the one frozen
+blind evaluation improves **9→16/16 cases** and **98→123/123 checkpoints**: 25
+fail→pass, 98 pass→pass, zero regressions or dropped checkpoints. Seven cases
+improve; the checkpoints are correlated boundary/recovery observations, not 25
+independent bugs or a typing-accuracy result. Source and scoring bytes are unchanged
+after freeze. All inputs, raw outputs, initial and repaired smoke evidence, source
+hashes and limits remain in `audits/emoji-query-cap-r36/`. Pre-freeze harness repairs
+add exact input-byte binding and independent Swift grapheme-count verification.
+The 40-grapheme bound is not a byte/scalar memory bound. No new native UI, retrieval,
+latency, physical-device or Gboard claim follows from this macOS public-API sweep.
 
 ### Rejected technical-token expansion
 
