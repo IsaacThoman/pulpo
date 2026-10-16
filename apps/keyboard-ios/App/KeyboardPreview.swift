@@ -55,13 +55,15 @@ final class PreviewHost: KeyboardHost {
 }
 
 final class TextViewDocument: TextDocument {
-  unowned let host: PreviewHost
+  // UIKit can retain an old input view/controller and its engine's document
+  // after the coordinator releases the host. That document must become inert.
+  private weak var host: PreviewHost?
 
   init(host: PreviewHost) {
     self.host = host
   }
 
-  private var textView: UITextView? { host.textView }
+  private var textView: UITextView? { host?.textView }
 
   var documentContextBeforeInput: String? {
     guard let textView, let range = textView.selectedTextRange else { return nil }
