@@ -44,3 +44,40 @@ component report writers create their requested directories. Without an explicit
 report request, exploratory output uses the runner's temporary directory. The
 parent integration run requests a new `/tmp/pulpo-r17-parent-clean-reports/`
 directory without external creation. No product source is retuned after reveal.
+
+## Parent integrated outcomes
+
+The cursor-only integration command finalizes **24/24 methods passing**, zero
+skips, failures or runtime warnings, in
+`/tmp/pulpo-r17-parent-integrated.xcresult` (exit0, approximately 314 seconds).
+It includes all AppTests, the three actual exploration workflows, draft
+navigation, dismissal/refocus and every KeyboardLanguageTests method. All four
+component outcomes exactly match retained `development-final.json`, including
+raw UTF-16 documents and ranges. Both actual cursor-gesture outcomes also match
+the retained final cases. Original v1 displacement expectations remain misses.
+
+A separate unchanged heldout replay finalizes exit65 with the single expected
+document assertion for `r17-cursor-02`. All six entire outcome objects exactly
+equal retained `heldout-candidate.json`: **5/6 exact documents, 6/6 selections**.
+Result `/tmp/pulpo-r17-parent-heldout.xcresult`, output
+`/tmp/pulpo-r17-parent-heldout/report.json`. It is exposed integration evidence,
+not a second blind evaluation or six passing cases. Zero-offset selection
+collapse and the six broader original unexecuted UX cases remain unaccepted.
+
+After the independently reviewed weak-host R21 fix, the combined command
+finalizes **47/48 passing**, no skips or runtime crashes, approximately 316
+seconds: `/tmp/pulpo-preview-integrated.xcresult`. It adds all six lifetime
+methods and eighteen dictation destination methods to the earlier selection.
+The sole failure is consumer-release timing in the standalone countercheck;
+host deallocation succeeds, input/controller/engine remain alive, and later
+standalone-document checks are unexecuted. All cursor, draft and actual UI flows
+pass. Counts overlap earlier commands and must not be added.
+
+Importing the final independently reviewed fixture refinements does not resolve
+that failure: `/tmp/pulpo-preview-lifetime-final-fixture.xcresult` finalizes
+**3/4**, zero skips/crashes, with all three primary lifetime cases passing and
+the same standalone countercheck failing. The retaining path is not established.
+The narrow weak-host fix adds no consumer retention edge and directly removes
+the demonstrated stale-host trap; full R21 frozen acceptance remains incomplete.
+R23 investigates retention separately with the failing assertions enabled. R24
+owns broader companion usability work; historical R17 nonexecution is unchanged.

@@ -555,6 +555,48 @@ these red reproductions are not a claim that the published regression suite
 passes them. New isolated rounds use all exposed examples only as development
 controls and obtain fresh independent inputs.
 
+### Preview Unicode movement and stale-document safety
+
+The companion preview now moves its caret by complete Swift Characters, rather
+than UTF-16 units that could split emoji or combining accents. It preserves CRLF,
+selection-start anchoring and logical movement, and clamps overshoot to document
+edges. The installed extension still delegates cursor movement to UIKit's proxy.
+The parent reproduces three cursor-method failures on published production, then
+passes **24/24 native methods** with the fix, including eight additional cluster
+families, extreme offsets, all draft/language workflows and real cursor gestures.
+All four component and two gesture outcomes match the agent's retained reports.
+The six heldout outcome objects also match exactly: **5/6 documents, 6/6 ranges**;
+zero-offset selection collapse remains a failure. Six broader R17 UX tasks were
+not run in that round. Language labels on component cases do not exercise three
+engine stacks. Visual RTL, marked text, VoiceOver and physical feel remain open.
+
+A separately reproduced baseline crash reaches a destroyed PreviewHost through
+TextViewDocument during a delayed suggestion-bar refresh. That adapter now holds
+a weak optional host: retained old keyboards read nil/false context and cannot
+write into the retired editor or its replacement. The combined parent command
+passes **47/48 native methods**, including all cursor/draft/UI workflows, three
+primary lifetime tests, two independent lifetime checks and eighteen dictation
+destination methods, with no runtime crash. The remaining standalone release
+countercheck still retains input/controller/engine after host release; later
+document checks remain unexecuted. Its final fixture replay is **3/4**. Retaining
+cause and full frozen lifecycle acceptance are unresolved; the failing assertions
+remain enabled and R23 owns that investigation. Source review finds no new
+retention edge in the narrow crash fix. These overlapping counts are not additive.
+
+The source-only R16/R18/R19 candidates remain rejected and archived outside test
+discovery. R16 has a concrete moved-caret inherited-text corruption; its 36 sealed
+cases remain unread/unexecuted. R18 adds no heldout usefulness and has one exposed
+target contaminating its primary 36 observations. R19's 24 measured sealed gains
+do not satisfy safety: all twelve safety rows are unaccepted, six ordinary review
+losses remain, and the author-contract hash cannot be matched to retained bytes.
+Verifiers preserve those limits and all original outcomes. One minimal R16
+corruption guard is retained in the normal core suite; it passes current source
+and causally fails the rejected engine in EN/bilingual. Parent Release **439 core
++ three service** tests pass with the same five known issues. Dictionaries and
+tooling are unchanged. See `audits/editing-ux-r17-parent.md`,
+`audits/preview-document-lifetime/audit.md`, `audits/r16-parent-protection.md` and
+the R16/R18/R19 artifact directories for exact scope, failed attempts and costs.
+
 ### Rejected technical-token expansion
 
 The first technical-text candidate makes every whitespace token containing a
