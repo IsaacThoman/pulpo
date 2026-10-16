@@ -1,0 +1,199 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "cases"
+  ],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "cases": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 6,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "intent",
+          "actions"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9-]+$"
+          },
+          "intent": {
+            "type": "string"
+          },
+          "actions": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 30,
+            "items": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "op",
+                    "target",
+                    "direction"
+                  ],
+                  "properties": {
+                    "op": {
+                      "const": "reach"
+                    },
+                    "target": {
+                      "enum": [
+                        "typing-language",
+                        "one-handed-setting",
+                        "clear-learned-words",
+                        "privacy"
+                      ]
+                    },
+                    "direction": {
+                      "enum": [
+                        "up",
+                        "down"
+                      ]
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "op",
+                    "target"
+                  ],
+                  "properties": {
+                    "op": {
+                      "const": "tap"
+                    },
+                    "target": {
+                      "enum": [
+                        "typing-language",
+                        "one-handed-setting",
+                        "clear-learned-words",
+                        "privacy"
+                      ]
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "op",
+                    "label"
+                  ],
+                  "properties": {
+                    "op": {
+                      "const": "choose"
+                    },
+                    "label": {
+                      "enum": [
+                        "English",
+                        "Espa\u00f1ol",
+                        "English + Espa\u00f1ol",
+                        "Off",
+                        "Left",
+                        "Right",
+                        "Clear Learned Words",
+                        "OK"
+                      ]
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "op",
+                    "target",
+                    "contains"
+                  ],
+                  "properties": {
+                    "op": {
+                      "const": "expectLabel"
+                    },
+                    "target": {
+                      "enum": [
+                        "typing-language",
+                        "one-handed-setting"
+                      ]
+                    },
+                    "contains": {
+                      "type": "string"
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "op"
+                  ],
+                  "properties": {
+                    "op": {
+                      "const": "relaunch"
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "op"
+                  ],
+                  "properties": {
+                    "op": {
+                      "const": "back"
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "op"
+                  ],
+                  "properties": {
+                    "op": {
+                      "const": "cancelClear"
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "op",
+                    "title"
+                  ],
+                  "properties": {
+                    "op": {
+                      "const": "expectScreen"
+                    },
+                    "title": {
+                      "enum": [
+                        "Keyboard",
+                        "Full Access & Privacy",
+                        "Clear all learned words?",
+                        "Learned Words Cleared"
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

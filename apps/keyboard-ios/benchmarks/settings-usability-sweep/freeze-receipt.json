@@ -1,0 +1,7 @@
+{
+  "apps/keyboard-ios/benchmarks/settings-usability-sweep/dev-intents.txt": "d99c42459fbe44214af08f33b9712980a16ab6f2dbfaa538106522aea91314fc",
+  "apps/keyboard-ios/benchmarks/settings-usability-sweep/contract.txt": "f4005a3446ed679cceef033dc10ec0281c48cb73f841623eaa5a31a4a1cc5856",
+  "apps/keyboard-ios/benchmarks/settings-usability-sweep/schema.json": "1ad5150f2c72e0d1ba3a29b8b6677cbbbec02300cccc861a40324e53779893e5",
+  "apps/keyboard-ios/benchmarks/settings-usability-sweep/capabilities.txt": "e98eaef6c913ad8aeeece549ed4a1b90b554c6001488512de0915b1b11b8776e",
+  "apps/keyboard-ios/UITests/SettingsUsabilityContractTests.swift": "3596cb734804ad48d101938bbd8447b21e45aa996473c5c18c22f111bf050b45"
+}

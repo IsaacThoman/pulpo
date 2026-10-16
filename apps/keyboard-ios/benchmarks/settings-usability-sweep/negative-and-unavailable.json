@@ -1,0 +1,59 @@
+{
+  "preFreezeObservation": {
+    "tests": 1,
+    "passed": 0,
+    "failed": 1,
+    "failedCommand": "app.buttons[\"Cancel\"].tap()",
+    "reason": "Observed iOS 27 confirmationDialog uses popover outside dismissal, no Cancel button. Harness capability error, not a product defect. Fixed before interface freeze.",
+    "rawError": "Failed to tap \"Cancel\" Button: No matches found for Elements matching predicate '\"Cancel\" IN identifiers'"
+  },
+  "baselineFeatureRed": {
+    "tests": 1,
+    "passed": 0,
+    "failed": 1,
+    "failedAssertion": "find-setting toolbar menu exists",
+    "reason": "Proposed new shortcut absent in baseline; existing settings were reachable."
+  },
+  "firstCandidate": {
+    "tests": 1,
+    "passed": 1,
+    "failed": 0,
+    "visualFinding": "Long shortcut labels crowded/clipped last menu row in screenshot; shortened before source freeze/reveal."
+  },
+  "deferred": {
+    "smallestSupportedViewport": "Not run: assigned device is 402x874; no permission to use/create another device. No smallest-screen claim.",
+    "VoiceOverFocusTransfer": "Not exercised; native menu labels/actions and source review only.",
+    "draftSelectionFocus": "No editor actions in frozen contract. Source owner and bindings unchanged; no native draft/selection claim.",
+    "learningStoreContents": "Clear/cancel confirmation and settings values checked; no seeded learned-word store readback in contract."
+  },
+  "deviceTools": {
+    "device_list": "Device list failed: The device command failed (exit code 127).",
+    "device_open": "Device list failed: The device command failed (exit code 127).",
+    "fallback": "UUID-pinned XCTest/CoreSimulator; platform was not declared unavailable."
+  },
+  "exposedOuterSwitchTap": {
+    "scope": "Additional post-freeze diagnostic, outside blind score",
+    "expectedValue": "0",
+    "candidateBefore": "1",
+    "candidateAfter": "1",
+    "candidateTapPoint": [
+      201,
+      269.16666666666686
+    ],
+    "baseline": {
+      "actualSwitchFrame": "(309.0, 502.0000000000002, 63.0, 28.0)",
+      "afterActualSwitchTap": "0",
+      "afterOuterTap": "1",
+      "before": "1",
+      "outerFrame": "(16.0, 470.0000000000002, 370.0, 92.33333333333337)"
+    },
+    "transition": "fail-to-fail",
+    "followup": "Actual nested native-switch tap changes value. Candidate actual-switch learning-Off test passed through jumps, clear acknowledgement copy, and relaunch. Frozen source/contract/fixture unchanged."
+  },
+  "diagnosticCompileFailure": {
+    "run": "baseline-outer-switch",
+    "error": "'NSStringFromCGRect' has been replaced by 'NSCoder.string(for:)'",
+    "nativeCommandsExecuted": 0,
+    "correction": "Diagnostic frame formatting only: String(describing:). Retained in native-runs.json."
+  }
+}

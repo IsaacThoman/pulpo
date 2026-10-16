@@ -1,0 +1,476 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "english-left-commute",
+      "intent": "Keep English for the morning commute, put the keyboard on the left for one-handed use, and check that both choices survive closing and reopening the app.",
+      "actions": [
+        {
+          "op": "expectScreen",
+          "title": "Keyboard"
+        },
+        {
+          "op": "reach",
+          "target": "typing-language",
+          "direction": "up"
+        },
+        {
+          "op": "tap",
+          "target": "typing-language"
+        },
+        {
+          "op": "choose",
+          "label": "English"
+        },
+        {
+          "op": "expectLabel",
+          "target": "typing-language",
+          "contains": "English"
+        },
+        {
+          "op": "reach",
+          "target": "one-handed-setting",
+          "direction": "up"
+        },
+        {
+          "op": "tap",
+          "target": "one-handed-setting"
+        },
+        {
+          "op": "choose",
+          "label": "Left"
+        },
+        {
+          "op": "expectLabel",
+          "target": "one-handed-setting",
+          "contains": "Left"
+        },
+        {
+          "op": "relaunch"
+        },
+        {
+          "op": "expectScreen",
+          "title": "Keyboard"
+        },
+        {
+          "op": "reach",
+          "target": "typing-language",
+          "direction": "up"
+        },
+        {
+          "op": "expectLabel",
+          "target": "typing-language",
+          "contains": "English"
+        },
+        {
+          "op": "reach",
+          "target": "one-handed-setting",
+          "direction": "up"
+        },
+        {
+          "op": "expectLabel",
+          "target": "one-handed-setting",
+          "contains": "Left"
+        }
+      ]
+    },
+    {
+      "id": "espanol-right-privacy",
+      "intent": "Quiero escribir en español con la mano derecha, consultar la información de privacidad y comprobar mis preferencias después de volver a abrir la aplicación.",
+      "actions": [
+        {
+          "op": "reach",
+          "target": "typing-language",
+          "direction": "up"
+        },
+        {
+          "op": "tap",
+          "target": "typing-language"
+        },
+        {
+          "op": "choose",
+          "label": "Español"
+        },
+        {
+          "op": "expectLabel",
+          "target": "typing-language",
+          "contains": "Español"
+        },
+        {
+          "op": "reach",
+          "target": "one-handed-setting",
+          "direction": "up"
+        },
+        {
+          "op": "tap",
+          "target": "one-handed-setting"
+        },
+        {
+          "op": "choose",
+          "label": "Right"
+        },
+        {
+          "op": "expectLabel",
+          "target": "one-handed-setting",
+          "contains": "Right"
+        },
+        {
+          "op": "reach",
+          "target": "privacy",
+          "direction": "up"
+        },
+        {
+          "op": "tap",
+          "target": "privacy"
+        },
+        {
+          "op": "expectScreen",
+          "title": "Full Access & Privacy"
+        },
+        {
+          "op": "back"
+        },
+        {
+          "op": "expectScreen",
+          "title": "Keyboard"
+        },
+        {
+          "op": "relaunch"
+        },
+        {
+          "op": "expectScreen",
+          "title": "Keyboard"
+        },
+        {
+          "op": "reach",
+          "target": "typing-language",
+          "direction": "up"
+        },
+        {
+          "op": "expectLabel",
+          "target": "typing-language",
+          "contains": "Español"
+        },
+        {
+          "op": "reach",
+          "target": "one-handed-setting",
+          "direction": "up"
+        },
+        {
+          "op": "expectLabel",
+          "target": "one-handed-setting",
+          "contains": "Right"
+        }
+      ]
+    },
+    {
+      "id": "bilingual-full-width",
+      "intent": "Switch between English y español with the full-width keyboard, read the privacy explanation, and return to confirm the bilingual and Off selections.",
+      "actions": [
+        {
+          "op": "reach",
+          "target": "typing-language",
+          "direction": "up"
+        },
+        {
+          "op": "tap",
+          "target": "typing-language"
+        },
+        {
+          "op": "choose",
+          "label": "English + Español"
+        },
+        {
+          "op": "expectLabel",
+          "target": "typing-language",
+          "contains": "English + Español"
+        },
+        {
+          "op": "reach",
+          "target": "one-handed-setting",
+          "direction": "up"
+        },
+        {
+          "op": "tap",
+          "target": "one-handed-setting"
+        },
+        {
+          "op": "choose",
+          "label": "Off"
+        },
+        {
+          "op": "expectLabel",
+          "target": "one-handed-setting",
+          "contains": "Off"
+        },
+        {
+          "op": "reach",
+          "target": "privacy",
+          "direction": "up"
+        },
+        {
+          "op": "tap",
+          "target": "privacy"
+        },
+        {
+          "op": "expectScreen",
+          "title": "Full Access & Privacy"
+        },
+        {
+          "op": "back"
+        },
+        {
+          "op": "expectScreen",
+          "title": "Keyboard"
+        },
+        {
+          "op": "reach",
+          "target": "one-handed-setting",
+          "direction": "down"
+        },
+        {
+          "op": "expectLabel",
+          "target": "one-handed-setting",
+          "contains": "Off"
+        },
+        {
+          "op": "reach",
+          "target": "typing-language",
+          "direction": "down"
+        },
+        {
+          "op": "expectLabel",
+          "target": "typing-language",
+          "contains": "English + Español"
+        }
+      ]
+    },
+    {
+      "id": "cancel-clearing-spanish",
+      "intent": "Configurar español y el teclado a la izquierda; abrir la confirmación de borrar palabras, decidir conservarlas y verificar que las preferencias siguen guardadas al reiniciar.",
+      "actions": [
+        {
+          "op": "reach",
+          "target": "typing-language",
+          "direction": "up"
+        },
+        {
+          "op": "tap",
+          "target": "typing-language"
+        },
+        {
+          "op": "choose",
+          "label": "Español"
+        },
+        {
+          "op": "expectLabel",
+          "target": "typing-language",
+          "contains": "Español"
+        },
+        {
+          "op": "reach",
+          "target": "one-handed-setting",
+          "direction": "up"
+        },
+        {
+          "op": "tap",
+          "target": "one-handed-setting"
+        },
+        {
+          "op": "choose",
+          "label": "Left"
+        },
+        {
+          "op": "expectLabel",
+          "target": "one-handed-setting",
+          "contains": "Left"
+        },
+        {
+          "op": "reach",
+          "target": "clear-learned-words",
+          "direction": "up"
+        },
+        {
+          "op": "tap",
+          "target": "clear-learned-words"
+        },
+        {
+          "op": "expectScreen",
+          "title": "Clear all learned words?"
+        },
+        {
+          "op": "cancelClear"
+        },
+        {
+          "op": "expectScreen",
+          "title": "Keyboard"
+        },
+        {
+          "op": "reach",
+          "target": "one-handed-setting",
+          "direction": "down"
+        },
+        {
+          "op": "expectLabel",
+          "target": "one-handed-setting",
+          "contains": "Left"
+        },
+        {
+          "op": "reach",
+          "target": "typing-language",
+          "direction": "down"
+        },
+        {
+          "op": "expectLabel",
+          "target": "typing-language",
+          "contains": "Español"
+        },
+        {
+          "op": "relaunch"
+        },
+        {
+          "op": "expectScreen",
+          "title": "Keyboard"
+        },
+        {
+          "op": "reach",
+          "target": "typing-language",
+          "direction": "up"
+        },
+        {
+          "op": "expectLabel",
+          "target": "typing-language",
+          "contains": "Español"
+        },
+        {
+          "op": "reach",
+          "target": "one-handed-setting",
+          "direction": "up"
+        },
+        {
+          "op": "expectLabel",
+          "target": "one-handed-setting",
+          "contains": "Left"
+        }
+      ]
+    },
+    {
+      "id": "confirm-clear-bilingual",
+      "intent": "Use English and Spanish with the keyboard on the right, confirm clearing learned words, dismiss the acknowledgement, and check that language and one-handed preferences remain after relaunch.",
+      "actions": [
+        {
+          "op": "reach",
+          "target": "typing-language",
+          "direction": "up"
+        },
+        {
+          "op": "tap",
+          "target": "typing-language"
+        },
+        {
+          "op": "choose",
+          "label": "English + Español"
+        },
+        {
+          "op": "expectLabel",
+          "target": "typing-language",
+          "contains": "English + Español"
+        },
+        {
+          "op": "reach",
+          "target": "one-handed-setting",
+          "direction": "up"
+        },
+        {
+          "op": "tap",
+          "target": "one-handed-setting"
+        },
+        {
+          "op": "choose",
+          "label": "Right"
+        },
+        {
+          "op": "expectLabel",
+          "target": "one-handed-setting",
+          "contains": "Right"
+        },
+        {
+          "op": "reach",
+          "target": "clear-learned-words",
+          "direction": "up"
+        },
+        {
+          "op": "tap",
+          "target": "clear-learned-words"
+        },
+        {
+          "op": "expectScreen",
+          "title": "Clear all learned words?"
+        },
+        {
+          "op": "choose",
+          "label": "Clear Learned Words"
+        },
+        {
+          "op": "expectScreen",
+          "title": "Learned Words Cleared"
+        },
+        {
+          "op": "choose",
+          "label": "OK"
+        },
+        {
+          "op": "expectScreen",
+          "title": "Keyboard"
+        },
+        {
+          "op": "reach",
+          "target": "one-handed-setting",
+          "direction": "down"
+        },
+        {
+          "op": "expectLabel",
+          "target": "one-handed-setting",
+          "contains": "Right"
+        },
+        {
+          "op": "reach",
+          "target": "typing-language",
+          "direction": "down"
+        },
+        {
+          "op": "expectLabel",
+          "target": "typing-language",
+          "contains": "English + Español"
+        },
+        {
+          "op": "relaunch"
+        },
+        {
+          "op": "expectScreen",
+          "title": "Keyboard"
+        },
+        {
+          "op": "reach",
+          "target": "typing-language",
+          "direction": "up"
+        },
+        {
+          "op": "expectLabel",
+          "target": "typing-language",
+          "contains": "English + Español"
+        },
+        {
+          "op": "reach",
+          "target": "one-handed-setting",
+          "direction": "up"
+        },
+        {
+          "op": "expectLabel",
+          "target": "one-handed-setting",
+          "contains": "Right"
+        }
+      ]
+    }
+  ]
+}

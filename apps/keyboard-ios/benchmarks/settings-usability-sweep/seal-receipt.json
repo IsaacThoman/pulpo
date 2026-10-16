@@ -1,0 +1,16 @@
+{
+  "actions": 99,
+  "cases": 5,
+  "freeze_receipt_sha256": "f9109ef8d6bc16394ac26f62a984bf73f79699527f5ec5438bacdf6e4029b221",
+  "frozen_sha256": {
+    "apps/keyboard-ios/UITests/SettingsUsabilityContractTests.swift": "3596cb734804ad48d101938bbd8447b21e45aa996473c5c18c22f111bf050b45",
+    "apps/keyboard-ios/benchmarks/settings-usability-sweep/capabilities.txt": "e98eaef6c913ad8aeeece549ed4a1b90b554c6001488512de0915b1b11b8776e",
+    "apps/keyboard-ios/benchmarks/settings-usability-sweep/contract.txt": "f4005a3446ed679cceef033dc10ec0281c48cb73f841623eaa5a31a4a1cc5856",
+    "apps/keyboard-ios/benchmarks/settings-usability-sweep/schema.json": "1ad5150f2c72e0d1ba3a29b8b6677cbbbec02300cccc861a40324e53779893e5"
+  },
+  "payload_sha256": "6d1aca9841eb52ce3fd8c932916824ec3a47c96fcebfd529f386066cd947378f",
+  "sealed_path": "/tmp/pulpo-settings-usability-sweep/sealed.json",
+  "sealed_sha256": "6d1aca9841eb52ce3fd8c932916824ec3a47c96fcebfd529f386066cd947378f",
+  "validation": "independent static schema, frozen bytes, executable interface, capability and state validation passed",
+  "verdict": "valid"
+}

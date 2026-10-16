@@ -40,160 +40,176 @@ struct HomeView: View {
   var body: some View {
     @Bindable var model = model
     NavigationStack(path: $path) {
-      List {
-        Section {
-          AppHeader()
-        }
-
-        SetupSection()
-
-        Section {
-          NavigationLink(value: Screen.tryIt) {
-            Label("Try It", systemImage: "keyboard")
-          }
-          .accessibilityIdentifier("try-it")
-          NavigationLink(value: Screen.tips) {
-            Label("Tips & Gestures", systemImage: "lightbulb")
-          }
-          .accessibilityIdentifier("tips")
-        }
-
-        AccountSection()
-
-        if model.keyboardEnabled, !model.fullAccess {
+      ScrollViewReader { settingsScroll in
+        List {
           Section {
-            Label("Until Full Access is on, changes here don't reach the installed keyboard. You can still choose its language from EN or ES above the keys.", systemImage: "info.circle")
-              .font(.subheadline)
-              .foregroundStyle(.secondary)
-              .accessibilityIdentifier("settings-need-full-access")
+            AppHeader()
           }
-        }
 
-        Section {
-          Picker("Typing Language", selection: $model.settings.language) {
-            ForEach(KeyboardLanguage.allCases, id: \.self) { language in
-              Text(language.title).tag(language)
+          SetupSection()
+
+          Section {
+            NavigationLink(value: Screen.tryIt) {
+              Label("Try It", systemImage: "keyboard")
+            }
+            .accessibilityIdentifier("try-it")
+            NavigationLink(value: Screen.tips) {
+              Label("Tips & Gestures", systemImage: "lightbulb")
+            }
+            .accessibilityIdentifier("tips")
+          }
+
+          AccountSection()
+
+          if model.keyboardEnabled, !model.fullAccess {
+            Section {
+              Label("Until Full Access is on, changes here don't reach the installed keyboard. You can still choose its language from EN or ES above the keys.", systemImage: "info.circle")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .accessibilityIdentifier("settings-need-full-access")
             }
           }
-          .accessibilityIdentifier("typing-language")
-        } header: {
-          Text("Language")
-        } footer: {
-          Text("Spelling, suggestions and slide typing run on this iPhone. English + Español accepts both languages without switching. Touch and hold a letter for accents or ñ. Change language from EN or ES above the keys. This does not change dictation or translate text.")
-        }
 
-        Section("Typing") {
-          SettingToggle("Auto-Correction", detail: "Fixes misspelled words when you type a space or punctuation.", isOn: $model.settings.autocorrect)
-          SettingToggle("Predictive Text", detail: "Suggests words above the keys as you type.", isOn: $model.settings.predictions)
-          SettingToggle("Auto-Capitalization", detail: "Capitalizes the first word of each sentence.", isOn: $model.settings.autoCapitalization)
-          SettingToggle("\u{201C}.\u{201D} Shortcut", detail: "Double-tap the space bar to type a period and a space.", isOn: $model.settings.doubleSpacePeriod)
-          SettingToggle("Smart Punctuation", detail: "Uses curly quotes and fixes the space around punctuation.", isOn: $model.settings.smartPunctuation)
-        }
-
-        Section("Slide to Type") {
-          SettingToggle("Slide to Type", detail: "Slide across the letters of a word, then lift.", isOn: $model.settings.swipeTyping)
-          SettingToggle("Show Slide Trail", detail: "Draws a line behind your finger as you slide.", isOn: $model.settings.swipeTrail)
-            .disabled(!model.settings.swipeTyping)
-        }
-
-        Section {
-          SettingToggle("Character Preview", detail: "Shows a larger letter above your finger as you type.", isOn: $model.settings.keyPopups)
-          SettingToggle("Number Hints on Top Row", detail: "Shows a number on each top-row key. Touch and hold to type it.", isOn: $model.settings.digitHints)
-          Picker("One-Handed Keyboard", selection: $oneHanded) {
-            Text("Off").tag(OneHandedMode.off)
-            Text("Left").tag(OneHandedMode.left)
-            Text("Right").tag(OneHandedMode.right)
+          Section {
+            Picker("Typing Language", selection: $model.settings.language) {
+              ForEach(KeyboardLanguage.allCases, id: \.self) { language in
+                Text(language.title).tag(language)
+              }
+            }
+            .accessibilityIdentifier("typing-language")
+            .id("typing-language")
+          } header: {
+            Text("Language")
+          } footer: {
+            Text("Spelling, suggestions and slide typing run on this iPhone. English + Español accepts both languages without switching. Touch and hold a letter for accents or ñ. Change language from EN or ES above the keys. This does not change dictation or translate text.")
           }
-          .accessibilityIdentifier("one-handed-setting")
-        } header: {
-          Text("Keys")
-        } footer: {
-          Text("You can also touch and hold the emoji key to switch to a one-handed keyboard.")
-        }
 
-        Section {
-          SettingToggle("Haptic Feedback", detail: "A light tap with each key. Needs Full Access.", isOn: $model.settings.haptics)
-          SettingToggle("Sound", detail: "Key clicks, when Keyboard Clicks is on in Settings › Sounds & Haptics.", isOn: $model.settings.sounds)
-        } header: {
-          Text("Feedback")
-        }
-
-        Section {
-          Picker("Keep Microphone Ready", selection: $model.settings.dictationStandbyMinutes) {
-            Text("Off").tag(0)
-            Text("1 minute").tag(1)
-            Text("5 minutes").tag(5)
-            Text("15 minutes").tag(15)
+          Section("Typing") {
+            SettingToggle("Auto-Correction", detail: "Fixes misspelled words when you type a space or punctuation.", isOn: $model.settings.autocorrect)
+            SettingToggle("Predictive Text", detail: "Suggests words above the keys as you type.", isOn: $model.settings.predictions)
+            SettingToggle("Auto-Capitalization", detail: "Capitalizes the first word of each sentence.", isOn: $model.settings.autoCapitalization)
+            SettingToggle("\u{201C}.\u{201D} Shortcut", detail: "Double-tap the space bar to type a period and a space.", isOn: $model.settings.doubleSpacePeriod)
+            SettingToggle("Smart Punctuation", detail: "Uses curly quotes and fixes the space around punctuation.", isOn: $model.settings.smartPunctuation)
           }
-        } header: {
-          Text("Dictation")
-        } footer: {
-          Text("Keyboards can't use the microphone, so Pulpo Keyboard briefly opens this app to record. Keeping the microphone ready lets your next dictation start right away without leaving your app. iOS shows the microphone indicator while it's ready, and nothing is recorded until you start a dictation.")
-        }
 
-        Section {
-          SettingToggle("Learn New Words", detail: "Remembers words you type often, on this iPhone only.", isOn: $model.settings.learnWords)
-          Button("Clear Learned Words", role: .destructive) { confirmClear = true }
-            .accessibilityIdentifier("clear-learned-words")
-          NavigationLink(value: Screen.privacy) {
-            Text("Full Access & Privacy")
+          Section("Slide to Type") {
+            SettingToggle("Slide to Type", detail: "Slide across the letters of a word, then lift.", isOn: $model.settings.swipeTyping)
+            SettingToggle("Show Slide Trail", detail: "Draws a line behind your finger as you slide.", isOn: $model.settings.swipeTrail)
+              .disabled(!model.settings.swipeTyping)
           }
-          .accessibilityIdentifier("privacy")
-        } header: {
-          Text("Privacy")
-        } footer: {
-          Text("Everything you type stays on this device. Autocorrect, predictions and learned words never leave it. Only dictation recordings you start are sent to your Pulpo account. Passwords and other private fields are never learned.")
-        }
 
-        Section {
-          Button("Reset Keyboard Settings", role: .destructive) { confirmReset = true }
-            .accessibilityIdentifier("reset-settings")
-        } footer: {
-          Text("Turns the settings above back to their defaults. Learned words and your Pulpo account stay as they are.")
-        }
+          Section {
+            SettingToggle("Character Preview", detail: "Shows a larger letter above your finger as you type.", isOn: $model.settings.keyPopups)
+            SettingToggle("Number Hints on Top Row", detail: "Shows a number on each top-row key. Touch and hold to type it.", isOn: $model.settings.digitHints)
+            Picker("One-Handed Keyboard", selection: $oneHanded) {
+              Text("Off").tag(OneHandedMode.off)
+              Text("Left").tag(OneHandedMode.left)
+              Text("Right").tag(OneHandedMode.right)
+            }
+            .accessibilityIdentifier("one-handed-setting")
+            .id("one-handed-setting")
+          } header: {
+            Text("Keys")
+          } footer: {
+            Text("You can also touch and hold the emoji key to switch to a one-handed keyboard.")
+          }
 
-        Section("About") {
-          LabeledContent("Version", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0")
-          Text("English and Spanish dictionaries from the Android Open Source Project (Apache 2.0). Next-word statistics derived from Tatoeba sentences (CC-BY 2.0 FR). Emoji data from Unicode.")
-            .font(.footnote)
-            .foregroundStyle(.secondary)
+          Section {
+            SettingToggle("Haptic Feedback", detail: "A light tap with each key. Needs Full Access.", isOn: $model.settings.haptics)
+            SettingToggle("Sound", detail: "Key clicks, when Keyboard Clicks is on in Settings › Sounds & Haptics.", isOn: $model.settings.sounds)
+          } header: {
+            Text("Feedback")
+          }
+
+          Section {
+            Picker("Keep Microphone Ready", selection: $model.settings.dictationStandbyMinutes) {
+              Text("Off").tag(0)
+              Text("1 minute").tag(1)
+              Text("5 minutes").tag(5)
+              Text("15 minutes").tag(15)
+            }
+          } header: {
+            Text("Dictation")
+          } footer: {
+            Text("Keyboards can't use the microphone, so Pulpo Keyboard briefly opens this app to record. Keeping the microphone ready lets your next dictation start right away without leaving your app. iOS shows the microphone indicator while it's ready, and nothing is recorded until you start a dictation.")
+          }
+
+          Section {
+            SettingToggle("Learn New Words", detail: "Remembers words you type often, on this iPhone only.", isOn: $model.settings.learnWords)
+              .id("privacy-settings")
+            Button("Clear Learned Words", role: .destructive) { confirmClear = true }
+              .accessibilityIdentifier("clear-learned-words")
+            NavigationLink(value: Screen.privacy) {
+              Text("Full Access & Privacy")
+            }
+            .accessibilityIdentifier("privacy")
+          } header: {
+            Text("Privacy")
+          } footer: {
+            Text("Everything you type stays on this device. Autocorrect, predictions and learned words never leave it. Only dictation recordings you start are sent to your Pulpo account. Passwords and other private fields are never learned.")
+          }
+
+          Section {
+            Button("Reset Keyboard Settings", role: .destructive) { confirmReset = true }
+              .accessibilityIdentifier("reset-settings")
+          } footer: {
+            Text("Turns the settings above back to their defaults. Learned words and your Pulpo account stay as they are.")
+          }
+
+          Section("About") {
+            LabeledContent("Version", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0")
+            Text("English and Spanish dictionaries from the Android Open Source Project (Apache 2.0). Next-word statistics derived from Tatoeba sentences (CC-BY 2.0 FR). Emoji data from Unicode.")
+              .font(.footnote)
+              .foregroundStyle(.secondary)
+          }
         }
-      }
-      .navigationTitle("Keyboard")
-      .navigationBarTitleDisplayMode(.inline)
-      .navigationDestination(for: Screen.self) { screen in
-        switch screen {
-        case .tryIt: TryItView(draft: $tryItDraft, focused: $tryItFocused)
-        case .tips: TipsView()
-        case .privacy: PrivacyView()
+        .toolbar {
+          ToolbarItem(placement: .topBarTrailing) {
+            Menu("Find Setting", systemImage: "magnifyingglass") {
+              Button("Language") { settingsScroll.scrollTo("typing-language", anchor: .top) }
+              Button("One-Handed") { settingsScroll.scrollTo("one-handed-setting", anchor: .top) }
+              Button("Privacy & Learning") { settingsScroll.scrollTo("privacy-settings", anchor: .top) }
+            }
+            .accessibilityIdentifier("find-setting")
+            .accessibilityHint("Jump to language, one-handed keyboard, or privacy and learning settings.")
+          }
         }
-      }
-      .confirmationDialog("Clear all learned words?", isPresented: $confirmClear, titleVisibility: .visible) {
-        Button("Clear Learned Words", role: .destructive) {
-          model.clearLearnedWords()
-          clearedLearnedWords = true
+        .navigationTitle("Keyboard")
+        .navigationBarTitleDisplayMode(.inline)
+        .navigationDestination(for: Screen.self) { screen in
+          switch screen {
+          case .tryIt: TryItView(draft: $tryItDraft, focused: $tryItFocused)
+          case .tips: TipsView()
+          case .privacy: PrivacyView()
+          }
         }
-      } message: {
-        Text("Pulpo Keyboard forgets the words and touch adjustments it learned from your typing. Your language and keyboard settings stay as they are.")
-      }
-      .confirmationDialog("Reset keyboard settings?", isPresented: $confirmReset, titleVisibility: .visible) {
-        Button("Reset Settings", role: .destructive) { model.resetSettings() }
-      } message: {
-        Text("Every setting goes back to its default. Learned words and your Pulpo account stay as they are.")
-      }
-      .alert("Learned Words Cleared", isPresented: $clearedLearnedWords) {
-        Button("OK", role: .cancel) {}
-      } message: {
-        Text(model.settings.learnWords ? "Pulpo Keyboard starts learning again as you type." : "Learn New Words is off, so nothing new will be learned.")
-      }
-      .fullScreenCover(isPresented: $model.showSetupGuide) {
-        SetupGuideView()
-      }
-      .sheet(isPresented: Binding(get: { model.route == .account && model.session == nil }, set: { if !$0 { model.route = nil } })) {
-        SignInView()
-      }
-      .fullScreenCover(isPresented: Binding(get: { model.route == .dictation }, set: { if !$0 { model.route = nil } })) {
-        DictationSessionView()
+        .confirmationDialog("Clear all learned words?", isPresented: $confirmClear, titleVisibility: .visible) {
+          Button("Clear Learned Words", role: .destructive) {
+            model.clearLearnedWords()
+            clearedLearnedWords = true
+          }
+        } message: {
+          Text("Pulpo Keyboard forgets the words and touch adjustments it learned from your typing. Your language and keyboard settings stay as they are.")
+        }
+        .confirmationDialog("Reset keyboard settings?", isPresented: $confirmReset, titleVisibility: .visible) {
+          Button("Reset Settings", role: .destructive) { model.resetSettings() }
+        } message: {
+          Text("Every setting goes back to its default. Learned words and your Pulpo account stay as they are.")
+        }
+        .alert("Learned Words Cleared", isPresented: $clearedLearnedWords) {
+          Button("OK", role: .cancel) {}
+        } message: {
+          Text(model.settings.learnWords ? "Pulpo Keyboard starts learning again as you type." : "Learn New Words is off, so nothing new will be learned.")
+        }
+        .fullScreenCover(isPresented: $model.showSetupGuide) {
+          SetupGuideView()
+        }
+        .sheet(isPresented: Binding(get: { model.route == .account && model.session == nil }, set: { if !$0 { model.route = nil } })) {
+          SignInView()
+        }
+        .fullScreenCover(isPresented: Binding(get: { model.route == .dictation }, set: { if !$0 { model.route = nil } })) {
+          DictationSessionView()
+        }
       }
     }
     .onChange(of: path) { _, screens in

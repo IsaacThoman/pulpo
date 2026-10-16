@@ -1,0 +1,10 @@
+R26 development usability intents — frozen before relevant source inspection
+Base: 19ec9830b25ea2b19486a4d1071fda27ea8a0ad7
+Scope: actual public settings/home/setup UI. EN, ES, EN+ES preserved.
+1. Find language, change each available language, relaunch and read back exact value.
+2. Find privacy/learning explanation and clear-learning confirmation. Cancel preserves settings; confirm semantics must match actual public controls.
+3. Find one-handed setting, change each available position, relaunch and read back exact value.
+4. At smallest supported iPhone viewport and largest Dynamic Type, use normal scrolling/navigation to reach and activate each actual setting without accidental neighbor activation, clipping of essential value/action, or state loss.
+Metrics: per-intent success/failed/unavailable, exact action sequence, number of scrolls/taps, target/control frame and screen bounds, selected value before/after/relaunch, and confirmation/cancellation outcome. Bounded failure is diagnostic only; investigate farther before declaring defect.
+Benefit gate: demonstrate a concrete public-UI failure or unnecessary interaction burden; native baseline red where possible, unchanged raw failed outcomes retained. Font size/AX label alone insufficient. No invented controls or policy; no modification to TryItView/KeyboardPreview/core.
+Blind gate: observational capability map and executable action contract/schema frozen before independent author; author sees only identical bytes/hash and map, never source/device/development targets/examples. Independent validator checks every action before sealing. Payload unread until useful candidate source freeze and independent review; reveal once, no tuning.
