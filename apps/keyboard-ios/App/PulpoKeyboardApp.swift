@@ -25,6 +25,10 @@ struct HomeView: View {
   @State private var confirmClear = false
   @State private var confirmReset = false
   @State private var clearedLearnedWords = false
+  // A scratch draft lives for this scene, including Settings navigation. Never
+  // persist typing samples to preferences, the app group, or disk.
+  @State private var tryItDraft = TryItDraft()
+  @State private var tryItFocused = true
   /// Shared with the keyboard, which also changes it from the emoji key's menu.
   @AppStorage(OneHandedStore.key, store: AppGroup.defaults) private var oneHanded: OneHandedMode = .off
   @State private var path: [Screen] = ProcessInfo.processInfo.arguments.contains("-PKPreview") ? [.tryIt] : []
@@ -159,7 +163,7 @@ struct HomeView: View {
       .navigationBarTitleDisplayMode(.inline)
       .navigationDestination(for: Screen.self) { screen in
         switch screen {
-        case .tryIt: TryItView()
+        case .tryIt: TryItView(draft: $tryItDraft, focused: $tryItFocused)
         case .tips: TipsView()
         case .privacy: PrivacyView()
         }

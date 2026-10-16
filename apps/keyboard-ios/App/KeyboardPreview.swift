@@ -6,7 +6,7 @@ import UIKit
 /// keyboard can be tried (and UI-tested) before it is enabled in Settings.
 final class PreviewHost: KeyboardHost {
   weak var textView: UITextView?
-  let openURL: (URL) -> Void
+  private var openURL: ((URL) -> Void)?
   private lazy var textDocument = TextViewDocument(host: self)
 
   init(textView: UITextView, openURL: @escaping (URL) -> Void) {
@@ -28,7 +28,15 @@ final class PreviewHost: KeyboardHost {
     textView.selectedTextRange = textView.textRange(from: position, to: position)
   }
 
-  func openApp(_ url: URL) { openURL(url) }
+  func openApp(_ url: URL) {
+    guard textView?.window != nil else { return }
+    openURL?(url)
+  }
+
+  func invalidate() {
+    textView = nil
+    openURL = nil
+  }
 }
 
 final class TextViewDocument: TextDocument {
@@ -60,11 +68,13 @@ final class TextViewDocument: TextDocument {
   func deleteBackward() { textView?.deleteBackward() }
 }
 
-/// A text view that types with the in-app keyboard.
+/// One editor keeps the same UTF-16 selection with either keyboard input view.
 struct PreviewTextView: UIViewRepresentable {
   @Binding var text: String
+  @Binding var selection: NSRange
   @Binding var focused: Bool
   var keyboardType: UIKeyboardType = .default
+  var usePreview = true
   let openURL: (URL) -> Void
 
   func makeCoordinator() -> Coordinator { Coordinator(self) }
@@ -75,14 +85,8 @@ struct PreviewTextView: UIViewRepresentable {
     textView.backgroundColor = .secondarySystemGroupedBackground
     textView.layer.cornerRadius = 12
     textView.textContainerInset = UIEdgeInsets(top: 12, left: 8, bottom: 12, right: 8)
-    textView.accessibilityIdentifier = "preview-text"
     textView.delegate = context.coordinator
-    let host = PreviewHost(textView: textView, openURL: openURL)
-    let controller = KeyboardController(host: host)
-    let input = PreviewInputView(controller: controller)
-    textView.inputView = input
-    context.coordinator.host = host
-    context.coordinator.controller = controller
+    context.coordinator.textView = textView
     return textView
   }
 
@@ -90,19 +94,56 @@ struct PreviewTextView: UIViewRepresentable {
     // SwiftUI recreates the representable as text and focus change. Delegates
     // must write through the current bindings, including after dismissal.
     context.coordinator.parent = self
-    if textView.keyboardType != keyboardType {
+    let coordinator = context.coordinator
+    // Assigning text may synchronously notify selection delegates. Those
+    // intermediate ranges must not replace the range we are restoring.
+    coordinator.restoring = true
+    defer { coordinator.restoring = false }
+    let traitsChanged = textView.keyboardType != keyboardType
+    var documentChanged = traitsChanged
+    if traitsChanged {
       textView.keyboardType = keyboardType
-      textView.autocapitalizationType = keyboardType == .default ? .sentences : .none
-      textView.autocorrectionType = keyboardType == .default ? .default : .no
-      context.coordinator.controller?.documentDidChange()
     }
+    textView.autocapitalizationType = keyboardType == .default ? .sentences : .none
+    textView.autocorrectionType = keyboardType == .default ? .default : .no
     if textView.text != text {
       textView.text = text
-      context.coordinator.controller?.documentDidChange()
+      documentChanged = true
     }
+    let length = (text as NSString).length
+    let start = min(max(0, selection.location), length)
+    let range = NSRange(location: start, length: min(max(0, selection.length), length - start))
+    if textView.selectedRange != range {
+      textView.selectedRange = range
+      documentChanged = true
+    }
+    textView.accessibilityIdentifier = usePreview ? "preview-text" : "system-text"
+    textView.accessibilityLabel = "Type here"
+    if usePreview, coordinator.controller == nil {
+      let host = PreviewHost(textView: textView) { [weak coordinator] url in
+        guard let coordinator, coordinator.active, coordinator.parent.usePreview,
+              coordinator.textView?.window != nil else { return }
+        coordinator.parent.openURL(url)
+      }
+      let controller = KeyboardController(host: host)
+      coordinator.host = host
+      coordinator.controller = controller
+      textView.inputView = PreviewInputView(controller: controller)
+      if textView.isFirstResponder { controller.hostWillAppear() }
+      textView.reloadInputViews()
+      documentChanged = true
+    } else if !usePreview, coordinator.controller != nil {
+      coordinator.removeKeyboard()
+      textView.inputView = nil
+      textView.reloadInputViews()
+    } else if traitsChanged, textView.isFirstResponder {
+      textView.reloadInputViews()
+    }
+    if documentChanged { coordinator.controller?.documentDidChange() }
     if focused, !textView.isFirstResponder {
-      DispatchQueue.main.async { [weak textView, weak coordinator = context.coordinator] in
-        guard coordinator?.parent.focused == true else { return }
+      DispatchQueue.main.async { [weak textView, weak coordinator] in
+        guard let coordinator, coordinator.active, coordinator.parent.focused,
+              textView?.window != nil else { return }
         textView?.becomeFirstResponder()
       }
     } else if !focused, textView.isFirstResponder {
@@ -110,33 +151,66 @@ struct PreviewTextView: UIViewRepresentable {
     }
   }
 
+  static func dismantleUIView(_ textView: UITextView, coordinator: Coordinator) {
+    // Invalidate before resigning/removing: UIKit and queued controller work
+    // must not publish into a replacement editor's shared draft or focus.
+    coordinator.active = false
+    textView.delegate = nil
+    coordinator.removeKeyboard()
+    textView.resignFirstResponder()
+    textView.inputView = nil
+  }
+
   final class Coordinator: NSObject, UITextViewDelegate {
     var parent: PreviewTextView
+    weak var textView: UITextView?
     var host: PreviewHost?
     var controller: KeyboardController?
+    var active = true
+    var restoring = false
 
     init(_ parent: PreviewTextView) {
       self.parent = parent
     }
 
+    private func owns(_ textView: UITextView) -> Bool {
+      active && self.textView === textView && textView.window != nil
+    }
+
     func textViewDidBeginEditing(_ textView: UITextView) {
-      if !parent.focused { parent.focused = true }
+      guard owns(textView) else { return }
+      if !restoring, !parent.focused { parent.focused = true }
       controller?.hostWillAppear()
     }
 
     func textViewDidEndEditing(_ textView: UITextView) {
-      if parent.focused { parent.focused = false }
+      guard owns(textView) else { return }
+      if !restoring, parent.focused { parent.focused = false }
       controller?.hostDidDisappear()
     }
 
     func textViewDidChange(_ textView: UITextView) {
+      guard owns(textView), !restoring else { return }
       parent.text = textView.text
+      parent.selection = textView.selectedRange
     }
 
     func textViewDidChangeSelection(_ textView: UITextView) {
+      guard owns(textView), !restoring else { return }
+      parent.selection = textView.selectedRange
       // Deferred so the keyboard's own multi-step edits finish first, as with the
       // asynchronous text proxy in the extension.
-      DispatchQueue.main.async { [weak self] in self?.controller?.documentDidChange() }
+      DispatchQueue.main.async { [weak self] in
+        guard let self, let textView = self.textView, self.owns(textView) else { return }
+        self.controller?.documentDidChange()
+      }
+    }
+
+    func removeKeyboard() {
+      controller?.hostDidDisappear()
+      host?.invalidate()
+      controller = nil
+      host = nil
     }
   }
 }

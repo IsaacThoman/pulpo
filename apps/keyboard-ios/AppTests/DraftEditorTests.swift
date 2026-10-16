@@ -18,25 +18,25 @@ final class DraftEditorTests: XCTestCase {
     var body: some View {
       PreviewTextView(text: $state.text, selection: $state.selection, focused: $state.focused,
         usePreview: state.preview) { state.urls.append($0) }
-        .id(state.preview)
     }
   }
 
   var window: UIWindow!
   var state: State!
 
-  override func setUp() {
-    super.setUp()
+  override func setUp() async throws {
+    try await super.setUp()
     state = State()
-    window = UIWindow(frame: UIScreen.main.bounds)
+    let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first!
+    window = UIWindow(windowScene: scene)
   }
 
-  override func tearDown() {
+  override func tearDown() async throws {
     window.rootViewController = nil
     window.isHidden = true
     window = nil
     state = nil
-    super.tearDown()
+    try await super.tearDown()
   }
 
   private func settle() {
@@ -45,7 +45,7 @@ final class DraftEditorTests: XCTestCase {
 
   private func findEditor(_ view: UIView) -> UITextView? {
     if let text = view as? UITextView { return text }
-    return view.subviews.lazy.compactMap { findEditor($0) }.first
+    return view.subviews.lazy.compactMap { self.findEditor($0) }.first
   }
 
   @discardableResult private func mount() throws -> UITextView {
@@ -71,9 +71,11 @@ final class DraftEditorTests: XCTestCase {
         let first = try mount()
         XCTAssertEqual(first.selectedRange, range)
         unmount()
+        state.focused = focused
         let restored = try mount()
         XCTAssertEqual(restored.text, original)
         XCTAssertEqual(restored.selectedRange, range)
+        XCTAssertEqual(restored.isFirstResponder, focused)
         restored.insertText("X")
         restored.delegate?.textViewDidChange?(restored)
         XCTAssertEqual(state.text, (original as NSString).replacingCharacters(in: range, with: "X"))
@@ -96,6 +98,27 @@ final class DraftEditorTests: XCTestCase {
       XCTAssertFalse(editor.isFirstResponder)
       XCTAssertFalse(state.focused)
     }
+  }
+
+  func testFocusedSwitchingRetainsEmojiSelectionAndCanReplaceIt() throws {
+    let original = state.text
+    state.selection = (original as NSString).range(of: "café")
+    let range = state.selection
+    state.focused = true
+    try mount()
+    for preview in [false, true] {
+      state.preview = preview
+      settle()
+      let editor = try XCTUnwrap(findEditor(window.rootViewController!.view))
+      XCTAssertTrue(editor.isFirstResponder)
+      XCTAssertTrue(state.focused)
+      XCTAssertEqual(editor.selectedRange, range)
+      XCTAssertEqual(editor.inputView is PreviewInputView, preview)
+    }
+    let editor = try XCTUnwrap(findEditor(window.rootViewController!.view))
+    editor.insertText("té")
+    editor.delegate?.textViewDidChange?(editor)
+    XCTAssertEqual(state.text, (original as NSString).replacingCharacters(in: range, with: "té"))
   }
 
   func testClearResetsRangeAndRemainsEmptyAfterRecreationAndModeChange() throws {

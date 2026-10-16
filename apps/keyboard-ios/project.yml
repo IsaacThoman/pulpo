@@ -104,6 +104,17 @@ targets:
         PRODUCT_NAME: PulpoKeyboardExtension
         APPLICATION_EXTENSION_API_ONLY: YES
         SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
+  PulpoKeyboardAppTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: AppTests
+    dependencies:
+      - target: PulpoKeyboard
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.isaacthoman.pulpo.keyboard.apptests
+        GENERATE_INFOPLIST_FILE: YES
   PulpoKeyboardUITests:
     type: bundle.ui-testing
     platform: iOS
@@ -129,4 +140,5 @@ schemes:
     test:
       config: Debug
       targets:
+        - PulpoKeyboardAppTests
         - PulpoKeyboardUITests
