@@ -1,0 +1,10 @@
+{
+  "classification": "Independent preexecution AUTHOR-V2 approval; not product acceptance",
+  "allArtifactsVerified": 1732,
+  "archiveSHA256": "632a5942ea3570305b7640a9b05af87eb6cd2ac13a2fcd66c00f982c344fd0f7",
+  "archiveBytes": 6310276,
+  "reportSHA256": "a42b5a05f78fc58cbed2fce26ddd06a214987582647c6911e520dec563dcd536",
+  "productExecutions": 0,
+  "parentPayloadOpened": false,
+  "v1RejectionRetained": true
+}
