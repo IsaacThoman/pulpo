@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { listSuggestions, resolveSuggestions, type SuggestionAction, type SuggestionHunk, type SuggestionRef } from '@pulpo/client-core/doc-schema'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
-import { Selection } from '@tiptap/pm/state'
+import { Selection, type EditorState } from '@tiptap/pm/state'
 import { useEditorState, type Editor } from '@tiptap/react'
 import { ui, uit } from '@/i18n/ui'
 import { SUGGESTION_REVIEW_META } from './suggestion-typing'
@@ -58,8 +58,16 @@ export function describeHunk(hunk: Pick<SuggestionHunk, 'inserted' | 'deleted'>)
   return ui("Change the layout")
 }
 
-/** How long the card stays after the pointer leaves a suggestion, so it can be reached. */
+/**
+ * How long the card stays after the pointer leaves its suggestion, for plain text or another
+ * suggestion, so it can be reached across whatever lies between.
+ */
 const HOVER_GRACE_MS = 250
+
+/** The suggestion an event's target is in. */
+function suggestionIdOf(event: Event): string | null {
+  return (event.target as Element | null)?.closest?.('[data-suggestion-id]')?.getAttribute('data-suggestion-id') ?? null
+}
 
 /**
  * The document's suggestions and the one being looked at: the hunk under the pointer, else the
@@ -69,21 +77,23 @@ export function useSuggestionReview(editor: Editor, onResolved?: () => void) {
   // The hunk last stepped to, and where that put the cursor. While the cursor stays there that
   // hunk is the one looked at, even when the position also falls inside or next to another.
   const stepped = useRef<{ id: string; pos: number } | null>(null)
+  const cursorHunkId = useCallback((state: EditorState) => {
+    const list = docSuggestions(state.doc)
+    const pos = state.selection.from
+    const step = stepped.current
+    return step?.pos === pos && list.some((hunk) => hunk.id === step.id) ? step.id : hunkAt(list, pos)?.id ?? null
+  }, [])
   const { hunks, cursorId } = useEditorState({
     editor,
-    selector: ({ editor: current }) => {
-      const list = docSuggestions(current.state.doc)
-      const pos = current.state.selection.from
-      const step = stepped.current
-      const cursorId = step?.pos === pos && list.some((hunk) => hunk.id === step.id) ? step.id : hunkAt(list, pos)?.id ?? null
-      return { hunks: list, cursorId }
-    },
+    selector: ({ editor: current }) => ({ hunks: docSuggestions(current.state.doc), cursorId: cursorHunkId(current.state) }),
     // The list only changes with the document, and is then a new array.
     equalityFn: (a, b) => b !== null && a.hunks === b.hunks && a.cursorId === b.cursorId,
   })
   const [hoverId, setHoverId] = useState<string | null>(null)
   const previousHunks = useRef(hunks.map((hunk) => hunk.id).join(','))
-  const leaveTimer = useRef<number | undefined>(undefined)
+  const hoverTimer = useRef<number | undefined>(undefined)
+  // The hunk whose card is showing, for the pointer handlers.
+  const shownId = useRef<string | null>(null)
 
   useEffect(() => {
     const ids = hunks.map((hunk) => hunk.id).join(',')
@@ -93,22 +103,46 @@ export function useSuggestionReview(editor: Editor, onResolved?: () => void) {
     onResolved?.()
   }, [hunks, onResolved])
 
-  const keepHover = useCallback(() => window.clearTimeout(leaveTimer.current), [])
-  const releaseHover = useCallback(() => {
-    window.clearTimeout(leaveTimer.current)
-    leaveTimer.current = window.setTimeout(() => setHoverId(null), HOVER_GRACE_MS)
+  const keepHover = useCallback(() => window.clearTimeout(hoverTimer.current), [])
+  /** Hovers `id`, or nothing, unless the pointer gets back to the card or its suggestion first. */
+  const hoverSoon = useCallback((id: string | null) => {
+    window.clearTimeout(hoverTimer.current)
+    hoverTimer.current = window.setTimeout(() => setHoverId(id), HOVER_GRACE_MS)
   }, [])
+  /** Hovers `id`, or nothing, at once. */
+  const hoverNow = useCallback((id: string | null) => {
+    window.clearTimeout(hoverTimer.current)
+    // Before React shows the card, so the pointer moving straight on is handled as leaving it.
+    shownId.current = id
+    setHoverId(id)
+  }, [])
+  const releaseHover = useCallback(() => hoverSoon(null), [hoverSoon])
+  const clearHover = () => {
+    window.clearTimeout(hoverTimer.current)
+    setHoverId(null)
+  }
 
   useEffect(() => {
     const dom = editor.view.dom
     const over = (event: MouseEvent) => {
-      const id = (event.target as Element | null)?.closest?.('[data-suggestion-id]')?.getAttribute('data-suggestion-id') ?? null
-      if (id) {
-        keepHover()
-        setHoverId(id)
-      } else {
-        releaseHover()
-      }
+      const id = suggestionIdOf(event)
+      if (id && id === shownId.current) keepHover()
+      else if (id && !shownId.current) hoverNow(id)
+      // On the way to the card the pointer may cross other suggestions, or the block suggestion
+      // around an inline one; they only take the card over once the pointer stays.
+      else hoverSoon(id)
+    }
+    // Clicking a suggestion picks it at once. A touch never travels to the card, so a tap picks
+    // whatever it lands on; that waits for its click, which comes once the caret is placed and not
+    // after a swipe to scroll. (WebKit gives clicks from taps the pointer type "mouse".)
+    let pointerType = 'mouse'
+    const press = (event: PointerEvent) => {
+      pointerType = event.pointerType
+      const id = suggestionIdOf(event)
+      if (id && pointerType === 'mouse') hoverNow(id)
+    }
+    const tap = (event: MouseEvent) => {
+      if (pointerType !== 'mouse') hoverNow(suggestionIdOf(event))
     }
     // Moving onto the card keeps the suggestion. React runs the card's onPointerEnter before this
     // mouseleave, so starting the timer here would hide the card under the pointer.
@@ -116,20 +150,27 @@ export function useSuggestionReview(editor: Editor, onResolved?: () => void) {
       if (!(event.relatedTarget as Element | null)?.closest?.('[data-suggestion-card]')) releaseHover()
     }
     dom.addEventListener('mouseover', over)
+    dom.addEventListener('pointerdown', press)
+    dom.addEventListener('click', tap)
     dom.addEventListener('mouseleave', leave)
     return () => {
       dom.removeEventListener('mouseover', over)
+      dom.removeEventListener('pointerdown', press)
+      dom.removeEventListener('click', tap)
       dom.removeEventListener('mouseleave', leave)
-      window.clearTimeout(leaveTimer.current)
+      window.clearTimeout(hoverTimer.current)
     }
-  }, [editor, keepHover, releaseHover])
+  }, [editor, keepHover, hoverSoon, hoverNow, releaseHover])
 
   const active = hunks.find((hunk) => hunk.id === hoverId) ?? hunks.find((hunk) => hunk.id === cursorId) ?? null
+  useLayoutEffect(() => {
+    shownId.current = active?.id ?? null
+  })
 
   const go = (direction: 1 | -1) => {
     const target = adjacentHunk(hunks, editor.state.selection.from, active?.id ?? null, direction)
     if (!target) return
-    setHoverId(null)
+    clearHover()
     const { tr } = editor.state
     const selection = Selection.near(tr.doc.resolve(target.from))
     stepped.current = { id: target.id, pos: selection.from }
@@ -140,7 +181,7 @@ export function useSuggestionReview(editor: Editor, onResolved?: () => void) {
   const resolve = (match: (ref: SuggestionRef) => boolean, action: SuggestionAction) => {
     const tr = resolveSuggestions(editor.state.tr.setMeta(SUGGESTION_REVIEW_META, true), match, action)
     if (!tr.docChanged) return
-    setHoverId(null)
+    clearHover()
     editor.view.dispatch(tr)
   }
 
