@@ -1,0 +1,506 @@
+{
+  "elapsedSeconds" : 0.12972291666665114,
+  "outcomes" : [
+    {
+      "category" : "diagnostic-typo",
+      "correct" : false,
+      "deletions" : 0,
+      "desired" : "Días ",
+      "id" : "diagnostic-001",
+      "keyCount" : 6,
+      "keyMilliseconds" : [
+        0.23020833396003582,
+        0.1094999997803825,
+        0.4573333335429197,
+        0.14512500001728768,
+        0.4257916662027128,
+        0.5467500004670001
+      ],
+      "mode" : "es",
+      "output" : "Díass ",
+      "rawOutput" : "Díass ",
+      "typed" : "Díass "
+    },
+    {
+      "category" : "diagnostic-typo",
+      "correct" : true,
+      "deletions" : 5,
+      "desired" : "días ",
+      "id" : "diagnostic-002",
+      "keyCount" : 6,
+      "keyMilliseconds" : [
+        0.028083333745598793,
+        0.05929166673013242,
+        0.08649999927001772,
+        0.11208333398826653,
+        0.38533333281520754,
+        0.45612499980052235
+      ],
+      "mode" : "es",
+      "output" : "días ",
+      "rawOutput" : "díass ",
+      "typed" : "díass "
+    },
+    {
+      "category" : "diagnostic-typo",
+      "correct" : false,
+      "deletions" : 0,
+      "desired" : "Árbol ",
+      "id" : "diagnostic-003",
+      "keyCount" : 7,
+      "keyMilliseconds" : [
+        0.06037500043021282,
+        0.5515000002560555,
+        0.2802499993777019,
+        0.20433333338587545,
+        0.737541667149344,
+        0.7438333332174807,
+        0.7663333326490829
+      ],
+      "mode" : "es",
+      "output" : "Árboll ",
+      "rawOutput" : "Árboll ",
+      "typed" : "Árboll "
+    },
+    {
+      "category" : "diagnostic-typo",
+      "correct" : true,
+      "deletions" : 6,
+      "desired" : "árbol ",
+      "id" : "diagnostic-004",
+      "keyCount" : 7,
+      "keyMilliseconds" : [
+        0.03204166659998009,
+        0.05891666660318151,
+        0.07579166594950948,
+        0.15608333342242986,
+        0.605208333581686,
+        0.6524999998873682,
+        0.6984166666370584
+      ],
+      "mode" : "es",
+      "output" : "árbol ",
+      "rawOutput" : "árboll ",
+      "typed" : "árboll "
+    },
+    {
+      "category" : "diagnostic-typo",
+      "correct" : false,
+      "deletions" : 0,
+      "desired" : "Adiós ",
+      "id" : "diagnostic-005",
+      "keyCount" : 7,
+      "keyMilliseconds" : [
+        0.025750000531843398,
+        0.5273333326840657,
+        0.2620833338369266,
+        0.5089999995107064,
+        0.6198333339852979,
+        0.6180833324833657,
+        0.657208333905146
+      ],
+      "mode" : "es",
+      "output" : "Adióss ",
+      "rawOutput" : "Adióss ",
+      "typed" : "Adióss "
+    },
+    {
+      "category" : "diagnostic-typo",
+      "correct" : true,
+      "deletions" : 6,
+      "desired" : "adiós ",
+      "id" : "diagnostic-006",
+      "keyCount" : 7,
+      "keyMilliseconds" : [
+        0.02562500048952643,
+        0.05229166617937153,
+        0.07841666683816584,
+        0.14800000008108327,
+        0.5804583333883784,
+        0.6162916661196505,
+        0.6400000002031447
+      ],
+      "mode" : "es",
+      "output" : "adiós ",
+      "rawOutput" : "adióss ",
+      "typed" : "adióss "
+    },
+    {
+      "category" : "diagnostic-typo",
+      "correct" : false,
+      "deletions" : 0,
+      "desired" : "Mañana ",
+      "id" : "diagnostic-007",
+      "keyCount" : 8,
+      "keyMilliseconds" : [
+        0.035958333683083765,
+        0.06062500051484676,
+        0.10179166656598682,
+        0.1599166662344942,
+        0.49812500037660357,
+        0.5357500003810856,
+        1.0225416663161013,
+        0.999124999907508
+      ],
+      "mode" : "es",
+      "output" : "Mañanaa ",
+      "rawOutput" : "Mañanaa ",
+      "typed" : "Mañanaa "
+    },
+    {
+      "category" : "diagnostic-typo",
+      "correct" : true,
+      "deletions" : 7,
+      "desired" : "mañana ",
+      "id" : "diagnostic-008",
+      "keyCount" : 8,
+      "keyMilliseconds" : [
+        0.02658333323779516,
+        0.05108333334646886,
+        0.08925000020099105,
+        0.1372500000798027,
+        0.4839583334614872,
+        0.5442083329398884,
+        0.9079166666197125,
+        0.9666666664998047
+      ],
+      "mode" : "es",
+      "output" : "mañana ",
+      "rawOutput" : "mañanaa ",
+      "typed" : "mañanaa "
+    },
+    {
+      "category" : "diagnostic-typo",
+      "correct" : false,
+      "deletions" : 0,
+      "desired" : "Aquí ",
+      "id" : "diagnostic-009",
+      "keyCount" : 6,
+      "keyMilliseconds" : [
+        0.0351250000676373,
+        0.051541665925469715,
+        0.09362500077259028,
+        0.1370416666759411,
+        0.7262500002980232,
+        0.5335416663001524
+      ],
+      "mode" : "es",
+      "output" : "Aquíi ",
+      "rawOutput" : "Aquíi ",
+      "typed" : "Aquíi "
+    },
+    {
+      "category" : "diagnostic-typo",
+      "correct" : true,
+      "deletions" : 5,
+      "desired" : "aquí ",
+      "id" : "diagnostic-010",
+      "keyCount" : 6,
+      "keyMilliseconds" : [
+        0.03654166721389629,
+        0.05004166632716078,
+        0.09037499967234908,
+        0.11925000035262201,
+        0.5004999993616366,
+        0.574333334043331
+      ],
+      "mode" : "es",
+      "output" : "aquí ",
+      "rawOutput" : "aquíi ",
+      "typed" : "aquíi "
+    },
+    {
+      "category" : "diagnostic-typo",
+      "correct" : false,
+      "deletions" : 0,
+      "desired" : "Fácil ",
+      "id" : "diagnostic-011",
+      "keyCount" : 7,
+      "keyMilliseconds" : [
+        0.03999999989900971,
+        0.06708333330607275,
+        0.39270833349291934,
+        0.1138333327617147,
+        0.3697500005728216,
+        0.4052499998579151,
+        0.4558333330351161
+      ],
+      "mode" : "es",
+      "output" : "Fácill ",
+      "rawOutput" : "Fácill ",
+      "typed" : "Fácill "
+    },
+    {
+      "category" : "diagnostic-typo",
+      "correct" : true,
+      "deletions" : 6,
+      "desired" : "fácil ",
+      "id" : "diagnostic-012",
+      "keyCount" : 7,
+      "keyMilliseconds" : [
+        0.026416666514705867,
+        0.07983333398442483,
+        0.07666666624572827,
+        0.1064583329934976,
+        0.3877500003000023,
+        0.37437500031956006,
+        0.8148333336066571
+      ],
+      "mode" : "es",
+      "output" : "fácil ",
+      "rawOutput" : "fácill ",
+      "typed" : "fácill "
+    },
+    {
+      "category" : "diagnostic-typo",
+      "correct" : false,
+      "deletions" : 0,
+      "desired" : "Días ",
+      "id" : "diagnostic-001",
+      "keyCount" : 6,
+      "keyMilliseconds" : [
+        0.1732500004436588,
+        0.0848333329486195,
+        0.13754166684520897,
+        0.4628750002666493,
+        0.7493333332604379,
+        0.7492499998988933
+      ],
+      "mode" : "bi",
+      "output" : "Díass ",
+      "rawOutput" : "Díass ",
+      "typed" : "Díass "
+    },
+    {
+      "category" : "diagnostic-typo",
+      "correct" : false,
+      "deletions" : 0,
+      "desired" : "días ",
+      "id" : "diagnostic-002",
+      "keyCount" : 6,
+      "keyMilliseconds" : [
+        0.02512499941076385,
+        0.06275000032474054,
+        0.1071666665666271,
+        0.17358333388983738,
+        0.6430000003092573,
+        0.7198333332780749
+      ],
+      "mode" : "bi",
+      "output" : "díass ",
+      "rawOutput" : "díass ",
+      "typed" : "díass "
+    },
+    {
+      "category" : "diagnostic-typo",
+      "correct" : false,
+      "deletions" : 0,
+      "desired" : "Árbol ",
+      "id" : "diagnostic-003",
+      "keyCount" : 7,
+      "keyMilliseconds" : [
+        0.04879166681348579,
+        0.08975000037025893,
+        0.3020416661456693,
+        0.26108333349839086,
+        1.0802500000863802,
+        1.1195416664122604,
+        1.1658333332889015
+      ],
+      "mode" : "bi",
+      "output" : "Árboll ",
+      "rawOutput" : "Árboll ",
+      "typed" : "Árboll "
+    },
+    {
+      "category" : "diagnostic-typo",
+      "correct" : true,
+      "deletions" : 6,
+      "desired" : "árbol ",
+      "id" : "diagnostic-004",
+      "keyCount" : 7,
+      "keyMilliseconds" : [
+        0.027166666768607683,
+        0.06991666668909602,
+        0.09212499935529195,
+        0.19599999995989492,
+        1.0386666672275169,
+        1.0862499993891106,
+        1.2067500001649023
+      ],
+      "mode" : "bi",
+      "output" : "árbol ",
+      "rawOutput" : "árboll ",
+      "typed" : "árboll "
+    },
+    {
+      "category" : "diagnostic-typo",
+      "correct" : false,
+      "deletions" : 0,
+      "desired" : "Adiós ",
+      "id" : "diagnostic-005",
+      "keyCount" : 7,
+      "keyMilliseconds" : [
+        0.026291666472388897,
+        0.10504166675673332,
+        0.11825000001408625,
+        0.2235000001746812,
+        1.0563749992797966,
+        1.0018333332482143,
+        1.0604583339954843
+      ],
+      "mode" : "bi",
+      "output" : "Adióss ",
+      "rawOutput" : "Adióss ",
+      "typed" : "Adióss "
+    },
+    {
+      "category" : "diagnostic-typo",
+      "correct" : true,
+      "deletions" : 6,
+      "desired" : "adiós ",
+      "id" : "diagnostic-006",
+      "keyCount" : 7,
+      "keyMilliseconds" : [
+        0.020750000658154022,
+        0.060958333051530644,
+        0.08833333322399994,
+        0.18458333306625718,
+        0.8845416668918915,
+        0.9174166671073181,
+        0.982458333055547
+      ],
+      "mode" : "bi",
+      "output" : "adiós ",
+      "rawOutput" : "adióss ",
+      "typed" : "adióss "
+    },
+    {
+      "category" : "diagnostic-typo",
+      "correct" : false,
+      "deletions" : 0,
+      "desired" : "Mañana ",
+      "id" : "diagnostic-007",
+      "keyCount" : 8,
+      "keyMilliseconds" : [
+        0.04587499915942317,
+        0.0804999999672873,
+        0.15133333363337442,
+        0.22541666658071335,
+        0.8171250001396402,
+        0.874791666319652,
+        1.6942500005825423,
+        1.6842083332448965
+      ],
+      "mode" : "bi",
+      "output" : "Mañanaa ",
+      "rawOutput" : "Mañanaa ",
+      "typed" : "Mañanaa "
+    },
+    {
+      "category" : "diagnostic-typo",
+      "correct" : true,
+      "deletions" : 7,
+      "desired" : "mañana ",
+      "id" : "diagnostic-008",
+      "keyCount" : 8,
+      "keyMilliseconds" : [
+        0.02766666693787556,
+        0.06420833324227715,
+        0.11858333346026484,
+        0.18741666644928046,
+        0.7444166667482932,
+        0.814041666671983,
+        1.5220416662486969,
+        1.6055833339123637
+      ],
+      "mode" : "bi",
+      "output" : "mañana ",
+      "rawOutput" : "mañanaa ",
+      "typed" : "mañanaa "
+    },
+    {
+      "category" : "diagnostic-typo",
+      "correct" : false,
+      "deletions" : 0,
+      "desired" : "Aquí ",
+      "id" : "diagnostic-009",
+      "keyCount" : 6,
+      "keyMilliseconds" : [
+        0.028833333090005908,
+        0.062041666751611046,
+        0.11854166677949252,
+        0.401791666263307,
+        0.9457500000280561,
+        0.9287083330491441
+      ],
+      "mode" : "bi",
+      "output" : "Aquíi ",
+      "rawOutput" : "Aquíi ",
+      "typed" : "Aquíi "
+    },
+    {
+      "category" : "diagnostic-typo",
+      "correct" : true,
+      "deletions" : 5,
+      "desired" : "aquí ",
+      "id" : "diagnostic-010",
+      "keyCount" : 6,
+      "keyMilliseconds" : [
+        0.0273750001724693,
+        0.054958333748800214,
+        0.1104166667573736,
+        0.154166666106903,
+        0.8662083337185322,
+        0.969624999925145
+      ],
+      "mode" : "bi",
+      "output" : "aquí ",
+      "rawOutput" : "aquíi ",
+      "typed" : "aquíi "
+    },
+    {
+      "category" : "diagnostic-typo",
+      "correct" : false,
+      "deletions" : 0,
+      "desired" : "Fácil ",
+      "id" : "diagnostic-011",
+      "keyCount" : 7,
+      "keyMilliseconds" : [
+        0.033583332879061345,
+        0.08012499984033639,
+        0.4034583334941999,
+        0.15404166697408073,
+        0.6602083331017639,
+        0.7302916665139492,
+        0.7580416668133694
+      ],
+      "mode" : "bi",
+      "output" : "Fácill ",
+      "rawOutput" : "Fácill ",
+      "typed" : "Fácill "
+    },
+    {
+      "category" : "diagnostic-typo",
+      "correct" : true,
+      "deletions" : 6,
+      "desired" : "fácil ",
+      "id" : "diagnostic-012",
+      "keyCount" : 7,
+      "keyMilliseconds" : [
+        0.029208333216956817,
+        0.06829166704847012,
+        0.09033333299157675,
+        0.1307500006078044,
+        0.6499583332697512,
+        0.7192916664280347,
+        0.996583333289891
+      ],
+      "mode" : "bi",
+      "output" : "fácil ",
+      "rawOutput" : "fácill ",
+      "typed" : "fácill "
+    }
+  ],
+  "schema" : 1
+}
