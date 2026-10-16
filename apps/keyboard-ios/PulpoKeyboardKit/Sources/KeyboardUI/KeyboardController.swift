@@ -173,7 +173,7 @@ public final class KeyboardController: NSObject {
   private(set) var stack: LanguageStack?
   private weak var host: KeyboardHost?
   private var settings: KeyboardSettings
-  private var settingsStore: SettingsStore
+  private let settingsStore = SettingsStore()
   private var loadedLanguage: KeyboardLanguage
   private var reportedLanguage: KeyboardLanguage?
   private var account = AccountSnapshot.signedOut
@@ -271,7 +271,6 @@ public final class KeyboardController: NSObject {
     let initStart = PerfLog.begin()
     self.host = host
     bridge = dictationBridge
-    settingsStore = Self.settingsStore(for: host)
     settings = settingsStore.load()
     loadedLanguage = settings.language
     let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
@@ -304,7 +303,6 @@ public final class KeyboardController: NSObject {
     rootView.bar.onForget = { [weak self] in self?.forget($0) }
     rootView.bar.onMicrophone = { [weak self] in self?.startDictation() }
     rootView.bar.onSettings = { [weak self] in self?.host?.openApp(URL(string: "\(AppGroup.urlScheme)://settings")!) }
-    rootView.bar.onLanguage = { [weak self] language in self?.chooseLanguage(language) }
     rootView.bar.onUndo = { [weak self] in self?.undoWordDeletion() }
     rootView.search.onBack = { [weak self] in self?.endEmojiSearch(showingPanel: true) }
     rootView.search.onSelect = { [weak self] in self?.insertSearchResult($0) }
@@ -351,7 +349,6 @@ public final class KeyboardController: NSObject {
     // The app can clear learned words while this process stays alive.
     stack?.personal.reloadIfChangedOnDisk()
     stack?.touch.reloadIfChangedOnDisk()
-    if let host { settingsStore = Self.settingsStore(for: host) }
     settings = settingsStore.load()
     if settings.language != loadedLanguage { replaceLanguage(settings.language) }
     engine.settings = settings
@@ -378,26 +375,6 @@ public final class KeyboardController: NSObject {
       DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in self?.rootView.keys.debugShowPreview(key) }
     }
     #endif
-  }
-
-  private static func settingsStore(for host: KeyboardHost) -> SettingsStore {
-    // App Group preferences require Full Access. A keyboard-local language
-    // choice remains usable and persistent even when the group is unavailable.
-    host.hasFullAccess || host.isInsideApp ? SettingsStore() : SettingsStore(defaults: .standard)
-  }
-
-  private func chooseLanguage(_ language: KeyboardLanguage) {
-    guard language != loadedLanguage else { return }
-    guard replaceLanguage(language) else {
-      rootView.bar.showNotice("This language dictionary is unavailable.")
-      return
-    }
-    settings.language = language
-    settingsStore.save(settings)
-    engine.settings = settings
-    wordDeletionUndo = nil
-    deletionPreview = nil
-    sync()
   }
 
   @discardableResult
@@ -512,7 +489,6 @@ public final class KeyboardController: NSObject {
   // MARK: Rendering
 
   private func sync() {
-    rootView.bar.setLanguage(loadedLanguage)
     if reportedLanguage != loadedLanguage {
       host?.setTypingLanguage(loadedLanguage.primaryLanguage)
       reportedLanguage = loadedLanguage

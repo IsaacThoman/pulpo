@@ -82,11 +82,10 @@ final class SettingsInstalledRouteR50Tests: XCTestCase {
     XCTAssertEqual(status(2), expected)
     XCTAssertEqual(status(3), "Done")
     let original = (1...3).map { status($0) }
-    app.buttons["keyboard-language"].tap()
-    let request = app.buttons["Keyboard Settings"]
+    let request = app.buttons["keyboard-settings"]
     evidence(fullAccess ? "r50-installed-completed-menu" : "r50-installed-off-menu")
     let menuAvailable = request.waitForExistence(timeout: 3) && request.isHittable
-    let binding = XCTAttachment(string: "Full Access: \(expected); setup statuses: \(original); installed Keyboard Settings menu available: \(menuAvailable); route binding: \(menuAvailable ? "actual installed menu tap" : "real public OS URL fallback; installed menu unavailable")")
+    let binding = XCTAttachment(string: "Full Access: \(expected); setup statuses: \(original); installed Keyboard Settings button available: \(menuAvailable); route binding: \(menuAvailable ? "actual installed settings button tap" : "real public OS URL fallback; installed settings button unavailable")")
     binding.name = fullAccess ? "r50-completed-route-binding" : "r50-off-route-binding"; binding.lifetime = .keepAlways; add(binding)
     if menuAvailable { request.tap() }
     else { XCUIDevice.shared.system.open(URL(string: "pulpokeyboard://settings")!) }

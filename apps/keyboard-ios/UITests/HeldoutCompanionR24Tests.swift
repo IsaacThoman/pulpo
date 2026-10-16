@@ -47,8 +47,7 @@ final class HeldoutCompanionR24Tests: XCTestCase {
     }
     selectAll.tap()
     try capture("fixture-selected-unverified-range", documentVisible: true)
-    app.key("keyboard-language").tap()
-    app.buttons["Keyboard Settings"].tap()
+    app.navigationBars.buttons.element(boundBy: 0).tap()
     try capture("open-settings", documentVisible: false)
     let language = app.key("typing-language")
     for _ in 0..<12 where !language.isHittable { app.swipeUp() }
@@ -65,8 +64,7 @@ final class HeldoutCompanionR24Tests: XCTestCase {
     field.tap()
     try capture("return-and-refocus", documentVisible: true)
     XCTAssertEqual(app.previewText, expected)
-    app.key("keyboard-language").tap()
-    app.buttons["Keyboard Settings"].tap()
+    app.navigationBars.buttons.element(boundBy: 0).tap()
     for _ in 0..<12 where !language.isHittable { app.swipeUp() }
     let reopened = language.label + " " + String(describing: language.value)
     observations.append(["stage": "reopened-language", "value": reopened, "selectedValueVisible": reopened.contains("Español")])

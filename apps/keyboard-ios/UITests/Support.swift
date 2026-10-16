@@ -36,6 +36,20 @@ extension XCUIApplication {
   var previewText: String {
     (textViews["preview-text"].value as? String) ?? ""
   }
+
+  /// Picks a typing language in the app's settings, then refocuses the Try It preview.
+  func chooseTypingLanguage(_ title: String) {
+    navigationBars.buttons.element(boundBy: 0).tap()
+    let picker = key("typing-language")
+    for _ in 0..<12 where !picker.isHittable { swipeUp() }
+    picker.tap()
+    buttons[title].firstMatch.tap()
+    let tryIt = key("try-it")
+    for _ in 0..<12 where !tryIt.isHittable { swipeDown() }
+    tryIt.tap()
+    textViews["preview-text"].tap()
+    _ = key("key-q").waitForExistence(timeout: 5)
+  }
 }
 
 /// Multi-point touch paths through XCTest's event synthesizer, for swipe typing.

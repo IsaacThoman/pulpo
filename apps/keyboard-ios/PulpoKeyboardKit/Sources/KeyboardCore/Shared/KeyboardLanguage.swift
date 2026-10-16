@@ -15,14 +15,6 @@ public enum KeyboardLanguage: String, Codable, CaseIterable, Sendable {
     }
   }
 
-  public var shortTitle: String {
-    switch self {
-    case .english: "EN"
-    case .spanish: "ES"
-    case .bilingual: "EN/ES"
-    }
-  }
-
   public var primaryLanguage: String {
     self == .spanish ? "es" : "en-US"
   }

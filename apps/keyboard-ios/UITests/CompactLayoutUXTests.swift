@@ -61,6 +61,9 @@ final class CompactLayoutUXTests: XCTestCase {
   private func exercise(_ input: Case) throws -> Report {
     var report = Report(id: input.id)
     let language: KeyboardLanguage = input.language == "en" ? .english : input.language == "es" ? .spanish : .bilingual
+    var settings = SettingsStore().load()
+    settings.language = language
+    SettingsStore().save(settings)
     let h = ControllerHarness(text: "", optimistic: true, waitsForEmoji: false)
     let vc = h.viewController
     let root = h.controller.rootView
@@ -93,7 +96,6 @@ final class CompactLayoutUXTests: XCTestCase {
     vc.view.frame.size.height = h.controller.preferredHeight
     vc.view.setNeedsLayout()
     vc.view.layoutIfNeeded()
-    h.controller.rootView.bar.onLanguage?(language)
     h.controller.keysView(root.keys, chooseOneHanded: input.dock == "left" ? .left : input.dock == "right" ? .right : .off)
     h.pump()
     // Bold Text is read globally by production. Inject its production style
@@ -190,9 +192,7 @@ final class CompactLayoutUXTests: XCTestCase {
     }
 
     checkButtons("initial")
-    let languageButton = try XCTUnwrap(root.bar.subviews.compactMap { $0 as? UIButton }.first { $0.accessibilityIdentifier == "keyboard-language" })
-    report.gate(languageButton.menu?.children.count == 4 && languageButton.showsMenuAsPrimaryAction, "language menu choices unavailable")
-    report.gate(languageButton.accessibilityLabel?.contains(language.title) == true, "language label lost full language meaning")
+    report.gate(!root.bar.subviews.contains { $0.accessibilityIdentifier == "keyboard-language" }, "language control returned to the suggestion bar")
     checkKeys("letters")
     if !root.sidePanel.isHidden {
       let originalSide = root.oneHanded
@@ -360,15 +360,6 @@ final class CompactLayoutUXTests: XCTestCase {
 /// Real XCTest event synthesis supplements in-process hit testing.
 @MainActor
 final class CompactLayoutInteractionTests: PreviewTypingTestCase {
-  func testLowerLanguageControlOpensMenuWithoutTyping() {
-    let language = app.key("keyboard-language")
-    language.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.94)).tap()
-    XCTAssertTrue(app.buttons["Español"].waitForExistence(timeout: 3), "A lower language tap should open the language menu")
-    XCTAssertEqual(app.previewText, "", "A language tap must not type a letter")
-    app.buttons["Español"].tap()
-    XCTAssertTrue(language.label.contains("Español"))
-  }
-
   func testLowerMicrophoneControlPresentsDictationWithoutTyping() {
     let mic = app.key("dictate")
     mic.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.94)).tap()

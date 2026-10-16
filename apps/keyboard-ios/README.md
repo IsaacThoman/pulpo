@@ -145,11 +145,10 @@ the next dictation starts without leaving the current app. The session token sta
 the app's Keychain; the keyboard extension never makes network requests.
 
 **Full Access** is needed for dictation, haptics, and reading shared settings. Without
-it the keyboard still types, corrects, predicts and swipes using defaults, with a
-language choice saved locally in the keyboard.
+it the keyboard still types, corrects, predicts and swipes using defaults (English).
 
-Choose English (the default), Español, or English + Español in Typing Language
-settings, or tap EN/ES above the keys to switch while typing. Bilingual mode
+Choose English (the default), Español, or English + Español in the app's Typing
+Language setting. Bilingual mode
 accepts both vocabularies; Spanish mode gives stronger Spanish-only suggestions.
 Accents and ñ are available by holding a letter. All three modes work offline;
 the choice does not change dictation. Source attribution, reproducible data builds,

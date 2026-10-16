@@ -64,7 +64,7 @@ struct HomeView: View {
 
           if model.keyboardEnabled, !model.fullAccess {
             Section {
-              Label("Until Full Access is on, changes here don't reach the installed keyboard. You can still choose its language from EN or ES above the keys.", systemImage: "info.circle")
+              Label("Until Full Access is on, changes here, including typing language, don't reach the installed keyboard.", systemImage: "info.circle")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .accessibilityIdentifier("settings-need-full-access")
@@ -82,7 +82,7 @@ struct HomeView: View {
           } header: {
             Text("Language")
           } footer: {
-            Text("Spelling, suggestions and slide typing run on this iPhone. English + Español accepts both languages without switching. Touch and hold a letter for accents or ñ. Change language from EN or ES above the keys. This does not change dictation or translate text.")
+            Text("Spelling, suggestions and slide typing run on this iPhone. English + Español accepts both languages without switching. Touch and hold a letter for accents or ñ. This does not change dictation or translate text.")
           }
 
           Section("Typing") {

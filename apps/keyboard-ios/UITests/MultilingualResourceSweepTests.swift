@@ -183,10 +183,10 @@ final class MultilingualResourceSweepTests: XCTestCase {
     for cycle in 0..<21 {
       try autoreleasepool {
         for selected in sequence {
-          timed("controller.modeSwitch") { controller.rootView.bar.onLanguage?(selected) }
+          timed("controller.modeSwitch") { choose(selected, in: controller) }
           XCTAssertEqual(host.language, selected.primaryLanguage)
         }
-        timed("controller.returnToMeasuredMode") { controller.rootView.bar.onLanguage?(language) }
+        timed("controller.returnToMeasuredMode") { choose(language, in: controller) }
         let before = host.text.text
         timed("controller.emojiOpenAndLayout") {
           controller.keysView(
@@ -269,6 +269,16 @@ final class MultilingualResourceSweepTests: XCTestCase {
   }
 }
 
+/// Switches language the way the app does: through shared settings, picked up on appear.
+@MainActor
+private func choose(_ language: KeyboardLanguage, in controller: KeyboardController) {
+  let store = SettingsStore()
+  var settings = store.load()
+  settings.language = language
+  store.save(settings)
+  controller.hostWillAppear()
+}
+
 @MainActor
 private final class ResourceSweepHost: KeyboardHost {
   let text = ResourceSweepDocument()
@@ -308,9 +318,7 @@ final class MultilingualResourceInteractionTests: XCTestCase {
     app.launch()
     XCTAssertTrue(app.key("key-q").waitForExistence(timeout: 8))
     for title in ["English", "Español", "English + Español"] {
-      app.key("keyboard-language").tap()
-      app.buttons[title].firstMatch.tap()
-      XCTAssertTrue(app.key("keyboard-language").label.contains(title))
+      app.chooseTypingLanguage(title)
       app.key("key-emoji").tap()
       XCTAssertTrue(app.key("emoji-panel").waitForExistence(timeout: 6))
       app.key("emoji-search-open").tap()
@@ -326,7 +334,6 @@ final class MultilingualResourceInteractionTests: XCTestCase {
       XCUIDevice.shared.press(.home)
       app.activate()
       XCTAssertTrue(app.key("key-q").waitForExistence(timeout: 5))
-      XCTAssertTrue(app.key("keyboard-language").label.contains(title))
       XCTAssertEqual(app.previewText, inserted)
     }
   }

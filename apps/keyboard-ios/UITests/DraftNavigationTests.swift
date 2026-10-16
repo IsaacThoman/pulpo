@@ -18,8 +18,7 @@ final class DraftNavigationTests: PreviewTypingTestCase {
     app.typeOnPreview("hola")
     let before = app.previewText
     XCTAssertFalse(before.isEmpty)
-    app.key("keyboard-language").tap()
-    app.buttons["Keyboard Settings"].tap()
+    app.navigationBars.buttons.element(boundBy: 0).tap()
     XCTAssertTrue(app.navigationBars["Keyboard"].waitForExistence(timeout: 5))
     returnToTryIt()
     waitForText(before)

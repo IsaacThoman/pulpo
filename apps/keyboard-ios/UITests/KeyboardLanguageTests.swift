@@ -3,16 +3,10 @@ import XCTest
 @MainActor
 final class KeyboardLanguageTests: PreviewTypingTestCase {
   private func choose(_ title: String) {
-    let language = app.key("keyboard-language")
-    XCTAssertTrue(language.waitForExistence(timeout: 3))
-    language.tap()
-    let choice = app.buttons[title].firstMatch
-    XCTAssertTrue(choice.waitForExistence(timeout: 3), app.debugDescription)
-    choice.tap()
-    XCTAssertTrue(language.label.contains(title))
+    app.chooseTypingLanguage(title)
   }
 
-  func testSwitchesTypingAndSwipeLanguageWithoutLeavingTheKeyboard() throws {
+  func testSwitchesTypingAndSwipeLanguageFromSettings() throws {
     choose("Español")
     app.typeOnPreview("hols")
     let correction = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Hola")).firstMatch
@@ -43,9 +37,7 @@ final class KeyboardLanguageTests: PreviewTypingTestCase {
     app.terminate()
     app.launchArguments = ["-PKPreview"]
     app.launch()
-    let language = app.key("keyboard-language")
-    XCTAssertTrue(language.waitForExistence(timeout: 8))
-    XCTAssertTrue(language.label.contains("Español"))
+    XCTAssertTrue(app.key("key-q").waitForExistence(timeout: 8))
     app.typeOnPreview("graciss ")
     waitForText("Gracias ")
   }
@@ -70,25 +62,17 @@ final class KeyboardLanguageTests: PreviewTypingTestCase {
     }
   }
 
-  func testHostSettingsAndKeyboardShareLanguageSelection() {
+  func testTopBarHasNoLanguageControl() {
+    XCTAssertFalse(app.key("keyboard-language").exists)
+  }
+
+  func testSettingsPickerKeepsLanguageSelection() {
     choose("Español")
-    app.key("keyboard-language").tap()
-    app.buttons["Keyboard Settings"].tap()
-    XCTAssertTrue(app.navigationBars["Keyboard"].waitForExistence(timeout: 5), app.debugDescription)
+    app.typeOnPreview("graciss ")
+    waitForText("Gracias ")
+    app.navigationBars.buttons.element(boundBy: 0).tap()
     let picker = app.key("typing-language")
-    for _ in 0..<5 where !picker.exists || !picker.isHittable { app.swipeUp() }
-    XCTAssertTrue(picker.exists, app.debugDescription)
-    XCTAssertTrue((picker.label + (picker.value as? String ?? "")).contains("Español"))
-    picker.tap()
-    app.buttons["English + Español"].firstMatch.tap()
-    let preview = app.key("try-it")
-    for _ in 0..<5 where !preview.isHittable { app.swipeDown() }
-    preview.tap()
-    // Returning from Settings restores the draft without forcing the keyboard
-    // open. Explicitly focus before checking the keyboard's language label.
-    app.textViews["preview-text"].tap()
-    let language = app.key("keyboard-language")
-    XCTAssertTrue(language.waitForExistence(timeout: 5))
-    XCTAssertTrue(language.label.contains("English + Español"))
+    for _ in 0..<12 where !picker.isHittable { app.swipeUp() }
+    XCTAssertTrue((picker.label + (picker.value as? String ?? "")).contains("Español"), app.debugDescription)
   }
 }

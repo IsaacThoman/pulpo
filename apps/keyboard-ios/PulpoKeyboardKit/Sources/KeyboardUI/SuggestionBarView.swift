@@ -7,7 +7,6 @@ final class SuggestionBarView: UIView {
   var onForget: ((Suggestion) -> Void)?
   var onMicrophone: (() -> Void)?
   var onSettings: (() -> Void)?
-  var onLanguage: ((KeyboardLanguage) -> Void)?
   var onUndo: (() -> Void)?
 
   private var style: KeyboardStyle
@@ -15,8 +14,6 @@ final class SuggestionBarView: UIView {
   private let dividers = (0..<2).map { _ in CALayer() }
   private let microphone = UIButton(type: .system)
   private let settings = UIButton(type: .system)
-  private let language = UIButton(type: .system)
-  private var currentLanguage: KeyboardLanguage?
   private let notice = NoticeView()
   /// What a delete swipe will remove, while the finger is down.
   private let deletionLabel = UILabel()
@@ -44,10 +41,6 @@ final class SuggestionBarView: UIView {
     settings.accessibilityIdentifier = "keyboard-settings"
     settings.addTarget(self, action: #selector(settingsTapped), for: .touchUpInside)
     addSubview(settings)
-    language.accessibilityIdentifier = "keyboard-language"
-    language.titleLabel?.font = .systemFont(ofSize: 11, weight: .semibold)
-    language.showsMenuAsPrimaryAction = true
-    addSubview(language)
     deletionLabel.textAlignment = .center
     deletionLabel.lineBreakMode = .byTruncatingHead
     deletionLabel.accessibilityIdentifier = "deletion-preview"
@@ -72,7 +65,6 @@ final class SuggestionBarView: UIView {
     settings.setPreferredSymbolConfiguration(UIImage.SymbolConfiguration(pointSize: 17, weight: .regular), forImageIn: .normal)
     microphone.tintColor = style.label
     settings.tintColor = style.secondaryLabel
-    language.setTitleColor(style.secondaryLabel, for: .normal)
     for divider in dividers { divider.backgroundColor = style.divider.cgColor }
     slots.forEach { $0.apply(style) }
     notice.apply(style)
@@ -142,23 +134,6 @@ final class SuggestionBarView: UIView {
 
   var microphoneVisible = true { didSet { setNeedsLayout() } }
 
-  func setLanguage(_ selected: KeyboardLanguage) {
-    guard selected != currentLanguage else { return }
-    currentLanguage = selected
-    language.setTitle(selected.shortTitle, for: .normal)
-    language.accessibilityLabel = "Typing language, \(selected.title)"
-    language.accessibilityHint = "Choose English, Español, or both languages"
-    let choices: [UIMenuElement] = KeyboardLanguage.allCases.map { mode in
-      UIAction(title: mode.title, state: mode == selected ? .on : .off) { [weak self] _ in
-        self?.onLanguage?(mode)
-      }
-    }
-    let settings = UIAction(title: "Keyboard Settings", image: UIImage(systemName: "slider.horizontal.3")) { [weak self] _ in
-      self?.onSettings?()
-    }
-    language.menu = UIMenu(title: "Typing Language", children: choices + [UIMenu(options: .displayInline, children: [settings])])
-  }
-
   func setSuggestions(_ suggestions: [Suggestion]) {
     self.suggestions = suggestions
     accessory = .suggestions
@@ -189,13 +164,10 @@ final class SuggestionBarView: UIView {
     let micWidth: CGFloat = microphoneVisible ? 46 : 0
     microphone.isHidden = !microphoneVisible
     microphone.frame = CGRect(x: bounds.width - micWidth - 2, y: 0, width: micWidth, height: bounds.height)
-    let languageWidth: CGFloat = 48
-    language.frame = CGRect(x: bounds.width - micWidth - languageWidth - 2, y: 0, width: languageWidth, height: bounds.height)
     settings.frame = CGRect(x: 4, y: 0, width: 44, height: bounds.height)
     let inset: CGFloat = microphoneVisible ? 6 : 0
-    // End the slots where the language control begins. Deriving this from the
-    // laid-out accessory also accounts for its trailing margin when mic is hidden.
-    let available = max(0, language.frame.minX - inset)
+    // End the slots where the microphone begins, including its trailing margin.
+    let available = max(0, microphone.frame.minX - inset)
     let slotWidth = available / 3
     for (index, slot) in slots.enumerated() {
       slot.frame = CGRect(x: inset + CGFloat(index) * slotWidth, y: 2, width: slotWidth, height: bounds.height - 4)

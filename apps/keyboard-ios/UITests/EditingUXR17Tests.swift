@@ -25,16 +25,14 @@ final class EditingUXR17Tests: PreviewTypingTestCase {
     app.typeOnPreview("\nok")
     capture("en-field-roundtrip")
     clearText()
-    app.key("keyboard-language").tap()
-    app.buttons["Español"].firstMatch.tap()
+    app.chooseTypingLanguage("Español")
     app.typeOnPreview("hola familia")
     app.textViews["preview-text"].press(forDuration: 1.1)
     capture("es-edit-menu")
     if app.menuItems["Select All"].exists { app.menuItems["Select All"].tap() }
     else if app.buttons["Select All"].exists { app.buttons["Select All"].tap() }
     capture("es-selected")
-    app.key("keyboard-language").tap()
-    app.buttons["English + Español"].firstMatch.tap()
+    app.chooseTypingLanguage("English + Español")
     app.typeOnPreview("sol")
     capture("es-selection-language")
     clearText()
@@ -50,8 +48,7 @@ final class EditingUXR17Tests: PreviewTypingTestCase {
     app.typeOnPreview("ok")
     capture("bi-search-roundtrip")
     clearText()
-    app.key("keyboard-language").tap()
-    app.buttons["English"].firstMatch.tap()
+    app.chooseTypingLanguage("English")
     app.typeOnPreview("hello")
     app.key("key-emoji").tap()
     app.key("emoji-search-open").tap()
@@ -70,8 +67,7 @@ final class EditingUXR17Tests: PreviewTypingTestCase {
     app.launchArguments = ["-PKPreview", "-PKResetLearning", "-PKResetSettings", "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
     app.launch()
     XCTAssertTrue(app.key("key-q").waitForExistence(timeout: 8))
-    app.key("keyboard-language").tap()
-    app.buttons["English + Español"].firstMatch.tap()
+    app.chooseTypingLanguage("English + Español")
     app.typeOnPreview("hola team")
     snapshot("r17-accessibility-main")
     var observations = [["id":"accessibility-main", "document":app.previewText, "ui":app.debugDescription]]
@@ -86,8 +82,7 @@ final class EditingUXR17Tests: PreviewTypingTestCase {
     for emoji in [false, true] {
       clearText()
       if emoji {
-        app.key("keyboard-language").tap()
-        app.buttons["Español"].firstMatch.tap()
+        app.chooseTypingLanguage("Español")
       }
       app.typeOnPreview("a")
       if emoji {
