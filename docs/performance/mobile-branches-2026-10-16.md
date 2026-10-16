@@ -58,7 +58,8 @@ BENCH_OUTPUT=/tmp/pulpo-mobile-branches.json node --import tsx scripts/benchmark
 NODE_OPTIONS=--no-experimental-webstorage npm run test -w @pulpo/mobile -- \
   src/mockup5/src/production/optimisticMetadata.test.ts \
   src/mockup5/src/production/optimisticResponses.test.ts \
-  src/mockup5/src/production/optimisticBranches.test.ts
+  src/mockup5/src/production/optimisticBranches.test.ts \
+  src/features/chat/projection.test.ts
 ```
 
 Regressions compare 24 deterministic mixed graphs against the previous
