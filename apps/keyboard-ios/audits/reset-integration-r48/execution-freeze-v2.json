@@ -1,0 +1,54 @@
+{
+  "format": "pulpo-r48-final-paired-execution-freeze-v2",
+  "verdict": "APPROVE_FOR_ONE_PAIRED_EXECUTION",
+  "purpose": "One new public-API compatibility execution per source, not whole-feature or population accuracy admission",
+  "frozenUTC": "2026-10-16T11:26:41.796091+00:00",
+  "parentHeadBeforeFreeze": "9a3e87dddcf8f1402ecb2af2ed2b1bd1dd0526f5",
+  "candidateProductionReference": "82165e7ffda344165fc9116027a4b6f3ffacd4f5",
+  "preparedSHA256": "69650367885bd24590f65d65fd3287cf3d6687418cdfb5a111d50cb836aa1b42",
+  "driverSHA256": "38626b5c3d0fabd61f82fbe9c75c45b6b5297c95eb262f60f379ba5dae3151d0",
+  "configSHA256": "e6bc291d8f4dbb9368f0b776fce330ef53db4973ae3ec81c28cbf5c92fc723c1",
+  "authorArchiveSHA256": "ad4c4cae22bea8965e22cdef9b60ddbca57a97260f69ceb8b602f6356ef0b15e",
+  "gates": {
+    "authorSemanticReview": {
+      "path": "fresh-validator-v2/review-report-v2.json",
+      "sha256": "a42b5a05f78fc58cbed2fce26ddd06a214987582647c6911e520dec563dcd536"
+    },
+    "sourceComposition": {
+      "path": "composition-review/receipt.json",
+      "sha256": "24e0d338ee2e6e283e98cb7274c5559bb7047054d7687c2620bffc6fd690c2ae"
+    },
+    "ordinaryCore": {
+      "path": "parent-validation/core-services-summary.json",
+      "sha256": "7e21013a80cbc5873ebdf720c74e78d8f7cfa28340c92714fb655dd967b67e27"
+    },
+    "nativeIntegration": {
+      "path": "native-review/review.md",
+      "sha256": "f12e9a1013e641efe02b9c5b1d4152a6e115171e921f86196ad21157e61957f5"
+    },
+    "executorReview": {
+      "path": "executor-review-v2/receipt.json",
+      "sha256": "7a83d8202c4d7f44ad879819a722323e5d82eef09c3c9def34c4c973bffc756f"
+    }
+  },
+  "runtime": {
+    "python": "3.9.6 (default, Aug 17 2026, 12:07:42) \n[Clang 21.0.0 (clang-2100.3.34.1)]",
+    "pythonExecutable": "/Applications/Xcode.app/Contents/Developer/usr/bin/python3",
+    "platform": "macOS-27.0.1-arm64-arm-64bit",
+    "macOS": "ProductName:\t\tmacOS\nProductVersion:\t\t27.0.1\nBuildVersion:\t\t26A434",
+    "compiler": "Apple Swift version 6.4 (swiftlang-6.4.0.34.1 clang-2100.3.34.1)\nTarget: arm64-apple-macosx27.0.0"
+  },
+  "executionPolicy": {
+    "versions": 2,
+    "maximumAttemptsPerVersion": 1,
+    "mutationRetries": 0,
+    "noPostRevealSourceOracleOrPayloadTuning": true,
+    "captureAllRawAndFailures": true
+  },
+  "limits": [
+    "Original R33 18/18 belongs to a9e only; original R45 647/652 remains rejected",
+    "Whole Core trees differ in EmojiSearch, TouchModel, InputTraits and numeric layout; no whole-tree single-variable causal claim",
+    "Native normal25/25 and AX8/8 retain5/2prioritywarnings; no foregroundstall or iOSlatencybound established",
+    "Compilation/source/hash receipts are observed artifact bindings, not independent compiler correspondence or historical blindness proof"
+  ]
+}
