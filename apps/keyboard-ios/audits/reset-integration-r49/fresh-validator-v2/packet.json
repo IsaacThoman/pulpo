@@ -1,0 +1,15 @@
+{
+  "archive": "/tmp/pulpo-r49-fresh-validator-v2/review-bundle.tar.gz",
+  "archive_sha256": "32a4d51a3ce066f4e185ac2ec67a61a91d385b96632cd6b8f5409822ad0ea5d1",
+  "manifest_sha256": "23dc4d75147af883b87c913b3eda63f12e9e77b30d22ed4e12fcc94209a0a245",
+  "receipt_sha256": "6b48a33d2a896522fa71e30bf55b0f13f20c26fd8da9cce0b12e46a79ff6f07f",
+  "review_sha256": "844b00cd30c0d46d37f1940168b3969bab1753f1080353c227c1cbfdcd628462",
+  "manifest_files": 85,
+  "archive_bytes": 25584482,
+  "private_payload_notice": "Archive includes fresh payload/reference/synthetic records. Parent retains unopened except review/metadata until final freeze.",
+  "verdict": "APPROVE_EXACT_AUTHOR_V2_PREEXECUTION_MATERIALS",
+  "direct_execution_authorized": false,
+  "parent_final_freeze_required": true,
+  "active_local_validation_processes": 0,
+  "hold_new_compiles_probes_until_parent_release": true
+}

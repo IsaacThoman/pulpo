@@ -1,0 +1,9 @@
+{
+  "verifiedArtifacts": 85,
+  "archiveSHA256": "32a4d51a3ce066f4e185ac2ec67a61a91d385b96632cd6b8f5409822ad0ea5d1",
+  "scope": "Opaque hashes plus approved report/metadata only; private archive retained unopened",
+  "verdict": "APPROVE_EXACT_AUTHOR_V2_PREEXECUTION_MATERIALS",
+  "productBuilds": 0,
+  "productExecutions": 0,
+  "finalFreezeRequired": true
+}

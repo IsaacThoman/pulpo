@@ -1,0 +1,64 @@
+{
+  "format": "pulpo-r49-author-v2-execution-map",
+  "author_review": "APPROVE_EXACT_AUTHOR_V2_PREEXECUTION_MATERIALS",
+  "direct_product_execution_authorized": false,
+  "parent_final_freeze_required": true,
+  "artifact_root": "/tmp/pulpo-r49-fresh-author-v2",
+  "archive_sha256": "5388ca0fa079ee9103fd1ff1c0d630e8de153bc4a3e0e268efe5707c46cb39eb",
+  "manifest_sha256": "f76d1a671ecb51ab1bd7fb3838649ff8e4fd131f1f93bddf6bf6828f6abfeca4",
+  "fixture_file": "fixtures.json",
+  "fixture_sha256": "9f49a1fa017e07f989c19518329e1a48b16e1e76c9c2d7826f5a55c301212912",
+  "runner_file": "Runner.swift",
+  "runner_sha256": "8f50f13ef8fcddc51d3521e6311992ebae2778f5635957f381f6a392ff61e4a1",
+  "evaluator_file": "evaluate.py",
+  "evaluator_sha256": "fd1c9260abb1a021ec164faa3ca55d3428a24d4f4478b84a7d6ba3a128294195",
+  "runner_argv": [
+    "FROZEN_VARIANT_RUNNER",
+    "/tmp/pulpo-r49-fresh-author-v2/fixtures.json",
+    "OUTSIDE_IMMUTABLE_BUNDLE/VARIANT-raw.json",
+    "OUTSIDE_IMMUTABLE_BUNDLE/VARIANT-environment.json"
+  ],
+  "evaluator_argv": [
+    "python3",
+    "/tmp/pulpo-r49-fresh-author-v2/evaluate.py",
+    "OUTSIDE_IMMUTABLE_BUNDLE/VARIANT-raw.json"
+  ],
+  "environment_exact_keys": [
+    "round",
+    "fixture_sha256",
+    "runner_sha256",
+    "execution"
+  ],
+  "environment_fixed": {
+    "round": "r49",
+    "fixture_sha256": "9f49a1fa017e07f989c19518329e1a48b16e1e76c9c2d7826f5a55c301212912",
+    "runner_sha256": "8f50f13ef8fcddc51d3521e6311992ebae2778f5635957f381f6a392ff61e4a1"
+  },
+  "execution_exact_keys": [
+    "variant",
+    "binary_sha256",
+    "source_manifest_sha256",
+    "approval_sha256",
+    "compiler",
+    "platform"
+  ],
+  "variants": [
+    "comparison",
+    "candidate"
+  ],
+  "runner_inserts_runtime": "Version 27.0.1 (Build 26A434)",
+  "wire_formats": {
+    "fixtures": "pulpo-r49-fixtures-v1",
+    "raw": "pulpo-r48-raw-v2",
+    "accounting": "pulpo-r49-observed-accounting-v2"
+  },
+  "exit_semantics": {
+    "runner_0": "Transport completion only",
+    "evaluator_0": "Complete passing workload",
+    "evaluator_1": "Well-formed failed/unavailable workload",
+    "evaluator_2": "Strict-invalid/malformed/binding failure; fixed denominators; observed facts unknown"
+  },
+  "aggregate_scoring": "772 aggregates; failure_count/diagnostic_message_count are messages, not failed aggregates. No pass numerator; never subtract messages from772.",
+  "freeze": "Actual complete binaries/sources/diffs/compiler/runtime/architecture; immutable author/reviewer approvals; inputs/environment bytes; unchanged source/ordinary/native gates and once-only ledger. Parent attests claimed hashes.",
+  "schedule": "One invocation per frozen variant tuple; synchronous saves; no concurrent workload/background save/mutation retry. Retain all raw/evaluation/exits/storage/failures/unavailable/unfired. No post-reveal repair/rerun admission."
+}
