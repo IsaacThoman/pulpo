@@ -86,6 +86,7 @@ final class SimulatedProxy: NSObject, UITextDocumentProxy {
   var keyboardAppearanceValue: UIKeyboardAppearance = .default
   var returnKeyTypeValue: UIReturnKeyType = .default
   var keyboardTypeValue: UIKeyboardType = .default
+  var secureEntryValue = false
 
   init(text: String = "") {
     super.init()
@@ -184,6 +185,11 @@ final class SimulatedProxy: NSObject, UITextDocumentProxy {
   var returnKeyType: UIReturnKeyType {
     get { returnKeyTypeValue }
     set { returnKeyTypeValue = newValue }
+  }
+
+  var isSecureTextEntry: Bool {
+    get { secureEntryValue }
+    set { secureEntryValue = newValue }
   }
 }
 
