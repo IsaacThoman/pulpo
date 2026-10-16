@@ -1,0 +1,110 @@
+{
+  "classification": "Artifact-only rejected R18 ranking experiment; no production change",
+  "base": "d50d2a4e7b881115f075849aeb1761b1513d89d5",
+  "artifacts": [
+    {
+      "path": "source-review.md",
+      "originalPath": "apps/keyboard-ios/audits/prefix-usefulness-r18/source-review.md",
+      "sha256": "655eb5e3cd66c9ba3926ab6f8d244ff6df39cbaaf2bb71c471353e222f8b583d"
+    },
+    {
+      "path": "development-rejected-paired.json.gz",
+      "originalPath": "apps/keyboard-ios/audits/prefix-usefulness-r18/development-rejected-paired.json",
+      "sha256": "9171bac2676aca28b6c5705a52b08e29d90a6a812f7c61066d99c9c477109efc",
+      "decompressedSHA256": "066fccbff1406a5446e889ee1e79b375d7f970dea92cfb7c253cd9e278255637"
+    },
+    {
+      "path": "freeze.md",
+      "originalPath": "apps/keyboard-ios/audits/prefix-usefulness-r18/freeze.md",
+      "sha256": "48e6e44ed3ac4be583bb9ad676639d1a6c1a7d112fb14df35529b510685f7726"
+    },
+    {
+      "path": "controls.json",
+      "originalPath": "apps/keyboard-ios/audits/prefix-usefulness-r18/controls.json",
+      "sha256": "341054fa0c55dbd28ace65309724fa43f95ad4a48744c648f43c3a310b0a6ea0"
+    },
+    {
+      "path": "candidate.patch",
+      "originalPath": "apps/keyboard-ios/audits/prefix-usefulness-r18/candidate.patch",
+      "sha256": "731f15fe10a64ac128b774034b2ff350b62b3baf886fca2643589a5efe32b939"
+    },
+    {
+      "path": "development.json",
+      "originalPath": "apps/keyboard-ios/audits/prefix-usefulness-r18/development.json",
+      "sha256": "5afb54830afadc87be03434b5785d5e02c2e730e6d0f440ee65a9e9ffe37c0bc"
+    },
+    {
+      "path": "novelty-audit.json",
+      "originalPath": "apps/keyboard-ios/audits/prefix-usefulness-r18/novelty-audit.json",
+      "sha256": "6e0cbfca037d1a50fb7c897881b0c9a86f13926aa7ef9e3f50903d9e3ae2391b"
+    },
+    {
+      "path": "exclusions.json",
+      "originalPath": "apps/keyboard-ios/audits/prefix-usefulness-r18/exclusions.json",
+      "sha256": "c0618eb613adc64a408eb249bfab49e658f461ba0d929d375cdefc05b865f71c"
+    },
+    {
+      "path": "agent-audit.md",
+      "originalPath": "apps/keyboard-ios/audits/prefix-usefulness-r18/audit.md",
+      "sha256": "79e353dd9af88fd032d7ee12e48afb93975d41c4ff6e03fd5da15295d933d0d5"
+    },
+    {
+      "path": "frozen-sha256.json",
+      "originalPath": "apps/keyboard-ios/audits/prefix-usefulness-r18/frozen-sha256.json",
+      "sha256": "c6eb7bfd602f5c5e1668fe00c6916ad3040c09aff2abf4d438d1e58230a1ff05"
+    },
+    {
+      "path": "heldout.json",
+      "originalPath": "apps/keyboard-ios/audits/prefix-usefulness-r18/heldout.json",
+      "sha256": "dea3ae6f64ee681557961999c0ad28b71b28ea4aae100712886c688df05c2f4e"
+    },
+    {
+      "path": "validation.json",
+      "originalPath": "apps/keyboard-ios/audits/prefix-usefulness-r18/validation.json",
+      "sha256": "87711d7b5ba8770812765351b32dedf86819747e4f44d0683e2861c294c45e82"
+    },
+    {
+      "path": "candidate-freeze.md",
+      "originalPath": "apps/keyboard-ios/audits/prefix-usefulness-r18/candidate-freeze.md",
+      "sha256": "15c83b00498bb023bf1a4f7e205335ede546167ebd3fe2be800935c27041b410"
+    },
+    {
+      "path": "heldout-selected-paired.json.gz",
+      "originalPath": "apps/keyboard-ios/audits/prefix-usefulness-r18/heldout-selected-paired.json",
+      "sha256": "ff1aa3d26dd472d7891c5fcf122acde266cba8b5358b658c58ffabef845dcbad",
+      "decompressedSHA256": "a874545dcfb1924674a6657d3472fef25f39202c96aa1ef48d720e6082d3a0ce"
+    },
+    {
+      "path": "heldout-authorship.md",
+      "originalPath": "apps/keyboard-ios/audits/prefix-usefulness-r18/heldout-authorship.md",
+      "sha256": "834933ae36937d722402e0445721f2324bb6d69aae78abb1df19bd4c26cc0c6e"
+    },
+    {
+      "path": "controls-rejected-paired.json.gz",
+      "originalPath": "apps/keyboard-ios/audits/prefix-usefulness-r18/controls-rejected-paired.json",
+      "sha256": "f3912a65604771c56d8dd6b73cd8c893d219461761cd250b11d68a05878fc496",
+      "decompressedSHA256": "23b1f5607932de1e34744771cb5ae1e155c83f9ccbe116ba4a7410b39219fc72"
+    },
+    {
+      "path": "compare.py",
+      "originalPath": "apps/keyboard-ios/audits/prefix-usefulness-r18/compare.py",
+      "sha256": "9d397417a9685d672e6ef55d366fcc25ce08751e315eecea644b8f9f244cbcfe"
+    },
+    {
+      "path": "heldout-rejected-paired.json.gz",
+      "originalPath": "apps/keyboard-ios/audits/prefix-usefulness-r18/heldout-rejected-paired.json",
+      "sha256": "7c0ff691548ae9d2c7d2178aa43a96ee907dad963bf5777ebe028a7de07ce55c",
+      "decompressedSHA256": "53a70a64c7d6d92443a78ee285673439ab7f5f2dc50a77db5ee4c935a8315bbe"
+    },
+    {
+      "path": "costs.json",
+      "originalPath": "apps/keyboard-ios/audits/prefix-usefulness-r18/costs.json",
+      "sha256": "fab2d17b4fa27d66ac03926f3752f1f3e57e28f3f71d08bae748c17b81406bc0"
+    },
+    {
+      "path": "PrefixUsefulnessR18Tests.swift.txt",
+      "originalPath": "apps/keyboard-ios/PulpoKeyboardKit/Tests/KeyboardCoreTests/PrefixUsefulnessR18Tests.swift",
+      "sha256": "ed968b9062c55d0e1f20cdfa718df851271d053c744b00c6a7f87dd3b74b9b48"
+    }
+  ]
+}

@@ -1,0 +1,2 @@
+# Preserve the original unified-diff blank context lines.
+candidate.patch -whitespace

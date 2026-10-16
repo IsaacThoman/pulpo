@@ -1,0 +1,110 @@
+{
+  "version": 1,
+  "note": "Exposed development/safety controls, never heldout gains. Authored after initial source inspection. All cross actual three stacks.",
+  "cases": [
+    {
+      "id": "control-accent-nfc",
+      "language": "es",
+      "before": "Escribe lám",
+      "after": "",
+      "target": "lámpara",
+      "kind": "completion"
+    },
+    {
+      "id": "control-accent-nfd",
+      "language": "es",
+      "before": "Escribe lám",
+      "after": "",
+      "target": "lámpara",
+      "kind": "completion"
+    },
+    {
+      "id": "control-allcaps",
+      "language": "en",
+      "before": "Order BUTT",
+      "after": "",
+      "target": "BUTTER",
+      "kind": "completion"
+    },
+    {
+      "id": "control-mixedcase",
+      "language": "en",
+      "before": "Call LuMi",
+      "after": "",
+      "target": "LuMi",
+      "kind": "literal"
+    },
+    {
+      "id": "control-name",
+      "language": "en",
+      "before": "Invite Merovia",
+      "after": "",
+      "target": "Merovia",
+      "kind": "literal"
+    },
+    {
+      "id": "control-literal-en",
+      "language": "en",
+      "before": "We want silence",
+      "after": "",
+      "target": "silence",
+      "kind": "literal"
+    },
+    {
+      "id": "control-literal-es",
+      "language": "es",
+      "before": "Es de madera",
+      "after": "",
+      "target": "madera",
+      "kind": "literal"
+    },
+    {
+      "id": "control-typo-en",
+      "language": "en",
+      "before": "Bring the kithcen",
+      "after": "",
+      "target": "kitchen",
+      "kind": "typo"
+    },
+    {
+      "id": "control-typo-es",
+      "language": "es",
+      "before": "La ventana está abierts",
+      "after": "",
+      "target": "abierta",
+      "kind": "typo"
+    },
+    {
+      "id": "control-private",
+      "language": "bi",
+      "before": "Secret vextora",
+      "after": "",
+      "target": "vextora",
+      "kind": "private"
+    },
+    {
+      "id": "control-suffix-space",
+      "language": "en",
+      "before": "Order butte",
+      "after": " for us",
+      "target": "butter",
+      "kind": "completion"
+    },
+    {
+      "id": "control-suffix-punctuation",
+      "language": "en",
+      "before": "Order butte",
+      "after": ", please",
+      "target": "butter",
+      "kind": "completion"
+    },
+    {
+      "id": "control-short-literal",
+      "language": "en",
+      "before": "It is ok",
+      "after": "",
+      "target": "ok",
+      "kind": "literal"
+    }
+  ]
+}

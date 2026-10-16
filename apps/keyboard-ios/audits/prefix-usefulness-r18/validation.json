@@ -1,0 +1,40 @@
+{
+  "candidate": {
+    "summaries": [
+      "✔ Test run with 3 tests in 1 suite passed after 0.001 seconds.",
+      "✘ Test run with 439 tests in 65 suites failed after 10.152 seconds with 6 issues (including 5 known issues)."
+    ],
+    "unexpectedIssues": [
+      "✘ Test supplementalLiteralsStayTypedEvenWithStrongContextAndEdgeTouches() recorded an issue at LiteralValidationTests.swift:40:7: Expectation failed: result.slots.contains { $0.text == \"for\" }"
+    ]
+  },
+  "selected": {
+    "summaries": [
+      "✔ Test run with 3 tests in 1 suite passed after 0.001 seconds.",
+      "━ Test run with 439 tests in 65 suites passed after 10.178 seconds with 5 known issues."
+    ],
+    "unexpectedIssues": []
+  },
+  "final": {
+    "summaries": [
+      "✔ Test run with 3 tests in 1 suite passed after 0.001 seconds.",
+      "━ Test run with 439 tests in 65 suites passed after 10.137 seconds with 5 known issues."
+    ],
+    "unexpectedIssues": []
+  },
+  "knownIssues": [
+    "EngineFuzzRegressionTests.hostRevertToARecentOwnStateIsAKnownAmbiguity seed440 wordDeleteWrong: own-snapshot/proxy-lag ambiguity",
+    "same test seed227 composingDesync: own-snapshot/proxy-lag ambiguity",
+    "MultilingualTests.frozenAcceptanceBenchmark en_US hel→hello unavailable",
+    "same test en_es hel→hello unavailable",
+    "same test en_es hol→hola unavailable"
+  ],
+  "compileFailures": [
+    "Harness used nonexistent suffix(predicate:); corrected to reversed().prefix(predicate:).reversed() before any heldout reveal.",
+    "Prebuild rg check for nonexistent backspace method stopped initial invocation; corrected to deleteBackward before compiling."
+  ],
+  "existingWarnings": [
+    "TouchModel.swift:155 non-Sendable function conversion",
+    "WordDeletionTests.swift:97 unused WordDeletion expression"
+  ]
+}

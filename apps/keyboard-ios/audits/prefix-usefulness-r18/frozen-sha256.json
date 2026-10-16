@@ -1,0 +1,9 @@
+{
+  "apps/keyboard-ios/audits/prefix-usefulness-r18/development.json": "5afb54830afadc87be03434b5785d5e02c2e730e6d0f440ee65a9e9ffe37c0bc",
+  "apps/keyboard-ios/audits/prefix-usefulness-r18/controls.json": "341054fa0c55dbd28ace65309724fa43f95ad4a48744c648f43c3a310b0a6ea0",
+  "apps/keyboard-ios/audits/prefix-usefulness-r18/exclusions.json": "c0618eb613adc64a408eb249bfab49e658f461ba0d929d375cdefc05b865f71c",
+  "apps/keyboard-ios/audits/prefix-usefulness-r18/compare.py": "9d397417a9685d672e6ef55d366fcc25ce08751e315eecea644b8f9f244cbcfe",
+  "apps/keyboard-ios/audits/prefix-usefulness-r18/candidate.patch": "731f15fe10a64ac128b774034b2ff350b62b3baf886fca2643589a5efe32b939",
+  "apps/keyboard-ios/PulpoKeyboardKit/Tests/KeyboardCoreTests/PrefixUsefulnessR18Tests.swift": "ed968b9062c55d0e1f20cdfa718df851271d053c744b00c6a7f87dd3b74b9b48",
+  "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Correction/Suggester.swift": "0608da9f8a2308ff71aaadf5cd2a59eaad856871ea299f56ec9b2200e14a3d65"
+}

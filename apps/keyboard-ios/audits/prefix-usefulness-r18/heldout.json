@@ -1,0 +1,101 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "hold-01",
+      "language": "en",
+      "before": "Could you bring an extra blan",
+      "after": "",
+      "target": "blanket",
+      "kind": "completion"
+    },
+    {
+      "id": "hold-02",
+      "language": "en",
+      "before": "Please confirm my appo",
+      "after": ", thanks.",
+      "target": "appointment",
+      "kind": "completion"
+    },
+    {
+      "id": "hold-03",
+      "language": "en",
+      "before": "I need to finish the lau",
+      "after": "",
+      "target": "laundry",
+      "kind": "completion"
+    },
+    {
+      "id": "hold-04",
+      "language": "en",
+      "before": "There should be free par",
+      "after": "",
+      "target": "parking",
+      "kind": "completion"
+    },
+    {
+      "id": "hold-05",
+      "language": "es",
+      "before": "Voy al trabajo en bici",
+      "after": ".",
+      "target": "bicicleta",
+      "kind": "completion"
+    },
+    {
+      "id": "hold-06",
+      "language": "es",
+      "before": "Voy a pasar por la far",
+      "after": "",
+      "target": "farmacia",
+      "kind": "completion"
+    },
+    {
+      "id": "hold-07",
+      "language": "es",
+      "before": "No olvides mi cump",
+      "after": "",
+      "target": "cumpleaños",
+      "kind": "completion"
+    },
+    {
+      "id": "hold-08",
+      "language": "es",
+      "before": "Para la cena faltan servi",
+      "after": "",
+      "target": "servilletas",
+      "kind": "completion"
+    },
+    {
+      "id": "hold-09",
+      "language": "bi",
+      "before": "Mi móvil needs a new bat",
+      "after": "",
+      "target": "battery",
+      "kind": "completion"
+    },
+    {
+      "id": "hold-10",
+      "language": "bi",
+      "before": "Can you bring el carg",
+      "after": ", por favor?",
+      "target": "cargador",
+      "kind": "completion"
+    },
+    {
+      "id": "hold-11",
+      "language": "bi",
+      "before": "Te espero at the air",
+      "after": "",
+      "target": "airport",
+      "kind": "completion"
+    },
+    {
+      "id": "hold-12",
+      "language": "bi",
+      "before": "I left the car en el esta",
+      "after": "",
+      "target": "estacionamiento",
+      "kind": "completion"
+    }
+  ]
+}

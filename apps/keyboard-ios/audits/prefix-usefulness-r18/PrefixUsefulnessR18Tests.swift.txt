@@ -1,0 +1,134 @@
+import Foundation
+import Testing
+@testable import KeyboardCore
+
+/// Opt-in synthetic host replay. Reports failures rather than weakening the oracle.
+struct PrefixUsefulnessR18Tests {
+  struct Input: Codable {
+    var id: String
+    var language: String
+    var before: String
+    var after: String
+    var target: String
+    var kind: String
+  }
+  struct Corpus: Decodable { var cases: [Input] }
+  struct Choice: Codable {
+    var text: String
+    var kind: String
+    var automatic: Bool
+    var document: String
+    var exactOutcome: Bool
+    var deletionUndoRestores: Bool
+    var personalCount: Int
+  }
+  struct Row: Codable {
+    var input: Input
+    var stack: String
+    var prefix: String
+    var targetInLexicon: Bool
+    var targetCorrectable: Bool
+    var ranked: [String]
+    var choices: [Choice]
+    var expectedDocument: String
+    var displayedTarget: Bool
+    var acceptedTarget: Bool
+    var useful: Bool
+    var saved: Int
+    var automatic: String?
+    var spaceDocument: String
+    var spaceUnwantedReplacement: Bool
+    var backspaceDocument: String
+    var personalCount: Int
+    var firstMicroseconds: Double
+    var warmMicroseconds: [Double]
+  }
+
+  @Test func replay() throws {
+    let env = ProcessInfo.processInfo.environment
+    guard let input = env["R18_INPUT"], let output = env["R18_OUTPUT"] else { return }
+    let cases = try JSONDecoder().decode(Corpus.self, from: Data(contentsOf: URL(fileURLWithPath: input))).cases
+    let emoji = EmojiSuggester(catalog: try EmojiCatalog.load(url: Fixtures.languageData.appendingPathComponent("emoji.json")))
+    var rows: [Row] = []
+    for language in KeyboardLanguage.allCases {
+      let lexicon = try Lexicon(url: Fixtures.languageData.appendingPathComponent(language.rawValue + ".pkdict"))
+      for item in cases {
+        let prefix = String(item.before.reversed().prefix { $0.isLetter || $0 == "'" || $0 == "’" }.reversed())
+        let stem = String(item.before.dropLast(prefix.count))
+        // Product oracle frozen before heldout reveal: no extra space before
+        // punctuation/whitespace; one space at end or before ordinary suffix.
+        let separator = item.after.first.map { $0.isWhitespace || $0.isPunctuation ? "" : " " } ?? " "
+        let expected = stem + item.target + separator + item.after
+        func fresh() -> (KeyboardEngine, MockDocument, PersonalDictionary) {
+          let personal = PersonalDictionary(url: nil)
+          let model = LanguageModel(lexicon: lexicon, personal: personal)
+          let corrector = SpellCorrector(lexicon: lexicon)
+          let suggester = Suggester(model: model, corrector: corrector)
+          let document = MockDocument(item.before + item.after)
+          document.moveCursor(to: item.before.count)
+          var settings = KeyboardSettings()
+          settings.language = language
+          settings.autoCapitalization = false
+          let engine = KeyboardEngine(document: document, suggester: suggester, glide: GlideDecoder(model: model), settings: settings)
+          engine.emojiSuggester = emoji
+          if item.kind == "private" { engine.traits.isSecure = true }
+          engine.documentDidChange()
+          return (engine, document, personal)
+        }
+        let (engine, document, personal) = fresh()
+        let start = DispatchTime.now().uptimeNanoseconds
+        let suggestions = engine.suggestions
+        let first = Double(DispatchTime.now().uptimeNanoseconds - start) / 1_000
+        var warm: [Double] = []
+        for _ in 0..<10 {
+          let start = DispatchTime.now().uptimeNanoseconds
+          engine.refreshSuggestions()
+          warm.append(Double(DispatchTime.now().uptimeNanoseconds - start) / 1_000)
+        }
+        var choices: [Choice] = []
+        for index in suggestions.slots.indices {
+          let (choiceEngine, choiceDocument, choicePersonal) = fresh()
+          let slot = choiceEngine.suggestions.slots[index]
+          choiceEngine.select(slot)
+          let actual = choiceDocument.text
+          var undone = false
+          if let deletion = choiceEngine.deleteWordsBackward(1) {
+            undone = choiceEngine.undo(deletion) && choiceDocument.text.utf8.elementsEqual(actual.utf8)
+          }
+          choiceEngine.save()
+          choices.append(Choice(text: slot.text, kind: String(describing: slot.kind), automatic: slot.isAutocorrection,
+                                document: actual, exactOutcome: actual.utf8.elementsEqual(expected.utf8), deletionUndoRestores: undone, personalCount: choicePersonal.totalCount))
+        }
+        let ranked = engine.suggester!.candidates(for: engine.composing, context: engine.languageContext()).prefix(20).map {
+          "\($0.text)|\($0.isCompletion ? "completion" : "edit")|\($0.cost)|\($0.score)"
+        }
+        engine.insertSpace()
+        let spaceDocument = document.text
+        engine.deleteBackward()
+        let backspaceDocument = document.text
+        // Literal acceptance must preserve exact input; space can correct typo
+        // controls but completing a deliberately partial word is unwanted.
+        let literalSpace = item.before + (item.after.first?.isWhitespace == true ? "" : " ") + item.after
+        engine.save()
+        let matching = choices.filter { $0.text == item.target }
+        let accepted = matching.contains { $0.exactOutcome }
+        let suffix = item.target.count - prefix.count
+        let validPrefix = item.target.precomposedStringWithCanonicalMapping.hasPrefix(prefix.precomposedStringWithCanonicalMapping)
+        let useful = item.kind == "completion" && validPrefix && suffix >= 3 && accepted
+        rows.append(Row(input: item, stack: language.rawValue, prefix: prefix,
+                        targetInLexicon: lexicon.id(of: item.target) != nil,
+                        targetCorrectable: engine.suggester!.isValid(item.target), ranked: ranked, choices: choices,
+                        expectedDocument: expected, displayedTarget: !matching.isEmpty, acceptedTarget: accepted,
+                        useful: useful, saved: useful ? max(0, suffix - 1) : 0,
+                        automatic: suggestions.autocorrection, spaceDocument: spaceDocument,
+                        spaceUnwantedReplacement: item.kind != "typo" && spaceDocument != literalSpace,
+                        backspaceDocument: backspaceDocument, personalCount: personal.totalCount,
+                        firstMicroseconds: first, warmMicroseconds: warm))
+      }
+    }
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+    try encoder.encode(rows).write(to: URL(fileURLWithPath: output))
+    print("R18 rows=\(rows.count) displayed=\(rows.filter(\.displayedTarget).count) accepted=\(rows.filter(\.acceptedTarget).count) useful=\(rows.filter(\.useful).count) saved=\(rows.reduce(0) { $0 + $1.saved })")
+  }
+}
