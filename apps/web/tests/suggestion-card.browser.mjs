@@ -64,6 +64,16 @@ try {
   assert.equal(await page.locator('[data-suggestion-id="inner"]').count(), 0, 'the inner suggestion is accepted')
   assert.equal(await page.locator('[data-suggestion-id="outer"]').count(), 1, 'the paragraph around it is still suggested')
 
+  // Clicking a suggestion at its end keeps its card, though the paragraph around it goes on there.
+  await open()
+  const brave = await suggestion('inner').boundingBox()
+  await page.mouse.move(brave.x + brave.width - 2, brave.y + brave.height / 2, { steps: 6 })
+  await card.getByText('Add “brave”', { exact: true }).waitFor()
+  await page.mouse.down()
+  await page.mouse.up()
+  await page.waitForTimeout(400)
+  assert.equal(await describe(), 'Add “brave”', 'the card stays on the suggestion clicked at its end')
+
   // The card of the suggestion at the cursor scrolls under the sticky toolbar, not over it.
   await open()
   await suggestion('swap', '.pulpo-suggestion-delete').click()

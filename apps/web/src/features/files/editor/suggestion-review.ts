@@ -68,6 +68,15 @@ const HOVER_GRACE_MS = 250
 type Hover = { id: string; cursorId: string | null }
 
 /**
+ * Whether the pointer's suggestion `hunk` is still the one looked at: until the cursor moves into
+ * another suggestion, as tapping it on a touch screen does, which is then the newer of the two. A
+ * cursor at its end, where a suggestion after or around it goes on, is still at it.
+ */
+function hoverHolds(hover: Hover, hunk: SuggestionHunk, cursorId: string | null, cursorPos: number | null): boolean {
+  return cursorId === null || cursorId === hover.cursorId || cursorId === hover.id || cursorPos === hunk.to
+}
+
+/**
  * The document's suggestions and the one being looked at: the hunk under the pointer, else the
  * one at the cursor. Accepting and rejecting go through the editor so its undo covers them.
  */
@@ -81,11 +90,14 @@ export function useSuggestionReview(editor: Editor, onResolved?: () => void) {
     const step = stepped.current
     return step?.pos === pos && list.some((hunk) => hunk.id === step.id) ? step.id : hunkAt(list, pos)?.id ?? null
   }, [])
-  const { hunks, cursorId } = useEditorState({
+  const { hunks, cursorId, cursorPos } = useEditorState({
     editor,
-    selector: ({ editor: current }) => ({ hunks: docSuggestions(current.state.doc), cursorId: cursorHunkId(current.state) }),
+    selector: ({ editor: current }) => {
+      const cursorId = cursorHunkId(current.state)
+      return { hunks: docSuggestions(current.state.doc), cursorId, cursorPos: cursorId ? current.state.selection.from : null }
+    },
     // The list only changes with the document, and is then a new array.
-    equalityFn: (a, b) => b !== null && a.hunks === b.hunks && a.cursorId === b.cursorId,
+    equalityFn: (a, b) => b !== null && a.hunks === b.hunks && a.cursorId === b.cursorId && a.cursorPos === b.cursorPos,
   })
   const [hover, setHover] = useState<Hover | null>(null)
   const previousHunks = useRef(hunks.map((hunk) => hunk.id).join(','))
@@ -147,11 +159,8 @@ export function useSuggestionReview(editor: Editor, onResolved?: () => void) {
     }
   }, [editor, cursorHunkId, keepHover, hoverSoon, releaseHover])
 
-  // The pointer's suggestion, until the cursor moves into another one, as tapping it on a touch
-  // screen does; that is the newer of the two.
-  const hovered = hover && (cursorId === null || cursorId === hover.cursorId || cursorId === hover.id)
-    ? hunks.find((hunk) => hunk.id === hover.id)
-    : undefined
+  const pointed = hover ? hunks.find((hunk) => hunk.id === hover.id) : undefined
+  const hovered = hover && pointed && hoverHolds(hover, pointed, cursorId, cursorPos) ? pointed : undefined
   const active = hovered ?? hunks.find((hunk) => hunk.id === cursorId) ?? null
   useLayoutEffect(() => {
     shownId.current = active?.id ?? null
