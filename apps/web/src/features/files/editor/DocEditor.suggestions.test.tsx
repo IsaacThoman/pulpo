@@ -50,13 +50,14 @@ function serverWith(content: unknown[]): FakeServer {
 
 const insertMark = (id: string) => ({ type: 'suggestionInsert', attrs: { id, changeId: 'change-2' } })
 
-/** A press of the pointer, which jsdom has no PointerEvent for. */
-function press(element: Element, pointerType: 'mouse' | 'touch') {
+/** A press of the pointer, which jsdom has no PointerEvent for, and the click it ends in. */
+function press(element: Element, pointerType: 'mouse' | 'touch', { click = true } = {}) {
   const event = new MouseEvent('pointerdown', { bubbles: true })
   Object.defineProperty(event, 'pointerType', { value: pointerType })
   act(() => {
     element.dispatchEvent(event)
   })
+  if (click) fireEvent.click(element)
 }
 
 /** Longer than the card's grace period after the pointer leaves its suggestion. */
@@ -404,9 +405,10 @@ describe('DocEditor suggestions', () => {
     const card = () => view.queryByRole('dialog', { name: 'Suggestion' })?.textContent
     fireEvent.mouseOver(element()!.querySelector(`[data-suggestion-id="${first!.id}"]`)!)
     await view.findByRole('dialog', { name: 'Suggestion' })
-    // A tap's mouse events follow its pointer events.
+    // A swipe to scroll starts like a tap but never clicks.
+    press(element()!.querySelector(`[data-suggestion-id="${second!.id}"]`)!, 'touch', { click: false })
+    expect(card()).toContain(describeHunk(first!))
     press(element()!.querySelector(`[data-suggestion-id="${second!.id}"]`)!, 'touch')
-    fireEvent.mouseOver(element()!.querySelector(`[data-suggestion-id="${second!.id}"]`)!)
     expect(card()).toContain(describeHunk(second!))
     press(element()!.querySelector(`[data-suggestion-id="${first!.id}"]`)!, 'mouse')
     expect(card()).toContain(describeHunk(first!))
