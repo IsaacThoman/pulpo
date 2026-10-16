@@ -60,6 +60,16 @@ file delivery depend on the source app. Plain text and website shares are not
 handled. A new native build is required for the document registration and local
 Expo module to take effect.
 
+### HTML attachment previews on iOS
+
+Quick Look never runs scripts, so HTML attachments open in a sandboxed web view
+instead. Each page is served with the same `SANDBOX_CSP` as the web preview
+sandbox, which gives it an opaque origin with no cookies, storage, or native
+bridge. Tapped links open in Safari View Controller. Pages over 10 MB, and
+binaries built before the web preview, fall back to Quick Look. See
+[the validation notes](e2e/html-preview-validation.md) for the security checks
+and the seeded flash card example.
+
 ### Android development
 
 Install Android Studio, an Android 17 / API 37 system image, SDK Platform 37,

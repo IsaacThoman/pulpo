@@ -2,7 +2,7 @@ export const DESKTOP_ORIGIN = 'https://desktop.pulpo.invalid'
 
 export const RENDERER_CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' blob: https:; connect-src 'self' https: wss:; worker-src 'self' blob:; font-src 'self' data:; object-src 'none'; base-uri 'none'; frame-src 'self'; form-action 'self' https:"
 
-/** Code previews run here, in an iframe without allow-same-origin. Keep in sync with apps/web/sandbox.html. */
+/** Code previews run here, in an iframe without allow-same-origin. Keep in sync with apps/web/sandbox.html and packages/contracts/src/sandbox.ts. */
 export const SANDBOX_PATH = '/sandbox.html'
 export const SANDBOX_CSP = "sandbox allow-scripts allow-modals allow-popups allow-forms allow-downloads; default-src 'none'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https:; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: blob: https:; font-src data: https:; media-src data: blob: https:; connect-src 'self' https:; worker-src blob:; frame-src 'none'; base-uri 'none'; form-action 'none'"
 

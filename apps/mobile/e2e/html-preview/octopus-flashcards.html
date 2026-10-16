@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Octopus Flash Cards</title>
+  <style>
+    :root {
+      --ink: #1d1530;
+      --muted: #6b6380;
+      --accent: #e0457b;
+      --accent-soft: #fde4ee;
+      --good: #1f9d6b;
+      --card: #ffffff;
+      --bg: linear-gradient(160deg, #fff4f8 0%, #eef3ff 100%);
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; }
+    body {
+      font: 16px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--ink);
+      background: var(--bg);
+      display: flex;
+      justify-content: center;
+      padding: 24px 18px 40px;
+    }
+    main { width: 100%; max-width: 440px; }
+    header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+    h1 { font-size: 22px; margin: 0; letter-spacing: -0.01em; }
+    #counter { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 14px; }
+    .progress { height: 6px; border-radius: 99px; background: #e6e1ef; margin: 14px 0 22px; overflow: hidden; }
+    .progress > div { height: 100%; width: 0; background: var(--accent); border-radius: inherit; transition: width .35s ease; }
+    .scene { perspective: 1200px; }
+    .card {
+      position: relative; height: 300px; cursor: pointer;
+      transform-style: preserve-3d; transition: transform .55s cubic-bezier(.2,.7,.2,1);
+    }
+    .card.flipped { transform: rotateY(180deg); }
+    .face {
+      position: absolute; inset: 0; border-radius: 22px; padding: 28px 24px;
+      display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center;
+      background: var(--card); box-shadow: 0 12px 34px rgba(64, 32, 96, .14);
+      backface-visibility: hidden; -webkit-backface-visibility: hidden;
+    }
+    .face .label { position: absolute; top: 18px; left: 22px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+    .face .emoji { font-size: 44px; margin-bottom: 10px; }
+    .front p { font-size: 21px; font-weight: 600; margin: 0; }
+    .back { transform: rotateY(180deg); background: var(--accent-soft); }
+    .back p { font-size: 18px; margin: 0; }
+    .hint { text-align: center; color: var(--muted); font-size: 13px; margin: 14px 0 0; }
+    .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 20px; }
+    button {
+      font: inherit; font-weight: 600; border: 0; border-radius: 14px; padding: 14px 12px; cursor: pointer;
+      transition: transform .1s ease, opacity .2s ease;
+    }
+    button:active { transform: scale(.97); }
+    button:disabled { opacity: .35; cursor: default; }
+    .again { background: #ece8f3; color: var(--ink); }
+    .knew { background: var(--good); color: #fff; }
+    .secondary { display: flex; justify-content: center; gap: 18px; margin-top: 18px; }
+    .link { background: none; color: var(--accent); padding: 6px; font-size: 14px; }
+    .results { text-align: center; background: var(--card); border-radius: 22px; padding: 34px 24px; box-shadow: 0 12px 34px rgba(64, 32, 96, .14); }
+    .results .score { font-size: 54px; font-weight: 700; color: var(--accent); margin: 6px 0; font-variant-numeric: tabular-nums; }
+    .results ul { text-align: left; padding-left: 20px; color: var(--muted); }
+    .restart { background: var(--accent); color: #fff; width: 100%; margin-top: 10px; }
+    .static-notice { background: #fff; border-radius: 18px; padding: 22px; color: var(--muted); }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>🐙 Octopus Flash Cards</h1>
+      <span id="counter" aria-live="polite"></span>
+    </header>
+    <div class="progress" aria-hidden="true"><div id="bar"></div></div>
+
+    <!-- Replaced by the quiz once its script runs. -->
+    <p id="static-notice" class="static-notice">Loading quiz… This flash card deck is interactive and needs JavaScript.</p>
+
+    <section id="quiz" hidden>
+      <div class="scene">
+        <div id="card" class="card" role="button" tabindex="0" aria-label="Flip card">
+          <div class="face front"><span class="label">Question</span><div class="emoji" id="emoji"></div><p id="question"></p></div>
+          <div class="face back"><span class="label">Answer</span><p id="answer"></p></div>
+        </div>
+      </div>
+      <p class="hint" id="hint">Tap the card to reveal the answer</p>
+      <div class="actions">
+        <button id="again" class="again" disabled>Still learning</button>
+        <button id="knew" class="knew" disabled>I knew it</button>
+      </div>
+      <div class="secondary">
+        <button id="shuffle" class="link">Shuffle deck</button>
+        <button id="skip" class="link">Skip</button>
+      </div>
+    </section>
+
+    <section id="results" class="results" hidden>
+      <div>Deck complete</div>
+      <div class="score" id="score"></div>
+      <div id="verdict"></div>
+      <ul id="review"></ul>
+      <button id="restart" class="restart">Practice again</button>
+    </section>
+  </main>
+
+  <script>
+    const deck = [
+      { emoji: '❤️', q: 'How many hearts does an octopus have?', a: 'Three — two pump blood through the gills, one through the rest of the body.' },
+      { emoji: '🩸', q: 'What colour is octopus blood?', a: 'Blue. It carries oxygen with copper-based hemocyanin instead of iron.' },
+      { emoji: '🧠', q: 'Where are most of an octopus’s neurons?', a: 'In its arms — about two thirds of them.' },
+      { emoji: '🎨', q: 'How does an octopus change colour so fast?', a: 'Chromatophores: pigment sacs in the skin that muscles stretch open or squeeze shut.' },
+      { emoji: '💨', q: 'What does an octopus squirt to escape predators?', a: 'A cloud of ink that hides it and can dull a predator’s sense of smell.' },
+      { emoji: '🦴', q: 'Why can an octopus squeeze through tiny gaps?', a: 'It has no bones — its beak is the only hard part of its body.' },
+      { emoji: '🐚', q: 'Which octopus carries coconut shells as portable shelter?', a: 'The veined (coconut) octopus.' },
+      { emoji: '🌊', q: 'What is “pulpo”?', a: 'Spanish for octopus.' },
+    ]
+
+    const $ = (id) => document.getElementById(id)
+    const card = $('card')
+    let order = []
+    let index = 0
+    let flipped = false
+    let known = []
+    let learning = []
+
+    function shuffle(items) {
+      const copy = items.slice()
+      for (let i = copy.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1))
+        ;[copy[i], copy[j]] = [copy[j], copy[i]]
+      }
+      return copy
+    }
+
+    function setFlipped(value) {
+      flipped = value
+      card.classList.toggle('flipped', flipped)
+      $('again').disabled = !flipped
+      $('knew').disabled = !flipped
+      $('hint').textContent = flipped ? 'Did you know it?' : 'Tap the card to reveal the answer'
+    }
+
+    function render() {
+      const answered = known.length + learning.length
+      $('bar').style.width = `${(answered / order.length) * 100}%`
+      if (index >= order.length) return finish()
+      const item = order[index]
+      const wasFlipped = flipped
+      setFlipped(false)
+      // Swap the text once the card has turned back, so the next answer never flashes.
+      setTimeout(() => {
+        $('emoji').textContent = item.emoji
+        $('question').textContent = item.q
+        $('answer').textContent = item.a
+      }, wasFlipped ? 250 : 0)
+      $('counter').textContent = `${index + 1} / ${order.length}`
+    }
+
+    function next(result) {
+      if (result) (result === 'knew' ? known : learning).push(order[index])
+      index += 1
+      render()
+    }
+
+    function finish() {
+      $('quiz').hidden = true
+      $('results').hidden = false
+      $('counter').textContent = 'Done'
+      const total = known.length + learning.length
+      const percent = total ? Math.round((known.length / total) * 100) : 0
+      $('score').textContent = `${known.length}/${total}`
+      $('verdict').textContent = percent === 100 ? 'Perfect — you’re a cephalopod expert!' : percent >= 50 ? 'Nice work. Review these and try again:' : 'Keep practising — review these:'
+      $('review').replaceChildren(...learning.map((item) => {
+        const li = document.createElement('li')
+        li.textContent = item.q
+        return li
+      }))
+    }
+
+    function start(items) {
+      order = items
+      index = 0
+      known = []
+      learning = []
+      $('results').hidden = true
+      $('quiz').hidden = false
+      render()
+    }
+
+    card.addEventListener('click', () => setFlipped(!flipped))
+    card.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setFlipped(!flipped) }
+    })
+    $('knew').addEventListener('click', () => next('knew'))
+    $('again').addEventListener('click', () => next('again'))
+    $('skip').addEventListener('click', () => { order.push(order[index]); next() })
+    $('shuffle').addEventListener('click', () => start(shuffle(deck)))
+    $('restart').addEventListener('click', () => start(learning.length ? shuffle(learning) : shuffle(deck)))
+
+    $('static-notice').hidden = true
+    start(deck.slice())
+  </script>
+</body>
+</html>

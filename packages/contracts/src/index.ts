@@ -14,6 +14,7 @@ export * from './composer.js'
 import { z } from 'zod'
 import { DEFAULT_MAX_INLINE_IMAGES, MAX_CONFIGURABLE_INLINE_IMAGES, MAX_MESSAGE_ATTACHMENTS } from './attachment-limits.js'
 export * from './attachment-limits.js'
+export * from './sandbox.js'
 import { CHAT_PRESET_ICON_NAMES } from './chat-preset-icons.generated.js'
 
 export { CHAT_PRESET_ICON_NAMES } from './chat-preset-icons.generated.js'
@@ -428,6 +429,43 @@ export const adminInviteCodeSchema = inviteCodeSchema.extend({
   redeemedByUsername: z.string().nullable(),
 })
 export type AdminInviteCode = z.infer<typeof adminInviteCodeSchema>
+
+export const bannerTypeSchema = z.enum(['info', 'warning', 'error'])
+export type BannerType = z.infer<typeof bannerTypeSchema>
+
+export const bannerSchema = z.object({
+  id: idSchema,
+  type: bannerTypeSchema,
+  content: z.string(),
+  dismissible: z.boolean(),
+  startsAt: isoDateSchema.nullable(),
+  endsAt: isoDateSchema.nullable(),
+  createdAt: isoDateSchema,
+})
+export type Banner = z.infer<typeof bannerSchema>
+
+/** A banner window is valid when it is open-ended on either side or ends after it starts. */
+export function bannerWindowIsValid(startsAt: string | null | undefined, endsAt: string | null | undefined): boolean {
+  return !startsAt || !endsAt || Date.parse(endsAt) > Date.parse(startsAt)
+}
+
+export const bannerCreateInputSchema = z.object({
+  type: bannerTypeSchema.default('info'),
+  content: z.string().trim().min(1).max(2_000),
+  dismissible: z.boolean().default(true),
+  startsAt: isoDateSchema.nullable().default(null),
+  endsAt: isoDateSchema.nullable().default(null),
+}).refine((input) => bannerWindowIsValid(input.startsAt, input.endsAt), { message: 'Banner must end after it starts', path: ['endsAt'] })
+export type BannerCreateInput = z.input<typeof bannerCreateInputSchema>
+
+export const bannerUpdateInputSchema = z.object({
+  type: bannerTypeSchema.optional(),
+  content: z.string().trim().min(1).max(2_000).optional(),
+  dismissible: z.boolean().optional(),
+  startsAt: isoDateSchema.nullable().optional(),
+  endsAt: isoDateSchema.nullable().optional(),
+})
+export type BannerUpdateInput = z.input<typeof bannerUpdateInputSchema>
 
 export const inviteCodeListSchema = z.object({
   quota: z.number().int().nonnegative(),

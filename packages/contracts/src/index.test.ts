@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   applyResponseEventToSnapshot,
+  bannerCreateInputSchema,
   createChatSchema,
   truncateChatTitle,
   agentCostLimitMicros,
@@ -1023,5 +1024,18 @@ describe('response snapshot accumulation', () => {
     for (const title of ['界'.repeat(201), `${'a'.repeat(199)}😀`, `${'a'.repeat(199)} b`]) {
       expect(createChatSchema.safeParse({ modelId: 'model-1', title: truncateChatTitle(title) }).success).toBe(true)
     }
+  })
+})
+
+describe('banner input', () => {
+  it('rejects a window that ends before it starts', () => {
+    expect(bannerCreateInputSchema.safeParse({ content: 'Maintenance', startsAt: '2026-10-18T10:00:00.000Z', endsAt: '2026-10-18T09:00:00.000Z' }).success).toBe(false)
+    expect(bannerCreateInputSchema.parse({ content: ' Maintenance ', endsAt: '2026-10-18T09:00:00.000Z' })).toEqual({
+      type: 'info', content: 'Maintenance', dismissible: true, startsAt: null, endsAt: '2026-10-18T09:00:00.000Z',
+    })
+  })
+
+  it('only accepts the styles the app renders', () => {
+    expect(bannerCreateInputSchema.safeParse({ content: 'Done', type: 'success' }).success).toBe(false)
   })
 })
