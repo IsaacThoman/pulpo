@@ -1,0 +1,155 @@
+{
+  "policy": "Original bytes copied without interpreting successful build logs. Old R33 archives/outcomes retain original source identities and limitations; no derived execution implied. Source archives enable standalone client reconstruction. No binary or build logs needed for compact witness retention.",
+  "artifacts": [
+    {
+      "original": "/tmp/pulpo-r33-touch-compat-parent/intent-before-execution.json",
+      "retained": "evidence/parent-witness/intent-before-execution.json",
+      "sha256": "3fa3fc25c8db8769143cd9e5f3fb41ab4ee13f75a873f5b63c6addf0981d8014",
+      "bytes": 910
+    },
+    {
+      "original": "/tmp/pulpo-r33-touch-compat-parent/baseline.json",
+      "retained": "evidence/parent-witness/baseline.json",
+      "sha256": "344e7ff6e5bf5d09d334a329afd48277a271eec66b7d3e2b940e20242f320d81",
+      "bytes": 308
+    },
+    {
+      "original": "/tmp/pulpo-r33-touch-compat-parent/candidate.json",
+      "retained": "evidence/parent-witness/candidate.json",
+      "sha256": "7fe8daf9f30d47c23c65930d6e0a594e5b537a3bc19836fd5a498915aa937704",
+      "bytes": 305
+    },
+    {
+      "original": "/tmp/pulpo-r33-touch-compat-parent/comparison.json",
+      "retained": "evidence/parent-witness/comparison.json",
+      "sha256": "b531bfcda950deb8f56a2d91ee5d31f8ee5caa29173b0ab84b415ab5a7abb5a3",
+      "bytes": 1954
+    },
+    {
+      "original": "/tmp/pulpo-r33-touch-compat-parent/baseline/client/Package.swift",
+      "retained": "evidence/parent-witness/baseline/Package.swift",
+      "sha256": "dfc90ba7a4e74d069c964e07b511684e7f2bd6c1c669b89daf434dd9f73a4fe6",
+      "bytes": 342
+    },
+    {
+      "original": "/tmp/pulpo-r33-touch-compat-parent/baseline/client/Sources/Witness/main.swift",
+      "retained": "evidence/parent-witness/baseline/Sources/Witness/main.swift",
+      "sha256": "97fc487ebd76aa6ff4befc7f7896a16fea1bd406975c177630f354e3ddc3ce26",
+      "bytes": 738
+    },
+    {
+      "original": "/tmp/pulpo-r33-touch-compat-parent/candidate/client/Package.swift",
+      "retained": "evidence/parent-witness/candidate/Package.swift",
+      "sha256": "08311ff9d95b0ac68bcadfa7307fa5ee900e356c3473026281dbcff527200663",
+      "bytes": 343
+    },
+    {
+      "original": "/tmp/pulpo-r33-touch-compat-parent/candidate/client/Sources/Witness/main.swift",
+      "retained": "evidence/parent-witness/candidate/Sources/Witness/main.swift",
+      "sha256": "97fc487ebd76aa6ff4befc7f7896a16fea1bd406975c177630f354e3ddc3ce26",
+      "bytes": 738
+    },
+    {
+      "original": "/tmp/pulpo-r33-parent-source-review/review.md",
+      "retained": "evidence/parent-source-review.md",
+      "sha256": "3d4b0eac6cf64a21ff2b8fef03879383b5a4dd95e1f6d612b4892e38648e12e0",
+      "bytes": 16569
+    },
+    {
+      "original": "/tmp/pulpo-r33-evidence/archives/development-raw-v3.json.gz",
+      "retained": "evidence/original-r33-archives/development-raw-v3.json.gz",
+      "sha256": "d4453c2961c46c669c613f61b9baee1d398a9e88dffeaf41c2efd9ba522495bf",
+      "bytes": 425438
+    },
+    {
+      "original": "/tmp/pulpo-r33-evidence/archives/development-raw-v4.json.gz",
+      "retained": "evidence/original-r33-archives/development-raw-v4.json.gz",
+      "sha256": "f68d41fdcdeb9819b07cfc8be73a2fa229d0e80673282d6ead2c5da953866a6d",
+      "bytes": 511747
+    },
+    {
+      "original": "/tmp/pulpo-r33-evidence/archives/development-raw-v5.json.gz",
+      "retained": "evidence/original-r33-archives/development-raw-v5.json.gz",
+      "sha256": "44d73fc2952fb16ae26b0e2ddaaf6db84ede3309c73304a7034abdc5cd299bb9",
+      "bytes": 584382
+    },
+    {
+      "original": "/tmp/pulpo-r33-evidence/archives/development-raw.json.gz",
+      "retained": "evidence/original-r33-archives/development-raw.json.gz",
+      "sha256": "9f0d9ce63456bc8dac30a8f770f71d871c033881b249fba249ad07b8056343f1",
+      "bytes": 175812
+    },
+    {
+      "original": "/tmp/pulpo-r33-evidence/archives/review-v2-raw.json.gz",
+      "retained": "evidence/original-r33-archives/review-v2-raw.json.gz",
+      "sha256": "485400333ef0c9beb2a1cf869b9cde32b3721432512813c022c140b3c8494a6e",
+      "bytes": 3588
+    },
+    {
+      "original": "/tmp/pulpo-r33-evidence/archives/review-v3-raw.json.gz",
+      "retained": "evidence/original-r33-archives/review-v3-raw.json.gz",
+      "sha256": "27071c2a6c93e2c6144577352595829f951d8cec1998d96a3b0a819abbe8c9ae",
+      "bytes": 95123
+    },
+    {
+      "original": "/tmp/pulpo-r33-evidence/archives/review-v4-raw.json.gz",
+      "retained": "evidence/original-r33-archives/review-v4-raw.json.gz",
+      "sha256": "c0ee838d523049c3b5dae118527410f0f7ad59d6bce0191b2af2982f66a1d0ff",
+      "bytes": 97272
+    },
+    {
+      "original": "/tmp/pulpo-r33-evidence/archives/review-v5-raw.json.gz",
+      "retained": "evidence/original-r33-archives/review-v5-raw.json.gz",
+      "sha256": "2ff203d9ef0fb449c9f205ea24d5483dbe32be2110dc0c8d25b5212c881bc911",
+      "bytes": 189998
+    },
+    {
+      "original": "/tmp/pulpo-r33-evidence/archives/supplement-v3-raw.json.gz",
+      "retained": "evidence/original-r33-archives/supplement-v3-raw.json.gz",
+      "sha256": "b595f91deadd401a9e3cb9a45c5bb6e39fb4b44676270f60bf201e958478900d",
+      "bytes": 13929
+    },
+    {
+      "original": "/tmp/pulpo-r33-evidence/reveal/execution.json",
+      "retained": "evidence/original-r33-reveal/execution.json",
+      "sha256": "d78c7009d269d93c2f71eb21c25af2da5d1d0f1fd82b9eea66390bdd4dd69284",
+      "bytes": 244
+    },
+    {
+      "original": "/tmp/pulpo-r33-evidence/reveal/results.json",
+      "retained": "evidence/original-r33-reveal/results.json",
+      "sha256": "c6e84ec1d1857192294c764c5fc66be07583f6c329fd06d81ebc8b3a9bc24dbe",
+      "bytes": 193147
+    },
+    {
+      "original": "/tmp/pulpo-r33-evidence/reveal/runner.stderr",
+      "retained": "evidence/original-r33-reveal/runner.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "original": "/tmp/pulpo-r33-evidence/reveal/static.stderr",
+      "retained": "evidence/original-r33-reveal/static.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "original": "/tmp/pulpo-r33-evidence/reveal/static.stdout",
+      "retained": "evidence/original-r33-reveal/static.stdout",
+      "sha256": "f64e88f30823656754b7c4f731ff447364b3bc7c32e8619f5a89a6025ac60519",
+      "bytes": 191
+    },
+    {
+      "commit": "305a8893911b7ba54186110ea9f0b919c9d6382e",
+      "retained": "evidence/baseline305-core-source.tar.gz",
+      "sha256": "d8e29d9350f10e88272c2913661903c7153d1dc303173593c24bb02def1f3e75",
+      "bytes": 70704
+    },
+    {
+      "commit": "a9e6ecfc895263721f14b8635dab8c3e87162839",
+      "retained": "evidence/original-a9e-core-source.tar.gz",
+      "sha256": "48bcfd7b0bc3cfe07ab2b004eef97009d129919ba6d89dbed5f3b2b9fe213c20",
+      "bytes": 82553
+    }
+  ]
+}

@@ -1,0 +1,49 @@
+{
+  "base": "5e17ab9c",
+  "originalBaseline": "305a8893911b7ba54186110ea9f0b919c9d6382e",
+  "originalSource": "a9e6ecfc895263721f14b8635dab8c3e87162839",
+  "originalTip": "3b5d104369140bbf8ff53408d661bd136290d855",
+  "orderedCherryPicks": [
+    {
+      "original": "c20e682d1e5ce123e8e1cd3bc0586de63ab7277f",
+      "imported": "6a6513143f2f5f35a96b44d4ca4a42b6ed371a80"
+    },
+    {
+      "original": "acb70884d7d353424337e8ebb7670f0967259494",
+      "imported": "53b490c5db7085c5bc63553db17165a06ac35214"
+    },
+    {
+      "original": "2357e19156e79edc9842a3b9626d9ab18b3f6f36",
+      "imported": "f2287b65d38b50e49058db8f7c8f1cca29f18ee6"
+    },
+    {
+      "original": "ac186d7ec782e64a41b7922f1b056f0565ee589b",
+      "imported": "077859a418e342a9d7c1117f26b408d6e74ddba8"
+    },
+    {
+      "original": "4fa9b1e7b39cb1e5db835eeb3c4b111f6540c566",
+      "imported": "d570e0e6f6acec83b145cece128d0167433f864b"
+    },
+    {
+      "original": "006f6d4a6b1e625779db8d49c73bb8d45f451956",
+      "imported": "6bfc3dab5efb451336625fb492719eefb796f09c"
+    },
+    {
+      "original": "a9e6ecfc895263721f14b8635dab8c3e87162839",
+      "imported": "f534eb0d9867f413c944dc9bdd6e1480008f1a81"
+    },
+    {
+      "original": "bd82649637038c67b449c241a72af49d5f87c625",
+      "imported": "b635910c8cb0a1af8daa54bb11ef6ace319fdc04"
+    },
+    {
+      "original": "a532f2ae0546035ff7daf88af20cfc642c3cc854",
+      "imported": "4bac728ff020d049225a15a71d44fdedb4a3431a"
+    },
+    {
+      "original": "3b5d104369140bbf8ff53408d661bd136290d855",
+      "imported": "a20bb202b9deaa6602da72cc840f10253d4aa0e6"
+    }
+  ],
+  "mergeAudit": "AppModel diff from parent base changes only learned-words clear glue; R42 account implementation retained. TouchModel source at imported tip equals original a9e. No R41 Settings/Controller owner overlay imported. Original R33 exact KeyboardController two-line dependency change retained."
+}
