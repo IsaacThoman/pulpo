@@ -1,0 +1,142 @@
+import Foundation
+import CryptoKit
+import KeyboardCore
+
+// Public API only. No product state/file decoding, formula, dictionary, threads or retries.
+func optionalPoint(_ p: KeyPoint) -> KeyPoint? { p }
+func optionalPoint(_ p: KeyPoint?) -> KeyPoint? { p }
+enum HarnessError: Error { case invalid(String) }
+func fail(_ s: String) throws -> Never { throw HarnessError.invalid(s) }
+let null = NSNull()
+func pointJSON(_ p: KeyPoint) -> [String: Any] {
+  func n(_ v: Double) -> Any { v.isFinite ? v : (v.isNaN ? "nan" : (v > 0 ? "posInf" : "negInf")) }
+  return ["x": n(Double(p.x)), "y": n(Double(p.y))]
+}
+func decodedNumber(_ a: Any) throws -> Double {
+  if let s = a as? String {
+    switch s { case "nan": return .nan; case "posInf": return .infinity; case "negInf": return -.infinity; default: try fail("unknown finite-input tag") }
+  }
+  guard let n = a as? NSNumber else { try fail("point number") }
+  return n.doubleValue
+}
+func projection(_ m: TouchModel) -> [String: Any] {
+  let w = m.weight
+  return ["weight": w.isFinite ? w as Any : (w.isNaN ? "nan" : (w > 0 ? "posInf" : "negInf")),
+          "offsets": m.offsets.map(pointJSON), "learning": m.isLearning]
+}
+func files(_ dir: URL?) throws -> [[String: Any]] {
+  guard let dir else { return [] }
+  let fm = FileManager.default
+  var enumerationError: Error?
+  guard let e = fm.enumerator(at: dir, includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey], options: [], errorHandler: { _, error in enumerationError = error; return false }) else { try fail("inventory enumeration") }
+  var out: [[String: Any]] = []; var total = 0
+  for case let u as URL in e {
+    let values = try u.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
+    if values.isSymbolicLink == true { try fail("inventory symlink") }
+    guard values.isRegularFile == true else { continue }
+    guard let size = values.fileSize, size <= 16 * 1024 * 1024, size >= 0, total + size <= 32 * 1024 * 1024, out.count < 128 else { try fail("inventory pre-read bound") }
+    let data = try Data(contentsOf: u); total += data.count
+    guard data.count <= 16 * 1024 * 1024 && total <= 32 * 1024 * 1024 && out.count < 128 else { try fail("inventory bound") }
+    let prefix = dir.path + "/"; guard u.path.hasPrefix(prefix) else { try fail("inventory escape") }
+    out.append(["path": String(u.path.dropFirst(prefix.count)), "bytes": data.count,
+                "sha256": SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()])
+  }
+  if let enumerationError { throw enumerationError }
+  return out.sorted { ($0["path"] as! String) < ($1["path"] as! String) }
+}
+final class Session {
+  var model: TouchModel
+  let directory: URL?
+  let url: URL?
+  var blocked: String?
+  init(directory: URL?) {
+    self.directory = directory; self.url = directory?.appendingPathComponent("TouchModel.json")
+    self.model = TouchModel(url: self.url)
+    if model.persistenceResult.rawValue != "ok" { blocked = "constructor status " + String(describing: model.persistenceResult.rawValue) }
+  }
+}
+@main struct Main {
+  static func main() throws {
+    guard CommandLine.arguments.count == 4 else { try fail("usage Runner fixtures.json raw.json environment.json") }
+    let fm = FileManager.default
+    let fixtureData = try Data(contentsOf: URL(fileURLWithPath: CommandLine.arguments[1]))
+    let fixture = try JSONSerialization.jsonObject(with: fixtureData) as! [String: Any]
+    let env = try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: CommandLine.arguments[3]))) as! [String: Any]
+    let base = fm.temporaryDirectory.resolvingSymlinksInPath().appendingPathComponent("pulpo-r48-" + UUID().uuidString, isDirectory: true)
+    try fm.createDirectory(at: base, withIntermediateDirectories: false)
+    var sessions: [String: Session] = [:]; var centers: [String: KeyPoint] = [:]
+    var records: [[String: Any]] = []
+    for operation in fixture["operations"] as! [[String: Any]] {
+      let id = operation["id"] as! String; let op = operation["op"] as! String
+      let input = operation["input"] as! [String: Any]; let sid = operation["session"] as? String
+      var record: [String: Any] = ["id": id, "op": op, "session": sid as Any? ?? null,
+        "input": input, "resolvedInput": null, "returned": null, "status": null,
+        "state": null, "files": [], "available": true, "invoked": false, "error": null]
+      do {
+        if op == "center" {
+          let b = (input["byte"] as! NSNumber).uint8Value
+          record["invoked"] = true
+          guard let p = optionalPoint(LetterGeometry.qwerty.center(b)) else { try fail("missing center") }
+          centers[String(UnicodeScalar(b))] = p; record["returned"] = pointJSON(p)
+        } else if op == "normalize" {
+          record["invoked"] = true
+          record["returned"] = TextNormalizer.key(input["text"] as! String)
+        } else if op == "construct" {
+          guard let sid, sessions[sid] == nil else { try fail("constructor session") }
+          var directory: URL? = nil
+          if input["persistent"] as! Bool {
+            let d = base.appendingPathComponent(UUID().uuidString, isDirectory: true)
+            try fm.createDirectory(at: d, withIntermediateDirectories: false); directory = d
+          }
+          record["invoked"] = true
+          sessions[sid] = Session(directory: directory)
+          record["resolvedInput"] = ["url": sessions[sid]!.url?.path as Any? ?? null]
+        } else {
+          guard let sid, let s = sessions[sid] else { try fail("missing session") }
+          if let blocked = s.blocked { try fail("session unavailable: " + blocked) }
+          switch op {
+          case "learn":
+            let taps = try (input["taps"] as! [Any]).map { item -> KeyPoint? in
+              if item is NSNull { return nil }
+              let d = item as! [String: Any]
+              if let key = d["base"] as? String {
+                guard let p = centers[key] else { try fail("missing fixture base") }
+                return KeyPoint(x: Double(p.x) + (d["dx"] as! NSNumber).doubleValue,
+                                y: Double(p.y) + (d["dy"] as! NSNumber).doubleValue)
+              }
+              return try KeyPoint(x: decodedNumber(d["x"]!), y: decodedNumber(d["y"]!))
+            }
+            let text = input["text"] as! String; let target = input["target"] as! String
+            record["resolvedInput"] = ["text": text, "target": target, "taps": taps.map { $0.map(pointJSON) as Any? ?? null }]
+            record["invoked"] = true
+            record["returned"] = s.model.learn(TypedWord(text: text, taps: taps), intended: target, geometry: LetterGeometry.qwerty)
+          case "save": record["invoked"] = true; record["returned"] = s.model.save(inBackground: false)
+          case "reload": record["invoked"] = true; record["returned"] = s.model.reloadIfChangedOnDisk()
+          case "setLearning": record["invoked"] = true; s.model.isLearning = input["value"] as! Bool
+          case "observe": record["invoked"] = true
+          case "reopen":
+            record["resolvedInput"] = ["url": s.url?.path as Any? ?? null]
+            record["invoked"] = true
+            s.model = TouchModel(url: s.url)
+          default: try fail("unknown operation")
+          }
+        }
+        if let sid, let s = sessions[sid] {
+          record["status"] = String(describing: s.model.persistenceResult.rawValue)
+          record["state"] = projection(s.model); record["files"] = try files(s.directory)
+          let status = record["status"] as! String
+          if status != "ok" && status != "invalid" { s.blocked = "operation status " + status }
+          if (op == "save" && record["returned"] as? Bool != true) || ((op == "construct" || op == "reopen" || op == "reload") && status != "ok") { s.blocked = "unconfirmed settlement or observation" }
+        }
+      } catch {
+        record["available"] = false; record["error"] = String(describing: error)
+        if let sid, let s = sessions[sid] { s.blocked = String(describing: error) }
+      }
+      records.append(record)
+    }
+    let output: [String: Any] = ["format": "pulpo-r48-raw-v2", "environment": env.merging(["runtime": ProcessInfo.processInfo.operatingSystemVersionString], uniquingKeysWith: { _, b in b }), "operations": records]
+    let data = try JSONSerialization.data(withJSONObject: output, options: [.prettyPrinted, .sortedKeys])
+    try data.write(to: URL(fileURLWithPath: CommandLine.arguments[2]), options: .atomic)
+    // Preserve fresh unique storage for audit; no cleanup mutations or automatic retries.
+  }
+}

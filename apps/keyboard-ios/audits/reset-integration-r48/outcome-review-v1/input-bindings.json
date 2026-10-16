@@ -1,0 +1,163 @@
+{
+  "format": "pulpo-r48-outcome-input-bindings-v1",
+  "files": [
+    {
+      "path": "/Users/isaacthoman/.t3/worktrees/pulpo/t3-a3218df3/apps/keyboard-ios/audits/reset-integration-r48/execution-freeze-v2.json",
+      "bytes": 2787,
+      "sha256": "b89f52ecce3cefd535fc799e6f44a16651eddcc9b6cbaa474bd33eb17217d7b8"
+    },
+    {
+      "path": "/tmp/pulpo-r48-paired-final-v2/execution.json",
+      "bytes": 1559,
+      "sha256": "5be5da8996a8feb4daea0f45cadfa001aa85ecfdd1046aabece2f9154665344b"
+    },
+    {
+      "path": "/tmp/pulpo-r48-paired-final-v2/RUN-STARTED",
+      "bytes": 65,
+      "sha256": "2ac2da626098cf5c7a21342bf885d9c0ba4b9bcfee4de12c273ca6c20648924e"
+    },
+    {
+      "path": "/tmp/pulpo-r48-paired-final-v2/author/author-review-v2/Runner.swift",
+      "bytes": 8585,
+      "sha256": "2718e44462cf19625484ef2b82b40771475ef5c546c2cf034523fc7de6730255"
+    },
+    {
+      "path": "/tmp/pulpo-r48-paired-final-v2/author/author-review-v2/evaluate.py",
+      "bytes": 26118,
+      "sha256": "45d84a3eccbac829cabef6f4cc087ee656582edaf39029f51a0a9e23fd96f663"
+    },
+    {
+      "path": "/tmp/pulpo-r48-paired-final-v2/author/author-review-v2/fixtures.json",
+      "bytes": 232582,
+      "sha256": "51a67006cb4218dac7143160c72d83f54d3b5a65a805960532c7ed8f7065d4b0"
+    },
+    {
+      "path": "/tmp/pulpo-r48-paired-final-v2/author/author-review-v2/accounting.json",
+      "bytes": 135186,
+      "sha256": "310c4f2bb3c2ef177388c6b3ccc61393ef01d650b4f004b5a88cd96b1521e1ad"
+    },
+    {
+      "path": "/tmp/pulpo-r48-paired-final-v2/author/author-review-v2/SPEC.md",
+      "bytes": 14479,
+      "sha256": "1632cbc293b7c2b29ce9333c0788d21422e443c0b6a1806ccaafee0d4a04b6c4"
+    },
+    {
+      "path": "/tmp/pulpo-r48-paired-final-v2/author/author-review-v2/PublicDomainReference.swift",
+      "bytes": 2303,
+      "sha256": "860e4098efcf1d38825458c4791c5398a7e37c626ba23dc91392e7f60629516b"
+    },
+    {
+      "path": "/tmp/pulpo-r48-paired-final-v2/author/author-review-v2/attestation.json",
+      "bytes": 2243,
+      "sha256": "f1a33837dd42f1eb14f9b8fd0b128d91526f3b022ffff355362efa982930f6aa"
+    },
+    {
+      "path": "/tmp/pulpo-r48-paired-final-v2/original-a9e/raw.json",
+      "bytes": 1159437,
+      "sha256": "db36f7446482a6934881ae60e64b7f96382b80493aae92be620e126aad14a084"
+    },
+    {
+      "path": "/tmp/pulpo-r48-paired-final-v2/original-a9e/evaluation-normal.json",
+      "bytes": 83359,
+      "sha256": "a089f1028a30c09f774ce6dfe14df279e99623369dd9de75e1c628e7d1258366"
+    },
+    {
+      "path": "/tmp/pulpo-r48-paired-final-v2/original-a9e/environment.json",
+      "bytes": 447,
+      "sha256": "2a3fa48389d928af36bc3b3e6e87341a27244c572401ed251dad9a3dcd118e83"
+    },
+    {
+      "path": "/tmp/pulpo-r48-paired-final-v2/original-a9e/runner.stdout",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/tmp/pulpo-r48-paired-final-v2/original-a9e/runner.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/tmp/pulpo-r48-paired-final-v2/original-a9e/evaluation-normal.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/tmp/pulpo-r48-paired-final-v2/integrated-82165/raw.json",
+      "bytes": 1159357,
+      "sha256": "c20168897ecd39260ff984537848095e1b1027d183f21954616cbc34a2454542"
+    },
+    {
+      "path": "/tmp/pulpo-r48-paired-final-v2/integrated-82165/evaluation-normal.json",
+      "bytes": 83045,
+      "sha256": "7a563acd9f92c1519dbcaab6d21962b81cfc91eafb913115c7436cbe257e249a"
+    },
+    {
+      "path": "/tmp/pulpo-r48-paired-final-v2/integrated-82165/environment.json",
+      "bytes": 451,
+      "sha256": "a9aa8bb6501b58cd464127bfeb769030b61c6cf673a462602a2a5e71a0d06fcb"
+    },
+    {
+      "path": "/tmp/pulpo-r48-paired-final-v2/integrated-82165/runner.stdout",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/tmp/pulpo-r48-paired-final-v2/integrated-82165/runner.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/tmp/pulpo-r48-paired-final-v2/integrated-82165/evaluation-normal.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/Users/isaacthoman/.t3/worktrees/pulpo/t3-a3218df3/apps/keyboard-ios/audits/reset-integration-r48/author-protocol.md",
+      "bytes": 3511,
+      "sha256": "fa39822952426f1f9d380f7e7051f37359744c7cc194767c24f4fa1719198947"
+    },
+    {
+      "path": "/Users/isaacthoman/.t3/worktrees/pulpo/t3-a3218df3/apps/keyboard-ios/audits/reset-integration-r48/domain-review/public-domain-v3.md",
+      "bytes": 12366,
+      "sha256": "986bbb9faefefd211c8f954c5d0fcd66ad1cd42e10008e69a354a7bc964dbef9"
+    },
+    {
+      "path": "/Users/isaacthoman/.t3/worktrees/pulpo/t3-a3218df3/apps/keyboard-ios/audits/reset-integration-r48/domain-review/PublicDomainReference.swift",
+      "bytes": 2303,
+      "sha256": "860e4098efcf1d38825458c4791c5398a7e37c626ba23dc91392e7f60629516b"
+    },
+    {
+      "path": "/tmp/pulpo-r48-fresh-validator/review-report-v1.json",
+      "bytes": 4974,
+      "sha256": "dcd5839c5fb4e082aeec5abc7ef481c00fb9e72cface25049452a9dc2d999391"
+    },
+    {
+      "path": "/tmp/pulpo-r48-fresh-validator-v2/review-report-v2.json",
+      "bytes": 5477,
+      "sha256": "a42b5a05f78fc58cbed2fce26ddd06a214987582647c6911e520dec563dcd536"
+    }
+  ],
+  "sourceTrees": {
+    "original-a9e": "5489d04cd2f18ceda4f8d2a7113fcdaf3b377e3aeaf35b3a2a26eb1ba01dcded",
+    "integrated-82165": "95bb869e4b1b13e6e79c8097e68d51619ef14545db64c6fe6f97be60f7b95421"
+  },
+  "sourceHashProvenance": "Frozen per-version environment/raw declaration; source trees deliberately not read or independently rehashed by this source-blind outcome auditor. Parent freeze/preparation/source-composition gates own implementation binding.",
+  "preparationSHA256FromFreeze": "69650367885bd24590f65d65fd3287cf3d6687418cdfb5a111d50cb836aa1b42",
+  "driverSHA256FromFreeze": "38626b5c3d0fabd61f82fbe9c75c45b6b5297c95eb262f60f379ba5dae3151d0",
+  "configSHA256FromFreeze": "e6bc291d8f4dbb9368f0b776fce330ef53db4973ae3ec81c28cbf5c92fc723c1",
+  "authorArchiveSHA256FromFreeze": "ad4c4cae22bea8965e22cdef9b60ddbca57a97260f69ceb8b602f6356ef0b15e",
+  "priorReviews": [
+    {
+      "version": "v1",
+      "path": "/tmp/pulpo-r48-fresh-validator/review-report-v1.json",
+      "sha256": "dcd5839c5fb4e082aeec5abc7ef481c00fb9e72cface25049452a9dc2d999391",
+      "verdict": "REJECT_PREEXECUTION_CORRECTION_REQUIRED"
+    },
+    {
+      "version": "v2",
+      "path": "/tmp/pulpo-r48-fresh-validator-v2/review-report-v2.json",
+      "sha256": "a42b5a05f78fc58cbed2fce26ddd06a214987582647c6911e520dec563dcd536",
+      "verdict": "APPROVE_EXACT_AUTHOR_V2_PREEXECUTION_MATERIALS"
+    }
+  ]
+}

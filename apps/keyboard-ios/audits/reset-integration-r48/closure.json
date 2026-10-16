@@ -1,0 +1,64 @@
+{
+  "actions": {
+    "invokedPerVersion": 200,
+    "persistentConstructorsInvokedPerVersion": 18,
+    "persistentLearnSaveReloadReopenInvokedPerVersion": 0,
+    "totalPerVersion": 375,
+    "unavailablePerVersion": 193,
+    "uninvokedPerVersion": 175
+  },
+  "additionalRunnerFindings": [
+    "Containment checked after file read",
+    "Blocked causes recursively rewrap, reaching 65979 UTF8 bytes"
+  ],
+  "artifacts": {
+    "outcomeArtifactManifest": "1251594c265fa74e1a4079fb380c1257b53b7b82a88eab21db88ede6a82f384e",
+    "outcomeFullArchive": "16f1d8887436add443fbba628c1ce64b9316fe445538a5e20046bd6763f61040",
+    "outcomeReview": "0cc72307c1d50e711f7a325545d852fbd07ee55dda6f259bc32b5f0de42c4bad",
+    "pairedResultsManifest": "139dc2ddf7e3dbdc4638db2ff3a534cb3ceeb28e711de94a3eb4cf5369bccbb1",
+    "rootCauseReceipt": "2ef22039fced36de5a680e952437026b203b7dfec9089a955ad6c51127caeb26",
+    "rootCauseReview": "94748ac0a9bf1c202e5397ae6cd3da35cc2b76773fc7bb73e9ab208e4eb2543d"
+  },
+  "checks": {
+    "candidateFailed": 1317,
+    "candidatePassed": 968,
+    "commonFailures": 1317,
+    "independentGainClaim": false,
+    "newFailedCheckIDs": 0,
+    "originalFailed": 1323,
+    "originalPassed": 962,
+    "repairedCheckIDs": 6,
+    "totalPerVersion": 2285
+  },
+  "disposition": "REJECT_FROZEN_ROUND_NO_WHOLE_FEATURE_ADMISSION",
+  "evaluators": {
+    "normalExit": 1,
+    "optimizedExit": 1,
+    "reportsByteEqual": true
+  },
+  "families": {
+    "passedPerVersion": 0,
+    "totalPerVersion": 18
+  },
+  "format": "pulpo-r48-frozen-round-closure-v1",
+  "freezeCommit": "7734b288f0b60de30a94178249c40c53dc1c97fb",
+  "freezeSHA256": "b89f52ecce3cefd535fc799e6f44a16651eddcc9b6cbaa474bd33eb17217d7b8",
+  "independentRootCause": "Runner compares /var and /private/var aliases inconsistently; 18 .ok constructors lose available inventory evidence then block 175 later actions. No demonstrated persistent product failure or success.",
+  "integrationPublished": false,
+  "next": "Separate exposed Foundation-only inventory/root-cause seam correction and independent preexecution review, then genuinely fresh source-blind cases under new version and one new freeze. Never repair/relabel/rerun this round.",
+  "pairedAttempts": {
+    "integrated-82165": 1,
+    "original-a9e": 1
+  },
+  "postrevealSourceRunnerOraclePayloadChanges": false,
+  "priorEvidenceRetained": [
+    "R33 18/18 applies to exact a9e only",
+    "R45 647/652 stays rejected, no normalization policy change",
+    "Author-v1 and executor-v1 preexecution rejection reports unchanged",
+    "Merged source composition approval, ordinary475Core+3services/data11, native25normal/8AX5 remain bounded independent gates with5/2runtimewarnings"
+  ],
+  "publishedHead": "e503e5a6646208c6dc125271431bbb9d677b9bb8",
+  "reruns": 0,
+  "sourceChangedForThisClosure": false,
+  "sourceProductionReference": "82165e7ffda344165fc9116027a4b6f3ffacd4f5"
+}

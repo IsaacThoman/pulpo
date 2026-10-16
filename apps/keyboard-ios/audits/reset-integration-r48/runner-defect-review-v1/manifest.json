@@ -1,0 +1,15 @@
+{
+  "format": "pulpo-r48-runner-defect-review-v1",
+  "files": {
+    "Runner.swift.txt": "2718e44462cf19625484ef2b82b40771475ef5c546c2cf034523fc7de6730255",
+    "commands.json": "dc4d6b41382053f65ccda1a3147040ff80d9788667c27aaa046f833426577099",
+    "inspect-retained.py": "1dc547ce77ddadc15ce155bf9c7699f4f6e366543864b2a26f78696856370146",
+    "integrated-82165-path-diagnostic.json": "3841c1c6a9fdc7e54d5a7c3d84c684411896452f5a94f83f1a25e1b7c46cd056",
+    "original-a9e-path-diagnostic.json": "207abead1bd437cd2c371d35b2865087562d655e0ad049ad64d8cca5c7f3378b",
+    "path-diagnostic.swift": "9aa7e37ee5112b91a9df6c0912fc940fd58b6cfa22b5b6c1f565b43d9a81730c",
+    "raw-mechanics-optimized.json": "c2298dacfe687a31869f4c67e649658be9271e79f3f6954996dad16335f1f6b5",
+    "raw-mechanics.json": "c2298dacfe687a31869f4c67e649658be9271e79f3f6954996dad16335f1f6b5",
+    "receipt.json": "2ef22039fced36de5a680e952437026b203b7dfec9089a955ad6c51127caeb26",
+    "review.md": "94748ac0a9bf1c202e5397ae6cd3da35cc2b76773fc7bb73e9ab208e4eb2543d"
+  }
+}

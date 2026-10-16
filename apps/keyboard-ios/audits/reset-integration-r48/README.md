@@ -60,9 +60,13 @@ inventory rejects their paths. Independent read-only investigation identifies
 inconsistent path representations. The remaining persistent actions are blocked.
 This is an executor defect and does not change the frozen round's failed result.
 No product replay, source/oracle repair or rerun is permitted for this round.
-Independent outcome and root-cause reports are being finalized. A separately
-versioned round requires a corrected, reviewed filesystem seam before fresh
-authorship. Whole-feature publication remains pending.
+Independent outcome and root-cause reviews retain the failed disposition in
+`outcome-review-v1/`, `runner-defect-review-v1/` and `closure.json`. They trace all
+2,285 check rows: the 1,317 common failures comprise 90 constructor-evidence
+checks, 1,178 blocked-action checks and all 49 unavailable cross-mode relations.
+No persistent learn/save/reload/reopen call fired. A separately versioned round
+requires a corrected, reviewed filesystem seam before fresh authorship.
+Whole-feature publication remains pending.
 
 `paired-results-v2/` retains both full raw outputs, normal/optimized evaluations,
 transport/environment records, exact failed IDs and read-only snapshots of the

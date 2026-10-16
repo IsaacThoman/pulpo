@@ -1,0 +1,165 @@
+{
+  "format": "pulpo-r48-independent-outcome-review-v1",
+  "round": "R48 author-v2 single paired execution",
+  "verdict": "RETAIN_FROZEN_ROUND_FAILED_NO_ADMISSION",
+  "productRerunsDuringReview": 0,
+  "frozenArtifactsEdited": false,
+  "frozenExecutionConsumed": true,
+  "frozenScores": {
+    "original-a9e": {
+      "passedChecks": 962,
+      "failedChecks": 1323,
+      "intendedChecks": 2285,
+      "passedFamilies": 0,
+      "intendedFamilies": 18
+    },
+    "integrated-82165": {
+      "passedChecks": 968,
+      "failedChecks": 1317,
+      "intendedChecks": 2285,
+      "passedFamilies": 0,
+      "intendedFamilies": 18
+    }
+  },
+  "intendedDenominators": {
+    "families": 18,
+    "instances": 36,
+    "operations": 375,
+    "relations": 49,
+    "modelOperations": 331,
+    "normalizationCalls": 18,
+    "geometryCalls": 26,
+    "learnCalls": 76,
+    "expectedAcceptedLearnCalls": 63,
+    "expectedRejectedLearnCalls": 13,
+    "persistentReopens": 18,
+    "individualChecks": 2285
+  },
+  "actualAccounting": {
+    "original-a9e": {
+      "executedActions": 200,
+      "unexecutedActions": 175,
+      "actualLearnInvocations": 38,
+      "observedAcceptedLearnCalls": 30,
+      "observedExpectedInvalidRejections": 6,
+      "unavailableActions": 193,
+      "unexpectedStatuses": 2
+    },
+    "integrated-82165": {
+      "executedActions": 200,
+      "unexecutedActions": 175,
+      "actualLearnInvocations": 38,
+      "observedAcceptedLearnCalls": 32,
+      "observedExpectedInvalidRejections": 6,
+      "unavailableActions": 193,
+      "unexpectedStatuses": 0
+    }
+  },
+  "commonFailureAttribution": {
+    "persistentConstructorInventoryUnavailableChecks": 90,
+    "dependentUninvokedPersistentChecks": 1178,
+    "crossModeRelationsUnavailable": 49,
+    "commonFailedChecks": 1317,
+    "persistentInstancesUnavailable": 18,
+    "persistentConstructorAPICallsInvokedWithOKButNoAvailableInventory": 18,
+    "dependentPersistentActionsNotInvoked": 175,
+    "persistentLearnCallsInvoked": 0,
+    "persistentSaveCallsInvoked": 0,
+    "freshReopensInvoked": 0
+  },
+  "exactRepairedCheckIDs": [
+    "long_sparse/local/step0/projectionDiffersFrom",
+    "long_sparse/local/step0/return",
+    "long_sparse/local/step0/status",
+    "sample_cap/local/step1/projectionDiffersFrom",
+    "sample_cap/local/step1/return",
+    "sample_cap/local/step1/status"
+  ],
+  "newFailedCheckIDs": [],
+  "observedDeltaInterpretation": {
+    "repairedChecks": 6,
+    "underlyingActualLocalLearnCalls": 2,
+    "intentFamiliesRepresented": 2,
+    "localInstanceActionCheckPasses": {
+      "original-a9e": 16,
+      "integrated-82165": 18
+    },
+    "localInstancesWithCompleteActionEvidence": 18,
+    "persistentInstancesWithCompleteActionEvidence": 0,
+    "claim": "The candidate meets the frozen acceptance/status/full-projection-change oracle on the two available local boundary calls that baseline rejects. These are six correlated checks, not six independent accuracy gains, and do not repair the failed whole round.",
+    "sourceCausality": "Entire frozen Core trees differ; public outputs alone do not establish a single-source-change causal attribution."
+  },
+  "strictEvaluatorReview": {
+    "rawTransportAcceptedWithoutShapeFailure": true,
+    "archivedNormalEvaluationsReconstructedExactly": true,
+    "optimizedEvaluationsIdentical": true,
+    "optimizedExitPerVersion": 1,
+    "all2285ExactUniqueRowsActuallyEvaluated": true,
+    "allFailedRowsPreserved": true,
+    "availabilityGateCorrectlyFailsUnavailableOKSnapshots": true,
+    "uninvokedCallsNotCreditedAsRejections": true,
+    "unexpectedStatuses": {
+      "original-a9e": 2,
+      "integrated-82165": 0
+    },
+    "unexpectedStatusExplanation": "Baseline has two invoked available false/invalid outcomes where the frozen local policy expects true/ok. Candidate has none. These are behavioral oracle mismatches, separate from infrastructure availability.",
+    "scoreFailureExplanation": "The 90 constructor-check failures include checks named status/return/zero because unavailable evidence invalidates every intended check; those failures do not mean the retained raw .ok constructor status was non-ok."
+  },
+  "findings": [
+    {
+      "id": "R48-OUTCOME-INV-01",
+      "kind": "runner inventory defect or representation mismatch",
+      "observed": "Every persistent constructor actually ran and retained .ok plus a finite zero projection, then inventory raised invalid(\"inventory escape\"). All subsequent persistent actions were blocked.",
+      "attribution": "Harness evidence collection failure; no persistent learning/save/reopen behavior was exercised or can be inferred from zeros.",
+      "mechanismConfidence": "The exact /var versus /private/var alias mechanism is not independently established in this outcome audit; separate source review owns that diagnosis. Frozen Runner compares enumerated URL.path against dir.path prefix.",
+      "preexecutionReviewLimit": "The earlier semantic/oracle review and declaration-only/synthetic checks did not exercise real Foundation inventory path representations and missed this runtime harness defect."
+    },
+    {
+      "id": "R48-OUTCOME-DIAG-02",
+      "kind": "runner diagnostic amplification",
+      "observed": "Each blocked action catches a new wrapper of Session.blocked and writes it back to Session.blocked. Error strings recursively escape previous strings and grow to 65,979 characters in the retained raw data.",
+      "effect": "Amplifies raw diagnostic output and obscures the initial cause; no score or additional API invocation is fabricated.",
+      "scope": "Recommendation only for a separately versioned future runner; no frozen edits."
+    }
+  ],
+  "priorReviewHistory": {
+    "v1": "Rejected before product execution for unsupported initial/reopen policy-default literals, unavailable outcomes credited as expected rejections, and unavailable unexpected statuses omitted. The rejection is retained.",
+    "v2": "Explicit policy setters and evidence/status counter fixes independently approved with 792 normal and optimized probes per mode. These fixes remain present and the frozen evaluator correctly rejects this revealed unavailable round. V2 preexecution approval is not retroactive product success."
+  },
+  "newRoundRecommendations": [
+    "Retain every frozen artifact, raw failure, original denominator and this rejection. Do not rerun either product binary or repair/relabel this revealed round.",
+    "If a new round is authorized, version its runner/protocol/freeze separately. Establish one consistent canonical path representation for both inventory root and enumerated entries, validate containment securely, and test Foundation-only temporary regular-file inventories including alias paths before any product execution.",
+    "Keep the first blocking error unchanged and give later unfired actions a bounded reference to that cause instead of recursively nesting its text; independently test long blocked sequences.",
+    "Keep all existing strict status/availability, full26 finite state, full-state same-accepted-sequence, intended-invalid conservation, fresh successful reopen, nonvacuous controls, strict JSON/accounting and no-mutation-retry gates. Revalidate actual row coverage under normal and optimized Python.",
+    "Treat reused revealed cases only as declared regression controls; commission fresh source-blind authored cases for new novelty claims. Freeze all successor author/runner/evaluator/source/environment/binary and independent review bytes before its single execution per version."
+  ],
+  "limits": [
+    "No population spelling/ranking accuracy or EN/ES/BI resource-mode evidence.",
+    "No R48 persistent durability, actual persistent sample-cap, settled persistent invalid-file conservation or local/persistent equivalence evidence because all persistent instances are unavailable.",
+    "No whole shared reset or R41 result-aware UI behavior is exercised by this standalone public TouchModel runner; prior source/ordinary/native gates remain separate evidence.",
+    "The observed local subset may be described for diagnosis, but it cannot replace the frozen 18-family/36-instance/2285-check admission denominator."
+  ],
+  "artifacts": [
+    "input-bindings.json",
+    "accounting-summary.json",
+    "exact-check-delta.json",
+    "observed-local-delta.json",
+    "original-a9e-all-check-rows.json",
+    "integrated-82165-all-check-rows.json",
+    "original-a9e-check-attribution.json",
+    "integrated-82165-check-attribution.json",
+    "original-a9e-instance-accounting.json",
+    "integrated-82165-instance-accounting.json",
+    "original-a9e-family-accounting.json",
+    "integrated-82165-family-accounting.json",
+    "inventory-and-blocking-diagnostics.json"
+  ],
+  "boundary": {
+    "productSourceReads": 0,
+    "productBinaryExecutions": 0,
+    "frozenSourceRunnerOracleEdits": 0,
+    "repositoryMutations": 0,
+    "nativeDeviceBuildActivity": 0,
+    "writesOnlyUnder": "/tmp/pulpo-r48-outcome-review-v1"
+  }
+}
