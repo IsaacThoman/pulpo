@@ -1,0 +1,34 @@
+{
+  "schemaErrors": [
+    "s01/1: unknown operation key expectState",
+    "s01/2: unknown operation key expectState",
+    "s02/1: unknown operation key expectState",
+    "s02/2: unknown operation key expectState",
+    "s03/0: unknown operation key expectState",
+    "s03/1: unknown operation key expectState",
+    "s04/1: unknown operation key expectState"
+  ],
+  "command": [
+    "swift",
+    "test",
+    "--package-path",
+    "/private/tmp/pulpo-r19-baseline/PulpoKeyboardKit",
+    "-c",
+    "release",
+    "--filter",
+    "AnchoredGrammarReplayTests"
+  ],
+  "inputSHA256": "422ec66018c9abf6da45dcea36591a1d83cac7503088b4b9319e4b689eefdb08",
+  "engineSHA256": "3f0987051ff0f176a5e1ef6396d415b0f8fe0fc2088735c75fef87f75158de97",
+  "runnerSHA256": "01333628a8ab4fc85ec8df0dc4884daf9efdd352b06d62f11c9a9459dffb583c",
+  "sourceStableDuringRun": true,
+  "templates": 35,
+  "denominator": 105,
+  "exitCode": 0,
+  "wallSeconds": 1.9301177500000002,
+  "summary": [
+    "Build complete! (0.28 sec)",
+    "R19 exact 47/105, oracle errors 26",
+    "\u2714 Test run with 1 test in 1 suite passed after 0.331 seconds."
+  ]
+}

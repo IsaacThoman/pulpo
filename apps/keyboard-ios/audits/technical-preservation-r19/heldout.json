@@ -1,0 +1,772 @@
+{
+  "cases": [
+    {
+      "id": "l01",
+      "category": "literal",
+      "before": "ledger /obsidian-cove/",
+      "after": "",
+      "operations": [
+        {
+          "op": "insert",
+          "text": "peopel "
+        }
+      ],
+      "expected": "ledger /obsidian-cove/peopel ",
+      "expectedByMode": {
+        "en": "ledger /obsidian-cove/peopel ",
+        "es": "ledger /obsidian-cove/peopel ",
+        "bi": "ledger /obsidian-cove/peopel "
+      }
+    },
+    {
+      "id": "l02",
+      "category": "literal",
+      "before": "ledger ~/saffron-vault/",
+      "after": "",
+      "operations": [
+        {
+          "op": "insert",
+          "text": "qiero "
+        }
+      ],
+      "expected": "ledger ~/saffron-vault/qiero ",
+      "expectedByMode": {
+        "en": "ledger ~/saffron-vault/qiero ",
+        "es": "ledger ~/saffron-vault/qiero ",
+        "bi": "ledger ~/saffron-vault/qiero "
+      }
+    },
+    {
+      "id": "l03",
+      "category": "literal",
+      "before": "ledger ./",
+      "after": "",
+      "operations": [
+        {
+          "op": "insert",
+          "text": "peopel "
+        }
+      ],
+      "expected": "ledger ./peopel ",
+      "expectedByMode": {
+        "en": "ledger ./peopel ",
+        "es": "ledger ./peopel ",
+        "bi": "ledger ./peopel "
+      }
+    },
+    {
+      "id": "l04",
+      "category": "literal",
+      "before": "ledger ../../../",
+      "after": "",
+      "operations": [
+        {
+          "op": "insert",
+          "text": "qiero "
+        }
+      ],
+      "expected": "ledger ../../../qiero ",
+      "expectedByMode": {
+        "en": "ledger ../../../qiero ",
+        "es": "ledger ../../../qiero ",
+        "bi": "ledger ../../../qiero "
+      }
+    },
+    {
+      "id": "l05",
+      "category": "literal",
+      "before": "ledger V:\\cobalt-nest\\",
+      "after": "",
+      "operations": [
+        {
+          "op": "insert",
+          "text": "peopel "
+        }
+      ],
+      "expected": "ledger V:\\cobalt-nest\\peopel ",
+      "expectedByMode": {
+        "en": "ledger V:\\cobalt-nest\\peopel ",
+        "es": "ledger V:\\cobalt-nest\\peopel ",
+        "bi": "ledger V:\\cobalt-nest\\peopel "
+      }
+    },
+    {
+      "id": "l06",
+      "category": "literal",
+      "before": "ledger J:/lilac-deck/",
+      "after": "",
+      "operations": [
+        {
+          "op": "insert",
+          "text": "qiero "
+        }
+      ],
+      "expected": "ledger J:/lilac-deck/qiero ",
+      "expectedByMode": {
+        "en": "ledger J:/lilac-deck/qiero ",
+        "es": "ledger J:/lilac-deck/qiero ",
+        "bi": "ledger J:/lilac-deck/qiero "
+      }
+    },
+    {
+      "id": "l07",
+      "category": "literal",
+      "before": "ledger \\\\quartz-pier\\moss-share\\",
+      "after": "",
+      "operations": [
+        {
+          "op": "insert",
+          "text": "peopel "
+        }
+      ],
+      "expected": "ledger \\\\quartz-pier\\moss-share\\peopel ",
+      "expectedByMode": {
+        "en": "ledger \\\\quartz-pier\\moss-share\\peopel ",
+        "es": "ledger \\\\quartz-pier\\moss-share\\peopel ",
+        "bi": "ledger \\\\quartz-pier\\moss-share\\peopel "
+      }
+    },
+    {
+      "id": "l08",
+      "category": "literal",
+      "before": "ledger /opal-bay/v3.",
+      "after": "",
+      "operations": [
+        {
+          "op": "insert",
+          "text": "qiero "
+        }
+      ],
+      "expected": "ledger /opal-bay/v3.qiero ",
+      "expectedByMode": {
+        "en": "ledger /opal-bay/v3.qiero ",
+        "es": "ledger /opal-bay/v3.qiero ",
+        "bi": "ledger /opal-bay/v3.qiero "
+      }
+    },
+    {
+      "id": "l09",
+      "category": "literal",
+      "before": "ledger /.../cerulean-step/",
+      "after": "",
+      "operations": [
+        {
+          "op": "insert",
+          "text": "peopel "
+        }
+      ],
+      "expected": "ledger /.../cerulean-step/peopel ",
+      "expectedByMode": {
+        "en": "ledger /.../cerulean-step/peopel ",
+        "es": "ledger /.../cerulean-step/peopel ",
+        "bi": "ledger /.../cerulean-step/peopel "
+      }
+    },
+    {
+      "id": "l10",
+      "category": "literal",
+      "before": "ledger /jade_47-~/.",
+      "after": "",
+      "operations": [
+        {
+          "op": "insert",
+          "text": "qiero "
+        }
+      ],
+      "expected": "ledger /jade_47-~/.qiero ",
+      "expectedByMode": {
+        "en": "ledger /jade_47-~/.qiero ",
+        "es": "ledger /jade_47-~/.qiero ",
+        "bi": "ledger /jade_47-~/.qiero "
+      }
+    },
+    {
+      "id": "l11",
+      "category": "literal",
+      "before": "ledger >/amber-reef/",
+      "after": "",
+      "operations": [
+        {
+          "op": "insert",
+          "text": "peopel "
+        }
+      ],
+      "expected": "ledger >/amber-reef/peopel ",
+      "expectedByMode": {
+        "en": "ledger >/amber-reef/peopel ",
+        "es": "ledger >/amber-reef/peopel ",
+        "bi": "ledger >/amber-reef/peopel "
+      }
+    },
+    {
+      "id": "l12",
+      "category": "literal",
+      "before": "ledger ../violet-shelf/",
+      "after": "\nSEAL-R19-END",
+      "operations": [
+        {
+          "op": "insert",
+          "text": "qiero "
+        }
+      ],
+      "expected": "ledger ../violet-shelf/qiero \nSEAL-R19-END",
+      "expectedByMode": {
+        "en": "ledger ../violet-shelf/qiero \nSEAL-R19-END",
+        "es": "ledger ../violet-shelf/qiero \nSEAL-R19-END",
+        "bi": "ledger ../violet-shelf/qiero \nSEAL-R19-END"
+      }
+    },
+    {
+      "id": "o01",
+      "category": "ordinary",
+      "before": "annotation //granite-brook/",
+      "after": "",
+      "operations": [
+        {
+          "op": "insert",
+          "text": "peopel "
+        }
+      ],
+      "expected": "annotation //granite-brook/people ",
+      "expectedByMode": {
+        "en": "annotation //granite-brook/people ",
+        "es": "annotation //granite-brook/peopel ",
+        "bi": "annotation //granite-brook/people "
+      }
+    },
+    {
+      "id": "o02",
+      "category": "ordinary",
+      "before": "choice east/",
+      "after": "",
+      "operations": [
+        {
+          "op": "insert",
+          "text": "qiero "
+        }
+      ],
+      "expected": "choice east/qiero ",
+      "expectedByMode": {
+        "en": "choice east/qiero ",
+        "es": "choice east/quiero ",
+        "bi": "choice east/quiero "
+      }
+    },
+    {
+      "id": "o03",
+      "category": "ordinary",
+      "before": "/indigo-wharf/log;",
+      "after": "",
+      "operations": [
+        {
+          "op": "insert",
+          "text": "peopel "
+        }
+      ],
+      "expected": "/indigo-wharf/log;people ",
+      "expectedByMode": {
+        "en": "/indigo-wharf/log;people ",
+        "es": "/indigo-wharf/log;peopel ",
+        "bi": "/indigo-wharf/log;people "
+      }
+    },
+    {
+      "id": "o04",
+      "category": "ordinary",
+      "before": "/ochre-gate/log#",
+      "after": "",
+      "operations": [
+        {
+          "op": "insert",
+          "text": "qiero "
+        }
+      ],
+      "expected": "/ochre-gate/log#qiero ",
+      "expectedByMode": {
+        "en": "/ochre-gate/log#qiero ",
+        "es": "/ochre-gate/log#quiero ",
+        "bi": "/ochre-gate/log#quiero "
+      }
+    },
+    {
+      "id": "o05",
+      "category": "ordinary",
+      "before": "/silver-cairn/log ",
+      "after": "",
+      "operations": [
+        {
+          "op": "insert",
+          "text": "peopel "
+        }
+      ],
+      "expected": "/silver-cairn/log people ",
+      "expectedByMode": {
+        "en": "/silver-cairn/log people ",
+        "es": "/silver-cairn/log peopel ",
+        "bi": "/silver-cairn/log people "
+      }
+    },
+    {
+      "id": "o06",
+      "category": "ordinary",
+      "before": "/../",
+      "after": "",
+      "operations": [
+        {
+          "op": "insert",
+          "text": "qiero "
+        }
+      ],
+      "expected": "/../qiero ",
+      "expectedByMode": {
+        "en": "/../qiero ",
+        "es": "/../quiero ",
+        "bi": "/../quiero "
+      }
+    },
+    {
+      "id": "o07",
+      "category": "ordinary",
+      "before": "/umber-islet//",
+      "after": "",
+      "operations": [
+        {
+          "op": "insert",
+          "text": "peopel "
+        }
+      ],
+      "expected": "/umber-islet//people ",
+      "expectedByMode": {
+        "en": "/umber-islet//people ",
+        "es": "/umber-islet//peopel ",
+        "bi": "/umber-islet//people "
+      }
+    },
+    {
+      "id": "o08",
+      "category": "ordinary",
+      "before": "/russet-creek:raw/",
+      "after": "",
+      "operations": [
+        {
+          "op": "insert",
+          "text": "qiero "
+        }
+      ],
+      "expected": "/russet-creek:raw/qiero ",
+      "expectedByMode": {
+        "en": "/russet-creek:raw/qiero ",
+        "es": "/russet-creek:raw/quiero ",
+        "bi": "/russet-creek:raw/quiero "
+      }
+    },
+    {
+      "id": "i01",
+      "category": "intentional-miss",
+      "before": "\"/garnet-grove/",
+      "after": "",
+      "operations": [
+        {
+          "op": "insert",
+          "text": "peopel "
+        }
+      ],
+      "expected": "\"/garnet-grove/peopel ",
+      "expectedByMode": {
+        "en": "\"/garnet-grove/peopel ",
+        "es": "\"/garnet-grove/peopel ",
+        "bi": "\"/garnet-grove/peopel "
+      },
+      "notes": "Desired literal bytes outside admitted grammar; report separately as intentional remaining miss, never as a blocking ordinary/control/safety regression."
+    },
+    {
+      "id": "i02",
+      "category": "intentional-miss",
+      "before": "`~/pearl-jetty/",
+      "after": "",
+      "operations": [
+        {
+          "op": "insert",
+          "text": "qiero "
+        }
+      ],
+      "expected": "`~/pearl-jetty/qiero ",
+      "expectedByMode": {
+        "en": "`~/pearl-jetty/qiero ",
+        "es": "`~/pearl-jetty/qiero ",
+        "bi": "`~/pearl-jetty/qiero "
+      },
+      "notes": "Desired literal bytes outside admitted grammar; report separately as intentional remaining miss, never as a blocking ordinary/control/safety regression."
+    },
+    {
+      "id": "i03",
+      "category": "intentional-miss",
+      "before": "//topaz-meadow/",
+      "after": "",
+      "operations": [
+        {
+          "op": "insert",
+          "text": "peopel "
+        }
+      ],
+      "expected": "//topaz-meadow/peopel ",
+      "expectedByMode": {
+        "en": "//topaz-meadow/peopel ",
+        "es": "//topaz-meadow/peopel ",
+        "bi": "//topaz-meadow/peopel "
+      },
+      "notes": "Desired literal bytes outside admitted grammar; report separately as intentional remaining miss, never as a blocking ordinary/control/safety regression."
+    },
+    {
+      "id": "i04",
+      "category": "intentional-miss",
+      "before": "/bronze-harbor/log;",
+      "after": "",
+      "operations": [
+        {
+          "op": "insert",
+          "text": "qiero "
+        }
+      ],
+      "expected": "/bronze-harbor/log;qiero ",
+      "expectedByMode": {
+        "en": "/bronze-harbor/log;qiero ",
+        "es": "/bronze-harbor/log;qiero ",
+        "bi": "/bronze-harbor/log;qiero "
+      },
+      "notes": "Desired literal bytes outside admitted grammar; report separately as intentional remaining miss, never as a blocking ordinary/control/safety regression."
+    },
+    {
+      "id": "i05",
+      "category": "intentional-miss",
+      "before": "--",
+      "after": "",
+      "operations": [
+        {
+          "op": "insert",
+          "text": "peopel "
+        }
+      ],
+      "expected": "--peopel ",
+      "expectedByMode": {
+        "en": "--peopel ",
+        "es": "--peopel ",
+        "bi": "--peopel "
+      },
+      "notes": "Desired literal bytes outside admitted grammar; report separately as intentional remaining miss, never as a blocking ordinary/control/safety regression."
+    },
+    {
+      "id": "c01",
+      "category": "control",
+      "before": "/vermilion-den/",
+      "after": "\nR19-ANCHOR-END",
+      "operations": [
+        {
+          "op": "move",
+          "offset": -14
+        },
+        {
+          "op": "backspace",
+          "expectDocument": "vermilion-den/\nR19-ANCHOR-END"
+        },
+        {
+          "op": "move",
+          "offset": 14
+        },
+        {
+          "op": "insert",
+          "text": "peopel "
+        }
+      ],
+      "expected": "vermilion-den/people \nR19-ANCHOR-END",
+      "expectedByMode": {
+        "en": "vermilion-den/people \nR19-ANCHOR-END",
+        "es": "vermilion-den/peopel \nR19-ANCHOR-END",
+        "bi": "vermilion-den/people \nR19-ANCHOR-END"
+      }
+    },
+    {
+      "id": "c02",
+      "category": "control",
+      "before": "/tangerine-port/",
+      "after": " / ",
+      "operations": [
+        {
+          "op": "move",
+          "offset": 3
+        },
+        {
+          "op": "insert",
+          "text": "peopel "
+        },
+        {
+          "op": "move",
+          "offset": -10
+        },
+        {
+          "op": "insert",
+          "text": "peopel "
+        }
+      ],
+      "expected": "/tangerine-port/peopel  / people ",
+      "expectedByMode": {
+        "en": "/tangerine-port/peopel  / people ",
+        "es": "/tangerine-port/peopel  / peopel ",
+        "bi": "/tangerine-port/peopel  / people "
+      }
+    },
+    {
+      "id": "c03",
+      "category": "control",
+      "before": "/chartreuse-lodge/",
+      "after": "\nR19-SELECTION-END",
+      "operations": [
+        {
+          "op": "select",
+          "start": 0,
+          "end": 18
+        },
+        {
+          "op": "insert",
+          "text": "qiero "
+        }
+      ],
+      "expected": "qiero \nR19-SELECTION-END",
+      "expectedByMode": {
+        "en": "qiero \nR19-SELECTION-END",
+        "es": "quiero \nR19-SELECTION-END",
+        "bi": "quiero \nR19-SELECTION-END"
+      }
+    },
+    {
+      "id": "c04",
+      "category": "control",
+      "before": "./auburn-alcove/",
+      "after": "",
+      "operations": [
+        {
+          "op": "backspace",
+          "count": 16
+        },
+        {
+          "op": "insert",
+          "text": "peopel "
+        },
+        {
+          "op": "undo"
+        }
+      ],
+      "expected": "peopel",
+      "expectedByMode": {
+        "en": "peopel",
+        "es": "peopel ",
+        "bi": "peopel"
+      },
+      "notes": "Undo invokes the keyboard autocorrection reversal via deleteBackward only when deleteUndoesLastEdit is true; reversal restores the spelling and removes the delimiter. With no available correction it is a defined no-op; host insertion undo is not requested."
+    },
+    {
+      "id": "c05",
+      "category": "control",
+      "before": "../turquoise-cell/",
+      "after": "",
+      "operations": [
+        {
+          "op": "insert",
+          "text": "qiero ",
+          "expectDocument": "../turquoise-cell/qiero "
+        },
+        {
+          "op": "reset",
+          "expectDocument": "../turquoise-cell/qiero "
+        },
+        {
+          "op": "insert",
+          "text": "peopel "
+        }
+      ],
+      "expected": "../turquoise-cell/qiero people ",
+      "expectedByMode": {
+        "en": "../turquoise-cell/qiero people ",
+        "es": "../turquoise-cell/qiero peopel ",
+        "bi": "../turquoise-cell/qiero people "
+      }
+    },
+    {
+      "id": "c06",
+      "category": "control",
+      "before": " /magenta-bower/",
+      "after": "",
+      "operations": [
+        {
+          "op": "move",
+          "offset": -16
+        },
+        {
+          "op": "sync",
+          "expectDocument": " /magenta-bower/"
+        },
+        {
+          "op": "insert",
+          "text": "qiero "
+        }
+      ],
+      "expected": "qiero  /magenta-bower/",
+      "expectedByMode": {
+        "en": "qiero  /magenta-bower/",
+        "es": "quiero  /magenta-bower/",
+        "bi": "quiero  /magenta-bower/"
+      }
+    },
+    {
+      "id": "s01",
+      "category": "safety",
+      "before": "vault ",
+      "after": "",
+      "operations": [
+        {
+          "op": "private",
+          "enabled": true
+        },
+        {
+          "op": "insert",
+          "text": "vexulora ",
+          "expectDocument": "vault vexulora ",
+          "expectState": {
+            "personalTotalCount": 0,
+            "personalCounts": {
+              "vexulora": 0
+            }
+          }
+        },
+        {
+          "op": "sync",
+          "expectState": {
+            "personalTotalCount": 0,
+            "personalCounts": {
+              "vexulora": 0
+            }
+          }
+        }
+      ],
+      "expected": "vault vexulora ",
+      "expectedByMode": {
+        "en": "vault vexulora ",
+        "es": "vault vexulora ",
+        "bi": "vault vexulora "
+      }
+    },
+    {
+      "id": "s02",
+      "category": "safety",
+      "before": "/aquamarine-landing/",
+      "after": "",
+      "operations": [
+        {
+          "op": "private",
+          "enabled": true
+        },
+        {
+          "op": "insert",
+          "text": "qiero ",
+          "expectState": {
+            "personalTotalCount": 0,
+            "personalCounts": {
+              "qiero": 0,
+              "quiero": 0
+            }
+          }
+        },
+        {
+          "op": "reset",
+          "expectState": {
+            "personalTotalCount": 0,
+            "personalCounts": {
+              "qiero": 0,
+              "quiero": 0
+            }
+          }
+        }
+      ],
+      "expected": "/aquamarine-landing/qiero ",
+      "expectedByMode": {
+        "en": "/aquamarine-landing/qiero ",
+        "es": "/aquamarine-landing/qiero ",
+        "bi": "/aquamarine-landing/qiero "
+      }
+    },
+    {
+      "id": "s03",
+      "category": "safety",
+      "before": "/platinum-ridge/",
+      "after": "",
+      "operations": [
+        {
+          "op": "insert",
+          "text": "peopel ",
+          "expectState": {
+            "personalTotalCount": 0,
+            "personalCounts": {
+              "peopel": 0,
+              "people": 0
+            }
+          }
+        },
+        {
+          "op": "sync",
+          "expectState": {
+            "personalTotalCount": 0,
+            "personalCounts": {
+              "peopel": 0,
+              "people": 0
+            }
+          }
+        }
+      ],
+      "expected": "/platinum-ridge/peopel ",
+      "expectedByMode": {
+        "en": "/platinum-ridge/peopel ",
+        "es": "/platinum-ridge/peopel ",
+        "bi": "/platinum-ridge/peopel "
+      }
+    },
+    {
+      "id": "s04",
+      "category": "safety",
+      "before": "vault ",
+      "after": "",
+      "operations": [
+        {
+          "op": "private",
+          "enabled": true
+        },
+        {
+          "op": "insert",
+          "text": "zelqumina ",
+          "expectState": {
+            "personalTotalCount": 0,
+            "personalCounts": {
+              "zelqumina": 0
+            }
+          }
+        },
+        {
+          "op": "private",
+          "enabled": false
+        },
+        {
+          "op": "reset"
+        },
+        {
+          "op": "insert",
+          "text": "qiero "
+        }
+      ],
+      "expected": "vault zelqumina qiero ",
+      "expectedByMode": {
+        "en": "vault zelqumina qiero ",
+        "es": "vault zelqumina quiero ",
+        "bi": "vault zelqumina quiero "
+      }
+    }
+  ]
+}

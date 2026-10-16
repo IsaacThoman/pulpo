@@ -1,0 +1,41 @@
+{
+  "allTemplates": 35,
+  "allLanguageExecutionsPerVersion": 105,
+  "executedRowsPerVersion": 105,
+  "dictionaryOrReplayUnavailableRows": 0,
+  "unsupportedStateAssertionTemplates": [
+    "s01",
+    "s02",
+    "s03",
+    "s04"
+  ],
+  "unsupportedStateAssertionRowsPerVersion": 12,
+  "unsupportedAssertionOccurrencesPerVersion": 21,
+  "resetSemanticMismatchTemplates": [
+    "c05",
+    "s02",
+    "s04"
+  ],
+  "resetSemanticMismatchRowsPerVersion": 9,
+  "undoSemanticMismatchTemplates": [
+    "c04"
+  ],
+  "undoSemanticMismatchRowsPerVersion": 3,
+  "authorUsesNondefaultCapitalization": true,
+  "actualRunnerUsesNormalPolicy": true,
+  "authorProtocolAlteredToRescueResults": false,
+  "casesExpectedOrRunnerEditedAfterReveal": false,
+  "note": "Lists overlap; do not add them to infer a unique unavailable denominator. Every authored final expectation and checkpoint remains unchanged; unsupported expectState fields generate schema errors in all matching rows. Mode/case failures remain in the primary denominator.",
+  "oracleErrorsPerVersion": {
+    "baseline": 26,
+    "candidate": 24
+  },
+  "documentExactIgnoringOracleErrors": {
+    "baseline": 51,
+    "candidate": 77
+  },
+  "primaryPassingIncludingAllCheckpoints": {
+    "baseline": 47,
+    "candidate": 71
+  }
+}

@@ -1,0 +1,374 @@
+{
+  "cases": [
+    {
+      "id": "slash-prose",
+      "category": "ordinary",
+      "before": "the notation /and/",
+      "after": "",
+      "operations": [
+        {
+          "op": "insert",
+          "text": "teh "
+        }
+      ],
+      "expected": "the notation /and/the ",
+      "expectedByMode": {
+        "es": "the notation /and/teh "
+      },
+      "notes": "Independent reviewer ordinary-intent ambiguity; fixed as ordinary before execution, never reclassified by parser match."
+    },
+    {
+      "id": "comment-dot",
+      "category": "ordinary",
+      "before": "//(./",
+      "after": "",
+      "operations": [
+        {
+          "op": "insert",
+          "text": "teh "
+        }
+      ],
+      "expected": "//(./the ",
+      "expectedByMode": {
+        "es": "//(./teh "
+      },
+      "notes": "Independent reviewer ordinary-intent ambiguity; fixed as ordinary before execution, never reclassified by parser match."
+    },
+    {
+      "id": "comment-root",
+      "category": "ordinary",
+      "before": "//(/tmp/",
+      "after": "",
+      "operations": [
+        {
+          "op": "insert",
+          "text": "teh "
+        }
+      ],
+      "expected": "//(/tmp/the ",
+      "expectedByMode": {
+        "es": "//(/tmp/teh "
+      },
+      "notes": "Independent reviewer ordinary-intent ambiguity; fixed as ordinary before execution, never reclassified by parser match."
+    },
+    {
+      "id": "separator-38",
+      "category": "ordinary",
+      "before": "/tmp/file&",
+      "after": "",
+      "operations": [
+        {
+          "op": "insert",
+          "text": "teh "
+        }
+      ],
+      "expected": "/tmp/file&the ",
+      "expectedByMode": {
+        "es": "/tmp/file&teh "
+      }
+    },
+    {
+      "id": "separator-60",
+      "category": "ordinary",
+      "before": "/tmp/file<",
+      "after": "",
+      "operations": [
+        {
+          "op": "insert",
+          "text": "teh "
+        }
+      ],
+      "expected": "/tmp/file<the ",
+      "expectedByMode": {
+        "es": "/tmp/file<teh "
+      }
+    },
+    {
+      "id": "separator-62",
+      "category": "ordinary",
+      "before": "/tmp/file>",
+      "after": "",
+      "operations": [
+        {
+          "op": "insert",
+          "text": "teh "
+        }
+      ],
+      "expected": "/tmp/file>the ",
+      "expectedByMode": {
+        "es": "/tmp/file>teh "
+      }
+    },
+    {
+      "id": "separator-40",
+      "category": "ordinary",
+      "before": "/tmp/file(",
+      "after": "",
+      "operations": [
+        {
+          "op": "insert",
+          "text": "teh "
+        }
+      ],
+      "expected": "/tmp/file(the ",
+      "expectedByMode": {
+        "es": "/tmp/file(teh "
+      }
+    },
+    {
+      "id": "separator-41",
+      "category": "ordinary",
+      "before": "/tmp/file)",
+      "after": "",
+      "operations": [
+        {
+          "op": "insert",
+          "text": "teh "
+        }
+      ],
+      "expected": "/tmp/file)the ",
+      "expectedByMode": {
+        "es": "/tmp/file)teh "
+      }
+    },
+    {
+      "id": "separator-91",
+      "category": "ordinary",
+      "before": "/tmp/file[",
+      "after": "",
+      "operations": [
+        {
+          "op": "insert",
+          "text": "teh "
+        }
+      ],
+      "expected": "/tmp/file[the ",
+      "expectedByMode": {
+        "es": "/tmp/file[teh "
+      }
+    },
+    {
+      "id": "separator-93",
+      "category": "ordinary",
+      "before": "/tmp/file]",
+      "after": "",
+      "operations": [
+        {
+          "op": "insert",
+          "text": "teh "
+        }
+      ],
+      "expected": "/tmp/file]the ",
+      "expectedByMode": {
+        "es": "/tmp/file]teh "
+      }
+    },
+    {
+      "id": "separator-123",
+      "category": "ordinary",
+      "before": "/tmp/file{",
+      "after": "",
+      "operations": [
+        {
+          "op": "insert",
+          "text": "teh "
+        }
+      ],
+      "expected": "/tmp/file{the ",
+      "expectedByMode": {
+        "es": "/tmp/file{teh "
+      }
+    },
+    {
+      "id": "separator-125",
+      "category": "ordinary",
+      "before": "/tmp/file}",
+      "after": "",
+      "operations": [
+        {
+          "op": "insert",
+          "text": "teh "
+        }
+      ],
+      "expected": "/tmp/file}the ",
+      "expectedByMode": {
+        "es": "/tmp/file}teh "
+      }
+    },
+    {
+      "id": "separator-63",
+      "category": "ordinary",
+      "before": "/tmp/file?",
+      "after": "",
+      "operations": [
+        {
+          "op": "insert",
+          "text": "teh "
+        }
+      ],
+      "expected": "/tmp/file?the ",
+      "expectedByMode": {
+        "es": "/tmp/file?teh "
+      }
+    },
+    {
+      "id": "separator-61",
+      "category": "ordinary",
+      "before": "/tmp/file=",
+      "after": "",
+      "operations": [
+        {
+          "op": "insert",
+          "text": "teh "
+        }
+      ],
+      "expected": "/tmp/file=the ",
+      "expectedByMode": {
+        "es": "/tmp/file=teh "
+      }
+    },
+    {
+      "id": "separator-44",
+      "category": "ordinary",
+      "before": "/tmp/file,",
+      "after": "",
+      "operations": [
+        {
+          "op": "insert",
+          "text": "teh "
+        }
+      ],
+      "expected": "/tmp/file,the ",
+      "expectedByMode": {
+        "es": "/tmp/file,teh "
+      }
+    },
+    {
+      "id": "separator-43",
+      "category": "ordinary",
+      "before": "/tmp/file+",
+      "after": "",
+      "operations": [
+        {
+          "op": "insert",
+          "text": "teh "
+        }
+      ],
+      "expected": "/tmp/file+the ",
+      "expectedByMode": {
+        "es": "/tmp/file+teh "
+      }
+    },
+    {
+      "id": "learning-hyphen",
+      "category": "safety",
+      "before": "/tmp/",
+      "after": "",
+      "operations": [
+        {
+          "op": "insert",
+          "text": "hello-world "
+        },
+        {
+          "op": "save",
+          "expectNoLearning": true
+        }
+      ],
+      "expected": "/tmp/hello-world ",
+      "notes": "Source-review learning limitation calibration. No complete final-component nonlearning claim."
+    },
+    {
+      "id": "learning-tilde",
+      "category": "safety",
+      "before": "/tmp/",
+      "after": "",
+      "operations": [
+        {
+          "op": "insert",
+          "text": "hello~world "
+        },
+        {
+          "op": "save",
+          "expectNoLearning": true
+        }
+      ],
+      "expected": "/tmp/hello~world ",
+      "notes": "Source-review learning limitation calibration. No complete final-component nonlearning claim."
+    },
+    {
+      "id": "learning-underscore",
+      "category": "safety",
+      "before": "/tmp/",
+      "after": "",
+      "operations": [
+        {
+          "op": "insert",
+          "text": "hello_world "
+        },
+        {
+          "op": "save",
+          "expectNoLearning": true
+        }
+      ],
+      "expected": "/tmp/hello_world ",
+      "notes": "Source-review learning limitation calibration. No complete final-component nonlearning claim."
+    },
+    {
+      "id": "explicit-state",
+      "category": "control",
+      "before": "say ./work/teh",
+      "after": " tail",
+      "operations": [
+        {
+          "op": "select",
+          "start": 11,
+          "end": 14,
+          "expectCursor": 11,
+          "expectSelection": 3
+        },
+        {
+          "op": "insert",
+          "text": "world ",
+          "expectCursor": 17,
+          "expectSelection": 0,
+          "expectUndoAvailable": false
+        },
+        {
+          "op": "sync",
+          "expectCursor": 17
+        }
+      ],
+      "expected": "say ./work/world  tail"
+    },
+    {
+      "id": "private-delta",
+      "category": "safety",
+      "before": "say ",
+      "after": "",
+      "operations": [
+        {
+          "op": "insert",
+          "text": "hello "
+        },
+        {
+          "op": "save"
+        },
+        {
+          "op": "private",
+          "enabled": true,
+          "expectLearns": false,
+          "expectAutocorrects": false
+        },
+        {
+          "op": "insert",
+          "text": "hello "
+        },
+        {
+          "op": "save",
+          "expectLearningUnchanged": true
+        }
+      ],
+      "expected": "say hello hello "
+    }
+  ]
+}

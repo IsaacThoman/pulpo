@@ -1,0 +1,27 @@
+{
+  "schemaErrors": [],
+  "command": [
+    "swift",
+    "test",
+    "--package-path",
+    "/Users/isaacthoman/.t3/worktrees/pulpo/t3-6c27ffb5/apps/keyboard-ios/PulpoKeyboardKit",
+    "-c",
+    "release",
+    "--filter",
+    "AnchoredGrammarReplayTests"
+  ],
+  "inputSHA256": "425a118fb07d19625ea247ff6654966aba7713e1e6688463e8eaecbceb859dd0",
+  "engineSHA256": "bbeac835ed46d3dc8aa949d7e773e323b95a853cabd67a8939f3c0f200579937",
+  "runnerSHA256": "01333628a8ab4fc85ec8df0dc4884daf9efdd352b06d62f11c9a9459dffb583c",
+  "templates": 21,
+  "denominator": 63,
+  "exitCode": 0,
+  "wallSeconds": 29.31689625,
+  "summary": [
+    "/Users/isaacthoman/.t3/worktrees/pulpo/t3-6c27ffb5/apps/keyboard-ios/PulpoKeyboardKit/Tests/KeyboardCoreTests/WordDeletionTests.swift:97:9: warning: expression of type 'KeyboardEngine.WordDeletion' is unused [#NoUsage]",
+    "    |         `- warning: expression of type 'KeyboardEngine.WordDeletion' is unused [#NoUsage]",
+    "Build complete! (28.23 sec)",
+    "R19 exact 47/63, oracle errors 18",
+    "\u2714 Test run with 1 test in 1 suite passed after 0.061 seconds."
+  ]
+}

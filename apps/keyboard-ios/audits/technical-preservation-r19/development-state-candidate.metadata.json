@@ -1,0 +1,24 @@
+{
+  "command": [
+    "swift",
+    "test",
+    "--package-path",
+    "/Users/isaacthoman/.t3/worktrees/pulpo/t3-6c27ffb5/apps/keyboard-ios/PulpoKeyboardKit",
+    "-c",
+    "release",
+    "--filter",
+    "AnchoredGrammarReplayTests"
+  ],
+  "inputSHA256": "37cce519aeab84c21387e24b940cb4c58dd751ed8b7b60f54457ea41d1a7e7af",
+  "engineSHA256": "bbeac835ed46d3dc8aa949d7e773e323b95a853cabd67a8939f3c0f200579937",
+  "runnerSHA256": "d3d6f5902c2e2043eb43189b790961c683da6ffef33909be0304ec32e4232be9",
+  "templates": 20,
+  "denominator": 60,
+  "exitCode": 0,
+  "wallSeconds": 1.5693345,
+  "summary": [
+    "Build complete! (0.36 sec)",
+    "R19 exact 59/60, oracle errors 1",
+    "\u2714 Test run with 1 test in 1 suite passed after 0.234 seconds."
+  ]
+}

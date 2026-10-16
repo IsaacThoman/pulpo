@@ -1,0 +1,181 @@
+{
+  "baselineRows": 60,
+  "candidateRows": 60,
+  "denominator": 60,
+  "missingBaseline": [],
+  "missingCandidate": [],
+  "modes": {
+    "en": {
+      "denominator": 20,
+      "baselinePass": 18,
+      "candidatePass": 20,
+      "gains": [
+        "notes-corruption",
+        "selection-suffix"
+      ],
+      "regressions": [],
+      "remainingMisses": [],
+      "oracleErrorsBaseline": {},
+      "oracleErrorsCandidate": {},
+      "ordinaryStateChanges": [],
+      "changedOutputs": [
+        "notes-corruption",
+        "selection-suffix"
+      ],
+      "categories": {
+        "control": {
+          "rows": 5,
+          "baselinePass": 5,
+          "candidatePass": 5,
+          "regressions": []
+        },
+        "literal": {
+          "rows": 7,
+          "baselinePass": 5,
+          "candidatePass": 7,
+          "regressions": []
+        },
+        "ordinary": {
+          "rows": 5,
+          "baselinePass": 5,
+          "candidatePass": 5,
+          "regressions": []
+        },
+        "safety": {
+          "rows": 3,
+          "baselinePass": 3,
+          "candidatePass": 3,
+          "regressions": []
+        }
+      }
+    },
+    "es": {
+      "denominator": 20,
+      "baselinePass": 14,
+      "candidatePass": 19,
+      "gains": [
+        "root-es",
+        "home-es",
+        "relative-es",
+        "drive-es",
+        "unc-es"
+      ],
+      "regressions": [],
+      "remainingMisses": [
+        "private-transition"
+      ],
+      "oracleErrorsBaseline": {
+        "private-transition": [
+          "learning checkpoint 4"
+        ]
+      },
+      "oracleErrorsCandidate": {
+        "private-transition": [
+          "learning checkpoint 4"
+        ]
+      },
+      "ordinaryStateChanges": [],
+      "changedOutputs": [
+        "root-es",
+        "home-es",
+        "relative-es",
+        "drive-es",
+        "unc-es"
+      ],
+      "categories": {
+        "control": {
+          "rows": 5,
+          "baselinePass": 5,
+          "candidatePass": 5,
+          "regressions": []
+        },
+        "literal": {
+          "rows": 7,
+          "baselinePass": 2,
+          "candidatePass": 7,
+          "regressions": []
+        },
+        "ordinary": {
+          "rows": 5,
+          "baselinePass": 5,
+          "candidatePass": 5,
+          "regressions": []
+        },
+        "safety": {
+          "rows": 3,
+          "baselinePass": 2,
+          "candidatePass": 2,
+          "regressions": []
+        }
+      }
+    },
+    "bi": {
+      "denominator": 20,
+      "baselinePass": 13,
+      "candidatePass": 20,
+      "gains": [
+        "root-es",
+        "home-es",
+        "relative-es",
+        "drive-es",
+        "unc-es",
+        "notes-corruption",
+        "selection-suffix"
+      ],
+      "regressions": [],
+      "remainingMisses": [],
+      "oracleErrorsBaseline": {},
+      "oracleErrorsCandidate": {},
+      "ordinaryStateChanges": [],
+      "changedOutputs": [
+        "root-es",
+        "home-es",
+        "relative-es",
+        "drive-es",
+        "unc-es",
+        "notes-corruption",
+        "selection-suffix"
+      ],
+      "categories": {
+        "control": {
+          "rows": 5,
+          "baselinePass": 5,
+          "candidatePass": 5,
+          "regressions": []
+        },
+        "literal": {
+          "rows": 7,
+          "baselinePass": 0,
+          "candidatePass": 7,
+          "regressions": []
+        },
+        "ordinary": {
+          "rows": 5,
+          "baselinePass": 5,
+          "candidatePass": 5,
+          "regressions": []
+        },
+        "safety": {
+          "rows": 3,
+          "baselinePass": 3,
+          "candidatePass": 3,
+          "regressions": []
+        }
+      }
+    }
+  },
+  "timings": {
+    "baseline": {
+      "keys": 540,
+      "medianMs": 0.09116666751651792,
+      "p95Ms": 1.821124998969026,
+      "maxMs": 2.160083333365037
+    },
+    "candidate": {
+      "keys": 540,
+      "medianMs": 0.02406250041531166,
+      "p95Ms": 2.0256666666682577,
+      "maxMs": 4.240208334522322
+    }
+  }
+}

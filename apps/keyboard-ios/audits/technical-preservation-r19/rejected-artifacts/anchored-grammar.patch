@@ -1,0 +1,54 @@
+diff --git a/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Input/KeyboardEngine.swift b/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Input/KeyboardEngine.swift
+index 3250fc21..341b9933 100644
+--- a/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Input/KeyboardEngine.swift
++++ b/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Input/KeyboardEngine.swift
+@@ -1266,6 +1266,49 @@ public final class KeyboardEngine {
+     return token.contains("@") || token.hasPrefix("#") || token.contains("_")
+       || token.contains("://") || lowered.hasPrefix("www.")
+       || ["http", "https", "ftp", "mailto"].contains(lowered)
++      || Self.hasAnchoredPathComponent(token)
++  }
++
++  /// Limit path preservation to a lexical fragment with an explicit anchor.
++  /// Prose/shell separators end the fragment; real filenames containing those
++  /// characters (and quoted paths) deliberately retain ordinary correction.
++  /// Recompute at the caret so host edits cannot leave a sticky literal mode.
++  static func hasAnchoredPathComponent(_ token: Substring) -> Bool {
++    guard !token.contains(where: { "\"'`\u{2018}\u{2019}\u{201C}\u{201D}".contains($0) }) else { return false }
++    let boundary = token.lastIndex { ";|&<>()[]{}!?=,+#".contains($0) }
++    let fragment = boundary.map { token[token.index(after: $0)...] } ?? token
++    guard !fragment.isEmpty else { return false }
++
++    func component(_ value: Substring) -> Bool {
++      !value.isEmpty && value.allSatisfy { $0.isLetter || $0.isNumber || "._-~".contains($0) }
++    }
++    func directory(_ value: Substring) -> Bool {
++      component(value) && value.contains { $0 != "." }
++    }
++    func components(_ body: Substring, separator: Character) -> [Substring]? {
++      let parts = body.split(separator: separator, omittingEmptySubsequences: false)
++      return !parts.isEmpty && parts.allSatisfy(component) ? parts : nil
++    }
++
++    if fragment.hasPrefix("/") {
++      // // commonly starts a comment. A single slash also lacks directory
++      // evidence; neither makes its following word unconditionally literal.
++      guard !fragment.hasPrefix("//"), let parts = components(fragment.dropFirst(), separator: "/"),
++            parts.count >= 2 else { return false }
++      return parts.dropLast().contains(where: directory)
++    }
++    for anchor in ["~/", "./", "../"] where fragment.hasPrefix(anchor) {
++      return components(fragment.dropFirst(anchor.count), separator: "/") != nil
++    }
++    if fragment.hasPrefix("\\\\") {
++      guard let parts = components(fragment.dropFirst(2), separator: "\\"), parts.count >= 3 else { return false }
++      return directory(parts[0]) && directory(parts[1])
++    }
++    var characters = fragment.makeIterator()
++    guard let drive = characters.next(), drive.isASCII, drive.isLetter,
++          characters.next() == ":", let separator = characters.next(),
++          separator == "/" || separator == "\\" else { return false }
++    return components(fragment.dropFirst(3), separator: separator) != nil
+   }
+ 
+   /// The last whitespace-separated token, as `split(whereSeparator:).last` finds it,

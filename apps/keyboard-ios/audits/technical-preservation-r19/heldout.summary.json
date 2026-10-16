@@ -1,0 +1,579 @@
+{
+  "inputTemplates": 35,
+  "expectedDenominator": 105,
+  "unexpectedRows": [],
+  "baselineRows": 105,
+  "candidateRows": 105,
+  "denominator": 105,
+  "missingBaseline": [],
+  "missingCandidate": [],
+  "infrastructureErrors": [
+    [
+      "s01",
+      "en",
+      "schema: unknown operation key expectState"
+    ],
+    [
+      "s01",
+      "en",
+      "schema: unknown operation key expectState"
+    ],
+    [
+      "s02",
+      "en",
+      "schema: unknown operation key expectState"
+    ],
+    [
+      "s02",
+      "en",
+      "schema: unknown operation key expectState"
+    ],
+    [
+      "s03",
+      "en",
+      "schema: unknown operation key expectState"
+    ],
+    [
+      "s03",
+      "en",
+      "schema: unknown operation key expectState"
+    ],
+    [
+      "s04",
+      "en",
+      "schema: unknown operation key expectState"
+    ],
+    [
+      "s01",
+      "es",
+      "schema: unknown operation key expectState"
+    ],
+    [
+      "s01",
+      "es",
+      "schema: unknown operation key expectState"
+    ],
+    [
+      "s02",
+      "es",
+      "schema: unknown operation key expectState"
+    ],
+    [
+      "s02",
+      "es",
+      "schema: unknown operation key expectState"
+    ],
+    [
+      "s03",
+      "es",
+      "schema: unknown operation key expectState"
+    ],
+    [
+      "s03",
+      "es",
+      "schema: unknown operation key expectState"
+    ],
+    [
+      "s04",
+      "es",
+      "schema: unknown operation key expectState"
+    ],
+    [
+      "s01",
+      "bi",
+      "schema: unknown operation key expectState"
+    ],
+    [
+      "s01",
+      "bi",
+      "schema: unknown operation key expectState"
+    ],
+    [
+      "s02",
+      "bi",
+      "schema: unknown operation key expectState"
+    ],
+    [
+      "s02",
+      "bi",
+      "schema: unknown operation key expectState"
+    ],
+    [
+      "s03",
+      "bi",
+      "schema: unknown operation key expectState"
+    ],
+    [
+      "s03",
+      "bi",
+      "schema: unknown operation key expectState"
+    ],
+    [
+      "s04",
+      "bi",
+      "schema: unknown operation key expectState"
+    ],
+    [
+      "s01",
+      "en",
+      "schema: unknown operation key expectState"
+    ],
+    [
+      "s01",
+      "en",
+      "schema: unknown operation key expectState"
+    ],
+    [
+      "s02",
+      "en",
+      "schema: unknown operation key expectState"
+    ],
+    [
+      "s02",
+      "en",
+      "schema: unknown operation key expectState"
+    ],
+    [
+      "s03",
+      "en",
+      "schema: unknown operation key expectState"
+    ],
+    [
+      "s03",
+      "en",
+      "schema: unknown operation key expectState"
+    ],
+    [
+      "s04",
+      "en",
+      "schema: unknown operation key expectState"
+    ],
+    [
+      "s01",
+      "es",
+      "schema: unknown operation key expectState"
+    ],
+    [
+      "s01",
+      "es",
+      "schema: unknown operation key expectState"
+    ],
+    [
+      "s02",
+      "es",
+      "schema: unknown operation key expectState"
+    ],
+    [
+      "s02",
+      "es",
+      "schema: unknown operation key expectState"
+    ],
+    [
+      "s03",
+      "es",
+      "schema: unknown operation key expectState"
+    ],
+    [
+      "s03",
+      "es",
+      "schema: unknown operation key expectState"
+    ],
+    [
+      "s04",
+      "es",
+      "schema: unknown operation key expectState"
+    ],
+    [
+      "s01",
+      "bi",
+      "schema: unknown operation key expectState"
+    ],
+    [
+      "s01",
+      "bi",
+      "schema: unknown operation key expectState"
+    ],
+    [
+      "s02",
+      "bi",
+      "schema: unknown operation key expectState"
+    ],
+    [
+      "s02",
+      "bi",
+      "schema: unknown operation key expectState"
+    ],
+    [
+      "s03",
+      "bi",
+      "schema: unknown operation key expectState"
+    ],
+    [
+      "s03",
+      "bi",
+      "schema: unknown operation key expectState"
+    ],
+    [
+      "s04",
+      "bi",
+      "schema: unknown operation key expectState"
+    ]
+  ],
+  "modes": {
+    "en": {
+      "denominator": 35,
+      "baselinePass": 17,
+      "candidatePass": 24,
+      "gains": [
+        "l01",
+        "l03",
+        "l05",
+        "l07",
+        "l09",
+        "l11",
+        "c02"
+      ],
+      "regressions": [],
+      "remainingMisses": [
+        "i01",
+        "i03",
+        "i05",
+        "c03",
+        "c04",
+        "c05",
+        "c06",
+        "s01",
+        "s02",
+        "s03",
+        "s04"
+      ],
+      "oracleErrorsBaseline": {
+        "c05": [
+          "document checkpoint 1: expected ../turquoise-cell/qiero , got "
+        ],
+        "s01": [
+          "schema: unknown operation key expectState",
+          "schema: unknown operation key expectState"
+        ],
+        "s02": [
+          "schema: unknown operation key expectState",
+          "schema: unknown operation key expectState"
+        ],
+        "s03": [
+          "schema: unknown operation key expectState",
+          "schema: unknown operation key expectState"
+        ],
+        "s04": [
+          "schema: unknown operation key expectState"
+        ]
+      },
+      "oracleErrorsCandidate": {
+        "c05": [
+          "document checkpoint 1: expected ../turquoise-cell/qiero , got "
+        ],
+        "s01": [
+          "schema: unknown operation key expectState",
+          "schema: unknown operation key expectState"
+        ],
+        "s02": [
+          "schema: unknown operation key expectState",
+          "schema: unknown operation key expectState"
+        ],
+        "s03": [
+          "schema: unknown operation key expectState",
+          "schema: unknown operation key expectState"
+        ],
+        "s04": [
+          "schema: unknown operation key expectState"
+        ]
+      },
+      "ordinaryStateChanges": [],
+      "changedOutputs": [
+        "l01",
+        "l03",
+        "l05",
+        "l07",
+        "l09",
+        "l11",
+        "c02",
+        "s03"
+      ],
+      "categories": {
+        "control": {
+          "rows": 6,
+          "baselinePass": 1,
+          "candidatePass": 2,
+          "regressions": []
+        },
+        "intentional-miss": {
+          "rows": 5,
+          "baselinePass": 2,
+          "candidatePass": 2,
+          "regressions": []
+        },
+        "literal": {
+          "rows": 12,
+          "baselinePass": 6,
+          "candidatePass": 12,
+          "regressions": []
+        },
+        "ordinary": {
+          "rows": 8,
+          "baselinePass": 8,
+          "candidatePass": 8,
+          "regressions": []
+        },
+        "safety": {
+          "rows": 4,
+          "baselinePass": 0,
+          "candidatePass": 0,
+          "regressions": []
+        }
+      }
+    },
+    "es": {
+      "denominator": 35,
+      "baselinePass": 20,
+      "candidatePass": 25,
+      "gains": [
+        "l02",
+        "l04",
+        "l06",
+        "l08",
+        "l12"
+      ],
+      "regressions": [],
+      "remainingMisses": [
+        "i02",
+        "i04",
+        "c03",
+        "c04",
+        "c05",
+        "c06",
+        "s01",
+        "s02",
+        "s03",
+        "s04"
+      ],
+      "oracleErrorsBaseline": {
+        "c05": [
+          "document checkpoint 0: expected ../turquoise-cell/qiero , got ../turquoise-cell/quiero ",
+          "document checkpoint 1: expected ../turquoise-cell/qiero , got "
+        ],
+        "s01": [
+          "schema: unknown operation key expectState",
+          "schema: unknown operation key expectState"
+        ],
+        "s02": [
+          "schema: unknown operation key expectState",
+          "schema: unknown operation key expectState"
+        ],
+        "s03": [
+          "schema: unknown operation key expectState",
+          "schema: unknown operation key expectState"
+        ],
+        "s04": [
+          "schema: unknown operation key expectState"
+        ]
+      },
+      "oracleErrorsCandidate": {
+        "c05": [
+          "document checkpoint 1: expected ../turquoise-cell/qiero , got "
+        ],
+        "s01": [
+          "schema: unknown operation key expectState",
+          "schema: unknown operation key expectState"
+        ],
+        "s02": [
+          "schema: unknown operation key expectState",
+          "schema: unknown operation key expectState"
+        ],
+        "s03": [
+          "schema: unknown operation key expectState",
+          "schema: unknown operation key expectState"
+        ],
+        "s04": [
+          "schema: unknown operation key expectState"
+        ]
+      },
+      "ordinaryStateChanges": [],
+      "changedOutputs": [
+        "l02",
+        "l04",
+        "l06",
+        "l08",
+        "l12"
+      ],
+      "categories": {
+        "control": {
+          "rows": 6,
+          "baselinePass": 2,
+          "candidatePass": 2,
+          "regressions": []
+        },
+        "intentional-miss": {
+          "rows": 5,
+          "baselinePass": 3,
+          "candidatePass": 3,
+          "regressions": []
+        },
+        "literal": {
+          "rows": 12,
+          "baselinePass": 7,
+          "candidatePass": 12,
+          "regressions": []
+        },
+        "ordinary": {
+          "rows": 8,
+          "baselinePass": 8,
+          "candidatePass": 8,
+          "regressions": []
+        },
+        "safety": {
+          "rows": 4,
+          "baselinePass": 0,
+          "candidatePass": 0,
+          "regressions": []
+        }
+      }
+    },
+    "bi": {
+      "denominator": 35,
+      "baselinePass": 10,
+      "candidatePass": 22,
+      "gains": [
+        "l01",
+        "l02",
+        "l03",
+        "l04",
+        "l05",
+        "l06",
+        "l07",
+        "l08",
+        "l09",
+        "l11",
+        "l12",
+        "c02"
+      ],
+      "regressions": [],
+      "remainingMisses": [
+        "i01",
+        "i02",
+        "i03",
+        "i04",
+        "i05",
+        "c03",
+        "c04",
+        "c05",
+        "c06",
+        "s01",
+        "s02",
+        "s03",
+        "s04"
+      ],
+      "oracleErrorsBaseline": {
+        "c05": [
+          "document checkpoint 0: expected ../turquoise-cell/qiero , got ../turquoise-cell/quiero ",
+          "document checkpoint 1: expected ../turquoise-cell/qiero , got "
+        ],
+        "s01": [
+          "schema: unknown operation key expectState",
+          "schema: unknown operation key expectState"
+        ],
+        "s02": [
+          "schema: unknown operation key expectState",
+          "schema: unknown operation key expectState"
+        ],
+        "s03": [
+          "schema: unknown operation key expectState",
+          "schema: unknown operation key expectState"
+        ],
+        "s04": [
+          "schema: unknown operation key expectState"
+        ]
+      },
+      "oracleErrorsCandidate": {
+        "c05": [
+          "document checkpoint 1: expected ../turquoise-cell/qiero , got "
+        ],
+        "s01": [
+          "schema: unknown operation key expectState",
+          "schema: unknown operation key expectState"
+        ],
+        "s02": [
+          "schema: unknown operation key expectState",
+          "schema: unknown operation key expectState"
+        ],
+        "s03": [
+          "schema: unknown operation key expectState",
+          "schema: unknown operation key expectState"
+        ],
+        "s04": [
+          "schema: unknown operation key expectState"
+        ]
+      },
+      "ordinaryStateChanges": [],
+      "changedOutputs": [
+        "l01",
+        "l02",
+        "l03",
+        "l04",
+        "l05",
+        "l06",
+        "l07",
+        "l08",
+        "l09",
+        "l11",
+        "l12",
+        "c02",
+        "s03"
+      ],
+      "categories": {
+        "control": {
+          "rows": 6,
+          "baselinePass": 1,
+          "candidatePass": 2,
+          "regressions": []
+        },
+        "intentional-miss": {
+          "rows": 5,
+          "baselinePass": 0,
+          "candidatePass": 0,
+          "regressions": []
+        },
+        "literal": {
+          "rows": 12,
+          "baselinePass": 1,
+          "candidatePass": 12,
+          "regressions": []
+        },
+        "ordinary": {
+          "rows": 8,
+          "baselinePass": 8,
+          "candidatePass": 8,
+          "regressions": []
+        },
+        "safety": {
+          "rows": 4,
+          "baselinePass": 0,
+          "candidatePass": 0,
+          "regressions": []
+        }
+      }
+    }
+  },
+  "timings": {
+    "baseline": {
+      "keys": 762,
+      "medianMs": 0.1037291676766472,
+      "p95Ms": 1.0146249987883493,
+      "maxMs": 1.3639583339681849
+    },
+    "candidate": {
+      "keys": 762,
+      "medianMs": 0.046499999371008016,
+      "p95Ms": 0.731208334400435,
+      "maxMs": 1.9873333330906462
+    }
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "schemaErrors": [
+    "s01/1: unknown operation key expectState",
+    "s01/2: unknown operation key expectState",
+    "s02/1: unknown operation key expectState",
+    "s02/2: unknown operation key expectState",
+    "s03/0: unknown operation key expectState",
+    "s03/1: unknown operation key expectState",
+    "s04/1: unknown operation key expectState"
+  ],
+  "command": [
+    "swift",
+    "test",
+    "--package-path",
+    "/private/tmp/pulpo-r19-candidate/PulpoKeyboardKit",
+    "-c",
+    "release",
+    "--filter",
+    "AnchoredGrammarReplayTests"
+  ],
+  "inputSHA256": "422ec66018c9abf6da45dcea36591a1d83cac7503088b4b9319e4b689eefdb08",
+  "engineSHA256": "bbeac835ed46d3dc8aa949d7e773e323b95a853cabd67a8939f3c0f200579937",
+  "runnerSHA256": "01333628a8ab4fc85ec8df0dc4884daf9efdd352b06d62f11c9a9459dffb583c",
+  "sourceStableDuringRun": true,
+  "templates": 35,
+  "denominator": 105,
+  "exitCode": 0,
+  "wallSeconds": 47.479838542,
+  "summary": [
+    "/private/tmp/pulpo-r19-candidate/PulpoKeyboardKit/Sources/KeyboardCore/Geometry/TouchModel.swift:155:54: warning: converting non-Sendable function value to '@Sendable @convention(block) () -> Void' may introduce data races",
+    "    |                                                      `- warning: converting non-Sendable function value to '@Sendable @convention(block) () -> Void' may introduce data races",
+    "/private/tmp/pulpo-r19-candidate/PulpoKeyboardKit/Tests/KeyboardCoreTests/WordDeletionTests.swift:97:9: warning: expression of type 'KeyboardEngine.WordDeletion' is unused [#NoUsage]",
+    "    |         `- warning: expression of type 'KeyboardEngine.WordDeletion' is unused [#NoUsage]",
+    "Build complete! (45.79 sec)",
+    "R19 exact 71/105, oracle errors 24",
+    "\u2714 Test run with 1 test in 1 suite passed after 0.208 seconds."
+  ]
+}
