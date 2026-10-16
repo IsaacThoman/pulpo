@@ -67,16 +67,27 @@ final class PreviewDocumentLifecycleCounterchecks: XCTestCase {
     }
   }
 
-  func testStandaloneDocumentSurvivesInputControllerEngineAndHostRelease() {
+  func testStandaloneDocumentSurvivesInputControllerEngineAndHostRelease() throws {
     let editor = makeEditor("cobalt kite")
     weak var releasedHost: PreviewHost?
     weak var releasedController: KeyboardController?
     weak var releasedInput: PreviewInputView?
     weak var releasedEngine: KeyboardEngine?
+    let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
     let document: TextDocument = autoreleasepool {
       let host = PreviewHost(textView: editor, openURL: { _ in })
       let controller = KeyboardController(host: host, dictationBridge: nil)
       let input = PreviewInputView(controller: controller)
+      // Give the real UIKit hierarchy a complete window/layout/remove cycle,
+      // rather than assuming an unpresented self-sizing input is released.
+      let window = UIWindow(windowScene: scene)
+      window.rootViewController = UIViewController()
+      window.makeKeyAndVisible()
+      input.frame = CGRect(x: 0, y: 0, width: window.bounds.width,
+        height: input.intrinsicContentSize.height)
+      window.rootViewController!.view.addSubview(input)
+      window.layoutIfNeeded()
+      input.layoutIfNeeded()
       releasedHost = host
       releasedController = controller
       releasedInput = input
@@ -87,6 +98,9 @@ final class PreviewDocumentLifecycleCounterchecks: XCTestCase {
       XCTAssertEqual(editor.text, "cobalt kite?")
       controller.engine.document.deleteBackward()
       XCTAssertEqual(editor.text, "cobalt kite")
+      input.removeFromSuperview()
+      window.rootViewController = nil
+      window.isHidden = true
       return withExtendedLifetime(input) { controller.engine.document }
     }
 
