@@ -205,14 +205,18 @@ try {
       const touch = await touchBrowser.newPage({ viewport: { width, height: 700 }, hasTouch: true })
       touch.on('pageerror', (error) => errors.push(error.message))
       await touch.goto(`${server.resolvedUrls.local[0]}tests/suggestion-card/index.html`)
+      await touch.locator('[data-suggestion-id="swap"]').first().waitFor()
       const touchCard = touch.getByRole('dialog', { name: 'Suggestion' })
       const tap = async (locator, across) => {
         const box = await locator.boundingBox()
         await touch.touchscreen.tap(box.x + box.width * across, box.y + box.height / 2)
       }
       const label = `${engine.name()} at ${width}px`
+      const toolbarHeight = () => touch.evaluate(() => document.querySelector('[aria-label="Formatting"]').closest('.sticky').getBoundingClientRect().height)
+      const before = await toolbarHeight()
       await tap(touch.locator('[data-suggestion-id="inner"]').first(), 0.5)
       await touchCard.getByText('Add “brave”', { exact: true }).waitFor()
+      assert.equal(await toolbarHeight(), before, `${label}: the toolbar keeps its height as the count changes`)
       await touch.waitForTimeout(400)
       assert.equal(await touchCard.getAttribute('data-suggestion-card'), 'inner', `${label}: the first tap's card stays`)
       await tap(touch.locator('[data-suggestion-id="swap"].pulpo-suggestion-insert').first(), 0.5)
