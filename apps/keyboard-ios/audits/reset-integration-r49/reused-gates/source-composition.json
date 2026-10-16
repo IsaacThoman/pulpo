@@ -1,0 +1,26 @@
+{
+  "verdict": "APPROVE_SOURCE_COMPOSITION_ONLY",
+  "reviewedHead": "82165e7ffda344165fc9116027a4b6f3ffacd4f5",
+  "publishedBaseline": "e503e5a6646208c6dc125271431bbb9d677b9bb8",
+  "recordedUTC": "2026-10-16T10:47:38.373925+00:00",
+  "productionSourceFilesChanged": 7,
+  "R45OriginMappings": 16,
+  "R41OriginMappings": 9,
+  "unrelatedFilesPreserved": 182,
+  "UIInsertions": 22,
+  "UIDeletions": 8,
+  "exactFinalR45Storage": true,
+  "AppModelOutsideClearPreserved": true,
+  "R38R42R43Preserved": true,
+  "82165ReadStatusGapClosedByStaticReview": true,
+  "oldR45FixturesRunnerRawOrHiddenInputRead": false,
+  "sourceBuildDeviceRuntimeExecution": false,
+  "repositoryFilesModified": false,
+  "reviewSHA256": "bdaaccce040b1e9ad6dd4e3e948eb6de97e0187a6ce3eb8c59df87f33ba550ab",
+  "artifacts": {
+    "composition-checks.json": "1f501638cfdb0b539dc14e83fc10271ffdc14a4687dfd341a48391ac212651f8",
+    "check-composition.py": "7a0e5579ce04ccb1d3d3566915f2c710da865d2696fb2014645e11a597585413",
+    "review.md": "bdaaccce040b1e9ad6dd4e3e948eb6de97e0187a6ce3eb8c59df87f33ba550ab"
+  },
+  "runtimeGates": "Parent ordinary/data reported passed; native and new blind acceptance remain separate, not executed here"
+}

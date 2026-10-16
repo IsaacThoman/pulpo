@@ -1,0 +1,34 @@
+{
+  "verdict": "APPROVE_BOUNDED_PREEXECUTION_MECHANICS",
+  "reviewedCommitIdentifier": "03bf024ebc5c28d8cf7c6b142001a0e8cfd9e3d3",
+  "driverSHA256": "38626b5c3d0fabd61f82fbe9c75c45b6b5297c95eb262f60f379ba5dae3151d0",
+  "metadataBindings": {
+    "/Users/isaacthoman/.t3/worktrees/pulpo/t3-a3218df3/apps/keyboard-ios/audits/reset-integration-r48/paired-executor.py": "38626b5c3d0fabd61f82fbe9c75c45b6b5297c95eb262f60f379ba5dae3151d0",
+    "/Users/isaacthoman/.t3/worktrees/pulpo/t3-a3218df3/apps/keyboard-ios/audits/reset-integration-r48/paired-config-v2.json": "e6bc291d8f4dbb9368f0b776fce330ef53db4973ae3ec81c28cbf5c92fc723c1",
+    "/Users/isaacthoman/.t3/worktrees/pulpo/t3-a3218df3/apps/keyboard-ios/audits/reset-integration-r48/contract-before-integration.md": "2b6b0157b199944b038a1f9256b49dbb5570ad1076ca43b48fbc916de536acfa",
+    "/Users/isaacthoman/.t3/worktrees/pulpo/t3-a3218df3/apps/keyboard-ios/audits/reset-integration-r48/author-protocol.md": "fa39822952426f1f9d380f7e7051f37359744c7cc194767c24f4fa1719198947",
+    "/Users/isaacthoman/.t3/worktrees/pulpo/t3-a3218df3/apps/keyboard-ios/audits/reset-integration-r48/domain-review/public-domain-v3.md": "986bbb9faefefd211c8f954c5d0fcd66ad1cd42e10008e69a354a7bc964dbef9",
+    "/Users/isaacthoman/.t3/worktrees/pulpo/t3-a3218df3/apps/keyboard-ios/audits/reset-integration-r48/paired-source-identities.json": "bea8801c153c07440d84311e854bbcce87ef466e85d307653e53bbe3b65fa8d9",
+    "/tmp/pulpo-r48-fresh-validator-v2/execution-map-v2.json": "2070ecf910c405dc33ceac59314dbb650b19c663245d9f6a75ffcda8e0d06744"
+  },
+  "normalDiagnosticCases": 15,
+  "optimizedDiagnosticCases": 15,
+  "inertSwiftCompilations": 2,
+  "inertBuiltBinaryExecutions": 0,
+  "realProductPreparations": 0,
+  "productExecutions": 0,
+  "nativeExecutions": 0,
+  "authoredSemanticBundleRead": false,
+  "productSourceRead": false,
+  "successfulBuildLogsRead": false,
+  "coreMetadataFilesPerVersion": [
+    25,
+    25
+  ],
+  "authorMetadataFileCount": 29,
+  "versionMetadataExactlyMatchesIdentity": true,
+  "authorArchiveAndManifestMatchExecutionMap": true,
+  "inertHashChainsVerified": true,
+  "priorV1ArtifactsModified": false,
+  "reviewSHA256": "daca75641b3805ee0e8a6d5f874f67fe11c44c65ade7425b282ad12258aa99b5"
+}
