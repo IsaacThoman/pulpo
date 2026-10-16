@@ -1,0 +1,38 @@
+{
+  "reviewedTip": "dd882f4c9658ac38ed11c4c7c36c50c60fc2fef8",
+  "productionCommit": "b2b31684",
+  "recordedUTC": "2026-10-16T09:03:23.766642+00:00",
+  "verdict": "CONDITIONAL_SOURCE_RISK_NOT_DEMONSTRATED_UI_OR_FROZEN_DOMAIN_REGRESSION",
+  "priorSeveritySuperseded": true,
+  "runtimeExecuted": false,
+  "uiReachabilityEstablished": false,
+  "callbackEventInFrozenRunner": false,
+  "directModelReplacementInFrozenRunner": true,
+  "recommendation": "Worth isolated narrow validation; broader account/dictation acceptance remains unproven",
+  "addendumSHA256": "fa8aa15e2d8dc657c0d46934b829cf4363ac874269a05800b85c0200efdfe126",
+  "readSourceAndContractSHA256": {
+    "apps/keyboard-ios/App/AppModel.swift": "2a6ab21bddaa51e0092f0908b530978ded33e20de51fc3ebe18d1155c497e8d3",
+    "apps/keyboard-ios/App/SignInAttempt.swift": "8f5fcd4c952083006ca6cc38e38912cf7615e643723adbbbc16bf1ca420afd21",
+    "apps/keyboard-ios/App/SignInView.swift": "74c748ace8489515f1e353584a95ced86fb3c54e2f2f445d66d36b0012729305",
+    "apps/keyboard-ios/App/DictationService.swift": "cf7d748e4933cf488098d5e97ad087c065cf8e48968c0b810cf63737d5bacc40",
+    "apps/keyboard-ios/App/PulpoKeyboardApp.swift": "98eec4e026bd1530bb57ec6527c49b70338134b4cf72acf345d4afd90ef7d420",
+    "apps/keyboard-ios/App/DictationSessionView.swift": "c8571a315e891ad8b5ef721777df1043a662248c40dd2716e10fabaf0ab5f3ab",
+    "apps/keyboard-ios/App/Info.plist": "f663abfb6d91db90ea7bed0cfe8481b2c57b16c9f61f7551b4e494762b914f38",
+    "apps/keyboard-ios/project.yml": "7aa710296a5cd0c0037d58f5167696d2c34d57b9ebab242b5ac92c1bf2049881",
+    "apps/keyboard-ios/audits/account-lifecycle-r35/intended-contract.md": "c6b8e447a767bb443ab0a19155993f37e53f0915ffcdebf25e0408204ebc3f98",
+    "apps/keyboard-ios/audits/account-lifecycle-r35/public-protocol.md": "f7b210b1b71d7beb288f5f65d0a87ce75136863faf06037730598a65a7a1475f",
+    "apps/keyboard-ios/audits/account-lifecycle-r35/domain-review.txt": "d0ff62f4ef101ca65543c0c79f1e129a07b4cde42ec9ea9969e150f8175a9803",
+    "apps/keyboard-ios/audits/account-lifecycle-r35/validate.py": "5cd1eb697a933c4b36063fae59d1bf5ba684259573c5543526e9a8f6adca0337",
+    "apps/keyboard-ios/audits/account-lifecycle-r35/freeze.json": "d4e459cd2a27fc1abf2ec4b74bdd3bd2cf5b855322fd921e4026aa6176359b9d"
+  },
+  "unchangedPriorArtifactsSHA256": {
+    "production-diff.patch": "8a5eddc994d945119ae9b20f22090a7cae96509cef368be5b7c8deb6806b2723",
+    "review-receipt.json": "6bfb6439e2080b96b0352e4e3e4c71d4900da228795cddd234e4b05d48d9baff",
+    "source-bindings.json": "7978a80dd4dc3aeb5f5b291c5080cdbcc72e12a9b3cc7ed1050ef4a9857dcab2",
+    "countercheck-contract.md": "e296aaf90176b61af61af694fae79e5f877c875d2b5bdb670bcbb393da543854",
+    "REVIEW.md": "4e5beb2508aaa80199917cb675d4cafdb821d0daac1eef1bc956f227361e297d",
+    "countercheck.swift.txt": "16ad3e16cf63bd162b33c7387b00116bb0fd485465a87849dbc0b0b363b9cc82"
+  },
+  "BsurvivesOracleMandatedByFrozenContract": false,
+  "frozenProtocolAndSchemaHashesMatch": true
+}

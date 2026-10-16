@@ -1,0 +1,64 @@
+Independent R35 account lifecycle review, round v2
+Workspace: /tmp/pulpo-r35-account-lifecycle
+Method: read-only static source review; only this requested report was written.
+Source references below are relative to apps/keyboard-ios unless otherwise stated.
+
+DISPOSITION
+
+No residual blocking defect identified in the reviewed candidate/runner source against the current public protocol. The source changes resolve the three prior blocking findings at the level this review can establish. This is not an execution pass, freeze approval, baseline-parity certification, schema-preflight result, or native UI proof. No hidden expectations or results were consulted.
+
+PRIOR BLOCKERS: RESOLUTION REVIEW
+
+B1 — Issuance accounting and unreserved work: resolved by source inspection.
+
+AppTests/AccountLifecycleR35Tests.swift:27-33 creates a record at URLProtocol startLoading/enqueue, independently of awaitRequest. counts now aggregates those records by actual method/path (57-59), rather than counting reservations. take marks reservation (35-40); respond marks release before possible discard (76-81); stopLoading marks cancellation (74). Dispositions preserve issuance order and all three flags (49-55). Record retains its transport (16-18), preventing deallocation and ObjectIdentifier reuse while the case record exists. Unreserved/cancelled requests therefore remain counted and visible.
+
+AppTests/AccountLifecycleR35BenchmarkTests.swift:203 checks all gate records for neither-release-nor-cancellation, in addition to the task and reserved-request checks at 204-206. The report includes issuance trace, dispositions and gate-derived counts after dispose (208-215). An unexpected active unreserved request cannot escape merely because no awaitRequest reserved it. Cancelled unreserved work is accounted as cancelled rather than erased. A reserved request left in driver.requests remains a conservative failure even if cancelled, consistent with the public requirement to release requests or explicitly account for cancellation preventing completion.
+
+B2 — Remote logout completion and retained teardown: resolved for the declared candidate observation seam.
+
+App/AppModel.swift:271-277 emits logoutStarted synchronously before spawning the logout task; defer emits logoutFinished only after the awaited client.logout returns or throws. Counting a start before task execution closes the earlier window in which final drain could observe no logout activity even though a task was queued. The task still captures the old client/bearer and has no local account-clear callback.
+
+BenchmarkTests.swift:172 waits for start/finish balance before reload, then verifies all tracked tasks are complete and checks the old state before reconstructing. Final drain also waits for start/finish balance with a retained timeout failure (200-202). dispose cancels tracked tasks and URLSession, performs a bounded wait for tracked-task and logout settlement, and records both kinds of teardown failure (42-47). Reports are assembled after dispose, retaining those failures, completion outcomes, cancellation dispositions and final counters (207-215). Store/snapshot disposal is outside the model event seam and thus excluded from primitive counts, as documented.
+
+These observations establish completion of the logout call, not successful server-side invalidation: production deliberately ignores logout errors. The current protocol requires completion, and does not promise success. A schedule can use reload or final drain as the logout completion barrier; respond alone remains no barrier. I did not inspect baseline source or comparison infrastructure, so matching instrumentation on the baseline remains unverified by this review.
+
+B3 — Refresh started during pending login: resolved, with explicit contract wording.
+
+The public protocol now permanently excludes a refresh launched while login is pending, including after login failure, Swift task cancellation, or authority revocation. AppModel.swift:239-246 captures beganDuringSignIn at actual refresh entry and requires it to be false for every authorized completion. That captured value cannot become eligible merely because the pending login later ends. The same authorization function guards both saving/publishing (254-257) and unauthorized sign-out (258-260). Generation, latest-refresh identity, current pending-login state, account instance/token and Task cancellation remain additional guards. The change therefore closes both variants of the prior ambiguity without restoring older refresh authority after newer work fails.
+
+OTHER REPORTED RESOLUTIONS
+
+Raw snapshot verification: BenchmarkTests.swift:69-74 requires actual data, decodes it directly, and rejects every key outside the four declared serialization fields. It no longer uses AccountSnapshot.load's missing/corrupt-to-signedOut fallback. Required bool fields are enforced by decoding; optional name/host keys may be omitted by the actual Codable representation. Exact checkpoint comparisons include signedIn and expected account fields (75-85). reload first checks the existing model/store/raw snapshot (174-176), before makeModel can republish (177). This resolves the previous false assurance from init repairing the snapshot before inspection. It still proves only same-process reconstruction, as the revised protocol correctly states.
+
+Counter units: the public protocol now explicitly describes successful save call sites, clear call sites regardless of OS result, and snapshot publish call sites rather than physical writes; init/reload count and disposal does not. AppModel.swift:222-225,254-255,279-290 and the runner event callback (35-40) agree with those units. HTTP counts are separately sourced from issuance records. This supports the documented accounting unit, not an allocation or disk-I/O measurement.
+
+SessionStore preservation: PulpoServices/SessionStore.swift:42-54 now updates an existing item and only attempts add after errSecItemNotFound. It no longer explicitly deletes an existing stored account before an attempted save. Any other update error returns false. This removes the reviewed delete-before-add failure path; no Keychain failure behavior was executed here.
+
+CANDIDATE AND CALLER ALIGNMENT
+
+- AppModel.signIn checks both task cancellation and UUID authority before networking, between config/login, and before the synchronous persistence/memory/snapshot commit (205-234). Its conditional defer cannot clear a replacement attempt. Ordinary failure and 2FA do not clear an existing account.
+- beginSignIn invalidates earlier refresh generations synchronously; cancelSignIn only revokes the matching attempt (192-203). SignInAttempt.submit invokes beginSignIn before creating its Task and captures submitted inputs (21-30). Its cancel/back paths revoke that UUID and cancel the owned Task (55-67). SignInView connects Back, Cancel, and disappearance to those paths (39,76-83).
+- Refresh issues config/me concurrently, awaits config first, and commits together (248-257). A newer refresh identity is never rolled back on error/cancellation. Explicit sign-out revokes account authority before synchronous local clear/publication (266-282).
+- PulpoClient endpoint methods, fake-fixture response shapes, bearer construction and optional nonempty two-factor body agree with the public descriptions (PulpoClient.swift:102-164). The snapshot definition contains only the four declared fields (KeyboardCore/Shared/AppGroup.swift:94-120).
+- PulpoKeyboardApp.swift:14-17 starts scene-activation refresh; 208 and 374 present SignInView; 358 calls default remote sign-out. DictationService.swift:205-229 guards unauthorized callbacks with lifecycle/cancellation and is cancelled on account replacement/sign-out by AppModel. Audio/upload behavior remains outside this runner.
+
+RESIDUAL LIMITS / NONBLOCKING OBSERVATIONS
+
+1. Transport trace precision is limited. BenchmarkTests.swift:151 samples isStopped for transportDiscarded, then AccountURLProtocol.respond checks it again (Tests.swift:78). stopLoading may run between these observations. The flag describes the earlier observation and cannot independently prove whether delivery happened; the final released/cancelled flags remain available. Neither this trace nor static review proves URLSession callback ordering or receipt of a response by the model. No stale-publication defect follows from this observation.
+
+2. Settlement failures are retained, not repaired. A teardown timeout can leave work alive; the next Driver resets a shared static gate (BenchmarkTests.swift:26). Such a case/run already has an explicit failure and must not support clean isolation claims or aggregate performance conclusions. The implementation has no URLSession invalidation-completion barrier. I found no concrete false-pass path from this in the reviewed settled candidate schedules, but did not execute transport teardown or concurrent tests.
+
+3. startRefresh schedules a Task, whereas startLogin authorizes synchronously. The refresh capture happens at actual entry (BenchmarkTests.swift:118-120; AppModel.swift:239-243). Schedules requiring refresh to have captured a particular account or pending-login state must establish entry using an issued-request barrier before changing that state. An adjacent startRefresh step alone does not prove that ordering. respond alone likewise does not prove task completion.
+
+4. Keychain clear still discards SecItemDelete status (SessionStore.swift:57-58), and load maps errors to nil. Failed deletion/protected-data behavior and actual OS update atomicity/persistence were not tested. The public runner explicitly excludes injected Keychain failures; counter wording does not pretend to certify OS success. Crash consistency, process restart and UserDefaults disk flush remain outside reload's scope.
+
+5. Native UI proof remains separate. Editable server/email/password can diverge from captured in-flight input. A successful captured submission can still dismiss; only the 2FA-error path checks current fields, while ordinary errors do not (SignInAttempt.swift:38-49). This follows the public captured-input model contract, but native controls, editing behavior, focus, dismissal and accessibility were not exercised here.
+
+6. Full fixture-schema enforcement is a separate preflight, as directed. The runner still defaults an invalid/missing steps array to empty and does not enforce all cross-case uniqueness/types (BenchmarkTests.swift:190-195). Unsupported operations are reported unavailable and are not included in the final correctness assertion (178-179,219-221). A valid independent schema preflight and explicit availability accounting are prerequisites for any coverage claim; neither was inspected or certified in this round.
+
+7. No baseline comparison, compilation/actor-default verification, tests, benchmarks, builds, devices, network or native proof was run. Reviewed UI/runner call paths serialize account work; general off-actor use was not established. Refresh records finished because the model consumes errors; candidate login cancellation may surface as cancelled after authority checking. Runtime outcomes and performance remain unverified.
+
+ACCESS BOUNDARY
+
+The first read was audits/account-lifecycle-r35/public-protocol.md. I then read the explicitly authorized /tmp/r35-candidate-review.txt, repository-root AGENTS.md, the five candidate source files named in the brief, the two R35 AppTests sources, and the necessary caller/serialization excerpts named above. An initial filename-only discovery command incidentally listed some other audit filenames; no contents of those files were opened or used. No other audit fixtures/results/intended-contract/domain-review, git history, baseline source, other-round content, private heldout paths, or protected external checkouts were read. No git operations were performed. The sole written artifact is /tmp/r35-candidate-review-v2.txt.

@@ -1,0 +1,8 @@
+{
+  "file": "apps/keyboard-ios/UITests/AccountLifecycleR42UITests.swift",
+  "sha256": "5987de79c1c91a08e08ff872ec76792badbe16ae2dc32c1266510de982d05240",
+  "priorSource": "ui-driver-v1.swift.txt",
+  "priorRun": "evidence/ui-normal-v1-summary.json",
+  "reason": "Normal Cancel root navigation succeeded and no held identity was observed; full-screen unidirectional flings never exposed a hittable account row. Replace with short drags in both directions and preserve failure screenshot/hierarchy. No account oracle or production change.",
+  "exposed": true
+}

@@ -1,0 +1,223 @@
+import Foundation
+import KeyboardCore
+import PulpoServices
+import XCTest
+@testable import PulpoKeyboard
+
+@MainActor
+final class AccountLifecycleR35BenchmarkTests: XCTestCase {
+  private enum RunnerError: Error { case invalid(String) }
+  @MainActor private final class Driver {
+    let store: SessionStore
+    let defaults: UserDefaults
+    let network: URLSession
+    var model: AppModel!
+    var tasks: [String: Task<Void, Never>] = [:]
+    var authorizations: [String: UUID] = [:]
+    var completed: [String: String] = [:]
+    var requests: [String: AccountHTTPGate.Pending] = [:]
+    var events: [[String: Any]] = []
+    var counts: [String: Int] = [:]
+    var checks: [[String: Any]] = []
+    var failures: [String] = []
+    var unavailable: [String] = []
+
+    init() {
+      AccountURLProtocol.gate.reset()
+      let namespace = "r35.benchmark.\(UUID().uuidString)"
+      store = SessionStore(service: namespace)
+      defaults = UserDefaults(suiteName: namespace)!
+      let configuration = URLSessionConfiguration.ephemeral
+      configuration.protocolClasses = [AccountURLProtocol.self]
+      network = URLSession(configuration: configuration)
+      model = makeModel()
+    }
+    func makeModel() -> AppModel {
+      AppModel(sessionStore: store, accountDefaults: defaults, accountURLSession: network) { [weak self] event in
+        guard let self else { return }
+        self.counts[event, default: 0] += 1
+        self.events.append(["event": event])
+      }
+    }
+    func dispose() async {
+      tasks.values.forEach { $0.cancel() }
+      network.invalidateAndCancel()
+      for _ in 0..<500 where completed.count < tasks.count || counts["logoutStarted", default: 0] != counts["logoutFinished", default: 0] { try? await Task.sleep(for: .milliseconds(1)) }
+      if completed.count < tasks.count { failures.append("Teardown did not settle tracked tasks") }
+      if counts["logoutStarted", default: 0] != counts["logoutFinished", default: 0] { failures.append("Teardown did not settle remote logout") }
+      store.clear()
+      defaults.removeObject(forKey: "accountSnapshot")
+    }
+    func string(_ step: [String: Any], _ key: String) throws -> String {
+      guard let value = step[key] as? String else { throw RunnerError.invalid("Missing string \(key)") }
+      return value
+    }
+    func waitFor(_ predicate: () -> Bool, description: String) async throws {
+      for _ in 0..<2000 {
+        if predicate() { return }
+        try await Task.sleep(for: .milliseconds(1))
+      }
+      throw RunnerError.invalid("Timeout: \(description)")
+    }
+    func check(_ step: [String: Any], model: AppModel) throws {
+      guard let expected = step["expected"] as? [String: Any] else { throw RunnerError.invalid("Missing expected state") }
+      func state(_ session: StoredSession?) -> [String: Any] {
+        ["name": session?.user.name ?? NSNull() as Any, "host": session?.instance.host() ?? NSNull() as Any,
+         "token": session?.token ?? NSNull() as Any, "dictation": session?.dictationAvailable ?? false]
+      }
+      let memory = state(model.session), persisted = state(store.load())
+      guard let rawSnapshot = defaults.data(forKey: "accountSnapshot") else { throw RunnerError.invalid("Missing persisted snapshot") }
+      let snapshot = try JSONDecoder().decode(AccountSnapshot.self, from: rawSnapshot)
+      guard let rawObject = try JSONSerialization.jsonObject(with: rawSnapshot) as? [String: Any],
+            Set(rawObject.keys).isSubset(of: ["signedIn", "displayName", "instanceHost", "dictationAvailable"]) else {
+        throw RunnerError.invalid("Unexpected snapshot fields (must never include token)")
+      }
+      let published: [String: Any] = ["name": snapshot.displayName ?? NSNull() as Any,
+        "host": snapshot.instanceHost ?? NSNull() as Any, "dictation": snapshot.dictationAvailable,
+        "signedIn": snapshot.signedIn]
+      let expectedSnapshot: [String: Any] = ["name": expected["name"] ?? NSNull(), "host": expected["host"] ?? NSNull(),
+        "dictation": expected["dictation"] ?? false, "signedIn": !(expected["name"] is NSNull)]
+      let pass = NSDictionary(dictionary: memory).isEqual(to: expected)
+        && NSDictionary(dictionary: persisted).isEqual(to: expected)
+        && NSDictionary(dictionary: published).isEqual(to: expectedSnapshot)
+      let id = try string(step, "id")
+      checks.append(["id": id, "expected": expected, "memory": memory, "persisted": persisted, "snapshot": published, "pass": pass])
+      if !pass { failures.append("Checkpoint \(id) disagrees with authored expectation") }
+    }
+    func execute(_ step: [String: Any]) async throws {
+      let op = try string(step, "op")
+      events.append(["step": step])
+      switch op {
+      case "startLogin":
+        let id = try string(step, "id"), host = try string(step, "host")
+        guard host.hasSuffix(".r35.invalid"), tasks[id] == nil else { throw RunnerError.invalid("Invalid login host/id") }
+        let email = step["email"] as? String ?? "fake@example.invalid"
+        let password = step["password"] as? String ?? "fake-password"
+        let code = step["code"] as? String
+        #if R35_BASELINE
+        #else
+        let authorization = model.beginSignIn()
+        authorizations[id] = authorization
+        #endif
+        tasks[id] = Task {
+          do {
+            #if R35_BASELINE
+            try await model.signIn(instance: "https://\(host)", email: email, password: password, twoFactorCode: code)
+            #else
+            try await model.signIn(instance: "https://\(host)", email: email, password: password, twoFactorCode: code, attempt: authorization)
+            #endif
+            completed[id] = "success"
+          } catch is CancellationError { completed[id] = "cancelled" }
+          catch let error as PulpoError { completed[id] = "error:\(error.status):\(error.code)" }
+          catch { completed[id] = "error:\(type(of: error))" }
+          events.append(["task": id, "outcome": completed[id]!])
+        }
+      case "startRefresh":
+        let id = try string(step, "id")
+        guard tasks[id] == nil else { throw RunnerError.invalid("Duplicate task id") }
+        tasks[id] = Task {
+          await model.refreshAccount()
+          completed[id] = "finished"
+          events.append(["task": id, "outcome": "finished"])
+        }
+      case "awaitRequest":
+        let id = try string(step, "id"), host = try string(step, "host"), path = try string(step, "path")
+        guard requests[id] == nil else { throw RunnerError.invalid("Duplicate request id") }
+        var pending: AccountHTTPGate.Pending?
+        try await waitFor({
+          pending = AccountURLProtocol.gate.take(host: host, path: path)
+          return pending != nil
+        }, description: "request \(host)\(path)")
+        let request = pending!.request
+        requests[id] = pending!
+        var body: Any = NSNull()
+        if let data = request.httpBody { body = (try? JSONSerialization.jsonObject(with: data)) ?? "invalidJSON" }
+        else if let stream = request.httpBodyStream {
+          stream.open(); defer { stream.close() }
+          var bytes = [UInt8](repeating: 0, count: 4096), data = Data()
+          while stream.hasBytesAvailable {
+            let length = stream.read(&bytes, maxLength: bytes.count)
+            if length <= 0 { break }; data.append(contentsOf: bytes.prefix(length))
+          }
+          if !data.isEmpty { body = (try? JSONSerialization.jsonObject(with: data)) ?? "invalidJSON" }
+        }
+        events.append(["request": id, "method": request.httpMethod!, "host": host, "path": path,
+          "authorization": request.value(forHTTPHeaderField: "authorization") ?? NSNull() as Any, "body": body])
+      case "respond":
+        let id = try string(step, "id")
+        guard let pending = requests.removeValue(forKey: id) else { throw RunnerError.invalid("Unknown request \(id)") }
+        let body = step["body"] ?? NSNull()
+        let data = body is NSNull ? Data() : try JSONSerialization.data(withJSONObject: body, options: [.fragmentsAllowed, .sortedKeys])
+        events.append(["response": id, "transportDiscarded": pending.transport.isStopped])
+        pending.transport.respond(status: step["status"] as? Int ?? 200, body: String(decoding: data, as: UTF8.self))
+      case "waitTask":
+        let id = try string(step, "id")
+        guard tasks[id] != nil else { throw RunnerError.invalid("Unknown task \(id)") }
+        try await waitFor({ completed[id] != nil }, description: "task \(id)")
+      case "cancelTask":
+        let id = try string(step, "id")
+        guard let task = tasks[id] else { throw RunnerError.invalid("Unknown task \(id)") }
+        task.cancel()
+      case "revokeLogin":
+        let id = try string(step, "id")
+        #if R35_BASELINE
+        unavailable.append("revokeLogin \(id): baseline has no synchronous authority API")
+        #else
+        guard let authorization = authorizations[id] else { throw RunnerError.invalid("Unknown login \(id)") }
+        model.cancelSignIn(authorization)
+        #endif
+      case "signOut": model.signOut(remote: step["remote"] as? Bool ?? false)
+      case "checkpoint": try check(step, model: model)
+      case "reload":
+        try await waitFor({ counts["logoutStarted", default: 0] == counts["logoutFinished", default: 0] }, description: "logout before reload")
+        guard completed.count == tasks.count else { throw RunnerError.invalid("reload with unsettled tasks") }
+        var before = step
+        before["id"] = (try string(step, "id")) + ".beforeReload"
+        try check(before, model: model)
+        try check(step, model: makeModel())
+      default:
+        unavailable.append("Unsupported operation \(op)")
+      }
+    }
+  }
+
+  func testPublicFixtures() async throws {
+    let environment = ProcessInfo.processInfo.environment
+    guard let path = environment["R35_FIXTURES"], let output = environment["R35_REPORT"] else {
+      throw XCTSkip("Opt-in R35 account fixtures require R35_FIXTURES and R35_REPORT")
+    }
+    let data = try Data(contentsOf: URL(fileURLWithPath: path))
+    guard let fixtures = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { throw RunnerError.invalid("Expected array") }
+    var reports: [[String: Any]] = []
+    for fixture in fixtures {
+      let start = ContinuousClock.now
+      let driver = Driver()
+      let steps = fixture["steps"] as? [[String: Any]] ?? []
+      for (index, step) in steps.enumerated() {
+        do { try await driver.execute(step) }
+        catch { driver.failures.append("step \(index): \(error)") }
+      }
+      do {
+        try await driver.waitFor({ driver.counts["logoutStarted", default: 0] == driver.counts["logoutFinished", default: 0] }, description: "all remote logout completions")
+      } catch { driver.failures.append("Final drain: \(error)") }
+      if AccountURLProtocol.gate.unaccountedCount != 0 { driver.failures.append("Unaccounted issued HTTP requests: \(AccountURLProtocol.gate.unaccountedCount)") }
+      let unsettled = driver.tasks.keys.filter { driver.completed[$0] == nil }.sorted()
+      if !unsettled.isEmpty { driver.failures.append("Unsettled tasks: \(unsettled)") }
+      if !driver.requests.isEmpty { driver.failures.append("Unreleased requests: \(driver.requests.keys.sorted())") }
+      driver.events.append(["event": "teardown"])
+      await driver.dispose()
+      for (key, count) in AccountURLProtocol.gate.counts { driver.counts[key] = count }
+      let elapsed = start.duration(to: .now)
+      let seconds = Double(elapsed.components.seconds) + Double(elapsed.components.attoseconds) / 1e18
+      reports.append(["id": fixture["id"] ?? "missing", "purpose": fixture["purpose"] ?? "",
+        "events": driver.events, "httpIssued": AccountURLProtocol.gate.trace, "httpDispositions": AccountURLProtocol.gate.dispositions, "counts": driver.counts,
+        "checks": driver.checks, "tasks": driver.completed, "failures": driver.failures,
+        "unavailable": driver.unavailable, "unsettled": unsettled, "elapsedSeconds": seconds])
+    }
+    let report = try JSONSerialization.data(withJSONObject: reports, options: [.prettyPrinted, .sortedKeys])
+    try report.write(to: URL(fileURLWithPath: output))
+    // Retain all cases before asserting. Availability is reported independently from correctness.
+    let failures = reports.reduce(0) { $0 + (($1["failures"] as? [String])?.count ?? 0) }
+    XCTAssertEqual(failures, 0, "Full raw report: \(output)")
+  }
+}

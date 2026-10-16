@@ -1,0 +1,98 @@
+{
+  "devicesAndConfigurations" : [
+    {
+      "device" : {
+        "architecture" : "arm64",
+        "deviceId" : "5D99D484-2D74-4F77-A3BA-223BBCC13B9F",
+        "deviceName" : "Pulpo R42 account admission",
+        "modelName" : "iPhone 17",
+        "osBuildNumber" : "24A434",
+        "osVersion" : "27.0",
+        "platform" : "iOS Simulator"
+      },
+      "expectedFailures" : 0,
+      "failedTests" : 5,
+      "passedTests" : 22,
+      "skippedTests" : 1,
+      "testPlanConfiguration" : {
+        "configurationId" : "1",
+        "configurationName" : "Test Scheme Action"
+      }
+    }
+  ],
+  "environmentDescription" : "PulpoKeyboard · Built with macOS 27.0.1",
+  "expectedFailures" : 0,
+  "failedTests" : 5,
+  "finishTime" : 1792141789.73,
+  "passedTests" : 22,
+  "result" : "Failed",
+  "runtimeWarnings" : [
+
+  ],
+  "skippedTests" : 1,
+  "startTime" : 1792141747.229,
+  "statistics" : [
+
+  ],
+  "testFailures" : [
+    {
+      "failureText" : "failed: caught error: \"PulpoError(status: 0, code: \"session_storage\", message: \"Couldn\\'t save your sign-in on this device. Try again.\")\"",
+      "targetName" : "PulpoKeyboardAppTests",
+      "testIdentifier" : 1,
+      "testIdentifierString" : "AccountLifecycleR35Tests/testDevelopmentLateRefreshCannotResurrectSignedOutAccount()",
+      "testIdentifierURL" : "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests/AccountLifecycleR35Tests/testDevelopmentLateRefreshCannotResurrectSignedOutAccount",
+      "testName" : "testDevelopmentLateRefreshCannotResurrectSignedOutAccount()"
+    },
+    {
+      "failureText" : "failed: caught error: \"PulpoError(status: 0, code: \"session_storage\", message: \"Couldn\\'t save your sign-in on this device. Try again.\")\"",
+      "targetName" : "PulpoKeyboardAppTests",
+      "testIdentifier" : 2,
+      "testIdentifierString" : "AccountLifecycleR35Tests/testDevelopmentLateUnauthorizedRefreshCannotSignOutReplacement()",
+      "testIdentifierURL" : "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests/AccountLifecycleR35Tests/testDevelopmentLateUnauthorizedRefreshCannotSignOutReplacement",
+      "testName" : "testDevelopmentLateUnauthorizedRefreshCannotSignOutReplacement()"
+    },
+    {
+      "failureText" : "XCTAssertEqual failed: (\"0\") is not equal to (\"1\")",
+      "targetName" : "PulpoKeyboardAppTests",
+      "testIdentifier" : 3,
+      "testIdentifierString" : "AccountLifecycleR35Tests/testDevelopmentPresentationCancellationBeforeTaskStartThenRetry()",
+      "testIdentifierURL" : "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests/AccountLifecycleR35Tests/testDevelopmentPresentationCancellationBeforeTaskStartThenRetry",
+      "testName" : "testDevelopmentPresentationCancellationBeforeTaskStartThenRetry()"
+    },
+    {
+      "failureText" : "XCTAssertTrue failed",
+      "targetName" : "PulpoKeyboardAppTests",
+      "testIdentifier" : 6,
+      "testIdentifierString" : "AccountLifecycleR35Tests/testDevelopmentTwoFactorBackAndCredentialEditResetChallenge()",
+      "testIdentifierURL" : "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests/AccountLifecycleR35Tests/testDevelopmentTwoFactorBackAndCredentialEditResetChallenge",
+      "testName" : "testDevelopmentTwoFactorBackAndCredentialEditResetChallenge()"
+    },
+    {
+      "failureText" : "XCTAssertNil failed: \"<PulpoKeyboard.PreviewInputView: 0x1288b8c80; baseClass = UIInputView; frame = (0 0; 402 295); backgroundColor = UIExtendedSRGBColorSpace 0.878431 0.882353 0.909804 1; layer = <CALayer: 0x1286930c0>>\"",
+      "targetName" : "PulpoKeyboardAppTests",
+      "testIdentifier" : 25,
+      "testIdentifierString" : "PreviewDocumentLifecycleCounterchecks/testStandaloneDocumentSurvivesInputControllerEngineAndHostRelease()",
+      "testIdentifierURL" : "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests/PreviewDocumentLifecycleCounterchecks/testStandaloneDocumentSurvivesInputControllerEngineAndHostRelease",
+      "testName" : "testStandaloneDocumentSurvivesInputControllerEngineAndHostRelease()"
+    }
+  ],
+  "title" : "Test - PulpoKeyboard",
+  "topInsights" : [
+    {
+      "category" : "Common Failures",
+      "impact" : "40% of failures",
+      "text" : "2 runs of 2 tests failed with failed: caught error: \"PulpoError(status: 0, code: \"session_storage\", message: \"Couldn\\'t save your sign-in on this device. Try again.\")\""
+    },
+    {
+      "category" : "Common Failures",
+      "impact" : "20% of failures",
+      "text" : "2 runs of 1 test failed with XCTAssertEqual failed: (\"nil\") is not equal to (\"Optional(\"Retry\")\")"
+    },
+    {
+      "category" : "Longest Test Runs",
+      "impact" : "19% of duration",
+      "text" : "1 longest test run with outlier durations exceeding 3.24s (three standard deviations)"
+    }
+  ],
+  "totalTestCount" : 28
+}

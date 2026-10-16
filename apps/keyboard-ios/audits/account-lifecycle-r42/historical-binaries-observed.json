@@ -1,0 +1,13 @@
+{
+  "limit": "Observed at parent audit time; no contemporaneous R35 build attestation or unmodified original binary proof. These paths are never executed by R42.",
+  "binaries": {
+    "original-candidate": {
+      "/tmp/pulpo-r35-build/Build/Products/Debug-iphonesimulator/PulpoKeyboard.app/PulpoKeyboard": "a8b67f308102099b38e23c48c02c674c6f7101e77354df3f978ea6d8f0bdbff3",
+      "/tmp/pulpo-r35-build/Build/Products/Debug-iphonesimulator/PulpoKeyboard.app/PulpoKeyboard.debug.dylib": "ed2d6fb31d8d76289a35985d50a5f9eb8d88ee8da12a442a1f6aa1ac85af5126"
+    },
+    "observational-baseline": {
+      "/tmp/pulpo-r35-baseline-build/Build/Products/Debug-iphonesimulator/PulpoKeyboard.app/PulpoKeyboard": "6d1148500e21790c83bb192b9f9f6b0881f80945f2616666acf1a000cca8ecb4",
+      "/tmp/pulpo-r35-baseline-build/Build/Products/Debug-iphonesimulator/PulpoKeyboard.app/PulpoKeyboard.debug.dylib": "52ed07925691635deb33b25b1cf091b6d643f3e303a76b8e9440a1bc4c13012a"
+    }
+  }
+}

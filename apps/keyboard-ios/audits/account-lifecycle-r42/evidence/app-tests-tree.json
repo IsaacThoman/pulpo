@@ -1,0 +1,464 @@
+{
+  "devices" : [
+    {
+      "architecture" : "arm64",
+      "deviceId" : "5D99D484-2D74-4F77-A3BA-223BBCC13B9F",
+      "deviceName" : "Pulpo R42 account admission",
+      "modelName" : "iPhone 17",
+      "osBuildNumber" : "24A434",
+      "osVersion" : "27.0",
+      "platform" : "iOS Simulator"
+    }
+  ],
+  "testNodes" : [
+    {
+      "children" : [
+        {
+          "children" : [
+            {
+              "children" : [
+                {
+                  "children" : [
+                    {
+                      "name" : "failed: caught error: \"PulpoError(status: 0, code: \"session_storage\", message: \"Couldn\\'t save your sign-in on this device. Try again.\")\"",
+                      "nodeType" : "Failure Message",
+                      "sourceLocation" : {
+                        "filePath" : "/Users/isaacthoman/.t3/worktrees/pulpo/t3-5890fa78/apps/keyboard-ios/AppTests/AccountLifecycleR35Tests.swift",
+                        "lineNumber" : 118
+                      }
+                    }
+                  ],
+                  "duration" : "0.2s",
+                  "durationInSeconds" : 0.20288801193237305,
+                  "name" : "testDevelopmentLateRefreshCannotResurrectSignedOutAccount()",
+                  "nodeIdentifier" : "AccountLifecycleR35Tests/testDevelopmentLateRefreshCannotResurrectSignedOutAccount()",
+                  "nodeIdentifierURL" : "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests/AccountLifecycleR35Tests/testDevelopmentLateRefreshCannotResurrectSignedOutAccount",
+                  "nodeType" : "Test Case",
+                  "result" : "Failed"
+                },
+                {
+                  "children" : [
+                    {
+                      "name" : "failed: caught error: \"PulpoError(status: 0, code: \"session_storage\", message: \"Couldn\\'t save your sign-in on this device. Try again.\")\"",
+                      "nodeType" : "Failure Message",
+                      "sourceLocation" : {
+                        "filePath" : "/Users/isaacthoman/.t3/worktrees/pulpo/t3-5890fa78/apps/keyboard-ios/AppTests/AccountLifecycleR35Tests.swift",
+                        "lineNumber" : 118
+                      }
+                    }
+                  ],
+                  "duration" : "0.014s",
+                  "durationInSeconds" : 0.013576984405517578,
+                  "name" : "testDevelopmentLateUnauthorizedRefreshCannotSignOutReplacement()",
+                  "nodeIdentifier" : "AccountLifecycleR35Tests/testDevelopmentLateUnauthorizedRefreshCannotSignOutReplacement()",
+                  "nodeIdentifierURL" : "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests/AccountLifecycleR35Tests/testDevelopmentLateUnauthorizedRefreshCannotSignOutReplacement",
+                  "nodeType" : "Test Case",
+                  "result" : "Failed"
+                },
+                {
+                  "children" : [
+                    {
+                      "name" : "XCTAssertEqual failed: (\"0\") is not equal to (\"1\")",
+                      "nodeType" : "Failure Message",
+                      "sourceLocation" : {
+                        "filePath" : "/Users/isaacthoman/.t3/worktrees/pulpo/t3-5890fa78/apps/keyboard-ios/AppTests/AccountLifecycleR35Tests.swift",
+                        "lineNumber" : 147
+                      }
+                    },
+                    {
+                      "name" : "XCTAssertNil failed: \"Couldn't save your sign-in on this device. Try again.\"",
+                      "nodeType" : "Failure Message",
+                      "sourceLocation" : {
+                        "filePath" : "/Users/isaacthoman/.t3/worktrees/pulpo/t3-5890fa78/apps/keyboard-ios/AppTests/AccountLifecycleR35Tests.swift",
+                        "lineNumber" : 148
+                      }
+                    },
+                    {
+                      "name" : "XCTAssertEqual failed: (\"nil\") is not equal to (\"Optional(\"Retry\")\")",
+                      "nodeType" : "Failure Message",
+                      "sourceLocation" : {
+                        "filePath" : "/Users/isaacthoman/.t3/worktrees/pulpo/t3-5890fa78/apps/keyboard-ios/AppTests/AccountLifecycleR35Tests.swift",
+                        "lineNumber" : 149
+                      }
+                    },
+                    {
+                      "name" : "XCTAssertEqual failed: (\"nil\") is not equal to (\"Optional(\"Retry\")\")",
+                      "nodeType" : "Failure Message",
+                      "sourceLocation" : {
+                        "filePath" : "/Users/isaacthoman/.t3/worktrees/pulpo/t3-5890fa78/apps/keyboard-ios/AppTests/AccountLifecycleR35Tests.swift",
+                        "lineNumber" : 150
+                      }
+                    }
+                  ],
+                  "duration" : "0.015s",
+                  "durationInSeconds" : 0.01532602310180664,
+                  "name" : "testDevelopmentPresentationCancellationBeforeTaskStartThenRetry()",
+                  "nodeIdentifier" : "AccountLifecycleR35Tests/testDevelopmentPresentationCancellationBeforeTaskStartThenRetry()",
+                  "nodeIdentifierURL" : "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests/AccountLifecycleR35Tests/testDevelopmentPresentationCancellationBeforeTaskStartThenRetry",
+                  "nodeType" : "Test Case",
+                  "result" : "Failed"
+                },
+                {
+                  "duration" : "0.012s",
+                  "durationInSeconds" : 0.012299060821533203,
+                  "name" : "testDevelopmentSignOutSuppressesLatePresentationError()",
+                  "nodeIdentifier" : "AccountLifecycleR35Tests/testDevelopmentSignOutSuppressesLatePresentationError()",
+                  "nodeIdentifierURL" : "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests/AccountLifecycleR35Tests/testDevelopmentSignOutSuppressesLatePresentationError",
+                  "nodeType" : "Test Case",
+                  "result" : "Passed"
+                },
+                {
+                  "duration" : "0.01s",
+                  "durationInSeconds" : 0.01014101505279541,
+                  "name" : "testDevelopmentSignOutWhileLoginPending()",
+                  "nodeIdentifier" : "AccountLifecycleR35Tests/testDevelopmentSignOutWhileLoginPending()",
+                  "nodeIdentifierURL" : "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests/AccountLifecycleR35Tests/testDevelopmentSignOutWhileLoginPending",
+                  "nodeType" : "Test Case",
+                  "result" : "Passed"
+                },
+                {
+                  "children" : [
+                    {
+                      "name" : "XCTAssertTrue failed",
+                      "nodeType" : "Failure Message",
+                      "sourceLocation" : {
+                        "filePath" : "/Users/isaacthoman/.t3/worktrees/pulpo/t3-5890fa78/apps/keyboard-ios/AppTests/AccountLifecycleR35Tests.swift",
+                        "lineNumber" : 187
+                      }
+                    },
+                    {
+                      "name" : "XCTAssertEqual failed: (\"nil\") is not equal to (\"Optional(\"edited.r35.invalid\")\")",
+                      "nodeType" : "Failure Message",
+                      "sourceLocation" : {
+                        "filePath" : "/Users/isaacthoman/.t3/worktrees/pulpo/t3-5890fa78/apps/keyboard-ios/AppTests/AccountLifecycleR35Tests.swift",
+                        "lineNumber" : 188
+                      }
+                    }
+                  ],
+                  "duration" : "0.03s",
+                  "durationInSeconds" : 0.03022599220275879,
+                  "name" : "testDevelopmentTwoFactorBackAndCredentialEditResetChallenge()",
+                  "nodeIdentifier" : "AccountLifecycleR35Tests/testDevelopmentTwoFactorBackAndCredentialEditResetChallenge()",
+                  "nodeIdentifierURL" : "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests/AccountLifecycleR35Tests/testDevelopmentTwoFactorBackAndCredentialEditResetChallenge",
+                  "nodeType" : "Test Case",
+                  "result" : "Failed"
+                }
+              ],
+              "name" : "AccountLifecycleR35Tests",
+              "nodeIdentifierURL" : "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests/AccountLifecycleR35Tests",
+              "nodeType" : "Test Suite",
+              "result" : "Failed"
+            },
+            {
+              "children" : [
+                {
+                  "duration" : "0.043s",
+                  "durationInSeconds" : 0.04326498508453369,
+                  "name" : "testOriginalLiteralPrefixesWithoutRepairingOracles()",
+                  "nodeIdentifier" : "BroadExposedR24Tests/testOriginalLiteralPrefixesWithoutRepairingOracles()",
+                  "nodeIdentifierURL" : "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests/BroadExposedR24Tests/testOriginalLiteralPrefixesWithoutRepairingOracles",
+                  "nodeType" : "Test Case",
+                  "result" : "Passed"
+                }
+              ],
+              "name" : "BroadExposedR24Tests",
+              "nodeIdentifierURL" : "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests/BroadExposedR24Tests",
+              "nodeType" : "Test Suite",
+              "result" : "Passed"
+            },
+            {
+              "children" : [
+                {
+                  "children" : [
+                    {
+                      "name" : "Test skipped - Requires the UUID-pinned R24 runner to change actual system content_size after ready",
+                      "nodeType" : "Skip Message"
+                    }
+                  ],
+                  "duration" : "0.0044s",
+                  "durationInSeconds" : 0.004405975341796875,
+                  "name" : "testLiveSystemTextSizeRetainsDraftSelectionAndFocus()",
+                  "nodeIdentifier" : "CompanionDynamicTypeR24Tests/testLiveSystemTextSizeRetainsDraftSelectionAndFocus()",
+                  "nodeIdentifierURL" : "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests/CompanionDynamicTypeR24Tests/testLiveSystemTextSizeRetainsDraftSelectionAndFocus",
+                  "nodeType" : "Test Case",
+                  "result" : "Skipped"
+                }
+              ],
+              "name" : "CompanionDynamicTypeR24Tests",
+              "nodeIdentifierURL" : "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests/CompanionDynamicTypeR24Tests",
+              "nodeType" : "Test Suite",
+              "result" : "Skipped"
+            },
+            {
+              "children" : [
+                {
+                  "duration" : "3s",
+                  "durationInSeconds" : 3.3127180337905884,
+                  "name" : "testSelectedMultilingualDraftAcrossSmallViewportModesFieldsAndRefocus()",
+                  "nodeIdentifier" : "CompanionWorkflowR24Tests/testSelectedMultilingualDraftAcrossSmallViewportModesFieldsAndRefocus()",
+                  "nodeIdentifierURL" : "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests/CompanionWorkflowR24Tests/testSelectedMultilingualDraftAcrossSmallViewportModesFieldsAndRefocus",
+                  "nodeType" : "Test Case",
+                  "result" : "Passed"
+                }
+              ],
+              "name" : "CompanionWorkflowR24Tests",
+              "nodeIdentifierURL" : "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests/CompanionWorkflowR24Tests",
+              "nodeType" : "Test Suite",
+              "result" : "Passed"
+            },
+            {
+              "children" : [
+                {
+                  "duration" : "0.0072s",
+                  "durationInSeconds" : 0.007169008255004883,
+                  "name" : "testFrozenCases()",
+                  "nodeIdentifier" : "CursorEditingR17Tests/testFrozenCases()",
+                  "nodeIdentifierURL" : "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests/CursorEditingR17Tests/testFrozenCases",
+                  "nodeType" : "Test Case",
+                  "result" : "Passed"
+                }
+              ],
+              "name" : "CursorEditingR17Tests",
+              "nodeIdentifierURL" : "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests/CursorEditingR17Tests",
+              "nodeType" : "Test Suite",
+              "result" : "Passed"
+            },
+            {
+              "children" : [
+                {
+                  "duration" : "0.63s",
+                  "durationInSeconds" : 0.6277279853820801,
+                  "name" : "testClearResetsRangeAndRemainsEmptyAfterRecreationAndModeChange()",
+                  "nodeIdentifier" : "DraftEditorTests/testClearResetsRangeAndRemainsEmptyAfterRecreationAndModeChange()",
+                  "nodeIdentifierURL" : "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests/DraftEditorTests/testClearResetsRangeAndRemainsEmptyAfterRecreationAndModeChange",
+                  "nodeType" : "Test Case",
+                  "result" : "Passed"
+                },
+                {
+                  "duration" : "1s",
+                  "durationInSeconds" : 1.4180920124053955,
+                  "name" : "testDetachedEditorEndEditingStopsHeldDeleteBeforeDismantling()",
+                  "nodeIdentifier" : "DraftEditorTests/testDetachedEditorEndEditingStopsHeldDeleteBeforeDismantling()",
+                  "nodeIdentifierURL" : "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests/DraftEditorTests/testDetachedEditorEndEditingStopsHeldDeleteBeforeDismantling",
+                  "nodeType" : "Test Case",
+                  "result" : "Passed"
+                },
+                {
+                  "duration" : "2s",
+                  "durationInSeconds" : 2.536716938018799,
+                  "name" : "testEmojiCaretAndSelectedRangeSurviveRecreationBeforeEditing()",
+                  "nodeIdentifier" : "DraftEditorTests/testEmojiCaretAndSelectedRangeSurviveRecreationBeforeEditing()",
+                  "nodeIdentifierURL" : "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests/DraftEditorTests/testEmojiCaretAndSelectedRangeSurviveRecreationBeforeEditing",
+                  "nodeType" : "Test Case",
+                  "result" : "Passed"
+                },
+                {
+                  "duration" : "0.5s",
+                  "durationInSeconds" : 0.49750494956970215,
+                  "name" : "testFocusedSwitchingRetainsEmojiSelectionAndCanReplaceIt()",
+                  "nodeIdentifier" : "DraftEditorTests/testFocusedSwitchingRetainsEmojiSelectionAndCanReplaceIt()",
+                  "nodeIdentifierURL" : "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests/DraftEditorTests/testFocusedSwitchingRetainsEmojiSelectionAndCanReplaceIt",
+                  "nodeType" : "Test Case",
+                  "result" : "Passed"
+                },
+                {
+                  "duration" : "0.62s",
+                  "durationInSeconds" : 0.6216199398040771,
+                  "name" : "testIndependentClearOfSelectedCombiningTextOnce()",
+                  "nodeIdentifier" : "DraftEditorTests/testIndependentClearOfSelectedCombiningTextOnce()",
+                  "nodeIdentifierURL" : "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests/DraftEditorTests/testIndependentClearOfSelectedCombiningTextOnce",
+                  "nodeType" : "Test Case",
+                  "result" : "Passed"
+                },
+                {
+                  "duration" : "2s",
+                  "durationInSeconds" : 2.181318998336792,
+                  "name" : "testIndependentCombiningEmojiSelectionAndArabicCaretOnce()",
+                  "nodeIdentifier" : "DraftEditorTests/testIndependentCombiningEmojiSelectionAndArabicCaretOnce()",
+                  "nodeIdentifierURL" : "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests/DraftEditorTests/testIndependentCombiningEmojiSelectionAndArabicCaretOnce",
+                  "nodeType" : "Test Case",
+                  "result" : "Passed"
+                },
+                {
+                  "duration" : "0.93s",
+                  "durationInSeconds" : 0.9337799549102783,
+                  "name" : "testInvalidAndOverflowingRangesStayWithinUTF16Text()",
+                  "nodeIdentifier" : "DraftEditorTests/testInvalidAndOverflowingRangesStayWithinUTF16Text()",
+                  "nodeIdentifierURL" : "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests/DraftEditorTests/testInvalidAndOverflowingRangesStayWithinUTF16Text",
+                  "nodeType" : "Test Case",
+                  "result" : "Passed"
+                },
+                {
+                  "duration" : "0.62s",
+                  "durationInSeconds" : 0.6238839626312256,
+                  "name" : "testRemovedEditorCallbacksCannotChangeReplacementDraftOrFocus()",
+                  "nodeIdentifier" : "DraftEditorTests/testRemovedEditorCallbacksCannotChangeReplacementDraftOrFocus()",
+                  "nodeIdentifierURL" : "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests/DraftEditorTests/testRemovedEditorCallbacksCannotChangeReplacementDraftOrFocus",
+                  "nodeType" : "Test Case",
+                  "result" : "Passed"
+                },
+                {
+                  "duration" : "0.77s",
+                  "durationInSeconds" : 0.7652119398117065,
+                  "name" : "testSwitchingNativeAndPreviewRetainsRangeAndDoesNotForceFocus()",
+                  "nodeIdentifier" : "DraftEditorTests/testSwitchingNativeAndPreviewRetainsRangeAndDoesNotForceFocus()",
+                  "nodeIdentifierURL" : "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests/DraftEditorTests/testSwitchingNativeAndPreviewRetainsRangeAndDoesNotForceFocus",
+                  "nodeType" : "Test Case",
+                  "result" : "Passed"
+                }
+              ],
+              "name" : "DraftEditorTests",
+              "nodeIdentifierURL" : "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests/DraftEditorTests",
+              "nodeType" : "Test Suite",
+              "result" : "Passed"
+            },
+            {
+              "children" : [
+                {
+                  "duration" : "0.03s",
+                  "durationInSeconds" : 0.02969992160797119,
+                  "name" : "testBackwardAndForwardMovementPreserveWholeClusters()",
+                  "nodeIdentifier" : "PreviewCursorBoundaryTests/testBackwardAndForwardMovementPreserveWholeClusters()",
+                  "nodeIdentifierURL" : "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests/PreviewCursorBoundaryTests/testBackwardAndForwardMovementPreserveWholeClusters",
+                  "nodeType" : "Test Case",
+                  "result" : "Passed"
+                },
+                {
+                  "duration" : "0.0025s",
+                  "durationInSeconds" : 0.002498030662536621,
+                  "name" : "testExtremeOffsetsClampWithoutArithmeticOverflow()",
+                  "nodeIdentifier" : "PreviewCursorBoundaryTests/testExtremeOffsetsClampWithoutArithmeticOverflow()",
+                  "nodeIdentifierURL" : "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests/PreviewCursorBoundaryTests/testExtremeOffsetsClampWithoutArithmeticOverflow",
+                  "nodeType" : "Test Case",
+                  "result" : "Passed"
+                },
+                {
+                  "duration" : "0.0026s",
+                  "durationInSeconds" : 0.002583026885986328,
+                  "name" : "testSelectionStartAndZeroOffsetKeepExistingCollapseContract()",
+                  "nodeIdentifier" : "PreviewCursorBoundaryTests/testSelectionStartAndZeroOffsetKeepExistingCollapseContract()",
+                  "nodeIdentifierURL" : "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests/PreviewCursorBoundaryTests/testSelectionStartAndZeroOffsetKeepExistingCollapseContract",
+                  "nodeType" : "Test Case",
+                  "result" : "Passed"
+                }
+              ],
+              "name" : "PreviewCursorBoundaryTests",
+              "nodeIdentifierURL" : "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests/PreviewCursorBoundaryTests",
+              "nodeType" : "Test Suite",
+              "result" : "Passed"
+            },
+            {
+              "children" : [
+                {
+                  "duration" : "0.0089s",
+                  "durationInSeconds" : 0.008877038955688477,
+                  "name" : "testDirectHostReleaseLeavesRetainedInputControllerEngineAndDocumentInert()",
+                  "nodeIdentifier" : "PreviewDocumentLifecycleCounterchecks/testDirectHostReleaseLeavesRetainedInputControllerEngineAndDocumentInert()",
+                  "nodeIdentifierURL" : "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests/PreviewDocumentLifecycleCounterchecks/testDirectHostReleaseLeavesRetainedInputControllerEngineAndDocumentInert",
+                  "nodeType" : "Test Case",
+                  "result" : "Passed"
+                },
+                {
+                  "duration" : "0.013s",
+                  "durationInSeconds" : 0.013110995292663574,
+                  "name" : "testInvalidationIsInertWhileHostAndSelectedEditorRemainAlive()",
+                  "nodeIdentifier" : "PreviewDocumentLifecycleCounterchecks/testInvalidationIsInertWhileHostAndSelectedEditorRemainAlive()",
+                  "nodeIdentifierURL" : "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests/PreviewDocumentLifecycleCounterchecks/testInvalidationIsInertWhileHostAndSelectedEditorRemainAlive",
+                  "nodeType" : "Test Case",
+                  "result" : "Passed"
+                },
+                {
+                  "children" : [
+                    {
+                      "name" : "XCTAssertNil failed: \"<PulpoKeyboard.PreviewInputView: 0x1288b8c80; baseClass = UIInputView; frame = (0 0; 402 295); backgroundColor = UIExtendedSRGBColorSpace 0.878431 0.882353 0.909804 1; layer = <CALayer: 0x1286930c0>>\"",
+                      "nodeType" : "Failure Message",
+                      "sourceLocation" : {
+                        "filePath" : "/Users/isaacthoman/.t3/worktrees/pulpo/t3-5890fa78/apps/keyboard-ios/AppTests/PreviewDocumentLifecycleCounterchecks.swift",
+                        "lineNumber" : 98
+                      }
+                    },
+                    {
+                      "name" : "XCTAssertNil failed: \"<KeyboardUI.KeyboardController: 0x128856a00>\"",
+                      "nodeType" : "Failure Message",
+                      "sourceLocation" : {
+                        "filePath" : "/Users/isaacthoman/.t3/worktrees/pulpo/t3-5890fa78/apps/keyboard-ios/AppTests/PreviewDocumentLifecycleCounterchecks.swift",
+                        "lineNumber" : 99
+                      }
+                    },
+                    {
+                      "name" : "XCTAssertNil failed: \"KeyboardCore.KeyboardEngine\"",
+                      "nodeType" : "Failure Message",
+                      "sourceLocation" : {
+                        "filePath" : "/Users/isaacthoman/.t3/worktrees/pulpo/t3-5890fa78/apps/keyboard-ios/AppTests/PreviewDocumentLifecycleCounterchecks.swift",
+                        "lineNumber" : 100
+                      }
+                    }
+                  ],
+                  "duration" : "2s",
+                  "durationInSeconds" : 2.036213994026184,
+                  "name" : "testStandaloneDocumentSurvivesInputControllerEngineAndHostRelease()",
+                  "nodeIdentifier" : "PreviewDocumentLifecycleCounterchecks/testStandaloneDocumentSurvivesInputControllerEngineAndHostRelease()",
+                  "nodeIdentifierURL" : "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests/PreviewDocumentLifecycleCounterchecks/testStandaloneDocumentSurvivesInputControllerEngineAndHostRelease",
+                  "nodeType" : "Test Case",
+                  "result" : "Failed"
+                }
+              ],
+              "name" : "PreviewDocumentLifecycleCounterchecks",
+              "nodeIdentifierURL" : "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests/PreviewDocumentLifecycleCounterchecks",
+              "nodeType" : "Test Suite",
+              "result" : "Failed"
+            },
+            {
+              "children" : [
+                {
+                  "duration" : "0.17s",
+                  "durationInSeconds" : 0.16555392742156982,
+                  "name" : "testLiveHostDocumentPreservesReadsAndEdits()",
+                  "nodeIdentifier" : "PreviewDocumentLifetimeTests/testLiveHostDocumentPreservesReadsAndEdits()",
+                  "nodeIdentifierURL" : "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests/PreviewDocumentLifetimeTests/testLiveHostDocumentPreservesReadsAndEdits",
+                  "nodeType" : "Test Case",
+                  "result" : "Passed"
+                },
+                {
+                  "duration" : "0.63s",
+                  "durationInSeconds" : 0.6315569877624512,
+                  "name" : "testRetainedInputEngineDocumentIsInertAfterRepresentableDismantle()",
+                  "nodeIdentifier" : "PreviewDocumentLifetimeTests/testRetainedInputEngineDocumentIsInertAfterRepresentableDismantle()",
+                  "nodeIdentifierURL" : "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests/PreviewDocumentLifetimeTests/testRetainedInputEngineDocumentIsInertAfterRepresentableDismantle",
+                  "nodeType" : "Test Case",
+                  "result" : "Passed"
+                },
+                {
+                  "duration" : "0.62s",
+                  "durationInSeconds" : 0.6182869672775269,
+                  "name" : "testRetainedInputEngineDocumentIsInertAfterSwitchToSystemKeyboard()",
+                  "nodeIdentifier" : "PreviewDocumentLifetimeTests/testRetainedInputEngineDocumentIsInertAfterSwitchToSystemKeyboard()",
+                  "nodeIdentifierURL" : "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests/PreviewDocumentLifetimeTests/testRetainedInputEngineDocumentIsInertAfterSwitchToSystemKeyboard",
+                  "nodeType" : "Test Case",
+                  "result" : "Passed"
+                }
+              ],
+              "name" : "PreviewDocumentLifetimeTests",
+              "nodeIdentifierURL" : "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests/PreviewDocumentLifetimeTests",
+              "nodeType" : "Test Suite",
+              "result" : "Passed"
+            }
+          ],
+          "name" : "PulpoKeyboardAppTests",
+          "nodeIdentifierURL" : "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests",
+          "nodeType" : "Unit test bundle",
+          "result" : "Failed"
+        }
+      ],
+      "name" : "PulpoKeyboard",
+      "nodeType" : "Test Plan",
+      "result" : "Failed"
+    }
+  ],
+  "testPlanConfigurations" : [
+    {
+      "configurationId" : "1",
+      "configurationName" : "Test Scheme Action"
+    }
+  ]
+}

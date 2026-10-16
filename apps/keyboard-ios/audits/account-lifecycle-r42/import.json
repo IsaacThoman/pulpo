@@ -1,0 +1,8 @@
+{
+  "apps/keyboard-ios/App/AppModel.swift": "2a6ab21bddaa51e0092f0908b530978ded33e20de51fc3ebe18d1155c497e8d3",
+  "apps/keyboard-ios/App/SignInAttempt.swift": "8f5fcd4c952083006ca6cc38e38912cf7615e643723adbbbc16bf1ca420afd21",
+  "apps/keyboard-ios/App/SignInView.swift": "74c748ace8489515f1e353584a95ced86fb3c54e2f2f445d66d36b0012729305",
+  "apps/keyboard-ios/AppTests/AccountLifecycleR35Tests.swift": "8555f183bc48d035541d4f3931157ee40d58aab35ba2f701af706be851a9d17a",
+  "apps/keyboard-ios/PulpoKeyboardKit/Sources/PulpoServices/PulpoClient.swift": "48c1dd94ab21728d3a2d2d343f94e70be6eeae7c6d1edd8d904c63df3aef7498",
+  "apps/keyboard-ios/PulpoKeyboardKit/Sources/PulpoServices/SessionStore.swift": "f76c74488415aad3c579612bc67bae159b941ca57873712c956ba179b001dac2"
+}

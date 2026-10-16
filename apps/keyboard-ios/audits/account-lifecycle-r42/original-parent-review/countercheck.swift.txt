@@ -1,0 +1,34 @@
+// NOT EXECUTED. Append to AccountLifecycleR35Tests.swift in an isolated NEW round.
+// Same-file extension accesses its existing private model/login/response/request/auth helpers.
+// Baseline requires the existing observational-injection branch, not an uninstrumented app.
+extension AccountLifecycleR35Tests {
+  func testOldUploadUnauthorizedCallbackDoesNotRevokePendingReplacementLogin() async throws {
+    let (model, store, defaults, network) = model()
+    defer {
+      store.clear()
+      defaults.removeObject(forKey: "accountSnapshot")
+      network.invalidateAndCancel()
+    }
+    try await login(model, host: "callback-owner.r35.invalid", name: "Old")
+    XCTAssertEqual(model.session?.user.name, "Old")
+    let replacement = Task {
+      try await model.signIn(instance: "https://callback-replacement.r35.invalid",
+                             email: "fake@example.invalid", password: "fake-password", twoFactorCode: nil)
+    }
+    defer { replacement.cancel() }
+    try await response("callback-replacement.r35.invalid", "/api/mobile/config", body: config)
+    let held = try await request("callback-replacement.r35.invalid", "/api/mobile/auth/login")
+    XCTAssertEqual(model.session?.user.name, "Old")
+    XCTAssertNotNil(model.dictation.onUnauthorized)
+    // Actual installed callback. No audio upload/lifecycle execution is claimed.
+    model.dictation.onUnauthorized?()
+    XCTAssertNil(model.session) // The old account's unauthorized response clears A.
+    held.transport.respond(status: 200, body: auth("Replacement"))
+    var loginError: Error?
+    do { try await replacement.value } catch { loginError = error }
+    XCTAssertNil(loginError, "A's unauthorized callback must not revoke B's explicit pending login")
+    XCTAssertEqual(model.session?.user.name, "Replacement")
+    XCTAssertEqual(store.load()?.user.name, "Replacement")
+    XCTAssertEqual(AccountSnapshot.load(defaults: defaults).displayName, "Replacement")
+  }
+}

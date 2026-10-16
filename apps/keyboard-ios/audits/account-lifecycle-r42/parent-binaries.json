@@ -1,0 +1,24 @@
+{
+  "recordedUTC": "2026-10-16T09:27:37.259456+00:00",
+  "sourceCommit": "7c2694fb",
+  "uiDriverSHA256": "235b03e8203c3935986e65e6b91a4c126fe6023d6a5207d59dfc32a6ac48e530",
+  "limit": "Final standard simulator-signing build products observed after successful native runs. Initial unsigned build was overwritten; no retrospective unsigned-binary attestation. Native app source matches import.json; historical R35 binary bindings are separately qualified.",
+  "binaries": {
+    "/tmp/pulpo-r42-derived/Build/Products/Debug-iphonesimulator/PulpoKeyboard.app/PulpoKeyboard": {
+      "sha256": "cb6b93e4a03f9b45595f36417b5bf48153ce026d98266c6dad311e74f2dfa6cd",
+      "bytes": 40512
+    },
+    "/tmp/pulpo-r42-derived/Build/Products/Debug-iphonesimulator/PulpoKeyboard.app/PulpoKeyboard.debug.dylib": {
+      "sha256": "b1e0bde4eef5fb04df18b17bed94d019f76e8dcddee592a178a50811d347f593",
+      "bytes": 6808016
+    },
+    "/tmp/pulpo-r42-derived/Build/Products/Debug-iphonesimulator/PulpoKeyboard.app/PlugIns/PulpoKeyboardAppTests.xctest/PulpoKeyboardAppTests": {
+      "sha256": "64dee2e5f927fe8cbbe6e6959b8e86e6d7b0193f75e6d7cf88d9168944125da7",
+      "bytes": 1105312
+    },
+    "/tmp/pulpo-r42-derived/Build/Products/Debug-iphonesimulator/PulpoKeyboardUITests-Runner.app/PlugIns/PulpoKeyboardUITests.xctest/PulpoKeyboardUITests": {
+      "sha256": "1b3410eba67421c2a5c964c42988c39d8ad4684d802cb1bff0bf262eb024a333",
+      "bytes": 7229152
+    }
+  }
+}

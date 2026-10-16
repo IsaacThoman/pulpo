@@ -1,0 +1,12 @@
+{
+  "file": "apps/keyboard-ios/UITests/AccountLifecycleR42UITests.swift",
+  "sha256": "2f334a762bbf7749d8cf8c74bebe5badf26b1ec28d777a26266303438f72b3a3",
+  "changes": [
+    "R42 distinct class",
+    "navigation-bar disappearance instead of lazy server-field absence",
+    "Keyboard root and hittable account control before signed-out claim",
+    "preserve per-test screenshots"
+  ],
+  "exposed": true,
+  "productionChanges": false
+}

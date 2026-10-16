@@ -1,0 +1,94 @@
+diff --git a/apps/keyboard-ios/App/AppModel.swift b/apps/keyboard-ios/App/AppModel.swift
+index 2078e197..1c3f406e 100644
+--- a/apps/keyboard-ios/App/AppModel.swift
++++ b/apps/keyboard-ios/App/AppModel.swift
+@@ -38,19 +38,27 @@ final class AppModel {
+   }
+   let dictation: DictationService
+   private let settingsStore = SettingsStore()
+-  private let sessionStore = SessionStore()
++  private let sessionStore: SessionStore
++  private let accountDefaults: UserDefaults?
++  @ObservationIgnored var accountEvent: ((String) -> Void)?
++  private let accountURLSession: URLSession
+   @ObservationIgnored private var appearanceObservers: [DarwinNotifications.Observation] = []
+ 
+   static let setupGuideSeenKey = "setupGuideSeen"
+   /// When the app last saw the installed keyboard appear without Full Access.
+   static let limitedKeyboardSeenKey = "limitedKeyboardSeenAt"
+ 
+-  init() {
++  init(sessionStore: SessionStore = SessionStore(), accountDefaults: UserDefaults? = AppGroup.defaults,
++       accountURLSession: URLSession = .shared, accountEvent: ((String) -> Void)? = nil) {
++    self.accountEvent = accountEvent
++    self.sessionStore = sessionStore
++    self.accountDefaults = accountDefaults
++    self.accountURLSession = accountURLSession
+     Diagnostics.record("app", "launch")
+     // Installed at launch: the host app's name arrives shortly after the keyboard opens us.
+     HostAppObserver.shared.start()
+     settings = SettingsStore().load()
+-    let stored = SessionStore().load()
++    let stored = sessionStore.load()
+     session = stored
+     dictation = DictationService()
+     dictation.sessionProvider = { [weak self] in self?.session }
+@@ -178,12 +186,13 @@ final class AppModel {
+ 
+   func signIn(instance: String, email: String, password: String, twoFactorCode: String?) async throws {
+     let url = try PulpoClient.normalizeInstance(instance, allowLocalhost: instanceAllowsLocalhost)
+-    let client = PulpoClient(instance: url)
++    let client = PulpoClient(instance: url, session: accountURLSession)
+     let config = try await client.config()
+     let label = "Pulpo Keyboard on \(UIDevice.current.name)"
+     let response = try await client.login(email: email, password: password, twoFactorCode: twoFactorCode, deviceLabel: label)
+     let stored = StoredSession(instance: url, token: response.session.token, user: response.user, dictationAvailable: config.capabilities.dictation)
+     sessionStore.save(stored)
++    accountEvent?("save")
+     session = stored
+     publishAccount()
+   }
+@@ -191,13 +200,14 @@ final class AppModel {
+   /// Re-reads whether dictation is enabled on the instance and that the session still works.
+   func refreshAccount() async {
+     guard var current = session else { return }
+-    let client = PulpoClient(instance: current.instance, token: current.token)
++    let client = PulpoClient(instance: current.instance, token: current.token, session: accountURLSession)
+     do {
+       async let config = client.config()
+       async let user = client.me()
+       current.dictationAvailable = try await config.capabilities.dictation
+       current.user = try await user
+       sessionStore.save(current)
++      accountEvent?("save")
+       session = current
+       publishAccount()
+     } catch let error as PulpoError where error.isUnauthorized {
+@@ -209,10 +219,15 @@ final class AppModel {
+ 
+   func signOut(remote: Bool = true) {
+     if remote, let current = session {
+-      let client = PulpoClient(instance: current.instance, token: current.token)
+-      Task { try? await client.logout() }
++      let client = PulpoClient(instance: current.instance, token: current.token, session: accountURLSession)
++      accountEvent?("logoutStarted")
++      Task {
++        defer { accountEvent?("logoutFinished") }
++        try? await client.logout()
++      }
+     }
+     sessionStore.clear()
++    accountEvent?("clear")
+     session = nil
+     publishAccount()
+   }
+@@ -221,7 +236,8 @@ final class AppModel {
+     let snapshot = session.map {
+       AccountSnapshot(signedIn: true, displayName: $0.user.name, instanceHost: $0.instance.host(), dictationAvailable: $0.dictationAvailable)
+     } ?? .signedOut
+-    snapshot.save()
++    snapshot.save(defaults: accountDefaults)
++    accountEvent?("publish")
+   }
+ 
+   // MARK: Learned words

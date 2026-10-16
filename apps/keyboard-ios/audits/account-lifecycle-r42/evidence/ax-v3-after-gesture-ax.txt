@@ -1,0 +1,77 @@
+Attributes: Application, 0x10927be80, pid: 94260, label: 'Pulpo Keyboard'
+Element subtree:
+ →Application, 0x10927be80, pid: 94260, label: 'Pulpo Keyboard'
+    Window, 0x1092783c0, {{0.0, 0.0}, {402.0, 874.0}}
+      Other, 0x109279680, {{0.0, 0.0}, {402.0, 874.0}}
+        Other, 0x109278a00, {{0.0, 0.0}, {402.0, 874.0}}
+          Other, 0x109279e00, {{0.0, 0.0}, {402.0, 874.0}}
+            Other, 0x109279540, {{0.0, 0.0}, {402.0, 874.0}}
+              Other, 0x109279040, {{0.0, 0.0}, {402.0, 874.0}}
+                NavigationBar, 0x109278b40, {{0.0, 62.0}, {402.0, 54.0}}, identifier: 'Keyboard'
+                  StaticText, 0x10927bd40, {{155.0, 71.3}, {91.7, 25.3}}, label: 'Keyboard'
+                  Button, 0x10927a800, {{346.0, 66.0}, {36.0, 36.0}}, identifier: 'find-setting', label: 'Find Setting'
+                Other, 0x109279f40, {{0.0, 0.0}, {402.0, 874.0}}
+                  Other, 0x10927abc0, {{0.0, 0.0}, {402.0, 874.0}}
+                    Other, 0x109278140, {{0.0, 0.0}, {402.0, 874.0}}
+                      Other, 0x109279400, {{0.0, 0.0}, {402.0, 874.0}}
+                        CollectionView, 0x109279a40, {{0.0, 0.0}, {402.0, 874.0}}
+                          Other, 0x109278dc0, {{-16.0, -1632.0}, {434.0, 2268.3}}
+                          Other, 0x10927b980, {{0.0, 0.0}, {402.0, 874.0}}
+                            Other, 0x10927aa80, {{0.0, 0.0}, {402.0, 156.0}}
+                          Other, 0x1092797c0, {{0.0, 0.0}, {402.0, 874.0}}
+                          Cell, 0x10927bc00, {{16.0, 151.0}, {370.0, 467.7}}
+                            Other, 0x10927ae40, {{16.0, 151.0}, {370.0, 467.7}}
+                              Other, 0x10927bac0, {{16.0, 151.0}, {370.0, 467.7}}
+                            Other, 0x10927b700, {{16.0, 151.0}, {370.0, 467.7}}
+                              Other, 0x10927b840, {{16.0, 151.0}, {370.0, 467.7}}
+                                Other, 0x10927b480, {{16.0, 151.0}, {370.0, 467.7}}
+                                  StaticText, 0x10927b340, {{16.0, 151.0}, {370.0, 467.7}}, label: 'Pulpo Keyboard, Swipe typing, on-device autocorrect, and Pulpo dictation.'
+                                    Image, 0x109279cc0, {{32.0, 170.0}, {52.0, 52.0}}, label: 'PulpoSmiley'
+                                    StaticText, 0x109279900, {{32.0, 232.0}, {238.7, 133.0}}, label: 'Pulpo Keyboard'
+                                    StaticText, 0x10927ad00, {{32.0, 367.0}, {338.0, 232.7}}, label: 'Swipe typing, on-device autocorrect, and Pulpo dictation.'
+                          Other, 0x109278000, {{-16.0, 636.3}, {434.0, 1031.3}}
+                          Cell, 0x10927a940, {{16.0, 636.3}, {370.0, 83.3}}
+                            Other, 0x109278280, {{16.0, 636.3}, {370.0, 83.3}}
+                            Other, 0x109278500, {{16.0, 636.3}, {370.0, 83.3}}
+                              Other, 0x10927a1c0, {{16.0, 636.3}, {370.0, 83.3}}
+                                Other, 0x109278f00, {{16.0, 636.3}, {370.0, 83.3}}
+                                  StaticText, 0x109278640, {{16.0, 636.3}, {370.0, 83.3}}, label: 'Setup'
+                          Cell, 0x104e23340, {{16.0, 719.7}, {370.0, 218.0}}
+                            Other, 0x104e20f00, {{16.0, 719.7}, {370.0, 218.0}}
+                              Other, 0x104e230c0, {{16.0, 719.7}, {370.0, 218.0}}
+                            Other, 0x104e23480, {{16.0, 719.7}, {370.0, 218.0}}
+                              Other, 0x104e235c0, {{16.0, 719.7}, {370.0, 218.0}}
+                                Other, 0x104e23840, {{16.0, 719.7}, {370.0, 218.0}}
+                                  Other, 0x104e20780, {{16.0, 719.7}, {370.0, 218.0}}, label: 'Add Pulpo Keyboard', value: To do
+                                    StaticText, 0x104e22f80, {{32.0, 734.7}, {243.3, 125.3}}, label: 'Add Pulpo Keyboard'
+                                    Image, 0x104e22a80, {{36.3, 868.3}, {49.7, 49.7}}, identifier: 'circle', label: 'Circle'
+                                    StaticText, 0x104e22d00, {{96.3, 864.0}, {116.0, 58.7}}, label: 'To do'
+                          Other, 0x104e23700, {{369.0, 116.0}, {30.0, 696.0}}, label: 'Vertical scroll bar, 5 pages', value: 0%
+                            Other, 0x104fcb5c0, {{396.0, 119.0}, {3.0, 175.0}}
+                          Other, 0x104fcb980, {{369.0, 116.0}, {30.0, 696.0}}, label: 'Vertical scroll bar, 5 pages', value: 0%
+                            Other, 0x104fc9e00, {{396.0, 119.0}, {3.0, 175.0}}
+                Toolbar, 0x104fcabc0, {{0.0, 0.0}, {402.0, 874.0}}, identifier: 'Toolbar', label: 'Toolbar'
+                  Other, 0x104fcb480, {{0.0, 0.0}, {402.0, 874.0}}
+    Window (Main), 0x104fc97c0, {{0.0, 0.0}, {402.0, 874.0}}
+      Other, 0x104fca6c0, {{0.0, 0.0}, {402.0, 874.0}}
+        Other, 0x104fca300, {{0.0, 0.0}, {402.0, 874.0}}
+      Other, 0x104fca580, {{0.0, 0.0}, {402.0, 874.0}}
+        Other, 0x104fcaf80, {{0.0, 0.0}, {402.0, 874.0}}
+          Other, 0x104fcb700, {{0.0, 0.0}, {402.0, 874.0}}
+          Other, 0x104fc9cc0, {{0.0, 0.0}, {402.0, 874.0}}
+            Other, 0x104fc9180, {{0.0, 0.0}, {402.0, 874.0}}
+              Other, 0x104fc8b40, {{0.0, 0.0}, {402.0, 874.0}}
+                Other, 0x104fcb0c0, {{0.0, 0.0}, {804.0, 1748.0}}
+                  Other, 0x104fc83c0, {{0.0, 390.6}, {402.0, 874.0}}
+                    Other, 0x104fca800, {{0.0, 390.6}, {402.0, 874.0}}
+                      Other, 0x104fc8dc0, {{0.0, 390.6}, {402.0, 874.0}}
+                        Other, 0x104fc9900, {{0.0, 390.6}, {402.0, 874.0}}
+                          Other, 0x104fca940, {{0.0, 390.6}, {402.0, 874.0}}
+                            Other, 0x104fcae40, {{0.0, 390.6}, {402.0, 874.0}}
+Path to element:
+ →Application, 0x10927be80, pid: 94260, label: 'Pulpo Keyboard'
+Query chain:
+ →Find: Target Application 'com.isaacthoman.pulpo.keyboard'
+  Output: {
+    Application, 0x104fc9b80, pid: 94260, label: 'Pulpo Keyboard'
+  }

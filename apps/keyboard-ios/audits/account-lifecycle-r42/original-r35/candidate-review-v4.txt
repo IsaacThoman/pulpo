@@ -1,0 +1,50 @@
+Independent R35 final pre-reveal evidence review, v4
+Candidate: /tmp/pulpo-r35-account-lifecycle
+Method: static, read-only review of the expressly permitted sources. The sole write is this requested report.
+References below are relative to apps/keyboard-ios.
+
+DISPOSITION
+
+R1 and R2 are addressed in the current source. No additional blocker identified within this scoped evidence review. The reviewed changes are suitable to freeze before the single blind reveal, subject to actually creating/verifying the seal and following the existing no-retuning policy. This is not an executed schema/seal/replay pass, native UI pass, binary-provenance certificate, or renewed production lifecycle review.
+
+The v3 conclusion of no identified production lifecycle blocker is prior-review context, not independently re-established here. No production implementation was opened in this round.
+
+R1 — ADDRESSED
+
+validate.py:19-31 rejects unsupported case/step keys and requires the defined fields. Optional email/password/code must be strings when present (54-55), and signOut.remote must be a Boolean (56-57); the previously identified defaulting/coercion inputs therefore fail preflight rather than receive schema:"pass". awaitRequest.path must be a string matching one of the four public endpoints (49-51). HTTP status must be an integer, excluding Boolean, in the accepted range (38-39).
+
+Task IDs cannot be reused by either startLogin or startRefresh anywhere within a case (27,42-44). waitTask/cancelTask/revokeLogin require an already-defined task (45-46), and revokeLogin additionally requires that ID to identify a login (47-48). Responses require a previously reserved request that has not already been answered (38-41); reservation IDs cannot collide while outstanding (49-53). These checks reject the reference errors relevant to the identified gap.
+
+Checkpoint/reload expectations require exactly the four public fields, nullable strings for name/host/token and a Boolean dictation; name:null requires the fully signed-out expectation (58-64). Existing case ID, host ownership, and purpose/steps checks remain present (20-37).
+
+This establishes rejection behavior by inspection of the normal Python invocation. It does not establish actual validity, meaningfulness or settlement of any hidden schedules. HTTP response bodies intentionally remain capable of expressing deliberate decoder failures. Runtime request availability, task settlement and transport outcomes still belong in retained runner evidence, as the protocol specifies. The validator uses Python assertions and must be invoked without assertion-disabling optimization.
+
+R2 — ADDRESSED
+
+compare.py requires --fixtures and --seal (38-39). It hashes the actual raw fixture bytes and checks their count against the manifest's blindCases entry (42-45). Baseline IDs must equal the complete ordered fixture IDs, and candidate IDs must equal baseline IDs (46-47). Each corresponding purpose and complete sequence of recorded input steps must match the fixture (51-54). Thus two equally truncated report arrays no longer satisfy the complete sealed-inventory check.
+
+Every paired case is appended, retaining both versions' failure arrays and unavailable arrays (59-63). The all-case summaries retain runner failure details and checkpoint failure totals (24-27). casesWithFailures is calculated independently of status classification (24): a case with both unavailability and failures remains counted as having failures even though its primary status is unavailable (10-13). No observed failure or unavailable status filters the comparison cohort.
+
+A distinct commonOperations result now has its own ordered IDs and baseline/candidate summaries (64-66). Membership is determined solely by every input operation belonging to the explicit public shared-operation set (50,55-58). That set includes all public operations except candidate-only revokeLogin. Cases outside this cohort remain in the complete pairs and overall summaries. Failures/unavailability inside the common cohort remain in its summaries. This meets the requested separate common-operations comparison without selecting successful outcomes.
+
+SEAL AND REPLAY SOURCE REVIEW
+
+seal.py replaces the prior short selected-file list with git ls-files enumeration over both checkouts' tracked App, Extension, AppTests, UITests, LanguageData, PulpoKeyboardKit/Sources, PulpoKeyboardKit/Tests, Package.swift and project.yml paths (19-23). It hashes working-tree bytes for those paths (26-30). Candidate public protocol and support scripts, including validate/compare/replay/seal/native-server, are explicitly included (15-16,30). Verification compares the complete freshly computed source dictionaries to the sealed dictionaries (38-40), so a changed tracked file or an enumerated tracked-path addition/removal changes the comparison.
+
+The source therefore addresses the prior narrow source-list coverage limitation for these enumerated tracked trees. It does not cover arbitrary untracked files or certify every external dependency, generated project, toolchain, built binary, or actual source inventory; none was inspected here. The manifest contains predeclared blind metadata (34-35). This review did not open or independently verify its source. compare.py supplies the actual fixture-byte/count check against that metadata; seal.py verify itself checks source dictionaries only.
+
+replay.py selects the benchmark test explicitly, pins one simulator UUID and disables parallel testing (23-27). Baseline stage supplies R35_BASELINE (28-29). Fixture/report paths are passed in TEST_RUNNER_R35_* environment entries (32-35), and subprocess exit status is propagated (21-22,36-37). Development tests require the explicit --development option (30-31). No invocation or output was inspected.
+
+Freeze/reveal is still a procedural obligation: these scripts do not themselves enforce a one-time reveal or prevent manifest replacement. Replay does not automatically invoke source-seal verification. These are limits on what the static review certifies, not evidence that the authorized freeze/reveal procedure has been violated. Create/verify the reviewed freeze before reveal and do not retune source, runner or comparison afterward, including after failures/unavailability.
+
+NATIVE HELPER ADJUSTMENT
+
+UITests/AccountLifecycleR35UITests.swift:36-50 makes scroll direction explicit: the default server-field path uses swipeDown when unavailable, while email/password pass below:true and use swipeUp to expose lower form fields. The bounded retry loop still runs only while the target is not hittable. The right-edge clearing interaction and exact nonsecure field-value assertion remain (38-45). Two-factor input value assertions also remain (140-153). Secure password values are still excluded from direct value equality at 45; this is not a new assertion added by this change.
+
+This is a test interaction adjustment within the native helper; no production or public blind runner policy change is present in the permitted files. Static inspection cannot establish actual scrolling/hittability, password replacement, accessibility behavior, focus or successful native execution. The prior bounded negative late-login observation remains a bounded UI assertion (89-100), not a model/transport completion barrier.
+
+ACCESS AND EXECUTION BOUNDARY
+
+Read order: public-protocol.md first, then /tmp/r35-final-review-v3.txt, then only current validate.py, compare.py, seal.py, replay.py and UITests/AccountLifecycleR35UITests.swift. The protocol was located by a filename-only lookup restricted to public-protocol.md after the direct checkout-root path did not exist.
+
+No development fixtures/results, hidden author files, other audit contents, production sources, baseline files, git history, protected paths or execution results were read. No git commands, validation/replay/seal execution, builds, tests, devices or network were used. No source was changed. The only created artifact is /tmp/r35-evidence-review-v4.txt.

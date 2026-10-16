@@ -1,0 +1,22 @@
+[
+  {
+    "semanticCheck": "remote must be bool",
+    "rejected": true
+  },
+  {
+    "semanticCheck": "code must be string",
+    "rejected": true
+  },
+  {
+    "semanticCheck": "task ids unique",
+    "rejected": true
+  },
+  {
+    "semanticCheck": "path exact string",
+    "rejected": true
+  },
+  {
+    "semanticCheck": "unknown fields rejected",
+    "rejected": true
+  }
+]

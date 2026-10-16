@@ -1,0 +1,3340 @@
+[
+  {
+    "id": "heldout-01",
+    "purpose": "Successful first login publishes a durable account with enabled capability",
+    "steps": [
+      {
+        "op": "startLogin",
+        "id": "L",
+        "host": "heldout-01-account.r35.invalid",
+        "email": "first@example.invalid",
+        "password": "fake-password-first"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "LConfig",
+        "host": "heldout-01-account.r35.invalid",
+        "path": "/api/mobile/config"
+      },
+      {
+        "op": "respond",
+        "id": "LConfig",
+        "status": 200,
+        "body": {
+          "instance": {
+            "name": "Fake instance"
+          },
+          "capabilities": {
+            "dictation": true
+          }
+        }
+      },
+      {
+        "op": "awaitRequest",
+        "id": "LPost",
+        "host": "heldout-01-account.r35.invalid",
+        "path": "/api/mobile/auth/login"
+      },
+      {
+        "op": "respond",
+        "id": "LPost",
+        "status": 200,
+        "body": {
+          "user": {
+            "id": "fake-user-id",
+            "name": "Fake First"
+          },
+          "session": {
+            "token": "fake-token-01",
+            "expiresAt": "2099-01-01"
+          }
+        }
+      },
+      {
+        "op": "waitTask",
+        "id": "L"
+      },
+      {
+        "op": "checkpoint",
+        "id": "C",
+        "expected": {
+          "name": "Fake First",
+          "host": "heldout-01-account.r35.invalid",
+          "token": "fake-token-01",
+          "dictation": true
+        }
+      },
+      {
+        "op": "reload",
+        "id": "D",
+        "expected": {
+          "name": "Fake First",
+          "host": "heldout-01-account.r35.invalid",
+          "token": "fake-token-01",
+          "dictation": true
+        }
+      }
+    ]
+  },
+  {
+    "id": "heldout-02",
+    "purpose": "Successful refresh changes name and capability while retaining session identity",
+    "steps": [
+      {
+        "op": "startLogin",
+        "id": "L",
+        "host": "heldout-02-account.r35.invalid"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "LConfig",
+        "host": "heldout-02-account.r35.invalid",
+        "path": "/api/mobile/config"
+      },
+      {
+        "op": "respond",
+        "id": "LConfig",
+        "status": 200,
+        "body": {
+          "instance": {
+            "name": "Fake instance"
+          },
+          "capabilities": {
+            "dictation": false
+          }
+        }
+      },
+      {
+        "op": "awaitRequest",
+        "id": "LPost",
+        "host": "heldout-02-account.r35.invalid",
+        "path": "/api/mobile/auth/login"
+      },
+      {
+        "op": "respond",
+        "id": "LPost",
+        "status": 200,
+        "body": {
+          "user": {
+            "id": "fake-user-id",
+            "name": "Fake Before"
+          },
+          "session": {
+            "token": "fake-token-02",
+            "expiresAt": "2099-01-01"
+          }
+        }
+      },
+      {
+        "op": "waitTask",
+        "id": "L"
+      },
+      {
+        "op": "checkpoint",
+        "id": "Before",
+        "expected": {
+          "name": "Fake Before",
+          "host": "heldout-02-account.r35.invalid",
+          "token": "fake-token-02",
+          "dictation": false
+        }
+      },
+      {
+        "op": "startRefresh",
+        "id": "R"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "RMe",
+        "host": "heldout-02-account.r35.invalid",
+        "path": "/api/mobile/me"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "RConfig",
+        "host": "heldout-02-account.r35.invalid",
+        "path": "/api/mobile/config"
+      },
+      {
+        "op": "respond",
+        "id": "RConfig",
+        "status": 200,
+        "body": {
+          "instance": {
+            "name": "Fake instance"
+          },
+          "capabilities": {
+            "dictation": true
+          }
+        }
+      },
+      {
+        "op": "respond",
+        "id": "RMe",
+        "status": 200,
+        "body": {
+          "user": {
+            "id": "fake-user-id",
+            "name": "Fake After"
+          }
+        }
+      },
+      {
+        "op": "waitTask",
+        "id": "R"
+      },
+      {
+        "op": "checkpoint",
+        "id": "After",
+        "expected": {
+          "name": "Fake After",
+          "host": "heldout-02-account.r35.invalid",
+          "token": "fake-token-02",
+          "dictation": true
+        }
+      },
+      {
+        "op": "reload",
+        "id": "D",
+        "expected": {
+          "name": "Fake After",
+          "host": "heldout-02-account.r35.invalid",
+          "token": "fake-token-02",
+          "dictation": true
+        }
+      }
+    ]
+  },
+  {
+    "id": "heldout-03",
+    "purpose": "Malformed login config cannot create an account",
+    "steps": [
+      {
+        "op": "startLogin",
+        "id": "L",
+        "host": "heldout-03-account.r35.invalid"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "Q",
+        "host": "heldout-03-account.r35.invalid",
+        "path": "/api/mobile/config"
+      },
+      {
+        "op": "respond",
+        "id": "Q",
+        "status": 200,
+        "body": {
+          "instance": {
+            "name": "Fake instance"
+          },
+          "capabilities": {
+            "dictation": "fake-not-a-boolean"
+          }
+        }
+      },
+      {
+        "op": "waitTask",
+        "id": "L"
+      },
+      {
+        "op": "checkpoint",
+        "id": "C",
+        "expected": {
+          "name": null,
+          "host": null,
+          "token": null,
+          "dictation": false
+        }
+      },
+      {
+        "op": "reload",
+        "id": "D",
+        "expected": {
+          "name": null,
+          "host": null,
+          "token": null,
+          "dictation": false
+        }
+      }
+    ]
+  },
+  {
+    "id": "heldout-04",
+    "purpose": "Ordinary replacement-login failure retains the previous account and capability",
+    "steps": [
+      {
+        "op": "startLogin",
+        "id": "Seed",
+        "host": "heldout-04-old.r35.invalid"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "SeedConfig",
+        "host": "heldout-04-old.r35.invalid",
+        "path": "/api/mobile/config"
+      },
+      {
+        "op": "respond",
+        "id": "SeedConfig",
+        "status": 200,
+        "body": {
+          "instance": {
+            "name": "Fake instance"
+          },
+          "capabilities": {
+            "dictation": false
+          }
+        }
+      },
+      {
+        "op": "awaitRequest",
+        "id": "SeedPost",
+        "host": "heldout-04-old.r35.invalid",
+        "path": "/api/mobile/auth/login"
+      },
+      {
+        "op": "respond",
+        "id": "SeedPost",
+        "status": 200,
+        "body": {
+          "user": {
+            "id": "fake-user-id",
+            "name": "Fake Cached"
+          },
+          "session": {
+            "token": "fake-token-04",
+            "expiresAt": "2099-01-01"
+          }
+        }
+      },
+      {
+        "op": "waitTask",
+        "id": "Seed"
+      },
+      {
+        "op": "startLogin",
+        "id": "L",
+        "host": "heldout-04-new.r35.invalid"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "LConfig",
+        "host": "heldout-04-new.r35.invalid",
+        "path": "/api/mobile/config"
+      },
+      {
+        "op": "respond",
+        "id": "LConfig",
+        "status": 200,
+        "body": {
+          "instance": {
+            "name": "Fake instance"
+          },
+          "capabilities": {
+            "dictation": true
+          }
+        }
+      },
+      {
+        "op": "awaitRequest",
+        "id": "LPost",
+        "host": "heldout-04-new.r35.invalid",
+        "path": "/api/mobile/auth/login"
+      },
+      {
+        "op": "respond",
+        "id": "LPost",
+        "status": 403,
+        "body": {
+          "error": {
+            "code": "fake_failure",
+            "message": "Fake controlled error"
+          }
+        }
+      },
+      {
+        "op": "waitTask",
+        "id": "L"
+      },
+      {
+        "op": "checkpoint",
+        "id": "C",
+        "expected": {
+          "name": "Fake Cached",
+          "host": "heldout-04-old.r35.invalid",
+          "token": "fake-token-04",
+          "dictation": false
+        }
+      },
+      {
+        "op": "reload",
+        "id": "D",
+        "expected": {
+          "name": "Fake Cached",
+          "host": "heldout-04-old.r35.invalid",
+          "token": "fake-token-04",
+          "dictation": false
+        }
+      }
+    ]
+  },
+  {
+    "id": "heldout-05",
+    "purpose": "Two-factor challenge preserves cache and an explicit coded retry can replace it",
+    "steps": [
+      {
+        "op": "startLogin",
+        "id": "Seed",
+        "host": "heldout-05-old.r35.invalid"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "SeedConfig",
+        "host": "heldout-05-old.r35.invalid",
+        "path": "/api/mobile/config"
+      },
+      {
+        "op": "respond",
+        "id": "SeedConfig",
+        "status": 200,
+        "body": {
+          "instance": {
+            "name": "Fake instance"
+          },
+          "capabilities": {
+            "dictation": true
+          }
+        }
+      },
+      {
+        "op": "awaitRequest",
+        "id": "SeedPost",
+        "host": "heldout-05-old.r35.invalid",
+        "path": "/api/mobile/auth/login"
+      },
+      {
+        "op": "respond",
+        "id": "SeedPost",
+        "status": 200,
+        "body": {
+          "user": {
+            "id": "fake-user-id",
+            "name": "Fake Cached"
+          },
+          "session": {
+            "token": "fake-token-05-old",
+            "expiresAt": "2099-01-01"
+          }
+        }
+      },
+      {
+        "op": "waitTask",
+        "id": "Seed"
+      },
+      {
+        "op": "startLogin",
+        "id": "Challenge",
+        "host": "heldout-05-challenge.r35.invalid",
+        "email": "challenge@example.invalid",
+        "password": "fake-challenge-password"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "ChallengeConfig",
+        "host": "heldout-05-challenge.r35.invalid",
+        "path": "/api/mobile/config"
+      },
+      {
+        "op": "respond",
+        "id": "ChallengeConfig",
+        "status": 200,
+        "body": {
+          "instance": {
+            "name": "Fake instance"
+          },
+          "capabilities": {
+            "dictation": false
+          }
+        }
+      },
+      {
+        "op": "awaitRequest",
+        "id": "ChallengePost",
+        "host": "heldout-05-challenge.r35.invalid",
+        "path": "/api/mobile/auth/login"
+      },
+      {
+        "op": "respond",
+        "id": "ChallengePost",
+        "status": 401,
+        "body": {
+          "error": {
+            "code": "two_factor_required",
+            "message": "Fake controlled error"
+          }
+        }
+      },
+      {
+        "op": "waitTask",
+        "id": "Challenge"
+      },
+      {
+        "op": "checkpoint",
+        "id": "Challenged",
+        "expected": {
+          "name": "Fake Cached",
+          "host": "heldout-05-old.r35.invalid",
+          "token": "fake-token-05-old",
+          "dictation": true
+        }
+      },
+      {
+        "op": "startLogin",
+        "id": "Retry",
+        "host": "heldout-05-challenge.r35.invalid",
+        "email": "retry@example.invalid",
+        "password": "fake-retry-password",
+        "code": "654321"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "RetryConfig",
+        "host": "heldout-05-challenge.r35.invalid",
+        "path": "/api/mobile/config"
+      },
+      {
+        "op": "respond",
+        "id": "RetryConfig",
+        "status": 200,
+        "body": {
+          "instance": {
+            "name": "Fake instance"
+          },
+          "capabilities": {
+            "dictation": false
+          }
+        }
+      },
+      {
+        "op": "awaitRequest",
+        "id": "RetryPost",
+        "host": "heldout-05-challenge.r35.invalid",
+        "path": "/api/mobile/auth/login"
+      },
+      {
+        "op": "respond",
+        "id": "RetryPost",
+        "status": 200,
+        "body": {
+          "user": {
+            "id": "fake-user-id",
+            "name": "Fake Verified"
+          },
+          "session": {
+            "token": "fake-token-05-new",
+            "expiresAt": "2099-01-01"
+          }
+        }
+      },
+      {
+        "op": "waitTask",
+        "id": "Retry"
+      },
+      {
+        "op": "checkpoint",
+        "id": "C",
+        "expected": {
+          "name": "Fake Verified",
+          "host": "heldout-05-challenge.r35.invalid",
+          "token": "fake-token-05-new",
+          "dictation": false
+        }
+      },
+      {
+        "op": "reload",
+        "id": "D",
+        "expected": {
+          "name": "Fake Verified",
+          "host": "heldout-05-challenge.r35.invalid",
+          "token": "fake-token-05-new",
+          "dictation": false
+        }
+      }
+    ]
+  },
+  {
+    "id": "heldout-06",
+    "purpose": "An older login success released after a newer success cannot replace the winner",
+    "steps": [
+      {
+        "op": "startLogin",
+        "id": "Old",
+        "host": "heldout-06-older.r35.invalid"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "OldConfig",
+        "host": "heldout-06-older.r35.invalid",
+        "path": "/api/mobile/config"
+      },
+      {
+        "op": "respond",
+        "id": "OldConfig",
+        "status": 200,
+        "body": {
+          "instance": {
+            "name": "Fake instance"
+          },
+          "capabilities": {
+            "dictation": true
+          }
+        }
+      },
+      {
+        "op": "awaitRequest",
+        "id": "OldPost",
+        "host": "heldout-06-older.r35.invalid",
+        "path": "/api/mobile/auth/login"
+      },
+      {
+        "op": "startLogin",
+        "id": "New",
+        "host": "heldout-06-newer.r35.invalid"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "NewConfig",
+        "host": "heldout-06-newer.r35.invalid",
+        "path": "/api/mobile/config"
+      },
+      {
+        "op": "respond",
+        "id": "NewConfig",
+        "status": 200,
+        "body": {
+          "instance": {
+            "name": "Fake instance"
+          },
+          "capabilities": {
+            "dictation": false
+          }
+        }
+      },
+      {
+        "op": "awaitRequest",
+        "id": "NewPost",
+        "host": "heldout-06-newer.r35.invalid",
+        "path": "/api/mobile/auth/login"
+      },
+      {
+        "op": "respond",
+        "id": "NewPost",
+        "status": 200,
+        "body": {
+          "user": {
+            "id": "fake-user-id",
+            "name": "Fake Winner"
+          },
+          "session": {
+            "token": "fake-token-06-new",
+            "expiresAt": "2099-01-01"
+          }
+        }
+      },
+      {
+        "op": "waitTask",
+        "id": "New"
+      },
+      {
+        "op": "checkpoint",
+        "id": "Winner",
+        "expected": {
+          "name": "Fake Winner",
+          "host": "heldout-06-newer.r35.invalid",
+          "token": "fake-token-06-new",
+          "dictation": false
+        }
+      },
+      {
+        "op": "respond",
+        "id": "OldPost",
+        "status": 200,
+        "body": {
+          "user": {
+            "id": "fake-user-id",
+            "name": "Fake Stale"
+          },
+          "session": {
+            "token": "fake-token-06-old",
+            "expiresAt": "2099-01-01"
+          }
+        }
+      },
+      {
+        "op": "waitTask",
+        "id": "Old"
+      },
+      {
+        "op": "checkpoint",
+        "id": "Late",
+        "expected": {
+          "name": "Fake Winner",
+          "host": "heldout-06-newer.r35.invalid",
+          "token": "fake-token-06-new",
+          "dictation": false
+        }
+      },
+      {
+        "op": "reload",
+        "id": "D",
+        "expected": {
+          "name": "Fake Winner",
+          "host": "heldout-06-newer.r35.invalid",
+          "token": "fake-token-06-new",
+          "dictation": false
+        }
+      }
+    ]
+  },
+  {
+    "id": "heldout-07",
+    "purpose": "An older two-factor failure released after a replacement succeeds cannot affect it",
+    "steps": [
+      {
+        "op": "startLogin",
+        "id": "Old",
+        "host": "heldout-07-older.r35.invalid"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "OldConfig",
+        "host": "heldout-07-older.r35.invalid",
+        "path": "/api/mobile/config"
+      },
+      {
+        "op": "respond",
+        "id": "OldConfig",
+        "status": 200,
+        "body": {
+          "instance": {
+            "name": "Fake instance"
+          },
+          "capabilities": {
+            "dictation": false
+          }
+        }
+      },
+      {
+        "op": "awaitRequest",
+        "id": "OldPost",
+        "host": "heldout-07-older.r35.invalid",
+        "path": "/api/mobile/auth/login"
+      },
+      {
+        "op": "startLogin",
+        "id": "New",
+        "host": "heldout-07-newer.r35.invalid"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "NewConfig",
+        "host": "heldout-07-newer.r35.invalid",
+        "path": "/api/mobile/config"
+      },
+      {
+        "op": "respond",
+        "id": "NewConfig",
+        "status": 200,
+        "body": {
+          "instance": {
+            "name": "Fake instance"
+          },
+          "capabilities": {
+            "dictation": true
+          }
+        }
+      },
+      {
+        "op": "awaitRequest",
+        "id": "NewPost",
+        "host": "heldout-07-newer.r35.invalid",
+        "path": "/api/mobile/auth/login"
+      },
+      {
+        "op": "respond",
+        "id": "NewPost",
+        "status": 200,
+        "body": {
+          "user": {
+            "id": "fake-user-id",
+            "name": "Fake Winner"
+          },
+          "session": {
+            "token": "fake-token-07",
+            "expiresAt": "2099-01-01"
+          }
+        }
+      },
+      {
+        "op": "waitTask",
+        "id": "New"
+      },
+      {
+        "op": "respond",
+        "id": "OldPost",
+        "status": 401,
+        "body": {
+          "error": {
+            "code": "two_factor_required",
+            "message": "Fake controlled error"
+          }
+        }
+      },
+      {
+        "op": "waitTask",
+        "id": "Old"
+      },
+      {
+        "op": "checkpoint",
+        "id": "C",
+        "expected": {
+          "name": "Fake Winner",
+          "host": "heldout-07-newer.r35.invalid",
+          "token": "fake-token-07",
+          "dictation": true
+        }
+      },
+      {
+        "op": "reload",
+        "id": "D",
+        "expected": {
+          "name": "Fake Winner",
+          "host": "heldout-07-newer.r35.invalid",
+          "token": "fake-token-07",
+          "dictation": true
+        }
+      }
+    ]
+  },
+  {
+    "id": "heldout-08",
+    "purpose": "A failed newest login does not restore publication authority to an older login",
+    "steps": [
+      {
+        "op": "startLogin",
+        "id": "Seed",
+        "host": "heldout-08-cached.r35.invalid"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "SeedConfig",
+        "host": "heldout-08-cached.r35.invalid",
+        "path": "/api/mobile/config"
+      },
+      {
+        "op": "respond",
+        "id": "SeedConfig",
+        "status": 200,
+        "body": {
+          "instance": {
+            "name": "Fake instance"
+          },
+          "capabilities": {
+            "dictation": false
+          }
+        }
+      },
+      {
+        "op": "awaitRequest",
+        "id": "SeedPost",
+        "host": "heldout-08-cached.r35.invalid",
+        "path": "/api/mobile/auth/login"
+      },
+      {
+        "op": "respond",
+        "id": "SeedPost",
+        "status": 200,
+        "body": {
+          "user": {
+            "id": "fake-user-id",
+            "name": "Fake Cached"
+          },
+          "session": {
+            "token": "fake-token-08-cache",
+            "expiresAt": "2099-01-01"
+          }
+        }
+      },
+      {
+        "op": "waitTask",
+        "id": "Seed"
+      },
+      {
+        "op": "startLogin",
+        "id": "Old",
+        "host": "heldout-08-older.r35.invalid"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "OldConfig",
+        "host": "heldout-08-older.r35.invalid",
+        "path": "/api/mobile/config"
+      },
+      {
+        "op": "respond",
+        "id": "OldConfig",
+        "status": 200,
+        "body": {
+          "instance": {
+            "name": "Fake instance"
+          },
+          "capabilities": {
+            "dictation": true
+          }
+        }
+      },
+      {
+        "op": "awaitRequest",
+        "id": "OldPost",
+        "host": "heldout-08-older.r35.invalid",
+        "path": "/api/mobile/auth/login"
+      },
+      {
+        "op": "startLogin",
+        "id": "New",
+        "host": "heldout-08-newest.r35.invalid"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "NewConfig",
+        "host": "heldout-08-newest.r35.invalid",
+        "path": "/api/mobile/config"
+      },
+      {
+        "op": "respond",
+        "id": "NewConfig",
+        "status": 200,
+        "body": {
+          "instance": {
+            "name": "Fake instance"
+          },
+          "capabilities": {
+            "dictation": true
+          }
+        }
+      },
+      {
+        "op": "awaitRequest",
+        "id": "NewPost",
+        "host": "heldout-08-newest.r35.invalid",
+        "path": "/api/mobile/auth/login"
+      },
+      {
+        "op": "respond",
+        "id": "NewPost",
+        "status": 500,
+        "body": {
+          "error": {
+            "code": "fake_failure",
+            "message": "Fake controlled error"
+          }
+        }
+      },
+      {
+        "op": "waitTask",
+        "id": "New"
+      },
+      {
+        "op": "checkpoint",
+        "id": "AfterFailure",
+        "expected": {
+          "name": "Fake Cached",
+          "host": "heldout-08-cached.r35.invalid",
+          "token": "fake-token-08-cache",
+          "dictation": false
+        }
+      },
+      {
+        "op": "respond",
+        "id": "OldPost",
+        "status": 200,
+        "body": {
+          "user": {
+            "id": "fake-user-id",
+            "name": "Fake Obsolete"
+          },
+          "session": {
+            "token": "fake-token-08-old",
+            "expiresAt": "2099-01-01"
+          }
+        }
+      },
+      {
+        "op": "waitTask",
+        "id": "Old"
+      },
+      {
+        "op": "checkpoint",
+        "id": "Late",
+        "expected": {
+          "name": "Fake Cached",
+          "host": "heldout-08-cached.r35.invalid",
+          "token": "fake-token-08-cache",
+          "dictation": false
+        }
+      },
+      {
+        "op": "reload",
+        "id": "D",
+        "expected": {
+          "name": "Fake Cached",
+          "host": "heldout-08-cached.r35.invalid",
+          "token": "fake-token-08-cache",
+          "dictation": false
+        }
+      }
+    ]
+  },
+  {
+    "id": "heldout-09",
+    "purpose": "Authority-only revocation preserves cache and allows retry despite a late success",
+    "steps": [
+      {
+        "op": "startLogin",
+        "id": "Seed",
+        "host": "heldout-09-cached.r35.invalid"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "SeedConfig",
+        "host": "heldout-09-cached.r35.invalid",
+        "path": "/api/mobile/config"
+      },
+      {
+        "op": "respond",
+        "id": "SeedConfig",
+        "status": 200,
+        "body": {
+          "instance": {
+            "name": "Fake instance"
+          },
+          "capabilities": {
+            "dictation": true
+          }
+        }
+      },
+      {
+        "op": "awaitRequest",
+        "id": "SeedPost",
+        "host": "heldout-09-cached.r35.invalid",
+        "path": "/api/mobile/auth/login"
+      },
+      {
+        "op": "respond",
+        "id": "SeedPost",
+        "status": 200,
+        "body": {
+          "user": {
+            "id": "fake-user-id",
+            "name": "Fake Cached"
+          },
+          "session": {
+            "token": "fake-token-09-cache",
+            "expiresAt": "2099-01-01"
+          }
+        }
+      },
+      {
+        "op": "waitTask",
+        "id": "Seed"
+      },
+      {
+        "op": "startLogin",
+        "id": "Revoked",
+        "host": "heldout-09-revoked.r35.invalid"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "RevokedConfig",
+        "host": "heldout-09-revoked.r35.invalid",
+        "path": "/api/mobile/config"
+      },
+      {
+        "op": "respond",
+        "id": "RevokedConfig",
+        "status": 200,
+        "body": {
+          "instance": {
+            "name": "Fake instance"
+          },
+          "capabilities": {
+            "dictation": false
+          }
+        }
+      },
+      {
+        "op": "awaitRequest",
+        "id": "RevokedPost",
+        "host": "heldout-09-revoked.r35.invalid",
+        "path": "/api/mobile/auth/login"
+      },
+      {
+        "op": "revokeLogin",
+        "id": "Revoked"
+      },
+      {
+        "op": "checkpoint",
+        "id": "RevokedState",
+        "expected": {
+          "name": "Fake Cached",
+          "host": "heldout-09-cached.r35.invalid",
+          "token": "fake-token-09-cache",
+          "dictation": true
+        }
+      },
+      {
+        "op": "startLogin",
+        "id": "Retry",
+        "host": "heldout-09-retry.r35.invalid"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "RetryConfig",
+        "host": "heldout-09-retry.r35.invalid",
+        "path": "/api/mobile/config"
+      },
+      {
+        "op": "respond",
+        "id": "RetryConfig",
+        "status": 200,
+        "body": {
+          "instance": {
+            "name": "Fake instance"
+          },
+          "capabilities": {
+            "dictation": false
+          }
+        }
+      },
+      {
+        "op": "awaitRequest",
+        "id": "RetryPost",
+        "host": "heldout-09-retry.r35.invalid",
+        "path": "/api/mobile/auth/login"
+      },
+      {
+        "op": "respond",
+        "id": "RetryPost",
+        "status": 200,
+        "body": {
+          "user": {
+            "id": "fake-user-id",
+            "name": "Fake Retry"
+          },
+          "session": {
+            "token": "fake-token-09-new",
+            "expiresAt": "2099-01-01"
+          }
+        }
+      },
+      {
+        "op": "waitTask",
+        "id": "Retry"
+      },
+      {
+        "op": "respond",
+        "id": "RevokedPost",
+        "status": 200,
+        "body": {
+          "user": {
+            "id": "fake-user-id",
+            "name": "Fake Revoked"
+          },
+          "session": {
+            "token": "fake-token-09-stale",
+            "expiresAt": "2099-01-01"
+          }
+        }
+      },
+      {
+        "op": "waitTask",
+        "id": "Revoked"
+      },
+      {
+        "op": "checkpoint",
+        "id": "C",
+        "expected": {
+          "name": "Fake Retry",
+          "host": "heldout-09-retry.r35.invalid",
+          "token": "fake-token-09-new",
+          "dictation": false
+        }
+      },
+      {
+        "op": "reload",
+        "id": "D",
+        "expected": {
+          "name": "Fake Retry",
+          "host": "heldout-09-retry.r35.invalid",
+          "token": "fake-token-09-new",
+          "dictation": false
+        }
+      }
+    ]
+  },
+  {
+    "id": "heldout-10",
+    "purpose": "Cancelling an issued login keeps the previous account and permits a fresh retry",
+    "steps": [
+      {
+        "op": "startLogin",
+        "id": "Seed",
+        "host": "heldout-10-cached.r35.invalid"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "SeedConfig",
+        "host": "heldout-10-cached.r35.invalid",
+        "path": "/api/mobile/config"
+      },
+      {
+        "op": "respond",
+        "id": "SeedConfig",
+        "status": 200,
+        "body": {
+          "instance": {
+            "name": "Fake instance"
+          },
+          "capabilities": {
+            "dictation": false
+          }
+        }
+      },
+      {
+        "op": "awaitRequest",
+        "id": "SeedPost",
+        "host": "heldout-10-cached.r35.invalid",
+        "path": "/api/mobile/auth/login"
+      },
+      {
+        "op": "respond",
+        "id": "SeedPost",
+        "status": 200,
+        "body": {
+          "user": {
+            "id": "fake-user-id",
+            "name": "Fake Cached"
+          },
+          "session": {
+            "token": "fake-token-10-cache",
+            "expiresAt": "2099-01-01"
+          }
+        }
+      },
+      {
+        "op": "waitTask",
+        "id": "Seed"
+      },
+      {
+        "op": "startLogin",
+        "id": "Cancelled",
+        "host": "heldout-10-retry.r35.invalid"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "CancelledConfig",
+        "host": "heldout-10-retry.r35.invalid",
+        "path": "/api/mobile/config"
+      },
+      {
+        "op": "respond",
+        "id": "CancelledConfig",
+        "status": 200,
+        "body": {
+          "instance": {
+            "name": "Fake instance"
+          },
+          "capabilities": {
+            "dictation": true
+          }
+        }
+      },
+      {
+        "op": "awaitRequest",
+        "id": "CancelledPost",
+        "host": "heldout-10-retry.r35.invalid",
+        "path": "/api/mobile/auth/login"
+      },
+      {
+        "op": "cancelTask",
+        "id": "Cancelled"
+      },
+      {
+        "op": "respond",
+        "id": "CancelledPost",
+        "status": 200,
+        "body": {
+          "user": {
+            "id": "fake-user-id",
+            "name": "Fake Cancelled"
+          },
+          "session": {
+            "token": "fake-token-10-cancelled",
+            "expiresAt": "2099-01-01"
+          }
+        }
+      },
+      {
+        "op": "waitTask",
+        "id": "Cancelled"
+      },
+      {
+        "op": "checkpoint",
+        "id": "CancelledState",
+        "expected": {
+          "name": "Fake Cached",
+          "host": "heldout-10-cached.r35.invalid",
+          "token": "fake-token-10-cache",
+          "dictation": false
+        }
+      },
+      {
+        "op": "startLogin",
+        "id": "Retry",
+        "host": "heldout-10-retry.r35.invalid"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "RetryConfig",
+        "host": "heldout-10-retry.r35.invalid",
+        "path": "/api/mobile/config"
+      },
+      {
+        "op": "respond",
+        "id": "RetryConfig",
+        "status": 200,
+        "body": {
+          "instance": {
+            "name": "Fake instance"
+          },
+          "capabilities": {
+            "dictation": true
+          }
+        }
+      },
+      {
+        "op": "awaitRequest",
+        "id": "RetryPost",
+        "host": "heldout-10-retry.r35.invalid",
+        "path": "/api/mobile/auth/login"
+      },
+      {
+        "op": "respond",
+        "id": "RetryPost",
+        "status": 200,
+        "body": {
+          "user": {
+            "id": "fake-user-id",
+            "name": "Fake Retry"
+          },
+          "session": {
+            "token": "fake-token-10-new",
+            "expiresAt": "2099-01-01"
+          }
+        }
+      },
+      {
+        "op": "waitTask",
+        "id": "Retry"
+      },
+      {
+        "op": "checkpoint",
+        "id": "C",
+        "expected": {
+          "name": "Fake Retry",
+          "host": "heldout-10-retry.r35.invalid",
+          "token": "fake-token-10-new",
+          "dictation": true
+        }
+      },
+      {
+        "op": "reload",
+        "id": "D",
+        "expected": {
+          "name": "Fake Retry",
+          "host": "heldout-10-retry.r35.invalid",
+          "token": "fake-token-10-new",
+          "dictation": true
+        }
+      }
+    ]
+  },
+  {
+    "id": "heldout-11",
+    "purpose": "Local sign-out fences a pending first-login success",
+    "steps": [
+      {
+        "op": "startLogin",
+        "id": "L",
+        "host": "heldout-11-account.r35.invalid"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "LConfig",
+        "host": "heldout-11-account.r35.invalid",
+        "path": "/api/mobile/config"
+      },
+      {
+        "op": "respond",
+        "id": "LConfig",
+        "status": 200,
+        "body": {
+          "instance": {
+            "name": "Fake instance"
+          },
+          "capabilities": {
+            "dictation": true
+          }
+        }
+      },
+      {
+        "op": "awaitRequest",
+        "id": "LPost",
+        "host": "heldout-11-account.r35.invalid",
+        "path": "/api/mobile/auth/login"
+      },
+      {
+        "op": "signOut",
+        "remote": false
+      },
+      {
+        "op": "checkpoint",
+        "id": "Immediate",
+        "expected": {
+          "name": null,
+          "host": null,
+          "token": null,
+          "dictation": false
+        }
+      },
+      {
+        "op": "respond",
+        "id": "LPost",
+        "status": 200,
+        "body": {
+          "user": {
+            "id": "fake-user-id",
+            "name": "Fake Late"
+          },
+          "session": {
+            "token": "fake-token-11",
+            "expiresAt": "2099-01-01"
+          }
+        }
+      },
+      {
+        "op": "waitTask",
+        "id": "L"
+      },
+      {
+        "op": "checkpoint",
+        "id": "Late",
+        "expected": {
+          "name": null,
+          "host": null,
+          "token": null,
+          "dictation": false
+        }
+      },
+      {
+        "op": "reload",
+        "id": "D",
+        "expected": {
+          "name": null,
+          "host": null,
+          "token": null,
+          "dictation": false
+        }
+      }
+    ]
+  },
+  {
+    "id": "heldout-12",
+    "purpose": "Local sign-out clears a cached account despite a pending replacement failure",
+    "steps": [
+      {
+        "op": "startLogin",
+        "id": "Seed",
+        "host": "heldout-12-cached.r35.invalid"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "SeedConfig",
+        "host": "heldout-12-cached.r35.invalid",
+        "path": "/api/mobile/config"
+      },
+      {
+        "op": "respond",
+        "id": "SeedConfig",
+        "status": 200,
+        "body": {
+          "instance": {
+            "name": "Fake instance"
+          },
+          "capabilities": {
+            "dictation": true
+          }
+        }
+      },
+      {
+        "op": "awaitRequest",
+        "id": "SeedPost",
+        "host": "heldout-12-cached.r35.invalid",
+        "path": "/api/mobile/auth/login"
+      },
+      {
+        "op": "respond",
+        "id": "SeedPost",
+        "status": 200,
+        "body": {
+          "user": {
+            "id": "fake-user-id",
+            "name": "Fake Cached"
+          },
+          "session": {
+            "token": "fake-token-12",
+            "expiresAt": "2099-01-01"
+          }
+        }
+      },
+      {
+        "op": "waitTask",
+        "id": "Seed"
+      },
+      {
+        "op": "startLogin",
+        "id": "Pending",
+        "host": "heldout-12-pending.r35.invalid"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "PendingConfig",
+        "host": "heldout-12-pending.r35.invalid",
+        "path": "/api/mobile/config"
+      },
+      {
+        "op": "respond",
+        "id": "PendingConfig",
+        "status": 200,
+        "body": {
+          "instance": {
+            "name": "Fake instance"
+          },
+          "capabilities": {
+            "dictation": false
+          }
+        }
+      },
+      {
+        "op": "awaitRequest",
+        "id": "PendingPost",
+        "host": "heldout-12-pending.r35.invalid",
+        "path": "/api/mobile/auth/login"
+      },
+      {
+        "op": "signOut",
+        "remote": false
+      },
+      {
+        "op": "checkpoint",
+        "id": "Immediate",
+        "expected": {
+          "name": null,
+          "host": null,
+          "token": null,
+          "dictation": false
+        }
+      },
+      {
+        "op": "respond",
+        "id": "PendingPost",
+        "status": 500,
+        "body": {
+          "error": {
+            "code": "fake_failure",
+            "message": "Fake controlled error"
+          }
+        }
+      },
+      {
+        "op": "waitTask",
+        "id": "Pending"
+      },
+      {
+        "op": "checkpoint",
+        "id": "Late",
+        "expected": {
+          "name": null,
+          "host": null,
+          "token": null,
+          "dictation": false
+        }
+      },
+      {
+        "op": "reload",
+        "id": "D",
+        "expected": {
+          "name": null,
+          "host": null,
+          "token": null,
+          "dictation": false
+        }
+      }
+    ]
+  },
+  {
+    "id": "heldout-13",
+    "purpose": "Remote sign-out captures old session and its delayed logout cannot clear a new login",
+    "steps": [
+      {
+        "op": "startLogin",
+        "id": "Seed",
+        "host": "heldout-13-old.r35.invalid"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "SeedConfig",
+        "host": "heldout-13-old.r35.invalid",
+        "path": "/api/mobile/config"
+      },
+      {
+        "op": "respond",
+        "id": "SeedConfig",
+        "status": 200,
+        "body": {
+          "instance": {
+            "name": "Fake instance"
+          },
+          "capabilities": {
+            "dictation": true
+          }
+        }
+      },
+      {
+        "op": "awaitRequest",
+        "id": "SeedPost",
+        "host": "heldout-13-old.r35.invalid",
+        "path": "/api/mobile/auth/login"
+      },
+      {
+        "op": "respond",
+        "id": "SeedPost",
+        "status": 200,
+        "body": {
+          "user": {
+            "id": "fake-user-id",
+            "name": "Fake Old"
+          },
+          "session": {
+            "token": "fake-token-13-old",
+            "expiresAt": "2099-01-01"
+          }
+        }
+      },
+      {
+        "op": "waitTask",
+        "id": "Seed"
+      },
+      {
+        "op": "signOut",
+        "remote": true
+      },
+      {
+        "op": "checkpoint",
+        "id": "Immediate",
+        "expected": {
+          "name": null,
+          "host": null,
+          "token": null,
+          "dictation": false
+        }
+      },
+      {
+        "op": "awaitRequest",
+        "id": "Logout",
+        "host": "heldout-13-old.r35.invalid",
+        "path": "/api/mobile/auth/logout"
+      },
+      {
+        "op": "startLogin",
+        "id": "New",
+        "host": "heldout-13-new.r35.invalid"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "NewConfig",
+        "host": "heldout-13-new.r35.invalid",
+        "path": "/api/mobile/config"
+      },
+      {
+        "op": "respond",
+        "id": "NewConfig",
+        "status": 200,
+        "body": {
+          "instance": {
+            "name": "Fake instance"
+          },
+          "capabilities": {
+            "dictation": false
+          }
+        }
+      },
+      {
+        "op": "awaitRequest",
+        "id": "NewPost",
+        "host": "heldout-13-new.r35.invalid",
+        "path": "/api/mobile/auth/login"
+      },
+      {
+        "op": "respond",
+        "id": "NewPost",
+        "status": 200,
+        "body": {
+          "user": {
+            "id": "fake-user-id",
+            "name": "Fake New"
+          },
+          "session": {
+            "token": "fake-token-13-new",
+            "expiresAt": "2099-01-01"
+          }
+        }
+      },
+      {
+        "op": "waitTask",
+        "id": "New"
+      },
+      {
+        "op": "checkpoint",
+        "id": "Replacement",
+        "expected": {
+          "name": "Fake New",
+          "host": "heldout-13-new.r35.invalid",
+          "token": "fake-token-13-new",
+          "dictation": false
+        }
+      },
+      {
+        "op": "respond",
+        "id": "Logout",
+        "status": 204,
+        "body": null
+      },
+      {
+        "op": "checkpoint",
+        "id": "Late",
+        "expected": {
+          "name": "Fake New",
+          "host": "heldout-13-new.r35.invalid",
+          "token": "fake-token-13-new",
+          "dictation": false
+        }
+      },
+      {
+        "op": "reload",
+        "id": "D",
+        "expected": {
+          "name": "Fake New",
+          "host": "heldout-13-new.r35.invalid",
+          "token": "fake-token-13-new",
+          "dictation": false
+        }
+      }
+    ]
+  },
+  {
+    "id": "heldout-14",
+    "purpose": "Refresh holds a completed me response until config permits atomic publication",
+    "steps": [
+      {
+        "op": "startLogin",
+        "id": "Seed",
+        "host": "heldout-14-account.r35.invalid"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "SeedConfig",
+        "host": "heldout-14-account.r35.invalid",
+        "path": "/api/mobile/config"
+      },
+      {
+        "op": "respond",
+        "id": "SeedConfig",
+        "status": 200,
+        "body": {
+          "instance": {
+            "name": "Fake instance"
+          },
+          "capabilities": {
+            "dictation": false
+          }
+        }
+      },
+      {
+        "op": "awaitRequest",
+        "id": "SeedPost",
+        "host": "heldout-14-account.r35.invalid",
+        "path": "/api/mobile/auth/login"
+      },
+      {
+        "op": "respond",
+        "id": "SeedPost",
+        "status": 200,
+        "body": {
+          "user": {
+            "id": "fake-user-id",
+            "name": "Fake Before"
+          },
+          "session": {
+            "token": "fake-token-14",
+            "expiresAt": "2099-01-01"
+          }
+        }
+      },
+      {
+        "op": "waitTask",
+        "id": "Seed"
+      },
+      {
+        "op": "startRefresh",
+        "id": "R"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "RMe",
+        "host": "heldout-14-account.r35.invalid",
+        "path": "/api/mobile/me"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "RConfig",
+        "host": "heldout-14-account.r35.invalid",
+        "path": "/api/mobile/config"
+      },
+      {
+        "op": "respond",
+        "id": "RMe",
+        "status": 200,
+        "body": {
+          "user": {
+            "id": "fake-user-id",
+            "name": "Fake After"
+          }
+        }
+      },
+      {
+        "op": "checkpoint",
+        "id": "PendingConfig",
+        "expected": {
+          "name": "Fake Before",
+          "host": "heldout-14-account.r35.invalid",
+          "token": "fake-token-14",
+          "dictation": false
+        }
+      },
+      {
+        "op": "respond",
+        "id": "RConfig",
+        "status": 200,
+        "body": {
+          "instance": {
+            "name": "Fake instance"
+          },
+          "capabilities": {
+            "dictation": true
+          }
+        }
+      },
+      {
+        "op": "waitTask",
+        "id": "R"
+      },
+      {
+        "op": "checkpoint",
+        "id": "After",
+        "expected": {
+          "name": "Fake After",
+          "host": "heldout-14-account.r35.invalid",
+          "token": "fake-token-14",
+          "dictation": true
+        }
+      },
+      {
+        "op": "reload",
+        "id": "D",
+        "expected": {
+          "name": "Fake After",
+          "host": "heldout-14-account.r35.invalid",
+          "token": "fake-token-14",
+          "dictation": true
+        }
+      }
+    ]
+  },
+  {
+    "id": "heldout-15",
+    "purpose": "Latest-started refresh wins against an older late success",
+    "steps": [
+      {
+        "op": "startLogin",
+        "id": "Seed",
+        "host": "heldout-15-account.r35.invalid"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "SeedConfig",
+        "host": "heldout-15-account.r35.invalid",
+        "path": "/api/mobile/config"
+      },
+      {
+        "op": "respond",
+        "id": "SeedConfig",
+        "status": 200,
+        "body": {
+          "instance": {
+            "name": "Fake instance"
+          },
+          "capabilities": {
+            "dictation": false
+          }
+        }
+      },
+      {
+        "op": "awaitRequest",
+        "id": "SeedPost",
+        "host": "heldout-15-account.r35.invalid",
+        "path": "/api/mobile/auth/login"
+      },
+      {
+        "op": "respond",
+        "id": "SeedPost",
+        "status": 200,
+        "body": {
+          "user": {
+            "id": "fake-user-id",
+            "name": "Fake Seed"
+          },
+          "session": {
+            "token": "fake-token-15",
+            "expiresAt": "2099-01-01"
+          }
+        }
+      },
+      {
+        "op": "waitTask",
+        "id": "Seed"
+      },
+      {
+        "op": "startRefresh",
+        "id": "Old"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "OldConfig",
+        "host": "heldout-15-account.r35.invalid",
+        "path": "/api/mobile/config"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "OldMe",
+        "host": "heldout-15-account.r35.invalid",
+        "path": "/api/mobile/me"
+      },
+      {
+        "op": "startRefresh",
+        "id": "New"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "NewMe",
+        "host": "heldout-15-account.r35.invalid",
+        "path": "/api/mobile/me"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "NewConfig",
+        "host": "heldout-15-account.r35.invalid",
+        "path": "/api/mobile/config"
+      },
+      {
+        "op": "respond",
+        "id": "NewConfig",
+        "status": 200,
+        "body": {
+          "instance": {
+            "name": "Fake instance"
+          },
+          "capabilities": {
+            "dictation": true
+          }
+        }
+      },
+      {
+        "op": "respond",
+        "id": "NewMe",
+        "status": 200,
+        "body": {
+          "user": {
+            "id": "fake-user-id",
+            "name": "Fake Newest"
+          }
+        }
+      },
+      {
+        "op": "waitTask",
+        "id": "New"
+      },
+      {
+        "op": "checkpoint",
+        "id": "Newest",
+        "expected": {
+          "name": "Fake Newest",
+          "host": "heldout-15-account.r35.invalid",
+          "token": "fake-token-15",
+          "dictation": true
+        }
+      },
+      {
+        "op": "respond",
+        "id": "OldConfig",
+        "status": 200,
+        "body": {
+          "instance": {
+            "name": "Fake instance"
+          },
+          "capabilities": {
+            "dictation": false
+          }
+        }
+      },
+      {
+        "op": "respond",
+        "id": "OldMe",
+        "status": 200,
+        "body": {
+          "user": {
+            "id": "fake-user-id",
+            "name": "Fake Older"
+          }
+        }
+      },
+      {
+        "op": "waitTask",
+        "id": "Old"
+      },
+      {
+        "op": "checkpoint",
+        "id": "Late",
+        "expected": {
+          "name": "Fake Newest",
+          "host": "heldout-15-account.r35.invalid",
+          "token": "fake-token-15",
+          "dictation": true
+        }
+      },
+      {
+        "op": "reload",
+        "id": "D",
+        "expected": {
+          "name": "Fake Newest",
+          "host": "heldout-15-account.r35.invalid",
+          "token": "fake-token-15",
+          "dictation": true
+        }
+      }
+    ]
+  },
+  {
+    "id": "heldout-16",
+    "purpose": "Failed newer refresh irrevocably fences an older unauthorized refresh",
+    "steps": [
+      {
+        "op": "startLogin",
+        "id": "Seed",
+        "host": "heldout-16-account.r35.invalid"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "SeedConfig",
+        "host": "heldout-16-account.r35.invalid",
+        "path": "/api/mobile/config"
+      },
+      {
+        "op": "respond",
+        "id": "SeedConfig",
+        "status": 200,
+        "body": {
+          "instance": {
+            "name": "Fake instance"
+          },
+          "capabilities": {
+            "dictation": true
+          }
+        }
+      },
+      {
+        "op": "awaitRequest",
+        "id": "SeedPost",
+        "host": "heldout-16-account.r35.invalid",
+        "path": "/api/mobile/auth/login"
+      },
+      {
+        "op": "respond",
+        "id": "SeedPost",
+        "status": 200,
+        "body": {
+          "user": {
+            "id": "fake-user-id",
+            "name": "Fake Cached"
+          },
+          "session": {
+            "token": "fake-token-16",
+            "expiresAt": "2099-01-01"
+          }
+        }
+      },
+      {
+        "op": "waitTask",
+        "id": "Seed"
+      },
+      {
+        "op": "startRefresh",
+        "id": "Old"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "OldConfig",
+        "host": "heldout-16-account.r35.invalid",
+        "path": "/api/mobile/config"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "OldMe",
+        "host": "heldout-16-account.r35.invalid",
+        "path": "/api/mobile/me"
+      },
+      {
+        "op": "startRefresh",
+        "id": "New"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "NewConfig",
+        "host": "heldout-16-account.r35.invalid",
+        "path": "/api/mobile/config"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "NewMe",
+        "host": "heldout-16-account.r35.invalid",
+        "path": "/api/mobile/me"
+      },
+      {
+        "op": "respond",
+        "id": "NewConfig",
+        "status": 200,
+        "body": {
+          "instance": {
+            "name": "Fake instance"
+          },
+          "capabilities": {
+            "dictation": false
+          }
+        }
+      },
+      {
+        "op": "respond",
+        "id": "NewMe",
+        "status": 500,
+        "body": {
+          "error": {
+            "code": "fake_failure",
+            "message": "Fake controlled error"
+          }
+        }
+      },
+      {
+        "op": "waitTask",
+        "id": "New"
+      },
+      {
+        "op": "checkpoint",
+        "id": "FailedNewest",
+        "expected": {
+          "name": "Fake Cached",
+          "host": "heldout-16-account.r35.invalid",
+          "token": "fake-token-16",
+          "dictation": true
+        }
+      },
+      {
+        "op": "respond",
+        "id": "OldConfig",
+        "status": 200,
+        "body": {
+          "instance": {
+            "name": "Fake instance"
+          },
+          "capabilities": {
+            "dictation": false
+          }
+        }
+      },
+      {
+        "op": "respond",
+        "id": "OldMe",
+        "status": 401,
+        "body": {
+          "error": {
+            "code": "unauthorized",
+            "message": "Fake controlled error"
+          }
+        }
+      },
+      {
+        "op": "waitTask",
+        "id": "Old"
+      },
+      {
+        "op": "checkpoint",
+        "id": "Late",
+        "expected": {
+          "name": "Fake Cached",
+          "host": "heldout-16-account.r35.invalid",
+          "token": "fake-token-16",
+          "dictation": true
+        }
+      },
+      {
+        "op": "reload",
+        "id": "D",
+        "expected": {
+          "name": "Fake Cached",
+          "host": "heldout-16-account.r35.invalid",
+          "token": "fake-token-16",
+          "dictation": true
+        }
+      }
+    ]
+  },
+  {
+    "id": "heldout-17",
+    "purpose": "Cancelled newer refresh does not reauthorize older successful work",
+    "steps": [
+      {
+        "op": "startLogin",
+        "id": "Seed",
+        "host": "heldout-17-account.r35.invalid"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "SeedConfig",
+        "host": "heldout-17-account.r35.invalid",
+        "path": "/api/mobile/config"
+      },
+      {
+        "op": "respond",
+        "id": "SeedConfig",
+        "status": 200,
+        "body": {
+          "instance": {
+            "name": "Fake instance"
+          },
+          "capabilities": {
+            "dictation": false
+          }
+        }
+      },
+      {
+        "op": "awaitRequest",
+        "id": "SeedPost",
+        "host": "heldout-17-account.r35.invalid",
+        "path": "/api/mobile/auth/login"
+      },
+      {
+        "op": "respond",
+        "id": "SeedPost",
+        "status": 200,
+        "body": {
+          "user": {
+            "id": "fake-user-id",
+            "name": "Fake Cached"
+          },
+          "session": {
+            "token": "fake-token-17",
+            "expiresAt": "2099-01-01"
+          }
+        }
+      },
+      {
+        "op": "waitTask",
+        "id": "Seed"
+      },
+      {
+        "op": "startRefresh",
+        "id": "Old"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "OldMe",
+        "host": "heldout-17-account.r35.invalid",
+        "path": "/api/mobile/me"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "OldConfig",
+        "host": "heldout-17-account.r35.invalid",
+        "path": "/api/mobile/config"
+      },
+      {
+        "op": "startRefresh",
+        "id": "New"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "NewConfig",
+        "host": "heldout-17-account.r35.invalid",
+        "path": "/api/mobile/config"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "NewMe",
+        "host": "heldout-17-account.r35.invalid",
+        "path": "/api/mobile/me"
+      },
+      {
+        "op": "cancelTask",
+        "id": "New"
+      },
+      {
+        "op": "respond",
+        "id": "NewConfig",
+        "status": 200,
+        "body": {
+          "instance": {
+            "name": "Fake instance"
+          },
+          "capabilities": {
+            "dictation": true
+          }
+        }
+      },
+      {
+        "op": "respond",
+        "id": "NewMe",
+        "status": 200,
+        "body": {
+          "user": {
+            "id": "fake-user-id",
+            "name": "Fake Cancelled"
+          }
+        }
+      },
+      {
+        "op": "waitTask",
+        "id": "New"
+      },
+      {
+        "op": "checkpoint",
+        "id": "CancelledNewest",
+        "expected": {
+          "name": "Fake Cached",
+          "host": "heldout-17-account.r35.invalid",
+          "token": "fake-token-17",
+          "dictation": false
+        }
+      },
+      {
+        "op": "respond",
+        "id": "OldConfig",
+        "status": 200,
+        "body": {
+          "instance": {
+            "name": "Fake instance"
+          },
+          "capabilities": {
+            "dictation": true
+          }
+        }
+      },
+      {
+        "op": "respond",
+        "id": "OldMe",
+        "status": 200,
+        "body": {
+          "user": {
+            "id": "fake-user-id",
+            "name": "Fake Older"
+          }
+        }
+      },
+      {
+        "op": "waitTask",
+        "id": "Old"
+      },
+      {
+        "op": "checkpoint",
+        "id": "Late",
+        "expected": {
+          "name": "Fake Cached",
+          "host": "heldout-17-account.r35.invalid",
+          "token": "fake-token-17",
+          "dictation": false
+        }
+      },
+      {
+        "op": "reload",
+        "id": "D",
+        "expected": {
+          "name": "Fake Cached",
+          "host": "heldout-17-account.r35.invalid",
+          "token": "fake-token-17",
+          "dictation": false
+        }
+      }
+    ]
+  },
+  {
+    "id": "heldout-18",
+    "purpose": "Eligible refresh unauthorized clears account durably",
+    "steps": [
+      {
+        "op": "startLogin",
+        "id": "Seed",
+        "host": "heldout-18-account.r35.invalid"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "SeedConfig",
+        "host": "heldout-18-account.r35.invalid",
+        "path": "/api/mobile/config"
+      },
+      {
+        "op": "respond",
+        "id": "SeedConfig",
+        "status": 200,
+        "body": {
+          "instance": {
+            "name": "Fake instance"
+          },
+          "capabilities": {
+            "dictation": true
+          }
+        }
+      },
+      {
+        "op": "awaitRequest",
+        "id": "SeedPost",
+        "host": "heldout-18-account.r35.invalid",
+        "path": "/api/mobile/auth/login"
+      },
+      {
+        "op": "respond",
+        "id": "SeedPost",
+        "status": 200,
+        "body": {
+          "user": {
+            "id": "fake-user-id",
+            "name": "Fake Expired"
+          },
+          "session": {
+            "token": "fake-token-18",
+            "expiresAt": "2099-01-01"
+          }
+        }
+      },
+      {
+        "op": "waitTask",
+        "id": "Seed"
+      },
+      {
+        "op": "startRefresh",
+        "id": "R"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "RConfig",
+        "host": "heldout-18-account.r35.invalid",
+        "path": "/api/mobile/config"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "RMe",
+        "host": "heldout-18-account.r35.invalid",
+        "path": "/api/mobile/me"
+      },
+      {
+        "op": "respond",
+        "id": "RConfig",
+        "status": 200,
+        "body": {
+          "instance": {
+            "name": "Fake instance"
+          },
+          "capabilities": {
+            "dictation": false
+          }
+        }
+      },
+      {
+        "op": "respond",
+        "id": "RMe",
+        "status": 401,
+        "body": {
+          "error": {
+            "code": "unauthorized",
+            "message": "Fake controlled error"
+          }
+        }
+      },
+      {
+        "op": "waitTask",
+        "id": "R"
+      },
+      {
+        "op": "checkpoint",
+        "id": "C",
+        "expected": {
+          "name": null,
+          "host": null,
+          "token": null,
+          "dictation": false
+        }
+      },
+      {
+        "op": "reload",
+        "id": "D",
+        "expected": {
+          "name": null,
+          "host": null,
+          "token": null,
+          "dictation": false
+        }
+      }
+    ]
+  },
+  {
+    "id": "heldout-19",
+    "purpose": "Config failure takes precedence over already-returned unauthorized me",
+    "steps": [
+      {
+        "op": "startLogin",
+        "id": "Seed",
+        "host": "heldout-19-account.r35.invalid"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "SeedConfig",
+        "host": "heldout-19-account.r35.invalid",
+        "path": "/api/mobile/config"
+      },
+      {
+        "op": "respond",
+        "id": "SeedConfig",
+        "status": 200,
+        "body": {
+          "instance": {
+            "name": "Fake instance"
+          },
+          "capabilities": {
+            "dictation": true
+          }
+        }
+      },
+      {
+        "op": "awaitRequest",
+        "id": "SeedPost",
+        "host": "heldout-19-account.r35.invalid",
+        "path": "/api/mobile/auth/login"
+      },
+      {
+        "op": "respond",
+        "id": "SeedPost",
+        "status": 200,
+        "body": {
+          "user": {
+            "id": "fake-user-id",
+            "name": "Fake Cached"
+          },
+          "session": {
+            "token": "fake-token-19",
+            "expiresAt": "2099-01-01"
+          }
+        }
+      },
+      {
+        "op": "waitTask",
+        "id": "Seed"
+      },
+      {
+        "op": "startRefresh",
+        "id": "R"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "RMe",
+        "host": "heldout-19-account.r35.invalid",
+        "path": "/api/mobile/me"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "RConfig",
+        "host": "heldout-19-account.r35.invalid",
+        "path": "/api/mobile/config"
+      },
+      {
+        "op": "respond",
+        "id": "RMe",
+        "status": 401,
+        "body": {
+          "error": {
+            "code": "unauthorized",
+            "message": "Fake controlled error"
+          }
+        }
+      },
+      {
+        "op": "respond",
+        "id": "RConfig",
+        "status": 500,
+        "body": {
+          "error": {
+            "code": "fake_failure",
+            "message": "Fake controlled error"
+          }
+        }
+      },
+      {
+        "op": "waitTask",
+        "id": "R"
+      },
+      {
+        "op": "checkpoint",
+        "id": "C",
+        "expected": {
+          "name": "Fake Cached",
+          "host": "heldout-19-account.r35.invalid",
+          "token": "fake-token-19",
+          "dictation": true
+        }
+      },
+      {
+        "op": "reload",
+        "id": "D",
+        "expected": {
+          "name": "Fake Cached",
+          "host": "heldout-19-account.r35.invalid",
+          "token": "fake-token-19",
+          "dictation": true
+        }
+      }
+    ]
+  },
+  {
+    "id": "heldout-20",
+    "purpose": "Starting a login fences an older refresh even when login later fails",
+    "steps": [
+      {
+        "op": "startLogin",
+        "id": "Seed",
+        "host": "heldout-20-cached.r35.invalid"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "SeedConfig",
+        "host": "heldout-20-cached.r35.invalid",
+        "path": "/api/mobile/config"
+      },
+      {
+        "op": "respond",
+        "id": "SeedConfig",
+        "status": 200,
+        "body": {
+          "instance": {
+            "name": "Fake instance"
+          },
+          "capabilities": {
+            "dictation": false
+          }
+        }
+      },
+      {
+        "op": "awaitRequest",
+        "id": "SeedPost",
+        "host": "heldout-20-cached.r35.invalid",
+        "path": "/api/mobile/auth/login"
+      },
+      {
+        "op": "respond",
+        "id": "SeedPost",
+        "status": 200,
+        "body": {
+          "user": {
+            "id": "fake-user-id",
+            "name": "Fake Cached"
+          },
+          "session": {
+            "token": "fake-token-20",
+            "expiresAt": "2099-01-01"
+          }
+        }
+      },
+      {
+        "op": "waitTask",
+        "id": "Seed"
+      },
+      {
+        "op": "startRefresh",
+        "id": "R"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "RConfig",
+        "host": "heldout-20-cached.r35.invalid",
+        "path": "/api/mobile/config"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "RMe",
+        "host": "heldout-20-cached.r35.invalid",
+        "path": "/api/mobile/me"
+      },
+      {
+        "op": "startLogin",
+        "id": "L",
+        "host": "heldout-20-attempt.r35.invalid"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "LConfig",
+        "host": "heldout-20-attempt.r35.invalid",
+        "path": "/api/mobile/config"
+      },
+      {
+        "op": "respond",
+        "id": "LConfig",
+        "status": 200,
+        "body": {
+          "instance": {
+            "name": "Fake instance"
+          },
+          "capabilities": {
+            "dictation": true
+          }
+        }
+      },
+      {
+        "op": "awaitRequest",
+        "id": "LPost",
+        "host": "heldout-20-attempt.r35.invalid",
+        "path": "/api/mobile/auth/login"
+      },
+      {
+        "op": "respond",
+        "id": "LPost",
+        "status": 403,
+        "body": {
+          "error": {
+            "code": "fake_failure",
+            "message": "Fake controlled error"
+          }
+        }
+      },
+      {
+        "op": "waitTask",
+        "id": "L"
+      },
+      {
+        "op": "checkpoint",
+        "id": "LoginFailed",
+        "expected": {
+          "name": "Fake Cached",
+          "host": "heldout-20-cached.r35.invalid",
+          "token": "fake-token-20",
+          "dictation": false
+        }
+      },
+      {
+        "op": "respond",
+        "id": "RConfig",
+        "status": 200,
+        "body": {
+          "instance": {
+            "name": "Fake instance"
+          },
+          "capabilities": {
+            "dictation": true
+          }
+        }
+      },
+      {
+        "op": "respond",
+        "id": "RMe",
+        "status": 401,
+        "body": {
+          "error": {
+            "code": "unauthorized",
+            "message": "Fake controlled error"
+          }
+        }
+      },
+      {
+        "op": "waitTask",
+        "id": "R"
+      },
+      {
+        "op": "checkpoint",
+        "id": "Late",
+        "expected": {
+          "name": "Fake Cached",
+          "host": "heldout-20-cached.r35.invalid",
+          "token": "fake-token-20",
+          "dictation": false
+        }
+      },
+      {
+        "op": "reload",
+        "id": "D",
+        "expected": {
+          "name": "Fake Cached",
+          "host": "heldout-20-cached.r35.invalid",
+          "token": "fake-token-20",
+          "dictation": false
+        }
+      }
+    ]
+  },
+  {
+    "id": "heldout-21",
+    "purpose": "Refresh begun during a pending login cannot sign out either cached or incoming identity",
+    "steps": [
+      {
+        "op": "startLogin",
+        "id": "Seed",
+        "host": "heldout-21-cached.r35.invalid"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "SeedConfig",
+        "host": "heldout-21-cached.r35.invalid",
+        "path": "/api/mobile/config"
+      },
+      {
+        "op": "respond",
+        "id": "SeedConfig",
+        "status": 200,
+        "body": {
+          "instance": {
+            "name": "Fake instance"
+          },
+          "capabilities": {
+            "dictation": false
+          }
+        }
+      },
+      {
+        "op": "awaitRequest",
+        "id": "SeedPost",
+        "host": "heldout-21-cached.r35.invalid",
+        "path": "/api/mobile/auth/login"
+      },
+      {
+        "op": "respond",
+        "id": "SeedPost",
+        "status": 200,
+        "body": {
+          "user": {
+            "id": "fake-user-id",
+            "name": "Fake Cached"
+          },
+          "session": {
+            "token": "fake-token-21-old",
+            "expiresAt": "2099-01-01"
+          }
+        }
+      },
+      {
+        "op": "waitTask",
+        "id": "Seed"
+      },
+      {
+        "op": "startLogin",
+        "id": "L",
+        "host": "heldout-21-incoming.r35.invalid"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "LConfig",
+        "host": "heldout-21-incoming.r35.invalid",
+        "path": "/api/mobile/config"
+      },
+      {
+        "op": "respond",
+        "id": "LConfig",
+        "status": 200,
+        "body": {
+          "instance": {
+            "name": "Fake instance"
+          },
+          "capabilities": {
+            "dictation": true
+          }
+        }
+      },
+      {
+        "op": "awaitRequest",
+        "id": "LPost",
+        "host": "heldout-21-incoming.r35.invalid",
+        "path": "/api/mobile/auth/login"
+      },
+      {
+        "op": "startRefresh",
+        "id": "R"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "RMe",
+        "host": "heldout-21-cached.r35.invalid",
+        "path": "/api/mobile/me"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "RConfig",
+        "host": "heldout-21-cached.r35.invalid",
+        "path": "/api/mobile/config"
+      },
+      {
+        "op": "respond",
+        "id": "RConfig",
+        "status": 200,
+        "body": {
+          "instance": {
+            "name": "Fake instance"
+          },
+          "capabilities": {
+            "dictation": true
+          }
+        }
+      },
+      {
+        "op": "respond",
+        "id": "RMe",
+        "status": 401,
+        "body": {
+          "error": {
+            "code": "unauthorized",
+            "message": "Fake controlled error"
+          }
+        }
+      },
+      {
+        "op": "waitTask",
+        "id": "R"
+      },
+      {
+        "op": "checkpoint",
+        "id": "LoginPending",
+        "expected": {
+          "name": "Fake Cached",
+          "host": "heldout-21-cached.r35.invalid",
+          "token": "fake-token-21-old",
+          "dictation": false
+        }
+      },
+      {
+        "op": "respond",
+        "id": "LPost",
+        "status": 200,
+        "body": {
+          "user": {
+            "id": "fake-user-id",
+            "name": "Fake Incoming"
+          },
+          "session": {
+            "token": "fake-token-21-new",
+            "expiresAt": "2099-01-01"
+          }
+        }
+      },
+      {
+        "op": "waitTask",
+        "id": "L"
+      },
+      {
+        "op": "checkpoint",
+        "id": "C",
+        "expected": {
+          "name": "Fake Incoming",
+          "host": "heldout-21-incoming.r35.invalid",
+          "token": "fake-token-21-new",
+          "dictation": true
+        }
+      },
+      {
+        "op": "reload",
+        "id": "D",
+        "expected": {
+          "name": "Fake Incoming",
+          "host": "heldout-21-incoming.r35.invalid",
+          "token": "fake-token-21-new",
+          "dictation": true
+        }
+      }
+    ]
+  },
+  {
+    "id": "heldout-22",
+    "purpose": "Same-host replacement fences late refresh success captured with an older bearer",
+    "steps": [
+      {
+        "op": "startLogin",
+        "id": "Seed",
+        "host": "heldout-22-account.r35.invalid"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "SeedConfig",
+        "host": "heldout-22-account.r35.invalid",
+        "path": "/api/mobile/config"
+      },
+      {
+        "op": "respond",
+        "id": "SeedConfig",
+        "status": 200,
+        "body": {
+          "instance": {
+            "name": "Fake instance"
+          },
+          "capabilities": {
+            "dictation": false
+          }
+        }
+      },
+      {
+        "op": "awaitRequest",
+        "id": "SeedPost",
+        "host": "heldout-22-account.r35.invalid",
+        "path": "/api/mobile/auth/login"
+      },
+      {
+        "op": "respond",
+        "id": "SeedPost",
+        "status": 200,
+        "body": {
+          "user": {
+            "id": "fake-user-id",
+            "name": "Fake Old"
+          },
+          "session": {
+            "token": "fake-token-22-old",
+            "expiresAt": "2099-01-01"
+          }
+        }
+      },
+      {
+        "op": "waitTask",
+        "id": "Seed"
+      },
+      {
+        "op": "startLogin",
+        "id": "L",
+        "host": "heldout-22-account.r35.invalid",
+        "email": "replacement@example.invalid",
+        "password": "fake-replacement-password"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "LConfig",
+        "host": "heldout-22-account.r35.invalid",
+        "path": "/api/mobile/config"
+      },
+      {
+        "op": "respond",
+        "id": "LConfig",
+        "status": 200,
+        "body": {
+          "instance": {
+            "name": "Fake instance"
+          },
+          "capabilities": {
+            "dictation": true
+          }
+        }
+      },
+      {
+        "op": "awaitRequest",
+        "id": "LPost",
+        "host": "heldout-22-account.r35.invalid",
+        "path": "/api/mobile/auth/login"
+      },
+      {
+        "op": "startRefresh",
+        "id": "R"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "RConfig",
+        "host": "heldout-22-account.r35.invalid",
+        "path": "/api/mobile/config"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "RMe",
+        "host": "heldout-22-account.r35.invalid",
+        "path": "/api/mobile/me"
+      },
+      {
+        "op": "respond",
+        "id": "LPost",
+        "status": 200,
+        "body": {
+          "user": {
+            "id": "fake-user-id",
+            "name": "Fake Replacement"
+          },
+          "session": {
+            "token": "fake-token-22-new",
+            "expiresAt": "2099-01-01"
+          }
+        }
+      },
+      {
+        "op": "waitTask",
+        "id": "L"
+      },
+      {
+        "op": "checkpoint",
+        "id": "Replacement",
+        "expected": {
+          "name": "Fake Replacement",
+          "host": "heldout-22-account.r35.invalid",
+          "token": "fake-token-22-new",
+          "dictation": true
+        }
+      },
+      {
+        "op": "respond",
+        "id": "RConfig",
+        "status": 200,
+        "body": {
+          "instance": {
+            "name": "Fake instance"
+          },
+          "capabilities": {
+            "dictation": false
+          }
+        }
+      },
+      {
+        "op": "respond",
+        "id": "RMe",
+        "status": 200,
+        "body": {
+          "user": {
+            "id": "fake-user-id",
+            "name": "Fake Stale User"
+          }
+        }
+      },
+      {
+        "op": "waitTask",
+        "id": "R"
+      },
+      {
+        "op": "checkpoint",
+        "id": "Late",
+        "expected": {
+          "name": "Fake Replacement",
+          "host": "heldout-22-account.r35.invalid",
+          "token": "fake-token-22-new",
+          "dictation": true
+        }
+      },
+      {
+        "op": "reload",
+        "id": "D",
+        "expected": {
+          "name": "Fake Replacement",
+          "host": "heldout-22-account.r35.invalid",
+          "token": "fake-token-22-new",
+          "dictation": true
+        }
+      }
+    ]
+  },
+  {
+    "id": "heldout-23",
+    "purpose": "Signed-out refresh is a settled no-op and sign-out remains durable",
+    "steps": [
+      {
+        "op": "checkpoint",
+        "id": "Initial",
+        "expected": {
+          "name": null,
+          "host": null,
+          "token": null,
+          "dictation": false
+        }
+      },
+      {
+        "op": "startRefresh",
+        "id": "R"
+      },
+      {
+        "op": "waitTask",
+        "id": "R"
+      },
+      {
+        "op": "checkpoint",
+        "id": "Refreshed",
+        "expected": {
+          "name": null,
+          "host": null,
+          "token": null,
+          "dictation": false
+        }
+      },
+      {
+        "op": "signOut",
+        "remote": false
+      },
+      {
+        "op": "reload",
+        "id": "D",
+        "expected": {
+          "name": null,
+          "host": null,
+          "token": null,
+          "dictation": false
+        }
+      }
+    ]
+  },
+  {
+    "id": "heldout-24",
+    "purpose": "Deliberate me decoding failure preserves a coherent cached account",
+    "steps": [
+      {
+        "op": "startLogin",
+        "id": "Seed",
+        "host": "heldout-24-account.r35.invalid"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "SeedConfig",
+        "host": "heldout-24-account.r35.invalid",
+        "path": "/api/mobile/config"
+      },
+      {
+        "op": "respond",
+        "id": "SeedConfig",
+        "status": 200,
+        "body": {
+          "instance": {
+            "name": "Fake instance"
+          },
+          "capabilities": {
+            "dictation": true
+          }
+        }
+      },
+      {
+        "op": "awaitRequest",
+        "id": "SeedPost",
+        "host": "heldout-24-account.r35.invalid",
+        "path": "/api/mobile/auth/login"
+      },
+      {
+        "op": "respond",
+        "id": "SeedPost",
+        "status": 200,
+        "body": {
+          "user": {
+            "id": "fake-user-id",
+            "name": "Fake Cached"
+          },
+          "session": {
+            "token": "fake-token-24",
+            "expiresAt": "2099-01-01"
+          }
+        }
+      },
+      {
+        "op": "waitTask",
+        "id": "Seed"
+      },
+      {
+        "op": "startRefresh",
+        "id": "R"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "RConfig",
+        "host": "heldout-24-account.r35.invalid",
+        "path": "/api/mobile/config"
+      },
+      {
+        "op": "awaitRequest",
+        "id": "RMe",
+        "host": "heldout-24-account.r35.invalid",
+        "path": "/api/mobile/me"
+      },
+      {
+        "op": "respond",
+        "id": "RConfig",
+        "status": 200,
+        "body": {
+          "instance": {
+            "name": "Fake instance"
+          },
+          "capabilities": {
+            "dictation": false
+          }
+        }
+      },
+      {
+        "op": "respond",
+        "id": "RMe",
+        "status": 200,
+        "body": {
+          "user": "fake-invalid-user-object"
+        }
+      },
+      {
+        "op": "waitTask",
+        "id": "R"
+      },
+      {
+        "op": "checkpoint",
+        "id": "C",
+        "expected": {
+          "name": "Fake Cached",
+          "host": "heldout-24-account.r35.invalid",
+          "token": "fake-token-24",
+          "dictation": true
+        }
+      },
+      {
+        "op": "reload",
+        "id": "D",
+        "expected": {
+          "name": "Fake Cached",
+          "host": "heldout-24-account.r35.invalid",
+          "token": "fake-token-24",
+          "dictation": true
+        }
+      }
+    ]
+  }
+]

@@ -1,0 +1,11 @@
+{
+  "revealedAfterSourceSealCommit": "3e416807",
+  "candidateSourceCommit": "3db59146",
+  "baselineSourceCommit": "4b6af6da",
+  "caseCount": 24,
+  "casesSHA256": "88bbdd0804e39b7d86596916062f1a2d8c4c92a77e1b6bdd5ba1b62383741de9",
+  "notesSHA256": "506f2b89d387375e0065eff5937e061bd58d4be812878711788a1b52067b9e81",
+  "finalAuthorTaskId": "node:delegated-task:command%3Amcp%3A48b5afc5-b748-403b-a52b-651077602c9b%3Athread-send%3Ar35-author-final-seal-reveal",
+  "notesStatus": "Original draft wording retained unchanged to preserve sealed bytes; author final task explicitly sealed unchanged at reveal.",
+  "policy": "No production, runner, validator, comparison or seal-script changes after reveal."
+}
