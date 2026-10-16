@@ -124,19 +124,11 @@ describe('undoing sidebar changes', () => {
   const toasts = () => useFileToasts.getState().toasts
   const sent = (method: string, path: string) => requests.filter((request) => request.method === method && request.path.endsWith(path)).map((request) => request.body)
 
-  it('moves items and puts them back on undo', async () => {
+  it('moves items without a toast, since the move shows in place', async () => {
     respond = () => json({ nodes: [] })
     await moveSidebarSelection(['work'], 'f9')
 
     expect(sent('POST', '/api/sidebar/move')).toEqual([{ ids: ['work'], parentId: 'f9' }])
-    expect(toasts()).toEqual([expect.objectContaining({ message: 'Moved "work"', undo: expect.any(Function) })])
-    await toasts()[0]!.undo!()
-    expect(sent('POST', '/api/sidebar/move')).toEqual([{ ids: ['work'], parentId: 'f9' }, { ids: ['work'], parentId: 'chats' }])
-  })
-
-  it('does not announce a move that changes nothing', async () => {
-    respond = () => json({ nodes: [] })
-    await moveSidebarSelection(['loose'], null)
     expect(toasts()).toEqual([])
   })
 

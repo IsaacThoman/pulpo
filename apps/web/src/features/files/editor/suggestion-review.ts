@@ -110,9 +110,18 @@ export function useSuggestionReview(editor: Editor, onResolved?: () => void) {
   const [hover, setHover] = useState<Hover | null>(null)
   // The hunk at the cursor whose card Escape closed, until the cursor leaves it.
   const [dismissedId, setDismissedId] = useState<string | null>(null)
+  const previousHunks = useRef(hunks.map((hunk) => hunk.id).join(','))
   const hoverTimer = useRef<number | undefined>(undefined)
   // The hunk whose card is showing, for the pointer handlers.
   const shownId = useRef<string | null>(null)
+
+  useEffect(() => {
+    const ids = hunks.map((hunk) => hunk.id).join(',')
+    if (previousHunks.current === ids) return
+    previousHunks.current = ids
+    // Undo/redo and typing can also remove or restore suggestions, without using a review button.
+    onResolved?.()
+  }, [hunks, onResolved])
 
   const keepHover = useCallback(() => window.clearTimeout(hoverTimer.current), [])
   /** Hovers `next`, or nothing, unless the pointer gets back to the card or its suggestion first. */
@@ -194,7 +203,6 @@ export function useSuggestionReview(editor: Editor, onResolved?: () => void) {
     clearHover()
     editor.view.dispatch(tr)
     if (refocus) editor.view.focus()
-    onResolved?.()
   }
 
   /**

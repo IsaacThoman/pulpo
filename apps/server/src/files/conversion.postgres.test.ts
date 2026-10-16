@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { Readable } from 'node:stream'
-import { eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
+import postgres from 'postgres'
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as Y from 'yjs'
 import { ydocToMarkdown } from '@pulpo/client-core/doc-schema'
@@ -9,20 +10,21 @@ import { fileDocs, fileNodes, users } from '../database/schema.js'
 
 const objects = vi.hoisted(() => new Map<string, Buffer>())
 const closed = vi.hoisted(() => vi.fn())
+const putGate = vi.hoisted(() => ({ wait: null as (() => Promise<void>) | null }))
 vi.mock('../responses/events.js', () => ({ publishStateChange: vi.fn() }))
 vi.mock('./doc-events.js', () => ({ publishDocsClosed: closed }))
 vi.mock('../jobs.js', () => ({ fileDocQueue: { add: vi.fn() } }))
 vi.mock('../storage/index.js', () => ({
   getBlobStore: () => ({
-    put: async (key: string, body: Uint8Array) => { objects.set(key, Buffer.from(body)) },
+    put: async (key: string, body: Uint8Array) => { objects.set(key, Buffer.from(body)); await putGate.wait?.() },
     getStream: async (key: string) => Readable.from([objects.get(key) ?? Buffer.alloc(0)]),
     delete: async (key: string) => { objects.delete(key) },
   }),
 }))
 
 const { convertBlobToDocInTx, previewMarkdownConversion } = await import('./conversion.js')
-const { loadYDoc } = await import('./doc-store.js')
-const { convertMisnamedDocs, mutateFileTree, updateFileNode } = await import('./tree-service.js')
+const { appendDocUpdate, compactDoc, loadYDoc } = await import('./doc-store.js')
+const { convertMisnamedDocs, moveNodeInTx, mutateFileTree, updateFileNode } = await import('./tree-service.js')
 const { createDoc } = await import('./doc-store.js')
 
 const enabled = process.env.PULPO_FILES_TESTS === 'true'
@@ -52,8 +54,52 @@ describe.skipIf(!enabled)('Markdown file conversion', () => {
     userId = randomUUID()
     await db.insert(users).values({ id: userId, name: 'Conversion test', email: `${userId}@example.test`, username: `c${userId.replaceAll('-', '')}`, role: 'user' })
     closed.mockClear()
+    putGate.wait = null
   })
   afterAll(async () => { await queryClient.end() })
+
+  it('finishes conversion and compaction when their database locks overlap', async () => {
+    const node = await createDoc(userId, { parentId: null, name: 'Concurrent.md', markdown: 'Before' })
+    const replica = await loadYDoc(node.id)
+    const vector = Y.encodeStateVector(replica)
+    const paragraph = new Y.XmlElement('paragraph')
+    paragraph.insert(0, [new Y.XmlText('Latest edit')])
+    replica.getXmlFragment('default').push([paragraph])
+    await appendDocUpdate({ nodeId: node.id, actorUserId: userId, update: Y.encodeStateAsUpdate(replica, vector), origin: 'client' })
+    let markEntered!: () => void
+    let release!: () => void
+    const entered = new Promise<void>((resolve) => { markEntered = resolve })
+    const released = new Promise<void>((resolve) => { release = resolve })
+    putGate.wait = async () => { markEntered(); await released }
+    let renamePid = 0
+    const rename = mutateFileTree(userId, async (tx) => {
+      const [backend] = await tx.execute<{ pid: number }>(sql`select pg_backend_pid() as pid`)
+      renamePid = backend!.pid
+      const [current] = await tx.select().from(fileNodes).where(eq(fileNodes.id, node.id))
+      return moveNodeInTx(tx, userId, current!, { parentId: null, name: 'Concurrent.txt', onConflict: 'fail' })
+    })
+    await entered
+    const compaction = compactDoc(node.id)
+    // A separate observer does not use either of the two transaction pool connections.
+    const observer = postgres(process.env.DATABASE_URL!, { max: 1 })
+    try {
+      await vi.waitFor(async () => {
+        const [row] = await observer<{ waiting: boolean }[]>`select exists (
+          select 1 from pg_stat_activity where ${renamePid} = any(pg_blocking_pids(pid))
+        ) as waiting`
+        expect(row!.waiting).toBe(true)
+      })
+      release()
+      const result = await Promise.all([rename, compaction])
+      expect(result[0].row.kind).toBe('blob')
+      expect(objects.get(result[0].row.objectKey!)?.toString()).toBe('Before\n\nLatest edit')
+    } finally {
+      release()
+      await Promise.allSettled([rename, compaction])
+      putGate.wait = null
+      await observer.end()
+    }
+  })
 
   it('reports no change when only line endings and trailing spaces differ', async () => {
     const node = await uploadedFile('notes.md', '# Notes  \r\n\r\n- one\r\n- two\r\n')

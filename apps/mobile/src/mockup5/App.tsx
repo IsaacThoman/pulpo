@@ -270,7 +270,7 @@ import {
 } from '../features/chat/history';
 import { activityDurationMs, buildLegacyMessageTimeline, buildMessageTimeline, completedActivityLabel, timelineActivityIsActive, workspaceIsActive, type TimelineStep } from '../features/chat/timeline';
 import { toolActivityPresentation } from '../features/chat/toolActivityPresentation';
-import { CHAT_SCROLL_TO_BOTTOM_THRESHOLD, chatLandingKeyboardTranslation, chatKeyboardBlankSpace, isNearChatBottom, resolveKeyboardLayoutProgress, shouldFollowChatContent } from '../features/chat/viewport';
+import { CHAT_RESUME_FOLLOW_THRESHOLD, CHAT_SCROLL_TO_BOTTOM_THRESHOLD, type ChatViewportMetrics, chatBottomDistance, chatLandingKeyboardTranslation, chatKeyboardBlankSpace, isNearChatBottom, resolveKeyboardLayoutProgress, shouldFollowChatContent, shouldResumeChatFollow } from '../features/chat/viewport';
 import {
   nextChatStartsTemporary,
   resolveChatHeaderAction,
@@ -335,6 +335,17 @@ const ChatScrollView = forwardRef<KeyboardChatScrollViewRef, ChatScrollViewProps
 ));
 
 ChatScrollView.displayName = 'ChatScrollView';
+
+function chatScrollMetrics(event: NativeSyntheticEvent<NativeScrollEvent>, inverted: boolean): ChatViewportMetrics {
+  const { contentOffset, contentInset, contentSize, layoutMeasurement } = event.nativeEvent;
+  return {
+    inverted,
+    insetTop: contentInset.top,
+    offsetY: contentOffset.y,
+    contentHeight: contentSize.height,
+    viewportHeight: layoutMeasurement.height,
+  };
+}
 
 function systemKeyboardIsVisible(): boolean {
   return Keyboard.isVisible() || KeyboardController.isVisible() || Keyboard.metrics() != null;
@@ -4233,6 +4244,10 @@ function ChatView({
   const isNearBottom = useRef(true);
   const shouldAutoFollow = useRef(true);
   const readerInteracting = useRef(false);
+  // A finger resting on the transcript, before (or without) any drag.
+  const readerTouching = useRef(false);
+  const viewportMetrics = useRef<ChatViewportMetrics | null>(null);
+  const readerDragStartDistance = useRef(0);
   const [maintainReaderAnchor, setMaintainReaderAnchor] = useState(false);
   const [scrollToBottomVisible, setScrollToBottomVisibleState] = useState(false);
   const scrollToBottomShown = useRef(false);
@@ -5410,14 +5425,8 @@ function ChatView({
   const agentLabel = activeAgentEnabled ? 'Pulpo Agent' : 'Disabled';
 
   const updateBottomProximity = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const { contentOffset, contentInset, contentSize, layoutMeasurement } = event.nativeEvent;
-    const metrics = {
-      inverted: bottomAnchored,
-      insetTop: contentInset.top,
-      offsetY: contentOffset.y,
-      contentHeight: contentSize.height,
-      viewportHeight: layoutMeasurement.height,
-    };
+    const metrics = chatScrollMetrics(event, bottomAnchored);
+    viewportMetrics.current = metrics;
     const nearBottom = isNearChatBottom(metrics);
     isNearBottom.current = nearBottom;
     // A newly selected chat initially reports offset zero before its rows have
@@ -5432,6 +5441,12 @@ function ChatView({
     // Native measurement and anchor adjustments also emit scroll events. Only
     // an actual gesture ending may rearm following after the reader takes over.
   }, [bottomAnchored, setScrollToBottomVisible]);
+
+  // Content can grow below a resting reader without emitting a scroll event.
+  const readerTailDistance = useCallback(() => {
+    if (!viewportMetrics.current) return 0;
+    return chatBottomDistance({ ...viewportMetrics.current, contentHeight: measuredContentHeight.current || viewportMetrics.current.contentHeight });
+  }, []);
 
   const cancelPendingFollow = useCallback(() => {
     if (pendingFollowFrame.current === null) return;
@@ -5479,15 +5494,21 @@ function ChatView({
     cancelTailSettle();
   }, [cancelPendingFollow, cancelTailSettle, chatId]);
 
+  // Momentum continues the drag, so only a drag records where the gesture began.
+  const beginReaderDrag = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    readerDragStartDistance.current = chatBottomDistance(chatScrollMetrics(event, bottomAnchored));
+    beginReaderInteraction();
+  }, [beginReaderInteraction, bottomAnchored]);
+
   const endReaderInteraction = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
     // Native layout/keyboard adjustments can emit an end event without a drag.
     if (!readerInteracting.current) return;
     if (chatId && hasTranscriptPositionObserver()) recordTranscriptPosition({ chatId, at: Date.now(), kind: 'readerEnd' });
     readerInteracting.current = false;
     updateBottomProximity(event);
-    shouldAutoFollow.current = isNearBottom.current;
-    setMaintainReaderAnchor(!isNearBottom.current);
-  }, [chatId, updateBottomProximity]);
+    shouldAutoFollow.current = shouldResumeChatFollow(readerDragStartDistance.current, readerTailDistance());
+    setMaintainReaderAnchor(!shouldAutoFollow.current);
+  }, [chatId, readerTailDistance, updateBottomProximity]);
 
   const followContentIfNeeded = useCallback(() => {
     const establishingChatTail = chatTailPending.current;
@@ -5496,19 +5517,40 @@ function ChatView({
     if (bottomAnchored && !establishingChatTail) return;
     if (!shouldFollowChatContent(
       shouldAutoFollow.current && isNearBottom.current,
-      readerInteracting.current,
+      readerInteracting.current || readerTouching.current,
       establishingChatTail,
     ) || pendingFollowFrame.current !== null) return;
     pendingFollowFrame.current = requestAnimationFrame(() => {
       pendingFollowFrame.current = null;
       if (!shouldFollowChatContent(
         shouldAutoFollow.current && isNearBottom.current,
-        readerInteracting.current,
+        readerInteracting.current || readerTouching.current,
         chatTailPending.current,
       )) return;
       scrollToMeasuredTail(chatTailPending.current ? false : assistantStatus === 'idle');
     });
   }, [assistantStatus, bottomAnchored, scrollToMeasuredTail]);
+
+  // Scroll events begin only once a finger moves, so a resting finger would
+  // otherwise watch the reply keep scrolling beneath it.
+  const beginReaderTouch = useCallback(() => {
+    Keyboard.dismiss();
+    readerTouching.current = true;
+    cancelPendingFollow();
+    setMaintainReaderAnchor(true);
+  }, [cancelPendingFollow]);
+
+  const endReaderTouch = useCallback(() => {
+    if (!readerTouching.current) return;
+    readerTouching.current = false;
+    // A drag that took over this touch reports next and decides on its own end.
+    requestAnimationFrame(() => {
+      if (readerTouching.current || readerInteracting.current) return;
+      if (shouldAutoFollow.current) shouldAutoFollow.current = readerTailDistance() <= CHAT_RESUME_FOLLOW_THRESHOLD;
+      setMaintainReaderAnchor(!shouldAutoFollow.current);
+      if (shouldAutoFollow.current) followContentIfNeeded();
+    });
+  }, [followContentIfNeeded, readerTailDistance]);
 
   const jumpToBottom = useCallback(() => {
     void Haptics.selectionAsync();
@@ -5538,6 +5580,8 @@ function ChatView({
     isNearBottom.current = true;
     shouldAutoFollow.current = true;
     readerInteracting.current = false;
+    readerTouching.current = false;
+    viewportMetrics.current = null;
     jumpingToBottom.current = false;
     chatTailPending.current = !bottomAnchored;
     setMaintainReaderAnchor(false);
@@ -5802,7 +5846,9 @@ function ChatView({
           contentInsetAdjustmentBehavior="never"
           data={visibleMessages}
           inverted={bottomAnchored}
-          maintainVisibleContentPosition={bottomAnchored && maintainReaderAnchor ? { minIndexForVisible: 0 } : undefined}
+          // Skip the newest row: it grows in place while streaming, so anchoring
+          // to it never compensates and the reader keeps being carried along.
+          maintainVisibleContentPosition={bottomAnchored && maintainReaderAnchor ? { minIndexForVisible: 1 } : undefined}
           maxToRenderPerBatch={1}
           updateCellsBatchingPeriod={32}
           windowSize={3}
@@ -5828,9 +5874,11 @@ function ChatView({
           onMomentumScrollBegin={beginReaderInteraction}
           onMomentumScrollEnd={endReaderInteraction}
           onScroll={updateBottomProximity}
-          onScrollBeginDrag={beginReaderInteraction}
+          onScrollBeginDrag={beginReaderDrag}
           onScrollEndDrag={endReaderInteraction}
-          onTouchStart={Keyboard.dismiss}
+          onTouchCancel={endReaderTouch}
+          onTouchEnd={endReaderTouch}
+          onTouchStart={beginReaderTouch}
           ref={listRef}
           renderItem={renderMessage}
           renderScrollComponent={renderChatScrollComponent}

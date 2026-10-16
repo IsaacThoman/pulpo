@@ -83,6 +83,7 @@ import { useFileClipboard } from '@/features/files/browser/clipboard'
 import { useFileOperations } from '@/features/files/browser/use-file-operations'
 import { useSidePanel } from '@/features/side-panel/store'
 import { openBeside, useMainNavigate } from '@/features/side-panel/use-panel-actions'
+import { OpenChatToLeftItem } from '@/features/side-panel/AgentActions'
 import { copyChatShareLink, duplicateChats } from '@/features/chat/chat-actions'
 import { ChatExpiryMenuItem } from '@/features/chat/ChatExpiryMenuItem'
 import {
@@ -456,6 +457,7 @@ function ChatMenu({ chat, onRename, atPointer = false }: { chat: Chat; onRename:
           {ui("Open in new tab")}
         </DropdownMenuItem>
       )}
+      <OpenChatToLeftItem chatId={chat.id} />
       <DropdownMenuItem onClick={() => togglePin(chat.id)}>
         {chat.pinned ? <PinOff /> : <Pin />}
         {chat.pinned ? t('chat.unpin') : t('chat.pin')}
@@ -941,6 +943,7 @@ function ItemMenu({ node, folder, sidebar, atPointer = false, onRename, onNewFol
   const path = itemPath(node)
   const opens = path && (filesEnabled || !path.startsWith('/files')) ? path : null
   const besideId = fileTargetId(node)
+  const chatTarget = node.kind === 'shortcut' && node.target?.available && node.target.kind === 'chat' ? node.target.id : null
   const parentId = node.parentId === sidebar.chatsFolderId ? null : node.parentId
   return (
     <DropdownMenuContent
@@ -982,6 +985,7 @@ function ItemMenu({ node, folder, sidebar, atPointer = false, onRename, onNewFol
           {ui("Open to the right")}
         </DropdownMenuItem>
       )}
+      {chatTarget && <OpenChatToLeftItem chatId={chatTarget} />}
       {/* The Sidebar folder is the sidebar itself; Archive can be pinned like any folder. */}
       <DropdownMenuItem disabled={node.systemRole === 'chats'} onClick={() => void pinSidebarItems([node.id], !node.pinned, [node])}>
         {node.pinned ? <PinOff /> : <Pin />}
@@ -1662,7 +1666,7 @@ export function Sidebar({
     const ids = nodes.map((node) => node.id)
     if (hint.kind !== 'row') {
       const folderId = hint.kind === 'folder-target' ? hint.folderId : null
-      void moveSidebarSelection(ids, folderId, { unpin: true, nodes })
+      void moveSidebarSelection(ids, folderId, { unpin: true })
       return true
     }
     // Several items stay together, in their order, at the spot shown.
