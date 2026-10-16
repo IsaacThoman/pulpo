@@ -201,3 +201,19 @@ Auto-capitalization off. Spanish's standalone layout retains Multilingual typing
 off. The test APK remains installed. No app data was cleared, unrelated app was
 removed, or emulator/iOS device was reset. `emulator-5554` is available to the
 parent again when this task returns.
+
+## Integrated parent verification
+
+The parent independently reviews frozen inputs, all 36 result rows, all 30 live
+Gboard active labels/letter geometries, captured language/correction switches,
+real touch paths, and exact scoring. A fresh core replay at integrated `72f444f7`
+exactly matches the original 36 id/output/score rows (elapsed times excluded):
+33/36 overall and 27/30 paired observable outputs. This is exposed regression
+verification, not another blind trial or an improvement over the original score.
+
+The parent hardens `summarize.py` to reject unknown/error statuses, unavailable
+rows containing output/score or lacking reasons, and nonboolean/inconsistent
+scores before aggregation. Missing/duplicate IDs also raise explicit errors that
+remain active under `python -O`. Eight tampered datasets fail under optimization;
+original summary bytes remain identical. An independent source review retains
+the validation change. No new Gboard observation or production edit is included.
