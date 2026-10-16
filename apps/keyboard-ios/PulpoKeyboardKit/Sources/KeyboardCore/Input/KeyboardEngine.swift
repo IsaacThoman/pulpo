@@ -996,6 +996,12 @@ public final class KeyboardEngine {
 
   // MARK: Context
 
+  /// Reconciles observable host changes before an action validates its destination.
+  /// Uses the same delayed-own-snapshot handling as typing, without editing text.
+  public func reconcileHostChanges() {
+    reconcilePendingHostChanges()
+  }
+
   /// Re-reads the document after the host changed text or moved the cursor.
   public func documentDidChange() {
     let identifier = document.documentIdentifier

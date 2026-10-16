@@ -204,6 +204,12 @@ public final class KeyboardController: NSObject {
   private var deferredDelete = false
   /// The text before the cursor when delete went down, so undo restores it all.
   private var deleteStartContext: String?
+  private struct DeleteGestureOrigin {
+    let documentID: UUID?
+    let isPrivate: Bool
+    var externalChanges: Int
+  }
+  private var deleteGestureOrigin: DeleteGestureOrigin?
   /// Words a delete swipe would remove, shown in the bar until the finger lifts.
   private var deletionPreview: (text: String, words: Int)?
   /// The last delete swipe, offered as Undo until the next edit.
@@ -453,6 +459,7 @@ public final class KeyboardController: NSObject {
       engine.page = traits.keyboard == .numbersAndPunctuation ? .numbers : .letters
     }
     engine.documentDidChange()
+    if deleteGestureOrigin != nil { validateDeleteGesture(reconcile: false) }
     sync()
     refreshTranscriptRecoveryIfNeeded()
   }
@@ -628,13 +635,40 @@ public final class KeyboardController: NSObject {
 
   private func flushDeferredDelete() {
     guard deferredDelete else { return }
+    guard validateDeleteGesture() else { return }
     deferredDelete = false
     engine.deleteBackward()
+  }
+
+  /// A held press belongs to its original field and privacy context. The engine
+  /// distinguishes accepted host changes from its own delayed acknowledgments.
+  @discardableResult
+  private func validateDeleteGesture(reconcile: Bool = true) -> Bool {
+    guard var origin = deleteGestureOrigin else { return false }
+    guard isVisible, let host,
+          host.document.documentIdentifier == origin.documentID,
+          host.inputTraits.isPrivate == origin.isPrivate else {
+      resetDeleteGesture()
+      return false
+    }
+    if reconcile { engine.reconcileHostChanges() }
+    if engine.externalContextChanges != origin.externalChanges {
+      // A fresh same-field selection deliberately targets just that range.
+      // A cursor move or external edit without a selection cancels the swipe.
+      guard host.document.selectedText?.isEmpty == false else {
+        resetDeleteGesture()
+        return false
+      }
+      origin.externalChanges = engine.externalContextChanges
+      deleteGestureOrigin = origin
+    }
+    return true
   }
 
   private func resetDeleteGesture() {
     deferredDelete = false
     deleteStartContext = nil
+    deleteGestureOrigin = nil
     deletionPreview = nil
     wordDeletionUndo = nil
   }
@@ -1036,7 +1070,12 @@ extension KeyboardController: KeysViewDelegate {
       engine.shiftDown()
     case .delete:
       deferredDelete = false
+      engine.reconcileHostChanges()
       deleteStartContext = engine.contextBeforeCursor
+      deleteGestureOrigin = DeleteGestureOrigin(
+        documentID: host?.document.documentIdentifier,
+        isPrivate: host?.inputTraits.isPrivate ?? engine.traits.isPrivate,
+        externalChanges: engine.externalContextChanges)
       if engine.deleteUndoesLastEdit {
         deferredDelete = true
         return
@@ -1108,6 +1147,7 @@ extension KeyboardController: KeysViewDelegate {
   func keysViewRepeatDelete(_ view: KeysView, wholeWord: Bool) {
     if settings.sounds { UIDevice.current.playInputClick() }
     if isSearching { return editSearch { wholeWord ? $0.deleteWordsBackward(1) : $0.deleteBackward() } }
+    guard validateDeleteGesture() else { return sync() }
     if deferredDelete {
       // The held press acts now; repeat continues from here.
       flushDeferredDelete()
@@ -1145,13 +1185,17 @@ extension KeyboardController: KeysViewDelegate {
   }
 
   func keysViewDeleteEnded(_ view: KeysView) {
-    guard deferredDelete, !isSearching else { return }
-    flushDeferredDelete()
-    sync()
+    guard !isSearching else { return }
+    let needsSync = deferredDelete
+    if deferredDelete { flushDeferredDelete() }
+    deleteGestureOrigin = nil
+    deleteStartContext = nil
+    if needsSync { sync() }
   }
 
   func keysView(_ view: KeysView, previewWordDeletion words: Int) {
     if isSearching { return }
+    guard validateDeleteGesture() else { return renderBar() }
     // A swipe replaces the press's own action, including undoing a correction.
     deferredDelete = false
     let text = words > 0 ? engine.wordDeletionPreview(words: words) : ""
@@ -1162,8 +1206,10 @@ extension KeyboardController: KeysViewDelegate {
 
   func keysView(_ view: KeysView, commitWordDeletion words: Int) {
     if isSearching { return editSearch { $0.deleteWordsBackward(words) } }
+    guard validateDeleteGesture() else { return sync() }
     deferredDelete = false
     deletionPreview = nil
+    deleteGestureOrigin = nil
     wordDeletionUndo = engine.deleteWordsBackward(words, originalContext: deleteStartContext)
     deleteStartContext = nil
     sync()
