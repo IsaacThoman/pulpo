@@ -1,0 +1,75 @@
+import Foundation
+
+struct Input: Decodable {
+  let version: Int
+  let cases: [Case]
+  struct Case: Decodable {
+    let id: String
+    let family: String
+    let initial: String
+    let actions: [Action]
+  }
+  struct Action: Decodable {
+    let op: String
+    let value: String?
+    let count: Int?
+  }
+}
+
+struct Output: Encodable {
+  let version: Int
+  let cases: [Case]
+  struct Case: Encodable {
+    let id: String
+    let family: String
+    let states: [State]
+  }
+  struct State: Encodable {
+    let step: Int
+    let op: String
+    let text: String
+    let characters: Int
+    let isEmpty: Bool
+    let scalars: [UInt32]
+  }
+}
+
+enum InvalidInput: Error { case version, operation }
+
+@main struct Measure {
+  static func main() throws {
+    let input = try JSONDecoder().decode(Input.self, from: Data(contentsOf: URL(fileURLWithPath: CommandLine.arguments[1])))
+    guard input.version == 1 else { throw InvalidInput.version }
+    var cases: [Output.Case] = []
+    for item in input.cases {
+      var query = EmojiSearchQuery(item.initial)
+      func state(_ step: Int, _ op: String) -> Output.State {
+        Output.State(step: step, op: op, text: query.text, characters: query.text.count,
+                     isEmpty: query.isEmpty, scalars: query.text.unicodeScalars.map(\.value))
+      }
+      var states = [state(-1, "init")]
+      for (step, action) in item.actions.enumerated() {
+        switch action.op {
+        case "append":
+          guard let value = action.value, action.count == nil else { throw InvalidInput.operation }
+          query.append(value)
+        case "backspace":
+          guard action.value == nil, action.count == nil else { throw InvalidInput.operation }
+          query.deleteBackward()
+        case "deleteWords":
+          guard let count = action.count, action.value == nil else { throw InvalidInput.operation }
+          query.deleteWordsBackward(count)
+        case "clear":
+          guard action.value == nil, action.count == nil else { throw InvalidInput.operation }
+          query.clear()
+        default: throw InvalidInput.operation
+        }
+        states.append(state(step, action.op))
+      }
+      cases.append(Output.Case(id: item.id, family: item.family, states: states))
+    }
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+    try encoder.encode(Output(version: 1, cases: cases)).write(to: URL(fileURLWithPath: CommandLine.arguments[2]))
+  }
+}

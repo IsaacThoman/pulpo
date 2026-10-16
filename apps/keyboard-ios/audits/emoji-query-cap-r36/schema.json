@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "cases"],
+  "properties": {
+    "version": {"const": 1},
+    "cases": {
+      "type": "array", "minItems": 12, "maxItems": 18,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["id", "family", "initial", "expectedInitial", "actions"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "family": {"type": "string", "minLength": 1},
+          "initial": {"type": "string"},
+          "expectedInitial": {"type": "string"},
+          "actions": {
+            "type": "array", "minItems": 1, "maxItems": 24,
+            "items": {
+              "oneOf": [
+                {
+                  "type": "object", "additionalProperties": false,
+                  "required": ["op", "value", "expected"],
+                  "properties": {
+                    "op": {"const": "append"},
+                    "value": {"type": "string"},
+                    "expected": {"type": "string"}
+                  }
+                },
+                {
+                  "type": "object", "additionalProperties": false,
+                  "required": ["op", "count", "expected"],
+                  "properties": {
+                    "op": {"const": "deleteWords"},
+                    "count": {"type": "integer", "minimum": -1000, "maximum": 1000},
+                    "expected": {"type": "string"}
+                  }
+                },
+                {
+                  "type": "object", "additionalProperties": false,
+                  "required": ["op", "expected"],
+                  "properties": {
+                    "op": {"enum": ["backspace", "clear"]},
+                    "expected": {"type": "string"}
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}
