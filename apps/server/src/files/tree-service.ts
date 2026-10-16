@@ -361,34 +361,63 @@ export async function trashFileNode(userId: string, id: string): Promise<void> {
   await trashFileNodes(userId, [id])
 }
 
-export async function restoreNodeInTx(tx: DatabaseTransaction, userId: string, id: string): Promise<FileNodeRow> {
+/**
+ * Restores a trashed item with what was trashed along with it. Without a destination it goes back
+ * where it was, or to the top level when that folder is still in the trash (as for items inside a
+ * trashed folder). With one it goes there instead, like a move.
+ */
+export async function restoreNodeInTx(tx: DatabaseTransaction, userId: string, id: string, destination?: { parentId: string | null }): Promise<FileNodeRow> {
   const access = await resolveFileAccess(tx, userId, id)
-  if (!access || !access.node.trashedAt || access.node.trashRootId !== access.node.id) throw notFound('Trashed item')
+  if (!access || !access.node.trashedAt || !access.node.trashRootId) throw notFound('Trashed item')
   const node = access.node
-  // If the original folder is still in the trash, the item comes back at the top level.
-  const parent = node.parentId ? (await resolveFileAccess(tx, userId, node.parentId))?.node : null
-  const parentId = parent && !parent.trashedAt ? parent.id : null
+  const trashRootId = access.node.trashRootId
+  const below = await subtree(tx, userId, node.id)
+  let parentId: string | null
+  if (destination) {
+    const height = Math.max(...below.map((row) => row.depth))
+    if (await destinationDepth(tx, userId, destination.parentId) + height > FILE_TREE_MAX_DEPTH) throw treeTooDeep()
+    parentId = destination.parentId
+  } else {
+    const parent = node.parentId ? (await resolveFileAccess(tx, userId, node.parentId))?.node : null
+    parentId = parent && !parent.trashedAt ? parent.id : null
+  }
   const name = await availableName(tx, userId, parentId, node.name)
-  // Rename while still trashed; the live-name index only applies once the batch is restored.
-  await tx.update(fileNodes).set({ parentId, name, revision: sql`${fileNodes.revision} + 1` }).where(eq(fileNodes.id, node.id))
-  await tx.update(fileNodes).set({ trashedAt: null, trashRootId: null, updatedAt: new Date() })
-    .where(and(eq(fileNodes.ownerUserId, userId), eq(fileNodes.trashRootId, node.id)))
+  // Rename while still trashed; the live-name index only applies once the batch is restored. Put
+  // somewhere new, an item goes to the top of that folder, as moved items do.
+  await tx.update(fileNodes).set({
+    parentId, name, revision: sql`${fileNodes.revision} + 1`,
+    ...destination && parentId !== node.parentId && !node.pinned ? { sortOrder: await topSortOrder(tx, userId, parentId) } : {},
+  }).where(eq(fileNodes.id, node.id))
+  // Items inside that were trashed earlier, on their own, stay in the trash.
+  await tx.update(fileNodes).set({ trashedAt: null, trashRootId: null, updatedAt: new Date() }).where(and(
+    eq(fileNodes.ownerUserId, userId),
+    eq(fileNodes.trashRootId, trashRootId),
+    inArray(fileNodes.id, below.map((row) => row.id)),
+  ))
   const [restored] = await tx.select().from(fileNodes).where(eq(fileNodes.id, node.id))
   return restored!
 }
 
-/** Restores trashed items; ids of trashed chats (from undoing a trash in Files) recover the chats. */
-export async function restoreFileNodes(userId: string, ids: string[]): Promise<FileNode[]> {
+/**
+ * Restores trashed items, including items inside trashed folders; ids of trashed chats (from
+ * undoing a trash in Files) recover the chats. With `destination`, everything goes there.
+ */
+export async function restoreFileNodes(userId: string, ids: string[], destination?: { parentId: string | null }): Promise<FileNode[]> {
   const nodeRows = await db.select({ id: fileNodes.id }).from(fileNodes)
     .where(and(eq(fileNodes.ownerUserId, userId), inArray(fileNodes.id, [...new Set(ids)])))
   const nodeIds = new Set(nodeRows.map((row) => row.id))
   const chatIds = ids.filter((id) => !nodeIds.has(id))
   return mutateFileTree(userId, async (tx) => {
+    // Checked first: recovering chats is not part of this transaction.
+    if (destination) await assertDestination(tx, userId, destination.parentId)
     const restored: FileNode[] = []
-    for (const id of nodeIds) restored.push(toFileNode(await restoreNodeInTx(tx, userId, id)))
+    for (const id of await topLevelIds(tx, userId, [...nodeIds])) restored.push(toFileNode(await restoreNodeInTx(tx, userId, id, destination)))
     if (chatIds.length) {
       const chatsFolderId = await chatsFolderIdOf(tx, userId)
-      restored.push(...(await recoverChats(userId, chatIds)).map((chat) => chatToFileNode(chat, chatsFolderId)))
+      const recovered = await recoverChats(userId, chatIds)
+      restored.push(...destination
+        ? await moveChatsInTx(tx, userId, recovered.map((chat) => ({ id: chat.id, parentId: destination.parentId })), chatsFolderId)
+        : recovered.map((chat) => chatToFileNode(chat, chatsFolderId)))
     }
     return restored
   }, chatIds.length ? CHAT_SCOPES : undefined)
@@ -405,6 +434,30 @@ export async function listTrash(userId: string): Promise<FileNode[]> {
     eq(fileNodes.trashRootId, fileNodes.id),
   )).orderBy(desc(fileNodes.trashedAt))
   return toFileNodes(db, userId, rows)
+}
+
+/**
+ * A trashed folder's contents as they were trashed with it, and the trashed folders above it up to
+ * the one that was trashed (which the trash lists).
+ */
+export async function listTrashedFolder(userId: string, id: string): Promise<FileListing> {
+  const access = await resolveFileAccess(db, userId, id)
+  const folder = access?.node
+  if (!folder?.trashedAt || !folder.trashRootId || folder.kind !== 'folder') throw notFound('Folder')
+  const [ancestors, children] = await Promise.all([
+    ancestorsOf(db, userId, folder),
+    db.select().from(fileNodes).where(and(
+      eq(fileNodes.ownerUserId, userId),
+      eq(fileNodes.parentId, folder.id),
+      eq(fileNodes.trashRootId, folder.trashRootId),
+      eq(fileNodes.status, 'ready'),
+    )).orderBy(desc(sql`${fileNodes.kind} = 'folder'`), asc(sql`lower(${fileNodes.name})`)),
+  ])
+  return {
+    folder: toFileNode(folder),
+    ancestors: ancestors.filter((row) => row.trashRootId === folder.trashRootId).map(toFileNode),
+    children: await toFileNodes(db, userId, children),
+  }
 }
 
 /**

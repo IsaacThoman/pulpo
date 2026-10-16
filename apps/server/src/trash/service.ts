@@ -1,10 +1,11 @@
 import { and, desc, eq, inArray, isNotNull, isNull } from 'drizzle-orm'
-import type { FileNode, TrashItem, TrashListing, TrashRetention } from '@pulpo/contracts'
+import type { FileNode, TrashFolderListing, TrashItem, TrashListing, TrashRetention } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import { chats, fileNodes } from '../database/schema.js'
 import { filePurgeAtFor, getTrashRetention, markChatsForPurge, purgeAtFor } from '../chats/trash.js'
 import { chatToFileNode, chatsFolderIdOf } from '../files/chat-items.js'
-import { deleteFileNodes, emptyTrash, listTrash, mutateFileTree, restoreFileNodes } from '../files/tree-service.js'
+import { deleteFileNodes, emptyTrash, listTrash, listTrashedFolder, mutateFileTree, restoreFileNodes } from '../files/tree-service.js'
+import { toFileNodes } from '../files/shortcuts.js'
 import { queueTrashPurge } from '../jobs.js'
 import { notFound } from '../lib/errors.js'
 import { shownWithoutFiles } from '../sidebar/service.js'
@@ -29,14 +30,29 @@ async function trashedFileItems(userId: string, scope: TrashScope): Promise<File
   return scope.files ? nodes : nodes.filter(shownWithoutFiles)
 }
 
+const withDeadline = (node: FileNode, retention: TrashRetention): TrashItem => ({
+  ...node,
+  trashedAt: node.trashedAt!,
+  purgeAt: filePurgeAtFor(new Date(node.trashedAt!), retention)?.toISOString() ?? null,
+})
+
 /** Trashed Files items with their purge deadlines, newest first. */
 export async function listTrashedFiles(userId: string, scope: TrashScope, retention?: TrashRetention): Promise<TrashItem[]> {
   const [nodes, setting] = await Promise.all([trashedFileItems(userId, scope), retention ?? getTrashRetention(userId)])
-  return nodes.map((node) => ({
-    ...node,
-    trashedAt: node.trashedAt!,
-    purgeAt: filePurgeAtFor(new Date(node.trashedAt!), setting)?.toISOString() ?? null,
-  }))
+  return nodes.map((node) => withDeadline(node, setting))
+}
+
+/** A trashed folder's contents, so the trash can be browsed like any other folder. */
+export async function listTrashFolder(userId: string, id: string, scope: TrashScope): Promise<TrashFolderListing> {
+  const [listing, retention] = await Promise.all([listTrashedFolder(userId, id), getTrashRetention(userId)])
+  const children = scope.files ? listing.children : listing.children.filter(shownWithoutFiles)
+  return {
+    folder: withDeadline(listing.folder!, retention),
+    ancestors: listing.ancestors,
+    children: children.map((node) => withDeadline(node, retention)),
+    retention,
+    files: scope.files,
+  }
 }
 
 export async function listAccountTrash(userId: string, scope: TrashScope): Promise<TrashListing> {
@@ -58,24 +74,30 @@ export async function listAccountTrash(userId: string, scope: TrashScope): Promi
   return { items, retention, files: scope.files }
 }
 
-/** Splits ids into trashed Files items (top-level trash entries) and chats. */
+/**
+ * Splits ids into Files items and chats. Without Files, only trashed items the sidebar would show
+ * can be acted on; Files checks the rest (that each item is in the trash) itself.
+ */
 async function partition(userId: string, ids: string[], scope: TrashScope): Promise<{ fileIds: string[]; chatIds: string[] }> {
   const unique = [...new Set(ids)]
-  const rows = await db.select({ id: fileNodes.id }).from(fileNodes)
+  const rows = await db.select().from(fileNodes)
     .where(and(eq(fileNodes.ownerUserId, userId), inArray(fileNodes.id, unique)))
   const nodeIds = new Set(rows.map((row) => row.id))
   const chatIds = unique.filter((id) => !nodeIds.has(id))
-  if (scope.files || !nodeIds.size) return { fileIds: [...nodeIds], chatIds }
-  const allowed = new Set((await trashedFileItems(userId, scope)).map((node) => node.id))
-  if ([...nodeIds].some((id) => !allowed.has(id))) throw notFound('Trashed item')
+  if (!scope.files && rows.length && (await toFileNodes(db, userId, rows)).some((node) => !node.trashedAt || !shownWithoutFiles(node))) {
+    throw notFound('Trashed item')
+  }
   return { fileIds: [...nodeIds], chatIds }
 }
 
-/** Restores items to where they were; chats go back to the sidebar. Returns the restored items. */
-export async function restoreTrashItems(userId: string, ids: string[], scope: TrashScope): Promise<FileNode[]> {
+/**
+ * Restores items, from the trash or from inside trashed folders. Without a destination they go
+ * back where they were (chats to the sidebar); with one, there. Returns the restored items.
+ */
+export async function restoreTrashItems(userId: string, ids: string[], scope: TrashScope, destination?: { parentId: string | null }): Promise<FileNode[]> {
   const { fileIds, chatIds } = await partition(userId, ids, scope)
   // Files restore already brings back chats among the ids, in the same transaction.
-  return restoreFileNodes(userId, [...fileIds, ...chatIds])
+  return restoreFileNodes(userId, [...fileIds, ...chatIds], destination)
 }
 
 async function purgeChats(userId: string, chatIds: string[], reason: string): Promise<void> {

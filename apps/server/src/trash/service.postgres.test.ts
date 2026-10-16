@@ -13,16 +13,16 @@ vi.mock('../agent/controller.js', () => ({ releaseWorkspaceForChat: vi.fn() }))
 vi.mock('../storage/index.js', () => ({ getBlobStore: () => ({ delete: async () => undefined }) }))
 
 const { cleanupFiles, createFolder, trashFileNodes } = await import('../files/tree-service.js')
-const { deleteTrashItems, emptyAccountTrash, listAccountTrash, restoreTrashItems } = await import('./service.js')
+const { deleteTrashItems, emptyAccountTrash, listAccountTrash, listTrashFolder, restoreTrashItems } = await import('./service.js')
 
 const enabled = process.env.PULPO_FILES_TESTS === 'true'
 const DAY = 86_400_000
 let userId: string
 let modelId: string
 
-async function insertBlob(name: string) {
+async function insertBlob(name: string, parentId: string | null = null) {
   const id = randomUUID()
-  await db.insert(fileNodes).values({ id, ownerUserId: userId, kind: 'blob', name, sizeBytes: 1, objectKey: `users/${userId}/files/${id}` })
+  await db.insert(fileNodes).values({ id, ownerUserId: userId, parentId, kind: 'blob', name, sizeBytes: 1, objectKey: `users/${userId}/files/${id}` })
   return id
 }
 
@@ -108,6 +108,56 @@ describe.skipIf(!enabled)('account trash', () => {
     expect(purging?.purgeStartedAt).not.toBeNull()
     expect(queued).toHaveBeenCalledWith(userId, 'trash-delete')
     expect((await listAccountTrash(userId, { files: true })).items).toEqual([])
+  })
+
+  it('opens trashed folders, and restores items from inside them on their own', async () => {
+    const projects = await createFolder(userId, { parentId: null, name: 'Projects' })
+    const drafts = await createFolder(userId, { parentId: projects.id, name: 'Drafts' })
+    const plan = await insertBlob('plan.txt', drafts.id)
+    await trashFileNodes(userId, [projects.id])
+
+    const top = await listTrashFolder(userId, projects.id, { files: true })
+    expect(top.ancestors).toEqual([])
+    expect(top.children.map((node) => node.id)).toEqual([drafts.id])
+    const inner = await listTrashFolder(userId, drafts.id, { files: true })
+    expect(inner.ancestors.map((node) => node.id)).toEqual([projects.id])
+    expect(inner.children.map((node) => [node.id, node.purgeAt])).toEqual([[plan, inner.folder.purgeAt]])
+    // Without Files, the trash shows only what the sidebar would.
+    expect((await listTrashFolder(userId, drafts.id, { files: false })).children).toEqual([])
+
+    // Its folder is still in the trash, so it comes back at the top of My files.
+    const [restored] = await restoreTrashItems(userId, [plan], { files: true })
+    expect(restored).toMatchObject({ id: plan, parentId: null, trashedAt: null })
+    expect((await listAccountTrash(userId, { files: true })).items.map((item) => item.id)).toEqual([projects.id])
+    expect((await listTrashFolder(userId, drafts.id, { files: true })).children).toEqual([])
+    await expect(listTrashFolder(userId, plan, { files: true })).rejects.toMatchObject({ statusCode: 404 })
+  })
+
+  it('restores into a chosen folder, chats included, keeping both names on a clash', async () => {
+    const destination = await createFolder(userId, { parentId: null, name: 'Inbox' })
+    await insertBlob('notes.txt', destination.id)
+    const fileId = await insertBlob('notes.txt')
+    const folder = await createFolder(userId, { parentId: null, name: 'Old' })
+    await trashFileNodes(userId, [fileId, folder.id])
+    const chatId = await trashedChat('Chat')
+
+    const restored = await restoreTrashItems(userId, [fileId, folder.id, chatId], { files: true }, { parentId: destination.id })
+    expect(restored.map((node) => [node.id, node.parentId, node.name]).sort()).toEqual([
+      [fileId, destination.id, 'notes (2).txt'],
+      [folder.id, destination.id, 'Old'],
+      [chatId, destination.id, 'Chat'],
+    ].sort())
+    const [chat] = await db.select().from(chats).where(eq(chats.id, chatId))
+    expect(chat).toMatchObject({ deletedAt: null, folderId: destination.id })
+  })
+
+  it('checks the destination before restoring anything', async () => {
+    const gone = await createFolder(userId, { parentId: null, name: 'Gone' })
+    await trashFileNodes(userId, [gone.id])
+    const chatId = await trashedChat('Chat')
+    await expect(restoreTrashItems(userId, [chatId], { files: true }, { parentId: gone.id })).rejects.toMatchObject({ statusCode: 404 })
+    const [chat] = await db.select().from(chats).where(eq(chats.id, chatId))
+    expect(chat?.deletedAt).not.toBeNull()
   })
 
   it('empties chats and Files items together', async () => {

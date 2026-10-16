@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { fileNodeSchema } from './files.js'
+import { fileNodeIdsSchema, fileNodeSchema } from './files.js'
 
 /**
  * How long trashed items stay recoverable. One setting covers chats and Files items; Files items
@@ -31,3 +31,24 @@ export const trashListingSchema = z.object({
   files: z.boolean(),
 })
 export type TrashListing = z.infer<typeof trashListingSchema>
+
+/**
+ * A trashed folder opened in the trash: its contents as they were trashed with it, and the trashed
+ * folders above it, from the one the trash lists down to its parent.
+ */
+export const trashFolderListingSchema = z.object({
+  folder: trashItemSchema,
+  ancestors: z.array(fileNodeSchema),
+  children: z.array(trashItemSchema),
+  retention: trashRetentionSchema,
+  files: z.boolean(),
+})
+export type TrashFolderListing = z.infer<typeof trashFolderListingSchema>
+
+/**
+ * Restores trashed items, including items inside trashed folders. With `parentId` they all go
+ * into that folder (null is the top of My files), like a move; without it, back where they were.
+ */
+export const restoreTrashItemsSchema = fileNodeIdsSchema.extend({
+  parentId: z.uuid().nullable().optional(),
+})

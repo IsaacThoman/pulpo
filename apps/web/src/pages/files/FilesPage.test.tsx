@@ -179,6 +179,34 @@ describe('menus of built-in folders', () => {
   })
 })
 
+describe('the trash in My files', () => {
+  const menuItem = (name: string) => screen.getByRole('menuitem', { name: new RegExp(`^${name}`) })
+
+  it('is a built-in folder that takes dropped items and opens the trash', async () => {
+    showFiles()
+    const trash = await screen.findByRole('option', { name: /^Trash/ })
+    expect(trash.getAttribute('data-drop-target')).toBe('trash')
+    fireEvent.contextMenu(trash)
+    await screen.findByRole('menuitem', { name: /^Rename/ })
+    for (const name of ['Pin', 'Rename', 'Color and icon…', 'Move to…', 'Cut', 'Move to trash']) {
+      expect(menuItem(name).getAttribute('aria-disabled')).toBe('true')
+    }
+    // It is not stored in Files, so there is nothing to copy or duplicate.
+    expect(screen.queryByRole('menuitem', { name: /^Copy/ })).toBeNull()
+    expect(screen.queryByRole('menuitem', { name: /^Duplicate/ })).toBeNull()
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' })
+    await doubleClick('Trash')
+    expect(screen.getByTestId('location').textContent).toBe('/files/trash')
+  })
+
+  it('opens in the panel like any folder', async () => {
+    useSidePanel.setState({ content: { kind: 'folder', id: null } })
+    showFiles(true)
+    await doubleClick('Trash')
+    expect(useSidePanel.getState().content).toEqual({ kind: 'folder', id: 'trash' })
+  })
+})
+
 describe('items an agent suggested', () => {
   it.each(['list', 'grid'])('are marked in %s view and can be accepted or rejected from their menu', async (view) => {
     localStorage.setItem('pulpo.files.view', view)

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent, type PointerEvent, type ReactNode } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { FILE_SCOPE_ROOT, MAX_CHAT_FILE_SCOPES, type FileFolderLayout, type FileGridPosition, type FileListing, type FileNode } from '@pulpo/contracts'
+import { useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query'
+import { FILE_SCOPE_ROOT, MAX_CHAT_FILE_SCOPES, type FileFolderLayout, type FileGridPosition, type FileListing, type FileNode, type TrashItem } from '@pulpo/contracts'
 import {
   Archive,
   ArrowDown,
@@ -27,6 +27,7 @@ import {
   Pin,
   PinOff,
   Plus,
+  RotateCcw,
   Scissors,
   Share2,
   SquareArrowOutUpRight,
@@ -79,7 +80,7 @@ import {
   type FileSelection,
   type NavigationKey,
 } from '@/features/files/browser/selection'
-import { readFileSort, sortFileNodes, toggleFileSort, uniqueChildName, writeFileSort, type FileSort, type FileSortKey } from '@/features/files/browser/sort'
+import { readFileSort, sortFileNodes, toggleFileSort, TRASH_SORT, uniqueChildName, writeFileSort, type FileSort, type FileSortKey } from '@/features/files/browser/sort'
 import { hasPrimaryModifier, isAppleShortcut, isEditableTarget, shortcutLabel } from '@/features/files/browser/shortcuts'
 import { useSidePanel, type PanelContent } from '@/features/side-panel/store'
 import { AgentMenuItems, OpenChatToLeftItem, SplitViewButton } from '@/features/side-panel/AgentActions'
@@ -93,6 +94,11 @@ import { archiveSidebarSelection, createShortcutInteractively, pinSidebarItems, 
 import { copyChatShareLink, duplicateChats } from '@/features/chat/chat-actions'
 import { ChatExpiryMenuItem } from '@/features/chat/ChatExpiryMenuItem'
 import { useChat } from '@/stores/chat'
+import { folderPath, isBuiltInFolder, isTrashFolder, TRASH_FOLDER_ID, trashFolderNode, trashFolderRef, trashLocation } from '@/features/trash/folder'
+import { TrashBanner } from '@/features/trash/TrashBanner'
+import { TrashDeleteDialog, type PendingTrashDeletion } from '@/features/trash/TrashDeleteDialog'
+import { useTrashOperations } from '@/features/trash/use-trash-operations'
+import { useTrashView } from '@/features/trash/use-trash-view'
 
 const VIEW_STORAGE_KEY = 'pulpo.files.view'
 const UPLOAD_CONCURRENCY = 3
@@ -171,36 +177,65 @@ export function FilesPage() {
   return <FilesBrowser folderId={folderId ?? null} layout="page" />
 }
 
-/** A folder in the side panel, beside a chat or another view. */
+/** The trash, or a trashed folder in it, browsed like any other folder. */
+export function TrashFolderPage() {
+  const { folderId } = useParams()
+  return <FilesBrowser folderId={trashFolderRef(folderId ?? null)} layout="page" />
+}
+
+/** A folder in the side panel, beside a chat or another view. `folderId` may be a trash reference. */
 export function FolderPanelView({ folderId }: { folderId: string | null }) {
   return <FilesBrowser folderId={folderId} layout="panel" />
 }
 
+/**
+ * A Files folder, or the trash: a built-in folder of My files whose items are restored by dragging
+ * them into a folder (or the sidebar), and which takes items dragged into it. `folderId` is a
+ * folder id, null for My files, or a trash reference (features/trash/folder).
+ */
 function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: FilesViewPlace['layout'] }) {
   const panel = layout === 'panel'
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const userId = useAuth((state) => state.user?.id)
   const filesEnabled = useAuth((state) => state.filesEnabled)
-  const listing = useQuery({
+  const trash = trashLocation(folderId)
+  const inTrash = trash !== null
+  const folderListing = useQuery({
     queryKey: folderQueryKey(userId, folderId),
     queryFn: () => fetchFolder(folderId),
-    enabled: Boolean(userId && filesEnabled),
+    enabled: Boolean(userId && filesEnabled && !inTrash),
   })
+  const trashListing = useTrashView(userId, trash)
+  const listing: UseQueryResult<FileListing> = inTrash ? trashListing : folderListing
+  const trashView = inTrash ? trashListing.data : undefined
   const place = useMemo<FilesViewPlace>(() => ({ layout, view: { kind: 'folder', id: folderId } }), [folderId, layout])
   const agentItem = useMemo(() => ({ id: folderId ?? FILE_SCOPE_ROOT }), [folderId])
-  usePublishFilesView(place, filesEnabled && !listing.isError ? agentItem : null)
+  // Trashed items are not files the agent can work on.
+  usePublishFilesView(place, filesEnabled && !inTrash && !listing.isError ? agentItem : null)
   const ops = useFileOperations()
+  const trashOps = useTrashOperations()
   const resolveFileSuggestion = useResolveFileSuggestion()
   const sidebar = useSidebarState().data
   const clip = useFileClipboard((state) => state.clip)
   const [view, setView] = useState<FilesView>(readView)
-  const [sort, setSort] = useState<FileSort>(readFileSort)
+  const [fileSort, setFileSort] = useState<FileSort>(readFileSort)
+  const [trashSort, setTrashSort] = useState<FileSort>(() => readFileSort(TRASH_SORT))
+  const sort = inTrash ? trashSort : fileSort
   const [selection, setSelection] = useState<FileSelection>(EMPTY_SELECTION)
   const [keyboardFocus, setKeyboardFocus] = useState(false)
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [menu, setMenu] = useState<MenuState | null>(null)
   const [moving, setMoving] = useState<FileNode[] | null>(null)
+  const [restoring, setRestoring] = useState<FileNode[] | null>(null)
+  const [pendingDeletion, setPendingDeletion] = useState<PendingTrashDeletion | null>(null)
+  // Trash deadlines count down while the trash is open.
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (!inTrash) return
+    const timer = window.setInterval(() => setNow(Date.now()), 30_000)
+    return () => window.clearInterval(timer)
+  }, [inTrash])
   const [uploads, setUploads] = useState<UploadEntry[]>([])
   const [dropTarget, setDropTarget] = useState<string | null>(null)
   const [marquee, setMarquee] = useState<Marquee | null>(null)
@@ -210,14 +245,20 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
   const lastPointerType = useRef('mouse')
   const typeahead = useRef({ text: '', at: 0 })
 
-  const nodes = useMemo(() => sortFileNodes(listing.data?.children ?? [], sort), [listing.data, sort])
+  const trashName = ui("Trash")
+  const nodes = useMemo(() => {
+    if (inTrash) return sortFileNodes((listing.data?.children ?? []) as TrashItem[], sort, (node) => node.trashedAt)
+    // The trash sits at the top of My files with the other built-in folders.
+    const children = folderId === null && listing.data ? [...listing.data.children, trashFolderNode(trashName)] : listing.data?.children ?? []
+    return sortFileNodes(children, sort)
+  }, [folderId, inTrash, listing.data, sort, trashName])
 
   // Grid view is a canvas: items keep the places they are dragged to, per folder and synced.
   const layoutKey = folderLayoutQueryKey(userId, folderId)
   const layoutQuery = useQuery({
     queryKey: layoutKey,
     queryFn: () => fetchFolderLayout(folderId),
-    enabled: Boolean(userId && filesEnabled && view === 'grid' && !listing.isError),
+    enabled: Boolean(userId && filesEnabled && !inTrash && view === 'grid' && !listing.isError),
   })
   const snapToGrid = layoutQuery.data?.snapToGrid ?? true
   const [canvasWidth, setCanvasWidth] = useState(0)
@@ -284,8 +325,13 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
 
   const changeSort = (key: FileSortKey) => {
     const next = toggleFileSort(sort, key)
-    setSort(next)
-    writeFileSort(next)
+    if (inTrash) {
+      setTrashSort(next)
+      writeFileSort(next, TRASH_SORT.storageKey)
+    } else {
+      setFileSort(next)
+      writeFileSort(next)
+    }
   }
 
   const goMain = useMainNavigate()
@@ -302,7 +348,9 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
       openBeside(content, goMain)
     }
   }
-  const nodeContent = (node: FileNode): PanelContent => node.kind === 'folder' ? { kind: 'folder', id: node.id } : { kind: 'file', id: node.id }
+  const nodeContent = (node: FileNode): PanelContent => node.kind === 'folder'
+    ? { kind: 'folder', id: inTrash ? trashFolderRef(node.id) : node.id }
+    : { kind: 'file', id: node.id }
   const elsewhereLabel = panel ? ui("Open in main view") : ui("Open to the right")
   // Without room for a split there is no "side"; Open already shows it in the main view.
   const splitAvailable = useSidePanel((state) => state.splitAvailable)
@@ -310,14 +358,20 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
   const ElsewhereIcon = panel ? Maximize2 : PanelRight
   const elsewhereShortcut = isAppleShortcut() ? '⌥ Click' : 'Alt+Click'
 
-  /** Shows a folder here: the page follows the route, the panel keeps its own place. */
+  /** Shows a folder (or a trash reference) here: the page follows the route, the panel keeps its own place. */
   const showFolder = (id: string | null) => {
     if (panel) useSidePanel.getState().open({ kind: 'folder', id })
-    else navigate(id ? `/files/f/${id}` : '/files')
+    else navigate(folderPath(id))
   }
 
   /** Opens an item here: folders browse in place, files fill this view with their editor or preview. */
   const open = (node: FileNode): void => {
+    // In the trash, folders can be looked through; anything else has to be restored first.
+    if (inTrash) {
+      if (node.kind === 'folder') showFolder(trashFolderRef(node.id))
+      else ops.notify(uit`"${node.name}" is in the trash. Restore it to open it.`)
+      return
+    }
     // A shortcut opens what it points at, wherever that is.
     if (node.kind === 'shortcut') {
       if (!node.target?.available) ops.notify(ui("The item this shortcut opens is in the trash"), 'error')
@@ -341,6 +395,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
    * always browse in place.
    */
   const openFromDoubleClick = (node: FileNode, event: MouseEvent) => {
+    if (inTrash) { open(node); return }
     const opens = resolveShortcut(node)
     if (opens.kind === 'folder' || opens.kind === 'chat' || opens.kind === 'shortcut') { open(node); return }
     // A Cmd/Ctrl-click toggles selection, so the pair of clicks would otherwise leave it unselected.
@@ -416,14 +471,37 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
   }, [pageRequest, requestStatus])
 
   const trashSelection = async (targets = selectedNodes) => {
-    if (!targets.length) return
+    if (!targets.length || targets.some(isBuiltInFolder)) return
     setSelection(EMPTY_SELECTION)
     await ops.trash(targets)
   }
 
+  const restoreSelection = async (targets = selectedNodes, destination?: { parentId: string | null }) => {
+    if (!targets.length) return
+    setSelection(EMPTY_SELECTION)
+    await trashOps.restore(targets, destination)
+  }
+
+  const confirmDeletion = () => {
+    const target = pendingDeletion
+    setPendingDeletion(null)
+    if (!target) return
+    setSelection(EMPTY_SELECTION)
+    if (target.kind === 'items') void trashOps.deleteForever(target.items)
+    else void trashOps.empty()
+  }
+
+  /** Restores the trashed folder being shown, then shows it where it went. */
+  const restoreShownFolder = async () => {
+    if (!trashView?.folder) return
+    const [restored] = await trashOps.restore([trashView.folder]) ?? []
+    if (restored) showFolder(restored.id)
+  }
+
   const setClipboard = (mode: 'cut' | 'copy', targets = selectedNodes) => {
-    // Built-in folders cannot move, so they cannot be cut.
-    if (!targets.length || mode === 'cut' && targets.some((node) => node.systemRole)) return
+    // Built-in folders cannot move, so they cannot be cut; the trash cannot be copied. Trashed
+    // items can only be cut: pasting restores them into the folder.
+    if (!targets.length || targets.some(isTrashFolder) || mode === 'cut' && targets.some(isBuiltInFolder) || mode === 'copy' && inTrash) return
     useFileClipboard.setState({ clip: { mode, nodes: targets } })
     if (mode === 'copy') {
       ops.notify(targets.length === 1 ? uit`Copied "${targets[0]!.name}"` : uit`Copied ${targets.length} items`)
@@ -432,10 +510,11 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
 
   const paste = async () => {
     const current = useFileClipboard.getState().clip
-    if (!current) return
+    if (!current || inTrash) return
     if (current.mode === 'cut') {
       useFileClipboard.setState({ clip: null })
-      await ops.move(current.nodes, folderId)
+      if (current.nodes.some((node) => node.trashedAt)) await trashOps.restore(current.nodes, { parentId: folderId })
+      else await ops.move(current.nodes, folderId)
     } else {
       const created = await ops.copy(current.nodes, folderId)
       if (created?.length) setSelection({ ids: new Set(created.map((node) => node.id)), anchor: created[0]!.id, focus: created.at(-1)!.id })
@@ -444,6 +523,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
 
   /** Files are copied; chats are duplicated with their history, as from the chat menu. */
   const duplicate = async (targets = selectedNodes) => {
+    if (inTrash || targets.some(isTrashFolder)) return
     const chats = targets.filter((node) => node.kind === 'chat').map((node) => ({ id: node.id, title: node.name }))
     const [created, chatCopies] = await Promise.all([ops.copy(targets, folderId, 'duplicate'), duplicateChats(chats)])
     if (chatCopies.length) await ops.refresh()
@@ -453,7 +533,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
 
   const startRename = () => {
     const target = selection.focus && selection.ids.has(selection.focus) ? byId.get(selection.focus) : selectedNodes[0]
-    if (target && selectedNodes.length === 1 && !target.systemRole) setRenamingId(target.id)
+    if (target && selectedNodes.length === 1 && !inTrash && !isBuiltInFolder(target)) setRenamingId(target.id)
   }
 
   const gridColumns = () => {
@@ -476,7 +556,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
 
   // One window listener that always sees the latest state, like a desktop file manager.
   const handleKey = (event: KeyboardEvent) => {
-    if (event.defaultPrevented || isEditableTarget(event.target) || renamingId || moving || menu) return
+    if (event.defaultPrevented || isEditableTarget(event.target) || renamingId || moving || restoring || pendingDeletion || menu) return
     if (!ownsKeys(layout, rootRef.current)) return
     const mod = hasPrimaryModifier(event)
     const key = event.key
@@ -491,6 +571,8 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
     }
     if (mod && key.toLowerCase() === 'a') { event.preventDefault(); setSelection(selectAll(order)); return }
     if (mod && key.toLowerCase() === 'x') { event.preventDefault(); setClipboard('cut'); return }
+    // The trash only lists items: they can be restored, cut to paste elsewhere, or deleted.
+    if (mod && inTrash) return
     if (mod && key.toLowerCase() === 'c') { event.preventDefault(); setClipboard('copy'); return }
     if (mod && key.toLowerCase() === 'v') { event.preventDefault(); void paste(); return }
     if (mod && key.toLowerCase() === 'd') { event.preventDefault(); void duplicate(); return }
@@ -501,9 +583,10 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
       if (target) { event.preventDefault(); open(target) }
       return
     }
-    if (key === 'F2') { event.preventDefault(); startRename(); return }
+    if (key === 'F2' && !inTrash) { event.preventDefault(); startRename(); return }
     if (key === 'Delete' || key === 'Backspace') {
-      if (selectedNodes.length && !selectedNodes.some((node) => node.systemRole)) { event.preventDefault(); void trashSelection() }
+      if (inTrash && selectedNodes.length) { event.preventDefault(); setPendingDeletion({ kind: 'items', items: selectedNodes }) }
+      else if (selectedNodes.length && !selectedNodes.some(isBuiltInFolder)) { event.preventDefault(); void trashSelection() }
       return
     }
     if (key === ' ') {
@@ -588,7 +671,8 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
 
   const drag = useItemDrag({
     tile: view === 'grid',
-    canvas: view === 'grid' ? {
+    // The trash keeps no layout of its own.
+    canvas: view === 'grid' && !inTrash ? {
       // The whole scrolling area below the header, including empty space past the items.
       element: () => bodyRef.current?.closest<HTMLElement>('[data-slot="scroll-area-viewport"]') ?? null,
       onMove: (dragged, delta) => {
@@ -596,30 +680,43 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
         saveLayout({ positions: Object.fromEntries(moveInGrid(gridPositions, dragged.map((node) => node.id), delta, snapToGrid)) })
       },
     } : undefined,
+    // The trash itself stays where it is.
     resolveNodes: (node) => {
-      if (selection.ids.has(node.id)) return nodes.filter((item) => selection.ids.has(item.id))
+      if (selection.ids.has(node.id)) return nodes.filter((item) => selection.ids.has(item.id) && !isTrashFolder(item))
       setSelection(selectOnly(node.id))
       return [node]
     },
+    // Out of the trash, items restore into any folder (or the sidebar); into it, they are trashed.
     // Dropping into the folder the items already live in, or into one of them, does nothing.
-    canDrop: (targetId, dragged) => !dragged.some((node) => node.id === targetId) && !dragged.every((node) => node.parentId === targetId),
-    onDrop: (dragged, targetId) => { void ops.move(dragged, targetId) },
+    canDrop: (targetId, dragged) => {
+      const intoTrash = trashLocation(targetId) !== null
+      if (inTrash) return !intoTrash
+      if (intoTrash) return !dragged.some(isBuiltInFolder)
+      return !dragged.some((node) => node.id === targetId) && !dragged.every((node) => node.parentId === targetId)
+    },
+    onDrop: (dragged, targetId) => {
+      if (inTrash) void restoreSelection(dragged, { parentId: targetId })
+      else if (trashLocation(targetId)) void trashSelection(dragged)
+      else void ops.move(dragged, targetId)
+    },
   })
 
   /** Moves items dragged out of the sidebar (chats, folders, files, or shortcuts) into `targetId`. */
   const dropSidebarItem = (event: DragEvent, targetId: string | null) => {
     const nodes = readSidebarItems(event.dataTransfer).filter((node) => node.id !== targetId)
-    if (nodes.length) void ops.move(nodes, targetId)
+    if (!nodes.length) return
+    if (trashLocation(targetId)) void ops.trash(nodes)
+    else void ops.move(nodes, targetId)
   }
 
   /**
    * Folder rows and breadcrumbs accept files dropped in from the operating system, and items
-   * dragged out of the sidebar.
+   * dragged out of the sidebar. The trash takes only items from the sidebar.
    */
   const dropProps = (targetId: string | null, key = targetId ?? 'root'): FileDropHandlers => ({
     onDragOver: (event) => {
       const fromSidebar = isSidebarItemDrag(event.dataTransfer)
-      if (!fromSidebar && !isFileDrag(event)) return
+      if (!fromSidebar && (!isFileDrag(event) || trashLocation(targetId))) return
       event.preventDefault()
       event.stopPropagation()
       event.dataTransfer.dropEffect = fromSidebar ? 'move' : 'copy'
@@ -630,7 +727,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
     },
     onDrop: (event) => {
       const fromSidebar = isSidebarItemDrag(event.dataTransfer)
-      if (!fromSidebar && !isFileDrag(event)) return
+      if (!fromSidebar && (!isFileDrag(event) || trashLocation(targetId))) return
       event.preventDefault()
       event.stopPropagation()
       setDropTarget(null)
@@ -641,7 +738,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
 
   const pageDrop = {
     onDragOver: (event: DragEvent) => {
-      if (!isFileDrag(event) && !isSidebarItemDrag(event.dataTransfer)) return
+      if (!isSidebarItemDrag(event.dataTransfer) && (!isFileDrag(event) || inTrash)) return
       event.preventDefault()
       setDropTarget('page')
     },
@@ -655,7 +752,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
         dropSidebarItem(event, folderId)
         return
       }
-      if (!isFileDrag(event)) return
+      if (!isFileDrag(event) || inTrash) return
       event.preventDefault()
       setDropTarget(null)
       void upload([...event.dataTransfer.files])
@@ -666,7 +763,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
     onPointerDown: (event: PointerEvent) => {
       lastPointerType.current = event.pointerType
       setKeyboardFocus(false)
-      if (renamingId !== node.id) drag.onPointerDown(event, node)
+      if (renamingId !== node.id && !isTrashFolder(node)) drag.onPointerDown(event, node)
     },
     onClick: (event: MouseEvent) => {
       if (renamingId === node.id || drag.consumeClick()) return
@@ -675,7 +772,8 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
       // Alt/Option-click opens an item in the other view, like "Open to the right" in editors. A chat
       // opens to the left, with this folder moved beside it; in the panel, chats already open there.
       const opens = resolveShortcut(node)
-      if (event.altKey && (opens.kind === 'chat' ? !panel && splitAvailable : opens.kind !== 'shortcut')) {
+      const elsewhere = inTrash ? opens.kind === 'folder' : opens.kind === 'chat' ? !panel && splitAvailable : opens.kind !== 'shortcut'
+      if (event.altKey && elsewhere) {
         setSelection(selectOnly(node.id))
         if (opens.kind === 'chat') splitView(place.view, goMain, opens.id)
         else openElsewhere(nodeContent(opens))
@@ -693,7 +791,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
       const rect = event.currentTarget.getBoundingClientRect()
       openMenuAt({ x: rect.left, y: rect.bottom }, node)
     },
-    dropHandlers: dropFolderOf(node) ? dropProps(dropFolderOf(node)!, node.id) : undefined,
+    dropHandlers: dropFolderOf(node) && !inTrash ? dropProps(dropFolderOf(node)!, node.id) : undefined,
     onRenameCommit: async (name: string) => {
       const ok = await ops.rename(node, name)
       if (ok) setRenamingId(null)
@@ -702,7 +800,8 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
     onRenameCancel: () => setRenamingId(null),
   })
 
-  if (!filesEnabled) {
+  // Without Files, the trash still holds chats and sidebar folders.
+  if (!filesEnabled && !inTrash) {
     return (
       <div className="grid h-full place-items-center p-8">
         <div className="max-w-md rounded-xl border p-6 text-center">
@@ -716,11 +815,13 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
 
   const single = selectedNodes.length === 1 ? selectedNodes[0]! : null
   const canDownload = selectedNodes.length > 0 && selectedNodes.every((node) => node.kind !== 'folder' && node.kind !== 'chat')
-  // Chats and shortcuts are not files the agent can be given, and built-in folders stay where they are.
-  const fileSelection = selectedNodes.filter((node) => node.kind !== 'chat' && node.kind !== 'shortcut')
+  // Chats, shortcuts, and the trash are not files the agent can be given, and built-in folders stay where they are.
+  const fileSelection = selectedNodes.filter((node) => node.kind !== 'chat' && node.kind !== 'shortcut' && !isTrashFolder(node))
   const hasChats = selectedNodes.some((node) => node.kind === 'chat')
   const trashLabel = hasChats && instantRetention && selectedNodes.every((node) => node.kind === 'chat') ? ui("Delete") : ui("Move to trash")
-  const hasSystem = selectedNodes.some((node) => node.systemRole)
+  const hasSystem = selectedNodes.some(isBuiltInFolder)
+  // The trash is not stored in Files, so it cannot be pinned, copied, or given a shortcut.
+  const hasTrash = selectedNodes.some(isTrashFolder)
   // Files and folders in the selection can be given a color and icon; chats and shortcuts are left out.
   const canStyle = selectedNodes.some(hasAppearance)
   const canUseAgent = fileSelection.length > 0 && fileSelection.length <= MAX_CHAT_FILE_SCOPES
@@ -771,24 +872,24 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
           <Download /> {ui("Download")}
         </DropdownMenuItem>
       )}
-      <DropdownMenuItem disabled={selectedNodes.some((node) => node.systemRole === 'chats')} onSelect={() => void pinSidebarItems(selectedNodes.map((node) => node.id), pinning, selectedNodes)}>
+      <DropdownMenuItem disabled={hasTrash || selectedNodes.some((node) => node.systemRole === 'chats')} onSelect={() => void pinSidebarItems(selectedNodes.map((node) => node.id), pinning, selectedNodes)}>
         {pinning ? <Pin /> : <PinOff />} {pinning ? ui("Pin") : ui("Unpin")}
       </DropdownMenuItem>
       {/* Built-in folders list the actions they do not allow, unavailable, so every folder's menu reads the same. */}
-      {single && <DropdownMenuItem disabled={Boolean(single.systemRole)} onSelect={() => setRenamingId(single.id)}><Pencil /> {ui("Rename")}<DropdownMenuShortcut>{shortcutLabel('F2')}</DropdownMenuShortcut></DropdownMenuItem>}
+      {single && <DropdownMenuItem disabled={isBuiltInFolder(single)} onSelect={() => setRenamingId(single.id)}><Pencil /> {ui("Rename")}<DropdownMenuShortcut>{shortcutLabel('F2')}</DropdownMenuShortcut></DropdownMenuItem>}
       {canStyle && <DropdownMenuItem disabled={hasSystem} onSelect={() => editAppearance(selectedNodes)}><Palette /> {ui("Color and icon…")}</DropdownMenuItem>}
       <DropdownMenuItem disabled={hasSystem} onSelect={() => setMoving(selectedNodes)}><FolderInput /> {ui("Move to…")}</DropdownMenuItem>
       {sidebar && <DropdownMenuItem disabled={hasSystem} onSelect={archiveSelection}><Archive /> {ui("Move to archive")}</DropdownMenuItem>}
-      {single && single.kind !== 'shortcut' && (
+      {single && single.kind !== 'shortcut' && !hasTrash && (
         <DropdownMenuItem onSelect={() => void createShortcutInteractively(single.kind === 'chat' ? 'chat' : 'file', single.id, folderId).then(() => ops.refresh()).catch(ops.fail)}>
           <SquareArrowOutUpRight /> {ui("Create shortcut…")}
         </DropdownMenuItem>
       )}
       {single?.kind === 'chat' && <FilesChatMenuItems chatId={single.id} />}
-      <DropdownMenuItem onSelect={() => void duplicate()}><CopyPlus /> {ui("Duplicate")}<DropdownMenuShortcut>{shortcutLabel('D', { mod: true })}</DropdownMenuShortcut></DropdownMenuItem>
+      {!hasTrash && <DropdownMenuItem onSelect={() => void duplicate()}><CopyPlus /> {ui("Duplicate")}<DropdownMenuShortcut>{shortcutLabel('D', { mod: true })}</DropdownMenuShortcut></DropdownMenuItem>}
       <DropdownMenuSeparator />
       <DropdownMenuItem disabled={hasSystem} onSelect={() => setClipboard('cut')}><Scissors /> {ui("Cut")}<DropdownMenuShortcut>{shortcutLabel('X', { mod: true })}</DropdownMenuShortcut></DropdownMenuItem>
-      {!hasChats && <DropdownMenuItem onSelect={() => setClipboard('copy')}><Copy /> {ui("Copy")}<DropdownMenuShortcut>{shortcutLabel('C', { mod: true })}</DropdownMenuShortcut></DropdownMenuItem>}
+      {!hasChats && !hasTrash && <DropdownMenuItem onSelect={() => setClipboard('copy')}><Copy /> {ui("Copy")}<DropdownMenuShortcut>{shortcutLabel('C', { mod: true })}</DropdownMenuShortcut></DropdownMenuItem>}
       <DropdownMenuSeparator />
       <DropdownMenuItem variant="destructive" disabled={hasSystem} onSelect={() => void trashSelection()}><Trash2 /> {trashLabel}<DropdownMenuShortcut>⌫</DropdownMenuShortcut></DropdownMenuItem>
     </>
@@ -810,6 +911,35 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
     </>
   )
 
+  const restoreTo = trashView?.files ? () => setRestoring(selectedNodes) : undefined
+  const trashItemMenu = (
+    <>
+      {selectedNodes.length > 1 && <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">{uit`${selectedNodes.length} items selected`}</DropdownMenuLabel>}
+      {single?.kind === 'folder' && <DropdownMenuItem onSelect={() => open(single)}><Eye /> {ui("Open")}<DropdownMenuShortcut>↵</DropdownMenuShortcut></DropdownMenuItem>}
+      {single?.kind === 'folder' && canOpenElsewhere && (
+        <DropdownMenuItem onSelect={() => openElsewhere(nodeContent(single))}><ElsewhereIcon /> {elsewhereLabel}<DropdownMenuShortcut>{elsewhereShortcut}</DropdownMenuShortcut></DropdownMenuItem>
+      )}
+      {single?.kind === 'folder' && <DropdownMenuSeparator />}
+      <DropdownMenuItem onSelect={() => void restoreSelection()}><RotateCcw /> {ui("Restore")}</DropdownMenuItem>
+      {restoreTo && <DropdownMenuItem onSelect={restoreTo}><FolderInput /> {ui("Restore to…")}</DropdownMenuItem>}
+      <DropdownMenuItem onSelect={() => setClipboard('cut')}><Scissors /> {ui("Cut")}<DropdownMenuShortcut>{shortcutLabel('X', { mod: true })}</DropdownMenuShortcut></DropdownMenuItem>
+      <DropdownMenuSeparator />
+      <DropdownMenuItem variant="destructive" onSelect={() => setPendingDeletion({ kind: 'items', items: selectedNodes })}>
+        <Trash2 /> {ui("Delete forever")}<DropdownMenuShortcut>⌫</DropdownMenuShortcut>
+      </DropdownMenuItem>
+    </>
+  )
+  const trashBackgroundMenu = (
+    <>
+      <DropdownMenuItem disabled={!nodes.length} onSelect={() => setSelection(selectAll(order))}>
+        <SquareDashedMousePointer /> {ui("Select all")}<DropdownMenuShortcut>{shortcutLabel('A', { mod: true })}</DropdownMenuShortcut>
+      </DropdownMenuItem>
+      <DropdownMenuItem variant="destructive" disabled={!trash?.folderId && !nodes.length} onSelect={() => setPendingDeletion({ kind: 'all' })}>
+        <Trash2 /> {ui("Empty trash")}
+      </DropdownMenuItem>
+    </>
+  )
+
   let body: ReactNode
   if (listing.isPending) {
     body = <div className="grid h-48 place-items-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
@@ -817,8 +947,16 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
     body = (
       <div className="rounded-xl border p-8 text-center text-sm">
         <p className="text-muted-foreground">{filesErrorMessage(listing.error)}</p>
-        <Button variant="outline" size="sm" className="mt-4" onClick={() => showFolder(null)}>{ui("Back to My files")}</Button>
+        {trash && !trash.folderId
+          ? <Button variant="outline" size="sm" className="mt-4" onClick={() => void listing.refetch()}>{ui("Try again")}</Button>
+          : <Button variant="outline" size="sm" className="mt-4" onClick={() => showFolder(trash ? TRASH_FOLDER_ID : null)}>{trash ? ui("Back to trash") : ui("Back to My files")}</Button>}
       </div>
+    )
+  } else if (!nodes.length && inTrash) {
+    body = (
+      <p className="rounded-xl border border-dashed p-10 text-center text-sm text-muted-foreground">
+        {trash?.folderId ? ui("This folder is empty") : ui("The trash is empty")}
+      </p>
     )
   } else if (!nodes.length) {
     body = (
@@ -841,6 +979,8 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
         cut={cutIds.has(node.id)}
         dragging={drag.draggingIds.has(node.id)}
         dropActive={dropTarget === node.id || (drag.activeTarget !== null && drag.activeTarget === dropFolderOf(node))}
+        droppable={!inTrash}
+        trash={inTrash ? { trashedAt: (node as TrashItem).trashedAt, purgeAt: (node as TrashItem).purgeAt, now } : undefined}
         renaming={renamingId === node.id}
         {...itemHandlers(node)}
       />
@@ -856,7 +996,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
         ref={itemsRef}
         role="listbox"
         aria-multiselectable
-        aria-label={ui("Files")}
+        aria-label={inTrash ? ui("Trash") : ui("Files")}
         className="relative"
         style={{ width: Math.max(canvasWidth, width + GRID_CELL.width), height: height + GRID_CELL.height }}
       >
@@ -866,12 +1006,21 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
       <div className="@container overflow-hidden rounded-xl border">
         <div className="hidden gap-3 border-b bg-muted/40 px-3 py-2 text-xs font-medium text-muted-foreground @lg:grid @lg:grid-cols-[minmax(0,1fr)_6rem_2.5rem] @2xl:grid-cols-[minmax(0,1fr)_9rem_6.5rem_6rem_2.5rem]">
           <SortHeader label={ui("Name")} sortKey="name" sort={sort} onSort={changeSort} />
-          <SortHeader label={ui("Modified")} sortKey="modified" sort={sort} onSort={changeSort} className="hidden @2xl:flex" />
-          <SortHeader label={ui("Kind")} sortKey="kind" sort={sort} onSort={changeSort} className="hidden @2xl:flex" />
+          {inTrash ? (
+            <>
+              <SortHeader label={ui("Trashed")} sortKey="modified" sort={sort} onSort={changeSort} className="hidden @2xl:flex" />
+              <span className="hidden truncate @2xl:block">{ui("Deletion")}</span>
+            </>
+          ) : (
+            <>
+              <SortHeader label={ui("Modified")} sortKey="modified" sort={sort} onSort={changeSort} className="hidden @2xl:flex" />
+              <SortHeader label={ui("Kind")} sortKey="kind" sort={sort} onSort={changeSort} className="hidden @2xl:flex" />
+            </>
+          )}
           <SortHeader label={ui("Size")} sortKey="size" sort={sort} onSort={changeSort} className="justify-end" />
           <span />
         </div>
-        <div ref={itemsRef} role="listbox" aria-multiselectable aria-label={ui("Files")} className="divide-y">{items}</div>
+        <div ref={itemsRef} role="listbox" aria-multiselectable aria-label={inTrash ? ui("Trash") : ui("Files")} className="divide-y">{items}</div>
       </div>
     )
   }
@@ -879,7 +1028,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
 
   const crumb = (id: string | null, key: string, isCurrent: boolean, content: ReactNode, className: string) => (
     <Link
-      to={id ? `/files/f/${id}` : '/files'}
+      to={folderPath(id)}
       {...dropProps(id, key)}
       data-drop-target={id ?? 'root'}
       draggable={false}
@@ -895,13 +1044,24 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
       {content}
     </Link>
   )
+  // In the trash: My files › Trash › the trashed folders down to this one. Without Files, the trash stands alone.
+  const atTrashRoot = inTrash && !trash.folderId
   const path = (
     <nav aria-label={ui("Folder path")} className="flex min-w-0 items-center gap-0.5 overflow-hidden text-xs text-muted-foreground">
-      {crumb(null, 'root', false, <><HardDrive className="size-3" />{ui("My files")}</>, 'flex shrink-0 items-center gap-1 rounded px-1 hover:bg-accent hover:text-foreground')}
+      {filesEnabled && crumb(null, 'root', false, <><HardDrive className="size-3" />{ui("My files")}</>, 'flex shrink-0 items-center gap-1 rounded px-1 hover:bg-accent hover:text-foreground')}
+      {inTrash && (
+        <span className="flex shrink-0 items-center gap-0.5">
+          {filesEnabled && <ChevronRight className="size-3 shrink-0" />}
+          {crumb(TRASH_FOLDER_ID, `crumb:${TRASH_FOLDER_ID}`, atTrashRoot, <><Trash2 className="size-3" />{ui("Trash")}</>, cn(
+            'flex items-center gap-1 rounded px-1 hover:bg-accent hover:text-foreground',
+            atTrashRoot && 'font-medium text-foreground',
+          ))}
+        </span>
+      )}
       {trail.map((folder, index) => (
         <span key={folder.id} className="flex min-w-0 items-center gap-0.5">
           <ChevronRight className="size-3 shrink-0" />
-          {crumb(folder.id, `crumb:${folder.id}`, index === trail.length - 1, folder.name, cn(
+          {crumb(inTrash ? trashFolderRef(folder.id) : folder.id, `crumb:${folder.id}`, index === trail.length - 1, folder.name, cn(
             'truncate rounded px-1 hover:bg-accent hover:text-foreground',
             index === trail.length - 1 && 'font-medium text-foreground',
           ))}
@@ -914,11 +1074,19 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
       <div role="toolbar" aria-label={ui("Selection")} className="flex h-8 shrink-0 items-center gap-0.5 rounded-lg border bg-muted px-0.5">
         <SelectionAction label={ui("Clear selection")} onClick={() => setSelection(EMPTY_SELECTION)}><X /></SelectionAction>
         <span className="px-1.5 text-sm font-medium whitespace-nowrap tabular-nums">{selectedNodes.length === 1 ? ui("1 selected") : uit`${selectedNodes.length} selected`}</span>
+        {inTrash ? (
+          <>
+            <SelectionAction label={ui("Restore")} onClick={() => void restoreSelection()}><RotateCcw /></SelectionAction>
+            {restoreTo && <SelectionAction label={ui("Restore to…")} onClick={restoreTo}><FolderInput /></SelectionAction>}
+            <SelectionAction label={ui("Delete forever")} destructive onClick={() => setPendingDeletion({ kind: 'items', items: selectedNodes })}><Trash2 /></SelectionAction>
+          </>
+        ) : <>
         {canDownload && <SelectionAction label={ui("Download")} onClick={() => void ops.download(selectedNodes)}><Download /></SelectionAction>}
         {!hasSystem && <SelectionAction label={ui("Move to…")} onClick={() => setMoving(selectedNodes)}><FolderInput /></SelectionAction>}
         {canStyle && !hasSystem && <SelectionAction label={ui("Color and icon…")} onClick={() => editAppearance(selectedNodes)}><Palette /></SelectionAction>}
-        <SelectionAction label={ui("Duplicate")} onClick={() => void duplicate()}><CopyPlus /></SelectionAction>
+        {!hasTrash && <SelectionAction label={ui("Duplicate")} onClick={() => void duplicate()}><CopyPlus /></SelectionAction>}
         {!hasSystem && <SelectionAction label={trashLabel} destructive onClick={() => void trashSelection()}><Trash2 /></SelectionAction>}
+        </>}
       </div>
     </TooltipProvider>
   )
@@ -956,7 +1124,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
       if (!event.currentTarget.contains(event.target as Node)) return
       if ((event.target as Element).closest('[data-file-id], input, a, [data-slot="scroll-area-scrollbar"]')) return
       event.preventDefault()
-      if (!listing.isError) openMenuAt({ x: event.clientX, y: event.clientY }, null)
+      if (!listing.isError || inTrash) openMenuAt({ x: event.clientX, y: event.clientY }, null)
     },
   }
   const dropHighlight = dropTarget === 'page' && 'rounded-2xl bg-primary/5'
@@ -993,7 +1161,14 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
       )}
 
       <FileContextMenu point={menu?.point ?? null} onClose={() => setMenu(null)}>
-        {menu?.scope === 'items' ? itemMenu : (
+        {inTrash ? (
+          menu?.scope === 'items' ? trashItemMenu : (
+            <>
+              {trashBackgroundMenu}
+              {canOpenElsewhere && <><DropdownMenuSeparator /><DropdownMenuItem onSelect={() => openElsewhere(place.view)}><ElsewhereIcon /> {elsewhereLabel}</DropdownMenuItem></>}
+            </>
+          )
+        ) : menu?.scope === 'items' ? itemMenu : (
           <>
             {backgroundMenu}
             <DropdownMenuSeparator />
@@ -1008,6 +1183,8 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
         )}
       </FileContextMenu>
       <FileMoveDialog nodes={moving} onOpenChange={(open) => { if (!open) setMoving(null) }} onMove={(targets, parentId) => ops.move(targets, parentId)} />
+      <FileMoveDialog restore nodes={restoring} onOpenChange={(open) => { if (!open) setRestoring(null) }} onMove={(targets, parentId) => restoreSelection(targets, { parentId })} />
+      <TrashDeleteDialog pending={pendingDeletion} onCancel={() => setPendingDeletion(null)} onConfirm={confirmDeletion} />
       <FileDragOverlay drag={drag} />
     </>
   )
@@ -1024,8 +1201,9 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
         {iconTip(ui("List view"), <Button variant="ghost" size="icon-sm" aria-pressed={view === 'list'} aria-label={ui("List view")} className={cn(view === 'list' && 'bg-accent text-foreground')} onClick={() => changeView('list')}><List /></Button>)}
         {iconTip(ui("Grid view"), <Button variant="ghost" size="icon-sm" aria-pressed={view === 'grid'} aria-label={ui("Grid view")} className={cn(view === 'grid' && 'bg-accent text-foreground')} onClick={() => changeView('grid')}><LayoutGrid /></Button>)}
       </div>
-      {iconTip(ui("Trash"), <Button asChild variant="ghost" size="icon-sm" aria-label={ui("Trash")}><Link to="/trash"><Trash2 /></Link></Button>)}
-      {newMenu}
+      {inTrash
+        ? <Button variant="outline" size="sm" className="ml-1" disabled={atTrashRoot && !nodes.length} onClick={() => setPendingDeletion({ kind: 'all' })}><Trash2 /> {ui("Empty trash")}</Button>
+        : newMenu}
     </>
   )
 
@@ -1040,7 +1218,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
       )}>
         <div className="min-w-0 flex-1 pr-1">
           {path}
-          <h1 className="truncate text-base leading-7 font-semibold">{listing.data?.folder?.name ?? ui("My files")}</h1>
+          <h1 className="truncate text-base leading-7 font-semibold">{listing.data?.folder?.name ?? (inTrash ? ui("Trash") : ui("My files"))}</h1>
         </div>
         {selectionBar}
         {/* With room the controls stay beside the selection bar; in a narrow header the bar takes their place. */}
@@ -1048,7 +1226,8 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
         {panel ? <PanelWindowButtons content={place.view} /> : <SplitViewButton view={place.view} />}
         {fileInputElement}
       </header>
-      {listing.data?.folder?.suggestion && (
+      {trashView && <TrashBanner view={trashView} now={now} onRestoreFolder={() => void restoreShownFolder()} className={cn(!panel && 'mobile-page-content')} />}
+      {!inTrash && listing.data?.folder?.suggestion && (
         <FileSuggestionBanner
           node={listing.data.folder}
           ancestors={listing.data.ancestors}
@@ -1060,7 +1239,8 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
         />
       )}
       <ScrollArea className="min-h-0 flex-1" horizontal={view === 'grid'} {...scrollHandlers}>
-        <div ref={bodyRef} className={cn('min-h-full px-4 py-3', !panel && 'mx-auto max-w-6xl', dropHighlight, marquee && 'select-none')}>
+        {/* The trash takes items dragged in from other views, wherever they are dropped on it. */}
+        <div ref={bodyRef} data-drop-target={inTrash ? folderId! : undefined} className={cn('min-h-full px-4 py-3', !panel && 'mx-auto max-w-6xl', dropHighlight, marquee && 'select-none')}>
           <div ref={widthProbe} aria-hidden className="h-0 w-full" />
           {body}
         </div>

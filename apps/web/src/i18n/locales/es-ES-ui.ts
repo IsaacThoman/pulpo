@@ -2423,13 +2423,19 @@ const esUi: Record<string, string> = {
   "Chats are deleted right away. Folders stay in the trash for 24 hours.": "Los chats se eliminan de inmediato. Las carpetas permanecen en la papelera durante 24 horas.",
   "Items stay in the trash until you delete them.": "Los elementos permanecen en la papelera hasta que los elimines.",
   "Items are deleted forever after {{0}}.": "Los elementos se eliminan definitivamente tras {{0}}.",
-  "No chats in the trash": "No hay chats en la papelera",
-  "No files in the trash": "No hay archivos en la papelera",
   "Files in the trash still count toward your storage.": "Los archivos de la papelera siguen contando para tu almacenamiento.",
   "Change retention": "Cambiar la conservación",
-  "Chats": "Chats",
-  "Folders": "Carpetas",
   "\"{{0}}\" will be permanently deleted. This cannot be undone.": "«{{0}}» se eliminará definitivamente. Esta acción no se puede deshacer.",
+  "Restore \"{{0}}\" to…": "Restaurar «{{0}}» en…",
+  "Restore {{0}} items to…": "Restaurar {{0}} elementos en…",
+  "Restore here": "Restaurar aquí",
+  "This folder is in the trash.": "Esta carpeta está en la papelera.",
+  "Restore folder": "Restaurar carpeta",
+  "\"{{0}}\" is in the trash. Restore it to open it.": "«{{0}}» está en la papelera. Restáuralo para abrirlo.",
+  "Restore to…": "Restaurar en…",
+  "Back to trash": "Volver a la papelera",
+  "Trashed": "En la papelera desde",
+  "Deletion": "Eliminación",
 }
 
 export default esUi

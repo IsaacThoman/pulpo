@@ -580,7 +580,7 @@ export function SettingsModal({
 
   const openTrash = () => {
     onClose()
-    navigate('/trash')
+    navigate('/files/trash')
   }
 
   return (
