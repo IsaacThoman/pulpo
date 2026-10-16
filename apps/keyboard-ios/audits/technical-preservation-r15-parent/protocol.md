@@ -1,0 +1,11 @@
+# R15 exposed controller integration protocol
+
+Freeze before baseline native execution. These are exposed regression cases authored after reading R15 source/audit, not independent blind accuracy evidence. Only AnchoredPathControllerTests.swift and this parent audit directory are owned by this task.
+
+Five methods, 36 scenario executions: each uses actual EN, ES and bilingual stacks through the production bar language callback, with queued and optimistic proxies. Anchored final component (6), queued selection replacement plus preserved newline suffix (6), ordinary single-slash and ASCII ellipsis correction followed by actual Delete Undo (12), accepted external marker deletion (6), and accepted external caret move before the original path suffix (6). English/bilingual use teh→the; Spanish uses inportante→importante. Normal field/default policy, including capitalization and learning, remains active. Prefixes avoid sentence-start casing ambiguity.
+
+All letters, spaces and Delete use actual visible key-cap centers, root hit routing and KeysView touch begin/end dispatch. Path punctuation is seeded through the simulated host, not fabricated letter keys. Assertions cover actual full documents, bar choices/proposals, delimiter behavior, correction Undo, selection replacement, exact suffix preservation and primitive counts on literal queued replacement. No real extension/system-keyboard or physical-phone claim. Ordinary controls cover only the named syntax; they do not establish absence of the separately identified //teh and /tmp/file;teh ambiguity costs.
+
+Settings restore on exit; each language model clears personal learning and touch calibration before/after its scenario. Native ownership: only iPhone 17 1EDC5D9A-7E25-432A-B5B1-9A8B702306A7. Device list/open returned exit 127; use documented XcodeGen/XCTest CoreSimulator fallback. No other devices, physical deployment or push.
+
+Baseline fixture SHA-256: `da9926b1ed1c40593833f27cbbf97f3629aa460312fd91acd67efebee7824c80`. Baseline HEAD: `584fd61e39250604309d476b3ca7ad166d337472`. Candidate import must wait for finalized baseline red; candidate then runs the same fixture, plus relevant controller/delete/language regressions. All outcomes and setup failures must remain disclosed.
