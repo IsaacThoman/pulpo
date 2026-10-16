@@ -10,7 +10,7 @@
     "compiler": "Apple clang version 21.0.0 (clang-2100.3.34.2)\nTarget: arm64-apple-darwin27.0.0\nThread model: posix\nInstalledDir: /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin",
     "threadSanitizer": false
   },
-  "method": "Actual dependency C++ header; platform includes stubbed, fresh process per sample, 512 growing 256–384KiB markdown prefixes, all measurement key dimensions constant. Retained bytes count both stored markdown strings; peak RSS is standalone process RSS, not app memory.",
+  "method": "Actual dependency C++ header; platform includes stubbed, fresh process per sample, 512 growing 256–384KiB markdown prefixes, all measurement key dimensions constant. Retained bytes count both stored markdown strings; peak RSS is standalone process RSS, not app memory. Historical-prefix hits use lookups only, without reinserting misses.",
   "samples": 7,
   "before": {
     "retainedEntries": 512,

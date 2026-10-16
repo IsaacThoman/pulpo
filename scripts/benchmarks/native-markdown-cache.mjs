@@ -73,7 +73,7 @@ try {
       upstreamHeaderSha256: UPSTREAM_SHA256,
       patchedHeaderSha256: createHash('sha256').update(patched).digest('hex'),
       environment: { os: `${os.type()} ${os.release()}`, architecture: os.arch(), cpu: os.cpus()[0]?.model, compiler: run(compiler, ['--version']).trim(), threadSanitizer: tsan },
-      method: 'Actual dependency C++ header; platform includes stubbed, fresh process per sample, 512 growing 256–384KiB markdown prefixes, all measurement key dimensions constant. Retained bytes count both stored markdown strings; peak RSS is standalone process RSS, not app memory.',
+      method: 'Actual dependency C++ header; platform includes stubbed, fresh process per sample, 512 growing 256–384KiB markdown prefixes, all measurement key dimensions constant. Retained bytes count both stored markdown strings; peak RSS is standalone process RSS, not app memory. Historical-prefix hits use lookups only, without reinserting misses.',
       samples, ...summaries,
     }
     if (process.env.BENCH_OUTPUT) await writeFile(process.env.BENCH_OUTPUT, `${JSON.stringify(report, null, 2)}\n`)

@@ -168,6 +168,7 @@ void runBenchmark() {
   }
   const auto finished = std::chrono::steady_clock::now();
   checkInvariants(cache);
+  // Lookup-only historical-prefix probe: misses are not reinserted.
   size_t hits = 0;
   for (size_t index = 0; index < snapshots; ++index) {
     if (contains(cache, keyFor(0, 256 * 1024 + index * 256))) ++hits;

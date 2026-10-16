@@ -60,14 +60,15 @@ benchmark runs.
 | Retained duplicated UTF-8 key text | 335,413,248 bytes | 7,836,160 bytes |
 | Standalone process peak RSS, median | 350,732,288 bytes | 14,286,848 bytes |
 | Insert 512 prefixes, median | 37.37 ms | 31.48 ms |
-| Hits when replaying all old prefixes | 512 / 512 | 10 / 512 |
+| Lookup-only historical-prefix hits | 512 / 512 | 10 / 512 |
 
 Retained source text decreased by 97.7% in this deliberately large-answer
 fixture. The RSS measurements belong to these standalone C++ processes; they
 exclude the React Native renderer, parsing, native layout, and actual app
 navigation. Insertion time is a diagnostic, not an end-to-end rendering result.
 
-The lower historical hit count exposes the tradeoff: evicted sizes must be
+The historical probe only calls lookup; it does not reinsert misses or model a
+read-through revisit workload. The lower historical hit count exposes the tradeoff: evicted sizes must be
 measured again when revisited. Small documents can still reach the 512-entry
 limit; sufficiently large documents reach the byte limit sooner. This benchmark
 does not claim a production cache hit rate or quantify the additional layout
@@ -104,3 +105,21 @@ The two plugin Vitest cases passed. Original and patched native-header tests als
 passed with ThreadSanitizer enabled, including the concurrent readers/writers;
 no races were reported by that run. Native app integration is validated
 separately from the standalone cache measurements above.
+
+
+### Fresh native integration, October 16
+
+A fresh Expo iOS prebuild applied the patch, CocoaPods installed successfully,
+and Xcode built the normal app in **Release** for the iOS Simulator with code
+signing disabled. That freshly built app installed and launched successfully on
+a disposable iPhone 18 Pro simulator running iOS 27.0. This validates compilation
+and startup of the actual patched native header, rather than a JavaScript-only
+replacement in an older shell.
+
+A temporary copy of that same binary then ran the repository's standalone
+`ui-entry.tsx` fixture and XCTest workflow. All three selected tests passed:
+`testLargeMarkdownSelection`, `testSelectLongAndCachedChats`, and
+`testGalleryFromLatestTurn` (3 passed, 0 failed, 0 skipped). No physical-device
+FPS, full-app memory plateau, or Android cache behavior is inferred from these
+checks. Build logs and the XCTest result bundle remain local audit artifacts;
+they contain no additional committed performance samples.
