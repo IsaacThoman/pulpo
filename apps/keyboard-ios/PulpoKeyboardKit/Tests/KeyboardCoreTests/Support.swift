@@ -46,22 +46,26 @@ final class MockDocument: TextDocument {
   var selectionOverride: String?
   /// Fields may withhold surrounding text while still accepting edits.
   var hidesContext = false
+  var hidesAfterContext = false
+  var declinesInserts = false
+  var declinesDeletes = false
 
   var documentContextBeforeInput: String? { hidesContext ? nil : contextBeforeOverride ?? String(text[..<cursor].dropLast(lag)) }
-  var documentContextAfterInput: String? { hidesContext ? nil : String(text[cursor...]) }
+  var documentContextAfterInput: String? { hidesContext || hidesAfterContext ? nil : String(text[cursor...]) }
   var selectedText: String? { selectionOverride }
   var hasText: Bool { !text.isEmpty }
 
   func insertText(_ inserted: String) {
     onWillEdit?()
-    let offset = text.distance(from: text.startIndex, to: cursor)
+    guard !declinesInserts else { return }
+    let prefix = String(text[..<cursor]) + inserted
     text.insert(contentsOf: inserted, at: cursor)
-    cursor = text.index(text.startIndex, offsetBy: offset + inserted.count)
+    cursor = text.index(text.startIndex, offsetBy: prefix.count)
   }
 
   func deleteBackward() {
     onWillEdit?()
-    guard cursor > text.startIndex else { return }
+    guard !declinesDeletes, cursor > text.startIndex else { return }
     deletions += 1
     let offset = text.distance(from: text.startIndex, to: cursor)
     text.remove(at: text.index(before: cursor))

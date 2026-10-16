@@ -53,6 +53,7 @@ public final class KeyboardEngine {
   public var settings: KeyboardSettings {
     didSet {
       policy = InputPolicy(traits: traits, settings: settings)
+      if !policy.learns { invalidateTouchOccurrence() }
       if settings != oldValue { invalidateSuggestionContext() }
     }
   }
@@ -60,6 +61,7 @@ public final class KeyboardEngine {
     didSet {
       let previous = policy
       policy = InputPolicy(traits: traits, settings: settings)
+      if policy != previous || traits.isPrivate != oldValue.isPrivate { invalidateTouchOccurrence() }
       // Hosts re-send traits with text callbacks. Appearance or return-key
       // changes leave the policy, and so the displayed choices, as they were.
       if policy != previous || traits.isPrivate != oldValue.isPrivate { invalidateSuggestionContext() }
@@ -118,7 +120,22 @@ public final class KeyboardEngine {
     var text: String { spaced ? word + " " : word }
   }
 
-  var composing = TypedWord(text: "")
+  var composing = TypedWord(text: "") {
+    didSet { if composing.isEmpty { composingTouchOccurrence = nil } }
+  }
+  /// Provenance only for extra external-boundary learning. Derived/restored
+  /// words do not acquire ownership merely by matching an earlier spelling.
+  private struct TouchOccurrence: Equatable {
+    let documentID: UUID?
+    let token = UUID()
+  }
+  private var composingTouchOccurrence: TouchOccurrence?
+  private var touchContextRevision = 0
+
+  private func invalidateTouchOccurrence() {
+    composingTouchOccurrence = nil
+    touchContextRevision &+= 1
+  }
   var lastEdit: LastEdit = .none
   /// A space tap close enough to the bottom letter row that it may have been a
   /// letter. Valid only while the text before the cursor is `anchor` plus the
@@ -316,9 +333,22 @@ public final class KeyboardEngine {
         // A replaced selection also continues the word before it.
         composing = TypedWord(text: Self.trailingWord(of: before))
       }
+      let occurrence = composingTouchOccurrence
+      let revision = touchContextRevision
+      let identifier = document.documentIdentifier
+      let ownsTouch = liveTouchContextMatches && composing.taps.count == composing.text.count
+        && (composing.isEmpty || occurrence?.documentID == identifier && occurrence != nil)
       insertDocumentText(text)
       if let typedCharacter = text.first, Self.isWordCharacter(typedCharacter), !(typedCharacter == "\u{2019}" && composing.isEmpty) {
         composing.append(text, tap: tap)
+        if ownsTouch, document.documentIdentifier == identifier, liveTouchContextMatches,
+           revision == touchContextRevision,
+           composing.taps.count == composing.text.count,
+           occurrence == composingTouchOccurrence {
+          composingTouchOccurrence = occurrence ?? TouchOccurrence(documentID: identifier)
+        } else {
+          composingTouchOccurrence = nil
+        }
       } else {
         composing = TypedWord(text: "")
       }
@@ -464,6 +494,16 @@ public final class KeyboardEngine {
     reconcilePendingHostChanges()
     spaceSlip = nil
     acceptPendingLearning()
+    let typed = composing
+    let occurrence = composingTouchOccurrence
+    let revision = touchContextRevision
+    // Check validity before this action's separate word learning can validate it.
+    let acceptsTouch = !typed.isEmpty && suggester?.isValid(typed.text) == true
+      && occurrence != nil && occurrence?.documentID == document.documentIdentifier
+      && typed.taps.count == typed.text.count && liveTouchContextMatches
+      && !composingLiteralToken && !cursorInsideWord
+      && document.documentContextAfterInput?.first.map({ "._@/#-".contains($0) }) != true
+      && before.hasSuffix(typed.text)
     if !composing.isEmpty {
       learn(composing.text)
       composing = TypedWord(text: "")
@@ -478,8 +518,19 @@ public final class KeyboardEngine {
        !"([{\u{201C}\u{2018}¿¡/@#".contains(previous), !Self.endsInOpeningQuote(before) {
       output = " " + output
     }
+    let prior = before
+    let tail = document.documentContextAfterInput
     phantomSpace = false
     insertDocumentText(output)
+    if acceptsTouch, Self.isExternalWordBoundary(output),
+       revision == touchContextRevision,
+       occurrence?.documentID == document.documentIdentifier,
+       Self.sameScalars(document.documentContextBeforeInput, prior + output),
+       Self.sameScalars(document.documentContextAfterInput, tail),
+       document.selectedText?.isEmpty != false,
+       (prior + output).prefix(prior.count).unicodeScalars.elementsEqual(prior.unicodeScalars) {
+      learnTouch(typed, intended: typed.text)
+    }
     lastEdit = .typed
     finishEdit()
   }
@@ -498,6 +549,54 @@ public final class KeyboardEngine {
     // mixed runs (such as emoticons) conservatively keep their separator.
     // A curly apostrophe followed by letters may begin a word, not close one.
     return text.drop(while: { run.contains($0) }).first?.isWhitespace ?? true
+  }
+
+  private static func isExternalWordBoundary(_ text: String) -> Bool {
+    guard let first = text.first else { return false }
+    let scalars = first.unicodeScalars
+    let emoji = scalars.contains { $0.properties.isEmoji && $0.value > 0x7F }
+      && (!isWordCharacter(first) || scalars.contains { $0.value == 0xFE0F })
+      || (scalars.contains { $0.value == 0x20E3 } && scalars.contains { $0.properties.isEmoji })
+    return first.isWhitespace || (first != "\u{2019}" && beginsWithAttachingPunctuation(text)) || emoji
+  }
+
+  private static func sameScalars(_ a: String?, _ b: String?) -> Bool {
+    guard let a, let b else { return false }
+    return a.unicodeScalars.elementsEqual(b.unicodeScalars)
+  }
+
+  /// Complete synchronous snapshots only; optimistic, one-sided or lagged
+  /// contexts cannot establish ownership, and there is no deferred recovery.
+  private var liveTouchContextMatches: Bool {
+    expectedSelection == nil && document.selectedText?.isEmpty != false
+      && document.documentIdentifier == expectedDocumentIdentifier
+      && Self.sameScalars(document.documentContextBeforeInput, before)
+      && Self.sameScalars(document.documentContextAfterInput, expectedAfterContext)
+  }
+
+  /// Extra tap provenance requires an exact expected/own snapshot. Broader
+  /// canonical or window matches can preserve ordinary reconciliation, but an
+  /// observed replacement cannot revive old taps when its spelling returns.
+  private func invalidateScalarTouchReplacement(before rawBefore: String?, after rawAfter: String?) {
+    // External insertion consumes composing before the primitive. Its captured
+    // taps still need invalidation from callbacks while that edit is in flight.
+    guard composingTouchOccurrence != nil || ownEditDepth > 0, let expectedContext else { return }
+    guard let rawBefore, let rawAfter, document.selectedText?.isEmpty != false else {
+      invalidateTouchOccurrence()
+      return
+    }
+    let observed = ContextSnapshot(before: rawBefore, after: rawAfter, selection: nil)
+    let expected = ContextSnapshot(before: expectedContext, after: expectedAfterContext, selection: expectedSelection)
+    func exact(_ snapshot: ContextSnapshot) -> Bool {
+      snapshot.selection == observed.selection && Self.sameScalars(snapshot.before, rawBefore)
+        && Self.sameScalars(snapshot.after, rawAfter)
+    }
+    if exact(expected) { return }
+    // Exact own echoes remain supported. Canonical matching alone cannot prove
+    // an echo, including an earlier state the ordinary reconciler calls lag.
+    let history = ownContextHistory.map(\.context) + recentOwnContexts.map(\.context)
+    if history.contains(where: exact) { return }
+    invalidateTouchOccurrence()
   }
 
   /// Inserts a dictation transcript, joining it naturally with the surrounding text.
@@ -521,6 +620,12 @@ public final class KeyboardEngine {
 
   public func deleteBackward() {
     reconcilePendingHostChanges()
+    let occurrence = composingTouchOccurrence
+    let revision = touchContextRevision
+    let prior = before
+    let tail = document.documentContextAfterInput
+    let preservesTouch = occurrence != nil && occurrence?.documentID == document.documentIdentifier
+      && !composing.isEmpty && composing.taps.count == composing.text.count && liveTouchContextMatches
     spaceSlip = nil
     pendingLearning = nil
     phantomSpace = false
@@ -528,6 +633,7 @@ public final class KeyboardEngine {
     correctionBeforeGlide = nil
     switch lastEdit {
     case let .autocorrected(original, inserted, separator) where before.hasSuffix(inserted + separator):
+      invalidateTouchOccurrence()
       for _ in 0..<(inserted + separator).count { deleteDocumentBackward() }
       insertDocumentText(original.text)
       rejected.insert(original.text)
@@ -537,6 +643,7 @@ public final class KeyboardEngine {
       finishEdit(deriveComposing: false)
       return
     case let .joinedSpaceSlip(original, inserted, separator, resumed) where before.hasSuffix(inserted + separator):
+      invalidateTouchOccurrence()
       for _ in 0..<(inserted + separator).count { deleteDocumentBackward() }
       insertDocumentText(original)
       composing = resumed.isEmpty || !before.hasSuffix(resumed.text) ? TypedWord(text: "") : resumed
@@ -545,6 +652,7 @@ public final class KeyboardEngine {
       finishEdit(deriveComposing: composing.isEmpty)
       return
     case let .glided(glide) where before.hasSuffix(glide.text):
+      invalidateTouchOccurrence()
       for _ in 0..<glide.text.count { deleteDocumentBackward() }
       composing = TypedWord(text: "")
       rejectGlide(glide.word, context: previousWord())
@@ -571,11 +679,18 @@ public final class KeyboardEngine {
     }
     lastEdit = .none
     finishEdit(deriveComposing: composing.isEmpty)
+    if !preservesTouch || composing.isEmpty || occurrence != composingTouchOccurrence
+      || revision != touchContextRevision || !liveTouchContextMatches
+      || !Self.sameScalars(document.documentContextBeforeInput, String(prior.dropLast()))
+      || !Self.sameScalars(document.documentContextAfterInput, tail) {
+      invalidateTouchOccurrence()
+    }
   }
 
   /// Deletes back to the start of the previous word, as delete-key repeat does once it speeds up.
   public func deleteWordBackward() {
     reconcilePendingHostChanges()
+    invalidateTouchOccurrence()
     spaceSlip = nil
     pendingLearning = nil
     correctionBeforeGlide = nil
@@ -1029,12 +1144,14 @@ public final class KeyboardEngine {
     let identifier = document.documentIdentifier
     let rawBefore = document.documentContextBeforeInput
     let rawAfter = document.documentContextAfterInput
+    invalidateScalarTouchReplacement(before: rawBefore, after: rawAfter)
     let current = rawBefore ?? ""
     let after = rawAfter ?? ""
     let selection = document.selectedText.flatMap { $0.isEmpty ? nil : $0 }
     let availability = ContextAvailability(before: rawBefore != nil, after: rawAfter != nil)
     let availabilityChanged = observedContextAvailability.map { $0 != availability } ?? false
     let privacyChanged = observedPrivateContext.map { $0 != traits.isPrivate } ?? false
+    if availabilityChanged { invalidateTouchOccurrence() }
     observedContextAvailability = availability
     observedPrivateContext = traits.isPrivate
     let now = clock()
@@ -1047,6 +1164,7 @@ public final class KeyboardEngine {
     let visibilityChanged = availabilityChanged && !matchesExpected &&
       !recentObservedOwnContexts.contains(where: { $0.context == observed })
     if identifier != expectedDocumentIdentifier || privacyChanged || visibilityChanged {
+      invalidateTouchOccurrence()
       lastShiftTap = -1
       expectedDocumentIdentifier = identifier
       if expectedContext != nil { externalContextChanges += 1 }
@@ -1091,6 +1209,7 @@ public final class KeyboardEngine {
         // we type. An empty expected context cannot establish a shared window.
         let windowShift = sameCursorTail && !expected.isEmpty && current.count >= 24
           && (expected.hasSuffix(current) || current.hasSuffix(expected))
+        invalidateTouchOccurrence()
         expectedContext = current
         expectedAfterContext = after
         expectedSelection = selection
@@ -1117,6 +1236,7 @@ public final class KeyboardEngine {
         echoedOwnSequence = ownEditSequence
       }
     } else {
+      invalidateTouchOccurrence()
       expectedContext = current
       expectedAfterContext = after
       expectedSelection = selection
@@ -1157,6 +1277,7 @@ public final class KeyboardEngine {
     guard expectedContext != nil, ownEditDepth == 0 else { return }
     let rawBefore = document.documentContextBeforeInput
     let rawAfter = document.documentContextAfterInput
+    invalidateScalarTouchReplacement(before: rawBefore, after: rawAfter)
     let selection = document.selectedText.flatMap { $0.isEmpty ? nil : $0 }
     // A changed selection is observable even when surrounding text is withheld.
     // Continue through the own-context checks so old selection echoes stay lag.
@@ -1236,6 +1357,7 @@ public final class KeyboardEngine {
   }
 
   private func deriveComposing() {
+    invalidateTouchOccurrence()
     let word = expectedSelection == nil ? Self.trailingWord(of: before) : ""
     if composing.text != word { composing = TypedWord(text: word) }
   }
