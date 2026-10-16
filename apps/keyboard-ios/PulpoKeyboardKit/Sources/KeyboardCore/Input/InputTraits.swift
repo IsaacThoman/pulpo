@@ -30,7 +30,15 @@ public struct InputTraits: Equatable, Sendable {
 
   public init() {}
 
+  // Exact UIKit raw values, calibrated from named constants on iOS. Keep the
+  // programmer-name aliases below for existing platform-free callers. Unknown
+  // custom content types are opaque: punctuation and case are significant.
   static let privateContentTypes: Set<String> = [
+    "new-password", "one-time-code", "email", "url", "tel", "cc-number", "cc-csc",
+    "cc-exp", "cc-exp-month", "cc-exp-year", "cc-name", "cc-given-name", "cc-family-name",
+    "cc-additional-name", "cc-type", "postal-code", "flight-number", "shipment-tracking-number",
+    "bday", "bday-day", "bday-month", "bday-year",
+    // Legacy symbolic aliases (username and password already equal UIKit raw values).
     "username", "password", "newPassword", "oneTimeCode", "emailAddress", "URL", "telephoneNumber",
     "creditCardNumber", "creditCardSecurityCode", "creditCardExpiration", "creditCardExpirationMonth",
     "creditCardExpirationYear", "creditCardName", "creditCardGivenName", "creditCardFamilyName",
