@@ -15,7 +15,7 @@ import UIKit
 @Observable
 final class DictationService {
   enum Phase: Equatable {
-    case idle, recording, transcribing, finished, failed(String)
+    case idle, preparing, recording, transcribing, finished, failed(String)
   }
 
   static let maximumSeconds: TimeInterval = 90
@@ -38,7 +38,9 @@ final class DictationService {
   @ObservationIgnored private let bridge = DictationBridge()
   @ObservationIgnored private let engine = AVAudioEngine()
   @ObservationIgnored private let capture = Capture()
-  @ObservationIgnored private var request: UUID?
+  @ObservationIgnored private var lifecycle = DictationRequestLifecycle()
+  @ObservationIgnored private var uploadTask: Task<Void, Never>?
+  private var request: UUID? { lifecycle.requestID }
   @ObservationIgnored private var commandObserver: DarwinNotifications.Observation?
   @ObservationIgnored private var standbyTimer: Timer?
   @ObservationIgnored private var limitTimer: Timer?
@@ -80,10 +82,11 @@ final class DictationService {
   // MARK: Recording
 
   func start(request: UUID, fromURL: Bool, host: String? = nil) {
-    if phase == .recording, self.request == request { return }
-    if phase == .recording { cancel() }
+    if self.request == request, lifecycle.stage == .preparing || lifecycle.stage == .recording || lifecycle.stage == .transcribing { return }
+    if lifecycle.attempt != nil { cancel() }
+    let attempt = lifecycle.start(request)
+    phase = .preparing
     startedFromKeyboard = fromURL
-    self.request = request
     transcript = nil
     handoffStartedAt = fromURL ? Date() : nil
     knownHost = host.flatMap { HostReturn.isOwnApp($0) ? nil : $0 }
@@ -94,11 +97,12 @@ final class DictationService {
     }
     switch AVAudioApplication.shared.recordPermission {
     case .granted:
-      beginRecording()
+      beginRecording(attempt)
     case .undetermined:
       AVAudioApplication.requestRecordPermission { @Sendable granted in
         Task { @MainActor in
-          granted ? self.beginRecording() : self.fail("Pulpo Keyboard needs microphone access to dictate. You can allow it in Settings.")
+          guard self.lifecycle.isCurrent(attempt, at: .preparing) else { return }
+          granted ? self.beginRecording(attempt) : self.fail("Pulpo Keyboard needs microphone access to dictate. You can allow it in Settings.")
         }
       }
     default:
@@ -106,7 +110,8 @@ final class DictationService {
     }
   }
 
-  private func beginRecording() {
+  private func beginRecording(_ attempt: DictationRequestLifecycle.Attempt) {
+    guard lifecycle.beginRecording(attempt) else { return }
     guard let bridge else { return fail("The keyboard and app couldn't connect. Reinstall Pulpo Keyboard.") }
     do {
       try startEngineIfNeeded()
@@ -127,14 +132,14 @@ final class DictationService {
     levelTimer = meter
     if let since = handoffStartedAt {
       handoffStartedAt = nil
-      returnToHost(handoffAt: since)
+      returnToHost(handoffAt: since, attempt: attempt)
     }
   }
 
   /// With recording running, reopens the app the keyboard came from. The host name
   /// arrives from UIKit about a second after launch; a host seen shortly before this
   /// handoff still counts, an older one doesn't.
-  private func returnToHost(handoffAt: Date) {
+  private func returnToHost(handoffAt: Date, attempt: DictationRequestLifecycle.Attempt) {
     let recordingAfter = Date().timeIntervalSince(handoffAt)
     let named = knownHost
     knownHost = nil
@@ -143,7 +148,7 @@ final class DictationService {
       HostAppObserver.shared.waitForHost(since: handoffAt.addingTimeInterval(-5), timeout: 3, completion: done)
     }
     resolve { [weak self] bundle in
-      guard let self else { return }
+      guard let self, self.lifecycle.isCurrent(attempt, at: .recording) else { return }
       let waited = Date().timeIntervalSince(handoffAt)
       guard self.phase == .recording, let bundle else {
         self.returnState = .failed
@@ -151,6 +156,7 @@ final class DictationService {
         return
       }
       HostReturn.open(bundle) { method in
+        guard self.lifecycle.isCurrent(attempt, at: .recording) else { return }
         self.returnState = method == .none ? .failed : .returned(HostReturn.name(for: bundle))
         Diagnostics.record("app", "return", ["outcome": method == .none ? "failed" : "returned", "method": method.rawValue, "host": bundle, "recordingMs": Int(recordingAfter * 1000), "hostMs": Int(waited * 1000)])
       }
@@ -181,7 +187,7 @@ final class DictationService {
   }
 
   func stop() {
-    guard phase == .recording, let request else { return }
+    guard phase == .recording, let attempt = lifecycle.beginTranscribing() else { return }
     limitTimer?.invalidate()
     levelTimer?.invalidate()
     let url = capture.finish()
@@ -194,43 +200,51 @@ final class DictationService {
     guard audio.count > 500 else { return fail("No speech was detected.") }
     let client = PulpoClient(instance: session.instance, token: session.token)
     let task = UIApplication.shared.beginBackgroundTask(withName: "dictation-upload")
-    Task {
+    uploadTask = Task {
       defer { UIApplication.shared.endBackgroundTask(task) }
       do {
+        try Task.checkCancellation()
         let text = try await client.transcribe(audio: audio)
-        guard self.request == request else { return }
+        guard !Task.isCancelled, self.lifecycle.finish(attempt) else { return }
+        self.uploadTask = nil
         self.transcript = text
         self.phase = .finished
         self.publish()
       } catch let error as PulpoError {
-        guard self.request == request else { return }
+        guard !Task.isCancelled, self.lifecycle.isCurrent(attempt, at: .transcribing) else { return }
         if error.isUnauthorized { self.onUnauthorized?() }
         self.fail(error.code == "dictation_no_speech" ? "No speech was detected." : error.message)
       } catch {
-        guard self.request == request else { return }
+        guard !Task.isCancelled, self.lifecycle.isCurrent(attempt, at: .transcribing) else { return }
         self.fail("The recording couldn't be transcribed.")
       }
     }
   }
 
   func cancel() {
+    lifecycle.cancel()
+    uploadTask?.cancel()
+    uploadTask = nil
+    handoffStartedAt = nil
+    transcript = nil
     limitTimer?.invalidate()
     levelTimer?.invalidate()
     if let url = capture.finish() { try? FileManager.default.removeItem(at: url) }
     phase = .idle
-    request = nil
     publish()
     enterStandby()
   }
 
   private func fail(_ message: String) {
+    guard let attempt = lifecycle.attempt, lifecycle.fail(attempt) else { return }
+    uploadTask = nil
     handoffStartedAt = nil
     if returnState == .finding { returnState = .failed }
     limitTimer?.invalidate()
     levelTimer?.invalidate()
-    _ = capture.finish()
+    if let url = capture.finish() { try? FileManager.default.removeItem(at: url) }
     phase = .failed(message)
-    publish()
+    endStandby()
   }
 
   // MARK: Standby
@@ -264,6 +278,9 @@ final class DictationService {
     let shared: DictationState.Phase
     var message: String?
     switch phase {
+    // Permission is still pending. Keep the keyboard's connecting panel rather
+    // than publishing an idle response that would clear its pending request.
+    case .preparing: return
     case .idle: shared = .idle
     case .recording: shared = .recording
     case .transcribing: shared = .transcribing
@@ -273,7 +290,7 @@ final class DictationService {
       message = text
     }
     bridge?.writeState(DictationState(
-      phase: shared, requestID: request, standbyUntil: engine.isRunning ? standbyUntil : nil,
+      phase: shared, requestID: lifecycle.responseRequestID, standbyUntil: engine.isRunning ? standbyUntil : nil,
       startedAt: startedAt, transcript: transcript, errorMessage: message
     ))
   }

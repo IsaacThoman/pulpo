@@ -23,18 +23,24 @@ struct DictationSessionView: View {
     .padding(24)
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .background(Color(.systemBackground))
-    .onChange(of: dictation.phase) { _, phase in
-      if phase == .finished || phase == .idle {
-        Task {
-          try? await Task.sleep(for: .seconds(phase == .finished ? 1.2 : 0.2))
-          dismiss()
-        }
-      }
+    .task(id: dictation.phase) {
+      let phase = dictation.phase
+      guard phase == .finished || phase == .idle else { return }
+      do {
+        try await Task.sleep(for: .seconds(phase == .finished ? 1.2 : 0.2))
+      } catch { return }
+      guard !Task.isCancelled else { return }
+      dismiss()
     }
   }
 
   @ViewBuilder private var status: some View {
     switch dictation.phase {
+    case .preparing:
+      VStack(spacing: 14) {
+        ProgressView()
+        Text("Starting dictation…").font(.title3)
+      }
     case .recording:
       VStack(spacing: 18) {
         Image(systemName: "mic.fill")
@@ -90,6 +96,7 @@ struct DictationSessionView: View {
           Text("Cancel").frame(maxWidth: .infinity)
         }
         .buttonStyle(.bordered)
+        .accessibilityIdentifier("app-dictation-cancel")
         Button {
           dictation.stop()
         } label: {
@@ -99,6 +106,11 @@ struct DictationSessionView: View {
         .accessibilityIdentifier("app-dictation-done")
       }
       .controlSize(.large)
+    case .preparing, .transcribing:
+      Button("Cancel", role: .cancel) { dictation.cancel() }
+        .buttonStyle(.bordered)
+        .controlSize(.large)
+        .accessibilityIdentifier("app-dictation-cancel")
     case .failed:
       VStack(spacing: 12) {
         // Offer the fix for the two failures the person can fix from here.
