@@ -24,6 +24,11 @@ final class CompactLayoutUXTests: XCTestCase {
     var keyWidth: CGFloat = 0
     var keyboardHeight: CGFloat = 0
     var dockAvailable = false
+    var hostEnvelope: [CGFloat] = []
+    var rootFrame: [CGFloat] = []
+    var safeAreaInsets: [CGFloat] = []
+    var controls: [String] = []
+    var limitations: [String] = []
     mutating func gate(_ passes: Bool, _ description: String) {
       checks += 1
       if !passes { failures.append(description) }
@@ -97,6 +102,13 @@ final class CompactLayoutUXTests: XCTestCase {
     report.keyWidth = root.keys.bounds.width
     report.keyboardHeight = root.bounds.height
     report.dockAvailable = root.canDock
+    report.hostEnvelope = [input.width, input.height]
+    report.rootFrame = [root.frame.minX, root.frame.minY, root.frame.width, root.frame.height]
+    report.safeAreaInsets = [root.safeAreaInsets.top, root.safeAreaInsets.left, root.safeAreaInsets.bottom, root.safeAreaInsets.right]
+    report.limitations = ["Injected content-size/legibility traits and production bold style; not system Settings or VoiceOver speech", "UIKit action dispatch follows hit testing; only separate XCUI methods synthesize real events", "Language choices use the controller callback; separate XCUI method verifies actual menu presentation", "Spanish accents use the shared QWERTY layout; no dedicated visible ñ key", "Fixed native keyboard metrics do not scale with Dynamic Type"]
+    if input.dock != "full" && !root.canDock {
+      report.limitations.append("Requested docking unavailable at this width/orientation; verified full width and absence of side controls")
+    }
     report.gate(root.bounds.width == input.width, "host width was not applied")
     report.gate(h.engine.settings.language == language, "language selection did not reach engine")
     report.gate(vc.traitCollection.preferredContentSizeCategory == (input.contentSize == "normal" ? .large : .accessibilityExtraExtraExtraLarge), "content size trait missing")
@@ -112,15 +124,26 @@ final class CompactLayoutUXTests: XCTestCase {
     }
     func descendants(_ view: UIView) -> [UIView] { view.subviews.flatMap { [$0] + descendants($0) } }
     func checkButtons(_ stage: String) {
-      for button in descendants(root).compactMap({ $0 as? UIButton }) where visible(button) && button.isEnabled {
-        let name = button.accessibilityIdentifier ?? button.accessibilityLabel ?? button.currentTitle ?? "button"
+      for button in descendants(root).compactMap({ $0 as? UIControl }) where visible(button) && button.isEnabled {
+        let name = button.accessibilityIdentifier ?? button.accessibilityLabel ?? (button as? UIButton)?.currentTitle ?? "button"
         let rect = button.convert(button.bounds, to: root)
-        report.gate(rect.width > 0 && rect.height > 0 && root.bounds.insetBy(dx: -0.5, dy: -0.5).contains(rect), "\(stage)/\(name): clipped or empty control \(rect)")
-        report.gate(!(button.accessibilityLabel ?? button.currentTitle ?? "").isEmpty, "\(stage)/\(name): missing meaning")
+        // Scrollable emoji results can intentionally extend outside their strip.
+        var visibleRect = rect.intersection(root.bounds)
+        var ancestor = button.superview
+        while let view = ancestor, view !== root {
+          if view.clipsToBounds { visibleRect = visibleRect.intersection(view.convert(view.bounds, to: root)) }
+          ancestor = view.superview
+        }
+        if visibleRect.isNull || visibleRect.isEmpty { continue }
+        if !report.controls.contains(name) { report.controls.append(name) }
+        if !(button is EmojiResultControl) {
+          report.gate(rect.width > 0 && rect.height > 0 && root.bounds.insetBy(dx: -0.5, dy: -0.5).contains(rect), "\(stage)/\(name): clipped or empty control \(rect)")
+        }
+        report.gate(!(button.accessibilityLabel ?? (button as? UIButton)?.currentTitle ?? "").isEmpty, "\(stage)/\(name): missing meaning")
         // Interior samples include the visible lower portion, not just centers.
-        for x in [CGFloat(0.15), 0.5, 0.85] {
-          for y in [CGFloat(0.15), 0.5, 0.85, 0.98] {
-            let point = button.convert(CGPoint(x: button.bounds.width * x, y: button.bounds.height * y), to: root)
+        for x in [CGFloat(0.02), 0.15, 0.5, 0.85, 0.98] {
+          for y in [CGFloat(0.02), 0.15, 0.5, 0.85, 0.98] {
+            let point = CGPoint(x: visibleRect.minX + visibleRect.width * x, y: visibleRect.minY + visibleRect.height * y)
             let hit = root.hitTest(point, with: nil)
             report.gate(hit === button || hit?.isDescendant(of: button) == true, "\(stage)/\(name): interior \(x),\(y) routed to \(hit.map { String(describing: type(of: $0)) } ?? "nil")")
           }
@@ -240,10 +263,42 @@ final class CompactLayoutUXTests: XCTestCase {
     root.layoutIfNeeded()
     root.dictation.layoutIfNeeded()
     checkButtons("dictation-message")
+    if input.id.contains("rotation") {
+      vc.view.frame.size.width = 812
+      h.controller.layoutChanged(dark: false)
+      vc.view.frame.size.height = h.controller.preferredHeight
+      vc.view.setNeedsLayout()
+      vc.view.layoutIfNeeded()
+      root.dictation.layoutIfNeeded()
+      report.gate(root.bounds.width == 812 && root.style.landscape, "portrait-to-landscape did not reflow production controller")
+      report.gate(root.dictation.frame == root.bounds, "presentation did not follow rotation bounds")
+      checkButtons("rotated-presentation")
+      root.mode = .keys
+      root.layoutIfNeeded()
+      root.keys.layoutIfNeeded()
+      checkKeys("rotated-letters")
+      vc.view.frame.size.width = input.width
+      h.controller.layoutChanged(dark: false)
+      vc.view.frame.size.height = h.controller.preferredHeight
+      vc.view.setNeedsLayout()
+      vc.view.layoutIfNeeded()
+      report.gate(root.bounds.width == input.width && !root.style.landscape, "landscape-to-portrait did not restore root")
+    }
+    if input.id.contains("live-ax") {
+      vc.traitOverrides.preferredContentSizeCategory = .large
+      vc.view.setNeedsLayout()
+      vc.view.layoutIfNeeded()
+      report.gate(vc.traitCollection.preferredContentSizeCategory == .large, "live content-size change missing")
+      vc.traitOverrides.preferredContentSizeCategory = .accessibilityExtraExtraExtraLarge
+      vc.view.setNeedsLayout()
+      vc.view.layoutIfNeeded()
+      report.gate(vc.traitCollection.preferredContentSizeCategory == .accessibilityExtraExtraExtraLarge, "live accessibility category restore missing")
+    }
     root.mode = .keys
     layout()
     checkButtons("restored")
     checkKeys("final")
+    report.gate(h.engine.settings.language == language, "mode transitions lost language")
     return report
   }
 
