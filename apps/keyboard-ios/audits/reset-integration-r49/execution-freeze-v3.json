@@ -1,0 +1,171 @@
+{
+  "format": "pulpo-r49-final-paired-execution-freeze-v3",
+  "verdict": "APPROVE_FOR_ONE_PAIRED_EXECUTION",
+  "frozenUTC": "2026-10-16T12:43:18.009725+00:00",
+  "parentHeadBeforeFreeze": "5d811a8c5df7500b9ab7378077875137372a84fe",
+  "candidateProductionReference": "82165e7ffda344165fc9116027a4b6f3ffacd4f5",
+  "preparedSHA256": "dde262ca2add9c88654ed2abd6aa84f30ce42f199e091137851fa3b810b3cb38",
+  "driverSHA256": "b2f9e5f1db43b848ce6afc8896434729ba1277dc696cbf3fd83c6bfce8463ea8",
+  "configSHA256": "8f5c6691e905199d6fb352f7f8aae708f1e96f8bbb6dd52c8531dafcdb8789d9",
+  "authorArchiveSHA256": "5388ca0fa079ee9103fd1ff1c0d630e8de153bc4a3e0e268efe5707c46cb39eb",
+  "authorFiles": {
+    "ACCOUNTING-V2.md": "1bd159719dcf70893c978bef6f18b3b3eb53c968da68c948f0fe671c4ece770b",
+    "CHANGELOG.md": "6b4c57697e84f9f18347f8964a9ea72ab6d050068f6ff33493075172d44eb337",
+    "PublicDomainReference.swift": "860e4098efcf1d38825458c4791c5398a7e37c626ba23dc91392e7f60629516b",
+    "README.md": "30153c372b203a9731ba852ef7c71819adc40a31528ca53debfab1ac2432cec1",
+    "ReferenceMain.swift": "3cf1b7c4a6dedcae9a12f66d5440b1ee003efe3db92ef56a8bc65b98c75198e2",
+    "Runner.swift": "8f50f13ef8fcddc51d3521e6311992ebae2778f5635957f381f6a392ff61e4a1",
+    "accounting-countertruth.json": "4dddb54752842765421c00f2705aa99cbeceae72804e07e5d50f3fdfaa1c96eb",
+    "accounting-results.json": "5713e2b85d2f3028881e277a6c34dec8d19405e2d0c13c88ade6405ec3be05ee",
+    "accounting-witnesses.json": "272bb8ccd0d1dbda272f6add35b83c5bf98b8fcda9b0b234a4958cdc806d2721",
+    "accounting_truth.py": "6cc14f93a6b92b7f6a89f6a29e46ebe16409f1b0cccfdd0b6694eabb2f60378b",
+    "add_accounting.py": "e19e4d7104afa9beb1fdf80057e59c6553c05451e03db85cd15fe1737355438e",
+    "adversarial-cases.json": "4973a2dcbcb8043b44b6934ffa393a2b8e2cff45fc0b3fae37ee7a067c8f33e0",
+    "adversarial-results.json": "6aa190a0bab1cf1f36387a2fd671b449dc401734faf769d93ecc3d29b224a1cf",
+    "author-protocol.md": "4f774c5d419d9f95f243cb0791db58b6cc6ce52a10c5c9c2b9129fae65159c42",
+    "author-validation.json": "f8d9f89444b5976adb56c0835d3e0741788c3b07a2e0d40b38c3f825e342476f",
+    "author.py": "c4b007fe192a410756fcc855c487d11bdc8932e62a3226af52e244e57df79b4f",
+    "environment-template.json": "c6dd071f6854e420e08178407125db08fa5897011bdc34d48d744873a4594981",
+    "evaluate.py": "fd1c9260abb1a021ec164faa3ca55d3428a24d4f4478b84a7d6ba3a128294195",
+    "expectations.json": "dc63f643ea7dd6f7a61df60663c1fa78580bcb9adb4d1b0ca4a68fab2d4a0ed1",
+    "fixtures-schema.json": "d077ddab27dd1c0b4ccc4b372972db97425d18248f994c5464598305ae163be5",
+    "fixtures.json": "9f49a1fa017e07f989c19518329e1a48b16e1e76c9c2d7826f5a55c301212912",
+    "make_accounting_witnesses.py": "0f213e9544a7403d438bcf2c6c206bbf5bef10b0a7fa3ca17c146b1bd9297ab6",
+    "make_adversaries.py": "d6ebf09d3c5458b01cdd7478c2386763bbb334245f1b3c83a43eccf816375950",
+    "make_diff.py": "8a940a48f371fb7c713b6d7d49936919e0d193a7a1de87373a0178af569f2ed9",
+    "make_report_schema.py": "5224eed728b277e640827df44f2ca8e61e37d6fbe43cb95cbf77adc004d5fb6c",
+    "make_schema.py": "6f31249802f1220c4fe7f1717a9f12a8d0f1192a7c2ca9c9ed1e7a72c03b489f",
+    "make_synthetic.py": "2a44e2139ca15426d03936e4cec5df5585219908ebfc6413854085bdbe6ac1ce",
+    "public-domain-v3.md": "986bbb9faefefd211c8f954c5d0fcd66ad1cd42e10008e69a354a7bc964dbef9",
+    "reference-assumptions.md": "767e70b4218e847f2a871bcb7dadff42d9c596c8d1e63a0852151c0aa58ac131",
+    "reference-requests.json": "a54790476c9c48e8153df8b151186300f7d6d69c77106e9c67c7d31539c20ee1",
+    "reference.json": "0431ce88a659611358b35d0672337137544149ab79709641c36b2dcb4a4343eb",
+    "report-schema-results.json": "092a92853b25b20d5c9faf7dd8dda7fdb9278dbccea501c27e0130a6f8c4a586",
+    "report-schema.json": "9d7212356abfee22be7e01c9249f9ac776fbd7df7bd38c4ad2126aea1d315898",
+    "runtime-binding.json": "d54449f756834a2f2c02445b8e1acf06a12dd768b6e439c38282f1c6546f0f4c",
+    "schema.json": "4fdcaa1cd0f094897d68b753a67805dbf97b1a5adfad695db106aa1dfa208db9",
+    "seal_manifest.py": "5fdb18d1b02f3698e96b173ff4396e8e70ee6bdb8ee1a10fb8e5b2538d546858",
+    "synthetic-raw.json": "cd1e9a67af46bea947d3a8494aee72dae17df8e051733bae332af9565b4e1814",
+    "test_accounting.py": "9144a3811e59ce87f664d228b127e1c4d878ed8f36e5234cf12aa7fa6b86ac45",
+    "test_evaluator.py": "082004bb8f055496725ba93b2353fcfe60bce4762cde444e07a08630d3d6a2b4",
+    "test_report_schema.py": "14029e441dafc857b6119c95a691850dd1d4c72e587a8a4197144af77489898f",
+    "v1-author-manifest.json": "8fa0b0af6ede9ed34cf07c8aebc3b5a651ebb8a10cc5d2da840c48173e23245a",
+    "v1-author-metadata.json": "f34abf2df11b59cbd588311e880ce15e8baad247d9603bac30afd6c71734a7ff",
+    "v1-evaluate.py.txt": "4819e7bec3c90eb24b8b34e0e581e52f580b6b8cae1614cdbb94540df600e12d",
+    "v1-independent-packet.json": "3f4fe832a48c6bf33adfbc93428935dc82e044e856b1631df61be1d2610b67a9",
+    "v1-independent-receipt.json": "32647adc01cfd4b2650d54d1a2e8fe89a50bfeaadacfaa32f3ebb913567a5e01",
+    "v1-independent-review.md": "e9ea8521bb872ab6537c589b94cbb5f25e02f15997ae5f4ea23fa6fe30bac463",
+    "v1-v2-files.json": "9cff62add18a2fe6b2f9b95f40cb397f6d64f3cd017725b9d1d4fdebac3c5145",
+    "v1-v2.diff": "27ce439cba5bb5e05016c4774b2cea76b357c0789c1ac9522d80f3d9982d80fd",
+    "v2-preservation-proof.json": "86e9af736a3457552e92888410ce60d46f5e37eda9f7fab8a5566fbf079b586f",
+    "verify_author.py": "3fb9ff7a642c72509a3d0a5626208eb47fafcf929073ce6cf30368de8770e7d9",
+    "verify_v2_preservation.py": "68b34e061798136902dd5f4ed24295ea53a3189e5d4a1ac241402b79ed2e3928",
+    "author-manifest.json": "f76d1a671ecb51ab1bd7fb3838649ff8e4fd131f1f93bddf6bf6828f6abfeca4"
+  },
+  "gates": {
+    "authorSemanticReview": {
+      "path": "fresh-validator-v2/receipt.json",
+      "sha256": "6b48a33d2a896522fa71e30bf55b0f13f20c26fd8da9cce0b12e46a79ff6f07f"
+    },
+    "sourceComposition": {
+      "path": "reused-gates/source-composition.json",
+      "sha256": "24e0d338ee2e6e283e98cb7274c5559bb7047054d7687c2620bffc6fd690c2ae"
+    },
+    "ordinaryCore": {
+      "path": "reused-gates/ordinary-core-services.json",
+      "sha256": "7e21013a80cbc5873ebdf720c74e78d8f7cfa28340c92714fb655dd967b67e27"
+    },
+    "nativeIntegration": {
+      "path": "reused-gates/native-integration.md",
+      "sha256": "f12e9a1013e641efe02b9c5b1d4152a6e115171e921f86196ad21157e61957f5"
+    },
+    "executorReview": {
+      "path": "environment-review-v1/receipt.json",
+      "sha256": "36662254531c6d81f5b9972d9f4f6552e95e8dfc000ae2c1e9807ab8e8c936ea"
+    }
+  },
+  "additionalMechanicsBindings": {
+    "seam-review-v1/receipt.json": "376fbe2e422cd8c178c087b4406d16f43e8e523f0dbea3541c50d282bca21d17",
+    "reused-gates/paired-driver-review.json": "7a83d8202c4d7f44ad879819a722323e5d82eef09c3c9def34c4c973bffc756f",
+    "fresh-validator-v2/review.md": "844b00cd30c0d46d37f1940168b3969bab1753f1080353c227c1cbfdcd628462"
+  },
+  "preparedRecords": [
+    {
+      "name": "comparison",
+      "buildExit": 0,
+      "buildArgv": [
+        "swift",
+        "build",
+        "-c",
+        "release",
+        "--package-path",
+        "/private/tmp/pulpo-r48-r49-final-v3/comparison/client",
+        "--product",
+        "BoundaryRunner",
+        "-Xswiftc",
+        "-parse-as-library"
+      ],
+      "successfulBuildLogRead": false,
+      "productExecutions": 0,
+      "binary": "comparison/client/.build/release/BoundaryRunner",
+      "binarySHA256": "d7a08b0463ad4342561c85952200310df7ed3b8785ea5424ec8de53e6ef545c8",
+      "environment": "comparison/environment.json",
+      "environmentSHA256": "a88f71a9555bee1e7312a91ed79005dfdd3fd76af5f32627a396415b282fac4c",
+      "sourceInventorySHA256": "5489d04cd2f18ceda4f8d2a7113fcdaf3b377e3aeaf35b3a2a26eb1ba01dcded",
+      "sourceManifest": "comparison/source-manifest.json",
+      "authorReviewSHA256": "6b48a33d2a896522fa71e30bf55b0f13f20c26fd8da9cce0b12e46a79ff6f07f"
+    },
+    {
+      "name": "candidate",
+      "buildExit": 0,
+      "buildArgv": [
+        "swift",
+        "build",
+        "-c",
+        "release",
+        "--package-path",
+        "/private/tmp/pulpo-r48-r49-final-v3/candidate/client",
+        "--product",
+        "BoundaryRunner",
+        "-Xswiftc",
+        "-parse-as-library"
+      ],
+      "successfulBuildLogRead": false,
+      "productExecutions": 0,
+      "binary": "candidate/client/.build/release/BoundaryRunner",
+      "binarySHA256": "33eddbe9ace209a853adcc0aa3e1e1a02a0286db2c89ad9c4928abfb3318c26b",
+      "environment": "candidate/environment.json",
+      "environmentSHA256": "5fd6d1d662d4bad820096d74abf2870f5a436588e56bd3a0edc988c582b7bc2b",
+      "sourceInventorySHA256": "95bb869e4b1b13e6e79c8097e68d51619ef14545db64c6fe6f97be60f7b95421",
+      "sourceManifest": "candidate/source-manifest.json",
+      "authorReviewSHA256": "6b48a33d2a896522fa71e30bf55b0f13f20c26fd8da9cce0b12e46a79ff6f07f"
+    }
+  ],
+  "runtime": {
+    "python": "3.9.6 (default, Aug 17 2026, 12:07:42) \n[Clang 21.0.0 (clang-2100.3.34.1)]",
+    "pythonExecutable": "/Applications/Xcode.app/Contents/Developer/usr/bin/python3",
+    "platform": "macOS-27.0.1-arm64-arm-64bit",
+    "compiler": "Apple Swift version 6.4 (swiftlang-6.4.0.34.1 clang-2100.3.34.1)\nTarget: arm64-apple-macosx27.0.0",
+    "runnerRuntime": "Version 27.0.1 (Build 26A434)"
+  },
+  "executionPolicy": {
+    "versions": 2,
+    "maximumAttemptsPerVersion": 1,
+    "mutationRetries": 0,
+    "noPostRevealSourceOracleOrPayloadTuning": true,
+    "captureAllRawAndFailures": true
+  },
+  "accounting": {
+    "actions": 452,
+    "relations": 320,
+    "aggregates": 772,
+    "diagnosticMessagesAreNotFailedAggregateCounts": true
+  },
+  "limits": [
+    "Whole Core source trees differ; paired observations do not establish isolated causation",
+    "Prior R45 and R48 failed rounds remain rejected and unchanged",
+    "Native normal25/25 and AX8/8 retain5/2priority warnings; no latency or suspension guarantee",
+    "Environment approval_sha256 binds semantic receipt; this separate freeze binds actual binary/environment and all five gates",
+    "No EN/ES/BI population accuracy, Gboard superiority or inaccessible extension-local erasure claim"
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "exit": 0,
+  "logSHA256": "483a85823ce5f5ea3241d97c5e512dee29b9962e626102c54384ca352ba8e99b",
+  "successfulBuildLogRead": false,
+  "argv": [
+    "swift",
+    "build",
+    "-c",
+    "release",
+    "--package-path",
+    "/private/tmp/pulpo-r48-r49-final-v3/comparison/client",
+    "--product",
+    "BoundaryRunner",
+    "-Xswiftc",
+    "-parse-as-library"
+  ],
+  "productExecutions": 0
+}

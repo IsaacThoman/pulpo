@@ -1,0 +1,13 @@
+{
+  "round": "r49",
+  "fixture_sha256": "9f49a1fa017e07f989c19518329e1a48b16e1e76c9c2d7826f5a55c301212912",
+  "runner_sha256": "8f50f13ef8fcddc51d3521e6311992ebae2778f5635957f381f6a392ff61e4a1",
+  "execution": {
+    "variant": "comparison",
+    "binary_sha256": "d7a08b0463ad4342561c85952200310df7ed3b8785ea5424ec8de53e6ef545c8",
+    "source_manifest_sha256": "5489d04cd2f18ceda4f8d2a7113fcdaf3b377e3aeaf35b3a2a26eb1ba01dcded",
+    "approval_sha256": "6b48a33d2a896522fa71e30bf55b0f13f20c26fd8da9cce0b12e46a79ff6f07f",
+    "compiler": "Apple Swift version 6.4 (swiftlang-6.4.0.34.1 clang-2100.3.34.1)\nTarget: arm64-apple-macosx27.0.0",
+    "platform": "macOS-27.0.1-arm64-arm-64bit"
+  }
+}

@@ -1,0 +1,60 @@
+{
+  "configSHA256": "8f5c6691e905199d6fb352f7f8aae708f1e96f8bbb6dd52c8531dafcdb8789d9",
+  "driverSHA256": "b2f9e5f1db43b848ce6afc8896434729ba1277dc696cbf3fd83c6bfce8463ea8",
+  "compiler": "Apple Swift version 6.4 (swiftlang-6.4.0.34.1 clang-2100.3.34.1)\nTarget: arm64-apple-macosx27.0.0",
+  "runnerSHA256": "8f50f13ef8fcddc51d3521e6311992ebae2778f5635957f381f6a392ff61e4a1",
+  "fixturesSHA256": "9f49a1fa017e07f989c19518329e1a48b16e1e76c9c2d7826f5a55c301212912",
+  "authorRoot": "author",
+  "records": [
+    {
+      "name": "comparison",
+      "buildExit": 0,
+      "buildArgv": [
+        "swift",
+        "build",
+        "-c",
+        "release",
+        "--package-path",
+        "/private/tmp/pulpo-r48-r49-final-v3/comparison/client",
+        "--product",
+        "BoundaryRunner",
+        "-Xswiftc",
+        "-parse-as-library"
+      ],
+      "successfulBuildLogRead": false,
+      "productExecutions": 0,
+      "binary": "comparison/client/.build/release/BoundaryRunner",
+      "binarySHA256": "d7a08b0463ad4342561c85952200310df7ed3b8785ea5424ec8de53e6ef545c8",
+      "environment": "comparison/environment.json",
+      "environmentSHA256": "a88f71a9555bee1e7312a91ed79005dfdd3fd76af5f32627a396415b282fac4c",
+      "sourceInventorySHA256": "5489d04cd2f18ceda4f8d2a7113fcdaf3b377e3aeaf35b3a2a26eb1ba01dcded",
+      "sourceManifest": "comparison/source-manifest.json",
+      "authorReviewSHA256": "6b48a33d2a896522fa71e30bf55b0f13f20c26fd8da9cce0b12e46a79ff6f07f"
+    },
+    {
+      "name": "candidate",
+      "buildExit": 0,
+      "buildArgv": [
+        "swift",
+        "build",
+        "-c",
+        "release",
+        "--package-path",
+        "/private/tmp/pulpo-r48-r49-final-v3/candidate/client",
+        "--product",
+        "BoundaryRunner",
+        "-Xswiftc",
+        "-parse-as-library"
+      ],
+      "successfulBuildLogRead": false,
+      "productExecutions": 0,
+      "binary": "candidate/client/.build/release/BoundaryRunner",
+      "binarySHA256": "33eddbe9ace209a853adcc0aa3e1e1a02a0286db2c89ad9c4928abfb3318c26b",
+      "environment": "candidate/environment.json",
+      "environmentSHA256": "5fd6d1d662d4bad820096d74abf2870f5a436588e56bd3a0edc988c582b7bc2b",
+      "sourceInventorySHA256": "95bb869e4b1b13e6e79c8097e68d51619ef14545db64c6fe6f97be60f7b95421",
+      "sourceManifest": "candidate/source-manifest.json",
+      "authorReviewSHA256": "6b48a33d2a896522fa71e30bf55b0f13f20c26fd8da9cce0b12e46a79ff6f07f"
+    }
+  ]
+}

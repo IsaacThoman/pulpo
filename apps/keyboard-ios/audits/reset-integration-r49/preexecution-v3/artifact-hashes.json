@@ -1,0 +1,12 @@
+{
+  "prepared.json": "dde262ca2add9c88654ed2abd6aa84f30ce42f199e091137851fa3b810b3cb38",
+  "config.json": "8f5c6691e905199d6fb352f7f8aae708f1e96f8bbb6dd52c8531dafcdb8789d9",
+  "comparison/environment.json": "a88f71a9555bee1e7312a91ed79005dfdd3fd76af5f32627a396415b282fac4c",
+  "comparison/source-manifest.json": "5489d04cd2f18ceda4f8d2a7113fcdaf3b377e3aeaf35b3a2a26eb1ba01dcded",
+  "comparison-binary.tar.gz": "3a4c656fd0b1cd759384dd51313467f586baeec1aacc19213bc6923addceead6",
+  "comparison-build-attestation.json": "a3042a435f83ef0c3a8323cca940815dfd9ccc754e6cfdce0a4cc9372fa905ee",
+  "candidate/environment.json": "5fd6d1d662d4bad820096d74abf2870f5a436588e56bd3a0edc988c582b7bc2b",
+  "candidate/source-manifest.json": "95bb869e4b1b13e6e79c8097e68d51619ef14545db64c6fe6f97be60f7b95421",
+  "candidate-binary.tar.gz": "a93dcc4ffb277bfd83ac2dacd9a4bc5463e968c47c3c0be59b765d2ddeeedd61",
+  "candidate-build-attestation.json": "79994147fd86dcc845b7c0e591d5c95b0930d37656a53a2275e44a4e77ced54a"
+}
