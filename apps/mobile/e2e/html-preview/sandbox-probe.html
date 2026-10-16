@@ -1,0 +1,87 @@
+<!doctype html>
+<!-- No viewport meta on purpose: the preview should still lay this page out at the device width. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Sandbox probe</title>
+  <style>
+    body { font: 15px/1.4 -apple-system, sans-serif; margin: 16px; color: #1d1530; }
+    h1 { font-size: 20px; margin: 0 0 12px; }
+    li { margin: 6px 0; }
+    .pass { color: #1f7a4d; }
+    .fail { color: #c0263a; font-weight: 600; }
+    button, a.button { box-sizing: border-box; display: block; width: 100%; margin: 8px 0; padding: 10px; font: inherit; border-radius: 10px; border: 1px solid #c9c2d6; background: #f5f2fa; color: inherit; text-align: center; text-decoration: none; }
+    #log { font: 12px ui-monospace, monospace; white-space: pre-wrap; background: #f6f6f6; padding: 8px; border-radius: 8px; min-height: 2em; }
+  </style>
+</head>
+<body>
+  <h1>Sandbox probe</h1>
+  <p id="summary">Scripts did not run.</p>
+  <ul id="checks"></ul>
+
+  <h2 id="manual">Manual checks</h2>
+  <button onclick="log('alert returned ' + String(alert('Hello from the preview')))">alert()</button>
+  <button onclick="log('confirm returned ' + confirm('Continue?'))">confirm()</button>
+  <button onclick="log('prompt returned ' + JSON.stringify(prompt('Your name?', 'Pulpo')))">prompt()</button>
+  <button onclick="for (let i = 0; i < 5; i++) alert('Dialog ' + (i + 1) + ' of 5')">Five alerts in a row</button>
+  <a class="button" href="https://example.com/">Link to https://example.com</a>
+  <a class="button" href="https://example.com/" target="_blank">target=_blank link</a>
+  <button onclick="log('window.open returned ' + window.open('https://example.com/'))">window.open()</button>
+  <button onclick="location.href = 'https://example.com/'; setTimeout(() => log('still here after scripted navigation'), 500)">Scripted navigation</button>
+  <a class="button" href="pulpo://chat">Link to pulpo:// app scheme</a>
+  <a class="button" href="#manual">Fragment link (#manual)</a>
+  <form onsubmit="log('submit event fired')" action="https://example.com/submit"><button>Submit form to example.com</button></form>
+  <div id="log"></div>
+
+  <script>
+    const checks = document.getElementById('checks')
+    function log(message) { document.getElementById('log').textContent += message + '\n' }
+    function report(name, pass, detail) {
+      const li = document.createElement('li')
+      li.className = pass ? 'pass' : 'fail'
+      li.textContent = `${pass ? 'PASS' : 'FAIL'} ${name}${detail ? ` — ${detail}` : ''}`
+      checks.append(li)
+      return pass
+    }
+    function throws(fn) { try { fn(); return null } catch (error) { return error.name || String(error) } }
+
+    async function run() {
+      const results = []
+      results.push(report('JavaScript runs', true))
+      results.push(report('Opaque origin', self.origin === 'null', `self.origin = ${self.origin}`))
+      const storageError = throws(() => localStorage.setItem('probe', '1'))
+      results.push(report('localStorage unavailable', storageError !== null, storageError || 'write succeeded'))
+      document.cookie = 'probe=1'
+      results.push(report('Cookies unavailable', !document.cookie.includes('probe'), `document.cookie = "${document.cookie}"`))
+      results.push(report('No native bridge', !(window.webkit && window.webkit.messageHandlers && Object.keys(window.webkit.messageHandlers).length), typeof window.webkit))
+      results.push(report('Laid out at device width', window.innerWidth < 600, `innerWidth = ${window.innerWidth}`))
+      try {
+        await fetch('http://localhost:8080/api/auth/settings')
+        results.push(report('Plain-HTTP requests blocked by CSP', false, 'request succeeded'))
+      } catch (error) {
+        results.push(report('Plain-HTTP requests blocked by CSP', true, error.name))
+      }
+      try {
+        const response = await fetch('/other.html')
+        results.push(report('Only the document is served', !response.ok, `status ${response.status}`))
+      } catch (error) {
+        results.push(report('Only the document is served', true, error.name))
+      }
+      const frameViolation = new Promise((resolve) => {
+        document.addEventListener('securitypolicyviolation', (event) => {
+          if (event.effectiveDirective === 'frame-src' || event.violatedDirective.startsWith('frame-src')) resolve(true)
+        })
+        setTimeout(() => resolve(false), 1500)
+      })
+      const frame = document.createElement('iframe')
+      frame.src = 'https://example.com/'
+      document.body.append(frame)
+      results.push(report('Frames blocked by CSP', await frameViolation))
+      frame.remove()
+      const passed = results.filter(Boolean).length
+      document.getElementById('summary').textContent = `${passed}/${results.length} checks passed`
+    }
+    run().catch((error) => log('probe error: ' + error))
+  </script>
+</body>
+</html>
