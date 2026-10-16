@@ -1,0 +1,45 @@
+{
+  "devicesAndConfigurations" : [
+    {
+      "device" : {
+        "architecture" : "arm64",
+        "deviceId" : "8E0D68B4-BDA5-45D6-8C7E-58FA058BF7A1",
+        "deviceName" : "Pulpo R38 Parent Validation",
+        "modelName" : "iPhone 16e",
+        "osBuildNumber" : "24A434",
+        "osVersion" : "27.0",
+        "platform" : "iOS Simulator"
+      },
+      "expectedFailures" : 0,
+      "failedTests" : 0,
+      "passedTests" : 4,
+      "skippedTests" : 0,
+      "testPlanConfiguration" : {
+        "configurationId" : "1",
+        "configurationName" : "Test Scheme Action"
+      }
+    }
+  ],
+  "environmentDescription" : "PulpoKeyboard · Built with macOS 27.0.1",
+  "expectedFailures" : 0,
+  "failedTests" : 0,
+  "finishTime" : 1792142954.173,
+  "passedTests" : 4,
+  "result" : "Passed",
+  "runtimeWarnings" : [
+
+  ],
+  "skippedTests" : 0,
+  "startTime" : 1792142920.12,
+  "statistics" : [
+
+  ],
+  "testFailures" : [
+
+  ],
+  "title" : "Test - PulpoKeyboard",
+  "topInsights" : [
+
+  ],
+  "totalTestCount" : 4
+}

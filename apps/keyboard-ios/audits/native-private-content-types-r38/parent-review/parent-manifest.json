@@ -1,0 +1,113 @@
+{
+  "version": 1,
+  "disposition": "MAPPING_SOURCE_SOUND_FULL_FROZEN_ACCEPTANCE_NOT_MET",
+  "originalPacketRelative": "apps/keyboard-ios/audits/native-private-content-types-r38",
+  "originalCandidateRef": "14f1f67c9bf81f729e5b84eab57ea09fe2e39a4e",
+  "parentCandidateRef": "6f9bb58d",
+  "baselineRef": "00e2a0e7a283bc4a780b02f847ea9d82dfe9e5ae",
+  "frozenSourceSnapshots": {
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Input/InputTraits.swift": "snapshots/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Input/InputTraits.swift.txt",
+    "apps/keyboard-ios/PulpoKeyboardKit/Tests/KeyboardCoreTests/NativeContentTypePrivacyTests.swift": "snapshots/apps/keyboard-ios/PulpoKeyboardKit/Tests/KeyboardCoreTests/NativeContentTypePrivacyTests.swift.txt",
+    "apps/keyboard-ios/AppTests/NativeContentTypePrivacyR38Tests.swift": "snapshots/apps/keyboard-ios/AppTests/NativeContentTypePrivacyR38Tests.swift.txt",
+    "apps/keyboard-ios/AppTests/NativeContentTypeCalibrationR38Tests.swift": "snapshots/apps/keyboard-ios/AppTests/NativeContentTypeCalibrationR38Tests.swift.txt"
+  },
+  "sourceCurrentlyMatchedAtCuration": {
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Input/InputTraits.swift": "b51ff8291e2fc6a64f2244a7ddf198d4a49fde79443bffca500b4d2b317d2b61",
+    "apps/keyboard-ios/PulpoKeyboardKit/Tests/KeyboardCoreTests/NativeContentTypePrivacyTests.swift": "8e177fa8d1aa88dc67337c9bdf7e32fec3a2850e2fb1d3dc689bebec88c6a66a",
+    "apps/keyboard-ios/AppTests/NativeContentTypePrivacyR38Tests.swift": "b87a55680f1ca8c20209fe3391f32774547818f0a428b7f4d1d09c0268f8fb58",
+    "apps/keyboard-ios/AppTests/NativeContentTypeCalibrationR38Tests.swift": "063ce59fcd6f6a79438b13adec7c543b9da3e9a2fff0ef718fd3e58aad8efd2d"
+  },
+  "files": {
+    "peer/REVIEW.md": {
+      "sha256": "d2078fff9f584fea21b823654df8c1d4ce0ef1e4c5b3dc94c2748f65b53813d6",
+      "bytes": 9538,
+      "origin": "/tmp/pulpo-r38-parent-review/REVIEW.md"
+    },
+    "peer/receipt.json": {
+      "sha256": "2d66d2698096995dc00fe0e273852d5bfd5ae307045a5ad651f84d7616401e10",
+      "bytes": 1677,
+      "origin": "/tmp/pulpo-r38-parent-review/receipt.json"
+    },
+    "peer/evidence-check.json": {
+      "sha256": "c268570bed82b4c727175fd48ee192e780210319a943c140961a713618bb56ca",
+      "bytes": 7587,
+      "origin": "/tmp/pulpo-r38-parent-review/evidence-check.json"
+    },
+    "peer/mapping-and-positive-controls.json": {
+      "sha256": "43547b46a294cbbaccc6d4e137d6521b15ffd771341858da212c53a742090613",
+      "bytes": 1772,
+      "origin": "/tmp/pulpo-r38-parent-review/mapping-and-positive-controls.json"
+    },
+    "peer/production.diff": {
+      "sha256": "b28d62b4e7a00a9ca2c3407f601c2d070a6dd23f7b5abcb60f75b014a17513e3",
+      "bytes": 1475,
+      "origin": "/tmp/pulpo-r38-parent-review/production.diff"
+    },
+    "peer/check-evidence.py.inactive.txt": {
+      "sha256": "2e6227ff5e1aa1e3c822ee322d659a4b1c8ce805aca44db76b7b7295134dc173",
+      "bytes": 7263,
+      "origin": "/tmp/pulpo-r38-parent-review/check-evidence.py"
+    },
+    "original-freezes/contract-freeze.json": {
+      "sha256": "6678bd94a598e16da821b2499ef177598a5755b8d6760b28d8fb90da8dd13114",
+      "bytes": 484,
+      "origin": "/Users/isaacthoman/.t3/worktrees/pulpo/t3-a3218df3/apps/keyboard-ios/audits/native-private-content-types-r38/contract-freeze.json"
+    },
+    "original-freezes/candidate-freeze.json": {
+      "sha256": "76509a8e265bfbd7a3f992a39490f4252aa9d54e4d873216ed8ed2682ae2a879",
+      "bytes": 4640,
+      "origin": "/Users/isaacthoman/.t3/worktrees/pulpo/t3-a3218df3/apps/keyboard-ios/audits/native-private-content-types-r38/candidate-freeze.json"
+    },
+    "original-freezes/heldout-seal.json": {
+      "sha256": "4012cb5e7bd17a53611f3dfbfd9635241ff1232b73541ba85127064427dcb6a0",
+      "bytes": 1148,
+      "origin": "/Users/isaacthoman/.t3/worktrees/pulpo/t3-a3218df3/apps/keyboard-ios/audits/native-private-content-types-r38/heldout-seal.json"
+    },
+    "original-freezes/manifest.json": {
+      "sha256": "f3e147efba5cf15e15ad83023cffad71e3f2d24e1c5c549abe521ba89978429b",
+      "bytes": 10172,
+      "origin": "/Users/isaacthoman/.t3/worktrees/pulpo/t3-a3218df3/apps/keyboard-ios/audits/native-private-content-types-r38/manifest.json"
+    },
+    "snapshots/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Input/InputTraits.swift.txt": {
+      "sha256": "b51ff8291e2fc6a64f2244a7ddf198d4a49fde79443bffca500b4d2b317d2b61",
+      "bytes": 3872,
+      "origin": "/Users/isaacthoman/.t3/worktrees/pulpo/t3-a3218df3/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Input/InputTraits.swift"
+    },
+    "snapshots/apps/keyboard-ios/PulpoKeyboardKit/Tests/KeyboardCoreTests/NativeContentTypePrivacyTests.swift.txt": {
+      "sha256": "8e177fa8d1aa88dc67337c9bdf7e32fec3a2850e2fb1d3dc689bebec88c6a66a",
+      "bytes": 4570,
+      "origin": "/Users/isaacthoman/.t3/worktrees/pulpo/t3-a3218df3/apps/keyboard-ios/PulpoKeyboardKit/Tests/KeyboardCoreTests/NativeContentTypePrivacyTests.swift"
+    },
+    "snapshots/apps/keyboard-ios/AppTests/NativeContentTypePrivacyR38Tests.swift.txt": {
+      "sha256": "b87a55680f1ca8c20209fe3391f32774547818f0a428b7f4d1d09c0268f8fb58",
+      "bytes": 7447,
+      "origin": "/Users/isaacthoman/.t3/worktrees/pulpo/t3-a3218df3/apps/keyboard-ios/AppTests/NativeContentTypePrivacyR38Tests.swift"
+    },
+    "snapshots/apps/keyboard-ios/AppTests/NativeContentTypeCalibrationR38Tests.swift.txt": {
+      "sha256": "063ce59fcd6f6a79438b13adec7c543b9da3e9a2fff0ef718fd3e58aad8efd2d",
+      "bytes": 3533,
+      "origin": "/Users/isaacthoman/.t3/worktrees/pulpo/t3-a3218df3/apps/keyboard-ios/AppTests/NativeContentTypeCalibrationR38Tests.swift"
+    },
+    "snapshots/baseline-InputTraits.swift.txt": {
+      "sha256": "018d9125d75d032c6f71ed58028bb506c26ea5240245510d4d621f489b2cf790",
+      "bytes": 3230,
+      "origin": "/tmp/pulpo-r38-parent-review/baseline-InputTraits.swift.txt"
+    },
+    "verify-parent.py": {
+      "sha256": "6717f056876915f6ea8d9647b245c1f5a332ee96120ea8d8bf029679300ffa3d",
+      "bytes": 22297,
+      "origin": "derived parent verification tool/note; not frozen experiment artifact"
+    },
+    "README.md": {
+      "sha256": "9a8cf06080936390de64f74ba507be669e6a73b40d95399f85a69b323063dcf5",
+      "bytes": 5730,
+      "origin": "derived parent verification tool/note; not frozen experiment artifact"
+    },
+    "validation-receipt.json": {
+      "sha256": "eb578737ebca30ded832440e0ba6a3553b5346a210901c8b867faa1e782c1bd4",
+      "bytes": 1921,
+      "origin": "derived parent checker validation summary; not new runtime benchmark evidence"
+    }
+  },
+  "excludedPeerWitnesses": "Four large peer witness arrays omitted; exact original full reports remain in original packet and scores are independently recomputed from them."
+}

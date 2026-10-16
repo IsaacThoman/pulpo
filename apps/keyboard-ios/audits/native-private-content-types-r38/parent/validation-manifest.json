@@ -1,0 +1,45 @@
+{
+  "scope": "Parent actual validation receipts and raw focused/full test output; unsigned retained-byte hashes.",
+  "files": {
+    "parent/baseline-test-overlay.json": {
+      "bytes": 776,
+      "sha256": "37178d1c2404b45d851e393174de349b0b0b339e0a701af982fde9f510bc5556"
+    },
+    "parent/native-candidate-tests.json": {
+      "bytes": 4053,
+      "sha256": "10075750406fde2c60fccadc12dbdbf925c6d5bd9d5a8515d07696f58e9e6fce"
+    },
+    "parent/native-attempt1-errors.txt": {
+      "bytes": 4837,
+      "sha256": "6cd8495d9a2aaeaf583b5f0d3121b2677e21a68946cd1ccdbd76f7da9fc84fd7"
+    },
+    "parent/device-release.json": {
+      "bytes": 190,
+      "sha256": "354ca290212f16061e1abefc7947378130085b2bb1830cbe0cc95490c2b6f7ac"
+    },
+    "parent/native-candidate-summary.json": {
+      "bytes": 1019,
+      "sha256": "e02a0dce444367a0a297a0f04807b1c2cdebce40afc59486a3500bbb41a9b52f"
+    },
+    "parent/full-core-services.txt.gz": {
+      "bytes": 23048,
+      "sha256": "099634573a63b1278fa0b294e582d0a2150241872619f91b63b16cc9b6c5c2bd"
+    },
+    "parent/parent-native-calibration.json": {
+      "bytes": 8221,
+      "sha256": "b639bcd10093a2ec5567376cf529a448378e6087c6ed41d9c1d5b97fc2fd2ed8"
+    },
+    "parent/parent-validation.json": {
+      "bytes": 2817,
+      "sha256": "0e70db4157ce310f82b43f8ba5dce4eb63455c2467dfff19cd2bd629176b8ed6"
+    },
+    "parent/device-created.json": {
+      "bytes": 462,
+      "sha256": "4498acf1d2b8931d1945c6537b705e0af3295b44535e9ee0935c28430c5f7047"
+    },
+    "parent/baseline-focused.txt.gz": {
+      "bytes": 16066,
+      "sha256": "5e27acaad750b2b3d39e8648d0d5d4580f6cb6026ac2274be4c452b0017287ea"
+    }
+  }
+}

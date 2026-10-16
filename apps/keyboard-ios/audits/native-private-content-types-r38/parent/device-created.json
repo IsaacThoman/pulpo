@@ -1,0 +1,11 @@
+{
+  "device": "8E0D68B4-BDA5-45D6-8C7E-58FA058BF7A1",
+  "name": "Pulpo R38 Parent Validation",
+  "type": "iPhone16e",
+  "runtime": "iOS27.0",
+  "createdByParent": true,
+  "priorState": "did not exist",
+  "deviceList": "raw exit127; iOS platform available",
+  "deviceOpen": "No device on host local; fallback pinned CoreSimulator/XCTest",
+  "scope": "parent candidate-only native mapping/controller reproduction; no physical device or UI touch/VoiceOver claim"
+}

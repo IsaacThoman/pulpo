@@ -1,0 +1,299 @@
+{
+  "runtimeExecuted": false,
+  "hashBindingsVerified": 35,
+  "inputSHA256": "b92aee89e5a0e989a14896189ba4d5a1c47ffe2a4b319ad92dac5e1671ac9a4c",
+  "platforms": {
+    "core": {
+      "baseline": {
+        "cases": 54,
+        "passedCases": 21,
+        "transitions": 1272,
+        "passedTransitions": 603,
+        "failureKinds": {
+          "private": 660,
+          "plain.appliesTextReplacements": 378,
+          "plain.autocorrects": 378,
+          "plain.autoSpaces": 378,
+          "plain.learns": 378,
+          "plain.showsSuggestions": 378,
+          "plain.smartQuotes": 378,
+          "plain.smartSpacing": 378,
+          "suggestionsEmpty": 285,
+          "allowsConfirmation": 570,
+          "totalCount": 573,
+          "touchWeight": 540,
+          "knownCounts[\"meadow\"]": 181,
+          "knownCounts[\"camino\"]": 181,
+          "knownCounts[\"amigo\"]": 181,
+          "touchPositive": 6,
+          "text.UTF16": 12,
+          "selection": 12,
+          "acceptedCore": 3
+        },
+        "challenges": {
+          "fired": 39,
+          "denied": 33,
+          "accepted": 6
+        }
+      },
+      "candidate": {
+        "cases": 54,
+        "passedCases": 51,
+        "transitions": 1272,
+        "passedTransitions": 1260,
+        "failureKinds": {
+          "touchPositive": 12
+        },
+        "challenges": {
+          "fired": 39,
+          "denied": 36,
+          "accepted": 3
+        }
+      },
+      "paired": {
+        "transitions": {
+          "commonPass": 600,
+          "gain": 660,
+          "commonFailure": 9,
+          "loss": 3
+        },
+        "losses": [
+          [
+            "r38-normal-learning-control",
+            "en_US",
+            5
+          ],
+          [
+            "r38-normal-learning-control",
+            "es",
+            5
+          ],
+          [
+            "r38-normal-learning-control",
+            "en_es",
+            5
+          ]
+        ],
+        "newFailureKinds": [
+          {
+            "transition": [
+              "r38-normal-learning-control",
+              "en_US",
+              4
+            ],
+            "newFailureKinds": [
+              "touchPositive"
+            ]
+          },
+          {
+            "transition": [
+              "r38-normal-learning-control",
+              "en_US",
+              5
+            ],
+            "newFailureKinds": [
+              "touchPositive"
+            ]
+          },
+          {
+            "transition": [
+              "r38-normal-learning-control",
+              "es",
+              4
+            ],
+            "newFailureKinds": [
+              "touchPositive"
+            ]
+          },
+          {
+            "transition": [
+              "r38-normal-learning-control",
+              "es",
+              5
+            ],
+            "newFailureKinds": [
+              "touchPositive"
+            ]
+          },
+          {
+            "transition": [
+              "r38-normal-learning-control",
+              "en_es",
+              4
+            ],
+            "newFailureKinds": [
+              "touchPositive"
+            ]
+          },
+          {
+            "transition": [
+              "r38-normal-learning-control",
+              "en_es",
+              5
+            ],
+            "newFailureKinds": [
+              "touchPositive"
+            ]
+          }
+        ]
+      }
+    },
+    "native": {
+      "baseline": {
+        "cases": 54,
+        "passedCases": 18,
+        "transitions": 1272,
+        "passedTransitions": 579,
+        "failureKinds": {
+          "private": 660,
+          "plain.appliesTextReplacements": 378,
+          "plain.autocorrects": 378,
+          "plain.autoSpaces": 378,
+          "plain.learns": 378,
+          "plain.showsSuggestions": 378,
+          "plain.smartQuotes": 378,
+          "plain.smartSpacing": 378,
+          "suggestionsEmpty": 285,
+          "allowsConfirmation": 570,
+          "totalCount": 573,
+          "touchWeight": 540,
+          "knownCounts[\"meadow\"]": 181,
+          "knownCounts[\"camino\"]": 181,
+          "knownCounts[\"amigo\"]": 181,
+          "touchPositive": 6,
+          "selection": 36,
+          "text.UTF16": 33,
+          "acceptedNative": 3
+        },
+        "challenges": {
+          "fired": 39,
+          "denied": 15,
+          "unavailable": 21,
+          "accepted": 3
+        }
+      },
+      "candidate": {
+        "cases": 54,
+        "passedCases": 48,
+        "transitions": 1272,
+        "passedTransitions": 1236,
+        "failureKinds": {
+          "touchPositive": 12,
+          "selection": 24,
+          "text.UTF16": 21
+        },
+        "challenges": {
+          "fired": 39,
+          "denied": 18,
+          "unavailable": 21
+        }
+      },
+      "paired": {
+        "transitions": {
+          "commonPass": 576,
+          "gain": 660,
+          "commonFailure": 33,
+          "loss": 3
+        },
+        "losses": [
+          [
+            "r38-normal-learning-control",
+            "en_US",
+            5
+          ],
+          [
+            "r38-normal-learning-control",
+            "es",
+            5
+          ],
+          [
+            "r38-normal-learning-control",
+            "en_es",
+            5
+          ]
+        ],
+        "newFailureKinds": [
+          {
+            "transition": [
+              "r38-normal-learning-control",
+              "en_US",
+              4
+            ],
+            "newFailureKinds": [
+              "touchPositive"
+            ]
+          },
+          {
+            "transition": [
+              "r38-normal-learning-control",
+              "en_US",
+              5
+            ],
+            "newFailureKinds": [
+              "touchPositive"
+            ]
+          },
+          {
+            "transition": [
+              "r38-normal-learning-control",
+              "es",
+              4
+            ],
+            "newFailureKinds": [
+              "touchPositive"
+            ]
+          },
+          {
+            "transition": [
+              "r38-normal-learning-control",
+              "es",
+              5
+            ],
+            "newFailureKinds": [
+              "touchPositive"
+            ]
+          },
+          {
+            "transition": [
+              "r38-normal-learning-control",
+              "en_es",
+              4
+            ],
+            "newFailureKinds": [
+              "touchPositive"
+            ]
+          },
+          {
+            "transition": [
+              "r38-normal-learning-control",
+              "en_es",
+              5
+            ],
+            "newFailureKinds": [
+              "touchPositive"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "rawReportSHA256": {
+    "heldout-core-baseline.json.gz": {
+      "archive": "9eb42bf65eaa390256985fcf2518582a82169e70c6ad2599a6eec7c8e5bef08a",
+      "original": "78b65578714b52f519cae7ea55892d9dd97a1bea3c7e797da6b64e408295337f"
+    },
+    "heldout-core-candidate.json.gz": {
+      "archive": "a5acb383141c4e45f8554496de7974cc3fae49fe064bcf5117ad34480a2b426e",
+      "original": "f3b76def1f33cf3be1e7305be7d9f754aeb346742d7456a901492fc9c565f2cf"
+    },
+    "heldout-native-baseline.json.gz": {
+      "archive": "3467f060d4380736605dcf85b5af47a5d436f6e3bf51923203b67d0a2cf99155",
+      "original": "d86bae5caef003dcfd0c144a18971888e95fadf38dab2446a65c3d56c6be404c"
+    },
+    "heldout-native-candidate.json.gz": {
+      "archive": "d3f5b8faa01f535a6123c31db219245f53c9287b23e67fd204b793ba08dcc06c",
+      "original": "e3c245f6f239fa252f9b1dc434f11aaff464f65762c8cd3f409b339c1a07b112"
+    }
+  },
+  "nativeSecureCaseActualStatesIdenticalBetweenVersions": true
+}

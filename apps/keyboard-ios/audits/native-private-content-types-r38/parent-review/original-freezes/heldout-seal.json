@@ -1,0 +1,19 @@
+{
+  "timeUTC": "2026-10-16T09:08:06.034024+00:00",
+  "candidateFreezeSHA256": "76509a8e265bfbd7a3f992a39490f4252aa9d54e4d873216ed8ed2682ae2a879",
+  "implementationCommit": "14f1f67c",
+  "input": "blind/heldout-v2.json",
+  "independentReviewValidated": true,
+  "unresolvedBlockers": 0,
+  "parentHadReadOrExecutedCorpus": false,
+  "hashes": {
+    "blind/oracle-review-summary-v2.json": "a58a200b3c8c97a35833f6a9d86aea1d0beb6ef0d7add08f9bdd4be64c08c128",
+    "blind/oracle-review-summary.json": "9106e786d7856ed638b268aefd64dd44b8187559a816915749ba580a2119abc4",
+    "blind/oracle-review-v2.md": "0d04ee669e1a2129abca344e322eeee97da57372a36f4b53b2004e0405e987f5",
+    "blind/authorship.md": "ea5fbfed31b852dd04f1608a114d41ce90e7dd16e37e305444d77843b31dc721",
+    "blind/heldout.json": "b4de5b05115d049fe2a8a4d71301b41d38f4b06dcdcacb9828104045cfa6b60e",
+    "blind/heldout-v2.json": "b92aee89e5a0e989a14896189ba4d5a1c47ffe2a4b319ad92dac5e1671ac9a4c",
+    "blind/oracle-review.md": "36f992e0fc1ecd8dbc5885063e34937f3f6fdb330ecc074d03919aa16d265411",
+    "blind/authorship-v2.md": "6f3d95635c3e354c614999ebc0ce16f0c6cf8edfe95679a34d3c9fd118d5c696"
+  }
+}

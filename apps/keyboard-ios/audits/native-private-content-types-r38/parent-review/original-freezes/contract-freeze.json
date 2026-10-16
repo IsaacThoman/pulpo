@@ -1,0 +1,10 @@
+{
+  "timeUTC": "2026-10-16T08:46:18.016211+00:00",
+  "productionEditsYet": false,
+  "hashes": {
+    "contract.md": "5b3f36bd029e740cd0c5f19074896f663f71078fcf533229294a81816297b5f6",
+    "calibration-baseline.json": "7770496683b1152c12c3f25b43b02ea246778724f3aed45a35e3c7a1f5b2e1e5",
+    "calibration-provenance.json": "b6b1d70769d60e87e2d91ed848ed03fbc7ce825aa8dfa04048591357f7638452",
+    "domain-review.md": "8c0ef55b582b3fef43689f214af5347655c4ee4711362652ff2ad99e45c9b9fc"
+  }
+}

@@ -1,0 +1,85 @@
+{
+  "baselinePrivateStrings": 24,
+  "candidatePrivateStrings": 46,
+  "newPrivateStrings": [
+    "bday",
+    "bday-day",
+    "bday-month",
+    "bday-year",
+    "cc-additional-name",
+    "cc-csc",
+    "cc-exp",
+    "cc-exp-month",
+    "cc-exp-year",
+    "cc-family-name",
+    "cc-given-name",
+    "cc-name",
+    "cc-number",
+    "cc-type",
+    "email",
+    "flight-number",
+    "new-password",
+    "one-time-code",
+    "postal-code",
+    "shipment-tracking-number",
+    "tel",
+    "url"
+  ],
+  "exactMeasuredUnion": true,
+  "legacyAliasesRetained": true,
+  "calibrationDeclaredPrivate": 24,
+  "calibrationNormal": 21,
+  "sourceSHA256": {
+    "baseline": "018d9125d75d032c6f71ed58028bb506c26ea5240245510d4d621f489b2cf790",
+    "candidate": "b51ff8291e2fc6a64f2244a7ddf198d4a49fde79443bffca500b4d2b317d2b61"
+  },
+  "distinctDevelopmentPositiveReadbacks": {
+    "core": {
+      "en_US": {
+        "positiveTouchStates": 1,
+        "positivePairStates": 1,
+        "touchWeights": [
+          10
+        ]
+      },
+      "es": {
+        "positiveTouchStates": 1,
+        "positivePairStates": 1,
+        "touchWeights": [
+          8
+        ]
+      },
+      "en_es": {
+        "positiveTouchStates": 1,
+        "positivePairStates": 1,
+        "touchWeights": [
+          10
+        ]
+      }
+    },
+    "native": {
+      "en_US": {
+        "positiveTouchStates": 1,
+        "positivePairStates": 1,
+        "touchWeights": [
+          10
+        ]
+      },
+      "es": {
+        "positiveTouchStates": 1,
+        "positivePairStates": 1,
+        "touchWeights": [
+          8
+        ]
+      },
+      "en_es": {
+        "positiveTouchStates": 1,
+        "positivePairStates": 1,
+        "touchWeights": [
+          10
+        ]
+      }
+    }
+  },
+  "runtimeExecuted": false
+}

@@ -8,6 +8,16 @@ unmeasured. Small deterministic Spanish and bilingual checks are reported below.
 
 ## Continued independent sweeps, October 15–16
 
+UIKit privacy mapping now recognizes the actual raw values for all 24 categories
+already declared private, adding 22 missing names while preserving legacy aliases
+and ordinary fields. Parent reproduced 550 failing baseline assertions, then
+passed 445 core + 3 service definitions with the same five known issues and all
+four focused native methods on a fresh iPhone 16e/iOS Simulator 27.0. The broader
+R38 blind gate remains unaccepted: three scored transition losses per platform,
+normal external-space touch controls and native secure-transition preservation
+remain failed. The exact raw data, reviews and component acceptance limits are in
+`audits/native-private-content-types-r38/parent-disposition.md`.
+
 The canonical Spanish emoji experiment in `audits/multilingual-emoji-r34/`
 was also rejected before blind reveal. Its source conforms to the approved
 conservative reservation policy, but that policy conflicts with three required
