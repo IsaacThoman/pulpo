@@ -3,6 +3,64 @@ import Testing
 @testable import KeyboardCore
 
 struct LearningPersistenceTests {
+  @Test func canonicalHistoriesPreservePairsAcrossMergeMigrationAndForget() throws {
+    let variants = [("r33caf\u{E9}", "r33cafe\u{301}"), ("r33\u{AC00}", "r33\u{1100}\u{1161}")]
+    for (composed, decomposed) in variants {
+      try domain { url, _ in
+        let a = PersonalDictionary(url: url), b = PersonalDictionary(url: url)
+        #expect(a.learn("r33canonical", after: composed))
+        #expect(a.learn("r33canonical", after: decomposed))
+        #expect(a.pairCount(composed, "r33canonical") == 2)
+        try finishLearning(a)
+        #expect(b.learn("r33canonical", after: decomposed))
+        try finishLearning(b)
+        try finishLearning(b)
+        let read = PersonalDictionary(url: url)
+        #expect(read.persistenceResult == .ok)
+        #expect(read.pairCount(composed, "r33canonical") == 3)
+        #expect(read.historyCount(decomposed) == 3)
+        #expect(read.forget("r33canonical"))
+        #expect(read.historyCount(composed) == 0)
+      }
+      for encoding in 1...2 {
+        try domain { url, _ in
+          let first = encoding == 1 ? composed + "\u{1F}r33migrated" : "\(composed.utf8.count):" + composed + "r33migrated"
+          let second = "\(decomposed.utf8.count):" + decomposed + "r33migrated"
+          let pairs = encoding == 1 ? [first: 2] : [first: 1, second: 1]
+          try JSONEncoder().encode(PersonalDictionary.Snapshot(pairEncoding: encoding, pairs: pairs)).write(to: url)
+          let read = PersonalDictionary(url: url)
+          #expect(read.persistenceResult == .ok)
+          #expect(read.pairCount(composed, "r33migrated") == 2)
+          #expect(read.historyCount(decomposed) == 2)
+          try finishLearning(read)
+          #expect(PersonalDictionary(url: url).pairCount(decomposed, "r33migrated") == 2)
+        }
+      }
+    }
+    try domain { url, _ in
+      let pairs = ["8:r33caf\u{E9}r33overflow": Int.max, "9:r33cafe\u{301}r33overflow": 1]
+      let data = try JSONEncoder().encode(PersonalDictionary.Snapshot(pairEncoding: 2, pairs: pairs))
+      try data.write(to: url)
+      #expect(PersonalDictionary(url: url).persistenceResult == .invalid)
+      #expect(try Data(contentsOf: url) == data)
+    }
+  }
+
+  @Test func pairEncodingPreservesCombiningAndControlBoundaries() throws {
+    try domain { url, _ in
+      let value = PersonalDictionary(url: url)
+      let pairs = [("r33a", "\u{301}r33target"), ("r33\r", "\nr33target"), ("r33\u{1F}", "\u{1F}r33target"), ("r33\u{200D}", "\u{301}r33target"), ("\u{301}r33history", "r33target")]
+      for (history, target) in pairs { #expect(value.learn(target, after: history)) }
+      try finishLearning(value)
+      let read = PersonalDictionary(url: url)
+      #expect(read.persistenceResult == .ok)
+      for (history, target) in pairs {
+        #expect(read.pairCount(history, target) == 1)
+        #expect(read.historyCount(history) == 1)
+      }
+    }
+  }
+
   @Test func embeddedNullKeysKeepDistinctForgetAndRetryIdentities() throws {
     try domain { url, _ in
       let first = PersonalDictionary(url: url), second = PersonalDictionary(url: url)

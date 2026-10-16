@@ -67,8 +67,8 @@ enum LearningPayload: Sendable {
     guard data.count <= LearningSQL.maximumBytes else { throw LearningPersistenceResult.capacity }
     switch kind {
     case .dictionary:
-      let value = try JSONDecoder().decode(PersonalDictionary.Snapshot.self, from: data)
-      guard value.version == 1, (1...2).contains(value.pairEncoding),
+      var value = try JSONDecoder().decode(PersonalDictionary.Snapshot.self, from: data)
+      guard value.version == 1, (1...3).contains(value.pairEncoding),
             legacy || (value.words.count <= PersonalDictionary.maximumWords && value.pairs.count <= PersonalDictionary.maximumPairs) else { throw LearningPersistenceResult.invalid }
       var total = 0
       for (word, entry) in value.words {
@@ -87,6 +87,10 @@ enum LearningPayload: Sendable {
       }
       // Existing explicit block preferences have only the payload byte bound.
       // Do not discard them merely because new admissions use smaller strings.
+      if value.pairEncoding != 3 {
+        value.pairs = try PersonalDictionary.canonicalPairs(value.pairs, encoding: value.pairEncoding)
+        value.pairEncoding = 3
+      }
       return .dictionary(legacy ? PersonalDictionary.pruningLegacy(value) : value)
     case .touch:
       let value = try JSONDecoder().decode(TouchModel.Snapshot.self, from: data)

@@ -82,30 +82,30 @@ public final class PersonalDictionary {
     reloadIfChangedOnDisk()
   }
 
-  var snapshot: Snapshot { Snapshot(pairEncoding: 2, words: words, pairs: pairs, blocked: Array(blocked).sorted()) }
+  var snapshot: Snapshot { Snapshot(pairEncoding: 3, words: words, pairs: pairs, blocked: Array(blocked).sorted()) }
 
   private func adopt(_ value: LearningPayload?) -> Bool {
     guard case let .dictionary(snapshot) = value else { return false }
     guard snapshot != self.snapshot else { return false }
-    words = snapshot.words
-    if snapshot.pairEncoding == 2 {
+    if snapshot.pairEncoding == 3 {
       pairs = snapshot.pairs
     } else {
-      pairs = Dictionary(uniqueKeysWithValues: snapshot.pairs.map { key, count in
-        let components = Self.splitPair(key, encoding: snapshot.pairEncoding)!
-        return (Self.pairKey(components.history, components.target), count)
-      })
+      guard let converted = try? Self.canonicalPairs(snapshot.pairs, encoding: snapshot.pairEncoding) else { return false }
+      pairs = converted
     }
+    words = snapshot.words
     blocked = Set(snapshot.blocked)
     blockedKeys = Set(snapshot.blocked.map(TextNormalizer.key))
     rebuildIndexes()
     return true
   }
 
-  /// Length-prefixed UTF-8 keeps arbitrary public history/target strings
-  /// lossless. Version-1 delimiter keys are imported with their original split.
+  /// Character counts preserve Swift String's canonical Unicode equality.
+  /// The control separator prevents a target's leading combining marks from
+  /// joining the history's last Character. Length still disambiguates embedded
+  /// separators, so arbitrary bounded component strings remain lossless.
   static func pairKey(_ history: String, _ target: String) -> String {
-    "\(history.utf8.count):" + history + target
+    "\(history.count):" + history + "\u{1F}" + target
   }
   static func splitPair(_ key: String, encoding: Int) -> (history: String, target: String)? {
     if encoding == 1 {
@@ -113,16 +113,34 @@ public final class PersonalDictionary {
       guard parts.count == 2 else { return nil }
       return (String(parts[0]), String(parts[1]))
     }
-    guard encoding == 2, let colon = key.utf8.firstIndex(of: 58) else { return nil }
+    guard (2...3).contains(encoding), let colon = key.utf8.firstIndex(of: 58) else { return nil }
     let bytes = key.utf8
     let lengthText = String(decoding: bytes[..<colon], as: UTF8.self)
     guard !lengthText.isEmpty, lengthText.count <= 3, lengthText.allSatisfy(\.isNumber),
           let length = Int(lengthText), lengthText == String(length), length <= 256 else { return nil }
     let start = bytes.index(after: colon)
+    if encoding == 3 {
+      guard let content = String(bytes: bytes[start...], encoding: .utf8),
+            let boundary = content.index(content.startIndex, offsetBy: length, limitedBy: content.endIndex),
+            boundary < content.endIndex, content[boundary] == "\u{1F}" else { return nil }
+      return (String(content[..<boundary]), String(content[content.index(after: boundary)...]))
+    }
     guard let end = bytes.index(start, offsetBy: length, limitedBy: bytes.endIndex),
           let history = String(bytes: bytes[start..<end], encoding: .utf8),
           let target = String(bytes: bytes[end...], encoding: .utf8) else { return nil }
     return (history, target)
+  }
+
+  static func canonicalPairs(_ pairs: [String: Int], encoding: Int) throws -> [String: Int] {
+    var converted: [String: Int] = [:]
+    for (key, count) in pairs {
+      guard let parts = splitPair(key, encoding: encoding) else { throw LearningPersistenceResult.invalid }
+      let next = pairKey(parts.history, parts.target)
+      let sum = converted[next, default: 0].addingReportingOverflow(count)
+      guard !sum.overflow else { throw LearningPersistenceResult.invalid }
+      converted[next] = sum.partialValue
+    }
+    return converted
   }
 
   static func pruningLegacy(_ snapshot: Snapshot) -> Snapshot {
@@ -169,7 +187,7 @@ public final class PersonalDictionary {
     }
     successors = [:]
     for (pair, count) in pairs {
-      if let parts = Self.splitPair(pair, encoding: 2) { successors[parts.history, default: [:]][parts.target] = count }
+      if let parts = Self.splitPair(pair, encoding: 3) { successors[parts.history, default: [:]][parts.target] = count }
     }
     rebuildHistoryTotals()
   }
@@ -276,7 +294,7 @@ public final class PersonalDictionary {
       if let entry = words.removeValue(forKey: form) { totalCount -= entry.count }
     }
     pairs = pairs.filter { pair, _ in
-      let target = Self.splitPair(pair, encoding: 2)?.target ?? ""
+      let target = Self.splitPair(pair, encoding: 3)?.target ?? ""
       return TextNormalizer.key(target) != key
     }
     for history in successors.keys {
@@ -332,8 +350,10 @@ public final class PersonalDictionary {
       // Decode once per pair, preserving the legacy tie order without parsing
       // strings at every comparison during a word-boundary capacity prune.
       let ranked = pairs.map { pair in
-        let parts = Self.splitPair(pair.key, encoding: 2)!
-        return (key: pair.key, value: pair.value, order: parts.history + "\u{1F}" + parts.target)
+        let bytes = pair.key.utf8
+        let start = bytes.index(after: bytes.firstIndex(of: 58)!)
+        // Encoding 3's suffix already is the exact legacy tie string.
+        return (key: pair.key, value: pair.value, order: String(decoding: bytes[start...], as: UTF8.self))
       }.sorted {
         if $0.value != $1.value { return $0.value > $1.value }
         return $0.order != $1.order ? $0.order < $1.order : $0.key < $1.key
@@ -341,7 +361,7 @@ public final class PersonalDictionary {
       for entry in ranked[pairLimit...] {
         let pair = entry.key, count = entry.value
         pairs.removeValue(forKey: pair)
-        guard let parts = Self.splitPair(pair, encoding: 2) else { continue }
+        guard let parts = Self.splitPair(pair, encoding: 3) else { continue }
         let history = parts.history
         successors[history]?.removeValue(forKey: parts.target)
         if successors[history]?.isEmpty == true {
