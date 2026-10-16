@@ -115,8 +115,9 @@ final class LearningResetResultUITests: XCTestCase {
     try confirmClear()
     try expectSuccess(expectedCopy)
     XCTAssertFalse(app.alerts["Couldn’t Clear Learned Words"].exists)
-    XCTAssertEqual(PersonalDictionary(url: dictionaryURL).count(of: "r41Café"), 0)
-    XCTAssertEqual(TouchModel(url: touchURL).weight, 0)
+    let cleared = try readableModels(dictionaryURL: dictionaryURL, touchURL: touchURL)
+    XCTAssertEqual(cleared.personal.count(of: "r41Café"), 0)
+    XCTAssertEqual(cleared.touch.weight, 0)
     try record(caseKey + "-success", in: directory)
     app.alerts.buttons["OK"].tap()
     XCTAssertEqual(toggle.value as? String, learning ? "1" : "0")
@@ -125,6 +126,28 @@ final class LearningResetResultUITests: XCTestCase {
     app.launch()
     try openPrivacy()
     XCTAssertEqual(toggle.value as? String, learning ? "1" : "0")
+    let reopened = try readableModels(dictionaryURL: dictionaryURL, touchURL: touchURL)
+    XCTAssertEqual(reopened.personal.count(of: "r41Café"), 0)
+    XCTAssertEqual(reopened.touch.weight, 0)
+  }
+
+  /// A busy fresh reader exposes an empty projection, not confirmed removal.
+  /// Only read observations retry; the clear mutation above fires exactly once.
+  private func readableModels(dictionaryURL: URL, touchURL: URL) throws -> (personal: PersonalDictionary, touch: TouchModel) {
+    let deadline = Date().addingTimeInterval(5)
+    repeat {
+      let personal = PersonalDictionary(url: dictionaryURL)
+      let touch = TouchModel(url: touchURL)
+      if personal.persistenceResult == .ok && touch.persistenceResult == .ok {
+        return (personal, touch)
+      }
+      try require([LearningPersistenceResult.ok, .busy].contains(personal.persistenceResult)
+        && [LearningPersistenceResult.ok, .busy].contains(touch.persistenceResult),
+        "Fresh durable-zero observation failed rather than reporting busy")
+      RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+    } while Date() < deadline
+    throw NSError(domain: "R48NativeFixture", code: 1,
+      userInfo: [NSLocalizedDescriptionKey: "Fresh durable-zero observation remained unavailable"])
   }
 
   private func openPrivacy() throws {
