@@ -998,9 +998,9 @@ function ItemMenu({ node, folder, sidebar, atPointer = false, onRename, onNewFol
         {t('common.rename')}
       </DropdownMenuItem>
       {!shortcut && (
-        <DropdownMenuItem disabled={system} onClick={() => editAppearance([node])}>
+        <DropdownMenuItem onClick={() => editAppearance([node])}>
           <Palette />
-          {ui("Color and icon…")}
+          {system ? ui("Color…") : ui("Color and icon…")}
         </DropdownMenuItem>
       )}
       {!system && (

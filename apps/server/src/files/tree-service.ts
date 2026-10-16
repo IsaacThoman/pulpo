@@ -271,7 +271,8 @@ export async function updateFileNode(userId: string, id: string, input: {
     let current = await liveNode(tx, userId, id)
     if (input.expectedRevision !== undefined && input.expectedRevision !== current.revision) throw revisionConflict()
     if (restyled) {
-      if (current.systemRole) throw systemFolderLocked()
+      // Built-in folders can take a color, but keep their own icon.
+      if (current.systemRole && input.icon !== undefined) throw systemFolderLocked()
       // Appearance is not content: the revision and modified time stay as they are.
       const [restyledRow] = await tx.update(fileNodes).set({
         ...input.color !== undefined ? { color: input.color } : {},

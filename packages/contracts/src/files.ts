@@ -71,7 +71,8 @@ export const fileNodeStatusSchema = z.enum(['pending', 'ready'])
 /**
  * Folders every account has at the top of My files. `chats` is the Sidebar folder: the sidebar
  * shows its contents (chats directly in it are the sidebar's unfiled list). `archive` is where
- * "Move to archive" puts things. System folders cannot be renamed, moved, trashed, or recolored.
+ * "Move to archive" puts things. System folders cannot be renamed, moved, trashed, or given an
+ * icon, but can be given a color.
  */
 export const fileSystemRoleSchema = z.enum(['chats', 'archive'])
 export type FileSystemRole = z.infer<typeof fileSystemRoleSchema>

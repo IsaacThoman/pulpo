@@ -2315,6 +2315,8 @@ const esUi: Record<string, string> = {
   "Create here": "Crear aquí",
   "{{0}} items": "{{0}} elementos",
   "Color and icon…": "Color e icono…",
+  "Color…": "Color…",
+  "Choose a color.": "Elige un color.",
   "Choose a color and icon.": "Elige un color y un icono.",
   "Color": "Color",
   "Icon": "Icono",

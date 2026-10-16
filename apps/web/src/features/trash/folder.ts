@@ -1,4 +1,4 @@
-import type { FileNode } from '@pulpo/contracts'
+import type { FileColor, FileNode } from '@pulpo/contracts'
 
 /**
  * The trash is a built-in folder at the top of My files, browsed like any other. Files views
@@ -29,11 +29,14 @@ export function folderPath(ref: string | null): string {
   return ref ? `/files/f/${ref}` : '/files'
 }
 
-/** The trash as an item of My files. */
-export function trashFolderNode(name: string): FileNode {
+/** The trash's color when the user has not chosen one. */
+export const TRASH_DEFAULT_COLOR: FileColor = 'red'
+
+/** The trash as an item of My files, in the color the user chose for it (setting `trashColor`). */
+export function trashFolderNode(name: string, color: FileColor | null): FileNode {
   const epoch = new Date(0).toISOString()
   return {
     id: TRASH_FOLDER_ID, parentId: null, kind: 'folder', name, status: 'ready', mimeType: null, sizeBytes: 0,
-    revision: 0, trashedAt: null, createdAt: epoch, updatedAt: epoch, systemRole: null,
+    revision: 0, trashedAt: null, createdAt: epoch, updatedAt: epoch, systemRole: null, color,
   }
 }

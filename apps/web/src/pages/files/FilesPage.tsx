@@ -246,12 +246,13 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
   const typeahead = useRef({ text: '', at: 0 })
 
   const trashName = ui("Trash")
+  const trashColor = useSettings((state) => state.trashColor)
   const nodes = useMemo(() => {
     if (inTrash) return sortFileNodes((listing.data?.children ?? []) as TrashItem[], sort, (node) => node.trashedAt)
     // The trash sits at the top of My files with the other built-in folders.
-    const children = folderId === null && listing.data ? [...listing.data.children, trashFolderNode(trashName)] : listing.data?.children ?? []
+    const children = folderId === null && listing.data ? [...listing.data.children, trashFolderNode(trashName, trashColor)] : listing.data?.children ?? []
     return sortFileNodes(children, sort)
-  }, [folderId, inTrash, listing.data, sort, trashName])
+  }, [folderId, inTrash, listing.data, sort, trashName, trashColor])
 
   // Grid view is a canvas: items keep the places they are dragged to, per folder and synced.
   const layoutKey = folderLayoutQueryKey(userId, folderId)
@@ -822,8 +823,10 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
   const hasSystem = selectedNodes.some(isBuiltInFolder)
   // The trash is not stored in Files, so it cannot be pinned, copied, or given a shortcut.
   const hasTrash = selectedNodes.some(isTrashFolder)
-  // Files and folders in the selection can be given a color and icon; chats and shortcuts are left out.
+  // Files and folders in the selection can be given a color and icon; chats and shortcuts are left
+  // out, and built-in folders only take a color.
   const canStyle = selectedNodes.some(hasAppearance)
+  const styleLabel = hasSystem ? ui("Color…") : ui("Color and icon…")
   const canUseAgent = fileSelection.length > 0 && fileSelection.length <= MAX_CHAT_FILE_SCOPES
   // Items inside a suggested folder share its suggestion; only the folder's banner acts on it.
   const suggestionRootItem = single?.suggestion && single.suggestion.changeId !== listing.data?.folder?.suggestion?.changeId ? single : null
@@ -877,7 +880,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
       </DropdownMenuItem>
       {/* Built-in folders list the actions they do not allow, unavailable, so every folder's menu reads the same. */}
       {single && <DropdownMenuItem disabled={isBuiltInFolder(single)} onSelect={() => setRenamingId(single.id)}><Pencil /> {ui("Rename")}<DropdownMenuShortcut>{shortcutLabel('F2')}</DropdownMenuShortcut></DropdownMenuItem>}
-      {canStyle && <DropdownMenuItem disabled={hasSystem} onSelect={() => editAppearance(selectedNodes)}><Palette /> {ui("Color and icon…")}</DropdownMenuItem>}
+      {canStyle && <DropdownMenuItem onSelect={() => editAppearance(selectedNodes)}><Palette /> {styleLabel}</DropdownMenuItem>}
       <DropdownMenuItem disabled={hasSystem} onSelect={() => setMoving(selectedNodes)}><FolderInput /> {ui("Move to…")}</DropdownMenuItem>
       {sidebar && <DropdownMenuItem disabled={hasSystem} onSelect={archiveSelection}><Archive /> {ui("Move to archive")}</DropdownMenuItem>}
       {single && single.kind !== 'shortcut' && !hasTrash && (
@@ -1083,7 +1086,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
         ) : <>
         {canDownload && <SelectionAction label={ui("Download")} onClick={() => void ops.download(selectedNodes)}><Download /></SelectionAction>}
         {!hasSystem && <SelectionAction label={ui("Move to…")} onClick={() => setMoving(selectedNodes)}><FolderInput /></SelectionAction>}
-        {canStyle && !hasSystem && <SelectionAction label={ui("Color and icon…")} onClick={() => editAppearance(selectedNodes)}><Palette /></SelectionAction>}
+        {canStyle && <SelectionAction label={styleLabel} onClick={() => editAppearance(selectedNodes)}><Palette /></SelectionAction>}
         {!hasTrash && <SelectionAction label={ui("Duplicate")} onClick={() => void duplicate()}><CopyPlus /></SelectionAction>}
         {!hasSystem && <SelectionAction label={trashLabel} destructive onClick={() => void trashSelection()}><Trash2 /></SelectionAction>}
         </>}

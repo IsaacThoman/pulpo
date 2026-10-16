@@ -4,6 +4,15 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { FileNode } from '@pulpo/contracts'
 import { AppearanceDialog } from './AppearanceDialog'
 import { editAppearance } from './appearance'
+import { trashFolderNode } from '@/features/trash/folder'
+import { useSettings } from '@/stores/settings'
+
+vi.hoisted(() => {
+  Object.defineProperty(window, 'matchMedia', {
+    configurable: true,
+    value: () => ({ matches: false, addEventListener: () => undefined }),
+  })
+})
 
 const setItemAppearance = vi.hoisted(() => vi.fn(async () => ({})))
 vi.mock('@/features/sidebar/api', () => ({ setItemAppearance }))
@@ -50,5 +59,21 @@ describe('AppearanceDialog', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Green' }))
     expect(setItemAppearance).toHaveBeenLastCalledWith(['f1', 'd1'], { color: 'green' })
+  })
+
+  it('offers only a color for built-in folders, and keeps the trash color as a setting', () => {
+    const archive: FileNode = { ...folder, id: 'a1', name: 'Archive', systemRole: 'archive', color: null }
+    useSettings.setState({ trashColor: null })
+    render(<AppearanceDialog />)
+    act(() => editAppearance([archive, trashFolderNode('Trash', null)]))
+    expect(screen.getByText('Choose a color.')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Rocket' })).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Purple' }))
+    expect(setItemAppearance).toHaveBeenLastCalledWith(['a1'], { color: 'purple' })
+    expect(useSettings.getState().trashColor).toBe('purple')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Default' }))
+    expect(useSettings.getState().trashColor).toBeNull()
   })
 })
