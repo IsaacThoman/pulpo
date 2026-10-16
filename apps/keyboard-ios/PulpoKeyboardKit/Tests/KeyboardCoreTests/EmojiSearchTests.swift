@@ -77,6 +77,22 @@ struct EmojiSearchTests {
     #expect(values("Éléphant").first == "🐘")
   }
 
+  // Informed regression controls from the rejected multilingual picker. These
+  // are established English aliases, including useful alternatives, rather
+  // than expectations about how a Spanish query should be interpreted.
+  @Test(arguments: [
+    ("vicuna", "vicuña", "🦙"),
+    ("sao", "são", "🇸🇹"),
+    ("pina", "piña", "🥥"),
+  ])
+  func englishDiacriticAliasesKeepUsefulResults(plain: String, marked: String, expected: String) {
+    let queries = Set([plain, plain.uppercased(), marked, marked.uppercased(),
+      marked.decomposedStringWithCanonicalMapping])
+    for query in queries.sorted() {
+      #expect(values(query).prefix(8).contains(expected), "\(query): \(values(query))")
+    }
+  }
+
   @Test func moreWordsNarrowTheResults() {
     let heart = values("heart")
     let red = values("red heart")
