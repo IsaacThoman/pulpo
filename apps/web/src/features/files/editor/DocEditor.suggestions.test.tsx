@@ -465,6 +465,16 @@ describe('nested and block suggestions', () => {
     expect(listSuggestions(editor().state.doc).map((hunk) => hunk.id)).toEqual(['outer'])
   })
 
+  it('keeps the card of a suggestion clicked at its end, where the block around it goes on', async () => {
+    const { view, element, editor } = mount(nested())
+    await waitFor(() => expect(element()?.querySelector('[data-suggestion="insert"]')).toBeTruthy())
+    fireEvent.mouseOver(element()!.querySelector('[data-suggestion-id="inner"]')!)
+    await view.findByRole('dialog', { name: 'Suggestion' })
+    act(() => editor().commands.setTextSelection(listSuggestions(editor().state.doc).find((hunk) => hunk.id === 'inner')!.to))
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(view.getByRole('dialog', { name: 'Suggestion' }).textContent).toContain('Add “brave”')
+  })
+
   it('steps through nested suggestions without getting stuck', async () => {
     const { view, element } = mount(nested())
     await waitFor(() => expect(element()?.querySelector('[data-suggestion="insert"]')).toBeTruthy())

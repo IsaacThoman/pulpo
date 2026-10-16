@@ -117,11 +117,12 @@ function pointerPos(editor: Editor, event: MouseEvent): number | null {
 type Hover = { id: string; offset: number | null; cursorId: string | null }
 
 /**
- * Whether the pointer's suggestion is still the one looked at: until the cursor moves into another
- * suggestion, as tapping it on a touch screen does, which is then the newer of the two.
+ * Whether the pointer's suggestion `hunk` is still the one looked at: until the cursor moves into
+ * another suggestion, as tapping it on a touch screen does, which is then the newer of the two. A
+ * cursor at its end, where a suggestion after or around it goes on, is still at it.
  */
-function hoverHolds(hover: Hover, cursorId: string | null): boolean {
-  return cursorId === null || cursorId === hover.cursorId || cursorId === hover.id
+function hoverHolds(hover: Hover, hunk: SuggestionHunk, cursorId: string | null, cursorPos: number | null): boolean {
+  return cursorId === null || cursorId === hover.cursorId || cursorId === hover.id || cursorPos === hunk.to
 }
 
 /**
@@ -215,7 +216,8 @@ export function useSuggestionReview(editor: Editor, onResolved?: () => void) {
     if (dismissedId && dismissedId !== cursorId) setDismissedId(null)
   }, [cursorId, dismissedId])
 
-  const hovered = hover && hoverHolds(hover, cursorId) ? hunks.find((hunk) => hunk.id === hover.id) : undefined
+  const pointed = hover ? hunks.find((hunk) => hunk.id === hover.id) : undefined
+  const hovered = hover && pointed && hoverHolds(hover, pointed, cursorId, cursorPos) ? pointed : undefined
   const atCursor = cursorId === dismissedId ? undefined : hunks.find((hunk) => hunk.id === cursorId)
   const active = hovered || atCursor || null
   // The card goes under the line looked at in a long hunk: the one pointed at, or the cursor's.
@@ -256,7 +258,8 @@ export function useSuggestionReview(editor: Editor, onResolved?: () => void) {
   const handleKey = (event: globalThis.KeyboardEvent): boolean => {
     if (event.isComposing) return false
     const cursorNow = cursorHunkId(editor.state)
-    const hoveredNow = hover && hoverHolds(hover, cursorNow) && docSuggestions(editor.state.doc).some((hunk) => hunk.id === hover.id) ? hover.id : null
+    const pointedNow = hover ? docSuggestions(editor.state.doc).find((hunk) => hunk.id === hover.id) : undefined
+    const hoveredNow = hover && pointedNow && hoverHolds(hover, pointedNow, cursorNow, editor.state.selection.from) ? hover.id : null
     if (event.key === 'Escape') {
       if (!hoveredNow && (!cursorNow || cursorNow === dismissedId)) return false
       clearHover()
