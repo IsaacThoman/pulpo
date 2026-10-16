@@ -1,0 +1,39 @@
+{
+  "schema": 1,
+  "candidateFreezeCommit": "dd8b142ab834737b837cee33636a886ea0af6a8d",
+  "baselineCommit": "f17109e7033eb849c9a2b98180e8c0f9d6174c3c",
+  "heldoutSHA256": "c29a3a03a9c909c43d8a6011554839aff038866946974c3ccadfbd505146ae6e",
+  "baselineRuns": 1,
+  "candidateRuns": 1,
+  "sourceRunnerContractHashesVerifiedAfterEvaluation": true,
+  "postRevealSourceRunnerOracleTuning": false,
+  "targetVocabularyCollisions": [],
+  "summary": {
+    "total": 36,
+    "oracleDefined": 35,
+    "baselineExact": 15,
+    "candidateExact": 28,
+    "baselineUnavailable": 0,
+    "candidateUnavailable": 0,
+    "outcomes": {
+      "gain": 13,
+      "failure": 7,
+      "pass": 15,
+      "ambiguous": 1
+    },
+    "regressionIDs": [],
+    "failureIDs": [
+      "sealed-08",
+      "sealed-09",
+      "sealed-10",
+      "sealed-12",
+      "sealed-23",
+      "sealed-24",
+      "sealed-26"
+    ],
+    "ambiguousChangedIDs": [],
+    "primitiveReplay": "all full documents/carets/selection replacements/conservation verified"
+  },
+  "disposition": "rejected: pre-reveal full regression control failed; no retention despite sealed target gains",
+  "native": "no device/native execution; private/selected controller transcript delivery unavailable; other native delivery and host Undo unverified"
+}

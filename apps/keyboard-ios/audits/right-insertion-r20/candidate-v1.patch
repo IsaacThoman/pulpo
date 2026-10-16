@@ -1,0 +1,54 @@
+diff --git a/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Input/KeyboardEngine.swift b/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Input/KeyboardEngine.swift
+index 3250fc21..f7fd7cc1 100644
+--- a/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Input/KeyboardEngine.swift
++++ b/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Input/KeyboardEngine.swift
+@@ -462,6 +462,7 @@ public final class KeyboardEngine {
+   public func insertText(_ text: String, spacing: Bool = false) {
+     guard !text.isEmpty else { return }
+     reconcilePendingHostChanges()
++    prepareExpectedContext()
+     spaceSlip = nil
+     acceptPendingLearning()
+     if !composing.isEmpty {
+@@ -469,6 +470,7 @@ public final class KeyboardEngine {
+       composing = TypedWord(text: "")
+     }
+     var output = text
++    var separatesFollowingWord = false
+     // External text can supply its own separator or begin with punctuation
+     // that attaches to the preceding word. Opening delimiters attach to the
+     // following text instead, including Spanish inverted punctuation.
+@@ -478,12 +480,32 @@ public final class KeyboardEngine {
+        !"([{\u{201C}\u{2018}¿¡/@#".contains(previous), !Self.endsInOpeningQuote(before) {
+       output = " " + output
+     }
++    // Opted-in plain phrases at a visible word boundary also separate from
++    // an existing word on the right. Use the reconciled suffix, not a delayed
++    // proxy snapshot, and keep the whole selection replacement in one edit.
++    // Other payload shapes and restricted fields retain their literal tail.
++    if spacing, policy.autoSpaces,
++       document.documentContextBeforeInput != nil, document.documentContextAfterInput != nil,
++       expectedAfterContext.first.map(Self.isExternalProseLetter) == true,
++       text.last.map(Self.isExternalProseLetter) == true,
++       text.allSatisfy({ Self.isExternalProseLetter($0) || $0.isWhitespace }),
++       before.isEmpty || before.last?.isWhitespace == true || text.first?.isWhitespace == true
++         || before.last.map({ "([{\u{201C}\u{2018}¿¡".contains($0) }) == true || Self.endsInOpeningQuote(before) {
++      output += " "
++      separatesFollowingWord = true
++    }
+     phantomSpace = false
+     insertDocumentText(output)
+-    lastEdit = .typed
++    lastEdit = separatesFollowingWord ? .automaticSpace(respace: true) : .typed
+     finishEdit()
+   }
+ 
++  private static func isExternalProseLetter(_ character: Character) -> Bool {
++    // This conservative shape filter covers English/Spanish, not scripts
++    // whose words conventionally join without spaces or opaque token syntax.
++    (character.isASCII && character.isLetter) || "áéíóúüñÁÉÍÓÚÜÑ".contains(character)
++  }
++
+   private static func beginsWithAttachingPunctuation(_ text: String) -> Bool {
+     guard let first = text.first else { return false }
+     let run: String

@@ -1,0 +1,94 @@
+{
+  "schema": 1,
+  "host": "macOS 27.0.1 arm64; Apple Swift 6.4; release SwiftPM",
+  "runs": [
+    {
+      "phase": "development-initial-candidate",
+      "exit": 0,
+      "wallSeconds": 42.692,
+      "finalSummary": "✔ Test run with 1 test in 1 suite passed after 0.046 seconds."
+    },
+    {
+      "phase": "development-initial-baseline",
+      "exit": 0,
+      "wallSeconds": 46.471,
+      "finalSummary": "✔ Test run with 1 test in 1 suite passed after 0.038 seconds."
+    },
+    {
+      "phase": "source-controls-initial-candidate",
+      "exit": 0,
+      "wallSeconds": 46.538,
+      "finalSummary": "✔ Test run with 1 test in 1 suite passed after 0.025 seconds."
+    },
+    {
+      "phase": "full-baseline",
+      "exit": 0,
+      "wallSeconds": 39.141,
+      "finalSummary": "━ Test run with 439 tests in 65 suites passed after 6.157 seconds with 5 known issues."
+    },
+    {
+      "phase": "full-candidate",
+      "exit": 1,
+      "wallSeconds": 35.541,
+      "finalSummary": "✘ Test run with 439 tests in 65 suites failed after 5.619 seconds with 6 issues (including 5 known issues)."
+    },
+    {
+      "phase": "source-controls-final-baseline",
+      "exit": 0,
+      "wallSeconds": 29.466,
+      "finalSummary": "✔ Test run with 1 test in 1 suite passed after 0.020 seconds."
+    },
+    {
+      "phase": "source-controls-final-candidate",
+      "exit": 0,
+      "wallSeconds": 1.177,
+      "finalSummary": "✔ Test run with 1 test in 1 suite passed after 0.021 seconds."
+    },
+    {
+      "phase": "heldout-baseline",
+      "exit": 0,
+      "wallSeconds": 1.328,
+      "finalSummary": "✔ Test run with 1 test in 1 suite passed after 0.033 seconds."
+    },
+    {
+      "phase": "heldout-candidate",
+      "exit": 0,
+      "wallSeconds": 1.328,
+      "finalSummary": "✔ Test run with 1 test in 1 suite passed after 0.032 seconds."
+    },
+    {
+      "phase": "r5-replay-candidate-development",
+      "exit": 0,
+      "wallSeconds": 1.184,
+      "finalSummary": "✔ Test run with 1 test in 1 suite passed after 0.027 seconds."
+    },
+    {
+      "phase": "r5-replay-candidate-heldout",
+      "exit": 0,
+      "wallSeconds": 1.197,
+      "finalSummary": "✔ Test run with 1 test in 1 suite passed after 0.026 seconds."
+    },
+    {
+      "phase": "r5-replay-baseline-development",
+      "exit": 0,
+      "wallSeconds": 1.247,
+      "finalSummary": "✔ Test run with 1 test in 1 suite passed after 0.027 seconds."
+    },
+    {
+      "phase": "r5-replay-baseline-heldout",
+      "exit": 0,
+      "wallSeconds": 1.173,
+      "finalSummary": "✔ Test run with 1 test in 1 suite passed after 0.024 seconds."
+    },
+    {
+      "phase": "full-restored",
+      "exit": 0,
+      "wallSeconds": 45.71,
+      "finalSummary": "━ Test run with 439 tests in 65 suites passed after 5.598 seconds with 5 known issues."
+    }
+  ],
+  "sumRecordedCommandWallSeconds": 294.193,
+  "additionalCost": "one initial pre-freeze runner compile failure fixed before evaluation; isolated baseline checkout with 143 MiB build directory; two independent child agents with metadata/review followups; model token/currency costs not measured",
+  "performanceInterpretation": "host test/build costs only, not keyboard latency/memory/device UX improvement; short heldout test runtimes are not a performance benchmark",
+  "productionCost": "candidate rejected; zero retained production changes; candidate shape filter would have scanned inserted payload linearly and read live contexts, with no extra dictionary lookup"
+}

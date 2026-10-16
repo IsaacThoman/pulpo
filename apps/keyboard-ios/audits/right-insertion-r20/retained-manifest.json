@@ -1,0 +1,307 @@
+{
+  "baselineCommit": "f17109e7033eb849c9a2b98180e8c0f9d6174c3c",
+  "candidateCommit": "dd8b142ab834737b837cee33636a886ea0af6a8d",
+  "engineSourceSHA256": {
+    "baseline": "3f0987051ff0f176a5e1ef6396d415b0f8fe0fc2088735c75fef87f75158de97",
+    "rejectedCandidate": "b9d11bd85692290a96e7798d2257e3b4b2cd3bd2ff12745ccd567d026dc93a1f",
+    "restored": "3f0987051ff0f176a5e1ef6396d415b0f8fe0fc2088735c75fef87f75158de97"
+  },
+  "files": {
+    ".gitattributes": {
+      "bytes": 122,
+      "sha256": "cb0e0c9c65e385226d708e0920e819332e68aad06a7b0ebb7f24c90d0d652f17"
+    },
+    "README.md": {
+      "bytes": 4049,
+      "sha256": "79fb7db99be9f29c2bece5e8438f0448dd97e7b055fb67ef2b6b3bc9d0637e16"
+    },
+    "RightInsertionR20Tests.swift.txt": {
+      "bytes": 8468,
+      "sha256": "8e72f993acd29910d5230d3fbc7cf17a3975fc3208f8c5a297c7b4e1b9f79aa2"
+    },
+    "agent-audit.md": {
+      "bytes": 11067,
+      "sha256": "2f2ed33dc5c36b644fea3f9664301cb90bf952a5d4a802e2bf1f642882a14e08"
+    },
+    "audit.md": {
+      "bytes": 6634,
+      "sha256": "1d08aa38e24a0e60519993bf457d9f1b3b2ffc6a094147d4827247699ad99977"
+    },
+    "baseline-full-gate-v1.json": {
+      "bytes": 1913,
+      "sha256": "77e5ab71b243480751e2968668b7298e47ecb7539e78e9299e81e0329ea38280"
+    },
+    "candidate-full-gate-v1.json": {
+      "bytes": 2288,
+      "sha256": "2a6dd725c05b608f210aeb64da611b599265d425a3784bb48db9e3b6cd073538"
+    },
+    "candidate-runner-freeze-v1.json": {
+      "bytes": 2590,
+      "sha256": "38918fd56f85eca24d9098de6200b2ab878050d75d534b5a8dcd2a474071033d"
+    },
+    "candidate-source-review-v1.md": {
+      "bytes": 10278,
+      "sha256": "63f5f5b854985802f37a449b072af9bd58c49e59283106b222e6c7210db09ca9"
+    },
+    "candidate-v1.patch": {
+      "bytes": 2901,
+      "sha256": "68b5efd5228225d4945bad22c58755aca92ff151ccadbf7d801519dd4708160f"
+    },
+    "contract-v1.txt": {
+      "bytes": 3433,
+      "sha256": "0be8f1e55f0779c37c3a1770c5dad3617e2dc158e287349aba63e3c69bce3765"
+    },
+    "costs-v1.json": {
+      "bytes": 3520,
+      "sha256": "e0e53c578607a43b4993ce5cd30f9299a24d42d10f44a9dc4ca2f139fc62002a"
+    },
+    "development-paired-v1.json.gz": {
+      "bytes": 3557,
+      "sha256": "133ee2543943cbf901be463984ffdcb5066c128909592930fe5379d19f8621bf"
+    },
+    "development-v1.json": {
+      "bytes": 10066,
+      "sha256": "83e84348b8b0daa34872eba926e338aadb6e127ddb5ba6bbf75ab6a7a47fe8a1"
+    },
+    "evaluation-v1.json": {
+      "bytes": 1279,
+      "sha256": "bafb9a4cc3456c8d5c43cbd827ce6fd8effee77ad86365a1f064897e61bc2ab1"
+    },
+    "heldout-baseline-gate-v1.json": {
+      "bytes": 447,
+      "sha256": "d0909343e632877caa400dc2f55784629a59eec8f63c382721e1c94a0f19d408"
+    },
+    "heldout-candidate-gate-v1.json": {
+      "bytes": 423,
+      "sha256": "35e1f24ea36dfe44c47d0cfd00e109671adea0eb8b528b75e36626c105e599d3"
+    },
+    "heldout-exclusions-v1.json": {
+      "bytes": 2700,
+      "sha256": "8949623ed8fb2907685d6032d9b0118fbb023ecc212f55cc885b9180869a1e1d"
+    },
+    "heldout-paired-v1.json.gz": {
+      "bytes": 3980,
+      "sha256": "c5bda2f0c7e0c0dded16b88be37b109885ef4f7edbeadfce9ef78562688370bc"
+    },
+    "heldout-v1.json": {
+      "bytes": 9705,
+      "sha256": "c29a3a03a9c909c43d8a6011554839aff038866946974c3ccadfbd505146ae6e"
+    },
+    "independent-source-review-v1.md": {
+      "bytes": 10566,
+      "sha256": "db05633d239e3821906f42b7f4cf9b775f7df7711657eeb5260bab9afcbde4ee"
+    },
+    "old-r5-replay-paired-v1.json.gz": {
+      "bytes": 1726,
+      "sha256": "e757d7c7d18ab6a1b067444258ad397cb41fc4b78cbdc071e55857bb4eadc5e5"
+    },
+    "pair-v1.py": {
+      "bytes": 3659,
+      "sha256": "ae7b746a2e32d055d42ac9979295970e758b0c329f06b743875f0e922a72a9aa"
+    },
+    "pre-source-freeze-v1.json": {
+      "bytes": 185,
+      "sha256": "49ad63ba4be582c55e89128b19e2445effb31d3ac74521581cf6d80e5f18e278"
+    },
+    "restored-full-gate-v1.json": {
+      "bytes": 1812,
+      "sha256": "b3abfe4574707ec719c360e9c123a5a74d27cf142f50a8540796f28d8e707cb7"
+    },
+    "run-swift-v1.py": {
+      "bytes": 1567,
+      "sha256": "a67b6621858762a2c9594e91d022729a4b06caba48acfcd428191fdc341e9db3"
+    },
+    "scope-v1.txt": {
+      "bytes": 4765,
+      "sha256": "aa8bc74d6194993f91e9d91da09bf489987561f587410e18a7f7713cdedd04be"
+    },
+    "sealed-author-v1.json": {
+      "bytes": 614,
+      "sha256": "56e52d81b4411ae881336a3cc0fb6eb93dcece67f30cba4ad2180bfa892a5da9"
+    },
+    "source-controls-paired-v1.json.gz": {
+      "bytes": 2404,
+      "sha256": "83b29776c432864e378c9055a30b22655fa037bedf45757965259684d280575e"
+    },
+    "source-controls-v1.json": {
+      "bytes": 6229,
+      "sha256": "450a407360dcf82692187c9ad03c86ce4b0d83db076d5479f6e445b3bae58ca9"
+    },
+    "verify.py": {
+      "bytes": 11563,
+      "sha256": "f14aa40ad97f4ad22e684bc02a1143b329dacf71c40ef29a2d695e10fe5f79ab"
+    }
+  },
+  "originals": {
+    ".gitattributes": {
+      "bytes": 122,
+      "commit": "f9f8d58cbeb19fb146b0e4f7fc6345ac2a85b1f5",
+      "path": "apps/keyboard-ios/audits/right-insertion-r20/.gitattributes",
+      "sha256": "cb0e0c9c65e385226d708e0920e819332e68aad06a7b0ebb7f24c90d0d652f17"
+    },
+    "RightInsertionR20Tests.swift.txt": {
+      "bytes": 8468,
+      "commit": "f9f8d58cbeb19fb146b0e4f7fc6345ac2a85b1f5",
+      "path": "apps/keyboard-ios/PulpoKeyboardKit/Tests/KeyboardCoreTests/RightInsertionR20Tests.swift",
+      "sha256": "8e72f993acd29910d5230d3fbc7cf17a3975fc3208f8c5a297c7b4e1b9f79aa2"
+    },
+    "agent-audit.md": {
+      "bytes": 11067,
+      "commit": "f9f8d58cbeb19fb146b0e4f7fc6345ac2a85b1f5",
+      "path": "apps/keyboard-ios/audits/right-insertion-r20/audit.md",
+      "sha256": "2f2ed33dc5c36b644fea3f9664301cb90bf952a5d4a802e2bf1f642882a14e08"
+    },
+    "baseline-full-gate-v1.json": {
+      "bytes": 1913,
+      "commit": "f9f8d58cbeb19fb146b0e4f7fc6345ac2a85b1f5",
+      "path": "apps/keyboard-ios/audits/right-insertion-r20/baseline-full-gate-v1.json",
+      "sha256": "77e5ab71b243480751e2968668b7298e47ecb7539e78e9299e81e0329ea38280"
+    },
+    "candidate-full-gate-v1.json": {
+      "bytes": 2288,
+      "commit": "f9f8d58cbeb19fb146b0e4f7fc6345ac2a85b1f5",
+      "path": "apps/keyboard-ios/audits/right-insertion-r20/candidate-full-gate-v1.json",
+      "sha256": "2a6dd725c05b608f210aeb64da611b599265d425a3784bb48db9e3b6cd073538"
+    },
+    "candidate-runner-freeze-v1.json": {
+      "bytes": 2590,
+      "commit": "f9f8d58cbeb19fb146b0e4f7fc6345ac2a85b1f5",
+      "path": "apps/keyboard-ios/audits/right-insertion-r20/candidate-runner-freeze-v1.json",
+      "sha256": "38918fd56f85eca24d9098de6200b2ab878050d75d534b5a8dcd2a474071033d"
+    },
+    "candidate-source-review-v1.md": {
+      "bytes": 10278,
+      "commit": "f9f8d58cbeb19fb146b0e4f7fc6345ac2a85b1f5",
+      "path": "apps/keyboard-ios/audits/right-insertion-r20/candidate-source-review-v1.md",
+      "sha256": "63f5f5b854985802f37a449b072af9bd58c49e59283106b222e6c7210db09ca9"
+    },
+    "candidate-v1.patch": {
+      "bytes": 2901,
+      "commit": "f9f8d58cbeb19fb146b0e4f7fc6345ac2a85b1f5",
+      "path": "apps/keyboard-ios/audits/right-insertion-r20/candidate-v1.patch",
+      "sha256": "68b5efd5228225d4945bad22c58755aca92ff151ccadbf7d801519dd4708160f"
+    },
+    "contract-v1.txt": {
+      "bytes": 3433,
+      "commit": "f9f8d58cbeb19fb146b0e4f7fc6345ac2a85b1f5",
+      "path": "apps/keyboard-ios/audits/right-insertion-r20/contract-v1.txt",
+      "sha256": "0be8f1e55f0779c37c3a1770c5dad3617e2dc158e287349aba63e3c69bce3765"
+    },
+    "costs-v1.json": {
+      "bytes": 3520,
+      "commit": "f9f8d58cbeb19fb146b0e4f7fc6345ac2a85b1f5",
+      "path": "apps/keyboard-ios/audits/right-insertion-r20/costs-v1.json",
+      "sha256": "e0e53c578607a43b4993ce5cd30f9299a24d42d10f44a9dc4ca2f139fc62002a"
+    },
+    "development-paired-v1.json.gz": {
+      "bytes": 69814,
+      "commit": "f9f8d58cbeb19fb146b0e4f7fc6345ac2a85b1f5",
+      "path": "apps/keyboard-ios/audits/right-insertion-r20/development-paired-v1.json",
+      "sha256": "b99751b65bc057d242cb2f0cdf189d63a49563200c2b4b8efadece698cae9373"
+    },
+    "development-v1.json": {
+      "bytes": 10066,
+      "commit": "f9f8d58cbeb19fb146b0e4f7fc6345ac2a85b1f5",
+      "path": "apps/keyboard-ios/audits/right-insertion-r20/development-v1.json",
+      "sha256": "83e84348b8b0daa34872eba926e338aadb6e127ddb5ba6bbf75ab6a7a47fe8a1"
+    },
+    "evaluation-v1.json": {
+      "bytes": 1279,
+      "commit": "f9f8d58cbeb19fb146b0e4f7fc6345ac2a85b1f5",
+      "path": "apps/keyboard-ios/audits/right-insertion-r20/evaluation-v1.json",
+      "sha256": "bafb9a4cc3456c8d5c43cbd827ce6fd8effee77ad86365a1f064897e61bc2ab1"
+    },
+    "heldout-baseline-gate-v1.json": {
+      "bytes": 447,
+      "commit": "f9f8d58cbeb19fb146b0e4f7fc6345ac2a85b1f5",
+      "path": "apps/keyboard-ios/audits/right-insertion-r20/heldout-baseline-gate-v1.json",
+      "sha256": "d0909343e632877caa400dc2f55784629a59eec8f63c382721e1c94a0f19d408"
+    },
+    "heldout-candidate-gate-v1.json": {
+      "bytes": 423,
+      "commit": "f9f8d58cbeb19fb146b0e4f7fc6345ac2a85b1f5",
+      "path": "apps/keyboard-ios/audits/right-insertion-r20/heldout-candidate-gate-v1.json",
+      "sha256": "35e1f24ea36dfe44c47d0cfd00e109671adea0eb8b528b75e36626c105e599d3"
+    },
+    "heldout-exclusions-v1.json": {
+      "bytes": 2700,
+      "commit": "f9f8d58cbeb19fb146b0e4f7fc6345ac2a85b1f5",
+      "path": "apps/keyboard-ios/audits/right-insertion-r20/heldout-exclusions-v1.json",
+      "sha256": "8949623ed8fb2907685d6032d9b0118fbb023ecc212f55cc885b9180869a1e1d"
+    },
+    "heldout-paired-v1.json.gz": {
+      "bytes": 65184,
+      "commit": "f9f8d58cbeb19fb146b0e4f7fc6345ac2a85b1f5",
+      "path": "apps/keyboard-ios/audits/right-insertion-r20/heldout-paired-v1.json",
+      "sha256": "204318965f082beca83e8b14d1832d9c3005c98f3f722e9fad36748452f9c5a9"
+    },
+    "heldout-v1.json": {
+      "bytes": 9705,
+      "commit": "f9f8d58cbeb19fb146b0e4f7fc6345ac2a85b1f5",
+      "path": "apps/keyboard-ios/audits/right-insertion-r20/heldout-v1.json",
+      "sha256": "c29a3a03a9c909c43d8a6011554839aff038866946974c3ccadfbd505146ae6e"
+    },
+    "independent-source-review-v1.md": {
+      "bytes": 10566,
+      "commit": "f9f8d58cbeb19fb146b0e4f7fc6345ac2a85b1f5",
+      "path": "apps/keyboard-ios/audits/right-insertion-r20/independent-source-review-v1.md",
+      "sha256": "db05633d239e3821906f42b7f4cf9b775f7df7711657eeb5260bab9afcbde4ee"
+    },
+    "old-r5-replay-paired-v1.json.gz": {
+      "bytes": 29220,
+      "commit": "f9f8d58cbeb19fb146b0e4f7fc6345ac2a85b1f5",
+      "path": "apps/keyboard-ios/audits/right-insertion-r20/old-r5-replay-paired-v1.json",
+      "sha256": "50e54d32d66609ffad03881885b2f678496e72b591817174ee170f5cc526fbf7"
+    },
+    "pair-v1.py": {
+      "bytes": 3659,
+      "commit": "f9f8d58cbeb19fb146b0e4f7fc6345ac2a85b1f5",
+      "path": "apps/keyboard-ios/audits/right-insertion-r20/pair-v1.py",
+      "sha256": "ae7b746a2e32d055d42ac9979295970e758b0c329f06b743875f0e922a72a9aa"
+    },
+    "pre-source-freeze-v1.json": {
+      "bytes": 185,
+      "commit": "f9f8d58cbeb19fb146b0e4f7fc6345ac2a85b1f5",
+      "path": "apps/keyboard-ios/audits/right-insertion-r20/pre-source-freeze-v1.json",
+      "sha256": "49ad63ba4be582c55e89128b19e2445effb31d3ac74521581cf6d80e5f18e278"
+    },
+    "restored-full-gate-v1.json": {
+      "bytes": 1812,
+      "commit": "f9f8d58cbeb19fb146b0e4f7fc6345ac2a85b1f5",
+      "path": "apps/keyboard-ios/audits/right-insertion-r20/restored-full-gate-v1.json",
+      "sha256": "b3abfe4574707ec719c360e9c123a5a74d27cf142f50a8540796f28d8e707cb7"
+    },
+    "run-swift-v1.py": {
+      "bytes": 1567,
+      "commit": "f9f8d58cbeb19fb146b0e4f7fc6345ac2a85b1f5",
+      "path": "apps/keyboard-ios/audits/right-insertion-r20/run-swift-v1.py",
+      "sha256": "a67b6621858762a2c9594e91d022729a4b06caba48acfcd428191fdc341e9db3"
+    },
+    "scope-v1.txt": {
+      "bytes": 4765,
+      "commit": "f9f8d58cbeb19fb146b0e4f7fc6345ac2a85b1f5",
+      "path": "apps/keyboard-ios/audits/right-insertion-r20/scope-v1.txt",
+      "sha256": "aa8bc74d6194993f91e9d91da09bf489987561f587410e18a7f7713cdedd04be"
+    },
+    "sealed-author-v1.json": {
+      "bytes": 614,
+      "commit": "f9f8d58cbeb19fb146b0e4f7fc6345ac2a85b1f5",
+      "path": "apps/keyboard-ios/audits/right-insertion-r20/sealed-author-v1.json",
+      "sha256": "56e52d81b4411ae881336a3cc0fb6eb93dcece67f30cba4ad2180bfa892a5da9"
+    },
+    "source-controls-paired-v1.json.gz": {
+      "bytes": 43584,
+      "commit": "f9f8d58cbeb19fb146b0e4f7fc6345ac2a85b1f5",
+      "path": "apps/keyboard-ios/audits/right-insertion-r20/source-controls-paired-v1.json",
+      "sha256": "454e00e9ae40635edd287e4abdbcee1cd84cf5ac75e8e936f86fd47ecee4d2f9"
+    },
+    "source-controls-v1.json": {
+      "bytes": 6229,
+      "commit": "f9f8d58cbeb19fb146b0e4f7fc6345ac2a85b1f5",
+      "path": "apps/keyboard-ios/audits/right-insertion-r20/source-controls-v1.json",
+      "sha256": "450a407360dcf82692187c9ad03c86ce4b0d83db076d5479f6e445b3bae58ca9"
+    }
+  },
+  "schema": 1,
+  "sourceCommit": "f9f8d58cbeb19fb146b0e4f7fc6345ac2a85b1f5"
+}

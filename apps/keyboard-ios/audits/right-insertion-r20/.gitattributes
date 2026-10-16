@@ -1,0 +1,2 @@
+# Unified diffs encode blank context lines as one space; retain sealed bytes.
+candidate-v1.patch whitespace=-blank-at-eol

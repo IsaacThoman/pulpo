@@ -1,0 +1,26 @@
+{
+  "command": [
+    "swift",
+    "test",
+    "-c",
+    "release",
+    "--package-path",
+    "apps/keyboard-ios/PulpoKeyboardKit"
+  ],
+  "exit": 0,
+  "wallSeconds": 45.71,
+  "diagnostics": [
+    "Build complete! (39.02 sec)",
+    "✔ Test run with 3 tests in 1 suite passed after 0.001 seconds.",
+    "━ Test hostRevertToARecentOwnStateIsAKnownAmbiguity(_:) recorded a known issue with 1 argument repro → composingDesync (seed 227) at EngineFuzzRegressionTests.swift:219:7: Expectation failed: result.violations.isEmpty",
+    "━ Test hostRevertToARecentOwnStateIsAKnownAmbiguity(_:) recorded a known issue with 1 argument repro → wordDeleteWrong (seed 440) at EngineFuzzRegressionTests.swift:219:7: Expectation failed: result.violations.isEmpty",
+    "━ Test hostRevertToARecentOwnStateIsAKnownAmbiguity(_:) with 2 test cases passed after 0.548 seconds with 2 known issues.",
+    "━ Test frozenAcceptanceBenchmark(resource:) recorded a known issue with 1 argument resource → \"en_US\" at MultilingualTests.swift:34:11: Expectation failed: offered",
+    "━ Test frozenAcceptanceBenchmark(resource:) recorded a known issue with 1 argument resource → \"en_es\" at MultilingualTests.swift:34:11: Expectation failed: offered",
+    "━ Test frozenAcceptanceBenchmark(resource:) recorded a known issue with 1 argument resource → \"en_es\" at MultilingualTests.swift:34:11: Expectation failed: offered",
+    "━ Suite EngineFuzzRegressionTests passed after 0.600 seconds with 2 known issues.",
+    "━ Test frozenAcceptanceBenchmark(resource:) with 3 test cases passed after 0.537 seconds with 3 known issues.",
+    "━ Suite MultilingualTests passed after 0.607 seconds with 3 known issues.",
+    "━ Test run with 439 tests in 65 suites passed after 5.598 seconds with 5 known issues."
+  ]
+}

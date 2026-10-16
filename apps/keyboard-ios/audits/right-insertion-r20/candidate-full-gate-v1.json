@@ -1,0 +1,30 @@
+{
+  "command": [
+    "swift",
+    "test",
+    "-c",
+    "release",
+    "--package-path",
+    "apps/keyboard-ios/PulpoKeyboardKit"
+  ],
+  "exit": 1,
+  "wallSeconds": 35.541,
+  "diagnostics": [
+    "Build complete! (28.71 sec)",
+    "✔ Test run with 3 tests in 1 suite passed after 0.001 seconds.",
+    "R20 exact 35/40; ambiguous 0; unavailable 0; conservation failures 0",
+    "━ Test frozenAcceptanceBenchmark(resource:) recorded a known issue with 1 argument resource → \"en_US\" at MultilingualTests.swift:34:11: Expectation failed: offered",
+    "━ Test frozenAcceptanceBenchmark(resource:) recorded a known issue with 1 argument resource → \"en_es\" at MultilingualTests.swift:34:11: Expectation failed: offered",
+    "━ Test frozenAcceptanceBenchmark(resource:) recorded a known issue with 1 argument resource → \"en_es\" at MultilingualTests.swift:34:11: Expectation failed: offered",
+    "━ Test hostRevertToARecentOwnStateIsAKnownAmbiguity(_:) recorded a known issue with 1 argument repro → wordDeleteWrong (seed 440) at EngineFuzzRegressionTests.swift:219:7: Expectation failed: result.violations.isEmpty",
+    "━ Test hostRevertToARecentOwnStateIsAKnownAmbiguity(_:) recorded a known issue with 1 argument repro → composingDesync (seed 227) at EngineFuzzRegressionTests.swift:219:7: Expectation failed: result.violations.isEmpty",
+    "━ Test frozenAcceptanceBenchmark(resource:) with 3 test cases passed after 0.558 seconds with 3 known issues.",
+    "━ Test hostRevertToARecentOwnStateIsAKnownAmbiguity(_:) with 2 test cases passed after 0.561 seconds with 2 known issues.",
+    "✘ Test pendingCursorMovePrecedesTranscriptCapitalization() recorded an issue at AccuracyEditingTests.swift:26:5: Expectation failed: document.text == \"Hello againA note. please \"",
+    "✘ Test pendingCursorMovePrecedesTranscriptCapitalization() failed after 0.137 seconds with 1 issue.",
+    "━ Suite MultilingualTests passed after 0.596 seconds with 3 known issues.",
+    "━ Suite EngineFuzzRegressionTests passed after 0.596 seconds with 2 known issues.",
+    "✘ Suite AccuracyEditingTests failed after 0.619 seconds with 1 issue.",
+    "✘ Test run with 439 tests in 65 suites failed after 5.619 seconds with 6 issues (including 5 known issues)."
+  ]
+}
