@@ -46,7 +46,8 @@ export function revealSuggestion(view: EditorView, hunk: SuggestionHunk, header:
   let cardTop: number
   try {
     textTop = view.coordsAtPos(hunk.from, 1).top
-    cardTop = cardSpot(view, hunk, hunk.from).top
+    // Where the card will go: stepping put the cursor in the hunk, inside a suggested block.
+    cardTop = cardSpot(view, hunk, view.state.selection.from).top
   } catch {
     // Measuring fails while the view updates.
     return

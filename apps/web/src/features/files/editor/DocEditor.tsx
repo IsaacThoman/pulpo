@@ -155,11 +155,10 @@ function DocEditorView({ editor, editable, width, toolbarSlot, onSuggestionsReso
           </div>
         )}
       </div>
-      {/* Match the chat column so documents read at the same width as conversations. The room at
-          the bottom fits the card of a suggestion on the last line. */}
+      {/* Match the chat column so documents read at the same width as conversations. */}
       <div className={cn(
-        'mx-auto w-full flex-1 pb-24',
-        width === 'fill' ? 'px-5 pt-5' : 'px-4 pt-8 sm:px-6',
+        'mx-auto w-full flex-1',
+        width === 'fill' ? 'px-5 py-5' : 'px-4 py-8 sm:px-6',
         width === 'wide' && 'max-w-[min(100%,90rem)]',
         width === 'narrow' && 'max-w-5xl',
       )}>
