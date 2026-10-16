@@ -2,7 +2,7 @@ import Testing
 @testable import KeyboardCore
 
 struct ExternalTextSpacingTests {
-  @Test(arguments: [", next", ".", "!", "?", ";", ":", ")", "]", "}", "”", "’s", "…"])
+  @Test(arguments: [", next", ".", "!", "?", ";", ":", ")", "]", "}", "”", "’", "…"])
   func suppliedClosingPunctuationAttaches(text: String) {
     let (engine, document) = Fixtures.engine("word")
     engine.insertText(text, spacing: true)

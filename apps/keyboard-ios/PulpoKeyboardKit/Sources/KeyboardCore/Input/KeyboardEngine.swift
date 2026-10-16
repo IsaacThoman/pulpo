@@ -473,7 +473,7 @@ public final class KeyboardEngine {
     // that attaches to the preceding word. Opening delimiters attach to the
     // following text instead, including Spanish inverted punctuation.
     if spacing || phantomSpace,
-       let first = text.first, !first.isWhitespace, !".,!?;:)]}\u{201D}\u{2019}…".contains(first),
+       let first = text.first, !first.isWhitespace, !Self.beginsWithAttachingPunctuation(text),
        let previous = before.last, !previous.isWhitespace,
        !"([{\u{201C}\u{2018}¿¡/@#".contains(previous), !Self.endsInOpeningQuote(before) {
       output = " " + output
@@ -482,6 +482,22 @@ public final class KeyboardEngine {
     insertDocumentText(output)
     lastEdit = .typed
     finishEdit()
+  }
+
+  private static func beginsWithAttachingPunctuation(_ text: String) -> Bool {
+    guard let first = text.first else { return false }
+    let run: String
+    if ".,!?;:…".contains(first) {
+      run = ".,!?;:…"
+    } else if ")]\u{007D}\u{201D}\u{2019}".contains(first) {
+      run = ")]\u{007D}\u{201D}\u{2019}"
+    } else {
+      return false
+    }
+    // A bounded punctuation run can attach, but punctuation-led words and
+    // mixed runs (such as emoticons) conservatively keep their separator.
+    // A curly apostrophe followed by letters may begin a word, not close one.
+    return text.drop(while: { run.contains($0) }).first?.isWhitespace ?? true
   }
 
   /// Inserts a dictation transcript, joining it naturally with the surrounding text.

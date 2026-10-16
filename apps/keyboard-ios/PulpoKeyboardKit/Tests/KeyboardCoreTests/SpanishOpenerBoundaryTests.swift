@@ -65,14 +65,14 @@ struct SpanishOpenerBoundaryTests {
     ("", true), ("Please, ", false), ("Done.” ", true),
     ("Done... ", true), ("Done… ", false), ("Done\n", true),
   ])
-  func transcriptCasingSharesTheBoundaryRuleAndRetainsExistingSpacing(opener: String, boundary: (String, Bool)) {
+  func transcriptCasingSharesTheBoundaryRuleAndJoinsInsideOpeners(opener: String, boundary: (String, Bool)) {
     // English supplies a known lowercase spelling of Hello, so a mid-sentence
     // transcript exercises the real lowercase decision rather than a name guard.
     let (engine, document) = Fixtures.engine(boundary.0 + opener)
     engine.insertTranscript("Hello again")
     let transcript = boundary.1 ? "Hello again" : "hello again"
-    // insertText(spacing:) still inserts this unwanted space after ¿/¡. Its
-    // removal is a separate spacing change, deliberately excluded here.
-    #expect(document.text == boundary.0 + opener + " " + transcript)
+    // The separate inserted-text spacing refinement removes only the unwanted
+    // post-opener space; the shared-helper casing expectations stay the same.
+    #expect(document.text == boundary.0 + opener + transcript)
   }
 }

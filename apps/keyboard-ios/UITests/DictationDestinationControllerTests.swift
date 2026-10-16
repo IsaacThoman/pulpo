@@ -83,6 +83,42 @@ final class DictationDestinationControllerTests: XCTestCase {
     XCTAssertNil(s.bridge.pendingRequest)
   }
 
+  func testBridgeDeliveredStandalonePunctuationAttachesOnce() throws {
+    for text in [",", "!", ";", ")", "..."] {
+      let s = try Session()
+      defer { s.close() }
+      s.host.proxy.hostChanges { $0 = SimulatedProxy.State("hello") }
+      s.host.proxy.receive()
+      s.controller.documentDidChange()
+      let request = try s.start()
+      s.complete(request, text: text)
+      s.complete(request, text: text)
+      s.applyEdits()
+      XCTAssertEqual(s.host.proxy.host.string, "hello" + text)
+      XCTAssertEqual(s.host.proxy.sentEdits, 1)
+      XCTAssertTrue(s.bridge.wasDelivered(request))
+      XCTAssertNil(s.bridge.pendingRequest)
+    }
+  }
+
+  func testBridgeDeliveredPunctuationLedTokensKeepTheirSeparator() throws {
+    for text in [".NET", ".env", ":)", "!important", "?flag", "’tis"] {
+      let s = try Session()
+      defer { s.close() }
+      s.host.proxy.hostChanges { $0 = SimulatedProxy.State("Use") }
+      s.host.proxy.receive()
+      s.controller.documentDidChange()
+      let request = try s.start()
+      s.complete(request, text: text)
+      s.complete(request, text: text)
+      s.applyEdits()
+      XCTAssertEqual(s.host.proxy.host.string, "Use " + text)
+      XCTAssertEqual(s.host.proxy.sentEdits, 1)
+      XCTAssertTrue(s.bridge.wasDelivered(request))
+      XCTAssertNil(s.bridge.pendingRequest)
+    }
+  }
+
   func testIdenticalTextInAnotherFieldWaitsForAnActualPanelButtonTap() throws {
     let s = try Session()
     defer { s.close() }

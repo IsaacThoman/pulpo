@@ -1,5 +1,7 @@
 # Source-blind inserted-text spacing sweep
 
+The frozen results below describe the original sweep candidate. Parent review subsequently narrowed its punctuation predicate; the separate post-review integration evidence at the end is not a new blind evaluation.
+
 ## Scope and blind ordering
 
 Parent base: `0c0352a1ed07b5efe884fa8c34f54cba11dff9a8`; isolated worktree branch `t3/blind-insertion-spacing-sweep`. No parent push, physical deployment, or simulator use.
@@ -109,3 +111,15 @@ The development baseline driver took 0.144 s test runtime; patched development p
 No simulator ownership was available and none was taken. Core tests exercise production engine behavior through an in-memory synchronous document, not a real app's asynchronous UITextDocumentProxy. Existing context-visibility, stale-suggestion, selection guard, host-lag/editing, language-switch, and fuzz regressions provide related coverage but do not certify every host. Synthetic swipes do not prove physical gesture accuracy. Frozen casing/whitespace expectations are narrow user tasks; raw snippets and transcript preprocessing are not interchangeable. Paired ambiguous straight quotes and every Unicode punctuation convention are not exhaustively evaluated.
 
 This sweep does not resolve right-side insertion spacing, transcript trimming, emoji panel spacing, unavailable completions, known host-revert ambiguity, or baseline timing failures. Relevant regression tests passed, but the full broad suite is explicitly not reported as green. Future sweeps should author and commit new tasks before inspection; these development/held-out cases are now exposed regression evidence and must not be reused as a fresh blind evaluation.
+
+## Post-review integration refinement
+
+Independent parent review rejected the original first-character punctuation predicate as too broad. With preceding text `Use`, `.NET` became `Use.NET`; punctuation-led tokens such as `.env`, `:)`, `!important`, `?flag`, and `’tis` had the same separator-loss risk. These cases were absent from the frozen tasks, so the original zero-regression claim applies only to that task set.
+
+The integrated predicate now attaches a leading run of sentence punctuation only when the run ends at end-of-input or whitespace. Closing brackets/curly quotes form a separate run with the same boundary requirement. Mixed punctuation/delimiter prefixes and punctuation followed immediately by letters conservatively retain the previous separator behavior. There are no word-specific exceptions. This intentionally leaves ambiguous possessive-like `’s` separated when spacing is requested, rather than treating every curly apostrophe as a closing quote. Straight closing-quote and mixed sentence-punctuation/closing-delimiter conventions remain outside the refinement. Supplied whitespace and post-opener attachment, including ¿/¡ and opening straight quotes, are preserved; literal insertion with no owed separator remains literal.
+
+`ExternalTextSpacingBoundaryTests` reproduced **28 failing assertions** against the imported broad predicate. After refinement, the release run passed **95 test functions across nine suites**, including 53 new parameterized boundary cases, existing editing/context/swipe/language regressions, and the deliberately updated Spanish opener transcript spacing expectation. Native `DictationDestinationControllerTests` now has two additional methods exercising real bridge delivery, destination checks, and duplicate completion handling for five punctuation snippets and six punctuation-led tokens; syntax parsing passed, but execution is delegated to the parent.
+
+Replaying the now-exposed development and held-out tasks retained **25/28** and **19/22** exact outcomes respectively, with full result arrays identical to the original retained candidate. The held-out unavailable route remains counted as a non-pass. This is post-review regression evidence, not further blind gains or evidence of general spacing completeness. Frozen task inputs, driver, and original baseline/patched artifacts were not modified.
+
+Focused release logs: `/tmp/pulpo-spacing-review-red.txt`, `/tmp/pulpo-spacing-review-green.txt`, and `/tmp/pulpo-spacing-review-held.txt`; isolated scratch directory `/tmp/pulpo-spanish-boundary-review-spm`. The new boundary rule scans only a leading punctuation run and performs no model lookup. Native tests and broad parent validation remain separately reported.
