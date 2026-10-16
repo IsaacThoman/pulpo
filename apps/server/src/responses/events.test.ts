@@ -33,7 +33,9 @@ describe('response event replay', () => {
   it('returns only newer events in stream order and does not decode acknowledged payloads', async () => {
     mocks.xrange.mockResolvedValue([
       entry(1, ['event', 'invalid old JSON', 'sequence', '1']),
-      entry(2), entry(3), entry(4),
+      // The acknowledged sequence itself is also skipped before decoding.
+      entry(2, ['sequence', '2', 'event', 'invalid acknowledged JSON']),
+      entry(3), entry(4),
     ])
     const result = await readResponseEvents('response-1', 2)
     expect(result.map((value) => value.sequence)).toEqual([3, 4])
