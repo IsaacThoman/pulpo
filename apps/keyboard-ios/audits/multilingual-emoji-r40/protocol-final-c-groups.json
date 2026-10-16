@@ -1,0 +1,2704 @@
+{
+  "classification": "Exposed v7 SAME-C assertions, fixed before candidate source",
+  "groups": [
+    {
+      "ids": [
+        "spanish-phrase",
+        "spanish-reorder",
+        "spanish-repeat"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "localized-cap-1-plain",
+        "localized-cap-1-order",
+        "localized-cap-1-repeat",
+        "localized-cap-1-upper-nfd"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "localized-cap-48-plain",
+        "localized-cap-48-order",
+        "localized-cap-48-repeat",
+        "localized-cap-48-upper-nfd"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "localized-cap-60-plain",
+        "localized-cap-60-order",
+        "localized-cap-60-repeat",
+        "localized-cap-60-upper-nfd"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "reserve-apostrophe-1-1",
+        "reserve-apostrophe-1-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "reserve-apostrophe-48-1",
+        "reserve-apostrophe-48-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "reserve-apostrophe-60-1",
+        "reserve-apostrophe-60-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "reserve-digits-1-1",
+        "reserve-digits-1-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "reserve-digits-48-1",
+        "reserve-digits-48-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "reserve-digits-60-1",
+        "reserve-digits-60-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "reserve-Mn-1-1",
+        "reserve-Mn-1-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "reserve-Mn-48-1",
+        "reserve-Mn-48-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "reserve-Mn-60-1",
+        "reserve-Mn-60-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "reserve-Mc-1-1",
+        "reserve-Mc-1-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "reserve-Mc-48-1",
+        "reserve-Mc-48-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "reserve-Mc-60-1",
+        "reserve-Mc-60-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "reserve-Me-1-1",
+        "reserve-Me-1-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "reserve-Me-48-1",
+        "reserve-Me-48-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "reserve-Me-60-1",
+        "reserve-Me-60-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "reserve-newUnicode-1-1",
+        "reserve-newUnicode-1-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "reserve-newUnicode-48-1",
+        "reserve-newUnicode-48-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "reserve-newUnicode-60-1",
+        "reserve-newUnicode-60-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-internal-cedilla-single-1-0",
+        "r40-internal-cedilla-single-1-1",
+        "r40-internal-cedilla-single-1-2",
+        "r40-internal-cedilla-single-1-4"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-internal-cedilla-pair-1-0",
+        "r40-internal-cedilla-pair-1-1",
+        "r40-internal-cedilla-pair-1-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-internal-cedilla-single-48-0",
+        "r40-internal-cedilla-single-48-1",
+        "r40-internal-cedilla-single-48-2",
+        "r40-internal-cedilla-single-48-4"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-internal-cedilla-pair-48-0",
+        "r40-internal-cedilla-pair-48-1",
+        "r40-internal-cedilla-pair-48-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-internal-cedilla-single-60-0",
+        "r40-internal-cedilla-single-60-1",
+        "r40-internal-cedilla-single-60-2",
+        "r40-internal-cedilla-single-60-4"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-internal-cedilla-pair-60-0",
+        "r40-internal-cedilla-pair-60-1",
+        "r40-internal-cedilla-pair-60-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-internal-acute-g-single-1-0",
+        "r40-internal-acute-g-single-1-1",
+        "r40-internal-acute-g-single-1-2",
+        "r40-internal-acute-g-single-1-4"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-internal-acute-g-pair-1-0",
+        "r40-internal-acute-g-pair-1-1",
+        "r40-internal-acute-g-pair-1-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-internal-acute-g-single-48-0",
+        "r40-internal-acute-g-single-48-1",
+        "r40-internal-acute-g-single-48-2",
+        "r40-internal-acute-g-single-48-4"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-internal-acute-g-pair-48-0",
+        "r40-internal-acute-g-pair-48-1",
+        "r40-internal-acute-g-pair-48-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-internal-acute-g-single-60-0",
+        "r40-internal-acute-g-single-60-1",
+        "r40-internal-acute-g-single-60-2",
+        "r40-internal-acute-g-single-60-4"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-internal-acute-g-pair-60-0",
+        "r40-internal-acute-g-pair-60-1",
+        "r40-internal-acute-g-pair-60-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-internal-stroke-l-single-1-0",
+        "r40-internal-stroke-l-single-1-1",
+        "r40-internal-stroke-l-single-1-2",
+        "r40-internal-stroke-l-single-1-4"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-internal-stroke-l-pair-1-0",
+        "r40-internal-stroke-l-pair-1-1",
+        "r40-internal-stroke-l-pair-1-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-internal-stroke-l-single-48-0",
+        "r40-internal-stroke-l-single-48-1",
+        "r40-internal-stroke-l-single-48-2",
+        "r40-internal-stroke-l-single-48-4"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-internal-stroke-l-pair-48-0",
+        "r40-internal-stroke-l-pair-48-1",
+        "r40-internal-stroke-l-pair-48-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-internal-stroke-l-single-60-0",
+        "r40-internal-stroke-l-single-60-1",
+        "r40-internal-stroke-l-single-60-2",
+        "r40-internal-stroke-l-single-60-4"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-internal-stroke-l-pair-60-0",
+        "r40-internal-stroke-l-pair-60-1",
+        "r40-internal-stroke-l-pair-60-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-internal-greek-single-1-0",
+        "r40-internal-greek-single-1-1",
+        "r40-internal-greek-single-1-2",
+        "r40-internal-greek-single-1-4"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-internal-greek-pair-1-0",
+        "r40-internal-greek-pair-1-1",
+        "r40-internal-greek-pair-1-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-internal-greek-single-48-0",
+        "r40-internal-greek-single-48-1",
+        "r40-internal-greek-single-48-2",
+        "r40-internal-greek-single-48-4"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-internal-greek-pair-48-0",
+        "r40-internal-greek-pair-48-1",
+        "r40-internal-greek-pair-48-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-internal-greek-single-60-0",
+        "r40-internal-greek-single-60-1",
+        "r40-internal-greek-single-60-2",
+        "r40-internal-greek-single-60-4"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-internal-greek-pair-60-0",
+        "r40-internal-greek-pair-60-1",
+        "r40-internal-greek-pair-60-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-internal-cyrillic-single-1-0",
+        "r40-internal-cyrillic-single-1-1",
+        "r40-internal-cyrillic-single-1-2",
+        "r40-internal-cyrillic-single-1-4"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-internal-cyrillic-pair-1-0",
+        "r40-internal-cyrillic-pair-1-1",
+        "r40-internal-cyrillic-pair-1-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-internal-cyrillic-single-48-0",
+        "r40-internal-cyrillic-single-48-1",
+        "r40-internal-cyrillic-single-48-2",
+        "r40-internal-cyrillic-single-48-4"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-internal-cyrillic-pair-48-0",
+        "r40-internal-cyrillic-pair-48-1",
+        "r40-internal-cyrillic-pair-48-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-internal-cyrillic-single-60-0",
+        "r40-internal-cyrillic-single-60-1",
+        "r40-internal-cyrillic-single-60-2",
+        "r40-internal-cyrillic-single-60-4"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-internal-cyrillic-pair-60-0",
+        "r40-internal-cyrillic-pair-60-1",
+        "r40-internal-cyrillic-pair-60-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-marks-Mn-consonant-0",
+        "r40-marks-Mn-consonant-1",
+        "r40-marks-Mn-consonant-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-marks-Mn-vowel-0",
+        "r40-marks-Mn-vowel-1",
+        "r40-marks-Mn-vowel-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-marks-Mc-consonant-0",
+        "r40-marks-Mc-consonant-1",
+        "r40-marks-Mc-consonant-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-marks-Mc-vowel-0",
+        "r40-marks-Mc-vowel-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-marks-Me-consonant-0",
+        "r40-marks-Me-consonant-1",
+        "r40-marks-Me-consonant-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-marks-Me-vowel-0",
+        "r40-marks-Me-vowel-1",
+        "r40-marks-Me-vowel-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-stopword-only-1-0",
+        "r40-stopword-only-1-1",
+        "r40-stopword-only-1-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-stopword-only-48-0",
+        "r40-stopword-only-48-1",
+        "r40-stopword-only-48-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-stopword-only-60-0",
+        "r40-stopword-only-60-1",
+        "r40-stopword-only-60-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-stopword-phrase-1-0",
+        "r40-stopword-phrase-1-1",
+        "r40-stopword-phrase-1-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-stopword-phrase-48-0",
+        "r40-stopword-phrase-48-1",
+        "r40-stopword-phrase-48-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-stopword-phrase-60-0",
+        "r40-stopword-phrase-60-1",
+        "r40-stopword-phrase-60-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-saturated-1-0",
+        "r40-saturated-1-1",
+        "r40-saturated-1-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-saturated-48-0",
+        "r40-saturated-48-1",
+        "r40-saturated-48-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-saturated-60-0",
+        "r40-saturated-60-1",
+        "r40-saturated-60-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-ranking-0",
+        "r40-ranking-1",
+        "r40-ranking-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-v4-mark-token-Mn-0",
+        "r40-v4-mark-token-Mn-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-v4-mark-token-Mc-0",
+        "r40-v4-mark-token-Mc-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-v4-mark-token-Me-0",
+        "r40-v4-mark-token-Me-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-v4-ignored-substrings-1-1",
+        "r40-v4-ignored-substrings-1-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-v4-ignored-substrings-48-1",
+        "r40-v4-ignored-substrings-48-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-v4-ignored-substrings-60-1",
+        "r40-v4-ignored-substrings-60-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-v4-retained-postings-1-0",
+        "r40-v4-retained-postings-1-1",
+        "r40-v4-retained-postings-1-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-v4-retained-postings-48-0",
+        "r40-v4-retained-postings-48-1",
+        "r40-v4-retained-postings-48-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-v4-retained-postings-60-0",
+        "r40-v4-retained-postings-60-1",
+        "r40-v4-retained-postings-60-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-v4-exact-winner-1-0",
+        "r40-v4-exact-winner-1-1",
+        "r40-v4-exact-winner-1-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-v4-exact-winner-48-0",
+        "r40-v4-exact-winner-48-1",
+        "r40-v4-exact-winner-48-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-v4-exact-winner-60-0",
+        "r40-v4-exact-winner-60-1",
+        "r40-v4-exact-winner-60-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-final-red-heart-mixed-1-0",
+        "r40-final-red-heart-mixed-1-1",
+        "r40-final-red-heart-mixed-1-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-final-red-heart-mixed-48-0",
+        "r40-final-red-heart-mixed-48-1",
+        "r40-final-red-heart-mixed-48-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-final-red-heart-mixed-60-0",
+        "r40-final-red-heart-mixed-60-1",
+        "r40-final-red-heart-mixed-60-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-final-red-heart-es-1-0",
+        "r40-final-red-heart-es-1-1",
+        "r40-final-red-heart-es-1-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-final-red-heart-es-48-0",
+        "r40-final-red-heart-es-48-1",
+        "r40-final-red-heart-es-48-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-final-red-heart-es-60-0",
+        "r40-final-red-heart-es-60-1",
+        "r40-final-red-heart-es-60-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-final-internal-enye-1-0",
+        "r40-final-internal-enye-1-1",
+        "r40-final-internal-enye-1-2",
+        "r40-final-internal-enye-1-3"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-final-internal-enye-48-0",
+        "r40-final-internal-enye-48-1",
+        "r40-final-internal-enye-48-2",
+        "r40-final-internal-enye-48-3"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-final-internal-enye-60-0",
+        "r40-final-internal-enye-60-1",
+        "r40-final-internal-enye-60-2",
+        "r40-final-internal-enye-60-3"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-final-internal-Mc-1-0",
+        "r40-final-internal-Mc-1-1",
+        "r40-final-internal-Mc-1-2",
+        "r40-final-internal-Mc-1-3"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-final-internal-Mc-48-0",
+        "r40-final-internal-Mc-48-1",
+        "r40-final-internal-Mc-48-2",
+        "r40-final-internal-Mc-48-3"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-final-internal-Mc-60-0",
+        "r40-final-internal-Mc-60-1",
+        "r40-final-internal-Mc-60-2",
+        "r40-final-internal-Mc-60-3"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-final-internal-Me-1-0",
+        "r40-final-internal-Me-1-1",
+        "r40-final-internal-Me-1-2",
+        "r40-final-internal-Me-1-3"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-final-internal-Me-48-0",
+        "r40-final-internal-Me-48-1",
+        "r40-final-internal-Me-48-2",
+        "r40-final-internal-Me-48-3"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-final-internal-Me-60-0",
+        "r40-final-internal-Me-60-1",
+        "r40-final-internal-Me-60-2",
+        "r40-final-internal-Me-60-3"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-final-internal-Mn-1-0",
+        "r40-final-internal-Mn-1-1",
+        "r40-final-internal-Mn-1-2",
+        "r40-final-internal-Mn-1-3"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-final-internal-Mn-48-0",
+        "r40-final-internal-Mn-48-1",
+        "r40-final-internal-Mn-48-2",
+        "r40-final-internal-Mn-48-3"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-final-internal-Mn-60-0",
+        "r40-final-internal-Mn-60-1",
+        "r40-final-internal-Mn-60-2",
+        "r40-final-internal-Mn-60-3"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-final-orphan-Mc-1-1",
+        "r40-final-orphan-Mc-1-2",
+        "r40-final-orphan-Mc-1-3"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-final-orphan-Mc-48-1",
+        "r40-final-orphan-Mc-48-2",
+        "r40-final-orphan-Mc-48-3"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-final-orphan-Mc-60-1",
+        "r40-final-orphan-Mc-60-2",
+        "r40-final-orphan-Mc-60-3"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-final-FF9E-context-1-0",
+        "r40-final-FF9E-context-1-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-final-FF9E-context-1-1",
+        "r40-final-FF9E-context-1-3"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-final-FF9E-context-48-0",
+        "r40-final-FF9E-context-48-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-final-FF9E-context-48-1",
+        "r40-final-FF9E-context-48-3"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-final-FF9E-context-60-0",
+        "r40-final-FF9E-context-60-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-final-FF9E-context-60-1",
+        "r40-final-FF9E-context-60-3"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-final-bounded-compact-1-0",
+        "r40-final-bounded-compact-1-1",
+        "r40-final-bounded-compact-1-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-final-bounded-compact-48-0",
+        "r40-final-bounded-compact-48-1",
+        "r40-final-bounded-compact-48-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-final-bounded-compact-60-0",
+        "r40-final-bounded-compact-60-1",
+        "r40-final-bounded-compact-60-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-final-bounded-phrase-1-0",
+        "r40-final-bounded-phrase-1-1",
+        "r40-final-bounded-phrase-1-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-final-bounded-phrase-48-0",
+        "r40-final-bounded-phrase-48-1",
+        "r40-final-bounded-phrase-48-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-final-bounded-phrase-60-0",
+        "r40-final-bounded-phrase-60-1",
+        "r40-final-bounded-phrase-60-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-final-bounded-keyword-1-0",
+        "r40-final-bounded-keyword-1-1",
+        "r40-final-bounded-keyword-1-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-final-bounded-keyword-48-0",
+        "r40-final-bounded-keyword-48-1",
+        "r40-final-bounded-keyword-48-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-final-bounded-keyword-60-0",
+        "r40-final-bounded-keyword-60-1",
+        "r40-final-bounded-keyword-60-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-final-exact-Mc-1-1",
+        "r40-final-exact-Mc-1-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-final-exact-Mc-48-1",
+        "r40-final-exact-Mc-48-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    },
+    {
+      "ids": [
+        "r40-final-exact-Mc-60-1",
+        "r40-final-exact-Mc-60-2"
+      ],
+      "kind": "same-C-localized-suffix-only"
+    }
+  ],
+  "replacedCrossIdentityGroups": [
+    {
+      "previousGroup": [
+        "spanish-phrase",
+        "spanish-punctuation",
+        "spanish-apostrophe",
+        "spanish-curly-apostrophe",
+        "spanish-digits",
+        "spanish-reorder",
+        "spanish-repeat"
+      ],
+      "sameCPartitions": [
+        [
+          "spanish-phrase",
+          "spanish-reorder",
+          "spanish-repeat"
+        ],
+        [
+          "spanish-punctuation"
+        ],
+        [
+          "spanish-apostrophe"
+        ],
+        [
+          "spanish-curly-apostrophe"
+        ],
+        [
+          "spanish-digits"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "reserve-apostrophe-1-0",
+        "reserve-apostrophe-1-1",
+        "reserve-apostrophe-1-2"
+      ],
+      "sameCPartitions": [
+        [
+          "reserve-apostrophe-1-0"
+        ],
+        [
+          "reserve-apostrophe-1-1",
+          "reserve-apostrophe-1-2"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "reserve-apostrophe-48-0",
+        "reserve-apostrophe-48-1",
+        "reserve-apostrophe-48-2"
+      ],
+      "sameCPartitions": [
+        [
+          "reserve-apostrophe-48-0"
+        ],
+        [
+          "reserve-apostrophe-48-1",
+          "reserve-apostrophe-48-2"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "reserve-apostrophe-60-0",
+        "reserve-apostrophe-60-1",
+        "reserve-apostrophe-60-2"
+      ],
+      "sameCPartitions": [
+        [
+          "reserve-apostrophe-60-0"
+        ],
+        [
+          "reserve-apostrophe-60-1",
+          "reserve-apostrophe-60-2"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "reserve-digits-1-0",
+        "reserve-digits-1-1",
+        "reserve-digits-1-2"
+      ],
+      "sameCPartitions": [
+        [
+          "reserve-digits-1-0"
+        ],
+        [
+          "reserve-digits-1-1",
+          "reserve-digits-1-2"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "reserve-digits-48-0",
+        "reserve-digits-48-1",
+        "reserve-digits-48-2"
+      ],
+      "sameCPartitions": [
+        [
+          "reserve-digits-48-0"
+        ],
+        [
+          "reserve-digits-48-1",
+          "reserve-digits-48-2"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "reserve-digits-60-0",
+        "reserve-digits-60-1",
+        "reserve-digits-60-2"
+      ],
+      "sameCPartitions": [
+        [
+          "reserve-digits-60-0"
+        ],
+        [
+          "reserve-digits-60-1",
+          "reserve-digits-60-2"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "reserve-Mn-1-0",
+        "reserve-Mn-1-1",
+        "reserve-Mn-1-2"
+      ],
+      "sameCPartitions": [
+        [
+          "reserve-Mn-1-0"
+        ],
+        [
+          "reserve-Mn-1-1",
+          "reserve-Mn-1-2"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "reserve-Mn-48-0",
+        "reserve-Mn-48-1",
+        "reserve-Mn-48-2"
+      ],
+      "sameCPartitions": [
+        [
+          "reserve-Mn-48-0"
+        ],
+        [
+          "reserve-Mn-48-1",
+          "reserve-Mn-48-2"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "reserve-Mn-60-0",
+        "reserve-Mn-60-1",
+        "reserve-Mn-60-2"
+      ],
+      "sameCPartitions": [
+        [
+          "reserve-Mn-60-0"
+        ],
+        [
+          "reserve-Mn-60-1",
+          "reserve-Mn-60-2"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "reserve-Mc-1-0",
+        "reserve-Mc-1-1",
+        "reserve-Mc-1-2"
+      ],
+      "sameCPartitions": [
+        [
+          "reserve-Mc-1-0"
+        ],
+        [
+          "reserve-Mc-1-1",
+          "reserve-Mc-1-2"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "reserve-Mc-48-0",
+        "reserve-Mc-48-1",
+        "reserve-Mc-48-2"
+      ],
+      "sameCPartitions": [
+        [
+          "reserve-Mc-48-0"
+        ],
+        [
+          "reserve-Mc-48-1",
+          "reserve-Mc-48-2"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "reserve-Mc-60-0",
+        "reserve-Mc-60-1",
+        "reserve-Mc-60-2"
+      ],
+      "sameCPartitions": [
+        [
+          "reserve-Mc-60-0"
+        ],
+        [
+          "reserve-Mc-60-1",
+          "reserve-Mc-60-2"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "reserve-Me-1-0",
+        "reserve-Me-1-1",
+        "reserve-Me-1-2"
+      ],
+      "sameCPartitions": [
+        [
+          "reserve-Me-1-0"
+        ],
+        [
+          "reserve-Me-1-1",
+          "reserve-Me-1-2"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "reserve-Me-48-0",
+        "reserve-Me-48-1",
+        "reserve-Me-48-2"
+      ],
+      "sameCPartitions": [
+        [
+          "reserve-Me-48-0"
+        ],
+        [
+          "reserve-Me-48-1",
+          "reserve-Me-48-2"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "reserve-Me-60-0",
+        "reserve-Me-60-1",
+        "reserve-Me-60-2"
+      ],
+      "sameCPartitions": [
+        [
+          "reserve-Me-60-0"
+        ],
+        [
+          "reserve-Me-60-1",
+          "reserve-Me-60-2"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "reserve-newUnicode-1-0",
+        "reserve-newUnicode-1-1",
+        "reserve-newUnicode-1-2"
+      ],
+      "sameCPartitions": [
+        [
+          "reserve-newUnicode-1-0"
+        ],
+        [
+          "reserve-newUnicode-1-1",
+          "reserve-newUnicode-1-2"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "reserve-newUnicode-48-0",
+        "reserve-newUnicode-48-1",
+        "reserve-newUnicode-48-2"
+      ],
+      "sameCPartitions": [
+        [
+          "reserve-newUnicode-48-0"
+        ],
+        [
+          "reserve-newUnicode-48-1",
+          "reserve-newUnicode-48-2"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "reserve-newUnicode-60-0",
+        "reserve-newUnicode-60-1",
+        "reserve-newUnicode-60-2"
+      ],
+      "sameCPartitions": [
+        [
+          "reserve-newUnicode-60-0"
+        ],
+        [
+          "reserve-newUnicode-60-1",
+          "reserve-newUnicode-60-2"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-internal-cedilla-single-1-0",
+        "r40-internal-cedilla-single-1-1",
+        "r40-internal-cedilla-single-1-2",
+        "r40-internal-cedilla-single-1-3",
+        "r40-internal-cedilla-single-1-4"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-internal-cedilla-single-1-0",
+          "r40-internal-cedilla-single-1-1",
+          "r40-internal-cedilla-single-1-2",
+          "r40-internal-cedilla-single-1-4"
+        ],
+        [
+          "r40-internal-cedilla-single-1-3"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-internal-cedilla-pair-1-0",
+        "r40-internal-cedilla-pair-1-1",
+        "r40-internal-cedilla-pair-1-2",
+        "r40-internal-cedilla-pair-1-3"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-internal-cedilla-pair-1-0",
+          "r40-internal-cedilla-pair-1-1",
+          "r40-internal-cedilla-pair-1-2"
+        ],
+        [
+          "r40-internal-cedilla-pair-1-3"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-internal-cedilla-single-48-0",
+        "r40-internal-cedilla-single-48-1",
+        "r40-internal-cedilla-single-48-2",
+        "r40-internal-cedilla-single-48-3",
+        "r40-internal-cedilla-single-48-4"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-internal-cedilla-single-48-0",
+          "r40-internal-cedilla-single-48-1",
+          "r40-internal-cedilla-single-48-2",
+          "r40-internal-cedilla-single-48-4"
+        ],
+        [
+          "r40-internal-cedilla-single-48-3"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-internal-cedilla-pair-48-0",
+        "r40-internal-cedilla-pair-48-1",
+        "r40-internal-cedilla-pair-48-2",
+        "r40-internal-cedilla-pair-48-3"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-internal-cedilla-pair-48-0",
+          "r40-internal-cedilla-pair-48-1",
+          "r40-internal-cedilla-pair-48-2"
+        ],
+        [
+          "r40-internal-cedilla-pair-48-3"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-internal-cedilla-single-60-0",
+        "r40-internal-cedilla-single-60-1",
+        "r40-internal-cedilla-single-60-2",
+        "r40-internal-cedilla-single-60-3",
+        "r40-internal-cedilla-single-60-4"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-internal-cedilla-single-60-0",
+          "r40-internal-cedilla-single-60-1",
+          "r40-internal-cedilla-single-60-2",
+          "r40-internal-cedilla-single-60-4"
+        ],
+        [
+          "r40-internal-cedilla-single-60-3"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-internal-cedilla-pair-60-0",
+        "r40-internal-cedilla-pair-60-1",
+        "r40-internal-cedilla-pair-60-2",
+        "r40-internal-cedilla-pair-60-3"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-internal-cedilla-pair-60-0",
+          "r40-internal-cedilla-pair-60-1",
+          "r40-internal-cedilla-pair-60-2"
+        ],
+        [
+          "r40-internal-cedilla-pair-60-3"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-internal-acute-g-single-1-0",
+        "r40-internal-acute-g-single-1-1",
+        "r40-internal-acute-g-single-1-2",
+        "r40-internal-acute-g-single-1-3",
+        "r40-internal-acute-g-single-1-4"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-internal-acute-g-single-1-0",
+          "r40-internal-acute-g-single-1-1",
+          "r40-internal-acute-g-single-1-2",
+          "r40-internal-acute-g-single-1-4"
+        ],
+        [
+          "r40-internal-acute-g-single-1-3"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-internal-acute-g-pair-1-0",
+        "r40-internal-acute-g-pair-1-1",
+        "r40-internal-acute-g-pair-1-2",
+        "r40-internal-acute-g-pair-1-3"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-internal-acute-g-pair-1-0",
+          "r40-internal-acute-g-pair-1-1",
+          "r40-internal-acute-g-pair-1-2"
+        ],
+        [
+          "r40-internal-acute-g-pair-1-3"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-internal-acute-g-single-48-0",
+        "r40-internal-acute-g-single-48-1",
+        "r40-internal-acute-g-single-48-2",
+        "r40-internal-acute-g-single-48-3",
+        "r40-internal-acute-g-single-48-4"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-internal-acute-g-single-48-0",
+          "r40-internal-acute-g-single-48-1",
+          "r40-internal-acute-g-single-48-2",
+          "r40-internal-acute-g-single-48-4"
+        ],
+        [
+          "r40-internal-acute-g-single-48-3"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-internal-acute-g-pair-48-0",
+        "r40-internal-acute-g-pair-48-1",
+        "r40-internal-acute-g-pair-48-2",
+        "r40-internal-acute-g-pair-48-3"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-internal-acute-g-pair-48-0",
+          "r40-internal-acute-g-pair-48-1",
+          "r40-internal-acute-g-pair-48-2"
+        ],
+        [
+          "r40-internal-acute-g-pair-48-3"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-internal-acute-g-single-60-0",
+        "r40-internal-acute-g-single-60-1",
+        "r40-internal-acute-g-single-60-2",
+        "r40-internal-acute-g-single-60-3",
+        "r40-internal-acute-g-single-60-4"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-internal-acute-g-single-60-0",
+          "r40-internal-acute-g-single-60-1",
+          "r40-internal-acute-g-single-60-2",
+          "r40-internal-acute-g-single-60-4"
+        ],
+        [
+          "r40-internal-acute-g-single-60-3"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-internal-acute-g-pair-60-0",
+        "r40-internal-acute-g-pair-60-1",
+        "r40-internal-acute-g-pair-60-2",
+        "r40-internal-acute-g-pair-60-3"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-internal-acute-g-pair-60-0",
+          "r40-internal-acute-g-pair-60-1",
+          "r40-internal-acute-g-pair-60-2"
+        ],
+        [
+          "r40-internal-acute-g-pair-60-3"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-internal-stroke-l-single-1-0",
+        "r40-internal-stroke-l-single-1-1",
+        "r40-internal-stroke-l-single-1-2",
+        "r40-internal-stroke-l-single-1-3",
+        "r40-internal-stroke-l-single-1-4"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-internal-stroke-l-single-1-0",
+          "r40-internal-stroke-l-single-1-1",
+          "r40-internal-stroke-l-single-1-2",
+          "r40-internal-stroke-l-single-1-4"
+        ],
+        [
+          "r40-internal-stroke-l-single-1-3"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-internal-stroke-l-pair-1-0",
+        "r40-internal-stroke-l-pair-1-1",
+        "r40-internal-stroke-l-pair-1-2",
+        "r40-internal-stroke-l-pair-1-3"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-internal-stroke-l-pair-1-0",
+          "r40-internal-stroke-l-pair-1-1",
+          "r40-internal-stroke-l-pair-1-2"
+        ],
+        [
+          "r40-internal-stroke-l-pair-1-3"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-internal-stroke-l-single-48-0",
+        "r40-internal-stroke-l-single-48-1",
+        "r40-internal-stroke-l-single-48-2",
+        "r40-internal-stroke-l-single-48-3",
+        "r40-internal-stroke-l-single-48-4"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-internal-stroke-l-single-48-0",
+          "r40-internal-stroke-l-single-48-1",
+          "r40-internal-stroke-l-single-48-2",
+          "r40-internal-stroke-l-single-48-4"
+        ],
+        [
+          "r40-internal-stroke-l-single-48-3"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-internal-stroke-l-pair-48-0",
+        "r40-internal-stroke-l-pair-48-1",
+        "r40-internal-stroke-l-pair-48-2",
+        "r40-internal-stroke-l-pair-48-3"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-internal-stroke-l-pair-48-0",
+          "r40-internal-stroke-l-pair-48-1",
+          "r40-internal-stroke-l-pair-48-2"
+        ],
+        [
+          "r40-internal-stroke-l-pair-48-3"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-internal-stroke-l-single-60-0",
+        "r40-internal-stroke-l-single-60-1",
+        "r40-internal-stroke-l-single-60-2",
+        "r40-internal-stroke-l-single-60-3",
+        "r40-internal-stroke-l-single-60-4"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-internal-stroke-l-single-60-0",
+          "r40-internal-stroke-l-single-60-1",
+          "r40-internal-stroke-l-single-60-2",
+          "r40-internal-stroke-l-single-60-4"
+        ],
+        [
+          "r40-internal-stroke-l-single-60-3"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-internal-stroke-l-pair-60-0",
+        "r40-internal-stroke-l-pair-60-1",
+        "r40-internal-stroke-l-pair-60-2",
+        "r40-internal-stroke-l-pair-60-3"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-internal-stroke-l-pair-60-0",
+          "r40-internal-stroke-l-pair-60-1",
+          "r40-internal-stroke-l-pair-60-2"
+        ],
+        [
+          "r40-internal-stroke-l-pair-60-3"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-internal-greek-single-1-0",
+        "r40-internal-greek-single-1-1",
+        "r40-internal-greek-single-1-2",
+        "r40-internal-greek-single-1-3",
+        "r40-internal-greek-single-1-4"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-internal-greek-single-1-0",
+          "r40-internal-greek-single-1-1",
+          "r40-internal-greek-single-1-2",
+          "r40-internal-greek-single-1-4"
+        ],
+        [
+          "r40-internal-greek-single-1-3"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-internal-greek-pair-1-0",
+        "r40-internal-greek-pair-1-1",
+        "r40-internal-greek-pair-1-2",
+        "r40-internal-greek-pair-1-3"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-internal-greek-pair-1-0",
+          "r40-internal-greek-pair-1-1",
+          "r40-internal-greek-pair-1-2"
+        ],
+        [
+          "r40-internal-greek-pair-1-3"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-internal-greek-single-48-0",
+        "r40-internal-greek-single-48-1",
+        "r40-internal-greek-single-48-2",
+        "r40-internal-greek-single-48-3",
+        "r40-internal-greek-single-48-4"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-internal-greek-single-48-0",
+          "r40-internal-greek-single-48-1",
+          "r40-internal-greek-single-48-2",
+          "r40-internal-greek-single-48-4"
+        ],
+        [
+          "r40-internal-greek-single-48-3"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-internal-greek-pair-48-0",
+        "r40-internal-greek-pair-48-1",
+        "r40-internal-greek-pair-48-2",
+        "r40-internal-greek-pair-48-3"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-internal-greek-pair-48-0",
+          "r40-internal-greek-pair-48-1",
+          "r40-internal-greek-pair-48-2"
+        ],
+        [
+          "r40-internal-greek-pair-48-3"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-internal-greek-single-60-0",
+        "r40-internal-greek-single-60-1",
+        "r40-internal-greek-single-60-2",
+        "r40-internal-greek-single-60-3",
+        "r40-internal-greek-single-60-4"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-internal-greek-single-60-0",
+          "r40-internal-greek-single-60-1",
+          "r40-internal-greek-single-60-2",
+          "r40-internal-greek-single-60-4"
+        ],
+        [
+          "r40-internal-greek-single-60-3"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-internal-greek-pair-60-0",
+        "r40-internal-greek-pair-60-1",
+        "r40-internal-greek-pair-60-2",
+        "r40-internal-greek-pair-60-3"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-internal-greek-pair-60-0",
+          "r40-internal-greek-pair-60-1",
+          "r40-internal-greek-pair-60-2"
+        ],
+        [
+          "r40-internal-greek-pair-60-3"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-internal-cyrillic-single-1-0",
+        "r40-internal-cyrillic-single-1-1",
+        "r40-internal-cyrillic-single-1-2",
+        "r40-internal-cyrillic-single-1-3",
+        "r40-internal-cyrillic-single-1-4"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-internal-cyrillic-single-1-0",
+          "r40-internal-cyrillic-single-1-1",
+          "r40-internal-cyrillic-single-1-2",
+          "r40-internal-cyrillic-single-1-4"
+        ],
+        [
+          "r40-internal-cyrillic-single-1-3"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-internal-cyrillic-pair-1-0",
+        "r40-internal-cyrillic-pair-1-1",
+        "r40-internal-cyrillic-pair-1-2",
+        "r40-internal-cyrillic-pair-1-3"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-internal-cyrillic-pair-1-0",
+          "r40-internal-cyrillic-pair-1-1",
+          "r40-internal-cyrillic-pair-1-2"
+        ],
+        [
+          "r40-internal-cyrillic-pair-1-3"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-internal-cyrillic-single-48-0",
+        "r40-internal-cyrillic-single-48-1",
+        "r40-internal-cyrillic-single-48-2",
+        "r40-internal-cyrillic-single-48-3",
+        "r40-internal-cyrillic-single-48-4"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-internal-cyrillic-single-48-0",
+          "r40-internal-cyrillic-single-48-1",
+          "r40-internal-cyrillic-single-48-2",
+          "r40-internal-cyrillic-single-48-4"
+        ],
+        [
+          "r40-internal-cyrillic-single-48-3"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-internal-cyrillic-pair-48-0",
+        "r40-internal-cyrillic-pair-48-1",
+        "r40-internal-cyrillic-pair-48-2",
+        "r40-internal-cyrillic-pair-48-3"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-internal-cyrillic-pair-48-0",
+          "r40-internal-cyrillic-pair-48-1",
+          "r40-internal-cyrillic-pair-48-2"
+        ],
+        [
+          "r40-internal-cyrillic-pair-48-3"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-internal-cyrillic-single-60-0",
+        "r40-internal-cyrillic-single-60-1",
+        "r40-internal-cyrillic-single-60-2",
+        "r40-internal-cyrillic-single-60-3",
+        "r40-internal-cyrillic-single-60-4"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-internal-cyrillic-single-60-0",
+          "r40-internal-cyrillic-single-60-1",
+          "r40-internal-cyrillic-single-60-2",
+          "r40-internal-cyrillic-single-60-4"
+        ],
+        [
+          "r40-internal-cyrillic-single-60-3"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-internal-cyrillic-pair-60-0",
+        "r40-internal-cyrillic-pair-60-1",
+        "r40-internal-cyrillic-pair-60-2",
+        "r40-internal-cyrillic-pair-60-3"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-internal-cyrillic-pair-60-0",
+          "r40-internal-cyrillic-pair-60-1",
+          "r40-internal-cyrillic-pair-60-2"
+        ],
+        [
+          "r40-internal-cyrillic-pair-60-3"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-marks-Mc-vowel-0",
+        "r40-marks-Mc-vowel-1",
+        "r40-marks-Mc-vowel-2"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-marks-Mc-vowel-0",
+          "r40-marks-Mc-vowel-2"
+        ],
+        [
+          "r40-marks-Mc-vowel-1"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-stopword-only-1-0",
+        "r40-stopword-only-1-1",
+        "r40-stopword-only-1-2",
+        "r40-stopword-only-1-3",
+        "r40-stopword-only-1-4"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-stopword-only-1-0",
+          "r40-stopword-only-1-1",
+          "r40-stopword-only-1-2"
+        ],
+        [
+          "r40-stopword-only-1-3"
+        ],
+        [
+          "r40-stopword-only-1-4"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-stopword-only-48-0",
+        "r40-stopword-only-48-1",
+        "r40-stopword-only-48-2",
+        "r40-stopword-only-48-3",
+        "r40-stopword-only-48-4"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-stopword-only-48-0",
+          "r40-stopword-only-48-1",
+          "r40-stopword-only-48-2"
+        ],
+        [
+          "r40-stopword-only-48-3"
+        ],
+        [
+          "r40-stopword-only-48-4"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-stopword-only-60-0",
+        "r40-stopword-only-60-1",
+        "r40-stopword-only-60-2",
+        "r40-stopword-only-60-3",
+        "r40-stopword-only-60-4"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-stopword-only-60-0",
+          "r40-stopword-only-60-1",
+          "r40-stopword-only-60-2"
+        ],
+        [
+          "r40-stopword-only-60-3"
+        ],
+        [
+          "r40-stopword-only-60-4"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-stopword-phrase-1-0",
+        "r40-stopword-phrase-1-1",
+        "r40-stopword-phrase-1-2",
+        "r40-stopword-phrase-1-3",
+        "r40-stopword-phrase-1-4"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-stopword-phrase-1-0",
+          "r40-stopword-phrase-1-1",
+          "r40-stopword-phrase-1-2"
+        ],
+        [
+          "r40-stopword-phrase-1-3"
+        ],
+        [
+          "r40-stopword-phrase-1-4"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-stopword-phrase-48-0",
+        "r40-stopword-phrase-48-1",
+        "r40-stopword-phrase-48-2",
+        "r40-stopword-phrase-48-3",
+        "r40-stopword-phrase-48-4"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-stopword-phrase-48-0",
+          "r40-stopword-phrase-48-1",
+          "r40-stopword-phrase-48-2"
+        ],
+        [
+          "r40-stopword-phrase-48-3"
+        ],
+        [
+          "r40-stopword-phrase-48-4"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-stopword-phrase-60-0",
+        "r40-stopword-phrase-60-1",
+        "r40-stopword-phrase-60-2",
+        "r40-stopword-phrase-60-3",
+        "r40-stopword-phrase-60-4"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-stopword-phrase-60-0",
+          "r40-stopword-phrase-60-1",
+          "r40-stopword-phrase-60-2"
+        ],
+        [
+          "r40-stopword-phrase-60-3"
+        ],
+        [
+          "r40-stopword-phrase-60-4"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-saturated-1-0",
+        "r40-saturated-1-1",
+        "r40-saturated-1-2",
+        "r40-saturated-1-3"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-saturated-1-0",
+          "r40-saturated-1-1",
+          "r40-saturated-1-2"
+        ],
+        [
+          "r40-saturated-1-3"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-saturated-48-0",
+        "r40-saturated-48-1",
+        "r40-saturated-48-2",
+        "r40-saturated-48-3"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-saturated-48-0",
+          "r40-saturated-48-1",
+          "r40-saturated-48-2"
+        ],
+        [
+          "r40-saturated-48-3"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-saturated-60-0",
+        "r40-saturated-60-1",
+        "r40-saturated-60-2",
+        "r40-saturated-60-3"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-saturated-60-0",
+          "r40-saturated-60-1",
+          "r40-saturated-60-2"
+        ],
+        [
+          "r40-saturated-60-3"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-v4-orphan-context-1-0",
+        "r40-v4-orphan-context-1-1",
+        "r40-v4-orphan-context-1-2",
+        "r40-v4-orphan-context-1-3"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-v4-orphan-context-1-0"
+        ],
+        [
+          "r40-v4-orphan-context-1-1"
+        ],
+        [
+          "r40-v4-orphan-context-1-2"
+        ],
+        [
+          "r40-v4-orphan-context-1-3"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-v4-orphan-context-48-0",
+        "r40-v4-orphan-context-48-1",
+        "r40-v4-orphan-context-48-2",
+        "r40-v4-orphan-context-48-3"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-v4-orphan-context-48-0"
+        ],
+        [
+          "r40-v4-orphan-context-48-1"
+        ],
+        [
+          "r40-v4-orphan-context-48-2"
+        ],
+        [
+          "r40-v4-orphan-context-48-3"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-v4-orphan-context-60-0",
+        "r40-v4-orphan-context-60-1",
+        "r40-v4-orphan-context-60-2",
+        "r40-v4-orphan-context-60-3"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-v4-orphan-context-60-0"
+        ],
+        [
+          "r40-v4-orphan-context-60-1"
+        ],
+        [
+          "r40-v4-orphan-context-60-2"
+        ],
+        [
+          "r40-v4-orphan-context-60-3"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-v4-mark-token-Mn-0",
+        "r40-v4-mark-token-Mn-1",
+        "r40-v4-mark-token-Mn-2",
+        "r40-v4-mark-token-Mn-3"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-v4-mark-token-Mn-0",
+          "r40-v4-mark-token-Mn-2"
+        ],
+        [
+          "r40-v4-mark-token-Mn-1"
+        ],
+        [
+          "r40-v4-mark-token-Mn-3"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-v4-mark-token-Mc-0",
+        "r40-v4-mark-token-Mc-1",
+        "r40-v4-mark-token-Mc-2",
+        "r40-v4-mark-token-Mc-3"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-v4-mark-token-Mc-0",
+          "r40-v4-mark-token-Mc-2"
+        ],
+        [
+          "r40-v4-mark-token-Mc-1"
+        ],
+        [
+          "r40-v4-mark-token-Mc-3"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-v4-mark-token-Me-0",
+        "r40-v4-mark-token-Me-1",
+        "r40-v4-mark-token-Me-2",
+        "r40-v4-mark-token-Me-3"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-v4-mark-token-Me-0",
+          "r40-v4-mark-token-Me-2"
+        ],
+        [
+          "r40-v4-mark-token-Me-1"
+        ],
+        [
+          "r40-v4-mark-token-Me-3"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-v4-ignored-substrings-1-0",
+        "r40-v4-ignored-substrings-1-1",
+        "r40-v4-ignored-substrings-1-2",
+        "r40-v4-ignored-substrings-1-3"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-v4-ignored-substrings-1-0"
+        ],
+        [
+          "r40-v4-ignored-substrings-1-1",
+          "r40-v4-ignored-substrings-1-2"
+        ],
+        [
+          "r40-v4-ignored-substrings-1-3"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-v4-ignored-substrings-48-0",
+        "r40-v4-ignored-substrings-48-1",
+        "r40-v4-ignored-substrings-48-2",
+        "r40-v4-ignored-substrings-48-3"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-v4-ignored-substrings-48-0"
+        ],
+        [
+          "r40-v4-ignored-substrings-48-1",
+          "r40-v4-ignored-substrings-48-2"
+        ],
+        [
+          "r40-v4-ignored-substrings-48-3"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-v4-ignored-substrings-60-0",
+        "r40-v4-ignored-substrings-60-1",
+        "r40-v4-ignored-substrings-60-2",
+        "r40-v4-ignored-substrings-60-3"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-v4-ignored-substrings-60-0"
+        ],
+        [
+          "r40-v4-ignored-substrings-60-1",
+          "r40-v4-ignored-substrings-60-2"
+        ],
+        [
+          "r40-v4-ignored-substrings-60-3"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-v4-scalar-boundary-1-0",
+        "r40-v4-scalar-boundary-1-1",
+        "r40-v4-scalar-boundary-1-2",
+        "r40-v4-scalar-boundary-1-3"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-v4-scalar-boundary-1-0"
+        ],
+        [
+          "r40-v4-scalar-boundary-1-1"
+        ],
+        [
+          "r40-v4-scalar-boundary-1-2"
+        ],
+        [
+          "r40-v4-scalar-boundary-1-3"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-v4-scalar-boundary-48-0",
+        "r40-v4-scalar-boundary-48-1",
+        "r40-v4-scalar-boundary-48-2",
+        "r40-v4-scalar-boundary-48-3"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-v4-scalar-boundary-48-0"
+        ],
+        [
+          "r40-v4-scalar-boundary-48-1"
+        ],
+        [
+          "r40-v4-scalar-boundary-48-2"
+        ],
+        [
+          "r40-v4-scalar-boundary-48-3"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-v4-scalar-boundary-60-0",
+        "r40-v4-scalar-boundary-60-1",
+        "r40-v4-scalar-boundary-60-2",
+        "r40-v4-scalar-boundary-60-3"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-v4-scalar-boundary-60-0"
+        ],
+        [
+          "r40-v4-scalar-boundary-60-1"
+        ],
+        [
+          "r40-v4-scalar-boundary-60-2"
+        ],
+        [
+          "r40-v4-scalar-boundary-60-3"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-v4-exact-winner-1-0",
+        "r40-v4-exact-winner-1-1",
+        "r40-v4-exact-winner-1-2",
+        "r40-v4-exact-winner-1-3"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-v4-exact-winner-1-0",
+          "r40-v4-exact-winner-1-1",
+          "r40-v4-exact-winner-1-2"
+        ],
+        [
+          "r40-v4-exact-winner-1-3"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-v4-exact-winner-48-0",
+        "r40-v4-exact-winner-48-1",
+        "r40-v4-exact-winner-48-2",
+        "r40-v4-exact-winner-48-3"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-v4-exact-winner-48-0",
+          "r40-v4-exact-winner-48-1",
+          "r40-v4-exact-winner-48-2"
+        ],
+        [
+          "r40-v4-exact-winner-48-3"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-v4-exact-winner-60-0",
+        "r40-v4-exact-winner-60-1",
+        "r40-v4-exact-winner-60-2",
+        "r40-v4-exact-winner-60-3"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-v4-exact-winner-60-0",
+          "r40-v4-exact-winner-60-1",
+          "r40-v4-exact-winner-60-2"
+        ],
+        [
+          "r40-v4-exact-winner-60-3"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-final-orphan-iota-1-0",
+        "r40-final-orphan-iota-1-1",
+        "r40-final-orphan-iota-1-2",
+        "r40-final-orphan-iota-1-3"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-final-orphan-iota-1-0"
+        ],
+        [
+          "r40-final-orphan-iota-1-1"
+        ],
+        [
+          "r40-final-orphan-iota-1-2"
+        ],
+        [
+          "r40-final-orphan-iota-1-3"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-final-orphan-iota-48-0",
+        "r40-final-orphan-iota-48-1",
+        "r40-final-orphan-iota-48-2",
+        "r40-final-orphan-iota-48-3"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-final-orphan-iota-48-0"
+        ],
+        [
+          "r40-final-orphan-iota-48-1"
+        ],
+        [
+          "r40-final-orphan-iota-48-2"
+        ],
+        [
+          "r40-final-orphan-iota-48-3"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-final-orphan-iota-60-0",
+        "r40-final-orphan-iota-60-1",
+        "r40-final-orphan-iota-60-2",
+        "r40-final-orphan-iota-60-3"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-final-orphan-iota-60-0"
+        ],
+        [
+          "r40-final-orphan-iota-60-1"
+        ],
+        [
+          "r40-final-orphan-iota-60-2"
+        ],
+        [
+          "r40-final-orphan-iota-60-3"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-final-orphan-Mc-1-0",
+        "r40-final-orphan-Mc-1-1",
+        "r40-final-orphan-Mc-1-2",
+        "r40-final-orphan-Mc-1-3"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-final-orphan-Mc-1-0"
+        ],
+        [
+          "r40-final-orphan-Mc-1-1",
+          "r40-final-orphan-Mc-1-2",
+          "r40-final-orphan-Mc-1-3"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-final-orphan-Mc-48-0",
+        "r40-final-orphan-Mc-48-1",
+        "r40-final-orphan-Mc-48-2",
+        "r40-final-orphan-Mc-48-3"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-final-orphan-Mc-48-0"
+        ],
+        [
+          "r40-final-orphan-Mc-48-1",
+          "r40-final-orphan-Mc-48-2",
+          "r40-final-orphan-Mc-48-3"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-final-orphan-Mc-60-0",
+        "r40-final-orphan-Mc-60-1",
+        "r40-final-orphan-Mc-60-2",
+        "r40-final-orphan-Mc-60-3"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-final-orphan-Mc-60-0"
+        ],
+        [
+          "r40-final-orphan-Mc-60-1",
+          "r40-final-orphan-Mc-60-2",
+          "r40-final-orphan-Mc-60-3"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-final-FF9E-context-1-0",
+        "r40-final-FF9E-context-1-1",
+        "r40-final-FF9E-context-1-2",
+        "r40-final-FF9E-context-1-3"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-final-FF9E-context-1-0",
+          "r40-final-FF9E-context-1-2"
+        ],
+        [
+          "r40-final-FF9E-context-1-1",
+          "r40-final-FF9E-context-1-3"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-final-FF9E-context-48-0",
+        "r40-final-FF9E-context-48-1",
+        "r40-final-FF9E-context-48-2",
+        "r40-final-FF9E-context-48-3"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-final-FF9E-context-48-0",
+          "r40-final-FF9E-context-48-2"
+        ],
+        [
+          "r40-final-FF9E-context-48-1",
+          "r40-final-FF9E-context-48-3"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-final-FF9E-context-60-0",
+        "r40-final-FF9E-context-60-1",
+        "r40-final-FF9E-context-60-2",
+        "r40-final-FF9E-context-60-3"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-final-FF9E-context-60-0",
+          "r40-final-FF9E-context-60-2"
+        ],
+        [
+          "r40-final-FF9E-context-60-1",
+          "r40-final-FF9E-context-60-3"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-final-exact-Mc-1-0",
+        "r40-final-exact-Mc-1-1",
+        "r40-final-exact-Mc-1-2"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-final-exact-Mc-1-0"
+        ],
+        [
+          "r40-final-exact-Mc-1-1",
+          "r40-final-exact-Mc-1-2"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-final-exact-Mc-48-0",
+        "r40-final-exact-Mc-48-1",
+        "r40-final-exact-Mc-48-2"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-final-exact-Mc-48-0"
+        ],
+        [
+          "r40-final-exact-Mc-48-1",
+          "r40-final-exact-Mc-48-2"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-final-exact-Mc-60-0",
+        "r40-final-exact-Mc-60-1",
+        "r40-final-exact-Mc-60-2"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-final-exact-Mc-60-0"
+        ],
+        [
+          "r40-final-exact-Mc-60-1",
+          "r40-final-exact-Mc-60-2"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-final-exact-musical-1-0",
+        "r40-final-exact-musical-1-1"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-final-exact-musical-1-0"
+        ],
+        [
+          "r40-final-exact-musical-1-1"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-final-exact-musical-48-0",
+        "r40-final-exact-musical-48-1"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-final-exact-musical-48-0"
+        ],
+        [
+          "r40-final-exact-musical-48-1"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    },
+    {
+      "previousGroup": [
+        "r40-final-exact-musical-60-0",
+        "r40-final-exact-musical-60-1"
+      ],
+      "sameCPartitions": [
+        [
+          "r40-final-exact-musical-60-0"
+        ],
+        [
+          "r40-final-exact-musical-60-1"
+        ]
+      ],
+      "reason": "Different T/W/X triples; no invariance claimed across partitions"
+    }
+  ]
+}

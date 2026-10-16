@@ -1,0 +1,18 @@
+{
+  "classification": "Rejected PRE-PRODUCTION v6 finite observations; no v6 fixture gate was frozen and no candidate was introduced",
+  "contractSHA256": "acb2b5d91fd9d5a4599fd8c427bcdde0e07ec7f6ceaa43121a9c4e697a39c573",
+  "observedOld417Rows": {
+    "path": "/tmp/pulpo-r40-protocol-v6/old417-v6-witnesses.json",
+    "sha256": "c8085c62aa79c16ba777eac43e13b14b68455c483ea02ce4dba543b98fff5dcd"
+  },
+  "obsoleteObserver": {
+    "path": "/Users/isaacthoman/.t3/worktrees/pulpo/t3-8973a5dc/apps/keyboard-ios/audits/multilingual-emoji-r40/rejected-v6-baseline-witness.swift.txt",
+    "sha256": "aa0c5d1da598fce936e1c1f7fda688711aabab256fe37a867bba39bae513b7e0"
+  },
+  "failedExactNameImplication": {
+    "path": "/tmp/pulpo-r40-protocol-v6/rejected-v6-exact-implication-failures.json",
+    "sha256": "0283288c73aa46d17f2ba8bb9d1fbffb410d7eeddccb1588d719b14c2abaffa8",
+    "failedRows": 6
+  },
+  "passesClaimedForObsoletePolicy": false
+}

@@ -1,0 +1,75 @@
+{
+  "baseline": "00e2a0e7a283bc4a780b02f847ea9d82dfe9e5ae",
+  "providerInstanceId": "codex",
+  "model": "gpt-6.1-sol",
+  "inherited": true,
+  "taskParent": "pr782-round40-useful-canonical-spanish-emoji",
+  "tasks": [
+    {
+      "role": "domain-v1-v2",
+      "taskId": "node:delegated-task:command%3Amcp%3A79b27fa3-5914-4091-8103-8c1e69b404c9%3Adelegate-task%3Apr782-r40-domain-proof-round1",
+      "state": "REJECT",
+      "report": "/tmp/pulpo-r40-domain-review/report.md"
+    },
+    {
+      "role": "domain-v3",
+      "taskId": "node:delegated-task:command%3Amcp%3A79b27fa3-5914-4091-8103-8c1e69b404c9%3Adelegate-task%3Apr782-r40-domain-proof-round2-v3",
+      "state": "REJECT",
+      "report": "/tmp/pulpo-r40-domain-v3/report.md"
+    },
+    {
+      "role": "domain-v4",
+      "taskId": "node:delegated-task:command%3Amcp%3A79b27fa3-5914-4091-8103-8c1e69b404c9%3Adelegate-task%3Apr782-r40-domain-proof-round3-v4",
+      "state": "REJECT",
+      "report": "/tmp/pulpo-r40-domain-v4/report.md"
+    },
+    {
+      "role": "domain-v5-broad",
+      "taskId": "node:delegated-task:command%3Amcp%3A79b27fa3-5914-4091-8103-8c1e69b404c9%3Adelegate-task%3Apr782-r40-domain-proof-round4-v5",
+      "state": "REJECT",
+      "report": "/tmp/pulpo-r40-domain-v5/report.md"
+    },
+    {
+      "role": "domain-v6-final",
+      "taskId": "node:delegated-task:command%3Amcp%3A79b27fa3-5914-4091-8103-8c1e69b404c9%3Adelegate-task%3Apr782-r40-domain-proof-round5-v6",
+      "state": "REJECT",
+      "report": "/tmp/pulpo-r40-domain-v6/report.md"
+    },
+    {
+      "role": "protocol-interface",
+      "taskId": "node:delegated-task:command%3Amcp%3A79b27fa3-5914-4091-8103-8c1e69b404c9%3Adelegate-task%3Apr782-r40-protocol-engineering-round1",
+      "state": "INTERFACE ONLY",
+      "report": "protocol-smoke.md"
+    },
+    {
+      "role": "protocol-v6",
+      "taskId": "node:delegated-task:command%3Amcp%3A79b27fa3-5914-4091-8103-8c1e69b404c9%3Adelegate-task%3Apr782-r40-protocol-engineering-round2-v6",
+      "state": "PASS PREPRODUCTION v7",
+      "report": "protocol-smoke.md"
+    },
+    {
+      "role": "domain-v7-final",
+      "taskId": "node:delegated-task:command%3Amcp%3A79b27fa3-5914-4091-8103-8c1e69b404c9%3Adelegate-task%3Apr782-r40-domain-proof-round6-v7",
+      "state": "APPROVE DOMAIN ONLY",
+      "report": "domain-v7-report.md"
+    },
+    {
+      "role": "source-review",
+      "taskId": "node:delegated-task:command%3Amcp%3A79b27fa3-5914-4091-8103-8c1e69b404c9%3Adelegate-task%3Apr782-r40-source-review-round1",
+      "state": "SOURCE REJECT; ADMISSION REJECT",
+      "report": "source-review.md",
+      "terminalResultAcknowledged": true
+    }
+  ],
+  "PR": "https://github.com/IsaacThoman/pulpo/pull/782",
+  "PRLinked": true,
+  "nativeAssigned": false,
+  "quietWindowRequested": false,
+  "productionEdited": true,
+  "freshAuthorDelegated": false,
+  "oldSealsReadOrRun": false,
+  "candidate": "8369f266cb9ad58e9ca9b76a9f50dd0cfca3c7b0",
+  "productionRestored": true,
+  "restoration": "52bf72e4e77e69da5415d9a36203b7a198fb6112",
+  "finalStatus": "REJECTED; AUDIT ONLY"
+}

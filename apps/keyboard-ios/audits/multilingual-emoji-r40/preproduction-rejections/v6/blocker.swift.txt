@@ -1,0 +1,34 @@
+import Foundation
+@main struct Main {static func main() throws {
+ let root="/tmp/pulpo-r40-domain-v6"
+ var rows:[[String:Any]]=[], assertions=0, incomplete=0, exactFailures=0, capFailures=0
+ let specifications:[(String,String,String)] = [
+  ("trailing-space-query","\u{0D4E}'","\u{0D4E}' "),
+  ("trailing-space-name","\u{0D4E}' ","\u{0D4E}'"),
+  ("curly-apostrophe","\u{0D4E}’","\u{0D4E}’ "),
+  ("tab-query","\u{0D4E}'","\u{0D4E}'\t"),
+  ("real-word-alias","\u{0D4E}'","\u{0D4E}' corazon"),
+  ("positive-plain","bar","bar"),
+  ("positive-technical","keycap: #","keycap: #"),
+  ("positive-compact","red heart","redheart")]
+ for (label,name,q) in specifications {
+  let s=fixture([("E",name,[]),("L","opaque",[])])
+  let o=Observed(s), env=o.envelope(q), w=words(normalized(q)), t=spanish(q)
+  let exact=o.exact[foldedName(q)]
+  let exactValid=exact.map {words(normalized(o.entries[$0].name))==w} ?? true
+  if !exactValid {exactFailures += 1}
+  for cap in [1,48,60] {for (p,pref) in [[:],["E":1000000,"L":-1000000],["E":-1000000,"L":1000000]].enumerated() {
+   let actual=s.search(q,limit:cap,preferring:pref).map(\.value)
+   let actualIDs=Set(actual.compactMap {v in o.entries.firstIndex {$0.value==v}})
+   let complete=actualIDs.isSubset(of:env);if !complete {incomplete += 1};assertions += 1
+   let alias="\u{0D4E}";let a=spanish(alias)
+   // A pure public domain oracle: L's hypothetical Spanish alias, baseline has no s field.
+   let eligible = !t.isEmpty && t.allSatisfy {tok in a.contains {$0.hasPrefix(tok)}}
+   let local=eligible && !env.contains(1) ? Array(["L"].prefix(max(0,cap-min(cap,env.count)))) : []
+   let merged=actual+local;if merged.count>cap {capFailures += 1}
+   rows.append(["fixture":label,"name":name,"nameScalars":scalars(name),"query":q,"queryScalars":scalars(q),"rawCharacterCount":q.count,"foldedName":foldedName(q),"foldedEntry":foldedName(name),"N":words(normalized(name)).sorted(),"W":w.sorted(),"T":t,"exactWinner":exact as Any? ?? NSNull(),"exactImplication":exactValid,"keys":o.keys,"envelope":env.sorted(),"cap":cap,"preferenceMap":p,"legacy":actual,"envelopeComplete":complete,"hypotheticalAlias":alias,"aliasEligible":eligible,"policyLocal":local,"policyMerged":merged,"policyCapHolds":merged.count<=cap,"candidateRun":false])
+  }}
+ }
+ try writeJSON(["rows":rows,"rowsCount":rows.count,"subsetAssertions":assertions,"subsetFailures":incomplete,"exactImplicationFailuresByFixture":exactFailures,"policyCapFailures":capFailures,"candidateRun":false],root+"/blocker.json")
+ print("rows=\(rows.count) subsetFailures=\(incomplete) exactFailuresByFixture=\(exactFailures) calculatedCapFailures=\(capFailures)")
+}}

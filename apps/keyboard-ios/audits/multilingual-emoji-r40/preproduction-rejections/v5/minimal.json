@@ -1,0 +1,2538 @@
+{
+  "candidateRun" : false,
+  "count" : 60,
+  "rows" : [
+    {
+      "B" : [
+
+      ],
+      "broad" : [
+
+      ],
+      "cap" : 1,
+      "entryName" : "ाñ",
+      "exactWinner" : null,
+      "foldedName" : "n",
+      "legacy" : [
+
+      ],
+      "nameN" : [
+        "ाn"
+      ],
+      "Nquery" : "n",
+      "policyMerged" : [
+        "L"
+      ],
+      "policyOverCap" : false,
+      "preferred" : {
+
+      },
+      "q" : "ñ",
+      "scalars" : [
+        241
+      ],
+      "spanishAliasForL" : "ñ",
+      "T" : [
+        "ñ"
+      ],
+      "tight" : [
+
+      ],
+      "W" : [
+        "n"
+      ]
+    },
+    {
+      "B" : [
+
+      ],
+      "broad" : [
+
+      ],
+      "cap" : 1,
+      "entryName" : "ाñ",
+      "exactWinner" : null,
+      "foldedName" : "n",
+      "legacy" : [
+
+      ],
+      "nameN" : [
+        "ाn"
+      ],
+      "Nquery" : "n",
+      "policyMerged" : [
+        "L"
+      ],
+      "policyOverCap" : false,
+      "preferred" : {
+        "E" : 1000000,
+        "L" : -1000000
+      },
+      "q" : "ñ",
+      "scalars" : [
+        241
+      ],
+      "spanishAliasForL" : "ñ",
+      "T" : [
+        "ñ"
+      ],
+      "tight" : [
+
+      ],
+      "W" : [
+        "n"
+      ]
+    },
+    {
+      "B" : [
+
+      ],
+      "broad" : [
+
+      ],
+      "cap" : 48,
+      "entryName" : "ाñ",
+      "exactWinner" : null,
+      "foldedName" : "n",
+      "legacy" : [
+
+      ],
+      "nameN" : [
+        "ाn"
+      ],
+      "Nquery" : "n",
+      "policyMerged" : [
+        "L"
+      ],
+      "policyOverCap" : false,
+      "preferred" : {
+
+      },
+      "q" : "ñ",
+      "scalars" : [
+        241
+      ],
+      "spanishAliasForL" : "ñ",
+      "T" : [
+        "ñ"
+      ],
+      "tight" : [
+
+      ],
+      "W" : [
+        "n"
+      ]
+    },
+    {
+      "B" : [
+
+      ],
+      "broad" : [
+
+      ],
+      "cap" : 48,
+      "entryName" : "ाñ",
+      "exactWinner" : null,
+      "foldedName" : "n",
+      "legacy" : [
+
+      ],
+      "nameN" : [
+        "ाn"
+      ],
+      "Nquery" : "n",
+      "policyMerged" : [
+        "L"
+      ],
+      "policyOverCap" : false,
+      "preferred" : {
+        "E" : 1000000,
+        "L" : -1000000
+      },
+      "q" : "ñ",
+      "scalars" : [
+        241
+      ],
+      "spanishAliasForL" : "ñ",
+      "T" : [
+        "ñ"
+      ],
+      "tight" : [
+
+      ],
+      "W" : [
+        "n"
+      ]
+    },
+    {
+      "B" : [
+
+      ],
+      "broad" : [
+
+      ],
+      "cap" : 60,
+      "entryName" : "ाñ",
+      "exactWinner" : null,
+      "foldedName" : "n",
+      "legacy" : [
+
+      ],
+      "nameN" : [
+        "ाn"
+      ],
+      "Nquery" : "n",
+      "policyMerged" : [
+        "L"
+      ],
+      "policyOverCap" : false,
+      "preferred" : {
+
+      },
+      "q" : "ñ",
+      "scalars" : [
+        241
+      ],
+      "spanishAliasForL" : "ñ",
+      "T" : [
+        "ñ"
+      ],
+      "tight" : [
+
+      ],
+      "W" : [
+        "n"
+      ]
+    },
+    {
+      "B" : [
+
+      ],
+      "broad" : [
+
+      ],
+      "cap" : 60,
+      "entryName" : "ाñ",
+      "exactWinner" : null,
+      "foldedName" : "n",
+      "legacy" : [
+
+      ],
+      "nameN" : [
+        "ाn"
+      ],
+      "Nquery" : "n",
+      "policyMerged" : [
+        "L"
+      ],
+      "policyOverCap" : false,
+      "preferred" : {
+        "E" : 1000000,
+        "L" : -1000000
+      },
+      "q" : "ñ",
+      "scalars" : [
+        241
+      ],
+      "spanishAliasForL" : "ñ",
+      "T" : [
+        "ñ"
+      ],
+      "tight" : [
+
+      ],
+      "W" : [
+        "n"
+      ]
+    },
+    {
+      "B" : [
+
+      ],
+      "broad" : [
+
+      ],
+      "cap" : 1,
+      "entryName" : "ाñ",
+      "exactWinner" : 0,
+      "foldedName" : "ाn",
+      "legacy" : [
+        "E"
+      ],
+      "nameN" : [
+        "ाn"
+      ],
+      "Nquery" : "n",
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "policyOverCap" : true,
+      "preferred" : {
+
+      },
+      "q" : "\tाñ",
+      "scalars" : [
+        9,
+        2366,
+        241
+      ],
+      "spanishAliasForL" : "ñ",
+      "T" : [
+        "ñ"
+      ],
+      "tight" : [
+
+      ],
+      "W" : [
+        "n"
+      ]
+    },
+    {
+      "B" : [
+
+      ],
+      "broad" : [
+
+      ],
+      "cap" : 1,
+      "entryName" : "ाñ",
+      "exactWinner" : 0,
+      "foldedName" : "ाn",
+      "legacy" : [
+        "E"
+      ],
+      "nameN" : [
+        "ाn"
+      ],
+      "Nquery" : "n",
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "policyOverCap" : true,
+      "preferred" : {
+        "E" : 1000000,
+        "L" : -1000000
+      },
+      "q" : "\tाñ",
+      "scalars" : [
+        9,
+        2366,
+        241
+      ],
+      "spanishAliasForL" : "ñ",
+      "T" : [
+        "ñ"
+      ],
+      "tight" : [
+
+      ],
+      "W" : [
+        "n"
+      ]
+    },
+    {
+      "B" : [
+
+      ],
+      "broad" : [
+
+      ],
+      "cap" : 48,
+      "entryName" : "ाñ",
+      "exactWinner" : 0,
+      "foldedName" : "ाn",
+      "legacy" : [
+        "E"
+      ],
+      "nameN" : [
+        "ाn"
+      ],
+      "Nquery" : "n",
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "policyOverCap" : false,
+      "preferred" : {
+
+      },
+      "q" : "\tाñ",
+      "scalars" : [
+        9,
+        2366,
+        241
+      ],
+      "spanishAliasForL" : "ñ",
+      "T" : [
+        "ñ"
+      ],
+      "tight" : [
+
+      ],
+      "W" : [
+        "n"
+      ]
+    },
+    {
+      "B" : [
+
+      ],
+      "broad" : [
+
+      ],
+      "cap" : 48,
+      "entryName" : "ाñ",
+      "exactWinner" : 0,
+      "foldedName" : "ाn",
+      "legacy" : [
+        "E"
+      ],
+      "nameN" : [
+        "ाn"
+      ],
+      "Nquery" : "n",
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "policyOverCap" : false,
+      "preferred" : {
+        "E" : 1000000,
+        "L" : -1000000
+      },
+      "q" : "\tाñ",
+      "scalars" : [
+        9,
+        2366,
+        241
+      ],
+      "spanishAliasForL" : "ñ",
+      "T" : [
+        "ñ"
+      ],
+      "tight" : [
+
+      ],
+      "W" : [
+        "n"
+      ]
+    },
+    {
+      "B" : [
+
+      ],
+      "broad" : [
+
+      ],
+      "cap" : 60,
+      "entryName" : "ाñ",
+      "exactWinner" : 0,
+      "foldedName" : "ाn",
+      "legacy" : [
+        "E"
+      ],
+      "nameN" : [
+        "ाn"
+      ],
+      "Nquery" : "n",
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "policyOverCap" : false,
+      "preferred" : {
+
+      },
+      "q" : "\tाñ",
+      "scalars" : [
+        9,
+        2366,
+        241
+      ],
+      "spanishAliasForL" : "ñ",
+      "T" : [
+        "ñ"
+      ],
+      "tight" : [
+
+      ],
+      "W" : [
+        "n"
+      ]
+    },
+    {
+      "B" : [
+
+      ],
+      "broad" : [
+
+      ],
+      "cap" : 60,
+      "entryName" : "ाñ",
+      "exactWinner" : 0,
+      "foldedName" : "ाn",
+      "legacy" : [
+        "E"
+      ],
+      "nameN" : [
+        "ाn"
+      ],
+      "Nquery" : "n",
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "policyOverCap" : false,
+      "preferred" : {
+        "E" : 1000000,
+        "L" : -1000000
+      },
+      "q" : "\tाñ",
+      "scalars" : [
+        9,
+        2366,
+        241
+      ],
+      "spanishAliasForL" : "ñ",
+      "T" : [
+        "ñ"
+      ],
+      "tight" : [
+
+      ],
+      "W" : [
+        "n"
+      ]
+    },
+    {
+      "B" : [
+
+      ],
+      "broad" : [
+
+      ],
+      "cap" : 1,
+      "entryName" : "ाβ",
+      "exactWinner" : null,
+      "foldedName" : "β",
+      "legacy" : [
+
+      ],
+      "nameN" : [
+        "ाβ"
+      ],
+      "Nquery" : "β",
+      "policyMerged" : [
+        "L"
+      ],
+      "policyOverCap" : false,
+      "preferred" : {
+
+      },
+      "q" : "β",
+      "scalars" : [
+        946
+      ],
+      "spanishAliasForL" : "β",
+      "T" : [
+        "β"
+      ],
+      "tight" : [
+
+      ],
+      "W" : [
+        "β"
+      ]
+    },
+    {
+      "B" : [
+
+      ],
+      "broad" : [
+
+      ],
+      "cap" : 1,
+      "entryName" : "ाβ",
+      "exactWinner" : null,
+      "foldedName" : "β",
+      "legacy" : [
+
+      ],
+      "nameN" : [
+        "ाβ"
+      ],
+      "Nquery" : "β",
+      "policyMerged" : [
+        "L"
+      ],
+      "policyOverCap" : false,
+      "preferred" : {
+        "E" : 1000000,
+        "L" : -1000000
+      },
+      "q" : "β",
+      "scalars" : [
+        946
+      ],
+      "spanishAliasForL" : "β",
+      "T" : [
+        "β"
+      ],
+      "tight" : [
+
+      ],
+      "W" : [
+        "β"
+      ]
+    },
+    {
+      "B" : [
+
+      ],
+      "broad" : [
+
+      ],
+      "cap" : 48,
+      "entryName" : "ाβ",
+      "exactWinner" : null,
+      "foldedName" : "β",
+      "legacy" : [
+
+      ],
+      "nameN" : [
+        "ाβ"
+      ],
+      "Nquery" : "β",
+      "policyMerged" : [
+        "L"
+      ],
+      "policyOverCap" : false,
+      "preferred" : {
+
+      },
+      "q" : "β",
+      "scalars" : [
+        946
+      ],
+      "spanishAliasForL" : "β",
+      "T" : [
+        "β"
+      ],
+      "tight" : [
+
+      ],
+      "W" : [
+        "β"
+      ]
+    },
+    {
+      "B" : [
+
+      ],
+      "broad" : [
+
+      ],
+      "cap" : 48,
+      "entryName" : "ाβ",
+      "exactWinner" : null,
+      "foldedName" : "β",
+      "legacy" : [
+
+      ],
+      "nameN" : [
+        "ाβ"
+      ],
+      "Nquery" : "β",
+      "policyMerged" : [
+        "L"
+      ],
+      "policyOverCap" : false,
+      "preferred" : {
+        "E" : 1000000,
+        "L" : -1000000
+      },
+      "q" : "β",
+      "scalars" : [
+        946
+      ],
+      "spanishAliasForL" : "β",
+      "T" : [
+        "β"
+      ],
+      "tight" : [
+
+      ],
+      "W" : [
+        "β"
+      ]
+    },
+    {
+      "B" : [
+
+      ],
+      "broad" : [
+
+      ],
+      "cap" : 60,
+      "entryName" : "ाβ",
+      "exactWinner" : null,
+      "foldedName" : "β",
+      "legacy" : [
+
+      ],
+      "nameN" : [
+        "ाβ"
+      ],
+      "Nquery" : "β",
+      "policyMerged" : [
+        "L"
+      ],
+      "policyOverCap" : false,
+      "preferred" : {
+
+      },
+      "q" : "β",
+      "scalars" : [
+        946
+      ],
+      "spanishAliasForL" : "β",
+      "T" : [
+        "β"
+      ],
+      "tight" : [
+
+      ],
+      "W" : [
+        "β"
+      ]
+    },
+    {
+      "B" : [
+
+      ],
+      "broad" : [
+
+      ],
+      "cap" : 60,
+      "entryName" : "ाβ",
+      "exactWinner" : null,
+      "foldedName" : "β",
+      "legacy" : [
+
+      ],
+      "nameN" : [
+        "ाβ"
+      ],
+      "Nquery" : "β",
+      "policyMerged" : [
+        "L"
+      ],
+      "policyOverCap" : false,
+      "preferred" : {
+        "E" : 1000000,
+        "L" : -1000000
+      },
+      "q" : "β",
+      "scalars" : [
+        946
+      ],
+      "spanishAliasForL" : "β",
+      "T" : [
+        "β"
+      ],
+      "tight" : [
+
+      ],
+      "W" : [
+        "β"
+      ]
+    },
+    {
+      "B" : [
+
+      ],
+      "broad" : [
+
+      ],
+      "cap" : 1,
+      "entryName" : "ाβ",
+      "exactWinner" : 0,
+      "foldedName" : "ाβ",
+      "legacy" : [
+        "E"
+      ],
+      "nameN" : [
+        "ाβ"
+      ],
+      "Nquery" : "β",
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "policyOverCap" : true,
+      "preferred" : {
+
+      },
+      "q" : "\tाβ",
+      "scalars" : [
+        9,
+        2366,
+        946
+      ],
+      "spanishAliasForL" : "β",
+      "T" : [
+        "β"
+      ],
+      "tight" : [
+
+      ],
+      "W" : [
+        "β"
+      ]
+    },
+    {
+      "B" : [
+
+      ],
+      "broad" : [
+
+      ],
+      "cap" : 1,
+      "entryName" : "ाβ",
+      "exactWinner" : 0,
+      "foldedName" : "ाβ",
+      "legacy" : [
+        "E"
+      ],
+      "nameN" : [
+        "ाβ"
+      ],
+      "Nquery" : "β",
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "policyOverCap" : true,
+      "preferred" : {
+        "E" : 1000000,
+        "L" : -1000000
+      },
+      "q" : "\tाβ",
+      "scalars" : [
+        9,
+        2366,
+        946
+      ],
+      "spanishAliasForL" : "β",
+      "T" : [
+        "β"
+      ],
+      "tight" : [
+
+      ],
+      "W" : [
+        "β"
+      ]
+    },
+    {
+      "B" : [
+
+      ],
+      "broad" : [
+
+      ],
+      "cap" : 48,
+      "entryName" : "ाβ",
+      "exactWinner" : 0,
+      "foldedName" : "ाβ",
+      "legacy" : [
+        "E"
+      ],
+      "nameN" : [
+        "ाβ"
+      ],
+      "Nquery" : "β",
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "policyOverCap" : false,
+      "preferred" : {
+
+      },
+      "q" : "\tाβ",
+      "scalars" : [
+        9,
+        2366,
+        946
+      ],
+      "spanishAliasForL" : "β",
+      "T" : [
+        "β"
+      ],
+      "tight" : [
+
+      ],
+      "W" : [
+        "β"
+      ]
+    },
+    {
+      "B" : [
+
+      ],
+      "broad" : [
+
+      ],
+      "cap" : 48,
+      "entryName" : "ाβ",
+      "exactWinner" : 0,
+      "foldedName" : "ाβ",
+      "legacy" : [
+        "E"
+      ],
+      "nameN" : [
+        "ाβ"
+      ],
+      "Nquery" : "β",
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "policyOverCap" : false,
+      "preferred" : {
+        "E" : 1000000,
+        "L" : -1000000
+      },
+      "q" : "\tाβ",
+      "scalars" : [
+        9,
+        2366,
+        946
+      ],
+      "spanishAliasForL" : "β",
+      "T" : [
+        "β"
+      ],
+      "tight" : [
+
+      ],
+      "W" : [
+        "β"
+      ]
+    },
+    {
+      "B" : [
+
+      ],
+      "broad" : [
+
+      ],
+      "cap" : 60,
+      "entryName" : "ाβ",
+      "exactWinner" : 0,
+      "foldedName" : "ाβ",
+      "legacy" : [
+        "E"
+      ],
+      "nameN" : [
+        "ाβ"
+      ],
+      "Nquery" : "β",
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "policyOverCap" : false,
+      "preferred" : {
+
+      },
+      "q" : "\tाβ",
+      "scalars" : [
+        9,
+        2366,
+        946
+      ],
+      "spanishAliasForL" : "β",
+      "T" : [
+        "β"
+      ],
+      "tight" : [
+
+      ],
+      "W" : [
+        "β"
+      ]
+    },
+    {
+      "B" : [
+
+      ],
+      "broad" : [
+
+      ],
+      "cap" : 60,
+      "entryName" : "ाβ",
+      "exactWinner" : 0,
+      "foldedName" : "ाβ",
+      "legacy" : [
+        "E"
+      ],
+      "nameN" : [
+        "ाβ"
+      ],
+      "Nquery" : "β",
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "policyOverCap" : false,
+      "preferred" : {
+        "E" : 1000000,
+        "L" : -1000000
+      },
+      "q" : "\tाβ",
+      "scalars" : [
+        9,
+        2366,
+        946
+      ],
+      "spanishAliasForL" : "β",
+      "T" : [
+        "β"
+      ],
+      "tight" : [
+
+      ],
+      "W" : [
+        "β"
+      ]
+    },
+    {
+      "B" : [
+
+      ],
+      "broad" : [
+
+      ],
+      "cap" : 1,
+      "entryName" : "ाø",
+      "exactWinner" : null,
+      "foldedName" : "ø",
+      "legacy" : [
+
+      ],
+      "nameN" : [
+        "ाø"
+      ],
+      "Nquery" : "ø",
+      "policyMerged" : [
+        "L"
+      ],
+      "policyOverCap" : false,
+      "preferred" : {
+
+      },
+      "q" : "ø",
+      "scalars" : [
+        248
+      ],
+      "spanishAliasForL" : "ø",
+      "T" : [
+        "ø"
+      ],
+      "tight" : [
+
+      ],
+      "W" : [
+        "ø"
+      ]
+    },
+    {
+      "B" : [
+
+      ],
+      "broad" : [
+
+      ],
+      "cap" : 1,
+      "entryName" : "ाø",
+      "exactWinner" : null,
+      "foldedName" : "ø",
+      "legacy" : [
+
+      ],
+      "nameN" : [
+        "ाø"
+      ],
+      "Nquery" : "ø",
+      "policyMerged" : [
+        "L"
+      ],
+      "policyOverCap" : false,
+      "preferred" : {
+        "E" : 1000000,
+        "L" : -1000000
+      },
+      "q" : "ø",
+      "scalars" : [
+        248
+      ],
+      "spanishAliasForL" : "ø",
+      "T" : [
+        "ø"
+      ],
+      "tight" : [
+
+      ],
+      "W" : [
+        "ø"
+      ]
+    },
+    {
+      "B" : [
+
+      ],
+      "broad" : [
+
+      ],
+      "cap" : 48,
+      "entryName" : "ाø",
+      "exactWinner" : null,
+      "foldedName" : "ø",
+      "legacy" : [
+
+      ],
+      "nameN" : [
+        "ाø"
+      ],
+      "Nquery" : "ø",
+      "policyMerged" : [
+        "L"
+      ],
+      "policyOverCap" : false,
+      "preferred" : {
+
+      },
+      "q" : "ø",
+      "scalars" : [
+        248
+      ],
+      "spanishAliasForL" : "ø",
+      "T" : [
+        "ø"
+      ],
+      "tight" : [
+
+      ],
+      "W" : [
+        "ø"
+      ]
+    },
+    {
+      "B" : [
+
+      ],
+      "broad" : [
+
+      ],
+      "cap" : 48,
+      "entryName" : "ाø",
+      "exactWinner" : null,
+      "foldedName" : "ø",
+      "legacy" : [
+
+      ],
+      "nameN" : [
+        "ाø"
+      ],
+      "Nquery" : "ø",
+      "policyMerged" : [
+        "L"
+      ],
+      "policyOverCap" : false,
+      "preferred" : {
+        "E" : 1000000,
+        "L" : -1000000
+      },
+      "q" : "ø",
+      "scalars" : [
+        248
+      ],
+      "spanishAliasForL" : "ø",
+      "T" : [
+        "ø"
+      ],
+      "tight" : [
+
+      ],
+      "W" : [
+        "ø"
+      ]
+    },
+    {
+      "B" : [
+
+      ],
+      "broad" : [
+
+      ],
+      "cap" : 60,
+      "entryName" : "ाø",
+      "exactWinner" : null,
+      "foldedName" : "ø",
+      "legacy" : [
+
+      ],
+      "nameN" : [
+        "ाø"
+      ],
+      "Nquery" : "ø",
+      "policyMerged" : [
+        "L"
+      ],
+      "policyOverCap" : false,
+      "preferred" : {
+
+      },
+      "q" : "ø",
+      "scalars" : [
+        248
+      ],
+      "spanishAliasForL" : "ø",
+      "T" : [
+        "ø"
+      ],
+      "tight" : [
+
+      ],
+      "W" : [
+        "ø"
+      ]
+    },
+    {
+      "B" : [
+
+      ],
+      "broad" : [
+
+      ],
+      "cap" : 60,
+      "entryName" : "ाø",
+      "exactWinner" : null,
+      "foldedName" : "ø",
+      "legacy" : [
+
+      ],
+      "nameN" : [
+        "ाø"
+      ],
+      "Nquery" : "ø",
+      "policyMerged" : [
+        "L"
+      ],
+      "policyOverCap" : false,
+      "preferred" : {
+        "E" : 1000000,
+        "L" : -1000000
+      },
+      "q" : "ø",
+      "scalars" : [
+        248
+      ],
+      "spanishAliasForL" : "ø",
+      "T" : [
+        "ø"
+      ],
+      "tight" : [
+
+      ],
+      "W" : [
+        "ø"
+      ]
+    },
+    {
+      "B" : [
+
+      ],
+      "broad" : [
+
+      ],
+      "cap" : 1,
+      "entryName" : "ाø",
+      "exactWinner" : 0,
+      "foldedName" : "ाø",
+      "legacy" : [
+        "E"
+      ],
+      "nameN" : [
+        "ाø"
+      ],
+      "Nquery" : "ø",
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "policyOverCap" : true,
+      "preferred" : {
+
+      },
+      "q" : "\tाø",
+      "scalars" : [
+        9,
+        2366,
+        248
+      ],
+      "spanishAliasForL" : "ø",
+      "T" : [
+        "ø"
+      ],
+      "tight" : [
+
+      ],
+      "W" : [
+        "ø"
+      ]
+    },
+    {
+      "B" : [
+
+      ],
+      "broad" : [
+
+      ],
+      "cap" : 1,
+      "entryName" : "ाø",
+      "exactWinner" : 0,
+      "foldedName" : "ाø",
+      "legacy" : [
+        "E"
+      ],
+      "nameN" : [
+        "ाø"
+      ],
+      "Nquery" : "ø",
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "policyOverCap" : true,
+      "preferred" : {
+        "E" : 1000000,
+        "L" : -1000000
+      },
+      "q" : "\tाø",
+      "scalars" : [
+        9,
+        2366,
+        248
+      ],
+      "spanishAliasForL" : "ø",
+      "T" : [
+        "ø"
+      ],
+      "tight" : [
+
+      ],
+      "W" : [
+        "ø"
+      ]
+    },
+    {
+      "B" : [
+
+      ],
+      "broad" : [
+
+      ],
+      "cap" : 48,
+      "entryName" : "ाø",
+      "exactWinner" : 0,
+      "foldedName" : "ाø",
+      "legacy" : [
+        "E"
+      ],
+      "nameN" : [
+        "ाø"
+      ],
+      "Nquery" : "ø",
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "policyOverCap" : false,
+      "preferred" : {
+
+      },
+      "q" : "\tाø",
+      "scalars" : [
+        9,
+        2366,
+        248
+      ],
+      "spanishAliasForL" : "ø",
+      "T" : [
+        "ø"
+      ],
+      "tight" : [
+
+      ],
+      "W" : [
+        "ø"
+      ]
+    },
+    {
+      "B" : [
+
+      ],
+      "broad" : [
+
+      ],
+      "cap" : 48,
+      "entryName" : "ाø",
+      "exactWinner" : 0,
+      "foldedName" : "ाø",
+      "legacy" : [
+        "E"
+      ],
+      "nameN" : [
+        "ाø"
+      ],
+      "Nquery" : "ø",
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "policyOverCap" : false,
+      "preferred" : {
+        "E" : 1000000,
+        "L" : -1000000
+      },
+      "q" : "\tाø",
+      "scalars" : [
+        9,
+        2366,
+        248
+      ],
+      "spanishAliasForL" : "ø",
+      "T" : [
+        "ø"
+      ],
+      "tight" : [
+
+      ],
+      "W" : [
+        "ø"
+      ]
+    },
+    {
+      "B" : [
+
+      ],
+      "broad" : [
+
+      ],
+      "cap" : 60,
+      "entryName" : "ाø",
+      "exactWinner" : 0,
+      "foldedName" : "ाø",
+      "legacy" : [
+        "E"
+      ],
+      "nameN" : [
+        "ाø"
+      ],
+      "Nquery" : "ø",
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "policyOverCap" : false,
+      "preferred" : {
+
+      },
+      "q" : "\tाø",
+      "scalars" : [
+        9,
+        2366,
+        248
+      ],
+      "spanishAliasForL" : "ø",
+      "T" : [
+        "ø"
+      ],
+      "tight" : [
+
+      ],
+      "W" : [
+        "ø"
+      ]
+    },
+    {
+      "B" : [
+
+      ],
+      "broad" : [
+
+      ],
+      "cap" : 60,
+      "entryName" : "ाø",
+      "exactWinner" : 0,
+      "foldedName" : "ाø",
+      "legacy" : [
+        "E"
+      ],
+      "nameN" : [
+        "ाø"
+      ],
+      "Nquery" : "ø",
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "policyOverCap" : false,
+      "preferred" : {
+        "E" : 1000000,
+        "L" : -1000000
+      },
+      "q" : "\tाø",
+      "scalars" : [
+        9,
+        2366,
+        248
+      ],
+      "spanishAliasForL" : "ø",
+      "T" : [
+        "ø"
+      ],
+      "tight" : [
+
+      ],
+      "W" : [
+        "ø"
+      ]
+    },
+    {
+      "B" : [
+
+      ],
+      "broad" : [
+
+      ],
+      "cap" : 1,
+      "entryName" : "ाł",
+      "exactWinner" : null,
+      "foldedName" : "ł",
+      "legacy" : [
+
+      ],
+      "nameN" : [
+        "ाł"
+      ],
+      "Nquery" : "ł",
+      "policyMerged" : [
+        "L"
+      ],
+      "policyOverCap" : false,
+      "preferred" : {
+
+      },
+      "q" : "ł",
+      "scalars" : [
+        322
+      ],
+      "spanishAliasForL" : "ł",
+      "T" : [
+        "ł"
+      ],
+      "tight" : [
+
+      ],
+      "W" : [
+        "ł"
+      ]
+    },
+    {
+      "B" : [
+
+      ],
+      "broad" : [
+
+      ],
+      "cap" : 1,
+      "entryName" : "ाł",
+      "exactWinner" : null,
+      "foldedName" : "ł",
+      "legacy" : [
+
+      ],
+      "nameN" : [
+        "ाł"
+      ],
+      "Nquery" : "ł",
+      "policyMerged" : [
+        "L"
+      ],
+      "policyOverCap" : false,
+      "preferred" : {
+        "E" : 1000000,
+        "L" : -1000000
+      },
+      "q" : "ł",
+      "scalars" : [
+        322
+      ],
+      "spanishAliasForL" : "ł",
+      "T" : [
+        "ł"
+      ],
+      "tight" : [
+
+      ],
+      "W" : [
+        "ł"
+      ]
+    },
+    {
+      "B" : [
+
+      ],
+      "broad" : [
+
+      ],
+      "cap" : 48,
+      "entryName" : "ाł",
+      "exactWinner" : null,
+      "foldedName" : "ł",
+      "legacy" : [
+
+      ],
+      "nameN" : [
+        "ाł"
+      ],
+      "Nquery" : "ł",
+      "policyMerged" : [
+        "L"
+      ],
+      "policyOverCap" : false,
+      "preferred" : {
+
+      },
+      "q" : "ł",
+      "scalars" : [
+        322
+      ],
+      "spanishAliasForL" : "ł",
+      "T" : [
+        "ł"
+      ],
+      "tight" : [
+
+      ],
+      "W" : [
+        "ł"
+      ]
+    },
+    {
+      "B" : [
+
+      ],
+      "broad" : [
+
+      ],
+      "cap" : 48,
+      "entryName" : "ाł",
+      "exactWinner" : null,
+      "foldedName" : "ł",
+      "legacy" : [
+
+      ],
+      "nameN" : [
+        "ाł"
+      ],
+      "Nquery" : "ł",
+      "policyMerged" : [
+        "L"
+      ],
+      "policyOverCap" : false,
+      "preferred" : {
+        "E" : 1000000,
+        "L" : -1000000
+      },
+      "q" : "ł",
+      "scalars" : [
+        322
+      ],
+      "spanishAliasForL" : "ł",
+      "T" : [
+        "ł"
+      ],
+      "tight" : [
+
+      ],
+      "W" : [
+        "ł"
+      ]
+    },
+    {
+      "B" : [
+
+      ],
+      "broad" : [
+
+      ],
+      "cap" : 60,
+      "entryName" : "ाł",
+      "exactWinner" : null,
+      "foldedName" : "ł",
+      "legacy" : [
+
+      ],
+      "nameN" : [
+        "ाł"
+      ],
+      "Nquery" : "ł",
+      "policyMerged" : [
+        "L"
+      ],
+      "policyOverCap" : false,
+      "preferred" : {
+
+      },
+      "q" : "ł",
+      "scalars" : [
+        322
+      ],
+      "spanishAliasForL" : "ł",
+      "T" : [
+        "ł"
+      ],
+      "tight" : [
+
+      ],
+      "W" : [
+        "ł"
+      ]
+    },
+    {
+      "B" : [
+
+      ],
+      "broad" : [
+
+      ],
+      "cap" : 60,
+      "entryName" : "ाł",
+      "exactWinner" : null,
+      "foldedName" : "ł",
+      "legacy" : [
+
+      ],
+      "nameN" : [
+        "ाł"
+      ],
+      "Nquery" : "ł",
+      "policyMerged" : [
+        "L"
+      ],
+      "policyOverCap" : false,
+      "preferred" : {
+        "E" : 1000000,
+        "L" : -1000000
+      },
+      "q" : "ł",
+      "scalars" : [
+        322
+      ],
+      "spanishAliasForL" : "ł",
+      "T" : [
+        "ł"
+      ],
+      "tight" : [
+
+      ],
+      "W" : [
+        "ł"
+      ]
+    },
+    {
+      "B" : [
+
+      ],
+      "broad" : [
+
+      ],
+      "cap" : 1,
+      "entryName" : "ाł",
+      "exactWinner" : 0,
+      "foldedName" : "ाł",
+      "legacy" : [
+        "E"
+      ],
+      "nameN" : [
+        "ाł"
+      ],
+      "Nquery" : "ł",
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "policyOverCap" : true,
+      "preferred" : {
+
+      },
+      "q" : "\tाł",
+      "scalars" : [
+        9,
+        2366,
+        322
+      ],
+      "spanishAliasForL" : "ł",
+      "T" : [
+        "ł"
+      ],
+      "tight" : [
+
+      ],
+      "W" : [
+        "ł"
+      ]
+    },
+    {
+      "B" : [
+
+      ],
+      "broad" : [
+
+      ],
+      "cap" : 1,
+      "entryName" : "ाł",
+      "exactWinner" : 0,
+      "foldedName" : "ाł",
+      "legacy" : [
+        "E"
+      ],
+      "nameN" : [
+        "ाł"
+      ],
+      "Nquery" : "ł",
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "policyOverCap" : true,
+      "preferred" : {
+        "E" : 1000000,
+        "L" : -1000000
+      },
+      "q" : "\tाł",
+      "scalars" : [
+        9,
+        2366,
+        322
+      ],
+      "spanishAliasForL" : "ł",
+      "T" : [
+        "ł"
+      ],
+      "tight" : [
+
+      ],
+      "W" : [
+        "ł"
+      ]
+    },
+    {
+      "B" : [
+
+      ],
+      "broad" : [
+
+      ],
+      "cap" : 48,
+      "entryName" : "ाł",
+      "exactWinner" : 0,
+      "foldedName" : "ाł",
+      "legacy" : [
+        "E"
+      ],
+      "nameN" : [
+        "ाł"
+      ],
+      "Nquery" : "ł",
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "policyOverCap" : false,
+      "preferred" : {
+
+      },
+      "q" : "\tाł",
+      "scalars" : [
+        9,
+        2366,
+        322
+      ],
+      "spanishAliasForL" : "ł",
+      "T" : [
+        "ł"
+      ],
+      "tight" : [
+
+      ],
+      "W" : [
+        "ł"
+      ]
+    },
+    {
+      "B" : [
+
+      ],
+      "broad" : [
+
+      ],
+      "cap" : 48,
+      "entryName" : "ाł",
+      "exactWinner" : 0,
+      "foldedName" : "ाł",
+      "legacy" : [
+        "E"
+      ],
+      "nameN" : [
+        "ाł"
+      ],
+      "Nquery" : "ł",
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "policyOverCap" : false,
+      "preferred" : {
+        "E" : 1000000,
+        "L" : -1000000
+      },
+      "q" : "\tाł",
+      "scalars" : [
+        9,
+        2366,
+        322
+      ],
+      "spanishAliasForL" : "ł",
+      "T" : [
+        "ł"
+      ],
+      "tight" : [
+
+      ],
+      "W" : [
+        "ł"
+      ]
+    },
+    {
+      "B" : [
+
+      ],
+      "broad" : [
+
+      ],
+      "cap" : 60,
+      "entryName" : "ाł",
+      "exactWinner" : 0,
+      "foldedName" : "ाł",
+      "legacy" : [
+        "E"
+      ],
+      "nameN" : [
+        "ाł"
+      ],
+      "Nquery" : "ł",
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "policyOverCap" : false,
+      "preferred" : {
+
+      },
+      "q" : "\tाł",
+      "scalars" : [
+        9,
+        2366,
+        322
+      ],
+      "spanishAliasForL" : "ł",
+      "T" : [
+        "ł"
+      ],
+      "tight" : [
+
+      ],
+      "W" : [
+        "ł"
+      ]
+    },
+    {
+      "B" : [
+
+      ],
+      "broad" : [
+
+      ],
+      "cap" : 60,
+      "entryName" : "ाł",
+      "exactWinner" : 0,
+      "foldedName" : "ाł",
+      "legacy" : [
+        "E"
+      ],
+      "nameN" : [
+        "ाł"
+      ],
+      "Nquery" : "ł",
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "policyOverCap" : false,
+      "preferred" : {
+        "E" : 1000000,
+        "L" : -1000000
+      },
+      "q" : "\tाł",
+      "scalars" : [
+        9,
+        2366,
+        322
+      ],
+      "spanishAliasForL" : "ł",
+      "T" : [
+        "ł"
+      ],
+      "tight" : [
+
+      ],
+      "W" : [
+        "ł"
+      ]
+    },
+    {
+      "B" : [
+        "ाab"
+      ],
+      "broad" : [
+
+      ],
+      "cap" : 1,
+      "entryName" : "ाab",
+      "exactWinner" : null,
+      "foldedName" : "ab",
+      "legacy" : [
+
+      ],
+      "nameN" : [
+        "ाab"
+      ],
+      "Nquery" : "ab",
+      "policyMerged" : [
+        "L"
+      ],
+      "policyOverCap" : false,
+      "preferred" : {
+
+      },
+      "q" : "ab",
+      "scalars" : [
+        97,
+        98
+      ],
+      "spanishAliasForL" : "ab",
+      "T" : [
+        "ab"
+      ],
+      "tight" : [
+
+      ],
+      "W" : [
+        "ab"
+      ]
+    },
+    {
+      "B" : [
+        "ाab"
+      ],
+      "broad" : [
+
+      ],
+      "cap" : 1,
+      "entryName" : "ाab",
+      "exactWinner" : null,
+      "foldedName" : "ab",
+      "legacy" : [
+
+      ],
+      "nameN" : [
+        "ाab"
+      ],
+      "Nquery" : "ab",
+      "policyMerged" : [
+        "L"
+      ],
+      "policyOverCap" : false,
+      "preferred" : {
+        "E" : 1000000,
+        "L" : -1000000
+      },
+      "q" : "ab",
+      "scalars" : [
+        97,
+        98
+      ],
+      "spanishAliasForL" : "ab",
+      "T" : [
+        "ab"
+      ],
+      "tight" : [
+
+      ],
+      "W" : [
+        "ab"
+      ]
+    },
+    {
+      "B" : [
+        "ाab"
+      ],
+      "broad" : [
+
+      ],
+      "cap" : 48,
+      "entryName" : "ाab",
+      "exactWinner" : null,
+      "foldedName" : "ab",
+      "legacy" : [
+
+      ],
+      "nameN" : [
+        "ाab"
+      ],
+      "Nquery" : "ab",
+      "policyMerged" : [
+        "L"
+      ],
+      "policyOverCap" : false,
+      "preferred" : {
+
+      },
+      "q" : "ab",
+      "scalars" : [
+        97,
+        98
+      ],
+      "spanishAliasForL" : "ab",
+      "T" : [
+        "ab"
+      ],
+      "tight" : [
+
+      ],
+      "W" : [
+        "ab"
+      ]
+    },
+    {
+      "B" : [
+        "ाab"
+      ],
+      "broad" : [
+
+      ],
+      "cap" : 48,
+      "entryName" : "ाab",
+      "exactWinner" : null,
+      "foldedName" : "ab",
+      "legacy" : [
+
+      ],
+      "nameN" : [
+        "ाab"
+      ],
+      "Nquery" : "ab",
+      "policyMerged" : [
+        "L"
+      ],
+      "policyOverCap" : false,
+      "preferred" : {
+        "E" : 1000000,
+        "L" : -1000000
+      },
+      "q" : "ab",
+      "scalars" : [
+        97,
+        98
+      ],
+      "spanishAliasForL" : "ab",
+      "T" : [
+        "ab"
+      ],
+      "tight" : [
+
+      ],
+      "W" : [
+        "ab"
+      ]
+    },
+    {
+      "B" : [
+        "ाab"
+      ],
+      "broad" : [
+
+      ],
+      "cap" : 60,
+      "entryName" : "ाab",
+      "exactWinner" : null,
+      "foldedName" : "ab",
+      "legacy" : [
+
+      ],
+      "nameN" : [
+        "ाab"
+      ],
+      "Nquery" : "ab",
+      "policyMerged" : [
+        "L"
+      ],
+      "policyOverCap" : false,
+      "preferred" : {
+
+      },
+      "q" : "ab",
+      "scalars" : [
+        97,
+        98
+      ],
+      "spanishAliasForL" : "ab",
+      "T" : [
+        "ab"
+      ],
+      "tight" : [
+
+      ],
+      "W" : [
+        "ab"
+      ]
+    },
+    {
+      "B" : [
+        "ाab"
+      ],
+      "broad" : [
+
+      ],
+      "cap" : 60,
+      "entryName" : "ाab",
+      "exactWinner" : null,
+      "foldedName" : "ab",
+      "legacy" : [
+
+      ],
+      "nameN" : [
+        "ाab"
+      ],
+      "Nquery" : "ab",
+      "policyMerged" : [
+        "L"
+      ],
+      "policyOverCap" : false,
+      "preferred" : {
+        "E" : 1000000,
+        "L" : -1000000
+      },
+      "q" : "ab",
+      "scalars" : [
+        97,
+        98
+      ],
+      "spanishAliasForL" : "ab",
+      "T" : [
+        "ab"
+      ],
+      "tight" : [
+
+      ],
+      "W" : [
+        "ab"
+      ]
+    },
+    {
+      "B" : [
+        "ाab"
+      ],
+      "broad" : [
+
+      ],
+      "cap" : 1,
+      "entryName" : "ाab",
+      "exactWinner" : 0,
+      "foldedName" : "ाab",
+      "legacy" : [
+        "E"
+      ],
+      "nameN" : [
+        "ाab"
+      ],
+      "Nquery" : "ab",
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "policyOverCap" : true,
+      "preferred" : {
+
+      },
+      "q" : "\tाab",
+      "scalars" : [
+        9,
+        2366,
+        97,
+        98
+      ],
+      "spanishAliasForL" : "ab",
+      "T" : [
+        "ab"
+      ],
+      "tight" : [
+
+      ],
+      "W" : [
+        "ab"
+      ]
+    },
+    {
+      "B" : [
+        "ाab"
+      ],
+      "broad" : [
+
+      ],
+      "cap" : 1,
+      "entryName" : "ाab",
+      "exactWinner" : 0,
+      "foldedName" : "ाab",
+      "legacy" : [
+        "E"
+      ],
+      "nameN" : [
+        "ाab"
+      ],
+      "Nquery" : "ab",
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "policyOverCap" : true,
+      "preferred" : {
+        "E" : 1000000,
+        "L" : -1000000
+      },
+      "q" : "\tाab",
+      "scalars" : [
+        9,
+        2366,
+        97,
+        98
+      ],
+      "spanishAliasForL" : "ab",
+      "T" : [
+        "ab"
+      ],
+      "tight" : [
+
+      ],
+      "W" : [
+        "ab"
+      ]
+    },
+    {
+      "B" : [
+        "ाab"
+      ],
+      "broad" : [
+
+      ],
+      "cap" : 48,
+      "entryName" : "ाab",
+      "exactWinner" : 0,
+      "foldedName" : "ाab",
+      "legacy" : [
+        "E"
+      ],
+      "nameN" : [
+        "ाab"
+      ],
+      "Nquery" : "ab",
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "policyOverCap" : false,
+      "preferred" : {
+
+      },
+      "q" : "\tाab",
+      "scalars" : [
+        9,
+        2366,
+        97,
+        98
+      ],
+      "spanishAliasForL" : "ab",
+      "T" : [
+        "ab"
+      ],
+      "tight" : [
+
+      ],
+      "W" : [
+        "ab"
+      ]
+    },
+    {
+      "B" : [
+        "ाab"
+      ],
+      "broad" : [
+
+      ],
+      "cap" : 48,
+      "entryName" : "ाab",
+      "exactWinner" : 0,
+      "foldedName" : "ाab",
+      "legacy" : [
+        "E"
+      ],
+      "nameN" : [
+        "ाab"
+      ],
+      "Nquery" : "ab",
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "policyOverCap" : false,
+      "preferred" : {
+        "E" : 1000000,
+        "L" : -1000000
+      },
+      "q" : "\tाab",
+      "scalars" : [
+        9,
+        2366,
+        97,
+        98
+      ],
+      "spanishAliasForL" : "ab",
+      "T" : [
+        "ab"
+      ],
+      "tight" : [
+
+      ],
+      "W" : [
+        "ab"
+      ]
+    },
+    {
+      "B" : [
+        "ाab"
+      ],
+      "broad" : [
+
+      ],
+      "cap" : 60,
+      "entryName" : "ाab",
+      "exactWinner" : 0,
+      "foldedName" : "ाab",
+      "legacy" : [
+        "E"
+      ],
+      "nameN" : [
+        "ाab"
+      ],
+      "Nquery" : "ab",
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "policyOverCap" : false,
+      "preferred" : {
+
+      },
+      "q" : "\tाab",
+      "scalars" : [
+        9,
+        2366,
+        97,
+        98
+      ],
+      "spanishAliasForL" : "ab",
+      "T" : [
+        "ab"
+      ],
+      "tight" : [
+
+      ],
+      "W" : [
+        "ab"
+      ]
+    },
+    {
+      "B" : [
+        "ाab"
+      ],
+      "broad" : [
+
+      ],
+      "cap" : 60,
+      "entryName" : "ाab",
+      "exactWinner" : 0,
+      "foldedName" : "ाab",
+      "legacy" : [
+        "E"
+      ],
+      "nameN" : [
+        "ाab"
+      ],
+      "Nquery" : "ab",
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "policyOverCap" : false,
+      "preferred" : {
+        "E" : 1000000,
+        "L" : -1000000
+      },
+      "q" : "\tाab",
+      "scalars" : [
+        9,
+        2366,
+        97,
+        98
+      ],
+      "spanishAliasForL" : "ab",
+      "T" : [
+        "ab"
+      ],
+      "tight" : [
+
+      ],
+      "W" : [
+        "ab"
+      ]
+    }
+  ]
+}

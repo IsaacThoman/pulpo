@@ -1,0 +1,111 @@
+{
+  "baselineCommit": "00e2a0e7a283bc4a780b02f847ea9d82dfe9e5ae",
+  "files": {
+    "Projection.swift": {
+      "bytes": 1777,
+      "sha256": "2433c05d4a2593994725e87424e4ff168565a83a448aae9b7b86ab5a07ab223b"
+    },
+    "baseline-EmojiCatalog.swift": {
+      "bytes": 12834,
+      "sha256": "c7f929ada6398c9c849e1b764e7bdacc3aca6956f3444fa74953db43cea5468e"
+    },
+    "child-independent-rerun.jsonl": {
+      "bytes": 11029,
+      "sha256": "c58de44ca2ebcfc8c90d96b340bf120f763b999c8db66e3bb862b7bfc750faa2"
+    },
+    "child/challenge.jsonl": {
+      "bytes": 11029,
+      "sha256": "c58de44ca2ebcfc8c90d96b340bf120f763b999c8db66e3bb862b7bfc750faa2"
+    },
+    "child/challenge.swift": {
+      "bytes": 7572,
+      "sha256": "fc7a80d61602305573e21e1404a15a44eee78565b57458552afa4683fe5e769d"
+    },
+    "child/report.md": {
+      "bytes": 11406,
+      "sha256": "24f2965a2b5bb81299e8928179365301275166b807a8cf236d6f520f57ee4ccd"
+    },
+    "child/run.sh": {
+      "bytes": 524,
+      "sha256": "644260cc276aa054a18c072ec09c883fc097bf80b7108a5dad0d8bd540bcacb8"
+    },
+    "domain-results.json": {
+      "bytes": 518845,
+      "sha256": "65d31b4db1c0ebf8d512adfb686b9450e9446e5b4c15d3ed571360c116129e29"
+    },
+    "domain-support.swift": {
+      "bytes": 4282,
+      "sha256": "bb62ad0ac9980cd0eaabed6fc5c7bbd6333bb691e749380367067e2461e15446"
+    },
+    "domain-witness.swift": {
+      "bytes": 10188,
+      "sha256": "9a76a783e1ca8ae978576831f55f1082df43ed9709962bd69b6394d96eb971cd"
+    },
+    "draft-contract-reviewed.md": {
+      "bytes": 11255,
+      "sha256": "d25e4387eab088efe21172cf3c09a218f4bcd6a2b7e549b80731d27b032b2132"
+    },
+    "impossibility-results.json": {
+      "bytes": 14860,
+      "sha256": "11c3d1458201169962a16c2844f6cf7c92f0b05130ec012531e1117b6f63999f"
+    },
+    "impossible.swift": {
+      "bytes": 1299,
+      "sha256": "5cc7bc69c1beeae4552c0bb53501c82dd18e9c723a4eabae931c697d34c95e86"
+    },
+    "leading.swift": {
+      "bytes": 532,
+      "sha256": "87cf0830edd634983d34df17cd8063c4aca831c1dc26c268853143772449d9fe"
+    },
+    "leading.txt": {
+      "bytes": 261,
+      "sha256": "c04e2d946d3ae7248552de65249230f18b3de535f52c4b3f9e5008e6c273868b"
+    },
+    "proposal-v2-reviewed.txt": {
+      "bytes": 1101,
+      "sha256": "f757f0ee702c63c59d70a1e4f7935f8dfa219b44ef3330879a4314db0e5f04e5"
+    },
+    "real-catalog-results.json": {
+      "bytes": 18289605,
+      "sha256": "ab6d3ee0be5361f6c207a74156de62aedaaa695af8c8f9e26809bb08977cf008"
+    },
+    "real-catalog.swift": {
+      "bytes": 2774,
+      "sha256": "ee916892c7ddc19b778e6f86192aa2a613077f23a5bbb82715bab6f484c429ea"
+    },
+    "reference-v5-contract.md": {
+      "bytes": 10891,
+      "sha256": "bebb6034c35bfb576e39f033013ac560a24d15f5128fc2490199b08cb66d5d01"
+    },
+    "report.md": {
+      "bytes": 15922,
+      "sha256": "811dffb10da268424862e26360d4c4f73130598fa28021ad3fbd58f43957a857"
+    },
+    "run.sh": {
+      "bytes": 653,
+      "sha256": "e36a7f50c5f8999ec09ac727b3ad78e3880cc2018e43ab8974400469bd48a682"
+    },
+    "scalar-scan.json": {
+      "bytes": 376,
+      "sha256": "034120800776264d1d16ee4777978dd1c3a88555c51aff3eb660770e8b8af74c"
+    },
+    "scalar-scan.swift": {
+      "bytes": 1109,
+      "sha256": "6e4f83ed9d1c2aed8148d06a867eaf6eea3d688501434da67a6b50e6512d3907"
+    }
+  },
+  "historicalV5SourceReview": {
+    "path": "/private/tmp/pulpo-r34-e6871a16/apps/keyboard-ios/audits/multilingual-emoji-r34/source-review.md",
+    "sha256": "0203f2e5da7343bba3fedbe6785779e0c2cc8df42636005ca2d35aac053165a6"
+  },
+  "historicalV5Witness": {
+    "path": "/private/tmp/pulpo-r34-e6871a16/apps/keyboard-ios/audits/multilingual-emoji-r34/protocol-v5-domain-witness.swift",
+    "sha256": "3ab6d66735c76bc6f4043b347e601a2a28ab88888e37d7b027cecd4aa2f341ae"
+  },
+  "realEnglishResource": {
+    "path": "/Users/isaacthoman/.t3/worktrees/pulpo/t3-8973a5dc/apps/keyboard-ios/LanguageData/emoji.json",
+    "sha256": "2085015d3bd75b7046aecd244b1961230b37fd25ac8aca475c7bc4afabba8117"
+  },
+  "runtime": "macOS-27.0.1-arm64-arm-64bit",
+  "swift": "Apple Swift version 6.4 (swiftlang-6.4.0.34.1 clang-2100.3.34.1)\nTarget: arm64-apple-macosx27.0.0\n"
+}

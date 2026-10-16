@@ -1,0 +1,21 @@
+{
+  "assertions" : 406901,
+  "candidateRun" : false,
+  "capacityIsPolicyOracle" : true,
+  "counts" : {
+    "actualNames" : 64611,
+    "all7374" : 66366,
+    "boundedPostings" : 81,
+    "capacity" : 585,
+    "priorIdentity" : 6,
+    "unicodeAndExact" : 3276,
+    "v5v6ActualPredecessors" : 270
+  },
+  "exposedQueries" : 7374,
+  "failures" : [
+
+  ],
+  "realEntries" : 1923,
+  "runtime" : "Version 27.0.1 (Build 26A434)",
+  "supplementalUniqueQueries" : 7179
+}

@@ -1,0 +1,28 @@
+{
+  "verdict": "APPROVE",
+  "scope": "independent source-domain policy only; no candidate/admission/production approval",
+  "bundle": {
+    "contract.md": "b2d87ff12173e5d43288becaa84dbdabf997373b94fedd8982228ff547351324",
+    "api-map.md": "273a68136943c8fd4635e23c3d97d9634c8bb6353abb4ffc5bb38c21233819ca",
+    "schema.json": "3d764e105588c0f8da40f82313b6b3885e1a05cbad175fae9915deba1e74397a"
+  },
+  "baseline": "00e2a0e7a283bc4a780b02f847ea9d82dfe9e5ae",
+  "controlRows": 135195,
+  "controlAssertions": 406901,
+  "all7374PairedRows": 66366,
+  "sequencePrefixTrials": 682452,
+  "sequenceEqualityChecks": 145488,
+  "additionalSaturationRows": 51,
+  "baselineApiRows": 342,
+  "failures": 0,
+  "candidateRun": false,
+  "policyArraysAreImplementationResults": false,
+  "pending": [
+    "protocol fixture freeze and all-action arbitrary-control smoke before production changes",
+    "candidate implementation and all7374 paired compatibility and capacity/Unicode controls",
+    "ordinary/core/resource/contextual/privacy tests and independent source review",
+    "required quiet-host costs and actual native safety",
+    "fresh source-blind author only after actual candidate exposure and preceding gates"
+  ],
+  "forbiddenActionsPerformed": []
+}

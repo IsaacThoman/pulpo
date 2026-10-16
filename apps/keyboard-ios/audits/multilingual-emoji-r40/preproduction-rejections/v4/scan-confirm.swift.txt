@@ -1,0 +1,9 @@
+import Foundation
+@main struct Main {static func main() throws {
+ let data=try Data(contentsOf:URL(fileURLWithPath:"scalar-scan.json")),scan=try JSONSerialization.jsonObject(with:data) as! [String:Any],candidates=scan["first200NecessaryConditionFailures"] as! [[String:Any]]
+ let es=[entry("E","bar",["north bear","quartz"]),entry("L","opaque")],s=EmojiSuggester(catalog:cat(es)),env=Envelope(es,s)
+ var rows:[[String:Any]]=[]
+ for candidate in candidates {let q=candidate["query"] as! String,t=Policy.tokens(q);for cap in [1,48,60] {let ids=env.ids(t),old=s.search(q,limit:cap).map(\.value);rows.append(["candidate":candidate,"rawScalars":Policy.scalars(q),"cap":cap,"actualLegacy":old,"envelope":ids.map{es[$0].value},"missingLegacy":old.filter{v in !ids.contains{es[$0].value==v}},"V":env.vocabulary,"I":env.indexed])}}
+ try json(["candidates":candidates.count,"checks":rows.count,"confirmedMissingRows":rows.filter{!($0["missingLegacy"] as! [String]).isEmpty}.count,"fixture":["English name":"bar","English keywords":["north bear","quartz"],"other name":"opaque"],"rows":rows],"scan-confirm.json")
+ print("candidate API checks",rows.count,"confirmed",rows.filter{!($0["missingLegacy"] as! [String]).isEmpty}.count)
+}}

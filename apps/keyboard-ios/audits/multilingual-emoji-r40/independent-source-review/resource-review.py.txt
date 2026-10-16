@@ -1,0 +1,37 @@
+from pathlib import Path
+import sys
+import hashlib, json, xml.etree.ElementTree as ET, importlib.util,copy,subprocess
+r=Path('/tmp/pulpo-r40-source-review'); rel='apps/keyboard-ios/'
+b=(r/'baseline'/rel/'LanguageData/emoji.json').read_bytes(); c=(r/'candidate'/rel/'LanguageData/emoji.json').read_bytes()
+base=json.loads(b);candidate=json.loads(c);actual=copy.deepcopy(candidate)
+for cat in actual['categories']:
+ for e in cat['emoji']:e.pop('s',None)
+serialized=json.dumps(actual,ensure_ascii=False,separators=(',',':')).encode();assert serialized==b
+hashes={};names={}
+for file,expected in [('es.xml','fe8384e9cd2ee0998eb00ddf5549272eb5b56739e539ef33fedcd727fce5026a'),('derived-es.xml','ea9b3abc0a2c73a815faec1034764b6a503d14638ad4fb9556d8a7341838672c')]:
+ p=Path('/tmp/pulpo-r40-cldr')/file; digest=hashlib.sha256(p.read_bytes()).hexdigest();assert digest==expected;hashes[file]=digest
+ xml=ET.parse(p).getroot();assert xml.find('./identity/language').get('type')=='es'
+ for el in xml.findall('./annotations/annotation'):
+  if el.get('type')!='tts':continue
+  value=el.get('cp','').replace('\ufe0f',''); name=''.join(el.itertext()).strip()
+  if not value or not name or name in {'↑↑↑','∅∅∅'}:continue
+  assert value not in names or names[value]==name;names[value]=name
+regen=copy.deepcopy(base); named=0;absent=[]
+for cat in regen['categories']:
+ for entry in cat['emoji']:
+  if entry['e'].replace('\ufe0f','') in names:entry['s']=names[entry['e'].replace('\ufe0f','')];named+=1
+  else:absent.append(entry['e'])
+assert json.dumps(regen,ensure_ascii=False,separators=(',',':')).encode()==c
+# Execute only frozen candidate helper; put bytecode and all artifacts inside review temp.
+sys.path.insert(0,str(r/'candidate'/rel/'scripts'))
+spec=importlib.util.spec_from_file_location('builder',r/'candidate'/rel/'scripts/build_language_data.py');module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+paths=[Path('/tmp/pulpo-r40-cldr/es.xml'),Path('/tmp/pulpo-r40-cldr/derived-es.xml')]
+module.verify_spanish_emoji_sources(paths)
+assert module.add_spanish_emoji_names(copy.deepcopy(base),paths)==regen
+invalid=0
+for pair in [[],paths[:1],paths*2,[paths[0],paths[0]],[paths[1],paths[1]]]:
+ try:module.verify_spanish_emoji_sources(pair)
+ except ValueError:invalid+=1
+ else:raise AssertionError(pair)
+result={'named':named,'unnamed':absent,'baseBytes':len(b),'candidateBytes':len(c),'addedBytes':len(c)-len(b),'strippingSpanishExactlyEqualsBaselineBytes':True,'independentXMLRegenerationExactlyEqualsCandidateBytes':True,'candidateHelperRegenerationMatches':True,'invalidSourcePairsRejected':invalid,'sourceHashes':hashes,'candidateSHA256':hashlib.sha256(c).hexdigest()}
+(r/'resource-review.json').write_text(json.dumps(result,indent=2,ensure_ascii=False)+'\n');print(json.dumps(result,ensure_ascii=False))

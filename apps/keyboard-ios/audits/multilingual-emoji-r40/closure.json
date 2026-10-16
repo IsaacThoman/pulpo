@@ -1,0 +1,90 @@
+{
+  "status": "REJECTED; PRODUCTION RESTORED; AUDIT ONLY",
+  "baseline": "00e2a0e7a283bc4a780b02f847ea9d82dfe9e5ae",
+  "candidate": "8369f266cb9ad58e9ca9b76a9f50dd0cfca3c7b0",
+  "restoration": "52bf72e4e77e69da5415d9a36203b7a198fb6112",
+  "sourceVerdict": "REJECT",
+  "admissionVerdict": "REJECT",
+  "sourceFinding": "R40-SOURCE-1: ASCII U+0000 fast path violates normative Foundation lowercase and ASCII single-letter guard",
+  "mandatorySmoke": {
+    "denominator": 569,
+    "passing": 566,
+    "failing": 3,
+    "unavailable": 0,
+    "failedIds": [
+      "r40-ranking-0",
+      "r40-ranking-1",
+      "r40-ranking-2"
+    ],
+    "failureCause": "incompatible frozen oracle; no retune"
+  },
+  "independentPublicControls": {
+    "denominator": 1134,
+    "passing": 1131,
+    "failing": 3,
+    "failureCause": "actual ASCII NUL source defect"
+  },
+  "independentTokenizer": {
+    "denominator": 71805,
+    "failing": 307,
+    "allMismatchesContainNUL": true
+  },
+  "independentLegacyPairs": {
+    "denominator": 66366,
+    "failing": 0
+  },
+  "restoredChecks": {
+    "core": 442,
+    "suites": 65,
+    "services": 3,
+    "knownIssues": 5,
+    "newIssues": 0,
+    "python": 3,
+    "status": "PASS Release"
+  },
+  "finalProductionDiff": [],
+  "candidateManifestSHA256": "f21ddaf446a1a50ac2b4bf72128a1f8fc57c394c7b3fc2e1aadd8692d12a1590",
+  "sourceReviewSHA256": "345f12dfe81c92dc56bac4fc4c788843153aa9c15f3c8d99de3350c3735c9b66",
+  "oldSeals": [
+    {
+      "path": "/tmp/pulpo-r31-sealed-v1.json",
+      "sha256": "a7067871f9f61e2b8d4d6378c259e8fbd7c9e1ac5fcbaa4db5a50c5b4ac891de",
+      "historicalRows": 46,
+      "payloadDisplayed": false,
+      "behaviorallyRun": false,
+      "finalDigestOnlyCheck": "PASS"
+    },
+    {
+      "path": "/tmp/pulpo-r34-sealed-v1.json",
+      "sha256": "a00397e33f570f0aa79975b21ae906bdb7fd2a327011e03affca4b753391ee35",
+      "historicalRows": 110,
+      "payloadDisplayed": false,
+      "behaviorallyRun": false,
+      "finalDigestOnlyCheck": "PASS"
+    }
+  ],
+  "freshBlindAuthorDelegated": false,
+  "opaqueExclusionCertification": "UNRUN",
+  "blindUtility": "UNAVAILABLE/UNRUN",
+  "constructionQueryMemoryCost": "UNAVAILABLE/UNRUN",
+  "native": "UNAVAILABLE/UNRUN",
+  "resourceDeltaBytes": 44744,
+  "resourceAdditionGate": "PASS only",
+  "quietWindowRequested": false,
+  "deviceAssigned": false,
+  "sourceOrOracleRetunedAfterReveal": false,
+  "pushMergeDeploy": false,
+  "historicalSnapshotNote": "normative-freeze.json preserves its earlier preproduction pending state; see preproduction-admission.json and protocol-interface-freeze.json for final pre-source PASS receipt",
+  "cherryPickInstruction": "Cherry-pick final audit-only commit directly onto parent baseline; do not cherry-pick rejected candidate or restoration commits.",
+  "finalArchiveChecks": {
+    "inactiveSixFileArchive": "PASS",
+    "restoredBeforeImages": "PASS",
+    "inactivePatchApplicability": "PASS without applying",
+    "normativeHashes": "PASS",
+    "independentOriginalEvidenceHashes": "PASS",
+    "copiedReviewHashes": "PASS",
+    "stagedWhitespaceCheck": "12 findings preserved: 11 unified patch context lines and 1 frozen protocol final blank line",
+    "stagedWhitespaceCheckExcludingOnlyThoseTwoArchiveFiles": "PASS",
+    "artifactHashManifest": "audit-files.sha256"
+  }
+}

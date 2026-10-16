@@ -1,0 +1,378 @@
+{
+  "classification": "EXPOSED frozen semantic development intents, not blind",
+  "summary": {
+    "baseline": {
+      "executionValid": true,
+      "executionErrors": [],
+      "allRowsPass": false,
+      "useful": {
+        "denominator": 36,
+        "passing": 12,
+        "unavailable": 0,
+        "uniqueAcceptedAlternatives": [
+          "⚽",
+          "❤️",
+          "🌂",
+          "🍨",
+          "🏔️",
+          "🐈‍⬛",
+          "📖",
+          "📞",
+          "🔌",
+          "🖱️",
+          "🚅",
+          "🚒"
+        ],
+        "familiesWithAcceptedUsefulRow": [
+          "affection",
+          "pet",
+          "landscape",
+          "power",
+          "sport",
+          "computer",
+          "emergency",
+          "dessert",
+          "rail",
+          "reading",
+          "weather",
+          "calling"
+        ]
+      },
+      "controls": {
+        "denominator": 8,
+        "passing": 8,
+        "unavailable": 0
+      }
+    },
+    "candidate": {
+      "executionValid": true,
+      "executionErrors": [],
+      "allRowsPass": true,
+      "useful": {
+        "denominator": 36,
+        "passing": 36,
+        "unavailable": 0,
+        "uniqueAcceptedAlternatives": [
+          "⚽",
+          "❤️",
+          "🌂",
+          "🍨",
+          "🏔️",
+          "🐈‍⬛",
+          "📖",
+          "📞",
+          "🔌",
+          "🖱️",
+          "🚅",
+          "🚒"
+        ],
+        "familiesWithAcceptedUsefulRow": [
+          "affection",
+          "pet",
+          "landscape",
+          "power",
+          "sport",
+          "computer",
+          "emergency",
+          "dessert",
+          "rail",
+          "reading",
+          "weather",
+          "calling"
+        ]
+      },
+      "controls": {
+        "denominator": 8,
+        "passing": 8,
+        "unavailable": 0
+      }
+    }
+  },
+  "familyUtility": [
+    {
+      "family": "affection",
+      "usefulRows": 3,
+      "baseline": {
+        "passingRows": 1,
+        "unavailableRows": 0,
+        "uniqueAcceptedAlternatives": [
+          "❤️"
+        ],
+        "hasAcceptedUsefulRow": true,
+        "allUsefulRowsPass": false
+      },
+      "candidate": {
+        "passingRows": 3,
+        "unavailableRows": 0,
+        "uniqueAcceptedAlternatives": [
+          "❤️"
+        ],
+        "hasAcceptedUsefulRow": true,
+        "allUsefulRowsPass": true
+      }
+    },
+    {
+      "family": "pet",
+      "usefulRows": 3,
+      "baseline": {
+        "passingRows": 1,
+        "unavailableRows": 0,
+        "uniqueAcceptedAlternatives": [
+          "🐈‍⬛"
+        ],
+        "hasAcceptedUsefulRow": true,
+        "allUsefulRowsPass": false
+      },
+      "candidate": {
+        "passingRows": 3,
+        "unavailableRows": 0,
+        "uniqueAcceptedAlternatives": [
+          "🐈‍⬛"
+        ],
+        "hasAcceptedUsefulRow": true,
+        "allUsefulRowsPass": true
+      }
+    },
+    {
+      "family": "landscape",
+      "usefulRows": 3,
+      "baseline": {
+        "passingRows": 1,
+        "unavailableRows": 0,
+        "uniqueAcceptedAlternatives": [
+          "🏔️"
+        ],
+        "hasAcceptedUsefulRow": true,
+        "allUsefulRowsPass": false
+      },
+      "candidate": {
+        "passingRows": 3,
+        "unavailableRows": 0,
+        "uniqueAcceptedAlternatives": [
+          "🏔️"
+        ],
+        "hasAcceptedUsefulRow": true,
+        "allUsefulRowsPass": true
+      }
+    },
+    {
+      "family": "power",
+      "usefulRows": 3,
+      "baseline": {
+        "passingRows": 1,
+        "unavailableRows": 0,
+        "uniqueAcceptedAlternatives": [
+          "🔌"
+        ],
+        "hasAcceptedUsefulRow": true,
+        "allUsefulRowsPass": false
+      },
+      "candidate": {
+        "passingRows": 3,
+        "unavailableRows": 0,
+        "uniqueAcceptedAlternatives": [
+          "🔌"
+        ],
+        "hasAcceptedUsefulRow": true,
+        "allUsefulRowsPass": true
+      }
+    },
+    {
+      "family": "sport",
+      "usefulRows": 3,
+      "baseline": {
+        "passingRows": 1,
+        "unavailableRows": 0,
+        "uniqueAcceptedAlternatives": [
+          "⚽"
+        ],
+        "hasAcceptedUsefulRow": true,
+        "allUsefulRowsPass": false
+      },
+      "candidate": {
+        "passingRows": 3,
+        "unavailableRows": 0,
+        "uniqueAcceptedAlternatives": [
+          "⚽"
+        ],
+        "hasAcceptedUsefulRow": true,
+        "allUsefulRowsPass": true
+      }
+    },
+    {
+      "family": "computer",
+      "usefulRows": 3,
+      "baseline": {
+        "passingRows": 1,
+        "unavailableRows": 0,
+        "uniqueAcceptedAlternatives": [
+          "🖱️"
+        ],
+        "hasAcceptedUsefulRow": true,
+        "allUsefulRowsPass": false
+      },
+      "candidate": {
+        "passingRows": 3,
+        "unavailableRows": 0,
+        "uniqueAcceptedAlternatives": [
+          "🖱️"
+        ],
+        "hasAcceptedUsefulRow": true,
+        "allUsefulRowsPass": true
+      }
+    },
+    {
+      "family": "emergency",
+      "usefulRows": 3,
+      "baseline": {
+        "passingRows": 1,
+        "unavailableRows": 0,
+        "uniqueAcceptedAlternatives": [
+          "🚒"
+        ],
+        "hasAcceptedUsefulRow": true,
+        "allUsefulRowsPass": false
+      },
+      "candidate": {
+        "passingRows": 3,
+        "unavailableRows": 0,
+        "uniqueAcceptedAlternatives": [
+          "🚒"
+        ],
+        "hasAcceptedUsefulRow": true,
+        "allUsefulRowsPass": true
+      }
+    },
+    {
+      "family": "dessert",
+      "usefulRows": 3,
+      "baseline": {
+        "passingRows": 1,
+        "unavailableRows": 0,
+        "uniqueAcceptedAlternatives": [
+          "🍨"
+        ],
+        "hasAcceptedUsefulRow": true,
+        "allUsefulRowsPass": false
+      },
+      "candidate": {
+        "passingRows": 3,
+        "unavailableRows": 0,
+        "uniqueAcceptedAlternatives": [
+          "🍨"
+        ],
+        "hasAcceptedUsefulRow": true,
+        "allUsefulRowsPass": true
+      }
+    },
+    {
+      "family": "rail",
+      "usefulRows": 3,
+      "baseline": {
+        "passingRows": 1,
+        "unavailableRows": 0,
+        "uniqueAcceptedAlternatives": [
+          "🚅"
+        ],
+        "hasAcceptedUsefulRow": true,
+        "allUsefulRowsPass": false
+      },
+      "candidate": {
+        "passingRows": 3,
+        "unavailableRows": 0,
+        "uniqueAcceptedAlternatives": [
+          "🚅"
+        ],
+        "hasAcceptedUsefulRow": true,
+        "allUsefulRowsPass": true
+      }
+    },
+    {
+      "family": "reading",
+      "usefulRows": 3,
+      "baseline": {
+        "passingRows": 1,
+        "unavailableRows": 0,
+        "uniqueAcceptedAlternatives": [
+          "📖"
+        ],
+        "hasAcceptedUsefulRow": true,
+        "allUsefulRowsPass": false
+      },
+      "candidate": {
+        "passingRows": 3,
+        "unavailableRows": 0,
+        "uniqueAcceptedAlternatives": [
+          "📖"
+        ],
+        "hasAcceptedUsefulRow": true,
+        "allUsefulRowsPass": true
+      }
+    },
+    {
+      "family": "weather",
+      "usefulRows": 3,
+      "baseline": {
+        "passingRows": 1,
+        "unavailableRows": 0,
+        "uniqueAcceptedAlternatives": [
+          "🌂"
+        ],
+        "hasAcceptedUsefulRow": true,
+        "allUsefulRowsPass": false
+      },
+      "candidate": {
+        "passingRows": 3,
+        "unavailableRows": 0,
+        "uniqueAcceptedAlternatives": [
+          "🌂"
+        ],
+        "hasAcceptedUsefulRow": true,
+        "allUsefulRowsPass": true
+      }
+    },
+    {
+      "family": "calling",
+      "usefulRows": 3,
+      "baseline": {
+        "passingRows": 1,
+        "unavailableRows": 0,
+        "uniqueAcceptedAlternatives": [
+          "📞"
+        ],
+        "hasAcceptedUsefulRow": true,
+        "allUsefulRowsPass": false
+      },
+      "candidate": {
+        "passingRows": 3,
+        "unavailableRows": 0,
+        "uniqueAcceptedAlternatives": [
+          "📞"
+        ],
+        "hasAcceptedUsefulRow": true,
+        "allUsefulRowsPass": true
+      }
+    },
+    {
+      "family": "negative",
+      "usefulRows": 0,
+      "baseline": {
+        "passingRows": 0,
+        "unavailableRows": 0,
+        "uniqueAcceptedAlternatives": [],
+        "hasAcceptedUsefulRow": false,
+        "allUsefulRowsPass": false
+      },
+      "candidate": {
+        "passingRows": 0,
+        "unavailableRows": 0,
+        "uniqueAcceptedAlternatives": [],
+        "hasAcceptedUsefulRow": false,
+        "allUsefulRowsPass": false
+      }
+    }
+  ],
+  "regressions": [],
+  "rawReport": "/tmp/pulpo-r40-candidate/development-intents-comparison.json",
+  "rawReportSHA256": "9dea45a12d4867fc302066b7c060242fd0203933823d32f37d5867e6072fd972"
+}

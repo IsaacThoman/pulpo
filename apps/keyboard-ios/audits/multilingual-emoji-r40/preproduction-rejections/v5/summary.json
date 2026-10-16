@@ -1,0 +1,211 @@
+{
+  "assertions" : 406122,
+  "candidateRun" : false,
+  "capacityIsPolicyOracle" : true,
+  "counts" : {
+    "actualNames" : 64611,
+    "all7374" : 66366,
+    "boundedPostings" : 81,
+    "capacity" : 585,
+    "priorIdentity" : 6,
+    "unicodeAndExact" : 3276
+  },
+  "exposedQueries" : 7374,
+  "failures" : [
+    {
+      "check" : "exactNEqualsW",
+      "query" : " \tाbar\n "
+    },
+    {
+      "check" : "broadComplete",
+      "query" : " \tाbar\n "
+    },
+    {
+      "check" : "tightComplete",
+      "query" : " \tाbar\n "
+    },
+    {
+      "check" : "broadComplete",
+      "query" : " \tाbar\n "
+    },
+    {
+      "check" : "tightComplete",
+      "query" : " \tाbar\n "
+    },
+    {
+      "check" : "broadComplete",
+      "query" : " \tाbar\n "
+    },
+    {
+      "check" : "tightComplete",
+      "query" : " \tाbar\n "
+    },
+    {
+      "check" : "broadComplete",
+      "query" : " \tाbar\n "
+    },
+    {
+      "check" : "tightComplete",
+      "query" : " \tाbar\n "
+    },
+    {
+      "check" : "broadComplete",
+      "query" : " \tाbar\n "
+    },
+    {
+      "check" : "tightComplete",
+      "query" : " \tाbar\n "
+    },
+    {
+      "check" : "broadComplete",
+      "query" : " \tाbar\n "
+    },
+    {
+      "check" : "tightComplete",
+      "query" : " \tाbar\n "
+    },
+    {
+      "check" : "broadComplete",
+      "query" : " \tाbar\n "
+    },
+    {
+      "check" : "tightComplete",
+      "query" : " \tाbar\n "
+    },
+    {
+      "check" : "broadComplete",
+      "query" : " \tाbar\n "
+    },
+    {
+      "check" : "tightComplete",
+      "query" : " \tाbar\n "
+    },
+    {
+      "check" : "broadComplete",
+      "query" : " \tाbar\n "
+    },
+    {
+      "check" : "tightComplete",
+      "query" : " \tाbar\n "
+    },
+    {
+      "check" : "exactNEqualsW",
+      "query" : " \tाzzz β\n "
+    },
+    {
+      "check" : "broadComplete",
+      "query" : " \tाzzz β\n "
+    },
+    {
+      "check" : "tightComplete",
+      "query" : " \tाzzz β\n "
+    },
+    {
+      "check" : "broadComplete",
+      "query" : " \tाzzz β\n "
+    },
+    {
+      "check" : "tightComplete",
+      "query" : " \tाzzz β\n "
+    },
+    {
+      "check" : "broadComplete",
+      "query" : " \tाzzz β\n "
+    },
+    {
+      "check" : "tightComplete",
+      "query" : " \tाzzz β\n "
+    },
+    {
+      "check" : "broadComplete",
+      "query" : " \tाzzz β\n "
+    },
+    {
+      "check" : "tightComplete",
+      "query" : " \tाzzz β\n "
+    },
+    {
+      "check" : "broadComplete",
+      "query" : " \tाzzz β\n "
+    },
+    {
+      "check" : "tightComplete",
+      "query" : " \tाzzz β\n "
+    },
+    {
+      "check" : "broadComplete",
+      "query" : " \tाzzz β\n "
+    },
+    {
+      "check" : "tightComplete",
+      "query" : " \tाzzz β\n "
+    },
+    {
+      "check" : "broadComplete",
+      "query" : " \tाzzz β\n "
+    },
+    {
+      "check" : "tightComplete",
+      "query" : " \tाzzz β\n "
+    },
+    {
+      "check" : "broadComplete",
+      "query" : " \tाzzz β\n "
+    },
+    {
+      "check" : "tightComplete",
+      "query" : " \tाzzz β\n "
+    },
+    {
+      "check" : "broadComplete",
+      "query" : " \tाzzz β\n "
+    },
+    {
+      "check" : "tightComplete",
+      "query" : " \tाzzz β\n "
+    },
+    {
+      "check" : "exactNEqualsW",
+      "query" : "red\t\nൎ\t\nheart"
+    },
+    {
+      "check" : "tightComplete",
+      "query" : "red\t\nൎ\t\nheart"
+    },
+    {
+      "check" : "tightComplete",
+      "query" : "red\t\nൎ\t\nheart"
+    },
+    {
+      "check" : "tightComplete",
+      "query" : "red\t\nൎ\t\nheart"
+    },
+    {
+      "check" : "tightComplete",
+      "query" : "red\t\nൎ\t\nheart"
+    },
+    {
+      "check" : "tightComplete",
+      "query" : "red\t\nൎ\t\nheart"
+    },
+    {
+      "check" : "tightComplete",
+      "query" : "red\t\nൎ\t\nheart"
+    },
+    {
+      "check" : "tightComplete",
+      "query" : "red\t\nൎ\t\nheart"
+    },
+    {
+      "check" : "tightComplete",
+      "query" : "red\t\nൎ\t\nheart"
+    },
+    {
+      "check" : "tightComplete",
+      "query" : "red\t\nൎ\t\nheart"
+    }
+  ],
+  "realEntries" : 1923,
+  "runtime" : "Version 27.0.1 (Build 26A434)",
+  "supplementalUniqueQueries" : 7179
+}

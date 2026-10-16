@@ -1,0 +1,6 @@
+import Foundation
+@main struct Main { static func main() {
+let entries=[Emoji(value:"E",name:"ιbar",version:1,tones:nil),Emoji(value:"L",name:"opaque",version:1,tones:nil)]
+let s=EmojiSuggester(catalog:EmojiCatalog(version:"probe",categories:[EmojiCategory(id:"x",name:"x",emoji:entries)]))
+for q in ["\u{0345}bar","bar","\u{0345} bar","\u{0345}'bar","\u{0345}bar bar","\u{0345}the bar"] {print(q.debugDescription,Policy.canonical(q),Policy.legacy(q).debugDescription,Policy.project(Policy.legacy(q)),s.search(q).map(\.value))}
+}}

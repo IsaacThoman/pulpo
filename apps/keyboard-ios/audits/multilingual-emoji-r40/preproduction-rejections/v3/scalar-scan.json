@@ -1,0 +1,603 @@
+{
+  "contextCount" : 851928,
+  "first100NecessaryConditionFailures" : [
+    {
+      "A" : [
+        "bar",
+        "ൎ"
+      ],
+      "legacy" : "ൎbar",
+      "Plegacy" : "ൎbar",
+      "query" : "ൎ'bar",
+      "scalar" : "U+0D4E",
+      "T" : [
+        "bar",
+        "ൎ"
+      ]
+    },
+    {
+      "A" : [
+        "aൎ",
+        "bar"
+      ],
+      "legacy" : "aൎbar",
+      "Plegacy" : "aൎbar",
+      "query" : "aൎ'bar",
+      "scalar" : "U+0D4E",
+      "T" : [
+        "aൎ",
+        "bar"
+      ]
+    },
+    {
+      "A" : [
+        "bar",
+        "nൎ"
+      ],
+      "legacy" : "nൎbar",
+      "Plegacy" : "nൎbar",
+      "query" : "nൎ'bar",
+      "scalar" : "U+0D4E",
+      "T" : [
+        "bar",
+        "nൎ"
+      ]
+    },
+    {
+      "A" : [
+        "bar",
+        "𑇂"
+      ],
+      "legacy" : "𑇂bar",
+      "Plegacy" : "𑇂bar",
+      "query" : "𑇂'bar",
+      "scalar" : "U+111C2",
+      "T" : [
+        "bar",
+        "𑇂"
+      ]
+    },
+    {
+      "A" : [
+        "a𑇂",
+        "bar"
+      ],
+      "legacy" : "a𑇂bar",
+      "Plegacy" : "a𑇂bar",
+      "query" : "a𑇂'bar",
+      "scalar" : "U+111C2",
+      "T" : [
+        "a𑇂",
+        "bar"
+      ]
+    },
+    {
+      "A" : [
+        "bar",
+        "n𑇂"
+      ],
+      "legacy" : "n𑇂bar",
+      "Plegacy" : "n𑇂bar",
+      "query" : "n𑇂'bar",
+      "scalar" : "U+111C2",
+      "T" : [
+        "bar",
+        "n𑇂"
+      ]
+    },
+    {
+      "A" : [
+        "bar",
+        "𑇃"
+      ],
+      "legacy" : "𑇃bar",
+      "Plegacy" : "𑇃bar",
+      "query" : "𑇃'bar",
+      "scalar" : "U+111C3",
+      "T" : [
+        "bar",
+        "𑇃"
+      ]
+    },
+    {
+      "A" : [
+        "a𑇃",
+        "bar"
+      ],
+      "legacy" : "a𑇃bar",
+      "Plegacy" : "a𑇃bar",
+      "query" : "a𑇃'bar",
+      "scalar" : "U+111C3",
+      "T" : [
+        "a𑇃",
+        "bar"
+      ]
+    },
+    {
+      "A" : [
+        "bar",
+        "n𑇃"
+      ],
+      "legacy" : "n𑇃bar",
+      "Plegacy" : "n𑇃bar",
+      "query" : "n𑇃'bar",
+      "scalar" : "U+111C3",
+      "T" : [
+        "bar",
+        "n𑇃"
+      ]
+    },
+    {
+      "A" : [
+        "bar",
+        "𑏑"
+      ],
+      "legacy" : "𑏑bar",
+      "Plegacy" : "𑏑bar",
+      "query" : "𑏑'bar",
+      "scalar" : "U+113D1",
+      "T" : [
+        "bar",
+        "𑏑"
+      ]
+    },
+    {
+      "A" : [
+        "a𑏑",
+        "bar"
+      ],
+      "legacy" : "a𑏑bar",
+      "Plegacy" : "a𑏑bar",
+      "query" : "a𑏑'bar",
+      "scalar" : "U+113D1",
+      "T" : [
+        "a𑏑",
+        "bar"
+      ]
+    },
+    {
+      "A" : [
+        "bar",
+        "n𑏑"
+      ],
+      "legacy" : "n𑏑bar",
+      "Plegacy" : "n𑏑bar",
+      "query" : "n𑏑'bar",
+      "scalar" : "U+113D1",
+      "T" : [
+        "bar",
+        "n𑏑"
+      ]
+    },
+    {
+      "A" : [
+        "bar",
+        "𑤿"
+      ],
+      "legacy" : "𑤿bar",
+      "Plegacy" : "𑤿bar",
+      "query" : "𑤿'bar",
+      "scalar" : "U+1193F",
+      "T" : [
+        "bar",
+        "𑤿"
+      ]
+    },
+    {
+      "A" : [
+        "a𑤿",
+        "bar"
+      ],
+      "legacy" : "a𑤿bar",
+      "Plegacy" : "a𑤿bar",
+      "query" : "a𑤿'bar",
+      "scalar" : "U+1193F",
+      "T" : [
+        "a𑤿",
+        "bar"
+      ]
+    },
+    {
+      "A" : [
+        "bar",
+        "n𑤿"
+      ],
+      "legacy" : "n𑤿bar",
+      "Plegacy" : "n𑤿bar",
+      "query" : "n𑤿'bar",
+      "scalar" : "U+1193F",
+      "T" : [
+        "bar",
+        "n𑤿"
+      ]
+    },
+    {
+      "A" : [
+        "bar",
+        "𑥁"
+      ],
+      "legacy" : "𑥁bar",
+      "Plegacy" : "𑥁bar",
+      "query" : "𑥁'bar",
+      "scalar" : "U+11941",
+      "T" : [
+        "bar",
+        "𑥁"
+      ]
+    },
+    {
+      "A" : [
+        "a𑥁",
+        "bar"
+      ],
+      "legacy" : "a𑥁bar",
+      "Plegacy" : "a𑥁bar",
+      "query" : "a𑥁'bar",
+      "scalar" : "U+11941",
+      "T" : [
+        "a𑥁",
+        "bar"
+      ]
+    },
+    {
+      "A" : [
+        "bar",
+        "n𑥁"
+      ],
+      "legacy" : "n𑥁bar",
+      "Plegacy" : "n𑥁bar",
+      "query" : "n𑥁'bar",
+      "scalar" : "U+11941",
+      "T" : [
+        "bar",
+        "n𑥁"
+      ]
+    },
+    {
+      "A" : [
+        "bar",
+        "𑪄"
+      ],
+      "legacy" : "𑪄bar",
+      "Plegacy" : "𑪄bar",
+      "query" : "𑪄'bar",
+      "scalar" : "U+11A84",
+      "T" : [
+        "bar",
+        "𑪄"
+      ]
+    },
+    {
+      "A" : [
+        "a𑪄",
+        "bar"
+      ],
+      "legacy" : "a𑪄bar",
+      "Plegacy" : "a𑪄bar",
+      "query" : "a𑪄'bar",
+      "scalar" : "U+11A84",
+      "T" : [
+        "a𑪄",
+        "bar"
+      ]
+    },
+    {
+      "A" : [
+        "bar",
+        "n𑪄"
+      ],
+      "legacy" : "n𑪄bar",
+      "Plegacy" : "n𑪄bar",
+      "query" : "n𑪄'bar",
+      "scalar" : "U+11A84",
+      "T" : [
+        "bar",
+        "n𑪄"
+      ]
+    },
+    {
+      "A" : [
+        "bar",
+        "𑪅"
+      ],
+      "legacy" : "𑪅bar",
+      "Plegacy" : "𑪅bar",
+      "query" : "𑪅'bar",
+      "scalar" : "U+11A85",
+      "T" : [
+        "bar",
+        "𑪅"
+      ]
+    },
+    {
+      "A" : [
+        "a𑪅",
+        "bar"
+      ],
+      "legacy" : "a𑪅bar",
+      "Plegacy" : "a𑪅bar",
+      "query" : "a𑪅'bar",
+      "scalar" : "U+11A85",
+      "T" : [
+        "a𑪅",
+        "bar"
+      ]
+    },
+    {
+      "A" : [
+        "bar",
+        "n𑪅"
+      ],
+      "legacy" : "n𑪅bar",
+      "Plegacy" : "n𑪅bar",
+      "query" : "n𑪅'bar",
+      "scalar" : "U+11A85",
+      "T" : [
+        "bar",
+        "n𑪅"
+      ]
+    },
+    {
+      "A" : [
+        "bar",
+        "𑪆"
+      ],
+      "legacy" : "𑪆bar",
+      "Plegacy" : "𑪆bar",
+      "query" : "𑪆'bar",
+      "scalar" : "U+11A86",
+      "T" : [
+        "bar",
+        "𑪆"
+      ]
+    },
+    {
+      "A" : [
+        "a𑪆",
+        "bar"
+      ],
+      "legacy" : "a𑪆bar",
+      "Plegacy" : "a𑪆bar",
+      "query" : "a𑪆'bar",
+      "scalar" : "U+11A86",
+      "T" : [
+        "a𑪆",
+        "bar"
+      ]
+    },
+    {
+      "A" : [
+        "bar",
+        "n𑪆"
+      ],
+      "legacy" : "n𑪆bar",
+      "Plegacy" : "n𑪆bar",
+      "query" : "n𑪆'bar",
+      "scalar" : "U+11A86",
+      "T" : [
+        "bar",
+        "n𑪆"
+      ]
+    },
+    {
+      "A" : [
+        "bar",
+        "𑪇"
+      ],
+      "legacy" : "𑪇bar",
+      "Plegacy" : "𑪇bar",
+      "query" : "𑪇'bar",
+      "scalar" : "U+11A87",
+      "T" : [
+        "bar",
+        "𑪇"
+      ]
+    },
+    {
+      "A" : [
+        "a𑪇",
+        "bar"
+      ],
+      "legacy" : "a𑪇bar",
+      "Plegacy" : "a𑪇bar",
+      "query" : "a𑪇'bar",
+      "scalar" : "U+11A87",
+      "T" : [
+        "a𑪇",
+        "bar"
+      ]
+    },
+    {
+      "A" : [
+        "bar",
+        "n𑪇"
+      ],
+      "legacy" : "n𑪇bar",
+      "Plegacy" : "n𑪇bar",
+      "query" : "n𑪇'bar",
+      "scalar" : "U+11A87",
+      "T" : [
+        "bar",
+        "n𑪇"
+      ]
+    },
+    {
+      "A" : [
+        "bar",
+        "𑪈"
+      ],
+      "legacy" : "𑪈bar",
+      "Plegacy" : "𑪈bar",
+      "query" : "𑪈'bar",
+      "scalar" : "U+11A88",
+      "T" : [
+        "bar",
+        "𑪈"
+      ]
+    },
+    {
+      "A" : [
+        "a𑪈",
+        "bar"
+      ],
+      "legacy" : "a𑪈bar",
+      "Plegacy" : "a𑪈bar",
+      "query" : "a𑪈'bar",
+      "scalar" : "U+11A88",
+      "T" : [
+        "a𑪈",
+        "bar"
+      ]
+    },
+    {
+      "A" : [
+        "bar",
+        "n𑪈"
+      ],
+      "legacy" : "n𑪈bar",
+      "Plegacy" : "n𑪈bar",
+      "query" : "n𑪈'bar",
+      "scalar" : "U+11A88",
+      "T" : [
+        "bar",
+        "n𑪈"
+      ]
+    },
+    {
+      "A" : [
+        "bar",
+        "𑪉"
+      ],
+      "legacy" : "𑪉bar",
+      "Plegacy" : "𑪉bar",
+      "query" : "𑪉'bar",
+      "scalar" : "U+11A89",
+      "T" : [
+        "bar",
+        "𑪉"
+      ]
+    },
+    {
+      "A" : [
+        "a𑪉",
+        "bar"
+      ],
+      "legacy" : "a𑪉bar",
+      "Plegacy" : "a𑪉bar",
+      "query" : "a𑪉'bar",
+      "scalar" : "U+11A89",
+      "T" : [
+        "a𑪉",
+        "bar"
+      ]
+    },
+    {
+      "A" : [
+        "bar",
+        "n𑪉"
+      ],
+      "legacy" : "n𑪉bar",
+      "Plegacy" : "n𑪉bar",
+      "query" : "n𑪉'bar",
+      "scalar" : "U+11A89",
+      "T" : [
+        "bar",
+        "n𑪉"
+      ]
+    },
+    {
+      "A" : [
+        "bar",
+        "𑵆"
+      ],
+      "legacy" : "𑵆bar",
+      "Plegacy" : "𑵆bar",
+      "query" : "𑵆'bar",
+      "scalar" : "U+11D46",
+      "T" : [
+        "bar",
+        "𑵆"
+      ]
+    },
+    {
+      "A" : [
+        "a𑵆",
+        "bar"
+      ],
+      "legacy" : "a𑵆bar",
+      "Plegacy" : "a𑵆bar",
+      "query" : "a𑵆'bar",
+      "scalar" : "U+11D46",
+      "T" : [
+        "a𑵆",
+        "bar"
+      ]
+    },
+    {
+      "A" : [
+        "bar",
+        "n𑵆"
+      ],
+      "legacy" : "n𑵆bar",
+      "Plegacy" : "n𑵆bar",
+      "query" : "n𑵆'bar",
+      "scalar" : "U+11D46",
+      "T" : [
+        "bar",
+        "n𑵆"
+      ]
+    },
+    {
+      "A" : [
+        "bar",
+        "𑼂"
+      ],
+      "legacy" : "𑼂bar",
+      "Plegacy" : "𑼂bar",
+      "query" : "𑼂'bar",
+      "scalar" : "U+11F02",
+      "T" : [
+        "bar",
+        "𑼂"
+      ]
+    },
+    {
+      "A" : [
+        "a𑼂",
+        "bar"
+      ],
+      "legacy" : "a𑼂bar",
+      "Plegacy" : "a𑼂bar",
+      "query" : "a𑼂'bar",
+      "scalar" : "U+11F02",
+      "T" : [
+        "a𑼂",
+        "bar"
+      ]
+    },
+    {
+      "A" : [
+        "bar",
+        "n𑼂"
+      ],
+      "legacy" : "n𑼂bar",
+      "Plegacy" : "n𑼂bar",
+      "query" : "n𑼂'bar",
+      "scalar" : "U+11F02",
+      "T" : [
+        "bar",
+        "n𑼂"
+      ]
+    }
+  ],
+  "markToLetterProjections" : [
+    {
+      "attachedConsonant" : "n",
+      "attachedVowel" : "a",
+      "projection" : "ι",
+      "scalar" : "U+0345"
+    }
+  ],
+  "note" : "Finite single-scalar context scan, not universal proof. Failure rows need actual API confirmation; tests necessary V\/I conditions against projected synthetic legacy key.",
+  "scalarCount" : 1112064
+}

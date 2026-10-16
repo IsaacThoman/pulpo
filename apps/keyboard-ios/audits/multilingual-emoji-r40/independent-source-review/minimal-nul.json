@@ -1,0 +1,1 @@
+[{"id": "minimal-ascii-nul-cap1", "q": "A\u0000B", "cap": 1, "preferred": {}, "catalog": {"version": "fixture", "categories": [{"id": "x", "name": "X", "emoji": [{"e": "L", "n": "opaque", "v": 1, "k": [], "s": "a b"}]}]}}]

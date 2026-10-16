@@ -1,0 +1,1383 @@
+{
+  "candidates" : 6,
+  "checks" : 18,
+  "confirmedMissingRows" : 18,
+  "fixture" : {
+    "English keywords" : [
+      "north bear",
+      "quartz"
+    ],
+    "English name" : "bar",
+    "other name" : "opaque"
+  },
+  "rows" : [
+    {
+      "actualLegacy" : [
+        "E"
+      ],
+      "candidate" : {
+        "A" : [
+          "bear",
+          "he",
+          "north",
+          "q",
+          "t",
+          "ำ"
+        ],
+        "conjunct" : false,
+        "legacy" : "q the north bear",
+        "Plegacy" : "qthenorthbear",
+        "prefix" : true,
+        "query" : "q t'he ำ north bear",
+        "R" : [
+          "bear",
+          "north",
+          "q",
+          "ำ"
+        ],
+        "scalar" : "U+0E33",
+        "T" : [
+          "bear",
+          "he",
+          "north",
+          "q",
+          "t",
+          "ำ"
+        ]
+      },
+      "cap" : 1,
+      "envelope" : [
+
+      ],
+      "I" : [
+        [
+          "bar",
+          "northbear",
+          "quartz"
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "missingLegacy" : [
+        "E"
+      ],
+      "rawScalars" : [
+        "U+0071",
+        "U+0020",
+        "U+0074",
+        "U+0027",
+        "U+0068",
+        "U+0065",
+        "U+0020",
+        "U+0E33",
+        "U+0020",
+        "U+006E",
+        "U+006F",
+        "U+0072",
+        "U+0074",
+        "U+0068",
+        "U+0020",
+        "U+0062",
+        "U+0065",
+        "U+0061",
+        "U+0072"
+      ],
+      "V" : [
+        [
+          "bar",
+          "bear",
+          "north",
+          "northbear",
+          "quartz"
+        ],
+        [
+          "opaque"
+        ]
+      ]
+    },
+    {
+      "actualLegacy" : [
+        "E"
+      ],
+      "candidate" : {
+        "A" : [
+          "bear",
+          "he",
+          "north",
+          "q",
+          "t",
+          "ำ"
+        ],
+        "conjunct" : false,
+        "legacy" : "q the north bear",
+        "Plegacy" : "qthenorthbear",
+        "prefix" : true,
+        "query" : "q t'he ำ north bear",
+        "R" : [
+          "bear",
+          "north",
+          "q",
+          "ำ"
+        ],
+        "scalar" : "U+0E33",
+        "T" : [
+          "bear",
+          "he",
+          "north",
+          "q",
+          "t",
+          "ำ"
+        ]
+      },
+      "cap" : 48,
+      "envelope" : [
+
+      ],
+      "I" : [
+        [
+          "bar",
+          "northbear",
+          "quartz"
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "missingLegacy" : [
+        "E"
+      ],
+      "rawScalars" : [
+        "U+0071",
+        "U+0020",
+        "U+0074",
+        "U+0027",
+        "U+0068",
+        "U+0065",
+        "U+0020",
+        "U+0E33",
+        "U+0020",
+        "U+006E",
+        "U+006F",
+        "U+0072",
+        "U+0074",
+        "U+0068",
+        "U+0020",
+        "U+0062",
+        "U+0065",
+        "U+0061",
+        "U+0072"
+      ],
+      "V" : [
+        [
+          "bar",
+          "bear",
+          "north",
+          "northbear",
+          "quartz"
+        ],
+        [
+          "opaque"
+        ]
+      ]
+    },
+    {
+      "actualLegacy" : [
+        "E"
+      ],
+      "candidate" : {
+        "A" : [
+          "bear",
+          "he",
+          "north",
+          "q",
+          "t",
+          "ำ"
+        ],
+        "conjunct" : false,
+        "legacy" : "q the north bear",
+        "Plegacy" : "qthenorthbear",
+        "prefix" : true,
+        "query" : "q t'he ำ north bear",
+        "R" : [
+          "bear",
+          "north",
+          "q",
+          "ำ"
+        ],
+        "scalar" : "U+0E33",
+        "T" : [
+          "bear",
+          "he",
+          "north",
+          "q",
+          "t",
+          "ำ"
+        ]
+      },
+      "cap" : 60,
+      "envelope" : [
+
+      ],
+      "I" : [
+        [
+          "bar",
+          "northbear",
+          "quartz"
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "missingLegacy" : [
+        "E"
+      ],
+      "rawScalars" : [
+        "U+0071",
+        "U+0020",
+        "U+0074",
+        "U+0027",
+        "U+0068",
+        "U+0065",
+        "U+0020",
+        "U+0E33",
+        "U+0020",
+        "U+006E",
+        "U+006F",
+        "U+0072",
+        "U+0074",
+        "U+0068",
+        "U+0020",
+        "U+0062",
+        "U+0065",
+        "U+0061",
+        "U+0072"
+      ],
+      "V" : [
+        [
+          "bar",
+          "bear",
+          "north",
+          "northbear",
+          "quartz"
+        ],
+        [
+          "opaque"
+        ]
+      ]
+    },
+    {
+      "actualLegacy" : [
+        "E"
+      ],
+      "candidate" : {
+        "A" : [
+          "bear",
+          "he",
+          "north",
+          "q",
+          "t",
+          "ຳ"
+        ],
+        "conjunct" : false,
+        "legacy" : "q the north bear",
+        "Plegacy" : "qthenorthbear",
+        "prefix" : true,
+        "query" : "q t'he ຳ north bear",
+        "R" : [
+          "bear",
+          "north",
+          "q",
+          "ຳ"
+        ],
+        "scalar" : "U+0EB3",
+        "T" : [
+          "bear",
+          "he",
+          "north",
+          "q",
+          "t",
+          "ຳ"
+        ]
+      },
+      "cap" : 1,
+      "envelope" : [
+
+      ],
+      "I" : [
+        [
+          "bar",
+          "northbear",
+          "quartz"
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "missingLegacy" : [
+        "E"
+      ],
+      "rawScalars" : [
+        "U+0071",
+        "U+0020",
+        "U+0074",
+        "U+0027",
+        "U+0068",
+        "U+0065",
+        "U+0020",
+        "U+0EB3",
+        "U+0020",
+        "U+006E",
+        "U+006F",
+        "U+0072",
+        "U+0074",
+        "U+0068",
+        "U+0020",
+        "U+0062",
+        "U+0065",
+        "U+0061",
+        "U+0072"
+      ],
+      "V" : [
+        [
+          "bar",
+          "bear",
+          "north",
+          "northbear",
+          "quartz"
+        ],
+        [
+          "opaque"
+        ]
+      ]
+    },
+    {
+      "actualLegacy" : [
+        "E"
+      ],
+      "candidate" : {
+        "A" : [
+          "bear",
+          "he",
+          "north",
+          "q",
+          "t",
+          "ຳ"
+        ],
+        "conjunct" : false,
+        "legacy" : "q the north bear",
+        "Plegacy" : "qthenorthbear",
+        "prefix" : true,
+        "query" : "q t'he ຳ north bear",
+        "R" : [
+          "bear",
+          "north",
+          "q",
+          "ຳ"
+        ],
+        "scalar" : "U+0EB3",
+        "T" : [
+          "bear",
+          "he",
+          "north",
+          "q",
+          "t",
+          "ຳ"
+        ]
+      },
+      "cap" : 48,
+      "envelope" : [
+
+      ],
+      "I" : [
+        [
+          "bar",
+          "northbear",
+          "quartz"
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "missingLegacy" : [
+        "E"
+      ],
+      "rawScalars" : [
+        "U+0071",
+        "U+0020",
+        "U+0074",
+        "U+0027",
+        "U+0068",
+        "U+0065",
+        "U+0020",
+        "U+0EB3",
+        "U+0020",
+        "U+006E",
+        "U+006F",
+        "U+0072",
+        "U+0074",
+        "U+0068",
+        "U+0020",
+        "U+0062",
+        "U+0065",
+        "U+0061",
+        "U+0072"
+      ],
+      "V" : [
+        [
+          "bar",
+          "bear",
+          "north",
+          "northbear",
+          "quartz"
+        ],
+        [
+          "opaque"
+        ]
+      ]
+    },
+    {
+      "actualLegacy" : [
+        "E"
+      ],
+      "candidate" : {
+        "A" : [
+          "bear",
+          "he",
+          "north",
+          "q",
+          "t",
+          "ຳ"
+        ],
+        "conjunct" : false,
+        "legacy" : "q the north bear",
+        "Plegacy" : "qthenorthbear",
+        "prefix" : true,
+        "query" : "q t'he ຳ north bear",
+        "R" : [
+          "bear",
+          "north",
+          "q",
+          "ຳ"
+        ],
+        "scalar" : "U+0EB3",
+        "T" : [
+          "bear",
+          "he",
+          "north",
+          "q",
+          "t",
+          "ຳ"
+        ]
+      },
+      "cap" : 60,
+      "envelope" : [
+
+      ],
+      "I" : [
+        [
+          "bar",
+          "northbear",
+          "quartz"
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "missingLegacy" : [
+        "E"
+      ],
+      "rawScalars" : [
+        "U+0071",
+        "U+0020",
+        "U+0074",
+        "U+0027",
+        "U+0068",
+        "U+0065",
+        "U+0020",
+        "U+0EB3",
+        "U+0020",
+        "U+006E",
+        "U+006F",
+        "U+0072",
+        "U+0074",
+        "U+0068",
+        "U+0020",
+        "U+0062",
+        "U+0065",
+        "U+0061",
+        "U+0072"
+      ],
+      "V" : [
+        [
+          "bar",
+          "bear",
+          "north",
+          "northbear",
+          "quartz"
+        ],
+        [
+          "opaque"
+        ]
+      ]
+    },
+    {
+      "actualLegacy" : [
+        "E"
+      ],
+      "candidate" : {
+        "A" : [
+          "ﾞbar"
+        ],
+        "conjunct" : false,
+        "legacy" : "bar",
+        "Plegacy" : "bar",
+        "prefix" : false,
+        "query" : "'ﾞbar",
+        "R" : [
+          "ﾞbar"
+        ],
+        "scalar" : "U+FF9E",
+        "T" : [
+          "ﾞbar"
+        ]
+      },
+      "cap" : 1,
+      "envelope" : [
+
+      ],
+      "I" : [
+        [
+          "bar",
+          "northbear",
+          "quartz"
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "missingLegacy" : [
+        "E"
+      ],
+      "rawScalars" : [
+        "U+0027",
+        "U+FF9E",
+        "U+0062",
+        "U+0061",
+        "U+0072"
+      ],
+      "V" : [
+        [
+          "bar",
+          "bear",
+          "north",
+          "northbear",
+          "quartz"
+        ],
+        [
+          "opaque"
+        ]
+      ]
+    },
+    {
+      "actualLegacy" : [
+        "E"
+      ],
+      "candidate" : {
+        "A" : [
+          "ﾞbar"
+        ],
+        "conjunct" : false,
+        "legacy" : "bar",
+        "Plegacy" : "bar",
+        "prefix" : false,
+        "query" : "'ﾞbar",
+        "R" : [
+          "ﾞbar"
+        ],
+        "scalar" : "U+FF9E",
+        "T" : [
+          "ﾞbar"
+        ]
+      },
+      "cap" : 48,
+      "envelope" : [
+
+      ],
+      "I" : [
+        [
+          "bar",
+          "northbear",
+          "quartz"
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "missingLegacy" : [
+        "E"
+      ],
+      "rawScalars" : [
+        "U+0027",
+        "U+FF9E",
+        "U+0062",
+        "U+0061",
+        "U+0072"
+      ],
+      "V" : [
+        [
+          "bar",
+          "bear",
+          "north",
+          "northbear",
+          "quartz"
+        ],
+        [
+          "opaque"
+        ]
+      ]
+    },
+    {
+      "actualLegacy" : [
+        "E"
+      ],
+      "candidate" : {
+        "A" : [
+          "ﾞbar"
+        ],
+        "conjunct" : false,
+        "legacy" : "bar",
+        "Plegacy" : "bar",
+        "prefix" : false,
+        "query" : "'ﾞbar",
+        "R" : [
+          "ﾞbar"
+        ],
+        "scalar" : "U+FF9E",
+        "T" : [
+          "ﾞbar"
+        ]
+      },
+      "cap" : 60,
+      "envelope" : [
+
+      ],
+      "I" : [
+        [
+          "bar",
+          "northbear",
+          "quartz"
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "missingLegacy" : [
+        "E"
+      ],
+      "rawScalars" : [
+        "U+0027",
+        "U+FF9E",
+        "U+0062",
+        "U+0061",
+        "U+0072"
+      ],
+      "V" : [
+        [
+          "bar",
+          "bear",
+          "north",
+          "northbear",
+          "quartz"
+        ],
+        [
+          "opaque"
+        ]
+      ]
+    },
+    {
+      "actualLegacy" : [
+        "E"
+      ],
+      "candidate" : {
+        "A" : [
+          "bear",
+          "he",
+          "north",
+          "q",
+          "t",
+          "ﾞ"
+        ],
+        "conjunct" : false,
+        "legacy" : "q the north bear",
+        "Plegacy" : "qthenorthbear",
+        "prefix" : true,
+        "query" : "q t'he ﾞ north bear",
+        "R" : [
+          "bear",
+          "north",
+          "q",
+          "ﾞ"
+        ],
+        "scalar" : "U+FF9E",
+        "T" : [
+          "bear",
+          "he",
+          "north",
+          "q",
+          "t",
+          "ﾞ"
+        ]
+      },
+      "cap" : 1,
+      "envelope" : [
+
+      ],
+      "I" : [
+        [
+          "bar",
+          "northbear",
+          "quartz"
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "missingLegacy" : [
+        "E"
+      ],
+      "rawScalars" : [
+        "U+0071",
+        "U+0020",
+        "U+0074",
+        "U+0027",
+        "U+0068",
+        "U+0065",
+        "U+0020",
+        "U+FF9E",
+        "U+0020",
+        "U+006E",
+        "U+006F",
+        "U+0072",
+        "U+0074",
+        "U+0068",
+        "U+0020",
+        "U+0062",
+        "U+0065",
+        "U+0061",
+        "U+0072"
+      ],
+      "V" : [
+        [
+          "bar",
+          "bear",
+          "north",
+          "northbear",
+          "quartz"
+        ],
+        [
+          "opaque"
+        ]
+      ]
+    },
+    {
+      "actualLegacy" : [
+        "E"
+      ],
+      "candidate" : {
+        "A" : [
+          "bear",
+          "he",
+          "north",
+          "q",
+          "t",
+          "ﾞ"
+        ],
+        "conjunct" : false,
+        "legacy" : "q the north bear",
+        "Plegacy" : "qthenorthbear",
+        "prefix" : true,
+        "query" : "q t'he ﾞ north bear",
+        "R" : [
+          "bear",
+          "north",
+          "q",
+          "ﾞ"
+        ],
+        "scalar" : "U+FF9E",
+        "T" : [
+          "bear",
+          "he",
+          "north",
+          "q",
+          "t",
+          "ﾞ"
+        ]
+      },
+      "cap" : 48,
+      "envelope" : [
+
+      ],
+      "I" : [
+        [
+          "bar",
+          "northbear",
+          "quartz"
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "missingLegacy" : [
+        "E"
+      ],
+      "rawScalars" : [
+        "U+0071",
+        "U+0020",
+        "U+0074",
+        "U+0027",
+        "U+0068",
+        "U+0065",
+        "U+0020",
+        "U+FF9E",
+        "U+0020",
+        "U+006E",
+        "U+006F",
+        "U+0072",
+        "U+0074",
+        "U+0068",
+        "U+0020",
+        "U+0062",
+        "U+0065",
+        "U+0061",
+        "U+0072"
+      ],
+      "V" : [
+        [
+          "bar",
+          "bear",
+          "north",
+          "northbear",
+          "quartz"
+        ],
+        [
+          "opaque"
+        ]
+      ]
+    },
+    {
+      "actualLegacy" : [
+        "E"
+      ],
+      "candidate" : {
+        "A" : [
+          "bear",
+          "he",
+          "north",
+          "q",
+          "t",
+          "ﾞ"
+        ],
+        "conjunct" : false,
+        "legacy" : "q the north bear",
+        "Plegacy" : "qthenorthbear",
+        "prefix" : true,
+        "query" : "q t'he ﾞ north bear",
+        "R" : [
+          "bear",
+          "north",
+          "q",
+          "ﾞ"
+        ],
+        "scalar" : "U+FF9E",
+        "T" : [
+          "bear",
+          "he",
+          "north",
+          "q",
+          "t",
+          "ﾞ"
+        ]
+      },
+      "cap" : 60,
+      "envelope" : [
+
+      ],
+      "I" : [
+        [
+          "bar",
+          "northbear",
+          "quartz"
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "missingLegacy" : [
+        "E"
+      ],
+      "rawScalars" : [
+        "U+0071",
+        "U+0020",
+        "U+0074",
+        "U+0027",
+        "U+0068",
+        "U+0065",
+        "U+0020",
+        "U+FF9E",
+        "U+0020",
+        "U+006E",
+        "U+006F",
+        "U+0072",
+        "U+0074",
+        "U+0068",
+        "U+0020",
+        "U+0062",
+        "U+0065",
+        "U+0061",
+        "U+0072"
+      ],
+      "V" : [
+        [
+          "bar",
+          "bear",
+          "north",
+          "northbear",
+          "quartz"
+        ],
+        [
+          "opaque"
+        ]
+      ]
+    },
+    {
+      "actualLegacy" : [
+        "E"
+      ],
+      "candidate" : {
+        "A" : [
+          "ﾟbar"
+        ],
+        "conjunct" : false,
+        "legacy" : "bar",
+        "Plegacy" : "bar",
+        "prefix" : false,
+        "query" : "'ﾟbar",
+        "R" : [
+          "ﾟbar"
+        ],
+        "scalar" : "U+FF9F",
+        "T" : [
+          "ﾟbar"
+        ]
+      },
+      "cap" : 1,
+      "envelope" : [
+
+      ],
+      "I" : [
+        [
+          "bar",
+          "northbear",
+          "quartz"
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "missingLegacy" : [
+        "E"
+      ],
+      "rawScalars" : [
+        "U+0027",
+        "U+FF9F",
+        "U+0062",
+        "U+0061",
+        "U+0072"
+      ],
+      "V" : [
+        [
+          "bar",
+          "bear",
+          "north",
+          "northbear",
+          "quartz"
+        ],
+        [
+          "opaque"
+        ]
+      ]
+    },
+    {
+      "actualLegacy" : [
+        "E"
+      ],
+      "candidate" : {
+        "A" : [
+          "ﾟbar"
+        ],
+        "conjunct" : false,
+        "legacy" : "bar",
+        "Plegacy" : "bar",
+        "prefix" : false,
+        "query" : "'ﾟbar",
+        "R" : [
+          "ﾟbar"
+        ],
+        "scalar" : "U+FF9F",
+        "T" : [
+          "ﾟbar"
+        ]
+      },
+      "cap" : 48,
+      "envelope" : [
+
+      ],
+      "I" : [
+        [
+          "bar",
+          "northbear",
+          "quartz"
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "missingLegacy" : [
+        "E"
+      ],
+      "rawScalars" : [
+        "U+0027",
+        "U+FF9F",
+        "U+0062",
+        "U+0061",
+        "U+0072"
+      ],
+      "V" : [
+        [
+          "bar",
+          "bear",
+          "north",
+          "northbear",
+          "quartz"
+        ],
+        [
+          "opaque"
+        ]
+      ]
+    },
+    {
+      "actualLegacy" : [
+        "E"
+      ],
+      "candidate" : {
+        "A" : [
+          "ﾟbar"
+        ],
+        "conjunct" : false,
+        "legacy" : "bar",
+        "Plegacy" : "bar",
+        "prefix" : false,
+        "query" : "'ﾟbar",
+        "R" : [
+          "ﾟbar"
+        ],
+        "scalar" : "U+FF9F",
+        "T" : [
+          "ﾟbar"
+        ]
+      },
+      "cap" : 60,
+      "envelope" : [
+
+      ],
+      "I" : [
+        [
+          "bar",
+          "northbear",
+          "quartz"
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "missingLegacy" : [
+        "E"
+      ],
+      "rawScalars" : [
+        "U+0027",
+        "U+FF9F",
+        "U+0062",
+        "U+0061",
+        "U+0072"
+      ],
+      "V" : [
+        [
+          "bar",
+          "bear",
+          "north",
+          "northbear",
+          "quartz"
+        ],
+        [
+          "opaque"
+        ]
+      ]
+    },
+    {
+      "actualLegacy" : [
+        "E"
+      ],
+      "candidate" : {
+        "A" : [
+          "bear",
+          "he",
+          "north",
+          "q",
+          "t",
+          "ﾟ"
+        ],
+        "conjunct" : false,
+        "legacy" : "q the north bear",
+        "Plegacy" : "qthenorthbear",
+        "prefix" : true,
+        "query" : "q t'he ﾟ north bear",
+        "R" : [
+          "bear",
+          "north",
+          "q",
+          "ﾟ"
+        ],
+        "scalar" : "U+FF9F",
+        "T" : [
+          "bear",
+          "he",
+          "north",
+          "q",
+          "t",
+          "ﾟ"
+        ]
+      },
+      "cap" : 1,
+      "envelope" : [
+
+      ],
+      "I" : [
+        [
+          "bar",
+          "northbear",
+          "quartz"
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "missingLegacy" : [
+        "E"
+      ],
+      "rawScalars" : [
+        "U+0071",
+        "U+0020",
+        "U+0074",
+        "U+0027",
+        "U+0068",
+        "U+0065",
+        "U+0020",
+        "U+FF9F",
+        "U+0020",
+        "U+006E",
+        "U+006F",
+        "U+0072",
+        "U+0074",
+        "U+0068",
+        "U+0020",
+        "U+0062",
+        "U+0065",
+        "U+0061",
+        "U+0072"
+      ],
+      "V" : [
+        [
+          "bar",
+          "bear",
+          "north",
+          "northbear",
+          "quartz"
+        ],
+        [
+          "opaque"
+        ]
+      ]
+    },
+    {
+      "actualLegacy" : [
+        "E"
+      ],
+      "candidate" : {
+        "A" : [
+          "bear",
+          "he",
+          "north",
+          "q",
+          "t",
+          "ﾟ"
+        ],
+        "conjunct" : false,
+        "legacy" : "q the north bear",
+        "Plegacy" : "qthenorthbear",
+        "prefix" : true,
+        "query" : "q t'he ﾟ north bear",
+        "R" : [
+          "bear",
+          "north",
+          "q",
+          "ﾟ"
+        ],
+        "scalar" : "U+FF9F",
+        "T" : [
+          "bear",
+          "he",
+          "north",
+          "q",
+          "t",
+          "ﾟ"
+        ]
+      },
+      "cap" : 48,
+      "envelope" : [
+
+      ],
+      "I" : [
+        [
+          "bar",
+          "northbear",
+          "quartz"
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "missingLegacy" : [
+        "E"
+      ],
+      "rawScalars" : [
+        "U+0071",
+        "U+0020",
+        "U+0074",
+        "U+0027",
+        "U+0068",
+        "U+0065",
+        "U+0020",
+        "U+FF9F",
+        "U+0020",
+        "U+006E",
+        "U+006F",
+        "U+0072",
+        "U+0074",
+        "U+0068",
+        "U+0020",
+        "U+0062",
+        "U+0065",
+        "U+0061",
+        "U+0072"
+      ],
+      "V" : [
+        [
+          "bar",
+          "bear",
+          "north",
+          "northbear",
+          "quartz"
+        ],
+        [
+          "opaque"
+        ]
+      ]
+    },
+    {
+      "actualLegacy" : [
+        "E"
+      ],
+      "candidate" : {
+        "A" : [
+          "bear",
+          "he",
+          "north",
+          "q",
+          "t",
+          "ﾟ"
+        ],
+        "conjunct" : false,
+        "legacy" : "q the north bear",
+        "Plegacy" : "qthenorthbear",
+        "prefix" : true,
+        "query" : "q t'he ﾟ north bear",
+        "R" : [
+          "bear",
+          "north",
+          "q",
+          "ﾟ"
+        ],
+        "scalar" : "U+FF9F",
+        "T" : [
+          "bear",
+          "he",
+          "north",
+          "q",
+          "t",
+          "ﾟ"
+        ]
+      },
+      "cap" : 60,
+      "envelope" : [
+
+      ],
+      "I" : [
+        [
+          "bar",
+          "northbear",
+          "quartz"
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "missingLegacy" : [
+        "E"
+      ],
+      "rawScalars" : [
+        "U+0071",
+        "U+0020",
+        "U+0074",
+        "U+0027",
+        "U+0068",
+        "U+0065",
+        "U+0020",
+        "U+FF9F",
+        "U+0020",
+        "U+006E",
+        "U+006F",
+        "U+0072",
+        "U+0074",
+        "U+0068",
+        "U+0020",
+        "U+0062",
+        "U+0065",
+        "U+0061",
+        "U+0072"
+      ],
+      "V" : [
+        [
+          "bar",
+          "bear",
+          "north",
+          "northbear",
+          "quartz"
+        ],
+        [
+          "opaque"
+        ]
+      ]
+    }
+  ]
+}

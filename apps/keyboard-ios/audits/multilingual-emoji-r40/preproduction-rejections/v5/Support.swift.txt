@@ -1,0 +1,54 @@
+import Foundation
+let locale = Locale(identifier:"en_US_POSIX")
+let ignored:Set<String> = ["a","an","and","for","in","of","on","the","to","with"]
+func foldedName(_ s:String)->String { s.folding(options:[.diacriticInsensitive,.caseInsensitive],locale:locale).split(whereSeparator: \.isWhitespace).joined(separator:" ") }
+func normalized(_ s:String)->String { let f=s.folding(options:[.diacriticInsensitive,.caseInsensitive],locale:locale); return normalizeFolded(f) }
+func normalizeFolded(_ f:String)->String { f.unicodeScalars.map { CharacterSet.alphanumerics.contains($0) ? String($0) : ($0 == "'" || $0 == "\u{2019}" ? "" : " ") }.joined().split(whereSeparator: \.isWhitespace).joined(separator:" ") }
+func words(_ s:String)->Set<String> { Set(s.split(separator:" ").map(String.init)) }
+func spanish(_ s:String)->[String] {
+ let f=s.lowercased(with:Locale(identifier:"es_ES_POSIX")).decomposedStringWithCanonicalMapping
+ var tokens:[String]=[], word="", vowel=false
+ func flush() { if !word.isEmpty { tokens.append(word.precomposedStringWithCanonicalMapping) }; word=""; vowel=false }
+ for c in f.unicodeScalars {
+  switch c.properties.generalCategory {
+  case .uppercaseLetter,.lowercaseLetter,.titlecaseLetter,.modifierLetter,.otherLetter: word += String(c); vowel="aeiou".unicodeScalars.contains(c)
+  case .nonspacingMark,.spacingMark,.enclosingMark: if !word.isEmpty && !vowel { word += String(c) }
+  default: flush()
+  }
+ }
+ flush(); return Set(tokens).sorted()
+}
+struct Observable {
+ let emoji:[Emoji]; let keys:[[String]]; let exact:[String:Int]; let nameSets:[Set<String>]; let vocab:[Set<String>]
+ init(_ s:EmojiSuggester) {
+  let fields=Dictionary(uniqueKeysWithValues:Mirror(reflecting:s).children.compactMap { c in c.label.map { ($0,c.value) } })
+  emoji=fields["emoji"] as! [Emoji]; exact=fields["exactNames"] as! [String:Int]
+  var k=Array(repeating:[String](),count:emoji.count)
+  for term in Mirror(reflecting:fields["index"]!).children {
+   let t=Dictionary(uniqueKeysWithValues:Mirror(reflecting:term.value).children.compactMap { c in c.label.map { ($0,c.value) } })
+   for m in Mirror(reflecting:t["matches"]!).children {
+    let f=Dictionary(uniqueKeysWithValues:Mirror(reflecting:m.value).children.compactMap { c in c.label.map { ($0,c.value) } })
+    k[f["id"] as! Int].append(t["key"] as! String)
+   }
+  }
+  keys=k
+  nameSets=emoji.map { words(normalized($0.name)) }
+  vocab=emoji.enumerated().map { i,e in
+   var v=Set(([e.name]+(e.keywords ?? [])).flatMap { words(normalized($0)) })
+   for key in k[i] { v.insert(key); v.formUnion(words(key)) }; return v
+  }
+ }
+ func envelope(_ q:String, tight:Bool=false)->Set<Int> {
+  let w=words(normalized(q)); if w.isEmpty { return [] }
+  return Set(emoji.indices.filter { i in
+   if nameSets[i] == w { return true }
+   guard keys[i].contains(where:{ k in w.contains { k.hasPrefix($0) } }) else { return false }
+   if !tight { return true }
+   return w.subtracting(ignored).allSatisfy { x in vocab[i].contains { $0.hasPrefix(x) } }
+  })
+ }
+}
+func fixture(_ entries:[(String,String,[String])])->EmojiSuggester {
+ EmojiSuggester(catalog:EmojiCatalog(version:"fixture", categories:[EmojiCategory(id:"fixture",name:"Fixture",emoji:entries.map { Emoji(value:$0.0,name:$0.1,version:1,tones:nil,keywords:$0.2) })]))
+}
+func jsonWrite(_ x:Any,_ path:String) throws { try JSONSerialization.data(withJSONObject:x, options:[.prettyPrinted,.sortedKeys,.fragmentsAllowed]).write(to:URL(fileURLWithPath:path)) }

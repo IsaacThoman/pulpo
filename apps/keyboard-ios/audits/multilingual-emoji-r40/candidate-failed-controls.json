@@ -1,0 +1,483 @@
+{
+  "status": "REJECT; no oracle retune",
+  "failedIDs": [
+    "r40-ranking-0",
+    "r40-ranking-1",
+    "r40-ranking-2"
+  ],
+  "requiredRows": 569,
+  "passedRows": 566,
+  "unavailableRows": 0,
+  "requiredChecks": [
+    {
+      "id": "r40-ranking-0",
+      "required": true,
+      "checked": true,
+      "available": true,
+      "checks": [
+        "schema-oracles",
+        "legacy-values-prefix",
+        "legacy-baseValues-prefix",
+        "exact-localized-suffix"
+      ],
+      "pass": false,
+      "errors": [
+        "independent localized fixture oracle failed",
+        "independent localized baseValues suffix oracle failed"
+      ],
+      "baseline": {
+        "baseValues": [],
+        "id": "r40-ranking-0",
+        "query": "mavela romulo",
+        "values": []
+      },
+      "candidate": {
+        "available": true,
+        "pass": true,
+        "errors": [],
+        "values": [
+          "r40-rank-002",
+          "r40-rank-003",
+          "r40-rank-000",
+          "r40-rank-001"
+        ],
+        "baseValues": [
+          "r40-rank-002",
+          "r40-rank-003",
+          "r40-rank-000",
+          "r40-rank-001"
+        ],
+        "query": "mavela romulo",
+        "targetRanks": [
+          {
+            "target": "r40-rank-002",
+            "rank": 1
+          },
+          {
+            "target": "r40-rank-003",
+            "rank": 2
+          },
+          {
+            "target": "r40-rank-000",
+            "rank": 3
+          },
+          {
+            "target": "r40-rank-001",
+            "rank": 4
+          },
+          {
+            "target": "r40-rank-004",
+            "rank": null
+          }
+        ],
+        "bestTargetRank": 1,
+        "maxRank": 60,
+        "acceptedAlternatives": [
+          "r40-rank-002",
+          "r40-rank-003",
+          "r40-rank-000",
+          "r40-rank-001"
+        ],
+        "forbiddenHits": [],
+        "expectEmpty": false,
+        "emptySatisfied": false,
+        "equivalence": null
+      },
+      "expectedLocalizedSuffix": [
+        "r40-rank-002",
+        "r40-rank-003",
+        "r40-rank-000",
+        "r40-rank-001",
+        "r40-rank-004"
+      ],
+      "observedLocalizedSuffix": [
+        "r40-rank-002",
+        "r40-rank-003",
+        "r40-rank-000",
+        "r40-rank-001"
+      ]
+    },
+    {
+      "id": "r40-ranking-1",
+      "required": true,
+      "checked": true,
+      "available": true,
+      "checks": [
+        "schema-oracles",
+        "legacy-values-prefix",
+        "legacy-baseValues-prefix",
+        "exact-localized-suffix"
+      ],
+      "pass": false,
+      "errors": [
+        "independent localized fixture oracle failed",
+        "independent localized baseValues suffix oracle failed"
+      ],
+      "baseline": {
+        "baseValues": [],
+        "id": "r40-ranking-1",
+        "query": "romulo mavela",
+        "values": []
+      },
+      "candidate": {
+        "available": true,
+        "pass": true,
+        "errors": [],
+        "values": [
+          "r40-rank-002",
+          "r40-rank-003",
+          "r40-rank-000",
+          "r40-rank-001"
+        ],
+        "baseValues": [
+          "r40-rank-002",
+          "r40-rank-003",
+          "r40-rank-000",
+          "r40-rank-001"
+        ],
+        "query": "romulo mavela",
+        "targetRanks": [
+          {
+            "target": "r40-rank-002",
+            "rank": 1
+          },
+          {
+            "target": "r40-rank-003",
+            "rank": 2
+          },
+          {
+            "target": "r40-rank-000",
+            "rank": 3
+          },
+          {
+            "target": "r40-rank-001",
+            "rank": 4
+          },
+          {
+            "target": "r40-rank-004",
+            "rank": null
+          }
+        ],
+        "bestTargetRank": 1,
+        "maxRank": 60,
+        "acceptedAlternatives": [
+          "r40-rank-002",
+          "r40-rank-003",
+          "r40-rank-000",
+          "r40-rank-001"
+        ],
+        "forbiddenHits": [],
+        "expectEmpty": false,
+        "emptySatisfied": false,
+        "equivalence": null
+      },
+      "expectedLocalizedSuffix": [
+        "r40-rank-002",
+        "r40-rank-003",
+        "r40-rank-000",
+        "r40-rank-001",
+        "r40-rank-004"
+      ],
+      "observedLocalizedSuffix": [
+        "r40-rank-002",
+        "r40-rank-003",
+        "r40-rank-000",
+        "r40-rank-001"
+      ]
+    },
+    {
+      "id": "r40-ranking-2",
+      "required": true,
+      "checked": true,
+      "available": true,
+      "checks": [
+        "schema-oracles",
+        "legacy-values-prefix",
+        "legacy-baseValues-prefix",
+        "exact-localized-suffix"
+      ],
+      "pass": false,
+      "errors": [
+        "independent localized fixture oracle failed",
+        "independent localized baseValues suffix oracle failed"
+      ],
+      "baseline": {
+        "baseValues": [],
+        "id": "r40-ranking-2",
+        "query": "ROMULO MAVELA ROMULO",
+        "values": []
+      },
+      "candidate": {
+        "available": true,
+        "pass": true,
+        "errors": [],
+        "values": [
+          "r40-rank-002",
+          "r40-rank-003",
+          "r40-rank-000",
+          "r40-rank-001"
+        ],
+        "baseValues": [
+          "r40-rank-002",
+          "r40-rank-003",
+          "r40-rank-000",
+          "r40-rank-001"
+        ],
+        "query": "ROMULO MAVELA ROMULO",
+        "targetRanks": [
+          {
+            "target": "r40-rank-002",
+            "rank": 1
+          },
+          {
+            "target": "r40-rank-003",
+            "rank": 2
+          },
+          {
+            "target": "r40-rank-000",
+            "rank": 3
+          },
+          {
+            "target": "r40-rank-001",
+            "rank": 4
+          },
+          {
+            "target": "r40-rank-004",
+            "rank": null
+          }
+        ],
+        "bestTargetRank": 1,
+        "maxRank": 60,
+        "acceptedAlternatives": [
+          "r40-rank-002",
+          "r40-rank-003",
+          "r40-rank-000",
+          "r40-rank-001"
+        ],
+        "forbiddenHits": [],
+        "expectEmpty": false,
+        "emptySatisfied": false,
+        "equivalence": null
+      },
+      "expectedLocalizedSuffix": [
+        "r40-rank-002",
+        "r40-rank-003",
+        "r40-rank-000",
+        "r40-rank-001",
+        "r40-rank-004"
+      ],
+      "observedLocalizedSuffix": [
+        "r40-rank-002",
+        "r40-rank-003",
+        "r40-rank-000",
+        "r40-rank-001"
+      ]
+    }
+  ],
+  "inputs": [
+    {
+      "id": "r40-ranking-0",
+      "family": "exposed-capacity",
+      "action": "fixture",
+      "query": "mavela romulo",
+      "acceptable": [
+        "r40-rank-002",
+        "r40-rank-003",
+        "r40-rank-000",
+        "r40-rank-001",
+        "r40-rank-004"
+      ],
+      "maxRank": 60,
+      "role": "control",
+      "entries": [
+        {
+          "emoji": "r40-rank-000",
+          "name": "velvet lantern itemaa",
+          "keywords": []
+        },
+        {
+          "emoji": "r40-rank-001",
+          "name": "velvet lantern itemab",
+          "keywords": []
+        },
+        {
+          "emoji": "r40-rank-002",
+          "name": "velvet lantern itemac",
+          "keywords": []
+        },
+        {
+          "emoji": "r40-rank-003",
+          "name": "velvet lantern itemad",
+          "keywords": []
+        },
+        {
+          "emoji": "r40-rank-004",
+          "name": "velvet lantern itemae",
+          "keywords": []
+        }
+      ],
+      "spanishAliases": [
+        {
+          "emoji": "r40-rank-000",
+          "name": "mavela romulo extra"
+        },
+        {
+          "emoji": "r40-rank-001",
+          "name": "mavelar romulo"
+        },
+        {
+          "emoji": "r40-rank-002",
+          "name": "mavela romulo romulo"
+        },
+        {
+          "emoji": "r40-rank-003",
+          "name": "romulo mavela"
+        },
+        {
+          "emoji": "r40-rank-004",
+          "name": "mavelar romular"
+        }
+      ],
+      "preferred": {
+        "r40-rank-004": 2
+      },
+      "expectEmpty": false
+    },
+    {
+      "id": "r40-ranking-1",
+      "family": "exposed-capacity",
+      "action": "fixture",
+      "query": "romulo mavela",
+      "acceptable": [
+        "r40-rank-002",
+        "r40-rank-003",
+        "r40-rank-000",
+        "r40-rank-001",
+        "r40-rank-004"
+      ],
+      "maxRank": 60,
+      "role": "control",
+      "entries": [
+        {
+          "emoji": "r40-rank-000",
+          "name": "velvet lantern itemaa",
+          "keywords": []
+        },
+        {
+          "emoji": "r40-rank-001",
+          "name": "velvet lantern itemab",
+          "keywords": []
+        },
+        {
+          "emoji": "r40-rank-002",
+          "name": "velvet lantern itemac",
+          "keywords": []
+        },
+        {
+          "emoji": "r40-rank-003",
+          "name": "velvet lantern itemad",
+          "keywords": []
+        },
+        {
+          "emoji": "r40-rank-004",
+          "name": "velvet lantern itemae",
+          "keywords": []
+        }
+      ],
+      "spanishAliases": [
+        {
+          "emoji": "r40-rank-000",
+          "name": "mavela romulo extra"
+        },
+        {
+          "emoji": "r40-rank-001",
+          "name": "mavelar romulo"
+        },
+        {
+          "emoji": "r40-rank-002",
+          "name": "mavela romulo romulo"
+        },
+        {
+          "emoji": "r40-rank-003",
+          "name": "romulo mavela"
+        },
+        {
+          "emoji": "r40-rank-004",
+          "name": "mavelar romular"
+        }
+      ],
+      "preferred": {
+        "r40-rank-004": 2
+      },
+      "expectEmpty": false
+    },
+    {
+      "id": "r40-ranking-2",
+      "family": "exposed-capacity",
+      "action": "fixture",
+      "query": "ROMULO MAVELA ROMULO",
+      "acceptable": [
+        "r40-rank-002",
+        "r40-rank-003",
+        "r40-rank-000",
+        "r40-rank-001",
+        "r40-rank-004"
+      ],
+      "maxRank": 60,
+      "role": "control",
+      "entries": [
+        {
+          "emoji": "r40-rank-000",
+          "name": "velvet lantern itemaa",
+          "keywords": []
+        },
+        {
+          "emoji": "r40-rank-001",
+          "name": "velvet lantern itemab",
+          "keywords": []
+        },
+        {
+          "emoji": "r40-rank-002",
+          "name": "velvet lantern itemac",
+          "keywords": []
+        },
+        {
+          "emoji": "r40-rank-003",
+          "name": "velvet lantern itemad",
+          "keywords": []
+        },
+        {
+          "emoji": "r40-rank-004",
+          "name": "velvet lantern itemae",
+          "keywords": []
+        }
+      ],
+      "spanishAliases": [
+        {
+          "emoji": "r40-rank-000",
+          "name": "mavela romulo extra"
+        },
+        {
+          "emoji": "r40-rank-001",
+          "name": "mavelar romulo"
+        },
+        {
+          "emoji": "r40-rank-002",
+          "name": "mavela romulo romulo"
+        },
+        {
+          "emoji": "r40-rank-003",
+          "name": "romulo mavela"
+        },
+        {
+          "emoji": "r40-rank-004",
+          "name": "mavelar romular"
+        }
+      ],
+      "preferred": {
+        "r40-rank-004": 2
+      },
+      "expectEmpty": false
+    }
+  ]
+}

@@ -1,0 +1,4348 @@
+{
+  "candidateRun" : false,
+  "exactImplicationFailuresByFixture" : 4,
+  "policyCapFailures" : 12,
+  "rows" : [
+    {
+      "aliasEligible" : true,
+      "candidateRun" : false,
+      "cap" : 1,
+      "envelope" : [
+
+      ],
+      "envelopeComplete" : false,
+      "exactImplication" : false,
+      "exactWinner" : 0,
+      "fixture" : "trailing-space-query",
+      "foldedEntry" : "ൎ'",
+      "foldedName" : "ൎ'",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+        "E"
+      ],
+      "N" : [
+        "ൎ"
+      ],
+      "name" : "ൎ'",
+      "nameScalars" : [
+        "U+0D4E",
+        "U+0027"
+      ],
+      "policyCapHolds" : false,
+      "policyLocal" : [
+        "L"
+      ],
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "preferenceMap" : 0,
+      "query" : "ൎ' ",
+      "queryScalars" : [
+        "U+0D4E",
+        "U+0027",
+        "U+0020"
+      ],
+      "rawCharacterCount" : 2,
+      "T" : [
+        "ൎ"
+      ],
+      "W" : [
+        "ൎ "
+      ]
+    },
+    {
+      "aliasEligible" : true,
+      "candidateRun" : false,
+      "cap" : 1,
+      "envelope" : [
+
+      ],
+      "envelopeComplete" : false,
+      "exactImplication" : false,
+      "exactWinner" : 0,
+      "fixture" : "trailing-space-query",
+      "foldedEntry" : "ൎ'",
+      "foldedName" : "ൎ'",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+        "E"
+      ],
+      "N" : [
+        "ൎ"
+      ],
+      "name" : "ൎ'",
+      "nameScalars" : [
+        "U+0D4E",
+        "U+0027"
+      ],
+      "policyCapHolds" : false,
+      "policyLocal" : [
+        "L"
+      ],
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "preferenceMap" : 1,
+      "query" : "ൎ' ",
+      "queryScalars" : [
+        "U+0D4E",
+        "U+0027",
+        "U+0020"
+      ],
+      "rawCharacterCount" : 2,
+      "T" : [
+        "ൎ"
+      ],
+      "W" : [
+        "ൎ "
+      ]
+    },
+    {
+      "aliasEligible" : true,
+      "candidateRun" : false,
+      "cap" : 1,
+      "envelope" : [
+
+      ],
+      "envelopeComplete" : false,
+      "exactImplication" : false,
+      "exactWinner" : 0,
+      "fixture" : "trailing-space-query",
+      "foldedEntry" : "ൎ'",
+      "foldedName" : "ൎ'",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+        "E"
+      ],
+      "N" : [
+        "ൎ"
+      ],
+      "name" : "ൎ'",
+      "nameScalars" : [
+        "U+0D4E",
+        "U+0027"
+      ],
+      "policyCapHolds" : false,
+      "policyLocal" : [
+        "L"
+      ],
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "preferenceMap" : 2,
+      "query" : "ൎ' ",
+      "queryScalars" : [
+        "U+0D4E",
+        "U+0027",
+        "U+0020"
+      ],
+      "rawCharacterCount" : 2,
+      "T" : [
+        "ൎ"
+      ],
+      "W" : [
+        "ൎ "
+      ]
+    },
+    {
+      "aliasEligible" : true,
+      "candidateRun" : false,
+      "cap" : 48,
+      "envelope" : [
+
+      ],
+      "envelopeComplete" : false,
+      "exactImplication" : false,
+      "exactWinner" : 0,
+      "fixture" : "trailing-space-query",
+      "foldedEntry" : "ൎ'",
+      "foldedName" : "ൎ'",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+        "E"
+      ],
+      "N" : [
+        "ൎ"
+      ],
+      "name" : "ൎ'",
+      "nameScalars" : [
+        "U+0D4E",
+        "U+0027"
+      ],
+      "policyCapHolds" : true,
+      "policyLocal" : [
+        "L"
+      ],
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "preferenceMap" : 0,
+      "query" : "ൎ' ",
+      "queryScalars" : [
+        "U+0D4E",
+        "U+0027",
+        "U+0020"
+      ],
+      "rawCharacterCount" : 2,
+      "T" : [
+        "ൎ"
+      ],
+      "W" : [
+        "ൎ "
+      ]
+    },
+    {
+      "aliasEligible" : true,
+      "candidateRun" : false,
+      "cap" : 48,
+      "envelope" : [
+
+      ],
+      "envelopeComplete" : false,
+      "exactImplication" : false,
+      "exactWinner" : 0,
+      "fixture" : "trailing-space-query",
+      "foldedEntry" : "ൎ'",
+      "foldedName" : "ൎ'",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+        "E"
+      ],
+      "N" : [
+        "ൎ"
+      ],
+      "name" : "ൎ'",
+      "nameScalars" : [
+        "U+0D4E",
+        "U+0027"
+      ],
+      "policyCapHolds" : true,
+      "policyLocal" : [
+        "L"
+      ],
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "preferenceMap" : 1,
+      "query" : "ൎ' ",
+      "queryScalars" : [
+        "U+0D4E",
+        "U+0027",
+        "U+0020"
+      ],
+      "rawCharacterCount" : 2,
+      "T" : [
+        "ൎ"
+      ],
+      "W" : [
+        "ൎ "
+      ]
+    },
+    {
+      "aliasEligible" : true,
+      "candidateRun" : false,
+      "cap" : 48,
+      "envelope" : [
+
+      ],
+      "envelopeComplete" : false,
+      "exactImplication" : false,
+      "exactWinner" : 0,
+      "fixture" : "trailing-space-query",
+      "foldedEntry" : "ൎ'",
+      "foldedName" : "ൎ'",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+        "E"
+      ],
+      "N" : [
+        "ൎ"
+      ],
+      "name" : "ൎ'",
+      "nameScalars" : [
+        "U+0D4E",
+        "U+0027"
+      ],
+      "policyCapHolds" : true,
+      "policyLocal" : [
+        "L"
+      ],
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "preferenceMap" : 2,
+      "query" : "ൎ' ",
+      "queryScalars" : [
+        "U+0D4E",
+        "U+0027",
+        "U+0020"
+      ],
+      "rawCharacterCount" : 2,
+      "T" : [
+        "ൎ"
+      ],
+      "W" : [
+        "ൎ "
+      ]
+    },
+    {
+      "aliasEligible" : true,
+      "candidateRun" : false,
+      "cap" : 60,
+      "envelope" : [
+
+      ],
+      "envelopeComplete" : false,
+      "exactImplication" : false,
+      "exactWinner" : 0,
+      "fixture" : "trailing-space-query",
+      "foldedEntry" : "ൎ'",
+      "foldedName" : "ൎ'",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+        "E"
+      ],
+      "N" : [
+        "ൎ"
+      ],
+      "name" : "ൎ'",
+      "nameScalars" : [
+        "U+0D4E",
+        "U+0027"
+      ],
+      "policyCapHolds" : true,
+      "policyLocal" : [
+        "L"
+      ],
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "preferenceMap" : 0,
+      "query" : "ൎ' ",
+      "queryScalars" : [
+        "U+0D4E",
+        "U+0027",
+        "U+0020"
+      ],
+      "rawCharacterCount" : 2,
+      "T" : [
+        "ൎ"
+      ],
+      "W" : [
+        "ൎ "
+      ]
+    },
+    {
+      "aliasEligible" : true,
+      "candidateRun" : false,
+      "cap" : 60,
+      "envelope" : [
+
+      ],
+      "envelopeComplete" : false,
+      "exactImplication" : false,
+      "exactWinner" : 0,
+      "fixture" : "trailing-space-query",
+      "foldedEntry" : "ൎ'",
+      "foldedName" : "ൎ'",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+        "E"
+      ],
+      "N" : [
+        "ൎ"
+      ],
+      "name" : "ൎ'",
+      "nameScalars" : [
+        "U+0D4E",
+        "U+0027"
+      ],
+      "policyCapHolds" : true,
+      "policyLocal" : [
+        "L"
+      ],
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "preferenceMap" : 1,
+      "query" : "ൎ' ",
+      "queryScalars" : [
+        "U+0D4E",
+        "U+0027",
+        "U+0020"
+      ],
+      "rawCharacterCount" : 2,
+      "T" : [
+        "ൎ"
+      ],
+      "W" : [
+        "ൎ "
+      ]
+    },
+    {
+      "aliasEligible" : true,
+      "candidateRun" : false,
+      "cap" : 60,
+      "envelope" : [
+
+      ],
+      "envelopeComplete" : false,
+      "exactImplication" : false,
+      "exactWinner" : 0,
+      "fixture" : "trailing-space-query",
+      "foldedEntry" : "ൎ'",
+      "foldedName" : "ൎ'",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+        "E"
+      ],
+      "N" : [
+        "ൎ"
+      ],
+      "name" : "ൎ'",
+      "nameScalars" : [
+        "U+0D4E",
+        "U+0027"
+      ],
+      "policyCapHolds" : true,
+      "policyLocal" : [
+        "L"
+      ],
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "preferenceMap" : 2,
+      "query" : "ൎ' ",
+      "queryScalars" : [
+        "U+0D4E",
+        "U+0027",
+        "U+0020"
+      ],
+      "rawCharacterCount" : 2,
+      "T" : [
+        "ൎ"
+      ],
+      "W" : [
+        "ൎ "
+      ]
+    },
+    {
+      "aliasEligible" : true,
+      "candidateRun" : false,
+      "cap" : 1,
+      "envelope" : [
+
+      ],
+      "envelopeComplete" : false,
+      "exactImplication" : false,
+      "exactWinner" : 0,
+      "fixture" : "trailing-space-name",
+      "foldedEntry" : "ൎ'",
+      "foldedName" : "ൎ'",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+        "E"
+      ],
+      "N" : [
+        "ൎ "
+      ],
+      "name" : "ൎ' ",
+      "nameScalars" : [
+        "U+0D4E",
+        "U+0027",
+        "U+0020"
+      ],
+      "policyCapHolds" : false,
+      "policyLocal" : [
+        "L"
+      ],
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "preferenceMap" : 0,
+      "query" : "ൎ'",
+      "queryScalars" : [
+        "U+0D4E",
+        "U+0027"
+      ],
+      "rawCharacterCount" : 1,
+      "T" : [
+        "ൎ"
+      ],
+      "W" : [
+        "ൎ"
+      ]
+    },
+    {
+      "aliasEligible" : true,
+      "candidateRun" : false,
+      "cap" : 1,
+      "envelope" : [
+
+      ],
+      "envelopeComplete" : false,
+      "exactImplication" : false,
+      "exactWinner" : 0,
+      "fixture" : "trailing-space-name",
+      "foldedEntry" : "ൎ'",
+      "foldedName" : "ൎ'",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+        "E"
+      ],
+      "N" : [
+        "ൎ "
+      ],
+      "name" : "ൎ' ",
+      "nameScalars" : [
+        "U+0D4E",
+        "U+0027",
+        "U+0020"
+      ],
+      "policyCapHolds" : false,
+      "policyLocal" : [
+        "L"
+      ],
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "preferenceMap" : 1,
+      "query" : "ൎ'",
+      "queryScalars" : [
+        "U+0D4E",
+        "U+0027"
+      ],
+      "rawCharacterCount" : 1,
+      "T" : [
+        "ൎ"
+      ],
+      "W" : [
+        "ൎ"
+      ]
+    },
+    {
+      "aliasEligible" : true,
+      "candidateRun" : false,
+      "cap" : 1,
+      "envelope" : [
+
+      ],
+      "envelopeComplete" : false,
+      "exactImplication" : false,
+      "exactWinner" : 0,
+      "fixture" : "trailing-space-name",
+      "foldedEntry" : "ൎ'",
+      "foldedName" : "ൎ'",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+        "E"
+      ],
+      "N" : [
+        "ൎ "
+      ],
+      "name" : "ൎ' ",
+      "nameScalars" : [
+        "U+0D4E",
+        "U+0027",
+        "U+0020"
+      ],
+      "policyCapHolds" : false,
+      "policyLocal" : [
+        "L"
+      ],
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "preferenceMap" : 2,
+      "query" : "ൎ'",
+      "queryScalars" : [
+        "U+0D4E",
+        "U+0027"
+      ],
+      "rawCharacterCount" : 1,
+      "T" : [
+        "ൎ"
+      ],
+      "W" : [
+        "ൎ"
+      ]
+    },
+    {
+      "aliasEligible" : true,
+      "candidateRun" : false,
+      "cap" : 48,
+      "envelope" : [
+
+      ],
+      "envelopeComplete" : false,
+      "exactImplication" : false,
+      "exactWinner" : 0,
+      "fixture" : "trailing-space-name",
+      "foldedEntry" : "ൎ'",
+      "foldedName" : "ൎ'",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+        "E"
+      ],
+      "N" : [
+        "ൎ "
+      ],
+      "name" : "ൎ' ",
+      "nameScalars" : [
+        "U+0D4E",
+        "U+0027",
+        "U+0020"
+      ],
+      "policyCapHolds" : true,
+      "policyLocal" : [
+        "L"
+      ],
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "preferenceMap" : 0,
+      "query" : "ൎ'",
+      "queryScalars" : [
+        "U+0D4E",
+        "U+0027"
+      ],
+      "rawCharacterCount" : 1,
+      "T" : [
+        "ൎ"
+      ],
+      "W" : [
+        "ൎ"
+      ]
+    },
+    {
+      "aliasEligible" : true,
+      "candidateRun" : false,
+      "cap" : 48,
+      "envelope" : [
+
+      ],
+      "envelopeComplete" : false,
+      "exactImplication" : false,
+      "exactWinner" : 0,
+      "fixture" : "trailing-space-name",
+      "foldedEntry" : "ൎ'",
+      "foldedName" : "ൎ'",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+        "E"
+      ],
+      "N" : [
+        "ൎ "
+      ],
+      "name" : "ൎ' ",
+      "nameScalars" : [
+        "U+0D4E",
+        "U+0027",
+        "U+0020"
+      ],
+      "policyCapHolds" : true,
+      "policyLocal" : [
+        "L"
+      ],
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "preferenceMap" : 1,
+      "query" : "ൎ'",
+      "queryScalars" : [
+        "U+0D4E",
+        "U+0027"
+      ],
+      "rawCharacterCount" : 1,
+      "T" : [
+        "ൎ"
+      ],
+      "W" : [
+        "ൎ"
+      ]
+    },
+    {
+      "aliasEligible" : true,
+      "candidateRun" : false,
+      "cap" : 48,
+      "envelope" : [
+
+      ],
+      "envelopeComplete" : false,
+      "exactImplication" : false,
+      "exactWinner" : 0,
+      "fixture" : "trailing-space-name",
+      "foldedEntry" : "ൎ'",
+      "foldedName" : "ൎ'",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+        "E"
+      ],
+      "N" : [
+        "ൎ "
+      ],
+      "name" : "ൎ' ",
+      "nameScalars" : [
+        "U+0D4E",
+        "U+0027",
+        "U+0020"
+      ],
+      "policyCapHolds" : true,
+      "policyLocal" : [
+        "L"
+      ],
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "preferenceMap" : 2,
+      "query" : "ൎ'",
+      "queryScalars" : [
+        "U+0D4E",
+        "U+0027"
+      ],
+      "rawCharacterCount" : 1,
+      "T" : [
+        "ൎ"
+      ],
+      "W" : [
+        "ൎ"
+      ]
+    },
+    {
+      "aliasEligible" : true,
+      "candidateRun" : false,
+      "cap" : 60,
+      "envelope" : [
+
+      ],
+      "envelopeComplete" : false,
+      "exactImplication" : false,
+      "exactWinner" : 0,
+      "fixture" : "trailing-space-name",
+      "foldedEntry" : "ൎ'",
+      "foldedName" : "ൎ'",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+        "E"
+      ],
+      "N" : [
+        "ൎ "
+      ],
+      "name" : "ൎ' ",
+      "nameScalars" : [
+        "U+0D4E",
+        "U+0027",
+        "U+0020"
+      ],
+      "policyCapHolds" : true,
+      "policyLocal" : [
+        "L"
+      ],
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "preferenceMap" : 0,
+      "query" : "ൎ'",
+      "queryScalars" : [
+        "U+0D4E",
+        "U+0027"
+      ],
+      "rawCharacterCount" : 1,
+      "T" : [
+        "ൎ"
+      ],
+      "W" : [
+        "ൎ"
+      ]
+    },
+    {
+      "aliasEligible" : true,
+      "candidateRun" : false,
+      "cap" : 60,
+      "envelope" : [
+
+      ],
+      "envelopeComplete" : false,
+      "exactImplication" : false,
+      "exactWinner" : 0,
+      "fixture" : "trailing-space-name",
+      "foldedEntry" : "ൎ'",
+      "foldedName" : "ൎ'",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+        "E"
+      ],
+      "N" : [
+        "ൎ "
+      ],
+      "name" : "ൎ' ",
+      "nameScalars" : [
+        "U+0D4E",
+        "U+0027",
+        "U+0020"
+      ],
+      "policyCapHolds" : true,
+      "policyLocal" : [
+        "L"
+      ],
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "preferenceMap" : 1,
+      "query" : "ൎ'",
+      "queryScalars" : [
+        "U+0D4E",
+        "U+0027"
+      ],
+      "rawCharacterCount" : 1,
+      "T" : [
+        "ൎ"
+      ],
+      "W" : [
+        "ൎ"
+      ]
+    },
+    {
+      "aliasEligible" : true,
+      "candidateRun" : false,
+      "cap" : 60,
+      "envelope" : [
+
+      ],
+      "envelopeComplete" : false,
+      "exactImplication" : false,
+      "exactWinner" : 0,
+      "fixture" : "trailing-space-name",
+      "foldedEntry" : "ൎ'",
+      "foldedName" : "ൎ'",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+        "E"
+      ],
+      "N" : [
+        "ൎ "
+      ],
+      "name" : "ൎ' ",
+      "nameScalars" : [
+        "U+0D4E",
+        "U+0027",
+        "U+0020"
+      ],
+      "policyCapHolds" : true,
+      "policyLocal" : [
+        "L"
+      ],
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "preferenceMap" : 2,
+      "query" : "ൎ'",
+      "queryScalars" : [
+        "U+0D4E",
+        "U+0027"
+      ],
+      "rawCharacterCount" : 1,
+      "T" : [
+        "ൎ"
+      ],
+      "W" : [
+        "ൎ"
+      ]
+    },
+    {
+      "aliasEligible" : true,
+      "candidateRun" : false,
+      "cap" : 1,
+      "envelope" : [
+
+      ],
+      "envelopeComplete" : false,
+      "exactImplication" : false,
+      "exactWinner" : 0,
+      "fixture" : "curly-apostrophe",
+      "foldedEntry" : "ൎ’",
+      "foldedName" : "ൎ’",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+        "E"
+      ],
+      "N" : [
+        "ൎ"
+      ],
+      "name" : "ൎ’",
+      "nameScalars" : [
+        "U+0D4E",
+        "U+2019"
+      ],
+      "policyCapHolds" : false,
+      "policyLocal" : [
+        "L"
+      ],
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "preferenceMap" : 0,
+      "query" : "ൎ’ ",
+      "queryScalars" : [
+        "U+0D4E",
+        "U+2019",
+        "U+0020"
+      ],
+      "rawCharacterCount" : 2,
+      "T" : [
+        "ൎ"
+      ],
+      "W" : [
+        "ൎ "
+      ]
+    },
+    {
+      "aliasEligible" : true,
+      "candidateRun" : false,
+      "cap" : 1,
+      "envelope" : [
+
+      ],
+      "envelopeComplete" : false,
+      "exactImplication" : false,
+      "exactWinner" : 0,
+      "fixture" : "curly-apostrophe",
+      "foldedEntry" : "ൎ’",
+      "foldedName" : "ൎ’",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+        "E"
+      ],
+      "N" : [
+        "ൎ"
+      ],
+      "name" : "ൎ’",
+      "nameScalars" : [
+        "U+0D4E",
+        "U+2019"
+      ],
+      "policyCapHolds" : false,
+      "policyLocal" : [
+        "L"
+      ],
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "preferenceMap" : 1,
+      "query" : "ൎ’ ",
+      "queryScalars" : [
+        "U+0D4E",
+        "U+2019",
+        "U+0020"
+      ],
+      "rawCharacterCount" : 2,
+      "T" : [
+        "ൎ"
+      ],
+      "W" : [
+        "ൎ "
+      ]
+    },
+    {
+      "aliasEligible" : true,
+      "candidateRun" : false,
+      "cap" : 1,
+      "envelope" : [
+
+      ],
+      "envelopeComplete" : false,
+      "exactImplication" : false,
+      "exactWinner" : 0,
+      "fixture" : "curly-apostrophe",
+      "foldedEntry" : "ൎ’",
+      "foldedName" : "ൎ’",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+        "E"
+      ],
+      "N" : [
+        "ൎ"
+      ],
+      "name" : "ൎ’",
+      "nameScalars" : [
+        "U+0D4E",
+        "U+2019"
+      ],
+      "policyCapHolds" : false,
+      "policyLocal" : [
+        "L"
+      ],
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "preferenceMap" : 2,
+      "query" : "ൎ’ ",
+      "queryScalars" : [
+        "U+0D4E",
+        "U+2019",
+        "U+0020"
+      ],
+      "rawCharacterCount" : 2,
+      "T" : [
+        "ൎ"
+      ],
+      "W" : [
+        "ൎ "
+      ]
+    },
+    {
+      "aliasEligible" : true,
+      "candidateRun" : false,
+      "cap" : 48,
+      "envelope" : [
+
+      ],
+      "envelopeComplete" : false,
+      "exactImplication" : false,
+      "exactWinner" : 0,
+      "fixture" : "curly-apostrophe",
+      "foldedEntry" : "ൎ’",
+      "foldedName" : "ൎ’",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+        "E"
+      ],
+      "N" : [
+        "ൎ"
+      ],
+      "name" : "ൎ’",
+      "nameScalars" : [
+        "U+0D4E",
+        "U+2019"
+      ],
+      "policyCapHolds" : true,
+      "policyLocal" : [
+        "L"
+      ],
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "preferenceMap" : 0,
+      "query" : "ൎ’ ",
+      "queryScalars" : [
+        "U+0D4E",
+        "U+2019",
+        "U+0020"
+      ],
+      "rawCharacterCount" : 2,
+      "T" : [
+        "ൎ"
+      ],
+      "W" : [
+        "ൎ "
+      ]
+    },
+    {
+      "aliasEligible" : true,
+      "candidateRun" : false,
+      "cap" : 48,
+      "envelope" : [
+
+      ],
+      "envelopeComplete" : false,
+      "exactImplication" : false,
+      "exactWinner" : 0,
+      "fixture" : "curly-apostrophe",
+      "foldedEntry" : "ൎ’",
+      "foldedName" : "ൎ’",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+        "E"
+      ],
+      "N" : [
+        "ൎ"
+      ],
+      "name" : "ൎ’",
+      "nameScalars" : [
+        "U+0D4E",
+        "U+2019"
+      ],
+      "policyCapHolds" : true,
+      "policyLocal" : [
+        "L"
+      ],
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "preferenceMap" : 1,
+      "query" : "ൎ’ ",
+      "queryScalars" : [
+        "U+0D4E",
+        "U+2019",
+        "U+0020"
+      ],
+      "rawCharacterCount" : 2,
+      "T" : [
+        "ൎ"
+      ],
+      "W" : [
+        "ൎ "
+      ]
+    },
+    {
+      "aliasEligible" : true,
+      "candidateRun" : false,
+      "cap" : 48,
+      "envelope" : [
+
+      ],
+      "envelopeComplete" : false,
+      "exactImplication" : false,
+      "exactWinner" : 0,
+      "fixture" : "curly-apostrophe",
+      "foldedEntry" : "ൎ’",
+      "foldedName" : "ൎ’",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+        "E"
+      ],
+      "N" : [
+        "ൎ"
+      ],
+      "name" : "ൎ’",
+      "nameScalars" : [
+        "U+0D4E",
+        "U+2019"
+      ],
+      "policyCapHolds" : true,
+      "policyLocal" : [
+        "L"
+      ],
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "preferenceMap" : 2,
+      "query" : "ൎ’ ",
+      "queryScalars" : [
+        "U+0D4E",
+        "U+2019",
+        "U+0020"
+      ],
+      "rawCharacterCount" : 2,
+      "T" : [
+        "ൎ"
+      ],
+      "W" : [
+        "ൎ "
+      ]
+    },
+    {
+      "aliasEligible" : true,
+      "candidateRun" : false,
+      "cap" : 60,
+      "envelope" : [
+
+      ],
+      "envelopeComplete" : false,
+      "exactImplication" : false,
+      "exactWinner" : 0,
+      "fixture" : "curly-apostrophe",
+      "foldedEntry" : "ൎ’",
+      "foldedName" : "ൎ’",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+        "E"
+      ],
+      "N" : [
+        "ൎ"
+      ],
+      "name" : "ൎ’",
+      "nameScalars" : [
+        "U+0D4E",
+        "U+2019"
+      ],
+      "policyCapHolds" : true,
+      "policyLocal" : [
+        "L"
+      ],
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "preferenceMap" : 0,
+      "query" : "ൎ’ ",
+      "queryScalars" : [
+        "U+0D4E",
+        "U+2019",
+        "U+0020"
+      ],
+      "rawCharacterCount" : 2,
+      "T" : [
+        "ൎ"
+      ],
+      "W" : [
+        "ൎ "
+      ]
+    },
+    {
+      "aliasEligible" : true,
+      "candidateRun" : false,
+      "cap" : 60,
+      "envelope" : [
+
+      ],
+      "envelopeComplete" : false,
+      "exactImplication" : false,
+      "exactWinner" : 0,
+      "fixture" : "curly-apostrophe",
+      "foldedEntry" : "ൎ’",
+      "foldedName" : "ൎ’",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+        "E"
+      ],
+      "N" : [
+        "ൎ"
+      ],
+      "name" : "ൎ’",
+      "nameScalars" : [
+        "U+0D4E",
+        "U+2019"
+      ],
+      "policyCapHolds" : true,
+      "policyLocal" : [
+        "L"
+      ],
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "preferenceMap" : 1,
+      "query" : "ൎ’ ",
+      "queryScalars" : [
+        "U+0D4E",
+        "U+2019",
+        "U+0020"
+      ],
+      "rawCharacterCount" : 2,
+      "T" : [
+        "ൎ"
+      ],
+      "W" : [
+        "ൎ "
+      ]
+    },
+    {
+      "aliasEligible" : true,
+      "candidateRun" : false,
+      "cap" : 60,
+      "envelope" : [
+
+      ],
+      "envelopeComplete" : false,
+      "exactImplication" : false,
+      "exactWinner" : 0,
+      "fixture" : "curly-apostrophe",
+      "foldedEntry" : "ൎ’",
+      "foldedName" : "ൎ’",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+        "E"
+      ],
+      "N" : [
+        "ൎ"
+      ],
+      "name" : "ൎ’",
+      "nameScalars" : [
+        "U+0D4E",
+        "U+2019"
+      ],
+      "policyCapHolds" : true,
+      "policyLocal" : [
+        "L"
+      ],
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "preferenceMap" : 2,
+      "query" : "ൎ’ ",
+      "queryScalars" : [
+        "U+0D4E",
+        "U+2019",
+        "U+0020"
+      ],
+      "rawCharacterCount" : 2,
+      "T" : [
+        "ൎ"
+      ],
+      "W" : [
+        "ൎ "
+      ]
+    },
+    {
+      "aliasEligible" : true,
+      "candidateRun" : false,
+      "cap" : 1,
+      "envelope" : [
+
+      ],
+      "envelopeComplete" : false,
+      "exactImplication" : false,
+      "exactWinner" : 0,
+      "fixture" : "tab-query",
+      "foldedEntry" : "ൎ'",
+      "foldedName" : "ൎ'",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+        "E"
+      ],
+      "N" : [
+        "ൎ"
+      ],
+      "name" : "ൎ'",
+      "nameScalars" : [
+        "U+0D4E",
+        "U+0027"
+      ],
+      "policyCapHolds" : false,
+      "policyLocal" : [
+        "L"
+      ],
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "preferenceMap" : 0,
+      "query" : "ൎ'\t",
+      "queryScalars" : [
+        "U+0D4E",
+        "U+0027",
+        "U+0009"
+      ],
+      "rawCharacterCount" : 2,
+      "T" : [
+        "ൎ"
+      ],
+      "W" : [
+        "ൎ "
+      ]
+    },
+    {
+      "aliasEligible" : true,
+      "candidateRun" : false,
+      "cap" : 1,
+      "envelope" : [
+
+      ],
+      "envelopeComplete" : false,
+      "exactImplication" : false,
+      "exactWinner" : 0,
+      "fixture" : "tab-query",
+      "foldedEntry" : "ൎ'",
+      "foldedName" : "ൎ'",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+        "E"
+      ],
+      "N" : [
+        "ൎ"
+      ],
+      "name" : "ൎ'",
+      "nameScalars" : [
+        "U+0D4E",
+        "U+0027"
+      ],
+      "policyCapHolds" : false,
+      "policyLocal" : [
+        "L"
+      ],
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "preferenceMap" : 1,
+      "query" : "ൎ'\t",
+      "queryScalars" : [
+        "U+0D4E",
+        "U+0027",
+        "U+0009"
+      ],
+      "rawCharacterCount" : 2,
+      "T" : [
+        "ൎ"
+      ],
+      "W" : [
+        "ൎ "
+      ]
+    },
+    {
+      "aliasEligible" : true,
+      "candidateRun" : false,
+      "cap" : 1,
+      "envelope" : [
+
+      ],
+      "envelopeComplete" : false,
+      "exactImplication" : false,
+      "exactWinner" : 0,
+      "fixture" : "tab-query",
+      "foldedEntry" : "ൎ'",
+      "foldedName" : "ൎ'",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+        "E"
+      ],
+      "N" : [
+        "ൎ"
+      ],
+      "name" : "ൎ'",
+      "nameScalars" : [
+        "U+0D4E",
+        "U+0027"
+      ],
+      "policyCapHolds" : false,
+      "policyLocal" : [
+        "L"
+      ],
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "preferenceMap" : 2,
+      "query" : "ൎ'\t",
+      "queryScalars" : [
+        "U+0D4E",
+        "U+0027",
+        "U+0009"
+      ],
+      "rawCharacterCount" : 2,
+      "T" : [
+        "ൎ"
+      ],
+      "W" : [
+        "ൎ "
+      ]
+    },
+    {
+      "aliasEligible" : true,
+      "candidateRun" : false,
+      "cap" : 48,
+      "envelope" : [
+
+      ],
+      "envelopeComplete" : false,
+      "exactImplication" : false,
+      "exactWinner" : 0,
+      "fixture" : "tab-query",
+      "foldedEntry" : "ൎ'",
+      "foldedName" : "ൎ'",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+        "E"
+      ],
+      "N" : [
+        "ൎ"
+      ],
+      "name" : "ൎ'",
+      "nameScalars" : [
+        "U+0D4E",
+        "U+0027"
+      ],
+      "policyCapHolds" : true,
+      "policyLocal" : [
+        "L"
+      ],
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "preferenceMap" : 0,
+      "query" : "ൎ'\t",
+      "queryScalars" : [
+        "U+0D4E",
+        "U+0027",
+        "U+0009"
+      ],
+      "rawCharacterCount" : 2,
+      "T" : [
+        "ൎ"
+      ],
+      "W" : [
+        "ൎ "
+      ]
+    },
+    {
+      "aliasEligible" : true,
+      "candidateRun" : false,
+      "cap" : 48,
+      "envelope" : [
+
+      ],
+      "envelopeComplete" : false,
+      "exactImplication" : false,
+      "exactWinner" : 0,
+      "fixture" : "tab-query",
+      "foldedEntry" : "ൎ'",
+      "foldedName" : "ൎ'",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+        "E"
+      ],
+      "N" : [
+        "ൎ"
+      ],
+      "name" : "ൎ'",
+      "nameScalars" : [
+        "U+0D4E",
+        "U+0027"
+      ],
+      "policyCapHolds" : true,
+      "policyLocal" : [
+        "L"
+      ],
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "preferenceMap" : 1,
+      "query" : "ൎ'\t",
+      "queryScalars" : [
+        "U+0D4E",
+        "U+0027",
+        "U+0009"
+      ],
+      "rawCharacterCount" : 2,
+      "T" : [
+        "ൎ"
+      ],
+      "W" : [
+        "ൎ "
+      ]
+    },
+    {
+      "aliasEligible" : true,
+      "candidateRun" : false,
+      "cap" : 48,
+      "envelope" : [
+
+      ],
+      "envelopeComplete" : false,
+      "exactImplication" : false,
+      "exactWinner" : 0,
+      "fixture" : "tab-query",
+      "foldedEntry" : "ൎ'",
+      "foldedName" : "ൎ'",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+        "E"
+      ],
+      "N" : [
+        "ൎ"
+      ],
+      "name" : "ൎ'",
+      "nameScalars" : [
+        "U+0D4E",
+        "U+0027"
+      ],
+      "policyCapHolds" : true,
+      "policyLocal" : [
+        "L"
+      ],
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "preferenceMap" : 2,
+      "query" : "ൎ'\t",
+      "queryScalars" : [
+        "U+0D4E",
+        "U+0027",
+        "U+0009"
+      ],
+      "rawCharacterCount" : 2,
+      "T" : [
+        "ൎ"
+      ],
+      "W" : [
+        "ൎ "
+      ]
+    },
+    {
+      "aliasEligible" : true,
+      "candidateRun" : false,
+      "cap" : 60,
+      "envelope" : [
+
+      ],
+      "envelopeComplete" : false,
+      "exactImplication" : false,
+      "exactWinner" : 0,
+      "fixture" : "tab-query",
+      "foldedEntry" : "ൎ'",
+      "foldedName" : "ൎ'",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+        "E"
+      ],
+      "N" : [
+        "ൎ"
+      ],
+      "name" : "ൎ'",
+      "nameScalars" : [
+        "U+0D4E",
+        "U+0027"
+      ],
+      "policyCapHolds" : true,
+      "policyLocal" : [
+        "L"
+      ],
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "preferenceMap" : 0,
+      "query" : "ൎ'\t",
+      "queryScalars" : [
+        "U+0D4E",
+        "U+0027",
+        "U+0009"
+      ],
+      "rawCharacterCount" : 2,
+      "T" : [
+        "ൎ"
+      ],
+      "W" : [
+        "ൎ "
+      ]
+    },
+    {
+      "aliasEligible" : true,
+      "candidateRun" : false,
+      "cap" : 60,
+      "envelope" : [
+
+      ],
+      "envelopeComplete" : false,
+      "exactImplication" : false,
+      "exactWinner" : 0,
+      "fixture" : "tab-query",
+      "foldedEntry" : "ൎ'",
+      "foldedName" : "ൎ'",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+        "E"
+      ],
+      "N" : [
+        "ൎ"
+      ],
+      "name" : "ൎ'",
+      "nameScalars" : [
+        "U+0D4E",
+        "U+0027"
+      ],
+      "policyCapHolds" : true,
+      "policyLocal" : [
+        "L"
+      ],
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "preferenceMap" : 1,
+      "query" : "ൎ'\t",
+      "queryScalars" : [
+        "U+0D4E",
+        "U+0027",
+        "U+0009"
+      ],
+      "rawCharacterCount" : 2,
+      "T" : [
+        "ൎ"
+      ],
+      "W" : [
+        "ൎ "
+      ]
+    },
+    {
+      "aliasEligible" : true,
+      "candidateRun" : false,
+      "cap" : 60,
+      "envelope" : [
+
+      ],
+      "envelopeComplete" : false,
+      "exactImplication" : false,
+      "exactWinner" : 0,
+      "fixture" : "tab-query",
+      "foldedEntry" : "ൎ'",
+      "foldedName" : "ൎ'",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+        "E"
+      ],
+      "N" : [
+        "ൎ"
+      ],
+      "name" : "ൎ'",
+      "nameScalars" : [
+        "U+0D4E",
+        "U+0027"
+      ],
+      "policyCapHolds" : true,
+      "policyLocal" : [
+        "L"
+      ],
+      "policyMerged" : [
+        "E",
+        "L"
+      ],
+      "preferenceMap" : 2,
+      "query" : "ൎ'\t",
+      "queryScalars" : [
+        "U+0D4E",
+        "U+0027",
+        "U+0009"
+      ],
+      "rawCharacterCount" : 2,
+      "T" : [
+        "ൎ"
+      ],
+      "W" : [
+        "ൎ "
+      ]
+    },
+    {
+      "aliasEligible" : false,
+      "candidateRun" : false,
+      "cap" : 1,
+      "envelope" : [
+
+      ],
+      "envelopeComplete" : true,
+      "exactImplication" : true,
+      "exactWinner" : null,
+      "fixture" : "real-word-alias",
+      "foldedEntry" : "ൎ'",
+      "foldedName" : "ൎ' corazon",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+
+      ],
+      "N" : [
+        "ൎ"
+      ],
+      "name" : "ൎ'",
+      "nameScalars" : [
+        "U+0D4E",
+        "U+0027"
+      ],
+      "policyCapHolds" : true,
+      "policyLocal" : [
+
+      ],
+      "policyMerged" : [
+
+      ],
+      "preferenceMap" : 0,
+      "query" : "ൎ' corazon",
+      "queryScalars" : [
+        "U+0D4E",
+        "U+0027",
+        "U+0020",
+        "U+0063",
+        "U+006F",
+        "U+0072",
+        "U+0061",
+        "U+007A",
+        "U+006F",
+        "U+006E"
+      ],
+      "rawCharacterCount" : 9,
+      "T" : [
+        "corazon",
+        "ൎ"
+      ],
+      "W" : [
+        "ൎ corazon"
+      ]
+    },
+    {
+      "aliasEligible" : false,
+      "candidateRun" : false,
+      "cap" : 1,
+      "envelope" : [
+
+      ],
+      "envelopeComplete" : true,
+      "exactImplication" : true,
+      "exactWinner" : null,
+      "fixture" : "real-word-alias",
+      "foldedEntry" : "ൎ'",
+      "foldedName" : "ൎ' corazon",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+
+      ],
+      "N" : [
+        "ൎ"
+      ],
+      "name" : "ൎ'",
+      "nameScalars" : [
+        "U+0D4E",
+        "U+0027"
+      ],
+      "policyCapHolds" : true,
+      "policyLocal" : [
+
+      ],
+      "policyMerged" : [
+
+      ],
+      "preferenceMap" : 1,
+      "query" : "ൎ' corazon",
+      "queryScalars" : [
+        "U+0D4E",
+        "U+0027",
+        "U+0020",
+        "U+0063",
+        "U+006F",
+        "U+0072",
+        "U+0061",
+        "U+007A",
+        "U+006F",
+        "U+006E"
+      ],
+      "rawCharacterCount" : 9,
+      "T" : [
+        "corazon",
+        "ൎ"
+      ],
+      "W" : [
+        "ൎ corazon"
+      ]
+    },
+    {
+      "aliasEligible" : false,
+      "candidateRun" : false,
+      "cap" : 1,
+      "envelope" : [
+
+      ],
+      "envelopeComplete" : true,
+      "exactImplication" : true,
+      "exactWinner" : null,
+      "fixture" : "real-word-alias",
+      "foldedEntry" : "ൎ'",
+      "foldedName" : "ൎ' corazon",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+
+      ],
+      "N" : [
+        "ൎ"
+      ],
+      "name" : "ൎ'",
+      "nameScalars" : [
+        "U+0D4E",
+        "U+0027"
+      ],
+      "policyCapHolds" : true,
+      "policyLocal" : [
+
+      ],
+      "policyMerged" : [
+
+      ],
+      "preferenceMap" : 2,
+      "query" : "ൎ' corazon",
+      "queryScalars" : [
+        "U+0D4E",
+        "U+0027",
+        "U+0020",
+        "U+0063",
+        "U+006F",
+        "U+0072",
+        "U+0061",
+        "U+007A",
+        "U+006F",
+        "U+006E"
+      ],
+      "rawCharacterCount" : 9,
+      "T" : [
+        "corazon",
+        "ൎ"
+      ],
+      "W" : [
+        "ൎ corazon"
+      ]
+    },
+    {
+      "aliasEligible" : false,
+      "candidateRun" : false,
+      "cap" : 48,
+      "envelope" : [
+
+      ],
+      "envelopeComplete" : true,
+      "exactImplication" : true,
+      "exactWinner" : null,
+      "fixture" : "real-word-alias",
+      "foldedEntry" : "ൎ'",
+      "foldedName" : "ൎ' corazon",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+
+      ],
+      "N" : [
+        "ൎ"
+      ],
+      "name" : "ൎ'",
+      "nameScalars" : [
+        "U+0D4E",
+        "U+0027"
+      ],
+      "policyCapHolds" : true,
+      "policyLocal" : [
+
+      ],
+      "policyMerged" : [
+
+      ],
+      "preferenceMap" : 0,
+      "query" : "ൎ' corazon",
+      "queryScalars" : [
+        "U+0D4E",
+        "U+0027",
+        "U+0020",
+        "U+0063",
+        "U+006F",
+        "U+0072",
+        "U+0061",
+        "U+007A",
+        "U+006F",
+        "U+006E"
+      ],
+      "rawCharacterCount" : 9,
+      "T" : [
+        "corazon",
+        "ൎ"
+      ],
+      "W" : [
+        "ൎ corazon"
+      ]
+    },
+    {
+      "aliasEligible" : false,
+      "candidateRun" : false,
+      "cap" : 48,
+      "envelope" : [
+
+      ],
+      "envelopeComplete" : true,
+      "exactImplication" : true,
+      "exactWinner" : null,
+      "fixture" : "real-word-alias",
+      "foldedEntry" : "ൎ'",
+      "foldedName" : "ൎ' corazon",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+
+      ],
+      "N" : [
+        "ൎ"
+      ],
+      "name" : "ൎ'",
+      "nameScalars" : [
+        "U+0D4E",
+        "U+0027"
+      ],
+      "policyCapHolds" : true,
+      "policyLocal" : [
+
+      ],
+      "policyMerged" : [
+
+      ],
+      "preferenceMap" : 1,
+      "query" : "ൎ' corazon",
+      "queryScalars" : [
+        "U+0D4E",
+        "U+0027",
+        "U+0020",
+        "U+0063",
+        "U+006F",
+        "U+0072",
+        "U+0061",
+        "U+007A",
+        "U+006F",
+        "U+006E"
+      ],
+      "rawCharacterCount" : 9,
+      "T" : [
+        "corazon",
+        "ൎ"
+      ],
+      "W" : [
+        "ൎ corazon"
+      ]
+    },
+    {
+      "aliasEligible" : false,
+      "candidateRun" : false,
+      "cap" : 48,
+      "envelope" : [
+
+      ],
+      "envelopeComplete" : true,
+      "exactImplication" : true,
+      "exactWinner" : null,
+      "fixture" : "real-word-alias",
+      "foldedEntry" : "ൎ'",
+      "foldedName" : "ൎ' corazon",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+
+      ],
+      "N" : [
+        "ൎ"
+      ],
+      "name" : "ൎ'",
+      "nameScalars" : [
+        "U+0D4E",
+        "U+0027"
+      ],
+      "policyCapHolds" : true,
+      "policyLocal" : [
+
+      ],
+      "policyMerged" : [
+
+      ],
+      "preferenceMap" : 2,
+      "query" : "ൎ' corazon",
+      "queryScalars" : [
+        "U+0D4E",
+        "U+0027",
+        "U+0020",
+        "U+0063",
+        "U+006F",
+        "U+0072",
+        "U+0061",
+        "U+007A",
+        "U+006F",
+        "U+006E"
+      ],
+      "rawCharacterCount" : 9,
+      "T" : [
+        "corazon",
+        "ൎ"
+      ],
+      "W" : [
+        "ൎ corazon"
+      ]
+    },
+    {
+      "aliasEligible" : false,
+      "candidateRun" : false,
+      "cap" : 60,
+      "envelope" : [
+
+      ],
+      "envelopeComplete" : true,
+      "exactImplication" : true,
+      "exactWinner" : null,
+      "fixture" : "real-word-alias",
+      "foldedEntry" : "ൎ'",
+      "foldedName" : "ൎ' corazon",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+
+      ],
+      "N" : [
+        "ൎ"
+      ],
+      "name" : "ൎ'",
+      "nameScalars" : [
+        "U+0D4E",
+        "U+0027"
+      ],
+      "policyCapHolds" : true,
+      "policyLocal" : [
+
+      ],
+      "policyMerged" : [
+
+      ],
+      "preferenceMap" : 0,
+      "query" : "ൎ' corazon",
+      "queryScalars" : [
+        "U+0D4E",
+        "U+0027",
+        "U+0020",
+        "U+0063",
+        "U+006F",
+        "U+0072",
+        "U+0061",
+        "U+007A",
+        "U+006F",
+        "U+006E"
+      ],
+      "rawCharacterCount" : 9,
+      "T" : [
+        "corazon",
+        "ൎ"
+      ],
+      "W" : [
+        "ൎ corazon"
+      ]
+    },
+    {
+      "aliasEligible" : false,
+      "candidateRun" : false,
+      "cap" : 60,
+      "envelope" : [
+
+      ],
+      "envelopeComplete" : true,
+      "exactImplication" : true,
+      "exactWinner" : null,
+      "fixture" : "real-word-alias",
+      "foldedEntry" : "ൎ'",
+      "foldedName" : "ൎ' corazon",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+
+      ],
+      "N" : [
+        "ൎ"
+      ],
+      "name" : "ൎ'",
+      "nameScalars" : [
+        "U+0D4E",
+        "U+0027"
+      ],
+      "policyCapHolds" : true,
+      "policyLocal" : [
+
+      ],
+      "policyMerged" : [
+
+      ],
+      "preferenceMap" : 1,
+      "query" : "ൎ' corazon",
+      "queryScalars" : [
+        "U+0D4E",
+        "U+0027",
+        "U+0020",
+        "U+0063",
+        "U+006F",
+        "U+0072",
+        "U+0061",
+        "U+007A",
+        "U+006F",
+        "U+006E"
+      ],
+      "rawCharacterCount" : 9,
+      "T" : [
+        "corazon",
+        "ൎ"
+      ],
+      "W" : [
+        "ൎ corazon"
+      ]
+    },
+    {
+      "aliasEligible" : false,
+      "candidateRun" : false,
+      "cap" : 60,
+      "envelope" : [
+
+      ],
+      "envelopeComplete" : true,
+      "exactImplication" : true,
+      "exactWinner" : null,
+      "fixture" : "real-word-alias",
+      "foldedEntry" : "ൎ'",
+      "foldedName" : "ൎ' corazon",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+
+      ],
+      "N" : [
+        "ൎ"
+      ],
+      "name" : "ൎ'",
+      "nameScalars" : [
+        "U+0D4E",
+        "U+0027"
+      ],
+      "policyCapHolds" : true,
+      "policyLocal" : [
+
+      ],
+      "policyMerged" : [
+
+      ],
+      "preferenceMap" : 2,
+      "query" : "ൎ' corazon",
+      "queryScalars" : [
+        "U+0D4E",
+        "U+0027",
+        "U+0020",
+        "U+0063",
+        "U+006F",
+        "U+0072",
+        "U+0061",
+        "U+007A",
+        "U+006F",
+        "U+006E"
+      ],
+      "rawCharacterCount" : 9,
+      "T" : [
+        "corazon",
+        "ൎ"
+      ],
+      "W" : [
+        "ൎ corazon"
+      ]
+    },
+    {
+      "aliasEligible" : false,
+      "candidateRun" : false,
+      "cap" : 1,
+      "envelope" : [
+        0
+      ],
+      "envelopeComplete" : true,
+      "exactImplication" : true,
+      "exactWinner" : 0,
+      "fixture" : "positive-plain",
+      "foldedEntry" : "bar",
+      "foldedName" : "bar",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+          "bar"
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+        "E"
+      ],
+      "N" : [
+        "bar"
+      ],
+      "name" : "bar",
+      "nameScalars" : [
+        "U+0062",
+        "U+0061",
+        "U+0072"
+      ],
+      "policyCapHolds" : true,
+      "policyLocal" : [
+
+      ],
+      "policyMerged" : [
+        "E"
+      ],
+      "preferenceMap" : 0,
+      "query" : "bar",
+      "queryScalars" : [
+        "U+0062",
+        "U+0061",
+        "U+0072"
+      ],
+      "rawCharacterCount" : 3,
+      "T" : [
+        "bar"
+      ],
+      "W" : [
+        "bar"
+      ]
+    },
+    {
+      "aliasEligible" : false,
+      "candidateRun" : false,
+      "cap" : 1,
+      "envelope" : [
+        0
+      ],
+      "envelopeComplete" : true,
+      "exactImplication" : true,
+      "exactWinner" : 0,
+      "fixture" : "positive-plain",
+      "foldedEntry" : "bar",
+      "foldedName" : "bar",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+          "bar"
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+        "E"
+      ],
+      "N" : [
+        "bar"
+      ],
+      "name" : "bar",
+      "nameScalars" : [
+        "U+0062",
+        "U+0061",
+        "U+0072"
+      ],
+      "policyCapHolds" : true,
+      "policyLocal" : [
+
+      ],
+      "policyMerged" : [
+        "E"
+      ],
+      "preferenceMap" : 1,
+      "query" : "bar",
+      "queryScalars" : [
+        "U+0062",
+        "U+0061",
+        "U+0072"
+      ],
+      "rawCharacterCount" : 3,
+      "T" : [
+        "bar"
+      ],
+      "W" : [
+        "bar"
+      ]
+    },
+    {
+      "aliasEligible" : false,
+      "candidateRun" : false,
+      "cap" : 1,
+      "envelope" : [
+        0
+      ],
+      "envelopeComplete" : true,
+      "exactImplication" : true,
+      "exactWinner" : 0,
+      "fixture" : "positive-plain",
+      "foldedEntry" : "bar",
+      "foldedName" : "bar",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+          "bar"
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+        "E"
+      ],
+      "N" : [
+        "bar"
+      ],
+      "name" : "bar",
+      "nameScalars" : [
+        "U+0062",
+        "U+0061",
+        "U+0072"
+      ],
+      "policyCapHolds" : true,
+      "policyLocal" : [
+
+      ],
+      "policyMerged" : [
+        "E"
+      ],
+      "preferenceMap" : 2,
+      "query" : "bar",
+      "queryScalars" : [
+        "U+0062",
+        "U+0061",
+        "U+0072"
+      ],
+      "rawCharacterCount" : 3,
+      "T" : [
+        "bar"
+      ],
+      "W" : [
+        "bar"
+      ]
+    },
+    {
+      "aliasEligible" : false,
+      "candidateRun" : false,
+      "cap" : 48,
+      "envelope" : [
+        0
+      ],
+      "envelopeComplete" : true,
+      "exactImplication" : true,
+      "exactWinner" : 0,
+      "fixture" : "positive-plain",
+      "foldedEntry" : "bar",
+      "foldedName" : "bar",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+          "bar"
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+        "E"
+      ],
+      "N" : [
+        "bar"
+      ],
+      "name" : "bar",
+      "nameScalars" : [
+        "U+0062",
+        "U+0061",
+        "U+0072"
+      ],
+      "policyCapHolds" : true,
+      "policyLocal" : [
+
+      ],
+      "policyMerged" : [
+        "E"
+      ],
+      "preferenceMap" : 0,
+      "query" : "bar",
+      "queryScalars" : [
+        "U+0062",
+        "U+0061",
+        "U+0072"
+      ],
+      "rawCharacterCount" : 3,
+      "T" : [
+        "bar"
+      ],
+      "W" : [
+        "bar"
+      ]
+    },
+    {
+      "aliasEligible" : false,
+      "candidateRun" : false,
+      "cap" : 48,
+      "envelope" : [
+        0
+      ],
+      "envelopeComplete" : true,
+      "exactImplication" : true,
+      "exactWinner" : 0,
+      "fixture" : "positive-plain",
+      "foldedEntry" : "bar",
+      "foldedName" : "bar",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+          "bar"
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+        "E"
+      ],
+      "N" : [
+        "bar"
+      ],
+      "name" : "bar",
+      "nameScalars" : [
+        "U+0062",
+        "U+0061",
+        "U+0072"
+      ],
+      "policyCapHolds" : true,
+      "policyLocal" : [
+
+      ],
+      "policyMerged" : [
+        "E"
+      ],
+      "preferenceMap" : 1,
+      "query" : "bar",
+      "queryScalars" : [
+        "U+0062",
+        "U+0061",
+        "U+0072"
+      ],
+      "rawCharacterCount" : 3,
+      "T" : [
+        "bar"
+      ],
+      "W" : [
+        "bar"
+      ]
+    },
+    {
+      "aliasEligible" : false,
+      "candidateRun" : false,
+      "cap" : 48,
+      "envelope" : [
+        0
+      ],
+      "envelopeComplete" : true,
+      "exactImplication" : true,
+      "exactWinner" : 0,
+      "fixture" : "positive-plain",
+      "foldedEntry" : "bar",
+      "foldedName" : "bar",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+          "bar"
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+        "E"
+      ],
+      "N" : [
+        "bar"
+      ],
+      "name" : "bar",
+      "nameScalars" : [
+        "U+0062",
+        "U+0061",
+        "U+0072"
+      ],
+      "policyCapHolds" : true,
+      "policyLocal" : [
+
+      ],
+      "policyMerged" : [
+        "E"
+      ],
+      "preferenceMap" : 2,
+      "query" : "bar",
+      "queryScalars" : [
+        "U+0062",
+        "U+0061",
+        "U+0072"
+      ],
+      "rawCharacterCount" : 3,
+      "T" : [
+        "bar"
+      ],
+      "W" : [
+        "bar"
+      ]
+    },
+    {
+      "aliasEligible" : false,
+      "candidateRun" : false,
+      "cap" : 60,
+      "envelope" : [
+        0
+      ],
+      "envelopeComplete" : true,
+      "exactImplication" : true,
+      "exactWinner" : 0,
+      "fixture" : "positive-plain",
+      "foldedEntry" : "bar",
+      "foldedName" : "bar",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+          "bar"
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+        "E"
+      ],
+      "N" : [
+        "bar"
+      ],
+      "name" : "bar",
+      "nameScalars" : [
+        "U+0062",
+        "U+0061",
+        "U+0072"
+      ],
+      "policyCapHolds" : true,
+      "policyLocal" : [
+
+      ],
+      "policyMerged" : [
+        "E"
+      ],
+      "preferenceMap" : 0,
+      "query" : "bar",
+      "queryScalars" : [
+        "U+0062",
+        "U+0061",
+        "U+0072"
+      ],
+      "rawCharacterCount" : 3,
+      "T" : [
+        "bar"
+      ],
+      "W" : [
+        "bar"
+      ]
+    },
+    {
+      "aliasEligible" : false,
+      "candidateRun" : false,
+      "cap" : 60,
+      "envelope" : [
+        0
+      ],
+      "envelopeComplete" : true,
+      "exactImplication" : true,
+      "exactWinner" : 0,
+      "fixture" : "positive-plain",
+      "foldedEntry" : "bar",
+      "foldedName" : "bar",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+          "bar"
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+        "E"
+      ],
+      "N" : [
+        "bar"
+      ],
+      "name" : "bar",
+      "nameScalars" : [
+        "U+0062",
+        "U+0061",
+        "U+0072"
+      ],
+      "policyCapHolds" : true,
+      "policyLocal" : [
+
+      ],
+      "policyMerged" : [
+        "E"
+      ],
+      "preferenceMap" : 1,
+      "query" : "bar",
+      "queryScalars" : [
+        "U+0062",
+        "U+0061",
+        "U+0072"
+      ],
+      "rawCharacterCount" : 3,
+      "T" : [
+        "bar"
+      ],
+      "W" : [
+        "bar"
+      ]
+    },
+    {
+      "aliasEligible" : false,
+      "candidateRun" : false,
+      "cap" : 60,
+      "envelope" : [
+        0
+      ],
+      "envelopeComplete" : true,
+      "exactImplication" : true,
+      "exactWinner" : 0,
+      "fixture" : "positive-plain",
+      "foldedEntry" : "bar",
+      "foldedName" : "bar",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+          "bar"
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+        "E"
+      ],
+      "N" : [
+        "bar"
+      ],
+      "name" : "bar",
+      "nameScalars" : [
+        "U+0062",
+        "U+0061",
+        "U+0072"
+      ],
+      "policyCapHolds" : true,
+      "policyLocal" : [
+
+      ],
+      "policyMerged" : [
+        "E"
+      ],
+      "preferenceMap" : 2,
+      "query" : "bar",
+      "queryScalars" : [
+        "U+0062",
+        "U+0061",
+        "U+0072"
+      ],
+      "rawCharacterCount" : 3,
+      "T" : [
+        "bar"
+      ],
+      "W" : [
+        "bar"
+      ]
+    },
+    {
+      "aliasEligible" : false,
+      "candidateRun" : false,
+      "cap" : 1,
+      "envelope" : [
+        0
+      ],
+      "envelopeComplete" : true,
+      "exactImplication" : true,
+      "exactWinner" : 0,
+      "fixture" : "positive-technical",
+      "foldedEntry" : "keycap: #",
+      "foldedName" : "keycap: #",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+          "keycap"
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+        "E"
+      ],
+      "N" : [
+        "keycap"
+      ],
+      "name" : "keycap: #",
+      "nameScalars" : [
+        "U+006B",
+        "U+0065",
+        "U+0079",
+        "U+0063",
+        "U+0061",
+        "U+0070",
+        "U+003A",
+        "U+0020",
+        "U+0023"
+      ],
+      "policyCapHolds" : true,
+      "policyLocal" : [
+
+      ],
+      "policyMerged" : [
+        "E"
+      ],
+      "preferenceMap" : 0,
+      "query" : "keycap: #",
+      "queryScalars" : [
+        "U+006B",
+        "U+0065",
+        "U+0079",
+        "U+0063",
+        "U+0061",
+        "U+0070",
+        "U+003A",
+        "U+0020",
+        "U+0023"
+      ],
+      "rawCharacterCount" : 9,
+      "T" : [
+        "keycap"
+      ],
+      "W" : [
+        "keycap"
+      ]
+    },
+    {
+      "aliasEligible" : false,
+      "candidateRun" : false,
+      "cap" : 1,
+      "envelope" : [
+        0
+      ],
+      "envelopeComplete" : true,
+      "exactImplication" : true,
+      "exactWinner" : 0,
+      "fixture" : "positive-technical",
+      "foldedEntry" : "keycap: #",
+      "foldedName" : "keycap: #",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+          "keycap"
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+        "E"
+      ],
+      "N" : [
+        "keycap"
+      ],
+      "name" : "keycap: #",
+      "nameScalars" : [
+        "U+006B",
+        "U+0065",
+        "U+0079",
+        "U+0063",
+        "U+0061",
+        "U+0070",
+        "U+003A",
+        "U+0020",
+        "U+0023"
+      ],
+      "policyCapHolds" : true,
+      "policyLocal" : [
+
+      ],
+      "policyMerged" : [
+        "E"
+      ],
+      "preferenceMap" : 1,
+      "query" : "keycap: #",
+      "queryScalars" : [
+        "U+006B",
+        "U+0065",
+        "U+0079",
+        "U+0063",
+        "U+0061",
+        "U+0070",
+        "U+003A",
+        "U+0020",
+        "U+0023"
+      ],
+      "rawCharacterCount" : 9,
+      "T" : [
+        "keycap"
+      ],
+      "W" : [
+        "keycap"
+      ]
+    },
+    {
+      "aliasEligible" : false,
+      "candidateRun" : false,
+      "cap" : 1,
+      "envelope" : [
+        0
+      ],
+      "envelopeComplete" : true,
+      "exactImplication" : true,
+      "exactWinner" : 0,
+      "fixture" : "positive-technical",
+      "foldedEntry" : "keycap: #",
+      "foldedName" : "keycap: #",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+          "keycap"
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+        "E"
+      ],
+      "N" : [
+        "keycap"
+      ],
+      "name" : "keycap: #",
+      "nameScalars" : [
+        "U+006B",
+        "U+0065",
+        "U+0079",
+        "U+0063",
+        "U+0061",
+        "U+0070",
+        "U+003A",
+        "U+0020",
+        "U+0023"
+      ],
+      "policyCapHolds" : true,
+      "policyLocal" : [
+
+      ],
+      "policyMerged" : [
+        "E"
+      ],
+      "preferenceMap" : 2,
+      "query" : "keycap: #",
+      "queryScalars" : [
+        "U+006B",
+        "U+0065",
+        "U+0079",
+        "U+0063",
+        "U+0061",
+        "U+0070",
+        "U+003A",
+        "U+0020",
+        "U+0023"
+      ],
+      "rawCharacterCount" : 9,
+      "T" : [
+        "keycap"
+      ],
+      "W" : [
+        "keycap"
+      ]
+    },
+    {
+      "aliasEligible" : false,
+      "candidateRun" : false,
+      "cap" : 48,
+      "envelope" : [
+        0
+      ],
+      "envelopeComplete" : true,
+      "exactImplication" : true,
+      "exactWinner" : 0,
+      "fixture" : "positive-technical",
+      "foldedEntry" : "keycap: #",
+      "foldedName" : "keycap: #",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+          "keycap"
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+        "E"
+      ],
+      "N" : [
+        "keycap"
+      ],
+      "name" : "keycap: #",
+      "nameScalars" : [
+        "U+006B",
+        "U+0065",
+        "U+0079",
+        "U+0063",
+        "U+0061",
+        "U+0070",
+        "U+003A",
+        "U+0020",
+        "U+0023"
+      ],
+      "policyCapHolds" : true,
+      "policyLocal" : [
+
+      ],
+      "policyMerged" : [
+        "E"
+      ],
+      "preferenceMap" : 0,
+      "query" : "keycap: #",
+      "queryScalars" : [
+        "U+006B",
+        "U+0065",
+        "U+0079",
+        "U+0063",
+        "U+0061",
+        "U+0070",
+        "U+003A",
+        "U+0020",
+        "U+0023"
+      ],
+      "rawCharacterCount" : 9,
+      "T" : [
+        "keycap"
+      ],
+      "W" : [
+        "keycap"
+      ]
+    },
+    {
+      "aliasEligible" : false,
+      "candidateRun" : false,
+      "cap" : 48,
+      "envelope" : [
+        0
+      ],
+      "envelopeComplete" : true,
+      "exactImplication" : true,
+      "exactWinner" : 0,
+      "fixture" : "positive-technical",
+      "foldedEntry" : "keycap: #",
+      "foldedName" : "keycap: #",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+          "keycap"
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+        "E"
+      ],
+      "N" : [
+        "keycap"
+      ],
+      "name" : "keycap: #",
+      "nameScalars" : [
+        "U+006B",
+        "U+0065",
+        "U+0079",
+        "U+0063",
+        "U+0061",
+        "U+0070",
+        "U+003A",
+        "U+0020",
+        "U+0023"
+      ],
+      "policyCapHolds" : true,
+      "policyLocal" : [
+
+      ],
+      "policyMerged" : [
+        "E"
+      ],
+      "preferenceMap" : 1,
+      "query" : "keycap: #",
+      "queryScalars" : [
+        "U+006B",
+        "U+0065",
+        "U+0079",
+        "U+0063",
+        "U+0061",
+        "U+0070",
+        "U+003A",
+        "U+0020",
+        "U+0023"
+      ],
+      "rawCharacterCount" : 9,
+      "T" : [
+        "keycap"
+      ],
+      "W" : [
+        "keycap"
+      ]
+    },
+    {
+      "aliasEligible" : false,
+      "candidateRun" : false,
+      "cap" : 48,
+      "envelope" : [
+        0
+      ],
+      "envelopeComplete" : true,
+      "exactImplication" : true,
+      "exactWinner" : 0,
+      "fixture" : "positive-technical",
+      "foldedEntry" : "keycap: #",
+      "foldedName" : "keycap: #",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+          "keycap"
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+        "E"
+      ],
+      "N" : [
+        "keycap"
+      ],
+      "name" : "keycap: #",
+      "nameScalars" : [
+        "U+006B",
+        "U+0065",
+        "U+0079",
+        "U+0063",
+        "U+0061",
+        "U+0070",
+        "U+003A",
+        "U+0020",
+        "U+0023"
+      ],
+      "policyCapHolds" : true,
+      "policyLocal" : [
+
+      ],
+      "policyMerged" : [
+        "E"
+      ],
+      "preferenceMap" : 2,
+      "query" : "keycap: #",
+      "queryScalars" : [
+        "U+006B",
+        "U+0065",
+        "U+0079",
+        "U+0063",
+        "U+0061",
+        "U+0070",
+        "U+003A",
+        "U+0020",
+        "U+0023"
+      ],
+      "rawCharacterCount" : 9,
+      "T" : [
+        "keycap"
+      ],
+      "W" : [
+        "keycap"
+      ]
+    },
+    {
+      "aliasEligible" : false,
+      "candidateRun" : false,
+      "cap" : 60,
+      "envelope" : [
+        0
+      ],
+      "envelopeComplete" : true,
+      "exactImplication" : true,
+      "exactWinner" : 0,
+      "fixture" : "positive-technical",
+      "foldedEntry" : "keycap: #",
+      "foldedName" : "keycap: #",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+          "keycap"
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+        "E"
+      ],
+      "N" : [
+        "keycap"
+      ],
+      "name" : "keycap: #",
+      "nameScalars" : [
+        "U+006B",
+        "U+0065",
+        "U+0079",
+        "U+0063",
+        "U+0061",
+        "U+0070",
+        "U+003A",
+        "U+0020",
+        "U+0023"
+      ],
+      "policyCapHolds" : true,
+      "policyLocal" : [
+
+      ],
+      "policyMerged" : [
+        "E"
+      ],
+      "preferenceMap" : 0,
+      "query" : "keycap: #",
+      "queryScalars" : [
+        "U+006B",
+        "U+0065",
+        "U+0079",
+        "U+0063",
+        "U+0061",
+        "U+0070",
+        "U+003A",
+        "U+0020",
+        "U+0023"
+      ],
+      "rawCharacterCount" : 9,
+      "T" : [
+        "keycap"
+      ],
+      "W" : [
+        "keycap"
+      ]
+    },
+    {
+      "aliasEligible" : false,
+      "candidateRun" : false,
+      "cap" : 60,
+      "envelope" : [
+        0
+      ],
+      "envelopeComplete" : true,
+      "exactImplication" : true,
+      "exactWinner" : 0,
+      "fixture" : "positive-technical",
+      "foldedEntry" : "keycap: #",
+      "foldedName" : "keycap: #",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+          "keycap"
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+        "E"
+      ],
+      "N" : [
+        "keycap"
+      ],
+      "name" : "keycap: #",
+      "nameScalars" : [
+        "U+006B",
+        "U+0065",
+        "U+0079",
+        "U+0063",
+        "U+0061",
+        "U+0070",
+        "U+003A",
+        "U+0020",
+        "U+0023"
+      ],
+      "policyCapHolds" : true,
+      "policyLocal" : [
+
+      ],
+      "policyMerged" : [
+        "E"
+      ],
+      "preferenceMap" : 1,
+      "query" : "keycap: #",
+      "queryScalars" : [
+        "U+006B",
+        "U+0065",
+        "U+0079",
+        "U+0063",
+        "U+0061",
+        "U+0070",
+        "U+003A",
+        "U+0020",
+        "U+0023"
+      ],
+      "rawCharacterCount" : 9,
+      "T" : [
+        "keycap"
+      ],
+      "W" : [
+        "keycap"
+      ]
+    },
+    {
+      "aliasEligible" : false,
+      "candidateRun" : false,
+      "cap" : 60,
+      "envelope" : [
+        0
+      ],
+      "envelopeComplete" : true,
+      "exactImplication" : true,
+      "exactWinner" : 0,
+      "fixture" : "positive-technical",
+      "foldedEntry" : "keycap: #",
+      "foldedName" : "keycap: #",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+          "keycap"
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+        "E"
+      ],
+      "N" : [
+        "keycap"
+      ],
+      "name" : "keycap: #",
+      "nameScalars" : [
+        "U+006B",
+        "U+0065",
+        "U+0079",
+        "U+0063",
+        "U+0061",
+        "U+0070",
+        "U+003A",
+        "U+0020",
+        "U+0023"
+      ],
+      "policyCapHolds" : true,
+      "policyLocal" : [
+
+      ],
+      "policyMerged" : [
+        "E"
+      ],
+      "preferenceMap" : 2,
+      "query" : "keycap: #",
+      "queryScalars" : [
+        "U+006B",
+        "U+0065",
+        "U+0079",
+        "U+0063",
+        "U+0061",
+        "U+0070",
+        "U+003A",
+        "U+0020",
+        "U+0023"
+      ],
+      "rawCharacterCount" : 9,
+      "T" : [
+        "keycap"
+      ],
+      "W" : [
+        "keycap"
+      ]
+    },
+    {
+      "aliasEligible" : false,
+      "candidateRun" : false,
+      "cap" : 1,
+      "envelope" : [
+        0
+      ],
+      "envelopeComplete" : true,
+      "exactImplication" : true,
+      "exactWinner" : null,
+      "fixture" : "positive-compact",
+      "foldedEntry" : "red heart",
+      "foldedName" : "redheart",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+          "heart",
+          "red",
+          "red heart",
+          "redheart"
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+        "E"
+      ],
+      "N" : [
+        "heart",
+        "red"
+      ],
+      "name" : "red heart",
+      "nameScalars" : [
+        "U+0072",
+        "U+0065",
+        "U+0064",
+        "U+0020",
+        "U+0068",
+        "U+0065",
+        "U+0061",
+        "U+0072",
+        "U+0074"
+      ],
+      "policyCapHolds" : true,
+      "policyLocal" : [
+
+      ],
+      "policyMerged" : [
+        "E"
+      ],
+      "preferenceMap" : 0,
+      "query" : "redheart",
+      "queryScalars" : [
+        "U+0072",
+        "U+0065",
+        "U+0064",
+        "U+0068",
+        "U+0065",
+        "U+0061",
+        "U+0072",
+        "U+0074"
+      ],
+      "rawCharacterCount" : 8,
+      "T" : [
+        "redheart"
+      ],
+      "W" : [
+        "redheart"
+      ]
+    },
+    {
+      "aliasEligible" : false,
+      "candidateRun" : false,
+      "cap" : 1,
+      "envelope" : [
+        0
+      ],
+      "envelopeComplete" : true,
+      "exactImplication" : true,
+      "exactWinner" : null,
+      "fixture" : "positive-compact",
+      "foldedEntry" : "red heart",
+      "foldedName" : "redheart",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+          "heart",
+          "red",
+          "red heart",
+          "redheart"
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+        "E"
+      ],
+      "N" : [
+        "heart",
+        "red"
+      ],
+      "name" : "red heart",
+      "nameScalars" : [
+        "U+0072",
+        "U+0065",
+        "U+0064",
+        "U+0020",
+        "U+0068",
+        "U+0065",
+        "U+0061",
+        "U+0072",
+        "U+0074"
+      ],
+      "policyCapHolds" : true,
+      "policyLocal" : [
+
+      ],
+      "policyMerged" : [
+        "E"
+      ],
+      "preferenceMap" : 1,
+      "query" : "redheart",
+      "queryScalars" : [
+        "U+0072",
+        "U+0065",
+        "U+0064",
+        "U+0068",
+        "U+0065",
+        "U+0061",
+        "U+0072",
+        "U+0074"
+      ],
+      "rawCharacterCount" : 8,
+      "T" : [
+        "redheart"
+      ],
+      "W" : [
+        "redheart"
+      ]
+    },
+    {
+      "aliasEligible" : false,
+      "candidateRun" : false,
+      "cap" : 1,
+      "envelope" : [
+        0
+      ],
+      "envelopeComplete" : true,
+      "exactImplication" : true,
+      "exactWinner" : null,
+      "fixture" : "positive-compact",
+      "foldedEntry" : "red heart",
+      "foldedName" : "redheart",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+          "heart",
+          "red",
+          "red heart",
+          "redheart"
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+        "E"
+      ],
+      "N" : [
+        "heart",
+        "red"
+      ],
+      "name" : "red heart",
+      "nameScalars" : [
+        "U+0072",
+        "U+0065",
+        "U+0064",
+        "U+0020",
+        "U+0068",
+        "U+0065",
+        "U+0061",
+        "U+0072",
+        "U+0074"
+      ],
+      "policyCapHolds" : true,
+      "policyLocal" : [
+
+      ],
+      "policyMerged" : [
+        "E"
+      ],
+      "preferenceMap" : 2,
+      "query" : "redheart",
+      "queryScalars" : [
+        "U+0072",
+        "U+0065",
+        "U+0064",
+        "U+0068",
+        "U+0065",
+        "U+0061",
+        "U+0072",
+        "U+0074"
+      ],
+      "rawCharacterCount" : 8,
+      "T" : [
+        "redheart"
+      ],
+      "W" : [
+        "redheart"
+      ]
+    },
+    {
+      "aliasEligible" : false,
+      "candidateRun" : false,
+      "cap" : 48,
+      "envelope" : [
+        0
+      ],
+      "envelopeComplete" : true,
+      "exactImplication" : true,
+      "exactWinner" : null,
+      "fixture" : "positive-compact",
+      "foldedEntry" : "red heart",
+      "foldedName" : "redheart",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+          "heart",
+          "red",
+          "red heart",
+          "redheart"
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+        "E"
+      ],
+      "N" : [
+        "heart",
+        "red"
+      ],
+      "name" : "red heart",
+      "nameScalars" : [
+        "U+0072",
+        "U+0065",
+        "U+0064",
+        "U+0020",
+        "U+0068",
+        "U+0065",
+        "U+0061",
+        "U+0072",
+        "U+0074"
+      ],
+      "policyCapHolds" : true,
+      "policyLocal" : [
+
+      ],
+      "policyMerged" : [
+        "E"
+      ],
+      "preferenceMap" : 0,
+      "query" : "redheart",
+      "queryScalars" : [
+        "U+0072",
+        "U+0065",
+        "U+0064",
+        "U+0068",
+        "U+0065",
+        "U+0061",
+        "U+0072",
+        "U+0074"
+      ],
+      "rawCharacterCount" : 8,
+      "T" : [
+        "redheart"
+      ],
+      "W" : [
+        "redheart"
+      ]
+    },
+    {
+      "aliasEligible" : false,
+      "candidateRun" : false,
+      "cap" : 48,
+      "envelope" : [
+        0
+      ],
+      "envelopeComplete" : true,
+      "exactImplication" : true,
+      "exactWinner" : null,
+      "fixture" : "positive-compact",
+      "foldedEntry" : "red heart",
+      "foldedName" : "redheart",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+          "heart",
+          "red",
+          "red heart",
+          "redheart"
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+        "E"
+      ],
+      "N" : [
+        "heart",
+        "red"
+      ],
+      "name" : "red heart",
+      "nameScalars" : [
+        "U+0072",
+        "U+0065",
+        "U+0064",
+        "U+0020",
+        "U+0068",
+        "U+0065",
+        "U+0061",
+        "U+0072",
+        "U+0074"
+      ],
+      "policyCapHolds" : true,
+      "policyLocal" : [
+
+      ],
+      "policyMerged" : [
+        "E"
+      ],
+      "preferenceMap" : 1,
+      "query" : "redheart",
+      "queryScalars" : [
+        "U+0072",
+        "U+0065",
+        "U+0064",
+        "U+0068",
+        "U+0065",
+        "U+0061",
+        "U+0072",
+        "U+0074"
+      ],
+      "rawCharacterCount" : 8,
+      "T" : [
+        "redheart"
+      ],
+      "W" : [
+        "redheart"
+      ]
+    },
+    {
+      "aliasEligible" : false,
+      "candidateRun" : false,
+      "cap" : 48,
+      "envelope" : [
+        0
+      ],
+      "envelopeComplete" : true,
+      "exactImplication" : true,
+      "exactWinner" : null,
+      "fixture" : "positive-compact",
+      "foldedEntry" : "red heart",
+      "foldedName" : "redheart",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+          "heart",
+          "red",
+          "red heart",
+          "redheart"
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+        "E"
+      ],
+      "N" : [
+        "heart",
+        "red"
+      ],
+      "name" : "red heart",
+      "nameScalars" : [
+        "U+0072",
+        "U+0065",
+        "U+0064",
+        "U+0020",
+        "U+0068",
+        "U+0065",
+        "U+0061",
+        "U+0072",
+        "U+0074"
+      ],
+      "policyCapHolds" : true,
+      "policyLocal" : [
+
+      ],
+      "policyMerged" : [
+        "E"
+      ],
+      "preferenceMap" : 2,
+      "query" : "redheart",
+      "queryScalars" : [
+        "U+0072",
+        "U+0065",
+        "U+0064",
+        "U+0068",
+        "U+0065",
+        "U+0061",
+        "U+0072",
+        "U+0074"
+      ],
+      "rawCharacterCount" : 8,
+      "T" : [
+        "redheart"
+      ],
+      "W" : [
+        "redheart"
+      ]
+    },
+    {
+      "aliasEligible" : false,
+      "candidateRun" : false,
+      "cap" : 60,
+      "envelope" : [
+        0
+      ],
+      "envelopeComplete" : true,
+      "exactImplication" : true,
+      "exactWinner" : null,
+      "fixture" : "positive-compact",
+      "foldedEntry" : "red heart",
+      "foldedName" : "redheart",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+          "heart",
+          "red",
+          "red heart",
+          "redheart"
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+        "E"
+      ],
+      "N" : [
+        "heart",
+        "red"
+      ],
+      "name" : "red heart",
+      "nameScalars" : [
+        "U+0072",
+        "U+0065",
+        "U+0064",
+        "U+0020",
+        "U+0068",
+        "U+0065",
+        "U+0061",
+        "U+0072",
+        "U+0074"
+      ],
+      "policyCapHolds" : true,
+      "policyLocal" : [
+
+      ],
+      "policyMerged" : [
+        "E"
+      ],
+      "preferenceMap" : 0,
+      "query" : "redheart",
+      "queryScalars" : [
+        "U+0072",
+        "U+0065",
+        "U+0064",
+        "U+0068",
+        "U+0065",
+        "U+0061",
+        "U+0072",
+        "U+0074"
+      ],
+      "rawCharacterCount" : 8,
+      "T" : [
+        "redheart"
+      ],
+      "W" : [
+        "redheart"
+      ]
+    },
+    {
+      "aliasEligible" : false,
+      "candidateRun" : false,
+      "cap" : 60,
+      "envelope" : [
+        0
+      ],
+      "envelopeComplete" : true,
+      "exactImplication" : true,
+      "exactWinner" : null,
+      "fixture" : "positive-compact",
+      "foldedEntry" : "red heart",
+      "foldedName" : "redheart",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+          "heart",
+          "red",
+          "red heart",
+          "redheart"
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+        "E"
+      ],
+      "N" : [
+        "heart",
+        "red"
+      ],
+      "name" : "red heart",
+      "nameScalars" : [
+        "U+0072",
+        "U+0065",
+        "U+0064",
+        "U+0020",
+        "U+0068",
+        "U+0065",
+        "U+0061",
+        "U+0072",
+        "U+0074"
+      ],
+      "policyCapHolds" : true,
+      "policyLocal" : [
+
+      ],
+      "policyMerged" : [
+        "E"
+      ],
+      "preferenceMap" : 1,
+      "query" : "redheart",
+      "queryScalars" : [
+        "U+0072",
+        "U+0065",
+        "U+0064",
+        "U+0068",
+        "U+0065",
+        "U+0061",
+        "U+0072",
+        "U+0074"
+      ],
+      "rawCharacterCount" : 8,
+      "T" : [
+        "redheart"
+      ],
+      "W" : [
+        "redheart"
+      ]
+    },
+    {
+      "aliasEligible" : false,
+      "candidateRun" : false,
+      "cap" : 60,
+      "envelope" : [
+        0
+      ],
+      "envelopeComplete" : true,
+      "exactImplication" : true,
+      "exactWinner" : null,
+      "fixture" : "positive-compact",
+      "foldedEntry" : "red heart",
+      "foldedName" : "redheart",
+      "hypotheticalAlias" : "ൎ",
+      "keys" : [
+        [
+          "heart",
+          "red",
+          "red heart",
+          "redheart"
+        ],
+        [
+          "opaque"
+        ]
+      ],
+      "legacy" : [
+        "E"
+      ],
+      "N" : [
+        "heart",
+        "red"
+      ],
+      "name" : "red heart",
+      "nameScalars" : [
+        "U+0072",
+        "U+0065",
+        "U+0064",
+        "U+0020",
+        "U+0068",
+        "U+0065",
+        "U+0061",
+        "U+0072",
+        "U+0074"
+      ],
+      "policyCapHolds" : true,
+      "policyLocal" : [
+
+      ],
+      "policyMerged" : [
+        "E"
+      ],
+      "preferenceMap" : 2,
+      "query" : "redheart",
+      "queryScalars" : [
+        "U+0072",
+        "U+0065",
+        "U+0064",
+        "U+0068",
+        "U+0065",
+        "U+0061",
+        "U+0072",
+        "U+0074"
+      ],
+      "rawCharacterCount" : 8,
+      "T" : [
+        "redheart"
+      ],
+      "W" : [
+        "redheart"
+      ]
+    }
+  ],
+  "rowsCount" : 72,
+  "subsetAssertions" : 72,
+  "subsetFailures" : 36
+}

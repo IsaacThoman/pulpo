@@ -1,0 +1,6 @@
+"\u{0345}bar" ["bar"] "ιbar" ιbar ["E"]
+"bar" ["bar"] "bar" bar []
+"\u{0345} bar" ["bar"] "ι bar" ιbar []
+"\u{0345}\'bar" ["bar"] "ιbar" ιbar ["E"]
+"\u{0345}bar bar" ["bar"] "ιbar bar" ιbarbar []
+"\u{0345}the bar" ["bar", "the"] "ιthe bar" ιthebar []

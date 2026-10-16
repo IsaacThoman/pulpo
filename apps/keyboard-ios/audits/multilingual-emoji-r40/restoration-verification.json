@@ -1,0 +1,19 @@
+{
+  "restoration": "52bf72e4",
+  "baseline": "00e2a0e7a283bc4a780b02f847ea9d82dfe9e5ae",
+  "productionDiff": [],
+  "releaseCoreTests": 442,
+  "releaseSuites": 65,
+  "releaseServices": 3,
+  "knownIssues": 5,
+  "newIssues": 0,
+  "pythonKeywordTests": 3,
+  "releaseLog": "/tmp/pulpo-r40-restored-core.log",
+  "releaseLogSHA256": "d3c11e8e9d6423ccd4c06331d01827b923798717adbae9969aa44415fba3c5b4",
+  "inactiveArchiveSourceFilesVerified": 6,
+  "inactivePatchCheck": "PASS; never applied",
+  "R36QueryWrapperSHA256": "b31bb9dfd4f0eaca8e7c71e5d5779d43a2e60649067b9a78ac6b0b12bc5b7d47",
+  "resourceSHA256": "2085015d3bd75b7046aecd244b1961230b37fd25ac8aca475c7bc4afabba8117",
+  "deviceActions": 0,
+  "nativeCostBlind": "UNAVAILABLE/UNRUN"
+}

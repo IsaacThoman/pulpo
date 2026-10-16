@@ -1,0 +1,164 @@
+{
+  "admittedScalarCount" : 141988,
+  "contextCount" : 1419880,
+  "failureCount" : 6,
+  "first200NecessaryConditionFailures" : [
+    {
+      "A" : [
+        "bear",
+        "he",
+        "north",
+        "q",
+        "t",
+        "ำ"
+      ],
+      "conjunct" : false,
+      "legacy" : "q the north bear",
+      "Plegacy" : "qthenorthbear",
+      "prefix" : true,
+      "query" : "q t'he ำ north bear",
+      "R" : [
+        "bear",
+        "north",
+        "q",
+        "ำ"
+      ],
+      "scalar" : "U+0E33",
+      "T" : [
+        "bear",
+        "he",
+        "north",
+        "q",
+        "t",
+        "ำ"
+      ]
+    },
+    {
+      "A" : [
+        "bear",
+        "he",
+        "north",
+        "q",
+        "t",
+        "ຳ"
+      ],
+      "conjunct" : false,
+      "legacy" : "q the north bear",
+      "Plegacy" : "qthenorthbear",
+      "prefix" : true,
+      "query" : "q t'he ຳ north bear",
+      "R" : [
+        "bear",
+        "north",
+        "q",
+        "ຳ"
+      ],
+      "scalar" : "U+0EB3",
+      "T" : [
+        "bear",
+        "he",
+        "north",
+        "q",
+        "t",
+        "ຳ"
+      ]
+    },
+    {
+      "A" : [
+        "ﾞbar"
+      ],
+      "conjunct" : false,
+      "legacy" : "bar",
+      "Plegacy" : "bar",
+      "prefix" : false,
+      "query" : "'ﾞbar",
+      "R" : [
+        "ﾞbar"
+      ],
+      "scalar" : "U+FF9E",
+      "T" : [
+        "ﾞbar"
+      ]
+    },
+    {
+      "A" : [
+        "bear",
+        "he",
+        "north",
+        "q",
+        "t",
+        "ﾞ"
+      ],
+      "conjunct" : false,
+      "legacy" : "q the north bear",
+      "Plegacy" : "qthenorthbear",
+      "prefix" : true,
+      "query" : "q t'he ﾞ north bear",
+      "R" : [
+        "bear",
+        "north",
+        "q",
+        "ﾞ"
+      ],
+      "scalar" : "U+FF9E",
+      "T" : [
+        "bear",
+        "he",
+        "north",
+        "q",
+        "t",
+        "ﾞ"
+      ]
+    },
+    {
+      "A" : [
+        "ﾟbar"
+      ],
+      "conjunct" : false,
+      "legacy" : "bar",
+      "Plegacy" : "bar",
+      "prefix" : false,
+      "query" : "'ﾟbar",
+      "R" : [
+        "ﾟbar"
+      ],
+      "scalar" : "U+FF9F",
+      "T" : [
+        "ﾟbar"
+      ]
+    },
+    {
+      "A" : [
+        "bear",
+        "he",
+        "north",
+        "q",
+        "t",
+        "ﾟ"
+      ],
+      "conjunct" : false,
+      "legacy" : "q the north bear",
+      "Plegacy" : "qthenorthbear",
+      "prefix" : true,
+      "query" : "q t'he ﾟ north bear",
+      "R" : [
+        "bear",
+        "north",
+        "q",
+        "ﾟ"
+      ],
+      "scalar" : "U+FF9F",
+      "T" : [
+        "bear",
+        "he",
+        "north",
+        "q",
+        "t",
+        "ﾟ"
+      ]
+    }
+  ],
+  "markCount" : 2543,
+  "note" : "Necessary condition screen against normalized query projection; neither actual API confirmation nor universal proof.",
+  "scalarCount" : 1112064
+}

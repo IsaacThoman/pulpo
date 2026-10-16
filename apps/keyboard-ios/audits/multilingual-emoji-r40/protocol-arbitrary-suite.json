@@ -1,0 +1,238 @@
+{
+  "version": 2,
+  "families": [
+    "r40-arbitrary-public-interfacé"
+  ],
+  "cases": [
+    {
+      "id": "arbitrary-search-é",
+      "family": "r40-arbitrary-public-interfacé",
+      "action": "search",
+      "query": "heart",
+      "acceptable": [
+        "❤️"
+      ],
+      "maxRank": 60,
+      "role": "control",
+      "stratum": "control",
+      "forbidden": [
+        "r40-arbitrary-absent"
+      ],
+      "expectEmpty": false,
+      "limit": 48,
+      "preferred": {
+        "❤️": 1000000,
+        "💔": -1000000
+      }
+    },
+    {
+      "id": "arbitrary-search-upper",
+      "family": "r40-arbitrary-public-interfacé",
+      "action": "search",
+      "query": "HEART",
+      "acceptable": [
+        "❤️"
+      ],
+      "maxRank": 60,
+      "role": "control",
+      "stratum": "control",
+      "forbidden": [
+        "r40-arbitrary-absent"
+      ],
+      "expectEmpty": false,
+      "equivalentTo": "arbitrary-search-é",
+      "limit": 48,
+      "preferred": {
+        "❤️": 1000000,
+        "💔": -1000000
+      }
+    },
+    {
+      "id": "arbitrary-wrapper",
+      "family": "r40-arbitrary-public-interfacé",
+      "action": "wrapper",
+      "query": "thumbs up",
+      "acceptable": [
+        "👍🏽"
+      ],
+      "maxRank": 60,
+      "role": "control",
+      "stratum": "control",
+      "forbidden": [
+        "r40-arbitrary-absent"
+      ],
+      "expectEmpty": false,
+      "limit": 1,
+      "recents": [
+        "👍🏻"
+      ],
+      "tones": {
+        "👍": "👍🏽"
+      }
+    },
+    {
+      "id": "arbitrary-wrapper-upper",
+      "family": "r40-arbitrary-public-interfacé",
+      "action": "wrapper",
+      "query": "THUMBS UP",
+      "acceptable": [
+        "👍🏽"
+      ],
+      "maxRank": 60,
+      "role": "control",
+      "stratum": "control",
+      "forbidden": [
+        "r40-arbitrary-absent"
+      ],
+      "expectEmpty": false,
+      "equivalentTo": "arbitrary-wrapper",
+      "limit": 1,
+      "recents": [
+        "👍🏻"
+      ],
+      "tones": {
+        "👍": "👍🏽"
+      }
+    },
+    {
+      "id": "arbitrary-fixture",
+      "family": "r40-arbitrary-public-interfacé",
+      "action": "fixture",
+      "query": "zephyr",
+      "acceptable": [
+        "r40-arbitrary-A"
+      ],
+      "maxRank": 60,
+      "role": "control",
+      "stratum": "control",
+      "forbidden": [
+        "r40-arbitrary-absent"
+      ],
+      "expectEmpty": false,
+      "limit": 60,
+      "preferred": {
+        "r40-arbitrary-A": 2
+      },
+      "entries": [
+        {
+          "emoji": "r40-arbitrary-A",
+          "name": "zephyr lens",
+          "keywords": [
+            "glass"
+          ],
+          "tones": [
+            "r40-arbitrary-A-tone"
+          ]
+        },
+        {
+          "emoji": "r40-arbitrary-B",
+          "name": "velvet lantern",
+          "keywords": []
+        }
+      ],
+      "spanishAliases": [
+        {
+          "emoji": "r40-arbitrary-A",
+          "name": "féruna"
+        },
+        {
+          "emoji": "r40-arbitrary-absent",
+          "name": "velúmina"
+        }
+      ]
+    },
+    {
+      "id": "arbitrary-fixture-upper",
+      "family": "r40-arbitrary-public-interfacé",
+      "action": "fixture",
+      "query": "ZEPHYR",
+      "acceptable": [
+        "r40-arbitrary-A"
+      ],
+      "maxRank": 60,
+      "role": "control",
+      "stratum": "control",
+      "forbidden": [
+        "r40-arbitrary-absent"
+      ],
+      "expectEmpty": false,
+      "limit": 60,
+      "preferred": {
+        "r40-arbitrary-A": 2
+      },
+      "entries": [
+        {
+          "emoji": "r40-arbitrary-A",
+          "name": "zephyr lens",
+          "keywords": [
+            "glass"
+          ],
+          "tones": [
+            "r40-arbitrary-A-tone"
+          ]
+        },
+        {
+          "emoji": "r40-arbitrary-B",
+          "name": "velvet lantern",
+          "keywords": []
+        }
+      ],
+      "spanishAliases": [
+        {
+          "emoji": "r40-arbitrary-A",
+          "name": "féruna"
+        },
+        {
+          "emoji": "r40-arbitrary-absent",
+          "name": "velúmina"
+        }
+      ],
+      "equivalentTo": "arbitrary-fixture"
+    },
+    {
+      "id": "arbitrary-fixture-localized",
+      "family": "r40-arbitrary-public-interfacé",
+      "action": "fixture",
+      "query": "FERUNA",
+      "acceptable": [
+        "r40-arbitrary-A"
+      ],
+      "maxRank": 60,
+      "role": "control",
+      "stratum": "control",
+      "forbidden": [
+        "r40-arbitrary-absent"
+      ],
+      "expectEmpty": false,
+      "entries": [
+        {
+          "emoji": "r40-arbitrary-A",
+          "name": "zephyr lens",
+          "keywords": [
+            "glass"
+          ],
+          "tones": [
+            "r40-arbitrary-A-tone"
+          ]
+        },
+        {
+          "emoji": "r40-arbitrary-B",
+          "name": "velvet lantern",
+          "keywords": []
+        }
+      ],
+      "spanishAliases": [
+        {
+          "emoji": "r40-arbitrary-A",
+          "name": "féruna"
+        },
+        {
+          "emoji": "r40-arbitrary-absent",
+          "name": "velúmina"
+        }
+      ],
+      "limit": 1,
+      "preferred": {}
+    }
+  ]
+}

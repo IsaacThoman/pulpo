@@ -1,0 +1,82 @@
+{
+  "liveInputHashesAtFinalizationNotReviewed": {
+    "contract.md": "105c5763e5b59dbe4dd1845ec45fba53b4cea12530694648d81d48b8a099fee7",
+    "schema.json": "3d764e105588c0f8da40f82313b6b3885e1a05cbad175fae9915deba1e74397a",
+    "api-map.md": "b21b136a7a7e2725853822f326939a6bd695a8f69a6e4ce545eedd97626b413f",
+    "EmojiCatalog.swift": "c7f929ada6398c9c849e1b764e7bdacc3aca6956f3444fa74953db43cea5468e",
+    "EmojiSearch.swift": "b31bb9dfd4f0eaca8e7c71e5d5779d43a2e60649067b9a78ac6b0b12bc5b7d47",
+    "emoji.json": "2085015d3bd75b7046aecd244b1961230b37fd25ac8aca475c7bc4afabba8117"
+  },
+  "liveContractHashAtFinalizationNotReviewed": "105c5763e5b59dbe4dd1845ec45fba53b4cea12530694648d81d48b8a099fee7",
+  "verdict": "REJECT",
+  "contractSHA256": "076a07001771c2146e4b1f1f095db60cc7a73815ef812e117d8824ed270e78ff",
+  "baselineCommit": "00e2a0e7a283bc4a780b02f847ea9d82dfe9e5ae",
+  "synthetic": {
+    "rows": 534,
+    "nominalEnvelopeOrCapFailureRows": 42,
+    "substantiveLetterBearingEnvelopeFailureRows": 36,
+    "capOverflowRows": 12,
+    "localizedTrancheOrderOrPreferenceInvariantFailureRows": 0,
+    "capacityRows": 270,
+    "capacityFilledRows": 270,
+    "vocabularyModelVersusActualReflectionChecks": 13,
+    "tokenizationControls": 28,
+    "emptyTokenNumericExactRows": 6
+  },
+  "realCatalog": {
+    "entryCount": 1923,
+    "uniqueQueries": 8671,
+    "checks": 26013,
+    "returnedResults": 60677,
+    "missingRows": 0
+  },
+  "scalarScan": {
+    "scalars": 1112064,
+    "contexts": 851928,
+    "necessaryConditionCandidateRows": 42,
+    "markToLetterProjections": [
+      {
+        "attachedConsonant": "n",
+        "attachedVowel": "a",
+        "projection": "ι",
+        "scalar": "U+0345"
+      }
+    ]
+  },
+  "independentChallenge": {
+    "prefixControls": 8,
+    "consonantContextControls": 2,
+    "technicalExactControl": 1,
+    "twoEntryMergeControls": 27
+  },
+  "inputs": {
+    "contract.md": {
+      "path": "/tmp/pulpo-r40-domain-v3/contract-v3.md",
+      "sha256": "076a07001771c2146e4b1f1f095db60cc7a73815ef812e117d8824ed270e78ff"
+    },
+    "schema.json": {
+      "path": "/tmp/pulpo-r40-domain-v3/schema.json",
+      "sha256": "3d764e105588c0f8da40f82313b6b3885e1a05cbad175fae9915deba1e74397a"
+    },
+    "api-map.md": {
+      "path": "/tmp/pulpo-r40-domain-v3/api-map.md",
+      "sha256": "0f8fa0472cb429e6019656a99755bc5f91f24e280d34915312c2ffca0960cfa9"
+    },
+    "EmojiCatalog.swift": {
+      "path": "/Users/isaacthoman/.t3/worktrees/pulpo/t3-8973a5dc/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Emoji/EmojiCatalog.swift",
+      "sha256": "c7f929ada6398c9c849e1b764e7bdacc3aca6956f3444fa74953db43cea5468e"
+    },
+    "EmojiSearch.swift": {
+      "path": "/Users/isaacthoman/.t3/worktrees/pulpo/t3-8973a5dc/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Emoji/EmojiSearch.swift",
+      "sha256": "b31bb9dfd4f0eaca8e7c71e5d5779d43a2e60649067b9a78ac6b0b12bc5b7d47"
+    },
+    "emoji.json": {
+      "path": "/Users/isaacthoman/.t3/worktrees/pulpo/t3-8973a5dc/apps/keyboard-ios/LanguageData/emoji.json",
+      "sha256": "2085015d3bd75b7046aecd244b1961230b37fd25ac8aca475c7bc4afabba8117"
+    }
+  },
+  "platform": "macOS-27.0.1-arm64-arm-64bit",
+  "swift": "Apple Swift version 6.4 (swiftlang-6.4.0.34.1 clang-2100.3.34.1)\nTarget: arm64-apple-macosx27.0.0",
+  "candidateProductionCodeTested": false,
+  "newProposalReviewed": false
+}

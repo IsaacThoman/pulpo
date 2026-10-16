@@ -1,0 +1,20 @@
+{
+  "admittedBases" : 139445,
+  "differenceCount" : 1,
+  "differences" : [
+    {
+      "canonicalProjected" : "",
+      "category" : "nonspacingMark",
+      "foundationLetters" : true,
+      "legacy" : "ι",
+      "legacyProjected" : "ι",
+      "raw" : "ͅ",
+      "scalar" : "U+0345",
+      "searchText" : true,
+      "tokens" : [
+
+      ]
+    }
+  ],
+  "scalars" : 1112064
+}

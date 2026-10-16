@@ -1,0 +1,3025 @@
+{
+  "checks" : 71805,
+  "failures" : [
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000\u0001CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000\u0002CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000\u0003CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000\u0004CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000\u0005CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000\u0006CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000\u0007CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000\bCD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000\tCD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000\nCD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000\u000bCD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000\fCD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000\rCD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000\u000eCD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000\u000fCD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000\u0010CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000\u0011CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000\u0012CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000\u0013CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000\u0014CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000\u0015CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000\u0016CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000\u0017CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000\u0018CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000\u0019CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000\u001aCD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000\u001bCD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000\u001cCD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000\u001dCD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000\u001eCD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000\u001fCD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000 CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000!CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000\"CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000#CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000$CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000%CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000&CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000'CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000(CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000)CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000*CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000+CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000,CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000-CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000.CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000\/CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u00000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u00001CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u00002CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u00003CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u00004CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u00005CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u00006CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u00007CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u00008CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u00009CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000:CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000;CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000<CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000=CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000>CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000?CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000@CD"
+    },
+    {
+      "actual" : [
+        "a"
+      ],
+      "expected" : [
+
+      ],
+      "query" : "\u0000A"
+    },
+    {
+      "actual" : [
+        "ab",
+        "acd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000ACD"
+    },
+    {
+      "actual" : [
+        "b"
+      ],
+      "expected" : [
+
+      ],
+      "query" : "\u0000B"
+    },
+    {
+      "actual" : [
+        "ab",
+        "bcd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000BCD"
+    },
+    {
+      "actual" : [
+        "c"
+      ],
+      "expected" : [
+
+      ],
+      "query" : "\u0000C"
+    },
+    {
+      "actual" : [
+        "ab",
+        "ccd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000CCD"
+    },
+    {
+      "actual" : [
+        "d"
+      ],
+      "expected" : [
+
+      ],
+      "query" : "\u0000D"
+    },
+    {
+      "actual" : [
+        "ab",
+        "dcd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000DCD"
+    },
+    {
+      "actual" : [
+        "e"
+      ],
+      "expected" : [
+
+      ],
+      "query" : "\u0000E"
+    },
+    {
+      "actual" : [
+        "ab",
+        "ecd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000ECD"
+    },
+    {
+      "actual" : [
+        "f"
+      ],
+      "expected" : [
+
+      ],
+      "query" : "\u0000F"
+    },
+    {
+      "actual" : [
+        "ab",
+        "fcd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000FCD"
+    },
+    {
+      "actual" : [
+        "g"
+      ],
+      "expected" : [
+
+      ],
+      "query" : "\u0000G"
+    },
+    {
+      "actual" : [
+        "ab",
+        "gcd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000GCD"
+    },
+    {
+      "actual" : [
+        "h"
+      ],
+      "expected" : [
+
+      ],
+      "query" : "\u0000H"
+    },
+    {
+      "actual" : [
+        "ab",
+        "hcd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000HCD"
+    },
+    {
+      "actual" : [
+        "i"
+      ],
+      "expected" : [
+
+      ],
+      "query" : "\u0000I"
+    },
+    {
+      "actual" : [
+        "ab",
+        "icd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000ICD"
+    },
+    {
+      "actual" : [
+        "j"
+      ],
+      "expected" : [
+
+      ],
+      "query" : "\u0000J"
+    },
+    {
+      "actual" : [
+        "ab",
+        "jcd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000JCD"
+    },
+    {
+      "actual" : [
+        "k"
+      ],
+      "expected" : [
+
+      ],
+      "query" : "\u0000K"
+    },
+    {
+      "actual" : [
+        "ab",
+        "kcd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000KCD"
+    },
+    {
+      "actual" : [
+        "l"
+      ],
+      "expected" : [
+
+      ],
+      "query" : "\u0000L"
+    },
+    {
+      "actual" : [
+        "ab",
+        "lcd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000LCD"
+    },
+    {
+      "actual" : [
+        "m"
+      ],
+      "expected" : [
+
+      ],
+      "query" : "\u0000M"
+    },
+    {
+      "actual" : [
+        "ab",
+        "mcd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000MCD"
+    },
+    {
+      "actual" : [
+        "n"
+      ],
+      "expected" : [
+
+      ],
+      "query" : "\u0000N"
+    },
+    {
+      "actual" : [
+        "ab",
+        "ncd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000NCD"
+    },
+    {
+      "actual" : [
+        "o"
+      ],
+      "expected" : [
+
+      ],
+      "query" : "\u0000O"
+    },
+    {
+      "actual" : [
+        "ab",
+        "ocd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000OCD"
+    },
+    {
+      "actual" : [
+        "p"
+      ],
+      "expected" : [
+
+      ],
+      "query" : "\u0000P"
+    },
+    {
+      "actual" : [
+        "ab",
+        "pcd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000PCD"
+    },
+    {
+      "actual" : [
+        "q"
+      ],
+      "expected" : [
+
+      ],
+      "query" : "\u0000Q"
+    },
+    {
+      "actual" : [
+        "ab",
+        "qcd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000QCD"
+    },
+    {
+      "actual" : [
+        "r"
+      ],
+      "expected" : [
+
+      ],
+      "query" : "\u0000R"
+    },
+    {
+      "actual" : [
+        "ab",
+        "rcd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000RCD"
+    },
+    {
+      "actual" : [
+        "s"
+      ],
+      "expected" : [
+
+      ],
+      "query" : "\u0000S"
+    },
+    {
+      "actual" : [
+        "ab",
+        "scd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000SCD"
+    },
+    {
+      "actual" : [
+        "t"
+      ],
+      "expected" : [
+
+      ],
+      "query" : "\u0000T"
+    },
+    {
+      "actual" : [
+        "ab",
+        "tcd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000TCD"
+    },
+    {
+      "actual" : [
+        "u"
+      ],
+      "expected" : [
+
+      ],
+      "query" : "\u0000U"
+    },
+    {
+      "actual" : [
+        "ab",
+        "ucd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000UCD"
+    },
+    {
+      "actual" : [
+        "v"
+      ],
+      "expected" : [
+
+      ],
+      "query" : "\u0000V"
+    },
+    {
+      "actual" : [
+        "ab",
+        "vcd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000VCD"
+    },
+    {
+      "actual" : [
+        "w"
+      ],
+      "expected" : [
+
+      ],
+      "query" : "\u0000W"
+    },
+    {
+      "actual" : [
+        "ab",
+        "wcd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000WCD"
+    },
+    {
+      "actual" : [
+        "x"
+      ],
+      "expected" : [
+
+      ],
+      "query" : "\u0000X"
+    },
+    {
+      "actual" : [
+        "ab",
+        "xcd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000XCD"
+    },
+    {
+      "actual" : [
+        "y"
+      ],
+      "expected" : [
+
+      ],
+      "query" : "\u0000Y"
+    },
+    {
+      "actual" : [
+        "ab",
+        "ycd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000YCD"
+    },
+    {
+      "actual" : [
+        "z"
+      ],
+      "expected" : [
+
+      ],
+      "query" : "\u0000Z"
+    },
+    {
+      "actual" : [
+        "ab",
+        "zcd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000ZCD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000[CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000\\CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000]CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000^CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000_CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000`CD"
+    },
+    {
+      "actual" : [
+        "a"
+      ],
+      "expected" : [
+
+      ],
+      "query" : "\u0000a"
+    },
+    {
+      "actual" : [
+        "ab",
+        "acd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000aCD"
+    },
+    {
+      "actual" : [
+        "b"
+      ],
+      "expected" : [
+
+      ],
+      "query" : "\u0000b"
+    },
+    {
+      "actual" : [
+        "ab",
+        "bcd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000bCD"
+    },
+    {
+      "actual" : [
+        "c"
+      ],
+      "expected" : [
+
+      ],
+      "query" : "\u0000c"
+    },
+    {
+      "actual" : [
+        "ab",
+        "ccd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000cCD"
+    },
+    {
+      "actual" : [
+        "d"
+      ],
+      "expected" : [
+
+      ],
+      "query" : "\u0000d"
+    },
+    {
+      "actual" : [
+        "ab",
+        "dcd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000dCD"
+    },
+    {
+      "actual" : [
+        "e"
+      ],
+      "expected" : [
+
+      ],
+      "query" : "\u0000e"
+    },
+    {
+      "actual" : [
+        "ab",
+        "ecd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000eCD"
+    },
+    {
+      "actual" : [
+        "f"
+      ],
+      "expected" : [
+
+      ],
+      "query" : "\u0000f"
+    },
+    {
+      "actual" : [
+        "ab",
+        "fcd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000fCD"
+    },
+    {
+      "actual" : [
+        "g"
+      ],
+      "expected" : [
+
+      ],
+      "query" : "\u0000g"
+    },
+    {
+      "actual" : [
+        "ab",
+        "gcd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000gCD"
+    },
+    {
+      "actual" : [
+        "h"
+      ],
+      "expected" : [
+
+      ],
+      "query" : "\u0000h"
+    },
+    {
+      "actual" : [
+        "ab",
+        "hcd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000hCD"
+    },
+    {
+      "actual" : [
+        "i"
+      ],
+      "expected" : [
+
+      ],
+      "query" : "\u0000i"
+    },
+    {
+      "actual" : [
+        "ab",
+        "icd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000iCD"
+    },
+    {
+      "actual" : [
+        "j"
+      ],
+      "expected" : [
+
+      ],
+      "query" : "\u0000j"
+    },
+    {
+      "actual" : [
+        "ab",
+        "jcd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000jCD"
+    },
+    {
+      "actual" : [
+        "k"
+      ],
+      "expected" : [
+
+      ],
+      "query" : "\u0000k"
+    },
+    {
+      "actual" : [
+        "ab",
+        "kcd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000kCD"
+    },
+    {
+      "actual" : [
+        "l"
+      ],
+      "expected" : [
+
+      ],
+      "query" : "\u0000l"
+    },
+    {
+      "actual" : [
+        "ab",
+        "lcd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000lCD"
+    },
+    {
+      "actual" : [
+        "m"
+      ],
+      "expected" : [
+
+      ],
+      "query" : "\u0000m"
+    },
+    {
+      "actual" : [
+        "ab",
+        "mcd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000mCD"
+    },
+    {
+      "actual" : [
+        "n"
+      ],
+      "expected" : [
+
+      ],
+      "query" : "\u0000n"
+    },
+    {
+      "actual" : [
+        "ab",
+        "ncd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000nCD"
+    },
+    {
+      "actual" : [
+        "o"
+      ],
+      "expected" : [
+
+      ],
+      "query" : "\u0000o"
+    },
+    {
+      "actual" : [
+        "ab",
+        "ocd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000oCD"
+    },
+    {
+      "actual" : [
+        "p"
+      ],
+      "expected" : [
+
+      ],
+      "query" : "\u0000p"
+    },
+    {
+      "actual" : [
+        "ab",
+        "pcd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000pCD"
+    },
+    {
+      "actual" : [
+        "q"
+      ],
+      "expected" : [
+
+      ],
+      "query" : "\u0000q"
+    },
+    {
+      "actual" : [
+        "ab",
+        "qcd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000qCD"
+    },
+    {
+      "actual" : [
+        "r"
+      ],
+      "expected" : [
+
+      ],
+      "query" : "\u0000r"
+    },
+    {
+      "actual" : [
+        "ab",
+        "rcd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000rCD"
+    },
+    {
+      "actual" : [
+        "s"
+      ],
+      "expected" : [
+
+      ],
+      "query" : "\u0000s"
+    },
+    {
+      "actual" : [
+        "ab",
+        "scd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000sCD"
+    },
+    {
+      "actual" : [
+        "t"
+      ],
+      "expected" : [
+
+      ],
+      "query" : "\u0000t"
+    },
+    {
+      "actual" : [
+        "ab",
+        "tcd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000tCD"
+    },
+    {
+      "actual" : [
+        "u"
+      ],
+      "expected" : [
+
+      ],
+      "query" : "\u0000u"
+    },
+    {
+      "actual" : [
+        "ab",
+        "ucd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000uCD"
+    },
+    {
+      "actual" : [
+        "v"
+      ],
+      "expected" : [
+
+      ],
+      "query" : "\u0000v"
+    },
+    {
+      "actual" : [
+        "ab",
+        "vcd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000vCD"
+    },
+    {
+      "actual" : [
+        "w"
+      ],
+      "expected" : [
+
+      ],
+      "query" : "\u0000w"
+    },
+    {
+      "actual" : [
+        "ab",
+        "wcd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000wCD"
+    },
+    {
+      "actual" : [
+        "x"
+      ],
+      "expected" : [
+
+      ],
+      "query" : "\u0000x"
+    },
+    {
+      "actual" : [
+        "ab",
+        "xcd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000xCD"
+    },
+    {
+      "actual" : [
+        "y"
+      ],
+      "expected" : [
+
+      ],
+      "query" : "\u0000y"
+    },
+    {
+      "actual" : [
+        "ab",
+        "ycd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000yCD"
+    },
+    {
+      "actual" : [
+        "z"
+      ],
+      "expected" : [
+
+      ],
+      "query" : "\u0000z"
+    },
+    {
+      "actual" : [
+        "ab",
+        "zcd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000zCD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000{CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000|CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000}CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000~CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0001\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0002\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0003\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0004\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0005\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0006\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0007\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\b\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\t\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\n\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u000b\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\f\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\r\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u000e\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u000f\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0010\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0011\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0012\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0013\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0014\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0015\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0016\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0017\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0018\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0019\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u001a\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u001b\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u001c\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u001d\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u001e\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u001f\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab \u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab!\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\"\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab#\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab$\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab%\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab&\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab'\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab(\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab)\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab*\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab+\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab,\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab-\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab.\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\/\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab0\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab1\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab2\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab3\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab4\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab5\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab6\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab7\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab8\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab9\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab:\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab;\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab<\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab=\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab>\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab?\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab@\u0000CD"
+    },
+    {
+      "actual" : [
+        "aba",
+        "cd"
+      ],
+      "expected" : [
+        "aba"
+      ],
+      "query" : "AbA\u0000CD"
+    },
+    {
+      "actual" : [
+        "abb",
+        "cd"
+      ],
+      "expected" : [
+        "abb"
+      ],
+      "query" : "AbB\u0000CD"
+    },
+    {
+      "actual" : [
+        "abc",
+        "cd"
+      ],
+      "expected" : [
+        "abc"
+      ],
+      "query" : "AbC\u0000CD"
+    },
+    {
+      "actual" : [
+        "abd",
+        "cd"
+      ],
+      "expected" : [
+        "abd"
+      ],
+      "query" : "AbD\u0000CD"
+    },
+    {
+      "actual" : [
+        "abe",
+        "cd"
+      ],
+      "expected" : [
+        "abe"
+      ],
+      "query" : "AbE\u0000CD"
+    },
+    {
+      "actual" : [
+        "abf",
+        "cd"
+      ],
+      "expected" : [
+        "abf"
+      ],
+      "query" : "AbF\u0000CD"
+    },
+    {
+      "actual" : [
+        "abg",
+        "cd"
+      ],
+      "expected" : [
+        "abg"
+      ],
+      "query" : "AbG\u0000CD"
+    },
+    {
+      "actual" : [
+        "abh",
+        "cd"
+      ],
+      "expected" : [
+        "abh"
+      ],
+      "query" : "AbH\u0000CD"
+    },
+    {
+      "actual" : [
+        "abi",
+        "cd"
+      ],
+      "expected" : [
+        "abi"
+      ],
+      "query" : "AbI\u0000CD"
+    },
+    {
+      "actual" : [
+        "abj",
+        "cd"
+      ],
+      "expected" : [
+        "abj"
+      ],
+      "query" : "AbJ\u0000CD"
+    },
+    {
+      "actual" : [
+        "abk",
+        "cd"
+      ],
+      "expected" : [
+        "abk"
+      ],
+      "query" : "AbK\u0000CD"
+    },
+    {
+      "actual" : [
+        "abl",
+        "cd"
+      ],
+      "expected" : [
+        "abl"
+      ],
+      "query" : "AbL\u0000CD"
+    },
+    {
+      "actual" : [
+        "abm",
+        "cd"
+      ],
+      "expected" : [
+        "abm"
+      ],
+      "query" : "AbM\u0000CD"
+    },
+    {
+      "actual" : [
+        "abn",
+        "cd"
+      ],
+      "expected" : [
+        "abn"
+      ],
+      "query" : "AbN\u0000CD"
+    },
+    {
+      "actual" : [
+        "abo",
+        "cd"
+      ],
+      "expected" : [
+        "abo"
+      ],
+      "query" : "AbO\u0000CD"
+    },
+    {
+      "actual" : [
+        "abp",
+        "cd"
+      ],
+      "expected" : [
+        "abp"
+      ],
+      "query" : "AbP\u0000CD"
+    },
+    {
+      "actual" : [
+        "abq",
+        "cd"
+      ],
+      "expected" : [
+        "abq"
+      ],
+      "query" : "AbQ\u0000CD"
+    },
+    {
+      "actual" : [
+        "abr",
+        "cd"
+      ],
+      "expected" : [
+        "abr"
+      ],
+      "query" : "AbR\u0000CD"
+    },
+    {
+      "actual" : [
+        "abs",
+        "cd"
+      ],
+      "expected" : [
+        "abs"
+      ],
+      "query" : "AbS\u0000CD"
+    },
+    {
+      "actual" : [
+        "abt",
+        "cd"
+      ],
+      "expected" : [
+        "abt"
+      ],
+      "query" : "AbT\u0000CD"
+    },
+    {
+      "actual" : [
+        "abu",
+        "cd"
+      ],
+      "expected" : [
+        "abu"
+      ],
+      "query" : "AbU\u0000CD"
+    },
+    {
+      "actual" : [
+        "abv",
+        "cd"
+      ],
+      "expected" : [
+        "abv"
+      ],
+      "query" : "AbV\u0000CD"
+    },
+    {
+      "actual" : [
+        "abw",
+        "cd"
+      ],
+      "expected" : [
+        "abw"
+      ],
+      "query" : "AbW\u0000CD"
+    },
+    {
+      "actual" : [
+        "abx",
+        "cd"
+      ],
+      "expected" : [
+        "abx"
+      ],
+      "query" : "AbX\u0000CD"
+    },
+    {
+      "actual" : [
+        "aby",
+        "cd"
+      ],
+      "expected" : [
+        "aby"
+      ],
+      "query" : "AbY\u0000CD"
+    },
+    {
+      "actual" : [
+        "abz",
+        "cd"
+      ],
+      "expected" : [
+        "abz"
+      ],
+      "query" : "AbZ\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab[\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\\\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab]\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab^\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab_\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab`\u0000CD"
+    },
+    {
+      "actual" : [
+        "aba",
+        "cd"
+      ],
+      "expected" : [
+        "aba"
+      ],
+      "query" : "Aba\u0000CD"
+    },
+    {
+      "actual" : [
+        "abb",
+        "cd"
+      ],
+      "expected" : [
+        "abb"
+      ],
+      "query" : "Abb\u0000CD"
+    },
+    {
+      "actual" : [
+        "abc",
+        "cd"
+      ],
+      "expected" : [
+        "abc"
+      ],
+      "query" : "Abc\u0000CD"
+    },
+    {
+      "actual" : [
+        "abd",
+        "cd"
+      ],
+      "expected" : [
+        "abd"
+      ],
+      "query" : "Abd\u0000CD"
+    },
+    {
+      "actual" : [
+        "abe",
+        "cd"
+      ],
+      "expected" : [
+        "abe"
+      ],
+      "query" : "Abe\u0000CD"
+    },
+    {
+      "actual" : [
+        "abf",
+        "cd"
+      ],
+      "expected" : [
+        "abf"
+      ],
+      "query" : "Abf\u0000CD"
+    },
+    {
+      "actual" : [
+        "abg",
+        "cd"
+      ],
+      "expected" : [
+        "abg"
+      ],
+      "query" : "Abg\u0000CD"
+    },
+    {
+      "actual" : [
+        "abh",
+        "cd"
+      ],
+      "expected" : [
+        "abh"
+      ],
+      "query" : "Abh\u0000CD"
+    },
+    {
+      "actual" : [
+        "abi",
+        "cd"
+      ],
+      "expected" : [
+        "abi"
+      ],
+      "query" : "Abi\u0000CD"
+    },
+    {
+      "actual" : [
+        "abj",
+        "cd"
+      ],
+      "expected" : [
+        "abj"
+      ],
+      "query" : "Abj\u0000CD"
+    },
+    {
+      "actual" : [
+        "abk",
+        "cd"
+      ],
+      "expected" : [
+        "abk"
+      ],
+      "query" : "Abk\u0000CD"
+    },
+    {
+      "actual" : [
+        "abl",
+        "cd"
+      ],
+      "expected" : [
+        "abl"
+      ],
+      "query" : "Abl\u0000CD"
+    },
+    {
+      "actual" : [
+        "abm",
+        "cd"
+      ],
+      "expected" : [
+        "abm"
+      ],
+      "query" : "Abm\u0000CD"
+    },
+    {
+      "actual" : [
+        "abn",
+        "cd"
+      ],
+      "expected" : [
+        "abn"
+      ],
+      "query" : "Abn\u0000CD"
+    },
+    {
+      "actual" : [
+        "abo",
+        "cd"
+      ],
+      "expected" : [
+        "abo"
+      ],
+      "query" : "Abo\u0000CD"
+    },
+    {
+      "actual" : [
+        "abp",
+        "cd"
+      ],
+      "expected" : [
+        "abp"
+      ],
+      "query" : "Abp\u0000CD"
+    },
+    {
+      "actual" : [
+        "abq",
+        "cd"
+      ],
+      "expected" : [
+        "abq"
+      ],
+      "query" : "Abq\u0000CD"
+    },
+    {
+      "actual" : [
+        "abr",
+        "cd"
+      ],
+      "expected" : [
+        "abr"
+      ],
+      "query" : "Abr\u0000CD"
+    },
+    {
+      "actual" : [
+        "abs",
+        "cd"
+      ],
+      "expected" : [
+        "abs"
+      ],
+      "query" : "Abs\u0000CD"
+    },
+    {
+      "actual" : [
+        "abt",
+        "cd"
+      ],
+      "expected" : [
+        "abt"
+      ],
+      "query" : "Abt\u0000CD"
+    },
+    {
+      "actual" : [
+        "abu",
+        "cd"
+      ],
+      "expected" : [
+        "abu"
+      ],
+      "query" : "Abu\u0000CD"
+    },
+    {
+      "actual" : [
+        "abv",
+        "cd"
+      ],
+      "expected" : [
+        "abv"
+      ],
+      "query" : "Abv\u0000CD"
+    },
+    {
+      "actual" : [
+        "abw",
+        "cd"
+      ],
+      "expected" : [
+        "abw"
+      ],
+      "query" : "Abw\u0000CD"
+    },
+    {
+      "actual" : [
+        "abx",
+        "cd"
+      ],
+      "expected" : [
+        "abx"
+      ],
+      "query" : "Abx\u0000CD"
+    },
+    {
+      "actual" : [
+        "aby",
+        "cd"
+      ],
+      "expected" : [
+        "aby"
+      ],
+      "query" : "Aby\u0000CD"
+    },
+    {
+      "actual" : [
+        "abz",
+        "cd"
+      ],
+      "expected" : [
+        "abz"
+      ],
+      "query" : "Abz\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab{\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab|\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab}\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab~\u0000CD"
+    },
+    {
+      "actual" : [
+        "ab",
+        "cd"
+      ],
+      "expected" : [
+        "ab"
+      ],
+      "query" : "Ab\u0000CD"
+    }
+  ],
+  "foundationCategoryDisagreementScalars" : 8770,
+  "markScalars" : 2543
+}

@@ -1,0 +1,20 @@
+import Foundation
+@main struct Scan {
+static func main() throws {
+var differences:[[String:Any]] = [], count=0, admitted=0
+for v:UInt32 in 0...0x10FFFF {
+ guard let u=Unicode.Scalar(v) else {continue}
+ let raw=String(u)
+ let c=Policy.canonical(raw).map(Policy.project).joined()
+ let p=Policy.project(Policy.legacy(raw))
+ if c != p {
+  differences.append(["scalar":String(format:"U+%04X",v),"category":String(describing:u.properties.generalCategory),"raw":raw,"tokens":Policy.canonical(raw),"canonicalProjected":c,"legacyProjected":p,"legacy":Policy.legacy(raw),"searchText":CharacterSet.letters.contains(u) || CharacterSet.nonBaseCharacters.contains(u),"foundationLetters":CharacterSet.letters.contains(u)])
+ }
+ if Policy.base(u) {admitted += 1}
+ count += 1
+}
+let out:[String:Any] = ["scalars":count,"admittedBases":admitted,"differenceCount":differences.count,"differences":differences]
+try JSONSerialization.data(withJSONObject:out, options:[.prettyPrinted,.sortedKeys]).write(to:URL(fileURLWithPath:"scalar-scan.json"))
+print("scanned \(count), admitted \(admitted), differences \(differences.count)")
+}
+}

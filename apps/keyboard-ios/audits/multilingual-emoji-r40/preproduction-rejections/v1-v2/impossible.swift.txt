@@ -1,0 +1,15 @@
+import Foundation
+@main struct Main { static func main() throws {
+let names=["ιnbar","opaque"], aliases=["unrelated","ñavoru"]
+let entries=names.enumerated().map{Emoji(value:$0.offset == 0 ? "E":"L",name:$0.element,version:1,tones:nil)}
+let s=EmojiSuggester(catalog:EmojiCatalog(version:"impossibility",categories:[EmojiCategory(id:"x",name:"x",emoji:entries)]))
+var rows:[[String:Any]]=[]
+for q in ["ñ","Ñ","n\u{0303}","\u{0345}ñ","\u{0345}Ñ","\u{0345}n\u{0303}","\u{0345}\u{0345}ñ","\u{0345}'ñ"] {
+for cap in [1,48,60] {
+let t=Policy.canonical(q),a=t.map(Policy.project),legacy=s.search(q,limit:cap).map(\.value)
+let row:[String:Any] = ["query":q,"queryScalars":q.unicodeScalars.map{String(format:"U+%04X",$0.value)},"canonical":t,"A":a,"legacyKey":Policy.legacy(q),"measuredBaseline":legacy,"cap":cap,"englishNames":names,"spanishAliasesForPolicyControls":aliases,"IProjected":["ιnbar","opaque"],"draftEnvelope":[],"calculatedFixedLocalizedTranche":["L"],"calculatedDraftMerged":legacy+["L"],"capViolation":legacy.count+1>cap]
+rows.append(row)
+print(cap,q.debugDescription,t,Policy.legacy(q).debugDescription,legacy,"draftEnvelope=[]")
+}}
+try JSONSerialization.data(withJSONObject:rows,options:[.prettyPrinted,.sortedKeys]).write(to:URL(fileURLWithPath:"impossibility-results.json"))
+}}

@@ -1,0 +1,13 @@
+{
+  "/tmp/pulpo-r40-candidate/smoke-summary.json": "d11d969f011e4108585355902e09ab7355173394e767a3a3aa8f2292f69e11ee",
+  "/tmp/pulpo-r40-candidate/smoke/candidate-required-checks.json": "0643a5db28d4099ae579dc183c404e33879b3956a54d3acf7dde0861c3cb2e9b",
+  "/tmp/pulpo-r40-candidate/smoke/protocol-exposed-smoke.json": "7ee42c6b8bba4ac17e30630c133d240f3610ee35fc23da792879fa76490df2df",
+  "/tmp/pulpo-r40-candidate/smoke/protocol-exposed-oracles.json": "0817a1c37145e54e3b5dec691246aacbe98fa164c67f64448ba0db90a62f0031",
+  "/tmp/pulpo-r40-candidate/smoke/candidate-output.json": "785c678a611db97db9619937048dc3f937fb19cb7d50fda49b68ce5a234aebad",
+  "/tmp/pulpo-r40-candidate/smoke/baseline-output.json": "5d8050ee3065d4d09ddb7ea74b2caa932578d2c7bf62b5e00fe1c2ade74941b4",
+  "/tmp/pulpo-r40-candidate/development-intents-comparison.json": "9dea45a12d4867fc302066b7c060242fd0203933823d32f37d5867e6072fd972",
+  "apps/keyboard-ios/audits/multilingual-emoji-r40/candidate-ordinary-verification.json": "b574040429f7196c90070818d0701ab0cd41abc95b9597e151d3442b5c990b61",
+  "apps/keyboard-ios/audits/multilingual-emoji-r40/protocol-interface-freeze.json": "c7102f83057856687453572d383aa0da6bc7abf375b182ed0609a6c819682135",
+  "apps/keyboard-ios/audits/multilingual-emoji-r40/smoke-runner.py": "e3c3a43ec85369e6f4abfe0f2359b5df0a9db17be241b17b3dfbeca06097a7c2",
+  "apps/keyboard-ios/audits/multilingual-emoji-r40/candidate-development-freeze.json": "6b8dd53ee8f821cb73f288c03d21025a767ef6c0b5c718eef696e34cfd0cfc35"
+}

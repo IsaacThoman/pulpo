@@ -1,0 +1,9 @@
+import Foundation
+@main struct Main {static func main() throws {
+let entries=[Emoji(value:"E",name:"bar",version:1,tones:nil),Emoji(value:"L",name:"opaque",version:1,tones:nil)]
+let s=EmojiSuggester(catalog:EmojiCatalog(version:"fixture",categories:[EmojiCategory(id:"f",name:"Fixture",emoji:entries)])),env=Envelope(entries)
+var rows:[[String:Any]]=[]
+for q in ["\u{0345}bar","'\u{0345}bar"," \u{0345}bar","-\u{0345}bar","&\u{0345}bar"]{for cap in [1,48,60]{let t=Policy.tokens(q),old=s.search(q,limit:cap).map(\.value),reserved=env.ids(t).count
+rows.append(["query":q,"scalars":q.unicodeScalars.map{String(format:"U+%04X",$0.value)},"FoundationFold":Policy.folded(q),"legacyKey":Policy.legacy(q),"T":t,"A":t.map(Policy.project),"actualLegacy":old,"envelope":env.ids(t).map{entries[$0].value},"I":env.indexed,"V":env.vocabulary,"cap":cap,"localizedAlias":"\u{0345}bar","localizedEligible":t == Policy.tokens("\u{0345}bar"),"policyMerged":old+(cap-reserved>0 ? ["L"]:[]),"baselineIncluded":old.allSatisfy{v in env.ids(t).contains{entries[$0].value == v}}])}}
+try JSONSerialization.data(withJSONObject:rows,options:[.prettyPrinted,.sortedKeys]).write(to:URL(fileURLWithPath:"blocker.json"));print(rows[3])
+}}

@@ -1,0 +1,13 @@
+import Foundation
+@main struct Main {static func main() throws {
+ let catalogJSON = #"{"version":"fixture","categories":[{"id":"fixture","name":"Fixture","emoji":[{"e":"E","n":"'a","v":1,"k":[]},{"e":"L","n":"opaque","v":1,"k":[]}]}]}"#
+ let c=try JSONDecoder().decode(EmojiCatalog.self,from:Data(catalogJSON.utf8)),es=c.categories.flatMap(\.emoji),s=EmojiSuggester(catalog:c),env=Envelope(es,s)
+ let x="\u{FF9E}a",aliases=[1:x],qs=[x,"'"+x,x+" "+x,"'"+x+" '"+x],caps=[1,48,60]
+ var rows:[[String:Any]]=[]
+ for raw in qs {for cap in caps {for pref in [[:],["E":1000000,"L":-1000000]] {
+  let t=Policy.tokens(raw),ids=env.ids(t),old=s.search(raw,limit:cap,preferring:pref).map(\.value),loc=Array(eligible(es,aliases,t).filter{!ids.contains($0)}.prefix(cap-min(cap,ids.count))).map{es[$0].value}
+  rows.append(["raw":raw,"rawScalars":Policy.scalars(raw),"canonical":t,"Q":t.map(Policy.q),"legacyFold":Policy.folded(raw),"normalized":Policy.legacy(raw),"actualLegacy":old,"envelope":ids.map{es[$0].value},"localizedTranche":loc,"policyMerged":old+loc,"cap":cap,"preferred":pref,"capacityExceeded":old.count+loc.count>cap,"missingLegacy":old.filter{v in !ids.contains{es[$0].value==v}}])
+ }}}
+ try json(["verdict":"REJECT exact v4","catalogJSON":catalogJSON,"alias":["L":x],"aliasScalars":Policy.scalars(x),"EnglishI":env.indexed[0],"EnglishV":env.vocabulary[0],"scalar":"U+FF9E","category":String(describing:Unicode.Scalar(0xFF9E)!.properties.generalCategory),"CharacterSetLetters":CharacterSet.letters.contains(Unicode.Scalar(0xFF9E)!),"baseAdmitted":Policy.base(Unicode.Scalar(0xFF9E)!),"mark":Policy.mark(Unicode.Scalar(0xFF9E)!),"rows":rows,"minimality":"Smallest confirmed witness: 2 canonical scalars, 3 raw scalars, 2 decoded fixture entries. Not a global exhaustive minimality claim."],"minimal.json")
+ print("minimal actual API rows",rows.count)
+}}

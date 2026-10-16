@@ -1,0 +1,24 @@
+{
+  "actualLegacyCap1" : [
+
+  ],
+  "broadEnvelope" : [
+    0
+  ],
+  "broadLocalizedCapacity" : 0,
+  "query" : "red corazón",
+  "T" : [
+    "corazon",
+    "red"
+  ],
+  "targetEnglish" : "red heart",
+  "targetSpanish" : "corazón",
+  "tightEnvelope" : [
+
+  ],
+  "tightLocalizedCapacity" : 1,
+  "W" : [
+    "corazon",
+    "red"
+  ]
+}

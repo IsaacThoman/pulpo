@@ -1,0 +1,41 @@
+{
+  "strictRequiredRows": 569,
+  "availableRequiredRows": 569,
+  "checkedRequiredRows": 569,
+  "strictPassingRows": 566,
+  "strictFailingRows": 3,
+  "strictFailedIds": [
+    "r40-ranking-0",
+    "r40-ranking-1",
+    "r40-ranking-2"
+  ],
+  "generalSchemaTargetOraclePassingRows": 569,
+  "exactLocalizedSuffixAssertions": 511,
+  "invariantGroups": 119,
+  "failedInvariantGroups": 0,
+  "arbitrarySuite": {
+    "executionValid": true,
+    "executionErrors": [],
+    "allRowsPass": true,
+    "useful": {
+      "denominator": 0,
+      "passing": 0,
+      "unavailable": 0,
+      "uniqueAcceptedAlternatives": [],
+      "familiesWithAcceptedUsefulRow": []
+    },
+    "controls": {
+      "denominator": 7,
+      "passing": 7,
+      "unavailable": 0
+    }
+  },
+  "invalidInputsRejected": 131,
+  "mandatoryResourceFailures": [
+    "absent catalog with fixture-only input",
+    "invalid catalog with fixture-only input",
+    "absent input"
+  ],
+  "protocolSmokePassed": false,
+  "protocolInterfaceSmokePassed": true
+}

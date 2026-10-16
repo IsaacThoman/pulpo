@@ -1,0 +1,209 @@
+{
+  "report": {
+    "archive": "source-review.md",
+    "sha256": "345f12dfe81c92dc56bac4fc4c788843153aa9c15f3c8d99de3350c3735c9b66"
+  },
+  "files": [
+    {
+      "original": "/tmp/pulpo-r40-source-review/verdict.json",
+      "archive": "independent-source-review/verdict.json",
+      "bytes": 1256,
+      "sha256": "334582b518055dfa0e62b50e46f43e0d14e6de4b0927371ce4177518139127a3"
+    },
+    {
+      "original": "/tmp/pulpo-r40-source-review/summary.json",
+      "archive": "independent-source-review/summary.json",
+      "bytes": 4562,
+      "sha256": "4f9f77a1b7db8d7920791cffdb76a676fe126e833c709215d2e736c9ab06b428"
+    },
+    {
+      "original": "/tmp/pulpo-r40-source-review/minimal-nul.json",
+      "archive": "independent-source-review/minimal-nul.json",
+      "bytes": 222,
+      "sha256": "e2c16c838a2a75df7623ff95e52fe32ec0096ee3d51cdfdfb612e635a18d4aa7"
+    },
+    {
+      "original": "/tmp/pulpo-r40-source-review/minimal-nul-baseline.jsonl",
+      "archive": "independent-source-review/minimal-nul-baseline.jsonl",
+      "bytes": 252,
+      "sha256": "5ef5870521e300ce6ed45b99ff449d9e6fbf031233e7420460dfc8c136d9b85b"
+    },
+    {
+      "original": "/tmp/pulpo-r40-source-review/minimal-nul-candidate.jsonl",
+      "archive": "independent-source-review/minimal-nul-candidate.jsonl",
+      "bytes": 255,
+      "sha256": "bbe6cc0d59621a63106f28ff474ac04c2c1add996c349cf4b993dc1915a0da03"
+    },
+    {
+      "original": "/tmp/pulpo-r40-source-review/nul-detail.json",
+      "archive": "independent-source-review/nul-detail.json",
+      "bytes": 200,
+      "sha256": "e9d74d2a7cb8b0d3a675be4f68e8da6b1e7c887f578f552e6a19edb788957f43"
+    },
+    {
+      "original": "/tmp/pulpo-r40-source-review/independent-ranking-adjudication.json",
+      "archive": "independent-source-review/independent-ranking-adjudication.json",
+      "bytes": 2431,
+      "sha256": "457013fad448a6d1982084e95b0cead45e42926b44d0278df1f341c7eb29863e"
+    },
+    {
+      "original": "/tmp/pulpo-r40-source-review/smoke-adjudication.json",
+      "archive": "independent-source-review/smoke-adjudication.json",
+      "bytes": 1007,
+      "sha256": "e60ad2e733e121cb324f51694abd262c6ef437a7c4a7a305ef8a9b9c9de2ce2d"
+    },
+    {
+      "original": "/tmp/pulpo-r40-source-review/smoke-failed-rows.json",
+      "archive": "independent-source-review/smoke-failed-rows.json",
+      "bytes": 5690,
+      "sha256": "9ef42b3dbbfe402c623a0d363220e1a17b4da1bc675d8d3565700baffaf06964"
+    },
+    {
+      "original": "/tmp/pulpo-r40-source-review/token-controls.json",
+      "archive": "independent-source-review/token-controls.json",
+      "bytes": 42229,
+      "sha256": "304059dda9b3438c3bc62dc8181a5e945e6e145ce98cfd0584399d061cb76c69"
+    },
+    {
+      "original": "/tmp/pulpo-r40-source-review/independent-controls-summary.json",
+      "archive": "independent-source-review/independent-controls-summary.json",
+      "bytes": 401,
+      "sha256": "00c01ff6e0290647f74344b5746d989a060c1b4448184cda7ed96b0de7aaa99f"
+    },
+    {
+      "original": "/tmp/pulpo-r40-source-review/independent-controls-failures.json",
+      "archive": "independent-source-review/independent-controls-failures.json",
+      "bytes": 1440,
+      "sha256": "3e39c55f939ac73ace710e768bfdfe592eeeede09cac70bcf8329a5385e03414"
+    },
+    {
+      "original": "/tmp/pulpo-r40-source-review/independent-invariance-failures.json",
+      "archive": "independent-source-review/independent-invariance-failures.json",
+      "bytes": 3,
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+    },
+    {
+      "original": "/tmp/pulpo-r40-source-review/metadata-controls.json",
+      "archive": "independent-source-review/metadata-controls.json",
+      "bytes": 287,
+      "sha256": "692997281a3cfa62277e7a7641b44982b6b8ff43458670b6b385326e40ce68c6"
+    },
+    {
+      "original": "/tmp/pulpo-r40-source-review/compat-summary.json",
+      "archive": "independent-source-review/compat-summary.json",
+      "bytes": 350,
+      "sha256": "5f98f764e0f3da8ffd3154ff1ae9cfead75549ce94075abf1c840958b8576e09"
+    },
+    {
+      "original": "/tmp/pulpo-r40-source-review/compat-failures.json",
+      "archive": "independent-source-review/compat-failures.json",
+      "bytes": 3,
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+    },
+    {
+      "original": "/tmp/pulpo-r40-source-review/resource-review.json",
+      "archive": "independent-source-review/resource-review.json",
+      "bytes": 706,
+      "sha256": "9ad095de94d9618c730e5a4ce131a213645e8b7fa5ef4d584c959c6ebdb66835"
+    },
+    {
+      "original": "/tmp/pulpo-r40-source-review/conservation.json",
+      "archive": "independent-source-review/conservation.json",
+      "bytes": 316,
+      "sha256": "434a325dff80fc1b86ae3350c9ed0d173ccbe9dce201a493c695802cdf5bf82c"
+    },
+    {
+      "original": "/tmp/pulpo-r40-source-review/snapshot-hashes.json",
+      "archive": "independent-source-review/snapshot-hashes.json",
+      "bytes": 2588,
+      "sha256": "84eac0815aee77a922ef80c941e54314b1d1cb2df195cb7036ba8ec08326cdea"
+    },
+    {
+      "original": "/tmp/pulpo-r40-source-review/hashes.sha256",
+      "archive": "independent-source-review/hashes.sha256",
+      "bytes": 8667,
+      "sha256": "2e59efc98a8a661340ecd158a517a6f21a2cd7d6860d7e134a8e35c26f914634"
+    },
+    {
+      "original": "/tmp/pulpo-r40-source-review/host-tool-versions.json",
+      "archive": "independent-source-review/host-tool-versions.json",
+      "bytes": 206,
+      "sha256": "2ab53c58e826ff003024a0fb779ae5c4a55bec5d55cf6f3f2d4faacbbaf3bc56"
+    },
+    {
+      "original": "/tmp/pulpo-r40-source-review/ordinary-log-hash-verification.json",
+      "archive": "independent-source-review/ordinary-log-hash-verification.json",
+      "bytes": 222,
+      "sha256": "515a9d80676576501e40ce854cba37ad190d06301d0c264f9c7d54bfdcf52a24"
+    },
+    {
+      "original": "/tmp/pulpo-r40-source-review/provided-evidence-hashes.json",
+      "archive": "independent-source-review/provided-evidence-hashes.json",
+      "bytes": 1508,
+      "sha256": "961ae91a471759a7266b0697a492b3e75a9c62a49086735240e7003d35eb4a22"
+    },
+    {
+      "original": "/tmp/pulpo-r40-source-review/nul-detail.swift",
+      "archive": "independent-source-review/nul-detail.swift.txt",
+      "bytes": 745,
+      "sha256": "fc335e0545a5cc6cb9b50550c9cf9be9c2b8cf0f7a12987cd5449bc18f4bd3e9"
+    },
+    {
+      "original": "/tmp/pulpo-r40-source-review/main.swift",
+      "archive": "independent-source-review/main.swift.txt",
+      "bytes": 2510,
+      "sha256": "63c7a1825fcf61ea6605a34da9ee303bc737acda598b964a7430d7fb4d1520f0"
+    },
+    {
+      "original": "/tmp/pulpo-r40-source-review/oracle.swift",
+      "archive": "independent-source-review/oracle.swift.txt",
+      "bytes": 3962,
+      "sha256": "7985b4975394ec4b99241887169a0873101e4484e1ac2c4518ef76f8858706ac"
+    },
+    {
+      "original": "/tmp/pulpo-r40-source-review/make-controls.py",
+      "archive": "independent-source-review/make-controls.py.txt",
+      "bytes": 3598,
+      "sha256": "83a3204668f95ec8042400c78535c20b2d23607ef90dada7553aecca6a86684e"
+    },
+    {
+      "original": "/tmp/pulpo-r40-source-review/resource-review.py",
+      "archive": "independent-source-review/resource-review.py.txt",
+      "bytes": 2834,
+      "sha256": "ee4889b4c94d8d0e9ddcd58b923717a17de9dbad478a0759ce4ebb6b98f01760"
+    },
+    {
+      "original": "/tmp/pulpo-r40-source-review/compare-controls.py",
+      "archive": "independent-source-review/compare-controls.py.txt",
+      "bytes": 2536,
+      "sha256": "35a1c7b6b6fc8d62f0e82d75ae61d41efc221d82b8847a1e377529aa5871c424"
+    },
+    {
+      "original": "/tmp/pulpo-r40-source-review/compare-compat.py",
+      "archive": "independent-source-review/compare-compat.py.txt",
+      "bytes": 1580,
+      "sha256": "780e668ba248cdc3aeed8c721df27d467f657e3c7d98eca9566dcfa281198bf0"
+    },
+    {
+      "original": "/tmp/pulpo-r40-source-review/token-harness/main.swift",
+      "archive": "independent-source-review/token-harness/main.swift.txt",
+      "bytes": 1684,
+      "sha256": "da928b8f7937e951a4c0373ae70a8b4897b959024d26a5c8ca07906f31e00a31"
+    },
+    {
+      "original": "/tmp/pulpo-r40-source-review/metadata-harness/main.swift",
+      "archive": "independent-source-review/metadata-harness/main.swift.txt",
+      "bytes": 3197,
+      "sha256": "46c144ae842a11abad210f83fd19c6006869a6685d2dc7d90ff7572f8ab91f7b"
+    },
+    {
+      "original": "/tmp/pulpo-r40-source-review/fixture-main.swift",
+      "archive": "independent-source-review/fixture-main.swift.txt",
+      "bytes": 2544,
+      "sha256": "da37a1f737ec9de8723b191eb8bba851361178335353b3502a774137902c1331"
+    }
+  ],
+  "fullOriginalEvidenceDirectory": "/tmp/pulpo-r40-source-review",
+  "rawEvidenceHashes": "hashes.sha256",
+  "rawEvidenceNotCopied": true
+}

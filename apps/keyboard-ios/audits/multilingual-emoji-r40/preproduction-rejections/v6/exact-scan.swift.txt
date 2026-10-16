@@ -1,0 +1,18 @@
+import Foundation
+let loc=Locale(identifier:"en_US_POSIX")
+func fold(_ s:String)->String { s.folding(options:[.diacriticInsensitive,.caseInsensitive],locale:loc) }
+func fn(_ s:String)->String { fold(s).split(whereSeparator: \.isWhitespace).joined(separator:" ") }
+func nm(_ s:String)->String { fold(s).unicodeScalars.map { CharacterSet.alphanumerics.contains($0) ? String($0) : ($0 == "'" || $0 == "\u{2019}" ? "" : " ") }.joined().split(whereSeparator: \.isWhitespace).joined(separator:" ") }
+func ws(_ s:String)->Set<String> { Set(s.split(separator:" ").map(String.init)) }
+var total=0, canonicalPairs=0, failed:[[String:Any]]=[]
+for i in 0...0x10ffff {
+ guard let u=UnicodeScalar(i) else {continue}; total += 1
+ let s=String(u), d=s.decomposedStringWithCanonicalMapping
+ guard s.unicodeScalars.map(\.value) != d.unicodeScalars.map(\.value) else { continue }
+ for (pre,post) in [("",""),("bar","baz"),("bar "," baz"),("\t","bar"),(" ","bar"),("'","bar"),("\u{0D4E}"," z")] {
+  let a=pre+s+post,b=pre+d+post
+  if fn(a)==fn(b) {canonicalPairs += 1; if ws(nm(a)) != ws(nm(b)) {failed.append(["a":a,"b":b,"fa":fn(a),"fb":fn(b),"na":nm(a),"nb":nm(b),"scalar":i])} }
+ }
+}
+let out:[String:Any] = ["validScalars":total,"canonicalFoldedEqualPairs":canonicalPairs,"failures":failed]
+let data=try! JSONSerialization.data(withJSONObject:out,options:[.prettyPrinted,.sortedKeys]);try! data.write(to:URL(fileURLWithPath:"/tmp/pulpo-r40-domain-v6/exact-scan.json"));print(String(data:data,encoding:.utf8)!)

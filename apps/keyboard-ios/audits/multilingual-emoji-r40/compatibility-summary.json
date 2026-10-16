@@ -1,0 +1,11 @@
+{
+  "rows": 7374,
+  "failures": 0,
+  "changedRawArrays": 747,
+  "mechanicalOnlyNoUtilityLabels": true,
+  "addedOccurrences": 3825,
+  "changedRawPath": "/tmp/pulpo-r40-candidate/compat-all-changed-rows.json",
+  "changedRawSHA256": "a0a6bfe24a27d3e315d0ed5c8e1a983a4b5fd1eb442558228b4ee62a617638af",
+  "baselineSHA256": "31f6691facd967070ef8eccc182b9279cdf6231fa42cf5d05bbdf6f3e733245f",
+  "candidateSHA256": "6d4cc84615ce354e8a0b4159c24a44e45840e8724d1957c8d88578d7b6305657"
+}

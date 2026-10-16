@@ -1,0 +1,8 @@
+import Foundation
+@main struct Main { static func main() throws {
+ let s=fixture([("E","red heart",[])])
+ let o=Observable(s); let q="red corazón"
+ let row:[String:Any] = ["query":q,"T":spanish(q),"W":words(normalized(q)).sorted(),"actualLegacyCap1":s.search(q,limit:1).map(\.value),"broadEnvelope":o.envelope(q).sorted(),"tightEnvelope":o.envelope(q,tight:true).sorted(),"targetEnglish":"red heart","targetSpanish":"corazón","broadLocalizedCapacity":1-min(1,o.envelope(q).count),"tightLocalizedCapacity":1-min(1,o.envelope(q,tight:true).count)]
+ try jsonWrite(row,"/tmp/pulpo-r40-domain-v5/mixed.json")
+ print(String(data:try JSONSerialization.data(withJSONObject:row,options:[.sortedKeys]),encoding:.utf8)!)
+} }
