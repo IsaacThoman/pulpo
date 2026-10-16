@@ -1,0 +1,21 @@
+{
+  "decision": "No production candidate; retain unchanged",
+  "base": "c0b3ca3b",
+  "heldoutAuthorCommit": "61c2758f16d399891bd2a651fd5cb85455981f4e",
+  "sealedHeldoutSHA256": "ab7466440909dd944f52ae1880fb36f58f9b8c7ff11600a6b9a84e7d02b9427a",
+  "hashes": {
+    "dev.json": "0641ee7d069b8e82c2f862eb32316bc2cddfc0510ac248bb0c89f95ab3a3c547",
+    "protocol.md": "a48fccd53df2806481e5b039be5c463aafc7cc1199d7b9e43b55f8a20a098467",
+    "baseline-dev.json": "4cbfbfd197be1a3815e9ea6f15e0ffd5a07d5ddc8db68dfe4925431a58381c3f",
+    "baseline-cold.json": "253078f140eaac95b78b03730c6f8ad60525f2dc17a12c33d14d1078e4181a21",
+    "compiler-coverage.json": "79594773b235d98fe47b9392d97aaaabcf6a0a4cab6a304e6ff181785de249bf",
+    "resource-identity.json": "6beca5a0a59a4287316c76822a11c5df80e0859ca056f65b531b9ece4213559f",
+    "runner": "30d04938d8a486b4d9c4e4992012515795e7ab239a2935a1a24ad63f1373ce80"
+  },
+  "productionGitObjects": {
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources": "99a950d67baa11bfe466cbdc469f8d5e6bfbf901",
+    "apps/keyboard-ios/LanguageData": "69796e182c19ae607c84ca2d730db46960b889fa",
+    "apps/keyboard-ios/scripts/build_language_data.py": "ac364ccbd0cabcec9cb95f3f25669b9fe53c3350",
+    "apps/keyboard-ios/scripts/build_multilingual_data.py": "d5e5e454fac2919efbd6559c5987fba3b1b1f328"
+  }
+}
