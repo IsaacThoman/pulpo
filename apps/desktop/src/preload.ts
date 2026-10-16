@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type {
   DesktopCommand,
   DesktopOperatingSystem,
+  DesktopSignedInAccounts,
   DesktopStoredSession,
   PulpoDesktopApi,
 } from './globals'
@@ -18,6 +19,10 @@ const api: PulpoDesktopApi = {
     load: () => ipcRenderer.invoke('desktop:session:load') as Promise<DesktopStoredSession | null>,
     store: (session) => ipcRenderer.invoke('desktop:session:store', session) as Promise<void>,
     clear: () => ipcRenderer.invoke('desktop:session:clear') as Promise<void>,
+  },
+  accounts: {
+    load: () => ipcRenderer.invoke('desktop:accounts:load') as Promise<DesktopSignedInAccounts | null>,
+    store: (accounts) => ipcRenderer.invoke('desktop:accounts:store', accounts) as Promise<void>,
   },
   openExternal: (url) => ipcRenderer.invoke('desktop:open-external', url) as Promise<void>,
   onProtocolUrl: (listener) => {

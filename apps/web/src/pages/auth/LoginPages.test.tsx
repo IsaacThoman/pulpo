@@ -11,6 +11,9 @@ const { authState } = vi.hoisted(() => ({
     setupRequired: false,
     instanceUrl: 'https://pulpo.baby',
     chooseInstance: vi.fn(),
+    signedInAccounts: [] as Array<{ id: string; name: string; username: string; email: string; avatarUrl: null; profileColor: null; active: boolean }>,
+    refreshSignedInAccounts: vi.fn(async () => undefined),
+    switchAccount: vi.fn(),
   },
 }))
 
@@ -32,6 +35,7 @@ import { LoginOptionsPage } from './LoginOptionsPage'
 import i18n from '@/i18n'
 
 afterEach(async () => {
+  authState.signedInAccounts = []
   await i18n.changeLanguage('en-US')
   Reflect.deleteProperty(globalThis, 'window')
 })
@@ -49,6 +53,15 @@ describe('login pages', () => {
     expect(markup).toContain('autoComplete="username webauthn"')
     expect(markup).not.toContain('Sign in with a passkey')
     expect(markup).not.toContain('Change server, currently')
+  })
+
+  it('offers signed-in accounts above the form so adding an account can be abandoned', () => {
+    authState.signedInAccounts = [{ id: 'personal', name: 'Personal Me', username: 'me', email: 'me@example.test', avatarUrl: null, profileColor: null, active: false }]
+    const markup = renderToStaticMarkup(<MemoryRouter><LoginPage /></MemoryRouter>)
+
+    expect(markup).toContain('Continue as')
+    expect(markup).toContain('me@example.test')
+    expect(markup.indexOf('Continue as')).toBeLessThan(markup.indexOf('Welcome back'))
   })
 
   it('shows the selected instance below the desktop login card', () => {

@@ -3,10 +3,10 @@ import { clearWebShelves } from '@/lib/local-first/shelf-registry'
 import { clearWebComposerSync } from '@/lib/local-first/composer-sync'
 import { create } from 'zustand'
 import { apiRequest, ApiError } from '@/lib/api'
-import { clearLocalUserData } from '@/lib/local-first/database'
+import { clearLocalUserData, indexedDbPersister } from '@/lib/local-first/database'
 import { clearRuntimeComposerDrafts } from '@/lib/local-first/composer-drafts'
 import { queryClient } from '@/lib/query-client'
-import { DEFAULT_MAX_INLINE_IMAGES, DEFAULT_MAX_ATTACHMENT_BYTES, type MobileConfig, type NativeAuthResponse, type PasskeyCeremony } from '@pulpo/contracts'
+import { DEFAULT_MAX_INLINE_IMAGES, DEFAULT_MAX_ATTACHMENT_BYTES, type MobileConfig, type NativeAuthResponse, type PasskeyCeremony, type SignedInAccount } from '@pulpo/contracts'
 import { authenticateWithPasskey, passkeyErrorMessage } from '@/lib/passkeys'
 import { normalizeInstanceUrl } from '@pulpo/client-core'
 import { authenticateDesktopPasskey, DesktopPasskeyCancelledError } from '@/lib/desktop-passkeys'
@@ -21,6 +21,13 @@ import {
 } from '@/lib/runtime'
 import { ui } from '@/i18n/ui'
 import { PROFILE_CHANGE_EVENT } from '@/lib/profile-events'
+import {
+  activateSignedInAccount,
+  listSignedInAccounts,
+  prepareToAddAccount,
+  signOutOtherAccounts,
+  signOutSignedInAccount,
+} from '@/lib/signed-in-accounts'
 
 export type AuthRole = 'pending' | 'user' | 'admin'
 
@@ -90,6 +97,16 @@ interface AuthState {
   chooseInstance: () => Promise<void>
   handleDesktopUnauthorized: () => Promise<void>
   replaceUser: (user: ServerUser) => void
+  signedInAccounts: SignedInAccount[]
+  refreshSignedInAccounts: () => Promise<void>
+  /** Keeps the active account signed in and reloads to the sign-in page. */
+  addAccount: () => Promise<void>
+  /** Activates another signed-in account and reloads the app as that account. */
+  switchAccount: (userId: string) => Promise<void>
+  signOutAccount: (userId: string) => Promise<void>
+  /** Signs out the active account; returns whether another account was activated. */
+  signOutActiveAccount: () => Promise<boolean>
+  signOutAllAccounts: () => Promise<void>
   setSignupEnabled: (value: boolean) => void
 }
 
@@ -121,8 +138,31 @@ function cacheProfile(user: AuthUser | null): void {
 }
 
 const cachedProfile = readCachedProfile()
+
+/** The persisted query cache is shared by every account in this browser profile. */
+async function forgetActiveAccountQueries(): Promise<void> {
+  await queryClient.cancelQueries()
+  queryClient.clear()
+  await indexedDbPersister.removeClient()
+}
+
+// Accounts share cookies and storage across tabs: follow another tab's account change.
+if (typeof window !== 'undefined') {
+  window.addEventListener?.('storage', (event) => {
+    if (event.key !== runtimeProfileKey()) return
+    let nextUserId: string | null = null
+    try { nextUserId = (JSON.parse(event.newValue ?? 'null') as AuthUser | null)?.id ?? null } catch { /* treat as signed out */ }
+    if (nextUserId !== (useAuth.getState().user?.id ?? null)) window.location.reload()
+  })
+}
 let bootstrapPromise: Promise<void> | null = null
 let bootstrapVersion = 0
+
+/** A startup check describes the credentials before a later auth transition. */
+function invalidateBootstrap(): void {
+  bootstrapVersion += 1
+  bootstrapPromise = null
+}
 
 export const useAuth = create<AuthState>()((set, get) => ({
   user: cachedProfile,
@@ -311,6 +351,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
       const response = isDesktopRuntime()
         ? await apiRequest<NativeAuthResponse>('/api/mobile/auth/login', { method: 'POST', body: { email, password, twoFactorCode, ...desktopDevice() } })
         : await apiRequest<AuthResponse>('/api/auth/login', { method: 'POST', body: { email, password, twoFactorCode } })
+      invalidateBootstrap()
       const user = normalizeUser(response.user)
       if (isDesktopRuntime() && 'session' in response) {
         const session = (response as NativeAuthResponse).session
@@ -333,6 +374,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
       if (isDesktopRuntime()) {
         configureDesktopRuntime({ instanceUrl: get().instanceUrl, token: null, onUnauthorized: () => { void get().handleDesktopUnauthorized() } })
         const response = await authenticateDesktopPasskey()
+        invalidateBootstrap()
         configureDesktopRuntime({ instanceUrl: get().instanceUrl, token: response.session.token, onUnauthorized: () => { void get().handleDesktopUnauthorized() } })
         await storeDesktopSession({ instanceUrl: get().instanceUrl, ...response.session })
         const user = normalizeUser(response.user)
@@ -345,6 +387,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
       const response = await apiRequest<AuthResponse>('/api/auth/passkey/verify', {
         method: 'POST', body: { ceremonyToken: ceremony.ceremonyToken, response: assertion },
       })
+      invalidateBootstrap()
       const user = normalizeUser(response.user)
       cacheProfile(user)
       set({ user, checkingSession: false })
@@ -361,6 +404,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
       const response = isDesktopRuntime()
         ? await apiRequest<NativeAuthResponse>('/api/mobile/auth/signup', { method: 'POST', body: { name, username, email, password, ...desktopDevice() } })
         : await apiRequest<AuthResponse>('/api/auth/signup', { method: 'POST', body: { name, username, email, password } })
+      invalidateBootstrap()
       const user = normalizeUser(response.user)
       if (isDesktopRuntime() && 'session' in response) {
         const session = (response as NativeAuthResponse).session
@@ -380,6 +424,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
       const response = isDesktopRuntime()
         ? await apiRequest<NativeAuthResponse>('/api/mobile/auth/setup', { method: 'POST', body: { name, username, email, password, ...desktopDevice() } })
         : await apiRequest<AuthResponse>('/api/auth/setup', { method: 'POST', body: { name, username, email, password } })
+      invalidateBootstrap()
       const user = normalizeUser(response.user)
       if (isDesktopRuntime() && 'session' in response) {
         const session = (response as NativeAuthResponse).session
@@ -395,8 +440,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
   },
 
   logout: async (localOnly = false) => {
-    bootstrapVersion += 1
-    bootstrapPromise = null
+    invalidateBootstrap()
     const userId = get().user?.id
     set({ user: null, checkingSession: false })
     cacheProfile(null)
@@ -408,7 +452,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
     await queryClient.cancelQueries()
     queryClient.clear()
     const { useChat } = await import('./chat')
-    useChat.setState({ chats: [], folders: [], activeChatId: null, activeTemporaryChatId: null, streamingIds: [], responseSequences: {}, responseChatIds: {} })
+    useChat.setState({ chats: [], activeChatId: null, activeTemporaryChatId: null, streamingIds: [], responseSequences: {}, responseChatIds: {} })
     if (userId) {
       clearRuntimeComposerDrafts(userId)
       clearWebShelves()
@@ -480,6 +524,58 @@ export const useAuth = create<AuthState>()((set, get) => ({
     const user = normalizeUser(profile)
     cacheProfile(user)
     set({ user })
+  },
+
+  signedInAccounts: [],
+
+  refreshSignedInAccounts: async () => {
+    const user = get().user
+    const accounts = await listSignedInAccounts(user)
+    if (get().user?.id === user?.id) set({ signedInAccounts: accounts })
+  },
+
+  addAccount: async () => {
+    const user = get().user
+    if (!user) return
+    await prepareToAddAccount(user)
+    invalidateBootstrap()
+    if (isDesktopRuntime()) configureDesktopRuntime({ instanceUrl: get().instanceUrl, token: null, onUnauthorized: () => { void get().handleDesktopUnauthorized() } })
+    set({ user: null, checkingSession: false })
+    cacheProfile(null)
+    await forgetActiveAccountQueries()
+    window.location.assign('/login')
+  },
+
+  switchAccount: async (userId) => {
+    const user = normalizeUser(await activateSignedInAccount(userId, get().user) as ServerUser)
+    invalidateBootstrap()
+    cacheProfile(user)
+    await forgetActiveAccountQueries()
+    window.location.assign('/')
+  },
+
+  signOutAccount: async (userId) => {
+    await signOutSignedInAccount(userId)
+    clearRuntimeComposerDrafts(userId)
+    await clearLocalUserData(userId)
+    set({ signedInAccounts: get().signedInAccounts.filter((account) => account.id !== userId) })
+  },
+
+  signOutActiveAccount: async () => {
+    await get().logout()
+    const next = (await listSignedInAccounts(null).catch(() => [])).find((account) => !account.active)
+    if (!next) return false
+    await get().switchAccount(next.id)
+    return true
+  },
+
+  signOutAllAccounts: async () => {
+    for (const userId of await signOutOtherAccounts()) {
+      clearRuntimeComposerDrafts(userId)
+      await clearLocalUserData(userId)
+    }
+    set({ signedInAccounts: [] })
+    await get().logout()
   },
 
   setSignupEnabled: (signupEnabled) => set({ signupEnabled }),

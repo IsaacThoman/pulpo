@@ -12,11 +12,22 @@ import { accessibleChatCondition } from '../chats/temporary.js'
 import { workspaceContinueWithoutAgentAvailableAt, workspaceQueuePosition } from './capacity.js'
 import { workspaceControllerRequest } from './controller-http.js'
 import type { RequestInit } from 'undici'
+import { posix } from 'node:path'
 import { detectImageMime } from './images.js'
 import { attemptWorkspaceLease, ControllerRequestError } from './lease-acquisition.js'
 
 const MAX_VIEW_IMAGE_BYTES = 20 * 1024 * 1024
 const MAX_EXPORT_FILE_BYTES = 25 * 1024 * 1024
+const POLL_INTERVAL_MS = 250
+const LONG_POLL_WAIT_MS = 10_000
+const POLL_ATTEMPTS = 3
+const POLL_RETRY_MS = 500
+const RELAY_ANSWER_TIMEOUT_MS = 10_000
+
+/** A `pulpo files` call from a bash command, held by the workspace daemon until Pulpo answers. Agent-controlled input. */
+export interface RelayRequest { id: string; command: string; args: unknown }
+/** `output` is what the CLI prints; `data` carries command-specific results such as pulled or pushed files. */
+export type RelayResult = { ok: true; output: string; data?: unknown } | { ok: false; error: string }
 
 export interface WorkspaceOperation {
   id: string
@@ -25,6 +36,8 @@ export interface WorkspaceOperation {
   exitCode: number | null
   error?: string
   details?: Record<string, unknown>
+  /** Present on daemons that relay `pulpo files` and support long-polls; absent on older images. */
+  relay?: { version: number; pending: RelayRequest[] }
 }
 
 export interface WorkspaceImage {
@@ -39,6 +52,22 @@ export interface WorkspaceFile {
 }
 
 const wait = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds))
+
+function workspaceFilePath(path: string): string {
+  const normalized = posix.normalize(path)
+  if (!path.startsWith('/') || !normalized.startsWith('/workspace/')) throw new Error('Workspace file paths must be absolute paths inside /workspace')
+  return normalized
+}
+
+/** The daemon answers `{ error }` JSON; surface that text rather than the controller envelope. */
+function workspaceFailure(action: string, error: unknown): Error {
+  if (!(error instanceof ControllerRequestError)) return error instanceof Error ? error : new Error(String(error))
+  let detail = error.responseBody
+  try { detail = String((JSON.parse(error.responseBody) as { error?: unknown }).error ?? detail) } catch { /* plain-text body */ }
+  return new Error(`${action}: ${detail}`)
+}
+
+const byteLimit = (bytes: number) => bytes % 1_048_576 === 0 ? `${bytes / 1_048_576} MiB` : `${bytes} byte`
 
 export class WorkspaceManager {
   private controllerLeaseId?: string
@@ -285,6 +314,101 @@ export class WorkspaceManager {
     return { data, sizeBytes: data.byteLength }
   }
 
+  /** Relay requests arrive while a bash command holds the lease, so these never acquire a replacement. */
+  private currentLease(): string {
+    if (this.toolsDisabled || !this.controllerLeaseId) throw new Error('The workspace is not available')
+    return this.controllerLeaseId
+  }
+
+  /** Writes bytes into the current workspace (used by `pulpo files pull`). */
+  async writeWorkspaceFile(path: string, body: Uint8Array | NodeJS.ReadableStream, sizeBytes: number, signal?: AbortSignal): Promise<void> {
+    const leaseId = this.currentLease()
+    const target = workspaceFilePath(path)
+    if (!Number.isSafeInteger(sizeBytes) || sizeBytes < 0 || (body instanceof Uint8Array && body.byteLength !== sizeBytes)) throw new Error('Workspace file size is invalid')
+    try {
+      const response = await this.request(`/v1/leases/${leaseId}/v1/files?path=${encodeURIComponent(target)}`, {
+        method: 'PUT', signal, duplex: 'half', headers: { 'content-type': 'application/octet-stream', 'content-length': String(sizeBytes) },
+        body: body instanceof Uint8Array ? body : body as unknown as AsyncIterable<Uint8Array>,
+      })
+      await response.arrayBuffer()
+    } catch (error) { throw workspaceFailure(`Could not write ${target}`, error) }
+  }
+
+  /** Reads a workspace file (used by `pulpo files push`), refusing to buffer more than maxBytes. */
+  async readWorkspaceFile(path: string, maxBytes: number, signal?: AbortSignal): Promise<Uint8Array> {
+    const leaseId = this.currentLease()
+    const target = workspaceFilePath(path)
+    const tooLarge = () => new Error(`${target} is larger than the ${byteLimit(maxBytes)} limit`)
+    let response: Response
+    try { response = await this.request(`/v1/leases/${leaseId}/v1/files?path=${encodeURIComponent(target)}`, { signal }) } catch (error) {
+      throw workspaceFailure(`Could not read ${target}`, error)
+    }
+    if (Number(response.headers.get('content-length') ?? 0) > maxBytes) { await response.body?.cancel(); throw tooLarge() }
+    const chunks: Uint8Array[] = []; let size = 0
+    const reader = response.body?.getReader()
+    for (let chunk = await reader?.read(); chunk && !chunk.done; chunk = await reader?.read()) {
+      size += chunk.value.byteLength
+      if (size > maxBytes) { await reader?.cancel(); throw tooLarge() }
+      chunks.push(chunk.value)
+    }
+    return Buffer.concat(chunks)
+  }
+
+  /**
+   * Answers each new `pulpo files` request. Only requests the daemon still lists are remembered:
+   * an answer whose delivery failed transiently (resent as is), or null once the daemon refused one
+   * for good (4xx; 404 means the CLI is gone, not that the lease expired). Answers go out even after
+   * the reply was stopped, because the change they report may already be committed; a short
+   * timeout of their own bounds that.
+   */
+  private async answerRelay(
+    leaseId: string,
+    operation: WorkspaceOperation,
+    unsettled: Map<string, RelayResult | null>,
+    onRelay: ((request: RelayRequest, signal?: AbortSignal) => Promise<RelayResult>) | undefined,
+    signal?: AbortSignal,
+  ): Promise<boolean> {
+    const pending = (Array.isArray(operation.relay?.pending) ? operation.relay.pending : [])
+      .filter((request) => typeof request?.id === 'string' && request.id && request.id.length <= 200 && typeof request.command === 'string')
+    const listed = new Set(pending.map((request) => request.id))
+    for (const id of unsettled.keys()) if (!listed.has(id)) unsettled.delete(id)
+    let answered = false
+    for (const request of pending) {
+      const retry = unsettled.get(request.id)
+      if (retry === null || (!retry && signal?.aborted)) continue
+      const result = retry ?? (onRelay
+        ? await onRelay({ id: request.id, command: request.command, args: request.args }, signal)
+          .catch((error: unknown): RelayResult => ({ ok: false, error: error instanceof Error ? error.message : String(error) }))
+        : { ok: false, error: 'Files are not available in this chat' })
+      if (!retry) answered = true
+      unsettled.delete(request.id)
+      try {
+        await (await this.request(`/v1/leases/${leaseId}/v1/relay/${encodeURIComponent(request.id)}`, {
+          method: 'POST', signal: AbortSignal.timeout(RELAY_ANSWER_TIMEOUT_MS), headers: { 'content-type': 'application/json' }, body: JSON.stringify(result),
+        })).arrayBuffer()
+      } catch (error) {
+        const details = { operationId: operation.id, requestId: request.id, error: error instanceof Error ? error.message : String(error) }
+        if (error instanceof ControllerRequestError && error.status < 500) {
+          if (error.status !== 404) { console.warn('Workspace daemon refused a relay answer', details); unsettled.set(request.id, null) }
+          continue
+        }
+        if (!retry) console.warn('Workspace relay answer was not delivered; retrying', details)
+        unsettled.set(request.id, result)
+      }
+    }
+    return answered
+  }
+
+  /** Retries transient poll failures (network blips, 5xx) a few times; a 4xx or repeated failure is final. */
+  private async poll(path: string, signal?: AbortSignal): Promise<WorkspaceOperation> {
+    for (let attempt = 1; ; attempt += 1) {
+      try { return await (await this.request(path, { signal })).json() as WorkspaceOperation } catch (error) {
+        if (signal?.aborted || attempt >= POLL_ATTEMPTS || (error instanceof ControllerRequestError && error.status < 500)) throw error
+        await wait(POLL_RETRY_MS * attempt)
+      }
+    }
+  }
+
   async execute(
     operationId: string,
     type: string,
@@ -292,6 +416,7 @@ export class WorkspaceManager {
     signal?: AbortSignal,
     onUpdate?: (output: string) => void,
     onStarted?: () => void | Promise<void>,
+    onRelay?: (request: RelayRequest, signal?: AbortSignal) => Promise<RelayResult>,
   ): Promise<WorkspaceOperation> {
     let leaseId = await this.ensureLease(signal)
     const init = { method: 'POST', signal, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: operationId, type, args }) }
@@ -308,11 +433,29 @@ export class WorkspaceManager {
     await onStarted?.()
     let operation = await response.json() as WorkspaceOperation
     let previousOutput = ''
+    let polledAt = 0
+    const unsettled = new Map<string, RelayResult | null>()
+    const stop = async (): Promise<never> => { await this.cancel(operationId); throw signal?.reason ?? new Error('Operation cancelled') }
     while (operation.status === 'running') {
-      if (signal?.aborted) { await this.cancel(operationId); throw signal.reason ?? new Error('Operation cancelled') }
+      if (signal?.aborted) await stop()
       if (operation.output !== previousOutput) { previousOutput = operation.output; onUpdate?.(operation.output) }
-      await new Promise((resolve) => setTimeout(resolve, 250))
-      operation = await (await this.request(`/v1/leases/${leaseId}/v1/operations/${operationId}`, { signal })).json() as WorkspaceOperation
+      const answered = await this.answerRelay(leaseId, operation, unsettled, onRelay, signal)
+      if (signal?.aborted) await stop()
+      // Long-polls wait for news on the daemon (output news only after 250 ms), so this floor never delays an honest
+      // daemon; it keeps one that answers instantly from spinning the loop.
+      const longPoll = operation.relay?.version === 1
+      if (!longPoll) await wait(POLL_INTERVAL_MS)
+      else if (!answered) await wait(Math.max(0, POLL_INTERVAL_MS - (Date.now() - polledAt)))
+      polledAt = Date.now()
+      try {
+        operation = await this.poll(`/v1/leases/${leaseId}/v1/operations/${operationId}${longPoll ? `?waitMs=${LONG_POLL_WAIT_MS}` : ''}`, signal)
+      } catch (error) {
+        if (signal?.aborted) await stop()
+        // Nobody will watch this command any more: stop it, so its held `pulpo files` calls fail now
+        // instead of waiting out the daemon's relay timeout.
+        await this.cancel(operationId)
+        throw error
+      }
     }
     if (operation.output !== previousOutput) onUpdate?.(operation.output)
     if (this.localLeaseId) { const now = new Date(); await db.update(workspaceLeases).set({ lastUsedAt: now, expiresAt: new Date(now.getTime() + this.idleTimeoutMs), updatedAt: now }).where(eq(workspaceLeases.id, this.localLeaseId)) }

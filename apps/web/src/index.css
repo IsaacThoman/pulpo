@@ -26,6 +26,8 @@
   --input: oklch(0.92 0.004 286.32);
   --ring: oklch(0.705 0.015 286.067);
   --radius: 0.5rem;
+  /* The open desktop sidebar's width; AppLayout sets the user's. */
+  --sidebar-width: 264px;
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.141 0.005 285.823);
   --sidebar-accent: oklch(0.967 0.001 286.375);
@@ -650,7 +652,7 @@ html[data-desktop="true"] .desktop-sidebar-titlebar {
 }
 
 html[data-desktop="true"] .desktop-model-titlebar-slot {
-  left: 276px;
+  left: calc(var(--sidebar-width) + 12px);
   height: 48px;
 }
 
@@ -821,6 +823,11 @@ html[data-desktop-os="win32"] .desktop-sidebar::after {
 
 html[data-desktop-os="win32"] .desktop-sidebar-added-border {
   display: none;
+}
+
+/* The folded rail's border starts below the title bar's curve, and so does its resize highlight. */
+html[data-desktop="true"]:not([data-desktop-os="win32"]) .desktop-sidebar-collapsed .sidebar-resize-handle::after {
+  top: 16px;
 }
 
 html[data-desktop="true"] .desktop-no-drag,

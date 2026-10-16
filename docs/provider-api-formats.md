@@ -10,6 +10,7 @@ provider uses.
 | --- | --- | --- |
 | **OpenAI Responses** (default) | `POST {base}/responses` | OpenAI, Azure OpenAI, Fireworks, other Responses-compatible gateways |
 | **OpenAI Chat Completions** | `POST {base}/chat/completions` | vLLM, Ollama, llama.cpp, Groq, OpenRouter, DeepSeek, Together, most self-hosted servers |
+| **Mistral Chat Completions** | `POST {base}/chat/completions` | Mistral directly, or gateways using Mistral's native thinking chunks |
 | **Anthropic Messages** | `POST {base}/messages` | Anthropic, Claude through Anthropic-compatible gateways, other providers with Anthropic-compatible endpoints |
 
 Apply migration `0092_provider_api_format.sql` with `npm run db:migrate`.
@@ -21,6 +22,7 @@ Under **Admin → Providers**, choose the **API format** when adding or editing 
 provider. The base URL includes the version path, as with OpenAI:
 
 - Anthropic: `https://api.anthropic.com/v1`
+- Mistral: `https://api.mistral.ai/v1` with `mistral_chat_completions`
 - A Chat Completions server such as vLLM: `http://vllm.internal:8000/v1`
 
 The provider health check and **Refresh models** use the provider's own model
@@ -65,6 +67,24 @@ the failure are still billed.
 - In Agent mode on servers other than OpenAI's, instructions use the `system`
   role and the output limit uses `max_tokens`. `reasoning_effort` is sent only
   when the model is configured with a reasoning effort.
+
+**Mistral Chat Completions**
+
+- Select this format explicitly for Mistral's native API. Existing OpenAI,
+  Chat Completions, and Anthropic connections retain their behavior; gateways
+  that normalize Mistral to OpenAI fields should keep their existing format.
+- Set `reasoning: {"effort": "high"}` or `reasoning: {"effort": "none"}` on
+  the model or its presets. A rejected effort is reported rather than silently
+  dropping the user's reasoning choice.
+- Both string answers and ordered arrays of nested `thinking` and `text` chunks
+  are translated into Pulpo's reasoning and answer events. Unsupported content
+  shapes fail with an adapter error, without including content in that error.
+- Thinking is stored and replayed as native assistant content on ordinary and
+  tool-calling turns to the same model and format. Imported tool IDs are mapped
+  consistently to Mistral's nine-character format.
+- Agent mode uses Pi's native Mistral adapter, which preserves thinking and tool
+  history. The configured reasoning choice also applies in Agent mode.
+- No database migration is needed to select this format.
 
 **Anthropic Messages**
 

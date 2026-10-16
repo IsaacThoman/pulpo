@@ -23,7 +23,7 @@ vi.mock('electron', () => ({
   },
 }))
 
-import { clearStoredSession, loadStoredSession, storeSession } from './session-store'
+import { clearStoredSession, loadSignedInAccounts, loadStoredSession, storeSession, storeSignedInAccounts } from './session-store'
 
 const session = {
   instanceUrl: 'https://pulpo.example',
@@ -74,5 +74,19 @@ describe('native session storage', () => {
     await storeSession(session)
     await clearStoredSession()
     await expect(loadStoredSession()).resolves.toBeNull()
+  })
+
+  it('encrypts other signed-in accounts and drops expired or malformed ones', async () => {
+    const work = { userId: '00000000-0000-4000-8000-000000000001', token: 'w'.repeat(43), expiresAt: '2099-01-01T00:00:00.000Z' }
+    await storeSignedInAccounts({
+      instanceUrl: session.instanceUrl,
+      accounts: [work, { ...work, userId: '00000000-0000-4000-8000-000000000002', expiresAt: '2020-01-01T00:00:00.000Z' }, { ...work, token: 'short' }],
+    })
+
+    const stored = await readFile(path.join(electron.userData, 'native-accounts.json'), 'utf8')
+    expect(stored).not.toContain(work.token)
+    await expect(loadSignedInAccounts()).resolves.toEqual({ instanceUrl: session.instanceUrl, accounts: [work] })
+    await storeSignedInAccounts({ instanceUrl: session.instanceUrl, accounts: [] })
+    await expect(loadSignedInAccounts()).resolves.toBeNull()
   })
 })

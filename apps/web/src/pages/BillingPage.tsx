@@ -6,6 +6,7 @@ import {
   ArrowLeft,
   Check,
   CreditCard,
+  Gauge,
   Loader2,
   Plus,
   ReceiptText,
@@ -39,6 +40,7 @@ import { Separator } from '@/components/ui/separator'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { SubscriptionUsageBars } from '@/components/SubscriptionUsageBars'
 import { AutoTopUpDialog, AutoTopUpStatus, MoneyInput } from '@/components/billing/AutoTopUp'
+import { ServiceTierDialog } from '@/components/billing/ServiceTierInfo'
 import { ui, uit } from '@/i18n/ui'
 
 const CREDIT_AMOUNTS = [10, 25, 50, 100] as const
@@ -81,6 +83,7 @@ export function BillingPage() {
   const [topUpError, setTopUpError] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [planOpen, setPlanOpen] = useState(false)
+  const [tierOpen, setTierOpen] = useState(false)
   const [planError, setPlanError] = useState('')
   const [autoTopUpOpen, setAutoTopUpOpen] = useState(false)
   const [saveCardForAutoTopUp, setSaveCardForAutoTopUp] = useState(false)
@@ -336,9 +339,16 @@ export function BillingPage() {
                 )}
                 <AutoTopUpStatus className="mt-4" autoTopUp={summary?.autoTopUp} />
               </div>
-              <div className="flex flex-wrap gap-2 pt-1">
-                <Button variant="default" onClick={() => { resetTopUp(); setTopUpOpen(true) }}><Plus />{ui("Add credits")}</Button>
-                <Button variant="ghost" disabled={!summary} onClick={() => setAutoTopUpOpen(true)}><Zap />{autoTopUpActionLabel(summary?.autoTopUp)}</Button>
+              <div className="pt-1">
+                <div className="flex flex-wrap gap-2">
+                  <Button variant="default" onClick={() => { resetTopUp(); setTopUpOpen(true) }}><Plus />{ui("Add credits")}</Button>
+                  <Button variant="ghost" disabled={!summary} onClick={() => setAutoTopUpOpen(true)}><Zap />{autoTopUpActionLabel(summary?.autoTopUp)}</Button>
+                </div>
+                {summary?.daily && (
+                  <button type="button" className="mt-3 inline-flex items-center gap-1.5 text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline" onClick={() => setTierOpen(true)}>
+                    <Gauge className="size-3.5" />{ui("Service tier info")}
+                  </button>
+                )}
               </div>
             </PaymentOption>
           </div>
@@ -419,6 +429,8 @@ export function BillingPage() {
         availableBalanceMicros={summary?.availableBalanceMicros}
         onSaved={refreshBilling}
       />
+
+      {summary?.daily && <ServiceTierDialog open={tierOpen} onOpenChange={setTierOpen} daily={summary.daily} tiers={summary.usageTiers} />}
 
       <Dialog open={planOpen} onOpenChange={(open) => { setPlanOpen(open); if (!open) setPlanError('') }}>
         <DialogContent className="sm:max-w-5xl">

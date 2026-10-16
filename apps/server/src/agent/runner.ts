@@ -8,9 +8,10 @@ import { Agent, type AgentMessage } from '@earendil-works/pi-agent-core'
 import { openAIResponsesApi } from '@earendil-works/pi-ai/api/openai-responses.lazy'
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy'
 import { anthropicMessagesApi } from '@earendil-works/pi-ai/api/anthropic-messages.lazy'
-import { chatCompletionsSamplingParameters, explicitReasoningEffort, piModelForProvider } from '../upstream/pi-model.js'
-import type { Api, AssistantMessage, Context, Model } from '@earendil-works/pi-ai'
-import { agentCostLimitMicros, findCostLimitItem, findCostLimitItems, toolImagePreviewSchema, type ToolImagePreview, type CompactionItem, type CostLimitItem, type RecallItem, type ResponseSnapshot } from '@pulpo/contracts'
+import { mistralConversationsApi } from '@earendil-works/pi-ai/api/mistral-conversations.lazy'
+import { chatCompletionsSamplingParameters, explicitReasoningEffort, mistralAgentPayload, piModelForProvider } from '../upstream/pi-model.js'
+import type { Api, AssistantMessage, Context, Message, Model, SimpleStreamOptions, ThinkingLevel, ToolChoice } from '@earendil-works/pi-ai'
+import { agentCostLimitMicros, findCostLimitItem, findCostLimitItems, toolImagePreviewSchema, type ToolImagePreview, type CompactionItem, type CostLimitItem, type FileChangesItem, type RecallItem, type ResponseSnapshot } from '@pulpo/contracts'
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { db } from '../database/client.js'
 import { agentRuns, applicationSettings, attachments, chats, generationAttempts, models, providerConnections, requestLogs, responses, toolExecutions, userPreferences } from '../database/schema.js'
@@ -30,7 +31,7 @@ import { buildAgentSystemPrompt, buildAgentUserPrompt, buildToolsDisabledSystemP
 import { runPostResponseTasks, type PostResponseTaskResult } from '../responses/post-tasks.js'
 import { calculateCostMicros, workspaceBillableMinutes, workspaceHoldMicros, workspaceUsageMicros } from '../accounting/pricing.js'
 import { truncateUtf8 } from './output.js'
-import { buildAgentOutput, type ToolTimelineItem } from './timeline.js'
+import { buildAgentOutput, nextAgentDisplayTurn, type ToolTimelineItem } from './timeline.js'
 import { messagesForPersistence } from './context.js'
 import { basename } from 'node:path'
 import { storeToolImagePreview } from '../attachments/tool-image-preview.js'
@@ -40,30 +41,26 @@ import { KagiClient } from './kagi.js'
 import { createWebTools, type WebProviderExecution } from './web-tools.js'
 import { FirecrawlClient, firecrawlCloudRequiresApiKey } from './firecrawl.js'
 import { createModelImageInterceptor, interceptAgentContextImages } from '../responses/image-ocr.js'
-import { retainedEntries } from '../responses/compaction.js'
-import {
-  agentCompactionItemId,
-  agentCompactionPrompt,
-  compactedAgentHandoffMessage,
-  prepareCompactedAgentNextTurn,
-  shouldCompactAgentContext,
-  splitAgentContext,
-} from './compaction.js'
+import { agentSummaryContext, agentSummaryText, completeAgentSummary, createAgentCompactor, interruptedCompactionItems, type AgentRequestFrame } from './compaction.js'
+import { hardContextLimit, summaryMaxOutputTokens } from '../compaction/policy.js'
+import { CompactionError, CompactionOverflowError } from '../compaction/summarize.js'
+import { piContextTokens } from '../compaction/tokens.js'
 import { isInsufficientBalanceError, trackBilledInternalModelCall } from '../responses/model-calls.js'
-import { createCatalogModelClient } from '../responses/catalog-model-runtime.js'
-import { effectiveAgentCompactionThreshold, estimateAgentContextTokens, shouldRetryContextOverflow } from './context-budget.js'
-import { sanitizeContextForStorage, sanitizeOutputForClient } from '../responses/public-output.js'
+import { codexContextFailureMessage, contextOverflowErrorMessage, contextOverflowOutcome, isContextFailure } from './context-budget.js'
+import { sanitizeOutputForClient } from '../responses/public-output.js'
 import { providerCacheRequestOptions, providerPromptCacheParameters } from '../responses/provider-cache.js'
 import { agentSnapshotIsDue } from './snapshot-policy.js'
 import { lineageFromLeaf } from '../messages/branching.js'
 import { responseUserAttachmentIds } from '../messages/input.js'
 import { responseInputText } from '../messages/input.js'
 import { createGenerationMemoryTools } from './memory-tools.js'
-import { createFilesTools, describeFileScope, loadFileScope } from '../files/agent-tools.js'
+import { describeFileScope } from '../files/agent/prompt.js'
+import { createFilesRelay } from '../files/agent/relay.js'
+import { loadChatFileScope } from '../files/agent/scope.js'
 import { readEpisodicMemorySettings } from '../episodic-memory/settings.js'
 import { generationSystemPrompt, loadGenerationMemory } from '../responses/memory-context.js'
 import { withGenerationTimeContext } from '../responses/time-context.js'
-import { messagesFromAgentContext, resolveAgentParentMessages, systemPromptFromAgentContext, withoutMemoryToolMessages } from './history.js'
+import { agentRunDisplayState, messagesFromAgentContext, resolveAgentParentMessages, resumedRunContinues, systemPromptFromAgentContext, withoutMemoryToolMessages } from './history.js'
 import { agentSamplingParameters, resolveAgentModelParameters } from './model-parameters.js'
 import { redis } from '../redis.js'
 import {
@@ -81,6 +78,7 @@ import { createProviderCostCapture } from './provider-cost.js'
 import { detailedPayloadCaptureIsActive } from '../logging/detailed-payload-retention.js'
 import { loadAgentPromptImages } from './prompt-images.js'
 import { adaptToolResultImagesForProvider, type ToolResultImageMode } from './tool-result-images.js'
+import { boundToolOutputContent, boundToolResultMessages } from './tool-output-budget.js'
 import { CODEX_PROVIDER_ID } from '../codex/constants.js'
 import { codexErrorRequiresReauthentication, createCodexModels, markCodexReauthenticationRequired, safeCodexErrorMessage } from '../codex/credential-store.js'
 import { codexInferenceReferenceCostMicros } from '../codex/reference-cost.js'
@@ -178,12 +176,11 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
   )
   const [chatState] = await db.select({ temporary: chats.temporary, fileScopeIds: chats.fileScopeIds }).from(chats)
     .where(eq(chats.id, record.response.chatId)).limit(1)
-  // Files attached to the chat, reachable only through the files tools and only while Files is on.
-  // Turns sent through admin chat access never reach the owner's Files.
-  const fileScope = parseAuthSettings(attachmentSettingsRow?.value).filesEnabled && record.response.origin !== 'admin_chat'
-    ? await loadFileScope(record.response.userId, chatState?.fileScopeIds ?? [])
-    : { roots: [], attached: [] }
-  const fileScopeContext = fileScope.roots.length ? describeFileScope(fileScope) : ''
+  // Files attached to the chat, reached only through `pulpo files` in bash and only while Files is
+  // on. Turns sent through admin chat access never reach the owner's Files; temporary chats have none.
+  const filesAllowed = parseAuthSettings(attachmentSettingsRow?.value).filesEnabled && record.response.origin !== 'admin_chat' && !chatState?.temporary
+  const fileScope = filesAllowed ? await loadChatFileScope(record.response.userId, record.response.chatId) : null
+  const fileScopeContext = fileScope?.roots.length ? describeFileScope(fileScope) : ''
   const memory = await loadGenerationMemory({
     chat: chatState,
     memoryEnabled: preferenceValues.memoryEnabled,
@@ -233,9 +230,9 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     generationSystemPrompt(memory.enabled, currentAgentSystemPrompt, systemPromptFromAgentContext(existingRun?.context)),
     record.response, startedAt,
   )
-  let resumedMessages = existingRun ? messagesFromAgentContext(existingRun.context) : parentMessages
+  let resumedMessages = boundToolResultMessages(existingRun ? messagesFromAgentContext(existingRun.context) : parentMessages)
   if (!memory.enabled) resumedMessages = withoutMemoryToolMessages(resumedMessages)
-  await db.insert(agentRuns).values({ id: runId, responseId, status: 'running', context: { systemPrompt: agentSystemPrompt, messages: resumedMessages }, startedAt: new Date() }).onConflictDoUpdate({ target: agentRuns.responseId, set: { status: 'running', updatedAt: new Date() } })
+  await db.insert(agentRuns).values({ id: runId, responseId, status: 'running', context: { systemPrompt: agentSystemPrompt, messages: resumedMessages, displayStart: resumedMessages.length, archivedMessages: [] }, startedAt: new Date() }).onConflictDoUpdate({ target: agentRuns.responseId, set: { status: 'running', updatedAt: new Date() } })
   const [requestLog] = await db.select().from(requestLogs).where(eq(requestLogs.responseId, responseId)).limit(1)
   if (!requestLog) throw new Error('Request log is missing')
   const detailedPayloadsEnabled = detailedPayloadCaptureIsActive(requestLog)
@@ -304,7 +301,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     await db.update(requestLogs).set({ stickyFallbackUsed: true, fallbackUsed: true, currentModelId: active.model.id, updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
     await publishAdminUsage(requestLog.id, true)
   }
-  const providerStreams = { 'openai-responses': openAIResponsesApi(), 'openai-completions': openAICompletionsApi(), 'anthropic-messages': anthropicMessagesApi() }
+  const providerStreams = { 'openai-responses': openAIResponsesApi(), 'openai-completions': openAICompletionsApi(), 'anthropic-messages': anthropicMessagesApi(), 'mistral-conversations': mistralConversationsApi() }
   const emptyUsage = { inputTokens: 0, cachedInputTokens: 0, cacheWriteTokens: 0, outputTokens: 0, reasoningTokens: 0, totalTokens: 0 }
   const persistedUsage = record.response.usage as typeof emptyUsage | null
   const publishResponseEvent = createResponseEventPublisher(record.response)
@@ -355,6 +352,8 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
   const turnFirstTokenMs = new Map<number, number>()
   const turnRetryAttempts = new Map<number, number>()
   let currentRetryAttempt = 1
+  // Context recovery is allowed again only after a model turn succeeds.
+  let successfulModelTurns = 0
   let lastResponder: { runtime: RuntimeModel; pricing: ActivePricing } | undefined
   const toolItems = new Map<string, ToolTimelineItem>((record.response.output as unknown[]).flatMap((raw) => {
     const item = raw as ToolTimelineItem | null
@@ -390,13 +389,20 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
   ))
   const recallItems: RecallItem[] = recallItem ? [recallItem] : []
   const costLimitItems = findCostLimitItems(record.response.output as unknown[])
+  let fileChangesItem = (record.response.output as unknown[]).find((raw): raw is FileChangesItem => (
+    (raw as { type?: string } | null)?.type === 'pulpo_file_changes'
+  ))
   let workspaceItem: Record<string, unknown> | undefined
   let workspaceStartedAtMs: number | undefined
   let workspaceReadyAtMs: number | undefined
   let workspaceHoldMicrosAmount = 0
   let workspaceCostMicros = 0
-  let skipMessageCount = parentMessages.length
-  const archivedDisplayMessages: AgentMessage[] = []
+  // Leading agent.state.messages that are not this run's output, and this run's messages compaction removed.
+  const resumedDisplay = existingRun ? agentRunDisplayState(existingRun.context) : undefined
+  let skipMessageCount = existingRun ? resumedDisplay?.displayStart ?? parentMessages.length : resumedMessages.length
+  const archivedDisplayMessages: AgentMessage[] = [...resumedDisplay?.archivedMessages ?? []]
+  // Whether agent.state.messages holds this run's prompt; a resumed run then continues instead of prompting again.
+  let promptRecorded = resumedDisplay?.promptRecorded ?? false
   let lastSnapshotAt = 0
   let emissionQueue = Promise.resolve()
   const emit = (type: string, payload: Record<string, unknown>): Promise<void> => {
@@ -459,6 +465,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
         compactionItems,
         recallItems,
         costLimitItems,
+        fileChangesItem,
         turnDurationsMs,
         streaming: false,
         terminal: true,
@@ -506,112 +513,164 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     await emit('pulpo.compaction.updated', publicItem)
     await snapshotIfDue()
   }
-  const compactionThreshold = () => effectiveAgentCompactionThreshold(
-    active.model.compactionThresholdTokens,
-    active.model.contextWindow,
-  )
-  const estimateCompactionTokens = (messages: AgentMessage[], extraMessages: AgentMessage[] = []) => estimateAgentContextTokens({
-    systemPrompt: agentSystemPrompt,
-    messages: [...messages, ...extraMessages],
-    tools: agent?.state.tools,
-  } as Context)
-  const compactAgentContext = async (
-    messages: AgentMessage[],
-    thresholdTokens: number,
-    phase: CompactionItem['phase'],
-    beforeAgentTurn?: number,
-    extraMessages: AgentMessage[] = [],
-    options: { force?: boolean; retainedTurns?: number; estimatedTokens?: number } = {},
-  ): Promise<AgentMessage[]> => {
-    const estimatedTokens = options.estimatedTokens ?? estimateCompactionTokens(messages, extraMessages)
-    const retainedTurnCount = options.retainedTurns ?? active.model.compactionRetainedTurns
-    const split = splitAgentContext(messages, retainedTurnCount)
-    if (!shouldCompactAgentContext({
-      enabled: active.model.compactionEnabled,
-      force: options.force,
-      estimatedTokens,
-      thresholdTokens,
-      cycleCount: split.cycles.length,
-      retainedTurns: retainedTurnCount,
-    })) return messages
-    const { retained, older, retainedCycles } = split
-    const storedRetained = sanitizeContextForStorage(retained)
-    const storedRetainedTurns = sanitizeContextForStorage(retainedCycles) as unknown[][]
-    const id = agentCompactionItemId(responseId, phase, beforeAgentTurn)
-    const existing = compactionItems.find((item) => item.id === id && item.status === 'completed' && item.model_id === active.model.id)
-    if (existing && !options.force) {
-      return [compactedAgentHandoffMessage(existing.summary, phase), ...retained]
+  /** Everything streamFn changes in a provider request without bookkeeping; the summarizer shares it so its prefix is identical. */
+  const prepareProviderContext = async (context: Context): Promise<Context> => {
+    if (!toolsDisabled) context = { ...context, systemPrompt: [context.systemPrompt, await manager.contextNotice()].filter(Boolean).join('\n\n') }
+    let preparedContext = await interceptAgentContextImages(context, active.model, imageInterceptor, active.provider)
+    preparedContext = adaptToolResultImagesForProvider(
+      preparedContext,
+      active.provider.toolResultImageMode as ToolResultImageMode,
+    )
+    if (preparedContext.tools?.some(tool => tool.name === 'generate_image') && !await selectedImageModel(record.response.userId)) {
+      preparedContext = { ...preparedContext, tools: preparedContext.tools.filter(tool => tool.name !== 'generate_image') }
     }
-    const started = Date.now()
-    const base: CompactionItem = {
-      id,
-      type: 'pulpo_compaction',
-      phase,
-      status: 'in_progress',
-      model_id: active.model.id,
-      estimated_tokens: estimatedTokens,
-      threshold_tokens: thresholdTokens,
-      retained_turns: retainedEntries(retained),
-      retained_context: storedRetained,
-      retained_context_turns: storedRetainedTurns,
-      summary: '',
-      started_at: new Date(started).toISOString(),
-      ...(beforeAgentTurn ? { before_agent_turn: beforeAgentTurn } : {}),
+    return preparedContext
+  }
+  type ProviderRequest = {
+    parameters: Record<string, unknown>
+    reasoning: ThinkingLevel
+    maxTokens: number
+    signal?: AbortSignal
+    fetch: typeof fetch
+    onPayload?: SimpleStreamOptions['onPayload']
+    toolChoice?: ToolChoice
+    /** Options pi-agent-core passes to streamFn. */
+    loopOptions?: SimpleStreamOptions
+  }
+  /** Streams to the active provider with the options every model call shares: key, cache affinity, session ids and transport. */
+  const streamActiveProvider = (context: Context, request: ProviderRequest) => {
+    const cacheOptions = providerCacheRequestOptions(active.provider, {
+      userId: record.response.userId,
+      chatId: record.response.chatId,
+      runId,
+    })
+    const streamOptions = {
+      ...request.loopOptions,
+      reasoning: request.reasoning,
+      samplingParams: agentSamplingParameters(active.provider.baseUrl, providerPromptCacheParameters(active.model.promptCachingEnabled, {
+        ...request.loopOptions?.samplingParams,
+        ...request.parameters,
+        max_output_tokens: request.maxTokens,
+      })),
+      maxTokens: request.maxTokens,
+      timeoutMs: active.provider.requestTimeoutMs,
+      maxRetries: 0,
+      signal: request.signal,
+      sessionId: cacheOptions.sessionId,
+      headers: cacheOptions.headers,
+      fetch: request.fetch,
+      onPayload: request.onPayload,
+      ...(request.toolChoice ? { toolChoice: request.toolChoice } : {}),
     }
-    await updateCompaction(base)
-    try {
-      const compactionInput = [{ role: 'user' as const, content: `${agentCompactionPrompt(phase)}\n\n${JSON.stringify(older)}` }]
-      const maxOutputTokens = Math.min(2_000, active.model.maxOutputTokens)
-      const billed = await trackBilledInternalModelCall({
-        responseId,
-        requestLogId: requestLog.id,
-        modelId: active.model.id,
-        upstreamModelId: active.model.upstreamModelId,
-        purpose: 'compaction',
-        requestInput: compactionInput,
-        maxOutputTokens,
-        required: true,
-        invoke: async () => {
-          if (active.codex) {
-            const result = await codexModels.completeSimple(active.piModel, {
-              messages: [{ role: 'user', content: compactionInput[0]!.content, timestamp: Date.now() }],
-            }, {
-              reasoning: 'low', maxTokens: maxOutputTokens, maxRetries: 0, transport: 'auto',
-              sessionId: `pulpo:${record.response.userId}:${record.response.chatId}:compaction`,
-            })
-            return {
-              id: result.responseId,
-              usage: {
-                inputTokens: result.usage.input + result.usage.cacheRead + result.usage.cacheWrite,
-                cachedInputTokens: result.usage.cacheRead, cacheWriteTokens: result.usage.cacheWrite,
-                outputTokens: result.usage.output, reasoningTokens: result.usage.reasoning ?? 0, totalTokens: result.usage.totalTokens,
-              },
-              output_text: result.content.flatMap((part) => part.type === 'text' ? [part.text] : []).join('\n'),
-            }
-          }
-          const client = createCatalogModelClient(active)
-          return client.responses.create({
-            model: active.model.upstreamModelId, input: compactionInput, store: false, max_output_tokens: maxOutputTokens,
-          })
+    if (active.codex) {
+      return codexModels.streamSimple(active.piModel, context, {
+        ...streamOptions,
+        samplingParams: undefined,
+        transport: 'auto',
+        sessionId: `pulpo:${record.response.userId}:${record.response.chatId}`,
+      })
+    }
+    if (active.piModel.api === 'openai-completions') {
+      return providerStreams['openai-completions'].streamSimple(active.piModel, context, {
+        ...streamOptions,
+        reasoning: explicitReasoningEffort(request.parameters) ? request.reasoning : undefined,
+        samplingParams: chatCompletionsSamplingParameters(providerPromptCacheParameters(active.model.promptCachingEnabled, request.parameters), active.provider.baseUrl),
+        apiKey: active.apiKey,
+      })
+    }
+    if (active.piModel.api === 'mistral-conversations') {
+      return providerStreams['mistral-conversations'].streamSimple(active.piModel, context, {
+        ...streamOptions,
+        reasoning: undefined,
+        samplingParams: undefined,
+        cacheRetention: active.model.promptCachingEnabled ? 'short' : 'none',
+        apiKey: active.apiKey,
+        onPayload: async (payload, model) => {
+          const body = mistralAgentPayload(payload, request.parameters)
+          return await streamOptions.onPayload?.(body, model) ?? body
         },
       })
-      if ('skipped' in billed) throw new Error('Insufficient balance for conversation compaction')
-      sidecarCostMicros += billed.costMicros
-      const item: CompactionItem = { ...base, status: 'completed', summary: billed.result.output_text, duration_ms: Date.now() - started }
-      await updateCompaction(item)
-      return [compactedAgentHandoffMessage(billed.result.output_text, phase), ...retained]
-    } catch (error) {
-      await updateCompaction({ ...base, status: 'failed', duration_ms: Date.now() - started, error: error instanceof Error ? error.message : String(error) })
-      throw error
     }
+    if (active.piModel.api === 'anthropic-messages') {
+      return providerStreams['anthropic-messages'].streamSimple(active.piModel, context, {
+        ...streamOptions,
+        samplingParams: undefined,
+        // Pi marks Anthropic cache breakpoints itself; follow the model's caching switch.
+        cacheRetention: active.model.promptCachingEnabled ? 'short' : 'none',
+        apiKey: active.apiKey,
+      })
+    }
+    return providerStreams['openai-responses'].streamSimple(active.piModel as Model<'openai-responses'>, context, {
+      ...streamOptions,
+      apiKey: active.apiKey,
+    })
   }
-  const adoptCompactedContext = (originalMessages: AgentMessage[], compactedMessages: AgentMessage[]) => {
-    if (compactedMessages === originalMessages) return false
+  const summaryMaxTokens = () => summaryMaxOutputTokens(active.model.maxOutputTokens)
+  /** One billed summarizer attempt: the real history sent like a normal turn, with low reasoning and no tool use. */
+  const summarizeAgentHistory = async (history: Message[], frame: AgentRequestFrame): Promise<string> => {
+    const maxTokens = summaryMaxTokens()
+    const request = await prepareProviderContext(agentSummaryContext(history, frame))
+    const { parameters } = resolveAgentModelParameters(active.model, record.response.parameters)
+    const billed = await trackBilledInternalModelCall({
+      responseId,
+      requestLogId: requestLog.id,
+      modelId: active.model.id,
+      upstreamModelId: active.model.upstreamModelId,
+      purpose: 'compaction',
+      requestInput: request,
+      maxOutputTokens: maxTokens,
+      required: true,
+      invoke: async () => {
+        const message = await completeAgentSummary({
+          context: request,
+          contextWindow: active.model.contextWindow,
+          stream: (context, toolChoice) => streamActiveProvider(context, {
+            parameters, reasoning: 'low', maxTokens, signal: frame.signal, fetch: diagnosticFetch(), toolChoice,
+          }),
+        }).catch(async (error: unknown) => {
+          if (!active.codex || error instanceof CompactionOverflowError) throw error
+          // The run's catch skips the reauthentication check for compaction failures, so an expired login is caught here, as in the worker.
+          if (codexErrorRequiresReauthentication(error)) await markCodexReauthenticationRequired(record.response.userId, 'Your Codex connection needs to be renewed.')
+          throw new CompactionError(`Context compaction failed: ${safeCodexErrorMessage(error)}`)
+        })
+        return {
+          id: message.responseId,
+          usage: {
+            inputTokens: message.usage.input + message.usage.cacheRead + message.usage.cacheWrite,
+            cachedInputTokens: message.usage.cacheRead, cacheWriteTokens: message.usage.cacheWrite,
+            outputTokens: message.usage.output, reasoningTokens: message.usage.reasoning ?? 0, totalTokens: message.usage.totalTokens,
+          },
+          output_text: agentSummaryText(message),
+        }
+      },
+    })
+    if ('skipped' in billed) throw new CompactionError('Insufficient balance for conversation compaction')
+    sidecarCostMicros += billed.costMicros
+    return billed.result.output_text
+  }
+  const compactAgentContext = createAgentCompactor({
+    responseId,
+    settings: () => ({
+      enabled: active.model.compactionEnabled,
+      modelId: active.model.id,
+      thresholdTokens: active.model.compactionThresholdTokens,
+      contextWindow: active.model.contextWindow,
+      retainedUserTokens: active.model.compactionRetainedUserTokens,
+      summaryMaxTokens: summaryMaxTokens(),
+    }),
+    items: () => compactionItems,
+    summarize: summarizeAgentHistory,
+    updateItem: updateCompaction,
+  })
+  /** Archive this run's display messages before swapping in the compacted history, so the output keeps them. */
+  const adoptCompactedContext = (compacted: AgentMessage[]) => {
     archivedDisplayMessages.push(...agent.state.messages.slice(skipMessageCount))
-    agent.state.messages = compactedMessages
-    skipMessageCount = compactedMessages.length
-    return true
+    agent.state.messages = compacted
+    skipMessageCount = compacted.length
+    // Mid-run and recovery compaction follow the prompt, which survives only as retained text.
+    promptRecorded = true
   }
+  const nextDisplayTurn = () => nextAgentDisplayTurn([...archivedDisplayMessages, ...agent.state.messages.slice(skipMessageCount)])
   let manager!: WorkspaceManager
   const disableAgentTools = () => {
     toolsDisabled = true
@@ -707,13 +766,6 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     maxOutputBytes: settings.maxToolOutputBytes,
     onOperationStarted: markToolStarted,
   })
-  const filesTools = createFilesTools({
-    userId: record.response.userId,
-    responseId,
-    scope: fileScope,
-    maxOutputBytes: settings.maxToolOutputBytes,
-    onOperationStarted: markToolStarted,
-  })
   const attachFile = async (operationId: string, path: string, name: string | undefined, signal?: AbortSignal) => {
     const [existing] = await db.select().from(attachments).where(and(
       eq(attachments.sourceResponseId, responseId), eq(attachments.sourceToolCallId, operationId), eq(attachments.status, 'ready'),
@@ -733,6 +785,21 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     await snapshotIfDue()
     return stored
   }
+  // `pulpo files` commands from bash, answered with the chat's scope as it is when each arrives.
+  const filesRelay = filesAllowed ? createFilesRelay({
+    userId: record.response.userId,
+    chatId: record.response.chatId,
+    responseId,
+    workspace: manager,
+    maxOutputBytes: settings.maxToolOutputBytes,
+    onChanged: async (count) => {
+      // Changes folded into other replies' suggestions leave this reply nothing to list.
+      if (!count && !fileChangesItem) return
+      fileChangesItem = { type: 'pulpo_file_changes', id: 'file-changes', count }
+      await emit('pulpo.agent.files.changed', { ...fileChangesItem })
+      await snapshotIfDue()
+    },
+  }) : undefined
   let agentAbortReason: 'response_timeout' | 'cancellation' | 'turn_limit' | undefined
   const abortTimer = setTimeout(() => {
     agentAbortReason ??= 'response_timeout'
@@ -758,63 +825,40 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
           })
           imagePreviews.set(toolCallId, preview)
           return preview
-        }),
+        }, filesRelay),
         ...configuredWebTools,
         ...imageTools,
         ...memoryTools,
-        ...filesTools,
       ],
       messages: resumedMessages,
       thinkingLevel: initialParameters.reasoning,
     },
-    prepareNextTurnWithContext: async ({ context, toolResults }, signal) => {
+    prepareNextTurnWithContext: async ({ context }, signal) => {
       if (!await waitAtCostLimit(signal)) return undefined
       if (manager.continuedWithoutAgent) disableAgentTools()
       if (toolsDisabled) context = withoutAgentTools(context, agentSystemPrompt)
-      const thresholdTokens = compactionThreshold()
-      let preparedContext = await interceptAgentContextImages(context, active.model, imageInterceptor, active.provider)
-      preparedContext = adaptToolResultImagesForProvider(
-        preparedContext as Context,
-        active.provider.toolResultImageMode as ToolResultImageMode,
-      ) as typeof preparedContext
-      const nextTurn = await prepareCompactedAgentNextTurn({
-        context,
-        completedModelTurns: modelTurns,
-        estimatedTokens: estimateAgentContextTokens(preparedContext as Context),
-        thresholdTokens,
-        willContinue: toolResults.length > 0 || agent.hasQueuedMessages(),
-        compact: (messages, beforeAgentTurn, estimatedTokens) => compactAgentContext(
-          messages,
-          thresholdTokens,
-          'agent_mid_run',
-          beforeAgentTurn,
-          [],
-          { force: true, estimatedTokens },
-        ),
-        adopt: adoptCompactedContext,
+      // pi-agent-core calls this only when another model turn is about to run.
+      const compacted = await compactAgentContext({
+        phase: 'agent_mid_run',
+        systemPrompt: context.systemPrompt,
+        tools: context.tools ?? [],
+        messages: context.messages,
+        beforeAgentTurn: nextDisplayTurn(),
+        signal,
       })
+      if (compacted) {
+        adoptCompactedContext(compacted)
+        return { context: { ...context, messages: compacted } }
+      }
       // Return the updated snapshot even when no compaction was needed.
-      return nextTurn ?? (toolsDisabled ? { context } : undefined)
+      return toolsDisabled ? { context } : undefined
     },
     streamFn: async (_model, context, options) => {
-      const cacheOptions = providerCacheRequestOptions(active.provider, {
-        userId: record.response.userId,
-        chatId: record.response.chatId,
-        runId,
-      })
-      if (!toolsDisabled) context = { ...context, systemPrompt: [context.systemPrompt, await manager.contextNotice()].filter(Boolean).join('\n\n') }
-      let preparedContext = await interceptAgentContextImages(context, active.model, imageInterceptor, active.provider)
-      preparedContext = adaptToolResultImagesForProvider(
-        preparedContext as Context,
-        active.provider.toolResultImageMode as ToolResultImageMode,
-      ) as typeof preparedContext
-      if (preparedContext.tools?.some(tool => tool.name === 'generate_image') && !await selectedImageModel(record.response.userId)) {
-        preparedContext = { ...preparedContext, tools: preparedContext.tools.filter(tool => tool.name !== 'generate_image') }
-      }
-      const hardContextLimit = effectiveAgentCompactionThreshold(Number.MAX_SAFE_INTEGER, active.model.contextWindow)
-      if (estimateAgentContextTokens(preparedContext as Context) > hardContextLimit) {
-        throw new Error('Agent context remains above the model context window after compaction')
-      }
+      const preparedContext = await prepareProviderContext(context)
+      // An oversized request fails like a provider overflow, so the run compacts and continues instead of failing.
+      const contextTokens = piContextTokens(preparedContext).tokens
+      const contextLimit = hardContextLimit(active.model.contextWindow)
+      if (contextTokens > contextLimit) throw new Error(contextOverflowErrorMessage(contextTokens, contextLimit))
       const resolvedParameters = resolveAgentModelParameters(active.model, record.response.parameters, options?.reasoning)
       const pricing = await getActivePricing(active.model.id)
       const reservation = await resizeBudgetReservation({
@@ -838,57 +882,20 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
       )
       const providerCostCapture = active.model.useProviderCost ? createProviderCostCapture() : undefined
       if (providerCostCapture) turnProviderCosts.set(modelTurns, providerCostCapture.costMicros)
-      const streamOptions = {
-          ...options,
-          reasoning: resolvedParameters.reasoning,
-          samplingParams: agentSamplingParameters(active.provider.baseUrl, providerPromptCacheParameters(active.model.promptCachingEnabled, {
-            ...options?.samplingParams,
-            ...resolvedParameters.parameters,
-            max_output_tokens: reservation.maxOutputTokens,
-          })),
-          maxTokens: reservation.maxOutputTokens,
-          timeoutMs: active.provider.requestTimeoutMs,
-          maxRetries: 0,
-          signal: firstTokenTimeout.signal,
-          sessionId: cacheOptions.sessionId,
-          headers: cacheOptions.headers,
-          fetch: diagnosticFetch({ purpose: 'generation', userId: record.response.userId, requestLogId: requestLog.id, modelCallId: turnAttemptIds.get(modelTurns), modelId: active.model.id, upstreamModelId: active.model.upstreamModelId, providerId: active.provider.id, metadata: { turnNumber: modelTurns, retryAttempt: currentRetryAttempt } }, providerCostCapture?.fetch),
-          onPayload: detailedPayloadsEnabled && active.codex
-            ? async (payload: unknown, model: Model<Api>) => {
-                const transformed = await options?.onPayload?.(payload, model)
-                turnRequestPayloads.set(modelTurns, diagnosticPayload(transformed ?? payload, 'reconstructed').body)
-                return transformed
-              }
-            : options?.onPayload,
-        }
-      if (active.codex) {
-        return codexModels.streamSimple(active.piModel, preparedContext, {
-          ...streamOptions,
-          samplingParams: undefined,
-          transport: 'auto',
-          sessionId: `pulpo:${record.response.userId}:${record.response.chatId}`,
-        })
-      }
-      if (active.piModel.api === 'openai-completions') {
-        return providerStreams['openai-completions'].streamSimple(active.piModel, preparedContext, {
-          ...streamOptions,
-          reasoning: explicitReasoningEffort(resolvedParameters.parameters) ? resolvedParameters.reasoning : undefined,
-          samplingParams: chatCompletionsSamplingParameters(providerPromptCacheParameters(active.model.promptCachingEnabled, resolvedParameters.parameters), active.provider.baseUrl),
-          apiKey: active.apiKey,
-        })
-      }
-      if (active.piModel.api === 'anthropic-messages') {
-        return providerStreams['anthropic-messages'].streamSimple(active.piModel, preparedContext, {
-          ...streamOptions,
-          samplingParams: undefined,
-          // Pi marks Anthropic cache breakpoints itself; follow the model's caching switch.
-          cacheRetention: active.model.promptCachingEnabled ? 'short' : 'none',
-          apiKey: active.apiKey,
-        })
-      }
-      return providerStreams['openai-responses'].streamSimple(active.piModel as Model<'openai-responses'>, preparedContext, {
-        ...streamOptions,
-        apiKey: active.apiKey,
+      return streamActiveProvider(preparedContext, {
+        loopOptions: options,
+        parameters: resolvedParameters.parameters,
+        reasoning: resolvedParameters.reasoning,
+        maxTokens: reservation.maxOutputTokens,
+        signal: firstTokenTimeout.signal,
+        fetch: diagnosticFetch({ purpose: 'generation', userId: record.response.userId, requestLogId: requestLog.id, modelCallId: turnAttemptIds.get(modelTurns), modelId: active.model.id, upstreamModelId: active.model.upstreamModelId, providerId: active.provider.id, metadata: { turnNumber: modelTurns, retryAttempt: currentRetryAttempt } }, providerCostCapture?.fetch),
+        onPayload: detailedPayloadsEnabled && active.codex
+          ? async (payload: unknown, model: Model<Api>) => {
+              const transformed = await options?.onPayload?.(payload, model)
+              turnRequestPayloads.set(modelTurns, diagnosticPayload(transformed ?? payload, 'reconstructed').body)
+              return transformed
+            }
+          : options?.onPayload,
       })
     },
     toolExecution: 'sequential',
@@ -897,20 +904,35 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
       if (toolCalls >= settings.maxToolCalls) return { block: true, reason: `Tool call limit (${settings.maxToolCalls}) reached` }
       return await waitAtCostLimit(signal) ? undefined : { block: true, reason: 'Stopped at the cost limit' }
     },
+    afterToolCall: async ({ toolCall, result }) => {
+      const content = boundToolOutputContent(toolCall.name, result.content, result.details)
+      return content ? { content } : undefined
+    },
   })
   let lastRunPersistAt = 0
+  // Display state lets a resumed run render the same output; only assistant messages are displayed.
+  const runContext = () => ({
+    systemPrompt: agentSystemPrompt,
+    messages: messagesForPersistence(agent.state.messages),
+    displayStart: skipMessageCount,
+    archivedMessages: messagesForPersistence(archivedDisplayMessages.filter((message) => message.role === 'assistant')),
+    promptRecorded,
+    billingTurns,
+  })
   const persistRunContext = async (force = false) => {
     if (!force && Date.now() - lastRunPersistAt < 500) return
     lastRunPersistAt = Date.now()
     await db.update(agentRuns).set({
       workspaceLeaseId: manager.leaseId,
-      context: { systemPrompt: agentSystemPrompt, messages: messagesForPersistence(agent.state.messages), billingTurns },
+      context: runContext(),
       modelTurns,
       toolCalls,
       updatedAt: new Date(),
     }).where(eq(agentRuns.id, runId))
   }
   agent.subscribe(async (event) => {
+    // The only user message pi-agent-core records during a run is the prompt; it is in agent.state.messages by now.
+    if (event.type === 'message_end' && event.message.role === 'user') promptRecorded = true
     if (event.type === 'turn_start') {
       modelTurns += 1
       if (modelTurns > settings.maxModelTurns) {
@@ -978,7 +1000,10 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
       const outputStarted = turnOutputStarted.has(completedTurnNumber) || assistantMessageHasOutput(message)
       if (outputStarted) turnOutputStarted.add(completedTurnNumber)
       const failed = message.stopReason === 'error' || message.stopReason === 'aborted'
-      if (!failed) currentRetryAttempt = 1
+      if (!failed) {
+        currentRetryAttempt = 1
+        successfulModelTurns += 1
+      }
       if (!failed || outputStarted) lastResponder = { runtime: completedRuntime.runtime, pricing }
       const cancellationRequested = message.stopReason === 'aborted'
         && (agentAbortReason === 'cancellation' || await isCancellationRequested(responseId))
@@ -1084,6 +1109,8 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
       pricing: await getActivePricing(active.model.id),
     })
     await emit('pulpo.agent.started', { runId })
+    // A compaction cut short by a crash never finishes; close it before the run goes on.
+    for (const item of interruptedCompactionItems(compactionItems)) await updateCompaction(item)
     const initialPrompt = buildAgentUserPrompt(record.response.input, attachedFiles) || 'How can I help?'
     const promptImages = await loadAgentPromptImages(attachedFiles, undefined, parseAuthSettings(attachmentSettingsRow?.value).maxInlineImages)
     const initialMessage: AgentMessage = {
@@ -1092,22 +1119,24 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
       timestamp: Date.now(),
     }
     if (!existingRun) {
-      resumedMessages = await compactAgentContext(
-        resumedMessages,
-        compactionThreshold(),
-        'pre_response',
-        undefined,
-        [initialMessage],
-        { estimatedTokens: estimateCompactionTokens(resumedMessages, [initialMessage]) },
-      )
+      // The history is summarized; agent.prompt appends the incoming prompt after the summary.
+      resumedMessages = await compactAgentContext({
+        phase: 'pre_response',
+        systemPrompt: agent.state.systemPrompt,
+        tools: agent.state.tools,
+        messages: resumedMessages,
+        pending: [initialMessage],
+      }) ?? resumedMessages
       agent.state.messages = resumedMessages
       agent.state.model = active.piModel
       skipMessageCount = resumedMessages.length
     }
-    if (existingRun && resumedMessages.length > parentMessages.length) await agent.continue()
+    if (existingRun && resumedRunContinues({ promptRecorded }, resumedMessages.length, skipMessageCount)) await agent.continue()
     else await agent.prompt(initialMessage)
     let last = agent.state.messages.at(-1)
-    let overflowRetried = false
+    // Any context recovery disables ordinary retries and fallback for the rest of the run.
+    let contextRecovered = false
+    let successfulTurnsAtRecovery: number | undefined
     const refreshTimeContext = () => {
       agentSystemPrompt = withGenerationTimeContext(agentSystemPrompt, record.response, Date.now())
       agent.state.systemPrompt = agentSystemPrompt
@@ -1116,28 +1145,31 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
       const failedTurnNumber = modelTurns
       const failedRuntime = turnRuntime.get(failedTurnNumber) ?? { runtime: active, index: activeIndex }
       const outputStarted = turnOutputStarted.has(failedTurnNumber) || assistantMessageHasOutput(last)
-      if (!outputStarted && shouldRetryContextOverflow(last, active.model.contextWindow, overflowRetried)) {
+      // Recovering twice without a successful turn in between would loop on a context that cannot shrink.
+      const recoveryAllowed = active.model.compactionEnabled
+        && (successfulTurnsAtRecovery === undefined || successfulModelTurns > successfulTurnsAtRecovery)
+      const overflow = contextOverflowOutcome(last, { contextWindow: active.model.contextWindow, outputStarted, recoveryAllowed })
+      // Resending or rerouting an oversized request cannot help, so an overflow that cannot be recovered fails the run.
+      if (overflow === 'stop') break
+      if (overflow === 'recover') {
         const failedMessage = last
         const originalMessages = agent.state.messages.slice(0, -1)
         agent.state.messages = originalMessages
-        const estimatedTokens = estimateAgentContextTokens({
+        const compactedMessages = await compactAgentContext({
+          phase: 'agent_mid_run',
           systemPrompt: agent.state.systemPrompt,
-          messages: originalMessages,
           tools: agent.state.tools,
-        } as Context)
-        const compactedMessages = await compactAgentContext(
-          originalMessages,
-          compactionThreshold(),
-          'agent_mid_run',
-          modelTurns,
-          [],
-          { force: true, retainedTurns: 1, estimatedTokens },
-        )
-        if (!adoptCompactedContext(originalMessages, compactedMessages)) {
+          messages: originalMessages,
+          force: true,
+          beforeAgentTurn: nextDisplayTurn(),
+        })
+        if (!compactedMessages) {
           agent.state.messages = [...originalMessages, failedMessage]
           break
         }
-        overflowRetried = true
+        adoptCompactedContext(compactedMessages)
+        contextRecovered = true
+        successfulTurnsAtRecovery = successfulModelTurns
         refreshTimeContext()
         await agent.continue()
         last = agent.state.messages.at(-1)
@@ -1151,7 +1183,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
         outputStarted,
         cancellationRequested,
       })
-      if (retryAttempt !== undefined && !overflowRetried) {
+      if (retryAttempt !== undefined && !contextRecovered) {
         const retryPolicy = failedRuntime.index > 0 ? runtimes[failedRuntime.index - 1]!.model : failedRuntime.runtime.model
         if (retryPolicy.retryDelaySeconds > 0) {
           await new Promise((resolve) => setTimeout(resolve, retryPolicy.retryDelaySeconds * 1_000))
@@ -1165,7 +1197,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
         last = agent.state.messages.at(-1)
         continue
       }
-      if (!canFallbackAgentTurn({ message: last, outputStarted, cancellationRequested, contextRetryAttempted: overflowRetried })) break
+      if (!canFallbackAgentTurn({ message: last, outputStarted, cancellationRequested, contextRetryAttempted: contextRecovered })) break
       if (failedRuntime.index !== activeIndex || activeIndex + 1 >= runtimes.length) break
       await markModelSticky(redis, failedRuntime.runtime.model, classifyGenerationError(new Error(last.errorMessage || 'Agent model turn failed')))
       agent.state.messages = agent.state.messages.slice(0, -1)
@@ -1181,7 +1213,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     await snapshot(terminalStatus)
     const [completed] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
     if (completed) await persistResponseItems(responseId, completed.output as unknown[])
-    await db.update(agentRuns).set({ status: 'completed', context: { systemPrompt: agentSystemPrompt, messages: messagesForPersistence(agent.state.messages), billingTurns }, modelTurns, toolCalls, completedAt: new Date(), updatedAt: new Date() }).where(eq(agentRuns.id, runId))
+    await db.update(agentRuns).set({ status: 'completed', context: runContext(), modelTurns, toolCalls, completedAt: new Date(), updatedAt: new Date() }).where(eq(agentRuns.id, runId))
     const finalResponder = lastResponder ?? { runtime: active, pricing: await getActivePricing(active.model.id) }
     await db.update(responses).set({ actualModelId: finalResponder.runtime.model.id, pricingVersionId: finalResponder.pricing.id }).where(eq(responses.id, responseId))
     const postTasks: PostResponseTaskResult = terminalStatus === 'completed'
@@ -1224,19 +1256,23 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     await db.update(requestLogs).set({ status: terminalStatus, actualModelId: finalResponder.runtime.model.id, inputTokens: usage.inputTokens, cachedInputTokens: usage.cachedInputTokens, cacheWriteTokens: usage.cacheWriteTokens, outputTokens: usage.outputTokens, reasoningTokens: usage.reasoningTokens, costMicros: cost, durationMs: totalDurationMs, tokensPerSecond: totalDurationMs > 0 ? completionTokensPerSecond(totalDurationMs, usage.outputTokens) : null, completedAt: new Date(), updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
     await publishAdminUsage(requestLog.id, true)
   } catch (error) {
-    const errorMessage = active.codex ? safeCodexErrorMessage(error) : error instanceof Error ? error.message : String(error)
+    // Compaction and overflow texts may mention tokens, which the Codex reauthentication check would misread.
+    const contextFailure = isContextFailure(error)
+    const errorMessage = active.codex
+      ? contextFailure ? codexContextFailureMessage(error) : safeCodexErrorMessage(error)
+      : error instanceof Error ? error.message : String(error)
     if (active.codex) {
       agent.state.messages = agent.state.messages.map((message) => (
         message.role === 'assistant' && message.errorMessage ? { ...message, errorMessage } : message
       ))
     }
-    if (active.codex && codexErrorRequiresReauthentication(error)) {
+    if (active.codex && !contextFailure && codexErrorRequiresReauthentication(error)) {
       await markCodexReauthenticationRequired(record.response.userId, 'Your Codex connection needs to be renewed.')
     }
     const cancelled = await isCancellationRequested(responseId)
     const status = cancelled ? 'cancelled' : 'failed'
     await snapshot(status, errorMessage)
-    await db.update(agentRuns).set({ status, error: errorMessage, context: { systemPrompt: agentSystemPrompt, messages: messagesForPersistence(agent.state.messages), billingTurns }, completedAt: new Date(), updatedAt: new Date() }).where(eq(agentRuns.id, runId))
+    await db.update(agentRuns).set({ status, error: errorMessage, context: runContext(), completedAt: new Date(), updatedAt: new Date() }).where(eq(agentRuns.id, runId))
     const finalResponder = lastResponder ?? { runtime: active, pricing: await getActivePricing(active.model.id) }
     await db.update(responses).set({ actualModelId: finalResponder.runtime.model.id, pricingVersionId: finalResponder.pricing.id }).where(eq(responses.id, responseId))
     const workspaceElapsedMs = workspaceReadyAtMs !== undefined && settings.billWorkspaces ? Date.now() - workspaceReadyAtMs : 0

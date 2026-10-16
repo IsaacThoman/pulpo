@@ -8,7 +8,7 @@ import { db } from '../database/client.js'
 import { chats, requestLogs, responses, usageEvents, users } from '../database/schema.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
-import { cascadeDeletionIds, newestDescendantId } from './branching.js'
+import { cascadeDeletionIds, hasOtherResponseVersion, leafAfterDeletion, newestDescendantId } from './branching.js'
 import { publishStateChange, requestCancellation } from '../responses/events.js'
 import { createResponse, toSnapshot } from '../responses/service.js'
 import { replaceResponseUserInput, responseAttachmentIds, responseInputText, responseUserAttachmentIds } from './input.js'
@@ -300,15 +300,18 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
     const cancelling = await db.transaction(async (tx) => {
       const [chat] = await tx.select().from(chats).where(and(eq(chats.id, original.chatId), eq(chats.userId, user.id))).for('update')
       const turns = await tx.select().from(responses).where(and(eq(responses.chatId, original.chatId), eq(responses.userId, user.id), isNull(responses.deletedAt))).orderBy(asc(responses.createdAt), asc(responses.id))
-      const deleting = cascadeDeletionIds(turns, original, id.endsWith(':input'))
+      const deletingUserMessage = id.endsWith(':input')
+      if (!deletingUserMessage && !hasOtherResponseVersion(turns, original)) {
+        throw new AppError(409, 'last_response_version', 'The only version of a response cannot be deleted')
+      }
+      const deleting = cascadeDeletionIds(turns, original, deletingUserMessage)
       const now = new Date()
       const cancelling = turns.filter((turn) => deleting.has(turn.id) && ['queued', 'in_progress'].includes(turn.status)).map((turn) => turn.id)
       if (deleting.size) {
         await tx.update(responses).set({ deletedAt: now, updatedAt: now }).where(inArray(responses.id, [...deleting]))
       }
-      const remaining = turns.filter((turn) => !deleting.has(turn.id))
       const currentLeaf = chat?.activeBranchLeafId ?? chat?.activeResponseId ?? null
-      const leafId = currentLeaf && !deleting.has(currentLeaf) ? currentLeaf : remaining.at(-1)?.id ?? null
+      const leafId = leafAfterDeletion(turns, original, deleting, currentLeaf)
       await tx.update(chats).set({ activeResponseId: leafId, activeBranchLeafId: leafId, updatedAt: now,
         ...(leafId !== currentLeaf ? { workspaceScopeId: newId() } : {}),
       }).where(and(

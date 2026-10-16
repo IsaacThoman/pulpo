@@ -1,6 +1,6 @@
 import { attachmentBatchRequiresAgent } from '@/lib/attachments'
 import { localComposerDraftId } from '@pulpo/client-core'
-import type { ComposerState } from '@pulpo/contracts'
+import type { ComposerState, FileAccessMode } from '@pulpo/contracts'
 import { webComposerSync } from '@/lib/local-first/composer-sync'
 import { create } from 'zustand'
 import { attachmentValidationError, createUploadQueue, retryBusyUpload } from '@pulpo/client-core'
@@ -52,6 +52,7 @@ export interface PendingSubmission {
   autoExpire: boolean
   /** Files folders for the chat this submission starts; absent in older saved submissions. */
   fileScopeIds?: string[]
+  fileScopeAccess?: Record<string, FileAccessMode>
   attachmentIds: string[]
   /** Dictation produced some of the message text (analytics only). */
   usedDictation?: boolean
@@ -76,6 +77,7 @@ interface SubmissionDraft {
   temporary: boolean
   autoExpire: boolean
   fileScopeIds?: string[]
+  fileScopeAccess?: Record<string, FileAccessMode>
   attachmentIds: string[]
   usedDictation?: boolean
 }
@@ -139,6 +141,7 @@ function renderSubmissionSurface(submission: PendingSubmission, records: UploadR
       temporary: submission.temporary,
       autoExpire: submission.autoExpire,
       fileScopeIds: submission.fileScopeIds,
+      fileScopeAccess: submission.fileScopeAccess,
       createdAt: submission.createdAt,
     })
     return
@@ -570,6 +573,7 @@ export const useUploadOutbox = create<UploadOutboxState>()((set, get) => ({
           temporary: draft.temporary,
           autoExpire: draft.autoExpire,
           fileScopeIds: draft.fileScopeIds,
+          fileScopeAccess: draft.fileScopeAccess,
           createdAt,
         })
       : { chatId: draft.chatId!, responseId }
@@ -584,7 +588,7 @@ export const useUploadOutbox = create<UploadOutboxState>()((set, get) => ({
       agentMode: draft.agentMode,
       temporary: draft.temporary,
       autoExpire: draft.autoExpire,
-      ...(draft.chatId === null && draft.fileScopeIds?.length ? { fileScopeIds: draft.fileScopeIds } : {}),
+      ...(draft.chatId === null && draft.fileScopeIds?.length ? { fileScopeIds: draft.fileScopeIds, fileScopeAccess: draft.fileScopeAccess } : {}),
       attachmentIds: draft.attachmentIds,
       ...(draft.usedDictation ? { usedDictation: true } : {}),
       createdAt,

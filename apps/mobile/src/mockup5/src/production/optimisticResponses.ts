@@ -115,23 +115,37 @@ export function withBranchMetadata(responses: ServerResponse[]): ServerResponse[
   const sorted = [...responses].sort((left, right) => (
     left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id)
   ))
+  const parents = new Map<string | null, Map<string, string[]>>()
+  const keys = new Map<ServerResponse, string>()
+  for (const response of sorted) {
+    const key = userBranchKey(response)
+    keys.set(response, key)
+    let groups = parents.get(response.parentResponseId)
+    if (!groups) { groups = new Map(); parents.set(response.parentResponseId, groups) }
+    const group = groups.get(key)
+    if (group) group.push(response.id)
+    else groups.set(key, [response.id])
+  }
+  const indexed = new Map([...parents].map(([parent, groups]) => [parent, {
+    userIds: [...groups.values()].map((ids) => ids.at(-1)!),
+    groups: new Map([...groups].map(([key, ids], index) => [key, {
+      ids,
+      index,
+      positions: new Map(ids.map((id, position) => [id, position])),
+    }])),
+  }]))
   return sorted.map((active) => {
-    const siblings = sorted.filter((response) => response.parentResponseId === active.parentResponseId)
-    const groups = new Map<string, ServerResponse[]>()
-    for (const sibling of siblings) {
-      const key = userBranchKey(sibling)
-      groups.set(key, [...(groups.get(key) ?? []), sibling])
-    }
-    const activeKey = userBranchKey(active)
-    const userIds = [...groups.entries()].map(([key, group]) => (
-      key === activeKey ? active.id : group.at(-1)!.id
-    ))
-    const assistantIds = groups.get(activeKey)?.map((response) => response.id) ?? [active.id]
+    const parent = indexed.get(active.parentResponseId)!
+    const group = parent.groups.get(keys.get(active)!)!
+    // Every prompt variant shows its newest answer, except the selected variant,
+    // whose control must point at this answer even when it is an older version.
+    const userIds = [...parent.userIds]
+    userIds[group.index] = active.id
     return {
       ...active,
       branches: {
-        user: { ids: userIds, index: userIds.indexOf(active.id) },
-        assistant: { ids: assistantIds, index: assistantIds.indexOf(active.id) },
+        user: { ids: userIds, index: group.index },
+        assistant: { ids: group.ids, index: group.positions.get(active.id)! },
       },
     }
   })
@@ -474,6 +488,35 @@ function deletionIds(responses: ServerResponse[], selected: ServerResponse, incl
   return deleting
 }
 
+function newestDescendantId(responses: ServerResponse[], selectedId: string): string {
+  const newestChild = new Map(responses.map((response) => [response.parentResponseId, response.id]))
+  let leafId = selectedId
+  const seen = new Set<string>()
+  while (!seen.has(leafId)) {
+    seen.add(leafId)
+    const child = newestChild.get(leafId)
+    if (!child || seen.has(child)) break
+    leafId = child
+  }
+  return leafId
+}
+
+/** Mirrors the server: show the neighbouring version, then another prompt variant, then the parent. */
+function leafAfterDeletion(responses: ServerResponse[], selected: ServerResponse, deleting: Set<string>, currentLeaf: string | null): string | null {
+  if (currentLeaf && !deleting.has(currentLeaf)) return currentLeaf
+  const sorted = [...responses].sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id))
+  const remaining = sorted.filter((response) => !deleting.has(response.id))
+  const versions = sorted.filter((response) => response.parentResponseId === selected.parentResponseId
+    && userBranchKey(response) === userBranchKey(selected))
+  const position = versions.findIndex((response) => response.id === selected.id)
+  const neighbour = [...versions.slice(0, Math.max(0, position)).reverse(), ...versions.slice(position + 1)]
+    .find((response) => !deleting.has(response.id))
+  const variant = remaining.filter((response) => response.parentResponseId === selected.parentResponseId).at(-1)
+  const parent = remaining.find((response) => response.id === selected.parentResponseId)
+  const anchor = neighbour ?? variant ?? parent
+  return anchor ? newestDescendantId(remaining, anchor.id) : remaining.at(-1)?.id ?? null
+}
+
 /** Apply a deletion after server success without blocking on a transcript refetch. */
 export function applyConfirmedMessageDeletion(input: {
   queryClient: QueryClient
@@ -489,7 +532,7 @@ export function applyConfirmedMessageDeletion(input: {
   const deleting = deletionIds(chat.responses, selected, includeUserVariant)
   const responses = chat.responses.filter((response) => !deleting.has(response.id))
   const currentLeaf = chat.activeBranchLeafId ?? chat.activeResponseId
-  const leafId = currentLeaf && !deleting.has(currentLeaf) ? currentLeaf : responses.at(-1)?.id ?? null
+  const leafId = leafAfterDeletion(chat.responses, selected, deleting, currentLeaf)
   for (const id of deleting) {
     pendingResponses.delete(pendingKey(input.namespace, id))
     useRealtimeStore.getState().removeSnapshot(id)

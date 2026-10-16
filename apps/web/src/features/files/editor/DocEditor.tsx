@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import { createDocExtensions } from '@pulpo/client-core/doc-schema'
 import Collaboration from '@tiptap/extension-collaboration'
 import CollaborationCaret from '@tiptap/extension-collaboration-caret'
@@ -26,6 +26,9 @@ import {
 import { ui } from '@/i18n/ui'
 import { cn } from '@/lib/utils'
 import { sessionColor, sessionLabel } from './presence'
+import { useSuggestionReview } from './suggestion-review'
+import { SuggestionTyping } from './suggestion-typing'
+import { SuggestionBar, SuggestionCard } from './SuggestionReview'
 import type { DocSession } from './use-doc-session'
 import './doc-editor.css'
 
@@ -112,17 +115,82 @@ function DocToolbar({ editor }: { editor: Editor }) {
   )
 }
 
-export function DocEditor({ session, editable, width = 'narrow', toolbarSlot }: {
+/** CSS for the hunk being looked at; marks and blocks carry its id, so one rule covers every piece. */
+function activeHunkStyle(id: string): string {
+  const selector = `.pulpo-doc-editor [data-suggestion-id="${id.replace(/[^\w-]/g, '')}"]`
+  return `${selector} { outline: 1.5px solid var(--pulpo-suggestion-focus); outline-offset: 1px; border-radius: 2px; }`
+}
+
+function DocEditorView({ editor, editable, width, toolbarSlot, onSuggestionsResolved }: {
+  editor: Editor
+  /** Viewers who cannot edit still see suggestions, without the actions. */
+  editable: boolean
+  width: 'narrow' | 'wide' | 'fill'
+  toolbarSlot?: ReactNode
+  onSuggestionsResolved?: () => void
+}) {
+  const review = useSuggestionReview(editor, onSuggestionsResolved)
+  const content = useRef<HTMLDivElement>(null)
+  const active = review.active
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="sticky top-0 z-10 flex flex-wrap items-center gap-2 border-b bg-background/95 px-4 py-1.5 backdrop-blur sm:px-6">
+        <div className="min-w-0 flex-1 overflow-x-auto"><DocToolbar editor={editor} /></div>
+        {toolbarSlot}
+        {review.hunks.length > 0 && (
+          <div className="basis-full border-t pt-1.5">
+            <SuggestionBar
+              hunks={review.hunks}
+              active={active}
+              editable={editable}
+              onStep={review.go}
+              onResolveAll={(action) => review.resolve(() => true, action)}
+            />
+          </div>
+        )}
+      </div>
+      {/* Match the chat column so documents read at the same width as conversations. */}
+      <div className={cn(
+        'mx-auto w-full flex-1',
+        width === 'fill' ? 'px-5 py-5' : 'px-4 py-8 sm:px-6',
+        width === 'wide' && 'max-w-[min(100%,90rem)]',
+        width === 'narrow' && 'max-w-5xl',
+      )}>
+        <div ref={content} className="relative">
+          <EditorContent editor={editor} />
+          {active && <style>{activeHunkStyle(active.id)}</style>}
+          {active && (
+            <SuggestionCard
+              key={active.id}
+              editor={editor}
+              hunk={active}
+              editable={editable}
+              container={content}
+              onResolve={(action) => review.resolve((ref) => ref.id === active.id, action)}
+              onPointerEnter={review.keepHover}
+              onPointerLeave={review.releaseHover}
+            />
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export function DocEditor({ session, editable, width = 'narrow', toolbarSlot, onSuggestionsResolved }: {
   session: DocSession
   editable: boolean
   /** `narrow` and `wide` follow the chat width preference (64rem or 90rem); `fill` uses the side panel's width. */
   width?: 'narrow' | 'wide' | 'fill'
   /** Rendered next to the toolbar, e.g. presence and sync status. */
   toolbarSlot?: ReactNode
+  /** Called after this editor accepted or rejected suggestions, e.g. to refresh replies' change lists. */
+  onSuggestionsResolved?: () => void
 }) {
   const editor = useEditor({
     extensions: [
       ...createDocExtensions(),
+      SuggestionTyping,
       Placeholder.configure({ placeholder: ui("Start writing…") }),
       Collaboration.configure({ document: session.doc }),
       CollaborationCaret.configure({
@@ -141,21 +209,5 @@ export function DocEditor({ session, editable, width = 'narrow', toolbarSlot }: 
   }, [editor, editable])
 
   if (!editor) return null
-  return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div className="sticky top-0 z-10 flex flex-wrap items-center gap-2 border-b bg-background/95 px-4 py-1.5 backdrop-blur sm:px-6">
-        <div className="min-w-0 flex-1 overflow-x-auto"><DocToolbar editor={editor} /></div>
-        {toolbarSlot}
-      </div>
-      {/* Match the chat column so documents read at the same width as conversations. */}
-      <div className={cn(
-        'mx-auto w-full flex-1',
-        width === 'fill' ? 'px-5 py-5' : 'px-4 py-8 sm:px-6',
-        width === 'wide' && 'max-w-[min(100%,90rem)]',
-        width === 'narrow' && 'max-w-5xl',
-      )}>
-        <EditorContent editor={editor} />
-      </div>
-    </div>
-  )
+  return <DocEditorView editor={editor} editable={editable} width={width} toolbarSlot={toolbarSlot} onSuggestionsResolved={onSuggestionsResolved} />
 }

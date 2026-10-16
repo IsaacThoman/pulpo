@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { createReadStream, createWriteStream } from 'node:fs'
 import { stat } from 'node:fs/promises'
-import { Readable } from 'node:stream'
+import { Readable, Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { createGzip } from 'node:zlib'
 import tar from 'tar-stream'
@@ -13,6 +13,20 @@ export type BackupArchiveEntry = {
 export interface BackupArchiveMetadata {
   sizeBytes: number
   checksum: string
+}
+
+/** Spool one blob to private disk so tar can know its size without buffering it. */
+export async function stageBackupBlob(path: string, source: Readable, expectedChecksum: string | null): Promise<BackupArchiveMetadata> {
+  const hash = createHash('sha256')
+  let sizeBytes = 0
+  await pipeline(source, new Transform({
+    transform(chunk: Buffer, _encoding, callback) {
+      sizeBytes += chunk.length; hash.update(chunk); callback(null, chunk)
+    },
+  }), createWriteStream(path, { flags: 'wx', mode: 0o600 }))
+  const checksums = [hash.copy().digest('hex'), hash.copy().digest('base64url'), hash.digest('base64')]
+  if (expectedChecksum && !checksums.includes(expectedChecksum)) throw new Error('Backup source blob checksum failed')
+  return { sizeBytes, checksum: checksums[0]! }
 }
 
 export function checksumMatches(value: Uint8Array, expected: string): boolean {

@@ -147,3 +147,26 @@ describe('Markdown images', () => {
     expect(markup).toContain('chart')
   })
 })
+
+describe('Markdown line breaks', () => {
+  it('collapses single newlines by default, as CommonMark does', () => {
+    const markup = renderToStaticMarkup(<Markdown content={'this\nis\nan example'} />)
+
+    expect(markup).not.toContain('<br/>')
+  })
+
+  it('keeps single newlines as line breaks when asked', () => {
+    const markup = renderToStaticMarkup(<Markdown content={'this\nis\nan *example*\n\nnext paragraph'} breaks />)
+
+    expect(markup).toContain('<p class="my-2 leading-7 first:mt-0 last:mb-0">this<br/>\nis<br/>\nan <em>example</em></p>')
+    expect(markup).toContain('next paragraph</p>')
+  })
+
+  it('leaves newlines inside code and math alone', () => {
+    const markup = renderToStaticMarkup(<Markdown content={'```\nline one\nline two\n```\n\n$$\na\n= b\n$$'} breaks />)
+
+    expect(markup).not.toContain('<br/>')
+    expect(markup).toContain('line one')
+    expect(markup).toContain('katex-display')
+  })
+})

@@ -1,4 +1,5 @@
 import type OpenAI from 'openai'
+import { createHash } from 'node:crypto'
 import {
   functionTools,
   isTextMediaType,
@@ -19,6 +20,38 @@ import { upstreamErrorDetails } from '../responses/upstream-request.js'
 
 type JsonRecord = Record<string, unknown>
 type ChatMessage = JsonRecord & { role: string }
+type ChatFormat = 'openai_chat_completions' | 'mistral_chat_completions'
+
+/** Mistral puts ordered answer and thinking chunks in the same content field. */
+export function mistralContentParts(content: unknown): Array<{ type: 'text' | 'thinking'; text: string }> {
+  if (content === undefined || content === null) return []
+  if (typeof content === 'string') return content ? [{ type: 'text', text: content }] : []
+  if (!Array.isArray(content)) throw new UpstreamStreamError('Unsupported Mistral content shape', 502)
+  return content.flatMap<{ type: 'text' | 'thinking'; text: string }>((raw) => {
+    if (typeof raw === 'string') return raw ? [{ type: 'text' as const, text: raw }] : []
+    const part = record(raw)
+    if (part?.type === 'text' && typeof part.text === 'string') return part.text ? [{ type: 'text' as const, text: part.text }] : []
+    if (part?.type === 'thinking' && Array.isArray(part.thinking)) {
+      const text = part.thinking.map((inner) => {
+        const nested = record(inner)
+        if (nested?.type !== 'text' || typeof nested.text !== 'string') throw new UpstreamStreamError('Unsupported Mistral thinking shape', 502)
+        return nested.text
+      }).join('')
+      return text ? [{ type: 'thinking' as const, text }] : []
+    }
+    throw new UpstreamStreamError('Unsupported Mistral content chunk', 502)
+  })
+}
+
+function appendMistralPart(messages: ChatMessage[], part: JsonRecord): void {
+  let target = messages.at(-1)
+  if (target?.role !== 'assistant') {
+    target = { role: 'assistant', content: [] }
+    messages.push(target)
+  }
+  const content = Array.isArray(target.content) ? target.content : []
+  target.content = [...content, part]
+}
 
 function record(value: unknown): JsonRecord | undefined {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : undefined
@@ -68,7 +101,22 @@ function userContent(parts: NeutralPart[]): string | JsonRecord[] {
  * Chat templates on many servers accept a single leading system message only,
  * so every system/developer entry is hoisted into one message, in order.
  */
-export function chatMessagesFromEntries(entries: NeutralEntry[], options: { model?: string } = {}): ChatMessage[] {
+export function chatMessagesFromEntries(entries: NeutralEntry[], options: { model?: string; format?: ChatFormat } = {}): ChatMessage[] {
+  const mistral = options.format === 'mistral_chat_completions'
+  // Mistral requires nine alphanumeric characters, including imported tool history.
+  const callIds = new Map<string, string>()
+  const usedIds = new Set(entries.flatMap(entry => entry.kind === 'function_call' && /^[a-zA-Z0-9]{9}$/.test(entry.callId) ? [entry.callId] : []))
+  const callId = (id: string) => {
+    if (!mistral || /^[a-zA-Z0-9]{9}$/.test(id)) return id
+    const existing = callIds.get(id)
+    if (existing) return existing
+    let candidate = ''
+    let salt = 0
+    do { candidate = createHash('sha256').update(`${id}:${salt++}`).digest('hex').slice(0, 9) } while (usedIds.has(candidate))
+    callIds.set(id, candidate)
+    usedIds.add(candidate)
+    return candidate
+  }
   const system = entries.flatMap((entry) => entry.kind === 'system' ? [entry.text.trim()] : []).filter(Boolean)
   const messages: ChatMessage[] = system.length ? [{ role: 'system', content: system.join('\n\n') }] : []
   let pendingImages: JsonRecord[] = []
@@ -83,6 +131,12 @@ export function chatMessagesFromEntries(entries: NeutralEntry[], options: { mode
   for (const entry of entries) {
     if (entry.kind === 'system') continue
     if (entry.kind === 'reasoning') {
+      if (mistral) {
+        if (entry.reasoning.format === 'mistral_chat_completions' && entry.reasoning.model === options.model && entry.reasoning.text) {
+          appendMistralPart(messages, { type: 'thinking', thinking: [{ type: 'text', text: entry.reasoning.text }] })
+        }
+        continue
+      }
       const own = entry.reasoning.format === 'openai_chat_completions' && (!options.model || entry.reasoning.model === options.model)
       pendingReasoning = own && entry.reasoning.text ? `${pendingReasoning}${entry.reasoning.text}` : pendingReasoning
       continue
@@ -92,13 +146,17 @@ export function chatMessagesFromEntries(entries: NeutralEntry[], options: { mode
       pendingReasoning = ''
       messages.push({ role: 'user', content: userContent(entry.parts) })
     } else if (entry.kind === 'assistant') {
+      if (mistral) {
+        appendMistralPart(messages, { type: 'text', text: entry.text })
+        continue
+      }
       const previous = messages.at(-1)
       // One assistant turn carries all of its text and calls; tool messages must follow it directly.
       if (previous?.role === 'assistant') previous.content = `${typeof previous.content === 'string' ? previous.content : ''}${entry.text}`
       else messages.push({ role: 'assistant', content: entry.text })
     } else if (entry.kind === 'function_call') {
       const previous = messages.at(-1)
-      const call = { id: entry.callId, type: 'function', function: { name: entry.name, arguments: entry.arguments || '{}' } }
+      const call = { id: callId(entry.callId), type: 'function', function: { name: entry.name, arguments: entry.arguments || '{}' } }
       const target = previous?.role === 'assistant' ? previous : { role: 'assistant', content: null }
       if (target !== previous) messages.push(target)
       target.tool_calls = [...(target.tool_calls as unknown[] | undefined ?? []), call]
@@ -107,7 +165,7 @@ export function chatMessagesFromEntries(entries: NeutralEntry[], options: { mode
     } else {
       const text = entry.output.flatMap((part) => part.type === 'text' ? [part.text] : []).join('\n')
       const images = entry.output.filter((part) => part.type === 'image')
-      messages.push({ role: 'tool', tool_call_id: entry.callId, content: text || (images.length ? '[image output follows]' : '') })
+      messages.push({ role: 'tool', tool_call_id: callId(entry.callId), content: text || (images.length ? '[image output follows]' : '') })
       pendingImages.push(...images.map((part) => ({ type: 'image_url', image_url: { url: part.type === 'image' ? part.url : '' } })))
     }
   }
@@ -116,7 +174,7 @@ export function chatMessagesFromEntries(entries: NeutralEntry[], options: { mode
 }
 
 /** Translate a Responses API request body into a Chat Completions request body. */
-export function chatCompletionsRequest(payload: JsonRecord, options: { baseUrl: string; stream: boolean }): JsonRecord {
+export function chatCompletionsRequest(payload: JsonRecord, options: { baseUrl: string; stream: boolean; format?: ChatFormat }): JsonRecord {
   const entries = neutralConversation(payload)
   const tools = functionTools(payload.tools)
   const toolChoice = neutralToolChoice(payload.tool_choice)
@@ -127,7 +185,7 @@ export function chatCompletionsRequest(payload: JsonRecord, options: { baseUrl: 
   const body: JsonRecord = {
     ...passthroughParameters(payload),
     model: payload.model,
-    messages: chatMessagesFromEntries(entries, { model: typeof payload.model === 'string' ? payload.model : undefined }),
+    messages: chatMessagesFromEntries(entries, { model: typeof payload.model === 'string' ? payload.model : undefined, format: options.format }),
     ...(maxTokens !== undefined ? { [prefersMaxCompletionTokens(options.baseUrl) ? 'max_completion_tokens' : 'max_tokens']: maxTokens } : {}),
     ...(typeof payload.temperature === 'number' ? { temperature: payload.temperature } : {}),
     ...(typeof payload.top_p === 'number' ? { top_p: payload.top_p } : {}),
@@ -217,8 +275,8 @@ function chunkError(chunk: JsonRecord): UpstreamStreamError | undefined {
  * `estimatedInputTokens` stands in for usage when a server never reports it,
  * so the generation is still billed.
  */
-export async function* translateChatStream(chunks: AsyncIterable<unknown>, model: string, options: { estimatedInputTokens?: number } = {}): AsyncGenerator<ResponsesStreamEvent> {
-  const builder = new ResponsesStreamBuilder('openai_chat_completions', { model })
+export async function* translateChatStream(chunks: AsyncIterable<unknown>, model: string, options: { estimatedInputTokens?: number; format?: ChatFormat } = {}): AsyncGenerator<ResponsesStreamEvent> {
+  const builder = new ResponsesStreamBuilder(options.format ?? 'openai_chat_completions', { model })
   let usage: ResponsesUsage | null = null
   let finishReason: unknown
   // Reasoning that resumes after visible output starts a new reasoning item.
@@ -238,10 +296,19 @@ export async function* translateChatStream(chunks: AsyncIterable<unknown>, model
       const choice = record(rawChoice)
       if (!choice || (typeof choice.index === 'number' && choice.index !== 0)) continue
       const delta = record(choice.delta) ?? record(choice.message) ?? {}
+      if (options.format === 'mistral_chat_completions') {
+        for (const part of mistralContentParts(delta.content)) {
+          if (part.type === 'thinking') yield* builder.reasoning(`reasoning:${reasoningSegment}`, part.text)
+          else {
+            if (builder.hasReasoning(`reasoning:${reasoningSegment}`)) yield* closeReasoning()
+            yield* builder.text(part.text)
+          }
+        }
+      }
       const reasoning = typeof delta.reasoning_content === 'string' ? delta.reasoning_content
         : typeof delta.reasoning === 'string' ? delta.reasoning : ''
       if (reasoning) yield* builder.reasoning(`reasoning:${reasoningSegment}`, reasoning)
-      if (typeof delta.content === 'string' && delta.content) {
+      if (options.format !== 'mistral_chat_completions' && typeof delta.content === 'string' && delta.content) {
         if (builder.hasReasoning(`reasoning:${reasoningSegment}`)) yield* closeReasoning()
         yield* builder.text(delta.content)
       }
@@ -275,7 +342,7 @@ export async function* translateChatStream(chunks: AsyncIterable<unknown>, model
     yield* builder.progress(knownUsage())
     throw new UpstreamStreamError('Provider stream ended before the response finished', 502)
   }
-  if (!usage) console.warn(JSON.stringify({ level: 'warn', service: 'pulpo-worker', event: 'upstream.usage_missing', format: 'openai_chat_completions', model }))
+  if (!usage) console.warn(JSON.stringify({ level: 'warn', service: 'pulpo-worker', event: 'upstream.usage_missing', format: options.format ?? 'openai_chat_completions', model }))
   yield* builder.finish({ usage: knownUsage(), incompleteReason: incompleteReason(finishReason) }).events
 }
 
@@ -283,24 +350,25 @@ export async function* translateChatStream(chunks: AsyncIterable<unknown>, model
 export async function openChatCompletionsStream(
   client: OpenAI,
   payload: JsonRecord,
-  options: { baseUrl: string; signal?: AbortSignal; headers?: Record<string, string> },
+  options: { baseUrl: string; format?: ChatFormat; signal?: AbortSignal; headers?: Record<string, string> },
 ): Promise<AsyncIterable<ResponsesStreamEvent>> {
-  let body = chatCompletionsRequest(payload, { baseUrl: options.baseUrl, stream: true })
+  let body = chatCompletionsRequest(payload, { baseUrl: options.baseUrl, format: options.format, stream: true })
   // Operator pass-through knobs degrade like the standard optional ones.
   const optional = new Set([...OPTIONAL_CHAT_PARAMETERS, ...Object.keys(passthroughParameters(payload))])
+  if (options.format === 'mistral_chat_completions') optional.delete('reasoning_effort')
   const estimatedInputTokens = estimateTokensExcludingMedia(body.messages)
   let swappedLimit = false
   for (let retries = 0; ; retries += 1) {
     try {
       const stream = await client.chat.completions.create(body as never, { signal: options.signal, headers: options.headers })
-      return translateChatStream(stream as unknown as AsyncIterable<unknown>, String(payload.model), { estimatedInputTokens })
+      return translateChatStream(stream as unknown as AsyncIterable<unknown>, String(payload.model), { estimatedInputTokens, format: options.format })
     } catch (error) {
       if (retries >= MAX_PARAMETER_RETRIES) throw error
       const swapped = swappedLimit ? undefined : swappedTokenLimit(error, body)
       if (swapped) swappedLimit = true
       const parameter = swapped ? undefined : rejectedOptionalParameter(error, body, optional)
       if (!swapped && !parameter) throw error
-      logParameterRetry('openai_chat_completions', parameter ?? ('max_tokens' in body ? 'max_tokens' : 'max_completion_tokens'), error instanceof Error ? error.message : String(error))
+      logParameterRetry(options.format ?? 'openai_chat_completions', parameter ?? ('max_tokens' in body ? 'max_tokens' : 'max_completion_tokens'), error instanceof Error ? error.message : String(error))
       body = swapped ?? withoutKey(body, parameter!)
     }
   }

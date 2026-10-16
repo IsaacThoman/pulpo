@@ -1,7 +1,6 @@
 import ExpoModulesCore
 import SwiftUI
 
-@available(iOS 26.0, *)
 private final class TemporaryChatHeaderModel: ObservableObject {
   @Published var active = false
   @Published var expanded = false
@@ -13,7 +12,6 @@ private final class TemporaryChatHeaderModel: ObservableObject {
   var reduceMotion = false
 }
 
-@available(iOS 26.0, *)
 private struct PulpoGhostShape: Shape {
   func path(in rect: CGRect) -> Path {
     let sx = rect.width / 24
@@ -43,7 +41,6 @@ private struct PulpoGhostShape: Shape {
   }
 }
 
-@available(iOS 26.0, *)
 private struct TemporaryChatHeaderContent: View {
   @ObservedObject var model: TemporaryChatHeaderModel
   let onToggleExpiration: () -> Void
@@ -90,64 +87,92 @@ private struct TemporaryChatHeaderContent: View {
   }
 
   var body: some View {
-    GlassEffectContainer(spacing: 8) {
-      HStack(spacing: 0) {
-        Button(action: model.leadingAction == "expiration" ? onToggleExpiration : onSave) {
-          ZStack {
-            Image(systemName: "bookmark")
-              .font(.system(size: 18))
-              .opacity(model.leadingAction == "save" && !model.saving ? 1 : 0)
-
-            Image(systemName: "hourglass")
-              .font(.system(size: 18))
-              .opacity(model.leadingAction == "expiration" ? 1 : 0)
-
-            ProgressView()
-              .controlSize(.small)
-              .opacity(model.leadingAction == "save" && model.saving ? 1 : 0)
-          }
-          .frame(width: 44, height: 44)
-          .foregroundStyle(leadingIconColor)
-          .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .frame(width: model.expanded ? 44 : 0, height: 44)
-        .opacity(model.expanded ? 1 : 0)
-        .scaleEffect(model.expanded ? 1 : 0.78)
-        .clipped()
-        .disabled(!model.expanded || (model.leadingAction == "save" && (model.saveDisabled || model.saving)))
-        .accessibilityHidden(!model.expanded)
-        .accessibilityLabel(leadingAccessibilityLabel)
-
-        Button(action: model.trailingAction == "ghost" ? onToggleTemporary : onNewChat) {
-          ZStack {
-            PulpoGhostShape()
-              .stroke(style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
-              .frame(width: 18, height: 18)
-              .opacity(model.trailingAction == "ghost" ? 1 : 0)
-              .scaleEffect(model.trailingAction == "ghost" ? 1 : 0.72)
-
-            Image(systemName: "square.and.pencil")
-              .font(.system(size: 18))
-              .opacity(model.trailingAction == "new-chat" ? 1 : 0)
-              .scaleEffect(model.trailingAction == "new-chat" ? 1 : 0.72)
-          }
-          .frame(width: 44, height: 44)
-          .foregroundStyle(iconColor)
-          .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(trailingAccessibilityLabel)
+    Group {
+      if #available(iOS 26.0, *) {
+        GlassEffectContainer(spacing: 8) { capsule }
+      } else {
+        capsule
       }
-      .frame(width: model.expanded ? 88 : 44, height: 44, alignment: .trailing)
-      .glassEffect(.regular.tint(glassTint).interactive(), in: Capsule())
-      .glassEffectID("temporary-chat-header", in: glassNamespace)
-      .animation(spring, value: model.expanded)
-      .animation(spring, value: model.leadingAction)
-      .animation(spring, value: model.saving)
-      .animation(spring, value: model.trailingAction)
     }
     .frame(maxWidth: .infinity, minHeight: 44, maxHeight: 44, alignment: .trailing)
+  }
+
+  private var capsule: some View {
+    HStack(spacing: 0) {
+      Button(action: model.leadingAction == "expiration" ? onToggleExpiration : onSave) {
+        ZStack {
+          Image(systemName: "bookmark")
+            .font(.system(size: 18))
+            .opacity(model.leadingAction == "save" && !model.saving ? 1 : 0)
+
+          Image(systemName: "hourglass")
+            .font(.system(size: 18))
+            .opacity(model.leadingAction == "expiration" ? 1 : 0)
+
+          ProgressView()
+            .controlSize(.small)
+            .opacity(model.leadingAction == "save" && model.saving ? 1 : 0)
+        }
+        .frame(width: 44, height: 44)
+        .foregroundStyle(leadingIconColor)
+        .contentShape(Rectangle())
+      }
+      .buttonStyle(.plain)
+      .frame(width: model.expanded ? 44 : 0, height: 44)
+      .opacity(model.expanded ? 1 : 0)
+      .scaleEffect(model.expanded ? 1 : 0.78)
+      .clipped()
+      .disabled(!model.expanded || (model.leadingAction == "save" && (model.saveDisabled || model.saving)))
+      .accessibilityHidden(!model.expanded)
+      .accessibilityLabel(leadingAccessibilityLabel)
+
+      Button(action: model.trailingAction == "ghost" ? onToggleTemporary : onNewChat) {
+        ZStack {
+          PulpoGhostShape()
+            .stroke(style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
+            .frame(width: 18, height: 18)
+            .opacity(model.trailingAction == "ghost" ? 1 : 0)
+            .scaleEffect(model.trailingAction == "ghost" ? 1 : 0.72)
+
+          Image(systemName: "square.and.pencil")
+            .font(.system(size: 18))
+            .opacity(model.trailingAction == "new-chat" ? 1 : 0)
+            .scaleEffect(model.trailingAction == "new-chat" ? 1 : 0.72)
+        }
+        .frame(width: 44, height: 44)
+        .foregroundStyle(iconColor)
+        .contentShape(Rectangle())
+      }
+      .buttonStyle(.plain)
+      .accessibilityLabel(trailingAccessibilityLabel)
+    }
+    .frame(width: model.expanded ? 88 : 44, height: 44, alignment: .trailing)
+    .modifier(TemporaryChatHeaderGlass(tint: glassTint, namespace: glassNamespace))
+    .animation(spring, value: model.expanded)
+    .animation(spring, value: model.leadingAction)
+    .animation(spring, value: model.saving)
+    .animation(spring, value: model.trailingAction)
+  }
+}
+
+/// Liquid Glass on iOS 26; a material capsule on earlier versions.
+private struct TemporaryChatHeaderGlass: ViewModifier {
+  let tint: Color?
+  let namespace: Namespace.ID
+
+  func body(content: Content) -> some View {
+    if #available(iOS 26.0, *) {
+      content
+        .glassEffect(.regular.tint(tint).interactive(), in: Capsule())
+        .glassEffectID("temporary-chat-header", in: namespace)
+    } else {
+      content.background {
+        Capsule()
+          .fill(.regularMaterial)
+          .overlay { Capsule().fill(tint ?? .clear) }
+          .overlay { Capsule().strokeBorder(Color.primary.opacity(0.1), lineWidth: 0.5) }
+      }
+    }
   }
 }
 
@@ -157,7 +182,6 @@ public final class TemporaryChatHeaderView: ExpoView {
   let onSave = EventDispatcher()
   let onNewChat = EventDispatcher()
 
-  @available(iOS 26.0, *)
   private lazy var model = TemporaryChatHeaderModel()
   private var hostingController: UIViewController?
 
@@ -168,7 +192,6 @@ public final class TemporaryChatHeaderView: ExpoView {
   }
 
   private func mountContent() {
-    guard #available(iOS 26.0, *) else { return }
     let content = TemporaryChatHeaderContent(
       model: model,
       onToggleExpiration: { [weak self] in self?.onToggleExpiration([:]) },
@@ -190,12 +213,12 @@ public final class TemporaryChatHeaderView: ExpoView {
   }
 
   public func setActive(_ value: Bool) {
-    guard #available(iOS 26.0, *), model.active != value else { return }
+    guard model.active != value else { return }
     model.active = value
   }
 
   public func setExpanded(_ value: Bool) {
-    guard #available(iOS 26.0, *), model.expanded != value else { return }
+    guard model.expanded != value else { return }
     let animation: Animation? = model.reduceMotion ? nil : .spring(response: 0.42, dampingFraction: 0.84)
     withAnimation(animation) {
       model.expanded = value
@@ -203,40 +226,38 @@ public final class TemporaryChatHeaderView: ExpoView {
   }
 
   public func setExpirationEnabled(_ value: Bool) {
-    guard #available(iOS 26.0, *), model.expirationEnabled != value else { return }
+    guard model.expirationEnabled != value else { return }
     withAnimation(model.reduceMotion ? nil : .easeInOut(duration: 0.16)) {
       model.expirationEnabled = value
     }
   }
 
   public func setLeadingAction(_ value: String) {
-    guard #available(iOS 26.0, *), model.leadingAction != value else { return }
+    guard model.leadingAction != value else { return }
     withAnimation(model.reduceMotion ? nil : .spring(response: 0.42, dampingFraction: 0.84)) {
       model.leadingAction = value
     }
   }
 
   public func setSaving(_ value: Bool) {
-    guard #available(iOS 26.0, *), model.saving != value else { return }
+    guard model.saving != value else { return }
     withAnimation(model.reduceMotion ? nil : .easeInOut(duration: 0.16)) {
       model.saving = value
     }
   }
 
   public func setSaveDisabled(_ value: Bool) {
-    guard #available(iOS 26.0, *) else { return }
     model.saveDisabled = value
   }
 
   public func setTrailingAction(_ value: String) {
-    guard #available(iOS 26.0, *), model.trailingAction != value else { return }
+    guard model.trailingAction != value else { return }
     withAnimation(model.reduceMotion ? nil : .spring(response: 0.42, dampingFraction: 0.84)) {
       model.trailingAction = value
     }
   }
 
   public func setReduceMotion(_ value: Bool) {
-    guard #available(iOS 26.0, *) else { return }
     model.reduceMotion = value
   }
 }

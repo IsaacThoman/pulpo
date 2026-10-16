@@ -5,6 +5,7 @@ import {
   GetObjectRetentionCommand,
   HeadObjectCommand,
   ListObjectsV2Command,
+  ListObjectVersionsCommand,
   PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3'
@@ -93,7 +94,7 @@ export class B2BackupStore {
       if (uploaded) {
         const waitMs = lockedUntil.getTime() - Date.now() + 100
         if (waitMs > 0) await new Promise((resolve) => setTimeout(resolve, waitMs))
-        await this.client.send(new DeleteObjectCommand({ Bucket: this.settings.bucket, Key: key }))
+        await this.delete(key)
       }
     }
   }
@@ -160,6 +161,23 @@ export class B2BackupStore {
   }
 
   async delete(key: string): Promise<void> {
-    await this.client.send(new DeleteObjectCommand({ Bucket: this.settings.bucket, Key: key }))
+    // B2 inserts a hide marker for unversioned DELETE. Remove exact versions
+    // so retention cleanup actually releases storage, including earlier retries.
+    let keyMarker: string | undefined, versionMarker: string | undefined
+    do {
+      const page = await this.client.send(new ListObjectVersionsCommand({
+        Bucket: this.settings.bucket, Prefix: key, KeyMarker: keyMarker, VersionIdMarker: versionMarker,
+      }))
+      for (const version of [...page.Versions ?? [], ...page.DeleteMarkers ?? []]) {
+        if (version.Key !== key) continue
+        if (!version.VersionId) throw new Error('Backblaze returned a backup version without an ID')
+        await this.client.send(new DeleteObjectCommand({ Bucket: this.settings.bucket, Key: key, VersionId: version.VersionId }))
+      }
+      if (!page.IsTruncated) return
+      if (!page.NextKeyMarker || (page.NextKeyMarker === keyMarker && page.NextVersionIdMarker === versionMarker)) {
+        throw new Error('Backblaze version listing did not advance')
+      }
+      keyMarker = page.NextKeyMarker; versionMarker = page.NextVersionIdMarker
+    } while (keyMarker)
   }
 }

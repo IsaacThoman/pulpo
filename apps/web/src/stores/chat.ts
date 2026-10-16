@@ -5,10 +5,13 @@ import { replaceEqualDeep } from '@tanstack/react-query'
 import {
   initialResponseDurationMs,
   mergeResponseSnapshots,
+  truncateChatTitle,
   type CreateQueuedMessageInput,
   type EmbeddedResponseSnapshot,
+  type FileAccessMode,
   type ResponseEvent,
   type ResponseSnapshot,
+  type UpdateChatInput,
   type UpdateQueuedMessageInput,
 } from '@pulpo/contracts'
 import {
@@ -17,7 +20,7 @@ import {
   mergeCachedResponseDetails,
   responseLineageDetailsAvailable,
 } from '@pulpo/client-core'
-import type { Attachment, Chat, Folder, Message, QueuedMessage } from '@/lib/types'
+import type { Attachment, Chat, Message, QueuedMessage } from '@/lib/types'
 import { apiRequest, ApiError, isNetworkError } from '@/lib/api'
 import { enqueueMutation } from '@/lib/local-first/outbox'
 import { localAccountKey, flushQueryPersistence } from '@/lib/local-first/database'
@@ -36,31 +39,11 @@ import { BranchSelectionIntents } from '@/lib/branch-selection-intents'
 import { BranchHistoryCache } from '@/lib/branch-history-cache'
 import { reorderList } from '@/lib/model-order'
 import { useAuth } from './auth'
+import { pinnedItemsCeiling, sidebarItemsFloor } from '@/features/sidebar/cache'
+import { useFileToasts } from '@/features/files/browser/toasts'
+import { filesErrorMessage } from '@/features/files/file-display'
 import { adminChatAccessActive, adminChatAccountKey } from '@/features/admin-chat/access'
-
-const FOLDER_EXPANDED_KEY = 'pulpo-folder-expanded'
-
-function loadFolderExpanded(): Record<string, boolean> {
-  try {
-    const raw = localStorage.getItem(FOLDER_EXPANDED_KEY)
-    if (!raw) return {}
-    const parsed = JSON.parse(raw) as unknown
-    if (!parsed || typeof parsed !== 'object') return {}
-    return Object.fromEntries(
-      Object.entries(parsed as Record<string, unknown>).filter((entry): entry is [string, boolean] => typeof entry[1] === 'boolean'),
-    )
-  } catch {
-    return {}
-  }
-}
-
-function saveFolderExpanded(map: Record<string, boolean>) {
-  try {
-    localStorage.setItem(FOLDER_EXPANDED_KEY, JSON.stringify(map))
-  } catch {
-    // ignore quota / private mode
-  }
-}
+import { scopedFileAccess } from '@/features/files/file-scope'
 
 function applySortOrders(ids: string[]): Map<string, number> {
   return new Map(ids.map((id, index) => [id, index]))
@@ -75,20 +58,27 @@ function orderedChatIds(chats: Chat[]): string[] {
   return [...chats].sort(compareChatOrder).map((chat) => chat.id)
 }
 
-/** Unpinned, non-temporary chats that are not inside an existing folder. */
-function looseChats(chats: Chat[], folders: Folder[]): Chat[] {
-  const folderIds = new Set(folders.map((folder) => folder.id))
-  return chats.filter((chat) => !chat.pinned && !chat.temporary && !(chat.folderId && folderIds.has(chat.folderId)))
+/**
+ * Unpinned, non-temporary chats that are not filed in a folder (nor at the top of My files): the
+ * sidebar's unfiled list.
+ */
+function looseChats(chats: Chat[]): Chat[] {
+  return chats.filter((chat) => !chat.pinned && !chat.temporary && !chat.folderId && !chat.inFilesRoot)
 }
 
-function chatListMembers(chats: Chat[], folders: Folder[], folderId: string | null): Chat[] {
+function chatListMembers(chats: Chat[], folderId: string | null): Chat[] {
   return folderId
     ? chats.filter((chat) => !chat.pinned && chat.folderId === folderId)
-    : looseChats(chats, folders)
+    : looseChats(chats)
 }
 
 function topSortOrder(chats: Chat[]): number {
   return chats.reduce((min, chat) => Math.min(min, chat.sortOrder), 1) - 1
+}
+
+/** The top of a folder's list, above its chats and the Files items the sidebar shows there. */
+export function topOrderIn(chats: Chat[], folderId: string | null): number {
+  return Math.min(topSortOrder(chatListMembers(chats, folderId)), sidebarItemsFloor(folderId) - 1)
 }
 
 type ChatListPosition = { targetId: string; edge: 'before' | 'after' }
@@ -99,44 +89,55 @@ function insertChatId(ids: string[], id: string, position: ChatListPosition | un
     : [...ids, id]
 }
 
+/**
+ * Resolves once the server has a change to the chat list. A refusal is reported in a toast, and
+ * the list refetched to undo it here.
+ */
+function settled(requests: Promise<unknown>[]): Promise<void> {
+  return Promise.all(requests).then(() => undefined, (cause: unknown) => {
+    useFileToasts.getState().show({ message: filesErrorMessage(cause), tone: 'error' })
+    void queryClient.invalidateQueries({ queryKey: chatsKey() })
+  })
+}
+
 /** Saves a chat's new list along with the full order of that list. */
-function commitChatPlacement(id: string, nextIds: string[], patch: Partial<Pick<Chat, 'pinned' | 'folderId'>>) {
+function commitChatPlacement(id: string, nextIds: string[], patch: Partial<Pick<Chat, 'pinned' | 'folderId'>>): Promise<void> {
   const orders = applySortOrders(nextIds)
   const sortOrder = orders.get(id) ?? nextIds.length - 1
   useChat.setState((state) => ({
     chats: state.chats.map((chat) => {
-      if (chat.id === id) return { ...chat, ...patch, sortOrder }
+      if (chat.id === id) return { ...chat, ...patch, ...'folderId' in patch ? { inFilesRoot: false } : {}, sortOrder }
       const nextOrder = orders.get(chat.id)
       return nextOrder === undefined ? chat : { ...chat, sortOrder: nextOrder }
     }),
   }))
-  void optimisticRequest('PATCH', `/api/chats/${id}`, { ...patch, sortOrder })
-  if (nextIds.length > 1) {
-    void optimisticRequest('PUT', '/api/chats/order', { chatIds: nextIds })
-  }
+  return settled([
+    optimisticRequest('PATCH', `/api/chats/${id}`, { ...patch, sortOrder }),
+    ...nextIds.length > 1 ? [optimisticRequest('PUT', '/api/chats/order', { chatIds: nextIds })] : [],
+  ])
 }
 
-/** Places an unpinned chat in a folder (at its end by default) or the unfiled list (at its top by default). */
+/** Places an unpinned chat in a folder or the unfiled list, at its top unless `position` says otherwise. */
 function placeInChatList(
   id: string,
   folderId: string | null,
   position: ChatListPosition | undefined,
   patch: Partial<Pick<Chat, 'pinned'>> = {},
-) {
-  const { chats, folders } = useChat.getState()
-  const destination = chatListMembers(chats, folders, folderId).filter((chat) => chat.id !== id)
+): Promise<void> {
+  const { chats } = useChat.getState()
+  const destination = chatListMembers(chats, folderId).filter((chat) => chat.id !== id)
   const destIds = orderedChatIds(destination)
 
-  if (!folderId && !(position && destIds.includes(position.targetId))) {
-    const sortOrder = topSortOrder(destination)
+  if (!(position && destIds.includes(position.targetId))) {
+    const sortOrder = topOrderIn(chats.filter((chat) => chat.id !== id), folderId)
     useChat.setState((state) => ({
-      chats: state.chats.map((chat) => chat.id === id ? { ...chat, ...patch, folderId: null, sortOrder } : chat),
+      chats: state.chats.map((chat) => chat.id === id ? { ...chat, ...patch, folderId, inFilesRoot: false, sortOrder } : chat),
     }))
-    void optimisticRequest('PATCH', `/api/chats/${id}`, { ...patch, folderId: null, sortOrder })
-    return
+    // The server places it above everything in the folder, Files items included.
+    return settled([optimisticRequest('PATCH', `/api/chats/${id}`, { ...patch, folderId })])
   }
 
-  commitChatPlacement(id, insertChatId(destIds, id, position), { ...patch, folderId })
+  return commitChatPlacement(id, insertChatId(destIds, id, position), { ...patch, folderId })
 }
 
 function reorderChatList(ids: string[], fromId: string, toId: string, edge: 'before' | 'after') {
@@ -193,9 +194,11 @@ export interface ServerChat {
   modelId: string
   pinned: boolean
   folderId: string | null
+  inFilesRoot?: boolean
   sortOrder?: number
   temporary?: boolean
   fileScopeIds?: string[]
+  fileScopeAccess?: Record<string, FileAccessMode>
   expiresAt?: string | null
   createdAt: string
   updatedAt: string
@@ -224,6 +227,7 @@ interface PendingMessageInput {
   temporary: boolean
   autoExpire: boolean
   fileScopeIds?: string[]
+  fileScopeAccess?: Record<string, FileAccessMode>
   createdAt?: number
 }
 
@@ -259,13 +263,6 @@ export function mergeServerChatDetails(cached: ServerChat | undefined, incoming:
   }
 }
 
-export interface ServerFolder {
-  id: string
-  name: string
-  pinned: boolean
-  sortOrder?: number
-}
-
 export interface ResponseGenerationSelection {
   modelId: string
   presetSelections: Record<string, string>
@@ -274,7 +271,6 @@ export interface ResponseGenerationSelection {
 
 interface ChatState {
   chats: Chat[]
-  folders: Folder[]
   activeChatId: string | null
   activeTemporaryChatId: string | null
   adminAccessRequiredChatId: string | null
@@ -283,7 +279,6 @@ interface ChatState {
   responseSequences: Record<string, number>
   responseChatIds: Record<string, string>
   replaceSummaries: (chats: ServerChat[]) => void
-  replaceFolders: (folders: ServerFolder[]) => void
   setDetailedChat: (chat: ServerChat) => void
   applyResponseEvents: (events: ResponseEvent[]) => boolean
   applyResponseSnapshot: (snapshot: ResponseSnapshot, options?: { invalidate?: boolean }) => void
@@ -295,26 +290,27 @@ interface ChatState {
   abandonTemporaryChat: (id?: string) => void
   markTemporaryExpired: (id: string) => void
   setChatAutoExpiration: (id: string, enabled: boolean) => void
-  deleteChat: (id: string) => void
+  /** Moves a chat to the trash (or deletes it, with instant retention); resolves once the server has. */
+  deleteChat: (id: string) => Promise<void>
+  /** Brings trashed chats back, e.g. to undo deleting them. */
+  recoverChats: (ids: readonly string[]) => Promise<void>
+  /** Copies a chat, history included, beside the original. Resolves with the copy's id. */
+  duplicateChat: (id: string) => Promise<string>
   renameChat: (id: string, title: string) => void
   /** Sets the Files folders the agent may use in a saved chat. */
   setChatFileScope: (id: string, fileScopeIds: string[]) => void
+  /** Sets what the agent may do with one item of a saved chat's Files scope. */
+  setChatFileAccess: (id: string, scopeId: string, mode: FileAccessMode) => void
   togglePin: (id: string) => void
-  moveToFolder: (id: string, folderId: string | null, position?: ChatListPosition) => void
-  /** Pins a chat at `position` in the pinned list, or at its end. */
-  pinChat: (id: string, position?: ChatListPosition) => void
+  /** Resolves once the server has it, so it can be undone. */
+  moveToFolder: (id: string, folderId: string | null, position?: ChatListPosition) => Promise<void>
   /** Unpins a chat into a folder or the unfiled list, like `moveToFolder` does for unpinned chats. */
-  unpinChat: (id: string, folderId: string | null, position?: ChatListPosition) => void
-  reorderPinnedChats: (fromId: string, toId: string, edge: 'before' | 'after') => void
+  unpinChat: (id: string, folderId: string | null, position?: ChatListPosition) => Promise<void>
   reorderFolderChats: (folderId: string, fromId: string, toId: string, edge: 'before' | 'after') => void
   reorderLooseChats: (fromId: string, toId: string, edge: 'before' | 'after') => void
   shareChat: (id: string) => Promise<string>
-  addFolder: (name: string) => void
-  toggleFolder: (id: string) => void
-  renameFolder: (id: string, name: string) => void
-  toggleFolderPin: (id: string) => void
-  reorderFolders: (fromId: string, toId: string, edge: 'before' | 'after') => void
-  deleteFolder: (id: string) => void
+  /** Unpins a chat and files it in the Archive folder; resolves once the server has it. */
+  archiveChat: (id: string, archiveFolderId: string) => Promise<void>
   sendMessage: (chatId: string | null, content: string, modelId: string, attachments?: Attachment[], temporary?: boolean, autoExpire?: boolean, staged?: StagedSendOptions) => string
   stagePendingMessage: (input: PendingMessageInput) => { chatId: string; responseId: string }
   stagePendingQueuedMessage: (input: PendingQueuedMessageInput) => void
@@ -338,7 +334,7 @@ interface ChatState {
     agentMode: boolean
   }) => Promise<void>
   editAssistantMessage: (chatId: string, messageId: string, content: string) => void
-  deleteUserMessage: (chatId: string, messageId: string) => void
+  deleteMessage: (chatId: string, messageId: string) => void
   activateBranch: (chatId: string, responseId: string) => void
   stopStreaming: (responseId: string) => void
   continueWithoutAgent: (responseId: string) => Promise<void>
@@ -534,10 +530,12 @@ function toChat(
     updatedAt: Date.parse(row.updatedAt),
     pinned: row.pinned,
     folderId: row.folderId,
+    inFilesRoot: row.inFilesRoot ?? current?.inFilesRoot ?? false,
     sortOrder: row.sortOrder ?? current?.sortOrder ?? 0,
     tags: current?.tags ?? [],
     temporary: row.temporary ?? current?.temporary ?? false,
     fileScopeIds: row.fileScopeIds ?? current?.fileScopeIds ?? [],
+    fileScopeAccess: row.fileScopeAccess ?? current?.fileScopeAccess ?? {},
     expiresAt: row.expiresAt === undefined
       ? current?.expiresAt ?? null
       : row.expiresAt === null ? null : Date.parse(row.expiresAt),
@@ -693,7 +691,7 @@ function cacheOptimisticTurn(input: {
         modelId: input.displayModelId,
         pinned: false,
         folderId: null,
-        sortOrder: input.temporary ? 0 : topSortOrder(looseChats(useChat.getState().chats, useChat.getState().folders)),
+        sortOrder: input.temporary ? 0 : topOrderIn(useChat.getState().chats, null),
         temporary: input.temporary,
         expiresAt: input.temporary ? new Date(input.createdAt + 48 * 60 * 60 * 1_000).toISOString() : input.expiresAt,
         createdAt,
@@ -951,6 +949,29 @@ function enqueueChatMutation<T>(chatId: string, operation: () => Promise<T>): Pr
   return result
 }
 
+/**
+ * Saves a change to a chat's Files scope in order with the chat's other requests, so it lands
+ * after the request that creates the chat. A chat that is still provisional needs no request:
+ * the one that creates it sends the scope as it is then. If the server refuses the change, the
+ * chat shows what it had before (unless it changed again since) and is read back.
+ */
+function saveChatFileScope(
+  id: string,
+  patch: Pick<UpdateChatInput, 'fileScopeIds' | 'fileScopeAccess'>,
+  { current, revert }: { current: (chat: Chat) => boolean; revert: Pick<Chat, 'fileScopeIds' | 'fileScopeAccess'> },
+): void {
+  void enqueueChatMutation(id, async () => {
+    if (useChat.getState().chats.find((chat) => chat.id === id)?.provisional) return
+    await optimisticRequest('PATCH', `/api/chats/${id}`, patch)
+  }).catch(() => {
+    useChat.setState((state) => ({
+      chats: state.chats.map((chat) => chat.id === id && current(chat) ? { ...chat, ...revert } : chat),
+    }))
+    void queryClient.invalidateQueries({ queryKey: chatsKey() })
+    void queryClient.invalidateQueries({ queryKey: chatKey(id) })
+  })
+}
+
 function failOptimisticResponse(
   chatId: string,
   responseId: string,
@@ -988,7 +1009,6 @@ function failOptimisticResponse(
 
 export const useChat = create<ChatState>()((set, get) => ({
   chats: [],
-  folders: [],
   activeChatId: null,
   activeTemporaryChatId: null,
   adminAccessRequiredChatId: null,
@@ -998,16 +1018,20 @@ export const useChat = create<ChatState>()((set, get) => ({
   responseChatIds: {},
 
   replaceSummaries: (rows) => set((state) => {
+    // Keep the first chat per ID, matching the linear lookup this index replaces.
+    const currentById = new Map<string, Chat>()
+    for (const chat of state.chats) if (!currentById.has(chat.id)) currentById.set(chat.id, chat)
     const serverChats = rows.map((row) => ({
-      ...toChat(row, state.chats.find((chat) => chat.id === row.id), state.responseSequences, state.streamingIds),
+      ...toChat(row, currentById.get(row.id), state.responseSequences, state.streamingIds),
       awaitingSummary: false,
     }))
+    const serverIds = new Set(serverChats.map((chat) => chat.id))
     const activeTemporary = state.activeTemporaryChatId
       ? state.chats.find((chat) => chat.id === state.activeTemporaryChatId && chat.temporary)
       : undefined
     const localOnly = state.chats.filter((chat) => (
       (chat.provisional || chat.awaitingSummary || chat.id === activeTemporary?.id)
-      && !serverChats.some((serverChat) => serverChat.id === chat.id)
+      && !serverIds.has(chat.id)
     ))
     const chats = [...localOnly, ...serverChats]
     const tracking = mergeSummaryResponseTracking(
@@ -1016,22 +1040,6 @@ export const useChat = create<ChatState>()((set, get) => ({
       responseChatIndex(chats, state.responseChatIds),
     )
     return { chats, ...tracking }
-  }),
-  replaceFolders: (rows) => set((state) => {
-    const persisted = loadFolderExpanded()
-    return {
-      folders: rows.map((row) => {
-        const existing = state.folders.find((folder) => folder.id === row.id)
-        const expanded = existing?.expanded ?? persisted[row.id] ?? true
-        return {
-          id: row.id,
-          name: row.name,
-          pinned: row.pinned,
-          sortOrder: row.sortOrder ?? existing?.sortOrder ?? 0,
-          expanded,
-        }
-      }),
-    }
   }),
   setDetailedChat: (incoming) => {
     const key = chatKey(incoming.id)
@@ -1071,7 +1079,7 @@ export const useChat = create<ChatState>()((set, get) => ({
       // Detail rows are often served from a cache that predates reorders, pins, or folder moves, so
       // the summary list and local mutations stay authoritative for where a known chat sits in the sidebar.
       const chat = current
-        ? { ...fromDetail, pinned: current.pinned, folderId: current.folderId, sortOrder: current.sortOrder }
+        ? { ...fromDetail, pinned: current.pinned, folderId: current.folderId, inFilesRoot: current.inFilesRoot, sortOrder: current.sortOrder }
         : fromDetail
       const chats = current ? state.chats.map((item) => item.id === row.id ? chat : item) : [chat, ...state.chats]
       return {
@@ -1299,60 +1307,84 @@ export const useChat = create<ChatState>()((set, get) => ({
     if (userId && useSettings.getState().trashRetention === 'instant') {
       void clearLocalChats(userId, [id]).catch(() => undefined)
     }
-    void optimisticRequest('DELETE', `/api/chats/${id}`).catch(() => void queryClient.invalidateQueries({ queryKey: chatsKey() }))
+    return settled([optimisticRequest('DELETE', `/api/chats/${id}`)])
   },
-  renameChat: (id, title) => {
+  recoverChats: async (ids) => {
+    try {
+      await Promise.all(ids.map((id) => apiRequest(`/api/chats/${id}/recover`, { method: 'POST' })))
+    } finally {
+      // The chat list puts recovered chats back where they were.
+      await queryClient.invalidateQueries({ queryKey: chatsKey() })
+    }
+  },
+  duplicateChat: async (id) => {
+    const copy = await apiRequest<ServerChat>(`/api/chats/${id}/duplicate`, { method: 'POST' })
+    queryClient.setQueryData(chatsKey(), (rows: ServerChat[] | undefined) => rows && [...rows.filter((row) => row.id !== copy.id), copy])
+    set((state) => ({ chats: [...state.chats.filter((chat) => chat.id !== copy.id), toChat(copy)] }))
+    return copy.id
+  },
+  renameChat: (id, rawTitle) => {
+    const title = truncateChatTitle(rawTitle)
+    if (!title) return
     set((state) => ({ chats: state.chats.map((chat) => chat.id === id ? { ...chat, title } : chat) }))
     void optimisticRequest('PATCH', `/api/chats/${id}`, { title })
   },
   setChatFileScope: (id, fileScopeIds) => {
-    set((state) => ({ chats: state.chats.map((chat) => chat.id === id ? { ...chat, fileScopeIds } : chat) }))
-    void optimisticRequest('PATCH', `/api/chats/${id}`, { fileScopeIds })
+    const chat = get().chats.find((item) => item.id === id)
+    if (!chat) return
+    // The server drops the modes of removed items too.
+    const fileScopeAccess = scopedFileAccess(fileScopeIds, chat.fileScopeAccess ?? {})
+    set((state) => ({ chats: state.chats.map((item) => item.id === id ? { ...item, fileScopeIds, fileScopeAccess } : item) }))
+    saveChatFileScope(id, { fileScopeIds }, {
+      current: (item) => item.fileScopeIds === fileScopeIds,
+      revert: { fileScopeIds: chat.fileScopeIds, fileScopeAccess: chat.fileScopeAccess },
+    })
+  },
+  setChatFileAccess: (id, scopeId, mode) => {
+    const chat = get().chats.find((item) => item.id === id)
+    if (!chat) return
+    const fileScopeAccess = { ...chat.fileScopeAccess, [scopeId]: mode }
+    set((state) => ({ chats: state.chats.map((item) => item.id === id ? { ...item, fileScopeAccess } : item) }))
+    // Only the changed entry: the server merges it into the chat's other modes.
+    saveChatFileScope(id, { fileScopeAccess: { [scopeId]: mode } }, {
+      current: (item) => item.fileScopeAccess === fileScopeAccess,
+      revert: { fileScopeAccess: chat.fileScopeAccess },
+    })
   },
   togglePin: (id) => {
     const chat = get().chats.find((item) => item.id === id)
     if (!chat) return
     const nextPinned = !chat.pinned
     const others = get().chats.filter((item) => item.id !== id)
+    // Pinned Files items share the pinned list, so a chat pinned now goes after them too.
     const maxPinnedOrder = others
       .filter((item) => item.pinned)
-      .reduce((max, item) => Math.max(max, item.sortOrder), -1)
+      .reduce((max, item) => Math.max(max, item.sortOrder), pinnedItemsCeiling())
     // Unpinned chats return to the top of their folder or the unfiled list.
-    const folderId = get().folders.some((folder) => folder.id === chat.folderId) ? chat.folderId : null
-    const sortOrder = nextPinned ? maxPinnedOrder + 1 : topSortOrder(chatListMembers(others, get().folders, folderId))
+    const sortOrder = nextPinned ? maxPinnedOrder + 1 : topOrderIn(others, chat.folderId)
     set((state) => ({
       chats: state.chats.map((item) => item.id === id ? { ...item, pinned: nextPinned, sortOrder } : item),
     }))
-    void optimisticRequest('PATCH', `/api/chats/${id}`, { pinned: nextPinned, sortOrder })
+    // Refiled in its folder, the server places it above that folder's Files items too.
+    void optimisticRequest('PATCH', `/api/chats/${id}`, nextPinned ? { pinned: true, sortOrder } : { pinned: false, folderId: chat.folderId })
   },
   moveToFolder: (id, folderId, position) => {
     if (get().chats.find((chat) => chat.id === id)?.pinned) {
       // Pinned chats keep their pinned position; the folder applies once they are unpinned.
-      set((state) => ({ chats: state.chats.map((chat) => chat.id === id ? { ...chat, folderId } : chat) }))
-      void optimisticRequest('PATCH', `/api/chats/${id}`, { folderId })
-      return
+      set((state) => ({ chats: state.chats.map((chat) => chat.id === id ? { ...chat, folderId, inFilesRoot: false } : chat) }))
+      return settled([optimisticRequest('PATCH', `/api/chats/${id}`, { folderId })])
     }
-    placeInChatList(id, folderId, position)
-  },
-  pinChat: (id, position) => {
-    const chat = get().chats.find((item) => item.id === id)
-    if (!chat || chat.pinned || chat.temporary) return
-    // The chat keeps its folder, so unpinning returns it there.
-    const pinnedIds = orderedChatIds(get().chats.filter((item) => item.pinned && item.id !== id))
-    commitChatPlacement(id, insertChatId(pinnedIds, id, position), { pinned: true })
+    return placeInChatList(id, folderId, position)
   },
   unpinChat: (id, folderId, position) => {
-    if (!get().chats.find((chat) => chat.id === id)?.pinned) return
-    placeInChatList(id, folderId, position, { pinned: false })
-  },
-  reorderPinnedChats: (fromId, toId, edge) => {
-    reorderChatList(orderedChatIds(get().chats.filter((chat) => chat.pinned)), fromId, toId, edge)
+    if (!get().chats.find((chat) => chat.id === id)?.pinned) return Promise.resolve()
+    return placeInChatList(id, folderId, position, { pinned: false })
   },
   reorderFolderChats: (folderId, fromId, toId, edge) => {
-    reorderChatList(orderedChatIds(chatListMembers(get().chats, get().folders, folderId)), fromId, toId, edge)
+    reorderChatList(orderedChatIds(chatListMembers(get().chats, folderId)), fromId, toId, edge)
   },
   reorderLooseChats: (fromId, toId, edge) => {
-    reorderChatList(orderedChatIds(looseChats(get().chats, get().folders)), fromId, toId, edge)
+    reorderChatList(orderedChatIds(looseChats(get().chats)), fromId, toId, edge)
   },
   shareChat: async (id) => {
     const share = await apiRequest<{ token: string }>('/api/chat-shares', {
@@ -1362,60 +1394,11 @@ export const useChat = create<ChatState>()((set, get) => ({
     })
     return `${location.origin}/share/${share.token}`
   },
-  addFolder: (name) => {
-    const id = crypto.randomUUID()
-    const sortOrder = get().folders.reduce((max, folder) => Math.max(max, folder.sortOrder), -1) + 1
+  archiveChat: (id, archiveFolderId) => {
     set((state) => ({
-      folders: [...state.folders, { id, name, pinned: false, expanded: true, sortOrder }],
+      chats: state.chats.map((chat) => chat.id === id ? { ...chat, pinned: false, folderId: archiveFolderId, inFilesRoot: false } : chat),
     }))
-    const expanded = loadFolderExpanded()
-    expanded[id] = true
-    saveFolderExpanded(expanded)
-    void optimisticRequest('POST', '/api/folders', { clientId: id, name })
-  },
-  toggleFolder: (id) => set((state) => {
-    const folders = state.folders.map((folder) => (
-      folder.id === id ? { ...folder, expanded: !folder.expanded } : folder
-    ))
-    const expanded = loadFolderExpanded()
-    for (const folder of folders) expanded[folder.id] = folder.expanded
-    saveFolderExpanded(expanded)
-    return { folders }
-  }),
-  renameFolder: (id, name) => {
-    set((state) => ({ folders: state.folders.map((folder) => folder.id === id ? { ...folder, name } : folder) }))
-    void optimisticRequest('PATCH', `/api/folders/${id}`, { name })
-  },
-  toggleFolderPin: (id) => {
-    const folder = get().folders.find((item) => item.id === id)
-    if (!folder) return
-    set((state) => ({ folders: state.folders.map((item) => item.id === id ? { ...item, pinned: !item.pinned } : item) }))
-    void optimisticRequest('PATCH', `/api/folders/${id}`, { pinned: !folder.pinned })
-  },
-  reorderFolders: (fromId, toId, edge) => {
-    const orderedIds = [...get().folders]
-      .sort((a, b) => a.sortOrder - b.sortOrder || Number(b.pinned) - Number(a.pinned))
-      .map((folder) => folder.id)
-    const nextIds = reorderList(orderedIds, fromId, toId, edge)
-    if (nextIds === orderedIds || nextIds.join() === orderedIds.join()) return
-    const orders = applySortOrders(nextIds)
-    set((state) => ({
-      folders: state.folders.map((folder) => {
-        const sortOrder = orders.get(folder.id)
-        return sortOrder === undefined ? folder : { ...folder, sortOrder }
-      }),
-    }))
-    void optimisticRequest('PUT', '/api/folders/order', { folderIds: nextIds })
-  },
-  deleteFolder: (id) => {
-    set((state) => ({
-      folders: state.folders.filter((folder) => folder.id !== id),
-      chats: state.chats.map((chat) => chat.folderId === id ? { ...chat, folderId: null } : chat),
-    }))
-    const expanded = loadFolderExpanded()
-    delete expanded[id]
-    saveFolderExpanded(expanded)
-    void optimisticRequest('DELETE', `/api/folders/${id}`)
+    return settled([optimisticRequest('POST', '/api/sidebar/archive', { chatIds: [id] })])
   },
 
   stagePendingMessage: (input) => {
@@ -1460,6 +1443,7 @@ export const useChat = create<ChatState>()((set, get) => ({
             tags: [],
             temporary: input.temporary,
             fileScopeIds: input.fileScopeIds ?? [],
+            fileScopeAccess: scopedFileAccess(input.fileScopeIds ?? [], input.fileScopeAccess ?? {}),
             expiresAt: input.temporary ? timestamp + 48 * 60 * 60 * 1_000 : newChatExpiresAt,
             expired: false,
             provisional: true,
@@ -1604,7 +1588,7 @@ export const useChat = create<ChatState>()((set, get) => ({
       content,
       modelId: generation.effectiveModelId || modelId,
       displayModelId: modelId,
-      title: (content || attachments[0]?.name || 'Image').slice(0, 200),
+      title: truncateChatTitle(content || attachments[0]?.name || '') || 'Image',
       temporary,
       expiresAt: newChatExpiresAt === null ? null : new Date(newChatExpiresAt).toISOString(),
       attachments,
@@ -1630,11 +1614,12 @@ export const useChat = create<ChatState>()((set, get) => ({
         chat: {
           clientId: id,
           modelId,
-          title: (content || attachments[0]?.name || 'Image').slice(0, 200),
+          title: truncateChatTitle(content || attachments[0]?.name || '') || 'Image',
           temporary,
           autoExpire,
           // Staging put the scope on the provisional chat.
           fileScopeIds: currentChat?.fileScopeIds ?? [],
+          fileScopeAccess: currentChat?.fileScopeAccess ?? {},
         },
         response: responseBody,
       }
@@ -1996,7 +1981,7 @@ export const useChat = create<ChatState>()((set, get) => ({
         : `/api/messages/${messageId}`
       const body = rejectedSend
         ? startChat ? {
-          chat: { ...startChat, clientId: chatId, modelId, title: (content || editedAttachments[0]?.name || 'Image').slice(0, 200) },
+          chat: { ...startChat, clientId: chatId, modelId, title: truncateChatTitle(content || editedAttachments[0]?.name || '') || 'Image' },
           response: responseBody,
         } : responseBody
         : { ...selection, content }
@@ -2046,7 +2031,7 @@ export const useChat = create<ChatState>()((set, get) => ({
     }))
       .then(() => queryClient.invalidateQueries({ queryKey: chatKey(chatId) }))
   },
-  deleteUserMessage: (chatId, messageId) => {
+  deleteMessage: (chatId, messageId) => {
     const owner = queryClient.getQueryCache().find({ queryKey: chatKey(chatId), exact: true })
     if (owner) branchHistories.delete(owner)
     void enqueueChatMutation(chatId, () => optimisticRequest('DELETE', `/api/messages/${messageId}`, undefined, {

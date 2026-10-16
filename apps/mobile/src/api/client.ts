@@ -161,6 +161,9 @@ export const mobileApi = {
     }),
   logout: () => apiRequest<void>('/api/mobile/auth/logout', { method: 'POST' }),
   me: () => apiRequest<{ user: User }>('/api/mobile/me'),
+  /** Signed-in inactive accounts: never touches the active session or its 401 handler. */
+  meWithToken: (token: string) => apiRequest<{ user: User }>('/api/mobile/me', { auth: false, headers: { authorization: `Bearer ${token}` } }),
+  logoutWithToken: (token: string) => apiRequest<void>('/api/mobile/auth/logout', { method: 'POST', auth: false, headers: { authorization: `Bearer ${token}` } }),
   redeemInviteCode: (code: string) => apiRequest<{ user: User }>('/api/invite-codes/redeem', { method: 'POST', body: { code } }),
   updateProfile: (name: string) => apiRequest<{ user: User }>('/api/me', { method: 'PATCH', body: { name } }),
   changePassword: (currentPassword: string, newPassword: string) =>

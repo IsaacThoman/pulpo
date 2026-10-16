@@ -66,13 +66,13 @@ function request(input: { role?: 'admin' | 'user'; body?: unknown; modelId?: str
       blocked: false, stateRevision: 0, createdAt: new Date().toISOString(),
     },
     params: { modelId: input.modelId ?? 'codex:gpt-test' },
-    body: input.body ?? { compactionThresholdTokens: 80_000, compactionRetainedTurns: 6 },
+    body: input.body ?? { compactionThresholdTokens: 80_000, compactionRetainedUserTokens: 12_000 },
   } as unknown as FastifyRequest
 }
 
 const model = {
   id: 'codex:gpt-test', name: 'GPT Test', upstreamModelId: 'gpt-test', contextWindow: 128_000, maxOutputTokens: 16_384, minimumOutputReservationTokens: 8_000,
-  compactionEnabled: true, compactionThresholdTokens: 90_000, compactionRetainedTurns: 4, sortOrder: 0, createdAt: new Date(),
+  compactionEnabled: true, compactionThresholdTokens: 90_000, compactionRetainedTurns: 4, compactionRetainedUserTokens: 20_000, sortOrder: 0, createdAt: new Date(),
 }
 
 describe('admin Codex model settings', () => {
@@ -87,17 +87,34 @@ describe('admin Codex model settings', () => {
     const result = await handler(request(), {} as FastifyReply)
     expect(result).toEqual({ data: [{
       id: 'codex:gpt-test', name: 'GPT Test', upstreamModelId: 'gpt-test', contextWindow: 128_000,
-      maxOutputTokens: 16_384, minimumOutputReservationTokens: 8_000, compactionThresholdTokens: 90_000, compactionRetainedTurns: 4,
-      maximumCompactionThresholdTokens: 123_904,
+      maxOutputTokens: 16_384, minimumOutputReservationTokens: 8_000, compactionThresholdTokens: 90_000, compactionRetainedUserTokens: 20_000,
+      maximumCompactionThresholdTokens: 115_200,
     }] })
     await expect(handler(request({ role: 'user' }), {} as FastifyReply)).rejects.toThrow('Administrator')
+  })
+
+  it('reports a threshold saved above the current maximum as the maximum, so the dialog can save', async () => {
+    // Allowed under the old window - 4,096 rule, above the 90% maximum of 115,200.
+    mocks.rows = [{ ...model, compactionThresholdTokens: 120_000 }]
+    const handlers = await catalogHandlers()
+    const listed = await handlers.get('GET /api/admin/codex-model-settings')!(request(), {} as FastifyReply) as { data: Array<Record<string, unknown>> }
+    expect(listed.data[0]).toMatchObject({ compactionThresholdTokens: 115_200, maximumCompactionThresholdTokens: 115_200 })
+    // Saving an unrelated setting with the reported threshold is accepted.
+    const patch = handlers.get('PATCH /api/admin/codex-model-settings/:modelId')!
+    const saved = await patch(request({ body: { compactionThresholdTokens: 115_200, compactionRetainedUserTokens: 40_000 } }), {} as FastifyReply)
+    expect(mocks.updates[0]).toMatchObject({ compactionThresholdTokens: 115_200, compactionRetainedUserTokens: 40_000 })
+    expect(saved).toMatchObject({ compactionThresholdTokens: 115_200 })
   })
 
   it('rejects unknown fields and unsafe thresholds', async () => {
     const handler = (await catalogHandlers()).get('PATCH /api/admin/codex-model-settings/:modelId')!
     await expect(handler(request({ body: { compactionEnabled: false } }), {} as FastifyReply)).rejects.toThrow()
-    await expect(handler(request({ body: { compactionThresholdTokens: 123_905 } }), {} as FastifyReply))
+    await expect(handler(request({ body: { compactionRetainedTurns: 4 } }), {} as FastifyReply)).rejects.toThrow()
+    await expect(handler(request({ body: { compactionThresholdTokens: 115_201 } }), {} as FastifyReply))
       .rejects.toMatchObject({ statusCode: 400, code: 'validation_error' })
+    for (const value of [-1, 1.5, 100_001, null]) {
+      await expect(handler(request({ body: { compactionRetainedUserTokens: value } }), {} as FastifyReply)).rejects.toThrow()
+    }
     expect(mocks.updates).toHaveLength(0)
   })
 
@@ -120,11 +137,12 @@ describe('admin Codex model settings', () => {
     const handler = (await catalogHandlers()).get('PATCH /api/admin/codex-model-settings/:modelId')!
     const result = await handler(request(), {} as FastifyReply)
     expect(mocks.updates[0]).toMatchObject({
-      compactionEnabled: true, compactionThresholdTokens: 80_000, compactionRetainedTurns: 6,
+      compactionEnabled: true, compactionThresholdTokens: 80_000, compactionRetainedUserTokens: 12_000,
     })
+    expect(mocks.updates[0]).not.toHaveProperty('compactionRetainedTurns')
     expect(mocks.audits).toContainEqual(expect.objectContaining({
       action: 'codex_model.settings.update', targetType: 'model', targetId: 'codex:gpt-test',
     }))
-    expect(result).toMatchObject({ compactionThresholdTokens: 80_000, compactionRetainedTurns: 6 })
+    expect(result).toMatchObject({ compactionThresholdTokens: 80_000, compactionRetainedUserTokens: 12_000 })
   })
 })

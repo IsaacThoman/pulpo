@@ -48,13 +48,18 @@ interface AdminBillingUser {
   fiveHourLimitOverridden: boolean
   storageLimitBytes: number
   storageLimitOverridden: boolean
+  usageTier: number
+  /** Null for accounts exempt from daily caps. */
+  dailyLimitMicros: number | null
+  dailySpentMicros: number
+  dailyLimitOverridden: boolean
   hold: { holdAt: string; holdReason: string | null; holdReference: string | null } | null
 }
 
 const usersViewSchema = z.object({
   query: z.string().catch(''),
   sort: z.object({
-    key: z.enum(['role', 'name', 'lastActiveAt', 'email', 'plan', 'weeklyLimit', 'fiveHourLimit', 'invites', 'balance', 'storage', 'joinedAt']),
+    key: z.enum(['role', 'name', 'lastActiveAt', 'email', 'plan', 'weeklyLimit', 'fiveHourLimit', 'dailyLimit', 'invites', 'balance', 'storage', 'joinedAt']),
     direction: z.enum(['ascending', 'descending']),
   }).nullable().catch(null),
 })
@@ -78,6 +83,7 @@ function userSortValue(user: MonitorUser, billing: AdminBillingUser | undefined,
     case 'plan': return billing ? { baby: 0, eight: 1, fat: 2 }[billing.plan] : null
     case 'weeklyLimit': return billing?.weeklyLimitMicros ?? null
     case 'fiveHourLimit': return billing?.fiveHourLimitMicros ?? null
+    case 'dailyLimit': return billing?.dailyLimitMicros ?? null
     case 'invites': return user.inviteCodeQuota ?? 0
     case 'balance': return user.balance
     case 'storage': return user.storageBytes ?? 0
@@ -228,6 +234,7 @@ function AdminUsersTable({ storageKey }: { storageKey: string | null }) {
                 {billingEnabled && sortHeader('plan', ui('Plan'))}
                 {billingEnabled && sortHeader('weeklyLimit', ui('Weekly limit'), true)}
                 {billingEnabled && sortHeader('fiveHourLimit', ui('5-hour limit'), true)}
+                {billingEnabled && sortHeader('dailyLimit', ui('Daily limit'), true)}
                 {billingEnabled && sortHeader('invites', ui('Invites'), true)}
                 {sortHeader('balance', ui('Balance'), true)}
                 {sortHeader('storage', ui('File storage'), true)}
@@ -267,6 +274,7 @@ function AdminUsersTable({ storageKey }: { storageKey: string | null }) {
                   {billingEnabled && <td className="px-3 py-2"><BillingPlanCell row={billingByUser.get(u.id)} onChanged={() => void billingUsersQuery.refetch()} /></td>}
                   {billingEnabled && <td className="px-3 py-2 text-right tabular-nums"><WeeklyLimitCell row={billingByUser.get(u.id)} onChanged={() => void billingUsersQuery.refetch()} /></td>}
                   {billingEnabled && <td className="px-3 py-2 text-right tabular-nums"><FiveHourLimitCell row={billingByUser.get(u.id)} onChanged={() => void billingUsersQuery.refetch()} /></td>}
+                  {billingEnabled && <td className="px-3 py-2 text-right tabular-nums"><DailyLimitCell row={billingByUser.get(u.id)} onChanged={() => void billingUsersQuery.refetch()} /></td>}
                   {billingEnabled && <td className="px-3 py-2 text-right tabular-nums"><InviteQuotaCell user={u} onChanged={() => void loadAdmin()} /></td>}
                   <td className="px-3 py-2 text-right tabular-nums">
                     <BalanceCell user={u} />
@@ -537,6 +545,36 @@ function FiveHourLimitCell({ row, onChanged }: { row: AdminBillingUser | undefin
     </button>
     {row.fiveHourLimitOverridden && <Button size="icon-sm" variant="ghost" title={ui("Reset to plan default")} onClick={() => {
       void apiRequest(`/api/admin/billing/users/${row.userId}/five-hour-limit`, { method: 'PATCH', body: { fiveHourLimitMicros: null } }).then(onChanged)
+    }}><RefreshCw className="size-3.5" /></Button>}
+  </span>
+}
+
+function DailyLimitCell({ row, onChanged }: { row: AdminBillingUser | undefined; onChanged: () => void }) {
+  const [editing, setEditing] = useState(false)
+  const [value, setValue] = useState('')
+  if (!row) return <span className="text-muted-foreground">—</span>
+  if (row.dailyLimitMicros === null) return <span className="text-muted-foreground" title={ui("Admins have no daily limit")}>{ui("Exempt")}</span>
+  const limitMicros = row.dailyLimitMicros
+
+  const save = async () => {
+    const amount = Number(value)
+    setEditing(false)
+    if (!Number.isFinite(amount) || amount < 0) return
+    await apiRequest(`/api/admin/billing/users/${row.userId}/daily-limit`, {
+      method: 'PATCH', body: { dailyLimitMicros: Math.round(amount * 1_000_000) },
+    })
+    onChanged()
+  }
+
+  if (editing) return <Input autoFocus className="ml-auto h-7 w-20 text-right text-xs" type="number" min="0" step="0.01" value={value} onChange={(event) => setValue(event.target.value)} onBlur={() => void save()} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') setEditing(false) }} />
+
+  return <span className="inline-flex items-center justify-end gap-1">
+    <span className="text-xs text-muted-foreground" title={ui("Usage tier")}>{row.dailyLimitOverridden ? ui("Custom") : ui("T{{tier}}", { tier: row.usageTier })}</span>
+    <button type="button" title={ui("Edit daily limit")} className="rounded-md px-1.5 py-0.5 hover:bg-accent" onClick={() => { setValue((limitMicros / 1_000_000).toFixed(2)); setEditing(true) }}>
+      {formatBalance(row.dailySpentMicros / 1_000_000)} / {formatBalance(limitMicros / 1_000_000)}
+    </button>
+    {row.dailyLimitOverridden && <Button size="icon-sm" variant="ghost" title={ui("Reset to usage tier")} onClick={() => {
+      void apiRequest(`/api/admin/billing/users/${row.userId}/daily-limit`, { method: 'PATCH', body: { dailyLimitMicros: null } }).then(onChanged)
     }}><RefreshCw className="size-3.5" /></Button>}
   </span>
 }

@@ -13,6 +13,7 @@ import {
 import { AppError } from '../lib/errors.js'
 import { parseBillingSettings } from '../settings/application-settings.js'
 import { getBillingEntitlements } from './entitlements.js'
+import { loadDailySpend, type DailySpend } from './usage-tiers.js'
 import { loadOwnerSharedAllowance, sharedAllowanceBar } from './shared-allowance.js'
 import { getAutoTopUpSummary, removeAutoTopUpPaymentMethod, updateAutoTopUpSettings } from './auto-top-up.js'
 import {
@@ -114,6 +115,25 @@ export function fiveHourSummaryPercentages(input: {
   }
 }
 
+export function dailySpendSummary(spend: DailySpend | null) {
+  if (!spend || spend.limitMicros === null) return null
+  return {
+    tier: spend.tier,
+    limitOverridden: spend.limitOverridden,
+    limitMicros: spend.limitMicros,
+    spentMicros: spend.spentMicros,
+    pendingMicros: spend.pendingMicros,
+    remainingMicros: spend.remainingMicros ?? 0,
+    remainingPercentage: Math.round(billingLimitPercentage(spend.remainingMicros ?? 0, spend.limitMicros)),
+    availableBarPercentage: billingLimitPercentage(spend.remainingMicros ?? 0, spend.limitMicros),
+    pendingBarPercentage: billingLimitPercentage(Math.min(spend.pendingMicros, Math.max(0, spend.limitMicros - spend.spentMicros)), spend.limitMicros),
+    resetsAt: spend.resetAt.toISOString(),
+    paidCents: spend.paidCents,
+    firstPaidAt: spend.firstPaidAt?.toISOString() ?? null,
+    next: spend.next ? { ...spend.next, availableAt: spend.next.availableAt?.toISOString() ?? null } : null,
+  }
+}
+
 export async function registerBillingRoutes(app: FastifyInstance): Promise<void> {
   const config = getConfig()
   if (!config.PULPO_BILLING_ENABLED) return
@@ -144,6 +164,7 @@ export async function registerBillingRoutes(app: FastifyInstance): Promise<void>
         .where(eq(applicationSettings.key, 'billing')).limit(1),
     ])
     const settings = parseBillingSettings(billingSetting?.value)
+    const dailySpend = await db.transaction((tx) => loadDailySpend(tx, { userId: user.id, role: user.role, weeklyLimitMicros: entitlements.weeklyLimitMicros }))
     const sharedAllowance = poolBalance ? await db.transaction((tx) => loadOwnerSharedAllowance(tx, user.id, entitlements, settings)) : null
     const subscription = selectSummarySubscription(subscriptions, entitlements.subscriptionPlan)
     const fiveHour = entitlements.fiveHourRemainingPercentage === null
@@ -172,6 +193,8 @@ export async function registerBillingRoutes(app: FastifyInstance): Promise<void>
       // How much of this user's weekly usage pool members can still draw on.
       shared: sharedAllowance ? sharedAllowanceBar(sharedAllowance) : null,
       sharedWeeklyPercent: settings.fatSharedWeeklyPercent,
+      daily: dailySpendSummary(dailySpend),
+      usageTiers: settings.usageTiers,
       onHold: entitlements.onHold,
       planStorageLimitBytes: {
         baby: settings.babyStorageLimitBytes,

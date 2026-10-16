@@ -1,12 +1,12 @@
 import { createHash } from 'node:crypto'
-import { readFile, rm, mkdtemp } from 'node:fs/promises'
+import { readFile, rm, mkdtemp, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Readable } from 'node:stream'
 import { gunzipSync } from 'node:zlib'
 import tar from 'tar-stream'
 import { afterEach, describe, expect, it } from 'vitest'
-import { checksumMatches, writeBackupArchive, type BackupArchiveEntry } from './backup-archive.js'
+import { checksumMatches, stageBackupBlob, writeBackupArchive, type BackupArchiveEntry } from './backup-archive.js'
 
 const temporaryDirectories: string[] = []
 
@@ -33,6 +33,20 @@ async function readEntries(archive: Uint8Array): Promise<Map<string, Buffer>> {
 }
 
 describe('backup archive', () => {
+  it('stages streamed blobs with exact sizes, private permissions and verified checksums', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'pulpo-backup-blob-test-'))
+    temporaryDirectories.push(directory)
+    const body = Buffer.from('streamed blob'), checksum = createHash('sha256').update(body).digest('hex')
+    const path = join(directory, 'blob')
+    expect(await stageBackupBlob(path, Readable.from([body.subarray(0, 3), body.subarray(3)]), checksum)).toEqual({ sizeBytes: body.length, checksum })
+    expect(await readFile(path)).toEqual(body)
+    expect((await stat(path)).mode & 0o777).toBe(0o600)
+    await expect(stageBackupBlob(join(directory, 'corrupt'), Readable.from([body]), 'incorrect')).rejects.toThrow('source blob checksum failed')
+    await expect(stageBackupBlob(join(directory, 'interrupted'), Readable.from((async function* () {
+      yield body; throw new Error('blob stream interrupted')
+    })()), null)).rejects.toThrow('blob stream interrupted')
+  })
+
   it('streams entries to gzip and reports exact integrity metadata', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'pulpo-backup-test-'))
     temporaryDirectories.push(directory)

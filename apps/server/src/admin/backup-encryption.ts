@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { Readable, Transform } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
 import { Encrypter } from 'age-encryption'
 
 export function isAgeEncryptedBackup(value: Uint8Array): boolean {
@@ -16,9 +17,14 @@ export async function createAgeEncryptionStream(
   const encrypted = await encrypter.encrypt(Readable.toWeb(source) as ReadableStream<Uint8Array>)
   const hash = createHash('sha256')
   let resolveChecksum!: (value: string) => void
-  const checksum = new Promise<string>((resolve) => {
+  let rejectChecksum!: (reason: unknown) => void
+  const checksum = new Promise<string>((resolve, reject) => {
     resolveChecksum = resolve
+    rejectChecksum = reject
   })
+  // Consumers usually await the digest after upload. Observe early failures
+  // immediately while preserving the rejection for that later await.
+  void checksum.catch(() => undefined)
   const hashingStream = new Transform({
     transform(chunk: Buffer, _encoding, callback) {
       hash.update(chunk)
@@ -29,8 +35,9 @@ export async function createAgeEncryptionStream(
       callback()
     },
   })
+  void pipeline(Readable.fromWeb(encrypted as unknown as import('node:stream/web').ReadableStream), hashingStream).catch(rejectChecksum)
   return {
-    body: Readable.fromWeb(encrypted as unknown as import('node:stream/web').ReadableStream).pipe(hashingStream),
+    body: hashingStream,
     sizeBytes: encrypted.size(sourceSize),
     checksum,
   }

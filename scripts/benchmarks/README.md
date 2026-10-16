@@ -51,3 +51,7 @@ The opening runner repeats 20 fresh cold opens and requires the warm page plus s
 Raw output includes the synthetic login token and response IDs. Keep it outside Git. Commit only the benchmark drivers and sanitized aggregate summaries. The API and browser runners are designed for isolated local services; they are not a production load test.
 
 For a direct layout comparison, build an unchanged baseline checkout and run `BENCH_BASE_WEB=/absolute/path/to/baseline/apps/web node scripts/benchmarks/long-chat-compare-layout.mjs`. It compares the final user/assistant Markdown geometry, composer, and header at desktop and phone widths and saves both screenshots outside the repository.
+
+## October 16 performance audit
+
+The [audit overview](../../docs/performance/audit-2026-10-16.md) links five independent PRs covering web rendering/account preparation, shared Markdown scanning, backend replay/owner retention, mobile branch indexing, and iOS native cache text. It records same-host before/after results, raw-sample locations, independent review outcomes, real-stack correctness controls, native validation, and unresolved findings. Each PR carries its own focused report and reproduction commands.

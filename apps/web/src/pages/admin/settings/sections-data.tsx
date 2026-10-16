@@ -154,7 +154,7 @@ function OffsiteBackupSection() {
           <div className="mt-0.5 break-all text-[11px] text-muted-foreground">{ui('ciphertext')} {job.archiveSizeBytes ?? '—'} {ui('bytes')} · {ui('SHA-256')} {job.archiveChecksum ?? '—'}{job.deletedAt ? ` · ${ui('deleted')} ${formatDateTime(Date.parse(job.deletedAt))}` : ''}</div>
           {job.error && <div className="mt-1 text-xs text-destructive">{job.error}</div>}
         </div>
-        {job.status === 'completed' && !job.deletedAt && <Button variant="outline" size="sm" onClick={() => void downloadApiFile(`/api/admin/backups/${job.id}/download`)}><Download />{ui('Encrypted')}</Button>}
+        {job.status === 'completed' && !job.deletedAt && <Button variant="outline" size="sm" onClick={() => void downloadApiFile(`/api/admin/backups/${job.id}/download`, `pulpo-instance-${job.createdAt.slice(0, 10)}.tar.gz.age`).catch(error => setMessage(error instanceof Error ? error.message : 'Backup download failed'))}><Download />{ui('Encrypted')}</Button>}
       </div>)}
     </Section>
   </>
@@ -162,7 +162,27 @@ function OffsiteBackupSection() {
 
 export function DatabaseSection() {
   const [status, setStatus] = useState('')
-  const createBackup = async () => { const job = await apiRequest<{ id: string }>('/api/admin/backups', { method: 'POST' }); setStatus('Building backup…'); for (let i = 0; i < 600; i += 1) { await new Promise((resolve) => setTimeout(resolve, 1000)); const result = await apiRequest<{ data: Array<{ id: string; status: string; progress: number; error?: string }> }>('/api/admin/backups'); const current = result.data.find((x) => x.id === job.id); if (current) setStatus(`Backup ${current.progress}%`); if (current?.status === 'completed') { await downloadApiFile(`/api/admin/backups/${job.id}/download`); setStatus('Backup ready'); return } if (current?.status === 'failed') { setStatus(current.error ?? 'Backup failed'); return } } }
+  const [backupWorking, setBackupWorking] = useState(false)
+  const createBackup = async () => {
+    if (backupWorking) return
+    setBackupWorking(true); setStatus('Building backup…')
+    try {
+      const job = await apiRequest<{ id: string }>('/api/admin/backups', { method: 'POST' })
+      for (let i = 0; i < 600; i += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 1000))
+        const result = await apiRequest<{ data: Array<{ id: string; status: string; progress: number; error?: string }> }>('/api/admin/backups')
+        const current = result.data.find((x) => x.id === job.id)
+        if (current) setStatus(`Backup ${current.progress}%`)
+        if (current?.status === 'completed') {
+          await downloadApiFile(`/api/admin/backups/${job.id}/download`, `pulpo-instance-${new Date().toISOString().slice(0, 10)}.tar.gz`)
+          setStatus('Backup ready'); return
+        }
+        if (current?.status === 'failed') { setStatus(current.error ?? 'Backup failed'); return }
+      }
+      setStatus('The backup is still running. The download did not finish within 10 minutes.')
+    } catch (error) { setStatus(error instanceof Error ? error.message : 'Backup failed') }
+    finally { setBackupWorking(false) }
+  }
 
   return (
     <div>
@@ -175,8 +195,8 @@ export function DatabaseSection() {
       </Section>
 
       <Section title={ui("Database")}>
-        <Field label={ui("Full application backup")} hint="Versioned .tar.gz containing durable database state, encrypted secrets, detailed payloads still in retention, and ready attachment blobs.">
-          <Button variant="outline" size="sm" onClick={() => void createBackup()}><Download />{ui("Backup instance")}</Button>
+        <Field label={ui("Full application backup")} hint="Versioned .tar.gz containing durable application data, encrypted secrets, Files and collaborative documents, and ready attachment and file blobs.">
+          <Button variant="outline" size="sm" disabled={backupWorking} onClick={() => void createBackup()}><Download />{ui("Backup instance")}</Button>
         </Field>
         <RestoreBackupForm />
         {status && <div className="rounded-md border bg-muted/30 p-3 text-xs">{status}</div>}

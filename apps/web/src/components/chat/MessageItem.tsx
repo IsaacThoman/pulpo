@@ -30,10 +30,11 @@ import { findCostLimitItem, workspaceContinueWithoutAgentAvailableAtMs, type Com
 import type { Chat, Message } from '@/lib/types'
 import { hasMultipleBranches } from '@/lib/message-branches'
 import { getCatalogModel } from '@/stores/catalog'
-import { formatCost, formatDuration, formatSecondsLabel, timeAgo } from '@/lib/format'
+import { formatCost, formatDuration, formatNumber, formatSecondsLabel, timeAgo } from '@/lib/format'
 import { useChat } from '@/stores/chat'
 import { selectAvailableChatIds } from '@/lib/chat-availability'
 import { useSettings } from '@/stores/settings'
+import { useAuth } from '@/stores/auth'
 import { useUploadOutbox } from '@/stores/upload-outbox'
 import { Markdown } from './Markdown'
 import { MessageAttachmentList } from './AttachmentImage'
@@ -59,7 +60,7 @@ import { ui, activeLocale } from '@/i18n/ui'
 import { toolActivityPresentation } from './tool-activity-presentation'
 import { UsageCostBreakdown } from '@/components/usage/UsageCostBreakdown'
 import { FileChangesBar } from '@/features/files/FileChangesBar'
-import { changedFiles } from '@/features/files/file-changes'
+import { fileChangesItem } from '@/features/files/file-changes'
 
 function CopyButton({ text }: { text: string }) {
   const { t } = useTranslation()
@@ -170,7 +171,7 @@ function StepDuration({ ms, live }: { ms?: number; live?: boolean }) {
 
 function ActivityToolRow({ tool }: { tool: ToolItem }) {
   const [open, setOpen] = useState(false)
-  const Icon = toolActivityPresentation(tool.tool).icon
+  const Icon = toolActivityPresentation(tool.tool, tool.arguments).icon
   const running = tool.status === 'running'
   const failed = tool.status === 'failed' || tool.isError
   const hasBody = tool.arguments !== undefined || Boolean(tool.output) || Boolean(tool.imagePreview)
@@ -276,10 +277,18 @@ function CostLimitPrompt({
   )
 }
 
+function compactionTokensLabel(item: CompactionItem): string | null {
+  if (typeof item.estimated_tokens !== 'number' || typeof item.tokens_after !== 'number') return null
+  return ui("Context: {{before}} → {{after}} tokens", { before: formatNumber(item.estimated_tokens), after: formatNumber(item.tokens_after) })
+}
+
 function CompactionStepRow({ item }: { item: CompactionItem }) {
   const [open, setOpen] = useState(false)
   const active = item.status === 'in_progress'
   const failed = item.status === 'failed'
+  // Items are never parsed, so schema defaults do not apply to stored or streamed output.
+  const retained = item.retained_turns ?? []
+  const tokens = compactionTokensLabel(item)
   return (
     <Collapsible open={open} onOpenChange={setOpen} className="min-w-0">
       <CollapsibleTrigger className="flex w-full cursor-pointer items-center gap-1.5 rounded-md py-0.5 text-left text-[12px] text-muted-foreground hover:text-foreground">
@@ -291,12 +300,13 @@ function CompactionStepRow({ item }: { item: CompactionItem }) {
       <CollapsibleContent>
         <div className="mt-2 space-y-3 pl-4 text-xs">
           {item.error ? <p className="text-destructive">{item.error}</p> : null}
+          {tokens ? <p className="tabular-nums text-muted-foreground">{tokens}</p> : null}
           {item.summary ? <div><div className="mb-1 font-medium text-foreground/80">{ui("Compacted summary")}</div><Markdown content={item.summary} /></div> : null}
-          {item.retained_turns.length ? (
+          {retained.length ? (
             <div>
               <div className="mb-1 font-medium text-foreground/80">{ui("Kept verbatim")}</div>
               <div className="space-y-1.5">
-                {item.retained_turns.map((entry, index) => (
+                {retained.map((entry, index) => (
                   <div key={`${entry.role}:${index}`} className="rounded-md bg-muted/40 px-2 py-1.5">
                     <div className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{entry.role}</div>
                     <pre className="whitespace-pre-wrap break-words font-sans text-[12px] leading-5">{entry.content}</pre>
@@ -506,7 +516,7 @@ function ActivityBlock({
       return workspaceLabel(workspace)
     }
     if (pausedCostLimit) return costLimitStepLabel(pausedCostLimit, true)
-    if (runningTool) return toolActivityPresentation(runningTool.tool).label
+    if (runningTool) return toolActivityPresentation(runningTool.tool, runningTool.arguments).label
     if (active && hasTools) return ui("Working…")
     if (active) return ui("Thinking…")
     if (recall && !hasOtherActivity) {
@@ -534,7 +544,7 @@ function ActivityBlock({
     if (workspaceFailed) return <XCircle className="size-3.5 shrink-0 text-destructive" />
     if (pausedCostLimit) return <Pause className="size-3.5 shrink-0" />
     if (runningTool) {
-      const Icon = toolActivityPresentation(runningTool.tool).icon
+      const Icon = toolActivityPresentation(runningTool.tool, runningTool.arguments).icon
       return <Icon className="size-3.5 shrink-0 animate-pulse" />
     }
     if (active && hasTools) return <Wrench className="size-3.5 shrink-0 animate-pulse" />
@@ -629,13 +639,14 @@ export const MessageItem = memo(function MessageItem({
   const speechActive = speechState.key === `${chat.id}:${message.id}`
   const { t } = useTranslation()
   const editAssistantMessage = useChat((state) => state.editAssistantMessage)
-  const deleteUserMessage = useChat((state) => state.deleteUserMessage)
+  const deleteMessage = useChat((state) => state.deleteMessage)
   const stopStreaming = useChat((state) => state.stopStreaming)
   const continueWithoutAgent = useChat((state) => state.continueWithoutAgent)
   const continuePastCostLimit = useChat((state) => state.continuePastCostLimit)
   const returnSubmissionToComposer = useUploadOutbox((state) => state.returnSubmissionToComposer)
   const showReasoning = useSettings((s) => s.showReasoning)
   const showResponseCost = useSettings((s) => s.showResponseCost)
+  const filesEnabled = useAuth((s) => s.filesEnabled)
   const [editing, setEditing] = useState(() => editDrafts?.has(message.id) ?? false)
   const [draft, setDraft] = useState(() => editDrafts?.get(message.id) ?? message.content)
   useEffect(() => {
@@ -726,7 +737,7 @@ export const MessageItem = memo(function MessageItem({
               <MessageAttachmentList attachments={message.attachments} />
             </div>
           )}
-          {message.content ? <Markdown content={message.content} /> : null}
+          {message.content ? <Markdown content={message.content} breaks /> : null}
         </div>
         <div className="flex items-center gap-1">
             <div className={cn("flex items-center gap-0.5 transition-opacity group-hover:opacity-100 focus-within:opacity-100", speechActive ? "opacity-100" : "opacity-0")}>
@@ -748,7 +759,7 @@ export const MessageItem = memo(function MessageItem({
                     <Pencil className="size-3.5" />
                   </ActionButton>
                   {!pendingDelivery && (
-                    <ActionButton label={t('chat.deleteMessage')} onClick={() => { if (confirm(t('chat.deleteMessageConfirm'))) deleteUserMessage(chat.id, message.id) }}>
+                    <ActionButton label={t('chat.deleteMessage')} onClick={() => { if (confirm(t('chat.deleteMessageConfirm'))) deleteMessage(chat.id, message.id) }}>
                       <Trash2 className="size-3.5" />
                     </ActionButton>
                   )}
@@ -766,7 +777,7 @@ export const MessageItem = memo(function MessageItem({
   const outputItems = message.outputItems ?? []
   const otherItems = outputItems.filter((item) => {
     const type = (item as { type?: string }).type
-    return type && !['message', 'reasoning', 'pulpo_tool', 'pulpo_workspace', 'pulpo_attachment', 'pulpo_compaction', 'pulpo_recall', 'pulpo_cost_limit'].includes(type)
+    return type && !['message', 'reasoning', 'pulpo_tool', 'pulpo_workspace', 'pulpo_attachment', 'pulpo_compaction', 'pulpo_recall', 'pulpo_cost_limit', 'pulpo_file_changes'].includes(type)
   })
   const costLimit = findCostLimitItem(outputItems)
   const lastActivityIndex = activitySegments.length - 1
@@ -898,7 +909,7 @@ export const MessageItem = memo(function MessageItem({
           )}
         </div>
 
-        {message.done && !chat.expired && changedFiles(message.outputItems) && <FileChangesBar responseId={message.id} />}
+        {message.done && !chat.expired && filesEnabled && fileChangesItem(outputItems) && <FileChangesBar responseId={message.id} />}
 
         {(message.done || hasMultipleBranches(message.branch)) && (
           <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-1">
@@ -921,6 +932,11 @@ export const MessageItem = memo(function MessageItem({
                     <ActionButton label={t('chat.regenerate')} onClick={() => { speechPlayback.stop(); onRegenerate(message.id) }}>
                       <RefreshCw className="size-3.5" />
                     </ActionButton>
+                    {hasMultipleBranches(message.branch) && (
+                      <ActionButton label={t('chat.deleteVersion')} onClick={() => { if (confirm(t('chat.deleteVersionConfirm'))) { speechPlayback.stop(); deleteMessage(chat.id, message.id) } }}>
+                        <Trash2 className="size-3.5" />
+                      </ActionButton>
+                    )}
                   </>
                 )}
                 <SpeechButton messageKey={`${chat.id}:${message.id}`} text={message.content} />

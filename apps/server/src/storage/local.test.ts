@@ -45,6 +45,7 @@ describe('local blob URLs', () => {
   it('routes Files objects to the Files API and everything else to attachments', async () => {
     const store = new LocalBlobStore('/unused')
     expect(localObjectRouteBase('users/u1/files/f1')).toBe('/api/files')
+    expect(localObjectRouteBase('restored/restore-id/files/f1')).toBe('/api/files')
     expect(localObjectRouteBase('users/u1/attachments/a1')).toBe('/api/attachments')
     expect(localObjectRouteBase('exports/u1/files/x')).toBe('/api/attachments')
     expect(await store.createUploadUrl('users/u1/files/f1')).toBe('/api/files/local-upload/users%2Fu1%2Ffiles%2Ff1')

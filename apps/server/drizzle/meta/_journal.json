@@ -652,6 +652,69 @@
       "when": 1791315879063,
       "tag": "0092_provider_api_format",
       "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1791479832886,
+      "tag": "0093_follow_new_account_model_defaults",
+      "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1791481918148,
+      "tag": "0094_lab_sort_order",
+      "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1791582575415,
+      "tag": "0095_model_hidden_platforms",
+      "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1791903652249,
+      "tag": "0096_model_user_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "7",
+      "when": 1791926446864,
+      "tag": "0097_files_chat_folders",
+      "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "7",
+      "when": 1791935022542,
+      "tag": "0098_usage_tiers",
+      "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "7",
+      "when": 1791936826692,
+      "tag": "0099_compaction_retained_user_tokens",
+      "breakpoints": true
+    },
+    {
+      "idx": 100,
+      "version": "7",
+      "when": 1791939840596,
+      "tag": "0100_file_node_pins",
+      "breakpoints": true
+    },
+    {
+      "idx": 101,
+      "version": "7",
+      "when": 1791992824383,
+      "tag": "0101_agent_file_access",
+      "breakpoints": true
     }
   ]
 }

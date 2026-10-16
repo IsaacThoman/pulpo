@@ -26,6 +26,29 @@ export function systemPromptFromAgentContext(context: unknown): string | undefin
   return typeof systemPrompt === 'string' && systemPrompt ? systemPrompt : undefined
 }
 
+/**
+ * Display bookkeeping saved with a run: where this run's own messages start in `messages`,
+ * the run's messages that compaction removed, and whether `messages` already holds the run's prompt.
+ * Absent on runs saved before compaction rework.
+ */
+export function agentRunDisplayState(context: unknown): { displayStart?: number; archivedMessages: AgentMessage[]; promptRecorded: boolean } {
+  if (!context || typeof context !== 'object') return { archivedMessages: [], promptRecorded: false }
+  const { displayStart, archivedMessages, promptRecorded } = context as { displayStart?: unknown; archivedMessages?: unknown; promptRecorded?: unknown }
+  return {
+    ...(typeof displayStart === 'number' && Number.isSafeInteger(displayStart) && displayStart >= 0 ? { displayStart } : {}),
+    archivedMessages: Array.isArray(archivedMessages) ? archivedMessages as AgentMessage[] : [],
+    promptRecorded: promptRecorded === true,
+  }
+}
+
+/**
+ * A resumed run continues instead of re-sending its prompt once the prompt is in the saved messages.
+ * Compaction resets displayStart to the compacted length, so comparing lengths is only a fallback for runs saved by older code.
+ */
+export function resumedRunContinues(display: { promptRecorded: boolean }, messageCount: number, displayStart: number): boolean {
+  return display.promptRecorded || messageCount > displayStart
+}
+
 function timestamp(value: Date | string | null | undefined): number {
   const parsed = value instanceof Date ? value.getTime() : Date.parse(value ?? '')
   return Number.isFinite(parsed) ? parsed : Date.now()

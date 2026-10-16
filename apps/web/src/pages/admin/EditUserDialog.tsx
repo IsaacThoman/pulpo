@@ -12,6 +12,10 @@ import type { MonitorUser } from '@/lib/types'
 import { ui } from '@/i18n/ui'
 import { AUTOMATIC_MODEL_VALUE, defaultModelOptions } from './settings/new-account-model-defaults-logic'
 
+function sameIds(left: string[], right: string[]): boolean {
+  return left.length === right.length && left.every((id) => right.includes(id))
+}
+
 export function EditUserDialog({ user, billingEnabled, onSave, onClose }: {
   user: MonitorUser
   billingEnabled: boolean
@@ -20,12 +24,23 @@ export function EditUserDialog({ user, billingEnabled, onSave, onClose }: {
 }) {
   const initialModelId = user.defaultModelId || null
   const [defaultModelId, setDefaultModelId] = useState(initialModelId)
+  const [resetFavorites, setResetFavorites] = useState(false)
+  const favoritesFollowDefaults = resetFavorites || !user.favoriteModelIds
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const models = useQuery({
     queryKey: ['admin-user-models', runtimeAccountKey(user.id)],
     queryFn: ({ signal }) => apiRequest<{ data: { id: string; name: string }[] }>(`/api/admin/users/${user.id}/models`, { signal }),
   })
+  const initialGrantedModelIds = user.grantedModelIds ?? []
+  const [grantedModelIds, setGrantedModelIds] = useState(initialGrantedModelIds)
+  const restrictedModels = useQuery({
+    queryKey: ['admin-restricted-models'],
+    queryFn: async ({ signal }) => (await apiRequest<{ data: { id: string; name: string; restricted: boolean }[] }>('/api/admin/models', { signal }))
+      .data.filter((model) => model.restricted),
+  })
+  const toggleGrant = (modelId: string, granted: boolean) => setGrantedModelIds((current) =>
+    granted ? [...current, modelId] : current.filter((id) => id !== modelId))
 
   const save = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -40,6 +55,11 @@ export function EditUserDialog({ user, billingEnabled, onSave, onClose }: {
         ...(billingEnabled ? { inviteCodeQuota: Number(values.get('inviteCodeQuota') ?? 0) } : {}),
         ...(password ? { password } : {}),
         ...(defaultModelId !== initialModelId ? { defaultModelId } : {}),
+        ...(resetFavorites ? { favoriteModelIds: null } : {}),
+        // The patch only manages restricted models; grants kept on unrestricted models stay untouched.
+        ...(!sameIds(grantedModelIds, initialGrantedModelIds) ? {
+          grantedModelIds: grantedModelIds.filter((id) => restrictedModels.data?.some((model) => model.id === id)),
+        } : {}),
       })
       onClose()
     } catch (error) {
@@ -80,7 +100,7 @@ export function EditUserDialog({ user, billingEnabled, onSave, onClose }: {
               onValueChange={(value) => setDefaultModelId(value === AUTOMATIC_MODEL_VALUE ? null : value)}>
               <SelectTrigger id="edit-user-default-model" className="w-full min-w-0"><SelectValue /></SelectTrigger>
               <SelectContent>
-                {defaultModelOptions(models.data?.data ?? [], defaultModelId).map((option) =>
+                {defaultModelOptions(models.data?.data ?? [], defaultModelId, ui('New-account default')).map((option) =>
                   <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}
               </SelectContent>
             </Select>
@@ -90,6 +110,31 @@ export function EditUserDialog({ user, billingEnabled, onSave, onClose }: {
               <Button type="button" variant="outline" size="sm" disabled={models.isFetching} onClick={() => void models.refetch()}>{ui('Retry')}</Button>
             </div>}
           </div>
+          <div className="space-y-1.5">
+            <Label id="edit-user-favorites">{ui('Favorite models')}</Label>
+            {favoritesFollowDefaults
+              ? <p aria-labelledby="edit-user-favorites" className="text-xs text-muted-foreground">{ui('Following new-account defaults')}</p>
+              : <div className="flex items-start justify-between gap-2">
+                <p aria-labelledby="edit-user-favorites" className="min-w-0 text-sm break-words">
+                  {user.favoriteModelIds!.length
+                    ? user.favoriteModelIds!.map((id) => models.data?.data.find((model) => model.id === id)?.name ?? id).join(', ')
+                    : ui('None')}
+                </p>
+                <Button type="button" variant="outline" size="sm" className="shrink-0" onClick={() => setResetFavorites(true)}>
+                  {ui('Reset to defaults')}
+                </Button>
+              </div>}
+          </div>
+          {user.role !== 'admin' && !!restrictedModels.data?.length && <div className="space-y-1.5">
+            <Label id="edit-user-restricted-models">{ui('Restricted models')}</Label>
+            <p className="text-xs text-muted-foreground">{ui('Checked models are available to this user.')}</p>
+            <div role="group" aria-labelledby="edit-user-restricted-models" className="space-y-1 rounded-md border p-2">
+              {restrictedModels.data.map((model) => <label key={model.id} className="flex min-w-0 cursor-pointer items-center gap-2 text-sm">
+                <input type="checkbox" className="size-4 shrink-0 accent-primary" checked={grantedModelIds.includes(model.id)} onChange={(event) => toggleGrant(model.id, event.target.checked)} />
+                <span className="truncate">{model.name}</span>
+              </label>)}
+            </div>
+          </div>}
           {billingEnabled && <div className="space-y-1.5">
             <Label htmlFor="edit-user-invite-quota">{ui('Invite code quota')}</Label>
             <Input id="edit-user-invite-quota" name="inviteCodeQuota" type="number" min={0} max={1000} defaultValue={user.inviteCodeQuota ?? 0} />

@@ -126,7 +126,7 @@ function changesBetween(before: unknown, after: unknown, path = ''): ManagementS
 
 async function validateModelReferences(document: ManagementSettingsDocument, mode: ManagementSettingsMode): Promise<void> {
   const referenced = [
-    ...(mode === 'instance' ? [] : [document.account.defaultModelId, ...document.account.favoriteModelIds]),
+    ...(mode === 'instance' ? [] : [document.account.defaultModelId, ...(document.account.favoriteModelIds ?? [])]),
     ...(mode === 'account' ? [] : [
       ...newAccountModelReferenceIds(document.instance.auth),
       document.instance.interface.localTask,

@@ -1,4 +1,14 @@
-import type { FileConversionPreview, FileFolderLayout, FileListing, FileNode, FileUploadReservation, MoveFileNodes, UpdateFileFolderLayout, UpdateFileNode } from '@pulpo/contracts'
+import type {
+  FileChangesResponse,
+  FileConversionPreview,
+  FileFolderLayout,
+  FileListing,
+  FileNode,
+  FileUploadReservation,
+  MoveFileNodes,
+  UpdateFileFolderLayout,
+  UpdateFileNode,
+} from '@pulpo/contracts'
 import { formatAttachmentSizeLimit } from '@pulpo/client-core'
 import { ApiError, apiRequest, authenticatedFetch, downloadApiFile, fetchApiBlob } from '@/lib/api'
 import { uit } from '@/i18n/ui'
@@ -52,9 +62,9 @@ export function convertToDoc(id: string): Promise<FileNode> {
   return apiRequest<FileNode>(`/api/files/${id}/convert`, { method: 'POST' })
 }
 
-/** Saves a document as a .md file, with the latest edits folded in by the server. */
-export async function downloadDocMarkdown(node: Pick<FileNode, 'id' | 'name'>): Promise<void> {
-  const { markdown } = await apiRequest<{ name: string; markdown: string }>(`/api/files/${node.id}/markdown`)
+/** An open editor exports its local snapshot, including offline edits; the browser fetches others. */
+export async function downloadDocMarkdown(node: Pick<FileNode, 'id' | 'name'>, snapshot?: string): Promise<void> {
+  const markdown = snapshot ?? (await apiRequest<{ name: string; markdown: string }>(`/api/files/${node.id}/markdown`)).markdown
   const url = URL.createObjectURL(new Blob([markdown], { type: 'text/markdown;charset=utf-8' }))
   const anchor = document.createElement('a')
   anchor.href = url
@@ -152,4 +162,31 @@ export async function fetchFileBlob(node: FileNode): Promise<Blob> {
   const response = await fetch(url)
   if (!response.ok) throw new ApiError(response.status, 'file_download_failed', uit`Download failed (${response.status})`)
   return response.blob()
+}
+
+/** Every reply's list of Files changes; under the Files prefix so Files updates refresh them. */
+export const allFileChangesQueryKey = (userId: string | undefined) => [...filesQueryKey(userId), 'changes'] as const
+export const fileChangesQueryKey = (userId: string | undefined, responseId: string) =>
+  [...allFileChangesQueryKey(userId), responseId] as const
+
+export function fetchFileChanges(responseId: string): Promise<FileChangesResponse> {
+  return apiRequest<FileChangesResponse>(`/api/responses/${responseId}/file-changes`)
+}
+
+/**
+ * Acts on all of a reply's changes: `undo`/`redo` its Write-mode changes, `accept`/`reject` its
+ * pending suggestions. Undo and redo fail with `file_changes_conflict` when items changed since.
+ */
+export function updateFileChanges(responseId: string, action: 'undo' | 'redo' | 'accept' | 'reject'): Promise<FileChangesResponse> {
+  return apiRequest<FileChangesResponse>(`/api/responses/${responseId}/file-changes/${action}`, { method: 'POST' })
+}
+
+/** Accepts or rejects one suggested change (for a document, all of its suggestions from that reply). */
+export function resolveFileChange(changeId: string, action: 'accept' | 'reject'): Promise<FileChangesResponse> {
+  return apiRequest<FileChangesResponse>(`/api/file-changes/${changeId}/${action}`, { method: 'POST' })
+}
+
+/** Accepts or rejects an item an agent suggested creating; rejecting deletes it (`node` is then null). */
+export async function resolveFileSuggestion(id: string, action: 'accept' | 'reject'): Promise<FileNode | null> {
+  return (await apiRequest<{ node: FileNode | null }>(`/api/files/${id}/suggestion/${action}`, { method: 'POST' })).node
 }

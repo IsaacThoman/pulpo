@@ -37,6 +37,8 @@ describe('Backblaze Object Lock upload requests', () => {
         response.writeHead(200, { 'content-type': 'application/xml' }).end('<Retention><Mode>COMPLIANCE</Mode></Retention>')
       } else if (url.searchParams.has('list-type')) {
         response.writeHead(200, { 'content-type': 'application/xml' }).end('<ListBucketResult><KeyCount>0</KeyCount></ListBucketResult>')
+      } else if (url.searchParams.has('versions')) {
+        response.writeHead(200, { 'content-type': 'application/xml' }).end(`<ListVersionsResult><IsTruncated>false</IsTruncated><Version><Key>${url.searchParams.get('prefix')}</Key><VersionId>probe-version</VersionId></Version></ListVersionsResult>`)
       } else {
         response.writeHead(200).end()
       }

@@ -44,7 +44,11 @@ beforeAll(async () => {
       requests.push({ method: req.method ?? '', url: req.url ?? '', headers: req.headers, body: raw ? JSON.parse(raw) as Record<string, unknown> : {} })
       if (req.method === 'POST' && req.url === '/v1/chat/completions') {
         res.writeHead(200, { 'content-type': 'text/event-stream' })
-        for (const chunk of chatChunks) res.write(`data: ${JSON.stringify(chunk)}\n\n`)
+        const values = JSON.parse(raw).model === 'mistral-large-4' ? [
+          { id: 'mistral-1', choices: [{ index: 0, delta: { content: [{ type: 'thinking', thinking: [{ type: 'text', text: 'plan' }] }, { type: 'text', text: '391' }] }, finish_reason: 'stop' }] },
+          { choices: [], usage: { prompt_tokens: 12, completion_tokens: 3 } },
+        ] : chatChunks
+        for (const chunk of values) res.write(`data: ${JSON.stringify(chunk)}\n\n`)
         res.end('data: [DONE]\n\n')
       } else if (req.method === 'POST' && req.url === '/v1/messages') {
         res.writeHead(200, { 'content-type': 'text/event-stream' })
@@ -121,6 +125,14 @@ describe('providerApiFormat', () => {
 })
 
 describe('createUpstreamTextClient over HTTP', () => {
+  it('routes explicit Mistral format to Chat Completions and collects typed content', async () => {
+    const client = createUpstreamTextClient(provider('mistral_chat_completions'), { maxRetries: 0 })
+    const response = await client.responses.create({ model: 'mistral-large-4', input: 'calculate', reasoning: { effort: 'high' } })
+    expect(client.format).toBe('mistral_chat_completions')
+    expect(response).toMatchObject({ status: 'completed', output_text: '391', output: [{ type: 'reasoning', pulpo_format: 'mistral_chat_completions', pulpo_model: 'mistral-large-4' }, { type: 'message' }] })
+    expect(requests[0]).toMatchObject({ url: '/v1/chat/completions', body: { reasoning_effort: 'high', stream: true } })
+    expect(requests[0]!.headers.authorization).toBe('Bearer sk-test-key')
+  })
   const body = {
     model: 'upstream-model',
     instructions: 'Be kind.',

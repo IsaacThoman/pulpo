@@ -4,9 +4,9 @@ import { normalizedPreferencePatch, preferencesWithModelDefaults } from './model
 describe('account model preferences', () => {
   it('adds clean defaults to older preference records', () => {
     expect(preferencesWithModelDefaults({ theme: 'dark' })).toEqual({
-      imageGeneration: { enabled: false, modelId: null }, speech: { modelId: null, models: {} }, theme: 'dark', animationSpeed: 1, automaticChatExpiration: '24h', newChatAutoExpire: false, chatSortMode: 'default',
+      imageGeneration: { enabled: false, modelId: null }, speech: { modelId: null, models: {} }, theme: 'dark', animationSpeed: 1, automaticChatExpiration: '24h', newChatAutoExpire: false, chatSortMode: 'default', fileDoubleClickAction: 'open',
       sidebarPins: { searchChats: true, files: true, usage: false, billing: false, friends: false, apiKeys: false },
-      agentModes: {}, instructionPresetSelections: {}, modelWarningDismissals: {}, favoriteModelIds: [], providerOrder: [],
+      agentModes: {}, instructionPresetSelections: {}, modelWarningDismissals: {}, defaultModelId: null, favoriteModelIds: null, providerOrder: [],
     })
   })
 
@@ -40,12 +40,16 @@ describe('account model preferences', () => {
     expect(preferencesWithModelDefaults({ chatSortMode: 'recent' }).chatSortMode).toBe('recent')
     expect(preferencesWithModelDefaults({ chatSortMode: 'alphabetical' }).chatSortMode).toBe('default')
     expect(preferencesWithModelDefaults({}).chatSortMode).toBe('default')
+    expect(preferencesWithModelDefaults({ fileDoubleClickAction: 'openBeside' }).fileDoubleClickAction).toBe('openBeside')
+    expect(preferencesWithModelDefaults({ fileDoubleClickAction: 'preview' }).fileDoubleClickAction).toBe('open')
+    expect(preferencesWithModelDefaults({}).fileDoubleClickAction).toBe('open')
   })
 
   it('normalizes only supplied model preference fields in a patch', () => {
     expect(normalizedPreferencePatch({
       theme: 'light', favoriteModelIds: ['model-b', 'model-a', 'model-b'],
     })).toEqual({ theme: 'light', favoriteModelIds: ['model-b', 'model-a'] })
+    expect(normalizedPreferencePatch({ favoriteModelIds: null })).toEqual({ favoriteModelIds: null })
   })
 
   it('rejects malformed model preference arrays', () => {

@@ -1,3 +1,4 @@
+import type { FollowedModelDefaults } from '@pulpo/contracts'
 import type { AuthSettings } from './application-settings.js'
 import { db } from '../database/client.js'
 import { userPreferences } from '../database/schema.js'
@@ -21,20 +22,32 @@ export function firstUnavailableModelReference(
   return [...referencedModelIds].find((modelId) => !available.has(modelId)) ?? null
 }
 
-export function newAccountPreferenceValues(settings: AuthSettings): Record<string, unknown> {
-  return preferencesWithModelDefaults({
-    defaultModelId: settings.newAccountModelDefaults.defaultModelId,
-    favoriteModelIds: settings.newAccountModelDefaults.favoriteModelIds,
-  })
+/** Fills model choices the account has not customized from the current new-account defaults. */
+export function withNewAccountModelDefaults(
+  values: Record<string, unknown>,
+  settings: AuthSettings,
+): { values: Record<string, unknown>; followedModelDefaults: FollowedModelDefaults } {
+  const defaults = settings.newAccountModelDefaults
+  const followedModelDefaults = {
+    defaultModelId: values.defaultModelId == null,
+    favoriteModelIds: values.favoriteModelIds == null,
+  }
+  return {
+    values: {
+      ...values,
+      defaultModelId: followedModelDefaults.defaultModelId ? defaults.defaultModelId : values.defaultModelId,
+      favoriteModelIds: followedModelDefaults.favoriteModelIds ? defaults.favoriteModelIds : values.favoriteModelIds,
+    },
+    followedModelDefaults,
+  }
 }
 
 export async function insertNewAccountPreferences(
   transaction: DatabaseTransaction,
   userId: string,
-  settings: AuthSettings,
 ): Promise<void> {
   await transaction.insert(userPreferences).values({
     userId,
-    values: newAccountPreferenceValues(settings),
+    values: preferencesWithModelDefaults(),
   })
 }

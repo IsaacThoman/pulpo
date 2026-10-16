@@ -6,6 +6,11 @@ const mocks = vi.hoisted(() => ({
   syncShortcuts: vi.fn(),
   clearShortcuts: vi.fn(),
   token: 'session-token' as string | null,
+  secure: new Map<string, string>(),
+  alert: vi.fn(),
+  logout: vi.fn(),
+  meWithToken: vi.fn(),
+  logoutWithToken: vi.fn(),
   config: vi.fn(),
   me: vi.fn(),
   login: vi.fn(),
@@ -18,18 +23,21 @@ const mocks = vi.hoisted(() => ({
   runSafariPasskeyAuthentication: vi.fn(),
   configureApi: vi.fn(),
   clearNamespace: vi.fn(async () => []),
-  deleteToken: vi.fn(async () => undefined),
+  deleteToken: vi.fn(async (_key: string) => undefined),
 }))
 
 vi.mock('../shortcuts/native', () => ({ syncShortcutsSession: mocks.syncShortcuts, clearShortcutsSession: mocks.clearShortcuts }))
 
-vi.mock('react-native', () => ({ Appearance: { setColorScheme: vi.fn() }, Platform: { OS: 'ios' } }))
+vi.mock('react-native', () => ({ Alert: { alert: mocks.alert }, Appearance: { setColorScheme: vi.fn() }, Platform: { OS: 'ios' } }))
 vi.mock('expo-device', () => ({ deviceName: 'Test iPhone', modelName: 'iPhone' }))
 vi.mock('expo-file-system', () => ({ File: class { exists = false; delete() {} } }))
 vi.mock('expo-secure-store', () => ({
   WHEN_UNLOCKED_THIS_DEVICE_ONLY: 'device-only',
-  getItemAsync: vi.fn(async () => mocks.token),
-  setItemAsync: vi.fn(async (_key: string, value: string) => { mocks.token = value }),
+  getItemAsync: vi.fn(async (key: string) => key === 'pulpo.native.session' ? mocks.token : mocks.secure.get(key) ?? null),
+  setItemAsync: vi.fn(async (key: string, value: string) => {
+    if (key === 'pulpo.native.session') mocks.token = value
+    else mocks.secure.set(key, value)
+  }),
   deleteItemAsync: mocks.deleteToken,
 }))
 vi.mock('../data/database', () => ({
@@ -66,7 +74,9 @@ vi.mock('../api/client', () => {
       verifyPasskey: mocks.verifyPasskey,
       exchangeBrowserPasskey: mocks.exchangeBrowserPasskey,
       signup: mocks.signup,
-      logout: vi.fn(async () => undefined),
+      logout: mocks.logout,
+      meWithToken: mocks.meWithToken,
+      logoutWithToken: mocks.logoutWithToken,
     },
   }
 })
@@ -117,10 +127,18 @@ beforeEach(() => {
   mocks.nativeAuthenticate.mockReset()
   mocks.runSafariPasskeyAuthentication.mockReset()
   mocks.configureApi.mockReset()
-  mocks.deleteToken.mockReset().mockResolvedValue(undefined)
+  mocks.deleteToken.mockReset().mockImplementation(async (key: string) => {
+    if (key === 'pulpo.native.session') mocks.token = null
+    else mocks.secure.delete(key)
+  })
+  mocks.secure.clear()
+  mocks.alert.mockReset()
+  mocks.logout.mockReset().mockResolvedValue(undefined)
+  mocks.meWithToken.mockReset()
+  mocks.logoutWithToken.mockReset().mockResolvedValue(undefined)
   mocks.clearNamespace.mockReset().mockResolvedValue([])
   useSessionStore.setState({
-    status: 'hydrating', instanceUrl, token: null, user: null, config: null, error: null,
+    status: 'hydrating', instanceUrl, token: null, user: null, accounts: [], config: null, error: null,
   })
   mocks.values.set('global:instanceUrl', instanceUrl)
   mocks.syncShortcuts.mockClear()
@@ -317,5 +335,191 @@ describe('signup and approval', () => {
     mocks.me.mockResolvedValue({ user: { ...pending, role: 'user' } })
     await useSessionStore.getState().refreshSession()
     expect(useSessionStore.getState()).toMatchObject({ status: 'authenticated', token: 'signup-token', user: { role: 'user' } })
+  })
+})
+
+describe('multiple signed-in accounts', () => {
+  const personal = user('11111111-1111-4111-8111-111111111111', 'Personal Isaac')
+  const work = user('22222222-2222-4222-8222-222222222222', 'Work Isaac')
+  const tokenKey = (account: User) => `pulpo.native.session.${account.id}`
+  const namespace = (account: User) => `${instanceUrl}|${account.id}`
+
+  // Signs in every account; the first is active and the rest are parked.
+  function signedIn(...accounts: User[]) {
+    for (const account of accounts) mocks.values.set(`${namespace(account)}:user`, account)
+    mocks.values.set('global:signedInAccounts', { instanceUrl, userIds: accounts.map((account) => account.id) })
+    mocks.values.set('global:activeSessionNamespace', namespace(accounts[0]!))
+    for (const account of accounts.slice(1)) mocks.secure.set(tokenKey(account), `token-${account.id}`)
+    mocks.token = `token-${accounts[0]!.id}`
+    useSessionStore.setState({ status: 'authenticated', token: mocks.token, user: accounts[0]!, accounts })
+    mocks.meWithToken.mockImplementation(async (token: string) => {
+      const account = accounts.find((candidate) => token === `token-${candidate.id}`)
+      if (!account) throw new ApiError(401, 'unauthorized', 'Unauthorized')
+      return { user: account }
+    })
+  }
+
+  it('parks the active session without revoking it or clearing its cache when adding an account', async () => {
+    signedIn(personal)
+
+    await useSessionStore.getState().addAccount()
+
+    expect(useSessionStore.getState()).toMatchObject({ status: 'anonymous', token: null, user: null, accounts: [personal] })
+    expect(mocks.secure.get(tokenKey(personal))).toBe(`token-${personal.id}`)
+    expect(mocks.token).toBeNull()
+    expect(mocks.values.get('global:activeSessionNamespace')).toBeNull()
+    expect(mocks.logout).not.toHaveBeenCalled()
+    expect(mocks.clearNamespace).not.toHaveBeenCalled()
+    expect(mocks.configureApi).toHaveBeenLastCalledWith(expect.objectContaining({ token: null }))
+
+    mocks.login.mockResolvedValue({ user: work, session: { token: 'token-work' } })
+    await useSessionStore.getState().login('work@pulpo.test', 'password')
+    expect(useSessionStore.getState()).toMatchObject({ status: 'authenticated', token: 'token-work', user: work, accounts: [personal, work] })
+    expect(mocks.values.get('global:signedInAccounts')).toEqual({ instanceUrl, userIds: [personal.id, work.id] })
+  })
+
+  it('refuses to add more than the maximum number of accounts', async () => {
+    const accounts = [1, 2, 3, 4, 5].map((index) => user(`${index}${index}${index}${index}${index}${index}${index}${index}-0000-4000-8000-000000000000`))
+    signedIn(...accounts)
+    await expect(useSessionStore.getState().addAccount()).rejects.toThrow('up to 5 accounts')
+    expect(useSessionStore.getState()).toMatchObject({ status: 'authenticated', user: accounts[0] })
+  })
+
+  it('replaces an already signed-in account instead of duplicating it', async () => {
+    signedIn(personal)
+    await useSessionStore.getState().addAccount()
+    mocks.login.mockResolvedValue({ user: personal, session: { token: 'token-personal-again' } })
+
+    await useSessionStore.getState().login('personal@pulpo.test', 'password')
+
+    expect(mocks.logoutWithToken).toHaveBeenCalledWith(`token-${personal.id}`)
+    expect(mocks.secure.has(tokenKey(personal))).toBe(false)
+    expect(mocks.values.get('global:signedInAccounts')).toEqual({ instanceUrl, userIds: [personal.id] })
+    expect(useSessionStore.getState()).toMatchObject({ token: 'token-personal-again', user: personal, accounts: [personal] })
+  })
+
+  it('switches accounts through a signed-out teardown and keeps both sessions', async () => {
+    signedIn(personal, work)
+    const transitions: Array<{ status: string; token: string | null }> = []
+    const unsubscribe = useSessionStore.subscribe(({ status, token }) => transitions.push({ status, token }))
+
+    await useSessionStore.getState().switchAccount(work.id)
+    unsubscribe()
+
+    expect(transitions[0]).toEqual({ status: 'hydrating', token: null })
+    expect(useSessionStore.getState()).toMatchObject({ status: 'authenticated', token: `token-${work.id}`, user: work })
+    expect(mocks.token).toBe(`token-${work.id}`)
+    expect(mocks.secure.get(tokenKey(personal))).toBe(`token-${personal.id}`)
+    expect(mocks.secure.has(tokenKey(work))).toBe(false)
+    expect(mocks.values.get('global:activeSessionNamespace')).toBe(namespace(work))
+    expect(mocks.meWithToken).toHaveBeenCalledWith(`token-${work.id}`)
+    expect(mocks.configureApi).toHaveBeenLastCalledWith(expect.objectContaining({ token: `token-${work.id}` }))
+    expect(mocks.clearShortcuts).toHaveBeenCalled()
+    expect(mocks.syncShortcuts).toHaveBeenLastCalledWith(expect.objectContaining({ token: `token-${work.id}`, user: work }))
+    expect(mocks.clearNamespace).not.toHaveBeenCalled()
+    expect(mocks.logout).not.toHaveBeenCalled()
+  })
+
+  it('drops a revoked account when switching to it and returns to the previous account', async () => {
+    signedIn(personal, work)
+    mocks.secure.set(tokenKey(work), 'revoked-token')
+
+    await expect(useSessionStore.getState().switchAccount(work.id)).rejects.toThrow('Work Isaac was signed out')
+
+    expect(useSessionStore.getState()).toMatchObject({ status: 'authenticated', token: `token-${personal.id}`, user: personal, accounts: [personal] })
+    expect(mocks.values.get('global:signedInAccounts')).toEqual({ instanceUrl, userIds: [personal.id] })
+    expect(mocks.secure.size).toBe(0)
+  })
+
+  it('signs out only the active account and falls back to another signed-in account', async () => {
+    signedIn(personal, work)
+
+    await useSessionStore.getState().logout()
+
+    expect(mocks.logout).toHaveBeenCalledOnce()
+    expect(mocks.clearNamespace).toHaveBeenCalledExactlyOnceWith(namespace(personal))
+    expect(useSessionStore.getState()).toMatchObject({ status: 'authenticated', token: `token-${work.id}`, user: work, accounts: [work] })
+    expect(mocks.values.get('global:signedInAccounts')).toEqual({ instanceUrl, userIds: [work.id] })
+  })
+
+  it('signs out an inactive account with its own token', async () => {
+    signedIn(personal, work)
+
+    await useSessionStore.getState().signOutAccount(work.id)
+
+    expect(mocks.logoutWithToken).toHaveBeenCalledWith(`token-${work.id}`)
+    expect(mocks.logout).not.toHaveBeenCalled()
+    expect(mocks.clearNamespace).toHaveBeenCalledExactlyOnceWith(namespace(work))
+    expect(useSessionStore.getState()).toMatchObject({ status: 'authenticated', user: personal, token: `token-${personal.id}` })
+    expect(mocks.secure.has(tokenKey(work))).toBe(false)
+  })
+
+  it('signs out of every account', async () => {
+    signedIn(personal, work)
+
+    await useSessionStore.getState().logoutAll()
+
+    expect(mocks.logoutWithToken).toHaveBeenCalledWith(`token-${work.id}`)
+    expect(mocks.logout).toHaveBeenCalledOnce()
+    expect(mocks.clearNamespace).toHaveBeenCalledWith(namespace(personal))
+    expect(mocks.clearNamespace).toHaveBeenCalledWith(namespace(work))
+    expect(useSessionStore.getState()).toMatchObject({ status: 'anonymous', token: null, user: null, accounts: [] })
+    expect(mocks.values.get('global:signedInAccounts')).toBeNull()
+    expect(mocks.token).toBeNull()
+    expect(mocks.secure.size).toBe(0)
+  })
+
+  it('falls back to another validated account when the active session expires', async () => {
+    signedIn(personal, work)
+
+    await useSessionStore.getState().handleUnauthorized()
+
+    expect(useSessionStore.getState()).toMatchObject({ status: 'authenticated', token: `token-${work.id}`, user: work, error: null })
+    expect(mocks.meWithToken).toHaveBeenCalledWith(`token-${work.id}`)
+    expect(mocks.alert).toHaveBeenCalledWith('Session expired', expect.stringContaining('Personal Isaac'))
+    expect(mocks.values.get('global:signedInAccounts')).toEqual({ instanceUrl, userIds: [work.id] })
+    expect(mocks.clearNamespace).not.toHaveBeenCalled()
+  })
+
+  it('shows sign-in when every fallback account was revoked', async () => {
+    signedIn(personal, work)
+    mocks.meWithToken.mockRejectedValue(new ApiError(401, 'unauthorized', 'Unauthorized'))
+
+    await useSessionStore.getState().handleUnauthorized()
+
+    expect(useSessionStore.getState()).toMatchObject({ status: 'anonymous', token: null, user: null, accounts: [], error: 'Your session expired. Sign in again.' })
+    expect(mocks.alert).not.toHaveBeenCalled()
+  })
+
+  it('ignores unauthorized responses while no account is active', async () => {
+    signedIn(personal, work)
+    await useSessionStore.getState().addAccount()
+    await useSessionStore.getState().handleUnauthorized()
+    expect(useSessionStore.getState()).toMatchObject({ status: 'anonymous', accounts: [personal, work], error: null })
+  })
+
+  it('signs out every account when switching instances', async () => {
+    signedIn(personal, work)
+    mocks.config.mockResolvedValue({ instance: { name: 'Other' } })
+
+    await useSessionStore.getState().switchInstance('https://other.test')
+
+    expect(mocks.logoutWithToken).toHaveBeenCalledWith(`token-${work.id}`)
+    expect(mocks.logout).toHaveBeenCalledOnce()
+    expect(mocks.clearNamespace).toHaveBeenCalledWith(namespace(personal))
+    expect(mocks.clearNamespace).toHaveBeenCalledWith(namespace(work))
+    expect(useSessionStore.getState()).toMatchObject({ instanceUrl: 'https://other.test', status: 'anonymous', accounts: [] })
+    expect(mocks.values.get('global:signedInAccounts')).toBeNull()
+    expect(mocks.secure.size).toBe(0)
+  })
+
+  it('offers parked accounts on the sign-in screen after a restart', async () => {
+    signedIn(personal)
+    await useSessionStore.getState().addAccount()
+    useSessionStore.setState({ status: 'hydrating', accounts: [] })
+
+    await useSessionStore.getState().hydrate()
+
+    expect(useSessionStore.getState()).toMatchObject({ status: 'anonymous', token: null, accounts: [personal] })
   })
 })

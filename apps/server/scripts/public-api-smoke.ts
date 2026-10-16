@@ -135,6 +135,15 @@ const chatTools: OpenAI.Chat.Completions.ChatCompletionTool[] = [{ type: 'functi
 const responseTools: OpenAI.Responses.Tool[] = [{ type: 'function', ...fn }]
 const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [{ role: 'user', content: 'Read probe.txt' }]
 const textOf = (response: OpenAI.Responses.Response) => response.output.filter(item => item.type === 'message').flatMap(item => item.content).filter(part => part.type === 'output_text').map(part => part.text).join('')
+async function waitForBudgetSettlement(responseId: string) {
+  const deadline = Date.now() + 5_000
+  do {
+    const [hold] = await db.select().from(schema.budgetReservations).where(eq(schema.budgetReservations.responseId, responseId))
+    if (hold?.status === 'settled') return
+    await new Promise(resolve => setTimeout(resolve, 25))
+  } while (Date.now() < deadline)
+  assert.fail(`Budget reservation for ${responseId} did not settle`)
+}
 
 try {
   for (const capture of [false, true]) for (const protocol of ['chat/completions', 'responses', 'completions']) for (const stream of [false, true]) {
@@ -391,12 +400,17 @@ try {
       assert.equal(result.status, 'completed')
       assert.equal(upstreamRequests[0]!.max_output_tokens, 8_192)
       assert.equal(upstreamRequests.at(-1)!.max_output_tokens, 8_000)
+      // The public response can finish before billing; finish the old charge
+      // before resetting the balance to the next request's exact budget floor.
+      await waitForBudgetSettlement(result.id)
       await db.update(schema.users).set({ balanceMicros: 4_000 }).where(eq(schema.users.id, keyRow!.userId))
       await db.update(schema.models).set({ minimumOutputReservationTokens: 1_000 }).where(eq(schema.models.id, fallbackModel))
       await db.update(schema.models).set({ minimumOutputReservationTokens: 2_000 }).where(eq(schema.models.id, model))
-      assert.equal((await client.responses.create({ model: fallbackModel, input: 'Hi' })).status, 'completed')
+      const loweredFloorResult = await client.responses.create({ model: fallbackModel, input: 'Hi' })
+      assert.equal(loweredFloorResult.status, 'completed')
       assert.equal(upstreamRequests.at(-2)!.max_output_tokens, 4_000)
       assert.equal(upstreamRequests.at(-1)!.max_output_tokens, 2_000)
+      await waitForBudgetSettlement(loweredFloorResult.id)
     } finally {
       for (const id of [model, fallbackModel]) await db.update(schema.models).set({ minimumOutputReservationTokens: 8_000 }).where(eq(schema.models.id, id))
       for (const id of [model, fallbackModel]) await db.update(schema.modelPricingVersions).set({ outputPriceMicros: 0 }).where(eq(schema.modelPricingVersions.modelId, id))

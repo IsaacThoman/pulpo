@@ -1,18 +1,22 @@
 import { and, asc, eq, gt, inArray, lt, sql } from 'drizzle-orm'
 import * as Y from 'yjs'
-import { applyMarkdownToYDoc, DOC_SCHEMA_VERSION, ydocToMarkdown } from '@pulpo/client-core/doc-schema'
+import { DOC_SCHEMA_VERSION, ydocToMarkdown } from '@pulpo/client-core/doc-schema'
 import { isMarkdownName, type FileNode } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import { fileDocs, fileDocUpdates, fileNodes } from '../database/schema.js'
 import { fileDocQueue } from '../jobs.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
-import { resolveFileAccess } from './access.js'
-import { publishDocUpdate } from './doc-events.js'
+import { resolveFileAccess, type FileNodeRow } from './access.js'
 import { docTooLarge, initialDocState, MAX_DOC_STATE_BYTES } from './doc-state.js'
-import { assertDestination, availableName, mutateFileTree, toFileNode } from './tree-service.js'
+import { assertDestination, assertNameAvailable, availableName, lockFileTree, mutateFileTree, toFileNode } from './tree-service.js'
+import { topSortOrder } from './order.js'
 
-export const MAX_DOC_UPDATE_BYTES = 1_000_000
+type DatabaseTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
+
+// A reconnect can upload the entire offline document, and a paste is one transaction.
+// Both must be able to send any document the store already supports.
+export const MAX_DOC_UPDATE_BYTES = MAX_DOC_STATE_BYTES
 // Re-exported for callers that import document limits from the store.
 export { docTooLarge, initialDocState, MAX_DOC_STATE_BYTES }
 
@@ -26,25 +30,40 @@ export type DocUpdateOrigin = 'client' | 'agent' | 'import' | 'restore'
 
 export const invalidDocUpdate = () => new AppError(400, 'invalid_update', 'The document update is invalid')
 
-export async function createDoc(userId: string, input: { parentId: string | null; name?: string; markdown?: string }): Promise<FileNode> {
+/**
+ * Creates a document inside a tree transaction. A taken name gets a ` (n)` suffix unless
+ * `exactName` is set, in which case it fails.
+ */
+export async function createDocInTx(tx: DatabaseTransaction, userId: string, input: {
+  parentId: string | null
+  name?: string
+  markdown?: string
+  exactName?: boolean
+  suggestionChangeId?: string | null
+}): Promise<FileNodeRow> {
   // Only Markdown names are editable documents; any other name is an ordinary file.
   if (input.name !== undefined && !isMarkdownName(input.name)) {
     throw new AppError(400, 'file_not_markdown', 'Only files named .md or .markdown can be edited')
   }
   const initial = initialDocState(input.markdown)
-  return mutateFileTree(userId, async (tx) => {
-    await assertDestination(tx, userId, input.parentId)
-    const name = await availableName(tx, userId, input.parentId, input.name ?? DEFAULT_DOC_NAME)
-    const [node] = await tx.insert(fileNodes).values({
-      id: newId(), ownerUserId: userId, parentId: input.parentId, kind: 'doc', name,
-      mimeType: 'text/markdown', sizeBytes: initial.state.byteLength,
-    }).returning()
-    await tx.insert(fileDocs).values({
-      nodeId: node!.id, state: initial.state, stateBytes: initial.state.byteLength,
-      markdown: initial.markdown, schemaVersion: DOC_SCHEMA_VERSION,
-    })
-    return toFileNode(node!)
+  await assertDestination(tx, userId, input.parentId)
+  const desired = input.name ?? DEFAULT_DOC_NAME
+  if (input.exactName) await assertNameAvailable(tx, userId, input.parentId, desired)
+  const name = input.exactName ? desired : await availableName(tx, userId, input.parentId, desired)
+  const [node] = await tx.insert(fileNodes).values({
+    id: newId(), ownerUserId: userId, parentId: input.parentId, kind: 'doc', name,
+    mimeType: 'text/markdown', sizeBytes: initial.state.byteLength,
+    sortOrder: await topSortOrder(tx, userId, input.parentId), suggestionChangeId: input.suggestionChangeId ?? null,
+  }).returning()
+  await tx.insert(fileDocs).values({
+    nodeId: node!.id, state: initial.state, stateBytes: initial.state.byteLength,
+    markdown: initial.markdown, schemaVersion: DOC_SCHEMA_VERSION,
   })
+  return node!
+}
+
+export async function createDoc(userId: string, input: { parentId: string | null; name?: string; markdown?: string }): Promise<FileNode> {
+  return mutateFileTree(userId, async (tx) => toFileNode(await createDocInTx(tx, userId, input)))
 }
 
 export async function scheduleDocCompaction(nodeId: string, delay = COMPACT_DELAY_MS): Promise<void> {
@@ -52,37 +71,60 @@ export async function scheduleDocCompaction(nodeId: string, delay = COMPACT_DELA
   await fileDocQueue.add('compact', { nodeId }, { delay, deduplication: { id: `compact:${nodeId}`, ttl: delay || 1_000 } })
 }
 
-/** Durably records one Yjs update. Callers broadcast it only after this resolves. */
-export async function appendDocUpdate(input: {
+export interface DocUpdateInput {
   nodeId: string
+  /** Revalidates a socket writer under the tree lock, including trash/conversion races. */
+  ownerUserId?: string
   actorUserId: string | null
   update: Uint8Array
   origin: DocUpdateOrigin
-}): Promise<void> {
-  if (!input.update.byteLength || input.update.byteLength > MAX_DOC_UPDATE_BYTES) throw invalidDocUpdate()
+  /** Updates the server computes itself may be larger than what clients may send. */
+  maxBytes?: number
+}
+
+/**
+ * Records one Yjs update inside the caller's transaction and returns the document's count of
+ * logged updates, which `scheduleCompactionAfterUpdate` needs once the transaction commits.
+ */
+export async function appendDocUpdateInTx(tx: DatabaseTransaction, input: DocUpdateInput): Promise<number> {
+  if (!input.update.byteLength || input.update.byteLength > (input.maxBytes ?? MAX_DOC_UPDATE_BYTES)) throw invalidDocUpdate()
   try {
     Y.decodeUpdate(input.update)
   } catch {
     throw invalidDocUpdate()
   }
-  const pending = await db.transaction(async (tx) => {
-    const [doc] = await tx.select({ stateBytes: fileDocs.stateBytes }).from(fileDocs).where(eq(fileDocs.nodeId, input.nodeId))
-    if (!doc) throw notFound('Document')
-    if (doc.stateBytes > MAX_DOC_STATE_BYTES) throw docTooLarge()
-    // Insert before touching the doc row: compaction holds that row lock, and an uncommitted
-    // log row is invisible to it, so compaction can never delete an update it did not fold in.
-    await tx.insert(fileDocUpdates).values({
-      nodeId: input.nodeId, update: input.update, byteSize: input.update.byteLength,
-      origin: input.origin, actorUserId: input.actorUserId,
-    })
-    const [row] = await tx.update(fileDocs).set({
-      pendingUpdates: sql`${fileDocs.pendingUpdates} + 1`,
-      lastEditedAt: new Date(),
-    }).where(eq(fileDocs.nodeId, input.nodeId)).returning({ pendingUpdates: fileDocs.pendingUpdates })
-    return row!.pendingUpdates
+  const [doc] = await tx.select({ stateBytes: fileDocs.stateBytes }).from(fileDocs).where(eq(fileDocs.nodeId, input.nodeId))
+  if (!doc) throw notFound('Document')
+  if (doc.stateBytes > MAX_DOC_STATE_BYTES) throw docTooLarge()
+  // Insert before touching the doc row: compaction holds that row lock, and an uncommitted
+  // log row is invisible to it, so compaction can never delete an update it did not fold in.
+  await tx.insert(fileDocUpdates).values({
+    nodeId: input.nodeId, update: input.update, byteSize: input.update.byteLength,
+    origin: input.origin, actorUserId: input.actorUserId,
   })
-  if (pending === 1) await scheduleDocCompaction(input.nodeId)
-  else if (pending % COMPACT_EVERY_UPDATES === 0) await scheduleDocCompaction(input.nodeId, 0)
+  const [row] = await tx.update(fileDocs).set({
+    pendingUpdates: sql`${fileDocs.pendingUpdates} + 1`,
+    lastEditedAt: new Date(),
+  }).where(eq(fileDocs.nodeId, input.nodeId)).returning({ pendingUpdates: fileDocs.pendingUpdates })
+  return row!.pendingUpdates
+}
+
+export async function scheduleCompactionAfterUpdate(nodeId: string, pendingUpdates: number): Promise<void> {
+  if (pendingUpdates === 1) await scheduleDocCompaction(nodeId)
+  else if (pendingUpdates % COMPACT_EVERY_UPDATES === 0) await scheduleDocCompaction(nodeId, 0)
+}
+
+/** Durably records one Yjs update. Callers broadcast it only after this resolves. */
+export async function appendDocUpdate(input: DocUpdateInput): Promise<void> {
+  const pending = await db.transaction(async (tx) => {
+    if (input.ownerUserId) {
+      await lockFileTree(tx, input.ownerUserId)
+      const access = await resolveFileAccess(tx, input.ownerUserId, input.nodeId)
+      if (!access || access.node.kind !== 'doc' || access.node.trashedAt || access.node.status !== 'ready') throw notFound('Document')
+    }
+    return appendDocUpdateInTx(tx, input)
+  })
+  await scheduleCompactionAfterUpdate(input.nodeId, pending)
 }
 
 /**
@@ -108,6 +150,11 @@ export async function loadYDoc(nodeId: string): Promise<Y.Doc> {
 /** Worker: folds logged updates into the snapshot, then deletes exactly the rows it folded. */
 export async function compactDoc(nodeId: string): Promise<void> {
   await db.transaction(async (tx) => {
+    const [node] = await tx.select({ ownerUserId: fileNodes.ownerUserId }).from(fileNodes).where(eq(fileNodes.id, nodeId))
+    if (!node) return
+    // Tree mutations can lock the node before deleting/converting its document. Match their
+    // tree → document → node order so compaction cannot deadlock a rename or subtree purge.
+    await lockFileTree(tx, node.ownerUserId)
     const [doc] = await tx.select().from(fileDocs).where(eq(fileDocs.nodeId, nodeId)).for('update')
     if (!doc) return
     const rows = await tx.select({ seq: fileDocUpdates.seq, update: fileDocUpdates.update }).from(fileDocUpdates)
@@ -144,27 +191,6 @@ export async function scheduleStaleDocCompactions(now = new Date()): Promise<voi
     lt(fileDocs.lastEditedAt, new Date(now.getTime() - 60_000)),
   )).limit(500)
   for (const doc of stale) await scheduleDocCompaction(doc.nodeId, 0)
-}
-
-/**
- * Rewrites a document to match `markdown` as a minimal Yjs diff, persists it, and sends it to
- * open editors. Returns the Markdown it had before, or null when nothing changed.
- */
-export async function writeDocMarkdown(input: {
-  nodeId: string
-  actorUserId: string
-  markdown: string
-  origin: Extract<DocUpdateOrigin, 'agent' | 'restore'>
-}): Promise<{ before: string } | null> {
-  const doc = await loadYDoc(input.nodeId)
-  const before = ydocToMarkdown(doc)
-  const vector = Y.encodeStateVector(doc)
-  applyMarkdownToYDoc(doc, input.markdown, input.origin)
-  if (ydocToMarkdown(doc) === before) return null
-  const update = Y.encodeStateAsUpdate(doc, vector)
-  await appendDocUpdate({ nodeId: input.nodeId, actorUserId: input.actorUserId, update, origin: input.origin })
-  await publishDocUpdate(input.nodeId, update)
-  return { before }
 }
 
 export async function readDocMarkdown(userId: string, nodeId: string): Promise<{ name: string; markdown: string }> {

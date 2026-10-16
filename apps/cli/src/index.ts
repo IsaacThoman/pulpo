@@ -629,6 +629,10 @@ export function createProgram(io: CliIo = processIo, dependencies: CliDependenci
     const { client } = await clientFor(command)
     emit(io, command, await client.request(`/api/management/v1/labs/${encodeURIComponent(id)}/models/order`, { method: 'PUT', body: await jsonFile(options.file) }))
   })
+  lab.command('order').requiredOption('-f, --file <path>', 'JSON with labIds in default model-menu order').action(async (options, command) => {
+    const { client } = await clientFor(command)
+    emit(io, command, await client.request('/api/management/v1/labs/order', { method: 'PUT', body: await jsonFile(options.file) }))
+  })
   const icon = registerFileCrud(program, io, {
     name: 'icon', pluralPath: '/api/management/v1/catalog-icons', create: false,
   })

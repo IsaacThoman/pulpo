@@ -293,16 +293,41 @@ export function TextAreaField({
 /** sticky save bar for settings pages */
 export function SaveBar({ onSave }: { onSave?: () => void | Promise<void> }) {
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const mounted = useRef(false)
+  const saving = useRef(false)
+  const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+      if (resetTimer.current !== null) {
+        clearTimeout(resetTimer.current)
+        resetTimer.current = null
+      }
+    }
+  }, [])
 
   const save = async () => {
-    if (!onSave || status === 'saving') return
+    if (!onSave || saving.current) return
+    saving.current = true
+    if (resetTimer.current !== null) {
+      clearTimeout(resetTimer.current)
+      resetTimer.current = null
+    }
     setStatus('saving')
     try {
       await onSave()
+      if (!mounted.current) return
       setStatus('saved')
-      setTimeout(() => setStatus('idle'), 1500)
+      resetTimer.current = setTimeout(() => {
+        resetTimer.current = null
+        if (mounted.current) setStatus('idle')
+      }, 1500)
     } catch {
-      setStatus('error')
+      if (mounted.current) setStatus('error')
+    } finally {
+      saving.current = false
     }
   }
 

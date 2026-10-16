@@ -137,10 +137,11 @@ describe('API key model access listings', () => {
     mocks.rows = [[{ id: 'key-1' }], models, []]
     expect(await (await handler('GET', '/api/api-keys/:id/models'))(request())).toEqual({ data: models })
     expect(condition(0).params).toEqual(['key-1', 'owner-1'])
-    expect(condition(1).params).toEqual([true, true, CODEX_PROVIDER_ID])
+    expect(condition(1).params).toEqual([true, true, CODEX_PROVIDER_ID, 'owner-1', 'owner-1'])
     expect(condition(1).sql).toContain('"models"."enabled"')
     expect(condition(1).sql).toContain('"models"."visible"')
     expect(condition(1).sql).toContain('"models"."provider_connection_id" <>')
+    expect(condition(1).sql).toContain('"models"."restricted"')
   })
 
   it('includes permitted models and reachable fallback and preset models, but excludes unrelated models', async () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { favoriteIdsMatch, resetFavoriteIds } from './models'
+import { resetFavoriteIds, useModels } from './models'
 
 describe('model favorites', () => {
   it('resets favorites to the configured new-account order', () => {
@@ -10,10 +10,12 @@ describe('model favorites', () => {
     expect(favorites).not.toBe(defaults)
   })
 
-  it('matches favorites only when IDs and order equal the new-account defaults', () => {
-    expect(favoriteIdsMatch([], [])).toBe(true)
-    expect(favoriteIdsMatch(['model-b', 'model-a'], ['model-b', 'model-a'])).toBe(true)
-    expect(favoriteIdsMatch(['model-a', 'model-b'], ['model-b', 'model-a'])).toBe(false)
-    expect(favoriteIdsMatch(['model-b'], ['model-b', 'model-a'])).toBe(false)
+  it('follows the new-account defaults after a reset until favorites change again', () => {
+    useModels.setState({ favoriteModelIds: ['custom'], favoritesFollowDefaults: false, newAccountFavoriteModelIds: ['default-a'] })
+    useModels.getState().resetFavorites()
+    expect(useModels.getState()).toMatchObject({ favoriteModelIds: ['default-a'], favoritesFollowDefaults: true })
+
+    useModels.getState().toggleFavorite('custom')
+    expect(useModels.getState()).toMatchObject({ favoriteModelIds: ['default-a', 'custom'], favoritesFollowDefaults: false })
   })
 })

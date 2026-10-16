@@ -20,7 +20,7 @@ const { useSettings } = await import('@/stores/settings')
 const { useCatalog } = await import('@/stores/catalog')
 const { queryClient } = await import('@/lib/query-client')
 const { localDb } = await import('@/lib/local-first/database')
-const { clearRuntimeComposerDrafts } = await import('@/lib/local-first/composer-drafts')
+const { clearRuntimeComposerDrafts, deleteComposerDraft } = await import('@/lib/local-first/composer-drafts')
 const { useComposerSyncPreference } = await import('@/stores/composer-sync-preference')
 
 const userId = '00000000-0000-4000-8000-000000000001'
@@ -113,6 +113,8 @@ beforeEach(async () => {
     const text = await Promise.race([pending.promise, abort])
     return new Response(JSON.stringify({ text }), { status: 200, headers: { 'content-type': 'application/json' } })
   })
+  // Unmount saves are asynchronous; drain this draft's write queue before clearing storage.
+  await deleteComposerDraft(userId, 'new')
   await localDb.drafts.clear()
   clearRuntimeComposerDrafts(userId)
   queryClient.clear()
@@ -121,7 +123,7 @@ beforeEach(async () => {
     showPromptSuggestions: false, sendWithEnter: true, composerSyncEnabled: false })
   useComposerSyncPreference.setState({ enabled: false, generation: '' })
   useCatalog.setState({ models: [model], loaded: true, agentAvailable: true })
-  useChat.setState({ chats: [], folders: [], activeChatId: null, activeTemporaryChatId: null,
+  useChat.setState({ chats: [], activeChatId: null, activeTemporaryChatId: null,
     streamingIds: [], responseSequences: {}, responseChatIds: {}, adminAccessRequiredChatId: null })
   useUploadOutbox.setState({ uploads: {}, submissions: [], preservedDrafts: {} })
 })
@@ -158,7 +160,8 @@ it('swaps the toolbar for a live waveform and inserts the transcript when finish
   await view.recording()
   expect(media.getUserMedia).toHaveBeenCalledWith({ audio: true })
   expect(media.recorders[0]!.mimeType).toBe('audio/webm;codecs=opus')
-  expect(media.contexts).toBe(1)
+  // The recording DOM can commit before the waveform's passive effect runs.
+  await waitFor(() => expect(media.contexts).toBe(1))
   expect(view.getByTestId('dictation-waveform')).toBeTruthy()
   expect(view.getByRole('button', { name: 'Send message' }).hasAttribute('disabled')).toBe(true)
 

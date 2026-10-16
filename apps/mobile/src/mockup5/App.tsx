@@ -106,6 +106,7 @@ import {
 import {
   accessibilityHint as swiftUIAccessibilityHint,
   accessibilityLabel as swiftUIAccessibilityLabel,
+  background as swiftUIBackground,
   buttonBorderShape,
   buttonStyle,
   contentShape,
@@ -125,6 +126,7 @@ import {
   textFieldStyle,
   tint,
 } from '@expo/ui/swift-ui/modifiers';
+import { glassButtonStyle, liquidGlassAvailable } from '../platform/glass';
 import { GlassView, isGlassEffectAPIAvailable } from 'expo-glass-effect';
 import * as Clipboard from 'expo-clipboard';
 import * as Crypto from 'expo-crypto';
@@ -268,7 +270,7 @@ import {
 } from '../features/chat/history';
 import { activityDurationMs, buildLegacyMessageTimeline, buildMessageTimeline, completedActivityLabel, timelineActivityIsActive, workspaceIsActive, type TimelineStep } from '../features/chat/timeline';
 import { toolActivityPresentation } from '../features/chat/toolActivityPresentation';
-import { CHAT_SCROLL_TO_BOTTOM_THRESHOLD, chatLandingKeyboardTranslation, chatKeyboardBlankSpace, isNearChatBottom, resolveKeyboardLayoutProgress, shouldFollowChatContent } from '../features/chat/viewport';
+import { CHAT_RESUME_FOLLOW_THRESHOLD, CHAT_SCROLL_TO_BOTTOM_THRESHOLD, type ChatViewportMetrics, chatBottomDistance, chatLandingKeyboardTranslation, chatKeyboardBlankSpace, isNearChatBottom, resolveKeyboardLayoutProgress, shouldFollowChatContent, shouldResumeChatFollow } from '../features/chat/viewport';
 import {
   nextChatStartsTemporary,
   resolveChatHeaderAction,
@@ -333,6 +335,17 @@ const ChatScrollView = forwardRef<KeyboardChatScrollViewRef, ChatScrollViewProps
 ));
 
 ChatScrollView.displayName = 'ChatScrollView';
+
+function chatScrollMetrics(event: NativeSyntheticEvent<NativeScrollEvent>, inverted: boolean): ChatViewportMetrics {
+  const { contentOffset, contentInset, contentSize, layoutMeasurement } = event.nativeEvent;
+  return {
+    inverted,
+    insetTop: contentInset.top,
+    offsetY: contentOffset.y,
+    contentHeight: contentSize.height,
+    viewportHeight: layoutMeasurement.height,
+  };
+}
 
 function systemKeyboardIsVisible(): boolean {
   return Keyboard.isVisible() || KeyboardController.isVisible() || Keyboard.metrics() != null;
@@ -735,13 +748,12 @@ function NativeComposerIconButton({
   const prominentTint = colorScheme === 'dark' ? '#f2f2f7' : '#1c1c1e';
   const prominentForeground = colorScheme === 'dark' || disabled ? '#1c1c1e' : '#ffffff';
   return (
-    <SwiftUIHost ignoreSafeArea="keyboard" style={styles.nativeComposerActionHost}>
+    <SwiftUIHost ignoreSafeArea="all" style={styles.nativeComposerActionHost}>
       <SwiftUIButton
         label={label}
         onPress={onPress}
         systemImage={systemImage}
         modifiers={[
-          buttonStyle(prominent ? 'glassProminent' : 'glass'),
           buttonBorderShape('circle'),
           controlSize('regular'),
           labelStyle('iconOnly'),
@@ -749,6 +761,7 @@ function NativeComposerIconButton({
           ...(prominent ? [foregroundStyle(prominentForeground)] : []),
           swiftUIDisabled(disabled),
           swiftUIAccessibilityLabel(label),
+          ...glassButtonStyle(prominent ? 'glassProminent' : 'glass'),
         ]}
       />
     </SwiftUIHost>
@@ -758,7 +771,7 @@ function NativeComposerIconButton({
 function NativeComposerShelfButton({ disabled, onPress }: { disabled: boolean; onPress: () => void }) {
   const { styles } = useChatStyles();
   return (
-    <SwiftUIHost ignoreSafeArea="keyboard" style={styles.nativeComposerShelfHost}>
+    <SwiftUIHost ignoreSafeArea="all" style={styles.nativeComposerShelfHost}>
       <SwiftUIButton onPress={onPress} modifiers={[
         buttonStyle('plain'),
         foregroundStyle('secondary'),
@@ -781,16 +794,16 @@ function NativeAttachmentMenu({ onTakePhoto, onPickPhotos, onPickFiles }: {
 }) {
   const { styles } = useChatStyles();
   return (
-    <SwiftUIHost ignoreSafeArea="keyboard" style={styles.nativeComposerCircleHost}>
+    <SwiftUIHost ignoreSafeArea="all" style={styles.nativeComposerCircleHost}>
       <SwiftUIMenu
         label="Add attachment"
         systemImage="plus"
         modifiers={[
-          buttonStyle('glass'),
           buttonBorderShape('circle'),
           controlSize('regular'),
           labelStyle('iconOnly'),
           swiftUIAccessibilityLabel('Add attachment'),
+          ...glassButtonStyle('glass'),
         ]}
       >
         <SwiftUIButton label="Take Photo" systemImage="camera" onPress={onTakePhoto} />
@@ -1135,13 +1148,13 @@ function RoundButton({ icon, onPress, accessibilityLabel, selected = false, sele
         <SwiftUIButton
           onPress={onPress}
           modifiers={[
-            buttonStyle(selected || tinted ? 'glassProminent' : 'glass'),
             buttonBorderShape('circle'),
             controlSize('regular'),
             ...(selected ? [tint(selectedTint), foregroundStyle(accent)] : []),
             ...(tinted && !selected ? [tint(selectedTint), foregroundStyle(selectedForeground)] : []),
             ...(!selected && selectedColor === 'teal' ? [foregroundStyle('secondary')] : []),
             swiftUIAccessibilityLabel(accessibilityLabel),
+            ...glassButtonStyle(selected || tinted ? 'glassProminent' : 'glass'),
           ]}
         >
           {icon === 'ghost' ? (
@@ -1181,7 +1194,9 @@ function DrawerNewChatButton({ isDark, onPress }: { isDark: boolean; onPress: ()
         <SwiftUIButton onPress={onPress} modifiers={[buttonStyle('plain'), swiftUIAccessibilityLabel('New Chat')]}>
           <SwiftUIHStack spacing={7.5} modifiers={[
             frame({ width: 123.75, height: 48.75 }),
-            swiftUIGlassEffect({ glass: { variant: 'regular', interactive: true, tint: glassTintColor }, shape: 'capsule' }),
+            liquidGlassAvailable
+              ? swiftUIGlassEffect({ glass: { variant: 'regular', interactive: true, tint: glassTintColor }, shape: 'capsule' })
+              : swiftUIBackground(isDark ? '#F2F2F7' : '#1C1C1E', shapes.capsule()),
           ]}>
             <SwiftUIImage systemName="square.and.pencil" size={16.875} modifiers={[foregroundStyle(foregroundColor)]} />
             <SwiftUIText modifiers={[font({ size: 14.0625, weight: 'semibold' }), foregroundStyle(foregroundColor)]}>New Chat</SwiftUIText>
@@ -1631,8 +1646,9 @@ function PrototypeRoot() {
   // Retain the focused auth input until its keyboard is fully gone. The chat
   // input can then mount and auto-focus against a clean keyboard state.
   if (authKeyboardHandoffPending) return <AuthExperience key="auth" />;
+  // Each signed-in account gets a fresh navigator, screens, and local state.
   return (
-    <NavigationContainer theme={navigationTheme} onStateChange={() => speechPlayback.stop()}>
+    <NavigationContainer key={productionUser?.id} theme={navigationTheme} onStateChange={() => speechPlayback.stop()}>
       <RootStack.Navigator
         initialRouteName="Chat"
         screenOptions={{ animation: 'default', contentStyle: { backgroundColor: isDark ? '#000000' : '#F5F5F7' }, headerShown: false, headerShadowVisible: false }}
@@ -2916,8 +2932,8 @@ function useMessageActionRunner({ message, onEdit, onRegenerate }: {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
       const explanation = message.role === 'user'
         ? 'This removes the message and every response that follows from it. This cannot be undone.'
-        : 'This removes this response branch and all of its descendants. This cannot be undone.';
-      Alert.alert(message.role === 'user' ? 'Delete message?' : 'Delete response?', explanation, [
+        : 'This removes this version of the response and every message that follows from it. This cannot be undone.';
+      Alert.alert(message.role === 'user' ? 'Delete message?' : 'Delete this version?', explanation, [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Delete', style: 'destructive', onPress: () => {
           if (!message.chatId) return;
@@ -2987,6 +3003,9 @@ function MessageContextMenu({
   const speak = () => { void readAloud(speechKey, message.text).then(() => { const error = speechPlayback.getSnapshot().error; if (error) Alert.alert('Read aloud', error); }).catch(error => Alert.alert('Read aloud', error.message)); };
   const speechLabel = speaking ? (speechState.phase === 'loading' ? 'Stop preparing speech' : 'Stop reading') : 'Read aloud';
   const runAction = useMessageActionRunner({ message, onEdit, onRegenerate });
+  // A response can only be deleted as one of several versions; the user message owns the last one.
+  const canDelete = message.role === 'user' || (message.branches?.length ?? 0) > 1;
+  const deleteLabel = message.role === 'user' ? 'Delete message' : 'Delete version';
   const previewText = message.text.length > 2_000
     ? `${message.text.slice(0, 1_999)}…`
     : message.text;
@@ -3003,7 +3022,7 @@ function MessageContextMenu({
         { label: message.role === 'user' ? 'Edit message' : 'Edit response', icon: 'pencil', onPress: () => runAction('edit') },
         ...(message.role === 'assistant' ? [{ label: 'Regenerate response', icon: 'arrow.clockwise', onPress: () => runAction('regenerate') }] : []),
         ...(canSpeak ? [{ label: speechLabel, icon: speaking ? 'stop.fill' : 'speaker.wave.2', onPress: speak }] : []),
-        { label: 'Delete message', icon: 'trash', destructive: true, onPress: () => runAction('delete') },
+        ...(canDelete ? [{ label: deleteLabel, icon: 'trash', destructive: true, onPress: () => runAction('delete') }] : []),
       ]}
       style={message.role === 'user' ? styles.userMessageContextHost : styles.assistantMessageContextHost}
       preview={(
@@ -3032,7 +3051,7 @@ function MessageContextMenu({
               <SwiftUIButton label="Regenerate response" systemImage="arrow.clockwise" onPress={() => runAction('regenerate')} />
             </>}
           {canSpeak && <SwiftUIButton label={speechLabel} systemImage={speaking ? 'stop.fill' : 'speaker.wave.2'} onPress={speak} />}
-          <SwiftUIButton label="Delete message" role="destructive" systemImage="trash" onPress={() => runAction('delete')} />
+          {canDelete && <SwiftUIButton label={deleteLabel} role="destructive" systemImage="trash" onPress={() => runAction('delete')} />}
         </>
       )}
     >
@@ -3326,6 +3345,7 @@ const ToolStepRow = memo(function ToolStepRow({ step }: { step: Extract<Timeline
 function CompactionStepContent({ step }: { step: Extract<TimelineStep, { kind: 'compaction' }> }) {
   const { styles } = useChatStyles();
   const item = step.compaction;
+  const retained = item.retained_turns ?? [];
   return (
     <View style={styles.compactionDetail}>
       {item.error ? <Text style={styles.compactionError}>{item.error}</Text> : null}
@@ -3335,10 +3355,10 @@ function CompactionStepContent({ step }: { step: Extract<TimelineStep, { kind: '
           <SafeMarkdown selectable={Platform.OS !== 'android'} compact>{item.summary}</SafeMarkdown>
         </View>
       ) : null}
-      {item.retained_turns.length ? (
+      {retained.length ? (
         <View style={styles.compactionSection}>
           <Text style={styles.compactionSectionTitle}>Kept verbatim</Text>
-          {item.retained_turns.map((entry, index) => (
+          {retained.map((entry, index) => (
             <View key={`${entry.role}:${index}`} style={styles.compactionTurn}>
               <Text style={styles.compactionRole}>{entry.role}</Text>
               <Text selectable style={styles.compactionContent}>{entry.content}</Text>
@@ -3778,12 +3798,12 @@ const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectM
           />
         )}
         modifiers={[
-          buttonStyle(tinted ? 'glassProminent' : 'glass'),
           buttonBorderShape('capsule'),
           controlSize('regular'),
           ...(tinted ? [tint('rgba(175,82,222,0.22)'), foregroundStyle(foreground)] : []),
           swiftUIAccessibilityLabel(`Model, ${model.name}`),
           swiftUIAccessibilityHint('Opens models and lab sections'),
+          ...glassButtonStyle(tinted ? 'glassProminent' : 'glass'),
         ]}
       >
         <SwiftUISection key="models" title={sectionLabel}>
@@ -4224,6 +4244,10 @@ function ChatView({
   const isNearBottom = useRef(true);
   const shouldAutoFollow = useRef(true);
   const readerInteracting = useRef(false);
+  // A finger resting on the transcript, before (or without) any drag.
+  const readerTouching = useRef(false);
+  const viewportMetrics = useRef<ChatViewportMetrics | null>(null);
+  const readerDragStartDistance = useRef(0);
   const [maintainReaderAnchor, setMaintainReaderAnchor] = useState(false);
   const [scrollToBottomVisible, setScrollToBottomVisibleState] = useState(false);
   const scrollToBottomShown = useRef(false);
@@ -5401,14 +5425,8 @@ function ChatView({
   const agentLabel = activeAgentEnabled ? 'Pulpo Agent' : 'Disabled';
 
   const updateBottomProximity = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const { contentOffset, contentInset, contentSize, layoutMeasurement } = event.nativeEvent;
-    const metrics = {
-      inverted: bottomAnchored,
-      insetTop: contentInset.top,
-      offsetY: contentOffset.y,
-      contentHeight: contentSize.height,
-      viewportHeight: layoutMeasurement.height,
-    };
+    const metrics = chatScrollMetrics(event, bottomAnchored);
+    viewportMetrics.current = metrics;
     const nearBottom = isNearChatBottom(metrics);
     isNearBottom.current = nearBottom;
     // A newly selected chat initially reports offset zero before its rows have
@@ -5423,6 +5441,12 @@ function ChatView({
     // Native measurement and anchor adjustments also emit scroll events. Only
     // an actual gesture ending may rearm following after the reader takes over.
   }, [bottomAnchored, setScrollToBottomVisible]);
+
+  // Content can grow below a resting reader without emitting a scroll event.
+  const readerTailDistance = useCallback(() => {
+    if (!viewportMetrics.current) return 0;
+    return chatBottomDistance({ ...viewportMetrics.current, contentHeight: measuredContentHeight.current || viewportMetrics.current.contentHeight });
+  }, []);
 
   const cancelPendingFollow = useCallback(() => {
     if (pendingFollowFrame.current === null) return;
@@ -5470,15 +5494,21 @@ function ChatView({
     cancelTailSettle();
   }, [cancelPendingFollow, cancelTailSettle, chatId]);
 
+  // Momentum continues the drag, so only a drag records where the gesture began.
+  const beginReaderDrag = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    readerDragStartDistance.current = chatBottomDistance(chatScrollMetrics(event, bottomAnchored));
+    beginReaderInteraction();
+  }, [beginReaderInteraction, bottomAnchored]);
+
   const endReaderInteraction = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
     // Native layout/keyboard adjustments can emit an end event without a drag.
     if (!readerInteracting.current) return;
     if (chatId && hasTranscriptPositionObserver()) recordTranscriptPosition({ chatId, at: Date.now(), kind: 'readerEnd' });
     readerInteracting.current = false;
     updateBottomProximity(event);
-    shouldAutoFollow.current = isNearBottom.current;
-    setMaintainReaderAnchor(!isNearBottom.current);
-  }, [chatId, updateBottomProximity]);
+    shouldAutoFollow.current = shouldResumeChatFollow(readerDragStartDistance.current, readerTailDistance());
+    setMaintainReaderAnchor(!shouldAutoFollow.current);
+  }, [chatId, readerTailDistance, updateBottomProximity]);
 
   const followContentIfNeeded = useCallback(() => {
     const establishingChatTail = chatTailPending.current;
@@ -5487,19 +5517,40 @@ function ChatView({
     if (bottomAnchored && !establishingChatTail) return;
     if (!shouldFollowChatContent(
       shouldAutoFollow.current && isNearBottom.current,
-      readerInteracting.current,
+      readerInteracting.current || readerTouching.current,
       establishingChatTail,
     ) || pendingFollowFrame.current !== null) return;
     pendingFollowFrame.current = requestAnimationFrame(() => {
       pendingFollowFrame.current = null;
       if (!shouldFollowChatContent(
         shouldAutoFollow.current && isNearBottom.current,
-        readerInteracting.current,
+        readerInteracting.current || readerTouching.current,
         chatTailPending.current,
       )) return;
       scrollToMeasuredTail(chatTailPending.current ? false : assistantStatus === 'idle');
     });
   }, [assistantStatus, bottomAnchored, scrollToMeasuredTail]);
+
+  // Scroll events begin only once a finger moves, so a resting finger would
+  // otherwise watch the reply keep scrolling beneath it.
+  const beginReaderTouch = useCallback(() => {
+    Keyboard.dismiss();
+    readerTouching.current = true;
+    cancelPendingFollow();
+    setMaintainReaderAnchor(true);
+  }, [cancelPendingFollow]);
+
+  const endReaderTouch = useCallback(() => {
+    if (!readerTouching.current) return;
+    readerTouching.current = false;
+    // A drag that took over this touch reports next and decides on its own end.
+    requestAnimationFrame(() => {
+      if (readerTouching.current || readerInteracting.current) return;
+      if (shouldAutoFollow.current) shouldAutoFollow.current = readerTailDistance() <= CHAT_RESUME_FOLLOW_THRESHOLD;
+      setMaintainReaderAnchor(!shouldAutoFollow.current);
+      if (shouldAutoFollow.current) followContentIfNeeded();
+    });
+  }, [followContentIfNeeded, readerTailDistance]);
 
   const jumpToBottom = useCallback(() => {
     void Haptics.selectionAsync();
@@ -5529,6 +5580,8 @@ function ChatView({
     isNearBottom.current = true;
     shouldAutoFollow.current = true;
     readerInteracting.current = false;
+    readerTouching.current = false;
+    viewportMetrics.current = null;
     jumpingToBottom.current = false;
     chatTailPending.current = !bottomAnchored;
     setMaintainReaderAnchor(false);
@@ -5793,7 +5846,9 @@ function ChatView({
           contentInsetAdjustmentBehavior="never"
           data={visibleMessages}
           inverted={bottomAnchored}
-          maintainVisibleContentPosition={bottomAnchored && maintainReaderAnchor ? { minIndexForVisible: 0 } : undefined}
+          // Skip the newest row: it grows in place while streaming, so anchoring
+          // to it never compensates and the reader keeps being carried along.
+          maintainVisibleContentPosition={bottomAnchored && maintainReaderAnchor ? { minIndexForVisible: 1 } : undefined}
           maxToRenderPerBatch={1}
           updateCellsBatchingPeriod={32}
           windowSize={3}
@@ -5819,9 +5874,11 @@ function ChatView({
           onMomentumScrollBegin={beginReaderInteraction}
           onMomentumScrollEnd={endReaderInteraction}
           onScroll={updateBottomProximity}
-          onScrollBeginDrag={beginReaderInteraction}
+          onScrollBeginDrag={beginReaderDrag}
           onScrollEndDrag={endReaderInteraction}
-          onTouchStart={Keyboard.dismiss}
+          onTouchCancel={endReaderTouch}
+          onTouchEnd={endReaderTouch}
+          onTouchStart={beginReaderTouch}
           ref={listRef}
           renderItem={renderMessage}
           renderScrollComponent={renderChatScrollComponent}
@@ -6021,15 +6078,15 @@ function ChatView({
                   ]} />
                 )}
                 {hasGenerationPresets && (Platform.OS === 'ios' ? (
-                  <SwiftUIHost ignoreSafeArea="keyboard" matchContents style={styles.effortMenuHost}>
+                  <SwiftUIHost ignoreSafeArea="all" matchContents style={styles.effortMenuHost}>
                     <SwiftUIMenu
                       label={presetLabel}
                       modifiers={[
-                        buttonStyle('glass'),
                         buttonBorderShape('capsule'),
                         controlSize('regular'),
                         swiftUIAccessibilityLabel(`Generation options, ${presetLabel}`),
                         swiftUIAccessibilityHint('Opens chat preset choices'),
+                        ...glassButtonStyle('glass'),
                       ]}
                     >
                       {(prototypeModel?.presets ?? []).map((preset) => (

@@ -17,7 +17,7 @@ function cleanInviteCode(value: string): string[] {
 export function PendingPage() {
   const { t } = useTranslation()
   const user = useAuth((s) => s.user)
-  const logout = useAuth((s) => s.logout)
+  const signOutActiveAccount = useAuth((s) => s.signOutActiveAccount)
   const replaceUser = useAuth((s) => s.replaceUser)
   const pendingDetails = useAuth((s) => s.pendingDetails)
   const adminEmail = useAuth((s) => s.adminEmail)
@@ -176,8 +176,7 @@ export function PendingPage() {
             variant="outline"
             className="flex-1"
             onClick={() => {
-              logout()
-              navigate('/login')
+              void signOutActiveAccount().then((switched) => { if (!switched) navigate('/login') })
             }}
           >
             <LogOut />

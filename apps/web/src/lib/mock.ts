@@ -1,7 +1,6 @@
 import type {
   Chat,
   ChatPreset,
-  Folder,
   Message,
   Model,
   MonitorUser,
@@ -396,12 +395,12 @@ const CHAT_TITLES = [
   'AbortController wiring',
 ]
 
-export function makeMockChats(): { chats: Chat[]; folders: Folder[] } {
+export function makeMockChats(): { chats: Chat[]; folders: Array<{ id: string; name: string }> } {
   const rand = mulberry32(1337)
-  const folders: Folder[] = [
-    { id: 'f-work', name: 'work', pinned: true, expanded: true, sortOrder: 0 },
-    { id: 'f-research', name: 'research', pinned: false, expanded: true, sortOrder: 1 },
-    { id: 'f-shitposts', name: 'shitposts', pinned: false, expanded: false, sortOrder: 2 },
+  const folders = [
+    { id: 'f-work', name: 'work' },
+    { id: 'f-research', name: 'research' },
+    { id: 'f-shitposts', name: 'shitposts' },
   ]
   const chats: Chat[] = []
   const now = Date.now()

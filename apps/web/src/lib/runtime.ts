@@ -7,6 +7,11 @@ export interface DesktopStoredSession {
   expiresAt: string
 }
 
+export interface DesktopSignedInAccounts {
+  instanceUrl: string
+  accounts: Array<{ userId: string; token: string; expiresAt: string }>
+}
+
 interface DesktopApi {
   platform: 'desktop'
   os: 'darwin' | 'win32' | 'linux'
@@ -14,6 +19,10 @@ interface DesktopApi {
     load(): Promise<DesktopStoredSession | null>
     store(session: DesktopStoredSession): Promise<void>
     clear(): Promise<void>
+  }
+  accounts: {
+    load(): Promise<DesktopSignedInAccounts | null>
+    store(accounts: DesktopSignedInAccounts): Promise<void>
   }
   openExternal(url: string): Promise<void>
   onProtocolUrl(listener: (url: string) => void): () => void
@@ -163,6 +172,16 @@ export async function storeDesktopSession(session: DesktopStoredSession): Promis
 
 export async function clearDesktopSession(): Promise<void> {
   await window.pulpoDesktop?.session.clear()
+}
+
+/** Other accounts signed in on the current desktop instance. */
+export async function loadDesktopSignedInAccounts(): Promise<DesktopSignedInAccounts['accounts']> {
+  const stored = await window.pulpoDesktop?.accounts.load()
+  return stored?.instanceUrl === new URL(instanceUrl).origin ? stored.accounts : []
+}
+
+export async function storeDesktopSignedInAccounts(accounts: DesktopSignedInAccounts['accounts']): Promise<void> {
+  await window.pulpoDesktop?.accounts.store({ instanceUrl: new URL(instanceUrl).origin, accounts })
 }
 
 export function onDesktopProtocolUrl(listener: (url: string) => void): () => void {

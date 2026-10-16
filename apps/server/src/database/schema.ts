@@ -349,6 +349,7 @@ export const labs = pgTable('labs', {
   name: text('name').notNull(),
   logo: text('logo').notNull(),
   customIconId: uuid('custom_icon_id').references(() => catalogIcons.id),
+  sortOrder: integer('sort_order').notNull().default(0),
   ...timestamps,
 })
 
@@ -364,6 +365,10 @@ export const models = pgTable('models', {
   sortOrder: integer('sort_order').notNull().default(0),
   enabled: boolean('enabled').notNull().default(true),
   visible: boolean('visible').notNull().default(true),
+  // Native store apps (`ios`, `android`) that must not list or use this model.
+  hiddenPlatforms: jsonb('hidden_platforms').$type<string[]>().notNull().default([]),
+  // Restricted models are listed and usable only by admins and users with a grant.
+  restricted: boolean('restricted').notNull().default(false),
   logo: text('logo'),
   customIconId: uuid('custom_icon_id').references(() => catalogIcons.id),
   systemPrompt: text('system_prompt').notNull().default(''),
@@ -377,7 +382,9 @@ export const models = pgTable('models', {
   minimumOutputReservationTokens: integer('minimum_output_reservation_tokens').notNull().default(8_000),
   compactionEnabled: boolean('compaction_enabled').notNull().default(true),
   compactionThresholdTokens: integer('compaction_threshold_tokens').notNull().default(100_000),
+  /** Deprecated and unused since migration 0099; kept for old pods during rolling deploys. Drop in a later migration. */
   compactionRetainedTurns: integer('compaction_retained_turns').notNull().default(4),
+  compactionRetainedUserTokens: integer('compaction_retained_user_tokens').notNull().default(20_000),
   executionMode: executionModeEnum('execution_mode').notNull().default('stream'),
   tags: jsonb('tags').notNull().default([]),
   allowedParameters: jsonb('allowed_parameters').notNull().default([]),
@@ -395,6 +402,13 @@ export const models = pgTable('models', {
   iconDark: text('icon_dark'),
   ...timestamps,
 }, (table) => [check('models_minimum_output_reservation_positive', sql`${table.minimumOutputReservationTokens} > 0`)])
+
+export const modelUserGrants = pgTable('model_user_grants', {
+  modelId: text('model_id').notNull().references(() => models.id, { onDelete: 'cascade' }),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  grantedBy: uuid('granted_by').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [primaryKey({ columns: [table.modelId, table.userId] }), index('model_user_grants_user_idx').on(table.userId)])
 
 export const modelPricingVersions = pgTable('model_pricing_versions', {
   id: uuid('id').primaryKey(),
@@ -439,20 +453,14 @@ export const providerHealthChecks = pgTable('provider_health_checks', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })
 
-export const folders = pgTable('folders', {
-  id: uuid('id').primaryKey(),
-  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  name: text('name').notNull(),
-  pinned: boolean('pinned').notNull().default(false),
-  sortOrder: integer('sort_order').notNull().default(0),
-  ...timestamps,
-})
-
 export const chats = pgTable('chats', {
   workspaceScopeId: uuid('workspace_scope_id').notNull().defaultRandom(),
   id: uuid('id').primaryKey(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  folderId: uuid('folder_id').references(() => folders.id, { onDelete: 'set null' }),
+  // The Files folder the chat lives in. Null is the sidebar's unfiled list (the Chats folder itself),
+  // or the top of My files when in_files_root is set.
+  folderId: uuid('folder_id').references((): AnyPgColumn => fileNodes.id, { onDelete: 'set null' }),
+  inFilesRoot: boolean('in_files_root').notNull().default(false),
   title: text('title').notNull().default('New chat'),
   modelId: text('model_id').notNull().references(() => models.id),
   pinned: boolean('pinned').notNull().default(false),
@@ -460,6 +468,8 @@ export const chats = pgTable('chats', {
   temporary: boolean('temporary').notNull().default(false),
   // Files items the agent may use: file_nodes ids (folders include subfolders), or 'root' for all files.
   fileScopeIds: jsonb('file_scope_ids').$type<string[]>().notNull().default([]),
+  // What the agent may do with each scope entry ('read' | 'suggest' | 'write'), keyed like file_scope_ids.
+  fileScopeAccess: jsonb('file_scope_access').$type<Record<string, string>>().notNull().default({}),
   activeBranchLeafId: uuid('active_branch_leaf_id'),
   activeResponseId: uuid('active_response_id'),
   expiresAt: timestamp('expires_at', { withTimezone: true }),
@@ -468,6 +478,8 @@ export const chats = pgTable('chats', {
   ...timestamps,
 }, (table) => [
   index('chats_user_updated_idx').on(table.userId, table.updatedAt),
+  index('chats_folder_idx').on(table.folderId).where(sql`${table.folderId} is not null`),
+  check('chats_files_root_check', sql`not ${table.inFilesRoot} or ${table.folderId} is null`),
   index('chats_title_search_idx').using('gin', sql`to_tsvector('simple', ${table.title})`),
   index('chats_expiry_idx').on(table.expiresAt)
     .where(sql`${table.expiresAt} is not null and ${table.deletedAt} is null and ${table.purgeStartedAt} is null`),
@@ -836,7 +848,7 @@ export const userMemoryDocumentRevisions = pgTable('user_memory_document_revisio
   check('user_memory_document_revisions_editor_check', sql`${table.editor} in ('user', 'agent')`),
 ])
 
-/** Account-owned Files tree. Distinct from `folders`, which only groups chats. */
+/** Account-owned Files tree. Chats are filed into its folders through `chats.folder_id`. */
 export const fileNodes = pgTable('file_nodes', {
   id: uuid('id').primaryKey(),
   // Access always resolves through the owner today; sharing will add grants beside it.
@@ -853,8 +865,27 @@ export const fileNodes = pgTable('file_nodes', {
   // The node the user trashed; its whole subtree shares this id so restore returns the batch.
   trashRootId: uuid('trash_root_id'),
   revision: integer('revision').notNull().default(0),
+  // Set on the account's built-in top-level folders (see FileSystemRole).
+  systemRole: text('system_role'),
+  // What a shortcut opens: another Files item or a chat. Removing the target removes its shortcuts.
+  targetNodeId: uuid('target_node_id').references((): AnyPgColumn => fileNodes.id, { onDelete: 'cascade' }),
+  // References chats(id) through a deferrable constraint added in the migration, so a backup can
+  // restore Files (which chats are filed in) before the chats that shortcuts point at.
+  targetChatId: uuid('target_chat_id'),
+  // Position among the folder's items, chats included (see files/order.ts). While pinned, the
+  // position in the sidebar's pinned list instead, as for chats.
+  sortOrder: integer('sort_order').notNull().default(0),
+  // Listed with the pinned chats at the top of the sidebar rather than in its folder there.
+  pinned: boolean('pinned').notNull().default(false),
+  // A chosen FileColor and FileIcon; null keeps the kind's own.
+  color: text('color'),
+  icon: text('icon'),
+  // Set while the item is an agent's suggestion awaiting review (see file_changes). Not a foreign
+  // key: backups leave out change history, and a restored suggestion can still be reviewed.
+  suggestionChangeId: uuid('suggestion_change_id'),
   ...timestamps,
 }, (table) => [
+  uniqueIndex('file_nodes_owner_system_role_unique').on(table.ownerUserId, table.systemRole).where(sql`${table.systemRole} is not null`),
   uniqueIndex('file_nodes_live_name_unique').on(
     table.ownerUserId,
     sql`coalesce(${table.parentId}, '00000000-0000-0000-0000-000000000000'::uuid)`,
@@ -863,11 +894,19 @@ export const fileNodes = pgTable('file_nodes', {
   index('file_nodes_owner_parent_idx').on(table.ownerUserId, table.parentId).where(sql`${table.trashedAt} is null`),
   index('file_nodes_owner_trash_idx').on(table.ownerUserId, table.trashRootId).where(sql`${table.trashedAt} is not null`),
   index('file_nodes_object_key_idx').on(table.objectKey),
-  check('file_nodes_kind_check', sql`${table.kind} in ('folder', 'doc', 'blob')`),
+  check('file_nodes_kind_check', sql`${table.kind} in ('folder', 'doc', 'blob', 'shortcut')`),
+  // Shortcuts have exactly one target; nothing else has one.
+  check('file_nodes_shortcut_check', sql`num_nonnulls(${table.targetNodeId}, ${table.targetChatId}) = case when ${table.kind} = 'shortcut' then 1 else 0 end`),
+  index('file_nodes_target_chat_idx').on(table.targetChatId).where(sql`${table.targetChatId} is not null`),
+  index('file_nodes_target_node_idx').on(table.targetNodeId).where(sql`${table.targetNodeId} is not null`),
   check('file_nodes_status_check', sql`${table.status} in ('pending', 'ready')`),
   check('file_nodes_name_check', sql`char_length(${table.name}) between 1 and 255`),
   check('file_nodes_size_check', sql`${table.sizeBytes} >= 0`),
   check('file_nodes_blob_check', sql`(${table.kind} = 'blob') = (${table.objectKey} is not null)`),
+  check('file_nodes_system_role_check', sql`${table.systemRole} is null or (${table.systemRole} in ('chats', 'archive') and ${table.kind} = 'folder' and ${table.parentId} is null)`),
+  // The Sidebar folder is the sidebar itself, so it cannot be pinned there.
+  check('file_nodes_pinned_check', sql`not ${table.pinned} or ${table.systemRole} is distinct from 'chats'`),
+  index('file_nodes_owner_pinned_idx').on(table.ownerUserId).where(sql`${table.pinned}`),
 ])
 
 /** Collaborative document state: a compacted Yjs update plus Markdown derived from it. */
@@ -916,21 +955,50 @@ export const fileFolderLayouts = pgTable('file_folder_layouts', {
 ])
 
 /**
- * What an agent response changed in Files, so the whole response can be undone: the Markdown a
- * document had before the response first edited it, or an item the response created.
+ * What an agent reply did to Files, one row per (reply, item, kind of change). Write-mode rows
+ * hold the item's state before and after the reply so the reply can be undone and redone;
+ * Suggest-mode rows hold the proposed state until the owner accepts or rejects it. Documents
+ * changed in Suggest mode carry their proposals inline as marks tagged with the row's id.
  */
-export const fileAgentChanges = pgTable('file_agent_changes', {
+export const fileChanges = pgTable('file_changes', {
   id: uuid('id').primaryKey(),
+  seq: bigint('seq', { mode: 'number' }).notNull().generatedAlwaysAsIdentity(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  chatId: uuid('chat_id').notNull().references(() => chats.id, { onDelete: 'cascade' }),
   responseId: uuid('response_id').notNull().references(() => responses.id, { onDelete: 'cascade' }),
+  nodeId: uuid('node_id').notNull().references(() => fileNodes.id, { onDelete: 'cascade' }),
+  mode: text('mode').notNull(),
+  kind: text('kind').notNull(),
+  status: text('status').notNull(),
+  before: jsonb('before').$type<Record<string, unknown>>(),
+  after: jsonb('after').$type<Record<string, unknown>>(),
+  ...timestamps,
+}, (table) => [
+  uniqueIndex('file_changes_response_node_kind_unique').on(table.responseId, table.nodeId, table.kind),
+  index('file_changes_user_created_idx').on(table.userId, table.createdAt),
+  index('file_changes_node_idx').on(table.nodeId),
+  index('file_changes_chat_pending_idx').on(table.chatId).where(sql`${table.status} = 'pending'`),
+  check('file_changes_mode_check', sql`${table.mode} in ('write', 'suggest')`),
+  check('file_changes_kind_check', sql`${table.kind} in ('create', 'update', 'move', 'trash')`),
+  check('file_changes_status_check', sql`${table.status} in ('applied', 'undone', 'pending', 'accepted', 'rejected')`),
+])
+
+/**
+ * Stored content of an uploaded file that is not its current content: what an agent replaced
+ * (kept for undo) or proposed (awaiting review). Counts toward the owner's storage.
+ */
+export const fileVersions = pgTable('file_versions', {
+  objectKey: text('object_key').primaryKey(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   nodeId: uuid('node_id').notNull().references(() => fileNodes.id, { onDelete: 'cascade' }),
-  kind: text('kind').notNull(),
-  beforeMarkdown: text('before_markdown'),
-  revertedAt: timestamp('reverted_at', { withTimezone: true }),
+  sizeBytes: bigint('size_bytes', { mode: 'number' }).notNull(),
+  mimeType: text('mime_type'),
+  checksum: text('checksum'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
-  uniqueIndex('file_agent_changes_response_node_unique').on(table.responseId, table.nodeId),
-  check('file_agent_changes_kind_check', sql`${table.kind} in ('edit', 'create')`),
+  index('file_versions_user_idx').on(table.userId),
+  index('file_versions_node_idx').on(table.nodeId),
+  check('file_versions_size_check', sql`${table.sizeBytes} >= 0`),
 ])
 
 export const episodicMemoryGenerations = pgTable('episodic_memory_generations', {
@@ -1239,6 +1307,8 @@ export const billingAccounts = pgTable('billing_accounts', {
   planOverride: text('plan_override'),
   weeklyLimitOverrideMicros: bigint('weekly_limit_override_micros', { mode: 'number' }),
   fiveHourLimitOverrideMicros: bigint('five_hour_limit_override_micros', { mode: 'number' }),
+  // Replaces the usage tier's daily spend cap when set.
+  dailyLimitOverrideMicros: bigint('daily_limit_override_micros', { mode: 'number' }),
   storageLimitOverrideBytes: bigint('storage_limit_override_bytes', { mode: 'number' }),
   holdAt: timestamp('hold_at', { withTimezone: true }),
   holdReason: text('hold_reason'),
@@ -1390,6 +1460,17 @@ export const weeklyUsagePeriods = pgTable('weekly_usage_periods', {
 }, (table) => [
   primaryKey({ columns: [table.userId, table.periodStart] }),
   check('weekly_usage_periods_spent_check', sql`${table.spentMicros} >= 0`),
+])
+
+/** Everything a user spent per UTC day, enforced by their usage tier's daily cap. */
+export const dailyUsagePeriods = pgTable('daily_usage_periods', {
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  periodStart: timestamp('period_start', { withTimezone: true }).notNull(),
+  spentMicros: bigint('spent_micros', { mode: 'number' }).notNull().default(0),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  primaryKey({ columns: [table.userId, table.periodStart] }),
+  check('daily_usage_periods_spent_check', sql`${table.spentMicros} >= 0`),
 ])
 
 export const fiveHourUsagePeriods = pgTable('five_hour_usage_periods', {

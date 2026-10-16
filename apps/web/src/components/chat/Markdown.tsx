@@ -12,6 +12,7 @@ import { writeClipboardText } from '@/lib/clipboard'
 import { codeFileExtension, downloadCode } from '@/lib/code-download'
 import { previewKindForLanguage, previewTitle } from '@/lib/code-preview'
 import { rehypeDisplayMathFallback, rehypeMarkDisplayMath } from '@/lib/display-math-fallback'
+import { remarkSoftBreaks } from '@/lib/soft-breaks'
 import { rehypeStreamCaret, STREAM_CARET_CLASS } from '@/lib/stream-caret'
 import { useCodePreview } from '@/stores/codePreview'
 
@@ -157,6 +158,8 @@ const markdownComponents: Components = {
   img: MarkdownImage,
 }
 
+const REMARK_PLUGINS: NonNullable<Options['remarkPlugins']> = [remarkGfm, remarkMath]
+const BREAKS_REMARK_PLUGINS: NonNullable<Options['remarkPlugins']> = [...REMARK_PLUGINS, remarkSoftBreaks]
 const REHYPE_PLUGINS: NonNullable<Options['rehypePlugins']> = [
   rehypeMarkDisplayMath,
   [rehypeKatex, { throwOnError: false, errorColor: 'var(--muted-foreground)' }],
@@ -188,6 +191,7 @@ export const Markdown = memo(function Markdown({
   content,
   streaming = false,
   caret = false,
+  breaks = false,
   components,
   urlTransform,
 }: {
@@ -195,6 +199,8 @@ export const Markdown = memo(function Markdown({
   streaming?: boolean
   /** Shows a blinking caret after the last rendered text. */
   caret?: boolean
+  /** Renders single newlines as line breaks, for user-typed text. */
+  breaks?: boolean
   /** Element overrides layered over the chat defaults. */
   components?: Components
   urlTransform?: UrlTransform
@@ -203,10 +209,12 @@ export const Markdown = memo(function Markdown({
   const normalized = useMemo(() => normalizeMathDelimiters(unwrapBoxedMinipages(rendered), { displayMathStyle: 'multiline' }), [rendered])
   const mergedComponents = useMemo(() => components ? { ...markdownComponents, ...components } : markdownComponents, [components])
 
-  return (
+  // Incoming chunks update `latest` before the 100 ms display tick. Reuse the element while
+  // its displayed content is unchanged so ReactMarkdown does not parse the same text again.
+  return useMemo(() => (
     <div className="markdown-content min-w-0 max-w-full [overflow-wrap:anywhere]">
       <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkMath]}
+        remarkPlugins={breaks ? BREAKS_REMARK_PLUGINS : REMARK_PLUGINS}
         rehypePlugins={caret ? CARET_REHYPE_PLUGINS : REHYPE_PLUGINS}
         components={mergedComponents}
         urlTransform={urlTransform}
@@ -214,5 +222,5 @@ export const Markdown = memo(function Markdown({
         {normalized}
       </ReactMarkdown>
     </div>
-  )
+  ), [normalized, breaks, caret, mergedComponents, urlTransform])
 })

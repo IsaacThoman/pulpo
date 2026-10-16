@@ -23,6 +23,10 @@ export function piModelForProvider(model: CatalogModel, provider: Provider): Mod
     maxTokens: model.maxOutputTokens,
   }
   const format = providerApiFormat(provider)
+  if (format === 'mistral_chat_completions') {
+    // Pi appends v1/chat/completions itself; the catalog URL includes /v1.
+    return { ...common, api: 'mistral-conversations', provider: 'mistral', baseUrl: provider.baseUrl.replace(/\/+$/, '').replace(/\/v1$/, '') } as Model<'mistral-conversations'>
+  }
   if (format === 'anthropic_messages') {
     const capabilities = anthropicModelCapabilities(model.upstreamModelId)
     return {
@@ -70,4 +74,17 @@ export function chatCompletionsSamplingParameters(parameters: Record<string, unk
 export function explicitReasoningEffort(parameters: Record<string, unknown>): boolean {
   const reasoning = parameters.reasoning
   return Boolean(reasoning && typeof reasoning === 'object' && typeof (reasoning as Record<string, unknown>).effort === 'string')
+}
+
+/** Pi's native Mistral adapter uses camelCase options, then serializes the wire body. */
+export function mistralAgentPayload(payload: unknown, parameters: Record<string, unknown>): Record<string, unknown> {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('Invalid Mistral request payload')
+  const sampling = chatCompletionsSamplingParameters(parameters, 'https://api.mistral.ai/v1')
+  const reasoning = parameters.reasoning
+  const effort = reasoning && typeof reasoning === 'object' && !Array.isArray(reasoning)
+    ? (reasoning as Record<string, unknown>).effort
+    : parameters.reasoning_effort
+  if (effort !== undefined && effort !== 'none' && effort !== 'high') throw new Error('Mistral reasoning effort must be none or high')
+  delete sampling.reasoning_effort
+  return { ...payload, ...sampling, ...(effort !== undefined ? { reasoningEffort: effort } : {}) }
 }

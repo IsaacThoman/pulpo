@@ -1,12 +1,12 @@
 import { acceptAccountDeletion, lockAccountAdministration } from '../account/deletion.js'
-import { and, desc, eq, isNull, ne, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNull, ne, notInArray, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { usernameSchema } from '@pulpo/contracts'
 import { createPasswordHash, requireAdmin } from '../auth/service.js'
 import { clearTwoFactor, hasTwoFactor, verifySecondFactor } from '../auth/two-factor.js'
 import { db } from '../database/client.js'
-import { apiKeys, applicationSettings, attachments, auditEvents, fileNodes, billingAccounts, creditLedger, managementTokens, passwordCredentials, passwordResetTokens, sessions, usageEvents, userPreferences, users, userTotpCredentials } from '../database/schema.js'
+import { apiKeys, applicationSettings, attachments, auditEvents, fileNodes, billingAccounts, creditLedger, managementTokens, models, modelUserGrants, passwordCredentials, passwordResetTokens, sessions, usageEvents, userPreferences, users, userTotpCredentials } from '../database/schema.js'
 import { newUserStorageLimit, refreshStorageLimit } from '../billing/storage-entitlements.js'
 import { hashToken, randomToken } from '../lib/crypto.js'
 import { AppError, notFound } from '../lib/errors.js'
@@ -29,6 +29,8 @@ import { preferencesWithModelDefaults } from '../settings/model-preferences.js'
 const patchUserSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
   defaultModelId: z.string().trim().min(1).max(120).nullable().optional(),
+  /** Admins can only return favorites to following the new-account defaults. */
+  favoriteModelIds: z.null().optional(),
   email: z.email().optional(),
   password: z.string().min(8).max(1_000).optional(),
   role: z.enum(['pending', 'user', 'admin']).optional(),
@@ -38,6 +40,8 @@ const patchUserSchema = z.object({
   username: usernameSchema.optional(),
   profileColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable().optional(),
   inviteCodeQuota: z.number().int().nonnegative().max(1_000).optional(),
+  /** Every restricted model the user may use; omitted restricted models lose their grant. */
+  grantedModelIds: z.array(z.string().min(1).max(120)).max(1_000).transform((ids) => [...new Set(ids)]).optional(),
 })
 
 export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
@@ -59,7 +63,7 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         await tx.insert(billingAccounts).values({ userId: id, storageLimitOverrideBytes: input.storageLimitBytes })
       }
       await tx.insert(passwordCredentials).values({ userId: id, passwordHash: await createPasswordHash(input.password) })
-      await insertNewAccountPreferences(tx, id, authSettings)
+      await insertNewAccountPreferences(tx, id)
       await tx.insert(auditEvents).values({ id: newId(), actorUserId: admin.id, action: 'user.create', targetType: 'user', targetId: id })
     })
     const [created] = await db.select().from(users).where(eq(users.id, id)).limit(1)
@@ -79,6 +83,11 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       user: users,
       defaultModelId: sql<string | null>`(
         select nullif(${userPreferences.values}->>'defaultModelId', '')
+        from ${userPreferences} where ${userPreferences.userId} = ${users.id}
+      )`,
+      favoriteModelIds: sql<string[] | null>`(
+        select case when jsonb_typeof(${userPreferences.values}->'favoriteModelIds') = 'array'
+          then ${userPreferences.values}->'favoriteModelIds' end
         from ${userPreferences} where ${userPreferences.userId} = ${users.id}
       )`,
       calls: sql<number>`coalesce(${usageTotals.calls}, 0)::int`,
@@ -102,6 +111,10 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         select 1 from ${userTotpCredentials}
         where ${userTotpCredentials.userId} = ${users.id}
       )`,
+      grantedModelIds: sql<string[]>`coalesce((
+        select array_agg(${modelUserGrants.modelId} order by ${modelUserGrants.createdAt})
+        from ${modelUserGrants} where ${modelUserGrants.userId} = ${users.id}
+      ), '{}')`,
     }).from(users).leftJoin(usageTotals, eq(usageTotals.userId, users.id)).orderBy(desc(users.createdAt))
     return { data: rows.map((row) => {
       const { avatarObjectKey: _avatarObjectKey, ...publicUser } = row.user
@@ -141,23 +154,46 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
     const relatedChanges = await db.transaction(async (tx) => {
       await lockAccountAdministration(tx)
       // Acquire the settings lock before user/preference row locks, matching account PATCH.
-      if (patch.defaultModelId !== undefined) await tx.execute(sql`select pg_advisory_xact_lock(1886747744)`)
+      if (patch.defaultModelId !== undefined || patch.favoriteModelIds !== undefined) await tx.execute(sql`select pg_advisory_xact_lock(1886747744)`)
       const [current] = await tx.select().from(users).where(eq(users.id, id)).limit(1)
       if (!current) throw notFound('User')
       if (current.deletionRequestedAt) throw new AppError(409, 'account_deleting', 'This account is being permanently deleted')
       const balanceChanged = patch.balanceMicros !== undefined && patch.balanceMicros !== current.balanceMicros
-      const { password, defaultModelId, ...userPatch } = patch
-      if (defaultModelId !== undefined) {
+      const { password, defaultModelId, favoriteModelIds, grantedModelIds, ...userPatch } = patch
+      // Apply grants first so a default model in the same patch can use a newly granted model.
+      if (grantedModelIds !== undefined) {
+        if (grantedModelIds.length) {
+          const restricted = await tx.select({ id: models.id }).from(models)
+            .where(and(inArray(models.id, grantedModelIds), eq(models.restricted, true)))
+          if (restricted.length !== grantedModelIds.length) {
+            throw new AppError(400, 'invalid_model_grant', 'Only restricted models can be granted to a user')
+          }
+        }
+        // Grants kept on a model that is no longer restricted return if it is restricted again.
+        await tx.delete(modelUserGrants).where(and(
+          eq(modelUserGrants.userId, id),
+          inArray(modelUserGrants.modelId, tx.select({ id: models.id }).from(models).where(eq(models.restricted, true))),
+          grantedModelIds.length ? notInArray(modelUserGrants.modelId, grantedModelIds) : undefined,
+        ))
+        if (grantedModelIds.length) {
+          await tx.insert(modelUserGrants).values(grantedModelIds.map((modelId) => ({ modelId, userId: id, grantedBy: admin.id })))
+            .onConflictDoNothing()
+        }
+      }
+      if (defaultModelId !== undefined || favoriteModelIds !== undefined) {
         const [preferences] = await tx.select({ values: userPreferences.values }).from(userPreferences)
           .where(eq(userPreferences.userId, id)).limit(1)
         const savedModelId = (preferences?.values as { defaultModelId?: unknown } | undefined)?.defaultModelId
-        if (defaultModelId !== null && defaultModelId !== savedModelId) {
+        if (defaultModelId != null && defaultModelId !== savedModelId) {
           const available = await availableUserModels(id, tx)
           if (!available.some((model) => model.id === defaultModelId)) {
             throw new AppError(400, 'invalid_default_model', 'Choose a model available to this user')
           }
         }
-        const modelPatch = { defaultModelId }
+        const modelPatch = {
+          ...(defaultModelId !== undefined ? { defaultModelId } : {}),
+          ...(favoriteModelIds !== undefined ? { favoriteModelIds } : {}),
+        }
         await tx.insert(userPreferences).values({ userId: id, values: preferencesWithModelDefaults(modelPatch) })
           .onConflictDoUpdate({
             target: userPreferences.userId,
@@ -196,7 +232,13 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       }
       await tx.insert(auditEvents).values({
         id: newId(), actorUserId: admin.id, action: 'user.update', targetType: 'user', targetId: id,
-        metadata: { ...userPatch, ...(defaultModelId !== undefined ? { defaultModelId } : {}), ...(password ? { passwordChanged: true } : {}) },
+        metadata: {
+          ...userPatch,
+          ...(defaultModelId !== undefined ? { defaultModelId } : {}),
+          ...(favoriteModelIds !== undefined ? { favoriteModelIds } : {}),
+          ...(grantedModelIds !== undefined ? { grantedModelIds } : {}),
+          ...(password ? { passwordChanged: true } : {}),
+        },
       })
       const friendChanges = friendVisibleChanged ? await bumpAccountRevisions(tx, await friendPeerIds(tx, id)) : []
       const poolChanges = balanceChanged ? await bumpAccountRevisions(tx, await poolPeerIds(tx, id)) : []

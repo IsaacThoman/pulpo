@@ -18,7 +18,7 @@ vi.mock('../responses/events.js', () => ({ publishSessionRevocation: vi.fn(), pu
 vi.mock('../redis.js', () => ({ redis: { del: vi.fn(), publish: vi.fn(), get: vi.fn(async () => null), incr: vi.fn(async () => 1), expire: vi.fn() } }))
 
 import { db, queryClient } from '../database/client.js'
-import { applicationSettings, attachments, auditEvents, chats, chatShares, passwordCredentials, pools, poolMembers, sessions, users, models, providerConnections, responses, budgetReservations, budgetReservationFunders, workspaceLeases, userTotpCredentials, twoFactorRecoveryCodes, billingSubscriptions, billingAccounts } from '../database/schema.js'
+import { applicationSettings, attachments, auditEvents, chats, chatShares, fileNodes, fileVersions, passwordCredentials, pools, poolMembers, sessions, users, models, providerConnections, responses, budgetReservations, budgetReservationFunders, workspaceLeases, userTotpCredentials, twoFactorRecoveryCodes, billingSubscriptions, billingAccounts } from '../database/schema.js'
 import { authenticateSession, createPasswordHash } from '../auth/service.js'
 import { hashToken } from '../lib/crypto.js'
 import { requireSensitiveAuth } from '../auth/sensitive-action.js'
@@ -228,6 +228,17 @@ describe.skipIf(!enabled)('account deletion with PostgreSQL', () => {
     expect((await db.select().from(workspaceLeases))[0]?.controllerLeaseId).toBe('lease_test')
     await deleteAccountData(userId)
     expect(await db.select().from(workspaceLeases)).toHaveLength(0)
+  })
+
+  it('deletes Files contents, including kept versions of uploaded files', async () => {
+    const nodeId = randomUUID()
+    await db.insert(fileNodes).values({ id: nodeId, ownerUserId: userId, kind: 'blob', name: 'data.txt', objectKey: 'files-current', sizeBytes: 3 })
+    await db.insert(fileVersions).values({ objectKey: 'files-kept', userId, nodeId, sizeBytes: 2 })
+    await acceptAccountDeletion(userId); await ageDeletion()
+    await deleteAccountData(userId)
+    expect(mocks.deleteBlob).toHaveBeenCalledWith('files-current')
+    expect(mocks.deleteBlob).toHaveBeenCalledWith('files-kept')
+    expect(await db.select().from(fileVersions)).toHaveLength(0)
   })
 
   it('preserves blobs until signed upload links expire', async () => {

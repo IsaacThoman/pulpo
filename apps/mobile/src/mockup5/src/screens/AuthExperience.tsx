@@ -102,6 +102,9 @@ export function AuthExperience() {
   const logout = useSessionStore((state) => state.logout);
   const refreshSession = useSessionStore((state) => state.refreshSession);
   const switchInstance = useSessionStore((state) => state.switchInstance);
+  // Accounts that stay signed in while another one is added.
+  const signedInAccounts = useSessionStore((state) => state.accounts);
+  const switchAccount = useSessionStore((state) => state.switchAccount);
   const session = {
     status: productionStatus === 'pending' ? 'pending' as const : productionStatus === 'authenticated' ? 'signed-in' as const : 'signed-out' as const,
     user: productionUser ? { ...productionUser, role: productionUser.role === 'pending' ? 'pending' as const : 'member' as const } : null,
@@ -289,7 +292,7 @@ export function AuthExperience() {
     <BackToSignIn colors={colors} onPress={() => goTo('login')} />
   </AuthShell>;
 
-  return <AuthShell colors={colors} title="Welcome back" subtitle="Sign in with your Pulpo account to sync conversations, models, and settings." footer={
+  return <AuthShell colors={colors} title={signedInAccounts.length ? 'Add an account' : 'Welcome back'} subtitle={signedInAccounts.length ? 'Sign in to another Pulpo account. Your other accounts stay signed in.' : 'Sign in with your Pulpo account to sync conversations, models, and settings.'} footer={
     <Pressable accessibilityRole="button" accessibilityLabel={`Change server, currently ${instance.url}`} onPress={() => goTo('instance')} style={styles.instanceButton}>
       <SymbolView name="server.rack" tintColor={colors.textFaint} size={14} />
       <Text style={[styles.instanceText, { color: colors.textMuted }]} numberOfLines={1}>{instance.url}</Text>
@@ -305,6 +308,7 @@ export function AuthExperience() {
       {instance.signupOpen ? <Pressable accessibilityRole="link" onPress={() => goTo('signup')} style={styles.linkTarget}><Text style={[styles.link, { color: colors.text }]}>Create account</Text></Pressable> : null}
       <Pressable accessibilityRole="link" onPress={() => goTo('forgot')} style={styles.linkTarget}><Text style={[styles.link, { color: colors.textMuted }]}>Forgot password?</Text></Pressable>
     </View>
+    {signedInAccounts.map((account) => <BackToSignIn key={account.id} colors={colors} label={`Back to ${account.name}`} onPress={() => { void run(() => switchAccount(account.id)); }} />)}
   </AuthShell>;
 }
 

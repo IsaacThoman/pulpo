@@ -11,11 +11,13 @@ vi.mock('../redis.js', () => ({ redis: { del: vi.fn(), publish: vi.fn(), get: vi
 
 import { AppError } from '../lib/errors.js'
 import { db, queryClient } from '../database/client.js'
-import { applicationSettings, auditEvents, models, providerConnections, userPreferences, userProviderCredentials, users } from '../database/schema.js'
+import { applicationSettings, auditEvents, modelPresetChoices, modelPresets, models, modelUserGrants, providerConnections, userPreferences, userProviderCredentials, users } from '../database/schema.js'
+import { assertModelsAccessibleToUser } from '../catalog/model-access.js'
 import { CODEX_PI_PROVIDER_ID, CODEX_PROVIDER_ID } from '../codex/constants.js'
 import { registerCatalogRoutes } from '../catalog/routes.js'
 import { registerSettingsRoutes } from '../settings/routes.js'
 import { registerAdminRoutes } from './routes.js'
+import { registerAdminSettingsRoutes } from './settings-routes.js'
 
 // Run against a disposable, migrated database named pulpo_admin_model_test only.
 const enabled = process.env.PULPO_ADMIN_MODEL_TESTS === 'true'
@@ -48,6 +50,7 @@ describe.skipIf(!enabled)('administrator default models with PostgreSQL', () => 
     await registerAdminRoutes(app)
     await registerCatalogRoutes(app)
     await registerSettingsRoutes(app)
+    await registerAdminSettingsRoutes(app)
   })
   beforeEach(async () => {
     await db.execute(sql`truncate users, models, provider_connections, application_settings, audit_events cascade`)
@@ -95,6 +98,20 @@ describe.skipIf(!enabled)('administrator default models with PostgreSQL', () => 
     actorId = adminId
     await db.update(applicationSettings).set({ value: { enabled: false } }).where(eq(applicationSettings.key, 'codex'))
     expect((await choices()).json().data.map((model: { id: string }) => model.id)).toEqual(['available', 'second'])
+  })
+
+  it('hides store-hidden models only from that store app’s catalog', async () => {
+    const saved = await app.inject({ method: 'PATCH', url: '/api/admin/models/second', payload: { hiddenPlatforms: ['ios'] } })
+    expect(saved.statusCode).toBe(200)
+    expect((await app.inject('/api/admin/models')).json().data.find((model: { id: string }) => model.id === 'second').hiddenPlatforms).toEqual(['ios'])
+    expect((await app.inject({ method: 'PATCH', url: '/api/admin/models/second', payload: { hiddenPlatforms: ['windows'] } })).statusCode).toBe(400)
+    actorId = targetId
+    const catalog = async (client?: string) => (await app.inject({ url: '/api/models', headers: client ? { 'x-pulpo-client': client } : {} }))
+      .json().data.map((model: { id: string }) => model.id)
+    expect(await catalog('ios/1.4.0')).toEqual(['available'])
+    expect(await catalog('android/1.4.0')).toEqual(['available', 'second'])
+    expect(await catalog('web')).toEqual(['available', 'second'])
+    expect(await catalog()).toEqual(['available', 'second'])
   })
 
   it('excludes a disconnected target’s Codex models', async () => {
@@ -169,5 +186,82 @@ describe.skipIf(!enabled)('administrator default models with PostgreSQL', () => 
     expect(results.map((result) => result.statusCode)).toEqual([200, 200])
     const [saved] = await db.select().from(userPreferences).where(eq(userPreferences.userId, adminId))
     expect(saved?.values).toMatchObject({ defaultModelId: 'available', favoriteModelIds: ['second'], theme: 'dark', nickname: 'Keep me' })
+  })
+
+  describe('restricted models', () => {
+    const catalog = async () => (await app.inject('/api/models')).json().data.map((model: { id: string }) => model.id)
+    const adminModel = async (id: string) => (await app.inject('/api/admin/models')).json().data.find((model: { id: string }) => model.id === id)
+    const restrict = (payload: Record<string, unknown>) => app.inject({ method: 'PATCH', url: '/api/admin/models/second', payload })
+
+    it('lists and admits a restricted model only for granted users and admins', async () => {
+      expect((await restrict({ restricted: true, allowedUserIds: [] })).statusCode).toBe(200)
+      expect(await catalog()).toEqual(['available', 'second'])
+      expect((await choices()).json().data.map((model: { id: string }) => model.id)).toEqual(['available'])
+      await expect(assertModelsAccessibleToUser(['second'], targetId)).rejects.toMatchObject({ statusCode: 403, code: 'model_access_denied' })
+      await expect(assertModelsAccessibleToUser(['second'], adminId)).resolves.toBeUndefined()
+      actorId = targetId
+      expect(await catalog()).toEqual(['available'])
+
+      actorId = adminId
+      const granted = await restrict({ allowedUserIds: [targetId, targetId] })
+      expect(granted.json()).toMatchObject({ restricted: true, allowedUserIds: [targetId] })
+      expect(await adminModel('second')).toMatchObject({ restricted: true, allowedUserIds: [targetId] })
+      await expect(assertModelsAccessibleToUser(['second'], targetId)).resolves.toBeUndefined()
+      actorId = targetId
+      expect(await catalog()).toEqual(['available', 'second'])
+
+      actorId = adminId
+      expect((await restrict({ restricted: false })).statusCode).toBe(200)
+      expect(await adminModel('second')).toMatchObject({ restricted: false, allowedUserIds: [targetId] })
+      expect((await restrict({ allowedUserIds: [] })).json().allowedUserIds).toEqual([])
+      actorId = targetId
+      expect(await catalog()).toEqual(['available', 'second'])
+    })
+
+    it('keeps existing grant metadata and rejects unknown users', async () => {
+      await restrict({ restricted: true, allowedUserIds: [targetId] })
+      const [before] = await db.select().from(modelUserGrants)
+      await restrict({ allowedUserIds: [targetId, adminId] })
+      const grants = await db.select().from(modelUserGrants)
+      expect(grants).toHaveLength(2)
+      expect(grants.find((grant) => grant.userId === targetId)).toEqual(before)
+      expect((await restrict({ allowedUserIds: [randomUUID()] })).statusCode).toBe(400)
+      expect(await db.select().from(modelUserGrants)).toHaveLength(2)
+    })
+
+    it('manages a user’s grants from the user patch and lists them', async () => {
+      await restrict({ restricted: true })
+      expect((await patch({ grantedModelIds: ['available'] })).statusCode).toBe(400)
+      expect((await patch({ defaultModelId: 'second' })).statusCode).toBe(400)
+      const response = await patch({ grantedModelIds: ['second'], defaultModelId: 'second' })
+      expect(response.statusCode).toBe(200)
+      expect(mocks.publish).toHaveBeenCalledWith({ userId: targetId, revision: response.json().stateRevision })
+      const rows = (await app.inject('/api/admin/users')).json().data
+      expect(rows.find((row: { user: { id: string } }) => row.user.id === targetId).grantedModelIds).toEqual(['second'])
+      expect(rows.find((row: { user: { id: string } }) => row.user.id === adminId).grantedModelIds).toEqual([])
+      expect((await patch({ grantedModelIds: [] })).statusCode).toBe(200)
+      expect(await db.select().from(modelUserGrants)).toEqual([])
+    })
+
+    it('drops preset redirects to a restricted model the user cannot use', async () => {
+      const presetId = randomUUID(), keepId = randomUUID(), redirectId = randomUUID()
+      await db.insert(modelPresets).values({ id: presetId, modelId: 'available', publicId: 'mode', name: 'Mode', icon: 'sparkles', sortOrder: 0 })
+      await db.insert(modelPresetChoices).values([
+        { id: keepId, presetId, publicId: 'fast', displayName: 'Fast', icon: 'zap', actionType: 'parameters', action: { parameters: {} }, sortOrder: 0 },
+        { id: redirectId, presetId, publicId: 'pro', displayName: 'Pro', icon: 'brain', actionType: 'redirect', action: { modelId: 'second' }, sortOrder: 1 },
+      ])
+      await db.update(modelPresets).set({ defaultChoiceId: redirectId }).where(eq(modelPresets.id, presetId))
+      await restrict({ restricted: true })
+      const presets = async () => (await app.inject('/api/models')).json().data.find((model: { id: string }) => model.id === 'available').presets
+      expect((await presets())[0].choices.map((choice: { id: string }) => choice.id)).toEqual(['fast', 'pro'])
+      actorId = targetId
+      expect((await presets())[0]).toMatchObject({ defaultChoiceId: 'fast', choices: [{ id: 'fast' }] })
+    })
+
+    it('rejects a restricted model as a new-account default', async () => {
+      await restrict({ restricted: true })
+      const response = await app.inject({ method: 'PATCH', url: '/api/admin/settings', payload: { auth: { newAccountModelDefaults: { defaultModelId: 'second', favoriteModelIds: [] } } } })
+      expect(response.json()).toMatchObject({ message: 'Configured model second is unavailable' })
+    })
   })
 })

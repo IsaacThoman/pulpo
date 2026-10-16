@@ -1,13 +1,16 @@
 import { useState } from 'react';
 import { Image } from 'expo-image';
 import { StyleSheet, Text, View } from 'react-native';
+import type { User } from '@pulpo/contracts';
 import { nativeAuthorizationHeaders } from '../../../api/client';
 import { useSessionStore } from '../../../store/session';
 import { useAppTheme } from '../theme';
 
-export function ProfileAvatar({ size }: { size: number }) {
+/** Shows the active user unless another signed-in account is given. */
+export function ProfileAvatar({ size, user: account }: { size: number; user?: User }) {
   const theme = useAppTheme();
-  const user = useSessionStore((state) => state.user);
+  const activeUser = useSessionStore((state) => state.user);
+  const user = account ?? activeUser;
   const instanceUrl = useSessionStore((state) => state.instanceUrl);
   const uri = user?.avatarUrl ? new URL(user.avatarUrl, `${instanceUrl}/`).toString() : null;
   return <AvatarImage key={`${user?.id}:${uri}`} size={size} uri={uri} name={user?.name ?? 'Pulpo user'} isDark={theme.isDark} />;

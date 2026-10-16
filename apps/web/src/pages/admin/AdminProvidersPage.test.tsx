@@ -115,3 +115,15 @@ it('shows and updates the format of an existing provider', async () => {
     apiFormat: 'openai_chat_completions', baseUrl: 'https://api.openai.com/v1',
   }) }))
 })
+
+it('creates an explicitly configured native Mistral provider with its default endpoint', async () => {
+  mockProviders()
+  render(<AdminProvidersPage />)
+  fireEvent.click(await screen.findByRole('button', { name: 'Add provider' }))
+  await chooseFormat('Mistral Chat Completions (/chat/completions)')
+  expect(baseUrlInput().value).toBe('https://api.mistral.ai/v1')
+  fireEvent.change(screen.getByLabelText('Provider name'), { target: { value: 'Mistral' } })
+  fireEvent.change(screen.getByLabelText('Provider API key'), { target: { value: 'fixture-key' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+  await waitFor(() => expect(mocks.api).toHaveBeenCalledWith('/api/admin/providers', { method: 'POST', body: expect.objectContaining({ apiFormat: 'mistral_chat_completions', baseUrl: 'https://api.mistral.ai/v1' }) }))
+})

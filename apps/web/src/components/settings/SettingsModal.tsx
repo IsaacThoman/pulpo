@@ -3,6 +3,7 @@ import { SpeechSettings } from '@/features/speech/SpeechSettings'
 import { refreshInstanceFeatures } from '@/lib/instance-features'
 import { DeleteAccountSettings } from './DeleteAccountSettings'
 import { DeviceSettings } from './DeviceSettings'
+import { SignedInAccountsSettings } from '@/components/layout/AccountSwitcher'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { useTranslation } from '@/i18n/useAppTranslation'
 import { useNavigate } from 'react-router-dom'
@@ -51,6 +52,7 @@ import {
   useSettings,
   type AutomaticChatExpiration,
   type ChatSortMode,
+  type FileDoubleClickAction,
   type Theme,
   type TrashRetention,
 } from '@/stores/settings'
@@ -344,7 +346,7 @@ export function SettingsModal({
   const [section, setSection] = useState<SettingsSectionId>(initialSection)
   const s = useSettings()
   const user = useAuth((a) => a.user)
-  const logout = useAuth((a) => a.logout)
+  const signOutActiveAccount = useAuth((a) => a.signOutActiveAccount)
   const billingEnabled = useAuth((a) => a.billingEnabled)
   const codexEnabled = useAuth((a) => a.codexEnabled)
   const replaceUser = useAuth((a) => a.replaceUser)
@@ -902,8 +904,9 @@ export function SettingsModal({
                   <TwoFactorSettings />
                   <DeleteAccountSettings />
                   <Separator className="my-3" />
+                  <SignedInAccountsSettings onClose={onClose} />
                   <Row label={ui("Sign out")} hint="End this session on this device.">
-                    <Button variant="outline" size="sm" onClick={() => { onClose(); logout(); navigate('/login') }}>{ui("Sign out")}</Button>
+                    <Button variant="outline" size="sm" onClick={() => { onClose(); void signOutActiveAccount().then((switched) => { if (!switched) navigate('/login') }) }}>{ui("Sign out")}</Button>
                   </Row>
                 </div>
               )}
@@ -1058,6 +1061,20 @@ export function SettingsModal({
                       <SelectContent>
                         <SelectItem value="default">{t('sidebar.chatSort.default')}</SelectItem>
                         <SelectItem value="recent">{t('sidebar.chatSort.recent')}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </Row>
+                  <Row label={ui("Double-click a file")} hint={ui("What double-clicking a file on the Files page does. Hold Cmd or Ctrl to do the other.")}>
+                    <Select
+                      value={s.fileDoubleClickAction}
+                      onValueChange={(v) => s.set('fileDoubleClickAction', v as FileDoubleClickAction)}
+                    >
+                      <SelectTrigger className="w-40" aria-label={ui("Double-click a file")}>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="open">{ui("Open")}</SelectItem>
+                        <SelectItem value="openBeside">{ui("Open to the right")}</SelectItem>
                       </SelectContent>
                     </Select>
                   </Row>

@@ -216,7 +216,9 @@ describe('ci-preview bootstrap preset', () => {
       maxOutputTokens: 16_384,
       agentEnabled: true,
       compactionThresholdTokens: 96_000,
+      compactionRetainedUserTokens: 20_000,
     })
+    expect(CI_PREVIEW_MODEL).not.toHaveProperty('compactionRetainedTurns')
     expect(ciPreviewAgentSettings(imageDigest)).toMatchObject({
       enabled: true,
       imageDigest,

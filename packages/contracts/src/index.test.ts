@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   applyResponseEventToSnapshot,
+  createChatSchema,
+  truncateChatTitle,
   agentCostLimitMicros,
   findCostLimitItem,
   findCostLimitItems,
@@ -306,15 +308,19 @@ describe('shared contracts', () => {
     const policy = createModelSchema.pick({
       compactionEnabled: true,
       compactionThresholdTokens: true,
-      compactionRetainedTurns: true,
+      compactionRetainedUserTokens: true,
     })
     expect(policy.parse({})).toEqual({
       compactionEnabled: true,
       compactionThresholdTokens: 100_000,
-      compactionRetainedTurns: 4,
+      compactionRetainedUserTokens: 20_000,
     })
+    expect(policy.parse({ compactionRetainedUserTokens: 0 }).compactionRetainedUserTokens).toBe(0)
+    expect(policy.parse({ compactionRetainedUserTokens: 100_000 }).compactionRetainedUserTokens).toBe(100_000)
     expect(policy.safeParse({ compactionThresholdTokens: 1_999 }).success).toBe(false)
-    expect(policy.safeParse({ compactionRetainedTurns: 33 }).success).toBe(false)
+    expect(policy.safeParse({ compactionRetainedUserTokens: 100_001 }).success).toBe(false)
+    expect(policy.safeParse({ compactionRetainedUserTokens: -1 }).success).toBe(false)
+    expect(policy.safeParse({ compactionRetainedUserTokens: 1.5 }).success).toBe(false)
   })
 
   it('validates additive custom catalog icon references', () => {
@@ -400,6 +406,7 @@ describe('shared contracts', () => {
     })
     expect(modelPreferencesSchema.parse({})).toEqual({ favoriteModelIds: [], providerOrder: [] })
     expect(modelPreferencesPatchSchema.safeParse({ favoriteModelIds: [42] }).success).toBe(false)
+    expect(modelPreferencesPatchSchema.parse({ favoriteModelIds: null })).toEqual({ favoriteModelIds: null })
     expect(modelPreferencesPatchSchema.safeParse({ providerOrder: Array.from({ length: 501 }, (_, index) => `lab-${index}`) }).success).toBe(false)
   })
 
@@ -505,7 +512,7 @@ describe('shared contracts', () => {
     })
     expect(document.account).toMatchObject({
       theme: 'system', trashRetention: '30d', automaticChatExpiration: '24h', newChatAutoExpire: false,
-      nickname: '', animationSpeed: 1, showPromptSuggestions: true, showResponseCost: false, favoriteModelIds: [], agentModes: {},
+      nickname: '', animationSpeed: 1, showPromptSuggestions: true, showResponseCost: false, favoriteModelIds: null, agentModes: {},
       agentCostLimitEnabled: true, agentCostLimitMicros: 1_000_000,
       instructionPresetSelections: {},
       sidebarPins: { searchChats: true, files: true, usage: false, billing: false, friends: false, apiKeys: false },
@@ -1006,4 +1013,15 @@ describe('response snapshot accumulation', () => {
     expect(() => backupSettingsUpdateSchema.parse({ ...input, recipient: 'AGE-SECRET-KEY-1PRIVATE' })).toThrow()
   })
 
+  it('truncates chat titles to the API limit without splitting surrogate pairs', () => {
+    expect(truncateChatTitle('  Short title  ')).toBe('Short title')
+    expect(truncateChatTitle('a'.repeat(250))).toHaveLength(200)
+    expect(truncateChatTitle(`${'a'.repeat(198)}😀`)).toBe(`${'a'.repeat(198)}😀`)
+    expect(truncateChatTitle(`${'a'.repeat(199)}😀`)).toBe('a'.repeat(199))
+    expect(truncateChatTitle(`${'a'.repeat(199)} b`)).toBe('a'.repeat(199))
+    expect(truncateChatTitle('   ')).toBe('')
+    for (const title of ['界'.repeat(201), `${'a'.repeat(199)}😀`, `${'a'.repeat(199)} b`]) {
+      expect(createChatSchema.safeParse({ modelId: 'model-1', title: truncateChatTitle(title) }).success).toBe(true)
+    }
+  })
 })
