@@ -1,6 +1,8 @@
 /* Document typography for the collaborative editor. Mirrors the Markdown the document exports. */
 .pulpo-doc-editor {
   min-height: 60dvh;
+  /* Room for the card of a suggestion on the last line, within the minimum height. */
+  padding-bottom: 4.5rem;
   outline: none;
   color: var(--foreground);
   font-size: 1rem;
