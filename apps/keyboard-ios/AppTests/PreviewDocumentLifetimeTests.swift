@@ -107,9 +107,9 @@ final class PreviewDocumentLifetimeTests: XCTestCase {
     coordinator.textViewDidChangeSelection(old)
     // Invoke the production dismantle entry point deterministically. Retaining
     // UIKit views can defer SwiftUI's automatic dismantling in this test host.
-    PreviewTextView.dismantleUIView(old, coordinator: coordinator)
     window.rootViewController = UIViewController()
     settle()
+    PreviewTextView.dismantleUIView(old, coordinator: coordinator)
     XCTAssertNil(coordinator.host)
     XCTAssertNil(coordinator.controller)
     guard host == nil else {

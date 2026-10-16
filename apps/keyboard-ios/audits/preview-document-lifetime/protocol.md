@@ -56,3 +56,13 @@ tests deterministic production cleanup, not automatic SwiftUI teardown timing.
 Both lifecycle fixtures now stop immediately if the weak host remains alive,
 so their milestone cannot falsely claim deallocation. All acceptance
 expectations remain identical. Freeze v2 before rerunning baseline/source edit.
+
+## v3 fixture ordering correction, still before production changes
+
+v2 red run exit 65: live passed, both lifecycle methods SIGABRT at the first
+before-input read after old weak-host nil. The dismantle method additionally
+had two coordinator nil assertions fail: dismantling while still mounted lets
+SwiftUI reinstall a *new* host/controller during pending updates. v3 removes
+the hosting owner and settles first, then invokes the production dismantle
+entry point and immediately checks ownership. This prevents that fixture-only
+reattachment without modifying production behavior or changing the acceptance.

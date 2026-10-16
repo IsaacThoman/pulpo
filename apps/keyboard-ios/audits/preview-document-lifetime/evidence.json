@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "scope": "R21 TextViewDocument lifetime only",
+  "baselineProductionCommit": "f17109e7",
+  "initialFixtureCommit": "b50afa3d",
+  "correctedFixtureCommit": "a7e37e6b",
+  "device": "7E1D7979-7307-4C53-8466-BB41154B383C",
+  "initialRun": {
+    "commandExit": 65,
+    "elapsedSeconds": 18.42,
+    "selectedClass": "PulpoKeyboardAppTests/PreviewDocumentLifetimeTests",
+    "passed": 1,
+    "failed": 2,
+    "skipped": 0,
+    "runtimeWarnings": [],
+    "fixtureDefect": "Automatic teardown did not release coordinator host/controller in dismantle method; 12 assertions failed. Not post-deallocation evidence.",
+    "crashMethod": "testRetainedInputEngineDocumentIsInertAfterSwitchToSystemKeyboard",
+    "weakHostWasNil": true,
+    "signal": "SIGABRT",
+    "termination": "Abort trap: 6",
+    "firstCrashingRead": "documentContextBeforeInput",
+    "restartedRunnerAdditionalTests": 0,
+    "allMethodChecksCompleted": false,
+    "stack": [
+      {
+        "symbol": "swift::fatalErrorv(unsigned int, char const*, char*)",
+        "sourceFile": null,
+        "sourceLine": null
+      },
+      {
+        "symbol": "swift::fatalError(unsigned int, char const*, ...)",
+        "sourceFile": null,
+        "sourceLine": null
+      },
+      {
+        "symbol": "swift::swift_abortRetainUnowned(void const*)",
+        "sourceFile": null,
+        "sourceLine": null
+      },
+      {
+        "symbol": "swift_unownedRetainStrong",
+        "sourceFile": null,
+        "sourceLine": null
+      },
+      {
+        "symbol": "TextViewDocument.textView.getter",
+        "sourceFile": "KeyboardPreview.swift",
+        "sourceLine": 49
+      },
+      {
+        "symbol": "TextViewDocument.documentContextBeforeInput.getter",
+        "sourceFile": "KeyboardPreview.swift",
+        "sourceLine": 52
+      },
+      {
+        "symbol": "protocol witness for TextDocument.documentContextBeforeInput.getter in conformance TextViewDocument",
+        "sourceFile": "/<compiler-generated>",
+        "sourceLine": null
+      }
+    ]
+  },
+  "limits": [
+    "No attribution of historical R17 crashes without their stacks.",
+    "R17 six broader UX heldout cases remain unexecuted."
+  ]
+}
