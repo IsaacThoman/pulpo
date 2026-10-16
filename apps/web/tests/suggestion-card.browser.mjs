@@ -129,6 +129,17 @@ try {
   await card.waitFor({ state: 'detached' })
   assert.equal(await page.locator('[data-suggestion-id="swap"]').count(), 0, 'the shortcut accepts the suggestion')
 
+  // On a touch screen, tapping another suggestion moves the card at once.
+  const touch = await browser.newPage({ viewport: { width: 1000, height: 600 }, hasTouch: true })
+  touch.on('pageerror', (error) => errors.push(error.message))
+  await touch.goto(`${server.resolvedUrls.local[0]}tests/suggestion-card/index.html`)
+  const touchCard = touch.getByRole('dialog', { name: 'Suggestion' })
+  await touch.locator('[data-suggestion-id="swap"].pulpo-suggestion-insert').first().tap()
+  await touchCard.getByText('Replace “stinky” with “awesome”', { exact: true }).waitFor()
+  await touch.locator('[data-suggestion-id="inner"]').first().tap()
+  await touchCard.getByText('Add “brave”', { exact: true }).waitFor({ timeout: 150 })
+  await touch.close()
+
   assert.deepEqual(errors, [])
   console.log('suggestion card stays reachable while hovered')
 } finally {

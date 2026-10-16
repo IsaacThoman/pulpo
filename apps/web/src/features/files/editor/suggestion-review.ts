@@ -81,7 +81,11 @@ function pointerPos(editor: Editor, event: MouseEvent): number | null {
   }
 }
 
-type Hover = { id: string; at: number | null }
+/**
+ * The hunk under the pointer, the position the pointer reached it at, and the hunk the cursor was
+ * in when it got there.
+ */
+type Hover = { id: string; at: number | null; cursorId: string | null }
 
 /**
  * The document's suggestions and the one being looked at: the hunk under the pointer, else the
@@ -139,13 +143,15 @@ export function useSuggestionReview(editor: Editor, onResolved?: () => void) {
     const dom = editor.view.dom
     const over = (event: MouseEvent) => {
       const id = (event.target as Element | null)?.closest?.('[data-suggestion-id]')?.getAttribute('data-suggestion-id') ?? null
-      if (id === shownId.current) {
+      if (id && id === shownId.current) {
         keepHover()
         return
       }
-      const next = id ? { id, at: pointerPos(editor, event) } : null
+      const next = id ? { id, at: pointerPos(editor, event), cursorId: cursorHunkId(editor.state) } : null
       if (next && !shownId.current) {
         keepHover()
+        // Before React shows the card, so the pointer moving straight on is handled as leaving it.
+        shownId.current = next.id
         setHover(next)
       } else {
         // On the way to the card the pointer may cross other suggestions, or the block suggestion
@@ -165,13 +171,17 @@ export function useSuggestionReview(editor: Editor, onResolved?: () => void) {
       dom.removeEventListener('mouseleave', leave)
       window.clearTimeout(hoverTimer.current)
     }
-  }, [editor, keepHover, hoverSoon, releaseHover])
+  }, [editor, cursorHunkId, keepHover, hoverSoon, releaseHover])
 
   useEffect(() => {
     if (dismissedId && dismissedId !== cursorId) setDismissedId(null)
   }, [cursorId, dismissedId])
 
-  const hovered = hover && hunks.find((hunk) => hunk.id === hover.id)
+  // The pointer's suggestion, until the cursor moves into another one, as tapping it on a touch
+  // screen does; that is the newer of the two.
+  const hovered = hover && (cursorId === null || cursorId === hover.cursorId || cursorId === hover.id)
+    ? hunks.find((hunk) => hunk.id === hover.id)
+    : undefined
   const atCursor = cursorId === dismissedId ? undefined : hunks.find((hunk) => hunk.id === cursorId)
   const active = hovered || atCursor || null
   // The card goes under the line looked at in a long hunk: the one pointed at, or the cursor's.

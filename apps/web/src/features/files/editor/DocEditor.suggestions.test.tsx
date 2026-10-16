@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, waitFor, within } from '@testing-library/react'
 import {
   applyMarkdownToYDoc,
   applyNodeToYDoc,
   docSchema,
   listSuggestions,
   mergeMarkdown,
+  resolveSuggestions,
   SUGGESTION_DELETE_MARK,
   ydocToMarkdown,
   ydocToNode,
@@ -215,6 +216,51 @@ describe('DocEditor suggestions', () => {
     accept.focus()
     fireEvent.click(accept)
     expect(document.activeElement).toBe(element())
+  })
+
+  it('hides a card the pointer passed straight over before it showed', async () => {
+    const server = suggestingServer()
+    const { view, element, editor } = mount(server)
+    await waitFor(() => expect(element()?.querySelector('.pulpo-suggestion-insert')).toBeTruthy())
+    const first = listSuggestions(editor().state.doc)[0]!
+    // Both moves arrive before React renders the card.
+    act(() => {
+      element()!.querySelector(`[data-suggestion-id="${first.id}"]`)!.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+      element()!.querySelector('h1')!.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+    })
+    await pastGrace()
+    expect(view.queryByRole('dialog', { name: 'Suggestion' })).toBeNull()
+  })
+
+  it('does not bring back the card of a suggestion restored after the pointer moved off', async () => {
+    const server = suggestingServer()
+    const { view, element, editor } = mount(server)
+    await waitFor(() => expect(element()?.querySelector('.pulpo-suggestion-insert')).toBeTruthy())
+    const first = listSuggestions(editor().state.doc)[0]!
+    fireEvent.mouseOver(element()!.querySelector(`[data-suggestion-id="${first.id}"]`)!)
+    await view.findByRole('dialog', { name: 'Suggestion' })
+    // Resolved without the card, as a collaborator or undo does.
+    act(() => editor().view.dispatch(resolveSuggestions(editor().state.tr, (ref) => ref.id === first.id, 'accept')))
+    expect(view.queryByRole('dialog', { name: 'Suggestion' })).toBeNull()
+    fireEvent.mouseOver(element()!.querySelector('h1')!)
+    await pastGrace()
+    act(() => editor().commands.undo())
+    expect(listSuggestions(editor().state.doc)[0]!.id).toBe(first.id)
+    await pastGrace()
+    expect(view.queryByRole('dialog', { name: 'Suggestion' })).toBeNull()
+  })
+
+  it('moves the card at once to a suggestion the cursor is put in, as a tap does', async () => {
+    const server = suggestingServer()
+    const { view, element, editor } = mount(server)
+    await waitFor(() => expect(element()?.querySelector('.pulpo-suggestion-insert')).toBeTruthy())
+    const [first, second] = listSuggestions(editor().state.doc)
+    fireEvent.mouseOver(element()!.querySelector(`[data-suggestion-id="${first!.id}"]`)!)
+    act(() => editor().commands.setTextSelection(first!.from + 1))
+    await view.findByRole('dialog', { name: 'Suggestion' })
+    fireEvent.mouseOver(element()!.querySelector(`[data-suggestion-id="${second!.id}"]`)!)
+    act(() => editor().commands.setTextSelection(second!.from + 1))
+    await waitFor(() => expect(view.getByRole('dialog', { name: 'Suggestion' }).textContent).toContain(describeHunk(second!)), { timeout: 100 })
   })
 
   it('steps through suggestions from the review bar', async () => {
