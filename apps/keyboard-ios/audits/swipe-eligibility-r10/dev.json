@@ -1,0 +1,322 @@
+[
+  {
+    "id": "r10d001",
+    "kind": "swipe",
+    "language": "spanish",
+    "target": "comida",
+    "context": "Quiero más ",
+    "expectedDocument": "Quiero más comida "
+  },
+  {
+    "id": "r10d002",
+    "kind": "swipe",
+    "language": "spanish",
+    "target": "amigos",
+    "context": "Salgo con mis ",
+    "expectedDocument": "Salgo con mis amigos "
+  },
+  {
+    "id": "r10d003",
+    "kind": "swipe",
+    "language": "spanish",
+    "target": "familia",
+    "context": "Visito a mi ",
+    "expectedDocument": "Visito a mi familia "
+  },
+  {
+    "id": "r10d004",
+    "kind": "swipe",
+    "language": "spanish",
+    "target": "escuela",
+    "context": "Voy a la ",
+    "expectedDocument": "Voy a la escuela "
+  },
+  {
+    "id": "r10d005",
+    "kind": "swipe",
+    "language": "spanish",
+    "target": "tiempo",
+    "context": "No tengo mucho ",
+    "expectedDocument": "No tengo mucho tiempo "
+  },
+  {
+    "id": "r10d006",
+    "kind": "swipe",
+    "language": "spanish",
+    "target": "ciudad",
+    "context": "Vivo en esta ",
+    "expectedDocument": "Vivo en esta ciudad "
+  },
+  {
+    "id": "r10d007",
+    "kind": "swipe",
+    "language": "spanish",
+    "target": "semana",
+    "context": "Nos vemos esta ",
+    "expectedDocument": "Nos vemos esta semana "
+  },
+  {
+    "id": "r10d008",
+    "kind": "swipe",
+    "language": "spanish",
+    "target": "bonito",
+    "context": "Es muy ",
+    "expectedDocument": "Es muy bonito "
+  },
+  {
+    "id": "r10d009",
+    "kind": "swipe",
+    "language": "spanish",
+    "target": "camino",
+    "context": "Sigue por este ",
+    "expectedDocument": "Sigue por este camino "
+  },
+  {
+    "id": "r10d010",
+    "kind": "swipe",
+    "language": "spanish",
+    "target": "agua",
+    "context": "Quiero un vaso de ",
+    "expectedDocument": "Quiero un vaso de agua "
+  },
+  {
+    "id": "r10d011",
+    "kind": "swipe",
+    "language": "spanish",
+    "target": "pollo",
+    "context": "Hoy comemos ",
+    "expectedDocument": "Hoy comemos pollo "
+  },
+  {
+    "id": "r10d012",
+    "kind": "swipe",
+    "language": "spanish",
+    "target": "llave",
+    "context": "No encuentro la ",
+    "expectedDocument": "No encuentro la llave "
+  },
+  {
+    "id": "r10d013",
+    "kind": "swipe",
+    "language": "spanish",
+    "target": "carro",
+    "context": "Voy en el ",
+    "expectedDocument": "Voy en el carro "
+  },
+  {
+    "id": "r10d014",
+    "kind": "swipe",
+    "language": "spanish",
+    "target": "tierra",
+    "context": "La planta necesita ",
+    "expectedDocument": "La planta necesita tierra "
+  },
+  {
+    "id": "r10d015",
+    "kind": "swipe",
+    "language": "spanish",
+    "target": "teléfono",
+    "context": "Contesta el ",
+    "expectedDocument": "Contesta el teléfono "
+  },
+  {
+    "id": "r10d016",
+    "kind": "swipe",
+    "language": "spanish",
+    "target": "música",
+    "context": "Escucho ",
+    "expectedDocument": "Escucho música "
+  },
+  {
+    "id": "r10d017",
+    "kind": "swipe",
+    "language": "bilingual",
+    "target": "dinero",
+    "context": "I need más ",
+    "expectedDocument": "I need más dinero "
+  },
+  {
+    "id": "r10d018",
+    "kind": "swipe",
+    "language": "bilingual",
+    "target": "tarde",
+    "context": "See you por la ",
+    "expectedDocument": "See you por la tarde "
+  },
+  {
+    "id": "r10d019",
+    "kind": "swipe",
+    "language": "bilingual",
+    "target": "después",
+    "context": "We can talk ",
+    "expectedDocument": "We can talk después "
+  },
+  {
+    "id": "r10d020",
+    "kind": "swipe",
+    "language": "bilingual",
+    "target": "también",
+    "context": "I want one ",
+    "expectedDocument": "I want one también "
+  },
+  {
+    "id": "r10d021",
+    "kind": "swipe",
+    "language": "bilingual",
+    "target": "información",
+    "context": "Please send la ",
+    "expectedDocument": "Please send la información "
+  },
+  {
+    "id": "r10d022",
+    "kind": "swipe",
+    "language": "bilingual",
+    "target": "difícil",
+    "context": "This is muy ",
+    "expectedDocument": "This is muy difícil "
+  },
+  {
+    "id": "r10d023",
+    "kind": "swipe",
+    "language": "bilingual",
+    "target": "reunión",
+    "context": "I am late a la ",
+    "expectedDocument": "I am late a la reunión "
+  },
+  {
+    "id": "r10d024",
+    "kind": "swipe",
+    "language": "bilingual",
+    "target": "mensaje",
+    "context": "Send me un ",
+    "expectedDocument": "Send me un mensaje "
+  },
+  {
+    "id": "r10d025",
+    "kind": "swipe",
+    "language": "english",
+    "target": "meeting",
+    "context": "Join the ",
+    "expectedDocument": "Join the meeting "
+  },
+  {
+    "id": "r10d026",
+    "kind": "swipe",
+    "language": "english",
+    "target": "please",
+    "context": "Help me ",
+    "expectedDocument": "Help me please "
+  },
+  {
+    "id": "r10d027",
+    "kind": "swipe",
+    "language": "english",
+    "target": "thanks",
+    "context": "Many ",
+    "expectedDocument": "Many thanks "
+  },
+  {
+    "id": "r10d028",
+    "kind": "swipe",
+    "language": "english",
+    "target": "message",
+    "context": "Send a ",
+    "expectedDocument": "Send a message "
+  },
+  {
+    "id": "r10d029",
+    "kind": "swipe",
+    "language": "english",
+    "target": "dinner",
+    "context": "Time for ",
+    "expectedDocument": "Time for dinner "
+  },
+  {
+    "id": "r10d030",
+    "kind": "swipe",
+    "language": "english",
+    "target": "tomorrow",
+    "context": "See you ",
+    "expectedDocument": "See you tomorrow "
+  },
+  {
+    "id": "r10d031",
+    "kind": "swipe",
+    "language": "english",
+    "target": "address",
+    "context": "Share your ",
+    "expectedDocument": "Share your address "
+  },
+  {
+    "id": "r10d032",
+    "kind": "swipe",
+    "language": "english",
+    "target": "happy",
+    "context": "I feel ",
+    "expectedDocument": "I feel happy "
+  },
+  {
+    "id": "r10d033",
+    "kind": "literal",
+    "language": "spanish",
+    "context": "Abre ",
+    "literal": "https://ejemplo.es/ruta?a=1 ",
+    "expectedDocument": "Abre https://ejemplo.es/ruta?a=1 "
+  },
+  {
+    "id": "r10d034",
+    "kind": "literal",
+    "language": "bilingual",
+    "context": "Email ",
+    "literal": "ana@example.com ",
+    "expectedDocument": "Email ana@example.com "
+  },
+  {
+    "id": "r10d035",
+    "kind": "literal",
+    "language": "spanish",
+    "context": "Clave ",
+    "literal": "Qz7_x9! ",
+    "expectedDocument": "Clave Qz7_x9! "
+  },
+  {
+    "id": "r10d036",
+    "kind": "literal",
+    "language": "bilingual",
+    "context": "Tag ",
+    "literal": "@mi_equipo ",
+    "expectedDocument": "Tag @mi_equipo "
+  },
+  {
+    "id": "r10d037",
+    "kind": "literal",
+    "language": "english",
+    "context": "Path ",
+    "literal": "/tmp/pulpo.json ",
+    "expectedDocument": "Path /tmp/pulpo.json "
+  },
+  {
+    "id": "r10d038",
+    "kind": "literal",
+    "language": "spanish",
+    "context": "Versión ",
+    "literal": "v2.10.3 ",
+    "expectedDocument": "Versión v2.10.3 "
+  },
+  {
+    "id": "r10d039",
+    "kind": "literal",
+    "language": "bilingual",
+    "context": "Code ",
+    "literal": "ABC-123 ",
+    "expectedDocument": "Code ABC-123 "
+  },
+  {
+    "id": "r10d040",
+    "kind": "literal",
+    "language": "english",
+    "context": "Amount ",
+    "literal": "12.50 ",
+    "expectedDocument": "Amount 12.50 "
+  }
+]
