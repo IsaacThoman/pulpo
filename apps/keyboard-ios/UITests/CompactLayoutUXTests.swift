@@ -87,6 +87,12 @@ final class CompactLayoutUXTests: XCTestCase {
     h.controller.layoutChanged(dark: false)
     vc.view.frame.size.height = h.controller.preferredHeight
     vc.view.layoutIfNeeded()
+    // A real input host follows onHeightChange after width-driven layout.
+    // This frame-based host must likewise apply the newly preferred height.
+    h.controller.layoutChanged(dark: false)
+    vc.view.frame.size.height = h.controller.preferredHeight
+    vc.view.setNeedsLayout()
+    vc.view.layoutIfNeeded()
     h.controller.rootView.bar.onLanguage?(language)
     h.controller.keysView(root.keys, chooseOneHanded: input.dock == "left" ? .left : input.dock == "right" ? .right : .off)
     h.pump()
@@ -216,6 +222,12 @@ final class CompactLayoutUXTests: XCTestCase {
     } else { report.gate(false, "disabled-slot fixture missing") }
     root.bar.setSuggestions(suggestions)
     layout()
+    root.bar.microphoneVisible = false
+    layout()
+    checkButtons("mic-hidden")
+    report.gate(root.bar.subviews.first { $0.accessibilityIdentifier == "dictate" }?.isHidden == true, "hidden microphone retained visible geometry")
+    root.bar.microphoneVisible = true
+    layout()
     for id in ["key-q", "key-w", "key-e"] { try tap(id) }
     report.gate(h.proxy.host.string.lowercased() == "qwe", "center taps did not type qwe")
     try tap("key-delete")
@@ -268,6 +280,7 @@ final class CompactLayoutUXTests: XCTestCase {
     h.settle()
     h.pump()
     layout()
+    report.gate(h.proxy.host.string != beforeDeletion, "word deletion did not change text before Undo")
     checkButtons("undo")
     let undo = root.bar.subviews.compactMap { $0 as? UIButton }.first { $0.accessibilityIdentifier == "undo-delete" && !$0.isHidden }
     report.gate(undo != nil, "Undo did not appear after word deletion")
@@ -289,7 +302,12 @@ final class CompactLayoutUXTests: XCTestCase {
       vc.view.frame.size.height = h.controller.preferredHeight
       vc.view.setNeedsLayout()
       vc.view.layoutIfNeeded()
+      h.controller.layoutChanged(dark: false)
+      vc.view.frame.size.height = h.controller.preferredHeight
+      vc.view.setNeedsLayout()
+      vc.view.layoutIfNeeded()
       root.dictation.layoutIfNeeded()
+      report.gate(root.bounds.height <= envelope.bounds.height, "rotated production keyboard exceeds host height envelope")
       report.gate(root.bounds.width == 812 && root.style.landscape, "portrait-to-landscape did not reflow production controller")
       report.gate(root.dictation.frame == root.bounds, "presentation did not follow rotation bounds")
       checkButtons("rotated-presentation")
@@ -303,9 +321,15 @@ final class CompactLayoutUXTests: XCTestCase {
       vc.view.frame.size.height = h.controller.preferredHeight
       vc.view.setNeedsLayout()
       vc.view.layoutIfNeeded()
+      h.controller.layoutChanged(dark: false)
+      vc.view.frame.size.height = h.controller.preferredHeight
+      vc.view.setNeedsLayout()
+      vc.view.layoutIfNeeded()
       report.gate(root.bounds.width == input.width && !root.style.landscape, "landscape-to-portrait did not restore root")
     }
     if input.id.contains("live-ax") {
+      root.mode = .keys
+      layout()
       vc.traitOverrides.preferredContentSizeCategory = .large
       vc.view.setNeedsLayout()
       vc.view.layoutIfNeeded()
