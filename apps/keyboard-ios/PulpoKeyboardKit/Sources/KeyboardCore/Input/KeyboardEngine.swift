@@ -1156,6 +1156,9 @@ public final class KeyboardEngine {
   }
 
   private func finishEdit(deriveComposing derive: Bool = false) {
+    // Caps lock requires consecutive Shift taps. Typing or editing between
+    // taps ends the double-tap sequence, even for a fast typist or Shift chord.
+    lastShiftTap = -1
     invalidateSuggestionContext()
     if derive { deriveComposing() }
     updateAutomaticShift()
