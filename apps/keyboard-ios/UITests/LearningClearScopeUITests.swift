@@ -16,7 +16,7 @@ final class LearningClearScopeUITests: XCTestCase {
     let sheet = app.sheets.firstMatch
     XCTAssertTrue(sheet.waitForExistence(timeout: 3))
     let copy = "Clears learned words and touch adjustments shared with this app. Learning stored only inside a keyboard without shared access can’t be cleared here. Your language and keyboard settings stay as they are."
-    let message = sheet.staticTexts[copy]
+    let message = sheet.staticTexts.matching(NSPredicate(format: "label == %@", copy)).firstMatch
     XCTAssertTrue(message.exists)
     XCTAssertTrue(message.isHittable)
     let confirm = sheet.buttons["Clear Learned Words"]
