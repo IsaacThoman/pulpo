@@ -1,0 +1,801 @@
+[
+  {
+    "id": "us_invoice_cent_repair",
+    "locale": "en_US",
+    "language": "en_US",
+    "keyboard": "decimal",
+    "globe": true,
+    "width": 320,
+    "oneHanded": "off",
+    "privateField": false,
+    "initialText": "",
+    "actions": [
+      {
+        "kind": "tap",
+        "value": "7"
+      },
+      {
+        "kind": "tap",
+        "value": "0"
+      },
+      {
+        "kind": "tap",
+        "value": "4"
+      },
+      {
+        "kind": "tap",
+        "value": "."
+      },
+      {
+        "kind": "tap",
+        "value": "2"
+      },
+      {
+        "kind": "tap",
+        "value": "9"
+      },
+      {
+        "kind": "delete"
+      },
+      {
+        "kind": "tap",
+        "value": "6"
+      },
+      {
+        "kind": "globeTouch"
+      },
+      {
+        "kind": "refresh"
+      },
+      {
+        "kind": "globeAX"
+      }
+    ],
+    "expectedText": "704.26",
+    "expectedAdvance": 1,
+    "expectedLists": 2
+  },
+  {
+    "id": "es_balance_append_then_numeric",
+    "locale": "es_ES",
+    "language": "es",
+    "keyboard": "decimal",
+    "globe": false,
+    "width": 375,
+    "oneHanded": "left",
+    "privateField": false,
+    "initialText": "18",
+    "actions": [
+      {
+        "kind": "tap",
+        "value": ","
+      },
+      {
+        "kind": "tap",
+        "value": "0"
+      },
+      {
+        "kind": "tap",
+        "value": "7"
+      },
+      {
+        "kind": "delete"
+      },
+      {
+        "kind": "tap",
+        "value": "2"
+      },
+      {
+        "kind": "field",
+        "value": "number"
+      },
+      {
+        "kind": "tap",
+        "value": "4"
+      },
+      {
+        "kind": "delete"
+      },
+      {
+        "kind": "refresh"
+      }
+    ],
+    "expectedText": "18,02",
+    "expectedAdvance": 0,
+    "expectedLists": 0
+  },
+  {
+    "id": "mx_price_ascii_suffix_reversal",
+    "locale": "es_MX",
+    "language": "en_es",
+    "keyboard": "decimal",
+    "globe": true,
+    "width": 393,
+    "oneHanded": "right",
+    "privateField": false,
+    "initialText": "MXN ",
+    "actions": [
+      {
+        "kind": "tap",
+        "value": "5"
+      },
+      {
+        "kind": "tap",
+        "value": "6"
+      },
+      {
+        "kind": "tap",
+        "value": "."
+      },
+      {
+        "kind": "tap",
+        "value": "8"
+      },
+      {
+        "kind": "tap",
+        "value": "0"
+      },
+      {
+        "kind": "globeAX"
+      },
+      {
+        "kind": "field",
+        "value": "asciiNumber"
+      },
+      {
+        "kind": "tap",
+        "value": "1"
+      },
+      {
+        "kind": "delete"
+      },
+      {
+        "kind": "globeTouch"
+      }
+    ],
+    "expectedText": "MXN 56.80",
+    "expectedAdvance": 1,
+    "expectedLists": 2
+  },
+  {
+    "id": "eg_meter_decimal_fraction_repair",
+    "locale": "ar_EG",
+    "language": "en_US",
+    "keyboard": "decimal",
+    "globe": true,
+    "width": 430,
+    "oneHanded": "left",
+    "privateField": false,
+    "initialText": "",
+    "actions": [
+      {
+        "kind": "tap",
+        "value": "9"
+      },
+      {
+        "kind": "tap",
+        "value": "٫"
+      },
+      {
+        "kind": "tap",
+        "value": "4"
+      },
+      {
+        "kind": "delete"
+      },
+      {
+        "kind": "tap",
+        "value": "3"
+      },
+      {
+        "kind": "tap",
+        "value": "0"
+      },
+      {
+        "kind": "globeTouch"
+      },
+      {
+        "kind": "refresh"
+      },
+      {
+        "kind": "globeAX"
+      }
+    ],
+    "expectedText": "9٫30",
+    "expectedAdvance": 1,
+    "expectedLists": 2
+  },
+  {
+    "id": "us_inventory_number_ascii_handoff",
+    "locale": "en_US",
+    "language": "es",
+    "keyboard": "number",
+    "globe": false,
+    "width": 430,
+    "oneHanded": "right",
+    "privateField": false,
+    "initialText": "481",
+    "actions": [
+      {
+        "kind": "delete"
+      },
+      {
+        "kind": "tap",
+        "value": "0"
+      },
+      {
+        "kind": "tap",
+        "value": "2"
+      },
+      {
+        "kind": "field",
+        "value": "asciiNumber"
+      },
+      {
+        "kind": "tap",
+        "value": "7"
+      },
+      {
+        "kind": "delete"
+      },
+      {
+        "kind": "tap",
+        "value": "9"
+      }
+    ],
+    "expectedText": "48029",
+    "expectedAdvance": 0,
+    "expectedLists": 0
+  },
+  {
+    "id": "es_landscape_ascii_serial_repair",
+    "locale": "es_ES",
+    "language": "en_es",
+    "keyboard": "asciiNumber",
+    "globe": true,
+    "width": 852,
+    "oneHanded": "off",
+    "privateField": false,
+    "initialText": "",
+    "actions": [
+      {
+        "kind": "tap",
+        "value": "9"
+      },
+      {
+        "kind": "tap",
+        "value": "0"
+      },
+      {
+        "kind": "tap",
+        "value": "7"
+      },
+      {
+        "kind": "tap",
+        "value": "1"
+      },
+      {
+        "kind": "tap",
+        "value": "6"
+      },
+      {
+        "kind": "tap",
+        "value": "2"
+      },
+      {
+        "kind": "tap",
+        "value": "8"
+      },
+      {
+        "kind": "tap",
+        "value": "3"
+      },
+      {
+        "kind": "tap",
+        "value": "5"
+      },
+      {
+        "kind": "tap",
+        "value": "4"
+      },
+      {
+        "kind": "delete"
+      },
+      {
+        "kind": "tap",
+        "value": "0"
+      },
+      {
+        "kind": "globeTouch"
+      },
+      {
+        "kind": "globeAX"
+      }
+    ],
+    "expectedText": "9071628350",
+    "expectedAdvance": 1,
+    "expectedLists": 2
+  },
+  {
+    "id": "mx_secure_fraction_number_roundtrip",
+    "locale": "es_MX",
+    "language": "es",
+    "keyboard": "decimal",
+    "globe": false,
+    "width": 375,
+    "oneHanded": "left",
+    "privateField": true,
+    "initialText": "",
+    "actions": [
+      {
+        "kind": "tap",
+        "value": "0"
+      },
+      {
+        "kind": "tap",
+        "value": "."
+      },
+      {
+        "kind": "tap",
+        "value": "7"
+      },
+      {
+        "kind": "tap",
+        "value": "5"
+      },
+      {
+        "kind": "delete"
+      },
+      {
+        "kind": "tap",
+        "value": "0"
+      },
+      {
+        "kind": "field",
+        "value": "number"
+      },
+      {
+        "kind": "tap",
+        "value": "6"
+      },
+      {
+        "kind": "delete"
+      },
+      {
+        "kind": "field",
+        "value": "decimal"
+      },
+      {
+        "kind": "refresh"
+      }
+    ],
+    "expectedText": "0.70",
+    "expectedAdvance": 0,
+    "expectedLists": 0
+  },
+  {
+    "id": "eg_secure_numeric_token",
+    "locale": "ar_EG",
+    "language": "en_es",
+    "keyboard": "number",
+    "globe": true,
+    "width": 393,
+    "oneHanded": "right",
+    "privateField": true,
+    "initialText": "",
+    "actions": [
+      {
+        "kind": "tap",
+        "value": "2"
+      },
+      {
+        "kind": "tap",
+        "value": "6"
+      },
+      {
+        "kind": "tap",
+        "value": "0"
+      },
+      {
+        "kind": "tap",
+        "value": "8"
+      },
+      {
+        "kind": "tap",
+        "value": "4"
+      },
+      {
+        "kind": "delete"
+      },
+      {
+        "kind": "tap",
+        "value": "9"
+      },
+      {
+        "kind": "globeTouch"
+      },
+      {
+        "kind": "refresh"
+      },
+      {
+        "kind": "globeAX"
+      }
+    ],
+    "expectedText": "26089",
+    "expectedAdvance": 1,
+    "expectedLists": 2
+  },
+  {
+    "id": "us_literal_bilingual_note",
+    "locale": "en_US",
+    "language": "en_es",
+    "keyboard": "standard",
+    "globe": true,
+    "width": 393,
+    "oneHanded": "left",
+    "privateField": false,
+    "initialText": "",
+    "actions": [
+      {
+        "kind": "tap",
+        "value": "s"
+      },
+      {
+        "kind": "tap",
+        "value": "a"
+      },
+      {
+        "kind": "tap",
+        "value": "v"
+      },
+      {
+        "kind": "tap",
+        "value": "e"
+      },
+      {
+        "kind": "key",
+        "value": "key-space"
+      },
+      {
+        "kind": "key",
+        "value": "key-numbers"
+      },
+      {
+        "kind": "tap",
+        "value": "4"
+      },
+      {
+        "kind": "tap",
+        "value": "2"
+      },
+      {
+        "kind": "tap",
+        "value": "!"
+      },
+      {
+        "kind": "key",
+        "value": "key-space"
+      },
+      {
+        "kind": "tap",
+        "value": "l"
+      },
+      {
+        "kind": "tap",
+        "value": "i"
+      },
+      {
+        "kind": "tap",
+        "value": "s"
+      },
+      {
+        "kind": "tap",
+        "value": "t"
+      },
+      {
+        "kind": "tap",
+        "value": "o"
+      },
+      {
+        "kind": "globeAX"
+      }
+    ],
+    "expectedText": "save 42! listo",
+    "expectedAdvance": 1,
+    "expectedLists": 0
+  },
+  {
+    "id": "es_literal_email_alias",
+    "locale": "es_ES",
+    "language": "en_US",
+    "keyboard": "email",
+    "globe": false,
+    "width": 320,
+    "oneHanded": "off",
+    "privateField": false,
+    "initialText": "",
+    "actions": [
+      {
+        "kind": "tap",
+        "value": "m"
+      },
+      {
+        "kind": "tap",
+        "value": "i"
+      },
+      {
+        "kind": "tap",
+        "value": "r"
+      },
+      {
+        "kind": "tap",
+        "value": "a"
+      },
+      {
+        "kind": "key",
+        "value": "key-numbers"
+      },
+      {
+        "kind": "key",
+        "value": "key-symbols"
+      },
+      {
+        "kind": "tap",
+        "value": "_"
+      },
+      {
+        "kind": "key",
+        "value": "key-numbers"
+      },
+      {
+        "kind": "tap",
+        "value": "2"
+      },
+      {
+        "kind": "tap",
+        "value": "7"
+      },
+      {
+        "kind": "tap",
+        "value": "@"
+      },
+      {
+        "kind": "key",
+        "value": "key-letters"
+      },
+      {
+        "kind": "tap",
+        "value": "s"
+      },
+      {
+        "kind": "tap",
+        "value": "o"
+      },
+      {
+        "kind": "tap",
+        "value": "l"
+      },
+      {
+        "kind": "tap",
+        "value": "."
+      },
+      {
+        "kind": "tap",
+        "value": "e"
+      },
+      {
+        "kind": "tap",
+        "value": "s"
+      }
+    ],
+    "expectedText": "mira_27@sol.es",
+    "expectedAdvance": 0,
+    "expectedLists": 0
+  },
+  {
+    "id": "mx_landscape_literal_query_url",
+    "locale": "es_MX",
+    "language": "en_es",
+    "keyboard": "url",
+    "globe": true,
+    "width": 852,
+    "oneHanded": "off",
+    "privateField": false,
+    "initialText": "",
+    "actions": [
+      {
+        "kind": "tap",
+        "value": "h"
+      },
+      {
+        "kind": "tap",
+        "value": "t"
+      },
+      {
+        "kind": "tap",
+        "value": "t"
+      },
+      {
+        "kind": "tap",
+        "value": "p"
+      },
+      {
+        "kind": "tap",
+        "value": "s"
+      },
+      {
+        "kind": "key",
+        "value": "key-numbers"
+      },
+      {
+        "kind": "tap",
+        "value": ":"
+      },
+      {
+        "kind": "tap",
+        "value": "/"
+      },
+      {
+        "kind": "tap",
+        "value": "/"
+      },
+      {
+        "kind": "key",
+        "value": "key-letters"
+      },
+      {
+        "kind": "tap",
+        "value": "l"
+      },
+      {
+        "kind": "tap",
+        "value": "a"
+      },
+      {
+        "kind": "tap",
+        "value": "g"
+      },
+      {
+        "kind": "tap",
+        "value": "o"
+      },
+      {
+        "kind": "tap",
+        "value": "."
+      },
+      {
+        "kind": "tap",
+        "value": "m"
+      },
+      {
+        "kind": "tap",
+        "value": "x"
+      },
+      {
+        "kind": "tap",
+        "value": "/"
+      },
+      {
+        "kind": "tap",
+        "value": "a"
+      },
+      {
+        "kind": "key",
+        "value": "key-numbers"
+      },
+      {
+        "kind": "tap",
+        "value": "2"
+      },
+      {
+        "kind": "tap",
+        "value": "?"
+      },
+      {
+        "kind": "key",
+        "value": "key-letters"
+      },
+      {
+        "kind": "tap",
+        "value": "x"
+      },
+      {
+        "kind": "key",
+        "value": "key-numbers"
+      },
+      {
+        "kind": "key",
+        "value": "key-symbols"
+      },
+      {
+        "kind": "tap",
+        "value": "="
+      },
+      {
+        "kind": "key",
+        "value": "key-numbers"
+      },
+      {
+        "kind": "tap",
+        "value": "7"
+      },
+      {
+        "kind": "globeTouch"
+      },
+      {
+        "kind": "globeAX"
+      }
+    ],
+    "expectedText": "https://lago.mx/a2?x=7",
+    "expectedAdvance": 1,
+    "expectedLists": 2
+  },
+  {
+    "id": "eg_secure_literal_punctuation_repair",
+    "locale": "ar_EG",
+    "language": "es",
+    "keyboard": "standard",
+    "globe": true,
+    "width": 430,
+    "oneHanded": "right",
+    "privateField": true,
+    "initialText": "",
+    "actions": [
+      {
+        "kind": "tap",
+        "value": "c"
+      },
+      {
+        "kind": "tap",
+        "value": "l"
+      },
+      {
+        "kind": "tap",
+        "value": "a"
+      },
+      {
+        "kind": "tap",
+        "value": "v"
+      },
+      {
+        "kind": "tap",
+        "value": "e"
+      },
+      {
+        "kind": "key",
+        "value": "key-numbers"
+      },
+      {
+        "kind": "tap",
+        "value": "-"
+      },
+      {
+        "kind": "tap",
+        "value": "8"
+      },
+      {
+        "kind": "tap",
+        "value": "?"
+      },
+      {
+        "kind": "refresh"
+      },
+      {
+        "kind": "globeTouch"
+      },
+      {
+        "kind": "globeAX"
+      },
+      {
+        "kind": "delete"
+      },
+      {
+        "kind": "tap",
+        "value": "!"
+      }
+    ],
+    "expectedText": "clave-8!",
+    "expectedAdvance": 1,
+    "expectedLists": 2
+  }
+]

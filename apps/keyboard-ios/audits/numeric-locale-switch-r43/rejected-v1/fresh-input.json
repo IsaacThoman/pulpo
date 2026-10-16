@@ -1,0 +1,882 @@
+[
+  {
+    "id": "us-compact-decimal-revise-switch",
+    "locale": "en_US",
+    "language": "en_US",
+    "keyboard": "decimal",
+    "globe": true,
+    "width": 320,
+    "oneHanded": "off",
+    "privateField": false,
+    "initialText": "",
+    "actions": [
+      {
+        "kind": "tap",
+        "value": "7"
+      },
+      {
+        "kind": "tap",
+        "value": "4"
+      },
+      {
+        "kind": "tap",
+        "value": "."
+      },
+      {
+        "kind": "tap",
+        "value": "0"
+      },
+      {
+        "kind": "tap",
+        "value": "6"
+      },
+      {
+        "kind": "delete"
+      },
+      {
+        "kind": "tap",
+        "value": "8"
+      },
+      {
+        "kind": "globeTouch"
+      },
+      {
+        "kind": "globeAX"
+      }
+    ],
+    "expectedText": "74.08",
+    "expectedAdvance": 1,
+    "expectedLists": 2
+  },
+  {
+    "id": "spain-left-amount-refresh",
+    "locale": "es_ES",
+    "language": "es",
+    "keyboard": "decimal",
+    "globe": false,
+    "width": 375,
+    "oneHanded": "left",
+    "privateField": false,
+    "initialText": "saldo=",
+    "actions": [
+      {
+        "kind": "tap",
+        "value": "2"
+      },
+      {
+        "kind": "tap",
+        "value": "9"
+      },
+      {
+        "kind": "tap",
+        "value": ","
+      },
+      {
+        "kind": "tap",
+        "value": "5"
+      },
+      {
+        "kind": "tap",
+        "value": "0"
+      },
+      {
+        "kind": "delete"
+      },
+      {
+        "kind": "tap",
+        "value": "7"
+      },
+      {
+        "kind": "refresh"
+      }
+    ],
+    "expectedText": "saldo=29,57",
+    "expectedAdvance": 0,
+    "expectedLists": 0
+  },
+  {
+    "id": "mexico-right-secure-amount",
+    "locale": "es_MX",
+    "language": "en_es",
+    "keyboard": "decimal",
+    "globe": true,
+    "width": 393,
+    "oneHanded": "right",
+    "privateField": true,
+    "initialText": "M$",
+    "actions": [
+      {
+        "kind": "tap",
+        "value": "6"
+      },
+      {
+        "kind": "tap",
+        "value": "0"
+      },
+      {
+        "kind": "tap",
+        "value": "."
+      },
+      {
+        "kind": "tap",
+        "value": "2"
+      },
+      {
+        "kind": "globeTouch"
+      },
+      {
+        "kind": "delete"
+      },
+      {
+        "kind": "tap",
+        "value": "4"
+      },
+      {
+        "kind": "globeAX"
+      }
+    ],
+    "expectedText": "M$60.4",
+    "expectedAdvance": 1,
+    "expectedLists": 2
+  },
+  {
+    "id": "egypt-landscape-decimal-repair",
+    "locale": "ar_EG",
+    "language": "en_US",
+    "keyboard": "decimal",
+    "globe": true,
+    "width": 852,
+    "oneHanded": "off",
+    "privateField": false,
+    "initialText": "",
+    "actions": [
+      {
+        "kind": "tap",
+        "value": "8"
+      },
+      {
+        "kind": "tap",
+        "value": "1"
+      },
+      {
+        "kind": "tap",
+        "value": "٫"
+      },
+      {
+        "kind": "tap",
+        "value": "3"
+      },
+      {
+        "kind": "tap",
+        "value": "5"
+      },
+      {
+        "kind": "globeTouch"
+      },
+      {
+        "kind": "refresh"
+      },
+      {
+        "kind": "delete"
+      },
+      {
+        "kind": "tap",
+        "value": "2"
+      }
+    ],
+    "expectedText": "81٫32",
+    "expectedAdvance": 0,
+    "expectedLists": 2
+  },
+  {
+    "id": "us-left-number-leading-zero",
+    "locale": "en_US",
+    "language": "es",
+    "keyboard": "number",
+    "globe": false,
+    "width": 393,
+    "oneHanded": "left",
+    "privateField": false,
+    "initialText": "ID ",
+    "actions": [
+      {
+        "kind": "tap",
+        "value": "0"
+      },
+      {
+        "kind": "tap",
+        "value": "9"
+      },
+      {
+        "kind": "tap",
+        "value": "2"
+      },
+      {
+        "kind": "delete"
+      },
+      {
+        "kind": "tap",
+        "value": "6"
+      },
+      {
+        "kind": "refresh"
+      }
+    ],
+    "expectedText": "ID 096",
+    "expectedAdvance": 0,
+    "expectedLists": 0
+  },
+  {
+    "id": "spain-compact-secure-ascii-switch",
+    "locale": "es_ES",
+    "language": "en_es",
+    "keyboard": "asciiNumber",
+    "globe": true,
+    "width": 320,
+    "oneHanded": "right",
+    "privateField": true,
+    "initialText": "clave:",
+    "actions": [
+      {
+        "kind": "tap",
+        "value": "4"
+      },
+      {
+        "kind": "tap",
+        "value": "0"
+      },
+      {
+        "kind": "tap",
+        "value": "1"
+      },
+      {
+        "kind": "globeAX"
+      },
+      {
+        "kind": "tap",
+        "value": "8"
+      },
+      {
+        "kind": "delete"
+      },
+      {
+        "kind": "globeTouch"
+      }
+    ],
+    "expectedText": "clave:401",
+    "expectedAdvance": 1,
+    "expectedLists": 2
+  },
+  {
+    "id": "mexico-right-number-double-menu",
+    "locale": "es_MX",
+    "language": "en_US",
+    "keyboard": "number",
+    "globe": true,
+    "width": 375,
+    "oneHanded": "right",
+    "privateField": false,
+    "initialText": "folio ",
+    "actions": [
+      {
+        "kind": "tap",
+        "value": "3"
+      },
+      {
+        "kind": "tap",
+        "value": "7"
+      },
+      {
+        "kind": "tap",
+        "value": "0"
+      },
+      {
+        "kind": "tap",
+        "value": "6"
+      },
+      {
+        "kind": "delete"
+      },
+      {
+        "kind": "tap",
+        "value": "5"
+      },
+      {
+        "kind": "globeTouch"
+      },
+      {
+        "kind": "globeTouch"
+      }
+    ],
+    "expectedText": "folio 3705",
+    "expectedAdvance": 0,
+    "expectedLists": 4
+  },
+  {
+    "id": "egypt-ascii-double-delete",
+    "locale": "ar_EG",
+    "language": "es",
+    "keyboard": "asciiNumber",
+    "globe": false,
+    "width": 430,
+    "oneHanded": "off",
+    "privateField": false,
+    "initialText": "رمز ",
+    "actions": [
+      {
+        "kind": "tap",
+        "value": "2"
+      },
+      {
+        "kind": "tap",
+        "value": "0"
+      },
+      {
+        "kind": "tap",
+        "value": "4"
+      },
+      {
+        "kind": "tap",
+        "value": "9"
+      },
+      {
+        "kind": "delete"
+      },
+      {
+        "kind": "delete"
+      },
+      {
+        "kind": "tap",
+        "value": "8"
+      }
+    ],
+    "expectedText": "رمز 208",
+    "expectedAdvance": 0,
+    "expectedLists": 0
+  },
+  {
+    "id": "us-bilingual-fraction-repair",
+    "locale": "en_US",
+    "language": "en_es",
+    "keyboard": "decimal",
+    "globe": false,
+    "width": 430,
+    "oneHanded": "off",
+    "privateField": false,
+    "initialText": "due ",
+    "actions": [
+      {
+        "kind": "tap",
+        "value": "0"
+      },
+      {
+        "kind": "tap",
+        "value": "."
+      },
+      {
+        "kind": "tap",
+        "value": "0"
+      },
+      {
+        "kind": "tap",
+        "value": "4"
+      },
+      {
+        "kind": "delete"
+      },
+      {
+        "kind": "tap",
+        "value": "9"
+      }
+    ],
+    "expectedText": "due 0.09",
+    "expectedAdvance": 0,
+    "expectedLists": 0
+  },
+  {
+    "id": "spain-english-comma-switch-refresh",
+    "locale": "es_ES",
+    "language": "en_US",
+    "keyboard": "decimal",
+    "globe": true,
+    "width": 393,
+    "oneHanded": "left",
+    "privateField": false,
+    "initialText": "EUR ",
+    "actions": [
+      {
+        "kind": "tap",
+        "value": "9"
+      },
+      {
+        "kind": "tap",
+        "value": ","
+      },
+      {
+        "kind": "tap",
+        "value": "9"
+      },
+      {
+        "kind": "tap",
+        "value": "0"
+      },
+      {
+        "kind": "globeAX"
+      },
+      {
+        "kind": "globeTouch"
+      },
+      {
+        "kind": "refresh"
+      }
+    ],
+    "expectedText": "EUR 9,90",
+    "expectedAdvance": 1,
+    "expectedLists": 2
+  },
+  {
+    "id": "mexico-landscape-private-fraction",
+    "locale": "es_MX",
+    "language": "es",
+    "keyboard": "decimal",
+    "globe": false,
+    "width": 852,
+    "oneHanded": "off",
+    "privateField": true,
+    "initialText": "12",
+    "actions": [
+      {
+        "kind": "tap",
+        "value": "."
+      },
+      {
+        "kind": "tap",
+        "value": "0"
+      },
+      {
+        "kind": "tap",
+        "value": "5"
+      },
+      {
+        "kind": "delete"
+      },
+      {
+        "kind": "tap",
+        "value": "0"
+      }
+    ],
+    "expectedText": "12.00",
+    "expectedAdvance": 0,
+    "expectedLists": 0
+  },
+  {
+    "id": "egypt-left-private-arabic-separator",
+    "locale": "ar_EG",
+    "language": "en_es",
+    "keyboard": "decimal",
+    "globe": true,
+    "width": 375,
+    "oneHanded": "left",
+    "privateField": true,
+    "initialText": "قيمة=",
+    "actions": [
+      {
+        "kind": "tap",
+        "value": "0"
+      },
+      {
+        "kind": "tap",
+        "value": "٫"
+      },
+      {
+        "kind": "tap",
+        "value": "7"
+      },
+      {
+        "kind": "delete"
+      },
+      {
+        "kind": "tap",
+        "value": "4"
+      },
+      {
+        "kind": "globeAX"
+      },
+      {
+        "kind": "globeTouch"
+      }
+    ],
+    "expectedText": "قيمة=0٫4",
+    "expectedAdvance": 1,
+    "expectedLists": 2
+  },
+  {
+    "id": "us-ordinary-letters-switch-control",
+    "locale": "en_US",
+    "language": "en_US",
+    "keyboard": "standard",
+    "globe": true,
+    "width": 375,
+    "oneHanded": "off",
+    "privateField": false,
+    "initialText": "note:",
+    "actions": [
+      {
+        "kind": "tap",
+        "value": "q"
+      },
+      {
+        "kind": "tap",
+        "value": "z"
+      },
+      {
+        "kind": "tap",
+        "value": "x"
+      },
+      {
+        "kind": "delete"
+      },
+      {
+        "kind": "globeAX"
+      },
+      {
+        "kind": "globeTouch"
+      }
+    ],
+    "expectedText": "note:qz",
+    "expectedAdvance": 1,
+    "expectedLists": 2
+  },
+  {
+    "id": "spain-private-email-literal-control",
+    "locale": "es_ES",
+    "language": "es",
+    "keyboard": "email",
+    "globe": false,
+    "width": 393,
+    "oneHanded": "right",
+    "privateField": true,
+    "initialText": "",
+    "actions": [
+      {
+        "kind": "tap",
+        "value": "a"
+      },
+      {
+        "kind": "tap",
+        "value": "b"
+      },
+      {
+        "kind": "tap",
+        "value": "@"
+      },
+      {
+        "kind": "tap",
+        "value": "c"
+      },
+      {
+        "kind": "tap",
+        "value": "d"
+      },
+      {
+        "kind": "tap",
+        "value": "."
+      },
+      {
+        "kind": "tap",
+        "value": "e"
+      },
+      {
+        "kind": "tap",
+        "value": "f"
+      },
+      {
+        "kind": "delete"
+      }
+    ],
+    "expectedText": "ab@cd.e",
+    "expectedAdvance": 0,
+    "expectedLists": 0
+  },
+  {
+    "id": "mexico-landscape-url-page-control",
+    "locale": "es_MX",
+    "language": "en_es",
+    "keyboard": "url",
+    "globe": true,
+    "width": 852,
+    "oneHanded": "off",
+    "privateField": false,
+    "initialText": "",
+    "actions": [
+      {
+        "kind": "tap",
+        "value": "x"
+      },
+      {
+        "kind": "tap",
+        "value": "y"
+      },
+      {
+        "kind": "tap",
+        "value": "."
+      },
+      {
+        "kind": "tap",
+        "value": "z"
+      },
+      {
+        "kind": "tap",
+        "value": "/"
+      },
+      {
+        "kind": "tap",
+        "value": "q"
+      },
+      {
+        "kind": "globeTouch"
+      },
+      {
+        "kind": "key",
+        "value": "key-numbers"
+      },
+      {
+        "kind": "tap",
+        "value": "3"
+      },
+      {
+        "kind": "tap",
+        "value": "2"
+      },
+      {
+        "kind": "key",
+        "value": "key-letters"
+      },
+      {
+        "kind": "tap",
+        "value": "r"
+      },
+      {
+        "kind": "globeAX"
+      }
+    ],
+    "expectedText": "xy.z/q32r",
+    "expectedAdvance": 1,
+    "expectedLists": 2
+  },
+  {
+    "id": "egypt-compact-prose-symbol-control",
+    "locale": "ar_EG",
+    "language": "es",
+    "keyboard": "standard",
+    "globe": false,
+    "width": 320,
+    "oneHanded": "off",
+    "privateField": false,
+    "initialText": "tag:",
+    "actions": [
+      {
+        "kind": "key",
+        "value": "key-numbers"
+      },
+      {
+        "kind": "tap",
+        "value": "4"
+      },
+      {
+        "kind": "tap",
+        "value": "8"
+      },
+      {
+        "kind": "key",
+        "value": "key-symbols"
+      },
+      {
+        "kind": "tap",
+        "value": "+"
+      },
+      {
+        "kind": "tap",
+        "value": "="
+      },
+      {
+        "kind": "delete"
+      },
+      {
+        "kind": "key",
+        "value": "key-letters"
+      },
+      {
+        "kind": "tap",
+        "value": "q"
+      }
+    ],
+    "expectedText": "tag:48+q",
+    "expectedAdvance": 0,
+    "expectedLists": 0
+  },
+  {
+    "id": "us-secure-field-roundtrip",
+    "locale": "en_US",
+    "language": "es",
+    "keyboard": "decimal",
+    "globe": true,
+    "width": 393,
+    "oneHanded": "right",
+    "privateField": true,
+    "initialText": "ref=",
+    "actions": [
+      {
+        "kind": "tap",
+        "value": "5"
+      },
+      {
+        "kind": "tap",
+        "value": "."
+      },
+      {
+        "kind": "tap",
+        "value": "6"
+      },
+      {
+        "kind": "field",
+        "value": "number"
+      },
+      {
+        "kind": "tap",
+        "value": "0"
+      },
+      {
+        "kind": "delete"
+      },
+      {
+        "kind": "field",
+        "value": "email"
+      },
+      {
+        "kind": "tap",
+        "value": "a"
+      },
+      {
+        "kind": "tap",
+        "value": "@"
+      },
+      {
+        "kind": "tap",
+        "value": "b"
+      },
+      {
+        "kind": "tap",
+        "value": "."
+      },
+      {
+        "kind": "tap",
+        "value": "c"
+      },
+      {
+        "kind": "globeAX"
+      },
+      {
+        "kind": "key",
+        "value": "key-numbers"
+      },
+      {
+        "kind": "tap",
+        "value": "2"
+      },
+      {
+        "kind": "field",
+        "value": "decimal"
+      },
+      {
+        "kind": "tap",
+        "value": "."
+      },
+      {
+        "kind": "tap",
+        "value": "9"
+      },
+      {
+        "kind": "globeTouch"
+      }
+    ],
+    "expectedText": "ref=5.6a@b.c2.9",
+    "expectedAdvance": 1,
+    "expectedLists": 2
+  },
+  {
+    "id": "spain-left-field-and-page-roundtrip",
+    "locale": "es_ES",
+    "language": "en_es",
+    "keyboard": "number",
+    "globe": false,
+    "width": 375,
+    "oneHanded": "left",
+    "privateField": false,
+    "initialText": "",
+    "actions": [
+      {
+        "kind": "tap",
+        "value": "1"
+      },
+      {
+        "kind": "tap",
+        "value": "8"
+      },
+      {
+        "kind": "field",
+        "value": "standard"
+      },
+      {
+        "kind": "tap",
+        "value": "q"
+      },
+      {
+        "kind": "tap",
+        "value": "z"
+      },
+      {
+        "kind": "key",
+        "value": "key-numbers"
+      },
+      {
+        "kind": "tap",
+        "value": "7"
+      },
+      {
+        "kind": "key",
+        "value": "key-letters"
+      },
+      {
+        "kind": "tap",
+        "value": "x"
+      },
+      {
+        "kind": "field",
+        "value": "decimal"
+      },
+      {
+        "kind": "tap",
+        "value": ","
+      },
+      {
+        "kind": "tap",
+        "value": "5"
+      },
+      {
+        "kind": "refresh"
+      },
+      {
+        "kind": "field",
+        "value": "asciiNumber"
+      },
+      {
+        "kind": "tap",
+        "value": "0"
+      }
+    ],
+    "expectedText": "18qz7x,50",
+    "expectedAdvance": 0,
+    "expectedLists": 0
+  }
+]

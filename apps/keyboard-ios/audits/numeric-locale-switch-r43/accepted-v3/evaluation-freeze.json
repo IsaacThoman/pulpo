@@ -1,0 +1,15 @@
+{
+  "frozenAt": 1792144745.4705322,
+  "device": "8E0314EC-CDF8-4606-895F-2C084B98E0F1",
+  "sourceManifest": "699be1c52b076140a57cd5bca6a3abc517b5c4733e0e19f2fc80beab25f61d3d",
+  "driver": "d025dfb413ac019ca75604466bcd97063f8e46218e6a3789980819639feafa31",
+  "orchestrator": "34b95ea7d2171e3045ca598af95c8de3150243f043d9717dd1be71a5ad0758d8",
+  "input": "3659d5d7801c2bd101d20bb9578092b048701cd2e46e600e42d6e05ed0ec2d3a",
+  "references": "fac7d4b3676f8f04a2df40a9531edce940c9bed33e3129e5d8f03ad30a07f857",
+  "oracle": "087bb4a9c6eda5a29cc394265dbdaddc8c6037a5344f323abab4ebd2ee35847c",
+  "variants": [
+    "baseline",
+    "candidate"
+  ],
+  "rerunPolicy": "one full paired evaluation, no gold/source changes after reveal"
+}

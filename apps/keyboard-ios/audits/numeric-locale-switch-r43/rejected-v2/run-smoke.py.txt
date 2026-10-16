@@ -1,0 +1,33 @@
+import importlib.util,json,shutil,pathlib
+p=pathlib.Path('/tmp/pulpo-r43-v2'); spec=importlib.util.spec_from_file_location('runner',p/'run-paired.py');m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+refs=json.loads((p/'references.json').read_text()); reports=[]
+def row(id,locale,language,kind,actions,text,private=False,initial='',globe=True,advance=1,lists=2):
+ return dict(id=id,locale=locale,language=language,keyboard=kind,globe=globe,width=320,oneHanded='off',privateField=private,initialText=initial,actions=actions,expectedText=text,expectedAdvance=advance,expectedLists=lists)
+for locale,mode in [('en_US','es'),('es_ES','en_US'),('es_MX','en_es'),('ar_EG','en_US')]:
+ sep=refs['locales'][locale]['separator']; actions=[{'kind':'tap','value':c} for c in ['1','2',sep,'3','4']]+[{'kind':'delete'},{'kind':'globeTouch'},{'kind':'globeAX'},{'kind':'refresh'}]
+ rows=[row('dev-private-'+locale,locale,mode,'decimal',actions,'ref:12'+sep+'3',True,'ref:')]
+ if locale=='en_US':
+  actions=[{'kind':'tap','value':'0'},{'kind':'tap','value':'9'},{'kind':'delete'},{'kind':'globeTouch'},{'kind':'globeAX'},{'kind':'refresh'},{'kind':'field','value':'standard'},{'kind':'key','value':'key-numbers'},{'kind':'key','value':'key-symbols'},{'kind':'field','value':'number'},{'kind':'tap','value':'7'}]
+  rows.append(row('dev-all-actions',locale,'en_US','number',actions,'07'))
+  rows.append(row('dev-url-observer',locale,'en_US','url',[{'kind':'tap','value':c} for c in 'net'],'https://net',initial='https://',globe=False,advance=0,lists=0))
+  rows.append(row('dev-positive-learning',locale,'en_US','standard',[{'kind':'tap','value':c} for c in 'quartz']+[{'kind':'key','value':'key-space'}],'quartz ',globe=False,advance=0,lists=0))
+ (p/('smoke-'+locale+'-input.json')).write_text(json.dumps(rows,ensure_ascii=False,indent=2));pathlib.Path('/tmp/r43-input.json').write_text(json.dumps(rows,ensure_ascii=False))
+ pathlib.Path('/tmp/r43-output.json').unlink(missing_ok=True)
+ x=m.locale_run(p/'DerivedData-smoke',locale)
+ code=m.invoke(['xcodebuild','test-without-building','-xctestrun',str(x),'-destination','platform=iOS Simulator,id='+m.DEVICE,'-parallel-testing-enabled','NO','-collect-test-diagnostics','never','-only-testing:R43Tests/R43Executor/testExecute','-resultBundlePath',str(p/('all-actions-smoke-'+locale+'.xcresult'))],p/('all-actions-smoke-'+locale+'.log'))
+ if code: raise RuntimeError('native smoke infrastructure failed')
+ dest=p/('all-actions-smoke-'+locale+'-raw.json');shutil.copy2('/tmp/r43-output.json',dest);data=json.loads(dest.read_text())
+ for expected,actual in zip(rows,data['rows']):
+  assert actual['id']==expected['id'] and not actual['errors'],actual
+  assert actual['text']==expected['expectedText'] and actual['advance']==expected['expectedAdvance'] and actual['lists']==expected['expectedLists'],actual['id']
+  for prefix in ['current','autoupdating']:
+   assert actual['locale'][prefix+'Identifier']==locale and actual['locale'][prefix+'DecimalSeparator']==sep
+  for g in ['initialGeometry','finalGeometry']:
+   assert all(k[r] for k in actual[g]['keys'] for r in ['centerRoutes','targetRoutes','identityRoutes','rootRoutes'])
+  assert len(actual['actions'])==len(expected['actions'])
+  if expected['privateField'] or expected['keyboard']=='url':
+   assert actual['learnedBefore']==actual['learnedAfter']==actual['learnedAfterDisappear']
+   assert all(a['learning']['policy']=='disabled' and a['learning']['beforeCount']==a['learning']['afterCount'] and a['learning']['beforeDirty']==a['learning']['afterDirty'] for a in actual['actions'])
+  if expected['id']=='dev-positive-learning': assert actual['learnedAfter']>actual['learnedBefore']
+ reports.append({'locale':locale,'rows':len(rows),'actions':sum(len(r['actions']) for r in rows),'passed':True,'rawSHA256':m.sha(dest)})
+(p/'all-actions-smoke-receipt.json').write_text(json.dumps(reports,indent=2));print(json.dumps({'allActionSmokePassed':True,'reports':reports}))

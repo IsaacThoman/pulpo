@@ -1,0 +1,37 @@
+{
+  "dictionaries": {
+    "en_US": {
+      "available": true,
+      "bytes": 12964440,
+      "sha256": "168c21378b29aa7fd37838aed910d64348b5267389abfd2dacd0598247cf1e64"
+    },
+    "en_es": {
+      "available": true,
+      "bytes": 27391648,
+      "sha256": "93d2d22d58e7e753771dd0e29b19036d74a5ec7aeafba703724c24a93e581237"
+    },
+    "es": {
+      "available": true,
+      "bytes": 15277240,
+      "sha256": "66a256a487f451812ec53920b2a5f2dea9aafb77fbf8e50240a0b87d2729e7fb"
+    }
+  },
+  "locales": {
+    "ar_EG": {
+      "region": "EG",
+      "separator": "\u066b"
+    },
+    "en_US": {
+      "region": "US",
+      "separator": "."
+    },
+    "es_ES": {
+      "region": "ES",
+      "separator": ","
+    },
+    "es_MX": {
+      "region": "MX",
+      "separator": "."
+    }
+  }
+}

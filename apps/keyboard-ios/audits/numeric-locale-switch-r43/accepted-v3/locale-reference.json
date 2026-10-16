@@ -1,0 +1,26 @@
+{
+  "allAvailableSeparators" : [
+    ",",
+    ".",
+    "٫"
+  ],
+  "availableLocaleCount" : 1072,
+  "locales" : {
+    "ar_EG" : {
+      "region" : "EG",
+      "separator" : "٫"
+    },
+    "en_US" : {
+      "region" : "US",
+      "separator" : "."
+    },
+    "es_ES" : {
+      "region" : "ES",
+      "separator" : ","
+    },
+    "es_MX" : {
+      "region" : "MX",
+      "separator" : "."
+    }
+  }
+}

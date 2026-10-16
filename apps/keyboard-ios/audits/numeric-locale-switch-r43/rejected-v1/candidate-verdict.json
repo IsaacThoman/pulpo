@@ -1,0 +1,793 @@
+{
+  "validInput": true,
+  "passed": false,
+  "summary": {
+    "total": 18,
+    "passed": 9,
+    "failed": 9,
+    "unchanged": 0,
+    "completion": 0.5
+  },
+  "globalErrors": [],
+  "rows": [
+    {
+      "id": "us-compact-decimal-revise-switch",
+      "passed": true,
+      "unchanged": false,
+      "errors": [],
+      "initialShortTargets": [],
+      "finalShortTargets": []
+    },
+    {
+      "id": "spain-left-amount-refresh",
+      "passed": true,
+      "unchanged": false,
+      "errors": [],
+      "initialShortTargets": [],
+      "finalShortTargets": []
+    },
+    {
+      "id": "mexico-right-secure-amount",
+      "passed": false,
+      "unchanged": false,
+      "errors": [
+        "action 0: wrong afterText"
+      ]
+    },
+    {
+      "id": "egypt-landscape-decimal-repair",
+      "passed": false,
+      "unchanged": false,
+      "errors": [
+        "row runtime errors missing/nonempty"
+      ]
+    },
+    {
+      "id": "us-left-number-leading-zero",
+      "passed": true,
+      "unchanged": false,
+      "errors": [],
+      "initialShortTargets": [],
+      "finalShortTargets": []
+    },
+    {
+      "id": "spain-compact-secure-ascii-switch",
+      "passed": false,
+      "unchanged": false,
+      "errors": [
+        "action 0: wrong afterText"
+      ]
+    },
+    {
+      "id": "mexico-right-number-double-menu",
+      "passed": true,
+      "unchanged": false,
+      "errors": [],
+      "initialShortTargets": [],
+      "finalShortTargets": []
+    },
+    {
+      "id": "egypt-ascii-double-delete",
+      "passed": false,
+      "unchanged": false,
+      "errors": [
+        "row runtime errors missing/nonempty"
+      ]
+    },
+    {
+      "id": "us-bilingual-fraction-repair",
+      "passed": true,
+      "unchanged": false,
+      "errors": [],
+      "initialShortTargets": [],
+      "finalShortTargets": []
+    },
+    {
+      "id": "spain-english-comma-switch-refresh",
+      "passed": true,
+      "unchanged": false,
+      "errors": [],
+      "initialShortTargets": [],
+      "finalShortTargets": []
+    },
+    {
+      "id": "mexico-landscape-private-fraction",
+      "passed": false,
+      "unchanged": false,
+      "errors": [
+        "action 0: wrong afterText"
+      ]
+    },
+    {
+      "id": "egypt-left-private-arabic-separator",
+      "passed": false,
+      "unchanged": false,
+      "errors": [
+        "row runtime errors missing/nonempty"
+      ]
+    },
+    {
+      "id": "us-ordinary-letters-switch-control",
+      "passed": true,
+      "unchanged": false,
+      "errors": [],
+      "initialShortTargets": [
+        {
+          "id": "key-q",
+          "width": 30.299999999999997,
+          "height": 45
+        },
+        {
+          "id": "key-w",
+          "width": 30.299999999999997,
+          "height": 45
+        },
+        {
+          "id": "key-e",
+          "width": 30.299999999999997,
+          "height": 45
+        },
+        {
+          "id": "key-r",
+          "width": 30.30000000000001,
+          "height": 45
+        },
+        {
+          "id": "key-t",
+          "width": 30.30000000000001,
+          "height": 45
+        },
+        {
+          "id": "key-y",
+          "width": 30.30000000000001,
+          "height": 45
+        },
+        {
+          "id": "key-u",
+          "width": 30.30000000000001,
+          "height": 45
+        },
+        {
+          "id": "key-i",
+          "width": 30.30000000000001,
+          "height": 45
+        },
+        {
+          "id": "key-o",
+          "width": 30.30000000000001,
+          "height": 45
+        },
+        {
+          "id": "key-p",
+          "width": 30.30000000000001,
+          "height": 45
+        },
+        {
+          "id": "key-a",
+          "width": 30.299999999999997,
+          "height": 45
+        },
+        {
+          "id": "key-s",
+          "width": 30.300000000000004,
+          "height": 45
+        },
+        {
+          "id": "key-d",
+          "width": 30.30000000000001,
+          "height": 45
+        },
+        {
+          "id": "key-f",
+          "width": 30.30000000000001,
+          "height": 45
+        },
+        {
+          "id": "key-g",
+          "width": 30.30000000000001,
+          "height": 45
+        },
+        {
+          "id": "key-h",
+          "width": 30.30000000000001,
+          "height": 45
+        },
+        {
+          "id": "key-j",
+          "width": 30.299999999999983,
+          "height": 45
+        },
+        {
+          "id": "key-k",
+          "width": 30.30000000000001,
+          "height": 45
+        },
+        {
+          "id": "key-l",
+          "width": 30.30000000000001,
+          "height": 45
+        },
+        {
+          "id": "key-shift",
+          "width": 39.499999999999986,
+          "height": 45
+        },
+        {
+          "id": "key-z",
+          "width": 30.300000000000004,
+          "height": 45
+        },
+        {
+          "id": "key-x",
+          "width": 30.299999999999983,
+          "height": 45
+        },
+        {
+          "id": "key-c",
+          "width": 30.299999999999983,
+          "height": 45
+        },
+        {
+          "id": "key-v",
+          "width": 30.30000000000001,
+          "height": 45
+        },
+        {
+          "id": "key-b",
+          "width": 30.30000000000001,
+          "height": 45
+        },
+        {
+          "id": "key-n",
+          "width": 30.299999999999983,
+          "height": 45
+        },
+        {
+          "id": "key-m",
+          "width": 30.30000000000001,
+          "height": 45
+        },
+        {
+          "id": "key-delete",
+          "width": 39.5,
+          "height": 45
+        },
+        {
+          "id": "key-numbers",
+          "width": 39.5,
+          "height": 44
+        },
+        {
+          "id": "key-globe",
+          "width": 39.5,
+          "height": 44
+        },
+        {
+          "id": "key-emoji",
+          "width": 39.5,
+          "height": 44
+        }
+      ],
+      "finalShortTargets": [
+        {
+          "id": "key-q",
+          "width": 30.299999999999997,
+          "height": 45
+        },
+        {
+          "id": "key-w",
+          "width": 30.299999999999997,
+          "height": 45
+        },
+        {
+          "id": "key-e",
+          "width": 30.299999999999997,
+          "height": 45
+        },
+        {
+          "id": "key-r",
+          "width": 30.30000000000001,
+          "height": 45
+        },
+        {
+          "id": "key-t",
+          "width": 30.30000000000001,
+          "height": 45
+        },
+        {
+          "id": "key-y",
+          "width": 30.30000000000001,
+          "height": 45
+        },
+        {
+          "id": "key-u",
+          "width": 30.30000000000001,
+          "height": 45
+        },
+        {
+          "id": "key-i",
+          "width": 30.30000000000001,
+          "height": 45
+        },
+        {
+          "id": "key-o",
+          "width": 30.30000000000001,
+          "height": 45
+        },
+        {
+          "id": "key-p",
+          "width": 30.30000000000001,
+          "height": 45
+        },
+        {
+          "id": "key-a",
+          "width": 30.299999999999997,
+          "height": 45
+        },
+        {
+          "id": "key-s",
+          "width": 30.300000000000004,
+          "height": 45
+        },
+        {
+          "id": "key-d",
+          "width": 30.30000000000001,
+          "height": 45
+        },
+        {
+          "id": "key-f",
+          "width": 30.30000000000001,
+          "height": 45
+        },
+        {
+          "id": "key-g",
+          "width": 30.30000000000001,
+          "height": 45
+        },
+        {
+          "id": "key-h",
+          "width": 30.30000000000001,
+          "height": 45
+        },
+        {
+          "id": "key-j",
+          "width": 30.299999999999983,
+          "height": 45
+        },
+        {
+          "id": "key-k",
+          "width": 30.30000000000001,
+          "height": 45
+        },
+        {
+          "id": "key-l",
+          "width": 30.30000000000001,
+          "height": 45
+        },
+        {
+          "id": "key-shift",
+          "width": 39.499999999999986,
+          "height": 45
+        },
+        {
+          "id": "key-z",
+          "width": 30.300000000000004,
+          "height": 45
+        },
+        {
+          "id": "key-x",
+          "width": 30.299999999999983,
+          "height": 45
+        },
+        {
+          "id": "key-c",
+          "width": 30.299999999999983,
+          "height": 45
+        },
+        {
+          "id": "key-v",
+          "width": 30.30000000000001,
+          "height": 45
+        },
+        {
+          "id": "key-b",
+          "width": 30.30000000000001,
+          "height": 45
+        },
+        {
+          "id": "key-n",
+          "width": 30.299999999999983,
+          "height": 45
+        },
+        {
+          "id": "key-m",
+          "width": 30.30000000000001,
+          "height": 45
+        },
+        {
+          "id": "key-delete",
+          "width": 39.5,
+          "height": 45
+        },
+        {
+          "id": "key-numbers",
+          "width": 39.5,
+          "height": 44
+        },
+        {
+          "id": "key-globe",
+          "width": 39.5,
+          "height": 44
+        },
+        {
+          "id": "key-emoji",
+          "width": 39.5,
+          "height": 44
+        }
+      ]
+    },
+    {
+      "id": "spain-private-email-literal-control",
+      "passed": true,
+      "unchanged": false,
+      "errors": [],
+      "initialShortTargets": [
+        {
+          "id": "key-q",
+          "width": 26,
+          "height": 45
+        },
+        {
+          "id": "key-w",
+          "width": 26,
+          "height": 45
+        },
+        {
+          "id": "key-e",
+          "width": 26,
+          "height": 45
+        },
+        {
+          "id": "key-r",
+          "width": 26,
+          "height": 45
+        },
+        {
+          "id": "key-t",
+          "width": 26,
+          "height": 45
+        },
+        {
+          "id": "key-y",
+          "width": 26,
+          "height": 45
+        },
+        {
+          "id": "key-u",
+          "width": 26,
+          "height": 45
+        },
+        {
+          "id": "key-i",
+          "width": 26,
+          "height": 45
+        },
+        {
+          "id": "key-o",
+          "width": 26,
+          "height": 45
+        },
+        {
+          "id": "key-p",
+          "width": 26,
+          "height": 45
+        },
+        {
+          "id": "key-a",
+          "width": 26,
+          "height": 45
+        },
+        {
+          "id": "key-s",
+          "width": 26,
+          "height": 45
+        },
+        {
+          "id": "key-d",
+          "width": 26,
+          "height": 45
+        },
+        {
+          "id": "key-f",
+          "width": 26,
+          "height": 45
+        },
+        {
+          "id": "key-g",
+          "width": 26,
+          "height": 45
+        },
+        {
+          "id": "key-h",
+          "width": 26,
+          "height": 45
+        },
+        {
+          "id": "key-j",
+          "width": 26,
+          "height": 45
+        },
+        {
+          "id": "key-k",
+          "width": 26,
+          "height": 45
+        },
+        {
+          "id": "key-l",
+          "width": 26,
+          "height": 45
+        },
+        {
+          "id": "key-shift",
+          "width": 34.125,
+          "height": 45
+        },
+        {
+          "id": "key-z",
+          "width": 26,
+          "height": 45
+        },
+        {
+          "id": "key-x",
+          "width": 26,
+          "height": 45
+        },
+        {
+          "id": "key-c",
+          "width": 26,
+          "height": 45
+        },
+        {
+          "id": "key-v",
+          "width": 26,
+          "height": 45
+        },
+        {
+          "id": "key-b",
+          "width": 26,
+          "height": 45
+        },
+        {
+          "id": "key-n",
+          "width": 26,
+          "height": 45
+        },
+        {
+          "id": "key-m",
+          "width": 26,
+          "height": 45
+        },
+        {
+          "id": "key-delete",
+          "width": 34.125,
+          "height": 45
+        },
+        {
+          "id": "key-numbers",
+          "width": 34.125,
+          "height": 44
+        },
+        {
+          "id": "key-emoji",
+          "width": 34.125,
+          "height": 44
+        },
+        {
+          "id": "key-@",
+          "width": 26,
+          "height": 44
+        },
+        {
+          "id": "key-.",
+          "width": 26,
+          "height": 44
+        }
+      ],
+      "finalShortTargets": [
+        {
+          "id": "key-q",
+          "width": 26,
+          "height": 45
+        },
+        {
+          "id": "key-w",
+          "width": 26,
+          "height": 45
+        },
+        {
+          "id": "key-e",
+          "width": 26,
+          "height": 45
+        },
+        {
+          "id": "key-r",
+          "width": 26,
+          "height": 45
+        },
+        {
+          "id": "key-t",
+          "width": 26,
+          "height": 45
+        },
+        {
+          "id": "key-y",
+          "width": 26,
+          "height": 45
+        },
+        {
+          "id": "key-u",
+          "width": 26,
+          "height": 45
+        },
+        {
+          "id": "key-i",
+          "width": 26,
+          "height": 45
+        },
+        {
+          "id": "key-o",
+          "width": 26,
+          "height": 45
+        },
+        {
+          "id": "key-p",
+          "width": 26,
+          "height": 45
+        },
+        {
+          "id": "key-a",
+          "width": 26,
+          "height": 45
+        },
+        {
+          "id": "key-s",
+          "width": 26,
+          "height": 45
+        },
+        {
+          "id": "key-d",
+          "width": 26,
+          "height": 45
+        },
+        {
+          "id": "key-f",
+          "width": 26,
+          "height": 45
+        },
+        {
+          "id": "key-g",
+          "width": 26,
+          "height": 45
+        },
+        {
+          "id": "key-h",
+          "width": 26,
+          "height": 45
+        },
+        {
+          "id": "key-j",
+          "width": 26,
+          "height": 45
+        },
+        {
+          "id": "key-k",
+          "width": 26,
+          "height": 45
+        },
+        {
+          "id": "key-l",
+          "width": 26,
+          "height": 45
+        },
+        {
+          "id": "key-shift",
+          "width": 34.125,
+          "height": 45
+        },
+        {
+          "id": "key-z",
+          "width": 26,
+          "height": 45
+        },
+        {
+          "id": "key-x",
+          "width": 26,
+          "height": 45
+        },
+        {
+          "id": "key-c",
+          "width": 26,
+          "height": 45
+        },
+        {
+          "id": "key-v",
+          "width": 26,
+          "height": 45
+        },
+        {
+          "id": "key-b",
+          "width": 26,
+          "height": 45
+        },
+        {
+          "id": "key-n",
+          "width": 26,
+          "height": 45
+        },
+        {
+          "id": "key-m",
+          "width": 26,
+          "height": 45
+        },
+        {
+          "id": "key-delete",
+          "width": 34.125,
+          "height": 45
+        },
+        {
+          "id": "key-numbers",
+          "width": 34.125,
+          "height": 44
+        },
+        {
+          "id": "key-emoji",
+          "width": 34.125,
+          "height": 44
+        },
+        {
+          "id": "key-@",
+          "width": 26,
+          "height": 44
+        },
+        {
+          "id": "key-.",
+          "width": 26,
+          "height": 44
+        }
+      ]
+    },
+    {
+      "id": "mexico-landscape-url-page-control",
+      "passed": false,
+      "unchanged": false,
+      "errors": [
+        "action 0: wrong learning policy"
+      ]
+    },
+    {
+      "id": "egypt-compact-prose-symbol-control",
+      "passed": false,
+      "unchanged": false,
+      "errors": [
+        "row runtime errors missing/nonempty"
+      ]
+    },
+    {
+      "id": "us-secure-field-roundtrip",
+      "passed": false,
+      "unchanged": false,
+      "errors": [
+        "action 0: wrong afterText"
+      ]
+    },
+    {
+      "id": "spain-left-field-and-page-roundtrip",
+      "passed": true,
+      "unchanged": false,
+      "errors": [],
+      "initialShortTargets": [],
+      "finalShortTargets": []
+    }
+  ],
+  "scope": "hosted workflow completion; installed OS menu and blanket landscape 44pt usability are not established"
+}

@@ -1,0 +1,30 @@
+[
+  {
+    "locale": "en_US",
+    "rows": 4,
+    "actions": 37,
+    "passed": true,
+    "rawSHA256": "f9f6c7d19f59d33d6126ec0a03709ea41cbd0d74c8cd3f88fa67af553c99099a"
+  },
+  {
+    "locale": "es_ES",
+    "rows": 1,
+    "actions": 9,
+    "passed": true,
+    "rawSHA256": "ac59509c489ff061b53cb4a6cf1cbb991bf986fcd8dea79b24cc1db98fb470b8"
+  },
+  {
+    "locale": "es_MX",
+    "rows": 1,
+    "actions": 9,
+    "passed": true,
+    "rawSHA256": "7bc2d702a420cd648496634dc9f2d506d34f2f27455d4b417174175a41f1388f"
+  },
+  {
+    "locale": "ar_EG",
+    "rows": 1,
+    "actions": 9,
+    "passed": true,
+    "rawSHA256": "6ec126ea98114caf855adc1319bf5bb6454d00aff7f7ca2421da23d3f0c3601b"
+  }
+]

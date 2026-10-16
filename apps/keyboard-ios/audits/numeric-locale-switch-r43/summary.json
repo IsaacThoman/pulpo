@@ -1,0 +1,64 @@
+{
+  "sourceCommit": "6781665e424c7b9f46ce09538bb3c3780c834c83",
+  "parent": "b5451e4211f0aa735233d5de8b98b5708c0e8a0d",
+  "pullRequest": "https://github.com/IsaacThoman/pulpo/pull/782",
+  "ordinaryCoreServices": {
+    "baselineTests": 445,
+    "candidateTests": 448,
+    "sameKnownIssues": 5,
+    "newFailures": 0,
+    "release": true
+  },
+  "hostedNativeFocused": {
+    "passedTests": 2,
+    "failedTests": 0,
+    "largestAXTrait": true,
+    "landscapeWidth": true,
+    "oneHanded": true,
+    "sourceSHA256": "ad1368137fa8ef45e9be2ee536abf15b4c39e0be3b5f5cb924111c259eec0db2"
+  },
+  "rounds": [
+    {
+      "version": 1,
+      "status": "rejected",
+      "rows": 18,
+      "actionsEach": 158,
+      "baselinePass": 5,
+      "candidatePass": 9,
+      "retainedFailures": 9,
+      "regressions": 0
+    },
+    {
+      "version": 2,
+      "status": "rejected",
+      "rows": 18,
+      "actionsEach": 203,
+      "baselinePass": 6,
+      "candidatePass": 15,
+      "retainedFailures": 3,
+      "regressions": 0
+    },
+    {
+      "version": 3,
+      "status": "bounded-hosted-acceptance",
+      "rows": 12,
+      "actionsEach": 160,
+      "baselinePass": 8,
+      "candidatePass": 12,
+      "gains": 4,
+      "retainedPasses": 8,
+      "retainedFailures": 0,
+      "regressions": 0
+    }
+  ],
+  "candidateV3HostCallbacks": {
+    "advance": 8,
+    "list": 14,
+    "globeTextOrCaretEdits": 0
+  },
+  "sourceUnchangedThroughAllRounds": true,
+  "installedOSMenuVerified": false,
+  "liveLocaleChangeVerified": false,
+  "phoneCustomKeyboardEligibilityClaimed": false,
+  "ownedSimulatorDeleted": true
+}

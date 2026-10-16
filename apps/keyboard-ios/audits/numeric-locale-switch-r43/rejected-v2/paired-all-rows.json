@@ -1,0 +1,277 @@
+{
+  "status": "REJECTED_FULL_ACCEPTANCE",
+  "counts": {
+    "total": 18,
+    "baselinePass": 6,
+    "candidatePass": 15,
+    "gains": 9,
+    "retainedFailures": 3,
+    "regressions": 0
+  },
+  "rows": [
+    {
+      "id": "fresh-v2-01-edit-cents",
+      "baselinePass": false,
+      "candidatePass": true,
+      "baselineErrors": [
+        "row runtime errors missing/nonempty"
+      ],
+      "candidateErrors": [],
+      "baselineText": "18.46",
+      "candidateText": "18.46",
+      "baselineAdvance": 0,
+      "candidateAdvance": 1,
+      "baselineLists": 0,
+      "candidateLists": 2
+    },
+    {
+      "id": "fresh-v2-02-small-comma-amount",
+      "baselinePass": false,
+      "candidatePass": true,
+      "baselineErrors": [
+        "row runtime errors missing/nonempty"
+      ],
+      "candidateErrors": [],
+      "baselineText": "008",
+      "candidateText": "0,08",
+      "baselineAdvance": 0,
+      "candidateAdvance": 0,
+      "baselineLists": 0,
+      "candidateLists": 0
+    },
+    {
+      "id": "fresh-v2-03-mixed-mode-price",
+      "baselinePass": false,
+      "candidatePass": true,
+      "baselineErrors": [
+        "row runtime errors missing/nonempty"
+      ],
+      "candidateErrors": [],
+      "baselineText": "MX 7.56",
+      "candidateText": "MX 7.56",
+      "baselineAdvance": 0,
+      "candidateAdvance": 1,
+      "baselineLists": 2,
+      "candidateLists": 2
+    },
+    {
+      "id": "fresh-v2-04-arabic-cents-revision",
+      "baselinePass": false,
+      "candidatePass": true,
+      "baselineErrors": [
+        "row runtime errors missing/nonempty"
+      ],
+      "candidateErrors": [],
+      "baselineText": "sum=124",
+      "candidateText": "sum=12٫4",
+      "baselineAdvance": 0,
+      "candidateAdvance": 1,
+      "baselineLists": 0,
+      "candidateLists": 4
+    },
+    {
+      "id": "fresh-v2-05-reference-to-amount",
+      "baselinePass": true,
+      "candidatePass": true,
+      "baselineErrors": [],
+      "candidateErrors": [],
+      "baselineText": "ref:804.2",
+      "candidateText": "ref:804.2",
+      "baselineAdvance": 0,
+      "candidateAdvance": 0,
+      "baselineLists": 0,
+      "candidateLists": 0
+    },
+    {
+      "id": "fresh-v2-06-replace-whole-add-fraction",
+      "baselinePass": false,
+      "candidatePass": true,
+      "baselineErrors": [
+        "row runtime errors missing/nonempty"
+      ],
+      "candidateErrors": [],
+      "baselineText": "910",
+      "candidateText": "91,0",
+      "baselineAdvance": 1,
+      "candidateAdvance": 1,
+      "baselineLists": 0,
+      "candidateLists": 2
+    },
+    {
+      "id": "fresh-v2-07-stock-code-backtrack",
+      "baselinePass": true,
+      "candidatePass": true,
+      "baselineErrors": [],
+      "candidateErrors": [],
+      "baselineText": "sku-65",
+      "candidateText": "sku-65",
+      "baselineAdvance": 0,
+      "candidateAdvance": 0,
+      "baselineLists": 0,
+      "candidateLists": 0
+    },
+    {
+      "id": "fresh-v2-08-ascii-to-arabic-fraction",
+      "baselinePass": false,
+      "candidatePass": true,
+      "baselineErrors": [
+        "row runtime errors missing/nonempty"
+      ],
+      "candidateErrors": [],
+      "baselineText": "40807",
+      "candidateText": "408٫07",
+      "baselineAdvance": 0,
+      "candidateAdvance": 1,
+      "baselineLists": 2,
+      "candidateLists": 2
+    },
+    {
+      "id": "fresh-v2-09-negative-landscape-amount",
+      "baselinePass": false,
+      "candidatePass": true,
+      "baselineErrors": [
+        "row runtime errors missing/nonempty"
+      ],
+      "candidateErrors": [],
+      "baselineText": "-372",
+      "candidateText": "-3,72",
+      "baselineAdvance": 1,
+      "candidateAdvance": 1,
+      "baselineLists": 0,
+      "candidateLists": 2
+    },
+    {
+      "id": "fresh-v2-10-amount-with-currency-label",
+      "baselinePass": true,
+      "candidatePass": true,
+      "baselineErrors": [],
+      "candidateErrors": [],
+      "baselineText": "5.096 usd",
+      "candidateText": "5.096 usd",
+      "baselineAdvance": 0,
+      "candidateAdvance": 0,
+      "baselineLists": 0,
+      "candidateLists": 0
+    },
+    {
+      "id": "fresh-v2-11-three-numeric-traits",
+      "baselinePass": false,
+      "candidatePass": true,
+      "baselineErrors": [
+        "row runtime errors missing/nonempty"
+      ],
+      "candidateErrors": [],
+      "baselineText": "041",
+      "candidateText": "0٫41",
+      "baselineAdvance": 0,
+      "candidateAdvance": 0,
+      "baselineLists": 0,
+      "candidateLists": 0
+    },
+    {
+      "id": "fresh-v2-12-repeated-accessibility-switch",
+      "baselinePass": false,
+      "candidatePass": true,
+      "baselineErrors": [
+        "row runtime errors missing/nonempty"
+      ],
+      "candidateErrors": [],
+      "baselineText": "total 28.56",
+      "candidateText": "total 28.56",
+      "baselineAdvance": 0,
+      "candidateAdvance": 2,
+      "baselineLists": 0,
+      "candidateLists": 2
+    },
+    {
+      "id": "fresh-v2-13-prose-and-numeric-page",
+      "baselinePass": true,
+      "candidatePass": true,
+      "baselineErrors": [],
+      "candidateErrors": [],
+      "baselineText": "ab17 x",
+      "candidateText": "ab17 x",
+      "baselineAdvance": 1,
+      "candidateAdvance": 1,
+      "baselineLists": 2,
+      "candidateLists": 2
+    },
+    {
+      "id": "fresh-v2-14-email-edit-local-number",
+      "baselinePass": true,
+      "candidatePass": true,
+      "baselineErrors": [],
+      "candidateErrors": [],
+      "baselineText": "luz7@mar.es",
+      "candidateText": "luz7@mar.es",
+      "baselineAdvance": 0,
+      "candidateAdvance": 0,
+      "baselineLists": 0,
+      "candidateLists": 0
+    },
+    {
+      "id": "fresh-v2-15-landscape-url-path",
+      "baselinePass": true,
+      "candidatePass": true,
+      "baselineErrors": [],
+      "candidateErrors": [],
+      "baselineText": "https://mapa.mx/26a",
+      "candidateText": "https://mapa.mx/26a",
+      "baselineAdvance": 1,
+      "candidateAdvance": 1,
+      "baselineLists": 2,
+      "candidateLists": 2
+    },
+    {
+      "id": "fresh-v2-16-private-otp-literal-pages",
+      "baselinePass": false,
+      "candidatePass": false,
+      "baselineErrors": [
+        "row runtime errors missing/nonempty"
+      ],
+      "candidateErrors": [
+        "action 0: wrong learning policy"
+      ],
+      "baselineText": "otp:73#b48",
+      "candidateText": "otp:73#b4٫8",
+      "baselineAdvance": 0,
+      "candidateAdvance": 0,
+      "baselineLists": 0,
+      "candidateLists": 0
+    },
+    {
+      "id": "fresh-v2-17-private-address-return",
+      "baselinePass": false,
+      "candidatePass": false,
+      "baselineErrors": [
+        "action 16: wrong afterText"
+      ],
+      "candidateErrors": [
+        "action 16: wrong afterText"
+      ],
+      "baselineText": "code+rio@uno.io8",
+      "candidateText": "code+rio@uno.io8",
+      "baselineAdvance": 1,
+      "candidateAdvance": 1,
+      "baselineLists": 2,
+      "candidateLists": 2
+    },
+    {
+      "id": "fresh-v2-18-url-symbols-to-prose-return",
+      "baselinePass": false,
+      "candidatePass": false,
+      "baselineErrors": [
+        "row runtime errors missing/nonempty"
+      ],
+      "candidateErrors": [
+        "row runtime errors missing/nonempty"
+      ],
+      "baselineText": "sol.es/4_x2",
+      "candidateText": "sol.es/4_x2",
+      "baselineAdvance": 0,
+      "candidateAdvance": 0,
+      "baselineLists": 0,
+      "candidateLists": 0
+    }
+  ]
+}

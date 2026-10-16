@@ -1,0 +1,8 @@
+import Foundation
+let ids = ["en_US", "es_ES", "es_MX", "ar_EG"]
+let locales = Dictionary(uniqueKeysWithValues: ids.map { id in
+ (id, ["region": Locale(identifier:id).region!.identifier, "separator": Locale(identifier:id).decimalSeparator!])
+})
+let separators = Set(Locale.availableIdentifiers.compactMap { Locale(identifier:$0).decimalSeparator }).sorted()
+let object: [String:Any] = ["locales":locales,"allAvailableSeparators":separators,"availableLocaleCount":Locale.availableIdentifiers.count]
+let d = try JSONSerialization.data(withJSONObject:object, options:[.prettyPrinted,.sortedKeys]); FileHandle.standardOutput.write(d)

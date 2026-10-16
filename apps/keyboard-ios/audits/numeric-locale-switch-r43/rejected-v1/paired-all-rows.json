@@ -1,0 +1,290 @@
+{
+  "status": "REJECTED_ACCEPTANCE",
+  "rows": [
+    {
+      "id": "us-compact-decimal-revise-switch",
+      "baselinePass": false,
+      "candidatePass": true,
+      "baselineErrors": [
+        "row runtime errors missing/nonempty"
+      ],
+      "candidateErrors": [],
+      "baselineText": "74.08",
+      "candidateText": "74.08",
+      "baselineAdvance": 0,
+      "candidateAdvance": 1,
+      "baselineLists": 0,
+      "candidateLists": 2
+    },
+    {
+      "id": "spain-left-amount-refresh",
+      "baselinePass": false,
+      "candidatePass": true,
+      "baselineErrors": [
+        "row runtime errors missing/nonempty"
+      ],
+      "candidateErrors": [],
+      "baselineText": "saldo=2957",
+      "candidateText": "saldo=29,57",
+      "baselineAdvance": 0,
+      "candidateAdvance": 0,
+      "baselineLists": 0,
+      "candidateLists": 0
+    },
+    {
+      "id": "mexico-right-secure-amount",
+      "baselinePass": false,
+      "candidatePass": false,
+      "baselineErrors": [
+        "row runtime errors missing/nonempty"
+      ],
+      "candidateErrors": [
+        "action 0: wrong afterText"
+      ],
+      "baselineText": "60.4",
+      "candidateText": "60.4",
+      "baselineAdvance": 0,
+      "candidateAdvance": 1,
+      "baselineLists": 0,
+      "candidateLists": 2
+    },
+    {
+      "id": "egypt-landscape-decimal-repair",
+      "baselinePass": false,
+      "candidatePass": false,
+      "baselineErrors": [
+        "row runtime errors missing/nonempty"
+      ],
+      "candidateErrors": [
+        "row runtime errors missing/nonempty"
+      ],
+      "baselineText": "8132",
+      "candidateText": "8132",
+      "baselineAdvance": 0,
+      "candidateAdvance": 0,
+      "baselineLists": 0,
+      "candidateLists": 2
+    },
+    {
+      "id": "us-left-number-leading-zero",
+      "baselinePass": true,
+      "candidatePass": true,
+      "baselineErrors": [],
+      "candidateErrors": [],
+      "baselineText": "ID 096",
+      "candidateText": "ID 096",
+      "baselineAdvance": 0,
+      "candidateAdvance": 0,
+      "baselineLists": 0,
+      "candidateLists": 0
+    },
+    {
+      "id": "spain-compact-secure-ascii-switch",
+      "baselinePass": false,
+      "candidatePass": false,
+      "baselineErrors": [
+        "action 0: wrong afterText"
+      ],
+      "candidateErrors": [
+        "action 0: wrong afterText"
+      ],
+      "baselineText": "401",
+      "candidateText": "401",
+      "baselineAdvance": 1,
+      "candidateAdvance": 1,
+      "baselineLists": 2,
+      "candidateLists": 2
+    },
+    {
+      "id": "mexico-right-number-double-menu",
+      "baselinePass": true,
+      "candidatePass": true,
+      "baselineErrors": [],
+      "candidateErrors": [],
+      "baselineText": "folio 3705",
+      "candidateText": "folio 3705",
+      "baselineAdvance": 0,
+      "candidateAdvance": 0,
+      "baselineLists": 4,
+      "candidateLists": 4
+    },
+    {
+      "id": "egypt-ascii-double-delete",
+      "baselinePass": false,
+      "candidatePass": false,
+      "baselineErrors": [
+        "row runtime errors missing/nonempty"
+      ],
+      "candidateErrors": [
+        "row runtime errors missing/nonempty"
+      ],
+      "baselineText": "رمز 208",
+      "candidateText": "رمز 208",
+      "baselineAdvance": 0,
+      "candidateAdvance": 0,
+      "baselineLists": 0,
+      "candidateLists": 0
+    },
+    {
+      "id": "us-bilingual-fraction-repair",
+      "baselinePass": true,
+      "candidatePass": true,
+      "baselineErrors": [],
+      "candidateErrors": [],
+      "baselineText": "due 0.09",
+      "candidateText": "due 0.09",
+      "baselineAdvance": 0,
+      "candidateAdvance": 0,
+      "baselineLists": 0,
+      "candidateLists": 0
+    },
+    {
+      "id": "spain-english-comma-switch-refresh",
+      "baselinePass": false,
+      "candidatePass": true,
+      "baselineErrors": [
+        "row runtime errors missing/nonempty"
+      ],
+      "candidateErrors": [],
+      "baselineText": "EUR 990",
+      "candidateText": "EUR 9,90",
+      "baselineAdvance": 0,
+      "candidateAdvance": 1,
+      "baselineLists": 0,
+      "candidateLists": 2
+    },
+    {
+      "id": "mexico-landscape-private-fraction",
+      "baselinePass": false,
+      "candidatePass": false,
+      "baselineErrors": [
+        "action 0: wrong afterText"
+      ],
+      "candidateErrors": [
+        "action 0: wrong afterText"
+      ],
+      "baselineText": ".00",
+      "candidateText": ".00",
+      "baselineAdvance": 0,
+      "candidateAdvance": 0,
+      "baselineLists": 0,
+      "candidateLists": 0
+    },
+    {
+      "id": "egypt-left-private-arabic-separator",
+      "baselinePass": false,
+      "candidatePass": false,
+      "baselineErrors": [
+        "row runtime errors missing/nonempty"
+      ],
+      "candidateErrors": [
+        "row runtime errors missing/nonempty"
+      ],
+      "baselineText": "04",
+      "candidateText": "04",
+      "baselineAdvance": 0,
+      "candidateAdvance": 1,
+      "baselineLists": 0,
+      "candidateLists": 2
+    },
+    {
+      "id": "us-ordinary-letters-switch-control",
+      "baselinePass": true,
+      "candidatePass": true,
+      "baselineErrors": [],
+      "candidateErrors": [],
+      "baselineText": "note:qz",
+      "candidateText": "note:qz",
+      "baselineAdvance": 1,
+      "candidateAdvance": 1,
+      "baselineLists": 2,
+      "candidateLists": 2
+    },
+    {
+      "id": "spain-private-email-literal-control",
+      "baselinePass": true,
+      "candidatePass": true,
+      "baselineErrors": [],
+      "candidateErrors": [],
+      "baselineText": "ab@cd.e",
+      "candidateText": "ab@cd.e",
+      "baselineAdvance": 0,
+      "candidateAdvance": 0,
+      "baselineLists": 0,
+      "candidateLists": 0
+    },
+    {
+      "id": "mexico-landscape-url-page-control",
+      "baselinePass": false,
+      "candidatePass": false,
+      "baselineErrors": [
+        "action 0: wrong learning policy"
+      ],
+      "candidateErrors": [
+        "action 0: wrong learning policy"
+      ],
+      "baselineText": "xy.z/q32r",
+      "candidateText": "xy.z/q32r",
+      "baselineAdvance": 1,
+      "candidateAdvance": 1,
+      "baselineLists": 2,
+      "candidateLists": 2
+    },
+    {
+      "id": "egypt-compact-prose-symbol-control",
+      "baselinePass": false,
+      "candidatePass": false,
+      "baselineErrors": [
+        "row runtime errors missing/nonempty"
+      ],
+      "candidateErrors": [
+        "row runtime errors missing/nonempty"
+      ],
+      "baselineText": "tag:48+q",
+      "candidateText": "tag:48+q",
+      "baselineAdvance": 0,
+      "candidateAdvance": 0,
+      "baselineLists": 0,
+      "candidateLists": 0
+    },
+    {
+      "id": "us-secure-field-roundtrip",
+      "baselinePass": false,
+      "candidatePass": false,
+      "baselineErrors": [
+        "row runtime errors missing/nonempty"
+      ],
+      "candidateErrors": [
+        "action 0: wrong afterText"
+      ],
+      "baselineText": "5.6a@b.c2.9",
+      "candidateText": "5.6a@b.c2.9",
+      "baselineAdvance": 1,
+      "candidateAdvance": 1,
+      "baselineLists": 0,
+      "candidateLists": 2
+    },
+    {
+      "id": "spain-left-field-and-page-roundtrip",
+      "baselinePass": false,
+      "candidatePass": true,
+      "baselineErrors": [
+        "row runtime errors missing/nonempty"
+      ],
+      "candidateErrors": [],
+      "baselineText": "18qz7x50",
+      "candidateText": "18qz7x,50",
+      "baselineAdvance": 0,
+      "candidateAdvance": 0,
+      "baselineLists": 0,
+      "candidateLists": 0
+    }
+  ],
+  "counts": {
+    "baselinePass": 5,
+    "candidatePass": 9,
+    "gains": 4,
+    "retainedFailures": 9,
+    "regressions": 0
+  }
+}

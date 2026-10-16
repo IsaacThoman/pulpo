@@ -1,0 +1,4 @@
+import SwiftUI
+@main struct R43App: App {
+ var body: some Scene { WindowGroup { Text("R43 native fixture") } }
+}
