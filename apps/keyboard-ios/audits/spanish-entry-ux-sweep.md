@@ -1,0 +1,44 @@
+# Blind Spanish / English character-entry sweep
+
+## Scope and blind sequence
+
+Started from `7f92656086fc27914aeb7c5de9928eb38fefda6d` in the isolated `t3/spanish-bilingual-entry` checkout. Protocol and external user-visible oracle were committed **before reading source, tests, AGENTS.md, or earlier audits**: `af2c40409aaf44d01d8011e7149ac2c0b039ad4d` (`docs(keyboard): freeze blind bilingual entry protocol`). Then read root AGENTS.md. No earlier audit was needed to select the candidate. See [frozen protocol](spanish-entry-ux-sweep-protocol.md).
+
+Inspected the native layout, key labels, alternate strip, accessibility alternate actions, controller insertion delegate, language selection flow, and core character/Shift rules. Existing long presses expose ñ, Spanish vowel accents, ü, ¿, and ¡ in all modes; shifted/locked alternates are uppercased. Language selection is already available in the suggestion bar. Native alternate selection calls `KeyboardEngine.insertCharacter`, the entry point exercised by the development tests.
+
+## Finding and candidate
+
+Sentence-start `¿` / `¡` are absent from the engine's opening punctuation set. Inserting either clears automatic Shift, so entering `¿dónde` at the start produces `¿dónde` instead of `¿Dónde`; likewise `¡sí` instead of `¡Sí`. This also occurs after a completed sentence or newline, regardless of the loaded language. It forces an extra Shift tap in routine Spanish entry.
+
+Retained fix: treat `¿` and `¡` like existing opening quotes/brackets when deriving sentence capitalization. Preserve the existing boundary rule: `Dime, ¿cómo` and `Entonces ¡sí` do not acquire a forced capital. This is a shared orthographic rule, including Spanish phrases typed in English mode. Implementation and development tests frozen in `f6d1df0ece31fc081cadb80a03cc27c7a6511377` (`fix(keyboard): preserve capitalization after Spanish openers`). No layout redesign, dictionary edits, ranking changes, dictation changes, or language-stack caching changes.
+
+Development regression coverage uses actual language stacks for all three modes and production engine insertions, checks sentence boundaries and nested opening punctuation, negative mid-sentence cases, host capitalization opt-outs, and shifted/locked ñ/á/ü. Held-out acceptance is evaluated only after freezing the implementation.
+
+## Execution and acceptance
+
+Commands run from the checkout root; logs are local `/tmp/pulpo-spanish-entry-*.log` artifacts, not committed. Reproduce focused validation with:
+
+```sh
+swift test --package-path apps/keyboard-ios/PulpoKeyboardKit --no-parallel --filter 'SpanishEntryAcceptanceTests|SpanishEntryTests|KeyboardEngineTests|ShiftSequenceTests|LanguageSwitchEditingTests|MultilingualTests|EditingRegressionTests|ContextVisibilityTests'
+```
+
+1. **Broad baseline, before production edits:** `swift test --package-path apps/keyboard-ios/PulpoKeyboardKit`. Stopped the keyboard test runner with SIGTERM after approximately **184 seconds** to bound cost and avoid continued contention with other sweeps. Exit 1; no complete-suite pass claim. Before termination, five tests failed: `suggestionsAreFastEnoughForEveryKeystroke` (343.5 ms versus 25 ms), `suggestionsStayResponsiveWithAFullPersonalDictionary` (790.0 ms versus 25 ms), `largeDocumentSeedFinishesAndReplays` (violation-key replay mismatch), `accuracyOnNoisySwipes` (60 ms timing limit), and `timedNoisySwipesStayAccurateAndFast` (60 ms timing limit). Broad concurrency peaked near nine CPU cores in a process sample. Existing warnings: non-Sendable closure conversion in TouchModel and unused WordDeletion expression. Also observed five already annotated known issues: two fuzz host-revert ambiguities and three multilingual short-prefix greeting recall cases. No changes made to these areas.
+2. **Red development baseline:** `--filter SpanishEntryTests` against unchanged production source. Four tests; one failed, three passed, **48 assertions** failing across **24 sentence-start combinations** (three modes × four prefixes × two openers). Each combination showed both missing automatic Shift and the wrong lowercase output. Test execution 0.058 s, excluding build and the wait for the broad run's SwiftPM lock.
+3. **Existing focused baseline:** six suites from the command above, excluding both new Spanish suites; `--no-parallel`. **97 tests passed**, three annotated known issues, 2.038 s test execution. This establishes the relevant existing baseline independently of the broad run.
+4. **Candidate, before held-out evaluation:** focused command excluding `SpanishEntryAcceptanceTests`. **101 tests passed**, the same three annotated known issues. Test execution 2.075 s; build plus run **7.10 s wall / 16.34 s user / 2.09 s system**. Then committed the implementation; no subsequent production edits.
+5. **Held-out acceptance:** first evaluated only after `f6d1df0e`. **105 tests passed** across eight suites, the same three annotated known issues; test execution 2.093 s; **6.02 s wall / 6.06 s user / 0.97 s system**. Cases below are exact text assertions through actual language resources and the production engine. Tests check the actual layout's alternate routes for ¿/¡/é/ü/ñ. Settings metadata is also set to match each loaded language; UIKit display is outside this execution layer.
+
+- **H1, Spanish and bilingual:** enter `¡`, lowercase `qué vergüenza!`, space, `¿`, lock caps, lowercase `mañana?`. Expected and actual: `¡Qué vergüenza! ¿MAÑANA?`. Then enter space, locked `üñ`, unlock and enter `üñ`; expected and actual: `¡Qué vergüenza! ¿MAÑANA? ÜÑüñ`.
+- **H2, Spanish and bilingual:** start with `uno dos`; cursor offset 4; insert `¿`, then `¡`; move cursor to end; insert `?`, then `!`. Expected and actual intermediate `uno ¿¡dos`, final `uno ¿¡dos?!`, zero deletions, no added spaces.
+- **H3:** type `my ` with the English stack; switch to bilingual, type `año `; switch to Spanish, type `is `; switch to English, type `2026`. Each switch preserves the preceding text exactly. Expected and actual final: `My año is 2026` with default autocorrection enabled. Rendered mode indication not executed.
+- **H4:** English stack; lock caps, enter lowercase `why?`; unlock, space, lowercase `wow!`. Expected and actual: `WHY? Wow!`, no locked Shift afterward. Native palette dismissal not executed.
+
+**Baseline-failure recheck:** isolated serial run of the two Suggester timing tests and fuzz replay: fuzz passed (8.132 s), both Suggester timing tests still failed (53.1 ms / 85.4 ms versus 25 ms), 11.24 s wall / 8.95 s user / 0.53 s system. Separate serial recheck of `GlideDecoderTests/accuracyOnNoisySwipes|GlideTimingTests/timedNoisySwipesStayAccurateAndFast`: both still failed their 60 ms timing limits (136.0 ms / 496.9 ms); 79.92 s wall / 73.84 s user / 0.92 s system. These four timing failures were present before production edits and remain unresolved; the isolated fuzz pass does not explain or fix its broad failure. No performance improvement claim.
+
+**Final validation:** reran the full focused command after aligning acceptance fixture settings metadata with its loaded language. **105 tests passed**, the same three annotated known issues, 2.277 s test execution. Build/run plus an approximately 16-second SwiftPM-lock wait: **20.07 s wall / 5.52 s user / 0.97 s system**. `git diff --check` passed. Acceptance assertions and production implementation were not tuned after the first held-out run.
+
+## Costs and limitations
+
+No push, physical deployment, simulator boot, external API call, or source edits outside this checkout. Native touch gestures, VoiceOver interaction, and rendered active-language feedback require device verification and are not established by core tests. The core tests establish exact inserted text and engine state; source inspection establishes the controller's delegation, not a runtime UIKit result. Held-out **core acceptance passes; complete native UX acceptance is not claimed**. No simulator or physical-device time consumed, no dictionary generation performed; monetary/model costs are not exposed by this environment. Approximately seven minutes elapsed from the protocol commit to the final audit. The broad baseline dominated cost, including a roughly 141-second SwiftPM-lock wait for the development baseline.
+
+Decision: retain the two-character sentence-opener extension because it removes a routine Spanish casing error, passes the targeted regression and held-out text checks, and introduces no new failure in those checks. Full-suite health and device-level affordance validation remain limited as described above.
