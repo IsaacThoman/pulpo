@@ -1,0 +1,138 @@
+{
+  "sourceSHA256": "ec2dca24e445fa2d9993d9b8dfd516f76859cf8b49a2c182cb824ea6a1421d02",
+  "cases": [
+    {
+      "id": "R17-HO-01",
+      "status": "not-run",
+      "startingDocument": "send the note.",
+      "startingSelectionUTF16": {
+        "start": 9,
+        "end": 13
+      },
+      "language": {
+        "active_typing_language": "en",
+        "enabled_typing_languages": [
+          "en"
+        ],
+        "app_ui_locale": "en"
+      },
+      "actualDocument": null,
+      "actualSelectionUTF16": null,
+      "actualLanguage": null,
+      "actualUI": null,
+      "reason": "Broad suite authored before scope narrowed to cursor adapter; semantic UI/fixture bindings were not implemented or executed. No pass/fail claim. Full immutable expectations retained in broad-heldout-authored.json."
+    },
+    {
+      "id": "R17-HO-02",
+      "status": "not-run",
+      "startingDocument": "Hola, Lucía.\nNos vemos.",
+      "startingSelectionUTF16": {
+        "start": 13,
+        "end": 13
+      },
+      "language": {
+        "active_typing_language": "es",
+        "enabled_typing_languages": [
+          "es"
+        ],
+        "app_ui_locale": "en"
+      },
+      "actualDocument": null,
+      "actualSelectionUTF16": null,
+      "actualLanguage": null,
+      "actualUI": null,
+      "reason": "Broad suite authored before scope narrowed to cursor adapter; semantic UI/fixture bindings were not implemented or executed. No pass/fail claim. Full immutable expectations retained in broad-heldout-authored.json."
+    },
+    {
+      "id": "R17-HO-03",
+      "status": "not-run",
+      "startingDocument": "Plan 📌: comer at noon.",
+      "startingSelectionUTF16": {
+        "start": 15,
+        "end": 22
+      },
+      "language": {
+        "active_typing_language": "es",
+        "enabled_typing_languages": [
+          "en",
+          "es"
+        ],
+        "app_ui_locale": "en"
+      },
+      "actualDocument": null,
+      "actualSelectionUTF16": null,
+      "actualLanguage": null,
+      "actualUI": null,
+      "reason": "Broad suite authored before scope narrowed to cursor adapter; semantic UI/fixture bindings were not implemented or executed. No pass/fail claim. Full immutable expectations retained in broad-heldout-authored.json."
+    },
+    {
+      "id": "R17-HO-04",
+      "status": "not-run",
+      "startingDocument": "Tu idea.",
+      "startingSelectionUTF16": {
+        "start": 0,
+        "end": 2
+      },
+      "language": {
+        "active_typing_language": "es",
+        "enabled_typing_languages": [
+          "es"
+        ],
+        "app_ui_locale": "en"
+      },
+      "actualDocument": null,
+      "actualSelectionUTF16": null,
+      "actualLanguage": null,
+      "actualUI": null,
+      "reason": "Broad suite authored before scope narrowed to cursor adapter; semantic UI/fixture bindings were not implemented or executed. No pass/fail claim. Full immutable expectations retained in broad-heldout-authored.json."
+    },
+    {
+      "id": "R17-HO-05",
+      "status": "not-run",
+      "startingDocument": "Call Ana at 4.",
+      "startingSelectionUTF16": {
+        "start": 5,
+        "end": 8
+      },
+      "language": {
+        "active_typing_language": "en",
+        "enabled_typing_languages": [
+          "en",
+          "es"
+        ],
+        "app_ui_locale": "en"
+      },
+      "actualDocument": null,
+      "actualSelectionUTF16": null,
+      "actualLanguage": null,
+      "actualUI": null,
+      "reason": "Broad suite authored before scope narrowed to cursor adapter; semantic UI/fixture bindings were not implemented or executed. No pass/fail claim. Full immutable expectations retained in broad-heldout-authored.json."
+    },
+    {
+      "id": "R17-HO-06",
+      "status": "not-run",
+      "startingDocument": "We say sí.",
+      "startingSelectionUTF16": {
+        "start": 9,
+        "end": 9
+      },
+      "language": {
+        "active_typing_language": "en",
+        "enabled_typing_languages": [
+          "en",
+          "es"
+        ],
+        "app_ui_locale": "en"
+      },
+      "actualDocument": null,
+      "actualSelectionUTF16": null,
+      "actualLanguage": null,
+      "actualUI": null,
+      "reason": "Broad suite authored before scope narrowed to cursor adapter; semantic UI/fixture bindings were not implemented or executed. No pass/fail claim. Full immutable expectations retained in broad-heldout-authored.json."
+    }
+  ],
+  "executed": 0,
+  "passed": 0,
+  "failed": 0,
+  "notRun": 6
+}
