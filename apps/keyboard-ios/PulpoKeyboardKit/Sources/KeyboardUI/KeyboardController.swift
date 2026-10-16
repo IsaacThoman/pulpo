@@ -635,7 +635,14 @@ public final class KeyboardController: NSObject {
   }
 
   private func forget(_ suggestion: Suggestion) {
-    guard stack?.personal.forget(suggestion.text) == true else { return }
+    guard stack?.personal.forget(suggestion.text) == true else {
+      // An uncertain persistence result may already have committed. Report
+      // the missing confirmation without claiming that removal did not occur.
+      let message = "Couldn't confirm removal. Try again."
+      rootView.bar.showNotice(message)
+      UIAccessibility.post(notification: .announcement, argument: message)
+      return
+    }
     stack?.personal.saveInBackground()
     engine.refreshSuggestions()
     sync()

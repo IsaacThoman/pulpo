@@ -255,8 +255,10 @@ final class SuggestionBarView: UIView {
   /// while the bar refreshes underneath it, as it does on every host callback.
   func offerToForget(_ suggestion: Suggestion) {
     showNotice("Stop suggesting \u{201C}\(suggestion.text)\u{201D}?", action: "Remove") { [weak self] in
-      self?.onForget?(suggestion)
+      // Dismiss this confirmation first, so a failed removal can leave its
+      // own notice visible without changing the dictation panel's state.
       self?.hideNotice()
+      self?.onForget?(suggestion)
     }
   }
 
