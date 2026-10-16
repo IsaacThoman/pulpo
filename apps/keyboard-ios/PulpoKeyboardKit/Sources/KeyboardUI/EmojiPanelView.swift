@@ -26,6 +26,7 @@ final class EmojiPanelView: UIView, UICollectionViewDataSource, UICollectionView
   private let delete = EmojiDeleteButton(type: .system)
   private let tonePicker = KeyPopupView(style: KeyboardStyle(modern: true, dark: false, landscape: false))
   private var toneTarget: Emoji?
+  private var toneActionGeneration = UUID()
   private var deleteTimer: Timer?
   private var deletePress: UUID?
   private var deleteRepeats = 0
@@ -130,6 +131,7 @@ final class EmojiPanelView: UIView, UICollectionViewDataSource, UICollectionView
 
   /// Called as soon as the keyboard disappears, even if UIKit retains its views.
   func cancelInteractions() {
+    toneActionGeneration = UUID()
     deleteUp()
     tonePicker.hide()
     toneTarget = nil
@@ -249,8 +251,6 @@ final class EmojiPanelView: UIView, UICollectionViewDataSource, UICollectionView
     let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "emoji", for: indexPath) as! EmojiCell
     let emoji = sections[indexPath.section].emoji[indexPath.item]
     show(emoji, in: cell, at: indexPath)
-    cell.accessibilityLabel = emoji.name
-    cell.accessibilityIdentifier = "emoji-\(emoji.value)"
     return cell
   }
 
@@ -258,6 +258,13 @@ final class EmojiPanelView: UIView, UICollectionViewDataSource, UICollectionView
     let value = indexPath.section == 0 ? emoji.value : history.preferred(for: emoji)
     let size = collectionView(collection, layout: collection.collectionViewLayout, sizeForItemAt: indexPath)
     cell.show(value, images.image(value, size: size, traits: collection.traitCollection))
+    let choices = indexPath.section == 0 ? [] : emoji.tones.map { [emoji.value] + $0 } ?? []
+    let generation = toneActionGeneration
+    cell.configureAccessibility(name: emoji.name, identifier: "emoji-\(emoji.value)", value: value, hasToneVariants: emoji.tones != nil, choices: choices) { [weak self] choice in
+      guard let self, self.window != nil, !self.isHidden, self.toneActionGeneration == generation else { return false }
+      self.chooseTone(choice, for: emoji)
+      return true
+    }
   }
 
   // Cells waiting for reuse let go of their images; one shown again without
@@ -355,6 +362,13 @@ final class EmojiPanelView: UIView, UICollectionViewDataSource, UICollectionView
 
   // MARK: Skin tones
 
+  /// Physical and accessible tone choices must remember and insert the same value.
+  private func chooseTone(_ choice: String, for emoji: Emoji) {
+    history.setPreferred(choice, for: emoji)
+    insert(choice)
+    collection.reloadData()
+  }
+
   @objc private func held(_ recognizer: UILongPressGestureRecognizer) {
     let point = recognizer.location(in: collection)
     switch recognizer.state {
@@ -371,9 +385,7 @@ final class EmojiPanelView: UIView, UICollectionViewDataSource, UICollectionView
       if toneTarget != nil { tonePicker.track(x: recognizer.location(in: self).x) }
     case .ended:
       if let target = toneTarget, let choice = tonePicker.selectedOption {
-        history.setPreferred(choice, for: target)
-        insert(choice)
-        collection.reloadData()
+        chooseTone(choice, for: target)
       }
       fallthrough
     default:
@@ -459,6 +471,7 @@ final class EmojiCell: UICollectionViewCell {
   static let pointSize: CGFloat = 30
   private(set) var emoji: String?
   let imageView = UIImageView()
+  private var accessibilityConfiguration = UUID()
 
   override init(frame: CGRect) {
     super.init(frame: frame)
@@ -474,6 +487,44 @@ final class EmojiCell: UICollectionViewCell {
     self.emoji = emoji
     imageView.image = drawn.image
     imageView.frame = drawn.frame
+  }
+
+  /// Describe the rendered value, including stored recent variants. Configure
+  /// every field together because collection cells move between categories.
+  func configureAccessibility(name: String, identifier: String, value: String, hasToneVariants: Bool, choices: [String], choose: @escaping (String) -> Bool) {
+    let configuration = UUID()
+    accessibilityConfiguration = configuration
+    accessibilityLabel = name
+    accessibilityIdentifier = identifier
+    accessibilityValue = Self.skinToneDescription(value) ?? (hasToneVariants ? "Default skin tone" : nil)
+    accessibilityCustomActions = choices.isEmpty ? nil : choices.map { choice in
+      let tone = Self.skinToneDescription(choice) ?? "Default skin tone"
+      return UIAccessibilityCustomAction(name: "Insert \(name), \(tone)") { [weak self] _ in
+        guard let self, self.window != nil, self.accessibilityConfiguration == configuration else { return false }
+        return choose(choice)
+      }
+    }
+  }
+
+  private static func skinToneDescription(_ value: String) -> String? {
+    let names = ["Light skin tone", "Medium-light skin tone", "Medium skin tone", "Medium-dark skin tone", "Dark skin tone"]
+    var tones: [String] = []
+    for scalar in value.unicodeScalars where (0x1F3FB...0x1F3FF).contains(scalar.value) {
+      let name = names[Int(scalar.value - 0x1F3FB)]
+      if !tones.contains(name) { tones.append(name) }
+    }
+    return tones.isEmpty ? nil : tones.joined(separator: ", ")
+  }
+
+  override func prepareForReuse() {
+    super.prepareForReuse()
+    accessibilityConfiguration = UUID()
+    accessibilityLabel = nil
+    accessibilityIdentifier = nil
+    accessibilityValue = nil
+    accessibilityCustomActions = nil
+    emoji = nil
+    imageView.image = nil
   }
 
   override var isHighlighted: Bool {
