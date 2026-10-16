@@ -128,3 +128,52 @@ The source and new test passed iPhone SDK syntax parsing. No simulator operation
 was performed by this sweep, and the new contact tests have not been executed here.
 Executable native red/green validation remains root-owned; a tests-first commit
 and source-traced failure are not reported as an executed native red run.
+
+## Parent native reproduction and independent review
+
+The parent executed the original six controller methods against `eb0f3339`: four
+methods fail with 42 assertions; same-field selection and delayed-own-report
+controls pass. All six methods pass on the integrated guarded controller before
+the contact-ownership follow-up, as part of a larger run with four unrelated
+installed-emoji activation failures. That run reached 63 supported passing
+methods but did not finalize its result bundle.
+
+The parent separately executed the six real-touch contact methods against
+`fcf4161a`, before `c0b3ca3b`: four fail with seven assertions (new swipe, new repeat,
+deferred Undo ordering, stale contact across a field switch); rapid two-tap
+release ordering and unrelated-letter preservation pass. All six method bodies
+reach terminal results. Xcode then stalls in finalization; the parent stops the
+finished command and its owned diagnostic process. This is executed red evidence,
+not a completed `.xcresult` or command exit establishing test success.
+
+An independent read-only review supports retaining the contact fix: retirement
+happens before fresh tracking insertion; valid deferred actions finish first;
+invalid destinations reject stale actions; exact-identity guards prevent timer
+resurrection after synchronous cancellation; unrelated modifier/letter tracking
+survives.
+
+The first finalized green bundle records 68/69 passing methods, including all six
+new contact methods. Its older deferred-field test fails its required correction
+setup, then continues with a queued initial deletion. It passes alone in a fresh
+runner. Source tracing identifies test-state leakage: the preceding real-touch
+Undo correctly pins `teh` in the process-shared personal model. Removing a missing
+disk file leaves the unsaved pin in memory when both file stamps are nil. This is
+not evidence that the destination guard dispatched a deferred stale edit.
+
+Test-only commit `73be8ca6` clears the active shared personal model and resets its
+touch calibration at harness creation through existing public APIs. A new
+same-process regression explicitly undoes a correction, verifies the pin and touch
+learning, constructs another harness sharing the same personal object, and checks
+that its fresh correction works. The original deferred-field test now fails fast
+unless correction and no-edit-on-touch-down preconditions hold. No production
+learning/reset behavior changes.
+
+Final parent native verification at `73be8ca6` completes with **70/70 methods
+passing**, zero failures, in a finalized result bundle, including all six
+destination and all six real-touch contact methods, the new same-process learning
+isolation method, existing controller/delete regressions, all 18 dictation
+bridge/destination methods, and emoji viewport/preview checks. Four known
+installed-emoji methods are explicitly excluded because the iOS 27 accessibility
+bridge omits visible extension keys; those methods remain unpassed. The command
+uses `-collect-test-diagnostics never`, avoiding the earlier finalization stall.
+No physical-phone validation is claimed. No raw result bundle is committed.

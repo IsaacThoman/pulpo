@@ -95,7 +95,7 @@ screenshots, APKs, and SDK downloads remain outside Git.
 ### Parent verification and unresolved evidence
 
 The first integrated batch passed **356 core tests plus three service tests**.
-The latest integrated batch passes **418 core tests in 59 suites plus three
+The latest integrated batch passes **436 core tests in 63 suites plus three
 service tests** in Release. Five known issues are tracked: two existing
 own-state/proxy-lag ambiguities and three prefix-completion misses. All **28 Python
 tooling tests** pass, including deterministic multilingual data checks.
@@ -206,7 +206,7 @@ provenance: choosing a suggestion, changing language, then typing comma produced
 `the ,`. The fix retains only space provenance, invalidates old-model alternatives,
 and ends the Shift tap sequence. Fourteen parameterized cases pass; nine
 assertions failed before the fix. Full details are in `audits/multilingual-sweep.md`.
-A separate blind sweep is measuring multilingual memory and latency costs.
+The completed resource sweep and its failed memory gates are reported below.
 
 ### Spanish opening punctuation and capitalization
 
@@ -224,8 +224,8 @@ permits lowercase; doing it before an opener rederives automatic Shift, matching
 the existing quote/bracket policy. Closing quotes, newlines, and ASCII ellipses
 retain existing boundaries; Unicode ellipsis is still unsupported. The shared
 helper also changes transcript casing after ¿/¡. It does **not** remove the
-pre-existing unwanted space inserted there by `insertText(spacing:)`; a separate
-blind inserted-text sweep is investigating spacing. No dictionary or layout edit
+pre-existing unwanted space inserted there by `insertText(spacing:)`; the subsequent
+inserted-text sweep below fixes this left-boundary spacing. No dictionary or layout edit
 is included. Full evidence and the agent's interrupted/debug timing runs remain
 in `audits/spanish-entry-ux-sweep.md`; final parent Release and native checks are
 reported above. The final parent Release run passes **418 core + 3 service tests**
@@ -275,6 +275,160 @@ on-wire attempt generation or insertion acknowledgement. Unobservable host edits
 and transcript retention across service recreation/new recordings are not
 established. The original frozen destination acceptance is not claimed in full;
 see `audits/dictation-destination-sweep.md`.
+
+### New bilingual tap benchmark and a rejected correction change
+
+A separate implementation-blind sweep freezes 38 development and 38 held-out
+cases, each expanding to 74 mode observations. Terminal typo targets are disjoint
+between splits; scaffolding overlaps, modes are correlated, and the author saw
+both sets during creation. The adapter uses actual centered key events, Shift,
+spaces, and committed `KeyboardEngine` output, with fresh learning state and
+raw-input controls. Auto-capitalization and smart punctuation are disabled. This
+is not natural touch/noise, UIKit, adaptation, swipe, or Gboard evidence.
+
+Baseline development scores **70/74**, held-out **73/74**. A candidate preserving
+an accented name improves development to 72/74, but a separately frozen,
+post-inspection diagnostic falls **22/24 → 11/24**. Held-out outputs are identical
+between baseline and candidate. The change fails its original eligibility gate
+and is rejected; no production correction change is retained. Parent replay
+matches every baseline outcome, including diagnostics, on the integrated branch.
+The opt-in benchmark records misses; its default passing invocation does not
+assert all aspirational accuracy cases succeed.
+
+Independent review also hardened `summarize.py` to bind every row to frozen
+id/mode/typed/desired/category fields, require full diagnostic coverage, and reject
+duplicates. Seven tampering checks fail as intended, while the original summary
+bytes remain unchanged. See `audits/bilingual-accuracy-sweep.md`.
+
+### Delete gestures remain bound to their original destination
+
+A newly frozen controller sweep reproduces a data-loss bug outside proxy-lag
+ambiguities. Begin in identified field A `shared old content!`, remove `!` on
+touch-down, then focus B `shared new` before releasing the swipe. The old
+controller deletes B's `new`, then offers A's `old content!` as Undo. Fresh caret
+and privacy transitions also leave the old gesture armed.
+
+The controller now records the field identity, privacy state, and accepted host
+change count at touch-down, and validates before preview, repeat, deferred
+release, and commit. An accepted nonselection caret/text change cancels the
+pending gesture. A same-field selection still deletes its actual range; known
+delayed own reports retain the gesture. A named core synchronization wrapper
+reuses existing reconciliation without an edit or algorithm change.
+
+The parent executed the six new production-controller methods against the
+pre-fix checkout: four fail with **42 assertions**, while same-field selection
+and delayed-own-report controls pass. All six methods reached their terminal
+results; Xcode then stalled during result finalization. The parent stopped that
+finished test command, so no finalized red `.xcresult` is claimed.
+
+Independent review then caught an introduced overlap bug: releasing an older
+delete contact could clear a newer press's origin. The follow-up retires older
+delete contacts and timers, preserves valid deferred correction Undo before the
+next Backspace, and cancels only delete contacts when a destination expires.
+Exact tracking checks prevent repeat callbacks from restarting a cancelled timer.
+Six new methods drive actual KeysView touch events; against the initial guard,
+four methods fail with **seven assertions**, while rapid two-tap release ordering
+and preservation of an unrelated letter pass. All methods reached terminal results,
+then Xcode stalled in result finalization and the parent stopped the command.
+Independent source review supports retaining the fix. A finalized parent native
+run passes **68/69** methods, including all six new touch methods. The one older
+deferred-Undo scenario fails its autocorrection setup because the preceding
+contact scenario correctly pins a spelling in the process-shared learned model.
+Its isolated rerun passes. Test-only commit `73be8ca6` now clears active in-memory
+learning and touch calibration, adds a same-process pin/learning isolation check,
+and fails fast on invalid deferred setup. The final combined rerun passes
+**70/70** methods in a finalized `.xcresult`, including all destination/contact
+cases, the shared-learning isolation check, existing delete gestures, all 18
+dictation destination methods, and emoji restoration/preview regressions. Four
+known installed-emoji methods are explicitly excluded because the iOS 27 remote
+accessibility bridge omits visible keys; they remain unpassed. Frozen protocol, reproductions, and limitations are in
+`audits/delete-gesture-destination-sweep.md`.
+
+### Inserted-text spacing and review-discovered token protection
+
+The inserted-text sweep freezes 28 development and 22 held-out exact tasks before
+source inspection. Its shared `insertText` fix respects supplied whitespace and
+opening delimiters, including ¿/¡ and contextually opening straight quotes.
+Standalone punctuation can attach to the preceding text. Development improves
+**20/28 → 25/28**, held-out **14/22 → 19/22**, with zero regressions in those tasks.
+One held-out suggestion is unavailable and remains a non-pass in the denominator.
+Right-side caret separators and panel emoji spacing remain unresolved.
+
+Independent review found the original broad punctuation predicate would join
+punctuation-led tokens (`Use .NET` → `Use.NET`, `Smile :)` → `Smile:)`). The parent
+refinement accepts only eligible punctuation runs ending at whitespace/end;
+punctuation-led words, emoticons, and ambiguous apostrophe tokens retain their
+requested separator. Twenty-eight assertions fail on the imported broad rule and
+pass after refinement. Ninety-five focused Release test functions pass, including
+53 new boundary cases. Parent development/held-out output arrays exactly match
+the original retained arrays; this rerun is exposed regression evidence, not a
+fresh blind gain. The Spanish opener characterization now expects the intended
+no-space boundary, with its casing matrix unchanged.
+
+The final integrated Release run passes **436 core + 3 service tests** with the
+same five tracked known issues. Two native bridge-delivery methods cover attaching
+punctuation and preserving token separators; both pass in the parent's integrated
+native method results. That run records 63 supported methods passing, while four
+installed-emoji methods fail before interaction because the iOS 27 remote
+accessibility bridge does not expose Pulpo's visible keys. Result finalization
+stalled afterward. A clean run explicitly excluding those four known blocked
+methods passes 70/70 in a finalized result bundle; they are not counted as passing.
+See `audits/inserted-text-spacing-sweep.md` for every miss and evaluation boundary.
+
+### Emoji reopening removes redundant viewport work
+
+The resource sweep changes only saved-offset restoration in `EmojiPanelView`:
+prepare current collection geometry, restore the saved position, then allow cells
+to be created. It avoids **50/60 starting-viewport cell/image requests** before
+showing the saved viewport, adds no retained cache, and preserves final visible
+items/offsets across twelve counter scenarios. Independent review found no
+material change to categories, recents, skin tones, search, or release paths.
+
+In the agent's Debug simulator workload, held-out picker-open/layout medians move
+**190.451 → 100.175 ms** English, **173.384 → 82.185 ms** Spanish, and
+**143.857 → 83.421 ms** bilingual. All 36 resource runs, two interaction probes,
+and 18 relevant regressions pass their functional assertions; all 216 typed
+passes and paired suggestion traces match. Sequential timing and simulator
+contention limit causal interpretation of percentages; deterministic eliminated
+work independently supports the change.
+
+Overall frozen acceptance remains **incomplete**: 150 MiB runner RSS, 10 MiB
+post-warmup growth, and generic 50 ms warm UI bounds fail. Runner RSS is Debug
+XCTest process memory, not the installed extension or a physical phone. Visible
+compositor latency remains unmeasured. The historical `firstPrediction` label
+times only `documentDidChange`, not prediction; future runs call it
+`documentAttachment`. Historical measurements remain unchanged and no separate
+cold-prediction gate is claimed from them. `keyAndSuggestions` does include real
+inference. See `audits/multilingual-resources-sweep.md` and its full metrics.
+
+### Fresh multilingual Gboard comparison
+
+A new implementation-blind 36-case probe uses 12 curated intentions each for
+English, Spanish, and bilingual modes. On **30 observable paired cases**, Pulpo
+matches **27/30** and Gboard **28/30** (26 both, one Pulpo only, two Gboard only,
+one neither). Six Gboard entry paths are explicitly unavailable: Japanese text
+has no verified configured layout, and this runner has no verified emoji-selector
+path. They remain in the complete 36-case accounting; their Pulpo core API
+successes do not establish on-screen reachability or superiority.
+
+Independent review recomputes the table, checks all 36 rows, frozen inputs in the
+APK, active-language labels and all 26 letter positions for every observed case,
+and actual English/Spanish monolingual toggles versus bilingual Spanish selection.
+Gboard receives real touch events, symbol-page digits, and verified accent-menu
+gestures. Pulpo receives real engine character/space calls without touch positions.
+History/reset and timing are asymmetric; this is curated intended-output evidence,
+not population accuracy, motor accuracy, latency, or an overall lead.
+
+Pulpo's three misses concern restoring `café`/`tomaré` and preserving literal
+`envia`; Gboard misses one English accent-restoration and one bilingual typo case.
+No production correction change is selected from these revealed observations.
+The original measured Pulpo revision is published `8891f197`; the parent replays
+all 36 cases on the integrated branch and exactly matches every id/output/score.
+Source review also hardens result validation: unknown/error status, unavailable
+rows carrying a score/output, missing reasons, and nonboolean/inconsistent scores
+are rejected before aggregation. Eight tampered datasets fail even under Python
+optimization, while original summary bytes remain unchanged. See
+`audits/gboard-multilingual-comparison.md`.
 
 ## Blind sweep loop: round 1
 
