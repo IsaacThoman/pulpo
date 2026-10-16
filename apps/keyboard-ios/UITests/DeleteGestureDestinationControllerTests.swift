@@ -121,8 +121,15 @@ final class DeleteGestureDestinationControllerTests: XCTestCase {
   func testFieldSwitchCancelsADeferredCorrectionUndoAtDeleteRelease() throws {
     let h = ControllerHarness(waitsForEmoji: false)
     h.type("and teh ")
-    XCTAssertTrue(h.engine.deleteUndoesLastEdit)
+    guard h.engine.deleteUndoesLastEdit else {
+      XCTFail("Expected a deferred correction undo; host contains \(h.proxy.host.string.debugDescription)")
+      return
+    }
     h.controller.keysView(h.controller.rootView.keys, touchDown: try XCTUnwrap(h.key(.delete)))
+    guard h.proxy.outbox.isEmpty else {
+      XCTFail("A deferred correction undo must not send an edit on touch-down")
+      return
+    }
     let sent = h.proxy.sentEdits
     h.proxy.identifier = UUID()
     h.proxy.hostChanges { $0 = SimulatedProxy.State("new field") }

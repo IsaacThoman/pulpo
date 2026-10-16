@@ -237,6 +237,10 @@ final class ControllerHarness {
     viewController.loadViewIfNeeded()
     viewController.view.frame = CGRect(x: 0, y: 0, width: 402, height: controller.preferredHeight)
     engine.clock = { [unowned self] in self.now }
+    // The production controller intentionally shares these models in process.
+    // Removing a missing file cannot clear unsaved pins or tap calibration.
+    engine.suggester?.model.personal.clear()
+    engine.suggester?.corrector.touch?.reset()
     appear()
     if waitsForEmoji { _ = pump(until: { self.engine.emojiSuggester != nil }, timeout: 120) }
     pump()

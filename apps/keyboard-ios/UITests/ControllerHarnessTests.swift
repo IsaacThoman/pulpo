@@ -9,6 +9,36 @@ import XCTest
 final class ControllerHarnessTests: XCTestCase {
   let heart = "\u{2764}\u{FE0F}"
 
+  func testNewHarnessClearsUnsavedPinnedLiteralsAndTapCalibration() throws {
+    let first = ControllerHarness(waitsForEmoji: false)
+    let firstSuggester = try XCTUnwrap(first.engine.suggester)
+    first.type("and teh ")
+    guard first.engine.deleteUndoesLastEdit else {
+      XCTFail("Expected the setup to autocorrect teh before explicitly undoing it")
+      return
+    }
+    let delete = try XCTUnwrap(first.controller.rootView.keys.keyViews.first { $0.key.action == .delete })
+    XCTAssertTrue(delete.accessibilityActivate())
+    first.settle()
+    XCTAssertEqual(first.proxy.host.string, "And teh")
+    XCTAssertTrue(firstSuggester.model.personal.isKnown("teh"))
+    XCTAssertTrue(firstSuggester.model.personal.hasUnsavedChanges)
+    let touch = try XCTUnwrap(firstSuggester.corrector.touch)
+    let geometry = firstSuggester.corrector.geometry
+    touch.learn(TypedWord(text: "the", taps: "the".utf8.map { geometry.center($0) }), intended: "the", geometry: geometry)
+    XCTAssertGreaterThan(touch.weight, 0)
+
+    let second = ControllerHarness(waitsForEmoji: false)
+    let secondSuggester = try XCTUnwrap(second.engine.suggester)
+    XCTAssertTrue(firstSuggester.model.personal === secondSuggester.model.personal, "Exercise the shared in-process model")
+    XCTAssertFalse(secondSuggester.model.personal.isKnown("teh"))
+    XCTAssertEqual(secondSuggester.model.personal.totalCount, 0)
+    XCTAssertEqual(secondSuggester.corrector.touch?.weight, 0)
+    second.type("and teh ")
+    XCTAssertEqual(second.proxy.host.string, "And the ")
+    XCTAssertTrue(second.engine.deleteUndoesLastEdit)
+  }
+
   // MARK: A tap on what the person saw applies
 
   /// The installed-extension failure: under load the tap lands well over a second
