@@ -143,6 +143,53 @@ final class ControllerHarnessTests: XCTestCase {
     XCTAssertEqual(harness.proxy.host.string, "I want beautiful ")
   }
 
+  // MARK: Selection changes during a delete swipe
+
+  func testNewHostSelectionDuringWordDeleteGestureAndVisibleUndoPreserveSurroundingText() throws {
+    for optimistic in [false, true] {
+      let harness = ControllerHarness(text: "prefix chosen suffix!", optimistic: optimistic, waitsForEmoji: false)
+      let keys = harness.controller.rootView.keys
+      let delete = try XCTUnwrap(harness.key(.delete))
+      let initialEdits = harness.proxy.sentEdits
+
+      // Touch-down deletes its own character before the finger becomes a swipe.
+      harness.controller.keysView(keys, touchDown: delete)
+      XCTAssertEqual(harness.proxy.outbox, [.delete])
+      harness.settle()
+      XCTAssertEqual(harness.proxy.host.string, "prefix chosen suffix")
+      harness.controller.keysView(keys, previewWordDeletion: 3)
+
+      // The host selects a different range while the gesture is still active.
+      harness.proxy.hostChanges { state in
+        state.cursor = "prefix ".count
+        state.selection = "chosen".count
+      }
+      harness.deliver(callbacks: [.selectionWill, .selectionDid])
+      XCTAssertEqual(harness.proxy.selectedText, "chosen")
+      XCTAssertEqual(harness.proxy.sentEdits, initialEdits + 1)
+
+      harness.controller.keysView(keys, commitWordDeletion: 3)
+      XCTAssertEqual(harness.proxy.outbox, [.delete], "Selected text must be removed with one primitive, optimistic: \(optimistic)")
+      XCTAssertEqual(harness.proxy.sentEdits, initialEdits + 2)
+      harness.settle()
+      harness.pump()
+      XCTAssertEqual(harness.proxy.host.string, "prefix  suffix")
+
+      let undo = try XCTUnwrap(harness.bar.subviews.compactMap { $0 as? UIButton }.first {
+        $0.accessibilityIdentifier == "undo-delete" && !$0.isHidden
+      })
+      XCTAssertFalse(harness.bar.isHidden)
+      undo.sendActions(for: .touchUpInside)
+      XCTAssertEqual(harness.proxy.outbox, [.insert("chosen")])
+      XCTAssertEqual(harness.proxy.sentEdits, initialEdits + 3)
+      harness.settle()
+      harness.pump()
+      // The old gesture origin includes "!"; it must not enter selection undo.
+      XCTAssertEqual(harness.proxy.host.string, "prefix chosen suffix")
+      XCTAssertTrue(undo.isHidden)
+    }
+  }
+
   // MARK: Forgetting a word
 
   private func noticeAction(_ harness: ControllerHarness) -> UIButton? {
