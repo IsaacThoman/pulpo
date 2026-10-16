@@ -67,8 +67,11 @@ final class CompactLayoutUXTests: XCTestCase {
     let window = UIWindow(frame: CGRect(x: 0, y: 0, width: max(input.width, 402), height: 900))
     let container = UIViewController()
     window.rootViewController = container
+    let envelope = UIView(frame: CGRect(x: 0, y: 250, width: input.width, height: input.height))
+    envelope.clipsToBounds = true
+    container.view.addSubview(envelope)
     container.addChild(vc)
-    container.view.addSubview(vc.view)
+    envelope.addSubview(vc.view)
     vc.didMove(toParent: container)
     vc.traitOverrides.preferredContentSizeCategory = input.contentSize == "normal" ? .large : .accessibilityExtraExtraExtraLarge
     vc.traitOverrides.legibilityWeight = input.bold ? .bold : .regular
@@ -80,7 +83,7 @@ final class CompactLayoutUXTests: XCTestCase {
       vc.removeFromParent()
       window.isHidden = true
     }
-    vc.view.frame = CGRect(x: 0, y: 250, width: input.width, height: h.controller.preferredHeight)
+    vc.view.frame = CGRect(x: 0, y: 0, width: input.width, height: h.controller.preferredHeight)
     h.controller.layoutChanged(dark: false)
     vc.view.frame.size.height = h.controller.preferredHeight
     vc.view.layoutIfNeeded()
@@ -110,6 +113,7 @@ final class CompactLayoutUXTests: XCTestCase {
       report.limitations.append("Requested docking unavailable at this width/orientation; verified full width and absence of side controls")
     }
     report.gate(root.bounds.width == input.width, "host width was not applied")
+    report.gate(root.bounds.height <= input.height, "production keyboard exceeds host height envelope")
     report.gate(h.engine.settings.language == language, "language selection did not reach engine")
     report.gate(vc.traitCollection.preferredContentSizeCategory == (input.contentSize == "normal" ? .large : .accessibilityExtraExtraExtraLarge), "content size trait missing")
 
@@ -134,7 +138,10 @@ final class CompactLayoutUXTests: XCTestCase {
           if view.clipsToBounds { visibleRect = visibleRect.intersection(view.convert(view.bounds, to: root)) }
           ancestor = view.superview
         }
-        if visibleRect.isNull || visibleRect.isEmpty { continue }
+        if visibleRect.isNull || visibleRect.isEmpty {
+          if !(button is EmojiResultControl) { report.gate(false, "\(stage)/\(name): fully clipped or empty control") }
+          continue
+        }
         if !report.controls.contains(name) { report.controls.append(name) }
         if !(button is EmojiResultControl) {
           report.gate(rect.width > 0 && rect.height > 0 && root.bounds.insetBy(dx: -0.5, dy: -0.5).contains(rect), "\(stage)/\(name): clipped or empty control \(rect)")
@@ -154,16 +161,21 @@ final class CompactLayoutUXTests: XCTestCase {
       for cap in root.keys.keyViews where cap.isEnabled {
         report.gate(root.keys.bounds.insetBy(dx: -0.5, dy: -0.5).contains(cap.frame), "\(stage)/\(cap.key.identifier): clipped key")
         report.gate(!(cap.accessibilityLabel ?? "").isEmpty, "\(stage)/\(cap.key.identifier): missing label")
-        let center = CGPoint(x: cap.frame.midX, y: cap.frame.midY)
-        let hit = root.hitTest(root.keys.convert(center, to: root), with: nil)
-        report.gate(hit === root.keys, "\(stage)/\(cap.key.identifier): center missed grid")
-        let index = root.keys.keyIndex(at: center)
-        report.gate(index.map { root.keys.keyViews[$0] === cap } == true, "\(stage)/\(cap.key.identifier): wrong key selected")
+        for x in [CGFloat(0.02), 0.5, 0.98] {
+          for y in [CGFloat(0.02), 0.5, 0.98] {
+            let point = CGPoint(x: cap.frame.minX + cap.frame.width * x, y: cap.frame.minY + cap.frame.height * y)
+            let hit = root.hitTest(root.keys.convert(point, to: root), with: nil)
+            report.gate(hit === root.keys, "\(stage)/\(cap.key.identifier): interior missed grid")
+            let index = root.keys.keyIndex(at: point)
+            report.gate(index.map { root.keys.keyViews[$0] === cap } == true, "\(stage)/\(cap.key.identifier): wrong key selected")
+          }
+        }
       }
     }
     func tap(_ identifier: String) throws {
       let cap = try XCTUnwrap(root.keys.keyViews.first { $0.key.identifier == identifier })
       let touch = Contact(point: CGPoint(x: cap.frame.midX, y: cap.frame.midY))
+      report.gate(root.hitTest(root.keys.convert(touch.point, to: root), with: nil) === root.keys, "\(identifier): touch dispatch did not reach grid")
       root.keys.touchesBegan([touch], with: nil)
       root.keys.touchesEnded([touch], with: nil)
       h.settle()
@@ -195,6 +207,13 @@ final class CompactLayoutUXTests: XCTestCase {
     root.bar.setSuggestions([])
     layout()
     checkButtons("empty-bar")
+    report.gate(root.hitTest(CGPoint(x: root.bar.frame.midX, y: root.bar.frame.midY), with: nil) === root.keys, "unused bar background stopped forwarding")
+    root.bar.setSuggestions([Suggestion(text: "test", kind: .literal)])
+    layout()
+    if let disabled = root.bar.subviews.compactMap({ $0 as? SlotControl }).first(where: { !$0.isEnabled }) {
+      let center = disabled.convert(CGPoint(x: disabled.bounds.midX, y: disabled.bounds.midY), to: root)
+      report.gate(root.hitTest(center, with: nil) === root.keys, "disabled suggestion stopped forwarding")
+    } else { report.gate(false, "disabled-slot fixture missing") }
     root.bar.setSuggestions(suggestions)
     layout()
     for id in ["key-q", "key-w", "key-e"] { try tap(id) }
@@ -241,6 +260,7 @@ final class CompactLayoutUXTests: XCTestCase {
 
     // Visible Undo is generated by the real controller/engine deletion path.
     h.type("one two ")
+    let beforeDeletion = h.proxy.host.string
     h.controller.keysView(root.keys, touchDown: try XCTUnwrap(h.key(.delete)))
     h.settle()
     h.controller.keysView(root.keys, previewWordDeletion: 1)
@@ -251,10 +271,9 @@ final class CompactLayoutUXTests: XCTestCase {
     checkButtons("undo")
     let undo = root.bar.subviews.compactMap { $0 as? UIButton }.first { $0.accessibilityIdentifier == "undo-delete" && !$0.isHidden }
     report.gate(undo != nil, "Undo did not appear after word deletion")
-    let deleted = h.proxy.host.string
     undo?.sendActions(for: .touchUpInside)
     h.settle()
-    report.gate(h.proxy.host.string != deleted, "Undo action did not restore text")
+    report.gate(h.proxy.host.string == beforeDeletion, "Undo action did not restore exact original text")
 
     // No microphone permission/server is needed to validate the real affordance
     // and message/close transition. Avoid recording or app navigation.
@@ -264,6 +283,7 @@ final class CompactLayoutUXTests: XCTestCase {
     root.dictation.layoutIfNeeded()
     checkButtons("dictation-message")
     if input.id.contains("rotation") {
+      envelope.frame.size = CGSize(width: 812, height: 224)
       vc.view.frame.size.width = 812
       h.controller.layoutChanged(dark: false)
       vc.view.frame.size.height = h.controller.preferredHeight
@@ -278,6 +298,7 @@ final class CompactLayoutUXTests: XCTestCase {
       root.keys.layoutIfNeeded()
       checkKeys("rotated-letters")
       vc.view.frame.size.width = input.width
+      envelope.frame.size = CGSize(width: input.width, height: input.height)
       h.controller.layoutChanged(dark: false)
       vc.view.frame.size.height = h.controller.preferredHeight
       vc.view.setNeedsLayout()
@@ -289,10 +310,12 @@ final class CompactLayoutUXTests: XCTestCase {
       vc.view.setNeedsLayout()
       vc.view.layoutIfNeeded()
       report.gate(vc.traitCollection.preferredContentSizeCategory == .large, "live content-size change missing")
+      checkButtons("live-normal-text")
       vc.traitOverrides.preferredContentSizeCategory = .accessibilityExtraExtraExtraLarge
       vc.view.setNeedsLayout()
       vc.view.layoutIfNeeded()
       report.gate(vc.traitCollection.preferredContentSizeCategory == .accessibilityExtraExtraExtraLarge, "live accessibility category restore missing")
+      checkButtons("live-accessibility-text")
     }
     root.mode = .keys
     layout()
