@@ -1,0 +1,63 @@
+{
+  "scope": "mechanics only; fake prepared ledgers and inert Python scripts; no product or author bundle read/executed",
+  "driverSHA256": "7744ff698ce7953a5ad2fc91b96b9859fb19b8cd7a4960a361fe36cacc5a25e1",
+  "optimized": true,
+  "cases": [
+    {
+      "case": "normal-and-repeat",
+      "work": "/private/tmp/pulpo-r48-inert-normal-b_f_xb0f",
+      "twoChildren": true,
+      "CLIOrderMatchesMap": true,
+      "repeatRejectedWithoutNewCalls": true
+    },
+    {
+      "case": "binary-corruption",
+      "work": "/private/tmp/pulpo-r48-inert-binary-corruption-wkrm6xk8",
+      "rejectedBeforeMarker": true
+    },
+    {
+      "case": "spawn-error",
+      "work": "/private/tmp/pulpo-r48-inert-spawn-error-uc1cl6e_",
+      "markerConsumed": true,
+      "firstLedgerItemHasNoLaunchErrorOrExit": true,
+      "secondNotAttempted": true,
+      "repeatRejected": true,
+      "exception": {
+        "type": "PermissionError",
+        "text": "[Errno 13] Permission denied: '/private/tmp/pulpo-r48-inert-spawn-error-uc1cl6e_/first/stub.py'"
+      }
+    },
+    {
+      "case": "stale-raw",
+      "work": "/private/tmp/pulpo-r48-inert-stale-raw-nsp42_wk",
+      "firstExit": 7,
+      "stalePreexistingRawAttributedToRun": true,
+      "secondAttempted": true,
+      "driverPrintedTransportComplete": true
+    },
+    {
+      "case": "timeout",
+      "work": "/private/tmp/pulpo-r48-inert-timeout-fluzdep8",
+      "inertTimeoutSeconds": 0.3,
+      "realTimeoutException": true,
+      "streamsRetained": true,
+      "streamHashesMissing": true,
+      "secondAttempted": true
+    },
+    {
+      "case": "archive-traversal",
+      "rejected": true,
+      "work": "/tmp/pulpo-r48-inert-archive-g87bclk5"
+    },
+    {
+      "case": "archive-symlink",
+      "rejected": true,
+      "work": "/tmp/pulpo-r48-inert-archive-nxsgm4tv"
+    },
+    {
+      "case": "archive-hardlink",
+      "rejected": true,
+      "work": "/tmp/pulpo-r48-inert-archive-h777rx_v"
+    }
+  ]
+}

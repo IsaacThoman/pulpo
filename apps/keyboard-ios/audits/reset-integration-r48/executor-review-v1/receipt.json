@@ -1,0 +1,37 @@
+{
+  "verdict": "REQUEST_BOUNDED_MECHANICAL_CORRECTIONS_BEFORE_PREPARE_FREEZE",
+  "reviewedCommitIdentifier": "1732cfb22e0a20053706a6b22ae54b9a445c4437",
+  "driverSHA256": "7744ff698ce7953a5ad2fc91b96b9859fb19b8cd7a4960a361fe36cacc5a25e1",
+  "approvedInputBindings": {
+    "apps/keyboard-ios/audits/reset-integration-r48/paired-executor.py": "7744ff698ce7953a5ad2fc91b96b9859fb19b8cd7a4960a361fe36cacc5a25e1",
+    "apps/keyboard-ios/audits/reset-integration-r48/contract-before-integration.md": "2b6b0157b199944b038a1f9256b49dbb5570ad1076ca43b48fbc916de536acfa",
+    "apps/keyboard-ios/audits/reset-integration-r48/author-protocol.md": "fa39822952426f1f9d380f7e7051f37359744c7cc194767c24f4fa1719198947",
+    "apps/keyboard-ios/audits/reset-integration-r48/domain-review/public-domain-v3.md": "986bbb9faefefd211c8f954c5d0fcd66ad1cd42e10008e69a354a7bc964dbef9",
+    "apps/keyboard-ios/audits/reset-integration-r48/paired-source-identities.json": "bea8801c153c07440d84311e854bbcce87ef466e85d307653e53bbe3b65fa8d9",
+    "/tmp/pulpo-r48-fresh-validator/execution-map-v1.json": "8e3d683c8d720d2135442c47792c8d640b6ce5847381e13be9d164243ee4f6b4"
+  },
+  "normalDiagnosticCases": 8,
+  "optimizedDiagnosticCases": 8,
+  "inertPrepareExit": 1,
+  "inertPrepareFailure": "Python3.9.6 extractall filter unsupported",
+  "productExecutions": 0,
+  "nativeExecutions": 0,
+  "productSourceRead": false,
+  "authoredSemanticBundleRead": false,
+  "successfulBuildLogsRead": false,
+  "findings": [
+    "PYTHON_FILTER_COMPATIBILITY",
+    "PREEXISTING_RAW_ATTRIBUTION",
+    "UNRECORDED_LAUNCH_OSERROR",
+    "TIMEOUT_STREAM_HASH_OMISSION"
+  ],
+  "artifactHashes": {
+    "review.md": "008cce552f4b75d432a84639673247238fff827eff5970a13c8760eb9a718832",
+    "paired-executor-reviewed.py.txt": "7744ff698ce7953a5ad2fc91b96b9859fb19b8cd7a4960a361fe36cacc5a25e1",
+    "inert-checks.py": "83822935df8b2eb3a36e7b4e0799e18fdc0133792082e791e117d389e82e2eeb",
+    "inert-normal.json": "e39cd8ddd424d074072e05b0823ef73586cd89343f9dc65bb4b95270a6bcdcba",
+    "inert-optimized.json": "bf5da8dce0b834d796b5fb0c0619a5a3b1f0c2acabe527e48499c730ba327555",
+    "inert-prepare.py": "c41632d8f27058baabbae5cde5618016f2c9f4a8c3d13512406681c41489ef34",
+    "inert-prepare.json": "15aa3974d2c43e86d1d4663fb2614cbc9d7a4c2c66509baeaf789a1a2c0a7a6f"
+  }
+}

@@ -11,6 +11,7 @@ import os
 from pathlib import Path, PurePosixPath
 import platform
 import shutil
+import stat
 import subprocess
 import tarfile
 
@@ -40,20 +41,46 @@ def inside(base, relative):
     value.relative_to(base.resolve())
     return value
 
-def unpack(archive, destination):
+def unpack(archive, destination, expected_files):
     with tarfile.open(archive) as source:
-        for member in source.getmembers():
+        members = source.getmembers()
+        files = set()
+        names = set()
+        ancestors = {str(parent) for name in expected_files for parent in PurePosixPath(name).parents}
+        for member in members:
             inside(destination, member.name)
+            name = str(PurePosixPath(member.name))
+            if name in names:
+                raise ValueError('Duplicate archive entry')
+            names.add(name)
             if not (member.isdir() or member.isfile()):
                 raise ValueError('Nonregular archive entry')
-        source.extractall(destination, filter='data')
+            if member.isfile():
+                if name not in expected_files or member.size > 64 * 1024 * 1024:
+                    raise ValueError('Unexpected/oversized archive file')
+                files.add(name)
+            elif name not in ancestors:
+                raise ValueError('Unexpected archive directory')
+        if files != set(expected_files) or sum(m.size for m in members) > 128 * 1024 * 1024:
+            raise ValueError('Incomplete/oversized archive inventory')
+        # Python 3.9-compatible: copy only prevalidated regular files, never
+        # archive links, modes, ownership or special entries. Refuse overwrites.
+        for member in members:
+            target = inside(destination, member.name)
+            if member.isdir():
+                target.mkdir(mode=0o700, parents=True, exist_ok=True)
+            else:
+                target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+                descriptor = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                with os.fdopen(descriptor, 'wb') as out, source.extractfile(member) as data:
+                    shutil.copyfileobj(data, out)
 
 def swift_string(value):
     return '"' + value.replace('\\', '\\\\').replace('"', '\\"').replace('\n', '\\n') + '"'
 
 def prepare(config_path, work, audit):
     config = read(config_path)
-    work.mkdir(parents=False, exist_ok=False)
+    work.mkdir(mode=0o700, parents=False, exist_ok=False)
     shutil.copyfile(config_path, work / 'config.json')
     env = dict(os.environ, DEVELOPER_DIR='/Applications/Xcode.app/Contents/Developer')
     compiler = subprocess.check_output(['swift', '--version'], env=env, text=True).strip()
@@ -61,7 +88,8 @@ def prepare(config_path, work, audit):
     archive = inside(audit, bundle['archive'])
     if digest(archive) != bundle['archiveSHA256']:
         raise ValueError('Author archive hash mismatch')
-    unpack(archive, work / 'author')
+    authored_files = {str(PurePosixPath(bundle['root']) / name) for name in bundle['files']}
+    unpack(archive, work / 'author', authored_files)
     author = inside(work / 'author', bundle['root'])
     if not {'Runner.swift', 'fixtures.json', 'evaluate.py'} <= set(bundle['files']):
         raise ValueError('Missing required authored file binding')
@@ -72,12 +100,14 @@ def prepare(config_path, work, audit):
     fixtures = inside(author, 'fixtures.json')
     records = []
     for version in config['versions']:
+        if not version['name'] or any(c not in 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_' for c in version['name']):
+            raise ValueError('Version labels must be simple ASCII names')
         directory = inside(work, version['name'])
         directory.mkdir()
         source_archive = inside(audit, version['archive'])
         if digest(source_archive) != version['archiveSHA256']:
             raise ValueError('Core archive hash mismatch')
-        unpack(source_archive, directory)
+        unpack(source_archive, directory, version['files'])
         core = inside(directory, 'apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore')
         actual = {str(p.relative_to(directory)):digest(p) for p in core.rglob('*') if p.is_file()}
         if actual != version['files']:
@@ -142,6 +172,15 @@ def run(freeze_path, work):
     for record in prepared['records']:
         if digest(inside(work, record['binary'])) != record['binarySHA256'] or digest(inside(work, record['environment'])) != record['environmentSHA256']:
             raise ValueError('Binary/environment changed after preparation')
+    if os.path.lexists(work/'RUN-STARTED'):
+        raise FileExistsError('Execution attempt already consumed')
+    for record in prepared['records']:
+        directory = work / record['name']
+        if directory.is_symlink() or not directory.is_dir():
+            raise ValueError('Version directory is not a plain owned directory')
+        for name in ['raw.json', 'runner.stdout', 'runner.stderr', 'empty-cwd']:
+            if os.path.lexists(directory/name):
+                raise ValueError('Pre-existing output/cwd contamination')
     # Even a partial or interrupted invocation consumes this execution attempt.
     marker = os.open(work/'RUN-STARTED', os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(marker, 'w') as stream:
@@ -160,13 +199,27 @@ def run(freeze_path, work):
             result = subprocess.run(command, cwd=cwd, capture_output=True, timeout=300)
             (directory/'runner.stdout').write_bytes(result.stdout)
             (directory/'runner.stderr').write_bytes(result.stderr)
-            item.update(exit=result.returncode, stdoutSHA256=digest(directory/'runner.stdout'),
-                stderrSHA256=digest(directory/'runner.stderr'))
+            item.update(exit=result.returncode, launched=True)
         except subprocess.TimeoutExpired as error:
             (directory/'runner.stdout').write_bytes(error.stdout or b'')
             (directory/'runner.stderr').write_bytes(error.stderr or b'')
-            item.update(timeout=True, exit=None)
-        item['rawSHA256'] = digest(directory/'raw.json') if (directory/'raw.json').exists() else None
+            item.update(timeout=True, exit=None, launched=True)
+        except OSError as error:
+            (directory/'runner.stdout').write_bytes(b'')
+            (directory/'runner.stderr').write_bytes(str(error).encode('utf-8', errors='backslashreplace'))
+            item.update(exit=None, launched=False, launchError={
+                'type':type(error).__name__, 'errno':error.errno, 'text':str(error)})
+        item.update(stdoutSHA256=digest(directory/'runner.stdout'),
+            stderrSHA256=digest(directory/'runner.stderr'))
+        output = directory/'raw.json'
+        item['rawSHA256'] = None
+        if os.path.lexists(output):
+            info = output.lstat()
+            if stat.S_ISREG(info.st_mode) and info.st_nlink == 1 and output.resolve().parent == directory.resolve():
+                item['rawSHA256'] = digest(output)
+                item['rawBytes'] = info.st_size
+            else:
+                item['rawError'] = 'Output is not a fresh contained regular file'
         item['cwdFiles'] = sorted(str(p.relative_to(cwd)) for p in cwd.rglob('*'))
         write(work/'execution.json', records)
     print(json.dumps({'stage':'transport_complete', 'records':records,
@@ -179,7 +232,7 @@ def main():
     parser.add_argument('work', type=Path)
     args = parser.parse_args()
     work = args.work.resolve()
-    if work.parent != Path('/tmp').resolve() or not work.name.startswith('pulpo-r48-'):
+    if work.parent != Path('/tmp').resolve() or not work.name.startswith('pulpo-r48-') or any(c not in 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_' for c in work.name):
         raise ValueError('Work must be a fresh /tmp/pulpo-r48-* directory')
     if args.stage == 'prepare':
         prepare(args.binding.resolve(), work, Path(__file__).resolve().parent)
