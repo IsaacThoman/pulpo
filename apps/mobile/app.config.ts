@@ -115,6 +115,7 @@ const config: ExpoConfig = {
     './plugins/with-pulpo-scenes',
     './plugins/with-pulpo-shortcuts',
     './plugins/with-pulpo-android',
+    './plugins/with-pulpo-markdown-cache',
     'expo-router',
     'expo-secure-store',
     ['expo-audio', {
