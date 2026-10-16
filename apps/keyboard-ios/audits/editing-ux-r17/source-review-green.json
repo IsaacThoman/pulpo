@@ -1,0 +1,36 @@
+[
+  {
+    "document" : "Ax\r\nb",
+    "documentPassed" : true,
+    "exactDocumentUTF16" : [
+      65,
+      120,
+      13,
+      10,
+      98
+    ],
+    "expectedDocument" : "Ax\r\nb",
+    "expectedSelectionUTF16" : [
+      2,
+      0
+    ],
+    "finalSelectionUTF16" : [
+      2,
+      0
+    ],
+    "id" : "review-crlf-left",
+    "initialDocument" : "A\r\nb",
+    "initialSelectionUTF16" : [
+      3,
+      0
+    ],
+    "language" : "en-es",
+    "movementSelectionUTF16" : [
+      1,
+      0
+    ],
+    "offset" : -1,
+    "selectionPassed" : true,
+    "ui" : "Real UITextView + PreviewHost; no keyboard controller or engine; engine language not exercised"
+  }
+]

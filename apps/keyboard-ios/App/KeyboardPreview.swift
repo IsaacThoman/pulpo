@@ -23,8 +23,23 @@ final class PreviewHost: KeyboardHost {
   func handleInputModeList(from view: UIView, with event: UIEvent) {}
 
   func adjustTextPosition(byCharacterOffset offset: Int) {
-    guard let textView, let range = textView.selectedTextRange,
-          let position = textView.position(from: range.start, offset: offset) else { return }
+    guard let textView, let range = textView.selectedTextRange else { return }
+    // UITextInput positions count UTF-16 units. Cursor gestures count visible
+    // characters, so stepping directly can split an emoji or a combining mark.
+    let text = textView.text ?? ""
+    let location = textView.offset(from: textView.beginningOfDocument, to: range.start)
+    let utf16Index = text.utf16.index(text.utf16.startIndex, offsetBy: location)
+    guard var index = String.Index(utf16Index, within: text) else { return }
+    var remaining = offset
+    while remaining < 0, index > text.startIndex {
+      index = text.index(before: index)
+      remaining += 1
+    }
+    while remaining > 0, index < text.endIndex {
+      index = text.index(after: index)
+      remaining -= 1
+    }
+    guard let position = textView.position(from: textView.beginningOfDocument, offset: index.utf16Offset(in: text)) else { return }
     textView.selectedTextRange = textView.textRange(from: position, to: position)
   }
 

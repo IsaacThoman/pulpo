@@ -1,0 +1,54 @@
+{
+  "cases": [
+    {
+      "test": "testClearResetsRangeAndRemainsEmptyAfterRecreationAndModeChange()",
+      "status": "Passed",
+      "failures": []
+    },
+    {
+      "test": "testDetachedEditorEndEditingStopsHeldDeleteBeforeDismantling()",
+      "status": "Passed",
+      "failures": []
+    },
+    {
+      "test": "testEmojiCaretAndSelectedRangeSurviveRecreationBeforeEditing()",
+      "status": "Failed",
+      "failures": [
+        "Crash: PulpoKeyboard at +[XCTFailableInvocation invokeErrorConventionInvocation:completion:]"
+      ]
+    },
+    {
+      "test": "testFocusedSwitchingRetainsEmojiSelectionAndCanReplaceIt()",
+      "status": "Failed",
+      "failures": [
+        "Crash: PulpoKeyboard"
+      ]
+    },
+    {
+      "test": "testIndependentClearOfSelectedCombiningTextOnce()",
+      "status": "Passed",
+      "failures": []
+    },
+    {
+      "test": "testIndependentCombiningEmojiSelectionAndArabicCaretOnce()",
+      "status": "Passed",
+      "failures": []
+    },
+    {
+      "test": "testInvalidAndOverflowingRangesStayWithinUTF16Text()",
+      "status": "Passed",
+      "failures": []
+    },
+    {
+      "test": "testRemovedEditorCallbacksCannotChangeReplacementDraftOrFocus()",
+      "status": "Passed",
+      "failures": []
+    },
+    {
+      "test": "testSwitchingNativeAndPreviewRetainsRangeAndDoesNotForceFocus()",
+      "status": "Passed",
+      "failures": []
+    }
+  ],
+  "documentSelectionLanguageUI": "Existing suite contains assertions; no per-case full document recorder. Two candidate crash cases cannot be counted as passes."
+}

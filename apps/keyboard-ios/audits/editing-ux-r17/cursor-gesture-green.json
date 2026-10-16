@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "observations": [
+    {
+      "before": "Ab",
+      "document": "XAb",
+      "exactDocumentUTF16": [
+        88,
+        65,
+        98
+      ],
+      "id": "en-cursor-ascii",
+      "selection": "unavailable via AX",
+      "ui": "Actual preview long-press-space cursor gesture and key tap; exact AX selection unavailable",
+      "language": "en"
+    },
+    {
+      "before": "A🍕b",
+      "document": "Ax🍕b",
+      "exactDocumentUTF16": [
+        65,
+        120,
+        55356,
+        57173,
+        98
+      ],
+      "id": "es-cursor-emoji",
+      "selection": "unavailable via AX",
+      "ui": "Actual preview long-press-space cursor gesture and key tap; exact AX selection unavailable",
+      "language": "es"
+    }
+  ],
+  "assessment": "v1 exact displacement expectations still miss; matching ASCII gesture moves two characters. Emoji now preserved, full document Ax🍕b; no v1 oracle edited"
+}

@@ -1,0 +1,30 @@
+[
+  {
+    "id": "accessibility-main",
+    "document": "Hola team",
+    "selectionUTF16": null,
+    "language": "en-es",
+    "ui": {
+      "contentSizeOverride": "UICTContentSizeCategoryAccessibilityXXXL",
+      "fieldControlFrames": "five 74x32pt segments; labels remain system segmented size",
+      "modeControlFrames": "two 185x32pt segments",
+      "tips": "sheet presented; first card scrolls below bottom at accessibility size"
+    },
+    "status": "partial observation only; dismissal, field switching and final append not executed",
+    "finding": "Small segmented labels remain despite larger editor/tips text; deferred to keep product change focused on demonstrated Unicode corruption"
+  },
+  {
+    "id": "accessibility-tips",
+    "document": "Hola team",
+    "selectionUTF16": null,
+    "language": "en-es",
+    "ui": {
+      "contentSizeOverride": "UICTContentSizeCategoryAccessibilityXXXL",
+      "fieldControlFrames": "five 74x32pt segments; labels remain system segmented size",
+      "modeControlFrames": "two 185x32pt segments",
+      "tips": "sheet presented; first card scrolls below bottom at accessibility size"
+    },
+    "status": "partial observation only; dismissal, field switching and final append not executed",
+    "finding": "Small segmented labels remain despite larger editor/tips text; deferred to keep product change focused on demonstrated Unicode corruption"
+  }
+]

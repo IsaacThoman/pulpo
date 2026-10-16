@@ -1,0 +1,4 @@
+{
+ "version":1,"origin":"Independent source review P2, before heldout reveal",
+ "cases":[{"id":"review-crlf-left","language":"en-es","document":"A\r\nb","selectionUTF16":[3,0],"offset":-1,"insert":"x","expectedDocument":"Ax\r\nb","expectedSelectionUTF16":[2,0]}]
+}

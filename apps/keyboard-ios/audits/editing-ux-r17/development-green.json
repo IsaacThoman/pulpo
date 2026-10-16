@@ -1,0 +1,150 @@
+[
+  {
+    "document" : "Ax🍕b",
+    "documentPassed" : true,
+    "exactDocumentUTF16" : [
+      65,
+      120,
+      55356,
+      57173,
+      98
+    ],
+    "expectedDocument" : "Ax🍕b",
+    "expectedSelectionUTF16" : [
+      2,
+      0
+    ],
+    "finalSelectionUTF16" : [
+      2,
+      0
+    ],
+    "id" : "en-pizza-left-two",
+    "initialDocument" : "A🍕b",
+    "initialSelectionUTF16" : [
+      4,
+      0
+    ],
+    "language" : "en",
+    "movementSelectionUTF16" : [
+      1,
+      0
+    ],
+    "offset" : -2,
+    "selectionPassed" : true,
+    "ui" : "Real UITextView + PreviewHost; no keyboard controller or engine; engine language not exercised"
+  },
+  {
+    "document" : "cafXé!",
+    "documentPassed" : true,
+    "exactDocumentUTF16" : [
+      99,
+      97,
+      102,
+      88,
+      101,
+      769,
+      33
+    ],
+    "expectedDocument" : "cafXé!",
+    "expectedSelectionUTF16" : [
+      4,
+      0
+    ],
+    "finalSelectionUTF16" : [
+      4,
+      0
+    ],
+    "id" : "es-combining-left",
+    "initialDocument" : "café!",
+    "initialSelectionUTF16" : [
+      5,
+      0
+    ],
+    "language" : "es",
+    "movementSelectionUTF16" : [
+      3,
+      0
+    ],
+    "offset" : -1,
+    "selectionPassed" : true,
+    "ui" : "Real UITextView + PreviewHost; no keyboard controller or engine; engine language not exercised"
+  },
+  {
+    "document" : "hi 👩🏽‍💻X hola",
+    "documentPassed" : true,
+    "exactDocumentUTF16" : [
+      104,
+      105,
+      32,
+      55357,
+      56425,
+      55356,
+      57341,
+      8205,
+      55357,
+      56507,
+      88,
+      32,
+      104,
+      111,
+      108,
+      97
+    ],
+    "expectedDocument" : "hi 👩🏽‍💻X hola",
+    "expectedSelectionUTF16" : [
+      11,
+      0
+    ],
+    "finalSelectionUTF16" : [
+      11,
+      0
+    ],
+    "id" : "bi-emoji-right",
+    "initialDocument" : "hi 👩🏽‍💻 hola",
+    "initialSelectionUTF16" : [
+      3,
+      0
+    ],
+    "language" : "en-es",
+    "movementSelectionUTF16" : [
+      10,
+      0
+    ],
+    "offset" : 1,
+    "selectionPassed" : true,
+    "ui" : "Real UITextView + PreviewHost; no keyboard controller or engine; engine language not exercised"
+  },
+  {
+    "document" : "Xabc",
+    "documentPassed" : true,
+    "exactDocumentUTF16" : [
+      88,
+      97,
+      98,
+      99
+    ],
+    "expectedDocument" : "Xabc",
+    "expectedSelectionUTF16" : [
+      1,
+      0
+    ],
+    "finalSelectionUTF16" : [
+      1,
+      0
+    ],
+    "id" : "en-left-boundary",
+    "initialDocument" : "abc",
+    "initialSelectionUTF16" : [
+      1,
+      0
+    ],
+    "language" : "en",
+    "movementSelectionUTF16" : [
+      0,
+      0
+    ],
+    "offset" : -8,
+    "selectionPassed" : true,
+    "ui" : "Real UITextView + PreviewHost; no keyboard controller or engine; engine language not exercised"
+  }
+]
