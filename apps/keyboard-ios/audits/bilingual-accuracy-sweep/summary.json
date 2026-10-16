@@ -1,0 +1,568 @@
+{
+  "development": {
+    "baseline": {
+      "correct": 70,
+      "total": 74,
+      "groups": {
+        "en/typo-recovery": {
+          "correct": 6,
+          "total": 6,
+          "percent": 100.0
+        },
+        "en/clean-literal": {
+          "correct": 6,
+          "total": 6,
+          "percent": 100.0
+        },
+        "en/editor": {
+          "correct": 6,
+          "total": 6,
+          "percent": 100.0
+        },
+        "es/typo-recovery": {
+          "correct": 6,
+          "total": 6,
+          "percent": 100.0
+        },
+        "es/clean-literal": {
+          "correct": 5,
+          "total": 6,
+          "percent": 83.33333333333333
+        },
+        "es/editor": {
+          "correct": 4,
+          "total": 6,
+          "percent": 66.66666666666667
+        },
+        "bi/typo-recovery": {
+          "correct": 16,
+          "total": 16,
+          "percent": 100.0
+        },
+        "bi/clean-literal": {
+          "correct": 15,
+          "total": 16,
+          "percent": 93.75
+        },
+        "bi/editor": {
+          "correct": 6,
+          "total": 6,
+          "percent": 100.0
+        }
+      },
+      "failures": [
+        {
+          "id": "dev-023",
+          "mode": "es",
+          "typed": "Íñigo ",
+          "desired": "Íñigo ",
+          "output": "Índigo "
+        },
+        {
+          "id": "dev-033",
+          "mode": "es",
+          "typed": "hello,world ",
+          "desired": "hello,world ",
+          "output": "bello,world "
+        },
+        {
+          "id": "dev-034",
+          "mode": "es",
+          "typed": "foo.bar ",
+          "desired": "foo.bar ",
+          "output": "foto.bar "
+        },
+        {
+          "id": "dev-023",
+          "mode": "bi",
+          "typed": "Íñigo ",
+          "desired": "Íñigo ",
+          "output": "Indigo "
+        }
+      ],
+      "elapsedSeconds": 0.43150087499998335,
+      "keys": 655,
+      "keyMilliseconds": {
+        "median": 0.1072500003829191,
+        "p95": 1.6302083331538597,
+        "mean": 0.42181151399488553
+      }
+    },
+    "rejected": {
+      "correct": 72,
+      "total": 74,
+      "groups": {
+        "en/typo-recovery": {
+          "correct": 6,
+          "total": 6,
+          "percent": 100.0
+        },
+        "en/clean-literal": {
+          "correct": 6,
+          "total": 6,
+          "percent": 100.0
+        },
+        "en/editor": {
+          "correct": 6,
+          "total": 6,
+          "percent": 100.0
+        },
+        "es/typo-recovery": {
+          "correct": 6,
+          "total": 6,
+          "percent": 100.0
+        },
+        "es/clean-literal": {
+          "correct": 6,
+          "total": 6,
+          "percent": 100.0
+        },
+        "es/editor": {
+          "correct": 4,
+          "total": 6,
+          "percent": 66.66666666666667
+        },
+        "bi/typo-recovery": {
+          "correct": 16,
+          "total": 16,
+          "percent": 100.0
+        },
+        "bi/clean-literal": {
+          "correct": 16,
+          "total": 16,
+          "percent": 100.0
+        },
+        "bi/editor": {
+          "correct": 6,
+          "total": 6,
+          "percent": 100.0
+        }
+      },
+      "failures": [
+        {
+          "id": "dev-033",
+          "mode": "es",
+          "typed": "hello,world ",
+          "desired": "hello,world ",
+          "output": "bello,world "
+        },
+        {
+          "id": "dev-034",
+          "mode": "es",
+          "typed": "foo.bar ",
+          "desired": "foo.bar ",
+          "output": "foto.bar "
+        }
+      ],
+      "elapsedSeconds": 0.41085995833327615,
+      "keys": 655,
+      "keyMilliseconds": {
+        "median": 0.10750000001280569,
+        "p95": 1.5675416671001585,
+        "mean": 0.38962888040592963
+      }
+    },
+    "transitions": [
+      {
+        "id": "dev-023",
+        "mode": "es",
+        "before": "Índigo ",
+        "after": "Íñigo ",
+        "fixed": true,
+        "regressed": false
+      },
+      {
+        "id": "dev-023",
+        "mode": "bi",
+        "before": "Indigo ",
+        "after": "Íñigo ",
+        "fixed": true,
+        "regressed": false
+      }
+    ]
+  },
+  "diagnostic": {
+    "baseline": {
+      "correct": 22,
+      "total": 24,
+      "groups": {
+        "es/diagnostic-typo": {
+          "correct": 12,
+          "total": 12,
+          "percent": 100.0
+        },
+        "bi/diagnostic-typo": {
+          "correct": 10,
+          "total": 12,
+          "percent": 83.33333333333333
+        }
+      },
+      "failures": [
+        {
+          "id": "diagnostic-001",
+          "mode": "bi",
+          "typed": "Díass ",
+          "desired": "Días ",
+          "output": "Díass "
+        },
+        {
+          "id": "diagnostic-002",
+          "mode": "bi",
+          "typed": "díass ",
+          "desired": "días ",
+          "output": "díass "
+        }
+      ],
+      "elapsedSeconds": 0.14109816666677943,
+      "keys": 164,
+      "keyMilliseconds": {
+        "median": 0.2086458330268215,
+        "p95": 1.2662916669796687,
+        "mean": 0.4379334349512025
+      }
+    },
+    "rejected": {
+      "correct": 11,
+      "total": 24,
+      "groups": {
+        "es/diagnostic-typo": {
+          "correct": 6,
+          "total": 12,
+          "percent": 50.0
+        },
+        "bi/diagnostic-typo": {
+          "correct": 5,
+          "total": 12,
+          "percent": 41.666666666666664
+        }
+      },
+      "failures": [
+        {
+          "id": "diagnostic-001",
+          "mode": "es",
+          "typed": "Díass ",
+          "desired": "Días ",
+          "output": "Díass "
+        },
+        {
+          "id": "diagnostic-003",
+          "mode": "es",
+          "typed": "Árboll ",
+          "desired": "Árbol ",
+          "output": "Árboll "
+        },
+        {
+          "id": "diagnostic-005",
+          "mode": "es",
+          "typed": "Adióss ",
+          "desired": "Adiós ",
+          "output": "Adióss "
+        },
+        {
+          "id": "diagnostic-007",
+          "mode": "es",
+          "typed": "Mañanaa ",
+          "desired": "Mañana ",
+          "output": "Mañanaa "
+        },
+        {
+          "id": "diagnostic-009",
+          "mode": "es",
+          "typed": "Aquíi ",
+          "desired": "Aquí ",
+          "output": "Aquíi "
+        },
+        {
+          "id": "diagnostic-011",
+          "mode": "es",
+          "typed": "Fácill ",
+          "desired": "Fácil ",
+          "output": "Fácill "
+        },
+        {
+          "id": "diagnostic-001",
+          "mode": "bi",
+          "typed": "Díass ",
+          "desired": "Días ",
+          "output": "Díass "
+        },
+        {
+          "id": "diagnostic-002",
+          "mode": "bi",
+          "typed": "díass ",
+          "desired": "días ",
+          "output": "díass "
+        },
+        {
+          "id": "diagnostic-003",
+          "mode": "bi",
+          "typed": "Árboll ",
+          "desired": "Árbol ",
+          "output": "Árboll "
+        },
+        {
+          "id": "diagnostic-005",
+          "mode": "bi",
+          "typed": "Adióss ",
+          "desired": "Adiós ",
+          "output": "Adióss "
+        },
+        {
+          "id": "diagnostic-007",
+          "mode": "bi",
+          "typed": "Mañanaa ",
+          "desired": "Mañana ",
+          "output": "Mañanaa "
+        },
+        {
+          "id": "diagnostic-009",
+          "mode": "bi",
+          "typed": "Aquíi ",
+          "desired": "Aquí ",
+          "output": "Aquíi "
+        },
+        {
+          "id": "diagnostic-011",
+          "mode": "bi",
+          "typed": "Fácill ",
+          "desired": "Fácil ",
+          "output": "Fácill "
+        }
+      ],
+      "elapsedSeconds": 0.12972291666665114,
+      "keys": 164,
+      "keyMilliseconds": {
+        "median": 0.22445833337769727,
+        "p95": 1.0802500000863802,
+        "mean": 0.4069443597605952
+      }
+    },
+    "transitions": [
+      {
+        "id": "diagnostic-001",
+        "mode": "es",
+        "before": "Días ",
+        "after": "Díass ",
+        "fixed": false,
+        "regressed": true
+      },
+      {
+        "id": "diagnostic-003",
+        "mode": "es",
+        "before": "Árbol ",
+        "after": "Árboll ",
+        "fixed": false,
+        "regressed": true
+      },
+      {
+        "id": "diagnostic-005",
+        "mode": "es",
+        "before": "Adiós ",
+        "after": "Adióss ",
+        "fixed": false,
+        "regressed": true
+      },
+      {
+        "id": "diagnostic-007",
+        "mode": "es",
+        "before": "Mañana ",
+        "after": "Mañanaa ",
+        "fixed": false,
+        "regressed": true
+      },
+      {
+        "id": "diagnostic-009",
+        "mode": "es",
+        "before": "Aquí ",
+        "after": "Aquíi ",
+        "fixed": false,
+        "regressed": true
+      },
+      {
+        "id": "diagnostic-011",
+        "mode": "es",
+        "before": "Fácil ",
+        "after": "Fácill ",
+        "fixed": false,
+        "regressed": true
+      },
+      {
+        "id": "diagnostic-003",
+        "mode": "bi",
+        "before": "Árbol ",
+        "after": "Árboll ",
+        "fixed": false,
+        "regressed": true
+      },
+      {
+        "id": "diagnostic-005",
+        "mode": "bi",
+        "before": "Adiós ",
+        "after": "Adióss ",
+        "fixed": false,
+        "regressed": true
+      },
+      {
+        "id": "diagnostic-007",
+        "mode": "bi",
+        "before": "Mañana ",
+        "after": "Mañanaa ",
+        "fixed": false,
+        "regressed": true
+      },
+      {
+        "id": "diagnostic-009",
+        "mode": "bi",
+        "before": "Aquí ",
+        "after": "Aquíi ",
+        "fixed": false,
+        "regressed": true
+      },
+      {
+        "id": "diagnostic-011",
+        "mode": "bi",
+        "before": "Fácil ",
+        "after": "Fácill ",
+        "fixed": false,
+        "regressed": true
+      }
+    ]
+  },
+  "held-out": {
+    "baseline": {
+      "correct": 73,
+      "total": 74,
+      "groups": {
+        "en/typo-recovery": {
+          "correct": 6,
+          "total": 6,
+          "percent": 100.0
+        },
+        "en/clean-literal": {
+          "correct": 6,
+          "total": 6,
+          "percent": 100.0
+        },
+        "en/editor": {
+          "correct": 6,
+          "total": 6,
+          "percent": 100.0
+        },
+        "es/typo-recovery": {
+          "correct": 6,
+          "total": 6,
+          "percent": 100.0
+        },
+        "es/clean-literal": {
+          "correct": 6,
+          "total": 6,
+          "percent": 100.0
+        },
+        "es/editor": {
+          "correct": 6,
+          "total": 6,
+          "percent": 100.0
+        },
+        "bi/typo-recovery": {
+          "correct": 15,
+          "total": 16,
+          "percent": 93.75
+        },
+        "bi/clean-literal": {
+          "correct": 16,
+          "total": 16,
+          "percent": 100.0
+        },
+        "bi/editor": {
+          "correct": 6,
+          "total": 6,
+          "percent": 100.0
+        }
+      },
+      "failures": [
+        {
+          "id": "held-001",
+          "mode": "bi",
+          "typed": "adn ",
+          "desired": "and ",
+          "output": "adn "
+        }
+      ],
+      "elapsedSeconds": 0.29074720833341416,
+      "keys": 668,
+      "keyMilliseconds": {
+        "median": 0.0698750000083237,
+        "p95": 0.9871666670733248,
+        "mean": 0.23425449103206392
+      }
+    },
+    "rejected": {
+      "correct": 73,
+      "total": 74,
+      "groups": {
+        "en/typo-recovery": {
+          "correct": 6,
+          "total": 6,
+          "percent": 100.0
+        },
+        "en/clean-literal": {
+          "correct": 6,
+          "total": 6,
+          "percent": 100.0
+        },
+        "en/editor": {
+          "correct": 6,
+          "total": 6,
+          "percent": 100.0
+        },
+        "es/typo-recovery": {
+          "correct": 6,
+          "total": 6,
+          "percent": 100.0
+        },
+        "es/clean-literal": {
+          "correct": 6,
+          "total": 6,
+          "percent": 100.0
+        },
+        "es/editor": {
+          "correct": 6,
+          "total": 6,
+          "percent": 100.0
+        },
+        "bi/typo-recovery": {
+          "correct": 15,
+          "total": 16,
+          "percent": 93.75
+        },
+        "bi/clean-literal": {
+          "correct": 16,
+          "total": 16,
+          "percent": 100.0
+        },
+        "bi/editor": {
+          "correct": 6,
+          "total": 6,
+          "percent": 100.0
+        }
+      },
+      "failures": [
+        {
+          "id": "held-001",
+          "mode": "bi",
+          "typed": "adn ",
+          "desired": "and ",
+          "output": "adn "
+        }
+      ],
+      "elapsedSeconds": 0.28775104166652454,
+      "keys": 668,
+      "keyMilliseconds": {
+        "median": 0.07168750062191975,
+        "p95": 0.9430833333681221,
+        "mean": 0.22395621257176512
+      }
+    },
+    "transitions": []
+  }
+}
