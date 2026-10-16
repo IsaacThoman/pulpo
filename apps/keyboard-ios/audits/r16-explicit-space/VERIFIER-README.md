@@ -1,0 +1,9 @@
+# Derived verifier Git path repair
+
+The retained `verify.py` was revised after curation to resolve the actual Git repository top level before running repository-relative pathspecs. Previously, optional net-diff checks ran from this audit subdirectory and could falsely return an empty diff because the pathspec matched nothing. All optional Git calls now use the same resolved top level. Original root-level manual restoration checks and immutable `git show COMMIT:path` hashes remain valid; the earlier optional empty-diff check alone did not establish restoration.
+
+The prior helper is preserved in Git at `25ecf29c21115e60a29ee4f475eedabc6dbcde3a`, path `apps/keyboard-ios/audits/r16-explicit-space/verify.py`, SHA-256 `b7e11330db6377cf03a4a7b3807888f23da4849d986c4dd75e5362b2cad34d15`, 5229 bytes. Only the parent retention manifest's `verify.py` entry now records the revised tool. No source/data/fixture/original freeze hash, experiment oracle, score or verdict changed. This separate note avoids rewriting the original archive README or its retained hash.
+
+Validation runs both helpers with `--git` from the repository root and an unrelated working directory. An isolated temporary Git repository executes each actual revised helper: a changed requested source path produces a nonempty diff and `git diff --exit-code` status 1; the old audit-directory call incorrectly returns empty, while an unrelated path remains empty. Default verification is also checked on a copied standalone archive outside Git. These are tool checks, not behavior/native replay.
+
+The historical verifier still uses Python `assert`; run ordinary `python3`, **not `python3 -O`**, for integrity checking. Optimized-mode execution is only a compatibility smoke check because assertions, including some Git calls, are removed. Optional `--git` requires the referenced history; standalone default verification needs no Git repository. Original evidence and acceptance limitations remain unchanged.

@@ -8,6 +8,14 @@ import subprocess
 import sys
 
 root = Path(__file__).resolve().parent
+
+
+def git_output(*arguments):
+    # Git pathspecs below are repository-relative, independent of the audit depth.
+    repository = subprocess.check_output(
+        ['git', 'rev-parse', '--show-toplevel'], cwd=root, text=True).strip()
+    return subprocess.check_output(['git', *arguments], cwd=repository)
+
 sha = lambda b: hashlib.sha256(b).hexdigest()
 read = lambda p: (root / p).read_bytes()
 manifest = json.loads(read('retained-manifest.json'))
@@ -69,11 +77,11 @@ if '--git' in sys.argv:
     proof = json.loads(read('restoration-proof.json'))
     for path, record in proof['blobs'].items():
         for commit in record['commits']:
-            data = subprocess.check_output(['git', 'show', commit + ':' + path], cwd=root)
+            data = git_output('show', commit + ':' + path)
             assert sha(data) == record['sha256'] and len(data) == record['bytes']
-    candidate = subprocess.check_output(['git', 'show', agent['soleCandidateCommit'] + ':apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Input/KeyboardEngine.swift'], cwd=root)
+    candidate = git_output('show', agent['soleCandidateCommit'] + ':apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Input/KeyboardEngine.swift')
     assert sha(candidate) == rejection['sourceSha256']
-    assert subprocess.check_output(['git', 'diff', proof['baseline'], proof['final'], '--',
+    assert git_output('diff', proof['baseline'], proof['final'], '--',
         'apps/keyboard-ios/PulpoKeyboardKit/Sources',
-        'apps/keyboard-ios/PulpoKeyboardKit/Tests/KeyboardCoreTests/EngineFuzz.swift'], cwd=root) == b''
+        'apps/keyboard-ios/PulpoKeyboardKit/Tests/KeyboardCoreTests/EngineFuzz.swift') == b''
 print(f'PASS: {len(manifest)} file hashes; 332 paired development rows; 24 unavailable scored executions; 8 diagnostic losses; 36 heldout unexecuted. No behavior replay.')

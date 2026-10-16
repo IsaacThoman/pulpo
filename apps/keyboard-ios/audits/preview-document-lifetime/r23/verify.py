@@ -9,6 +9,14 @@ import subprocess
 import sys
 
 root = Path(__file__).resolve().parent
+
+
+def git_output(*arguments):
+    # Git pathspecs below are repository-relative, independent of the audit depth.
+    repository = subprocess.check_output(
+        ['git', 'rev-parse', '--show-toplevel'], cwd=root, text=True).strip()
+    return subprocess.check_output(['git', *arguments], cwd=repository)
+
 assert set(sys.argv[1:]) <= {'--git', '--external'}
 sha = lambda b: hashlib.sha256(b).hexdigest()
 raw = lambda name: (root / name).read_bytes()
@@ -76,14 +84,14 @@ assert not list(root.rglob('*.swift'))
 if '--git' in sys.argv:
     for name, record in provenance.items():
         if record['kind'] == 'git-blob':
-            assert subprocess.check_output(['git', 'show', record['commit'] + ':' + record['path']], cwd=root) == content(name)
+            assert git_output('show', record['commit'] + ':' + record['path']) == content(name)
     proof = json.loads(raw('source-proof.json'))
     for path, expected in proof['originalAppTests'].items():
         for commit in [proof['startingCommit'], proof['finalCommit']]:
-            assert sha(subprocess.check_output(['git', 'show', commit + ':' + path], cwd=root)) == expected
+            assert sha(git_output('show', commit + ':' + path)) == expected
     path = 'apps/keyboard-ios/AppTests/PreviewDocumentLifecycleCounterchecks.swift'
-    assert sha(subprocess.check_output(['git', 'show', proof['originalCountercheckCommit'] + ':' + path], cwd=root)) == proof['originalAppTests'][path]
+    assert sha(git_output('show', proof['originalCountercheckCommit'] + ':' + path)) == proof['originalAppTests'][path]
     for commit, record in proof['livingHostComparisonSource'].items():
-        assert sha(subprocess.check_output(['git', 'show', commit + ':' + record['path']], cwd=root)) == record['sha256']
-    assert subprocess.check_output(['git', 'diff', proof['startingCommit'], proof['finalCommit'], '--', 'apps/keyboard-ios/App', 'apps/keyboard-ios/PulpoKeyboardKit/Sources'], cwd=root) == b''
+        assert sha(git_output('show', commit + ':' + record['path'])) == record['sha256']
+    assert git_output('diff', proof['startingCommit'], proof['finalCommit'], '--', 'apps/keyboard-ios/App', 'apps/keyboard-ios/PulpoKeyboardKit/Sources') == b''
 print(f'PASS: {len(manifest)} file hashes; pointer closure/strong layouts; 20/28 methods, 16 failed assertions; acceptance remains incomplete. No native replay.')
