@@ -1,0 +1,9 @@
+{
+  "cb8b9062a064210ba6c811f853f3f9aa930170dd": "docs(audit): preserve exposed R50 discovery and intended outcomes",
+  "b90093fe46b3479439742e695e3a5e3e46f728c6": "fix(settings): dismiss setup guide for keyboard settings route",
+  "41abf982961422ea331ba02cb6bd12a7a25ad2f1": "fix(emoji): expose tone identity and accessible tone choices",
+  "cc23b895a58421fc80649c0f13ea5d309d76a538": "test(ui): exercise settings routing and mounted emoji tone actions",
+  "9e9f363d9db7972af954cfba080ca9ccc71816b9": "test(ui): align UX witnesses with filtered catalog and visible controls",
+  "169a83c50160f43cfbed4f0fbee1fb66da759469": "test(settings): witness installed routes across real Full Access states",
+  "15e8f711acbea024dd216a10dd3928f5537bda63": "test(settings): retain unavailable menu evidence and use real OS fallback"
+}

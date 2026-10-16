@@ -1,0 +1,256 @@
+[
+  {
+    "path": "/tmp/pulpo-r50-installed-availability.log",
+    "bytes": 20590,
+    "sha256": "92865cd3eff47573585695663981e8eb4fd4bfb7129a6fb8b01e29b151712f85"
+  },
+  {
+    "path": "/tmp/pulpo-r50-new-build.log",
+    "bytes": 135326,
+    "sha256": "b7a894ca101132c04fdc0ee8f07f46c512eea5700a92af2f6a53fbff67771282"
+  },
+  {
+    "path": "/tmp/pulpo-r50-new-states-build.log",
+    "bytes": 141202,
+    "sha256": "dc765a2fed780544f6848237051f0c724f14ea2d26820d6321cbce7fe96f9fcf"
+  },
+  {
+    "path": "/tmp/pulpo-r50-new-states.log",
+    "bytes": 48995,
+    "sha256": "81847c0baa4e320fd9083b56b7619bdb6de733e7210cfb4848ef4952590cbba7"
+  },
+  {
+    "path": "/tmp/pulpo-r50-new.log",
+    "bytes": 14810,
+    "sha256": "92e4d7b6d52e04743c50b34c9a63aecf6cef8536054e5aed4945c62311607f1a"
+  },
+  {
+    "path": "/tmp/pulpo-r50-old-attempt2-build.log",
+    "bytes": 338911,
+    "sha256": "e8e52a776989e4bbeef6674a18432ababbea9d8034b70c9b81e0dca6afda9877"
+  },
+  {
+    "path": "/tmp/pulpo-r50-old-attempt3-build.log",
+    "bytes": 474688,
+    "sha256": "655940191e5857ef5f41f4b746a9dd533a84a6a7ebbad4e4098004bcbd9fdf33"
+  },
+  {
+    "path": "/tmp/pulpo-r50-old-build.log",
+    "bytes": 671,
+    "sha256": "f5a5ac84e035460e4d40259522309b117d93f05141dc1534ea6245c3f14194c6"
+  },
+  {
+    "path": "/tmp/pulpo-r50-old-corrected-build.log",
+    "bytes": 99808,
+    "sha256": "27ab66531433cece4326b89e84546e69ff69c99a0403fbe72095a4b0b0efc64d"
+  },
+  {
+    "path": "/tmp/pulpo-r50-old-corrected.log",
+    "bytes": 14942,
+    "sha256": "a83742966836c507e4e62443ced61e3ec3a3a97284ae0d740b6fcb51d059362b"
+  },
+  {
+    "path": "/tmp/pulpo-r50-old-final-build.log",
+    "bytes": 75518,
+    "sha256": "a1fc610e5fad9b684f8f2849953aa8704801e44f1aa375d976ee3d62fb7797c3"
+  },
+  {
+    "path": "/tmp/pulpo-r50-old-final-native-nodiag.log",
+    "bytes": 8321,
+    "sha256": "1069ac9ed462d60fcd82f33d1173d8d773304ec17c4192480382eaa116e86002"
+  },
+  {
+    "path": "/tmp/pulpo-r50-old-final-native.log",
+    "bytes": 7273,
+    "sha256": "5f833aa49ed04c28b21f4e69c5b04915f5c3bcfc359641752165131d9bde96c3"
+  },
+  {
+    "path": "/tmp/pulpo-r50-old-final-route.log",
+    "bytes": 27389,
+    "sha256": "64c6265483693e14584d329d24e47af9ce9ffefc44e7e633beb44f97e0bd78d6"
+  },
+  {
+    "path": "/tmp/pulpo-r50-old-installed-build.log",
+    "bytes": 177740,
+    "sha256": "6dec72032ad503727c1bfe514e86fe8ba751c6972575772ccfeea41ce28c14e5"
+  },
+  {
+    "path": "/tmp/pulpo-r50-old-installed.log",
+    "bytes": 36528,
+    "sha256": "390156f02124fdcb0c8b6b876cf1a0b8c43e526ddedf01290dd29d532a428494"
+  },
+  {
+    "path": "/tmp/pulpo-r50-old-states-build.log",
+    "bytes": 81519,
+    "sha256": "cc4286f079aa3a358da76d921be3cf28c0e0a70cbf5781fa46bc148c0e4a885f"
+  },
+  {
+    "path": "/tmp/pulpo-r50-old-states.log",
+    "bytes": 42720,
+    "sha256": "fb95082d05deb6a36a839e0576c605dffff891c80ff8f437f113d1df30f9a2ca"
+  },
+  {
+    "path": "/tmp/pulpo-r50-ordinary.log",
+    "bytes": 94738,
+    "sha256": "02b02c24d15a4140f47daec5b79f7397fcebd13da1e01c1e85bc31585320a968"
+  },
+  {
+    "path": "/tmp/pulpo-r50-installed-availability.events.json",
+    "bytes": 213498,
+    "sha256": "41340c0c6c0d40fffed46a2e3d7c831765c1fe6b6323980dc7c09aed6ec9d363"
+  },
+  {
+    "path": "/tmp/pulpo-r50-new-states.events.json",
+    "bytes": 484324,
+    "sha256": "8676bf0c727477efb4fd889593cecb0671313dec3db264968b46d1c61006c920"
+  },
+  {
+    "path": "/tmp/pulpo-r50-new.events.json",
+    "bytes": 246586,
+    "sha256": "becc8faa9d2699f6a6fa08d23804728613b89657ede0e4129ea042734cfa3dc0"
+  },
+  {
+    "path": "/tmp/pulpo-r50-old-corrected.events.json",
+    "bytes": 275620,
+    "sha256": "f59c76880c190501b1c09773682e0ed8ba05f3df707f67faee49f82572dc1ad4"
+  },
+  {
+    "path": "/tmp/pulpo-r50-old-final-native-nodiag.events.json",
+    "bytes": 150815,
+    "sha256": "d6254213e3e598cb6324dede8c6f2628c7b3a21504df7382100eb05b7adae244"
+  },
+  {
+    "path": "/tmp/pulpo-r50-old-final-route.events.json",
+    "bytes": 340475,
+    "sha256": "dcc5250787223286b4e0263515c99e899c6e3fb32a0c06424a85cce62069ec18"
+  },
+  {
+    "path": "/tmp/pulpo-r50-old-installed.events.json",
+    "bytes": 357822,
+    "sha256": "1c744f0343af9d549408a47310c48e0f8c9ea7cea8ffd4144c7a454d9b54f181"
+  },
+  {
+    "path": "/tmp/pulpo-r50-old-states.events.json",
+    "bytes": 412546,
+    "sha256": "3cc4bd56b4e9ab14cdbdcd9efa1c2551f1ec7927de1c211cc9ba2b2658b042e1"
+  },
+  {
+    "path": "/tmp/pulpo-r50-ordinary.events.json",
+    "bytes": 878726,
+    "sha256": "c5bbf90f867d91a8ae1aa9dba221c63c64bd88ebd29217c430372e8147d73705"
+  },
+  {
+    "path": "/tmp/pulpo-r50-installed-availability.xcresult",
+    "fileCount": 30,
+    "treeManifestSHA256": "d38acd5ae9b5cc4d2f0d116d63f9c24ee0839faf9c2af1dc8e2341634e063998",
+    "treeDigestDefinition": "SHA256 of JSON [[relative path, file SHA256], ...] sorted by path, compact separators"
+  },
+  {
+    "path": "/tmp/pulpo-r50-new-build.xcresult",
+    "fileCount": 8,
+    "treeManifestSHA256": "6744722043b8d50974edd80e36c86f34463ef2523d0c7ee135084ebe0b5a4709",
+    "treeDigestDefinition": "SHA256 of JSON [[relative path, file SHA256], ...] sorted by path, compact separators"
+  },
+  {
+    "path": "/tmp/pulpo-r50-new-states-build.xcresult",
+    "fileCount": 7,
+    "treeManifestSHA256": "c0ee1d62e08f5ba0f8e6e3e64aeccea491958268257195fdca74da606f8b926c",
+    "treeDigestDefinition": "SHA256 of JSON [[relative path, file SHA256], ...] sorted by path, compact separators"
+  },
+  {
+    "path": "/tmp/pulpo-r50-new-states.xcresult",
+    "fileCount": 74,
+    "treeManifestSHA256": "aeb26ef10bc1c468c473961d95eede2181fe7d7da8fbc7933b70acd993569a2a",
+    "treeDigestDefinition": "SHA256 of JSON [[relative path, file SHA256], ...] sorted by path, compact separators"
+  },
+  {
+    "path": "/tmp/pulpo-r50-new.xcresult",
+    "fileCount": 66,
+    "treeManifestSHA256": "3486ebacee1a0b4a530e60c0843e74565034134d9b15c477f7cb818e18e902ed",
+    "treeDigestDefinition": "SHA256 of JSON [[relative path, file SHA256], ...] sorted by path, compact separators"
+  },
+  {
+    "path": "/tmp/pulpo-r50-old-attempt2.xcresult",
+    "fileCount": 17,
+    "treeManifestSHA256": "512d85a0ada388cefb3fc66e0d7f64e8cf24e2a97a03fa5591409cb6c8282c7d",
+    "treeDigestDefinition": "SHA256 of JSON [[relative path, file SHA256], ...] sorted by path, compact separators"
+  },
+  {
+    "path": "/tmp/pulpo-r50-old-attempt3.xcresult",
+    "fileCount": 801,
+    "treeManifestSHA256": "96185b55e22963d05ad36949f8c7da31ca2f9c5e33f71a64f038306c4a87d9ee",
+    "treeDigestDefinition": "SHA256 of JSON [[relative path, file SHA256], ...] sorted by path, compact separators"
+  },
+  {
+    "path": "/tmp/pulpo-r50-old-corrected-build.xcresult",
+    "fileCount": 7,
+    "treeManifestSHA256": "ce6c412ad42715c7967369bab99a90f32fb978f4dcca752908c91a2768318909",
+    "treeDigestDefinition": "SHA256 of JSON [[relative path, file SHA256], ...] sorted by path, compact separators"
+  },
+  {
+    "path": "/tmp/pulpo-r50-old-corrected.xcresult",
+    "fileCount": 62,
+    "treeManifestSHA256": "a192b652b91ea97cbadbe6498e4aafc6a9d891c1d2a28598ef62e97ecaf4d2ae",
+    "treeDigestDefinition": "SHA256 of JSON [[relative path, file SHA256], ...] sorted by path, compact separators"
+  },
+  {
+    "path": "/tmp/pulpo-r50-old-final-build.xcresult",
+    "fileCount": 8,
+    "treeManifestSHA256": "6fd8d849fb9f0c768989c2b44a808e0607f9b7f5de2eb1ac0b2b8dc4d37a99a1",
+    "treeDigestDefinition": "SHA256 of JSON [[relative path, file SHA256], ...] sorted by path, compact separators"
+  },
+  {
+    "path": "/tmp/pulpo-r50-old-final-native-nodiag.xcresult",
+    "fileCount": 38,
+    "treeManifestSHA256": "3fc6862136d4202d50ff40b5aa82a8f6b9944c65bb18aa2e573be8e5bc2283e1",
+    "treeDigestDefinition": "SHA256 of JSON [[relative path, file SHA256], ...] sorted by path, compact separators"
+  },
+  {
+    "path": "/tmp/pulpo-r50-old-final-native.xcresult",
+    "fileCount": 790,
+    "treeManifestSHA256": "49d2f9e8333cd635c2c421f14f8b844b332b1adc6a7249aae2ee1d16c0012ddf",
+    "treeDigestDefinition": "SHA256 of JSON [[relative path, file SHA256], ...] sorted by path, compact separators"
+  },
+  {
+    "path": "/tmp/pulpo-r50-old-final-route.xcresult",
+    "fileCount": 42,
+    "treeManifestSHA256": "ead3edea4f50e95457eafaee33c958251087a98b6ef4d03e3e0c4d19f63195a5",
+    "treeDigestDefinition": "SHA256 of JSON [[relative path, file SHA256], ...] sorted by path, compact separators"
+  },
+  {
+    "path": "/tmp/pulpo-r50-old-installed-build.xcresult",
+    "fileCount": 7,
+    "treeManifestSHA256": "0441dc416fbf6237b9591807a8f1ec30b841e9c678533d91212b0eac2374f2e8",
+    "treeDigestDefinition": "SHA256 of JSON [[relative path, file SHA256], ...] sorted by path, compact separators"
+  },
+  {
+    "path": "/tmp/pulpo-r50-old-installed.xcresult",
+    "fileCount": 54,
+    "treeManifestSHA256": "163697a3e40859db99751d85c33d9946fee54b9df2e9b028f2e7750c7e950f98",
+    "treeDigestDefinition": "SHA256 of JSON [[relative path, file SHA256], ...] sorted by path, compact separators"
+  },
+  {
+    "path": "/tmp/pulpo-r50-old-states-build.xcresult",
+    "fileCount": 7,
+    "treeManifestSHA256": "4b4a0f7ebc87645bba29b523276c7756668fcea9f17d17011a93ba9537504e52",
+    "treeDigestDefinition": "SHA256 of JSON [[relative path, file SHA256], ...] sorted by path, compact separators"
+  },
+  {
+    "path": "/tmp/pulpo-r50-old-states.xcresult",
+    "fileCount": 160,
+    "treeManifestSHA256": "7de8a77636e420779d3dcea3b6b50078fa860d96332f71e5bdb9be201f30c48e",
+    "treeDigestDefinition": "SHA256 of JSON [[relative path, file SHA256], ...] sorted by path, compact separators"
+  },
+  {
+    "path": "/tmp/pulpo-r50-old.xcresult",
+    "fileCount": 7,
+    "treeManifestSHA256": "11a1f5b50bc289c753adfed9fb2561e2bb18c16a272a67b7b4462e3a6cca19b4",
+    "treeDigestDefinition": "SHA256 of JSON [[relative path, file SHA256], ...] sorted by path, compact separators"
+  },
+  {
+    "path": "/tmp/pulpo-r50-ordinary.xcresult",
+    "fileCount": 58,
+    "treeManifestSHA256": "dd239c3cf5e002d8ce77b52a3bd3254065bbedb37e31985cdbf65005884a1924",
+    "treeDigestDefinition": "SHA256 of JSON [[relative path, file SHA256], ...] sorted by path, compact separators"
+  }
+]

@@ -1,0 +1,157 @@
+[
+  {
+    "attachments" : [
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "371DE15B-3876-4931-8C6B-31C5467C215F",
+        "deviceName" : "Pulpo R50 UX owned",
+        "exportedFileName" : "F0F9ECE0-245F-419B-80EA-27B56A69D98C.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "category-preferred-tone-mounted_0_5C5ABBAF-773A-414A-951D-92F0A61E0A11.png",
+        "timestamp" : 1792152494.961
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "371DE15B-3876-4931-8C6B-31C5467C215F",
+        "deviceName" : "Pulpo R50 UX owned",
+        "exportedFileName" : "96C09A20-9A61-41A6-93C9-17D77AF5FF91.txt",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "category-preferred-tone_0_18663B43-DF26-4C8F-AC0D-0CE69FF4C340.txt",
+        "timestamp" : 1792152494.759
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "371DE15B-3876-4931-8C6B-31C5467C215F",
+        "deviceName" : "Pulpo R50 UX owned",
+        "exportedFileName" : "703C62FA-9E84-4448-B9EF-A760E8D4C818.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "recents-stored-tones-mounted_0_0F16038A-8B1F-4E0F-9C45-4C84751A4A22.png",
+        "timestamp" : 1792152494.518
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "371DE15B-3876-4931-8C6B-31C5467C215F",
+        "deviceName" : "Pulpo R50 UX owned",
+        "exportedFileName" : "F188BC2D-0A99-4300-A733-B1AB864C7D8D.txt",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "recents-stored-tones_0_CCE21EC3-3373-45EB-B156-C0D1A89C680E.txt",
+        "timestamp" : 1792152494.311
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "371DE15B-3876-4931-8C6B-31C5467C215F",
+        "deviceName" : "Pulpo R50 UX owned",
+        "exportedFileName" : "D9D7EA8C-106A-4C52-992D-7B1DA28643B7.txt",
+        "isAssociatedWithFailure" : true,
+        "suggestedHumanReadableName" : "Complete Issue Description.txt"
+      }
+    ],
+    "testIdentifier" : "EmojiToneAccessibilityR50Tests/testMountedToneActionsInsertionReopenRecentsAndReuse()",
+    "testIdentifierURL" : "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests/EmojiToneAccessibilityR50Tests/testMountedToneActionsInsertionReopenRecentsAndReuse"
+  },
+  {
+    "attachments" : [
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "371DE15B-3876-4931-8C6B-31C5467C215F",
+        "deviceName" : "Pulpo R50 UX owned",
+        "exportedFileName" : "30770B73-2147-4D52-AE5D-2CF52E273C84.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "r50-after-public-settings-url_0_0FCDFF62-21E1-4441-A958-E58D8C259182.png",
+        "timestamp" : 1792152509.127
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "371DE15B-3876-4931-8C6B-31C5467C215F",
+        "deviceName" : "Pulpo R50 UX owned",
+        "exportedFileName" : "D911F42E-D668-4CF1-9178-7BBA7BCEFA05.txt",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "App UI hierarchy for com.isaacthoman.pulpo_0_837AC150-9C07-466A-AD57-BBF9C4271C77.keyboard",
+        "timestamp" : 1792152508.913
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "371DE15B-3876-4931-8C6B-31C5467C215F",
+        "deviceName" : "Pulpo R50 UX owned",
+        "exportedFileName" : "9D662F91-C738-4798-9155-934EFFFFE4D0",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "UI Snapshot 2026-10-16 at 08.08.28 AM",
+        "timestamp" : 1792152508.913
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "371DE15B-3876-4931-8C6B-31C5467C215F",
+        "deviceName" : "Pulpo R50 UX owned",
+        "exportedFileName" : "66D32330-F9BF-401D-86F3-1A2CD3CB6985.txt",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "Debug description for `\"setup-step-1\" Any`_0_674A9E26-1199-40AF-9E2A-D65A6E5F4BD5.txt",
+        "timestamp" : 1792152508.811
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "371DE15B-3876-4931-8C6B-31C5467C215F",
+        "deviceName" : "Pulpo R50 UX owned",
+        "exportedFileName" : "25129665-E599-41C3-8478-6262EF3299D5.txt",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "Debug description for `\"setup-step-1\" Any`_0_9BE768F6-E90D-41B0-AD9B-A55F6D443304.txt",
+        "timestamp" : 1792152507.889
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "371DE15B-3876-4931-8C6B-31C5467C215F",
+        "deviceName" : "Pulpo R50 UX owned",
+        "exportedFileName" : "C8E51691-8BED-4D08-B189-46B5F0B39CB5.txt",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "Debug description for `\"setup-step-1\" Any`_0_4421D126-CF15-4BEC-8FE7-91772EFD5AF5.txt",
+        "timestamp" : 1792152506.874
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "371DE15B-3876-4931-8C6B-31C5467C215F",
+        "deviceName" : "Pulpo R50 UX owned",
+        "exportedFileName" : "D6430D49-2BBE-42DB-8F4B-A5E7CA7D4DEC.txt",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "Debug description for `\"setup-step-1\" Any`_0_91531551-8399-423B-B9F1-867D8C01CE33.txt",
+        "timestamp" : 1792152505.875
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "371DE15B-3876-4931-8C6B-31C5467C215F",
+        "deviceName" : "Pulpo R50 UX owned",
+        "exportedFileName" : "BD51660D-EAE9-46E4-BC17-BB2D1B2745DA.txt",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "Debug description for `\"setup-step-1\" Any`_0_62B5765B-31E4-416E-9B46-12AD02294BA3.txt",
+        "timestamp" : 1792152504.873
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "371DE15B-3876-4931-8C6B-31C5467C215F",
+        "deviceName" : "Pulpo R50 UX owned",
+        "exportedFileName" : "5D178825-C2C7-4E8D-BA28-90E5C83B304D.txt",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "Debug description for `\"setup-step-1\" Any`_0_EAFEB70B-DC9F-4595-82AB-0C707BCF3126.txt",
+        "timestamp" : 1792152503.874
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "371DE15B-3876-4931-8C6B-31C5467C215F",
+        "deviceName" : "Pulpo R50 UX owned",
+        "exportedFileName" : "DD341E7A-6AD4-47AC-BDE9-BEB79BE8DF12.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "r50-guide-before-public-url_0_8B702CCF-C3FD-413B-BEE5-960684295566.png",
+        "timestamp" : 1792152502.732
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "371DE15B-3876-4931-8C6B-31C5467C215F",
+        "deviceName" : "Pulpo R50 UX owned",
+        "exportedFileName" : "6AF2CA68-070B-4BE5-8874-F76D2BCE4690.mp4",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "Screen Recording 2026-10-16 at 08.08.17 AM.mp4",
+        "timestamp" : 1792152497.911
+      }
+    ],
+    "testIdentifier" : "SettingsRouteR50Tests/testPublicSettingsURLDismissesDisplayedGuideAndAllowsReopen()",
+    "testIdentifierURL" : "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/SettingsRouteR50Tests/testPublicSettingsURLDismissesDisplayedGuideAndAllowsReopen"
+  }
+]

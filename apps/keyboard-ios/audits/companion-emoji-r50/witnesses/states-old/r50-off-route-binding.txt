@@ -1,0 +1,1 @@
+Full Access: Off; setup statuses: ["Done", "Off", "Done"]; installed Keyboard Settings menu available: false; route binding: real public OS URL fallback; installed menu unavailable

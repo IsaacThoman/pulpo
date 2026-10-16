@@ -1,0 +1,9 @@
+{
+  "base": "fc85f84bb6df3fcf9e7a8afb471658cfc83d082b",
+  "AppModel_removing_only_settings_dismissal_equals_base": true,
+  "unchanged_files": {
+    "apps/keyboard-ios/App/PulpoKeyboardApp.swift": "1ff4b34077ad63148acb3ae97c7d1465dd391aec6784276e580b9383f66a5617",
+    "apps/keyboard-ios/App/SetupGuideView.swift": "7feb8507cff83e027ffe1a0f69ed52c0740c99acb96ab9b1a4363ce0226ace17",
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardUI/KeyboardController.swift": "30ec7b843868c2f22bca2cb90d58d9733d82c0c0961d3c75e1f6d82246a2bfae"
+  }
+}

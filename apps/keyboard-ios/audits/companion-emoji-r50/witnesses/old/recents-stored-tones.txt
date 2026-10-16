@@ -1,0 +1,2 @@
+emoji-👍🏿 | thumbs up | nil | []
+emoji-👍🏻 | thumbs up | nil | []
