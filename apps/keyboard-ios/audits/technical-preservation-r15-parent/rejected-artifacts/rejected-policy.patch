@@ -1,0 +1,29 @@
+diff --git a/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Input/KeyboardEngine.swift b/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Input/KeyboardEngine.swift
+index 3250fc21..a058c4b1 100644
+--- a/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Input/KeyboardEngine.swift
++++ b/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Input/KeyboardEngine.swift
+@@ -1266,6 +1266,24 @@ public final class KeyboardEngine {
+     return token.contains("@") || token.hasPrefix("#") || token.contains("_")
+       || token.contains("://") || lowered.hasPrefix("www.")
+       || ["http", "https", "ftp", "mailto"].contains(lowered)
++      || Self.hasPathAnchor(token)
++  }
++
++  /// An explicit root distinguishes paths from prose such as `and/or`,
++  /// `Wait...really`, or an unspaced sentence. Bare filenames and relative
++  /// paths without a dot/root remain ambiguous and retain ordinary correction.
++  /// Derive this from the current cursor context so deleting the anchor or
++  /// moving out of the token immediately restores ordinary suggestions.
++  static func hasPathAnchor(_ token: Substring) -> Bool {
++    // A single leading slash can introduce an alternative in chat. Require
++    // a directory boundary before treating a Unix-rooted token as a path.
++    if token.hasPrefix("/") { return token.dropFirst().contains("/") }
++    if token.hasPrefix("./") || token.hasPrefix("../")
++      || token.hasPrefix("~/") || token.hasPrefix("\\\\") { return true }
++    var characters = token.makeIterator()
++    guard let drive = characters.next(), drive.isASCII, drive.isLetter,
++          characters.next() == ":", let separator = characters.next() else { return false }
++    return separator == "\\" || separator == "/"
+   }
+ 
+   /// The last whitespace-separated token, as `split(whereSeparator:).last` finds it,

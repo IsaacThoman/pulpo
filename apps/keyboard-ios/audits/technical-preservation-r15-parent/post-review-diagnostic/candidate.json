@@ -1,0 +1,546 @@
+[
+  {
+    "automatic" : {
+      "alternatives" : [
+        "teh"
+      ],
+      "beforeDelimiter" : "say //teh",
+      "keyMilliseconds" : [
+        0.025583332899259403,
+        0.004583333065966144,
+        0.003041666786884889,
+        0.146625001434586
+      ],
+      "learned" : [
+
+      ],
+      "output" : "say //teh ",
+      "touchWeight" : 0
+    },
+    "correct" : false,
+    "expected" : "say //the ",
+    "group" : "post-review-ambiguity",
+    "id" : "comment-slash",
+    "mode" : "en_US",
+    "raw" : {
+      "alternatives" : [
+        "teh"
+      ],
+      "beforeDelimiter" : "say //teh",
+      "keyMilliseconds" : [
+        0.0048749989218777046,
+        0.003249999281251803,
+        0.0028333324735285714,
+        0.07458333311660681
+      ],
+      "learned" : [
+
+      ],
+      "output" : "say //teh ",
+      "touchWeight" : 0
+    },
+    "rawCorrect" : true,
+    "rawExpected" : "say //teh "
+  },
+  {
+    "automatic" : {
+      "alternatives" : [
+        "teh"
+      ],
+      "beforeDelimiter" : "/tmp/file;teh",
+      "keyMilliseconds" : [
+        0.004625000656233169,
+        0.004208332029520534,
+        0.00399999953515362,
+        0.08037500083446503
+      ],
+      "learned" : [
+
+      ],
+      "output" : "/tmp/file;teh ",
+      "touchWeight" : 0
+    },
+    "correct" : false,
+    "expected" : "/tmp/file;the ",
+    "group" : "post-review-ambiguity",
+    "id" : "path-semicolon",
+    "mode" : "en_US",
+    "raw" : {
+      "alternatives" : [
+        "teh"
+      ],
+      "beforeDelimiter" : "/tmp/file;teh",
+      "keyMilliseconds" : [
+        0.004166666258242913,
+        0.0038750004023313522,
+        0.0038750004023313522,
+        0.06795833360229153
+      ],
+      "learned" : [
+
+      ],
+      "output" : "/tmp/file;teh ",
+      "touchWeight" : 0
+    },
+    "rawCorrect" : true,
+    "rawExpected" : "/tmp/file;teh "
+  },
+  {
+    "automatic" : {
+      "alternatives" : [
+        "teh",
+        "the",
+        "Tehran"
+      ],
+      "autocorrection" : "the",
+      "beforeDelimiter" : "/tmp/file\nsay teh",
+      "keyMilliseconds" : [
+        0.0925833337532822,
+        0.06583333379239775,
+        0.08670833449286874,
+        0.16925000090850517
+      ],
+      "learned" : [
+        "the"
+      ],
+      "output" : "/tmp/file\nsay the ",
+      "touchWeight" : 3
+    },
+    "correct" : true,
+    "expected" : "/tmp/file\nsay the ",
+    "group" : "post-review-control",
+    "id" : "path-newline",
+    "mode" : "en_US",
+    "raw" : {
+      "alternatives" : [
+        "teh",
+        "the",
+        "Tehran"
+      ],
+      "beforeDelimiter" : "/tmp/file\nsay teh",
+      "keyMilliseconds" : [
+        0.05479166611621622,
+        0.061499998992076144,
+        0.06774999928893521,
+        0.10695833407226019
+      ],
+      "learned" : [
+        "teh"
+      ],
+      "output" : "/tmp/file\nsay teh ",
+      "touchWeight" : 0
+    },
+    "rawCorrect" : true,
+    "rawExpected" : "/tmp/file\nsay teh "
+  },
+  {
+    "automatic" : {
+      "alternatives" : [
+        "teh",
+        "the",
+        "Tehran"
+      ],
+      "autocorrection" : "the",
+      "beforeDelimiter" : "/tmp/file say teh",
+      "keyMilliseconds" : [
+        0.058708332289825194,
+        0.05679166679328773,
+        0.06858333290438168,
+        0.14558333350578323
+      ],
+      "learned" : [
+        "the"
+      ],
+      "output" : "/tmp/file say the ",
+      "touchWeight" : 3
+    },
+    "correct" : true,
+    "expected" : "/tmp/file say the ",
+    "group" : "post-review-control",
+    "id" : "path-space",
+    "mode" : "en_US",
+    "raw" : {
+      "alternatives" : [
+        "teh",
+        "the",
+        "Tehran"
+      ],
+      "beforeDelimiter" : "/tmp/file say teh",
+      "keyMilliseconds" : [
+        0.055791666454751976,
+        0.05170833355805371,
+        0.06366666639223695,
+        0.10149999980058055
+      ],
+      "learned" : [
+        "teh"
+      ],
+      "output" : "/tmp/file say teh ",
+      "touchWeight" : 0
+    },
+    "rawCorrect" : true,
+    "rawExpected" : "/tmp/file say teh "
+  },
+  {
+    "automatic" : {
+      "alternatives" : [
+        "teh"
+      ],
+      "beforeDelimiter" : "say //teh",
+      "keyMilliseconds" : [
+        0.0028333324735285714,
+        0.0026666675694286823,
+        0.0027500009309733286,
+        0.1244583327206783
+      ],
+      "learned" : [
+
+      ],
+      "output" : "say //teh ",
+      "touchWeight" : 0
+    },
+    "correct" : false,
+    "expected" : "say //the ",
+    "group" : "post-review-ambiguity",
+    "id" : "comment-slash",
+    "mode" : "es",
+    "raw" : {
+      "alternatives" : [
+        "teh"
+      ],
+      "beforeDelimiter" : "say //teh",
+      "keyMilliseconds" : [
+        0.0051666665967786685,
+        0.0033749984140740708,
+        0.0029583334253402427,
+        0.08858333239913918
+      ],
+      "learned" : [
+
+      ],
+      "output" : "say //teh ",
+      "touchWeight" : 0
+    },
+    "rawCorrect" : true,
+    "rawExpected" : "say //teh "
+  },
+  {
+    "automatic" : {
+      "alternatives" : [
+        "teh"
+      ],
+      "beforeDelimiter" : "/tmp/file;teh",
+      "keyMilliseconds" : [
+        0.004583333065966144,
+        0.0039583337638759986,
+        0.0038750004023313522,
+        0.07220833322207909
+      ],
+      "learned" : [
+
+      ],
+      "output" : "/tmp/file;teh ",
+      "touchWeight" : 0
+    },
+    "correct" : false,
+    "expected" : "/tmp/file;the ",
+    "group" : "post-review-ambiguity",
+    "id" : "path-semicolon",
+    "mode" : "es",
+    "raw" : {
+      "alternatives" : [
+        "teh"
+      ],
+      "beforeDelimiter" : "/tmp/file;teh",
+      "keyMilliseconds" : [
+        0.004249999619787559,
+        0.003916666173608974,
+        0.003916667992598377,
+        0.07949999962875154
+      ],
+      "learned" : [
+
+      ],
+      "output" : "/tmp/file;teh ",
+      "touchWeight" : 0
+    },
+    "rawCorrect" : true,
+    "rawExpected" : "/tmp/file;teh "
+  },
+  {
+    "automatic" : {
+      "alternatives" : [
+        "teh",
+        "tehuelches",
+        "Tehuantepec"
+      ],
+      "beforeDelimiter" : "/tmp/file\nsay teh",
+      "keyMilliseconds" : [
+        0.03375000051164534,
+        0.06416666656150483,
+        0.05941666677244939,
+        0.12691666597675066
+      ],
+      "learned" : [
+        "teh"
+      ],
+      "output" : "/tmp/file\nsay teh ",
+      "touchWeight" : 0
+    },
+    "correct" : false,
+    "expected" : "/tmp/file\nsay the ",
+    "group" : "post-review-control",
+    "id" : "path-newline",
+    "mode" : "es",
+    "raw" : {
+      "alternatives" : [
+        "teh",
+        "tehuelches",
+        "Tehuantepec"
+      ],
+      "beforeDelimiter" : "/tmp/file\nsay teh",
+      "keyMilliseconds" : [
+        0.026708332370617427,
+        0.043416666812845506,
+        0.04570833334582858,
+        0.11604166684264783
+      ],
+      "learned" : [
+        "teh"
+      ],
+      "output" : "/tmp/file\nsay teh ",
+      "touchWeight" : 0
+    },
+    "rawCorrect" : true,
+    "rawExpected" : "/tmp/file\nsay teh "
+  },
+  {
+    "automatic" : {
+      "alternatives" : [
+        "teh",
+        "tehuelches",
+        "Tehuantepec"
+      ],
+      "beforeDelimiter" : "/tmp/file say teh",
+      "keyMilliseconds" : [
+        0.030791667086305097,
+        0.04562499998428393,
+        0.0475416672998108,
+        0.1053750002029119
+      ],
+      "learned" : [
+        "teh"
+      ],
+      "output" : "/tmp/file say teh ",
+      "touchWeight" : 0
+    },
+    "correct" : false,
+    "expected" : "/tmp/file say the ",
+    "group" : "post-review-control",
+    "id" : "path-space",
+    "mode" : "es",
+    "raw" : {
+      "alternatives" : [
+        "teh",
+        "tehuelches",
+        "Tehuantepec"
+      ],
+      "beforeDelimiter" : "/tmp/file say teh",
+      "keyMilliseconds" : [
+        0.026749999960884452,
+        0.04066666588187218,
+        0.04004166657978203,
+        0.10366666538175195
+      ],
+      "learned" : [
+        "teh"
+      ],
+      "output" : "/tmp/file say teh ",
+      "touchWeight" : 0
+    },
+    "rawCorrect" : true,
+    "rawExpected" : "/tmp/file say teh "
+  },
+  {
+    "automatic" : {
+      "alternatives" : [
+        "teh"
+      ],
+      "beforeDelimiter" : "say //teh",
+      "keyMilliseconds" : [
+        0.0030000010156072676,
+        0.002833334292517975,
+        0.0026666675694286823,
+        0.15333333431044593
+      ],
+      "learned" : [
+
+      ],
+      "output" : "say //teh ",
+      "touchWeight" : 0
+    },
+    "correct" : false,
+    "expected" : "say //the ",
+    "group" : "post-review-ambiguity",
+    "id" : "comment-slash",
+    "mode" : "en_es",
+    "raw" : {
+      "alternatives" : [
+        "teh"
+      ],
+      "beforeDelimiter" : "say //teh",
+      "keyMilliseconds" : [
+        0.002749999111983925,
+        0.002583334207884036,
+        0.0027083333407063037,
+        0.13550000039685983
+      ],
+      "learned" : [
+
+      ],
+      "output" : "say //teh ",
+      "touchWeight" : 0
+    },
+    "rawCorrect" : true,
+    "rawExpected" : "say //teh "
+  },
+  {
+    "automatic" : {
+      "alternatives" : [
+        "teh"
+      ],
+      "beforeDelimiter" : "/tmp/file;teh",
+      "keyMilliseconds" : [
+        0.004166668077232316,
+        0.0038333328120643273,
+        0.0039583337638759986,
+        0.12345833420113195
+      ],
+      "learned" : [
+
+      ],
+      "output" : "/tmp/file;teh ",
+      "touchWeight" : 0
+    },
+    "correct" : false,
+    "expected" : "/tmp/file;the ",
+    "group" : "post-review-ambiguity",
+    "id" : "path-semicolon",
+    "mode" : "en_es",
+    "raw" : {
+      "alternatives" : [
+        "teh"
+      ],
+      "beforeDelimiter" : "/tmp/file;teh",
+      "keyMilliseconds" : [
+        0.003916666173608974,
+        0.0037500012695090845,
+        0.003916666173608974,
+        0.0932916682359064
+      ],
+      "learned" : [
+
+      ],
+      "output" : "/tmp/file;teh ",
+      "touchWeight" : 0
+    },
+    "rawCorrect" : true,
+    "rawExpected" : "/tmp/file;teh "
+  },
+  {
+    "automatic" : {
+      "alternatives" : [
+        "teh",
+        "the",
+        "Tehran"
+      ],
+      "autocorrection" : "the",
+      "beforeDelimiter" : "/tmp/file\nsay teh",
+      "keyMilliseconds" : [
+        0.06929166556801647,
+        0.06616666723857634,
+        0.08291666745208204,
+        0.1900416664284421
+      ],
+      "learned" : [
+        "the"
+      ],
+      "output" : "/tmp/file\nsay the ",
+      "touchWeight" : 3
+    },
+    "correct" : true,
+    "expected" : "/tmp/file\nsay the ",
+    "group" : "post-review-control",
+    "id" : "path-newline",
+    "mode" : "en_es",
+    "raw" : {
+      "alternatives" : [
+        "teh",
+        "the",
+        "Tehran"
+      ],
+      "beforeDelimiter" : "/tmp/file\nsay teh",
+      "keyMilliseconds" : [
+        0.06454166759795044,
+        0.058833333241636865,
+        0.07012500100245234,
+        0.1397500000166474
+      ],
+      "learned" : [
+        "teh"
+      ],
+      "output" : "/tmp/file\nsay teh ",
+      "touchWeight" : 0
+    },
+    "rawCorrect" : true,
+    "rawExpected" : "/tmp/file\nsay teh "
+  },
+  {
+    "automatic" : {
+      "alternatives" : [
+        "teh",
+        "the",
+        "Tehran"
+      ],
+      "autocorrection" : "the",
+      "beforeDelimiter" : "/tmp/file say teh",
+      "keyMilliseconds" : [
+        0.07141666719689965,
+        0.06116666736488696,
+        0.07858333265176043,
+        0.19458333372313064
+      ],
+      "learned" : [
+        "the"
+      ],
+      "output" : "/tmp/file say the ",
+      "touchWeight" : 3
+    },
+    "correct" : true,
+    "expected" : "/tmp/file say the ",
+    "group" : "post-review-control",
+    "id" : "path-space",
+    "mode" : "en_es",
+    "raw" : {
+      "alternatives" : [
+        "teh",
+        "the",
+        "Tehran"
+      ],
+      "beforeDelimiter" : "/tmp/file say teh",
+      "keyMilliseconds" : [
+        0.06812500032538082,
+        0.06462499914050568,
+        0.07141666537791025,
+        0.1395833332935581
+      ],
+      "learned" : [
+        "teh"
+      ],
+      "output" : "/tmp/file say teh ",
+      "touchWeight" : 0
+    },
+    "rawCorrect" : true,
+    "rawExpected" : "/tmp/file say teh "
+  }
+]

@@ -1,0 +1,1036 @@
+{
+  "development": {
+    "en_US": {
+      "total": 38,
+      "baseline": 20,
+      "candidate": 25,
+      "rawBaseline": 38,
+      "rawCandidate": 38,
+      "gains": [
+        "root",
+        "relative",
+        "home",
+        "windows",
+        "known-path"
+      ],
+      "regressions": [],
+      "candidateFailures": [
+        "filename",
+        "barepath",
+        "option",
+        "slash-es",
+        "spaced",
+        "dots-es",
+        "space-es",
+        "ordinary-es",
+        "accent",
+        "accent2",
+        "delete-marker",
+        "delete-option",
+        "undo"
+      ],
+      "outputChanges": [
+        "root",
+        "relative",
+        "home",
+        "windows",
+        "known-path"
+      ],
+      "alternativeChanges": [
+        "root",
+        "relative",
+        "parent",
+        "home",
+        "windows",
+        "unc",
+        "known-path"
+      ],
+      "autocorrectionChanges": [
+        "root",
+        "relative",
+        "home",
+        "windows",
+        "known-path"
+      ],
+      "learningChanges": [
+        "root",
+        "relative",
+        "parent",
+        "home",
+        "windows",
+        "unc",
+        "known-path",
+        "inside-path"
+      ],
+      "groups": {
+        "boundary": {
+          "total": 1,
+          "baseline": 1,
+          "candidate": 1
+        },
+        "capitalization": {
+          "total": 1,
+          "baseline": 1,
+          "candidate": 1
+        },
+        "diagnostic": {
+          "total": 1,
+          "baseline": 0,
+          "candidate": 1
+        },
+        "inside-word": {
+          "total": 2,
+          "baseline": 2,
+          "candidate": 2
+        },
+        "ordinary-boundary": {
+          "total": 13,
+          "baseline": 6,
+          "candidate": 6
+        },
+        "privacy": {
+          "total": 4,
+          "baseline": 4,
+          "candidate": 4
+        },
+        "technical": {
+          "total": 11,
+          "baseline": 4,
+          "candidate": 8
+        },
+        "transition": {
+          "total": 4,
+          "baseline": 2,
+          "candidate": 2
+        },
+        "undo": {
+          "total": 1,
+          "baseline": 0,
+          "candidate": 0
+        }
+      }
+    },
+    "en_es": {
+      "total": 38,
+      "baseline": 23,
+      "candidate": 30,
+      "rawBaseline": 38,
+      "rawCandidate": 38,
+      "gains": [
+        "root",
+        "relative",
+        "parent",
+        "home",
+        "windows",
+        "unc",
+        "known-path"
+      ],
+      "regressions": [],
+      "candidateFailures": [
+        "filename",
+        "barepath",
+        "option",
+        "spaced",
+        "space-es",
+        "delete-marker",
+        "delete-option",
+        "undo"
+      ],
+      "outputChanges": [
+        "root",
+        "relative",
+        "parent",
+        "home",
+        "windows",
+        "unc",
+        "known-path"
+      ],
+      "alternativeChanges": [
+        "root",
+        "relative",
+        "parent",
+        "home",
+        "windows",
+        "unc",
+        "known-path"
+      ],
+      "autocorrectionChanges": [
+        "root",
+        "relative",
+        "parent",
+        "home",
+        "windows",
+        "unc",
+        "known-path"
+      ],
+      "learningChanges": [
+        "root",
+        "relative",
+        "parent",
+        "home",
+        "windows",
+        "unc",
+        "known-path",
+        "inside-path"
+      ],
+      "groups": {
+        "boundary": {
+          "total": 1,
+          "baseline": 1,
+          "candidate": 1
+        },
+        "capitalization": {
+          "total": 1,
+          "baseline": 1,
+          "candidate": 1
+        },
+        "diagnostic": {
+          "total": 1,
+          "baseline": 0,
+          "candidate": 1
+        },
+        "inside-word": {
+          "total": 2,
+          "baseline": 2,
+          "candidate": 2
+        },
+        "ordinary-boundary": {
+          "total": 13,
+          "baseline": 11,
+          "candidate": 11
+        },
+        "privacy": {
+          "total": 4,
+          "baseline": 4,
+          "candidate": 4
+        },
+        "technical": {
+          "total": 11,
+          "baseline": 2,
+          "candidate": 8
+        },
+        "transition": {
+          "total": 4,
+          "baseline": 2,
+          "candidate": 2
+        },
+        "undo": {
+          "total": 1,
+          "baseline": 0,
+          "candidate": 0
+        }
+      }
+    },
+    "es": {
+      "total": 38,
+      "baseline": 19,
+      "candidate": 22,
+      "rawBaseline": 38,
+      "rawCandidate": 38,
+      "gains": [
+        "parent",
+        "home",
+        "unc"
+      ],
+      "regressions": [],
+      "candidateFailures": [
+        "option",
+        "slash-en",
+        "slash-words",
+        "dots",
+        "unicode",
+        "sentence",
+        "spaced",
+        "space-es",
+        "ordinary-en",
+        "delete-marker",
+        "delete-option",
+        "caret-away",
+        "selection",
+        "suffix",
+        "undo",
+        "capital"
+      ],
+      "outputChanges": [
+        "parent",
+        "home",
+        "unc"
+      ],
+      "alternativeChanges": [
+        "relative",
+        "parent",
+        "home",
+        "windows",
+        "unc"
+      ],
+      "autocorrectionChanges": [
+        "parent",
+        "home",
+        "unc"
+      ],
+      "learningChanges": [
+        "root",
+        "relative",
+        "parent",
+        "home",
+        "windows",
+        "unc",
+        "known-path",
+        "inside-path"
+      ],
+      "groups": {
+        "boundary": {
+          "total": 1,
+          "baseline": 0,
+          "candidate": 0
+        },
+        "capitalization": {
+          "total": 1,
+          "baseline": 0,
+          "candidate": 0
+        },
+        "diagnostic": {
+          "total": 1,
+          "baseline": 1,
+          "candidate": 1
+        },
+        "inside-word": {
+          "total": 2,
+          "baseline": 2,
+          "candidate": 2
+        },
+        "ordinary-boundary": {
+          "total": 13,
+          "baseline": 5,
+          "candidate": 5
+        },
+        "privacy": {
+          "total": 4,
+          "baseline": 4,
+          "candidate": 4
+        },
+        "technical": {
+          "total": 11,
+          "baseline": 7,
+          "candidate": 10
+        },
+        "transition": {
+          "total": 4,
+          "baseline": 0,
+          "candidate": 0
+        },
+        "undo": {
+          "total": 1,
+          "baseline": 0,
+          "candidate": 0
+        }
+      }
+    }
+  },
+  "heldout": {
+    "en_US": {
+      "total": 44,
+      "baseline": 21,
+      "candidate": 31,
+      "rawBaseline": 44,
+      "rawCandidate": 44,
+      "gains": [
+        "h01",
+        "h02",
+        "h03",
+        "h04",
+        "h05",
+        "h06",
+        "h13",
+        "h14",
+        "h15",
+        "h16"
+      ],
+      "regressions": [],
+      "candidateFailures": [
+        "h08",
+        "h09",
+        "h10",
+        "h27",
+        "h28",
+        "h29",
+        "h30",
+        "h31",
+        "h32",
+        "h38",
+        "h40",
+        "h41",
+        "h42"
+      ],
+      "outputChanges": [
+        "h01",
+        "h02",
+        "h03",
+        "h04",
+        "h05",
+        "h06",
+        "h13",
+        "h14",
+        "h15",
+        "h16"
+      ],
+      "alternativeChanges": [
+        "h01",
+        "h02",
+        "h03",
+        "h04",
+        "h05",
+        "h06",
+        "h13",
+        "h14",
+        "h15",
+        "h16"
+      ],
+      "autocorrectionChanges": [
+        "h01",
+        "h02",
+        "h03",
+        "h04",
+        "h05",
+        "h06",
+        "h13",
+        "h14",
+        "h15",
+        "h16"
+      ],
+      "learningChanges": [
+        "h01",
+        "h02",
+        "h03",
+        "h04",
+        "h05",
+        "h06",
+        "h13",
+        "h14",
+        "h15",
+        "h16"
+      ],
+      "groups": {
+        "prose-ascii-ellipsis": {
+          "total": 1,
+          "baseline": 1,
+          "candidate": 1
+        },
+        "prose-capitalization": {
+          "total": 1,
+          "baseline": 1,
+          "candidate": 1
+        },
+        "prose-external-caret-boundary": {
+          "total": 1,
+          "baseline": 0,
+          "candidate": 0
+        },
+        "prose-marker-deletion-boundary": {
+          "total": 1,
+          "baseline": 1,
+          "candidate": 1
+        },
+        "prose-ordinary-boundary-en": {
+          "total": 6,
+          "baseline": 6,
+          "candidate": 6
+        },
+        "prose-ordinary-boundary-es": {
+          "total": 6,
+          "baseline": 0,
+          "candidate": 0
+        },
+        "prose-selection-boundary": {
+          "total": 1,
+          "baseline": 0,
+          "candidate": 0
+        },
+        "prose-sentence-boundary": {
+          "total": 1,
+          "baseline": 1,
+          "candidate": 1
+        },
+        "prose-slash-expression-en": {
+          "total": 1,
+          "baseline": 1,
+          "candidate": 1
+        },
+        "prose-slash-expression-es": {
+          "total": 1,
+          "baseline": 0,
+          "candidate": 0
+        },
+        "prose-true-inside-word": {
+          "total": 2,
+          "baseline": 2,
+          "candidate": 2
+        },
+        "prose-undo": {
+          "total": 1,
+          "baseline": 0,
+          "candidate": 0
+        },
+        "prose-unicode-ellipsis": {
+          "total": 1,
+          "baseline": 1,
+          "candidate": 1
+        },
+        "technical-ambiguous-barepath": {
+          "total": 1,
+          "baseline": 0,
+          "candidate": 0
+        },
+        "technical-ambiguous-camel": {
+          "total": 1,
+          "baseline": 1,
+          "candidate": 1
+        },
+        "technical-ambiguous-filename": {
+          "total": 1,
+          "baseline": 0,
+          "candidate": 0
+        },
+        "technical-ambiguous-option": {
+          "total": 1,
+          "baseline": 0,
+          "candidate": 0
+        },
+        "technical-ambiguous-snake": {
+          "total": 1,
+          "baseline": 1,
+          "candidate": 1
+        },
+        "technical-caret-suffix": {
+          "total": 1,
+          "baseline": 0,
+          "candidate": 1
+        },
+        "technical-deletion-anchor-retained": {
+          "total": 1,
+          "baseline": 0,
+          "candidate": 1
+        },
+        "technical-drive": {
+          "total": 1,
+          "baseline": 0,
+          "candidate": 1
+        },
+        "technical-email-field": {
+          "total": 1,
+          "baseline": 1,
+          "candidate": 1
+        },
+        "technical-external-caret": {
+          "total": 1,
+          "baseline": 0,
+          "candidate": 1
+        },
+        "technical-home": {
+          "total": 1,
+          "baseline": 0,
+          "candidate": 1
+        },
+        "technical-one-time-code": {
+          "total": 1,
+          "baseline": 1,
+          "candidate": 1
+        },
+        "technical-parent": {
+          "total": 1,
+          "baseline": 0,
+          "candidate": 1
+        },
+        "technical-relative": {
+          "total": 1,
+          "baseline": 0,
+          "candidate": 1
+        },
+        "technical-rooted": {
+          "total": 1,
+          "baseline": 0,
+          "candidate": 1
+        },
+        "technical-secure-field": {
+          "total": 1,
+          "baseline": 1,
+          "candidate": 1
+        },
+        "technical-selection": {
+          "total": 1,
+          "baseline": 0,
+          "candidate": 1
+        },
+        "technical-unc": {
+          "total": 1,
+          "baseline": 0,
+          "candidate": 1
+        },
+        "technical-url": {
+          "total": 1,
+          "baseline": 1,
+          "candidate": 1
+        },
+        "technical-url-field": {
+          "total": 1,
+          "baseline": 1,
+          "candidate": 1
+        }
+      }
+    },
+    "en_es": {
+      "total": 44,
+      "baseline": 27,
+      "candidate": 37,
+      "rawBaseline": 44,
+      "rawCandidate": 44,
+      "gains": [
+        "h01",
+        "h02",
+        "h03",
+        "h04",
+        "h05",
+        "h06",
+        "h13",
+        "h14",
+        "h15",
+        "h16"
+      ],
+      "regressions": [],
+      "candidateFailures": [
+        "h08",
+        "h09",
+        "h10",
+        "h31",
+        "h40",
+        "h41",
+        "h42"
+      ],
+      "outputChanges": [
+        "h01",
+        "h02",
+        "h03",
+        "h04",
+        "h05",
+        "h06",
+        "h13",
+        "h14",
+        "h15",
+        "h16"
+      ],
+      "alternativeChanges": [
+        "h01",
+        "h02",
+        "h03",
+        "h04",
+        "h05",
+        "h06",
+        "h13",
+        "h14",
+        "h15",
+        "h16"
+      ],
+      "autocorrectionChanges": [
+        "h01",
+        "h02",
+        "h03",
+        "h04",
+        "h05",
+        "h06",
+        "h13",
+        "h14",
+        "h15",
+        "h16"
+      ],
+      "learningChanges": [
+        "h01",
+        "h02",
+        "h03",
+        "h04",
+        "h05",
+        "h06",
+        "h13",
+        "h14",
+        "h15",
+        "h16"
+      ],
+      "groups": {
+        "prose-ascii-ellipsis": {
+          "total": 1,
+          "baseline": 1,
+          "candidate": 1
+        },
+        "prose-capitalization": {
+          "total": 1,
+          "baseline": 1,
+          "candidate": 1
+        },
+        "prose-external-caret-boundary": {
+          "total": 1,
+          "baseline": 0,
+          "candidate": 0
+        },
+        "prose-marker-deletion-boundary": {
+          "total": 1,
+          "baseline": 1,
+          "candidate": 1
+        },
+        "prose-ordinary-boundary-en": {
+          "total": 6,
+          "baseline": 6,
+          "candidate": 6
+        },
+        "prose-ordinary-boundary-es": {
+          "total": 6,
+          "baseline": 5,
+          "candidate": 5
+        },
+        "prose-selection-boundary": {
+          "total": 1,
+          "baseline": 0,
+          "candidate": 0
+        },
+        "prose-sentence-boundary": {
+          "total": 1,
+          "baseline": 1,
+          "candidate": 1
+        },
+        "prose-slash-expression-en": {
+          "total": 1,
+          "baseline": 1,
+          "candidate": 1
+        },
+        "prose-slash-expression-es": {
+          "total": 1,
+          "baseline": 1,
+          "candidate": 1
+        },
+        "prose-true-inside-word": {
+          "total": 2,
+          "baseline": 2,
+          "candidate": 2
+        },
+        "prose-undo": {
+          "total": 1,
+          "baseline": 0,
+          "candidate": 0
+        },
+        "prose-unicode-ellipsis": {
+          "total": 1,
+          "baseline": 1,
+          "candidate": 1
+        },
+        "technical-ambiguous-barepath": {
+          "total": 1,
+          "baseline": 0,
+          "candidate": 0
+        },
+        "technical-ambiguous-camel": {
+          "total": 1,
+          "baseline": 1,
+          "candidate": 1
+        },
+        "technical-ambiguous-filename": {
+          "total": 1,
+          "baseline": 0,
+          "candidate": 0
+        },
+        "technical-ambiguous-option": {
+          "total": 1,
+          "baseline": 0,
+          "candidate": 0
+        },
+        "technical-ambiguous-snake": {
+          "total": 1,
+          "baseline": 1,
+          "candidate": 1
+        },
+        "technical-caret-suffix": {
+          "total": 1,
+          "baseline": 0,
+          "candidate": 1
+        },
+        "technical-deletion-anchor-retained": {
+          "total": 1,
+          "baseline": 0,
+          "candidate": 1
+        },
+        "technical-drive": {
+          "total": 1,
+          "baseline": 0,
+          "candidate": 1
+        },
+        "technical-email-field": {
+          "total": 1,
+          "baseline": 1,
+          "candidate": 1
+        },
+        "technical-external-caret": {
+          "total": 1,
+          "baseline": 0,
+          "candidate": 1
+        },
+        "technical-home": {
+          "total": 1,
+          "baseline": 0,
+          "candidate": 1
+        },
+        "technical-one-time-code": {
+          "total": 1,
+          "baseline": 1,
+          "candidate": 1
+        },
+        "technical-parent": {
+          "total": 1,
+          "baseline": 0,
+          "candidate": 1
+        },
+        "technical-relative": {
+          "total": 1,
+          "baseline": 0,
+          "candidate": 1
+        },
+        "technical-rooted": {
+          "total": 1,
+          "baseline": 0,
+          "candidate": 1
+        },
+        "technical-secure-field": {
+          "total": 1,
+          "baseline": 1,
+          "candidate": 1
+        },
+        "technical-selection": {
+          "total": 1,
+          "baseline": 0,
+          "candidate": 1
+        },
+        "technical-unc": {
+          "total": 1,
+          "baseline": 0,
+          "candidate": 1
+        },
+        "technical-url": {
+          "total": 1,
+          "baseline": 1,
+          "candidate": 1
+        },
+        "technical-url-field": {
+          "total": 1,
+          "baseline": 1,
+          "candidate": 1
+        }
+      }
+    },
+    "es": {
+      "total": 44,
+      "baseline": 31,
+      "candidate": 31,
+      "rawBaseline": 44,
+      "rawCandidate": 44,
+      "gains": [],
+      "regressions": [],
+      "candidateFailures": [
+        "h08",
+        "h21",
+        "h22",
+        "h23",
+        "h24",
+        "h25",
+        "h26",
+        "h31",
+        "h39",
+        "h40",
+        "h41",
+        "h42",
+        "h44"
+      ],
+      "outputChanges": [],
+      "alternativeChanges": [
+        "h02",
+        "h05",
+        "h14"
+      ],
+      "autocorrectionChanges": [],
+      "learningChanges": [
+        "h01",
+        "h02",
+        "h03",
+        "h04",
+        "h05",
+        "h06",
+        "h13",
+        "h14",
+        "h15",
+        "h16"
+      ],
+      "groups": {
+        "prose-ascii-ellipsis": {
+          "total": 1,
+          "baseline": 1,
+          "candidate": 1
+        },
+        "prose-capitalization": {
+          "total": 1,
+          "baseline": 1,
+          "candidate": 1
+        },
+        "prose-external-caret-boundary": {
+          "total": 1,
+          "baseline": 0,
+          "candidate": 0
+        },
+        "prose-marker-deletion-boundary": {
+          "total": 1,
+          "baseline": 0,
+          "candidate": 0
+        },
+        "prose-ordinary-boundary-en": {
+          "total": 6,
+          "baseline": 0,
+          "candidate": 0
+        },
+        "prose-ordinary-boundary-es": {
+          "total": 6,
+          "baseline": 5,
+          "candidate": 5
+        },
+        "prose-selection-boundary": {
+          "total": 1,
+          "baseline": 0,
+          "candidate": 0
+        },
+        "prose-sentence-boundary": {
+          "total": 1,
+          "baseline": 0,
+          "candidate": 0
+        },
+        "prose-slash-expression-en": {
+          "total": 1,
+          "baseline": 1,
+          "candidate": 1
+        },
+        "prose-slash-expression-es": {
+          "total": 1,
+          "baseline": 1,
+          "candidate": 1
+        },
+        "prose-true-inside-word": {
+          "total": 2,
+          "baseline": 2,
+          "candidate": 2
+        },
+        "prose-undo": {
+          "total": 1,
+          "baseline": 0,
+          "candidate": 0
+        },
+        "prose-unicode-ellipsis": {
+          "total": 1,
+          "baseline": 1,
+          "candidate": 1
+        },
+        "technical-ambiguous-barepath": {
+          "total": 1,
+          "baseline": 1,
+          "candidate": 1
+        },
+        "technical-ambiguous-camel": {
+          "total": 1,
+          "baseline": 1,
+          "candidate": 1
+        },
+        "technical-ambiguous-filename": {
+          "total": 1,
+          "baseline": 0,
+          "candidate": 0
+        },
+        "technical-ambiguous-option": {
+          "total": 1,
+          "baseline": 1,
+          "candidate": 1
+        },
+        "technical-ambiguous-snake": {
+          "total": 1,
+          "baseline": 1,
+          "candidate": 1
+        },
+        "technical-caret-suffix": {
+          "total": 1,
+          "baseline": 1,
+          "candidate": 1
+        },
+        "technical-deletion-anchor-retained": {
+          "total": 1,
+          "baseline": 1,
+          "candidate": 1
+        },
+        "technical-drive": {
+          "total": 1,
+          "baseline": 1,
+          "candidate": 1
+        },
+        "technical-email-field": {
+          "total": 1,
+          "baseline": 1,
+          "candidate": 1
+        },
+        "technical-external-caret": {
+          "total": 1,
+          "baseline": 1,
+          "candidate": 1
+        },
+        "technical-home": {
+          "total": 1,
+          "baseline": 1,
+          "candidate": 1
+        },
+        "technical-one-time-code": {
+          "total": 1,
+          "baseline": 1,
+          "candidate": 1
+        },
+        "technical-parent": {
+          "total": 1,
+          "baseline": 1,
+          "candidate": 1
+        },
+        "technical-relative": {
+          "total": 1,
+          "baseline": 1,
+          "candidate": 1
+        },
+        "technical-rooted": {
+          "total": 1,
+          "baseline": 1,
+          "candidate": 1
+        },
+        "technical-secure-field": {
+          "total": 1,
+          "baseline": 1,
+          "candidate": 1
+        },
+        "technical-selection": {
+          "total": 1,
+          "baseline": 1,
+          "candidate": 1
+        },
+        "technical-unc": {
+          "total": 1,
+          "baseline": 1,
+          "candidate": 1
+        },
+        "technical-url": {
+          "total": 1,
+          "baseline": 1,
+          "candidate": 1
+        },
+        "technical-url-field": {
+          "total": 1,
+          "baseline": 1,
+          "candidate": 1
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,29 @@
+[
+  {
+    "id": "root-slash-prose",
+    "group": "ordinary-boundary",
+    "before": "send /",
+    "typed": "recieve ",
+    "selected": "",
+    "after": "",
+    "expected": "send /receive "
+  },
+  {
+    "id": "full-path",
+    "group": "technical",
+    "before": "use ",
+    "typed": "/clientsecret/report ",
+    "selected": "",
+    "after": "",
+    "expected": "use /clientsecret/report "
+  },
+  {
+    "id": "quoted-relative",
+    "group": "technical",
+    "before": "use (",
+    "typed": "./drafts/teh ",
+    "selected": "",
+    "after": "",
+    "expected": "use (./drafts/teh "
+  }
+]

@@ -1,0 +1,61 @@
+import Testing
+@testable import KeyboardCore
+
+struct AnchoredPathTests {
+  @Test(arguments: ["/var/teh", "./teh", "../teh", "~/teh", "D:\\teh", "z:/teh", "\\\\host\\teh"])
+  func explicitPathsHaveAnchors(token: String) {
+    #expect(KeyboardEngine.hasPathAnchor(Substring(token)))
+  }
+
+  @Test(arguments: ["a/teh", "/recieve", "útil/inportante", "Wait...teh", "Wait…teh", "Done.teh", "report.txt", "--recieve", "drafts/teh", "c:teh", "é:/teh", "\\teh", ".../teh"])
+  func ambiguousPunctuationRetainsOrdinaryPolicy(token: String) {
+    #expect(!KeyboardEngine.hasPathAnchor(Substring(token)))
+  }
+
+  static func item(_ before: String, typed: String, after: String = "", selected: String = "", delete: Int? = nil, undo: Bool? = nil) -> TechnicalPreservationReplayTests.Case {
+    .init(id: "control", group: "control", before: before, selected: selected, after: after,
+          typed: typed, expected: "", field: nil, delete: delete, moveBefore: nil, moveAfter: nil, undo: undo)
+  }
+
+  @Test(arguments: KeyboardLanguage.allCases)
+  func pathFinalComponentKeepsTextAndSkipsLearning(language: KeyboardLanguage) throws {
+    let replay = try TechnicalPreservationReplayTests.replay(Self.item("/var/cache/", typed: "inportante "), language: language, autocorrect: true)
+    #expect(replay.output == "/var/cache/inportante ")
+    #expect(replay.autocorrection == nil)
+    #expect(replay.alternatives == ["inportante"])
+    #expect(replay.learned.isEmpty)
+  }
+
+  @Test(arguments: [KeyboardLanguage.english, .bilingual])
+  func proseAndUndoKeepUsefulCorrection(language: KeyboardLanguage) throws {
+    for prefix in ["a/", "Wait...", "Wait…", "Done.", "say "] {
+      let replay = try TechnicalPreservationReplayTests.replay(Self.item(prefix, typed: "teh "), language: language, autocorrect: true)
+      #expect(replay.output == prefix + "the ")
+      #expect(replay.autocorrection == "the")
+      #expect(replay.alternatives.contains("the"))
+    }
+    let slash = try TechnicalPreservationReplayTests.replay(Self.item("send /", typed: "recieve "), language: language, autocorrect: true)
+    #expect(slash.output == "send /receive ")
+    let deleted = try TechnicalPreservationReplayTests.replay(Self.item("./", typed: "teh ", delete: 2), language: language, autocorrect: true)
+    #expect(deleted.output == "The ")
+    let undo = try TechnicalPreservationReplayTests.replay(Self.item("say ", typed: "teh ", undo: true), language: language, autocorrect: true)
+    #expect(undo.output == "say teh")
+  }
+
+  @Test(arguments: [KeyboardLanguage.spanish, .bilingual])
+  func spanishProseKeepsUsefulCorrection(language: KeyboardLanguage) throws {
+    let replay = try TechnicalPreservationReplayTests.replay(Self.item("útil/", typed: "inportante "), language: language, autocorrect: true)
+    #expect(replay.output == "útil/importante ")
+    #expect(replay.autocorrection == "importante")
+    #expect(replay.alternatives.contains("importante"))
+  }
+
+  @Test(arguments: KeyboardLanguage.allCases)
+  func selectionAndInsideWordPreserveSuffix(language: KeyboardLanguage) throws {
+    let selection = try TechnicalPreservationReplayTests.replay(Self.item("./drafts/", typed: "inportante ", after: "\nend", selected: "old"), language: language, autocorrect: true)
+    #expect(selection.output == "./drafts/inportante \nend")
+    let inside = try TechnicalPreservationReplayTests.replay(Self.item("say ", typed: "teh ", after: "tail"), language: language, autocorrect: true)
+    #expect(inside.output == "say teh tail")
+    #expect(inside.alternatives.isEmpty)
+  }
+}

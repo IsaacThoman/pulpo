@@ -1,0 +1,2 @@
+# Preserve exact unified-diff blank context lines.
+rejected-artifacts/rejected-policy.patch -whitespace
