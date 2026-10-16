@@ -5,21 +5,21 @@ import { ui } from '@/i18n/ui'
 import { bannerSegments } from './banner-links'
 
 // Opaque surfaces tinted from the theme card color so page content never shows through.
-const TONES: Record<BannerType, { icon: LucideIcon; card: string; badge: string }> = {
+const TONES: Record<BannerType, { icon: LucideIcon; card: string; iconColor: string }> = {
   info: {
     icon: Info,
     card: 'border-border bg-card',
-    badge: 'bg-sky-500/12 text-sky-600 dark:text-sky-400',
+    iconColor: 'text-sky-600 dark:text-sky-400',
   },
   warning: {
     icon: TriangleAlert,
     card: 'border-amber-500/30 bg-[color-mix(in_oklab,var(--color-amber-500)_9%,var(--card))]',
-    badge: 'bg-amber-500/15 text-amber-600 dark:text-amber-400',
+    iconColor: 'text-amber-600 dark:text-amber-400',
   },
   error: {
     icon: OctagonAlert,
     card: 'border-destructive/30 bg-[color-mix(in_oklab,var(--destructive)_9%,var(--card))]',
-    badge: 'bg-destructive/12 text-destructive dark:text-red-400',
+    iconColor: 'text-destructive dark:text-red-400',
   },
 }
 
@@ -35,11 +35,10 @@ export function BannerCard({ type, content, onDismiss, className }: {
   return (
     <div
       role={type === 'error' ? 'alert' : 'status'}
-      className={cn('flex w-full items-start gap-3 rounded-xl border px-3.5 py-2.5 text-sm', tone.card, className)}
+      className={cn('flex w-full items-start gap-2.5 rounded-xl border px-3.5 py-2.5 text-sm', tone.card, className)}
     >
-      <span className={cn('mt-px flex size-5 shrink-0 items-center justify-center rounded-full', tone.badge)}>
-        <Icon className="size-3.5" aria-hidden />
-      </span>
+      {/* Centers the 16px icon on the 22px first line of copy. */}
+      <Icon className={cn('mt-[3px] size-4 shrink-0', tone.iconColor)} aria-hidden />
       <p className="min-w-0 flex-1 whitespace-pre-line leading-[1.375rem] text-foreground/90 [overflow-wrap:anywhere]">
         {bannerSegments(content).map((segment, index) => segment.kind === 'link'
           ? <a key={index} href={segment.href} target="_blank" rel="noreferrer" className="font-medium text-foreground underline decoration-foreground/30 underline-offset-2 transition-colors hover:decoration-foreground">{segment.text}</a>
