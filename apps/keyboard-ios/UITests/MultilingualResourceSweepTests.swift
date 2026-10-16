@@ -90,7 +90,8 @@ final class MultilingualResourceSweepTests: XCTestCase {
         document: document, suggester: stack.suggester, glide: stack.glide, settings: settings)
       engine.emojiSuggester = index
       let phase = pass == 0 ? "cold" : "warm"
-      timed("\(phase).firstPrediction") { engine.documentDidChange() }
+      // Attaches document state; suggestions are evaluated inside keyAndSuggestions.
+      timed("\(phase).documentAttachment") { engine.documentDidChange() }
       for character in (heldOut ? held : development)[language]! {
         let suggestions = timed("\(phase).keyAndSuggestions") {
           if character == " " {
