@@ -56,11 +56,26 @@ unchanged evaluator passes the candidate's 772 aggregate checks across 45
 instances and 15 families, with all 452 actions fired and no unavailable action
 or relation. The comparison fails with 15 diagnostic messages; these messages
 are not a failed-check numerator. Normal and optimized evaluation of the same
-raw outputs agree byte-for-byte. Independent complete outcome accounting is
-pending. `paired-results-v3/` retains all raw outputs, evaluator reports, the
+raw outputs agree byte-for-byte. Independent complete outcome accounting accepts
+761/772 comparison versus 772/772 candidate: four repaired action aggregates
+and seven repaired relations, zero losses/common failures, across two correlated
+families. Family programs improve 13/15 to 15/15; instances improve 40/45 to 45/45.
+All 80 learn calls execute; expected true/.ok acceptances improve 45 to 49 while
+all 31 intentionally invalid learns reject on both. The 452 workload steps
+include 72 projection observations, not 452 distinct method calls. The reviewer
+passes 898 integrity/accounting checks and verifies all 30 final persistent
+stores. `outcome-review-v1/` retains complete new derived ledgers and reports;
+the hash-bound full duplicate review archive remains external as documented.
+`paired-results-v3/` retains all raw outputs, evaluator reports, the
 spent marker and every final synthetic store file; no product rerun occurred.
 
 Product and ordinary-test files remain byte-identical to the merged `82165e7f`
 reference that passed R48's source, ordinary and native gates. Their limits,
-including five normal/two AX5 runtime priority warnings, remain attached. The
-integration is unpublished; PR #782 still has published head `e503e5a6`.
+including five normal/two AX5 runtime priority warnings, remain attached.
+`parent-disposition.json` accepts the bounded integrated source for the PR using
+these separate gates. R49 exercises TouchModel compatibility, not reset/forget;
+the original R33 cross-process storage gates, unchanged storage bytes and parent
+native fault/retry evidence remain separately attributed. Inaccessible fallback
+erasure, iOS suspension/crash durability and population accuracy remain unproven.
+The later R50 UI import is byte-identical across the entire app/project/resources/
+tests to its already executed candidate; Core files still match `82165e7f`.

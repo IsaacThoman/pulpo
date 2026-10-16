@@ -39,7 +39,7 @@ passes in either. A runner path-alias inventory defect causes 193 unavailable
 and 175 unexecuted actions in each version. Six correlated local check repairs
 and zero new failed IDs do not establish persistent durability or whole-feature
 acceptance. The full failed round is retained without retuning or rerunning;
-whole-feature publication remains pending. See `audits/reset-integration-r48/`.
+that round supplies no publication approval. See `audits/reset-integration-r48/`.
 The separately versioned R49 runner passes 28 supplied and five independent
 Foundation-only filesystem probes. A new source-blind author has sealed 15
 families, 45 instances and 452 actions; independent preexecution review rejects
@@ -49,10 +49,29 @@ the original rejection remains retained. After a separately reviewed preparation
 metadata adapter, both binaries built and all five gates were frozen before one
 pair. The candidate passes all 772 aggregate checks across 45 instances and 15
 families, with all 452 actions fired and zero unavailable evidence. The original
-comparison fails; its 15 diagnostic messages are not a failed-check numerator.
-Normal and optimized evaluation of the same raw outputs agree. Independent
-complete outcome accounting remains pending; no rerun or post-reveal tuning
-occurred. See `audits/reset-integration-r49/`.
+comparison passes 761/772; its 15 diagnostic messages map to four failed actions
+and seven failed relations. Independent accounting verifies 11 correlated
+aggregate repairs across two families, zero losses/common failures, all 80 learn
+calls and all 30 final persistent stores. Family programs improve 13/15 to
+15/15; instances improve 40/45 to 45/45. Normal and optimized evaluation of the
+same raw outputs agree; no rerun or post-reveal tuning occurred. Parent accepts
+this bounded integrated source using the separate source, ordinary, native and
+fresh compatibility gates. R49 contains no reset/forget operation and does not
+replace original R33 storage evidence or prove inaccessible fallback erasure,
+iOS suspension, crash durability or population typing accuracy. See
+`audits/reset-integration-r49/parent-disposition.json`.
+
+Settings requests now dismiss a displayed Setup Guide, and emoji cells expose
+their stored/preferred tone and accessible tone choices with stale-action guards.
+Four distinct exposed native controls improve old0/4 to new4/4; three ordinary
+methods pass and the existing missing-runner Dynamic Type case remains skipped.
+The installed keyboard's Settings menu is unavailable; completed/Full Access-off
+controls use the real public OS URL fallback and do not claim menu dispatch.
+Tone actions dispatch into a real UITextView, without a spoken VoiceOver claim.
+Parent verifies all 92 artifact hashes and that its entire app/project/resources/
+tests exactly match the executed R50 candidate, reusing that scoped runtime
+evidence without an extra test run. Existing priority warnings remain recorded.
+See `audits/companion-emoji-r50/parent-disposition.json`.
 
 Account sign-in cancellation now revokes pending publication before task start
 and after network suspension; obsolete refreshes cannot restore a signed-out

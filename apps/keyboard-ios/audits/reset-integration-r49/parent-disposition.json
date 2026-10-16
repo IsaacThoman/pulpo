@@ -1,0 +1,58 @@
+{
+  "verdict": "ACCEPT_BOUNDED_INTEGRATED_SOURCE_FOR_PR",
+  "recordedUTC": "2026-10-16T12:52:30.054523+00:00",
+  "rootHead": "49a3192cae2818e58155f846cc2aeb73c411a261",
+  "R33R45R41ProductionReference": "82165e7ffda344165fc9116027a4b6f3ffacd4f5",
+  "Core25FilesExact": true,
+  "sourceGate": "reused-gates/source-composition.json",
+  "ordinaryGate": "475 Core definitions456executed19existingoptinskips +3Services; same5known;11data checks",
+  "nativeGate": "parent25normal+8samebinaryAX5 pass;5/2prioritywarnings retained",
+  "freshCompatibility": {
+    "freezeSHA256": "57fa7966b4d0f56424a2f1f4509ed0c29f7b93e8947eb79f7be79c5b3a577f90",
+    "receiptSHA256": "a07821654f75e9447ba7cae978626a7dcce6db3859d9e77da25d8878a720d5d9",
+    "comparison": 761,
+    "candidate": 772,
+    "denominator": 772,
+    "aggregateRepairs": 11,
+    "losses": 0,
+    "commonFailures": 0,
+    "families": "13/15 to15/15",
+    "instances": "40/45 to45/45",
+    "orderedWorkloadActions": 452,
+    "actualLearnCalls": 80,
+    "expectedAcceptedTrueOK": "45 to49",
+    "intendedInvalidRejected": "31/31 both",
+    "unavailable": 0,
+    "unfired": 0,
+    "productAttemptsPerSource": 1
+  },
+  "R50": {
+    "sourceReference": "1bcd7e41",
+    "entireKeyboardTreeExceptAuditsAndQualityByteIdentical": true,
+    "artifactHashesVerified": 92,
+    "focusedControls": "old0/4 new4/4 distinct exposednative methods, samefinalfixtures",
+    "ordinary": "3pass1skip unchangedmissingR24runner",
+    "sourceReview": "round2 nofindings",
+    "nativeRerunOnParent": false,
+    "reuseReason": "Entire app/project/resources/package/source/tests byte-identical to already executed R50 candidate; audit-only differences. No new Core changes or unresolved concern requiring repeated runtime checks.",
+    "limits": [
+      "ActualOS publicURL fallback, installedmenu unavailable and not counted as fired",
+      "Public customactiondispatch into actualUITextView; no spokenVoiceOver claim",
+      "ExistingR33prioritywarning retained",
+      "Ownedfreshdevice restored/deleted; no protected/globalpreference changes"
+    ]
+  },
+  "priorRejectedRoundsRemainRejected": [
+    "R45 boundary628/652 to647/652 five sharedoracle-domain failures",
+    "R48 pair962/2285 to968/2285 unavailable193each",
+    "R49 author-v1 preexecution reporting rejection",
+    "R34/R40 localization source/smoke rejects; R46 cost unavailable and retainedmemoryfailures"
+  ],
+  "limits": [
+    "Accept narrow current source composition with reset result-feedback and corrected touch compatibility; no promise of inaccessible fallback erasure",
+    "R49 testsTouchModel, not reset/forget; originalR33crossprocess gates+unchangedstoragebytes and parent realnativefaults remain separate supporting evidence",
+    "WholeCoretrees differ; no single-change causation or populationEN/ES/BI/Gboard accuracy claim",
+    "iOSsuspension/crashdurability/physicalperformance/VOspeech/fullnativegreen remain unproven",
+    "R47keptwordlearning andR51transcriptrepair not included"
+  ]
+}

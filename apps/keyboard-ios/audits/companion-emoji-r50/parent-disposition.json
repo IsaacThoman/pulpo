@@ -1,0 +1,18 @@
+{
+  "verdict": "ACCEPT_R50_UI_COMPONENT",
+  "rootHead": "49a3192cae2818e58155f846cc2aeb73c411a261",
+  "entireKeyboardNonAuditTreeExact": "1bcd7e41",
+  "productChangesOnly": [
+    "AppModel.settings dismiss guide",
+    "EmojiPanel accessibility tone identity/actions+staleactionguards"
+  ],
+  "nativeResultsReused": "exactalreadyexecutedR50source/tests/resources/project, no extra execution",
+  "Core25FilesExact82165": true,
+  "artifactHashesVerified": 92,
+  "limits": [
+    "ActualOS publicURL fallback, installedmenu unavailable and not counted as fired",
+    "Public customactiondispatch into actualUITextView; no spokenVoiceOver claim",
+    "ExistingR33prioritywarning retained",
+    "Ownedfreshdevice restored/deleted; no protected/globalpreference changes"
+  ]
+}
