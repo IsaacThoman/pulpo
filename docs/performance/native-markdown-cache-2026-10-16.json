@@ -1,0 +1,145 @@
+{
+  "timestamp": "2026-10-16T04:29:33.004Z",
+  "dependencyVersion": "0.7.4",
+  "upstreamHeaderSha256": "1bdc8a0384032d9db924214e9a02ac68df968880dbf2a758479b7d2c8cdaa07b",
+  "patchedHeaderSha256": "89fec6213e7ce9470c8020a5ff93389dcc1e85f2d4a3271294f6bd903330dd90",
+  "environment": {
+    "os": "Darwin 27.0.0",
+    "architecture": "arm64",
+    "cpu": "Apple M5 Pro",
+    "compiler": "Apple clang version 21.0.0 (clang-2100.3.34.2)\nTarget: arm64-apple-darwin27.0.0\nThread model: posix\nInstalledDir: /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin",
+    "threadSanitizer": false
+  },
+  "method": "Actual dependency C++ header; platform includes stubbed, fresh process per sample, 512 growing 256–384KiB markdown prefixes, all measurement key dimensions constant. Retained bytes count both stored markdown strings; peak RSS is standalone process RSS, not app memory.",
+  "samples": 7,
+  "before": {
+    "retainedEntries": 512,
+    "retainedKeyTextBytes": 335413248,
+    "historicalCacheHits": 512,
+    "medianPeakRssBytes": 350732288,
+    "medianInsertMilliseconds": 37.3653,
+    "samples": [
+      {
+        "snapshots": 512,
+        "retainedEntries": 512,
+        "retainedKeyTextBytes": 335413248,
+        "peakRssBytes": 350732288,
+        "historicalCacheHits": 512,
+        "insertMilliseconds": 37.941
+      },
+      {
+        "snapshots": 512,
+        "retainedEntries": 512,
+        "retainedKeyTextBytes": 335413248,
+        "peakRssBytes": 350732288,
+        "historicalCacheHits": 512,
+        "insertMilliseconds": 37.3653
+      },
+      {
+        "snapshots": 512,
+        "retainedEntries": 512,
+        "retainedKeyTextBytes": 335413248,
+        "peakRssBytes": 350732288,
+        "historicalCacheHits": 512,
+        "insertMilliseconds": 37.3492
+      },
+      {
+        "snapshots": 512,
+        "retainedEntries": 512,
+        "retainedKeyTextBytes": 335413248,
+        "peakRssBytes": 351092736,
+        "historicalCacheHits": 512,
+        "insertMilliseconds": 39.228
+      },
+      {
+        "snapshots": 512,
+        "retainedEntries": 512,
+        "retainedKeyTextBytes": 335413248,
+        "peakRssBytes": 351076352,
+        "historicalCacheHits": 512,
+        "insertMilliseconds": 38.8188
+      },
+      {
+        "snapshots": 512,
+        "retainedEntries": 512,
+        "retainedKeyTextBytes": 335413248,
+        "peakRssBytes": 350732288,
+        "historicalCacheHits": 512,
+        "insertMilliseconds": 37.2106
+      },
+      {
+        "snapshots": 512,
+        "retainedEntries": 512,
+        "retainedKeyTextBytes": 335413248,
+        "peakRssBytes": 350732288,
+        "historicalCacheHits": 512,
+        "insertMilliseconds": 37.0548
+      }
+    ]
+  },
+  "after": {
+    "retainedEntries": 10,
+    "retainedKeyTextBytes": 7836160,
+    "historicalCacheHits": 10,
+    "medianPeakRssBytes": 14286848,
+    "medianInsertMilliseconds": 31.4848,
+    "samples": [
+      {
+        "snapshots": 512,
+        "retainedEntries": 10,
+        "retainedKeyTextBytes": 7836160,
+        "peakRssBytes": 14286848,
+        "historicalCacheHits": 10,
+        "insertMilliseconds": 33.5168
+      },
+      {
+        "snapshots": 512,
+        "retainedEntries": 10,
+        "retainedKeyTextBytes": 7836160,
+        "peakRssBytes": 14286848,
+        "historicalCacheHits": 10,
+        "insertMilliseconds": 32.612
+      },
+      {
+        "snapshots": 512,
+        "retainedEntries": 10,
+        "retainedKeyTextBytes": 7836160,
+        "peakRssBytes": 14286848,
+        "historicalCacheHits": 10,
+        "insertMilliseconds": 31.2066
+      },
+      {
+        "snapshots": 512,
+        "retainedEntries": 10,
+        "retainedKeyTextBytes": 7836160,
+        "peakRssBytes": 14270464,
+        "historicalCacheHits": 10,
+        "insertMilliseconds": 30.8079
+      },
+      {
+        "snapshots": 512,
+        "retainedEntries": 10,
+        "retainedKeyTextBytes": 7836160,
+        "peakRssBytes": 14647296,
+        "historicalCacheHits": 10,
+        "insertMilliseconds": 31.3458
+      },
+      {
+        "snapshots": 512,
+        "retainedEntries": 10,
+        "retainedKeyTextBytes": 7836160,
+        "peakRssBytes": 14286848,
+        "historicalCacheHits": 10,
+        "insertMilliseconds": 31.4848
+      },
+      {
+        "snapshots": 512,
+        "retainedEntries": 10,
+        "retainedKeyTextBytes": 7836160,
+        "peakRssBytes": 14614528,
+        "historicalCacheHits": 10,
+        "insertMilliseconds": 33.356
+      }
+    ]
+  }
+}
