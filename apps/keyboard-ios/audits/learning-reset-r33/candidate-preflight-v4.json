@@ -1,0 +1,37 @@
+{
+  "candidateCommit": "006f6d4a6b1e625779db8d49c73bb8d45f451956",
+  "sourceFiles": {
+    "apps/keyboard-ios/App/AppModel.swift": "c9707901f8803489b0f01188932c298337fa80d785385cdd5c978d3c6b9d1bbd",
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Dictionary/PersonalDictionary.swift": "0bac71e413ea3c99f8972dd6cae10685e76adbd0b0537f587b589768b00a8d28",
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Geometry/TouchModel.swift": "fc5f3d9f9f6fdd57d8aa7c4e61556ef29284339ccd3f045c22404701b08e06ef",
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Shared/LearnedDataPersistence.swift": "22f679c0f51d7dd48610c9f2464c51cfbf0c181938bd6a18a13a591f039854a2",
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardUI/KeyboardController.swift": "3b4e7997dd7a7429da4737e68045725c14381c7881424d0cb91e50c6744755b8"
+  },
+  "runnerFiles": {
+    "run-v3.py": "a36d009cd3a7dea65dee1320a144019b3765c940c62d1fafa0f98cf57fd63c91",
+    "run-v4.py": "26e965bab271156d8b744ebdf8ec5fe30ab3d17523c3de92f8d8b0c360517e85",
+    "worker-v3.swift": "420e7003a48cf7d5a5b63945830cbf03250a871e6c2661e6b57e37632fa9a6f7",
+    "validate-v3.py": "218cb903730a3557f53b0a7d353be3e40354548a3eb7700d02ca780eecd05d64",
+    "transaction-gate-v3.c": "c16b02907a8ac665f071ac94b24b427b843f3b92ba45caf56ffb2fca30cf9b0d",
+    "adapter-capabilities-v3.md": "f24e6e50f9fc803282cfe86a2a2474ec56ed94ca120584d06d501f613dc36b2d",
+    "schema-preflight-v3.json": "2b7a34f6c482a6ac0ffe7f23c2d9964c72b6f31c34eed3f0b7aa59f75e4cb6ef",
+    "contract-preflight-v3.md": "a517f4b627b3575a99d0959240a0a6bd3a0dd2781c7d763c52214fe714799ccd",
+    "public-api-v3.md": "85289af4b0993e78250b0d223d28aa4568ca0488036dd0356f1818c8c701997e",
+    "run-v5.py": "09072bc189cfedf010caad9b401b00e6e6f6b8e06f0fe025ce432ef8c4af48dd"
+  },
+  "requiredGates": {
+    "release": "456core+3services;exact5existingknownissues;17newregressions;unchangedceilings",
+    "data": "11 Python data tests",
+    "nativeBuild": "generic iOS Simulator Release only; no boot/device/suspension proof",
+    "development": "16trueprocessschedules239oracles+10faultfixtures",
+    "resource": "1000 accepted learns,5000 enqueues under held tx,20 repetitions one crash schedule,noURLfiles0",
+    "latency": "full5000words/20000pairs; actual3EN/ES/bilingual stacks shared authority; unchanged letter path; report baseline/delta and prune optimization"
+  },
+  "blind": "SameoriginalpayloadUNREAD/UNEXECUTED;runv5independentstaticresealACCEPT;hasha3e8c031b95f39ca8609b76bbe65a9630f2dc7c126189dd9e580eadc0b9ba35f",
+  "integrationDependencies": [
+    "Settings Bool/error alert parent/R28 required",
+    "explicit forget failure feedback parent UI followup",
+    "native suspension/UI/device unavailable"
+  ],
+  "priorRejection": "v1NUL, v2canonicalbyteprefixloss, v3CharacterheaderUnicodedrift + noURLlonghistoryprune. New4stableUTF8escapegrammar solvesboth; read1/2checkedcoalescing, all3explicitfailclosedunshippedrejectedformat(noUnicodewriterver -> cannotguesssafely). New30/257Character20001memoryprunecases + stableU0897/rawkey andmalformed/unsupportedformatfailpreserve."
+}

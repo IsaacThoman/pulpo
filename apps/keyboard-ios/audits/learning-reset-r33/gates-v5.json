@@ -1,0 +1,217 @@
+{
+  "candidate": "a9e6ecfc895263721f14b8635dab8c3e87162839",
+  "runner": "run-v5.py",
+  "hashes": {
+    "/tmp/pulpo-r33-full-release-candidate5.log": "826e25fcebf694921f4e8d484867aa4f9514618cb8323cb5d4cba476bdc5fb85",
+    "/tmp/pulpo-r33-data-tests.log": "946c5e3566f9432743a44f338dbf70b6880ba18c0b3d69902cdf8711fb9bba9a",
+    "/tmp/pulpo-r33-development-candidate5-v5/results.json": "15e90f00c39e6627c2e75de33a24bc5532b24fcf54c51d8ad04a065983d493ab",
+    "/tmp/pulpo-r33-resources-candidate5/results.json": "0785c81b32983d0fb8aa2fa2d4a285fbf181dcdcfb07693dec8c109fffbfc991",
+    "/tmp/pulpo-r33-input-latency-candidate5.json": "23b739a375d532118ae10660eb7b9ebedaf1191a84ba1fd5d66da995fc77d274",
+    "/tmp/pulpo-r33-latency-candidate5.json": "34f34c0a45a8f2d21c94db9c9e5151c5718110d2d8bb93f851f46671212f88de",
+    "/tmp/pulpo-r33-worker-v3-candidate5": "2f700f5e369e141abe94b7b1f58a4873364deb0e3ab04ddcbbbff2489d47d883",
+    "/tmp/pulpo-r33-gate-v3.dylib": "316843028364bcdfdb98a9fb987f1314bc25754e6634d8cd51daf19480867c8c",
+    "/tmp/pulpo-r33-development-faults.dylib": "6ecbd30581e4d527e77fc987de99c589b357a62e1329db5988054ec31d85dd00",
+    "/tmp/pulpo-r33-input-latency-control-candidate4.json": "6a3433928bca43ad8c37ddb165376a2cb77725b9b3c0f2357b30f27590cdf8e9",
+    "/tmp/pulpo-r33-normalizer-development.json": "e65dbfaa83f8664c86eb3564e339440715b1ce54a85dba30ce4ed7a02af331bc"
+  },
+  "rawArchiveSHA256": "44d73fc2952fb16ae26b0e2ddaaf6db84ede3309c73304a7034abdc5cd299bb9",
+  "gates": {
+    "core": {
+      "tests": 457,
+      "knownIssues": 5,
+      "newUnexpectedIssues": 0,
+      "exitCode": 0,
+      "testsAdded": 18
+    },
+    "services": {
+      "tests": 3,
+      "exitCode": 0
+    },
+    "data": {
+      "tests": 11,
+      "exitCode": 0
+    },
+    "native": {
+      "command": "generic iOS Simulator Release xcodebuild CODE_SIGNING_ALLOWED=NO",
+      "exitCode": 0,
+      "log": "/tmp/pulpo-r33-native-build-candidate5.log",
+      "successfulLogRead": false,
+      "deviceUsed": false
+    },
+    "development": {
+      "uniqueSchedules": 17,
+      "availableSchedules": 17,
+      "passedSchedules": 17,
+      "scheduleOracles": 260,
+      "passedScheduleOracles": 260,
+      "uniqueFixtures": 10,
+      "availableFixtures": 10,
+      "passedFixtures": 10
+    },
+    "resource": {
+      "pass": true,
+      "checks": 7234,
+      "requests": 5000,
+      "crashUniqueSchedules": 1,
+      "crashRepetitions": 20,
+      "rssGrowthBytes": 16384,
+      "memoryFiles": 0
+    },
+    "performance": {
+      "input-latency": {
+        "actualLanguageStacks": 3,
+        "results": [
+          {
+            "backgroundEnqueueMilliseconds": 0.042708,
+            "dictionaryFile": "en_US.pkdict",
+            "firstLetterMayAcceptPriorWordMilliseconds": {
+              "max": 0.020916,
+              "p50": 0.001834,
+              "p95": 0.00425
+            },
+            "letterSamples": 212,
+            "mode": "en_US",
+            "spaceMilliseconds": {
+              "max": 9.691625,
+              "p50": 2.09875,
+              "p95": 2.9005
+            },
+            "steadyLetterMilliseconds": {
+              "max": 0.00425,
+              "p50": 0.001333,
+              "p95": 0.001791
+            },
+            "wordBoundarySamples": 56
+          },
+          {
+            "backgroundEnqueueMilliseconds": 0.007209,
+            "dictionaryFile": "es.pkdict",
+            "firstLetterMayAcceptPriorWordMilliseconds": {
+              "max": 0.006583,
+              "p50": 0.001875,
+              "p95": 0.005667
+            },
+            "letterSamples": 180,
+            "mode": "es",
+            "spaceMilliseconds": {
+              "max": 3.024333,
+              "p50": 1.647625,
+              "p95": 2.5195
+            },
+            "steadyLetterMilliseconds": {
+              "max": 0.00525,
+              "p50": 0.001417,
+              "p95": 0.004834
+            },
+            "wordBoundarySamples": 56
+          },
+          {
+            "backgroundEnqueueMilliseconds": 0.007666,
+            "dictionaryFile": "en_es.pkdict",
+            "firstLetterMayAcceptPriorWordMilliseconds": {
+              "max": 0.006333,
+              "p50": 0.001917,
+              "p95": 0.006125
+            },
+            "letterSamples": 200,
+            "mode": "en_es",
+            "spaceMilliseconds": {
+              "max": 3.808417,
+              "p50": 2.019875,
+              "p95": 3.171833
+            },
+            "steadyLetterMilliseconds": {
+              "max": 0.005084,
+              "p50": 0.001416,
+              "p95": 0.004958
+            },
+            "wordBoundarySamples": 56
+          }
+        ],
+        "sharedLearningAuthority": true
+      },
+      "latency": {
+        "authorityBytes": 1966080,
+        "capacityWordMilliseconds": {
+          "max": 25.052042,
+          "p50": 0.793833,
+          "p95": 1.229291
+        },
+        "commitMilliseconds": {
+          "max": 23.240166,
+          "p50": 21.299834,
+          "p95": 23.240166
+        },
+        "dictionaryClearMilliseconds": 1.041167,
+        "familyBytes": 1966080,
+        "familyFiles": 4,
+        "hundredQueriesMilliseconds": {
+          "max": 0.008458,
+          "p50": 0.004875,
+          "p95": 0.006125
+        },
+        "wordMilliseconds": {
+          "max": 0.460375,
+          "p50": 0.296958,
+          "p95": 0.393292
+        }
+      }
+    },
+    "performanceControls": [
+      {
+        "trial": 1,
+        "label": "baseline",
+        "hostLoad": "5:27  up  6:03, 2 users, load averages: 61.75 49.43 29.69",
+        "exitCode": 0,
+        "elapsedMilliseconds": 1157.832416,
+        "stdout": "{\n  \"actualLanguageStacks\" : 3,\n  \"results\" : [\n    {\n      \"backgroundEnqueueMilliseconds\" : 0.190834,\n      \"dictionaryFile\" : \"en_US.pkdict\",\n      \"firstLetterMayAcceptPriorWordMilliseconds\" : {\n        \"max\" : 0.031541,\n        \"p50\" : 0.0029160000000000002,\n        \"p95\" : 0.0064999999999999997\n      },\n      \"letterSamples\" : 212,\n      \"mode\" : \"en_US\",\n      \"spaceMilliseconds\" : {\n        \"max\" : 12.476416,\n        \"p50\" : 1.149208,\n        \"p95\" : 5.602417\n      },\n      \"steadyLetterMilliseconds\" : {\n        \"max\" : 0.036249999999999998,\n        \"p50\" : 0.0014580000000000001,\n        \"p95\" : 0.0034160000000000002\n      },\n      \"wordBoundarySamples\" : 56\n    },\n    {\n      \"backgroundEnqueueMilliseconds\" : 0.056917000000000002,\n      \"dictionaryFile\" : \"es.pkdict\",\n      \"firstLetterMayAcceptPriorWordMilliseconds\" : {\n        \"max\" : 0.018208999999999999,\n        \"p50\" : 0.0032499999999999999,\n        \"p95\" : 0.0094160000000000008\n      },\n      \"letterSamples\" : 180,\n      \"mode\" : \"es\",\n      \"spaceMilliseconds\" : {\n        \"max\" : 7.2504999999999997,\n        \"p50\" : 1.0921670000000001,\n        \"p95\" : 5.7029579999999997\n      },\n      \"steadyLetterMilliseconds\" : {\n        \"max\" : 0.021833999999999999,\n        \"p50\" : 0.0016670000000000001,\n        \"p95\" : 0.0057080000000000004\n      },\n      \"wordBoundarySamples\" : 56\n    },\n    {\n      \"backgroundEnqueueMilliseconds\" : 0.058416999999999997,\n      \"dictionaryFile\" : \"en_es.pkdict\",\n      \"firstLetterMayAcceptPriorWordMilliseconds\" : {\n        \"max\" : 0.0088749999999999992,\n        \"p50\" : 0.0030000000000000001,\n        \"p95\" : 0.0057499999999999999\n      },\n      \"letterSamples\" : 200,\n      \"mode\" : \"en_es\",\n      \"spaceMilliseconds\" : {\n        \"max\" : 7.0527920000000002,\n        \"p50\" : 1.0670409999999999,\n        \"p95\" : 5.4001669999999997\n      },\n      \"steadyLetterMilliseconds\" : {\n        \"max\" : 0.008208,\n        \"p50\" : 0.001542,\n        \"p95\" : 0.0049579999999999997\n      },\n      \"wordBoundarySamples\" : 56\n    }\n  ],\n  \"sharedLearningAuthority\" : true\n}\n",
+        "stderr": ""
+      },
+      {
+        "trial": 1,
+        "label": "candidate4",
+        "hostLoad": "5:27  up  6:03, 2 users, load averages: 57.77 48.81 29.59",
+        "exitCode": 0,
+        "elapsedMilliseconds": 17667.107542,
+        "stdout": "{\n  \"actualLanguageStacks\" : 3,\n  \"results\" : [\n    {\n      \"backgroundEnqueueMilliseconds\" : 0.053707999999999999,\n      \"dictionaryFile\" : \"en_US.pkdict\",\n      \"firstLetterMayAcceptPriorWordMilliseconds\" : {\n        \"max\" : 0.022917,\n        \"p50\" : 0.0032499999999999999,\n        \"p95\" : 0.005875\n      },\n      \"letterSamples\" : 212,\n      \"mode\" : \"en_US\",\n      \"spaceMilliseconds\" : {\n        \"max\" : 9.7723329999999997,\n        \"p50\" : 2.2493750000000001,\n        \"p95\" : 3.4082080000000001\n      },\n      \"steadyLetterMilliseconds\" : {\n        \"max\" : 0.005875,\n        \"p50\" : 0.0014170000000000001,\n        \"p95\" : 0.002\n      },\n      \"wordBoundarySamples\" : 56\n    },\n    {\n      \"backgroundEnqueueMilliseconds\" : 0.011124999999999999,\n      \"dictionaryFile\" : \"es.pkdict\",\n      \"firstLetterMayAcceptPriorWordMilliseconds\" : {\n        \"max\" : 0.0078750000000000001,\n        \"p50\" : 0.0027910000000000001,\n        \"p95\" : 0.0067910000000000002\n      },\n      \"letterSamples\" : 180,\n      \"mode\" : \"es\",\n      \"spaceMilliseconds\" : {\n        \"max\" : 3.5680000000000001,\n        \"p50\" : 1.803042,\n        \"p95\" : 2.6825830000000002\n      },\n      \"steadyLetterMilliseconds\" : {\n        \"max\" : 0.0054580000000000002,\n        \"p50\" : 0.0015,\n        \"p95\" : 0.0049170000000000004\n      },\n      \"wordBoundarySamples\" : 56\n    },\n    {\n      \"backgroundEnqueueMilliseconds\" : 0.0090830000000000008,\n      \"dictionaryFile\" : \"en_es.pkdict\",\n      \"firstLetterMayAcceptPriorWordMilliseconds\" : {\n        \"max\" : 0.0084169999999999991,\n        \"p50\" : 0.002875,\n        \"p95\" : 0.0073749999999999996\n      },\n      \"letterSamples\" : 200,\n      \"mode\" : \"en_es\",\n      \"spaceMilliseconds\" : {\n        \"max\" : 3.8064589999999998,\n        \"p50\" : 2.0853329999999999,\n        \"p95\" : 3.3594590000000002\n      },\n      \"steadyLetterMilliseconds\" : {\n        \"max\" : 0.0054590000000000003,\n        \"p50\" : 0.0015410000000000001,\n        \"p95\" : 0.0050000000000000001\n      },\n      \"wordBoundarySamples\" : 56\n    }\n  ],\n  \"sharedLearningAuthority\" : true\n}\n",
+        "stderr": ""
+      },
+      {
+        "trial": 2,
+        "label": "baseline",
+        "hostLoad": "5:27  up  6:03, 2 users, load averages: 46.58 46.78 29.20",
+        "exitCode": 0,
+        "elapsedMilliseconds": 909.512917,
+        "stdout": "{\n  \"actualLanguageStacks\" : 3,\n  \"results\" : [\n    {\n      \"backgroundEnqueueMilliseconds\" : 0.169459,\n      \"dictionaryFile\" : \"en_US.pkdict\",\n      \"firstLetterMayAcceptPriorWordMilliseconds\" : {\n        \"max\" : 0.030459,\n        \"p50\" : 0.0024160000000000002,\n        \"p95\" : 0.0052919999999999998\n      },\n      \"letterSamples\" : 212,\n      \"mode\" : \"en_US\",\n      \"spaceMilliseconds\" : {\n        \"max\" : 7.3792080000000002,\n        \"p50\" : 1.071583,\n        \"p95\" : 2.2010830000000001\n      },\n      \"steadyLetterMilliseconds\" : {\n        \"max\" : 0.010749999999999999,\n        \"p50\" : 0.0013749999999999999,\n        \"p95\" : 0.0022079999999999999\n      },\n      \"wordBoundarySamples\" : 56\n    },\n    {\n      \"backgroundEnqueueMilliseconds\" : 0.063583000000000001,\n      \"dictionaryFile\" : \"es.pkdict\",\n      \"firstLetterMayAcceptPriorWordMilliseconds\" : {\n        \"max\" : 0.0064159999999999998,\n        \"p50\" : 0.0019589999999999998,\n        \"p95\" : 0.005208\n      },\n      \"letterSamples\" : 180,\n      \"mode\" : \"es\",\n      \"spaceMilliseconds\" : {\n        \"max\" : 2.3574999999999999,\n        \"p50\" : 0.67779199999999995,\n        \"p95\" : 1.7792079999999999\n      },\n      \"steadyLetterMilliseconds\" : {\n        \"max\" : 0.0051669999999999997,\n        \"p50\" : 0.0014580000000000001,\n        \"p95\" : 0.0047920000000000003\n      },\n      \"wordBoundarySamples\" : 56\n    },\n    {\n      \"backgroundEnqueueMilliseconds\" : 0.059416999999999998,\n      \"dictionaryFile\" : \"en_es.pkdict\",\n      \"firstLetterMayAcceptPriorWordMilliseconds\" : {\n        \"max\" : 0.0069170000000000004,\n        \"p50\" : 0.0025829999999999998,\n        \"p95\" : 0.0057920000000000003\n      },\n      \"letterSamples\" : 200,\n      \"mode\" : \"en_es\",\n      \"spaceMilliseconds\" : {\n        \"max\" : 2.4493330000000002,\n        \"p50\" : 0.936083,\n        \"p95\" : 2.4401670000000002\n      },\n      \"steadyLetterMilliseconds\" : {\n        \"max\" : 0.0089589999999999999,\n        \"p50\" : 0.0014580000000000001,\n        \"p95\" : 0.0049170000000000004\n      },\n      \"wordBoundarySamples\" : 56\n    }\n  ],\n  \"sharedLearningAuthority\" : true\n}\n",
+        "stderr": ""
+      },
+      {
+        "trial": 2,
+        "label": "candidate4",
+        "hostLoad": "5:27  up  6:03, 2 users, load averages: 46.58 46.78 29.20",
+        "exitCode": 0,
+        "elapsedMilliseconds": 17422.513625,
+        "stdout": "{\n  \"actualLanguageStacks\" : 3,\n  \"results\" : [\n    {\n      \"backgroundEnqueueMilliseconds\" : 0.041542000000000003,\n      \"dictionaryFile\" : \"en_US.pkdict\",\n      \"firstLetterMayAcceptPriorWordMilliseconds\" : {\n        \"max\" : 0.02375,\n        \"p50\" : 0.002666,\n        \"p95\" : 0.0057089999999999997\n      },\n      \"letterSamples\" : 212,\n      \"mode\" : \"en_US\",\n      \"spaceMilliseconds\" : {\n        \"max\" : 11.573916000000001,\n        \"p50\" : 2.107583,\n        \"p95\" : 3.2409590000000001\n      },\n      \"steadyLetterMilliseconds\" : {\n        \"max\" : 0.0047920000000000003,\n        \"p50\" : 0.0013339999999999999,\n        \"p95\" : 0.0020839999999999999\n      },\n      \"wordBoundarySamples\" : 56\n    },\n    {\n      \"backgroundEnqueueMilliseconds\" : 0.0088749999999999992,\n      \"dictionaryFile\" : \"es.pkdict\",\n      \"firstLetterMayAcceptPriorWordMilliseconds\" : {\n        \"max\" : 0.0079170000000000004,\n        \"p50\" : 0.0029160000000000002,\n        \"p95\" : 0.006208\n      },\n      \"letterSamples\" : 180,\n      \"mode\" : \"es\",\n      \"spaceMilliseconds\" : {\n        \"max\" : 3.1617500000000001,\n        \"p50\" : 1.9287080000000001,\n        \"p95\" : 2.7599999999999998\n      },\n      \"steadyLetterMilliseconds\" : {\n        \"max\" : 0.0055840000000000004,\n        \"p50\" : 0.001542,\n        \"p95\" : 0.0051250000000000002\n      },\n      \"wordBoundarySamples\" : 56\n    },\n    {\n      \"backgroundEnqueueMilliseconds\" : 0.0098750000000000001,\n      \"dictionaryFile\" : \"en_es.pkdict\",\n      \"firstLetterMayAcceptPriorWordMilliseconds\" : {\n        \"max\" : 0.0060829999999999999,\n        \"p50\" : 0.0029169999999999999,\n        \"p95\" : 0.005875\n      },\n      \"letterSamples\" : 200,\n      \"mode\" : \"en_es\",\n      \"spaceMilliseconds\" : {\n        \"max\" : 3.7157499999999999,\n        \"p50\" : 2.062916,\n        \"p95\" : 3.3036669999999999\n      },\n      \"steadyLetterMilliseconds\" : {\n        \"max\" : 0.0050419999999999996,\n        \"p50\" : 0.001542,\n        \"p95\" : 0.0049170000000000004\n      },\n      \"wordBoundarySamples\" : 56\n    }\n  ],\n  \"sharedLearningAuthority\" : true\n}\n",
+        "stderr": ""
+      }
+    ]
+  },
+  "limits": [
+    "Finalinputspace9.692/3.024/3.808ms;standalonecapacity25.052ms,save23.240ms,clear1.041ms. Initialpriorcandidate455msinputspikeand2pairedcontrolsallretained;nohardFSbound/causalhostattribution. Existing25suggestion/60glideceilingsunchangedpass.",
+    "No iOS device UI/suspension/fileprotection runtime proof",
+    "Settings and Forget parent patches uninstalled/unvalidated",
+    "Original R29 inside-atomicwrite schedule unavailable underserialization",
+    "Baseline typed-new-contract heldout unavailable; no inventedpairedfailuredelta"
+  ],
+  "blind": {
+    "payloadSHA256": "0834b19e144e30b46506484d04e5d61748976e4e8699614525340bc1e06ccbae",
+    "resealSHA256": "a3e8c031b95f39ca8609b76bbe65a9630f2dc7c126189dd9e580eadc0b9ba35f",
+    "runnerSHA256": "09072bc189cfedf010caad9b401b00e6e6f6b8e06f0fe025ce432ef8c4af48dd",
+    "cases": 18,
+    "oracles": 361,
+    "readByImplementer": false,
+    "executed": false
+  },
+  "rawArchive": "/tmp/pulpo-r33-evidence/archives/development-raw-v5.json.gz",
+  "fixedFinding": "R5keyreadvalidationopaqueString/nonempty/UTF8<=256; producerunchangednormalizeronce; same/crossprocessregressionspass"
+}

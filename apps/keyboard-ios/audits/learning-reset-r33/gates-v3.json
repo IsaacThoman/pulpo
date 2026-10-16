@@ -1,0 +1,177 @@
+{
+  "candidate": "4fa9b1e7b39cb1e5db835eeb3c4b111f6540c566",
+  "runner": "run-v5.py",
+  "hashes": {
+    "/tmp/pulpo-r33-full-release-candidate3-final.log": "2f7232028800e8b6950174fb2e6edfbce312316689dd5a67527db37f7ff91f1d",
+    "/tmp/pulpo-r33-data-tests.log": "946c5e3566f9432743a44f338dbf70b6880ba18c0b3d69902cdf8711fb9bba9a",
+    "/tmp/pulpo-r33-development-candidate3-final-v5/results.json": "2af89f442997f9f5d5ab4675ca748852cca2364613ad7a74514c3a8a613fbe7d",
+    "/tmp/pulpo-r33-resources-candidate3-final/results.json": "10e0252924f7b848c2ea466af7a74083942afcb0cccfbdc41b9feb448330280d",
+    "/tmp/pulpo-r33-input-latency-candidate3-final.json": "bb22c3dcc58ac23d4ff9c30cbbbb6b98f634c04387572234c8855b8ec1c4c7d8",
+    "/tmp/pulpo-r33-latency-candidate3-final.json": "ae6f579bb0218a99ab88c2cf221998ab90e373daacb4db59e5e0740ebbda2b02",
+    "/tmp/pulpo-r33-worker-v3-candidate3-final": "995f3462cfed756408a77d87a2132efb4985bedeb30b3cdae25ceb34dd109c85",
+    "/tmp/pulpo-r33-gate-v3.dylib": "316843028364bcdfdb98a9fb987f1314bc25754e6634d8cd51daf19480867c8c",
+    "/tmp/pulpo-r33-development-faults.dylib": "6ecbd30581e4d527e77fc987de99c589b357a62e1329db5988054ec31d85dd00"
+  },
+  "rawArchiveSHA256": "d4453c2961c46c669c613f61b9baee1d398a9e88dffeaf41c2efd9ba522495bf",
+  "gates": {
+    "core": {
+      "tests": 454,
+      "knownIssues": 5,
+      "newUnexpectedIssues": 0,
+      "exitCode": 0,
+      "testsAdded": 15
+    },
+    "services": {
+      "tests": 3,
+      "exitCode": 0
+    },
+    "data": {
+      "tests": 11,
+      "exitCode": 0
+    },
+    "native": {
+      "command": "generic iOS Simulator Release xcodebuild CODE_SIGNING_ALLOWED=NO",
+      "exitCode": 0,
+      "log": "/tmp/pulpo-r33-native-build-candidate3-final.log",
+      "successfulLogRead": false,
+      "deviceUsed": false
+    },
+    "development": {
+      "uniqueSchedules": 15,
+      "availableSchedules": 15,
+      "passedSchedules": 15,
+      "scheduleOracles": 219,
+      "passedScheduleOracles": 219,
+      "uniqueFixtures": 10,
+      "availableFixtures": 10,
+      "passedFixtures": 10
+    },
+    "resource": {
+      "pass": true,
+      "checks": 7234,
+      "requests": 5000,
+      "crashUniqueSchedules": 1,
+      "crashRepetitions": 20,
+      "rssGrowthBytes": 32768,
+      "memoryFiles": 0
+    },
+    "performance": {
+      "input-latency": {
+        "actualLanguageStacks": 3,
+        "results": [
+          {
+            "backgroundEnqueueMilliseconds": 0.050458,
+            "dictionaryFile": "en_US.pkdict",
+            "firstLetterMayAcceptPriorWordMilliseconds": {
+              "max": 0.018417,
+              "p50": 0.003084,
+              "p95": 0.006459
+            },
+            "letterSamples": 212,
+            "mode": "en_US",
+            "spaceMilliseconds": {
+              "max": 10.898791,
+              "p50": 2.2835,
+              "p95": 3.1275
+            },
+            "steadyLetterMilliseconds": {
+              "max": 0.006084,
+              "p50": 0.001417,
+              "p95": 0.002208
+            },
+            "wordBoundarySamples": 56
+          },
+          {
+            "backgroundEnqueueMilliseconds": 0.008792,
+            "dictionaryFile": "es.pkdict",
+            "firstLetterMayAcceptPriorWordMilliseconds": {
+              "max": 0.009959,
+              "p50": 0.003125,
+              "p95": 0.007417
+            },
+            "letterSamples": 180,
+            "mode": "es",
+            "spaceMilliseconds": {
+              "max": 3.676625,
+              "p50": 1.9895,
+              "p95": 3.319833
+            },
+            "steadyLetterMilliseconds": {
+              "max": 0.005916,
+              "p50": 0.001542,
+              "p95": 0.005167
+            },
+            "wordBoundarySamples": 56
+          },
+          {
+            "backgroundEnqueueMilliseconds": 0.006708,
+            "dictionaryFile": "en_es.pkdict",
+            "firstLetterMayAcceptPriorWordMilliseconds": {
+              "max": 0.009042,
+              "p50": 0.003708,
+              "p95": 0.006417
+            },
+            "letterSamples": 200,
+            "mode": "en_es",
+            "spaceMilliseconds": {
+              "max": 4.633459,
+              "p50": 2.111708,
+              "p95": 3.548292
+            },
+            "steadyLetterMilliseconds": {
+              "max": 0.005542,
+              "p50": 0.001583,
+              "p95": 0.005166
+            },
+            "wordBoundarySamples": 56
+          }
+        ],
+        "sharedLearningAuthority": true
+      },
+      "latency": {
+        "authorityBytes": 2039808,
+        "capacityWordMilliseconds": {
+          "max": 26.536875,
+          "p50": 0.78625,
+          "p95": 1.28925
+        },
+        "commitMilliseconds": {
+          "max": 26.132333,
+          "p50": 23.86975,
+          "p95": 26.132333
+        },
+        "dictionaryClearMilliseconds": 1.045625,
+        "familyBytes": 2039808,
+        "familyFiles": 4,
+        "hundredQueriesMilliseconds": {
+          "max": 0.008417,
+          "p50": 0.005,
+          "p95": 0.005792
+        },
+        "wordMilliseconds": {
+          "max": 1.317833,
+          "p50": 0.329958,
+          "p95": 0.464833
+        }
+      }
+    }
+  },
+  "limits": [
+    "Candidate3 inputmax10.899/3.677/4.633ms;capacityflush26.537ms,save26.132ms;nohardFSdeadline;existingceilingsunchanged",
+    "No iOS device UI/suspension/fileprotection runtime proof",
+    "Settings and Forget parent patches uninstalled/unvalidated",
+    "Original R29 inside-atomicwrite schedule unavailable underserialization",
+    "Baseline typed-new-contract heldout unavailable; no inventedpairedfailuredelta",
+    "Encoding3Characterheadercross-Unicode-versionreadability underindependentreview, notnative-proved."
+  ],
+  "blind": {
+    "payloadSHA256": "0834b19e144e30b46506484d04e5d61748976e4e8699614525340bc1e06ccbae",
+    "resealSHA256": "a3e8c031b95f39ca8609b76bbe65a9630f2dc7c126189dd9e580eadc0b9ba35f",
+    "runnerSHA256": "09072bc189cfedf010caad9b401b00e6e6f6b8e06f0fe025ce432ef8c4af48dd",
+    "cases": 18,
+    "oracles": 361,
+    "readByImplementer": false,
+    "executed": false
+  },
+  "rawArchive": "development-raw-v3.json.gz"
+}
