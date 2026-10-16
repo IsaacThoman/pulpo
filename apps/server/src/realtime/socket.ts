@@ -25,6 +25,7 @@ import { toSnapshot } from '../responses/service.js'
 import { accessibleChatCondition } from '../chats/temporary.js'
 import { DOC_CLOSED_CHANNEL, DOC_UPDATE_CHANNEL } from '../files/doc-events.js'
 import { bindDocSocket, closeDocsLocally, relayDocUpdateLocally } from '../files/doc-socket.js'
+import { MAX_DOC_UPDATE_BYTES } from '../files/doc-store.js'
 
 export interface SocketData {
   composerSyncEnabled: boolean
@@ -129,7 +130,8 @@ export async function createSocketServer(httpServer: HttpServer) {
   const subscriber = createRedis()
   const io = new Server<ClientToServerEvents, ServerToClientEvents, Record<string, never>, SocketData>(httpServer, {
     path: '/socket.io',
-    maxHttpBufferSize: 4_100_000,
+    // Polling base64-encodes binary updates; leave room for that plus the event envelope.
+    maxHttpBufferSize: Math.ceil(MAX_DOC_UPDATE_BYTES * 4 / 3) + 100_000,
     cors: {
       origin: (origin, callback) => callback(null, !origin || isAllowedOrigin(origin, config)),
       credentials: true,

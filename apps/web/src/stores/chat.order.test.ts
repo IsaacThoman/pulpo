@@ -1,5 +1,6 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Chat } from '@/lib/types'
+import type { ServerChat } from './chat'
 
 const storage = new Map<string, string>()
 vi.stubGlobal('localStorage', {
@@ -63,6 +64,7 @@ beforeEach(() => {
     balanceMicros: 1_000, storageLimitBytes: 1_000, blocked: false, stateRevision: 0, createdAt: '2026-09-01T00:00:00.000Z',
   } })
   useChat.setState({
+    activeTemporaryChatId: null, streamingIds: [], responseSequences: {}, responseChatIds: {},
     chats: [
       chat('a', { createdAt: 3_000 }),
       chat('b', { createdAt: 2_000 }),
@@ -76,6 +78,62 @@ beforeEach(() => {
 afterAll(() => vi.unstubAllGlobals())
 
 describe('chat order', () => {
+  it('refreshes summaries while preserving local transcripts and unacknowledged chats', () => {
+    const existing = chat('shared', { messages: [{ id: 'answer', role: 'assistant', content: 'Cached answer', done: true, timestamp: 1 }] })
+    useChat.setState({
+      chats: [existing, chat('provisional', { provisional: true }), chat('awaiting', { awaitingSummary: true }), chat('temporary', { temporary: true }), chat('removed')],
+      activeTemporaryChatId: 'temporary', streamingIds: [], responseChatIds: {},
+    })
+    const row: ServerChat = {
+      id: 'shared', title: 'Updated title', modelId: 'test-model', pinned: false, folderId: null,
+      createdAt: new Date(1_000).toISOString(), updatedAt: new Date(2_000).toISOString(),
+      activeResponseId: null, activeBranchLeafId: null, inFlightResponseIds: ['live-answer'],
+    }
+    useChat.getState().replaceSummaries([row])
+    const state = useChat.getState()
+    expect(state.chats.map((item) => item.id)).toEqual(['provisional', 'awaiting', 'temporary', 'shared'])
+    expect(state.chats.at(-1)).toMatchObject({ title: 'Updated title', awaitingSummary: false })
+    expect(state.chats.at(-1)?.messages).toBe(existing.messages)
+    expect(state.streamingIds).toEqual(['live-answer'])
+    expect(state.responseChatIds['live-answer']).toBe('shared')
+    // A non-temporary ID in this field does not retain a removed server chat.
+    useChat.setState({ activeTemporaryChatId: 'shared' })
+    useChat.getState().replaceSummaries([])
+    expect(useChat.getState().chats.map((item) => item.id)).toEqual(['provisional', 'awaiting'])
+  })
+
+  it('matches refreshed summaries with linear reads of current chat IDs', () => {
+    const count = 1_000
+    let idReads = 0
+    const current = Array.from({ length: count }, (_, index) => {
+      const value = chat(`chat-${index}`)
+      Object.defineProperty(value, 'id', { get: () => { idReads++; return `chat-${index}` } })
+      return value
+    })
+    const rows: ServerChat[] = Array.from({ length: count }, (_, index) => ({
+      id: `chat-${count - index - 1}`, title: 'Refreshed', modelId: 'test-model', pinned: false, folderId: null,
+      createdAt: new Date(1_000).toISOString(), updatedAt: new Date(2_000).toISOString(),
+      activeResponseId: null, activeBranchLeafId: null,
+    }))
+    useChat.setState({ chats: current, activeTemporaryChatId: null, streamingIds: [], responseChatIds: {} })
+    idReads = 0
+    useChat.getState().replaceSummaries(rows)
+    expect(useChat.getState().chats.map((item) => item.id)).toEqual(rows.map((row) => row.id))
+    expect(idReads).toBeLessThan(count * 10)
+  })
+
+  it('refreshes a duplicated chat ID from its first local copy', () => {
+    const first = chat('dup', { messages: [{ id: 'first', role: 'assistant', content: 'First', done: true, timestamp: 1 }] })
+    const second = chat('dup', { messages: [{ id: 'second', role: 'assistant', content: 'Second', done: true, timestamp: 2 }] })
+    useChat.setState({ chats: [first, second], activeTemporaryChatId: null, streamingIds: [], responseChatIds: {} })
+    useChat.getState().replaceSummaries([{
+      id: 'dup', title: 'Refreshed', modelId: 'test-model', pinned: false, folderId: null,
+      createdAt: new Date(1_000).toISOString(), updatedAt: new Date(2_000).toISOString(),
+      activeResponseId: null, activeBranchLeafId: null,
+    }])
+    expect(useChat.getState().chats.map((item) => item.messages)).toEqual([first.messages])
+  })
+
   it('does not move a chat when it receives new activity', () => {
     expect(looseOrder()).toEqual(['a', 'b', 'c'])
     useChat.setState((state) => ({
