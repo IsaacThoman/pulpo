@@ -1,0 +1,354 @@
+{
+  "classification": "Staged integration only; not release admission",
+  "parent": "e503e5a6646208c6dc125271431bbb9d677b9bb8",
+  "headAtObservation": "82165e7ffda344165fc9116027a4b6f3ffacd4f5",
+  "conflicts": false,
+  "checks": [
+    {
+      "path": "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Dictionary/PersonalDictionary.swift",
+      "reference": "79398ca5",
+      "actualSHA256": "0bac71e413ea3c99f8972dd6cae10685e76adbd0b0537f587b589768b00a8d28",
+      "expectedSHA256": "0bac71e413ea3c99f8972dd6cae10685e76adbd0b0537f587b589768b00a8d28",
+      "matches": true
+    },
+    {
+      "path": "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Geometry/TouchModel.swift",
+      "reference": "79398ca5",
+      "actualSHA256": "696843c4f16b2132715558fbf67d2b7560344a51f3916dafca5b08ea0b0ff443",
+      "expectedSHA256": "696843c4f16b2132715558fbf67d2b7560344a51f3916dafca5b08ea0b0ff443",
+      "matches": true
+    },
+    {
+      "path": "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Shared/LearnedDataPersistence.swift",
+      "reference": "79398ca5",
+      "actualSHA256": "213dcf5810e5fffb33921827b563b31feb3eb7d2ac32c026aa9f694e028ef235",
+      "expectedSHA256": "213dcf5810e5fffb33921827b563b31feb3eb7d2ac32c026aa9f694e028ef235",
+      "matches": true
+    },
+    {
+      "path": "apps/keyboard-ios/PulpoKeyboardKit/Tests/KeyboardCoreTests/TouchCompatibilityTests.swift",
+      "reference": "79398ca5",
+      "actualSHA256": "7666ade2f064334718be7f580c9c9efa11470de548c6453be4d75d64357040a4",
+      "expectedSHA256": "7666ade2f064334718be7f580c9c9efa11470de548c6453be4d75d64357040a4",
+      "matches": true
+    },
+    {
+      "path": "apps/keyboard-ios/App/PulpoKeyboardApp.swift",
+      "reference": "48219fd0",
+      "actualSHA256": "1ff4b34077ad63148acb3ae97c7d1465dd391aec6784276e580b9383f66a5617",
+      "expectedSHA256": "1ff4b34077ad63148acb3ae97c7d1465dd391aec6784276e580b9383f66a5617",
+      "matches": true
+    },
+    {
+      "path": "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardUI/SuggestionBarView.swift",
+      "reference": "48219fd0",
+      "actualSHA256": "ec1c5a7aadf8a51dff940855a7fbbc941f987e5a208363622c0323cf07105400",
+      "expectedSHA256": "ec1c5a7aadf8a51dff940855a7fbbc941f987e5a208363622c0323cf07105400",
+      "matches": true
+    },
+    {
+      "path": "apps/keyboard-ios/UITests/LearningForgetControllerTests.swift",
+      "reference": "48219fd0",
+      "actualSHA256": "85c5acc972bcdb29d1f01da3be472ce863e4638568890fed9bacafe51b7dc05f",
+      "expectedSHA256": "85c5acc972bcdb29d1f01da3be472ce863e4638568890fed9bacafe51b7dc05f",
+      "matches": true
+    },
+    {
+      "path": "apps/keyboard-ios/UITests/LearningForgetResultUITests.swift",
+      "reference": "48219fd0",
+      "actualSHA256": "bb1f80a463a55c7465a2a355aee9cd24eb5fac49a2f074071c9e2353e2fbc761",
+      "expectedSHA256": "bb1f80a463a55c7465a2a355aee9cd24eb5fac49a2f074071c9e2353e2fbc761",
+      "matches": true
+    },
+    {
+      "path": "apps/keyboard-ios/UITests/LearningClearScopeUITests.swift",
+      "reference": "48219fd0",
+      "actualSHA256": "713cc6a895af0a9bd1c9678c622bf2f7527dcd25b1fcc1cb7d32d0857d5634af",
+      "expectedSHA256": "713cc6a895af0a9bd1c9678c622bf2f7527dcd25b1fcc1cb7d32d0857d5634af",
+      "matches": true
+    },
+    {
+      "path": "apps/keyboard-ios/UITests/SuggestionForgetFeedbackTests.swift",
+      "reference": "48219fd0",
+      "actualSHA256": "df3d87411856f986b5bfa4c1cdc0de1e1080c1cbef049d3e178f74b404ef0e04",
+      "expectedSHA256": "df3d87411856f986b5bfa4c1cdc0de1e1080c1cbef049d3e178f74b404ef0e04",
+      "matches": true
+    },
+    {
+      "path": "apps/keyboard-ios/UITests/LearningMessageReadability.swift",
+      "reference": "48219fd0",
+      "actualSHA256": "e98b2375101710b143cf204e2365bbf4a675460c7e7e415c7204264bfd330c4a",
+      "expectedSHA256": "e98b2375101710b143cf204e2365bbf4a675460c7e7e415c7204264bfd330c4a",
+      "matches": true
+    },
+    {
+      "path": "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Input/KeyboardEngine.swift",
+      "reference": "e503e5a6646208c6dc125271431bbb9d677b9bb8",
+      "actualSHA256": "3f0987051ff0f176a5e1ef6396d415b0f8fe0fc2088735c75fef87f75158de97",
+      "expectedSHA256": "3f0987051ff0f176a5e1ef6396d415b0f8fe0fc2088735c75fef87f75158de97",
+      "matches": true
+    },
+    {
+      "path": "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Input/InputTraits.swift",
+      "reference": "e503e5a6646208c6dc125271431bbb9d677b9bb8",
+      "actualSHA256": "b51ff8291e2fc6a64f2244a7ddf198d4a49fde79443bffca500b4d2b317d2b61",
+      "expectedSHA256": "b51ff8291e2fc6a64f2244a7ddf198d4a49fde79443bffca500b4d2b317d2b61",
+      "matches": true
+    },
+    {
+      "path": "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Layout/KeyboardLayout.swift",
+      "reference": "e503e5a6646208c6dc125271431bbb9d677b9bb8",
+      "actualSHA256": "0001873a89ec6e02351c8f2847d68e1dcd921af80e61d7df02d19aa6e8e1554c",
+      "expectedSHA256": "0001873a89ec6e02351c8f2847d68e1dcd921af80e61d7df02d19aa6e8e1554c",
+      "matches": true
+    },
+    {
+      "path": "apps/keyboard-ios/PulpoKeyboardKit/Sources/PulpoServices/PulpoClient.swift",
+      "reference": "e503e5a6646208c6dc125271431bbb9d677b9bb8",
+      "actualSHA256": "48c1dd94ab21728d3a2d2d343f94e70be6eeae7c6d1edd8d904c63df3aef7498",
+      "expectedSHA256": "48c1dd94ab21728d3a2d2d343f94e70be6eeae7c6d1edd8d904c63df3aef7498",
+      "matches": true
+    },
+    {
+      "path": "apps/keyboard-ios/PulpoKeyboardKit/Sources/PulpoServices/SessionStore.swift",
+      "reference": "e503e5a6646208c6dc125271431bbb9d677b9bb8",
+      "actualSHA256": "f76c74488415aad3c579612bc67bae159b941ca57873712c956ba179b001dac2",
+      "expectedSHA256": "f76c74488415aad3c579612bc67bae159b941ca57873712c956ba179b001dac2",
+      "matches": true
+    },
+    {
+      "path": "apps/keyboard-ios/App/AppModel.swift",
+      "scope": "outside learned words section",
+      "reference": "e503e5a6646208c6dc125271431bbb9d677b9bb8",
+      "matches": true
+    },
+    {
+      "path": "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardUI/KeyboardController.swift",
+      "scope": "outside forget function",
+      "reference": "e503e5a6646208c6dc125271431bbb9d677b9bb8",
+      "matches": true
+    }
+  ],
+  "allChecksPass": true,
+  "commits": [
+    {
+      "commit": "bcd254c16223c0958b1b7bb6a32ef617bf8dcaa8",
+      "subject": "docs(keyboard): freeze approved reset persistence protocol",
+      "directCherryPickFrom": "6a6513143f2f5f35a96b44d4ca4a42b6ed371a80",
+      "allProvenanceTrailers": [
+        "c20e682d1e5ce123e8e1cd3bc0586de63ab7277f",
+        "6a6513143f2f5f35a96b44d4ca4a42b6ed371a80"
+      ]
+    },
+    {
+      "commit": "0933aac1d1a833f40f0d53a5f582eefc0aa8831f",
+      "subject": "fix(keyboard): fence shared learning commits across resets",
+      "directCherryPickFrom": "53b490c5db7085c5bc63553db17165a06ac35214",
+      "allProvenanceTrailers": [
+        "acb70884d7d353424337e8ebb7670f0967259494",
+        "53b490c5db7085c5bc63553db17165a06ac35214"
+      ]
+    },
+    {
+      "commit": "7eec24073c2c6012f9a349959104bb1a2e81b5b6",
+      "subject": "fix(keyboard): preserve exact registrar keys and bounded lock sharing",
+      "directCherryPickFrom": "f2287b65d38b50e49058db8f7c8f1cca29f18ee6",
+      "allProvenanceTrailers": [
+        "2357e19156e79edc9842a3b9626d9ab18b3f6f36",
+        "f2287b65d38b50e49058db8f7c8f1cca29f18ee6"
+      ]
+    },
+    {
+      "commit": "0cca0139e870068d9cd10de5436a843f375985d8",
+      "subject": "test(keyboard): preserve reset schedules and pre-reveal evidence",
+      "directCherryPickFrom": "077859a418e342a9d7c1117f26b408d6e74ddba8",
+      "allProvenanceTrailers": [
+        "ac186d7ec782e64a41b7922f1b056f0565ee589b",
+        "077859a418e342a9d7c1117f26b408d6e74ddba8"
+      ]
+    },
+    {
+      "commit": "31c4dd053f3c3024421a7a1b787845e7552c05a6",
+      "subject": "fix(keyboard): preserve canonical Unicode pair identities",
+      "directCherryPickFrom": "d570e0e6f6acec83b145cece128d0167433f864b",
+      "allProvenanceTrailers": [
+        "4fa9b1e7b39cb1e5db835eeb3c4b111f6540c566",
+        "d570e0e6f6acec83b145cece128d0167433f864b"
+      ]
+    },
+    {
+      "commit": "7085403f8bc4f46eb2c4fed64b4c4adaad8e1981",
+      "subject": "fix(keyboard): encode pair components with stable byte escapes",
+      "directCherryPickFrom": "6bfc3dab5efb451336625fb492719eefb796f09c",
+      "allProvenanceTrailers": [
+        "006f6d4a6b1e625779db8d49c73bb8d45f451956",
+        "6bfc3dab5efb451336625fb492719eefb796f09c"
+      ]
+    },
+    {
+      "commit": "6e90ea11ea10a34a71386f5e14ac4b4a8afed428",
+      "subject": "fix(keyboard): validate opaque learned-key outputs without renormalizing",
+      "directCherryPickFrom": "f534eb0d9867f413c944dc9bdd6e1480008f1a81",
+      "allProvenanceTrailers": [
+        "a9e6ecfc895263721f14b8635dab8c3e87162839",
+        "f534eb0d9867f413c944dc9bdd6e1480008f1a81"
+      ]
+    },
+    {
+      "commit": "b83bf0b3550bdf03e6addf0ea471b3431a7913bc",
+      "subject": "docs(keyboard): retain corrections and external evidence receipts",
+      "directCherryPickFrom": "b635910c8cb0a1af8daa54bb11ef6ace319fdc04",
+      "allProvenanceTrailers": [
+        "bd82649637038c67b449c241a72af49d5f87c625",
+        "b635910c8cb0a1af8daa54bb11ef6ace319fdc04"
+      ]
+    },
+    {
+      "commit": "4238a59ad88a46f2d9f6f44146daf180f93663d3",
+      "subject": "docs(keyboard): freeze reviewed reset candidate before reveal",
+      "directCherryPickFrom": "4bac728ff020d049225a15a71d44fdedb4a3431a",
+      "allProvenanceTrailers": [
+        "a532f2ae0546035ff7daf88af20cfc642c3cc854",
+        "4bac728ff020d049225a15a71d44fdedb4a3431a"
+      ]
+    },
+    {
+      "commit": "0d36f72196d499038dab16333dcdc7965f46e0a9",
+      "subject": "docs(keyboard): record single reset reveal and integration limits",
+      "directCherryPickFrom": "a20bb202b9deaa6602da72cc840f10253d4aa0e6",
+      "allProvenanceTrailers": [
+        "3b5d104369140bbf8ff53408d661bd136290d855",
+        "a20bb202b9deaa6602da72cc840f10253d4aa0e6"
+      ]
+    },
+    {
+      "commit": "0dcf9502ec7079e035f324a75bfd7a3460b11021",
+      "subject": "docs(keyboard): freeze touch compatibility contract and dependencies",
+      "directCherryPickFrom": "9fe08a9fdfb2184286d00b8ed3420764f97c0360",
+      "allProvenanceTrailers": [
+        "9fe08a9fdfb2184286d00b8ed3420764f97c0360"
+      ]
+    },
+    {
+      "commit": "251fcd6990cb7a24c951ece3c527cba71d72da97",
+      "subject": "fix(keyboard): preserve long-word touch learning compatibility",
+      "directCherryPickFrom": "c2442112ae37625a848b0da981e7cb61dc24fd76",
+      "allProvenanceTrailers": [
+        "c2442112ae37625a848b0da981e7cb61dc24fd76"
+      ]
+    },
+    {
+      "commit": "64638f7274b72da568b5dcda128ac1970e33f937",
+      "subject": "test(keyboard): account for final offset cap in clamp oracle",
+      "directCherryPickFrom": "79398ca5d3c184849ea724f4cf2d5bf817da9ddd",
+      "allProvenanceTrailers": [
+        "79398ca5d3c184849ea724f4cf2d5bf817da9ddd"
+      ]
+    },
+    {
+      "commit": "9f6321eb25425d6649dbc4b16cfa8e8bfd85bcd6",
+      "subject": "test(keyboard): retain touch compatibility gates and source admission",
+      "directCherryPickFrom": "6a6a9b8dbd28ee9b05a5d76dd0e8f9babcb31d9a",
+      "allProvenanceTrailers": [
+        "6a6a9b8dbd28ee9b05a5d76dd0e8f9babcb31d9a"
+      ]
+    },
+    {
+      "commit": "0c316b28b4363f15eb9d0260c2e89a1d9d7cc0bb",
+      "subject": "test(keyboard): freeze independently validated touch boundaries",
+      "directCherryPickFrom": "a882016841deeb8e5cbf12df316bd4977887b31c",
+      "allProvenanceTrailers": [
+        "a882016841deeb8e5cbf12df316bd4977887b31c"
+      ]
+    },
+    {
+      "commit": "6995b52412daeb46161e7a59b5da600c34c6d647",
+      "subject": "test(keyboard): preserve rejected touch boundary results",
+      "directCherryPickFrom": "abafac5f0712e8132f0da36a66de4026a93cc790",
+      "allProvenanceTrailers": [
+        "abafac5f0712e8132f0da36a66de4026a93cc790"
+      ]
+    },
+    {
+      "commit": "a57b0754999a84f43e29d656d2374a20a08dd983",
+      "subject": "fix(keyboard): surface unconfirmed learning removals",
+      "directCherryPickFrom": "c156797b406182ad83329177804d67d40fc53ad8",
+      "allProvenanceTrailers": [
+        "c156797b406182ad83329177804d67d40fc53ad8"
+      ]
+    },
+    {
+      "commit": "52777942cbd2e8e79ed2e17982af50bea9e14f9a",
+      "subject": "test(keyboard): cover native learning removal failures and retry",
+      "directCherryPickFrom": "244566f6b3727a07ab652aa63f2ff60e9995ea59",
+      "allProvenanceTrailers": [
+        "244566f6b3727a07ab652aa63f2ff60e9995ea59"
+      ]
+    },
+    {
+      "commit": "ea5e94f392ef2d0c3ff0b3a5d6abc0ca691f1d7c",
+      "subject": "test(keyboard): observe unavailable storage after releasing faults",
+      "directCherryPickFrom": "82d1f1644d2b0a6a1f854f758795b47e416bf6d9",
+      "allProvenanceTrailers": [
+        "82d1f1644d2b0a6a1f854f758795b47e416bf6d9"
+      ]
+    },
+    {
+      "commit": "84a16fcddb826ff95668121408dbe945d31fc8db",
+      "subject": "test(keyboard): reset the owned forget fixture between runs",
+      "directCherryPickFrom": "508840da3b40c6f74aa083258293b8a9138631e6",
+      "allProvenanceTrailers": [
+        "508840da3b40c6f74aa083258293b8a9138631e6"
+      ]
+    },
+    {
+      "commit": "b92a3c154ecfbbc79d754b1690eb2dfbdcd0202a",
+      "subject": "test(keyboard): query the complete shared scope accessibility label",
+      "directCherryPickFrom": "561a6621b99a65550611f1e452d6a254cff81893",
+      "allProvenanceTrailers": [
+        "561a6621b99a65550611f1e452d6a254cff81893"
+      ]
+    },
+    {
+      "commit": "cdb3dfab562e0c99ca850ff7f50e57b596de321d",
+      "subject": "test(keyboard): confirm durable reads and native popover dismissal",
+      "directCherryPickFrom": "f3c410fc3488f6269995d574a6451ce2511d43d6",
+      "allProvenanceTrailers": [
+        "f3c410fc3488f6269995d574a6451ce2511d43d6"
+      ]
+    },
+    {
+      "commit": "726285597152d18ebc62ebd7d77c5ac71098fc79",
+      "subject": "test(keyboard): verify native scrolling at accessibility sizes",
+      "directCherryPickFrom": "5de06a604b30c488088b3fd5bb9b75fc0cf5f25d",
+      "allProvenanceTrailers": [
+        "5de06a604b30c488088b3fd5bb9b75fc0cf5f25d"
+      ]
+    },
+    {
+      "commit": "863bdff46d34583456556b87ca6f4627bd0abe95",
+      "subject": "test(keyboard): drag within the native confirmation viewport",
+      "directCherryPickFrom": "b94f3b1eefcd3d9172417d513f64caea301939d2",
+      "allProvenanceTrailers": [
+        "b94f3b1eefcd3d9172417d513f64caea301939d2"
+      ]
+    },
+    {
+      "commit": "8cb6d94579b15f66219f7963fa4912b4126ee80b",
+      "subject": "docs(keyboard): record exposed native UI integration evidence",
+      "directCherryPickFrom": "48219fd07e6071db0e9ade73389a9119c8ad0906",
+      "allProvenanceTrailers": [
+        "48219fd07e6071db0e9ade73389a9119c8ad0906"
+      ]
+    },
+    {
+      "commit": "82165e7ffda344165fc9116027a4b6f3ffacd4f5",
+      "subject": "test(keyboard): require readable durable reset observations",
+      "directCherryPickFrom": null,
+      "allProvenanceTrailers": []
+    }
+  ],
+  "oldR45RoundVerdict": "REJECTED; unchanged",
+  "oldR33BlindAttribution": "exact a9e only",
+  "newBlindAuthored": false
+}

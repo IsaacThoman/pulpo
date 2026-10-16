@@ -1,0 +1,278 @@
+{
+  "classification" : "Exposed runtime diagnostics, not pass\/fail or product execution",
+  "rows" : [
+    {
+      "foundationCompatibility" : [
+        927,
+        931
+      ],
+      "input" : [
+        927,
+        931
+      ],
+      "nsStringLower" : [
+        959,
+        962
+      ],
+      "perCharacterSwiftLower" : [
+        [
+          959
+        ],
+        [
+          963
+        ]
+      ],
+      "swiftCategories" : [
+        "uppercaseLetter",
+        "uppercaseLetter"
+      ],
+      "swiftLower" : [
+        959,
+        963
+      ]
+    },
+    {
+      "foundationCompatibility" : [
+        65,
+        931
+      ],
+      "input" : [
+        65,
+        931
+      ],
+      "nsStringLower" : [
+        97,
+        962
+      ],
+      "perCharacterSwiftLower" : [
+        [
+          97
+        ],
+        [
+          963
+        ]
+      ],
+      "swiftCategories" : [
+        "uppercaseLetter",
+        "uppercaseLetter"
+      ],
+      "swiftLower" : [
+        97,
+        963
+      ]
+    },
+    {
+      "foundationCompatibility" : [
+        931
+      ],
+      "input" : [
+        931
+      ],
+      "nsStringLower" : [
+        963
+      ],
+      "perCharacterSwiftLower" : [
+        [
+          963
+        ]
+      ],
+      "swiftCategories" : [
+        "uppercaseLetter"
+      ],
+      "swiftLower" : [
+        963
+      ]
+    },
+    {
+      "foundationCompatibility" : [
+        83,
+        116,
+        114,
+        97,
+        223,
+        101
+      ],
+      "input" : [
+        83,
+        116,
+        114,
+        97,
+        223,
+        101
+      ],
+      "nsStringLower" : [
+        115,
+        116,
+        114,
+        97,
+        223,
+        101
+      ],
+      "perCharacterSwiftLower" : [
+        [
+          115
+        ],
+        [
+          116
+        ],
+        [
+          114
+        ],
+        [
+          97
+        ],
+        [
+          223
+        ],
+        [
+          101
+        ]
+      ],
+      "swiftCategories" : [
+        "uppercaseLetter",
+        "lowercaseLetter",
+        "lowercaseLetter",
+        "lowercaseLetter",
+        "lowercaseLetter",
+        "lowercaseLetter"
+      ],
+      "swiftLower" : [
+        115,
+        116,
+        114,
+        97,
+        223,
+        101
+      ]
+    },
+    {
+      "foundationCompatibility" : [
+        7838
+      ],
+      "input" : [
+        7838
+      ],
+      "nsStringLower" : [
+        223
+      ],
+      "perCharacterSwiftLower" : [
+        [
+          223
+        ]
+      ],
+      "swiftCategories" : [
+        "uppercaseLetter"
+      ],
+      "swiftLower" : [
+        223
+      ]
+    },
+    {
+      "foundationCompatibility" : [
+        65
+      ],
+      "input" : [
+        7468
+      ],
+      "nsStringLower" : [
+        7468
+      ],
+      "perCharacterSwiftLower" : [
+        [
+          7468
+        ]
+      ],
+      "swiftCategories" : [
+        "modifierLetter"
+      ],
+      "swiftLower" : [
+        7468
+      ]
+    },
+    {
+      "foundationCompatibility" : [
+        97,
+        2199
+      ],
+      "input" : [
+        97,
+        2199
+      ],
+      "nsStringLower" : [
+        97,
+        2199
+      ],
+      "perCharacterSwiftLower" : [
+        [
+          97,
+          2199
+        ]
+      ],
+      "swiftCategories" : [
+        "lowercaseLetter",
+        "nonspacingMark"
+      ],
+      "swiftLower" : [
+        97,
+        2199
+      ]
+    },
+    {
+      "foundationCompatibility" : [
+        97,
+        2307
+      ],
+      "input" : [
+        97,
+        2307
+      ],
+      "nsStringLower" : [
+        97,
+        2307
+      ],
+      "perCharacterSwiftLower" : [
+        [
+          97,
+          2307
+        ]
+      ],
+      "swiftCategories" : [
+        "lowercaseLetter",
+        "spacingMark"
+      ],
+      "swiftLower" : [
+        97,
+        2307
+      ]
+    },
+    {
+      "foundationCompatibility" : [
+        97,
+        8413
+      ],
+      "input" : [
+        97,
+        8413
+      ],
+      "nsStringLower" : [
+        97,
+        8413
+      ],
+      "perCharacterSwiftLower" : [
+        [
+          97,
+          8413
+        ]
+      ],
+      "swiftCategories" : [
+        "lowercaseLetter",
+        "enclosingMark"
+      ],
+      "swiftLower" : [
+        97,
+        8413
+      ]
+    }
+  ],
+  "runtime" : "Version 27.0.1 (Build 26A434)"
+}
