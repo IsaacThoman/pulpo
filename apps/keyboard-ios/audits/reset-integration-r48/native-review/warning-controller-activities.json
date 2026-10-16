@@ -1,0 +1,53 @@
+{
+  "testIdentifier": "LearningForgetControllerTests/testRealCanonicalSQLiteBusyShowsNoticeAndExplicitRetryConfirmsRemoval()",
+  "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/LearningForgetControllerTests/testRealCanonicalSQLiteBusyShowsNoticeAndExplicitRetryConfirmsRemoval",
+  "testName": "testRealCanonicalSQLiteBusyShowsNoticeAndExplicitRetryConfirmsRemoval()",
+  "testRuns": [
+    {
+      "activities": [
+        {
+          "activityType": "com.apple.dt.xctest.activity-type.internal",
+          "isAssociatedWithFailure": false,
+          "startTime": 1792147963.501,
+          "title": "Start Test at 2026-10-16 06:52:43.501"
+        },
+        {
+          "activityType": "com.apple.dt.xctest.activity-type.internal",
+          "isAssociatedWithFailure": false,
+          "startTime": 1792147963.515,
+          "title": "Set Up"
+        },
+        {
+          "childActivities": [
+            {
+              "isAssociatedWithFailure": false,
+              "title": ""
+            }
+          ],
+          "isAssociatedWithFailure": false,
+          "startTime": 1792147963.651,
+          "title": "Thread running at User-initiated quality-of-service class waiting on a lower QoS thread running at Utility quality-of-service class. Investigate ways to avoid priority inversions"
+        },
+        {
+          "activityType": "com.apple.dt.xctest.activity-type.internal",
+          "isAssociatedWithFailure": false,
+          "startTime": 1792147963.726,
+          "title": "Tear Down"
+        }
+      ],
+      "device": {
+        "architecture": "arm64",
+        "deviceId": "0FD9B95B-D450-4276-A110-ECA608AB48E7",
+        "deviceName": "Pulpo-R48-Reset-Integration",
+        "modelName": "iPhone 16",
+        "osBuildNumber": "24A434",
+        "osVersion": "27.0",
+        "platform": "iOS Simulator"
+      },
+      "testPlanConfiguration": {
+        "configurationId": "1",
+        "configurationName": "Test Scheme Action"
+      }
+    }
+  ]
+}

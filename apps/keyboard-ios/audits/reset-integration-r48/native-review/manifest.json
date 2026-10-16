@@ -1,0 +1,38 @@
+{
+  "artifact-integrity.json": {
+    "bytes": 16252,
+    "sha256": "4c5819a915e599066f84dabc24bc7a8e6c0676f270d00d64f06425492c7c1611"
+  },
+  "check-artifacts.py": {
+    "bytes": 7992,
+    "sha256": "901477a87fdd11b8317118e067c9d356957a5070d5c6a4a47e185ab8cf8631b3"
+  },
+  "debug-normal-controller-legacy-summary.json": {
+    "bytes": 17117,
+    "sha256": "cbf0254dcb8d320fecb2fe4392d2bcfcaec6d8cf5e0b810ad25f87df1c9dcc95"
+  },
+  "debug-normal-legacy-root.json": {
+    "bytes": 32104,
+    "sha256": "ad02b9d248049d0fff38eb2a959e568cfb9ce90208fc4b2e831cbf9c4ec91142"
+  },
+  "debug-normal-legacy-tests.json": {
+    "bytes": 207162,
+    "sha256": "cd027add18767349e7f3ce5733cfc0974198a456c74e1168efcc435be343787f"
+  },
+  "review.md": {
+    "bytes": 11855,
+    "sha256": "f12e9a1013e641efe02b9c5b1d4152a6e115171e921f86196ad21157e61957f5"
+  },
+  "reviewed-artifact-bindings.json": {
+    "bytes": 3834,
+    "sha256": "0daa17f708bd64bb488e799822c06ef2323faadfc89601dde72c9e99b03d3d36"
+  },
+  "warning-controller-activities.json": {
+    "bytes": 1990,
+    "sha256": "ab9381da5ff291311732a21640c18fab296d661a8f1fb0756b5caeffe15d4e7d"
+  },
+  "warning-controller-test-details.json": {
+    "bytes": 2849,
+    "sha256": "46d3c3a3b89dbc0a9efaa4108c9817ce88135a282a9e883782288e3b77ca329c"
+  }
+}

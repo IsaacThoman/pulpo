@@ -1,0 +1,1121 @@
+{
+  "_type": {
+    "_name": "ActionsInvocationRecord"
+  },
+  "actions": {
+    "_type": {
+      "_name": "Array"
+    },
+    "_values": [
+      {
+        "_type": {
+          "_name": "ActionRecord"
+        },
+        "actionResult": {
+          "_type": {
+            "_name": "ActionResult"
+          },
+          "coverage": {
+            "_type": {
+              "_name": "CodeCoverageInfo"
+            },
+            "hasCoverageData": {
+              "_type": {
+                "_name": "Bool"
+              },
+              "_value": "false"
+            }
+          },
+          "diagnosticsRef": {
+            "_type": {
+              "_name": "Reference"
+            },
+            "id": {
+              "_type": {
+                "_name": "String"
+              },
+              "_value": "0~K8PImRFx_WESkwHyA5bMxTIhTvp1ZgypPqL4NSa6N4RM0NcskgRnux4TQod80nDXrlp9vDCzoSicC6ohUBmlYg=="
+            }
+          },
+          "issues": {
+            "_type": {
+              "_name": "ResultIssueSummaries"
+            },
+            "analyzerWarningSummaries": {
+              "_type": {
+                "_name": "Array"
+              }
+            },
+            "errorSummaries": {
+              "_type": {
+                "_name": "Array"
+              }
+            },
+            "testFailureSummaries": {
+              "_type": {
+                "_name": "Array"
+              }
+            },
+            "testWarningSummaries": {
+              "_type": {
+                "_name": "Array"
+              },
+              "_values": [
+                {
+                  "_type": {
+                    "_name": "TestIssueSummary",
+                    "_supertype": {
+                      "_name": "IssueSummary"
+                    }
+                  },
+                  "documentLocationInCreatingWorkspace": {
+                    "_type": {
+                      "_name": "DocumentLocation"
+                    },
+                    "concreteTypeName": {
+                      "_type": {
+                        "_name": "String"
+                      },
+                      "_value": "DVTTextDocumentLocation"
+                    },
+                    "url": {
+                      "_type": {
+                        "_name": "String"
+                      },
+                      "_value": ""
+                    }
+                  },
+                  "issueType": {
+                    "_type": {
+                      "_name": "String"
+                    },
+                    "_value": "Uncategorized"
+                  },
+                  "message": {
+                    "_type": {
+                      "_name": "String"
+                    },
+                    "_value": "Thread running at User-initiated quality-of-service class waiting on a lower QoS thread running at Utility quality-of-service class. Investigate ways to avoid priority inversions"
+                  },
+                  "testCaseName": {
+                    "_type": {
+                      "_name": "String"
+                    },
+                    "_value": "CompanionWorkflowR24Tests.testSelectedMultilingualDraftAcrossSmallViewportModesFieldsAndRefocus()"
+                  }
+                },
+                {
+                  "_type": {
+                    "_name": "TestIssueSummary",
+                    "_supertype": {
+                      "_name": "IssueSummary"
+                    }
+                  },
+                  "documentLocationInCreatingWorkspace": {
+                    "_type": {
+                      "_name": "DocumentLocation"
+                    },
+                    "concreteTypeName": {
+                      "_type": {
+                        "_name": "String"
+                      },
+                      "_value": "DVTTextDocumentLocation"
+                    },
+                    "url": {
+                      "_type": {
+                        "_name": "String"
+                      },
+                      "_value": ""
+                    }
+                  },
+                  "issueType": {
+                    "_type": {
+                      "_name": "String"
+                    },
+                    "_value": "Uncategorized"
+                  },
+                  "message": {
+                    "_type": {
+                      "_name": "String"
+                    },
+                    "_value": "Thread running at User-initiated quality-of-service class waiting on a lower QoS thread running at Utility quality-of-service class. Investigate ways to avoid priority inversions"
+                  },
+                  "testCaseName": {
+                    "_type": {
+                      "_name": "String"
+                    },
+                    "_value": "DraftNavigationTests.testSettingsRoundTripKeepsDraftAndDismissedReturnStaysHidden()"
+                  }
+                },
+                {
+                  "_type": {
+                    "_name": "TestIssueSummary",
+                    "_supertype": {
+                      "_name": "IssueSummary"
+                    }
+                  },
+                  "documentLocationInCreatingWorkspace": {
+                    "_type": {
+                      "_name": "DocumentLocation"
+                    },
+                    "concreteTypeName": {
+                      "_type": {
+                        "_name": "String"
+                      },
+                      "_value": "DVTTextDocumentLocation"
+                    },
+                    "url": {
+                      "_type": {
+                        "_name": "String"
+                      },
+                      "_value": ""
+                    }
+                  },
+                  "issueType": {
+                    "_type": {
+                      "_name": "String"
+                    },
+                    "_value": "Uncategorized"
+                  },
+                  "message": {
+                    "_type": {
+                      "_name": "String"
+                    },
+                    "_value": "Thread running at User-initiated quality-of-service class waiting on a lower QoS thread running at Utility quality-of-service class. Investigate ways to avoid priority inversions"
+                  },
+                  "testCaseName": {
+                    "_type": {
+                      "_name": "String"
+                    },
+                    "_value": "DraftNavigationTests.testSwitchingModesAndReturningKeepsTextFieldKindAndDismissal()"
+                  }
+                },
+                {
+                  "_type": {
+                    "_name": "TestIssueSummary",
+                    "_supertype": {
+                      "_name": "IssueSummary"
+                    }
+                  },
+                  "documentLocationInCreatingWorkspace": {
+                    "_type": {
+                      "_name": "DocumentLocation"
+                    },
+                    "concreteTypeName": {
+                      "_type": {
+                        "_name": "String"
+                      },
+                      "_value": "DVTTextDocumentLocation"
+                    },
+                    "url": {
+                      "_type": {
+                        "_name": "String"
+                      },
+                      "_value": "file:///Users/isaacthoman/.t3/worktrees/pulpo/t3-a3218df3/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Shared/LearnedDataPersistence.swift#EndingLineNumber=679&StartingLineNumber=679"
+                    }
+                  },
+                  "issueType": {
+                    "_type": {
+                      "_name": "String"
+                    },
+                    "_value": "Uncategorized"
+                  },
+                  "message": {
+                    "_type": {
+                      "_name": "String"
+                    },
+                    "_value": "Thread running at User-initiated quality-of-service class waiting on a lower QoS thread running at Utility quality-of-service class. Investigate ways to avoid priority inversions"
+                  },
+                  "testCaseName": {
+                    "_type": {
+                      "_name": "String"
+                    },
+                    "_value": "LearningForgetControllerTests.testRealCanonicalSQLiteBusyShowsNoticeAndExplicitRetryConfirmsRemoval()"
+                  }
+                },
+                {
+                  "_type": {
+                    "_name": "TestIssueSummary",
+                    "_supertype": {
+                      "_name": "IssueSummary"
+                    }
+                  },
+                  "documentLocationInCreatingWorkspace": {
+                    "_type": {
+                      "_name": "DocumentLocation"
+                    },
+                    "concreteTypeName": {
+                      "_type": {
+                        "_name": "String"
+                      },
+                      "_value": "DVTTextDocumentLocation"
+                    },
+                    "url": {
+                      "_type": {
+                        "_name": "String"
+                      },
+                      "_value": ""
+                    }
+                  },
+                  "issueType": {
+                    "_type": {
+                      "_name": "String"
+                    },
+                    "_value": "Uncategorized"
+                  },
+                  "message": {
+                    "_type": {
+                      "_name": "String"
+                    },
+                    "_value": "Thread running at User-initiated quality-of-service class waiting on a lower QoS thread running at Utility quality-of-service class. Investigate ways to avoid priority inversions"
+                  },
+                  "testCaseName": {
+                    "_type": {
+                      "_name": "String"
+                    },
+                    "_value": "LearningForgetResultUITests.testRealPreviewForgetNoticeIsReadableDismissibleAndRetryable()"
+                  }
+                }
+              ]
+            },
+            "warningSummaries": {
+              "_type": {
+                "_name": "Array"
+              }
+            }
+          },
+          "logRef": {
+            "_type": {
+              "_name": "Reference"
+            },
+            "id": {
+              "_type": {
+                "_name": "String"
+              },
+              "_value": "0~W6gLNy_0jaLObSvPlZsPSwjXW--BUUCxq49YSVVzQKV0VgJuRgVGBq_Q-Xe8neuESh6wN_Zrlus4R6a5JnAvsw=="
+            },
+            "targetType": {
+              "_type": {
+                "_name": "TypeDefinition"
+              },
+              "name": {
+                "_type": {
+                  "_name": "String"
+                },
+                "_value": "ActivityLogSection"
+              }
+            }
+          },
+          "metrics": {
+            "_type": {
+              "_name": "ResultMetrics"
+            },
+            "analyzerWarningCount": {
+              "_type": {
+                "_name": "Int"
+              },
+              "_value": "0"
+            },
+            "errorCount": {
+              "_type": {
+                "_name": "Int"
+              },
+              "_value": "0"
+            },
+            "testsCount": {
+              "_type": {
+                "_name": "Int"
+              },
+              "_value": "25"
+            },
+            "testsFailedCount": {
+              "_type": {
+                "_name": "Int"
+              },
+              "_value": "0"
+            },
+            "testsSkippedCount": {
+              "_type": {
+                "_name": "Int"
+              },
+              "_value": "0"
+            },
+            "warningCount": {
+              "_type": {
+                "_name": "Int"
+              },
+              "_value": "0"
+            }
+          },
+          "resultName": {
+            "_type": {
+              "_name": "String"
+            },
+            "_value": "action"
+          },
+          "status": {
+            "_type": {
+              "_name": "String"
+            },
+            "_value": "succeeded"
+          },
+          "testsRef": {
+            "_type": {
+              "_name": "Reference"
+            },
+            "id": {
+              "_type": {
+                "_name": "String"
+              },
+              "_value": "0~dBLfDk2KgzAvXGcrp-Mg4-oMvL-lg275bkT3_DdEktsOqlNksoMER1V-RNaQ0yPjMFq-ZwwF1t1oWy-rI5xpZQ=="
+            },
+            "targetType": {
+              "_type": {
+                "_name": "TypeDefinition"
+              },
+              "name": {
+                "_type": {
+                  "_name": "String"
+                },
+                "_value": "ActionTestPlanRunSummaries"
+              }
+            }
+          }
+        },
+        "buildResult": {
+          "_type": {
+            "_name": "ActionResult"
+          },
+          "coverage": {
+            "_type": {
+              "_name": "CodeCoverageInfo"
+            },
+            "hasCoverageData": {
+              "_type": {
+                "_name": "Bool"
+              },
+              "_value": "false"
+            }
+          },
+          "issues": {
+            "_type": {
+              "_name": "ResultIssueSummaries"
+            },
+            "analyzerWarningSummaries": {
+              "_type": {
+                "_name": "Array"
+              }
+            },
+            "errorSummaries": {
+              "_type": {
+                "_name": "Array"
+              }
+            },
+            "testFailureSummaries": {
+              "_type": {
+                "_name": "Array"
+              }
+            },
+            "testWarningSummaries": {
+              "_type": {
+                "_name": "Array"
+              }
+            },
+            "warningSummaries": {
+              "_type": {
+                "_name": "Array"
+              }
+            }
+          },
+          "metrics": {
+            "_type": {
+              "_name": "ResultMetrics"
+            },
+            "analyzerWarningCount": {
+              "_type": {
+                "_name": "Int"
+              },
+              "_value": "0"
+            },
+            "errorCount": {
+              "_type": {
+                "_name": "Int"
+              },
+              "_value": "0"
+            },
+            "testsCount": {
+              "_type": {
+                "_name": "Int"
+              },
+              "_value": "0"
+            },
+            "testsFailedCount": {
+              "_type": {
+                "_name": "Int"
+              },
+              "_value": "0"
+            },
+            "testsSkippedCount": {
+              "_type": {
+                "_name": "Int"
+              },
+              "_value": "0"
+            },
+            "warningCount": {
+              "_type": {
+                "_name": "Int"
+              },
+              "_value": "0"
+            }
+          },
+          "resultName": {
+            "_type": {
+              "_name": "String"
+            },
+            "_value": "build"
+          },
+          "status": {
+            "_type": {
+              "_name": "String"
+            },
+            "_value": "notRequested"
+          }
+        },
+        "endedTime": {
+          "_type": {
+            "_name": "Date"
+          },
+          "_value": "2026-10-16T06:55:43.625-0400"
+        },
+        "runDestination": {
+          "_type": {
+            "_name": "ActionRunDestinationRecord"
+          },
+          "displayName": {
+            "_type": {
+              "_name": "String"
+            },
+            "_value": "Pulpo-R48-Reset-Integration"
+          },
+          "localComputerRecord": {
+            "_type": {
+              "_name": "ActionDeviceRecord"
+            },
+            "busSpeedInMHz": {
+              "_type": {
+                "_name": "Int"
+              },
+              "_value": "0"
+            },
+            "cpuCount": {
+              "_type": {
+                "_name": "Int"
+              },
+              "_value": "1"
+            },
+            "cpuKind": {
+              "_type": {
+                "_name": "String"
+              },
+              "_value": "Apple M5 Pro"
+            },
+            "cpuSpeedInMHz": {
+              "_type": {
+                "_name": "Int"
+              },
+              "_value": "0"
+            },
+            "identifier": {
+              "_type": {
+                "_name": "String"
+              },
+              "_value": "00006050-0015292C1AEB401C"
+            },
+            "isConcreteDevice": {
+              "_type": {
+                "_name": "Bool"
+              },
+              "_value": "true"
+            },
+            "isWireless": {
+              "_type": {
+                "_name": "Bool"
+              },
+              "_value": "false"
+            },
+            "logicalCPUCoresPerPackage": {
+              "_type": {
+                "_name": "Int"
+              },
+              "_value": "18"
+            },
+            "modelCode": {
+              "_type": {
+                "_name": "String"
+              },
+              "_value": "Mac17,16"
+            },
+            "modelName": {
+              "_type": {
+                "_name": "String"
+              },
+              "_value": "Mac Mini"
+            },
+            "modelUTI": {
+              "_type": {
+                "_name": "String"
+              },
+              "_value": "com.apple.macmini-m5-pro"
+            },
+            "name": {
+              "_type": {
+                "_name": "String"
+              },
+              "_value": "My Mac"
+            },
+            "nativeArchitecture": {
+              "_type": {
+                "_name": "String"
+              },
+              "_value": "arm64e"
+            },
+            "operatingSystemVersion": {
+              "_type": {
+                "_name": "String"
+              },
+              "_value": "27.0.1"
+            },
+            "operatingSystemVersionWithBuildNumber": {
+              "_type": {
+                "_name": "String"
+              },
+              "_value": "27.0.1 (26A434)"
+            },
+            "physicalCPUCoresPerPackage": {
+              "_type": {
+                "_name": "Int"
+              },
+              "_value": "18"
+            },
+            "platformRecord": {
+              "_type": {
+                "_name": "ActionPlatformRecord"
+              },
+              "identifier": {
+                "_type": {
+                  "_name": "String"
+                },
+                "_value": "com.apple.platform.macosx"
+              },
+              "userDescription": {
+                "_type": {
+                  "_name": "String"
+                },
+                "_value": "macOS"
+              }
+            },
+            "ramSizeInMegabytes": {
+              "_type": {
+                "_name": "Int"
+              },
+              "_value": "49152"
+            }
+          },
+          "targetArchitecture": {
+            "_type": {
+              "_name": "String"
+            },
+            "_value": "arm64"
+          },
+          "targetDeviceRecord": {
+            "_type": {
+              "_name": "ActionDeviceRecord"
+            },
+            "busSpeedInMHz": {
+              "_type": {
+                "_name": "Int"
+              },
+              "_value": "0"
+            },
+            "cpuCount": {
+              "_type": {
+                "_name": "Int"
+              },
+              "_value": "0"
+            },
+            "cpuKind": {
+              "_type": {
+                "_name": "String"
+              },
+              "_value": ""
+            },
+            "cpuSpeedInMHz": {
+              "_type": {
+                "_name": "Int"
+              },
+              "_value": "0"
+            },
+            "identifier": {
+              "_type": {
+                "_name": "String"
+              },
+              "_value": "0FD9B95B-D450-4276-A110-ECA608AB48E7"
+            },
+            "isConcreteDevice": {
+              "_type": {
+                "_name": "Bool"
+              },
+              "_value": "true"
+            },
+            "isWireless": {
+              "_type": {
+                "_name": "Bool"
+              },
+              "_value": "false"
+            },
+            "logicalCPUCoresPerPackage": {
+              "_type": {
+                "_name": "Int"
+              },
+              "_value": "0"
+            },
+            "modelCode": {
+              "_type": {
+                "_name": "String"
+              },
+              "_value": "iPhone17,3"
+            },
+            "modelName": {
+              "_type": {
+                "_name": "String"
+              },
+              "_value": "iPhone 16"
+            },
+            "modelUTI": {
+              "_type": {
+                "_name": "String"
+              },
+              "_value": "com.apple.iphone-16-1"
+            },
+            "name": {
+              "_type": {
+                "_name": "String"
+              },
+              "_value": "Pulpo-R48-Reset-Integration"
+            },
+            "nativeArchitecture": {
+              "_type": {
+                "_name": "String"
+              },
+              "_value": "arm64"
+            },
+            "operatingSystemVersion": {
+              "_type": {
+                "_name": "String"
+              },
+              "_value": "27.0"
+            },
+            "operatingSystemVersionWithBuildNumber": {
+              "_type": {
+                "_name": "String"
+              },
+              "_value": "27.0 (24A434)"
+            },
+            "physicalCPUCoresPerPackage": {
+              "_type": {
+                "_name": "Int"
+              },
+              "_value": "0"
+            },
+            "platformRecord": {
+              "_type": {
+                "_name": "ActionPlatformRecord"
+              },
+              "identifier": {
+                "_type": {
+                  "_name": "String"
+                },
+                "_value": "com.apple.platform.iphonesimulator"
+              },
+              "userDescription": {
+                "_type": {
+                  "_name": "String"
+                },
+                "_value": "iOS Simulator"
+              }
+            },
+            "ramSizeInMegabytes": {
+              "_type": {
+                "_name": "Int"
+              },
+              "_value": "0"
+            }
+          },
+          "targetSDKRecord": {
+            "_type": {
+              "_name": "ActionSDKRecord"
+            },
+            "identifier": {
+              "_type": {
+                "_name": "String"
+              },
+              "_value": "iphonesimulator27.1"
+            },
+            "isInternal": {
+              "_type": {
+                "_name": "Bool"
+              },
+              "_value": "false"
+            },
+            "name": {
+              "_type": {
+                "_name": "String"
+              },
+              "_value": "Simulator - iOS 27.1"
+            },
+            "operatingSystemVersion": {
+              "_type": {
+                "_name": "String"
+              },
+              "_value": "27.1"
+            }
+          }
+        },
+        "schemeCommandName": {
+          "_type": {
+            "_name": "String"
+          },
+          "_value": "Test"
+        },
+        "schemeTaskName": {
+          "_type": {
+            "_name": "String"
+          },
+          "_value": "Action"
+        },
+        "startedTime": {
+          "_type": {
+            "_name": "Date"
+          },
+          "_value": "2026-10-16T06:51:14.149-0400"
+        },
+        "testPlanName": {
+          "_type": {
+            "_name": "String"
+          },
+          "_value": "PulpoKeyboard"
+        }
+      }
+    ]
+  },
+  "issues": {
+    "_type": {
+      "_name": "ResultIssueSummaries"
+    },
+    "analyzerWarningSummaries": {
+      "_type": {
+        "_name": "Array"
+      }
+    },
+    "errorSummaries": {
+      "_type": {
+        "_name": "Array"
+      }
+    },
+    "testFailureSummaries": {
+      "_type": {
+        "_name": "Array"
+      }
+    },
+    "testWarningSummaries": {
+      "_type": {
+        "_name": "Array"
+      },
+      "_values": [
+        {
+          "_type": {
+            "_name": "TestIssueSummary",
+            "_supertype": {
+              "_name": "IssueSummary"
+            }
+          },
+          "documentLocationInCreatingWorkspace": {
+            "_type": {
+              "_name": "DocumentLocation"
+            },
+            "concreteTypeName": {
+              "_type": {
+                "_name": "String"
+              },
+              "_value": "DVTTextDocumentLocation"
+            },
+            "url": {
+              "_type": {
+                "_name": "String"
+              },
+              "_value": ""
+            }
+          },
+          "issueType": {
+            "_type": {
+              "_name": "String"
+            },
+            "_value": "Uncategorized"
+          },
+          "message": {
+            "_type": {
+              "_name": "String"
+            },
+            "_value": "Thread running at User-initiated quality-of-service class waiting on a lower QoS thread running at Utility quality-of-service class. Investigate ways to avoid priority inversions"
+          },
+          "testCaseName": {
+            "_type": {
+              "_name": "String"
+            },
+            "_value": "CompanionWorkflowR24Tests.testSelectedMultilingualDraftAcrossSmallViewportModesFieldsAndRefocus()"
+          }
+        },
+        {
+          "_type": {
+            "_name": "TestIssueSummary",
+            "_supertype": {
+              "_name": "IssueSummary"
+            }
+          },
+          "documentLocationInCreatingWorkspace": {
+            "_type": {
+              "_name": "DocumentLocation"
+            },
+            "concreteTypeName": {
+              "_type": {
+                "_name": "String"
+              },
+              "_value": "DVTTextDocumentLocation"
+            },
+            "url": {
+              "_type": {
+                "_name": "String"
+              },
+              "_value": ""
+            }
+          },
+          "issueType": {
+            "_type": {
+              "_name": "String"
+            },
+            "_value": "Uncategorized"
+          },
+          "message": {
+            "_type": {
+              "_name": "String"
+            },
+            "_value": "Thread running at User-initiated quality-of-service class waiting on a lower QoS thread running at Utility quality-of-service class. Investigate ways to avoid priority inversions"
+          },
+          "testCaseName": {
+            "_type": {
+              "_name": "String"
+            },
+            "_value": "DraftNavigationTests.testSettingsRoundTripKeepsDraftAndDismissedReturnStaysHidden()"
+          }
+        },
+        {
+          "_type": {
+            "_name": "TestIssueSummary",
+            "_supertype": {
+              "_name": "IssueSummary"
+            }
+          },
+          "documentLocationInCreatingWorkspace": {
+            "_type": {
+              "_name": "DocumentLocation"
+            },
+            "concreteTypeName": {
+              "_type": {
+                "_name": "String"
+              },
+              "_value": "DVTTextDocumentLocation"
+            },
+            "url": {
+              "_type": {
+                "_name": "String"
+              },
+              "_value": ""
+            }
+          },
+          "issueType": {
+            "_type": {
+              "_name": "String"
+            },
+            "_value": "Uncategorized"
+          },
+          "message": {
+            "_type": {
+              "_name": "String"
+            },
+            "_value": "Thread running at User-initiated quality-of-service class waiting on a lower QoS thread running at Utility quality-of-service class. Investigate ways to avoid priority inversions"
+          },
+          "testCaseName": {
+            "_type": {
+              "_name": "String"
+            },
+            "_value": "DraftNavigationTests.testSwitchingModesAndReturningKeepsTextFieldKindAndDismissal()"
+          }
+        },
+        {
+          "_type": {
+            "_name": "TestIssueSummary",
+            "_supertype": {
+              "_name": "IssueSummary"
+            }
+          },
+          "documentLocationInCreatingWorkspace": {
+            "_type": {
+              "_name": "DocumentLocation"
+            },
+            "concreteTypeName": {
+              "_type": {
+                "_name": "String"
+              },
+              "_value": "DVTTextDocumentLocation"
+            },
+            "url": {
+              "_type": {
+                "_name": "String"
+              },
+              "_value": "file:///Users/isaacthoman/.t3/worktrees/pulpo/t3-a3218df3/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Shared/LearnedDataPersistence.swift#EndingLineNumber=679&StartingLineNumber=679"
+            }
+          },
+          "issueType": {
+            "_type": {
+              "_name": "String"
+            },
+            "_value": "Uncategorized"
+          },
+          "message": {
+            "_type": {
+              "_name": "String"
+            },
+            "_value": "Thread running at User-initiated quality-of-service class waiting on a lower QoS thread running at Utility quality-of-service class. Investigate ways to avoid priority inversions"
+          },
+          "testCaseName": {
+            "_type": {
+              "_name": "String"
+            },
+            "_value": "LearningForgetControllerTests.testRealCanonicalSQLiteBusyShowsNoticeAndExplicitRetryConfirmsRemoval()"
+          }
+        },
+        {
+          "_type": {
+            "_name": "TestIssueSummary",
+            "_supertype": {
+              "_name": "IssueSummary"
+            }
+          },
+          "documentLocationInCreatingWorkspace": {
+            "_type": {
+              "_name": "DocumentLocation"
+            },
+            "concreteTypeName": {
+              "_type": {
+                "_name": "String"
+              },
+              "_value": "DVTTextDocumentLocation"
+            },
+            "url": {
+              "_type": {
+                "_name": "String"
+              },
+              "_value": ""
+            }
+          },
+          "issueType": {
+            "_type": {
+              "_name": "String"
+            },
+            "_value": "Uncategorized"
+          },
+          "message": {
+            "_type": {
+              "_name": "String"
+            },
+            "_value": "Thread running at User-initiated quality-of-service class waiting on a lower QoS thread running at Utility quality-of-service class. Investigate ways to avoid priority inversions"
+          },
+          "testCaseName": {
+            "_type": {
+              "_name": "String"
+            },
+            "_value": "LearningForgetResultUITests.testRealPreviewForgetNoticeIsReadableDismissibleAndRetryable()"
+          }
+        }
+      ]
+    },
+    "warningSummaries": {
+      "_type": {
+        "_name": "Array"
+      }
+    }
+  },
+  "metadataRef": {
+    "_type": {
+      "_name": "Reference"
+    },
+    "id": {
+      "_type": {
+        "_name": "String"
+      },
+      "_value": "0~NrRqkJ3rYPY76epZs0k6KnZGbfBIqg2RPFq-bamD_UzeSGkHx08o6XpLDZC4Ocm-0HVJwHLLajesuUvs-Ge4sw=="
+    },
+    "targetType": {
+      "_type": {
+        "_name": "TypeDefinition"
+      },
+      "name": {
+        "_type": {
+          "_name": "String"
+        },
+        "_value": "ActionsInvocationMetadata"
+      }
+    }
+  },
+  "metrics": {
+    "_type": {
+      "_name": "ResultMetrics"
+    },
+    "analyzerWarningCount": {
+      "_type": {
+        "_name": "Int"
+      },
+      "_value": "0"
+    },
+    "errorCount": {
+      "_type": {
+        "_name": "Int"
+      },
+      "_value": "0"
+    },
+    "testsCount": {
+      "_type": {
+        "_name": "Int"
+      },
+      "_value": "25"
+    },
+    "testsFailedCount": {
+      "_type": {
+        "_name": "Int"
+      },
+      "_value": "0"
+    },
+    "testsSkippedCount": {
+      "_type": {
+        "_name": "Int"
+      },
+      "_value": "0"
+    },
+    "warningCount": {
+      "_type": {
+        "_name": "Int"
+      },
+      "_value": "0"
+    }
+  }
+}

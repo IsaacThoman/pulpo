@@ -1,0 +1,71 @@
+{
+  "devices": [
+    {
+      "architecture": "arm64",
+      "deviceId": "0FD9B95B-D450-4276-A110-ECA608AB48E7",
+      "deviceName": "Pulpo-R48-Reset-Integration",
+      "modelName": "iPhone 16",
+      "osBuildNumber": "24A434",
+      "osVersion": "27.0",
+      "platform": "iOS Simulator"
+    }
+  ],
+  "duration": "Ran for 0.23 seconds",
+  "durationInSeconds": 0.2309199571609497,
+  "hasMediaAttachments": false,
+  "hasPerformanceMetrics": false,
+  "startTime": 1792147963.501,
+  "testDescription": "Test case with 1 run",
+  "testIdentifier": "LearningForgetControllerTests/testRealCanonicalSQLiteBusyShowsNoticeAndExplicitRetryConfirmsRemoval()",
+  "testIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/LearningForgetControllerTests/testRealCanonicalSQLiteBusyShowsNoticeAndExplicitRetryConfirmsRemoval",
+  "testName": "testRealCanonicalSQLiteBusyShowsNoticeAndExplicitRetryConfirmsRemoval()",
+  "testPlanConfigurations": [
+    {
+      "configurationId": "1",
+      "configurationName": "Test Scheme Action"
+    }
+  ],
+  "testResult": "Passed",
+  "testRuns": [
+    {
+      "children": [
+        {
+          "children": [
+            {
+              "children": [
+                {
+                  "name": "",
+                  "nodeType": "Source Code Reference",
+                  "sourceLocation": {
+                    "filePath": "/Users/isaacthoman/.t3/worktrees/pulpo/t3-a3218df3/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Shared/LearnedDataPersistence.swift",
+                    "lineNumber": 680
+                  }
+                }
+              ],
+              "name": "Thread running at User-initiated quality-of-service class waiting on a lower QoS thread running at Utility quality-of-service class. Investigate ways to avoid priority inversions",
+              "nodeType": "Runtime Warning",
+              "sourceLocation": {
+                "filePath": "/Users/isaacthoman/.t3/worktrees/pulpo/t3-a3218df3/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Shared/LearnedDataPersistence.swift",
+                "lineNumber": 680
+              }
+            }
+          ],
+          "duration": "0.23s",
+          "durationInSeconds": 0.2309199571609497,
+          "name": "Test Scheme Action",
+          "nodeIdentifier": "1",
+          "nodeIdentifierURL": "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardUITests/LearningForgetControllerTests/testRealCanonicalSQLiteBusyShowsNoticeAndExplicitRetryConfirmsRemoval",
+          "nodeType": "Test Plan Configuration",
+          "result": "Passed"
+        }
+      ],
+      "details": "iOS Simulator 27.0",
+      "duration": "0.23s",
+      "durationInSeconds": 0.2309199571609497,
+      "name": "iPhone 16",
+      "nodeIdentifier": "0FD9B95B-D450-4276-A110-ECA608AB48E7",
+      "nodeType": "Device",
+      "result": "Passed"
+    }
+  ]
+}
