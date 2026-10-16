@@ -1,0 +1,24 @@
+{
+  "format": "pulpo-r49-filesystem-attestation-v1",
+  "readSet": [
+    {
+      "path": "/tmp/pulpo-r48-fresh-author-v2/Runner.swift",
+      "sha256": "2718e44462cf19625484ef2b82b40771475ef5c546c2cf034523fc7de6730255",
+      "kind": "own unchanged frozen runner source"
+    }
+  ],
+  "failedReadAttempt": "/tmp/pulpo-r48-fresh-author-v2/author-review-v2/Runner.swift did not exist; no content read",
+  "otherReads": "Own newly generated R49 source, diagnostics and artifacts; compiler/runtime metadata; metadata/content of fresh probe-owned fixtures only. Parent-provided task context was not artifact inspection.",
+  "retainedR48StoresRead": false,
+  "repositoryReads": false,
+  "repositoryMutations": false,
+  "productSourceRead": false,
+  "productBinaryReadOrExecuted": false,
+  "KeyboardCoreOrModelAPICalls": 0,
+  "productBuilds": 0,
+  "R49ProductExecutions": 0,
+  "productResultCredit": false,
+  "newBenchmarkAuthoring": false,
+  "preservesR48Artifacts": true,
+  "independentReview": "required and pending"
+}

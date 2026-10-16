@@ -1,0 +1,10 @@
+{
+  "compilerStdout": "Apple Swift version 6.4 (swiftlang-6.4.0.34.1 clang-2100.3.34.1)\nTarget: arm64-apple-macosx27.0.0\n",
+  "compilerStderr": "swift-driver version: 1.168.6 ",
+  "architecture": "arm64",
+  "runtime": "Version 27.0.1 (Build 26A434)",
+  "productBuilds": 0,
+  "productExecutions": 0,
+  "FoundationProbeExecutions": 3,
+  "scope": "R49 filesystem mechanics only; no statement denying the parent-reported earlier R48 execution"
+}
