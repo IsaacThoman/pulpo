@@ -1,0 +1,13 @@
+{
+  "roundTrips": 13,
+  "nilSaves": 1,
+  "memoryInstances": 15,
+  "normalizationAssertions": 5,
+  "settledSeedSaves": 9,
+  "acceptedLongSparsePersistent": 2,
+  "expandedSampleCountExceedsSourceTapCount": 5,
+  "oversizeInvalidAssertions": 3,
+  "lengthCapMutantDistinguished": 2,
+  "anyNonfiniteTapMutantDistinguished": 4,
+  "persistentInstances": 19
+}

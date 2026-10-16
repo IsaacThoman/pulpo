@@ -1,0 +1,38 @@
+{
+  "authorRole": "NEW independent SOURCE-BLIND AUTHOR; pre-execution local/persistent boundary validation",
+  "version": "pulpo-r45-new-boundaries-v1",
+  "existingContextReadSet": [
+    {
+      "path": "/Users/isaacthoman/.t3/worktrees/pulpo/t3-a6c40353/apps/keyboard-ios/audits/reset-touch-compatibility-r45/public-api.md",
+      "sha256": "188a0221590ff03b10de42b371949bbb2c0ba32def167da1690a5e9bdfcbbd41"
+    }
+  ],
+  "onlyExistingContextFileRead": true,
+  "authorGeneratedArtifactsMayBeReadForStaticReview": true,
+  "productSourceResourcesTestsDevOutputsDiffHistoryOtherAuditsOldWitnessesOldBlindPayloadRead": false,
+  "subagentsUsed": false,
+  "productExecutionBuildDevicesNetworkPush": false,
+  "fakeProductExecutedOrCreated": false,
+  "staticChecksOnly": [
+    "Swift frontend syntax parsing (no typecheck, no link)",
+    "fixture structure and denominator arithmetic"
+  ],
+  "uniqueIndependentFamilies": 24,
+  "modeInstances": 34,
+  "fixedPlannedChecks": 652,
+  "fixedBusyRetryCount": 0,
+  "oraclesFixedBeforeAnyProductExecution": true,
+  "officialValidatorFreezeClaimed": false,
+  "postRevealRetuningAuthorized": false,
+  "postPairedRunNewDomainFailurePolicy": "Reject the round or open a separately identified author/validator round; do not silently retune this payload.",
+  "knownValidationLimit": "Syntax parse only; public-module typecheck and all behavioral checks remain unexecuted.",
+  "authoredFileSHA256": {
+    "denominators.json": "8f86dbf664f9a2a4f3f5c5d2260eff88b003a625096c34dfbc3c2facddeda289",
+    "fixtures.json": "1d48e1bf2f65d45113b917106dfc10a48a32cc3e068be23535a7ada6694d5fe4",
+    "read-set.json": "dbc191ee4c866f4dfa3174e41a015edfd59151298cdff53ea33d3ba90a0f6946",
+    "runner.swift": "8a2dd587cfe9f1a04306e216581cce3eb378fbc340e171aacb127f6635bf0243",
+    "schema-and-rationale.md": "b2c22295ed8b46feda28ad2ac29049e08cde5b231be0ed94ad24bfa46d31ec8c",
+    "static-checks.json": "75db59042ff390ad89716e490dd7209fbae029e492b9853614c41c49d54cc1d6",
+    "swift-parse-output.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+}

@@ -1,0 +1,7 @@
+# Parent integration boundary
+
+Source correction c2442112 plus test-only79398ca5 is ready after source/ordinary admission, and parent was notified early through T3. It depends on the exact ten ordered R33 dependency commits; imported mapping is in dependency-provenance.json. Root had not imported R33 when this round began. Current worktree inherits parent5e17ab9c; do not replace parent account code with older AppModel. The complete AppModel diff from5e17 is only combined-clear glue; all account/deep-link bytes outside that section match exactly.
+
+No R41 Settings/Controller owner overlay (c156) is included or edited. R41 reported latest source dependency9059b94a (exact4fa9..a9e), previous normal13pass, AX5previous10/13 with fixture-navigation/static-geometry failures, and actual finala9e normal+AX5 runs ongoing at handoff. These are parent reports, not executions/admissions by R45. Parent/R41 must stage derived correction after their active run and perform current merged-byte UI/native validation separately. Do not call extension-local inaccessible fallback erased by group clear.
+
+No device assigned or used; no native build, physical deploy, suspension/fileprotection, or iOS performance proof in R45. Original generic simulator native build and macOS outlier454.816ms remain historicala9e evidence; paired controls do not erase the outlier. Protected main repo/device/perf-audit paths untouched. No push/merge/deploy. New independent boundary sweep pending; no overall PR782 release/accuracy admission.

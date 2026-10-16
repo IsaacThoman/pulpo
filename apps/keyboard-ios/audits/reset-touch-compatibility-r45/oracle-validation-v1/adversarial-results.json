@@ -1,0 +1,1400 @@
+{
+  "method": "STATIC/SYNTHETIC independent predicates; not executed Swift or behavioral evidence",
+  "checks": 348,
+  "passed": 348,
+  "failed": 0,
+  "tests": [
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "tapless_control",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "tapless_control",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "tapless_control",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "tapless_control",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "tapless_control",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "wrong_normalization",
+      "pass": true
+    },
+    {
+      "kind": "tapless_control",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "wrong_normalization",
+      "pass": true
+    },
+    {
+      "kind": "tapless_control",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "wrong_normalization",
+      "pass": true
+    },
+    {
+      "kind": "tapless_control",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "tapless_control",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "tapless_control",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "tapless_control",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "tapless_control",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "tapless_control",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "tapless_control",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "tapless_control",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "tapless_control",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "tapless_control",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "tapless_control",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "tapless_control",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "tapless_control",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "tapless_control",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "tapless_control",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "tapless_control",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "tapless_control",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "tapless_control",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "tapless_control",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "tapless_control",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "tapless_control",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "tapless_control",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "tapless_control",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "tapless_control",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "busy_as_expected_oversize",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "tapless_control",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "busy_as_expected_oversize",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "wrong_normalization",
+      "pass": true
+    },
+    {
+      "kind": "tapless_control",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "tapless_control",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "wrong_normalization",
+      "pass": true
+    },
+    {
+      "kind": "busy_as_expected_oversize",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "tapless_control",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "tapless_control",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "tapless_control",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "tapless_control",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "tapless_control",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "tapless_control",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "tapless_control",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "tapless_control",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "tapless_control",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "tapless_control",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "tapless_control",
+      "pass": true
+    },
+    {
+      "kind": "valid_fixed_expectation",
+      "pass": true
+    },
+    {
+      "kind": "inverted_acceptance",
+      "pass": true
+    },
+    {
+      "kind": "off_by_one_sample",
+      "pass": true
+    },
+    {
+      "kind": "reversed_weight_relation",
+      "pass": true
+    },
+    {
+      "kind": "tapless_control",
+      "pass": true
+    },
+    {
+      "kind": "signed_zero_change_rejected",
+      "pass": true
+    },
+    {
+      "kind": "one_ulp_change_rejected",
+      "pass": true
+    },
+    {
+      "kind": "nonfinite_equivalence_rejected",
+      "pass": true
+    },
+    {
+      "kind": "nonfinite_weight_increase_rejected",
+      "pass": true
+    },
+    {
+      "kind": "nonfinite_equivalence_rejected",
+      "pass": true
+    },
+    {
+      "kind": "nonfinite_weight_increase_rejected",
+      "pass": true
+    },
+    {
+      "kind": "nonfinite_equivalence_rejected",
+      "pass": true
+    },
+    {
+      "kind": "nonfinite_weight_increase_rejected",
+      "pass": true
+    },
+    {
+      "kind": "beyond_tolerance_rejected",
+      "pass": true
+    },
+    {
+      "kind": "within_tolerance_allowed",
+      "pass": true
+    },
+    {
+      "kind": "filesystem_kind_mutation_rejected",
+      "pass": true
+    },
+    {
+      "kind": "filesystem_inode_mutation_rejected",
+      "pass": true
+    },
+    {
+      "kind": "filesystem_device_mutation_rejected",
+      "pass": true
+    },
+    {
+      "kind": "filesystem_mtimeSeconds_mutation_rejected",
+      "pass": true
+    },
+    {
+      "kind": "filesystem_mtimeNanoseconds_mutation_rejected",
+      "pass": true
+    },
+    {
+      "kind": "filesystem_bytesBase64_mutation_rejected",
+      "pass": true
+    },
+    {
+      "kind": "filesystem_symlink_mutation_rejected",
+      "pass": true
+    },
+    {
+      "kind": "filesystem_membership_mutation_rejected",
+      "pass": true
+    },
+    {
+      "kind": "fail_prevents_pass",
+      "pass": true
+    },
+    {
+      "kind": "error_prevents_pass",
+      "pass": true
+    },
+    {
+      "kind": "unavailable_prevents_pass",
+      "pass": true
+    },
+    {
+      "kind": "publication_error_prevents_pass",
+      "pass": true
+    }
+  ]
+}
