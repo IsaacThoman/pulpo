@@ -28,3 +28,16 @@ Acceptance: existing meaningful regression suites pass; all supported preservati
 ## Results
 
 Pending implementation and measurement. Frozen protocol above must remain unchanged; append results below.
+
+### Development observations before implementation
+
+Freeze commit: `1a31f4f4`. Corpus SHA-256: development `8772fa3bf98fa46e5ddc7305dc6b71bdf04c6bc5115fe89308be3d550b95a64c`; held-out `3b9f8ba977496674aac531ac9fe6de4555dd1cec4fb2881c4db781b170c43383`.
+
+Development baseline: correction 39/40 top-1 and 40/40 top-3; swipe 20/30 top-1 and top-3 (ideal/jitter 10/10 each; sparse 0/10); prediction 3/4 top-1/top-3; preservation 20/20; editing 4/4. No recall/ranking changes are justified by this evidence. Sparse paths remove intended letter targets, rather than merely reducing sampling along the same trajectory; this limitation was discovered after freezing and is retained, not silently repaired. The transposition of equal letters in `tomorrow` also produces an unchanged control, not a typo. These defects reduce benchmark realism and must be accounted for when interpreting results.
+
+Exploratory code investigation then produced two separate editing failure classes, captured in `AccuracyEditingTests` before engine changes:
+
+1. Dictation chooses first-word capitalization using cached cursor context before `insertText` reconciles pending host changes. Three transcripts × send/clear, host paste and new-sentence replacement fail all nine output checks; a pending cursor move fails one more. This can lowercase a new sentence or uppercase a mid-sentence insertion.
+2. `select` clears space-slip and deleted-swipe evidence before validating the suggestion's generation. An obsolete ordinary or emoji choice is textually ignored, but alters subsequent correction. Two slip scenarios and one obsolete emoji scenario fail; one also loses its correct undo state. The development regression run records 14 failed assertions across four test functions (seven parameterized invocations), including the ten dictation outputs and three continuation outputs. These exploratory regressions are **not** part of the original blind benchmark and cannot be used to claim its acceptance threshold was met.
+
+Candidate scope is restricted to reconciling before dictation casing and deferring suggestion-side state changes until validity checks pass. Keep dictionary, corrector, prediction and swipe scoring unchanged. Run the original held-out corpus only after freezing this candidate; retain the frozen acceptance rules even if these fixes leave original benchmark scores unchanged.
