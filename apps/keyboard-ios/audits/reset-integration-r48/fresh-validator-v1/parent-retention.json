@@ -1,0 +1,10 @@
+{
+  "verdict": "REJECT_PREEXECUTION_CORRECTION_REQUIRED",
+  "boundArtifacts": 1403,
+  "allHashesVerified": true,
+  "archiveSHA256": "edb23501f3dd2b4adda34528969d079e6ae5d8f044716a5c3ea10b41f4c091a8",
+  "archiveBytes": 4641793,
+  "productExecutions": 0,
+  "parentPayloadOpened": false,
+  "summary": "Three benchmark corrections: explicit learning policy; unavailable rejection-success accounting; unavailable unexpected-status accounting. 664 mechanical probes each normal/optimized, exact1961rows, no product/mockbehavior credit."
+}
