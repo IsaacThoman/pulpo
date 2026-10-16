@@ -1,0 +1,201 @@
+{
+  "exit": 0,
+  "gateExit": 0,
+  "testsRequested": [
+    "PulpoKeyboardUITests/LearningResetResultUITests",
+    "PulpoKeyboardUITests/SuggestionForgetFeedbackTests",
+    "PulpoKeyboardUITests/LearningForgetControllerTests",
+    "PulpoKeyboardUITests/LearningForgetResultUITests",
+    "PulpoKeyboardUITests/LearningClearScopeUITests",
+    "PulpoKeyboardAppTests/AccountLifecycleR35Tests",
+    "PulpoKeyboardAppTests/NativeContentTypePrivacyR38Tests",
+    "PulpoKeyboardAppTests/NativeContentTypeCalibrationR38Tests",
+    "PulpoKeyboardAppTests/CompanionWorkflowR24Tests",
+    "PulpoKeyboardUITests/NumericKeyboardControllerTests",
+    "PulpoKeyboardUITests/SettingsUsabilitySweepTests",
+    "PulpoKeyboardUITests/DraftNavigationTests"
+  ],
+  "summary": {
+    "devicesAndConfigurations": [
+      {
+        "device": {
+          "architecture": "arm64",
+          "deviceId": "0FD9B95B-D450-4276-A110-ECA608AB48E7",
+          "deviceName": "Pulpo-R48-Reset-Integration",
+          "modelName": "iPhone 16",
+          "osBuildNumber": "24A434",
+          "osVersion": "27.0",
+          "platform": "iOS Simulator"
+        },
+        "expectedFailures": 0,
+        "failedTests": 0,
+        "passedTests": 25,
+        "skippedTests": 0,
+        "testPlanConfiguration": {
+          "configurationId": "1",
+          "configurationName": "Test Scheme Action"
+        }
+      }
+    ],
+    "environmentDescription": "PulpoKeyboard \u00b7 Built with macOS 27.0.1",
+    "expectedFailures": 0,
+    "failedTests": 0,
+    "finishTime": 1792148143.625,
+    "passedTests": 25,
+    "result": "Passed",
+    "runtimeWarnings": [
+      {
+        "issueType": "Runtime Warning",
+        "message": "Thread running at User-initiated quality-of-service class waiting on a lower QoS thread running at Utility quality-of-service class. Investigate ways to avoid priority inversions"
+      },
+      {
+        "issueType": "Runtime Warning",
+        "message": "Thread running at User-initiated quality-of-service class waiting on a lower QoS thread running at Utility quality-of-service class. Investigate ways to avoid priority inversions"
+      },
+      {
+        "issueType": "Runtime Warning",
+        "message": "Thread running at User-initiated quality-of-service class waiting on a lower QoS thread running at Utility quality-of-service class. Investigate ways to avoid priority inversions"
+      },
+      {
+        "issueType": "Runtime Warning",
+        "message": "Thread running at User-initiated quality-of-service class waiting on a lower QoS thread running at Utility quality-of-service class. Investigate ways to avoid priority inversions"
+      },
+      {
+        "issueType": "Runtime Warning",
+        "message": "Thread running at User-initiated quality-of-service class waiting on a lower QoS thread running at Utility quality-of-service class. Investigate ways to avoid priority inversions",
+        "sourceURL": "file:///Users/isaacthoman/.t3/worktrees/pulpo/t3-a3218df3/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Shared/LearnedDataPersistence.swift"
+      }
+    ],
+    "skippedTests": 0,
+    "startTime": 1792147874.149,
+    "statistics": [],
+    "testFailures": [],
+    "title": "Test - PulpoKeyboard",
+    "topInsights": [
+      {
+        "category": "Longest Test Runs",
+        "impact": "87% of duration",
+        "text": "1 longest test run with outlier durations exceeding 3.02s (three standard deviations)"
+      }
+    ],
+    "totalTestCount": 25
+  },
+  "complete": {
+    "completed": [
+      "busy-off",
+      "busy-on",
+      "forget-busy",
+      "io-on"
+    ],
+    "nonce": "af017f35-1aef-40b9-910e-11ea36b29e54"
+  },
+  "markers": {
+    "forget-busy.request.json": {
+      "caseKey": "forget-busy",
+      "nonce": "af017f35-1aef-40b9-910e-11ea36b29e54"
+    },
+    "io-on.released.json": {
+      "active": false,
+      "caseKey": "io-on",
+      "error": null,
+      "nonce": "af017f35-1aef-40b9-910e-11ea36b29e54"
+    },
+    "session.json": {
+      "cases": [
+        "busy-on",
+        "busy-off",
+        "io-on",
+        "forget-busy"
+      ],
+      "deviceUDID": "0FD9B95B-D450-4276-A110-ECA608AB48E7",
+      "fixtureReceiptSHA256": "e34f0a956ef722f72ad3d68c8850e1bd55128ebd9911e22f0dc7ddc8b8b1f4d1",
+      "group": "/Users/isaacthoman/Library/Developer/CoreSimulator/Devices/0FD9B95B-D450-4276-A110-ECA608AB48E7/data/Containers/Shared/AppGroup/4E20A166-EDDA-42F7-94C1-B9929D7CFB1F",
+      "lock": "/Users/isaacthoman/Library/Developer/CoreSimulator/Devices/0FD9B95B-D450-4276-A110-ECA608AB48E7/data/Containers/Shared/AppGroup/4E20A166-EDDA-42F7-94C1-B9929D7CFB1F/PersonalDictionary.json.learning-v2.sqlite.lock",
+      "metadataIdentifier": "group.com.isaacthoman.pulpo.keyboard",
+      "nonce": "af017f35-1aef-40b9-910e-11ea36b29e54"
+    },
+    "io-on.release.json": {
+      "nonce": "af017f35-1aef-40b9-910e-11ea36b29e54"
+    },
+    "busy-on.released.json": {
+      "active": false,
+      "caseKey": "busy-on",
+      "error": null,
+      "nonce": "af017f35-1aef-40b9-910e-11ea36b29e54"
+    },
+    "busy-on.request.json": {
+      "caseKey": "busy-on",
+      "nonce": "af017f35-1aef-40b9-910e-11ea36b29e54"
+    },
+    "busy-on.active.json": {
+      "active": true,
+      "caseKey": "busy-on",
+      "fault": "held-flock",
+      "lockDevice": 16777232,
+      "lockInode": 4402113,
+      "nonce": "af017f35-1aef-40b9-910e-11ea36b29e54"
+    },
+    "busy-off.request.json": {
+      "caseKey": "busy-off",
+      "nonce": "af017f35-1aef-40b9-910e-11ea36b29e54"
+    },
+    "forget-busy.release.json": {
+      "nonce": "af017f35-1aef-40b9-910e-11ea36b29e54"
+    },
+    "complete.json": {
+      "completed": [
+        "busy-off",
+        "busy-on",
+        "forget-busy",
+        "io-on"
+      ],
+      "nonce": "af017f35-1aef-40b9-910e-11ea36b29e54"
+    },
+    "forget-busy.released.json": {
+      "active": false,
+      "caseKey": "forget-busy",
+      "error": null,
+      "nonce": "af017f35-1aef-40b9-910e-11ea36b29e54"
+    },
+    "io-on.request.json": {
+      "caseKey": "io-on",
+      "nonce": "af017f35-1aef-40b9-910e-11ea36b29e54"
+    },
+    "busy-off.released.json": {
+      "active": false,
+      "caseKey": "busy-off",
+      "error": null,
+      "nonce": "af017f35-1aef-40b9-910e-11ea36b29e54"
+    },
+    "busy-on.release.json": {
+      "nonce": "af017f35-1aef-40b9-910e-11ea36b29e54"
+    },
+    "io-on.active.json": {
+      "active": true,
+      "caseKey": "io-on",
+      "fault": "directory-at-lock-path",
+      "lockDevice": 16777232,
+      "lockInode": 4402113,
+      "nonce": "af017f35-1aef-40b9-910e-11ea36b29e54"
+    },
+    "forget-busy.active.json": {
+      "active": true,
+      "caseKey": "forget-busy",
+      "fault": "held-flock",
+      "lockDevice": 16777232,
+      "lockInode": 4402113,
+      "nonce": "af017f35-1aef-40b9-910e-11ea36b29e54"
+    },
+    "busy-off.release.json": {
+      "nonce": "af017f35-1aef-40b9-910e-11ea36b29e54"
+    },
+    "busy-off.active.json": {
+      "active": true,
+      "caseKey": "busy-off",
+      "fault": "held-flock",
+      "lockDevice": 16777232,
+      "lockInode": 4402113,
+      "nonce": "af017f35-1aef-40b9-910e-11ea36b29e54"
+    }
+  }
+}

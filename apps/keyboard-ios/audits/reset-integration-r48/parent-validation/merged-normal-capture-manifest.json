@@ -1,0 +1,98 @@
+[
+  {
+    "sourceName": "busy-off-actual-result.png",
+    "sourceSHA256": "8ae596fbb4a4524b97ae081f2291473308895f33f00c2e4358d7d94535e430cb",
+    "retained": "merged-normal-captures/busy-off-actual-result.png",
+    "retainedSHA256": "8ae596fbb4a4524b97ae081f2291473308895f33f00c2e4358d7d94535e430cb"
+  },
+  {
+    "sourceName": "busy-off-actual-result.txt",
+    "sourceSHA256": "0092248f8d2d00fe3934986fbbbd4c97d93693958b1912f89b9a2021e0edd477",
+    "retained": "merged-normal-captures/busy-off-actual-result.txt.gz",
+    "retainedSHA256": "3d2d7b8d94cf64fe8f10cf32361f460ec93735e52b522316d79bb6067cb47557"
+  },
+  {
+    "sourceName": "busy-off-failure.png",
+    "sourceSHA256": "8ae596fbb4a4524b97ae081f2291473308895f33f00c2e4358d7d94535e430cb",
+    "retained": "merged-normal-captures/busy-off-failure.png",
+    "retainedSHA256": "8ae596fbb4a4524b97ae081f2291473308895f33f00c2e4358d7d94535e430cb"
+  },
+  {
+    "sourceName": "busy-off-failure.txt",
+    "sourceSHA256": "3b992ec65a8b964ba14fa1f1123ae6dbdbe8892a9d12698458b9351facf47ea1",
+    "retained": "merged-normal-captures/busy-off-failure.txt.gz",
+    "retainedSHA256": "033317de4264be29f27d232a508e4e086e3c358c1c9f6fbc56ddfec06124ef26"
+  },
+  {
+    "sourceName": "busy-off-success.png",
+    "sourceSHA256": "fb193f65d0df63d56852eda0e62f903d26b32bbf7e0fba559fad35e11fcc3131",
+    "retained": "merged-normal-captures/busy-off-success.png",
+    "retainedSHA256": "fb193f65d0df63d56852eda0e62f903d26b32bbf7e0fba559fad35e11fcc3131"
+  },
+  {
+    "sourceName": "busy-off-success.txt",
+    "sourceSHA256": "f657f9e056f86ba9896e4764dbc39e7422462046bba188b0e47692b227c17e11",
+    "retained": "merged-normal-captures/busy-off-success.txt.gz",
+    "retainedSHA256": "7f9e8b7eee74227eb6c1257271d5e1cb2293ee6c595736dbd927441b70b2f3d7"
+  },
+  {
+    "sourceName": "busy-on-actual-result.png",
+    "sourceSHA256": "8ae596fbb4a4524b97ae081f2291473308895f33f00c2e4358d7d94535e430cb",
+    "retained": "merged-normal-captures/busy-on-actual-result.png",
+    "retainedSHA256": "8ae596fbb4a4524b97ae081f2291473308895f33f00c2e4358d7d94535e430cb"
+  },
+  {
+    "sourceName": "busy-on-actual-result.txt",
+    "sourceSHA256": "9593f0a6ba0cdd89a196ba08ccbeb14e6d58e831c4a45d3b1cddf4a65b8a33cb",
+    "retained": "merged-normal-captures/busy-on-actual-result.txt.gz",
+    "retainedSHA256": "a997b1798574ec8c5766a7fa5e224c21049e7f4ac66d9d9ddeedadb408ce2722"
+  },
+  {
+    "sourceName": "busy-on-failure.png",
+    "sourceSHA256": "8ae596fbb4a4524b97ae081f2291473308895f33f00c2e4358d7d94535e430cb",
+    "retained": "merged-normal-captures/busy-on-failure.png",
+    "retainedSHA256": "8ae596fbb4a4524b97ae081f2291473308895f33f00c2e4358d7d94535e430cb"
+  },
+  {
+    "sourceName": "busy-on-failure.txt",
+    "sourceSHA256": "5075631e220300320ff27643b2b9c24c13ca45202909e6d7a508a59baeee2a20",
+    "retained": "merged-normal-captures/busy-on-failure.txt.gz",
+    "retainedSHA256": "63f18ee35a2e0110c633f2d32e4d8a396349bab6d04865d2d95aca5d27cd2cb0"
+  },
+  {
+    "sourceName": "forget-busy-ax.txt",
+    "sourceSHA256": "62d400a76faca17a40fda9fdf416212e62126c27d681c9250be036195901c599",
+    "retained": "merged-normal-captures/forget-busy-ax.txt.gz",
+    "retainedSHA256": "dde2454a52a3de555036675949a1fd5d2fba4bc7ac98c8073a18050c1b5172a5"
+  },
+  {
+    "sourceName": "forget-busy.png",
+    "sourceSHA256": "d77c8b42c1694978194fbf43dfb50ce3dbc27e4152248fed2cfa6163f0369c60",
+    "retained": "merged-normal-captures/forget-busy.png",
+    "retainedSHA256": "d77c8b42c1694978194fbf43dfb50ce3dbc27e4152248fed2cfa6163f0369c60"
+  },
+  {
+    "sourceName": "io-on-actual-result.png",
+    "sourceSHA256": "3b51634a6299b7606a164a3399bfc1fbba94e44c99d9d676025edd9539c7b5ae",
+    "retained": "merged-normal-captures/io-on-actual-result.png",
+    "retainedSHA256": "3b51634a6299b7606a164a3399bfc1fbba94e44c99d9d676025edd9539c7b5ae"
+  },
+  {
+    "sourceName": "io-on-actual-result.txt",
+    "sourceSHA256": "5120fa790cac33ec29add4623024f344c01f2fd1d9d537963c0ec091d35f8ee7",
+    "retained": "merged-normal-captures/io-on-actual-result.txt.gz",
+    "retainedSHA256": "8192cc97c2d03dd856918ee3c78d6873662c63702f657bcc8790bfc223446495"
+  },
+  {
+    "sourceName": "io-on-failure.png",
+    "sourceSHA256": "3b51634a6299b7606a164a3399bfc1fbba94e44c99d9d676025edd9539c7b5ae",
+    "retained": "merged-normal-captures/io-on-failure.png",
+    "retainedSHA256": "3b51634a6299b7606a164a3399bfc1fbba94e44c99d9d676025edd9539c7b5ae"
+  },
+  {
+    "sourceName": "io-on-failure.txt",
+    "sourceSHA256": "de329238bd481a577fa111c25924377f3abe3739d881350c6f0c4848348796fa",
+    "retained": "merged-normal-captures/io-on-failure.txt.gz",
+    "retainedSHA256": "f90b3f02300bd6d5c55c649daf6cd128da4aba0566bdd5be8a390fcc3eb3f980"
+  }
+]

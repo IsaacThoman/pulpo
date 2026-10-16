@@ -1,0 +1,28 @@
+{
+  "sameDebugSourceAndBinaries": true,
+  "sourceFiles": 117,
+  "binaryFiles": 3,
+  "runs": {
+    "merged-normal": {
+      "gateComplete": true,
+      "runtimeWarnings": 5,
+      "pass": 21,
+      "fail": 4,
+      "skip": 0
+    },
+    "merged-debug-normal": {
+      "gateComplete": true,
+      "runtimeWarnings": 5,
+      "pass": 25,
+      "fail": 0,
+      "skip": 0
+    },
+    "merged-debug-ax5": {
+      "gateComplete": true,
+      "runtimeWarnings": 2,
+      "pass": 8,
+      "fail": 0,
+      "skip": 0
+    }
+  }
+}

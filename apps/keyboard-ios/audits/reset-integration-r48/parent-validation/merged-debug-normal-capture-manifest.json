@@ -1,0 +1,122 @@
+[
+  {
+    "sourceName": "busy-off-actual-result.png",
+    "sourceSHA256": "6f99c904f0ded408c22580c214afd17d4dec154a10261a20a3733dd1e15388f1",
+    "retained": "merged-debug-normal-captures/busy-off-actual-result.png",
+    "retainedSHA256": "6f99c904f0ded408c22580c214afd17d4dec154a10261a20a3733dd1e15388f1"
+  },
+  {
+    "sourceName": "busy-off-actual-result.txt",
+    "sourceSHA256": "73d08b94e7a27509897ba533172ba5da952c42716dc07f5ec36079651fd89c0e",
+    "retained": "merged-debug-normal-captures/busy-off-actual-result.txt.gz",
+    "retainedSHA256": "1e7727b016a6063f75b987ce19c29b5ee3d8ae009ed0675ce262cf09cf52d7f4"
+  },
+  {
+    "sourceName": "busy-off-failure.png",
+    "sourceSHA256": "6f99c904f0ded408c22580c214afd17d4dec154a10261a20a3733dd1e15388f1",
+    "retained": "merged-debug-normal-captures/busy-off-failure.png",
+    "retainedSHA256": "6f99c904f0ded408c22580c214afd17d4dec154a10261a20a3733dd1e15388f1"
+  },
+  {
+    "sourceName": "busy-off-failure.txt",
+    "sourceSHA256": "62a620d43e7a025ae7dfccc53813c8c0975c9336fc572479a44807cf6396e076",
+    "retained": "merged-debug-normal-captures/busy-off-failure.txt.gz",
+    "retainedSHA256": "b96b8c930bb59ca2cbad3cb05252d5bc81ebe9e14df30fb74331c03ade2f003e"
+  },
+  {
+    "sourceName": "busy-off-success.png",
+    "sourceSHA256": "951bf118fa389dc8570cba706ac5772662318e2a79d0f1cc4feb87aa10f62d69",
+    "retained": "merged-debug-normal-captures/busy-off-success.png",
+    "retainedSHA256": "951bf118fa389dc8570cba706ac5772662318e2a79d0f1cc4feb87aa10f62d69"
+  },
+  {
+    "sourceName": "busy-off-success.txt",
+    "sourceSHA256": "0f1fd8490d5358e749fbea781abbaa18a3a1a9395c6aeba8387642d7edae5e53",
+    "retained": "merged-debug-normal-captures/busy-off-success.txt.gz",
+    "retainedSHA256": "1f690969b689b0cc009ec8fbb5eb670d0455eb645212d09939854fcac492f778"
+  },
+  {
+    "sourceName": "busy-on-actual-result.png",
+    "sourceSHA256": "cc0afc0a37ad590dcb7c24b7a1607115c5a63a405e34df70adeeb8c2eb3f8f3e",
+    "retained": "merged-debug-normal-captures/busy-on-actual-result.png",
+    "retainedSHA256": "cc0afc0a37ad590dcb7c24b7a1607115c5a63a405e34df70adeeb8c2eb3f8f3e"
+  },
+  {
+    "sourceName": "busy-on-actual-result.txt",
+    "sourceSHA256": "1cdb389b725752a415f6f687aa86993a4f44d4b4fe3acb97745252df157dd557",
+    "retained": "merged-debug-normal-captures/busy-on-actual-result.txt.gz",
+    "retainedSHA256": "f7e6ad27b74693909249bd83af1d53b204717c1d0ee9fa9c872f453a56211d5c"
+  },
+  {
+    "sourceName": "busy-on-failure.png",
+    "sourceSHA256": "cc0afc0a37ad590dcb7c24b7a1607115c5a63a405e34df70adeeb8c2eb3f8f3e",
+    "retained": "merged-debug-normal-captures/busy-on-failure.png",
+    "retainedSHA256": "cc0afc0a37ad590dcb7c24b7a1607115c5a63a405e34df70adeeb8c2eb3f8f3e"
+  },
+  {
+    "sourceName": "busy-on-failure.txt",
+    "sourceSHA256": "660d73c9ef8727b0d8e9a6fa098ef6bd0b361c274f8b953ccc9240449bf26914",
+    "retained": "merged-debug-normal-captures/busy-on-failure.txt.gz",
+    "retainedSHA256": "97df40d5270349e3fd43e303ce3a239ca753dc7e2a152b754e08d97e4f574c78"
+  },
+  {
+    "sourceName": "busy-on-success.png",
+    "sourceSHA256": "352def63c279b49a916181650319c17b30e1861774bf63acdea28a0770e03a26",
+    "retained": "merged-debug-normal-captures/busy-on-success.png",
+    "retainedSHA256": "352def63c279b49a916181650319c17b30e1861774bf63acdea28a0770e03a26"
+  },
+  {
+    "sourceName": "busy-on-success.txt",
+    "sourceSHA256": "26afe11069c355438eb8fd9da2f0ed48f8b05a349bcf8c99641ee22bac26353e",
+    "retained": "merged-debug-normal-captures/busy-on-success.txt.gz",
+    "retainedSHA256": "58705c9de49af02eca758ac941b8cce9c2bf5d856c8992390ffe8ee219743f6c"
+  },
+  {
+    "sourceName": "forget-busy-ax.txt",
+    "sourceSHA256": "ea64ace0b27a4c65e910eaa7eab629f3cfe28e27a6a32ff7ff1fd8927b3749a5",
+    "retained": "merged-debug-normal-captures/forget-busy-ax.txt.gz",
+    "retainedSHA256": "42b043d49ae378406686da784d0840696a5479557b5c93afb210ecec020d5fd8"
+  },
+  {
+    "sourceName": "forget-busy.png",
+    "sourceSHA256": "40d2c190e3389b1c32e9c38ca97e7ded20de9f293b11142d4f84acfe0be7798b",
+    "retained": "merged-debug-normal-captures/forget-busy.png",
+    "retainedSHA256": "40d2c190e3389b1c32e9c38ca97e7ded20de9f293b11142d4f84acfe0be7798b"
+  },
+  {
+    "sourceName": "io-on-actual-result.png",
+    "sourceSHA256": "f0756893205cf69ad0ce3930ab830188a31e2f2bf29c76b6686e1381486aff9e",
+    "retained": "merged-debug-normal-captures/io-on-actual-result.png",
+    "retainedSHA256": "f0756893205cf69ad0ce3930ab830188a31e2f2bf29c76b6686e1381486aff9e"
+  },
+  {
+    "sourceName": "io-on-actual-result.txt",
+    "sourceSHA256": "9e086af4312de48c6d5e452967c6fbda9e9f5c9b6b1ed2e7ffe4690da8e3e9b0",
+    "retained": "merged-debug-normal-captures/io-on-actual-result.txt.gz",
+    "retainedSHA256": "0c7c7c5cd3032b07756c265b6c129d6da29b9ed176b7d124e1dee767028bfe22"
+  },
+  {
+    "sourceName": "io-on-failure.png",
+    "sourceSHA256": "f0756893205cf69ad0ce3930ab830188a31e2f2bf29c76b6686e1381486aff9e",
+    "retained": "merged-debug-normal-captures/io-on-failure.png",
+    "retainedSHA256": "f0756893205cf69ad0ce3930ab830188a31e2f2bf29c76b6686e1381486aff9e"
+  },
+  {
+    "sourceName": "io-on-failure.txt",
+    "sourceSHA256": "38978a2847101e1893a5e70c89ea2804412470f3f063015401416879ae04f7eb",
+    "retained": "merged-debug-normal-captures/io-on-failure.txt.gz",
+    "retainedSHA256": "93ba337a0548129d92d113785b24da74b4fa6b7af7e04e15d447477a59b60001"
+  },
+  {
+    "sourceName": "io-on-success.png",
+    "sourceSHA256": "174125607f261f5ae6a24218529391f54edc01240b2c7e5b87b60ebe6f1351c8",
+    "retained": "merged-debug-normal-captures/io-on-success.png",
+    "retainedSHA256": "174125607f261f5ae6a24218529391f54edc01240b2c7e5b87b60ebe6f1351c8"
+  },
+  {
+    "sourceName": "io-on-success.txt",
+    "sourceSHA256": "23b3e2eac828afe5b9441a79ee9358e77d0098d46cec1c06154223d5ae50060a",
+    "retained": "merged-debug-normal-captures/io-on-success.txt.gz",
+    "retainedSHA256": "3ef00a81009b273dacc8cdca509e552ffe1058b7ae4e987172f7938691ce8771"
+  }
+]
