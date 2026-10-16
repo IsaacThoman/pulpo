@@ -3,7 +3,8 @@
 The user's real-use feedback exposed a gap in the earlier synthetic evaluations.
 Recorded human gestures score far below generated center paths. Current evidence
 supports specific improvements, not an overall real-use lead over Gboard. Gboard
-on iOS, multilingual input, and physical-device latency remain unmeasured.
+on iOS, broad real-use multilingual accuracy, and physical-device latency remain
+unmeasured. Small deterministic Spanish and bilingual checks are reported below.
 
 ## Continued independent sweeps, October 15–16
 
@@ -11,8 +12,8 @@ The continuation started at `433e54ad`, preserving the user's icon change while
 bringing this worktree onto PR #782. Three independent agents froze protocols in
 isolated worktrees before inspecting implementation or earlier audit findings.
 The complete protocols and limitations are in `audits/accuracy-sweep.md` and
-`audits/ux-sweep.md`; multilingual work and a second dictation destination sweep
-are still being integrated. They are not counted as validated features here.
+`audits/ux-sweep.md`. The integrated language and dictation destination sweeps
+are described below; their audits retain the original acceptance failures.
 
 ### Editing, cancellation, and accessible controls
 
@@ -93,16 +94,35 @@ screenshots, APKs, and SDK downloads remain outside Git.
 
 ### Parent verification and unresolved evidence
 
-The first integrated batch passes **356 core tests plus three service tests** in
-Release, with the same two tracked own-state/proxy-lag ambiguities. After the
-navigation extension, **100 focused engine/context/suggestion/Shift tests pass**.
-The initial simulator baseline passed 62 typing, touch, and controller tests;
-the seven new UX methods pass independently after integration. A broader native
-run was interrupted during Xcode result finalization; its installed-picker check
-failed because the system keyboard remained active/off-screen. The six installed
-extension tests likewise failed during keyboard activation. They are **not**
-counted as passed extension validation; simulator hardware-keyboard setup is
-under investigation. All 22 existing Python tooling tests pass.
+The first integrated batch passed **356 core tests plus three service tests**.
+The language/destination/completion batch now passes **404 core tests in 56 suites plus
+three service tests** in Release. Five known issues are tracked: two existing
+own-state/proxy-lag ambiguities and three prefix-completion misses. All **28 Python
+tooling tests** pass, including deterministic multilingual data checks.
+
+On iPhone 17 / iOS 27.0, an integrated focused run passed **27 methods**: three
+language checks, 16 dictation-destination controller checks, seven new UX checks,
+and one installed-keyboard geometry check. This run preceded the final language
+spacing fix; that fix and the final private-field checks pass the Release core
+suite. The initial baseline also passed 62 typing, touch, and controller methods.
+
+The headless simulator had its hardware keyboard attached, hiding every software
+keyboard. `scripts/simulator_keyboard.py` now disables that setting on a specific
+simulator. Afterward, a new test explicitly selects **Pulpo Keyboard**, then
+verifies an actual Q tap, `teh ` → `The `, and an eight-point swipe yielding
+`The keyboard`. This supplements rather than passes the six original installed
+accessibility-dependent checks: iOS 27's remote accessibility bridge still omits
+the rendered extension's keys and reports conflicting screen coordinate spaces.
+Installed VoiceOver traversal remains unverified; no app workaround was added for
+that simulator behavior.
+
+An additional companion-app dictation run passed both signed-out flows but
+failed its recording flow before Done appeared. The simulator reported
+`The microphone couldn't start…feature is not supported` and displayed Cancel
+and Try Again. This is **not** a passing recording/upload integration test. The
+27-method controller run uses real bridge files/notifications with simulated
+published recorder states; production audio, upload, and device return remain
+unverified.
 
 A new 200-seed editor fuzz run starting at 782000, 300 operations per seed, first
 crashed in its own host oracle. The generator intentionally samples cursor
@@ -113,6 +133,99 @@ violations: two pending/stale double spaces, one capitalization miss, two
 composition desynchronizations, one literal-suggestion mismatch, and two
 hidden-context word deletions. Several recreate an own state and remain ambiguous
 with delayed proxy reports; these are unresolved evidence, not a zero-failure run.
+
+### Fresh selected-range deletion regression
+
+A further editor sweep froze `audits/external-edit-fresh-protocol.json` before
+source inspection. A faithful immediate host adapter then reproduced a concrete
+failure outside delayed-proxy ambiguities: after a fresh selection arrived during
+a delete swipe, `prefix [chosen] suffix` became `p suffix`, and Undo produced
+`pprefix  suffix`. The engine used the prefix's word length for repeated delete
+primitives even though the first primitive deleted the selection.
+
+The fix deletes the selected range once and records its actual contents for Undo,
+ignoring the gesture's older prefix snapshot. Undo also checks the following text,
+and a zero-word gesture changes nothing. Three of four new scenarios failed
+before the fix; all four and 88 existing focused tests pass. This is production
+engine evidence plus inspected controller reachability, not a measured frequency
+or a completed real host-selection gesture test. See
+`audits/external-edit-fresh-sweep.md`; hidden-context/proxy edge review continues.
+
+### English, Spanish, and bilingual input
+
+The companion settings and keyboard language menu offer English (`en_US`),
+Español (`es`), and English + Español (`en_es`). Settings migrate to English when
+an old value is absent or malformed. Switching replaces the static language
+model while sharing local personal words, tap adaptation, and replacements;
+private fields remain unlearned. Full Access off uses local settings, and the
+extension reports its selected primary language. The original English binary is
+byte-identical. Spanish and bilingual resources add **42,668,888 bytes**; pinned
+AOSP/Tatoeba inputs and attribution are documented in `LanguageData/MULTILINGUAL.md`.
+
+The agent's frozen Spanish recognition checks improve **1/10 → 10/10**, and
+three synthetic Spanish swipes improve **0/3 → 3/3** first choices. These small
+checks establish vocabulary/geometry support, not natural Spanish swipe accuracy.
+Original prefix acceptance remains incomplete: `hel` lacks `hello` in English
+and bilingual mode, `hol` lacks `hola` in bilingual mode, and bilingual `hols`
+places `hola` sixth. Their tests retain explicit known issues rather than relaxed
+thresholds. There is no dedicated ñ row, translated emoji search, or selectable
+dictation recognition language in this batch.
+
+The parent independently froze `audits/parent-language-holdout.json` before
+reviewing the implementation (SHA-256
+`9e9022db546b2450fb6d065d60fd4c7c4a2a7ec4b8933e7ae32dd09b3ddf744a`).
+All **64 exact literal commits**, six code-switch messages, and 15 Spanish words
+in composed/decomposed Unicode pass in the applicable modes. Learning-off checks
+and language transitions across email, URL, secure, and one-time-code fields keep
+personal words and learned touch weights at zero. These fixtures are now spent.
+
+Independent review found that switching language discarded automatic-space
+provenance: choosing a suggestion, changing language, then typing comma produced
+`the ,`. The fix retains only space provenance, invalidates old-model alternatives,
+and ends the Shift tap sequence. Fourteen parameterized cases pass; nine
+assertions failed before the fix. Full details are in `audits/multilingual-sweep.md`.
+A separate blind sweep is measuring multilingual memory and latency costs.
+
+### Explicit accents in suggestion ranking
+
+A new blind completion sweep froze 40 development and 40 verification prompts
+before source inspection. It retains a stable display-only partition: when a
+prefix includes an explicit accent, already-retrieved continuations preserving
+that written prefix precede alternatives. Automatic correction, retrieval limits,
+probabilities, and dictionary bytes stay unchanged. Independent review confirmed
+exactly four changed strips across 80 prompts.
+
+Development useful hits improve **22/40 → 23/40**, saving one additional keystroke.
+Verification coverage improves **21/40 → 22/40**, but useful hits remain **14/40**
+and saved keystrokes remain **40**. The gained verification completion saves zero
+taps, and its vocabulary overlaps development. This is a narrow spelling-fidelity
+fix, not evidence of general completion-effort or next-word improvement. Candidate
+ranking may displace a higher-scoring nonpreserving suggestion from the visible
+strip; it does not change the automatic correction. Parent replay matches all 80
+recorded slot/outcome rows exactly. Real Spanish/bilingual integration checks add
+16 composed/decomposed accent/ñ/ü competitions, 12 engine selections, and 40
+automatic-correction references matching the pre-partition implementation. These
+are regression checks, not a new holdout. See
+`audits/completion-candidates-sweep.md` for all misses and rejected experiments.
+
+### Dictation destination and explicit insertion
+
+A transcript automatically inserts only after continuous observation of the same
+identified public field, with unchanged surrounding text and selection. Leaving
+the keyboard, changing fields/caret, or an unidentified preview requires an
+explicit **Insert Here** action. This action checks the current request,
+publication, revision, destination, privacy, and Full Access again; a refusal
+keeps the pending transcript. Request-bound Done and Cancel ignore stale panels.
+Destination snapshots remain in memory and exclude private field text.
+
+Ten core guard scenarios and 16 production-controller methods cover bridge
+publication, notifications, explicit confirmation, stale controls, field changes,
+privacy, access loss, and duplicate delivery. Independent review found no new bug,
+but this is not durable queueing: the bridge has one replaceable slot and no
+on-wire attempt generation or insertion acknowledgement. Unobservable host edits
+and transcript retention across service recreation/new recordings are not
+established. The original frozen destination acceptance is not claimed in full;
+see `audits/dictation-destination-sweep.md`.
 
 ## Blind sweep loop: round 1
 
