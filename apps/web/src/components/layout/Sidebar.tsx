@@ -87,6 +87,7 @@ import { openBeside, useMainNavigate } from '@/features/side-panel/use-panel-act
 import { OpenChatToLeftItem } from '@/features/side-panel/AgentActions'
 import { copyChatShareLink, duplicateChats } from '@/features/chat/chat-actions'
 import { ChatExpiryMenuItem } from '@/features/chat/ChatExpiryMenuItem'
+import { sidebarChatGroups } from '@/features/sidebar/chat-groups'
 import {
   archiveSidebarSelection,
   createShortcutInteractively,
@@ -1736,14 +1737,7 @@ export function Sidebar({
   // Pinned chats and Files items share one order above it, wherever they are in Files.
   const pinnedEntries = sidebarEntries(chats.filter((c) => c.pinned), sidebar?.pinnedItems ?? [])
   // Chats filed in folders show inside them; chats in folders the sidebar does not show stay in Files.
-  const inFolders = new Map<string, Chat[]>()
-  const loose: Chat[] = []
-  for (const c of chats) {
-    // Chats at the top of My files are in Files only.
-    if (c.pinned || c.inFilesRoot) continue
-    if (!c.folderId) loose.push(c)
-    else inFolders.set(c.folderId, [...inFolders.get(c.folderId) ?? [], c])
-  }
+  const { inFolders, loose } = sidebarChatGroups(chats)
   /**
    * Creates an untitled folder and renames it in place, as in Files. The server picks a free name,
    * so renaming starts once the folder is listed under its final name.

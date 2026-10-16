@@ -92,6 +92,38 @@ async function composerAccountEnabled(userId: string): Promise<boolean> {
   return (preferences?.values as { composerSyncEnabled?: unknown } | undefined)?.composerSyncEnabled !== false
 }
 
+type ResponseOwner = { userId: string; chatId: string }
+
+/** Share in-flight lookups without retaining every response for the API process's lifetime. */
+export function createResponseOwnerResolver(
+  load: (responseId: string) => Promise<ResponseOwner | undefined>,
+  { maxEntries = 4096, ttlMs = 300_000, now = Date.now } = {},
+) {
+  const cache = new Map<string, { expiresAt: number; pending: Promise<ResponseOwner | undefined> }>()
+  return (responseId: string): Promise<ResponseOwner | undefined> => {
+    const cached = cache.get(responseId)
+    if (cached && cached.expiresAt > now()) {
+      cache.delete(responseId)
+      cache.set(responseId, cached)
+      return cached.pending
+    }
+    cache.delete(responseId)
+    const entry = {
+      expiresAt: now() + ttlMs,
+      pending: Promise.resolve().then(() => load(responseId)),
+    }
+    // An evicted request can finish after a newer lookup for the same response.
+    const forget = () => { if (cache.get(responseId) === entry) cache.delete(responseId) }
+    entry.pending = entry.pending.then((owner) => {
+      if (!owner) forget()
+      return owner
+    }, (error: unknown) => { forget(); throw error })
+    cache.set(responseId, entry)
+    while (cache.size > maxEntries) cache.delete(cache.keys().next().value!)
+    return entry.pending
+  }
+}
+
 export async function createSocketServer(httpServer: HttpServer) {
   const config = getConfig()
   const adapterRedis = createRedis()
@@ -269,20 +301,10 @@ export async function createSocketServer(httpServer: HttpServer) {
     bindDocSocket(socket)
   })
 
-  const responseOwners = new Map<string, Promise<{ userId: string; chatId: string } | undefined>>()
-  const ownerFor = async (responseId: string) => {
-    const cached = responseOwners.get(responseId)
-    if (cached) return cached
-    const pending = db.select({ userId: responses.userId, chatId: responses.chatId })
+  const ownerFor = createResponseOwnerResolver((responseId) =>
+    db.select({ userId: responses.userId, chatId: responses.chatId })
       .from(responses).where(eq(responses.id, responseId)).limit(1)
-      .then((rows) => rows[0])
-      .catch((error) => {
-        responseOwners.delete(responseId)
-        throw error
-      })
-    responseOwners.set(responseId, pending)
-    return pending
-  }
+      .then((rows) => rows[0]))
 
   await subscriber.subscribe('pulpo:chat-started', 'pulpo:composer-changes', 'pulpo:response-events', 'pulpo:response-snapshots', 'pulpo:state-changes', 'pulpo:session-revocations', 'pulpo:admin-usage', DOC_CLOSED_CHANNEL, DOC_UPDATE_CHANNEL)
   subscriber.on('message', (channel: string, message: string) => {
@@ -306,14 +328,16 @@ export async function createSocketServer(httpServer: HttpServer) {
       io.to('admin:usage').emit('admin.usage.upsert', JSON.parse(message))
     } else if (channel === 'pulpo:response-events') {
       const event = JSON.parse(message) as { responseId: string }
-      void ownerFor(event.responseId).then((owner) => {
+      runSocketTask('response.event', async () => {
+        const owner = await ownerFor(event.responseId)
         let rooms = io.to(`response:${event.responseId}`)
         if (owner) rooms = rooms.to(`chat:${owner.chatId}`).to(`user:${owner.userId}`)
         rooms.emit('response.event', event as never)
       })
     } else if (channel === 'pulpo:response-snapshots') {
       const snapshot = JSON.parse(message) as ResponseSnapshot
-      void ownerFor(snapshot.responseId).then((owner) => {
+      runSocketTask('response.snapshot', async () => {
+        const owner = await ownerFor(snapshot.responseId)
         let rooms = io.to(`response:${snapshot.responseId}`)
         if (owner) rooms = rooms.to(`chat:${owner.chatId}`).to(`user:${owner.userId}`)
         rooms.emit('response.snapshot', snapshot)

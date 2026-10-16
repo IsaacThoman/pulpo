@@ -1,0 +1,17 @@
+# Copy to /etc/wireguard/wg-pulpo.conf (mode 0600) and fill in the values from
+# your provider's WireGuard config (ProtonVPN, Mullvad, or your own VPS).
+# Keep Table = off: only pod traffic may use this tunnel, never the host's.
+# Remove the provider's DNS line and any IPv6 Address/AllowedIPs entries.
+
+[Interface]
+PrivateKey = REPLACE_WITH_PRIVATE_KEY
+Address = 10.2.0.2/32
+MTU = 1420
+Table = off
+PostUp = /usr/local/sbin/pulpo-workspace-egress route-up
+
+[Peer]
+PublicKey = REPLACE_WITH_SERVER_PUBLIC_KEY
+Endpoint = REPLACE_WITH_SERVER:51820
+AllowedIPs = 0.0.0.0/0
+PersistentKeepalive = 25

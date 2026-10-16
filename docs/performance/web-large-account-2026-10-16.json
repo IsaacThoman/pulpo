@@ -1,0 +1,228 @@
+{
+  "baseline": "08b2b232",
+  "date": "2026-10-16",
+  "node": "v26.12.0",
+  "browser": "Chromium 153.0.8010.12 (Playwright 1.63.0)",
+  "hardware": "Apple M5 Pro",
+  "cpuThrottling": 1,
+  "repetitions": 7,
+  "warmup": 1,
+  "cases": [
+    {
+      "count": 1000,
+      "operation": "summaries",
+      "before": {
+        "version": "08b2b232",
+        "count": 1000,
+        "provisional": 25,
+        "operation": "summaries",
+        "medianMs": 3.3999999999068677,
+        "samplesMs": [
+          3.7999999998137355,
+          3.2999999998137355,
+          3.5,
+          3.3999999999068677,
+          3.2999999998137355,
+          3.1000000000931323,
+          3.599999999627471
+        ]
+      },
+      "after": {
+        "version": "working-tree",
+        "count": 1000,
+        "provisional": 25,
+        "operation": "summaries",
+        "medianMs": 0.8000000002793968,
+        "samplesMs": [
+          1.1000000000931323,
+          1,
+          0.8999999999068677,
+          0.7999999998137355,
+          0.8000000002793968,
+          0.7000000001862645,
+          0.7999999998137355
+        ]
+      }
+    },
+    {
+      "count": 1000,
+      "operation": "folder-grouping",
+      "before": {
+        "version": "08b2b232",
+        "count": 1000,
+        "provisional": 25,
+        "operation": "folder-grouping",
+        "medianMs": 0.6000000000931323,
+        "samplesMs": [
+          0.7999999998137355,
+          0.7000000001862645,
+          0.6000000000931323,
+          0.6000000000931323,
+          0.5,
+          0.5,
+          0.6000000000931323
+        ]
+      },
+      "after": {
+        "version": "working-tree",
+        "count": 1000,
+        "provisional": 25,
+        "operation": "folder-grouping",
+        "medianMs": 0,
+        "samplesMs": [
+          0.10000000009313226,
+          0,
+          0,
+          0,
+          0,
+          0.10000000009313226,
+          0.10000000009313226
+        ]
+      }
+    },
+    {
+      "count": 5000,
+      "operation": "summaries",
+      "before": {
+        "version": "08b2b232",
+        "count": 5000,
+        "provisional": 25,
+        "operation": "summaries",
+        "medianMs": 61.299999999813735,
+        "samplesMs": [
+          63.89999999990687,
+          61.299999999813735,
+          60.700000000186265,
+          59.89999999990687,
+          66,
+          62,
+          60.59999999962747
+        ]
+      },
+      "after": {
+        "version": "working-tree",
+        "count": 5000,
+        "provisional": 25,
+        "operation": "summaries",
+        "medianMs": 3.099999999627471,
+        "samplesMs": [
+          3.1000000000931323,
+          3,
+          2.8999999999068677,
+          2.7000000001862645,
+          3.1000000000931323,
+          3.099999999627471,
+          3.2000000001862645
+        ]
+      }
+    },
+    {
+      "count": 5000,
+      "operation": "folder-grouping",
+      "before": {
+        "version": "08b2b232",
+        "count": 5000,
+        "provisional": 25,
+        "operation": "folder-grouping",
+        "medianMs": 8,
+        "samplesMs": [
+          8,
+          8,
+          7.900000000372529,
+          8,
+          8,
+          7.7000000001862645,
+          7.899999999906868
+        ]
+      },
+      "after": {
+        "version": "working-tree",
+        "count": 5000,
+        "provisional": 25,
+        "operation": "folder-grouping",
+        "medianMs": 0.19999999972060323,
+        "samplesMs": [
+          0.20000000018626451,
+          0.19999999972060323,
+          0.19999999972060323,
+          0.10000000009313226,
+          0.19999999972060323,
+          0.20000000018626451,
+          0.20000000018626451
+        ]
+      }
+    },
+    {
+      "count": 20000,
+      "operation": "summaries",
+      "before": {
+        "version": "08b2b232",
+        "count": 20000,
+        "provisional": 25,
+        "operation": "summaries",
+        "medianMs": 346.29999999981374,
+        "samplesMs": [
+          333.39999999990687,
+          340.79999999981374,
+          349,
+          340.8000000002794,
+          346.29999999981374,
+          352.6999999997206,
+          346.89999999990687
+        ]
+      },
+      "after": {
+        "version": "working-tree",
+        "count": 20000,
+        "provisional": 25,
+        "operation": "summaries",
+        "medianMs": 10.899999999906868,
+        "samplesMs": [
+          11.5,
+          11.399999999906868,
+          11,
+          10.299999999813735,
+          10.399999999906868,
+          10.899999999906868,
+          10.800000000279397
+        ]
+      }
+    },
+    {
+      "count": 20000,
+      "operation": "folder-grouping",
+      "before": {
+        "version": "08b2b232",
+        "count": 20000,
+        "provisional": 25,
+        "operation": "folder-grouping",
+        "medianMs": 103.70000000018626,
+        "samplesMs": [
+          105.89999999990687,
+          103.89999999990687,
+          106.5,
+          101.39999999990687,
+          103.39999999990687,
+          103.70000000018626,
+          99.70000000018626
+        ]
+      },
+      "after": {
+        "version": "working-tree",
+        "count": 20000,
+        "provisional": 25,
+        "operation": "folder-grouping",
+        "medianMs": 0.20000000018626451,
+        "samplesMs": [
+          0.2999999998137355,
+          0.09999999962747097,
+          0.20000000018626451,
+          0.2999999998137355,
+          0.2999999998137355,
+          0.10000000009313226,
+          0.10000000009313226
+        ]
+      }
+    }
+  ]
+}

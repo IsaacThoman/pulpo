@@ -1,5 +1,71 @@
-import { describe, expect, it } from 'vitest'
-import { FULL_STATE_INVALIDATION_SCOPES, realtimeResourceId, socketSessionToken } from './socket.js'
+import { describe, expect, it, vi } from 'vitest'
+import { createResponseOwnerResolver, FULL_STATE_INVALIDATION_SCOPES, realtimeResourceId, socketSessionToken } from './socket.js'
+
+describe('response owner cache', () => {
+  const owner = { userId: 'user', chatId: 'chat' }
+
+  it('shares concurrent lookups and reuses resolved owners', async () => {
+    const load = vi.fn(async () => owner)
+    const resolve = createResponseOwnerResolver(load)
+    const first = resolve('response')
+    expect(resolve('response')).toBe(first)
+    await expect(first).resolves.toEqual(owner)
+    await expect(resolve('response')).resolves.toEqual(owner)
+    expect(load).toHaveBeenCalledOnce()
+  })
+
+  it('evicts the least recently used response while preserving hot entries', async () => {
+    const load = vi.fn(async () => owner)
+    const resolve = createResponseOwnerResolver(load, { maxEntries: 2 })
+    await resolve('first')
+    await resolve('second')
+    await resolve('first')
+    await resolve('third')
+    await resolve('first')
+    expect(load).toHaveBeenCalledTimes(3)
+    await resolve('second')
+    expect(load).toHaveBeenCalledTimes(4)
+  })
+
+  it('refreshes expired owners even when they are frequently accessed', async () => {
+    let now = 0
+    const load = vi.fn(async () => owner)
+    const resolve = createResponseOwnerResolver(load, { ttlMs: 100, now: () => now })
+    await resolve('response')
+    now = 99
+    await resolve('response')
+    expect(load).toHaveBeenCalledOnce()
+    now = 100
+    await resolve('response')
+    expect(load).toHaveBeenCalledTimes(2)
+  })
+
+  it('retries failed and missing lookups', async () => {
+    const load = vi.fn<(id: string) => Promise<typeof owner | undefined>>()
+      .mockRejectedValueOnce(new Error('database unavailable')).mockResolvedValueOnce(undefined).mockResolvedValue(owner)
+    const resolve = createResponseOwnerResolver(load)
+    await expect(resolve('response')).rejects.toThrow('database unavailable')
+    await expect(resolve('response')).resolves.toBeUndefined()
+    await expect(resolve('response')).resolves.toEqual(owner)
+    expect(load).toHaveBeenCalledTimes(3)
+  })
+
+  it('does not let an evicted pending lookup remove its replacement', async () => {
+    let finish!: (value: typeof owner | undefined) => void
+    const load = vi.fn<(id: string) => Promise<typeof owner | undefined>>()
+      .mockImplementationOnce(() => new Promise((resolve) => { finish = resolve }))
+      .mockResolvedValue(owner)
+    const resolve = createResponseOwnerResolver(load, { maxEntries: 1 })
+    const old = resolve('response')
+    await resolve('other')
+    const replacement = resolve('response')
+    await replacement
+    finish(undefined)
+    await old
+    expect(resolve('response')).toBe(replacement)
+    expect(load).toHaveBeenCalledTimes(3)
+  })
+})
 
 describe('Socket.IO session transport', () => {
   it('prefers an explicit native token and preserves cookie fallback', () => {
