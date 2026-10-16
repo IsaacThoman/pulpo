@@ -32,13 +32,19 @@ finds zero exact duplicate session programs (26 geometry controls are exposed).
 `fresh-validator-v1/` preserves the complete rejection and private evidence archive.
 The evaluator's diagnostic `failure_count` is not a failed-aggregate numerator.
 
-A separately versioned preexecution accounting correction is underway. Fixtures,
-runner, reference and all behavioral oracles must remain byte-identical; only
-reporting and its verification artifacts change. The fresh payload remains
-unopened at parent level. No R49 product build or execution has occurred; new
-independent approval and a binary/environment/input/source freeze are still
-required. The v1 configuration is retained as unexecuted proposed mechanics,
-not execution approval.
+The separately versioned author-v2 accounting correction is sealed and under a
+new independent review. Parent verified all 52 archived files opaquely and exact
+byte preservation of fixtures, expectations, reference, runner, raw schema and
+approved public documents. The author reports all 68 original synthetic cases
+and 28 new accounting witnesses pass in both modes (192 executions). Reporting
+now separates planned counts from observed call/outcome/status ledgers, with
+strict-invalid observations labeled unknown. Those are proposed mechanics until
+the independent review completes. `fresh-author-v2/` retains the immutable bundle.
+
+The fresh payload remains unopened at parent level. No R49 product build or
+execution has occurred; independent approval and a new
+binary/environment/input/source freeze are still required. Both versioned
+configurations are unexecuted proposed mechanics, not execution approval.
 
 Product and ordinary-test files remain byte-identical to the merged `82165e7f`
 reference that passed R48's source, ordinary and native gates. Their limits,

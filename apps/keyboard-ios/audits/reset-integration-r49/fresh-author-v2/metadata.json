@@ -1,0 +1,100 @@
+{
+  "aggregate_pass_numerator": null,
+  "archive_bytes": 1263577,
+  "archive_members": 52,
+  "archive_path": "/tmp/pulpo-r49-fresh-author-v2/author-bundle.tar.gz",
+  "archive_scope": "All manifest-listed author artifacts plus manifest; metadata external to avoid self-reference. Exact v1-v2 diff excludes derived self-referential seals and binds exclusions separately.",
+  "archive_sha256": "5388ca0fa079ee9103fd1ff1c0d630e8de153bc4a3e0e268efe5707c46cb39eb",
+  "bindings": {
+    "Runner.swift": "8f50f13ef8fcddc51d3521e6311992ebae2778f5635957f381f6a392ff61e4a1",
+    "accounting-countertruth.json": "4dddb54752842765421c00f2705aa99cbeceae72804e07e5d50f3fdfaa1c96eb",
+    "author-manifest.json": "f76d1a671ecb51ab1bd7fb3838649ff8e4fd131f1f93bddf6bf6828f6abfeca4",
+    "evaluate.py": "fd1c9260abb1a021ec164faa3ca55d3428a24d4f4478b84a7d6ba3a128294195",
+    "expectations.json": "dc63f643ea7dd6f7a61df60663c1fa78580bcb9adb4d1b0ca4a68fab2d4a0ed1",
+    "fixtures.json": "9f49a1fa017e07f989c19518329e1a48b16e1e76c9c2d7826f5a55c301212912",
+    "reference.json": "0431ce88a659611358b35d0672337137544149ab79709641c36b2dcb4a4343eb",
+    "report-schema.json": "9d7212356abfee22be7e01c9249f9ac776fbd7df7bd38c4ad2126aea1d315898",
+    "schema.json": "4fdcaa1cd0f094897d68b753a67805dbf97b1a5adfad695db106aa1dfa208db9",
+    "v1-v2-files.json": "9cff62add18a2fe6b2f9b95f40cb397f6d64f3cd017725b9d1d4fdebac3c5145",
+    "v1-v2.diff": "27ce439cba5bb5e05016c4774b2cea76b357c0789c1ac9522d80f3d9982d80fd",
+    "v2-preservation-proof.json": "86e9af736a3457552e92888410ce60d46f5e37eda9f7fab8a5566fbf079b586f"
+  },
+  "bundle_directory": "/tmp/pulpo-r49-fresh-author-v2",
+  "delegation": false,
+  "execution_approval": false,
+  "failure_count_unit": "diagnostic_messages_not_failed_aggregates",
+  "format": "pulpo-r49-author-metadata-v2",
+  "frozen": true,
+  "manifest_entries": 51,
+  "manifest_path": "/tmp/pulpo-r49-fresh-author-v2/author-manifest.json",
+  "planned_counts": {
+    "accepted_calls": 49,
+    "center_calls": 26,
+    "checks": 772,
+    "counts_are_planned": true,
+    "expected_invalid_calls": 31,
+    "families": 15,
+    "instances": 45,
+    "learn_calls": 80,
+    "normalize_calls": 14,
+    "operations": 452,
+    "relations": 320
+  },
+  "post_reveal_tuning": false,
+  "preservation": {
+    "behavioral_validation_and_scoring_body_byte_identical": true,
+    "modified_v1_artifacts": [
+      "README.md",
+      "adversarial-results.json",
+      "evaluate.py",
+      "seal_manifest.py"
+    ],
+    "protected_files_identical": true,
+    "unchanged_v1_artifacts": 23
+  },
+  "product_executions": 0,
+  "source_output_blind": true,
+  "status": "sealed_for_NEW_independent_review",
+  "strict_invalid_accounting": "observed counts null/unknown; all frozen operation IDs unknown; no fired/verified partial credit; denominators retained",
+  "synthetic_baseline_observed": {
+    "actual_invocations": 452,
+    "actual_learn_calls": 80,
+    "observed_status_counts": {
+      "busy": 0,
+      "capacity": 0,
+      "cleanup": 0,
+      "invalid": 58,
+      "io": 0,
+      "ok": 354,
+      "uncertain": 0
+    },
+    "product_evidence": false,
+    "verified_expected_accepted_learns": 49,
+    "verified_intended_invalid_rejections": 31
+  },
+  "synthetic_tests": {
+    "accounting_v2_cases": 28,
+    "accounting_v2_executions": 56,
+    "all_expected_exits_and_countertruth_pass": true,
+    "existing_v1_cases": 68,
+    "existing_v1_executions": 136,
+    "normal_and_optimized_consistent": true,
+    "schema_reports_validated": 192,
+    "synthetic_only": true,
+    "total_cases": 96,
+    "total_executions": 192
+  },
+  "v1_preserved": {
+    "archive_sha256": "bfa62181addfade8b2e0011c059b7608941cddf4c53e9876294071b412f15fe4",
+    "directory": "/tmp/pulpo-r49-fresh-author-v1",
+    "manifest_sha256": "8fa0b0af6ede9ed34cf07c8aebc3b5a651ebb8a10cc5d2da840c48173e23245a",
+    "metadata_sha256": "f34abf2df11b59cbd588311e880ce15e8baad247d9603bac30afd6c71734a7ff",
+    "original_files_verified_unchanged": true,
+    "packet_sha256": "3f4fe832a48c6bf33adfbc93428935dc82e044e856b1631df61be1d2610b67a9",
+    "receipt_sha256": "32647adc01cfd4b2650d54d1a2e8fe89a50bfeaadacfaa32f3ebb913567a5e01",
+    "review_archive_sha256": "1def3064fb115f2d25f4d305b68b0810062a4b9423db2eb51bb8a2f2cad8ecd7",
+    "review_sha256": "e9ea8521bb872ab6537c589b94cbb5f25e02f15997ae5f4ea23fa6fe30bac463",
+    "verdict": "REJECT_PREEXECUTION_ACCOUNTING_CORRECTION_REQUIRED"
+  },
+  "version": "author-v2-preexecution-accounting-correction"
+}

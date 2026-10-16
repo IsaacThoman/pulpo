@@ -1,0 +1,20 @@
+{
+  "purpose": "Opaque hashes/inventory and byte-preservation only; fresh payload unopened at parent level",
+  "archiveSHA256": "5388ca0fa079ee9103fd1ff1c0d630e8de153bc4a3e0e268efe5707c46cb39eb",
+  "manifestFilesVerified": 51,
+  "archiveFilesVerified": 52,
+  "protectedArtifactsByteIdentical": [
+    "fixtures.json",
+    "expectations.json",
+    "reference.json",
+    "Runner.swift",
+    "schema.json",
+    "public-domain-v3.md",
+    "PublicDomainReference.swift",
+    "author-protocol.md"
+  ],
+  "runnerSHA256": "8f50f13ef8fcddc51d3521e6311992ebae2778f5635957f381f6a392ff61e4a1",
+  "productBuilds": 0,
+  "productExecutions": 0,
+  "status": "Independent v2 review running; no execution approval"
+}
