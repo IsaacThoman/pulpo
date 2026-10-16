@@ -11,6 +11,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { ui } from '@/i18n/ui'
 import { cn } from '@/lib/utils'
 import { formatChartNumber } from '@/lib/format'
+import { isoFromLocalInput, localInputValue } from '@/lib/datetime-local'
 import { useSettings } from '@/stores/settings'
 import { DEFAULT_CHART_ANIMATION_DURATION_MS, scaledAnimationDuration } from '@/lib/animation-speed'
 import { formatBucketLabel, formatBucketTick, formatPercent } from './format'
@@ -28,21 +29,6 @@ function rangeLabel(range: AnalyticsRange): string {
     case 'all': return ui('All time')
     case 'custom': return ui('Custom range')
   }
-}
-
-/** `datetime-local` value for an ISO instant, in the viewer's zone. */
-function localInputValue(iso: string | null): string {
-  if (!iso) return ''
-  const date = new Date(iso)
-  if (Number.isNaN(date.getTime())) return ''
-  const offset = date.getTimezoneOffset() * 60_000
-  return new Date(date.getTime() - offset).toISOString().slice(0, 16)
-}
-
-function isoFromLocalInput(value: string): string | null {
-  if (!value) return null
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? null : date.toISOString()
 }
 
 /** Preset ranges plus a custom from/to popover; writes straight to the URL. */
