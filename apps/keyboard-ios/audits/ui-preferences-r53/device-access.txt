@@ -1,0 +1,2 @@
+device_list: Device list failed: The device command failed (exit code 127).
+device_open(hostId=local,deviceId=A4E1CFD8-0EC3-4584-B60D-CD878D007FA0,platform=ios): No device A4E1CFD8-0EC3-4584-B60D-CD878D007FA0 on host local. Call device_list for current ids.

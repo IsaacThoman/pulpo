@@ -1,0 +1,5 @@
+Blind authorship declaration
+
+I independently authored the 16 cases in pulpo-r53-public-workload-author-v1.json using only the public description supplied in the user request. Before creating these outputs, I did not inspect files, source, tests, reports, audits, diffs, candidate changes, results, other model outputs, or filesystem artifacts. I did not run the app, builds, probes, devices, or other agents. This workload has not been executed.
+
+The cases cover English, Español, and English + Español with positive, negative, editing, preference, and history controls. Recorded visible emoji/text variables avoid fixed search ordering and slide-recognition accuracy assumptions. Physical click audibility and tactile haptics are not simulator release gates.

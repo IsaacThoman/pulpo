@@ -1,0 +1,301 @@
+R53 fresh public-v2 — independent semantics/action-binding review and fixture freeze
+
+STATUS
+Source-only review and fixture authorship are complete. The fresh packet has not
+been edited. The new fixture is PublicBehaviorR53V2Tests.swift, independent of
+existing test classes: exactly 12 test methods, 4 English, 4 Español, 4 English +
+Español. Every authored numbered action remains in its original case and order;
+none exceeds six. Setup and observation handoffs are not extra authored editing
+actions. No app/build/test/probe/device/model/subagent invocation was made. No
+case has been executed. This document is not a release decision or a test result.
+The packet and fixture are now frozen for the requested review phase. No claim
+is made that this new Swift file has compiled or that target discovery includes
+it; neither a build nor project mutation is authorized in this task.
+
+READ BOUNDARY
+Read /tmp/pulpo-r53-fresh-public-v2.json and its matching authorship declaration.
+Listed only that packet's matching filenames and the permitted baseline-source
+directory. Read baseline-source EmojiPanelView.swift.txt and
+EmojiSearchBarView.swift.txt; searched KeysView.swift.txt for public input and
+accessibility bindings. Used git ls-tree and git show at 9ff451f4, within
+/tmp/pulpo-r53-ui-preferences, for baseline App/TryItView.swift,
+App/PulpoKeyboardApp.swift, App/KeyboardPreview.swift, the launch-flag fragment
+of App/AppModel.swift, UITests/Support.swift, InstalledKeyboardTests.swift,
+EditingUXR17Tests.swift, KeyboardLanguageTests.swift,
+SettingsInstalledRouteR50Tests.swift, and public locator fragments of
+EmojiSearchTests.swift. These establish existing native helper/public UI
+bindings, not candidate outcomes. No working-tree production source, other audit,
+v1 packet, previous findings, dev result, report, log, recording, or model output
+was read. No source change was made. The task's statement about earlier gates
+and fresh authorship chronology was accepted as context, not independently
+verified by reading forbidden material. No adaptation to a later language
+relocation or unrelated parent change is included.
+
+COMMON PUBLIC BINDING
+Each test launches a fresh app scene with -PKPreview -PKSystemKeyboard
+-PKResetSettings. There is no -PKResetLearning, learned-word clear, emoji clear,
+defaults-domain removal, account operation, or transcript operation. The native
+host must be the ordinary Text Try It UITextView, accessibility id system-text;
+preview-text is rejected. If needed, Next keyboard is tapped to reach Pulpo's
+key-q. Failure to reach the installed extension is recorded without fallback.
+
+Before action 1, app navigation opens Keyboard Settings. Exact baseline switch
+titles Auto-Correction, Auto-Capitalization, “.” Shortcut, Smart Punctuation and
+Learn New Words are set OFF through their visible public switches. The authored
+Slide to Type, Show Slide Trail, Sound and Haptic Feedback initial states are
+established through app switches. The disabled Show Slide Trail row in ES-04 is
+prepared ON while Slide to Type is temporarily ON, then Slide to Type is set OFF,
+all before numbered actions. No numbered settings visit changes an unnamed
+control. All four slide/feedback switch values are read and screenshotted during
+each such visit, including the disabled retained trail value. Predictive Text is
+not an authored transform oracle and no suggestion is selected.
+
+The host's baseline traits specify sentence capitalization/default correction;
+the app has no public host-traits switch. The fixture therefore explicitly
+requires ordinary public iOS Settings > General > Keyboard preparation with
+system Auto-Capitalization, Auto-Correction, Smart Punctuation and period
+shortcut OFF. That is behavioral preparation, not a hidden trait assignment.
+Pulpo must already be enabled with Full Access for app settings to reach the
+extension; the observer verifies these public controls without clearing data.
+If the OS controls/permission cannot be observed or established, the binding is
+unavailable with its precise obstacle, not silently presumed satisfied. No
+candidate entitlement, permission store or internal trait is inspected.
+
+Language is selected using the baseline public keyboard-language menu and the
+exact English / Español / English + Español choice, checking its displayed
+label. Initial literal text is entered by visible key taps. Public Clear handles
+an unexpected scratch draft. The initial caret is then prepared using ONLY
+ordinary host touch/magnifier/selection editing, never a controller/delegate or
+the space-slide feature under test. Each initial host/caret is independently
+observed before action 1. Letter actions map to key-<letter>, space to key-space,
+and Backspace to key-delete, one tap per listed input. No test-only text setter
+or host delegate call prepares or observes the document.
+
+Every immediate checkpoint compares the full host AX string as literal UTF-16
+(not canonical-equivalent Swift string equality), and captures the ordinary
+screen. A human separately records the actual host text, full text before and
+after the collapsed visible caret, and screenshot/live-frame adjudication.
+Empty strings must be explicit responses, not missing fields. No caret is
+inferred solely from document length. Subsequent authored insertions/deletions
+serve as additional caret witnesses, without adding sentinel input actions.
+
+EXACT MECHANICAL LIMITS / NO SILENT SUBSTITUTIONS
+1. XCTest exposes the host text value but no public selectedTextRange/caret API
+   here. It also cannot inspect a live caret while its ordinary drag API holds
+   a finger and stop on a visually chosen boundary. EN-02/ES-02/BI-02 therefore
+   hand the ONE hold-space/slide/release action to a human who stops at the
+   visible authored boundary. Fixed pixel distances, counts of cursor commands,
+   repeated correction gestures, and post-gesture caret repair are forbidden.
+   The actual action and caret must be recorded; inability to drive/observe the
+   continuous public gesture is unavailable, never an automated behavioral pass.
+2. Try It's baseline onDisappear unfocuses the host. A normal coordinate tap on
+   return can move the insertion point and would confound the unchanged-caret
+   oracle. The return handoff explicitly requires ordinary public edit activation
+   preserving the saved selection, e.g. a supported VoiceOver activation, with
+   no manual caret placement/repair. Its availability is not established by this
+   unexecuted review. If the platform cannot provide it, the settings-return
+   caret observation is unbindable there. The fixture must report this obstacle,
+   not tap-and-repair or relaunch/reseed the host. This applies to EN-04, ES-04,
+   BI-04 and their common setup; all setup still requires public focus.
+3. A visible emoji picture cannot by itself distinguish every invisible selector
+   or scalar spelling. Baseline grid identifiers use the catalog base while the
+   drawn glyph may use a stored preferred variant. Accessibility values can
+   describe tone without exposing its exact Unicode sequence. The fixture does
+   NOT strip an id prefix and call that a displayed-emoji observation. A human
+   must transcribe the full actually displayed sequence before selection,
+   corroborating the visible glyph with public accessibility; the record includes
+   literal scalar values. If the full sequence cannot be established through
+   the allowed public presentation, report that exact obstacle as unavailable.
+   Do not infer E or R from the subsequently inserted host substring, silently
+   drop selectors/modifiers/ZWJ components, or choose a fixed convenient emoji.
+4. The transient slide trail is not a reliable post-release screenshot oracle.
+   Before each native TouchPath trace a human starts a real recording. The
+   subsequent human adjudication references that SAME recording, attached to the
+   test result, and states trail presence/absence and an actual nonempty committed
+   span at the host caret. No screenshot after release is used to assert absence.
+   An unavailable native multi-point helper/extension delivery is not replaced
+   with a straight drag or a controller call. TouchPath is the existing helper
+   expressly permitted by the task; no additional private event API is introduced.
+5. Recents membership is a visible section observation, not a history-store read
+   or an insertion-derived proxy. The public Frequently Used button opens it;
+   ordinary browsing can reveal E without an ordering/count/empty-history rule.
+   The observer must distinguish that section from an adjacent category in the
+   same collection viewport. If E is absent this is a failed membership outcome;
+   inability to observe/drive the UI is separately unavailable.
+6. Physical system-click audibility and tactile haptics are unavailable
+   observations on Simulator. ES-04 records both as unavailable at actions 2,
+   4 and 6; no fake sound/tactile assertion and no physical release prerequisite
+   is added. Displayed independent switches and literal editing remain asserted.
+
+ACTION-BY-ACTION INDEPENDENT REVIEW
+Caret notation below is explanatory; the bar is never literal host input.
+
+EN-01 / English / red| blue — 3 actions
+1. Tap key-s, key-u, key-n. Exact redsun| blue follows by literal insertion.
+2. Tap key-delete once. Exact redsu| blue removes only the preceding n.
+3. Tap key-space, key-o, key-n. Exact redsu on| blue; original suffix unchanged.
+All three oracles are internally consistent. Whole-host comparisons and visible
+caret records bind them; actions 1 and 3 also witness middle insertion.
+
+EN-02 / English / lake| — 4 actions
+1. Human holds key-space, slides LEFT until la|ke is visible, releases once.
+   Assert unchanged lake/no space and visual la|ke before the next input.
+2. Tap key-x. Exact lax|ke is the literal insertion witness for action 1.
+3. Human holds key-space, slides RIGHT until laxke| is visible, releases once.
+   Assert unchanged laxke and end caret before the next input.
+4. Tap key-s. Exact laxkes| is the insertion witness for action 3.
+All four oracles are consistent; continuous visual stop is human-bound as in
+limit 1. No fixed-distance assumption or extra witness is substituted.
+
+EN-03 / English / note| — 6 actions
+1. Tap key-emoji, then emoji-search-open. Observe unchanged note|.
+2. Tap key-c, key-a, key-t; emoji-search-field's displayed AX query must be cat.
+   Observe unchanged note|; no host query insertion is allowed.
+3. Tap key-delete once with search active, then key-r. Query must be car; require
+   at least one visible selectable emoji-result-* in the public result
+   strip. Observe unchanged note| immediately, independently of later selection.
+4. Observe full displayed E first, freeze its visible element/frame/name/value,
+   then tap that SAME element. Exact host note+E, collapsed caret after E.
+5. Return through public emoji-abc if picker is present, or key-letters if search
+   is present; tap key-z. Exact host note+E+z, end caret.
+6. Open picker, tap Frequently Used, visibly locate E in that section. Observe
+   unchanged note+E+z and caret. There is no history ordering/count assertion.
+The cat -> ca -> car edit and all concatenations are consistent. Availability
+has no emoji identity/rank oracle. Full E observation is conditional on limit 3;
+recents membership is conditional on actual visible section adjudication.
+
+EN-04 / English / empty caret / slide ON, trail ON, feedback both OFF — 6 actions
+1. Existing native TouchPath traces visible c -> a -> t continuously, releases.
+   Recording must show a following trail; commit a nonempty span at the caret.
+   Record entire actual host as G and its end caret. No exact word is asserted.
+2. Public app Settings: change ONLY Show Slide Trail OFF, observe Slide to Type
+   ON and both feedback OFF, return by public navigation/edit activation. Host
+   must remain G with identical caret, never be reseeded.
+3. Tap key-q. Exact G+q, end caret: literal settings-return insertion witness.
+4. Native trace d -> o -> g, release. Recording must show NO trail and a nonempty
+   slide-typed span at the caret. Record ENTIRE actual resulting host as H.
+   No assumption about spelling, prefix, or boundary spacing relative to G+q.
+5. Settings: change ONLY Slide to Type OFF. Trail and both feedback remain OFF.
+   Return; exact H and unchanged caret.
+6. Tap key-v. Exact H+v, end caret, with Slide to Type OFF.
+All oracles are consistent; H is the entire resulting host, not just a new word.
+The packet does not require a slide attempt with input disabled. No such action
+or oracle is added. Settings focus and trail limits 2/4 remain explicit.
+
+ES-01 / Español / pan| sal — 3 actions
+1. Tap key-l, key-u, key-z. Exact panluz| sal.
+2. Tap key-delete once. Exact panlu| sal.
+3. Tap key-n, key-space, key-a. Exact panlun a| sal, original suffix preserved.
+All literal operations and caret boundaries are consistent. No accent,
+autocorrection, spelling quality, or prediction assumption is introduced.
+
+ES-02 / Español / mesa| — 4 actions
+1. One human hold-space/LEFT-slide/release stopped at visible me|sa. Unchanged
+   mesa, no inserted space, immediate visual caret record.
+2. Tap key-x. Exact mex|sa witnesses that boundary.
+3. One human hold-space/RIGHT-slide/release stopped at visible mexsa|. Host
+   unchanged; immediate visual end-caret record.
+4. Tap key-delete once. Exact mexs| witnesses deletion at the moved caret.
+All four oracles are consistent. Limit 1 applies; there is no repaired caret.
+
+ES-03 / Español / lista| / history unspecified — 4 actions
+1. Tap key-emoji. Observe any visible selectable displayed emoji E IN FULL
+   before tapping that same frozen element. Exact host lista+E, caret after E.
+2. Public return to letters, reopen picker, tap Frequently Used. Visibly locate
+   recorded E in that section; unchanged lista+E/caret. History is never cleared.
+3. Independently observe the displayed matching recent entry IN FULL as R before
+   tapping it. Require exact scalar equality R=E. Exact host lista+E+R, caret
+   after R. Catalog ids alone cannot stand in for this observation.
+4. Return through public letter control; tap key-y, key-a. Exact lista+E+R+ya,
+   end caret: repeated-emoji insertion/continuation witness.
+All oracles are consistent without rank/count/uniqueness assumptions. Limits 3/5
+can make the public observation unavailable; no fixed emoji or host-delta oracle
+is substituted for either E or R.
+
+ES-04 / Español / base| / slide OFF, trail ON, feedback both OFF — 6 actions
+1. App Settings: change ONLY Sound ON; observe Sound ON, Haptic Feedback OFF,
+   Slide to Type OFF and retained Show Slide Trail ON. Return; base| unchanged.
+2. Tap key-a. Exact basea|. Physical sound and haptics unavailable on Simulator.
+3. App Settings: change ONLY Haptic Feedback ON. Observe both feedback ON and
+   slide OFF/trail ON retained. Return; basea| unchanged.
+4. Tap key-delete once. Exact base|. Both physical observations unavailable.
+5. App Settings: change ONLY Sound OFF. Observe Haptic Feedback still ON and
+   slide OFF/trail ON retained. Return; base| unchanged.
+6. Tap key-o. Exact baseo|. Both physical observations unavailable; independent
+   displayed controls and literal editing continuity are the actual assertions.
+All six oracles are consistent. Disabled trail's retained ON value is observed,
+not toggled or normalized OFF during numbered actions. Limit 2 applies.
+
+BI-01 / English + Español / hi| sol — 3 actions
+1. Tap key-space, key-m, key-a, key-r. Exact hi mar| sol.
+2. Tap key-delete once. Exact hi ma| sol.
+3. Tap key-p. Exact hi map| sol, original suffix preserved.
+All literal concatenations/carets are consistent; no language ranking is tested.
+
+BI-02 / English + Español / dos sun| — 4 actions
+1. One human hold-space/LEFT-slide/release stopped at visible dos| sun, BEFORE
+   the existing space. Host remains dos sun, no space insertion.
+2. Tap key-x. Exact dosx| sun is the middle insertion witness.
+3. One human hold-space/RIGHT-slide/release stopped at dosx sun|. Host unchanged.
+4. Tap key-y. Exact dosx suny| is the end insertion witness.
+All four oracles are consistent, including the space-side boundary. Limit 1
+applies; no fixed distance or cursor-command shortcut is substituted.
+
+BI-03 / English + Español / go| casa — 6 actions
+1. Tap key-emoji, then emoji-search-open. Observe unchanged go| casa.
+2. Tap key-s, key-o, key-l. Displayed query sol; unchanged go| casa.
+3. Tap key-delete THREE times with local search active. Displayed query empty;
+   host remains go| casa, including original suffix and caret.
+4. Tap key-p, key-a, key-n. Displayed query pan; at least one visible
+   selectable public result; unchanged go| casa. No emoji identity oracle.
+5. Observe full displayed E before tapping that same frozen result. Exact host
+   go+E+" casa", with caret immediately after E, before the original suffix.
+6. Public return to letters; tap key-q. Exact go+E+q+" casa", caret after q.
+All query edits and concatenations are consistent. Action 6 witnesses the
+middle emoji caret. Neither sol nor pan is allowed into the host. Limit 3 applies.
+
+BI-04 / English + Español / empty caret / slide ON, trail OFF, feedback OFF — 6 actions
+1. Native continuous visible s -> o -> l trace, release. Recording shows NO trail
+   but a nonempty committed span. Record entire actual G and end caret.
+2. App Settings: change ONLY Slide to Type OFF, observe trail OFF and both
+   feedback OFF retained. Return; exact G and unchanged caret.
+3. Tap key-x. Exact G+x, end caret.
+4. App Settings: turn Slide to Type ON FIRST, then Show Slide Trail ON, no other
+   control changes. Both feedback remain OFF. Return; exact G+x/caret unchanged.
+5. Native continuous visible m -> a -> r trace, release. Recording shows a
+   following visible trail and nonempty slide-typed span at the caret. Record
+   entire actual resulting H, without word/prefix/boundary-spacing requirements.
+6. Tap key-z. Exact H+z, end caret.
+All six oracles are consistent. Disabled trail enablement order is mechanical
+and preserves the authored controls. Limits 2/4 apply. No disabled-slide gesture
+or dictionary-quality assertion has been added.
+
+HANDOFF / OBSERVATION CONTRACT
+The fixture's header documents PK_R53_V2_HANDOFF_DIR. Each observation/action
+publishes a uniquely named request and screenshot into that runner-accessible
+directory. A human supplies the corresponding atomic JSON response with the
+exact token, observer, evidence/adjudication and observed fields. Fresh nonce
+names prevent stale responses from being reused. The response is attached to
+the XCTest result. For transient slide checks, the same actual recording must
+exist at its supplied absolute path and is also attached. Missing human binding
+is explicitly unavailable/skipped, not a pass. A reported absence of required
+membership, wrong text/caret/query/trail/state or empty slide commit fails.
+The 1800-second handoff limit and ordinary XCUI locator waits are fixture
+mechanics, not new public latency/performance thresholds. No performance claim
+is made. These handoffs store observer evidence only; they neither read nor
+write candidate private state.
+Visible candidate enumeration uses the public hit-testable element and viewport
+intersection, not a new full-cell-geometry threshold. The human must observe the
+full displayed glyph; a clipped cell hitbox alone does not disqualify a complete
+glyph. The frozen locator/name/value/frame is rechecked before accepting its
+observation and again before selection, including membership-only observations.
+
+Review conclusion: all twelve authored textual/action sequences have coherent
+public semantics. Complete unattended action/observation binding is unavailable
+for the specific caret, focus, full-emoji-scalar and transient-trail reasons
+above. The new fixture represents those limits explicitly with native input,
+public UI observations and mandatory human evidence, preserving every authored
+input/oracle instead of retuning it. An environment unable to fulfill a required
+public observation must retain that unavailable result and exact obstacle.
+No blanket gate, pass result, test execution authorization, or claim that the
+unavailable physical feedback must be measured is invented here.

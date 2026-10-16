@@ -1,0 +1,44 @@
+[
+  {
+    "path": "/tmp/pulpo-r53-baseline-dev-v1.log",
+    "bytes": 568322,
+    "sha256": "2a430360bc839e72bc08636887ce972a57446a12b4d59b8747916d580d5e44f7",
+    "note": ""
+  },
+  {
+    "path": "/tmp/pulpo-r53-baseline-dev-v2.log",
+    "bytes": 237652,
+    "sha256": "78755b78d9ea1740d8601a79aec48d9151796e3ed139753319511b9ee2ab3032",
+    "note": ""
+  },
+  {
+    "path": "/tmp/pulpo-r53-candidate-dev-v2.log",
+    "bytes": 316061,
+    "sha256": "3d45720c2d9225e497acc49fb112e02a8fc11ee4f1fef00a4f68e79661c8ddbf",
+    "note": "Successful logs hashed only, never inspected as text."
+  },
+  {
+    "path": "/tmp/pulpo-r53-baseline-dev-v2.mp4",
+    "bytes": 231408731,
+    "sha256": "b4ea650ba6fb819444d8c0d869c5ce6b97dad0cb8d3e283aaa8caef99512fb8c",
+    "note": ""
+  },
+  {
+    "path": "/tmp/pulpo-r53-candidate-dev-v2.mp4",
+    "bytes": 201625858,
+    "sha256": "319ba5beba78335bbc196cbe9e5d19ee4ade4fff4ee33cdaf4e58d447a95b1d0",
+    "note": ""
+  },
+  {
+    "path": "/tmp/pulpo-r53-signed-preflight-v1.log",
+    "bytes": 75337,
+    "sha256": "af2f91b8b107124fd15b01d4b319ce9f79b2d7f47e5ad1b51a7d907ad947c768",
+    "note": ""
+  },
+  {
+    "path": "/tmp/pulpo-r53-signing-mechanics-v2.log",
+    "bytes": 95767,
+    "sha256": "f0929f34fdd342a4d85b35d2e02546485bca94e02884fc743bc557a85a9e8be7",
+    "note": "Successful logs hashed only, never inspected as text."
+  }
+]

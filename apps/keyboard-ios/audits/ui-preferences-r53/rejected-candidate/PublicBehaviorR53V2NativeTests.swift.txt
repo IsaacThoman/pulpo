@@ -1,0 +1,508 @@
+import XCTest
+import UIKit
+import SwiftUI
+import KeyboardCore
+@testable import KeyboardUI
+@testable import PulpoKeyboard
+
+/// Mounted native public-UI adapter for the UNCHANGED fresh-v2 packet.
+/// NOT an installed-extension/XCUITest packet. Never compiled or run by its author.
+/// Only setup uses preference writes. Numbered visits use HomeView's real toggles.
+/// Four during-contact images need the frozen manual trail adjudication described
+/// in /tmp/pulpo-r53-public-v2-binding-round2.txt; a green XCTest is insufficient.
+@MainActor
+final class PublicBehaviorR53V2NativeTests: XCTestCase, UITextViewDelegate {
+  private var window: UIWindow!
+  private var previousWindow: UIWindow?
+  private var editor: UIViewController!
+  private var textView: UITextView!
+  private var host: PreviewHost!
+  private var keyboard: KeyboardController!
+  private var settingsPage: UIViewController!
+  private var caseID = ""
+  private var expectedSettings: [String: Bool] = [:]
+  private var checkpointCount = 0
+  private var recentSection: Int?
+  private let settingNames = ["Slide to Type", "Show Slide Trail", "Sound", "Haptic Feedback"]
+
+  private enum BindingError: Error { case unavailable }
+  private func require(_ condition: Bool, _ message: String) throws {
+    guard condition else { XCTFail("\(caseID): \(message)"); throw BindingError.unavailable }
+  }
+  private func equal(_ a: String, _ b: String) -> Bool { a.utf16.elementsEqual(b.utf16) }
+  private func pump(_ seconds: TimeInterval = 0.025) {
+    RunLoop.main.run(until: Date().addingTimeInterval(seconds))
+    window?.layoutIfNeeded()
+    keyboard?.rootView.layoutIfNeeded()
+  }
+  private func note(_ name: String, _ value: String) {
+    let a = XCTAttachment(string: value)
+    a.name = "\(caseID)-\(name)"; a.lifetime = .keepAlways; add(a)
+  }
+  private func image(_ name: String, _ view: UIView) throws {
+    try require(view.window != nil && !view.bounds.isEmpty, "Cannot capture mounted \(name)")
+    var drawn = false
+    let rendered = UIGraphicsImageRenderer(bounds: view.bounds).image { _ in
+      drawn = view.drawHierarchy(in: view.bounds, afterScreenUpdates: true)
+    }
+    try require(drawn, "Actual hierarchy rendering unavailable: \(name)")
+    let a = XCTAttachment(image: rendered)
+    a.name = "\(caseID)-\(name)"; a.lifetime = .keepAlways; add(a)
+  }
+  private func views(_ root: UIView) -> [UIView] { [root] + root.subviews.flatMap { views($0) } }
+  private func visible(_ view: UIView) -> Bool {
+    guard let w = view.window, !view.bounds.isEmpty else { return false }
+    var child: UIView? = view
+    while let v = child {
+      if v.isHidden || v.alpha == 0 { return false }
+      if v.clipsToBounds && !v.bounds.intersects(view.convert(view.bounds, to: v)) { return false }
+      child = v.superview
+    }
+    return w.bounds.intersects(view.convert(view.bounds, to: w))
+  }
+  private func control(_ id: String) throws -> UIView {
+    let deadline = Date().addingTimeInterval(10) // resource/UI availability, no latency oracle
+    repeat {
+      if let v = views(keyboard.rootView).first(where: { $0.accessibilityIdentifier == id && visible($0) }) { return v }
+      pump()
+    } while Date() < deadline
+    try require(false, "Visible production control unavailable: \(id)")
+    throw BindingError.unavailable
+  }
+  private func activate(_ view: UIView) throws {
+    try require(visible(view), "Activation target is not mounted/visible")
+    if let button = view as? UIControl {
+      try require(button.isEnabled, "Production control disabled")
+      button.sendActions(for: .touchUpInside)
+    } else {
+      try require(view.accessibilityActivate(), "Production accessibility activation failed")
+    }
+    pump()
+  }
+  private func tap(_ id: String) throws { try activate(control(id)) }
+  private func letters(_ value: String) throws {
+    for c in value { try tap(c == " " ? "key-space" : "key-\(c)") }
+  }
+  private func delete(_ count: Int = 1) throws { for _ in 0..<count { try tap("key-delete") } }
+
+  private func begin(_ id: String, language: KeyboardLanguage, initial: String,
+                     before: String, slide: Bool = true, trail: Bool = true) throws {
+    continueAfterFailure = false
+    caseID = id; checkpointCount = 0; recentSection = nil
+    var initialSettings = KeyboardSettings()
+    initialSettings.language = language
+    initialSettings.autocorrect = false; initialSettings.autoCapitalization = false
+    initialSettings.doubleSpacePeriod = false; initialSettings.smartPunctuation = false
+    initialSettings.predictions = false; initialSettings.learnWords = false
+    initialSettings.swipeTyping = slide; initialSettings.swipeTrail = trail
+    initialSettings.sounds = false; initialSettings.haptics = false
+    SettingsStore().save(initialSettings) // INITIAL SETUP ONLY, before any numbered action
+    OneHandedStore(defaults: AppGroup.defaults).save(.off)
+    expectedSettings = ["Slide to Type": slide, "Show Slide Trail": trail,
+                        "Sound": false, "Haptic Feedback": false]
+    let model = AppModel()
+    model.showSetupGuide = false // mount setup, before actions
+    settingsPage = UIHostingController(rootView: HomeView().environment(model))
+    settingsPage.modalPresentationStyle = .fullScreen
+    let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
+    try require(scene != nil, "Native UIWindowScene unavailable")
+    previousWindow = scene!.windows.first(where: \.isKeyWindow)
+    window = UIWindow(windowScene: scene!)
+    editor = UIViewController(); editor.view.backgroundColor = .systemBackground
+    window.rootViewController = editor; window.makeKeyAndVisible()
+    textView = UITextView(frame: CGRect(x: 16, y: 100, width: window.bounds.width - 32, height: 160))
+    textView.autoresizingMask = [.flexibleWidth]
+    textView.font = .systemFont(ofSize: 24)
+    textView.backgroundColor = .secondarySystemBackground
+    textView.autocorrectionType = .no; textView.autocapitalizationType = .none
+    textView.smartQuotesType = .no; textView.smartDashesType = .no
+    textView.smartInsertDeleteType = .no; textView.spellCheckingType = .no
+    editor.view.addSubview(textView)
+    textView.insertText(initial) // ordinary UITextInput setup, before numbered actions
+    textView.selectedRange = NSRange(location: before.utf16.count, length: 0)
+    host = PreviewHost(textView: textView) { [weak self] url in
+      guard let self, url.host == "settings" else { return }
+      self.textView.resignFirstResponder()
+      self.editor.present(self.settingsPage, animated: false)
+    }
+    keyboard = KeyboardController(host: host)
+    textView.inputView = PreviewInputView(controller: keyboard)
+    textView.delegate = self
+    try require(textView.becomeFirstResponder(), "Mounted editor cannot focus")
+    pump(0.1)
+    let languageControl = try control("keyboard-language")
+    try require(languageControl.accessibilityLabel == "Typing language, \(language.title)", "Displayed language differs from fixture")
+    try hostState(before, String(initial.dropFirst(before.count)))
+  }
+  func textViewDidBeginEditing(_ textView: UITextView) { keyboard?.hostWillAppear() }
+  func textViewDidEndEditing(_ textView: UITextView) { keyboard?.hostDidDisappear() }
+  func textViewDidChangeSelection(_ textView: UITextView) {
+    // The same deferred host notification used by production PreviewTextView.
+    DispatchQueue.main.async { [weak self, weak textView] in
+      guard let self, let textView, self.textView === textView, textView.isFirstResponder else { return }
+      self.keyboard?.documentDidChange()
+    }
+  }
+  override func tearDown() {
+    textView?.resignFirstResponder(); textView?.delegate = nil
+    host?.invalidate(); textView?.inputView = nil
+    window?.isHidden = true; window?.rootViewController = nil
+    previousWindow?.makeKey()
+    settingsPage = nil; keyboard = nil; host = nil; textView = nil; editor = nil; window = nil
+    super.tearDown()
+  }
+  private func hostState(_ before: String, _ after: String = "") throws {
+    try require(equal(textView.text ?? "", before + after), "Literal host differs: \((textView.text ?? "").debugDescription)")
+    try require(textView.selectedRange == NSRange(location: before.utf16.count, length: 0), "Actual UITextView caret/selection differs")
+    guard let range = textView.selectedTextRange else { try require(false, "Host has no caret"); return }
+    let rect = textView.caretRect(for: range.start)
+    try require(textView.window != nil && range.isEmpty && !rect.isEmpty && rect.intersects(textView.bounds), "Host caret is not in the visible mounted editor")
+  }
+  private func check(_ action: Int, _ before: String, _ after: String = "") throws {
+    try hostState(before, after)
+    checkpointCount += 1
+    note("a\(action)-host", "text=\((textView.text ?? "").debugDescription)\nselectedRange=\(textView.selectedRange)\ncaretRect=\(textView.caretRect(for: textView.selectedTextRange!.start))")
+    try image("a\(action)-host", textView)
+  }
+  private func done(_ count: Int) { XCTAssertEqual(checkpointCount, count, "Every authored checkpoint must be checked immediately") }
+
+  /// One contact, actual KeysView callbacks and its unchanged installed delegate.
+  /// One-point increments are mechanics; the actual host caret alone stops it.
+  private func cursor(_ action: Int, direction: Int, before: String, after: String = "") throws {
+    let keys = keyboard.rootView.keys
+    let space = try control("key-space")
+    let start = space.convert(CGPoint(x: space.bounds.midX, y: space.bounds.midY), to: keys)
+    let original = textView.text ?? ""
+    let touch = R53NativeContact(in: keys, point: start)
+    keys.touchesBegan([touch], with: nil)
+    pump(0.65) // hold, then slide; never a fixed-distance correctness oracle
+    let target = before.utf16.count
+    while textView.selectedRange != NSRange(location: target, length: 0) {
+      let next = CGPoint(x: touch.point.x + CGFloat(direction), y: start.y)
+      guard keys.bounds.contains(next) else {
+        keys.touchesCancelled([touch], with: nil)
+        try require(false, "Caret target not reached within visible continuous contact surface; no retry/repair")
+        return
+      }
+      touch.point = next; touch.contactPhase = .moved
+      keys.touchesMoved([touch], with: nil); pump(1.0 / 60)
+    }
+    touch.contactPhase = .ended; keys.touchesEnded([touch], with: nil); pump()
+    try require(equal(textView.text ?? "", original), "Cursor contact mutated host")
+    try check(action, before, after)
+  }
+  private func query(_ expected: String) throws {
+    let field = try control("emoji-search-field")
+    try require(equal(field.accessibilityValue ?? "", expected), "Displayed local query differs")
+  }
+  private func search() throws { try tap("key-emoji"); try tap("emoji-search-open"); _ = try control("emoji-search-field") }
+  private func lettersLayout() throws {
+    if views(keyboard.rootView).contains(where: { $0.accessibilityIdentifier == "emoji-panel" && visible($0) }) { try tap("emoji-abc") }
+    else if views(keyboard.rootView).contains(where: { $0.accessibilityIdentifier == "emoji-search-field" && visible($0) }) { try tap("key-letters") }
+    _ = try control("key-q")
+  }
+  private func recents() throws {
+    try tap("key-emoji")
+    let panel = try control("emoji-panel")
+    guard let recent = views(panel).compactMap({ $0 as? UIButton }).first(where: { $0.accessibilityLabel == "Frequently Used" && visible($0) }) else {
+      try require(false, "Actual public recent category missing"); return
+    }
+    recentSection = recent.tag // section addressed by THIS actual production UI control
+    try activate(recent)
+    try require(views(panel).compactMap { $0 as? UILabel }.contains { $0.text == "FREQUENTLY USED" && visible($0) }, "Displayed category is not recents")
+  }
+  private struct EmojiChoice {
+    let value: String
+    let choose: () throws -> Void
+  }
+  private func glyphVisible(_ image: UIImageView) -> Bool {
+    guard visible(image), image.image != nil else { return false }
+    // Require the actual glyph image, rather than the entire cell, to be unclipped.
+    var ancestor = image.superview
+    while let v = ancestor {
+      if v.clipsToBounds && !v.bounds.contains(image.convert(image.bounds, to: v)) { return false }
+      ancestor = v.superview
+    }
+    return true
+  }
+  private func observeEmoji(_ stage: String, search: Bool = false, matching: String? = nil, recent: Bool = false) throws -> EmojiChoice {
+    let container = try control(search ? "emoji-search-results" : "emoji-panel")
+    let choice: EmojiChoice
+    if search {
+      // Read the live control's render operand beside its actual UIImageView.
+      // No search engine/result list, ID parsing, predetermined rank or post-insertion inference.
+      let candidates = views(container).compactMap { $0 as? EmojiResultControl }.filter { glyphVisible($0.imageView) }
+      guard let cell = candidates.first(where: { matching == nil || equal($0.result.value, matching!) }) else {
+        try require(false, "No visible selectable full search emoji"); throw BindingError.unavailable
+      }
+      let value = cell.result.value
+      choice = EmojiChoice(value: value) { [weak self, weak cell] in
+        guard let self, let cell else { throw BindingError.unavailable }
+        try self.require(self.glyphVisible(cell.imageView) && self.equal(cell.result.value, value), "Observed search presentation changed")
+        try self.activate(cell)
+      }
+    } else {
+      guard let collection = views(container).compactMap({ $0 as? UICollectionView }).first else {
+        try require(false, "Mounted production emoji collection missing"); throw BindingError.unavailable
+      }
+      func shown() -> [(EmojiCell, IndexPath)] {
+        collection.visibleCells.compactMap { cell in
+          guard let cell = cell as? EmojiCell, let path = collection.indexPath(for: cell),
+                (!recent || path.section == recentSection), glyphVisible(cell.imageView),
+                let value = cell.emoji, matching == nil || equal(value, matching!) else { return nil }
+          return (cell, path)
+        }
+      }
+      // Browse only the actual recents section if a matching entry is offscreen.
+      // Section comes from the actual activated Frequently Used button, never a
+      // presumed category position, emoji identity, history count or ranking.
+      while shown().isEmpty, recent {
+        let next = min(collection.contentOffset.x + collection.bounds.width / 2,
+                       max(0, collection.contentSize.width - collection.bounds.width))
+        guard next > collection.contentOffset.x else { break }
+        collection.setContentOffset(CGPoint(x: next, y: collection.contentOffset.y), animated: false); pump()
+        if !collection.indexPathsForVisibleItems.contains(where: { $0.section == recentSection }) { break }
+      }
+      guard let (cell, path) = shown().first, let value = cell.emoji else {
+        try require(false, "Recorded emoji not visibly available in requested collection section"); throw BindingError.unavailable
+      }
+      choice = EmojiChoice(value: value) { [weak self, weak cell, weak collection] in
+        guard let self, let cell, let collection else { throw BindingError.unavailable }
+        try self.require(collection.cellForItem(at: path) === cell && self.glyphVisible(cell.imageView) && self.equal(cell.emoji ?? "", value), "Observed collection cell changed")
+        try self.require(collection.delegate != nil, "Production collection delegate missing")
+        collection.selectItem(at: path, animated: false, scrollPosition: [])
+        collection.delegate?.collectionView?(collection, didSelectItemAt: path)
+        self.pump()
+      }
+    }
+    try require(!choice.value.isEmpty, "Displayed emoji is empty")
+    note(stage + "-full-emoji-before-selection", choice.value + "\n" + choice.value.unicodeScalars.map { String(format: "U+%04X", $0.value) }.joined(separator: " "))
+    try image(stage + "-displayed-emoji-before-selection", container)
+    return choice
+  }
+  private func availableResult() throws { _ = try observeEmoji("ordinary-query-available-result", search: true) }
+
+  /// Actual public SwiftUI accessibility hierarchy, including virtual elements.
+  private func accessibilityObjects(_ root: NSObject) -> [NSObject] {
+    var seen = Set<ObjectIdentifier>()
+    func walk(_ object: NSObject) -> [NSObject] {
+      guard seen.insert(ObjectIdentifier(object)).inserted else { return [] }
+      var children = (object as? UIView)?.subviews.map { $0 as NSObject } ?? []
+      if let elements = object.accessibilityElements { children += elements.compactMap { $0 as? NSObject } }
+      let count = object.accessibilityElementCount()
+      if count > 0 && count != NSNotFound {
+        for index in 0..<count { if let e = object.accessibilityElement(at: index) as? NSObject { children.append(e) } }
+      }
+      return [object] + children.flatMap(walk)
+    }
+    return walk(root)
+  }
+  private func setting(_ title: String) throws -> NSObject {
+    let root = settingsPage.view!
+    func found() -> NSObject? {
+      accessibilityObjects(root).first { object in
+        let label = object.accessibilityLabel ?? ""
+        let named = label == title || label.hasPrefix(title + ",") || label.hasPrefix(title + "\n")
+        let frame = object.accessibilityFrame
+        return named && !frame.isEmpty && root.convert(root.bounds, to: nil).intersects(frame)
+          && (object is UISwitch || object.accessibilityTraits.contains(.button) || object.accessibilityValue != nil)
+      }
+    }
+    let scrolls = views(root).compactMap { $0 as? UIScrollView }.filter { $0.contentSize.height > $0.bounds.height }
+    for scroll in scrolls { scroll.setContentOffset(CGPoint(x: scroll.contentOffset.x, y: -scroll.adjustedContentInset.top), animated: false) }
+    pump()
+    if let result = found() { return result }
+    for scroll in scrolls {
+      while scroll.contentOffset.y < scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom {
+        let next = min(scroll.contentOffset.y + scroll.bounds.height / 2,
+                       scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom)
+        scroll.setContentOffset(CGPoint(x: scroll.contentOffset.x, y: next), animated: false); pump()
+        if let result = found() { return result }
+      }
+    }
+    try require(false, "Real production settings control unavailable: \(title); no model/store fallback")
+    throw BindingError.unavailable
+  }
+  private func displayedValue(_ object: NSObject) throws -> Bool {
+    if let toggle = object as? UISwitch { return toggle.isOn }
+    switch object.accessibilityValue?.lowercased() {
+    case "1", "on": return true
+    case "0", "off": return false
+    default: try require(false, "Real settings control has no readable displayed Boolean"); throw BindingError.unavailable
+    }
+  }
+  private func visit(_ action: Int, _ changes: [(String, Bool)], _ before: String) throws {
+    let originalRange = textView.selectedRange
+    try tap("keyboard-settings") // production button -> PreviewHost openURL -> mounted HomeView
+    try require(editor.presentedViewController === settingsPage, "Real app root settings did not open")
+    pump(0.1)
+    for (title, desired) in changes {
+      let toggle = try setting(title)
+      if try displayedValue(toggle) != desired {
+        try require(!toggle.accessibilityTraits.contains(.notEnabled), "Named real toggle is disabled")
+        if let uiSwitch = toggle as? UISwitch {
+          try require(uiSwitch.isEnabled, "Named UISwitch disabled")
+          uiSwitch.setOn(desired, animated: false); uiSwitch.sendActions(for: .valueChanged)
+        } else {
+          try require(toggle.accessibilityActivate(), "Real SwiftUI toggle activation unavailable; no preference write substitute")
+        }
+        pump()
+      }
+      expectedSettings[title] = desired
+    }
+    for title in settingNames {
+      let toggle = try setting(title)
+      try require(try displayedValue(toggle) == expectedSettings[title]!, "Displayed independent setting differs: \(title)")
+      note("a\(action)-setting-\(title)", "displayed=\(try displayedValue(toggle))")
+      try image("a\(action)-settings-\(title)", settingsPage.view)
+    }
+    settingsPage.dismiss(animated: false); pump()
+    try require(textView.becomeFirstResponder(), "Cannot return to mounted keyboard")
+    pump()
+    try require(textView.selectedRange == originalRange, "Settings visit changed host caret")
+    try check(action, before)
+  }
+  private func glide(_ action: Int, _ path: String, trail: Bool) throws -> String {
+    let keys = keyboard.rootView.keys
+    let points = try path.map { c -> CGPoint in
+      let cap = try control("key-\(c)")
+      return cap.convert(CGPoint(x: cap.bounds.midX, y: cap.bounds.midY), to: keys)
+    }
+    try require(points.count >= 2, "Authored visible key path unavailable")
+    let original = textView.text ?? ""
+    let touch = R53NativeContact(in: keys, point: points[0])
+    keys.touchesBegan([touch], with: nil)
+    for (start, end) in zip(points, points.dropFirst()) {
+      for step in 1...12 {
+        let fraction = CGFloat(step) / 12
+        touch.point = CGPoint(x: start.x + (end.x - start.x) * fraction, y: start.y + (end.y - start.y) * fraction)
+        touch.contactPhase = .moved; keys.touchesMoved([touch], with: nil); pump(1.0 / 60)
+      }
+    }
+    // Capture while the SAME contact remains down, before touchesEnded/fade.
+    try image("a\(action)-DURING-CONTACT-trail", keyboard.rootView)
+    note("a\(action)-trail-manual-check-PENDING", "Fixed frame: \(caseID)-a\(action)-DURING-CONTACT-trail. Authored trail visible=\(trail). Main must adjudicate the actual rendered image; no layer/settings oracle, later replacement frame, retry or rescue.")
+    touch.contactPhase = .ended; keys.touchesEnded([touch], with: nil); pump()
+    let actual = textView.text ?? ""
+    // Only nonempty changed committed text, no exact word/rank/spacing oracle.
+    let shared = zip(original, actual).prefix(while: { $0.0 == $0.1 }).count
+    let committed = String(actual.dropFirst(shared))
+    try require(!committed.isEmpty && !equal(actual, original), "No nonempty slide-typed span committed")
+    note("a\(action)-actual-slide-host", "before=\(original.debugDescription)\nactual=\(actual.debugDescription)\nnewSpan=\(committed.debugDescription)")
+    try check(action, actual)
+    return actual
+  }
+  private func physical(_ action: Int) {
+    note("a\(action)-physical-feedback", "Physical system-click audibility: unavailable. Tactile haptics: unavailable. Assert displayed independent settings and editing continuity only.")
+  }
+
+  func testEN01() throws {
+    try begin("EN-01", language: .english, initial: "red blue", before: "red")
+    try letters("sun"); try check(1, "redsun", " blue")
+    try delete(); try check(2, "redsu", " blue")
+    try letters(" on"); try check(3, "redsu on", " blue"); done(3)
+  }
+  func testEN02() throws {
+    try begin("EN-02", language: .english, initial: "lake", before: "lake")
+    try cursor(1, direction: -1, before: "la", after: "ke")
+    try letters("x"); try check(2, "lax", "ke")
+    try cursor(3, direction: 1, before: "laxke")
+    try letters("s"); try check(4, "laxkes"); done(4)
+  }
+  func testEN03() throws {
+    try begin("EN-03", language: .english, initial: "note", before: "note")
+    try search(); try check(1, "note")
+    try letters("cat"); try query("cat"); try check(2, "note")
+    try delete(); try letters("r"); try query("car"); try availableResult(); try check(3, "note")
+    let e = try observeEmoji("a4-E", search: true); try e.choose(); try check(4, "note" + e.value)
+    try lettersLayout(); try letters("z"); try check(5, "note" + e.value + "z")
+    try recents(); _ = try observeEmoji("a6-membership-E", matching: e.value, recent: true)
+    try check(6, "note" + e.value + "z"); done(6)
+  }
+  func testEN04() throws {
+    try begin("EN-04", language: .english, initial: "", before: "", slide: true, trail: true)
+    let g = try glide(1, "cat", trail: true)
+    try visit(2, [("Show Slide Trail", false)], g)
+    try letters("q"); try check(3, g + "q")
+    let h = try glide(4, "dog", trail: false)
+    try visit(5, [("Slide to Type", false)], h)
+    try letters("v"); try check(6, h + "v"); done(6)
+  }
+  func testES01() throws {
+    try begin("ES-01", language: .spanish, initial: "pan sal", before: "pan")
+    try letters("luz"); try check(1, "panluz", " sal")
+    try delete(); try check(2, "panlu", " sal")
+    try letters("n a"); try check(3, "panlun a", " sal"); done(3)
+  }
+  func testES02() throws {
+    try begin("ES-02", language: .spanish, initial: "mesa", before: "mesa")
+    try cursor(1, direction: -1, before: "me", after: "sa")
+    try letters("x"); try check(2, "mex", "sa")
+    try cursor(3, direction: 1, before: "mexsa")
+    try delete(); try check(4, "mexs"); done(4)
+  }
+  func testES03() throws {
+    try begin("ES-03", language: .spanish, initial: "lista", before: "lista")
+    try tap("key-emoji"); let e = try observeEmoji("a1-E"); try e.choose(); try check(1, "lista" + e.value)
+    try lettersLayout(); try recents(); _ = try observeEmoji("a2-membership-E", matching: e.value, recent: true)
+    try check(2, "lista" + e.value)
+    let r = try observeEmoji("a3-R", matching: e.value, recent: true); try r.choose(); try check(3, "lista" + e.value + r.value)
+    try lettersLayout(); try letters("ya"); try check(4, "lista" + e.value + r.value + "ya"); done(4)
+  }
+  func testES04() throws {
+    try begin("ES-04", language: .spanish, initial: "base", before: "base", slide: false, trail: true)
+    try visit(1, [("Sound", true)], "base")
+    try letters("a"); try check(2, "basea"); physical(2)
+    try visit(3, [("Haptic Feedback", true)], "basea")
+    try delete(); try check(4, "base"); physical(4)
+    try visit(5, [("Sound", false)], "base")
+    try letters("o"); try check(6, "baseo"); physical(6); done(6)
+  }
+  func testBI01() throws {
+    try begin("BI-01", language: .bilingual, initial: "hi sol", before: "hi")
+    try letters(" mar"); try check(1, "hi mar", " sol")
+    try delete(); try check(2, "hi ma", " sol")
+    try letters("p"); try check(3, "hi map", " sol"); done(3)
+  }
+  func testBI02() throws {
+    try begin("BI-02", language: .bilingual, initial: "dos sun", before: "dos sun")
+    try cursor(1, direction: -1, before: "dos", after: " sun")
+    try letters("x"); try check(2, "dosx", " sun")
+    try cursor(3, direction: 1, before: "dosx sun")
+    try letters("y"); try check(4, "dosx suny"); done(4)
+  }
+  func testBI03() throws {
+    try begin("BI-03", language: .bilingual, initial: "go casa", before: "go")
+    try search(); try check(1, "go", " casa")
+    try letters("sol"); try query("sol"); try check(2, "go", " casa")
+    try delete(3); try query(""); try check(3, "go", " casa")
+    try letters("pan"); try query("pan"); try availableResult(); try check(4, "go", " casa")
+    let e = try observeEmoji("a5-E", search: true); try e.choose(); try check(5, "go" + e.value, " casa")
+    try lettersLayout(); try letters("q"); try check(6, "go" + e.value + "q", " casa"); done(6)
+  }
+  func testBI04() throws {
+    try begin("BI-04", language: .bilingual, initial: "", before: "", slide: true, trail: false)
+    let g = try glide(1, "sol", trail: false)
+    try visit(2, [("Slide to Type", false)], g)
+    try letters("x"); try check(3, g + "x")
+    try visit(4, [("Slide to Type", true), ("Show Slide Trail", true)], g + "x")
+    let h = try glide(5, "mar", trail: true)
+    try letters("z"); try check(6, h + "z"); done(6)
+  }
+}
+
+/// Test event carrier only: no engine/controller calls, KVC or private HID API.
+/// One object retains contact identity across began/moved/ended callbacks.
+@MainActor
+private final class R53NativeContact: UITouch {
+  weak var target: UIView?
+  var point: CGPoint
+  var contactPhase: UITouch.Phase = .began
+  init(in view: UIView, point: CGPoint) { target = view; self.point = point; super.init() }
+  override var view: UIView? { target }
+  override var window: UIWindow? { target?.window }
+  override var timestamp: TimeInterval { ProcessInfo.processInfo.systemUptime }
+  override var phase: UITouch.Phase { contactPhase }
+  override func location(in view: UIView?) -> CGPoint { target?.convert(point, to: view) ?? point }
+  override func previousLocation(in view: UIView?) -> CGPoint { location(in: view) }
+}

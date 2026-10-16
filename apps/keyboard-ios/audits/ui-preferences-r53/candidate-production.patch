@@ -1,0 +1,194 @@
+diff --git a/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardUI/EmojiPanelView.swift b/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardUI/EmojiPanelView.swift
+index a824888d..41d86f22 100644
+--- a/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardUI/EmojiPanelView.swift
++++ b/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardUI/EmojiPanelView.swift
+@@ -14,6 +14,7 @@ protocol EmojiPanelDelegate: AnyObject {
+ /// under a search field and the current category's name.
+ final class EmojiPanelView: UIView, UICollectionViewDataSource, UICollectionViewDelegate, UICollectionViewDelegateFlowLayout {
+   weak var delegate: EmojiPanelDelegate?
++  var onInputClick: (() -> Void)?
+   private var style: KeyboardStyle
+   private let history: EmojiHistory
+   private var sections: [(id: String, name: String, emoji: [Emoji])] = []
+@@ -297,7 +298,7 @@ final class EmojiPanelView: UIView, UICollectionViewDataSource, UICollectionView
+ 
+   private func insert(_ value: String) {
+     KeyboardFeedback.current?.key()
+-    UIDevice.current.playInputClick()
++    onInputClick?()
+     history.use(value)
+     delegate?.emojiPanel(self, insert: value)
+   }
+@@ -428,7 +429,7 @@ final class EmojiPanelView: UIView, UICollectionViewDataSource, UICollectionView
+ 
+   private func deleteOnce() {
+     KeyboardFeedback.current?.key(function: true)
+-    UIDevice.current.playInputClick()
++    onInputClick?()
+     delegate?.emojiPanelDelete(self, wholeWord: false)
+   }
+ 
+diff --git a/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardUI/EmojiSearchBarView.swift b/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardUI/EmojiSearchBarView.swift
+index 9984dd3f..8d9bb0c3 100644
+--- a/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardUI/EmojiSearchBarView.swift
++++ b/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardUI/EmojiSearchBarView.swift
+@@ -7,6 +7,7 @@ import UIKit
+ /// the field is a label over the keyboard's own query buffer, as on Gboard.
+ final class EmojiSearchBarView: UIView, UIScrollViewDelegate {
+   var onBack: (() -> Void)?
++  var onInputClick: (() -> Void)?
+   var onSelect: ((EmojiSearchResult) -> Void)?
+ 
+   private var style: KeyboardStyle
+@@ -138,7 +139,7 @@ final class EmojiSearchBarView: UIView, UIScrollViewDelegate {
+ 
+   @objc private func resultTapped(_ sender: EmojiResultControl) {
+     KeyboardFeedback.current?.key()
+-    UIDevice.current.playInputClick()
++    onInputClick?()
+     onSelect?(sender.result)
+   }
+ }
+diff --git a/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardUI/KeyboardController.swift b/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardUI/KeyboardController.swift
+index 63be0b90..c76b3d27 100644
+--- a/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardUI/KeyboardController.swift
++++ b/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardUI/KeyboardController.swift
+@@ -300,6 +300,8 @@ public final class KeyboardController: NSObject {
+     haptics.enabled = settings.haptics && host.hasFullAccess
+     KeyboardFeedback.current = haptics
+     rootView.keys.delegate = self
++    rootView.keys.showsGlideTrail = settings.swipeTrail
++    rootView.search.onInputClick = { [weak self] in self?.requestInputClick() }
+     rootView.bar.onSelect = { [weak self] in self?.select($0) }
+     rootView.bar.onForget = { [weak self] in self?.forget($0) }
+     rootView.bar.onMicrophone = { [weak self] in self?.startDictation() }
+@@ -355,6 +357,7 @@ public final class KeyboardController: NSObject {
+     settings = settingsStore.load()
+     if settings.language != loadedLanguage { replaceLanguage(settings.language) }
+     engine.settings = settings
++    rootView.keys.showsGlideTrail = settings.swipeTrail
+     KeyboardFeedback.current = haptics
+     haptics.enabled = settings.haptics && host?.hasFullAccess == true
+     account = AccountSnapshot.load()
+@@ -621,6 +624,11 @@ public final class KeyboardController: NSObject {
+ 
+   private func feedback(for key: Key) {
+     haptics.key(function: key.style != .input)
++    requestInputClick()
++  }
++
++  /// UIKit retains control of whether an allowed click is audible.
++  private func requestInputClick() {
+     if settings.sounds { UIDevice.current.playInputClick() }
+   }
+ 
+@@ -710,6 +718,7 @@ public final class KeyboardController: NSObject {
+       }
+       let panel = EmojiPanelView(style: rootView.style, catalog: catalog, history: emojiHistory)
+       panel.delegate = self
++      panel.onInputClick = { [weak self] in self?.requestInputClick() }
+       if rootView.emojiOffset > 0 { panel.scrollOffset = rootView.emojiOffset }
+       rootView.insertSubview(panel, belowSubview: rootView.dictation)
+       rootView.emoji = panel
+@@ -1163,7 +1172,7 @@ extension KeyboardController: KeysViewDelegate {
+   }
+ 
+   func keysViewRepeatDelete(_ view: KeysView, wholeWord: Bool) {
+-    if settings.sounds { UIDevice.current.playInputClick() }
++    requestInputClick()
+     if isSearching { return editSearch { wholeWord ? $0.deleteWordsBackward(1) : $0.deleteBackward() } }
+     guard validateDeleteGesture() else { return sync() }
+     if deferredDelete {
+@@ -1234,7 +1243,7 @@ extension KeyboardController: KeysViewDelegate {
+   }
+ 
+   var keysViewAllowsGlide: Bool { !isSearching && stack != nil && engine.policy.allowsGlide && engine.page == .letters }
+-  var keysViewAllowsCursorMovement: Bool { !isSearching }
++  var keysViewAllowsCursorMovement: Bool { !isSearching && host != nil }
+   var keysViewShowsPopups: Bool { settings.keyPopups }
+   var keysViewOneHandedMode: OneHandedMode? { rootView.canDock ? rootView.oneHanded : nil }
+ 
+diff --git a/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardUI/KeysView.swift b/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardUI/KeysView.swift
+index cad75bb9..bf135deb 100644
+--- a/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardUI/KeysView.swift
++++ b/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardUI/KeysView.swift
+@@ -50,6 +50,13 @@ extension KeysViewDelegate {
+ final class KeysView: UIView {
+   weak var delegate: KeysViewDelegate?
+   weak var popupHost: UIView?
++  /// Drawing only; the full gesture still reaches the glide decoder.
++  var showsGlideTrail = true {
++    didSet {
++      trail.layer.isHidden = !showsGlideTrail
++      if !showsGlideTrail { trail.clear() }
++    }
++  }
+   private(set) var layout: KeyboardLayout
+   private(set) var style: KeyboardStyle
+   private(set) var keyViews: [KeyView] = []
+@@ -99,6 +106,8 @@ final class KeysView: UIView {
+     var committed = false
+     var fromPageKey = false
+     var cursorMoved = false
++    /// A revoked trackpad contact stays revoked until lift, even after regrant.
++    var cursorRevoked = false
+     /// Words a delete swipe currently selects.
+     var deleteWords = 0
+     /// How many points the trail has drawn.
+@@ -433,6 +442,11 @@ final class KeysView: UIView {
+     case .alternates, .menu:
+       if let popup, let host = popupHost { popup.track(x: convert(point, to: host).x) }
+     case .cursor:
++      guard !tracking.cursorRevoked, delegate?.keysViewAllowsCursorMovement == true else {
++        tracking.cursorRevoked = true
++        keyViews.forEach { $0.isDimmed = false }
++        return
++      }
+       let step: CGFloat = 9
+       let offset = Int(((point.x - tracking.cursorAnchor) / step).rounded(.towardZero))
+       if offset != 0 {
+@@ -453,7 +467,7 @@ final class KeysView: UIView {
+     case .deleteSwipe:
+       updateDeleteSwipe(tracking, to: point)
+     case .glide:
+-      trail.add(tracking.points[tracking.trailed...])
++      if showsGlideTrail { trail.add(tracking.points[tracking.trailed...]) }
+       tracking.trailed = tracking.points.count
+     case .tap:
+       let key = tracking.key
+@@ -586,13 +600,16 @@ final class KeysView: UIView {
+     tracking.timer?.invalidate()
+     keyViews[tracking.keyIndex].isPressed = false
+     popup?.hide()
+-    trail.begin()
+-    trail.add(tracking.points[...])
++    if showsGlideTrail {
++      trail.begin()
++      trail.add(tracking.points[...])
++    }
+     tracking.trailed = tracking.points.count
+   }
+ 
+   private func enterCursorMode(_ tracking: Tracking) {
+-    guard tracking.mode == .tap else { return }
++    guard tracking.mode == .tap, !tracking.committed,
++          delegate?.keysViewAllowsCursorMovement == true else { return }
+     stats.cursorSlides += 1
+     tracking.mode = .cursor
+     tracking.timer?.invalidate()
+@@ -855,6 +872,15 @@ final class GlideTrail {
+     CATransaction.commit()
+   }
+ 
++  func clear() {
++    link?.invalidate()
++    link = nil
++    points = []
++    layer.removeAllAnimations()
++    layer.path = nil
++    layer.opacity = 0
++  }
++
+   func finish() {
+     link?.invalidate()
+     link = nil

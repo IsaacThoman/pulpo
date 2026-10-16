@@ -1,0 +1,260 @@
+[
+  {
+    "name": "click-repeat-false_0_D5D42035-2DD3-4DA4-AB59-5731C18599AB.txt",
+    "file": "/tmp/pulpo-r53-baseline-signed-v4-attachments/62B2FA20-3303-4E02-A4A5-8D4F78DEB11F.txt",
+    "receipt": "requests=0; text=a\ud83c\udf55; haptics=false",
+    "sha256": "117f7713c61e55ec581ffe17be3bd4221f2004194d4f0ef6fa9bc7bf67bf16e6"
+  },
+  {
+    "name": "click-search-result-false_0_4956B141-C666-43D4-82C2-3DBD7B4EFC19.txt",
+    "file": "/tmp/pulpo-r53-baseline-signed-v4-attachments/CAE6920D-7E0C-482E-9218-B159BB3D75F0.txt",
+    "receipt": "requests=1; text=a\ud83c\udf55; haptics=false",
+    "sha256": "d5dc7fc4c0a5c605d83d7b7953f6b7b6c499dbcb103e9657664224a4fbbf4927"
+  },
+  {
+    "name": "click-picker-delete-false_0_D1813E80-3000-424B-8961-E6673E9282E6.txt",
+    "file": "/tmp/pulpo-r53-baseline-signed-v4-attachments/CB018718-6687-4674-BA93-8EF606EC455C.txt",
+    "receipt": "requests=1; text=a; haptics=false",
+    "sha256": "cbcccaea26f81db66381bc81be78243973cab58c7a09742870c790eae7afde25"
+  },
+  {
+    "name": "click-picker-false_0_7FDFC776-9688-43F5-B782-04073E214322.txt",
+    "file": "/tmp/pulpo-r53-baseline-signed-v4-attachments/DC3FC250-A935-4D8A-9ABD-ED61022C21A5.txt",
+    "receipt": "requests=1; text=a\ud83d\ude00; haptics=false",
+    "sha256": "bd89dd5eb298a2d5455d02e220acc592e39aad62a123170bf27b3a4879444b89"
+  },
+  {
+    "name": "click-letter-false_0_8ECF160F-6329-4C31-81A8-78F96ADB6323.txt",
+    "file": "/tmp/pulpo-r53-baseline-signed-v4-attachments/1076BF94-B96D-486C-969B-2D21AE231627.txt",
+    "receipt": "requests=0; text=a; haptics=false",
+    "sha256": "d8d6c8ebca91ca892d2ba301eca85daa542a68163da79e26de02f26fe3cd0ee6"
+  },
+  {
+    "name": "click-repeat-true_0_A3E2F1B2-A2AB-4427-95C7-D4EA854044C7.txt",
+    "file": "/tmp/pulpo-r53-baseline-signed-v4-attachments/3D7ACF0E-AD83-4A0B-9E92-B76613394154.txt",
+    "receipt": "requests=1; text=a\ud83c\udf55; haptics=true",
+    "sha256": "b9a7d70fbe3f162fd9f344cb6dedef4914f6e17509c971165e46717d0ae2c0bf"
+  },
+  {
+    "name": "click-search-result-true_0_9E0EEBAF-D595-4D06-B7FF-6CA064740122.txt",
+    "file": "/tmp/pulpo-r53-baseline-signed-v4-attachments/B74ADD39-841F-476C-AD68-49B9C2C90E23.txt",
+    "receipt": "requests=1; text=a\ud83c\udf55; haptics=true",
+    "sha256": "b9a7d70fbe3f162fd9f344cb6dedef4914f6e17509c971165e46717d0ae2c0bf"
+  },
+  {
+    "name": "click-picker-delete-true_0_B6468634-7454-4BD4-A358-F29ED986F5E5.txt",
+    "file": "/tmp/pulpo-r53-baseline-signed-v4-attachments/28119370-D896-4B8B-A172-419363C096EE.txt",
+    "receipt": "requests=1; text=a; haptics=true",
+    "sha256": "bc583f063ee3eb8469bfa2aaf68397c272bc8e59965f1084df6ccd30ac262a2d"
+  },
+  {
+    "name": "click-picker-true_0_0148D027-7124-4B31-A5C8-0F3C7DB2E54A.txt",
+    "file": "/tmp/pulpo-r53-baseline-signed-v4-attachments/49AB4540-89D8-48BD-BAAB-C24F49C61ECC.txt",
+    "receipt": "requests=1; text=a\ud83d\ude00; haptics=true",
+    "sha256": "a75084a7f32ecdc077249b8572680d0321c1bfbe2093cc6140bb4e59b7452afa"
+  },
+  {
+    "name": "click-letter-true_0_B516A5AC-62B2-44AD-A29A-3CAEC601AAAD.txt",
+    "file": "/tmp/pulpo-r53-baseline-signed-v4-attachments/1C5F58A3-0DA6-4BD9-8345-387ED809348F.txt",
+    "receipt": "requests=1; text=a; haptics=true",
+    "sha256": "bc583f063ee3eb8469bfa2aaf68397c272bc8e59965f1084df6ccd30ac262a2d"
+  },
+  {
+    "name": "click-repeat-true_0_ABFABB3D-E0E4-42F7-83FA-FE561E5F9270.txt",
+    "file": "/tmp/pulpo-r53-baseline-signed-v4-attachments/8EE8748A-9360-4637-B660-23C714202720.txt",
+    "receipt": "requests=1; text=a\ud83c\udf55; haptics=false",
+    "sha256": "d5dc7fc4c0a5c605d83d7b7953f6b7b6c499dbcb103e9657664224a4fbbf4927"
+  },
+  {
+    "name": "click-search-result-true_0_0FBF9DC3-4803-4279-85EA-75F5BF1D099F.txt",
+    "file": "/tmp/pulpo-r53-baseline-signed-v4-attachments/BAC5F502-FCD7-4854-B353-349BA7D76442.txt",
+    "receipt": "requests=1; text=a\ud83c\udf55; haptics=false",
+    "sha256": "d5dc7fc4c0a5c605d83d7b7953f6b7b6c499dbcb103e9657664224a4fbbf4927"
+  },
+  {
+    "name": "click-picker-delete-true_0_35415E75-70D3-4D2A-951C-1A6A5FD11290.txt",
+    "file": "/tmp/pulpo-r53-baseline-signed-v4-attachments/DC6BAFD0-63D9-4CBB-BC44-6BE46D673776.txt",
+    "receipt": "requests=1; text=a; haptics=false",
+    "sha256": "cbcccaea26f81db66381bc81be78243973cab58c7a09742870c790eae7afde25"
+  },
+  {
+    "name": "click-picker-true_0_D32B8C92-CC35-4F4B-A90C-95C5E9A2FA0D.txt",
+    "file": "/tmp/pulpo-r53-baseline-signed-v4-attachments/CE74E245-A811-4680-AA5E-D39B6C260499.txt",
+    "receipt": "requests=1; text=a\ud83d\ude00; haptics=false",
+    "sha256": "bd89dd5eb298a2d5455d02e220acc592e39aad62a123170bf27b3a4879444b89"
+  },
+  {
+    "name": "click-letter-true_0_269991BA-CF20-4645-B1DD-90EA3E35CDF6.txt",
+    "file": "/tmp/pulpo-r53-baseline-signed-v4-attachments/10ECAD21-21F6-4698-9D14-8A8AA617F781.txt",
+    "receipt": "requests=1; text=a; haptics=false",
+    "sha256": "cbcccaea26f81db66381bc81be78243973cab58c7a09742870c790eae7afde25"
+  },
+  {
+    "name": "click-repeat-false_0_8B56C40A-4B78-4E83-963B-0BAC3D1DF4E9.txt",
+    "file": "/tmp/pulpo-r53-baseline-signed-v4-attachments/5928F76A-DDC3-459A-8905-D8DA08BA14BD.txt",
+    "receipt": "requests=0; text=a\ud83c\udf55; haptics=true",
+    "sha256": "3e0a6589aad78df3cdf962b015e00dc5b38191ac89c937f29791200b0194fcda"
+  },
+  {
+    "name": "click-search-result-false_0_C1DDE682-7C47-4FB3-845A-742E810EA6B2.txt",
+    "file": "/tmp/pulpo-r53-baseline-signed-v4-attachments/85B00A33-1A3D-4E45-9C86-944100130FB0.txt",
+    "receipt": "requests=1; text=a\ud83c\udf55; haptics=true",
+    "sha256": "b9a7d70fbe3f162fd9f344cb6dedef4914f6e17509c971165e46717d0ae2c0bf"
+  },
+  {
+    "name": "click-picker-delete-false_0_16F33178-0B72-4A8C-BC6E-EBB398D99B2C.txt",
+    "file": "/tmp/pulpo-r53-baseline-signed-v4-attachments/13B6DA45-45EB-4492-BA4D-70BA13608CF9.txt",
+    "receipt": "requests=1; text=a; haptics=true",
+    "sha256": "bc583f063ee3eb8469bfa2aaf68397c272bc8e59965f1084df6ccd30ac262a2d"
+  },
+  {
+    "name": "click-picker-false_0_94C8ABAF-A3B9-4372-A52F-B5F3C05A9DAE.txt",
+    "file": "/tmp/pulpo-r53-baseline-signed-v4-attachments/62CD321B-61EC-4D9C-8CDC-F96FA50EA0D9.txt",
+    "receipt": "requests=1; text=a\ud83d\ude00; haptics=true",
+    "sha256": "a75084a7f32ecdc077249b8572680d0321c1bfbe2093cc6140bb4e59b7452afa"
+  },
+  {
+    "name": "click-letter-false_0_37F805C7-EC41-4D2D-AEE5-58CE27B0786B.txt",
+    "file": "/tmp/pulpo-r53-baseline-signed-v4-attachments/FC6FE0B4-CEF8-43B4-9E1D-F1BA56012D28.txt",
+    "receipt": "requests=0; text=a; haptics=true",
+    "sha256": "b92022d9ebdbbac01dc2bed9a3566c78f5d91dfcd5e52dae17c28cbe931375f1"
+  },
+  {
+    "name": "click-repeat-false_0_776DE1F3-2BAF-41A2-86AF-155B61073948.txt",
+    "file": "/tmp/pulpo-r53-baseline-signed-v4-attachments/9DC046FE-E1A7-4C3D-8198-879377FB9AC9.txt",
+    "receipt": "requests=0; text=a\ud83c\udf55; haptics=false",
+    "sha256": "117f7713c61e55ec581ffe17be3bd4221f2004194d4f0ef6fa9bc7bf67bf16e6"
+  },
+  {
+    "name": "click-search-result-false_0_9D46C9DF-A046-45CE-89FF-50ACEC660AE3.txt",
+    "file": "/tmp/pulpo-r53-baseline-signed-v4-attachments/1378F274-96FA-4660-94F3-5BC4E1F99956.txt",
+    "receipt": "requests=1; text=a\ud83c\udf55; haptics=false",
+    "sha256": "d5dc7fc4c0a5c605d83d7b7953f6b7b6c499dbcb103e9657664224a4fbbf4927"
+  },
+  {
+    "name": "click-picker-delete-false_0_6CBE0B47-5628-4DAE-AB29-6CD1D566D791.txt",
+    "file": "/tmp/pulpo-r53-baseline-signed-v4-attachments/A93C2DF2-2DCE-44F2-BDB7-5B0F2AB08DD6.txt",
+    "receipt": "requests=1; text=a; haptics=false",
+    "sha256": "cbcccaea26f81db66381bc81be78243973cab58c7a09742870c790eae7afde25"
+  },
+  {
+    "name": "click-picker-false_0_E0C3108D-75FC-4D4E-B517-9D1C7D1B9F81.txt",
+    "file": "/tmp/pulpo-r53-baseline-signed-v4-attachments/9D2A9875-2FA3-4BD2-AE09-E6DD45C04628.txt",
+    "receipt": "requests=1; text=a\ud83d\ude00; haptics=false",
+    "sha256": "bd89dd5eb298a2d5455d02e220acc592e39aad62a123170bf27b3a4879444b89"
+  },
+  {
+    "name": "click-letter-false_0_8881E494-2C51-4F19-AD21-AE860B113355.txt",
+    "file": "/tmp/pulpo-r53-baseline-signed-v4-attachments/AD1E4DAC-C08C-4E27-9126-5258EE5BA290.txt",
+    "receipt": "requests=0; text=a; haptics=false",
+    "sha256": "d8d6c8ebca91ca892d2ba301eca85daa542a68163da79e26de02f26fe3cd0ee6"
+  },
+  {
+    "name": "query-bilingual-cancel_0_63EA1BA8-1ADE-4FE2-BB5A-D4F5BC0038BF.txt",
+    "file": "/tmp/pulpo-r53-baseline-signed-v4-attachments/9052E391-81F1-40C7-9F73-D5C7EBC70560.txt",
+    "receipt": "query=cara; dimmed=31; selected={4, 0}",
+    "sha256": "1374d7d1ee8064500d9098e54e68c6b7cd0dd0d01eb1d514f69caf16145c2063"
+  },
+  {
+    "name": "query-bilingual-stationary_0_42035D4D-8A4B-49A1-9CE5-FF4191DB2231.txt",
+    "file": "/tmp/pulpo-r53-baseline-signed-v4-attachments/E110EA3A-FAD0-48DB-8498-42FB172743FA.txt",
+    "receipt": "query=cara; dimmed=31; selected={4, 0}",
+    "sha256": "1374d7d1ee8064500d9098e54e68c6b7cd0dd0d01eb1d514f69caf16145c2063"
+  },
+  {
+    "name": "query-bilingual-slide_0_F67344D5-8E1B-44A4-9CB4-B3BF53609934.txt",
+    "file": "/tmp/pulpo-r53-baseline-signed-v4-attachments/351C62E7-D19D-4E4B-ACEF-AFBC700F7645.txt",
+    "receipt": "query=cara; dimmed=31; selected={4, 0}",
+    "sha256": "1374d7d1ee8064500d9098e54e68c6b7cd0dd0d01eb1d514f69caf16145c2063"
+  },
+  {
+    "name": "query-bilingual-hold-drift_0_8410A029-CE5F-4DF8-9EE2-760095140D80.txt",
+    "file": "/tmp/pulpo-r53-baseline-signed-v4-attachments/B0168F57-EFA2-4795-9F37-7BD1AE73B227.txt",
+    "receipt": "query=cara; dimmed=31; selected={4, 0}",
+    "sha256": "1374d7d1ee8064500d9098e54e68c6b7cd0dd0d01eb1d514f69caf16145c2063"
+  },
+  {
+    "name": "query-spanish-cancel_0_A3FBE2BA-9069-4362-B095-FF425845F72E.txt",
+    "file": "/tmp/pulpo-r53-baseline-signed-v4-attachments/B54F45F9-61BB-4E36-8CF6-A79A6D941578.txt",
+    "receipt": "query=cara; dimmed=31; selected={4, 0}",
+    "sha256": "1374d7d1ee8064500d9098e54e68c6b7cd0dd0d01eb1d514f69caf16145c2063"
+  },
+  {
+    "name": "query-spanish-stationary_0_868DD55B-734C-4136-8B10-6955DA5DFF23.txt",
+    "file": "/tmp/pulpo-r53-baseline-signed-v4-attachments/8A952FAA-11BC-4364-B88F-71F717EE5E7C.txt",
+    "receipt": "query=cara; dimmed=31; selected={4, 0}",
+    "sha256": "1374d7d1ee8064500d9098e54e68c6b7cd0dd0d01eb1d514f69caf16145c2063"
+  },
+  {
+    "name": "query-spanish-slide_0_6ED15227-6FB4-46A3-A99A-4C4432187332.txt",
+    "file": "/tmp/pulpo-r53-baseline-signed-v4-attachments/D00E3936-ADA7-43B4-B121-8CCA34E46A2A.txt",
+    "receipt": "query=cara; dimmed=31; selected={4, 0}",
+    "sha256": "1374d7d1ee8064500d9098e54e68c6b7cd0dd0d01eb1d514f69caf16145c2063"
+  },
+  {
+    "name": "query-spanish-hold-drift_0_EBB87E78-1EC2-4386-ABD1-628BEE05233D.txt",
+    "file": "/tmp/pulpo-r53-baseline-signed-v4-attachments/C5008B42-BAE5-4A09-8C14-080D7E0A53A5.txt",
+    "receipt": "query=cara; dimmed=31; selected={4, 0}",
+    "sha256": "1374d7d1ee8064500d9098e54e68c6b7cd0dd0d01eb1d514f69caf16145c2063"
+  },
+  {
+    "name": "query-english-cancel_0_94458BF1-FE0A-4EC3-B0AD-A31CBF6A345E.txt",
+    "file": "/tmp/pulpo-r53-baseline-signed-v4-attachments/1149C124-9BD6-4E68-AA16-084C0E4AB86A.txt",
+    "receipt": "query=red; dimmed=31; selected={4, 0}",
+    "sha256": "2c43ddae7b20e0f417c021ea3df9abecba63a50f22096b23c0a17b8dac4091e6"
+  },
+  {
+    "name": "query-english-stationary_0_5A68ED49-AF04-4F1E-BD7E-0D534215A9A2.txt",
+    "file": "/tmp/pulpo-r53-baseline-signed-v4-attachments/4C75E4EA-AC93-4F40-9412-EA3D63F9D822.txt",
+    "receipt": "query=red; dimmed=31; selected={4, 0}",
+    "sha256": "2c43ddae7b20e0f417c021ea3df9abecba63a50f22096b23c0a17b8dac4091e6"
+  },
+  {
+    "name": "query-english-slide_0_AA4FC344-29DC-4011-9BBF-B1FEFCCF70A3.txt",
+    "file": "/tmp/pulpo-r53-baseline-signed-v4-attachments/62FEE725-E86F-4655-8107-E1F8824195FA.txt",
+    "receipt": "query=red; dimmed=31; selected={4, 0}",
+    "sha256": "2c43ddae7b20e0f417c021ea3df9abecba63a50f22096b23c0a17b8dac4091e6"
+  },
+  {
+    "name": "query-english-hold-drift_0_5E5AE86D-6445-4EE5-9649-7D643023AF71.txt",
+    "file": "/tmp/pulpo-r53-baseline-signed-v4-attachments/33254434-8B20-4384-AA37-1F933E4283A9.txt",
+    "receipt": "query=red; dimmed=31; selected={4, 0}",
+    "sha256": "2c43ddae7b20e0f417c021ea3df9abecba63a50f22096b23c0a17b8dac4091e6"
+  },
+  {
+    "name": "trail-bilingual-false_0_B15077AF-C1EC-4AEC-BDB1-E5BE47BE4459.txt",
+    "file": "/tmp/pulpo-r53-baseline-signed-v4-attachments/BA0A68CE-1D02-4C13-AFA2-372589491AD9.txt",
+    "receipt": "visible=true; glides=6",
+    "sha256": "fd8868faff688f39d3204b08c1d65e177ffe81ca65835143afff560427ea7810"
+  },
+  {
+    "name": "trail-bilingual-true_0_ADD53784-7608-4D65-A420-20A4232C7967.txt",
+    "file": "/tmp/pulpo-r53-baseline-signed-v4-attachments/4D4AE881-5DBA-4298-8AD2-F6607548A7D7.txt",
+    "receipt": "visible=true; glides=5",
+    "sha256": "c821d5e2d2cd2ed06f29546bb380aba3598cb3cd933000a7da53dfbf4e9f7f2a"
+  },
+  {
+    "name": "trail-spanish-false_0_67903236-D8E8-4FE1-BD0A-5049E1AFD59F.txt",
+    "file": "/tmp/pulpo-r53-baseline-signed-v4-attachments/F9685A09-BDC6-4323-9A97-90982755A3D5.txt",
+    "receipt": "visible=true; glides=4",
+    "sha256": "03e2c8e838c1b0e82e7bfadbec1c4cbf6105157c8aa8f8779a23422139e1f772"
+  },
+  {
+    "name": "trail-spanish-true_0_7B23E4F4-5D4F-47A1-B466-39F4CCBF437B.txt",
+    "file": "/tmp/pulpo-r53-baseline-signed-v4-attachments/27400A1E-BB56-4F76-B31C-97E635A4BEA6.txt",
+    "receipt": "visible=true; glides=3",
+    "sha256": "888ffcdbad5aea732493aad4eb77f0351db3f502f3719d17761e6d88630b0b7b"
+  },
+  {
+    "name": "trail-english-false_0_EDF567D5-DB50-48C9-8DD1-7BAED65D4CDD.txt",
+    "file": "/tmp/pulpo-r53-baseline-signed-v4-attachments/F5FC806F-A9D5-4553-A4D1-D201CAC6BAFD.txt",
+    "receipt": "visible=true; glides=2",
+    "sha256": "4a7f2ac4107ae3528944edddee00d5436a4317d57cedd337622b24ee309242d2"
+  },
+  {
+    "name": "trail-english-true_0_1537DC2D-9200-4F04-8265-AE4B138A5577.txt",
+    "file": "/tmp/pulpo-r53-baseline-signed-v4-attachments/2CE43E52-6E59-4258-ABAD-A931F8E9ADB2.txt",
+    "receipt": "visible=true; glides=1",
+    "sha256": "ec5c894212968d1e5fd8ea98dbfa09c3c8a2ee5ae1bd8684f176a3a425c53ae6"
+  }
+]

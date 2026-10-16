@@ -1,0 +1,217 @@
+[
+  {
+    "name": "click-repeat-false_0_3EC13215-7570-4477-AA9F-428EE3A25104.txt",
+    "file": "/tmp/pulpo-r53-candidate-attachments/BA96658A-3377-45E9-A288-9B5B1EC29170.txt",
+    "receipt": "requests=0; text=a\ud83c\udf55; haptics=false"
+  },
+  {
+    "name": "click-search-result-false_0_C46D8B1D-00A8-49A7-B6E8-1EE4DFC9BEE4.txt",
+    "file": "/tmp/pulpo-r53-candidate-attachments/44036A9E-A1D8-4452-95E7-BD0434DD0965.txt",
+    "receipt": "requests=0; text=a\ud83c\udf55; haptics=false"
+  },
+  {
+    "name": "click-picker-delete-false_0_892EA6B0-C7C7-4A10-842C-A0982AFE5EE7.txt",
+    "file": "/tmp/pulpo-r53-candidate-attachments/87A3DAD2-B78F-43E1-86BD-8CCE28893801.txt",
+    "receipt": "requests=0; text=a; haptics=false"
+  },
+  {
+    "name": "click-picker-false_0_750C47E1-02C9-424A-A5A9-4F1F65D65B64.txt",
+    "file": "/tmp/pulpo-r53-candidate-attachments/B127631D-6E9B-40FF-8510-72540ACD3FF3.txt",
+    "receipt": "requests=0; text=a\ud83d\ude00; haptics=false"
+  },
+  {
+    "name": "click-letter-false_0_C71AD564-829D-48A2-A0E0-9662FD1C2C2E.txt",
+    "file": "/tmp/pulpo-r53-candidate-attachments/09006CD7-5614-4D36-B3F0-BC684E97C38E.txt",
+    "receipt": "requests=0; text=a; haptics=false"
+  },
+  {
+    "name": "click-repeat-true_0_E23E5005-4E6A-48C0-BA25-E40F8E48DC26.txt",
+    "file": "/tmp/pulpo-r53-candidate-attachments/E0021DBE-707C-453A-AD6D-E7FAD921335A.txt",
+    "receipt": "requests=1; text=a\ud83c\udf55; haptics=true"
+  },
+  {
+    "name": "click-search-result-true_0_C26A0E26-C4F4-4586-9AE3-C5C4B7CE2CB3.txt",
+    "file": "/tmp/pulpo-r53-candidate-attachments/27ED46EF-00F1-4CE3-9DF3-BCB3A1676872.txt",
+    "receipt": "requests=1; text=a\ud83c\udf55; haptics=true"
+  },
+  {
+    "name": "click-picker-delete-true_0_2A5EF9E7-78B1-430F-A683-48EB010BE762.txt",
+    "file": "/tmp/pulpo-r53-candidate-attachments/A4634F88-6678-4802-BEA2-F3551843E512.txt",
+    "receipt": "requests=1; text=a; haptics=true"
+  },
+  {
+    "name": "click-picker-true_0_8D14F5E1-1869-4E1E-BE58-C88DB00CADAF.txt",
+    "file": "/tmp/pulpo-r53-candidate-attachments/E5BAAD59-3378-4ABE-9ECF-83FF3204BA9B.txt",
+    "receipt": "requests=1; text=a\ud83d\ude00; haptics=true"
+  },
+  {
+    "name": "click-letter-true_0_4A9AD44D-C9E0-4FC0-9757-C0D5CBF24859.txt",
+    "file": "/tmp/pulpo-r53-candidate-attachments/EFB79A4B-833F-46FD-8542-446F82D6F24E.txt",
+    "receipt": "requests=1; text=a; haptics=true"
+  },
+  {
+    "name": "click-repeat-true_0_BD2F37E5-9180-4E48-A3A2-B9F5DD23FF82.txt",
+    "file": "/tmp/pulpo-r53-candidate-attachments/99E60CC7-ABC4-4922-883F-568731996370.txt",
+    "receipt": "requests=1; text=a\ud83c\udf55; haptics=false"
+  },
+  {
+    "name": "click-search-result-true_0_1260D6D9-BB94-4EB6-ABED-8C6434D7D60D.txt",
+    "file": "/tmp/pulpo-r53-candidate-attachments/05956ABC-C34A-4385-ADFF-B858E47A3055.txt",
+    "receipt": "requests=1; text=a\ud83c\udf55; haptics=false"
+  },
+  {
+    "name": "click-picker-delete-true_0_3E7D5423-F974-45D1-87BB-8518D71FB9F8.txt",
+    "file": "/tmp/pulpo-r53-candidate-attachments/BD7CEBA1-3BEE-44B1-976E-9196E428CC76.txt",
+    "receipt": "requests=1; text=a; haptics=false"
+  },
+  {
+    "name": "click-picker-true_0_F55102F2-167E-4C11-9DD0-B78F4223D1ED.txt",
+    "file": "/tmp/pulpo-r53-candidate-attachments/0593A75F-7170-4D13-B07C-2BF50A137540.txt",
+    "receipt": "requests=1; text=a\ud83d\ude00; haptics=false"
+  },
+  {
+    "name": "click-letter-true_0_B4CD9F09-DE09-405C-BDDD-48E12FA6BB66.txt",
+    "file": "/tmp/pulpo-r53-candidate-attachments/63A74609-A6A9-4490-A324-9E16E5BC7A1F.txt",
+    "receipt": "requests=1; text=a; haptics=false"
+  },
+  {
+    "name": "click-repeat-false_0_644F9796-82FC-46A0-AA6A-53BB02F04019.txt",
+    "file": "/tmp/pulpo-r53-candidate-attachments/A435ABED-523D-4843-8831-5B32C94A2700.txt",
+    "receipt": "requests=0; text=a\ud83c\udf55; haptics=true"
+  },
+  {
+    "name": "click-search-result-false_0_A609018A-E027-4CC7-81AB-7D1459089797.txt",
+    "file": "/tmp/pulpo-r53-candidate-attachments/A4654192-3882-4D32-9FD3-928FFA7C5AD2.txt",
+    "receipt": "requests=0; text=a\ud83c\udf55; haptics=true"
+  },
+  {
+    "name": "click-picker-delete-false_0_B15B91DC-4FE1-4AB1-A036-62EDD550C7ED.txt",
+    "file": "/tmp/pulpo-r53-candidate-attachments/FAD1C187-2959-44FE-9FC7-BD81DF7A8CB4.txt",
+    "receipt": "requests=0; text=a; haptics=true"
+  },
+  {
+    "name": "click-picker-false_0_815CDFF5-5858-4B9D-9A78-1697DC56F76B.txt",
+    "file": "/tmp/pulpo-r53-candidate-attachments/112BE5EC-1552-40DA-8324-6728E59310FD.txt",
+    "receipt": "requests=0; text=a\ud83d\ude00; haptics=true"
+  },
+  {
+    "name": "click-letter-false_0_EF29BE4E-A09C-44FB-8718-FBF662BAD592.txt",
+    "file": "/tmp/pulpo-r53-candidate-attachments/49B49DD2-AE22-4182-AADD-8DEBD270F854.txt",
+    "receipt": "requests=0; text=a; haptics=true"
+  },
+  {
+    "name": "click-repeat-false_0_EED52949-D022-418B-9B93-91EB3DCF46D4.txt",
+    "file": "/tmp/pulpo-r53-candidate-attachments/75BB9F60-D33F-41D8-A7C2-10F1F386B95F.txt",
+    "receipt": "requests=0; text=a\ud83c\udf55; haptics=false"
+  },
+  {
+    "name": "click-search-result-false_0_9377CB1F-F837-460D-AD43-923F60B659BC.txt",
+    "file": "/tmp/pulpo-r53-candidate-attachments/D046CCAB-C19D-4BF2-813A-0BA20F96A594.txt",
+    "receipt": "requests=0; text=a\ud83c\udf55; haptics=false"
+  },
+  {
+    "name": "click-picker-delete-false_0_076512F4-CF15-480C-B937-1D933BA4DAE3.txt",
+    "file": "/tmp/pulpo-r53-candidate-attachments/7085EF4F-57DB-4BB1-8912-BE91A82F7915.txt",
+    "receipt": "requests=0; text=a; haptics=false"
+  },
+  {
+    "name": "click-picker-false_0_1E92E86B-9A2D-4CDE-9C73-D972B7EA4B39.txt",
+    "file": "/tmp/pulpo-r53-candidate-attachments/6142EB1C-3A92-424A-B3F1-0A39A24FAADF.txt",
+    "receipt": "requests=0; text=a\ud83d\ude00; haptics=false"
+  },
+  {
+    "name": "click-letter-false_0_8C3F5A48-4585-4DF9-8978-70E194E93563.txt",
+    "file": "/tmp/pulpo-r53-candidate-attachments/F64AB438-ACDA-4281-B56F-7033B178257B.txt",
+    "receipt": "requests=0; text=a; haptics=false"
+  },
+  {
+    "name": "query-bilingual-cancel_0_8A865EA9-6476-4B9C-9B63-DB9DC30C8D47.txt",
+    "file": "/tmp/pulpo-r53-candidate-attachments/25E8AA79-969C-44DB-8716-E0ADF52DBB37.txt",
+    "receipt": "query=cara; dimmed=0; selected={4, 0}"
+  },
+  {
+    "name": "query-bilingual-stationary_0_D3C07594-FC5A-4739-A2F5-38995C559C5A.txt",
+    "file": "/tmp/pulpo-r53-candidate-attachments/696FF520-1B2B-4F2A-90D0-F74A471CCB8B.txt",
+    "receipt": "query=cara; dimmed=0; selected={4, 0}"
+  },
+  {
+    "name": "query-bilingual-slide_0_52D2F25F-47B9-4BE1-86BC-D00D125AC323.txt",
+    "file": "/tmp/pulpo-r53-candidate-attachments/07F0CC85-D817-4C3B-9085-31A13345C52F.txt",
+    "receipt": "query=cara; dimmed=0; selected={4, 0}"
+  },
+  {
+    "name": "query-bilingual-hold-drift_0_1897D891-56AC-4BC5-8E2E-83154D8F7433.txt",
+    "file": "/tmp/pulpo-r53-candidate-attachments/BB891BC3-A2A1-4AD6-AE65-83169D4343DF.txt",
+    "receipt": "query=cara; dimmed=0; selected={4, 0}"
+  },
+  {
+    "name": "query-spanish-cancel_0_7DC93A2F-CB8E-4830-8393-EE2FDB2094C1.txt",
+    "file": "/tmp/pulpo-r53-candidate-attachments/5670B019-EFAE-4F29-BE97-0C8341E0DAAB.txt",
+    "receipt": "query=cara; dimmed=0; selected={4, 0}"
+  },
+  {
+    "name": "query-spanish-stationary_0_2D79AC53-07CE-4AF2-BFAC-6A9E0D2C0F4A.txt",
+    "file": "/tmp/pulpo-r53-candidate-attachments/457B3E70-5F81-4DE0-92FF-96C7B8137082.txt",
+    "receipt": "query=cara; dimmed=0; selected={4, 0}"
+  },
+  {
+    "name": "query-spanish-slide_0_A5C5A30B-56AE-4053-B9F5-0E9EDAE40224.txt",
+    "file": "/tmp/pulpo-r53-candidate-attachments/5CC052D4-3694-4350-AD8E-5A149C54D275.txt",
+    "receipt": "query=cara; dimmed=0; selected={4, 0}"
+  },
+  {
+    "name": "query-spanish-hold-drift_0_A5E0AD12-C2FC-45F0-BECA-0BA998E48075.txt",
+    "file": "/tmp/pulpo-r53-candidate-attachments/62E84353-DCCC-4A68-8F87-0375826EF3FE.txt",
+    "receipt": "query=cara; dimmed=0; selected={4, 0}"
+  },
+  {
+    "name": "query-english-cancel_0_47CFB048-F68A-4453-8FD9-ECC9FCE6B7FB.txt",
+    "file": "/tmp/pulpo-r53-candidate-attachments/77DD79BC-1055-4E82-A47B-2E8569C7EA57.txt",
+    "receipt": "query=red; dimmed=0; selected={4, 0}"
+  },
+  {
+    "name": "query-english-stationary_0_DF5FB1A9-541D-49CA-9985-E4C9D244B1F2.txt",
+    "file": "/tmp/pulpo-r53-candidate-attachments/406D1BD6-92E2-4F36-8A73-7E6CBAD183F8.txt",
+    "receipt": "query=red; dimmed=0; selected={4, 0}"
+  },
+  {
+    "name": "query-english-slide_0_AA3B0A54-CA4B-46ED-8A76-FD7652CC984A.txt",
+    "file": "/tmp/pulpo-r53-candidate-attachments/D6EB1F03-3E1A-4FB0-9A0C-2A1E06E34839.txt",
+    "receipt": "query=red; dimmed=0; selected={4, 0}"
+  },
+  {
+    "name": "query-english-hold-drift_0_3C1FE618-6676-4E8A-8E60-BB7EE8357C63.txt",
+    "file": "/tmp/pulpo-r53-candidate-attachments/971605D4-A1BD-46D8-A753-5FC11FBFCFF4.txt",
+    "receipt": "query=red; dimmed=0; selected={4, 0}"
+  },
+  {
+    "name": "trail-bilingual-false_0_33446FA6-CF6A-45E8-816F-BC5D1BB9AA3F.txt",
+    "file": "/tmp/pulpo-r53-candidate-attachments/2B057002-1FC6-4EDE-A982-0A74539F8EC2.txt",
+    "receipt": "visible=false; glides=6"
+  },
+  {
+    "name": "trail-bilingual-true_0_AA699889-CB9F-4EC6-ABAB-26B9F7CAF231.txt",
+    "file": "/tmp/pulpo-r53-candidate-attachments/01C95FEB-BA48-40C1-B6F5-87EE40A0669D.txt",
+    "receipt": "visible=true; glides=5"
+  },
+  {
+    "name": "trail-spanish-false_0_6FAFE280-9F2C-4726-BB76-20B00D23D101.txt",
+    "file": "/tmp/pulpo-r53-candidate-attachments/897707D6-9DE1-4B65-8551-00A27D3103C3.txt",
+    "receipt": "visible=false; glides=4"
+  },
+  {
+    "name": "trail-spanish-true_0_CE2C7B71-76DC-474D-B96D-BE464104B97F.txt",
+    "file": "/tmp/pulpo-r53-candidate-attachments/AB5D180E-8F1E-41A5-9709-190DF4233D6C.txt",
+    "receipt": "visible=true; glides=3"
+  },
+  {
+    "name": "trail-english-false_0_0393627B-8A61-463D-AAA7-9508C02A1AC5.txt",
+    "file": "/tmp/pulpo-r53-candidate-attachments/5E18CFAC-0BA3-4055-981C-FC2E592470E1.txt",
+    "receipt": "visible=false; glides=2"
+  },
+  {
+    "name": "trail-english-true_0_E6509F5A-DC2C-473D-9F11-99ADC2DFEE82.txt",
+    "file": "/tmp/pulpo-r53-candidate-attachments/CEA7DFDD-EE81-46EE-A623-E7BA59751DE2.txt",
+    "receipt": "visible=true; glides=1"
+  }
+]

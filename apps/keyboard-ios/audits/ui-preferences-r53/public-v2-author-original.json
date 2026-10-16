@@ -1,0 +1,490 @@
+{
+  "case_count": 12,
+  "conventions": {
+    "scope": "Independent source-blind public-behavior workload. No case has been executed. Execution must wait for independent semantic/action-binding review and complete freeze.",
+    "distribution": "Exactly 12 cases: four English, four Español, four English + Español.",
+    "fixture": [
+      "Use a plain-text host. Prepare each initial host text and caret through ordinary host editing before the numbered actions. Each case starts independently.",
+      "Host transformations, keyboard auto-capitalization, autocorrection, smart punctuation, and learning are OFF for all exact literal comparisons.",
+      "Use the stated language mode. Start on letter keys unless stated otherwise. Establish initial settings before numbered actions.",
+      "Caret notation uses | for the insertion point; | is never literal host text. Existing emoji history is unspecified unless a case creates a known entry."
+    ],
+    "action_binding": [
+      "Each case contains at most six numbered public actions. A finite listed sequence of key taps is performed in order. A settings visit means opening public settings, changing only the named controls, observing their displayed values, and returning to the keyboard.",
+      "Check each outcome immediately after its referenced action. Observe host text and caret through the ordinary host UI; do not use private APIs, logs, or internal state.",
+      "For cursor editing, hold the space bar and slide in the named direction until the visibly indicated host caret reaches the stated character boundary, then release. No fixed distance or duration is required.",
+      "For slide typing, trace the named visible letter keys in one continuous gesture and release. Require a committed nonempty text span, without an exact glide word, spelling, ranking, prediction, or boundary-spacing oracle. Capture actual resulting host text and caret when requested.",
+      "Before every emoji selection, record the full actually displayed selectable emoji as the named variable, including any variation selectors, modifiers, or joined components. Tap that same displayed result. Never assume a fixed identity or ranking.",
+      "Open/focus emoji search through its public UI and type its queries using keyboard letter keys. Search Backspace refers to the key while the keyboard-local search field has focus. Until a result is selected, query typing and editing must preserve host text and caret.",
+      "An ordinary query requiring a visible selectable result checks search availability only. No particular emoji identity, order, or count is required.",
+      "Recent-choice checks assert visible membership of the recorded emoji, with no exact ordering, count, uniqueness, or assumption of empty history.",
+      "Physical sound and tactile haptics are unavailable observations on Simulator. Record both as unavailable on Simulator; neither is an impossible release prerequisite. Feedback cases assert independent displayed settings and editing continuity."
+    ],
+    "variables": "All variables are case-local observations recorded before their dependent actions. Concatenation means exact text joining with no added characters unless explicitly stated.",
+    "exclusions": "No performance thresholds, population claims, inaccessible internals, dictionary-quality oracle, or persistence across reinstall/reboot."
+  },
+  "cases": [
+    {
+      "id": "EN-01",
+      "language": "English",
+      "initial_state": {
+        "host_text": "red blue",
+        "caret": "red| blue",
+        "keyboard": "English letter keys"
+      },
+      "actions": [
+        "Tap letter keys s, u, n in order.",
+        "Tap Backspace once.",
+        "Tap the space bar once, then letter keys o, n in order."
+      ],
+      "expected_outcomes": [
+        {
+          "after_action": 1,
+          "checkpoint": "Host is exactly redsun blue; caret is redsun| blue."
+        },
+        {
+          "after_action": 2,
+          "checkpoint": "Host is exactly redsu blue; caret is redsu| blue."
+        },
+        {
+          "after_action": 3,
+          "checkpoint": "Host is exactly redsu on blue; caret is redsu on| blue. Existing suffix remains intact."
+        }
+      ],
+      "rationale": "Positive tap typing, single deletion, and insertion continuity within existing text."
+    },
+    {
+      "id": "EN-02",
+      "language": "English",
+      "initial_state": {
+        "host_text": "lake",
+        "caret": "lake|",
+        "keyboard": "English letter keys"
+      },
+      "actions": [
+        "Hold the space bar, slide left until the visible caret is between a and k, and release.",
+        "Tap letter key x.",
+        "Hold the space bar, slide right until the visible caret reaches the end, and release.",
+        "Tap letter key s."
+      ],
+      "expected_outcomes": [
+        {
+          "after_action": 1,
+          "checkpoint": "Host remains exactly lake; caret is la|ke. Cursor editing inserts no spaces."
+        },
+        {
+          "after_action": 2,
+          "checkpoint": "Host is exactly laxke; caret is lax|ke."
+        },
+        {
+          "after_action": 3,
+          "checkpoint": "Host remains exactly laxke; caret is laxke|."
+        },
+        {
+          "after_action": 4,
+          "checkpoint": "Host is exactly laxkes; caret is at end."
+        }
+      ],
+      "rationale": "Checks both cursor-slide directions, no text mutation during movement, and insertion at the chosen caret."
+    },
+    {
+      "id": "EN-03",
+      "language": "English",
+      "initial_state": {
+        "host_text": "note",
+        "caret": "note|",
+        "keyboard": "English; emoji picker closed"
+      },
+      "actions": [
+        "Open the emoji picker and focus its keyboard-local search field.",
+        "Tap letter keys c, a, t to enter cat.",
+        "Tap search Backspace once, then letter key r to change the query to car.",
+        "Record one visible selectable result full emoji as E, then tap that same result.",
+        "Return to letter keys and tap letter key z.",
+        "Open the emoji picker and show recent choices."
+      ],
+      "expected_outcomes": [
+        {
+          "after_action": 1,
+          "checkpoint": "Host remains note with caret at end."
+        },
+        {
+          "after_action": 2,
+          "checkpoint": "Query is exactly cat; host remains note with unchanged caret."
+        },
+        {
+          "after_action": 3,
+          "checkpoint": "Query is exactly car and at least one selectable result is visible. Host remains note with unchanged caret; search deletion does not delete host text."
+        },
+        {
+          "after_action": 4,
+          "checkpoint": "Host is exactly the concatenation of note and recorded E; caret is immediately after E. Neither query is inserted into the host."
+        },
+        {
+          "after_action": 5,
+          "checkpoint": "Host is exactly the concatenation of note, E, and z; caret is at end."
+        },
+        {
+          "after_action": 6,
+          "checkpoint": "Recent choices visibly contain E. Opening recents preserves host text and caret."
+        }
+      ],
+      "rationale": "Checks query isolation and correction, observed-result selection, letter-entry continuity, and recent-choice history."
+    },
+    {
+      "id": "EN-04",
+      "language": "English",
+      "initial_state": {
+        "host_text": "",
+        "caret": "at start",
+        "keyboard": "English letter keys",
+        "settings": {
+          "Slide to Type": true,
+          "Show Slide Trail": true,
+          "Sound": false,
+          "Haptic Feedback": false
+        }
+      },
+      "actions": [
+        "Slide continuously over c, a, t and release; record resulting host text as G.",
+        "In settings turn Show Slide Trail OFF, leave Slide to Type ON, and return to the keyboard.",
+        "Tap letter key q.",
+        "Slide continuously over d, o, g and release; record resulting host text as H.",
+        "In settings turn Slide to Type OFF, leave Show Slide Trail OFF, and return to the keyboard.",
+        "Tap letter key v."
+      ],
+      "expected_outcomes": [
+        {
+          "after_action": 1,
+          "checkpoint": "A visible trail follows the gesture and a nonempty text span is committed. Record actual G; caret follows the committed text. No exact word is required."
+        },
+        {
+          "after_action": 2,
+          "checkpoint": "Slide to Type is ON and Show Slide Trail is OFF. Both feedback settings remain OFF. Host and caret are unchanged."
+        },
+        {
+          "after_action": 3,
+          "checkpoint": "Host is exactly G concatenated with q; caret is at end."
+        },
+        {
+          "after_action": 4,
+          "checkpoint": "No slide trail is displayed during the gesture; a nonempty slide-typed span is committed at the caret. Record actual resulting H without an exact spelling or boundary-spacing requirement."
+        },
+        {
+          "after_action": 5,
+          "checkpoint": "Slide to Type and Show Slide Trail are OFF. Both feedback settings remain OFF. Host and caret are unchanged."
+        },
+        {
+          "after_action": 6,
+          "checkpoint": "Host is exactly H concatenated with v; caret is at end. Tap typing works with Slide to Type OFF."
+        }
+      ],
+      "rationale": "Separates trail visibility from slide input, checks application on return, and checks tap continuity after disabling slide input."
+    },
+    {
+      "id": "ES-01",
+      "language": "Español",
+      "initial_state": {
+        "host_text": "pan sal",
+        "caret": "pan| sal",
+        "keyboard": "Español letter keys"
+      },
+      "actions": [
+        "Tap letter keys l, u, z in order.",
+        "Tap Backspace once.",
+        "Tap letter key n, the space bar once, then letter key a."
+      ],
+      "expected_outcomes": [
+        {
+          "after_action": 1,
+          "checkpoint": "Host is exactly panluz sal; caret is panluz| sal."
+        },
+        {
+          "after_action": 2,
+          "checkpoint": "Host is exactly panlu sal; caret is panlu| sal."
+        },
+        {
+          "after_action": 3,
+          "checkpoint": "Host is exactly panlun a sal; caret is panlun a| sal. Existing suffix remains intact."
+        }
+      ],
+      "rationale": "Checks literal Spanish-mode letters and spaces, single deletion, and continued middle insertion without correction assumptions."
+    },
+    {
+      "id": "ES-02",
+      "language": "Español",
+      "initial_state": {
+        "host_text": "mesa",
+        "caret": "mesa|",
+        "keyboard": "Español letter keys"
+      },
+      "actions": [
+        "Hold the space bar, slide left until the visible caret is between e and s, and release.",
+        "Tap letter key x.",
+        "Hold the space bar, slide right until the visible caret reaches the end, and release.",
+        "Tap Backspace once."
+      ],
+      "expected_outcomes": [
+        {
+          "after_action": 1,
+          "checkpoint": "Host remains exactly mesa; caret is me|sa. No space is inserted."
+        },
+        {
+          "after_action": 2,
+          "checkpoint": "Host is exactly mexsa; caret is mex|sa."
+        },
+        {
+          "after_action": 3,
+          "checkpoint": "Host remains exactly mexsa; caret is at end."
+        },
+        {
+          "after_action": 4,
+          "checkpoint": "Host is exactly mexs; caret is at end. Deletion uses the moved caret."
+        }
+      ],
+      "rationale": "Checks cursor-only gestures and subsequent insertion and deletion at the moved host caret."
+    },
+    {
+      "id": "ES-03",
+      "language": "Español",
+      "initial_state": {
+        "host_text": "lista",
+        "caret": "lista|",
+        "keyboard": "Español; emoji picker closed",
+        "recents": "Existing history unspecified."
+      },
+      "actions": [
+        "Open the emoji picker, record one visible selectable full emoji as E, and tap it.",
+        "Return to letter keys, reopen the emoji picker, and show recent choices.",
+        "Record the displayed recent entry matching E as R, then tap that entry.",
+        "Return to letter keys and tap letter keys y, a in order."
+      ],
+      "expected_outcomes": [
+        {
+          "after_action": 1,
+          "checkpoint": "Host is exactly lista concatenated with E; caret is immediately after E."
+        },
+        {
+          "after_action": 2,
+          "checkpoint": "Recent choices visibly contain E. Host and caret are unchanged; no ordering or empty-history assumption applies."
+        },
+        {
+          "after_action": 3,
+          "checkpoint": "Recorded R is the full displayed emoji matching E. Host is exactly the concatenation of lista, E, and R; caret is after R."
+        },
+        {
+          "after_action": 4,
+          "checkpoint": "Host is exactly the concatenation of lista, E, R, and ya; caret is at end."
+        }
+      ],
+      "rationale": "Creates a known history control, selects its observed recent entry, and checks repeated emoji insertion followed by letters."
+    },
+    {
+      "id": "ES-04",
+      "language": "Español",
+      "initial_state": {
+        "host_text": "base",
+        "caret": "base|",
+        "keyboard": "Español letter keys",
+        "settings": {
+          "Slide to Type": false,
+          "Show Slide Trail": true,
+          "Sound": false,
+          "Haptic Feedback": false
+        }
+      },
+      "actions": [
+        "In settings turn Sound ON, leave Haptic Feedback OFF, and return to the keyboard.",
+        "Tap letter key a.",
+        "In settings turn Haptic Feedback ON, leave Sound ON, and return to the keyboard.",
+        "Tap Backspace once.",
+        "In settings turn Sound OFF, leave Haptic Feedback ON, and return to the keyboard.",
+        "Tap letter key o."
+      ],
+      "expected_outcomes": [
+        {
+          "after_action": 1,
+          "checkpoint": "Sound is ON, Haptic Feedback is OFF, Slide to Type is OFF, and Show Slide Trail is ON. Host remains base with caret at end."
+        },
+        {
+          "after_action": 2,
+          "checkpoint": "Host is exactly basea with caret at end. On Simulator record physical system-click audibility and tactile haptics as unavailable."
+        },
+        {
+          "after_action": 3,
+          "checkpoint": "Sound and Haptic Feedback are ON. Slide settings retain their initial values. Host and caret are unchanged."
+        },
+        {
+          "after_action": 4,
+          "checkpoint": "Host is exactly base with caret at end. On Simulator physical sound and tactile haptics are unavailable observations."
+        },
+        {
+          "after_action": 5,
+          "checkpoint": "Sound is OFF and Haptic Feedback remains ON. Slide settings retain their initial values. Host and caret are unchanged."
+        },
+        {
+          "after_action": 6,
+          "checkpoint": "Host is exactly baseo with caret at end. On Simulator record physical sound and tactile haptics unavailable; independent settings and editing continuity are the asserted outcomes."
+        }
+      ],
+      "rationale": "Checks independent feedback controls applied on return and editing continuity without requiring unavailable Simulator sensations."
+    },
+    {
+      "id": "BI-01",
+      "language": "English + Español",
+      "initial_state": {
+        "host_text": "hi sol",
+        "caret": "hi| sol",
+        "keyboard": "English + Español letter keys"
+      },
+      "actions": [
+        "Tap the space bar once, then letter keys m, a, r in order.",
+        "Tap Backspace once.",
+        "Tap letter key p."
+      ],
+      "expected_outcomes": [
+        {
+          "after_action": 1,
+          "checkpoint": "Host is exactly hi mar sol; caret is hi mar| sol."
+        },
+        {
+          "after_action": 2,
+          "checkpoint": "Host is exactly hi ma sol; caret is hi ma| sol."
+        },
+        {
+          "after_action": 3,
+          "checkpoint": "Host is exactly hi map sol; caret is hi map| sol. Existing suffix remains intact."
+        }
+      ],
+      "rationale": "Checks literal tap typing and deletion in mixed-language context without prediction or language-ranking expectations."
+    },
+    {
+      "id": "BI-02",
+      "language": "English + Español",
+      "initial_state": {
+        "host_text": "dos sun",
+        "caret": "dos sun|",
+        "keyboard": "English + Español letter keys"
+      },
+      "actions": [
+        "Hold the space bar, slide left until the visible caret is after dos and before its existing space, and release.",
+        "Tap letter key x.",
+        "Hold the space bar, slide right until the visible caret reaches the end, and release.",
+        "Tap letter key y."
+      ],
+      "expected_outcomes": [
+        {
+          "after_action": 1,
+          "checkpoint": "Host remains exactly dos sun; caret is dos| sun. Cursor movement inserts no spaces."
+        },
+        {
+          "after_action": 2,
+          "checkpoint": "Host is exactly dosx sun; caret is dosx| sun."
+        },
+        {
+          "after_action": 3,
+          "checkpoint": "Host remains exactly dosx sun; caret is at end."
+        },
+        {
+          "after_action": 4,
+          "checkpoint": "Host is exactly dosx suny; caret is at end."
+        }
+      ],
+      "rationale": "Checks bidirectional cursor editing across a word boundary and continued bilingual-mode letter entry."
+    },
+    {
+      "id": "BI-03",
+      "language": "English + Español",
+      "initial_state": {
+        "host_text": "go casa",
+        "caret": "go| casa",
+        "keyboard": "English + Español; emoji picker closed"
+      },
+      "actions": [
+        "Open the emoji picker and focus its keyboard-local search field.",
+        "Tap letter keys s, o, l to enter sol.",
+        "Tap search Backspace three times to empty the query.",
+        "Tap letter keys p, a, n to enter pan.",
+        "Record one visible selectable result full emoji as E, then tap that same result.",
+        "Return to letter keys and tap letter key q."
+      ],
+      "expected_outcomes": [
+        {
+          "after_action": 1,
+          "checkpoint": "Host remains go casa with caret at go| casa."
+        },
+        {
+          "after_action": 2,
+          "checkpoint": "Query is exactly sol. Host remains go casa with unchanged caret; the query stays out of host text."
+        },
+        {
+          "after_action": 3,
+          "checkpoint": "Query is empty. Host remains exactly go casa with caret at go| casa; search deletion does not delete host characters."
+        },
+        {
+          "after_action": 4,
+          "checkpoint": "Query is exactly pan and at least one selectable result is visible. Host and caret are unchanged."
+        },
+        {
+          "after_action": 5,
+          "checkpoint": "Host is exactly the concatenation of go, recorded E, and the original suffix space plus casa. Caret is immediately after E. Neither query is inserted into the host."
+        },
+        {
+          "after_action": 6,
+          "checkpoint": "Host is exactly the concatenation of go, E, q, and the original suffix space plus casa. Caret is immediately after q."
+        }
+      ],
+      "rationale": "Checks fully clearing and replacing a local query, host isolation, result selection at a middle caret, and letter-entry continuity."
+    },
+    {
+      "id": "BI-04",
+      "language": "English + Español",
+      "initial_state": {
+        "host_text": "",
+        "caret": "at start",
+        "keyboard": "English + Español letter keys",
+        "settings": {
+          "Slide to Type": true,
+          "Show Slide Trail": false,
+          "Sound": false,
+          "Haptic Feedback": false
+        }
+      },
+      "actions": [
+        "Slide continuously over s, o, l and release; record resulting host text as G.",
+        "In settings turn Slide to Type OFF, leave Show Slide Trail OFF, and return to the keyboard.",
+        "Tap letter key x.",
+        "In settings turn Slide to Type ON and Show Slide Trail ON, and return to the keyboard.",
+        "Slide continuously over m, a, r and release; record resulting host text as H.",
+        "Tap letter key z."
+      ],
+      "expected_outcomes": [
+        {
+          "after_action": 1,
+          "checkpoint": "No slide trail is displayed; a nonempty slide-typed span is committed. Record actual G with no exact spelling oracle; caret follows the committed text."
+        },
+        {
+          "after_action": 2,
+          "checkpoint": "Slide to Type and Show Slide Trail are OFF. Both feedback settings remain OFF. Host and caret are unchanged."
+        },
+        {
+          "after_action": 3,
+          "checkpoint": "Host is exactly G concatenated with x; caret is at end."
+        },
+        {
+          "after_action": 4,
+          "checkpoint": "Slide to Type and Show Slide Trail are ON. Both feedback settings remain OFF. Host and caret are unchanged."
+        },
+        {
+          "after_action": 5,
+          "checkpoint": "A visible trail follows the gesture and a nonempty slide-typed span is committed at the caret. Record actual resulting H without an exact spelling or boundary-spacing requirement."
+        },
+        {
+          "after_action": 6,
+          "checkpoint": "Host is exactly H concatenated with z; caret is at end."
+        }
+      ],
+      "rationale": "Checks slide and tap continuity through disable/re-enable settings visits, with independent visible-trail checkpoints in bilingual mode."
+    }
+  ]
+}

@@ -1,0 +1,123 @@
+import XCTest
+
+/// Native event injection through the installed extension; no direct delegate substitutes.
+@MainActor
+final class UIPreferencesR53GestureTests: XCTestCase {
+  private let app = XCUIApplication()
+  private var field: XCUIElement { app.textViews["system-text"] }
+  private var text: String { let s = field.value as? String ?? ""; return s == "Type here" ? "" : s }
+  private func launch() {
+    app.launchArguments = ["-PKPreview", "-PKSystemKeyboard", "-PKResetSettings"]
+    app.launch()
+    XCTAssertTrue(field.waitForExistence(timeout: 8)); field.tap()
+    for _ in 0..<5 where !app.key("key-q").exists {
+      let globe = app.buttons["Next keyboard"].firstMatch
+      if globe.waitForExistence(timeout: 2) { globe.tap() }
+    }
+    XCTAssertTrue(app.key("key-q").waitForExistence(timeout: 5), app.debugDescription)
+  }
+  private func language(_ title: String) {
+    app.key("keyboard-language").tap(); app.buttons[title].firstMatch.tap()
+    XCTAssertTrue(app.key("keyboard-language").label.contains(title))
+  }
+  private func type(_ s: String) { for c in s { app.key(c == " " ? "key-space" : "key-\(c)").tap() } }
+  private var query: String { app.key("emoji-search-field").value as? String ?? "" }
+  private func openSearch() {
+    app.key("key-emoji").tap()
+    XCTAssertTrue(app.key("emoji-search-open").waitForExistence(timeout: 6))
+    app.key("emoji-search-open").tap()
+    XCTAssertTrue(app.key("emoji-search-field").waitForExistence(timeout: 3))
+  }
+  private func spaceGesture(_ kind: String) throws {
+    let r = app.key("key-space").frame
+    let p = CGPoint(x: r.midX, y: r.midY)
+    switch kind {
+    case "hold-drift":
+      let a = app.key("key-space").coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+      a.press(forDuration: 0.7, thenDragTo: a.withOffset(CGVector(dx: 18, dy: 0)), withVelocity: .slow, thenHoldForDuration: 0.1)
+    case "slide":
+      try TouchPath.swipe(through: [p, CGPoint(x: p.x + 36, y: p.y), CGPoint(x: p.x + 60, y: p.y)], duration: 0.22)
+    case "stationary": app.key("key-space").press(forDuration: 0.7)
+    default: app.key("key-space").tap()
+    }
+  }
+  func testInstalledQuerySpaceHoldSlideTapAcrossLanguages() throws {
+    continueAfterFailure = true
+    launch(); type("host ")
+    let sentinel = text
+    for title in ["English", "Español", "English + Español"] {
+      language(title)
+      for kind in ["hold-drift", "slide", "stationary", "tap"] {
+        openSearch(); let prefix = title == "English" ? "red" : "cara"
+        let suffix = title == "English" ? "heart" : "feliz"
+        type(prefix); XCTAssertEqual(query, prefix)
+        try spaceGesture(kind); type(suffix)
+        snapshot("r53-installed-\(title)-\(kind)")
+        XCTAssertEqual(query, prefix + " " + suffix)
+        XCTAssertEqual(text, sentinel)
+        app.key("key-letters").tap()
+      }
+    }
+  }
+  func testInstalledOrdinaryTrackpadMovesCaretWithoutExtraSpace() throws {
+    continueAfterFailure = false
+    launch(); type("hello world")
+    let before = text
+    let r = app.key("key-space").frame
+    let a = app.key("key-space").coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+    a.press(forDuration: 0.7, thenDragTo: a.withOffset(CGVector(dx: -36, dy: 0)), withVelocity: .slow, thenHoldForDuration: 0.1)
+    XCTAssertEqual(text, before)
+    app.key("key-x").tap()
+    XCTAssertTrue(text.contains("x")); XCTAssertFalse(text.hasSuffix("x"), "Trackpad must move inside the host text")
+    XCTAssertEqual(text.replacingOccurrences(of: "x", with: ""), before)
+    snapshot("r53-installed-trackpad-hold")
+    let p = CGPoint(x: r.midX, y: r.midY)
+    let prior = text
+    try TouchPath.swipe(through: [p, CGPoint(x: p.x - 36, y: p.y), CGPoint(x: p.x - 60, y: p.y)], duration: 0.22)
+    XCTAssertEqual(text, prior)
+    app.key("key-z").tap()
+    XCTAssertEqual(text.replacingOccurrences(of: "z", with: ""), prior)
+    snapshot("r53-installed-trackpad-slide")
+  }
+  private func trail(_ on: Bool, language title: String) {
+    app.key("keyboard-language").tap(); app.buttons["Keyboard Settings"].tap()
+    XCTAssertTrue(app.buttons["find-setting"].waitForExistence(timeout: 5))
+    app.buttons["find-setting"].tap(); app.buttons["Language"].firstMatch.tap()
+    let picker = app.buttons["typing-language"]
+    XCTAssertTrue(picker.waitForExistence(timeout: 3)); picker.tap()
+    app.buttons[title].firstMatch.tap()
+    XCTAssertTrue(picker.label.contains(title))
+    let row = app.switches.matching(NSPredicate(format: "label BEGINSWITH %@", "Show Slide Trail,")).firstMatch
+    for _ in 0..<5 where !row.exists || !row.isHittable { app.swipeUp() }
+    XCTAssertTrue(row.waitForExistence(timeout: 3), app.debugDescription)
+    if (row.value as? String == "1") != on { row.switches.firstMatch.tap() }
+    XCTAssertEqual(row.value as? String, on ? "1" : "0")
+    snapshot("r53-app-preferences-\(title)-trail-\(on)")
+    let preview = app.key("try-it")
+    for _ in 0..<7 where !preview.exists || !preview.isHittable { app.swipeDown() }
+    XCTAssertTrue(preview.isHittable); preview.tap()
+    field.tap(); XCTAssertTrue(app.key("key-q").waitForExistence(timeout: 5))
+    XCTAssertTrue(app.key("keyboard-language").label.contains(title), "App-set language must reach the installed extension")
+    snapshot("r53-extension-preference-readback-\(title)-trail-\(on)")
+  }
+  func testInstalledTrailPreferenceAndMatchedGlides() throws {
+    continueAfterFailure = false
+    launch()
+    // Begin in a different extension language, then change it ONLY in the app.
+    // Each new language in the loop must cross the app -> extension boundary.
+    language("Español")
+    snapshot("r53-before-app-bridge-extension-spanish")
+    for title in ["English", "Español", "English + Español"] {
+      let word = title == "English" ? "we" : "hola"
+      for enabled in [true, false] {
+        trail(enabled, language: title)
+        let clear = app.navigationBars.buttons["Clear"]
+        if clear.isEnabled { clear.tap(); field.tap() }
+        let points = word.map { c -> CGPoint in let r = app.key("key-\(c)").frame; return CGPoint(x: r.midX, y: r.midY) }
+        try TouchPath.swipe(through: points, duration: 1.2)
+        XCTAssertEqual(text.lowercased().trimmingCharacters(in: .whitespaces), word)
+        snapshot("r53-installed-glide-\(title)-trail-\(enabled)")
+      }
+    }
+  }
+}

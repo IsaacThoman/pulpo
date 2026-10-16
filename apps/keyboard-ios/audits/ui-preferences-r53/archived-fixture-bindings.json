@@ -1,0 +1,18 @@
+{
+  "apps/keyboard-ios/AppTests/UIPreferencesR53Tests.swift": {
+    "archive": "apps/keyboard-ios/audits/ui-preferences-r53/rejected-candidate/UIPreferencesR53Tests.swift.txt",
+    "sha256": "33d23ca8e4a970e7f33165b70dba3f5bb839e8f30b68525525c0c002319cd3d2"
+  },
+  "apps/keyboard-ios/UITests/UIPreferencesR53GestureTests.swift": {
+    "archive": "apps/keyboard-ios/audits/ui-preferences-r53/rejected-candidate/UIPreferencesR53GestureTests.swift.txt",
+    "sha256": "00af8de8e7f699eaf7fd765c4b1265c07739ddfb313686c585cc88da230f2d57"
+  },
+  "apps/keyboard-ios/AppTests/PublicBehaviorR53V2NativeTests.swift": {
+    "archive": "apps/keyboard-ios/audits/ui-preferences-r53/rejected-candidate/PublicBehaviorR53V2NativeTests.swift.txt",
+    "sha256": "2d2b4582345977e72c9a18ba277088647b0de190bc02a733bf201205f9c03951"
+  },
+  "apps/keyboard-ios/UITests/KeyTouchTests.swift": {
+    "archive": "apps/keyboard-ios/audits/ui-preferences-r53/rejected-candidate/KeyTouchTests.swift.txt",
+    "sha256": "c699557c58a6277608b2a9522856bf17f4e4ca3f5e98987e02ad3164c6b72d65"
+  }
+}

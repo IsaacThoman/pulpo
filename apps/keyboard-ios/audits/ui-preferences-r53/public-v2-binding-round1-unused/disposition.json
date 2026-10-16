@@ -1,0 +1,19 @@
+{
+  "recordedUTC": "2026-10-16T18:02:25.821524+00:00",
+  "compiled": false,
+  "executed": false,
+  "mainFullFreeze": false,
+  "status": "Not admitted. Original review reports coherent12cases but unattendedbindings unavailable. Round1 added externalXCTest-only restriction beyond task, leading to liveoperator protocol. Preserve its exact fixturefreeze bytes. Independent round2 reviews alternative nativepublicUI binding BEFORE mainfullfreeze or anyexecution; authoredpacket/oraclesunchanged. No results revealed.",
+  "files": [
+    {
+      "source": "/tmp/pulpo-r53-public-v2-binding-review.txt",
+      "archive": "apps/keyboard-ios/audits/ui-preferences-r53/public-v2-binding-round1-unused/pulpo-r53-public-v2-binding-review.txt",
+      "sha256": "91b47dc0f47d881f323a61f6f1149d33766bba5aed6f57edf6dea3b949fa20ee"
+    },
+    {
+      "source": "apps/keyboard-ios/UITests/PublicBehaviorR53V2Tests.swift",
+      "archive": "apps/keyboard-ios/audits/ui-preferences-r53/public-v2-binding-round1-unused/PublicBehaviorR53V2Tests.swift.txt",
+      "sha256": "a39728094073bde92ccb150a840351fdcbcc63e63bfe0145f38f41eeccb68d7d"
+    }
+  ]
+}

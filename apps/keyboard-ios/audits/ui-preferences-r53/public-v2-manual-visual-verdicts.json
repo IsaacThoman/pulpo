@@ -1,0 +1,62 @@
+{
+  "adjudicatedUTC": "2026-10-16T18:13:17.858943+00:00",
+  "verdicts": [
+    {
+      "source": "old",
+      "originalAttachment": {
+        "name": "BI-04-a1-DURING-CONTACT-trail_0_86BC1A91-DCF0-447F-B7DC-73AAF2EA154C.png",
+        "file": "/tmp/pulpo-r53-public-v2-old-attachments/6F50F15C-B99F-4979-8782-0612EB54D3C6.png",
+        "sha256": "641d01dc92b040977c433ca0c37d01266a60bdff79d785e13891d302a88fbeac"
+      },
+      "archive": "apps/keyboard-ios/audits/ui-preferences-r53/rejected-candidate/public-v2-old-BI04-a1.png",
+      "manuallyInspected": true,
+      "expectedVisible": false,
+      "observedVisible": true,
+      "matchesAuthoredOracle": false
+    },
+    {
+      "source": "old",
+      "originalAttachment": {
+        "name": "EN-04-a1-DURING-CONTACT-trail_0_465DDC4E-8736-412D-AE8B-A260CBF8E67E.png",
+        "file": "/tmp/pulpo-r53-public-v2-old-attachments/D7D9EE79-5613-4897-BDDB-DDE60FBAC548.png",
+        "sha256": "e88dfa1e9615a01c826a4fd2d130717b719da106bf0fded3f58106bcd4984185"
+      },
+      "archive": "apps/keyboard-ios/audits/ui-preferences-r53/rejected-candidate/public-v2-old-EN04-a1.png",
+      "manuallyInspected": true,
+      "expectedVisible": true,
+      "observedVisible": true,
+      "matchesAuthoredOracle": true
+    },
+    {
+      "source": "candidate",
+      "originalAttachment": {
+        "name": "BI-04-a1-DURING-CONTACT-trail_0_4F8729ED-922D-4A2A-A622-B136728818D7.png",
+        "file": "/tmp/pulpo-r53-public-v2-candidate-attachments/8F4ADEF0-D190-4A73-B072-00E169BEAA19.png",
+        "sha256": "34efc2f07b47253f8b66be877173b47bbc116e2f0ab9451c0a7b59ca81b70dbf"
+      },
+      "archive": "apps/keyboard-ios/audits/ui-preferences-r53/rejected-candidate/public-v2-candidate-BI04-a1.png",
+      "manuallyInspected": true,
+      "expectedVisible": false,
+      "observedVisible": false,
+      "matchesAuthoredOracle": true
+    },
+    {
+      "source": "candidate",
+      "originalAttachment": {
+        "name": "EN-04-a1-DURING-CONTACT-trail_0_BAD99DC7-4FB4-46A6-A819-351917782669.png",
+        "file": "/tmp/pulpo-r53-public-v2-candidate-attachments/D7A108DA-5E25-468D-9463-6FF97A13B4BD.png",
+        "sha256": "e88dfa1e9615a01c826a4fd2d130717b719da106bf0fded3f58106bcd4984185"
+      },
+      "archive": "apps/keyboard-ios/audits/ui-preferences-r53/rejected-candidate/public-v2-candidate-EN04-a1.png",
+      "manuallyInspected": true,
+      "expectedVisible": true,
+      "observedVisible": true,
+      "matchesAuthoredOracle": true
+    }
+  ],
+  "unreachedPerSource": [
+    "EN-04-a4-DURING-CONTACT-trail",
+    "BI-04-a5-DURING-CONTACT-trail"
+  ],
+  "scope": "Original fixed during-contact frames only, no replacements/replay. Partial observations cannot pass complete acceptance gate."
+}

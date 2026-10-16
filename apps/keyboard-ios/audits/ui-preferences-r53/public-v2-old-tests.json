@@ -1,0 +1,192 @@
+{
+  "devices" : [
+    {
+      "architecture" : "arm64",
+      "deviceId" : "A4E1CFD8-0EC3-4584-B60D-CD878D007FA0",
+      "deviceName" : "Pulpo R53 owned",
+      "modelName" : "iPhone 18 Pro",
+      "osBuildNumber" : "24A434",
+      "osVersion" : "27.0",
+      "platform" : "iOS Simulator"
+    }
+  ],
+  "testNodes" : [
+    {
+      "children" : [
+        {
+          "children" : [
+            {
+              "children" : [
+                {
+                  "children" : [
+                    {
+                      "name" : "Thread running at User-initiated quality-of-service class waiting on a lower QoS thread running at Utility quality-of-service class. Investigate ways to avoid priority inversions",
+                      "nodeType" : "Runtime Warning"
+                    }
+                  ],
+                  "duration" : "0.96s",
+                  "durationInSeconds" : 0.9556980133056641,
+                  "name" : "testBI01()",
+                  "nodeIdentifier" : "PublicBehaviorR53V2NativeTests/testBI01()",
+                  "nodeIdentifierURL" : "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests/PublicBehaviorR53V2NativeTests/testBI01",
+                  "nodeType" : "Test Case",
+                  "result" : "Passed"
+                },
+                {
+                  "duration" : "3s",
+                  "durationInSeconds" : 3.086773991584778,
+                  "name" : "testBI02()",
+                  "nodeIdentifier" : "PublicBehaviorR53V2NativeTests/testBI02()",
+                  "nodeIdentifierURL" : "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests/PublicBehaviorR53V2NativeTests/testBI02",
+                  "nodeType" : "Test Case",
+                  "result" : "Passed"
+                },
+                {
+                  "duration" : "0.88s",
+                  "durationInSeconds" : 0.8770869970321655,
+                  "name" : "testBI03()",
+                  "nodeIdentifier" : "PublicBehaviorR53V2NativeTests/testBI03()",
+                  "nodeIdentifierURL" : "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests/PublicBehaviorR53V2NativeTests/testBI03",
+                  "nodeType" : "Test Case",
+                  "result" : "Passed"
+                },
+                {
+                  "children" : [
+                    {
+                      "name" : "failed - BI-04: Real production settings control unavailable: Slide to Type; no model/store fallback",
+                      "nodeType" : "Failure Message",
+                      "sourceLocation" : {
+                        "filePath" : "/tmp/pulpo-r53-ui-preferences/apps/keyboard-ios/AppTests/PublicBehaviorR53V2NativeTests.swift",
+                        "lineNumber" : 30
+                      }
+                    }
+                  ],
+                  "duration" : "1s",
+                  "durationInSeconds" : 1.2812719345092773,
+                  "name" : "testBI04()",
+                  "nodeIdentifier" : "PublicBehaviorR53V2NativeTests/testBI04()",
+                  "nodeIdentifierURL" : "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests/PublicBehaviorR53V2NativeTests/testBI04",
+                  "nodeType" : "Test Case",
+                  "result" : "Failed"
+                },
+                {
+                  "duration" : "0.52s",
+                  "durationInSeconds" : 0.5234230756759644,
+                  "name" : "testEN01()",
+                  "nodeIdentifier" : "PublicBehaviorR53V2NativeTests/testEN01()",
+                  "nodeIdentifierURL" : "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests/PublicBehaviorR53V2NativeTests/testEN01",
+                  "nodeType" : "Test Case",
+                  "result" : "Passed"
+                },
+                {
+                  "duration" : "2s",
+                  "durationInSeconds" : 2.396404981613159,
+                  "name" : "testEN02()",
+                  "nodeIdentifier" : "PublicBehaviorR53V2NativeTests/testEN02()",
+                  "nodeIdentifierURL" : "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests/PublicBehaviorR53V2NativeTests/testEN02",
+                  "nodeType" : "Test Case",
+                  "result" : "Passed"
+                },
+                {
+                  "duration" : "0.9s",
+                  "durationInSeconds" : 0.8982870578765869,
+                  "name" : "testEN03()",
+                  "nodeIdentifier" : "PublicBehaviorR53V2NativeTests/testEN03()",
+                  "nodeIdentifierURL" : "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests/PublicBehaviorR53V2NativeTests/testEN03",
+                  "nodeType" : "Test Case",
+                  "result" : "Passed"
+                },
+                {
+                  "children" : [
+                    {
+                      "name" : "failed - EN-04: Real production settings control unavailable: Show Slide Trail; no model/store fallback",
+                      "nodeType" : "Failure Message",
+                      "sourceLocation" : {
+                        "filePath" : "/tmp/pulpo-r53-ui-preferences/apps/keyboard-ios/AppTests/PublicBehaviorR53V2NativeTests.swift",
+                        "lineNumber" : 30
+                      }
+                    }
+                  ],
+                  "duration" : "1s",
+                  "durationInSeconds" : 1.1083030700683594,
+                  "name" : "testEN04()",
+                  "nodeIdentifier" : "PublicBehaviorR53V2NativeTests/testEN04()",
+                  "nodeIdentifierURL" : "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests/PublicBehaviorR53V2NativeTests/testEN04",
+                  "nodeType" : "Test Case",
+                  "result" : "Failed"
+                },
+                {
+                  "duration" : "0.49s",
+                  "durationInSeconds" : 0.4941139221191406,
+                  "name" : "testES01()",
+                  "nodeIdentifier" : "PublicBehaviorR53V2NativeTests/testES01()",
+                  "nodeIdentifierURL" : "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests/PublicBehaviorR53V2NativeTests/testES01",
+                  "nodeType" : "Test Case",
+                  "result" : "Passed"
+                },
+                {
+                  "duration" : "2s",
+                  "durationInSeconds" : 2.40837299823761,
+                  "name" : "testES02()",
+                  "nodeIdentifier" : "PublicBehaviorR53V2NativeTests/testES02()",
+                  "nodeIdentifierURL" : "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests/PublicBehaviorR53V2NativeTests/testES02",
+                  "nodeType" : "Test Case",
+                  "result" : "Passed"
+                },
+                {
+                  "duration" : "0.93s",
+                  "durationInSeconds" : 0.9269289970397949,
+                  "name" : "testES03()",
+                  "nodeIdentifier" : "PublicBehaviorR53V2NativeTests/testES03()",
+                  "nodeIdentifierURL" : "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests/PublicBehaviorR53V2NativeTests/testES03",
+                  "nodeType" : "Test Case",
+                  "result" : "Passed"
+                },
+                {
+                  "children" : [
+                    {
+                      "name" : "failed - ES-04: Real production settings control unavailable: Sound; no model/store fallback",
+                      "nodeType" : "Failure Message",
+                      "sourceLocation" : {
+                        "filePath" : "/tmp/pulpo-r53-ui-preferences/apps/keyboard-ios/AppTests/PublicBehaviorR53V2NativeTests.swift",
+                        "lineNumber" : 30
+                      }
+                    },
+                    {
+                      "name" : "Thread running at User-initiated quality-of-service class waiting on a lower QoS thread running at Utility quality-of-service class. Investigate ways to avoid priority inversions",
+                      "nodeType" : "Runtime Warning"
+                    }
+                  ],
+                  "duration" : "0.48s",
+                  "durationInSeconds" : 0.4819449186325073,
+                  "name" : "testES04()",
+                  "nodeIdentifier" : "PublicBehaviorR53V2NativeTests/testES04()",
+                  "nodeIdentifierURL" : "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests/PublicBehaviorR53V2NativeTests/testES04",
+                  "nodeType" : "Test Case",
+                  "result" : "Failed"
+                }
+              ],
+              "name" : "PublicBehaviorR53V2NativeTests",
+              "nodeIdentifierURL" : "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests/PublicBehaviorR53V2NativeTests",
+              "nodeType" : "Test Suite",
+              "result" : "Failed"
+            }
+          ],
+          "name" : "PulpoKeyboardAppTests",
+          "nodeIdentifierURL" : "test://com.apple.xcode/PulpoKeyboard/PulpoKeyboardAppTests",
+          "nodeType" : "Unit test bundle",
+          "result" : "Failed"
+        }
+      ],
+      "name" : "PulpoKeyboard",
+      "nodeType" : "Test Plan",
+      "result" : "Failed"
+    }
+  ],
+  "testPlanConfigurations" : [
+    {
+      "configurationId" : "1",
+      "configurationName" : "Test Scheme Action"
+    }
+  ]
+}

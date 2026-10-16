@@ -1,0 +1,146 @@
+{
+  "actionTitle" : "Build for Testing \"PulpoKeyboard\"",
+  "analyzerWarningCount" : 0,
+  "analyzerWarnings" : [
+
+  ],
+  "destination" : {
+    "architecture" : "arm64",
+    "deviceId" : "A4E1CFD8-0EC3-4584-B60D-CD878D007FA0",
+    "deviceName" : "Pulpo R53 owned",
+    "modelName" : "iPhone 18 Pro",
+    "osBuildNumber" : "24A434",
+    "osVersion" : "27.0",
+    "platform" : "iOS Simulator"
+  },
+  "endTime" : 1792174185.194,
+  "errorCount" : 0,
+  "errors" : [
+
+  ],
+  "startTime" : 1792174182.385,
+  "status" : "succeeded",
+  "warningCount" : 20,
+  "warnings" : [
+    {
+      "className" : "DVTTextDocumentLocation",
+      "issueType" : "ActorIsolatedCall",
+      "message" : "Call to main actor-isolated instance method 'resignFirstResponder()' in a synchronous nonisolated context",
+      "sourceURL" : "file:///tmp/pulpo-r53-ui-preferences/apps/keyboard-ios/AppTests/PublicBehaviorR53V2NativeTests.swift#EndingColumnNumber=14&EndingLineNumber=146&StartingColumnNumber=14&StartingLineNumber=146&Timestamp=813866982.393949"
+    },
+    {
+      "className" : "DVTTextDocumentLocation",
+      "issueType" : "Swift Compiler Warning",
+      "message" : "Main actor-isolated property 'textView' can not be referenced from a nonisolated context",
+      "sourceURL" : "file:///tmp/pulpo-r53-ui-preferences/apps/keyboard-ios/AppTests/PublicBehaviorR53V2NativeTests.swift#EndingColumnNumber=4&EndingLineNumber=146&StartingColumnNumber=4&StartingLineNumber=146&Timestamp=813866982.393949"
+    },
+    {
+      "className" : "DVTTextDocumentLocation",
+      "issueType" : "Swift Compiler Warning",
+      "message" : "Main actor-isolated property 'delegate' can not be mutated from a nonisolated context",
+      "sourceURL" : "file:///tmp/pulpo-r53-ui-preferences/apps/keyboard-ios/AppTests/PublicBehaviorR53V2NativeTests.swift#EndingColumnNumber=48&EndingLineNumber=146&StartingColumnNumber=48&StartingLineNumber=146&Timestamp=813866982.393949"
+    },
+    {
+      "className" : "DVTTextDocumentLocation",
+      "issueType" : "Swift Compiler Warning",
+      "message" : "Main actor-isolated property 'textView' can not be referenced from a nonisolated context",
+      "sourceURL" : "file:///tmp/pulpo-r53-ui-preferences/apps/keyboard-ios/AppTests/PublicBehaviorR53V2NativeTests.swift#EndingColumnNumber=38&EndingLineNumber=146&StartingColumnNumber=38&StartingLineNumber=146&Timestamp=813866982.393949"
+    },
+    {
+      "className" : "DVTTextDocumentLocation",
+      "issueType" : "ActorIsolatedCall",
+      "message" : "Call to main actor-isolated instance method 'invalidate()' in a synchronous nonisolated context",
+      "sourceURL" : "file:///tmp/pulpo-r53-ui-preferences/apps/keyboard-ios/AppTests/PublicBehaviorR53V2NativeTests.swift#EndingColumnNumber=10&EndingLineNumber=147&StartingColumnNumber=10&StartingLineNumber=147&Timestamp=813866982.393949"
+    },
+    {
+      "className" : "DVTTextDocumentLocation",
+      "issueType" : "Swift Compiler Warning",
+      "message" : "Main actor-isolated property 'host' can not be referenced from a nonisolated context",
+      "sourceURL" : "file:///tmp/pulpo-r53-ui-preferences/apps/keyboard-ios/AppTests/PublicBehaviorR53V2NativeTests.swift#EndingColumnNumber=4&EndingLineNumber=147&StartingColumnNumber=4&StartingLineNumber=147&Timestamp=813866982.393949"
+    },
+    {
+      "className" : "DVTTextDocumentLocation",
+      "issueType" : "Swift Compiler Warning",
+      "message" : "Main actor-isolated property 'inputView' can not be mutated from a nonisolated context",
+      "sourceURL" : "file:///tmp/pulpo-r53-ui-preferences/apps/keyboard-ios/AppTests/PublicBehaviorR53V2NativeTests.swift#EndingColumnNumber=34&EndingLineNumber=147&StartingColumnNumber=34&StartingLineNumber=147&Timestamp=813866982.393949"
+    },
+    {
+      "className" : "DVTTextDocumentLocation",
+      "issueType" : "Swift Compiler Warning",
+      "message" : "Main actor-isolated property 'textView' can not be referenced from a nonisolated context",
+      "sourceURL" : "file:///tmp/pulpo-r53-ui-preferences/apps/keyboard-ios/AppTests/PublicBehaviorR53V2NativeTests.swift#EndingColumnNumber=24&EndingLineNumber=147&StartingColumnNumber=24&StartingLineNumber=147&Timestamp=813866982.393949"
+    },
+    {
+      "className" : "DVTTextDocumentLocation",
+      "issueType" : "Swift Compiler Warning",
+      "message" : "Main actor-isolated property 'isHidden' can not be mutated from a nonisolated context",
+      "sourceURL" : "file:///tmp/pulpo-r53-ui-preferences/apps/keyboard-ios/AppTests/PublicBehaviorR53V2NativeTests.swift#EndingColumnNumber=12&EndingLineNumber=148&StartingColumnNumber=12&StartingLineNumber=148&Timestamp=813866982.393949"
+    },
+    {
+      "className" : "DVTTextDocumentLocation",
+      "issueType" : "Swift Compiler Warning",
+      "message" : "Main actor-isolated property 'window' can not be referenced from a nonisolated context",
+      "sourceURL" : "file:///tmp/pulpo-r53-ui-preferences/apps/keyboard-ios/AppTests/PublicBehaviorR53V2NativeTests.swift#EndingColumnNumber=4&EndingLineNumber=148&StartingColumnNumber=4&StartingLineNumber=148&Timestamp=813866982.393949"
+    },
+    {
+      "className" : "DVTTextDocumentLocation",
+      "issueType" : "Swift Compiler Warning",
+      "message" : "Main actor-isolated property 'rootViewController' can not be mutated from a nonisolated context",
+      "sourceURL" : "file:///tmp/pulpo-r53-ui-preferences/apps/keyboard-ios/AppTests/PublicBehaviorR53V2NativeTests.swift#EndingColumnNumber=37&EndingLineNumber=148&StartingColumnNumber=37&StartingLineNumber=148&Timestamp=813866982.393949"
+    },
+    {
+      "className" : "DVTTextDocumentLocation",
+      "issueType" : "Swift Compiler Warning",
+      "message" : "Main actor-isolated property 'window' can not be referenced from a nonisolated context",
+      "sourceURL" : "file:///tmp/pulpo-r53-ui-preferences/apps/keyboard-ios/AppTests/PublicBehaviorR53V2NativeTests.swift#EndingColumnNumber=29&EndingLineNumber=148&StartingColumnNumber=29&StartingLineNumber=148&Timestamp=813866982.393949"
+    },
+    {
+      "className" : "DVTTextDocumentLocation",
+      "issueType" : "ActorIsolatedCall",
+      "message" : "Call to main actor-isolated instance method 'makeKey()' in a synchronous nonisolated context",
+      "sourceURL" : "file:///tmp/pulpo-r53-ui-preferences/apps/keyboard-ios/AppTests/PublicBehaviorR53V2NativeTests.swift#EndingColumnNumber=20&EndingLineNumber=149&StartingColumnNumber=20&StartingLineNumber=149&Timestamp=813866982.393949"
+    },
+    {
+      "className" : "DVTTextDocumentLocation",
+      "issueType" : "Swift Compiler Warning",
+      "message" : "Main actor-isolated property 'previousWindow' can not be referenced from a nonisolated context",
+      "sourceURL" : "file:///tmp/pulpo-r53-ui-preferences/apps/keyboard-ios/AppTests/PublicBehaviorR53V2NativeTests.swift#EndingColumnNumber=4&EndingLineNumber=149&StartingColumnNumber=4&StartingLineNumber=149&Timestamp=813866982.393949"
+    },
+    {
+      "className" : "DVTTextDocumentLocation",
+      "issueType" : "Swift Compiler Warning",
+      "message" : "Main actor-isolated property 'settingsPage' can not be mutated from a nonisolated context",
+      "sourceURL" : "file:///tmp/pulpo-r53-ui-preferences/apps/keyboard-ios/AppTests/PublicBehaviorR53V2NativeTests.swift#EndingColumnNumber=4&EndingLineNumber=150&StartingColumnNumber=4&StartingLineNumber=150&Timestamp=813866982.393949"
+    },
+    {
+      "className" : "DVTTextDocumentLocation",
+      "issueType" : "Swift Compiler Warning",
+      "message" : "Main actor-isolated property 'keyboard' can not be mutated from a nonisolated context",
+      "sourceURL" : "file:///tmp/pulpo-r53-ui-preferences/apps/keyboard-ios/AppTests/PublicBehaviorR53V2NativeTests.swift#EndingColumnNumber=24&EndingLineNumber=150&StartingColumnNumber=24&StartingLineNumber=150&Timestamp=813866982.393949"
+    },
+    {
+      "className" : "DVTTextDocumentLocation",
+      "issueType" : "Swift Compiler Warning",
+      "message" : "Main actor-isolated property 'host' can not be mutated from a nonisolated context",
+      "sourceURL" : "file:///tmp/pulpo-r53-ui-preferences/apps/keyboard-ios/AppTests/PublicBehaviorR53V2NativeTests.swift#EndingColumnNumber=40&EndingLineNumber=150&StartingColumnNumber=40&StartingLineNumber=150&Timestamp=813866982.393949"
+    },
+    {
+      "className" : "DVTTextDocumentLocation",
+      "issueType" : "Swift Compiler Warning",
+      "message" : "Main actor-isolated property 'textView' can not be mutated from a nonisolated context",
+      "sourceURL" : "file:///tmp/pulpo-r53-ui-preferences/apps/keyboard-ios/AppTests/PublicBehaviorR53V2NativeTests.swift#EndingColumnNumber=52&EndingLineNumber=150&StartingColumnNumber=52&StartingLineNumber=150&Timestamp=813866982.393949"
+    },
+    {
+      "className" : "DVTTextDocumentLocation",
+      "issueType" : "Swift Compiler Warning",
+      "message" : "Main actor-isolated property 'editor' can not be mutated from a nonisolated context",
+      "sourceURL" : "file:///tmp/pulpo-r53-ui-preferences/apps/keyboard-ios/AppTests/PublicBehaviorR53V2NativeTests.swift#EndingColumnNumber=68&EndingLineNumber=150&StartingColumnNumber=68&StartingLineNumber=150&Timestamp=813866982.393949"
+    },
+    {
+      "className" : "DVTTextDocumentLocation",
+      "issueType" : "Swift Compiler Warning",
+      "message" : "Main actor-isolated property 'window' can not be mutated from a nonisolated context",
+      "sourceURL" : "file:///tmp/pulpo-r53-ui-preferences/apps/keyboard-ios/AppTests/PublicBehaviorR53V2NativeTests.swift#EndingColumnNumber=82&EndingLineNumber=150&StartingColumnNumber=82&StartingLineNumber=150&Timestamp=813866982.393949"
+    }
+  ]
+}

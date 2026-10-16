@@ -1,0 +1,538 @@
+#if os(iOS)
+import CoreText
+import UIKit
+
+protocol EmojiPanelDelegate: AnyObject {
+  func emojiPanel(_ panel: EmojiPanelView, insert emoji: String)
+  func emojiPanelDelete(_ panel: EmojiPanelView, wholeWord: Bool)
+  /// The search field was tapped: type a query on the letter keys.
+  func emojiPanelSearch(_ panel: EmojiPanelView)
+  func emojiPanelClose(_ panel: EmojiPanelView)
+}
+
+/// Emoji grid with categories, recents and skin tones, in the keyboard's footprint,
+/// under a search field and the current category's name.
+final class EmojiPanelView: UIView, UICollectionViewDataSource, UICollectionViewDelegate, UICollectionViewDelegateFlowLayout {
+  weak var delegate: EmojiPanelDelegate?
+  private var style: KeyboardStyle
+  private let history: EmojiHistory
+  private var sections: [(id: String, name: String, emoji: [Emoji])] = []
+  private let header = UILabel()
+  private let searchField = UIButton(type: .system)
+  private let collection: UICollectionView
+  private let toolbar = UIStackView()
+  private var categoryButtons: [UIButton] = []
+  private let abc = UIButton(type: .system)
+  private let delete = EmojiDeleteButton(type: .system)
+  private let tonePicker = KeyPopupView(style: KeyboardStyle(modern: true, dark: false, landscape: false))
+  private var toneTarget: Emoji?
+  private var toneActionGeneration = UUID()
+  private var deleteTimer: Timer?
+  private var deletePress: UUID?
+  private var deleteRepeats = 0
+  private var pendingOffset: CGFloat?
+  private let images = EmojiImages(pointSize: EmojiCell.pointSize, limit: 48)
+  private var rows: CGFloat { style.landscape ? 3 : 5 }
+
+  static let symbols: [String: String] = [
+    "recents": "clock", "smileys": "face.smiling", "animals": "pawprint", "food": "fork.knife",
+    "activity": "basketball", "travel": "car", "objects": "lightbulb", "symbols": "heart", "flags": "flag",
+  ]
+
+  init(style: KeyboardStyle, catalog: EmojiCatalog, history: EmojiHistory) {
+    self.style = style
+    self.history = history
+    let layout = UICollectionViewFlowLayout()
+    layout.scrollDirection = .horizontal
+    layout.minimumInteritemSpacing = 0
+    layout.minimumLineSpacing = 0
+    collection = UICollectionView(frame: .zero, collectionViewLayout: layout)
+    super.init(frame: .zero)
+    accessibilityIdentifier = "emoji-panel"
+    sections = [("recents", "Frequently Used", [])] + catalog.categories.map { ($0.id, $0.name, $0.emoji) }
+    reloadRecents()
+
+    header.font = .systemFont(ofSize: 12, weight: .semibold)
+    header.textAlignment = .right
+    header.adjustsFontSizeToFitWidth = true
+    header.minimumScaleFactor = 0.8
+    addSubview(header)
+    searchField.contentHorizontalAlignment = .leading
+    searchField.accessibilityLabel = "Search Emoji"
+    searchField.accessibilityTraits = .searchField
+    searchField.accessibilityIdentifier = "emoji-search-open"
+    searchField.addTarget(self, action: #selector(searchTapped), for: .touchUpInside)
+    addSubview(searchField)
+    collection.backgroundColor = .clear
+    // The header and toolbar already sit outside the grid. Host safe areas and
+    // scroll-edge effects must not shift or obscure its first row or columns.
+    collection.contentInsetAdjustmentBehavior = .never
+    collection.hideScrollEdgeEffects()
+    collection.showsHorizontalScrollIndicator = false
+    collection.dataSource = self
+    collection.delegate = self
+    collection.register(EmojiCell.self, forCellWithReuseIdentifier: "emoji")
+    collection.delaysContentTouches = false
+    let hold = UILongPressGestureRecognizer(target: self, action: #selector(held(_:)))
+    hold.minimumPressDuration = 0.35
+    collection.addGestureRecognizer(hold)
+    addSubview(collection)
+
+    abc.setTitle("ABC", for: .normal)
+    abc.titleLabel?.font = .systemFont(ofSize: 15, weight: .medium)
+    abc.accessibilityIdentifier = "emoji-abc"
+    abc.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
+    addSubview(abc)
+    toolbar.axis = .horizontal
+    toolbar.distribution = .fillEqually
+    addSubview(toolbar)
+    for (index, section) in sections.enumerated() {
+      let button = UIButton(type: .system)
+      button.setImage(UIImage(systemName: Self.symbols[section.id] ?? "circle", withConfiguration: UIImage.SymbolConfiguration(pointSize: 15)), for: .normal)
+      button.accessibilityLabel = section.name
+      button.tag = index
+      button.addTarget(self, action: #selector(categoryTapped(_:)), for: .touchUpInside)
+      toolbar.addArrangedSubview(button)
+      categoryButtons.append(button)
+    }
+    delete.setImage(UIImage(systemName: "delete.left", withConfiguration: UIImage.SymbolConfiguration(pointSize: 18)), for: .normal)
+    delete.accessibilityLabel = "delete"
+    delete.accessibilityIdentifier = "emoji-delete"
+    delete.onAccessibilityActivate = { [weak self] in
+      guard let self else { return false }
+      self.deleteUp()
+      self.deleteOnce()
+      return true
+    }
+    delete.addTarget(self, action: #selector(deleteDown), for: .touchDown)
+    delete.addTarget(self, action: #selector(deleteUp), for: [.touchUpInside, .touchUpOutside, .touchCancel, .touchDragExit])
+    addSubview(delete)
+    tonePicker.isHidden = true
+    addSubview(tonePicker)
+    applyStyle(style)
+    filterUnsupported(catalog)
+  }
+
+  required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
+
+  override func willMove(toSuperview newSuperview: UIView?) {
+    if newSuperview == nil { deleteUp() }
+    super.willMove(toSuperview: newSuperview)
+  }
+
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    if window == nil { deleteUp() }
+  }
+
+  override var isHidden: Bool {
+    didSet { if isHidden { deleteUp() } }
+  }
+
+  /// Called as soon as the keyboard disappears, even if UIKit retains its views.
+  func cancelInteractions() {
+    toneActionGeneration = UUID()
+    deleteUp()
+    tonePicker.hide()
+    toneTarget = nil
+  }
+
+  func applyStyle(_ style: KeyboardStyle) {
+    self.style = style
+    header.textColor = style.secondaryLabel
+    var field = UIButton.Configuration.plain()
+    field.image = UIImage(systemName: "magnifyingglass", withConfiguration: UIImage.SymbolConfiguration(pointSize: 12, weight: .medium))
+    field.imagePadding = 5
+    field.attributedTitle = AttributedString("Search Emoji", attributes: AttributeContainer([.font: UIFont.systemFont(ofSize: 15)]))
+    field.baseForegroundColor = style.secondaryLabel
+    field.background.backgroundColor = style.dark ? UIColor(white: 1, alpha: 0.14) : UIColor(white: 1, alpha: 0.75)
+    field.background.cornerRadius = 8
+    field.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 9, bottom: 0, trailing: 9)
+    searchField.configuration = field
+    abc.tintColor = style.label
+    delete.tintColor = style.label
+    setNeedsLayout()
+    updateSelectedCategory()
+  }
+
+  private func reloadRecents() {
+    var lookup: [String: Emoji] = [:]
+    for section in sections.dropFirst() { for emoji in section.emoji { lookup[emoji.value] = emoji } }
+    sections[0].emoji = history.recents.compactMap { value in
+      lookup[value] ?? lookup.values.first { $0.tones?.contains(value) == true }.map { Emoji(value: value, name: $0.name, version: $0.version, tones: nil) }
+    }
+  }
+
+  /// Hides emoji newer than the installed system font. Checked once per OS version.
+  private func filterUnsupported(_ catalog: EmojiCatalog) {
+    let key = "emojiUnsupported2-\(UIDevice.current.systemVersion)"
+    if let cached = UserDefaults.standard.stringArray(forKey: key) {
+      apply(unsupported: Set(cached))
+      return
+    }
+    let all = catalog.categories.flatMap(\.emoji).map(\.value)
+    Task.detached(priority: .utility) {
+      let unsupported = all.filter { !Self.drawsAsOneGlyph($0) }
+      await MainActor.run {
+        UserDefaults.standard.set(unsupported, forKey: key)
+        self.apply(unsupported: Set(unsupported))
+      }
+    }
+  }
+
+  private func apply(unsupported: Set<String>) {
+    guard !unsupported.isEmpty else { return }
+    for index in sections.indices { sections[index].emoji.removeAll { unsupported.contains($0.value) } }
+    collection.reloadData()
+  }
+
+  /// Supported emoji render as one real glyph from the emoji font; missing ones fall
+  /// back to the `.notdef` box (glyph 0) or split into several glyphs.
+  nonisolated static func drawsAsOneGlyph(_ emoji: String) -> Bool {
+    let font = CTFontCreateWithName("AppleColorEmoji" as CFString, 32, nil)
+    let attributed = NSAttributedString(string: emoji, attributes: [NSAttributedString.Key(kCTFontAttributeName as String): font])
+    let line = CTLineCreateWithAttributedString(attributed)
+    guard CTLineGetGlyphCount(line) == 1, let run = (CTLineGetGlyphRuns(line) as? [CTRun])?.first else { return false }
+    var glyph = CGGlyph(0)
+    CTRunGetGlyphs(run, CFRange(location: 0, length: 1), &glyph)
+    let attributes = CTRunGetAttributes(run) as NSDictionary
+    let runFont = attributes[kCTFontAttributeName as String].map { $0 as! CTFont }
+    let name = runFont.map { CTFontCopyPostScriptName($0) as String } ?? ""
+    return glyph != 0 && name.contains("AppleColorEmoji")
+  }
+
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    let toolbarHeight: CGFloat = 40
+    // The field and the category name share the top line, so the grid keeps
+    // the rows that fit full glyphs in portrait and compact landscape.
+    let top: CGFloat = 28
+    let fieldWidth = min(320, (bounds.width * 0.55).rounded())
+    searchField.frame = CGRect(x: 8, y: 3, width: fieldWidth, height: 24)
+    header.frame = CGRect(x: searchField.frame.maxX + 10, y: 5, width: max(0, bounds.width - searchField.frame.maxX - 24), height: 18)
+    collection.frame = CGRect(x: 0, y: top, width: bounds.width, height: bounds.height - top - toolbarHeight)
+    abc.frame = CGRect(x: 4, y: bounds.height - toolbarHeight, width: 50, height: toolbarHeight)
+    delete.frame = CGRect(x: bounds.width - 50, y: bounds.height - toolbarHeight, width: 46, height: toolbarHeight)
+    toolbar.frame = CGRect(x: abc.frame.maxX, y: bounds.height - toolbarHeight, width: delete.frame.minX - abc.frame.maxX, height: toolbarHeight)
+    collection.collectionViewLayout.invalidateLayout()
+    if let offset = pendingOffset, collection.bounds.width > 0 {
+      pendingOffset = nil
+      // Prepare geometry without creating the starting viewport's cells/images.
+      // Restore the saved position before UICollectionView lays out its cells.
+      let layout = collection.collectionViewLayout
+      layout.prepare()
+      collection.contentOffset.x = min(offset, max(0, layout.collectionViewContentSize.width - collection.bounds.width))
+    }
+    updateSelectedCategory()
+  }
+
+  /// Lets go of the images no cell shows.
+  func releaseCachedImages() {
+    images.removeAll()
+  }
+
+  /// How far the grid is scrolled. A picker built again after the last one was
+  /// released opens where that one was left.
+  var scrollOffset: CGFloat {
+    get { pendingOffset ?? collection.contentOffset.x }
+    set {
+      pendingOffset = newValue
+      setNeedsLayout()
+    }
+  }
+
+  // MARK: Grid
+
+  func numberOfSections(in collectionView: UICollectionView) -> Int { sections.count }
+
+  func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int { sections[section].emoji.count }
+
+  func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
+    let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "emoji", for: indexPath) as! EmojiCell
+    let emoji = sections[indexPath.section].emoji[indexPath.item]
+    show(emoji, in: cell, at: indexPath)
+    return cell
+  }
+
+  private func show(_ emoji: Emoji, in cell: EmojiCell, at indexPath: IndexPath) {
+    let value = indexPath.section == 0 ? emoji.value : history.preferred(for: emoji)
+    let size = collectionView(collection, layout: collection.collectionViewLayout, sizeForItemAt: indexPath)
+    cell.show(value, images.image(value, size: size, traits: collection.traitCollection))
+    let choices = indexPath.section == 0 ? [] : emoji.tones.map { [emoji.value] + $0 } ?? []
+    let generation = toneActionGeneration
+    cell.configureAccessibility(name: emoji.name, identifier: "emoji-\(emoji.value)", value: value, hasToneVariants: emoji.tones != nil, choices: choices) { [weak self] choice in
+      guard let self, self.window != nil, !self.isHidden, self.toneActionGeneration == generation else { return false }
+      self.chooseTone(choice, for: emoji)
+      return true
+    }
+  }
+
+  // Cells waiting for reuse let go of their images; one shown again without
+  // being dequeued, as when a scroll turns back, gets its image back.
+  func collectionView(_ collectionView: UICollectionView, willDisplay cell: UICollectionViewCell, forItemAt indexPath: IndexPath) {
+    guard let cell = cell as? EmojiCell, cell.imageView.image == nil else { return }
+    show(sections[indexPath.section].emoji[indexPath.item], in: cell, at: indexPath)
+  }
+
+  func collectionView(_ collectionView: UICollectionView, didEndDisplaying cell: UICollectionViewCell, forItemAt indexPath: IndexPath) {
+    (cell as? EmojiCell)?.imageView.image = nil
+  }
+
+  func collectionView(_ collectionView: UICollectionView, layout: UICollectionViewLayout, sizeForItemAt indexPath: IndexPath) -> CGSize {
+    // The compact landscape keyboard needs fewer rows to keep the emoji glyphs
+    // from overlapping one another and clipping at the grid's upper/lower edge.
+    let height = floor(collectionView.bounds.height / rows)
+    return CGSize(width: max(40, height + 4), height: height)
+  }
+
+  func collectionView(_ collectionView: UICollectionView, layout: UICollectionViewLayout, insetForSectionAt section: Int) -> UIEdgeInsets {
+    sections[section].emoji.isEmpty ? .zero : UIEdgeInsets(top: 0, left: 6, bottom: 0, right: 10)
+  }
+
+  func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
+    let emoji = sections[indexPath.section].emoji[indexPath.item]
+    let value = indexPath.section == 0 ? emoji.value : history.preferred(for: emoji)
+    insert(value)
+  }
+
+  private func insert(_ value: String) {
+    KeyboardFeedback.current?.key()
+    UIDevice.current.playInputClick()
+    history.use(value)
+    delegate?.emojiPanel(self, insert: value)
+  }
+
+  func scrollViewDidScroll(_ scrollView: UIScrollView) {
+    updateSelectedCategory()
+  }
+
+  func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+    PerfLog.trackFrames(true)
+  }
+
+  func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
+    if !decelerate { scrollingStopped() }
+  }
+
+  func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
+    scrollingStopped()
+  }
+
+  private func scrollingStopped() {
+    PerfLog.trackFrames(false)
+    if collection.contentOffset.x <= 1 {
+      PerfLog.event("emojiScrollStart")
+    } else if collection.contentOffset.x >= collection.contentSize.width - collection.bounds.width - 1 {
+      PerfLog.event("emojiScrollEnd")
+    }
+  }
+
+  private var visibleSection: Int {
+    let probe = CGPoint(x: collection.contentOffset.x + 30, y: collection.bounds.height / 2)
+    if let path = collection.indexPathForItem(at: probe) { return path.section }
+    return collection.indexPathsForVisibleItems.map(\.section).min() ?? 0
+  }
+
+  private func updateSelectedCategory() {
+    let section = visibleSection
+    header.text = sections.indices.contains(section) ? sections[section].name.uppercased() : nil
+    for (index, button) in categoryButtons.enumerated() {
+      button.tintColor = index == section ? style.label : style.secondaryLabel
+    }
+  }
+
+  @objc private func categoryTapped(_ sender: UIButton) {
+    let section = sender.tag
+    guard sections.indices.contains(section) else { return }
+    if section == 0 {
+      // Keep the current grid stable while inserting, then show the latest
+      // history when the person returns to Frequently Used.
+      reloadRecents()
+      collection.reloadData()
+      collection.layoutIfNeeded()
+    }
+    if sections[section].emoji.isEmpty {
+      collection.setContentOffset(.zero, animated: false)
+    } else if let attributes = collection.layoutAttributesForItem(at: IndexPath(item: 0, section: section)) {
+      let x = min(attributes.frame.minX - 6, max(0, collection.contentSize.width - collection.bounds.width))
+      collection.setContentOffset(CGPoint(x: max(0, x), y: 0), animated: false)
+    }
+    updateSelectedCategory()
+  }
+
+  // MARK: Skin tones
+
+  /// Physical and accessible tone choices must remember and insert the same value.
+  private func chooseTone(_ choice: String, for emoji: Emoji) {
+    history.setPreferred(choice, for: emoji)
+    insert(choice)
+    collection.reloadData()
+  }
+
+  @objc private func held(_ recognizer: UILongPressGestureRecognizer) {
+    let point = recognizer.location(in: collection)
+    switch recognizer.state {
+    case .began:
+      guard let path = collection.indexPathForItem(at: point), path.section > 0 else { return }
+      let emoji = sections[path.section].emoji[path.item]
+      guard let tones = emoji.tones, let cell = collection.cellForItem(at: path) else { return }
+      toneTarget = emoji
+      let rect = cell.convert(cell.bounds, to: self).insetBy(dx: 2, dy: 2)
+      tonePicker.showAlternates([emoji.value] + tones, keyRect: rect, in: bounds, style: style, emoji: true)
+      tonePicker.track(x: recognizer.location(in: self).x)
+      KeyboardFeedback.current?.emphasis()
+    case .changed:
+      if toneTarget != nil { tonePicker.track(x: recognizer.location(in: self).x) }
+    case .ended:
+      if let target = toneTarget, let choice = tonePicker.selectedOption {
+        chooseTone(choice, for: target)
+      }
+      fallthrough
+    default:
+      toneTarget = nil
+      tonePicker.hide()
+    }
+  }
+
+  // MARK: Search
+
+  @objc private func searchTapped() {
+    KeyboardFeedback.current?.key(function: true)
+    delegate?.emojiPanelSearch(self)
+  }
+
+  /// Back from search: show what was just picked if recents are in view.
+  func searchEnded() {
+    guard collection.contentOffset.x <= 1 || visibleSection == 0 else { return }
+    reloadRecents()
+    collection.reloadData()
+    collection.setContentOffset(.zero, animated: false)
+    updateSelectedCategory()
+  }
+
+  // MARK: Toolbar
+
+  @objc private func closeTapped() {
+    delegate?.emojiPanelClose(self)
+  }
+
+  @objc private func deleteDown() {
+    deleteUp()
+    let press = UUID()
+    deletePress = press
+    deleteOnce()
+    guard deletePress == press else { return }
+    deleteRepeats = 0
+    scheduleDelete(after: 0.45)
+  }
+
+  private func deleteOnce() {
+    KeyboardFeedback.current?.key(function: true)
+    UIDevice.current.playInputClick()
+    delegate?.emojiPanelDelete(self, wholeWord: false)
+  }
+
+  private func scheduleDelete(after delay: TimeInterval) {
+    guard let press = deletePress else { return }
+    deleteTimer?.invalidate()
+    let timer = Timer(timeInterval: delay, repeats: false) { [weak self] _ in
+      MainActor.assumeIsolated {
+        guard let self, self.deletePress == press else { return }
+        self.deleteRepeats += 1
+        self.delegate?.emojiPanelDelete(self, wholeWord: self.deleteRepeats > 14)
+        // A host edit can synchronously dismiss the keyboard. Its cancellation
+        // must win over this callback scheduling the next repeat.
+        guard self.deletePress == press else { return }
+        self.scheduleDelete(after: self.deleteRepeats > 14 ? 0.24 : 0.085)
+      }
+    }
+    RunLoop.main.add(timer, forMode: .common)
+    deleteTimer = timer
+  }
+
+  @objc private func deleteUp() {
+    deletePress = nil
+    deleteTimer?.invalidate()
+    deleteTimer = nil
+  }
+}
+
+/// Accessibility activation has no touch-down/up pair; it must delete once
+/// without starting the destructive hold timer.
+private final class EmojiDeleteButton: UIButton {
+  var onAccessibilityActivate: (() -> Bool)?
+
+  override func accessibilityActivate() -> Bool {
+    onAccessibilityActivate?() ?? false
+  }
+}
+
+final class EmojiCell: UICollectionViewCell {
+  static let pointSize: CGFloat = 30
+  private(set) var emoji: String?
+  let imageView = UIImageView()
+  private var accessibilityConfiguration = UUID()
+
+  override init(frame: CGRect) {
+    super.init(frame: frame)
+    contentView.addSubview(imageView)
+    isAccessibilityElement = true
+    accessibilityTraits = .keyboardKey
+  }
+
+  required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
+
+  /// Shows `emoji`, drawn for a box the size of the cell.
+  func show(_ emoji: String, _ drawn: DrawnEmoji) {
+    self.emoji = emoji
+    imageView.image = drawn.image
+    imageView.frame = drawn.frame
+  }
+
+  /// Describe the rendered value, including stored recent variants. Configure
+  /// every field together because collection cells move between categories.
+  func configureAccessibility(name: String, identifier: String, value: String, hasToneVariants: Bool, choices: [String], choose: @escaping (String) -> Bool) {
+    let configuration = UUID()
+    accessibilityConfiguration = configuration
+    accessibilityLabel = name
+    accessibilityIdentifier = identifier
+    accessibilityValue = Self.skinToneDescription(value) ?? (hasToneVariants ? "Default skin tone" : nil)
+    accessibilityCustomActions = choices.isEmpty ? nil : choices.map { choice in
+      let tone = Self.skinToneDescription(choice) ?? "Default skin tone"
+      return UIAccessibilityCustomAction(name: "Insert \(name), \(tone)") { [weak self] _ in
+        guard let self, self.window != nil, self.accessibilityConfiguration == configuration else { return false }
+        return choose(choice)
+      }
+    }
+  }
+
+  private static func skinToneDescription(_ value: String) -> String? {
+    let names = ["Light skin tone", "Medium-light skin tone", "Medium skin tone", "Medium-dark skin tone", "Dark skin tone"]
+    var tones: [String] = []
+    for scalar in value.unicodeScalars where (0x1F3FB...0x1F3FF).contains(scalar.value) {
+      let name = names[Int(scalar.value - 0x1F3FB)]
+      if !tones.contains(name) { tones.append(name) }
+    }
+    return tones.isEmpty ? nil : tones.joined(separator: ", ")
+  }
+
+  override func prepareForReuse() {
+    super.prepareForReuse()
+    accessibilityConfiguration = UUID()
+    accessibilityLabel = nil
+    accessibilityIdentifier = nil
+    accessibilityValue = nil
+    accessibilityCustomActions = nil
+    emoji = nil
+    imageView.image = nil
+  }
+
+  override var isHighlighted: Bool {
+    didSet {
+      contentView.backgroundColor = isHighlighted ? UIColor.label.withAlphaComponent(0.1) : .clear
+      contentView.layer.cornerRadius = 8
+    }
+  }
+}
+
+#endif

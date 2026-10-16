@@ -1,0 +1,8 @@
+{
+  "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardUI/KeysView.swift": "eddc2f9479a9a8775cf3f3b63ba16c0eeeab11e376008f2269c866ac17085fd0",
+  "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardUI/KeyboardController.swift": "05667c5dc0db705f1e5abd27837df5d204f9d5c160048426f4b5b3460a94e70b",
+  "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardUI/KeyboardHost.swift": "e8b46cb05a13b07742769fadf9ade504904b21f2729f31e0f96b485706c87190",
+  "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardUI/EmojiPanelView.swift": "d2f201fffb79210a9c3ee92440e3b33a4c8df542a902e8f29fb967a169674057",
+  "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardUI/EmojiSearchBarView.swift": "3838932028f6ddad74faf91bd9edbdb06b557f8d4914d81bba8ac32fd631d935",
+  "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardUI/PulpoKeyboardViewController.swift": "e856f759588aaa498dd42d6ee2549ed28bbda1f05bd1d082ec31abb471c4e256"
+}

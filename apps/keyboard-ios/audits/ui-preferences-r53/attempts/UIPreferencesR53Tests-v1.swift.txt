@@ -1,0 +1,152 @@
+import UIKit
+import XCTest
+import ObjectiveC.runtime
+@testable import KeyboardUI
+@testable import PulpoKeyboard
+
+@MainActor
+private enum ClickReceipt { static var count = 0 }
+extension UIDevice {
+  @objc fileprivate func r53_clickReceipt() { MainActor.assumeIsolated { ClickReceipt.count += 1 } }
+}
+
+/// Native development controls, frozen and run identically against old/new UI source.
+@MainActor
+final class UIPreferencesR53Tests: XCTestCase {
+  private var window: UIWindow!
+  private var editor: UITextView!
+  private var host: PreviewHost!
+  private var controller: KeyboardController!
+  private var prior: KeyboardSettings!
+  private var swapped = false
+  private var keys: KeysView { controller.rootView.keys }
+  override func setUp() async throws {
+    prior = SettingsStore().load()
+    let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+    window = UIWindow(windowScene: scene); window.rootViewController = UIViewController(); window.makeKeyAndVisible()
+    editor = UITextView(frame: CGRect(x: 10, y: 70, width: 360, height: 130))
+    window.rootViewController!.view.addSubview(editor)
+    host = PreviewHost(textView: editor) { _ in XCTFail("Unexpected navigation") }
+    var settings = KeyboardSettings(); settings.autoCapitalization = false; settings.learnWords = false
+    settings.autocorrect = false; settings.haptics = false
+    SettingsStore().save(settings)
+    controller = KeyboardController(host: host, dictationBridge: nil)
+    controller.rootView.frame = CGRect(x: 0, y: 260, width: window.bounds.width, height: controller.preferredHeight)
+    window.rootViewController!.view.addSubview(controller.rootView)
+    controller.rootView.layoutIfNeeded(); controller.hostWillAppear(); settle()
+  }
+  override func tearDown() async throws {
+    if swapped { swapClicks() }
+    controller.hostDidDisappear(); controller = nil; host = nil
+    window.isHidden = true; window.rootViewController = nil; window = nil
+    SettingsStore().save(prior)
+  }
+  private func settle(_ duration: Double = 0.15) { RunLoop.main.run(until: Date().addingTimeInterval(duration)) }
+  private func swapClicks() {
+    method_exchangeImplementations(class_getInstanceMethod(UIDevice.self, #selector(UIDevice.playInputClick))!, class_getInstanceMethod(UIDevice.self, #selector(UIDevice.r53_clickReceipt))!)
+    swapped.toggle()
+  }
+  private func configure(_ change: (inout KeyboardSettings) -> Void) {
+    var s = SettingsStore().load(); change(&s); SettingsStore().save(s); controller.hostWillAppear(); controller.rootView.layoutIfNeeded()
+  }
+  private func key(_ id: String) -> KeyView { keys.keyViews.first { $0.key.identifier == id }! }
+  private func point(_ id: String) -> CGPoint { let r = key(id).frame; return CGPoint(x: r.midX, y: r.midY) }
+  private func tap(_ id: String) { XCTAssertTrue(key(id).accessibilityActivate()) }
+  private func type(_ text: String) { for c in text { tap(c == " " ? "key-space" : "key-\(c)") } }
+  private func search() throws {
+    let catalog = try EmojiCatalog.load(url: XCTUnwrap(KeyboardResources.url("emoji", "json"))).filtered { EmojiPanelView.drawsAsOneGlyph($0.value) }
+    controller.emojiResourcesLoaded(catalog: catalog, suggester: EmojiSuggester(catalog: catalog))
+    tap("key-emoji"); controller.rootView.layoutIfNeeded()
+    let panel = try XCTUnwrap(controller.rootView.emoji)
+    controller.emojiPanelSearch(panel); controller.rootView.layoutIfNeeded()
+  }
+  private func descendants<T: UIView>(_ view: UIView, _: T.Type) -> [T] { (view as? T).map { [$0] } ?? view.subviews.flatMap { descendants($0, T.self) } }
+  private func witness(_ name: String, _ detail: String) {
+    let a = XCTAttachment(string: detail); a.name = name; a.lifetime = .keepAlways; add(a)
+    let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in window.drawHierarchy(in: window.bounds, afterScreenUpdates: true) }
+    let b = XCTAttachment(image: image); b.name = name; b.lifetime = .keepAlways; add(b)
+  }
+  private final class Contact: UITouch {
+    var point: CGPoint; var time: Double = 0
+    init(_ point: CGPoint) { self.point = point; super.init() }
+    override func location(in view: UIView?) -> CGPoint { point }
+    override var timestamp: TimeInterval { time }
+  }
+  private func drag(_ c: Contact, _ dx: CGFloat) { c.point.x += dx; c.time += 0.1; keys.touchesMoved([c], with: nil) }
+
+  func testQueryHoldSlideAndCancellationPreserveSeparatorAndHost() throws {
+    for language in KeyboardLanguage.allCases {
+      configure { $0.language = language }
+      editor.text = "Host sentinel"; editor.selectedRange = NSRange(location: 4, length: 0)
+      for kind in ["hold-drift", "slide", "stationary", "cancel"] {
+        try search(); type(language == .english ? "red" : "cara")
+        let prefix = controller.rootView.search.query
+        let c = Contact(point("key-space")); keys.touchesBegan([c], with: nil)
+        if kind == "slide" { drag(c, 36); drag(c, 18) }
+        else { settle(0.6); if kind != "stationary" { drag(c, 18) } }
+        witness("query-\(language)-\(kind)", "query=\(controller.rootView.search.query); dimmed=\(keys.keyViews.filter(\.isDimmed).count); selected=\(editor.selectedRange)")
+        XCTAssertFalse(keys.keyViews.contains(where: \.isDimmed))
+        if kind == "cancel" { keys.touchesCancelled([c], with: nil) } else { keys.touchesEnded([c], with: nil) }
+        XCTAssertEqual(controller.rootView.search.query, prefix + (kind == "cancel" ? "" : " "))
+        type(language == .english ? "heart" : "feliz")
+        XCTAssertEqual(controller.rootView.search.query, prefix + (kind == "cancel" ? "" : " ") + (language == .english ? "heart" : "feliz"))
+        XCTAssertEqual(editor.text, "Host sentinel"); XCTAssertEqual(editor.selectedRange, NSRange(location: 4, length: 0))
+        controller.hostWillAppear(); controller.rootView.layoutIfNeeded()
+      }
+    }
+  }
+
+  func testTrailPreferenceWithIdenticalGlideAndTapControls() throws {
+    for language in KeyboardLanguage.allCases {
+      let word = language == .english ? "we" : "hola"
+      var outcomes: [String] = []
+      for enabled in [true, false] {
+        configure { $0.language = language; $0.swipeTrail = enabled }
+        editor.text = ""; editor.selectedRange = NSRange(location: 0, length: 0); controller.documentDidChange()
+        let c = Contact(point("key-\(word.first!)")); keys.touchesBegan([c], with: nil)
+        for letter in word.dropFirst() { c.point = point("key-\(letter)"); c.time += 0.2; keys.touchesMoved([c], with: nil) }
+        let layers = (keys.layer.sublayers ?? []).compactMap { $0 as? CAShapeLayer }.filter { $0.zPosition == 10 }
+        let visible = layers.contains { !$0.isHidden && $0.opacity > 0 && !($0.path?.isEmpty ?? true) }
+        witness("trail-\(language)-\(enabled)", "visible=\(visible); glides=\(keys.stats.glides)")
+        XCTAssertEqual(visible, enabled)
+        keys.touchesEnded([c], with: nil); outcomes.append(editor.text)
+        XCTAssertEqual(editor.text?.trimmingCharacters(in: .whitespaces), word)
+      }
+      XCTAssertEqual(outcomes[0], outcomes[1])
+      tap("key-space"); tap("key-x"); XCTAssertTrue(editor.text.hasSuffix(" x"))
+    }
+  }
+
+  func testAllClickRoutesRespectReloadedSoundAndPreserveActions() throws {
+    swapClicks()
+    for enabled in [false, true, false] {
+      configure { $0.sounds = enabled; $0.haptics = !enabled }
+      XCTAssertEqual(controller.haptics.enabled, !enabled)
+      editor.text = ""; controller.documentDidChange()
+      func receipt(_ name: String, _ action: () throws -> Void) rethrows {
+        ClickReceipt.count = 0; try action()
+        witness("click-\(name)-\(enabled)", "requests=\(ClickReceipt.count); text=\(editor.text ?? ""); haptics=\(controller.haptics.enabled)")
+        XCTAssertEqual(ClickReceipt.count, enabled ? 1 : 0, name)
+      }
+      receipt("letter") { tap("key-a") }
+      tap("key-emoji"); controller.rootView.layoutIfNeeded(); settle()
+      // Ensure async resource loading is complete without substituting the insert callback.
+      if controller.rootView.emoji == nil { try search(); controller.hostWillAppear(); tap("key-emoji"); controller.rootView.layoutIfNeeded() }
+      let panel = try XCTUnwrap(controller.rootView.emoji)
+      let grid = try XCTUnwrap(descendants(panel, UICollectionView.self).first)
+      receipt("picker") { panel.collectionView(grid, didSelectItemAt: IndexPath(item: 0, section: 1)) }
+      let inserted = editor.text!
+      XCTAssertGreaterThan(inserted.count, 1)
+      let delete = try XCTUnwrap(descendants(panel, UIControl.self).first { $0.accessibilityIdentifier == "emoji-delete" })
+      receipt("picker-delete") { XCTAssertTrue(delete.accessibilityActivate()) }
+      XCTAssertEqual(editor.text, "a")
+      controller.emojiPanelSearch(panel); controller.rootView.layoutIfNeeded()
+      type("pizza"); controller.rootView.layoutIfNeeded()
+      let result = try XCTUnwrap(descendants(controller.rootView.search, UIControl.self).first { $0.accessibilityIdentifier == "emoji-result-🍕" })
+      receipt("search-result") { result.sendActions(for: .touchUpInside) }
+      XCTAssertEqual(editor.text, "a🍕")
+      receipt("repeat") { controller.keysViewRepeatDelete(keys, wholeWord: false) }
+      XCTAssertEqual(editor.text, "a🍕"); XCTAssertEqual(controller.rootView.search.query, "pizz")
+    }
+  }
+}

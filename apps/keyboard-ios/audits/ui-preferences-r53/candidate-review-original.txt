@@ -1,0 +1,19 @@
+R53 candidate independent source review
+Base: 9ff451f4
+Candidate: /tmp/pulpo-r53-ui-preferences
+
+Disposition: No actionable findings. No concrete P0/P1/P2/P3 regression or missing production gate identified in the four KeyboardUI source-file changes against the base.
+
+Source conclusions (paths below are relative to the candidate):
+
+- Visual trail preference is renderer-only. KeyboardController.swift:303 and :360 apply the effective swipeTrail setting at initialization and hostWillAppear. KeysView.swift:54-58 hides and clears the renderer when disabled; :469-471 and :603-607 gate drawing without removing gesture samples or suppressing glide dispatch at :552-557. GlideTrail.clear() at :875-882 invalidates the display link, removes animations and points, and clears the path and opacity, covering both active and fading trails.
+
+- Existing click requests converge on the owning controller's settings.sounds guard at KeyboardController.swift:630-632. Ordinary key feedback (:625-627), repeat delete (:1174-1176), picker insertion/deletion (EmojiPanelView.swift:299-303 and :430-433), and search-result selection (EmojiSearchBarView.swift:140-143) reach that sink. The picker callback is installed at KeyboardController.swift:719-721 and the persistent search callback at :304; both capture their controller weakly. Haptic calls, history updates, and editing callbacks remain outside the sound guard. Existing UIKit audio-feedback conformances remain at PulpoKeyboardViewController.swift:6-7 and App/KeyboardPreview.swift:238-240.
+
+- The central cursor-entry guard at KeysView.swift:610-618 covers the space hold timer (:422-425), direct slide (:475-478), and release/coalesced promotion (:328-346). It checks permission and committed state before changing mode, dimming keys, or issuing emphasis feedback. KeyboardController.swift:1246 denies entry during emoji search or without a surviving host. Denied entry retains tap mode, allowing ordinary query-space activation through KeysView.swift:559-579 and KeyboardController.swift:811-816.
+
+- The active cursor branch at KeysView.swift:444-455 rechecks permission before issuing movement and latches observed revocation. It undims without clearing cursorMoved or converting the contact to a tap. The roll path at :385-389 commits only tap contacts; a revoked cursor therefore cannot be committed early by another finger. The terminal cursor path at :538-543 inserts a space only when uncancelled and no authorized movement request was previously made. Existing cursor release does not issue a final movement request. End invalidates timers (:511-518); roll commits invalidate timers and mark committed (:583-589); cancellation clears timers, contacts, and dimming (:782-790). Normal root-mode changes call cancelAllTouches at KeyboardController.swift:112-113.
+
+Contract boundaries honored: movement is an authorized request, not proof of host displacement; observed revocation is reconciled through processed cursor movement or terminal/existing mode cancellation, without live polling; settings refresh on hostWillAppear with the existing Full Access/default-store selection (KeyboardController.swift:349-389). No stronger live cross-process or limited-access behavior is inferred.
+
+Method: source and production diff inspection only. No tests, test output, audits, devices, builds, author workload files, other workspaces, or other agents were consulted. This review does not claim runtime verification.

@@ -1,0 +1,13 @@
+{
+  "restoredUTC": "2026-10-16T18:12:34.064178+00:00",
+  "reason": "Frozen ONE-pair acceptance failed: three identical real settings-control binding failures old/new; no replay/rescue or oracle retuning. Zero accepted improvements.",
+  "restoredFiles": [
+    "EmojiSearchBarView.swift.txt",
+    "KeysView.swift.txt",
+    "EmojiPanelView.swift.txt",
+    "KeyboardController.swift.txt"
+  ],
+  "verification": "All baseline-source-sha256.json entries match restored live production source. Exact candidate/test snapshots retained in rejected-candidate; candidate-production.patch unchanged.",
+  "publicRuns": 2,
+  "retries": 0
+}
