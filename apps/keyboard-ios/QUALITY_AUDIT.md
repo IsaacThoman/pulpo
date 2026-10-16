@@ -95,7 +95,7 @@ screenshots, APKs, and SDK downloads remain outside Git.
 ### Parent verification and unresolved evidence
 
 The first integrated batch passed **356 core tests plus three service tests**.
-The latest integrated batch passes **436 core tests in 63 suites plus three
+The latest integrated batch passes **438 core tests in 64 suites plus three
 service tests** in Release. Five known issues are tracked: two existing
 own-state/proxy-lag ambiguities and three prefix-completion misses. All **28 Python
 tooling tests** pass, including deterministic multilingual data checks.
@@ -429,6 +429,40 @@ rows carrying a score/output, missing reasons, and nonboolean/inconsistent score
 are rejected before aggregation. Eight tampered datasets fail even under Python
 optimization, while original summary bytes remain unchanged. See
 `audits/gboard-multilingual-comparison.md`.
+
+### Independent Spanish swipe eligibility baseline
+
+The follow-up freezes a correct full-document oracle before baseline, with an
+independent target-disjoint held-out author and no retained production candidate.
+Actual engine insertion must commit context + target, owe its phantom separator,
+and materialize the exact full document through normal Space. Development scores
+128/128 swipe observations and 8/8 literals; held-out scores 124/128 and 7/8.
+Four nominal width/jitter profiles collapse to two normalized path families, so
+unique targets score **32/32 development and 31/32 held-out**, not an
+improvement or a paired regression. All target words are present, eligible, and
+visible; no compiler/data expansion is justified by development evidence.
+
+All four held-out swipe misses are `silla → sola`, one target repeated across the
+profiles. The literal miss changes `/tmp/notes.txt` to `/tmp/notes.text` in an
+English text field. Both are retained; a new independently authored technical-text
+sweep is investigating the exposed literal bug. No per-word exception or dictionary
+change is included. A separate structural check finds 57 bilingual entries with
+both suppression and glide flags, but has not demonstrated a returned, displayed,
+or committed suppressed output. A separate contract-preserving investigation is
+running; exact typed and personally learned vocabulary remain intentional cases.
+
+Independent review verifies counts, hashes, sealed-author provenance and target
+exclusions, and corrects the failure ID in the audit. Parent replays match every
+semantic output in both splits; these exposed reruns are not new blind gains.
+The result validator now requires the exact case/profile/language coverage,
+recomputes literal scores, and rejects invalid booleans and timings. Fourteen
+negative datasets fail even under Python optimization; original summary bytes
+remain unchanged. Timing and literal gate verdicts are derived from observations;
+above-limit timing controls now produce failed gates. Full Release passes
+**438 core + 3 service tests**, with the
+same five known issues. Timing is host core inference only; frozen cold process
+provenance is incomplete and later launch evidence is explicitly supplementary.
+See `audits/swipe-eligibility-r10/audit.md` for every result and failed gate.
 
 ## Blind sweep loop: round 1
 
