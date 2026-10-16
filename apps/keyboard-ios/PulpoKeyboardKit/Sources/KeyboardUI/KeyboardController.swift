@@ -530,10 +530,15 @@ public final class KeyboardController: NSObject {
     }
     let traits = engine.traits
     let needsGlobe = host?.needsInputModeSwitchKey ?? false
-    let key = "\(engine.page)|\(traits.keyboard)|\(traits.returnKey)|\(needsGlobe)|\(settings.digitHints)"
+    // Resolve at each actual refresh so a live region change can invalidate the
+    // decimal layout even when the host's input traits remain identical.
+    let decimalSeparator = traits.keyboard == .decimalPad
+      ? KeyboardLayout.resolvedDecimalSeparator(Locale.autoupdatingCurrent.decimalSeparator) : ""
+    let key = "\(engine.page)|\(traits.keyboard)|\(traits.returnKey)|\(needsGlobe)|\(settings.digitHints)|\(decimalSeparator)"
     if key != layoutKey {
       layoutKey = key
-      let layout = KeyboardLayout.make(page: engine.page, traits: traits, needsGlobe: needsGlobe, digitHints: settings.digitHints)
+      let layout = KeyboardLayout.make(page: engine.page, traits: traits, needsGlobe: needsGlobe, digitHints: settings.digitHints,
+                                       decimalSeparator: decimalSeparator)
       rootView.keys.setLayout(layout, style: rootView.style)
     } else if rootView.keys.style != rootView.style {
       rootView.keys.setLayout(rootView.keys.layout, style: rootView.style)

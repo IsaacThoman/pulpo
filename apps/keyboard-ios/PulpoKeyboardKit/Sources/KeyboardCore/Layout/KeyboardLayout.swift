@@ -102,9 +102,20 @@ public struct KeyboardLayout: Equatable, Sendable {
     }
   }
 
-  public static func make(page: KeyboardPage, traits: InputTraits, needsGlobe: Bool, digitHints: Bool) -> KeyboardLayout {
+  /// Region conventions are independent of the selected typing language.
+  public static func resolvedDecimalSeparator(_ separator: String?) -> String {
+    guard let separator, separator.count == 1,
+          separator.unicodeScalars.allSatisfy({ CharacterSet.punctuationCharacters.contains($0) }) else { return "." }
+    return separator
+  }
+
+  public static func make(page: KeyboardPage, traits: InputTraits, needsGlobe: Bool, digitHints: Bool,
+                          decimalSeparator: String? = Locale.autoupdatingCurrent.decimalSeparator) -> KeyboardLayout {
     if traits.keyboard == .phonePad { return phonePad(symbols: page != .letters, needsGlobe: needsGlobe) }
-    if traits.isNumeric { return numberPad(decimal: traits.keyboard == .decimalPad, needsGlobe: needsGlobe) }
+    if traits.isNumeric {
+      return numberPad(decimal: traits.keyboard == .decimalPad, needsGlobe: needsGlobe,
+                       decimalSeparator: resolvedDecimalSeparator(decimalSeparator))
+    }
     let top: [KeyRow]
     switch page {
     case .letters: top = letterRows(digitHints: digitHints)
@@ -188,7 +199,7 @@ public struct KeyboardLayout: Equatable, Sendable {
     return KeyRow(keys: keys)
   }
 
-  static func numberPad(decimal: Bool, needsGlobe: Bool) -> KeyboardLayout {
+  static func numberPad(decimal: Bool, needsGlobe: Bool, decimalSeparator: String = ".") -> KeyboardLayout {
     let letters = ["", "ABC", "DEF", "GHI", "JKL", "MNO", "PQRS", "TUV", "WXYZ"]
     var rows: [KeyRow] = []
     for row in 0..<3 {
@@ -198,10 +209,17 @@ public struct KeyboardLayout: Equatable, Sendable {
       }))
     }
     let corner: Key = decimal
-      ? Key(action: .character("."), label: ".")
+      ? Key(action: .character(decimalSeparator), label: decimalSeparator)
       : needsGlobe ? Key(action: .nextKeyboard, label: "globe", style: .function, identifier: "key-globe")
       : Key(action: .text(""), label: "", style: .function, identifier: "key-blank")
-    rows.append(KeyRow(keys: [corner, Key(action: .character("0"), label: "0"), Key(action: .delete, label: "delete", style: .function, identifier: "key-delete")]))
+    var bottom = [corner, Key(action: .character("0"), label: "0"), Key(action: .delete, label: "delete", style: .function, identifier: "key-delete")]
+    if decimal && needsGlobe {
+      bottom.insert(Key(action: .nextKeyboard, label: "globe", style: .function, identifier: "key-globe"), at: 1)
+      // KeysView uses three pitches for numeric rows. Four controls share that
+      // same span; each cap is its pitch fraction minus the existing key gap.
+      for index in bottom.indices { bottom[index].width = 0.75 }
+    }
+    rows.append(KeyRow(keys: bottom))
     return KeyboardLayout(rows: rows, isNumberPad: true)
   }
 
