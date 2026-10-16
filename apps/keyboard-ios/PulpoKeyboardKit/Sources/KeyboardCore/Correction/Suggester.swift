@@ -216,9 +216,22 @@ public final class Suggester {
     } else if valid {
       ordered = [Suggestion(text: typed, kind: .literal)]
     }
+    // Lookup folds accents to find candidates, but an explicitly typed accent
+    // is spelling evidence for the strip. Prefer continuations that preserve
+    // the written prefix, without changing automatic-correction evidence above.
+    var displayRanked = ranked
+    if typed.decomposedStringWithCanonicalMapping.unicodeScalars.contains(where: {
+      $0.properties.generalCategory == .nonspacingMark
+    }) {
+      let prefix = typed.precomposedStringWithCanonicalMapping.lowercased()
+      let preserving = ranked.map { candidate in
+        (candidate, candidate.text.precomposedStringWithCanonicalMapping.lowercased().hasPrefix(prefix))
+      }
+      displayRanked = preserving.filter { $0.1 }.map { $0.0 } + preserving.filter { !$0.1 }.map { $0.0 }
+    }
     // Smart quotes type ’; the dictionary spells it '. Show "I’m" once, not twice.
     let plainTyped = typed.replacingOccurrences(of: "\u{2019}", with: "'")
-    for candidate in ranked where candidate.text != typed && candidate.text != plainTyped && !ordered.contains(where: { $0.text == candidate.text }) {
+    for candidate in displayRanked where candidate.text != typed && candidate.text != plainTyped && !ordered.contains(where: { $0.text == candidate.text }) {
       ordered.append(Suggestion(text: candidate.text, kind: candidate.isCompletion ? .completion : .correction))
       if ordered.count == 3 { break }
     }
