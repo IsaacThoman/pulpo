@@ -356,6 +356,7 @@ public final class KeyboardController: NSObject {
     recordDiagnostics()
     stopLevelUpdates()
     rootView.keys.cancelAllTouches()
+    rootView.emoji?.cancelInteractions()
     // The keyboard reappears on the letters.
     rootView.releaseEmoji()
     PerfLog.end("disappear", start)
@@ -991,6 +992,7 @@ extension KeyboardController: KeysViewDelegate {
   }
 
   var keysViewAllowsGlide: Bool { !isSearching && stack != nil && engine.policy.allowsGlide && engine.page == .letters }
+  var keysViewAllowsCursorMovement: Bool { !isSearching }
   var keysViewShowsPopups: Bool { settings.keyPopups }
   var keysViewOneHandedMode: OneHandedMode? { rootView.canDock ? rootView.oneHanded : nil }
 

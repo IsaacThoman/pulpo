@@ -23,10 +23,11 @@ final class EmojiPanelView: UIView, UICollectionViewDataSource, UICollectionView
   private let toolbar = UIStackView()
   private var categoryButtons: [UIButton] = []
   private let abc = UIButton(type: .system)
-  private let delete = UIButton(type: .system)
+  private let delete = EmojiDeleteButton(type: .system)
   private let tonePicker = KeyPopupView(style: KeyboardStyle(modern: true, dark: false, landscape: false))
   private var toneTarget: Emoji?
   private var deleteTimer: Timer?
+  private var deletePress: UUID?
   private var deleteRepeats = 0
   private var pendingOffset: CGFloat?
   private let images = EmojiImages(pointSize: EmojiCell.pointSize, limit: 48)
@@ -96,8 +97,14 @@ final class EmojiPanelView: UIView, UICollectionViewDataSource, UICollectionView
     delete.setImage(UIImage(systemName: "delete.left", withConfiguration: UIImage.SymbolConfiguration(pointSize: 18)), for: .normal)
     delete.accessibilityLabel = "delete"
     delete.accessibilityIdentifier = "emoji-delete"
+    delete.onAccessibilityActivate = { [weak self] in
+      guard let self else { return false }
+      self.deleteUp()
+      self.deleteOnce()
+      return true
+    }
     delete.addTarget(self, action: #selector(deleteDown), for: .touchDown)
-    delete.addTarget(self, action: #selector(deleteUp), for: [.touchUpInside, .touchUpOutside, .touchCancel])
+    delete.addTarget(self, action: #selector(deleteUp), for: [.touchUpInside, .touchUpOutside, .touchCancel, .touchDragExit])
     addSubview(delete)
     tonePicker.isHidden = true
     addSubview(tonePicker)
@@ -106,6 +113,27 @@ final class EmojiPanelView: UIView, UICollectionViewDataSource, UICollectionView
   }
 
   required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
+
+  override func willMove(toSuperview newSuperview: UIView?) {
+    if newSuperview == nil { deleteUp() }
+    super.willMove(toSuperview: newSuperview)
+  }
+
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    if window == nil { deleteUp() }
+  }
+
+  override var isHidden: Bool {
+    didSet { if isHidden { deleteUp() } }
+  }
+
+  /// Called as soon as the keyboard disappears, even if UIKit retains its views.
+  func cancelInteractions() {
+    deleteUp()
+    tonePicker.hide()
+    toneTarget = nil
+  }
 
   func applyStyle(_ style: KeyboardStyle) {
     self.style = style
@@ -374,20 +402,32 @@ final class EmojiPanelView: UIView, UICollectionViewDataSource, UICollectionView
   }
 
   @objc private func deleteDown() {
-    KeyboardFeedback.current?.key(function: true)
-    UIDevice.current.playInputClick()
-    delegate?.emojiPanelDelete(self, wholeWord: false)
+    deleteUp()
+    let press = UUID()
+    deletePress = press
+    deleteOnce()
+    guard deletePress == press else { return }
     deleteRepeats = 0
     scheduleDelete(after: 0.45)
   }
 
+  private func deleteOnce() {
+    KeyboardFeedback.current?.key(function: true)
+    UIDevice.current.playInputClick()
+    delegate?.emojiPanelDelete(self, wholeWord: false)
+  }
+
   private func scheduleDelete(after delay: TimeInterval) {
+    guard let press = deletePress else { return }
     deleteTimer?.invalidate()
     let timer = Timer(timeInterval: delay, repeats: false) { [weak self] _ in
       MainActor.assumeIsolated {
-        guard let self else { return }
+        guard let self, self.deletePress == press else { return }
         self.deleteRepeats += 1
         self.delegate?.emojiPanelDelete(self, wholeWord: self.deleteRepeats > 14)
+        // A host edit can synchronously dismiss the keyboard. Its cancellation
+        // must win over this callback scheduling the next repeat.
+        guard self.deletePress == press else { return }
         self.scheduleDelete(after: self.deleteRepeats > 14 ? 0.24 : 0.085)
       }
     }
@@ -396,8 +436,19 @@ final class EmojiPanelView: UIView, UICollectionViewDataSource, UICollectionView
   }
 
   @objc private func deleteUp() {
+    deletePress = nil
     deleteTimer?.invalidate()
     deleteTimer = nil
+  }
+}
+
+/// Accessibility activation has no touch-down/up pair; it must delete once
+/// without starting the destructive hold timer.
+private final class EmojiDeleteButton: UIButton {
+  var onAccessibilityActivate: (() -> Bool)?
+
+  override func accessibilityActivate() -> Bool {
+    onAccessibilityActivate?() ?? false
   }
 }
 

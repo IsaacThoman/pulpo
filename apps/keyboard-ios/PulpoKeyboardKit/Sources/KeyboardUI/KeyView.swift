@@ -11,7 +11,12 @@ final class KeyView: UIView {
   private(set) var style: KeyboardStyle
 
   var isPressed = false { didSet { if isPressed != oldValue { applyColors() } } }
-  var isEnabled = true { didSet { if isEnabled != oldValue { applyColors() } } }
+  var isEnabled = true {
+    didSet {
+      if isEnabled { accessibilityTraits.remove(.notEnabled) } else { accessibilityTraits.insert(.notEnabled) }
+      if isEnabled != oldValue { applyColors() }
+    }
+  }
   var shift: ShiftState = .off { didSet { if shift != oldValue { applyContent() } } }
   /// Blanks labels while the space bar works as a trackpad.
   var isDimmed = false { didSet { label.alpha = isDimmed ? 0 : 1; symbol.alpha = isDimmed ? 0 : 1; hint.alpha = isDimmed ? 0 : 1 } }
@@ -31,7 +36,7 @@ final class KeyView: UIView {
     addSubview(symbol)
     hint.textAlignment = .center
     addSubview(hint)
-    isAccessibilityElement = true
+    isAccessibilityElement = key.action != .text("")
     accessibilityTraits = .keyboardKey
     accessibilityIdentifier = key.identifier
     applyStyle(style)
@@ -167,6 +172,7 @@ final class KeyView: UIView {
   }
 
   override func accessibilityActivate() -> Bool {
+    guard isEnabled, isAccessibilityElement, superview is KeysView else { return false }
     (superview as? KeysView)?.activateForAccessibility(self)
     return true
   }

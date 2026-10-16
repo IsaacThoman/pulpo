@@ -20,6 +20,7 @@ protocol KeysViewDelegate: AnyObject {
   func keysViewDidLayout(_ view: KeysView)
   var keysViewAllowsGlide: Bool { get }
   var keysViewShowsPopups: Bool { get }
+  var keysViewAllowsCursorMovement: Bool { get }
   /// Delete was released without sliding into a word swipe (also after repeats).
   func keysViewDeleteEnded(_ view: KeysView)
   /// Sliding left from delete selects whole words; `words` is 0 when the finger
@@ -35,6 +36,7 @@ protocol KeysViewDelegate: AnyObject {
 }
 
 extension KeysViewDelegate {
+  var keysViewAllowsCursorMovement: Bool { true }
   func keysViewDeleteEnded(_ view: KeysView) {}
   func keysView(_ view: KeysView, previewWordDeletion words: Int) {}
   func keysView(_ view: KeysView, commitWordDeletion words: Int) {}
@@ -661,6 +663,15 @@ final class KeysView: UIView {
   /// VoiceOver can't hold a key, so the emoji key offers the layouts as actions and
   /// keys with a long-press strip (accents, digits, punctuation) offer its options.
   func accessibilityActions(for view: KeyView) -> [UIAccessibilityCustomAction]? {
+    if view.key.action == .space, delegate?.keysViewAllowsCursorMovement == true {
+      return [("Move cursor left", -1), ("Move cursor right", 1)].map { name, offset in
+        UIAccessibilityCustomAction(name: name) { [weak self] _ in
+          guard let self, self.delegate?.keysViewAllowsCursorMovement == true else { return false }
+          self.delegate?.keysView(self, moveCursor: offset)
+          return true
+        }
+      }
+    }
     if view.key.action != .emoji {
       let key = view.key
       var options = key.alternates
@@ -753,6 +764,7 @@ final class KeysView: UIView {
   #endif
 
   func activateForAccessibility(_ view: KeyView) {
+    guard view.isEnabled, view.key.action != .text("") else { return }
     delegate?.keysView(self, touchDown: view.key)
     if view.key.action == .shift { delegate?.keysViewShiftUp(self); return }
     if case .page = view.key.action { return }

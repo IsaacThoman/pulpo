@@ -15,6 +15,86 @@ final class EmojiPanelTests: XCTestCase {
     defaults = nil
   }
 
+  func testEmojiDeleteStopsOnEveryInterruption() async throws {
+    for interruption in ["release", "outside", "cancel", "drag-out", "remove", "hide", "host-disappear"] {
+      let panel = try makePanel(style: KeyboardStyle(modern: true, dark: false, landscape: false), width: 375)
+      let host = UIView(frame: panel.bounds)
+      host.addSubview(panel)
+      let recorder = DeleteRecorder()
+      panel.delegate = recorder
+      let delete = try XCTUnwrap(panel.subviews.compactMap { $0 as? UIButton }.first { $0.accessibilityIdentifier == "emoji-delete" })
+      delete.sendActions(for: .touchDown)
+      XCTAssertEqual(recorder.deletions, 1)
+      switch interruption {
+      case "release": delete.sendActions(for: .touchUpInside)
+      case "outside": delete.sendActions(for: .touchUpOutside)
+      case "cancel": delete.sendActions(for: .touchCancel)
+      case "drag-out": delete.sendActions(for: .touchDragExit)
+      case "remove": panel.removeFromSuperview()
+      case "hide": panel.isHidden = true
+      default: panel.cancelInteractions()
+      }
+      // Keep the panel alive after removal, just as UIKit may retain an old
+      // keyboard instance. A weak timer capture alone cannot make this safe.
+      try await Task.sleep(for: .milliseconds(600))
+      XCTAssertEqual(recorder.deletions, 1, "Delete continued after \(interruption)")
+      panel.cancelInteractions()
+    }
+  }
+
+  func testEmojiDeleteRepeatsWhileHeldAndStopsAfterRelease() async throws {
+    let panel = try makePanel(style: KeyboardStyle(modern: true, dark: false, landscape: false), width: 375)
+    let recorder = DeleteRecorder()
+    panel.delegate = recorder
+    let delete = try XCTUnwrap(panel.subviews.compactMap { $0 as? UIButton }.first { $0.accessibilityIdentifier == "emoji-delete" })
+    delete.sendActions(for: .touchDown)
+    try await Task.sleep(for: .milliseconds(650))
+    XCTAssertGreaterThan(recorder.deletions, 1, "The safety fix must preserve held delete")
+    delete.sendActions(for: .touchUpInside)
+    let atRelease = recorder.deletions
+    try await Task.sleep(for: .milliseconds(300))
+    XCTAssertEqual(recorder.deletions, atRelease)
+  }
+
+  func testAccessibleEmojiDeleteActsOnceWithoutHolding() async throws {
+    let panel = try makePanel(style: KeyboardStyle(modern: true, dark: false, landscape: false), width: 375)
+    let recorder = DeleteRecorder()
+    panel.delegate = recorder
+    let delete = try XCTUnwrap(panel.subviews.compactMap { $0 as? UIButton }.first { $0.accessibilityIdentifier == "emoji-delete" })
+    XCTAssertTrue(delete.accessibilityActivate())
+    XCTAssertEqual(recorder.deletions, 1)
+    try await Task.sleep(for: .milliseconds(600))
+    XCTAssertEqual(recorder.deletions, 1, "VoiceOver must not start a hold timer")
+  }
+
+  func testDeleteCallbackCannotRestartRepeatAfterSynchronousDismissal() async throws {
+    for cancelOnDeletion in [1, 2] {
+      let panel = try makePanel(style: KeyboardStyle(modern: true, dark: false, landscape: false), width: 375)
+      let recorder = DeleteRecorder()
+      panel.delegate = recorder
+      recorder.onDelete = { [weak panel, weak recorder] in
+        if recorder?.deletions == cancelOnDeletion { panel?.cancelInteractions() }
+      }
+      let delete = try XCTUnwrap(panel.subviews.compactMap { $0 as? UIButton }.first { $0.accessibilityIdentifier == "emoji-delete" })
+      delete.sendActions(for: .touchDown)
+      try await Task.sleep(for: .milliseconds(850))
+      XCTAssertEqual(recorder.deletions, cancelOnDeletion)
+      panel.cancelInteractions()
+    }
+  }
+
+  private final class DeleteRecorder: EmojiPanelDelegate {
+    var deletions = 0
+    var onDelete: (() -> Void)?
+    func emojiPanel(_ panel: EmojiPanelView, insert emoji: String) {}
+    func emojiPanelDelete(_ panel: EmojiPanelView, wholeWord: Bool) {
+      deletions += 1
+      onDelete?()
+    }
+    func emojiPanelSearch(_ panel: EmojiPanelView) {}
+    func emojiPanelClose(_ panel: EmojiPanelView) {}
+  }
+
   func testEmojiGlyphsFitPortraitAndLandscapeCells() throws {
     for landscape in [false, true] {
       for inset in [false, true] {

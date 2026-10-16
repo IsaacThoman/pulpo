@@ -33,6 +33,41 @@ final class KeyTouchTests: XCTestCase {
     return Contact(point: CGPoint(x: view.frame.midX, y: view.frame.midY), time: time)
   }
 
+  func testSpaceOffersAccessibleCursorStepsWithoutTypingASpace() throws {
+    let space = try XCTUnwrap(keys.keyViews.first { $0.key.identifier == "key-space" })
+    let actions = try XCTUnwrap(space.accessibilityCustomActions)
+    XCTAssertEqual(actions.map(\.name), ["Move cursor left", "Move cursor right"])
+    for action in actions { XCTAssertEqual(action.actionHandler?(action), true) }
+    XCTAssertEqual(recorder.cursorOffsets, [-1, 1])
+    XCTAssertTrue(recorder.events.isEmpty, "Cursor actions must not type a space")
+    recorder.allowsCursorMovement = false
+    XCTAssertNil(space.accessibilityCustomActions, "Search must not offer to move the host caret")
+    XCTAssertEqual(actions[0].actionHandler?(actions[0]), false, "An old action must respect the current mode")
+    XCTAssertEqual(recorder.cursorOffsets, [-1, 1])
+  }
+
+  func testDisabledReturnIsAnnouncedAndCannotActivate() throws {
+    let key = try XCTUnwrap(keys.keyViews.first { $0.key.action == .returnKey })
+    keys.returnEnabled = false
+    XCTAssertTrue(key.accessibilityTraits.contains(.notEnabled))
+    XCTAssertFalse(key.accessibilityActivate())
+    XCTAssertTrue(recorder.events.isEmpty)
+    keys.returnEnabled = true
+    XCTAssertFalse(key.accessibilityTraits.contains(.notEnabled))
+    XCTAssertTrue(key.accessibilityActivate())
+    XCTAssertEqual(recorder.activations, [key.key.identifier])
+  }
+
+  func testNumberPadSpacerIsNotAnAccessibleEmptyKey() throws {
+    var traits = InputTraits()
+    traits.keyboard = .numberPad
+    keys.setLayout(KeyboardLayout.make(page: .letters, traits: traits, needsGlobe: false, digitHints: false), style: keys.style)
+    let blank = try XCTUnwrap(keys.keyViews.first { $0.key.action == .text("") })
+    XCTAssertFalse(blank.isAccessibilityElement)
+    XCTAssertFalse(blank.accessibilityActivate())
+    XCTAssertTrue(recorder.events.isEmpty)
+  }
+
   func testGapsChooseTheClosestKeyEdgeAcrossStaggeredRows() {
     let a = keys.keyViews.first { $0.key.identifier == "key-a" }!.frame
     let q = keys.keyViews.first { $0.key.identifier == "key-q" }!.frame
@@ -563,6 +598,8 @@ final class KeyTouchTests: XCTestCase {
     var glidePaths: [[CGPoint]] = []
     var glideTimes: [[TimeInterval]] = []
     var allowsGlide = true
+    var allowsCursorMovement = true
+    var cursorOffsets: [Int] = []
     var layouts = 0
     var activationPoints: [CGPoint] = []
     var onActivate: ((Key) -> Void)?
@@ -570,6 +607,7 @@ final class KeyTouchTests: XCTestCase {
     var pageSlideFinishes = 0
     var activations: [String] { events.filter { $0.hasPrefix("activate:") }.map { String($0.dropFirst(9)) } }
     var keysViewAllowsGlide: Bool { allowsGlide }
+    var keysViewAllowsCursorMovement: Bool { allowsCursorMovement }
     var keysViewShowsPopups: Bool { false }
     func keysView(_ view: KeysView, touchDown key: Key) { events.append("down:\(key.identifier)"); onTouchDown?(key) }
     func keysView(_ view: KeysView, activate key: Key, at point: CGPoint) {
@@ -585,7 +623,7 @@ final class KeyTouchTests: XCTestCase {
     func keysViewShiftUp(_ view: KeysView) { events.append("shift-up") }
     func keysView(_ view: KeysView, insertAlternate text: String, for key: Key) {}
     func keysViewRepeatDelete(_ view: KeysView, wholeWord: Bool) {}
-    func keysView(_ view: KeysView, moveCursor offset: Int) {}
+    func keysView(_ view: KeysView, moveCursor offset: Int) { cursorOffsets.append(offset) }
     func keysView(_ view: KeysView, inputModeListWith event: UIEvent) {}
     func keysViewFinishedPageSlide(_ view: KeysView) { pageSlideFinishes += 1 }
     func keysViewDidLayout(_ view: KeysView) { layouts += 1 }
