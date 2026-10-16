@@ -1,0 +1,293 @@
+{
+  "schema": 1,
+  "cases": [
+    {
+      "id": "en-01",
+      "mode": "en",
+      "category": "typo",
+      "typed": "please brign snacks",
+      "expected": "please bring snacks ",
+      "final_boundary": " "
+    },
+    {
+      "id": "en-02",
+      "mode": "en",
+      "category": "typo",
+      "typed": "we shoudl leave soon",
+      "expected": "we should leave soon ",
+      "final_boundary": " "
+    },
+    {
+      "id": "en-03",
+      "mode": "en",
+      "category": "literal",
+      "typed": "velvet otters nap",
+      "expected": "velvet otters nap ",
+      "final_boundary": " "
+    },
+    {
+      "id": "en-04",
+      "mode": "en",
+      "category": "literal",
+      "typed": "build zxqv42 now",
+      "expected": "build zxqv42 now ",
+      "final_boundary": " "
+    },
+    {
+      "id": "en-05",
+      "mode": "en",
+      "category": "switch",
+      "typed": "send el recibo today",
+      "expected": "send el recibo today ",
+      "final_boundary": " "
+    },
+    {
+      "id": "en-06",
+      "mode": "en",
+      "category": "switch",
+      "typed": "my vecino is ready",
+      "expected": "my vecino is ready ",
+      "final_boundary": " "
+    },
+    {
+      "id": "en-07",
+      "mode": "en",
+      "category": "ambiguous",
+      "typed": "the form is here",
+      "expected": "the form is here ",
+      "final_boundary": " "
+    },
+    {
+      "id": "en-08",
+      "mode": "en",
+      "category": "ambiguous",
+      "typed": "we can brake here",
+      "expected": "we can brake here ",
+      "final_boundary": " "
+    },
+    {
+      "id": "en-09",
+      "mode": "en",
+      "category": "accents",
+      "typed": "café mañana",
+      "expected": "café mañana ",
+      "final_boundary": " "
+    },
+    {
+      "id": "en-10",
+      "mode": "en",
+      "category": "accents",
+      "typed": "jalapeno cafe",
+      "expected": "jalapeño café ",
+      "final_boundary": " "
+    },
+    {
+      "id": "en-11",
+      "mode": "en",
+      "category": "unsupported",
+      "typed": "東京",
+      "expected": "東京 ",
+      "final_boundary": " "
+    },
+    {
+      "id": "en-12",
+      "mode": "en",
+      "category": "unsupported",
+      "typed": "🦑",
+      "expected": "🦑 ",
+      "final_boundary": " "
+    },
+    {
+      "id": "es-01",
+      "mode": "es",
+      "category": "typo",
+      "typed": "trae la camieta",
+      "expected": "trae la camiseta ",
+      "final_boundary": " "
+    },
+    {
+      "id": "es-02",
+      "mode": "es",
+      "category": "typo",
+      "typed": "vamos a esribir",
+      "expected": "vamos a escribir ",
+      "final_boundary": " "
+    },
+    {
+      "id": "es-03",
+      "mode": "es",
+      "category": "literal",
+      "typed": "las nutrias descansan",
+      "expected": "las nutrias descansan ",
+      "final_boundary": " "
+    },
+    {
+      "id": "es-04",
+      "mode": "es",
+      "category": "literal",
+      "typed": "usa zxqv42 ahora",
+      "expected": "usa zxqv42 ahora ",
+      "final_boundary": " "
+    },
+    {
+      "id": "es-05",
+      "mode": "es",
+      "category": "switch",
+      "typed": "manda the invoice hoy",
+      "expected": "manda the invoice hoy ",
+      "final_boundary": " "
+    },
+    {
+      "id": "es-06",
+      "mode": "es",
+      "category": "switch",
+      "typed": "mi meeting termina pronto",
+      "expected": "mi meeting termina pronto ",
+      "final_boundary": " "
+    },
+    {
+      "id": "es-07",
+      "mode": "es",
+      "category": "ambiguous",
+      "typed": "la casa queda lejos",
+      "expected": "la casa queda lejos ",
+      "final_boundary": " "
+    },
+    {
+      "id": "es-08",
+      "mode": "es",
+      "category": "ambiguous",
+      "typed": "tu sabes el camino",
+      "expected": "tu sabes el camino ",
+      "final_boundary": " "
+    },
+    {
+      "id": "es-09",
+      "mode": "es",
+      "category": "accents",
+      "typed": "el niño pidió té",
+      "expected": "el niño pidió té ",
+      "final_boundary": " "
+    },
+    {
+      "id": "es-10",
+      "mode": "es",
+      "category": "accents",
+      "typed": "manana tomare cafe",
+      "expected": "mañana tomaré café ",
+      "final_boundary": " "
+    },
+    {
+      "id": "es-11",
+      "mode": "es",
+      "category": "unsupported",
+      "typed": "東京",
+      "expected": "東京 ",
+      "final_boundary": " "
+    },
+    {
+      "id": "es-12",
+      "mode": "es",
+      "category": "unsupported",
+      "typed": "🦑",
+      "expected": "🦑 ",
+      "final_boundary": " "
+    },
+    {
+      "id": "en-es-01",
+      "mode": "en-es",
+      "category": "typo",
+      "typed": "please trrae la caja",
+      "expected": "please trae la caja ",
+      "final_boundary": " "
+    },
+    {
+      "id": "en-es-02",
+      "mode": "en-es",
+      "category": "typo",
+      "typed": "necesito the reciept",
+      "expected": "necesito the receipt ",
+      "final_boundary": " "
+    },
+    {
+      "id": "en-es-03",
+      "mode": "en-es",
+      "category": "literal",
+      "typed": "quiet gatos sleep",
+      "expected": "quiet gatos sleep ",
+      "final_boundary": " "
+    },
+    {
+      "id": "en-es-04",
+      "mode": "en-es",
+      "category": "literal",
+      "typed": "envia zxqv42 today",
+      "expected": "envia zxqv42 today ",
+      "final_boundary": " "
+    },
+    {
+      "id": "en-es-05",
+      "mode": "en-es",
+      "category": "switch",
+      "typed": "bring las llaves tomorrow",
+      "expected": "bring las llaves tomorrow ",
+      "final_boundary": " "
+    },
+    {
+      "id": "en-es-06",
+      "mode": "en-es",
+      "category": "switch",
+      "typed": "quiero the blue folder",
+      "expected": "quiero the blue folder ",
+      "final_boundary": " "
+    },
+    {
+      "id": "en-es-07",
+      "mode": "en-es",
+      "category": "ambiguous",
+      "typed": "once we arrive llama",
+      "expected": "once we arrive llama ",
+      "final_boundary": " "
+    },
+    {
+      "id": "en-es-08",
+      "mode": "en-es",
+      "category": "ambiguous",
+      "typed": "sale el sol soon",
+      "expected": "sale el sol soon ",
+      "final_boundary": " "
+    },
+    {
+      "id": "en-es-09",
+      "mode": "en-es",
+      "category": "accents",
+      "typed": "mañana bring café",
+      "expected": "mañana bring café ",
+      "final_boundary": " "
+    },
+    {
+      "id": "en-es-10",
+      "mode": "en-es",
+      "category": "accents",
+      "typed": "el nino wants tea",
+      "expected": "el niño wants tea ",
+      "final_boundary": " "
+    },
+    {
+      "id": "en-es-11",
+      "mode": "en-es",
+      "category": "unsupported",
+      "typed": "東京",
+      "expected": "東京 ",
+      "final_boundary": " "
+    },
+    {
+      "id": "en-es-12",
+      "mode": "en-es",
+      "category": "unsupported",
+      "typed": "🦑",
+      "expected": "🦑 ",
+      "final_boundary": " "
+    }
+  ]
+}
