@@ -1,0 +1,21 @@
+{
+  "protocol": "Casing safety follow-up. The original paired verification has been seen and is spent for tuning. Freeze new words before the general Shift sequence fix. Use fixed 80ms/120ms/200ms intervals; no word-specific casing exceptions. Check literal committed text, held Shift chords, true Shift double taps, and non-Shift interruption.",
+  "develop": [
+    "eBay",
+    "iOS",
+    "macOS",
+    "LaTeX",
+    "McAfee",
+    "YouTube"
+  ],
+  "verify": [
+    "npmRun",
+    "getURL",
+    "ClaudeCode",
+    "TypeScript",
+    "GitLab",
+    "WebKit",
+    "OAuth",
+    "iPadOS"
+  ]
+}
