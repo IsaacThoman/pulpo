@@ -189,20 +189,56 @@ final class DraftEditorTests: XCTestCase {
     state.selection = NSRange(location: (state.text as NSString).length, length: 0)
     state.focused = true
     let removed = try mount()
-    XCTAssertTrue(removed.isFirstResponder)
+    guard removed.isFirstResponder else {
+      XCTFail("The lifecycle fixture must have a genuinely focused editor")
+      return
+    }
     let delegate = try XCTUnwrap(removed.delegate as? PreviewTextView.Coordinator)
     let host = try XCTUnwrap(delegate.host)
     let controller = try XCTUnwrap(delegate.controller)
+    let input = try XCTUnwrap(removed.inputView as? PreviewInputView)
     let keys = controller.rootView.keys
     defer { keys.cancelAllTouches() }
+    // Prefer UIKit's normal input-view presentation and layout first.
+    removed.reloadInputViews()
+    window.layoutIfNeeded()
+    settle()
+    input.setNeedsLayout()
+    input.layoutIfNeeded()
+    if input.bounds.width <= 0 || input.bounds.height <= 0 || keys.bounds.width <= 0 {
+      // A focused app-hosted unit editor can have an unpresented input view.
+      // Lay out that same real view using its hosting window/intrinsic size;
+      // do not fake controller appearance or alter native detach callbacks.
+      let width = window.bounds.width
+      let height = input.intrinsicContentSize.height
+      guard width > 0, height > 0, width.isFinite, height.isFinite else {
+        XCTFail("The real window and preview input must provide usable geometry")
+        return
+      }
+      input.frame = CGRect(x: 0, y: 0, width: width, height: height)
+      input.setNeedsLayout()
+      input.layoutIfNeeded()
+    }
+    controller.rootView.setNeedsLayout()
+    controller.rootView.layoutIfNeeded()
+    keys.setNeedsLayout()
     keys.layoutIfNeeded()
     let key = try XCTUnwrap(keys.keyViews.first { $0.key.action == .delete })
-    XCTAssertGreaterThan(key.frame.width, 0)
-    let contact = HeldContact(point: CGPoint(x: key.frame.midX, y: key.frame.midY))
+    let point = CGPoint(x: key.frame.midX, y: key.frame.midY)
+    guard keys.bounds.width > 0, keys.bounds.height > 0,
+          key.frame.width > 0, key.frame.height > 0,
+          let index = keys.keyIndex(at: point), keys.keyViews[index].key.action == .delete else {
+      XCTFail("The attached fixture must hit-test a laid-out delete key before holding it")
+      return
+    }
+    let contact = HeldContact(point: point)
     let original = removed.text
     keys.touchesBegan([contact], with: nil)
     let afterTouchDown = removed.text
-    XCTAssertNotEqual(afterTouchDown, original, "The real delete contact must edit its attached editor")
+    guard afterTouchDown != original else {
+      XCTFail("The real delete contact must edit its attached editor")
+      return
+    }
     let repeatDeadline = Date().addingTimeInterval(1)
     while removed.text == afterTouchDown, Date() < repeatDeadline {
       RunLoop.main.run(until: Date().addingTimeInterval(0.01))
