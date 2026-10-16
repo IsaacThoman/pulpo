@@ -1,0 +1,52 @@
+import Testing
+@testable import KeyboardCore
+
+struct ExplicitSpaceRegressionTests {
+  private func atBoundary(_ text: String = "join meeting", caret: Int = 5) -> (KeyboardEngine, MockDocument) {
+    var traits = InputTraits()
+    traits.capitalization = .none
+    let (engine, document) = Fixtures.engine(text, traits: traits)
+    document.moveCursor(to: caret)
+    engine.documentDidChange()
+    return (engine, document)
+  }
+
+  @Test func explicitSpaceCorrectsOnlyNewWordAndUndoRemovesSeparator() {
+    let (engine, document) = atBoundary()
+    engine.type("teh ")
+    #expect(document.text == "join the meeting")
+    #expect(document.text.distance(from: document.text.startIndex, to: document.cursor) == 9)
+    engine.deleteBackward()
+    #expect(document.text == "join tehmeeting")
+    #expect(document.text.distance(from: document.text.startIndex, to: document.cursor) == 8)
+  }
+
+  @Test func swipeWithoutSpaceRetainsPendingTypoAndInheritedSuffix() {
+    let (engine, document) = atBoundary()
+    engine.type("teh")
+    var generator = SeededGenerator(state: 123)
+    engine.insertGlide(SyntheticSwipe.points(for: "hello", noise: 0, generator: &generator))
+    #expect(document.text == "join teh hello meeting")
+    engine.deleteBackward()
+    #expect(document.text == "join teh meeting")
+    engine.deleteBackward()
+    #expect(document.text == "join tehmeeting")
+  }
+
+  @Test(arguments: [",", ".", "\n"])
+  func genericTerminatorsRetainInheritedWordContract(separator: String) {
+    let (engine, document) = atBoundary()
+    engine.type("teh" + separator)
+    #expect(document.text == "join teh" + separator + "meeting")
+  }
+
+  @Test func inheritedPrefixAndExternalTextCannotAcquireOwnership() {
+    let (fragment, fragmentDocument) = atBoundary("join tmeeting", caret: 6)
+    fragment.type("eh ")
+    #expect(fragmentDocument.text == "join teh meeting")
+    let (external, externalDocument) = atBoundary()
+    external.insertText("teh")
+    external.insertSpace()
+    #expect(externalDocument.text == "join teh meeting")
+  }
+}

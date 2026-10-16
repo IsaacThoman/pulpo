@@ -1,0 +1,272 @@
+import Testing
+@testable import KeyboardCore
+
+/// Exercises the actual FuzzHost/FuzzRun adapter with synthetic primitive faults.
+/// Replacement spellings are arbitrary: these tests require no lexical outcome.
+struct R16FuzzOracleIntegrationTests {
+  typealias Oracle = R16ConservationOracle
+
+  private func freshRun(field: FuzzField = .standard, prefix: String = "old ", suffix: String = "suffix") -> FuzzRun {
+    let run = FuzzRun(seed: 16, config: FuzzConfig(field: field, prefill: prefix + suffix))
+    run.execute(.moveCursor(Double(prefix.count) / Double((prefix + suffix).count), .now))
+    return run
+  }
+
+  private func type(_ text: String, into run: FuzzRun) {
+    for key in text { run.execute(.letter(key, nil, dt: 0.2)) }
+  }
+
+  /// Fault injection at the same physical boundary used by execute, followed by
+  /// the unchanged legacy checks. No production correction/dictionary is used.
+  @discardableResult
+  private func rewrite(_ run: FuzzRun, op: FuzzOp = .space(dt: 0.2), deletes: Int = 3,
+                       output: String = "xyz ") -> Oracle.Verdict {
+    let before = run.host.actualSnapshot
+    let action = run.conservationAction(op)
+    run.host.log.removeAll()
+    run.host.appliedSteps.removeAll()
+    for _ in 0..<deletes { run.host.deleteBackward() }
+    run.host.insertText(output)
+    run.observeConservation(op: op, action: action, before: before, truthful: true, pending: false)
+    run.check(op: op, net: run.net(preBefore: Array(before.before), hadSelection: before.selectionLength > 0),
+              preBefore: before.before, preAfter: before.after,
+              preSelection: String(before.text.dropFirst(before.caret).prefix(before.selectionLength)),
+              preText: before.text, preShift: .off, conservationVerdict: run.conservationVerdict,
+              truthful: true, pending: false, tapped: nil, stale: nil, preVersion: run.version,
+              preSuggestions: [], glideWord: nil, glideCalled: false)
+    return run.conservationVerdict
+  }
+
+  @Test func physicalSnapshotsIncludeReentrantTimingSelectionAndGraphemes() {
+    let host = FuzzHost()
+    host.set(text: "old abcsuffix", cursor: 4)
+    host.selection = 3
+    var callbacks = 0
+    host.reentrant = {
+      callbacks += 1
+      // A callback precedes the actual primitive. Capture must follow it.
+      if callbacks == 1 { host.cursor = 5; host.selection = 2 }
+    }
+    host.insertText("e\u{301}")
+    host.deleteBackward()
+    #expect(host.appliedSteps.count == 2)
+    #expect(host.appliedSteps[0].before == .init(text: "old abcsuffix", caret: 5, selectionLength: 2))
+    #expect(host.appliedSteps[0].after == .init(text: "old ae\u{301}suffix", caret: 6))
+    #expect(host.appliedSteps[1].after == .init(text: "old asuffix", caret: 5))
+    for step in host.appliedSteps {
+      #expect(Oracle.applying(step.primitive, to: step.before) == step.after)
+    }
+  }
+
+  @Test func onlyFreshWholeWordSpaceCanExemptTheMidwordGuard() {
+    let run = freshRun()
+    type("abc", into: run)
+    #expect(run.conservationOracle.owned == .init(prefix: "old ", word: "abc", suffix: "suffix"))
+    #expect(rewrite(run).permitsSpaceReplacement)
+    #expect(run.violations.isEmpty, "\(run.violations)")
+    #expect(run.host.text == "old xyz suffix")
+    #expect(run.conservationTrace?.steps.count == 4)
+  }
+
+  @Test func actualExecuteGroupsAndLabelsEverySpacePrimitive() {
+    // This checks real action dispatch without depending on a dictionary correction.
+    let run = freshRun()
+    type("abc", into: run)
+    run.execute(.space(dt: 0.2))
+    guard let trace = run.conservationTrace else { Issue.record("missing actual space trace"); return }
+    if case .explicitSpace = trace.action {} else { Issue.record("space was mislabeled") }
+    #expect(trace.before == .init(text: "old abcsuffix", caret: 7))
+    #expect(trace.after == run.host.actualSnapshot)
+    #expect(run.conservationOp == .space(dt: 0.2))
+    #expect(!trace.steps.isEmpty)
+    #expect(run.conservationOracle.actual == run.host.actualSnapshot)
+    #expect(run.violations.isEmpty, "\(run.violations)")
+  }
+
+  @Test func partialStartAndInheritedMidwordStillFail() {
+    let partial = freshRun()
+    type("abc", into: partial)
+    #expect(!rewrite(partial, deletes: 2, output: "xy ").permitsSpaceReplacement)
+    #expect(partial.violations.contains { $0.cls == "partialWordReplacement" && !$0.tag.contains("midWord") })
+    #expect(partial.violations.contains { $0.cls == "partialWordReplacement" && $0.tag.contains("midWord") })
+    #expect(partial.violations.contains { $0.cls == "r16Conservation" })
+    #expect(partial.violations.filter { $0.cls == "r16Conservation" }.count == partial.conservationVerdict.failures.count)
+
+    let inherited = freshRun(prefix: "old a")
+    type("bc", into: inherited)
+    #expect(inherited.conservationOracle.owned == nil)
+    #expect(!rewrite(inherited).permitsSpaceReplacement)
+    #expect(inherited.violations.contains { $0.cls == "partialWordReplacement" && $0.tag.contains("midWord") })
+  }
+
+  @Test(arguments: [FuzzOp.key(".", dt: 0.2), .returnKey])
+  func punctuationAndReturnKeepTheirMidwordBlanket(op: FuzzOp) {
+    let run = freshRun()
+    type("abc", into: run)
+    #expect(!rewrite(run, op: op).permitsSpaceReplacement)
+    #expect(run.violations.contains { $0.cls == "partialWordReplacement" && $0.tag.contains("midWord") })
+  }
+
+  @Test(arguments: [FuzzOp.swipe("xyz", seed: 16, noise: 0), .garbageSwipe(seed: 16), .textKey("xyz")])
+  func nonspaceActionsCannotBorrowSpaceProvenance(op: FuzzOp) {
+    let run = freshRun()
+    type("abc", into: run)
+    #expect(!rewrite(run, op: op).permitsSpaceReplacement)
+    #expect(run.conservationOracle.owned == nil)
+    // The legacy fuzzer does not include swipe/textKey in isTerminator. Keep
+    // that source contract; the separate R16 sweep supplies its swipe blanket.
+    #expect(!run.violations.contains { $0.cls == "partialWordReplacement" && $0.tag.contains("midWord") })
+    #expect(!rewrite(run, deletes: 4).permitsSpaceReplacement)
+    #expect(run.violations.contains { $0.cls == "partialWordReplacement" && $0.tag.contains("midWord") })
+  }
+
+  @Test func swipeKeepsTheExistingPartialStartGuard() {
+    let run = freshRun()
+    type("abc", into: run)
+    #expect(!rewrite(run, op: .swipe("xyz", seed: 16, noise: 0), deletes: 2).permitsSpaceReplacement)
+    #expect(run.violations.contains { $0.cls == "partialWordReplacement" && !$0.tag.contains("midWord") })
+  }
+
+  @Test func multiwordRewriteFailuresRemainVisibleOutsideInheritedWords() {
+    let run = freshRun(suffix: "")
+    type("abc", into: run)
+    #expect(!rewrite(run, output: "xy z ").permitsSpaceReplacement)
+    #expect(run.conservationVerdict.failures.contains { $0.contains("alphabetic word") })
+    #expect(run.violations.contains { $0.cls == "r16Conservation" })
+  }
+
+  @Test func hostIdentityAndSelectionBarriersCannotReuseOwnedText() {
+    let run = freshRun()
+    type("abc", into: run)
+    // Identical physical text is still a genuine host-origin replacement.
+    run.execute(.replaceAll(run.host.text, .pending))
+    #expect(run.conservationOracle.owned == nil)
+    run.execute(.moveCursor(7.0 / Double(run.host.text.count), .now))
+    #expect(!rewrite(run).permitsSpaceReplacement)
+    #expect(run.violations.contains { $0.cls == "partialWordReplacement" && $0.tag.contains("midWord") })
+
+    let selection = freshRun()
+    selection.execute(.select(4.0 / Double(selection.host.text.count), 1, .now))
+    type("abc", into: selection)
+    #expect(selection.conservationOracle.owned == nil)
+    #expect(!rewrite(selection).permitsSpaceReplacement)
+  }
+
+  @Test func reportsDoNotAcquireOrRevokePhysicalOwnership() {
+    let run = freshRun()
+    type("abc", into: run)
+    let owned = run.conservationOracle.owned
+    run.execute(.lag(3, ops: 10))
+    run.execute(.ack)
+    #expect(run.conservationOracle.owned == owned)
+    run.execute(.hide(ops: 10))
+    run.execute(.ack)
+    #expect(run.conservationOracle.owned == owned)
+    // Ambiguous casing loses ownership on the next letter, even if the engine
+    // happens to emit the expected character under its own optimistic state.
+    run.execute(.letter("d", nil, dt: 0.2))
+    #expect(run.conservationOracle.owned == nil)
+    #expect(!run.conservationVerdict.permitsSpaceReplacement)
+  }
+
+  @Test func everyAdapterFailureIsRecordedEvenWithoutLegacyNetDamage() {
+    let run = freshRun()
+    type("abc", into: run)
+    let before = run.host.actualSnapshot
+    run.host.appliedSteps.removeAll()
+    run.host.insertText(" ")
+    // Drop the actual insert evidence: final text alone must not pass.
+    run.host.appliedSteps.removeAll()
+    run.observeConservation(op: .space(dt: 0.2), action: .explicitSpace, before: before, truthful: false, pending: true)
+    #expect(!run.conservationVerdict.failures.isEmpty)
+    #expect(!run.conservationVerdict.permitsSpaceReplacement)
+    #expect(run.violations.filter { $0.cls == "r16Conservation" }.count == run.conservationVerdict.failures.count)
+    #expect(run.violations.contains { $0.tag == "pending+stale" })
+  }
+
+  @Test func transientPrefixDamageAndSuffixDamageCannotEarnAnException() {
+    let run = freshRun()
+    type("abc", into: run)
+    #expect(!rewrite(run, deletes: 4, output: " xyz ").permitsSpaceReplacement)
+    #expect(run.violations.contains { $0.cls == "r16Conservation" && $0.detail.contains("lower bound") })
+
+    let suffix = freshRun()
+    type("abc", into: suffix)
+    let before = suffix.host.actualSnapshot
+    suffix.host.appliedSteps.removeAll()
+    suffix.host.chars[suffix.host.cursor] = "z"
+    suffix.observeConservation(op: .space(dt: 0.2), action: .explicitSpace, before: before, truthful: true, pending: false)
+    #expect(!suffix.conservationVerdict.permitsSpaceReplacement)
+    #expect(!suffix.conservationVerdict.failures.isEmpty)
+  }
+
+  @Test(arguments: [FuzzField.standard, .words, .allCaps])
+  func independentAutomaticCasingEstablishesExactOwnership(field: FuzzField) {
+    let run = freshRun(field: field, prefix: "")
+    type("abc", into: run)
+    let expected = field == .allCaps ? "ABC" : "Abc"
+    #expect(run.conservationOracle.owned?.word == expected)
+    #expect(run.conservationOracle.owned?.suffix == "suffix")
+  }
+
+  @Test func manualTapDoubleTapAndHeldShiftUseUserActions() {
+    let tap = freshRun()
+    tap.execute(.shiftTap)
+    type("abc", into: tap)
+    #expect(tap.conservationOracle.owned?.word == "Abc")
+
+    let suppressed = freshRun(prefix: "")
+    suppressed.execute(.shiftTap)
+    type("abc", into: suppressed)
+    #expect(suppressed.conservationOracle.owned?.word == "abc")
+
+    let lock = freshRun()
+    lock.execute(.shiftDoubleTap)
+    type("abc", into: lock)
+    #expect(lock.conservationOracle.owned?.word == "ABC")
+
+    let chord = freshRun()
+    chord.execute(.shiftDown)
+    type("abc", into: chord)
+    #expect(chord.conservationOracle.owned?.word == "ABC")
+    chord.execute(.shiftUp)
+    #expect(chord.conservationOracle.owned == nil) // unmodeled action remains a barrier
+  }
+
+  @Test func temporaryContextUncertaintyRecoversButManualUncertaintyDoesNot() {
+    var automatic = FuzzOracleShift()
+    automatic.refresh(capital: false, reliable: false)
+    #expect(automatic.casing(reliable: true) == nil)
+    automatic.refresh(capital: false, reliable: true)
+    #expect(automatic.casing(reliable: true) == .asEntered)
+
+    var manual = FuzzOracleShift()
+    manual.refresh(capital: false, reliable: false)
+    manual.down(at: 1)
+    manual.up()
+    manual.refresh(capital: false, reliable: true)
+    #expect(manual.casing(reliable: true) == nil)
+    manual.character()
+    manual.refresh(capital: false, reliable: true)
+    #expect(manual.casing(reliable: true) == nil)
+    manual.doubleTap()
+    #expect(manual.casing(reliable: true) == .uppercase)
+  }
+
+  @Test func ambiguousCasingAndSkippedTapsCannotOwnObservedOutput() {
+    let ambiguous = freshRun(prefix: "(")
+    if case .other = ambiguous.conservationAction(.letter("a", nil, dt: 0.2)) {} else {
+      Issue.record("ambiguous opening punctuation acquired a casing label")
+    }
+    ambiguous.execute(.letter("a", nil, dt: 0.2))
+    #expect(ambiguous.conservationOracle.owned == nil)
+
+    let skipped = freshRun()
+    type("abc", into: skipped)
+    skipped.execute(.page(.numbers))
+    skipped.execute(.letter("d", nil, dt: 0.2))
+    #expect(skipped.skipped == 1)
+    #expect(skipped.conservationTrace?.steps.isEmpty == true)
+    #expect(skipped.conservationOracle.owned == nil)
+  }
+}

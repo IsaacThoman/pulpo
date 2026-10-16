@@ -1,0 +1,82 @@
+diff --git a/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Input/KeyboardEngine.swift b/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Input/KeyboardEngine.swift
+index 3250fc21..b6ade6b3 100644
+--- a/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Input/KeyboardEngine.swift
++++ b/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Input/KeyboardEngine.swift
+@@ -56 +56 @@ public final class KeyboardEngine {
+-      if settings != oldValue { invalidateSuggestionContext() }
++      if settings != oldValue { typedBoundaryWord = nil; invalidateSuggestionContext() }
+@@ -65 +65 @@ public final class KeyboardEngine {
+-      if policy != previous || traits.isPrivate != oldValue.isPrivate { invalidateSuggestionContext() }
++      if policy != previous || traits.isPrivate != oldValue.isPrivate { typedBoundaryWord = nil; invalidateSuggestionContext() }
+@@ -120,0 +121,8 @@ public final class KeyboardEngine {
++  /// Provenance of a word made entirely by contiguous letter-key taps. Neither
++  /// inherited fragments nor external insertions can establish this span.
++  private struct TypedBoundaryWord {
++    let prefix: String
++    let suffix: String
++    var text: String
++  }
++  private var typedBoundaryWord: TypedBoundaryWord?
+@@ -237,0 +246 @@ public final class KeyboardEngine {
++    typedBoundaryWord = nil
+@@ -305,0 +315,13 @@ public final class KeyboardEngine {
++    var boundaryWord: TypedBoundaryWord?
++    if key.count == 1, text.count == 1, first.isLetter, text.first?.isLetter == true,
++       expectedSelection == nil, observedContextAvailability?.before == true,
++       observedContextAvailability?.after == true {
++      if let owned = typedBoundaryWord, owned.text == composing.text,
++         before == owned.prefix + owned.text, expectedAfterContext == owned.suffix {
++        boundaryWord = owned
++      } else if composing.isEmpty, before.isEmpty || before.last?.isWhitespace == true {
++        boundaryWord = TypedBoundaryWord(prefix: before, suffix: expectedAfterContext, text: "")
++      }
++      boundaryWord?.text += text
++    }
++    typedBoundaryWord = boundaryWord
+@@ -351,0 +374 @@ public final class KeyboardEngine {
++      typedBoundaryWord = nil
+@@ -370 +393 @@ public final class KeyboardEngine {
+-      commitComposing(separator: " ")
++      commitComposing(separator: " ", fromSpaceKey: true)
+@@ -447,0 +471 @@ public final class KeyboardEngine {
++    typedBoundaryWord = nil
+@@ -462,0 +487 @@ public final class KeyboardEngine {
++    typedBoundaryWord = nil
+@@ -504,0 +530 @@ public final class KeyboardEngine {
++    typedBoundaryWord = nil
+@@ -522,0 +549 @@ public final class KeyboardEngine {
++    typedBoundaryWord = nil
+@@ -577,0 +605 @@ public final class KeyboardEngine {
++    typedBoundaryWord = nil
+@@ -663,0 +692 @@ public final class KeyboardEngine {
++    typedBoundaryWord = nil
+@@ -698,0 +728 @@ public final class KeyboardEngine {
++    typedBoundaryWord = nil
+@@ -742,0 +773 @@ public final class KeyboardEngine {
++    typedBoundaryWord = nil
+@@ -810,0 +842 @@ public final class KeyboardEngine {
++    typedBoundaryWord = nil
+@@ -915 +947,2 @@ public final class KeyboardEngine {
+-  private func commitComposing(separator: String) {
++  private func commitComposing(separator: String, fromSpaceKey: Bool = false) {
++    defer { typedBoundaryWord = nil }
+@@ -922 +955,14 @@ public final class KeyboardEngine {
+-    if let replacement = suggestions.autocorrection, replacement != typed.text {
++    var correction = suggestions.autocorrection
++    // A space key completes a newly typed word even when inherited text follows.
++    // The shared punctuation/return/swipe commit path keeps its existing gate.
++    if fromSpaceKey, separator == " ", cursorInsideWord, expectedSelection == nil,
++       policy.autocorrects, !literalToken, let owned = typedBoundaryWord,
++       owned.text == typed.text, before == owned.prefix + owned.text,
++       expectedAfterContext == owned.suffix,
++       let replacement = suggester?.suggestions(for: typed, context: languageContext(),
++         autocorrect: policy.autocorrects, replacements: policy.appliesTextReplacements,
++         rejected: rejected).autocorrection,
++       !replacement.isEmpty, replacement.allSatisfy(\.isLetter) {
++      correction = replacement
++    }
++    if let replacement = correction, replacement != typed.text {
+@@ -1068,0 +1115 @@ public final class KeyboardEngine {
++      typedBoundaryWord = nil
+@@ -1238,0 +1286 @@ public final class KeyboardEngine {
++    typedBoundaryWord = nil

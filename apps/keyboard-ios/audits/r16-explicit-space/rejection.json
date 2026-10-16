@@ -1,0 +1,82 @@
+{
+  "decision": "reject-before-candidate-freeze-and-heldout-reveal",
+  "soleSourceCandidate": "1b6fc8720b8b66106f85884f14e91d01bbc6f873",
+  "sourceSha256": "888da16d77069f316581eb9db11d2ea6e515d6d8907d36b75a7972a2869ff608",
+  "developmentPerTiming": {
+    "baseline": 38,
+    "candidate": 58,
+    "totalScored": 78,
+    "unavailable": 6,
+    "scoredRegressions": 0,
+    "diagnosticBaseline": 5,
+    "diagnosticCandidate": 3,
+    "diagnosticTotal": 5
+  },
+  "candidateFullSuiteSnapshot": {
+    "tests": 485,
+    "suites": 68,
+    "exitCode": 1,
+    "issues": 6,
+    "knownIssues": 5,
+    "failingTest": "shortRandomizedEditingSequencesKeepInvariants",
+    "seconds": 10.546,
+    "coreTests": 485,
+    "serviceTests": 3,
+    "totalTests": 488,
+    "note": "SwiftPM invokes separate core and services runners. tests/suites fields are the core summary; services passed separately."
+  },
+  "finalFocusedOracleAdapter": {
+    "tests": 43,
+    "exitCode": 0
+  },
+  "finalShortFuzz": {
+    "exitCode": 1,
+    "midwordUnprovenSeeds": [
+      2,
+      9,
+      11
+    ],
+    "oracleScopeSeeds": [
+      7,
+      10
+    ]
+  },
+  "heldout": {
+    "authored": 36,
+    "scoredAuthored": 30,
+    "diagnosticAuthored": 6,
+    "executed": 0,
+    "unavailable": 36,
+    "reason": "Pre-reveal gate failed; independent reviewer declined freeze/reveal. No inputs read or repaired, no fresh gains claimed.",
+    "sha256": "8f2b71322b863befb8673d486a1fe31de33ec8d0adef2bd02bfe868fdde3942b"
+  },
+  "noPostRevealTuning": true,
+  "noRevealOccurred": true,
+  "blockingSourceReview": {
+    "commit": "325ae50a62f47d45e2f81b0bcdebd47bb2cd3f6c",
+    "severity": "P1",
+    "finding": "Observable unreported caret move into repeated inherited suffix can redirect candidate correction onto inherited teh. Candidate EN/bilingual fail; exact baseline passes EN/ES/bilingual. Distinct live context pair, not old-own-identical ambiguity.",
+    "candidateFocused": {
+      "functions": 38,
+      "passed": 37,
+      "issues": 6,
+      "exitCode": 1
+    },
+    "baselineFocused": {
+      "functions": 1,
+      "languageParameters": 3,
+      "exitCode": 0
+    }
+  },
+  "restoredFinalSuite": {
+    "tests": 475,
+    "suites": 68,
+    "knownIssues": 5,
+    "exitCode": 0,
+    "seconds": 10.239,
+    "coreTests": 475,
+    "serviceTests": 3,
+    "totalTests": 478,
+    "note": "SwiftPM invokes separate core and services runners. tests/suites fields are the core summary; services passed separately."
+  }
+}

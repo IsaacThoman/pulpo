@@ -1,0 +1,26 @@
+{
+  "baseline": "584fd61e39250604309d476b3ca7ad166d337472",
+  "restoration": "9c78d3bc",
+  "final": "81d0091c",
+  "allProductionAndOriginalFuzzerNetDiffEmpty": true,
+  "blobs": {
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Input/KeyboardEngine.swift": {
+      "sha256": "3f0987051ff0f176a5e1ef6396d415b0f8fe0fc2088735c75fef87f75158de97",
+      "bytes": 69750,
+      "commits": [
+        "584fd61e",
+        "9c78d3bc",
+        "81d0091c"
+      ]
+    },
+    "apps/keyboard-ios/PulpoKeyboardKit/Tests/KeyboardCoreTests/EngineFuzz.swift": {
+      "sha256": "d839f66e9baac788f546badeadc4f73735af07f3e18f7ca26b818a608964ecb0",
+      "bytes": 56799,
+      "commits": [
+        "584fd61e",
+        "9c78d3bc",
+        "81d0091c"
+      ]
+    }
+  }
+}

@@ -1,0 +1,84 @@
+{
+  "base": "584fd61e39250604309d476b3ca7ad166d337472",
+  "contractCommit": "ccff8948",
+  "oracleCommit": "b3fb8f70",
+  "soleCandidateCommit": "1b6fc872",
+  "rejectedGateCommit": "e64cad2a",
+  "sourceReviewCommit": "325ae50a62f47d45e2f81b0bcdebd47bb2cd3f6c",
+  "productionRestoredByteIdentical": true,
+  "originalFuzzRestoredByteIdentical": true,
+  "sourceHashes": {
+    "apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Input/KeyboardEngine.swift": "3f0987051ff0f176a5e1ef6396d415b0f8fe0fc2088735c75fef87f75158de97",
+    "apps/keyboard-ios/PulpoKeyboardKit/Tests/KeyboardCoreTests/EngineFuzz.swift": "d839f66e9baac788f546badeadc4f73735af07f3e18f7ca26b818a608964ecb0"
+  },
+  "artifacts": {
+    "baseline-validation.json": "a4f8892ba0a32dbdbd1304416f0c00afbb211af9f09fd6ed86983545770ea6d9",
+    "development-report.json": "0e2018ac79189a24c21a625e0ec4378264498b77b9bff622dd80659ddc149260",
+    "development.json": "3bc80544aa645336e59ce601234a1245271178fdf55ce9f7b4347171d538748c",
+    "exclusions.json": "5e6c17fa6de46c59df9097dea6115238bbcf247763a37bb71e0a880a5d56a615",
+    "fuzz-integration-review.md": "6b1deccc5d656fe77d6d2d61073e5e7b53c23f4588999efd1daa20379a967c82",
+    "heldout-seal.json": "d216044588f82c5c97fac953362057bf7b2168731c1587bb1cf5a7f507c6ac71",
+    "oracle-review.md": "4696bf1d6e755bbc56a43d05b8d8d41bd4a0d23fdeebef6b43b9bef4d9f45998",
+    "protocol.md": "d7dd38cfa4b8254a52750953ac10bf0d7ccf735fad9ae26de60ca9db42a4c8f5",
+    "rejected-artifacts/ExplicitSpaceRegressionTests.swift.txt": "93505fa08619be5becdfd178b8e9c932e27d3d6fe1051dcd701b73a37cbea24f",
+    "rejected-artifacts/R16FuzzOracleIntegrationTests.swift.txt": "03bd0b37fd765db7438e33af74d8fab7303b3b1948596cd8e8d5fe9c30cd8a9a",
+    "rejected-artifacts/R16SourceReviewTests.swift.txt": "23b52a03d833a9220dc8d65e6d0ad4db7b42d96077bc01415b6106c6e36f3cfc",
+    "rejected-artifacts/candidate-and-fuzz.patch": "6ca1b8a1588e6a3c6dd8b05d79a7bf4456b01218ae63f052f63ceaaa63c27236",
+    "rejection.json": "e421ad87b53f62d87cddc71a45327cfe22d5eb018f735eeb43c0cedcf22b1d7a",
+    "report.py": "15396f0b112ff09739e8ffb626e0ccf9f7832bd7872d5efd72002a2469457d91",
+    "source-review.md": "0aba1f1afbcadd64c39ced7a6531379daa5d38254ff7b1dc4f533788bea8cb1c"
+  },
+  "rawResultHashes": {
+    "/tmp/pulpo-r16-dev-baseline.json": "6bca90f6ff3736b8a8c4aab920ff968bf2bbe5c09386c27654d17ff5e1bbc875",
+    "/tmp/pulpo-r16-dev-baseline-final.json": "fd7ec10194768b6930e93e269ebd2d5c6bbd5eb04a54d3cbfa7036c5989478dc",
+    "/tmp/pulpo-r16-dev-candidate.json": "5295f7e0ba8b553c326a2ed3074ad29b014ae42f94f80c09342394d39858a5b9"
+  },
+  "tasks": {
+    "blindAuthor": "node:delegated-task:command%3Amcp%3A57ed1b8d-c671-4068-8d2f-bd0b283c197c%3Adelegate-task%3Ar16-sealed-author-v1",
+    "oracleReview": "node:delegated-task:command%3Amcp%3A57ed1b8d-c671-4068-8d2f-bd0b283c197c%3Adelegate-task%3Ar16-oracle-review-v1",
+    "fuzzIntegrationReview": "node:delegated-task:command%3Amcp%3A57ed1b8d-c671-4068-8d2f-bd0b283c197c%3Adelegate-task%3Ar16-fuzz-integration-review-v2",
+    "sourceReview": "node:delegated-task:command%3Amcp%3A57ed1b8d-c671-4068-8d2f-bd0b283c197c%3Adelegate-task%3Ar16-independent-source-review-v1"
+  },
+  "heldout": {
+    "authorReportedSha256": "8f2b71322b863befb8673d486a1fe31de33ec8d0adef2bd02bfe868fdde3942b",
+    "implementationRead": false,
+    "executions": 0,
+    "unavailableCases": 36,
+    "note": "No candidate freeze/reveal after failed gate. Only count/hash were delivered. Unread input remains external /tmp/pulpo-r16-sealed/heldout.json; durable repository artifact is the seal only."
+  },
+  "costs": {
+    "delegatedTasks": 4,
+    "fullReleaseSuiteRuns": 4,
+    "developmentTimingExecutions": 996,
+    "pairedDevelopmentTimingExecutions": 664,
+    "freshHeldoutExecutions": 0,
+    "dataTests": 15,
+    "nativeBuilds": 0,
+    "devices": 0,
+    "deployments": 0,
+    "pushes": 0,
+    "sourceReviewFocusedInvocations": 5,
+    "sourceReviewBuildCacheMiBApprox": 336,
+    "billingOrTokenUsage": "Unavailable: provider tools expose no usage meter."
+  },
+  "recordedAtUTC": "2026-10-16T06:24:07.439288+00:00",
+  "restorationCommit": "9c78d3bc",
+  "finalValidation": {
+    "coreTests": 475,
+    "coreSuites": 68,
+    "serviceTests": 3,
+    "serviceSuites": 1,
+    "totalTests": 478,
+    "knownCoreIssues": 5,
+    "exitCode": 0
+  },
+  "elapsedSecondsFromProtocolCommit": 1474.241,
+  "finalTestHashes": {
+    "ExplicitSpaceSweepTests.swift": "f8ad6535e02c7aec7afacf4572897cb838ea69123211e6108b3998f4b33b0ddc",
+    "ExplicitSpaceRegressionTests.swift": "b993cd794b4aaed38474b39b00df1442c9d1e6c7bf6284f3c29efebe1db21bef",
+    "R16ConservationOracle.swift": "bdbc6eb60abfa0cd781f6d5f5dbb4d4e01bf525aeaed4f55b066adb76366188a",
+    "R16ConservationOracleTests.swift": "4ebaf4b0deb26366bcbd2bca9ed2fa2a40b32e8d3f9c90ec4b888a49526f0de7",
+    "R16SourceReviewTests.swift": "998715f633b25c1a7812b1f86ff5c850e735ab12accc54da5d4529700de21ce2"
+  },
+  "auditSha256": "4dfaa64d58abfbf2b7c4408a0bc1e8e6cbd2cd2877f9dfdd0c8d19d92f0d33ed"
+}
