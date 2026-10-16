@@ -661,6 +661,14 @@ index construction rises roughly **26→238ms**. Neither production policy is
 imported. Exact evidence and independent limitations are preserved in
 `audits/phrase-insertion-r26/` and `audits/multilingual-emoji-r27/`.
 
+R31's follow-up preserves those English aliases and reduces observed construction
+overhead, but remains **rejected before reveal**: equivalent Spanish token orders
+and repetitions select different identities at result caps. Its numeric cost
+thresholds pass observationally; required quiet-host acceptance is unavailable.
+All 46 sealed rows remain unrun. The exact inactive patch, complete exposed
+compatibility pairs, seven blocking sequences and original verdicts are retained
+in `audits/multilingual-emoji-r31/`; no R31 production change is imported.
+
 Two small normal guards protect those observable regressions. Both pass current
 source; isolated frozen candidates compile then fail with twelve R26 and six R27
 assertions. The current parent Release gate passes **441 core functions / 65 suites
