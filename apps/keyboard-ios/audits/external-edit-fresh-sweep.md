@@ -29,7 +29,16 @@ surrounding text intact. The fix checks the reconciled selection before deriving
 the number of word-deletion primitives. An old gesture-origin prefix cannot
 replace the selected-text undo payload. Undo now also requires matching following
 context, so a fresh external suffix edit cannot authorize stale restoration.
-The existing delayed-proxy reconciliation policy is unchanged.
+The existing recognition of delayed own snapshots is retained.
+
+Root review found a follow-up gap: a live selection can be observable while both
+surrounding contexts are nil, before a host callback arrives. The existing
+reconciliation early return ignored selected text. With context newly withheld,
+the first fix still issued six primitives, producing `pr suffix` and recording
+`suffix` as the undo payload; an initially hidden host instead returned no deletion.
+The follow-up reads selection before that early return and permits reconciliation
+when selection changed. It still runs the existing own-history checks, so a known
+old selection snapshot after our own replacement remains a delayed echo.
 
 Production UI reachability was inspected: `KeyboardController.documentDidChange`
 does not cancel an active delete swipe, and `commitWordDeletion` delegates to
@@ -61,6 +70,16 @@ Passed: 92 tests in 6 suites, including all 4 new regressions, ordinary word
 deletion/undo, correction undo, selection handling, hidden contexts, delayed own
 snapshots, phantom spacing, and space-slip behavior. Existing unrelated warnings
 in `TouchModel.swift` and `WordDeletionTests.swift` remained.
+
+Follow-up red tests were committed separately in `80594fec`. The same focused
+command ran 6 tests, including a parameterized test with two hidden-context cases.
+Both freshly observable hidden selections failed before the guard refinement;
+the delayed own-selection echo test and original four tests passed. After the
+refinement, the six-suite command above passed **94 tests in 6 suites**, including
+the newly hidden and initially hidden selection cases and a delayed hidden own
+selection after replacing `chosen` with `hello`. The latter still deletes the
+whole replacement word in five primitives, rather than mistaking the old selected
+snapshot for a new host selection.
 
 ## Limits
 

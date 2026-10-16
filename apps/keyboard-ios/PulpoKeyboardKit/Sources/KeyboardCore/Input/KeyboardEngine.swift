@@ -1129,9 +1129,10 @@ public final class KeyboardEngine {
     guard expectedContext != nil, ownEditDepth == 0 else { return }
     let rawBefore = document.documentContextBeforeInput
     let rawAfter = document.documentContextAfterInput
-    // A field that withholds its context has nothing to reconcile against.
-    guard rawBefore != nil || rawAfter != nil else { return }
     let selection = document.selectedText.flatMap { $0.isEmpty ? nil : $0 }
+    // A changed selection is observable even when surrounding text is withheld.
+    // Continue through the own-context checks so old selection echoes stay lag.
+    guard rawBefore != nil || rawAfter != nil || selection != expectedSelection else { return }
     let observed = ContextSnapshot(before: rawBefore ?? "", after: rawAfter ?? "", selection: selection)
     if document.documentIdentifier == expectedDocumentIdentifier, let expected = expectedContext {
       // Proxies can expose only a window around the cursor; a sliding window is not a change.
