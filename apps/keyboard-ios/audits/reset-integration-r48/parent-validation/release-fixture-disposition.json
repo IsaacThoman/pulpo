@@ -1,0 +1,8 @@
+{
+  "verdict": "RETAINED_FAILED_RUN",
+  "result": "21/25 passed, 4 failed, 0 skips, gate4/4 complete/restored",
+  "cause": "Root used Release configuration with exposed UI fixtures depending on #if DEBUG applyTestArguments -PKResetSettings. Later cases inherited learning Off. No production repair or oracle change.",
+  "sourceEvidence": "apps/keyboard-ios/App/AppModel.swift:73,90,95",
+  "nextRun": "Separate Debug build and explicit binary/source receipts; original Release failures unchanged",
+  "successfulBuildLogRead": false
+}

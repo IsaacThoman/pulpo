@@ -1,0 +1,54 @@
+{
+  "core-services-summary.json": {
+    "size": 3385,
+    "sha256": "7e21013a80cbc5873ebdf720c74e78d8f7cfa28340c92714fb655dd967b67e27"
+  },
+  "data-tests-all.txt": {
+    "size": 110,
+    "sha256": "5da93239f08653c8476941f6cc36836fbd719e80ffbaaab394c1a22259546915"
+  },
+  "merged-normal-command.json": {
+    "size": 1388,
+    "sha256": "1f361a73ddfa9c2382f7d0201475bc2a1f1f2d4efad9486ec5c1ab3b90f25025"
+  },
+  "merged-normal-gate-session.json": {
+    "size": 339,
+    "sha256": "8dd6b2dc73ad5e47e32b2c26d226fd0d0d5dc57753d86969173b72a3e43042f4"
+  },
+  "merged-normal-outcome.json": {
+    "size": 9826,
+    "sha256": "e89085df9494d7d2b074869bea406b73e6e741f02315cfd89f5827be7af24a48"
+  },
+  "merged-normal-source-binaries.json": {
+    "size": 16958,
+    "sha256": "d4a1891e98cda3495d6e720eb749c5b97bce728abbe301631034f485c3ba8a8a"
+  },
+  "merged-normal-summary.json": {
+    "size": 5221,
+    "sha256": "97eb29bdabe05ba04a6c53bde933d9adeefb90b265523cfe4d7b82b2b8607eb9"
+  },
+  "owned-fixture.json": {
+    "size": 641,
+    "sha256": "6e928553eb32233eb94e1f799326f1decc6acb9d90e2dbbbabd5a0c9c1439998"
+  },
+  "preflight-v1-result.json": {
+    "size": 260,
+    "sha256": "983e070a08a9612f60a2b4b0238e44bc106fd3e7c4e6fff2904bab53f921ea59"
+  },
+  "release-fixture-disposition.json": {
+    "size": 533,
+    "sha256": "09112f9f51fab6706a86e4cbffabfad00e97735405e665a47066029cc61506d8"
+  },
+  "run-native-preflight-v1.py": {
+    "size": 5537,
+    "sha256": "731bed24eab135a2c36f33390163746d7175f9534eb600e7fe776fd6ef3022fa"
+  },
+  "run-native-release-v2.py": {
+    "size": 5609,
+    "sha256": "955d5ecbedc5d0cf496769cb9b8d1e83c4695ddab2bed56169a45f8f28db0568"
+  },
+  "swift-events.jsonl.gz": {
+    "size": 83321,
+    "sha256": "668760a4905d981d77236f99493f52635fce983ef0d3b299af61d2bb898ef41a"
+  }
+}
