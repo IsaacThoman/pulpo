@@ -1,0 +1,12 @@
+- Packet: [/tmp/pulpo-r56-timing/private-packet.json](/tmp/pulpo-r56-timing/private-packet.json)
+  SHA256: `e03592798042e880e9268af659ccdabdce10c689254a00a0fa1d3f5dc6dff466`
+- Author note: [/tmp/pulpo-r56-timing/private-author-note.json](/tmp/pulpo-r56-timing/private-author-note.json)
+  SHA256: `c3005335cc20c43334869742852847b3fd91b1b50d526bb184dd8ade3f5e0151`
+
+33 cases: 18 positive, 6 fast controls, 3 failure probes, 3 literal, 3 cancellation. Languages: 11 en_US, 10 es, 12 en_es. Delivery: 20 moves, 13 coalesced. Histories: 9 empty, 12 English, 12 Spanish.
+
+Coverage includes stationary initial/interior/end contacts, resumed movement, small offsets, tiny jitter, coalesced/main-final duplication, and exact document/caret oracles.
+
+Provenance: fresh controlled synthetic authorship; no human-population or dataset claim.
+
+Blindness attestation: no prohibited files, sources, results, packets, datasets, directories, or seals inspected. Only the public contract and newly authored bytes were used. Only the two permitted artifacts were written. No builds, app executions, delegation, Git edits, or pushes.

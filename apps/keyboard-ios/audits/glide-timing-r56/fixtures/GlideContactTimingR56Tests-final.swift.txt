@@ -1,0 +1,473 @@
+import UIKit
+import XCTest
+import CryptoKit
+@testable import KeyboardUI
+@testable import KeyboardCore
+
+/// New controlled contacts, never recorded human gestures. Exercises actual
+/// KeysView callbacks, controller, engine, decoder and a UIKit text document.
+@MainActor
+final class GlideContactTimingR56Tests: XCTestCase {
+  override func tearDown() async throws { KeyboardResources.directory = nil }
+  private func renderPendingBar() async {
+    await withCheckedContinuation { continuation in
+      DispatchQueue.main.async { continuation.resume() }
+    }
+  }
+  private final class Host: KeyboardHost, @preconcurrency TextDocument {
+    let field = UITextView()
+    var document: TextDocument { self }
+    var inputTraits: InputTraits { InputTraits(field) }
+    var needsInputModeSwitchKey: Bool { false }
+    var hasFullAccess: Bool { false }
+    var isInsideApp: Bool { false }
+    var documentContextBeforeInput: String? { (field.text as NSString).substring(to: field.selectedRange.location) }
+    var documentContextAfterInput: String? { (field.text as NSString).substring(from: NSMaxRange(field.selectedRange)) }
+    var selectedText: String? { field.selectedRange.length == 0 ? nil : (field.text as NSString).substring(with: field.selectedRange) }
+    var hasText: Bool { field.hasText }
+    func insertText(_ text: String) { field.insertText(text) }
+    func deleteBackward() { field.deleteBackward() }
+    func adjustTextPosition(byCharacterOffset offset: Int) {
+      field.selectedRange = NSRange(location: max(0, min((field.text as NSString).length, field.selectedRange.location + offset)), length: 0)
+    }
+    func advanceToNextInputMode() {}
+    func handleInputModeList(from view: UIView, with event: UIEvent) {}
+    func openApp(_ url: URL) {}
+  }
+
+  private final class Contact: UITouch {
+    var point: CGPoint
+    var time: Double
+    init(_ point: CGPoint, _ time: Double) { self.point = point; self.time = time; super.init() }
+    override func location(in view: UIView?) -> CGPoint { point }
+    override var timestamp: TimeInterval { time }
+  }
+  private final class Batch: UIEvent {
+    let samples: [UITouch]
+    var requests = 0
+    init(_ samples: [UITouch]) { self.samples = samples; super.init() }
+    override func coalescedTouches(for touch: UITouch) -> [UITouch]? { requests += 1; return samples }
+  }
+
+  private final class Spy: KeysViewDelegate {
+    let controller: KeyboardController
+    var paths: [[CGPoint]] = []
+    var times: [[Double]] = []
+    var decoded: [[GlideCandidate]] = []
+    var events: [String] = []
+    init(_ controller: KeyboardController) { self.controller = controller }
+    var keysViewAllowsGlide: Bool { controller.keysViewAllowsGlide }
+    var keysViewShowsPopups: Bool { false }
+    var keysViewAllowsCursorMovement: Bool { controller.keysViewAllowsCursorMovement }
+    func keysView(_ view: KeysView, glide points: [CGPoint], times: [TimeInterval], start: Key) {
+      paths.append(points); self.times.append(times); events.append("glide")
+      decoded.append(controller.engine.glide!.decode(points.map(controller.normalized), times: times,
+                                                       context: controller.engine.languageContext(), limit: 4))
+      controller.keysView(view, glide: points, times: times, start: start)
+    }
+    func keysView(_ view: KeysView, touchDown key: Key) { events.append("down:" + key.identifier); controller.keysView(view, touchDown: key) }
+    func keysView(_ view: KeysView, activate key: Key, at point: CGPoint) { events.append("tap:" + key.identifier); controller.keysView(view, activate: key, at: point) }
+    func keysView(_ view: KeysView, insertAlternate text: String, for key: Key) { events.append("alternate:" + text); controller.keysView(view, insertAlternate: text, for: key) }
+    func keysViewRepeatDelete(_ view: KeysView, wholeWord: Bool) { controller.keysViewRepeatDelete(view, wholeWord: wholeWord) }
+    func keysView(_ view: KeysView, moveCursor offset: Int) { events.append("cursor:\(offset)"); controller.keysView(view, moveCursor: offset) }
+    func keysViewShiftUp(_ view: KeysView) { controller.keysViewShiftUp(view) }
+    func keysView(_ view: KeysView, inputModeListWith event: UIEvent) { controller.keysView(view, inputModeListWith: event) }
+    func keysViewFinishedPageSlide(_ view: KeysView) { controller.keysViewFinishedPageSlide(view) }
+    func keysViewDidLayout(_ view: KeysView) { controller.keysViewDidLayout(view) }
+    func keysViewDeleteEnded(_ view: KeysView) { controller.keysViewDeleteEnded(view) }
+    func keysView(_ view: KeysView, previewWordDeletion words: Int) { controller.keysView(view, previewWordDeletion: words) }
+    func keysView(_ view: KeysView, commitWordDeletion words: Int) { controller.keysView(view, commitWordDeletion: words) }
+  }
+
+  private func setup(_ language: KeyboardLanguage = .english, before: String = "", after: String = "", keyboard: UIKeyboardType = .default) throws -> (Host, KeyboardController, Spy) {
+    KeyboardResources.directory = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("LanguageData")
+    var settings = KeyboardSettings()
+    settings.language = language; settings.learnWords = false; settings.sounds = false; settings.haptics = false
+    settings.autoCapitalization = false; settings.keyPopups = false
+    // This is the fresh owned simulator's test-runner domain, not host settings.
+    SettingsStore(defaults: .standard).save(settings)
+    let host = Host()
+    host.field.keyboardType = keyboard
+    host.field.autocapitalizationType = .none
+    host.field.text = before + after
+    host.field.selectedRange = NSRange(location: (before as NSString).length, length: 0)
+    let controller = KeyboardController(host: host, dictationBridge: nil)
+    let root = controller.rootView
+    root.frame = CGRect(x: 0, y: 0, width: 393, height: controller.preferredHeight)
+    root.layoutIfNeeded()
+    XCTAssertEqual(controller.engine.settings.language, language)
+    XCTAssertEqual(root.oneHanded, .off)
+    let stack = try XCTUnwrap(controller.stack)
+    XCTAssertNotNil(stack.lexicon.id(of: language == .english ? "hello" : "hola"))
+    // No learned history/persistent writes influence this experiment.
+    let isolated = try LanguageStack(dictionaryURL: XCTUnwrap(KeyboardResources.url(language.rawValue, "pkdict")), personalURL: nil)
+    isolated.setGeometry(stack.glide.geometry)
+    for (letter, point) in root.keys.letterCenters {
+      if let byte = String(letter).utf8.first {
+        XCTAssertEqual(isolated.glide.geometry.center(byte), controller.normalized(point))
+      }
+    }
+    controller.engine.useLanguageStack(isolated)
+    controller.engine.settings = settings
+    let spy = Spy(controller)
+    root.keys.delegate = spy
+    return (host, controller, spy)
+  }
+
+  private func center(_ letter: Character, _ keys: KeysView) -> CGPoint {
+    let key = keys.keyViews.first { $0.key.identifier == "key-\(letter)" }!
+    return CGPoint(x: key.frame.midX, y: key.frame.midY)
+  }
+  private func path(_ letters: String, _ keys: KeysView) -> [(CGPoint, Double)] {
+    var result: [(CGPoint, Double)] = []
+    var time = 10.0
+    for letter in letters {
+      let next = center(letter, keys)
+      if let last = result.last {
+        let distance = hypot(next.x - last.0.x, next.y - last.0.y) / keys.pitch.width
+        let steps = max(2, Int(ceil(distance / 0.12)))
+        for step in 1...steps {
+          let share = Double(step) / Double(steps)
+          result.append((CGPoint(x: last.0.x + (next.x - last.0.x) * share, y: last.0.y + (next.y - last.0.y) * share), time + distance / 10 * share))
+        }
+        time += distance / 10
+      } else { result.append((next, time)) }
+    }
+    return result
+  }
+  @discardableResult
+  private func drive(_ samples: [(CGPoint, Double)], _ keys: KeysView, coalesced: Bool = false, cancelled: Bool = false) -> [[String: Any]] {
+    var callbacks: [[String: Any]] = []
+    let contact = Contact(samples[0].0, samples[0].1)
+    func record(_ phase: String, _ batch: Batch? = nil) {
+      callbacks.append(["callback": phase, "main": [contact.point.x, contact.point.y, contact.timestamp],
+                        "coalescedRequests": batch?.requests ?? 0,
+                        "coalesced": batch?.samples.map { [$0.location(in: keys).x, $0.location(in: keys).y, $0.timestamp] } ?? []])
+    }
+    keys.touchesBegan([contact], with: nil)
+    record("touchesBegan")
+    if coalesced {
+      let last = samples.last!
+      contact.point = last.0; contact.time = last.1
+      let batch = Batch(samples.dropFirst().map { Contact($0.0, $0.1) })
+      if cancelled {
+        keys.touchesMoved([contact], with: batch); record("touchesMoved", batch)
+        keys.touchesCancelled([contact], with: nil); record("touchesCancelled")
+      } else { keys.touchesEnded([contact], with: batch); record("touchesEnded", batch) }
+    } else {
+      for sample in samples.dropFirst().dropLast() {
+        contact.point = sample.0; contact.time = sample.1
+        keys.touchesMoved([contact], with: nil)
+        record("touchesMoved")
+      }
+      contact.point = samples.last!.0; contact.time = samples.last!.1
+      if cancelled { keys.touchesCancelled([contact], with: nil); record("touchesCancelled") }
+      else { keys.touchesEnded([contact], with: nil); record("touchesEnded") }
+    }
+    return callbacks
+  }
+  private func candidates(_ values: [GlideCandidate]) -> [[String: Any]] { values.map { ["text": $0.text, "score": $0.score] } }
+  private func snapshot(_ host: Host, _ controller: KeyboardController) -> [String: Any] {
+    ["text": host.field.text ?? "", "caret": host.field.selectedRange.location,
+     "selectionLength": host.field.selectedRange.length,
+     "engineChoices": controller.engine.suggestions.slots.map { ["text": $0.text, "kind": String(describing: $0.kind)] },
+     "visibleChoices": controller.rootView.bar.suggestions.map { ["text": $0.text, "kind": String(describing: $0.kind)] }]
+  }
+  private func attach(_ name: String, _ value: Any) throws {
+    let data = try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys])
+    let attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.json")
+    attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
+  }
+
+  func testDevelopmentReceipt() async throws {
+    var rows: [[String: Any]] = []
+    for language in [KeyboardLanguage.english, .spanish, .bilingual] {
+      let words = language == .english ? ["wer", "itr", "hello", "top"] : ["hola", "gracias", "como", "para"]
+      for letters in words {
+       for history in ["", "we need ", "vamos a "] {
+        for delivery in ["moving", "stationary-lift", "coalesced-rest", "jitter", "cancel"] {
+          let (host, controller, spy) = try setup(language, before: history, after: " tail")
+          let keys = controller.rootView.keys
+          var raw = path(letters, keys)
+          let arrival = raw.last!
+          if delivery == "stationary-lift" { raw.append((arrival.0, arrival.1 + 0.15)) }
+          if delivery == "coalesced-rest" {
+            for step in 1...12 { raw.append((arrival.0, arrival.1 + Double(step) / 80)) }
+          }
+          if delivery == "jitter" {
+            for step in 1...12 { raw.append((CGPoint(x: arrival.0.x + (step.isMultiple(of: 2) ? 0.02 : -0.02), y: arrival.0.y), arrival.1 + Double(step) / 80)) }
+          }
+          let normalized = raw.map { controller.normalized($0.0) }
+          let times = raw.map(\.1)
+          let decoder = controller.engine.glide!
+          let reference = decoder.decode(normalized, times: times, context: controller.engine.languageContext(), limit: 4)
+          drive(raw, keys, coalesced: delivery == "coalesced-rest", cancelled: delivery == "cancel")
+          await renderPendingBar()
+          XCTAssertEqual(spy.paths.count, delivery == "cancel" ? 0 : 1)
+          XCTAssertEqual(spy.times.count, spy.paths.count)
+          XCTAssertEqual(controller.rootView.bar.suggestions, controller.engine.suggestions.slots)
+          var row: [String: Any] = ["language": language.rawValue, "letters": letters, "history": history, "delivery": delivery,
+            "input": raw.map { [$0.0.x, $0.0.y, $0.1] }, "reference": candidates(reference),
+            "referenceLift": GlideDecoder.liftSpeed(points: normalized, times: times, window: decoder.liftWindow) as Any? ?? NSNull(),
+            "events": spy.events, "after": snapshot(host, controller)]
+          if let points = spy.paths.first, let transported = spy.times.first {
+            row["transport"] = zip(points, transported).map { [$0.0.x, $0.0.y, $0.1] }
+            row["decoded"] = candidates(spy.decoded[0])
+            row["transportLift"] = GlideDecoder.liftSpeed(points: points.map(controller.normalized), times: transported, window: decoder.liftWindow) as Any? ?? NSNull()
+            XCTAssertEqual(points.count, transported.count)
+            XCTAssertEqual(points.first, raw.first!.0); XCTAssertEqual(points.last, raw.last!.0)
+            XCTAssertEqual(spy.decoded[0], reference)
+          }
+          let inserted = String((host.documentContextBeforeInput ?? "").dropFirst(history.count))
+          let slot = controller.rootView.bar.subviews.compactMap { $0 as? SlotControl }.first {
+            !$0.isHidden && $0.suggestion?.kind == .alternative && $0.suggestion?.text != inserted
+          }
+          row["choiceAvailable"] = slot != nil
+          XCTAssertEqual(slot != nil, delivery != "cancel")
+          if let slot, let choice = slot.suggestion {
+            row["choiceFired"] = choice.text
+            let previousText = host.field.text
+            slot.sendActions(for: .touchUpInside)
+            await renderPendingBar()
+            row["afterChoice"] = snapshot(host, controller)
+            XCTAssertNotEqual(host.field.text, previousText)
+            XCTAssertEqual(host.field.text, history + choice.text + " tail")
+            XCTAssertEqual(host.field.selectedRange.location, ((history + choice.text) as NSString).length)
+            XCTAssertEqual(host.field.selectedRange.length, 0)
+            XCTAssertEqual(host.documentContextAfterInput, " tail")
+          } else { row["choiceFired"] = NSNull() }
+          rows.append(row)
+          keys.cancelAllTouches()
+        }
+       }
+      }
+    }
+    try attach("r56-development-receipt", rows)
+  }
+
+  func testStationaryLiftConservesArrivalAndReleaseTimes() throws {
+    let (_, controller, spy) = try setup()
+    let keys = controller.rootView.keys
+    var raw = path("wer", keys)
+    let arrival = raw.last!
+    raw.append((arrival.0, arrival.1 + 0.15))
+    drive(raw, keys)
+    XCTAssertEqual(spy.times.first?.suffix(2), [arrival.1, arrival.1 + 0.15])
+    XCTAssertEqual(spy.paths.first?.suffix(2), [arrival.0, arrival.0])
+  }
+
+  func testEndpointTimingControls() throws {
+    for variant in ["same-time", "zero", "backward", "invalid", "initial", "interior", "long-rest", "sparse-tap", "cancel"] {
+      let (host, controller, spy) = try setup()
+      let keys = controller.rootView.keys
+      var raw = path("top", keys)
+      let arrival = raw.last!
+      switch variant {
+      case "same-time": raw.append(arrival)
+      case "zero": raw = raw.map { ($0.0, 0) }; raw.append((arrival.0, 0))
+      case "backward": raw += [(arrival.0, arrival.1 + 0.2), (arrival.0, arrival.1 + 0.1), (arrival.0, arrival.1 + 0.15)]
+      case "invalid": raw += [(arrival.0, .nan), (arrival.0, arrival.1 + 0.2)]
+      case "initial": raw.insert((raw[0].0, raw[0].1 + 0.1), at: 1)
+      case "interior":
+        let index = raw.count / 2
+        raw.insert((raw[index].0, raw[index].1 + 0.02), at: index + 1)
+      case "long-rest":
+        for step in 1...10_000 { raw.append((arrival.0, arrival.1 + Double(step) / 1000)) }
+      case "sparse-tap": raw = [raw[0], (raw[0].0, raw[0].1 + 0.1), arrival]
+      default: break
+      }
+      drive(raw, keys, cancelled: variant == "cancel")
+      if variant == "cancel" || variant == "sparse-tap" {
+        XCTAssertEqual(spy.paths.count, 0, variant)
+        if variant == "cancel" { XCTAssertEqual(host.field.text, "") }
+        else { XCTAssertEqual(spy.events.filter { $0.hasPrefix("tap:") }.count, 1) }
+      } else {
+        XCTAssertEqual(spy.paths.count, 1, variant)
+        let points = try XCTUnwrap(spy.paths.first), times = try XCTUnwrap(spy.times.first)
+        XCTAssertEqual(points.count, times.count, variant)
+        XCTAssertEqual(points.first, raw.first!.0); XCTAssertEqual(points.last, raw.last!.0)
+        let reference = controller.engine.glide!
+        let context = reference.model.context(previousWord: nil, sentenceStart: true)
+        if variant == "backward" || variant == "invalid" || variant == "long-rest" {
+          let expected = reference.decode(raw.map { controller.normalized($0.0) }, times: raw.map(\.1), context: context, limit: 4)
+          XCTAssertEqual(spy.decoded.first, expected, variant)
+          XCTAssertLessThanOrEqual(points.count, path("top", keys).count + 3, variant)
+          if variant == "invalid" { XCTAssertTrue(times.contains { !$0.isFinite }) }
+        }
+        if variant == "initial" || variant == "interior" {
+          // Endpoint-only repair explicitly preserves existing interior transport.
+          var spatial: [CGPoint] = []
+          var spatialTimes: [Double] = []
+          for sample in raw where spatial.last != sample.0 { spatial.append(sample.0); spatialTimes.append(sample.1) }
+          XCTAssertEqual(points, spatial, variant); XCTAssertEqual(times, spatialTimes, variant)
+        }
+      }
+      keys.cancelAllTouches()
+    }
+  }
+
+  func testTerminalWindowAndClockReferenceBoundaries() throws {
+    var rows: [[String: Any]] = []
+    for movement in [0.049, 0.05, 0.051, 0.4] {
+      for hold in [0.049, 0.05, 0.051] {
+        let (_, controller, spy) = try setup()
+        let keys = controller.rootView.keys
+        let seed = path("we", keys), origin = seed.first!.1, span = seed.last!.1 - seed.first!.1
+        var raw = seed.map { ($0.0, origin + ($0.1 - origin) / span * movement) }
+        let arrival = raw.last!
+        for index in 1...7 { raw.append((arrival.0, arrival.1 + hold * Double(index) / 7)) }
+        let decoder = controller.engine.glide!, context = controller.engine.languageContext()
+        let expected = decoder.decode(raw.map { controller.normalized($0.0) }, times: raw.map(\.1), context: context, limit: 4)
+        let expectedLift = GlideDecoder.liftSpeed(points: raw.map { controller.normalized($0.0) }, times: raw.map(\.1), window: decoder.liftWindow)
+        drive(raw, keys, coalesced: true)
+        let points = try XCTUnwrap(spy.paths.first), times = try XCTUnwrap(spy.times.first)
+        XCTAssertEqual(spy.decoded[0], expected)
+        let actualLift = GlideDecoder.liftSpeed(points: points.map(controller.normalized), times: times, window: decoder.liftWindow)
+        XCTAssertEqual(actualLift, expectedLift)
+        XCTAssertEqual(points.count, times.count)
+        rows.append(["movement": movement, "hold": hold, "total": raw.last!.1 - origin,
+                     "input": raw.map { [$0.0.x, $0.0.y, $0.1] }, "transport": zip(points, times).map { [$0.0.x, $0.0.y, $0.1] },
+                     "reference": candidates(expected), "preDispatch": candidates(spy.decoded[0]), "lift": actualLift as Any? ?? NSNull()])
+      }
+    }
+    for variant in ["peak-return-arrival", "prefix-maximum", "invalid-resume-coalesced"] {
+      let (_, controller, spy) = try setup()
+      let keys = controller.rootView.keys
+      var raw = path("top", keys)
+      let arrival = raw.last!
+      if variant == "peak-return-arrival" { raw += [(arrival.0, arrival.1 + 0.2), arrival] }
+      if variant == "prefix-maximum" {
+        raw[raw.count / 3].1 = arrival.1 + 2
+        raw += [(arrival.0, arrival.1 + 0.2), (arrival.0, arrival.1 + 0.1)]
+      }
+      if variant == "invalid-resume-coalesced" { raw.insert((raw[raw.count / 2].0, .nan), at: raw.count / 2 + 1) }
+      // Baseline spatial prefix, plus every occurrence in the terminal run.
+      var reference: [(CGPoint, Double)] = [], terminal: [(CGPoint, Double)] = []
+      for sample in raw {
+        if sample.0 == reference.last?.0 { terminal.append(sample) }
+        else { terminal.removeAll(); reference.append(sample) }
+      }
+      reference += terminal
+      let decoder = controller.engine.glide!, context = controller.engine.languageContext()
+      let expected = decoder.decode(reference.map { controller.normalized($0.0) }, times: reference.map(\.1), context: context, limit: 4)
+      drive(raw, keys, coalesced: true)
+      let points = try XCTUnwrap(spy.paths.first), times = try XCTUnwrap(spy.times.first)
+      XCTAssertEqual(spy.decoded[0], expected, variant)
+      XCTAssertTrue(times.allSatisfy(\.isFinite), variant)
+      if variant == "peak-return-arrival" { XCTAssertEqual(times.suffix(3), [arrival.1, arrival.1 + 0.2, arrival.1]) }
+      rows.append(["variant": variant, "input": raw.map { sample -> [Any] in [sample.0.x, sample.0.y, sample.1.isFinite ? sample.1 as Any : "nan"] },
+                   "transport": zip(points, times).map { [$0.0.x, $0.0.y, $0.1] }, "reference": candidates(expected), "preDispatch": candidates(spy.decoded[0])])
+    }
+    try attach("r56-boundary-receipt", rows)
+  }
+
+  private struct FrozenPacket: Decodable { let schema: Int; let cases: [FrozenCase] }
+  private struct FrozenCase: Decodable {
+    let id: String, language: String, before: String, after: String, mode: String, delivery: String
+    let subdivisions: Int
+    let waypoints: [FrozenWaypoint]
+    let literalText: String?
+  }
+  private struct FrozenWaypoint: Decodable { let key: String; let t: Double; let dx: Double?; let dy: Double? }
+
+  func testFrozenCallbackMechanicsWithoutPacket() throws {
+    let (host, controller, spy) = try setup(before: "x ", after: " tail")
+    let callbacks = drive(path("test", controller.rootView.keys), controller.rootView.keys, coalesced: true, cancelled: true)
+    XCTAssertEqual(spy.paths.count, 0)
+    XCTAssertEqual(host.field.text, "x  tail")
+    XCTAssertEqual(host.field.selectedRange, NSRange(location: 2, length: 0))
+    XCTAssertEqual(callbacks.map { $0["callback"] as! String }, ["touchesBegan", "touchesMoved", "touchesCancelled"])
+    XCTAssertEqual(callbacks[1]["coalescedRequests"] as? Int, 1)
+    let (literalHost, literalController, literalSpy) = try setup(before: "x ", after: " tail", keyboard: .URL)
+    let keys = literalController.rootView.keys
+    for letter in "test" {
+      let contact = Contact(center(letter, keys), 0)
+      keys.touchesBegan([contact], with: nil); keys.touchesEnded([contact], with: nil)
+    }
+    XCTAssertEqual(literalHost.field.text, "x test tail")
+    XCTAssertEqual(literalHost.field.selectedRange, NSRange(location: 6, length: 0))
+    XCTAssertTrue(literalSpy.paths.isEmpty)
+    XCTAssertEqual(literalSpy.events.filter { $0.hasPrefix("tap:") }.count, 4)
+  }
+
+  /// The packet stays private until independent oracle/evaluator review and the
+  /// full freeze. This method deliberately ignores all oracle fields.
+  func testFrozenReceipt() async throws {
+    let packetURL = URL(fileURLWithPath: "/tmp/pulpo-r56-timing/private-packet.json")
+    guard FileManager.default.fileExists(atPath: packetURL.path) else { throw XCTSkip("R56 fresh packet not installed") }
+    let data = try Data(contentsOf: packetURL)
+    let packet = try JSONDecoder().decode(FrozenPacket.self, from: data)
+    XCTAssertEqual(packet.schema, 1)
+    XCTAssertFalse(packet.cases.isEmpty); XCTAssertLessThanOrEqual(packet.cases.count, 42)
+    XCTAssertEqual(Set(packet.cases.map(\.id)).count, packet.cases.count)
+    var rows: [[String: Any]] = []
+    for item in packet.cases {
+      let language = try XCTUnwrap(KeyboardLanguage(rawValue: item.language))
+      XCTAssertTrue(["glide", "cancel", "literal"].contains(item.mode))
+      XCTAssertTrue(["moves", "coalesced"].contains(item.delivery))
+      XCTAssertTrue((1...16).contains(item.subdivisions))
+      let (host, controller, spy) = try setup(language, before: item.before, after: item.after,
+                                              keyboard: item.mode == "literal" ? .URL : .default)
+      let keys = controller.rootView.keys
+      var raw: [(CGPoint, Double)] = [], callbacks: [[String: Any]] = []
+      for waypoint in item.waypoints {
+        let key = try XCTUnwrap(waypoint.key.first)
+        let target = center(key, keys)
+        let point = CGPoint(x: target.x + (waypoint.dx ?? 0) * keys.pitch.width,
+                            y: target.y + (waypoint.dy ?? 0) * keys.pitch.height)
+        if let last = raw.last {
+          for step in 1...item.subdivisions {
+            let share = Double(step) / Double(item.subdivisions)
+            let location = step == item.subdivisions ? point : CGPoint(x: last.0.x + (point.x - last.0.x) * share, y: last.0.y + (point.y - last.0.y) * share)
+            let time = step == item.subdivisions ? waypoint.t : last.1 + (waypoint.t - last.1) * share
+            raw.append((location, time))
+          }
+        } else { raw.append((point, waypoint.t)) }
+      }
+      let before = snapshot(host, controller)
+      var reference: [GlideCandidate] = []
+      if item.mode == "literal" {
+        let text = try XCTUnwrap(item.literalText)
+        for (index, letter) in text.enumerated() {
+          let point = center(letter, keys), time = Double(index) * 0.06
+          let contact = Contact(point, time)
+          keys.touchesBegan([contact], with: nil); callbacks.append(["callback": "touchesBegan", "main": [point.x, point.y, time]])
+          keys.touchesEnded([contact], with: nil); callbacks.append(["callback": "touchesEnded", "main": [point.x, point.y, time]])
+        }
+      } else {
+        XCTAssertGreaterThanOrEqual(raw.count, 2)
+        // Baseline spatial prefix plus all terminal occurrences, independent of
+        // the candidate's bounded summary and without treating it as a word oracle.
+        var prefix: [(CGPoint, Double)] = [], terminal: [(CGPoint, Double)] = []
+        for sample in raw {
+          if sample.0 == prefix.last?.0 { terminal.append(sample) }
+          else { terminal.removeAll(); prefix.append(sample) }
+        }
+        let referenceInput = prefix + terminal
+        reference = controller.engine.glide!.decode(referenceInput.map { controller.normalized($0.0) }, times: referenceInput.map(\.1),
+                                                     context: controller.engine.languageContext(), limit: 4)
+        callbacks = drive(raw, keys, coalesced: item.delivery == "coalesced", cancelled: item.mode == "cancel")
+      }
+      await renderPendingBar()
+      let after = snapshot(host, controller)
+      var row: [String: Any] = ["id": item.id, "before": before, "after": after,
+        "input": raw.map { [$0.0.x, $0.0.y, $0.1] }, "callbacks": callbacks, "events": spy.events,
+        "terminalReference": candidates(reference), "preDispatch": spy.decoded.map { candidates($0) },
+        "transport": zip(spy.paths, spy.times).map { points, times in zip(points, times).map { [$0.0.x, $0.0.y, $0.1] } }]
+      let inserted = String((host.documentContextBeforeInput ?? "").dropFirst(item.before.count))
+      let available = controller.rootView.bar.subviews.compactMap { $0 as? SlotControl }.filter {
+        !$0.isHidden && $0.suggestion?.kind == .alternative && $0.suggestion?.text != inserted
+      }
+      row["choiceAvailableCount"] = available.count
+      if let slot = available.first, let choice = slot.suggestion {
+        row["choiceFired"] = choice.text
+        slot.sendActions(for: .touchUpInside)
+        await renderPendingBar()
+        row["afterChoice"] = snapshot(host, controller)
+      } else { row["choiceFired"] = NSNull() }
+      rows.append(row)
+      keys.cancelAllTouches()
+    }
+    try attach("r56-frozen-receipt", ["schema": 1, "packetSHA256": SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined(), "rows": rows])
+  }
+}

@@ -1,0 +1,223 @@
+import UIKit
+import XCTest
+@testable import KeyboardUI
+@testable import KeyboardCore
+
+/// New controlled contacts, never recorded human gestures. Exercises actual
+/// KeysView callbacks, controller, engine, decoder and a UIKit text document.
+@MainActor
+final class GlideContactTimingR56Tests: XCTestCase {
+  override func tearDown() async throws { KeyboardResources.directory = nil }
+  private func renderPendingBar() async {
+    await withCheckedContinuation { continuation in
+      DispatchQueue.main.async { continuation.resume() }
+    }
+  }
+  private final class Host: KeyboardHost, @preconcurrency TextDocument {
+    let field = UITextView()
+    var document: TextDocument { self }
+    var inputTraits: InputTraits { InputTraits(field) }
+    var needsInputModeSwitchKey: Bool { false }
+    var hasFullAccess: Bool { false }
+    var isInsideApp: Bool { false }
+    var documentContextBeforeInput: String? { (field.text as NSString).substring(to: field.selectedRange.location) }
+    var documentContextAfterInput: String? { (field.text as NSString).substring(from: NSMaxRange(field.selectedRange)) }
+    var selectedText: String? { field.selectedRange.length == 0 ? nil : (field.text as NSString).substring(with: field.selectedRange) }
+    var hasText: Bool { field.hasText }
+    func insertText(_ text: String) { field.insertText(text) }
+    func deleteBackward() { field.deleteBackward() }
+    func adjustTextPosition(byCharacterOffset offset: Int) {
+      field.selectedRange = NSRange(location: max(0, min((field.text as NSString).length, field.selectedRange.location + offset)), length: 0)
+    }
+    func advanceToNextInputMode() {}
+    func handleInputModeList(from view: UIView, with event: UIEvent) {}
+    func openApp(_ url: URL) {}
+  }
+
+  private final class Contact: UITouch {
+    var point: CGPoint
+    var time: Double
+    init(_ point: CGPoint, _ time: Double) { self.point = point; self.time = time; super.init() }
+    override func location(in view: UIView?) -> CGPoint { point }
+    override var timestamp: TimeInterval { time }
+  }
+  private final class Batch: UIEvent {
+    let samples: [UITouch]
+    init(_ samples: [UITouch]) { self.samples = samples; super.init() }
+    override func coalescedTouches(for touch: UITouch) -> [UITouch]? { samples }
+  }
+
+  private final class Spy: KeysViewDelegate {
+    let controller: KeyboardController
+    var paths: [[CGPoint]] = []
+    var times: [[Double]] = []
+    var decoded: [[GlideCandidate]] = []
+    var events: [String] = []
+    init(_ controller: KeyboardController) { self.controller = controller }
+    var keysViewAllowsGlide: Bool { controller.keysViewAllowsGlide }
+    var keysViewShowsPopups: Bool { false }
+    var keysViewAllowsCursorMovement: Bool { controller.keysViewAllowsCursorMovement }
+    func keysView(_ view: KeysView, glide points: [CGPoint], times: [TimeInterval], start: Key) {
+      paths.append(points); self.times.append(times); events.append("glide")
+      decoded.append(controller.engine.glide!.decode(points.map(controller.normalized), times: times,
+                                                       context: controller.engine.languageContext(), limit: 4))
+      controller.keysView(view, glide: points, times: times, start: start)
+    }
+    func keysView(_ view: KeysView, touchDown key: Key) { events.append("down:" + key.identifier); controller.keysView(view, touchDown: key) }
+    func keysView(_ view: KeysView, activate key: Key, at point: CGPoint) { events.append("tap:" + key.identifier); controller.keysView(view, activate: key, at: point) }
+    func keysView(_ view: KeysView, insertAlternate text: String, for key: Key) { events.append("alternate:" + text); controller.keysView(view, insertAlternate: text, for: key) }
+    func keysViewRepeatDelete(_ view: KeysView, wholeWord: Bool) { controller.keysViewRepeatDelete(view, wholeWord: wholeWord) }
+    func keysView(_ view: KeysView, moveCursor offset: Int) { events.append("cursor:\(offset)"); controller.keysView(view, moveCursor: offset) }
+    func keysViewShiftUp(_ view: KeysView) { controller.keysViewShiftUp(view) }
+    func keysView(_ view: KeysView, inputModeListWith event: UIEvent) { controller.keysView(view, inputModeListWith: event) }
+    func keysViewFinishedPageSlide(_ view: KeysView) { controller.keysViewFinishedPageSlide(view) }
+    func keysViewDidLayout(_ view: KeysView) { controller.keysViewDidLayout(view) }
+    func keysViewDeleteEnded(_ view: KeysView) { controller.keysViewDeleteEnded(view) }
+    func keysView(_ view: KeysView, previewWordDeletion words: Int) { controller.keysView(view, previewWordDeletion: words) }
+    func keysView(_ view: KeysView, commitWordDeletion words: Int) { controller.keysView(view, commitWordDeletion: words) }
+  }
+
+  private func setup(_ language: KeyboardLanguage = .english, before: String = "", after: String = "") throws -> (Host, KeyboardController, Spy) {
+    KeyboardResources.directory = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("LanguageData")
+    var settings = KeyboardSettings()
+    settings.language = language; settings.learnWords = false; settings.sounds = false; settings.haptics = false
+    settings.autoCapitalization = false; settings.keyPopups = false
+    // This is the fresh owned simulator's test-runner domain, not host settings.
+    SettingsStore(defaults: .standard).save(settings)
+    let host = Host()
+    host.field.autocapitalizationType = .none
+    host.field.text = before + after
+    host.field.selectedRange = NSRange(location: (before as NSString).length, length: 0)
+    let controller = KeyboardController(host: host, dictationBridge: nil)
+    let root = controller.rootView
+    root.frame = CGRect(x: 0, y: 0, width: 393, height: controller.preferredHeight)
+    root.layoutIfNeeded()
+    XCTAssertEqual(controller.engine.settings.language, language)
+    let stack = try XCTUnwrap(controller.stack)
+    XCTAssertNotNil(stack.lexicon.id(of: language == .english ? "hello" : "hola"))
+    // No learned history/persistent writes influence this experiment.
+    let isolated = try LanguageStack(dictionaryURL: XCTUnwrap(KeyboardResources.url(language.rawValue, "pkdict")), personalURL: nil)
+    isolated.setGeometry(stack.glide.geometry)
+    controller.engine.useLanguageStack(isolated)
+    controller.engine.settings = settings
+    let spy = Spy(controller)
+    root.keys.delegate = spy
+    return (host, controller, spy)
+  }
+
+  private func center(_ letter: Character, _ keys: KeysView) -> CGPoint {
+    let key = keys.keyViews.first { $0.key.identifier == "key-\(letter)" }!
+    return CGPoint(x: key.frame.midX, y: key.frame.midY)
+  }
+  private func path(_ letters: String, _ keys: KeysView) -> [(CGPoint, Double)] {
+    var result: [(CGPoint, Double)] = []
+    var time = 10.0
+    for letter in letters {
+      let next = center(letter, keys)
+      if let last = result.last {
+        let distance = hypot(next.x - last.0.x, next.y - last.0.y) / keys.pitch.width
+        let steps = max(2, Int(ceil(distance / 0.12)))
+        for step in 1...steps {
+          let share = Double(step) / Double(steps)
+          result.append((CGPoint(x: last.0.x + (next.x - last.0.x) * share, y: last.0.y + (next.y - last.0.y) * share), time + distance / 10 * share))
+        }
+        time += distance / 10
+      } else { result.append((next, time)) }
+    }
+    return result
+  }
+  private func drive(_ samples: [(CGPoint, Double)], _ keys: KeysView, coalesced: Bool = false, cancelled: Bool = false) {
+    let contact = Contact(samples[0].0, samples[0].1)
+    keys.touchesBegan([contact], with: nil)
+    if coalesced {
+      let last = samples.last!
+      contact.point = last.0; contact.time = last.1
+      keys.touchesEnded([contact], with: Batch(samples.dropFirst().map { Contact($0.0, $0.1) }))
+    } else {
+      for sample in samples.dropFirst().dropLast() {
+        contact.point = sample.0; contact.time = sample.1
+        keys.touchesMoved([contact], with: nil)
+      }
+      contact.point = samples.last!.0; contact.time = samples.last!.1
+      if cancelled { keys.touchesCancelled([contact], with: nil) }
+      else { keys.touchesEnded([contact], with: nil) }
+    }
+  }
+  private func candidates(_ values: [GlideCandidate]) -> [[String: Any]] { values.map { ["text": $0.text, "score": $0.score] } }
+  private func snapshot(_ host: Host, _ controller: KeyboardController) -> [String: Any] {
+    ["text": host.field.text ?? "", "caret": host.field.selectedRange.location,
+     "selectionLength": host.field.selectedRange.length,
+     "engineChoices": controller.engine.suggestions.slots.map { ["text": $0.text, "kind": String(describing: $0.kind)] },
+     "visibleChoices": controller.rootView.bar.suggestions.map { ["text": $0.text, "kind": String(describing: $0.kind)] }]
+  }
+  private func attach(_ name: String, _ value: Any) throws {
+    let data = try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys])
+    let attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.json")
+    attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
+  }
+
+  func testDevelopmentReceipt() async throws {
+    var rows: [[String: Any]] = []
+    for language in [KeyboardLanguage.english, .spanish, .bilingual] {
+      let words = language == .english ? ["wer", "itr", "hello", "top"] : ["hola", "gracias", "como", "para"]
+      for letters in words {
+        for delivery in ["moving", "stationary-lift", "coalesced-rest", "jitter", "cancel"] {
+          let (host, controller, spy) = try setup(language, before: "", after: " tail")
+          let keys = controller.rootView.keys
+          var raw = path(letters, keys)
+          let arrival = raw.last!
+          if delivery == "stationary-lift" { raw.append((arrival.0, arrival.1 + 0.15)) }
+          if delivery == "coalesced-rest" {
+            for step in 1...12 { raw.append((arrival.0, arrival.1 + Double(step) / 80)) }
+          }
+          if delivery == "jitter" {
+            for step in 1...12 { raw.append((CGPoint(x: arrival.0.x + (step.isMultiple(of: 2) ? 0.02 : -0.02), y: arrival.0.y), arrival.1 + Double(step) / 80)) }
+          }
+          let normalized = raw.map { controller.normalized($0.0) }
+          let times = raw.map(\.1)
+          let decoder = controller.engine.glide!
+          let reference = decoder.decode(normalized, times: times, context: controller.engine.languageContext(), limit: 4)
+          drive(raw, keys, coalesced: delivery == "coalesced-rest", cancelled: delivery == "cancel")
+          await renderPendingBar()
+          XCTAssertEqual(spy.paths.count, delivery == "cancel" ? 0 : 1)
+          XCTAssertEqual(spy.times.count, spy.paths.count)
+          XCTAssertEqual(controller.rootView.bar.suggestions, controller.engine.suggestions.slots)
+          var row: [String: Any] = ["language": language.rawValue, "letters": letters, "delivery": delivery,
+            "input": raw.map { [$0.0.x, $0.0.y, $0.1] }, "reference": candidates(reference),
+            "referenceLift": GlideDecoder.liftSpeed(points: normalized, times: times, window: decoder.liftWindow) as Any? ?? NSNull(),
+            "events": spy.events, "after": snapshot(host, controller)]
+          if let points = spy.paths.first, let transported = spy.times.first {
+            row["transport"] = zip(points, transported).map { [$0.0.x, $0.0.y, $0.1] }
+            row["decoded"] = candidates(spy.decoded[0])
+            row["transportLift"] = GlideDecoder.liftSpeed(points: points.map(controller.normalized), times: transported, window: decoder.liftWindow) as Any? ?? NSNull()
+            XCTAssertEqual(points.count, transported.count)
+            XCTAssertEqual(points.first, raw.first!.0); XCTAssertEqual(points.last, raw.last!.0)
+          }
+          if let slot = controller.rootView.bar.subviews.compactMap({ $0 as? SlotControl }).first(where: { !$0.isHidden && $0.suggestion?.kind == .alternative }), let choice = slot.suggestion {
+            row["choiceFired"] = choice.text
+            slot.sendActions(for: .touchUpInside)
+            await renderPendingBar()
+            row["afterChoice"] = snapshot(host, controller)
+            XCTAssertTrue(host.field.text.hasSuffix(" tail"))
+            XCTAssertEqual(host.field.selectedRange.length, 0)
+            XCTAssertEqual(host.documentContextAfterInput, " tail")
+          } else { row["choiceFired"] = NSNull() }
+          rows.append(row)
+          keys.cancelAllTouches()
+        }
+      }
+    }
+    try attach("r56-development-receipt", rows)
+  }
+
+  func testStationaryLiftConservesArrivalAndReleaseTimes() throws {
+    let (_, controller, spy) = try setup()
+    let keys = controller.rootView.keys
+    var raw = path("wer", keys)
+    let arrival = raw.last!
+    raw.append((arrival.0, arrival.1 + 0.15))
+    drive(raw, keys)
+    XCTAssertEqual(spy.times.first?.suffix(2), [arrival.1, arrival.1 + 0.15])
+    XCTAssertEqual(spy.paths.first?.suffix(2), [arrival.0, arrival.0])
+  }
+}

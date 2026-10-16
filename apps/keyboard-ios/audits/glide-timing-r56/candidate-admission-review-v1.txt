@@ -1,0 +1,15 @@
+**Conditional admission of the source; hold the fresh author until the gates below close.** I found no must-fix production-code defect.
+
+The bounded summary merges correctly online: arrival remains intact; peak, first invalid, and latest retain occurrence order; returning to arrival after a peak survives. Movement clears pending metadata, including within coalesced batches. Payload augmentation stays after committed/cancelled guards and leaves action classification and trail arrays unchanged. See [KeysView.swift](/Users/isaacthoman/.t3/worktrees/pulpo/t3-6fc96701/apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardUI/KeysView.swift:362).
+
+Unresolved gates:
+
+1. **Ordinary checks:** the supported release, nonparallel Core/Services run must finish with only the same five known issues and zero unexpected failures. The retained concurrent failure remains unresolved evidence until then; no load-based allowance is justified.
+
+2. **Required boundary coverage:** [endpoint controls](/Users/isaacthoman/.t3/worktrees/pulpo/t3-6fc96701/apps/keyboard-ios/AppTests/GlideContactTimingR56Tests.swift:232) omit stationary durations below/at/above `liftWindow`, total durations around `2 * liftWindow`, peak-then-return-to-arrival, prefix maximum exceeding terminal times, and invalid pending timing followed by movement inside a coalesced batch. These were explicit pre-admission requirements. Verify transport and terminal-reference score/output agreement without changing production source.
+
+3. **Runner assertions:** [the receipt test](/Users/isaacthoman/.t3/worktrees/pulpo/t3-6fc96701/apps/keyboard-ios/AppTests/GlideContactTimingR56Tests.swift:189) records reference equality and full replacement outcomes but does not assert them. Its current choice assertions could pass after a no-op action. Assert decoded/reference equality, expected choice availability, full replacement text, and exact UTF-16 caret position.
+
+The existing evidence is sound: hashes match; 144/144 pre-dispatch score lists equal reference; all 144 rendered choice actions produced the expected full document and caret. The matched baseline supports the narrow stopped-`top` utility claim. `wer` demonstrates fidelity; `itr` remains failure-to-failure.
+
+No edits, builds, tests, fresh author, or protected-material access performed.

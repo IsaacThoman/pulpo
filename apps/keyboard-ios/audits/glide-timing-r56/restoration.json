@@ -1,0 +1,18 @@
+{
+  "decision": "reject promotion: frozen visible gain gate 0/33",
+  "prototypeStillAvailable": "raw/candidate-v1.patch.gz and fixtures/KeysView-candidate-v1.swift.txt",
+  "restoredProductionSourceSHA256": "671ea47eba2716cf6ae3e57777d677264c428836c31ab1113c0f0ded59f2cb7a",
+  "fixturesArchivedExact": {
+    "apps/keyboard-ios/AppTests/GlideContactTimingR56Tests.swift": {
+      "archive": "apps/keyboard-ios/audits/glide-timing-r56/fixtures/GlideContactTimingR56Tests-final.swift.txt",
+      "SHA256": "ab5d63b5dbaec3c901201b129c6290f4ab576e2e8c7380c36e7a4c74b6b6e19d"
+    },
+    "apps/keyboard-ios/PulpoKeyboardKit/Tests/KeyboardCoreTests/GlideContactReferenceR56Tests.swift": {
+      "archive": "apps/keyboard-ios/audits/glide-timing-r56/fixtures/GlideContactReferenceR56Tests-final.swift.txt",
+      "SHA256": "65a5b8c4c6362cb7fef25bf9d554efa5f3bba03defc670ec46a7a6f49dcf1e33"
+    }
+  },
+  "nativePairExecutionsPerArm": 1,
+  "scoringCompatibleInvocation": 1,
+  "postRevealRetune": false
+}

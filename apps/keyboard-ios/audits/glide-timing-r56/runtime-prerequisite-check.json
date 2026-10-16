@@ -1,0 +1,17 @@
+{
+  "originalFailurePreserved": true,
+  "protocolRuntimeVersionPin": null,
+  "requiredLanguageFeature": "zip(strict=True), Python>=3.10",
+  "firstInvocationProducedScores": false,
+  "nativePairRerunAllowed": false,
+  "evaluatorEditsAllowed": false,
+  "monkeypatchAllowed": false,
+  "compatibleRuntimeAllowed": "environment prerequisite correction; exact frozen evaluator bytes remain mandatory",
+  "checks": {
+    "evaluator": true,
+    "capture": true,
+    "packet": true,
+    "candidateSource": true,
+    "pairExecutions": true
+  }
+}

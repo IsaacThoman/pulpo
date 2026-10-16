@@ -1,0 +1,9 @@
+**ADMIT for pre-freeze evaluator review.**
+
+Both objections are closed: the shared-success gate requires exactly `positive`, and a shared-correct positive case must actually fire a different rendered alternative with valid full-text/caret binding in both arms. Other evaluator logic is unchanged. No additional concrete gate or action-binding defect found.
+
+The 33-case packet hash matches the supplied hash.
+
+Full freeze must bind the reviewed evaluator bytes: [capture.py:48](/Users/isaacthoman/.t3/worktrees/pulpo/t3-6fc96701/apps/keyboard-ios/audits/glide-timing-r56/capture.py:48) hashes itself and the selected sources/resources/binaries, but omits `evaluate.py`. Capture metadata alone therefore does not establish evaluator identity.
+
+Only permitted artifacts inspected; no builds, packet execution, edits, or retuning.

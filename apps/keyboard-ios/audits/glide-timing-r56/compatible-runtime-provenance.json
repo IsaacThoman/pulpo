@@ -1,0 +1,20 @@
+{
+  "executable": "/tmp/pulpo-python-runtimes/cpython-3.12.12-macos-aarch64-none/bin/python3.12",
+  "version": "3.12.12 (main, Oct 14 2025, 21:38:21) [Clang 20.1.4 ]",
+  "implementation": "CPython",
+  "strictZipControl": [
+    [
+      1,
+      2
+    ]
+  ],
+  "createdAt": "2026-10-16T17:54:37.516107+00:00",
+  "uvVersion": "0.9.3",
+  "requestedPython": "3.12.12",
+  "isolatedInstall": true,
+  "defaultInterpreterChanged": false,
+  "uvBinarySHA256": "13b5d08cae849fe304270877e2841d7b015615b5d7fe23cfb88a8e0a8a95776b",
+  "pythonBinarySHA256": "8c0411e0ac2ef9cff0eff7d9862793df104169ae3bb92ddc60162e1355fe1721",
+  "installLogSHA256": "9910c1a378529417f6679a0d9f1f43bf21ed48ef6799d0e0df040aa8de930adb",
+  "productOrEvaluatorExecuted": false
+}

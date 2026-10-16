@@ -1,0 +1,51 @@
+[
+  {
+    "clientRequestId": "r56-design-contract-v1",
+    "taskId": "node:delegated-task:command%3Amcp%3Af137ec5d-943a-4861-b7a2-710366a6a36c%3Adelegate-task%3Ar56-design-contract-v1",
+    "provider": "codex",
+    "model": "gpt-6.1-sol",
+    "options": "inherited; no overrides"
+  },
+  {
+    "clientRequestId": "r56-actual-route-runner-precorrection-v1",
+    "taskId": "node:delegated-task:command%3Amcp%3Af137ec5d-943a-4861-b7a2-710366a6a36c%3Adelegate-task%3Ar56-actual-route-runner-precorrection-v1",
+    "provider": "codex",
+    "model": "gpt-6.1-sol",
+    "options": "inherited; no overrides"
+  },
+  {
+    "clientRequestId": "r56-endpoint-design-challenge-v2",
+    "taskId": "node:delegated-task:command%3Amcp%3Af137ec5d-943a-4861-b7a2-710366a6a36c%3Adelegate-task%3Ar56-endpoint-design-challenge-v2",
+    "provider": "codex",
+    "model": "gpt-6.1-sol",
+    "options": "inherited; no overrides"
+  },
+  {
+    "clientRequestId": "r56-candidate-source-runner-admission-v1",
+    "taskId": "node:delegated-task:command%3Amcp%3Af137ec5d-943a-4861-b7a2-710366a6a36c%3Adelegate-task%3Ar56-candidate-source-runner-admission-v1",
+    "provider": "codex",
+    "model": "gpt-6.1-sol",
+    "options": "inherited; no overrides"
+  },
+  {
+    "clientRequestId": "r56-fresh-source-blind-author-v1",
+    "taskId": "node:delegated-task:command%3Amcp%3Af137ec5d-943a-4861-b7a2-710366a6a36c%3Adelegate-task%3Ar56-fresh-source-blind-author-v1",
+    "provider": "codex",
+    "model": "gpt-6.1-sol",
+    "options": "inherited; no overrides"
+  },
+  {
+    "clientRequestId": "r56-fresh-oracle-evaluator-review-v1",
+    "taskId": "node:delegated-task:command%3Amcp%3Af137ec5d-943a-4861-b7a2-710366a6a36c%3Adelegate-task%3Ar56-fresh-oracle-evaluator-review-v1",
+    "provider": "codex",
+    "model": "gpt-6.1-sol",
+    "options": "inherited; no overrides"
+  },
+  {
+    "clientRequestId": "r56-fresh-oracle-evaluator-review-v2",
+    "taskId": "node:delegated-task:command%3Amcp%3Af137ec5d-943a-4861-b7a2-710366a6a36c%3Adelegate-task%3Ar56-fresh-oracle-evaluator-review-v2",
+    "provider": "codex",
+    "model": "gpt-6.1-sol",
+    "options": "inherited; no overrides"
+  }
+]
