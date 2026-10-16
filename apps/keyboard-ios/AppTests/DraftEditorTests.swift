@@ -174,4 +174,55 @@ final class DraftEditorTests: XCTestCase {
     XCTAssertFalse(live.isFirstResponder)
     XCTAssertTrue(state.urls.isEmpty)
   }
+
+  // Independently authored inputs, evaluated only after ba86a1b9 was selected.
+  // Recreation exercises the native editor lifetime; the real HomeView route
+  // is covered separately by DraftNavigationTests, not simulated as an E2E pass.
+  func testIndependentCombiningEmojiSelectionAndArabicCaretOnce() throws {
+    for (text, range) in [
+      ("A👩🏽‍💻e\u{0301}中文\n終", NSRange(location: 1, length: 9)),
+      ("مرحبا 🧪 e\u{0301}", NSRange(location: 8, length: 0)),
+    ] {
+      state.text = text
+      state.selection = range
+      state.focused = false
+      try mount()
+      unmount()
+      try mount()
+      for preview in [false, true] {
+        state.preview = preview
+        settle()
+        let editor = try XCTUnwrap(findEditor(window.rootViewController!.view))
+        XCTAssertEqual(editor.text, text)
+        XCTAssertEqual(editor.selectedRange, range)
+        XCTAssertFalse(editor.isFirstResponder)
+      }
+      state.focused = true
+      settle()
+      let editor = try XCTUnwrap(findEditor(window.rootViewController!.view))
+      XCTAssertEqual(editor.text, text)
+      XCTAssertEqual(editor.selectedRange, range)
+      XCTAssertTrue(editor.isFirstResponder)
+      unmount()
+    }
+  }
+
+  func testIndependentClearOfSelectedCombiningTextOnce() throws {
+    var draft = TryItDraft()
+    draft.text = "秘密 🔐 e\u{0301}"
+    draft.selection = NSRange(location: 6, length: 2)
+    state.text = draft.text
+    state.selection = draft.selection
+    try mount()
+    draft.clear()
+    state.text = draft.text
+    state.selection = draft.selection
+    settle()
+    unmount()
+    state.preview = false
+    let editor = try mount()
+    XCTAssertEqual(editor.text, "")
+    XCTAssertEqual(editor.selectedRange, NSRange(location: 0, length: 0))
+    XCTAssertFalse(editor.isFirstResponder)
+  }
 }

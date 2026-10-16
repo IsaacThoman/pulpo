@@ -2,7 +2,7 @@
 
 ## Protocol frozen before implementation
 
-Baseline: `7f6def76`, after cherry-picking reviewed settings commits `b4090f3a`, `1d7c51d1`, `dd61eda6`, `b091ea83` as `3e06e6e1`, `324bbfae`, `7ab9598c`, `7f6def76`. Prior H4 (empty draft after Keyboard Settings navigation) is now a development case. This follow-up makes no fresh held-out or independent-author claim. Inputs are synthetic; no user text/accounts/services.
+Baseline: `7f6def76`, after cherry-picking reviewed settings commits `b4090f3a`, `1d7c51d1`, `dd61eda6`, `b091ea83` as `3e06e6e1`, `324bbfae`, `7ab9598c`, `7f6def76`. Prior H4 (empty draft after Keyboard Settings navigation) is now a development case. The development protocol below makes no fresh held-out or independent-author claim. Inputs are synthetic; no user text/accounts/services.
 
 Acceptance fixed before production edits:
 
@@ -16,3 +16,13 @@ Acceptance fixed before production edits:
 Tests are frozen in `UITests/DraftNavigationTests.swift` and `AppTests/DraftEditorTests.swift` before implementation. AppTests uses the real UIViewRepresentable/UITextView in a hosted SwiftUI view and will be wired as a native app-hosted XCTest target. UI tests cover actual companion navigation. Native range tests avoid relying on remote extension accessibility or unsupported emoji injection by XCTest. Unit/bridge checks alone do not count as physical-device or installed-extension interaction proof.
 
 Only iPhone 17 `1EDC5D9A-7E25-432A-B5B1-9A8B702306A7` is owned. Never touch the parent's 18 Pro, Android 5554, unrelated E1C6B89D, parent audit QUALITY_AUDIT, or root checkout. No push/deploy. Project generation and DerivedData are isolated to this worktree; artifacts stay under `/tmp/pulpo-draft-followup-*`. Device tools attempted: device_list reported host failure and device_open failed, both `Device list failed: The device command failed (exit code 127).`; documented pinned agent-device/simctl fallback is authorized. Successful build logs will not be read. Every test command must finish and produce a valid result bundle to count as a completed gate; terminal method results from a stalled runner are partial evidence only. No overlapping build/project regeneration while a test command is alive.
+
+## Supplementary independent inputs, frozen before evaluation
+
+Production candidate: `ba86a1b9`. Independent author `/root/independent_draft_cases` received only the scratch-editor contract and was explicitly forbidden source, tests, audit, device access, edits, and builds. Native same-provider delegation was selected after the live catalog confirmed inherited `codex` / `gpt-6.1-sol`. Author returned these scenarios without inspecting the candidate. Selection was frozen before executing them; no production tuning will follow their one-shot evaluation in this round.
+
+1. `A👩🏽‍💻e\u0301中文\n終` (14 UTF-16 units), selected `{1,9}` = emoji + decomposed `é`. Settings return, preview → installed → preview: text/range exact after every step.
+2. `مرحبا 🧪 e\u0301` (11 units), caret `{8,0}` immediately after the test tube. **Hide Keyboard** is the dismissal control. Settings return and both mode switches must keep text/caret/dismissal; explicit editor refocus must retain the caret.
+3. `秘密 🔐 e\u0301` (8 units), selection `{6,2}`. Clear resets text/range, recreation/mode changes do not resurrect it. New sentinel `私密-🗝️-e\u0301` (9 units), caret `{9,0}`, must disappear after actual app-process termination/relaunch and remain absent through Settings/mode switching. This observable lifetime check alone cannot prove absence from every log or persistent byte store.
+
+Adapter fixed before execution: `testIndependentCombiningEmojiSelectionAndArabicCaretOnce` and `testIndependentClearOfSelectedCombiningTextOnce` exercise exact new UTF-16 inputs through the actual native bridge, recreation, mode switches, Clear implementation, dismissal/refocus. They **do not** assert the actual HomeView Settings route for those exact inputs; the real route is exercised separately by development UI tests. Exact combined independent scenarios 1/2 therefore remain incomplete acceptance even if component checks pass. For scenario 3's process boundary, use pinned agent-device `fill` with the exact sentinel, terminate/relaunch the real companion using pinned simctl, inspect Try It, navigate and switch modes. No extra production test hooks. If fill or selection is obstructed, report it; do not replace the data silently or count an attempted input as a pass. No rerun of these supplementary inputs after evaluation.
