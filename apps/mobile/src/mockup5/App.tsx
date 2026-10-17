@@ -35,7 +35,7 @@ import { mobileComposerSync } from '../features/chat/composerSync';
 import { useComposerSync } from '../features/chat/useComposerSync';
 import { temporaryChatColors } from '../features/chat/temporaryColors';
 import { submitComposerDraft } from '../features/chat/composerSubmission';
-import { idSchema, type ComposerState } from '@pulpo/contracts';
+import { idSchema, type ComposerState, type FileNode } from '@pulpo/contracts';
 import {
   createContext,
   forwardRef,
@@ -222,6 +222,23 @@ import { aiIconSource, useCatalogIconCacheRevision } from './src/production/AiIc
 import { SafeMarkdown } from '../components/SafeMarkdown';
 import { ModelWarningBanner } from './src/components/ModelWarningBanner';
 import { AttachmentImageViewer, type AttachmentImagePreviewItem, type AttachmentImageTransitionOrigin } from '../components/AttachmentImageViewer';
+import { useFilesCapabilityRefresh, useFilesEnabled } from '../features/files/availability';
+import { parseFilesLink, useFilesLinkInbox } from '../features/files/links';
+import { clearNewChatFileScope, liveFileScope, newChatFileScope, useChatFileScope } from '../features/files/chatScope';
+import { FileChangesCard } from '../features/files/components/FileChangesCard';
+import { FileScopeBar } from '../features/files/components/FileScopeBar';
+import { useFileScopePicker } from '../features/files/scopePicker';
+import { useOpenFileItem } from '../features/files/open';
+import { fileOpenTarget } from '../features/files/itemActions';
+import { isPinnedFileEntry, pinnedFileItemsCeiling, unpinFileItem, usePinnedFileItems, withPinnedFileItems, type PinnedFileEntry } from '../features/files/pinned';
+import { PinnedFileRow } from '../features/files/components/PinnedFileRow';
+import { filesErrorMessage } from '../features/files/display';
+import { useFilesNamespace } from '../features/files/useFilesNamespace';
+import { filesQueryKeys, lookUpFileNode } from '../features/files/queries';
+import { fileChangesItem } from '@pulpo/client-core/files';
+import { FileDocumentScreen } from '../features/files/screens/FileDocumentScreen';
+import { FileMarkdownScreen } from '../features/files/screens/FileMarkdownScreen';
+import { FilesFolderScreen } from '../features/files/screens/FilesFolderScreen';
 import { timeAgo } from '../features/chat/format';
 import {
   MAX_COMPOSER_ATTACHMENTS,
@@ -787,10 +804,12 @@ function NativeComposerShelfButton({ disabled, onPress }: { disabled: boolean; o
   );
 }
 
-function NativeAttachmentMenu({ onTakePhoto, onPickPhotos, onPickFiles }: {
+function NativeAttachmentMenu({ onTakePhoto, onPickPhotos, onPickFiles, onAddFromFiles }: {
   onTakePhoto: () => void;
   onPickPhotos: () => void;
   onPickFiles: () => void;
+  /** Lets the agent work with Files items; absent where a chat cannot take Files. */
+  onAddFromFiles?: () => void;
 }) {
   const { styles } = useChatStyles();
   return (
@@ -809,6 +828,8 @@ function NativeAttachmentMenu({ onTakePhoto, onPickPhotos, onPickFiles }: {
         <SwiftUIButton label="Take Photo" systemImage="camera" onPress={onTakePhoto} />
         <SwiftUIButton label="Photo Library" systemImage="photo.on.rectangle" onPress={onPickPhotos} />
         <SwiftUIButton label="Choose Files" systemImage="doc" onPress={onPickFiles} />
+        {onAddFromFiles ? <SwiftUIDivider /> : null}
+        {onAddFromFiles ? <SwiftUIButton label="Add from Files…" systemImage="folder.badge.plus" onPress={onAddFromFiles} /> : null}
       </SwiftUIMenu>
     </SwiftUIHost>
   );
@@ -1664,7 +1685,10 @@ function PrototypeRoot() {
         <RootStack.Screen name="Passkeys" component={PasskeysScreen} options={{ headerShown: false }} />
         <RootStack.Screen name="InstanceDetails" component={InstanceDetailsScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Pulpo Instance', headerBackTitle: 'Account' }} />
         <RootStack.Screen name="SettingsDetail" component={SettingsDetailScreen} options={{ headerShown: Platform.OS === 'ios', headerBackTitle: 'Settings' }} />
-        <RootStack.Screen name="Trash" component={TrashScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Trash', headerBackTitle: 'Settings' }} />
+        <RootStack.Screen name="Trash" component={TrashScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Trash' }} />
+        <RootStack.Screen name="FilesFolder" component={FilesFolderScreen} options={{ headerShown: Platform.OS === 'ios', headerLargeTitle: true, title: 'My files' }} />
+        <RootStack.Screen name="FileDocument" component={FileDocumentScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Document' }} />
+        <RootStack.Screen name="FileMarkdown" component={FileMarkdownScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Markdown' }} />
       </RootStack.Navigator>
     </NavigationContainer>
   );
@@ -2296,6 +2320,38 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     composerFocusRevision.current += 1;
     setComposerFocusRequest({ revision: composerFocusRevision.current, target: 'composer' });
   }, [activeChatId, animatePanel, navigation, newChat, pendingImports, productionInstanceUrl, productionScopeReady, productionUserId]);
+  // Files links (pulpo://files/…) open their screen once the account's data is ready.
+  const filesLink = useFilesLinkInbox((state) => state.pending);
+  const openFileItem = useOpenFileItem();
+  const filesLinkGeneration = useRef(0);
+  // A lookup still running when the account changes opens nothing.
+  useEffect(() => { filesLinkGeneration.current += 1; }, [productionUserId]);
+  useEffect(() => {
+    if (!filesLink || !productionScopeReady || !productionUserId) return;
+    const url = useFilesLinkInbox.getState().take();
+    const destination = url ? parseFilesLink(url, productionInstanceUrl) : null;
+    if (!destination) return;
+    const generation = ++filesLinkGeneration.current;
+    animatePanel(false);
+    Keyboard.dismiss();
+    if (destination.type === 'trash') navigation.navigate('Trash');
+    else if (destination.type === 'folder') navigation.push('FilesFolder', { folderId: destination.id });
+    else {
+      // As on the web, a file link is any kind of file: what it is decides where it opens. Items seen
+      // before are known offline too; anything else says why it can't open. Looked up once and at
+      // once, outside the shared query, which would wait for the connection to come back; dropped if
+      // another link came (or the account changed) meanwhile.
+      const namespace = cacheNamespace(productionInstanceUrl, productionUserId);
+      void lookUpFileNode(namespace, destination.id).then(
+        (value) => {
+          if (generation !== filesLinkGeneration.current) return;
+          queryClient.setQueryData(filesQueryKeys.node(namespace, destination.id), value);
+          void openFileItem(value.node);
+        },
+        (error: unknown) => { if (generation === filesLinkGeneration.current) Alert.alert('Can’t open this link', filesErrorMessage(error)); },
+      );
+    }
+  }, [animatePanel, filesLink, navigation, openFileItem, productionInstanceUrl, productionScopeReady, productionUserId, queryClient]);
   const shortcutDestination = useShortcutInbox((state) => state.pending[0]);
   const shortcutActions = useRef({ animatePanel, dismissComposer, finishExistingChatTransition, interruptDrawerTransition, navigation, newChat, abandonActiveTemporaryChat });
   shortcutActions.current = { animatePanel, dismissComposer, finishExistingChatTransition, interruptDrawerTransition, navigation, newChat, abandonActiveTemporaryChat };
@@ -2357,6 +2413,25 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     Keyboard.dismiss();
     navigation.navigate('Settings');
   }, [abandonActiveTemporaryChat, animatePanel, navigation]);
+
+  const openFilesFromHistory = useCallback(() => {
+    animatePanel(false);
+    Keyboard.dismiss();
+    navigation.navigate('FilesFolder', { folderId: null });
+  }, [animatePanel, navigation]);
+
+  const openFileItemFromHistory = useCallback((node: FileNode) => {
+    const target = fileOpenTarget(node);
+    const chat = target.type === 'chat' ? historyChats.find((item) => item.id === target.id) : undefined;
+    // A shortcut to a chat opens it here, like picking the chat itself.
+    if (chat) {
+      selectChat(chat);
+      return;
+    }
+    animatePanel(false);
+    Keyboard.dismiss();
+    void openFileItem(node);
+  }, [animatePanel, historyChats, openFileItem, selectChat]);
 
   const saveActiveTemporaryChat = useCallback(async () => {
     if (!activeChatId || savingTemporaryChatId) return;
@@ -2476,6 +2551,11 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     const initialSortOrder = activePrototypeChat?.sortOrder ?? (options?.temporary ? 0 : topChatSortOrder(
       visibleHistoryChats(currentChats), new Set(currentFolders.map((folder) => folder.id)), null,
     ));
+    // A new chat starts with the Files items picked for it (temporary chats get no Files), minus any
+    // known to be gone since: the server refuses a scope naming them.
+    const startingFileScope = !activeChat && !options?.temporary && productionNamespace
+      ? liveFileScope(queryClient, productionNamespace, newChatFileScope(productionNamespace))
+      : null;
     if (!activeChat) {
       upsertChat({
         id: key,
@@ -2491,6 +2571,8 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
         deletedAt: null,
         purgeAt: null,
         messages: [],
+        fileScopeIds: startingFileScope?.ids ?? [],
+        fileScopeAccess: startingFileScope?.access ?? {},
       });
       setActiveChatId(key);
     }
@@ -2550,6 +2632,8 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
             sizeBytes: attachment.size ?? 0,
           })),
           createdAt: timestamp,
+          fileScopeIds: startingFileScope?.ids,
+          fileScopeAccess: startingFileScope?.access,
         });
       }
       let serverChatId = activeChat?.id;
@@ -2567,6 +2651,8 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
           attachmentIds: prepared.map((attachment) => attachment.serverId),
           agentMode,
           usedDictation: options?.usedDictation,
+          fileScopeIds: startingFileScope?.ids,
+          fileScopeAccess: startingFileScope?.access,
         });
         if (options?.temporary) pendingTemporaryStart.current = { chatId: key, promise: startPromise };
         let started: Awaited<typeof startPromise>;
@@ -2578,6 +2664,8 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
         serverChatId = started.chat.id;
         response = started.response;
         serverChatCreated = true;
+        // The draft's items now belong to the chat (the start request carried them, or is queued with them).
+        if (startingFileScope?.ids.length && productionNamespace) clearNewChatFileScope(productionNamespace);
         setActiveChatId(serverChatId);
       } else {
         response = await sendServerMessage({
@@ -2811,6 +2899,8 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
               onSelectChat={selectChat}
               onNewChat={newChatFromHistory}
               onOpenSettings={openSettingsFromHistory}
+              onOpenFiles={openFilesFromHistory}
+              onOpenFileItem={openFileItemFromHistory}
               onPreviewRequest={loadHistoryPreview}
             />
           </Reanimated.View>
@@ -3218,7 +3308,7 @@ function WorkTriggerIcon({ steps, active }: { steps: TimelineStep[]; active: boo
   const tools = steps.filter((step) => step.kind === 'tool');
   const runningTool = tools.find((step) => step.tool.status === 'running');
   if (runningTool?.kind === 'tool') {
-    const RunningToolIcon = toolActivityPresentation(runningTool.tool.tool).icon;
+    const RunningToolIcon = toolActivityPresentation(runningTool.tool.tool, runningTool.tool.arguments).icon;
     return <PulsingIcon reduceMotion={reduceMotion}><RunningToolIcon color={COLORS.muted} size={14} /></PulsingIcon>;
   }
   if (active && tools.length > 0) return <PulsingIcon reduceMotion={reduceMotion}><Wrench color={COLORS.muted} size={14} /></PulsingIcon>;
@@ -3279,7 +3369,7 @@ function workLabel(steps: TimelineStep[], active: boolean, durationMs?: number):
   const paused = pausedCostLimit(steps, active);
   if (paused) return costLimitLabel(paused, true);
   const runningTool = steps.find((step) => step.kind === 'tool' && step.tool.status === 'running');
-  if (runningTool?.kind === 'tool') return toolActivityPresentation(runningTool.tool.tool).label;
+  if (runningTool?.kind === 'tool') return toolActivityPresentation(runningTool.tool.tool, runningTool.tool.arguments).label;
   if (active) return steps.some((step) => step.kind === 'tool') ? 'Working…' : 'Thinking…';
   return completedActivityLabel(steps, durationMs);
 }
@@ -3311,7 +3401,7 @@ const ToolStepRow = memo(function ToolStepRow({ step }: { step: Extract<Timeline
     step.tool.output ?? '',
   ].filter(Boolean).join('\n'), [step.tool.arguments, step.tool.output]);
   const seconds = step.tool.durationMs === undefined ? null : Math.max(0, Math.round(step.tool.durationMs / 1000));
-  const ToolIcon = toolActivityPresentation(step.tool.tool).icon;
+  const ToolIcon = toolActivityPresentation(step.tool.tool, step.tool.arguments).icon;
   return (
     <View style={styles.workStep}>
       <Pressable
@@ -3455,7 +3545,7 @@ function WorkBlock({ steps, active, durationMs, initialWork, onOpenChat }: {
 }
 
 function otherOutputItems(outputItems?: unknown[]): Array<Record<string, unknown>> {
-  const known = new Set(['message', 'reasoning', 'pulpo_tool', 'pulpo_workspace', 'pulpo_attachment', 'pulpo_compaction', 'pulpo_recall', 'pulpo_cost_limit']);
+  const known = new Set(['message', 'reasoning', 'pulpo_tool', 'pulpo_workspace', 'pulpo_attachment', 'pulpo_compaction', 'pulpo_recall', 'pulpo_cost_limit', 'pulpo_file_changes']);
   return (outputItems ?? []).filter((item): item is Record<string, unknown> => {
     const type = (item as { type?: unknown }).type;
     return typeof type === 'string' && !known.has(type);
@@ -3560,6 +3650,9 @@ const MessageRow = memo(function MessageRow({
   const streaming = message.status === 'streaming' || message.status === 'queued';
   const responseStartedAt = useMemo(() => message.requestReceivedAt ? Date.parse(message.requestReceivedAt) : message.createdAt ?? Date.now(), [message.createdAt, message.requestReceivedAt]);
   const extraOutput = useMemo(() => otherOutputItems(message.outputItems), [message.outputItems]);
+  // A reply's Files changes are reviewed under it once it finished (see FileChangesCard).
+  const filesNamespace = useFilesNamespace();
+  const filesEnabled = useFilesEnabled();
   const costLimit = useMemo(() => findCostLimitItem(message.outputItems), [message.outputItems]);
   const [costLimitPending, setCostLimitPending] = useState(false);
   const costLimitKey = costLimit ? `${costLimit.limit_micros}:${costLimit.status}` : undefined;
@@ -3700,6 +3793,9 @@ const MessageRow = memo(function MessageRow({
                 ))}
               </>}</SentAttachmentWindow>
             )}
+            {filesNamespace && filesEnabled && !streaming && fileChangesItem(message.outputItems) ? (
+              <FileChangesCard namespace={filesNamespace} responseId={message.id} />
+            ) : null}
             {costLimit?.status === 'awaiting_confirmation' && streaming && !timeline.some((segment) => segment.kind === 'activity' && segment.steps.some((step) => step.kind === 'cost_limit')) && <View style={styles.workRow}><Pause color={COLORS.muted} size={13} /><Text style={styles.workRowTitle}>{costLimitLabel(costLimit, true)}</Text></View>}
             {costLimit?.status === 'awaiting_confirmation' && streaming && (
               <View style={styles.costLimitActions}>
@@ -4289,6 +4385,11 @@ function ChatView({
     setAgentSelection((current) => current.enabled === enabled ? current : { ...current, enabled });
   }, []);
   const activeAgentEnabled = canUseAgent && agentEnabled;
+  // The Files items this chat's agent works with (the unsent chat keeps a draft of them).
+  const filesNamespace = useFilesNamespace();
+  const fileScope = useChatFileScope(filesNamespace, chatId, temporary);
+  const showFileScopePicker = useFileScopePicker((state) => state.show);
+  const openFileItem = useOpenFileItem();
   const [attachments, setAttachmentState] = useState<ComposerAttachment[]>([]);
   const attachmentsRequireAgent = attachments.some((attachment) => attachment.kind === 'file')
     || imageBatchNeedsWorkspace(attachments.filter((attachment) => attachment.kind !== 'file').map((attachment) => ({ sizeBytes: attachment.size })), maxInlineImages);
@@ -6010,6 +6111,14 @@ function ChatView({
                   </Pressable>
                 </View>
               ) : null}
+              <FileScopeBar
+                namespace={filesNamespace}
+                scope={fileScope}
+                agentActive={activeAgentEnabled}
+                canUseAgent={canUseAgent}
+                onTurnOnAgent={() => setAgentEnabled(true)}
+                onOpenItem={(node) => { void openFileItem(node); }}
+              />
               <AttachmentStrip
                 attachments={attachments}
                 onPreviewFile={openFilePreview}
@@ -6069,12 +6178,13 @@ function ChatView({
                   style={[styles.composerToolbar, composerToolbarStyle]}
                 >
                 {Platform.OS === 'ios' ? (
-                  <NativeAttachmentMenu onTakePhoto={takePhoto} onPickFiles={pickFiles} onPickPhotos={pickPhotos} />
+                  <NativeAttachmentMenu onTakePhoto={takePhoto} onPickFiles={pickFiles} onPickPhotos={pickPhotos} onAddFromFiles={fileScope.available ? showFileScopePicker : undefined} />
                 ) : (
                   <MaterialMenu label="Add attachment" icon="plus" actions={[
                     { label: 'Take photo', icon: 'camera', onPress: takePhoto },
                     { label: 'Photos', icon: 'photo.on.rectangle', onPress: pickPhotos },
                     { label: 'Choose files', icon: 'doc', onPress: pickFiles },
+                    ...(fileScope.available ? [{ label: 'Add from Files', icon: 'folder', onPress: showFileScopePicker }] : []),
                   ]} />
                 )}
                 {hasGenerationPresets && (Platform.OS === 'ios' ? (
@@ -6212,8 +6322,25 @@ function NativeDrawerSearch({ value, focused, onChange, onFocusChange, fieldRef 
   </SwiftUIHost>;
 }
 
-function NativeFoldersDisclosure({ folders, onCreate, onSelectChat }: {
+/** The drawer's way into Files, styled like the Folders row beneath it. */
+function NativeFilesRow({ onOpen }: { onOpen: () => void }) {
+  const { styles } = useChatStyles();
+  return <SwiftUIHost ignoreSafeArea="all" style={styles.nativeFoldersHeaderHost}>
+    <SwiftUIButton onPress={() => { Haptics.selectionAsync(); onOpen(); }} modifiers={[buttonStyle('plain'), foregroundStyle('primary'), swiftUIAccessibilityLabel('Files')]}>
+      <SwiftUIHStack spacing={12} modifiers={[frame({ maxWidth: Infinity, minHeight: DRAWER_ACTION_HEIGHT }), contentShape(shapes.rectangle())]}>
+        <SwiftUIImage systemName="doc.on.doc" size={17} modifiers={[frame({ width: 20, height: 20 })]} />
+        <SwiftUIText>Files</SwiftUIText>
+        <SwiftUISpacer />
+        <SwiftUIImage systemName="chevron.right" size={13} modifiers={[foregroundStyle('secondary')]} />
+      </SwiftUIHStack>
+    </SwiftUIButton>
+  </SwiftUIHost>;
+}
+
+function NativeFoldersDisclosure({ folders, leading, onCreate, onSelectChat }: {
   folders: Array<{ id: string; name: string; chats: HistoryChatSummary[] }>;
+  /** A row above Folders (Files), inside this view so that appearing later never leaves Folders out of place. */
+  leading?: ReactNode;
   onCreate: () => void;
   onSelectChat: (chat: HistoryChatSummary) => void;
 }) {
@@ -6225,6 +6352,7 @@ function NativeFoldersDisclosure({ folders, onCreate, onSelectChat }: {
   const exiting = reduceMotion ? undefined : FadeOutUp.duration(150);
   const layout = reduceMotion ? undefined : LinearTransition.duration(200);
   return <Reanimated.View layout={layout} style={styles.nativeFoldersDisclosureHost}>
+    {leading}
     <SwiftUIHost ignoreSafeArea="all" style={styles.nativeFoldersHeaderHost}>
       <SwiftUIContextMenu>
         <SwiftUIContextMenu.Trigger>
@@ -6377,7 +6505,7 @@ const HistoryChatRow = memo(function HistoryChatRow({ active, chat, expirationMe
   );
 });
 
-const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpen, loading, onSelectChat, onNewChat, onOpenSettings, onPreviewRequest }: {
+const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpen, loading, onSelectChat, onNewChat, onOpenSettings, onOpenFiles, onOpenFileItem, onPreviewRequest }: {
   chats: HistoryChatSummary[];
   activeChatId: string | null;
   drawerOpen: boolean;
@@ -6385,9 +6513,17 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
   onSelectChat: (chat: HistoryChatSummary) => void;
   onNewChat: () => void;
   onOpenSettings: () => void;
+  onOpenFiles: () => void;
+  /** Opens a pinned Files item. */
+  onOpenFileItem: (node: FileNode) => void;
   onPreviewRequest: (chatId: string) => void;
 }) {
   const { styles, COLORS } = useChatStyles();
+  const filesEnabled = useFilesEnabled();
+  const filesNamespace = useFilesNamespace();
+  const queryClient = useQueryClient();
+  const pinnedFileItems = usePinnedFileItems(filesNamespace, filesEnabled);
+  useFilesCapabilityRefresh();
   const insets = useSafeAreaInsets();
   const { fontScale } = useWindowDimensions();
   const newChatWidth = Platform.OS === 'android' ? Math.min(240, 160 + Math.max(0, fontScale - 1) * 70) : undefined;
@@ -6463,8 +6599,10 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
   );
   const sections = useMemo(() => {
     // Search also surfaces filed chats, since the folder list is hidden while searching.
-    return historyChatSections(filtered, folders, search.length > 0, chatSortMode);
-  }, [chatSortMode, filtered, folders, search]);
+    const chatSections = historyChatSections(filtered, folders, search.length > 0, chatSortMode);
+    // Pinned Files items share the Pinned list; search looks through chats only.
+    return search ? chatSections : withPinnedFileItems(chatSections, pinnedFileItems);
+  }, [chatSortMode, filtered, folders, pinnedFileItems, search]);
   const { label: removeChatLabel, requiresConfirmation } = chatRemovalBehavior(trashRetention);
 
   const runChatAction = useCallback((chat: HistoryChatSummary, action: HistoryChatAction) => {
@@ -6487,7 +6625,7 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
       return;
     }
     if (action === 'pin') {
-      togglePin(chat.id);
+      togglePin(chat.id, pinnedFileItemsCeiling(pinnedFileItems));
       return;
     }
     if (action === 'rename') {
@@ -6512,7 +6650,7 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
         upsertChat({ id: copy.id, title: copy.title, modelId: copy.modelId, pinned: copy.pinned, folderId: copy.folderId, sortOrder: copy.sortOrder, temporary: copy.temporary, createdAt: Date.parse(copy.createdAt), updatedAt: Date.parse(copy.updatedAt), deletedAt: null, purgeAt: null, messages: source?.messages ?? [] });
       }).catch((error) => Alert.alert('Couldn’t duplicate chat', error instanceof Error ? error.message : undefined));
     }
-  }, [renameChat, requiresConfirmation, togglePin, trashChat, upsertChat]);
+  }, [pinnedFileItems, renameChat, requiresConfirmation, togglePin, trashChat, upsertChat]);
 
   const showChatActions = useCallback((chat: HistoryChatSummary, anchor?: MenuAnchor) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -6534,7 +6672,33 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
   }, [dismissSearch, onSelectChat]);
 
   const requestHistoryPreview = useCallback((chat: HistoryChatSummary) => onPreviewRequest(chat.id), [onPreviewRequest]);
-  const renderHistoryChat = useCallback(({ item }: { item: HistoryChatSummary }) => {
+  const openPinnedFileItem = useCallback((node: FileNode) => {
+    dismissSearch();
+    onOpenFileItem(node);
+  }, [dismissSearch, onOpenFileItem]);
+  const unpinPinnedFileItem = useCallback((node: FileNode) => {
+    Haptics.selectionAsync();
+    unpinFileItem(queryClient, filesNamespace, node).catch((error) => Alert.alert('Couldn’t unpin', filesErrorMessage(error, node.name)));
+  }, [filesNamespace, queryClient]);
+  const showPinnedFileActions = useCallback((node: FileNode) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    showActions(node.name, [
+      { label: 'Open', icon: 'arrow.up.forward.app', onPress: () => openPinnedFileItem(node) },
+      { label: 'Unpin', icon: 'pin.slash', onPress: () => unpinPinnedFileItem(node) },
+    ]);
+  }, [openPinnedFileItem, unpinPinnedFileItem]);
+  const renderHistoryChat = useCallback(({ item }: { item: HistoryChatSummary | PinnedFileEntry }) => {
+    if (isPinnedFileEntry(item)) {
+      return <PinnedFileRow
+        node={item.node}
+        rowStyle={styles.chatRow}
+        pressedStyle={styles.navRowPressed}
+        titleStyle={styles.chatTitle}
+        onOpen={openPinnedFileItem}
+        onUnpin={unpinPinnedFileItem}
+        onLongPress={showPinnedFileActions}
+      />;
+    }
     const source = previewChatsById.get(item.id);
     const previewText = source?.detailLoaded === false
       ? 'Loading preview…'
@@ -6561,7 +6725,7 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
       onPreviewRequest={requestHistoryPreview}
       onSelectChat={selectHistoryChat}
     />;
-  }, [activeChatId, automaticChatExpiration, isDark, models, requestHistoryPreview, previewChatsById, removeChatLabel, runChatAction, selectHistoryChat, showChatActions]);
+  }, [activeChatId, automaticChatExpiration, isDark, models, openPinnedFileItem, requestHistoryPreview, previewChatsById, removeChatLabel, runChatAction, selectHistoryChat, showChatActions, showPinnedFileActions, styles, unpinPinnedFileItem]);
 
   return (
     <View style={styles.panelRoot}>
@@ -6594,7 +6758,8 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
         </View>}
 
         <Reanimated.View pointerEvents={searchActive ? 'none' : 'auto'} style={searchActionsAnimatedStyle}>
-          {Platform.OS === 'ios' ? <NativeFoldersDisclosure folders={folderItems} onSelectChat={selectHistoryChat} onCreate={() => { dismissSearch(); Alert.prompt('New folder', 'Create a folder for related chats.', (name) => name.trim() && addFolder(name)); }} /> : <AndroidFoldersDisclosure folders={folderItems} onSelectChat={selectHistoryChat} onCreate={() => { dismissSearch(); promptText({ title: 'New folder', confirmLabel: 'Create', onSubmit: (name) => addFolder(name) }); }} />}
+          {filesEnabled && Platform.OS !== 'ios' ? <MaterialNavigationRow title="Files" icon="folder.badge.person.crop" onPress={() => { dismissSearch(); onOpenFiles(); }} /> : null}
+          {Platform.OS === 'ios' ? <NativeFoldersDisclosure leading={filesEnabled ? <NativeFilesRow onOpen={() => { dismissSearch(); onOpenFiles(); }} /> : null} folders={folderItems} onSelectChat={selectHistoryChat} onCreate={() => { dismissSearch(); Alert.prompt('New folder', 'Create a folder for related chats.', (name) => name.trim() && addFolder(name)); }} /> : <AndroidFoldersDisclosure folders={folderItems} onSelectChat={selectHistoryChat} onCreate={() => { dismissSearch(); promptText({ title: 'New folder', confirmLabel: 'Create', onSubmit: (name) => addFolder(name) }); }} />}
 
         </Reanimated.View>
 

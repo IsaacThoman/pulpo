@@ -2,6 +2,11 @@ import { describe, expect, it, vi } from 'vitest';
 import { toolActivityPresentation } from './toolActivityPresentation';
 
 const icons = vi.hoisted(() => ({
+  FileDiff: Symbol('FileDiff'),
+  FolderDown: Symbol('FolderDown'),
+  FolderInput: Symbol('FolderInput'),
+  FolderUp: Symbol('FolderUp'),
+  Trash2: Symbol('Trash2'),
   FilePenLine: Symbol('FilePenLine'),
   FilePlus: Symbol('FilePlus'),
   FileText: Symbol('FileText'),
@@ -45,5 +50,14 @@ describe('toolActivityPresentation', () => {
 
   it('uses generic work presentation for unknown tools', () => {
     expect(toolActivityPresentation('custom_tool')).toEqual({ label: 'Working…', icon: icons.Wrench });
+  });
+
+  it('labels the agent\'s pulpo files commands like the web does', () => {
+    expect(toolActivityPresentation('bash', { command: 'pulpo files cat "Projects/Plan.md"' })).toEqual({ icon: icons.FileText, label: 'Reading Plan.md…' })
+    expect(toolActivityPresentation('bash', { command: 'cd /workspace && pulpo files push --to Notes notes.md' })).toEqual({ icon: icons.FolderUp, label: 'Saving to Files…' })
+    expect(toolActivityPresentation('bash', { command: 'pulpo files rm Old/' })).toEqual({ icon: icons.Trash2, label: 'Moving Old to the trash…' })
+    // Anything besides `pulpo files` keeps the bash label.
+    expect(toolActivityPresentation('bash', { command: 'pulpo files ls && rm -rf /tmp/x' }).label).toBe('Running bash…')
+    expect(toolActivityPresentation('bash', { command: 'ls -la' }).label).toBe('Running bash…')
   });
 });

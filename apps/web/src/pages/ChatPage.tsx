@@ -35,7 +35,7 @@ import { ui } from '@/i18n/ui'
 import { DesktopActionsTitleBarSlot, DesktopModelTitleBarSlot } from '@/components/desktop/DesktopSidebarTitleBar'
 import { useDocumentTitle } from '@/lib/document-title'
 import { useNewChatScope, usePublishChatTarget } from '@/features/side-panel/agent'
-import { NO_FILE_ACCESS, scopedFileAccess } from '@/features/files/file-scope'
+import { NO_FILE_ACCESS, scopedFileAccess } from '@pulpo/client-core/files'
 
 const DEFAULT_SUGGESTED_PROMPTS = [
   { id: '1', translationKey: 'chat.suggestedPrompts.build' },

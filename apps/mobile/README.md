@@ -70,6 +70,20 @@ binaries built before the web preview, fall back to Quick Look. See
 [the validation notes](e2e/html-preview-validation.md) for the security checks
 and the seeded flash card example.
 
+### Files and the document editor
+
+Files screens live in `src/features/files`; [docs/files.md](../../docs/files.md#mobile)
+describes how documents sync and stay on the device. Documents are edited by the
+web's TipTap editor running in the native `pulpo-doc-editor` view (a
+`WKWebView` on iOS, a `WebView` on Android). Its page comes from `editor/`. After
+changing it, or the shared editor code in `@pulpo/client-core`, run
+`npm run build:editor -w @pulpo/mobile` and commit the regenerated
+`src/features/files/editor/editorBundle.generated.ts`. A test fails while that
+file is stale. Changes to the native view need a new native build. The local
+acceptance setup (a disposable account, a gateway that can drop the connection,
+and a second device editing alongside) is described in
+[the Files validation notes](e2e/files-validation.md).
+
 ### Android development
 
 Install Android Studio, an Android 17 / API 37 system image, SDK Platform 37,

@@ -1,0 +1,2 @@
+# The mobile document editor page, built by apps/mobile/scripts/build-doc-editor.mjs.
+apps/mobile/src/features/files/editor/editorBundle.generated.ts linguist-generated=true -diff

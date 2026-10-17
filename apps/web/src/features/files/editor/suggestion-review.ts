@@ -1,62 +1,24 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
-import { listSuggestions, resolveSuggestions, type SuggestionAction, type SuggestionHunk, type SuggestionRef } from '@pulpo/client-core/doc-schema'
-import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
+import { adjacentHunk, docSuggestions, hunkAt, SUGGESTION_REVIEW_META, summarizeHunk } from '@pulpo/client-core/doc-editor'
+import { resolveSuggestions, type SuggestionAction, type SuggestionHunk, type SuggestionRef } from '@pulpo/client-core/doc-schema'
 import { Plugin, PluginKey, Selection, type EditorState } from '@tiptap/pm/state'
 import { Extension, useEditorState, type Editor } from '@tiptap/react'
 import { ui, uit } from '@/i18n/ui'
 import { hasPrimaryModifier, isAppleShortcut } from '../browser/shortcuts'
-import { SUGGESTION_REVIEW_META } from './suggestion-typing'
 
-const hunkCache = new WeakMap<ProseMirrorNode, SuggestionHunk[]>()
-
-/** A document's hunks. Documents are immutable, so selection-only updates reuse the list. */
-export function docSuggestions(doc: ProseMirrorNode): SuggestionHunk[] {
-  let hunks = hunkCache.get(doc)
-  if (!hunks) {
-    hunks = listSuggestions(doc)
-    hunkCache.set(doc, hunks)
-  }
-  return hunks
-}
-
-function innermost(hunks: readonly SuggestionHunk[]): SuggestionHunk | null {
-  return hunks.reduce<SuggestionHunk | null>((best, hunk) => !best || hunk.to - hunk.from < best.to - best.from ? hunk : best, null)
-}
-
-/**
- * The hunk the cursor is in or touching: the innermost when one sits inside another (text
- * suggested inside a suggested block), and between two, the one starting there.
- */
-export function hunkAt(hunks: readonly SuggestionHunk[], pos: number): SuggestionHunk | null {
-  return innermost(hunks.filter((hunk) => hunk.from <= pos && pos < hunk.to)) ?? innermost(hunks.filter((hunk) => hunk.to === pos))
-}
-
-/** The next or previous hunk from the active one (or the cursor), wrapping around. */
-export function adjacentHunk(hunks: readonly SuggestionHunk[], pos: number, activeId: string | null, direction: 1 | -1): SuggestionHunk | null {
-  if (!hunks.length) return null
-  const active = activeId ? hunks.findIndex((hunk) => hunk.id === activeId) : -1
-  if (active >= 0) return hunks[(active + direction + hunks.length) % hunks.length]!
-  if (direction === 1) return hunks.find((hunk) => hunk.from > pos) ?? hunks[0]!
-  return hunks.findLast((hunk) => hunk.to < pos) ?? hunks.at(-1)!
-}
-
-const QUOTE_LENGTH = 48
-
-function excerpt(text: string): string {
-  const flat = text.replace(/\s+/g, ' ').trim()
-  return flat.length > QUOTE_LENGTH ? `${flat.slice(0, QUOTE_LENGTH - 1)}…` : flat
-}
+export { adjacentHunk, docSuggestions, hunkAt } from '@pulpo/client-core/doc-editor'
 
 /** What a hunk does, in a few words: "Replace “a” with “b”". */
 export function describeHunk(hunk: Pick<SuggestionHunk, 'inserted' | 'deleted'>): string {
-  const inserted = excerpt(hunk.inserted)
-  const deleted = excerpt(hunk.deleted)
-  if (inserted && deleted) return uit`Replace “${deleted}” with “${inserted}”`
-  if (inserted) return uit`Add “${inserted}”`
-  if (deleted) return uit`Delete “${deleted}”`
-  if (hunk.inserted) return ui("Add a space or line break")
-  if (hunk.deleted) return ui("Delete a space or line break")
-  return ui("Change the layout")
+  const summary = summarizeHunk(hunk)
+  switch (summary.kind) {
+    case 'replace': return uit`Replace “${summary.deleted}” with “${summary.inserted}”`
+    case 'add': return uit`Add “${summary.inserted}”`
+    case 'delete': return uit`Delete “${summary.deleted}”`
+    case 'add-whitespace': return ui("Add a space or line break")
+    case 'delete-whitespace': return ui("Delete a space or line break")
+    case 'layout': return ui("Change the layout")
+  }
 }
 
 /**

@@ -2,6 +2,7 @@ import { bindMobileShelfSocket } from '../features/chat/shelf'
 import { createOutboxScheduler } from '../data/outboxScheduler'
 import { subscribeToOutboxChanges } from '../data/outboxNotifications'
 import { bindMobileComposerSocket } from '../features/chat/composerSync'
+import { bindMobileFilesSocket } from '../features/files/realtime'
 import { useEffect, useRef } from 'react'
 import { AppState } from 'react-native'
 import * as Crypto from 'expo-crypto'
@@ -101,6 +102,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     }) as PulpoSocket
     const unbindShelf = bindMobileShelfSocket(namespace, socket)
     const unbindComposer = bindMobileComposerSocket(namespace, socket)
+    const unbindFiles = bindMobileFilesSocket(namespace, socket, queryClient)
     const unregisterSocket = registerRealtimeSocket(socket)
 
     let disposed = false
@@ -375,6 +377,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       socket.disconnect()
       unbindShelf()
       unbindComposer()
+      unbindFiles()
       unregisterSocket()
       useRealtimeStore.getState().setConnectionPhase('idle')
       useRealtimeStore.getState().setSyncError(null)

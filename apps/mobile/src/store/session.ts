@@ -18,9 +18,15 @@ import {
   runSafariPasskeyAuthentication,
 } from '../auth/passkeys'
 import { cacheNamespace, clearNamespace, getValue, setValue } from '../data/database'
+import { runAccountCleanups } from './accountCleanup'
 
 const SESSION_TOKEN_KEY = 'pulpo.native.session'
 const GLOBAL_NAMESPACE = 'global'
+
+/** Where an instance's configuration is kept as last read, so what it offers is known offline. */
+function configKey(instanceUrl: string): string {
+  return `config:${instanceUrl}`
+}
 const ACTIVE_SESSION_NAMESPACE_KEY = 'activeSessionNamespace'
 const SIGNED_IN_ACCOUNTS_KEY = 'signedInAccounts'
 const TOKEN_OPTIONS = { keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY }
@@ -93,6 +99,8 @@ async function loadAccounts(instanceUrl: string): Promise<User[]> {
 
 async function clearAccountData(instanceUrl: string, userId: string): Promise<void> {
   const namespace = cacheNamespace(instanceUrl, userId)
+  // Open documents close (writing what is pending) and queued uploads are dropped.
+  await runAccountCleanups(namespace)
   clearComposerDraftCacheNamespace(namespace)
   clearMobileShelf(namespace)
   clearMobileComposerSync(namespace)
@@ -175,6 +183,15 @@ export const useSessionStore = create<SessionState>((set, get) => {
     await persistSession(instanceUrl, user, token)
     configureApi({ instanceUrl, token, onUnauthorized })
     set({ token, user, status: sessionStatus(user), error: null, accounts: await loadAccounts(instanceUrl) })
+    refreshConfig(instanceUrl, token)
+  }
+
+  // What the instance offers is read again for a new active session: the read made at launch is
+  // dropped when the stored session turns out to be revoked.
+  const refreshConfig = (instanceUrl: string, token: string) => {
+    void mobileApi.config().then((config) => {
+      if (config && get().token === token && get().instanceUrl === instanceUrl) set({ config })
+    }).catch(() => undefined)
   }
 
   // Makes a signed-in inactive account active. The current account, if any,
@@ -226,6 +243,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
     await persistAccount(instanceUrl, user)
     if (get().token !== token) return
     set({ user, status: sessionStatus(user), error: null, accounts: await loadAccounts(instanceUrl) })
+    refreshConfig(instanceUrl, token)
   }
 
   // After the active account is gone, open another signed-in account
@@ -286,6 +304,10 @@ export const useSessionStore = create<SessionState>((set, get) => {
           })
           void rememberActiveNamespace(cached.namespace)
           void rememberSignedInAccount(instanceUrl, cached.user.id)
+          // Until the server answers (or while offline), the instance offers what it did last time,
+          // e.g. Files, whose folders and documents seen before still open.
+          const remembered = await getValue<MobileConfig>(GLOBAL_NAMESPACE, configKey(instanceUrl)).catch(() => null)
+          if (remembered && !get().config && get().token === token && get().instanceUrl === instanceUrl) set({ config: remembered })
         }
 
         const refreshFromServer = async () => {
@@ -509,6 +531,11 @@ export const useSessionStore = create<SessionState>((set, get) => {
 function deviceMetadata() {
   return { platform: Platform.OS === 'ios' ? 'ios' as const : Platform.OS === 'android' ? 'android' as const : 'unknown' as const }
 }
+
+// The instance's configuration is kept as last read (see `hydrate`).
+useSessionStore.subscribe((state, previous) => {
+  if (state.config && state.config !== previous.config) void setValue(GLOBAL_NAMESPACE, configKey(state.instanceUrl), state.config).catch(() => undefined)
+})
 
 // Synchronous native bridge: account transitions cannot race a queued React effect.
 useSessionStore.subscribe((state, previous) => {

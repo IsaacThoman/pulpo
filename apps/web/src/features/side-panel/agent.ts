@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { create } from 'zustand'
 import { focusComposer } from '@/components/chat/composer-focus'
-import { addFileScope, NO_FILE_ACCESS, type FileScopeAccess } from '@/features/files/file-scope'
+import { addFileScope, NO_FILE_ACCESS, type FileScopeAccess } from '@pulpo/client-core/files'
 import { useChat } from '@/stores/chat'
 import { useSidePanel, type PanelContent } from './store'
 

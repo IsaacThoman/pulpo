@@ -134,6 +134,9 @@ export interface PrototypeChat {
   messages: PrototypeMessage[];
   deletedAt: number | null;
   purgeAt: number | null;
+  /** Files items the chat's agent works with, and what it may do with each (see FileScopeChips). */
+  fileScopeIds?: string[];
+  fileScopeAccess?: Partial<Record<string, import('@pulpo/contracts').FileAccessMode>>;
 }
 
 export interface PrototypeFolder {
