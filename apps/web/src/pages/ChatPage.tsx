@@ -181,7 +181,7 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
   const focusComposer = () => focusComposerRef.current?.focus()
   // Previews belong to the chat they were opened from.
   useEffect(() => () => useCodePreview.getState().close(), [chatId])
-  const [temporary, setTemporary] = useState(false)
+  const [temporary, setTemporary] = useState(() => Boolean(navigationState?.temporary))
   const [savingTemporary, setSavingTemporary] = useState(false)
   const [temporaryError, setTemporaryError] = useState<string | null>(null)
   const setDesktopTemporaryChat = useDesktopChrome((state) => state.setTemporaryChat)
@@ -239,6 +239,15 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
     const next = resolveDefaultModelId(models, defaultModelId)
     if (next) setModelId(next)
   }, [defaultModelId, models, resetDefaultToken])
+
+  // After the reset above, which turns temporary mode off. The request is then dropped from the
+  // history entry, so going back or reloading does not start another temporary chat.
+  useEffect(() => {
+    if (!navigationState?.temporary) return
+    setTemporary(true)
+    setTemporaryError(null)
+    navigate(`${location.pathname}${location.search}`, { replace: true, state: { ...navigationState, temporary: undefined } })
+  }, [location.pathname, location.search, navigate, navigationState])
 
   useEffect(() => {
     if (adminMode || !routeChatId || !chat?.temporary) return

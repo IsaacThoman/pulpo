@@ -35,8 +35,9 @@ export function SplitViewButton({ view }: { view: PanelContent }) {
  * "Open to the left" for a chat's menu, the mirror of "Open to the right": what the main view shows
  * moves into the panel and the chat opens beside it. Offered only when the main view shows
  * something the panel can hold and there is room for both; otherwise it would just open the chat.
+ * Without a chat, a new one opens.
  */
-export function OpenChatToLeftItem({ chatId, shortcut }: { chatId: string; shortcut?: string }) {
+export function OpenChatToLeftItem({ chatId, shortcut }: { chatId?: string; shortcut?: string }) {
   const go = useMainNavigate()
   const { pathname } = useLocation()
   const available = useSidePanel((state) => state.splitAvailable)
