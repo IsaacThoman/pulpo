@@ -153,9 +153,9 @@ export async function uploadFile(parentId: string | null, upload: LocalUpload, o
     } catch (error) {
       // The system's own transfer failed without an answer from the server (the connection went,
       // or timed out; its wording varies by platform and language). With the file still there, the
-      // upload is tried again on reconnecting.
+      // upload is tried again on reconnecting (a few times; see the upload queue).
       if (!source.exists) throw error
-      throw Object.assign(error instanceof Error ? error : new Error(String(error)), { retry: true })
+      throw Object.assign(error instanceof Error ? error : new Error(String(error)), { retry: true, transfer: true })
     }
     if (response.status === 503) throw Object.assign(new Error('Uploads are busy'), { status: 503 })
     return response

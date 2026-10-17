@@ -33,6 +33,11 @@ export interface QueuedUpload extends LocalUpload {
 
 const STORAGE_KEY = 'files:uploads'
 const CONCURRENCY = 3
+/**
+ * Failed attempts after which a failed system transfer is reported instead of waiting for a
+ * connection: a transfer can also fail for good (e.g. the device has no room to send it from).
+ */
+const MAX_TRANSFER_FAILURES = 3
 
 export const useFileUploads = create<{ items: QueuedUpload[] }>(() => ({ items: [] }))
 
@@ -125,13 +130,15 @@ class AccountChangedError extends Error {
   }
 }
 
-function filesEnabled(): boolean {
-  return filesCapability(useSessionStore.getState().config).enabled
+/** Files is known to be off. An unknown configuration (not read yet) lets uploads try. */
+function filesTurnedOff(): boolean {
+  const { config } = useSessionStore.getState()
+  return Boolean(config) && !filesCapability(config).enabled
 }
 
 function pump(): void {
   // While an administrator has Files off, uploads wait; they resume once it is back on.
-  if (!filesEnabled()) return
+  if (filesTurnedOff()) return
   while (running < CONCURRENCY) {
     const namespace = activeNamespace()
     // Another account's uploads wait until it is signed in again.
@@ -223,7 +230,9 @@ async function runUpload(item: QueuedUpload): Promise<void> {
       }
     }
     // Files turned off meanwhile: the upload waits for it to be back on, like it waits for a connection.
-    const offline = isNetworkError(error) || (error as { retry?: boolean }).retry === true || isFilesDisabledError(error)
+    const { retry, transfer } = (error ?? {}) as { retry?: boolean; transfer?: boolean }
+    const offline = (isNetworkError(error) || retry === true || isFilesDisabledError(error))
+      && !(transfer === true && item.attempts + 1 >= MAX_TRANSFER_FAILURES)
     update(item.id, {
       reservedNodeId,
       state: offline ? 'offline' : 'failed',

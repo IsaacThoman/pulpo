@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => {
   const kv = new Map<string, unknown>()
   return {
     kv,
-    session: { instanceUrl: 'https://pulpo.test', user: { id: 'a' } as { id: string } | null },
+    session: { instanceUrl: 'https://pulpo.test', user: { id: 'a' } as { id: string } | null, config: {} as object | null },
     uploadFile: vi.fn(),
     deleteFileNode: vi.fn(async (_id: string) => undefined),
     fetchFileNode: vi.fn(async (_id: string): Promise<{ node: Record<string, unknown> }> => ({ node: { id: _id, status: 'pending' } })),
@@ -78,6 +78,7 @@ const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
 beforeEach(() => {
   mocks.kv.clear()
   mocks.session.user = { id: 'a' }
+  mocks.session.config = {}
   mocks.uploadFile.mockReset()
   mocks.deleteFileNode.mockReset().mockImplementation(async () => undefined)
   mocks.fetchFileNode.mockReset().mockImplementation(async (id: string) => ({ node: { id, status: 'pending' } }))
@@ -229,5 +230,32 @@ describe('Files uploads', () => {
     await resumeUploads(A, client)
     expect(mocks.deleted).toEqual([`${directory}/left-behind`])
     expect(useFileUploads.getState().items).toMatchObject([{ id: 'queued' }])
+  })
+
+  it('uploads what was queued before an offline launch, before the configuration is read', async () => {
+    await clearUploads(A)
+    // Launched offline: nothing says what the instance offers yet (Files would read as off).
+    mocks.session.config = null
+    mocks.filesEnabled = false
+    mocks.kv.set(`${A}:files:uploads`, [{ id: 'queued', namespace: A, parentId: null, uri: 'documents/pending-uploads/x/nine.jpg', name: 'nine.jpg', mimeType: 'image/jpeg', sizeBytes: 10, state: 'waiting', attempts: 0 }])
+    mocks.uploadFile.mockImplementation(async () => ({ id: 'node-9', name: 'nine.jpg' }))
+    await resumeUploads(A, client)
+    await settle()
+    expect(mocks.uploadFile).toHaveBeenCalledTimes(1)
+    expect(useFileUploads.getState().items).toEqual([])
+  })
+
+  it('reports a system transfer that keeps failing instead of waiting for a connection forever', async () => {
+    mocks.uploadFile.mockImplementation(async () => { throw Object.assign(new Error('Unable to upload a file: no space left'), { retry: true, transfer: true }) })
+    await enqueueUploads(A, null, [photo('ten.jpg')], client)
+    await settle()
+    expect(useFileUploads.getState().items[0]).toMatchObject({ state: 'offline', attempts: 1 })
+    await resumeUploads(A, client)
+    await settle()
+    expect(useFileUploads.getState().items[0]).toMatchObject({ state: 'offline', attempts: 2 })
+    await resumeUploads(A, client)
+    await settle()
+    expect(useFileUploads.getState().items[0]).toMatchObject({ state: 'failed', attempts: 3, error: 'Unable to upload a file: no space left' })
+    expect(mocks.toasts).toHaveLength(1)
   })
 })

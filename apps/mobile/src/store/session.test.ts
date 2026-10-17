@@ -255,6 +255,29 @@ describe('instance configuration', () => {
   })
 })
 
+describe('remembered instance configuration', () => {
+  it('offers what the instance did last time while it cannot be reached', async () => {
+    const cachedUser = user('66666666-6666-4666-8666-666666666666', 'Offline User')
+    const namespace = `${instanceUrl}|${cachedUser.id}`
+    const remembered = { instance: { name: 'Pulpo' }, capabilities: { files: { enabled: true, docSchemaVersion: 2 } } }
+    mocks.values.set('global:activeSessionNamespace', namespace)
+    mocks.values.set(`${namespace}:user`, cachedUser)
+    mocks.values.set(`global:config:${new URL(instanceUrl).origin}`, remembered)
+    mocks.config.mockRejectedValue(new TypeError('Network request failed'))
+    mocks.me.mockRejectedValue(new TypeError('Network request failed'))
+
+    await useSessionStore.getState().hydrate()
+    await vi.waitFor(() => expect(useSessionStore.getState().error).toBe('Offline'))
+    expect(useSessionStore.getState().config).toEqual(remembered)
+  })
+
+  it('remembers the configuration the server sends', async () => {
+    const config = { instance: { name: 'Pulpo' }, capabilities: { files: { enabled: false, docSchemaVersion: 2 } } }
+    useSessionStore.setState({ config: config as never })
+    expect(mocks.values.get(`global:config:${new URL(instanceUrl).origin}`)).toEqual(config)
+  })
+})
+
 describe('passkey login', () => {
   const ceremony = { ceremonyToken: 'c'.repeat(43), options: { challenge: 'challenge' } }
   const assertion = { id: 'credential' }

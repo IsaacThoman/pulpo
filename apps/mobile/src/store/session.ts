@@ -22,6 +22,11 @@ import { runAccountCleanups } from './accountCleanup'
 
 const SESSION_TOKEN_KEY = 'pulpo.native.session'
 const GLOBAL_NAMESPACE = 'global'
+
+/** Where an instance's configuration is kept as last read, so what it offers is known offline. */
+function configKey(instanceUrl: string): string {
+  return `config:${new URL(instanceUrl).origin}`
+}
 const ACTIVE_SESSION_NAMESPACE_KEY = 'activeSessionNamespace'
 const SIGNED_IN_ACCOUNTS_KEY = 'signedInAccounts'
 const TOKEN_OPTIONS = { keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY }
@@ -294,6 +299,10 @@ export const useSessionStore = create<SessionState>((set, get) => {
           })
           void rememberActiveNamespace(cached.namespace)
           void rememberSignedInAccount(instanceUrl, cached.user.id)
+          // Until the server answers (or while offline), the instance offers what it did last time,
+          // e.g. Files, whose folders and documents seen before still open.
+          const remembered = await getValue<MobileConfig>(GLOBAL_NAMESPACE, configKey(instanceUrl)).catch(() => null)
+          if (remembered && !get().config && get().token === token && get().instanceUrl === instanceUrl) set({ config: remembered })
         }
 
         const refreshFromServer = async () => {
@@ -517,6 +526,16 @@ export const useSessionStore = create<SessionState>((set, get) => {
 function deviceMetadata() {
   return { platform: Platform.OS === 'ios' ? 'ios' as const : Platform.OS === 'android' ? 'android' as const : 'unknown' as const }
 }
+
+// The instance's configuration is kept as last read (see `hydrate`).
+useSessionStore.subscribe((state, previous) => {
+  if (!state.config || state.config === previous.config) return
+  try {
+    void setValue(GLOBAL_NAMESPACE, configKey(state.instanceUrl), state.config).catch(() => undefined)
+  } catch {
+    // Not an instance address; nothing to remember it by.
+  }
+})
 
 // Synchronous native bridge: account transitions cannot race a queued React effect.
 useSessionStore.subscribe((state, previous) => {
