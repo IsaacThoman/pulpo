@@ -15,6 +15,8 @@ const DOC = '0B0C9C2E-6D2A-4C0B-9E8B-1F2D3C4B5A69'
 
 /** Every database operation waits this long first, like a busy queue on a slow device. */
 let databaseDelayMs = 0
+/** Writes that fail before reaching the database, e.g. while the device is full. */
+let failingWrites = 0
 
 function sqlite() {
   const database = new DatabaseSync(':memory:')
@@ -35,9 +37,19 @@ function sqlite() {
     },
   }
   const queue = createOperationQueue()
+  const failing: DocDatabase = {
+    ...adapter,
+    withTransactionAsync: async (task) => {
+      if (failingWrites > 0) {
+        failingWrites -= 1
+        throw new Error('database or disk is full')
+      }
+      return adapter.withTransactionAsync(task)
+    },
+  }
   const run: DatabaseRunner = (operation) => queue(async () => {
     if (databaseDelayMs) await new Promise((resolve) => setTimeout(resolve, databaseDelayMs))
-    return operation(adapter)
+    return operation(failing)
   })
   return { database, store: new DocStore(run) }
 }
@@ -61,6 +73,7 @@ describe('document sessions on the device', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     databaseDelayMs = 0
+    failingWrites = 0
   })
   afterEach(() => { vi.useRealTimers() })
 
@@ -180,7 +193,7 @@ describe('document sessions on the device', () => {
     handle.release()
   })
 
-  it('discards a copy stored by a newer version of the app', async () => {
+  it('discards a copy stored by a newer version of the app once the server has it', async () => {
     const { database, store } = sqlite()
     const newer = new DocSessionRegistry(NAMESPACE, store, 3)
     const handle = newer.acquire(DOC)
@@ -188,7 +201,8 @@ describe('document sessions on the device', () => {
     type(handle.controller.doc, 'From a newer schema')
     await vi.advanceTimersByTimeAsync(500)
     await newer.destroy()
-    expect(row(database)?.schema_version).toBe(3)
+    await store.markSynced(NAMESPACE, DOC.toLowerCase())
+    expect(row(database)).toMatchObject({ dirty: 0, schema_version: 3 })
     const older = new DocSessionRegistry(NAMESPACE, store, 2)
     const reopened = older.acquire(DOC)
     await vi.advanceTimersByTimeAsync(2_000)
@@ -358,6 +372,115 @@ describe('document sessions on the device', () => {
     expect(row(database)?.dirty).toBe(0)
     fresh.release()
   })
+  it('keeps a newer version\'s unsynced edits untouched until that version is back', async () => {
+    const { database, store } = sqlite()
+    const newer = new DocSessionRegistry(NAMESPACE, store, 3)
+    const handle = newer.acquire(DOC)
+    await vi.advanceTimersByTimeAsync(2_000)
+    type(handle.controller.doc, 'From a newer schema')
+    await vi.advanceTimersByTimeAsync(500)
+    await newer.destroy()
+
+    // An older version leaves the copy out of its background upload, and writes nothing over it.
+    const server = new FakeServer()
+    const older = new DocSessionRegistry(NAMESPACE, store, 2)
+    older.attach(new FakeSocket(server) as unknown as DocSocket)
+    await older.flushDirty()
+    expect(older.openDocIds()).toEqual([])
+    const opened = older.acquire(DOC)
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect(ydocToMarkdown(opened.controller.doc).trim()).toBe('')
+    type(opened.controller.doc, 'Typed in the older version')
+    await vi.advanceTimersByTimeAsync(500)
+    opened.release()
+    await vi.advanceTimersByTimeAsync(LINGER_MS + 1_000)
+    expect(row(database)).toMatchObject({ dirty: 1, schema_version: 3 })
+
+    const back = new DocSessionRegistry(NAMESPACE, store, 3)
+    const reopened = back.acquire(DOC)
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect(ydocToMarkdown(reopened.controller.doc).trim()).toBe('From a newer schema')
+    reopened.release()
+  })
+
+  it('writes an edit again when storing it failed', async () => {
+    const { store } = sqlite()
+    const registry = new DocSessionRegistry(NAMESPACE, store, 2)
+    const handle = registry.acquire(DOC)
+    await vi.advanceTimersByTimeAsync(2_000)
+    failingWrites = 1
+    type(handle.controller.doc, 'Kept through a full disk')
+    await vi.advanceTimersByTimeAsync(500)
+    expect(failingWrites).toBe(0)
+    await vi.advanceTimersByTimeAsync(3_000)
+    // Read back from the database while the session is still open (closing stores a snapshot anyway).
+    const stored = await store.load(NAMESPACE, DOC.toLowerCase())
+    expect(stored.dirty).toBe(true)
+    const reloaded = new Y.Doc()
+    Y.applyUpdate(reloaded, stored.update!)
+    expect(ydocToMarkdown(reloaded).trim()).toBe('Kept through a full disk')
+    handle.release()
+  })
+
+  it('writes what open documents have pending at once when asked, e.g. as the app leaves', async () => {
+    const { database, store } = sqlite()
+    const registry = new DocSessionRegistry(NAMESPACE, store, 2)
+    const handle = registry.acquire(DOC)
+    await vi.advanceTimersByTimeAsync(2_000)
+    type(handle.controller.doc, 'Typed just before leaving')
+    await registry.flushOpen()
+    expect(row(database)?.dirty).toBe(1)
+    handle.release()
+  })
+
+  it('tries a document again later when it closed before its edits were uploaded', async () => {
+    const { database, store } = sqlite()
+    const server = new FakeServer()
+    let failing = true
+    class FlakySocket extends FakeSocket {
+      override emit(event: string, input: { docId: string; update?: Uint8Array; stateVector?: Uint8Array }, ack?: (result: unknown) => void) {
+        if (event === 'doc.update' && failing) {
+          ack?.({ ok: false, error: 'failed' })
+          return this
+        }
+        return super.emit(event, input, ack)
+      }
+    }
+    const registry = new DocSessionRegistry(NAMESPACE, store, 2)
+    registry.attach(new FlakySocket(server) as unknown as DocSocket)
+    const handle = registry.acquire(DOC)
+    await vi.advanceTimersByTimeAsync(2_000)
+    type(handle.controller.doc, 'Saved on the second try')
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(handle.controller.getSnapshot().status).toMatchObject({ state: 'error', error: 'failed' })
+    // The screen is left instead of retrying; the server recovers meanwhile.
+    handle.release()
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(registry.openDocIds()).toEqual([])
+    expect(row(database)?.dirty).toBe(1)
+    failing = false
+    await vi.advanceTimersByTimeAsync(31_000)
+    expect(ydocToMarkdown(server.doc).trim()).toBe('Saved on the second try')
+    expect(row(database)?.dirty).toBe(0)
+    await registry.destroy()
+  })
+
+  it('closes replaced sessions too when signing out, so nothing is written after', async () => {
+    const { database, store } = sqlite()
+    const registry = new DocSessionRegistry(NAMESPACE, store, 2)
+    const view = registry.acquire(DOC)
+    await vi.advanceTimersByTimeAsync(2_000)
+    type(view.controller.doc, 'Before signing out')
+    registry.restart(DOC)
+    await registry.destroy()
+    // Signing out then deletes the account's data.
+    database.exec('DELETE FROM file_docs; DELETE FROM file_doc_updates;')
+    // The replaced view's editor hands over its final state as it goes.
+    type(view.controller.doc, 'Before signing out\n\nAfter signing out')
+    view.release()
+    await vi.advanceTimersByTimeAsync(LINGER_MS + 1_000)
+    expect(row(database)).toBeUndefined()
+  })
 })
 
 describe('the document store', () => {
@@ -378,4 +501,5 @@ describe('the document store', () => {
     Y.applyUpdate(reloaded, stored.update!)
     expect(ydocToMarkdown(reloaded).trim()).toBe('From the closing session\n\nTyped in the new session')
   })
+
 })

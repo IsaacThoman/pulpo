@@ -97,10 +97,11 @@ export class DocStore {
     })
   }
 
-  dirtyDocIds(namespace: string): Promise<string[]> {
+  /** Copies with edits not uploaded yet; with `schemaVersion`, only those an editor of it can read. */
+  dirtyDocIds(namespace: string, schemaVersion?: number): Promise<string[]> {
     return this.run(async (database) => {
       const rows = await database.getAllAsync<{ doc_id: string }>(
-        'SELECT doc_id FROM file_docs WHERE namespace = ? AND dirty = 1 ORDER BY opened_at DESC', namespace,
+        'SELECT doc_id FROM file_docs WHERE namespace = ? AND dirty = 1 AND schema_version <= ? ORDER BY opened_at DESC', namespace, schemaVersion ?? Number.MAX_SAFE_INTEGER,
       )
       return rows.map((row) => row.doc_id)
     })

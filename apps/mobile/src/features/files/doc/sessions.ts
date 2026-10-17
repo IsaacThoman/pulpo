@@ -7,6 +7,9 @@ import type { DocStore } from './store'
 export const LINGER_MS = 30_000
 /** How long a background flush waits for one document before moving on. */
 const FLUSH_TIMEOUT_MS = 20_000
+/** A document that closed before its edits were uploaded is tried again after this, then less often. */
+const RETRY_MIN_MS = 30_000
+const RETRY_MAX_MS = 15 * 60_000
 
 export interface DocHandle {
   readonly docId: string
@@ -23,6 +26,7 @@ interface Entry {
   lingerTimer?: ReturnType<typeof setTimeout>
   /** Replaced by a fresh session (see `restart`); closes once its last user lets go. */
   stale: boolean
+  closed: boolean
   unsubscribe: () => void
 }
 
@@ -54,6 +58,8 @@ export class DocSessionRegistry {
   private readonly unreachable = new Set<string>()
   /** Sessions replaced by `restart` that still have views, by document. */
   private readonly replaced = new Map<string, Set<Entry>>()
+  private retryTimer: ReturnType<typeof setTimeout> | undefined
+  private retryDelay = RETRY_MIN_MS
 
   constructor(
     private readonly namespace: string,
@@ -116,7 +122,8 @@ export class DocSessionRegistry {
     if (this.destroyed) return Promise.resolve()
     this.flushing ??= (async () => {
       try {
-        const ids = await this.store.dirtyDocIds(this.namespace)
+        // Copies a newer version of the app made wait for it (see SqliteDocPersistence).
+        const ids = await this.store.dirtyDocIds(this.namespace, this.schemaVersion)
         for (const docId of ids) {
           if (this.destroyed || !this.socket?.connected) return
           if (this.entries.has(docId) || this.unreachable.has(docId)) continue
@@ -140,13 +147,37 @@ export class DocSessionRegistry {
     return [...this.entries.keys()]
   }
 
-  /** Signs out: closes every session, writing what is pending. */
+  /** Writes what every open session has pending now, e.g. as the app goes to the background. */
+  async flushOpen(): Promise<void> {
+    await Promise.all(this.allEntries().map((entry) => entry.persistence.flush()))
+  }
+
+  /** Signs out: closes every session, replaced ones included, writing what is pending. */
   async destroy(): Promise<void> {
     if (this.destroyed) return
     this.destroyed = true
-    const entries = [...this.entries.values()]
+    if (this.retryTimer !== undefined) clearTimeout(this.retryTimer)
+    const entries = this.allEntries()
     this.entries.clear()
+    this.replaced.clear()
     await Promise.all(entries.map((entry) => this.close(entry)))
+  }
+
+  private allEntries(): Entry[] {
+    return [...this.entries.values(), ...[...this.replaced.values()].flatMap((entries) => [...entries])]
+  }
+
+  /**
+   * A document closed before the server had all its edits (e.g. a save failed and the screen was
+   * left): the background flush tries again while connected, less often each time.
+   */
+  private retryLater(): void {
+    if (this.destroyed || this.retryTimer !== undefined) return
+    this.retryTimer = setTimeout(() => {
+      this.retryTimer = undefined
+      this.retryDelay = Math.min(this.retryDelay * 2, RETRY_MAX_MS)
+      void this.flushDirty()
+    }, this.retryDelay)
   }
 
   private open(docId: string): Entry {
@@ -159,7 +190,7 @@ export class DocSessionRegistry {
         return persistence
       },
     })
-    const entry: Entry = { docId, controller, persistence, users: 0, stale: false, unsubscribe: () => {} }
+    const entry: Entry = { docId, controller, persistence, users: 0, stale: false, closed: false, unsubscribe: () => {} }
     let previous = controller.getSnapshot().status
     entry.unsubscribe = controller.subscribe(() => {
       const { status } = controller.getSnapshot()
@@ -202,8 +233,13 @@ export class DocSessionRegistry {
   }
 
   private async close(entry: Entry): Promise<void> {
+    // Signing out closes replaced sessions whose views let go later.
+    if (entry.closed) return
+    entry.closed = true
     if (entry.lingerTimer !== undefined) clearTimeout(entry.lingerTimer)
     entry.unsubscribe()
+    // Where it stood with the server, before leaving the document reports it offline.
+    const { status } = entry.controller.getSnapshot()
     // Leave the document at once, so a session opened for it meanwhile keeps the socket's room.
     entry.controller.attach(null)
     await entry.persistence.whenLoaded
@@ -212,6 +248,8 @@ export class DocSessionRegistry {
     // Fold the log into one snapshot while the document is in memory, but only when it holds
     // this device's copy; otherwise the snapshot would replace stored edits it lacks.
     const state = entry.persistence.ready ? Y.encodeStateAsUpdate(entry.controller.doc) : null
+    if (status.state === 'synced') this.retryDelay = RETRY_MIN_MS
+    else if (status.state !== 'closed' && !entry.stale) this.retryLater()
     entry.controller.destroy()
     if (state) await this.store.compact(this.namespace, entry.docId, state, this.schemaVersion).catch(() => undefined)
   }
