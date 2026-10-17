@@ -19,6 +19,7 @@ import { SymbolView } from '../../../platform/SymbolView'
 import { useAppTheme } from '../../../theme'
 import { useDocSchemaSupported, useFilesEnabled } from '../availability'
 import { FilesToastHost } from '../components/FilesToastHost'
+import { FilesTurnedOff } from '../components/FilesTurnedOff'
 import { FORMATTING_BAR_HEIGHT, FormattingBar } from '../components/FormattingBar'
 import { FolderPickerSheet } from '../components/FolderPickerSheet'
 import { accountDocSessions } from '../doc/accountSessions'
@@ -101,11 +102,14 @@ export function FileDocumentScreen({ navigation, route }: Props) {
   // `generation` starts a fresh session (after a restore, or to retry a failed one).
   const [generation, setGeneration] = useState(0)
   useEffect(() => {
-    if (!namespace) return
+    if (!namespace || !filesEnabled) return
     const held = accountDocSessions(namespace).acquire(fileId)
     setHandle(held)
-    return () => held.release()
-  }, [fileId, generation, namespace])
+    return () => {
+      held.release()
+      setHandle(null)
+    }
+  }, [fileId, filesEnabled, generation, namespace])
   const restartSession = useCallback(() => {
     accountDocSessions(namespace).restart(fileId)
     setEditorState(null)
@@ -234,7 +238,7 @@ export function FileDocumentScreen({ navigation, route }: Props) {
       headerShown: Platform.OS === 'ios',
       headerLargeTitle: false,
       headerBackTitle: 'Back',
-      unstable_headerRightItems: Platform.OS === 'ios' ? () => [
+      unstable_headerRightItems: Platform.OS === 'ios' && filesEnabled ? () => [
         ...(peers.length ? [{
           type: 'custom' as const,
           hidesSharedBackground: true,
@@ -364,6 +368,15 @@ export function FileDocumentScreen({ navigation, route }: Props) {
       ) : null}
     </View>
   ) : null
+
+  if (!filesEnabled) {
+    return (
+      <View style={[styles.flex, { backgroundColor: theme.background, paddingTop: Platform.OS === 'android' ? insets.top : 0 }]}>
+        {Platform.OS === 'android' ? <PageHeader title={title.replace(/\.(md|markdown)$/i, '')} onBack={() => navigation.goBack()} /> : null}
+        <FilesTurnedOff />
+      </View>
+    )
+  }
 
   return (
     <View style={[styles.flex, { backgroundColor: theme.isDark ? theme.background : theme.elevated, paddingTop: Platform.OS === 'android' ? insets.top : 0 }]}>

@@ -22,7 +22,8 @@ body {
   font-size: var(--font-size);
   min-height: 100vh;
 }
-#editor { padding: 12px max(20px, env(safe-area-inset-right)) calc(48px + var(--bottom-padding)) max(20px, env(safe-area-inset-left)); }
+/* As wide as the web's document page (max-w-5xl), so lines stay readable on iPad and tablets. */
+#editor { box-sizing: border-box; max-width: 64rem; margin: 0 auto; padding: 12px max(20px, env(safe-area-inset-right)) calc(48px + var(--bottom-padding)) max(20px, env(safe-area-inset-left)); }
 
 .pulpo-doc-editor {
   min-height: calc(100vh - 80px);

@@ -66,6 +66,11 @@ private var accessoryKey: UInt8 = 0
 private func installInputAccessory(_ accessory: UIView?, in webView: WKWebView) {
   guard let content = webView.scrollView.subviews.first(where: { String(describing: type(of: $0)).hasPrefix("WKContent") }) else { return }
   objc_setAssociatedObject(content, &accessoryKey, accessory, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+  // The iPad keyboard's shortcuts bar would repeat our bar's formatting, and offer underline, which
+  // documents do not have; its leading group (undo, redo, paste) stays.
+  if accessory != nil {
+    for item in [webView.inputAssistantItem, content.inputAssistantItem] { item.trailingBarButtonGroups = [] }
+  }
   let base: AnyClass = type(of: content)
   // Already ours: the associated accessory above is all that changes.
   if NSStringFromClass(base).hasPrefix("PulpoDocEditor_") { return }

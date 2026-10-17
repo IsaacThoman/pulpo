@@ -15,6 +15,7 @@ import { MaterialIconButton } from '../../../platform/MaterialUI'
 import { SymbolView } from '../../../platform/SymbolView'
 import { useAppTheme } from '../../../theme'
 import { refreshFilesCapability, useFilesEnabled, isFilesDisabledError } from '../availability'
+import { FilesTurnedOff } from '../components/FilesTurnedOff'
 import { FileRow } from '../components/FileRow'
 import { FilesToastHost } from '../components/FilesToastHost'
 import { FolderPickerSheet } from '../components/FolderPickerSheet'
@@ -28,8 +29,8 @@ import { useFilesNamespace } from '../useFilesNamespace'
 
 type Props = NativeStackScreenProps<RootStackParamList, 'FilesFolder'>
 
-/** iOS 26 puts the search field in a bar at the bottom of the screen; toasts sit above it. */
-const BOTTOM_SEARCH_HEIGHT = Platform.OS === 'ios' && Number.parseInt(String(Platform.Version), 10) >= 26 ? 64 : 0
+/** iOS 26 puts the search field in a bar at the bottom of an iPhone's screen; toasts sit above it. */
+const BOTTOM_SEARCH_HEIGHT = Platform.OS === 'ios' && !Platform.isPad && Number.parseInt(String(Platform.Version), 10) >= 26 ? 64 : 0
 
 const SORT_LABELS: Record<FileSortKey, string> = { name: 'Name', modified: 'Date Modified', size: 'Size', kind: 'Kind' }
 
@@ -233,7 +234,7 @@ export function FilesFolderScreen({ navigation, route }: Props) {
       headerBackTitle: 'Back',
       // While selecting, the selection actions take the bottom of the screen, where iOS 26 keeps
       // the search field, as in the Files app.
-      headerSearchBarOptions: Platform.OS === 'ios' && !selecting ? {
+      headerSearchBarOptions: Platform.OS === 'ios' && filesEnabled && !selecting ? {
         placeholder: folderId === null ? 'Search My files' : `Search ${title}`,
         hideWhenScrolling: true,
         onChangeText: (event) => setSearch(event.nativeEvent.text),
@@ -255,15 +256,7 @@ export function FilesFolderScreen({ navigation, route }: Props) {
     }
   }, [listing])
 
-  if (!filesEnabled) {
-    return (
-      <View style={[styles.center, { backgroundColor: theme.background }]}>
-        <SymbolView name="folder.badge.questionmark" size={44} tintColor={theme.tertiary} />
-        <Text style={[styles.emptyTitle, { color: theme.text }]}>Files are turned off</Text>
-        <Text style={[styles.emptyBody, { color: theme.secondary }]}>Your administrator has turned off Files for this instance.</Text>
-      </View>
-    )
-  }
+  if (!filesEnabled) return <FilesTurnedOff />
 
   const renderUpload = (upload: QueuedUpload) => (
     <Pressable
