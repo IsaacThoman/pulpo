@@ -15,8 +15,8 @@ export type RootStackParamList = {
   Trash: undefined;
   /** A Files folder; null is the top of My files. */
   FilesFolder: { folderId: string | null; name?: string };
-  /** A collaborative document. */
-  FileDocument: { fileId: string; name?: string };
+  /** A collaborative document; `created` opens a new one ready to type in. */
+  FileDocument: { fileId: string; name?: string; created?: boolean };
   /** An uploaded Markdown file: read only until it is made editable. */
   FileMarkdown: { fileId: string; name?: string };
 };

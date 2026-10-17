@@ -28,6 +28,9 @@ import { useFilesNamespace } from '../useFilesNamespace'
 
 type Props = NativeStackScreenProps<RootStackParamList, 'FilesFolder'>
 
+/** iOS 26 puts the search field in a bar at the bottom of the screen; toasts sit above it. */
+const BOTTOM_SEARCH_HEIGHT = Platform.OS === 'ios' && Number.parseInt(String(Platform.Version), 10) >= 26 ? 64 : 0
+
 const SORT_LABELS: Record<FileSortKey, string> = { name: 'Name', modified: 'Date Modified', size: 'Size', kind: 'Kind' }
 
 /** The sort Files lists use, kept per account. */
@@ -107,7 +110,7 @@ export function FilesFolderScreen({ navigation, route }: Props) {
   }), [folderId, operations])
   const newDocument = useCallback(async () => {
     const created = await operations.createDocument(folderId, children)
-    if (created) navigation.push('FileDocument', { fileId: created.id, name: created.name })
+    if (created) navigation.push('FileDocument', { fileId: created.id, name: created.name, created: true })
   }, [children, folderId, navigation, operations])
   const upload = useCallback(async (source: 'photos' | 'camera' | 'files') => {
     try {
@@ -417,7 +420,7 @@ export function FilesFolderScreen({ navigation, route }: Props) {
     <View style={[styles.flex, { backgroundColor: theme.background }]}>
       {content}
       {selectionBar}
-      <FilesToastHost bottomOffset={selecting ? 72 : 0} />
+      <FilesToastHost bottomOffset={selecting ? 72 : BOTTOM_SEARCH_HEIGHT} />
       {moving ? (
         <FolderPickerSheet
           namespace={namespace}

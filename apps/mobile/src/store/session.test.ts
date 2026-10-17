@@ -23,16 +23,14 @@ const mocks = vi.hoisted(() => ({
   runSafariPasskeyAuthentication: vi.fn(),
   configureApi: vi.fn(),
   clearNamespace: vi.fn(async () => []),
-  closeDocSessions: vi.fn(async (_namespace: string) => undefined),
-  clearUploads: vi.fn(async (_namespace: string) => undefined),
+  runAccountCleanups: vi.fn(async (_namespace: string) => undefined),
   deleteToken: vi.fn(async (_key: string) => undefined),
 }))
 
 vi.mock('../shortcuts/native', () => ({ syncShortcutsSession: mocks.syncShortcuts, clearShortcutsSession: mocks.clearShortcuts }))
 
 vi.mock('react-native', () => ({ Alert: { alert: mocks.alert }, Appearance: { setColorScheme: vi.fn() }, Platform: { OS: 'ios' } }))
-vi.mock('../features/files/doc/accountSessions', () => ({ closeDocSessions: mocks.closeDocSessions }))
-vi.mock('../features/files/uploads', () => ({ clearUploads: mocks.clearUploads }))
+vi.mock('./accountCleanup', () => ({ runAccountCleanups: mocks.runAccountCleanups }))
 vi.mock('expo-device', () => ({ deviceName: 'Test iPhone', modelName: 'iPhone' }))
 vi.mock('expo-file-system', () => ({ File: class { exists = false; delete() {} } }))
 vi.mock('expo-secure-store', () => ({
@@ -287,9 +285,8 @@ describe('local sign-out after account deletion', () => {
     expect(mocks.syncShortcuts).toHaveBeenLastCalledWith(expect.objectContaining({ token: null, user: null, status: 'anonymous' }))
     expect(mocks.configureApi).toHaveBeenCalledWith(expect.objectContaining({ token: null }))
     expect(mocks.clearNamespace).toHaveBeenCalledWith(`${instanceUrl}|deleted-user`)
-    // The account's open documents and queued uploads go with it.
-    expect(mocks.closeDocSessions).toHaveBeenCalledWith(`${instanceUrl}|deleted-user`)
-    expect(mocks.clearUploads).toHaveBeenCalledWith(`${instanceUrl}|deleted-user`)
+    // Features' own account data (Files documents, uploads) goes with it.
+    expect(mocks.runAccountCleanups).toHaveBeenCalledWith(`${instanceUrl}|deleted-user`)
     expect(mocks.values.get('global:activeSessionNamespace')).toBeNull()
   })
 })

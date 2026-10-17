@@ -118,6 +118,14 @@ export function FileDocumentScreen({ navigation, route }: Props) {
     recountPending.current = true
   }, [])
 
+  // A document just created opens ready to type in, once.
+  const focusedNew = useRef(false)
+  useEffect(() => {
+    if (!route.params.created || focusedNew.current || !editorState?.loaded || !editorState.formatting?.editable) return
+    focusedNew.current = true
+    editor.current?.focus('start')
+  }, [editorState?.formatting?.editable, editorState?.loaded, route.params.created])
+
   // A document turned into an ordinary file opens as one.
   useEffect(() => {
     if (status.state === 'closed' && status.reason === 'converted') void nodeQuery.refetch()

@@ -223,6 +223,7 @@ import { SafeMarkdown } from '../components/SafeMarkdown';
 import { ModelWarningBanner } from './src/components/ModelWarningBanner';
 import { AttachmentImageViewer, type AttachmentImagePreviewItem, type AttachmentImageTransitionOrigin } from '../components/AttachmentImageViewer';
 import { useFilesCapabilityRefresh, useFilesEnabled } from '../features/files/availability';
+import { parseFilesLink, useFilesLinkInbox } from '../features/files/links';
 import { FileDocumentScreen } from '../features/files/screens/FileDocumentScreen';
 import { FileMarkdownScreen } from '../features/files/screens/FileMarkdownScreen';
 import { FilesFolderScreen } from '../features/files/screens/FilesFolderScreen';
@@ -2303,6 +2304,19 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     composerFocusRevision.current += 1;
     setComposerFocusRequest({ revision: composerFocusRevision.current, target: 'composer' });
   }, [activeChatId, animatePanel, navigation, newChat, pendingImports, productionInstanceUrl, productionScopeReady, productionUserId]);
+  // Files links (pulpo://files/…) open their screen once the account's data is ready.
+  const filesLink = useFilesLinkInbox((state) => state.pending);
+  useEffect(() => {
+    if (!filesLink || !productionScopeReady) return;
+    const url = useFilesLinkInbox.getState().take();
+    const destination = url ? parseFilesLink(url, productionInstanceUrl) : null;
+    if (!destination) return;
+    animatePanel(false);
+    Keyboard.dismiss();
+    if (destination.type === 'trash') navigation.navigate('Trash');
+    else if (destination.type === 'document') navigation.push('FileDocument', { fileId: destination.id });
+    else navigation.push('FilesFolder', { folderId: destination.id });
+  }, [animatePanel, filesLink, navigation, productionInstanceUrl, productionScopeReady]);
   const shortcutDestination = useShortcutInbox((state) => state.pending[0]);
   const shortcutActions = useRef({ animatePanel, dismissComposer, finishExistingChatTransition, interruptDrawerTransition, navigation, newChat, abandonActiveTemporaryChat });
   shortcutActions.current = { animatePanel, dismissComposer, finishExistingChatTransition, interruptDrawerTransition, navigation, newChat, abandonActiveTemporaryChat };
