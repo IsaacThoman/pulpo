@@ -1,5 +1,6 @@
 import { useLocation, useNavigate } from 'react-router-dom'
 import { isDesktopRuntime } from '@/lib/runtime'
+import { folderPath, trashFolderRef } from '@/features/trash/folder'
 import { SIDE_PANEL_PARAM, useSidePanel, type PanelContent } from './store'
 
 /**
@@ -15,7 +16,7 @@ export function locationIsCurrent(location: { key: string }): boolean {
 export function panelContentPath(content: PanelContent): string {
   if (content.kind === 'file') return `/files/d/${content.id}`
   if (content.kind === 'attachment') return `/attachments/${content.id}`
-  return content.id ? `/files/f/${content.id}` : '/files'
+  return folderPath(content.id)
 }
 
 /** What the main view shows, when it is something the panel can also show. */
@@ -27,6 +28,9 @@ export function mainViewContent(pathname: string): PanelContent | null {
   const folder = /^\/files\/f\/([0-9a-f-]{36})$/i.exec(pathname)
   if (folder) return { kind: 'folder', id: folder[1]!.toLowerCase() }
   if (pathname === '/files') return { kind: 'folder', id: null }
+  if (pathname === '/files/trash') return { kind: 'folder', id: trashFolderRef(null) }
+  const trashed = /^\/files\/trash\/f\/([0-9a-f-]{36})$/i.exec(pathname)
+  if (trashed) return { kind: 'folder', id: trashFolderRef(trashed[1]!.toLowerCase()) }
   return null
 }
 

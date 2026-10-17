@@ -13,13 +13,15 @@ import {
   FolderArchive,
   MessageSquare,
   PanelLeft,
+  Trash2,
   type LucideIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { TRASH_FOLDER_ID } from '@/features/trash/folder'
 import { FILE_COLOR_CLASSES, FILE_ICON_GLYPHS } from './appearance'
 import { ARCHIVE_EXTENSIONS, CODE_EXTENSIONS, fileExtension, SHEET_EXTENSIONS } from './file-display'
 
-type IconNode = Pick<FileNode, 'kind' | 'name' | 'mimeType'> & Partial<Pick<FileNode, 'systemRole' | 'target' | 'color' | 'icon'>>
+type IconNode = Pick<FileNode, 'kind' | 'name' | 'mimeType'> & Partial<Pick<FileNode, 'id' | 'systemRole' | 'target' | 'color' | 'icon'>>
 
 /** A shortcut looks like what it opens, with an arrow in the corner as on a desktop. */
 export function FileNodeIcon({ node, className }: { node: IconNode; className?: string }) {
@@ -45,11 +47,13 @@ const FOLDER_COLORS = 'fill-muted-foreground/15 text-muted-foreground'
 function ItemIcon({ node, className }: { node: IconNode; className?: string }) {
   const classes = cn('shrink-0', className)
   if (node.kind === 'chat') return <MessageSquare className={cn(classes, 'text-sky-500')} />
-  // The Sidebar folder shows the sidebar itself, the mirror of "Open to the right".
-  if (node.kind === 'folder' && node.systemRole === 'chats') return <PanelLeft className={cn(classes, FOLDER_COLORS)} />
-  if (node.kind === 'folder' && node.systemRole === 'archive') return <FolderArchive className={cn(classes, FOLDER_COLORS)} />
   // A chosen color replaces the kind's own; a chosen icon replaces its glyph.
   const tint = node.color ? FILE_COLOR_CLASSES[node.color] : null
+  // Built-in folders keep their icons. The Sidebar folder shows the sidebar itself, the mirror of
+  // "Open to the right".
+  if (node.kind === 'folder' && node.systemRole === 'chats') return <PanelLeft className={cn(classes, tint ? [tint.text, tint.fill] : FOLDER_COLORS)} />
+  if (node.kind === 'folder' && node.systemRole === 'archive') return <FolderArchive className={cn(classes, tint ? [tint.text, tint.fill] : FOLDER_COLORS)} />
+  if (node.kind === 'folder' && node.id === TRASH_FOLDER_ID) return <Trash2 className={cn(classes, tint ? [tint.text, tint.fill] : FOLDER_COLORS)} />
   if (node.icon) {
     const Glyph = FILE_ICON_GLYPHS[node.icon]
     return <Glyph className={cn(classes, tint?.text ?? 'text-muted-foreground')} />

@@ -41,6 +41,10 @@ describe('response sync planning', () => {
     expect(stateInvalidationQueryKeys('folders', 'user-1')).toEqual([['folders', 'user-1']])
   })
 
+  it('refreshes the trash when Files change, since it lists trashed Files items', () => {
+    expect(stateInvalidationQueryKeys('files', 'user-1')).toEqual([['files', 'user-1'], ['folders', 'user-1'], ['trash', 'user-1']])
+  })
+
   it('groups interleaved events by response without changing their order', () => {
     const events = [event('a', 1, 'A'), event('b', 1, 'B'), event('a', 2, ' C')]
     expect(groupResponseEvents(events).map((batch) => batch.map((item) => item.sequence)))

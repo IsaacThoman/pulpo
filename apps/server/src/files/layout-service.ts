@@ -1,5 +1,5 @@
 import { and, eq, isNull } from 'drizzle-orm'
-import type { FileFolderLayout, UpdateFileFolderLayout } from '@pulpo/contracts'
+import { TRASH_FOLDER_ID, type FileFolderLayout, type UpdateFileFolderLayout } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import { fileFolderLayouts, fileNodes } from '../database/schema.js'
 import { notFound } from '../lib/errors.js'
@@ -38,6 +38,8 @@ export async function updateFolderLayout(userId: string, input: ReturnType<typeo
       isNull(fileNodes.trashedAt),
     ))
     const live = new Set(children.map((child) => child.id))
+    // The Trash sits at the top of My files.
+    if (!input.folderId) live.add(TRASH_FOLDER_ID)
     const positions: Record<string, { x: number; y: number }> = {}
     for (const [id, position] of Object.entries({ ...row?.positions, ...input.positions })) {
       if (position && live.has(id)) positions[id] = { x: position.x, y: position.y }

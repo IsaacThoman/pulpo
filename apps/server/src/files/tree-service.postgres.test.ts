@@ -9,7 +9,6 @@ import {
   createFolder,
   deleteFileNode,
   emptyTrash,
-  FILE_TRASH_RETENTION_MS,
   listFolder,
   listTrash,
   moveFileNodes,
@@ -131,7 +130,8 @@ describe.skipIf(!enabled)('Files tree PostgreSQL behavior', () => {
 
   it('cleans up abandoned uploads and expired trash', async () => {
     const pending = randomUUID()
-    const old = new Date(Date.now() - FILE_TRASH_RETENTION_MS - 60_000)
+    // Thirty days is the default retention.
+    const old = new Date(Date.now() - 30 * 86_400_000 - 60_000)
     await db.insert(fileNodes).values({ id: pending, ownerUserId: userId, kind: 'blob', name: 'p', status: 'pending', objectKey: `k/${pending}`, createdAt: old })
     const trashed = await insertBlob(null, 't')
     await db.update(fileNodes).set({ trashedAt: old, trashRootId: trashed }).where(eq(fileNodes.id, trashed))

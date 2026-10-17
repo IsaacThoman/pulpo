@@ -4,8 +4,10 @@ import { Ban } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { setItemAppearance } from '@/features/sidebar/api'
+import { isBuiltInFolder, isTrashFolder } from '@/features/trash/folder'
 import { ui, uit } from '@/i18n/ui'
 import { cn } from '@/lib/utils'
+import { useSettings } from '@/stores/settings'
 import { FILE_COLOR_CLASSES, FILE_ICON_GLYPHS, useAppearanceEditor } from './appearance'
 import { FileNodeIcon } from './FileNodeIcon'
 
@@ -60,7 +62,10 @@ function iconLabel(icon: FileIcon): string {
 
 const OPTION = 'grid size-8 cursor-pointer place-items-center rounded-md outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring aria-pressed:bg-accent aria-pressed:ring-2 aria-pressed:ring-ring'
 
-/** Chooses the color and icon of one or more files and folders; each choice applies at once. */
+/**
+ * Chooses the color and icon of one or more files and folders; each choice applies at once.
+ * Built-in folders keep their own icons, so with one among them only the color is offered.
+ */
 export function AppearanceDialog() {
   const nodes = useAppearanceEditor((state) => state.nodes)
   const close = () => useAppearanceEditor.setState({ nodes: null })
@@ -83,10 +88,14 @@ function AppearancePicker({ nodes, onDone }: { nodes: FileNode[]; onDone: () => 
     color: shared(nodes.map((node) => node.color ?? null)),
     icon: shared(nodes.map((node) => node.icon ?? null)),
   }))
+  const builtIn = nodes.some(isBuiltInFolder)
   const choose = (change: { color?: FileColor | null } | { icon?: FileIcon | null }) => {
     setAppearance((current) => ({ ...current, ...change }))
+    // The trash is not stored in Files: its color is a setting.
+    if ('color' in change && nodes.some(isTrashFolder)) useSettings.getState().set('trashColor', change.color ?? null)
+    const ids = nodes.filter((node) => !isTrashFolder(node)).map((node) => node.id)
     // Failures are reported in a toast.
-    void setItemAppearance(nodes.map((node) => node.id), change)
+    if (ids.length) void setItemAppearance(ids, change)
   }
   const single = nodes.length === 1 ? nodes[0]! : null
   const preview = { ...nodes[0]!, color: appearance.color ?? null, icon: appearance.icon ?? null }
@@ -97,7 +106,7 @@ function AppearancePicker({ nodes, onDone }: { nodes: FileNode[]; onDone: () => 
           {single && <FileNodeIcon node={preview} className="size-5" />}
           <span className="truncate">{single ? single.name : uit`${nodes.length} items`}</span>
         </DialogTitle>
-        <DialogDescription>{ui("Choose a color and icon.")}</DialogDescription>
+        <DialogDescription>{builtIn ? ui("Choose a color.") : ui("Choose a color and icon.")}</DialogDescription>
       </DialogHeader>
       <section className="space-y-2">
         <h3 className="text-xs font-medium text-muted-foreground">{ui("Color")}</h3>
@@ -112,7 +121,7 @@ function AppearancePicker({ nodes, onDone }: { nodes: FileNode[]; onDone: () => 
           ))}
         </div>
       </section>
-      <section className="space-y-2">
+      {!builtIn && <section className="space-y-2">
         <h3 className="text-xs font-medium text-muted-foreground">{ui("Icon")}</h3>
         <div className="grid grid-cols-8 gap-1">
           <button type="button" className={OPTION} aria-pressed={appearance.icon === null} aria-label={ui("Default")} title={ui("Default")} onClick={() => choose({ icon: null })}>
@@ -127,7 +136,7 @@ function AppearancePicker({ nodes, onDone }: { nodes: FileNode[]; onDone: () => 
             )
           })}
         </div>
-      </section>
+      </section>}
       <DialogFooter>
         <Button type="button" onClick={onDone}>{ui("Done")}</Button>
       </DialogFooter>

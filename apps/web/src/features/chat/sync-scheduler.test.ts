@@ -43,9 +43,9 @@ it('invalidates only state affected by settled outbox operations', () => {
   expect(outboxInvalidationQueryKeys([], 'u', 'active')).toEqual([])
   expect(outboxInvalidationQueryKeys(['/api/settings'], 'u', 'active')).toEqual([['settings', 'u']])
   expect(outboxInvalidationQueryKeys(['/api/chats/active', '/api/chats/order'], 'u', 'active')).toEqual([
-    ['chats', 'u'], ['deleted-chats', 'u'], ['chat', 'u', 'active'],
+    ['chats', 'u'], ['trash', 'u'], ['chat', 'u', 'active'],
   ])
   expect(outboxInvalidationQueryKeys(['/api/folders/folder-a'], 'u', 'active')).toEqual([
-    ['folders', 'u'], ['chats', 'u'], ['deleted-chats', 'u'], ['chat', 'u', 'active'],
+    ['folders', 'u'], ['chats', 'u'], ['trash', 'u'], ['chat', 'u', 'active'],
   ])
 })

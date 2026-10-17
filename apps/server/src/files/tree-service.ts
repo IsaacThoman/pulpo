@@ -1,8 +1,8 @@
-import { and, asc, desc, eq, inArray, isNotNull, isNull, lt, ne, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, isNotNull, isNull, lt, ne, sql, type SQL } from 'drizzle-orm'
 import { FILE_TREE_MAX_DEPTH, isMarkdownName, nextAvailableName, type FileColor, type FileIcon, type FileListing, type FileNode, type FileNodeKind, type FileSystemRole, type StateInvalidationScope } from '@pulpo/contracts'
 import { assertStorageCapacity } from '../attachments/storage-quota.js'
 import { db } from '../database/client.js'
-import { chats, fileNodes, fileVersions } from '../database/schema.js'
+import { chats, fileNodes, fileVersions, userPreferences } from '../database/schema.js'
 import { bumpAccountRevisions, publishScopedStateChanges, type AccountRevisionChange } from '../friends/sync.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
@@ -12,12 +12,13 @@ import { convertDocToBlobInTx } from './conversion.js'
 import { publishDocsClosed } from './doc-events.js'
 import { chatsFolderIdOf, chatToFileNode, liveChatIds, listFolderChats, moveChatsInTx } from './chat-items.js'
 import { recoverChats, trashChats } from '../chats/trash-service.js'
+import { fileTrashRetentionSql, legacyFileTrashKeptSql } from '../chats/trash.js'
+import { ensureUnifiedTrashSince } from '../trash/unified-since.js'
 import { toFileNodes } from './shortcuts.js'
 import { topSortOrder } from './order.js'
 
 type DatabaseTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
 
-export const FILE_TRASH_RETENTION_MS = 30 * 86_400_000
 export const PENDING_FILE_UPLOAD_TTL_MS = 86_400_000
 
 export function toFileNode(row: FileNodeRow): FileNode {
@@ -43,7 +44,7 @@ export function toFileNode(row: FileNodeRow): FileNode {
 }
 
 export const systemFolderLocked = () =>
-  new AppError(400, 'file_system_folder', 'This folder is built in and cannot be renamed, moved, trashed, or recolored')
+  new AppError(400, 'file_system_folder', 'This folder is built in and cannot be renamed, moved, trashed, or given an icon')
 
 /** Changes to Files that also move or trash chats must refresh chat lists too. */
 const CHAT_SCOPES: StateInvalidationScope[] = ['files', 'folders', 'chats']
@@ -271,7 +272,8 @@ export async function updateFileNode(userId: string, id: string, input: {
     let current = await liveNode(tx, userId, id)
     if (input.expectedRevision !== undefined && input.expectedRevision !== current.revision) throw revisionConflict()
     if (restyled) {
-      if (current.systemRole) throw systemFolderLocked()
+      // Built-in folders can take a color, but keep their own icon.
+      if (current.systemRole && input.icon !== undefined) throw systemFolderLocked()
       // Appearance is not content: the revision and modified time stay as they are.
       const [restyledRow] = await tx.update(fileNodes).set({
         ...input.color !== undefined ? { color: input.color } : {},
@@ -361,34 +363,72 @@ export async function trashFileNode(userId: string, id: string): Promise<void> {
   await trashFileNodes(userId, [id])
 }
 
-export async function restoreNodeInTx(tx: DatabaseTransaction, userId: string, id: string): Promise<FileNodeRow> {
+/**
+ * Restores a trashed item with what was trashed along with it. Without a destination it goes back
+ * where it was, or to the top level when that folder is still in the trash (as for items inside a
+ * trashed folder). With one it goes there instead, like a move.
+ */
+export async function restoreNodeInTx(tx: DatabaseTransaction, userId: string, id: string, destination?: { parentId: string | null }): Promise<FileNodeRow> {
   const access = await resolveFileAccess(tx, userId, id)
-  if (!access || !access.node.trashedAt || access.node.trashRootId !== access.node.id) throw notFound('Trashed item')
+  if (!access || !access.node.trashedAt || !access.node.trashRootId) throw notFound('Trashed item')
   const node = access.node
-  // If the original folder is still in the trash, the item comes back at the top level.
-  const parent = node.parentId ? (await resolveFileAccess(tx, userId, node.parentId))?.node : null
-  const parentId = parent && !parent.trashedAt ? parent.id : null
+  const trashRootId = access.node.trashRootId
+  const below = await subtree(tx, userId, node.id)
+  let parentId: string | null
+  if (destination) {
+    const height = Math.max(...below.map((row) => row.depth))
+    if (await destinationDepth(tx, userId, destination.parentId) + height > FILE_TREE_MAX_DEPTH) throw treeTooDeep()
+    parentId = destination.parentId
+  } else {
+    const parent = node.parentId ? (await resolveFileAccess(tx, userId, node.parentId))?.node : null
+    parentId = parent && !parent.trashedAt ? parent.id : null
+  }
   const name = await availableName(tx, userId, parentId, node.name)
-  // Rename while still trashed; the live-name index only applies once the batch is restored.
-  await tx.update(fileNodes).set({ parentId, name, revision: sql`${fileNodes.revision} + 1` }).where(eq(fileNodes.id, node.id))
-  await tx.update(fileNodes).set({ trashedAt: null, trashRootId: null, updatedAt: new Date() })
-    .where(and(eq(fileNodes.ownerUserId, userId), eq(fileNodes.trashRootId, node.id)))
+  // Rename while still trashed; the live-name index only applies once the batch is restored. Put
+  // somewhere new, an item goes to the top of that folder, as moved items do.
+  await tx.update(fileNodes).set({
+    parentId, name, revision: sql`${fileNodes.revision} + 1`,
+    ...destination && parentId !== node.parentId && !node.pinned ? { sortOrder: await topSortOrder(tx, userId, parentId) } : {},
+  }).where(eq(fileNodes.id, node.id))
+  // Items inside that were trashed earlier, on their own, stay in the trash.
+  await tx.update(fileNodes).set({ trashedAt: null, trashRootId: null, updatedAt: new Date() }).where(and(
+    eq(fileNodes.ownerUserId, userId),
+    eq(fileNodes.trashRootId, trashRootId),
+    inArray(fileNodes.id, below.map((row) => row.id)),
+  ))
   const [restored] = await tx.select().from(fileNodes).where(eq(fileNodes.id, node.id))
   return restored!
 }
 
-/** Restores trashed items; ids of trashed chats (from undoing a trash in Files) recover the chats. */
-export async function restoreFileNodes(userId: string, ids: string[]): Promise<FileNode[]> {
+/**
+ * Restores trashed items, including items inside trashed folders; ids of trashed chats (from
+ * undoing a trash in Files) recover the chats. With `destination`, everything goes there.
+ */
+export async function restoreFileNodes(userId: string, ids: string[], destination?: { parentId: string | null }): Promise<FileNode[]> {
   const nodeRows = await db.select({ id: fileNodes.id }).from(fileNodes)
     .where(and(eq(fileNodes.ownerUserId, userId), inArray(fileNodes.id, [...new Set(ids)])))
   const nodeIds = new Set(nodeRows.map((row) => row.id))
   const chatIds = ids.filter((id) => !nodeIds.has(id))
   return mutateFileTree(userId, async (tx) => {
+    // Checked first: recovering chats is not part of this transaction.
+    if (destination) await assertDestination(tx, userId, destination.parentId)
     const restored: FileNode[] = []
-    for (const id of nodeIds) restored.push(toFileNode(await restoreNodeInTx(tx, userId, id)))
+    const topLevel = await topLevelIds(tx, userId, [...nodeIds])
+    for (const id of topLevel) restored.push(toFileNode(await restoreNodeInTx(tx, userId, id, destination)))
+    // Items trashed on their own before a folder above them was are not restored with that folder.
+    // Listed too, they go back into it, outer ones first so inner ones find their folders live.
+    const inner = [...nodeIds].filter((id) => !topLevel.includes(id))
+    const depths = new Map(await Promise.all(inner.map(async (id) => [id, (await chainIds(tx, userId, id)).length] as const)))
+    for (const id of inner.sort((a, b) => depths.get(a)! - depths.get(b)!)) {
+      const [row] = await tx.select({ trashedAt: fileNodes.trashedAt }).from(fileNodes).where(eq(fileNodes.id, id))
+      if (row?.trashedAt) restored.push(toFileNode(await restoreNodeInTx(tx, userId, id)))
+    }
     if (chatIds.length) {
       const chatsFolderId = await chatsFolderIdOf(tx, userId)
-      restored.push(...(await recoverChats(userId, chatIds)).map((chat) => chatToFileNode(chat, chatsFolderId)))
+      const recovered = await recoverChats(userId, chatIds)
+      restored.push(...destination
+        ? await moveChatsInTx(tx, userId, recovered.map((chat) => ({ id: chat.id, parentId: destination.parentId })), chatsFolderId)
+        : recovered.map((chat) => chatToFileNode(chat, chatsFolderId)))
     }
     return restored
   }, chatIds.length ? CHAT_SCOPES : undefined)
@@ -404,7 +444,31 @@ export async function listTrash(userId: string): Promise<FileNode[]> {
     isNotNull(fileNodes.trashedAt),
     eq(fileNodes.trashRootId, fileNodes.id),
   )).orderBy(desc(fileNodes.trashedAt))
-  return rows.map(toFileNode)
+  return toFileNodes(db, userId, rows)
+}
+
+/**
+ * A trashed folder's contents as they were trashed with it, and the trashed folders above it up to
+ * the one that was trashed (which the trash lists).
+ */
+export async function listTrashedFolder(userId: string, id: string): Promise<FileListing> {
+  const access = await resolveFileAccess(db, userId, id)
+  const folder = access?.node
+  if (!folder?.trashedAt || !folder.trashRootId || folder.kind !== 'folder') throw notFound('Folder')
+  const [ancestors, children] = await Promise.all([
+    ancestorsOf(db, userId, folder),
+    db.select().from(fileNodes).where(and(
+      eq(fileNodes.ownerUserId, userId),
+      eq(fileNodes.parentId, folder.id),
+      eq(fileNodes.trashRootId, folder.trashRootId),
+      eq(fileNodes.status, 'ready'),
+    )).orderBy(desc(sql`${fileNodes.kind} = 'folder'`), asc(sql`lower(${fileNodes.name})`)),
+  ])
+  return {
+    folder: toFileNode(folder),
+    ancestors: ancestors.filter((row) => row.trashRootId === folder.trashRootId).map(toFileNode),
+    children: await toFileNodes(db, userId, children),
+  }
 }
 
 /**
@@ -462,21 +526,39 @@ export async function emptyTrash(userId: string): Promise<void> {
   }).then((docIds) => publishDocsClosed(docIds, 'deleted'))
 }
 
-/** Maintenance: drop uploads that were never confirmed and trash past its retention window. */
-export async function cleanupFiles(now = new Date()): Promise<void> {
-  const abandoned = await db.select({ id: fileNodes.id, userId: fileNodes.ownerUserId }).from(fileNodes).where(and(
+/**
+ * Maintenance: drop uploads that were never confirmed and trash past the account's retention
+ * setting (all accounts, or just `userId` after it changes its setting).
+ */
+export async function cleanupFiles(now = new Date(), userId?: string): Promise<void> {
+  await ensureUnifiedTrashSince()
+  const abandoned = and(
     eq(fileNodes.status, 'pending'),
     lt(fileNodes.createdAt, new Date(now.getTime() - PENDING_FILE_UPLOAD_TTL_MS)),
-  )).limit(500)
-  const expired = await db.select({ id: fileNodes.id, userId: fileNodes.ownerUserId }).from(fileNodes).where(and(
+  )
+  const expired = and(
     eq(fileNodes.trashRootId, fileNodes.id),
-    lt(fileNodes.trashedAt, new Date(now.getTime() - FILE_TRASH_RETENTION_MS)),
-  )).limit(500)
+    sql`${fileNodes.trashedAt} + ${fileTrashRetentionSql(userPreferences.values)} <= ${now.toISOString()}::timestamptz`,
+    sql`not ${legacyFileTrashKeptSql(fileNodes.trashedAt, now)}`,
+  )
+  const due = (executor: FileExecutor, where: SQL | undefined, filter: SQL | undefined) => executor
+    .select({ id: fileNodes.id, userId: fileNodes.ownerUserId }).from(fileNodes)
+    .leftJoin(userPreferences, eq(userPreferences.userId, fileNodes.ownerUserId))
+    .where(and(where, filter)).limit(500)
+  // Retention is filtered in SQL so items kept indefinitely never crowd expired ones out of the batch.
+  const account = userId ? eq(fileNodes.ownerUserId, userId) : undefined
+  const rows = [...await due(db, abandoned, account), ...await due(db, expired, account)]
   const byUser = new Map<string, string[]>()
-  for (const row of [...abandoned, ...expired]) byUser.set(row.userId, [...byUser.get(row.userId) ?? [], row.id])
-  for (const [userId, ids] of byUser) {
+  for (const row of rows) byUser.set(row.userId, [...byUser.get(row.userId) ?? [], row.id])
+  for (const [owner, ids] of byUser) {
     // One account's storage failure must not block cleanup for the others.
-    await mutateFileTree(userId, (tx) => purgeNodesInTx(tx, userId, ids))
+    await mutateFileTree(owner, async (tx) => {
+      // Checked again under the account's lock: an item restored, or an upload confirmed, since
+      // the batch was read stays.
+      const scope = and(eq(fileNodes.ownerUserId, owner), inArray(fileNodes.id, ids))
+      const still = [...await due(tx, abandoned, scope), ...await due(tx, expired, scope)]
+      return purgeNodesInTx(tx, owner, [...new Set(still.map((row) => row.id))])
+    })
       .then((docIds) => publishDocsClosed(docIds, 'deleted'))
       .catch(() => undefined)
   }

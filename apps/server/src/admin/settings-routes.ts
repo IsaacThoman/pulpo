@@ -15,6 +15,7 @@ import { requireSecretRevealAuth } from '../auth/sensitive-action.js'
 import { db } from '../database/client.js'
 import { applicationSettings, auditEvents, backupJobs, banners, codexLoginAttempts, exportJobs, models, users } from '../database/schema.js'
 import { maintenanceQueue } from '../jobs.js'
+import { UNIFIED_TRASH_SINCE_KEY } from '../trash/unified-since.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { getBlobStore } from '../storage/index.js'
@@ -122,6 +123,7 @@ export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise
     let loggingSettings: DetailedPayloadLoggingSettings | undefined
     if (values.diagnosticCleanup !== undefined) throw new AppError(400, 'runtime_status_read_only', 'Diagnostic cleanup status is managed by the worker')
     if (values.publicUrl !== undefined) throw new AppError(400, 'deployment_setting_read_only', 'PUBLIC_URL is managed by the deployment environment')
+    if (values[UNIFIED_TRASH_SINCE_KEY] !== undefined) throw new AppError(400, 'runtime_status_read_only', 'When the trash was unified is recorded by the server')
     if (values.auth !== undefined) {
       const authSettings = authSettingsSchema.parse(values.auth)
       const referencedModelIds = newAccountModelReferenceIds(authSettings)

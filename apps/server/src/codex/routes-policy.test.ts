@@ -93,6 +93,11 @@ describe('Codex instance settings endpoints', () => {
     expect(state.writes).toEqual([])
   })
 
+  it('keeps when the trash was unified read-only', async () => {
+    await expect(call('PATCH /api/admin/settings', { unifiedTrashSince: '2020-01-01T00:00:00Z' })).rejects.toMatchObject({ statusCode: 400, code: 'runtime_status_read_only' })
+    expect(state.writes).toEqual([])
+  })
+
   it('persists the toggle, audits it, and cancels pending logins without deleting credentials', async () => {
     await call('PATCH /api/admin/settings', { codex: { enabled: false } })
     expect(await call('GET /api/admin/settings')).toEqual({ values: { codex: { enabled: false } } })
