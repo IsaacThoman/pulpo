@@ -13,6 +13,7 @@ import { publishDocsClosed } from './doc-events.js'
 import { chatsFolderIdOf, chatToFileNode, liveChatIds, listFolderChats, moveChatsInTx } from './chat-items.js'
 import { recoverChats, trashChats } from '../chats/trash-service.js'
 import { fileTrashRetentionSql, legacyFileTrashKeptSql } from '../chats/trash.js'
+import { ensureUnifiedTrashSince } from '../trash/unified-since.js'
 import { toFileNodes } from './shortcuts.js'
 import { topSortOrder } from './order.js'
 
@@ -530,6 +531,7 @@ export async function emptyTrash(userId: string): Promise<void> {
  * setting (all accounts, or just `userId` after it changes its setting).
  */
 export async function cleanupFiles(now = new Date(), userId?: string): Promise<void> {
+  await ensureUnifiedTrashSince()
   const abandoned = and(
     eq(fileNodes.status, 'pending'),
     lt(fileNodes.createdAt, new Date(now.getTime() - PENDING_FILE_UPLOAD_TTL_MS)),

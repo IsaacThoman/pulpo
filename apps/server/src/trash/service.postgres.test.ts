@@ -231,6 +231,20 @@ describe.skipIf(!enabled)('account trash', () => {
     expect(await nodeIds()).toEqual([before])
   })
 
+  it('records when the trash was unified if the setting is missing, keeping what was trashed by then', async () => {
+    // As when the worker cleans up before migration 0102 runs, or after restoring an older backup.
+    await db.delete(applicationSettings).where(eq(applicationSettings.key, 'unifiedTrashSince'))
+    await setRetention('instant')
+    const kept = await insertBlob('kept.txt')
+    await trashedAt(kept, 5 * DAY)
+    const [item] = (await listAccountTrash(userId, { files: true })).items
+    expect(Date.parse(item!.purgeAt!) - Date.parse(item!.trashedAt)).toBe(30 * DAY)
+    await cleanupFiles(new Date(), userId)
+    expect(await nodeIds()).toEqual([kept])
+    const [row] = await db.select().from(applicationSettings).where(eq(applicationSettings.key, 'unifiedTrashSince'))
+    expect(Date.now() - Date.parse(row!.value as string)).toBeLessThan(60_000)
+  })
+
   it('keeps a folder restored while cleanup waited for the account', async () => {
     await setRetention('7d')
     const folder = await createFolder(userId, { parentId: null, name: 'Restored' })

@@ -6,6 +6,7 @@ import { getBlobStore } from '../storage/index.js'
 import { releaseWorkspaceForChat } from '../agent/controller.js'
 import { publishStateChange, requestCancellation } from '../responses/events.js'
 import { scheduleChatIndex } from '../episodic-memory/queue.js'
+import { UNIFIED_TRASH_SINCE_KEY } from '../trash/unified-since.js'
 import { finalizeRequestAnalytics } from '../analytics/capture.js'
 
 export const trashRetentionValues = TRASH_RETENTION_VALUES
@@ -39,18 +40,10 @@ function fileRetentionMs(retention: TrashRetention): number | null {
 
 /**
  * Before chats and Files shared one trash, Files kept trashed items 30 days whatever the setting.
- * Items trashed before then (the time migration 0102 stored as `unifiedTrashSince`) keep at least
- * those 30 days, so a shorter retention chosen for chats does not purge them early on upgrade.
+ * Items trashed before then (`unifiedSince`, see trash/unified-since.ts) keep at least those 30
+ * days, so a shorter retention chosen for chats does not purge them early on upgrade.
  */
-export const UNIFIED_TRASH_SINCE_KEY = 'unifiedTrashSince'
 const LEGACY_FILE_TRASH_RETENTION_MS = 30 * 24 * 60 * 60 * 1_000
-
-export async function getUnifiedTrashSince(): Promise<Date | null> {
-  const [row] = await db.select({ value: applicationSettings.value }).from(applicationSettings)
-    .where(eq(applicationSettings.key, UNIFIED_TRASH_SINCE_KEY))
-  const since = typeof row?.value === 'string' ? new Date(row.value) : null
-  return since && !Number.isNaN(since.getTime()) ? since : null
-}
 
 export function filePurgeAtFor(trashedAt: Date, retention: TrashRetention, unifiedSince: Date | null = null): Date | null {
   const duration = fileRetentionMs(retention)
@@ -59,7 +52,10 @@ export function filePurgeAtFor(trashedAt: Date, retention: TrashRetention, unifi
   return new Date(trashedAt.getTime() + (legacy ? Math.max(duration, LEGACY_FILE_TRASH_RETENTION_MS) : duration))
 }
 
-/** SQL: whether an item trashed at `trashedAt` is still within the 30 days it was trashed under. Matches `filePurgeAtFor`. */
+/**
+ * SQL: whether an item trashed at `trashedAt` is still within the 30 days it was trashed under.
+ * Matches `filePurgeAtFor`; callers record the time first (`ensureUnifiedTrashSince`).
+ */
 export function legacyFileTrashKeptSql(trashedAt: SQLWrapper, now: Date): SQL {
   const since = sql`(select (${applicationSettings.value} #>> '{}')::timestamptz from ${applicationSettings} where ${applicationSettings.key} = ${UNIFIED_TRASH_SINCE_KEY})`
   return sql`coalesce(${trashedAt} < ${since} and ${trashedAt} + ${sql.raw(`interval '${LEGACY_FILE_TRASH_RETENTION_MS} milliseconds'`)} > ${now.toISOString()}::timestamptz, false)`
