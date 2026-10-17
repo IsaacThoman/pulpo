@@ -70,6 +70,7 @@ import { billingPlanTier, fetchBillingSummary } from '@/lib/billing'
 import { isDesktopRuntime } from '@/lib/runtime'
 import { ui, uit } from '@/i18n/ui'
 import { FilesNavMenu } from '@/features/files/FilesNavMenu'
+import { NavItemMenu, type NavItemMenuKey, type NavItemMenuState } from '@/features/sidebar/NavItemMenu'
 import { FileNodeIcon } from '@/features/files/FileNodeIcon'
 import { SuggestedBadge } from '@/features/files/FileSuggestion'
 import { registerItemDropZone } from '@/features/files/browser/use-item-drag'
@@ -1521,6 +1522,7 @@ export function Sidebar({
   const [newFolderId, setNewFolderId] = useState<string | null>(null)
   const [activeTooltip, setActiveTooltip] = useState<string | null>(null)
   const [filesMenuPoint, setFilesMenuPoint] = useState<{ x: number; y: number } | null>(null)
+  const [navMenu, setNavMenu] = useState<NavItemMenuState | null>(null)
   const shiftHeld = useShiftHeld()
   const trashOps = useTrashOperations()
   const folderOfList = (list: DropList): string | null => {
@@ -1723,11 +1725,10 @@ export function Sidebar({
   const uploadInput = useRef<HTMLInputElement>(null)
   const uploadTarget = useRef<string | null>(null)
 
-  const startNewChat = () => {
+  const startNewChat = (temporary = false) => {
     useChat.getState().abandonTemporaryChat()
-    navigate('/', {
-      state: newChatLocationState(Boolean(chatId || activeTemporaryChatId), composerModelId),
-    })
+    const state = newChatLocationState(Boolean(chatId || activeTemporaryChatId), composerModelId)
+    navigate('/', { state: temporary ? { ...state, temporary } : state })
     onNavigate()
   }
 
@@ -1798,6 +1799,11 @@ export function Sidebar({
     'flex h-8 cursor-pointer items-center overflow-hidden rounded-lg text-sm text-sidebar-foreground/85 transition-colors hover:bg-sidebar-accent/70',
     collapsed ? 'w-9' : 'w-full'
   )
+
+  const openNavMenu = (key: NavItemMenuKey) => (event: React.MouseEvent) => {
+    event.preventDefault()
+    setNavMenu({ key, x: event.clientX, y: event.clientY })
+  }
 
   const iconBtn = (label: string, onClick: () => void, icon: React.ReactNode, badge?: number, onContextMenu?: (event: React.MouseEvent) => void) => (
     <Tooltip
@@ -1964,17 +1970,25 @@ export function Sidebar({
       >
         {/* primary nav */}
         <div className="space-y-0.5 px-2" data-sidebar-nav>
-          {iconBtn(t('chat.newChat'), startNewChat, <SquarePen className="size-4" />)}
-          {sidebarPins.searchChats && iconBtn(t('sidebar.searchChats'), onOpenSearch, <Search className="size-4" />)}
+          {iconBtn(t('chat.newChat'), () => startNewChat(), <SquarePen className="size-4" />, undefined, openNavMenu('newChat'))}
+          {sidebarPins.searchChats && iconBtn(t('sidebar.searchChats'), onOpenSearch, <Search className="size-4" />, undefined, openNavMenu('searchChats'))}
           {filesEnabled && sidebarPins.files && iconBtn(t('sidebar.files'), () => go('/files'), <FolderIcon className="size-4" />, undefined, (event) => {
             event.preventDefault()
             setFilesMenuPoint({ x: event.clientX, y: event.clientY })
           })}
-          {sidebarPins.usage && iconBtn(t('sidebar.usage'), () => go('/usage'), <BarChart3 className="size-4" />)}
-          {billingEnabled && sidebarPins.billing && iconBtn(t('sidebar.billing'), () => go('/billing'), <CreditCard className="size-4" />)}
-          {sidebarPins.friends && iconBtn(t('sidebar.friends'), () => go('/friends'), <UsersRound className="size-4" />, pendingSocialCount)}
-          {apiKeysEnabled && sidebarPins.apiKeys && iconBtn(t('sidebar.apiKeys'), () => go('/api-keys'), <KeyRound className="size-4" />)}
+          {sidebarPins.usage && iconBtn(t('sidebar.usage'), () => go('/usage'), <BarChart3 className="size-4" />, undefined, openNavMenu('usage'))}
+          {billingEnabled && sidebarPins.billing && iconBtn(t('sidebar.billing'), () => go('/billing'), <CreditCard className="size-4" />, undefined, openNavMenu('billing'))}
+          {sidebarPins.friends && iconBtn(t('sidebar.friends'), () => go('/friends'), <UsersRound className="size-4" />, pendingSocialCount, openNavMenu('friends'))}
+          {apiKeysEnabled && sidebarPins.apiKeys && iconBtn(t('sidebar.apiKeys'), () => go('/api-keys'), <KeyRound className="size-4" />, undefined, openNavMenu('apiKeys'))}
           {filesEnabled && <FilesNavMenu point={filesMenuPoint} onClose={() => setFilesMenuPoint(null)} go={go} />}
+          <NavItemMenu
+            menu={navMenu}
+            onClose={() => setNavMenu(null)}
+            onNewChat={startNewChat}
+            onSearch={onOpenSearch}
+            subscribed={Boolean(billingQuery.data?.subscription)}
+            go={go}
+          />
         </div>
 
         {/* Secondary content stays mounted so every section animates on one timeline. */}
@@ -2064,6 +2078,11 @@ export function Sidebar({
           <DropdownMenuTrigger asChild>
             <button
               className="relative flex h-10 w-full cursor-pointer items-center gap-2 overflow-hidden rounded-lg text-left hover:bg-sidebar-accent"
+              // Right-clicking opens the same menu as clicking.
+              onContextMenu={(event) => {
+                event.preventDefault()
+                setAccountMenuOpen(true)
+              }}
             >
               <span className="flex size-8 shrink-0 items-center justify-center">
                 <ProfileAvatar name={user?.name ?? 'Pulpo user'} avatarUrl={user?.avatarUrl} className="size-7" fallbackClassName="text-[11px]" />
@@ -2130,7 +2149,7 @@ export function Sidebar({
         {spaceMenu && sidebar && (
           <SpaceMenuContent
             folderId={spaceMenu.folderId ?? sidebar.chatsFolderId}
-            onNewChat={spaceMenu.folderId ? undefined : startNewChat}
+            onNewChat={spaceMenu.folderId ? undefined : () => startNewChat()}
             onNewFolder={() => newFolder(spaceMenu.folderId ?? undefined)}
             onUpload={() => {
               uploadTarget.current = spaceMenu.folderId ?? sidebar.chatsFolderId
