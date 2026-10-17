@@ -33,6 +33,10 @@
     "./doc-editor": {
       "types": "./dist/doc-editor/index.d.ts",
       "import": "./dist/doc-editor/index.js"
+    },
+    "./doc-editor/summary": {
+      "types": "./dist/doc-editor/summary.d.ts",
+      "import": "./dist/doc-editor/summary.js"
     }
   },
   "scripts": {

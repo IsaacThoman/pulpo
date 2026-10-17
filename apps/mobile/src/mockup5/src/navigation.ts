@@ -13,4 +13,10 @@ export type RootStackParamList = {
   InstanceDetails: undefined;
   SettingsDetail: { section: SettingsSection };
   Trash: undefined;
+  /** A Files folder; null is the top of My files. */
+  FilesFolder: { folderId: string | null; name?: string };
+  /** A collaborative document. */
+  FileDocument: { fileId: string; name?: string };
+  /** An uploaded Markdown file: read only until it is made editable. */
+  FileMarkdown: { fileId: string; name?: string };
 };

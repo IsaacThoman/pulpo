@@ -73,6 +73,20 @@ public final class PulpoFileClipboardModule: Module {
       }
     }
 
+    View(ItemContextMenuView.self) {
+      Events("onAction", "onItemPress")
+
+      Prop("actions") { (view, value: [ItemContextMenuAction]) in
+        view.setActions(value)
+      }
+      Prop("preview") { (view, value: ItemContextMenuPreview) in
+        view.setPreview(value)
+      }
+      Prop("pressEnabled") { (view, value: Bool) in
+        view.setPressEnabled(value)
+      }
+    }
+
     View(HistoryChatContextMenuView.self) {
       Events("onAction", "onChatPress", "onPreviewRequest", "onPreviewEnd")
 

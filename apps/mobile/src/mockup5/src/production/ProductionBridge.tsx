@@ -115,6 +115,8 @@ function mapChat(chat: ServerChat, messages: PrototypeMessage[] = [], detailLoad
     queuedMessages: chat.queuedMessages,
     deletedAt: chat.deletedAt ? Date.parse(chat.deletedAt) : null,
     purgeAt: chat.purgeAt ? Date.parse(chat.purgeAt) : null,
+    fileScopeIds: chat.fileScopeIds ?? [],
+    fileScopeAccess: chat.fileScopeAccess ?? {},
   }
 }
 
@@ -391,6 +393,9 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
   useEffect(() => {
     configureProductionActions({
       renameChat: (id, title) => offlineCapableMutation({ namespace, entityKey: `chat:${id}`, method: 'PATCH', path: `/api/chats/${id}`, body: { title }, request: () => updateChat(id, { title }) }),
+      // Queued scope changes replay in order; the server merges access per item.
+      setChatFileScope: (id, fileScopeIds) => offlineCapableMutation({ namespace, entityKey: `chat:${id}:file-scope`, method: 'PATCH', path: `/api/chats/${id}`, body: { fileScopeIds }, request: () => updateChat(id, { fileScopeIds }) }),
+      setChatFileAccess: (id, itemId, mode) => offlineCapableMutation({ namespace, entityKey: `chat:${id}:file-access:${itemId}`, method: 'PATCH', path: `/api/chats/${id}`, body: { fileScopeAccess: { [itemId]: mode } }, request: () => updateChat(id, { fileScopeAccess: { [itemId]: mode } }) }),
       togglePin: (id, pinned, sortOrder) => offlineCapableMutation({ namespace, entityKey: `chat:${id}`, method: 'PATCH', path: `/api/chats/${id}`, body: { pinned, sortOrder }, request: () => updateChat(id, { pinned, sortOrder }) }),
       moveChat: (id, folderId, sortOrder) => offlineCapableMutation({ namespace, entityKey: `chat:${id}`, method: 'PATCH', path: `/api/chats/${id}`, body: { folderId, sortOrder }, request: () => updateChat(id, { folderId, sortOrder }) }),
       setChatAutoExpiration: (id, enabled) => offlineCapableMutation({ namespace, entityKey: `chat:${id}:expiration`, method: 'PATCH', path: `/api/chats/${id}`, body: { autoExpire: enabled }, request: () => updateChat(id, { autoExpire: enabled }) }),

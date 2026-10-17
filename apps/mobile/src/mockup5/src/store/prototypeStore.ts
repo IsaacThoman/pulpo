@@ -27,6 +27,9 @@ type PrototypeActions = {
   upsertChat: (chat: PrototypeChat) => void;
   discardChat: (id: string) => void;
   renameChat: (id: string, title: string) => void;
+  /** Replaces which Files items a saved chat's agent works with; access of items that stay is kept. */
+  setChatFileScope: (id: string, ids: string[]) => void;
+  setChatFileAccess: (id: string, itemId: string, mode: import('@pulpo/contracts').FileAccessMode) => void;
   togglePin: (id: string) => void;
   moveChat: (id: string, folderId: string | null) => void;
   setChatAutoExpiration: (id: string, enabled: boolean) => void;
@@ -156,6 +159,23 @@ export const usePrototypeStore = create<PrototypeStore>()((set, get) => ({
     runOptimisticAction(`chat:${chatId}:title`, productionActions.renameChat(chatId, trimmed), () => {
       if (!previous) return;
       set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, title: previous.title, updatedAt: previous.updatedAt } : chat) }));
+    });
+  },
+  setChatFileScope: (chatId, ids) => {
+    const previous = get().chats.find((chat) => chat.id === chatId);
+    if (!previous) return;
+    const access = Object.fromEntries(Object.entries(previous.fileScopeAccess ?? {}).filter(([id]) => ids.includes(id)));
+    set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, fileScopeIds: ids, fileScopeAccess: access } : chat) }));
+    runOptimisticAction(`chat:${chatId}:file-scope`, productionActions.setChatFileScope(chatId, ids), () => {
+      set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, fileScopeIds: previous.fileScopeIds, fileScopeAccess: previous.fileScopeAccess } : chat) }));
+    });
+  },
+  setChatFileAccess: (chatId, itemId, mode) => {
+    const previous = get().chats.find((chat) => chat.id === chatId);
+    if (!previous || !(previous.fileScopeIds ?? []).includes(itemId)) return;
+    set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, fileScopeAccess: { ...chat.fileScopeAccess, [itemId]: mode } } : chat) }));
+    runOptimisticAction(`chat:${chatId}:file-access:${itemId}`, productionActions.setChatFileAccess(chatId, itemId, mode), () => {
+      set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, fileScopeAccess: previous.fileScopeAccess } : chat) }));
     });
   },
   togglePin: (chatId) => {

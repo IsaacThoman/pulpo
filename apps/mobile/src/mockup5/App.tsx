@@ -222,6 +222,10 @@ import { aiIconSource, useCatalogIconCacheRevision } from './src/production/AiIc
 import { SafeMarkdown } from '../components/SafeMarkdown';
 import { ModelWarningBanner } from './src/components/ModelWarningBanner';
 import { AttachmentImageViewer, type AttachmentImagePreviewItem, type AttachmentImageTransitionOrigin } from '../components/AttachmentImageViewer';
+import { useFilesCapabilityRefresh, useFilesEnabled } from '../features/files/availability';
+import { FileDocumentScreen } from '../features/files/screens/FileDocumentScreen';
+import { FileMarkdownScreen } from '../features/files/screens/FileMarkdownScreen';
+import { FilesFolderScreen } from '../features/files/screens/FilesFolderScreen';
 import { timeAgo } from '../features/chat/format';
 import {
   MAX_COMPOSER_ATTACHMENTS,
@@ -1665,6 +1669,9 @@ function PrototypeRoot() {
         <RootStack.Screen name="InstanceDetails" component={InstanceDetailsScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Pulpo Instance', headerBackTitle: 'Account' }} />
         <RootStack.Screen name="SettingsDetail" component={SettingsDetailScreen} options={{ headerShown: Platform.OS === 'ios', headerBackTitle: 'Settings' }} />
         <RootStack.Screen name="Trash" component={TrashScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Trash', headerBackTitle: 'Settings' }} />
+        <RootStack.Screen name="FilesFolder" component={FilesFolderScreen} options={{ headerShown: Platform.OS === 'ios', headerLargeTitle: true, title: 'My files' }} />
+        <RootStack.Screen name="FileDocument" component={FileDocumentScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Document' }} />
+        <RootStack.Screen name="FileMarkdown" component={FileMarkdownScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Markdown' }} />
       </RootStack.Navigator>
     </NavigationContainer>
   );
@@ -2358,6 +2365,12 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     navigation.navigate('Settings');
   }, [abandonActiveTemporaryChat, animatePanel, navigation]);
 
+  const openFilesFromHistory = useCallback(() => {
+    animatePanel(false);
+    Keyboard.dismiss();
+    navigation.navigate('FilesFolder', { folderId: null });
+  }, [animatePanel, navigation]);
+
   const saveActiveTemporaryChat = useCallback(async () => {
     if (!activeChatId || savingTemporaryChatId) return;
     const chat = usePrototypeStore.getState().chats.find((candidate) => candidate.id === activeChatId);
@@ -2811,6 +2824,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
               onSelectChat={selectChat}
               onNewChat={newChatFromHistory}
               onOpenSettings={openSettingsFromHistory}
+              onOpenFiles={openFilesFromHistory}
               onPreviewRequest={loadHistoryPreview}
             />
           </Reanimated.View>
@@ -6212,8 +6226,25 @@ function NativeDrawerSearch({ value, focused, onChange, onFocusChange, fieldRef 
   </SwiftUIHost>;
 }
 
-function NativeFoldersDisclosure({ folders, onCreate, onSelectChat }: {
+/** The drawer's way into Files, styled like the Folders row beneath it. */
+function NativeFilesRow({ onOpen }: { onOpen: () => void }) {
+  const { styles } = useChatStyles();
+  return <SwiftUIHost ignoreSafeArea="all" style={styles.nativeFoldersHeaderHost}>
+    <SwiftUIButton onPress={() => { Haptics.selectionAsync(); onOpen(); }} modifiers={[buttonStyle('plain'), foregroundStyle('primary'), swiftUIAccessibilityLabel('Files')]}>
+      <SwiftUIHStack spacing={12} modifiers={[frame({ maxWidth: Infinity, minHeight: DRAWER_ACTION_HEIGHT }), contentShape(shapes.rectangle())]}>
+        <SwiftUIImage systemName="doc.on.doc" size={17} modifiers={[frame({ width: 20, height: 20 })]} />
+        <SwiftUIText>Files</SwiftUIText>
+        <SwiftUISpacer />
+        <SwiftUIImage systemName="chevron.right" size={13} modifiers={[foregroundStyle('secondary')]} />
+      </SwiftUIHStack>
+    </SwiftUIButton>
+  </SwiftUIHost>;
+}
+
+function NativeFoldersDisclosure({ folders, leading, onCreate, onSelectChat }: {
   folders: Array<{ id: string; name: string; chats: HistoryChatSummary[] }>;
+  /** A row above Folders (Files), inside this view so that appearing later never leaves Folders out of place. */
+  leading?: ReactNode;
   onCreate: () => void;
   onSelectChat: (chat: HistoryChatSummary) => void;
 }) {
@@ -6225,6 +6256,7 @@ function NativeFoldersDisclosure({ folders, onCreate, onSelectChat }: {
   const exiting = reduceMotion ? undefined : FadeOutUp.duration(150);
   const layout = reduceMotion ? undefined : LinearTransition.duration(200);
   return <Reanimated.View layout={layout} style={styles.nativeFoldersDisclosureHost}>
+    {leading}
     <SwiftUIHost ignoreSafeArea="all" style={styles.nativeFoldersHeaderHost}>
       <SwiftUIContextMenu>
         <SwiftUIContextMenu.Trigger>
@@ -6377,7 +6409,7 @@ const HistoryChatRow = memo(function HistoryChatRow({ active, chat, expirationMe
   );
 });
 
-const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpen, loading, onSelectChat, onNewChat, onOpenSettings, onPreviewRequest }: {
+const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpen, loading, onSelectChat, onNewChat, onOpenSettings, onOpenFiles, onPreviewRequest }: {
   chats: HistoryChatSummary[];
   activeChatId: string | null;
   drawerOpen: boolean;
@@ -6385,9 +6417,12 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
   onSelectChat: (chat: HistoryChatSummary) => void;
   onNewChat: () => void;
   onOpenSettings: () => void;
+  onOpenFiles: () => void;
   onPreviewRequest: (chatId: string) => void;
 }) {
   const { styles, COLORS } = useChatStyles();
+  const filesEnabled = useFilesEnabled();
+  useFilesCapabilityRefresh();
   const insets = useSafeAreaInsets();
   const { fontScale } = useWindowDimensions();
   const newChatWidth = Platform.OS === 'android' ? Math.min(240, 160 + Math.max(0, fontScale - 1) * 70) : undefined;
@@ -6594,7 +6629,8 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
         </View>}
 
         <Reanimated.View pointerEvents={searchActive ? 'none' : 'auto'} style={searchActionsAnimatedStyle}>
-          {Platform.OS === 'ios' ? <NativeFoldersDisclosure folders={folderItems} onSelectChat={selectHistoryChat} onCreate={() => { dismissSearch(); Alert.prompt('New folder', 'Create a folder for related chats.', (name) => name.trim() && addFolder(name)); }} /> : <AndroidFoldersDisclosure folders={folderItems} onSelectChat={selectHistoryChat} onCreate={() => { dismissSearch(); promptText({ title: 'New folder', confirmLabel: 'Create', onSubmit: (name) => addFolder(name) }); }} />}
+          {filesEnabled && Platform.OS !== 'ios' ? <MaterialNavigationRow title="Files" icon="doc.on.doc" onPress={() => { dismissSearch(); onOpenFiles(); }} /> : null}
+          {Platform.OS === 'ios' ? <NativeFoldersDisclosure leading={filesEnabled ? <NativeFilesRow onOpen={() => { dismissSearch(); onOpenFiles(); }} /> : null} folders={folderItems} onSelectChat={selectHistoryChat} onCreate={() => { dismissSearch(); Alert.prompt('New folder', 'Create a folder for related chats.', (name) => name.trim() && addFolder(name)); }} /> : <AndroidFoldersDisclosure folders={folderItems} onSelectChat={selectHistoryChat} onCreate={() => { dismissSearch(); promptText({ title: 'New folder', confirmLabel: 'Create', onSubmit: (name) => addFolder(name) }); }} />}
 
         </Reanimated.View>
 

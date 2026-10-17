@@ -18,6 +18,8 @@ import {
   runSafariPasskeyAuthentication,
 } from '../auth/passkeys'
 import { cacheNamespace, clearNamespace, getValue, setValue } from '../data/database'
+import { closeDocSessions } from '../features/files/doc/accountSessions'
+import { clearUploads } from '../features/files/uploads'
 
 const SESSION_TOKEN_KEY = 'pulpo.native.session'
 const GLOBAL_NAMESPACE = 'global'
@@ -93,6 +95,8 @@ async function loadAccounts(instanceUrl: string): Promise<User[]> {
 
 async function clearAccountData(instanceUrl: string, userId: string): Promise<void> {
   const namespace = cacheNamespace(instanceUrl, userId)
+  await closeDocSessions(namespace).catch(() => undefined)
+  await clearUploads(namespace).catch(() => undefined)
   clearComposerDraftCacheNamespace(namespace)
   clearMobileShelf(namespace)
   clearMobileComposerSync(namespace)
