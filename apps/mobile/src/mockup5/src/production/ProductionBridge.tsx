@@ -400,7 +400,12 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
       // Queued scope changes replay in order; the server merges access per item.
       setChatFileScope: (id, fileScopeIds) => offlineCapableMutation({ namespace, entityKey: `chat:${id}:file-scope`, method: 'PATCH', path: `/api/chats/${id}`, body: { fileScopeIds }, request: () => updateChat(id, { fileScopeIds }) }),
       setChatFileAccess: (id, itemId, mode) => offlineCapableMutation({ namespace, entityKey: `chat:${id}:file-access:${itemId}`, method: 'PATCH', path: `/api/chats/${id}`, body: { fileScopeAccess: { [itemId]: mode } }, request: () => updateChat(id, { fileScopeAccess: { [itemId]: mode } }) }),
-      togglePin: (id, pinned, sortOrder) => offlineCapableMutation({ namespace, entityKey: `chat:${id}`, method: 'PATCH', path: `/api/chats/${id}`, body: { pinned, sortOrder }, request: () => updateChat(id, { pinned, sortOrder }) }),
+      // Unpinned, a chat goes back to its folder and the server places it there, above that folder's
+      // Files items too (as on the web).
+      togglePin: (id, pinned, sortOrder, folderId: string | null) => {
+        const patch = pinned ? { pinned, sortOrder } : { pinned, folderId }
+        return offlineCapableMutation({ namespace, entityKey: `chat:${id}`, method: 'PATCH', path: `/api/chats/${id}`, body: patch, request: () => updateChat(id, patch) })
+      },
       moveChat: (id, folderId, sortOrder) => offlineCapableMutation({ namespace, entityKey: `chat:${id}`, method: 'PATCH', path: `/api/chats/${id}`, body: { folderId, sortOrder }, request: () => updateChat(id, { folderId, sortOrder }) }),
       setChatAutoExpiration: (id, enabled) => offlineCapableMutation({ namespace, entityKey: `chat:${id}:expiration`, method: 'PATCH', path: `/api/chats/${id}`, body: { autoExpire: enabled }, request: () => updateChat(id, { autoExpire: enabled }) }),
       trashChat: (id) => offlineCapableMutation({ namespace, entityKey: `chat:${id}`, method: 'DELETE', path: `/api/chats/${id}`, request: () => trashChat(id) }),

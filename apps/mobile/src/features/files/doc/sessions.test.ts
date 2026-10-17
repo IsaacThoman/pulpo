@@ -313,8 +313,52 @@ describe('document sessions on the device', () => {
     handle.release()
     fresh.release()
   })
-})
 
+  it('never marks the copy in sync over a later edit still waiting for a busy database', async () => {
+    const { database, store } = sqlite()
+    const server = new FakeServer()
+    const socket = new FakeSocket(server)
+    const registry = new DocSessionRegistry(NAMESPACE, store, 2)
+    registry.attach(socket as unknown as DocSocket)
+    const handle = registry.acquire(DOC)
+    await vi.advanceTimersByTimeAsync(2_000)
+    // Writes take a second; the second edit's write is queued while the first one's still runs.
+    databaseDelayMs = 1_000
+    type(handle.controller.doc, 'Acknowledged edit')
+    await vi.advanceTimersByTimeAsync(100)
+    expect(handle.controller.getSnapshot().status.state).toBe('synced')
+    // A second edit, made as the connection drops: only this device has it.
+    type(handle.controller.doc, 'Acknowledged edit\n\nOnly on this device')
+    socket.disconnect()
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(ydocToMarkdown(server.doc).trim()).toBe('Acknowledged edit')
+    expect(row(database)?.dirty).toBe(1)
+    handle.release()
+  })
+
+  it('brings edits made in a replaced session\'s view to the server once that view closes', async () => {
+    const { database, store } = sqlite()
+    const server = new FakeServer()
+    applyMarkdownToYDoc(server.doc, 'Original')
+    const socket = new FakeSocket(server)
+    const registry = new DocSessionRegistry(NAMESPACE, store, 2)
+    registry.attach(socket as unknown as DocSocket)
+    const stale = registry.acquire(DOC)
+    await vi.advanceTimersByTimeAsync(2_000)
+    registry.restart(DOC)
+    const fresh = registry.acquire(DOC)
+    // The old view takes a last keystroke before it goes; its session no longer has the room.
+    type(stale.controller.doc, 'Original\n\nTyped in the old view')
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect(fresh.controller.getSnapshot().status.state).toBe('synced')
+    expect(row(database)?.dirty).toBe(1)
+    stale.release()
+    await vi.advanceTimersByTimeAsync(3_000)
+    expect(ydocToMarkdown(server.doc).trim()).toBe('Original\n\nTyped in the old view')
+    expect(row(database)?.dirty).toBe(0)
+    fresh.release()
+  })
+})
 
 describe('the document store', () => {
   it('never drops another session\'s stored edits when compacting', async () => {

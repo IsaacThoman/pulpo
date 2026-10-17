@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => {
     session: { instanceUrl: 'https://pulpo.test', user: { id: 'a' } as { id: string } | null },
     uploadFile: vi.fn(),
     deleteFileNode: vi.fn(async (_id: string) => undefined),
+    fetchFileNode: vi.fn(async (_id: string): Promise<{ node: Record<string, unknown> }> => ({ node: { id: _id, status: 'pending' } })),
     cacheUploadedFile: vi.fn(async () => undefined),
     deleted: [] as string[],
     events: [] as string[],
@@ -47,7 +48,7 @@ vi.mock('../../data/database', () => ({
 }))
 vi.mock('../../store/session', () => ({ useSessionStore: { getState: () => mocks.session } }))
 vi.mock('../../api/client', () => ({ isNetworkError: (error: unknown) => (error as { network?: boolean })?.network === true }))
-vi.mock('./api', () => ({ uploadFile: mocks.uploadFile, deleteFileNode: mocks.deleteFileNode, cacheUploadedFile: mocks.cacheUploadedFile }))
+vi.mock('./api', () => ({ uploadFile: mocks.uploadFile, deleteFileNode: mocks.deleteFileNode, fetchFileNode: mocks.fetchFileNode, cacheUploadedFile: mocks.cacheUploadedFile }))
 vi.mock('./operations', () => ({ refreshFiles: async () => undefined }))
 vi.mock('./display', () => ({ filesErrorMessage: (error: unknown) => (error instanceof Error ? error.message : String(error)) }))
 vi.mock('./toasts', () => ({ useFilesToasts: { getState: () => ({ show: () => {} }) } }))
@@ -65,6 +66,7 @@ beforeEach(() => {
   mocks.session.user = { id: 'a' }
   mocks.uploadFile.mockReset()
   mocks.deleteFileNode.mockReset().mockImplementation(async () => undefined)
+  mocks.fetchFileNode.mockReset().mockImplementation(async (id: string) => ({ node: { id, status: 'pending' } }))
   mocks.cacheUploadedFile.mockReset().mockImplementation(async () => undefined)
   mocks.deleted.length = 0
   mocks.events.length = 0
@@ -95,7 +97,7 @@ describe('Files uploads', () => {
       options.onReserved({ id: 'placeholder-1' })
       throw Object.assign(new Error('offline'), { network: true })
     })
-    mocks.deleteFileNode.mockImplementationOnce(async () => { throw Object.assign(new Error('offline'), { network: true }) })
+    mocks.fetchFileNode.mockImplementationOnce(async () => { throw Object.assign(new Error('offline'), { network: true }) })
     await enqueueUploads(A, null, [photo('two.jpg')], client)
     await settle()
     expect(useFileUploads.getState().items[0]).toMatchObject({ state: 'offline', reservedNodeId: 'placeholder-1' })
@@ -104,6 +106,34 @@ describe('Files uploads', () => {
     await resumeUploads(A, client)
     await settle()
     expect(mocks.deleteFileNode).toHaveBeenLastCalledWith('placeholder-1')
+    expect(useFileUploads.getState().items).toEqual([])
+  })
+
+  it('finishes an upload whose confirmation answer was lost, instead of uploading it again', async () => {
+    mocks.uploadFile.mockImplementationOnce(async (_parent: string | null, _upload: unknown, options: { onReserved: (node: { id: string }) => void }) => {
+      options.onReserved({ id: 'placeholder-4' })
+      // The server confirmed the file, but the answer never arrived.
+      throw Object.assign(new Error('timed out'), { network: true })
+    })
+    mocks.fetchFileNode.mockImplementation(async (id: string) => ({ node: { id, name: 'four.jpg', status: 'ready' } }))
+    await enqueueUploads(A, null, [photo('four.jpg')], client)
+    await settle()
+    expect(useFileUploads.getState().items).toEqual([])
+    expect(mocks.deleteFileNode).not.toHaveBeenCalled()
+    expect(mocks.uploadFile).toHaveBeenCalledTimes(1)
+    expect(mocks.cacheUploadedFile).toHaveBeenCalledWith(expect.objectContaining({ id: 'placeholder-4' }), expect.any(String))
+  })
+
+  it('never deletes a finished earlier attempt, even one trashed since, when resuming', async () => {
+    // As after a relaunch: the queue is read from storage.
+    await clearUploads(A)
+    mocks.kv.set(`${A}:files:uploads`, [{ id: 'old', namespace: A, parentId: null, uri: 'documents/pending-uploads/x/five.jpg', name: 'five.jpg', mimeType: 'image/jpeg', sizeBytes: 10, state: 'waiting', attempts: 1, reservedNodeId: 'placeholder-5' }])
+    mocks.fetchFileNode.mockImplementation(async (id: string) => ({ node: { id, name: 'five.jpg', status: 'ready', trashedAt: '2026-10-17T00:00:00.000Z' } }))
+    await resumeUploads(A, client)
+    await settle()
+    expect(mocks.fetchFileNode).toHaveBeenCalledWith('placeholder-5')
+    expect(mocks.deleteFileNode).not.toHaveBeenCalled()
+    expect(mocks.uploadFile).not.toHaveBeenCalled()
     expect(useFileUploads.getState().items).toEqual([])
   })
 

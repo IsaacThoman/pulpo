@@ -1,13 +1,15 @@
 import type { QueryClient } from '@tanstack/react-query'
 import type { PulpoSocket } from '../../providers/realtimeStore'
 import { registerAccountCleanup } from '../../store/accountCleanup'
+import { clearMarkdownExports } from './api'
 import { bindMobileDocSocket, closeDocSessions } from './doc/accountSessions'
 import { clearUploads, resumeUploads } from './uploads'
 
-// Signing out closes the account's documents and forgets its queued uploads.
+// Signing out closes the account's documents, forgets its queued uploads, and removes exports.
 registerAccountCleanup(async (namespace) => {
   await closeDocSessions(namespace)
   await clearUploads(namespace)
+  clearMarkdownExports()
 })
 
 /**

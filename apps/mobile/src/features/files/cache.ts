@@ -43,6 +43,10 @@ export async function cachedFileUri(namespace: string, nodeId: string, version: 
 export async function recordCachedFile(namespace: string, nodeId: string, version: string, file: File): Promise<void> {
   const quotaBytes = Math.max(usePreferencesStore.getState().attachmentCacheMb * 1024 * 1024, file.size)
   const evicted = await withMobileDatabase(async (database) => {
+    // A copy kept under an earlier name (the path follows it) is replaced, not left behind.
+    const previous = await database.getFirstAsync<{ local_uri: string }>(
+      'SELECT local_uri FROM file_cache WHERE namespace = ? AND node_id = ?', namespace, nodeId,
+    )
     await database.runAsync(
       `INSERT INTO file_cache(namespace, node_id, version, local_uri, size_bytes, last_accessed) VALUES (?, ?, ?, ?, ?, ?)
        ON CONFLICT(namespace, node_id) DO UPDATE SET version = excluded.version, local_uri = excluded.local_uri,
@@ -56,7 +60,8 @@ export async function recordCachedFile(namespace: string, nodeId: string, versio
       attachmentId: row.node_id, localUri: row.local_uri, sizeBytes: row.size_bytes, lastAccessed: row.last_accessed,
     })), quotaBytes)
     for (const record of plan) await database.runAsync('DELETE FROM file_cache WHERE namespace = ? AND node_id = ?', namespace, record.attachmentId)
-    return plan.map((record) => record.localUri)
+    const removed = plan.map((record) => record.localUri)
+    return previous && previous.local_uri !== file.uri ? [...removed, previous.local_uri] : removed
   })
   for (const uri of evicted) {
     try {

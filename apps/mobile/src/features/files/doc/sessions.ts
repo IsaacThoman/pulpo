@@ -52,6 +52,8 @@ export class DocSessionRegistry {
    * unsynced copies are kept, in case the document comes back, but not retried on every reconnect.
    */
   private readonly unreachable = new Set<string>()
+  /** Sessions replaced by `restart` that still have views, by document. */
+  private readonly replaced = new Map<string, Set<Entry>>()
 
   constructor(
     private readonly namespace: string,
@@ -95,6 +97,9 @@ export class DocSessionRegistry {
     if (!entry) return
     this.entries.delete(id)
     entry.stale = true
+    const replaced = this.replaced.get(id) ?? new Set<Entry>()
+    replaced.add(entry)
+    this.replaced.set(id, replaced)
     // Leave the room before the new session joins it on the same socket.
     entry.controller.attach(null)
     if (entry.users === 0) void this.close(entry)
@@ -160,7 +165,9 @@ export class DocSessionRegistry {
       const { status } = controller.getSnapshot()
       if (status === previous) return
       previous = status
-      if (status.state === 'synced') void persistence.markSynced()
+      // While a replaced session of the document is open, edits only it has may be on the device:
+      // the copy stays flagged until they are merged here (see `close`).
+      if (status.state === 'synced' && !this.replaced.has(docId)) void persistence.markSynced()
       // The server answers a trashed document as not found, so "deleted" may only mean trashed:
       // a copy with edits not uploaded yet is kept for when it is restored.
       if (status.state === 'closed' && (status.reason === 'deleted' || status.reason === 'trashed')) {
@@ -201,11 +208,27 @@ export class DocSessionRegistry {
     entry.controller.attach(null)
     await entry.persistence.whenLoaded
     await entry.persistence.flush()
+    if (entry.stale) this.mergeReplaced(entry)
     // Fold the log into one snapshot while the document is in memory, but only when it holds
     // this device's copy; otherwise the snapshot would replace stored edits it lacks.
     const state = entry.persistence.ready ? Y.encodeStateAsUpdate(entry.controller.doc) : null
     entry.controller.destroy()
     if (state) await this.store.compact(this.namespace, entry.docId, state, this.schemaVersion).catch(() => undefined)
+  }
+
+  /**
+   * A replaced session is closing: anything typed in it after it was replaced reaches the server
+   * through the session that replaced it (merging is idempotent), which then shakes hands again so
+   * the copy can be marked in sync once that is confirmed.
+   */
+  private mergeReplaced(entry: Entry): void {
+    const replaced = this.replaced.get(entry.docId)
+    replaced?.delete(entry)
+    if (replaced && !replaced.size) this.replaced.delete(entry.docId)
+    const current = this.entries.get(entry.docId)
+    if (!current || this.destroyed) return
+    Y.applyUpdate(current.controller.doc, Y.encodeStateAsUpdate(entry.controller.doc))
+    if (!this.replaced.has(entry.docId)) current.controller.provider.resync()
   }
 
   /**

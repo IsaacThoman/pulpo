@@ -153,7 +153,8 @@ export async function uploadFile(parentId: string | null, upload: LocalUpload, o
   })
   if (result.status < 200 || result.status >= 300) throw new ApiError(result.status, 'file_upload_failed', `Upload failed (${result.status})`)
   options.assertActive?.()
-  return apiRequest<FileNode>(`/api/files/${reservation.node.id}/confirm`, { method: 'POST' })
+  // The server reads the whole object back to check it, which takes a while for large files.
+  return apiRequest<FileNode>(`/api/files/${reservation.node.id}/confirm`, { method: 'POST', timeoutMs: 120_000 })
 }
 
 /** What identifies an uploaded file's current content; new content changes it. */
@@ -221,13 +222,25 @@ export function downloadFile(node: FileNode): Promise<File> {
   return pending
 }
 
+const EXPORT_DIRECTORY = 'files-export'
+
 /** Writes Markdown to a shareable temporary file named after the document. */
 export function markdownExportFile(name: string, markdown: string): File {
-  const directory = new Directory(Paths.cache, 'files-export')
+  const directory = new Directory(Paths.cache, EXPORT_DIRECTORY)
   directory.create({ idempotent: true, intermediates: true })
   const file = new File(directory, safeName(/\.(md|markdown)$/i.test(name) ? name : `${name}.md`))
   if (file.exists) file.delete()
   file.create()
   file.write(markdown)
   return file
+}
+
+/** Removes exported Markdown (signing out); exports are only kept for the share sheet. */
+export function clearMarkdownExports(): void {
+  try {
+    const directory = new Directory(Paths.cache, EXPORT_DIRECTORY)
+    if (directory.exists) directory.delete()
+  } catch {
+    // Nothing to remove.
+  }
 }

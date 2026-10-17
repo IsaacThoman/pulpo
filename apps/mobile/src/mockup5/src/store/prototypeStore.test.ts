@@ -66,11 +66,12 @@ describe('prototype store', () => {
 
     usePrototypeStore.getState().togglePin('c-kv');
     expect(chat('c-kv')).toMatchObject({ pinned: true, sortOrder: 1 });
-    expect(togglePin).toHaveBeenLastCalledWith('c-kv', true, 1);
+    expect(togglePin).toHaveBeenLastCalledWith('c-kv', true, 1, null);
 
     usePrototypeStore.getState().togglePin('c-streaming');
     expect(chat('c-streaming')).toMatchObject({ pinned: false, sortOrder: 0 });
-    expect(togglePin).toHaveBeenLastCalledWith('c-streaming', false, 0);
+    // The server places it in its folder; the order here is the local guess until it answers.
+    expect(togglePin).toHaveBeenLastCalledWith('c-streaming', false, 0, null);
 
     usePrototypeStore.getState().moveChat('c-streaming', folderId);
     expect(chat('c-streaming')).toMatchObject({ folderId, sortOrder: 0 });

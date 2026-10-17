@@ -4,14 +4,14 @@ import type { NativeStackHeaderItem, NativeStackScreenProps } from '@react-navig
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as Haptics from 'expo-haptics'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react'
-import { ActivityIndicator, Alert, FlatList, Platform, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native'
+import { ActivityIndicator, Alert, BackHandler, FlatList, Platform, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { create } from 'zustand'
 import { getValue, setValue } from '../../../data/database'
 import type { RootStackParamList } from '../../../mockup5/src/navigation'
 import { PageHeader, Screen } from '../../../mockup5/src/components/PrototypeUI'
 import { showActions, promptText } from '../../../platform/materialActions'
-import { MaterialIconButton } from '../../../platform/MaterialUI'
+import { MaterialIconButton, MaterialSearchField } from '../../../platform/MaterialUI'
 import { SymbolView } from '../../../platform/SymbolView'
 import { useAppTheme } from '../../../theme'
 import { refreshFilesCapability, useFilesEnabled, isFilesDisabledError } from '../availability'
@@ -107,6 +107,15 @@ export function FilesFolderScreen({ navigation, route }: Props) {
     // The search field comes back empty (see `headerSearchBarOptions`), so its filter goes too.
     setSearch('')
   }, [])
+  // Android's back button leaves selection before it leaves the folder.
+  useEffect(() => {
+    if (Platform.OS !== 'android' || !selecting) return
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      exitSelection()
+      return true
+    })
+    return () => subscription.remove()
+  }, [exitSelection, selecting])
 
   const newFolder = useCallback(() => promptName('New Folder', 'Untitled folder', 'Create', (name) => {
     void operations.createFolder(folderId, name).then((created) => { if (created) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success) })
@@ -256,12 +265,17 @@ export function FilesFolderScreen({ navigation, route }: Props) {
     }
   }, [listing])
 
-  if (!filesEnabled) return <FilesTurnedOff />
+  if (!filesEnabled) {
+    return Platform.OS === 'android'
+      ? <Screen scroll={false}><PageHeader title={title} onBack={() => navigation.goBack()} /><FilesTurnedOff /></Screen>
+      : <FilesTurnedOff />
+  }
 
   const renderUpload = (upload: QueuedUpload) => (
     <Pressable
       key={upload.id}
-      accessibilityRole="button"
+      // Only a stopped upload offers anything (try again or remove).
+      accessibilityRole={upload.state === 'failed' || upload.state === 'offline' ? 'button' : undefined}
       accessibilityLabel={`${upload.name}, ${upload.state === 'failed' ? `upload failed: ${upload.error}` : upload.state === 'offline' ? 'waiting for a connection' : 'uploading'}`}
       onPress={() => {
         if (upload.state !== 'failed' && upload.state !== 'offline') return
@@ -287,28 +301,44 @@ export function FilesFolderScreen({ navigation, route }: Props) {
     </Pressable>
   )
 
-  const header = (
+  // Android draws its own header, above the list so that it stays in every state.
+  const androidHeader = Platform.OS !== 'android' ? null : selecting ? (
+    <PageHeader
+      title={selectedNodes.length ? `${selectedNodes.length} selected` : 'Select items'}
+      onBack={exitSelection}
+      right={<MaterialIconButton icon="checkmark" label="Done" onPress={exitSelection} />}
+    />
+  ) : (
     <View>
-      {Platform.OS === 'android' ? (
-        <PageHeader
-          title={title}
-          onBack={() => navigation.goBack()}
-          right={<View style={styles.androidActions}>
-            <MaterialIconButton icon="plus" label="Add" onPress={() => showActions('Add', [
-              { label: 'New document', icon: 'doc.badge.plus', onPress: () => { void newDocument() } },
-              { label: 'New folder', icon: 'folder.badge.plus', onPress: newFolder },
-              { label: 'Photo library', icon: 'photo.on.rectangle', onPress: () => { void upload('photos') } },
-              { label: 'Take photo', icon: 'camera', onPress: () => { void upload('camera') } },
-              { label: 'Choose files', icon: 'folder', onPress: () => { void upload('files') } },
-            ])} />
-            <MaterialIconButton icon="ellipsis" label="More" onPress={() => showActions('Sort by', (Object.keys(SORT_LABELS) as FileSortKey[]).map((key) => ({
-              label: SORT_LABELS[key],
+      <PageHeader
+        title={title}
+        onBack={() => navigation.goBack()}
+        right={<View style={styles.androidActions}>
+          <MaterialIconButton icon="plus" label="Add" onPress={() => showActions('Add', [
+            { label: 'New document', icon: 'doc.badge.plus', onPress: () => { void newDocument() } },
+            { label: 'New folder', icon: 'folder.badge.plus', onPress: newFolder },
+            { label: 'Photo library', icon: 'photo.on.rectangle', onPress: () => { void upload('photos') } },
+            { label: 'Take photo', icon: 'camera', onPress: () => { void upload('camera') } },
+            { label: 'Choose files', icon: 'folder', onPress: () => { void upload('files') } },
+          ])} />
+          <MaterialIconButton icon="ellipsis" label="More" onPress={() => showActions(title, [
+            ...(items.length ? [{ label: 'Select', icon: 'checkmark.circle', onPress: () => setSelecting(true) }] : []),
+            ...(Object.keys(SORT_LABELS) as FileSortKey[]).map((key) => ({
+              label: `Sort by ${SORT_LABELS[key].toLowerCase()}`,
               selected: sort.key === key,
               onPress: () => setSort(sort.key === key ? { key, direction: sort.direction === 'asc' ? 'desc' : 'asc' } : { key, direction: key === 'modified' || key === 'size' ? 'desc' : 'asc' }),
-            })))} />
-          </View>}
-        />
-      ) : null}
+            })),
+          ])} />
+        </View>}
+      />
+      <MaterialSearchField value={search} onChange={setSearch} onFocusChange={() => {}} placeholder={folderId === null ? 'Search My files' : `Search ${title}`} />
+    </View>
+  )
+
+  // Android's screen already keeps clear of the bottom inset.
+  const bottomInset = Platform.OS === 'android' ? 0 : insets.bottom
+  const header = (
+    <View>
       {listing.data?.offline ? (
         <View style={[styles.banner, { backgroundColor: theme.fill }]}>
           <SymbolView name="icloud.slash" size={15} tintColor={theme.secondary} />
@@ -359,7 +389,7 @@ export function FilesFolderScreen({ navigation, route }: Props) {
       contentInsetAdjustmentBehavior="automatic"
       keyboardDismissMode="on-drag"
       ListHeaderComponent={header}
-      contentContainerStyle={{ paddingBottom: insets.bottom + (selecting ? 96 : 32) }}
+      contentContainerStyle={{ paddingBottom: bottomInset + (selecting ? 96 : 32) }}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { void onRefresh() }} />}
       ListEmptyComponent={localUploads.length ? null : (
         <View style={styles.empty}>
@@ -391,7 +421,7 @@ export function FilesFolderScreen({ navigation, route }: Props) {
   )
 
   const selectionBar = selecting ? (
-    <View style={[styles.selectionBar, { paddingBottom: insets.bottom + 8, backgroundColor: theme.isDark ? theme.elevated : theme.elevated, borderTopColor: theme.separator }]}>
+    <View style={[styles.selectionBar, { paddingBottom: bottomInset + 8, backgroundColor: theme.isDark ? theme.elevated : theme.elevated, borderTopColor: theme.separator }]}>
       <Text style={[styles.selectionCount, { color: theme.secondary }]}>{selectedNodes.length ? `${selectedNodes.length} selected` : 'Select items'}</Text>
       <View style={styles.selectionActions}>
         {[
@@ -415,6 +445,7 @@ export function FilesFolderScreen({ navigation, route }: Props) {
 
   const body = (
     <View style={[styles.flex, { backgroundColor: theme.background }]}>
+      {androidHeader}
       {content}
       {selectionBar}
       <FilesToastHost bottomOffset={selecting ? 72 : BOTTOM_SEARCH_HEIGHT} />

@@ -101,8 +101,18 @@ class PulpoDocEditorView(context: Context, appContext: AppContext) : ExpoView(co
     val dead = webView
     removeView(dead)
     dead.destroy()
+    // A final state asked of the dead page never comes: the app stops waiting for it.
+    if (finalStatePending) {
+      finalStatePending = false
+      PulpoDocEditorModule.current?.sendFinalState(instanceId, null)
+    }
+    // Torn down meanwhile: nothing is shown any more, so no new page is started.
+    if (destroyed) return
+    finalStateSent = false
     webView = makeWebView()
     addView(webView, LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+    // React Native lays out this view's children only once; the new one is sized here, or it stays empty.
+    measureAndLayout()
     onTerminate(mapOf<String, Any>())
     loadedHtml = null
     html?.let { load(it) }

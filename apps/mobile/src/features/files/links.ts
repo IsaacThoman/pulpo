@@ -57,3 +57,21 @@ export function listenForFilesLinks(linking: {
   void linking.getInitialURL().then((url) => { if (url && active) useFilesLinkInbox.getState().receive(url) }).catch(() => undefined)
   return () => { active = false; listener.remove() }
 }
+
+/**
+ * Opens a link tapped in the app's own content (a reply, a document) in the app when it is a Files
+ * link on this instance, written in full or as a path (as agents write them). Returns whether it did.
+ */
+export function openFilesLinkInApp(href: string, instanceUrl: string): boolean {
+  let url = href
+  if (href.startsWith('/') && !href.startsWith('//')) {
+    try {
+      url = new URL(href, instanceUrl).href
+    } catch {
+      return false
+    }
+  }
+  if (!parseFilesLink(url, instanceUrl)) return false
+  useFilesLinkInbox.getState().receive(url)
+  return true
+}

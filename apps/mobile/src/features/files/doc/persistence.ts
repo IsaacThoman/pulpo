@@ -39,6 +39,8 @@ export class SqliteDocPersistence implements DocPersistence {
       // newer version (after a downgrade) may hold content this editor would drop: it is discarded.
       if (stored.schemaVersion !== null && stored.schemaVersion > schemaVersion) {
         await store.remove(namespace, docId)
+        // No copy is left to wait for.
+        this.ready = !this.destroyed
         return
       }
       this.hadCopy = stored.update !== null
@@ -79,9 +81,10 @@ export class SqliteDocPersistence implements DocPersistence {
    */
   markSynced(): Promise<void> {
     if (!this.ready || this.destroyed) return this.tail
-    // After pending writes, so an earlier local edit cannot set the flag again afterwards.
+    // Queued right behind the pending writes (the database runs operations in call order), so an
+    // earlier edit cannot set the flag again afterwards, and a later one is never cleared by it.
     void this.flush()
-    this.tail = this.tail.then(() => this.store.markSynced(this.namespace, this.docId)).catch(() => undefined)
+    this.tail = this.store.markSynced(this.namespace, this.docId).catch(() => undefined)
     return this.tail
   }
 

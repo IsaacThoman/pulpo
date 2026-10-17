@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseFilesLink, useFilesLinkInbox } from './links'
+import { openFilesLinkInApp, parseFilesLink, useFilesLinkInbox } from './links'
 
 const instance = 'https://pulpo.example'
 const id = '0B0C9C2E-6D2A-4C0B-9E8B-1F2D3C4B5A69'
@@ -27,6 +27,18 @@ describe('Files links', () => {
     useFilesLinkInbox.getState().receive('pulpo://files')
     useFilesLinkInbox.getState().receive(`pulpo://files/d/${id}`)
     expect(useFilesLinkInbox.getState().take()).toBe(`pulpo://files/d/${id}`)
+    expect(useFilesLinkInbox.getState().take()).toBeNull()
+  })
+
+  it('opens Files links tapped in replies in the app, written in full or as a path', () => {
+    useFilesLinkInbox.getState().take()
+    expect(openFilesLinkInApp(`/files/d/${id}`, instance)).toBe(true)
+    expect(useFilesLinkInbox.getState().take()).toBe(`${instance}/files/d/${id}`)
+    expect(openFilesLinkInApp(`${instance}/files/f/${id}`, instance)).toBe(true)
+    expect(useFilesLinkInbox.getState().take()).toBe(`${instance}/files/f/${id}`)
+    expect(openFilesLinkInApp('https://example.com/files/d/x', instance)).toBe(false)
+    expect(openFilesLinkInApp(`//elsewhere.example/files/d/${id}`, instance)).toBe(false)
+    expect(openFilesLinkInApp('/settings', instance)).toBe(false)
     expect(useFilesLinkInbox.getState().take()).toBeNull()
   })
 })

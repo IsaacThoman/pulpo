@@ -3774,7 +3774,7 @@ const MessageRow = memo(function MessageRow({
                 ))}
               </>}</SentAttachmentWindow>
             )}
-            {filesNamespace && filesEnabled && !streaming && message.status === 'complete' && fileChangesItem(message.outputItems) ? (
+            {filesNamespace && filesEnabled && !streaming && fileChangesItem(message.outputItems) ? (
               <FileChangesCard namespace={filesNamespace} responseId={message.id} />
             ) : null}
             {costLimit?.status === 'awaiting_confirmation' && streaming && !timeline.some((segment) => segment.kind === 'activity' && segment.steps.some((step) => step.kind === 'cost_limit')) && <View style={styles.workRow}><Pause color={COLORS.muted} size={13} /><Text style={styles.workRowTitle}>{costLimitLabel(costLimit, true)}</Text></View>}

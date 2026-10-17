@@ -244,7 +244,7 @@ export function MaterialSuggestionButton({ label, onPress, fullWidth, containerC
   </Host>;
 }
 
-export function MaterialSearchField({ value: query, onChange, onFocusChange, fieldRef }: SearchFieldProps) {
+export function MaterialSearchField({ value: query, onChange, onFocusChange, fieldRef, placeholder = 'Search chats' }: SearchFieldProps) {
   const nativeRef = useRef<TextFieldRef>(null);
   const focused = useRef(false);
   const blur = async () => {
@@ -265,7 +265,7 @@ export function MaterialSearchField({ value: query, onChange, onFocusChange, fie
     <TextField ref={nativeRef} value={value} onValueChange={change} onFocusChanged={(next) => { focused.current = next; onFocusChange(next); }} singleLine
       keyboardOptions={{ capitalization: 'none', autoCorrectEnabled: false, imeAction: 'search' }}
       keyboardActions={{ onSearch: () => { Keyboard.dismiss(); void blur(); } }} modifiers={[fillMaxWidth()]}>
-      <TextField.Placeholder><Text>Search chats</Text></TextField.Placeholder>
+      <TextField.Placeholder><Text>{placeholder}</Text></TextField.Placeholder>
       <TextField.LeadingIcon><Icon source={materialIcon('magnifyingglass')} size={24} /></TextField.LeadingIcon>
       {query.length > 0 ? <TextField.TrailingIcon><IconButton onClick={clear}><Icon source={materialIcon('xmark')} size={24} contentDescription="Clear search" /></IconButton></TextField.TrailingIcon> : null}
     </TextField>

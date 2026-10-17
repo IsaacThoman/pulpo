@@ -1,3 +1,4 @@
+import type { FileNode } from '@pulpo/contracts'
 import type { QueryClient } from '@tanstack/react-query'
 import * as Crypto from 'expo-crypto'
 import * as DocumentPicker from 'expo-document-picker'
@@ -7,7 +8,7 @@ import { create } from 'zustand'
 import { isNetworkError } from '../../api/client'
 import { cacheNamespace, getValue, setValue } from '../../data/database'
 import { useSessionStore } from '../../store/session'
-import { cacheUploadedFile, deleteFileNode, uploadFile, type LocalUpload } from './api'
+import { cacheUploadedFile, deleteFileNode, fetchFileNode, uploadFile, type LocalUpload } from './api'
 import { filesErrorMessage } from './display'
 import { refreshFiles } from './operations'
 import { useFilesToasts } from './toasts'
@@ -15,13 +16,13 @@ import { useFilesToasts } from './toasts'
 /**
  * Files uploads. Picked files are copied into the app's own storage and recorded first, so an
  * upload interrupted by going offline, backgrounding, or the app ending resumes on the next
- * launch. A resumed upload releases the reservation its interrupted attempt left behind.
+ * launch. A resumed upload first settles the reservation its interrupted attempt left behind.
  */
 export interface QueuedUpload extends LocalUpload {
   id: string
   namespace: string
   parentId: string | null
-  /** The placeholder the server made for the attempt in progress, released if it is retried. */
+  /** The placeholder the server made for the attempt in progress, settled before it is retried. */
   reservedNodeId?: string
   /** `offline`: waiting for a connection; `resumeUploads` (on reconnect or launch) retries it. */
   state: 'waiting' | 'uploading' | 'offline' | 'failed'
@@ -104,15 +105,37 @@ function pump(): void {
   }
 }
 
-/** Releases a placeholder; resolves whether it is gone (so the queue can forget it). */
-async function release(nodeId: string): Promise<boolean> {
+const statusOf = (error: unknown) => (error as { status?: number } | null)?.status
+
+/**
+ * What became of an earlier attempt's placeholder. If its confirmation went through but the answer
+ * was lost, the file is there: the upload is done, and the file is left alone even if it has been
+ * trashed since. A placeholder still waiting for its bytes is released. `kept` means the server
+ * could not be asked (e.g. offline), so the next attempt asks again.
+ */
+async function settleReservation(nodeId: string): Promise<{ uploaded: FileNode } | 'released' | 'kept'> {
+  let node: FileNode
+  try {
+    node = (await fetchFileNode(nodeId)).node
+  } catch (error) {
+    return statusOf(error) === 404 ? 'released' : 'kept'
+  }
+  if (node.status === 'ready') return { uploaded: node }
   try {
     await deleteFileNode(nodeId)
-    return true
+    return 'released'
   } catch (error) {
-    // Already gone counts as released.
-    return (error as { status?: number }).status === 404
+    return statusOf(error) === 404 ? 'released' : 'kept'
   }
+}
+
+/** The upload is on the server: forget it first, so ending the app now cannot upload it again. */
+async function complete(item: QueuedUpload, node: FileNode): Promise<void> {
+  remove(item.id)
+  await persist(item.namespace)
+  await cacheUploadedFile(node, item.uri).catch(() => undefined)
+  discardStaged(item.uri)
+  if (queryClient) await refreshFiles(queryClient, item.namespace)
 }
 
 async function runUpload(item: QueuedUpload): Promise<void> {
@@ -120,9 +143,15 @@ async function runUpload(item: QueuedUpload): Promise<void> {
   let reservedNodeId = item.reservedNodeId
   try {
     assertActive()
-    // An earlier attempt's placeholder would otherwise take the name and wait 24 hours to be purged.
+    // An earlier attempt's placeholder would otherwise take the name and wait 24 hours to be purged,
+    // unless that attempt in fact finished.
     if (reservedNodeId) {
-      if (!(await release(reservedNodeId))) throw Object.assign(new Error('The earlier attempt could not be released'), { retry: true })
+      const earlier = await settleReservation(reservedNodeId)
+      if (earlier === 'kept') throw Object.assign(new Error('The earlier attempt could not be checked'), { retry: true })
+      if (earlier !== 'released') {
+        await complete(item, earlier.uploaded)
+        return
+      }
       reservedNodeId = undefined
       update(item.id, { reservedNodeId: undefined })
     }
@@ -135,21 +164,23 @@ async function runUpload(item: QueuedUpload): Promise<void> {
         if (queryClient) void refreshFiles(queryClient, item.namespace)
       },
     })
-    // Done: forget the item first, so ending the app now cannot upload it again.
-    remove(item.id)
-    await persist(item.namespace)
-    await cacheUploadedFile(node, item.uri).catch(() => undefined)
-    discardStaged(item.uri)
-    if (queryClient) await refreshFiles(queryClient, item.namespace)
+    await complete(item, node)
   } catch (error) {
-    if (error instanceof AccountChangedError) {
+    if (error instanceof AccountChangedError || activeNamespace() !== item.namespace) {
       // The placeholder belongs to the other account; it is released when that account resumes.
       update(item.id, { state: 'waiting', reservedNodeId })
       await persist(item.namespace)
       return
     }
-    // Forget the placeholder only once it is released; the next attempt releases it otherwise.
-    if (reservedNodeId && await release(reservedNodeId)) reservedNodeId = undefined
+    // Forget the placeholder only once it is released; the next attempt settles it otherwise.
+    if (reservedNodeId) {
+      const earlier = await settleReservation(reservedNodeId)
+      if (earlier === 'released') reservedNodeId = undefined
+      else if (earlier !== 'kept') {
+        await complete(item, earlier.uploaded)
+        return
+      }
+    }
     const offline = isNetworkError(error) || (error as { retry?: boolean }).retry === true
     update(item.id, {
       reservedNodeId,
@@ -207,7 +238,8 @@ export async function cancelUpload(id: string): Promise<void> {
   if (!item || item.state === 'uploading') return
   remove(id)
   discardStaged(item.uri)
-  if (item.reservedNodeId) await deleteFileNode(item.reservedNodeId).catch(() => undefined)
+  // Only a placeholder still waiting for its bytes is deleted; a finished upload stays.
+  if (item.reservedNodeId) await settleReservation(item.reservedNodeId)
   await persist(item.namespace)
 }
 

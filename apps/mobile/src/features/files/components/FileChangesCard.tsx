@@ -146,7 +146,7 @@ export function FileChangesCard({ namespace, responseId }: { namespace: string; 
                 </>}
               </View>
             ) : pendingSuggestion(change) ? (
-              <Pressable accessibilityRole="button" onPress={() => { void open(change) }} style={[styles.reviewButton, { backgroundColor: theme.fillStrong }]}>
+              <Pressable accessibilityLabel={`Review suggestions in ${change.name}`} accessibilityRole="button" onPress={() => { void open(change) }} style={[styles.reviewButton, { backgroundColor: theme.fillStrong }]}>
                 <Text style={[styles.reviewLabel, { color: theme.blue }]}>Review</Text>
               </Pressable>
             ) : null}

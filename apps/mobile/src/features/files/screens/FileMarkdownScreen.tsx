@@ -12,6 +12,8 @@ import { MaterialButton } from '../../../platform/MaterialUI'
 import { SymbolView } from '../../../platform/SymbolView'
 import { useAppTheme } from '../../../theme'
 import { convertToDoc, downloadFile, fetchConversionPreview } from '../api'
+import { useFilesEnabled } from '../availability'
+import { FilesTurnedOff } from '../components/FilesTurnedOff'
 import { filesErrorMessage } from '../display'
 import { shareFileItem } from '../open'
 import { refreshFiles } from '../operations'
@@ -71,12 +73,13 @@ export function FileMarkdownScreen({ navigation, route }: Props) {
   const insets = useSafeAreaInsets()
   const queryClient = useQueryClient()
   const namespace = useFilesNamespace()
-  const nodeQuery = useQuery({ ...fileNodeQuery(namespace, route.params.fileId), enabled: Boolean(namespace) })
+  const filesEnabled = useFilesEnabled()
+  const nodeQuery = useQuery({ ...fileNodeQuery(namespace, route.params.fileId), enabled: Boolean(namespace) && filesEnabled })
   const node = nodeQuery.data?.node
   const content = useQuery({
     queryKey: [...filesQueryKeys.node(namespace, route.params.fileId), 'content', node?.updatedAt ?? ''],
     queryFn: async () => (await downloadFile(node!)).text(),
-    enabled: Boolean(node) && node?.kind === 'blob',
+    enabled: Boolean(node) && node?.kind === 'blob' && filesEnabled,
   })
   const [preview, setPreview] = useState<FileConversionPreview | null>(null)
   const [busy, setBusy] = useState(false)
@@ -117,7 +120,7 @@ export function FileMarkdownScreen({ navigation, route }: Props) {
       title: node?.name ?? route.params.name ?? 'Markdown',
       headerShown: Platform.OS === 'ios',
       headerBackTitle: 'Back',
-      unstable_headerRightItems: Platform.OS === 'ios' && node ? () => [
+      unstable_headerRightItems: Platform.OS === 'ios' && node && filesEnabled ? () => [
         { type: 'button', label: 'Share', icon: { type: 'sfSymbol', name: 'square.and.arrow.up' }, onPress: () => { void shareFileItem(node).catch((error) => Alert.alert('Couldn’t share', filesErrorMessage(error))) } },
         { type: 'button', label: busy ? 'Opening…' : 'Edit', variant: 'prominent', disabled: busy || Boolean(node.trashedAt), onPress: () => { void edit() } },
       ] : undefined,
@@ -127,9 +130,9 @@ export function FileMarkdownScreen({ navigation, route }: Props) {
   return (
     <View style={[styles.flex, { backgroundColor: theme.isDark ? theme.background : theme.elevated, paddingTop: Platform.OS === 'android' ? insets.top : 0 }]}>
       {Platform.OS === 'android' ? (
-        <PageHeader title={node?.name ?? 'Markdown'} onBack={() => navigation.goBack()} right={node ? <MaterialButton label="Edit" onPress={() => { void edit() }} /> : null} />
+        <PageHeader title={node?.name ?? 'Markdown'} onBack={() => navigation.goBack()} right={node && filesEnabled ? <MaterialButton label="Edit" onPress={() => { void edit() }} /> : null} />
       ) : null}
-      {content.data !== undefined ? (
+      {!filesEnabled ? <FilesTurnedOff /> : content.data !== undefined ? (
         <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 24 }]}>
           <SafeMarkdown>{content.data}</SafeMarkdown>
         </ScrollView>
