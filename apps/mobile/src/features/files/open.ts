@@ -60,7 +60,8 @@ export function useOpenFileItem() {
         case 'folder': navigation.push('FilesFolder', { folderId: target.id, name: target.name }); return
         case 'document': navigation.push('FileDocument', { fileId: target.id, name: target.name }); return
         case 'markdown': navigation.push('FileMarkdown', { fileId: target.id, name: target.name }); return
-        case 'chat': navigation.navigate('Chat', { chatId: target.id }); return
+        // Back to the one chat screen, which opens the chat (pushing would stack a second one).
+        case 'chat': navigation.popTo('Chat', { chatId: target.id }); return
         case 'unavailable': Alert.alert('Can’t open this item', target.reason); return
         case 'file': {
           const file = target.node ?? (await fetchFileNode(target.id)).node

@@ -16,6 +16,7 @@ import { MaterialIconButton } from '../../../platform/MaterialUI'
 import type { RootStackParamList } from '../../../mockup5/src/navigation'
 import { promptText } from '../../../platform/materialActions'
 import { SymbolView } from '../../../platform/SymbolView'
+import { useSessionStore } from '../../../store/session'
 import { useAppTheme } from '../../../theme'
 import { useDocSchemaSupported, useFilesEnabled } from '../availability'
 import { FilesToastHost } from '../components/FilesToastHost'
@@ -29,6 +30,7 @@ import { docEditorAvailable, DocEditorView, type DocEditorHandle } from '../edit
 import { deviceSessionLabel } from '../editor/presentation'
 import { fetchDocMarkdown } from '../api'
 import { filesErrorMessage } from '../display'
+import { openFilesLinkInApp } from '../links'
 import { shareFileItem } from '../open'
 import { useFileOperations } from '../operations'
 import { fileNodeQuery, filesQueryKeys } from '../queries'
@@ -327,6 +329,8 @@ export function FileDocumentScreen({ navigation, route }: Props) {
       onStateChange={setEditorState}
       onResolved={onResolved}
       onLink={(href) => {
+        // Files links on this instance open here, as on the web.
+        if (openFilesLinkInApp(href, useSessionStore.getState().instanceUrl)) return
         if (/^https?:/i.test(href)) void WebBrowser.openBrowserAsync(href).catch(() => undefined)
         else if (/^mailto:/i.test(href)) void Linking.openURL(href).catch(() => undefined)
       }}

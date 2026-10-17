@@ -234,6 +234,7 @@ import { isPinnedFileEntry, pinnedFileItemsCeiling, unpinFileItem, usePinnedFile
 import { PinnedFileRow } from '../features/files/components/PinnedFileRow';
 import { filesErrorMessage } from '../features/files/display';
 import { useFilesNamespace } from '../features/files/useFilesNamespace';
+import { fileNodeQuery } from '../features/files/queries';
 import { fileChangesItem } from '@pulpo/client-core/files';
 import { FileDocumentScreen } from '../features/files/screens/FileDocumentScreen';
 import { FileMarkdownScreen } from '../features/files/screens/FileMarkdownScreen';
@@ -1684,7 +1685,7 @@ function PrototypeRoot() {
         <RootStack.Screen name="Passkeys" component={PasskeysScreen} options={{ headerShown: false }} />
         <RootStack.Screen name="InstanceDetails" component={InstanceDetailsScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Pulpo Instance', headerBackTitle: 'Account' }} />
         <RootStack.Screen name="SettingsDetail" component={SettingsDetailScreen} options={{ headerShown: Platform.OS === 'ios', headerBackTitle: 'Settings' }} />
-        <RootStack.Screen name="Trash" component={TrashScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Trash', headerBackTitle: 'Settings' }} />
+        <RootStack.Screen name="Trash" component={TrashScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Trash' }} />
         <RootStack.Screen name="FilesFolder" component={FilesFolderScreen} options={{ headerShown: Platform.OS === 'ios', headerLargeTitle: true, title: 'My files' }} />
         <RootStack.Screen name="FileDocument" component={FileDocumentScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Document' }} />
         <RootStack.Screen name="FileMarkdown" component={FileMarkdownScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Markdown' }} />
@@ -2321,17 +2322,26 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   }, [activeChatId, animatePanel, navigation, newChat, pendingImports, productionInstanceUrl, productionScopeReady, productionUserId]);
   // Files links (pulpo://files/…) open their screen once the account's data is ready.
   const filesLink = useFilesLinkInbox((state) => state.pending);
+  const openFileItem = useOpenFileItem();
   useEffect(() => {
-    if (!filesLink || !productionScopeReady) return;
+    if (!filesLink || !productionScopeReady || !productionUserId) return;
     const url = useFilesLinkInbox.getState().take();
     const destination = url ? parseFilesLink(url, productionInstanceUrl) : null;
     if (!destination) return;
     animatePanel(false);
     Keyboard.dismiss();
     if (destination.type === 'trash') navigation.navigate('Trash');
-    else if (destination.type === 'document') navigation.push('FileDocument', { fileId: destination.id });
-    else navigation.push('FilesFolder', { folderId: destination.id });
-  }, [animatePanel, filesLink, navigation, productionInstanceUrl, productionScopeReady]);
+    else if (destination.type === 'folder') navigation.push('FilesFolder', { folderId: destination.id });
+    else {
+      // As on the web, a file link is any kind of file: what it is decides where it opens. One that
+      // can't be looked up (offline, not seen before) opens as a document, which may be on the device.
+      const fileId = destination.id;
+      void queryClient.fetchQuery(fileNodeQuery(cacheNamespace(productionInstanceUrl, productionUserId), fileId)).then(
+        ({ node }) => openFileItem(node),
+        () => navigation.push('FileDocument', { fileId }),
+      );
+    }
+  }, [animatePanel, filesLink, navigation, openFileItem, productionInstanceUrl, productionScopeReady, productionUserId, queryClient]);
   const shortcutDestination = useShortcutInbox((state) => state.pending[0]);
   const shortcutActions = useRef({ animatePanel, dismissComposer, finishExistingChatTransition, interruptDrawerTransition, navigation, newChat, abandonActiveTemporaryChat });
   shortcutActions.current = { animatePanel, dismissComposer, finishExistingChatTransition, interruptDrawerTransition, navigation, newChat, abandonActiveTemporaryChat };
@@ -2400,7 +2410,6 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     navigation.navigate('FilesFolder', { folderId: null });
   }, [animatePanel, navigation]);
 
-  const openPinnedFileItem = useOpenFileItem();
   const openFileItemFromHistory = useCallback((node: FileNode) => {
     const target = fileOpenTarget(node);
     const chat = target.type === 'chat' ? historyChats.find((item) => item.id === target.id) : undefined;
@@ -2411,8 +2420,8 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     }
     animatePanel(false);
     Keyboard.dismiss();
-    void openPinnedFileItem(node);
-  }, [animatePanel, historyChats, openPinnedFileItem, selectChat]);
+    void openFileItem(node);
+  }, [animatePanel, historyChats, openFileItem, selectChat]);
 
   const saveActiveTemporaryChat = useCallback(async () => {
     if (!activeChatId || savingTemporaryChatId) return;

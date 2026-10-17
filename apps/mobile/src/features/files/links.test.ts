@@ -8,9 +8,9 @@ describe('Files links', () => {
   it('opens My files, folders, documents, and the trash', () => {
     expect(parseFilesLink('pulpo://files', instance)).toEqual({ type: 'folder', id: null })
     expect(parseFilesLink(`pulpo://files/f/${id}`, instance)).toEqual({ type: 'folder', id: id.toLowerCase() })
-    expect(parseFilesLink(`pulpo://files/d/${id}`, instance)).toEqual({ type: 'document', id: id.toLowerCase() })
+    expect(parseFilesLink(`pulpo://files/d/${id}`, instance)).toEqual({ type: 'file', id: id.toLowerCase() })
     expect(parseFilesLink('pulpo://files/trash', instance)).toEqual({ type: 'trash' })
-    expect(parseFilesLink(`${instance}/files/d/${id}`, instance)).toEqual({ type: 'document', id: id.toLowerCase() })
+    expect(parseFilesLink(`${instance}/files/d/${id}`, instance)).toEqual({ type: 'file', id: id.toLowerCase() })
   })
 
   it('ignores other hosts, instances, and malformed ids', () => {
