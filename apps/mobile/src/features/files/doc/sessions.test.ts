@@ -547,6 +547,31 @@ describe('document sessions on the device', () => {
     await registry.destroy()
   })
 
+  it('discards sessions replaced by Retry or Restore too when the document becomes a file', async () => {
+    const { database, store } = sqlite()
+    const server = new FakeServer()
+    const socket = new FakeSocket(server)
+    const registry = new DocSessionRegistry(NAMESPACE, store, 2)
+    registry.attach(socket as unknown as DocSocket)
+    const lower = registry.acquire(DOC)
+    await vi.advanceTimersByTimeAsync(2_000)
+    type(lower.controller.doc, 'Original')
+    await vi.advanceTimersByTimeAsync(1_000)
+    // Retry on another view of the document replaces the session the lower view still holds.
+    registry.restart(DOC)
+    const upper = registry.acquire(DOC)
+    await vi.advanceTimersByTimeAsync(2_000)
+    socket.deliver('doc.closed', { docId: DOC.toLowerCase(), reason: 'converted' })
+    await vi.advanceTimersByTimeAsync(500)
+    type(lower.controller.doc, 'Original\n\nTyped in the lower view')
+    await vi.advanceTimersByTimeAsync(1_000)
+    upper.release()
+    lower.release()
+    await vi.advanceTimersByTimeAsync(LINGER_MS + 1_000)
+    expect(row(database)).toBeUndefined()
+    await registry.destroy()
+  })
+
 })
 
 describe('the document store', () => {

@@ -56,12 +56,13 @@ export class SqliteDocPersistence implements DocPersistence {
         }
         await store.remove(namespace, docId)
         // No copy is left to wait for.
-        this.ready = !this.destroyed
+        this.ready = !this.destroyed && !this.frozen
         return
       }
       this.hadCopy = stored.update !== null
       if (stored.update) Y.applyUpdate(doc, stored.update, this)
-      this.ready = !this.destroyed
+      // Discarded while loading (see `discard`): never ready, so never compacted or marked in sync.
+      this.ready = !this.destroyed && !this.frozen
     }).catch(() => undefined).finally(() => {
       this.loaded = true
       // Updates that arrived while loading (from the server) are written now.

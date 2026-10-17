@@ -226,8 +226,12 @@ export class DocSessionRegistry {
       // starts afresh under the same id, so this copy must never reach it.
       if (status.state === 'closed' && status.reason === 'converted') {
         this.unreachable.add(docId)
-        entry.discarded = true
-        void persistence.discard()
+        // Sessions replaced by Retry or Restore are no longer in the room to hear it themselves.
+        for (const gone of [entry, ...(this.replaced.get(docId) ?? [])]) {
+          gone.discarded = true
+          void gone.persistence.discard()
+        }
+        this.replaced.delete(docId)
       }
       if (entry.users === 0 && !entry.stale && done(entry)) this.closeSoon(entry, 0)
     })
