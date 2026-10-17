@@ -177,8 +177,12 @@ function safeName(name: string): string {
   return cleaned.slice(-120) || 'file'
 }
 
+const ITEM_ID = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i
+
 function cacheDestination(node: Pick<FileNode, 'id' | 'name'>): File {
-  const directory = new Directory(Paths.cache, 'files', node.id)
+  // The id names a directory, so it must be one (never a path from an untrusted server).
+  if (!ITEM_ID.test(node.id)) throw new Error('This item’s id isn’t valid.')
+  const directory = new Directory(Paths.cache, 'files', node.id.toLowerCase())
   directory.create({ idempotent: true, intermediates: true })
   return new File(directory, safeName(node.name))
 }
@@ -222,6 +226,11 @@ export function downloadFile(node: FileNode): Promise<File> {
     const destination = cacheDestination(node)
     if (destination.exists) destination.delete()
     const file = await File.downloadFileAsync(url, destination, { idempotent: true, headers: nativeAuthorizationHeaders(url) })
+    // Signed out (or switched) meanwhile: that account's files were removed, and this one goes too.
+    if (currentNamespace() !== namespace) {
+      if (file.exists) file.delete()
+      throw new Error('The account changed while the file was downloading.')
+    }
     if (namespace) await recordCachedFile(namespace, node.id, version, file)
     return file
   })()
