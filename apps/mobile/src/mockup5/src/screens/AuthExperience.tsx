@@ -3,7 +3,7 @@ import { useSubpageBack } from '../../../platform/useSubpageBack';
 import { DeleteAccountAction } from '../../../components/DeleteAccount';
 import type { ComponentProps, PropsWithChildren, ReactNode } from 'react';
 import { useState } from 'react';
-import { ActivityIndicator, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SymbolView } from '../../../platform/SymbolView';
 import { useAppTheme } from '../theme';
@@ -11,6 +11,7 @@ import { normalizeInstanceUrl } from '../domain';
 import { mobileApi } from '../../../api/client';
 import { NativePasskeyError, PasskeyCancelledError } from '../../../auth/passkeys';
 import { useSessionStore } from '../../../store/session';
+import { unsyncedEditsNote } from '../../../features/files/doc/accountSessions';
 import { FORM_CONTENT_MAX } from '../../../responsive';
 
 type AuthPage = 'login' | 'login-options' | 'two-factor' | 'signup' | 'forgot' | 'instance';
@@ -194,11 +195,27 @@ export function AuthExperience() {
       setError(nextError instanceof Error ? nextError.message : 'Invalid URL.');
       return;
     }
-    void run(async () => {
+    // The same server: nothing to switch, and nobody is signed out.
+    if (normalized.replace(/\/+$/, '') === productionInstanceUrl.replace(/\/+$/, '')) {
+      setInstanceUrl(normalized);
+      setPage('login');
+      return;
+    }
+    const change = () => void run(async () => {
       await switchInstance(normalized);
       setInstanceUrl(normalized);
       setPage('login');
     });
+    if (!signedInAccounts.length) {
+      change();
+      return;
+    }
+    // Every signed-in account belongs to this server, so switching signs them all out.
+    void unsyncedEditsNote(productionInstanceUrl, signedInAccounts.map((account) => account.id)).then((note) => Alert.alert(
+      'Change server?',
+      `Using another server signs out of every account on this one.${note}`,
+      [{ text: 'Cancel', style: 'cancel' }, { text: 'Change Server', style: 'destructive', onPress: change }],
+    ));
   };
   const refreshApproval = async () => {
     setError('');

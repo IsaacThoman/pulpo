@@ -43,7 +43,7 @@ import { apiRequest, mobileApi } from '../../../api/client';
 import { useSessionStore } from '../../../store/session';
 import { useRealtimeStore } from '../../../providers/realtimeStore';
 import { cacheNamespace } from '../../../data/database';
-import { unsyncedDocumentCount } from '../../../features/files/doc/accountSessions';
+import { unsyncedEditsNote } from '../../../features/files/doc/accountSessions';
 import { queryKeys } from '../../../data/queries';
 import { deleteTrashedFiles, fetchTrashedFiles, restoreTrashedFiles, trashDeletesLabel, trashedFileIcon, trashedFilesQueryKey } from '../../../features/trash/trashedFiles';
 import { canUseNativePasskeys, createPkceRequest, nativeRegister, openPasskeyEnrollment, PasskeyCancelledError } from '../../../auth/passkeys';
@@ -84,14 +84,6 @@ function useSignedInAccounts() {
   return useMemo(() => !user || accounts.some((account) => account.id === user.id)
     ? accounts.map((account) => account.id === user?.id ? user : account)
     : [user, ...accounts], [accounts, user]);
-}
-
-/** What signing out would delete that the server doesn't have yet: document edits made on this device. */
-async function unsyncedEditsNote(instanceUrl: string, userIds: readonly string[]): Promise<string> {
-  const counts = await Promise.all(userIds.map((id) => unsyncedDocumentCount(cacheNamespace(instanceUrl, id)).catch(() => 0)));
-  const total = counts.reduce((sum, count) => sum + count, 0);
-  if (!total) return '';
-  return `\n\n${total === 1 ? 'A document has edits' : `${total} documents have edits`} that haven’t been uploaded yet. Signing out deletes them from this device.`;
 }
 
 export function AccountScreen({ navigation }: NativeStackScreenProps<RootStackParamList, 'Account'>) {

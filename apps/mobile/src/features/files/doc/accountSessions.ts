@@ -1,6 +1,6 @@
 import type { DocSocket } from '@pulpo/client-core/doc-sync'
 import { AppState } from 'react-native'
-import { withMobileDatabase } from '../../../data/database'
+import { cacheNamespace, withMobileDatabase } from '../../../data/database'
 import { EDITOR_BUNDLE } from '../editor/editorBundle.generated'
 import { closeDocSessions, docSessions, DocSessionRegistry } from './sessions'
 import { DocStore, type DocDatabase } from './store'
@@ -15,6 +15,17 @@ export function accountDocSessions(namespace: string): DocSessionRegistry {
 /** How many of the account's documents have edits not uploaded yet (signing out deletes them). */
 export async function unsyncedDocumentCount(namespace: string): Promise<number> {
   return (await store.dirtyDocIds(namespace)).length
+}
+
+/**
+ * What signing these accounts out would delete that the server doesn't have yet, as a sentence for
+ * the confirmation (empty when nothing).
+ */
+export async function unsyncedEditsNote(instanceUrl: string, userIds: readonly string[]): Promise<string> {
+  const counts = await Promise.all(userIds.map((id) => unsyncedDocumentCount(cacheNamespace(instanceUrl, id)).catch(() => 0)))
+  const total = counts.reduce((sum, count) => sum + count, 0)
+  if (!total) return ''
+  return `\n\n${total === 1 ? 'A document has edits' : `${total} documents have edits`} that haven’t been uploaded yet. Signing out deletes them from this device.`
 }
 
 /**
