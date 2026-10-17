@@ -41,7 +41,7 @@ Then:
 
 ## Automated validation
 
-- **Mobile:** 113 test files and 985 tests. Among them:
+- **Mobile:** 113 test files and 987 tests. Among them:
   - The document store and sessions run on a real SQLite database (`node:sqlite`) with the app's schema. They cover:
     - offline edits across relaunches;
     - a slow database;
