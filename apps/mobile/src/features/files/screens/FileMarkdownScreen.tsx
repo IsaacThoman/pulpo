@@ -95,15 +95,18 @@ export function FileMarkdownScreen({ navigation, route }: Props) {
   const convert = async () => {
     if (!node) return
     setBusy(true)
+    // Set before the request: the server announces the change before it answers, and the refetch
+    // that follows would otherwise open the editor as well.
+    leaving.current = true
     try {
       // A copy left from when this was a document before must not be merged into the new one.
       await forgetStaleDocCopies(namespace, [node]).catch(() => undefined)
       const doc = await convertToDoc(node.id)
-      leaving.current = true
       setPreview(null)
       await refreshFiles(queryClient, namespace)
       navigation.replace('FileDocument', { fileId: doc.id, name: doc.name })
     } catch (error) {
+      leaving.current = false
       Alert.alert('Couldn’t make this file editable', filesErrorMessage(error, node.name))
     } finally {
       setBusy(false)
