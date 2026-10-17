@@ -41,7 +41,7 @@ Then:
 
 ## Automated validation
 
-- **Mobile:** 109 test files and 952 tests. Among them:
+- **Mobile:** 110 test files and 974 tests. Among them:
   - The document store and sessions run on a real SQLite database (`node:sqlite`) with the app's schema. They cover:
     - offline edits across relaunches;
     - a slow database;
@@ -51,12 +51,16 @@ Then:
     - compaction;
     - eviction.
   - The editor bridge runs two pages on one document against the real editor bundle.
-  - Other areas: the upload queue (account changes, lost confirmations, placeholders), Files links, pinned items, and account cleanup.
-  - A test fails when `editorBundle.generated.ts` is stale, and another when TipTap reaches the app's Hermes bundle.
+  - Other areas:
+    - the upload queue: account changes, lost confirmations, placeholders, Files turned off, retry races, staged copies, and failed transfers;
+    - offline chat starts and scope changes whose Files items went away;
+    - the remembered instance configuration;
+    - Files links, pinned items, and account cleanup.
+  - The bundled editor page is rebuilt in the test and compared with the committed one, and another test fails when TipTap reaches the app's Hermes bundle.
 - **Shared code and other packages:**
   - client-core: 318 tests, including doc-sync's provider and session controller against a fake server.
   - contracts: 122 tests.
-  - Web: 1,330 tests (`NODE_OPTIONS=--no-experimental-webstorage` under Node 26), plus the suggestion-card browser test in Chromium and WebKit.
+  - Web: 1,337 tests (`NODE_OPTIONS=--no-experimental-webstorage` under Node 26), plus the suggestion-card browser test in Chromium and WebKit.
   - Server: 1,750 tests (database-backed suites skipped), including the mobile config's `capabilities.files`.
 - **Types and lint:** `tsc` passes for mobile, web, server, and client-core, and `npm run lint` passes.
 - **Regression tests:** each one written for an audit finding was checked to fail without its fix.
@@ -131,6 +135,26 @@ Hardware acceleration (HVF) isn't available to the Android emulator on this macO
 - **Renderer crash:** killing the renderer process brings the editor back with its content. The first run found a bug: the replacement `WebView` was never laid out. It was fixed and checked again, and editing after the crash still syncs.
 - **Offline:** an edit made offline survived a force-stop. The background upload sent it on the next launch, without the document being opened.
 
+## After updating to dev
+
+The branch was brought up to date with `dev` (one file overlapped and merged cleanly) and audited again, in three areas at once and then twice more on the fixes. Everything below was checked again on the iPhone simulator against the same local backend:
+
+- Opening a chat from Files returns to the one chat screen (Back has nothing behind it).
+- `/files/d/` links open what the item is:
+  - an uploaded image in Quick Look;
+  - uploaded Markdown in its screen;
+  - a document in the editor.
+- A link to an item never seen on the device, tapped offline, says so at once and opens nothing later.
+- A Files link inside a read-only document opens in the app.
+- Trash opened from Files shows "My files" as its back button.
+- With no trash retention, deleting a chat from Files asks first, with the drawer's wording.
+- Signing out with an offline edit pending says so. Once the edit uploaded, the warning was gone.
+- After a revoked session was found at launch, signing in again shows Files without leaving the app.
+- After an offline launch, Files is in the drawer, and an upload queued before the launch went through on reconnecting, without leaving the app.
+- An upload that reached the server while Files was turned off waited without an error, then finished once Files was back on.
+
+Changes to native code: none, so Android was not run again; the changed screens use the same code on both platforms.
+
 ## Audits
 
 Independent reviewers audited each phase as it landed, then the whole branch twice. Each of their findings was fixed, and the fixes that could be tested got regression tests:
@@ -165,6 +189,23 @@ Independent reviewers audited each phase as it landed, then the whole branch twi
   - The Markdown screen's "turned off" state.
   - Replaced cached files and exports are removed.
   - Files links in replies open in the app.
+- **After updating to dev:**
+  - The bundled editor page is checked against a fresh build, not only its recorded hash.
+  - Opening a chat from Files no longer stacks a second chat screen.
+  - File links open uploads, not only documents. Links inside documents open in the app.
+  - Uploads:
+    - a transfer interrupted by the connection waits instead of failing;
+    - uploads wait while Files is off;
+    - Try Again can't start a second copy;
+    - cached bytes go to the right account;
+    - staged copies are swept.
+  - Documents:
+    - failed local writes are retried, and open documents write as the app leaves;
+    - a newer version's unsynced copy is kept;
+    - documents that closed unsynced are retried, unless the server refuses them for good;
+    - signing out closes replaced sessions and warns about unsynced edits.
+  - Chats started offline, and scope changes made offline, keep the Files items that remain.
+  - The instance configuration is read again on signing in and remembered for offline launches.
 
 ## Not covered
 
@@ -175,3 +216,6 @@ Independent reviewers audited each phase as it landed, then the whole branch twi
   - The hardware back button. On this emulator, Back leaves the app from every screen, Settings included. That is not specific to Files; it is related to `predictiveBackGestureEnabled` in `app.config.ts`, which predates this work. The Files folder screen still handles Back to leave selection.
 - iPad drag and drop, and a side-by-side Files pane: Files opens full screen over the chat, as Settings does.
 - A hardware keyboard. TipTap's own shortcuts run inside the web view, but no keyboard was attached in these runs.
+- Two audit suggestions were left as they are:
+  - **The editor page's error reports:** the app does not reload the page when it reports an error. Most such reports are harmless page errors, which reloading would interrupt, and the updates the page applies all come from the app's own document.
+  - **Android WebViews without the origin-checked message listener:** those (older than version 83) fall back to a plain JavaScript interface. The page loads nothing from anywhere and cannot navigate, so only the editor's own page can reach it.
