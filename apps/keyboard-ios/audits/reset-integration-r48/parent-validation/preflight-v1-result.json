@@ -1,7 +1,0 @@
-{
-  "exit": 1,
-  "productTestsFired": false,
-  "gateStarted": false,
-  "error": "Expected exactly three test app/bundle binaries: dSYM DWARF files shared executable names",
-  "sourceSHA256": "731bed24eab135a2c36f33390163746d7175f9534eb600e7fe776fd6ef3022fa"
-}

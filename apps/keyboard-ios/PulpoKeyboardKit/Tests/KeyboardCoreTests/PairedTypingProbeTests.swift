@@ -31,7 +31,7 @@ struct PairedTypingProbeTests {
     let split = try #require(environment["PK_PAIRED_TYPING_SPLIT"])
     try #require(split == "develop" || split == "verify")
     let url = Fixtures.languageData.deletingLastPathComponent()
-      .appendingPathComponent("audits/paired-typing-probe.json")
+      .appendingPathComponent("Tests/Fixtures/paired-typing-probe.json")
     let corpus = try JSONDecoder().decode(Corpus.self, from: Data(contentsOf: url))
     let cases = split == "develop" ? corpus.develop : corpus.verify
     var rows: [Row] = []

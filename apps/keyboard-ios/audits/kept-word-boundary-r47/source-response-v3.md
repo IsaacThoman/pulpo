@@ -1,9 +1,0 @@
-R47 response to source review v3
-
-The reviewer identified a real continuity defect: the extra acceptance has already consumed composing when callbacks occur in the insertion primitive. The scalar helper now also observes callbacks while ownEditDepth > 0. This keeps invalidation active during the existing synchronous primitive without new pending/recovery state or changes to canonical reconciliation. The captured revision prevents later acceptance.
-
-The exact newly exposed witness is retained: primitive-callback-candidate-v3.json learns 3 for the forbidden normalized/restored primitive; space and unchanged external both learn 3. The immutable same witness against v4 yields space 3, unchanged external 3, observed roundtrip 0, with same exact scalar destination, Character caret5, collapsed selection and word count1. Both raw full26offset outputs, commands, source/binary hashes and executable archives are retained.
-
-The mandatory actual-Engine primitive control adds exact own callback positive matched to full Space offsets and canonical callback roundtrip negative with full zero. Full serial Release v4: 467 retained definitions, 448 declared executed, 19 opt-in skips, same five known issues, exit0, all16 mandatory definitions without skip/error/failure. Source-test-run-v4.json records full package source hashes before/after and XML/test-binary/resources; no source drift. Exposed development-v3 input unchanged: 64cases347rows per variant,5285/5285 correlated checks,zero unavailable. All earlier findings/failures remain immutable; no fresh author/input/seal/reveal/native execution.
-
-Source review v4 is independent and still required; the local witness/test result does not admit this patch. Admission binding script changes are reviewed separately and intentionally excluded from this source snapshot while their audit-only implementation is active.

@@ -1,9 +1,0 @@
-{
-  "driverSHA256": "ea7db3e2f1b2a272232373c28d39f5587b0e1402e2b3fd3cd10f6c3aa91c2c47",
-  "driverSyntaxValid": true,
-  "validationScriptsSyntaxValid": true,
-  "entrypointFileName": "main.swift",
-  "runnerCLIArgumentCount": 2,
-  "productExecutions": 0,
-  "stubExecutions": 0
-}

@@ -1,9 +1,0 @@
-{
-  "sha256": "8f2b71322b863befb8673d486a1fe31de33ec8d0adef2bd02bfe868fdde3942b",
-  "cases": 36,
-  "scored": 30,
-  "diagnostic": 6,
-  "perLanguage": {"en": 12, "es": 12, "bilingual": 12},
-  "taskId": "node:delegated-task:command%3Amcp%3A57ed1b8d-c671-4068-8d2f-bd0b283c197c%3Adelegate-task%3Ar16-sealed-author-v1",
-  "note": "Independent author reported count/hash only. Input file remains unread by implementation agent until candidate freeze."
-}

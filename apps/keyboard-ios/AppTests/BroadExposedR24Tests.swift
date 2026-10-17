@@ -8,7 +8,7 @@ import XCTest
 final class BroadExposedR24Tests: XCTestCase {
   func testOriginalLiteralPrefixesWithoutRepairingOracles() throws {
     let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
-    let input = root.appendingPathComponent("audits/editing-ux-r17/broad-heldout-authored.json")
+    let input = root.appendingPathComponent("Tests/Fixtures/cursor-editing/broad-cases.json")
     let suite = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: input)) as? [String: Any])
     let cases = try XCTUnwrap(suite["cases"] as? [[String: Any]])
     var outcomes: [[String: Any]] = []

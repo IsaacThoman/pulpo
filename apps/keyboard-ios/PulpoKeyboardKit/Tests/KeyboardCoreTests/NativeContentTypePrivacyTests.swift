@@ -11,7 +11,7 @@ struct NativeContentTypePrivacyTests {
   }
   private func fields() throws -> [Calibration.Field] {
     let root = Fixtures.languageData.deletingLastPathComponent()
-    let url = root.appendingPathComponent("audits/native-private-content-types-r38/calibration-baseline.json")
+    let url = root.appendingPathComponent("Tests/Fixtures/native-content-types.json")
     return try JSONDecoder().decode(Calibration.self, from: Data(contentsOf: url)).fields
   }
 

@@ -1,1 +1,0 @@
-[{"id":"dense40","targetLength":40,"tapCount":40,"weight":40},{"weight":41,"targetLength":41,"tapCount":41,"id":"dense41"},{"tapCount":40,"weight":40,"targetLength":41,"id":"sparse41"},{"targetLength":64,"id":"dense64","tapCount":64,"weight":64},{"tapCount":0,"weight":0,"targetLength":41,"id":"tapless41"}]

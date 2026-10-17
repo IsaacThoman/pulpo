@@ -1,6 +1,0 @@
-{
-  "source": "apps/keyboard-ios/audits/r33-ui-integration-r41/host_fault_gate.py.txt",
-  "sourceSHA256": "6e560edc4476b4bff0ee1bf21757f8ca8c50b9cc04746ff28e79c9f721d4cb42",
-  "derivedSHA256": "402773d68ad72e48090de14186454c0157cab63c1a27c7facd3a20d421c83f24",
-  "change": "Only disposable receipt purpose label R41-owned-test-store -> R48-owned-test-store; gate behavior unchanged"
-}

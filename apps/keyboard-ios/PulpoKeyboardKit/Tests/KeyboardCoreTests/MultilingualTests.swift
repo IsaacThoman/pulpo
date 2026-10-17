@@ -30,7 +30,7 @@ struct MultilingualTests {
       let offered = candidates.prefix(8).map(\.text).contains(target)
       print("MULTILINGUAL \(resource) completion \(prefix): \(candidates.prefix(8).map(\.text)); target available \(offered)")
       if prefix == "hel" || (resource == "en_es" && prefix == "hol") {
-        withKnownIssue("Short-prefix greeting recall is below the frozen criterion; see multilingual-sweep.md") {
+        withKnownIssue("Short-prefix greeting recall is below the frozen criterion; see QUALITY_AUDIT.md") {
           #expect(offered, "Completion \(prefix) → \(target)")
         }
       } else {

@@ -1,9 +1,0 @@
-{
-  "archive": "full-review.tar.gz",
-  "bytes": 49921142,
-  "sha256": "83556c671c09c8f1977ce90d648772f9ac4f17930eedc042acd23d5b12e10449",
-  "manifest_sha256": "2f2c113a129b661e26ed17205dfd64897da5e4c3f0bcda701de9d520b12e0c52",
-  "report_sha256": "e14bfe600276f2ffe402aee720cc93004c889e55d76a8f0dee98ffd7f992b5a2",
-  "receipt_sha256": "a07821654f75e9447ba7cae978626a7dcce6db3859d9e77da25d8878a720d5d9",
-  "files": 419
-}

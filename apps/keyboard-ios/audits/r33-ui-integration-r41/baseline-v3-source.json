@@ -1,9 +1,0 @@
-{
-  "App/AppModel.swift": "c9707901f8803489b0f01188932c298337fa80d785385cdd5c978d3c6b9d1bbd",
-  "App/PulpoKeyboardApp.swift": "98eec4e026bd1530bb57ec6527c49b70338134b4cf72acf345d4afd90ef7d420",
-  "PulpoKeyboardKit/Sources/KeyboardUI/KeyboardController.swift": "3b4e7997dd7a7429da4737e68045725c14381c7881424d0cb91e50c6744755b8",
-  "PulpoKeyboardKit/Sources/KeyboardUI/SuggestionBarView.swift": "200058d705495b59d93991b652c7915cad3e711a9f134393836f5a602d31fc0e",
-  "UITests/LearningResetResultUITests.swift": "836e559e174411fd7c63246740b74818a99b7a6d781f7655ed85a0d3bde13341",
-  "UITests/LearningForgetControllerTests.swift": "375bd1f941d57b984bbbc83807437f195cee8a86ac357f4de68eb2735e92ff2b",
-  "UITests/SuggestionForgetFeedbackTests.swift": "df3d87411856f986b5bfa4c1cdc0de1e1080c1cbef049d3e178f74b404ef0e04"
-}

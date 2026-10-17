@@ -1,8 +1,0 @@
-{
-  "recordedUTC": "2026-10-16T08:15:42.786735+00:00",
-  "stage": "before production edits and engine inference",
-  "files": {
-    "preimplementation.md": "2027ec9657f47881195a6527bf2ea06025e61a7aff378d026f2b71aa82aafd3d",
-    "fallback-development-intents.json": "a38d42a4a1fc5d72dce19411a220392c022fd2c0f1732d6ac363e988b93adc24"
-  }
-}

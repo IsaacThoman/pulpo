@@ -1,8 +1,0 @@
-{
-  "timeUTC": "2026-10-16T09:18:10.421138+00:00",
-  "temporaryBaselineWorktreeRemoved": true,
-  "temporaryNativeRunnerSourcesRemoved": true,
-  "ownedSimulatorInitialNonexistenceRestored": true,
-  "nativePanelClosed": true,
-  "buildCachesAndXcresults": "Retained only in own /tmp/pulpo-r38-* paths; no build caches or uncompressed large corpora in Git."
-}

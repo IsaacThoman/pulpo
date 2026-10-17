@@ -1,5 +1,0 @@
-{
-  "old": "Try It lookup after at most5swipeDown; second scenario directly taps virtualized element",
-  "new": "Bounded40swipeDown plus20swipeUp until real TryIt hittable; shared driver waits for correct preview/system editor; all original draft/dismissal/field assertions retained",
-  "intent": "Support actual AX5 List virtualization and tall initial header with native scrolling; no product navigation or frozen benchmark edit"
-}

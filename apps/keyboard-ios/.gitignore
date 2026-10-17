@@ -4,3 +4,9 @@ PulpoKeyboardKit/.build/
 PulpoKeyboardKit/.swiftpm/
 scripts/__pycache__/
 *.pyc
+
+# Experiment evidence belongs outside the source checkout.
+/audits/
+/test-results/
+/benchmarks/*/results/
+*.xcresult/

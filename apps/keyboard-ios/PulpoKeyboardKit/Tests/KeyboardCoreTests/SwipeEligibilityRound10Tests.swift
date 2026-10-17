@@ -39,7 +39,7 @@ struct SwipeEligibilityRound10Tests {
   struct Report: Codable { let rows: [Row]; let literals: [Literal]; let cold: Cold? }
   static let root = URL(fileURLWithPath: #filePath)
     .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-    .appendingPathComponent("audits/swipe-eligibility-r10")
+    .appendingPathComponent("Tests/Fixtures/swipe-eligibility")
   static let profiles = ["320-ideal", "390-ideal", "390-jitter", "430-jitter"]
 
   static func path(_ word: String, profile: String) throws -> ([KeyPoint], [Double]) {

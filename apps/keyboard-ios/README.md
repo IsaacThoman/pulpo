@@ -16,6 +16,8 @@ keyboard extensions get a small memory budget (roughly 50–70 MB) and must star
 | `App/` | The companion app: setup, sign-in, settings, Try It, and the dictation recorder. |
 | `LanguageData/` | English, Spanish and bilingual dictionaries and emoji catalog (`emoji.json`). |
 | `UITests/` | Simulator UI tests, including Settings automation that enables the keyboard. |
+| `Tests/Fixtures/` | Fixed regression inputs shared by engine and native tests. |
+| `benchmarks/` | Reusable comparison runners and small input sets; generated results stay outside Git. |
 | `scripts/` | Data build script and a stub Pulpo server for dictation tests. |
 
 The Xcode project is generated with [XcodeGen](https://github.com/yonaskolb/XcodeGen) from
@@ -217,7 +219,10 @@ Use `develop.json` for experiments, freeze the implementation, then evaluate
 `verify.json`. `PK_HUMAN_BASELINE` optionally asserts that an identically ordered
 gesture set does not lose first-choice or top-three accuracy. Keep archives,
 prepared gestures, per-case reports, screenshots, and build products outside Git.
-The checked-in audit records source checksums, aggregate results and tradeoffs.
+The checked-in quality summary records aggregate findings and known limitations.
+Store new experiment logs, raw receipts, copied source snapshots, screenshots and
+rejected prototypes outside the checkout; keep only reusable fixtures, necessary
+baselines and concise summaries in Git.
 
 ## Language data
 

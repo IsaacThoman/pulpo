@@ -1,3 +1,0 @@
-Recursive extraction traverses dict values AND array members of all original R27 development/sealed/review inputs and parent 16-query inputs, including query/reference/acceptable arrays. Extracted quoted references in review/contract/report text too. Catalog resources and output result arrays are not input families/queries/targets and are not treated as targets. New R31 development inputs and semantic target-family additions included. No payload read by implementer before reveal.
-Files: 10; strings: 626; families: 53; SHA256: 67e654815fdb00d08df2c482cd985b0480736de8cd046e0e9ac3295971a8641e
-Author-contract.md preserves exact original normative bytes, removing only the development-input section before author receives it. No normative policy/gate changed.

@@ -1,9 +1,0 @@
-import Foundation
-@main struct Probe {
-static func scalars(_ s:String)->[UInt32] {s.unicodeScalars.map(\.value)}
-static func main() throws {
- let locale=Locale(identifier:"en_US_POSIX"),q="A\u{0}B"
- let lower=q.lowercased(with:locale),nfd=lower.decomposedStringWithCanonicalMapping
- let result:[String:Any]=["inputScalars":scalars(q),"lowercaseScalars":scalars(lower),"lowercaseThenNFDScalars":scalars(nfd),"romularPrefixesRomulo":"romular".hasPrefix("romulo"),"mavelarPrefixesMavela":"mavelar".hasPrefix("mavela")]
- let data=try JSONSerialization.data(withJSONObject:result,options:[.prettyPrinted,.sortedKeys]);try data.write(to:URL(fileURLWithPath:"/tmp/pulpo-r40-source-review/nul-detail.json"));print(String(decoding:data,as:UTF8.self))
-}}

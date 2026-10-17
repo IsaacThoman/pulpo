@@ -1,9 +1,0 @@
-{
-  "installedApp": "/Users/isaacthoman/Library/Developer/CoreSimulator/Devices/A4E1CFD8-0EC3-4584-B60D-CD878D007FA0/data/Containers/Bundle/Application/17890666-5E8E-493C-8353-09E695C31523/PulpoKeyboard.app",
-  "files": {
-    "PulpoKeyboard": "ad203ef2853bc9f516d47593c8f7b37467545a19654bbb398afdde55208ca317",
-    "PulpoKeyboard.debug.dylib": "4e0705d5572aa14e1704e7afca7a678143f67297250182434b6ba00d49c95ca3",
-    "PlugIns/PulpoKeyboardExtension.appex/PulpoKeyboardExtension": "7487ee1499fcb354168b367e793683cf9aee1a869bd5c4c570e8bd346e53eefa",
-    "PlugIns/PulpoKeyboardExtension.appex/PulpoKeyboardExtension.debug.dylib": "38d2dd115603fb36bbcded6341aeccecd694f38ec4d6aa3163c87c733df3a5e2"
-  }
-}

@@ -1,2 +1,0 @@
-# Preserve exact unified-diff context lines.
-rejected-artifacts/anchored-grammar.patch -whitespace

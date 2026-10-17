@@ -1,9 +1,0 @@
-{
- "version":1,"frozenBeforeRelevantSource":true,
- "cases":[
-  {"id":"en-cursor-ascii","language":"English","document":"Ab","selectionUTF16":[2,0],"gesture":{"key":"space","holdSeconds":0.7,"deltaPoints":[-24,0]},"then":"x","expectedDocument":"Axb","expectedSelectionUTF16":[2,0]},
-  {"id":"es-cursor-emoji","language":"Español","document":"A🍕b","selectionUTF16":[4,0],"gesture":{"key":"space","holdSeconds":0.7,"deltaPoints":[-24,0]},"then":"x","expectedDocument":"A🍕xb","expectedSelectionUTF16":[4,0]}
- ],
- "purpose":"Same visible cursor gesture should edit at a character boundary and preserve emoji; displacement assumption retained if incorrect",
- "limitations":["Exact selection unavailable via AX; full document authoritative"]
-}

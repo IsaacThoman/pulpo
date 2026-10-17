@@ -1,9 +1,0 @@
-# Exposed post-review diagnostic, no fresh/blind gain claim. No package/core builds.
-# One identical public-API client linked separately to already-built immutable libraries.
-swiftc -O -I /tmp/pulpo-r11-baseline/apps/keyboard-ios/PulpoKeyboardKit/.build/out/Products/Release -L /tmp/pulpo-r11-baseline/apps/keyboard-ios/PulpoKeyboardKit/.build/out/Products/Release -lKeyboardCore /tmp/pulpo-r22-review-diagnostic/Client.swift -o /tmp/pulpo-r22-review-diagnostic/baseline-client
-swiftc -O -I /tmp/r22-build/out/Products/Release -L /tmp/r22-build/out/Products/Release -lKeyboardCore /tmp/pulpo-r22-review-diagnostic/Client.swift -o /tmp/pulpo-r22-review-diagnostic/candidate-client
-/tmp/pulpo-r22-review-diagnostic/baseline-client /tmp/pulpo-r22-review-diagnostic/cases.json /private/tmp/pulpo-r22-completion-punctuation/apps/keyboard-ios/LanguageData /tmp/pulpo-r22-review-diagnostic/baseline.json
-/tmp/pulpo-r22-review-diagnostic/candidate-client /tmp/pulpo-r22-review-diagnostic/cases.json /private/tmp/pulpo-r22-completion-punctuation/apps/keyboard-ios/LanguageData /tmp/pulpo-r22-review-diagnostic/candidate.json
-# Both output arrays contain all 11 contexts x 3 stacks, all 33 actual literal slots.
-# Core tree of baseline e9f5d6bb equals R22 baseline 967e5c4b: 9461e76ced19b360c20449e42536a64ae0c8d4c4.
-# Directory libraries/binaries are external execution artifacts, not portable archived inputs.

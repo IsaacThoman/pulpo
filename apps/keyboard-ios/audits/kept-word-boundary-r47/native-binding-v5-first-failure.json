@@ -1,8 +1,0 @@
-{
-  "status": "WHOLE_GATE_ERROR",
-  "unavailable": 1,
-  "scope": "Native binding validator; actual XCTest passed1/1, not a test failure",
-  "error": "structured native Passed summary",
-  "validatorSHA256": "6ee3391d3c3f72cf3761426ff3196c37da91abdaac6fbbb32f47cfe83def7dfb",
-  "summaryResult": "Passed"
-}

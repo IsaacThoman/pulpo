@@ -1,8 +1,0 @@
-# Source-only review preceded reading audit outcomes. No sealed suite or paired rows opened.
-# Baseline e9f5d6bb and R26 74a4af2d have identical complete KeyboardCore source tree 9461e76ced19b360c20449e42536a64ae0c8d4c4.
-# Identical frozen standalone client, linked to existing immutable production libraries; no package/core builds.
-swiftc -O -I /tmp/pulpo-r11-baseline/apps/keyboard-ios/PulpoKeyboardKit/.build/out/Products/Release -L /tmp/pulpo-r11-baseline/apps/keyboard-ios/PulpoKeyboardKit/.build/out/Products/Release -lKeyboardCore /tmp/pulpo-r26-independent-review/Client.swift -o /tmp/pulpo-r26-independent-review/baseline-client
-swiftc -O -I /Users/isaacthoman/.t3/worktrees/pulpo/t3-b87a270b/apps/keyboard-ios/PulpoKeyboardKit/.build/out/Products/Release -L /Users/isaacthoman/.t3/worktrees/pulpo/t3-b87a270b/apps/keyboard-ios/PulpoKeyboardKit/.build/out/Products/Release -lKeyboardCore /tmp/pulpo-r26-independent-review/Client.swift -o /tmp/pulpo-r26-independent-review/candidate-client
-/tmp/pulpo-r26-independent-review/baseline-client /tmp/pulpo-r26-independent-review/inputs.json /Users/isaacthoman/.t3/worktrees/pulpo/t3-b87a270b/apps/keyboard-ios/LanguageData /tmp/pulpo-r26-independent-review/baseline.json
-/tmp/pulpo-r26-independent-review/candidate-client /tmp/pulpo-r26-independent-review/inputs.json /Users/isaacthoman/.t3/worktrees/pulpo/t3-b87a270b/apps/keyboard-ios/LanguageData /tmp/pulpo-r26-independent-review/candidate.json
-# Baseline lib SHA256 5c9f187f73e45a7fe7ad199f2ed4207feea8256bb4179e3632818210813372fe; candidate 7006816f37b41d10415453d1c6b55310938bc3531ad2a574a9fe13afcb523b2e.

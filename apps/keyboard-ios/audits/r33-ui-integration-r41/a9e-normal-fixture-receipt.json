@@ -1,8 +1,0 @@
-{
-  "purpose": "R41-owned-test-store",
-  "disposable": true,
-  "deviceUDID": "F3191384-9F35-4AC4-A739-37E6C7C8D584",
-  "groupContainer": "/Users/isaacthoman/Library/Developer/CoreSimulator/Devices/F3191384-9F35-4AC4-A739-37E6C7C8D584/data/Containers/Shared/AppGroup/A2CF3AED-BFBB-4435-AA7E-2843935ED633",
-  "initialStoreFiles": {},
-  "origin": "R41-only device, all stores created during this recorded round"
-}

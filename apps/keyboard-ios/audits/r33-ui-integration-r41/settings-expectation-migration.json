@@ -1,6 +1,0 @@
-{
-  "test": "SettingsUsabilitySweepTests.testLearningOffSurvivesJumpsClearAndRelaunch",
-  "old": "Learn New Words is off, so nothing new will be learned.",
-  "new": "Shared learned words and touch adjustments have been cleared. Learn New Words is off, so nothing new will be learned.",
-  "intent": "Scope the successful alert to shared learning; preserve Off state assertions and relaunch/navigation checks. No frozen benchmark or historical audit changed."
-}

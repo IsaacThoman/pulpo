@@ -1,9 +1,0 @@
-DYLD_SHARED_REGION=avoid not supported for simulator
-Tracing: <PreviewInputView 0x116a1de00> [640]
-
-Found 70 roots referencing: <PreviewInputView 0x116a1de00> [640]
-
-This is a reverse reference tree showing how the specified block is referenced.
-The top node is the specified block, the next level down are blocks that reference that, and so on.
-The number at the start of each line is the number of paths-to-roots going through that node.
-      2 <_UIInputViewContent 0x116a6d180> [448]   +432: __strong _inputView 0x116a6d330

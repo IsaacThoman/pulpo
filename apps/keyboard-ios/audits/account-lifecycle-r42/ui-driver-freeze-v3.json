@@ -1,8 +1,0 @@
-{
-  "file": "apps/keyboard-ios/UITests/AccountLifecycleR42UITests.swift",
-  "sha256": "235b03e8203c3935986e65e6b91a4c126fe6023d6a5207d59dfc32a6ac48e530",
-  "priorSource": "ui-driver-v2.swift.txt",
-  "priorRun": "evidence/ui-ax-v2-summary.json",
-  "reason": "Largest v2 center-title gesture failed navigation-bar disappearance while form was scrolled. Preserve failure; exposed v3 scrolls the actual Form top via gestures and drags unobstructed top-right chrome to screen bottom, retaining before/after screenshots and AX hierarchy. No oracle/production changes.",
-  "exposed": true
-}

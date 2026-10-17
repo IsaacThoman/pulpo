@@ -5,7 +5,7 @@ import XCTest
 @testable import KeyboardUI
 
 /// Opt-in simulator workload. Run alone in a fresh runner for each mode/sample.
-/// The independent protocol is frozen in audits/multilingual-resources-sweep.md.
+/// Synthetic resource controls; measurements do not establish physical-device budgets.
 @MainActor
 final class MultilingualResourceSweepTests: XCTestCase {
   private var samples: [String: [Double]] = [:]

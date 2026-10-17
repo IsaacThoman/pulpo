@@ -1,4 +1,0 @@
-    t =    17.31s Press "Sign In to Pulpo" NavigationBar[0.50, 0.50] for 0.1 seconds, then drag to Target Application 'com.isaacthoman.pulpo.keyboard'[0.50, 0.90] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds 
-    t =    19.25s Waiting 3.0s for "Sign In to Pulpo" NavigationBar to not exist
-/Users/isaacthoman/.t3/worktrees/pulpo/t3-5890fa78/apps/keyboard-ios/UITests/AccountLifecycleR42UITests.swift:150: error: -[PulpoKeyboardUITests.AccountLifecycleR42UITests testDismissPendingSheetThenRetry] : XCTAssertTrue failed
-Test Case '-[PulpoKeyboardUITests.AccountLifecycleR42UITests testDismissPendingSheetThenRetry]' failed (22.566 seconds).

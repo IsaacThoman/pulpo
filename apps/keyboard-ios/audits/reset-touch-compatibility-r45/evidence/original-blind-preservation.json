@@ -1,6 +1,0 @@
-{
-  "archive": "original-r33-blind-uninterpreted.tar.gz",
-  "archiveSHA256": "20961bdcdaa030d79d878ca069b6ae90cd82b6a09ed72c4342ccde013e4764b0",
-  "originalPayloadSHA256": "0834b19e144e30b46506484d04e5d61748976e4e8699614525340bc1e06ccbae",
-  "policy": "Opaque byte archive retained without semantic fixture/oracle inspection by R45 implementer. Original exposed a9e evidence only. New boundary author/validator may not access it. Historical blind status and accounting limitations remain unchanged."
-}

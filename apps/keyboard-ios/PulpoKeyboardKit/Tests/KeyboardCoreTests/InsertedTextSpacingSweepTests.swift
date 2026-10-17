@@ -38,9 +38,9 @@ struct InsertedTextSpacingSweepTests {
     let environment = ProcessInfo.processInfo.environment
     let suite = environment["PULPO_SPACING_SUITE"] ?? "development"
     #expect(["development", "held-out"].contains(suite))
-    let audit = Fixtures.languageData.deletingLastPathComponent()
-      .appendingPathComponent("audits/inserted-text-spacing-sweep")
-    let tasks = try JSONDecoder().decode([Task].self, from: Data(contentsOf: audit.appendingPathComponent(suite + ".json")))
+    let fixtures = Fixtures.languageData.deletingLastPathComponent()
+      .appendingPathComponent("Tests/Fixtures/inserted-text-spacing")
+    let tasks = try JSONDecoder().decode([Task].self, from: Data(contentsOf: fixtures.appendingPathComponent(suite + ".json")))
     var results: [Result] = []
     for task in tasks {
       let mode = try language(task.mode)

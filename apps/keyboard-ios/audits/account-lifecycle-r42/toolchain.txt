@@ -1,7 +1,0 @@
-Xcode 27.1
-Build version 27A9275
-
-swift-driver version: 1.168.6 Apple Swift version 6.4 (swiftlang-6.4.0.34.1 clang-2100.3.34.1)
-Target: arm64-apple-macosx27.0.0
-
-7c2694fb286b7d03945123de489568cfc51f142f

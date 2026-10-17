@@ -1,9 +1,0 @@
-import Foundation
-let data=Data(#"{"version":"test","categories":[{"id":"test","name":"test","emoji":[{"e":"L","n":"opaque","v":1,"s":"a b"}]}]}"#.utf8)
-let catalog=try JSONDecoder().decode(EmojiCatalog.self,from:data)
-let query="A\u{0000}B"
-let index=EmojiSuggester(catalog:catalog)
-let results=index.search(query,limit:1).map(\.value)
-let observation:[String:Any] = ["queryUTF8":Array(query.utf8),"foundationLowercaseUTF8":Array(query.lowercased(with:Locale(identifier:"en_US_POSIX")).utf8),"results":results]
-let raw=try JSONSerialization.data(withJSONObject:observation,options:[.sortedKeys])
-print(String(data:raw,encoding:.utf8)!)

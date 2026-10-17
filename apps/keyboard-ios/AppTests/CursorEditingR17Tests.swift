@@ -36,9 +36,9 @@ final class CursorEditingR17Tests: XCTestCase {
 
   func testFrozenCases() throws {
     let directory = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
-      .appendingPathComponent("audits/editing-ux-r17")
+      .appendingPathComponent("Tests/Fixtures/cursor-editing")
     let path = ProcessInfo.processInfo.environment["PK_R17_CASES"]
-    let url = path.map { URL(fileURLWithPath: $0) } ?? directory.appendingPathComponent("cursor-development-v2.json")
+    let url = path.map { URL(fileURLWithPath: $0) } ?? directory.appendingPathComponent("cursor-cases.json")
     let inputs = try JSONDecoder().decode(Suite.self, from: Data(contentsOf: url)).cases
     var outcomes: [Outcome] = []
     for input in inputs {

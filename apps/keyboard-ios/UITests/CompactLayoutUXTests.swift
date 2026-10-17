@@ -40,7 +40,7 @@ final class CompactLayoutUXTests: XCTestCase {
 
   private func run(_ phase: String) throws {
     let directory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-      .deletingLastPathComponent().appendingPathComponent("audits/compact-layout-ux")
+      .deletingLastPathComponent().appendingPathComponent("Tests/Fixtures/compact-layout")
     let cases = try JSONDecoder().decode([Case].self, from: Data(contentsOf: directory.appendingPathComponent("\(phase)-cases.json")))
     let original = SettingsStore().load()
     defer { SettingsStore().save(original) }

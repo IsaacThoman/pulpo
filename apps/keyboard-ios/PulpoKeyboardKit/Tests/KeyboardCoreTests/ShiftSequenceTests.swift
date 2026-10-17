@@ -12,7 +12,7 @@ struct ShiftSequenceTests {
       var output: String
       var passed: Bool
     }
-    let url = Fixtures.languageData.deletingLastPathComponent().appendingPathComponent("audits/shift-sequence-probe.json")
+    let url = Fixtures.languageData.deletingLastPathComponent().appendingPathComponent("Tests/Fixtures/shift-sequence-probe.json")
     let words = try JSONDecoder().decode(Corpus.self, from: Data(contentsOf: url)).verify
     var rows: [Row] = []
     for interval in [0.08, 0.12, 0.20] {

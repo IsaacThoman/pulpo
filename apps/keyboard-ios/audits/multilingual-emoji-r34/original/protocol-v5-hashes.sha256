@@ -1,8 +1,0 @@
-bebb6034c35bfb576e39f033013ac560a24d15f5128fc2490199b08cb66d5d01  apps/keyboard-ios/audits/multilingual-emoji-r34/contract.md
-3d764e105588c0f8da40f82313b6b3885e1a05cbad175fae9915deba1e74397a  apps/keyboard-ios/audits/multilingual-emoji-r34/schema.json
-0f8fa0472cb429e6019656a99755bc5f91f24e280d34915312c2ffca0960cfa9  apps/keyboard-ios/audits/multilingual-emoji-r34/api-map.md
-c7f929ada6398c9c849e1b764e7bdacc3aca6956f3444fa74953db43cea5468e  apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Emoji/EmojiCatalog.swift
-10258fab0b30f82d17be2a6358b68fe93b1d3930e0b0bd3d32c159579be781a2  apps/keyboard-ios/PulpoKeyboardKit/Sources/KeyboardCore/Emoji/EmojiSearch.swift
-3ab6d66735c76bc6f4043b347e601a2a28ab88888e37d7b027cecd4aa2f341ae  apps/keyboard-ios/audits/multilingual-emoji-r34/protocol-v5-domain-witness.swift
-ecef6cb0510e4d15f52f719098420d699687e058228c066985bfe2253e65afa2  apps/keyboard-ios/audits/multilingual-emoji-r34/protocol-v5-domain-witness.json
-bfa7d79c44286fa1a078cf9a4f463f61a34b29dddc8a742cc55f5fec14c3c753  apps/keyboard-ios/audits/multilingual-emoji-r34/protocol-review-v5.md

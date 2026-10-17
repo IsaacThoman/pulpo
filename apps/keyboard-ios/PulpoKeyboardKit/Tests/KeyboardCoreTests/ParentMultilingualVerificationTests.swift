@@ -12,7 +12,7 @@ struct ParentMultilingualVerificationTests {
   }
 
   private func corpus() throws -> Corpus {
-    let url = Fixtures.languageData.deletingLastPathComponent().appendingPathComponent("audits/parent-language-holdout.json")
+    let url = Fixtures.languageData.deletingLastPathComponent().appendingPathComponent("Tests/Fixtures/parent-language-holdout.json")
     return try JSONDecoder().decode(Corpus.self, from: Data(contentsOf: url))
   }
 
