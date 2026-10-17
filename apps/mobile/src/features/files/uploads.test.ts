@@ -257,5 +257,25 @@ describe('Files uploads', () => {
     await settle()
     expect(useFileUploads.getState().items[0]).toMatchObject({ state: 'failed', attempts: 3, error: 'Unable to upload a file: no space left' })
     expect(mocks.toasts).toHaveLength(1)
+
+    // Trying again by hand gets the full allowance again.
+    retryUpload(useFileUploads.getState().items[0]!.id)
+    await settle()
+    expect(useFileUploads.getState().items[0]).toMatchObject({ state: 'offline', transferFailures: 1 })
+  })
+
+  it('counts only failed transfers toward reporting one, not going offline otherwise', async () => {
+    mocks.uploadFile
+      .mockImplementationOnce(async () => { throw Object.assign(new Error('offline'), { network: true }) })
+      .mockImplementationOnce(async () => { throw Object.assign(new Error('timed out'), { network: true }) })
+      .mockImplementationOnce(async () => { throw Object.assign(new Error('Unable to upload a file: connection reset'), { retry: true, transfer: true }) })
+    await enqueueUploads(A, null, [photo('eleven.jpg')], client)
+    await settle()
+    for (let resume = 0; resume < 2; resume += 1) {
+      await resumeUploads(A, client)
+      await settle()
+    }
+    expect(useFileUploads.getState().items[0]).toMatchObject({ state: 'offline', attempts: 3, transferFailures: 1 })
+    expect(mocks.toasts).toEqual([])
   })
 })

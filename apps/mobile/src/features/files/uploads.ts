@@ -29,13 +29,15 @@ export interface QueuedUpload extends LocalUpload {
   state: 'waiting' | 'uploading' | 'offline' | 'failed'
   error?: string
   attempts: number
+  /** System transfers that failed since the upload was queued or last tried again by hand. */
+  transferFailures?: number
 }
 
 const STORAGE_KEY = 'files:uploads'
 const CONCURRENCY = 3
 /**
- * Failed attempts after which a failed system transfer is reported instead of waiting for a
- * connection: a transfer can also fail for good (e.g. the device has no room to send it from).
+ * Failed system transfers after which one is reported instead of waiting for a connection: a
+ * transfer can also fail for good (e.g. the device has no room to send it from).
  */
 const MAX_TRANSFER_FAILURES = 3
 
@@ -231,13 +233,15 @@ async function runUpload(item: QueuedUpload): Promise<void> {
     }
     // Files turned off meanwhile: the upload waits for it to be back on, like it waits for a connection.
     const { retry, transfer } = (error ?? {}) as { retry?: boolean; transfer?: boolean }
+    const transferFailures = (item.transferFailures ?? 0) + (transfer === true ? 1 : 0)
     const offline = (isNetworkError(error) || retry === true || isFilesDisabledError(error))
-      && !(transfer === true && item.attempts + 1 >= MAX_TRANSFER_FAILURES)
+      && !(transfer === true && transferFailures >= MAX_TRANSFER_FAILURES)
     update(item.id, {
       reservedNodeId,
       state: offline ? 'offline' : 'failed',
       error: offline ? undefined : filesErrorMessage(error, item.name),
       attempts: item.attempts + 1,
+      transferFailures,
     })
     await persist(item.namespace)
     if (queryClient) void refreshFiles(queryClient, item.namespace)
@@ -301,7 +305,7 @@ function stopped(item: QueuedUpload | undefined): item is QueuedUpload {
 export function retryUpload(id: string): void {
   // The upload may have resumed on its own while the user decided, e.g. on reconnecting.
   if (!stopped(useFileUploads.getState().items.find((item) => item.id === id))) return
-  update(id, { state: 'waiting', error: undefined })
+  update(id, { state: 'waiting', error: undefined, transferFailures: 0 })
   pump()
 }
 
