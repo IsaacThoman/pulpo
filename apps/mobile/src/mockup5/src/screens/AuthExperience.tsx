@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SymbolView } from '../../../platform/SymbolView';
 import { useAppTheme } from '../theme';
 import { normalizeInstanceUrl } from '../domain';
+import { normalizeInstanceUrl as normalizeServerAddress } from '@pulpo/client-core';
 import { mobileApi } from '../../../api/client';
 import { NativePasskeyError, PasskeyCancelledError } from '../../../auth/passkeys';
 import { useSessionStore } from '../../../store/session';
@@ -195,8 +196,15 @@ export function AuthExperience() {
       setError(nextError instanceof Error ? nextError.message : 'Invalid URL.');
       return;
     }
-    // The same server: nothing to switch, and nobody is signed out.
-    if (normalized.replace(/\/+$/, '') === productionInstanceUrl.replace(/\/+$/, '')) {
+    // The same server (compared as the session stores it, path included): nothing to switch, and
+    // nobody is signed out.
+    let sameServer = false;
+    try {
+      sameServer = normalizeServerAddress(instanceUrl, true) === productionInstanceUrl;
+    } catch {
+      // Not a valid address for the session; the switch reports it.
+    }
+    if (sameServer) {
       setInstanceUrl(normalized);
       setPage('login');
       return;
