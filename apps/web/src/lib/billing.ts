@@ -2,6 +2,7 @@ import { apiRequest } from './api'
 import { formatBytes } from './attachments'
 import { chargeCentsForCredits } from './billing-pricing'
 import { formatBalance, formatDate } from './format'
+import { openExternalUrl } from './runtime'
 import { ui } from '@/i18n/ui'
 
 export type BillingPlan = 'baby' | 'eight' | 'fat'
@@ -129,6 +130,12 @@ export interface BillingSummary {
 
 export function fetchBillingSummary(): Promise<BillingSummary> {
   return apiRequest<BillingSummary>('/api/billing/summary')
+}
+
+/** Opens the payment provider's portal, where a subscription is managed. */
+export async function openBillingPortal(): Promise<void> {
+  const result = await apiRequest<{ url: string }>('/api/billing/portal', { method: 'POST' })
+  await openExternalUrl(result.url)
 }
 
 export const AUTO_TOP_UP_MIN_AMOUNT_CENTS = 500
