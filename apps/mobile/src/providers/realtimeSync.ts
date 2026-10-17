@@ -31,7 +31,11 @@ export function stateInvalidationQueryKeys(
     ]
   }
   if (scope === 'shelved-drafts') return [['shelved-drafts', namespace]]
-  if (scope === 'models' || scope === 'folders' || scope === 'settings') return [[scope, namespace]]
+  // Files changes refresh Files listings, documents' details, replies' change lists, and the trash
+  // screen's Files section. Folder changes move chats, which Files lists too.
+  if (scope === 'files') return [['files', namespace], ['trashed-files', namespace]]
+  if (scope === 'folders') return [['folders', namespace], ['files', namespace], ['trashed-files', namespace]]
+  if (scope === 'models' || scope === 'settings') return [[scope, namespace]]
   return []
 }
 

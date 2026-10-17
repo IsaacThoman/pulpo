@@ -11,8 +11,8 @@ import { newId } from '../lib/ids.js'
 import { createResponse, toSnapshot } from '../responses/service.js'
 import { publishChatStarted, publishStateChange, requestCancellation } from '../responses/events.js'
 import { publishAdminUsage } from '../admin/usage-events.js'
-import { maintenanceQueue } from '../jobs.js'
-import { cancelChatWork, getTrashRetention, markChatsForPurge, purgeAtFor } from './trash.js'
+import { queueTrashPurge } from '../jobs.js'
+import { cancelChatWork, getTrashRetention, markChatsForPurge, purgeAtFor, trashedChatValues } from './trash.js'
 import { planDuplicateTree } from './duplicate.js'
 import { toPublicChat, toPublicChatResponses, withoutWorkspaceScope } from './public.js'
 import { assertFileScope, mergedFileAccessSql, scopedFileAccess } from './file-scope.js'
@@ -204,18 +204,9 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     const ids = active.map((chat) => chat.id)
     const now = new Date()
     const retention = await getTrashRetention(user.id)
-    await db.update(chats).set({
-      deletedAt: now,
-      expiresAt: null,
-      purgeStartedAt: retention === 'instant' ? now : null,
-      updatedAt: now,
-    }).where(and(eq(chats.userId, user.id), isNull(chats.deletedAt)))
+    await db.update(chats).set(trashedChatValues(now, retention)).where(and(eq(chats.userId, user.id), isNull(chats.deletedAt)))
     await cancelChatWork(ids)
-    if (retention === 'instant' && ids.length) {
-      await maintenanceQueue.add('purge-chats', { type: 'purge-chats', payload: { userId: user.id } }, {
-        jobId: `purge-chats-delete-all-${user.id}-${Date.now()}`,
-      })
-    }
+    if (retention === 'instant' && ids.length) await queueTrashPurge(user.id, 'delete-all')
     await bumpRevision(user.id)
     await scheduleUserIndex(user.id, 'delete-all-chats')
     reply.code(204).send()
@@ -227,11 +218,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       eq(chats.userId, user.id), isNotNull(chats.deletedAt), isNull(chats.purgeStartedAt),
     ))
     const deleting = await markChatsForPurge(deleted.map((chat) => chat.id), user.id)
-    if (deleting) {
-      await maintenanceQueue.add('purge-chats', { type: 'purge-chats', payload: { userId: user.id } }, {
-        jobId: `purge-chats-trash-all-${user.id}-${Date.now()}`,
-      })
-    }
+    if (deleting) await queueTrashPurge(user.id, 'trash-all')
     await bumpRevision(user.id)
     reply.code(202)
     return { deleting }
@@ -653,9 +640,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     const { id } = request.params as { id: string }
     const deleting = await markChatsForPurge([id], user.id)
     if (!deleting) throw notFound('Deleted chat')
-    await maintenanceQueue.add('purge-chats', { type: 'purge-chats', payload: { userId: user.id } }, {
-      jobId: `purge-chat-${id}-${Date.now()}`,
-    })
+    await queueTrashPurge(user.id, 'permanent')
     await bumpRevision(user.id, id)
     reply.code(202)
     return { deleting: 1 }

@@ -18,7 +18,6 @@ import { useAuth } from '@/stores/auth'
 export const filesQueryKey = (userId: string | undefined) => ['files', userId] as const
 export const folderQueryKey = (userId: string | undefined, folderId: string | null) =>
   [...filesQueryKey(userId), 'folder', folderId ?? 'root'] as const
-export const trashQueryKey = (userId: string | undefined) => [...filesQueryKey(userId), 'trash'] as const
 export const folderLayoutQueryKey = (userId: string | undefined, folderId: string | null) =>
   [...filesQueryKey(userId), 'layout', folderId ?? 'root'] as const
 
@@ -32,10 +31,6 @@ export function updateFolderLayout(input: UpdateFileFolderLayout): Promise<FileF
 
 export function fetchFolder(folderId: string | null): Promise<FileListing> {
   return apiRequest<FileListing>(folderId ? `/api/files?parentId=${encodeURIComponent(folderId)}` : '/api/files')
-}
-
-export async function fetchTrash(): Promise<FileNode[]> {
-  return (await apiRequest<{ items: FileNode[] }>('/api/files/trash')).items
 }
 
 export function createFolder(parentId: string | null, name: string): Promise<FileNode> {
@@ -109,10 +104,6 @@ export async function restoreFileNodes(ids: string[]): Promise<FileNode[]> {
 
 export function deleteFileNodes(ids: string[]): Promise<void> {
   return apiRequest<void>('/api/files/batch/delete', { method: 'POST', body: { ids } })
-}
-
-export function emptyTrash(): Promise<void> {
-  return apiRequest<void>('/api/files/trash', { method: 'DELETE' })
 }
 
 /** Reserve → PUT bytes → confirm. A failed upload releases its reservation so the name and quota free up. */

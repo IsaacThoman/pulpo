@@ -51,6 +51,9 @@ Object.assign(folderItems, {
   f1: [node('f3', 'f1', 'folder', 'Folder f3', 1)],
 })
 
+const trashOps = vi.hoisted(() => ({ restore: vi.fn(async () => []), deleteForever: vi.fn(), empty: vi.fn() }))
+vi.mock('@/features/trash/use-trash-operations', () => ({ useTrashOperations: () => trashOps }))
+
 const chatActions = vi.hoisted(() => ({ duplicateChats: vi.fn(), copyChatShareLink: vi.fn() }))
 vi.mock('@/features/chat/chat-actions', async (importActual) => ({
   ...await importActual<typeof import('@/features/chat/chat-actions')>(),
@@ -112,6 +115,7 @@ vi.mock('@/stores/settings', () => {
 })
 
 const { Sidebar } = await import('./Sidebar')
+const { useFileClipboard } = await import('@/features/files/browser/clipboard')
 
 const ROW_HEIGHT = 30
 
@@ -433,6 +437,15 @@ describe('right-clicking empty sidebar space', () => {
     expect(await screen.findByRole('menuitem', { name: 'New folder' })).toBeTruthy()
     expect(menuItems()).not.toContain('New chat')
     expect(screen.queryByRole('menuitem', { name: /Sort by/ })).toBeNull()
+  })
+
+  it('restores items cut in the trash when pasted into a folder', async () => {
+    const trashed = { ...node('t1', 'gone', 'blob', 'old.txt', 0), trashedAt: '2026-10-01T00:00:00.000Z' }
+    useFileClipboard.setState({ clip: { mode: 'cut', nodes: [trashed] } })
+    fireEvent.contextMenu(document.querySelector('[data-folder-body="f2"]')!, { clientX: 20, clientY: 280 })
+    fireEvent.click(await screen.findByRole('menuitem', { name: /^Paste/ }))
+    await vi.waitFor(() => expect(trashOps.restore).toHaveBeenCalledWith([trashed], { parentId: 'f2' }))
+    expect(useFileClipboard.getState().clip).toBeNull()
   })
 
   it('leaves rows to their own menus', async () => {

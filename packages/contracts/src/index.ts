@@ -9,7 +9,8 @@ export * from './usage-cost.js'
 export * from './admin-analytics.js'
 import type { ComposerAck, ComposerSnapshot, ComposerWrite } from './composer.js'
 import type { DocAck, DocClosedEvent, DocJoinInput, DocJoinResult, DocUpdateMessage } from './files.js'
-import { fileAccessModeSchema } from './files.js'
+import { fileAccessModeSchema, fileColorSchema, type FileColor } from './files.js'
+import { DEFAULT_TRASH_RETENTION, trashRetentionSchema } from './trash.js'
 export * from './composer.js'
 import { z } from 'zod'
 import { DEFAULT_MAX_INLINE_IMAGES, MAX_CONFIGURABLE_INLINE_IMAGES, MAX_MESSAGE_ATTACHMENTS } from './attachment-limits.js'
@@ -1584,6 +1585,9 @@ export type ChatSortMode = z.infer<typeof chatSortModeSchema>
 /** What double-clicking a file on the files page does: open it in place, or beside the folder. */
 export const fileDoubleClickActionSchema = z.enum(['open', 'openBeside'])
 export type FileDoubleClickAction = z.infer<typeof fileDoubleClickActionSchema>
+/** The color of the Trash folder in Files: red unless changed; null shows it uncolored. */
+export const trashColorSchema = fileColorSchema.nullable()
+export const DEFAULT_TRASH_COLOR: FileColor = 'red'
 export const ANIMATION_SPEED_MIN = 0.01
 export const ANIMATION_SPEED_MAX = 5
 export const DEFAULT_ANIMATION_SPEED = 1
@@ -1623,11 +1627,12 @@ export const managementAccountSettingsSchema = z.object({
   leaderboardColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).default('#10b981'),
   localChatLimit: z.number().int().min(0).max(500).default(50),
   localAttachmentCacheMb: z.number().int().min(0).max(2_048).default(50),
-  trashRetention: z.enum(['instant', '24h', '7d', '30d', '90d', 'indefinite']).default('30d'),
+  trashRetention: trashRetentionSchema.default(DEFAULT_TRASH_RETENTION),
   automaticChatExpiration: automaticChatExpirationSchema.default('24h'),
   newChatAutoExpire: newChatAutoExpireSchema,
   chatSortMode: chatSortModeSchema.default('default'),
   fileDoubleClickAction: fileDoubleClickActionSchema.default('open'),
+  trashColor: trashColorSchema.default(DEFAULT_TRASH_COLOR),
   defaultModelId: z.string().max(120).nullable().default(null),
   generation: z.record(z.string(), z.record(z.string(), z.string())).default({}),
   /** Null follows the instance's new-account default favorites. */
@@ -2077,3 +2082,4 @@ export interface ServerToClientEvents {
 
 export * from "./shelf.js"
 export * from "./files.js"
+export * from "./trash.js"

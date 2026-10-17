@@ -12,6 +12,8 @@ import {
   modelWarningDismissalsSchema,
   newChatAutoExpireSchema,
   sidebarPinsSchema,
+  DEFAULT_TRASH_COLOR,
+  trashColorSchema,
 } from '@pulpo/contracts'
 
 export function preferencesWithModelDefaults(values?: Record<string, unknown>): Record<string, unknown> {
@@ -37,6 +39,8 @@ export function preferencesWithModelDefaults(values?: Record<string, unknown>): 
     chatSortMode: parsedChatSortMode.success ? parsedChatSortMode.data : 'default',
     fileDoubleClickAction: parsedFileDoubleClickAction.success ? parsedFileDoubleClickAction.data : 'open',
     sidebarPins: sidebarPinsSchema.parse(values?.sidebarPins ?? {}),
+    // Null is a choice (no color); a missing or unknown value is the default red.
+    trashColor: trashColorSchema.catch(DEFAULT_TRASH_COLOR).parse(values?.trashColor),
     agentModes: parsedAgentModes.success ? parsedAgentModes.data : {},
     instructionPresetSelections: parsedInstructionPresetSelections.success ? parsedInstructionPresetSelections.data : {},
     modelWarningDismissals: parsedModelWarningDismissals.success ? parsedModelWarningDismissals.data : {},

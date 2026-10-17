@@ -3,8 +3,10 @@ import type { FileNode } from '@pulpo/contracts'
 import { MoreHorizontal, Pin } from 'lucide-react'
 import { ui, uit } from '@/i18n/ui'
 import { formatBytes } from '@/lib/attachments'
-import { timeAgo } from '@/lib/format'
+import { formatDateTime, timeAgo } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import { isTrashFolder } from '@/features/trash/folder'
+import { trashDeletesLabel } from '@/features/trash/labels'
 import { dropFolderOf, fileKindLabel } from '../file-display'
 import { FileNodeIcon } from '../FileNodeIcon'
 import { SuggestedBadge } from '../FileSuggestion'
@@ -27,6 +29,10 @@ export interface FileItemProps {
   /** Part of the selection currently being dragged; shown faded in place. */
   dragging: boolean
   dropActive: boolean
+  /** False for folders that items cannot be dropped into (trashed ones). */
+  droppable?: boolean
+  /** For items in the trash: when they were trashed and when they will be deleted for good. */
+  trash?: { trashedAt: string; purgeAt: string | null; now: number }
   renaming: boolean
   onPointerDown: (event: PointerEvent) => void
   onClick: (event: MouseEvent) => void
@@ -71,12 +77,15 @@ export function FileItem(props: FileItemProps) {
       <title>{ui("Pinned to the sidebar")}</title>
     </Pin>
   )
+  const trash = props.trash
+  const deletes = trash && trashDeletesLabel(trash.purgeAt, trash.now)
+  const deletesTitle = trash?.purgeAt ? formatDateTime(Date.parse(trash.purgeAt)) : undefined
   const shared = {
     'data-file-id': node.id,
     role: 'option' as const,
     'aria-selected': selected,
     // Folders are drop targets for items dragged within Files (see useItemDrag).
-    'data-drop-target': dropFolderOf(node),
+    'data-drop-target': props.droppable === false ? undefined : dropFolderOf(node),
     draggable: false,
     onPointerDown: props.onPointerDown,
     onClick: props.onClick,
@@ -101,6 +110,7 @@ export function FileItem(props: FileItemProps) {
       >
         <FileNodeIcon node={node} className="size-11" />
         {name}
+        {deletes && <span className="-mt-1.5 text-xs text-muted-foreground" title={deletesTitle}>{deletes}</span>}
         {node.suggestion && <SuggestedBadge className={cn('absolute top-1.5 bg-background/80', node.pinned ? 'left-7' : 'left-1.5')} />}
         {pin}
         <div className="absolute top-1 right-1">{menuButton}</div>
@@ -127,8 +137,18 @@ export function FileItem(props: FileItemProps) {
         {node.suggestion && !renaming && <SuggestedBadge />}
         {!renaming && pin}
       </span>
-      <span className="hidden truncate text-sm text-muted-foreground @2xl:block">{timeAgo(Date.parse(node.updatedAt))}</span>
-      <span className="hidden truncate text-sm text-muted-foreground @2xl:block">{fileKindLabel(node)}</span>
+      {trash ? (
+        <>
+          <span className="hidden truncate text-sm text-muted-foreground @2xl:block" title={formatDateTime(Date.parse(trash.trashedAt))}>{timeAgo(Date.parse(trash.trashedAt))}</span>
+          <span className="hidden truncate text-sm text-muted-foreground @2xl:block" title={deletesTitle}>{deletes}</span>
+        </>
+      ) : (
+        <>
+          {/* The trash is not a stored folder, so it has no modified time. */}
+          <span className="hidden truncate text-sm text-muted-foreground @2xl:block">{isTrashFolder(node) ? '—' : timeAgo(Date.parse(node.updatedAt))}</span>
+          <span className="hidden truncate text-sm text-muted-foreground @2xl:block">{fileKindLabel(node)}</span>
+        </>
+      )}
       <span className="hidden text-right text-sm text-muted-foreground tabular-nums @lg:block">{node.kind === 'folder' || node.kind === 'chat' || node.kind === 'shortcut' ? '—' : formatBytes(node.sizeBytes)}</span>
       {menuButton}
     </div>

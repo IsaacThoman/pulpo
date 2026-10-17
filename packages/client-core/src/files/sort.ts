@@ -10,13 +10,13 @@ export interface FileSort {
 export const DEFAULT_FILE_SORT: FileSort = { key: 'name', direction: 'asc' }
 export const FILE_SORT_KEYS: readonly FileSortKey[] = ['name', 'modified', 'size', 'kind']
 
-/** A saved sort, or the default when it is missing or no longer valid. */
-export function parseFileSort(value: unknown): FileSort {
+/** A saved sort, or `fallback` when it is missing or no longer valid. */
+export function parseFileSort(value: unknown, fallback: FileSort = DEFAULT_FILE_SORT): FileSort {
   const saved = value as Partial<FileSort> | null | undefined
   if (saved && FILE_SORT_KEYS.includes(saved.key as FileSortKey) && (saved.direction === 'asc' || saved.direction === 'desc')) {
     return { key: saved.key as FileSortKey, direction: saved.direction }
   }
-  return DEFAULT_FILE_SORT
+  return fallback
 }
 
 /** Clicking the active column flips its direction; another column starts in its natural order. */
@@ -34,12 +34,15 @@ export function fileKindKey(node: Pick<FileNode, 'kind' | 'name'>): string {
 
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' })
 
-/** Folders always come first, as in desktop file managers; ties fall back to the name. */
-export function sortFileNodes(nodes: readonly FileNode[], sort: FileSort): FileNode[] {
+/**
+ * Folders always come first, as in desktop file managers; ties fall back to the name. `dateOf` is
+ * the date "modified" sorts by (the trash sorts by when items were trashed).
+ */
+export function sortFileNodes<T extends FileNode>(nodes: readonly T[], sort: FileSort, dateOf: (node: T) => string = (node) => node.updatedAt): T[] {
   const direction = sort.direction === 'asc' ? 1 : -1
-  const compare = (left: FileNode, right: FileNode): number => {
+  const compare = (left: T, right: T): number => {
     switch (sort.key) {
-      case 'modified': return Date.parse(left.updatedAt) - Date.parse(right.updatedAt)
+      case 'modified': return Date.parse(dateOf(left)) - Date.parse(dateOf(right))
       case 'size': return left.sizeBytes - right.sizeBytes
       case 'kind': return collator.compare(fileKindKey(left), fileKindKey(right))
       default: return 0

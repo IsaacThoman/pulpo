@@ -73,6 +73,7 @@ import { FilesNavMenu } from '@/features/files/FilesNavMenu'
 import { FileNodeIcon } from '@/features/files/FileNodeIcon'
 import { SuggestedBadge } from '@/features/files/FileSuggestion'
 import { registerItemDropZone } from '@/features/files/browser/use-item-drag'
+import { useTrashOperations } from '@/features/trash/use-trash-operations'
 import { AppearanceDialog } from '@/features/files/AppearanceDialog'
 import { editAppearance, hasAppearance } from '@/features/files/appearance'
 import { FolderPickerDialog } from '@/features/sidebar/FolderPickerDialog'
@@ -998,9 +999,9 @@ function ItemMenu({ node, folder, sidebar, atPointer = false, onRename, onNewFol
         {t('common.rename')}
       </DropdownMenuItem>
       {!shortcut && (
-        <DropdownMenuItem disabled={system} onClick={() => editAppearance([node])}>
+        <DropdownMenuItem onClick={() => editAppearance([node])}>
           <Palette />
-          {ui("Color and icon…")}
+          {system ? ui("Color…") : ui("Color and icon…")}
         </DropdownMenuItem>
       )}
       {!system && (
@@ -1053,13 +1054,16 @@ function SpaceMenuContent({ folderId, onNewChat, onNewFolder, onUpload, go }: {
   const filesEnabled = useAuth((state) => state.filesEnabled)
   const clip = useFileClipboard((state) => state.clip)
   const ops = useFileOperations()
+  const trashOps = useTrashOperations()
   const recentOrder = useSettings((state) => state.chatSortMode === 'recent')
   const setSetting = useSettings((state) => state.set)
   const paste = async () => {
     if (!clip) return
     if (clip.mode === 'cut') {
       useFileClipboard.setState({ clip: null })
-      await ops.move(clip.nodes, folderId)
+      // Items cut in the trash are restored here.
+      if (clip.nodes.some((node) => node.trashedAt)) await trashOps.restore(clip.nodes, { parentId: folderId })
+      else await ops.move(clip.nodes, folderId)
     } else {
       await ops.copy(clip.nodes, folderId)
     }
@@ -1518,6 +1522,7 @@ export function Sidebar({
   const [activeTooltip, setActiveTooltip] = useState<string | null>(null)
   const [filesMenuPoint, setFilesMenuPoint] = useState<{ x: number; y: number } | null>(null)
   const shiftHeld = useShiftHeld()
+  const trashOps = useTrashOperations()
   const folderOfList = (list: DropList): string | null => {
     if (list === 'pinned') return null
     if (list === 'loose') return sidebar?.chatsFolderId ?? null
@@ -1659,11 +1664,25 @@ export function Sidebar({
     placeAtLine(hint, ids)
   }
 
+  /**
+   * Restores items dragged out of the trash into the folder shown, then puts them at the spot shown.
+   * The pinned list is not a folder: there they come back where they were, and are pinned.
+   */
+  const restoreFromTrash = async (nodes: FileNode[], hint: DropHint) => {
+    const parentId = hint.kind === 'folder-target' ? hint.folderId : hint.kind === 'loose-target' ? sidebar?.chatsFolderId ?? null : folderOfList(hint.list)
+    const restored = await trashOps.restore(nodes, parentId ? { parentId } : undefined)
+    if (restored?.length && hint.kind === 'row') placeAtLine(hint, restored.map((node) => node.id), restored)
+  }
+
   /** Places items dragged in from the Files browser where the sidebar showed (see useItemDrag). */
   const dropFromFiles = (nodes: FileNode[]): boolean => {
     const hint = drag.dropRef.current
     drag.setDrop(null)
     if (!hint) return false
+    if (nodes.some((node) => node.trashedAt)) {
+      void restoreFromTrash(nodes, hint)
+      return true
+    }
     const ids = nodes.map((node) => node.id)
     if (hint.kind !== 'row') {
       const folderId = hint.kind === 'folder-target' ? hint.folderId : null

@@ -323,6 +323,22 @@ export function FilesFolderScreen({ navigation, route }: Props) {
           <Pressable accessibilityRole="button" onPress={() => runAction(folder, 'reject-suggestion')}><Text style={[styles.bannerAction, { color: theme.red }]}>Remove</Text></Pressable>
         </View>
       ) : null}
+      {folderId === null && !search ? (
+        <Pressable
+          accessibilityHint="Opens deleted chats and files"
+          accessibilityLabel="Trash"
+          accessibilityRole="button"
+          onPress={() => navigation.navigate('Trash')}
+          style={({ pressed }) => [styles.trashRow, pressed && { opacity: 0.6 }]}
+          testID="files-trash"
+        >
+          <View style={styles.trashIcon}><SymbolView name="trash.fill" size={24} tintColor="#FF3B30" /></View>
+          <View style={[styles.trashText, { borderBottomColor: theme.separator }]}>
+            <Text style={[styles.trashName, { color: theme.text }]}>Trash</Text>
+            <SymbolView name="chevron.right" size={13} tintColor={theme.tertiary} />
+          </View>
+        </Pressable>
+      ) : null}
       {localUploads.map(renderUpload)}
     </View>
   )
@@ -442,6 +458,10 @@ const styles = StyleSheet.create({
   uploadName: { fontSize: 17 },
   uploadState: { fontSize: 13, marginTop: 1 },
   androidActions: { flexDirection: 'row', alignItems: 'center' },
+  trashRow: { flexDirection: 'row', alignItems: 'center', paddingLeft: 16, minHeight: 56 },
+  trashIcon: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', marginRight: 14 },
+  trashText: { flex: 1, alignSelf: 'stretch', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingRight: 16, borderBottomWidth: StyleSheet.hairlineWidth },
+  trashName: { fontSize: 17 },
   selectionBar: { position: 'absolute', left: 0, right: 0, bottom: 0, borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 8, paddingHorizontal: 16 },
   selectionCount: { textAlign: 'center', fontSize: 13, marginBottom: 4 },
   selectionActions: { flexDirection: 'row', justifyContent: 'space-around' },
