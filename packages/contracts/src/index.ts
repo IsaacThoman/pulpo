@@ -15,6 +15,7 @@ export * from './composer.js'
 import { z } from 'zod'
 import { DEFAULT_MAX_INLINE_IMAGES, MAX_CONFIGURABLE_INLINE_IMAGES, MAX_MESSAGE_ATTACHMENTS } from './attachment-limits.js'
 export * from './attachment-limits.js'
+export * from './sandbox.js'
 import { CHAT_PRESET_ICON_NAMES } from './chat-preset-icons.generated.js'
 
 export { CHAT_PRESET_ICON_NAMES } from './chat-preset-icons.generated.js'

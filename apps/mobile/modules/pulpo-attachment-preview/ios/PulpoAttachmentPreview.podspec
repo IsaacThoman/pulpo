@@ -1,7 +1,7 @@
 Pod::Spec.new do |s|
   s.name           = 'PulpoAttachmentPreview'
   s.version        = '1.0.0'
-  s.summary        = 'Presents Pulpo attachments with iOS Quick Look.'
+  s.summary        = 'Presents Pulpo attachments with iOS Quick Look and a sandboxed web view.'
   s.description    = 'An app-local Expo module for native fullscreen document previews.'
   s.author         = 'Pulpo'
   s.homepage       = 'https://docs.expo.dev/modules/'
@@ -10,7 +10,7 @@ Pod::Spec.new do |s|
   s.static_framework = true
 
   s.dependency 'ExpoModulesCore'
-  s.frameworks = 'QuickLook'
+  s.frameworks = 'QuickLook', 'SafariServices', 'WebKit'
   s.pod_target_xcconfig = { 'DEFINES_MODULE' => 'YES' }
   s.source_files = '**/*.{h,m,mm,swift,hpp,cpp}'
 end

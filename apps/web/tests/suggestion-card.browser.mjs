@@ -89,6 +89,112 @@ try {
   })
   assert.equal(covered, 'toolbar', 'the toolbar stays on top of the card')
 
+  // The step buttons stay put while the count next to them changes width.
+  await open()
+  const next = page.getByRole('button', { name: 'Next suggestion' })
+  const bar = page.getByRole('toolbar', { name: 'Suggestions' })
+  const count = Number((await bar.textContent()).match(/(\d+) suggestions/)[1])
+  const nextBox = await next.boundingBox()
+  await next.click()
+  assert.deepEqual(await next.boundingBox(), nextBox, 'Next stays put when the count changes')
+  await next.click()
+  assert.match(await bar.textContent(), new RegExp(`Suggestion 2 of ${count}`))
+
+  // Stepping either way shows each suggestion below the toolbar, with its card in view.
+  await open()
+  const shown = () => page.evaluate(() => {
+    const card = document.querySelector('[data-suggestion-card]')
+    const id = card.getAttribute('data-suggestion-card')
+    const text = document.querySelector(`[data-suggestion-id="${id}"]`).getClientRects()[0]
+    return {
+      id,
+      textTop: text.top,
+      headerBottom: document.querySelector('[aria-label="Formatting"]').closest('.sticky').getBoundingClientRect().bottom,
+      cardBottom: card.getBoundingClientRect().bottom,
+      frameBottom: document.querySelector('[data-scroller]').getBoundingClientRect().bottom,
+    }
+  })
+  for (const button of [...Array(count).fill('Next suggestion'), ...Array(count).fill('Previous suggestion')]) {
+    await page.getByRole('button', { name: button }).click()
+    const { id, textTop, headerBottom, cardBottom, frameBottom } = await shown()
+    assert.ok(textTop >= headerBottom, `${button} shows ${id} below the toolbar`)
+    assert.ok(cardBottom <= frameBottom, `${button} shows the card of ${id}`)
+  }
+
+  // A long suggestion's card goes under its last line when there is room for it in view, and
+  // otherwise under the line pointed at.
+  await open()
+  const long = suggestion('long')
+  const hoverLong = async (top) => {
+    await page.mouse.move(5, 5)
+    await card.waitFor({ state: 'detached' })
+    await page.evaluate((top) => {
+      const scroller = document.querySelector('[data-scroller]')
+      scroller.scrollTop += document.querySelector('[data-suggestion-id="long"]').getBoundingClientRect().top - top
+    }, top)
+    const box = await long.boundingBox()
+    await page.mouse.move(box.x + 40, box.y + 10, { steps: 6 })
+    await page.locator('[data-suggestion-card="long"]').waitFor()
+    return { box, card: await card.boundingBox() }
+  }
+  const inView = await hoverLong(150)
+  assert.ok(inView.box.height > 150, 'the long suggestion spans several lines')
+  assert.ok(inView.card.y > inView.box.y + inView.box.height - 10, 'with room, the card is under the last line')
+  const runningOff = await hoverLong(450)
+  assert.ok(runningOff.card.y - runningOff.box.y < 50, 'without room, the card is under the first line')
+
+  // The shortcut accepts the suggestion at the cursor.
+  await open()
+  await suggestion('swap', '.pulpo-suggestion-delete').click()
+  await card.waitFor()
+  await page.keyboard.press('ControlOrMeta+Alt+Enter')
+  await card.waitFor({ state: 'detached' })
+  assert.equal(await page.locator('[data-suggestion-id="swap"]').count(), 0, 'the shortcut accepts the suggestion')
+
+  // Escape closes the card until the cursor leaves its suggestion.
+  await open()
+  await suggestion('swap', '.pulpo-suggestion-insert').click()
+  await card.waitFor()
+  // The card shows as the click starts; the cursor lands in the suggestion a little later.
+  await page.waitForFunction(() => document.querySelector('.pulpo-doc-editor').editor.state.selection.from > 1)
+  await page.keyboard.press('Escape')
+  await card.waitFor({ state: 'detached' })
+  await page.keyboard.press('ArrowRight')
+  await page.waitForTimeout(300)
+  assert.equal(await card.count(), 0, 'the card stays closed while the cursor stays in the suggestion')
+  await page.keyboard.press('Home')
+  await suggestion('swap', '.pulpo-suggestion-insert').click()
+  await card.waitFor()
+
+  // Rejecting with the shortcut keeps the line break before the suggestion, and the keys' repeats
+  // while held leave the suggestion after it alone.
+  await open()
+  await suggestion('afterbreak').scrollIntoViewIfNeeded()
+  await page.evaluate(() => {
+    const { editor } = document.querySelector('.pulpo-doc-editor')
+    editor.view.focus()
+    editor.commands.setTextSelection(editor.view.posAtDOM(editor.view.dom.querySelector('[data-suggestion-id="afterbreak"]'), 0))
+  })
+  const holdReject = async () => {
+    await page.keyboard.down('ControlOrMeta')
+    await page.keyboard.down('Alt')
+    await page.keyboard.down('Backspace')
+    await page.keyboard.down('Backspace')
+    await page.keyboard.up('Backspace')
+    await page.keyboard.up('Alt')
+    await page.keyboard.up('ControlOrMeta')
+  }
+  const lines = () => page.evaluate(() => {
+    const line = [...document.querySelectorAll('.pulpo-doc-editor p')].find((paragraph) => paragraph.textContent.startsWith('Line one'))
+    return { text: line.textContent, breaks: line.querySelectorAll('br:not(.ProseMirror-trailingBreak)').length, adjacent: Boolean(line.querySelector('[data-suggestion-id="adjacent"]')) }
+  })
+  await holdReject()
+  assert.deepEqual(await lines(), { text: 'Line onehere tail.', breaks: 1, adjacent: true })
+  // With no suggestion left at the cursor, the keys leave the line break alone too.
+  await page.keyboard.press('ControlOrMeta+Alt+Backspace')
+  await holdReject()
+  assert.deepEqual(await lines(), { text: 'Line one tail.', breaks: 1, adjacent: false })
+
   // On a touch screen, tapping a suggestion moves the card to it at once, wherever in the word the
   // caret lands (Safari puts it at a word's edge), tapping plain text hides it, and a swipe to
   // scroll leaves it be. The first tap lands where it was aimed, even at phone widths where the
@@ -99,14 +205,18 @@ try {
       const touch = await touchBrowser.newPage({ viewport: { width, height: 700 }, hasTouch: true })
       touch.on('pageerror', (error) => errors.push(error.message))
       await touch.goto(`${server.resolvedUrls.local[0]}tests/suggestion-card/index.html`)
+      await touch.locator('[data-suggestion-id="swap"]').first().waitFor()
       const touchCard = touch.getByRole('dialog', { name: 'Suggestion' })
       const tap = async (locator, across) => {
         const box = await locator.boundingBox()
         await touch.touchscreen.tap(box.x + box.width * across, box.y + box.height / 2)
       }
       const label = `${engine.name()} at ${width}px`
+      const toolbarHeight = () => touch.evaluate(() => document.querySelector('[aria-label="Formatting"]').closest('.sticky').getBoundingClientRect().height)
+      const before = await toolbarHeight()
       await tap(touch.locator('[data-suggestion-id="inner"]').first(), 0.5)
       await touchCard.getByText('Add “brave”', { exact: true }).waitFor()
+      assert.equal(await toolbarHeight(), before, `${label}: the toolbar keeps its height as the count changes`)
       await touch.waitForTimeout(400)
       assert.equal(await touchCard.getAttribute('data-suggestion-card'), 'inner', `${label}: the first tap's card stays`)
       await tap(touch.locator('[data-suggestion-id="swap"].pulpo-suggestion-insert').first(), 0.5)
