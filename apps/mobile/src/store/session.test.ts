@@ -271,6 +271,13 @@ describe('remembered instance configuration', () => {
     expect(useSessionStore.getState().config).toEqual(remembered)
   })
 
+  it('remembers it per instance address, paths included', async () => {
+    const config = { instance: { name: 'Team' }, capabilities: {} }
+    useSessionStore.setState({ instanceUrl: 'https://pulpo.test/team', config: config as never })
+    expect(mocks.values.get('global:config:https://pulpo.test/team')).toEqual(config)
+    expect(mocks.values.get(`global:config:${instanceUrl}`)).toBeUndefined()
+  })
+
   it('remembers the configuration the server sends', async () => {
     const config = { instance: { name: 'Pulpo' }, capabilities: { files: { enabled: false, docSchemaVersion: 2 } } }
     useSessionStore.setState({ config: config as never })
