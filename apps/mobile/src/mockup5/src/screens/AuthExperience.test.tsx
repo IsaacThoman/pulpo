@@ -172,6 +172,7 @@ describe('mobile pending approval', () => {
 
   it.each([
     ['ignores a seventh typed character', 'AB1CD2', 'AB1CD2X', 'AB1CD2'],
+    ['ignores a seventh character typed at the start', 'AB1CD2', 'XAB1CD2', 'AB1CD2'],
     ['replaces the code with one pasted in the middle', 'ZZZZZZ', 'ZZZABC123ZZZ', 'ABC123'],
     ['keeps one copy of a doubled autofill', '', '123456123456', '123456'],
     ['replaces a similar code with one pasted at the start', 'AB1CD3', 'AB1CD2AB1CD3', 'AB1CD2'],

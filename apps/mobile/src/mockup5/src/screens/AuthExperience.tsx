@@ -59,7 +59,9 @@ function nextInviteCode(previous: string, raw: string) {
   if (cleaned.length <= INVITE_CODE_LENGTH) return cleaned;
   // A full code pasted into an existing one replaces it instead of being cut off.
   const inserted = cleanInviteCode(insertedText(previous, raw));
-  return (inserted.length === INVITE_CODE_LENGTH ? inserted : cleaned).slice(0, INVITE_CODE_LENGTH);
+  if (inserted.length === INVITE_CODE_LENGTH) return inserted;
+  // Extra characters typed into a full code are ignored wherever the caret is.
+  return previous.length === INVITE_CODE_LENGTH ? previous : cleaned.slice(0, INVITE_CODE_LENGTH);
 }
 
 function useCompactAuthLayout() {
