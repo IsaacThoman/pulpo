@@ -2,8 +2,8 @@ import { MaterialButton, MaterialField } from '../../../platform/MaterialUI';
 import { useSubpageBack } from '../../../platform/useSubpageBack';
 import { DeleteAccountAction } from '../../../components/DeleteAccount';
 import type { ComponentProps, PropsWithChildren, ReactNode } from 'react';
-import { useState } from 'react';
-import { ActivityIndicator, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
+import { useRef, useState } from 'react';
+import { ActivityIndicator, Image, KeyboardAvoidingView, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SymbolView } from '../../../platform/SymbolView';
 import { useAppTheme } from '../theme';
@@ -34,6 +34,8 @@ type AuthFieldProps = ComponentProps<typeof TextInput> & {
 };
 
 const COMPACT_AUTH_HEIGHT = 700;
+const INVITE_CODE_LENGTH = 6;
+const DEFAULT_PENDING_MESSAGE = 'Your account is pending approval. An admin will review it shortly.';
 
 function useCompactAuthLayout() {
   return useWindowDimensions().height <= COMPACT_AUTH_HEIGHT;
@@ -50,7 +52,7 @@ function AuthShell({ title, subtitle, children, footer, colors }: PropsWithChild
       </View>
       <View style={[styles.heading, compact && styles.compactHeading]}>
         <Text accessibilityRole="header" style={[styles.title, compact && styles.compactTitle, { color: colors.text }]}>{title}</Text>
-        <Text style={[styles.subtitle, compact && styles.compactSubtitle, { color: colors.textMuted }]}>{subtitle}</Text>
+        {subtitle ? <Text style={[styles.subtitle, compact && styles.compactSubtitle, { color: colors.textMuted }]}>{subtitle}</Text> : null}
       </View>
       <View style={[styles.form, compact && styles.compactForm]}>{children}</View>
       {footer ? <View style={[styles.footer, compact && styles.compactFooter]}>{footer}</View> : null}
@@ -83,6 +85,61 @@ function PrimaryAuthButton({ label, colors, loading = false, disabled = false, i
   return <Pressable accessibilityRole="button" accessibilityLabel={label} disabled={inactive} onPress={onPress} style={[styles.primaryButton, compact && styles.compactPrimaryButton, { backgroundColor }]}>
     {loading ? <ActivityIndicator color={foregroundColor} /> : <><Text style={[styles.primaryButtonText, { color: foregroundColor }]}>{label}</Text>{icon ? <SymbolView name={icon} tintColor={foregroundColor} size={16} weight="semibold" /> : null}</>}
   </Pressable>;
+}
+
+function SecondaryAuthButton({ label, colors, loading = false, disabled = false, tonal = false, icon, onPress }: {
+  label: string;
+  colors: AuthColors;
+  loading?: boolean;
+  disabled?: boolean;
+  tonal?: boolean;
+  icon?: Parameters<typeof SymbolView>[0]['name'];
+  onPress: () => void;
+}) {
+  const compact = useCompactAuthLayout();
+  if (Platform.OS === 'android') return <MaterialButton label={label} variant="secondary" onPress={onPress} disabled={disabled} loading={loading} icon={typeof icon === 'string' ? icon : undefined} />;
+  const inactive = disabled || loading;
+  return <Pressable accessibilityRole="button" accessibilityLabel={label} disabled={inactive} onPress={onPress} style={[styles.secondaryButton, compact && styles.compactSecondaryButton, tonal ? { backgroundColor: colors.surface, borderColor: colors.surface } : { borderColor: colors.border }, inactive && !loading && styles.inactiveButton]}>
+    {loading ? <ActivityIndicator color={colors.text} /> : <>{icon ? <SymbolView name={icon} tintColor={colors.text} size={16} weight="semibold" /> : null}<Text style={[styles.secondaryButtonText, { color: colors.text }]}>{label}</Text></>}
+  </Pressable>;
+}
+
+function InviteCodeField({ colors, value, disabled, invalid, onChangeText, onSubmit }: { colors: AuthColors; value: string; disabled: boolean; invalid: boolean; onChangeText: (value: string) => void; onSubmit: () => void }) {
+  const inputRef = useRef<TextInput>(null);
+  const [focused, setFocused] = useState(false);
+  const compact = useCompactAuthLayout();
+  const activeIndex = Math.min(value.length, INVITE_CODE_LENGTH - 1);
+  return <View style={styles.inviteCode}>
+    <Text style={[styles.inviteCodeLabel, { color: colors.text }]} onPress={() => inputRef.current?.focus()}>Invite code</Text>
+    <View>
+      <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={[styles.inviteCodeCells, compact && styles.compactInviteCodeCells]}>
+        {Array.from({ length: INVITE_CODE_LENGTH }, (_, index) => <View key={index} style={[styles.inviteCodeCell, compact && styles.compactInviteCodeCell, { backgroundColor: colors.surface, borderColor: invalid ? colors.destructive : focused && index === activeIndex ? colors.text : colors.border }]}>
+          <Text style={[styles.inviteCodeCharacter, compact && styles.compactInviteCodeCharacter, { color: colors.text }]}>{value[index] ?? ''}</Text>
+        </View>)}
+      </View>
+      {/* One transparent input over the boxes keeps paste, autofill, and backspace native. */}
+      <TextInput
+        ref={inputRef}
+        accessibilityLabel="Invite code"
+        accessibilityHint="Six letters or numbers"
+        value={value}
+        onChangeText={(next) => onChangeText(next.toUpperCase().replace(/[^0-9A-Z]/g, '').slice(0, INVITE_CODE_LENGTH))}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        onSubmitEditing={onSubmit}
+        editable={!disabled}
+        maxLength={INVITE_CODE_LENGTH}
+        autoCapitalize="characters"
+        autoCorrect={false}
+        autoComplete="one-time-code"
+        spellCheck={false}
+        returnKeyType="go"
+        caretHidden
+        selectionColor="transparent"
+        style={styles.inviteCodeInput}
+      />
+    </View>
+  </View>;
 }
 
 function BackToSignIn({ colors, onPress, label = 'Back to sign in' }: { colors: AuthColors; onPress: () => void; label?: string }) {
@@ -126,6 +183,8 @@ export function AuthExperience() {
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
   const [pendingFeedback, setPendingFeedback] = useState('');
+  const [pendingAction, setPendingAction] = useState<'redeem' | 'refresh' | null>(null);
+  const [inviteRejected, setInviteRejected] = useState(false);
   const [passkeyFallback, setPasskeyFallback] = useState(false);
   const [inviteCode, setInviteCode] = useState('');
 
@@ -203,48 +262,60 @@ export function AuthExperience() {
   const refreshApproval = async () => {
     setError('');
     setPendingFeedback('');
-    setLoading(true);
+    setInviteRejected(false);
+    setPendingAction('refresh');
     try {
       await refreshSession();
       if (useSessionStore.getState().status === 'pending') setPendingFeedback('Still waiting for administrator approval.');
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : 'Could not refresh approval status. Check your connection and try again.');
     } finally {
-      setLoading(false);
+      setPendingAction(null);
     }
   };
   const redeemInvite = async () => {
+    if (pendingAction || inviteCode.length !== INVITE_CODE_LENGTH) return;
     setError('');
     setPendingFeedback('');
-    setLoading(true);
+    setPendingAction('redeem');
     try {
       await mobileApi.redeemInviteCode(inviteCode);
       await refreshSession();
     } catch (nextError) {
+      setInviteRejected(true);
       setError(nextError instanceof Error ? nextError.message : 'Unable to redeem this invite code.');
     } finally {
-      setLoading(false);
+      setPendingAction(null);
     }
   };
 
-  if (session.status === 'pending' && session.user) return <AuthShell colors={colors} title="Approval needed" subtitle="Your Pulpo account is ready, but an administrator needs to approve it before you can start chatting.">
-    <View style={[styles.pendingCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-      <SymbolView name="person.crop.circle.badge.clock" size={28} tintColor={colors.textMuted} />
-      <View style={styles.pendingIdentity}>
-        <Text style={[styles.pendingName, { color: colors.text }]}>{session.user.name}</Text>
-        <Text style={[styles.pendingEmail, { color: colors.textMuted }]}>{session.user.email}</Text>
+  if (session.status === 'pending' && session.user) {
+    const auth = productionConfig?.auth;
+    return <AuthShell colors={colors} title="Account pending approval" subtitle={auth?.pendingMessage ?? DEFAULT_PENDING_MESSAGE}>
+      {auth?.inviteCodesEnabled ? <>
+        <InviteCodeField colors={colors} value={inviteCode} disabled={pendingAction === 'redeem'} invalid={inviteRejected} onChangeText={(value) => { setInviteCode(value); setInviteRejected(false); setError(''); }} onSubmit={() => { void redeemInvite(); }} />
+        <PrimaryAuthButton label="Redeem invite code" colors={colors} loading={pendingAction === 'redeem'} disabled={inviteCode.length !== INVITE_CODE_LENGTH || pendingAction === 'refresh'} onPress={() => { void redeemInvite(); }} />
+      </> : null}
+      {auth?.pendingDetails && auth.adminEmail ? <View style={[styles.helpCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <SymbolView name="envelope" size={16} tintColor={colors.textMuted} />
+        <View style={styles.helpCopy}>
+          <Text style={[styles.helpTitle, { color: colors.text }]}>Need help?</Text>
+          <Text style={[styles.helpText, { color: colors.textMuted }]}>Contact your admin at <Text accessibilityRole="link" onPress={() => { void Linking.openURL(`mailto:${auth.adminEmail}`); }} style={[styles.helpLink, { color: colors.text }]}>{auth.adminEmail}</Text></Text>
+        </View>
+      </View> : null}
+      {pendingFeedback ? <Text accessibilityLiveRegion="polite" style={[styles.pendingHelp, { color: colors.textMuted }]}>{pendingFeedback}</Text> : null}
+      {error ? <Text accessibilityRole="alert" style={[styles.error, { color: colors.destructive }]}>{error}</Text> : null}
+      <View style={styles.pendingActions}>
+        <SecondaryAuthButton label="Sign out" colors={colors} icon="rectangle.portrait.and.arrow.right" disabled={pendingAction !== null} onPress={() => { void logout(); }} />
+        <SecondaryAuthButton label="Refresh status" colors={colors} tonal loading={pendingAction === 'refresh'} disabled={pendingAction === 'redeem'} onPress={() => { void refreshApproval(); }} />
       </View>
-    </View>
-    {productionConfig?.auth.inviteCodesEnabled ? <>
-      <AuthField colors={colors} icon="key" label="Invite code" value={inviteCode} onChangeText={(value) => setInviteCode(value.toUpperCase().replace(/[^0-9A-Z]/g, '').slice(0, 6))} autoCapitalize="characters" autoCorrect={false} maxLength={6} />
-      <PrimaryAuthButton label="Redeem invite code" colors={colors} loading={loading} disabled={inviteCode.length !== 6} onPress={() => { void redeemInvite(); }} />
-    </> : null}
-    {pendingFeedback ? <Text accessibilityLiveRegion="polite" style={[styles.pendingHelp, { color: colors.textMuted }]}>{pendingFeedback}</Text> : null}
-    {error ? <Text accessibilityRole="alert" style={[styles.error, { color: colors.destructive }]}>{error}</Text> : null}
-    <DeleteAccountAction />
-    <PrimaryAuthButton label="Refresh status" colors={colors} loading={loading} onPress={() => { void refreshApproval(); }} />
-    <Pressable accessibilityRole="button" onPress={() => { void logout(); }} style={[styles.secondaryButton, { borderColor: colors.border }]}><Text style={[styles.secondaryButtonText, { color: colors.text }]}>Back to sign in</Text></Pressable>
-  </AuthShell>;
+      <View style={[styles.dangerZone, { borderTopColor: colors.border }]}>
+        <Text accessibilityRole="header" style={[styles.dangerTitle, { color: colors.text }]}>Delete account</Text>
+        <Text style={[styles.dangerText, { color: colors.textMuted }]}>Permanently delete your account and its data.</Text>
+        <View style={styles.dangerAction}><DeleteAccountAction /></View>
+      </View>
+    </AuthShell>;
+  }
 
   if (page === 'two-factor') return <AuthShell colors={colors} title="Verify your identity" subtitle={recoveryMode ? 'Enter one of your saved recovery codes.' : 'Enter the six-digit code from your authenticator app.'}>
     <AuthField colors={colors} icon="checkmark.shield" label={recoveryMode ? 'Recovery code' : 'Authenticator code'} value={twoFactorCode} onChangeText={(value) => setTwoFactorCode(recoveryMode ? value.toUpperCase() : value.replace(/\D/g, '').slice(0, 6))} autoComplete="one-time-code" keyboardType={recoveryMode ? 'default' : 'number-pad'} maxLength={recoveryMode ? 14 : 6} />
@@ -341,7 +412,9 @@ const styles = StyleSheet.create({
   primaryButton: { minHeight: 52, borderRadius: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   compactPrimaryButton: { minHeight: 48, borderRadius: 15 },
   primaryButtonText: { fontSize: 16, fontWeight: '600' },
-  secondaryButton: { minHeight: 50, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center' },
+  secondaryButton: { minHeight: 50, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  compactSecondaryButton: { minHeight: 46, borderRadius: 15 },
+  inactiveButton: { opacity: 0.5 },
   secondaryButtonText: { fontSize: 16, fontWeight: '600' },
   links: { flexDirection: 'row', justifyContent: 'center', gap: 10 },
   linkTarget: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 6 },
@@ -352,9 +425,24 @@ const styles = StyleSheet.create({
   instanceText: { maxWidth: 210, fontSize: 12.5 },
   change: { fontSize: 12.5, fontWeight: '600' },
   note: { fontSize: 12.5, lineHeight: 18, textAlign: 'center', paddingHorizontal: 10 },
-  pendingCard: { minHeight: 74, borderRadius: 18, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 14 },
-  pendingIdentity: { flex: 1, gap: 2 },
-  pendingName: { fontSize: 16, fontWeight: '600' },
-  pendingEmail: { fontSize: 13.5 },
   pendingHelp: { fontSize: 13.5, lineHeight: 20 },
+  pendingActions: { gap: 10 },
+  inviteCode: { gap: 10 },
+  inviteCodeLabel: { fontSize: 15, fontWeight: '600' },
+  inviteCodeCells: { flexDirection: 'row', gap: 10 },
+  compactInviteCodeCells: { gap: 8 },
+  inviteCodeCell: { flex: 1, aspectRatio: 1, maxHeight: 64, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center' },
+  compactInviteCodeCell: { borderRadius: 12 },
+  inviteCodeCharacter: { fontFamily: Platform.select({ ios: 'Menlo', default: 'monospace' }), fontSize: 22, fontWeight: '600' },
+  compactInviteCodeCharacter: { fontSize: 20 },
+  inviteCodeInput: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, color: 'transparent', backgroundColor: 'transparent', fontSize: 1 },
+  helpCard: { borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, padding: 14, flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  helpCopy: { flex: 1, gap: 2 },
+  helpTitle: { fontSize: 14, fontWeight: '600' },
+  helpText: { fontSize: 14, lineHeight: 20 },
+  helpLink: { fontWeight: '600' },
+  dangerZone: { marginTop: 10, paddingTop: 20, borderTopWidth: StyleSheet.hairlineWidth, gap: 4 },
+  dangerTitle: { fontSize: 15, fontWeight: '600' },
+  dangerText: { fontSize: 13.5, lineHeight: 19 },
+  dangerAction: { alignItems: 'flex-start', marginTop: 4, marginLeft: Platform.OS === 'ios' ? -8 : 0 },
 });
