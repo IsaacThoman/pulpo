@@ -41,7 +41,8 @@ export function fileItemActions(node: FileNode, context: FileItemActionContext):
     actions.push({ id: 'reject-suggestion', title: 'Remove Suggested Item', systemImage: 'xmark.circle', section: 1, destructive: true })
   }
   if (isBuiltIn(node)) {
-    actions.push({ id: node.pinned ? 'unpin' : 'pin', title: node.pinned ? 'Unpin' : 'Pin', systemImage: node.pinned ? 'pin.slash' : 'pin', section: 2 })
+    // The Chats folder is the sidebar's own list of chats, so it can't be pinned to it (as on the web).
+    if (node.systemRole !== 'chats') actions.push({ id: node.pinned ? 'unpin' : 'pin', title: node.pinned ? 'Unpin' : 'Pin', systemImage: node.pinned ? 'pin.slash' : 'pin', section: 2 })
     return actions
   }
   actions.push({ id: 'rename', title: 'Rename', systemImage: 'pencil', section: 2 })
