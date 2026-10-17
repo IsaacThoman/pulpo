@@ -41,7 +41,7 @@ Then:
 
 ## Automated validation
 
-- **Mobile:** 110 test files and 974 tests. Among them:
+- **Mobile:** 113 test files and 985 tests. Among them:
   - The document store and sessions run on a real SQLite database (`node:sqlite`) with the app's schema. They cover:
     - offline edits across relaunches;
     - a slow database;
@@ -152,6 +152,10 @@ The branch was brought up to date with `dev` (one file overlapped and merged cle
 - After a revoked session was found at launch, signing in again shows Files without leaving the app.
 - After an offline launch, Files is in the drawer, and an upload queued before the launch went through on reconnecting, without leaving the app.
 - An upload that reached the server while Files was turned off waited without an error, then finished once Files was back on.
+- A document renamed to `.txt` lost its stored copy on the device. Renamed back and turned into a document with **Edit**, its content appeared once on the server, not twice.
+- An uploaded Markdown file converted on another device while open switched to the editor on its own.
+- The Chats folder's menu has no **Pin**.
+- **Change server** from the Add Account screen asks before signing every account out. Entering the same server changes nothing, and the account stayed signed in.
 
 Changes to native code: none, so Android was not run again; the changed screens use the same code on both platforms.
 
@@ -205,7 +209,10 @@ Independent reviewers audited each phase as it landed, then the whole branch twi
     - documents that closed unsynced are retried, unless the server refuses them for good;
     - signing out closes replaced sessions and warns about unsynced edits.
   - Chats started offline, and scope changes made offline, keep the Files items that remain.
-  - The instance configuration is read again on signing in and remembered for offline launches.
+  - The instance configuration is read again on signing in and on switching accounts, and remembered per instance address for offline launches.
+  - A document that became an ordinary file has its copy removed and is never merged into a document made from it later.
+  - Changing servers, and signing this device out from Devices, warn about unsynced edits.
+  - Downloaded files finished after signing out are removed, and item ids are checked before they name a directory.
 
 ## Not covered
 
@@ -216,6 +223,7 @@ Independent reviewers audited each phase as it landed, then the whole branch twi
   - The hardware back button. On this emulator, Back leaves the app from every screen, Settings included. That is not specific to Files; it is related to `predictiveBackGestureEnabled` in `app.config.ts`, which predates this work. The Files folder screen still handles Back to leave selection.
 - iPad drag and drop, and a side-by-side Files pane: Files opens full screen over the chat, as Settings does.
 - A hardware keyboard. TipTap's own shortcuts run inside the web view, but no keyboard was attached in these runs.
+- A document turned into an ordinary file and back on another device, while this device never saw it as a file, can still meet this device's old copy when opened, as the web's stored copies can. Closing that fully needs the server to give each document an identity that changes when it is made afresh; neither app has one yet.
 - Two audit suggestions were left as they are:
   - **The editor page's error reports:** the app does not reload the page when it reports an error. Most such reports are harmless page errors, which reloading would interrupt, and the updates the page applies all come from the app's own document.
   - **Android WebViews without the origin-checked message listener:** those (older than version 83) fall back to a plain JavaScript interface. The page loads nothing from anywhere and cannot navigate, so only the editor's own page can reach it.
