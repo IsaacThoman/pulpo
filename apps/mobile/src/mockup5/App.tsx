@@ -35,7 +35,7 @@ import { mobileComposerSync } from '../features/chat/composerSync';
 import { useComposerSync } from '../features/chat/useComposerSync';
 import { temporaryChatColors } from '../features/chat/temporaryColors';
 import { submitComposerDraft } from '../features/chat/composerSubmission';
-import { idSchema, type ComposerState } from '@pulpo/contracts';
+import { idSchema, type ComposerState, type FileNode } from '@pulpo/contracts';
 import {
   createContext,
   forwardRef,
@@ -229,6 +229,10 @@ import { FileChangesCard } from '../features/files/components/FileChangesCard';
 import { FileScopeBar } from '../features/files/components/FileScopeBar';
 import { useFileScopePicker } from '../features/files/scopePicker';
 import { useOpenFileItem } from '../features/files/open';
+import { fileOpenTarget } from '../features/files/itemActions';
+import { isPinnedFileEntry, pinnedFileItemsCeiling, unpinFileItem, usePinnedFileItems, withPinnedFileItems, type PinnedFileEntry } from '../features/files/pinned';
+import { PinnedFileRow } from '../features/files/components/PinnedFileRow';
+import { filesErrorMessage } from '../features/files/display';
 import { useFilesNamespace } from '../features/files/useFilesNamespace';
 import { fileChangesItem } from '@pulpo/client-core/files';
 import { FileDocumentScreen } from '../features/files/screens/FileDocumentScreen';
@@ -2396,6 +2400,20 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     navigation.navigate('FilesFolder', { folderId: null });
   }, [animatePanel, navigation]);
 
+  const openPinnedFileItem = useOpenFileItem();
+  const openFileItemFromHistory = useCallback((node: FileNode) => {
+    const target = fileOpenTarget(node);
+    const chat = target.type === 'chat' ? historyChats.find((item) => item.id === target.id) : undefined;
+    // A shortcut to a chat opens it here, like picking the chat itself.
+    if (chat) {
+      selectChat(chat);
+      return;
+    }
+    animatePanel(false);
+    Keyboard.dismiss();
+    void openPinnedFileItem(node);
+  }, [animatePanel, historyChats, openPinnedFileItem, selectChat]);
+
   const saveActiveTemporaryChat = useCallback(async () => {
     if (!activeChatId || savingTemporaryChatId) return;
     const chat = usePrototypeStore.getState().chats.find((candidate) => candidate.id === activeChatId);
@@ -2863,6 +2881,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
               onNewChat={newChatFromHistory}
               onOpenSettings={openSettingsFromHistory}
               onOpenFiles={openFilesFromHistory}
+              onOpenFileItem={openFileItemFromHistory}
               onPreviewRequest={loadHistoryPreview}
             />
           </Reanimated.View>
@@ -6467,7 +6486,7 @@ const HistoryChatRow = memo(function HistoryChatRow({ active, chat, expirationMe
   );
 });
 
-const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpen, loading, onSelectChat, onNewChat, onOpenSettings, onOpenFiles, onPreviewRequest }: {
+const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpen, loading, onSelectChat, onNewChat, onOpenSettings, onOpenFiles, onOpenFileItem, onPreviewRequest }: {
   chats: HistoryChatSummary[];
   activeChatId: string | null;
   drawerOpen: boolean;
@@ -6476,10 +6495,15 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
   onNewChat: () => void;
   onOpenSettings: () => void;
   onOpenFiles: () => void;
+  /** Opens a pinned Files item. */
+  onOpenFileItem: (node: FileNode) => void;
   onPreviewRequest: (chatId: string) => void;
 }) {
   const { styles, COLORS } = useChatStyles();
   const filesEnabled = useFilesEnabled();
+  const filesNamespace = useFilesNamespace();
+  const queryClient = useQueryClient();
+  const pinnedFileItems = usePinnedFileItems(filesNamespace, filesEnabled);
   useFilesCapabilityRefresh();
   const insets = useSafeAreaInsets();
   const { fontScale } = useWindowDimensions();
@@ -6556,8 +6580,10 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
   );
   const sections = useMemo(() => {
     // Search also surfaces filed chats, since the folder list is hidden while searching.
-    return historyChatSections(filtered, folders, search.length > 0, chatSortMode);
-  }, [chatSortMode, filtered, folders, search]);
+    const chatSections = historyChatSections(filtered, folders, search.length > 0, chatSortMode);
+    // Pinned Files items share the Pinned list; search looks through chats only.
+    return search ? chatSections : withPinnedFileItems(chatSections, pinnedFileItems);
+  }, [chatSortMode, filtered, folders, pinnedFileItems, search]);
   const { label: removeChatLabel, requiresConfirmation } = chatRemovalBehavior(trashRetention);
 
   const runChatAction = useCallback((chat: HistoryChatSummary, action: HistoryChatAction) => {
@@ -6580,7 +6606,7 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
       return;
     }
     if (action === 'pin') {
-      togglePin(chat.id);
+      togglePin(chat.id, pinnedFileItemsCeiling(pinnedFileItems));
       return;
     }
     if (action === 'rename') {
@@ -6605,7 +6631,7 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
         upsertChat({ id: copy.id, title: copy.title, modelId: copy.modelId, pinned: copy.pinned, folderId: copy.folderId, sortOrder: copy.sortOrder, temporary: copy.temporary, createdAt: Date.parse(copy.createdAt), updatedAt: Date.parse(copy.updatedAt), deletedAt: null, purgeAt: null, messages: source?.messages ?? [] });
       }).catch((error) => Alert.alert('Couldn’t duplicate chat', error instanceof Error ? error.message : undefined));
     }
-  }, [renameChat, requiresConfirmation, togglePin, trashChat, upsertChat]);
+  }, [pinnedFileItems, renameChat, requiresConfirmation, togglePin, trashChat, upsertChat]);
 
   const showChatActions = useCallback((chat: HistoryChatSummary, anchor?: MenuAnchor) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -6627,7 +6653,33 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
   }, [dismissSearch, onSelectChat]);
 
   const requestHistoryPreview = useCallback((chat: HistoryChatSummary) => onPreviewRequest(chat.id), [onPreviewRequest]);
-  const renderHistoryChat = useCallback(({ item }: { item: HistoryChatSummary }) => {
+  const openPinnedFileItem = useCallback((node: FileNode) => {
+    dismissSearch();
+    onOpenFileItem(node);
+  }, [dismissSearch, onOpenFileItem]);
+  const unpinPinnedFileItem = useCallback((node: FileNode) => {
+    Haptics.selectionAsync();
+    unpinFileItem(queryClient, filesNamespace, node).catch((error) => Alert.alert('Couldn’t unpin', filesErrorMessage(error, node.name)));
+  }, [filesNamespace, queryClient]);
+  const showPinnedFileActions = useCallback((node: FileNode) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    showActions(node.name, [
+      { label: 'Open', icon: 'arrow.up.forward.app', onPress: () => openPinnedFileItem(node) },
+      { label: 'Unpin', icon: 'pin.slash', onPress: () => unpinPinnedFileItem(node) },
+    ]);
+  }, [openPinnedFileItem, unpinPinnedFileItem]);
+  const renderHistoryChat = useCallback(({ item }: { item: HistoryChatSummary | PinnedFileEntry }) => {
+    if (isPinnedFileEntry(item)) {
+      return <PinnedFileRow
+        node={item.node}
+        rowStyle={styles.chatRow}
+        pressedStyle={styles.navRowPressed}
+        titleStyle={styles.chatTitle}
+        onOpen={openPinnedFileItem}
+        onUnpin={unpinPinnedFileItem}
+        onLongPress={showPinnedFileActions}
+      />;
+    }
     const source = previewChatsById.get(item.id);
     const previewText = source?.detailLoaded === false
       ? 'Loading preview…'
@@ -6654,7 +6706,7 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
       onPreviewRequest={requestHistoryPreview}
       onSelectChat={selectHistoryChat}
     />;
-  }, [activeChatId, automaticChatExpiration, isDark, models, requestHistoryPreview, previewChatsById, removeChatLabel, runChatAction, selectHistoryChat, showChatActions]);
+  }, [activeChatId, automaticChatExpiration, isDark, models, openPinnedFileItem, requestHistoryPreview, previewChatsById, removeChatLabel, runChatAction, selectHistoryChat, showChatActions, showPinnedFileActions, styles, unpinPinnedFileItem]);
 
   return (
     <View style={styles.panelRoot}>

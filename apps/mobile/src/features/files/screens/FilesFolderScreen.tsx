@@ -103,6 +103,8 @@ export function FilesFolderScreen({ navigation, route }: Props) {
   const exitSelection = useCallback(() => {
     setSelecting(false)
     setSelected(new Set())
+    // The search field comes back empty (see `headerSearchBarOptions`), so its filter goes too.
+    setSearch('')
   }, [])
 
   const newFolder = useCallback(() => promptName('New Folder', 'Untitled folder', 'Create', (name) => {
@@ -229,7 +231,9 @@ export function FilesFolderScreen({ navigation, route }: Props) {
       headerShown: Platform.OS === 'ios',
       headerLargeTitle: true,
       headerBackTitle: 'Back',
-      headerSearchBarOptions: Platform.OS === 'ios' ? {
+      // While selecting, the selection actions take the bottom of the screen, where iOS 26 keeps
+      // the search field, as in the Files app.
+      headerSearchBarOptions: Platform.OS === 'ios' && !selecting ? {
         placeholder: folderId === null ? 'Search My files' : `Search ${title}`,
         hideWhenScrolling: true,
         onChangeText: (event) => setSearch(event.nativeEvent.text),
@@ -429,6 +433,7 @@ export function FilesFolderScreen({ navigation, route }: Props) {
           confirmLabel="Move Here"
           initialFolderId={folderId}
           excludeIds={moving.map((node) => node.id)}
+          sourceFolderIds={moving.map((node) => node.parentId)}
           onCancel={() => setMoving(null)}
           onConfirm={(destination) => {
             const nodes = moving

@@ -30,7 +30,8 @@ type PrototypeActions = {
   /** Replaces which Files items a saved chat's agent works with; access of items that stay is kept. */
   setChatFileScope: (id: string, ids: string[]) => void;
   setChatFileAccess: (id: string, itemId: string, mode: import('@pulpo/contracts').FileAccessMode) => void;
-  togglePin: (id: string) => void;
+  /** `pinnedAfter`: the last position among the pinned Files items, which share the pinned list. */
+  togglePin: (id: string, pinnedAfter?: number) => void;
   moveChat: (id: string, folderId: string | null) => void;
   setChatAutoExpiration: (id: string, enabled: boolean) => void;
   trashChat: (id: string) => void;
@@ -178,7 +179,7 @@ export const usePrototypeStore = create<PrototypeStore>()((set, get) => ({
       set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, fileScopeAccess: previous.fileScopeAccess } : chat) }));
     });
   },
-  togglePin: (chatId) => {
+  togglePin: (chatId, pinnedAfter = -1) => {
     const current = get().chats.find((chat) => chat.id === chatId);
     if (!current) return;
     const next = !current.pinned;
@@ -186,7 +187,7 @@ export const usePrototypeStore = create<PrototypeStore>()((set, get) => ({
     const folderIds = new Set(get().folders.map((folder) => folder.id));
     // Match the web sidebar: pin to the end of Pinned, unpin to the top of the chat's list.
     const sortOrder = next
-      ? others.filter((chat) => chat.pinned).reduce((max, chat) => Math.max(max, chat.sortOrder), -1) + 1
+      ? others.filter((chat) => chat.pinned).reduce((max, chat) => Math.max(max, chat.sortOrder), pinnedAfter) + 1
       : topChatSortOrder(others, folderIds, current.folderId && folderIds.has(current.folderId) ? current.folderId : null);
     set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, pinned: next, sortOrder } : chat) }));
     runOptimisticAction(`chat:${chatId}:pinned`, productionActions.togglePin(chatId, next, sortOrder), () => {

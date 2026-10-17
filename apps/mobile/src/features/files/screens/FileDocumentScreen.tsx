@@ -395,6 +395,7 @@ export function FileDocumentScreen({ navigation, route }: Props) {
           confirmLabel="Move Here"
           initialFolderId={node.parentId}
           excludeIds={[node.id]}
+          sourceFolderIds={[node.parentId]}
           onCancel={() => setMoving(false)}
           onConfirm={(destination) => {
             setMoving(false)

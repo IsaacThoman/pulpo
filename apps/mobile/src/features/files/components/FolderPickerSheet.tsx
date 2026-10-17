@@ -31,6 +31,8 @@ type Props = BaseProps & (
     confirmLabel: string
     /** Items being moved: they and their contents cannot be the destination. */
     excludeIds?: readonly string[]
+    /** The moved items' folders: confirming where all of them already are would change nothing. */
+    sourceFolderIds?: ReadonlyArray<string | null>
     onConfirm: (folderId: string | null, folderName: string) => void
   }
   | {
@@ -107,7 +109,10 @@ export function FolderPickerSheet(props: Props) {
     if (props.mode === 'destination') props.onConfirm(current.id, current.name)
     else props.onConfirm([...picked.values()], current)
   }
-  const destinationBlocked = props.mode === 'destination' && current.id !== null && excluded.has(current.id)
+  const destinationBlocked = props.mode === 'destination' && (
+    (current.id !== null && excluded.has(current.id))
+    || Boolean(props.sourceFolderIds?.length && props.sourceFolderIds.every((id) => id === current.id))
+  )
   const confirmLabel = props.mode === 'items' && picked.size === 0
     ? (current.id === null ? 'Add All Files' : 'Add This Folder')
     : props.confirmLabel
@@ -120,7 +125,7 @@ export function FolderPickerSheet(props: Props) {
             <Text style={[styles.headerButton, { color: theme.blue }]}>Cancel</Text>
           </Pressable>
           <Text accessibilityRole="header" numberOfLines={1} style={[styles.headerTitle, { color: theme.text }]}>{props.title}</Text>
-          <Pressable accessibilityRole="button" disabled={destinationBlocked} hitSlop={10} onPress={confirm} style={[styles.headerSide, styles.headerTrailing]} testID="folder-picker-confirm">
+          <Pressable accessibilityRole="button" accessibilityState={{ disabled: destinationBlocked }} disabled={destinationBlocked} hitSlop={10} onPress={confirm} style={[styles.headerSide, styles.headerTrailing]} testID="folder-picker-confirm">
             <Text numberOfLines={1} style={[styles.headerButton, styles.headerConfirm, { color: destinationBlocked ? theme.tertiary : theme.blue }]}>{confirmLabel}</Text>
           </Pressable>
         </View>
