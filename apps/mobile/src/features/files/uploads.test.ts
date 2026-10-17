@@ -13,6 +13,12 @@ const mocks = vi.hoisted(() => {
     cacheUploadedFile: vi.fn(async () => undefined),
     deleted: [] as string[],
     events: [] as string[],
+    toasts: [] as string[],
+    filesEnabled: true,
+    /** Picked files that cannot be copied. */
+    unreadable: new Set<string>(),
+    /** What each directory holds, by its URI. */
+    listing: new Map<string, string[]>(),
   }
 })
 
@@ -28,7 +34,8 @@ vi.mock('expo-file-system', () => {
     exists = true
     constructor(...parts: Array<string | { uri: string }>) { this.uri = parts.map((part) => typeof part === 'string' ? part : part.uri).join('/') }
     create() {}
-    delete() {}
+    delete() { mocks.deleted.push(this.uri) }
+    list() { return (mocks.listing.get(this.uri) ?? []).map((uri) => new Directory(uri)) }
   }
   class File {
     uri: string
@@ -36,7 +43,10 @@ vi.mock('expo-file-system', () => {
     size = 10
     constructor(...parts: Array<string | { uri: string }>) { this.uri = parts.map((part) => typeof part === 'string' ? part : part.uri).join('/') }
     get parentDirectory() { return new Directory(this.uri.split('/').slice(0, -1).join('/')) }
-    async copy(destination: File) { mocks.events.push(`copy ${destination.uri}`) }
+    async copy(destination: File) {
+      if (mocks.unreadable.has(this.uri)) throw new Error('unreadable')
+      mocks.events.push(`copy ${destination.uri}`)
+    }
     delete() { mocks.deleted.push(this.uri) }
   }
   return { Directory, File, Paths: { document: 'documents' } }
@@ -51,9 +61,13 @@ vi.mock('../../api/client', () => ({ isNetworkError: (error: unknown) => (error 
 vi.mock('./api', () => ({ uploadFile: mocks.uploadFile, deleteFileNode: mocks.deleteFileNode, fetchFileNode: mocks.fetchFileNode, cacheUploadedFile: mocks.cacheUploadedFile }))
 vi.mock('./operations', () => ({ refreshFiles: async () => undefined }))
 vi.mock('./display', () => ({ filesErrorMessage: (error: unknown) => (error instanceof Error ? error.message : String(error)) }))
-vi.mock('./toasts', () => ({ useFilesToasts: { getState: () => ({ show: () => {} }) } }))
+vi.mock('./toasts', () => ({ useFilesToasts: { getState: () => ({ show: ({ message }: { message: string }) => { mocks.toasts.push(message) } }) } }))
+vi.mock('./availability', () => ({
+  filesCapability: () => ({ enabled: mocks.filesEnabled, docSchemaVersion: null }),
+  isFilesDisabledError: (error: unknown) => (error as { code?: string } | null)?.code === 'files_disabled',
+}))
 
-const { clearUploads, enqueueUploads, resumeUploads, useFileUploads } = await import('./uploads')
+const { cancelUpload, clearUploads, enqueueUploads, resumeUploads, retryUpload, useFileUploads } = await import('./uploads')
 
 const A = 'https://pulpo.test|a'
 const B = 'https://pulpo.test|b'
@@ -70,6 +84,10 @@ beforeEach(() => {
   mocks.cacheUploadedFile.mockReset().mockImplementation(async () => undefined)
   mocks.deleted.length = 0
   mocks.events.length = 0
+  mocks.toasts.length = 0
+  mocks.filesEnabled = true
+  mocks.unreadable.clear()
+  mocks.listing.clear()
   useFileUploads.setState({ items: [] })
 })
 
@@ -121,7 +139,7 @@ describe('Files uploads', () => {
     expect(useFileUploads.getState().items).toEqual([])
     expect(mocks.deleteFileNode).not.toHaveBeenCalled()
     expect(mocks.uploadFile).toHaveBeenCalledTimes(1)
-    expect(mocks.cacheUploadedFile).toHaveBeenCalledWith(expect.objectContaining({ id: 'placeholder-4' }), expect.any(String))
+    expect(mocks.cacheUploadedFile).toHaveBeenCalledWith(A, expect.objectContaining({ id: 'placeholder-4' }), expect.any(String))
   })
 
   it('never deletes a finished earlier attempt, even one trashed since, when resuming', async () => {
@@ -155,5 +173,61 @@ describe('Files uploads', () => {
     await clearUploads(A)
     expect(mocks.deleted).toContain('documents/pending-uploads/x/old.jpg')
     expect(mocks.kv.get(`${A}:files:uploads`)).toEqual([])
+  })
+  it('keeps an upload that resumed on its own while the user chose Try Again or Remove', async () => {
+    mocks.uploadFile.mockImplementationOnce(async () => { throw Object.assign(new Error('offline'), { network: true }) })
+    await enqueueUploads(A, null, [photo('six.jpg')], client)
+    await settle()
+    const id = useFileUploads.getState().items[0]!.id
+    expect(useFileUploads.getState().items[0]).toMatchObject({ state: 'offline' })
+    // Reconnecting resumes it while the alert is still open.
+    mocks.uploadFile.mockImplementation(() => new Promise(() => {}))
+    await resumeUploads(A, client)
+    expect(useFileUploads.getState().items[0]).toMatchObject({ state: 'uploading' })
+    retryUpload(id)
+    await cancelUpload(id)
+    expect(mocks.uploadFile).toHaveBeenCalledTimes(2)
+    expect(useFileUploads.getState().items[0]).toMatchObject({ id, state: 'uploading' })
+  })
+
+  it('waits while Files is turned off, without failing, and goes on once it is back on', async () => {
+    mocks.filesEnabled = false
+    await enqueueUploads(A, null, [photo('seven.jpg')], client)
+    expect(mocks.uploadFile).not.toHaveBeenCalled()
+    expect(useFileUploads.getState().items[0]).toMatchObject({ state: 'waiting' })
+
+    // Turned off while uploading: the upload waits, with nothing to report.
+    mocks.filesEnabled = true
+    mocks.uploadFile.mockImplementationOnce(async () => { throw Object.assign(new Error('Files are disabled'), { code: 'files_disabled' }) })
+    await resumeUploads(A, client)
+    await settle()
+    expect(useFileUploads.getState().items[0]).toMatchObject({ state: 'offline' })
+    expect(mocks.toasts).toEqual([])
+
+    mocks.uploadFile.mockImplementationOnce(async () => ({ id: 'node-7', name: 'seven.jpg' }))
+    await resumeUploads(A, client)
+    await settle()
+    expect(useFileUploads.getState().items).toEqual([])
+  })
+
+  it('queues nothing, and keeps no copies, when one of the picked files cannot be copied', async () => {
+    mocks.unreadable.add('cache/bad.jpg')
+    await expect(enqueueUploads(A, null, [photo('good.jpg'), photo('bad.jpg')], client)).rejects.toThrow('unreadable')
+    expect(useFileUploads.getState().items).toEqual([])
+    expect(mocks.uploadFile).not.toHaveBeenCalled()
+    const copied = mocks.events.find((event) => event.endsWith('/good.jpg'))!.slice('copy '.length)
+    expect(mocks.deleted).toContain(copied)
+    expect(mocks.deleted.some((uri) => uri.endsWith('/bad.jpg') || copied.startsWith(`${uri}/`))).toBe(true)
+  })
+
+  it('removes staged copies its queue no longer knows when it first resumes', async () => {
+    await clearUploads(A)
+    const directory = `documents/pending-uploads/${encodeURIComponent(A)}`
+    mocks.listing.set(directory, [`${directory}/queued`, `${directory}/left-behind`])
+    mocks.kv.set(`${A}:files:uploads`, [{ id: 'queued', namespace: A, parentId: null, uri: `${directory}/queued/eight.jpg`, name: 'eight.jpg', mimeType: 'image/jpeg', sizeBytes: 10, state: 'failed', attempts: 1, error: 'Too large' }])
+    mocks.deleted.length = 0
+    await resumeUploads(A, client)
+    expect(mocks.deleted).toEqual([`${directory}/left-behind`])
+    expect(useFileUploads.getState().items).toMatchObject([{ id: 'queued' }])
   })
 })

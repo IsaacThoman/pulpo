@@ -143,11 +143,20 @@ export async function uploadFile(parentId: string | null, upload: LocalUpload, o
   const source = new File(upload.uri)
   const result = await retryBusyUpload(async () => {
     options.assertActive?.()
-    const response = await source.upload(url, {
-      httpMethod: 'PUT',
-      mimeType: upload.mimeType,
-      headers: { ...reservation.uploadHeaders, ...nativeAuthorizationHeaders(url) },
-    })
+    let response: Awaited<ReturnType<File['upload']>>
+    try {
+      response = await source.upload(url, {
+        httpMethod: 'PUT',
+        mimeType: upload.mimeType,
+        headers: { ...reservation.uploadHeaders, ...nativeAuthorizationHeaders(url) },
+      })
+    } catch (error) {
+      // The system's own transfer failed without an answer from the server (the connection went,
+      // or timed out; its wording varies by platform and language). With the file still there, the
+      // upload is tried again on reconnecting.
+      if (!source.exists) throw error
+      throw Object.assign(error instanceof Error ? error : new Error(String(error)), { retry: true })
+    }
     if (response.status === 503) throw Object.assign(new Error('Uploads are busy'), { status: 503 })
     return response
   })
@@ -179,11 +188,10 @@ function currentNamespace(): string | null {
   return user ? cacheNamespace(instanceUrl, user.id) : null
 }
 
-/** Keeps a just-uploaded file's bytes as its downloaded copy, so opening it needs no download. */
-export async function cacheUploadedFile(node: FileNode, sourceUri: string): Promise<void> {
-  const namespace = currentNamespace()
+/** Keeps a just-uploaded file's bytes as the account's downloaded copy, so opening it needs no download. */
+export async function cacheUploadedFile(namespace: string, node: FileNode, sourceUri: string): Promise<void> {
   const source = new File(sourceUri)
-  if (!namespace || !source.exists) return
+  if (!source.exists) return
   const destination = cacheDestination(node)
   if (source.uri !== destination.uri) await source.copy(destination, { overwrite: true })
   await recordCachedFile(namespace, node.id, fileContentVersion(node), destination)

@@ -9,6 +9,7 @@ import { isNetworkError } from '../../api/client'
 import { cacheNamespace, getValue, setValue } from '../../data/database'
 import { useSessionStore } from '../../store/session'
 import { cacheUploadedFile, deleteFileNode, fetchFileNode, uploadFile, type LocalUpload } from './api'
+import { filesCapability, isFilesDisabledError } from './availability'
 import { filesErrorMessage } from './display'
 import { refreshFiles } from './operations'
 import { useFilesToasts } from './toasts'
@@ -49,19 +50,53 @@ function remove(id: string): void {
   useFileUploads.setState((state) => ({ items: state.items.filter((item) => item.id !== id) }))
 }
 
-function pendingDirectory(): Directory {
-  const directory = new Directory(Paths.document, 'pending-uploads')
-  directory.create({ idempotent: true, intermediates: true })
-  return directory
+/** Where an account's picked files wait to be uploaded, each in a directory of its own. */
+function pendingDirectory(namespace: string): Directory {
+  return new Directory(Paths.document, 'pending-uploads', encodeURIComponent(namespace))
 }
 
+/** Directories being staged into, which are not in the queue yet. */
+const staging = new Set<string>()
+
 /** Copies a picked file somewhere it survives the picker's temporary files being cleared. */
-async function stage(source: LocalUpload): Promise<LocalUpload> {
-  const directory = new Directory(pendingDirectory(), Crypto.randomUUID())
-  directory.create({ idempotent: true, intermediates: true })
-  const destination = new File(directory, source.name.replace(/[\\/]/g, '-') || 'file')
-  await new File(source.uri).copy(destination)
-  return { ...source, uri: destination.uri, sizeBytes: destination.size || source.sizeBytes }
+async function stage(namespace: string, source: LocalUpload): Promise<LocalUpload> {
+  const directory = new Directory(pendingDirectory(namespace), Crypto.randomUUID())
+  staging.add(directory.uri)
+  try {
+    directory.create({ idempotent: true, intermediates: true })
+    const destination = new File(directory, source.name.replace(/[\\/]/g, '-') || 'file')
+    await new File(source.uri).copy(destination)
+    return { ...source, uri: destination.uri, sizeBytes: destination.size || source.sizeBytes }
+  } catch (error) {
+    staging.delete(directory.uri)
+    try {
+      if (directory.exists) directory.delete()
+    } catch {
+      // Swept on the next launch.
+    }
+    throw error
+  }
+}
+
+function stagedDirectory(uri: string): string {
+  return new File(uri).parentDirectory.uri
+}
+
+/**
+ * Removes staged copies the account's queue no longer knows, e.g. one left by the app ending
+ * between finishing an upload and deleting its copy.
+ */
+function sweepStaged(namespace: string, stored: readonly QueuedUpload[]): void {
+  try {
+    const directory = pendingDirectory(namespace)
+    if (!directory.exists) return
+    const known = new Set([...useFileUploads.getState().items.filter((item) => item.namespace === namespace), ...stored].map((item) => stagedDirectory(item.uri)))
+    for (const entry of directory.list()) {
+      if (!known.has(entry.uri) && !staging.has(entry.uri)) entry.delete()
+    }
+  } catch {
+    // Tried again on the next launch.
+  }
 }
 
 function discardStaged(uri: string): void {
@@ -90,7 +125,13 @@ class AccountChangedError extends Error {
   }
 }
 
+function filesEnabled(): boolean {
+  return filesCapability(useSessionStore.getState().config).enabled
+}
+
 function pump(): void {
+  // While an administrator has Files off, uploads wait; they resume once it is back on.
+  if (!filesEnabled()) return
   while (running < CONCURRENCY) {
     const namespace = activeNamespace()
     // Another account's uploads wait until it is signed in again.
@@ -133,7 +174,7 @@ async function settleReservation(nodeId: string): Promise<{ uploaded: FileNode }
 async function complete(item: QueuedUpload, node: FileNode): Promise<void> {
   remove(item.id)
   await persist(item.namespace)
-  await cacheUploadedFile(node, item.uri).catch(() => undefined)
+  await cacheUploadedFile(item.namespace, node, item.uri).catch(() => undefined)
   discardStaged(item.uri)
   if (queryClient) await refreshFiles(queryClient, item.namespace)
 }
@@ -181,7 +222,8 @@ async function runUpload(item: QueuedUpload): Promise<void> {
         return
       }
     }
-    const offline = isNetworkError(error) || (error as { retry?: boolean }).retry === true
+    // Files turned off meanwhile: the upload waits for it to be back on, like it waits for a connection.
+    const offline = isNetworkError(error) || (error as { retry?: boolean }).retry === true || isFilesDisabledError(error)
     update(item.id, {
       reservedNodeId,
       state: offline ? 'offline' : 'failed',
@@ -198,15 +240,28 @@ async function runUpload(item: QueuedUpload): Promise<void> {
 /** Queues files for upload into a folder; returns once they are staged. */
 export async function enqueueUploads(namespace: string, parentId: string | null, uploads: LocalUpload[], client: QueryClient): Promise<void> {
   queryClient = client
-  const staged = await Promise.all(uploads.map(async (upload) => ({
-    ...(await stage(upload)),
+  const copies = await Promise.allSettled(uploads.map((upload) => stage(namespace, upload)))
+  const failed = copies.find((copy) => copy.status === 'rejected')
+  if (failed) {
+    // Nothing is queued unless every file is: the copies already made go.
+    for (const copy of copies) {
+      if (copy.status === 'fulfilled') {
+        staging.delete(stagedDirectory(copy.value.uri))
+        discardStaged(copy.value.uri)
+      }
+    }
+    throw failed.reason
+  }
+  const staged = copies.map((copy) => ({
+    ...(copy as PromiseFulfilledResult<LocalUpload>).value,
     id: Crypto.randomUUID(),
     namespace,
     parentId,
     state: 'waiting' as const,
     attempts: 0,
-  })))
+  }))
   useFileUploads.setState((state) => ({ items: [...state.items, ...staged] }))
+  for (const item of staged) staging.delete(stagedDirectory(item.uri))
   await persist(namespace)
   pump()
 }
@@ -221,6 +276,7 @@ export async function resumeUploads(namespace: string, client: QueryClient): Pro
     const known = new Set(useFileUploads.getState().items.map((item) => item.id))
     const restored = stored.filter((item) => !known.has(item.id) && new File(item.uri).exists)
     if (restored.length) useFileUploads.setState((state) => ({ items: [...state.items, ...restored] }))
+    sweepStaged(namespace, stored)
   }
   useFileUploads.setState((state) => ({
     items: state.items.map((item) => item.namespace === namespace && item.state === 'offline' ? { ...item, state: 'waiting' } : item),
@@ -228,14 +284,21 @@ export async function resumeUploads(namespace: string, client: QueryClient): Pro
   pump()
 }
 
+/** Whether an upload has stopped, so it can be tried again or removed (not while it runs). */
+function stopped(item: QueuedUpload | undefined): item is QueuedUpload {
+  return item?.state === 'failed' || item?.state === 'offline'
+}
+
 export function retryUpload(id: string): void {
+  // The upload may have resumed on its own while the user decided, e.g. on reconnecting.
+  if (!stopped(useFileUploads.getState().items.find((item) => item.id === id))) return
   update(id, { state: 'waiting', error: undefined })
   pump()
 }
 
 export async function cancelUpload(id: string): Promise<void> {
   const item = useFileUploads.getState().items.find((entry) => entry.id === id)
-  if (!item || item.state === 'uploading') return
+  if (!stopped(item)) return
   remove(id)
   discardStaged(item.uri)
   // Only a placeholder still waiting for its bytes is deleted; a finished upload stays.
@@ -249,6 +312,12 @@ export async function clearUploads(namespace: string): Promise<void> {
   useFileUploads.setState((state) => ({ items: state.items.filter((item) => item.namespace !== namespace) }))
   const stored = await getValue<QueuedUpload[]>(namespace, STORAGE_KEY).catch(() => null) ?? []
   for (const uri of new Set([...inMemory, ...stored].map((item) => item.uri))) discardStaged(uri)
+  try {
+    const directory = pendingDirectory(namespace)
+    if (directory.exists) directory.delete()
+  } catch {
+    // Already gone.
+  }
   await setValue(namespace, STORAGE_KEY, []).catch(() => undefined)
   loaded.delete(namespace)
 }
