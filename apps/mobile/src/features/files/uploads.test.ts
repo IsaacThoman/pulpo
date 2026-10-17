@@ -278,4 +278,22 @@ describe('Files uploads', () => {
     expect(useFileUploads.getState().items[0]).toMatchObject({ state: 'offline', attempts: 3, transferFailures: 1 })
     expect(mocks.toasts).toEqual([])
   })
+
+  it('tries a failed transfer again soon, even when the connection never seemed to drop', async () => {
+    // Signing out cancels a retry an earlier upload left waiting.
+    await clearUploads(A)
+    vi.useFakeTimers()
+    try {
+      mocks.uploadFile.mockImplementationOnce(async () => { throw Object.assign(new Error('Unable to upload a file: timeout'), { retry: true, transfer: true }) })
+      await enqueueUploads(A, null, [photo('twelve.jpg')], client)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(useFileUploads.getState().items[0]).toMatchObject({ state: 'offline' })
+      mocks.uploadFile.mockImplementationOnce(async () => ({ id: 'node-12', name: 'twelve.jpg' }))
+      await vi.advanceTimersByTimeAsync(31_000)
+      expect(mocks.uploadFile).toHaveBeenCalledTimes(2)
+      expect(useFileUploads.getState().items).toEqual([])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })

@@ -40,6 +40,8 @@ const CONCURRENCY = 3
  * transfer can also fail for good (e.g. the device has no room to send it from).
  */
 const MAX_TRANSFER_FAILURES = 3
+/** A failed transfer is tried again after this even if the connection never seemed to drop. */
+const TRANSFER_RETRY_MS = 30_000
 
 export const useFileUploads = create<{ items: QueuedUpload[] }>(() => ({ items: [] }))
 
@@ -119,6 +121,18 @@ function discardStaged(uri: string): void {
 
 let running = 0
 let queryClient: QueryClient | null = null
+let transferRetry: { namespace: string; timer: ReturnType<typeof setTimeout> } | undefined
+
+function retryTransfersSoon(namespace: string): void {
+  if (transferRetry) return
+  transferRetry = {
+    namespace,
+    timer: setTimeout(() => {
+      transferRetry = undefined
+      if (queryClient) void resumeUploads(namespace, queryClient).catch(() => undefined)
+    }, TRANSFER_RETRY_MS),
+  }
+}
 
 /** The signed-in account's namespace; uploads only run for it, with its session. */
 function activeNamespace(): string | null {
@@ -245,6 +259,8 @@ async function runUpload(item: QueuedUpload): Promise<void> {
     })
     await persist(item.namespace)
     if (queryClient) void refreshFiles(queryClient, item.namespace)
+    // Reconnecting retries it too, but the socket may well have stayed up through the failure.
+    if (offline && transfer === true) retryTransfersSoon(item.namespace)
     if (offline) return
     useFilesToasts.getState().show({ message: `Couldn’t upload “${item.name}”: ${filesErrorMessage(error, item.name)}`, tone: 'error' })
   }
@@ -321,6 +337,10 @@ export async function cancelUpload(id: string): Promise<void> {
 
 /** Forgets an account's queue (sign-out), including uploads staged while it was not active. */
 export async function clearUploads(namespace: string): Promise<void> {
+  if (transferRetry?.namespace === namespace) {
+    clearTimeout(transferRetry.timer)
+    transferRetry = undefined
+  }
   const inMemory = useFileUploads.getState().items.filter((item) => item.namespace === namespace)
   useFileUploads.setState((state) => ({ items: state.items.filter((item) => item.namespace !== namespace) }))
   const stored = await getValue<QueuedUpload[]>(namespace, STORAGE_KEY).catch(() => null) ?? []
