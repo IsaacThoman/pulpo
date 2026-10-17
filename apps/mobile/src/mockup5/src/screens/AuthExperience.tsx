@@ -43,15 +43,22 @@ function cleanInviteCode(value: string) {
   return value.toUpperCase().replace(/[^0-9A-Z]/g, '');
 }
 
-function nextInviteCode(previous: string, raw: string) {
-  const cleaned = cleanInviteCode(raw);
-  if (cleaned.length <= INVITE_CODE_LENGTH) return cleaned;
-  // A full code pasted anywhere into an existing one replaces it instead of being cut off.
+function insertedText(previous: string, raw: string) {
+  // Pastes at the end or start are unambiguous; otherwise diff against the previous value.
+  if (raw.startsWith(previous)) return raw.slice(previous.length);
+  if (raw.endsWith(previous)) return raw.slice(0, raw.length - previous.length);
   let start = 0;
   while (start < previous.length && raw[start] === previous[start]) start += 1;
   let end = 0;
   while (end < previous.length - start && raw[raw.length - 1 - end] === previous[previous.length - 1 - end]) end += 1;
-  const inserted = cleanInviteCode(raw.slice(start, raw.length - end));
+  return raw.slice(start, raw.length - end);
+}
+
+function nextInviteCode(previous: string, raw: string) {
+  const cleaned = cleanInviteCode(raw);
+  if (cleaned.length <= INVITE_CODE_LENGTH) return cleaned;
+  // A full code pasted into an existing one replaces it instead of being cut off.
+  const inserted = cleanInviteCode(insertedText(previous, raw));
   return (inserted.length === INVITE_CODE_LENGTH ? inserted : cleaned).slice(0, INVITE_CODE_LENGTH);
 }
 
@@ -316,7 +323,7 @@ export function AuthExperience() {
       try {
         redeemed = await mobileApi.redeemInviteCode(inviteCode);
       } catch (nextError) {
-        setInviteError(nextError instanceof Error ? nextError.message : 'Unable to redeem this invite code.');
+        if (useSessionStore.getState().token === token) setInviteError(nextError instanceof Error ? nextError.message : 'Unable to redeem this invite code.');
         return;
       }
       // The session may have expired or switched while the code was being redeemed.

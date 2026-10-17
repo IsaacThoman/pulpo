@@ -174,12 +174,22 @@ describe('mobile pending approval', () => {
     ['ignores a seventh typed character', 'AB1CD2', 'AB1CD2X', 'AB1CD2'],
     ['replaces the code with one pasted in the middle', 'ZZZZZZ', 'ZZZABC123ZZZ', 'ABC123'],
     ['keeps one copy of a doubled autofill', '', '123456123456', '123456'],
+    ['replaces a similar code with one pasted at the start', 'AB1CD3', 'AB1CD2AB1CD3', 'AB1CD2'],
+    ['replaces a similar code with one pasted at the end', 'ABC123', 'ABC123ABC999', 'ABC999'],
   ])('%s', async (_name, previous, raw, expected) => {
     setSession({ auth })
     await act(async () => root.render(<AuthExperience />))
     if (previous) await typeInviteCode(previous)
     await typeInviteCode(raw)
     expect(inviteInput().value).toBe(expected)
+  })
+
+  it('shows a sign out failure instead of leaving it unhandled', async () => {
+    setSession({ auth })
+    mocks.logout.mockRejectedValue(new Error('Could not reach the server.'))
+    await act(async () => root.render(<AuthExperience />))
+    await act(async () => button('Sign out').click())
+    expect(container.textContent).toContain('Could not reach the server.')
   })
 
   it('does not apply a redeemed user to a session that changed meanwhile', async () => {
