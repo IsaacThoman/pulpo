@@ -30,6 +30,12 @@ interface Entry {
   unsubscribe: () => void
 }
 
+/** Errors a later attempt may get past; the others need something to change first (e.g. an update). */
+function retryable(status: DocSyncStatus): boolean {
+  return status.state !== 'synced' && status.state !== 'closed'
+    && (status.state !== 'error' || status.error === 'failed' || status.error === 'rate_limited')
+}
+
 /** Nothing more will happen without a new join: in sync, closed, or failed (rate limits retry). */
 function settled(status: DocSyncStatus): boolean {
   return status.state === 'synced' || status.state === 'closed' || (status.state === 'error' && status.error !== 'rate_limited')
@@ -249,7 +255,7 @@ export class DocSessionRegistry {
     // this device's copy; otherwise the snapshot would replace stored edits it lacks.
     const state = entry.persistence.ready ? Y.encodeStateAsUpdate(entry.controller.doc) : null
     if (status.state === 'synced') this.retryDelay = RETRY_MIN_MS
-    else if (status.state !== 'closed' && !entry.stale) this.retryLater()
+    else if (retryable(status) && !entry.stale) this.retryLater()
     entry.controller.destroy()
     if (state) await this.store.compact(this.namespace, entry.docId, state, this.schemaVersion).catch(() => undefined)
   }

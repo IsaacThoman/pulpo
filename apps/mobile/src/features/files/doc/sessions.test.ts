@@ -481,6 +481,36 @@ describe('document sessions on the device', () => {
     await vi.advanceTimersByTimeAsync(LINGER_MS + 1_000)
     expect(row(database)).toBeUndefined()
   })
+  it('does not try again a document the server refuses until something changes', async () => {
+    const { database, store } = sqlite()
+    const server = new FakeServer()
+    let joins = 0
+    class RefusingSocket extends FakeSocket {
+      override emit(event: string, input: { docId: string; update?: Uint8Array; stateVector?: Uint8Array }, ack?: (result: unknown) => void) {
+        if (event === 'doc.join') joins += 1
+        if (event === 'doc.update') {
+          ack?.({ ok: false, error: 'doc_too_large' })
+          return this
+        }
+        return super.emit(event, input, ack)
+      }
+    }
+    const registry = new DocSessionRegistry(NAMESPACE, store, 2)
+    registry.attach(new RefusingSocket(server) as unknown as DocSocket)
+    const handle = registry.acquire(DOC)
+    await vi.advanceTimersByTimeAsync(2_000)
+    type(handle.controller.doc, 'Far too long')
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(handle.controller.getSnapshot().status).toMatchObject({ state: 'error', error: 'doc_too_large' })
+    handle.release()
+    await vi.advanceTimersByTimeAsync(1_000)
+    const before = joins
+    await vi.advanceTimersByTimeAsync(20 * 60_000)
+    expect(joins).toBe(before)
+    expect(row(database)?.dirty).toBe(1)
+    await registry.destroy()
+  })
+
 })
 
 describe('the document store', () => {
