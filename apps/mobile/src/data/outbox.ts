@@ -7,9 +7,39 @@ import { flushCacheWrites } from './writeBehind'
 import { ApiError, apiRequest } from '../api/client'
 import { cacheChats, cachedChat, completeOutbox, failOutbox, pendingOutbox } from './database'
 import { withoutCachedChatDetails } from './cache'
-import { readyOutboxPrefix } from './schema'
+import { readyOutboxPrefix, type OutboxRecord } from './schema'
 
 const activeReplays = new Map<string, Promise<{ replayed: number; rejected: number }>>()
+
+/** Where a queued request carries a chat's Files scope: a chat start, or a change to the chat. */
+function fileScopeOf(row: Pick<OutboxRecord, 'method' | 'path'>, body: unknown): { ids: string[]; with: (ids: string[]) => unknown } | null {
+  const payload = body as { chat?: { fileScopeIds?: string[] }; fileScopeIds?: string[] } | undefined
+  if (row.path === '/api/chats/start' && payload?.chat?.fileScopeIds?.length) {
+    return { ids: payload.chat.fileScopeIds, with: (ids) => ({ ...payload, chat: { ...payload.chat, fileScopeIds: ids } }) }
+  }
+  if (row.method === 'PATCH' && /^\/api\/chats\/[^/]+$/.test(row.path) && payload?.fileScopeIds?.length) {
+    return { ids: payload.fileScopeIds, with: (ids) => ({ ...payload, fileScopeIds: ids }) }
+  }
+  return null
+}
+
+/**
+ * Sends a queued request whose chat Files scope may name items trashed or deleted elsewhere since
+ * (the server checks the scope before anything else, so nothing happened): again with the items that
+ * remain, rather than the chat start (and its first message) or the change being dropped.
+ */
+async function sendKeepingFileScope<T>(row: OutboxRecord, body: unknown, send: (payload: unknown) => Promise<T>): Promise<T> {
+  let payload = body
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await send(payload)
+    } catch (error) {
+      const scope = fileScopeOf(row, payload)
+      if (attempt >= 2 || !scope || !(error instanceof ApiError) || error.code !== 'invalid_file_scope') throw error
+      payload = scope.with(await acceptedFileScope(scope.ids))
+    }
+  }
+}
 
 /** The Files items of a chat's scope that the server still accepts (live items the user owns). */
 async function acceptedFileScope(ids: readonly string[]): Promise<string[]> {
@@ -40,14 +70,7 @@ async function performReplay(namespace: string, client?: QueryClient): Promise<{
         body: payload,
         idempotencyKey: row.id,
       })
-      const result = await send(body).catch(async (error: unknown) => {
-        // A chat started offline still starts when some of its Files items were trashed or deleted
-        // elsewhere meanwhile (the server checks the scope first, so nothing was created): with the
-        // items that remain, rather than being dropped with its first message.
-        const scope: string[] | undefined = body?.chat?.fileScopeIds
-        if (row.path !== '/api/chats/start' || !(error instanceof ApiError) || error.code !== 'invalid_file_scope' || !scope?.length) throw error
-        return send({ ...body, chat: { ...body.chat, fileScopeIds: await acceptedFileScope(scope) } })
-      })
+      const result = await sendKeepingFileScope(row, body, send)
       if (row.entityKey.startsWith('queued-message:')) await settleQueuedSubmission(namespace, row.id, row.path, result.queuedMessage ?? null, undefined, client)
       await completeOutbox(row.id)
       replayed += 1

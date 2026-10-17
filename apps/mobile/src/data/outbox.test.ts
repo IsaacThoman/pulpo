@@ -83,4 +83,34 @@ describe('chat start outbox replay', () => {
     expect(mocks.complete).not.toHaveBeenCalled()
     expect(mocks.fail).toHaveBeenCalledOnce()
   })
+  it('keeps a Files scope change made offline with the items that remain', async () => {
+    const change = { id: 'scope-change', namespace: 'account', entityKey: 'chat:chat:file-scope', method: 'PATCH', path: '/api/chats/chat', body: JSON.stringify({ fileScopeIds: ['kept', 'gone'] }), createdAt: 1, attempts: 0, nextAttemptAt: 0 }
+    mocks.pending.mockResolvedValue([change])
+    mocks.request.mockImplementation(async (path: string, options?: { body?: { fileScopeIds: string[] } }) => {
+      if (path === '/api/files/kept') return { node: { id: 'kept', kind: 'folder', status: 'ready', trashedAt: null } }
+      if (path === '/api/files/gone') throw new ApiError(404, 'not_found', 'Not found')
+      if (options?.body?.fileScopeIds.includes('gone')) throw new ApiError(400, 'invalid_file_scope', 'Choose items from your files')
+      return {}
+    })
+    await expect(replayOutbox('account', client)).resolves.toEqual({ replayed: 1, rejected: 0 })
+    expect(mocks.request).toHaveBeenLastCalledWith('/api/chats/chat', expect.objectContaining({ method: 'PATCH', body: { fileScopeIds: ['kept'] } }))
+  })
+  it('checks the scope again when another item went away in between', async () => {
+    mocks.pending.mockResolvedValue([start])
+    const trashed = new Set(['trashed'])
+    let lookups = 0
+    mocks.request.mockImplementation(async (path: string, options?: { body?: { chat: { fileScopeIds: string[] } } }) => {
+      if (path.startsWith('/api/files/')) {
+        const id = path.slice('/api/files/'.length)
+        const node = { id, kind: 'doc', status: 'ready', trashedAt: trashed.has(id) ? '2026-10-17T00:00:00.000Z' : null }
+        // "kept" is trashed elsewhere right after the first check.
+        if (++lookups === 3) trashed.add('kept')
+        return { node }
+      }
+      if (options?.body?.chat.fileScopeIds.some((id) => trashed.has(id))) throw new ApiError(400, 'invalid_file_scope', 'Choose items from your files')
+      return {}
+    })
+    await expect(replayOutbox('account', client)).resolves.toEqual({ replayed: 1, rejected: 0 })
+    expect(mocks.request).toHaveBeenLastCalledWith('/api/chats/start', expect.objectContaining({ body: expect.objectContaining({ chat: expect.objectContaining({ fileScopeIds: ['gone'] }) }) }))
+  })
 })
