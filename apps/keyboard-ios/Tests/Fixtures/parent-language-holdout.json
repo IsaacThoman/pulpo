@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "purpose": "Parent validation frozen before multilingual implementation review; agent has no access to these cases in its brief.",
+  "literalWords": [
+    "mañana",
+    "pingüino",
+    "vergüenza",
+    "corazón",
+    "español",
+    "información",
+    "película",
+    "miércoles",
+    "también",
+    "familia",
+    "hola",
+    "gracias",
+    "amigos",
+    "tranquilo",
+    "desarrollo",
+    "food",
+    "hello",
+    "keyboard",
+    "meeting",
+    "maybe",
+    "OpenAI",
+    "Isaac",
+    "María",
+    "Xóchitl",
+    "NextAuth",
+    "myVariable",
+    "https://pulpo.ai",
+    "user_123"
+  ],
+  "codeSwitchSentences": [
+    "nos vemos after the meeting",
+    "send the información mañana",
+    "thanks por la ayuda",
+    "quiero coffee con mis amigos",
+    "the película was great",
+    "my familia está aquí"
+  ],
+  "privacy": [
+    "email",
+    "url",
+    "secure",
+    "oneTimeCode"
+  ],
+  "policy": [
+    "default stays English",
+    "Spanish selection persists across keyboard reappearance",
+    "bilingual preserves known valid literals from both languages",
+    "explicitly accented and decomposed spellings are preserved",
+    "switching does not apply stale suggestions or learn private text",
+    "English behavior and cold path remain bounded"
+  ]
+}

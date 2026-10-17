@@ -1,0 +1,320 @@
+{
+  "fields" : [
+    {
+      "adapterRawValue" : "username",
+      "declaredPrivate" : true,
+      "id" : "username",
+      "observedPrivate" : true,
+      "rawValue" : "username"
+    },
+    {
+      "adapterRawValue" : "password",
+      "declaredPrivate" : true,
+      "id" : "password",
+      "observedPrivate" : true,
+      "rawValue" : "password"
+    },
+    {
+      "adapterRawValue" : "new-password",
+      "declaredPrivate" : true,
+      "id" : "newPassword",
+      "observedPrivate" : false,
+      "rawValue" : "new-password"
+    },
+    {
+      "adapterRawValue" : "one-time-code",
+      "declaredPrivate" : true,
+      "id" : "oneTimeCode",
+      "observedPrivate" : false,
+      "rawValue" : "one-time-code"
+    },
+    {
+      "adapterRawValue" : "email",
+      "declaredPrivate" : true,
+      "id" : "emailAddress",
+      "observedPrivate" : false,
+      "rawValue" : "email"
+    },
+    {
+      "adapterRawValue" : "url",
+      "declaredPrivate" : true,
+      "id" : "URL",
+      "observedPrivate" : false,
+      "rawValue" : "url"
+    },
+    {
+      "adapterRawValue" : "tel",
+      "declaredPrivate" : true,
+      "id" : "telephoneNumber",
+      "observedPrivate" : false,
+      "rawValue" : "tel"
+    },
+    {
+      "adapterRawValue" : "cc-number",
+      "declaredPrivate" : true,
+      "id" : "creditCardNumber",
+      "observedPrivate" : false,
+      "rawValue" : "cc-number"
+    },
+    {
+      "adapterRawValue" : "cc-csc",
+      "declaredPrivate" : true,
+      "id" : "creditCardSecurityCode",
+      "observedPrivate" : false,
+      "rawValue" : "cc-csc"
+    },
+    {
+      "adapterRawValue" : "cc-exp",
+      "declaredPrivate" : true,
+      "id" : "creditCardExpiration",
+      "observedPrivate" : false,
+      "rawValue" : "cc-exp"
+    },
+    {
+      "adapterRawValue" : "cc-exp-month",
+      "declaredPrivate" : true,
+      "id" : "creditCardExpirationMonth",
+      "observedPrivate" : false,
+      "rawValue" : "cc-exp-month"
+    },
+    {
+      "adapterRawValue" : "cc-exp-year",
+      "declaredPrivate" : true,
+      "id" : "creditCardExpirationYear",
+      "observedPrivate" : false,
+      "rawValue" : "cc-exp-year"
+    },
+    {
+      "adapterRawValue" : "cc-name",
+      "declaredPrivate" : true,
+      "id" : "creditCardName",
+      "observedPrivate" : false,
+      "rawValue" : "cc-name"
+    },
+    {
+      "adapterRawValue" : "cc-given-name",
+      "declaredPrivate" : true,
+      "id" : "creditCardGivenName",
+      "observedPrivate" : false,
+      "rawValue" : "cc-given-name"
+    },
+    {
+      "adapterRawValue" : "cc-family-name",
+      "declaredPrivate" : true,
+      "id" : "creditCardFamilyName",
+      "observedPrivate" : false,
+      "rawValue" : "cc-family-name"
+    },
+    {
+      "adapterRawValue" : "cc-additional-name",
+      "declaredPrivate" : true,
+      "id" : "creditCardMiddleName",
+      "observedPrivate" : false,
+      "rawValue" : "cc-additional-name"
+    },
+    {
+      "adapterRawValue" : "cc-type",
+      "declaredPrivate" : true,
+      "id" : "creditCardType",
+      "observedPrivate" : false,
+      "rawValue" : "cc-type"
+    },
+    {
+      "adapterRawValue" : "postal-code",
+      "declaredPrivate" : true,
+      "id" : "postalCode",
+      "observedPrivate" : false,
+      "rawValue" : "postal-code"
+    },
+    {
+      "adapterRawValue" : "flight-number",
+      "declaredPrivate" : true,
+      "id" : "flightNumber",
+      "observedPrivate" : false,
+      "rawValue" : "flight-number"
+    },
+    {
+      "adapterRawValue" : "shipment-tracking-number",
+      "declaredPrivate" : true,
+      "id" : "shipmentTrackingNumber",
+      "observedPrivate" : false,
+      "rawValue" : "shipment-tracking-number"
+    },
+    {
+      "adapterRawValue" : "bday",
+      "declaredPrivate" : true,
+      "id" : "birthdate",
+      "observedPrivate" : false,
+      "rawValue" : "bday"
+    },
+    {
+      "adapterRawValue" : "bday-day",
+      "declaredPrivate" : true,
+      "id" : "birthdateDay",
+      "observedPrivate" : false,
+      "rawValue" : "bday-day"
+    },
+    {
+      "adapterRawValue" : "bday-month",
+      "declaredPrivate" : true,
+      "id" : "birthdateMonth",
+      "observedPrivate" : false,
+      "rawValue" : "bday-month"
+    },
+    {
+      "adapterRawValue" : "bday-year",
+      "declaredPrivate" : true,
+      "id" : "birthdateYear",
+      "observedPrivate" : false,
+      "rawValue" : "bday-year"
+    },
+    {
+      "adapterRawValue" : "name",
+      "declaredPrivate" : false,
+      "id" : "name",
+      "observedPrivate" : false,
+      "rawValue" : "name"
+    },
+    {
+      "adapterRawValue" : "honorifix-prefix",
+      "declaredPrivate" : false,
+      "id" : "namePrefix",
+      "observedPrivate" : false,
+      "rawValue" : "honorifix-prefix"
+    },
+    {
+      "adapterRawValue" : "given-name",
+      "declaredPrivate" : false,
+      "id" : "givenName",
+      "observedPrivate" : false,
+      "rawValue" : "given-name"
+    },
+    {
+      "adapterRawValue" : "additional-name",
+      "declaredPrivate" : false,
+      "id" : "middleName",
+      "observedPrivate" : false,
+      "rawValue" : "additional-name"
+    },
+    {
+      "adapterRawValue" : "family-name",
+      "declaredPrivate" : false,
+      "id" : "familyName",
+      "observedPrivate" : false,
+      "rawValue" : "family-name"
+    },
+    {
+      "adapterRawValue" : "honorifix-suffix",
+      "declaredPrivate" : false,
+      "id" : "nameSuffix",
+      "observedPrivate" : false,
+      "rawValue" : "honorifix-suffix"
+    },
+    {
+      "adapterRawValue" : "nickname",
+      "declaredPrivate" : false,
+      "id" : "nickname",
+      "observedPrivate" : false,
+      "rawValue" : "nickname"
+    },
+    {
+      "adapterRawValue" : "organization-title",
+      "declaredPrivate" : false,
+      "id" : "jobTitle",
+      "observedPrivate" : false,
+      "rawValue" : "organization-title"
+    },
+    {
+      "adapterRawValue" : "organization",
+      "declaredPrivate" : false,
+      "id" : "organizationName",
+      "observedPrivate" : false,
+      "rawValue" : "organization"
+    },
+    {
+      "adapterRawValue" : "location",
+      "declaredPrivate" : false,
+      "id" : "location",
+      "observedPrivate" : false,
+      "rawValue" : "location"
+    },
+    {
+      "adapterRawValue" : "street-address",
+      "declaredPrivate" : false,
+      "id" : "fullStreetAddress",
+      "observedPrivate" : false,
+      "rawValue" : "street-address"
+    },
+    {
+      "adapterRawValue" : "address-line1",
+      "declaredPrivate" : false,
+      "id" : "streetAddressLine1",
+      "observedPrivate" : false,
+      "rawValue" : "address-line1"
+    },
+    {
+      "adapterRawValue" : "address-line2",
+      "declaredPrivate" : false,
+      "id" : "streetAddressLine2",
+      "observedPrivate" : false,
+      "rawValue" : "address-line2"
+    },
+    {
+      "adapterRawValue" : "address-level2",
+      "declaredPrivate" : false,
+      "id" : "addressCity",
+      "observedPrivate" : false,
+      "rawValue" : "address-level2"
+    },
+    {
+      "adapterRawValue" : "address-level1",
+      "declaredPrivate" : false,
+      "id" : "addressState",
+      "observedPrivate" : false,
+      "rawValue" : "address-level1"
+    },
+    {
+      "adapterRawValue" : "address-level1+2",
+      "declaredPrivate" : false,
+      "id" : "addressCityAndState",
+      "observedPrivate" : false,
+      "rawValue" : "address-level1+2"
+    },
+    {
+      "adapterRawValue" : "address-level3",
+      "declaredPrivate" : false,
+      "id" : "sublocality",
+      "observedPrivate" : false,
+      "rawValue" : "address-level3"
+    },
+    {
+      "adapterRawValue" : "country-name",
+      "declaredPrivate" : false,
+      "id" : "countryName",
+      "observedPrivate" : false,
+      "rawValue" : "country-name"
+    },
+    {
+      "adapterRawValue" : "date-time",
+      "declaredPrivate" : false,
+      "id" : "dateTime",
+      "observedPrivate" : false,
+      "rawValue" : "date-time"
+    },
+    {
+      "adapterRawValue" : "esim-eid",
+      "declaredPrivate" : false,
+      "id" : "cellularEID",
+      "observedPrivate" : false,
+      "rawValue" : "esim-eid"
+    },
+    {
+      "adapterRawValue" : "esim-imei",
+      "declaredPrivate" : false,
+      "id" : "cellularIMEI",
+      "observedPrivate" : false,
+      "rawValue" : "esim-imei"
+    }
+  ],
+  "os" : "27.0"
+}
