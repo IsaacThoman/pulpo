@@ -40,7 +40,7 @@ let container: HTMLDivElement
 
 function setSession(config: { auth: Partial<typeof auth> } | null) {
   mocks.state = {
-    status: 'pending', instanceUrl: 'https://pulpo.test', accounts: [], config,
+    status: 'pending', token: 'token', instanceUrl: 'https://pulpo.test', accounts: [], config,
     user: { id: 'user', name: 'New Member', email: 'new@example.test', role: 'pending' },
     refreshSession: mocks.refresh, discover: mocks.discover, setUser: mocks.setUser, logout: mocks.logout,
   }
@@ -60,6 +60,7 @@ const inviteInput = () => container.querySelector<HTMLInputElement>('input[aria-
 beforeEach(() => {
   vi.resetAllMocks()
   mocks.discover.mockResolvedValue({})
+  mocks.openURL.mockResolvedValue(undefined)
   container = document.createElement('div'); document.body.append(container); root = createRoot(container)
 })
 afterEach(async () => { await act(async () => root.unmount()); container.remove() })
@@ -72,6 +73,7 @@ describe('mobile pending approval', () => {
     expect(container.textContent).toContain('You are on the waitlist.')
     expect(container.textContent).not.toContain('Your Pulpo account is ready')
     expect(container.textContent).toContain('Contact your admin at admin@example.test')
+    expect(container.textContent).toContain('Signed in as new@example.test')
     await act(async () => (Array.from(container.querySelectorAll('span')).find((value) => value.textContent === 'admin@example.test')!).click())
     expect(mocks.openURL).toHaveBeenCalledWith('mailto:admin@example.test')
     expect(button('Sign out')).toBeTruthy()
@@ -159,13 +161,34 @@ describe('mobile pending approval', () => {
     expect(container.textContent).not.toContain('This invite code is invalid')
   })
 
-  it('shows a sign out failure instead of leaving it unhandled', async () => {
+  it('signs out once on a double tap', async () => {
     setSession({ auth })
-    mocks.logout.mockRejectedValue(new Error('Could not reach the server.'))
+    mocks.logout.mockReturnValue(new Promise(() => {}))
     await act(async () => root.render(<AuthExperience />))
-    await act(async () => button('Sign out').click())
+    await act(async () => { button('Sign out').click(); button('Sign out').click() })
     expect(mocks.logout).toHaveBeenCalledOnce()
-    expect(container.textContent).toContain('Could not reach the server.')
+    expect(button('Refresh status').disabled).toBe(true)
+  })
+
+  it.each([
+    ['ignores a seventh typed character', 'AB1CD2', 'AB1CD2X', 'AB1CD2'],
+    ['replaces the code with one pasted in the middle', 'ZZZZZZ', 'ZZZABC123ZZZ', 'ABC123'],
+    ['keeps one copy of a doubled autofill', '', '123456123456', '123456'],
+  ])('%s', async (_name, previous, raw, expected) => {
+    setSession({ auth })
+    await act(async () => root.render(<AuthExperience />))
+    if (previous) await typeInviteCode(previous)
+    await typeInviteCode(raw)
+    expect(inviteInput().value).toBe(expected)
+  })
+
+  it('does not apply a redeemed user to a session that changed meanwhile', async () => {
+    setSession({ auth })
+    mocks.redeem.mockImplementation(async () => { mocks.state = { ...mocks.state, token: 'other' }; return { user: approvedUser } })
+    await act(async () => root.render(<AuthExperience />))
+    await typeInviteCode('AB1CD2')
+    await act(async () => button('Redeem invite code').click())
+    expect(mocks.setUser).not.toHaveBeenCalled()
   })
 
   it('explains when the administrator has turned account deletion off', async () => {

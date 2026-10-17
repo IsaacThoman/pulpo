@@ -46,8 +46,12 @@ function cleanInviteCode(value: string) {
 function nextInviteCode(previous: string, raw: string) {
   const cleaned = cleanInviteCode(raw);
   if (cleaned.length <= INVITE_CODE_LENGTH) return cleaned;
-  // A full code pasted after a rejected one replaces it instead of being cut off.
-  const inserted = raw.startsWith(previous) ? cleanInviteCode(raw.slice(previous.length)) : '';
+  // A full code pasted anywhere into an existing one replaces it instead of being cut off.
+  let start = 0;
+  while (start < previous.length && raw[start] === previous[start]) start += 1;
+  let end = 0;
+  while (end < previous.length - start && raw[raw.length - 1 - end] === previous[previous.length - 1 - end]) end += 1;
+  const inserted = cleanInviteCode(raw.slice(start, raw.length - end));
   return (inserted.length === INVITE_CODE_LENGTH ? inserted : cleaned).slice(0, INVITE_CODE_LENGTH);
 }
 
@@ -148,6 +152,7 @@ function InviteCodeField({ colors, value, disabled, error, onChangeText, onSubmi
         autoCapitalize="characters"
         autoCorrect={false}
         autoComplete="one-time-code"
+        keyboardType={Platform.OS === 'android' ? 'visible-password' : 'default'}
         spellCheck={false}
         returnKeyType="go"
         caretHidden
@@ -303,21 +308,26 @@ export function AuthExperience() {
       setError(nextError instanceof Error ? nextError.message : 'Could not refresh approval status. Check your connection and try again.');
     }
   });
-  const redeemInvite = () => runPendingAction('redeem', async () => {
+  const redeemInvite = async () => {
     if (inviteCode.length !== INVITE_CODE_LENGTH) return;
-    let redeemed: Awaited<ReturnType<typeof mobileApi.redeemInviteCode>>;
-    try {
-      redeemed = await mobileApi.redeemInviteCode(inviteCode);
-    } catch (nextError) {
-      setInviteError(nextError instanceof Error ? nextError.message : 'Unable to redeem this invite code.');
-      return;
-    }
-    try {
-      await setUser(redeemed.user);
-    } catch {
-      setPendingFeedback('Invite accepted. Tap Refresh status to continue.');
-    }
-  });
+    await runPendingAction('redeem', async () => {
+      const token = useSessionStore.getState().token;
+      let redeemed: Awaited<ReturnType<typeof mobileApi.redeemInviteCode>>;
+      try {
+        redeemed = await mobileApi.redeemInviteCode(inviteCode);
+      } catch (nextError) {
+        setInviteError(nextError instanceof Error ? nextError.message : 'Unable to redeem this invite code.');
+        return;
+      }
+      // The session may have expired or switched while the code was being redeemed.
+      if (useSessionStore.getState().token !== token) return;
+      try {
+        await setUser(redeemed.user);
+      } catch {
+        setPendingFeedback('Invite accepted. Tap Refresh status to continue.');
+      }
+    });
+  };
   const signOut = () => runPendingAction('signout', async () => {
     try {
       await logout();
@@ -337,9 +347,10 @@ export function AuthExperience() {
         <SymbolView name="envelope" size={16} tintColor={colors.textMuted} />
         <View style={styles.helpCopy}>
           <Text style={[styles.helpTitle, { color: colors.text }]}>Need help?</Text>
-          <Text style={[styles.helpText, { color: colors.textMuted }]}>Contact your admin at <Text accessibilityRole="link" onPress={() => { void Linking.openURL(`mailto:${auth.adminEmail}`); }} style={[styles.helpLink, { color: colors.text }]}>{auth.adminEmail}</Text></Text>
+          <Text style={[styles.helpText, { color: colors.textMuted }]}>Contact your admin at <Text accessibilityRole="link" onPress={() => { void Linking.openURL(`mailto:${auth.adminEmail}`).catch(() => undefined); }} style={[styles.helpLink, { color: colors.text }]}>{auth.adminEmail}</Text></Text>
         </View>
       </View> : null}
+      <Text numberOfLines={1} ellipsizeMode="middle" style={[styles.pendingHelp, { color: colors.textMuted }]}>Signed in as <Text style={[styles.helpLink, { color: colors.text }]}>{session.user.email}</Text></Text>
       {pendingFeedback ? <Text accessibilityLiveRegion="polite" style={[styles.pendingHelp, { color: colors.textMuted }]}>{pendingFeedback}</Text> : null}
       {error ? <Text accessibilityRole="alert" style={[styles.error, { color: colors.destructive }]}>{error}</Text> : null}
       <View style={styles.pendingActions}>
@@ -349,7 +360,7 @@ export function AuthExperience() {
       <View style={[styles.dangerZone, { borderTopColor: colors.border }]}>
         <Text accessibilityRole="header" style={[styles.dangerTitle, { color: colors.text }]}>Delete account</Text>
         {auth && !auth.accountDeletionEnabled
-          ? <Text style={[styles.dangerText, { color: colors.textMuted }]}>Account deletion is disabled by the instance administrator.{auth.adminEmail ? <> Contact <Text accessibilityRole="link" onPress={() => { void Linking.openURL(`mailto:${auth.adminEmail}`); }} style={[styles.helpLink, { color: colors.text }]}>{auth.adminEmail}</Text>.</> : null}</Text>
+          ? <Text style={[styles.dangerText, { color: colors.textMuted }]}>Account deletion is disabled by the instance administrator.{auth.adminEmail ? <> Contact <Text accessibilityRole="link" onPress={() => { void Linking.openURL(`mailto:${auth.adminEmail}`).catch(() => undefined); }} style={[styles.helpLink, { color: colors.text }]}>{auth.adminEmail}</Text>.</> : null}</Text>
           : <>
             <Text style={[styles.dangerText, { color: colors.textMuted }]}>Permanently delete your account and its data.</Text>
             <View style={styles.dangerAction}><DeleteAccountAction /></View>
