@@ -56,3 +56,31 @@ describe('queued-message outbox replay', () => {
     expect(mocks.fail).toHaveBeenCalledOnce()
   })
 })
+describe('chat start outbox replay', () => {
+  const start = { id: 'response', namespace: 'account', entityKey: 'response:response', method: 'POST', path: '/api/chats/start', body: JSON.stringify({ chat: { clientId: 'started', fileScopeIds: ['kept', 'trashed', 'gone'], fileScopeAccess: { kept: 'write' } }, response: { clientId: 'response', input: 'Summarize these' } }), createdAt: 1, attempts: 0, nextAttemptAt: 0 }
+  it('starts a chat whose Files items were trashed or deleted elsewhere with the items that remain', async () => {
+    mocks.pending.mockResolvedValue([start])
+    mocks.request.mockImplementation(async (path: string, options?: { body?: { chat: { fileScopeIds: string[] } } }) => {
+      if (path === '/api/files/kept') return { node: { id: 'kept', kind: 'doc', status: 'ready', trashedAt: null } }
+      if (path === '/api/files/trashed') return { node: { id: 'trashed', kind: 'doc', status: 'ready', trashedAt: '2026-10-17T00:00:00.000Z' } }
+      if (path === '/api/files/gone') throw new ApiError(404, 'not_found', 'Not found')
+      if (options?.body?.chat.fileScopeIds.length !== 1) throw new ApiError(400, 'invalid_file_scope', 'Choose items from your files')
+      return {}
+    })
+    await expect(replayOutbox('account', client)).resolves.toEqual({ replayed: 1, rejected: 0 })
+    expect(mocks.request).toHaveBeenLastCalledWith('/api/chats/start', expect.objectContaining({
+      idempotencyKey: 'response',
+      body: expect.objectContaining({ chat: expect.objectContaining({ fileScopeIds: ['kept'], fileScopeAccess: { kept: 'write' } }), response: expect.objectContaining({ input: 'Summarize these' }) }),
+    }))
+  })
+  it('tries the start again later when its Files items cannot be checked', async () => {
+    mocks.pending.mockResolvedValue([start])
+    mocks.request.mockImplementation(async (path: string) => {
+      if (path.startsWith('/api/files/')) throw new TypeError('offline')
+      throw new ApiError(400, 'invalid_file_scope', 'Choose items from your files')
+    })
+    await expect(replayOutbox('account', client)).resolves.toEqual({ replayed: 0, rejected: 0 })
+    expect(mocks.complete).not.toHaveBeenCalled()
+    expect(mocks.fail).toHaveBeenCalledOnce()
+  })
+})

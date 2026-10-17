@@ -1,3 +1,4 @@
+import { FILE_SCOPE_ROOT, type FileNode } from '@pulpo/contracts'
 import { mobileChatStarted } from '../features/chat/chatStarted'
 import type { QueryClient } from '@tanstack/react-query'
 import type { MobileQueuedMessage, ServerChat } from '../types'
@@ -10,6 +11,22 @@ import { readyOutboxPrefix } from './schema'
 
 const activeReplays = new Map<string, Promise<{ replayed: number; rejected: number }>>()
 
+/** The Files items of a chat's scope that the server still accepts (live items the user owns). */
+async function acceptedFileScope(ids: readonly string[]): Promise<string[]> {
+  const kept = await Promise.all(ids.map(async (id) => {
+    if (id === FILE_SCOPE_ROOT) return id
+    try {
+      const { node } = await apiRequest<{ node: FileNode }>(`/api/files/${encodeURIComponent(id)}`)
+      return node.status === 'ready' && !node.trashedAt && node.kind !== 'shortcut' ? id : null
+    } catch (error) {
+      // Gone (or Files turned off). Anything else is not an answer: the start is tried again later.
+      if (error instanceof ApiError && (error.status === 404 || error.status === 403)) return null
+      throw new Error('The chat’s Files items could not be checked', { cause: error })
+    }
+  }))
+  return kept.filter((id): id is string => id !== null)
+}
+
 async function performReplay(namespace: string, client?: QueryClient): Promise<{ replayed: number; rejected: number }> {
   const rows = readyOutboxPrefix(await pendingOutbox(namespace), Date.now())
   let replayed = 0
@@ -18,10 +35,18 @@ async function performReplay(namespace: string, client?: QueryClient): Promise<{
     try {
       const body = row.body ? JSON.parse(row.body) : undefined
       if (row.path === '/api/chats/start' && body?.chat?.clientId) mobileChatStarted.ignoreLocal(namespace, body.chat.clientId)
-      const result = await apiRequest<{ queuedMessage?: MobileQueuedMessage | null }>(row.path, {
+      const send = (payload: unknown) => apiRequest<{ queuedMessage?: MobileQueuedMessage | null }>(row.path, {
         method: row.method,
-        body,
+        body: payload,
         idempotencyKey: row.id,
+      })
+      const result = await send(body).catch(async (error: unknown) => {
+        // A chat started offline still starts when some of its Files items were trashed or deleted
+        // elsewhere meanwhile (the server checks the scope first, so nothing was created): with the
+        // items that remain, rather than being dropped with its first message.
+        const scope: string[] | undefined = body?.chat?.fileScopeIds
+        if (row.path !== '/api/chats/start' || !(error instanceof ApiError) || error.code !== 'invalid_file_scope' || !scope?.length) throw error
+        return send({ ...body, chat: { ...body.chat, fileScopeIds: await acceptedFileScope(scope) } })
       })
       if (row.entityKey.startsWith('queued-message:')) await settleQueuedSubmission(namespace, row.id, row.path, result.queuedMessage ?? null, undefined, client)
       await completeOutbox(row.id)

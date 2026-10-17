@@ -9,6 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { create } from 'zustand'
 import { getValue, setValue } from '../../../data/database'
 import type { RootStackParamList } from '../../../mockup5/src/navigation'
+import { usePrototypeStore } from '../../../mockup5/src/store/prototypeStore'
 import { PageHeader, Screen } from '../../../mockup5/src/components/PrototypeUI'
 import { showActions, promptText } from '../../../platform/materialActions'
 import { MaterialIconButton, MaterialSearchField } from '../../../platform/MaterialUI'
@@ -133,6 +134,41 @@ export function FilesFolderScreen({ navigation, route }: Props) {
     }
   }, [folderId, namespace, queryClient])
 
+  /**
+   * Trashes items, asking first when that deletes chats for good (no trash retention), as the drawer
+   * does, or when `confirm` asks for it anyway.
+   */
+  const trashItems = useCallback((nodes: readonly FileNode[], options: { confirm?: boolean; then?: () => void } = {}) => {
+    const run = () => { void operations.trash(nodes).then((done) => {
+      if (done) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
+      options.then?.()
+    }) }
+    const chats = nodes.filter((node) => node.kind === 'chat').length
+    const deletesChats = chats > 0 && usePrototypeStore.getState().preferences.trashRetention === 'instant'
+    if (!deletesChats && !options.confirm) {
+      run()
+      return
+    }
+    const subject = nodes.length === 1 ? `“${nodes[0]!.name}”` : `${nodes.length} items`
+    if (!deletesChats) {
+      Alert.alert(`Move ${subject} to the trash?`, undefined, [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Move to Trash', style: 'destructive', onPress: run },
+      ])
+      return
+    }
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning)
+    const [title, message] = nodes.length === 1
+      ? ['Delete chat?', `${subject} will be removed from your history.`]
+      : chats === nodes.length
+        ? [`Delete ${nodes.length} chats?`, 'They will be removed from your history.']
+        : [`Delete ${nodes.length} items?`, 'Chats are deleted for good. Everything else moves to the trash.']
+    Alert.alert(title, message, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: run },
+    ])
+  }, [operations])
+
   const runAction = useCallback((node: FileNode, action: string) => {
     const id = action as FileItemActionId
     switch (id) {
@@ -156,12 +192,12 @@ export function FilesFolderScreen({ navigation, route }: Props) {
           { text: 'Remove', style: 'destructive', onPress: () => { void operations.resolveSuggestion(node, 'reject') } },
         ])
         return
-      case 'trash': void operations.trash([node]).then((done) => { if (done) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success) }); return
+      case 'trash': trashItems([node]); return
       case 'add-to-chat':
       case 'open-in-new-chat':
         return
     }
-  }, [openItem, operations])
+  }, [openItem, operations, trashItems])
 
   const actionsFor = useCallback((node: FileNode) => fileItemActions(node, { agent: 'none', selectable: true }), [])
   const press = useCallback((node: FileNode) => {
@@ -427,12 +463,7 @@ export function FilesFolderScreen({ navigation, route }: Props) {
         {[
           { icon: 'folder', label: 'Move', disabled: !selectedNodes.length || selectedNodes.some(isBuiltIn), onPress: () => setMoving(selectedNodes) },
           { icon: 'plus.square.on.square', label: 'Duplicate', disabled: !selectedNodes.some((node) => node.kind !== 'chat') || selectedNodes.some(isBuiltIn), onPress: () => { void operations.duplicate(selectedNodes, folderId).then(exitSelection) } },
-          { icon: 'trash', label: 'Trash', destructive: true, disabled: !selectedNodes.length || selectedNodes.some(isBuiltIn), onPress: () => {
-            Alert.alert(`Move ${selectedNodes.length === 1 ? `“${selectedNodes[0]!.name}”` : `${selectedNodes.length} items`} to the trash?`, undefined, [
-              { text: 'Cancel', style: 'cancel' },
-              { text: 'Move to Trash', style: 'destructive', onPress: () => { void operations.trash(selectedNodes).then(exitSelection) } },
-            ])
-          } },
+          { icon: 'trash', label: 'Trash', destructive: true, disabled: !selectedNodes.length || selectedNodes.some(isBuiltIn), onPress: () => trashItems(selectedNodes, { confirm: true, then: exitSelection }) },
         ].map((action) => (
           <Pressable key={action.label} accessibilityLabel={action.label} accessibilityRole="button" accessibilityState={{ disabled: action.disabled }} disabled={action.disabled} onPress={action.onPress} style={({ pressed }) => [styles.selectionAction, pressed && { opacity: 0.6 }]} testID={`files-selection-${action.label.toLowerCase()}`}>
             <SymbolView name={action.icon as never} size={22} tintColor={action.disabled ? theme.tertiary : action.destructive ? theme.red : theme.blue} />
