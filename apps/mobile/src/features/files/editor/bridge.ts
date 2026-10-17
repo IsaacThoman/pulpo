@@ -12,8 +12,14 @@ import {
   type ReviewAction,
 } from './protocol'
 
-/** Edits arriving from the editor; the session's store and provider treat them as local. */
-export const EDITOR_ORIGIN = 'pulpo-editor'
+/**
+ * The origin of edits arriving from one editor page. Each bridge has its own, so edits from one
+ * page still reach another page open on the same document; stores and providers treat any of them
+ * as local edits.
+ */
+export interface EditorOrigin {
+  readonly editor: true
+}
 
 export interface EditorBridgeState {
   /** The editor has loaded the current session's document. */
@@ -62,6 +68,8 @@ export class EditorBridge {
   private readonly exports = new Map<string, { resolve: (markdown: string) => void; reject: (error: Error) => void }>()
   private destroyed = false
   private options: EditorBridgeOptions
+  /** Applies this page's edits, which are never sent back to it. */
+  readonly origin: EditorOrigin = { editor: true }
 
   constructor(options: EditorBridgeOptions) {
     this.options = options
@@ -147,7 +155,7 @@ export class EditorBridge {
   /** Merges the page's full state, e.g. pulled by the native host while it tears the view down. */
   mergeFinalState(update: string | null): void {
     if (!update || this.destroyed) return
-    Y.applyUpdate(this.options.doc, base64ToBytes(update), EDITOR_ORIGIN)
+    Y.applyUpdate(this.options.doc, base64ToBytes(update), this.origin)
   }
 
   destroy(): void {
@@ -190,7 +198,7 @@ export class EditorBridge {
         this.setState({ ...this.state, loaded: true })
         break
       case 'update':
-        Y.applyUpdate(this.options.doc, base64ToBytes(message.update), EDITOR_ORIGIN)
+        Y.applyUpdate(this.options.doc, base64ToBytes(message.update), this.origin)
         break
       case 'sync':
         this.post({ type: 'update', session: this.session, update: bytesToBase64(Y.encodeStateAsUpdate(this.options.doc, base64ToBytes(message.stateVector))) })
@@ -225,8 +233,8 @@ export class EditorBridge {
   }
 
   private readonly onDocUpdate = (update: Uint8Array, origin: unknown) => {
-    // The editor already has its own edits.
-    if (origin === EDITOR_ORIGIN || !this.state.loaded) return
+    // The page already has its own edits.
+    if (origin === this.origin || !this.state.loaded) return
     this.post({ type: 'update', session: this.session, update: bytesToBase64(update) })
   }
 

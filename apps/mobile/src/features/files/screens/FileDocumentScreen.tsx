@@ -6,15 +6,20 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as Haptics from 'expo-haptics'
 import * as WebBrowser from 'expo-web-browser'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import { ActivityIndicator, Alert, Keyboard, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { ActivityIndicator, Alert, Keyboard, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller'
 import { SafeMarkdown } from '../../../components/SafeMarkdown'
+import { PageHeader } from '../../../mockup5/src/components/PrototypeUI'
+import { showActions } from '../../../platform/materialActions'
+import { MaterialIconButton } from '../../../platform/MaterialUI'
 import type { RootStackParamList } from '../../../mockup5/src/navigation'
 import { promptText } from '../../../platform/materialActions'
 import { SymbolView } from '../../../platform/SymbolView'
 import { useAppTheme } from '../../../theme'
 import { useDocSchemaSupported, useFilesEnabled } from '../availability'
 import { FilesToastHost } from '../components/FilesToastHost'
+import { FORMATTING_BAR_HEIGHT, FormattingBar } from '../components/FormattingBar'
 import { FolderPickerSheet } from '../components/FolderPickerSheet'
 import { accountDocSessions } from '../doc/accountSessions'
 import type { DocHandle } from '../doc/sessions'
@@ -93,11 +98,18 @@ export function FileDocumentScreen({ navigation, route }: Props) {
   const recountPending = useRef(false)
 
   // One hold on the session for this screen's status and presence; the editor takes its own.
+  // `generation` starts a fresh session (after a restore, or to retry a failed one).
+  const [generation, setGeneration] = useState(0)
   useEffect(() => {
     if (!namespace) return
     const held = accountDocSessions(namespace).acquire(fileId)
     setHandle(held)
     return () => held.release()
+  }, [fileId, generation, namespace])
+  const restartSession = useCallback(() => {
+    accountDocSessions(namespace).restart(fileId)
+    setEditorState(null)
+    setGeneration((current) => current + 1)
   }, [fileId, namespace])
   const snapshot = useSyncExternalStore(handle?.controller.subscribe ?? noSubscription, handle?.controller.getSnapshot ?? (() => CLOSED))
   const { status, peers, session } = snapshot
@@ -139,7 +151,9 @@ export function FileDocumentScreen({ navigation, route }: Props) {
   }, [session, status.state])
   useEffect(() => { setLoadedOnce(false) }, [handle])
   const problem = documentProblem(status, node, schemaSupported)
-  const usable = Boolean(session) && (loadedOnce || status.state === 'synced' || status.state === 'syncing' || session?.hasCachedContent === true)
+  // A session still in memory from earlier (e.g. lingering after closing) holds the document too.
+  const inMemory = Boolean(handle && handle.controller.doc.getXmlFragment('default').length > 0)
+  const usable = Boolean(session) && (loadedOnce || inMemory || status.state === 'synced' || status.state === 'syncing' || session?.hasCachedContent === true)
   const editable = filesEnabled && !problem && usable && node?.kind === 'doc' && docEditorAvailable
   const title = node?.name ?? route.params.name ?? 'Document'
   // Without a usable copy (an outdated app, or offline before the first sync) the server's Markdown is shown.
@@ -240,6 +254,18 @@ export function FileDocumentScreen({ navigation, route }: Props) {
   const suggestions = editorState?.suggestions
   const reviewVisible = Boolean(suggestions?.count) && !keyboardVisible && editorState?.loaded
   const reviewBarHeight = reviewVisible ? 116 : 0
+  // Android draws its formatting bar above the keyboard; the editor keeps the caret clear of it.
+  const formattingBarVisible = Platform.OS === 'android' && keyboardVisible && editable && Boolean(editorState?.loaded)
+  const editorBottomPadding = reviewBarHeight + (formattingBarVisible ? FORMATTING_BAR_HEIGHT : 0)
+  const showAndroidMenu = () => showActions(title, [
+    { label: 'Export', icon: 'square.and.arrow.up', onPress: () => { void exportDocument() } },
+    { label: 'Rename', icon: 'pencil', onPress: rename },
+    { label: 'Move', icon: 'folder', onPress: () => setMoving(true) },
+    { label: 'Duplicate', icon: 'plus.square.on.square', onPress: () => { if (node) void operations.duplicate([node], node.parentId) } },
+    { label: node?.pinned ? 'Unpin' : 'Pin', icon: node?.pinned ? 'pin.slash' : 'pin', onPress: () => { if (node) void operations.setPinned([node], !node.pinned) } },
+    { label: 'Show in folder', icon: 'folder.badge.questionmark', onPress: () => { if (node) navigation.push('FilesFolder', { folderId: node.parentId, name: nodeQuery.data?.ancestors.at(-1)?.name }) } },
+    { label: 'Move to trash', icon: 'trash', destructive: true, onPress: trash },
+  ])
 
   const banner = (() => {
     if (problem) {
@@ -249,8 +275,8 @@ export function FileDocumentScreen({ navigation, route }: Props) {
             <Text style={[styles.bannerTitle, { color: theme.text }]}>{problem.title}</Text>
             <Text style={[styles.bannerDetail, { color: theme.secondary }]}>{problem.detail}</Text>
           </View>
-          {problem.action === 'restore' && node ? <Pressable accessibilityRole="button" onPress={() => { void operations.restore([node]).then(() => nodeQuery.refetch()).then(() => handle?.controller.provider.resync()) }}><Text style={[styles.bannerAction, { color: theme.blue }]}>Restore</Text></Pressable> : null}
-          {problem.action === 'retry' ? <Pressable accessibilityRole="button" onPress={() => handle?.controller.provider.resync()}><Text style={[styles.bannerAction, { color: theme.blue }]}>Retry</Text></Pressable> : null}
+          {problem.action === 'restore' && node ? <Pressable accessibilityRole="button" onPress={() => { void operations.restore([node]).then(() => nodeQuery.refetch()).then(restartSession) }}><Text style={[styles.bannerAction, { color: theme.blue }]}>Restore</Text></Pressable> : null}
+          {problem.action === 'retry' ? <Pressable accessibilityRole="button" onPress={restartSession}><Text style={[styles.bannerAction, { color: theme.blue }]}>Retry</Text></Pressable> : null}
           {problem.action === 'back' ? <Pressable accessibilityRole="button" onPress={() => navigation.goBack()}><Text style={[styles.bannerAction, { color: theme.blue }]}>Close</Text></Pressable> : null}
         </View>
       )
@@ -285,18 +311,20 @@ export function FileDocumentScreen({ navigation, route }: Props) {
     ) : <View style={styles.center}><ActivityIndicator color={theme.secondary} /></View>
   ) : handle && session ? (
     <DocEditorView
+      key={generation}
       ref={editor}
       acquire={() => accountDocSessions(namespace).acquire(fileId)}
       editable={editable}
       placeholder="Start writing…"
       sessionLabel={deviceSessionLabel()}
       sessionColor={sessionColor(handle.controller.doc.clientID)}
-      bottomPadding={reviewBarHeight}
+      bottomPadding={editorBottomPadding}
       style={styles.flex}
       onStateChange={setEditorState}
       onResolved={onResolved}
       onLink={(href) => {
-        if (/^(https?:|mailto:)/i.test(href)) void WebBrowser.openBrowserAsync(href).catch(() => undefined)
+        if (/^https?:/i.test(href)) void WebBrowser.openBrowserAsync(href).catch(() => undefined)
+        else if (/^mailto:/i.test(href)) void Linking.openURL(href).catch(() => undefined)
       }}
     />
   ) : (
@@ -339,8 +367,24 @@ export function FileDocumentScreen({ navigation, route }: Props) {
 
   return (
     <View style={[styles.flex, { backgroundColor: theme.isDark ? theme.background : theme.elevated, paddingTop: Platform.OS === 'android' ? insets.top : 0 }]}>
+      {Platform.OS === 'android' ? (
+        <PageHeader
+          title={title.replace(/\.(md|markdown)$/i, '')}
+          onBack={() => navigation.goBack()}
+          right={<View style={styles.androidActions}>
+            <SyncIndicator status={status} />
+            <MaterialIconButton icon="ellipsis" label="Document" onPress={showAndroidMenu} />
+          </View>}
+        />
+      ) : null}
       {banner}
-      {body}
+      {Platform.OS === 'android' ? <KeyboardAvoidingView behavior="padding" style={styles.flex}>{body}</KeyboardAvoidingView> : body}
+      <FormattingBar
+        formatting={editorState?.formatting ?? null}
+        visible={formattingBarVisible}
+        onCommand={(command) => editor.current?.toolbar(command)}
+        onDismissKeyboard={() => editor.current?.dismissKeyboard()}
+      />
       {reviewBar}
       <FilesToastHost bottomOffset={reviewBarHeight} />
       {moving && node ? (
@@ -370,6 +414,7 @@ const styles = StyleSheet.create({
   centerBody: { fontSize: 15, lineHeight: 21, textAlign: 'center' },
   fallback: { paddingHorizontal: 20, paddingTop: 12 },
   syncIndicator: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
+  androidActions: { flexDirection: 'row', alignItems: 'center' },
   peers: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 4 },
   peer: { width: 14, height: 14, borderRadius: 7, borderWidth: 2, marginLeft: -4 },
   peerMore: { fontSize: 12, marginLeft: 4 },

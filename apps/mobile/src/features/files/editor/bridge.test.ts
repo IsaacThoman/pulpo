@@ -5,7 +5,7 @@ import { JSDOM as UntypedJSDOM } from 'jsdom'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Awareness } from 'y-protocols/awareness'
 import * as Y from 'yjs'
-import { EDITOR_ORIGIN, EditorBridge } from './bridge'
+import { EditorBridge } from './bridge'
 import { EDITOR_BUNDLE } from './editorBundle.generated'
 import type { EditorTheme } from './protocol'
 
@@ -135,7 +135,7 @@ describe('editor bridge with the built editor', () => {
     bridge.format('heading2')
     page.flush()
     expect(ydocToMarkdown(doc).trim()).toBe('## Hello')
-    expect(origins).toContain(EDITOR_ORIGIN)
+    expect(origins).toContain(bridge.origin)
     expect(bridge.getState().formatting?.active).toContain('heading2')
   })
 
@@ -223,4 +223,29 @@ describe('editor bridge with the built editor', () => {
     readOnly.page.flush()
     expect(ydocToMarkdown(readOnly.doc).trim()).toBe('Text')
   })
+
+  it('shows one page\'s edits in another page open on the same document', async () => {
+    const first = open('Shared')
+    // A second editor on the same app copy (e.g. the same document opened again from a folder).
+    let second!: Page
+    const bridge = new EditorBridge({
+      doc: first.doc,
+      awareness: first.awareness,
+      send: (message) => second.send(message),
+      editable: true,
+      placeholder: '',
+      user: { name: 'Pulpo on iPhone', color: '#123456' },
+      theme,
+      schemaVersion: EDITOR_BUNDLE.schemaVersion,
+    })
+    second = new Page(bridge)
+    pages.push(second)
+    second.flush()
+    first.bridge.focus('end')
+    first.bridge.format('heading1')
+    first.page.flush()
+    second.flush()
+    expect(await exported(bridge, second)).toBe('# Shared')
+  })
 })
+

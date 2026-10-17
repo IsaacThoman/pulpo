@@ -2,7 +2,8 @@ import type { FormatCommand } from '@pulpo/client-core/doc-editor'
 import * as Crypto from 'expo-crypto'
 import { requireNativeViewManager } from 'expo-modules-core'
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState, useSyncExternalStore, type Ref } from 'react'
-import { Alert, type StyleProp, type ViewStyle } from 'react-native'
+import { Alert, Platform, type StyleProp, type ViewStyle } from 'react-native'
+import { promptText } from '../../../platform/materialActions'
 import PulpoDocEditor from '../../../../modules/pulpo-doc-editor'
 import { useAppTheme } from '../../../theme'
 import type { DocHandle } from '../doc/sessions'
@@ -41,9 +42,14 @@ export const docEditorAvailable = NativeDocEditor !== null
  * and the session is held until it is merged (or a short wait passes).
  */
 const closing = new Map<string, { bridge: EditorBridge; handle: DocHandle; timer: ReturnType<typeof setTimeout> }>()
+/** Editors on screen: the native host also sends their state when they leave the window (e.g. covered by another screen). */
+const live = new Map<string, EditorBridge>()
 const FINAL_STATE_WAIT_MS = 3_000
 
 PulpoDocEditor?.addListener('onFinalState', ({ instanceId, state }) => {
+  // Merging is idempotent, so a state sent while the editor is still mounted is merged too.
+  const mounted = live.get(instanceId)
+  if (mounted) mounted.mergeFinalState(state)
   const pending = closing.get(instanceId)
   if (!pending) return
   closing.delete(instanceId)
@@ -59,6 +65,8 @@ const initialState = () => INITIAL
 
 export interface DocEditorHandle {
   format(command: FormatCommand, href?: string): void
+  /** A formatting bar's command, asking for a link's address where needed. */
+  toolbar(command: FormatCommand): void
   review(action: ReviewAction): void
   focus(at?: 'start' | 'end'): void
   exportMarkdown(): Promise<string>
@@ -121,7 +129,9 @@ export const DocEditorView = forwardRef<DocEditorHandle, Props>(function DocEdit
     // This session's caret is labeled for other devices viewing the document.
     controller.provider.awareness.setLocalStateField('user', { name: props.sessionLabel, color: props.sessionColor })
     setInstance({ id, bridge, handle })
+    live.set(id, bridge)
     return () => {
+      live.delete(id)
       // Keep the session until the page's final state is merged; see `closing`.
       const timer = setTimeout(() => {
         if (!closing.delete(id)) return
@@ -147,8 +157,37 @@ export const DocEditorView = forwardRef<DocEditorHandle, Props>(function DocEdit
     bridge?.setTheme(editorTheme(theme, bottomPadding))
   }, [bridge, theme, bottomPadding])
 
+  const runToolbar = (command: string) => {
+    if (!bridge) return
+    if (command !== 'link') {
+      bridge.format(command as FormatCommand)
+      return
+    }
+    const current = state.formatting?.linkHref ?? null
+    const save = (value?: string) => { if (value?.trim()) bridge.format('link', normalizeHref(value)) }
+    if (Platform.OS === 'ios') {
+      Alert.prompt(
+        current ? 'Edit link' : 'Add link',
+        undefined,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          ...(current ? [{ text: 'Remove link', style: 'destructive' as const, onPress: () => bridge.format('link', '') }] : []),
+          { text: 'Save', isPreferred: true, onPress: save },
+        ],
+        'plain-text',
+        current ?? 'https://',
+        'url',
+      )
+    } else {
+      promptText({ title: current ? 'Edit link' : 'Add link', message: current ? 'Leave empty to remove the link.' : undefined, value: current ?? 'https://', confirmLabel: 'Save', onSubmit: (value) => value.trim() ? save(value) : current ? bridge.format('link', '') : undefined })
+    }
+  }
+  const runToolbarRef = useRef(runToolbar)
+  runToolbarRef.current = runToolbar
+
   useImperativeHandle(ref, () => ({
     format: (command, href) => bridge?.format(command, href),
+    toolbar: (command) => runToolbarRef.current(command),
     review: (action) => bridge?.review(action),
     focus: (at) => bridge?.focus(at),
     exportMarkdown: () => bridge ? bridge.exportMarkdown() : Promise.reject(new Error('The editor has not loaded')),
@@ -158,25 +197,6 @@ export const DocEditorView = forwardRef<DocEditorHandle, Props>(function DocEdit
 
   if (!NativeDocEditor || !instance || !bridge) return null
   const formatting = state.formatting
-  const runToolbar = (command: string) => {
-    if (command === 'link') {
-      const current = formatting?.linkHref ?? null
-      Alert.prompt(
-        current ? 'Edit link' : 'Add link',
-        undefined,
-        [
-          { text: 'Cancel', style: 'cancel' },
-          ...(current ? [{ text: 'Remove link', style: 'destructive' as const, onPress: () => bridge.format('link', '') }] : []),
-          { text: 'Save', isPreferred: true, onPress: (value?: string) => { if (value?.trim()) bridge.format('link', normalizeHref(value)) } },
-        ],
-        'plain-text',
-        current ?? 'https://',
-        'url',
-      )
-      return
-    }
-    bridge.format(command as FormatCommand)
-  }
   return (
     <NativeDocEditor
       ref={native}

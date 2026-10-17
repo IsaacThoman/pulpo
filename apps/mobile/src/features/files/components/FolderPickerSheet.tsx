@@ -70,8 +70,10 @@ export function FolderPickerSheet(props: Props) {
 
   const items = useMemo(() => {
     const children = listing.data?.children ?? []
+    // Chats and shortcuts cannot be attached to a chat (as on the web); moving into a shortcut's
+    // folder goes through the folder itself.
     const visible = children.filter((node) => (
-      node.status === 'ready' && node.kind !== 'chat' && (props.mode === 'items' ? node.kind !== 'shortcut' || node.target?.kind === 'folder' : node.kind === 'folder' || node.target?.kind === 'folder')
+      node.status === 'ready' && node.kind !== 'chat' && node.kind !== 'shortcut' && (props.mode === 'items' || node.kind === 'folder')
     ))
     return sortFileNodes(visible, DEFAULT_FILE_SORT)
   }, [listing.data?.children, props.mode])

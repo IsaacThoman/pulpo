@@ -96,7 +96,11 @@ function mapMessage(message: DisplayMessage): PrototypeMessage {
   return mapped
 }
 
-function mapChat(chat: ServerChat, messages: PrototypeMessage[] = [], detailLoaded = false): PrototypeChat {
+/**
+ * A server chat as the app's chat. `previous` is the app's current copy: a chat payload without a
+ * Files scope (an optimistic detail, an offline start) keeps the scope it had, as on the web.
+ */
+function mapChat(chat: ServerChat, messages: PrototypeMessage[] = [], detailLoaded = false, previous?: PrototypeChat): PrototypeChat {
   return {
     id: chat.id,
     title: chat.title,
@@ -115,15 +119,15 @@ function mapChat(chat: ServerChat, messages: PrototypeMessage[] = [], detailLoad
     queuedMessages: chat.queuedMessages,
     deletedAt: chat.deletedAt ? Date.parse(chat.deletedAt) : null,
     purgeAt: chat.purgeAt ? Date.parse(chat.purgeAt) : null,
-    fileScopeIds: chat.fileScopeIds ?? [],
-    fileScopeAccess: chat.fileScopeAccess ?? {},
+    fileScopeIds: chat.fileScopeIds ?? previous?.fileScopeIds ?? [],
+    fileScopeAccess: chat.fileScopeAccess ?? previous?.fileScopeAccess ?? {},
   }
 }
 
 // oxlint-disable-next-line react/only-export-components -- shared detail projection for realtime navigation
 export function mergeProductionChatDetail(current: PrototypeChat[], detail: ServerChat, projected: PrototypeMessage[]): PrototypeChat[] {
   const previous = current.find((chat) => chat.id === detail.id)
-  const incoming = mapChat(detail, reuseProjectedMessages(previous?.messages ?? [], projected), true)
+  const incoming = mapChat(detail, reuseProjectedMessages(previous?.messages ?? [], projected), true, previous)
   // A remotely started chat can load before its account summary refresh arrives.
   return previous ? current.map((chat) => chat.id === detail.id ? incoming : chat) : [incoming, ...current]
 }
@@ -243,7 +247,7 @@ export async function hydrateProductionChatPreview(
     const projected = projectResidentChat(detail, useRealtimeStore.getState().snapshots).map(mapMessage)
     usePrototypeStore.setState((state) => ({
       chats: state.chats.map((chat) => chat.id === chatId
-        ? mapChat(detail, reuseProjectedMessages(chat.messages, projected), true) : chat),
+        ? mapChat(detail, reuseProjectedMessages(chat.messages, projected), true, chat) : chat),
     }))
   }
   const unsubscribe = queryClient.getQueryCache().subscribe((event) => {
@@ -511,6 +515,7 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
             { ...chat, queuedMessages: chat.queuedMessages ?? oldChats.get(chat.id)?.queuedMessages },
             oldChats.get(chat.id)?.messages,
             oldChats.get(chat.id)?.detailLoaded,
+            oldChats.get(chat.id),
           )),
         ],
         folders: folders.data ? mergeServerFolders(folders.data, state.folders) : state.folders,

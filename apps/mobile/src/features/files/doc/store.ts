@@ -106,6 +106,19 @@ export class DocStore {
     })
   }
 
+  /** Forgets a copy unless it holds edits not uploaded yet (which may still find their document). */
+  removeIfClean(namespace: string, docId: string): Promise<boolean> {
+    return this.run(async (database) => {
+      const row = await database.getFirstAsync<{ dirty: number }>('SELECT dirty FROM file_docs WHERE namespace = ? AND doc_id = ?', namespace, docId)
+      if (!row || row.dirty === 1) return false
+      await database.withTransactionAsync(async () => {
+        await database.runAsync('DELETE FROM file_doc_updates WHERE namespace = ? AND doc_id = ?', namespace, docId)
+        await database.runAsync('DELETE FROM file_docs WHERE namespace = ? AND doc_id = ?', namespace, docId)
+      })
+      return true
+    })
+  }
+
   /** Forgets a copy, e.g. once its document was permanently deleted. */
   remove(namespace: string, docId: string): Promise<void> {
     return this.run(async (database) => {
@@ -134,13 +147,25 @@ export class DocStore {
     })
   }
 
+  /**
+   * Replaces a copy's log with one snapshot. The snapshot is merged with what is stored rather than
+   * replacing it, so a write from another session of the same document (two can overlap while one
+   * restarts) is never dropped; merging Yjs updates is idempotent.
+   */
   private async writeSnapshot(database: DocDatabase, namespace: string, docId: string, snapshot: Uint8Array, schemaVersion: number, local: boolean): Promise<void> {
-    await database.runAsync('DELETE FROM file_doc_updates WHERE namespace = ? AND doc_id = ?', namespace, docId)
+    const stored = await database.getFirstAsync<{ state: unknown }>('SELECT state FROM file_docs WHERE namespace = ? AND doc_id = ?', namespace, docId)
+    const updates = await database.getAllAsync<{ id: number; data: unknown }>(
+      'SELECT id, data FROM file_doc_updates WHERE namespace = ? AND doc_id = ? ORDER BY id', namespace, docId,
+    )
+    const parts = [...(stored ? [bytes(stored.state)] : []), ...updates.map((update) => bytes(update.data)), snapshot]
+    const merged = parts.length === 1 ? snapshot : Y.mergeUpdates(parts)
+    const lastId = updates.at(-1)?.id
+    if (lastId !== undefined) await database.runAsync('DELETE FROM file_doc_updates WHERE namespace = ? AND doc_id = ? AND id <= ?', namespace, docId, lastId)
     await database.runAsync(
       `INSERT INTO file_docs(namespace, doc_id, state, schema_version, dirty, size_bytes, opened_at) VALUES (?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(namespace, doc_id) DO UPDATE SET state = excluded.state, schema_version = excluded.schema_version,
          dirty = MAX(file_docs.dirty, excluded.dirty), size_bytes = excluded.size_bytes, opened_at = excluded.opened_at`,
-      namespace, docId, snapshot, schemaVersion, local ? 1 : 0, snapshot.byteLength, Date.now(),
+      namespace, docId, merged, schemaVersion, local ? 1 : 0, merged.byteLength, Date.now(),
     )
   }
 }

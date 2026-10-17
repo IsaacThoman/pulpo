@@ -67,8 +67,9 @@ private func installInputAccessory(_ accessory: UIView?, in webView: WKWebView) 
   guard let content = webView.scrollView.subviews.first(where: { String(describing: type(of: $0)).hasPrefix("WKContent") }) else { return }
   objc_setAssociatedObject(content, &accessoryKey, accessory, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
   let base: AnyClass = type(of: content)
+  // Already ours: the associated accessory above is all that changes.
+  if NSStringFromClass(base).hasPrefix("PulpoDocEditor_") { return }
   let name = "PulpoDocEditor_\(NSStringFromClass(base))"
-  if NSStringFromClass(base) == name { return }
   var subclass: AnyClass? = NSClassFromString(name)
   if subclass == nil, let created = objc_allocateClassPair(base, name, 0) {
     let selector = #selector(getter: UIResponder.inputAccessoryView)

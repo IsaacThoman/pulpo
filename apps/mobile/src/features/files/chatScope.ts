@@ -1,10 +1,12 @@
-import { DEFAULT_FILE_ACCESS_MODE, FILE_SCOPE_ROOT, MAX_CHAT_FILE_SCOPES, type FileAccessMode } from '@pulpo/contracts'
+import { DEFAULT_FILE_ACCESS_MODE, FILE_SCOPE_ROOT, MAX_CHAT_FILE_SCOPES, type FileAccessMode, type FileNode } from '@pulpo/contracts'
+import type { QueryClient } from '@tanstack/react-query'
 import { addFileScope, scopedFileAccess } from '@pulpo/client-core/files'
 import { useCallback, useEffect, useMemo } from 'react'
 import { create } from 'zustand'
 import { getValue, setValue } from '../../data/database'
 import { usePrototypeStore } from '../../mockup5/src/store/prototypeStore'
 import { useFilesEnabled } from './availability'
+import { filesQueryKeys } from './queries'
 
 export { FILE_SCOPE_ROOT, MAX_CHAT_FILE_SCOPES }
 
@@ -45,6 +47,20 @@ export const useNewChatFileScope = create<{
 /** The unsent chat's scope, for starting it; empty when there is none. */
 export function newChatFileScope(namespace: string): FileScopeState {
   return useNewChatFileScope.getState().scopes[namespace] ?? EMPTY
+}
+
+/**
+ * A scope without the items this device knows are gone (in the trash, or deleted), as the chips
+ * show them; the server refuses to start a chat whose scope names one.
+ */
+export function liveFileScope(queryClient: QueryClient, namespace: string, scope: FileScopeState): FileScopeState {
+  const ids = scope.ids.filter((id) => {
+    if (id === FILE_SCOPE_ROOT) return true
+    const state = queryClient.getQueryState<{ node: FileNode }>(filesQueryKeys.node(namespace, id))
+    if (state?.status === 'error' && (state.error as { status?: number } | null)?.status === 404) return false
+    return !state?.data?.node.trashedAt
+  })
+  return ids.length === scope.ids.length ? scope : { ids, access: scopedFileAccess(ids, scope.access as Record<string, FileAccessMode>) }
 }
 
 export function clearNewChatFileScope(namespace: string): void {

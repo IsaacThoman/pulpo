@@ -122,38 +122,38 @@ export interface LocalUpload {
 }
 
 /**
- * Reserve, PUT the bytes, confirm. A failed upload releases its reservation so its name and
- * storage free up again. `onReserved` reports the placeholder, e.g. to show it while uploading.
+ * Reserve, PUT the bytes, confirm. `onReserved` reports the placeholder as soon as it exists, so
+ * the caller (the upload queue) can release it if anything later fails; `assertActive` stops the
+ * upload when the account it belongs to is no longer the one signed in.
  */
-export async function uploadFile(parentId: string | null, upload: LocalUpload, options: { onReserved?: (node: FileNode) => void } = {}): Promise<FileNode> {
+export async function uploadFile(parentId: string | null, upload: LocalUpload, options: {
+  onReserved?: (node: FileNode) => void
+  assertActive?: () => void
+} = {}): Promise<FileNode> {
   const maxBytes = useSessionStore.getState().config?.limits?.maxAttachmentBytes
   const validation = attachmentValidationError({ name: upload.name, mimeType: upload.mimeType, sizeBytes: upload.sizeBytes }, maxBytes)
   if (validation) throw new ApiError(413, 'file_too_large', validation)
+  options.assertActive?.()
   const reservation = await apiRequest<FileUploadReservation>('/api/files/uploads', {
     method: 'POST',
     body: { parentId, name: upload.name, mimeType: upload.mimeType, sizeBytes: upload.sizeBytes },
   })
   options.onReserved?.(reservation.node)
-  try {
-    const url = apiUrl(reservation.uploadUrl)
-    const source = new File(upload.uri)
-    const result = await retryBusyUpload(async () => {
-      const response = await source.upload(url, {
-        httpMethod: 'PUT',
-        mimeType: upload.mimeType,
-        headers: { ...reservation.uploadHeaders, ...nativeAuthorizationHeaders(url) },
-      })
-      if (response.status === 503) throw Object.assign(new Error('Uploads are busy'), { status: 503 })
-      return response
+  const url = apiUrl(reservation.uploadUrl)
+  const source = new File(upload.uri)
+  const result = await retryBusyUpload(async () => {
+    options.assertActive?.()
+    const response = await source.upload(url, {
+      httpMethod: 'PUT',
+      mimeType: upload.mimeType,
+      headers: { ...reservation.uploadHeaders, ...nativeAuthorizationHeaders(url) },
     })
-    if (result.status < 200 || result.status >= 300) throw new ApiError(result.status, 'file_upload_failed', `Upload failed (${result.status})`)
-    const node = await apiRequest<FileNode>(`/api/files/${reservation.node.id}/confirm`, { method: 'POST' })
-    await cacheUploadedFile(node, upload.uri).catch(() => undefined)
-    return node
-  } catch (error) {
-    await deleteFileNode(reservation.node.id).catch(() => undefined)
-    throw error
-  }
+    if (response.status === 503) throw Object.assign(new Error('Uploads are busy'), { status: 503 })
+    return response
+  })
+  if (result.status < 200 || result.status >= 300) throw new ApiError(result.status, 'file_upload_failed', `Upload failed (${result.status})`)
+  options.assertActive?.()
+  return apiRequest<FileNode>(`/api/files/${reservation.node.id}/confirm`, { method: 'POST' })
 }
 
 /** What identifies an uploaded file's current content; new content changes it. */
@@ -178,7 +178,8 @@ function currentNamespace(): string | null {
   return user ? cacheNamespace(instanceUrl, user.id) : null
 }
 
-async function cacheUploadedFile(node: FileNode, sourceUri: string): Promise<void> {
+/** Keeps a just-uploaded file's bytes as its downloaded copy, so opening it needs no download. */
+export async function cacheUploadedFile(node: FileNode, sourceUri: string): Promise<void> {
   const namespace = currentNamespace()
   const source = new File(sourceUri)
   if (!namespace || !source.exists) return

@@ -229,6 +229,8 @@ export async function startChat(input: {
         updatedAt: now,
         responses: [],
         attachments: [],
+        // Queued with the start request, so the chat keeps its Files items while offline.
+        ...(input.fileScopeIds?.length ? { fileScopeIds: input.fileScopeIds, fileScopeAccess: input.fileScopeAccess ?? {} } : {}),
       },
       response: useRealtimeStore.getState().snapshots[input.responseId] ?? queued,
     }

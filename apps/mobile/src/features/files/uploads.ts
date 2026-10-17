@@ -5,8 +5,9 @@ import { Directory, File, Paths } from 'expo-file-system'
 import * as ImagePicker from 'expo-image-picker'
 import { create } from 'zustand'
 import { isNetworkError } from '../../api/client'
-import { getValue, setValue } from '../../data/database'
-import { deleteFileNode, uploadFile, type LocalUpload } from './api'
+import { cacheNamespace, getValue, setValue } from '../../data/database'
+import { useSessionStore } from '../../store/session'
+import { cacheUploadedFile, deleteFileNode, uploadFile, type LocalUpload } from './api'
 import { filesErrorMessage } from './display'
 import { refreshFiles } from './operations'
 import { useFilesToasts } from './toasts'
@@ -76,9 +77,23 @@ function discardStaged(uri: string): void {
 let running = 0
 let queryClient: QueryClient | null = null
 
+/** The signed-in account's namespace; uploads only run for it, with its session. */
+function activeNamespace(): string | null {
+  const { instanceUrl, user } = useSessionStore.getState()
+  return user ? cacheNamespace(instanceUrl, user.id) : null
+}
+
+class AccountChangedError extends Error {
+  constructor() {
+    super('The account changed')
+  }
+}
+
 function pump(): void {
   while (running < CONCURRENCY) {
-    const next = useFileUploads.getState().items.find((item) => item.state === 'waiting')
+    const namespace = activeNamespace()
+    // Another account's uploads wait until it is signed in again.
+    const next = useFileUploads.getState().items.find((item) => item.state === 'waiting' && item.namespace === namespace)
     if (!next) return
     running += 1
     update(next.id, { state: 'uploading', error: undefined })
@@ -89,31 +104,61 @@ function pump(): void {
   }
 }
 
-async function runUpload(item: QueuedUpload): Promise<void> {
+/** Releases a placeholder; resolves whether it is gone (so the queue can forget it). */
+async function release(nodeId: string): Promise<boolean> {
   try {
+    await deleteFileNode(nodeId)
+    return true
+  } catch (error) {
+    // Already gone counts as released.
+    return (error as { status?: number }).status === 404
+  }
+}
+
+async function runUpload(item: QueuedUpload): Promise<void> {
+  const assertActive = () => { if (activeNamespace() !== item.namespace) throw new AccountChangedError() }
+  let reservedNodeId = item.reservedNodeId
+  try {
+    assertActive()
     // An earlier attempt's placeholder would otherwise take the name and wait 24 hours to be purged.
-    if (item.reservedNodeId) await deleteFileNode(item.reservedNodeId).catch(() => undefined)
-    await uploadFile(item.parentId, item, {
+    if (reservedNodeId) {
+      if (!(await release(reservedNodeId))) throw Object.assign(new Error('The earlier attempt could not be released'), { retry: true })
+      reservedNodeId = undefined
+      update(item.id, { reservedNodeId: undefined })
+    }
+    const node = await uploadFile(item.parentId, item, {
+      assertActive,
       onReserved: (reserved) => {
+        reservedNodeId = reserved.id
         update(item.id, { reservedNodeId: reserved.id })
         void persist(item.namespace)
         if (queryClient) void refreshFiles(queryClient, item.namespace)
       },
     })
+    // Done: forget the item first, so ending the app now cannot upload it again.
     remove(item.id)
-    discardStaged(item.uri)
     await persist(item.namespace)
+    await cacheUploadedFile(node, item.uri).catch(() => undefined)
+    discardStaged(item.uri)
     if (queryClient) await refreshFiles(queryClient, item.namespace)
   } catch (error) {
-    const offline = isNetworkError(error)
+    if (error instanceof AccountChangedError) {
+      // The placeholder belongs to the other account; it is released when that account resumes.
+      update(item.id, { state: 'waiting', reservedNodeId })
+      await persist(item.namespace)
+      return
+    }
+    // Forget the placeholder only once it is released; the next attempt releases it otherwise.
+    if (reservedNodeId && await release(reservedNodeId)) reservedNodeId = undefined
+    const offline = isNetworkError(error) || (error as { retry?: boolean }).retry === true
     update(item.id, {
-      // The upload helper releases its own reservation when it fails.
-      reservedNodeId: undefined,
+      reservedNodeId,
       state: offline ? 'offline' : 'failed',
       error: offline ? undefined : filesErrorMessage(error, item.name),
       attempts: item.attempts + 1,
     })
     await persist(item.namespace)
+    if (queryClient) void refreshFiles(queryClient, item.namespace)
     if (offline) return
     useFilesToasts.getState().show({ message: `Couldn’t upload “${item.name}”: ${filesErrorMessage(error, item.name)}`, tone: 'error' })
   }
@@ -166,11 +211,13 @@ export async function cancelUpload(id: string): Promise<void> {
   await persist(item.namespace)
 }
 
-/** Forgets an account's queue (sign-out). */
+/** Forgets an account's queue (sign-out), including uploads staged while it was not active. */
 export async function clearUploads(namespace: string): Promise<void> {
-  const items = useFileUploads.getState().items.filter((item) => item.namespace === namespace)
+  const inMemory = useFileUploads.getState().items.filter((item) => item.namespace === namespace)
   useFileUploads.setState((state) => ({ items: state.items.filter((item) => item.namespace !== namespace) }))
-  for (const item of items) discardStaged(item.uri)
+  const stored = await getValue<QueuedUpload[]>(namespace, STORAGE_KEY).catch(() => null) ?? []
+  for (const uri of new Set([...inMemory, ...stored].map((item) => item.uri))) discardStaged(uri)
+  await setValue(namespace, STORAGE_KEY, []).catch(() => undefined)
   loaded.delete(namespace)
 }
 

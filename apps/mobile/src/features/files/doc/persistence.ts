@@ -13,6 +13,11 @@ export class SqliteDocPersistence implements DocPersistence {
   readonly whenLoaded: Promise<void>
   /** Whether the stored copy had content, i.e. the document can be read offline. */
   hadCopy = false
+  /**
+   * The stored copy (if any) is in the document. Until then, the document may lack edits only this
+   * device has, so being in sync with the server says nothing about them.
+   */
+  ready = false
   private pending: Uint8Array[] = []
   private pendingLocal = false
   private timer: ReturnType<typeof setTimeout> | undefined
@@ -38,6 +43,7 @@ export class SqliteDocPersistence implements DocPersistence {
       }
       this.hadCopy = stored.update !== null
       if (stored.update) Y.applyUpdate(doc, stored.update, this)
+      this.ready = !this.destroyed
     }).catch(() => undefined).finally(() => {
       this.loaded = true
       // Updates that arrived while loading (from the server) are written now.
@@ -67,8 +73,12 @@ export class SqliteDocPersistence implements DocPersistence {
     return this.tail
   }
 
-  /** The server has everything; called by the session once it reports synced. */
+  /**
+   * The server has everything; called by the session once it reports synced. Ignored before the
+   * stored copy is in the document: its edits reach the server only through the next handshake.
+   */
   markSynced(): Promise<void> {
+    if (!this.ready || this.destroyed) return this.tail
     // After pending writes, so an earlier local edit cannot set the flag again afterwards.
     void this.flush()
     this.tail = this.tail.then(() => this.store.markSynced(this.namespace, this.docId)).catch(() => undefined)

@@ -224,7 +224,7 @@ import { ModelWarningBanner } from './src/components/ModelWarningBanner';
 import { AttachmentImageViewer, type AttachmentImagePreviewItem, type AttachmentImageTransitionOrigin } from '../components/AttachmentImageViewer';
 import { useFilesCapabilityRefresh, useFilesEnabled } from '../features/files/availability';
 import { parseFilesLink, useFilesLinkInbox } from '../features/files/links';
-import { clearNewChatFileScope, newChatFileScope, useChatFileScope } from '../features/files/chatScope';
+import { clearNewChatFileScope, liveFileScope, newChatFileScope, useChatFileScope } from '../features/files/chatScope';
 import { FileChangesCard } from '../features/files/components/FileChangesCard';
 import { FileScopeBar } from '../features/files/components/FileScopeBar';
 import { useFileScopePicker } from '../features/files/scopePicker';
@@ -2514,8 +2514,11 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     const initialSortOrder = activePrototypeChat?.sortOrder ?? (options?.temporary ? 0 : topChatSortOrder(
       visibleHistoryChats(currentChats), new Set(currentFolders.map((folder) => folder.id)), null,
     ));
-    // A new chat starts with the Files items picked for it (temporary chats get no Files).
-    const startingFileScope = !activeChat && !options?.temporary && productionNamespace ? newChatFileScope(productionNamespace) : null;
+    // A new chat starts with the Files items picked for it (temporary chats get no Files), minus any
+    // known to be gone since: the server refuses a scope naming them.
+    const startingFileScope = !activeChat && !options?.temporary && productionNamespace
+      ? liveFileScope(queryClient, productionNamespace, newChatFileScope(productionNamespace))
+      : null;
     if (!activeChat) {
       upsertChat({
         id: key,
@@ -2592,6 +2595,8 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
             sizeBytes: attachment.size ?? 0,
           })),
           createdAt: timestamp,
+          fileScopeIds: startingFileScope?.ids,
+          fileScopeAccess: startingFileScope?.access,
         });
       }
       let serverChatId = activeChat?.id;
@@ -6682,7 +6687,7 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
         </View>}
 
         <Reanimated.View pointerEvents={searchActive ? 'none' : 'auto'} style={searchActionsAnimatedStyle}>
-          {filesEnabled && Platform.OS !== 'ios' ? <MaterialNavigationRow title="Files" icon="doc.on.doc" onPress={() => { dismissSearch(); onOpenFiles(); }} /> : null}
+          {filesEnabled && Platform.OS !== 'ios' ? <MaterialNavigationRow title="Files" icon="folder.badge.person.crop" onPress={() => { dismissSearch(); onOpenFiles(); }} /> : null}
           {Platform.OS === 'ios' ? <NativeFoldersDisclosure leading={filesEnabled ? <NativeFilesRow onOpen={() => { dismissSearch(); onOpenFiles(); }} /> : null} folders={folderItems} onSelectChat={selectHistoryChat} onCreate={() => { dismissSearch(); Alert.prompt('New folder', 'Create a folder for related chats.', (name) => name.trim() && addFolder(name)); }} /> : <AndroidFoldersDisclosure folders={folderItems} onSelectChat={selectHistoryChat} onCreate={() => { dismissSearch(); promptText({ title: 'New folder', confirmLabel: 'Create', onSubmit: (name) => addFolder(name) }); }} />}
 
         </Reanimated.View>

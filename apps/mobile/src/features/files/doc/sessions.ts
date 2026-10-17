@@ -21,11 +21,19 @@ interface Entry {
   persistence: SqliteDocPersistence
   users: number
   lingerTimer?: ReturnType<typeof setTimeout>
+  /** Replaced by a fresh session (see `restart`); closes once its last user lets go. */
+  stale: boolean
   unsubscribe: () => void
 }
 
+/** Nothing more will happen without a new join: in sync, closed, or failed (rate limits retry). */
 function settled(status: DocSyncStatus): boolean {
-  return status.state === 'synced' || status.state === 'closed' || status.state === 'error'
+  return status.state === 'synced' || status.state === 'closed' || (status.state === 'error' && status.error !== 'rate_limited')
+}
+
+/** Whether an entry has nothing left to upload: settled, with this device's copy in the document. */
+function done(entry: Entry): boolean {
+  return entry.persistence.ready && settled(entry.controller.getSnapshot().status)
 }
 
 /**
@@ -39,6 +47,11 @@ export class DocSessionRegistry {
   private socket: DocSocket | null = null
   private destroyed = false
   private flushing: Promise<void> | null = null
+  /**
+   * Documents the server said are gone (deleted, or in the trash) since the app started. Their
+   * unsynced copies are kept, in case the document comes back, but not retried on every reconnect.
+   */
+  private readonly unreachable = new Set<string>()
 
   constructor(
     private readonly namespace: string,
@@ -46,9 +59,11 @@ export class DocSessionRegistry {
     private readonly schemaVersion: number,
   ) {}
 
-  acquire(docId: string): DocHandle {
+  acquire(docId: string, options: { background?: boolean } = {}): DocHandle {
     if (this.destroyed) throw new Error('The account signed out')
     const id = docId.toLowerCase()
+    // Opening a document on purpose tries it again, e.g. after it was restored.
+    if (!options.background) this.unreachable.delete(id)
     let entry = this.entries.get(id)
     if (!entry) entry = this.open(id)
     if (entry.lingerTimer !== undefined) clearTimeout(entry.lingerTimer)
@@ -68,6 +83,23 @@ export class DocSessionRegistry {
     }
   }
 
+  /**
+   * Starts a document's session over, e.g. after it was restored from the trash or failed: the
+   * current one leaves the document at once and closes when its views let go; the next `acquire`
+   * opens a new one.
+   */
+  restart(docId: string): void {
+    const id = docId.toLowerCase()
+    const entry = this.entries.get(id)
+    this.unreachable.delete(id)
+    if (!entry) return
+    this.entries.delete(id)
+    entry.stale = true
+    // Leave the room before the new session joins it on the same socket.
+    entry.controller.attach(null)
+    if (entry.users === 0) void this.close(entry)
+  }
+
   /** Switches every session to the account's current socket (or none). */
   attach(socket: DocSocket | null): void {
     this.socket = socket
@@ -82,10 +114,13 @@ export class DocSessionRegistry {
         const ids = await this.store.dirtyDocIds(this.namespace)
         for (const docId of ids) {
           if (this.destroyed || !this.socket?.connected) return
-          if (this.entries.has(docId)) continue
-          const handle = this.acquire(docId)
-          await this.waitUntilSettled(handle.controller, FLUSH_TIMEOUT_MS)
-          handle.release()
+          if (this.entries.has(docId) || this.unreachable.has(docId)) continue
+          const handle = this.acquire(docId, { background: true })
+          try {
+            await this.uploadWhenLoaded(handle, FLUSH_TIMEOUT_MS)
+          } finally {
+            handle.release()
+          }
         }
       } catch {
         // The next reconnect tries again.
@@ -119,16 +154,20 @@ export class DocSessionRegistry {
         return persistence
       },
     })
-    const entry: Entry = { docId, controller, persistence, users: 0, unsubscribe: () => {} }
+    const entry: Entry = { docId, controller, persistence, users: 0, stale: false, unsubscribe: () => {} }
     let previous = controller.getSnapshot().status
     entry.unsubscribe = controller.subscribe(() => {
       const { status } = controller.getSnapshot()
       if (status === previous) return
       previous = status
       if (status.state === 'synced') void persistence.markSynced()
-      // A permanently deleted document's copy has nowhere to go.
-      if (status.state === 'closed' && status.reason === 'deleted') void persistence.destroy().then(() => this.store.remove(this.namespace, docId))
-      if (entry.users === 0 && settled(status)) this.closeSoon(entry, 0)
+      // The server answers a trashed document as not found, so "deleted" may only mean trashed:
+      // a copy with edits not uploaded yet is kept for when it is restored.
+      if (status.state === 'closed' && (status.reason === 'deleted' || status.reason === 'trashed')) {
+        this.unreachable.add(docId)
+        if (status.reason === 'deleted') void persistence.whenLoaded.then(() => this.store.removeIfClean(this.namespace, docId)).catch(() => undefined)
+      }
+      if (entry.users === 0 && !entry.stale && done(entry)) this.closeSoon(entry, 0)
     })
     controller.attach(this.socket)
     this.entries.set(docId, entry)
@@ -137,8 +176,13 @@ export class DocSessionRegistry {
 
   private release(entry: Entry): void {
     entry.users -= 1
-    if (entry.users > 0 || this.entries.get(entry.docId) !== entry) return
-    this.closeSoon(entry, settled(entry.controller.getSnapshot().status) ? 0 : LINGER_MS)
+    if (entry.users > 0) return
+    if (entry.stale) {
+      void this.close(entry)
+      return
+    }
+    if (this.entries.get(entry.docId) !== entry) return
+    this.closeSoon(entry, done(entry) ? 0 : LINGER_MS)
   }
 
   private closeSoon(entry: Entry, delay: number): void {
@@ -153,26 +197,42 @@ export class DocSessionRegistry {
   private async close(entry: Entry): Promise<void> {
     if (entry.lingerTimer !== undefined) clearTimeout(entry.lingerTimer)
     entry.unsubscribe()
+    // Leave the document at once, so a session opened for it meanwhile keeps the socket's room.
+    entry.controller.attach(null)
     await entry.persistence.whenLoaded
     await entry.persistence.flush()
-    // Fold the log into one snapshot while the document is still in memory.
-    const state = Y.encodeStateAsUpdate(entry.controller.doc)
+    // Fold the log into one snapshot while the document is in memory, but only when it holds
+    // this device's copy; otherwise the snapshot would replace stored edits it lacks.
+    const state = entry.persistence.ready ? Y.encodeStateAsUpdate(entry.controller.doc) : null
     entry.controller.destroy()
-    await this.store.compact(this.namespace, entry.docId, state, this.schemaVersion).catch(() => undefined)
+    if (state) await this.store.compact(this.namespace, entry.docId, state, this.schemaVersion).catch(() => undefined)
   }
 
-  private waitUntilSettled(controller: DocSessionController, timeoutMs: number): Promise<void> {
-    return new Promise((resolve) => {
-      const done = () => {
+  /**
+   * Waits until a document's stored copy is loaded and a handshake made after that settled, so
+   * whatever the copy holds reached the server (or the server said where it stands).
+   */
+  private async uploadWhenLoaded(handle: DocHandle, timeoutMs: number): Promise<void> {
+    const deadline = Date.now() + timeoutMs
+    const timeout = <T>(promise: Promise<T>, ms: number) => Promise.race([promise, new Promise<void>((resolve) => setTimeout(resolve, ms))])
+    await timeout(handle.persistence.whenLoaded, timeoutMs)
+    if (!handle.persistence.ready) return
+    const { controller } = handle
+    const before = controller.getSnapshot().status
+    if (settled(before) && before.state !== 'synced') return
+    await new Promise<void>((resolve) => {
+      const finish = () => {
         clearTimeout(timer)
         unsubscribe()
         resolve()
       }
-      const timer = setTimeout(done, timeoutMs)
+      const timer = setTimeout(finish, Math.max(0, deadline - Date.now()))
       const unsubscribe = controller.subscribe(() => {
-        if (settled(controller.getSnapshot().status)) done()
+        const { status } = controller.getSnapshot()
+        if (status !== before && settled(status)) finish()
       })
-      if (settled(controller.getSnapshot().status)) done()
+      // A fresh handshake: one made before the copy loaded did not include it.
+      controller.provider.resync()
     })
   }
 }
