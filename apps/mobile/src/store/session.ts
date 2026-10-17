@@ -25,7 +25,7 @@ const GLOBAL_NAMESPACE = 'global'
 
 /** Where an instance's configuration is kept as last read, so what it offers is known offline. */
 function configKey(instanceUrl: string): string {
-  return `config:${new URL(instanceUrl).origin}`
+  return `config:${instanceUrl}`
 }
 const ACTIVE_SESSION_NAMESPACE_KEY = 'activeSessionNamespace'
 const SIGNED_IN_ACCOUNTS_KEY = 'signedInAccounts'
@@ -183,8 +183,12 @@ export const useSessionStore = create<SessionState>((set, get) => {
     await persistSession(instanceUrl, user, token)
     configureApi({ instanceUrl, token, onUnauthorized })
     set({ token, user, status: sessionStatus(user), error: null, accounts: await loadAccounts(instanceUrl) })
-    // What the instance offers is read again: the read made at launch is dropped when the stored
-    // session turns out to be revoked, and features such as Files would stay hidden until the next.
+    refreshConfig(instanceUrl, token)
+  }
+
+  // What the instance offers is read again for a new active session: the read made at launch is
+  // dropped when the stored session turns out to be revoked.
+  const refreshConfig = (instanceUrl: string, token: string) => {
     void mobileApi.config().then((config) => {
       if (config && get().token === token && get().instanceUrl === instanceUrl) set({ config })
     }).catch(() => undefined)
@@ -239,6 +243,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
     await persistAccount(instanceUrl, user)
     if (get().token !== token) return
     set({ user, status: sessionStatus(user), error: null, accounts: await loadAccounts(instanceUrl) })
+    refreshConfig(instanceUrl, token)
   }
 
   // After the active account is gone, open another signed-in account
@@ -529,12 +534,7 @@ function deviceMetadata() {
 
 // The instance's configuration is kept as last read (see `hydrate`).
 useSessionStore.subscribe((state, previous) => {
-  if (!state.config || state.config === previous.config) return
-  try {
-    void setValue(GLOBAL_NAMESPACE, configKey(state.instanceUrl), state.config).catch(() => undefined)
-  } catch {
-    // Not an instance address; nothing to remember it by.
-  }
+  if (state.config && state.config !== previous.config) void setValue(GLOBAL_NAMESPACE, configKey(state.instanceUrl), state.config).catch(() => undefined)
 })
 
 // Synchronous native bridge: account transitions cannot race a queued React effect.

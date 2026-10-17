@@ -262,7 +262,7 @@ describe('remembered instance configuration', () => {
     const remembered = { instance: { name: 'Pulpo' }, capabilities: { files: { enabled: true, docSchemaVersion: 2 } } }
     mocks.values.set('global:activeSessionNamespace', namespace)
     mocks.values.set(`${namespace}:user`, cachedUser)
-    mocks.values.set(`global:config:${new URL(instanceUrl).origin}`, remembered)
+    mocks.values.set(`global:config:${instanceUrl}`, remembered)
     mocks.config.mockRejectedValue(new TypeError('Network request failed'))
     mocks.me.mockRejectedValue(new TypeError('Network request failed'))
 
@@ -274,7 +274,7 @@ describe('remembered instance configuration', () => {
   it('remembers the configuration the server sends', async () => {
     const config = { instance: { name: 'Pulpo' }, capabilities: { files: { enabled: false, docSchemaVersion: 2 } } }
     useSessionStore.setState({ config: config as never })
-    expect(mocks.values.get(`global:config:${new URL(instanceUrl).origin}`)).toEqual(config)
+    expect(mocks.values.get(`global:config:${instanceUrl}`)).toEqual(config)
   })
 })
 
@@ -436,6 +436,14 @@ describe('multiple signed-in accounts', () => {
     expect(mocks.secure.has(tokenKey(personal))).toBe(false)
     expect(mocks.values.get('global:signedInAccounts')).toEqual({ instanceUrl, userIds: [personal.id] })
     expect(useSessionStore.getState()).toMatchObject({ token: 'token-personal-again', user: personal, accounts: [personal] })
+  })
+
+  it('reads the instance configuration again for the account it switches to', async () => {
+    signedIn(personal, work)
+    const config = { instance: { name: 'Pulpo' }, capabilities: { files: { enabled: true, docSchemaVersion: 2 } } }
+    mocks.config.mockResolvedValue(config)
+    await useSessionStore.getState().switchAccount(work.id)
+    await vi.waitFor(() => expect(useSessionStore.getState().config).toEqual(config))
   })
 
   it('switches accounts through a signed-out teardown and keeps both sessions', async () => {
