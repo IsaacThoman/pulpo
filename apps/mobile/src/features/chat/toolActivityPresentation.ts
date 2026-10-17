@@ -1,16 +1,22 @@
+import { agentPathName, pulpoFilesCommand } from '@pulpo/client-core/files';
 import {
+  FileDiff,
   FilePenLine,
   FilePlus,
   FileText,
+  FolderDown,
+  FolderInput,
   FolderOpen,
   FolderPlus,
   FolderSearch,
+  FolderUp,
   Globe,
   Image,
   List,
   Paperclip,
   Search,
   Terminal,
+  Trash2,
   Wrench,
   type LucideIcon,
 } from 'lucide-react-native';
@@ -41,7 +47,30 @@ const presentations: Record<string, ToolActivityPresentation> = {
   files_create_folder: { icon: FolderPlus, label: 'Creating a folder…' },
 };
 
-export function toolActivityPresentation(name?: string): ToolActivityPresentation {
+/** What a `pulpo files` command in the agent's bash does, as the web labels it. */
+function filesCommandPresentation(command: string): ToolActivityPresentation | null {
+  const parsed = pulpoFilesCommand(command);
+  if (!parsed) return null;
+  const name = parsed.path ? agentPathName(parsed.path) : null;
+  switch (parsed.subcommand) {
+    case 'ls':
+    case 'tree': return { icon: FolderOpen, label: 'Looking through your files…' };
+    case 'cat': return { icon: FileText, label: name ? `Reading ${name}…` : 'Reading a file…' };
+    case 'grep': return { icon: Search, label: 'Searching your files…' };
+    case 'pull': return { icon: FolderDown, label: 'Copying from Files…' };
+    case 'push': return { icon: FolderUp, label: 'Saving to Files…' };
+    case 'status': return { icon: FileDiff, label: 'Checking for changes…' };
+    case 'mkdir': return { icon: FolderPlus, label: 'Creating a folder…' };
+    case 'mv': return { icon: FolderInput, label: name ? `Moving ${name}…` : 'Moving an item…' };
+    case 'rm': return { icon: Trash2, label: name ? `Moving ${name} to the trash…` : 'Moving an item to the trash…' };
+    default: return { icon: FolderOpen, label: 'Working with your files…' };
+  }
+}
+
+export function toolActivityPresentation(name?: string, args?: unknown): ToolActivityPresentation {
+  const command = name === 'bash' && args && typeof args === 'object' ? (args as { command?: unknown }).command : undefined;
+  const files = typeof command === 'string' ? filesCommandPresentation(command) : null;
+  if (files) return files;
   return name && presentations[name]
     ? presentations[name]
     : { icon: Wrench, label: 'Working…' };

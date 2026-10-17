@@ -23,6 +23,9 @@ export function useDocSession(userId: string, docId: string): DocSessionSnapshot
         return { whenLoaded: persistence.whenSynced.then(() => undefined), origin: persistence, destroy: () => persistence.destroy() }
       },
     })
+    // The current socket at once, so a cache that loads before the next render never starts the
+    // session without one (which would show it offline for a moment).
+    next.attach(useRealtimeSocket.getState().socket)
     setController(next)
     return () => {
       next.destroy()

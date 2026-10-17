@@ -106,7 +106,7 @@ export function useChatFileScope(namespace: string, chatId: string | null | unde
 }
 
 export const ACCESS_MODE_LABELS: Record<FileAccessMode, { title: string; detail: string; symbol: string }> = {
-  read: { title: 'Read Only', detail: 'The agent can read but not change it', symbol: 'eye' },
-  suggest: { title: 'Suggest Changes', detail: 'You review each change first', symbol: 'text.badge.checkmark' },
-  write: { title: 'Edit Directly', detail: 'Changes apply at once; undo from the reply', symbol: 'pencil' },
+  read: { title: 'Read Only', detail: 'Read it without changing it', symbol: 'eye' },
+  suggest: { title: 'Suggest Changes', detail: 'Suggest changes for you to review', symbol: 'text.badge.checkmark' },
+  write: { title: 'Edit Directly', detail: 'Change it directly (undo from the reply)', symbol: 'pencil' },
 }

@@ -55,6 +55,12 @@ function ToolbarButton({ label, active, disabled, onClick, children }: {
   )
 }
 
+/** Toolbar buttons that turn a format on and off, announced as pressed or not. */
+const TOGGLE_COMMANDS = new Set<FormatCommand>([
+  'heading1', 'heading2', 'heading3', 'bold', 'italic', 'strike', 'code', 'link',
+  'bulletList', 'orderedList', 'taskList', 'blockquote', 'codeBlock',
+])
+
 function DocToolbar({ editor }: { editor: Editor }) {
   const state = useEditorState({ editor, selector: ({ editor: current }) => formattingState(current) })
   const run = (command: FormatCommand) => runFormatCommand(editor, command)
@@ -65,7 +71,8 @@ function DocToolbar({ editor }: { editor: Editor }) {
   const button = (command: FormatCommand, label: string, icon: ReactNode, onClick = () => { run(command) }) => (
     <ToolbarButton
       label={label}
-      active={state.active.includes(command)}
+      // Actions (undo, insert a table, …) are not toggles; only formats report being on.
+      active={TOGGLE_COMMANDS.has(command) ? state.active.includes(command) : undefined}
       disabled={state.disabled.includes(command)}
       onClick={onClick}
     >

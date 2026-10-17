@@ -224,6 +224,12 @@ import { ModelWarningBanner } from './src/components/ModelWarningBanner';
 import { AttachmentImageViewer, type AttachmentImagePreviewItem, type AttachmentImageTransitionOrigin } from '../components/AttachmentImageViewer';
 import { useFilesCapabilityRefresh, useFilesEnabled } from '../features/files/availability';
 import { parseFilesLink, useFilesLinkInbox } from '../features/files/links';
+import { clearNewChatFileScope, newChatFileScope, useChatFileScope } from '../features/files/chatScope';
+import { FileChangesCard } from '../features/files/components/FileChangesCard';
+import { FileScopeBar, useFileScopePicker } from '../features/files/components/FileScopeBar';
+import { useOpenFileItem } from '../features/files/open';
+import { useFilesNamespace } from '../features/files/useFilesNamespace';
+import { fileChangesItem } from '@pulpo/client-core/files';
 import { FileDocumentScreen } from '../features/files/screens/FileDocumentScreen';
 import { FileMarkdownScreen } from '../features/files/screens/FileMarkdownScreen';
 import { FilesFolderScreen } from '../features/files/screens/FilesFolderScreen';
@@ -792,10 +798,12 @@ function NativeComposerShelfButton({ disabled, onPress }: { disabled: boolean; o
   );
 }
 
-function NativeAttachmentMenu({ onTakePhoto, onPickPhotos, onPickFiles }: {
+function NativeAttachmentMenu({ onTakePhoto, onPickPhotos, onPickFiles, onAddFromFiles }: {
   onTakePhoto: () => void;
   onPickPhotos: () => void;
   onPickFiles: () => void;
+  /** Lets the agent work with Files items; absent where a chat cannot take Files. */
+  onAddFromFiles?: () => void;
 }) {
   const { styles } = useChatStyles();
   return (
@@ -814,6 +822,8 @@ function NativeAttachmentMenu({ onTakePhoto, onPickPhotos, onPickFiles }: {
         <SwiftUIButton label="Take Photo" systemImage="camera" onPress={onTakePhoto} />
         <SwiftUIButton label="Photo Library" systemImage="photo.on.rectangle" onPress={onPickPhotos} />
         <SwiftUIButton label="Choose Files" systemImage="doc" onPress={onPickFiles} />
+        {onAddFromFiles ? <SwiftUIDivider /> : null}
+        {onAddFromFiles ? <SwiftUIButton label="Add from Files…" systemImage="folder.badge.plus" onPress={onAddFromFiles} /> : null}
       </SwiftUIMenu>
     </SwiftUIHost>
   );
@@ -2503,6 +2513,8 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     const initialSortOrder = activePrototypeChat?.sortOrder ?? (options?.temporary ? 0 : topChatSortOrder(
       visibleHistoryChats(currentChats), new Set(currentFolders.map((folder) => folder.id)), null,
     ));
+    // A new chat starts with the Files items picked for it (temporary chats get no Files).
+    const startingFileScope = !activeChat && !options?.temporary && productionNamespace ? newChatFileScope(productionNamespace) : null;
     if (!activeChat) {
       upsertChat({
         id: key,
@@ -2518,6 +2530,8 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
         deletedAt: null,
         purgeAt: null,
         messages: [],
+        fileScopeIds: startingFileScope?.ids ?? [],
+        fileScopeAccess: startingFileScope?.access ?? {},
       });
       setActiveChatId(key);
     }
@@ -2594,6 +2608,8 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
           attachmentIds: prepared.map((attachment) => attachment.serverId),
           agentMode,
           usedDictation: options?.usedDictation,
+          fileScopeIds: startingFileScope?.ids,
+          fileScopeAccess: startingFileScope?.access,
         });
         if (options?.temporary) pendingTemporaryStart.current = { chatId: key, promise: startPromise };
         let started: Awaited<typeof startPromise>;
@@ -2605,6 +2621,8 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
         serverChatId = started.chat.id;
         response = started.response;
         serverChatCreated = true;
+        // The draft's items now belong to the chat (the start request carried them, or is queued with them).
+        if (startingFileScope?.ids.length && productionNamespace) clearNewChatFileScope(productionNamespace);
         setActiveChatId(serverChatId);
       } else {
         response = await sendServerMessage({
@@ -3246,7 +3264,7 @@ function WorkTriggerIcon({ steps, active }: { steps: TimelineStep[]; active: boo
   const tools = steps.filter((step) => step.kind === 'tool');
   const runningTool = tools.find((step) => step.tool.status === 'running');
   if (runningTool?.kind === 'tool') {
-    const RunningToolIcon = toolActivityPresentation(runningTool.tool.tool).icon;
+    const RunningToolIcon = toolActivityPresentation(runningTool.tool.tool, runningTool.tool.arguments).icon;
     return <PulsingIcon reduceMotion={reduceMotion}><RunningToolIcon color={COLORS.muted} size={14} /></PulsingIcon>;
   }
   if (active && tools.length > 0) return <PulsingIcon reduceMotion={reduceMotion}><Wrench color={COLORS.muted} size={14} /></PulsingIcon>;
@@ -3307,7 +3325,7 @@ function workLabel(steps: TimelineStep[], active: boolean, durationMs?: number):
   const paused = pausedCostLimit(steps, active);
   if (paused) return costLimitLabel(paused, true);
   const runningTool = steps.find((step) => step.kind === 'tool' && step.tool.status === 'running');
-  if (runningTool?.kind === 'tool') return toolActivityPresentation(runningTool.tool.tool).label;
+  if (runningTool?.kind === 'tool') return toolActivityPresentation(runningTool.tool.tool, runningTool.tool.arguments).label;
   if (active) return steps.some((step) => step.kind === 'tool') ? 'Working…' : 'Thinking…';
   return completedActivityLabel(steps, durationMs);
 }
@@ -3339,7 +3357,7 @@ const ToolStepRow = memo(function ToolStepRow({ step }: { step: Extract<Timeline
     step.tool.output ?? '',
   ].filter(Boolean).join('\n'), [step.tool.arguments, step.tool.output]);
   const seconds = step.tool.durationMs === undefined ? null : Math.max(0, Math.round(step.tool.durationMs / 1000));
-  const ToolIcon = toolActivityPresentation(step.tool.tool).icon;
+  const ToolIcon = toolActivityPresentation(step.tool.tool, step.tool.arguments).icon;
   return (
     <View style={styles.workStep}>
       <Pressable
@@ -3483,7 +3501,7 @@ function WorkBlock({ steps, active, durationMs, initialWork, onOpenChat }: {
 }
 
 function otherOutputItems(outputItems?: unknown[]): Array<Record<string, unknown>> {
-  const known = new Set(['message', 'reasoning', 'pulpo_tool', 'pulpo_workspace', 'pulpo_attachment', 'pulpo_compaction', 'pulpo_recall', 'pulpo_cost_limit']);
+  const known = new Set(['message', 'reasoning', 'pulpo_tool', 'pulpo_workspace', 'pulpo_attachment', 'pulpo_compaction', 'pulpo_recall', 'pulpo_cost_limit', 'pulpo_file_changes']);
   return (outputItems ?? []).filter((item): item is Record<string, unknown> => {
     const type = (item as { type?: unknown }).type;
     return typeof type === 'string' && !known.has(type);
@@ -3588,6 +3606,9 @@ const MessageRow = memo(function MessageRow({
   const streaming = message.status === 'streaming' || message.status === 'queued';
   const responseStartedAt = useMemo(() => message.requestReceivedAt ? Date.parse(message.requestReceivedAt) : message.createdAt ?? Date.now(), [message.createdAt, message.requestReceivedAt]);
   const extraOutput = useMemo(() => otherOutputItems(message.outputItems), [message.outputItems]);
+  // A reply's Files changes are reviewed under it once it finished (see FileChangesCard).
+  const filesNamespace = useFilesNamespace();
+  const filesEnabled = useFilesEnabled();
   const costLimit = useMemo(() => findCostLimitItem(message.outputItems), [message.outputItems]);
   const [costLimitPending, setCostLimitPending] = useState(false);
   const costLimitKey = costLimit ? `${costLimit.limit_micros}:${costLimit.status}` : undefined;
@@ -3728,6 +3749,9 @@ const MessageRow = memo(function MessageRow({
                 ))}
               </>}</SentAttachmentWindow>
             )}
+            {filesNamespace && filesEnabled && !streaming && message.status === 'complete' && fileChangesItem(message.outputItems) ? (
+              <FileChangesCard namespace={filesNamespace} responseId={message.id} />
+            ) : null}
             {costLimit?.status === 'awaiting_confirmation' && streaming && !timeline.some((segment) => segment.kind === 'activity' && segment.steps.some((step) => step.kind === 'cost_limit')) && <View style={styles.workRow}><Pause color={COLORS.muted} size={13} /><Text style={styles.workRowTitle}>{costLimitLabel(costLimit, true)}</Text></View>}
             {costLimit?.status === 'awaiting_confirmation' && streaming && (
               <View style={styles.costLimitActions}>
@@ -4317,6 +4341,11 @@ function ChatView({
     setAgentSelection((current) => current.enabled === enabled ? current : { ...current, enabled });
   }, []);
   const activeAgentEnabled = canUseAgent && agentEnabled;
+  // The Files items this chat's agent works with (the unsent chat keeps a draft of them).
+  const filesNamespace = useFilesNamespace();
+  const fileScope = useChatFileScope(filesNamespace, chatId, temporary);
+  const showFileScopePicker = useFileScopePicker((state) => state.show);
+  const openFileItem = useOpenFileItem();
   const [attachments, setAttachmentState] = useState<ComposerAttachment[]>([]);
   const attachmentsRequireAgent = attachments.some((attachment) => attachment.kind === 'file')
     || imageBatchNeedsWorkspace(attachments.filter((attachment) => attachment.kind !== 'file').map((attachment) => ({ sizeBytes: attachment.size })), maxInlineImages);
@@ -6038,6 +6067,14 @@ function ChatView({
                   </Pressable>
                 </View>
               ) : null}
+              <FileScopeBar
+                namespace={filesNamespace}
+                scope={fileScope}
+                agentActive={activeAgentEnabled}
+                canUseAgent={canUseAgent}
+                onTurnOnAgent={() => setAgentEnabled(true)}
+                onOpenItem={(node) => { void openFileItem(node); }}
+              />
               <AttachmentStrip
                 attachments={attachments}
                 onPreviewFile={openFilePreview}
@@ -6097,12 +6134,13 @@ function ChatView({
                   style={[styles.composerToolbar, composerToolbarStyle]}
                 >
                 {Platform.OS === 'ios' ? (
-                  <NativeAttachmentMenu onTakePhoto={takePhoto} onPickFiles={pickFiles} onPickPhotos={pickPhotos} />
+                  <NativeAttachmentMenu onTakePhoto={takePhoto} onPickFiles={pickFiles} onPickPhotos={pickPhotos} onAddFromFiles={fileScope.available ? showFileScopePicker : undefined} />
                 ) : (
                   <MaterialMenu label="Add attachment" icon="plus" actions={[
                     { label: 'Take photo', icon: 'camera', onPress: takePhoto },
                     { label: 'Photos', icon: 'photo.on.rectangle', onPress: pickPhotos },
                     { label: 'Choose files', icon: 'doc', onPress: pickFiles },
+                    ...(fileScope.available ? [{ label: 'Add from Files', icon: 'folder', onPress: showFileScopePicker }] : []),
                   ]} />
                 )}
                 {hasGenerationPresets && (Platform.OS === 'ios' ? (
