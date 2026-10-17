@@ -2,7 +2,7 @@
 import { act, createElement, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-const mocks = vi.hoisted(() => ({ openURL: vi.fn(), redeem: vi.fn(), refresh: vi.fn(), logout: vi.fn(), state: {} as Record<string, unknown> }))
+const mocks = vi.hoisted(() => ({ openURL: vi.fn(), redeem: vi.fn(), refresh: vi.fn(), discover: vi.fn(), setUser: vi.fn(), logout: vi.fn(), state: {} as Record<string, unknown> }))
 vi.mock('react-native', () => {
   const Container = ({ children }: { children?: ReactNode }) => createElement('div', null, children)
   return {
@@ -13,7 +13,7 @@ vi.mock('react-native', () => {
     ActivityIndicator: () => createElement('span', null, 'Loading'),
     Image: () => null,
     KeyboardAvoidingView: Container, ScrollView: Container, View: Container,
-    Text: ({ children, onPress }: { children?: ReactNode; onPress?: () => void }) => createElement('span', { onClick: onPress }, children),
+    Text: ({ children, onPress, accessibilityRole }: { children?: ReactNode; onPress?: () => void; accessibilityRole?: string }) => createElement('span', { onClick: onPress, role: accessibilityRole }, children),
     Pressable: ({ children, onPress, disabled, accessibilityLabel }: { children?: ReactNode; onPress: () => void; disabled?: boolean; accessibilityLabel?: string }) => createElement('button', { onClick: onPress, disabled, 'aria-label': accessibilityLabel }, children),
     TextInput: ({ value, onChangeText, accessibilityLabel, editable = true }: { value: string; onChangeText: (value: string) => void; accessibilityLabel: string; editable?: boolean }) => createElement('input', { 'aria-label': accessibilityLabel, value, disabled: !editable, onChange: (event: { target: { value: string } }) => onChangeText(event.target.value) }),
   }
@@ -42,7 +42,7 @@ function setSession(config: { auth: Partial<typeof auth> } | null) {
   mocks.state = {
     status: 'pending', instanceUrl: 'https://pulpo.test', accounts: [], config,
     user: { id: 'user', name: 'New Member', email: 'new@example.test', role: 'pending' },
-    refreshSession: mocks.refresh, logout: mocks.logout,
+    refreshSession: mocks.refresh, discover: mocks.discover, setUser: mocks.setUser, logout: mocks.logout,
   }
 }
 const button = (label: string) => Array.from(container.querySelectorAll('button')).find((value) => value.textContent === label || value.getAttribute('aria-label') === label)!
@@ -54,8 +54,12 @@ async function typeInviteCode(value: string) {
   })
 }
 
+const approvedUser = { id: 'user', name: 'New Member', email: 'new@example.test', role: 'user' }
+const inviteInput = () => container.querySelector<HTMLInputElement>('input[aria-label="Invite code"]')!
+
 beforeEach(() => {
   vi.resetAllMocks()
+  mocks.discover.mockResolvedValue({})
   container = document.createElement('div'); document.body.append(container); root = createRoot(container)
 })
 afterEach(async () => { await act(async () => root.unmount()); container.remove() })
@@ -86,22 +90,61 @@ describe('mobile pending approval', () => {
     expect(container.textContent).toContain('Your account is pending approval. An admin will review it shortly.')
   })
 
-  it('normalizes the invite code and redeems it once all six characters are entered', async () => {
+  it('normalizes the invite code and applies the approved user returned by redeeming it', async () => {
     setSession({ auth })
-    mocks.redeem.mockResolvedValue(undefined)
-    mocks.refresh.mockResolvedValue(undefined)
+    mocks.redeem.mockResolvedValue({ user: approvedUser })
+    mocks.setUser.mockResolvedValue(undefined)
     await act(async () => root.render(<AuthExperience />))
     await typeInviteCode('ab-1')
-    expect(container.querySelector<HTMLInputElement>('input[aria-label="Invite code"]')!.value).toBe('AB1')
+    expect(inviteInput().value).toBe('AB1')
     expect(button('Redeem invite code').disabled).toBe(true)
     await typeInviteCode('ab1-cd2-ef3')
-    expect(container.querySelector<HTMLInputElement>('input[aria-label="Invite code"]')!.value).toBe('AB1CD2')
+    expect(inviteInput().value).toBe('AB1CD2')
     await act(async () => button('Redeem invite code').click())
     expect(mocks.redeem).toHaveBeenCalledWith('AB1CD2')
-    expect(mocks.refresh).toHaveBeenCalledOnce()
+    expect(mocks.setUser).toHaveBeenCalledWith(approvedUser)
+    expect(mocks.refresh).not.toHaveBeenCalled()
   })
 
-  it('shows a rejected invite code without blocking a status refresh', async () => {
+  it('replaces a rejected code when a full code is pasted after it', async () => {
+    setSession({ auth })
+    mocks.redeem.mockRejectedValue(new Error('This invite code is invalid or already used'))
+    await act(async () => root.render(<AuthExperience />))
+    await typeInviteCode('ZZZZZZ')
+    await act(async () => button('Redeem invite code').click())
+    expect(container.textContent).toContain('This invite code is invalid or already used')
+    await typeInviteCode('ZZZZZZ abc-123\n')
+    expect(inviteInput().value).toBe('ABC123')
+    expect(container.textContent).not.toContain('This invite code is invalid')
+  })
+
+  it('does not report a used code as rejected when saving the approved account fails', async () => {
+    setSession({ auth })
+    mocks.redeem.mockResolvedValue({ user: approvedUser })
+    mocks.setUser.mockRejectedValue(new Error('Storage unavailable'))
+    await act(async () => root.render(<AuthExperience />))
+    await typeInviteCode('AB1CD2')
+    await act(async () => button('Redeem invite code').click())
+    expect(container.textContent).toContain('Invite accepted. Tap Refresh status to continue.')
+    expect(container.querySelector('[role="alert"]')).toBeNull()
+  })
+
+  it('locks the other actions while one is running', async () => {
+    setSession({ auth })
+    let finishRedeem!: (value: unknown) => void
+    mocks.redeem.mockReturnValue(new Promise((resolve) => { finishRedeem = resolve }))
+    mocks.setUser.mockResolvedValue(undefined)
+    await act(async () => root.render(<AuthExperience />))
+    await typeInviteCode('AB1CD2')
+    await act(async () => { button('Redeem invite code').click(); button('Redeem invite code').click() })
+    expect(mocks.redeem).toHaveBeenCalledOnce()
+    expect(button('Sign out').disabled).toBe(true)
+    expect(button('Refresh status').disabled).toBe(true)
+    await act(async () => finishRedeem({ user: approvedUser }))
+    expect(button('Sign out').disabled).toBe(false)
+  })
+
+  it('refreshes approval and instance settings, clearing a rejected code', async () => {
     setSession({ auth })
     mocks.redeem.mockRejectedValue(new Error('This invite code is invalid or already used'))
     mocks.refresh.mockResolvedValue(undefined)
@@ -111,7 +154,24 @@ describe('mobile pending approval', () => {
     expect(container.textContent).toContain('This invite code is invalid or already used')
     await act(async () => button('Refresh status').click())
     expect(mocks.refresh).toHaveBeenCalledOnce()
+    expect(mocks.discover).toHaveBeenCalledOnce()
     expect(container.textContent).toContain('Still waiting for administrator approval.')
     expect(container.textContent).not.toContain('This invite code is invalid')
+  })
+
+  it('shows a sign out failure instead of leaving it unhandled', async () => {
+    setSession({ auth })
+    mocks.logout.mockRejectedValue(new Error('Could not reach the server.'))
+    await act(async () => root.render(<AuthExperience />))
+    await act(async () => button('Sign out').click())
+    expect(mocks.logout).toHaveBeenCalledOnce()
+    expect(container.textContent).toContain('Could not reach the server.')
+  })
+
+  it('explains when the administrator has turned account deletion off', async () => {
+    setSession({ auth: { ...auth, accountDeletionEnabled: false } })
+    await act(async () => root.render(<AuthExperience />))
+    expect(container.textContent).toContain('Account deletion is disabled by the instance administrator.')
+    expect(Array.from(container.querySelectorAll('button')).some((value) => value.textContent === 'Delete account')).toBe(false)
   })
 })

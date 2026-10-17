@@ -37,6 +37,20 @@ const COMPACT_AUTH_HEIGHT = 700;
 const INVITE_CODE_LENGTH = 6;
 const DEFAULT_PENDING_MESSAGE = 'Your account is pending approval. An admin will review it shortly.';
 
+type PendingAction = 'redeem' | 'refresh' | 'signout';
+
+function cleanInviteCode(value: string) {
+  return value.toUpperCase().replace(/[^0-9A-Z]/g, '');
+}
+
+function nextInviteCode(previous: string, raw: string) {
+  const cleaned = cleanInviteCode(raw);
+  if (cleaned.length <= INVITE_CODE_LENGTH) return cleaned;
+  // A full code pasted after a rejected one replaces it instead of being cut off.
+  const inserted = raw.startsWith(previous) ? cleanInviteCode(raw.slice(previous.length)) : '';
+  return (inserted.length === INVITE_CODE_LENGTH ? inserted : cleaned).slice(0, INVITE_CODE_LENGTH);
+}
+
 function useCompactAuthLayout() {
   return useWindowDimensions().height <= COMPACT_AUTH_HEIGHT;
 }
@@ -99,23 +113,26 @@ function SecondaryAuthButton({ label, colors, loading = false, disabled = false,
   const compact = useCompactAuthLayout();
   if (Platform.OS === 'android') return <MaterialButton label={label} variant="secondary" onPress={onPress} disabled={disabled} loading={loading} icon={typeof icon === 'string' ? icon : undefined} />;
   const inactive = disabled || loading;
-  return <Pressable accessibilityRole="button" accessibilityLabel={label} disabled={inactive} onPress={onPress} style={[styles.secondaryButton, compact && styles.compactSecondaryButton, tonal ? { backgroundColor: colors.surface, borderColor: colors.surface } : { borderColor: colors.border }, inactive && !loading && styles.inactiveButton]}>
+  return <Pressable accessibilityRole="button" accessibilityLabel={label} disabled={inactive} onPress={onPress} style={[styles.secondaryButton, compact && styles.compactSecondaryButton, { borderColor: colors.border }, tonal && { backgroundColor: colors.surface }, inactive && !loading && styles.inactiveButton]}>
     {loading ? <ActivityIndicator color={colors.text} /> : <>{icon ? <SymbolView name={icon} tintColor={colors.text} size={16} weight="semibold" /> : null}<Text style={[styles.secondaryButtonText, { color: colors.text }]}>{label}</Text></>}
   </Pressable>;
 }
 
-function InviteCodeField({ colors, value, disabled, invalid, onChangeText, onSubmit }: { colors: AuthColors; value: string; disabled: boolean; invalid: boolean; onChangeText: (value: string) => void; onSubmit: () => void }) {
+function InviteCodeField({ colors, value, disabled, error, onChangeText, onSubmit }: { colors: AuthColors; value: string; disabled: boolean; error: string; onChangeText: (value: string) => void; onSubmit: () => void }) {
   const inputRef = useRef<TextInput>(null);
   const [focused, setFocused] = useState(false);
   const compact = useCompactAuthLayout();
   const activeIndex = Math.min(value.length, INVITE_CODE_LENGTH - 1);
   return <View style={styles.inviteCode}>
-    <Text style={[styles.inviteCodeLabel, { color: colors.text }]} onPress={() => inputRef.current?.focus()}>Invite code</Text>
+    <Text accessible={false} style={[styles.inviteCodeLabel, { color: colors.text }]} onPress={() => inputRef.current?.focus()}>Invite code</Text>
     <View>
       <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={[styles.inviteCodeCells, compact && styles.compactInviteCodeCells]}>
-        {Array.from({ length: INVITE_CODE_LENGTH }, (_, index) => <View key={index} style={[styles.inviteCodeCell, compact && styles.compactInviteCodeCell, { backgroundColor: colors.surface, borderColor: invalid ? colors.destructive : focused && index === activeIndex ? colors.text : colors.border }]}>
-          <Text style={[styles.inviteCodeCharacter, compact && styles.compactInviteCodeCharacter, { color: colors.text }]}>{value[index] ?? ''}</Text>
-        </View>)}
+        {Array.from({ length: INVITE_CODE_LENGTH }, (_, index) => {
+          const active = focused && index === activeIndex;
+          return <View key={index} style={[styles.inviteCodeCell, compact && styles.compactInviteCodeCell, (error || active) && styles.emphasizedInviteCodeCell, { backgroundColor: colors.surface, borderColor: error ? colors.destructive : active ? colors.text : colors.border }]}>
+            <Text maxFontSizeMultiplier={1.3} style={[styles.inviteCodeCharacter, compact && styles.compactInviteCodeCharacter, { color: colors.text }]}>{value[index] ?? ''}</Text>
+          </View>;
+        })}
       </View>
       {/* One transparent input over the boxes keeps paste, autofill, and backspace native. */}
       <TextInput
@@ -123,12 +140,11 @@ function InviteCodeField({ colors, value, disabled, invalid, onChangeText, onSub
         accessibilityLabel="Invite code"
         accessibilityHint="Six letters or numbers"
         value={value}
-        onChangeText={(next) => onChangeText(next.toUpperCase().replace(/[^0-9A-Z]/g, '').slice(0, INVITE_CODE_LENGTH))}
+        onChangeText={(next) => onChangeText(nextInviteCode(value, next))}
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
         onSubmitEditing={onSubmit}
         editable={!disabled}
-        maxLength={INVITE_CODE_LENGTH}
         autoCapitalize="characters"
         autoCorrect={false}
         autoComplete="one-time-code"
@@ -139,6 +155,7 @@ function InviteCodeField({ colors, value, disabled, invalid, onChangeText, onSub
         style={styles.inviteCodeInput}
       />
     </View>
+    {error ? <Text accessibilityRole="alert" style={[styles.error, { color: colors.destructive }]}>{error}</Text> : null}
   </View>;
 }
 
@@ -158,6 +175,8 @@ export function AuthExperience() {
   const signup = useSessionStore((state) => state.signup);
   const logout = useSessionStore((state) => state.logout);
   const refreshSession = useSessionStore((state) => state.refreshSession);
+  const discover = useSessionStore((state) => state.discover);
+  const setUser = useSessionStore((state) => state.setUser);
   const switchInstance = useSessionStore((state) => state.switchInstance);
   // Accounts that stay signed in while another one is added.
   const signedInAccounts = useSessionStore((state) => state.accounts);
@@ -183,8 +202,9 @@ export function AuthExperience() {
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
   const [pendingFeedback, setPendingFeedback] = useState('');
-  const [pendingAction, setPendingAction] = useState<'redeem' | 'refresh' | null>(null);
-  const [inviteRejected, setInviteRejected] = useState(false);
+  const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
+  const pendingActionRef = useRef(false);
+  const [inviteError, setInviteError] = useState('');
   const [passkeyFallback, setPasskeyFallback] = useState(false);
   const [inviteCode, setInviteCode] = useState('');
 
@@ -259,42 +279,59 @@ export function AuthExperience() {
       setPage('login');
     });
   };
-  const refreshApproval = async () => {
+  const runPendingAction = async (action: PendingAction, task: () => Promise<void>) => {
+    // A ref, not state, so two taps in the same frame cannot both start.
+    if (pendingActionRef.current) return;
+    pendingActionRef.current = true;
     setError('');
+    setInviteError('');
     setPendingFeedback('');
-    setInviteRejected(false);
-    setPendingAction('refresh');
+    setPendingAction(action);
     try {
-      await refreshSession();
+      await task();
+    } finally {
+      pendingActionRef.current = false;
+      setPendingAction(null);
+    }
+  };
+  const refreshApproval = () => runPendingAction('refresh', async () => {
+    try {
+      // Also reload the instance config so pending message and invite changes show up, like the web page's reload.
+      await Promise.all([refreshSession(), discover().catch(() => undefined)]);
       if (useSessionStore.getState().status === 'pending') setPendingFeedback('Still waiting for administrator approval.');
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : 'Could not refresh approval status. Check your connection and try again.');
-    } finally {
-      setPendingAction(null);
     }
-  };
-  const redeemInvite = async () => {
-    if (pendingAction || inviteCode.length !== INVITE_CODE_LENGTH) return;
-    setError('');
-    setPendingFeedback('');
-    setPendingAction('redeem');
+  });
+  const redeemInvite = () => runPendingAction('redeem', async () => {
+    if (inviteCode.length !== INVITE_CODE_LENGTH) return;
+    let redeemed: Awaited<ReturnType<typeof mobileApi.redeemInviteCode>>;
     try {
-      await mobileApi.redeemInviteCode(inviteCode);
-      await refreshSession();
+      redeemed = await mobileApi.redeemInviteCode(inviteCode);
     } catch (nextError) {
-      setInviteRejected(true);
-      setError(nextError instanceof Error ? nextError.message : 'Unable to redeem this invite code.');
-    } finally {
-      setPendingAction(null);
+      setInviteError(nextError instanceof Error ? nextError.message : 'Unable to redeem this invite code.');
+      return;
     }
-  };
+    try {
+      await setUser(redeemed.user);
+    } catch {
+      setPendingFeedback('Invite accepted. Tap Refresh status to continue.');
+    }
+  });
+  const signOut = () => runPendingAction('signout', async () => {
+    try {
+      await logout();
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : 'Could not sign out.');
+    }
+  });
 
   if (session.status === 'pending' && session.user) {
     const auth = productionConfig?.auth;
     return <AuthShell colors={colors} title="Account pending approval" subtitle={auth?.pendingMessage ?? DEFAULT_PENDING_MESSAGE}>
       {auth?.inviteCodesEnabled ? <>
-        <InviteCodeField colors={colors} value={inviteCode} disabled={pendingAction === 'redeem'} invalid={inviteRejected} onChangeText={(value) => { setInviteCode(value); setInviteRejected(false); setError(''); }} onSubmit={() => { void redeemInvite(); }} />
-        <PrimaryAuthButton label="Redeem invite code" colors={colors} loading={pendingAction === 'redeem'} disabled={inviteCode.length !== INVITE_CODE_LENGTH || pendingAction === 'refresh'} onPress={() => { void redeemInvite(); }} />
+        <InviteCodeField colors={colors} value={inviteCode} disabled={pendingAction === 'redeem'} error={inviteError} onChangeText={(value) => { setInviteCode(value); setInviteError(''); }} onSubmit={() => { void redeemInvite(); }} />
+        <PrimaryAuthButton label="Redeem invite code" colors={colors} loading={pendingAction === 'redeem'} disabled={inviteCode.length !== INVITE_CODE_LENGTH || pendingAction !== null} onPress={() => { void redeemInvite(); }} />
       </> : null}
       {auth?.pendingDetails && auth.adminEmail ? <View style={[styles.helpCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
         <SymbolView name="envelope" size={16} tintColor={colors.textMuted} />
@@ -306,13 +343,17 @@ export function AuthExperience() {
       {pendingFeedback ? <Text accessibilityLiveRegion="polite" style={[styles.pendingHelp, { color: colors.textMuted }]}>{pendingFeedback}</Text> : null}
       {error ? <Text accessibilityRole="alert" style={[styles.error, { color: colors.destructive }]}>{error}</Text> : null}
       <View style={styles.pendingActions}>
-        <SecondaryAuthButton label="Sign out" colors={colors} icon="rectangle.portrait.and.arrow.right" disabled={pendingAction !== null} onPress={() => { void logout(); }} />
-        <SecondaryAuthButton label="Refresh status" colors={colors} tonal loading={pendingAction === 'refresh'} disabled={pendingAction === 'redeem'} onPress={() => { void refreshApproval(); }} />
+        <SecondaryAuthButton label="Sign out" colors={colors} icon="rectangle.portrait.and.arrow.right" loading={pendingAction === 'signout'} disabled={pendingAction !== null} onPress={() => { void signOut(); }} />
+        <SecondaryAuthButton label="Refresh status" colors={colors} tonal loading={pendingAction === 'refresh'} disabled={pendingAction !== null} onPress={() => { void refreshApproval(); }} />
       </View>
       <View style={[styles.dangerZone, { borderTopColor: colors.border }]}>
         <Text accessibilityRole="header" style={[styles.dangerTitle, { color: colors.text }]}>Delete account</Text>
-        <Text style={[styles.dangerText, { color: colors.textMuted }]}>Permanently delete your account and its data.</Text>
-        <View style={styles.dangerAction}><DeleteAccountAction /></View>
+        {auth && !auth.accountDeletionEnabled
+          ? <Text style={[styles.dangerText, { color: colors.textMuted }]}>Account deletion is disabled by the instance administrator.{auth.adminEmail ? <> Contact <Text accessibilityRole="link" onPress={() => { void Linking.openURL(`mailto:${auth.adminEmail}`); }} style={[styles.helpLink, { color: colors.text }]}>{auth.adminEmail}</Text>.</> : null}</Text>
+          : <>
+            <Text style={[styles.dangerText, { color: colors.textMuted }]}>Permanently delete your account and its data.</Text>
+            <View style={styles.dangerAction}><DeleteAccountAction /></View>
+          </>}
       </View>
     </AuthShell>;
   }
@@ -433,6 +474,7 @@ const styles = StyleSheet.create({
   compactInviteCodeCells: { gap: 8 },
   inviteCodeCell: { flex: 1, aspectRatio: 1, maxHeight: 64, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center' },
   compactInviteCodeCell: { borderRadius: 12 },
+  emphasizedInviteCodeCell: { borderWidth: 1.5 },
   inviteCodeCharacter: { fontFamily: Platform.select({ ios: 'Menlo', default: 'monospace' }), fontSize: 22, fontWeight: '600' },
   compactInviteCodeCharacter: { fontSize: 20 },
   inviteCodeInput: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, color: 'transparent', backgroundColor: 'transparent', fontSize: 1 },
