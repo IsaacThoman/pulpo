@@ -226,7 +226,8 @@ import { useFilesCapabilityRefresh, useFilesEnabled } from '../features/files/av
 import { parseFilesLink, useFilesLinkInbox } from '../features/files/links';
 import { clearNewChatFileScope, newChatFileScope, useChatFileScope } from '../features/files/chatScope';
 import { FileChangesCard } from '../features/files/components/FileChangesCard';
-import { FileScopeBar, useFileScopePicker } from '../features/files/components/FileScopeBar';
+import { FileScopeBar } from '../features/files/components/FileScopeBar';
+import { useFileScopePicker } from '../features/files/scopePicker';
 import { useOpenFileItem } from '../features/files/open';
 import { useFilesNamespace } from '../features/files/useFilesNamespace';
 import { fileChangesItem } from '@pulpo/client-core/files';

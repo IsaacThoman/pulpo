@@ -1,5 +1,5 @@
 import type { FileChangeConflict, FileChangesResponse, FileChangeSummary } from '@pulpo/contracts'
-import { diffRows, fileChangeConflictsOf, fileChangeLabelOf, lineDiff, pendingSuggestion } from '@pulpo/client-core/files'
+import { diffRows, fileChangeConflictsOf, lineDiff, pendingSuggestion } from '@pulpo/client-core/files'
 import { useNavigation } from '@react-navigation/native'
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -12,29 +12,13 @@ import type { RootStackParamList } from '../../../mockup5/src/navigation'
 import { SymbolView } from '../../../platform/SymbolView'
 import { useAppTheme } from '../../../theme'
 import { fetchFileNode, resolveFileChange, updateFileChanges } from '../api'
-import { fileIcon, filesErrorMessage, formatBytes } from '../display'
+import { changeLabel, conflictReason } from '../changeLabels'
+import { fileIcon, filesErrorMessage } from '../display'
 import { previewUploadedFile } from '../open'
 import { refreshFiles } from '../operations'
 import { fileChangesQuery, filesQueryKeys } from '../queries'
 
 const COLLAPSED_ROWS = 4
-
-/** "edited", "3 suggestions", … in English (the web words them through its translations). */
-export function changeLabel(change: FileChangeSummary): string {
-  const label = fileChangeLabelOf(change)
-  switch (label.kind) {
-    case 'suggestions': return label.count === 1 ? '1 suggestion' : `${label.count} suggestions`
-    case 'new-folder': return 'new folder'
-    case 'new': return 'new'
-    case 'new-version': return change.fromSizeBytes !== undefined && change.toSizeBytes !== undefined
-      ? `new version · ${formatBytes(change.toSizeBytes)}`
-      : 'new version'
-    case 'edited': return 'edited'
-    case 'renamed': return 'renamed'
-    case 'moved': return 'moved'
-    case 'deleted': return 'deleted'
-  }
-}
 
 function statusLabel(change: FileChangeSummary): string | null {
   if (!change.available) return 'no longer available'
@@ -44,17 +28,6 @@ function statusLabel(change: FileChangeSummary): string | null {
     case 'rejected': return 'rejected'
     case 'undone': return 'undone'
     case 'applied': return null
-  }
-}
-
-export function conflictReason(conflict: FileChangeConflict): string {
-  switch (conflict.reason) {
-    case 'edited': return 'Edited since the agent’s reply'
-    case 'moved': return 'Moved or renamed since the agent’s reply'
-    case 'trashed': return 'Moved to the trash since the agent’s reply'
-    case 'deleted': return 'Permanently deleted'
-    case 'restored': return 'Restored from the trash since the agent’s reply'
-    case 'replaced': return 'Replaced with other content since the agent’s reply'
   }
 }
 

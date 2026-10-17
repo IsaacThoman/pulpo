@@ -5,20 +5,13 @@ import { useQueries } from '@tanstack/react-query'
 import * as Haptics from 'expo-haptics'
 import { useState } from 'react'
 import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
-import { create } from 'zustand'
 import { MaterialMenu } from '../../../platform/MaterialUI'
 import { useAppTheme } from '../../../theme'
 import { ACCESS_MODE_LABELS, MAX_CHAT_FILE_SCOPES, type ChatFileScope } from '../chatScope'
 import { fileIcon } from '../display'
 import { fileNodeQuery } from '../queries'
+import { useFileScopePicker } from '../scopePicker'
 import { FolderPickerSheet } from './FolderPickerSheet'
-
-/** Opens the "Add from Files" picker from the composer's + menu. */
-export const useFileScopePicker = create<{ open: boolean; show: () => void; hide: () => void }>((set) => ({
-  open: false,
-  show: () => set({ open: true }),
-  hide: () => set({ open: false }),
-}))
 
 interface Props {
   namespace: string
