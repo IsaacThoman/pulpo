@@ -296,4 +296,25 @@ describe('Files uploads', () => {
       vi.useRealTimers()
     }
   })
+
+  it('keeps a separate retry for each account', async () => {
+    await clearUploads(A)
+    await clearUploads(B)
+    vi.useFakeTimers()
+    try {
+      mocks.uploadFile.mockImplementationOnce(async () => { throw Object.assign(new Error('Unable to upload a file: timeout'), { retry: true, transfer: true }) })
+      await enqueueUploads(A, null, [photo('a.jpg')], client)
+      await vi.advanceTimersByTimeAsync(0)
+      // Another account becomes active, and its transfer fails too.
+      mocks.session.user = { id: 'b' }
+      mocks.uploadFile.mockImplementationOnce(async () => { throw Object.assign(new Error('Unable to upload a file: timeout'), { retry: true, transfer: true }) })
+      await enqueueUploads(B, null, [photo('b.jpg')], client)
+      await vi.advanceTimersByTimeAsync(0)
+      mocks.uploadFile.mockImplementation(async (_parent: string | null, upload: { name: string }) => ({ id: `node-${upload.name}`, name: upload.name }))
+      await vi.advanceTimersByTimeAsync(31_000)
+      expect(useFileUploads.getState().items.filter((item) => item.namespace === B)).toEqual([])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })

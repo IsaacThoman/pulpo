@@ -121,17 +121,15 @@ function discardStaged(uri: string): void {
 
 let running = 0
 let queryClient: QueryClient | null = null
-let transferRetry: { namespace: string; timer: ReturnType<typeof setTimeout> } | undefined
+/** Each account's pending retry of failed transfers. */
+const transferRetries = new Map<string, ReturnType<typeof setTimeout>>()
 
 function retryTransfersSoon(namespace: string): void {
-  if (transferRetry) return
-  transferRetry = {
-    namespace,
-    timer: setTimeout(() => {
-      transferRetry = undefined
-      if (queryClient) void resumeUploads(namespace, queryClient).catch(() => undefined)
-    }, TRANSFER_RETRY_MS),
-  }
+  if (transferRetries.has(namespace)) return
+  transferRetries.set(namespace, setTimeout(() => {
+    transferRetries.delete(namespace)
+    if (queryClient) void resumeUploads(namespace, queryClient).catch(() => undefined)
+  }, TRANSFER_RETRY_MS))
 }
 
 /** The signed-in account's namespace; uploads only run for it, with its session. */
@@ -337,10 +335,8 @@ export async function cancelUpload(id: string): Promise<void> {
 
 /** Forgets an account's queue (sign-out), including uploads staged while it was not active. */
 export async function clearUploads(namespace: string): Promise<void> {
-  if (transferRetry?.namespace === namespace) {
-    clearTimeout(transferRetry.timer)
-    transferRetry = undefined
-  }
+  clearTimeout(transferRetries.get(namespace))
+  transferRetries.delete(namespace)
   const inMemory = useFileUploads.getState().items.filter((item) => item.namespace === namespace)
   useFileUploads.setState((state) => ({ items: state.items.filter((item) => item.namespace !== namespace) }))
   const stored = await getValue<QueuedUpload[]>(namespace, STORAGE_KEY).catch(() => null) ?? []
