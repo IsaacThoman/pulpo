@@ -2323,22 +2323,24 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   // Files links (pulpo://files/…) open their screen once the account's data is ready.
   const filesLink = useFilesLinkInbox((state) => state.pending);
   const openFileItem = useOpenFileItem();
+  const filesLinkGeneration = useRef(0);
   useEffect(() => {
     if (!filesLink || !productionScopeReady || !productionUserId) return;
     const url = useFilesLinkInbox.getState().take();
     const destination = url ? parseFilesLink(url, productionInstanceUrl) : null;
     if (!destination) return;
+    const generation = ++filesLinkGeneration.current;
     animatePanel(false);
     Keyboard.dismiss();
     if (destination.type === 'trash') navigation.navigate('Trash');
     else if (destination.type === 'folder') navigation.push('FilesFolder', { folderId: destination.id });
     else {
-      // As on the web, a file link is any kind of file: what it is decides where it opens. One that
-      // can't be looked up (offline, not seen before) opens as a document, which may be on the device.
-      const fileId = destination.id;
-      void queryClient.fetchQuery(fileNodeQuery(cacheNamespace(productionInstanceUrl, productionUserId), fileId)).then(
-        ({ node }) => openFileItem(node),
-        () => navigation.push('FileDocument', { fileId }),
+      // As on the web, a file link is any kind of file: what it is decides where it opens. Items seen
+      // before are known offline too; anything else says why it can't open. Looked up once and at
+      // once (never held until the connection is back), and dropped if another link came meanwhile.
+      void queryClient.fetchQuery({ ...fileNodeQuery(cacheNamespace(productionInstanceUrl, productionUserId), destination.id), networkMode: 'always', retry: false }).then(
+        ({ node }) => { if (generation === filesLinkGeneration.current) void openFileItem(node); },
+        (error: unknown) => { if (generation === filesLinkGeneration.current) Alert.alert('Can’t open this link', filesErrorMessage(error)); },
       );
     }
   }, [animatePanel, filesLink, navigation, openFileItem, productionInstanceUrl, productionScopeReady, productionUserId, queryClient]);
