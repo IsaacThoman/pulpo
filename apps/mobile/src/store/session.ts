@@ -178,6 +178,11 @@ export const useSessionStore = create<SessionState>((set, get) => {
     await persistSession(instanceUrl, user, token)
     configureApi({ instanceUrl, token, onUnauthorized })
     set({ token, user, status: sessionStatus(user), error: null, accounts: await loadAccounts(instanceUrl) })
+    // What the instance offers is read again: the read made at launch is dropped when the stored
+    // session turns out to be revoked, and features such as Files would stay hidden until the next.
+    void mobileApi.config().then((config) => {
+      if (config && get().token === token && get().instanceUrl === instanceUrl) set({ config })
+    }).catch(() => undefined)
   }
 
   // Makes a signed-in inactive account active. The current account, if any,

@@ -242,6 +242,19 @@ describe('two-factor login', () => {
   })
 })
 
+describe('instance configuration', () => {
+  it('reads it again on signing in, after a revoked session dropped the read made at launch', async () => {
+    mocks.token = null
+    const config = { instance: { name: 'Pulpo' }, capabilities: { files: { enabled: true, docSchemaVersion: 2 } } }
+    mocks.config.mockResolvedValue(config)
+    const signedIn = user('55555555-5555-4555-8555-555555555555', 'Files User')
+    mocks.login.mockResolvedValue({ user: signedIn, session: { token: 'fresh-token', expiresAt: '2026-09-01T00:00:00.000Z' } })
+
+    await useSessionStore.getState().login('member@example.com', 'password')
+    await vi.waitFor(() => expect(useSessionStore.getState().config).toEqual(config))
+  })
+})
+
 describe('passkey login', () => {
   const ceremony = { ceremonyToken: 'c'.repeat(43), options: { challenge: 'challenge' } }
   const assertion = { id: 'credential' }
