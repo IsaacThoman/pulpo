@@ -148,7 +148,7 @@ export function ChatDataBridge() {
       if (batch) {
         if (batch.chatIds.length || batch.accountOnlyRevisions.length || batch.scopes.includes('chats')) {
           add(['chats', userId])
-          add(['deleted-chats', userId])
+          add(['trash', userId])
         }
         for (const id of batch.chatIds) add(['chat', userId, id])
         for (const scope of batch.scopes) for (const key of stateInvalidationQueryKeys(scope, userId)) add(key)
@@ -220,7 +220,7 @@ export function ChatDataBridge() {
       const scopes = syncInvalidationScopes(result)
       for (const scope of scopes) invalidateStateScope(scope)
       if (scopes.includes('chats')) {
-        queueInvalidation(['deleted-chats', userId])
+        queueInvalidation(['trash', userId])
       }
       if (scopes.includes('chats') && activeChatIdRef.current) {
         queueInvalidation(['chat', userId, activeChatIdRef.current])

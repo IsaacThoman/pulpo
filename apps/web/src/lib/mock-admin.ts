@@ -41,14 +41,3 @@ export const ADMIN_LABS: AdminLab[] = (() => {
   }
   return [...byName.values()]
 })()
-
-export interface Banner {
-  id: string
-  type: 'info' | 'warning' | 'error' | 'success'
-  content: string
-  dismissible: boolean
-}
-
-export const SEED_BANNERS: Banner[] = [
-  { id: 'bn-1', type: 'info', content: 'pulpo will be down for maintenance Sunday 03:00–03:30 UTC.', dismissible: true },
-]

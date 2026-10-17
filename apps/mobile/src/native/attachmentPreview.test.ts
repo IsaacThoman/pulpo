@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   previewImages: vi.fn(async () => undefined),
   updatePreviewImage: vi.fn(async () => true),
   previewFile: vi.fn(async () => undefined),
+  previewWebDocument: vi.fn(async () => undefined),
 }))
 
 vi.mock('react-native', () => ({ Platform: { OS: 'ios' } }))
@@ -15,16 +16,20 @@ vi.mock('expo', () => ({
     previewImages: mocks.previewImages,
     updatePreviewImage: mocks.updatePreviewImage,
     previewFile: mocks.previewFile,
+    previewWebDocument: mocks.previewWebDocument,
   })),
 }))
 
+import { SANDBOX_CSP } from '@pulpo/contracts'
 import {
   animateImageTransition,
   previewFile,
   previewImages,
+  previewWebDocument,
   supportsAttachmentPreview,
   supportsNativeImageGallery,
   supportsNativeImageTransition,
+  supportsWebDocumentPreview,
   updatePreviewImage,
 } from './attachmentPreview'
 
@@ -34,6 +39,7 @@ describe('attachment preview wrapper', () => {
     mocks.previewImages.mockReset().mockResolvedValue(undefined)
     mocks.updatePreviewImage.mockReset().mockResolvedValue(true)
     mocks.previewFile.mockReset().mockResolvedValue(undefined)
+    mocks.previewWebDocument.mockReset().mockResolvedValue(undefined)
   })
 
   it('presents a local file through the optional Apple module', async () => {
@@ -82,5 +88,20 @@ describe('attachment preview wrapper', () => {
   it('upgrades a loading gallery item without reopening the preview', async () => {
     await expect(updatePreviewImage('photo-1', 'file:///tmp/photo.jpg')).resolves.toBe(true)
     expect(mocks.updatePreviewImage).toHaveBeenCalledWith('photo-1', 'file:///tmp/photo.jpg', false)
+  })
+
+  it('runs HTML pages under the shared opaque-origin sandbox policy', async () => {
+    expect(supportsWebDocumentPreview).toBe(true)
+    await previewWebDocument('file:///tmp/quiz.html', 'quiz.html')
+    expect(mocks.previewWebDocument).toHaveBeenCalledWith('file:///tmp/quiz.html', 'quiz.html', SANDBOX_CSP)
+    expect(SANDBOX_CSP).toMatch(/^sandbox allow-scripts /)
+    expect(SANDBOX_CSP).not.toContain('allow-same-origin')
+  })
+
+  it('maps native web preview failures to preview error codes', async () => {
+    mocks.previewWebDocument.mockRejectedValueOnce(new Error('FunctionCallException caused by AttachmentPreviewUnsupported'))
+    await expect(previewWebDocument('file:///tmp/huge.html', 'huge.html')).rejects.toMatchObject({
+      code: 'ERR_ATTACHMENT_PREVIEW_UNSUPPORTED',
+    })
   })
 })

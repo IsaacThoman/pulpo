@@ -628,7 +628,8 @@ private final class PulpoPreviewCoordinator: NSObject, QLPreviewControllerDataSo
 }
 
 public final class PulpoAttachmentPreviewModule: Module {
-  private var activePreview: PulpoPreviewCoordinator?
+  // A Quick Look coordinator or a web preview controller; only one document preview is open at a time.
+  private var activePreview: NSObject?
   private var activeImageGallery: PulpoImageGalleryCoordinator?
   private var activeImageTransition: UIViewPropertyAnimator?
   private weak var activeImageTransitionOverlay: UIView?
@@ -857,6 +858,66 @@ public final class PulpoAttachmentPreviewModule: Module {
       presenter.present(coordinator.navigationController, animated: true) {
         coordinator.navigationController.presentationController?.delegate = coordinator
       }
+    }
+    .runOnQueue(.main)
+
+    AsyncFunction("previewWebDocument") { (uri: URL, title: String, contentSecurityPolicy: String) in
+      guard activePreview == nil, activeImageGallery == nil else {
+        throw Exception(
+          name: "AttachmentPreviewBusy",
+          description: "Another attachment preview is already open.",
+          code: "ERR_ATTACHMENT_PREVIEW_BUSY"
+        )
+      }
+      // Untrusted pages must never run with a real origin, whatever the caller passes.
+      guard
+        contentSecurityPolicy.hasPrefix("sandbox "),
+        !contentSecurityPolicy.contains("allow-same-origin"),
+        !contentSecurityPolicy.contains("allow-top-navigation")
+      else {
+        throw Exception(
+          name: "AttachmentPreviewUnavailable",
+          description: "The page preview policy is invalid.",
+          code: "ERR_ATTACHMENT_PREVIEW_UNAVAILABLE"
+        )
+      }
+      guard uri.isFileURL, FileManager.default.fileExists(atPath: uri.path) else {
+        throw Exception(
+          name: "AttachmentPreviewMissingFile",
+          description: "The attachment file is no longer available.",
+          code: "ERR_ATTACHMENT_PREVIEW_MISSING_FILE"
+        )
+      }
+      let size = (try? uri.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+      guard size <= maxWebPreviewBytes, let document = try? Data(contentsOf: uri) else {
+        throw Exception(
+          name: "AttachmentPreviewUnsupported",
+          description: "This page is too large to run as a preview.",
+          code: "ERR_ATTACHMENT_PREVIEW_UNSUPPORTED"
+        )
+      }
+      guard let presenter = appContext?.utilities?.currentViewController() else {
+        throw Exception(
+          name: "AttachmentPreviewUnavailable",
+          description: "The attachment preview could not be presented.",
+          code: "ERR_ATTACHMENT_PREVIEW_UNAVAILABLE"
+        )
+      }
+
+      let controller = PulpoWebPreviewViewController(
+        document: document,
+        fileURL: uri,
+        title: title,
+        contentSecurityPolicy: contentSecurityPolicy
+      )
+      controller.onDismiss = { [weak self, weak controller] in
+        guard let self, self.activePreview === controller else { return }
+        self.activePreview = nil
+      }
+      activePreview = controller
+      let navigationController = UINavigationController(rootViewController: controller)
+      navigationController.modalPresentationStyle = .fullScreen
+      presenter.present(navigationController, animated: true)
     }
     .runOnQueue(.main)
   }

@@ -25,4 +25,14 @@ describe('document socket budget', () => {
     now = 200
     expect(bucket.take(200)).toBe(true)
   })
+
+  it('allows a document-sized burst without increasing the sustained rate', () => {
+    let now = 0
+    const bucket = new TokenBucket(40, 2_000_000, 2, () => now, 8_000_000)
+    expect(bucket.take(8_000_000)).toBe(true)
+    expect(bucket.take(1)).toBe(false)
+    now = 1_000
+    expect(bucket.take(2_000_000)).toBe(true)
+    expect(bucket.take(1)).toBe(false)
+  })
 })

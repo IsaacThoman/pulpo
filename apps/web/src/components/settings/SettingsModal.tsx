@@ -8,7 +8,7 @@ import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { useTranslation } from '@/i18n/useAppTranslation'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import type { InstructionPreset } from '@pulpo/contracts'
+import { TRASH_RETENTION_VALUES, type InstructionPreset } from '@pulpo/contracts'
 import {
   Database,
   Bot,
@@ -45,7 +45,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ModelIcon } from '@/components/ModelIcon'
 import {
   SUPPORTED_LANGUAGES,
   normalizeLanguage,
@@ -61,7 +60,7 @@ import { cn } from '@/lib/utils'
 import { ApiError, apiRequest, downloadApiFile } from '@/lib/api'
 import { queryClient } from '@/lib/query-client'
 import { useChat } from '@/stores/chat'
-import { getCatalogModel, useCatalog } from '@/stores/catalog'
+import { useCatalog } from '@/stores/catalog'
 import { formatBytes } from '@/lib/attachments'
 import { formatDateTime, timeAgo } from '@/lib/format'
 import { clearLocalChats } from '@/lib/local-first/chat-cache'
@@ -79,6 +78,8 @@ import { AnimationSpeedInput } from './AnimationSpeedInput'
 import { CostLimitInput } from './CostLimitInput'
 import { chatImportFileIsTooLarge } from './chat-import'
 import { ui, uit } from '@/i18n/ui'
+import { fetchTrash, trashQueryKey } from '@/features/trash/api'
+import { trashRetentionLabel } from '@/features/trash/labels'
 
 const Markdown = lazy(() => import('@/components/chat/Markdown').then((module) => ({ default: module.Markdown })))
 
@@ -121,39 +122,6 @@ interface StorageUsage {
   usedBytes: number
   limitBytes: number
   remainingBytes: number
-}
-
-interface DeletedChat {
-  id: string
-  title: string
-  modelId: string
-  deletedAt: string
-  purgeAt: string | null
-}
-
-const TRASH_RETENTION_LABELS: Record<TrashRetention, string> = {
-  instant: 'No retention',
-  '24h': '24 hours',
-  '7d': '7 days',
-  '30d': '30 days',
-  '90d': '90 days',
-  indefinite: 'Indefinitely',
-}
-
-function trashTrashedLabel(iso: string): string {
-  return `Trashed ${timeAgo(new Date(iso).getTime())}`
-}
-
-function trashDeletesLabel(iso: string | null, now = Date.now()): string {
-  if (!iso) return ui("Kept indefinitely")
-  const ms = new Date(iso).getTime() - now
-  if (ms <= 0) return ui("Deletes now")
-  const minutes = Math.max(1, Math.ceil(ms / 60_000))
-  if (minutes < 60) return `Deletes in ${minutes}m`
-  const hours = Math.ceil(ms / 3_600_000)
-  if (hours < 24) return `Deletes in ${hours}h`
-  const days = Math.ceil(ms / 86_400_000)
-  return `Deletes in ${days}d`
 }
 
 function Row({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
@@ -365,7 +333,6 @@ export function SettingsModal({
   const [storageUsage, setStorageUsage] = useState<StorageUsage | null>(null)
   const [trashRetentionSaving, setTrashRetentionSaving] = useState(false)
   const [trashRetentionError, setTrashRetentionError] = useState('')
-  const [trashNow, setTrashNow] = useState(() => Date.now())
   const [profileName, setProfileName] = useState(user?.name ?? '')
   const [profileColor, setProfileColor] = useState(() => user?.profileColor ?? automaticProfileColor(user?.id ?? 'pulpo-user'))
   const [profileSaving, setProfileSaving] = useState(false)
@@ -377,17 +344,12 @@ export function SettingsModal({
     user?.profileColor && !PROFILE_COLORS.some((color) => color === user.profileColor),
   ))
   const avatarInputRef = useRef<HTMLInputElement>(null)
-  const deletedChatsQueryKey = ['deleted-chats', user?.id] as const
-  const deletedChatsQuery = useQuery({
-    queryKey: deletedChatsQueryKey,
-    queryFn: () => apiRequest<{ data: DeletedChat[] }>('/api/chats/deleted').then((result) => result.data),
-    enabled: Boolean(open && section === 'trash' && user?.id && s.trashRetention !== 'instant'),
-    staleTime: 0,
-    refetchInterval: 15_000,
-    refetchOnMount: 'always',
-    refetchOnWindowFocus: 'always',
+  const trashQuery = useQuery({
+    queryKey: trashQueryKey(user?.id),
+    queryFn: fetchTrash,
+    enabled: Boolean(open && section === 'trash' && user?.id),
   })
-  const deletedChats = deletedChatsQuery.data ?? []
+  const trashItems = trashQuery.data?.items ?? []
   const personalizationQuery = useQuery({
     queryKey: ['settings', user?.id],
     queryFn: () => apiRequest<{ values: Record<string, unknown>; instructionPresets: InstructionPreset[] }>('/api/settings'),
@@ -471,13 +433,6 @@ export function SettingsModal({
       setProfileSaving(false)
     }
   }
-
-  useEffect(() => {
-    if (!open || section !== 'trash' || s.trashRetention === 'instant') return
-    setTrashNow(Date.now())
-    const id = window.setInterval(() => setTrashNow(Date.now()), 30_000)
-    return () => window.clearInterval(id)
-  }, [open, section, s.trashRetention])
 
   const chooseImport = () => {
     const input = document.createElement('input'); input.type = 'file'; input.accept = 'application/json,.json'
@@ -587,26 +542,6 @@ export function SettingsModal({
     }
   }
 
-  const recoverChat = async (id: string) => {
-    await apiRequest(`/api/chats/${id}/recover`, { method: 'POST' })
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ['chats'] }),
-      queryClient.invalidateQueries({ queryKey: deletedChatsQueryKey }),
-    ])
-  }
-
-  const permanentlyDeleteChat = async (chat: DeletedChat) => {
-    if (!confirm(`Permanently delete “${chat.title}”? This cannot be undone.`)) return
-    await apiRequest(`/api/chats/${chat.id}/permanent`, { method: 'DELETE' })
-    await queryClient.invalidateQueries({ queryKey: deletedChatsQueryKey })
-  }
-
-  const permanentlyDeleteAll = async () => {
-    if (!deletedChats.length || !confirm(ui("Permanently delete every chat in trash? This cannot be undone."))) return
-    await apiRequest('/api/chats/deleted', { method: 'DELETE' })
-    await queryClient.invalidateQueries({ queryKey: deletedChatsQueryKey })
-  }
-
   const updateTrashRetention = async (value: TrashRetention) => {
     const previous = s.trashRetention
     s.set('trashRetention', value)
@@ -615,11 +550,9 @@ export function SettingsModal({
     try {
       await apiRequest('/api/settings', { method: 'PATCH', body: { trashRetention: value } })
       if (value === 'instant' && user?.id) {
-        void clearLocalChats(user.id, deletedChats.map((chat) => chat.id)).catch(() => undefined)
-        queryClient.removeQueries({ queryKey: deletedChatsQueryKey, exact: true })
-      } else {
-        await queryClient.invalidateQueries({ queryKey: deletedChatsQueryKey })
+        void clearLocalChats(user.id, trashItems.filter((item) => item.kind === 'chat').map((item) => item.id)).catch(() => undefined)
       }
+      await queryClient.invalidateQueries({ queryKey: trashQueryKey(user?.id) })
     } catch (error) {
       s.set('trashRetention', previous)
       setTrashRetentionError(error instanceof Error ? error.message : 'Could not save trash retention')
@@ -641,8 +574,13 @@ export function SettingsModal({
     }
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ['chats'] }),
-      queryClient.invalidateQueries({ queryKey: deletedChatsQueryKey }),
+      queryClient.invalidateQueries({ queryKey: trashQueryKey(user?.id) }),
     ])
+  }
+
+  const openTrash = () => {
+    onClose()
+    navigate('/files/trash')
   }
 
   return (
@@ -695,78 +633,32 @@ export function SettingsModal({
                 <div className="min-w-0">
                   <h2 className="text-base font-semibold">{ui("Trash")}</h2>
                   <Separator className="my-3" />
-                  <Row label={ui("Trash retention period")} hint="How long trashed chats stay recoverable before permanent deletion.">
+                  <Row label={ui("Trash retention period")} hint={trashQuery.data?.files === false
+                    ? ui("How long trashed chats and folders stay recoverable before they are deleted forever. Folders are always kept for at least 24 hours.")
+                    : ui("How long trashed chats and files stay recoverable before they are deleted forever. Files are always kept for at least 24 hours.")}>
                     <Select value={s.trashRetention} disabled={trashRetentionSaving} onValueChange={(value) => void updateTrashRetention(value as TrashRetention)}>
                       <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        {(Object.entries(TRASH_RETENTION_LABELS) as [TrashRetention, string][]).map(([value, label]) => (
-                          <SelectItem key={value} value={value}>{label}</SelectItem>
+                        {TRASH_RETENTION_VALUES.map((value) => (
+                          <SelectItem key={value} value={value}>{trashRetentionLabel(value)}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </Row>
                   {trashRetentionError && <p className="text-right text-xs text-destructive">{trashRetentionError}</p>}
                   <Separator className="my-3" />
-                  <div className="flex min-w-0 items-center justify-between gap-3 py-1">
-                    <div className="min-w-0">
-                      <div className="text-sm font-medium">{ui("Trashed chats")}</div>
-                      <div className="mt-0.5 text-xs text-muted-foreground">
-                        {s.trashRetention === 'instant'
-                          ? ui("Chats are permanently deleted immediately.")
-                          : deletedChatsQuery.isLoading
-                            ? ui("Loading…")
-                            : deletedChats.length
-                              ? uit`${deletedChats.length} chat${deletedChats.length === 1 ? '' : 's'}`
-                              : ui("Recover chats or permanently delete them.")}
-                      </div>
-                    </div>
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      className="shrink-0"
-                      disabled={!deletedChats.length || s.trashRetention === 'instant'}
-                      onClick={() => void permanentlyDeleteAll()}
-                    > {ui("Empty trash")} </Button>
-                  </div>
-                  {s.trashRetention === 'instant' ? null : deletedChatsQuery.isLoading ? (
-                    <p className="py-8 text-center text-sm text-muted-foreground">{ui("Loading trashed chats…")}</p>
-                  ) : deletedChatsQuery.error ? (
-                    <div className="py-8 text-center text-sm text-destructive">
-                      <p>{deletedChatsQuery.error instanceof Error ? deletedChatsQuery.error.message : ui("Could not load trashed chats")}</p>
-                      <Button variant="outline" size="sm" className="mt-3" onClick={() => void deletedChatsQuery.refetch()}>{ui("Try again")}</Button>
-                    </div>
-                  ) : !deletedChats.length ? (
-                    <p className="py-8 text-center text-sm text-muted-foreground">{ui("Trash is empty.")}</p>
-                  ) : (
-                    <div className="min-w-0 divide-y">
-                      {deletedChats.map((chat) => {
-                        const deletedTs = new Date(chat.deletedAt).getTime()
-                        const purgeTs = chat.purgeAt ? new Date(chat.purgeAt).getTime() : null
-                        return (
-                          <div key={chat.id} className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2.5 py-2.5">
-                            <ModelIcon
-                              model={getCatalogModel(chat.modelId)}
-                              className="size-4 shrink-0 rounded-[2px]"
-                            />
-                            <div className="min-w-0 overflow-hidden">
-                              <div className="truncate text-sm font-medium">{chat.title}</div>
-                              <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                                <span title={formatDateTime(deletedTs)}>{trashTrashedLabel(chat.deletedAt)}</span>
-                                <span aria-hidden className="text-muted-foreground/50"> · </span>
-                                <span title={purgeTs ? formatDateTime(purgeTs) : undefined}>
-                                  {trashDeletesLabel(chat.purgeAt, trashNow)}
-                                </span>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-1.5">
-                              <Button variant="outline" size="sm" onClick={() => void recoverChat(chat.id)}> {ui("Recover")} </Button>
-                              <Button variant="destructive" size="sm" onClick={() => void permanentlyDeleteChat(chat)}> {ui("Delete")} </Button>
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
+                  <Row
+                    label={ui("Trashed items")}
+                    hint={trashQuery.isPending
+                      ? ui("Loading…")
+                      : trashQuery.isError
+                        ? ui("Could not load the trash")
+                        : trashItems.length
+                          ? (trashItems.length === 1 ? ui("1 item in the trash") : uit`${trashItems.length} items in the trash`)
+                          : ui("The trash is empty")}
+                  >
+                    <Button variant="outline" size="sm" className="shrink-0" onClick={openTrash}>{ui("Open trash")}</Button>
+                  </Row>
                 </div>
               )}
 
@@ -1219,7 +1111,7 @@ export function SettingsModal({
                       ? 'Permanently deletes every chat.'
                       : s.trashRetention === 'indefinite'
                         ? 'Moves every conversation to trash. (no automatic permanent deletion)'
-                        : `Moves every conversation to trash. (delete in ${TRASH_RETENTION_LABELS[s.trashRetention].toLowerCase()})`}
+                        : `Moves every conversation to trash. (delete in ${trashRetentionLabel(s.trashRetention).toLowerCase()})`}
                   >
                     <Button variant="destructive" size="sm" disabled={trashRetentionSaving} onClick={() => void deleteAllChats()}>{ui("Trash all chats")}</Button>
                   </Row>

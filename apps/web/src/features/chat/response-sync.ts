@@ -22,8 +22,8 @@ export function stateInvalidationQueryKeys(scope: StateInvalidationScope, userId
   if (scope === 'pool') {
     return [['pool', userId], ['pool-pending-count', userId], ['pool-usage', userId]]
   }
-  // The sidebar's folders and shortcuts are part of Files.
-  if (scope === 'files') return [['files', userId], ['folders', userId]]
+  // The sidebar's folders and shortcuts are part of Files, and trashed Files items are listed in the trash.
+  if (scope === 'files') return [['files', userId], ['folders', userId], ['trash', userId]]
   return [[scope, userId]]
 }
 
@@ -106,10 +106,10 @@ export function outboxInvalidationQueryKeys(paths: readonly string[], userId: st
   for (const path of paths) {
     if (path.startsWith('/api/settings')) { add(['settings', userId]); continue }
     if (path.startsWith('/api/folders') || path.startsWith('/api/sidebar')) add(['folders', userId])
-    if (path.startsWith('/api/sidebar')) add(['files', userId])
-    if (/^\/api\/(chats|folders|messages|responses|sidebar)(\/|$)/.test(path)) {
+    if (path.startsWith('/api/sidebar') || path.startsWith('/api/trash')) add(['files', userId])
+    if (/^\/api\/(chats|folders|messages|responses|sidebar|trash)(\/|$)/.test(path)) {
       add(['chats', userId])
-      add(['deleted-chats', userId])
+      add(['trash', userId])
       const chatId = /^\/api\/chats\/([^/?]+)/.exec(path)?.[1]
       if (chatId && chatId !== 'order') add(['chat', userId, chatId])
       if (activeChatId) add(['chat', userId, activeChatId])

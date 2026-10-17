@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { DOC_FRAGMENT_NAME } from '@pulpo/client-core/doc-schema'
+import { ydocToMarkdown } from '@pulpo/client-core/doc-schema'
 import { isMarkdownName, type FileConversionPreview, type FileNode } from '@pulpo/contracts'
 import { ChevronRight, CloudCheck, CloudOff, Download, FolderOpen, HardDrive, Loader2, Pencil, TriangleAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -13,7 +13,6 @@ import { useAuth } from '@/stores/auth'
 import { useSettings } from '@/stores/settings'
 import { Markdown } from '@/components/chat/Markdown'
 import {
-  allFileChangesQueryKey,
   convertToDoc,
   downloadDocMarkdown,
   downloadFile,
@@ -28,12 +27,13 @@ import { filesErrorMessage } from '@/features/files/file-display'
 import { DocEditor } from '@/features/files/editor/DocEditor'
 import type { DocSyncStatus } from '@/features/files/editor/socket-provider'
 import { useDocSession, type PresencePeer } from '@/features/files/editor/use-doc-session'
+import { useSuggestionRecount } from '@/features/files/editor/use-suggestion-recount'
 import { FilePreviewBody } from '@/features/files/FilePreview'
 import { FileSuggestionBanner } from '@/features/files/FileSuggestion'
 import { MarkdownConversionDialog } from '@/features/files/MarkdownConversionDialog'
 import { revealFileInPlace } from '@/features/files/reveal'
 import { PanelWindowButtons } from '@/features/side-panel/PanelControls'
-import { openBeside, panelContentPath, useMainNavigate } from '@/features/side-panel/use-panel-actions'
+import { locationIsCurrent, openBeside, panelContentPath, useMainNavigate } from '@/features/side-panel/use-panel-actions'
 import { SplitViewButton } from '@/features/side-panel/AgentActions'
 import { usePublishFilesView, type AgentItem, type FilesViewPlace } from '@/features/side-panel/agent'
 import { useSidePanel, type PanelContent } from '@/features/side-panel/store'
@@ -65,7 +65,7 @@ function SyncIndicator({ status }: { status: DocSyncStatus }) {
       </Tooltip>
     )
   }
-  if (status.state === 'connecting' || (status.state === 'error' && status.error === 'rate_limited')) {
+  if (status.state === 'connecting' || status.state === 'syncing' || (status.state === 'error' && status.error === 'rate_limited')) {
     return <span className="flex items-center gap-1.5 text-xs text-muted-foreground"><Loader2 className="size-3.5 animate-spin" />{ui("Syncing")}</span>
   }
   return null
@@ -248,13 +248,10 @@ function FileHeader({ node, ancestors, view, onDownload, children }: {
   )
 }
 
-/** Time for a resolved suggestion to reach the server before replies recount what is pending. */
-const SUGGESTION_SYNC_DELAY_MS = 1_500
-
 function OpenDoc({ userId, docId, view }: { userId: string; docId: string; view: FileViewContext }) {
-  const queryClient = useQueryClient()
   const nodeQuery = useQuery({ queryKey: fileNodeQueryKey(userId, docId), queryFn: () => fetchFileNode(docId) })
   const { session, status, peers } = useDocSession(userId, docId)
+  const recountSuggestions = useSuggestionRecount(userId, status)
   const [everSynced, setEverSynced] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
   const chatWidth = useSettings((state) => state.chatWidth)
@@ -267,7 +264,7 @@ function OpenDoc({ userId, docId, view }: { userId: string; docId: string; view:
   const parentPath = node?.parentId ? `/files/f/${node.parentId}` : '/files'
   const problem = statusProblem(status)
   // Before the first sync, only allow typing when a cached copy is already on screen.
-  const hasContent = Boolean(session && session.doc.getXmlFragment(DOC_FRAGMENT_NAME).length > 0)
+  const hasContent = Boolean(session?.hasCachedContent)
   const editable = !problem && Boolean(node && !node.trashedAt) && (everSynced || hasContent)
 
   return (
@@ -276,7 +273,11 @@ function OpenDoc({ userId, docId, view }: { userId: string; docId: string; view:
         node={node}
         ancestors={ancestors}
         view={view}
-        onDownload={() => node && void downloadDocMarkdown(node).catch((cause: unknown) => setNotice(filesErrorMessage(cause)))}
+        onDownload={() => {
+          if (!node) return
+          void (async () => downloadDocMarkdown(node, session && (everSynced || hasContent) ? ydocToMarkdown(session.doc) : undefined))()
+            .catch((cause: unknown) => setNotice(filesErrorMessage(cause)))
+        }}
       >
         <Presence peers={peers} />
         <SyncIndicator status={status} />
@@ -299,7 +300,7 @@ function OpenDoc({ userId, docId, view }: { userId: string; docId: string; view:
             session={session}
             editable={editable}
             width={view.layout === 'panel' ? 'fill' : chatWidth === 'full' ? 'wide' : 'narrow'}
-            onSuggestionsResolved={() => window.setTimeout(() => void queryClient.invalidateQueries({ queryKey: allFileChangesQueryKey(userId) }), SUGGESTION_SYNC_DELAY_MS)}
+            onSuggestionsResolved={recountSuggestions}
           />
         ) : (
           <div className="grid h-64 place-items-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
@@ -449,14 +450,17 @@ function FileRoute({ userId, fileId, view }: { userId: string; fileId: string; v
 }
 
 export function FileDocPage() {
-  const { docId } = useParams()
+  const { docId: routeDocId } = useParams()
+  const docId = routeDocId?.toLowerCase()
+  const location = useLocation()
   const userId = useAuth((state) => state.user?.id)
   const filesEnabled = useAuth((state) => state.filesEnabled)
+  const shown = useSidePanel((state) => state.content)
   // Opening the side panel's file full page moves it here instead of showing it twice.
   useEffect(() => {
-    const shown = useSidePanel.getState().content
-    if (docId && shown?.kind === 'file' && shown.id === docId) useSidePanel.getState().close()
-  }, [docId])
+    if (!locationIsCurrent(location)) return
+    if (docId && shown?.kind === 'file' && shown.id.toLowerCase() === docId) useSidePanel.getState().close()
+  }, [docId, location, shown])
   if (!filesEnabled) {
     return <div className="grid h-full place-items-center p-8 text-sm text-muted-foreground">{ui("Files are disabled by the administrator")}</div>
   }
@@ -465,9 +469,13 @@ export function FileDocPage() {
 }
 
 /** The side panel's content: the same file views in a compact layout. */
-export function FilePanelView({ fileId }: { fileId: string }) {
+export function FilePanelView({ fileId: requestedId }: { fileId: string }) {
+  const fileId = requestedId.toLowerCase()
   const userId = useAuth((state) => state.user?.id)
+  const { pathname } = useLocation()
   const view = useMemo<FileViewContext>(() => ({ layout: 'panel', panel: { kind: 'file', id: fileId } }), [fileId])
-  if (!userId) return null
+  // One socket has one room membership per document. Never mount a second session even for
+  // the render before the page's effect closes a reopened panel (e.g. Cmd/Ctrl+\).
+  if (!userId || pathname.toLowerCase() === `/files/d/${fileId}`) return null
   return <FileRoute key={fileId} userId={userId} fileId={fileId} view={view} />
 }

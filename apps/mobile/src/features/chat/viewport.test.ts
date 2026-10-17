@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import {
   CHAT_BOTTOM_FOLLOW_THRESHOLD,
+  CHAT_RESUME_FOLLOW_THRESHOLD,
   CHAT_SCROLL_TO_BOTTOM_THRESHOLD,
+  chatBottomDistance,
   chatKeyboardBlankSpace,
   chatLandingKeyboardTranslation,
   isNearChatBottom,
   resolveKeyboardLayoutProgress,
   shouldFollowChatContent,
+  shouldResumeChatFollow,
 } from './viewport'
 
 describe('chat viewport following', () => {
@@ -35,6 +38,22 @@ describe('chat viewport following', () => {
     const inverted = { ...metrics, inverted: true, insetTop: 300 }
     expect(isNearChatBottom({ ...inverted, offsetY: -150 }, CHAT_SCROLL_TO_BOTTOM_THRESHOLD)).toBe(true)
     expect(isNearChatBottom({ ...inverted, offsetY: 0 }, CHAT_SCROLL_TO_BOTTOM_THRESHOLD)).toBe(false)
+  })
+
+  it('detaches a reader whose short swipe ends away from the tail', () => {
+    expect(CHAT_RESUME_FOLLOW_THRESHOLD).toBeLessThan(CHAT_BOTTOM_FOLLOW_THRESHOLD)
+    const inverted = { inverted: true, contentHeight: 10000, viewportHeight: 800, insetTop: 300 }
+    expect(chatBottomDistance({ ...inverted, offsetY: -300 })).toBe(0)
+    expect(chatBottomDistance({ ...inverted, offsetY: -240 })).toBeGreaterThan(CHAT_RESUME_FOLLOW_THRESHOLD)
+    expect(chatBottomDistance({ offsetY: 1240, contentHeight: 2000, viewportHeight: 700 })).toBe(60)
+    expect(chatBottomDistance({ offsetY: 0, contentHeight: 500, viewportHeight: 700 })).toBe(0)
+  })
+
+  it('resumes following only at the tail or when heading back toward it', () => {
+    expect(shouldResumeChatFollow(0, 60)).toBe(false)
+    expect(shouldResumeChatFollow(0, 12)).toBe(true)
+    expect(shouldResumeChatFollow(400, 60)).toBe(true)
+    expect(shouldResumeChatFollow(400, 150)).toBe(false)
   })
 
   it('pauses following as soon as a drag or momentum sequence begins', () => {

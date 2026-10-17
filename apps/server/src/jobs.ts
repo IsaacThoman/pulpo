@@ -46,6 +46,16 @@ export const codexLoginQueue = new Queue<CodexLoginJob>('codex-login', {
 
 export const maintenanceQueue = new Queue<MaintenanceJob>('maintenance', { connection })
 
+/**
+ * Purges the account's trash now: chats marked for purging, and chats and Files items past the
+ * retention setting. (The job keeps its original name so jobs queued before upgrades still run.)
+ */
+export async function queueTrashPurge(userId: string, reason: string): Promise<void> {
+  await maintenanceQueue.add('purge-chats', { type: 'purge-chats', payload: { userId } }, {
+    jobId: `purge-chats-${reason}-${userId}-${Date.now()}`,
+  })
+}
+
 export const embeddingQueue = new Queue<EmbeddingJob>('episodic-memory', {
   connection,
   defaultJobOptions: {

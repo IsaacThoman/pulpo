@@ -1,13 +1,13 @@
 import { eq, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { agentCostLimitMicrosSchema, chatSortModeSchema, fileDoubleClickActionSchema, newChatAutoExpireSchema } from '@pulpo/contracts'
+import { agentCostLimitMicrosSchema, chatSortModeSchema, fileDoubleClickActionSchema, newChatAutoExpireSchema, trashColorSchema } from '@pulpo/contracts'
 import { requireUser } from '../auth/service.js'
 import { db } from '../database/client.js'
 import { applicationSettings, userPreferences, users } from '../database/schema.js'
 import { AppError } from '../lib/errors.js'
 import { publishStateChange } from '../responses/events.js'
-import { embeddingQueue, maintenanceQueue } from '../jobs.js'
+import { embeddingQueue, queueTrashPurge } from '../jobs.js'
 import { DEFAULT_TRASH_RETENTION, parseTrashRetention, trashRetentionValues } from '../chats/trash.js'
 import { normalizedPreferencePatch, preferencesWithModelDefaults } from './model-preferences.js'
 import { automaticChatExpirationValues, parseAutomaticChatExpiration } from '../chats/expiration.js'
@@ -75,6 +75,9 @@ export async function registerSettingsRoutes(app: FastifyInstance): Promise<void
     if ('fileDoubleClickAction' in patch && !fileDoubleClickActionSchema.safeParse(patch.fileDoubleClickAction).success) {
       throw new AppError(400, 'invalid_file_double_click_action', 'Choose what double-clicking a file does')
     }
+    if ('trashColor' in patch && !trashColorSchema.safeParse(patch.trashColor).success) {
+      throw new AppError(400, 'invalid_trash_color', 'Choose a valid trash color')
+    }
     if ('showPromptSuggestions' in patch && typeof patch.showPromptSuggestions !== 'boolean') {
       throw new AppError(400, 'invalid_prompt_suggestions_setting', 'Choose whether prompt suggestions should be shown')
     }
@@ -123,9 +126,7 @@ export async function registerSettingsRoutes(app: FastifyInstance): Promise<void
     })
     if (stateRevision !== undefined) await publishStateChange({ userId: user.id, revision: stateRevision })
     if ('trashRetention' in patch && parseTrashRetention(patch.trashRetention) !== previousTrashRetention) {
-      await maintenanceQueue.add('purge-chats', { type: 'purge-chats', payload: { userId: user.id } }, {
-        jobId: `purge-chats-settings-${user.id}-${Date.now()}`,
-      })
+      await queueTrashPurge(user.id, 'settings')
     }
     if ('memoryEnabled' in patch && patch.memoryEnabled !== previousMemoryEnabled) {
       const enabled = patch.memoryEnabled === true

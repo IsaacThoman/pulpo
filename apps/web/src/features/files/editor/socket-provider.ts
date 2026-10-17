@@ -6,6 +6,7 @@ import type { PulpoSocket } from '@/lib/realtime-socket'
 
 export type DocSyncStatus =
   | { state: 'connecting' }
+  | { state: 'syncing' }
   | { state: 'synced' }
   | { state: 'offline' }
   | { state: 'closed'; reason: DocClosedEvent['reason'] }
@@ -14,6 +15,7 @@ export type DocSyncStatus =
 /** Local edits are coalesced for this long before one merged update is sent. */
 const SEND_DELAY_MS = 50
 const RATE_LIMIT_RETRY_MS = 1_000
+const ACK_TIMEOUT_MS = 10_000
 const REMOTE = 'remote'
 
 type AwarenessChange = { added: number[]; updated: number[]; removed: number[] }
@@ -30,9 +32,14 @@ export class SocketIOYProvider {
   status: DocSyncStatus = { state: 'connecting' }
   private socket: PulpoSocket | null = null
   private joined = false
+  private joining = false
+  private destroyed = false
+  /** Invalidates callbacks from earlier joins, connections, and sends. */
+  private generation = 0
   private pending: Uint8Array[] = []
   private inflight = false
   private sendTimer: ReturnType<typeof setTimeout> | undefined
+  private ackTimer: ReturnType<typeof setTimeout> | undefined
   private readonly listeners = new Set<(status: DocSyncStatus) => void>()
   private detachSocket: (() => void) | null = null
 
@@ -42,7 +49,7 @@ export class SocketIOYProvider {
   private readonly ignoredOrigins: unknown[]
 
   constructor(docId: string, doc: Y.Doc, ignoredOrigins: unknown[] = []) {
-    this.docId = docId
+    this.docId = docId.toLowerCase()
     this.doc = doc
     this.ignoredOrigins = ignoredOrigins
     this.awareness = new Awareness(doc)
@@ -57,20 +64,26 @@ export class SocketIOYProvider {
 
   /** Switches to a new socket (or none, while signed out or reconnecting the account). */
   attach(socket: PulpoSocket | null): void {
-    if (socket === this.socket) return
+    if (socket === this.socket) {
+      if (!socket && !this.isFinal()) this.setStatus({ state: 'offline' })
+      return
+    }
     this.detachSocket?.()
     this.detachSocket = null
     this.socket = socket
-    this.joined = false
-    if (!socket || this.isFinal()) return
+    this.resetSync()
+    if (this.isFinal()) return
+    if (!socket) { this.setStatus({ state: 'offline' }); return }
     const onConnect = () => this.join()
     const onDisconnect = () => {
-      this.joined = false
-      this.inflight = false
+      this.resetSync()
+      this.clearRemoteAwareness()
       if (!this.isFinal()) this.setStatus({ state: 'offline' })
     }
     const onUpdate = (event: DocUpdateMessage) => {
-      if (event.docId === this.docId && this.joined) Y.applyUpdate(this.doc, bytes(event.update), this)
+      // The server joins the room before reading its snapshot. Updates committed after that
+      // snapshot can arrive before its ack, and must participate in the same reconciliation.
+      if (event.docId === this.docId && (this.joined || this.joining) && !this.isFinal()) Y.applyUpdate(this.doc, bytes(event.update), this)
     }
     const onAwareness = (event: DocUpdateMessage) => {
       if (event.docId === this.docId && this.joined) applyAwarenessUpdate(this.awareness, bytes(event.update), REMOTE)
@@ -83,7 +96,7 @@ export class SocketIOYProvider {
     }
     const onClosed = (event: DocClosedEvent) => {
       if (event.docId !== this.docId) return
-      this.joined = false
+      this.resetSync()
       this.setStatus({ state: 'closed', reason: event.reason })
       this.clearRemoteAwareness()
     }
@@ -102,7 +115,7 @@ export class SocketIOYProvider {
       socket.off('doc.awareness-query', onAwarenessQuery)
       socket.off('doc.peer-left', onPeerLeft)
       socket.off('doc.closed', onClosed)
-      if (this.joined) socket.emit('doc.leave', { docId: this.docId })
+      if (this.joined || this.joining) socket.emit('doc.leave', { docId: this.docId })
       this.joined = false
     }
     if (socket.connected) this.join()
@@ -115,10 +128,13 @@ export class SocketIOYProvider {
   }
 
   destroy(): void {
+    if (this.destroyed) return
     if (this.sendTimer !== undefined) clearTimeout(this.sendTimer)
     this.flushNow()
     removeAwarenessStates(this.awareness, [this.doc.clientID], 'local')
     this.attach(null)
+    this.destroyed = true
+    this.resetSync()
     this.doc.off('update', this.onDocUpdate)
     this.awareness.off('update', this.onAwarenessUpdate)
     this.awareness.destroy()
@@ -126,25 +142,46 @@ export class SocketIOYProvider {
   }
 
   private isFinal(): boolean {
-    return this.status.state === 'closed' || (this.status.state === 'error' && this.status.error !== 'rate_limited')
+    return this.destroyed || this.status.state === 'closed' || (this.status.state === 'error' && this.status.error !== 'rate_limited')
+  }
+
+  private resetSync(): void {
+    this.generation++
+    this.joined = false
+    this.joining = false
+    this.inflight = false
+    if (this.sendTimer !== undefined) clearTimeout(this.sendTimer)
+    if (this.ackTimer !== undefined) clearTimeout(this.ackTimer)
+    this.sendTimer = undefined
+    this.ackTimer = undefined
   }
 
   private setStatus(status: DocSyncStatus): void {
+    if (JSON.stringify(status) === JSON.stringify(this.status)) return
     this.status = status
     for (const listener of this.listeners) listener(status)
   }
 
   private join(): void {
     const socket = this.socket
-    if (!socket) return
+    if (!socket?.connected || this.isFinal()) return
+    this.resetSync()
+    const generation = this.generation
+    this.joining = true
     this.setStatus({ state: 'connecting' })
+    // Rejoining is safe even when the server saved a request whose ack was lost: Yjs diffs
+    // contain only what the other replica still lacks. Never leave the send queue stuck.
+    this.ackTimer = setTimeout(() => this.join(), ACK_TIMEOUT_MS)
     socket.emit('doc.join', {
       docId: this.docId,
       stateVector: Y.encodeStateVector(this.doc),
       awarenessClientId: this.doc.clientID,
       schemaVersion: DOC_SCHEMA_VERSION,
     }, (result) => {
-      if (socket !== this.socket) return
+      if (generation !== this.generation || this.isFinal()) return
+      clearTimeout(this.ackTimer)
+      this.ackTimer = undefined
+      this.joining = false
       if (!result.ok) {
         this.setStatus(result.error === 'not_found' ? { state: 'closed', reason: 'deleted' } : { state: 'error', error: result.error })
         return
@@ -155,7 +192,7 @@ export class SocketIOYProvider {
       // Everything the server lacks, including edits made offline, in one update.
       const missing = Y.encodeStateAsUpdate(this.doc, bytes(result.stateVector))
       this.pending = hasChanges(missing) ? [missing] : []
-      this.setStatus({ state: 'synced' })
+      this.setStatus({ state: this.pending.length ? 'syncing' : 'synced' })
       this.flushNow()
       this.sendAwareness([this.doc.clientID])
     })
@@ -163,7 +200,10 @@ export class SocketIOYProvider {
 
   private readonly onDocUpdate = (update: Uint8Array, origin: unknown) => {
     if (origin === this || this.ignoredOrigins.includes(origin)) return
+    // Offline and joining edits live in the Y.Doc; the next handshake includes them all.
+    if (!this.joined || this.isFinal()) return
     this.pending.push(update)
+    this.setStatus({ state: 'syncing' })
     if (this.sendTimer === undefined) this.sendTimer = setTimeout(() => this.flushNow(), SEND_DELAY_MS)
   }
 
@@ -171,12 +211,18 @@ export class SocketIOYProvider {
     if (this.sendTimer !== undefined) clearTimeout(this.sendTimer)
     this.sendTimer = undefined
     const socket = this.socket
-    if (!socket || !this.joined || this.inflight || !this.pending.length) return
+    if (!socket || !this.joined || this.inflight || this.isFinal()) return
+    if (!this.pending.length) { this.setStatus({ state: 'synced' }); return }
     const update = this.pending.length === 1 ? this.pending[0]! : Y.mergeUpdates(this.pending)
     this.pending = []
     this.inflight = true
+    const generation = this.generation
+    this.setStatus({ state: 'syncing' })
+    this.ackTimer = setTimeout(() => this.join(), ACK_TIMEOUT_MS)
     socket.emit('doc.update', { docId: this.docId, update }, (result) => {
-      if (socket !== this.socket || !this.inflight) return
+      if (generation !== this.generation || !this.inflight || this.isFinal()) return
+      clearTimeout(this.ackTimer)
+      this.ackTimer = undefined
       this.inflight = false
       if (result.ok) {
         this.flushNow()

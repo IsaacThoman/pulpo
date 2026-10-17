@@ -60,6 +60,8 @@ describe('mobile realtime sync helpers', () => {
   it('maps folder invalidations to the account folder query', () => {
     expect(stateInvalidationQueryKeys('folders', 'instance|user')).toEqual([
       ['folders', 'instance|user'],
+      ['trashed-files', 'instance|user'],
     ])
+    expect(stateInvalidationQueryKeys('files', 'instance|user')).toEqual([['trashed-files', 'instance|user']])
   })
 })

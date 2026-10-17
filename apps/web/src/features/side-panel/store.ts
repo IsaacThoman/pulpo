@@ -9,8 +9,8 @@ const WIDTH_STORAGE_KEY = 'pulpo.sidePanel.width'
 export const DEFAULT_PANEL_WIDTH = 520
 
 /**
- * What the side panel shows: a file, a folder of the Files browser (`null` is My files), or a
- * chat attachment. Chats always live in the main view; the panel holds what they work on.
+ * What the side panel shows: a file, a folder of the Files browser (`null` is My files; the trash
+ * and trashed folders use the references in features/trash/folder), or a chat attachment. Chats always live in the main view; the panel holds what they work on.
  */
 export type PanelContent =
   | { kind: 'file'; id: string }
@@ -67,7 +67,7 @@ export function parsePanelContent(value: string | null): PanelContent | null {
   if (file) return { kind: 'file', id: file[1]! }
   const attachment = new RegExp(`^attachment:(${UUID})$`).exec(lower)
   if (attachment) return { kind: 'attachment', id: attachment[1]! }
-  const folder = new RegExp(`^folder:(root|${UUID})$`).exec(lower)
+  const folder = new RegExp(`^folder:(root|trash|trash:${UUID}|${UUID})$`).exec(lower)
   if (folder) return { kind: 'folder', id: folder[1] === 'root' ? null : folder[1]! }
   return null
 }

@@ -70,9 +70,11 @@ import { billingPlanTier, fetchBillingSummary } from '@/lib/billing'
 import { isDesktopRuntime } from '@/lib/runtime'
 import { ui, uit } from '@/i18n/ui'
 import { FilesNavMenu } from '@/features/files/FilesNavMenu'
+import { NavItemMenu, type NavItemMenuKey, type NavItemMenuState } from '@/features/sidebar/NavItemMenu'
 import { FileNodeIcon } from '@/features/files/FileNodeIcon'
 import { SuggestedBadge } from '@/features/files/FileSuggestion'
 import { registerItemDropZone } from '@/features/files/browser/use-item-drag'
+import { useTrashOperations } from '@/features/trash/use-trash-operations'
 import { AppearanceDialog } from '@/features/files/AppearanceDialog'
 import { editAppearance, hasAppearance } from '@/features/files/appearance'
 import { FolderPickerDialog } from '@/features/sidebar/FolderPickerDialog'
@@ -86,6 +88,7 @@ import { openBeside, useMainNavigate } from '@/features/side-panel/use-panel-act
 import { OpenChatToLeftItem } from '@/features/side-panel/AgentActions'
 import { copyChatShareLink, duplicateChats } from '@/features/chat/chat-actions'
 import { ChatExpiryMenuItem } from '@/features/chat/ChatExpiryMenuItem'
+import { sidebarChatGroups } from '@/features/sidebar/chat-groups'
 import {
   archiveSidebarSelection,
   createShortcutInteractively,
@@ -997,9 +1000,9 @@ function ItemMenu({ node, folder, sidebar, atPointer = false, onRename, onNewFol
         {t('common.rename')}
       </DropdownMenuItem>
       {!shortcut && (
-        <DropdownMenuItem disabled={system} onClick={() => editAppearance([node])}>
+        <DropdownMenuItem onClick={() => editAppearance([node])}>
           <Palette />
-          {ui("Color and icon…")}
+          {system ? ui("Color…") : ui("Color and icon…")}
         </DropdownMenuItem>
       )}
       {!system && (
@@ -1052,13 +1055,16 @@ function SpaceMenuContent({ folderId, onNewChat, onNewFolder, onUpload, go }: {
   const filesEnabled = useAuth((state) => state.filesEnabled)
   const clip = useFileClipboard((state) => state.clip)
   const ops = useFileOperations()
+  const trashOps = useTrashOperations()
   const recentOrder = useSettings((state) => state.chatSortMode === 'recent')
   const setSetting = useSettings((state) => state.set)
   const paste = async () => {
     if (!clip) return
     if (clip.mode === 'cut') {
       useFileClipboard.setState({ clip: null })
-      await ops.move(clip.nodes, folderId)
+      // Items cut in the trash are restored here.
+      if (clip.nodes.some((node) => node.trashedAt)) await trashOps.restore(clip.nodes, { parentId: folderId })
+      else await ops.move(clip.nodes, folderId)
     } else {
       await ops.copy(clip.nodes, folderId)
     }
@@ -1516,7 +1522,9 @@ export function Sidebar({
   const [newFolderId, setNewFolderId] = useState<string | null>(null)
   const [activeTooltip, setActiveTooltip] = useState<string | null>(null)
   const [filesMenuPoint, setFilesMenuPoint] = useState<{ x: number; y: number } | null>(null)
+  const [navMenu, setNavMenu] = useState<NavItemMenuState | null>(null)
   const shiftHeld = useShiftHeld()
+  const trashOps = useTrashOperations()
   const folderOfList = (list: DropList): string | null => {
     if (list === 'pinned') return null
     if (list === 'loose') return sidebar?.chatsFolderId ?? null
@@ -1658,11 +1666,25 @@ export function Sidebar({
     placeAtLine(hint, ids)
   }
 
+  /**
+   * Restores items dragged out of the trash into the folder shown, then puts them at the spot shown.
+   * The pinned list is not a folder: there they come back where they were, and are pinned.
+   */
+  const restoreFromTrash = async (nodes: FileNode[], hint: DropHint) => {
+    const parentId = hint.kind === 'folder-target' ? hint.folderId : hint.kind === 'loose-target' ? sidebar?.chatsFolderId ?? null : folderOfList(hint.list)
+    const restored = await trashOps.restore(nodes, parentId ? { parentId } : undefined)
+    if (restored?.length && hint.kind === 'row') placeAtLine(hint, restored.map((node) => node.id), restored)
+  }
+
   /** Places items dragged in from the Files browser where the sidebar showed (see useItemDrag). */
   const dropFromFiles = (nodes: FileNode[]): boolean => {
     const hint = drag.dropRef.current
     drag.setDrop(null)
     if (!hint) return false
+    if (nodes.some((node) => node.trashedAt)) {
+      void restoreFromTrash(nodes, hint)
+      return true
+    }
     const ids = nodes.map((node) => node.id)
     if (hint.kind !== 'row') {
       const folderId = hint.kind === 'folder-target' ? hint.folderId : null
@@ -1703,11 +1725,10 @@ export function Sidebar({
   const uploadInput = useRef<HTMLInputElement>(null)
   const uploadTarget = useRef<string | null>(null)
 
-  const startNewChat = () => {
+  const startNewChat = (temporary = false) => {
     useChat.getState().abandonTemporaryChat()
-    navigate('/', {
-      state: newChatLocationState(Boolean(chatId || activeTemporaryChatId), composerModelId),
-    })
+    const state = newChatLocationState(Boolean(chatId || activeTemporaryChatId), composerModelId)
+    navigate('/', { state: temporary ? { ...state, temporary } : state })
     onNavigate()
   }
 
@@ -1720,14 +1741,7 @@ export function Sidebar({
   // Pinned chats and Files items share one order above it, wherever they are in Files.
   const pinnedEntries = sidebarEntries(chats.filter((c) => c.pinned), sidebar?.pinnedItems ?? [])
   // Chats filed in folders show inside them; chats in folders the sidebar does not show stay in Files.
-  const inFolders = new Map<string, Chat[]>()
-  const loose: Chat[] = []
-  for (const c of chats) {
-    // Chats at the top of My files are in Files only.
-    if (c.pinned || c.inFilesRoot) continue
-    if (!c.folderId) loose.push(c)
-    else inFolders.set(c.folderId, [...inFolders.get(c.folderId) ?? [], c])
-  }
+  const { inFolders, loose } = sidebarChatGroups(chats)
   /**
    * Creates an untitled folder and renames it in place, as in Files. The server picks a free name,
    * so renaming starts once the folder is listed under its final name.
@@ -1785,6 +1799,11 @@ export function Sidebar({
     'flex h-8 cursor-pointer items-center overflow-hidden rounded-lg text-sm text-sidebar-foreground/85 transition-colors hover:bg-sidebar-accent/70',
     collapsed ? 'w-9' : 'w-full'
   )
+
+  const openNavMenu = (key: NavItemMenuKey) => (event: React.MouseEvent) => {
+    event.preventDefault()
+    setNavMenu({ key, x: event.clientX, y: event.clientY })
+  }
 
   const iconBtn = (label: string, onClick: () => void, icon: React.ReactNode, badge?: number, onContextMenu?: (event: React.MouseEvent) => void) => (
     <Tooltip
@@ -1951,17 +1970,25 @@ export function Sidebar({
       >
         {/* primary nav */}
         <div className="space-y-0.5 px-2" data-sidebar-nav>
-          {iconBtn(t('chat.newChat'), startNewChat, <SquarePen className="size-4" />)}
-          {sidebarPins.searchChats && iconBtn(t('sidebar.searchChats'), onOpenSearch, <Search className="size-4" />)}
+          {iconBtn(t('chat.newChat'), () => startNewChat(), <SquarePen className="size-4" />, undefined, openNavMenu('newChat'))}
+          {sidebarPins.searchChats && iconBtn(t('sidebar.searchChats'), onOpenSearch, <Search className="size-4" />, undefined, openNavMenu('searchChats'))}
           {filesEnabled && sidebarPins.files && iconBtn(t('sidebar.files'), () => go('/files'), <FolderIcon className="size-4" />, undefined, (event) => {
             event.preventDefault()
             setFilesMenuPoint({ x: event.clientX, y: event.clientY })
           })}
-          {sidebarPins.usage && iconBtn(t('sidebar.usage'), () => go('/usage'), <BarChart3 className="size-4" />)}
-          {billingEnabled && sidebarPins.billing && iconBtn(t('sidebar.billing'), () => go('/billing'), <CreditCard className="size-4" />)}
-          {sidebarPins.friends && iconBtn(t('sidebar.friends'), () => go('/friends'), <UsersRound className="size-4" />, pendingSocialCount)}
-          {apiKeysEnabled && sidebarPins.apiKeys && iconBtn(t('sidebar.apiKeys'), () => go('/api-keys'), <KeyRound className="size-4" />)}
+          {sidebarPins.usage && iconBtn(t('sidebar.usage'), () => go('/usage'), <BarChart3 className="size-4" />, undefined, openNavMenu('usage'))}
+          {billingEnabled && sidebarPins.billing && iconBtn(t('sidebar.billing'), () => go('/billing'), <CreditCard className="size-4" />, undefined, openNavMenu('billing'))}
+          {sidebarPins.friends && iconBtn(t('sidebar.friends'), () => go('/friends'), <UsersRound className="size-4" />, pendingSocialCount, openNavMenu('friends'))}
+          {apiKeysEnabled && sidebarPins.apiKeys && iconBtn(t('sidebar.apiKeys'), () => go('/api-keys'), <KeyRound className="size-4" />, undefined, openNavMenu('apiKeys'))}
           {filesEnabled && <FilesNavMenu point={filesMenuPoint} onClose={() => setFilesMenuPoint(null)} go={go} />}
+          <NavItemMenu
+            menu={navMenu}
+            onClose={() => setNavMenu(null)}
+            onNewChat={startNewChat}
+            onSearch={onOpenSearch}
+            subscribed={Boolean(billingQuery.data?.subscription)}
+            go={go}
+          />
         </div>
 
         {/* Secondary content stays mounted so every section animates on one timeline. */}
@@ -2051,6 +2078,11 @@ export function Sidebar({
           <DropdownMenuTrigger asChild>
             <button
               className="relative flex h-10 w-full cursor-pointer items-center gap-2 overflow-hidden rounded-lg text-left hover:bg-sidebar-accent"
+              // Right-clicking opens the same menu as clicking.
+              onContextMenu={(event) => {
+                event.preventDefault()
+                setAccountMenuOpen(true)
+              }}
             >
               <span className="flex size-8 shrink-0 items-center justify-center">
                 <ProfileAvatar name={user?.name ?? 'Pulpo user'} avatarUrl={user?.avatarUrl} className="size-7" fallbackClassName="text-[11px]" />
@@ -2117,7 +2149,7 @@ export function Sidebar({
         {spaceMenu && sidebar && (
           <SpaceMenuContent
             folderId={spaceMenu.folderId ?? sidebar.chatsFolderId}
-            onNewChat={spaceMenu.folderId ? undefined : startNewChat}
+            onNewChat={spaceMenu.folderId ? undefined : () => startNewChat()}
             onNewFolder={() => newFolder(spaceMenu.folderId ?? undefined)}
             onUpload={() => {
               uploadTarget.current = spaceMenu.folderId ?? sidebar.chatsFolderId

@@ -18,7 +18,6 @@ import { useAuth } from '@/stores/auth'
 export const filesQueryKey = (userId: string | undefined) => ['files', userId] as const
 export const folderQueryKey = (userId: string | undefined, folderId: string | null) =>
   [...filesQueryKey(userId), 'folder', folderId ?? 'root'] as const
-export const trashQueryKey = (userId: string | undefined) => [...filesQueryKey(userId), 'trash'] as const
 export const folderLayoutQueryKey = (userId: string | undefined, folderId: string | null) =>
   [...filesQueryKey(userId), 'layout', folderId ?? 'root'] as const
 
@@ -32,10 +31,6 @@ export function updateFolderLayout(input: UpdateFileFolderLayout): Promise<FileF
 
 export function fetchFolder(folderId: string | null): Promise<FileListing> {
   return apiRequest<FileListing>(folderId ? `/api/files?parentId=${encodeURIComponent(folderId)}` : '/api/files')
-}
-
-export async function fetchTrash(): Promise<FileNode[]> {
-  return (await apiRequest<{ items: FileNode[] }>('/api/files/trash')).items
 }
 
 export function createFolder(parentId: string | null, name: string): Promise<FileNode> {
@@ -62,9 +57,9 @@ export function convertToDoc(id: string): Promise<FileNode> {
   return apiRequest<FileNode>(`/api/files/${id}/convert`, { method: 'POST' })
 }
 
-/** Saves a document as a .md file, with the latest edits folded in by the server. */
-export async function downloadDocMarkdown(node: Pick<FileNode, 'id' | 'name'>): Promise<void> {
-  const { markdown } = await apiRequest<{ name: string; markdown: string }>(`/api/files/${node.id}/markdown`)
+/** An open editor exports its local snapshot, including offline edits; the browser fetches others. */
+export async function downloadDocMarkdown(node: Pick<FileNode, 'id' | 'name'>, snapshot?: string): Promise<void> {
+  const markdown = snapshot ?? (await apiRequest<{ name: string; markdown: string }>(`/api/files/${node.id}/markdown`)).markdown
   const url = URL.createObjectURL(new Blob([markdown], { type: 'text/markdown;charset=utf-8' }))
   const anchor = document.createElement('a')
   anchor.href = url
@@ -109,10 +104,6 @@ export async function restoreFileNodes(ids: string[]): Promise<FileNode[]> {
 
 export function deleteFileNodes(ids: string[]): Promise<void> {
   return apiRequest<void>('/api/files/batch/delete', { method: 'POST', body: { ids } })
-}
-
-export function emptyTrash(): Promise<void> {
-  return apiRequest<void>('/api/files/trash', { method: 'DELETE' })
 }
 
 /** Reserve → PUT bytes → confirm. A failed upload releases its reservation so the name and quota free up. */

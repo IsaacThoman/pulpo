@@ -14,6 +14,7 @@ import {
   trashFileNodes,
   updateFileNode,
 } from '../api'
+import { trashQueryKey } from '@/features/trash/api'
 import { filesErrorMessage } from '../file-display'
 import { useFileToasts } from './toasts'
 
@@ -30,7 +31,11 @@ export function useFileOperations() {
   const queryClient = useQueryClient()
   const userId = useAuth((state) => state.user?.id)
   const show = useFileToasts((state) => state.show)
-  const refresh = () => queryClient.invalidateQueries({ queryKey: filesQueryKey(userId) })
+  // The trash lists what Files trashes, so it refreshes with it.
+  const refresh = () => Promise.all([
+    queryClient.invalidateQueries({ queryKey: filesQueryKey(userId) }),
+    queryClient.invalidateQueries({ queryKey: trashQueryKey(userId) }),
+  ])
 
   const run = async <T>(action: () => Promise<T>, name?: string): Promise<T | undefined> => {
     try {

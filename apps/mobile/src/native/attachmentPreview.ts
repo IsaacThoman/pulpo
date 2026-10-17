@@ -1,3 +1,4 @@
+import { SANDBOX_CSP } from '@pulpo/contracts'
 import { Platform } from 'react-native'
 import PulpoAttachmentPreview, {
   type PulpoImageGalleryItem,
@@ -25,6 +26,9 @@ export const supportsNativeImageTransition = Platform.OS === 'ios'
   && typeof PulpoAttachmentPreview?.animateImageTransition === 'function'
 export const supportsNativeImageGallery = Platform.OS === 'ios'
   && typeof PulpoAttachmentPreview?.previewImages === 'function'
+// Binaries built before the web preview fall back to Quick Look after an over-the-air update.
+export const supportsWebDocumentPreview = Platform.OS === 'ios'
+  && typeof PulpoAttachmentPreview?.previewWebDocument === 'function'
 
 const imagePreviewBusyRetryDelays = [60, 100, 160, 240]
 
@@ -107,5 +111,16 @@ export async function previewFile(uri: string, title: string): Promise<void> {
     await PulpoAttachmentPreview.previewFile(uri, title)
   } catch (cause) {
     throw attachmentPreviewError(cause, 'The file could not be previewed.')
+  }
+}
+
+export async function previewWebDocument(uri: string, title: string): Promise<void> {
+  if (!supportsWebDocumentPreview || !PulpoAttachmentPreview) {
+    throw new AttachmentPreviewError('Page previews are unavailable on this platform.', 'ERR_ATTACHMENT_PREVIEW_UNAVAILABLE')
+  }
+  try {
+    await PulpoAttachmentPreview.previewWebDocument(uri, title, SANDBOX_CSP)
+  } catch (cause) {
+    throw attachmentPreviewError(cause, 'The page could not be previewed.')
   }
 }

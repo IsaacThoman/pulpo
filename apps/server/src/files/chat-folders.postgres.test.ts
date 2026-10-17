@@ -216,7 +216,9 @@ describe.skipIf(!enabled)('chats filed in Files folders', () => {
     expect(await updateSidebarItem(userId, work.id, { icon: null })).toMatchObject({ color: 'teal', icon: null })
     const [copy] = await copyFileNodes(userId, [work.id], chatsFolderId)
     expect(copy).toMatchObject({ color: 'teal', icon: null })
-    await expect(updateSidebarItem(userId, chatsFolderId, { color: 'red' })).rejects.toMatchObject({ code: 'file_system_folder' })
+    // Built-in folders take a color, but keep their own icon.
+    expect(await updateSidebarItem(userId, chatsFolderId, { color: 'red' })).toMatchObject({ systemRole: 'chats', color: 'red', name: 'Sidebar' })
+    await expect(updateSidebarItem(userId, chatsFolderId, { icon: 'rocket' })).rejects.toMatchObject({ code: 'file_system_folder' })
     await expect(updateSidebarItem(userId, await insertChat(), { color: 'red' })).rejects.toMatchObject({ code: 'validation_error' })
   })
 
