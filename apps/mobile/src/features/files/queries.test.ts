@@ -5,11 +5,12 @@ const mocks = vi.hoisted(() => ({
   fetchFileNode: vi.fn(),
   cachedNode: vi.fn(),
   cacheNode: vi.fn(async () => undefined),
+  forgetStaleDocCopies: vi.fn(async () => undefined),
 }))
 
 vi.mock('../../api/client', () => ({ isNetworkError: (error: unknown) => (error as { network?: boolean } | null)?.network === true }))
 vi.mock('./api', () => ({ fetchFileNode: mocks.fetchFileNode, fetchFileChanges: vi.fn(), fetchFolder: vi.fn(), fetchSidebar: vi.fn() }))
-vi.mock('./cache', () => ({ cachedNode: mocks.cachedNode, cacheNode: mocks.cacheNode, cachedListing: vi.fn(), cacheListing: vi.fn() }))
+vi.mock('./cache', () => ({ cachedNode: mocks.cachedNode, cacheNode: mocks.cacheNode, forgetStaleDocCopies: mocks.forgetStaleDocCopies, cachedListing: vi.fn(), cacheListing: vi.fn() }))
 
 const { lookUpFileNode } = await import('./queries')
 
@@ -27,6 +28,8 @@ describe('looking up a Files item', () => {
     mocks.fetchFileNode.mockResolvedValue({ node, ancestors: [] })
     await expect(lookUpFileNode(NAMESPACE, 'report')).resolves.toEqual({ node, ancestors: [] })
     expect(mocks.cacheNode).toHaveBeenCalledWith(NAMESPACE, { node, ancestors: [] })
+    // An item that is no longer a document has its stale copy removed.
+    expect(mocks.forgetStaleDocCopies).toHaveBeenCalledWith(NAMESPACE, [node])
   })
 
   it('answers offline with the item as last seen on the device', async () => {

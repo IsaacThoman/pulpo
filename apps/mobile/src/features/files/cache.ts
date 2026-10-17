@@ -28,6 +28,24 @@ export function cacheNode(namespace: string, value: { node: FileNode; ancestors:
   return setValue(namespace, nodeKey(value.node.id), value)
 }
 
+/**
+ * Removes the stored copies (see doc/store.ts) of items that are no longer documents. A document
+ * renamed away from Markdown becomes an ordinary file, and one made from it later starts afresh
+ * under the same id: an old copy would otherwise be merged into it, duplicating its content.
+ */
+export async function forgetStaleDocCopies(namespace: string, nodes: readonly Pick<FileNode, 'id' | 'kind'>[]): Promise<void> {
+  const ids = nodes.filter((node) => node.kind !== 'doc').map((node) => node.id.toLowerCase())
+  if (!ids.length) return
+  await withMobileDatabase(async (database) => {
+    for (let start = 0; start < ids.length; start += 500) {
+      const chunk = ids.slice(start, start + 500)
+      const marks = chunk.map(() => '?').join(', ')
+      await database.runAsync(`DELETE FROM file_doc_updates WHERE namespace = ? AND doc_id IN (${marks})`, namespace, ...chunk)
+      await database.runAsync(`DELETE FROM file_docs WHERE namespace = ? AND doc_id IN (${marks})`, namespace, ...chunk)
+    }
+  })
+}
+
 export async function cachedFileUri(namespace: string, nodeId: string, version: string): Promise<string | null> {
   return withMobileDatabase(async (database) => {
     const row = await database.getFirstAsync<{ local_uri: string; version: string }>(

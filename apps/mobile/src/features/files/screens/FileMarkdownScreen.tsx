@@ -2,7 +2,7 @@ import type { FileConversionPreview } from '@pulpo/contracts'
 import { diffRows, lineDiff } from '@pulpo/client-core/files'
 import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useLayoutEffect, useMemo, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ActivityIndicator, Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { SafeMarkdown } from '../../../components/SafeMarkdown'
@@ -13,6 +13,7 @@ import { SymbolView } from '../../../platform/SymbolView'
 import { useAppTheme } from '../../../theme'
 import { convertToDoc, downloadFile, fetchConversionPreview } from '../api'
 import { useFilesEnabled } from '../availability'
+import { forgetStaleDocCopies } from '../cache'
 import { FilesTurnedOff } from '../components/FilesTurnedOff'
 import { filesErrorMessage } from '../display'
 import { shareFileItem } from '../open'
@@ -83,12 +84,22 @@ export function FileMarkdownScreen({ navigation, route }: Props) {
   })
   const [preview, setPreview] = useState<FileConversionPreview | null>(null)
   const [busy, setBusy] = useState(false)
+  // Made a document meanwhile (here, or on another device): it opens in the editor instead, once.
+  const leaving = useRef(false)
+  useEffect(() => {
+    if (node?.kind !== 'doc' || leaving.current) return
+    leaving.current = true
+    navigation.replace('FileDocument', { fileId: node.id, name: node.name })
+  }, [navigation, node])
 
   const convert = async () => {
     if (!node) return
     setBusy(true)
     try {
+      // A copy left from when this was a document before must not be merged into the new one.
+      await forgetStaleDocCopies(namespace, [node]).catch(() => undefined)
       const doc = await convertToDoc(node.id)
+      leaving.current = true
       setPreview(null)
       await refreshFiles(queryClient, namespace)
       navigation.replace('FileDocument', { fileId: doc.id, name: doc.name })

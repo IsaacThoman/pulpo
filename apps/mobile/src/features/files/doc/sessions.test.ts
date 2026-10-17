@@ -511,6 +511,42 @@ describe('document sessions on the device', () => {
     await registry.destroy()
   })
 
+  it('discards the copy of a document that became an ordinary file, so a document made from it later starts afresh', async () => {
+    const { database, store } = sqlite()
+    const server = new FakeServer()
+    const socket = new FakeSocket(server)
+    const registry = new DocSessionRegistry(NAMESPACE, store, 2)
+    registry.attach(socket as unknown as DocSocket)
+    const handle = registry.acquire(DOC)
+    await vi.advanceTimersByTimeAsync(2_000)
+    type(handle.controller.doc, 'Before it became a file')
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(ydocToMarkdown(server.doc).trim()).toBe('Before it became a file')
+
+    // Renamed away from Markdown elsewhere: the server drops the document.
+    socket.deliver('doc.closed', { docId: DOC.toLowerCase(), reason: 'converted' })
+    await vi.advanceTimersByTimeAsync(500)
+    expect(row(database)).toBeUndefined()
+    type(handle.controller.doc, 'Before it became a file\n\nTyped after')
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(row(database)).toBeUndefined()
+
+    // Made into a document again, it starts afresh on the server under the same id.
+    const fresh = new FakeServer()
+    registry.attach(new FakeSocket(fresh) as unknown as DocSocket)
+    const early = registry.acquire(DOC)
+    expect(early.controller).not.toBe(handle.controller)
+    handle.release()
+    early.release()
+    await vi.advanceTimersByTimeAsync(LINGER_MS + 1_000)
+    const reopened = registry.acquire(DOC)
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect(ydocToMarkdown(fresh.doc).trim()).toBe('')
+    expect(ydocToMarkdown(reopened.controller.doc).trim()).toBe('')
+    reopened.release()
+    await registry.destroy()
+  })
+
 })
 
 describe('the document store', () => {

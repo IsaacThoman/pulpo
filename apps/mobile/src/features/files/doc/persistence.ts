@@ -26,10 +26,11 @@ export class SqliteDocPersistence implements DocPersistence {
   private loaded = false
   private destroyed = false
   /**
-   * The stored copy came from a newer version of the app and holds edits not uploaded yet: it is
-   * left exactly as it is for when that version is back, and this session writes nothing.
+   * Nothing more is written: the stored copy came from a newer version of the app and holds edits
+   * not uploaded yet (it is left exactly as it is for when that version is back), or the document
+   * is gone for good (see `discard`).
    */
-  private kept = false
+  private frozen = false
   private tail: Promise<void> = Promise.resolve()
 
   constructor(
@@ -48,7 +49,7 @@ export class SqliteDocPersistence implements DocPersistence {
       if (stored.schemaVersion !== null && stored.schemaVersion > schemaVersion) {
         if (stored.dirty) {
           // Never ready either: the copy is not marked in sync, or compacted, from here.
-          this.kept = true
+          this.frozen = true
           this.pending = []
           this.pendingLocal = false
           return
@@ -76,7 +77,7 @@ export class SqliteDocPersistence implements DocPersistence {
   flush(): Promise<void> {
     if (this.timer !== undefined) clearTimeout(this.timer)
     this.timer = undefined
-    if (!this.loaded || !this.pending.length || this.kept) return this.tail
+    if (!this.loaded || !this.pending.length || this.frozen) return this.tail
     const updates = this.pending
     const local = this.pendingLocal
     this.pending = []
@@ -110,6 +111,21 @@ export class SqliteDocPersistence implements DocPersistence {
     return this.tail
   }
 
+  /**
+   * The document stopped being one (it became an ordinary file): its copy is removed and nothing is
+   * written again, so the copy can never be merged into a document made later under the same id.
+   */
+  discard(): Promise<void> {
+    this.frozen = true
+    this.ready = false
+    this.pending = []
+    this.pendingLocal = false
+    if (this.timer !== undefined) clearTimeout(this.timer)
+    this.timer = undefined
+    this.tail = this.tail.then(() => this.whenLoaded).then(() => this.store.remove(this.namespace, this.docId)).catch(() => undefined)
+    return this.tail
+  }
+
   destroy(): Promise<void> {
     if (this.destroyed) return this.tail
     const result = this.flush()
@@ -123,7 +139,7 @@ export class SqliteDocPersistence implements DocPersistence {
   }
 
   private readonly onUpdate = (update: Uint8Array, origin: unknown) => {
-    if (origin === this || this.destroyed || this.kept) return
+    if (origin === this || this.destroyed || this.frozen) return
     this.pending.push(update)
     // The server's updates are cached for offline reading; everything else is an edit made here.
     if (!(origin instanceof SocketIOYProvider)) this.pendingLocal = true

@@ -27,6 +27,8 @@ interface Entry {
   /** Replaced by a fresh session (see `restart`); closes once its last user lets go. */
   stale: boolean
   closed: boolean
+  /** The document became an ordinary file; its copy is discarded and never merged anywhere. */
+  discarded: boolean
   unsubscribe: () => void
 }
 
@@ -79,6 +81,13 @@ export class DocSessionRegistry {
     // Opening a document on purpose tries it again, e.g. after it was restored.
     if (!options.background) this.unreachable.delete(id)
     let entry = this.entries.get(id)
+    // A document made again from the file it became starts afresh, apart from the old session.
+    if (entry?.discarded && !options.background) {
+      this.entries.delete(id)
+      entry.stale = true
+      if (entry.users === 0) void this.close(entry)
+      entry = undefined
+    }
     if (!entry) entry = this.open(id)
     if (entry.lingerTimer !== undefined) clearTimeout(entry.lingerTimer)
     entry.lingerTimer = undefined
@@ -109,9 +118,11 @@ export class DocSessionRegistry {
     if (!entry) return
     this.entries.delete(id)
     entry.stale = true
-    const replaced = this.replaced.get(id) ?? new Set<Entry>()
-    replaced.add(entry)
-    this.replaced.set(id, replaced)
+    if (!entry.discarded) {
+      const replaced = this.replaced.get(id) ?? new Set<Entry>()
+      replaced.add(entry)
+      this.replaced.set(id, replaced)
+    }
     // Leave the room before the new session joins it on the same socket.
     entry.controller.attach(null)
     if (entry.users === 0) void this.close(entry)
@@ -196,7 +207,7 @@ export class DocSessionRegistry {
         return persistence
       },
     })
-    const entry: Entry = { docId, controller, persistence, users: 0, stale: false, closed: false, unsubscribe: () => {} }
+    const entry: Entry = { docId, controller, persistence, users: 0, stale: false, closed: false, discarded: false, unsubscribe: () => {} }
     let previous = controller.getSnapshot().status
     entry.unsubscribe = controller.subscribe(() => {
       const { status } = controller.getSnapshot()
@@ -210,6 +221,13 @@ export class DocSessionRegistry {
       if (status.state === 'closed' && (status.reason === 'deleted' || status.reason === 'trashed')) {
         this.unreachable.add(docId)
         if (status.reason === 'deleted') void persistence.whenLoaded.then(() => this.store.removeIfClean(this.namespace, docId)).catch(() => undefined)
+      }
+      // An ordinary file now: the server dropped the document, and one made from the file later
+      // starts afresh under the same id, so this copy must never reach it.
+      if (status.state === 'closed' && status.reason === 'converted') {
+        this.unreachable.add(docId)
+        entry.discarded = true
+        void persistence.discard()
       }
       if (entry.users === 0 && !entry.stale && done(entry)) this.closeSoon(entry, 0)
     })
@@ -250,7 +268,7 @@ export class DocSessionRegistry {
     entry.controller.attach(null)
     await entry.persistence.whenLoaded
     await entry.persistence.flush()
-    if (entry.stale) this.mergeReplaced(entry)
+    if (entry.stale && !entry.discarded) this.mergeReplaced(entry)
     // Fold the log into one snapshot while the document is in memory, but only when it holds
     // this device's copy; otherwise the snapshot would replace stored edits it lacks.
     const state = entry.persistence.ready ? Y.encodeStateAsUpdate(entry.controller.doc) : null

@@ -2,7 +2,7 @@ import type { FileChangesResponse, FileListing, FileNode, SidebarState } from '@
 import { queryOptions } from '@tanstack/react-query'
 import { isNetworkError } from '../../api/client'
 import { fetchFileChanges, fetchFileNode, fetchFolder, fetchSidebar } from './api'
-import { cachedListing, cachedNode, cacheListing, cacheNode } from './cache'
+import { cachedListing, cachedNode, cacheListing, cacheNode, forgetStaleDocCopies } from './cache'
 
 /** Every Files query starts with ['files', namespace], so the `files` realtime scope refreshes them all. */
 export const filesQueryKeys = {
@@ -22,6 +22,7 @@ export function folderQuery(namespace: string, folderId: string | null) {
       try {
         const listing = await fetchFolder(folderId, signal)
         void cacheListing(namespace, folderId, listing).catch(() => undefined)
+        void forgetStaleDocCopies(namespace, listing.children).catch(() => undefined)
         return listing
       } catch (error) {
         if (isNetworkError(error)) {
@@ -41,6 +42,7 @@ export async function lookUpFileNode(namespace: string, id: string, signal?: Abo
   try {
     const value = await fetchFileNode(id, signal)
     void cacheNode(namespace, value).catch(() => undefined)
+    void forgetStaleDocCopies(namespace, [value.node]).catch(() => undefined)
     return value
   } catch (error) {
     if (isNetworkError(error)) {
