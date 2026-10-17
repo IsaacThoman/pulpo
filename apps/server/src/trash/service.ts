@@ -2,7 +2,7 @@ import { and, desc, eq, inArray, isNotNull, isNull } from 'drizzle-orm'
 import type { FileNode, TrashFolderListing, TrashItem, TrashListing, TrashRetention } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import { chats, fileNodes } from '../database/schema.js'
-import { filePurgeAtFor, getTrashRetention, markChatsForPurge, purgeAtFor } from '../chats/trash.js'
+import { filePurgeAtFor, getTrashRetention, getUnifiedTrashSince, markChatsForPurge, purgeAtFor } from '../chats/trash.js'
 import { chatToFileNode, chatsFolderIdOf } from '../files/chat-items.js'
 import { deleteFileNodes, emptyTrash, listTrash, listTrashedFolder, mutateFileTree, restoreFileNodes } from '../files/tree-service.js'
 import { toFileNodes } from '../files/shortcuts.js'
@@ -30,26 +30,30 @@ async function trashedFileItems(userId: string, scope: TrashScope): Promise<File
   return scope.files ? nodes : nodes.filter(shownWithoutFiles)
 }
 
-const withDeadline = (node: FileNode, retention: TrashRetention): TrashItem => ({
+/** When trashed Files items are purged: by the retention setting, and `unifiedSince` (see `filePurgeAtFor`). */
+interface FileDeadlines { retention: TrashRetention; unifiedSince: Date | null }
+
+const withDeadline = (node: FileNode, { retention, unifiedSince }: FileDeadlines): TrashItem => ({
   ...node,
   trashedAt: node.trashedAt!,
-  purgeAt: filePurgeAtFor(new Date(node.trashedAt!), retention)?.toISOString() ?? null,
+  purgeAt: filePurgeAtFor(new Date(node.trashedAt!), retention, unifiedSince)?.toISOString() ?? null,
 })
 
 /** Trashed Files items with their purge deadlines, newest first. */
 export async function listTrashedFiles(userId: string, scope: TrashScope, retention?: TrashRetention): Promise<TrashItem[]> {
-  const [nodes, setting] = await Promise.all([trashedFileItems(userId, scope), retention ?? getTrashRetention(userId)])
-  return nodes.map((node) => withDeadline(node, setting))
+  const [nodes, setting, unifiedSince] = await Promise.all([trashedFileItems(userId, scope), retention ?? getTrashRetention(userId), getUnifiedTrashSince()])
+  return nodes.map((node) => withDeadline(node, { retention: setting, unifiedSince }))
 }
 
 /** A trashed folder's contents, so the trash can be browsed like any other folder. */
 export async function listTrashFolder(userId: string, id: string, scope: TrashScope): Promise<TrashFolderListing> {
-  const [listing, retention] = await Promise.all([listTrashedFolder(userId, id), getTrashRetention(userId)])
+  const [listing, retention, unifiedSince] = await Promise.all([listTrashedFolder(userId, id), getTrashRetention(userId), getUnifiedTrashSince()])
   const children = scope.files ? listing.children : listing.children.filter(shownWithoutFiles)
+  const deadlines = { retention, unifiedSince }
   return {
-    folder: withDeadline(listing.folder!, retention),
+    folder: withDeadline(listing.folder!, deadlines),
     ancestors: listing.ancestors,
-    children: children.map((node) => withDeadline(node, retention)),
+    children: children.map((node) => withDeadline(node, deadlines)),
     retention,
     files: scope.files,
   }

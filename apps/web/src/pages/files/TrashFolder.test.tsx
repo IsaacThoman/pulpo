@@ -183,6 +183,25 @@ describe('the trash folder', () => {
     expect(screen.getByTestId('location').textContent).toBe('/files/f/folder')
   })
 
+  it('goes back to the trash after restoring the folder being shown with Files turned off', async () => {
+    auth.filesEnabled = false
+    showTrash('/files/trash/f/folder')
+    fireEvent.click(await screen.findByRole('button', { name: /Restore folder/ }))
+    await act(async () => undefined)
+    expect(api.restoreTrashItems).toHaveBeenCalledWith(['folder'], undefined)
+    expect(screen.getByTestId('location').textContent).toBe('/files/trash')
+  })
+
+  it('goes back to the trash after emptying it from inside a trashed folder', async () => {
+    showTrash('/files/trash/f/folder')
+    await screen.findByText('plan.md')
+    fireEvent.click(screen.getByRole('button', { name: /Empty trash/ }))
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Delete forever' }))
+    await act(async () => undefined)
+    expect(api.emptyTrash).toHaveBeenCalled()
+    expect(screen.getByTestId('location').textContent).toBe('/files/trash')
+  })
+
   it('does not open trashed files', async () => {
     showTrash()
     const list = await screen.findByRole('listbox', { name: 'Trash' })

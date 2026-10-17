@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { eq } from 'drizzle-orm'
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db, queryClient } from '../database/client.js'
-import { chats, fileNodes, models, providerConnections, userPreferences, users } from '../database/schema.js'
+import { applicationSettings, chats, fileNodes, models, providerConnections, userPreferences, users } from '../database/schema.js'
 
 const queued = vi.hoisted(() => vi.fn())
 vi.mock('../responses/events.js', () => ({ publishStateChange: vi.fn(), requestCancellation: vi.fn() }))
@@ -12,7 +12,7 @@ vi.mock('../episodic-memory/queue.js', () => ({ scheduleChatIndex: vi.fn() }))
 vi.mock('../agent/controller.js', () => ({ releaseWorkspaceForChat: vi.fn() }))
 vi.mock('../storage/index.js', () => ({ getBlobStore: () => ({ delete: async () => undefined }) }))
 
-const { cleanupFiles, createFolder, trashFileNodes } = await import('../files/tree-service.js')
+const { cleanupFiles, createFolder, mutateFileTree, restoreNodeInTx, trashFileNodes } = await import('../files/tree-service.js')
 const { deleteTrashItems, emptyAccountTrash, listAccountTrash, listTrashFolder, restoreTrashItems } = await import('./service.js')
 
 const enabled = process.env.PULPO_FILES_TESTS === 'true'
@@ -36,6 +36,9 @@ async function trashedAt(id: string, ageMs: number) {
   await db.update(fileNodes).set({ trashedAt: new Date(Date.now() - ageMs), trashRootId: id }).where(eq(fileNodes.id, id))
 }
 
+/** When the trash was unified (migration 0102 stores it); items trashed before keep Files' 30 days. */
+const setUnifiedSince = (since: Date) => db.insert(applicationSettings).values({ key: 'unifiedTrashSince', value: since.toISOString() })
+  .onConflictDoUpdate({ target: applicationSettings.key, set: { value: since.toISOString() } })
 const setRetention = (trashRetention: string) => db.insert(userPreferences).values({ userId, values: { trashRetention } })
 const nodeIds = async () => (await db.select({ id: fileNodes.id }).from(fileNodes).where(eq(fileNodes.ownerUserId, userId))).map((row) => row.id)
 
@@ -49,6 +52,8 @@ describe.skipIf(!enabled)('account trash', () => {
     await db.insert(providerConnections).values({ id: providerId, name: 'Fixture', baseUrl: 'https://example.test/v1', encryptedApiKey: 'unused' })
     await db.insert(models).values({ id: modelId, providerConnectionId: providerId, upstreamModelId: 'fixture', name: 'Fixture', contextWindow: 128_000, maxOutputTokens: 16_000 })
     queued.mockClear()
+    // Long ago, so the backdated items below follow the retention setting alone.
+    await setUnifiedSince(new Date(0))
   })
   afterAll(async () => { await queryClient.end() })
 
@@ -208,5 +213,39 @@ describe.skipIf(!enabled)('account trash', () => {
     await trashedAt(hourOld, 365 * DAY)
     await cleanupFiles(new Date(), userId)
     expect(await nodeIds()).toEqual([hourOld])
+  })
+
+  it('keeps items trashed before the trash was unified the 30 days Files gave them', async () => {
+    await setRetention('instant')
+    await setUnifiedSince(new Date(Date.now() - 3 * DAY))
+    const before = await insertBlob('before.txt')
+    const longBefore = await insertBlob('long-before.txt')
+    const after = await insertBlob('after.txt')
+    await trashedAt(before, 5 * DAY)
+    await trashedAt(longBefore, 31 * DAY)
+    await trashedAt(after, 2 * DAY)
+
+    const [item] = (await listAccountTrash(userId, { files: true })).items.filter((entry) => entry.id === before)
+    expect(Date.parse(item!.purgeAt!) - Date.parse(item!.trashedAt)).toBe(30 * DAY)
+    await cleanupFiles(new Date(), userId)
+    expect(await nodeIds()).toEqual([before])
+  })
+
+  it('keeps a folder restored while cleanup waited for the account', async () => {
+    await setRetention('7d')
+    const folder = await createFolder(userId, { parentId: null, name: 'Restored' })
+    const inner = await insertBlob('inner.txt', folder.id)
+    await trashFileNodes(userId, [folder.id])
+    await db.update(fileNodes).set({ trashedAt: new Date(Date.now() - 8 * DAY) }).where(eq(fileNodes.trashRootId, folder.id))
+
+    let cleanup: Promise<void> | undefined
+    await mutateFileTree(userId, async (tx) => {
+      // Cleanup reads the folder as expired, then waits for this transaction's lock.
+      cleanup = cleanupFiles(new Date(), userId)
+      await new Promise((resolve) => setTimeout(resolve, 300))
+      await restoreNodeInTx(tx, userId, folder.id)
+    })
+    await cleanup
+    expect((await nodeIds()).sort()).toEqual([folder.id, inner].sort())
   })
 })

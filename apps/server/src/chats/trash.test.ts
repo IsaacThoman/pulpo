@@ -40,6 +40,14 @@ describe('trash retention', () => {
     expect(filePurgeAtFor(deletedAt, 'indefinite')).toBeNull()
   })
 
+  it('keeps Files items trashed before the trash was unified at least 30 days', () => {
+    const unifiedSince = new Date('2026-01-05T00:00:00.000Z')
+    expect(filePurgeAtFor(deletedAt, 'instant', unifiedSince)?.toISOString()).toBe('2026-01-31T00:00:00.000Z')
+    expect(filePurgeAtFor(deletedAt, '90d', unifiedSince)?.toISOString()).toBe('2026-04-01T00:00:00.000Z')
+    expect(filePurgeAtFor(deletedAt, 'indefinite', unifiedSince)).toBeNull()
+    expect(filePurgeAtFor(deletedAt, 'instant', deletedAt)?.toISOString()).toBe('2026-01-02T00:00:00.000Z')
+  })
+
   it('reads Files retention from preferences in SQL, defaulting to 30 days', () => {
     const query = new PgDialect().sqlToQuery(fileTrashRetentionSql(sql`prefs.values`))
     expect(query.sql).toContain("interval '86400000 milliseconds'")

@@ -489,20 +489,25 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
     if (!target) return
     setSelection(EMPTY_SELECTION)
     if (target.kind === 'items') void trashOps.deleteForever(target.items)
-    else void trashOps.empty()
+    else {
+      // The trashed folder being shown goes with everything else.
+      if (trash?.folderId) showFolder(TRASH_FOLDER_ID)
+      void trashOps.empty()
+    }
   }
 
-  /** Restores the trashed folder being shown, then shows it where it went. */
+  /** Restores the trashed folder being shown, then shows it where it went (without Files, it is back in the sidebar). */
   const restoreShownFolder = async () => {
     if (!trashView?.folder) return
     const [restored] = await trashOps.restore([trashView.folder]) ?? []
-    if (restored) showFolder(restored.id)
+    if (restored) showFolder(filesEnabled ? restored.id : TRASH_FOLDER_ID)
   }
 
-  const setClipboard = (mode: 'cut' | 'copy', targets = selectedNodes) => {
-    // Built-in folders cannot move, so they cannot be cut; the trash cannot be copied. Trashed
+  const setClipboard = (mode: 'cut' | 'copy', selected = selectedNodes) => {
+    // Built-in folders cannot move, so they cannot be cut; the trash is left out of a copy. Trashed
     // items can only be cut: pasting restores them into the folder.
-    if (!targets.length || targets.some(isTrashFolder) || mode === 'cut' && targets.some(isBuiltInFolder) || mode === 'copy' && inTrash) return
+    const targets = mode === 'copy' ? selected.filter((node) => !isTrashFolder(node)) : selected
+    if (!targets.length || mode === 'cut' && targets.some(isBuiltInFolder) || mode === 'copy' && inTrash) return
     useFileClipboard.setState({ clip: { mode, nodes: targets } })
     if (mode === 'copy') {
       ops.notify(targets.length === 1 ? uit`Copied "${targets[0]!.name}"` : uit`Copied ${targets.length} items`)
@@ -523,8 +528,10 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
   }
 
   /** Files are copied; chats are duplicated with their history, as from the chat menu. */
-  const duplicate = async (targets = selectedNodes) => {
-    if (inTrash || targets.some(isTrashFolder)) return
+  const duplicate = async (selected = selectedNodes) => {
+    // The trash is left out, as when copying.
+    const targets = selected.filter((node) => !isTrashFolder(node))
+    if (inTrash || !targets.length) return
     const chats = targets.filter((node) => node.kind === 'chat').map((node) => ({ id: node.id, title: node.name }))
     const [created, chatCopies] = await Promise.all([ops.copy(targets, folderId, 'duplicate'), duplicateChats(chats)])
     if (chatCopies.length) await ops.refresh()
@@ -821,8 +828,10 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
   const hasChats = selectedNodes.some((node) => node.kind === 'chat')
   const trashLabel = hasChats && instantRetention && selectedNodes.every((node) => node.kind === 'chat') ? ui("Delete") : ui("Move to trash")
   const hasSystem = selectedNodes.some(isBuiltInFolder)
-  // The trash is not stored in Files, so it cannot be pinned, copied, or given a shortcut.
+  // The trash is not stored in Files, so it cannot be pinned, copied, or given a shortcut; copying
+  // and duplicating leave it out.
   const hasTrash = selectedNodes.some(isTrashFolder)
+  const onlyTrash = hasTrash && selectedNodes.length === 1
   // Files and folders in the selection can be given a color and icon; chats and shortcuts are left
   // out, and built-in folders only take a color.
   const canStyle = selectedNodes.some(hasAppearance)
@@ -889,10 +898,10 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
         </DropdownMenuItem>
       )}
       {single?.kind === 'chat' && <FilesChatMenuItems chatId={single.id} />}
-      {!hasTrash && <DropdownMenuItem onSelect={() => void duplicate()}><CopyPlus /> {ui("Duplicate")}<DropdownMenuShortcut>{shortcutLabel('D', { mod: true })}</DropdownMenuShortcut></DropdownMenuItem>}
+      {!onlyTrash && <DropdownMenuItem onSelect={() => void duplicate()}><CopyPlus /> {ui("Duplicate")}<DropdownMenuShortcut>{shortcutLabel('D', { mod: true })}</DropdownMenuShortcut></DropdownMenuItem>}
       <DropdownMenuSeparator />
       <DropdownMenuItem disabled={hasSystem} onSelect={() => setClipboard('cut')}><Scissors /> {ui("Cut")}<DropdownMenuShortcut>{shortcutLabel('X', { mod: true })}</DropdownMenuShortcut></DropdownMenuItem>
-      {!hasChats && !hasTrash && <DropdownMenuItem onSelect={() => setClipboard('copy')}><Copy /> {ui("Copy")}<DropdownMenuShortcut>{shortcutLabel('C', { mod: true })}</DropdownMenuShortcut></DropdownMenuItem>}
+      {!hasChats && !onlyTrash && <DropdownMenuItem onSelect={() => setClipboard('copy')}><Copy /> {ui("Copy")}<DropdownMenuShortcut>{shortcutLabel('C', { mod: true })}</DropdownMenuShortcut></DropdownMenuItem>}
       <DropdownMenuSeparator />
       <DropdownMenuItem variant="destructive" disabled={hasSystem} onSelect={() => void trashSelection()}><Trash2 /> {trashLabel}<DropdownMenuShortcut>⌫</DropdownMenuShortcut></DropdownMenuItem>
     </>
@@ -1087,7 +1096,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
         {canDownload && <SelectionAction label={ui("Download")} onClick={() => void ops.download(selectedNodes)}><Download /></SelectionAction>}
         {!hasSystem && <SelectionAction label={ui("Move to…")} onClick={() => setMoving(selectedNodes)}><FolderInput /></SelectionAction>}
         {canStyle && <SelectionAction label={styleLabel} onClick={() => editAppearance(selectedNodes)}><Palette /></SelectionAction>}
-        {!hasTrash && <SelectionAction label={ui("Duplicate")} onClick={() => void duplicate()}><CopyPlus /></SelectionAction>}
+        {!onlyTrash && <SelectionAction label={ui("Duplicate")} onClick={() => void duplicate()}><CopyPlus /></SelectionAction>}
         {!hasSystem && <SelectionAction label={trashLabel} destructive onClick={() => void trashSelection()}><Trash2 /></SelectionAction>}
         </>}
       </div>

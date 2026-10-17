@@ -7,6 +7,7 @@ import { FilesPage, FolderPanelView } from './FilesPage'
 import { useSettings, type FileDoubleClickAction } from '@/stores/settings'
 import { useSidePanel } from '@/features/side-panel/store'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { useFileClipboard } from '@/features/files/browser/clipboard'
 
 vi.hoisted(() => {
   Object.defineProperty(window, 'matchMedia', {
@@ -200,6 +201,22 @@ describe('the trash in My files', () => {
     fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' })
     await doubleClick('Trash')
     expect(screen.getByTestId('location').textContent).toBe('/files/trash')
+  })
+
+  it('is left out when everything is selected and copied', async () => {
+    showFiles()
+    await screen.findByRole('option', { name: /^Trash/ })
+    fireEvent.keyDown(window, { key: 'a', ctrlKey: true })
+    fireEvent.keyDown(window, { key: 'c', ctrlKey: true })
+    const copied = useFileClipboard.getState().clip?.nodes.map((node) => node.id) ?? []
+    expect(copied).toContain('document')
+    expect(copied).not.toContain('trash')
+    // Selected with a file, the trash leaves Copy and Duplicate available for it.
+    fireEvent.click(screen.getByRole('option', { name: /Notes.md/ }))
+    fireEvent.click(screen.getByRole('option', { name: /^Trash/ }), { ctrlKey: true })
+    fireEvent.contextMenu(screen.getByRole('option', { name: /Notes.md/ }))
+    expect((await screen.findByRole('menuitem', { name: /^Copy/ })).getAttribute('aria-disabled')).toBeNull()
+    expect(screen.getByRole('menuitem', { name: /^Duplicate/ })).toBeTruthy()
   })
 
   it('opens in the panel like any folder', async () => {

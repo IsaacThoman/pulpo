@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNotNull, isNull, lt, ne, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, isNotNull, isNull, lt, ne, sql, type SQL } from 'drizzle-orm'
 import { FILE_TREE_MAX_DEPTH, isMarkdownName, nextAvailableName, type FileColor, type FileIcon, type FileListing, type FileNode, type FileNodeKind, type FileSystemRole, type StateInvalidationScope } from '@pulpo/contracts'
 import { assertStorageCapacity } from '../attachments/storage-quota.js'
 import { db } from '../database/client.js'
@@ -12,7 +12,7 @@ import { convertDocToBlobInTx } from './conversion.js'
 import { publishDocsClosed } from './doc-events.js'
 import { chatsFolderIdOf, chatToFileNode, liveChatIds, listFolderChats, moveChatsInTx } from './chat-items.js'
 import { recoverChats, trashChats } from '../chats/trash-service.js'
-import { fileTrashRetentionSql } from '../chats/trash.js'
+import { fileTrashRetentionSql, legacyFileTrashKeptSql } from '../chats/trash.js'
 import { toFileNodes } from './shortcuts.js'
 import { topSortOrder } from './order.js'
 
@@ -530,24 +530,33 @@ export async function emptyTrash(userId: string): Promise<void> {
  * setting (all accounts, or just `userId` after it changes its setting).
  */
 export async function cleanupFiles(now = new Date(), userId?: string): Promise<void> {
-  const abandoned = await db.select({ id: fileNodes.id, userId: fileNodes.ownerUserId }).from(fileNodes).where(and(
+  const abandoned = and(
     eq(fileNodes.status, 'pending'),
     lt(fileNodes.createdAt, new Date(now.getTime() - PENDING_FILE_UPLOAD_TTL_MS)),
-    userId ? eq(fileNodes.ownerUserId, userId) : undefined,
-  )).limit(500)
-  // Retention is filtered in SQL so items kept indefinitely never crowd expired ones out of the batch.
-  const expired = await db.select({ id: fileNodes.id, userId: fileNodes.ownerUserId }).from(fileNodes)
+  )
+  const expired = and(
+    eq(fileNodes.trashRootId, fileNodes.id),
+    sql`${fileNodes.trashedAt} + ${fileTrashRetentionSql(userPreferences.values)} <= ${now.toISOString()}::timestamptz`,
+    sql`not ${legacyFileTrashKeptSql(fileNodes.trashedAt, now)}`,
+  )
+  const due = (executor: FileExecutor, where: SQL | undefined, filter: SQL | undefined) => executor
+    .select({ id: fileNodes.id, userId: fileNodes.ownerUserId }).from(fileNodes)
     .leftJoin(userPreferences, eq(userPreferences.userId, fileNodes.ownerUserId))
-    .where(and(
-      eq(fileNodes.trashRootId, fileNodes.id),
-      userId ? eq(fileNodes.ownerUserId, userId) : undefined,
-      sql`${fileNodes.trashedAt} + ${fileTrashRetentionSql(userPreferences.values)} <= ${now.toISOString()}::timestamptz`,
-    )).limit(500)
+    .where(and(where, filter)).limit(500)
+  // Retention is filtered in SQL so items kept indefinitely never crowd expired ones out of the batch.
+  const account = userId ? eq(fileNodes.ownerUserId, userId) : undefined
+  const rows = [...await due(db, abandoned, account), ...await due(db, expired, account)]
   const byUser = new Map<string, string[]>()
-  for (const row of [...abandoned, ...expired]) byUser.set(row.userId, [...byUser.get(row.userId) ?? [], row.id])
+  for (const row of rows) byUser.set(row.userId, [...byUser.get(row.userId) ?? [], row.id])
   for (const [owner, ids] of byUser) {
     // One account's storage failure must not block cleanup for the others.
-    await mutateFileTree(owner, (tx) => purgeNodesInTx(tx, owner, ids))
+    await mutateFileTree(owner, async (tx) => {
+      // Checked again under the account's lock: an item restored, or an upload confirmed, since
+      // the batch was read stays.
+      const scope = and(eq(fileNodes.ownerUserId, owner), inArray(fileNodes.id, ids))
+      const still = [...await due(tx, abandoned, scope), ...await due(tx, expired, scope)]
+      return purgeNodesInTx(tx, owner, [...new Set(still.map((row) => row.id))])
+    })
       .then((docIds) => publishDocsClosed(docIds, 'deleted'))
       .catch(() => undefined)
   }
