@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { diffRows, lineDiff } from './markdown-diff'
+import { diffRows, lineDiff } from './markdown-diff.js'
 
 describe('Markdown conversion diff', () => {
   it('marks removed and added lines around unchanged ones', () => {

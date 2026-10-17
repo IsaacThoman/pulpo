@@ -1,8 +1,21 @@
-import type { DocClosedEvent, DocSyncError, DocUpdateMessage } from '@pulpo/contracts'
-import { DOC_SCHEMA_VERSION } from '@pulpo/client-core/doc-schema'
+import type { ClientToServerEvents, DocClosedEvent, DocSyncError, DocUpdateMessage, ServerToClientEvents } from '@pulpo/contracts'
+import type { Socket } from 'socket.io-client'
 import { applyAwarenessUpdate, Awareness, encodeAwarenessUpdate, removeAwarenessStates } from 'y-protocols/awareness'
 import * as Y from 'yjs'
-import type { PulpoSocket } from '@/lib/realtime-socket'
+import { DOC_SCHEMA_VERSION } from '../doc-schema/version.js'
+
+/** The part of the account's Socket.IO connection that documents use. */
+export type DocSocket = Pick<Socket<ServerToClientEvents, ClientToServerEvents>, 'connected' | 'on' | 'off' | 'emit'>
+
+export interface SocketIOYProviderOptions {
+  /** Update origins that are not user edits, such as the offline cache replaying stored state. */
+  ignoredOrigins?: unknown[]
+  /**
+   * The schema version of the editor that renders this document. Defaults to this package's;
+   * clients that ship their editor separately (mobile) pass the version that editor was built with.
+   */
+  schemaVersion?: number
+}
 
 export type DocSyncStatus =
   | { state: 'connecting' }
@@ -30,7 +43,7 @@ type AwarenessChange = { added: number[]; updated: number[]; removed: number[] }
 export class SocketIOYProvider {
   readonly awareness: Awareness
   status: DocSyncStatus = { state: 'connecting' }
-  private socket: PulpoSocket | null = null
+  private socket: DocSocket | null = null
   private joined = false
   private joining = false
   private destroyed = false
@@ -45,13 +58,14 @@ export class SocketIOYProvider {
 
   readonly docId: string
   readonly doc: Y.Doc
-  /** Update origins that are not user edits, such as the offline cache replaying stored state. */
   private readonly ignoredOrigins: unknown[]
+  private readonly schemaVersion: number
 
-  constructor(docId: string, doc: Y.Doc, ignoredOrigins: unknown[] = []) {
+  constructor(docId: string, doc: Y.Doc, { ignoredOrigins = [], schemaVersion = DOC_SCHEMA_VERSION }: SocketIOYProviderOptions = {}) {
     this.docId = docId.toLowerCase()
     this.doc = doc
     this.ignoredOrigins = ignoredOrigins
+    this.schemaVersion = schemaVersion
     this.awareness = new Awareness(doc)
     doc.on('update', this.onDocUpdate)
     this.awareness.on('update', this.onAwarenessUpdate)
@@ -63,7 +77,7 @@ export class SocketIOYProvider {
   }
 
   /** Switches to a new socket (or none, while signed out or reconnecting the account). */
-  attach(socket: PulpoSocket | null): void {
+  attach(socket: DocSocket | null): void {
     if (socket === this.socket) {
       if (!socket && !this.isFinal()) this.setStatus({ state: 'offline' })
       return
@@ -176,7 +190,7 @@ export class SocketIOYProvider {
       docId: this.docId,
       stateVector: Y.encodeStateVector(this.doc),
       awarenessClientId: this.doc.clientID,
-      schemaVersion: DOC_SCHEMA_VERSION,
+      schemaVersion: this.schemaVersion,
     }, (result) => {
       if (generation !== this.generation || this.isFinal()) return
       clearTimeout(this.ackTimer)
@@ -254,7 +268,7 @@ export class SocketIOYProvider {
   }
 }
 
-/** socket.io-client delivers binary payloads as ArrayBuffers in browsers. */
+/** socket.io-client delivers binary payloads as ArrayBuffers in browsers and React Native. */
 function bytes(value: Uint8Array | ArrayBuffer): Uint8Array {
   return value instanceof Uint8Array ? value : new Uint8Array(value)
 }

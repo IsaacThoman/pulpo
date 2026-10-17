@@ -173,6 +173,15 @@ export const mobileConfigSchema = z.object({
     dictation: z.boolean().optional().default(false),
     twoFactorAuth: z.boolean().optional().default(false),
     passkeys: z.boolean().optional().default(false),
+    /**
+     * Files and its collaborative documents. Older servers omit it; clients then hide Files.
+     * `docSchemaVersion` is the document schema the server accepts edits in, so a client whose
+     * bundled editor speaks another version can open documents read only instead of failing to join.
+     */
+    files: z.object({
+      enabled: z.boolean(),
+      docSchemaVersion: z.number().int().positive(),
+    }).optional(),
   }),
 })
 export type MobileConfig = z.infer<typeof mobileConfigSchema>

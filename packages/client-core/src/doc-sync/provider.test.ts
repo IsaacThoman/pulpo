@@ -1,8 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as Y from 'yjs'
-import type { PulpoSocket } from '@/lib/realtime-socket'
-import { FakeServer, FakeSocket } from './fake-doc-server.test.helpers'
-import { SocketIOYProvider } from './socket-provider'
+import { FakeServer, FakeSocket } from './testing.js'
+import { SocketIOYProvider, type DocSocket } from './provider.js'
 
 const text = (doc: Y.Doc) => doc.getText('t').toString()
 
@@ -14,7 +13,7 @@ describe('SocketIOYProvider', () => {
     const doc = new Y.Doc()
     const socket = new FakeSocket(server)
     const provider = new SocketIOYProvider('doc-1', doc)
-    provider.attach(socket as unknown as PulpoSocket)
+    provider.attach(socket as unknown as DocSocket)
     return { doc, socket, provider }
   }
 

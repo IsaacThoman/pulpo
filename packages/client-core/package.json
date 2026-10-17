@@ -17,6 +17,22 @@
     "./doc-schema": {
       "types": "./dist/doc-schema/index.d.ts",
       "import": "./dist/doc-schema/index.js"
+    },
+    "./doc-sync": {
+      "types": "./dist/doc-sync/index.d.ts",
+      "import": "./dist/doc-sync/index.js"
+    },
+    "./doc-sync/testing": {
+      "types": "./dist/doc-sync/testing.d.ts",
+      "import": "./dist/doc-sync/testing.js"
+    },
+    "./files": {
+      "types": "./dist/files/index.d.ts",
+      "import": "./dist/files/index.js"
+    },
+    "./doc-editor": {
+      "types": "./dist/doc-editor/index.d.ts",
+      "import": "./dist/doc-editor/index.js"
     }
   },
   "scripts": {
@@ -28,17 +44,23 @@
     "@tiptap/core": "^3.31.3",
     "@tiptap/extension-code": "^3.31.3",
     "@tiptap/extension-code-block": "^3.31.3",
+    "@tiptap/extension-collaboration": "^3.31.3",
+    "@tiptap/extension-collaboration-caret": "^3.31.3",
     "@tiptap/extension-list": "^3.31.3",
     "@tiptap/extension-table": "^3.31.3",
+    "@tiptap/extensions": "^3.31.3",
     "@tiptap/markdown": "^3.31.3",
     "@tiptap/pm": "^3.31.3",
     "@tiptap/starter-kit": "^3.31.3",
     "@tiptap/y-tiptap": "^3.0.9",
     "marked": "^15.0.12",
+    "y-protocols": "^1.0.7",
     "yjs": "^13.6.33"
   },
   "devDependencies": {
     "@types/node": "^24.13.2",
+    "jsdom": "^26.1.0",
+    "socket.io-client": "^4.8.3",
     "typescript": "~6.0.2",
     "vitest": "^4.1.11"
   }

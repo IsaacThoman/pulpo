@@ -1,8 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as Y from 'yjs'
-import type { PulpoSocket } from '@/lib/realtime-socket'
-import { FakeServer, FakeSocket } from './fake-doc-server.test.helpers'
-import { SocketIOYProvider } from './socket-provider'
+import { FakeServer, FakeSocket } from './testing.js'
+import { SocketIOYProvider, type DocSocket } from './provider.js'
 
 /** Persists requests normally but lets replies arrive late, out of order, or never. */
 class DelayedSocket extends FakeSocket {
@@ -42,7 +41,7 @@ describe('document sync under delayed acknowledgements', () => {
     const doc = new Y.Doc()
     const provider = new SocketIOYProvider('doc-1', doc)
     providers.push(provider)
-    provider.attach(socket as unknown as PulpoSocket)
+    provider.attach(socket as unknown as DocSocket)
     return { socket, doc, provider }
   }
 
@@ -108,7 +107,7 @@ describe('document sync under delayed acknowledgements', () => {
     a.provider.attach(null)
     a.doc.getText('t').insert(5, ' offline')
     const socket = new DelayedSocket(server)
-    a.provider.attach(socket as unknown as PulpoSocket)
+    a.provider.attach(socket as unknown as DocSocket)
     a.doc.getText('t').insert(a.doc.getText('t').length, ' last')
     vi.advanceTimersByTime(100)
     expect(server.doc.getText('t').toString()).toBe('first offline last')

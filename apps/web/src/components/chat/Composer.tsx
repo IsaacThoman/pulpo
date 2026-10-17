@@ -65,7 +65,7 @@ import { canSubmitComposerDraft } from '@/components/chat/composer-upload-policy
 import type { Attachment } from '@/lib/types'
 import { useUploadOutbox, type UploadRecord } from '@/stores/upload-outbox'
 import { FileScopeChip, FileScopePicker } from '@/features/files/FileScope'
-import { addFileScope, fileAccessMode, NO_FILE_ACCESS, scopedFileAccess, type FileScopeAccess } from '@/features/files/file-scope'
+import { addFileScope, fileAccessMode, NO_FILE_ACCESS, scopedFileAccess, type FileScopeAccess } from '@pulpo/client-core/files'
 import { apiRequest } from '@/lib/api'
 import { dictationFilename, insertDictationText, preferredDictationMimeType } from '@/lib/dictation'
 import { DictationBar } from '@/components/chat/DictationBar'

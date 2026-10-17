@@ -1,3 +1,4 @@
+/** In-memory stand-ins for the server's document rooms, for tests of document sync. */
 import * as Y from 'yjs'
 
 type Handler = (...args: unknown[]) => void

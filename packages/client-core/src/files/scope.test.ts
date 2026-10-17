@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { addFileScope, fileAccessMode, scopedFileAccess } from './file-scope'
+import { addFileScope, fileAccessMode, scopedFileAccess } from './scope.js'
 
 describe('addFileScope', () => {
   it('appends new items once, keeping items inside an added folder or all files', () => {

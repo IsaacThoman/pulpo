@@ -1,7 +1,7 @@
-import { parseBlockSuggestion, SUGGESTION_BLOCK_ATTR, SUGGESTION_DELETE_MARK } from '@pulpo/client-core/doc-schema'
+import { Extension } from '@tiptap/core'
 import { isChangeOrigin } from '@tiptap/extension-collaboration'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
-import { Extension } from '@tiptap/react'
+import { parseBlockSuggestion, SUGGESTION_BLOCK_ATTR, SUGGESTION_DELETE_MARK } from '../doc-schema/suggestions.js'
 
 /** Set on transactions that accept or reject suggestions, which this plugin leaves alone. */
 export const SUGGESTION_REVIEW_META = 'pulpoSuggestionReview'
