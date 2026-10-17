@@ -34,22 +34,27 @@ export function folderQuery(namespace: string, folderId: string | null) {
   })
 }
 
+export type FileNodeLookup = { node: FileNode; ancestors: FileNode[]; offline?: boolean }
+
+/** An item, from the server when reachable; offline, as last seen on this device. Asks once. */
+export async function lookUpFileNode(namespace: string, id: string, signal?: AbortSignal): Promise<FileNodeLookup> {
+  try {
+    const value = await fetchFileNode(id, signal)
+    void cacheNode(namespace, value).catch(() => undefined)
+    return value
+  } catch (error) {
+    if (isNetworkError(error)) {
+      const cached = await cachedNode(namespace, id)
+      if (cached) return { ...cached, offline: true }
+    }
+    throw error
+  }
+}
+
 export function fileNodeQuery(namespace: string, id: string) {
   return queryOptions({
     queryKey: filesQueryKeys.node(namespace, id),
-    queryFn: async ({ signal }): Promise<{ node: FileNode; ancestors: FileNode[]; offline?: boolean }> => {
-      try {
-        const value = await fetchFileNode(id, signal)
-        void cacheNode(namespace, value).catch(() => undefined)
-        return value
-      } catch (error) {
-        if (isNetworkError(error)) {
-          const cached = await cachedNode(namespace, id)
-          if (cached) return { ...cached, offline: true }
-        }
-        throw error
-      }
-    },
+    queryFn: ({ signal }): Promise<FileNodeLookup> => lookUpFileNode(namespace, id, signal),
   })
 }
 

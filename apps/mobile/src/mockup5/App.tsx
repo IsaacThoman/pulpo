@@ -234,7 +234,7 @@ import { isPinnedFileEntry, pinnedFileItemsCeiling, unpinFileItem, usePinnedFile
 import { PinnedFileRow } from '../features/files/components/PinnedFileRow';
 import { filesErrorMessage } from '../features/files/display';
 import { useFilesNamespace } from '../features/files/useFilesNamespace';
-import { fileNodeQuery } from '../features/files/queries';
+import { filesQueryKeys, lookUpFileNode } from '../features/files/queries';
 import { fileChangesItem } from '@pulpo/client-core/files';
 import { FileDocumentScreen } from '../features/files/screens/FileDocumentScreen';
 import { FileMarkdownScreen } from '../features/files/screens/FileMarkdownScreen';
@@ -2324,6 +2324,8 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   const filesLink = useFilesLinkInbox((state) => state.pending);
   const openFileItem = useOpenFileItem();
   const filesLinkGeneration = useRef(0);
+  // A lookup still running when the account changes opens nothing.
+  useEffect(() => { filesLinkGeneration.current += 1; }, [productionUserId]);
   useEffect(() => {
     if (!filesLink || !productionScopeReady || !productionUserId) return;
     const url = useFilesLinkInbox.getState().take();
@@ -2337,9 +2339,15 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     else {
       // As on the web, a file link is any kind of file: what it is decides where it opens. Items seen
       // before are known offline too; anything else says why it can't open. Looked up once and at
-      // once (never held until the connection is back), and dropped if another link came meanwhile.
-      void queryClient.fetchQuery({ ...fileNodeQuery(cacheNamespace(productionInstanceUrl, productionUserId), destination.id), networkMode: 'always', retry: false }).then(
-        ({ node }) => { if (generation === filesLinkGeneration.current) void openFileItem(node); },
+      // once, outside the shared query, which would wait for the connection to come back; dropped if
+      // another link came (or the account changed) meanwhile.
+      const namespace = cacheNamespace(productionInstanceUrl, productionUserId);
+      void lookUpFileNode(namespace, destination.id).then(
+        (value) => {
+          if (generation !== filesLinkGeneration.current) return;
+          queryClient.setQueryData(filesQueryKeys.node(namespace, destination.id), value);
+          void openFileItem(value.node);
+        },
         (error: unknown) => { if (generation === filesLinkGeneration.current) Alert.alert('Can’t open this link', filesErrorMessage(error)); },
       );
     }
