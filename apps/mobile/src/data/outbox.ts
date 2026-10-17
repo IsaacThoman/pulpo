@@ -11,17 +11,27 @@ import { readyOutboxPrefix, type OutboxRecord } from './schema'
 
 const activeReplays = new Map<string, Promise<{ replayed: number; rejected: number }>>()
 
+interface QueuedFileScope {
+  ids: string[]
+  with: (ids: string[]) => unknown
+  /** A chat start, which goes ahead without items that can't be checked; a scope change does not. */
+  startsChat: boolean
+}
+
 /** Where a queued request carries a chat's Files scope: a chat start, or a change to the chat. */
-function fileScopeOf(row: Pick<OutboxRecord, 'method' | 'path'>, body: unknown): { ids: string[]; with: (ids: string[]) => unknown } | null {
+function fileScopeOf(row: Pick<OutboxRecord, 'method' | 'path'>, body: unknown): QueuedFileScope | null {
   const payload = body as { chat?: { fileScopeIds?: string[] }; fileScopeIds?: string[] } | undefined
   if (row.path === '/api/chats/start' && payload?.chat?.fileScopeIds?.length) {
-    return { ids: payload.chat.fileScopeIds, with: (ids) => ({ ...payload, chat: { ...payload.chat, fileScopeIds: ids } }) }
+    return { ids: payload.chat.fileScopeIds, with: (ids) => ({ ...payload, chat: { ...payload.chat, fileScopeIds: ids } }), startsChat: true }
   }
   if (row.method === 'PATCH' && /^\/api\/chats\/[^/]+$/.test(row.path) && payload?.fileScopeIds?.length) {
-    return { ids: payload.fileScopeIds, with: (ids) => ({ ...payload, fileScopeIds: ids }) }
+    return { ids: payload.fileScopeIds, with: (ids) => ({ ...payload, fileScopeIds: ids }), startsChat: false }
   }
   return null
 }
+
+/** Files is turned off, so which items are still live can't be told. */
+class FilesTurnedOffError extends Error {}
 
 /**
  * Sends a queued request whose chat Files scope may name items trashed or deleted elsewhere since
@@ -36,7 +46,17 @@ async function sendKeepingFileScope<T>(row: OutboxRecord, body: unknown, send: (
     } catch (error) {
       const scope = fileScopeOf(row, payload)
       if (attempt >= 2 || !scope || !(error instanceof ApiError) || error.code !== 'invalid_file_scope') throw error
-      payload = scope.with(await acceptedFileScope(scope.ids))
+      let accepted: string[]
+      try {
+        accepted = await acceptedFileScope(scope.ids)
+      } catch (lookup) {
+        if (!(lookup instanceof FilesTurnedOffError)) throw lookup
+        // A chat still starts, without its items; a scope change is refused as sent rather than
+        // emptying the chat's scope.
+        if (!scope.startsChat) throw error
+        accepted = scope.ids.filter((id) => id === FILE_SCOPE_ROOT)
+      }
+      payload = scope.with(accepted)
     }
   }
 }
@@ -49,8 +69,9 @@ async function acceptedFileScope(ids: readonly string[]): Promise<string[]> {
       const { node } = await apiRequest<{ node: FileNode }>(`/api/files/${encodeURIComponent(id)}`)
       return node.status === 'ready' && !node.trashedAt && node.kind !== 'shortcut' ? id : null
     } catch (error) {
-      // Gone (or Files turned off). Anything else is not an answer: the start is tried again later.
-      if (error instanceof ApiError && (error.status === 404 || error.status === 403)) return null
+      // Gone. Anything else is not an answer: the request is tried again later.
+      if (error instanceof ApiError && error.status === 404) return null
+      if (error instanceof ApiError && error.code === 'files_disabled') throw new FilesTurnedOffError('Files is turned off', { cause: error })
       throw new Error('The chat’s Files items could not be checked', { cause: error })
     }
   }))

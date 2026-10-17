@@ -113,4 +113,18 @@ describe('chat start outbox replay', () => {
     await expect(replayOutbox('account', client)).resolves.toEqual({ replayed: 1, rejected: 0 })
     expect(mocks.request).toHaveBeenLastCalledWith('/api/chats/start', expect.objectContaining({ body: expect.objectContaining({ chat: expect.objectContaining({ fileScopeIds: ['gone'] }) }) }))
   })
+  it('leaves a chat\'s scope alone, and still starts chats, while Files is turned off', async () => {
+    const change = { id: 'scope-change', namespace: 'account', entityKey: 'chat:chat:file-scope', method: 'PATCH', path: '/api/chats/chat', body: JSON.stringify({ fileScopeIds: ['live', 'gone'] }), createdAt: 1, attempts: 0, nextAttemptAt: 0 }
+    mocks.pending.mockResolvedValue([change, { ...start, createdAt: 2 }])
+    mocks.request.mockImplementation(async (path: string, options?: { body?: { fileScopeIds?: string[]; chat?: { fileScopeIds: string[] } } }) => {
+      if (path.startsWith('/api/files/')) throw new ApiError(403, 'files_disabled', 'Files are disabled by the administrator')
+      const scope = options?.body?.fileScopeIds ?? options?.body?.chat?.fileScopeIds ?? []
+      if (scope.length) throw new ApiError(400, 'invalid_file_scope', 'Choose items from your files')
+      return {}
+    })
+    await expect(replayOutbox('account', client)).resolves.toEqual({ replayed: 1, rejected: 1 })
+    const patches = mocks.request.mock.calls.filter(([path]) => path === '/api/chats/chat')
+    expect(patches.map(([, options]) => options.body)).toEqual([{ fileScopeIds: ['live', 'gone'] }])
+    expect(mocks.request).toHaveBeenLastCalledWith('/api/chats/start', expect.objectContaining({ body: expect.objectContaining({ chat: expect.objectContaining({ fileScopeIds: [] }) }) }))
+  })
 })
