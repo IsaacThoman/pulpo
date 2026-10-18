@@ -38,19 +38,20 @@ export interface DraftPresets {
 }
 
 /**
- * Presets for a draft being opened. Chats start from their history. Unstarted
- * new-chat drafts have none, so they keep their earlier choices, including
- * after a rejected first send returns to them.
+ * Presets for a draft being opened: its chat's history, else defaults. A
+ * new-chat draft whose first send was rejected gets back, once, the choices
+ * it was submitted with (`startingPresets`, keyed by draft scope).
  */
 export function enterDraftPresets(
-  newChatMemory: Map<string, DraftPresets>,
-  leaving: { scope: string; newChat: boolean; state: DraftPresets } | null,
-  entering: { scope: string; newChat: boolean },
+  startingPresets: Map<string, DraftPresets>,
+  scope: string,
   messages: Parameters<typeof chatGenerationSelections>[0],
 ): DraftPresets {
-  if (leaving?.newChat) newChatMemory.set(leaving.scope, leaving.state)
-  const remembered = entering.newChat ? newChatMemory.get(entering.scope) : undefined
-  if (remembered) return remembered
+  const submitted = startingPresets.get(scope)
+  if (submitted) {
+    startingPresets.delete(scope)
+    return submitted
+  }
   const presets = chatGenerationSelections(messages)
   return { presets, settled: Object.keys(presets).length > 0 }
 }

@@ -4219,8 +4219,14 @@ function ChatView({
   draftPresetsRef.current = draftPresets;
   /** The draft scope whose presets are settled, so late-loading history no longer reseeds them. */
   const settledPresetScopeRef = useRef<string | null>(null);
-  /** Unstarted new-chat drafts have no history, so a rejected start returns to their earlier choices. */
-  const newChatPresetsRef = useRef(new Map<string, DraftPresets>());
+  /** Choices of new-chat drafts whose first send is pending, restored if the start is rejected. */
+  const startingPresetsRef = useRef(new Map<string, DraftPresets>());
+  /** Snapshot when submission starts; refs only, since memoized submit callbacks may hold an older render. */
+  const captureStartingPresets = () => {
+    const active = activeDraftRef.current;
+    if (!active || (active.draftId !== localComposerDraftId(null, false) && active.draftId !== localComposerDraftId(null, true))) return null;
+    return { scope: active.scope, state: { presets: draftPresetsRef.current, settled: settledPresetScopeRef.current === active.scope } };
+  };
   const onSelectPreset = (presetId: string, choiceId: string) => {
     settledPresetScopeRef.current = activeDraftRef.current?.scope ?? null;
     setDraftPresets((current) => ({ ...current, [model.id]: { ...presetSelections, [presetId]: choiceId } }));
@@ -4612,11 +4618,7 @@ function ChatView({
 
     activeDraftRef.current = { scope, namespace: draftNamespace, draftId };
     // Reset before hydration opens composer sync, which seeds unsaved drafts from current state.
-    const newChatDraft = (id: string) => id === localComposerDraftId(null, false) || id === localComposerDraftId(null, true);
-    const entered = enterDraftPresets(newChatPresetsRef.current, previous ? {
-      scope: previous.scope, newChat: newChatDraft(previous.draftId),
-      state: { presets: draftPresetsRef.current, settled: settledPresetScopeRef.current === previous.scope },
-    } : null, { scope, newChat: newChatDraft(draftId) }, messagesRef.current);
+    const entered = enterDraftPresets(startingPresetsRef.current, scope, messagesRef.current);
     setDraftPresets(entered.presets);
     settledPresetScopeRef.current = entered.settled ? scope : null;
     usedDictationRef.current = false;
@@ -5344,6 +5346,7 @@ function ChatView({
     sendingRef.current = true;
     setSending(true);
     let followSnapshot: ChatFollowSnapshot | null = null;
+    const starting = captureStartingPresets();
     const submittedDraft = { input, attachments: [...attachments], agentEnabled: activeAgentEnabled, usedDictation: usedDictationRef.current };
     const submittedDraftIdentity = activeDraftRef.current;
     const restoreSubmittedDraft = () => {
@@ -5391,6 +5394,7 @@ function ChatView({
         send: () => {
           // Arm before onSend inserts its optimistic rows.
           if (!shouldQueueMessage(assistantStatus !== 'idle', queuedMessages.length)) followSnapshot = armSubmittedTurnFollow();
+          if (starting) startingPresetsRef.current.set(starting.scope, starting.state);
           return onSend(
             submittedDraft.input,
             submittedDraft.attachments,
@@ -5427,8 +5431,8 @@ function ChatView({
         return;
       }
       followSnapshot = null;
-      // A started chat owns its presets now; the next unstarted draft begins from defaults again.
-      if (submittedDraftIdentity) newChatPresetsRef.current.delete(submittedDraftIdentity.scope);
+      // The started chat owns its presets now; the next new chat begins from defaults again.
+      if (starting) startingPresetsRef.current.delete(starting.scope);
       const retainedAttachments = submittedDraftIdentity
         ? cachedComposerDraft<ComposerAttachment>(submittedDraftIdentity.scope)?.attachments ?? [] : [];
       for (const attachment of submittedDraft.attachments) {
@@ -5450,9 +5454,10 @@ function ChatView({
   const submitSuggestion = useCallback((message: string) => {
     if (isDictationBusy()) return;
     const followSnapshot = armSubmittedTurnFollow();
-    const submittedScope = activeDraftRef.current?.scope;
+    const starting = captureStartingPresets();
+    if (starting) startingPresetsRef.current.set(starting.scope, starting.state);
     void onSend(message, [], { presetSelections, agentEnabled: activeAgentEnabled, temporary, autoExpire }).then((accepted) => {
-      if (accepted && submittedScope) newChatPresetsRef.current.delete(submittedScope);
+      if (accepted && starting) startingPresetsRef.current.delete(starting.scope);
       if (!accepted) restoreSubmittedTurnFollow(followSnapshot);
     }).catch((error) => {
       restoreSubmittedTurnFollow(followSnapshot);

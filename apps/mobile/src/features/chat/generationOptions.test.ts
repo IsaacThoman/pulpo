@@ -46,20 +46,15 @@ describe('generation options', () => {
     expect(chatGenerationSelections([])).toEqual({})
   })
 
-  it('starts chats from history and returns new-chat drafts to their earlier choices', () => {
-    const memory = new Map()
-    const started = [{ role: 'assistant', modelId: 'model-1', presetSelections: { reasoning: 'high' } }]
-    const newDraft = { scope: 'local\u0000temporary:new', newChat: true }
-    const startedChat = { scope: 'local\u0000temporary:chat', newChat: false }
-    // Opening a chat never carries the previous draft's choices.
-    expect(enterDraftPresets(memory, { ...newDraft, state: { presets: { 'model-1': { reasoning: 'low' } }, settled: true } }, startedChat, started))
-      .toEqual({ presets: { 'model-1': { reasoning: 'high' } }, settled: true })
-    // A rejected first send returns to the unstarted draft with its choices intact.
-    expect(enterDraftPresets(memory, { ...startedChat, state: { presets: { 'model-1': { reasoning: 'high' } }, settled: true } }, newDraft, []))
-      .toEqual({ presets: { 'model-1': { reasoning: 'low' } }, settled: true })
-    // Chats without loaded history stay open to late seeding; unvisited new-chat drafts use defaults.
-    expect(enterDraftPresets(memory, null, startedChat, [])).toEqual({ presets: {}, settled: false })
-    expect(enterDraftPresets(memory, null, { scope: 'local\u0000new', newChat: true }, [])).toEqual({ presets: {}, settled: false })
+  it('starts drafts from history, and restores a rejected start\'s choices once', () => {
+    const history = [{ role: 'assistant', modelId: 'model-1', presetSelections: { reasoning: 'high' } }]
+    const starting = new Map([['local\u0000temporary:new', { presets: { 'model-1': { reasoning: 'low' } }, settled: true }]])
+    expect(enterDraftPresets(starting, 'local\u0000temporary:chat', history)).toEqual({ presets: { 'model-1': { reasoning: 'high' } }, settled: true })
+    // History that has not loaded leaves the draft open to late seeding.
+    expect(enterDraftPresets(starting, 'local\u0000chat', [])).toEqual({ presets: {}, settled: false })
+    expect(enterDraftPresets(starting, 'local\u0000temporary:new', [])).toEqual({ presets: { 'model-1': { reasoning: 'low' } }, settled: true })
+    // Later visits start from defaults, like a freshly mounted web composer.
+    expect(enterDraftPresets(starting, 'local\u0000temporary:new', [])).toEqual({ presets: {}, settled: false })
   })
 
   it('saves one explicit choice without discarding other saved defaults', () => {
