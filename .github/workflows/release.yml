@@ -56,6 +56,8 @@ jobs:
             command: npm run build
           - name: Lint
             command: npm run lint
+          - name: Docs
+            command: npm run docs:build
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
