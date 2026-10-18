@@ -35,7 +35,8 @@ class ArchiveValidationTests(unittest.TestCase):
 
     def write_info(self, bundle, info, version='0.159.0', build='1760000000'):
         with (bundle / 'Info.plist').open('wb') as stream:
-            plistlib.dump({'CFBundleShortVersionString': version, 'CFBundleVersion': build, **info}, stream)
+            plistlib.dump({'CFBundleShortVersionString': version, 'CFBundleVersion': build,
+                           'UIDeviceFamily': [1], **info}, stream)
 
     def check(self):
         validate.validate_archive(self.archive, self.data, '0.159.0', '1760000000')
@@ -50,6 +51,20 @@ class ArchiveValidationTests(unittest.TestCase):
         }, version='1.0', build='1')
         with self.assertRaisesRegex(RuntimeError, r'PulpoKeyboardExtension.appex is 1.0 \(1\), expected 0.159.0'):
             self.check()
+
+    def test_rejects_a_bundle_that_also_targets_ipad(self):
+        for bundle, info in (
+            (self.app, {'CFBundleIdentifier': validate.deploy.APP_ID, 'CFBundleDisplayName': 'Pulpo Keyboard'}),
+            (self.extension, {
+                'CFBundleIdentifier': validate.deploy.EXTENSION_ID,
+                'NSExtension': {'NSExtensionPointIdentifier': 'com.apple.keyboard-service'},
+            }),
+        ):
+            with self.subTest(bundle=bundle.name):
+                self.write_info(bundle, {**info, 'UIDeviceFamily': [1, 2]})
+                with self.assertRaisesRegex(RuntimeError, rf'{bundle.name} targets device families \[1, 2\], expected iPhone only'):
+                    self.check()
+                self.write_info(bundle, info)
 
     def test_rejects_a_bundle_without_its_privacy_manifest(self):
         for bundle in (self.app, self.extension):

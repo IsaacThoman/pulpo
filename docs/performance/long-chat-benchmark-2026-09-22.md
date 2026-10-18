@@ -90,7 +90,7 @@ The 10-turn case did not compact. The other cases used the real context-preparat
 
 ### Every message remains mounted
 
-[MessageList.tsx](../../apps/web/src/components/chat/MessageList.tsx) maps the entire message array into `MessageItem` components. There is no transcript virtualization, and both user and assistant messages invoke Markdown. Existing memoization helps updates but does not avoid the initial parsing, component allocation, effects/subscriptions, DOM creation, style work, and layout for off-screen history.
+[MessageList.tsx](https://github.com/IsaacThoman/pulpo/blob/d16ead32d10ad1a113af66dc2b215432aa97e9e7/apps/web/src/components/chat/MessageList.tsx) maps the entire message array into `MessageItem` components. There is no transcript virtualization, and both user and assistant messages invoke Markdown. Existing memoization helps updates but does not avoid the initial parsing, component allocation, effects/subscriptions, DOM creation, style work, and layout for off-screen history.
 
 Plain chats grew from 875 DOM elements at 10 turns to 285,305 at 5,000. Retained JS heap grew from about 13 MiB to 282 MiB. In the 5,000-turn runs, opening included roughly 2.9–3.0 seconds of script execution and 0.54 seconds of layout. The large-body case had only about 6,000 elements, yet required roughly 5.4 seconds of script work and 1.9 seconds of layout: message count alone is not a sufficient performance budget.
 
@@ -98,9 +98,9 @@ The rich 1,000-turn fixture produced approximately 181,000 elements, versus 57,0
 
 ### Server branch metadata scans the conversation repeatedly
 
-The detail route in [chats/routes.ts](../../apps/server/src/chats/routes.ts) selects all non-deleted responses, collects their usage and attachments, and constructs the complete response. `format=compact` avoids duplicated snapshot output. `scope=active` suppresses inactive bodies on the wire, but still loads all database response bodies and visits every turn.
+The detail route in [chats/routes.ts](https://github.com/IsaacThoman/pulpo/blob/d16ead32d10ad1a113af66dc2b215432aa97e9e7/apps/server/src/chats/routes.ts) selects all non-deleted responses, collects their usage and attachments, and constructs the complete response. `format=compact` avoids duplicated snapshot output. `scope=active` suppresses inactive bodies on the wire, but still loads all database response bodies and visits every turn.
 
-[toPublicChatResponses](../../apps/server/src/chats/public.ts) calls `metadataForTurn` for each turn. [metadataForTurn](../../apps/server/src/messages/branching.ts) filters the entire conversation to find siblings. A linear conversation therefore does approximately N² parent comparisons even though nearly every response has just one sibling. The server lineage walker also uses repeated `unshift`; the shared client implementation already uses `push` and one `reverse`.
+[toPublicChatResponses](https://github.com/IsaacThoman/pulpo/blob/d16ead32d10ad1a113af66dc2b215432aa97e9e7/apps/server/src/chats/public.ts) calls `metadataForTurn` for each turn. [metadataForTurn](https://github.com/IsaacThoman/pulpo/blob/d16ead32d10ad1a113af66dc2b215432aa97e9e7/apps/server/src/messages/branching.ts) filters the entire conversation to find siblings. A linear conversation therefore does approximately N² parent comparisons even though nearly every response has just one sibling. The server lineage walker also uses repeated `unshift`; the shared client implementation already uses `push` and one `reverse`.
 
 At 20,000 turns, median database materialization took 209 ms, complete DTO construction took 4,724 ms, and isolated branch-metadata construction took 3,922 ms. JSON serialization itself took only about 29 ms. The endpoint was therefore dominated by application CPU rather than a slow database lookup. These isolated timings are separate measurements and must not be added together or treated as a precise profile of the HTTP sample.
 
@@ -108,23 +108,23 @@ Highly branched histories were not benchmarked. They may behave worse: inactive 
 
 ### Update isolation helps, but work still scales with history
 
-[MessageItem](../../apps/web/src/components/chat/MessageItem.tsx) memoizes stable message identities. The existing performance test deliberately replaces Markdown and verifies that changing one foreground message renders one row, while a background-chat update renders none. The browser benchmark independently checks preservation of an old message's DOM node and all 60 streamed chunks.
+[MessageItem](https://github.com/IsaacThoman/pulpo/blob/d16ead32d10ad1a113af66dc2b215432aa97e9e7/apps/web/src/components/chat/MessageItem.tsx) memoizes stable message identities. The existing performance test deliberately replaces Markdown and verifies that changing one foreground message renders one row, while a background-chat update renders none. The browser benchmark independently checks preservation of an old message's DOM node and all 60 streamed chunks.
 
-[ChatDataBridge](../../apps/web/src/features/chat/ChatDataBridge.tsx) batches events on a 50 ms timer. [Markdown](../../apps/web/src/components/chat/Markdown.tsx) refreshes streaming content on a 100 ms timer. Those are useful controls and help explain why stream freshness stays around a tenth of a second in shorter conversations.
+[ChatDataBridge](https://github.com/IsaacThoman/pulpo/blob/d16ead32d10ad1a113af66dc2b215432aa97e9e7/apps/web/src/features/chat/ChatDataBridge.tsx) batches events on a 50 ms timer. [Markdown](https://github.com/IsaacThoman/pulpo/blob/d16ead32d10ad1a113af66dc2b215432aa97e9e7/apps/web/src/components/chat/Markdown.tsx) refreshes streaming content on a 100 ms timer. Those are useful controls and help explain why stream freshness stays around a tenth of a second in shorter conversations.
 
-However, [applyResponseEvents](../../apps/web/src/stores/chat.ts) copies the response-sequence map and traverses the message array on each batch. `MessageList` then maps/reconciles the full array even when unchanged row bodies bail out. Zustand subscriptions still exist for every mounted row, and layout operates on a large document. At 5,000 turns, repeated scrolling and streaming long tasks appear despite correct incremental text and stable historical DOM.
+However, [applyResponseEvents](https://github.com/IsaacThoman/pulpo/blob/d16ead32d10ad1a113af66dc2b215432aa97e9e7/apps/web/src/stores/chat.ts) copies the response-sequence map and traverses the message array on each batch. `MessageList` then maps/reconciles the full array even when unchanged row bodies bail out. Zustand subscriptions still exist for every mounted row, and layout operates on a large document. At 5,000 turns, repeated scrolling and streaming long tasks appear despite correct incremental text and stable historical DOM.
 
 ### Persistence is coalesced by chat, not by turn
 
 Streaming updates enter the query cache about once per second; IndexedDB writes are coalesced too. Unchanged other chats retain their stored bodies. This avoids writing every historical chat on every token.
 
-The changed chat is still persisted as a whole body. [database.ts](../../apps/web/src/lib/local-first/database.ts) writes `plan.changed` transcript objects, while [chat-cache-policy.ts](../../apps/web/src/lib/local-first/chat-cache-policy.ts) serializes each new immutable chat object and scans its UTF-8 size. A streaming update changes that object identity. The 5,000-turn benchmark recorded synchronous IndexedDB `put` work up to about 34 ms for a transcript record; serialization/size-accounting work before `put` is additional and is not included in that number. Coalescing controls frequency, not per-write growth.
+The changed chat is still persisted as a whole body. [database.ts](https://github.com/IsaacThoman/pulpo/blob/d16ead32d10ad1a113af66dc2b215432aa97e9e7/apps/web/src/lib/local-first/database.ts) writes `plan.changed` transcript objects, while [chat-cache-policy.ts](https://github.com/IsaacThoman/pulpo/blob/d16ead32d10ad1a113af66dc2b215432aa97e9e7/apps/web/src/lib/local-first/chat-cache-policy.ts) serializes each new immutable chat object and scans its UTF-8 size. A streaming update changes that object identity. The 5,000-turn benchmark recorded synchronous IndexedDB `put` work up to about 34 ms for a transcript record; serialization/size-accounting work before `put` is additional and is not included in that number. Coalescing controls frequency, not per-write growth.
 
 The same cache policy permits **25 MiB total across retained transcript queries**, with a default 50-chat count limit. A single larger query is skipped. The 30,522,244-byte large fixture loaded online but had no persisted transcript record and failed all three detail-unavailable reloads. This is not a browser quota error or deletion of server data. It is an explicit retention policy with a user-visible recovery consequence. A less repetitive real conversation may also incur much more network cost than this fixture.
 
 ### Model compaction solves a different problem
 
-The worker reads history and then selects the ancestor chain before preparing model input. [compactConversation](../../apps/server/src/responses/compaction.ts) can reuse the latest completed checkpoint and retain recent turns, keeping ordinary ongoing model context bounded. It does not remove old transcript rows or stop the browser rendering them.
+The worker reads history and then selects the ancestor chain before preparing model input. [compactConversation](https://github.com/IsaacThoman/pulpo/blob/d16ead32d10ad1a113af66dc2b215432aa97e9e7/apps/server/src/responses/compaction.ts) can reuse the latest completed checkpoint and retain recent turns, keeping ordinary ongoing model context bounded. It does not remove old transcript rows or stop the browser rendering them.
 
 A synthetic imported history without a checkpoint is a distinct edge case: all older context is offered to one summarization call. The experiment below reports the app's own approximate token estimate, not a provider tokenizer count. Very large first-compaction inputs can exceed a model's context window; the audit does not claim that an actual provider would accept them. Normal gradual conversations with valid checkpoints can behave much better.
 
@@ -140,7 +140,7 @@ The next implementation should be judged against these same workloads and functi
 
 ## Artifacts and validation
 
-- [Reproduction instructions](../../scripts/benchmarks/README.md) and five benchmark/summary files in that directory.
+- [Reproduction instructions](https://github.com/IsaacThoman/pulpo/blob/87a3fabc1d7a306b40b0544a947dbc8e80fa2a01/scripts/benchmarks/README.md) and five benchmark/summary files in that directory.
 - [Sanitized measurement summary](long-chat-benchmark-2026-09-22.json): per-run phase aggregates and API medians, without raw frame traces, message bodies, or the synthetic session token.
 - Production web build and benchmark-script lint passed. The focused row-isolation regression suite passed all three tests; browser measurements remain the evidence for real Markdown/DOM costs.
 - Raw traces and fixtures remain outside Git under `/tmp/pulpo-longchat-benchmark`. The disposable API and benchmark database/Redis containers are stopped and removed after measurement.
