@@ -4223,8 +4223,8 @@ function ChatView({
   draftPresetsRef.current = draftPresets;
   /** The draft scope whose presets are settled, so late-loading history no longer reseeds them. */
   const settledPresetScopeRef = useRef<string | null>(null);
-  /** Drafts with an explicit choice this session; their own synced draft may match defaults, so history must not replace it. */
-  const chosenPresetScopesRef = useRef(new Set<string>());
+  /** Explicit choices this session, per draft and model. History fills in other models but never replaces these. */
+  const chosenPresetsRef = useRef(new Map<string, Record<string, GenerationSelections>>());
   /** A new-chat draft's pending first send, so a rejected start can return to its choices. */
   const pendingStartRef = useRef<PendingStart | null>(null);
   const startTokenRef = useRef(0);
@@ -4247,9 +4247,12 @@ function ChatView({
     if (token !== null) pendingStartRef.current = settlePendingStart(pendingStartRef.current, token);
   };
   const onSelectPreset = (presetId: string, choiceId: string) => {
-    settledPresetScopeRef.current = activeDraftRef.current?.scope ?? null;
-    if (settledPresetScopeRef.current) chosenPresetScopesRef.current.add(settledPresetScopeRef.current);
-    setDraftPresets((current) => ({ ...current, [model.id]: { ...presetSelections, [presetId]: choiceId } }));
+    const scope = activeDraftRef.current?.scope ?? null;
+    const selections = { ...presetSelections, [presetId]: choiceId };
+    settledPresetScopeRef.current = scope;
+    // Chats only: new-chat drafts start fresh like web. A queue edit's choices belong to the queued message.
+    if (scope && chatId && !queueEditRef.current) chosenPresetsRef.current.set(scope, { ...chosenPresetsRef.current.get(scope), [model.id]: selections });
+    setDraftPresets((current) => ({ ...current, [model.id]: selections }));
     // Match web: regular new-chat choices become model defaults; existing and temporary chats stay scoped.
     if (!chatId && !temporary && !handoffBusyRef.current) onSavePresetDefault(model.id, presetId, choiceId);
     Haptics.selectionAsync();
@@ -4640,8 +4643,8 @@ function ChatView({
     // Reset before hydration opens composer sync, which seeds unsaved drafts from current state.
     const entered = enterDraftPresets(pendingStartRef.current, { scope, draftId }, messagesRef.current);
     pendingStartRef.current = entered.pending;
-    setDraftPresets(entered.presets.presets);
-    settledPresetScopeRef.current = entered.presets.settled || chosenPresetScopesRef.current.has(scope) ? scope : null;
+    setDraftPresets({ ...entered.presets.presets, ...chosenPresetsRef.current.get(scope) });
+    settledPresetScopeRef.current = entered.presets.settled ? scope : null;
     usedDictationRef.current = false;
     hydratedDraftScopeRef.current = null;
     draftLoadRevisionRef.current += 1;
@@ -4696,7 +4699,7 @@ function ChatView({
     const seeded = chatGenerationSelections(messages);
     if (!Object.keys(seeded).length) return;
     settledPresetScopeRef.current = scope;
-    setDraftPresets(seeded);
+    setDraftPresets({ ...seeded, ...chosenPresetsRef.current.get(scope) });
   }, [messageEdit, messages]);
 
   const sharedComposerState: ComposerState = {
