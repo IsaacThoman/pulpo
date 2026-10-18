@@ -306,7 +306,9 @@ Independent reviewers audited each phase as it landed, then the whole branch twi
   Look and sharing. Older servers without a checksum retain conservative invalidation; copies
   cached under the old metadata-based identity need one fresh download.
 - Native drawer rows use a minimum height and grow with their text, rather than clipping names
-  at 44 points. Checked on the iPhone at the largest accessibility text size.
+  at 44 points. Their native hosts remeasure on live text-size changes. Checked on the iPhone
+  at the largest accessibility text size, and on iPad switching large → XXXL → maximum
+  accessibility → large while the app stayed running.
 - Visual indentation stops at 64 points, without limiting the real folder depth. Folder, chat,
   document, empty-state, and move-picker rows use the same limit. Checked the 23-level tree and
   opened its deepest document on the iPhone; a regression test covers the contract's maximum depth.

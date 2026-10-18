@@ -1,6 +1,6 @@
 import type { FileNode } from '@pulpo/contracts'
 import { memo } from 'react'
-import { Platform, Pressable, type StyleProp, StyleSheet, Text, type TextStyle, View, type ViewStyle } from 'react-native'
+import { Platform, Pressable, type StyleProp, StyleSheet, Text, type TextStyle, useWindowDimensions, View, type ViewStyle } from 'react-native'
 import { ItemContextMenuView, itemContextMenuAvailable, type ContextMenuAction } from '../../../native/ItemContextMenuView'
 import { SymbolView } from '../../../platform/SymbolView'
 import { useAppTheme } from '../../../theme'
@@ -40,6 +40,7 @@ interface Props {
 /** A folder, file, or shortcut in the drawer, among the chats; a folder opens and closes in place. */
 export const SidebarNodeRow = memo(function SidebarNodeRow({ node, depth, styles: rowStyles, actions, folder, active, unavailable, subtitle, onPress, onAction, onLongPress }: Props) {
   const theme = useAppTheme()
+  const { fontScale } = useWindowDimensions()
   // Muted unless given a color, as the web sidebar shows them among the chats.
   const kindIcon = fileIcon(node)
   const icon = node.color ?? node.target?.color ? kindIcon : { ...kindIcon, tint: theme.secondary }
@@ -81,6 +82,8 @@ export const SidebarNodeRow = memo(function SidebarNodeRow({ node, depth, styles
   if (Platform.OS === 'ios' && itemContextMenuAvailable) {
     return (
       <ItemContextMenuView
+        // The native host otherwise keeps its old measurement after a live Dynamic Type change.
+        key={fontScale}
         accessible
         accessibilityLabel={label}
         accessibilityRole="button"

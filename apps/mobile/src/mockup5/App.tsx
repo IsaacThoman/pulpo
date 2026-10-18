@@ -6381,7 +6381,7 @@ const HistoryChatRow = memo(function HistoryChatRow({ active, archiveAvailable, 
   const { styles } = useChatStyles();
   const { fontScale } = useWindowDimensions();
   const previewLease = useRef<(() => void) | null>(null);
-  useEffect(() => () => { previewLease.current?.(); previewLease.current = null; }, [chat.id]);
+  useEffect(() => () => { previewLease.current?.(); previewLease.current = null; }, [chat.id, fontScale]);
   const endPreview = () => { previewLease.current?.(); previewLease.current = null; };
   const largeAndroidText = Platform.OS === 'android' && fontScale >= 1.5;
   const expirationAction = expirationMenuAction?.kind ?? 'hidden';
@@ -6395,6 +6395,8 @@ const HistoryChatRow = memo(function HistoryChatRow({ active, archiveAvailable, 
   </>;
   if (Platform.OS === 'ios') return (
     <HistoryChatContextMenuView
+      // Recreate the native host so a live text-size change measures the row again.
+      key={fontScale}
       accessibilityLabel={chat.title}
       accessibilityHint="Double tap to open. Long press for more actions."
       accessibilityRole="button"
