@@ -28,6 +28,25 @@ function fixture() {
 }
 
 describe('composer realtime synchronization', () => {
+  it('seeds an unsaved draft from the state current when storage loads', async () => {
+    let release!: (value: ComposerCheckpoint | null) => void
+    const sync = new ComposerSync({ load: () => new Promise((resolve) => { release = resolve }), save: async () => {} }, 'a')
+    const writes: ComposerWrite[] = []
+    sync.connect({
+      read: async () => ({ ok: true, snapshot: { draftId: 'new', revision: 0, clearedRevision: 0, state: state(), mutationId: null } }),
+      write: async (input) => { writes.push(input); return { ok: true, snapshot: { draftId: 'new', revision: 1, clearedRevision: 0, state: { ...state(), ...input.patch }, mutationId: input.mutationId } } },
+    })
+    let current: ComposerState = { ...state(), model: { id: 'model', presets: { effort: 'low' } } }
+    const listener = vi.fn()
+    const opened = sync.open('new', () => current, listener)
+    current = { ...state('typed'), model: { id: 'model', presets: { effort: 'high' } } }
+    release(null)
+    await opened
+    expect(listener.mock.calls[0]![0].pending).toMatchObject({ content: 'typed', model: { presets: { effort: 'high' } } })
+    expect(writes[0]!.patch).toMatchObject({ content: 'typed', model: { presets: { effort: 'high' } } })
+    sync.dispose()
+  })
+
   it('imports once and applies remote revisions without echo writes', async () => {
     const f = fixture(), a = f.client('a'), b = f.client('b')
     await a.open(state('hello'))

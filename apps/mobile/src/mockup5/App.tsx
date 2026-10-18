@@ -249,7 +249,7 @@ import {
   restoreLatestDraft,
   stagedTranscriptAttachments,
 } from '../features/chat/optimisticAttachmentSend';
-import { chatGenerationSelections, generationDefaultsWithChoice, generationSummary, resolveGenerationSelections, type GenerationSelections } from '../features/chat/generationOptions';
+import { chatGenerationSelections, enterDraftPresets, generationDefaultsWithChoice, type DraftPresets, generationSummary, resolveGenerationSelections, type GenerationSelections } from '../features/chat/generationOptions';
 import { composerGenerationAction, selectedAssistantStatus, selectedInFlightResponseId } from '../features/chat/generationControls';
 import {
   cacheComposerDraft,
@@ -4215,13 +4215,17 @@ function ChatView({
   const presetSelections = resolveGenerationSelections(prototypeModel, draftPresets[model.id] ?? defaultPresetSelections);
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
+  const draftPresetsRef = useRef(draftPresets);
+  draftPresetsRef.current = draftPresets;
   /** The draft scope whose presets are settled, so late-loading history no longer reseeds them. */
   const settledPresetScopeRef = useRef<string | null>(null);
+  /** Unstarted new-chat drafts have no history, so a rejected start returns to their earlier choices. */
+  const newChatPresetsRef = useRef(new Map<string, DraftPresets>());
   const onSelectPreset = (presetId: string, choiceId: string) => {
     settledPresetScopeRef.current = activeDraftRef.current?.scope ?? null;
     setDraftPresets((current) => ({ ...current, [model.id]: { ...presetSelections, [presetId]: choiceId } }));
     // Match web: regular new-chat choices become model defaults; existing and temporary chats stay scoped.
-    if (!chatId && !temporary) onSavePresetDefault(model.id, presetId, choiceId);
+    if (!chatId && !temporary && !handoffBusyRef.current) onSavePresetDefault(model.id, presetId, choiceId);
     Haptics.selectionAsync();
   };
   const insets = useSafeAreaInsets();
@@ -4608,9 +4612,13 @@ function ChatView({
 
     activeDraftRef.current = { scope, namespace: draftNamespace, draftId };
     // Reset before hydration opens composer sync, which seeds unsaved drafts from current state.
-    const seededPresets = chatGenerationSelections(messagesRef.current);
-    setDraftPresets(seededPresets);
-    settledPresetScopeRef.current = Object.keys(seededPresets).length ? scope : null;
+    const newChatDraft = (id: string) => id === localComposerDraftId(null, false) || id === localComposerDraftId(null, true);
+    const entered = enterDraftPresets(newChatPresetsRef.current, previous ? {
+      scope: previous.scope, newChat: newChatDraft(previous.draftId),
+      state: { presets: draftPresetsRef.current, settled: settledPresetScopeRef.current === previous.scope },
+    } : null, { scope, newChat: newChatDraft(draftId) }, messagesRef.current);
+    setDraftPresets(entered.presets);
+    settledPresetScopeRef.current = entered.settled ? scope : null;
     usedDictationRef.current = false;
     hydratedDraftScopeRef.current = null;
     draftLoadRevisionRef.current += 1;

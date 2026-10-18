@@ -63,8 +63,10 @@ export class ComposerSync {
   private saves = new LatestValueQueue<string, ComposerCheckpoint, void>()
   constructor(private persistence: ComposerPersistence, private clientId: string) {}
 
-  async open(draftId: string, initial: ComposerState, listener: (checkpoint: ComposerCheckpoint) => void): Promise<() => void> {
-    if (initial.temporary || draftId.startsWith('temporary:')) return () => undefined
+  /** A function initial state is read once the local checkpoint loads, so edits made meanwhile are not replaced by a stale copy. */
+  async open(draftId: string, initial: ComposerState | (() => ComposerState), listener: (checkpoint: ComposerCheckpoint) => void): Promise<() => void> {
+    const initialState = typeof initial === 'function' ? initial : () => initial
+    if (initialState().temporary || draftId.startsWith('temporary:')) return () => undefined
     let entry = this.entries.get(draftId)
     if (!entry) {
       entry = { snapshot: { draftId, revision: 0, clearedRevision: 0, mutationId: null, state: emptyComposerState() }, pending: {}, listeners: new Set(), ready: false, saved: Promise.resolve() }
@@ -81,7 +83,10 @@ export class ComposerSync {
           entry!.temporaryReturn = saved.temporaryReturn
           entry!.submissions = (saved.submissions ?? (saved.submission ? [saved.submission] : [])).filter((receipt) => !receipt.state.temporary)
         }
-        else if (!saved && (initial.content || initial.attachments.length || initial.model)) entry!.pending = sharedPatch(initial)
+        else if (!saved) {
+          const current = initialState()
+          if (!current.temporary && (current.content || current.attachments.length || current.model)) entry!.pending = sharedPatch(current)
+        }
         entry!.initialized = true
       })
     }

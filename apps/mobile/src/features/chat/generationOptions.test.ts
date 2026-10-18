@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { PrototypeModel } from '../../mockup5/src/domain'
-import { chatGenerationSelections, generationDefaultsWithChoice, generationSummary, resolveGenerationSelections } from './generationOptions'
+import { chatGenerationSelections, enterDraftPresets, generationDefaultsWithChoice, generationSummary, resolveGenerationSelections } from './generationOptions'
 
 const model = {
   id: 'model-1',
@@ -44,6 +44,22 @@ describe('generation options', () => {
       { role: 'assistant', modelId: 'model-2' },
     ])).toEqual({ 'model-1': { reasoning: 'high' }, 'model-2': { speed: 'quality' } })
     expect(chatGenerationSelections([])).toEqual({})
+  })
+
+  it('starts chats from history and returns new-chat drafts to their earlier choices', () => {
+    const memory = new Map()
+    const started = [{ role: 'assistant', modelId: 'model-1', presetSelections: { reasoning: 'high' } }]
+    const newDraft = { scope: 'local\u0000temporary:new', newChat: true }
+    const startedChat = { scope: 'local\u0000temporary:chat', newChat: false }
+    // Opening a chat never carries the previous draft's choices.
+    expect(enterDraftPresets(memory, { ...newDraft, state: { presets: { 'model-1': { reasoning: 'low' } }, settled: true } }, startedChat, started))
+      .toEqual({ presets: { 'model-1': { reasoning: 'high' } }, settled: true })
+    // A rejected first send returns to the unstarted draft with its choices intact.
+    expect(enterDraftPresets(memory, { ...startedChat, state: { presets: { 'model-1': { reasoning: 'high' } }, settled: true } }, newDraft, []))
+      .toEqual({ presets: { 'model-1': { reasoning: 'low' } }, settled: true })
+    // Chats without loaded history stay open to late seeding; unvisited new-chat drafts use defaults.
+    expect(enterDraftPresets(memory, null, startedChat, [])).toEqual({ presets: {}, settled: false })
+    expect(enterDraftPresets(memory, null, { scope: 'local\u0000new', newChat: true }, [])).toEqual({ presets: {}, settled: false })
   })
 
   it('saves one explicit choice without discarding other saved defaults', () => {

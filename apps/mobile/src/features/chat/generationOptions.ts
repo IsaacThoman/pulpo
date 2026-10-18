@@ -31,6 +31,30 @@ export function chatGenerationSelections(
   return selections
 }
 
+export interface DraftPresets {
+  presets: Record<string, GenerationSelections>
+  /** History no longer reseeds a settled draft; a shared draft or an explicit choice decided it. */
+  settled: boolean
+}
+
+/**
+ * Presets for a draft being opened. Chats start from their history. Unstarted
+ * new-chat drafts have none, so they keep their earlier choices, including
+ * after a rejected first send returns to them.
+ */
+export function enterDraftPresets(
+  newChatMemory: Map<string, DraftPresets>,
+  leaving: { scope: string; newChat: boolean; state: DraftPresets } | null,
+  entering: { scope: string; newChat: boolean },
+  messages: Parameters<typeof chatGenerationSelections>[0],
+): DraftPresets {
+  if (leaving?.newChat) newChatMemory.set(leaving.scope, leaving.state)
+  const remembered = entering.newChat ? newChatMemory.get(entering.scope) : undefined
+  if (remembered) return remembered
+  const presets = chatGenerationSelections(messages)
+  return { presets, settled: Object.keys(presets).length > 0 }
+}
+
 /** Record one explicit choice as the account default, keeping the model's other saved choices. */
 export function generationDefaultsWithChoice(
   generation: Record<string, GenerationSelections>,

@@ -26,7 +26,10 @@ export function useComposerSync(userId: string | null, draftId: string, state: C
     wasEditing.current = false
     skippingEdit.current = false
     hiddenSubmission.current = null
-    void sync.open(draftId, latest.current.state, (checkpoint) => {
+    const opening = latest.current.state
+    // Seed an unsaved draft from the composer as it is once storage loads, not as it was on open.
+    const initial = () => latest.current.identity === identity ? latest.current.state : opening
+    void sync.open(draftId, initial, (checkpoint) => {
       if (disposed || latest.current.state.temporary || !usePreferencesStore.getState().composerSyncEnabled || latest.current.identity !== identity) return
       opened.current = identity
       let remote = { ...checkpoint.snapshot.state, ...checkpoint.pending }
