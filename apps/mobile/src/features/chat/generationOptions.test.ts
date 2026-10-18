@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { PrototypeModel } from '../../mockup5/src/domain'
-import { generationSummary, resolveGenerationSelections } from './generationOptions'
+import { chatGenerationSelections, enterDraftPresets, generationDefaultsWithChoice, generationSummary, resolveGenerationSelections, discardPendingStart, settlePendingStart, type PendingStart } from './generationOptions'
 
 const model = {
   id: 'model-1',
@@ -33,5 +33,62 @@ describe('generation options', () => {
 
   it('summarizes every active preset like the web composer', () => {
     expect(generationSummary(model, { reasoning: 'low', speed: 'quality' })).toBe('Low · Quality')
+  })
+
+  it('starts a chat from each model\'s newest assistant turn', () => {
+    expect(chatGenerationSelections([
+      { role: 'assistant', modelId: 'model-1', presetSelections: { reasoning: 'low' } },
+      { role: 'user', modelId: 'model-1', presetSelections: { reasoning: 'medium' } },
+      { role: 'assistant', modelId: 'model-2', presetSelections: { speed: 'quality' } },
+      { role: 'assistant', modelId: 'model-1', presetSelections: { reasoning: 'high' } },
+      { role: 'assistant', modelId: 'model-2' },
+    ])).toEqual({ 'model-1': { reasoning: 'high' }, 'model-2': { speed: 'quality' } })
+    expect(chatGenerationSelections([])).toEqual({})
+  })
+
+  describe('new-chat starts', () => {
+    const history = [{ role: 'assistant', modelId: 'model-1', presetSelections: { reasoning: 'high' } }]
+    const draft = { scope: 'local\u0000temporary:new', draftId: 'temporary:new' }
+    const chat = { scope: 'local\u0000temporary:chat', draftId: 'temporary:chat' }
+    const other = { scope: 'local\u0000other', draftId: 'other' }
+    const sent = { presets: { 'model-1': { reasoning: 'low' } }, settled: true }
+    const defaults = { presets: {}, settled: false }
+    const begun = (): PendingStart => ({ token: 1, scope: draft.scope, state: sent })
+    /** Enter the chat the send opened, with its optimistic turn. */
+    const opened = () => enterDraftPresets(begun(), chat, history).pending
+
+    it('starts drafts from history and records the chat a send opened', () => {
+      expect(enterDraftPresets(begun(), chat, history)).toEqual({ presets: { presets: { 'model-1': { reasoning: 'high' } }, settled: true }, pending: { ...begun(), started: chat } })
+      // History that has not loaded leaves the draft open to late seeding.
+      expect(enterDraftPresets(null, other, [])).toEqual({ presets: defaults, pending: null })
+    })
+
+    it('restores a start discarded by its rejection once, on the return', () => {
+      const discarded = settlePendingStart(discardPendingStart(opened(), 1, chat.scope), 1)
+      expect(discarded).toMatchObject({ rejected: true })
+      expect(enterDraftPresets(discarded, draft, [])).toEqual({ presets: sent, pending: null })
+    })
+
+    it('does not restore while pending, after acceptance, or when the user moved on', () => {
+      // Opening a new chat while the first send is pending, e.g. after abandoning the started temporary chat.
+      expect(enterDraftPresets(opened(), draft, [])).toEqual({ presets: defaults, pending: opened() })
+      expect(settlePendingStart(opened(), 1)).toBeNull()
+      // Discarded after the user switched chats.
+      expect(discardPendingStart(opened(), 1, other.scope)).toEqual(opened())
+      // A discarded start that is not followed by its return is dropped.
+      expect(enterDraftPresets(discardPendingStart(opened(), 1, chat.scope), other, [])).toEqual({ presets: defaults, pending: null })
+      // A newer start owns the slot.
+      expect(discardPendingStart(opened(), 2, chat.scope)).toEqual(opened())
+      expect(settlePendingStart(opened(), 2)).toEqual(opened())
+    })
+  })
+
+  it('saves one explicit choice without discarding other saved defaults', () => {
+    const saved = { 'model-1': { reasoning: 'low', speed: 'quality' }, 'model-2': { speed: 'fast' } }
+    expect(generationDefaultsWithChoice(saved, 'model-1', 'reasoning', 'high')).toEqual({
+      'model-1': { reasoning: 'high', speed: 'quality' },
+      'model-2': { speed: 'fast' },
+    })
+    expect(generationDefaultsWithChoice({}, 'model-3', 'speed', 'fast')).toEqual({ 'model-3': { speed: 'fast' } })
   })
 })

@@ -85,6 +85,7 @@ function mapMessage(message: DisplayMessage): PrototypeMessage {
     error: message.error,
     outputItems: message.outputItems,
     agentMode: message.agentMode,
+    presetSelections: message.presetSelections,
     meta: message.usage ? `${message.usage.inputTokens.toLocaleString()}→${message.usage.outputTokens.toLocaleString()} tok` : undefined,
     branches: message.branch.variants.length > 1 ? message.branch.variants.map((branch) => ({
       ...branch,
