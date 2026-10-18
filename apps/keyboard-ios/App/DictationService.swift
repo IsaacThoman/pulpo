@@ -143,36 +143,40 @@ final class DictationService {
     let recordingAfter = Date().timeIntervalSince(handoffAt)
     let named = knownHost
     knownHost = nil
-    let resolve: (@escaping (String?) -> Void) -> Void = { [weak self] done in
-      if let named { return self?.afterActivation { done(named) } ?? () }
-      HostAppObserver.shared.waitForHost(since: handoffAt.addingTimeInterval(-5), timeout: 3, completion: done)
-    }
-    resolve { [weak self] bundle in
-      guard let self, self.lifecycle.isCurrent(attempt, at: .recording) else { return }
-      let waited = Date().timeIntervalSince(handoffAt)
-      guard self.phase == .recording, let bundle else {
-        self.returnState = .failed
-        Diagnostics.record("app", "return", ["outcome": bundle == nil ? "no-host" : "not-recording", "observer": HostAppObserver.shared.isAvailable, "recordingMs": Int(recordingAfter * 1000), "waitedMs": Int(waited * 1000)])
-        return
-      }
-      HostReturn.open(bundle, isAuthorized: { [weak self] in
-        self?.lifecycle.isCurrent(attempt, at: .recording) == true
-      }) { method in
-        guard self.lifecycle.isCurrent(attempt, at: .recording) else { return }
-        self.returnState = method == .none ? .failed : .returned(HostReturn.name(for: bundle))
-        Diagnostics.record("app", "return", ["outcome": method == .none ? "failed" : "returned", "method": method.rawValue, "host": bundle, "recordingMs": Int(recordingAfter * 1000), "hostMs": Int(waited * 1000)])
-      }
+    if let named { return reopenWhenActive(named, handoffAt: handoffAt, recordingAfter: recordingAfter, attempt: attempt) }
+    HostAppObserver.shared.waitForHost(since: handoffAt.addingTimeInterval(-5), timeout: 3) { [weak self] bundle in
+      self?.reopen(bundle, handoffAt: handoffAt, recordingAfter: recordingAfter, attempt: attempt)
     }
   }
 
   /// iOS ignores opening another app while this one is still coming forward, so a host
   /// known at launch waits until this app is active and has settled.
-  private func afterActivation(_ body: @escaping () -> Void, checks: Int = 30) {
-    guard UIApplication.shared.applicationState == .active || checks == 0 else {
-      DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in self?.afterActivation(body, checks: checks - 1) }
+  private func reopenWhenActive(_ bundle: String, handoffAt: Date, recordingAfter: TimeInterval, attempt: DictationRequestLifecycle.Attempt, checks: Int = 30) {
+    let active = UIApplication.shared.applicationState == .active || checks == 0
+    DispatchQueue.main.asyncAfter(deadline: .now() + (active ? 0.5 : 0.1)) { [weak self] in
+      MainActor.assumeIsolated {
+        guard let self else { return }
+        if active { self.reopen(bundle, handoffAt: handoffAt, recordingAfter: recordingAfter, attempt: attempt) }
+        else { self.reopenWhenActive(bundle, handoffAt: handoffAt, recordingAfter: recordingAfter, attempt: attempt, checks: checks - 1) }
+      }
+    }
+  }
+
+  private func reopen(_ bundle: String?, handoffAt: Date, recordingAfter: TimeInterval, attempt: DictationRequestLifecycle.Attempt) {
+    guard lifecycle.isCurrent(attempt, at: .recording) else { return }
+    let waited = Date().timeIntervalSince(handoffAt)
+    guard phase == .recording, let bundle else {
+      returnState = .failed
+      Diagnostics.record("app", "return", ["outcome": bundle == nil ? "no-host" : "not-recording", "observer": HostAppObserver.shared.isAvailable, "recordingMs": Int(recordingAfter * 1000), "waitedMs": Int(waited * 1000)])
       return
     }
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: body)
+    HostReturn.open(bundle, isAuthorized: { [weak self] in
+      self?.lifecycle.isCurrent(attempt, at: .recording) == true
+    }) { [weak self] method in
+      guard let self, self.lifecycle.isCurrent(attempt, at: .recording) else { return }
+      self.returnState = method == .none ? .failed : .returned(HostReturn.name(for: bundle))
+      Diagnostics.record("app", "return", ["outcome": method == .none ? "failed" : "returned", "method": method.rawValue, "host": bundle, "recordingMs": Int(recordingAfter * 1000), "hostMs": Int(waited * 1000)])
+    }
   }
 
   private func startEngineIfNeeded() throws {
