@@ -35,6 +35,13 @@ function sameBranches(left?: ResponseBranch[], right?: ResponseBranch[]): boolea
   })
 }
 
+function sameSelections(left?: Record<string, string>, right?: Record<string, string>): boolean {
+  if (left === right) return true
+  if (!left || !right) return false
+  const keys = Object.keys(left)
+  return keys.length === Object.keys(right).length && keys.every((key) => left[key] === right[key])
+}
+
 function sameOutput(left?: unknown[], right?: unknown[]): boolean {
   return left === right || ((left?.length ?? 0) === 0 && (right?.length ?? 0) === 0)
 }
@@ -47,6 +54,7 @@ export function projectedMessageUnchanged(left: PrototypeMessage, right: Prototy
     && left.status === right.status && left.error === right.error && left.meta === right.meta
     && left.feedback === right.feedback && left.activeBranch === right.activeBranch
     && left.agentMode === right.agentMode
+    && sameSelections(left.presetSelections, right.presetSelections)
     && sameAttachments(left.attachments, right.attachments)
     && sameActivity(left.activity, right.activity)
     && sameBranches(left.branches, right.branches)

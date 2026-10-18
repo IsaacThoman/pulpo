@@ -249,7 +249,7 @@ import {
   restoreLatestDraft,
   stagedTranscriptAttachments,
 } from '../features/chat/optimisticAttachmentSend';
-import { generationSummary, resolveGenerationSelections, type GenerationSelections } from '../features/chat/generationOptions';
+import { chatGenerationSelections, generationDefaultsWithChoice, generationSummary, resolveGenerationSelections, type GenerationSelections } from '../features/chat/generationOptions';
 import { composerGenerationAction, selectedAssistantStatus, selectedInFlightResponseId } from '../features/chat/generationControls';
 import {
   cacheComposerDraft,
@@ -593,6 +593,7 @@ type Message = {
   branches?: ResponseBranch[];
   activeBranch?: number;
   agentMode?: boolean;
+  presetSelections?: GenerationSelections;
 };
 type Chat = { id: string; title: string; modelId: string; time: string; section: string; messages: Message[] };
 type SendOptions = {
@@ -682,6 +683,7 @@ function prototypeMessageToLegacy(message: PrototypeMessage, chatId: string, cha
     branches: message.branches,
     activeBranch: message.activeBranch,
     agentMode: message.agentMode,
+    presetSelections: message.presetSelections,
   };
   legacyMessageCache.set(message, { chatId, chatModelId, value });
   return value;
@@ -2416,20 +2418,14 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     Haptics.selectionAsync();
   }, []);
 
-  const selectPreset = useCallback((presetId: string, choiceId: string) => {
-    const store = usePreferencesStore.getState();
-    const generation = store.generation;
-    const next = {
-      ...generation,
-      [selectedModelId]: { ...generation[selectedModelId], [presetId]: choiceId },
-    };
+  const savePresetDefault = useCallback((modelId: string, presetId: string, choiceId: string) => {
+    const next = generationDefaultsWithChoice(usePreferencesStore.getState().generation, modelId, presetId, choiceId);
     runProductionAction(productionActions.setPreference('generation', next), {
       onError: (error) => {
         useRealtimeStore.getState().setSyncError(error instanceof Error ? error.message : 'The preset choice could not be synced.');
       },
     });
-    Haptics.selectionAsync();
-  }, [selectedModelId]);
+  }, []);
 
   const sendMessage = async (
     value = input,
@@ -2514,6 +2510,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
       status: 'queued',
       outputItems: [],
       agentMode,
+      presetSelections: selections,
     });
     activeResponseId.current = responseId;
     setAssistantStatus('thinking');
@@ -2842,7 +2839,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
             composerFocusSuppressed={composerFocusSuppressed}
             composerFocusRequest={composerFocusRequest}
             onChangeInput={setInput}
-            onSelectPreset={selectPreset}
+            onSavePresetDefault={savePresetDefault}
             onSend={sendMessage}
             onRemoteChatStarted={openStartedChat}
             onStop={stopGeneration}
@@ -4162,7 +4159,7 @@ function ComposerQueueSection({ title, subject, visible, collapsed, onToggle, fa
 
 function ChatView({
   acceptIncomingFiles, messages, queuedMessages, chatId, chatLoaded, onTranscriptReady, openingChatId, draftNamespace, keyboardLayoutEnabled, transcriptTransitionActive, model, models, prototypeModel, presetSelections: defaultPresetSelections, input, composerInputRef, composerFocusSuppressed, composerFocusRequest, onChangeInput, onSend, onRemoteChatStarted, assistantStatus,
-  onEdit, onRegenerate, onActivateBranch, onOpenChat, onStop, onTogglePanel, onSelectModel, onNewChat, onSaveTemporary, persistentSidebar, sidebarVisible, temporary, autoExpire, expirationPeriod, showAutoExpirationControl, expired, savingTemporary, onTemporaryChange, onAutoExpirationChange,
+  onEdit, onRegenerate, onActivateBranch, onOpenChat, onStop, onTogglePanel, onSelectModel, onSavePresetDefault, onNewChat, onSaveTemporary, persistentSidebar, sidebarVisible, temporary, autoExpire, expirationPeriod, showAutoExpirationControl, expired, savingTemporary, onTemporaryChange, onAutoExpirationChange,
 }: {
   acceptIncomingFiles: boolean;
   messages: Message[];
@@ -4195,7 +4192,8 @@ function ChatView({
   persistentSidebar: boolean;
   sidebarVisible: boolean;
   onSelectModel: (model: Model) => void;
-  onSelectPreset: (presetId: string, choiceId: string) => void;
+  /** Saves an explicit new-chat choice as the account's default for that model. */
+  onSavePresetDefault: (modelId: string, presetId: string, choiceId: string) => void;
   onNewChat: () => void;
   onSaveTemporary: () => void;
   temporary: boolean;
@@ -4211,9 +4209,21 @@ function ChatView({
   const queueClient = useQueryClient();
   const [queueBusy, setQueueBusy] = useState(false);
   const queueEditRef = useRef<{ id: string; chatId: string; namespace: string; model: Model; presets: Record<string, GenerationSelections> } | null>(null);
+  // Choices belong to the open draft. Each draft starts from its chat's latest
+  // turns, then account defaults; a shared draft or an explicit choice wins.
   const [draftPresets, setDraftPresets] = useState<Record<string, GenerationSelections>>({});
   const presetSelections = resolveGenerationSelections(prototypeModel, draftPresets[model.id] ?? defaultPresetSelections);
-  const onSelectPreset = (presetId: string, choiceId: string) => setDraftPresets((current) => ({ ...current, [model.id]: { ...presetSelections, [presetId]: choiceId } }));
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
+  /** The draft scope whose presets are settled, so late-loading history no longer reseeds them. */
+  const settledPresetScopeRef = useRef<string | null>(null);
+  const onSelectPreset = (presetId: string, choiceId: string) => {
+    settledPresetScopeRef.current = activeDraftRef.current?.scope ?? null;
+    setDraftPresets((current) => ({ ...current, [model.id]: { ...presetSelections, [presetId]: choiceId } }));
+    // Match web: regular new-chat choices become model defaults; existing and temporary chats stay scoped.
+    if (!chatId && !temporary) onSavePresetDefault(model.id, presetId, choiceId);
+    Haptics.selectionAsync();
+  };
   const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
   const { reduceMotion, reduceTransparency } = useAccessibilityPreferences();
@@ -4597,6 +4607,10 @@ function ChatView({
     }
 
     activeDraftRef.current = { scope, namespace: draftNamespace, draftId };
+    // Reset before hydration opens composer sync, which seeds unsaved drafts from current state.
+    const seededPresets = chatGenerationSelections(messagesRef.current);
+    setDraftPresets(seededPresets);
+    settledPresetScopeRef.current = Object.keys(seededPresets).length ? scope : null;
     usedDictationRef.current = false;
     hydratedDraftScopeRef.current = null;
     draftLoadRevisionRef.current += 1;
@@ -4644,6 +4658,16 @@ function ChatView({
     });
   }, [activeDraftSnapshot, chatId, temporary, draftNamespace, onChangeInput, placeComposerCursorAtEnd, setAttachments]);
 
+  // An uncached chat's history can arrive after its draft opens; adopt its presets until something settles them.
+  useEffect(() => {
+    const scope = activeDraftRef.current?.scope;
+    if (!scope || settledPresetScopeRef.current === scope || messageEdit) return;
+    const seeded = chatGenerationSelections(messages);
+    if (!Object.keys(seeded).length) return;
+    settledPresetScopeRef.current = scope;
+    setDraftPresets(seeded);
+  }, [messageEdit, messages]);
+
   const sharedComposerState: ComposerState = {
     content: preservedComposerRef.current?.input ?? input,
     attachments: (preservedComposerRef.current?.attachments ?? attachments)
@@ -4681,6 +4705,7 @@ function ChatView({
         setAttachments(next);
         setAgentEnabled(remote.agentMode);
         if (remote.model) {
+          settledPresetScopeRef.current = activeDraftRef.current?.scope ?? null;
           setDraftPresets((current) => ({ ...current, [remote.model!.id]: remote.model!.presets }));
           const selected = models.find((candidate) => candidate.id === remote.model!.id);
           if (selected && selected.id !== model.id) onSelectModel(selected);

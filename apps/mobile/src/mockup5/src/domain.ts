@@ -113,6 +113,7 @@ export interface PrototypeMessage {
   feedback?: 'good' | 'bad' | null;
   outputItems?: unknown[];
   agentMode?: boolean;
+  presetSelections?: Record<string, string>;
 }
 
 export interface PrototypeChat {

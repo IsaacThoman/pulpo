@@ -20,6 +20,27 @@ export function resolveGenerationSelections(
   }))
 }
 
+/** Each model's choices from its newest assistant turn, so a chat reopens with the controls it last used. */
+export function chatGenerationSelections(
+  messages: readonly { role: string; modelId?: string; presetSelections?: GenerationSelections }[],
+): Record<string, GenerationSelections> {
+  const selections: Record<string, GenerationSelections> = {}
+  for (const message of messages) {
+    if (message.role === 'assistant' && message.modelId && message.presetSelections) selections[message.modelId] = message.presetSelections
+  }
+  return selections
+}
+
+/** Record one explicit choice as the account default, keeping the model's other saved choices. */
+export function generationDefaultsWithChoice(
+  generation: Record<string, GenerationSelections>,
+  modelId: string,
+  presetId: string,
+  choiceId: string,
+): Record<string, GenerationSelections> {
+  return { ...generation, [modelId]: { ...generation[modelId], [presetId]: choiceId } }
+}
+
 export function generationSummary(
   model: PrototypeModel | undefined,
   selections: GenerationSelections,
