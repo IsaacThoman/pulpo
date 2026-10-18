@@ -4249,9 +4249,12 @@ function ChatView({
   const onSelectPreset = (presetId: string, choiceId: string) => {
     const scope = activeDraftRef.current?.scope ?? null;
     const selections = { ...presetSelections, [presetId]: choiceId };
-    settledPresetScopeRef.current = scope;
-    // Chats only: new-chat drafts start fresh like web. A queue edit's choices belong to the queued message.
-    if (scope && chatId && !queueEditRef.current) chosenPresetsRef.current.set(scope, { ...chosenPresetsRef.current.get(scope), [model.id]: selections });
+    // A queue edit's choices belong to the queued message; restoreComposer puts the draft's back.
+    if (!queueEditRef.current) {
+      settledPresetScopeRef.current = scope;
+      // Chats only: new-chat drafts start fresh like web.
+      if (scope && chatId) chosenPresetsRef.current.set(scope, { ...chosenPresetsRef.current.get(scope), [model.id]: selections });
+    }
     setDraftPresets((current) => ({ ...current, [model.id]: selections }));
     // Match web: regular new-chat choices become model defaults; existing and temporary chats stay scoped.
     if (!chatId && !temporary && !handoffBusyRef.current) onSavePresetDefault(model.id, presetId, choiceId);
@@ -4739,7 +4742,11 @@ function ChatView({
         setAttachments(next);
         setAgentEnabled(remote.agentMode);
         if (remote.model) {
-          settledPresetScopeRef.current = activeDraftRef.current?.scope ?? null;
+          const scope = activeDraftRef.current?.scope ?? null;
+          settledPresetScopeRef.current = scope;
+          // The synced draft replaced an explicit choice; remember what the user now sees.
+          const chosen = scope ? chosenPresetsRef.current.get(scope) : undefined;
+          if (scope && chosen?.[remote.model.id]) chosenPresetsRef.current.set(scope, { ...chosen, [remote.model.id]: remote.model.presets });
           setDraftPresets((current) => ({ ...current, [remote.model!.id]: remote.model!.presets }));
           const selected = models.find((candidate) => candidate.id === remote.model!.id);
           if (selected && selected.id !== model.id) onSelectModel(selected);
