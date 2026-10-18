@@ -4723,6 +4723,8 @@ function ChatView({
         }
       }
     }, Boolean(messageEdit),
+    // Another client's draft already chose presets, even when they match ours; history must not replace them.
+    () => { settledPresetScopeRef.current = activeDraftRef.current?.scope ?? null; },
   );
 
   useEffect(() => {
@@ -5425,6 +5427,8 @@ function ChatView({
         return;
       }
       followSnapshot = null;
+      // A started chat owns its presets now; the next unstarted draft begins from defaults again.
+      if (submittedDraftIdentity) newChatPresetsRef.current.delete(submittedDraftIdentity.scope);
       const retainedAttachments = submittedDraftIdentity
         ? cachedComposerDraft<ComposerAttachment>(submittedDraftIdentity.scope)?.attachments ?? [] : [];
       for (const attachment of submittedDraft.attachments) {
@@ -5446,7 +5450,9 @@ function ChatView({
   const submitSuggestion = useCallback((message: string) => {
     if (isDictationBusy()) return;
     const followSnapshot = armSubmittedTurnFollow();
+    const submittedScope = activeDraftRef.current?.scope;
     void onSend(message, [], { presetSelections, agentEnabled: activeAgentEnabled, temporary, autoExpire }).then((accepted) => {
+      if (accepted && submittedScope) newChatPresetsRef.current.delete(submittedScope);
       if (!accepted) restoreSubmittedTurnFollow(followSnapshot);
     }).catch((error) => {
       restoreSubmittedTurnFollow(followSnapshot);

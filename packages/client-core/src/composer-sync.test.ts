@@ -28,6 +28,15 @@ function fixture() {
 }
 
 describe('composer realtime synchronization', () => {
+  it('distinguishes its own draft revisions from other clients', async () => {
+    const f = fixture(), a = f.client('a'), ab = f.client('ab')
+    await a.open(state('hello'))
+    expect(a.sync.ownsMutation(f.snapshot().mutationId)).toBe(true)
+    expect(ab.sync.ownsMutation(f.snapshot().mutationId)).toBe(false)
+    expect(a.sync.ownsMutation(null)).toBe(false)
+    a.sync.dispose(); ab.sync.dispose()
+  })
+
   it('seeds an unsaved draft from the state current when storage loads', async () => {
     let release!: (value: ComposerCheckpoint | null) => void
     const sync = new ComposerSync({ load: () => new Promise((resolve) => { release = resolve }), save: async () => {} }, 'a')

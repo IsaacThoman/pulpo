@@ -100,6 +100,10 @@ export class ComposerSync {
     return () => { entry!.listeners.delete(listener) }
   }
 
+  /** True for a draft revision this coordinator wrote, as opposed to another client. */
+  ownsMutation(mutationId: string | null | undefined): boolean {
+    return Boolean(mutationId?.startsWith(`${this.clientId}:`))
+  }
   connect(transport: ComposerTransport): void {
     this.transport = transport
     this.generation++

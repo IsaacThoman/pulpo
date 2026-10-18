@@ -4,11 +4,12 @@ import type { ComposerState } from '@pulpo/contracts'
 import { usePreferencesStore } from '../../store/preferences'
 import { mobileComposerSync } from './composerSync'
 
-export function useComposerSync(userId: string | null, draftId: string, state: ComposerState, hydrated: boolean, paused: boolean, apply: (state: ComposerState) => void, editing = false) {
+/** `onSharedModel` reports a draft whose model choice was confirmed by the server from another client or session. */
+export function useComposerSync(userId: string | null, draftId: string, state: ComposerState, hydrated: boolean, paused: boolean, apply: (state: ComposerState) => void, editing = false, onSharedModel?: () => void) {
   const enabled = usePreferencesStore((state) => state.composerSyncEnabled)
   const identity = `${userId ?? "local"}\u0000${draftId}`
-  const latest = useRef({ state, apply, paused, editing, identity })
-  latest.current = { state, apply, paused, editing, identity }
+  const latest = useRef({ state, apply, paused, editing, identity, onSharedModel })
+  latest.current = { state, apply, paused, editing, identity, onSharedModel }
   const deferred = useRef<ComposerState | null>(null)
   const wasEditing = useRef(false)
   const baseline = useRef(state)
@@ -32,6 +33,7 @@ export function useComposerSync(userId: string | null, draftId: string, state: C
     void sync.open(draftId, initial, (checkpoint) => {
       if (disposed || latest.current.state.temporary || !usePreferencesStore.getState().composerSyncEnabled || latest.current.identity !== identity) return
       opened.current = identity
+      if (checkpoint.snapshot.revision > 0 && checkpoint.snapshot.state.model && !sync.ownsMutation(checkpoint.snapshot.mutationId)) latest.current.onSharedModel?.()
       let remote = { ...checkpoint.snapshot.state, ...checkpoint.pending }
       // An optimistic clear is local until acceptance. Coordinator notifications
       // (including our own control writes) can still carry the submitted text.
