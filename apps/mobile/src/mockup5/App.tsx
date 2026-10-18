@@ -2615,6 +2615,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
       activeResponseSubscription.current?.();
       activeResponseSubscription.current = null;
       setAssistantStatus('idle');
+      // Must run before the chat is removed and navigation returns, so ChatView can restore the draft's presets.
       if (!activeChat && !serverChatCreated) options?.onStartDiscarded?.();
       if (productionNamespace) {
         rejectOptimisticTurn({
@@ -4222,6 +4223,8 @@ function ChatView({
   draftPresetsRef.current = draftPresets;
   /** The draft scope whose presets are settled, so late-loading history no longer reseeds them. */
   const settledPresetScopeRef = useRef<string | null>(null);
+  /** Drafts with an explicit choice this session; their own synced draft may match defaults, so history must not replace it. */
+  const chosenPresetScopesRef = useRef(new Set<string>());
   /** A new-chat draft's pending first send, so a rejected start can return to its choices. */
   const pendingStartRef = useRef<PendingStart | null>(null);
   const startTokenRef = useRef(0);
@@ -4245,6 +4248,7 @@ function ChatView({
   };
   const onSelectPreset = (presetId: string, choiceId: string) => {
     settledPresetScopeRef.current = activeDraftRef.current?.scope ?? null;
+    if (settledPresetScopeRef.current) chosenPresetScopesRef.current.add(settledPresetScopeRef.current);
     setDraftPresets((current) => ({ ...current, [model.id]: { ...presetSelections, [presetId]: choiceId } }));
     // Match web: regular new-chat choices become model defaults; existing and temporary chats stay scoped.
     if (!chatId && !temporary && !handoffBusyRef.current) onSavePresetDefault(model.id, presetId, choiceId);
@@ -4637,7 +4641,7 @@ function ChatView({
     const entered = enterDraftPresets(pendingStartRef.current, { scope, draftId }, messagesRef.current);
     pendingStartRef.current = entered.pending;
     setDraftPresets(entered.presets.presets);
-    settledPresetScopeRef.current = entered.presets.settled ? scope : null;
+    settledPresetScopeRef.current = entered.presets.settled || chosenPresetScopesRef.current.has(scope) ? scope : null;
     usedDictationRef.current = false;
     hydratedDraftScopeRef.current = null;
     draftLoadRevisionRef.current += 1;
