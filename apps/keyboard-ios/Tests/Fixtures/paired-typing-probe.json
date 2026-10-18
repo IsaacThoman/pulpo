@@ -1,0 +1,507 @@
+{
+  "protocol": "Frozen paired typing probe. No tuning on verification cases. Both keyboards receive centered taps after the literal prefix and followed by space. Exact literal preservation and intended typo recovery are reported separately. Curated probes are not population accuracy estimates.",
+  "develop": [
+    {
+      "input": "buisness",
+      "expected": "business",
+      "kind": "typo"
+    },
+    {
+      "input": "remeber",
+      "expected": "remember",
+      "kind": "typo"
+    },
+    {
+      "input": "happyness",
+      "expected": "happiness",
+      "kind": "typo"
+    },
+    {
+      "input": "acheived",
+      "expected": "achieved",
+      "kind": "typo"
+    },
+    {
+      "input": "dissapear",
+      "expected": "disappear",
+      "kind": "typo"
+    },
+    {
+      "input": "charactor",
+      "expected": "character",
+      "kind": "typo"
+    },
+    {
+      "input": "agianst",
+      "expected": "against",
+      "kind": "typo"
+    },
+    {
+      "input": "surprize",
+      "expected": "surprise",
+      "kind": "typo"
+    },
+    {
+      "input": "occassion",
+      "expected": "occasion",
+      "kind": "typo"
+    },
+    {
+      "input": "alwasy",
+      "expected": "always",
+      "kind": "typo"
+    },
+    {
+      "input": "wore",
+      "expected": "wore",
+      "kind": "literal"
+    },
+    {
+      "input": "wed",
+      "expected": "wed",
+      "kind": "literal"
+    },
+    {
+      "input": "shell",
+      "expected": "shell",
+      "kind": "literal"
+    },
+    {
+      "input": "id",
+      "expected": "id",
+      "kind": "literal"
+    },
+    {
+      "input": "Saoirse",
+      "expected": "Saoirse",
+      "kind": "literal"
+    },
+    {
+      "input": "Anjali",
+      "expected": "Anjali",
+      "kind": "literal"
+    },
+    {
+      "input": "GraphQL",
+      "expected": "GraphQL",
+      "kind": "literal"
+    },
+    {
+      "input": "useEffect",
+      "expected": "useEffect",
+      "kind": "literal"
+    },
+    {
+      "input": "meh",
+      "expected": "meh",
+      "kind": "literal"
+    },
+    {
+      "input": "yep",
+      "expected": "yep",
+      "kind": "literal"
+    }
+  ],
+  "verify": [
+    {
+      "input": "absense",
+      "expected": "absence",
+      "kind": "typo"
+    },
+    {
+      "input": "accross",
+      "expected": "across",
+      "kind": "typo"
+    },
+    {
+      "input": "aparent",
+      "expected": "apparent",
+      "kind": "typo"
+    },
+    {
+      "input": "basicaly",
+      "expected": "basically",
+      "kind": "typo"
+    },
+    {
+      "input": "calender",
+      "expected": "calendar",
+      "kind": "typo"
+    },
+    {
+      "input": "cemetary",
+      "expected": "cemetery",
+      "kind": "typo"
+    },
+    {
+      "input": "commited",
+      "expected": "committed",
+      "kind": "typo"
+    },
+    {
+      "input": "concious",
+      "expected": "conscious",
+      "kind": "typo"
+    },
+    {
+      "input": "curiousity",
+      "expected": "curiosity",
+      "kind": "typo"
+    },
+    {
+      "input": "dissapoint",
+      "expected": "disappoint",
+      "kind": "typo"
+    },
+    {
+      "input": "existance",
+      "expected": "existence",
+      "kind": "typo"
+    },
+    {
+      "input": "familar",
+      "expected": "familiar",
+      "kind": "typo"
+    },
+    {
+      "input": "finaly",
+      "expected": "finally",
+      "kind": "typo"
+    },
+    {
+      "input": "foriegn",
+      "expected": "foreign",
+      "kind": "typo"
+    },
+    {
+      "input": "fourty",
+      "expected": "forty",
+      "kind": "typo"
+    },
+    {
+      "input": "goverment",
+      "expected": "government",
+      "kind": "typo"
+    },
+    {
+      "input": "grammer",
+      "expected": "grammar",
+      "kind": "typo"
+    },
+    {
+      "input": "happend",
+      "expected": "happened",
+      "kind": "typo"
+    },
+    {
+      "input": "heigth",
+      "expected": "height",
+      "kind": "typo"
+    },
+    {
+      "input": "humerous",
+      "expected": "humorous",
+      "kind": "typo"
+    },
+    {
+      "input": "immediatly",
+      "expected": "immediately",
+      "kind": "typo"
+    },
+    {
+      "input": "independant",
+      "expected": "independent",
+      "kind": "typo"
+    },
+    {
+      "input": "knowlege",
+      "expected": "knowledge",
+      "kind": "typo"
+    },
+    {
+      "input": "libary",
+      "expected": "library",
+      "kind": "typo"
+    },
+    {
+      "input": "maintainance",
+      "expected": "maintenance",
+      "kind": "typo"
+    },
+    {
+      "input": "milennium",
+      "expected": "millennium",
+      "kind": "typo"
+    },
+    {
+      "input": "noticable",
+      "expected": "noticeable",
+      "kind": "typo"
+    },
+    {
+      "input": "ocasionally",
+      "expected": "occasionally",
+      "kind": "typo"
+    },
+    {
+      "input": "particulary",
+      "expected": "particularly",
+      "kind": "typo"
+    },
+    {
+      "input": "persue",
+      "expected": "pursue",
+      "kind": "typo"
+    },
+    {
+      "input": "posession",
+      "expected": "possession",
+      "kind": "typo"
+    },
+    {
+      "input": "prefered",
+      "expected": "preferred",
+      "kind": "typo"
+    },
+    {
+      "input": "priviledge",
+      "expected": "privilege",
+      "kind": "typo"
+    },
+    {
+      "input": "publically",
+      "expected": "publicly",
+      "kind": "typo"
+    },
+    {
+      "input": "refered",
+      "expected": "referred",
+      "kind": "typo"
+    },
+    {
+      "input": "relevent",
+      "expected": "relevant",
+      "kind": "typo"
+    },
+    {
+      "input": "rythm",
+      "expected": "rhythm",
+      "kind": "typo"
+    },
+    {
+      "input": "sincerly",
+      "expected": "sincerely",
+      "kind": "typo"
+    },
+    {
+      "input": "succesful",
+      "expected": "successful",
+      "kind": "typo"
+    },
+    {
+      "input": "truely",
+      "expected": "truly",
+      "kind": "typo"
+    },
+    {
+      "input": "cant",
+      "expected": "cant",
+      "kind": "literal"
+    },
+    {
+      "input": "wont",
+      "expected": "wont",
+      "kind": "literal"
+    },
+    {
+      "input": "well",
+      "expected": "well",
+      "kind": "literal"
+    },
+    {
+      "input": "were",
+      "expected": "were",
+      "kind": "literal"
+    },
+    {
+      "input": "its",
+      "expected": "its",
+      "kind": "literal"
+    },
+    {
+      "input": "ill",
+      "expected": "ill",
+      "kind": "literal"
+    },
+    {
+      "input": "lets",
+      "expected": "lets",
+      "kind": "literal"
+    },
+    {
+      "input": "hell",
+      "expected": "hell",
+      "kind": "literal"
+    },
+    {
+      "input": "shed",
+      "expected": "shed",
+      "kind": "literal"
+    },
+    {
+      "input": "wed",
+      "expected": "wed",
+      "kind": "literal"
+    },
+    {
+      "input": "werewolf",
+      "expected": "werewolf",
+      "kind": "literal"
+    },
+    {
+      "input": "wonted",
+      "expected": "wonted",
+      "kind": "literal"
+    },
+    {
+      "input": "form",
+      "expected": "form",
+      "kind": "literal"
+    },
+    {
+      "input": "from",
+      "expected": "from",
+      "kind": "literal"
+    },
+    {
+      "input": "than",
+      "expected": "than",
+      "kind": "literal"
+    },
+    {
+      "input": "then",
+      "expected": "then",
+      "kind": "literal"
+    },
+    {
+      "input": "loose",
+      "expected": "loose",
+      "kind": "literal"
+    },
+    {
+      "input": "lose",
+      "expected": "lose",
+      "kind": "literal"
+    },
+    {
+      "input": "quiet",
+      "expected": "quiet",
+      "kind": "literal"
+    },
+    {
+      "input": "quite",
+      "expected": "quite",
+      "kind": "literal"
+    },
+    {
+      "input": "affect",
+      "expected": "affect",
+      "kind": "literal"
+    },
+    {
+      "input": "effect",
+      "expected": "effect",
+      "kind": "literal"
+    },
+    {
+      "input": "advice",
+      "expected": "advice",
+      "kind": "literal"
+    },
+    {
+      "input": "advise",
+      "expected": "advise",
+      "kind": "literal"
+    },
+    {
+      "input": "Niamh",
+      "expected": "Niamh",
+      "kind": "literal"
+    },
+    {
+      "input": "Aoife",
+      "expected": "Aoife",
+      "kind": "literal"
+    },
+    {
+      "input": "Xochitl",
+      "expected": "Xochitl",
+      "kind": "literal"
+    },
+    {
+      "input": "Szymon",
+      "expected": "Szymon",
+      "kind": "literal"
+    },
+    {
+      "input": "Pranav",
+      "expected": "Pranav",
+      "kind": "literal"
+    },
+    {
+      "input": "Aarav",
+      "expected": "Aarav",
+      "kind": "literal"
+    },
+    {
+      "input": "GitHub",
+      "expected": "GitHub",
+      "kind": "literal"
+    },
+    {
+      "input": "iMessage",
+      "expected": "iMessage",
+      "kind": "literal"
+    },
+    {
+      "input": "PyTorch",
+      "expected": "PyTorch",
+      "kind": "literal"
+    },
+    {
+      "input": "Neovim",
+      "expected": "Neovim",
+      "kind": "literal"
+    },
+    {
+      "input": "SolidJS",
+      "expected": "SolidJS",
+      "kind": "literal"
+    },
+    {
+      "input": "getUser",
+      "expected": "getUser",
+      "kind": "literal"
+    },
+    {
+      "input": "isReady",
+      "expected": "isReady",
+      "kind": "literal"
+    },
+    {
+      "input": "bun",
+      "expected": "bun",
+      "kind": "literal"
+    },
+    {
+      "input": "yup",
+      "expected": "yup",
+      "kind": "literal"
+    },
+    {
+      "input": "nope",
+      "expected": "nope",
+      "kind": "literal"
+    }
+  ]
+}
