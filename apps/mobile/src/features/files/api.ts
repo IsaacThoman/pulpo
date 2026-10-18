@@ -5,7 +5,6 @@ import type {
   FileNode,
   FileUploadReservation,
   MoveFileNodes,
-  SidebarState,
   UpdateFileNode,
 } from '@pulpo/contracts'
 import { attachmentValidationError, retryBusyUpload } from '@pulpo/client-core'
@@ -78,10 +77,6 @@ export function convertToDoc(id: string): Promise<FileNode> {
 /** A document's Markdown as the server has it, without pending suggestions. */
 export async function fetchDocMarkdown(id: string): Promise<{ name: string; markdown: string }> {
   return apiRequest<{ name: string; markdown: string }>(`/api/files/${id}/markdown`)
-}
-
-export function fetchSidebar(signal?: AbortSignal): Promise<SidebarState> {
-  return apiRequest<SidebarState>('/api/sidebar', { signal })
 }
 
 export function pinItems(ids: string[], pinned: boolean): Promise<unknown> {

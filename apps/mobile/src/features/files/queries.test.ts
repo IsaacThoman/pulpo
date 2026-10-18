@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('../../api/client', () => ({ isNetworkError: (error: unknown) => (error as { network?: boolean } | null)?.network === true }))
-vi.mock('./api', () => ({ fetchFileNode: mocks.fetchFileNode, fetchFileChanges: vi.fn(), fetchFolder: vi.fn(), fetchSidebar: vi.fn() }))
+vi.mock('./api', () => ({ fetchFileNode: mocks.fetchFileNode, fetchFileChanges: vi.fn(), fetchFolder: vi.fn() }))
 vi.mock('./cache', () => ({ cachedNode: mocks.cachedNode, cacheNode: mocks.cacheNode, forgetStaleDocCopies: mocks.forgetStaleDocCopies, cachedListing: vi.fn(), cacheListing: vi.fn() }))
 
 const { lookUpFileNode } = await import('./queries')

@@ -123,6 +123,8 @@ export interface PrototypeChat {
   updatedAt: number;
   pinned: boolean;
   folderId: string | null;
+  /** Filed at the top of My files: outside the sidebar, which lists the Chats folder. */
+  inFilesRoot?: boolean;
   /** Manual position within the pinned list, its folder, or the unfiled list. */
   sortOrder: number;
   temporary: boolean;

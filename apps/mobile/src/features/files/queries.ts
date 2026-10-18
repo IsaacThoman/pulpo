@@ -1,7 +1,7 @@
-import type { FileChangesResponse, FileListing, FileNode, SidebarState } from '@pulpo/contracts'
+import type { FileChangesResponse, FileListing, FileNode } from '@pulpo/contracts'
 import { queryOptions } from '@tanstack/react-query'
 import { isNetworkError } from '../../api/client'
-import { fetchFileChanges, fetchFileNode, fetchFolder, fetchSidebar } from './api'
+import { fetchFileChanges, fetchFileNode, fetchFolder } from './api'
 import { cachedListing, cachedNode, cacheListing, cacheNode, forgetStaleDocCopies } from './cache'
 
 /** Every Files query starts with ['files', namespace], so the `files` realtime scope refreshes them all. */
@@ -11,7 +11,6 @@ export const filesQueryKeys = {
   node: (namespace: string, id: string) => ['files', namespace, 'node', id.toLowerCase()] as const,
   changes: (namespace: string) => ['files', namespace, 'changes'] as const,
   responseChanges: (namespace: string, responseId: string) => ['files', namespace, 'changes', responseId] as const,
-  sidebar: (namespace: string) => ['files', namespace, 'sidebar'] as const,
 }
 
 /** A listing, from the server when reachable; offline, the last one seen on this device. */
@@ -68,9 +67,3 @@ export function fileChangesQuery(namespace: string, responseId: string) {
   })
 }
 
-export function sidebarQuery(namespace: string) {
-  return queryOptions({
-    queryKey: filesQueryKeys.sidebar(namespace),
-    queryFn: ({ signal }): Promise<SidebarState> => fetchSidebar(signal),
-  })
-}

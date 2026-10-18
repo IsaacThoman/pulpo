@@ -23,16 +23,21 @@ type PrototypeActions = {
   addFolder: (name: string) => string;
   renameFolder: (id: string, name: string) => void;
   deleteFolder: (id: string) => void;
-  toggleFolder: (id: string) => void;
   upsertChat: (chat: PrototypeChat) => void;
   discardChat: (id: string) => void;
   renameChat: (id: string, title: string) => void;
   /** Replaces which Files items a saved chat's agent works with; access of items that stay is kept. */
   setChatFileScope: (id: string, ids: string[]) => void;
   setChatFileAccess: (id: string, itemId: string, mode: import('@pulpo/contracts').FileAccessMode) => void;
-  /** `pinnedAfter`: the last position among the pinned Files items, which share the pinned list. */
-  togglePin: (id: string, pinnedAfter?: number) => void;
-  moveChat: (id: string, folderId: string | null) => void;
+  /**
+   * `pinnedAfter`: the last position among the pinned Files items, which share the pinned list.
+   * `floor`: the lowest position among the Files items of the chat's folder, which an unpinned chat goes above.
+   */
+  togglePin: (id: string, pinnedAfter?: number, floor?: number) => void;
+  /** Files a chat at the top of a folder, or (null) of the sidebar; `floor` as for `togglePin`. */
+  moveChat: (id: string, folderId: string | null, floor?: number) => void;
+  /** Unpins a chat and files it in the Archive folder. */
+  archiveChat: (id: string, archiveFolderId: string) => void;
   setChatAutoExpiration: (id: string, enabled: boolean) => void;
   trashChat: (id: string) => void;
   trashAllChats: () => void;
@@ -149,7 +154,6 @@ export const usePrototypeStore = create<PrototypeStore>()((set, get) => ({
       });
     });
   },
-  toggleFolder: (folderId) => set((state) => ({ folders: state.folders.map((folder) => folder.id === folderId ? { ...folder, expanded: !folder.expanded } : folder) })),
   upsertChat: (chat) => set((state) => ({ chats: state.chats.some((item) => item.id === chat.id) ? state.chats.map((item) => item.id === chat.id ? chat : item) : [chat, ...state.chats] })),
   discardChat: (chatId) => set((state) => ({ chats: state.chats.filter((chat) => chat.id !== chatId) })),
   renameChat: (chatId, title) => {
@@ -179,34 +183,38 @@ export const usePrototypeStore = create<PrototypeStore>()((set, get) => ({
       set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, fileScopeAccess: previous.fileScopeAccess } : chat) }));
     });
   },
-  togglePin: (chatId, pinnedAfter = -1) => {
+  togglePin: (chatId, pinnedAfter = -1, floor) => {
     const current = get().chats.find((chat) => chat.id === chatId);
     if (!current) return;
     const next = !current.pinned;
     const others = visibleHistoryChats(get().chats).filter((chat) => chat.id !== chatId);
-    const folderIds = new Set(get().folders.map((folder) => folder.id));
     // Match the web sidebar: pin to the end of Pinned, unpin to the top of the chat's list.
     const sortOrder = next
       ? others.filter((chat) => chat.pinned).reduce((max, chat) => Math.max(max, chat.sortOrder), pinnedAfter) + 1
-      : topChatSortOrder(others, folderIds, current.folderId && folderIds.has(current.folderId) ? current.folderId : null);
+      : topChatSortOrder(others, current.inFilesRoot ? null : current.folderId, { floor });
     set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, pinned: next, sortOrder } : chat) }));
     runOptimisticAction(`chat:${chatId}:pinned`, productionActions.togglePin(chatId, next, sortOrder, current.folderId ?? null), () => {
       set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, pinned: current.pinned, sortOrder: current.sortOrder } : chat) }));
     });
   },
-  moveChat: (chatId, folderId) => {
+  moveChat: (chatId, folderId, floor) => {
     const current = get().chats.find((chat) => chat.id === chatId);
     if (!current) return;
-    const others = visibleHistoryChats(get().chats).filter((chat) => chat.id !== chatId && !chat.pinned);
-    // Pinned chats keep their pinned position; otherwise match the web sidebar's placement.
-    const sortOrder = current.pinned
-      ? current.sortOrder
-      : folderId
-        ? others.filter((chat) => chat.folderId === folderId).reduce((max, chat) => Math.max(max, chat.sortOrder), -1) + 1
-        : topChatSortOrder(others, new Set(get().folders.map((folder) => folder.id)), null);
-    set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, folderId, sortOrder } : chat) }));
-    runOptimisticAction(`chat:${chatId}:folder`, productionActions.moveChat(chatId, folderId, sortOrder), () => {
-      set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, folderId: current.folderId, sortOrder: current.sortOrder } : chat) }));
+    const others = visibleHistoryChats(get().chats).filter((chat) => chat.id !== chatId);
+    // As on the web: to the top of its new list, above its Files items too (the server places it
+    // so); pinned chats keep their pinned position.
+    const sortOrder = current.pinned ? current.sortOrder : topChatSortOrder(others, folderId, { floor });
+    set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, folderId, inFilesRoot: false, sortOrder } : chat) }));
+    runOptimisticAction(`chat:${chatId}:folder`, productionActions.moveChat(chatId, folderId), () => {
+      set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, folderId: current.folderId, inFilesRoot: current.inFilesRoot, sortOrder: current.sortOrder } : chat) }));
+    });
+  },
+  archiveChat: (chatId, archiveFolderId) => {
+    const current = get().chats.find((chat) => chat.id === chatId);
+    if (!current) return;
+    set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, pinned: false, folderId: archiveFolderId, inFilesRoot: false } : chat) }));
+    runOptimisticAction(`chat:${chatId}:archive`, productionActions.archiveChat(chatId), () => {
+      set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, pinned: current.pinned, folderId: current.folderId, inFilesRoot: current.inFilesRoot } : chat) }));
     });
   },
   setChatAutoExpiration: (chatId, enabled) => {

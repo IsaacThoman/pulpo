@@ -24,6 +24,8 @@ import { usePrototypeStore } from '../store/prototypeStore'
 import { configureProductionActions } from './productionActions'
 import { reuseProjectedMessages } from './messageReuse'
 import { mergeServerFolders } from './folderMetadata'
+import { archiveSidebarItems } from '../../../features/sidebar/api'
+import { sidebarStateQuery } from '../../../features/sidebar/queries'
 import {
   acknowledgeOptimisticChatList,
   clearPendingOptimisticResponses,
@@ -109,6 +111,7 @@ function mapChat(chat: ServerChat, messages: PrototypeMessage[] = [], detailLoad
     updatedAt: Date.parse(chat.updatedAt),
     pinned: chat.pinned,
     folderId: chat.folderId,
+    inFilesRoot: chat.inFilesRoot ?? false,
     // Chats cached before sort orders were synced fall back to creation order.
     sortOrder: chat.sortOrder ?? 0,
     temporary: chat.temporary,
@@ -353,7 +356,9 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
   const serverHydrated = useRef(false)
   const chats = useQuery({ ...chatsQuery(namespace, preferences.localChatLimit), enabled })
   const deleted = useQuery({ ...deletedChatsQuery(namespace, preferences.localChatLimit), enabled })
-  const folders = useQuery({ ...foldersQuery(namespace), enabled })
+  // Chat folders are Files folders the sidebar lists; only servers without the sidebar need /api/folders.
+  const sidebar = useQuery({ ...sidebarStateQuery(namespace), enabled })
+  const folders = useQuery({ ...foldersQuery(namespace), enabled: enabled && sidebar.data === null })
   const models = useQuery({ ...modelsQuery(namespace), enabled: pickerEnabled })
   const settings = useQuery({ queryKey: queryKeys.settings(namespace), queryFn: mobileApi.settings, enabled: pickerEnabled })
   const detail = useQuery({
@@ -406,7 +411,9 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
         const patch = pinned ? { pinned, sortOrder } : { pinned, folderId }
         return offlineCapableMutation({ namespace, entityKey: `chat:${id}`, method: 'PATCH', path: `/api/chats/${id}`, body: patch, request: () => updateChat(id, patch) })
       },
-      moveChat: (id, folderId, sortOrder) => offlineCapableMutation({ namespace, entityKey: `chat:${id}`, method: 'PATCH', path: `/api/chats/${id}`, body: { folderId, sortOrder }, request: () => updateChat(id, { folderId, sortOrder }) }),
+      // The server files it at the top of the folder, above that folder's Files items too.
+      moveChat: (id, folderId) => offlineCapableMutation({ namespace, entityKey: `chat:${id}`, method: 'PATCH', path: `/api/chats/${id}`, body: { folderId }, request: () => updateChat(id, { folderId }) }),
+      archiveChat: (id) => offlineCapableMutation({ namespace, entityKey: `chat:${id}`, method: 'POST', path: '/api/sidebar/archive', body: { chatIds: [id], fileIds: [] }, request: () => archiveSidebarItems({ chatIds: [id], fileIds: [] }) }),
       setChatAutoExpiration: (id, enabled) => offlineCapableMutation({ namespace, entityKey: `chat:${id}:expiration`, method: 'PATCH', path: `/api/chats/${id}`, body: { autoExpire: enabled }, request: () => updateChat(id, { autoExpire: enabled }) }),
       trashChat: (id) => offlineCapableMutation({ namespace, entityKey: `chat:${id}`, method: 'DELETE', path: `/api/chats/${id}`, request: () => trashChat(id) }),
       trashAllChats: () => offlineCapableMutation({ namespace, entityKey: 'chats:all', method: 'DELETE', path: '/api/chats', request: () => mobileApi.trashAllChats() }),

@@ -93,6 +93,9 @@ public final class PulpoFileClipboardModule: Module {
       Prop("pinned") { (view, value: Bool) in
         view.setPinned(value)
       }
+      Prop("archiveAvailable") { (view, value: Bool) in
+        view.setArchiveAvailable(value)
+      }
       Prop("removeChatLabel") { (view, value: String) in
         view.setRemoveChatLabel(value)
       }

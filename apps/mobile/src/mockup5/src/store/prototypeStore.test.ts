@@ -74,13 +74,51 @@ describe('prototype store', () => {
     expect(togglePin).toHaveBeenLastCalledWith('c-streaming', false, 0, null);
 
     usePrototypeStore.getState().moveChat('c-streaming', folderId);
-    expect(chat('c-streaming')).toMatchObject({ folderId, sortOrder: 0 });
-    expect(moveChat).toHaveBeenLastCalledWith('c-streaming', folderId, 0);
+    expect(chat('c-streaming')).toMatchObject({ folderId, sortOrder: 0, inFilesRoot: false });
+    // The server files it at the top of the folder, above the folder's Files items too.
+    expect(moveChat).toHaveBeenLastCalledWith('c-streaming', folderId);
 
     usePrototypeStore.getState().togglePin('c-kv');
     usePrototypeStore.getState().moveChat('c-streaming', null);
     expect(chat('c-streaming')).toMatchObject({ folderId: null, sortOrder: -1 });
-    expect(moveChat).toHaveBeenLastCalledWith('c-streaming', null, -1);
+    expect(moveChat).toHaveBeenLastCalledWith('c-streaming', null);
+  });
+
+  it('moves a chat to the top of its new folder, above its chats and Files items, as on the web', () => {
+    const moveChat = vi.fn(async () => undefined);
+    const togglePin = vi.fn(async () => undefined);
+    configureProductionActions({ moveChat, togglePin });
+    const chat = (id: string) => usePrototypeStore.getState().chats.find((item) => item.id === id);
+    usePrototypeStore.setState((state) => ({ chats: state.chats.map((item) => item.id === 'c-streaming' ? { ...item, pinned: false, folderId: 'work', sortOrder: 4 } : item) }));
+
+    // At the top of the folder's chats (as on the web, never below 0)...
+    usePrototypeStore.getState().moveChat('c-kv', 'work');
+    expect(chat('c-kv')).toMatchObject({ folderId: 'work', sortOrder: 0 });
+    // ...and of its Files items, when they are higher up.
+    usePrototypeStore.getState().moveChat('c-kv', null);
+    usePrototypeStore.getState().moveChat('c-kv', 'work', -10);
+    expect(chat('c-kv')).toMatchObject({ folderId: 'work', sortOrder: -11 });
+    // Unpinned, a chat goes above the Files items of its folder too.
+    usePrototypeStore.getState().togglePin('c-kv');
+    usePrototypeStore.getState().togglePin('c-kv', -1, -20);
+    expect(chat('c-kv')).toMatchObject({ pinned: false, sortOrder: -21 });
+    expect(togglePin).toHaveBeenLastCalledWith('c-kv', false, -21, 'work');
+  });
+
+  it('archives a chat, unpinning it, and puts it back when the server refuses', async () => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    let refuse!: (error: Error) => void;
+    const archiveChat = vi.fn(() => new Promise<undefined>((_resolve, reject) => { refuse = reject; }));
+    configureProductionActions({ archiveChat });
+    const chat = () => usePrototypeStore.getState().chats.find((item) => item.id === 'c-streaming');
+
+    usePrototypeStore.getState().archiveChat('c-streaming', 'archive');
+    expect(chat()).toMatchObject({ pinned: false, folderId: 'archive', inFilesRoot: false });
+    expect(archiveChat).toHaveBeenCalledWith('c-streaming');
+
+    refuse(new Error('No'));
+    await vi.waitFor(() => expect(chat()).toMatchObject({ pinned: true, folderId: null }));
+    warning.mockRestore();
   });
 
   it('optimistically persists the new-chat expiration choice', async () => {
