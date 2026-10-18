@@ -202,14 +202,19 @@ The follow-up that made the drawer the web's sidebar (#846) was checked against 
 - **New folder** (confirmed on the server);
 - **Move to archive** in the chat menu.
 
-**Audits.** Five rounds of independent review found 33 issues:
+**Audits.** Six rounds of independent review found 36 issues, fewer and smaller each round:
 - Round 1: 10. One claim, that **Other folder…** never opens on iOS, was disproved on the simulator.
 - Round 2: 9.
 - Round 3: 6.
 - Round 4: 3.
 - Round 5: 5.
+- Round 6: 3, all minor.
 
-Every other finding confirmed by reading the code was fixed, with a test that fails without the fix, apart from one left as noted under "Not covered". Among the fixes:
+Every other finding confirmed by reading the code was fixed, with a test that fails without the fix, apart from two that were left:
+- One is noted under "Not covered".
+- The other: the position kept for a folder created offline stays on the device after it is sent. That is a few bytes, and it is never read again.
+
+Among the fixes:
 - Older servers are told where a moved or unpinned chat goes.
 - Undo is offered only once an archive has reached the server.
 - Chats and items at the top of My files are handled where they are.
@@ -219,6 +224,7 @@ Every other finding confirmed by reading the code was fixed, with a test that fa
 - Shortcuts that would open into themselves open in Files.
 - Toasts and sheets don't outlive an account switch.
 - Chats moved on the device before a trash or an Undo that was refused go back where they were.
+- Restoring from Settings › Trash brings folders back into the drawer.
 
 ## Audits
 

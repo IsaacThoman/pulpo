@@ -45,6 +45,7 @@ import { useRealtimeStore } from '../../../providers/realtimeStore';
 import { cacheNamespace } from '../../../data/database';
 import { unsyncedEditsNote } from '../../../features/files/doc/accountSessions';
 import { queryKeys } from '../../../data/queries';
+import { filesQueryKeys } from '../../../features/files/queries';
 import { deleteTrashedFiles, fetchTrashedFiles, restoreTrashedFiles, trashDeletesLabel, trashedFileIcon, trashedFilesQueryKey } from '../../../features/trash/trashedFiles';
 import { canUseNativePasskeys, createPkceRequest, nativeRegister, openPasskeyEnrollment, PasskeyCancelledError } from '../../../auth/passkeys';
 
@@ -473,9 +474,10 @@ export function TrashScreen({ navigation }: NativeStackScreenProps<RootStackPara
     } catch (error) {
       Alert.alert(failure, error instanceof Error ? error.message : 'Try again when you are online.');
     } finally {
-      // Restored folders reappear in the sidebar.
+      // Restored folders reappear in the sidebar (from Files, or the chat folders of older servers).
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: trashedFilesQueryKey(namespace) }),
+        queryClient.invalidateQueries({ queryKey: filesQueryKeys.all(namespace) }),
         queryClient.invalidateQueries({ queryKey: queryKeys.folders(namespace) }),
       ]);
     }

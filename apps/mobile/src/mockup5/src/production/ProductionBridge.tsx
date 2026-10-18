@@ -25,6 +25,7 @@ import { configureProductionActions } from './productionActions'
 import { reuseProjectedMessages } from './messageReuse'
 import { mergeServerFolders } from './folderMetadata'
 import { archiveSidebarItems } from '../../../features/sidebar/api'
+import { moveChatPatch, pinChatPatch } from './chatPatches'
 import { sidebarStateQuery } from '../../../features/sidebar/queries'
 import {
   acknowledgeOptimisticChatList,
@@ -408,17 +409,11 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
       // Unpinned, a chat goes back to its folder and the server places it there, above that folder's
       // Files items too (as on the web).
       togglePin: (id, pinned, sortOrder, folderId: string | null | undefined, sendSortOrder = false) => {
-        // Servers without the sidebar only move an unpinned chat when told where. Without a
-        // folder (a chat at the top of My files), it stays where it is.
-        const patch = pinned
-          ? { pinned, sortOrder }
-          : { pinned, ...folderId === undefined ? {} : { folderId }, ...sendSortOrder ? { sortOrder } : {} }
+        const patch = pinChatPatch(pinned, sortOrder, folderId, sendSortOrder)
         return offlineCapableMutation({ namespace, entityKey: `chat:${id}`, method: 'PATCH', path: `/api/chats/${id}`, body: patch, request: () => updateChat(id, patch) })
       },
-      // The server files it at the top of the folder, above that folder's Files items too; servers
-      // without the sidebar need the position.
       moveChat: (id, folderId, sortOrder?: number) => {
-        const patch = sortOrder === undefined ? { folderId } : { folderId, sortOrder }
+        const patch = moveChatPatch(folderId, sortOrder)
         return offlineCapableMutation({ namespace, entityKey: `chat:${id}`, method: 'PATCH', path: `/api/chats/${id}`, body: patch, request: () => updateChat(id, patch) })
       },
       archiveChat: (id) => offlineCapableMutation({ namespace, entityKey: `chat:${id}`, method: 'POST', path: '/api/sidebar/archive', body: { chatIds: [id], fileIds: [] }, request: () => archiveSidebarItems({ chatIds: [id], fileIds: [] }) }),
