@@ -109,6 +109,7 @@ final class KeyView: UIView {
     label.isHidden = false
     symbol.isHidden = true
     var name: String?
+    var image: UIImage?
     switch key.action {
     case .character(let text):
       let upper = shift.isActive && text.first?.isLetter == true
@@ -130,7 +131,7 @@ final class KeyView: UIView {
       name = "globe"
       accessibilityLabel = "next keyboard"
     case .emoji:
-      name = "face.smiling"
+      image = PulpoFaceSymbol.image(withConfiguration: style.symbolConfiguration, dark: style.dark)
       accessibilityLabel = "emoji"
     case .space:
       // The wide iOS 26 space bar is blank; a pad-sized space key needs its name.
@@ -151,10 +152,11 @@ final class KeyView: UIView {
         (key.label.count > 3 || key.label == "123" || key.label == "ABC" ? style.functionFont : style.symbolFont)
       accessibilityLabel = key.label
     }
-    if let name {
+    if let name { image = UIImage(systemName: name, withConfiguration: style.symbolConfiguration) }
+    if let image {
       label.isHidden = true
       symbol.isHidden = false
-      symbol.image = UIImage(systemName: name, withConfiguration: style.symbolConfiguration)
+      symbol.image = image
     }
     hint.text = key.hint
     hint.isHidden = key.hint == nil
