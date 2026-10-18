@@ -31,7 +31,10 @@ export function stateInvalidationQueryKeys(
     ]
   }
   if (scope === 'shelved-drafts') return [['shelved-drafts', namespace]]
-  if (scope === 'models' || scope === 'folders' || scope === 'settings') return [[scope, namespace]]
+  // Trashing or restoring folders and files changes the trash screen's Files section.
+  if (scope === 'files') return [['trashed-files', namespace]]
+  if (scope === 'folders') return [['folders', namespace], ['trashed-files', namespace]]
+  if (scope === 'models' || scope === 'settings') return [[scope, namespace]]
   return []
 }
 

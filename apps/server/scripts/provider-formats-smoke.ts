@@ -9,7 +9,7 @@ import { createServer, type IncomingHttpHeaders, type ServerResponse } from 'nod
 import { once } from 'node:events'
 import OpenAI from 'openai'
 import Anthropic from '@anthropic-ai/sdk'
-import { Worker } from 'bullmq'
+import { Queue, Worker } from 'bullmq'
 
 if (new URL(process.env.DATABASE_URL ?? 'http://invalid').pathname !== '/pulpo_provider_formats_test'
   || !process.env.REDIS_URL || new URL(process.env.REDIS_URL).pathname !== '/15') {
@@ -551,7 +551,7 @@ try {
 } finally {
   await worker.close()
   await app.close()
-  await Promise.all(Object.values(queues).map(queue => queue.close()))
+  await Promise.all(Object.values(queues).filter(value => value instanceof Queue).map(queue => queue.close()))
   await redis.quit()
   await closeDiagnostics(); await queryClient.end()
   upstream.closeAllConnections(); upstream.close()

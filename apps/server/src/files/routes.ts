@@ -17,7 +17,6 @@ import {
   getFileNode,
   listFolder,
   mutateFileTree,
-  listTrash,
   moveFileNodes,
   restoreFileNode,
   restoreFileNodes,
@@ -27,6 +26,7 @@ import {
   updateFileNode,
 } from './tree-service.js'
 import { registerFileUploadRoutes } from './upload-routes.js'
+import { listTrashedFiles } from '../trash/service.js'
 import { getFolderLayout, normalizeInput, updateFolderLayout } from './layout-service.js'
 import { liveChatIds } from './chat-items.js'
 import { ensureSystemFolders } from './system-folders.js'
@@ -98,9 +98,10 @@ export async function registerFileRoutes(app: FastifyInstance): Promise<void> {
     return updateFolderLayout(user.id, normalizeInput(updateFileFolderLayoutSchema.parse(request.body)))
   })
 
+  // Files items only; /api/trash lists them together with trashed chats.
   app.get('/api/files/trash', async (request) => {
     const user = await requireFilesUser(request)
-    return { items: await listTrash(user.id) }
+    return { items: await listTrashedFiles(user.id, { files: true }) }
   })
 
   app.delete('/api/files/trash', async (request, reply) => {

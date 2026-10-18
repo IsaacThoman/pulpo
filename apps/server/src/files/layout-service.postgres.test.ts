@@ -39,4 +39,12 @@ describe.skipIf(!enabled)('Files grid layouts', () => {
     await updateFolderLayout(userId, normalizeInput({ folderId: null, positions: { [a.id]: null } }))
     expect(await getFolderLayout(userId, null)).toEqual({ folderId: null, snapToGrid: false, positions: {} })
   })
+
+  it('keeps the place of the Trash, which is not stored in Files, at the top only', async () => {
+    const a = await createFolder(userId, { parentId: null, name: 'A' })
+    await updateFolderLayout(userId, normalizeInput({ folderId: null, positions: { [a.id]: { x: 0, y: 0 }, trash: { x: 120, y: 0 } } }))
+    expect((await getFolderLayout(userId, null)).positions).toEqual({ [a.id]: { x: 0, y: 0 }, trash: { x: 120, y: 0 } })
+    await updateFolderLayout(userId, normalizeInput({ folderId: a.id, positions: { trash: { x: 0, y: 0 } } }))
+    expect((await getFolderLayout(userId, a.id)).positions).toEqual({})
+  })
 })

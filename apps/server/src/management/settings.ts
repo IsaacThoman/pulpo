@@ -16,7 +16,7 @@ import {
 } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import { applicationSettings, auditEvents, models, userPreferences, users } from '../database/schema.js'
-import { maintenanceQueue } from '../jobs.js'
+import { queueTrashPurge } from '../jobs.js'
 import { encryptSecret } from '../lib/crypto.js'
 import { AppError } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
@@ -259,9 +259,7 @@ export async function applyManagementSettings(
   if (publishedRevision !== undefined) await publishStateChange({ userId, revision: publishedRevision })
   await publishScopedStateChanges(friendChanges, ['friends'])
   if (mode !== 'instance' && previousTrashRetention !== account.trashRetention) {
-    await maintenanceQueue.add('purge-chats', { type: 'purge-chats', payload: { userId } }, {
-      jobId: `purge-chats-management-settings-${userId}-${Date.now()}`,
-    })
+    await queueTrashPurge(userId, 'management-settings')
   }
   return loadManagementSettings(userId)
 }

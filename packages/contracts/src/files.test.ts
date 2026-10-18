@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { fileNameError, fileNameSchema, isMarkdownName, normalizeFileName, updateFileNodeSchema, updateSidebarItemSchema } from './files.js'
+import { fileNameError, fileNameSchema, isMarkdownName, normalizeFileName, updateFileFolderLayoutSchema, updateFileNodeSchema, updateSidebarItemSchema } from './files.js'
 
 describe('Files names', () => {
   it('normalizes to trimmed NFC', () => {
@@ -34,5 +34,11 @@ describe('Markdown names', () => {
     expect(isMarkdownName('README.MARKDOWN')).toBe(true)
     expect(isMarkdownName('notes.md.txt')).toBe(false)
     expect(isMarkdownName('md')).toBe(false)
+  })
+
+  it('keeps grid places of stored items and of the Trash', () => {
+    const at = { x: 0, y: 0 }
+    expect(updateFileFolderLayoutSchema.safeParse({ folderId: null, positions: { '01a146d5-cb9c-752b-b83f-22b4005894cc': at, trash: at } }).success).toBe(true)
+    expect(updateFileFolderLayoutSchema.safeParse({ folderId: null, positions: { other: at } }).success).toBe(false)
   })
 })

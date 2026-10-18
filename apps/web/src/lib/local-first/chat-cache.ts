@@ -1,4 +1,5 @@
 import { localComposerDraftId } from '@pulpo/client-core'
+import type { TrashListing } from '@pulpo/contracts'
 import { queryClient } from '@/lib/query-client'
 import { localAccountKey, localDb } from './database'
 import { clearRuntimeComposerDrafts } from './composer-drafts'
@@ -24,8 +25,8 @@ export async function clearLocalChats(userId: string, chatIds: string[]): Promis
     for (const response of chat?.responses ?? []) responseIds.add(response.id)
     queryClient.removeQueries({ queryKey: ['chat', userId, chatId], exact: true })
   }
-  queryClient.setQueryData<Array<{ id: string }>>(['deleted-chats', userId], (rows) =>
-    rows?.filter((row) => !idSet.has(row.id)),
+  queryClient.setQueryData<TrashListing>(['trash', userId], (listing) =>
+    listing && { ...listing, items: listing.items.filter((item) => !idSet.has(item.id)) },
   )
 
   await localDb.transaction('rw', localDb.drafts, localDb.attachmentBlobs, localDb.responseCursors, async () => {

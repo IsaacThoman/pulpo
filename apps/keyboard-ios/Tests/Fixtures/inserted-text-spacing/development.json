@@ -1,0 +1,418 @@
+[
+  {
+    "id": "D01",
+    "mode": "en",
+    "initialLeft": "hello",
+    "initialRight": "",
+    "actions": [
+      {
+        "kind": "snippet",
+        "text": "world"
+      }
+    ],
+    "expected": "hello world",
+    "control": "space required between words"
+  },
+  {
+    "id": "D02",
+    "mode": "en",
+    "initialLeft": "hello ",
+    "initialRight": "",
+    "actions": [
+      {
+        "kind": "snippet",
+        "text": "world"
+      }
+    ],
+    "expected": "hello world",
+    "control": "do not duplicate existing space"
+  },
+  {
+    "id": "D03",
+    "mode": "en",
+    "initialLeft": "hello",
+    "initialRight": ", friend",
+    "actions": [
+      {
+        "kind": "snippet",
+        "text": "world"
+      }
+    ],
+    "expected": "hello world, friend",
+    "control": "space before word; none before comma"
+  },
+  {
+    "id": "D04",
+    "mode": "en",
+    "initialLeft": "(",
+    "initialRight": "",
+    "actions": [
+      {
+        "kind": "snippet",
+        "text": "hello"
+      }
+    ],
+    "expected": "(hello",
+    "control": "no space after opening parenthesis"
+  },
+  {
+    "id": "D05",
+    "mode": "en",
+    "initialLeft": "[",
+    "initialRight": "remaining]",
+    "actions": [
+      {
+        "kind": "snippet",
+        "text": "hello "
+      }
+    ],
+    "expected": "[hello remaining]",
+    "control": "no space after opening bracket; supplied trailing separator"
+  },
+  {
+    "id": "D06",
+    "mode": "en",
+    "initialLeft": "“",
+    "initialRight": "”",
+    "actions": [
+      {
+        "kind": "snippet",
+        "text": "hello"
+      }
+    ],
+    "expected": "“hello”",
+    "control": "no spaces inside paired quotes"
+  },
+  {
+    "id": "D07",
+    "mode": "en",
+    "initialLeft": "hello",
+    "initialRight": "",
+    "actions": [
+      {
+        "kind": "snippet",
+        "text": ","
+      }
+    ],
+    "expected": "hello,",
+    "control": "no space before comma"
+  },
+  {
+    "id": "D08",
+    "mode": "en",
+    "initialLeft": "hello",
+    "initialRight": "",
+    "actions": [
+      {
+        "kind": "snippet",
+        "text": "!"
+      }
+    ],
+    "expected": "hello!",
+    "control": "no space before exclamation mark"
+  },
+  {
+    "id": "D09",
+    "mode": "en",
+    "initialLeft": "hello.",
+    "initialRight": "",
+    "actions": [
+      {
+        "kind": "snippet",
+        "text": "world"
+      }
+    ],
+    "expected": "hello. world",
+    "control": "separator after sentence punctuation"
+  },
+  {
+    "id": "D10",
+    "mode": "en",
+    "initialLeft": "hello\n",
+    "initialRight": "",
+    "actions": [
+      {
+        "kind": "snippet",
+        "text": "world"
+      }
+    ],
+    "expected": "hello\nworld",
+    "control": "newline already separates"
+  },
+  {
+    "id": "D11",
+    "mode": "en",
+    "initialLeft": "hello\t",
+    "initialRight": "",
+    "actions": [
+      {
+        "kind": "snippet",
+        "text": "world"
+      }
+    ],
+    "expected": "hello\tworld",
+    "control": "tab already separates"
+  },
+  {
+    "id": "D12",
+    "mode": "en",
+    "initialLeft": "hello",
+    "initialRight": " world",
+    "actions": [
+      {
+        "kind": "snippet",
+        "text": "brave"
+      }
+    ],
+    "expected": "hello brave world",
+    "control": "reuse existing right-side separator"
+  },
+  {
+    "id": "D13",
+    "mode": "en",
+    "initialLeft": "hello ",
+    "initialRight": "world",
+    "actions": [
+      {
+        "kind": "snippet",
+        "text": "brave"
+      }
+    ],
+    "expected": "hello brave world",
+    "control": "separator needed on right at caret"
+  },
+  {
+    "id": "D14",
+    "mode": "en",
+    "initialLeft": "hello (",
+    "initialRight": ") world",
+    "actions": [
+      {
+        "kind": "snippet",
+        "text": "brave"
+      }
+    ],
+    "expected": "hello (brave) world",
+    "control": "caret insertion bounded by brackets"
+  },
+  {
+    "id": "D15",
+    "mode": "en",
+    "initialLeft": "hello",
+    "initialRight": "",
+    "actions": [
+      {
+        "kind": "snippet",
+        "text": " world"
+      }
+    ],
+    "expected": "hello world",
+    "control": "preserve supplied leading separator once"
+  },
+  {
+    "id": "D16",
+    "mode": "en",
+    "initialLeft": "hello",
+    "initialRight": "",
+    "actions": [
+      {
+        "kind": "snippet",
+        "text": "world!"
+      }
+    ],
+    "expected": "hello world!",
+    "control": "punctuation belongs to inserted phrase"
+  },
+  {
+    "id": "D17",
+    "mode": "en",
+    "initialLeft": "hel",
+    "initialRight": "",
+    "actions": [
+      {
+        "kind": "suggestion",
+        "text": "hello"
+      },
+      {
+        "kind": "type",
+        "text": "there"
+      }
+    ],
+    "expected": "hello there",
+    "control": "accepted completion separates next typed word"
+  },
+  {
+    "id": "D18",
+    "mode": "en",
+    "initialLeft": "hello ",
+    "initialRight": "",
+    "actions": [
+      {
+        "kind": "swipe",
+        "text": "world"
+      },
+      {
+        "kind": "type",
+        "text": "again"
+      }
+    ],
+    "expected": "hello world again",
+    "control": "swipe separates next typed word"
+  },
+  {
+    "id": "D19",
+    "mode": "es",
+    "initialLeft": "hola",
+    "initialRight": "",
+    "actions": [
+      {
+        "kind": "snippet",
+        "text": "mundo"
+      }
+    ],
+    "expected": "hola mundo",
+    "control": "Spanish word separator"
+  },
+  {
+    "id": "D20",
+    "mode": "es",
+    "initialLeft": "¿",
+    "initialRight": "?",
+    "actions": [
+      {
+        "kind": "snippet",
+        "text": "qué tal"
+      }
+    ],
+    "expected": "¿qué tal?",
+    "control": "no space inside inverted question marks"
+  },
+  {
+    "id": "D21",
+    "mode": "es",
+    "initialLeft": "¡",
+    "initialRight": "!",
+    "actions": [
+      {
+        "kind": "snippet",
+        "text": "hola"
+      }
+    ],
+    "expected": "¡hola!",
+    "control": "no space inside inverted exclamation marks"
+  },
+  {
+    "id": "D22",
+    "mode": "en",
+    "initialLeft": "hello",
+    "initialRight": "",
+    "actions": [
+      {
+        "kind": "mode",
+        "text": "es"
+      },
+      {
+        "kind": "snippet",
+        "text": "mundo"
+      }
+    ],
+    "expected": "hello mundo",
+    "control": "switch to Spanish retains separator behavior"
+  },
+  {
+    "id": "D23",
+    "mode": "es",
+    "initialLeft": "hola",
+    "initialRight": "",
+    "actions": [
+      {
+        "kind": "mode",
+        "text": "bilingual"
+      },
+      {
+        "kind": "snippet",
+        "text": "world"
+      }
+    ],
+    "expected": "hola world",
+    "control": "bilingual switch retains separator behavior"
+  },
+  {
+    "id": "D24",
+    "mode": "bilingual",
+    "initialLeft": "hello",
+    "initialRight": "",
+    "actions": [
+      {
+        "kind": "mode",
+        "text": "en"
+      },
+      {
+        "kind": "snippet",
+        "text": ":"
+      }
+    ],
+    "expected": "hello:",
+    "control": "mode switch does not add punctuation space"
+  },
+  {
+    "id": "D25",
+    "mode": "en",
+    "initialLeft": "",
+    "initialRight": "",
+    "actions": [
+      {
+        "kind": "snippet",
+        "text": "hello, world"
+      }
+    ],
+    "expected": "hello, world",
+    "control": "preserve internal phrase spacing"
+  },
+  {
+    "id": "D26",
+    "mode": "en",
+    "initialLeft": "",
+    "initialRight": "",
+    "actions": [
+      {
+        "kind": "snippet",
+        "text": ""
+      }
+    ],
+    "expected": "",
+    "control": "empty insertion is inert"
+  },
+  {
+    "id": "D27",
+    "mode": "en",
+    "initialLeft": "hello",
+    "initialRight": "",
+    "actions": [
+      {
+        "kind": "emoji",
+        "text": "🙂"
+      },
+      {
+        "kind": "type",
+        "text": "world"
+      }
+    ],
+    "expected": "hello 🙂 world",
+    "control": "emoji separates adjacent words"
+  },
+  {
+    "id": "D28",
+    "mode": "en",
+    "initialLeft": "hello",
+    "initialRight": "",
+    "actions": [
+      {
+        "kind": "type",
+        "text": ","
+      }
+    ],
+    "expected": "hello,",
+    "control": "literal typing punctuation control"
+  }
+]

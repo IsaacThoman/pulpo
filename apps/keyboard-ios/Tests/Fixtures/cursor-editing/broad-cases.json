@@ -1,0 +1,980 @@
+{
+  "schema_version": 1,
+  "suite": "Pulpo PR782 R17 multilingual editing UX independent held-out synthetic cases",
+  "case_count": 6,
+  "seal_policy": "Reveal only after candidate source review and freeze; do not include case contents in implementer messages.",
+  "selection_contract": {
+    "unit": "UTF-16 code units",
+    "range": "zero-based, half-open, normalized start/end; collapsed range is a caret",
+    "line_endings": "LF",
+    "unicode_normalization": "literal precomposed characters as serialized; no automatic normalization",
+    "unfocused_selection": "stored editor range; highlight hidden while editor is unfocused",
+    "shift_selection_anchor": "original caret remains the anchor across consecutive Shift+ArrowLeft actions"
+  },
+  "fixture_and_action_contract": [
+    "Each case starts independently with the exact document, selection, languages and UI state specified; install them as fixture state without typing setup text.",
+    "Try It means the editable demonstration document, including its onboarding instance where specified.",
+    "Typing replaces the selection or inserts at the caret. Exact literal input is supplied with composition completed; no suggestions, autocorrection, smart punctuation or ranking are accepted.",
+    "select_range denotes ordinary text selection via available editor controls. move_caret denotes an ordinary beginning/end navigation command. Key actions are logical keyboard events.",
+    "Onboarding next/back and settings actions bind to the matching semantic controls; no particular visible label, screen layout or implementation API is assumed.",
+    "The settings case assumes an active typing-language setting for the already-enabled English and Spanish languages. App UI locale remains English; choosing a typing language does not imply translating the app interface.",
+    "Navigating away dismisses the keyboard. Returning retains the stored range without automatically focusing. focus_editor_without_repositioning explicitly resumes editing at that stored range using a non-positioning focus action.",
+    "Every expected state gives the full underlying document and stored range even when the editor is offscreen. No unlisted content mutation, focus jump, language switch, alert or error is allowed."
+  ],
+  "limitations": [
+    "Authored solely from the task brief and AGENTS.md; implementation, product screenshots, prior audit cases and candidate behavior were not inspected.",
+    "Semantic UI bindings and navigation/focus expectations are proposed acceptance contracts, not claims about existing controls. A missing control or different intended focus policy needs adjudication after unsealing.",
+    "No device interaction, native tests, builds, product edits, push or deployment were performed. Static artifact integrity checks do not establish product behavior.",
+    "The six small cases do not cover dictation, IME composition, accessibility, orientation, persistence across app termination or locale-dependent keyboard layouts."
+  ],
+  "cases": [
+    {
+      "id": "R17-HO-01",
+      "name": "English replacement followed by beginning and end navigation",
+      "starting_state": {
+        "document": "send the note.",
+        "selection_utf16": {
+          "start": 9,
+          "end": 13
+        },
+        "language": {
+          "active_typing_language": "en",
+          "enabled_typing_languages": [
+            "en"
+          ],
+          "app_ui_locale": "en"
+        },
+        "ui": {
+          "surface": "try_it",
+          "editor_focused": true,
+          "keyboard": "visible",
+          "selection_highlight_visible": true,
+          "language_control_value": "en",
+          "unexpected_alert_or_error": false
+        }
+      },
+      "steps": [
+        {
+          "action": {
+            "type": "type_text",
+            "text": "draft"
+          },
+          "expected": {
+            "document": "send the draft.",
+            "selection_utf16": {
+              "start": 14,
+              "end": 14
+            },
+            "language": {
+              "active_typing_language": "en",
+              "enabled_typing_languages": [
+                "en"
+              ],
+              "app_ui_locale": "en"
+            },
+            "ui": {
+              "surface": "try_it",
+              "editor_focused": true,
+              "keyboard": "visible",
+              "selection_highlight_visible": false,
+              "language_control_value": "en",
+              "unexpected_alert_or_error": false
+            }
+          }
+        },
+        {
+          "action": {
+            "type": "move_caret",
+            "destination": "document_start"
+          },
+          "expected": {
+            "document": "send the draft.",
+            "selection_utf16": {
+              "start": 0,
+              "end": 0
+            },
+            "language": {
+              "active_typing_language": "en",
+              "enabled_typing_languages": [
+                "en"
+              ],
+              "app_ui_locale": "en"
+            },
+            "ui": {
+              "surface": "try_it",
+              "editor_focused": true,
+              "keyboard": "visible",
+              "selection_highlight_visible": false,
+              "language_control_value": "en",
+              "unexpected_alert_or_error": false
+            }
+          }
+        },
+        {
+          "action": {
+            "type": "type_text",
+            "text": "Please "
+          },
+          "expected": {
+            "document": "Please send the draft.",
+            "selection_utf16": {
+              "start": 7,
+              "end": 7
+            },
+            "language": {
+              "active_typing_language": "en",
+              "enabled_typing_languages": [
+                "en"
+              ],
+              "app_ui_locale": "en"
+            },
+            "ui": {
+              "surface": "try_it",
+              "editor_focused": true,
+              "keyboard": "visible",
+              "selection_highlight_visible": false,
+              "language_control_value": "en",
+              "unexpected_alert_or_error": false
+            }
+          }
+        },
+        {
+          "action": {
+            "type": "move_caret",
+            "destination": "document_end"
+          },
+          "expected": {
+            "document": "Please send the draft.",
+            "selection_utf16": {
+              "start": 22,
+              "end": 22
+            },
+            "language": {
+              "active_typing_language": "en",
+              "enabled_typing_languages": [
+                "en"
+              ],
+              "app_ui_locale": "en"
+            },
+            "ui": {
+              "surface": "try_it",
+              "editor_focused": true,
+              "keyboard": "visible",
+              "selection_highlight_visible": false,
+              "language_control_value": "en",
+              "unexpected_alert_or_error": false
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "R17-HO-02",
+      "name": "Spanish paragraph join and short phrase replacement",
+      "starting_state": {
+        "document": "Hola, Lucía.\nNos vemos.",
+        "selection_utf16": {
+          "start": 13,
+          "end": 13
+        },
+        "language": {
+          "active_typing_language": "es",
+          "enabled_typing_languages": [
+            "es"
+          ],
+          "app_ui_locale": "en"
+        },
+        "ui": {
+          "surface": "try_it",
+          "editor_focused": true,
+          "keyboard": "visible",
+          "selection_highlight_visible": false,
+          "language_control_value": "es",
+          "unexpected_alert_or_error": false
+        }
+      },
+      "steps": [
+        {
+          "action": {
+            "type": "press_key",
+            "key": "Backspace"
+          },
+          "expected": {
+            "document": "Hola, Lucía.Nos vemos.",
+            "selection_utf16": {
+              "start": 12,
+              "end": 12
+            },
+            "language": {
+              "active_typing_language": "es",
+              "enabled_typing_languages": [
+                "es"
+              ],
+              "app_ui_locale": "en"
+            },
+            "ui": {
+              "surface": "try_it",
+              "editor_focused": true,
+              "keyboard": "visible",
+              "selection_highlight_visible": false,
+              "language_control_value": "es",
+              "unexpected_alert_or_error": false
+            }
+          }
+        },
+        {
+          "action": {
+            "type": "type_text",
+            "text": " "
+          },
+          "expected": {
+            "document": "Hola, Lucía. Nos vemos.",
+            "selection_utf16": {
+              "start": 13,
+              "end": 13
+            },
+            "language": {
+              "active_typing_language": "es",
+              "enabled_typing_languages": [
+                "es"
+              ],
+              "app_ui_locale": "en"
+            },
+            "ui": {
+              "surface": "try_it",
+              "editor_focused": true,
+              "keyboard": "visible",
+              "selection_highlight_visible": false,
+              "language_control_value": "es",
+              "unexpected_alert_or_error": false
+            }
+          }
+        },
+        {
+          "action": {
+            "type": "select_range",
+            "start_utf16": 13,
+            "end_utf16": 22
+          },
+          "expected": {
+            "document": "Hola, Lucía. Nos vemos.",
+            "selection_utf16": {
+              "start": 13,
+              "end": 22
+            },
+            "language": {
+              "active_typing_language": "es",
+              "enabled_typing_languages": [
+                "es"
+              ],
+              "app_ui_locale": "en"
+            },
+            "ui": {
+              "surface": "try_it",
+              "editor_focused": true,
+              "keyboard": "visible",
+              "selection_highlight_visible": true,
+              "language_control_value": "es",
+              "unexpected_alert_or_error": false
+            }
+          }
+        },
+        {
+          "action": {
+            "type": "type_text",
+            "text": "Hasta mañana"
+          },
+          "expected": {
+            "document": "Hola, Lucía. Hasta mañana.",
+            "selection_utf16": {
+              "start": 25,
+              "end": 25
+            },
+            "language": {
+              "active_typing_language": "es",
+              "enabled_typing_languages": [
+                "es"
+              ],
+              "app_ui_locale": "en"
+            },
+            "ui": {
+              "surface": "try_it",
+              "editor_focused": true,
+              "keyboard": "visible",
+              "selection_highlight_visible": false,
+              "language_control_value": "es",
+              "unexpected_alert_or_error": false
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "R17-HO-03",
+      "name": "Bilingual sentence replacement after a decorative emoji",
+      "starting_state": {
+        "document": "Plan 📌: comer at noon.",
+        "selection_utf16": {
+          "start": 15,
+          "end": 22
+        },
+        "language": {
+          "active_typing_language": "es",
+          "enabled_typing_languages": [
+            "en",
+            "es"
+          ],
+          "app_ui_locale": "en"
+        },
+        "ui": {
+          "surface": "try_it",
+          "editor_focused": true,
+          "keyboard": "visible",
+          "selection_highlight_visible": true,
+          "language_control_value": "es",
+          "unexpected_alert_or_error": false
+        }
+      },
+      "steps": [
+        {
+          "action": {
+            "type": "type_text",
+            "text": "a las doce"
+          },
+          "expected": {
+            "document": "Plan 📌: comer a las doce.",
+            "selection_utf16": {
+              "start": 25,
+              "end": 25
+            },
+            "language": {
+              "active_typing_language": "es",
+              "enabled_typing_languages": [
+                "en",
+                "es"
+              ],
+              "app_ui_locale": "en"
+            },
+            "ui": {
+              "surface": "try_it",
+              "editor_focused": true,
+              "keyboard": "visible",
+              "selection_highlight_visible": false,
+              "language_control_value": "es",
+              "unexpected_alert_or_error": false
+            }
+          }
+        },
+        {
+          "action": {
+            "type": "press_key",
+            "key": "ArrowLeft"
+          },
+          "expected": {
+            "document": "Plan 📌: comer a las doce.",
+            "selection_utf16": {
+              "start": 24,
+              "end": 24
+            },
+            "language": {
+              "active_typing_language": "es",
+              "enabled_typing_languages": [
+                "en",
+                "es"
+              ],
+              "app_ui_locale": "en"
+            },
+            "ui": {
+              "surface": "try_it",
+              "editor_focused": true,
+              "keyboard": "visible",
+              "selection_highlight_visible": false,
+              "language_control_value": "es",
+              "unexpected_alert_or_error": false
+            }
+          }
+        },
+        {
+          "action": {
+            "type": "press_key",
+            "key": "ArrowRight"
+          },
+          "expected": {
+            "document": "Plan 📌: comer a las doce.",
+            "selection_utf16": {
+              "start": 25,
+              "end": 25
+            },
+            "language": {
+              "active_typing_language": "es",
+              "enabled_typing_languages": [
+                "en",
+                "es"
+              ],
+              "app_ui_locale": "en"
+            },
+            "ui": {
+              "surface": "try_it",
+              "editor_focused": true,
+              "keyboard": "visible",
+              "selection_highlight_visible": false,
+              "language_control_value": "es",
+              "unexpected_alert_or_error": false
+            }
+          }
+        },
+        {
+          "action": {
+            "type": "type_text",
+            "text": " juntos"
+          },
+          "expected": {
+            "document": "Plan 📌: comer a las doce juntos.",
+            "selection_utf16": {
+              "start": 32,
+              "end": 32
+            },
+            "language": {
+              "active_typing_language": "es",
+              "enabled_typing_languages": [
+                "en",
+                "es"
+              ],
+              "app_ui_locale": "en"
+            },
+            "ui": {
+              "surface": "try_it",
+              "editor_focused": true,
+              "keyboard": "visible",
+              "selection_highlight_visible": false,
+              "language_control_value": "es",
+              "unexpected_alert_or_error": false
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "R17-HO-04",
+      "name": "Spanish onboarding editing survives forward and back navigation",
+      "starting_state": {
+        "document": "Tu idea.",
+        "selection_utf16": {
+          "start": 0,
+          "end": 2
+        },
+        "language": {
+          "active_typing_language": "es",
+          "enabled_typing_languages": [
+            "es"
+          ],
+          "app_ui_locale": "en"
+        },
+        "ui": {
+          "surface": "try_it",
+          "editor_focused": true,
+          "keyboard": "visible",
+          "selection_highlight_visible": true,
+          "language_control_value": "es",
+          "unexpected_alert_or_error": false,
+          "onboarding_step": "try_it"
+        }
+      },
+      "steps": [
+        {
+          "action": {
+            "type": "type_text",
+            "text": "Mi"
+          },
+          "expected": {
+            "document": "Mi idea.",
+            "selection_utf16": {
+              "start": 2,
+              "end": 2
+            },
+            "language": {
+              "active_typing_language": "es",
+              "enabled_typing_languages": [
+                "es"
+              ],
+              "app_ui_locale": "en"
+            },
+            "ui": {
+              "surface": "try_it",
+              "editor_focused": true,
+              "keyboard": "visible",
+              "selection_highlight_visible": false,
+              "language_control_value": "es",
+              "unexpected_alert_or_error": false,
+              "onboarding_step": "try_it"
+            }
+          }
+        },
+        {
+          "action": {
+            "type": "activate_onboarding_next"
+          },
+          "expected": {
+            "document": "Mi idea.",
+            "selection_utf16": {
+              "start": 2,
+              "end": 2
+            },
+            "language": {
+              "active_typing_language": "es",
+              "enabled_typing_languages": [
+                "es"
+              ],
+              "app_ui_locale": "en"
+            },
+            "ui": {
+              "surface": "onboarding_next",
+              "editor_focused": false,
+              "keyboard": "hidden",
+              "selection_highlight_visible": false,
+              "language_control_value": null,
+              "unexpected_alert_or_error": false,
+              "onboarding_step": "immediately_after_try_it"
+            }
+          }
+        },
+        {
+          "action": {
+            "type": "activate_onboarding_back"
+          },
+          "expected": {
+            "document": "Mi idea.",
+            "selection_utf16": {
+              "start": 2,
+              "end": 2
+            },
+            "language": {
+              "active_typing_language": "es",
+              "enabled_typing_languages": [
+                "es"
+              ],
+              "app_ui_locale": "en"
+            },
+            "ui": {
+              "surface": "try_it",
+              "editor_focused": false,
+              "keyboard": "hidden",
+              "selection_highlight_visible": false,
+              "language_control_value": "es",
+              "unexpected_alert_or_error": false,
+              "onboarding_step": "try_it"
+            }
+          }
+        },
+        {
+          "action": {
+            "type": "focus_editor_without_repositioning"
+          },
+          "expected": {
+            "document": "Mi idea.",
+            "selection_utf16": {
+              "start": 2,
+              "end": 2
+            },
+            "language": {
+              "active_typing_language": "es",
+              "enabled_typing_languages": [
+                "es"
+              ],
+              "app_ui_locale": "en"
+            },
+            "ui": {
+              "surface": "try_it",
+              "editor_focused": true,
+              "keyboard": "visible",
+              "selection_highlight_visible": false,
+              "language_control_value": "es",
+              "unexpected_alert_or_error": false,
+              "onboarding_step": "try_it"
+            }
+          }
+        },
+        {
+          "action": {
+            "type": "type_text",
+            "text": " nueva"
+          },
+          "expected": {
+            "document": "Mi nueva idea.",
+            "selection_utf16": {
+              "start": 8,
+              "end": 8
+            },
+            "language": {
+              "active_typing_language": "es",
+              "enabled_typing_languages": [
+                "es"
+              ],
+              "app_ui_locale": "en"
+            },
+            "ui": {
+              "surface": "try_it",
+              "editor_focused": true,
+              "keyboard": "visible",
+              "selection_highlight_visible": false,
+              "language_control_value": "es",
+              "unexpected_alert_or_error": false,
+              "onboarding_step": "try_it"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "R17-HO-05",
+      "name": "Settings language change preserves a selected name in Try It",
+      "starting_state": {
+        "document": "Call Ana at 4.",
+        "selection_utf16": {
+          "start": 5,
+          "end": 8
+        },
+        "language": {
+          "active_typing_language": "en",
+          "enabled_typing_languages": [
+            "en",
+            "es"
+          ],
+          "app_ui_locale": "en"
+        },
+        "ui": {
+          "surface": "try_it",
+          "editor_focused": true,
+          "keyboard": "visible",
+          "selection_highlight_visible": true,
+          "language_control_value": "en",
+          "unexpected_alert_or_error": false
+        }
+      },
+      "steps": [
+        {
+          "action": {
+            "type": "open_settings"
+          },
+          "expected": {
+            "document": "Call Ana at 4.",
+            "selection_utf16": {
+              "start": 5,
+              "end": 8
+            },
+            "language": {
+              "active_typing_language": "en",
+              "enabled_typing_languages": [
+                "en",
+                "es"
+              ],
+              "app_ui_locale": "en"
+            },
+            "ui": {
+              "surface": "settings",
+              "editor_focused": false,
+              "keyboard": "hidden",
+              "selection_highlight_visible": false,
+              "language_control_value": "en",
+              "unexpected_alert_or_error": false
+            }
+          }
+        },
+        {
+          "action": {
+            "type": "choose_active_typing_language",
+            "language": "es"
+          },
+          "expected": {
+            "document": "Call Ana at 4.",
+            "selection_utf16": {
+              "start": 5,
+              "end": 8
+            },
+            "language": {
+              "active_typing_language": "es",
+              "enabled_typing_languages": [
+                "en",
+                "es"
+              ],
+              "app_ui_locale": "en"
+            },
+            "ui": {
+              "surface": "settings",
+              "editor_focused": false,
+              "keyboard": "hidden",
+              "selection_highlight_visible": false,
+              "language_control_value": "es",
+              "unexpected_alert_or_error": false
+            }
+          }
+        },
+        {
+          "action": {
+            "type": "close_settings_to_try_it"
+          },
+          "expected": {
+            "document": "Call Ana at 4.",
+            "selection_utf16": {
+              "start": 5,
+              "end": 8
+            },
+            "language": {
+              "active_typing_language": "es",
+              "enabled_typing_languages": [
+                "en",
+                "es"
+              ],
+              "app_ui_locale": "en"
+            },
+            "ui": {
+              "surface": "try_it",
+              "editor_focused": false,
+              "keyboard": "hidden",
+              "selection_highlight_visible": false,
+              "language_control_value": "es",
+              "unexpected_alert_or_error": false
+            }
+          }
+        },
+        {
+          "action": {
+            "type": "focus_editor_without_repositioning"
+          },
+          "expected": {
+            "document": "Call Ana at 4.",
+            "selection_utf16": {
+              "start": 5,
+              "end": 8
+            },
+            "language": {
+              "active_typing_language": "es",
+              "enabled_typing_languages": [
+                "en",
+                "es"
+              ],
+              "app_ui_locale": "en"
+            },
+            "ui": {
+              "surface": "try_it",
+              "editor_focused": true,
+              "keyboard": "visible",
+              "selection_highlight_visible": true,
+              "language_control_value": "es",
+              "unexpected_alert_or_error": false
+            }
+          }
+        },
+        {
+          "action": {
+            "type": "type_text",
+            "text": "Inés"
+          },
+          "expected": {
+            "document": "Call Inés at 4.",
+            "selection_utf16": {
+              "start": 9,
+              "end": 9
+            },
+            "language": {
+              "active_typing_language": "es",
+              "enabled_typing_languages": [
+                "en",
+                "es"
+              ],
+              "app_ui_locale": "en"
+            },
+            "ui": {
+              "surface": "try_it",
+              "editor_focused": true,
+              "keyboard": "visible",
+              "selection_highlight_visible": false,
+              "language_control_value": "es",
+              "unexpected_alert_or_error": false
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "R17-HO-06",
+      "name": "Bilingual selection extension and final punctuation deletion",
+      "starting_state": {
+        "document": "We say sí.",
+        "selection_utf16": {
+          "start": 9,
+          "end": 9
+        },
+        "language": {
+          "active_typing_language": "en",
+          "enabled_typing_languages": [
+            "en",
+            "es"
+          ],
+          "app_ui_locale": "en"
+        },
+        "ui": {
+          "surface": "try_it",
+          "editor_focused": true,
+          "keyboard": "visible",
+          "selection_highlight_visible": false,
+          "language_control_value": "en",
+          "unexpected_alert_or_error": false
+        }
+      },
+      "steps": [
+        {
+          "action": {
+            "type": "press_key",
+            "key": "ArrowLeft",
+            "modifiers": [
+              "Shift"
+            ]
+          },
+          "expected": {
+            "document": "We say sí.",
+            "selection_utf16": {
+              "start": 8,
+              "end": 9
+            },
+            "language": {
+              "active_typing_language": "en",
+              "enabled_typing_languages": [
+                "en",
+                "es"
+              ],
+              "app_ui_locale": "en"
+            },
+            "ui": {
+              "surface": "try_it",
+              "editor_focused": true,
+              "keyboard": "visible",
+              "selection_highlight_visible": true,
+              "language_control_value": "en",
+              "unexpected_alert_or_error": false
+            }
+          }
+        },
+        {
+          "action": {
+            "type": "press_key",
+            "key": "ArrowLeft",
+            "modifiers": [
+              "Shift"
+            ]
+          },
+          "expected": {
+            "document": "We say sí.",
+            "selection_utf16": {
+              "start": 7,
+              "end": 9
+            },
+            "language": {
+              "active_typing_language": "en",
+              "enabled_typing_languages": [
+                "en",
+                "es"
+              ],
+              "app_ui_locale": "en"
+            },
+            "ui": {
+              "surface": "try_it",
+              "editor_focused": true,
+              "keyboard": "visible",
+              "selection_highlight_visible": true,
+              "language_control_value": "en",
+              "unexpected_alert_or_error": false
+            }
+          }
+        },
+        {
+          "action": {
+            "type": "type_text",
+            "text": "yes"
+          },
+          "expected": {
+            "document": "We say yes.",
+            "selection_utf16": {
+              "start": 10,
+              "end": 10
+            },
+            "language": {
+              "active_typing_language": "en",
+              "enabled_typing_languages": [
+                "en",
+                "es"
+              ],
+              "app_ui_locale": "en"
+            },
+            "ui": {
+              "surface": "try_it",
+              "editor_focused": true,
+              "keyboard": "visible",
+              "selection_highlight_visible": false,
+              "language_control_value": "en",
+              "unexpected_alert_or_error": false
+            }
+          }
+        },
+        {
+          "action": {
+            "type": "press_key",
+            "key": "ArrowRight"
+          },
+          "expected": {
+            "document": "We say yes.",
+            "selection_utf16": {
+              "start": 11,
+              "end": 11
+            },
+            "language": {
+              "active_typing_language": "en",
+              "enabled_typing_languages": [
+                "en",
+                "es"
+              ],
+              "app_ui_locale": "en"
+            },
+            "ui": {
+              "surface": "try_it",
+              "editor_focused": true,
+              "keyboard": "visible",
+              "selection_highlight_visible": false,
+              "language_control_value": "en",
+              "unexpected_alert_or_error": false
+            }
+          }
+        },
+        {
+          "action": {
+            "type": "press_key",
+            "key": "Backspace"
+          },
+          "expected": {
+            "document": "We say yes",
+            "selection_utf16": {
+              "start": 10,
+              "end": 10
+            },
+            "language": {
+              "active_typing_language": "en",
+              "enabled_typing_languages": [
+                "en",
+                "es"
+              ],
+              "app_ui_locale": "en"
+            },
+            "ui": {
+              "surface": "try_it",
+              "editor_focused": true,
+              "keyboard": "visible",
+              "selection_highlight_visible": false,
+              "language_control_value": "en",
+              "unexpected_alert_or_error": false
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

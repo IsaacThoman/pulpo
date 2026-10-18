@@ -21,7 +21,7 @@ import { formatBalance, formatDate } from '@/lib/format'
 import { creditCentsFromInput } from '@/lib/billing-pricing'
 import { apiRequest } from '@/lib/api'
 import { openExternalUrl } from '@/lib/runtime'
-import { autoTopUpActionLabel, autoTopUpSettingsError, billingPlanName, defaultAutoTopUpSettings, fetchBillingSummary, formatPlanStorage, managedBillingPlan, paymentStatusLabel, pendingBillingPlan, planChoiceDisabled, planChoiceLabel, saveAutoTopUpSettings, type BillingPlan } from '@/lib/billing'
+import { autoTopUpActionLabel, autoTopUpSettingsError, billingPlanName, defaultAutoTopUpSettings, fetchBillingSummary, formatPlanStorage, managedBillingPlan, openBillingPortal, paymentStatusLabel, pendingBillingPlan, planChoiceDisabled, planChoiceLabel, saveAutoTopUpSettings, type BillingPlan } from '@/lib/billing'
 import { queryClient } from '@/lib/query-client'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
@@ -187,8 +187,7 @@ export function BillingPage() {
     setSubmitting(true)
     setPlanError('')
     try {
-      const result = await apiRequest<{ url: string }>('/api/billing/portal', { method: 'POST' })
-      await openExternalUrl(result.url)
+      await openBillingPortal()
     } catch (error) {
       setPlanError(error instanceof Error ? error.message : 'Could not open billing management.')
       setSubmitting(false)

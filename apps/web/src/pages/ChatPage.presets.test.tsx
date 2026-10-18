@@ -2,7 +2,7 @@
 import 'fake-indexeddb/auto'
 import { Profiler, type ComponentProps } from 'react'
 import { act, cleanup, fireEvent, render, waitFor, within } from '@testing-library/react'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useLocation, type InitialEntry } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { ComposerSync } from '@pulpo/client-core'
 import { emptyComposerState, type ComposerSnapshot, type ComposerWrite } from '@pulpo/contracts'
@@ -101,7 +101,7 @@ function enableSync() {
     return { ok: true, snapshot }
   }, write })
 }
-function renderChat(path = '/') {
+function renderChat(path: InitialEntry = '/') {
   return render(<Profiler id="chat" onRender={() => {
     const label = document.querySelector('button[aria-label="Generation options"]')?.textContent
     if (label) renderedControls.push(label)
@@ -363,4 +363,18 @@ it.each(['send', 'suggestion'])('does not flash defaults when older summaries fi
   expect(view.getByRole('textbox')).toBe(startedInput)
   expect((startedInput as HTMLTextAreaElement).value).toBe('next unsent message')
   expectNoPresetFlash()
+})
+
+it('starts a temporary chat when the navigation asks, and drops the request from history', async () => {
+  let state: unknown
+  function StateProbe() {
+    state = useLocation().state
+    return null
+  }
+  const view = render(<MemoryRouter initialEntries={[{ pathname: '/', state: { resetDefaultModel: 'reset', temporary: true } }]}>
+    <TooltipProvider><Routes><Route path="/" element={<><ChatPage /><StateProbe /></>} /></Routes></TooltipProvider>
+  </MemoryRouter>)
+  expect(await view.findByRole('button', { name: 'Disable temporary chat' })).toBeTruthy()
+  await waitFor(() => expect(state).toEqual({ resetDefaultModel: 'reset', temporary: undefined }))
+  expect(view.getByRole('button', { name: 'Disable temporary chat' })).toBeTruthy()
 })

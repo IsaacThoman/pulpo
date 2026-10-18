@@ -7,6 +7,7 @@ import { FilesPage, FolderPanelView } from './FilesPage'
 import { useSettings, type FileDoubleClickAction } from '@/stores/settings'
 import { useSidePanel } from '@/features/side-panel/store'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { useFileClipboard } from '@/features/files/browser/clipboard'
 
 vi.hoisted(() => {
   Object.defineProperty(window, 'matchMedia', {
@@ -159,23 +160,70 @@ it('applies a changed preference to an already open browser', async () => {
 })
 
 describe('menus of built-in folders', () => {
-  const unavailable = ['Pin', 'Rename', 'Color and icon…', 'Move to…', 'Cut', 'Move to trash']
+  const unavailable = ['Pin', 'Rename', 'Move to…', 'Cut', 'Move to trash']
   // Menu items' names end with their keyboard shortcut.
   const menuItem = (name: string) => screen.getByRole('menuitem', { name: new RegExp(`^${name}`) })
 
-  it('lists the actions they do not allow, unavailable', async () => {
+  it('lists the actions they do not allow, unavailable, and can be given only a color', async () => {
     showFiles()
     fireEvent.contextMenu(await screen.findByRole('option', { name: /Sidebar/ }))
     await screen.findByRole('menuitem', { name: /^Copy/ })
     for (const name of unavailable) expect(menuItem(name).getAttribute('aria-disabled')).toBe('true')
     expect(menuItem('Copy').getAttribute('aria-disabled')).toBeNull()
+    expect(menuItem('Color…').getAttribute('aria-disabled')).toBeNull()
+    expect(screen.queryByRole('menuitem', { name: /^Color and icon/ })).toBeNull()
   })
 
   it('leaves the same actions available for other folders', async () => {
     showFiles()
     fireEvent.contextMenu(await screen.findByRole('option', { name: /Projects/ }))
     await screen.findByRole('menuitem', { name: /^Copy/ })
-    for (const name of unavailable) expect(menuItem(name).getAttribute('aria-disabled')).toBeNull()
+    for (const name of [...unavailable, 'Color and icon…']) expect(menuItem(name).getAttribute('aria-disabled')).toBeNull()
+  })
+})
+
+describe('the trash in My files', () => {
+  const menuItem = (name: string) => screen.getByRole('menuitem', { name: new RegExp(`^${name}`) })
+
+  it('is a built-in folder that takes dropped items and opens the trash', async () => {
+    showFiles()
+    const trash = await screen.findByRole('option', { name: /^Trash/ })
+    expect(trash.getAttribute('data-drop-target')).toBe('trash')
+    fireEvent.contextMenu(trash)
+    await screen.findByRole('menuitem', { name: /^Rename/ })
+    for (const name of ['Pin', 'Rename', 'Move to…', 'Cut', 'Move to trash']) {
+      expect(menuItem(name).getAttribute('aria-disabled')).toBe('true')
+    }
+    expect(menuItem('Color…').getAttribute('aria-disabled')).toBeNull()
+    // It is not stored in Files, so there is nothing to copy or duplicate.
+    expect(screen.queryByRole('menuitem', { name: /^Copy/ })).toBeNull()
+    expect(screen.queryByRole('menuitem', { name: /^Duplicate/ })).toBeNull()
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' })
+    await doubleClick('Trash')
+    expect(screen.getByTestId('location').textContent).toBe('/files/trash')
+  })
+
+  it('is left out when everything is selected and copied', async () => {
+    showFiles()
+    await screen.findByRole('option', { name: /^Trash/ })
+    fireEvent.keyDown(window, { key: 'a', ctrlKey: true })
+    fireEvent.keyDown(window, { key: 'c', ctrlKey: true })
+    const copied = useFileClipboard.getState().clip?.nodes.map((node) => node.id) ?? []
+    expect(copied).toContain('document')
+    expect(copied).not.toContain('trash')
+    // Selected with a file, the trash leaves Copy and Duplicate available for it.
+    fireEvent.click(screen.getByRole('option', { name: /Notes.md/ }))
+    fireEvent.click(screen.getByRole('option', { name: /^Trash/ }), { ctrlKey: true })
+    fireEvent.contextMenu(screen.getByRole('option', { name: /Notes.md/ }))
+    expect((await screen.findByRole('menuitem', { name: /^Copy/ })).getAttribute('aria-disabled')).toBeNull()
+    expect(screen.getByRole('menuitem', { name: /^Duplicate/ })).toBeTruthy()
+  })
+
+  it('opens in the panel like any folder', async () => {
+    useSidePanel.setState({ content: { kind: 'folder', id: null } })
+    showFiles(true)
+    await doubleClick('Trash')
+    expect(useSidePanel.getState().content).toEqual({ kind: 'folder', id: 'trash' })
   })
 })
 

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Check,
   ChevronRight,
@@ -152,6 +153,8 @@ export function ApiKeysPage() {
   const deleteKey = useApiKeys((s) => s.deleteKey)
   const load = useApiKeys((s) => s.load)
   const models = useCatalog((state) => state.models)
+  const [searchParams] = useSearchParams()
+  const navigate = useNavigate()
 
   const [query, setQuery] = useState('')
   const [createOpen, setCreateOpen] = useState(false)
@@ -164,6 +167,13 @@ export function ApiKeysPage() {
   const [modelsTarget, setModelsTarget] = useState<ApiKey | null>(null)
 
   useEffect(() => { void load() }, [load])
+
+  // The sidebar's "New key" opens the create dialog through `?new=1`.
+  useEffect(() => {
+    if (searchParams.get('new') !== '1') return
+    setCreateOpen(true)
+    navigate('/api-keys', { replace: true })
+  }, [navigate, searchParams])
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()

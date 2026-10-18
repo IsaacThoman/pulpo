@@ -74,15 +74,20 @@ export function FolderBrowser({ folderId, onNavigate, excludedIds, files }: {
   )
 }
 
-/** Moves items to a folder chosen in the picker, starting from their current folder. */
+/**
+ * Moves items to a folder chosen in the picker, starting from their current folder. With
+ * `restore`, trashed items are restored there instead, starting from My files.
+ */
 export function FileMoveDialog({
   nodes,
   onOpenChange,
   onMove,
+  restore = false,
 }: {
   nodes: FileNode[] | null
   onOpenChange: (open: boolean) => void
   onMove: (nodes: FileNode[], parentId: string | null) => Promise<unknown>
+  restore?: boolean
 }) {
   const [folderId, setFolderId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -90,12 +95,12 @@ export function FileMoveDialog({
 
   useEffect(() => {
     if (!nodes?.length) return
-    setFolderId(nodes[0]!.parentId)
+    setFolderId(restore ? null : nodes[0]!.parentId)
     setError(null)
-  }, [nodes])
+  }, [nodes, restore])
 
   const moving = new Set(nodes?.map((node) => node.id))
-  const unchanged = Boolean(nodes?.every((node) => node.parentId === folderId))
+  const unchanged = !restore && Boolean(nodes?.every((node) => node.parentId === folderId))
 
   const move = async () => {
     if (!nodes?.length) return
@@ -114,14 +119,18 @@ export function FileMoveDialog({
     <Dialog open={Boolean(nodes?.length)} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>{nodes?.length === 1 ? uit`Move "${nodes[0]!.name}"` : nodes?.length ? uit`Move ${nodes.length} items` : ui("Move")}</DialogTitle>
+          <DialogTitle>
+            {restore
+              ? nodes?.length === 1 ? uit`Restore "${nodes[0]!.name}" to…` : uit`Restore ${nodes?.length ?? 0} items to…`
+              : nodes?.length === 1 ? uit`Move "${nodes[0]!.name}"` : nodes?.length ? uit`Move ${nodes.length} items` : ui("Move")}
+          </DialogTitle>
           <DialogDescription>{ui("Choose a destination folder.")}</DialogDescription>
         </DialogHeader>
         {nodes?.length ? <FolderBrowser folderId={folderId} onNavigate={setFolderId} excludedIds={moving} /> : null}
         {error && <p className="text-sm text-destructive">{error}</p>}
         <DialogFooter>
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>{ui("Cancel")}</Button>
-          <Button type="button" disabled={saving || unchanged} onClick={() => void move()}>{ui("Move here")}</Button>
+          <Button type="button" disabled={saving || unchanged} onClick={() => void move()}>{restore ? ui("Restore here") : ui("Move here")}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

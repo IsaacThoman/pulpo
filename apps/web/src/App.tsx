@@ -25,7 +25,7 @@ const ApiKeysPage = lazy(() => import('@/pages/ApiKeysPage').then((module) => ({
 const FilesPage = lazy(() => import('@/pages/files/FilesPage').then((module) => ({ default: module.FilesPage })))
 const FileDocPage = lazy(() => import('@/pages/files/FileDocPage').then((module) => ({ default: module.FileDocPage })))
 const AttachmentPage = lazy(() => import('@/pages/AttachmentPage').then((module) => ({ default: module.AttachmentPage })))
-const FilesTrashPage = lazy(() => import('@/pages/files/FilesTrashPage').then((module) => ({ default: module.FilesTrashPage })))
+const TrashFolderPage = lazy(() => import('@/pages/files/FilesPage').then((module) => ({ default: module.TrashFolderPage })))
 const BillingPage = lazy(() => import('@/pages/BillingPage').then((module) => ({ default: module.BillingPage })))
 const AdminLayout = lazy(() => import('@/pages/admin/AdminLayout').then((module) => ({ default: module.AdminLayout })))
 const AdminUsersPage = lazy(() => import('@/pages/admin/AdminUsersPage').then((module) => ({ default: module.AdminUsersPage })))
@@ -136,7 +136,8 @@ export default function App() {
             </Route>
             <Route path="files" element={<LocalizedRoute><FilesPage /></LocalizedRoute>} />
             <Route path="files/f/:folderId" element={<LocalizedRoute><FilesPage /></LocalizedRoute>} />
-            <Route path="files/trash" element={<LocalizedRoute><FilesTrashPage /></LocalizedRoute>} />
+            <Route path="files/trash" element={<LocalizedRoute><TrashFolderPage /></LocalizedRoute>} />
+            <Route path="files/trash/f/:folderId" element={<LocalizedRoute><TrashFolderPage /></LocalizedRoute>} />
             <Route path="files/d/:docId" element={<LocalizedRoute><FileDocPage /></LocalizedRoute>} />
             <Route path="attachments/:attachmentId" element={<LocalizedRoute><AttachmentPage /></LocalizedRoute>} />
             <Route path="friends" element={<LocalizedRoute><FriendsPage /></LocalizedRoute>} />

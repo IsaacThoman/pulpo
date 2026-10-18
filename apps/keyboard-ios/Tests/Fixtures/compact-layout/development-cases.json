@@ -1,0 +1,272 @@
+[
+  {
+    "id": "dev-en-320-full",
+    "width": 320,
+    "height": 300,
+    "language": "en",
+    "dock": "full",
+    "contentSize": "accessibility",
+    "bold": true,
+    "scenario": "controls-modes-roundtrip"
+  },
+  {
+    "id": "dev-en-320-left",
+    "width": 320,
+    "height": 300,
+    "language": "en",
+    "dock": "left",
+    "contentSize": "accessibility",
+    "bold": true,
+    "scenario": "controls-modes-roundtrip"
+  },
+  {
+    "id": "dev-en-320-right",
+    "width": 320,
+    "height": 300,
+    "language": "en",
+    "dock": "right",
+    "contentSize": "accessibility",
+    "bold": true,
+    "scenario": "controls-modes-roundtrip"
+  },
+  {
+    "id": "dev-en-402-full",
+    "width": 402,
+    "height": 300,
+    "language": "en",
+    "dock": "full",
+    "contentSize": "normal",
+    "bold": false,
+    "scenario": "controls-modes-roundtrip"
+  },
+  {
+    "id": "dev-en-402-left",
+    "width": 402,
+    "height": 300,
+    "language": "en",
+    "dock": "left",
+    "contentSize": "normal",
+    "bold": false,
+    "scenario": "controls-modes-roundtrip"
+  },
+  {
+    "id": "dev-en-402-right",
+    "width": 402,
+    "height": 300,
+    "language": "en",
+    "dock": "right",
+    "contentSize": "normal",
+    "bold": false,
+    "scenario": "controls-modes-roundtrip"
+  },
+  {
+    "id": "dev-en-690-full",
+    "width": 690,
+    "height": 240,
+    "language": "en",
+    "dock": "full",
+    "contentSize": "normal",
+    "bold": false,
+    "scenario": "controls-modes-roundtrip"
+  },
+  {
+    "id": "dev-en-690-left",
+    "width": 690,
+    "height": 240,
+    "language": "en",
+    "dock": "left",
+    "contentSize": "normal",
+    "bold": false,
+    "scenario": "controls-modes-roundtrip"
+  },
+  {
+    "id": "dev-en-690-right",
+    "width": 690,
+    "height": 240,
+    "language": "en",
+    "dock": "right",
+    "contentSize": "normal",
+    "bold": false,
+    "scenario": "controls-modes-roundtrip"
+  },
+  {
+    "id": "dev-es-320-full",
+    "width": 320,
+    "height": 300,
+    "language": "es",
+    "dock": "full",
+    "contentSize": "accessibility",
+    "bold": true,
+    "scenario": "controls-modes-roundtrip"
+  },
+  {
+    "id": "dev-es-320-left",
+    "width": 320,
+    "height": 300,
+    "language": "es",
+    "dock": "left",
+    "contentSize": "accessibility",
+    "bold": true,
+    "scenario": "controls-modes-roundtrip"
+  },
+  {
+    "id": "dev-es-320-right",
+    "width": 320,
+    "height": 300,
+    "language": "es",
+    "dock": "right",
+    "contentSize": "accessibility",
+    "bold": true,
+    "scenario": "controls-modes-roundtrip"
+  },
+  {
+    "id": "dev-es-402-full",
+    "width": 402,
+    "height": 300,
+    "language": "es",
+    "dock": "full",
+    "contentSize": "normal",
+    "bold": false,
+    "scenario": "controls-modes-roundtrip"
+  },
+  {
+    "id": "dev-es-402-left",
+    "width": 402,
+    "height": 300,
+    "language": "es",
+    "dock": "left",
+    "contentSize": "normal",
+    "bold": false,
+    "scenario": "controls-modes-roundtrip"
+  },
+  {
+    "id": "dev-es-402-right",
+    "width": 402,
+    "height": 300,
+    "language": "es",
+    "dock": "right",
+    "contentSize": "normal",
+    "bold": false,
+    "scenario": "controls-modes-roundtrip"
+  },
+  {
+    "id": "dev-es-690-full",
+    "width": 690,
+    "height": 240,
+    "language": "es",
+    "dock": "full",
+    "contentSize": "normal",
+    "bold": false,
+    "scenario": "controls-modes-roundtrip"
+  },
+  {
+    "id": "dev-es-690-left",
+    "width": 690,
+    "height": 240,
+    "language": "es",
+    "dock": "left",
+    "contentSize": "normal",
+    "bold": false,
+    "scenario": "controls-modes-roundtrip"
+  },
+  {
+    "id": "dev-es-690-right",
+    "width": 690,
+    "height": 240,
+    "language": "es",
+    "dock": "right",
+    "contentSize": "normal",
+    "bold": false,
+    "scenario": "controls-modes-roundtrip"
+  },
+  {
+    "id": "dev-bilingual-320-full",
+    "width": 320,
+    "height": 300,
+    "language": "bilingual",
+    "dock": "full",
+    "contentSize": "accessibility",
+    "bold": true,
+    "scenario": "controls-modes-roundtrip"
+  },
+  {
+    "id": "dev-bilingual-320-left",
+    "width": 320,
+    "height": 300,
+    "language": "bilingual",
+    "dock": "left",
+    "contentSize": "accessibility",
+    "bold": true,
+    "scenario": "controls-modes-roundtrip"
+  },
+  {
+    "id": "dev-bilingual-320-right",
+    "width": 320,
+    "height": 300,
+    "language": "bilingual",
+    "dock": "right",
+    "contentSize": "accessibility",
+    "bold": true,
+    "scenario": "controls-modes-roundtrip"
+  },
+  {
+    "id": "dev-bilingual-402-full",
+    "width": 402,
+    "height": 300,
+    "language": "bilingual",
+    "dock": "full",
+    "contentSize": "normal",
+    "bold": false,
+    "scenario": "controls-modes-roundtrip"
+  },
+  {
+    "id": "dev-bilingual-402-left",
+    "width": 402,
+    "height": 300,
+    "language": "bilingual",
+    "dock": "left",
+    "contentSize": "normal",
+    "bold": false,
+    "scenario": "controls-modes-roundtrip"
+  },
+  {
+    "id": "dev-bilingual-402-right",
+    "width": 402,
+    "height": 300,
+    "language": "bilingual",
+    "dock": "right",
+    "contentSize": "normal",
+    "bold": false,
+    "scenario": "controls-modes-roundtrip"
+  },
+  {
+    "id": "dev-bilingual-690-full",
+    "width": 690,
+    "height": 240,
+    "language": "bilingual",
+    "dock": "full",
+    "contentSize": "normal",
+    "bold": false,
+    "scenario": "controls-modes-roundtrip"
+  },
+  {
+    "id": "dev-bilingual-690-left",
+    "width": 690,
+    "height": 240,
+    "language": "bilingual",
+    "dock": "left",
+    "contentSize": "normal",
+    "bold": false,
+    "scenario": "controls-modes-roundtrip"
+  },
+  {
+    "id": "dev-bilingual-690-right",
+    "width": 690,
+    "height": 240,
+    "language": "bilingual",
+    "dock": "right",
+    "contentSize": "normal",
+    "bold": false,
+    "scenario": "controls-modes-roundtrip"
+  }
+]
