@@ -43,6 +43,15 @@ interface PendingFolder {
   parentId: string | null
   name: string
   createdAt: number
+  /** Where it was put when created, above everything then in its folder. */
+  sortOrder?: number
+}
+
+const pendingOrderKey = (id: string) => `sidebar:pending-order:${id}`
+
+/** Keeps where a folder created offline went, so it stays there until the server has it. */
+export function keepPendingFolderOrder(namespace: string, id: string, sortOrder: number): Promise<void> {
+  return setValue(namespace, pendingOrderKey(id), sortOrder).catch(() => undefined)
 }
 
 /**
@@ -51,7 +60,7 @@ interface PendingFolder {
  */
 export async function pendingSidebarFolders(namespace: string): Promise<PendingFolder[]> {
   const rows = await pendingOutbox(namespace).catch(() => [])
-  return rows.flatMap((row) => {
+  const folders = rows.flatMap((row): PendingFolder[] => {
     if (row.method !== 'POST' || row.path !== '/api/sidebar/folders' || !row.body) return []
     try {
       const body = JSON.parse(row.body) as { id?: unknown; parentId?: unknown; name?: unknown }
@@ -61,6 +70,10 @@ export async function pendingSidebarFolders(namespace: string): Promise<PendingF
       return []
     }
   })
+  return Promise.all(folders.map(async (folder) => {
+    const sortOrder = await getValue<number>(namespace, pendingOrderKey(folder.id)).catch(() => null)
+    return typeof sortOrder === 'number' ? { ...folder, sortOrder } : folder
+  }))
 }
 
 function withPendingState(state: SidebarState | null, pending: readonly PendingFolder[]): SidebarState | null {
@@ -92,7 +105,7 @@ export function withPendingItems(
       const at = new Date(folder.createdAt).toISOString()
       return {
         id: folder.id, parentId: folderId, kind: 'folder', name: folder.name, status: 'ready', mimeType: null, sizeBytes: 0, revision: 0,
-        trashedAt: null, createdAt: at, updatedAt: at, systemRole: null, sortOrder: top - index, pinned: false,
+        trashedAt: null, createdAt: at, updatedAt: at, systemRole: null, sortOrder: folder.sortOrder ?? top - index, pinned: false,
       }
     }),
     ...items,

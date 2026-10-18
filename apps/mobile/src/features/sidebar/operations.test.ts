@@ -120,6 +120,8 @@ describe('creating a folder in the drawer', () => {
     })
     expect(listing(CHATS)![0]?.id).toBe(created!.id)
     expect(mocks.refreshFiles).not.toHaveBeenCalled()
+    // Where it went is kept, so it stays there until the server has it.
+    expect(mocks.kept.get(`sidebar:pending-order:${created!.id}`)).toBe(created!.sortOrder)
   })
 
   it('refuses a name the server would, before showing or keeping anything', async () => {
@@ -301,6 +303,22 @@ describe('trashing in the drawer', () => {
     mocks.namespace = 'https://other.test|b'
     await trashing
     expect(show).not.toHaveBeenCalled()
+  })
+
+  it('puts a folder’s chats back when trashing it is refused', async () => {
+    mocks.chats = [chat('in-inner', { folderId: 'inner', pinned: true, sortOrder: 4 })]
+    mocks.api.trashSidebarItems.mockRejectedValueOnce(new Error('No'))
+    await operations().trash(node('work', { sortOrder: -2 }))
+    expect(mocks.chats[0]).toMatchObject({ folderId: 'inner', pinned: true, sortOrder: 4 })
+    expect(show).toHaveBeenCalledWith({ message: 'No', tone: 'error' })
+  })
+
+  it('puts an archived chat back in the archive when its Undo is refused', async () => {
+    mocks.chats = [chat('c', { folderId: ARCHIVE })]
+    await operations().archive({ kind: 'chat', id: 'c', name: 'c', folderId: 'work', inFilesRoot: false, pinned: true })
+    mocks.api.moveSidebarItems.mockRejectedValueOnce(new Error('Offline'))
+    await (show.mock.calls.at(-1)![0] as { undo: () => Promise<void> }).undo()
+    expect(mocks.chats[0]).toMatchObject({ folderId: ARCHIVE, pinned: false })
   })
 
   it('deletes a shortcut', async () => {

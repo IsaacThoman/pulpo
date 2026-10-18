@@ -101,6 +101,14 @@ describe('the sidebar queries', () => {
     expect(placed.map((item) => [item.id, item.sortOrder])).toEqual([['older', -31], ['newer', -32], ['doc', -5]])
   })
 
+  it('keep a folder created offline where it was put, though chats placed later are higher now', async () => {
+    mocks.outbox = [{ method: 'POST', path: '/api/sidebar/folders', body: JSON.stringify({ id: 'kept', parentId: null, name: 'Kept' }), createdAt: 1 }]
+    mocks.kept.set('sidebar:pending-order:kept', -4)
+    mocks.chats = [{ id: 'later', folderId: null, sortOrder: -9, pinned: false, createdAt: 2 }]
+    mocks.fetchSidebarItems.mockResolvedValue([])
+    expect((await client.fetchQuery(sidebarItemsQuery(NAMESPACE, 'chats', true))).map((item) => [item.id, item.sortOrder])).toEqual([['kept', -4]])
+  })
+
   it('open a folder still waiting to be created, with the folders created in it meanwhile', async () => {
     mocks.outbox = [
       { method: 'POST', path: '/api/sidebar/folders', body: JSON.stringify({ id: 'outer', parentId: null, name: 'Outer' }), createdAt: 1 },

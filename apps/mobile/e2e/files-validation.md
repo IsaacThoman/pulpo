@@ -202,13 +202,14 @@ The follow-up that made the drawer the web's sidebar (#846) was checked against 
 - **New folder** (confirmed on the server);
 - **Move to archive** in the chat menu.
 
-**Audits.** Four rounds of independent review found 30 issues:
+**Audits.** Five rounds of independent review found 33 issues:
 - Round 1: 10. One claim, that **Other folder…** never opens on iOS, was disproved on the simulator.
 - Round 2: 9.
 - Round 3: 6.
 - Round 4: 3.
+- Round 5: 5.
 
-Every finding confirmed by reading the code was fixed, with a test that fails without the fix. Among them:
+Every other finding confirmed by reading the code was fixed, with a test that fails without the fix, apart from one left as noted under "Not covered". Among the fixes:
 - Older servers are told where a moved or unpinned chat goes.
 - Undo is offered only once an archive has reached the server.
 - Chats and items at the top of My files are handled where they are.
@@ -217,6 +218,7 @@ Every finding confirmed by reading the code was fixed, with a test that fails wi
 - Folders and the top level say when their contents can't load.
 - Shortcuts that would open into themselves open in Files.
 - Toasts and sheets don't outlive an account switch.
+- Chats moved on the device before a trash or an Undo that was refused go back where they were.
 
 ## Audits
 
@@ -283,6 +285,8 @@ Independent reviewers audited each phase as it landed, then the whole branch twi
 - iPad drag and drop, and a side-by-side Files pane: Files opens full screen over the chat, as Settings does.
 - A hardware keyboard. TipTap's own shortcuts run inside the web view, but no keyboard was attached in these runs.
 - A document turned into an ordinary file and back on another device, while this device never saw it as a file, can still meet this device's old copy when opened, as the web's stored copies can. Closing that fully needs the server to give each document an identity that changes when it is made afresh; neither app has one yet.
+- The drawer on a server without `/api/sidebar` (before 0.156) was covered by unit tests only.
+- A folder created offline looks like any other folder until the outbox sends it. If the outbox is held up after reconnecting (an earlier change keeps failing), renaming, moving, or trashing that folder, or moving a chat into it, fails with an error until then. Offline those actions already say they need a connection, and creating folders inside it is queued too.
 - Two audit suggestions were left as they are:
   - **The editor page's error reports:** the app does not reload the page when it reports an error. Most such reports are harmless page errors, which reloading would interrupt, and the updates the page applies all come from the app's own document.
   - **Android WebViews without the origin-checked message listener:** those (older than version 83) fall back to a plain JavaScript interface. The page loads nothing from anywhere and cannot navigate, so only the editor's own page can reach it.

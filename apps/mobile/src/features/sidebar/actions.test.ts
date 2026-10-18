@@ -1,7 +1,7 @@
 // @vitest-environment node
 import type { FileNode } from '@pulpo/contracts'
 import { describe, expect, it } from 'vitest'
-import { sidebarItemActions, sidebarItemOpens, sidebarTrashLabel } from './actions'
+import { sidebarItemActions, sidebarItemOpens, sidebarItemTapOpens, sidebarTrashLabel } from './actions'
 
 const node = (patch: Partial<FileNode> = {}): FileNode => ({
   id: 'id', parentId: 'chats', kind: 'folder', name: 'Work', status: 'ready', mimeType: null, sizeBytes: 0, revision: 0,
@@ -36,6 +36,16 @@ describe('the drawer’s item menu', () => {
     // Without Files, only shortcuts to chats open.
     expect(sidebarItemOpens(shortcut, false)).toBe(false)
     expect(sidebarItemOpens({ ...shortcut, target: { ...shortcut.target!, kind: 'chat' } }, false)).toBe(true)
+  })
+
+  it('opens on a tap only what can open, though a trashed shortcut still says why', () => {
+    const doc = node({ kind: 'doc' })
+    const shortcut = (kind: 'chat' | 'doc', available: boolean) => node({ kind: 'shortcut', target: { kind, id: 't', name: 't', mimeType: null, systemRole: null, available } })
+    expect(sidebarItemTapOpens(doc, true)).toBe(true)
+    expect(sidebarItemTapOpens(doc, false)).toBe(false)
+    expect(sidebarItemTapOpens(shortcut('chat', true), false)).toBe(true)
+    expect(sidebarItemTapOpens(shortcut('doc', true), false)).toBe(false)
+    expect(sidebarItemTapOpens(shortcut('chat', false), false)).toBe(true)
   })
 
   it('only renames and deletes chat folders from servers without the sidebar', () => {

@@ -12,7 +12,7 @@ import { refreshFiles } from '../files/operations'
 import { useFilesToasts, type FilesToast } from '../files/toasts'
 import { archiveSidebarItems, createSidebarFolder, moveSidebarItems, orderPinnedItems, renameSidebarItem, restoreSidebarItems, trashSidebarItems } from './api'
 import { useSidebarExpansion } from './expansion'
-import { sidebarKeys } from './queries'
+import { keepPendingFolderOrder, sidebarKeys } from './queries'
 import { isWithin, pinnedItemsCeiling } from './tree'
 
 /** A chat or a Files item, as the drawer acts on it. */
@@ -65,6 +65,20 @@ function pinnedOrder(sidebar: SidebarState | null | undefined): string[] {
 }
 
 const nameOf = (target: SidebarTarget) => target.kind === 'chat' ? target.name : target.node.name
+
+type ChatPlace = { folderId: string | null; inFilesRoot?: boolean; pinned: boolean; sortOrder: number }
+
+/**
+ * Where these chats are now, to put them back if a change made here first is refused: the chat
+ * list may not change on the server, and a refetch with nothing new wouldn't undo it.
+ */
+function chatPlaces(matches: (chat: ChatPlace & { id: string }) => boolean): () => void {
+  const before = new Map(usePrototypeStore.getState().chats.filter(matches)
+    .map((chat) => [chat.id, { folderId: chat.folderId, inFilesRoot: chat.inFilesRoot, pinned: chat.pinned, sortOrder: chat.sortOrder }]))
+  return () => usePrototypeStore.setState((state) => ({
+    chats: state.chats.map((chat) => before.has(chat.id) ? { ...chat, ...before.get(chat.id) } : chat),
+  }))
+}
 
 type ShowToast = (toast: Omit<FilesToast, 'id' | 'tone'> & { tone?: FilesToast['tone'] }) => void
 
@@ -124,6 +138,7 @@ export function sidebarOperations(client: QueryClient, namespace: string, showTo
    */
   const putBack = async (id: string, parentId: string | null, wasPinned: boolean, pinnedBefore: readonly string[]) => {
     const chatsFolderId = cache.readState()?.chatsFolderId
+    const restore = chatPlaces((chat) => chat.id === id)
     usePrototypeStore.setState((state) => ({
       chats: state.chats.map((chat) => chat.id === id
         ? { ...chat, folderId: parentId === chatsFolderId ? null : parentId, inFilesRoot: parentId === null, pinned: chat.pinned || wasPinned }
@@ -137,6 +152,7 @@ export function sidebarOperations(client: QueryClient, namespace: string, showTo
         await orderPinnedItems(pinnedBefore.filter((other) => other === id || pinnedNow.has(other)))
       }
     } catch (cause) {
+      restore()
       fail(cause)
     } finally {
       await refresh(true)
@@ -172,6 +188,8 @@ export function sidebarOperations(client: QueryClient, namespace: string, showTo
           // The client-chosen id makes the replay create it once. Until then the sidebar's
           // queries list it from the outbox, even after a relaunch or a refetch.
           await queueOfflineMutation({ namespace, entityKey: `folder:${id}`, method: 'POST', path: '/api/sidebar/folders', body })
+          // Where it went now, among the chats placed before it; the server puts later ones above it.
+          await keepPendingFolderOrder(namespace, id, node.sortOrder ?? 0)
           return node
         }
         fail(cause, trimmed)
@@ -309,6 +327,7 @@ export function sidebarOperations(client: QueryClient, namespace: string, showTo
       const state = cache.readState()
       if (!state) return
       const removed = new Set([node.id, ...node.kind === 'folder' ? state.folders.filter((folder) => isWithin(state, folder.id, node.id)).map((folder) => folder.id) : []])
+      const restore = chatPlaces((chat) => Boolean(chat.folderId && removed.has(chat.folderId)))
       const trashed = await mutate(() => {
         cache.writeState((current) => ({ ...current, folders: current.folders.filter((folder) => !removed.has(folder.id)) }))
         cache.writeListings((items) => items.filter((item) => !removed.has(item.id)))
@@ -317,7 +336,10 @@ export function sidebarOperations(client: QueryClient, namespace: string, showTo
           chats: current.chats.map((chat) => chat.folderId && removed.has(chat.folderId) ? { ...chat, folderId: null } : chat),
         }))
       }, () => trashSidebarItems([node.id]), { name: node.name, chats: true })
-      if (!trashed) return
+      if (!trashed) {
+        restore()
+        return
+      }
       const roots = trashed.value
       show({
         message: node.kind === 'shortcut' ? `Deleted “${node.name}”` : `Moved “${node.name}” to the trash`,

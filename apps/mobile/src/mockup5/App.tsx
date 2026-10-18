@@ -233,7 +233,7 @@ import { filesErrorMessage } from '../features/files/display';
 import { useFileOperations } from '../features/files/operations';
 import { enqueueUploads, pickUploads } from '../features/files/uploads';
 import { useFilesToasts } from '../features/files/toasts';
-import { sidebarItemActions, sidebarItemOpens, type SidebarItemActionId } from '../features/sidebar/actions';
+import { sidebarItemActions, sidebarItemTapOpens, type SidebarItemActionId } from '../features/sidebar/actions';
 import { SidebarHeading } from '../features/sidebar/components/SidebarHeading';
 import { SIDEBAR_INDENT, SidebarMessageRow, SidebarNodeRow, type SidebarRowStyles } from '../features/sidebar/components/SidebarNodeRow';
 import { useSidebarExpansion } from '../features/sidebar/expansion';
@@ -6754,8 +6754,7 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
       setFolderExpanded(row.expansionKey, !row.expanded);
       return;
     }
-    // Without Files, only shortcuts to chats open (a trashed target says why, through Files' opener).
-    if (!filesEnabled && !sidebarItemOpens(row.node, false)) return;
+    if (!sidebarItemTapOpens(row.node, filesEnabled)) return;
     openSidebarItem(row.node);
   }, [filesEnabled, openSidebarItem, setFolderExpanded]);
   const showItemActions = useCallback((row: NodeRow, anchor?: MenuAnchor) => {

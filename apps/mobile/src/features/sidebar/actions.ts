@@ -25,6 +25,14 @@ export function sidebarItemOpens(node: FileNode, filesEnabled: boolean): boolean
 }
 
 /**
+ * Whether tapping an item does anything: with Files off, only shortcuts to chats open, and a
+ * shortcut to something trashed still says why it can't (without needing Files).
+ */
+export function sidebarItemTapOpens(node: FileNode, filesEnabled: boolean): boolean {
+  return filesEnabled || (node.kind === 'shortcut' && node.target?.available === false) || sidebarItemOpens(node, false)
+}
+
+/**
  * The menu of a folder, file, or shortcut in the drawer, as the web sidebar's item menu has it
  * (without what needs a pointer or tabs). Built-in folders can only be opened and pinned.
  */
