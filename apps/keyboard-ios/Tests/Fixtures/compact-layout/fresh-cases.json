@@ -1,0 +1,122 @@
+[
+  {
+    "id": "fresh-en-narrow-portrait-right",
+    "width": 320,
+    "height": 292,
+    "language": "en",
+    "dock": "right",
+    "contentSize": "normal",
+    "bold": false,
+    "scenario": "Start in letters with right docking. Tap the visible centers and near-inside edges of the first and last letter of every row, then space and delete. Verify each point reaches its intended production control, inserts or deletes exactly the expected character, and does not land in the undocked margin. Activate the return-to-full-width control and repeat the outer letter taps. Record any unavailable docking action rather than substituting a synthetic key view."
+  },
+  {
+    "id": "fresh-es-narrow-portrait-bold",
+    "width": 320,
+    "height": 306,
+    "language": "es",
+    "dock": "full",
+    "contentSize": "normal",
+    "bold": true,
+    "scenario": "Type a Spanish phrase using the production Spanish layout, including the visible Spanish-specific letter, space and punctuation. Inspect row-end labels and hit-test every visible key center. Open the language control and choose an available alternative, then restore Spanish. Require visible or accessible identities for actionable language choices; treat an intentionally shortened phrase as acceptable when its meaning remains available."
+  },
+  {
+    "id": "fresh-bilingual-standard-portrait-left-ax",
+    "width": 375,
+    "height": 320,
+    "language": "bilingual",
+    "dock": "left",
+    "contentSize": "accessibility",
+    "bold": false,
+    "scenario": "With accessibility text sizing active, inspect and invoke each visible language, Undo and microphone affordance through its real UIKit action or an actual touch. Verify the target is inside the keyboard, has a meaningful accessible identity, and is not occluded by an adjacent control. If Undo needs an eligible edit, create one with the production editing interaction before checking it. Return to letters and type the outer keys of each row."
+  },
+  {
+    "id": "fresh-en-standard-portrait-left-bold",
+    "width": 393,
+    "height": 296,
+    "language": "en",
+    "dock": "left",
+    "contentSize": "normal",
+    "bold": true,
+    "scenario": "Open numbers and then the second symbol page using the production controls. Tap representative symbols at both row ends and the center, return to letters, and verify the same targets still hit correctly. Open and dismiss any available language presentation, then verify space, return and delete remain independently actionable and no dismissed presentation intercepts their touches."
+  },
+  {
+    "id": "fresh-es-standard-portrait-right-ax-bold",
+    "width": 402,
+    "height": 336,
+    "language": "es",
+    "dock": "right",
+    "contentSize": "accessibility",
+    "bold": true,
+    "scenario": "Inspect the largest supported accessibility text setting together with bold text. Exercise the language menu, create and invoke an eligible Undo, and open and dismiss the microphone presentation where available. Verify the three affordances remain distinguishable and independently reachable before and after each dismissal. Check that any clipped label retains its full accessible meaning and does not conceal a neighboring action."
+  },
+  {
+    "id": "fresh-bilingual-wide-portrait-full",
+    "width": 440,
+    "height": 314,
+    "language": "bilingual",
+    "dock": "full",
+    "contentSize": "normal",
+    "bold": false,
+    "scenario": "Switch among available English, Spanish and bilingual language states through the real language affordance, ending in bilingual. Exercise shift, shift lock where supported, numbers and letters. For every resulting visible layout, check each key center resolves to its own intended control and that rows and utility controls do not overlap. Verify the selected language remains identifiable after mode changes."
+  },
+  {
+    "id": "fresh-en-landscape-compact-full-ax",
+    "width": 568,
+    "height": 210,
+    "language": "en",
+    "dock": "full",
+    "contentSize": "accessibility",
+    "bold": false,
+    "scenario": "Use the compact landscape bounds with accessibility text. Inspect the top utility area and the bottom row for clipping, then invoke each available language, Undo and microphone action after creating any required eligible edit. Dismiss presentations and type a short sentence with spaces and return. Verify the root and bar stay within the supplied bounds and their visible controls retain distinct real hit targets."
+  },
+  {
+    "id": "fresh-es-landscape-compact-left",
+    "width": 667,
+    "height": 216,
+    "language": "es",
+    "dock": "left",
+    "contentSize": "normal",
+    "bold": false,
+    "scenario": "Start docked left in compact landscape, enter letters and symbols, then restore full width through the visible docking control. Verify the root, bar and every row agree on the current docking geometry; taps inside a visible edge key must not be lost to the surrounding root. Re-enter left docking if supported and confirm the restore control remains reachable. Document a platform restriction on landscape docking as unsupported rather than passing a replacement layout."
+  },
+  {
+    "id": "fresh-bilingual-landscape-standard-right-bold",
+    "width": 844,
+    "height": 228,
+    "language": "bilingual",
+    "dock": "right",
+    "contentSize": "normal",
+    "bold": true,
+    "scenario": "With bold text in landscape, open and dismiss the language chooser twice, switch to symbols and back, and invoke the visible docking restore action. Check that presentation frames track the current keyboard bounds and do not leave a blocking invisible view after dismissal. Probe all visible control centers plus the near-inside corners of the language and restore controls. Report unsupported landscape docking explicitly."
+  },
+  {
+    "id": "fresh-es-landscape-wide-full-ax-bold",
+    "width": 956,
+    "height": 238,
+    "language": "es",
+    "dock": "full",
+    "contentSize": "accessibility",
+    "bold": true,
+    "scenario": "Exercise the Spanish keyboard in wide landscape with accessibility text and bold. Inspect language, Undo and microphone labels or icons, invoke each eligible action, and verify dismissal restores letter input. Tap every bottom-row control at its visible center, confirming no overlap redirects the action. A shortened descriptive label is acceptable if its action and full accessible meaning remain available."
+  },
+  {
+    "id": "fresh-en-rotation-presentation-restore",
+    "width": 375,
+    "height": 308,
+    "language": "en",
+    "dock": "full",
+    "contentSize": "normal",
+    "bold": false,
+    "scenario": "Start at the specified portrait bounds. Open an available language or microphone presentation, resize the production controller to 812 by 224 landscape bounds through its supported layout lifecycle, dismiss, then restore the original portrait bounds. Verify the presentation follows or dismisses cleanly, the bar and keys reflow together, and all utility and outer-row key centers hit the intended targets after both transitions. Record the platform lifecycle used."
+  },
+  {
+    "id": "fresh-bilingual-live-ax-docking-restore",
+    "width": 430,
+    "height": 328,
+    "language": "bilingual",
+    "dock": "right",
+    "contentSize": "accessibility",
+    "bold": true,
+    "scenario": "Start at the largest supported accessibility text size with bold text and right docking. Restore full width, open numbers, return to letters, and change text sizing to normal through the supported trait or setting mechanism before returning to accessibility sizing. Verify the selected language and docking state stay coherent, no stale frames block the language, Undo or microphone affordance, and every visible control remains identifiable and independently actionable. Record settings that cannot be applied dynamically as unsupported instead of claiming a live transition."
+  }
+]

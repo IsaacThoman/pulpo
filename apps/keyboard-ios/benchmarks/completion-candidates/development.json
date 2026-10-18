@@ -1,0 +1,443 @@
+{
+  "schema": 1,
+  "split": "development",
+  "visibleSlotLimit": 3,
+  "cases": [
+    {
+      "id": "dev-common-completion-1",
+      "group": "common-completion",
+      "mode": "completion",
+      "context": "Please send the ",
+      "prefix": "sched",
+      "accepted": [
+        "schedule"
+      ]
+    },
+    {
+      "id": "dev-common-completion-2",
+      "group": "common-completion",
+      "mode": "completion",
+      "context": "I packed a ",
+      "prefix": "sandw",
+      "accepted": [
+        "sandwich"
+      ]
+    },
+    {
+      "id": "dev-common-completion-3",
+      "group": "common-completion",
+      "mode": "completion",
+      "context": "The door is ",
+      "prefix": "lock",
+      "accepted": [
+        "locked"
+      ]
+    },
+    {
+      "id": "dev-common-completion-4",
+      "group": "common-completion",
+      "mode": "completion",
+      "context": "That sounds ",
+      "prefix": "inter",
+      "accepted": [
+        "interesting"
+      ]
+    },
+    {
+      "id": "dev-short-prefix-1",
+      "group": "short-prefix",
+      "mode": "completion",
+      "context": "Bring your ",
+      "prefix": "u",
+      "accepted": [
+        "umbrella"
+      ]
+    },
+    {
+      "id": "dev-short-prefix-2",
+      "group": "short-prefix",
+      "mode": "completion",
+      "context": "I will arrive ",
+      "prefix": "to",
+      "accepted": [
+        "tomorrow",
+        "tonight"
+      ]
+    },
+    {
+      "id": "dev-short-prefix-3",
+      "group": "short-prefix",
+      "mode": "completion",
+      "context": "Please make some ",
+      "prefix": "co",
+      "accepted": [
+        "coffee"
+      ]
+    },
+    {
+      "id": "dev-short-prefix-4",
+      "group": "short-prefix",
+      "mode": "completion",
+      "context": "We should ",
+      "prefix": "re",
+      "accepted": [
+        "rest",
+        "relax"
+      ]
+    },
+    {
+      "id": "dev-ambiguous-valid-1",
+      "group": "ambiguous-valid",
+      "mode": "completion",
+      "context": "The garden needs ",
+      "prefix": "water",
+      "accepted": [
+        "water",
+        "watering"
+      ]
+    },
+    {
+      "id": "dev-ambiguous-valid-2",
+      "group": "ambiguous-valid",
+      "mode": "completion",
+      "context": "Please keep the ",
+      "prefix": "light",
+      "accepted": [
+        "light",
+        "lights"
+      ]
+    },
+    {
+      "id": "dev-ambiguous-valid-3",
+      "group": "ambiguous-valid",
+      "mode": "completion",
+      "context": "We saw a ",
+      "prefix": "bear",
+      "accepted": [
+        "bear"
+      ]
+    },
+    {
+      "id": "dev-ambiguous-valid-4",
+      "group": "ambiguous-valid",
+      "mode": "completion",
+      "context": "I need a ",
+      "prefix": "plan",
+      "accepted": [
+        "plan"
+      ]
+    },
+    {
+      "id": "dev-unfamiliar-name-1",
+      "group": "unfamiliar-name",
+      "mode": "completion",
+      "context": "Please call ",
+      "prefix": "Zelm",
+      "accepted": [
+        "Zelmira"
+      ]
+    },
+    {
+      "id": "dev-unfamiliar-name-2",
+      "group": "unfamiliar-name",
+      "mode": "completion",
+      "context": "Meet me near ",
+      "prefix": "Qor",
+      "accepted": [
+        "Qorven"
+      ]
+    },
+    {
+      "id": "dev-unfamiliar-name-3",
+      "group": "unfamiliar-name",
+      "mode": "completion",
+      "context": "I emailed ",
+      "prefix": "Navi",
+      "accepted": [
+        "Navika"
+      ]
+    },
+    {
+      "id": "dev-unfamiliar-name-4",
+      "group": "unfamiliar-name",
+      "mode": "completion",
+      "context": "Thanks for helping ",
+      "prefix": "Ely",
+      "accepted": [
+        "Elyra"
+      ]
+    },
+    {
+      "id": "dev-normalization-1",
+      "group": "normalization",
+      "mode": "completion",
+      "context": "Visit the ",
+      "prefix": "café",
+      "accepted": [
+        "café"
+      ]
+    },
+    {
+      "id": "dev-normalization-2",
+      "group": "normalization",
+      "mode": "completion",
+      "context": "We saw a ",
+      "prefix": "naï",
+      "accepted": [
+        "naïve"
+      ]
+    },
+    {
+      "id": "dev-normalization-3",
+      "group": "normalization",
+      "mode": "completion",
+      "context": "Say ",
+      "prefix": "HE",
+      "accepted": [
+        "hello",
+        "hey"
+      ]
+    },
+    {
+      "id": "dev-normalization-4",
+      "group": "normalization",
+      "mode": "completion",
+      "context": "Read about ",
+      "prefix": "rés",
+      "accepted": [
+        "résumé"
+      ]
+    },
+    {
+      "id": "dev-context-completion-1",
+      "group": "context-completion",
+      "mode": "completion",
+      "context": "Would you like a cup of ",
+      "prefix": "te",
+      "accepted": [
+        "tea"
+      ]
+    },
+    {
+      "id": "dev-context-completion-2",
+      "group": "context-completion",
+      "mode": "completion",
+      "context": "We need to catch the ",
+      "prefix": "tra",
+      "accepted": [
+        "train"
+      ]
+    },
+    {
+      "id": "dev-context-completion-3",
+      "group": "context-completion",
+      "mode": "completion",
+      "context": "I will be home in ten ",
+      "prefix": "mi",
+      "accepted": [
+        "minutes"
+      ]
+    },
+    {
+      "id": "dev-context-completion-4",
+      "group": "context-completion",
+      "mode": "completion",
+      "context": "Can you turn off the ",
+      "prefix": "li",
+      "accepted": [
+        "light",
+        "lights"
+      ]
+    },
+    {
+      "id": "dev-next-common-1",
+      "group": "next-common",
+      "mode": "next",
+      "context": "Thank you ",
+      "prefix": "",
+      "accepted": [
+        "for",
+        "so"
+      ]
+    },
+    {
+      "id": "dev-next-common-2",
+      "group": "next-common",
+      "mode": "next",
+      "context": "See you ",
+      "prefix": "",
+      "accepted": [
+        "soon",
+        "tomorrow",
+        "later"
+      ]
+    },
+    {
+      "id": "dev-next-common-3",
+      "group": "next-common",
+      "mode": "next",
+      "context": "I want to ",
+      "prefix": "",
+      "accepted": [
+        "go",
+        "see",
+        "know"
+      ]
+    },
+    {
+      "id": "dev-next-common-4",
+      "group": "next-common",
+      "mode": "next",
+      "context": "Have a nice ",
+      "prefix": "",
+      "accepted": [
+        "day",
+        "weekend"
+      ]
+    },
+    {
+      "id": "dev-next-ambiguous-1",
+      "group": "next-ambiguous",
+      "mode": "next",
+      "context": "The package is ",
+      "prefix": "",
+      "accepted": [
+        "here",
+        "ready",
+        "late",
+        "arriving"
+      ]
+    },
+    {
+      "id": "dev-next-ambiguous-2",
+      "group": "next-ambiguous",
+      "mode": "next",
+      "context": "Could we ",
+      "prefix": "",
+      "accepted": [
+        "meet",
+        "talk",
+        "reschedule"
+      ]
+    },
+    {
+      "id": "dev-next-ambiguous-3",
+      "group": "next-ambiguous",
+      "mode": "next",
+      "context": "I made ",
+      "prefix": "",
+      "accepted": [
+        "it",
+        "dinner",
+        "coffee"
+      ]
+    },
+    {
+      "id": "dev-next-ambiguous-4",
+      "group": "next-ambiguous",
+      "mode": "next",
+      "context": "This looks ",
+      "prefix": "",
+      "accepted": [
+        "good",
+        "great",
+        "interesting"
+      ]
+    },
+    {
+      "id": "dev-next-rare-history-1",
+      "group": "next-rare-history",
+      "mode": "next",
+      "context": "The velvet otter waits ",
+      "prefix": "",
+      "accepted": [
+        "outside",
+        "quietly",
+        "patiently"
+      ]
+    },
+    {
+      "id": "dev-next-rare-history-2",
+      "group": "next-rare-history",
+      "mode": "next",
+      "context": "Our ceramic satellite needs ",
+      "prefix": "",
+      "accepted": [
+        "repair",
+        "repairs",
+        "work"
+      ]
+    },
+    {
+      "id": "dev-next-rare-history-3",
+      "group": "next-rare-history",
+      "mode": "next",
+      "context": "After the copper parade ",
+      "prefix": "",
+      "accepted": [
+        "we",
+        "I",
+        "the"
+      ]
+    },
+    {
+      "id": "dev-next-rare-history-4",
+      "group": "next-rare-history",
+      "mode": "next",
+      "context": "A quiet orchard can ",
+      "prefix": "",
+      "accepted": [
+        "be",
+        "help",
+        "grow"
+      ]
+    },
+    {
+      "id": "dev-next-normalization-1",
+      "group": "next-normalization",
+      "mode": "next",
+      "context": "THANK YOU ",
+      "prefix": "",
+      "accepted": [
+        "for",
+        "so"
+      ]
+    },
+    {
+      "id": "dev-next-normalization-2",
+      "group": "next-normalization",
+      "mode": "next",
+      "context": "See you ",
+      "prefix": "",
+      "accepted": [
+        "soon",
+        "tomorrow",
+        "later"
+      ]
+    },
+    {
+      "id": "dev-next-normalization-3",
+      "group": "next-normalization",
+      "mode": "next",
+      "context": "I’ll see you ",
+      "prefix": "",
+      "accepted": [
+        "soon",
+        "tomorrow",
+        "later"
+      ]
+    },
+    {
+      "id": "dev-next-normalization-4",
+      "group": "next-normalization",
+      "mode": "next",
+      "context": "The café is ",
+      "prefix": "",
+      "accepted": [
+        "open",
+        "closed",
+        "nearby"
+      ]
+    }
+  ]
+}
