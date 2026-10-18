@@ -61,6 +61,23 @@ installs and opens `com.isaacthoman.pulpo.keyboard`. Set `PULPO_IOS_DEVICE` to a
 paired device name or UDID to override the default `Isaac iphone`. Build output
 uses a separate keyboard cache; logs are printed only if deployment fails.
 
+## Release
+
+Every Pulpo release on `main` also ships Pulpo Keyboard. The
+`keyboard-testflight` job in `.github/workflows/release.yml` checks out the
+semantic release tag, generates the project with a pinned XcodeGen, and
+archives it with the release version and a timestamp build number, the same as
+Pulpo Mobile. `scripts/validate_archive.py` then checks the app, extension,
+language data, versions and privacy manifests before
+`.github/scripts/upload-ios-testflight.sh` uploads the build. That script is
+shared with Pulpo Mobile and uses the same `testflight` GitHub environment
+secrets. The upload only runs after the `Keyboard / iOS` check passes.
+
+Each target bundles its own `PrivacyInfo.xcprivacy`. Update them when the app
+or extension starts using another
+[required reason API](https://developer.apple.com/documentation/bundleresources/describing-use-of-required-reason-api)
+or collects new data.
+
 ## How it works
 
 **Touch routing.** The extension paints an opaque keyboard background. Transparent
