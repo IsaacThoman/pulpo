@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { PrototypeModel } from '../../mockup5/src/domain'
-import { chatGenerationSelections, enterDraftPresets, generationDefaultsWithChoice, generationSummary, resolveGenerationSelections } from './generationOptions'
+import { chatGenerationSelections, enterDraftPresets, generationDefaultsWithChoice, generationSummary, resolveGenerationSelections, settlePendingStart, type PendingStart } from './generationOptions'
 
 const model = {
   id: 'model-1',
@@ -46,15 +46,45 @@ describe('generation options', () => {
     expect(chatGenerationSelections([])).toEqual({})
   })
 
-  it('starts drafts from history, and restores a rejected start\'s choices once', () => {
+  describe('new-chat starts', () => {
     const history = [{ role: 'assistant', modelId: 'model-1', presetSelections: { reasoning: 'high' } }]
-    const starting = new Map([['local\u0000temporary:new', { presets: { 'model-1': { reasoning: 'low' } }, settled: true }]])
-    expect(enterDraftPresets(starting, 'local\u0000temporary:chat', history)).toEqual({ presets: { 'model-1': { reasoning: 'high' } }, settled: true })
-    // History that has not loaded leaves the draft open to late seeding.
-    expect(enterDraftPresets(starting, 'local\u0000chat', [])).toEqual({ presets: {}, settled: false })
-    expect(enterDraftPresets(starting, 'local\u0000temporary:new', [])).toEqual({ presets: { 'model-1': { reasoning: 'low' } }, settled: true })
-    // Later visits start from defaults, like a freshly mounted web composer.
-    expect(enterDraftPresets(starting, 'local\u0000temporary:new', [])).toEqual({ presets: {}, settled: false })
+    const draft = { scope: 'local\u0000temporary:new', draftId: 'temporary:new' }
+    const chat = { scope: 'local\u0000temporary:chat', draftId: 'temporary:chat' }
+    const other = { scope: 'local\u0000other', draftId: 'other' }
+    const sent = { presets: { 'model-1': { reasoning: 'low' } }, settled: true }
+    const defaults = { presets: {}, settled: false }
+    const begun = (): PendingStart => ({ token: 1, scope: draft.scope, state: sent })
+    const exists = (ids: string[]) => (draftId: string) => ids.includes(draftId)
+    /** Enter the chat the send opened, with its optimistic turn. */
+    const opened = () => enterDraftPresets(begun(), chat, history, exists(['temporary:chat']))
+
+    it('starts drafts from history and records the chat a send opened', () => {
+      expect(opened()).toEqual({ presets: { presets: { 'model-1': { reasoning: 'high' } }, settled: true }, pending: { ...begun(), started: chat } })
+      // History that has not loaded leaves the draft open to late seeding.
+      expect(enterDraftPresets(null, other, [], exists([]))).toEqual({ presets: defaults, pending: null })
+    })
+
+    it('restores a rejected start once, whether the rejection or the return happens first', () => {
+      const rejected = settlePendingStart(opened().pending, 1, false, { activeScope: chat.scope, chatExists: exists([]) })
+      expect(rejected).toMatchObject({ rejected: true })
+      expect(enterDraftPresets(rejected, draft, [], exists([]))).toEqual({ presets: sent, pending: null })
+      // The return rendered first: the chat is already discarded.
+      expect(enterDraftPresets(opened().pending, draft, [], exists([]))).toEqual({ presets: sent, pending: null })
+    })
+
+    it('does not restore while pending, after acceptance, or when the user moved on', () => {
+      // Opening a new chat while the first send is still pending.
+      expect(enterDraftPresets(opened().pending, draft, [], exists(['temporary:chat']))).toMatchObject({ presets: defaults })
+      expect(settlePendingStart(opened().pending, 1, true, { activeScope: chat.scope, chatExists: exists(['temporary:chat']) })).toBeNull()
+      // Rejected after the user switched chats, or after the server created the chat.
+      expect(settlePendingStart(opened().pending, 1, false, { activeScope: other.scope, chatExists: exists([]) })).toBeNull()
+      expect(settlePendingStart(opened().pending, 1, false, { activeScope: chat.scope, chatExists: exists(['temporary:chat']) })).toBeNull()
+      // A rejected start that is not followed by its return is dropped.
+      const rejected = settlePendingStart(opened().pending, 1, false, { activeScope: chat.scope, chatExists: exists([]) })
+      expect(enterDraftPresets(rejected, other, [], exists([]))).toEqual({ presets: defaults, pending: null })
+      // A newer start owns the slot.
+      expect(settlePendingStart(opened().pending, 2, true, { activeScope: chat.scope, chatExists: exists([]) })).toEqual(opened().pending)
+    })
   })
 
   it('saves one explicit choice without discarding other saved defaults', () => {
