@@ -136,15 +136,15 @@ final class DictationService {
     }
   }
 
-  /// With recording running, reopens the app the keyboard came from. The host name
-  /// arrives from UIKit about a second after launch; a host seen shortly before this
-  /// handoff still counts, an older one doesn't.
+  /// With recording running, reopens the app the keyboard came from. The keyboard
+  /// usually names it; otherwise the name arrives from UIKit about a second after
+  /// launch, and a host seen shortly before this handoff still counts, an older one doesn't.
   private func returnToHost(handoffAt: Date, attempt: DictationRequestLifecycle.Attempt) {
     let recordingAfter = Date().timeIntervalSince(handoffAt)
     let named = knownHost
     knownHost = nil
-    let resolve: (@escaping (String?) -> Void) -> Void = { done in
-      if let named { return done(named) }
+    let resolve: (@escaping (String?) -> Void) -> Void = { [weak self] done in
+      if let named { return self?.afterActivation { done(named) } ?? () }
       HostAppObserver.shared.waitForHost(since: handoffAt.addingTimeInterval(-5), timeout: 3, completion: done)
     }
     resolve { [weak self] bundle in
@@ -163,6 +163,16 @@ final class DictationService {
         Diagnostics.record("app", "return", ["outcome": method == .none ? "failed" : "returned", "method": method.rawValue, "host": bundle, "recordingMs": Int(recordingAfter * 1000), "hostMs": Int(waited * 1000)])
       }
     }
+  }
+
+  /// iOS ignores opening another app while this one is still coming forward, so a host
+  /// known at launch waits until this app is active and has settled.
+  private func afterActivation(_ body: @escaping () -> Void, checks: Int = 30) {
+    guard UIApplication.shared.applicationState == .active || checks == 0 else {
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in self?.afterActivation(body, checks: checks - 1) }
+      return
+    }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: body)
   }
 
   private func startEngineIfNeeded() throws {

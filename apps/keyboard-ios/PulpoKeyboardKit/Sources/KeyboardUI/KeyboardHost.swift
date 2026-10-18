@@ -15,7 +15,7 @@ public protocol KeyboardHost: AnyObject {
   func adjustTextPosition(byCharacterOffset offset: Int)
   func openApp(_ url: URL)
   func setTypingLanguage(_ language: String)
-  /// The app being typed in, when iOS still reveals it (before iOS 26.4).
+  /// The app being typed in, when it can be found.
   var hostBundleIdentifier: String? { get }
 }
 

@@ -158,14 +158,33 @@ open class PulpoKeyboardViewController: UIInputViewController, KeyboardHost {
   public var inputTraits: InputTraits { InputTraits(textDocumentProxy) }
   public var isInsideApp: Bool { false }
 
-  /// Private and gone since iOS 26.4; only read when the object still answers to it.
+  /// UIKit's private host bundle ID reads "<null>" since iOS 26.4, but the host's process
+  /// ID is still there, and its executable lives inside the host's app bundle. Every hop is
+  /// private or best effort and is checked; `nil` sends dictation back to asking the person.
   public var hostBundleIdentifier: String? {
     for object in [parent as NSObject?, self as NSObject?].compactMap({ $0 }) {
       for key in ["_hostBundleID", "_hostApplicationBundleIdentifier"] where object.responds(to: NSSelectorFromString(key)) {
-        if let value = object.value(forKey: key) as? String, !value.isEmpty { return value }
+        if let value = object.value(forKey: key) as? String, Self.isBundleIdentifier(value) { return value }
       }
     }
-    return nil
+    return hostBundleIdentifierFromProcess
+  }
+
+  private var hostBundleIdentifierFromProcess: String? {
+    guard responds(to: NSSelectorFromString("_hostProcessIdentifier")),
+          let pid = (value(forKey: "_hostProcessIdentifier") as? NSNumber)?.int32Value, pid > 0,
+          let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "proc_pidpath") else { return nil }
+    typealias PidPath = @convention(c) (Int32, UnsafeMutablePointer<CChar>, UInt32) -> Int32
+    var buffer = [CChar](repeating: 0, count: 4096)
+    guard unsafeBitCast(symbol, to: PidPath.self)(pid, &buffer, UInt32(buffer.count)) > 0 else { return nil }
+    var url = URL(fileURLWithPath: String(cString: buffer))
+    while url.pathExtension != "app", url.pathComponents.count > 1 { url.deleteLastPathComponent() }
+    guard url.pathExtension == "app", let bundle = Bundle(url: url)?.bundleIdentifier, Self.isBundleIdentifier(bundle) else { return nil }
+    return bundle
+  }
+
+  static func isBundleIdentifier(_ value: String) -> Bool {
+    value.contains(".") && value.allSatisfy { $0.isLetter || $0.isNumber || $0 == "." || $0 == "-" }
   }
 
   public func adjustTextPosition(byCharacterOffset offset: Int) {

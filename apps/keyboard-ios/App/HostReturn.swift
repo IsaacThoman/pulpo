@@ -3,9 +3,9 @@ import UIKit
 
 /// Learns which app the person was typing in when the keyboard opened Pulpo Keyboard.
 ///
-/// There is no public API for this (Apple DTS on FB22247647), and since iOS 26.4 the
-/// keyboard extension can't see its host either. UIKit in the containing app still
-/// receives the remote keyboard's source bundle in `_UIRemoteKeyboards.currentState`,
+/// There is no public API for this (Apple DTS on FB22247647). The keyboard usually
+/// names the host in its dictation link; this is the fallback. UIKit in the containing
+/// app receives the remote keyboard's source bundle in `_UIRemoteKeyboards.currentState`,
 /// about a second after the keyboard opens the app. The value is transient, so it is
 /// observed from launch rather than polled. Every hop is checked: if UIKit changes,
 /// this stays inert and dictation falls back to asking the person to tap back.
