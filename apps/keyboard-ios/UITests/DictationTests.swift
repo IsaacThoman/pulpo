@@ -1,0 +1,68 @@
+import XCTest
+
+/// Dictation from the keyboard through the app's recorder to a Pulpo server.
+/// Needs `scripts/stub_pulpo_server.py` on port 8091 and microphone permission
+/// granted to the app (`xcrun simctl privacy <device> grant microphone com.isaacthoman.pulpo.keyboard`).
+@MainActor
+final class DictationTests: XCTestCase {
+  func stubAvailable() -> Bool {
+    guard let url = URL(string: "http://127.0.0.1:8091/api/mobile/config"), let data = try? Data(contentsOf: url) else { return false }
+    return !data.isEmpty
+  }
+
+  func testDictationConfirmsTheTranscriptInUnidentifiedPreview() throws {
+    try XCTSkipUnless(stubAvailable(), "Start scripts/stub_pulpo_server.py first")
+    let app = XCUIApplication()
+    app.launchArguments = ["-PKPreview", "-PKResetLearning", "-PKResetSettings"]
+    app.launchEnvironment["PK_TEST_LOGIN"] = "http://127.0.0.1:8091|tester@example.com|correct horse"
+    app.launch()
+    XCTAssertTrue(app.key("key-q").waitForExistence(timeout: 8))
+    sleep(2)
+    app.typeOnPreview("so ")
+    app.descendants(matching: .any).matching(identifier: "dictate").firstMatch.tap()
+    let done = app.descendants(matching: .any).matching(identifier: "dictation-done").firstMatch
+    XCTAssertTrue(done.waitForExistence(timeout: 6), "Recording never started:\n\(app.debugDescription)")
+    sleep(2)
+    snapshot("dictation-recording")
+    done.tap()
+    let insert = app.descendants(matching: .any).matching(identifier: "dictation-action").firstMatch
+    XCTAssertTrue(insert.waitForExistence(timeout: 10), "An unidentified preview requires explicit insertion confirmation")
+    XCTAssertEqual(app.previewText, "So ", "No transcript should insert before confirmation")
+    XCTAssertEqual(insert.label, "Insert Here")
+    insert.tap()
+    let deadline = Date().addingTimeInterval(10)
+    while Date() < deadline, !app.previewText.contains("Pulpo dictation") { usleep(200_000) }
+    XCTAssertEqual(app.previewText, "So hello from Pulpo dictation.")
+    XCTAssertTrue(app.key("key-q").waitForExistence(timeout: 3), "Keyboard should return after dictation")
+  }
+
+  func testDictationAsksToSignInFirst() {
+    let app = XCUIApplication()
+    app.launchArguments = ["-PKPreview", "-PKSignOut"]
+    app.launch()
+    XCTAssertTrue(app.key("key-q").waitForExistence(timeout: 8))
+    app.descendants(matching: .any).matching(identifier: "dictate").firstMatch.tap()
+    let title = app.descendants(matching: .any).matching(identifier: "dictation-title").firstMatch
+    XCTAssertTrue(title.waitForExistence(timeout: 3))
+    XCTAssertEqual(title.label, "Sign in to dictate")
+    snapshot("dictation-sign-in")
+    app.descendants(matching: .any).matching(identifier: "dictation-cancel").firstMatch.tap()
+    XCTAssertTrue(app.key("key-q").waitForExistence(timeout: 3))
+  }
+
+  /// If the app's recorder opens signed out, its error leads straight to sign-in.
+  func testRecorderOffersSignInWhenSignedOut() {
+    let app = XCUIApplication()
+    app.launchArguments = ["-PKSignOut"]
+    app.launch()
+    XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "sign-in").firstMatch.waitForExistence(timeout: 8))
+    app.open(URL(string: "pulpokeyboard://dictate?request=\(UUID().uuidString)")!)
+    let confirm = XCUIApplication(bundleIdentifier: "com.apple.springboard").buttons["Open"]
+    if confirm.waitForExistence(timeout: 3) { confirm.tap() }
+    let signIn = app.descendants(matching: .any).matching(identifier: "dictation-sign-in").firstMatch
+    XCTAssertTrue(signIn.waitForExistence(timeout: 6), app.debugDescription)
+    snapshot("dictation-recorder-signed-out")
+    signIn.tap()
+    XCTAssertTrue(app.textFields["email"].waitForExistence(timeout: 5), "Sign-in should open:\n\(app.debugDescription)")
+  }
+}

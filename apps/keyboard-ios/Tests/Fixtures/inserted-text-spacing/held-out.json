@@ -1,0 +1,338 @@
+[
+  {
+    "id": "H01",
+    "mode": "es",
+    "initialLeft": "buenos",
+    "initialRight": "",
+    "actions": [
+      {
+        "kind": "snippet",
+        "text": "días"
+      }
+    ],
+    "expected": "buenos días",
+    "control": "accented word separator"
+  },
+  {
+    "id": "H02",
+    "mode": "en",
+    "initialLeft": "one ",
+    "initialRight": "",
+    "actions": [
+      {
+        "kind": "snippet",
+        "text": "two"
+      }
+    ],
+    "expected": "one two",
+    "control": "existing separator control"
+  },
+  {
+    "id": "H03",
+    "mode": "en",
+    "initialLeft": "{",
+    "initialRight": "}",
+    "actions": [
+      {
+        "kind": "snippet",
+        "text": "value"
+      }
+    ],
+    "expected": "{value}",
+    "control": "no space inside braces"
+  },
+  {
+    "id": "H04",
+    "mode": "en",
+    "initialLeft": "‘",
+    "initialRight": "’",
+    "actions": [
+      {
+        "kind": "snippet",
+        "text": "yes"
+      }
+    ],
+    "expected": "‘yes’",
+    "control": "no space inside curly single quotes"
+  },
+  {
+    "id": "H05",
+    "mode": "en",
+    "initialLeft": "yes",
+    "initialRight": "",
+    "actions": [
+      {
+        "kind": "snippet",
+        "text": "?"
+      }
+    ],
+    "expected": "yes?",
+    "control": "no space before question mark"
+  },
+  {
+    "id": "H06",
+    "mode": "en",
+    "initialLeft": "yes",
+    "initialRight": "",
+    "actions": [
+      {
+        "kind": "snippet",
+        "text": ";"
+      }
+    ],
+    "expected": "yes;",
+    "control": "no space before semicolon"
+  },
+  {
+    "id": "H07",
+    "mode": "en",
+    "initialLeft": "first,",
+    "initialRight": "",
+    "actions": [
+      {
+        "kind": "snippet",
+        "text": "second"
+      }
+    ],
+    "expected": "first, second",
+    "control": "space after comma"
+  },
+  {
+    "id": "H08",
+    "mode": "en",
+    "initialLeft": "first\n\n",
+    "initialRight": "",
+    "actions": [
+      {
+        "kind": "snippet",
+        "text": "second"
+      }
+    ],
+    "expected": "first\n\nsecond",
+    "control": "paragraph separator control"
+  },
+  {
+    "id": "H09",
+    "mode": "en",
+    "initialLeft": "first",
+    "initialRight": " third",
+    "actions": [
+      {
+        "kind": "snippet",
+        "text": "second"
+      }
+    ],
+    "expected": "first second third",
+    "control": "existing right separator at caret"
+  },
+  {
+    "id": "H10",
+    "mode": "en",
+    "initialLeft": "first ",
+    "initialRight": "third",
+    "actions": [
+      {
+        "kind": "snippet",
+        "text": "second"
+      }
+    ],
+    "expected": "first second third",
+    "control": "missing right separator at caret"
+  },
+  {
+    "id": "H11",
+    "mode": "en",
+    "initialLeft": "say [",
+    "initialRight": "] now",
+    "actions": [
+      {
+        "kind": "snippet",
+        "text": "yes"
+      }
+    ],
+    "expected": "say [yes] now",
+    "control": "bracketed caret insertion"
+  },
+  {
+    "id": "H12",
+    "mode": "en",
+    "initialLeft": "first",
+    "initialRight": "",
+    "actions": [
+      {
+        "kind": "snippet",
+        "text": "second\nthird"
+      }
+    ],
+    "expected": "first second\nthird",
+    "control": "preserve transcript line break"
+  },
+  {
+    "id": "H13",
+    "mode": "en",
+    "initialLeft": "first",
+    "initialRight": "",
+    "actions": [
+      {
+        "kind": "snippet",
+        "text": " second!"
+      }
+    ],
+    "expected": "first second!",
+    "control": "supplied leading separator with punctuation"
+  },
+  {
+    "id": "H14",
+    "mode": "es",
+    "initialLeft": "bue",
+    "initialRight": "",
+    "actions": [
+      {
+        "kind": "suggestion",
+        "text": "bueno"
+      },
+      {
+        "kind": "type",
+        "text": "amigo"
+      }
+    ],
+    "expected": "bueno amigo",
+    "control": "Spanish suggestion acceptance"
+  },
+  {
+    "id": "H15",
+    "mode": "es",
+    "initialLeft": "hola ",
+    "initialRight": "",
+    "actions": [
+      {
+        "kind": "swipe",
+        "text": "mundo"
+      },
+      {
+        "kind": "type",
+        "text": "bonito"
+      }
+    ],
+    "expected": "hola mundo bonito",
+    "control": "Spanish swipe acceptance"
+  },
+  {
+    "id": "H16",
+    "mode": "bilingual",
+    "initialLeft": "¿",
+    "initialRight": "?",
+    "actions": [
+      {
+        "kind": "snippet",
+        "text": "ready ya"
+      }
+    ],
+    "expected": "¿ready ya?",
+    "control": "bilingual inverted punctuation"
+  },
+  {
+    "id": "H17",
+    "mode": "en",
+    "initialLeft": "hello",
+    "initialRight": "",
+    "actions": [
+      {
+        "kind": "mode",
+        "text": "es"
+      },
+      {
+        "kind": "snippet",
+        "text": "amigo"
+      },
+      {
+        "kind": "mode",
+        "text": "bilingual"
+      },
+      {
+        "kind": "snippet",
+        "text": "today"
+      }
+    ],
+    "expected": "hello amigo today",
+    "control": "multiple language switches"
+  },
+  {
+    "id": "H18",
+    "mode": "es",
+    "initialLeft": "hola",
+    "initialRight": "",
+    "actions": [
+      {
+        "kind": "mode",
+        "text": "en"
+      },
+      {
+        "kind": "snippet",
+        "text": ")"
+      }
+    ],
+    "expected": "hola)",
+    "control": "closing punctuation after language switch"
+  },
+  {
+    "id": "H19",
+    "mode": "en",
+    "initialLeft": "first",
+    "initialRight": "",
+    "actions": [
+      {
+        "kind": "emoji",
+        "text": "🎉"
+      },
+      {
+        "kind": "type",
+        "text": "next"
+      }
+    ],
+    "expected": "first 🎉 next",
+    "control": "second emoji separator control"
+  },
+  {
+    "id": "H20",
+    "mode": "en",
+    "initialLeft": "literal",
+    "initialRight": "",
+    "actions": [
+      {
+        "kind": "type",
+        "text": "!"
+      }
+    ],
+    "expected": "literal!",
+    "control": "literal typing remains direct"
+  },
+  {
+    "id": "H21",
+    "mode": "en",
+    "initialLeft": "hello",
+    "initialRight": "",
+    "actions": [
+      {
+        "kind": "snippet",
+        "text": "..."
+      }
+    ],
+    "expected": "hello...",
+    "control": "ellipsis has no preceding separator"
+  },
+  {
+    "id": "H22",
+    "mode": "en",
+    "initialLeft": "prefix ",
+    "initialRight": " suffix",
+    "actions": [
+      {
+        "kind": "snippet",
+        "text": "middle"
+      }
+    ],
+    "expected": "prefix middle suffix",
+    "control": "spaces already present on both sides"
+  }
+]

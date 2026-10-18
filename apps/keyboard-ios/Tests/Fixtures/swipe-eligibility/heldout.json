@@ -1,0 +1,322 @@
+[
+  {
+    "id": "r10h001",
+    "kind": "swipe",
+    "language": "spanish",
+    "target": "sofá",
+    "context": "Ya llegamos a casa. Voy a sentarme en el ",
+    "expectedDocument": "Ya llegamos a casa. Voy a sentarme en el sofá "
+  },
+  {
+    "id": "r10h002",
+    "kind": "swipe",
+    "language": "spanish",
+    "target": "café",
+    "context": "Acabo de levantarme. Voy a preparar un ",
+    "expectedDocument": "Acabo de levantarme. Voy a preparar un café "
+  },
+  {
+    "id": "r10h003",
+    "kind": "swipe",
+    "language": "spanish",
+    "target": "mesa",
+    "context": "La cena está lista. Pon los vasos en la ",
+    "expectedDocument": "La cena está lista. Pon los vasos en la mesa "
+  },
+  {
+    "id": "r10h004",
+    "kind": "swipe",
+    "language": "spanish",
+    "target": "puerta",
+    "context": "Ya salimos todos. Por favor cierra la ",
+    "expectedDocument": "Ya salimos todos. Por favor cierra la puerta "
+  },
+  {
+    "id": "r10h005",
+    "kind": "swipe",
+    "language": "spanish",
+    "target": "libro",
+    "context": "Hoy tengo un rato libre. Quiero leer este ",
+    "expectedDocument": "Hoy tengo un rato libre. Quiero leer este libro "
+  },
+  {
+    "id": "r10h006",
+    "kind": "swipe",
+    "language": "spanish",
+    "target": "ropa",
+    "context": "La lavadora ya terminó. Voy a tender la ",
+    "expectedDocument": "La lavadora ya terminó. Voy a tender la ropa "
+  },
+  {
+    "id": "r10h007",
+    "kind": "swipe",
+    "language": "spanish",
+    "target": "noche",
+    "context": "Ya compré las entradas. Vamos al cine esta ",
+    "expectedDocument": "Ya compré las entradas. Vamos al cine esta noche "
+  },
+  {
+    "id": "r10h008",
+    "kind": "swipe",
+    "language": "spanish",
+    "target": "pan",
+    "context": "La tienda sigue abierta. Voy a comprar ",
+    "expectedDocument": "La tienda sigue abierta. Voy a comprar pan "
+  },
+  {
+    "id": "r10h009",
+    "kind": "swipe",
+    "language": "spanish",
+    "target": "leche",
+    "context": "Ya serví los cereales. Solo falta la ",
+    "expectedDocument": "Ya serví los cereales. Solo falta la leche "
+  },
+  {
+    "id": "r10h010",
+    "kind": "swipe",
+    "language": "spanish",
+    "target": "gato",
+    "context": "Oigo un ruido en el patio. Creo que es el ",
+    "expectedDocument": "Oigo un ruido en el patio. Creo que es el gato "
+  },
+  {
+    "id": "r10h011",
+    "kind": "swipe",
+    "language": "spanish",
+    "target": "silla",
+    "context": "Tenemos otra visita. Hace falta una ",
+    "expectedDocument": "Tenemos otra visita. Hace falta una silla "
+  },
+  {
+    "id": "r10h012",
+    "kind": "swipe",
+    "language": "spanish",
+    "target": "correo",
+    "context": "Ya enviaron los detalles. Voy a revisar el ",
+    "expectedDocument": "Ya enviaron los detalles. Voy a revisar el correo "
+  },
+  {
+    "id": "r10h013",
+    "kind": "swipe",
+    "language": "spanish",
+    "target": "cerrar",
+    "context": "Hace frío en el cuarto. Voy a ",
+    "expectedDocument": "Hace frío en el cuarto. Voy a cerrar "
+  },
+  {
+    "id": "r10h014",
+    "kind": "swipe",
+    "language": "spanish",
+    "target": "galletas",
+    "context": "Ya llegaron los invitados. Voy a servir unas ",
+    "expectedDocument": "Ya llegaron los invitados. Voy a servir unas galletas "
+  },
+  {
+    "id": "r10h015",
+    "kind": "swipe",
+    "language": "spanish",
+    "target": "película",
+    "context": "Hoy nos quedamos en casa. Podemos ver una ",
+    "expectedDocument": "Hoy nos quedamos en casa. Podemos ver una película "
+  },
+  {
+    "id": "r10h016",
+    "kind": "swipe",
+    "language": "spanish",
+    "target": "sábado",
+    "context": "Ya confirmé la reserva. Nos vemos el ",
+    "expectedDocument": "Ya confirmé la reserva. Nos vemos el sábado "
+  },
+  {
+    "id": "r10h017",
+    "kind": "swipe",
+    "language": "bilingual",
+    "target": "vacaciones",
+    "context": "El vuelo ya está reservado. I need unas ",
+    "expectedDocument": "El vuelo ya está reservado. I need unas vacaciones "
+  },
+  {
+    "id": "r10h018",
+    "kind": "swipe",
+    "language": "bilingual",
+    "target": "desayuno",
+    "context": "It's still early. Ya preparé el ",
+    "expectedDocument": "It's still early. Ya preparé el desayuno "
+  },
+  {
+    "id": "r10h019",
+    "kind": "swipe",
+    "language": "bilingual",
+    "target": "baño",
+    "context": "We just got home. Voy a limpiar el ",
+    "expectedDocument": "We just got home. Voy a limpiar el baño "
+  },
+  {
+    "id": "r10h020",
+    "kind": "swipe",
+    "language": "bilingual",
+    "target": "equipo",
+    "context": "The game starts soon. Vamos a apoyar al ",
+    "expectedDocument": "The game starts soon. Vamos a apoyar al equipo "
+  },
+  {
+    "id": "r10h021",
+    "kind": "swipe",
+    "language": "bilingual",
+    "target": "tickets",
+    "context": "Ya elegimos la película. I bought the ",
+    "expectedDocument": "Ya elegimos la película. I bought the tickets "
+  },
+  {
+    "id": "r10h022",
+    "kind": "swipe",
+    "language": "bilingual",
+    "target": "weekend",
+    "context": "Ya terminé todo el trabajo. I am free this ",
+    "expectedDocument": "Ya terminé todo el trabajo. I am free this weekend "
+  },
+  {
+    "id": "r10h023",
+    "kind": "swipe",
+    "language": "bilingual",
+    "target": "lunch",
+    "context": "Todavía no he comido. Let's meet for ",
+    "expectedDocument": "Todavía no he comido. Let's meet for lunch "
+  },
+  {
+    "id": "r10h024",
+    "kind": "swipe",
+    "language": "bilingual",
+    "target": "ready",
+    "context": "Ya terminé de empacar. I am ",
+    "expectedDocument": "Ya terminé de empacar. I am ready "
+  },
+  {
+    "id": "r10h025",
+    "kind": "swipe",
+    "language": "english",
+    "target": "today",
+    "context": "The weather looks good. We can go outside ",
+    "expectedDocument": "The weather looks good. We can go outside today "
+  },
+  {
+    "id": "r10h026",
+    "kind": "swipe",
+    "language": "english",
+    "target": "home",
+    "context": "My shift is over. I am going ",
+    "expectedDocument": "My shift is over. I am going home "
+  },
+  {
+    "id": "r10h027",
+    "kind": "swipe",
+    "language": "english",
+    "target": "water",
+    "context": "I just finished my run. I need some ",
+    "expectedDocument": "I just finished my run. I need some water "
+  },
+  {
+    "id": "r10h028",
+    "kind": "swipe",
+    "language": "english",
+    "target": "school",
+    "context": "The bus is here. We have to leave for ",
+    "expectedDocument": "The bus is here. We have to leave for school "
+  },
+  {
+    "id": "r10h029",
+    "kind": "swipe",
+    "language": "english",
+    "target": "friend",
+    "context": "I know someone who can help. Let me call my ",
+    "expectedDocument": "I know someone who can help. Let me call my friend "
+  },
+  {
+    "id": "r10h030",
+    "kind": "swipe",
+    "language": "english",
+    "target": "better",
+    "context": "I slept well last night. I feel much ",
+    "expectedDocument": "I slept well last night. I feel much better "
+  },
+  {
+    "id": "r10h031",
+    "kind": "swipe",
+    "language": "english",
+    "target": "little",
+    "context": "This soup is too hot. Let it cool a ",
+    "expectedDocument": "This soup is too hot. Let it cool a little "
+  },
+  {
+    "id": "r10h032",
+    "kind": "swipe",
+    "language": "english",
+    "target": "summer",
+    "context": "We booked a trip to the beach. We are going this ",
+    "expectedDocument": "We booked a trip to the beach. We are going this summer "
+  },
+  {
+    "id": "r10h033",
+    "kind": "literal",
+    "language": "spanish",
+    "context": "Ya encontré la página. Abre ",
+    "literal": "https://ejemplo.org/ayuda?modo=2 ",
+    "expectedDocument": "Ya encontré la página. Abre https://ejemplo.org/ayuda?modo=2 "
+  },
+  {
+    "id": "r10h034",
+    "kind": "literal",
+    "language": "bilingual",
+    "context": "Ya tengo el contacto. Email ",
+    "literal": "luis@example.org ",
+    "expectedDocument": "Ya tengo el contacto. Email luis@example.org "
+  },
+  {
+    "id": "r10h035",
+    "kind": "literal",
+    "language": "spanish",
+    "context": "Ya creé la cuenta. La clave es ",
+    "literal": "Rt8_p4? ",
+    "expectedDocument": "Ya creé la cuenta. La clave es Rt8_p4? "
+  },
+  {
+    "id": "r10h036",
+    "kind": "literal",
+    "language": "bilingual",
+    "context": "Ya publiqué la foto. Tag ",
+    "literal": "@grupo_local ",
+    "expectedDocument": "Ya publiqué la foto. Tag @grupo_local "
+  },
+  {
+    "id": "r10h037",
+    "kind": "literal",
+    "language": "english",
+    "context": "The export is ready. Save it to ",
+    "literal": "/tmp/notes.txt ",
+    "expectedDocument": "The export is ready. Save it to /tmp/notes.txt "
+  },
+  {
+    "id": "r10h038",
+    "kind": "literal",
+    "language": "spanish",
+    "context": "Ya instalé la actualización. La versión es ",
+    "literal": "v3.4.2 ",
+    "expectedDocument": "Ya instalé la actualización. La versión es v3.4.2 "
+  },
+  {
+    "id": "r10h039",
+    "kind": "literal",
+    "language": "bilingual",
+    "context": "Ya llegó el paquete. The code is ",
+    "literal": "PKG-482 ",
+    "expectedDocument": "Ya llegó el paquete. The code is PKG-482 "
+  },
+  {
+    "id": "r10h040",
+    "kind": "literal",
+    "language": "english",
+    "context": "The receipt is ready. The total is ",
+    "literal": "24.75 ",
+    "expectedDocument": "The receipt is ready. The total is 24.75 "
+  }
+]
