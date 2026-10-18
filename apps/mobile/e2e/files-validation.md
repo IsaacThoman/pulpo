@@ -296,3 +296,24 @@ Independent reviewers audited each phase as it landed, then the whole branch twi
 - Two audit suggestions were left as they are:
   - **The editor page's error reports:** the app does not reload the page when it reports an error. Most such reports are harmless page errors, which reloading would interrupt, and the updates the page applies all come from the app's own document.
   - **Android WebViews without the origin-checked message listener:** those (older than version 83) fall back to a plain JavaScript interface. The page loads nothing from anywhere and cannot navigate, so only the editor's own page can reach it.
+
+## Follow-up to the simulator audit of #846
+
+- Downloaded blobs use an optional `contentChecksum` from the server as their content identity.
+  Renaming or moving an item keeps its downloaded bytes available offline, including changes
+  received from another device. Actual content replacements still invalidate the copy, even
+  when their byte count is unchanged. Renaming also updates the local filename used by Quick
+  Look and sharing. Older servers without a checksum retain conservative invalidation; copies
+  cached under the old metadata-based identity need one fresh download.
+- Native drawer rows use a minimum height and grow with their text, rather than clipping names
+  at 44 points. Checked on the iPhone at the largest accessibility text size.
+- Visual indentation stops at 64 points, without limiting the real folder depth. Folder, chat,
+  document, empty-state, and move-picker rows use the same limit. Checked the 23-level tree and
+  opened its deepest document on the iPhone; a regression test covers the contract's maximum depth.
+- Regression tests exercise Files and sidebar rename paths with the real SQLite cache, offline
+  moves, replacements, conversion back to a blob, older servers, and account separation.
+  The PostgreSQL tree-service suite checks that rename/move preserve the checksum and replacing
+  contents changes it.
+- Follow-up simulator checks passed: Android opened the deepest document and selected the deepest
+  move destination; iPad reopened a renamed download offline in Quick Look under its current name,
+  with no extra download request. The gateway was restored online and system text sizes restored.

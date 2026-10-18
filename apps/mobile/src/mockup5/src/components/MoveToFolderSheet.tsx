@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAppTheme } from '../theme';
+import { sidebarIndent } from '../../../features/sidebar/layout';
 
 export type MoveToFolderSheetProps = {
   /**
@@ -24,7 +25,7 @@ export function MoveToFolderSheet({ folderId, folders, disabledIds, onMove, onOt
   const [query, setQuery] = useState('');
   const search = query.trim().toLocaleLowerCase();
   const visibleFolders = folders.filter((folder) => folder.name.toLocaleLowerCase().includes(search));
-  const button = (label: string, onPress: () => void, options: { selected?: boolean; disabled?: boolean; depth?: number } = {}) => <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ selected: options.selected, disabled: options.disabled }} disabled={options.disabled} onPress={onPress} style={[styles.button, { borderColor: theme.separator, paddingLeft: 12 + (options.depth ?? 0) * 18, opacity: options.disabled ? 0.4 : 1 }]}><Text style={{ color: theme.text, fontSize: 17, flexShrink: 1 }}>{label}</Text>{options.selected ? <Text style={{ color: theme.blue }}>✓</Text> : null}</Pressable>;
+  const button = (label: string, onPress: () => void, options: { selected?: boolean; disabled?: boolean; depth?: number } = {}) => <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ selected: options.selected, disabled: options.disabled }} disabled={options.disabled} onPress={onPress} style={[styles.button, { borderColor: theme.separator, paddingLeft: 12 + sidebarIndent(options.depth ?? 0), opacity: options.disabled ? 0.4 : 1 }]}><Text style={{ color: theme.text, fontSize: 17, flexShrink: 1 }}>{label}</Text>{options.selected ? <Text style={{ color: theme.blue }}>✓</Text> : null}</Pressable>;
   const move = (destination: string | null) => {
     onMove(destination);
     onClose();

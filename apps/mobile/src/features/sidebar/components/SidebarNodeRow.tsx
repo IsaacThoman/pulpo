@@ -5,9 +5,7 @@ import { ItemContextMenuView, itemContextMenuAvailable, type ContextMenuAction }
 import { SymbolView } from '../../../platform/SymbolView'
 import { useAppTheme } from '../../../theme'
 import { fileIcon, fileKindLabel, fileSubtitle } from '../../files/display'
-
-/** How far each level of a folder's contents is indented, as the web nests them. */
-export const SIDEBAR_INDENT = 16
+import { sidebarIndent } from '../layout'
 
 export interface SidebarRowStyles {
   /** The drawer's chat row styles, so these line up with the chats around them. */
@@ -78,7 +76,7 @@ export const SidebarNodeRow = memo(function SidebarNodeRow({ node, depth, styles
     </>
   )
   // The native menu host spans the list, so an indented one gives up its full width.
-  const indent = depth ? { marginLeft: depth * SIDEBAR_INDENT, width: 'auto', alignSelf: 'stretch' } as const : null
+  const indent = depth ? { marginLeft: sidebarIndent(depth), width: 'auto', alignSelf: 'stretch' } as const : null
   const dimmed = unavailable ? styles.dimmed : null
   if (Platform.OS === 'ios' && itemContextMenuAvailable) {
     return (
@@ -118,7 +116,7 @@ export const SidebarNodeRow = memo(function SidebarNodeRow({ node, depth, styles
 
 /** "Empty" (or loading) inside an open folder, or the drawer's own empty state. */
 export function SidebarMessageRow({ label, depth, style }: { label: string; depth: number; style: StyleProp<TextStyle> }) {
-  return <Text style={[style, { marginLeft: depth * SIDEBAR_INDENT }]}>{label}</Text>
+  return <Text style={[style, { marginLeft: sidebarIndent(depth) }]}>{label}</Text>
 }
 
 const styles = StyleSheet.create({

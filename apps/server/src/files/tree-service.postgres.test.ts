@@ -12,6 +12,7 @@ import {
   listFolder,
   listTrash,
   moveFileNodes,
+  mutateFileTree,
   restoreFileNode,
   restoreFileNodes,
   trashFileNode,
@@ -20,6 +21,7 @@ import {
 } from './tree-service.js'
 import { copyFileNodes } from './copy-service.js'
 import { saveAttachmentToFiles } from './save-attachment.js'
+import { setBlobContent } from './agent/versions.js'
 
 const publish = vi.hoisted(() => vi.fn())
 const deletedKeys = vi.hoisted(() => [] as string[])
@@ -74,6 +76,23 @@ describe.skipIf(!enabled)('Files tree PostgreSQL behavior', () => {
     const moved = await updateFileNode(userId, child.id, { parentId: null, name: 'Sibling', expectedRevision: 0 })
     expect(moved).toMatchObject({ parentId: null, name: 'Sibling', revision: 1 })
     await expect(updateFileNode(userId, child.id, { name: 'Stale', expectedRevision: 0 })).rejects.toMatchObject({ code: 'file_revision_conflict' })
+  })
+
+  it('exposes stable content checksums through rename and move, changing them with the bytes', async () => {
+    const target = await createFolder(userId, { parentId: null, name: 'Target' })
+    const id = await insertBlob(null, 'report.txt', 8)
+    await db.update(fileNodes).set({ checksum: 'original-checksum' }).where(eq(fileNodes.id, id))
+    const renamed = await updateFileNode(userId, id, { name: 'renamed.txt' })
+    expect(renamed).toMatchObject({ contentChecksum: 'original-checksum', revision: 1 })
+    const [moved] = await moveFileNodes(userId, [{ id, parentId: target.id }])
+    expect(moved).toMatchObject({ contentChecksum: 'original-checksum', parentId: target.id, revision: 2 })
+    await mutateFileTree(userId, (tx) => setBlobContent(tx, id, {
+      objectKey: `users/${userId}/files/replacement`, sizeBytes: 8, checksum: 'replacement-checksum', mimeType: 'text/plain',
+    }))
+    expect((await listFolder(userId, target.id)).children).toMatchObject([
+      { id, sizeBytes: 8, contentChecksum: 'replacement-checksum', revision: 3 },
+    ])
+    expect(target.contentChecksum).toBeNull()
   })
 
   it('serializes concurrent moves so two folders cannot become each other\'s parent', async () => {

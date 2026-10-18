@@ -162,7 +162,11 @@ export async function uploadFile(parentId: string | null, upload: LocalUpload, o
 }
 
 /** What identifies an uploaded file's current content; new content changes it. */
-export function fileContentVersion(node: Pick<FileNode, 'updatedAt' | 'sizeBytes' | 'revision'>): string {
+export function fileContentVersion(node: Pick<FileNode, 'updatedAt' | 'sizeBytes' | 'revision' | 'contentChecksum'>): string {
+  // Node revisions include metadata changes. A checksum follows only the bytes, so renaming or
+  // moving a downloaded file (also from another device) keeps it available offline. Without a
+  // checksum from an older server, keep conservative invalidation rather than risk stale bytes.
+  if (node.contentChecksum) return `checksum:${node.contentChecksum}|${node.sizeBytes}`
   return `${node.updatedAt}|${node.sizeBytes}|${node.revision}`
 }
 
@@ -213,7 +217,23 @@ export function downloadFile(node: FileNode): Promise<File> {
       const cached = await cachedFileUri(namespace, node.id, version)
       if (cached) {
         const file = new File(cached)
-        if (file.exists) return file
+        if (file.exists) {
+          const destination = cacheDestination(node)
+          if (file.uri === destination.uri) return file
+          // Quick Look and sharing take the displayed name from this path. Keep the bytes
+          // through a rename too; only retire the old path after the new copy is recorded.
+          try {
+            await file.copy(destination, { overwrite: true })
+          } catch {
+            return file
+          }
+          if (currentNamespace() !== namespace) {
+            if (destination.exists) destination.delete()
+            throw new Error('The account changed while the file was opening.')
+          }
+          await recordCachedFile(namespace, node.id, version, destination)
+          return destination
+        }
       }
     }
     const { url: rawUrl } = await apiRequest<{ url: string }>(`/api/files/${node.id}/download`)

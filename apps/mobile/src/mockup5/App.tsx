@@ -235,7 +235,8 @@ import { enqueueUploads, pickUploads } from '../features/files/uploads';
 import { useFilesToasts } from '../features/files/toasts';
 import { sidebarItemActions, sidebarItemTapOpens, type SidebarItemActionId } from '../features/sidebar/actions';
 import { SidebarHeading } from '../features/sidebar/components/SidebarHeading';
-import { SIDEBAR_INDENT, SidebarMessageRow, SidebarNodeRow, type SidebarRowStyles } from '../features/sidebar/components/SidebarNodeRow';
+import { SidebarMessageRow, SidebarNodeRow, type SidebarRowStyles } from '../features/sidebar/components/SidebarNodeRow';
+import { sidebarIndent } from '../features/sidebar/layout';
 import { useSidebarExpansion } from '../features/sidebar/expansion';
 import { sidebarItemsFloor, useSidebarOperations, type SidebarTarget } from '../features/sidebar/operations';
 import { useSidebarListings, useSidebarState } from '../features/sidebar/queries';
@@ -6360,11 +6361,6 @@ function NativeFilesRow({ onOpen }: { onOpen: () => void }) {
 type HistoryChatAction = HistoryChatContextMenuAction;
 const DEFAULT_HISTORY_PREVIEW = 'Start a new conversation with your selected model.';
 
-/** Indents a row in a folder; the native menu hosts span the list, so they give up their full width. */
-function sidebarIndent(depth: number) {
-  return { marginLeft: depth * SIDEBAR_INDENT, width: 'auto', alignSelf: 'stretch' } as const;
-}
-
 const HistoryChatRow = memo(function HistoryChatRow({ active, archiveAvailable, chat, depth = 0, expirationMenuAction, previewModelImageURI, previewModelName, previewText, removeChatLabel, onChatAction, onOpenActions, onPreviewRequest, onSelectChat }: {
   active: boolean;
   /** Offers Move to archive. */
@@ -6423,7 +6419,7 @@ const HistoryChatRow = memo(function HistoryChatRow({ active, archiveAvailable, 
         onPreviewRequest(chat);
       }}
       onPreviewEnd={endPreview}
-      style={[styles.chatContextMenuHost, depth ? sidebarIndent(depth) : null]}
+      style={[styles.chatContextMenuHost, depth ? { marginLeft: sidebarIndent(depth), width: 'auto', alignSelf: 'stretch' } : null]}
     >
       <View pointerEvents="none" style={[styles.chatRow, active && styles.chatRowActive]}>
         {rowContent}
@@ -6438,7 +6434,7 @@ const HistoryChatRow = memo(function HistoryChatRow({ active, archiveAvailable, 
       delayLongPress={350}
       onLongPress={(event) => onOpenActions(chat, { x: event.nativeEvent.pageX, y: event.nativeEvent.pageY })}
       onPress={() => onSelectChat(chat)}
-      style={({ pressed }) => [styles.chatRow, { paddingVertical: largeAndroidText ? 10 : 4 }, depth ? { marginLeft: depth * SIDEBAR_INDENT } : null, active && styles.chatRowActive, pressed && styles.navRowPressed]}
+      style={({ pressed }) => [styles.chatRow, { paddingVertical: largeAndroidText ? 10 : 4 }, depth ? { marginLeft: sidebarIndent(depth) } : null, active && styles.chatRowActive, pressed && styles.navRowPressed]}
     >
       {rowContent}
     </Pressable>
@@ -7225,8 +7221,8 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   drawerNewChatButtonFallback: { width: 123.75, height: 48.75, borderRadius: 24.375, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7.5 },
   drawerNewChatButtonText: { color: COLORS.text, fontSize: 14.0625, fontWeight: '600' },
   sectionLabel: { color: COLORS.muted, fontSize: 11, fontWeight: '600', marginTop: 16, marginBottom: 5, marginHorizontal: 12 },
-  chatContextMenuHost: { width: '100%', height: 44 },
-  chatRow: { minHeight: Platform.OS === 'android' ? 48 : 44, borderRadius: 13, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  chatContextMenuHost: { width: '100%', minHeight: 44 },
+  chatRow: { minHeight: Platform.OS === 'android' ? 48 : 44, borderRadius: 13, paddingHorizontal: 12, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 10 },
   chatRowActive: { backgroundColor: COLORS.secondary },
   chatTitle: { color: COLORS.textSoft, fontSize: 15 },
   chatTime: { color: COLORS.muted, fontSize: 12 },

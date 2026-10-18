@@ -1,8 +1,10 @@
 // @vitest-environment node
 import type { FileNode, SidebarState } from '@pulpo/contracts'
+import { FILE_TREE_MAX_DEPTH } from '@pulpo/contracts'
 import { describe, expect, it } from 'vitest'
 import type { HistoryChatSummary } from '../chat/history'
 import { buildSidebarTree, folderOutline, isWithin, pinnedItemsCeiling, shownInSidebar, type SidebarRow, type SidebarTreeInput } from './tree'
+import { sidebarIndent } from './layout'
 
 const NOW = Date.parse('2026-10-17T12:00:00Z')
 const CHATS = '00000000-0000-4000-8000-000000000001'
@@ -47,6 +49,25 @@ function outline(sections: ReturnType<typeof build>['sections']) {
 }
 
 describe('the drawer as the web sidebar', () => {
+  it('keeps every row reachable at maximum depth without consuming its title or touch area', () => {
+    const folders = Array.from({ length: FILE_TREE_MAX_DEPTH }, (_, depth) => node(`level-${depth}`, { parentId: depth ? `level-${depth - 1}` : CHATS }))
+    const deepest = folders.at(-1)!
+    const listings = new Map<string, FileNode[]>([[CHATS, [folders[0]!]]])
+    folders.forEach((folder, index) => listings.set(folder.id, index + 1 < folders.length
+      ? [folders[index + 1]!]
+      : [node('deep-document', { kind: 'doc', parentId: folder.id })]))
+    const rows = build({
+      listings, expanded: new Set(folders.map((folder) => folder.id)),
+      chats: [chat('deep-chat', { folderId: deepest.id })],
+    }).sections.flatMap((section) => section.data)
+
+    expect(rows).toHaveLength(folders.length + 2)
+    expect(rows.filter((row) => row.depth === FILE_TREE_MAX_DEPTH).map((row) => row.type).sort()).toEqual(['chat', 'item'])
+    // Even a 280-point drawer reserves 100 points for the title after its padding and icons.
+    // Capping the visual indentation must never truncate the actual tree or its loaded folders.
+    for (const row of rows) expect(280 - 20 - 80 - sidebarIndent(row.depth)).toBeGreaterThanOrEqual(100)
+  })
+
   it('lists the Chats folder’s chats and Files items in their shared manual order', () => {
     const tree = build({
       chats: [chat('late', { sortOrder: 3 }), chat('first', { sortOrder: -2 }), chat('tie-old', { sortOrder: 1, createdAt: 1 }), chat('tie-new', { sortOrder: 1, createdAt: 2 })],
