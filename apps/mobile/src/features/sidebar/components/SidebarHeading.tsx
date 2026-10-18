@@ -58,7 +58,8 @@ export function SidebarHeading({ title, titleStyle, order, filesEnabled, canCrea
       <View style={styles.row}>
         <Text accessibilityRole="header" style={[titleStyle, styles.title]}>{title}</Text>
         {newFolder}
-        <SwiftUIHost matchContents style={styles.menuHost}>
+        {/* The list owns these insets; SwiftUI can retain a top inset after scrolling offscreen. */}
+        <SwiftUIHost ignoreSafeArea="all" matchContents style={styles.menuHost}>
           <SwiftUIMenu
             label={<SwiftUIImage systemName="ellipsis.circle" size={16} color={theme.secondary} modifiers={[frame({ width: 28, height: 28 })]} />}
             modifiers={[accessibilityLabel('Chat list options')]}

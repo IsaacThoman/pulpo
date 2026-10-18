@@ -319,3 +319,7 @@ Independent reviewers audited each phase as it landed, then the whole branch twi
 - Follow-up simulator checks passed: Android opened the deepest document and selected the deepest
   move destination; iPad reopened a renamed download offline in Quick Look under its current name,
   with no extra download request. The gateway was restored online and system text sizes restored.
+- The heading's options menu ignores its SwiftUI host's safe area: after scrolling the heading
+  offscreen and back, it stays aligned with New folder instead of moving down by the top inset.
+  Reproduced the 49-point displacement on iPhone, then checked three scroll round trips and
+  opening the menu after the fix.
