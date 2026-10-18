@@ -74,8 +74,12 @@ type ShowToast = (toast: Omit<FilesToast, 'id' | 'tone'> & { tone?: FilesToast['
  * shows at once, then is confirmed or put back by refetching; failures show in a toast. Creating
  * a folder is kept for later offline; the rest need a connection, as in Files.
  */
-export function sidebarOperations(client: QueryClient, namespace: string, show: ShowToast) {
+export function sidebarOperations(client: QueryClient, namespace: string, showToast: ShowToast) {
   const cache = sidebarCache(client, namespace)
+  // An action that finishes after switching accounts says nothing: its Undo would act on the other one.
+  const show: ShowToast = (toast) => {
+    if (usePrototypeStore.getState().productionNamespace === namespace) showToast(toast)
+  }
   const expand = (key: string) => useSidebarExpansion.getState().setExpanded(key, true)
   const refresh = (chats = false) => refreshFiles(client, namespace, chats)
   const fail = (cause: unknown, name?: string) => show({ message: filesErrorMessage(cause, name), tone: 'error' })
@@ -158,6 +162,8 @@ export function sidebarOperations(client: QueryClient, namespace: string, show: 
       await client.cancelQueries({ queryKey: sidebarKeys.all(namespace) })
       cache.writeState((current) => ({ ...current, folders: [...current.folders, { id, parentId: parent, name: trimmed, systemRole: null }] }))
       cache.writeListing(parent, (items) => [node, ...items])
+      // Opened before the server has it (offline), it is empty rather than loading.
+      client.setQueryData<FileNode[]>(sidebarKeys.items(namespace, id), [])
       const body = { id, parentId: target, name: trimmed }
       try {
         await createSidebarFolder(body)
@@ -223,6 +229,23 @@ export function sidebarOperations(client: QueryClient, namespace: string, show: 
       const state = cache.readState()
       if (target.kind === 'chat') {
         if (target.pinned === pinned) return
+        if (target.inFilesRoot && !pinned && state) {
+          // The sidebar's unpin puts it at the top of My files, where it stays; the chat's own
+          // would keep its place in the pinned list as its place there.
+          const restore = (value: boolean) => usePrototypeStore.setState((current) => ({
+            chats: current.chats.map((chat) => chat.id === target.id ? { ...chat, pinned: value } : chat),
+          }))
+          restore(false)
+          try {
+            await pinItems([target.id], false)
+          } catch (cause) {
+            restore(true)
+            fail(cause, target.name)
+          } finally {
+            await refresh(true)
+          }
+          return
+        }
         usePrototypeStore.getState().togglePin(target.id, pinnedItemsCeiling(state), placement(target.inFilesRoot ? null : target.folderId))
         return
       }

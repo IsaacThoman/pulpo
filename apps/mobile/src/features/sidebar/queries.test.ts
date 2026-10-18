@@ -87,4 +87,18 @@ describe('the sidebar queries', () => {
     mocks.fetchSidebarItems.mockRejectedValue({ network: true })
     expect((await new QueryClient().fetchQuery(sidebarItemsQuery(NAMESPACE, 'work'))).map((item) => item.id)).toEqual(['inner', 'doc'])
   })
+
+  it('open a folder still waiting to be created, with the folders created in it meanwhile', async () => {
+    mocks.outbox = [
+      { method: 'POST', path: '/api/sidebar/folders', body: JSON.stringify({ id: 'outer', parentId: null, name: 'Outer' }), createdAt: 1 },
+      { method: 'POST', path: '/api/sidebar/folders', body: JSON.stringify({ id: 'nested', parentId: 'outer', name: 'Nested' }), createdAt: 2 },
+    ]
+    // Offline, with nothing on the device; online before the outbox sent it, the server doesn't know it.
+    mocks.fetchSidebarItems.mockRejectedValueOnce({ network: true }).mockRejectedValueOnce(new Error('Not found'))
+    expect((await client.fetchQuery(sidebarItemsQuery(NAMESPACE, 'outer'))).map((item) => item.id)).toEqual(['nested'])
+    expect(await new QueryClient().fetchQuery(sidebarItemsQuery(NAMESPACE, 'nested'))).toEqual([])
+    // Any other folder that can't load still fails.
+    mocks.fetchSidebarItems.mockRejectedValueOnce({ network: true })
+    await expect(new QueryClient().fetchQuery(sidebarItemsQuery(NAMESPACE, 'unknown'))).rejects.toEqual({ network: true })
+  })
 })

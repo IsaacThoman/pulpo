@@ -117,9 +117,8 @@ describe('the drawer as the web sidebar', () => {
       listings: new Map([[CHATS, [node('work')]], ['work', [shortcut]]]),
       expanded: new Set(['work', 'shortcut:to-work']),
     })
-    // Inside "work", the shortcut to "work" stays closed.
-    expect(outline(tree.sections)).toEqual([['Chats', ['folder:work@0', 'folder:to-work@1']]])
-    expect(tree.sections[0]!.data[1]).toMatchObject({ folderId: 'work', expansionKey: 'shortcut:to-work', expanded: false })
+    // Inside "work", the shortcut to "work" opens in Files instead.
+    expect(outline(tree.sections)).toEqual([['Chats', ['folder:work@0', 'item:to-work@1']]])
   })
 
   it('opens a shortcut to the Chats folder with its unfiled chats, but not within the Chats folder itself', () => {
@@ -133,9 +132,16 @@ describe('the drawer as the web sidebar', () => {
       expanded: new Set(['shortcut:pinned-to-root', 'shortcut:to-root']),
     })
     expect(outline(tree.sections)).toEqual([
-      ['Pinned', ['folder:pinned-to-root@0', 'chat:loose@1', 'folder:to-root@1']],
-      ['Chats', ['chat:loose@0', 'folder:to-root@0']],
+      ['Pinned', ['folder:pinned-to-root@0', 'chat:loose@1', 'item:to-root@1']],
+      ['Chats', ['chat:loose@0', 'item:to-root@0']],
     ])
+  })
+
+  it('says so when the top level can’t load, instead of leaving its folders out silently', () => {
+    const offline = build({ chats: [chat('loose')], unavailable: new Map([[CHATS, 'offline']]) })
+    expect(outline(offline.sections)).toEqual([['Chats', ['empty:Your folders aren’t available offline@0', 'chat:loose@0']]])
+    const failed = build({ unavailable: new Map([[CHATS, 'failed']]) })
+    expect(outline(failed.sections)).toEqual([['Chats', ['empty:Couldn’t load your folders@0']]])
   })
 
   it('shows trashed shortcuts as items, which cannot open', () => {
@@ -196,6 +202,11 @@ describe('the drawer as the web sidebar', () => {
     expect(outline(tree.sections)).toEqual([['Chats', ['folder:work@0', 'chat:filed@1', 'folder:empty@0', 'empty:Empty@1', 'chat:loose@0']]])
     expect(tree.sections[0]!.data[0]).toMatchObject({ legacy: true, chatCount: 1 })
     expect(tree.folderIds).toEqual([])
+  })
+
+  it('shows chats of chat folders not listed yet unfiled, on servers without the sidebar', () => {
+    const tree = build({ sidebar: null, chats: [chat('filed', { folderId: 'unlisted' })], legacyFolders: [] })
+    expect(outline(tree.sections)).toEqual([['Chats', ['chat:filed@0']]])
   })
 })
 

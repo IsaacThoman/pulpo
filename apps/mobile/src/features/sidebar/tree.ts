@@ -72,6 +72,11 @@ const UNAVAILABLE_LABELS: Record<SidebarUnavailable | 'loading', string> = {
   failed: 'Couldn’t load this folder',
 }
 
+const ROOT_UNAVAILABLE_LABELS: Record<SidebarUnavailable, string> = {
+  offline: 'Your folders aren’t available offline',
+  failed: 'Couldn’t load your folders',
+}
+
 /** Without Files, only folders and shortcuts to folders or chats show, as the server lists them. */
 export function shownInSidebar(node: FileNode, filesEnabled: boolean): boolean {
   if (filesEnabled) return true
@@ -105,14 +110,16 @@ export function buildSidebarTree(input: SidebarTreeInput): SidebarTree {
   const folderIds: string[] = []
   const need = (id: string) => { if (!folderIds.includes(id)) folderIds.push(id) }
 
-  // Chats filed in folders show inside them; chats at the top of My files stay in Files.
+  // Chats filed in folders show inside them; chats at the top of My files stay in Files. Without
+  // the sidebar, a chat in a folder not (yet) listed shows unfiled, as chat folders always did.
+  const legacyIds = sidebar === null ? new Set((input.legacyFolders ?? []).map((folder) => folder.id)) : null
   const pinnedChats: HistoryChatSummary[] = []
   const loose: HistoryChatSummary[] = []
   const inFolders = new Map<string, HistoryChatSummary[]>()
   for (const chat of input.chats) {
     if (chat.pinned) pinnedChats.push(chat)
     else if (chat.inFilesRoot) continue
-    else if (!chat.folderId) loose.push(chat)
+    else if (!chat.folderId || (legacyIds && !legacyIds.has(chat.folderId))) loose.push(chat)
     else {
       const folder = inFolders.get(chat.folderId)
       if (folder) folder.push(chat)
@@ -133,15 +140,16 @@ export function buildSidebarTree(input: SidebarTreeInput): SidebarTree {
       const folderId = node.kind === 'folder' ? node.id
         : node.kind === 'shortcut' && node.target?.kind === 'folder' && node.target.available ? node.target.id
           : null
-      if (!folderId) {
+      // A shortcut to a folder it is in (the Chats folder at the top) would only open into itself:
+      // it opens in Files instead, like other items.
+      if (!folderId || path.includes(folderId)) {
         rows.push({ type: 'item', key, depth, node })
         continue
       }
       const expansionKey = node.kind === 'shortcut' ? `shortcut:${node.id}` : node.id
       // A shortcut to the Chats folder opens the top of the sidebar, unfiled chats included.
       const chats = folderId === sidebar?.chatsFolderId ? loose : inFolders.get(folderId) ?? []
-      // A shortcut to a folder above it would open into itself forever.
-      const open = expanded.has(expansionKey) && !path.includes(folderId) && depth < FILE_TREE_MAX_DEPTH
+      const open = expanded.has(expansionKey) && depth < FILE_TREE_MAX_DEPTH
       rows.push({ type: 'folder', key, depth, node, folderId, expansionKey, expanded: open, chatCount: chats.length, ...entry.legacy ? { legacy: true } : {} })
       if (!open) continue
       let items: readonly FileNode[] = []
@@ -194,9 +202,16 @@ export function buildSidebarTree(input: SidebarTreeInput): SidebarTree {
     emit(root, 0, rootPath, 'root', data)
     sections.push({ key: 'chats', title: 'Chats', data })
   }
+  // Without the top level's listing, its folders and their chats are missing: say so.
+  const rootMissing = sidebar && !listings.get(sidebar.chatsFolderId) ? input.unavailable?.get(sidebar.chatsFolderId) : undefined
+  const notice: SidebarRow | null = rootMissing ? { type: 'empty', key: 'root/unavailable', depth: 0, label: ROOT_UNAVAILABLE_LABELS[rootMissing] } : null
   const first = sections.find((section) => section.key !== 'pinned')
-  if (first) first.heading = true
-  else sections.push({ key: 'chats', title: 'Chats', heading: true, data: [{ type: 'empty', key: 'root/empty', depth: 0, label: 'No chats yet' }] })
+  if (first) {
+    first.heading = true
+    if (notice) first.data.unshift(notice)
+  } else {
+    sections.push({ key: 'chats', title: 'Chats', heading: true, data: [notice ?? { type: 'empty', key: 'root/empty', depth: 0, label: 'No chats yet' }] })
+  }
   return { sections, folderIds }
 }
 

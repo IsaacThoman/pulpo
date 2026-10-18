@@ -23,6 +23,7 @@ const mocks = vi.hoisted(() => ({
   },
   refreshFiles: vi.fn(async () => undefined),
   queueOfflineMutation: vi.fn(async () => undefined),
+  namespace: 'https://pulpo.test|a',
   kept: new Map<string, unknown>(),
 }))
 
@@ -35,7 +36,7 @@ vi.mock('../../data/database', () => ({
 vi.mock('../../data/mutations', () => ({ queueOfflineMutation: mocks.queueOfflineMutation }))
 vi.mock('../../mockup5/src/store/prototypeStore', () => ({
   usePrototypeStore: {
-    getState: () => ({ chats: mocks.chats, ...mocks.store }),
+    getState: () => ({ chats: mocks.chats, productionNamespace: mocks.namespace, ...mocks.store }),
     setState: (update: (state: { chats: typeof mocks.chats }) => { chats: typeof mocks.chats }) => { mocks.chats = update({ chats: mocks.chats }).chats },
   },
 }))
@@ -74,6 +75,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   mocks.kept.clear()
   mocks.chats = []
+  mocks.namespace = NAMESPACE
   useSidebarExpansion.setState({ namespace: '', expanded: new Set() })
   client = new QueryClient()
   client.setQueryData<SidebarState>(sidebarKeys.state(NAMESPACE), {
@@ -203,6 +205,18 @@ describe('pinning in the drawer', () => {
     expect(listing('work')![0]).toMatchObject({ id: 'pinned-doc', pinned: false, sortOrder: -1 })
   })
 
+  it('unpins a chat at the top of My files the way the sidebar does, which keeps it there', async () => {
+    mocks.chats = [chat('c', { pinned: true, inFilesRoot: true })]
+    await operations().setPinned({ kind: 'chat', id: 'c', name: 'c', folderId: null, inFilesRoot: true, pinned: true }, false)
+    expect(mocks.api.pinItems).toHaveBeenCalledWith(['c'], false)
+    expect(mocks.store.togglePin).not.toHaveBeenCalled()
+    expect(mocks.chats[0]).toMatchObject({ pinned: false })
+    mocks.api.pinItems.mockRejectedValueOnce(new Error('No'))
+    mocks.chats = [chat('c', { pinned: true, inFilesRoot: true })]
+    await operations().setPinned({ kind: 'chat', id: 'c', name: 'c', folderId: null, inFilesRoot: true, pinned: true }, false)
+    expect(mocks.chats[0]).toMatchObject({ pinned: true })
+  })
+
   it('pins a chat after the pinned Files items, and unpins it above its folder’s items', async () => {
     await operations().setPinned({ kind: 'chat', id: 'c', name: 'c', folderId: null, inFilesRoot: false, pinned: false }, true)
     expect(mocks.store.togglePin).toHaveBeenLastCalledWith('c', 3, { floor: -2, sendSortOrder: false })
@@ -280,6 +294,13 @@ describe('trashing in the drawer', () => {
     expect(toast.message).toBe('Moved “work” to the trash')
     await toast.undo()
     expect(mocks.api.restoreSidebarItems).toHaveBeenCalledWith(['work'])
+  })
+
+  it('says nothing about an action that finished after switching accounts', async () => {
+    const trashing = operations().trash(node('work'))
+    mocks.namespace = 'https://other.test|b'
+    await trashing
+    expect(show).not.toHaveBeenCalled()
   })
 
   it('deletes a shortcut', async () => {

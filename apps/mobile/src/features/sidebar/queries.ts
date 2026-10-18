@@ -104,7 +104,15 @@ export function sidebarItemsQuery(namespace: string, folderId: string, root = fa
   return queryOptions({
     queryKey: sidebarKeys.items(namespace, folderId),
     queryFn: async ({ signal }): Promise<FileNode[]> => {
-      const items = await withDeviceCopy(namespace, itemsKey(folderId), () => fetchSidebarItems(folderId, signal))
+      let items: FileNode[]
+      try {
+        items = await withDeviceCopy(namespace, itemsKey(folderId), () => fetchSidebarItems(folderId, signal))
+      } catch (error) {
+        // A folder still waiting to be created is on neither the server nor the device: it is
+        // empty but for the folders created in it meanwhile.
+        if (!(await pendingSidebarFolders(namespace)).some((folder) => folder.id === folderId)) throw error
+        items = []
+      }
       return withPendingItems(items, folderId, root, await pendingSidebarFolders(namespace))
     },
     staleTime: 30_000,

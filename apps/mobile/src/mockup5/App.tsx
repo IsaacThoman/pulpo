@@ -6499,6 +6499,11 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
   useEffect(() => { useSidebarExpansion.getState().load(filesNamespace); }, [filesNamespace]);
   const [moveTarget, setMoveTarget] = useState<SidebarTarget | null>(null);
   const [pickingFolderFor, setPickingFolderFor] = useState<SidebarTarget | null>(null);
+  // Sheets open for one account's items close when switching to another.
+  useEffect(() => () => {
+    setMoveTarget(null);
+    setPickingFolderFor(null);
+  }, [filesNamespace]);
   const [search, setSearch] = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
   const [hideNewChatButton, setHideNewChatButton] = useState(
@@ -6766,7 +6771,7 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
     row: styles.chatRow, active: styles.chatRowActive, pressed: styles.navRowPressed, title: styles.chatTitle, count: styles.chatTime, menuHost: styles.chatContextMenuHost,
   }), [styles]);
   const renderHistoryRow = useCallback(({ item: row }: { item: SidebarRow }) => {
-    if (row.type === 'empty') return <SidebarMessageRow label={row.label} depth={row.depth} style={row.depth ? styles.sidebarMessage : styles.noResults} />;
+    if (row.type === 'empty') return <SidebarMessageRow label={row.label} depth={row.depth} style={row.key === 'root/empty' ? styles.noResults : styles.sidebarMessage} />;
     if (row.type === 'folder' || row.type === 'item') {
       const node = row.node;
       return <SidebarNodeRow
