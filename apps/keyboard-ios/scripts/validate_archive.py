@@ -23,6 +23,9 @@ def validate_archive(archive, language_data, version, build):
         actual = (info.get('CFBundleShortVersionString'), info.get('CFBundleVersion'))
         if actual != (version, build):
             raise RuntimeError(f'{bundle.name} is {actual[0]} ({actual[1]}), expected {version} ({build})')
+        # App Store Connect rejects iPad builds that support only portrait.
+        if info.get('UIDeviceFamily') != [1]:
+            raise RuntimeError(f'{bundle.name} targets device families {info.get("UIDeviceFamily")}, expected iPhone only')
         if not (bundle / 'PrivacyInfo.xcprivacy').is_file():
             raise RuntimeError(f'{bundle.name} is missing PrivacyInfo.xcprivacy')
 
