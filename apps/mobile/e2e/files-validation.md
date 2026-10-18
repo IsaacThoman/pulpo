@@ -106,7 +106,7 @@ Then:
 - An item pinned elsewhere appears without a refresh.
 
 **Files turned off**
-- The drawer hides Files and its pinned items.
+- The drawer hides its Files row and Files items; folders and shortcuts to folders or chats stay, as on the web (since the drawer became the sidebar, below).
 - Files links show "Files are turned off" instead of stale copies.
 - Everything returns, live, once Files is turned on again.
 
@@ -158,6 +158,46 @@ The branch was brought up to date with `dev` (one file overlapped and merged cle
 - **Change server** from the Add Account screen asks before signing every account out. Entering the same server changes nothing, and the account stayed signed in.
 
 Changes to native code: none, so Android was not run again; the changed screens use the same code on both platforms.
+
+## The drawer as the web sidebar
+
+The follow-up that made the drawer the web's sidebar (#846) was checked against the same local backend. Its account had folders, chats filed in them, a document, and a pinned folder in the Sidebar folder, created through `/api/sidebar` and `/api/chats/start`.
+
+**iPhone simulator.** The drawer listed the same rows in the same order as the web sidebar for the same account. Each of these was checked:
+- Opening folders in place, nested. Open folders stayed open after a relaunch.
+- **New folder** and **New Folder Inside**.
+- **Move to Folder**: the sheet greyed out the folder itself and its subfolders. **Other folder…** moved a folder out of the sidebar into a Files folder.
+- Moving a chat into a folder opened it.
+- A chat at the top of My files, found by search, came back into the sidebar with **No folder**.
+- Chats:
+  - **Move to archive** in the native menu, and **Undo**.
+  - Archiving offline said it would happen once online, offered no Undo, and was archived after reconnecting.
+- Pinning a document put it at the end of Pinned.
+- **New Document** opened the editor, and the document appeared at the top.
+- Recent order grouped the top level by day.
+- Trashing a folder put its chat at the top, and **Undo** restored the folder.
+- Shortcuts:
+  - a shortcut to a folder opened in place;
+  - a shortcut to a chat opened the chat.
+  - The open chat was highlighted inside nested folders.
+- Search found a chat filed two folders deep.
+- A restore made elsewhere appeared live.
+- A folder created offline:
+  - showed at once;
+  - survived a relaunch while offline;
+  - was created once after reconnecting.
+- With Files turned off:
+  - the Files row and the documents left the drawer, while folders and shortcuts to folders or chats stayed;
+  - menus lost Open in Files and Move to Archive, and trashing became **Delete**;
+  - renaming a folder still worked.
+
+**Android (API 34 ATD emulator).** Checked through the view hierarchy:
+- the same rows in the same order;
+- folders opening in place, indented;
+- the folder action menu, and moving a folder through the move dialog (confirmed on the server);
+- the heading menu: New document, Upload, Sort by, and Open in Files. Switching to Recent and back worked;
+- **New folder** (confirmed on the server);
+- **Move to archive** in the chat menu.
 
 ## Audits
 

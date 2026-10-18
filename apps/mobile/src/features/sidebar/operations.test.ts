@@ -41,7 +41,10 @@ vi.mock('../../mockup5/src/store/prototypeStore', () => ({
 }))
 vi.mock('../files/api', () => ({ pinItems: mocks.api.pinItems, moveFileNodes: mocks.api.moveFileNodes }))
 vi.mock('../files/operations', () => ({ refreshFiles: mocks.refreshFiles }))
-vi.mock('../files/display', () => ({ filesErrorMessage: (error: unknown) => (error as Error).message }))
+vi.mock('../files/display', () => ({
+  filesErrorMessage: (error: unknown) => (error as Error).message,
+  fileNameErrorMessage: (error: string) => error === 'invalid_character' ? 'Names can’t contain “/” or control characters.' : error,
+}))
 vi.mock('./api', () => mocks.api)
 
 const { sidebarItemsFloor, sidebarOperations } = await import('./operations')
@@ -107,15 +110,24 @@ describe('creating a folder in the drawer', () => {
     expect(useSidebarExpansion.getState().expanded.has('work')).toBe(true)
   })
 
-  it('is kept for later offline, and on the device meanwhile', async () => {
+  it('is kept for later offline', async () => {
     mocks.api.createSidebarFolder.mockRejectedValue({ network: true })
     const created = await operations().createFolder(null, 'Offline')
     expect(mocks.queueOfflineMutation).toHaveBeenCalledWith({
       namespace: NAMESPACE, entityKey: `folder:${created!.id}`, method: 'POST', path: '/api/sidebar/folders', body: { id: created!.id, parentId: null, name: 'Offline' },
     })
-    // A refetch offline (from the device's copy) still shows it.
-    expect((mocks.kept.get(`sidebar:items:${CHATS}`) as { value: FileNode[] }).value[0]?.id).toBe(created!.id)
+    expect(listing(CHATS)![0]?.id).toBe(created!.id)
     expect(mocks.refreshFiles).not.toHaveBeenCalled()
+  })
+
+  it('refuses a name the server would, before showing or keeping anything', async () => {
+    mocks.api.createSidebarFolder.mockRejectedValue({ network: true })
+    await expect(operations().createFolder(null, 'Work/Personal')).resolves.toBeUndefined()
+    expect(show).toHaveBeenCalledWith({ message: 'Names can’t contain “/” or control characters.', tone: 'error' })
+    expect(listing(CHATS)!.map((item) => item.id)).toEqual(['work', 'notes'])
+    expect(mocks.queueOfflineMutation).not.toHaveBeenCalled()
+    await operations().rename(node('inner', { parentId: 'work' }), 'a/b')
+    expect(mocks.api.renameSidebarItem).not.toHaveBeenCalled()
   })
 
   it('reports a refusal', async () => {
@@ -236,10 +248,14 @@ describe('archiving in the drawer', () => {
   })
 
   it('archives a chat through the chat list, which keeps it for later offline', async () => {
+    mocks.chats = [chat('c', { folderId: ARCHIVE })]
     await operations().archive({ kind: 'chat', id: 'c', name: 'Plans', folderId: null, inFilesRoot: false, pinned: false })
     expect(mocks.store.archiveChat).toHaveBeenCalledWith('c', ARCHIVE)
     const toast = show.mock.calls.at(-1)![0] as { undo: () => Promise<void> }
-    await toast.undo()
+    const undone = toast.undo()
+    // Back at once, before the server answers.
+    expect(mocks.chats[0]).toMatchObject({ folderId: null, inFilesRoot: false })
+    await undone
     expect(mocks.api.moveSidebarItems).toHaveBeenCalledWith(['c'], null)
     expect(mocks.api.orderPinnedItems).not.toHaveBeenCalled()
   })

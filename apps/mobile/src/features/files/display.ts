@@ -1,4 +1,4 @@
-import type { FileColor, FileIcon, FileNode } from '@pulpo/contracts'
+import type { FileColor, FileIcon, FileNameError, FileNode } from '@pulpo/contracts'
 import { isMarkdownName } from '@pulpo/contracts'
 import { ARCHIVE_EXTENSIONS, CODE_EXTENSIONS, fileExtension, SHEET_EXTENSIONS } from '@pulpo/client-core/files'
 import { ApiError, isNetworkError } from '../../api/client'
@@ -137,16 +137,28 @@ export function isBuiltIn(node: Pick<FileNode, 'systemRole'>): boolean {
   return Boolean(node.systemRole)
 }
 
+const FILE_NAME_ERRORS: Record<FileNameError, string> = {
+  empty: 'Name is required.',
+  too_long: 'Names can be at most 255 characters.',
+  reserved: 'This name is reserved.',
+  invalid_character: 'Names can’t contain “/” or control characters.',
+}
+
+/** Why a name can't be used, in words (see `fileNameError`). */
+export function fileNameErrorMessage(error: FileNameError): string {
+  return FILE_NAME_ERRORS[error]
+}
+
 /** The Files API's known failures in words; anything else keeps the server's message. */
 export function filesErrorMessage(error: unknown, name?: string): string {
   if (isNetworkError(error)) return 'You’re offline. Try again when you’re connected.'
   if (error instanceof ApiError) {
     switch (error.code) {
       case 'file_name_conflict': return name ? `An item named “${name}” already exists here.` : 'An item with this name already exists here.'
-      case 'file_name_empty': return 'Name is required.'
-      case 'file_name_too_long': return 'Names can be at most 255 characters.'
-      case 'file_name_reserved': return 'This name is reserved.'
-      case 'file_name_invalid_character': return 'Names can’t contain “/” or control characters.'
+      case 'file_name_empty': return FILE_NAME_ERRORS.empty
+      case 'file_name_too_long': return FILE_NAME_ERRORS.too_long
+      case 'file_name_reserved': return FILE_NAME_ERRORS.reserved
+      case 'file_name_invalid_character': return FILE_NAME_ERRORS.invalid_character
       case 'file_replace_conflict': return 'The file to overwrite has changed. Try saving again.'
       case 'file_move_cycle': return 'A folder can’t be moved into itself.'
       case 'file_tree_too_deep': return 'Folders can be nested at most 32 levels deep.'

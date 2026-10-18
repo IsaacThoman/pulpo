@@ -407,9 +407,12 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
       setChatFileAccess: (id, itemId, mode) => offlineCapableMutation({ namespace, entityKey: `chat:${id}:file-access:${itemId}`, method: 'PATCH', path: `/api/chats/${id}`, body: { fileScopeAccess: { [itemId]: mode } }, request: () => updateChat(id, { fileScopeAccess: { [itemId]: mode } }) }),
       // Unpinned, a chat goes back to its folder and the server places it there, above that folder's
       // Files items too (as on the web).
-      togglePin: (id, pinned, sortOrder, folderId: string | null, sendSortOrder = false) => {
-        // Servers without the sidebar only move an unpinned chat when told where.
-        const patch = pinned ? { pinned, sortOrder } : { pinned, folderId, ...sendSortOrder ? { sortOrder } : {} }
+      togglePin: (id, pinned, sortOrder, folderId: string | null | undefined, sendSortOrder = false) => {
+        // Servers without the sidebar only move an unpinned chat when told where. Without a
+        // folder (a chat at the top of My files), it stays where it is.
+        const patch = pinned
+          ? { pinned, sortOrder }
+          : { pinned, ...folderId === undefined ? {} : { folderId }, ...sendSortOrder ? { sortOrder } : {} }
         return offlineCapableMutation({ namespace, entityKey: `chat:${id}`, method: 'PATCH', path: `/api/chats/${id}`, body: patch, request: () => updateChat(id, patch) })
       },
       // The server files it at the top of the folder, above that folder's Files items too; servers

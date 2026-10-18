@@ -7,15 +7,23 @@ import { liquidGlassAvailable } from '../../../platform/glass'
 import { useAppTheme } from '../../../theme'
 import { useFilesToasts } from '../toasts'
 
-/** The floating confirmation (with Undo) for Files actions, above the screen's bottom edge. */
-export function FilesToastHost({ bottomOffset = 0 }: { bottomOffset?: number }) {
+/** The last toast read out, so a host mounted while it shows (or a second host) doesn't repeat it. */
+let announcedToastId = 0
+
+/**
+ * The floating confirmation (with Undo) for Files actions, above the screen's bottom edge.
+ * `glass: false` draws it opaque, where glass can't show (the drawer, which animates its opacity).
+ */
+export function FilesToastHost({ bottomOffset = 0, glass = true }: { bottomOffset?: number; glass?: boolean }) {
   const theme = useAppTheme()
   const insets = useSafeAreaInsets()
   const toast = useFilesToasts((state) => state.toast)
   const dismiss = useFilesToasts((state) => state.dismiss)
   const [undoing, setUndoing] = useState(false)
   useEffect(() => {
-    if (toast) AccessibilityInfo.announceForAccessibility(toast.message)
+    if (!toast || toast.id === announcedToastId) return
+    announcedToastId = toast.id
+    AccessibilityInfo.announceForAccessibility(toast.message)
   }, [toast])
   if (!toast) return null
   const content = (
@@ -48,7 +56,7 @@ export function FilesToastHost({ bottomOffset = 0 }: { bottomOffset?: number }) 
       pointerEvents="box-none"
       style={[styles.host, { bottom: insets.bottom + 12 + bottomOffset }]}
     >
-      {Platform.OS === 'ios' && liquidGlassAvailable
+      {Platform.OS === 'ios' && liquidGlassAvailable && glass
         ? <GlassView glassEffectStyle="regular" isInteractive style={styles.capsule}>{content}</GlassView>
         : <View style={[styles.capsule, { backgroundColor: theme.elevated, borderColor: theme.separator, borderWidth: StyleSheet.hairlineWidth }]}>{content}</View>}
     </Reanimated.View>

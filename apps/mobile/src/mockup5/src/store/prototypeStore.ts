@@ -207,7 +207,9 @@ export const usePrototypeStore = create<PrototypeStore>()((set, get) => ({
       ? others.filter((chat) => chat.pinned).reduce((max, chat) => Math.max(max, chat.sortOrder), pinnedAfter) + 1
       : topChatSortOrder(others, current.inFilesRoot ? null : current.folderId, { floor });
     set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, pinned: next, sortOrder } : chat) }));
-    runOptimisticAction(`chat:${chatId}:pinned`, productionActions.togglePin(chatId, next, sortOrder, current.folderId ?? null, sendSortOrder), () => {
+    // A chat at the top of My files stays there (sending its folder would file it in the sidebar).
+    const folderId = current.inFilesRoot ? undefined : current.folderId ?? null;
+    runOptimisticAction(`chat:${chatId}:pinned`, productionActions.togglePin(chatId, next, sortOrder, folderId, sendSortOrder), () => {
       set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, pinned: current.pinned, sortOrder: current.sortOrder } : chat) }));
     });
   },

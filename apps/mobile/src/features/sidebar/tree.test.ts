@@ -122,6 +122,22 @@ describe('the drawer as the web sidebar', () => {
     expect(tree.sections[0]!.data[1]).toMatchObject({ folderId: 'work', expansionKey: 'shortcut:to-work', expanded: false })
   })
 
+  it('opens a shortcut to the Chats folder with its unfiled chats, but not within the Chats folder itself', () => {
+    const toRoot = (id: string, patch: Partial<FileNode> = {}) => node(id, {
+      kind: 'shortcut', target: { kind: 'folder', id: CHATS, name: 'Sidebar', mimeType: null, systemRole: 'chats', available: true }, ...patch,
+    })
+    const tree = build({
+      chats: [chat('loose')],
+      sidebar: sidebar({ pinnedItems: [toRoot('pinned-to-root', { pinned: true, parentId: 'elsewhere' })] }),
+      listings: new Map([[CHATS, [toRoot('to-root', { sortOrder: 1 })]]]),
+      expanded: new Set(['shortcut:pinned-to-root', 'shortcut:to-root']),
+    })
+    expect(outline(tree.sections)).toEqual([
+      ['Pinned', ['folder:pinned-to-root@0', 'chat:loose@1', 'folder:to-root@1']],
+      ['Chats', ['chat:loose@0', 'folder:to-root@0']],
+    ])
+  })
+
   it('shows trashed shortcuts as items, which cannot open', () => {
     const gone = node('gone', { kind: 'shortcut', target: { kind: 'folder', id: 'x', name: 'x', mimeType: null, systemRole: null, available: false } })
     expect(outline(build({ listings: new Map([[CHATS, [gone]]]) }).sections)).toEqual([['Chats', ['item:gone@0']]])

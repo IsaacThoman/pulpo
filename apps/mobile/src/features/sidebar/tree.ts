@@ -138,7 +138,8 @@ export function buildSidebarTree(input: SidebarTreeInput): SidebarTree {
         continue
       }
       const expansionKey = node.kind === 'shortcut' ? `shortcut:${node.id}` : node.id
-      const chats = inFolders.get(folderId) ?? []
+      // A shortcut to the Chats folder opens the top of the sidebar, unfiled chats included.
+      const chats = folderId === sidebar?.chatsFolderId ? loose : inFolders.get(folderId) ?? []
       // A shortcut to a folder above it would open into itself forever.
       const open = expanded.has(expansionKey) && !path.includes(folderId) && depth < FILE_TREE_MAX_DEPTH
       rows.push({ type: 'folder', key, depth, node, folderId, expansionKey, expanded: open, chatCount: chats.length, ...entry.legacy ? { legacy: true } : {} })
@@ -175,6 +176,8 @@ export function buildSidebarTree(input: SidebarTreeInput): SidebarTree {
     ))
   }
   const root = entries(loose, rootNodes, recent, legacy)
+  // The top level is the Chats folder: a shortcut to it there would only list it again.
+  const rootPath = sidebar ? [sidebar.chatsFolderId] : []
   if (recent) {
     // Recent order lists the top level by last activity under time headings; folders keep their manual order inside.
     for (const entry of root) {
@@ -184,11 +187,11 @@ export function buildSidebarTree(input: SidebarTreeInput): SidebarTree {
         section = { key: `recent:${title}`, title, data: [] }
         sections.push(section)
       }
-      emit([entry], 0, [], 'root', section.data)
+      emit([entry], 0, rootPath, 'root', section.data)
     }
   } else if (root.length) {
     const data: SidebarRow[] = []
-    emit(root, 0, [], 'root', data)
+    emit(root, 0, rootPath, 'root', data)
     sections.push({ key: 'chats', title: 'Chats', data })
   }
   const first = sections.find((section) => section.key !== 'pinned')

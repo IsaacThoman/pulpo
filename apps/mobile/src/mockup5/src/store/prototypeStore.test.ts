@@ -106,6 +106,15 @@ describe('prototype store', () => {
     expect(togglePin).toHaveBeenLastCalledWith('c-kv', false, -21, 'work', false);
   });
 
+  it('leaves a chat at the top of My files there when unpinning it', () => {
+    const togglePin = vi.fn(async () => undefined);
+    configureProductionActions({ togglePin });
+    usePrototypeStore.setState((state) => ({ chats: state.chats.map((chat) => chat.id === 'c-streaming' ? { ...chat, inFilesRoot: true } : chat) }));
+    usePrototypeStore.getState().togglePin('c-streaming');
+    expect(togglePin).toHaveBeenLastCalledWith('c-streaming', false, expect.any(Number), undefined, false);
+    expect(usePrototypeStore.getState().chats.find((chat) => chat.id === 'c-streaming')).toMatchObject({ pinned: false, inFilesRoot: true });
+  });
+
   it('tells servers without the sidebar where a moved or unpinned chat goes, as they keep its old place otherwise', () => {
     const moveChat = vi.fn(async () => undefined);
     const togglePin = vi.fn(async () => undefined);

@@ -7,16 +7,18 @@ const mocks = vi.hoisted(() => ({
   fetchSidebarState: vi.fn(),
   fetchSidebarItems: vi.fn(),
   kept: new Map<string, unknown>(),
+  outbox: [] as Array<{ method: string; path: string; body: string | null; createdAt: number }>,
 }))
 
 vi.mock('../../api/client', () => ({ isNetworkError: (error: unknown) => (error as { network?: boolean } | null)?.network === true }))
 vi.mock('../../data/database', () => ({
   getValue: async (_namespace: string, key: string) => mocks.kept.get(key) ?? null,
   setValue: async (_namespace: string, key: string, value: unknown) => { mocks.kept.set(key, value) },
+  pendingOutbox: async () => mocks.outbox,
 }))
 vi.mock('./api', () => ({ fetchSidebarState: mocks.fetchSidebarState, fetchSidebarItems: mocks.fetchSidebarItems }))
 
-const { keepSidebarOnDevice, sidebarItemsQuery, sidebarKeys, sidebarStateQuery, sidebarUnavailable } = await import('./queries')
+const { sidebarItemsQuery, sidebarStateQuery, sidebarUnavailable } = await import('./queries')
 
 const NAMESPACE = 'https://pulpo.test|a'
 const state = { chatsFolderId: 'chats', archiveFolderId: 'archive', folders: [], pinnedItems: [] } satisfies SidebarState
@@ -24,6 +26,7 @@ let client: QueryClient
 
 beforeEach(() => {
   mocks.kept.clear()
+  mocks.outbox = []
   mocks.fetchSidebarState.mockReset()
   mocks.fetchSidebarItems.mockReset()
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -62,11 +65,26 @@ describe('the sidebar queries', () => {
     expect(sidebarUnavailable({ data: [], isError: true, fetchStatus: 'paused' })).toBeNull()
   })
 
-  it('keep changes made offline for the next launch', async () => {
-    client.setQueryData(sidebarKeys.state(NAMESPACE), state)
-    client.setQueryData(sidebarKeys.items(NAMESPACE, 'work'), [{ id: 'new' }])
-    await keepSidebarOnDevice(client, NAMESPACE)
-    expect(mocks.kept.get('sidebar:state')).toEqual({ value: state })
-    expect(mocks.kept.get('sidebar:items:work')).toEqual({ value: [{ id: 'new' }] })
+  it('list folders created offline until the server has them, without keeping them as the server’s', async () => {
+    mocks.outbox = [
+      { method: 'POST', path: '/api/sidebar/folders', body: JSON.stringify({ id: 'top', parentId: null, name: 'Top' }), createdAt: 1 },
+      { method: 'POST', path: '/api/sidebar/folders', body: JSON.stringify({ id: 'inner', parentId: 'work', name: 'Inner' }), createdAt: 2 },
+      { method: 'PATCH', path: '/api/chats/c', body: JSON.stringify({ folderId: 'top' }), createdAt: 3 },
+    ]
+    mocks.fetchSidebarState.mockResolvedValue(state)
+    const withPending = await client.fetchQuery(sidebarStateQuery(NAMESPACE))
+    expect(withPending?.folders.map((folder) => [folder.id, folder.parentId])).toEqual([['top', 'chats'], ['inner', 'work']])
+    await vi.waitFor(() => expect(mocks.kept.get('sidebar:state')).toEqual({ value: state }))
+
+    mocks.fetchSidebarItems.mockResolvedValue([{ id: 'doc', sortOrder: -2 }])
+    const root = await client.fetchQuery(sidebarItemsQuery(NAMESPACE, 'chats', true))
+    expect(root.map((item) => [item.id, item.sortOrder])).toEqual([['top', -3], ['doc', -2]])
+    const work = await new QueryClient().fetchQuery(sidebarItemsQuery(NAMESPACE, 'work'))
+    expect(work.map((item) => item.id)).toEqual(['inner', 'doc'])
+    // Offline, from the device's copy, too; and not twice once the server lists them.
+    mocks.fetchSidebarItems.mockResolvedValue([{ id: 'top', sortOrder: 0 }])
+    expect((await new QueryClient().fetchQuery(sidebarItemsQuery(NAMESPACE, 'chats', true))).map((item) => item.id)).toEqual(['top'])
+    mocks.fetchSidebarItems.mockRejectedValue({ network: true })
+    expect((await new QueryClient().fetchQuery(sidebarItemsQuery(NAMESPACE, 'work'))).map((item) => item.id)).toEqual(['inner', 'doc'])
   })
 })

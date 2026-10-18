@@ -1,4 +1,4 @@
-import type { FileNode, SidebarState } from '@pulpo/contracts'
+import { fileNameError, normalizeFileName, type FileNode, type SidebarState } from '@pulpo/contracts'
 import { useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { randomUUID } from 'expo-crypto'
 import { useMemo } from 'react'
@@ -7,12 +7,12 @@ import { queueOfflineMutation } from '../../data/mutations'
 import { usePrototypeStore } from '../../mockup5/src/store/prototypeStore'
 import { topChatSortOrder, visibleHistoryChats } from '../chat/history'
 import { moveFileNodes, pinItems } from '../files/api'
-import { filesErrorMessage } from '../files/display'
+import { fileNameErrorMessage, filesErrorMessage } from '../files/display'
 import { refreshFiles } from '../files/operations'
 import { useFilesToasts, type FilesToast } from '../files/toasts'
 import { archiveSidebarItems, createSidebarFolder, moveSidebarItems, orderPinnedItems, renameSidebarItem, restoreSidebarItems, trashSidebarItems } from './api'
 import { useSidebarExpansion } from './expansion'
-import { keepSidebarOnDevice, sidebarKeys } from './queries'
+import { sidebarKeys } from './queries'
 import { isWithin, pinnedItemsCeiling } from './tree'
 
 /** A chat or a Files item, as the drawer acts on it. */
@@ -96,14 +96,35 @@ export function sidebarOperations(client: QueryClient, namespace: string, show: 
     }
   }
 
-  /** Chats on servers without the sidebar keep their old position unless told the new one. */
-  const placement = (folderId: string | null) => ({ floor: sidebarItemsFloor(client, namespace, folderId), sendSortOrder: cache.readState() === null })
+  /**
+   * Where a moved or unpinned chat goes. Servers without the sidebar keep a chat's old position
+   * unless told the new one, so it is sent whenever the sidebar isn't known to be there.
+   */
+  const placement = (folderId: string | null) => ({ floor: sidebarItemsFloor(client, namespace, folderId), sendSortOrder: !cache.readState() })
+
+  /**
+   * A name as the server will keep it, or null (saying why) when it can't be used. Checked before
+   * anything shows or is kept for later, so a refused name never comes and goes offline.
+   */
+  const usableName = (name: string): string | null => {
+    const normalized = normalizeFileName(name)
+    const error = fileNameError(normalized)
+    if (!error) return normalized
+    show({ message: fileNameErrorMessage(error), tone: 'error' })
+    return null
+  }
 
   /**
    * Puts something archived back where it was (null: the top of My files, where only Files
-   * moves things), and back in the pinned list in its old place.
+   * moves things), and back in the pinned list in its old place. A chat moves back here at once.
    */
   const putBack = async (id: string, parentId: string | null, wasPinned: boolean, pinnedBefore: readonly string[]) => {
+    const chatsFolderId = cache.readState()?.chatsFolderId
+    usePrototypeStore.setState((state) => ({
+      chats: state.chats.map((chat) => chat.id === id
+        ? { ...chat, folderId: parentId === chatsFolderId ? null : parentId, inFilesRoot: parentId === null, pinned: chat.pinned || wasPinned }
+        : chat),
+    }))
     try {
       if (parentId === null) await moveFileNodes([{ id, parentId: null }])
       else await moveSidebarItems([id], inSidebar(parentId))
@@ -122,8 +143,9 @@ export function sidebarOperations(client: QueryClient, namespace: string, show: 
     /** Creates a folder at the top of `parentId` (null: of the sidebar), offline too. */
     async createFolder(parentId: string | null, name: string): Promise<FileNode | undefined> {
       const state = cache.readState()
-      const trimmed = name.trim()
-      if (!state || !trimmed) return undefined
+      if (!state) return undefined
+      const trimmed = usableName(name)
+      if (!trimmed) return undefined
       const target = inSidebar(parentId)
       const parent = target ?? state.chatsFolderId
       const id = randomUUID()
@@ -141,9 +163,9 @@ export function sidebarOperations(client: QueryClient, namespace: string, show: 
         await createSidebarFolder(body)
       } catch (cause) {
         if (isNetworkError(cause)) {
-          // The client-chosen id makes the replay create it once; kept on the device meanwhile.
+          // The client-chosen id makes the replay create it once. Until then the sidebar's
+          // queries list it from the outbox, even after a relaunch or a refetch.
           await queueOfflineMutation({ namespace, entityKey: `folder:${id}`, method: 'POST', path: '/api/sidebar/folders', body })
-          await keepSidebarOnDevice(client, namespace)
           return node
         }
         fail(cause, trimmed)
@@ -156,8 +178,9 @@ export function sidebarOperations(client: QueryClient, namespace: string, show: 
 
     /** Renames a folder, file, or shortcut; the server numbers a name in use. */
     async rename(node: FileNode, name: string): Promise<void> {
-      const next = name.trim()
-      if (!next || next === node.name) return
+      if (normalizeFileName(name) === node.name) return
+      const next = usableName(name)
+      if (!next) return
       const rename = (item: FileNode) => item.id === node.id ? { ...item, name: next } : item
       await mutate(() => {
         cache.writeState((state) => ({ ...state, folders: state.folders.map((folder) => folder.id === node.id ? { ...folder, name: next } : folder) }))

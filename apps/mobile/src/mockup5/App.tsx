@@ -6487,8 +6487,11 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
   const { state: loadedSidebar, unavailable: sidebarMissing } = useSidebarState(filesNamespace);
   // Offline before the sidebar was ever kept on the device (just after updating the app), the chat
   // folders last seen through /api/folders stand in for it.
-  const sidebar = loadedSidebar === undefined && sidebarMissing ? null : loadedSidebar;
+  const usingCachedFolders = loadedSidebar === undefined && Boolean(sidebarMissing);
+  const sidebar = usingCachedFolders ? null : loadedSidebar;
   const sidebarFocused = useIsFocused();
+  // A toast's Undo acts for the account it was shown for.
+  useEffect(() => () => useFilesToasts.getState().dismiss(), [filesNamespace]);
   const sidebarOperations = useSidebarOperations(filesNamespace);
   const fileOperations = useFileOperations(filesNamespace);
   const expandedFolders = useSidebarExpansion((state) => state.expanded);
@@ -6517,7 +6520,7 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
   // They belong to an account: another one's are never asked of the next one's server.
   const [listed, setListed] = useState<{ namespace: string; ids: readonly string[] }>({ namespace: filesNamespace, ids: NO_FOLDERS });
   const listedFolderIds = listed.namespace === filesNamespace ? listed.ids : NO_FOLDERS;
-  const { listings, unavailable: unavailableListings } = useSidebarListings(filesNamespace, listedFolderIds);
+  const { listings, unavailable: unavailableListings } = useSidebarListings(filesNamespace, listedFolderIds, sidebar?.chatsFolderId);
   const tree = useMemo(() => buildSidebarTree({
     chats, sidebar, legacyFolders, listings, unavailable: unavailableListings, expanded: expandedFolders, order: chatSortMode, filesEnabled,
   }), [chatSortMode, chats, expandedFolders, filesEnabled, legacyFolders, listings, sidebar, unavailableListings]);
@@ -6634,7 +6637,7 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
     if (action === 'duplicate') {
       void duplicateServerChat(chat.id).then((copy) => {
         const source = usePrototypeStore.getState().chats.find((item) => item.id === chat.id);
-        upsertChat({ id: copy.id, title: copy.title, modelId: copy.modelId, pinned: copy.pinned, folderId: copy.folderId, sortOrder: copy.sortOrder, temporary: copy.temporary, createdAt: Date.parse(copy.createdAt), updatedAt: Date.parse(copy.updatedAt), deletedAt: null, purgeAt: null, messages: source?.messages ?? [] });
+        upsertChat({ id: copy.id, title: copy.title, modelId: copy.modelId, pinned: copy.pinned, folderId: copy.folderId, inFilesRoot: copy.inFilesRoot ?? false, sortOrder: copy.sortOrder, temporary: copy.temporary, createdAt: Date.parse(copy.createdAt), updatedAt: Date.parse(copy.updatedAt), deletedAt: null, purgeAt: null, messages: source?.messages ?? [] });
       }).catch((error) => Alert.alert('Couldn’t duplicate chat', error instanceof Error ? error.message : undefined));
     }
   }, [chatTarget, renameChat, requiresConfirmation, sidebarOperations, trashChat, upsertChat]);
@@ -6700,12 +6703,15 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
   }, [dismissSearch, onOpenFilesFolder, sidebar]);
 
   type NodeRow = Extract<SidebarRow, { type: 'folder' | 'item' }>;
-  const itemActions = useCallback((row: NodeRow) => sidebarItemActions(row.node, {
-    folder: row.type === 'folder',
-    filesEnabled,
-    archived: Boolean(sidebar && (row.node.id === sidebar.archiveFolderId || inArchive(row.node.parentId))),
-    legacy: row.type === 'folder' && row.legacy,
-  }), [filesEnabled, inArchive, sidebar]);
+  const itemActions = useCallback((row: NodeRow) => row.type === 'folder' && row.legacy && usingCachedFolders
+    // Cached chat folders standing in offline may be the Archive or nested ones: shown, not changed.
+    ? []
+    : sidebarItemActions(row.node, {
+      folder: row.type === 'folder',
+      filesEnabled,
+      archived: Boolean(sidebar && (row.node.id === sidebar.archiveFolderId || inArchive(row.node.parentId))),
+      legacy: row.type === 'folder' && row.legacy,
+    }), [filesEnabled, inArchive, sidebar, usingCachedFolders]);
   const runItemAction = useCallback((row: NodeRow, action: SidebarItemActionId) => {
     const node = row.node;
     const legacy = row.type === 'folder' && row.legacy;
@@ -6746,8 +6752,10 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
     openSidebarItem(row.node);
   }, [openSidebarItem, setFolderExpanded]);
   const showItemActions = useCallback((row: NodeRow, anchor?: MenuAnchor) => {
+    const actions = itemActions(row);
+    if (!actions.length) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    showActions(row.node.name, itemActions(row).map((action) => ({
+    showActions(row.node.name, actions.map((action) => ({
       label: action.title,
       icon: action.systemImage,
       destructive: action.destructive,
@@ -6904,7 +6912,7 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
         </View>
       </SafeAreaView>
       {/* Only while the drawer is what's on screen: Files screens show (and announce) their own. */}
-      {drawerOpen && sidebarFocused ? <FilesToastHost bottomOffset={64} /> : null}
+      {drawerOpen && sidebarFocused ? <FilesToastHost bottomOffset={64} glass={false} /> : null}
       {moveTarget ? <MoveToFolderSheet
         folderId={moveSource(moveTarget)}
         folders={outline}
