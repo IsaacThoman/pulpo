@@ -31,6 +31,8 @@ interface Props {
   active?: boolean
   /** A shortcut to something in the trash, which cannot open. */
   unavailable?: boolean
+  /** Shown under the name in the long-press preview, instead of the item's own details. */
+  subtitle?: string
   onPress: (node: FileNode) => void
   onAction: (node: FileNode, action: string) => void
   /** Android has no native menu view: long pressing shows the actions instead. */
@@ -38,7 +40,7 @@ interface Props {
 }
 
 /** A folder, file, or shortcut in the drawer, among the chats; a folder opens and closes in place. */
-export const SidebarNodeRow = memo(function SidebarNodeRow({ node, depth, styles: rowStyles, actions, folder, active, unavailable, onPress, onAction, onLongPress }: Props) {
+export const SidebarNodeRow = memo(function SidebarNodeRow({ node, depth, styles: rowStyles, actions, folder, active, unavailable, subtitle, onPress, onAction, onLongPress }: Props) {
   const theme = useAppTheme()
   // Muted unless given a color, as the web sidebar shows them among the chats.
   const kindIcon = fileIcon(node)
@@ -87,7 +89,7 @@ export const SidebarNodeRow = memo(function SidebarNodeRow({ node, depth, styles
         accessibilityHint={hint}
         accessibilityState={{ expanded: folder?.expanded, selected: active }}
         actions={actions}
-        preview={{ title: node.name, subtitle: fileSubtitle(node), systemImage: icon.symbol, tint: icon.tint }}
+        preview={{ title: node.name, subtitle: subtitle ?? fileSubtitle(node), systemImage: icon.symbol, tint: icon.tint }}
         onAction={(action) => onAction(node, action)}
         onPress={() => onPress(node)}
         style={[rowStyles.menuHost, indent]}

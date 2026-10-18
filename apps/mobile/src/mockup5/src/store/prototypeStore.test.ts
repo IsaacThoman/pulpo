@@ -66,22 +66,22 @@ describe('prototype store', () => {
 
     usePrototypeStore.getState().togglePin('c-kv');
     expect(chat('c-kv')).toMatchObject({ pinned: true, sortOrder: 1 });
-    expect(togglePin).toHaveBeenLastCalledWith('c-kv', true, 1, null);
+    expect(togglePin).toHaveBeenLastCalledWith('c-kv', true, 1, null, false);
 
     usePrototypeStore.getState().togglePin('c-streaming');
     expect(chat('c-streaming')).toMatchObject({ pinned: false, sortOrder: 0 });
     // The server places it in its folder; the order here is the local guess until it answers.
-    expect(togglePin).toHaveBeenLastCalledWith('c-streaming', false, 0, null);
+    expect(togglePin).toHaveBeenLastCalledWith('c-streaming', false, 0, null, false);
 
     usePrototypeStore.getState().moveChat('c-streaming', folderId);
     expect(chat('c-streaming')).toMatchObject({ folderId, sortOrder: 0, inFilesRoot: false });
     // The server files it at the top of the folder, above the folder's Files items too.
-    expect(moveChat).toHaveBeenLastCalledWith('c-streaming', folderId);
+    expect(moveChat).toHaveBeenLastCalledWith('c-streaming', folderId, undefined);
 
     usePrototypeStore.getState().togglePin('c-kv');
     usePrototypeStore.getState().moveChat('c-streaming', null);
     expect(chat('c-streaming')).toMatchObject({ folderId: null, sortOrder: -1 });
-    expect(moveChat).toHaveBeenLastCalledWith('c-streaming', null);
+    expect(moveChat).toHaveBeenLastCalledWith('c-streaming', null, undefined);
   });
 
   it('moves a chat to the top of its new folder, above its chats and Files items, as on the web', () => {
@@ -96,13 +96,24 @@ describe('prototype store', () => {
     expect(chat('c-kv')).toMatchObject({ folderId: 'work', sortOrder: 0 });
     // ...and of its Files items, when they are higher up.
     usePrototypeStore.getState().moveChat('c-kv', null);
-    usePrototypeStore.getState().moveChat('c-kv', 'work', -10);
+    usePrototypeStore.getState().moveChat('c-kv', 'work', { floor: -10 });
     expect(chat('c-kv')).toMatchObject({ folderId: 'work', sortOrder: -11 });
+    expect(moveChat).toHaveBeenLastCalledWith('c-kv', 'work', undefined);
     // Unpinned, a chat goes above the Files items of its folder too.
     usePrototypeStore.getState().togglePin('c-kv');
-    usePrototypeStore.getState().togglePin('c-kv', -1, -20);
+    usePrototypeStore.getState().togglePin('c-kv', -1, { floor: -20 });
     expect(chat('c-kv')).toMatchObject({ pinned: false, sortOrder: -21 });
-    expect(togglePin).toHaveBeenLastCalledWith('c-kv', false, -21, 'work');
+    expect(togglePin).toHaveBeenLastCalledWith('c-kv', false, -21, 'work', false);
+  });
+
+  it('tells servers without the sidebar where a moved or unpinned chat goes, as they keep its old place otherwise', () => {
+    const moveChat = vi.fn(async () => undefined);
+    const togglePin = vi.fn(async () => undefined);
+    configureProductionActions({ moveChat, togglePin });
+    usePrototypeStore.getState().moveChat('c-kv', 'work', { sendSortOrder: true });
+    expect(moveChat).toHaveBeenLastCalledWith('c-kv', 'work', 0);
+    usePrototypeStore.getState().togglePin('c-streaming', -1, { sendSortOrder: true });
+    expect(togglePin).toHaveBeenLastCalledWith('c-streaming', false, 0, null, true);
   });
 
   it('archives a chat, unpinning it, and puts it back when the server refuses', async () => {
@@ -112,13 +123,22 @@ describe('prototype store', () => {
     configureProductionActions({ archiveChat });
     const chat = () => usePrototypeStore.getState().chats.find((item) => item.id === 'c-streaming');
 
-    usePrototypeStore.getState().archiveChat('c-streaming', 'archive');
+    const outcome = usePrototypeStore.getState().archiveChat('c-streaming', 'archive');
     expect(chat()).toMatchObject({ pinned: false, folderId: 'archive', inFilesRoot: false });
     expect(archiveChat).toHaveBeenCalledWith('c-streaming');
 
     refuse(new Error('No'));
+    await expect(outcome).resolves.toBe('failed');
     await vi.waitFor(() => expect(chat()).toMatchObject({ pinned: true, folderId: null }));
     warning.mockRestore();
+  });
+
+  it('says whether an archived chat reached the server or waits for a connection', async () => {
+    configureProductionActions({ archiveChat: async () => ({ archiveFolderId: 'archive' }) });
+    await expect(usePrototypeStore.getState().archiveChat('c-kv', 'archive')).resolves.toBe('sent');
+    configureProductionActions({ archiveChat: async () => undefined });
+    await expect(usePrototypeStore.getState().archiveChat('c-streaming', 'archive')).resolves.toBe('queued');
+    await expect(usePrototypeStore.getState().archiveChat('missing', 'archive')).resolves.toBe('failed');
   });
 
   it('optimistically persists the new-chat expiration choice', async () => {

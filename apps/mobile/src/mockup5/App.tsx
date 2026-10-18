@@ -6484,7 +6484,11 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
   const renameChat = usePrototypeStore((state) => state.renameChat);
   const upsertChat = usePrototypeStore((state) => state.upsertChat);
   // The drawer is the web's sidebar: the Chats folder's chats, folders, files, and shortcuts.
-  const sidebar = useSidebarState(filesNamespace);
+  const { state: loadedSidebar, unavailable: sidebarMissing } = useSidebarState(filesNamespace);
+  // Offline before the sidebar was ever kept on the device (just after updating the app), the chat
+  // folders last seen through /api/folders stand in for it.
+  const sidebar = loadedSidebar === undefined && sidebarMissing ? null : loadedSidebar;
+  const sidebarFocused = useIsFocused();
   const sidebarOperations = useSidebarOperations(filesNamespace);
   const fileOperations = useFileOperations(filesNamespace);
   const expandedFolders = useSidebarExpansion((state) => state.expanded);
@@ -6510,14 +6514,18 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
     return () => subscriptions.forEach((subscription) => subscription.remove());
   }, []);
   // Building the drawer finds which folder listings it needs, so contents load as folders open.
-  const [listedFolderIds, setListedFolderIds] = useState<readonly string[]>([]);
-  const listings = useSidebarListings(filesNamespace, listedFolderIds);
+  // They belong to an account: another one's are never asked of the next one's server.
+  const [listed, setListed] = useState<{ namespace: string; ids: readonly string[] }>({ namespace: filesNamespace, ids: NO_FOLDERS });
+  const listedFolderIds = listed.namespace === filesNamespace ? listed.ids : NO_FOLDERS;
+  const { listings, unavailable: unavailableListings } = useSidebarListings(filesNamespace, listedFolderIds);
   const tree = useMemo(() => buildSidebarTree({
-    chats, sidebar, legacyFolders, listings, expanded: expandedFolders, order: chatSortMode, filesEnabled,
-  }), [chatSortMode, chats, expandedFolders, filesEnabled, legacyFolders, listings, sidebar]);
+    chats, sidebar, legacyFolders, listings, unavailable: unavailableListings, expanded: expandedFolders, order: chatSortMode, filesEnabled,
+  }), [chatSortMode, chats, expandedFolders, filesEnabled, legacyFolders, listings, sidebar, unavailableListings]);
   useEffect(() => {
-    setListedFolderIds((current) => current.join('\n') === tree.folderIds.join('\n') ? current : tree.folderIds);
-  }, [tree.folderIds]);
+    setListed((current) => current.namespace === filesNamespace && current.ids.join('\n') === tree.folderIds.join('\n')
+      ? current
+      : { namespace: filesNamespace, ids: tree.folderIds });
+  }, [filesNamespace, tree.folderIds]);
   const outline = useMemo(() => sidebar
     ? folderOutline(sidebar, filesEnabled)
     : legacyFolders.map((folder) => ({ id: folder.id, name: folder.name, depth: 0 })), [filesEnabled, legacyFolders, sidebar]);
@@ -6569,9 +6577,14 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
     // Until chats load, the list says so instead.
     return loading && !chats.length ? [] : tree.sections;
   }, [chatSortMode, chats.length, filtered, loading, outline, search, tree.sections]);
-  const chatTarget = useCallback((chat: HistoryChatSummary): SidebarTarget => ({ kind: 'chat', id: chat.id, name: chat.title, folderId: chat.folderId, pinned: chat.pinned }), []);
+  const chatTarget = useCallback((chat: HistoryChatSummary): SidebarTarget => ({
+    kind: 'chat', id: chat.id, name: chat.title, folderId: chat.folderId, inFilesRoot: chat.inFilesRoot, pinned: chat.pinned,
+  }), []);
+  const archivedFolderIds = useMemo(() => new Set(sidebar
+    ? sidebar.folders.filter((folder) => isWithin(sidebar, folder.id, sidebar.archiveFolderId)).map((folder) => folder.id)
+    : []), [sidebar]);
   /** Whether something in this folder (null: the top of the sidebar) is already in the Archive. */
-  const inArchive = useCallback((folderId: string | null) => Boolean(sidebar && folderId && isWithin(sidebar, folderId, sidebar.archiveFolderId)), [sidebar]);
+  const inArchive = useCallback((folderId: string | null) => Boolean(folderId && archivedFolderIds.has(folderId)), [archivedFolderIds]);
   const chatArchivable = useCallback((chat: HistoryChatSummary) => filesEnabled && Boolean(sidebar) && !inArchive(chat.folderId), [filesEnabled, inArchive, sidebar]);
   const { label: removeChatLabel, requiresConfirmation } = chatRemovalBehavior(trashRetention);
 
@@ -6756,6 +6769,8 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
         folder={row.type === 'folder' ? { expanded: row.expanded, chatCount: row.chatCount } : undefined}
         active={node.kind === 'shortcut' && node.target?.kind === 'chat' && node.target.id === activeChatId}
         unavailable={node.kind === 'shortcut' && !node.target?.available}
+        // A chat folder from /api/folders has no date of its own.
+        subtitle={row.type === 'folder' && row.legacy ? `${row.chatCount} chat${row.chatCount === 1 ? '' : 's'}` : undefined}
         onPress={() => pressSidebarRow(row)}
         onAction={(_node, action) => runItemAction(row, action as SidebarItemActionId)}
         onLongPress={(_node, anchor) => showItemActions(row, anchor)}
@@ -6803,17 +6818,24 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
     onOrderChange={(order) => usePrototypeStore.getState().setPreference('chatSortMode', order)}
     onOpenInFiles={openSidebarInFiles}
   /> : <Text style={styles.sectionLabel}>{section.title}</Text>, [chatSortMode, filesEnabled, newDocument, newFolder, openSidebarInFiles, sidebar, styles, upload]);
-  /** Where a chat or item being moved is now: a folder, or null for the top of the sidebar. */
-  const moveSource = (target: SidebarTarget) => target.kind === 'chat'
-    ? target.folderId
-    : target.node.parentId === sidebar?.chatsFolderId ? null : target.node.parentId;
+  /**
+   * Where a chat or item being moved is now: a folder, null for the top of the sidebar, or
+   * undefined for the top of My files, outside the sidebar.
+   */
+  const moveSource = (target: SidebarTarget): string | null | undefined => {
+    if (target.kind === 'chat') return target.inFilesRoot ? undefined : target.folderId;
+    if (target.node.parentId === null) return undefined;
+    return target.node.parentId === sidebar?.chatsFolderId ? null : target.node.parentId;
+  };
+  /** The same, as Files names it (null: the top of My files). */
+  const moveSourceInFiles = (target: SidebarTarget): string | null => {
+    const source = moveSource(target);
+    return source === undefined ? null : source ?? sidebar?.chatsFolderId ?? null;
+  };
   const moveBlocked = useMemo(() => moveTarget?.kind === 'node' && moveTarget.node.kind === 'folder'
     ? new Set(outline.filter((folder) => isWithin(sidebar, folder.id, moveTarget.node.id)).map((folder) => folder.id))
     : undefined, [moveTarget, outline, sidebar]);
-  const moveTo = (target: SidebarTarget, folderId: string | null) => {
-    if (sidebar) void sidebarOperations.move(target, folderId);
-    else if (target.kind === 'chat') usePrototypeStore.getState().moveChat(target.id, folderId);
-  };
+  const moveTo = (target: SidebarTarget, folderId: string | null) => { void sidebarOperations.move(target, folderId); };
 
   return (
     <View style={styles.panelRoot}>
@@ -6881,7 +6903,8 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
           <DrawerNewChatButton isDark={isDark} onPress={() => { dismissSearch(); onNewChat(); }} />
         </View>
       </SafeAreaView>
-      <FilesToastHost bottomOffset={64} />
+      {/* Only while the drawer is what's on screen: Files screens show (and announce) their own. */}
+      {drawerOpen && sidebarFocused ? <FilesToastHost bottomOffset={64} /> : null}
       {moveTarget ? <MoveToFolderSheet
         folderId={moveSource(moveTarget)}
         folders={outline}
@@ -6895,8 +6918,9 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
         mode="destination"
         title={`Move “${pickingFolderFor.kind === 'chat' ? pickingFolderFor.name : pickingFolderFor.node.name}”`}
         confirmLabel="Move Here"
-        initialFolderId={moveSource(pickingFolderFor) ?? sidebar?.chatsFolderId ?? null}
+        initialFolderId={moveSourceInFiles(pickingFolderFor)}
         excludeIds={pickingFolderFor.kind === 'node' ? [pickingFolderFor.node.id] : []}
+        sourceFolderIds={[moveSourceInFiles(pickingFolderFor)]}
         onCancel={() => setPickingFolderFor(null)}
         // My files itself, like the Chats folder, is the top of the sidebar (as on the web).
         onConfirm={(folderId) => {
@@ -6908,6 +6932,8 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
     </View>
   );
 });
+
+const NO_FOLDERS: readonly string[] = [];
 
 function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   flex: { flex: 1 },

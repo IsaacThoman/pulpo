@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
   store: {
     moveChat: vi.fn(),
     togglePin: vi.fn(),
-    archiveChat: vi.fn(),
+    archiveChat: vi.fn(async () => 'sent'),
   },
   api: {
     createSidebarFolder: vi.fn(),
@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
     archiveSidebarItems: vi.fn(async () => undefined),
     orderPinnedItems: vi.fn(async () => undefined),
     pinItems: vi.fn(async () => undefined),
+    moveFileNodes: vi.fn(async () => []),
   },
   refreshFiles: vi.fn(async () => undefined),
   queueOfflineMutation: vi.fn(async () => undefined),
@@ -38,7 +39,7 @@ vi.mock('../../mockup5/src/store/prototypeStore', () => ({
     setState: (update: (state: { chats: typeof mocks.chats }) => { chats: typeof mocks.chats }) => { mocks.chats = update({ chats: mocks.chats }).chats },
   },
 }))
-vi.mock('../files/api', () => ({ pinItems: mocks.api.pinItems }))
+vi.mock('../files/api', () => ({ pinItems: mocks.api.pinItems, moveFileNodes: mocks.api.moveFileNodes }))
 vi.mock('../files/operations', () => ({ refreshFiles: mocks.refreshFiles }))
 vi.mock('../files/display', () => ({ filesErrorMessage: (error: unknown) => (error as Error).message }))
 vi.mock('./api', () => mocks.api)
@@ -149,13 +150,26 @@ describe('moving in the drawer', () => {
   })
 
   it('moves a chat above the destination’s Files items', async () => {
-    await operations().move({ kind: 'chat', id: 'c', name: 'c', folderId: 'work', pinned: false }, null)
-    expect(mocks.store.moveChat).toHaveBeenCalledWith('c', null, -2)
+    await operations().move({ kind: 'chat', id: 'c', name: 'c', folderId: 'work', inFilesRoot: false, pinned: false }, null)
+    expect(mocks.store.moveChat).toHaveBeenCalledWith('c', null, { floor: -2, sendSortOrder: false })
     expect(sidebarItemsFloor(client, NAMESPACE, 'missing')).toBeUndefined()
   })
 
+  it('brings a chat from the top of My files into the sidebar', async () => {
+    await operations().move({ kind: 'chat', id: 'c', name: 'c', folderId: null, inFilesRoot: true, pinned: true }, null)
+    expect(mocks.store.moveChat).toHaveBeenCalledWith('c', null, { floor: -2, sendSortOrder: false })
+  })
+
+  it('tells servers without the sidebar where a chat goes', async () => {
+    client.setQueryData(sidebarKeys.state(NAMESPACE), null)
+    await operations().move({ kind: 'chat', id: 'c', name: 'c', folderId: null, inFilesRoot: false, pinned: false }, 'legacy-folder')
+    expect(mocks.store.moveChat).toHaveBeenCalledWith('c', 'legacy-folder', { floor: undefined, sendSortOrder: true })
+    await operations().setPinned({ kind: 'chat', id: 'c', name: 'c', folderId: null, inFilesRoot: false, pinned: false }, true)
+    expect(mocks.store.togglePin).toHaveBeenCalledWith('c', -1, { floor: undefined, sendSortOrder: true })
+  })
+
   it('leaves things where they already are', async () => {
-    await operations().move({ kind: 'chat', id: 'c', name: 'c', folderId: null, pinned: false }, CHATS)
+    await operations().move({ kind: 'chat', id: 'c', name: 'c', folderId: null, inFilesRoot: false, pinned: false }, CHATS)
     await operations().move({ kind: 'node', node: node('work') }, null)
     expect(mocks.store.moveChat).not.toHaveBeenCalled()
     expect(mocks.api.moveSidebarItems).not.toHaveBeenCalled()
@@ -178,11 +192,11 @@ describe('pinning in the drawer', () => {
   })
 
   it('pins a chat after the pinned Files items, and unpins it above its folder’s items', async () => {
-    await operations().setPinned({ kind: 'chat', id: 'c', name: 'c', folderId: null, pinned: false }, true)
-    expect(mocks.store.togglePin).toHaveBeenLastCalledWith('c', 3, -2)
-    await operations().setPinned({ kind: 'chat', id: 'c', name: 'c', folderId: 'work', pinned: true }, false)
-    expect(mocks.store.togglePin).toHaveBeenLastCalledWith('c', 3, 0)
-    await operations().setPinned({ kind: 'chat', id: 'c', name: 'c', folderId: null, pinned: true }, true)
+    await operations().setPinned({ kind: 'chat', id: 'c', name: 'c', folderId: null, inFilesRoot: false, pinned: false }, true)
+    expect(mocks.store.togglePin).toHaveBeenLastCalledWith('c', 3, { floor: -2, sendSortOrder: false })
+    await operations().setPinned({ kind: 'chat', id: 'c', name: 'c', folderId: 'work', inFilesRoot: false, pinned: true }, false)
+    expect(mocks.store.togglePin).toHaveBeenLastCalledWith('c', 3, { floor: 0, sendSortOrder: false })
+    await operations().setPinned({ kind: 'chat', id: 'c', name: 'c', folderId: null, inFilesRoot: false, pinned: true }, true)
     expect(mocks.store.togglePin).toHaveBeenCalledTimes(2)
   })
 })
@@ -201,8 +215,28 @@ describe('archiving in the drawer', () => {
     expect(mocks.refreshFiles).toHaveBeenLastCalledWith(client, NAMESPACE, true)
   })
 
+  it('puts something archived from the top of My files back there, through Files', async () => {
+    await operations().archive({ kind: 'node', node: node('loose-doc', { kind: 'doc', parentId: null }) })
+    await (show.mock.calls.at(-1)![0] as { undo: () => Promise<void> }).undo()
+    expect(mocks.api.moveFileNodes).toHaveBeenCalledWith([{ id: 'loose-doc', parentId: null }])
+    expect(mocks.api.moveSidebarItems).not.toHaveBeenCalled()
+    await operations().archive({ kind: 'chat', id: 'c', name: 'c', folderId: null, inFilesRoot: true, pinned: false })
+    await (show.mock.calls.at(-1)![0] as { undo: () => Promise<void> }).undo()
+    expect(mocks.api.moveFileNodes).toHaveBeenLastCalledWith([{ id: 'c', parentId: null }])
+  })
+
+  it('offers no undo for a chat archived offline, and says nothing when the server refuses', async () => {
+    mocks.store.archiveChat.mockResolvedValueOnce('queued')
+    await operations().archive({ kind: 'chat', id: 'c', name: 'Plans', folderId: null, inFilesRoot: false, pinned: false })
+    expect(show).toHaveBeenLastCalledWith({ message: '“Plans” will move to the archive once you’re back online' })
+    show.mockClear()
+    mocks.store.archiveChat.mockResolvedValueOnce('failed')
+    await operations().archive({ kind: 'chat', id: 'c', name: 'Plans', folderId: null, inFilesRoot: false, pinned: false })
+    expect(show).not.toHaveBeenCalled()
+  })
+
   it('archives a chat through the chat list, which keeps it for later offline', async () => {
-    await operations().archive({ kind: 'chat', id: 'c', name: 'Plans', folderId: null, pinned: false })
+    await operations().archive({ kind: 'chat', id: 'c', name: 'Plans', folderId: null, inFilesRoot: false, pinned: false })
     expect(mocks.store.archiveChat).toHaveBeenCalledWith('c', ARCHIVE)
     const toast = show.mock.calls.at(-1)![0] as { undo: () => Promise<void> }
     await toast.undo()

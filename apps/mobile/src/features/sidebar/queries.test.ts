@@ -16,7 +16,7 @@ vi.mock('../../data/database', () => ({
 }))
 vi.mock('./api', () => ({ fetchSidebarState: mocks.fetchSidebarState, fetchSidebarItems: mocks.fetchSidebarItems }))
 
-const { keepSidebarOnDevice, sidebarItemsQuery, sidebarKeys, sidebarStateQuery } = await import('./queries')
+const { keepSidebarOnDevice, sidebarItemsQuery, sidebarKeys, sidebarStateQuery, sidebarUnavailable } = await import('./queries')
 
 const NAMESPACE = 'https://pulpo.test|a'
 const state = { chatsFolderId: 'chats', archiveFolderId: 'archive', folders: [], pinnedItems: [] } satisfies SidebarState
@@ -53,6 +53,13 @@ describe('the sidebar queries', () => {
     mocks.kept.set('sidebar:items:work', { value: [] })
     mocks.fetchSidebarItems.mockRejectedValue(new Error('Forbidden'))
     await expect(new QueryClient().fetchQuery(sidebarItemsQuery(NAMESPACE, 'work'))).rejects.toThrow('Forbidden')
+  })
+
+  it('tell a listing that is missing offline from one that was refused, and from one still loading', () => {
+    expect(sidebarUnavailable({ data: undefined, isError: false, fetchStatus: 'paused' })).toBe('offline')
+    expect(sidebarUnavailable({ data: undefined, isError: true, fetchStatus: 'idle' })).toBe('failed')
+    expect(sidebarUnavailable({ data: undefined, isError: false, fetchStatus: 'fetching' })).toBeNull()
+    expect(sidebarUnavailable({ data: [], isError: true, fetchStatus: 'paused' })).toBeNull()
   })
 
   it('keep changes made offline for the next launch', async () => {

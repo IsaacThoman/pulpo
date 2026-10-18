@@ -4,8 +4,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAppTheme } from '../theme';
 
 export type MoveToFolderSheetProps = {
-  /** Where the chat or item is now: a folder, or null for no folder (the top of the sidebar). */
-  folderId: string | null;
+  /**
+   * Where the chat or item is now: a folder, null for no folder (the top of the sidebar), or
+   * undefined outside the sidebar (the top of My files), where none is checked.
+   */
+  folderId: string | null | undefined;
   /** The folders it can go in, outermost first, with how deeply each is nested. */
   folders: { id: string; name: string; depth?: number }[];
   /** Folders it cannot go in: an item's own folder and those inside it. */

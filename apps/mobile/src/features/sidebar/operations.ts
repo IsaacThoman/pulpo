@@ -6,7 +6,7 @@ import { isNetworkError } from '../../api/client'
 import { queueOfflineMutation } from '../../data/mutations'
 import { usePrototypeStore } from '../../mockup5/src/store/prototypeStore'
 import { topChatSortOrder, visibleHistoryChats } from '../chat/history'
-import { pinItems } from '../files/api'
+import { moveFileNodes, pinItems } from '../files/api'
 import { filesErrorMessage } from '../files/display'
 import { refreshFiles } from '../files/operations'
 import { useFilesToasts, type FilesToast } from '../files/toasts'
@@ -17,13 +17,15 @@ import { isWithin, pinnedItemsCeiling } from './tree'
 
 /** A chat or a Files item, as the drawer acts on it. */
 export type SidebarTarget =
-  | { kind: 'chat'; id: string; name: string; folderId: string | null; pinned: boolean }
+  /** `inFilesRoot`: at the top of My files, outside the sidebar (found by search, or pinned). */
+  | { kind: 'chat'; id: string; name: string; folderId: string | null; inFilesRoot: boolean; pinned: boolean }
   | { kind: 'node'; node: FileNode }
 
 /** The drawer's copies of the sidebar in the query cache, changed at once by the actions below. */
 function sidebarCache(client: QueryClient, namespace: string) {
   const stateKey = sidebarKeys.state(namespace)
-  const readState = () => client.getQueryData<SidebarState | null>(stateKey) ?? null
+  /** Undefined until loaded; null from a server without the sidebar. */
+  const readState = () => client.getQueryData<SidebarState | null>(stateKey)
   const writeState = (update: (state: SidebarState) => SidebarState) => {
     client.setQueryData<SidebarState | null>(stateKey, (state) => state ? update(state) : state)
   }
@@ -55,7 +57,7 @@ function topOrderIn(client: QueryClient, namespace: string, folderId: string | n
 }
 
 /** The pinned list, chats and Files items, in order. */
-function pinnedOrder(sidebar: SidebarState | null): string[] {
+function pinnedOrder(sidebar: SidebarState | null | undefined): string[] {
   return [
     ...visibleHistoryChats(usePrototypeStore.getState().chats).filter((chat) => chat.pinned).map((chat) => ({ id: chat.id, sortOrder: chat.sortOrder, createdAt: chat.createdAt })),
     ...(sidebar?.pinnedItems ?? []).map((item) => ({ id: item.id, sortOrder: item.sortOrder ?? 0, createdAt: Date.parse(item.createdAt) })),
@@ -94,10 +96,17 @@ export function sidebarOperations(client: QueryClient, namespace: string, show: 
     }
   }
 
-  /** Puts something archived back where it was, and back in the pinned list in its old place. */
-  const putBack = async (id: string, parentId: string, wasPinned: boolean, pinnedBefore: readonly string[]) => {
+  /** Chats on servers without the sidebar keep their old position unless told the new one. */
+  const placement = (folderId: string | null) => ({ floor: sidebarItemsFloor(client, namespace, folderId), sendSortOrder: cache.readState() === null })
+
+  /**
+   * Puts something archived back where it was (null: the top of My files, where only Files
+   * moves things), and back in the pinned list in its old place.
+   */
+  const putBack = async (id: string, parentId: string | null, wasPinned: boolean, pinnedBefore: readonly string[]) => {
     try {
-      await moveSidebarItems([id], inSidebar(parentId))
+      if (parentId === null) await moveFileNodes([{ id, parentId: null }])
+      else await moveSidebarItems([id], inSidebar(parentId))
       if (wasPinned) {
         const pinnedNow = new Set(pinnedOrder(cache.readState()))
         await orderPinnedItems(pinnedBefore.filter((other) => other === id || pinnedNow.has(other)))
@@ -165,8 +174,8 @@ export function sidebarOperations(client: QueryClient, namespace: string, show: 
       const destination = inSidebar(folderId)
       if (destination) expand(destination)
       if (target.kind === 'chat') {
-        if (target.folderId === destination) return
-        usePrototypeStore.getState().moveChat(target.id, destination, sidebarItemsFloor(client, namespace, destination))
+        if (target.folderId === destination && !target.inFilesRoot) return
+        usePrototypeStore.getState().moveChat(target.id, destination, placement(destination))
         return
       }
       const state = cache.readState()
@@ -191,7 +200,7 @@ export function sidebarOperations(client: QueryClient, namespace: string, show: 
       const state = cache.readState()
       if (target.kind === 'chat') {
         if (target.pinned === pinned) return
-        usePrototypeStore.getState().togglePin(target.id, pinnedItemsCeiling(state), sidebarItemsFloor(client, namespace, target.folderId))
+        usePrototypeStore.getState().togglePin(target.id, pinnedItemsCeiling(state), placement(target.inFilesRoot ? null : target.folderId))
         return
       }
       const node = target.node
@@ -218,17 +227,23 @@ export function sidebarOperations(client: QueryClient, namespace: string, show: 
       const pinnedBefore = pinnedOrder(state)
       const name = nameOf(target)
       let id: string
-      let parentId: string
+      // Null: the top of My files.
+      let parentId: string | null
       let wasPinned: boolean
       if (target.kind === 'chat') {
         ({ id, pinned: wasPinned } = target)
-        parentId = target.folderId ?? state.chatsFolderId
-        // Kept for later offline, like the chat's other changes.
-        usePrototypeStore.getState().archiveChat(id, state.archiveFolderId)
+        parentId = target.inFilesRoot ? null : target.folderId ?? state.chatsFolderId
+        // Kept for later offline, like the chat's other changes; it can only be undone once sent.
+        const outcome = await usePrototypeStore.getState().archiveChat(id, state.archiveFolderId)
+        if (outcome === 'failed') return
+        if (outcome === 'queued') {
+          show({ message: `“${name}” will move to the archive once you’re back online` })
+          return
+        }
       } else {
         const node = target.node
         id = node.id
-        parentId = node.parentId ?? state.chatsFolderId
+        parentId = node.parentId
         wasPinned = Boolean(node.pinned)
         const archived = await mutate(() => {
           if (node.kind === 'folder') cache.writeState((current) => ({ ...current, folders: current.folders.map((folder) => folder.id === node.id ? { ...folder, parentId: current.archiveFolderId } : folder) }))

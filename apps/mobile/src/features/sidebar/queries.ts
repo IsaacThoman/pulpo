@@ -1,9 +1,10 @@
 import type { FileNode, SidebarState } from '@pulpo/contracts'
 import { queryOptions, useQueries, useQuery, useQueryClient, type QueryClient, type QueryKey } from '@tanstack/react-query'
-import { useCallback, useEffect, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { isNetworkError } from '../../api/client'
 import { getValue, setValue } from '../../data/database'
 import { fetchSidebarItems, fetchSidebarState } from './api'
+import type { SidebarUnavailable } from './tree'
 
 /**
  * Sidebar queries live under ['files', namespace], so the `files` and `folders` realtime scopes
@@ -79,23 +80,55 @@ function useDeviceCopies(client: QueryClient, namespace: string, entries: Readon
   }, [client, entries, namespace])
 }
 
-/** The sidebar state: undefined until known, null on servers without the sidebar. */
-export function useSidebarState(namespace: string): SidebarState | null | undefined {
+type QueryOutcome = { data?: unknown; isError: boolean; fetchStatus: string }
+
+/** Why something is missing: offline with no copy on the device, or refused; null while it loads. */
+export function sidebarUnavailable(result: QueryOutcome): SidebarUnavailable | null {
+  if (result.data !== undefined) return null
+  if (result.isError) return 'failed'
+  return result.fetchStatus === 'paused' ? 'offline' : null
+}
+
+/** The sidebar state (undefined until known, null on servers without the sidebar), and why it is missing. */
+export function useSidebarState(namespace: string): { state: SidebarState | null | undefined; unavailable: SidebarUnavailable | null } {
   const client = useQueryClient()
   useDeviceCopies(client, namespace, useMemo(() => namespace ? [{ key: sidebarKeys.state(namespace), deviceKey: STATE_KEY }] : [], [namespace]))
-  return useQuery({ ...sidebarStateQuery(namespace), enabled: Boolean(namespace) }).data
+  const query = useQuery({ ...sidebarStateQuery(namespace), enabled: Boolean(namespace) })
+  return { state: query.data, unavailable: sidebarUnavailable(query) }
+}
+
+export interface SidebarListings {
+  /** Loaded listings; a folder missing here is still loading, or unavailable. */
+  listings: ReadonlyMap<string, FileNode[]>
+  unavailable: ReadonlyMap<string, SidebarUnavailable>
+}
+
+function sameEntries<V>(left: ReadonlyMap<string, V>, right: ReadonlyMap<string, V>): boolean {
+  return left.size === right.size && [...left].every(([key, value]) => right.get(key) === value)
 }
 
 /**
- * The listings of these folders (a stable array), as far as loaded; a folder missing from the map
- * is still loading. The map only changes when a listing does.
+ * The listings of these folders (a stable array). The result only changes when a listing (or
+ * why one is missing) does, not on every refetch, so the drawer is not rebuilt for nothing.
  */
-export function useSidebarListings(namespace: string, folderIds: readonly string[]): ReadonlyMap<string, FileNode[]> {
+export function useSidebarListings(namespace: string, folderIds: readonly string[]): SidebarListings {
   const client = useQueryClient()
   const entries = useMemo(() => namespace ? folderIds.map((id) => ({ key: sidebarKeys.items(namespace, id), deviceKey: itemsKey(id) })) : [], [folderIds, namespace])
   useDeviceCopies(client, namespace, entries)
-  const combine = useCallback((results: Array<{ data?: FileNode[] }>) => (
-    new Map(folderIds.flatMap((id, index) => results[index]?.data ? [[id, results[index]!.data!] as const] : []))
-  ), [folderIds])
+  const previous = useRef<SidebarListings | null>(null)
+  const combine = useCallback((results: Array<QueryOutcome & { data?: FileNode[] }>): SidebarListings => {
+    const listings = new Map<string, FileNode[]>()
+    const unavailable = new Map<string, SidebarUnavailable>()
+    folderIds.forEach((id, index) => {
+      const result = results[index]
+      if (result?.data) listings.set(id, result.data)
+      const missing = result ? sidebarUnavailable(result) : null
+      if (missing) unavailable.set(id, missing)
+    })
+    const last = previous.current
+    if (last && sameEntries(last.listings, listings) && sameEntries(last.unavailable, unavailable)) return last
+    previous.current = { listings, unavailable }
+    return previous.current
+  }, [folderIds])
   return useQueries({ queries: folderIds.map((id) => ({ ...sidebarItemsQuery(namespace, id), enabled: Boolean(namespace) })), combine })
 }

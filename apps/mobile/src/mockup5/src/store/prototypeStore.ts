@@ -31,13 +31,16 @@ type PrototypeActions = {
   setChatFileAccess: (id: string, itemId: string, mode: import('@pulpo/contracts').FileAccessMode) => void;
   /**
    * `pinnedAfter`: the last position among the pinned Files items, which share the pinned list.
-   * `floor`: the lowest position among the Files items of the chat's folder, which an unpinned chat goes above.
+   * See `ChatPlacement` for `options`.
    */
-  togglePin: (id: string, pinnedAfter?: number, floor?: number) => void;
-  /** Files a chat at the top of a folder, or (null) of the sidebar; `floor` as for `togglePin`. */
-  moveChat: (id: string, folderId: string | null, floor?: number) => void;
-  /** Unpins a chat and files it in the Archive folder. */
-  archiveChat: (id: string, archiveFolderId: string) => void;
+  togglePin: (id: string, pinnedAfter?: number, options?: ChatPlacement) => void;
+  /** Files a chat at the top of a folder, or (null) of the sidebar. */
+  moveChat: (id: string, folderId: string | null, options?: ChatPlacement) => void;
+  /**
+   * Unpins a chat and files it in the Archive folder. Resolves with whether the server has it,
+   * it waits for a connection, or it was refused (and put back).
+   */
+  archiveChat: (id: string, archiveFolderId: string) => Promise<'sent' | 'queued' | 'failed'>;
   setChatAutoExpiration: (id: string, enabled: boolean) => void;
   trashChat: (id: string) => void;
   trashAllChats: () => void;
@@ -52,6 +55,17 @@ type PrototypeActions = {
 };
 
 export type PrototypeStore = PersistedPrototypeState & PrototypeActions;
+
+/** Where a chat moved or unpinned goes in its new list. */
+export type ChatPlacement = {
+  /** The lowest position among the Files items listed there, which the chat goes above. */
+  floor?: number;
+  /**
+   * Send the position too: servers without the sidebar (before 0.156) keep a chat's old one
+   * otherwise. Newer servers place it at the top themselves, above Files items not loaded here.
+   */
+  sendSortOrder?: boolean;
+};
 
 export const LEGACY_PROTOTYPE_STORAGE_KEYS = [
   'pulpo-mockup-5-prototype-v1',
@@ -183,7 +197,7 @@ export const usePrototypeStore = create<PrototypeStore>()((set, get) => ({
       set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, fileScopeAccess: previous.fileScopeAccess } : chat) }));
     });
   },
-  togglePin: (chatId, pinnedAfter = -1, floor) => {
+  togglePin: (chatId, pinnedAfter = -1, { floor, sendSortOrder = false } = {}) => {
     const current = get().chats.find((chat) => chat.id === chatId);
     if (!current) return;
     const next = !current.pinned;
@@ -193,11 +207,11 @@ export const usePrototypeStore = create<PrototypeStore>()((set, get) => ({
       ? others.filter((chat) => chat.pinned).reduce((max, chat) => Math.max(max, chat.sortOrder), pinnedAfter) + 1
       : topChatSortOrder(others, current.inFilesRoot ? null : current.folderId, { floor });
     set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, pinned: next, sortOrder } : chat) }));
-    runOptimisticAction(`chat:${chatId}:pinned`, productionActions.togglePin(chatId, next, sortOrder, current.folderId ?? null), () => {
+    runOptimisticAction(`chat:${chatId}:pinned`, productionActions.togglePin(chatId, next, sortOrder, current.folderId ?? null, sendSortOrder), () => {
       set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, pinned: current.pinned, sortOrder: current.sortOrder } : chat) }));
     });
   },
-  moveChat: (chatId, folderId, floor) => {
+  moveChat: (chatId, folderId, { floor, sendSortOrder = false } = {}) => {
     const current = get().chats.find((chat) => chat.id === chatId);
     if (!current) return;
     const others = visibleHistoryChats(get().chats).filter((chat) => chat.id !== chatId);
@@ -205,17 +219,20 @@ export const usePrototypeStore = create<PrototypeStore>()((set, get) => ({
     // so); pinned chats keep their pinned position.
     const sortOrder = current.pinned ? current.sortOrder : topChatSortOrder(others, folderId, { floor });
     set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, folderId, inFilesRoot: false, sortOrder } : chat) }));
-    runOptimisticAction(`chat:${chatId}:folder`, productionActions.moveChat(chatId, folderId), () => {
+    runOptimisticAction(`chat:${chatId}:folder`, productionActions.moveChat(chatId, folderId, sendSortOrder ? sortOrder : undefined), () => {
       set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, folderId: current.folderId, inFilesRoot: current.inFilesRoot, sortOrder: current.sortOrder } : chat) }));
     });
   },
   archiveChat: (chatId, archiveFolderId) => {
     const current = get().chats.find((chat) => chat.id === chatId);
-    if (!current) return;
+    if (!current) return Promise.resolve('failed');
     set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, pinned: false, folderId: archiveFolderId, inFilesRoot: false } : chat) }));
-    runOptimisticAction(`chat:${chatId}:archive`, productionActions.archiveChat(chatId), () => {
+    const action = productionActions.archiveChat(chatId);
+    runOptimisticAction(`chat:${chatId}:archive`, action, () => {
       set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, pinned: current.pinned, folderId: current.folderId, inFilesRoot: current.inFilesRoot } : chat) }));
     });
+    // Kept for later offline, the change resolves with nothing.
+    return action.then((result) => result === undefined ? 'queued' : 'sent', () => 'failed');
   },
   setChatAutoExpiration: (chatId, enabled) => {
     const current = get().chats.find((chat) => chat.id === chatId);

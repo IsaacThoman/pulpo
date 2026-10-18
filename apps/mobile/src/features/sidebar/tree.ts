@@ -39,13 +39,17 @@ export interface SidebarSection {
   heading?: boolean
 }
 
+/** Why a listing the drawer needs is missing: offline with no copy on the device, or refused. */
+export type SidebarUnavailable = 'offline' | 'failed'
+
 export interface SidebarTreeInput {
   chats: readonly HistoryChatSummary[]
   /** Undefined until loaded; null on servers without the sidebar, where `legacyFolders` apply. */
   sidebar: SidebarState | null | undefined
   legacyFolders?: readonly { id: string; name: string }[]
-  /** Loaded folder listings; a folder missing here is still loading. */
+  /** Loaded folder listings; a folder missing here is still loading, unless `unavailable` says otherwise. */
   listings: ReadonlyMap<string, readonly FileNode[]>
+  unavailable?: ReadonlyMap<string, SidebarUnavailable>
   expanded: ReadonlySet<string>
   order: 'default' | 'recent'
   filesEnabled: boolean
@@ -61,6 +65,12 @@ export interface SidebarTree {
 type Entry =
   | { kind: 'chat'; id: string; sortOrder: number; createdAt: number; updatedAt: number; chat: HistoryChatSummary }
   | { kind: 'node'; id: string; sortOrder: number; createdAt: number; updatedAt: number; node: FileNode; legacy?: boolean }
+
+const UNAVAILABLE_LABELS: Record<SidebarUnavailable | 'loading', string> = {
+  loading: 'Loading…',
+  offline: 'Not available offline',
+  failed: 'Couldn’t load this folder',
+}
 
 /** Without Files, only folders and shortcuts to folders or chats show, as the server lists them. */
 export function shownInSidebar(node: FileNode, filesEnabled: boolean): boolean {
@@ -134,16 +144,16 @@ export function buildSidebarTree(input: SidebarTreeInput): SidebarTree {
       rows.push({ type: 'folder', key, depth, node, folderId, expansionKey, expanded: open, chatCount: chats.length, ...entry.legacy ? { legacy: true } : {} })
       if (!open) continue
       let items: readonly FileNode[] = []
-      let loading = false
+      let label = 'Empty'
       if (!entry.legacy) {
         need(folderId)
         const listing = listings.get(folderId)
-        loading = listing === undefined
         items = visible(listing)
+        if (!listing) label = UNAVAILABLE_LABELS[input.unavailable?.get(folderId) ?? 'loading']
       }
       const contents = entries(chats, items, false)
       if (contents.length) emit(contents, depth + 1, [...path, folderId], key, rows)
-      else rows.push({ type: 'empty', key: `${key}/empty`, depth: depth + 1, label: loading ? 'Loading…' : 'Empty' })
+      else rows.push({ type: 'empty', key: `${key}/empty`, depth: depth + 1, label })
     }
   }
 

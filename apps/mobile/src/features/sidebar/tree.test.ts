@@ -100,6 +100,17 @@ describe('the drawer as the web sidebar', () => {
     expect(outline(tree.sections)).toEqual([['Chats', ['folder:loading@0', 'empty:Loading…@1', 'folder:empty@0', 'empty:Empty@1']]])
   })
 
+  it('says when an open folder can’t load', () => {
+    const tree = build({
+      listings: new Map([[CHATS, [node('offline'), node('refused', { sortOrder: 1 })]]]),
+      unavailable: new Map([['offline', 'offline'], ['refused', 'failed']]),
+      expanded: new Set(['offline', 'refused']),
+    })
+    expect(outline(tree.sections)).toEqual([['Chats', [
+      'folder:offline@0', 'empty:Not available offline@1', 'folder:refused@0', 'empty:Couldn’t load this folder@1',
+    ]]])
+  })
+
   it('opens a shortcut to a folder in place, on its own, and never into itself', () => {
     const shortcut = node('to-work', { kind: 'shortcut', parentId: 'work', target: { kind: 'folder', id: 'work', name: 'work', mimeType: null, systemRole: null, available: true } })
     const tree = build({
