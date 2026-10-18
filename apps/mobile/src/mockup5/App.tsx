@@ -249,7 +249,7 @@ import {
   restoreLatestDraft,
   stagedTranscriptAttachments,
 } from '../features/chat/optimisticAttachmentSend';
-import { chatGenerationSelections, enterDraftPresets, generationDefaultsWithChoice, settlePendingStart, type PendingStart, generationSummary, resolveGenerationSelections, type GenerationSelections } from '../features/chat/generationOptions';
+import { chatGenerationSelections, discardPendingStart, enterDraftPresets, generationDefaultsWithChoice, settlePendingStart, type PendingStart, generationSummary, resolveGenerationSelections, type GenerationSelections } from '../features/chat/generationOptions';
 import { composerGenerationAction, selectedAssistantStatus, selectedInFlightResponseId } from '../features/chat/generationControls';
 import {
   cacheComposerDraft,
@@ -600,6 +600,8 @@ type SendOptions = {
   presetSelections: GenerationSelections; agentEnabled: boolean; temporary: boolean; autoExpire: boolean;
   /** Dictation produced some of the message text (analytics only). */
   usedDictation?: boolean;
+  /** Called synchronously when a rejection discards the chat this send started, before leaving it. */
+  onStartDiscarded?: () => void;
 };
 type PrepareAttachments = () => Promise<PreparedAttachment[]>;
 
@@ -2613,6 +2615,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
       activeResponseSubscription.current?.();
       activeResponseSubscription.current = null;
       setAssistantStatus('idle');
+      if (!activeChat && !serverChatCreated) options?.onStartDiscarded?.();
       if (productionNamespace) {
         rejectOptimisticTurn({
           queryClient,
@@ -4234,15 +4237,11 @@ function ChatView({
     pendingStartRef.current = { token, ...starting };
     return token;
   };
-  const startedChatExists = (draftId: string) => {
-    const id = draftId.startsWith('temporary:') ? draftId.slice('temporary:'.length) : draftId;
-    return usePrototypeStore.getState().chats.some((chat) => chat.id === id);
+  const discardStart = (token: number | null) => {
+    if (token !== null) pendingStartRef.current = discardPendingStart(pendingStartRef.current, token, activeDraftRef.current?.scope);
   };
-  const settleStart = (token: number | null, accepted: boolean) => {
-    if (token === null) return;
-    pendingStartRef.current = settlePendingStart(pendingStartRef.current, token, accepted, {
-      activeScope: activeDraftRef.current?.scope, chatExists: startedChatExists,
-    });
+  const settleStart = (token: number | null) => {
+    if (token !== null) pendingStartRef.current = settlePendingStart(pendingStartRef.current, token);
   };
   const onSelectPreset = (presetId: string, choiceId: string) => {
     settledPresetScopeRef.current = activeDraftRef.current?.scope ?? null;
@@ -4635,7 +4634,7 @@ function ChatView({
 
     activeDraftRef.current = { scope, namespace: draftNamespace, draftId };
     // Reset before hydration opens composer sync, which seeds unsaved drafts from current state.
-    const entered = enterDraftPresets(pendingStartRef.current, { scope, draftId }, messagesRef.current, startedChatExists);
+    const entered = enterDraftPresets(pendingStartRef.current, { scope, draftId }, messagesRef.current);
     pendingStartRef.current = entered.pending;
     setDraftPresets(entered.presets.presets);
     settledPresetScopeRef.current = entered.presets.settled ? scope : null;
@@ -5417,7 +5416,7 @@ function ChatView({
           return onSend(
             submittedDraft.input,
             submittedDraft.attachments,
-            { presetSelections, agentEnabled: activeAgentEnabled, temporary, autoExpire, usedDictation: submittedDraft.usedDictation },
+            { presetSelections, agentEnabled: activeAgentEnabled, temporary, autoExpire, usedDictation: submittedDraft.usedDictation, onStartDiscarded: () => discardStart(startToken) },
             async () => {
               const prepared = await Promise.all(submittedDraft.attachments.map(uploadOne));
               if (prepared.some((attachment) => attachment === null)) {
@@ -5444,7 +5443,7 @@ function ChatView({
         restore: restoreSubmittedDraft,
         complete: async (revision) => { await composerSync?.completeSubmission(sharedDraftId, sharedComposerState, revision ?? undefined); },
       });
-      settleStart(startToken, accepted);
+      settleStart(startToken);
       if (!accepted) {
         if (followSnapshot) restoreSubmittedTurnFollow(followSnapshot);
         followSnapshot = null;
@@ -5461,7 +5460,7 @@ function ChatView({
         attachmentDraftOwnersRef.current.delete(attachment.localId);
       }
     } catch (error) {
-      settleStart(startToken, false);
+      settleStart(startToken);
       if (followSnapshot) restoreSubmittedTurnFollow(followSnapshot);
       Alert.alert('Couldn’t send message', error instanceof Error ? error.message : 'Your complete draft was restored. Please try again.');
     } finally {
@@ -5474,11 +5473,11 @@ function ChatView({
     if (isDictationBusy()) return;
     const followSnapshot = armSubmittedTurnFollow();
     const startToken = beginStart(captureStartingPresets());
-    void onSend(message, [], { presetSelections, agentEnabled: activeAgentEnabled, temporary, autoExpire }).then((accepted) => {
-      settleStart(startToken, accepted);
+    void onSend(message, [], { presetSelections, agentEnabled: activeAgentEnabled, temporary, autoExpire, onStartDiscarded: () => discardStart(startToken) }).then((accepted) => {
+      settleStart(startToken);
       if (!accepted) restoreSubmittedTurnFollow(followSnapshot);
     }).catch((error) => {
-      settleStart(startToken, false);
+      settleStart(startToken);
       restoreSubmittedTurnFollow(followSnapshot);
       Alert.alert('Couldn’t send message', error instanceof Error ? error.message : undefined);
     });

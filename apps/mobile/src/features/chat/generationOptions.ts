@@ -45,40 +45,36 @@ export interface PendingStart {
   state: DraftPresets
   /** The draft of the chat the send opened, entered right after submission. */
   started?: { scope: string; draftId: string }
-  /** Rejected and discarded while still open: the next entry may restore it. */
+  /** Discarded by a rejection while still open: the next entry may restore it. */
   rejected?: boolean
 }
 
 /**
  * Presets for a draft being opened: its chat's history, else defaults. Only
  * the entry that follows a rejected start's discard returns the new-chat draft
- * to the choices it was sent with. The discard is detected here as well, since
- * that return can render before the rejection settles.
+ * to the choices it was sent with.
  */
 export function enterDraftPresets(
   pending: PendingStart | null,
   entering: { scope: string; draftId: string },
   messages: Parameters<typeof chatGenerationSelections>[0],
-  chatExists: (draftId: string) => boolean,
 ): { presets: DraftPresets; pending: PendingStart | null } {
-  const discarded = Boolean(pending && (pending.rejected || (pending.started && !chatExists(pending.started.draftId))))
-  if (pending && discarded && entering.scope === pending.scope) return { presets: pending.state, pending: null }
+  if (pending?.rejected && entering.scope === pending.scope) return { presets: pending.state, pending: null }
   const fromHistory = chatGenerationSelections(messages)
   const presets = { presets: fromHistory, settled: Object.keys(fromHistory).length > 0 }
-  if (!pending || discarded) return { presets, pending: null }
+  if (!pending || pending.rejected) return { presets, pending: null }
   return { presets, pending: !pending.started && entering.scope !== pending.scope ? { ...pending, started: entering } : pending }
 }
 
-/** Accepted starts own their presets; a rejection is restorable only if it discarded the chat the user is still on. */
-export function settlePendingStart(
-  pending: PendingStart | null,
-  token: number,
-  accepted: boolean,
-  context: { activeScope: string | undefined; chatExists: (draftId: string) => boolean },
-): PendingStart | null {
-  if (!pending || pending.token !== token) return pending
-  if (accepted || !pending.started || context.activeScope !== pending.started.scope || context.chatExists(pending.started.draftId)) return null
+/** Reported synchronously as a rejection discards the started chat, before navigation returns the user. */
+export function discardPendingStart(pending: PendingStart | null, token: number, activeScope: string | undefined): PendingStart | null {
+  if (!pending || pending.token !== token || !pending.started || activeScope !== pending.started.scope) return pending
   return { ...pending, rejected: true }
+}
+
+/** Once a send settles, only a discarded start stays, awaiting its return. */
+export function settlePendingStart(pending: PendingStart | null, token: number): PendingStart | null {
+  return !pending || pending.token !== token || pending.rejected ? pending : null
 }
 
 /** Record one explicit choice as the account default, keeping the model's other saved choices. */
