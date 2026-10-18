@@ -249,7 +249,7 @@ import {
   restoreLatestDraft,
   stagedTranscriptAttachments,
 } from '../features/chat/optimisticAttachmentSend';
-import { generationSummary, resolveGenerationSelections, type GenerationSelections } from '../features/chat/generationOptions';
+import { chatGenerationSelections, discardPendingStart, enterDraftPresets, generationDefaultsWithChoice, settlePendingStart, type PendingStart, generationSummary, resolveGenerationSelections, type GenerationSelections } from '../features/chat/generationOptions';
 import { composerGenerationAction, selectedAssistantStatus, selectedInFlightResponseId } from '../features/chat/generationControls';
 import {
   cacheComposerDraft,
@@ -593,12 +593,15 @@ type Message = {
   branches?: ResponseBranch[];
   activeBranch?: number;
   agentMode?: boolean;
+  presetSelections?: GenerationSelections;
 };
 type Chat = { id: string; title: string; modelId: string; time: string; section: string; messages: Message[] };
 type SendOptions = {
   presetSelections: GenerationSelections; agentEnabled: boolean; temporary: boolean; autoExpire: boolean;
   /** Dictation produced some of the message text (analytics only). */
   usedDictation?: boolean;
+  /** Called synchronously when a rejection discards the chat this send started, before leaving it. */
+  onStartDiscarded?: () => void;
 };
 type PrepareAttachments = () => Promise<PreparedAttachment[]>;
 
@@ -682,6 +685,7 @@ function prototypeMessageToLegacy(message: PrototypeMessage, chatId: string, cha
     branches: message.branches,
     activeBranch: message.activeBranch,
     agentMode: message.agentMode,
+    presetSelections: message.presetSelections,
   };
   legacyMessageCache.set(message, { chatId, chatModelId, value });
   return value;
@@ -2416,20 +2420,14 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     Haptics.selectionAsync();
   }, []);
 
-  const selectPreset = useCallback((presetId: string, choiceId: string) => {
-    const store = usePreferencesStore.getState();
-    const generation = store.generation;
-    const next = {
-      ...generation,
-      [selectedModelId]: { ...generation[selectedModelId], [presetId]: choiceId },
-    };
+  const savePresetDefault = useCallback((modelId: string, presetId: string, choiceId: string) => {
+    const next = generationDefaultsWithChoice(usePreferencesStore.getState().generation, modelId, presetId, choiceId);
     runProductionAction(productionActions.setPreference('generation', next), {
       onError: (error) => {
         useRealtimeStore.getState().setSyncError(error instanceof Error ? error.message : 'The preset choice could not be synced.');
       },
     });
-    Haptics.selectionAsync();
-  }, [selectedModelId]);
+  }, []);
 
   const sendMessage = async (
     value = input,
@@ -2514,6 +2512,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
       status: 'queued',
       outputItems: [],
       agentMode,
+      presetSelections: selections,
     });
     activeResponseId.current = responseId;
     setAssistantStatus('thinking');
@@ -2616,6 +2615,8 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
       activeResponseSubscription.current?.();
       activeResponseSubscription.current = null;
       setAssistantStatus('idle');
+      // Must run before the chat is removed and navigation returns, so ChatView can restore the draft's presets.
+      if (!activeChat && !serverChatCreated) options?.onStartDiscarded?.();
       if (productionNamespace) {
         rejectOptimisticTurn({
           queryClient,
@@ -2842,7 +2843,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
             composerFocusSuppressed={composerFocusSuppressed}
             composerFocusRequest={composerFocusRequest}
             onChangeInput={setInput}
-            onSelectPreset={selectPreset}
+            onSavePresetDefault={savePresetDefault}
             onSend={sendMessage}
             onRemoteChatStarted={openStartedChat}
             onStop={stopGeneration}
@@ -4162,7 +4163,7 @@ function ComposerQueueSection({ title, subject, visible, collapsed, onToggle, fa
 
 function ChatView({
   acceptIncomingFiles, messages, queuedMessages, chatId, chatLoaded, onTranscriptReady, openingChatId, draftNamespace, keyboardLayoutEnabled, transcriptTransitionActive, model, models, prototypeModel, presetSelections: defaultPresetSelections, input, composerInputRef, composerFocusSuppressed, composerFocusRequest, onChangeInput, onSend, onRemoteChatStarted, assistantStatus,
-  onEdit, onRegenerate, onActivateBranch, onOpenChat, onStop, onTogglePanel, onSelectModel, onNewChat, onSaveTemporary, persistentSidebar, sidebarVisible, temporary, autoExpire, expirationPeriod, showAutoExpirationControl, expired, savingTemporary, onTemporaryChange, onAutoExpirationChange,
+  onEdit, onRegenerate, onActivateBranch, onOpenChat, onStop, onTogglePanel, onSelectModel, onSavePresetDefault, onNewChat, onSaveTemporary, persistentSidebar, sidebarVisible, temporary, autoExpire, expirationPeriod, showAutoExpirationControl, expired, savingTemporary, onTemporaryChange, onAutoExpirationChange,
 }: {
   acceptIncomingFiles: boolean;
   messages: Message[];
@@ -4195,7 +4196,8 @@ function ChatView({
   persistentSidebar: boolean;
   sidebarVisible: boolean;
   onSelectModel: (model: Model) => void;
-  onSelectPreset: (presetId: string, choiceId: string) => void;
+  /** Saves an explicit new-chat choice as the account's default for that model. */
+  onSavePresetDefault: (modelId: string, presetId: string, choiceId: string) => void;
   onNewChat: () => void;
   onSaveTemporary: () => void;
   temporary: boolean;
@@ -4211,9 +4213,53 @@ function ChatView({
   const queueClient = useQueryClient();
   const [queueBusy, setQueueBusy] = useState(false);
   const queueEditRef = useRef<{ id: string; chatId: string; namespace: string; model: Model; presets: Record<string, GenerationSelections> } | null>(null);
+  // Choices belong to the open draft. Each draft starts from its chat's latest
+  // turns, then account defaults; a shared draft or an explicit choice wins.
   const [draftPresets, setDraftPresets] = useState<Record<string, GenerationSelections>>({});
   const presetSelections = resolveGenerationSelections(prototypeModel, draftPresets[model.id] ?? defaultPresetSelections);
-  const onSelectPreset = (presetId: string, choiceId: string) => setDraftPresets((current) => ({ ...current, [model.id]: { ...presetSelections, [presetId]: choiceId } }));
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
+  const draftPresetsRef = useRef(draftPresets);
+  draftPresetsRef.current = draftPresets;
+  /** The draft scope whose presets are settled, so late-loading history no longer reseeds them. */
+  const settledPresetScopeRef = useRef<string | null>(null);
+  /** Explicit choices this session, per draft and model. History fills in other models but never replaces these. */
+  const chosenPresetsRef = useRef(new Map<string, Record<string, GenerationSelections>>());
+  /** A new-chat draft's pending first send, so a rejected start can return to its choices. */
+  const pendingStartRef = useRef<PendingStart | null>(null);
+  const startTokenRef = useRef(0);
+  // Refs only below: memoized submit callbacks may hold an older render's closure.
+  const captureStartingPresets = () => {
+    const active = activeDraftRef.current;
+    if (!active || (active.draftId !== localComposerDraftId(null, false) && active.draftId !== localComposerDraftId(null, true))) return null;
+    return { scope: active.scope, state: { presets: draftPresetsRef.current, settled: settledPresetScopeRef.current === active.scope } };
+  };
+  const beginStart = (starting: ReturnType<typeof captureStartingPresets>) => {
+    if (!starting) return null;
+    const token = ++startTokenRef.current;
+    pendingStartRef.current = { token, ...starting };
+    return token;
+  };
+  const discardStart = (token: number | null) => {
+    if (token !== null) pendingStartRef.current = discardPendingStart(pendingStartRef.current, token, activeDraftRef.current?.scope);
+  };
+  const settleStart = (token: number | null) => {
+    if (token !== null) pendingStartRef.current = settlePendingStart(pendingStartRef.current, token);
+  };
+  const onSelectPreset = (presetId: string, choiceId: string) => {
+    const scope = activeDraftRef.current?.scope ?? null;
+    const selections = { ...presetSelections, [presetId]: choiceId };
+    // A queue edit's choices belong to the queued message; restoreComposer puts the draft's back.
+    if (!queueEditRef.current) {
+      settledPresetScopeRef.current = scope;
+      // Chats only: new-chat drafts start fresh like web.
+      if (scope && chatId) chosenPresetsRef.current.set(scope, { ...chosenPresetsRef.current.get(scope), [model.id]: selections });
+    }
+    setDraftPresets((current) => ({ ...current, [model.id]: selections }));
+    // Match web: regular new-chat choices become model defaults; existing and temporary chats stay scoped.
+    if (!chatId && !temporary && !handoffBusyRef.current) onSavePresetDefault(model.id, presetId, choiceId);
+    Haptics.selectionAsync();
+  };
   const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
   const { reduceMotion, reduceTransparency } = useAccessibilityPreferences();
@@ -4597,6 +4643,11 @@ function ChatView({
     }
 
     activeDraftRef.current = { scope, namespace: draftNamespace, draftId };
+    // Reset before hydration opens composer sync, which seeds unsaved drafts from current state.
+    const entered = enterDraftPresets(pendingStartRef.current, { scope, draftId }, messagesRef.current);
+    pendingStartRef.current = entered.pending;
+    setDraftPresets({ ...entered.presets.presets, ...chosenPresetsRef.current.get(scope) });
+    settledPresetScopeRef.current = entered.presets.settled ? scope : null;
     usedDictationRef.current = false;
     hydratedDraftScopeRef.current = null;
     draftLoadRevisionRef.current += 1;
@@ -4644,6 +4695,16 @@ function ChatView({
     });
   }, [activeDraftSnapshot, chatId, temporary, draftNamespace, onChangeInput, placeComposerCursorAtEnd, setAttachments]);
 
+  // An uncached chat's history can arrive after its draft opens; adopt its presets until something settles them.
+  useEffect(() => {
+    const scope = activeDraftRef.current?.scope;
+    if (!scope || settledPresetScopeRef.current === scope || messageEdit) return;
+    const seeded = chatGenerationSelections(messages);
+    if (!Object.keys(seeded).length) return;
+    settledPresetScopeRef.current = scope;
+    setDraftPresets({ ...seeded, ...chosenPresetsRef.current.get(scope) });
+  }, [messageEdit, messages]);
+
   const sharedComposerState: ComposerState = {
     content: preservedComposerRef.current?.input ?? input,
     attachments: (preservedComposerRef.current?.attachments ?? attachments)
@@ -4681,6 +4742,11 @@ function ChatView({
         setAttachments(next);
         setAgentEnabled(remote.agentMode);
         if (remote.model) {
+          const scope = activeDraftRef.current?.scope ?? null;
+          settledPresetScopeRef.current = scope;
+          // The synced draft replaced an explicit choice; remember what the user now sees.
+          const chosen = scope ? chosenPresetsRef.current.get(scope) : undefined;
+          if (scope && chosen?.[remote.model.id]) chosenPresetsRef.current.set(scope, { ...chosen, [remote.model.id]: remote.model.presets });
           setDraftPresets((current) => ({ ...current, [remote.model!.id]: remote.model!.presets }));
           const selected = models.find((candidate) => candidate.id === remote.model!.id);
           if (selected && selected.id !== model.id) onSelectModel(selected);
@@ -4690,6 +4756,8 @@ function ChatView({
         }
       }
     }, Boolean(messageEdit),
+    // Another client's draft already chose presets, even when they match ours; history must not replace them.
+    () => { settledPresetScopeRef.current = activeDraftRef.current?.scope ?? null; },
   );
 
   useEffect(() => {
@@ -5309,6 +5377,8 @@ function ChatView({
     sendingRef.current = true;
     setSending(true);
     let followSnapshot: ChatFollowSnapshot | null = null;
+    const starting = captureStartingPresets();
+    let startToken: number | null = null;
     const submittedDraft = { input, attachments: [...attachments], agentEnabled: activeAgentEnabled, usedDictation: usedDictationRef.current };
     const submittedDraftIdentity = activeDraftRef.current;
     const restoreSubmittedDraft = () => {
@@ -5356,10 +5426,11 @@ function ChatView({
         send: () => {
           // Arm before onSend inserts its optimistic rows.
           if (!shouldQueueMessage(assistantStatus !== 'idle', queuedMessages.length)) followSnapshot = armSubmittedTurnFollow();
+          startToken = beginStart(starting);
           return onSend(
             submittedDraft.input,
             submittedDraft.attachments,
-            { presetSelections, agentEnabled: activeAgentEnabled, temporary, autoExpire, usedDictation: submittedDraft.usedDictation },
+            { presetSelections, agentEnabled: activeAgentEnabled, temporary, autoExpire, usedDictation: submittedDraft.usedDictation, onStartDiscarded: () => discardStart(startToken) },
             async () => {
               const prepared = await Promise.all(submittedDraft.attachments.map(uploadOne));
               if (prepared.some((attachment) => attachment === null)) {
@@ -5386,6 +5457,7 @@ function ChatView({
         restore: restoreSubmittedDraft,
         complete: async (revision) => { await composerSync?.completeSubmission(sharedDraftId, sharedComposerState, revision ?? undefined); },
       });
+      settleStart(startToken);
       if (!accepted) {
         if (followSnapshot) restoreSubmittedTurnFollow(followSnapshot);
         followSnapshot = null;
@@ -5402,6 +5474,7 @@ function ChatView({
         attachmentDraftOwnersRef.current.delete(attachment.localId);
       }
     } catch (error) {
+      settleStart(startToken);
       if (followSnapshot) restoreSubmittedTurnFollow(followSnapshot);
       Alert.alert('Couldn’t send message', error instanceof Error ? error.message : 'Your complete draft was restored. Please try again.');
     } finally {
@@ -5413,9 +5486,12 @@ function ChatView({
   const submitSuggestion = useCallback((message: string) => {
     if (isDictationBusy()) return;
     const followSnapshot = armSubmittedTurnFollow();
-    void onSend(message, [], { presetSelections, agentEnabled: activeAgentEnabled, temporary, autoExpire }).then((accepted) => {
+    const startToken = beginStart(captureStartingPresets());
+    void onSend(message, [], { presetSelections, agentEnabled: activeAgentEnabled, temporary, autoExpire, onStartDiscarded: () => discardStart(startToken) }).then((accepted) => {
+      settleStart(startToken);
       if (!accepted) restoreSubmittedTurnFollow(followSnapshot);
     }).catch((error) => {
+      settleStart(startToken);
       restoreSubmittedTurnFollow(followSnapshot);
       Alert.alert('Couldn’t send message', error instanceof Error ? error.message : undefined);
     });

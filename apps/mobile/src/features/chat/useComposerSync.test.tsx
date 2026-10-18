@@ -198,3 +198,76 @@ describe('mobile temporary composer isolation', () => {
     expect(f.state()).toMatchObject({ temporary: false, content: 'shared draft' })
   })
 })
+
+describe('mobile composer draft opening', () => {
+  async function open(server: ComposerSnapshot, local: ComposerState) {
+    const sync = new ComposerSync({ load: async () => null, save: async () => {} }, 'phone')
+    coordinator.current = sync
+    sync.connect({
+      read: async () => ({ ok: true, snapshot: server }),
+      write: async (input) => {
+        server = { ...server, revision: server.revision + 1, mutationId: input.mutationId, state: { ...server.state, ...input.patch } }
+        return { ok: true, snapshot: server }
+      },
+    })
+    const shared = vi.fn()
+    function Composer() {
+      const [value, update] = useState(local)
+      useComposerSync('user', 'chat', value, true, false, update, false, shared)
+      return null
+    }
+    container = document.createElement('div')
+    document.body.append(container)
+    root = createRoot(container)
+    await act(async () => root!.render(createElement(Composer)))
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
+    return shared
+  }
+  const model = { id: 'model', presets: { effort: 'low' } }
+
+  it('reports another client\'s model choice even when it matches local controls', async () => {
+    const shared = await open({ draftId: 'chat', revision: 2, clearedRevision: 0, mutationId: 'web:4', state: { ...emptyComposerState(), model } },
+      { ...emptyComposerState(), model })
+    expect(shared).toHaveBeenCalled()
+  })
+
+  it('does not report a model this client seeded into an unsaved draft', async () => {
+    const shared = await open({ draftId: 'chat', revision: 0, clearedRevision: 0, mutationId: null, state: emptyComposerState() },
+      { ...emptyComposerState(), model })
+    expect(shared).not.toHaveBeenCalled()
+  })
+
+  it('keeps controls changed while the local draft loads', async () => {
+    let release!: () => void
+    const loaded = new Promise<null>((resolve) => { release = () => resolve(null) })
+    let server: ComposerSnapshot = { draftId: 'chat', revision: 0, clearedRevision: 0, mutationId: null, state: emptyComposerState() }
+    const sync = new ComposerSync({ load: () => loaded, save: async () => {} }, 'phone')
+    coordinator.current = sync
+    sync.connect({
+      read: async () => ({ ok: true, snapshot: server }),
+      write: async (input) => {
+        server = { ...server, revision: server.revision + 1, mutationId: input.mutationId, state: { ...server.state, ...input.patch } }
+        return { ok: true, snapshot: server }
+      },
+    })
+    let state!: ComposerState
+    let setState!: (state: ComposerState) => void
+    function Composer() {
+      const [value, update] = useState<ComposerState>({ ...emptyComposerState(), model: { id: 'model', presets: { effort: 'low' } } })
+      state = value
+      setState = update
+      useComposerSync('user', 'chat', value, true, false, update)
+      return null
+    }
+    container = document.createElement('div')
+    document.body.append(container)
+    root = createRoot(container)
+    await act(async () => root!.render(createElement(Composer)))
+    // Chat history arrives and seeds its presets before storage resolves.
+    await act(async () => setState({ ...state, model: { id: 'model', presets: { effort: 'high' } } }))
+    await act(async () => { release(); await loaded })
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
+    expect(state.model).toEqual({ id: 'model', presets: { effort: 'high' } })
+    expect(server.state.model).toEqual({ id: 'model', presets: { effort: 'high' } })
+  })
+})

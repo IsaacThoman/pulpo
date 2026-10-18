@@ -20,6 +20,73 @@ export function resolveGenerationSelections(
   }))
 }
 
+/** Each model's choices from its newest assistant turn, so a chat reopens with the controls it last used. */
+export function chatGenerationSelections(
+  messages: readonly { role: string; modelId?: string; presetSelections?: GenerationSelections }[],
+): Record<string, GenerationSelections> {
+  const selections: Record<string, GenerationSelections> = {}
+  for (const message of messages) {
+    if (message.role === 'assistant' && message.modelId && message.presetSelections) selections[message.modelId] = message.presetSelections
+  }
+  return selections
+}
+
+export interface DraftPresets {
+  presets: Record<string, GenerationSelections>
+  /** History no longer reseeds a settled draft; a shared draft or an explicit choice decided it. */
+  settled: boolean
+}
+
+/** A new-chat draft's first send that has not yet been accepted. */
+export interface PendingStart {
+  token: number
+  /** The new-chat draft the send left, and the choices it was submitted with. */
+  scope: string
+  state: DraftPresets
+  /** The draft of the chat the send opened, entered right after submission. */
+  started?: { scope: string; draftId: string }
+  /** Discarded by a rejection while still open: the next entry may restore it. */
+  rejected?: boolean
+}
+
+/**
+ * Presets for a draft being opened: its chat's history, else defaults. Only
+ * the entry that follows a rejected start's discard returns the new-chat draft
+ * to the choices it was sent with.
+ */
+export function enterDraftPresets(
+  pending: PendingStart | null,
+  entering: { scope: string; draftId: string },
+  messages: Parameters<typeof chatGenerationSelections>[0],
+): { presets: DraftPresets; pending: PendingStart | null } {
+  if (pending?.rejected && entering.scope === pending.scope) return { presets: pending.state, pending: null }
+  const fromHistory = chatGenerationSelections(messages)
+  const presets = { presets: fromHistory, settled: Object.keys(fromHistory).length > 0 }
+  if (!pending || pending.rejected) return { presets, pending: null }
+  return { presets, pending: !pending.started && entering.scope !== pending.scope ? { ...pending, started: entering } : pending }
+}
+
+/** Reported synchronously as a rejection discards the started chat, before navigation returns the user. */
+export function discardPendingStart(pending: PendingStart | null, token: number, activeScope: string | undefined): PendingStart | null {
+  if (!pending || pending.token !== token || !pending.started || activeScope !== pending.started.scope) return pending
+  return { ...pending, rejected: true }
+}
+
+/** Once a send settles, only a discarded start stays, awaiting its return. */
+export function settlePendingStart(pending: PendingStart | null, token: number): PendingStart | null {
+  return !pending || pending.token !== token || pending.rejected ? pending : null
+}
+
+/** Record one explicit choice as the account default, keeping the model's other saved choices. */
+export function generationDefaultsWithChoice(
+  generation: Record<string, GenerationSelections>,
+  modelId: string,
+  presetId: string,
+  choiceId: string,
+): Record<string, GenerationSelections> {
+  return { ...generation, [modelId]: { ...generation[modelId], [presetId]: choiceId } }
+}
+
 export function generationSummary(
   model: PrototypeModel | undefined,
   selections: GenerationSelections,
