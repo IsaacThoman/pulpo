@@ -137,6 +137,19 @@ describe('the drawer as the web sidebar', () => {
     ])
   })
 
+  it('says so when an open folder’s files and folders can’t load, above the chats it has', () => {
+    const tree = build({
+      chats: [chat('in-work', { folderId: 'work' })],
+      listings: new Map([[CHATS, [node('work')]]]),
+      unavailable: new Map([['work', 'offline']]),
+      expanded: new Set(['work']),
+    })
+    expect(outline(tree.sections)).toEqual([['Chats', ['folder:work@0', 'empty:Not available offline@1', 'chat:in-work@1']]])
+    // Still loading, the chats show on their own.
+    const loading = build({ chats: [chat('in-work', { folderId: 'work' })], listings: new Map([[CHATS, [node('work')]]]), expanded: new Set(['work']) })
+    expect(outline(loading.sections)).toEqual([['Chats', ['folder:work@0', 'chat:in-work@1']]])
+  })
+
   it('says so when the top level can’t load, instead of leaving its folders out silently', () => {
     const offline = build({ chats: [chat('loose')], unavailable: new Map([[CHATS, 'offline']]) })
     expect(outline(offline.sections)).toEqual([['Chats', ['empty:Your folders aren’t available offline@0', 'chat:loose@0']]])

@@ -3,6 +3,8 @@ import { queryOptions, useQueries, useQuery, useQueryClient, type QueryClient, t
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { isNetworkError } from '../../api/client'
 import { getValue, pendingOutbox, setValue } from '../../data/database'
+import { usePrototypeStore } from '../../mockup5/src/store/prototypeStore'
+import { topChatSortOrder, visibleHistoryChats } from '../chat/history'
 import { fetchSidebarItems, fetchSidebarState } from './api'
 import type { SidebarUnavailable } from './tree'
 
@@ -70,17 +72,27 @@ function withPendingState(state: SidebarState | null, pending: readonly PendingF
   }
 }
 
-/** Adds this folder's pending folders at its top, as the server will put them. `root`: the Chats folder. */
-function withPendingItems(items: FileNode[], folderId: string, root: boolean, pending: readonly PendingFolder[]): FileNode[] {
+/**
+ * Adds this folder's pending folders at its top, above its chats and items, as the server will put
+ * them (the newest first). `root`: the Chats folder. `chats`: the account's, for their places.
+ */
+export function withPendingItems(
+  items: FileNode[],
+  folderId: string,
+  root: boolean,
+  pending: readonly PendingFolder[],
+  chats: Parameters<typeof topChatSortOrder>[0],
+): FileNode[] {
   const missing = pending.filter((folder) => (folder.parentId === null ? root : folder.parentId === folderId) && !items.some((item) => item.id === folder.id))
   if (!missing.length) return items
-  const top = items.reduce((min, item) => Math.min(min, item.sortOrder ?? 0), 0)
+  const floor = items.length ? Math.min(...items.map((item) => item.sortOrder ?? 0)) : undefined
+  const top = topChatSortOrder(chats, root ? null : folderId, { floor })
   return [
     ...missing.map((folder, index): FileNode => {
       const at = new Date(folder.createdAt).toISOString()
       return {
         id: folder.id, parentId: folderId, kind: 'folder', name: folder.name, status: 'ready', mimeType: null, sizeBytes: 0, revision: 0,
-        trashedAt: null, createdAt: at, updatedAt: at, systemRole: null, sortOrder: top - missing.length + index, pinned: false,
+        trashedAt: null, createdAt: at, updatedAt: at, systemRole: null, sortOrder: top - index, pinned: false,
       }
     }),
     ...items,
@@ -113,7 +125,7 @@ export function sidebarItemsQuery(namespace: string, folderId: string, root = fa
         if (!(await pendingSidebarFolders(namespace)).some((folder) => folder.id === folderId)) throw error
         items = []
       }
-      return withPendingItems(items, folderId, root, await pendingSidebarFolders(namespace))
+      return withPendingItems(items, folderId, root, await pendingSidebarFolders(namespace), visibleHistoryChats(usePrototypeStore.getState().chats))
     },
     staleTime: 30_000,
   })

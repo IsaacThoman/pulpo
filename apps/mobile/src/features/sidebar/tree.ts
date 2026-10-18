@@ -153,16 +153,21 @@ export function buildSidebarTree(input: SidebarTreeInput): SidebarTree {
       rows.push({ type: 'folder', key, depth, node, folderId, expansionKey, expanded: open, chatCount: chats.length, ...entry.legacy ? { legacy: true } : {} })
       if (!open) continue
       let items: readonly FileNode[] = []
-      let label = 'Empty'
+      let missing: SidebarUnavailable | 'loading' | null = null
       if (!entry.legacy) {
         need(folderId)
         const listing = listings.get(folderId)
         items = visible(listing)
-        if (!listing) label = UNAVAILABLE_LABELS[input.unavailable?.get(folderId) ?? 'loading']
+        if (!listing) missing = input.unavailable?.get(folderId) ?? 'loading'
       }
       const contents = entries(chats, items, false)
-      if (contents.length) emit(contents, depth + 1, [...path, folderId], key, rows)
-      else rows.push({ type: 'empty', key: `${key}/empty`, depth: depth + 1, label })
+      if (!contents.length) {
+        rows.push({ type: 'empty', key: `${key}/empty`, depth: depth + 1, label: missing ? UNAVAILABLE_LABELS[missing] : 'Empty' })
+        continue
+      }
+      // Its chats are on the device, but its folders and files are missing: say so above them.
+      if (missing && missing !== 'loading') rows.push({ type: 'empty', key: `${key}/unavailable`, depth: depth + 1, label: UNAVAILABLE_LABELS[missing] })
+      emit(contents, depth + 1, [...path, folderId], key, rows)
     }
   }
 

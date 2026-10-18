@@ -185,7 +185,10 @@ The follow-up that made the drawer the web's sidebar (#846) was checked against 
 - A folder created offline:
   - showed at once;
   - survived a relaunch while offline;
+  - stayed in place through the reconnect;
   - was created once after reconnecting.
+- A folder created offline inside another folder created offline showed nested, and both reached the server once, nested.
+- A folder name containing "/" was refused with a message before anything changed.
 - With Files turned off:
   - the Files row and the documents left the drawer, while folders and shortcuts to folders or chats stayed;
   - menus lost Open in Files and Move to Archive, and trashing became **Delete**;
@@ -198,6 +201,22 @@ The follow-up that made the drawer the web's sidebar (#846) was checked against 
 - the heading menu: New document, Upload, Sort by, and Open in Files. Switching to Recent and back worked;
 - **New folder** (confirmed on the server);
 - **Move to archive** in the chat menu.
+
+**Audits.** Four rounds of independent review found 30 issues:
+- Round 1: 10. One claim, that **Other folder…** never opens on iOS, was disproved on the simulator.
+- Round 2: 9.
+- Round 3: 6.
+- Round 4: 3.
+
+Every finding confirmed by reading the code was fixed, with a test that fails without the fix. Among them:
+- Older servers are told where a moved or unpinned chat goes.
+- Undo is offered only once an archive has reached the server.
+- Chats and items at the top of My files are handled where they are.
+- Names are checked before anything is shown or queued.
+- Folders created offline are listed from the outbox until the server has them: nested, opened, across relaunches and refetches, and above the chats.
+- Folders and the top level say when their contents can't load.
+- Shortcuts that would open into themselves open in Files.
+- Toasts and sheets don't outlive an account switch.
 
 ## Audits
 

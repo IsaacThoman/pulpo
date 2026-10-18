@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   fetchSidebarItems: vi.fn(),
   kept: new Map<string, unknown>(),
   outbox: [] as Array<{ method: string; path: string; body: string | null; createdAt: number }>,
+  chats: [] as Array<Record<string, unknown>>,
 }))
 
 vi.mock('../../api/client', () => ({ isNetworkError: (error: unknown) => (error as { network?: boolean } | null)?.network === true }))
@@ -17,8 +18,9 @@ vi.mock('../../data/database', () => ({
   pendingOutbox: async () => mocks.outbox,
 }))
 vi.mock('./api', () => ({ fetchSidebarState: mocks.fetchSidebarState, fetchSidebarItems: mocks.fetchSidebarItems }))
+vi.mock('../../mockup5/src/store/prototypeStore', () => ({ usePrototypeStore: { getState: () => ({ chats: mocks.chats }) } }))
 
-const { sidebarItemsQuery, sidebarStateQuery, sidebarUnavailable } = await import('./queries')
+const { sidebarItemsQuery, sidebarStateQuery, sidebarUnavailable, withPendingItems } = await import('./queries')
 
 const NAMESPACE = 'https://pulpo.test|a'
 const state = { chatsFolderId: 'chats', archiveFolderId: 'archive', folders: [], pinnedItems: [] } satisfies SidebarState
@@ -27,6 +29,7 @@ let client: QueryClient
 beforeEach(() => {
   mocks.kept.clear()
   mocks.outbox = []
+  mocks.chats = []
   mocks.fetchSidebarState.mockReset()
   mocks.fetchSidebarItems.mockReset()
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -86,6 +89,16 @@ describe('the sidebar queries', () => {
     expect((await new QueryClient().fetchQuery(sidebarItemsQuery(NAMESPACE, 'chats', true))).map((item) => item.id)).toEqual(['top'])
     mocks.fetchSidebarItems.mockRejectedValue({ network: true })
     expect((await new QueryClient().fetchQuery(sidebarItemsQuery(NAMESPACE, 'work'))).map((item) => item.id)).toEqual(['inner', 'doc'])
+  })
+
+  it('put folders created offline above the folder’s chats too, the newest first, as the server will', () => {
+    const chat = (id: string, folderId: string | null, sortOrder: number) => ({ id, folderId, sortOrder, pinned: false, createdAt: 1 })
+    const pending = [
+      { id: 'older', parentId: null, name: 'Older', createdAt: 1 },
+      { id: 'newer', parentId: null, name: 'Newer', createdAt: 2 },
+    ]
+    const placed = withPendingItems([{ id: 'doc', sortOrder: -5 } as never], 'chats', true, pending, [chat('top-chat', null, -30), chat('filed', 'work', -90)])
+    expect(placed.map((item) => [item.id, item.sortOrder])).toEqual([['older', -31], ['newer', -32], ['doc', -5]])
   })
 
   it('open a folder still waiting to be created, with the folders created in it meanwhile', async () => {
