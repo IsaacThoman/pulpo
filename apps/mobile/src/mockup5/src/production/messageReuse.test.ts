@@ -27,4 +27,11 @@ describe('reuseProjectedMessages', () => {
     expect(next[0]).not.toBe(previous[0])
     expect(next[0]?.latencyMs).toBe(1_250)
   })
+
+  it('publishes preset choices missing from a cached row, and reuses equal ones', () => {
+    const previous = [message('one', 'done')]
+    const next = reuseProjectedMessages(previous, [{ ...message('one', 'done'), presetSelections: { effort: 'high' } }])
+    expect(next[0]?.presetSelections).toEqual({ effort: 'high' })
+    expect(reuseProjectedMessages(next, [{ ...message('one', 'done'), presetSelections: { effort: 'high' } }])).toBe(next)
+  })
 })

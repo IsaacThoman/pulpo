@@ -46,6 +46,8 @@ export interface DisplayMessage {
   branch: { ids: string[]; index: number; variants: DisplayBranch[] }
   error?: string
   agentMode: boolean
+  /** Generation preset choices the assistant turn was requested with. */
+  presetSelections?: Record<string, string>
   usage?: { inputTokens: number; outputTokens: number } | null
   outputItems: unknown[]
 }
@@ -251,7 +253,7 @@ export function createChatProjector() {
           ...response.branches.assistant,
           variants: branchVariants(byId, response.branches.assistant.ids, 'assistant', liveSnapshots),
         },
-        error: errorMessage, agentMode: response.agentMode, usage: response.usage,
+        error: errorMessage, agentMode: response.agentMode, presetSelections: response.presetSelections, usage: response.usage,
         outputItems: output,
       }]
       if (existing && userDependencies.length === existing.userDependencies.length

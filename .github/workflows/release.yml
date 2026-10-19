@@ -56,6 +56,8 @@ jobs:
             command: npm run build
           - name: Lint
             command: npm run lint
+          - name: Docs
+            command: npm run docs:build
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -102,6 +104,10 @@ jobs:
       - name: Validate stable iPhone deployment
         if: matrix.name == 'Test'
         run: python3 apps/mobile/scripts/deploy-iphone_test.py
+
+      - name: Validate TestFlight signing and upload
+        if: matrix.name == 'Test'
+        run: python3 .github/scripts/upload-ios-testflight_test.py
 
   chat-search:
     name: Database integration tests
@@ -315,6 +321,28 @@ jobs:
           npm install --prefix "${smoke_dir}" "${RUNNER_TEMP}/${tarball}"
           "${smoke_dir}/node_modules/.bin/pulpo" --version
           "${smoke_dir}/node_modules/.bin/pulpo" --json settings schema >/dev/null
+
+  keyboard:
+    name: Keyboard / iOS
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.action != 'closed'
+    runs-on: macos-26
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up XcodeGen
+        run: .github/scripts/setup-xcodegen.sh
+
+      - name: Test keyboard scripts and release validation
+        run: python3 -m unittest discover -s apps/keyboard-ios/scripts -p 'test_*.py'
+
+      - name: Test keyboard engine
+        run: npm run keyboard:test
+
+      - name: Build keyboard app for the simulator
+        run: npm run keyboard:build
 
   windows-signing-tools-check:
     name: Windows signing tools
@@ -1267,90 +1295,66 @@ jobs:
           APP_STORE_CONNECT_API_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_API_PRIVATE_KEY }}
           IOS_DEVELOPMENT_CERTIFICATE_P12_BASE64: ${{ secrets.IOS_DEVELOPMENT_CERTIFICATE_P12_BASE64 }}
           IOS_DEVELOPMENT_CERTIFICATE_PASSWORD: ${{ secrets.IOS_DEVELOPMENT_CERTIFICATE_PASSWORD }}
+        run: ../../.github/scripts/upload-ios-testflight.sh -- -workspace ios/Pulpo.xcworkspace -scheme Pulpo
+
+  keyboard-testflight:
+    name: Build and submit Pulpo Keyboard to TestFlight
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      needs.release.outputs.version != ''
+    needs: [release, keyboard]
+    runs-on: macos-26
+    environment: testflight
+    permissions:
+      contents: read
+    concurrency:
+      group: keyboard-testflight-main
+      cancel-in-progress: false
+    defaults:
+      run:
+        working-directory: apps/keyboard-ios
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: v${{ needs.release.outputs.version }}
+
+      - name: Set up XcodeGen
+        run: ../../.github/scripts/setup-xcodegen.sh
+
+      - name: Set iOS version
+        env:
+          RELEASE_VERSION: ${{ needs.release.outputs.version }}
         run: |
           set -euo pipefail
 
-          for variable in \
-            APP_STORE_CONNECT_API_ISSUER_ID \
-            APP_STORE_CONNECT_API_KEY_ID \
-            APP_STORE_CONNECT_API_PRIVATE_KEY \
-            IOS_DEVELOPMENT_CERTIFICATE_P12_BASE64 \
-            IOS_DEVELOPMENT_CERTIFICATE_PASSWORD; do
-            if [[ -z "${!variable}" ]]; then
-              echo "The ${variable} GitHub environment secret is not configured." >&2
-              exit 1
-            fi
-          done
+          build_number="$(date -u +%s)"
 
-          auth_key_path="${RUNNER_TEMP}/AuthKey_${APP_STORE_CONNECT_API_KEY_ID}.p8"
-          certificate_path="${RUNNER_TEMP}/Pulpo-CI.p12"
-          keychain_path="${RUNNER_TEMP}/pulpo-signing.keychain-db"
-          keychain_password="$(openssl rand -base64 32)"
-          trap 'security delete-keychain "${keychain_path}" 2>/dev/null || true; rm -f "${auth_key_path}" "${certificate_path}"' EXIT
-
-          printf '%s' "${APP_STORE_CONNECT_API_PRIVATE_KEY}" > "${auth_key_path}"
-          printf '%s' "${IOS_DEVELOPMENT_CERTIFICATE_P12_BASE64}" | base64 --decode > "${certificate_path}"
-          chmod 600 "${auth_key_path}"
-          chmod 600 "${certificate_path}"
-
-          echo 'Creating temporary signing keychain.'
-          security create-keychain -p "${keychain_password}" "${keychain_path}"
-          security set-keychain-settings -lut 21600 "${keychain_path}"
-          security unlock-keychain -p "${keychain_password}" "${keychain_path}"
-
-          echo 'Importing Apple Development signing identity.'
-          security import "${certificate_path}" \
-            -k "${keychain_path}" \
-            -P "${IOS_DEVELOPMENT_CERTIFICATE_PASSWORD}" \
-            -A \
-            -t cert \
-            -f pkcs12
-
-          if ! security find-identity -v -p codesigning "${keychain_path}" | grep -q 'Apple Development'; then
-            echo 'The imported PKCS#12 does not contain a valid Apple Development signing identity and private key.' >&2
+          if [[ ! "${RELEASE_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Semantic-release produced an invalid version: ${RELEASE_VERSION}" >&2
             exit 1
           fi
 
-          echo 'Configuring signing identity key access.'
-          security set-key-partition-list \
-            -S apple-tool:,apple: \
-            -k "${keychain_password}" \
-            "${keychain_path}"
-          security list-keychains -d user -s "${keychain_path}"
-          security default-keychain -d user -s "${keychain_path}"
+          {
+            echo "PULPO_APP_VERSION=${RELEASE_VERSION}"
+            echo "PULPO_IOS_BUILD_NUMBER=${build_number}"
+          } >> "${GITHUB_ENV}"
 
-          archive_path="${RUNNER_TEMP}/Pulpo.xcarchive"
-          export_options_path="${RUNNER_TEMP}/ExportOptions.plist"
+          echo "Preparing ${RELEASE_VERSION} (${build_number}) for TestFlight."
 
-          echo "Uploading ${PULPO_APP_VERSION} (${PULPO_IOS_BUILD_NUMBER}) to TestFlight."
+      - name: Generate the Xcode project
+        run: xcodegen generate
 
-          xcodebuild \
-            -workspace ios/Pulpo.xcworkspace \
-            -scheme Pulpo \
-            -configuration Release \
-            -destination 'generic/platform=iOS' \
-            -archivePath "${archive_path}" \
-            -allowProvisioningUpdates \
-            -authenticationKeyPath "${auth_key_path}" \
-            -authenticationKeyID "${APP_STORE_CONNECT_API_KEY_ID}" \
-            -authenticationKeyIssuerID "${APP_STORE_CONNECT_API_ISSUER_ID}" \
-            DEVELOPMENT_TEAM=PX72AL9366 \
-            MARKETING_VERSION="${PULPO_APP_VERSION}" \
-            CURRENT_PROJECT_VERSION="${PULPO_IOS_BUILD_NUMBER}" \
-            archive
-
-          /usr/libexec/PlistBuddy -c 'Add :method string app-store-connect' "${export_options_path}"
-          /usr/libexec/PlistBuddy -c 'Add :destination string upload' "${export_options_path}"
-          /usr/libexec/PlistBuddy -c 'Add :signingStyle string automatic' "${export_options_path}"
-          /usr/libexec/PlistBuddy -c 'Add :teamID string PX72AL9366' "${export_options_path}"
-          /usr/libexec/PlistBuddy -c 'Add :manageAppVersionAndBuildNumber bool false' "${export_options_path}"
-          /usr/libexec/PlistBuddy -c 'Add :testFlightInternalTestingOnly bool false' "${export_options_path}"
-
-          xcodebuild \
-            -exportArchive \
-            -archivePath "${archive_path}" \
-            -exportOptionsPlist "${export_options_path}" \
-            -allowProvisioningUpdates \
-            -authenticationKeyPath "${auth_key_path}" \
-            -authenticationKeyID "${APP_STORE_CONNECT_API_KEY_ID}" \
-            -authenticationKeyIssuerID "${APP_STORE_CONNECT_API_ISSUER_ID}"
+      # Pulpo Keyboard shares the Pulpo release version, so both apps move together.
+      - name: Archive and upload to TestFlight
+        env:
+          APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_API_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_API_PRIVATE_KEY }}
+          IOS_DEVELOPMENT_CERTIFICATE_P12_BASE64: ${{ secrets.IOS_DEVELOPMENT_CERTIFICATE_P12_BASE64 }}
+          IOS_DEVELOPMENT_CERTIFICATE_PASSWORD: ${{ secrets.IOS_DEVELOPMENT_CERTIFICATE_PASSWORD }}
+        run: >-
+          ../../.github/scripts/upload-ios-testflight.sh
+          --validate scripts/validate_archive.py
+          -- -project PulpoKeyboard.xcodeproj -scheme PulpoKeyboard
