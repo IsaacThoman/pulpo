@@ -22,11 +22,11 @@ export function AgentMenu({ enabled, disabled, onSelect, onSelectClose }: {
           type="button"
           disabled={disabled}
           aria-label={t('chat.agentOptions', { selection: label })}
-          className="group/agent-options flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-xs text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-ring/50 focus-visible:ring-[3px] data-[pointer-focus]:focus-visible:ring-0 disabled:cursor-not-allowed disabled:opacity-40"
+          className="group/agent-options flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-xs text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-ring/50 focus-visible:ring-[3px] data-[pointer-focus]:focus-visible:ring-0 disabled:cursor-not-allowed disabled:opacity-40 @max-[26rem]/composer-toolbar:px-2"
         >
           <Icon className="size-4" />
-          <span>{label}</span>
-          <ChevronDown className="size-3 shrink-0 rotate-180 opacity-60 transition-transform duration-200 group-data-[state=open]/agent-options:rotate-0 motion-reduce:transition-none" />
+          <span className="@max-[26rem]/composer-toolbar:hidden">{label}</span>
+          <ChevronDown className="size-3 shrink-0 rotate-180 opacity-60 transition-transform duration-200 group-data-[state=open]/agent-options:rotate-0 motion-reduce:transition-none @max-[26rem]/composer-toolbar:hidden" />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent {...menuFocus.contentProps} align="start" side="top" className="w-48">
