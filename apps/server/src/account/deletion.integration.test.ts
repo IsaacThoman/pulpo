@@ -252,7 +252,7 @@ describe.skipIf(!enabled)('account deletion with PostgreSQL', () => {
 
   it('ignores late subscription events both during cleanup and after permanent deletion', async () => {
     await db.insert(billingAccounts).values({ userId, stripeCustomerId: 'cus_deleted' })
-    await db.insert(billingSubscriptions).values({ stripeSubscriptionId: 'sub_existing', userId, stripePriceId: 'price_test', plan: 'eight', status: 'canceled', providerModifiedAt: new Date(0) })
+    await db.insert(billingSubscriptions).values({ providerSubscriptionId: 'sub_existing', provider: 'stripe', userId, providerProductId: 'price_test', plan: 'eight', status: 'canceled', providerModifiedAt: new Date(0) })
     await acceptAccountDeletion(userId)
     const event = (id: string): Stripe.Event => ({
       id: randomUUID(), type: 'customer.subscription.updated', created: Math.floor(Date.now() / 1000),

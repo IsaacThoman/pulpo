@@ -1,5 +1,5 @@
 import Stripe from 'stripe'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { db } from '../database/client.js'
 import { billingAccounts, billingCheckouts, billingSubscriptions } from '../database/schema.js'
 import { getStripeClient, isMissingStripeResource } from '../billing/stripe.js'
@@ -8,11 +8,15 @@ const { StripeInvalidRequestError } = Stripe.errors
 
 export async function cancelAccountBilling(userId: string): Promise<void> {
   const [account] = await db.select().from(billingAccounts).where(eq(billingAccounts.userId, userId))
-  const subscriptions = await db.select().from(billingSubscriptions).where(eq(billingSubscriptions.userId, userId))
+  // App Store subscriptions can only be cancelled by the subscriber in their Apple account settings.
+  const subscriptions = await db.select().from(billingSubscriptions).where(and(
+    eq(billingSubscriptions.userId, userId),
+    eq(billingSubscriptions.provider, 'stripe'),
+  ))
   const checkouts = await db.select().from(billingCheckouts).where(eq(billingCheckouts.userId, userId))
   if (!account?.stripeCustomerId && !subscriptions.length && !checkouts.length) return
   await cancelStripeResources(getStripeClient(), account?.stripeCustomerId ?? null,
-    subscriptions.map((row) => row.stripeSubscriptionId),
+    subscriptions.map((row) => row.providerSubscriptionId),
     checkouts.flatMap((row) => row.stripeCheckoutSessionId ? [row.stripeCheckoutSessionId] : []),
     account?.stripePaymentMethodId ? [account.stripePaymentMethodId] : [])
 }

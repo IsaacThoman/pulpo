@@ -211,12 +211,12 @@ export async function registerBillingRoutes(app: FastifyInstance): Promise<void>
       } : null,
       autoTopUp,
       payments: orders.map((order) => ({
-        id: order.stripePaymentId,
+        id: order.providerPaymentId,
         kind: isCreditOrderReason(order.billingReason) ? 'credits' : 'subscription',
         automatic: order.billingReason === 'auto_top_up',
-        plan: order.stripePriceId === config.STRIPE_FAT_PRICE_ID
+        plan: order.providerProductId === config.STRIPE_FAT_PRICE_ID
           ? 'fat'
-          : order.stripePriceId === config.STRIPE_EIGHT_PRICE_ID
+          : order.providerProductId === config.STRIPE_EIGHT_PRICE_ID
             ? 'eight'
             : null,
         requestedCreditCents: order.requestedCreditCents,

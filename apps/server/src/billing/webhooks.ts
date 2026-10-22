@@ -176,7 +176,7 @@ async function resolveUser(tx: Transaction, input: {
     : []
   const [subscription] = !checkout && input.subscriptionId
     ? await tx.select({ userId: billingSubscriptions.userId }).from(billingSubscriptions)
-      .where(eq(billingSubscriptions.stripeSubscriptionId, input.subscriptionId)).limit(1)
+      .where(eq(billingSubscriptions.providerSubscriptionId, input.subscriptionId)).limit(1)
     : []
   const metadataUserId = await userExists(tx, input.metadataUserId)
   const customerUserId = await customerUser(tx, input.customerId ?? null)
@@ -209,7 +209,7 @@ async function upsertSubscription(
   if (!priceId || !plan) return
   const customerId = idOf(subscription.customer)
   const [existing] = await tx.select().from(billingSubscriptions)
-    .where(eq(billingSubscriptions.stripeSubscriptionId, subscription.id)).for('update')
+    .where(eq(billingSubscriptions.providerSubscriptionId, subscription.id)).for('update')
   const userId = await resolveUser(tx, {
     subscriptionId: subscription.id,
     customerId,
@@ -221,7 +221,7 @@ async function upsertSubscription(
   const period = subscriptionPeriod(subscription)
   const values = {
     userId,
-    stripePriceId: priceId,
+    providerProductId: priceId,
     plan,
     status: subscription.status,
     cancelAtPeriodEnd: subscription.cancel_at_period_end,
@@ -232,10 +232,11 @@ async function upsertSubscription(
   }
   if (existing) {
     await tx.update(billingSubscriptions).set(values)
-      .where(eq(billingSubscriptions.stripeSubscriptionId, subscription.id))
+      .where(eq(billingSubscriptions.providerSubscriptionId, subscription.id))
   } else {
     await tx.insert(billingSubscriptions).values({
-      stripeSubscriptionId: subscription.id,
+      providerSubscriptionId: subscription.id,
+      provider: 'stripe',
       ...values,
       paidThrough: null,
     })
@@ -266,7 +267,7 @@ async function recordGrant(tx: Transaction, input: {
     metadata: { stripePaymentId: input.orderId, billingReason: input.billingReason, plan: input.plan },
   })
   await tx.update(billingOrders).set({ grantedCreditMicros: input.grantMicros, updatedAt: new Date() })
-    .where(eq(billingOrders.stripePaymentId, input.orderId))
+    .where(eq(billingOrders.providerPaymentId, input.orderId))
 }
 
 async function applyPaidCheckout(
@@ -307,12 +308,13 @@ async function applyPaidCheckout(
   const netCents = subtotalCents - discountCents
   await saveCustomer(tx, userId, idOf(checkout.customer))
   await tx.insert(billingOrders).values({
-    stripePaymentId: payment.paymentIntentId,
+    providerPaymentId: payment.paymentIntentId,
+    provider: 'stripe',
     userId,
     stripeCheckoutSessionId: checkout.id,
     stripePaymentIntentId: payment.paymentIntentId,
     stripeChargeId: payment.chargeId,
-    stripePriceId: getConfig().STRIPE_CREDIT_PRODUCT_ID!,
+    providerProductId: getConfig().STRIPE_CREDIT_PRODUCT_ID!,
     billingReason: 'purchase',
     status: 'paid',
     currency: checkout.currency!,
@@ -327,7 +329,7 @@ async function applyPaidCheckout(
     paidAt: eventAt,
     createdAt: new Date(checkout.created * 1_000),
   }).onConflictDoUpdate({
-    target: billingOrders.stripePaymentId,
+    target: billingOrders.providerPaymentId,
     set: {
       status: 'paid',
       processingFeeAmountCents: payment.processingFeeCents,
@@ -335,7 +337,7 @@ async function applyPaidCheckout(
     },
   })
   const [order] = await tx.select().from(billingOrders)
-    .where(eq(billingOrders.stripePaymentId, payment.paymentIntentId)).for('update')
+    .where(eq(billingOrders.providerPaymentId, payment.paymentIntentId)).for('update')
   if (!order) throw new Error(`Failed to store Stripe payment ${payment.paymentIntentId}`)
   const grantMicros = grantMicrosForPaidOrder({
     isCreditPurchase: true,
@@ -420,11 +422,12 @@ async function applyPaidAutoTopUpInvoice(
   const discountCents = sumAmounts(invoice.total_discount_amounts)
   const netCents = invoice.total_excluding_tax ?? invoice.total - taxCents
   await tx.insert(billingOrders).values({
-    stripePaymentId: invoice.id,
+    providerPaymentId: invoice.id,
+    provider: 'stripe',
     userId,
     stripePaymentIntentId: payment.paymentIntentId,
     stripeChargeId: payment.chargeId,
-    stripePriceId: creditProductId,
+    providerProductId: creditProductId,
     billingReason: 'auto_top_up',
     status: 'paid',
     currency: invoice.currency,
@@ -439,7 +442,7 @@ async function applyPaidAutoTopUpInvoice(
     paidAt: unixDate(invoice.status_transitions.paid_at) ?? eventAt,
     createdAt: new Date(invoice.created * 1_000),
   }).onConflictDoUpdate({
-    target: billingOrders.stripePaymentId,
+    target: billingOrders.providerPaymentId,
     set: {
       status: 'paid',
       processingFeeAmountCents: payment.processingFeeCents,
@@ -447,7 +450,7 @@ async function applyPaidAutoTopUpInvoice(
     },
   })
   const [order] = await tx.select().from(billingOrders)
-    .where(eq(billingOrders.stripePaymentId, invoice.id)).for('update')
+    .where(eq(billingOrders.providerPaymentId, invoice.id)).for('update')
   if (!order) throw new Error(`Failed to store Stripe invoice ${invoice.id}`)
   await recordGrant(tx, {
     orderId: invoice.id,
@@ -534,12 +537,13 @@ async function applyPaidInvoice(
   const taxCents = sumAmounts(invoice.total_taxes)
   const discountCents = sumAmounts(invoice.total_discount_amounts)
   await tx.insert(billingOrders).values({
-    stripePaymentId: invoice.id,
+    providerPaymentId: invoice.id,
+    provider: 'stripe',
     userId,
-    stripeSubscriptionId: subscriptionId,
+    providerSubscriptionId: subscriptionId,
     stripePaymentIntentId: payment.paymentIntentId,
     stripeChargeId: payment.chargeId,
-    stripePriceId: priceId,
+    providerProductId: priceId,
     billingReason: invoice.billing_reason ?? 'subscription',
     status: invoice.status,
     currency: invoice.currency,
@@ -552,7 +556,7 @@ async function applyPaidInvoice(
     paidAt: unixDate(invoice.status_transitions.paid_at) ?? eventAt,
     createdAt: new Date(invoice.created * 1_000),
   }).onConflictDoUpdate({
-    target: billingOrders.stripePaymentId,
+    target: billingOrders.providerPaymentId,
     set: {
       status: invoice.status,
       processingFeeAmountCents: payment.processingFeeCents,
@@ -560,12 +564,12 @@ async function applyPaidInvoice(
     },
   })
   const [order] = await tx.select().from(billingOrders)
-    .where(eq(billingOrders.stripePaymentId, invoice.id)).for('update')
+    .where(eq(billingOrders.providerPaymentId, invoice.id)).for('update')
   if (!order) throw new Error(`Failed to store Stripe invoice ${invoice.id}`)
   const paidThrough = subscription ? subscriptionPeriod(subscription).end : unixDate(invoice.period_end)
   const invoicePaidAt = unixDate(invoice.status_transitions.paid_at) ?? eventAt
   const [existingSubscription] = await tx.select().from(billingSubscriptions)
-    .where(eq(billingSubscriptions.stripeSubscriptionId, subscriptionId)).for('update')
+    .where(eq(billingSubscriptions.providerSubscriptionId, subscriptionId)).for('update')
   if (existingSubscription) {
     // Reconciliation replays invoices newest-first, so only a newer invoice may move the paid plan.
     const recordPaidPlan = shouldRecordPaidPlan(existingSubscription.paidPlanAt, invoicePaidAt)
@@ -579,7 +583,7 @@ async function applyPaidInvoice(
         paidPlanAt: invoicePaidAt,
       } : {}),
       updatedAt: new Date(),
-    }).where(eq(billingSubscriptions.stripeSubscriptionId, subscriptionId))
+    }).where(eq(billingSubscriptions.providerSubscriptionId, subscriptionId))
   }
   const billingReason = invoice.billing_reason ?? 'subscription'
   const grantMicros = grantMicrosForPaidOrder({
@@ -619,7 +623,7 @@ async function applyFailedInvoice(tx: Transaction, invoice: Stripe.Invoice, chan
   const subscriptionId = invoiceSubscriptionId(invoice)
   if (!subscriptionId) return
   const [subscription] = await tx.update(billingSubscriptions).set({ status: 'past_due', updatedAt: new Date() })
-    .where(eq(billingSubscriptions.stripeSubscriptionId, subscriptionId)).returning({ userId: billingSubscriptions.userId })
+    .where(eq(billingSubscriptions.providerSubscriptionId, subscriptionId)).returning({ userId: billingSubscriptions.userId })
   if (subscription) changedUsers.add(subscription.userId)
 }
 
@@ -687,7 +691,7 @@ async function applyRefund(tx: Transaction, refund: Stripe.Refund, eventAt: Date
   const refundedAmountCents = Math.max(order.refundedAmountCents, refund.amount)
   await tx.update(billingOrders).set({
     status: 'refunded', refundedAmountCents, refundedAt: eventAt, updatedAt: new Date(),
-  }).where(eq(billingOrders.stripePaymentId, order.stripePaymentId))
+  }).where(eq(billingOrders.providerPaymentId, order.providerPaymentId))
   await placeBillingHold(tx, order.userId, 'payment_refunded', refund.id, changedUsers)
 }
 
@@ -702,7 +706,7 @@ async function applyRefundedCharge(tx: Transaction, charge: Stripe.Charge, event
     refundedAmountCents: charge.amount_refunded,
     refundedAt: eventAt,
     updatedAt: new Date(),
-  }).where(eq(billingOrders.stripePaymentId, order.stripePaymentId))
+  }).where(eq(billingOrders.providerPaymentId, order.providerPaymentId))
   await placeBillingHold(tx, order.userId, 'payment_reversed', charge.id, changedUsers)
 }
 
@@ -837,6 +841,7 @@ export async function processStripeWebhookEvent(event: Stripe.Event): Promise<vo
     const changes = await db.transaction(async (tx) => {
       await tx.insert(billingWebhookEvents).values({
         providerEventId,
+        provider: 'stripe',
         type: event.type,
         resourceId: 'id' in event.data.object ? String(event.data.object.id) : null,
       }).onConflictDoNothing()
@@ -872,6 +877,7 @@ export async function processStripeWebhookEvent(event: Stripe.Event): Promise<vo
     const message = error instanceof Error ? error.message.slice(0, 2_000) : String(error).slice(0, 2_000)
     await db.insert(billingWebhookEvents).values({
       providerEventId,
+      provider: 'stripe',
       type: event.type,
       resourceId: 'id' in event.data.object ? String(event.data.object.id) : null,
       status: 'failed',

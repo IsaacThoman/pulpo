@@ -33,8 +33,8 @@ bundle is retained on `pulpo-agents` at
   initiating ping to public destinations as well as private destinations.
   Host-originated administrative traffic is unaffected.
 - IPv4 TCP and UDP continue through the existing Kubernetes rules: workspace egress
-  allows cluster DNS on UDP/TCP 53 and public IPv4 TCP 80/443, excluding the listed
-  private/special ranges. Workspace ingress permits controller TCP 8787 and
+  permits only the egress proxy on TCP 4750, with no direct DNS or internet.
+  Workspace ingress permits controller TCP 8787 and
   the network implementation's node exceptions. Reply traffic is stateful.
 - The verified deployment uses IPv4 pod addressing on a single node. IPv6
   link-local paths are tested separately; routed IPv6/dual-stack, additional
@@ -42,9 +42,133 @@ bundle is retained on `pulpo-agents` at
   review. For routed IPv6 pods, add their source ranges as well as the local
   bridge match before enabling that topology.
 
-This closes the verified ICMP/IPv6 paths, not a complete audit of every IP protocol,
-source-spoofing behavior, tunnel, service NAT path or tenant isolation boundary.
-Successful DNS/HTTPS tests and blocked peer TCP/UDP tests complement it.
+These rules close the verified ICMP/IPv6 paths. The separately installed identity
+guard below closes the reproduced source-spoofing and ARP paths. These checks do
+not constitute a complete audit of every protocol, tunnel, service NAT path or
+tenant isolation boundary.
+
+## Source identity and ARP isolation
+
+Install `guard.py` as well as the ICMP/IPv6 rules above. A workspace with root
+inside its Kata VM can create raw packets: in the unprotected bridge, claiming
+the node's source IP bypassed kube-router's node exception and delivered data
+to another diagnostic workspace. A forged controller source reached its daemon
+port, and forged ARP frames reached the peer. Filtering ordinary connections
+alone did not cover these paths.
+
+The guard is a chained CNI plugin running on the **host**, before the runtime
+starts the guest. It uses the preceding CNI result, not information supplied by
+the guest, to bind every `cni0` port to its interface index, name, MAC and IPv4
+address. Unknown ports, forged identities and unsupported Ethernet protocols
+are denied before bridge learning and IP policy evaluation.
+
+For workspaces it additionally:
+
+- Allows ARP only for the gateway, controller and proxy, with the assigned sender
+  IP and MAC. Peer ARP and unrelated broadcasts are not delivered to workspaces.
+  Controller/proxy addresses can still be visible through legitimate control
+  traffic; this is not a promise to conceal all infrastructure addresses.
+- Permits new IPv4 egress only to the proxy service/pod on TCP 4750, plus replies
+  to permitted incoming connections. Both native bridge and routed IP paths are
+  enforced, independently of kube-router and its bridge-filtering sysctl.
+- Validates workspace IPv6 source identity and fixed-layout neighbor-discovery
+  messages, denies bridged IPv6 between pods, and preserves the existing host
+  IPv6 positive controls. IPv6 extension headers and fragmented IPv6 are outside
+  this IPv4-only deployment and are denied.
+
+The controller and proxy Deployment names in `pulpo-workspaces` identify trusted
+roles; other pods in that namespace receive workspace restrictions. Other
+namespaces retain their existing policy, with CNI IPv4/MAC source validation.
+This assumes users cannot create/rename Kubernetes pods or change the host's CNI
+configuration. Workspaces do not receive Kubernetes service-account tokens.
+Retest before changing namespaces, Deployment names, bridge topology, CNI,
+addressing or the proxy port. Multiple nodes/bridges and dual-stack are unsupported.
+
+Copy this directory to the node, then run:
+
+```sh
+sudo python3 install-guard.py --rollback-seconds 900
+```
+
+The installer verifies the kernel rules, adopts existing identities from the
+root-owned libcni cache, and refuses a partial bridge-port inventory. It appends
+the CNI plugin while preserving the existing plugins. It does not restart K3s or
+user workspaces. A timed rollback remains armed until the printed confirmation
+command is run after verification.
+
+| Installed path | Purpose |
+| --- | --- |
+| `/usr/local/sbin/pulpo-workspace-guard` | Guard executable and `reload` command |
+| `/var/lib/rancher/k3s/data/cni/pulpo-workspace-guard` | Chained CNI executable |
+| `/etc/pulpo/workspace-network/guard.json` | Node-specific bridge/gateway/proxy settings |
+| `/etc/pulpo/workspace-network/guard.conflist` | Persistent Flannel CNI configuration |
+| `/etc/rancher/k3s/config.yaml.d/52-pulpo-workspace-guard.yaml` | Makes K3s retain the custom CNI configuration |
+| `/var/lib/pulpo-workspace-network/guard/` | Root-owned identity/rule ledger and shared lifecycle lock |
+| `/etc/systemd/system/pulpo-workspace-guard.service` | Applies protection at boot and on reload |
+| `/etc/systemd/system/pulpo-workspace-guard-reconcile.path` | Watches libcni cache completion for late identities |
+| `/etc/systemd/system/pulpo-workspace-guard-reconcile.service` | Reconciles identities under the same guard lock |
+| `/etc/systemd/system/k3s.service.d/52-pulpo-guard.conf` | Reapplies protection before K3s starts; failure blocks startup |
+
+CNI ADD, DEL, CHECK, reload, install and rollback share a lock. Rule updates replace
+only the guard's two nftables tables, atomically. CNI ADD returns success only
+after enforcement is installed; CHECK also detects missing or altered rules.
+Stopping the service leaves rules installed. The guard requires the host's
+existing Python 3, iproute2, nftables, systemd 250+ and network-namespace support.
+
+An ADD already using the old CNI configuration cannot take the new guard lock.
+The cache watcher starts before the configuration handoff and catches its late
+result even if the initial reload has finished. Until adoption, the unknown-port
+rule blocks that interface; packet protection never depends on the watcher.
+The watcher uses cache close/rename notifications rather than polling, retries
+transient cache-read failures, and has no activation rate limit that could leave
+it disabled during a burst of pod creation. Rollback pauses it before restoring
+files and restores its previous enabled/active state.
+
+Verify with two disposable `pulpo.dev/state: network-check` bounded Kata pods:
+
+```sh
+sudo python3 verify_l2.py --pods WORKSPACE_A WORKSPACE_B
+sudo python3 verify.py --pods WORKSPACE_A WORKSPACE_B \
+  --node-ip 192.168.8.198 --lan-ip 192.168.8.1 --egress proxy
+sudo systemctl reload pulpo-workspace-guard.service
+```
+
+Repeat after reload and after recreating a diagnostic pod. `verify_l2.py` checks
+both directions with forged node/controller/unused source IPs, Ethernet/ARP MACs,
+forged ARP replies and peer ARP discovery. A real host UDP positive control checks
+the receiver; the optional pre-install `--expect-spoof allowed` baseline verifies
+that the forged node packet actually reaches the peer's UDP application.
+Temporary receivers expire after six seconds. The script refuses user pods.
+
+Run the ordinary lifecycle tests with the command below. The privileged kernel
+test uses entirely disposable namespaces, including a cloned source identity on
+an unregistered interface and bridge filtering disabled. It never touches the
+production bridge. CI runs both:
+
+```sh
+python3 -m unittest discover -s infra/workspace-network -p 'test_*.py'
+sudo python3 infra/workspace-network/test_guard_kernel.py
+sudo python3 infra/workspace-network/test_guard_systemd.py
+```
+
+Backups live under `/var/backups/pulpo-workspace-guard/`. Explicit rollback uses
+the preserved installer:
+
+```sh
+sudo python3 /var/backups/pulpo-workspace-guard/TIMESTAMP/install-guard.py \
+  --rollback /var/backups/pulpo-workspace-guard/TIMESTAMP
+```
+
+Initial rollback restores the previous CNI files and removes only the guard's
+tables. It deliberately retains the executable and creates the root-owned
+`guard.disabled` marker so pods with cached CNI configurations can still be
+deleted. A missing configuration without that explicit marker fails closed.
+Reinstallation removes the marker under the same lock. Do not delete the CNI
+executable while any cached pod configuration still references it.
+Upgrade rollback restores the previous guard implementation/configuration and
+rebuilds its rules from current live identities, including pods created since
+the backup. It does not restore a stale pod inventory. Recovery also tolerates
+an initial installation failing before the service unit has been written.
 
 ## Install
 
