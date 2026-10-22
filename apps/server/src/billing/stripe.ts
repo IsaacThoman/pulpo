@@ -1,8 +1,8 @@
 import Stripe from 'stripe'
-import { and, eq, inArray } from 'drizzle-orm'
+import { and, eq, inArray, sql } from 'drizzle-orm'
 import { getConfig } from '../config.js'
 import { db } from '../database/client.js'
-import { billingAccounts, billingCheckouts, billingSubscriptions, users } from '../database/schema.js'
+import { billingAccounts, billingCheckouts, billingSubscriptions, users, type BillingProvider } from '../database/schema.js'
 import { AppError } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import {
@@ -259,11 +259,7 @@ async function createSubscriptionCheckoutUnchecked(input: {
   idempotencyKey: string
 }): Promise<{ url: string; checkoutId: string }> {
   await checkoutUser(input.userId)
-  const [current] = await db.select({ provider: billingSubscriptions.provider })
-    .from(billingSubscriptions).where(and(
-      eq(billingSubscriptions.userId, input.userId),
-      inArray(billingSubscriptions.status, ['active', 'past_due']),
-    )).limit(1)
+  const current = await currentPaidSubscription(input.userId)
   if (current) {
     throwIfManagedByAppStore(current)
     throw new AppError(409, 'subscription_exists', 'Choose an upgrade or switch to Baby from Compare plans')
@@ -328,16 +324,17 @@ async function createCustomerPortalUrlUnchecked(userId: string): Promise<string>
   return session.url
 }
 
+/** The user's active subscription, preferring Stripe so a Stripe plan stays manageable alongside an App Store one. */
 async function currentPaidSubscription(userId: string) {
   const [current] = await db.select().from(billingSubscriptions).where(and(
     eq(billingSubscriptions.userId, userId),
     inArray(billingSubscriptions.status, ['active', 'past_due']),
-  )).limit(1)
+  )).orderBy(sql`${billingSubscriptions.provider} = 'stripe' desc`).limit(1)
   return current ?? null
 }
 
 /** App Store subscriptions can only be changed from the iOS app's subscription settings. */
-function throwIfManagedByAppStore(subscription: { provider: string }): void {
+function throwIfManagedByAppStore(subscription: { provider: BillingProvider }): void {
   if (subscription.provider !== 'stripe') {
     throw new AppError(409, 'subscription_managed_by_app_store', 'This subscription is billed through the App Store. Manage it from the Pulpo iOS app.')
   }

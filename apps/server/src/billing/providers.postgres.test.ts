@@ -78,6 +78,16 @@ describe.skipIf(!enabled)('billing providers in PostgreSQL', () => {
       .rejects.toMatchObject({ statusCode: 409, code: 'subscription_exists' })
   })
 
+  it('treats a user with Stripe and App Store subscriptions as a Stripe subscriber', async () => {
+    const userId = await subscriber([
+      { id: `${Date.now()}4`, provider: 'app_store', plan: 'fat' },
+      { id: `sub_${randomUUID()}`, provider: 'stripe' },
+    ])
+
+    await expect(createSubscriptionCheckout({ userId, plan: 'fat', idempotencyKey: randomUUID() }))
+      .rejects.toMatchObject({ statusCode: 409, code: 'subscription_exists' })
+  })
+
   it('cancels only Stripe subscriptions when deleting an account', async () => {
     const stripeId = `sub_${randomUUID()}`
     const userId = await subscriber([

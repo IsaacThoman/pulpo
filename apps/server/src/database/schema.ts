@@ -1339,10 +1339,12 @@ export const billingAccounts = pgTable('billing_accounts', {
   check('billing_accounts_storage_override_check', sql`${table.storageLimitOverrideBytes} is null or ${table.storageLimitOverrideBytes} >= 0`),
 ])
 
+export type BillingProvider = 'stripe' | 'app_store'
+
 export const billingSubscriptions = pgTable('billing_subscriptions', {
   // Stripe subscription ID (`sub_…`) or App Store original transaction ID.
   providerSubscriptionId: text('provider_subscription_id').primaryKey(),
-  provider: text('provider').notNull(),
+  provider: text('provider').$type<BillingProvider>().notNull(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   // Stripe price ID or App Store product ID.
   providerProductId: text('provider_product_id').notNull(),
@@ -1416,7 +1418,7 @@ export const billingAutoTopUps = pgTable('billing_auto_top_ups', {
 export const billingOrders = pgTable('billing_orders', {
   // Stripe payment intent or invoice ID, or App Store transaction ID.
   providerPaymentId: text('provider_payment_id').primaryKey(),
-  provider: text('provider').notNull(),
+  provider: text('provider').$type<BillingProvider>().notNull(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   stripeCheckoutSessionId: text('stripe_checkout_session_id'),
   providerSubscriptionId: text('provider_subscription_id'),
@@ -1450,7 +1452,7 @@ export const billingOrders = pgTable('billing_orders', {
 
 export const billingWebhookEvents = pgTable('billing_webhook_events', {
   providerEventId: text('provider_event_id').primaryKey(),
-  provider: text('provider').notNull(),
+  provider: text('provider').$type<BillingProvider>().notNull(),
   type: text('type').notNull(),
   resourceId: text('resource_id'),
   status: text('status').notNull().default('processing'),

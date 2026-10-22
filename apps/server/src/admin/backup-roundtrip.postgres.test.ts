@@ -212,6 +212,36 @@ describe.skipIf(!enabled)('full application backup audit with PostgreSQL and loc
     expect((await db.select().from(schema.users))[0]).toMatchObject({ inviteCodeQuota: 0, stateRevision: 0 })
   })
 
+  it('restores billing rows from archives made before billing providers', async () => {
+    await db.insert(schema.billingSubscriptions).values({ userId, providerSubscriptionId: 'sub_legacy', provider: 'stripe', providerProductId: 'price_legacy', plan: 'fat', status: 'active', providerModifiedAt: new Date() })
+    await db.insert(schema.billingOrders).values([
+      { providerPaymentId: 'in_legacy', provider: 'stripe', userId, providerSubscriptionId: 'sub_legacy', providerProductId: 'price_legacy', billingReason: 'subscription_create', status: 'paid', currency: 'usd' },
+      { providerPaymentId: 'pi_legacy', provider: 'stripe', userId, providerProductId: 'prod_legacy', billingReason: 'purchase', status: 'paid', currency: 'usd' },
+    ])
+    await db.insert(schema.billingWebhookEvents).values({ providerEventId: 'evt_legacy', provider: 'stripe', type: 'invoice.paid', status: 'processed' })
+    const legacyNames = { provider_subscription_id: 'stripe_subscription_id', provider_product_id: 'stripe_price_id', provider_payment_id: 'stripe_payment_id' }
+    const archive = await rewriteArchive(await backup(), database => {
+      for (const table of ['billing_subscriptions', 'billing_orders', 'billing_webhook_events']) {
+        for (const row of database[table]!) {
+          delete row.provider
+          for (const [current, legacy] of Object.entries(legacyNames)) {
+            if (current in row) { row[legacy] = row[current]; delete row[current] }
+          }
+        }
+      }
+    })
+    await db.delete(schema.billingSubscriptions)
+    await db.delete(schema.billingOrders)
+    await db.delete(schema.billingWebhookEvents)
+    await restore(archive)
+    expect(await db.select().from(schema.billingSubscriptions)).toMatchObject([{ providerSubscriptionId: 'sub_legacy', provider: 'stripe', providerProductId: 'price_legacy', plan: 'fat' }])
+    expect(await db.select().from(schema.billingOrders).orderBy(schema.billingOrders.providerPaymentId)).toMatchObject([
+      { providerPaymentId: 'in_legacy', provider: 'stripe', providerSubscriptionId: 'sub_legacy', providerProductId: 'price_legacy' },
+      { providerPaymentId: 'pi_legacy', provider: 'stripe', providerSubscriptionId: null, providerProductId: 'prod_legacy' },
+    ])
+    expect(await db.select().from(schema.billingWebhookEvents)).toMatchObject([{ providerEventId: 'evt_legacy', provider: 'stripe' }])
+  })
+
   it.each(['missing', 'corrupt'])('fails a backup with a %s source blob without publishing a broken archive', async (failure) => {
     const key = `users/${userId}/files/fixture`, body = Buffer.from('original data')
     await db.insert(schema.fileNodes).values({ id: randomUUID(), ownerUserId: userId, kind: 'blob', name: 'fixture.bin', objectKey: key, sizeBytes: body.length, checksum: hash(body) })
