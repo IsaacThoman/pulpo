@@ -171,7 +171,7 @@ describe('user-owned operational records', () => {
     expect(migration).toContain('CREATE UNIQUE INDEX IF NOT EXISTS "responses_user_scope_idempotency_unique"')
   })
 
-  it('uses Stripe billing identifiers and keeps platform and processing fees separate', () => {
+  it('uses provider-neutral billing identifiers and keeps platform and processing fees separate', () => {
     const accountConfig = getTableConfig(billingAccounts)
     const checkoutConfig = getTableConfig(billingCheckouts)
     const orderConfig = getTableConfig(billingOrders)
@@ -180,16 +180,20 @@ describe('user-owned operational records', () => {
       .flatMap((config) => [
         ...config.columns.map((column) => column.name),
         ...config.indexes.map((index) => index.config.name),
+        ...config.checks.map((constraint) => constraint.name),
       ])
 
     expect(allNames).toEqual(expect.arrayContaining([
       'stripe_customer_id',
       'stripe_checkout_session_id',
-      'stripe_payment_id',
+      'provider',
+      'provider_payment_id',
       'stripe_payment_intent_id',
       'stripe_charge_id',
-      'stripe_price_id',
-      'stripe_subscription_id',
+      'provider_product_id',
+      'provider_subscription_id',
+      'billing_subscriptions_provider_check',
+      'billing_orders_provider_check',
       'platform_fee_amount_cents',
       'processing_fee_amount_cents',
     ]))
