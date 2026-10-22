@@ -4,7 +4,7 @@ import { eq, inArray } from 'drizzle-orm'
 import { db, queryClient } from '../database/client.js'
 import { applicationSettings, billingSubscriptions, users } from '../database/schema.js'
 
-const stripe = vi.hoisted(() => ({ cancelled: [] as string[] }))
+const stripe = vi.hoisted(() => ({ calls: 0, cancelled: [] as string[] }))
 
 vi.mock('../config.js', async (original) => {
   const config = await original<typeof import('../config.js')>()
@@ -21,7 +21,7 @@ vi.mock('./stripe.js', async (original) => {
       cancel: vi.fn(async (id: string) => { stripe.cancelled.push(id) }),
     },
   }
-  return { ...actual, getStripeClient: () => client }
+  return { ...actual, getStripeClient: () => { stripe.calls += 1; return client } }
 })
 
 const { changeSubscription, createSubscriptionCheckout } = await import('./stripe.js')
@@ -56,7 +56,7 @@ async function subscriber(subscriptions: Array<{ id: string; provider: 'stripe' 
 }
 
 describe.skipIf(!enabled)('billing providers in PostgreSQL', () => {
-  beforeEach(() => { stripe.cancelled = [] })
+  beforeEach(() => { stripe.calls = 0; stripe.cancelled = [] })
   afterAll(async () => {
     if (userIds.length) await db.delete(users).where(inArray(users.id, userIds))
     await queryClient.end()
@@ -105,7 +105,7 @@ describe.skipIf(!enabled)('billing providers in PostgreSQL', () => {
 
     await cancelAccountBilling(userId)
 
-    expect(stripe.cancelled).toEqual([])
+    expect(stripe.calls).toBe(0)
   })
 
   it('keeps the paid plan storage after a downgrade until the period ends', async () => {
