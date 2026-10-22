@@ -1421,7 +1421,7 @@ export function Composer({
           className="hidden"
           onChange={(event) => addFiles(event.target.files)}
         />
-        <div className="flex min-w-0 select-none items-center gap-1 px-2.5 pb-2.5">
+        <div className="@container/composer-toolbar flex min-w-0 select-none items-center gap-1 px-2.5 pb-2.5">
           {canScopeFiles ? (
             <DropdownMenu>
               <Tooltip>
@@ -1524,6 +1524,7 @@ export function Composer({
             </DropdownMenu>
           )}
 
+          {/* In a narrow composer (e.g. beside a split view), the agent menu collapses to its icon before the presets truncate. */}
           <AgentMenu
             onSelectClose={focusComposer}
             enabled={activeAgentMode}
