@@ -1339,10 +1339,15 @@ export const billingAccounts = pgTable('billing_accounts', {
   check('billing_accounts_storage_override_check', sql`${table.storageLimitOverrideBytes} is null or ${table.storageLimitOverrideBytes} >= 0`),
 ])
 
+export type BillingProvider = 'stripe' | 'app_store'
+
 export const billingSubscriptions = pgTable('billing_subscriptions', {
-  stripeSubscriptionId: text('stripe_subscription_id').primaryKey(),
+  // Stripe subscription ID (`sub_…`) or App Store original transaction ID.
+  providerSubscriptionId: text('provider_subscription_id').primaryKey(),
+  provider: text('provider').$type<BillingProvider>().notNull(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  stripePriceId: text('stripe_price_id').notNull(),
+  // Stripe price ID or App Store product ID.
+  providerProductId: text('provider_product_id').notNull(),
   plan: text('plan').notNull(),
   status: text('status').notNull(),
   cancelAtPeriodEnd: boolean('cancel_at_period_end').notNull().default(false),
@@ -1358,6 +1363,7 @@ export const billingSubscriptions = pgTable('billing_subscriptions', {
 }, (table) => [
   index('billing_subscriptions_user_idx').on(table.userId),
   index('billing_subscriptions_status_idx').on(table.status),
+  check('billing_subscriptions_provider_check', sql`${table.provider} in ('stripe', 'app_store')`),
   check('billing_subscriptions_plan_check', sql`${table.plan} in ('eight', 'fat')`),
   check('billing_subscriptions_paid_plan_check', sql`${table.paidPlan} is null or ${table.paidPlan} in ('eight', 'fat')`),
 ])
@@ -1410,13 +1416,15 @@ export const billingAutoTopUps = pgTable('billing_auto_top_ups', {
 ])
 
 export const billingOrders = pgTable('billing_orders', {
-  stripePaymentId: text('stripe_payment_id').primaryKey(),
+  // Stripe payment intent or invoice ID, or App Store transaction ID.
+  providerPaymentId: text('provider_payment_id').primaryKey(),
+  provider: text('provider').$type<BillingProvider>().notNull(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   stripeCheckoutSessionId: text('stripe_checkout_session_id'),
-  stripeSubscriptionId: text('stripe_subscription_id'),
+  providerSubscriptionId: text('provider_subscription_id'),
   stripePaymentIntentId: text('stripe_payment_intent_id'),
   stripeChargeId: text('stripe_charge_id'),
-  stripePriceId: text('stripe_price_id').notNull(),
+  providerProductId: text('provider_product_id').notNull(),
   billingReason: text('billing_reason').notNull(),
   status: text('status').notNull(),
   currency: text('currency').notNull(),
@@ -1435,14 +1443,16 @@ export const billingOrders = pgTable('billing_orders', {
   ...timestamps,
 }, (table) => [
   index('billing_orders_user_created_idx').on(table.userId, table.createdAt),
-  index('billing_orders_subscription_idx').on(table.stripeSubscriptionId),
+  index('billing_orders_subscription_idx').on(table.providerSubscriptionId),
   index('billing_orders_payment_intent_idx').on(table.stripePaymentIntentId),
   index('billing_orders_charge_idx').on(table.stripeChargeId),
   index('billing_orders_paid_idx').on(table.paidAt),
+  check('billing_orders_provider_check', sql`${table.provider} in ('stripe', 'app_store')`),
 ])
 
 export const billingWebhookEvents = pgTable('billing_webhook_events', {
   providerEventId: text('provider_event_id').primaryKey(),
+  provider: text('provider').$type<BillingProvider>().notNull(),
   type: text('type').notNull(),
   resourceId: text('resource_id'),
   status: text('status').notNull().default('processing'),
@@ -1450,7 +1460,10 @@ export const billingWebhookEvents = pgTable('billing_webhook_events', {
   receivedAt: timestamp('received_at', { withTimezone: true }).notNull().defaultNow(),
   processedAt: timestamp('processed_at', { withTimezone: true }),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-}, (table) => [index('billing_webhook_status_idx').on(table.status, table.receivedAt)])
+}, (table) => [
+  index('billing_webhook_status_idx').on(table.status, table.receivedAt),
+  check('billing_webhook_events_provider_check', sql`${table.provider} in ('stripe', 'app_store')`),
+])
 
 export const weeklyUsagePeriods = pgTable('weekly_usage_periods', {
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),

@@ -1,8 +1,8 @@
 import Stripe from 'stripe'
-import { and, eq, inArray } from 'drizzle-orm'
+import { and, eq, inArray, sql } from 'drizzle-orm'
 import { getConfig } from '../config.js'
 import { db } from '../database/client.js'
-import { billingAccounts, billingCheckouts, billingSubscriptions, users } from '../database/schema.js'
+import { billingAccounts, billingCheckouts, billingSubscriptions, users, type BillingProvider } from '../database/schema.js'
 import { AppError } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import {
@@ -259,12 +259,11 @@ async function createSubscriptionCheckoutUnchecked(input: {
   idempotencyKey: string
 }): Promise<{ url: string; checkoutId: string }> {
   await checkoutUser(input.userId)
-  const [current] = await db.select({ id: billingSubscriptions.stripeSubscriptionId })
-    .from(billingSubscriptions).where(and(
-      eq(billingSubscriptions.userId, input.userId),
-      inArray(billingSubscriptions.status, ['active', 'past_due']),
-    )).limit(1)
-  if (current) throw new AppError(409, 'subscription_exists', 'Choose an upgrade or switch to Baby from Compare plans')
+  const current = await currentPaidSubscription(input.userId)
+  if (current) {
+    throwIfManagedByAppStore(current)
+    throw new AppError(409, 'subscription_exists', 'Choose an upgrade or switch to Baby from Compare plans')
+  }
   const prior = await existingCheckout(input.userId, input.idempotencyKey)
   if (prior?.checkoutUrl && prior.stripeCheckoutSessionId) return { url: prior.checkoutUrl, checkoutId: prior.stripeCheckoutSessionId }
   if (prior) throw new AppError(409, 'checkout_in_progress', 'This checkout is already being created')
@@ -325,12 +324,20 @@ async function createCustomerPortalUrlUnchecked(userId: string): Promise<string>
   return session.url
 }
 
+/** The user's active subscription, preferring Stripe so a Stripe plan stays manageable alongside an App Store one. */
 async function currentPaidSubscription(userId: string) {
   const [current] = await db.select().from(billingSubscriptions).where(and(
     eq(billingSubscriptions.userId, userId),
     inArray(billingSubscriptions.status, ['active', 'past_due']),
-  )).limit(1)
+  )).orderBy(sql`${billingSubscriptions.provider} = 'stripe' desc`).limit(1)
   return current ?? null
+}
+
+/** App Store subscriptions can only be changed from the iOS app's subscription settings. */
+function throwIfManagedByAppStore(subscription: { provider: BillingProvider }): void {
+  if (subscription.provider !== 'stripe') {
+    throw new AppError(409, 'subscription_managed_by_app_store', 'This subscription is billed through the App Store. Manage it from the Pulpo iOS app.')
+  }
 }
 
 function rethrowStripe(error: unknown): never {
@@ -380,7 +387,7 @@ async function saveSubscription(
   const result = subscriptionResult(subscription)
   const now = new Date()
   await db.update(billingSubscriptions).set({
-    stripePriceId: result.priceId,
+    providerProductId: result.priceId,
     plan: result.plan,
     status: subscription.status,
     cancelAtPeriodEnd: subscription.cancel_at_period_end,
@@ -389,7 +396,7 @@ async function saveSubscription(
     ...(paidPlan ? { paidPlan, paidPlanAt: now } : {}),
     providerModifiedAt: now,
     updatedAt: now,
-  }).where(eq(billingSubscriptions.stripeSubscriptionId, subscription.id))
+  }).where(eq(billingSubscriptions.providerSubscriptionId, subscription.id))
   return result
 }
 
@@ -408,15 +415,16 @@ async function changeSubscriptionUnchecked(input: {
   await checkoutUser(input.userId)
   const current = await currentPaidSubscription(input.userId)
   if (!current) throw new AppError(409, 'subscription_missing', 'Subscribe to a paid plan first')
+  throwIfManagedByAppStore(current)
 
   const stripe = getStripeClient()
   let subscription: Stripe.Subscription
   try {
-    subscription = await stripe.subscriptions.retrieve(current.stripeSubscriptionId)
+    subscription = await stripe.subscriptions.retrieve(current.providerSubscriptionId)
   } catch (error) {
     if (isMissingStripeResource(error)) {
       await db.update(billingSubscriptions).set({ status: 'canceled', updatedAt: new Date() })
-        .where(eq(billingSubscriptions.stripeSubscriptionId, current.stripeSubscriptionId))
+        .where(eq(billingSubscriptions.providerSubscriptionId, current.providerSubscriptionId))
       throw new AppError(409, 'subscription_missing', 'This subscription no longer exists. Refresh Billing to start a new one.')
     }
     rethrowStripe(error)
@@ -452,7 +460,7 @@ async function changeSubscriptionUnchecked(input: {
     // downgrades keeps its benefits until the period ends.
     let paidPlanAfterChange: PaidBillingPlan | undefined = current.paidPlan ? undefined : paidPlan
     if (change === 'cancel' || change === 'renew') {
-      updated = await stripe.subscriptions.update(current.stripeSubscriptionId, {
+      updated = await stripe.subscriptions.update(current.providerSubscriptionId, {
         cancel_at_period_end: change === 'cancel',
       })
     } else {
@@ -463,7 +471,7 @@ async function changeSubscriptionUnchecked(input: {
       }
       const targetPlan: PaidBillingPlan = change === 'downgrade_eight' ? 'eight' : 'fat'
       updated = await stripe.subscriptions.update(
-        current.stripeSubscriptionId,
+        current.providerSubscriptionId,
         subscriptionSwitchParams(item.id, priceIdForPlan(targetPlan), { prorate: change === 'upgrade_fat' }),
       )
       if (change === 'upgrade_fat') paidPlanAfterChange = 'fat'

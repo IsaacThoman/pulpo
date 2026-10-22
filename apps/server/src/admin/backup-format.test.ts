@@ -69,6 +69,24 @@ describe('full backup format', () => {
     expect(database.ocr_attempts[0]).toMatchObject({ request_payload: null, response_payload: null })
   })
 
+  it('maps Stripe billing identifiers from archives made before billing providers', () => {
+    const database = {
+      billing_subscriptions: [{ stripe_subscription_id: 'sub_1', stripe_price_id: 'price_eight', plan: 'eight' }],
+      billing_orders: [
+        { stripe_payment_id: 'in_1', stripe_subscription_id: 'sub_1', stripe_price_id: 'price_eight' },
+        { stripe_payment_id: 'pi_1', stripe_price_id: 'prod_credits' },
+      ],
+      billing_webhook_events: [{ provider_event_id: 'evt_1' }],
+    }
+
+    applyFullBackupCompatibilityDefaults(database)
+
+    expect(database.billing_subscriptions[0]).toMatchObject({ provider: 'stripe', provider_subscription_id: 'sub_1', provider_product_id: 'price_eight' })
+    expect(database.billing_orders[0]).toMatchObject({ provider: 'stripe', provider_payment_id: 'in_1', provider_subscription_id: 'sub_1', provider_product_id: 'price_eight' })
+    expect(database.billing_orders[1]).toMatchObject({ provider: 'stripe', provider_payment_id: 'pi_1', provider_subscription_id: null, provider_product_id: 'prod_credits' })
+    expect(database.billing_webhook_events[0]).toMatchObject({ provider: 'stripe' })
+  })
+
   it('attributes archived usage to the requested model rather than a fallback responder', () => {
     const database: Record<string, Array<Record<string, unknown>>> = {
       request_logs: [{ id: 'log', response_id: 'kept', requested_model_id: 'glm-flash' }],

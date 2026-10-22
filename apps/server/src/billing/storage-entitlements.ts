@@ -50,8 +50,13 @@ export async function loadStorageEntitlement(
       planOverride: billingAccounts.planOverride,
     }).from(billingAccounts)
       .where(eq(billingAccounts.userId, userId)).limit(1),
-    tx.select({ plan: billingSubscriptions.plan, status: billingSubscriptions.status, paidThrough: billingSubscriptions.paidThrough })
-      .from(billingSubscriptions).where(eq(billingSubscriptions.userId, userId)),
+    // Storage follows the plan in effect, so a downgrade keeps the paid plan's storage until the period ends.
+    tx.select({
+      plan: billingSubscriptions.plan,
+      paidPlan: billingSubscriptions.paidPlan,
+      status: billingSubscriptions.status,
+      paidThrough: billingSubscriptions.paidThrough,
+    }).from(billingSubscriptions).where(eq(billingSubscriptions.userId, userId)),
     tx.select({ value: applicationSettings.value }).from(applicationSettings)
       .where(eq(applicationSettings.key, 'billing')).limit(1),
   ])
