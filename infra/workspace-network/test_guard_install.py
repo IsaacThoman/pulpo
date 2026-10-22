@@ -25,6 +25,7 @@ class GuardInstallerTest(unittest.TestCase):
         self.guard_tables = False
         self.active = self.enabled = False
         self.failure = None
+        self.previous_reloads = 0
         replacements = {name: root / name for name in [
             'BACKUPS', 'ACTIVE_CNI', 'CUSTOM_CNI', 'BINARY', 'CNI_BINARY', 'UNIT', 'K3S_UNIT', 'K3S_CONFIG']}
         patches = [patch.object(installer, name, path) for name, path in replacements.items()]
@@ -34,6 +35,8 @@ class GuardInstallerTest(unittest.TestCase):
                     patch.object(installer.subprocess, 'run', side_effect=self.command),
                     patch.object(guard, 'run', side_effect=self.output),
                     patch.object(guard, 'adopt', return_value={'id': {'host': 'veth-test'}}),
+                    patch.object(guard, 'alive', return_value=True),
+                    patch.object(installer, 'load_previous_guard', side_effect=self.previous_guard),
                     patch.object(guard, 'apply', side_effect=self.apply),
                     contextlib.redirect_stdout(io.StringIO())]
         for patcher in patches:
@@ -60,6 +63,10 @@ class GuardInstallerTest(unittest.TestCase):
         if self.failure == 'apply':
             raise RuntimeError('nft failed')
         self.guard_tables = True
+
+    def previous_guard(self):
+        self.previous_reloads += 1
+        return guard
 
     def command(self, *args, **kwargs):
         argv = list(args[0]) if isinstance(args[0], list) else list(args)
@@ -171,6 +178,37 @@ class GuardInstallerTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'service start failed'):
             self.install()
         self.assert_restored()
+
+    def test_failure_before_unit_creation_completes_rollback(self):
+        original_write = installer.write
+
+        def fail_configuration(path, data, mode=0o644):
+            if path == guard.CONFIG:
+                raise OSError('configuration write failed')
+            return original_write(path, data, mode)
+
+        with patch.object(installer, 'write', side_effect=fail_configuration):
+            with self.assertRaisesRegex(OSError, 'configuration write failed'):
+                self.install()
+        self.assert_restored()
+        self.assertEqual(installer.pending(), [])
+
+    def test_upgrade_rollback_preserves_new_pods_and_does_not_resurrect_deleted_ones(self):
+        first = self.install()
+        self.invoke('--confirm', first)
+        with patch('sys.argv', ['install-guard.py']):
+            installer.main()
+        second = next(path for path in installer.pending() if path != first)
+        # A successful CNI ADD followed by DEL of the old pod after the backup.
+        guard.atomic_json(guard.STATE / 'endpoints.json', {'new:eth0': {'host': 'veth-new'}})
+        with patch.object(guard, 'adopt', return_value={'new:eth0': {'host': 'veth-new'}}):
+            self.invoke('--auto-rollback', second)
+        entries = json.loads((guard.STATE / 'endpoints.json').read_text())
+        self.assertIn('new:eth0', entries)
+        self.assertNotIn('id', entries)
+        self.assertEqual(self.previous_reloads, 1)
+        self.assertTrue(self.guard_tables)
+        self.assertFalse(guard.DISABLED.exists())
 
 
 if __name__ == '__main__':

@@ -153,6 +153,10 @@ tables. It deliberately retains the executable and creates the root-owned
 deleted. A missing configuration without that explicit marker fails closed.
 Reinstallation removes the marker under the same lock. Do not delete the CNI
 executable while any cached pod configuration still references it.
+Upgrade rollback restores the previous guard implementation/configuration and
+rebuilds its rules from current live identities, including pods created since
+the backup. It does not restore a stale pod inventory. Recovery also tolerates
+an initial installation failing before the service unit has been written.
 
 ## Install
 

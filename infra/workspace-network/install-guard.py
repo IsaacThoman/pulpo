@@ -6,6 +6,8 @@ CNI executable is intentionally retained, disabled, for cached CNI DEL calls.
 """
 import argparse
 import datetime
+import importlib.machinery
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -53,6 +55,25 @@ def validated_backup(value):
     return path
 
 
+def load_previous_guard():
+    # Rollback must use the restored implementation, not the renderer from the
+    # version being rolled back. Loading it in-process preserves our CNI lock.
+    loader = importlib.machinery.SourceFileLoader('pulpo_guard_rollback', str(BINARY))
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    previous = importlib.util.module_from_spec(spec)
+    loader.exec_module(previous)
+    return previous
+
+
+def reload_previous_guard():
+    previous = load_previous_guard()
+    config = previous.read_config()
+    entries = previous.load(config)
+    entries.update(previous.adopt(config))
+    previous.apply(entries, config)
+    previous.atomic_json(previous.STATE / 'endpoints.json', entries)
+
+
 def restore(backup, automatic=False):
     if (backup / 'rolled-back').exists() or (automatic and (backup / 'confirmed').exists()):
         return
@@ -60,9 +81,9 @@ def restore(backup, automatic=False):
     run('systemctl', 'stop', state['timer'] + '.timer')
     # Disable/stop while the unit file still exists. Removing it first makes
     # systemctl disable fail on an initial installation's rollback.
-    if not state['enabled']:
+    if not state['enabled'] and UNIT.exists():
         run('systemctl', 'disable', SERVICE)
-    if not state['active']:
+    if not state['active'] and UNIT.exists():
         subprocess.run(['systemctl', 'stop', SERVICE], check=False, capture_output=True)
     # Cached libcni configurations may still invoke this binary on DEL. Keep it
     # available; only the explicit root-owned rollback marker permits bypass.
@@ -70,6 +91,11 @@ def restore(backup, automatic=False):
         write(guard.DISABLED, 'Installation rolled back; cached CNI cleanup only.\n', 0o600)
     for dest, existed in state['files'].items():
         path = Path(dest)
+        # CNI ADD/DEL may have changed these ledgers since the upgrade began.
+        # Restore the old code/configuration and regenerate its rules using
+        # live identities instead of resurrecting the backup's pod inventory.
+        if state['previousGuard'] and path in [guard.STATE / 'endpoints.json', guard.STATE / 'enforcement.json']:
+            continue
         if existed:
             saved = backup / dest.lstrip('/')
             write(path, saved.read_bytes(), saved.stat().st_mode & 0o777)
@@ -81,7 +107,16 @@ def restore(backup, automatic=False):
     for family in ['bridge', 'inet']:
         rules += f'add table {family} {guard.TABLE}\ndelete table {family} {guard.TABLE}\n'
         rules += (backup / (family + '.nft')).read_text()
-    run(guard.NFT, '-f', '-', input=rules)
+    if state['previousGuard']:
+        try:
+            reload_previous_guard()
+        except BaseException:
+            # Keep the previous security boundary if live reconciliation fails,
+            # but do not report successful rollback or hide the failure.
+            run(guard.NFT, '-f', '-', input=rules)
+            raise
+    else:
+        run(guard.NFT, '-f', '-', input=rules)
     run('systemctl', 'daemon-reload')
     (backup / 'rolled-back').touch()
     print('Restored guard configuration:', backup)

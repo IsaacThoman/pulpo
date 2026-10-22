@@ -45,8 +45,15 @@ valid workspace identity. Raw peer frames are checked in both directions with
 known destination MACs, so blocked ARP cannot conceal a forwarding-policy gap.
 Source-port egress checks run before any destination-port accept rule. The
 guard loads twice in one namespace to exercise
-atomic replacement. CI includes this test plus the 28 unprivileged identity and
+atomic replacement. CI includes this test plus the 30 unprivileged identity and
 installer lifecycle tests.
+
+The pre-merge independent review also reproduced two installer availability
+defects: early failure before service creation could abort rollback, and upgrade
+rollback could discard identities created after its backup. Regression tests
+now cover recovery before unit creation and rebuilding the previous guard's
+rules from the current pod inventory during upgrade rollback. These were
+installer defects rather than additional demonstrated packet-policy bypasses.
 
 The pre-install host configuration is retained at:
 
