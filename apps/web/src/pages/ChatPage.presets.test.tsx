@@ -2,7 +2,7 @@
 import 'fake-indexeddb/auto'
 import { Profiler, type ComponentProps } from 'react'
 import { act, cleanup, fireEvent, render, waitFor, within } from '@testing-library/react'
-import { MemoryRouter, Route, Routes, useLocation, type InitialEntry } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useLocation, useNavigate, type InitialEntry } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { ComposerSync } from '@pulpo/client-core'
 import { emptyComposerState, type ComposerSnapshot, type ComposerWrite } from '@pulpo/contracts'
@@ -377,4 +377,30 @@ it('starts a temporary chat when the navigation asks, and drops the request from
   expect(await view.findByRole('button', { name: 'Disable temporary chat' })).toBeTruthy()
   await waitFor(() => expect(state).toEqual({ resetDefaultModel: 'reset', temporary: undefined }))
   expect(view.getByRole('button', { name: 'Disable temporary chat' })).toBeTruthy()
+})
+
+it('drops the temporary tint when leaving a temporary new chat for a saved chat', async () => {
+  const { useDesktopChrome } = await import('@/stores/desktopChrome')
+  const chatId = useChat.getState().sendMessage(null, 'saved turn', model.id, [], false, false, {
+    targetChatId: crypto.randomUUID(), responseId: crypto.randomUUID(), presetSelections: defaults, agentMode: true,
+  })
+  let navigate: ReturnType<typeof useNavigate> | null = null
+  function NavigateProbe() {
+    navigate = useNavigate()
+    return null
+  }
+  const view = render(<MemoryRouter initialEntries={['/']}><TooltipProvider><NavigateProbe /><Routes>
+    <Route path="/" element={<ChatPage />} />
+    <Route path="/c/:chatId" element={<ChatPage />} />
+  </Routes></TooltipProvider></MemoryRouter>)
+  fireEvent.click(await view.findByRole('button', { name: /enable temporary/i }))
+  await view.findByRole('button', { name: /disable temporary/i })
+  expect(view.container.querySelector('[data-desktop-temporary-chat="true"]')).toBeTruthy()
+  expect(useDesktopChrome.getState().temporaryChat).toBe(true)
+  act(() => navigate!(`/c/${chatId}`))
+  await waitFor(() => expect(view.container.querySelector('[data-desktop-temporary-chat]')).toBeNull())
+  expect(useDesktopChrome.getState().temporaryChat).toBe(false)
+  act(() => navigate!('/'))
+  expect(await view.findByRole('button', { name: /disable temporary/i })).toBeTruthy()
+  expect(view.container.querySelector('[data-desktop-temporary-chat="true"]')).toBeTruthy()
 })

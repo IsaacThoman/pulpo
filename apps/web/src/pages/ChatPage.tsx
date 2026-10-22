@@ -355,7 +355,8 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
     navigate('/', { state: newChatLocationState(true, modelId) })
   }
 
-  const temporaryMode = temporary || Boolean(chat?.temporary)
+  // The page stays mounted across routes, so the new-chat toggle must not tint a saved chat.
+  const temporaryMode = Boolean(chat?.temporary) || (temporary && !routeChatId)
   // Files beside the page add to this chat; temporary chats and admin views take no files.
   usePublishChatTarget(adminMode || temporaryMode ? null : chat ? { kind: 'chat', id: chat.id } : { kind: 'new' })
   const desktopSidebarVisible = useDesktopChrome((state) => state.desktopSidebarVisible)
