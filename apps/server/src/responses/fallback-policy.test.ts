@@ -5,6 +5,7 @@ import {
   canFallbackAfterGenerationError,
   classifyGenerationError,
   completionTokensPerSecond,
+  incompleteStreamAttemptLimit,
   isContextOverflowError,
   isModelSticky,
   isSlowCompletion,
@@ -56,6 +57,16 @@ describe('shared model fallback policy', () => {
     expect(isSlowCompletion(policy, 15_000, 299)).toBe(true)
     expect(isSlowCompletion(policy, 15_000, 300)).toBe(false)
     expect(completionTokensPerSecond(15_000, 300)).toBe(20)
+  })
+
+  it('grants incomplete streams one resend without lowering configured attempts', () => {
+    expect(incompleteStreamAttemptLimit(1, 'OpenAI Responses stream ended before a terminal response event')).toBe(2)
+    expect(incompleteStreamAttemptLimit(1, 'Anthropic stream ended before message_stop')).toBe(2)
+    expect(incompleteStreamAttemptLimit(1, 'Provider stream ended before the response finished')).toBe(2)
+    expect(incompleteStreamAttemptLimit(1, 'Provider stream ended without a response')).toBe(2)
+    expect(incompleteStreamAttemptLimit(4, 'Provider stream ended without a response')).toBe(4)
+    expect(incompleteStreamAttemptLimit(1, 'Provider overloaded')).toBe(1)
+    expect(incompleteStreamAttemptLimit(1, undefined)).toBe(1)
   })
 
   it('classifies retryable and non-retryable failures consistently', () => {
