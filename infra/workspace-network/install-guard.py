@@ -26,6 +26,10 @@ SERVICE = 'pulpo-workspace-guard.service'
 UNIT = Path('/etc/systemd/system') / SERVICE
 K3S_UNIT = Path('/etc/systemd/system/k3s.service.d/52-pulpo-guard.conf')
 K3S_CONFIG = Path('/etc/rancher/k3s/config.yaml.d/52-pulpo-workspace-guard.yaml')
+WATCH = 'pulpo-workspace-guard-reconcile.path'
+RECONCILE = 'pulpo-workspace-guard-reconcile.service'
+WATCH_UNIT = Path('/etc/systemd/system') / WATCH
+RECONCILE_UNIT = Path('/etc/systemd/system') / RECONCILE
 
 
 def run(*args, **kwargs):
@@ -79,6 +83,14 @@ def restore(backup, automatic=False):
         return
     state = json.loads((backup / 'state.json').read_text())
     run('systemctl', 'stop', state['timer'] + '.timer')
+    # Pause cache-driven reloads before restoring code/configuration. The
+    # watcher service may be waiting for this lock; stopping it is safe.
+    if WATCH_UNIT.exists():
+        run('systemctl', 'stop', WATCH)
+        if not state.get('watchEnabled', False):
+            run('systemctl', 'disable', WATCH)
+    if RECONCILE_UNIT.exists():
+        run('systemctl', 'stop', RECONCILE)
     # Disable/stop while the unit file still exists. Removing it first makes
     # systemctl disable fail on an initial installation's rollback.
     if not state['enabled'] and UNIT.exists():
@@ -118,6 +130,8 @@ def restore(backup, automatic=False):
     else:
         run(guard.NFT, '-f', '-', input=rules)
     run('systemctl', 'daemon-reload')
+    if state.get('watchActive', False):
+        run('systemctl', 'start', WATCH)
     (backup / 'rolled-back').touch()
     print('Restored guard configuration:', backup)
 
@@ -149,11 +163,13 @@ def install(args):
     stamp = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
     backup = BACKUPS / stamp
     backup.mkdir(parents=True, mode=0o700)
-    files = [ACTIVE_CNI, CUSTOM_CNI, BINARY, CNI_BINARY, UNIT, K3S_UNIT, K3S_CONFIG,
+    files = [ACTIVE_CNI, CUSTOM_CNI, BINARY, CNI_BINARY, UNIT, K3S_UNIT, K3S_CONFIG, WATCH_UNIT, RECONCILE_UNIT,
              guard.CONFIG, guard.DISABLED, guard.STATE / 'endpoints.json', guard.STATE / 'enforcement.json']
     state = {'files': {}, 'timer': 'pulpo-guard-rollback-' + stamp.lower(),
              'enabled': subprocess.run(['systemctl', 'is-enabled', '--quiet', SERVICE], capture_output=True).returncode == 0,
              'active': subprocess.run(['systemctl', 'is-active', '--quiet', SERVICE], capture_output=True).returncode == 0,
+             'watchEnabled': subprocess.run(['systemctl', 'is-enabled', '--quiet', WATCH], capture_output=True).returncode == 0,
+             'watchActive': subprocess.run(['systemctl', 'is-active', '--quiet', WATCH], capture_output=True).returncode == 0,
              'previousGuard': guard.CONFIG.exists() and not guard.DISABLED.exists()}
     for path in files:
         if path.is_symlink():
@@ -184,16 +200,30 @@ def install(args):
         write(UNIT, '[Unit]\nDescription=Pulpo workspace CNI identity guard\nAfter=local-fs.target\nBefore=k3s.service\n\n'
               '[Service]\nType=oneshot\nRemainAfterExit=yes\nExecStart=' + str(BINARY) + ' reload\nExecReload=' + str(BINARY) + ' reload\n\n'
               '[Install]\nWantedBy=multi-user.target\n')
-        write(K3S_UNIT, '[Unit]\nWants=' + SERVICE + '\nAfter=' + SERVICE + '\n\n'
+        write(K3S_UNIT, '[Unit]\nWants=' + SERVICE + ' ' + WATCH + '\nAfter=' + SERVICE + ' ' + WATCH + '\n\n'
               '[Service]\nExecStartPre=' + str(BINARY) + ' reload\n')
+        write(WATCH_UNIT, '[Unit]\nDescription=Reconcile late CNI workspace identities\n'
+              'After=local-fs.target\nBefore=k3s.service\n\n'
+              '[Path]\nPathChanged=' + str(guard.CACHE) + '\nUnit=' + RECONCILE + '\n'
+              'TriggerLimitIntervalSec=0\n\n[Install]\nWantedBy=multi-user.target\n')
+        write(RECONCILE_UNIT, '[Unit]\nDescription=Reconcile cached CNI identities\n'
+              'StartLimitIntervalSec=0\nConditionPathExists=' + str(guard.CONFIG) + '\n'
+              'ConditionPathExists=!' + str(guard.DISABLED) + '\n\n'
+              '[Service]\nType=oneshot\nExecStart=' + str(BINARY) + ' reload\n'
+              'TimeoutStartSec=30s\nRestart=on-failure\nRestartSec=1s\n')
         guard.DISABLED.unlink(missing_ok=True)
+        run('systemctl', 'daemon-reload')
+        run('systemctl', 'enable', SERVICE)
+        run('systemctl', 'enable', WATCH)
+        # Start watching before handing off the conflist. Old ADDs do not hold
+        # our lock and may commit libcni caches arbitrarily late; their close/
+        # rename events must trigger adoption after the final initial reload.
+        run('systemctl', 'start', WATCH)
         # The CNI and installer share a lock. A new guarded ADD cannot return
         # until these tables and all identities have been committed atomically.
         write(ACTIVE_CNI, CUSTOM_CNI.read_bytes())
         guard.apply(entries, settings)
         guard.atomic_json(guard.STATE / 'endpoints.json', entries)
-        run('systemctl', 'daemon-reload')
-        run('systemctl', 'enable', SERVICE)
     except BaseException:
         restore(backup)
         raise
@@ -230,6 +260,7 @@ def main():
             for family in ['bridge', 'inet']:
                 guard.run(guard.NFT, 'list', 'table', family, guard.TABLE)
             run('systemctl', 'is-active', SERVICE)
+            run('systemctl', 'is-active', WATCH)
             run('systemctl', 'stop', state['timer'] + '.timer')
             (args.confirm / 'confirmed').touch()
             print('Confirmed; automatic rollback cancelled:', args.confirm)

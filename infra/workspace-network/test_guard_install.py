@@ -24,10 +24,12 @@ class GuardInstallerTest(unittest.TestCase):
         self.calls = []
         self.guard_tables = False
         self.active = self.enabled = False
+        self.watch_active = self.watch_enabled = False
         self.failure = None
         self.previous_reloads = 0
         replacements = {name: root / name for name in [
-            'BACKUPS', 'ACTIVE_CNI', 'CUSTOM_CNI', 'BINARY', 'CNI_BINARY', 'UNIT', 'K3S_UNIT', 'K3S_CONFIG']}
+            'BACKUPS', 'ACTIVE_CNI', 'CUSTOM_CNI', 'BINARY', 'CNI_BINARY', 'UNIT', 'K3S_UNIT', 'K3S_CONFIG',
+            'WATCH_UNIT', 'RECONCILE_UNIT']}
         patches = [patch.object(installer, name, path) for name, path in replacements.items()]
         patches += [patch.object(guard, name, root / name) for name in ['CONFIG', 'DISABLED', 'STATE']]
         patches += [patch.object(installer.os, 'geteuid', return_value=0),
@@ -81,22 +83,33 @@ class GuardInstallerTest(unittest.TestCase):
             elif argv[1:3] == ['-f', '-']:
                 self.guard_tables = 'previous guard table' in kwargs['input']
         if argv[0] == 'systemctl':
+            watched = len(argv) > 2 and argv[-1] == installer.WATCH
             if argv[1] == 'is-enabled':
-                code = 0 if self.enabled else 1
+                code = 0 if (self.watch_enabled if watched else self.enabled) else 1
             elif argv[1] == 'is-active':
-                code = 0 if self.active else 3
+                code = 0 if (self.watch_active if watched else self.active) else 3
             elif argv[1] == 'enable':
-                self.enabled = True
+                if watched:
+                    self.watch_enabled = True
+                else:
+                    self.enabled = True
             elif argv[1] == 'disable':
-                if not installer.UNIT.exists():
+                if not (installer.WATCH_UNIT if watched else installer.UNIT).exists():
                     raise RuntimeError('systemctl cannot disable a removed unit')
-                self.enabled = False
+                if watched:
+                    self.watch_enabled = False
+                else:
+                    self.enabled = False
             elif argv[1:3] == ['restart', installer.SERVICE]:
                 if self.failure == 'service':
                     raise RuntimeError('service start failed')
                 self.active = True
             elif argv[1:3] == ['stop', installer.SERVICE]:
                 self.active = False
+            elif argv[1:3] == ['start', installer.WATCH]:
+                self.watch_active = True
+            elif argv[1:3] == ['stop', installer.WATCH]:
+                self.watch_active = False
         if code and kwargs.get('check'):
             raise subprocess.CalledProcessError(code, argv, output, error)
         return subprocess.CompletedProcess(argv, code, output, error)
@@ -115,6 +128,8 @@ class GuardInstallerTest(unittest.TestCase):
         self.assertFalse(self.guard_tables)
         self.assertFalse(self.enabled)
         self.assertFalse(self.active)
+        self.assertFalse(self.watch_active)
+        self.assertFalse(self.watch_enabled)
         self.assertTrue(guard.DISABLED.exists())
         # Cached new CNI configurations remain deletable after rollback.
         self.assertTrue(installer.BINARY.exists())
@@ -209,6 +224,26 @@ class GuardInstallerTest(unittest.TestCase):
         self.assertEqual(self.previous_reloads, 1)
         self.assertTrue(self.guard_tables)
         self.assertFalse(guard.DISABLED.exists())
+        self.assertTrue(self.watch_active and self.watch_enabled)
+
+    def test_watcher_starts_before_handoff_and_recovers_an_arbitrarily_late_old_add(self):
+        original_write = installer.write
+
+        def observe_handoff(path, data, mode=0o644):
+            if path == installer.ACTIVE_CNI:
+                self.assertTrue(self.watch_active)
+            return original_write(path, data, mode)
+
+        with patch.object(installer, 'write', side_effect=observe_handoff):
+            self.install()
+        # Complete an old, unguarded ADD after installation and its final
+        # service reload. The cache-change service invokes this same command.
+        self.assertNotIn('late:eth0', json.loads((guard.STATE / 'endpoints.json').read_text()))
+        with patch.object(guard, 'adopt', return_value={'late:eth0': {'host': 'veth-late'}}), \
+                patch.object(guard, 'read_config', return_value=json.loads(guard.CONFIG.read_text())), \
+                patch('sys.argv', ['guard', 'reload']):
+            guard.main()
+        self.assertIn('late:eth0', json.loads((guard.STATE / 'endpoints.json').read_text()))
 
 
 if __name__ == '__main__':

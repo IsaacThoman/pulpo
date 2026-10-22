@@ -26,3 +26,5 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y nftables iproute2
       - name: Test real packets in disposable network namespaces
         run: sudo python3 infra/workspace-network/test_guard_kernel.py
+      - name: Test generated cache watcher with private files and units
+        run: sudo python3 infra/workspace-network/test_guard_systemd.py

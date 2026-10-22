@@ -45,8 +45,10 @@ valid workspace identity. Raw peer frames are checked in both directions with
 known destination MACs, so blocked ARP cannot conceal a forwarding-policy gap.
 Source-port egress checks run before any destination-port accept rule. The
 guard loads twice in one namespace to exercise
-atomic replacement. CI includes this test plus the 30 unprivileged identity and
-installer lifecycle tests.
+atomic replacement. CI includes this test, 31 unprivileged identity/installer
+tests, and a real systemd test using private cache files and unique temporary
+units. The systemd test observes two separate late cache completions without
+touching the production CNI directory or firewall.
 
 The pre-merge independent review also reproduced two installer availability
 defects: early failure before service creation could abort rollback, and upgrade
@@ -54,6 +56,10 @@ rollback could discard identities created after its backup. Regression tests
 now cover recovery before unit creation and rebuilding the previous guard's
 rules from the current pod inventory during upgrade rollback. These were
 installer defects rather than additional demonstrated packet-policy bypasses.
+The next review reproduced a first-install race with an ADD using the old CNI
+configuration completing after the final reload. A systemd cache-change watcher
+now starts before handoff and reconciles these late identities while unknown
+ports remain denied. This addresses availability without weakening the boundary.
 
 The pre-install host configuration is retained at:
 

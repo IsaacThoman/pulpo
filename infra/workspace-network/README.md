@@ -105,13 +105,24 @@ command is run after verification.
 | `/etc/rancher/k3s/config.yaml.d/52-pulpo-workspace-guard.yaml` | Makes K3s retain the custom CNI configuration |
 | `/var/lib/pulpo-workspace-network/guard/` | Root-owned identity/rule ledger and shared lifecycle lock |
 | `/etc/systemd/system/pulpo-workspace-guard.service` | Applies protection at boot and on reload |
+| `/etc/systemd/system/pulpo-workspace-guard-reconcile.path` | Watches libcni cache completion for late identities |
+| `/etc/systemd/system/pulpo-workspace-guard-reconcile.service` | Reconciles identities under the same guard lock |
 | `/etc/systemd/system/k3s.service.d/52-pulpo-guard.conf` | Reapplies protection before K3s starts; failure blocks startup |
 
 CNI ADD, DEL, CHECK, reload, install and rollback share a lock. Rule updates replace
 only the guard's two nftables tables, atomically. CNI ADD returns success only
 after enforcement is installed; CHECK also detects missing or altered rules.
 Stopping the service leaves rules installed. The guard requires the host's
-existing Python 3, iproute2, nftables and network-namespace support.
+existing Python 3, iproute2, nftables, systemd 250+ and network-namespace support.
+
+An ADD already using the old CNI configuration cannot take the new guard lock.
+The cache watcher starts before the configuration handoff and catches its late
+result even if the initial reload has finished. Until adoption, the unknown-port
+rule blocks that interface; packet protection never depends on the watcher.
+The watcher uses cache close/rename notifications rather than polling, retries
+transient cache-read failures, and has no activation rate limit that could leave
+it disabled during a burst of pod creation. Rollback pauses it before restoring
+files and restores its previous enabled/active state.
 
 Verify with two disposable `pulpo.dev/state: network-check` bounded Kata pods:
 
@@ -137,6 +148,7 @@ production bridge. CI runs both:
 ```sh
 python3 -m unittest discover -s infra/workspace-network -p 'test_*.py'
 sudo python3 infra/workspace-network/test_guard_kernel.py
+sudo python3 infra/workspace-network/test_guard_systemd.py
 ```
 
 Backups live under `/var/backups/pulpo-workspace-guard/`. Explicit rollback uses
