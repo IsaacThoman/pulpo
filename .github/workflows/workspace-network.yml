@@ -1,0 +1,28 @@
+name: Validate workspace network isolation
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - infra/workspace-network/**
+      - .github/workflows/workspace-network.yml
+  push:
+    branches: [main]
+    paths:
+      - infra/workspace-network/**
+      - .github/workflows/workspace-network.yml
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Test CNI identity and installer lifecycle
+        run: python3 -m unittest discover -s infra/workspace-network -p 'test_*.py'
+      - name: Install packet-filter test prerequisites
+        run: sudo apt-get update && sudo apt-get install -y nftables iproute2
+      - name: Test real packets in disposable network namespaces
+        run: sudo python3 infra/workspace-network/test_guard_kernel.py
