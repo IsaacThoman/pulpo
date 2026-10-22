@@ -69,6 +69,7 @@ import {
   isContextOverflowError,
   completionTokensPerSecond,
   fallbackModelAttemptLimit,
+  incompleteStreamAttemptLimit,
   isModelSticky,
   isSlowCompletion,
   markModelSticky,
@@ -1168,6 +1169,7 @@ export async function processGeneration(responseId: string): Promise<void> {
           continue
         }
         if (!canFallbackAfterGenerationError(error)) { model = undefined; break }
+        attemptLimit = incompleteStreamAttemptLimit(attemptLimit, error instanceof Error ? error.message : undefined)
         if (attempt + 1 < attemptLimit && retryDelaySeconds > 0) await new Promise((resolve) => setTimeout(resolve, retryDelaySeconds * 1000))
       }
     }

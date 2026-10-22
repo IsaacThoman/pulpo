@@ -46,6 +46,14 @@ describe('Agent fallback policy', () => {
     expect(nextAgentRetryAttempt({ message: aborted, currentAttempt: 1, maxAttempts: 2, outputStarted: false, cancellationRequested: false })).toBe(2)
   })
 
+  it('resends an incomplete stream once when the model has no configured retries', () => {
+    const ended = failed([], 'OpenAI Responses stream ended before a terminal response event')
+    expect(nextAgentRetryAttempt({ message: ended, currentAttempt: 1, maxAttempts: 1, outputStarted: false, cancellationRequested: false })).toBe(2)
+    expect(nextAgentRetryAttempt({ message: ended, currentAttempt: 2, maxAttempts: 1, outputStarted: false, cancellationRequested: false })).toBeUndefined()
+    expect(nextAgentRetryAttempt({ message: ended, currentAttempt: 1, maxAttempts: 1, outputStarted: true, cancellationRequested: false })).toBeUndefined()
+    expect(nextAgentRetryAttempt({ message: failed(), currentAttempt: 1, maxAttempts: 1, outputStarted: false, cancellationRequested: false })).toBeUndefined()
+  })
+
   it('does not retry after output or cancellation', () => {
     const message = failed([], 'Provider overloaded')
     expect(nextAgentRetryAttempt({ message, currentAttempt: 1, maxAttempts: 2, outputStarted: true, cancellationRequested: false })).toBeUndefined()
