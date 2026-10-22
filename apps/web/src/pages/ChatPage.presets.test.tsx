@@ -381,6 +381,8 @@ it('starts a temporary chat when the navigation asks, and drops the request from
 
 it('drops the temporary tint when leaving a temporary new chat for a saved chat', async () => {
   const { useDesktopChrome } = await import('@/stores/desktopChrome')
+  // Start hydrated so toggling tests route tinting rather than the draft-loading guard.
+  rememberRuntimeComposerDraft(userId, 'new', { content: 'unsent draft', attachmentIds: [], attachments: [] })
   const chatId = useChat.getState().sendMessage(null, 'saved turn', model.id, [], false, false, {
     targetChatId: crypto.randomUUID(), responseId: crypto.randomUUID(), presetSelections: defaults, agentMode: true,
   })
