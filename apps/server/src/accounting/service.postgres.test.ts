@@ -471,7 +471,7 @@ describe.skipIf(!enabled)('budget-aware reservations in PostgreSQL', () => {
     }
     async function payment(userId: string, netCents: number, paidDaysAgo: number, refundedCents = 0) {
       await db.insert(billingOrders).values({
-        stripePaymentId: randomUUID(), userId, stripePriceId: 'price_test', billingReason: 'purchase', status: refundedCents ? 'refunded' : 'paid', currency: 'usd',
+        providerPaymentId: randomUUID(), provider: 'stripe', userId, providerProductId: 'price_test', billingReason: 'purchase', status: refundedCents ? 'refunded' : 'paid', currency: 'usd',
         subtotalAmountCents: netCents, netAmountCents: netCents, totalAmountCents: netCents, refundedAmountCents: refundedCents,
         paidAt: new Date(Date.now() - paidDaysAgo * 24 * 60 * 60 * 1_000),
       })
