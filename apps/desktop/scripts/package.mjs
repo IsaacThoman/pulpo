@@ -5,7 +5,7 @@ const forge = path.resolve(import.meta.dirname, '../../../node_modules/@electron
 const nodeMajor = Number(process.versions.node.split('.')[0])
 const command = nodeMajor >= 26 ? 'npx' : process.execPath
 const args = nodeMajor >= 26
-  ? ['--yes', '--package=node@24.18.1', 'node', forge, 'package']
+  ? ['--yes', '--package=node@24.22.1', 'node', forge, 'package']
   : [forge, 'package']
 
 const child = spawn(command, args, { cwd: path.resolve(import.meta.dirname, '..'), stdio: 'inherit' })
