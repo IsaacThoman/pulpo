@@ -28,7 +28,7 @@ function runNpm(args, env = process.env) {
 
 async function main() {
   if (nodeMajor >= 26 && process.env.PULPO_FORGE_NODE24 !== '1') {
-    return runNpm(['exec', '--yes', '--package=node@24.18.1', '--', 'node', import.meta.filename, ...forwarded], {
+    return runNpm(['exec', '--yes', '--package=node@24.22.1', '--', 'node', import.meta.filename, ...forwarded], {
       ...process.env,
       PULPO_FORGE_NODE24: '1',
     })
