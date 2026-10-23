@@ -18,6 +18,7 @@ type Range = '7d' | '30d' | '90d' | 'all'
 /** animate bars by full date so a range change keeps each day in place */
 const MATCH_BY_DATE = matchByDataKey('date')
 type ProductKind = 'eight' | 'fat' | 'credits' | 'unknown'
+type BillingProvider = 'stripe' | 'app_store'
 
 const RANGES: { id: Range; label: string }[] = [
   { id: '7d', label: "7d" },
@@ -48,7 +49,8 @@ interface Dashboard {
   subscribers: { eight: number; fat: number }
   trend: Array<{ day: string; totalCents: number; payments: number }>
   recentOrders: Array<{
-    stripePaymentId: string
+    paymentId: string
+    provider: BillingProvider
     userName: string
     userEmail: string
     product: ProductKind
@@ -64,7 +66,8 @@ interface Dashboard {
     userId: string
     userName: string
     userEmail: string
-    stripeSubscriptionId: string
+    subscriptionId: string
+    provider: BillingProvider
     plan: 'eight' | 'fat'
     status: string
     cancelAtPeriodEnd: boolean
@@ -349,7 +352,7 @@ export function AdminBillingPage() {
               </thead>
               <tbody className="divide-y">
                 {data.recentOrders.map((order) => (
-                  <tr key={order.stripePaymentId}>
+                  <tr key={order.paymentId}>
                     <td className="max-w-48 px-3 py-2">
                       <div className="truncate">{order.userName}</div>
                       <div className="truncate text-muted-foreground">{order.userEmail}</div>
@@ -363,7 +366,7 @@ export function AdminBillingPage() {
                     <td className="px-3 py-2 text-right tabular-nums">{order.grantedCreditMicros > 0 ? formatBalance(order.grantedCreditMicros / 1_000_000) : '—'}</td>
                     <td className="px-3 py-2"><Badge variant={order.refundedAmountCents > 0 ? 'destructive' : 'outline'}>{order.refundedAmountCents > 0 ? ui("refunded") : order.status}</Badge></td>
                     <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{formatDate(Date.parse(order.createdAt))}</td>
-                    <td className="px-3 py-2 text-right">{stripeMode && <StripeLink href={stripePaymentUrl(stripeMode, order.stripePaymentId)} />}</td>
+                    <td className="px-3 py-2 text-right">{stripeMode && order.provider === 'stripe' && <StripeLink href={stripePaymentUrl(stripeMode, order.paymentId)} />}</td>
                   </tr>
                 ))}
               </tbody>
@@ -388,7 +391,7 @@ export function AdminBillingPage() {
               </thead>
               <tbody className="divide-y">
                 {data.recentSubscriptions.map((row) => (
-                  <tr key={row.stripeSubscriptionId}>
+                  <tr key={row.subscriptionId}>
                     <td className="max-w-48 px-3 py-2">
                       <div className="truncate">{row.userName}</div>
                       <div className="truncate text-muted-foreground">{row.userEmail}</div>
@@ -397,7 +400,7 @@ export function AdminBillingPage() {
                     <td className="px-3 py-2"><Badge variant={row.status === 'past_due' ? 'destructive' : 'outline'}>{row.cancelAtPeriodEnd ? ui("canceling") : row.status}</Badge></td>
                     <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{row.paidThrough ? formatDate(Date.parse(row.paidThrough)) : '—'}</td>
                     <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{row.currentPeriodEnd ? formatDate(Date.parse(row.currentPeriodEnd)) : '—'}</td>
-                    <td className="px-3 py-2 text-right">{stripeMode && <StripeLink href={stripeSubscriptionUrl(stripeMode, row.stripeSubscriptionId)} />}</td>
+                    <td className="px-3 py-2 text-right">{stripeMode && row.provider === 'stripe' && <StripeLink href={stripeSubscriptionUrl(stripeMode, row.subscriptionId)} />}</td>
                   </tr>
                 ))}
               </tbody>

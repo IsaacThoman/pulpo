@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.18
-FROM node:24.18.1-bookworm-slim AS daemon-build
+FROM node:24.22.1-bookworm-slim AS daemon-build
 WORKDIR /src
 COPY packages/workspace-daemon/package.json packages/workspace-daemon/tsconfig.json ./
 RUN npm install --include=dev
@@ -9,9 +9,9 @@ RUN npm run build
 FROM ubuntu:24.04
 
 ARG TARGETARCH
-ARG NODE_VERSION=24.18.1
-ARG NODE_SHA256_AMD64=d6c664df3f3f61458e8c277585571328522d705166723a7c7823a9253a4d15a0
-ARG NODE_SHA256_ARM64=7201e3a09dc825bac57867c81913e2b8f0ef87d04cb9082af4cda82f6ff3d88c
+ARG NODE_VERSION=24.22.1
+ARG NODE_SHA256_AMD64=6c172a9ab6718f7b801fb5a7bd486af2ee5e32758086a04b84fcce2aa77095e6
+ARG NODE_SHA256_ARM64=dbabf7a1cbf947e6059ffad2c27b80041db97dea1e553b62afdee7f13fca336e
 
 LABEL org.opencontainers.image.title="Pulpo Agent Workspace" \
       org.opencontainers.image.description="Disposable Ubuntu workspace for Pulpo agent sandboxes" \

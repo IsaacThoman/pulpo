@@ -1,5 +1,5 @@
 import type { AssistantMessage } from '@earendil-works/pi-ai'
-import { canFallbackAfterGenerationError, fallbackModelAttemptLimit, primaryModelAttemptLimit } from '../responses/fallback-policy.js'
+import { canFallbackAfterGenerationError, fallbackModelAttemptLimit, incompleteStreamAttemptLimit, primaryModelAttemptLimit } from '../responses/fallback-policy.js'
 
 type RetryChainModel = { fallbackModelId: string | null; maxRetries: number }
 
@@ -68,7 +68,7 @@ export function nextAgentRetryAttempt(input: {
   outputStarted: boolean
   cancellationRequested: boolean
 }): number | undefined {
-  if (input.currentAttempt >= input.maxAttempts) return undefined
+  if (input.currentAttempt >= incompleteStreamAttemptLimit(input.maxAttempts, input.message.errorMessage)) return undefined
   return canFallbackAgentTurn({
     message: input.message,
     outputStarted: input.outputStarted,
