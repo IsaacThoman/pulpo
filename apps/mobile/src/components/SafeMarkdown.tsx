@@ -1,6 +1,8 @@
 import { memo, useMemo } from 'react'
 import { Linking, Platform, StyleSheet, type TextStyle, type ViewStyle } from 'react-native'
 import { EnrichedMarkdownText, type MarkdownStyle } from 'react-native-enriched-markdown'
+import { openFilesLinkInApp } from '../features/files/links'
+import { useSessionStore } from '../store/session'
 import { useAppTheme } from '../theme'
 import { beginsWithMarkdownHeading, linkMarkdownImages, normalizeMathDelimiters, unwrapBoxedMinipages } from './markdown'
 
@@ -22,6 +24,7 @@ export const SafeMarkdown = memo(function SafeMarkdown({
   onLinkPress?: (url: string) => boolean
 }) {
   const theme = useAppTheme()
+  const instanceUrl = useSessionStore((state) => state.instanceUrl)
   // Android's native inline math is a single bitmap span with no horizontal
   // gesture handling. Move wide formulas into the scrollable display-math view.
   const markdown = useMemo(() => normalizeMathDelimiters(linkMarkdownImages(unwrapBoxedMinipages(children)), {
@@ -72,6 +75,8 @@ export const SafeMarkdown = memo(function SafeMarkdown({
     maxFontSizeMultiplier={2}
     onLinkPress={({ url }) => {
       if (onLinkPress?.(url)) return
+      // Files on this instance open in the app rather than the browser.
+      if (openFilesLinkInApp(url, instanceUrl)) return
       if (/^https?:\/\//i.test(url)) void Linking.openURL(url)
     }}
     selectable={selectable}

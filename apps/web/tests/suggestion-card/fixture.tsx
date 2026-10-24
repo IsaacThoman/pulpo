@@ -6,9 +6,8 @@ import * as Y from 'yjs'
 import '../../src/index.css'
 import '../../src/i18n'
 import { DocEditor } from '../../src/features/files/editor/DocEditor'
-import { FakeServer, FakeSocket } from '../../src/features/files/editor/fake-doc-server.test.helpers'
-import { SocketIOYProvider } from '../../src/features/files/editor/socket-provider'
-import type { PulpoSocket } from '../../src/lib/realtime-socket'
+import { SocketIOYProvider, type DocSocket } from '@pulpo/client-core/doc-sync'
+import { FakeServer, FakeSocket } from '@pulpo/client-core/doc-sync/testing'
 
 const text = (value: string, marks?: unknown[]) => ({ type: 'text', text: value, ...(marks && { marks }) })
 const mark = (type: 'suggestionInsert' | 'suggestionDelete', id: string) => ({ type, attrs: { id, changeId: 'change-1' } })
@@ -31,7 +30,7 @@ applyNodeToYDoc(server.doc, ProseMirrorNode.fromJSON(docSchema(), { type: 'doc',
 
 const doc = new Y.Doc()
 const provider = new SocketIOYProvider('doc-1', doc)
-provider.attach(new FakeSocket(server) as unknown as PulpoSocket)
+provider.attach(new FakeSocket(server) as unknown as DocSocket)
 
 // Scrolls like the file page, with the editor's toolbar sticking to the top.
 createRoot(document.getElementById('root')!).render(

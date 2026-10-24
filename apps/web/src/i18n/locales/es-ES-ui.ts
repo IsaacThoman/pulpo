@@ -1828,6 +1828,15 @@ const esUi: Record<string, string> = {
   "New": "Nuevo",
   "New folder": "Nueva carpeta",
   "Upload files": "Subir archivos",
+  "Import from URL": "Importar desde URL",
+  "Saves the page's text in this folder as a document you can edit.": "Guarda el texto de la página en esta carpeta como un documento que puedes editar.",
+  "Web address": "Dirección web",
+  "Imported \"{{0}}\"": "Se importó «{{0}}»",
+  "Enter a full web address, like https://example.com": "Introduce una dirección web completa, como https://example.com",
+  "Only https:// links can be imported": "Solo se pueden importar enlaces https://",
+  "Links with a username or password cannot be imported": "No se pueden importar enlaces con usuario o contraseña",
+  "This page could not be imported. Check the link and try again.": "No se pudo importar esta página. Revisa el enlace e inténtalo de nuevo.",
+  "Importing from a URL is not available": "La importación desde URL no está disponible",
   "Uploads": "Subidas",
   "Untitled folder": "Carpeta sin título",
   "Items in the trash still count toward your storage and are deleted forever after 30 days.": "Los elementos de la papelera siguen contando para tu almacenamiento y se eliminan definitivamente tras 30 días.",
@@ -2507,6 +2516,10 @@ const esUi: Record<string, string> = {
   "Subscription plans": "Planes de suscripción",
   "Specific users": "Usuarios específicos",
   "No users selected.": "No hay usuarios seleccionados.",
+  "Unable to transcribe the recording": "No se ha podido transcribir la grabación",
+  "Microphone permission was denied": "Se ha denegado el permiso del micrófono",
+  "Unable to access the microphone": "No se puede acceder al micrófono",
+  "The document can't be edited right now, so the dictation wasn't added.": "Ahora no se puede editar el documento, así que no se ha añadido el dictado.",
 }
 
 export default esUi

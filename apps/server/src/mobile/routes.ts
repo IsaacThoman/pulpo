@@ -11,6 +11,7 @@ import {
   mobilePasskeyVerifyInputSchema,
   verifyPasskeyAuthenticationInputSchema,
 } from '@pulpo/contracts'
+import { DOC_SCHEMA_VERSION } from '@pulpo/client-core/doc-schema'
 import { db } from '../database/client.js'
 import { applicationSettings, passwordCredentials, users } from '../database/schema.js'
 import { getConfig } from '../config.js'
@@ -76,6 +77,7 @@ export async function registerMobileRoutes(app: FastifyInstance): Promise<void> 
         folders: true,
         twoFactorAuth: true,
         passkeys: true,
+        files: { enabled: auth.filesEnabled, docSchemaVersion: DOC_SCHEMA_VERSION },
       },
     })
   })

@@ -4,6 +4,7 @@ import { useFocusEffect } from '@react-navigation/native'
 import type { DeviceSession, DeviceSessionList } from '@pulpo/contracts'
 import { mobileApi } from '../api/client'
 import { useSessionStore } from '../store/session'
+import { unsyncedEditsNote } from '../features/files/doc/accountSessions'
 import { Card, PageHeader, Screen } from '../mockup5/src/components/PrototypeUI'
 import { useAppTheme } from '../mockup5/src/theme'
 
@@ -40,16 +41,22 @@ export function DevicesScreen({ navigation }: { navigation: { goBack(): void } }
     } catch (next) { setError(next instanceof Error ? next.message : 'Could not sign out device.') }
     finally { setBusy(false) }
   }
-  const confirm = (session: DeviceSession | 'others') => Alert.alert(
-    session === 'others' ? 'Sign out all other devices?' : `Sign out ${session.deviceLabel}?`,
-    session !== 'others' && session.isCurrent ? 'This is your current device. You will return to sign-in.' : 'These sessions will need to sign in again.',
-    [{ text: 'Cancel', style: 'cancel' }, { text: 'Sign out', style: 'destructive', onPress: () => { void revoke(session) } }],
-  )
+  const confirm = async (session: DeviceSession | 'others') => {
+    const current = session !== 'others' && session.isCurrent
+    // Signing this device out deletes what it has not uploaded yet.
+    const { instanceUrl, user } = useSessionStore.getState()
+    const note = current && user ? await unsyncedEditsNote(instanceUrl, [user.id]).catch(() => '') : ''
+    Alert.alert(
+      session === 'others' ? 'Sign out all other devices?' : `Sign out ${session.deviceLabel}?`,
+      current ? `This is your current device. You will return to sign-in.${note}` : 'These sessions will need to sign in again.',
+      [{ text: 'Cancel', style: 'cancel' }, { text: 'Sign out', style: 'destructive', onPress: () => { void revoke(session) } }],
+    )
+  }
   return <Screen>
     <PageHeader title="Devices" onBack={() => navigation.goBack()} />
     <Text style={{ color: theme.secondary, marginBottom: 12 }}>Each entry is a signed-in session. Different browsers on one device can appear separately.</Text>
     <Button title="Refresh" disabled={loading || busy} onPress={() => void refresh()} />
-    <Button title="Sign out all other devices" color={theme.red} disabled={busy || !data?.sessions.some((session) => !session.isCurrent)} onPress={() => confirm('others')} />
+    <Button title="Sign out all other devices" color={theme.red} disabled={busy || !data?.sessions.some((session) => !session.isCurrent)} onPress={() => { void confirm('others') }} />
     {loading && <ActivityIndicator accessibilityLabel="Loading devices" />}
     {error ? <View accessibilityRole="alert"><Text style={{ color: theme.red }}>{error}</Text><Button title="Retry" disabled={busy} onPress={() => void refresh()} /></View> : null}
     {data?.sessions.length === 0 && <Text style={{ color: theme.secondary }}>No signed-in devices.</Text>}
@@ -62,7 +69,7 @@ export function DevicesScreen({ navigation }: { navigation: { goBack(): void } }
         <Text style={{ color: theme.secondary }}>Last active: {new Date(session.lastSeenAt).toLocaleString()}</Text>
         <Button title={expanded === session.id ? 'Hide details' : 'Details'} onPress={() => setExpanded(expanded === session.id ? null : session.id)} />
         {expanded === session.id && <View><Text selectable style={{ color: theme.secondary }}>Sign-in IP: {session.signInIp ?? 'Unknown'}</Text><Text style={{ color: theme.secondary }}>Signed in: {new Date(session.createdAt).toLocaleString()}</Text></View>}
-        <Button title="Sign out" accessibilityLabel={`Sign out ${session.deviceLabel}`} color={theme.red} disabled={busy} onPress={() => confirm(session)} />
+        <Button title="Sign out" accessibilityLabel={`Sign out ${session.deviceLabel}`} color={theme.red} disabled={busy} onPress={() => { void confirm(session) }} />
       </View>
     </Card>)}
   </Screen>

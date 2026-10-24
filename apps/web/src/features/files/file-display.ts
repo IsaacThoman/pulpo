@@ -2,39 +2,17 @@ import { isMarkdownName, type FileNameError, type FileNode } from '@pulpo/contra
 import { ApiError } from '@/lib/api'
 import { ui, uit } from '@/i18n/ui'
 
-export type FilePreviewKind = 'image' | 'pdf' | 'video' | 'audio' | 'markdown' | 'text' | null
-
-/** Largest file that is fetched into memory for an inline preview. */
-export const MAX_INLINE_PREVIEW_BYTES = 50 * 1024 * 1024
-export const MAX_TEXT_PREVIEW_BYTES = 2 * 1024 * 1024
-
-const TEXT_EXTENSIONS = new Set([
-  'txt', 'log', 'csv', 'tsv', 'json', 'jsonl', 'yaml', 'yml', 'toml', 'ini', 'xml', 'html', 'css', 'js', 'jsx',
-  'ts', 'tsx', 'py', 'rb', 'go', 'rs', 'java', 'kt', 'swift', 'c', 'h', 'cpp', 'sh', 'sql', 'env',
-])
-export const CODE_EXTENSIONS = new Set(['json', 'js', 'jsx', 'ts', 'tsx', 'py', 'rb', 'go', 'rs', 'java', 'kt', 'swift', 'c', 'h', 'cpp', 'sh', 'sql', 'html', 'css', 'xml'])
-export const ARCHIVE_EXTENSIONS = new Set(['zip', 'tar', 'gz', 'tgz', '7z', 'rar'])
-export const SHEET_EXTENSIONS = new Set(['csv', 'tsv', 'xls', 'xlsx', 'numbers'])
-
-export function fileExtension(name: string): string {
-  const dot = name.lastIndexOf('.')
-  return dot > 0 ? name.slice(dot + 1).toLowerCase() : ''
-}
-
-export function filePreviewKind(node: Pick<FileNode, 'kind' | 'name' | 'mimeType' | 'sizeBytes'>): FilePreviewKind {
-  if (node.kind !== 'blob') return null
-  const mime = (node.mimeType ?? '').toLowerCase()
-  const extension = fileExtension(node.name)
-  if (mime.startsWith('video/')) return 'video'
-  if (mime.startsWith('audio/')) return 'audio'
-  if (node.sizeBytes > MAX_INLINE_PREVIEW_BYTES) return null
-  if (mime.startsWith('image/')) return 'image'
-  if (mime === 'application/pdf' || extension === 'pdf') return 'pdf'
-  if (node.sizeBytes > MAX_TEXT_PREVIEW_BYTES) return null
-  if (extension === 'md' || extension === 'markdown' || mime === 'text/markdown') return 'markdown'
-  if (mime.startsWith('text/') || mime === 'application/json' || TEXT_EXTENSIONS.has(extension)) return 'text'
-  return null
-}
+export {
+  ARCHIVE_EXTENSIONS,
+  CODE_EXTENSIONS,
+  fileExtension,
+  filePreviewKind,
+  MAX_INLINE_PREVIEW_BYTES,
+  MAX_TEXT_PREVIEW_BYTES,
+  SHEET_EXTENSIONS,
+  type FilePreviewKind,
+} from '@pulpo/client-core/files'
+import { fileExtension } from '@pulpo/client-core/files'
 
 /** The folder items dropped on `node` go into: the folder itself, or the folder a shortcut opens. */
 export function dropFolderOf(node: FileNode): string | undefined {
@@ -85,6 +63,11 @@ export function filesErrorMessage(error: unknown, name?: string): string {
       case 'not_found': return ui("This item no longer exists")
       case 'file_system_folder': return ui("This folder is built in and cannot be renamed, moved, trashed, or recolored")
       case 'file_chat_copy': return ui("Chats cannot be copied here; duplicate them from the chat menu")
+      case 'url_import_invalid': return ui("Enter a full web address, like https://example.com")
+      case 'url_import_not_https': return ui("Only https:// links can be imported")
+      case 'url_import_credentials': return ui("Links with a username or password cannot be imported")
+      case 'url_import_failed': return ui("This page could not be imported. Check the link and try again.")
+      case 'url_import_unavailable': return ui("Importing from a URL is not available")
       case 'file_shortcut_to_shortcut': return ui("Create a shortcut to the item this shortcut opens instead")
       default: return error.message
     }

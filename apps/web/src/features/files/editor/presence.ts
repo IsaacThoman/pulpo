@@ -1,12 +1,7 @@
 import { uit } from '@/i18n/ui'
 import { desktopDevice, isDesktopRuntime } from '@/lib/runtime'
 
-/** Distinct, readable on light and dark backgrounds. */
-const SESSION_COLORS = ['#2563eb', '#db2777', '#059669', '#d97706', '#7c3aed', '#dc2626', '#0891b2', '#65a30d']
-
-export function sessionColor(clientId: number): string {
-  return SESSION_COLORS[clientId % SESSION_COLORS.length]!
-}
+export { sessionColor } from '@pulpo/client-core/doc-sync'
 
 /** Names the device behind a cursor, since every session belongs to the same person today. */
 export function sessionLabel(userAgent = navigator.userAgent): string {

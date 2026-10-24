@@ -43,7 +43,9 @@ import { apiRequest, mobileApi } from '../../../api/client';
 import { useSessionStore } from '../../../store/session';
 import { useRealtimeStore } from '../../../providers/realtimeStore';
 import { cacheNamespace } from '../../../data/database';
+import { unsyncedEditsNote } from '../../../features/files/doc/accountSessions';
 import { queryKeys } from '../../../data/queries';
+import { filesQueryKeys } from '../../../features/files/queries';
 import { deleteTrashedFiles, fetchTrashedFiles, restoreTrashedFiles, trashDeletesLabel, trashedFileIcon, trashedFilesQueryKey } from '../../../features/trash/trashedFiles';
 import { canUseNativePasskeys, createPkceRequest, nativeRegister, openPasskeyEnrollment, PasskeyCancelledError } from '../../../auth/passkeys';
 
@@ -100,11 +102,15 @@ export function AccountScreen({ navigation }: NativeStackScreenProps<RootStackPa
   const user = session.user;
   const canAddAccount = accounts.length < MAX_SIGNED_IN_ACCOUNTS;
   const accountLimitFooter = canAddAccount ? undefined : `You can be signed in to up to ${MAX_SIGNED_IN_ACCOUNTS} accounts.`;
-  const confirmSignOut = () => Alert.alert('Sign out?', 'End this session on this device.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Sign out', style: 'destructive', onPress: () => { void signOut(); } }]);
+  const instanceUrl = useSessionStore((state) => state.instanceUrl);
+  const confirmSigningOut = (title: string, message: string, userIds: readonly string[], confirmLabel: string, run: () => void) => {
+    void unsyncedEditsNote(instanceUrl, userIds).then((note) => Alert.alert(title, `${message}${note}`, [{ text: 'Cancel', style: 'cancel' }, { text: confirmLabel, style: 'destructive', onPress: run }]));
+  };
+  const confirmSignOut = () => confirmSigningOut('Sign out?', 'End this session on this device.', user ? [user.id] : [], 'Sign out', () => { void signOut(); });
   const switchTo = (account: User) => { if (account.id !== user?.id) void switchAccount(account.id).catch((error) => Alert.alert('Couldn’t switch account', error instanceof Error ? error.message : undefined)); };
   const add = () => { void addAccount().catch((error) => Alert.alert('Couldn’t add account', error instanceof Error ? error.message : undefined)); };
-  const confirmSignOutAccount = (account: User) => account.id === user?.id ? confirmSignOut() : Alert.alert(`Sign out of ${account.name}?`, 'End this account’s session on this device.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Sign out', style: 'destructive', onPress: () => { void signOutAccount(account.id).catch((error) => Alert.alert('Couldn’t sign out', error instanceof Error ? error.message : undefined)); } }]);
-  const confirmSignOutAll = () => Alert.alert('Sign out of all accounts?', 'End every account session on this device.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Sign out all', style: 'destructive', onPress: () => { void signOutAll(); } }]);
+  const confirmSignOutAccount = (account: User) => account.id === user?.id ? confirmSignOut() : confirmSigningOut(`Sign out of ${account.name}?`, 'End this account’s session on this device.', [account.id], 'Sign out', () => { void signOutAccount(account.id).catch((error) => Alert.alert('Couldn’t sign out', error instanceof Error ? error.message : undefined)); });
+  const confirmSignOutAll = () => confirmSigningOut('Sign out of all accounts?', 'End every account session on this device.', accounts.map((account) => account.id), 'Sign out all', () => { void signOutAll(); });
 
   if (Platform.OS === 'ios') return <SwiftUIHost modifiers={[tint(theme.blue)]} style={styles.flex}><SwiftUIForm>
     <SwiftUISection title="Profile">
@@ -468,9 +474,10 @@ export function TrashScreen({ navigation }: NativeStackScreenProps<RootStackPara
     } catch (error) {
       Alert.alert(failure, error instanceof Error ? error.message : 'Try again when you are online.');
     } finally {
-      // Restored folders reappear in the sidebar.
+      // Restored folders reappear in the sidebar (from Files, or the chat folders of older servers).
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: trashedFilesQueryKey(namespace) }),
+        queryClient.invalidateQueries({ queryKey: filesQueryKeys.all(namespace) }),
         queryClient.invalidateQueries({ queryKey: queryKeys.folders(namespace) }),
       ]);
     }

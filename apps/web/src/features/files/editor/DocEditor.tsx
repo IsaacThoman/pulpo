@@ -1,8 +1,5 @@
 import { useEffect, useRef, type ReactNode } from 'react'
-import { createDocExtensions } from '@pulpo/client-core/doc-schema'
-import Collaboration from '@tiptap/extension-collaboration'
-import CollaborationCaret from '@tiptap/extension-collaboration-caret'
-import { Placeholder } from '@tiptap/extensions'
+import { createEditorExtensions, formattingState, runFormatCommand, type FormatCommand } from '@pulpo/client-core/doc-editor'
 import { EditorContent, useEditor, useEditorState, type Editor } from '@tiptap/react'
 import {
   Bold,
@@ -15,6 +12,7 @@ import {
   List,
   ListChecks,
   ListOrdered,
+  Mic,
   Minus,
   Quote,
   Redo2,
@@ -23,18 +21,21 @@ import {
   Table,
   Undo2,
 } from 'lucide-react'
+import { useTranslation } from '@/i18n/useAppTranslation'
 import { ui } from '@/i18n/ui'
 import { cn } from '@/lib/utils'
+import { DictationKeys, dictationShortcut, useDocDictation, type DocDictation } from './doc-dictation'
+import { DocDictationBar } from './DocDictationBar'
 import { sessionColor, sessionLabel } from './presence'
 import { revealSuggestion } from './suggestion-layout'
 import { SuggestionReviewKeys, useSuggestionReview } from './suggestion-review'
-import { SuggestionTyping } from './suggestion-typing'
 import { SuggestionBar, SuggestionCard } from './SuggestionReview'
 import type { DocSession } from './use-doc-session'
 import './doc-editor.css'
 
-function ToolbarButton({ label, active, disabled, onClick, children }: {
+function ToolbarButton({ label, shortcut, active, disabled, onClick, children }: {
   label: string
+  shortcut?: { label: string; aria: string }
   active?: boolean
   disabled?: boolean
   onClick: () => void
@@ -44,7 +45,8 @@ function ToolbarButton({ label, active, disabled, onClick, children }: {
     <button
       type="button"
       aria-label={label}
-      title={label}
+      aria-keyshortcuts={shortcut?.aria}
+      title={shortcut ? `${label} (${shortcut.label})` : label}
       aria-pressed={active}
       disabled={disabled}
       onMouseDown={(event) => event.preventDefault()}
@@ -59,60 +61,72 @@ function ToolbarButton({ label, active, disabled, onClick, children }: {
   )
 }
 
+/** Toolbar buttons that turn a format on and off, announced as pressed or not. */
+const TOGGLE_COMMANDS = new Set<FormatCommand>([
+  'heading1', 'heading2', 'heading3', 'bold', 'italic', 'strike', 'code', 'link',
+  'bulletList', 'orderedList', 'taskList', 'blockquote', 'codeBlock',
+])
+
 function DocToolbar({ editor }: { editor: Editor }) {
-  const state = useEditorState({
-    editor,
-    selector: ({ editor: current }) => ({
-      editable: current.isEditable,
-      bold: current.isActive('bold'),
-      italic: current.isActive('italic'),
-      strike: current.isActive('strike'),
-      code: current.isActive('code'),
-      link: current.isActive('link'),
-      h1: current.isActive('heading', { level: 1 }),
-      h2: current.isActive('heading', { level: 2 }),
-      h3: current.isActive('heading', { level: 3 }),
-      bulletList: current.isActive('bulletList'),
-      orderedList: current.isActive('orderedList'),
-      taskList: current.isActive('taskList'),
-      blockquote: current.isActive('blockquote'),
-      codeBlock: current.isActive('codeBlock'),
-      canUndo: current.can().undo(),
-      canRedo: current.can().redo(),
-    }),
-  })
-  const chain = () => editor.chain().focus()
+  const state = useEditorState({ editor, selector: ({ editor: current }) => formattingState(current) })
+  const run = (command: FormatCommand) => runFormatCommand(editor, command)
   const setLink = () => {
-    const previous = editor.getAttributes('link').href as string | undefined
-    const href = window.prompt(ui("Link URL"), previous ?? 'https://')
-    if (href === null) return
-    if (!href.trim()) chain().extendMarkRange('link').unsetLink().run()
-    else chain().extendMarkRange('link').setLink({ href: href.trim() }).run()
+    const href = window.prompt(ui("Link URL"), state.linkHref ?? 'https://')
+    if (href !== null) runFormatCommand(editor, 'link', { href })
   }
-  const disabled = !state.editable
+  const button = (command: FormatCommand, label: string, icon: ReactNode, onClick = () => { run(command) }) => (
+    <ToolbarButton
+      label={label}
+      // Actions (undo, insert a table, …) are not toggles; only formats report being on.
+      active={TOGGLE_COMMANDS.has(command) ? state.active.includes(command) : undefined}
+      disabled={state.disabled.includes(command)}
+      onClick={onClick}
+    >
+      {icon}
+    </ToolbarButton>
+  )
   return (
     <div role="toolbar" aria-label={ui("Formatting")} className="flex flex-wrap items-center gap-0.5">
-      <ToolbarButton label={ui("Undo")} disabled={disabled || !state.canUndo} onClick={() => chain().undo().run()}><Undo2 className="size-4" /></ToolbarButton>
-      <ToolbarButton label={ui("Redo")} disabled={disabled || !state.canRedo} onClick={() => chain().redo().run()}><Redo2 className="size-4" /></ToolbarButton>
+      {button('undo', ui("Undo"), <Undo2 className="size-4" />)}
+      {button('redo', ui("Redo"), <Redo2 className="size-4" />)}
       <span className="mx-1 h-5 w-px bg-border" />
-      <ToolbarButton label={ui("Heading 1")} active={state.h1} disabled={disabled} onClick={() => chain().toggleHeading({ level: 1 }).run()}><Heading1 className="size-4" /></ToolbarButton>
-      <ToolbarButton label={ui("Heading 2")} active={state.h2} disabled={disabled} onClick={() => chain().toggleHeading({ level: 2 }).run()}><Heading2 className="size-4" /></ToolbarButton>
-      <ToolbarButton label={ui("Heading 3")} active={state.h3} disabled={disabled} onClick={() => chain().toggleHeading({ level: 3 }).run()}><Heading3 className="size-4" /></ToolbarButton>
+      {button('heading1', ui("Heading 1"), <Heading1 className="size-4" />)}
+      {button('heading2', ui("Heading 2"), <Heading2 className="size-4" />)}
+      {button('heading3', ui("Heading 3"), <Heading3 className="size-4" />)}
       <span className="mx-1 h-5 w-px bg-border" />
-      <ToolbarButton label={ui("Bold")} active={state.bold} disabled={disabled} onClick={() => chain().toggleBold().run()}><Bold className="size-4" /></ToolbarButton>
-      <ToolbarButton label={ui("Italic")} active={state.italic} disabled={disabled} onClick={() => chain().toggleItalic().run()}><Italic className="size-4" /></ToolbarButton>
-      <ToolbarButton label={ui("Strikethrough")} active={state.strike} disabled={disabled} onClick={() => chain().toggleStrike().run()}><Strikethrough className="size-4" /></ToolbarButton>
-      <ToolbarButton label={ui("Inline code")} active={state.code} disabled={disabled} onClick={() => chain().toggleCode().run()}><Code className="size-4" /></ToolbarButton>
-      <ToolbarButton label={ui("Link")} active={state.link} disabled={disabled} onClick={setLink}><Link2 className="size-4" /></ToolbarButton>
+      {button('bold', ui("Bold"), <Bold className="size-4" />)}
+      {button('italic', ui("Italic"), <Italic className="size-4" />)}
+      {button('strike', ui("Strikethrough"), <Strikethrough className="size-4" />)}
+      {button('code', ui("Inline code"), <Code className="size-4" />)}
+      {button('link', ui("Link"), <Link2 className="size-4" />, setLink)}
       <span className="mx-1 h-5 w-px bg-border" />
-      <ToolbarButton label={ui("Bulleted list")} active={state.bulletList} disabled={disabled} onClick={() => chain().toggleBulletList().run()}><List className="size-4" /></ToolbarButton>
-      <ToolbarButton label={ui("Numbered list")} active={state.orderedList} disabled={disabled} onClick={() => chain().toggleOrderedList().run()}><ListOrdered className="size-4" /></ToolbarButton>
-      <ToolbarButton label={ui("Checklist")} active={state.taskList} disabled={disabled} onClick={() => chain().toggleTaskList().run()}><ListChecks className="size-4" /></ToolbarButton>
-      <ToolbarButton label={ui("Quote")} active={state.blockquote} disabled={disabled} onClick={() => chain().toggleBlockquote().run()}><Quote className="size-4" /></ToolbarButton>
-      <ToolbarButton label={ui("Code block")} active={state.codeBlock} disabled={disabled} onClick={() => chain().toggleCodeBlock().run()}><SquareCode className="size-4" /></ToolbarButton>
-      <ToolbarButton label={ui("Table")} disabled={disabled} onClick={() => chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()}><Table className="size-4" /></ToolbarButton>
-      <ToolbarButton label={ui("Divider")} disabled={disabled} onClick={() => chain().setHorizontalRule().run()}><Minus className="size-4" /></ToolbarButton>
+      {button('bulletList', ui("Bulleted list"), <List className="size-4" />)}
+      {button('orderedList', ui("Numbered list"), <ListOrdered className="size-4" />)}
+      {button('taskList', ui("Checklist"), <ListChecks className="size-4" />)}
+      {button('blockquote', ui("Quote"), <Quote className="size-4" />)}
+      {button('codeBlock', ui("Code block"), <SquareCode className="size-4" />)}
+      {button('table', ui("Table"), <Table className="size-4" />)}
+      {button('divider', ui("Divider"), <Minus className="size-4" />)}
     </div>
+  )
+}
+
+/** Pinned after the formatting buttons, where Word keeps Dictate. Red while it is listening; pressing it again finishes. */
+function DictateButton({ dictation, editable }: { dictation: DocDictation; editable: boolean }) {
+  const { t } = useTranslation()
+  const { phase } = dictation.recorder
+  return (
+    <ToolbarButton
+      // A toggle keeps its name; being pressed says it is on.
+      label={t('chat.dictate')}
+      shortcut={dictationShortcut()}
+      active={phase !== 'idle'}
+      // Waiting for the microphone or the transcript, the floating bar can still cancel.
+      disabled={!editable || (phase !== 'idle' && phase !== 'recording')}
+      onClick={dictation.toggle}
+    >
+      <Mic className={cn('size-4', phase === 'recording' && 'text-red-600 dark:text-red-400')} />
+    </ToolbarButton>
   )
 }
 
@@ -122,15 +136,17 @@ function activeHunkStyle(id: string): string {
   return `${selector} { outline: 1.5px solid var(--pulpo-suggestion-focus); outline-offset: 1px; border-radius: 2px; }`
 }
 
-function DocEditorView({ editor, editable, width, toolbarSlot, onSuggestionsResolved }: {
+function DocEditorView({ editor, editable, dictationEnabled, width, toolbarSlot, onSuggestionsResolved }: {
   editor: Editor
   /** Viewers who cannot edit still see suggestions, without the actions. */
   editable: boolean
+  dictationEnabled: boolean
   width: 'narrow' | 'wide' | 'fill'
   toolbarSlot?: ReactNode
   onSuggestionsResolved?: () => void
 }) {
   const review = useSuggestionReview(editor, onSuggestionsResolved)
+  const dictation = useDocDictation(editor, editable, dictationEnabled)
   const header = useRef<HTMLDivElement>(null)
   const content = useRef<HTMLDivElement>(null)
   const active = review.active
@@ -139,9 +155,11 @@ function DocEditorView({ editor, editable, width, toolbarSlot, onSuggestionsReso
     if (target) revealSuggestion(editor.view, target, header.current)
   }
   return (
-    <div className="flex min-h-0 flex-1 flex-col" onKeyDown={review.onKeyDown}>
+    // At least as tall as the view, so the dictation bar floats at its bottom under a short document.
+    <div className="flex min-h-full flex-1 flex-col" onKeyDown={(event) => { review.onKeyDown(event); dictation.onKeyDown(event) }}>
       <div ref={header} className="sticky top-0 z-10 flex flex-wrap items-center gap-2 border-b bg-background/95 px-4 py-1.5 backdrop-blur sm:px-6">
         <div className="min-w-0 flex-1 overflow-x-auto"><DocToolbar editor={editor} /></div>
+        {dictation.enabled && <DictateButton dictation={dictation} editable={editable} />}
         {toolbarSlot}
         {review.hunks.length > 0 && (
           <div className="basis-full border-t pt-1.5">
@@ -181,13 +199,16 @@ function DocEditorView({ editor, editable, width, toolbarSlot, onSuggestionsReso
           )}
         </div>
       </div>
+      {dictation.enabled && <DocDictationBar dictation={dictation} />}
     </div>
   )
 }
 
-export function DocEditor({ session, editable, width = 'narrow', toolbarSlot, onSuggestionsResolved }: {
+export function DocEditor({ session, editable, dictation = false, width = 'narrow', toolbarSlot, onSuggestionsResolved }: {
   session: DocSession
   editable: boolean
+  /** Offers Pulpo dictation, when the administrator has enabled it. */
+  dictation?: boolean
   /** `narrow` and `wide` follow the chat width preference (64rem or 90rem); `fill` uses the side panel's width. */
   width?: 'narrow' | 'wide' | 'fill'
   /** Rendered next to the toolbar, e.g. presence and sync status. */
@@ -197,15 +218,14 @@ export function DocEditor({ session, editable, width = 'narrow', toolbarSlot, on
 }) {
   const editor = useEditor({
     extensions: [
-      ...createDocExtensions(),
-      SuggestionTyping,
-      SuggestionReviewKeys,
-      Placeholder.configure({ placeholder: ui("Start writing…") }),
-      Collaboration.configure({ document: session.doc }),
-      CollaborationCaret.configure({
-        provider: session.provider,
+      ...createEditorExtensions({
+        doc: session.doc,
+        awareness: session.provider.awareness,
         user: { name: sessionLabel(), color: sessionColor(session.doc.clientID) },
+        placeholder: ui("Start writing…"),
       }),
+      SuggestionReviewKeys,
+      DictationKeys,
     ],
     editable,
     editorProps: {
@@ -218,5 +238,5 @@ export function DocEditor({ session, editable, width = 'narrow', toolbarSlot, on
   }, [editor, editable])
 
   if (!editor) return null
-  return <DocEditorView editor={editor} editable={editable} width={width} toolbarSlot={toolbarSlot} onSuggestionsResolved={onSuggestionsResolved} />
+  return <DocEditorView editor={editor} editable={editable} dictationEnabled={dictation} width={width} toolbarSlot={toolbarSlot} onSuggestionsResolved={onSuggestionsResolved} />
 }

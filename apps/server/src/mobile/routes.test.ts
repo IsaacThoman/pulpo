@@ -19,6 +19,7 @@ vi.mock('../auth/service.js', () => ({
   verifyPassword: vi.fn(),
 }))
 
+import { DOC_SCHEMA_VERSION } from '@pulpo/client-core/doc-schema'
 import { registerMobileRoutes } from './routes.js'
 
 describe('mobile dictation capability', () => {
@@ -40,6 +41,26 @@ describe('mobile dictation capability', () => {
       post: vi.fn(),
     } as unknown as FastifyInstance)
     expect(await handler()).toMatchObject({ capabilities: { dictation: enabled } })
+  })
+})
+
+describe('mobile Files capability', () => {
+  it.each([
+    [{}, true],
+    [{ filesEnabled: false }, false],
+  ])('advertises Files and the document schema version (%j)', async (auth, enabled) => {
+    const values = [[{ id: 'user' }], [{ value: auth }], []]
+    mocks.select.mockImplementation(() => {
+      const rows = values.shift()
+      const chain = { from: () => chain, where: () => chain, limit: async () => rows }
+      return chain
+    })
+    let handler!: () => Promise<unknown>
+    await registerMobileRoutes({
+      get: (path: string, callback: () => Promise<unknown>) => { if (path === '/api/mobile/config') handler = callback },
+      post: vi.fn(),
+    } as unknown as FastifyInstance)
+    expect(await handler()).toMatchObject({ capabilities: { files: { enabled, docSchemaVersion: DOC_SCHEMA_VERSION } } })
   })
 })
 

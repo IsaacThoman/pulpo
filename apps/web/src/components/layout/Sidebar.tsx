@@ -9,6 +9,7 @@ import {
   ClipboardPaste,
   CopyPlus,
   FilePlus2,
+  Link2,
   Upload,
   CreditCard,
   ChevronRight,
@@ -76,6 +77,7 @@ import { SuggestedBadge } from '@/features/files/FileSuggestion'
 import { registerItemDropZone } from '@/features/files/browser/use-item-drag'
 import { useTrashOperations } from '@/features/trash/use-trash-operations'
 import { AppearanceDialog } from '@/features/files/AppearanceDialog'
+import { ImportUrlDialog } from '@/features/files/ImportUrlDialog'
 import { editAppearance, hasAppearance } from '@/features/files/appearance'
 import { FolderPickerDialog } from '@/features/sidebar/FolderPickerDialog'
 import { writeSidebarItems, type SidebarDragItem } from '@/features/sidebar/drag-data'
@@ -1043,16 +1045,18 @@ type SpaceMenu = { x: number; y: number; folderId: string | null }
  * The menu for empty space at the top level of the sidebar (the Chats folder) or inside an open
  * folder, like the empty-space menu in Files. Sorting applies to the top level only.
  */
-function SpaceMenuContent({ folderId, onNewChat, onNewFolder, onUpload, go }: {
+function SpaceMenuContent({ folderId, onNewChat, onNewFolder, onUpload, onImportUrl, go }: {
   folderId: string
   /** Given at the top level only, with the sort choice. */
   onNewChat?: () => void
   onNewFolder: () => void
   onUpload: () => void
+  onImportUrl: () => void
   go: (path: string) => void
 }) {
   const { t } = useTranslation()
   const filesEnabled = useAuth((state) => state.filesEnabled)
+  const urlImportEnabled = useAuth((state) => state.urlImportEnabled)
   const clip = useFileClipboard((state) => state.clip)
   const ops = useFileOperations()
   const trashOps = useTrashOperations()
@@ -1092,6 +1096,12 @@ function SpaceMenuContent({ folderId, onNewChat, onNewFolder, onUpload, go }: {
             <Upload />
             {ui("Upload files")}
           </DropdownMenuItem>
+          {urlImportEnabled && (
+            <DropdownMenuItem onClick={onImportUrl}>
+              <Link2 />
+              {ui("Import from URL")}
+            </DropdownMenuItem>
+          )}
           <DropdownMenuItem disabled={!clip} onClick={() => void paste()}>
             <ClipboardPaste />
             {clip ? (clip.nodes.length === 1 ? uit`Paste "${clip.nodes[0]!.name}"` : uit`Paste ${clip.nodes.length} items`) : ui("Paste")}
@@ -1724,6 +1734,7 @@ export function Sidebar({
   }
   const uploadInput = useRef<HTMLInputElement>(null)
   const uploadTarget = useRef<string | null>(null)
+  const [importTarget, setImportTarget] = useState<string | null>(null)
 
   const startNewChat = (temporary = false) => {
     useChat.getState().abandonTemporaryChat()
@@ -2155,6 +2166,7 @@ export function Sidebar({
               uploadTarget.current = spaceMenu.folderId ?? sidebar.chatsFolderId
               uploadInput.current?.click()
             }}
+            onImportUrl={() => setImportTarget(spaceMenu.folderId ?? sidebar.chatsFolderId)}
             go={go}
           />
         )}
@@ -2164,6 +2176,17 @@ export function Sidebar({
           <SelectionMenuContent ids={selectionMenu.ids} sidebar={sidebar} onDone={() => setSelection(EMPTY_SELECTION)} />
         )}
       </PointerMenu>
+      <ImportUrlDialog
+        open={importTarget !== null}
+        parentId={importTarget}
+        onOpenChange={(open) => { if (!open) setImportTarget(null) }}
+        onImported={(node) => {
+          // Opens the page like a new file; the folder shows it once the sidebar refreshes.
+          if (node.parentId) useFolderExpansion.getState().setExpanded(node.parentId, true)
+          void refreshSidebar()
+          go(`/files/d/${node.id}`)
+        }}
+      />
       <input
         ref={uploadInput}
         type="file"
