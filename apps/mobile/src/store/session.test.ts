@@ -23,12 +23,14 @@ const mocks = vi.hoisted(() => ({
   runSafariPasskeyAuthentication: vi.fn(),
   configureApi: vi.fn(),
   clearNamespace: vi.fn(async () => []),
+  runAccountCleanups: vi.fn(async (_namespace: string) => undefined),
   deleteToken: vi.fn(async (_key: string) => undefined),
 }))
 
 vi.mock('../shortcuts/native', () => ({ syncShortcutsSession: mocks.syncShortcuts, clearShortcutsSession: mocks.clearShortcuts }))
 
 vi.mock('react-native', () => ({ Alert: { alert: mocks.alert }, Appearance: { setColorScheme: vi.fn() }, Platform: { OS: 'ios' } }))
+vi.mock('./accountCleanup', () => ({ runAccountCleanups: mocks.runAccountCleanups }))
 vi.mock('expo-device', () => ({ deviceName: 'Test iPhone', modelName: 'iPhone' }))
 vi.mock('expo-file-system', () => ({ File: class { exists = false; delete() {} } }))
 vi.mock('expo-secure-store', () => ({
@@ -240,6 +242,49 @@ describe('two-factor login', () => {
   })
 })
 
+describe('instance configuration', () => {
+  it('reads it again on signing in, after a revoked session dropped the read made at launch', async () => {
+    mocks.token = null
+    const config = { instance: { name: 'Pulpo' }, capabilities: { files: { enabled: true, docSchemaVersion: 2 } } }
+    mocks.config.mockResolvedValue(config)
+    const signedIn = user('55555555-5555-4555-8555-555555555555', 'Files User')
+    mocks.login.mockResolvedValue({ user: signedIn, session: { token: 'fresh-token', expiresAt: '2026-09-01T00:00:00.000Z' } })
+
+    await useSessionStore.getState().login('member@example.com', 'password')
+    await vi.waitFor(() => expect(useSessionStore.getState().config).toEqual(config))
+  })
+})
+
+describe('remembered instance configuration', () => {
+  it('offers what the instance did last time while it cannot be reached', async () => {
+    const cachedUser = user('66666666-6666-4666-8666-666666666666', 'Offline User')
+    const namespace = `${instanceUrl}|${cachedUser.id}`
+    const remembered = { instance: { name: 'Pulpo' }, capabilities: { files: { enabled: true, docSchemaVersion: 2 } } }
+    mocks.values.set('global:activeSessionNamespace', namespace)
+    mocks.values.set(`${namespace}:user`, cachedUser)
+    mocks.values.set(`global:config:${instanceUrl}`, remembered)
+    mocks.config.mockRejectedValue(new TypeError('Network request failed'))
+    mocks.me.mockRejectedValue(new TypeError('Network request failed'))
+
+    await useSessionStore.getState().hydrate()
+    await vi.waitFor(() => expect(useSessionStore.getState().error).toBe('Offline'))
+    expect(useSessionStore.getState().config).toEqual(remembered)
+  })
+
+  it('remembers it per instance address, paths included', async () => {
+    const config = { instance: { name: 'Team' }, capabilities: {} }
+    useSessionStore.setState({ instanceUrl: 'https://pulpo.test/team', config: config as never })
+    expect(mocks.values.get('global:config:https://pulpo.test/team')).toEqual(config)
+    expect(mocks.values.get(`global:config:${instanceUrl}`)).toBeUndefined()
+  })
+
+  it('remembers the configuration the server sends', async () => {
+    const config = { instance: { name: 'Pulpo' }, capabilities: { files: { enabled: false, docSchemaVersion: 2 } } }
+    useSessionStore.setState({ config: config as never })
+    expect(mocks.values.get(`global:config:${instanceUrl}`)).toEqual(config)
+  })
+})
+
 describe('passkey login', () => {
   const ceremony = { ceremonyToken: 'c'.repeat(43), options: { challenge: 'challenge' } }
   const assertion = { id: 'credential' }
@@ -283,6 +328,8 @@ describe('local sign-out after account deletion', () => {
     expect(mocks.syncShortcuts).toHaveBeenLastCalledWith(expect.objectContaining({ token: null, user: null, status: 'anonymous' }))
     expect(mocks.configureApi).toHaveBeenCalledWith(expect.objectContaining({ token: null }))
     expect(mocks.clearNamespace).toHaveBeenCalledWith(`${instanceUrl}|deleted-user`)
+    // Features' own account data (Files documents, uploads) goes with it.
+    expect(mocks.runAccountCleanups).toHaveBeenCalledWith(`${instanceUrl}|deleted-user`)
     expect(mocks.values.get('global:activeSessionNamespace')).toBeNull()
   })
 })
@@ -396,6 +443,14 @@ describe('multiple signed-in accounts', () => {
     expect(mocks.secure.has(tokenKey(personal))).toBe(false)
     expect(mocks.values.get('global:signedInAccounts')).toEqual({ instanceUrl, userIds: [personal.id] })
     expect(useSessionStore.getState()).toMatchObject({ token: 'token-personal-again', user: personal, accounts: [personal] })
+  })
+
+  it('reads the instance configuration again for the account it switches to', async () => {
+    signedIn(personal, work)
+    const config = { instance: { name: 'Pulpo' }, capabilities: { files: { enabled: true, docSchemaVersion: 2 } } }
+    mocks.config.mockResolvedValue(config)
+    await useSessionStore.getState().switchAccount(work.id)
+    await vi.waitFor(() => expect(useSessionStore.getState().config).toEqual(config))
   })
 
   it('switches accounts through a signed-out teardown and keeps both sessions', async () => {

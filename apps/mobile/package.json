@@ -9,6 +9,7 @@
     "deploy:iphone": "bash ./scripts/deploy-iphone.sh",
     "prebuild": "expo prebuild",
     "typecheck": "tsc --noEmit",
+    "build:editor": "node scripts/build-doc-editor.mjs",
     "test": "vitest run --exclude \"**/dist/**\"",
     "export": "expo export --platform all",
     "android": "expo run:android",
@@ -64,18 +65,24 @@
     "react-native-svg": "15.15.4",
     "react-native-worklets": "0.10.1",
     "socket.io-client": "^4.8.3",
+    "y-protocols": "^1.0.7",
+    "yjs": "^13.6.33",
     "zustand": "^5.0.11"
   },
   "devDependencies": {
     "@types/node": "^24.13.2",
     "@types/react": "~19.2.2",
+    "jsdom": "^26.1.0",
     "typescript": "~6.0.3",
+    "vite": "^8.1.1",
     "vitest": "^4.1.11"
   },
   "expo": {
     "autolinking": {
       "android": {
-        "buildFromSource": ["expo-ui"]
+        "buildFromSource": [
+          "expo-ui"
+        ]
       }
     }
   }

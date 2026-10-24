@@ -7,8 +7,8 @@ import '../../src/index.css'
 import '../../src/i18n'
 import { TooltipProvider } from '../../src/components/ui/tooltip'
 import { DocEditor } from '../../src/features/files/editor/DocEditor'
-import { FakeServer, FakeSocket } from '../../src/features/files/editor/fake-doc-server.test.helpers'
-import { SocketIOYProvider } from '../../src/features/files/editor/socket-provider'
+import { FakeServer, FakeSocket } from '@pulpo/client-core/doc-sync/testing'
+import { SocketIOYProvider } from '@pulpo/client-core/doc-sync'
 import type { PulpoSocket } from '../../src/lib/realtime-socket'
 
 const params = new URLSearchParams(location.search)

@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { ui, uit } from '@/i18n/ui'
 import { cn } from '@/lib/utils'
-import { diffRows, lineDiff } from './markdown-diff'
+import { diffRows, lineDiff } from '@pulpo/client-core/files'
 
 /** Line diff of two Markdown texts with a little context, or a note when they are too long to compare. */
 export function MarkdownDiff({ before, after, className }: { before: string; after: string; className?: string }) {

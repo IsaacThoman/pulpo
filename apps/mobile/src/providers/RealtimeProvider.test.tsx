@@ -13,6 +13,7 @@ vi.mock('../store/session', () => ({ useSessionStore: session }))
 vi.mock('../api/client', () => ({ apiOrigin: () => 'https://pulpo.test', mobileApi: { me: mocks.me } }))
 vi.mock('../features/chat/shelf', () => ({ bindMobileShelfSocket: () => () => {} }))
 vi.mock('../features/chat/composerSync', () => ({ bindMobileComposerSocket: () => () => {} }))
+vi.mock('../features/files/realtime', () => ({ bindMobileFilesSocket: () => () => {} }))
 vi.mock('../data/outbox', () => ({ replayOutbox: async () => ({ replayed: 0, rejected: 0 }) }))
 vi.mock('../data/database', () => ({
   cacheNamespace: (origin: string, id: string) => `${origin}|${id}`,

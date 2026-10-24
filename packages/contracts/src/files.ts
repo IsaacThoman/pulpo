@@ -99,6 +99,8 @@ export const fileNodeSchema = z.object({
   status: fileNodeStatusSchema,
   mimeType: z.string().nullable(),
   sizeBytes: z.number().int().nonnegative(),
+  /** Uploaded bytes' checksum; unchanged by renames or moves. Older servers may omit it. */
+  contentChecksum: z.string().nullable().optional(),
   revision: z.number().int().nonnegative(),
   trashedAt: z.string().nullable(),
   createdAt: z.string(),

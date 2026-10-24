@@ -25,7 +25,7 @@ import {
 } from '@/features/files/api'
 import { filesErrorMessage } from '@/features/files/file-display'
 import { DocEditor } from '@/features/files/editor/DocEditor'
-import type { DocSyncStatus } from '@/features/files/editor/socket-provider'
+import type { DocSyncStatus } from '@pulpo/client-core/doc-sync'
 import { useDocSession, type PresencePeer } from '@/features/files/editor/use-doc-session'
 import { useSuggestionRecount } from '@/features/files/editor/use-suggestion-recount'
 import { FilePreviewBody } from '@/features/files/FilePreview'

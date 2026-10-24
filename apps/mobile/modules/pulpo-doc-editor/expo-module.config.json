@@ -1,0 +1,9 @@
+{
+  "platforms": ["apple", "android"],
+  "apple": {
+    "modules": ["PulpoDocEditorModule"]
+  },
+  "android": {
+    "modules": ["expo.modules.pulpodoceditor.PulpoDocEditorModule"]
+  }
+}

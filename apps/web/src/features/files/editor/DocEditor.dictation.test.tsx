@@ -7,8 +7,8 @@ import * as Y from 'yjs'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import type { PulpoSocket } from '@/lib/realtime-socket'
 import { DocEditor } from './DocEditor'
-import { FakeServer, FakeSocket } from './fake-doc-server.test.helpers'
-import { SocketIOYProvider } from './socket-provider'
+import { FakeServer, FakeSocket } from '@pulpo/client-core/doc-sync/testing'
+import { SocketIOYProvider } from '@pulpo/client-core/doc-sync'
 
 // jsdom has no layout; scrolling the cursor into view measures it.
 const rect = { top: 0, bottom: 10, left: 0, right: 10, width: 10, height: 10, x: 0, y: 0, toJSON: () => ({}) } as DOMRect

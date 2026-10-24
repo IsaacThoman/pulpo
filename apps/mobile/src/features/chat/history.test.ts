@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   createHistoryProjector,
-  historyFolderItems,
   historyChatSections,
   historyChatSummary,
   resolveHistoryChatExpiryMenuAction,
@@ -14,7 +13,7 @@ import {
 function summary(id: string, patch: Partial<HistoryChatSummary> = {}): HistoryChatSummary {
   return {
     id, title: id, modelId: 'gpt-5', time: '1:00 PM', section: 'Today',
-    pinned: false, folderId: null, sortOrder: 0, createdAt: 1_000, updatedAt: 1_000, expiresAt: null, ...patch,
+    pinned: false, folderId: null, inFilesRoot: false, sortOrder: 0, createdAt: 1_000, updatedAt: 1_000, expiresAt: null, ...patch,
   }
 }
 
@@ -39,17 +38,19 @@ describe('historyChatSections', () => {
       .toEqual(['top', 'newest', 'older', 'active'])
   })
 
-  it('keeps filed chats in their folders unless searching', () => {
+  it('keeps filed chats in their folders unless searching, where folders the sidebar does not show come last', () => {
     const folders = [{ id: 'b' }, { id: 'a' }]
     const loose = summary('loose', { sortOrder: 5 })
     const inA = summary('in-a', { folderId: 'a' })
     const inB = summary('in-b', { folderId: 'b', sortOrder: 9 })
-    const missingFolder = summary('missing-folder', { folderId: 'gone', sortOrder: 6 })
+    // In a folder elsewhere in Files, or at the top of My files: not in the sidebar, as on the web.
+    const elsewhere = summary('elsewhere', { folderId: 'gone', sortOrder: 6 })
+    const inFilesRoot = summary('in-files-root', { inFilesRoot: true, sortOrder: 1 })
+    const chats = [inA, loose, inB, elsewhere, inFilesRoot]
 
-    expect(historyChatSections([inA, loose, inB, missingFolder], folders)[0]?.data.map((chat) => chat.id))
-      .toEqual(['loose', 'missing-folder'])
-    expect(historyChatSections([inA, loose, inB, missingFolder], folders, true)[0]?.data.map((chat) => chat.id))
-      .toEqual(['loose', 'missing-folder', 'in-b', 'in-a'])
+    expect(historyChatSections(chats, folders)[0]?.data.map((chat) => chat.id)).toEqual(['loose'])
+    expect(historyChatSections(chats, folders, true)[0]?.data.map((chat) => chat.id))
+      .toEqual(['loose', 'in-b', 'in-a', 'in-files-root', 'elsewhere'])
   })
 
   it('lists unpinned chats by last activity under time headings in recent order', () => {
@@ -74,14 +75,19 @@ describe('topChatSortOrder', () => {
     { id: 'loose', pinned: false, folderId: null, sortOrder: 0, createdAt: 1 },
     { id: 'filed', pinned: false, folderId: 'a', sortOrder: -5, createdAt: 1 },
     { id: 'pinned', pinned: true, folderId: null, sortOrder: -9, createdAt: 1 },
+    { id: 'in-files-root', pinned: false, folderId: null, inFilesRoot: true, sortOrder: -20, createdAt: 1 },
   ]
 
   it('places a chat above every other chat in its destination list', () => {
-    expect(topChatSortOrder(chats, new Set(['a']), null)).toBe(-1)
-    expect(topChatSortOrder(chats, new Set(['a']), 'a')).toBe(-6)
-    expect(topChatSortOrder(chats, new Set(), null)).toBe(-6)
-    expect(topChatSortOrder([], new Set(), null)).toBe(0)
-    expect(topChatSortOrder(chats, new Set(['a']), null, 'loose')).toBe(0)
+    expect(topChatSortOrder(chats, null)).toBe(-1)
+    expect(topChatSortOrder(chats, 'a')).toBe(-6)
+    expect(topChatSortOrder([], null)).toBe(0)
+    expect(topChatSortOrder(chats, null, { excludeId: 'loose' })).toBe(0)
+  })
+
+  it('places it above the Files items listed there too', () => {
+    expect(topChatSortOrder(chats, null, { floor: -3 })).toBe(-4)
+    expect(topChatSortOrder(chats, 'a', { floor: 10 })).toBe(-6)
   })
 })
 
@@ -217,13 +223,21 @@ describe('large history projection', () => {
     expect(createHistoryProjector()([a], now)[0]).not.toBe(first[0])
   })
 
-  it('groups large sections and folders without changing order or mutating inputs', () => {
+  it('groups large sections without changing order or mutating inputs', () => {
     const chats = Array.from({ length: 5000 }, (_, i) => Object.freeze(historyChatSummary({ ...source, id: String(i), folderId: i % 2 ? 'b' : 'a', sortOrder: i }, now)))
-    expect(historyChatSections(chats)[0].data).toEqual(chats)
-    const folders = historyFolderItems([{ id: 'b', name: 'B' }, { id: 'a', name: 'A' }, { id: 'empty', name: 'Empty' }], chats)
-    expect(folders.map((f) => f.id)).toEqual(['b', 'a', 'empty'])
-    expect(folders[0].chats).toEqual(chats.filter((c) => c.folderId === 'b'))
-    expect(folders[1].chats).toEqual(chats.filter((c) => c.folderId === 'a'))
-    expect(folders[2].chats).toEqual([])
+    expect(historyChatSections(chats, [], true)[0].data).toEqual(chats)
+    expect(historyChatSections(chats, [{ id: 'b' }, { id: 'a' }], true)[0].data).toEqual([
+      ...chats.filter((chat) => chat.folderId === 'b'),
+      ...chats.filter((chat) => chat.folderId === 'a'),
+    ])
+  })
+
+  it('updates a chat moved to the top of My files', () => {
+    const project = createHistoryProjector()
+    const first = project([source], now)
+    const moved = project([{ ...source, inFilesRoot: true }], now)
+    expect(moved[0]).not.toBe(first[0])
+    expect(moved[0]?.inFilesRoot).toBe(true)
+    expect(reuseHistoryChatSummaries(first, moved)[0]).toBe(moved[0])
   })
 })

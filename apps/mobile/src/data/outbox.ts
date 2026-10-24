@@ -1,3 +1,4 @@
+import { FILE_SCOPE_ROOT, type FileNode } from '@pulpo/contracts'
 import { mobileChatStarted } from '../features/chat/chatStarted'
 import type { QueryClient } from '@tanstack/react-query'
 import type { MobileQueuedMessage, ServerChat } from '../types'
@@ -6,9 +7,76 @@ import { flushCacheWrites } from './writeBehind'
 import { ApiError, apiRequest } from '../api/client'
 import { cacheChats, cachedChat, completeOutbox, failOutbox, pendingOutbox } from './database'
 import { withoutCachedChatDetails } from './cache'
-import { readyOutboxPrefix } from './schema'
+import { readyOutboxPrefix, type OutboxRecord } from './schema'
 
 const activeReplays = new Map<string, Promise<{ replayed: number; rejected: number }>>()
+
+interface QueuedFileScope {
+  ids: string[]
+  with: (ids: string[]) => unknown
+  /** A chat start, which goes ahead without items that can't be checked; a scope change does not. */
+  startsChat: boolean
+}
+
+/** Where a queued request carries a chat's Files scope: a chat start, or a change to the chat. */
+function fileScopeOf(row: Pick<OutboxRecord, 'method' | 'path'>, body: unknown): QueuedFileScope | null {
+  const payload = body as { chat?: { fileScopeIds?: string[] }; fileScopeIds?: string[] } | undefined
+  if (row.path === '/api/chats/start' && payload?.chat?.fileScopeIds?.length) {
+    return { ids: payload.chat.fileScopeIds, with: (ids) => ({ ...payload, chat: { ...payload.chat, fileScopeIds: ids } }), startsChat: true }
+  }
+  if (row.method === 'PATCH' && /^\/api\/chats\/[^/]+$/.test(row.path) && payload?.fileScopeIds?.length) {
+    return { ids: payload.fileScopeIds, with: (ids) => ({ ...payload, fileScopeIds: ids }), startsChat: false }
+  }
+  return null
+}
+
+/** Files is turned off, so which items are still live can't be told. */
+class FilesTurnedOffError extends Error {}
+
+/**
+ * Sends a queued request whose chat Files scope may name items trashed or deleted elsewhere since
+ * (the server checks the scope before anything else, so nothing happened): again with the items that
+ * remain, rather than the chat start (and its first message) or the change being dropped.
+ */
+async function sendKeepingFileScope<T>(row: OutboxRecord, body: unknown, send: (payload: unknown) => Promise<T>): Promise<T> {
+  let payload = body
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await send(payload)
+    } catch (error) {
+      const scope = fileScopeOf(row, payload)
+      if (attempt >= 2 || !scope || !(error instanceof ApiError) || error.code !== 'invalid_file_scope') throw error
+      let accepted: string[]
+      try {
+        accepted = await acceptedFileScope(scope.ids)
+      } catch (lookup) {
+        if (!(lookup instanceof FilesTurnedOffError)) throw lookup
+        // A chat still starts, without its items; a scope change is refused as sent rather than
+        // emptying the chat's scope.
+        if (!scope.startsChat) throw error
+        accepted = scope.ids.filter((id) => id === FILE_SCOPE_ROOT)
+      }
+      payload = scope.with(accepted)
+    }
+  }
+}
+
+/** The Files items of a chat's scope that the server still accepts (live items the user owns). */
+async function acceptedFileScope(ids: readonly string[]): Promise<string[]> {
+  const kept = await Promise.all(ids.map(async (id) => {
+    if (id === FILE_SCOPE_ROOT) return id
+    try {
+      const { node } = await apiRequest<{ node: FileNode }>(`/api/files/${encodeURIComponent(id)}`)
+      return node.status === 'ready' && !node.trashedAt && node.kind !== 'shortcut' ? id : null
+    } catch (error) {
+      // Gone. Anything else is not an answer: the request is tried again later.
+      if (error instanceof ApiError && error.status === 404) return null
+      if (error instanceof ApiError && error.code === 'files_disabled') throw new FilesTurnedOffError('Files is turned off', { cause: error })
+      throw new Error('The chat’s Files items could not be checked', { cause: error })
+    }
+  }))
+  return kept.filter((id): id is string => id !== null)
+}
 
 async function performReplay(namespace: string, client?: QueryClient): Promise<{ replayed: number; rejected: number }> {
   const rows = readyOutboxPrefix(await pendingOutbox(namespace), Date.now())
@@ -18,11 +86,12 @@ async function performReplay(namespace: string, client?: QueryClient): Promise<{
     try {
       const body = row.body ? JSON.parse(row.body) : undefined
       if (row.path === '/api/chats/start' && body?.chat?.clientId) mobileChatStarted.ignoreLocal(namespace, body.chat.clientId)
-      const result = await apiRequest<{ queuedMessage?: MobileQueuedMessage | null }>(row.path, {
+      const send = (payload: unknown) => apiRequest<{ queuedMessage?: MobileQueuedMessage | null }>(row.path, {
         method: row.method,
-        body,
+        body: payload,
         idempotencyKey: row.id,
       })
+      const result = await sendKeepingFileScope(row, body, send)
       if (row.entityKey.startsWith('queued-message:')) await settleQueuedSubmission(namespace, row.id, row.path, result.queuedMessage ?? null, undefined, client)
       await completeOutbox(row.id)
       replayed += 1

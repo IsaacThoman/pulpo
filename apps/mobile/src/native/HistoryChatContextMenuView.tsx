@@ -11,6 +11,7 @@ export type HistoryChatContextMenuAction =
   | 'duplicate'
   | 'enable-expiration'
   | 'disable-expiration'
+  | 'archive'
 
 type ActionEvent = {
   nativeEvent: {
@@ -25,6 +26,8 @@ type PressEvent = {
 type HistoryChatContextMenuNativeProps = ViewProps & {
   children?: ReactNode
   pinned: boolean
+  /** Offers Move to archive (with Files on, for chats not archived yet). */
+  archiveAvailable: boolean
   removeChatLabel: string
   expirationAction: 'hidden' | 'enable' | 'disable'
   expirationPeriodLabel: string
