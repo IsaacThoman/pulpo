@@ -5,14 +5,11 @@ import { PresetIcon } from './PresetIcon'
 
 type BadgeTag = Pick<DataRetentionTag, 'name' | 'description' | 'icon' | 'color'>
 
-/** Tinted icon pill; the hex color carries both light and dark themes at these opacities. */
+/** The tag's icon drawn in its color. */
 export function DataRetentionBadgeMark({ tag, className }: { tag: BadgeTag; className?: string }) {
   return (
-    <span
-      className={cn('inline-flex size-5 shrink-0 items-center justify-center rounded-full border', className)}
-      style={{ color: tag.color, backgroundColor: `${tag.color}1f`, borderColor: `${tag.color}4d` }}
-    >
-      <PresetIcon name={tag.icon} className="size-3" />
+    <span className="inline-flex shrink-0" style={{ color: tag.color }}>
+      <PresetIcon name={tag.icon} className={cn('size-4', className)} />
     </span>
   )
 }
@@ -24,7 +21,7 @@ export function DataRetentionBadge({ tag, className }: { tag: BadgeTag; classNam
         <button
           type="button"
           aria-label={tag.description ? `${tag.name}. ${tag.description}` : tag.name}
-          className={cn('inline-flex cursor-default rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring/50', className)}
+          className={cn('inline-flex cursor-default rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50', className)}
         >
           <DataRetentionBadgeMark tag={tag} />
         </button>

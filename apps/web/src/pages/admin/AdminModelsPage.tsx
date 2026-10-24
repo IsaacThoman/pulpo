@@ -607,7 +607,7 @@ function ModelEditorBody({
               <SelectItem value={DATA_RETENTION_TAG_NONE}>{ui("None")}</SelectItem>
               {retentionTags.map((tag) => (
                 <SelectItem key={tag.id} value={tag.id}>
-                  <DataRetentionBadgeMark tag={tag} className="size-4 [&_svg]:size-2.5" />{tag.name}
+                  <DataRetentionBadgeMark tag={tag} className="size-3.5" />{tag.name}
                 </SelectItem>
               ))}
             </SelectContent>
