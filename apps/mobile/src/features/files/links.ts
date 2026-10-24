@@ -4,12 +4,13 @@ export type FilesLink =
   | { type: 'folder'; id: string | null }
   /** Any file, as the web's `/files/d/` route: a document, or an uploaded file. */
   | { type: 'file'; id: string }
-  | { type: 'trash' }
+  /** The trash (`folderId` null), or a trashed folder in it. */
+  | { type: 'trash'; folderId: string | null }
 
 const uuid = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i
 
 /**
- * A Files link: `pulpo://files[/f/<folder>|/d/<file>|/trash]`, or the same path on the signed-in
+ * A Files link: `pulpo://files[/f/<folder>|/d/<file>|/trash[/f/<folder>]]`, or the same path on the signed-in
  * instance's own web address (as the web app links them). Navigation only; nothing else is read.
  */
 export function parseFilesLink(value: string, instanceUrl: string): FilesLink | null {
@@ -25,7 +26,8 @@ export function parseFilesLink(value: string, instanceUrl: string): FilesLink | 
     } else return null
     const parts = path.split('/').filter(Boolean)
     if (!parts.length) return { type: 'folder', id: null }
-    if (parts.length === 1 && parts[0] === 'trash') return { type: 'trash' }
+    if (parts.length === 1 && parts[0] === 'trash') return { type: 'trash', folderId: null }
+    if (parts.length === 3 && parts[0] === 'trash' && parts[1] === 'f' && uuid.test(parts[2]!)) return { type: 'trash', folderId: parts[2]!.toLowerCase() }
     if (parts.length === 2 && uuid.test(parts[1]!)) {
       if (parts[0] === 'f') return { type: 'folder', id: parts[1]!.toLowerCase() }
       if (parts[0] === 'd') return { type: 'file', id: parts[1]!.toLowerCase() }

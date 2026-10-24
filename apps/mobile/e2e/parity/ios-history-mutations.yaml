@@ -15,16 +15,21 @@ appId: com.isaacthoman.pulpo
 - tapOn: Trash
 - tapOn: Settings
 - tapOn: 'Trash, Retention.*'
-- tapOn: 'Parity Android actions copy.*'
+- tapOn: 'Open Trash.*'
+- longPressOn: 'Parity Android actions copy.*'
 - tapOn: Restore
+- tapOn: Back
 - tapOn: Settings
 - tapOn: Chat
 - longPressOn: Parity Android actions copy
 - tapOn: Trash
 - tapOn: Settings
 - tapOn: 'Trash, Retention.*'
-- tapOn: 'Parity Android actions copy.*'
-- tapOn: Delete permanently
-- assertVisible: Trash is empty
+- tapOn: 'Open Trash.*'
+- longPressOn: 'Parity Android actions copy.*'
+- tapOn: Delete Forever
+- tapOn: Delete Forever
+- assertVisible: The trash is empty
+- tapOn: Back
 - tapOn: Settings
 - tapOn: Chat

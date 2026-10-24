@@ -16,6 +16,10 @@ interface Props {
   selected?: boolean
   busy?: boolean
   last?: boolean
+  /** In place of the item's usual details (the trash shows each item's deadline). */
+  subtitle?: string
+  /** Whether tapping opens a folder, marked with a chevron; by default, whether the item is one. */
+  opensFolder?: boolean
   onPress: (node: FileNode) => void
   onAction: (node: FileNode, action: string) => void
   /** Android has no native menu view: long pressing shows the actions instead. */
@@ -23,11 +27,11 @@ interface Props {
 }
 
 /** One item in a Files list: its icon, name, details, and marks for pinned and suggested items. */
-export const FileRow = memo(function FileRow({ node, actions, selecting, selected, busy, last, onPress, onAction, onLongPress }: Props) {
+export const FileRow = memo(function FileRow({ node, actions, selecting, selected, busy, last, subtitle = fileSubtitle(node), opensFolder, onPress, onAction, onLongPress }: Props) {
   const theme = useAppTheme()
   const icon = fileIcon(node)
-  const folder = openedKind(node) === 'folder'
-  const label = `${node.name}, ${fileSubtitle(node)}${node.suggestion ? ', suggested by the agent' : ''}${node.pinned ? ', pinned' : ''}`
+  const folder = opensFolder ?? openedKind(node) === 'folder'
+  const label = `${node.name}, ${subtitle}${node.suggestion ? ', suggested by the agent' : ''}${node.pinned ? ', pinned' : ''}`
   const content = (
     <View style={[styles.row, { minHeight: FILE_ROW_HEIGHT }]}>
       {selecting ? (
@@ -56,7 +60,7 @@ export const FileRow = memo(function FileRow({ node, actions, selecting, selecte
             </View>
           ) : null}
         </View>
-        <Text numberOfLines={1} style={[styles.subtitle, { color: theme.secondary }]}>{fileSubtitle(node)}</Text>
+        <Text numberOfLines={1} style={[styles.subtitle, { color: theme.secondary }]}>{subtitle}</Text>
         <View style={styles.trailing}>
           {busy || node.status === 'pending' ? <ActivityIndicator size="small" color={theme.secondary} /> : folder && !selecting ? <SymbolView name="chevron.right" size={13} tintColor={theme.tertiary} /> : null}
         </View>
@@ -72,7 +76,7 @@ export const FileRow = memo(function FileRow({ node, actions, selecting, selecte
         accessibilityState={{ selected: selecting ? selected : undefined }}
         accessibilityHint={selecting ? 'Double tap to select.' : 'Double tap to open. Touch and hold for more actions.'}
         actions={actions}
-        preview={{ title: node.name, subtitle: fileSubtitle(node), systemImage: icon.symbol, tint: icon.tint }}
+        preview={{ title: node.name, subtitle, systemImage: icon.symbol, tint: icon.tint }}
         onAction={(action) => onAction(node, action)}
         onPress={() => onPress(node)}
         testID={`file-row-${node.name}`}
