@@ -91,6 +91,7 @@ describe('chatCompletionsRequest', () => {
           { type: 'input_file', filename: 'data.csv', file_data: `data:text/csv;base64,${text}` },
           { type: 'input_file', filename: 'doc.pdf', file_data: 'data:application/pdf;base64,JVBERi0=' },
           { type: 'input_file', file_id: 'file-1' },
+          { type: 'input_file', filename: 'paper.pdf', file_url: 'https://example.com/paper.pdf' },
         ] },
       ],
     }, { baseUrl: OTHER, stream: false })
@@ -102,6 +103,7 @@ describe('chatCompletionsRequest', () => {
       { type: 'text', text: 'File data.csv:\na,b\n1,2' },
       { type: 'file', file: { filename: 'doc.pdf', file_data: 'data:application/pdf;base64,JVBERi0=' } },
       { type: 'file', file: { file_id: 'file-1' } },
+      { type: 'text', text: '[Document paper.pdf: https://example.com/paper.pdf]' },
     ])
   })
 

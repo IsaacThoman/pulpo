@@ -284,7 +284,7 @@ describe('anthropicMessagesFromEntries', () => {
     ])
   })
 
-  it('maps images, PDFs, text documents, and unreadable files', () => {
+  it('maps images, PDFs, URL documents, text documents, and unreadable files', () => {
     const text = Buffer.from('hello file').toString('base64')
     const [message] = anthropicMessagesFromEntries([{ kind: 'user', parts: [
       { type: 'image', url: 'data:image/png;base64,iVBOR' },
@@ -293,7 +293,9 @@ describe('anthropicMessagesFromEntries', () => {
       { type: 'file', filename: 'notes.md', fileData: `data:text/markdown;base64,${text}` },
       { type: 'file', filename: 'sheet.xlsx', fileData: 'data:application/vnd.ms-excel;base64,AAAA' },
       { type: 'file', fileId: 'file-9' },
+      { type: 'file', filename: 'paper.pdf', fileUrl: 'https://example.com/paper.pdf' },
       { type: 'text', text: '' },
+      { type: 'text', text: ' \n\n ' },
     ] }], options)
     expect(message!.content).toEqual([
       { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'iVBOR' } },
@@ -302,7 +304,16 @@ describe('anthropicMessagesFromEntries', () => {
       { type: 'document', source: { type: 'text', media_type: 'text/plain', data: 'hello file' }, title: 'notes.md' },
       { type: 'text', text: '[Attachment sheet.xlsx (application/vnd.ms-excel) cannot be read by this model]' },
       { type: 'text', text: '[Attachment file-9 cannot be read by this model]' },
+      { type: 'document', source: { type: 'url', url: 'https://example.com/paper.pdf' }, title: 'paper.pdf' },
     ])
+  })
+
+  it('drops whitespace-only assistant text', () => {
+    expect(anthropicMessagesFromEntries([
+      { kind: 'user', parts: [{ type: 'text', text: 'hi' }] },
+      { kind: 'assistant', text: '\n\n' },
+      { kind: 'user', parts: [{ type: 'text', text: 'again' }] },
+    ], options)).toEqual([{ role: 'user', content: [{ type: 'text', text: 'hi' }, { type: 'text', text: 'again' }] }])
   })
 })
 
@@ -567,6 +578,33 @@ describe('Anthropic request constraints', () => {
       expect(body).not.toHaveProperty('thinking')
       expect(body).not.toHaveProperty('tool_choice')
     }
+  })
+
+  it('treats Claude Haiku 5.5 as an adaptive model that thinks by default', () => {
+    const effort = anthropicMessagesRequest({ model: 'claude-haiku-5-5', input: 'q', reasoning: { effort: 'high' }, temperature: 0.5 }, { stream: true })
+    expect(effort.thinking).toEqual({ type: 'adaptive', display: 'summarized' })
+    expect(effort.output_config).toEqual({ effort: 'high' })
+    expect(effort).not.toHaveProperty('temperature')
+    expect(anthropicMessagesRequest({ model: 'claude-haiku-5-5', input: 'q', temperature: 0.5 }, { stream: true })).not.toHaveProperty('temperature')
+    const forced = anthropicMessagesRequest({ ...base, model: 'claude-haiku-5-5', tool_choice: 'required' }, { stream: true })
+    expect(forced.thinking).toEqual({ type: 'disabled' })
+    expect(forced.tool_choice).toEqual({ type: 'any' })
+  })
+
+  it('applies sampling and tool-choice limits to an operator-set thinking default', () => {
+    const operator = { type: 'enabled', budget_tokens: 2_000 }
+    const body = anthropicMessagesRequest({ ...base, model: 'claude-sonnet-4-5', thinking: operator, temperature: 0.3, tool_choice: 'required' }, { stream: true })
+    expect(body.thinking).toEqual(operator)
+    expect(body).not.toHaveProperty('temperature')
+    expect(body).not.toHaveProperty('tool_choice')
+    // An operator default that disables thinking still allows both.
+    const disabled = anthropicMessagesRequest({ ...base, model: 'claude-sonnet-4-5', thinking: { type: 'disabled' }, temperature: 0.3, tool_choice: 'required' }, { stream: true })
+    expect(disabled.temperature).toBe(0.3)
+    expect(disabled.tool_choice).toEqual({ type: 'any' })
+    // An operator thinking default on a model that thinks by default is left alone.
+    const opus5 = anthropicMessagesRequest({ ...base, model: 'claude-opus-5', thinking: { type: 'adaptive' }, tool_choice: 'required' }, { stream: true })
+    expect(opus5.thinking).toEqual({ type: 'adaptive' })
+    expect(opus5).not.toHaveProperty('tool_choice')
   })
 
   it('drops custom sampling whenever thinking is on', () => {

@@ -50,13 +50,16 @@ function fileBlock(part: Extract<NeutralPart, { type: 'file' }>): Block {
   if (parsed && isTextMediaType(parsed.mediaType)) {
     return { type: 'document', source: { type: 'text', media_type: 'text/plain', data: Buffer.from(parsed.data, 'base64').toString('utf8') }, ...title }
   }
+  // Anthropic fetches URL documents itself; URL sources are PDFs.
+  if (!parsed && part.fileUrl) return { type: 'document', source: { type: 'url', url: part.fileUrl }, ...title }
   const label = part.filename ?? part.fileId ?? 'attachment'
   return { type: 'text', text: `[Attachment ${label}${parsed ? ` (${parsed.mediaType})` : ''} cannot be read by this model]` }
 }
 
 function partBlocks(parts: NeutralPart[]): Block[] {
   return parts.flatMap((part): Block[] => {
-    if (part.type === 'text') return part.text ? [{ type: 'text', text: part.text }] : []
+    // Anthropic rejects text blocks without non-whitespace text.
+    if (part.type === 'text') return part.text.trim() ? [{ type: 'text', text: part.text }] : []
     if (part.type === 'image') return [imageBlock(part.url)]
     return [fileBlock(part)]
   })
@@ -89,7 +92,7 @@ export function anthropicMessagesFromEntries(
   for (const entry of entries) {
     if (entry.kind === 'system') continue
     if (entry.kind === 'user') append('user', partBlocks(entry.parts))
-    else if (entry.kind === 'assistant') append('assistant', entry.text ? [{ type: 'text', text: entry.text }] : [])
+    else if (entry.kind === 'assistant') append('assistant', entry.text.trim() ? [{ type: 'text', text: entry.text }] : [])
     else if (entry.kind === 'function_call') {
       append('assistant', [{ type: 'tool_use', id: anthropicToolId(entry.callId), name: entry.name, input: toolInput(entry.arguments) }])
     } else if (entry.kind === 'function_output') {
@@ -167,18 +170,22 @@ export function anthropicMessagesRequest(payload: JsonRecord, options: { stream:
     if (budget) thinking = { type: 'enabled', budget_tokens: budget }
   }
   if (format?.type === 'json_schema') outputConfig.format = { type: 'json_schema', schema: format.schema }
-  // Thinking rejects custom sampling; newer models reject it outright.
-  const sampling = capabilities.sampling && (!thinking || thinking.type === 'disabled')
-  const temperature = sampling && typeof payload.temperature === 'number' ? Math.min(1, Math.max(0, payload.temperature)) : undefined
-  const topP = sampling && temperature === undefined && typeof payload.top_p === 'number' ? payload.top_p : undefined
+  const passthrough = passthroughParameters(payload)
   const tools = functionTools(payload.tools)
   const toolChoice = neutralToolChoice(payload.tool_choice)
   const disableParallel = payload.parallel_tool_calls === false
   // Forced tool use is rejected alongside thinking, and by models that always think.
   // Models that think by default can force tools once thinking is disabled explicitly.
   const forcing = tools.length > 0 && (toolChoice === 'required' || (Boolean(toolChoice) && typeof toolChoice === 'object'))
-  if (forcing && !thinking && capabilities.thinksByDefault && !capabilities.thinkingAlwaysOn) thinking = { type: 'disabled' }
-  const canForceTools = !capabilities.thinkingAlwaysOn && (!thinking || thinking.type === 'disabled')
+  if (forcing && !thinking && !passthrough.thinking && capabilities.thinksByDefault && !capabilities.thinkingAlwaysOn) thinking = { type: 'disabled' }
+  // An operator default fills `thinking` when Pulpo sets none, so it constrains sampling and tool choice too.
+  const effectiveThinking = thinking ?? record(passthrough.thinking)
+  const thinkingOn = Boolean(effectiveThinking) && effectiveThinking?.type !== 'disabled'
+  const canForceTools = !capabilities.thinkingAlwaysOn && !thinkingOn
+  // Thinking rejects custom sampling; newer models reject it outright.
+  const sampling = capabilities.sampling && !thinkingOn
+  const temperature = sampling && typeof payload.temperature === 'number' ? Math.min(1, Math.max(0, payload.temperature)) : undefined
+  const topP = sampling && temperature === undefined && typeof payload.top_p === 'number' ? payload.top_p : undefined
   let anthropicToolChoice: JsonRecord | undefined
   if (tools.length) {
     if (toolChoice === 'none') anthropicToolChoice = { type: 'none' }
@@ -189,7 +196,7 @@ export function anthropicMessagesRequest(payload: JsonRecord, options: { stream:
   const messages = anthropicMessagesFromEntries(entries, { upstreamModel: model, replayThinking: true })
   return {
     // Operator defaults fill fields Pulpo leaves unset; translated values win.
-    ...passthroughParameters(payload),
+    ...passthrough,
     model,
     max_tokens: maxTokens,
     ...(systemTexts.length ? { system: [{ type: 'text', text: systemTexts.join('\n\n') }] } : {}),

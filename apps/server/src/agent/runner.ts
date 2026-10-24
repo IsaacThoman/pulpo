@@ -9,7 +9,7 @@ import { openAIResponsesApi } from '@earendil-works/pi-ai/api/openai-responses.l
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy'
 import { anthropicMessagesApi } from '@earendil-works/pi-ai/api/anthropic-messages.lazy'
 import { mistralConversationsApi } from '@earendil-works/pi-ai/api/mistral-conversations.lazy'
-import { chatCompletionsSamplingParameters, explicitReasoningEffort, mistralAgentPayload, piModelForProvider } from '../upstream/pi-model.js'
+import { chatCompletionsSamplingParameters, explicitReasoningEffort, mistralAgentPayload, piModelForProvider, reasoningDisabled } from '../upstream/pi-model.js'
 import type { Api, AssistantMessage, Context, Message, Model, SimpleStreamOptions, ThinkingLevel, ToolChoice } from '@earendil-works/pi-ai'
 import { agentCostLimitMicros, findCostLimitItem, findCostLimitItems, toolImagePreviewSchema, type ToolImagePreview, type CompactionItem, type CostLimitItem, type FileChangesItem, type RecallItem, type ResponseSnapshot } from '@pulpo/contracts'
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm'
@@ -594,6 +594,8 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     if (active.piModel.api === 'anthropic-messages') {
       return providerStreams['anthropic-messages'].streamSimple(active.piModel, context, {
         ...streamOptions,
+        // Effort `none` turns thinking off, or runs at the lowest effort on models that always think.
+        reasoning: reasoningDisabled(request.parameters) ? (active.piModel.thinkingLevelMap?.off === null ? 'low' : undefined) : request.reasoning,
         samplingParams: undefined,
         // Pi marks Anthropic cache breakpoints itself; follow the model's caching switch.
         cacheRetention: active.model.promptCachingEnabled ? 'short' : 'none',

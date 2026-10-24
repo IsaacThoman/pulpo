@@ -93,7 +93,8 @@ the failure are still billed.
   Anthropic-compatible endpoint, get `budget_tokens`. Effort levels the model
   does not accept fall back to the nearest one it does.
 - Custom `temperature` and `top_p` are omitted where the model rejects them
-  (Claude Opus 4.7 and later, Sonnet 5 and later) and whenever thinking is on.
+  (Claude Opus 4.7 and later, Sonnet 5 and later, Haiku 5.5) and whenever
+  thinking is on, including thinking set as a model default parameter.
   `temperature` is clamped to Anthropic's 0–1 range.
 - Forced tool use (`tool_choice` `required` or a named function) is sent only
   where Anthropic allows it. Thinking is disabled for that request on models

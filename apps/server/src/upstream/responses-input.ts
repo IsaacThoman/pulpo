@@ -7,7 +7,7 @@
 export type NeutralPart =
   | { type: 'text'; text: string }
   | { type: 'image'; url: string; detail?: string }
-  | { type: 'file'; filename?: string; fileData?: string; fileId?: string }
+  | { type: 'file'; filename?: string; fileData?: string; fileId?: string; fileUrl?: string }
 
 export type NeutralReasoning = {
   text: string
@@ -56,8 +56,9 @@ function contentParts(content: unknown): NeutralPart[] {
         ...(typeof part.filename === 'string' ? { filename: part.filename } : {}),
         ...(typeof part.file_data === 'string' ? { fileData: part.file_data } : {}),
         ...(typeof part.file_id === 'string' ? { fileId: part.file_id } : {}),
+        ...(typeof part.file_url === 'string' ? { fileUrl: part.file_url } : {}),
       }
-      if (file.fileData || file.fileId) parts.push(file)
+      if (file.fileData || file.fileId || file.fileUrl) parts.push(file)
     }
   }
   return parts
