@@ -35,7 +35,7 @@ import { mobileComposerSync } from '../features/chat/composerSync';
 import { useComposerSync } from '../features/chat/useComposerSync';
 import { temporaryChatColors } from '../features/chat/temporaryColors';
 import { submitComposerDraft } from '../features/chat/composerSubmission';
-import { idSchema, type ComposerState } from '@pulpo/contracts';
+import { idSchema, type ComposerState, type FileNode } from '@pulpo/contracts';
 import {
   createContext,
   forwardRef,
@@ -164,11 +164,8 @@ import {
 } from 'react-native-keyboard-controller';
 import Reanimated, {
   cancelAnimation,
-  FadeInUp,
-  FadeOutUp,
   interpolate,
   interpolateColor,
-  LinearTransition,
   runOnJS,
   type SharedValue,
   useAnimatedReaction,
@@ -222,6 +219,34 @@ import { aiIconSource, useCatalogIconCacheRevision } from './src/production/AiIc
 import { SafeMarkdown } from '../components/SafeMarkdown';
 import { ModelWarningBanner } from './src/components/ModelWarningBanner';
 import { AttachmentImageViewer, type AttachmentImagePreviewItem, type AttachmentImageTransitionOrigin } from '../components/AttachmentImageViewer';
+import { useFilesCapabilityRefresh, useFilesEnabled } from '../features/files/availability';
+import { parseFilesLink, useFilesLinkInbox } from '../features/files/links';
+import { clearNewChatFileScope, liveFileScope, newChatFileScope, useChatFileScope } from '../features/files/chatScope';
+import { FileChangesCard } from '../features/files/components/FileChangesCard';
+import { FileScopeBar } from '../features/files/components/FileScopeBar';
+import { useFileScopePicker } from '../features/files/scopePicker';
+import { useOpenFileItem } from '../features/files/open';
+import { fileOpenTarget } from '../features/files/itemActions';
+import { FilesToastHost } from '../features/files/components/FilesToastHost';
+import { FolderPickerSheet } from '../features/files/components/FolderPickerSheet';
+import { filesErrorMessage } from '../features/files/display';
+import { useFileOperations } from '../features/files/operations';
+import { enqueueUploads, pickUploads } from '../features/files/uploads';
+import { useFilesToasts } from '../features/files/toasts';
+import { sidebarItemActions, sidebarItemTapOpens, type SidebarItemActionId } from '../features/sidebar/actions';
+import { SidebarHeading } from '../features/sidebar/components/SidebarHeading';
+import { SidebarMessageRow, SidebarNodeRow, type SidebarRowStyles } from '../features/sidebar/components/SidebarNodeRow';
+import { sidebarIndent } from '../features/sidebar/layout';
+import { useSidebarExpansion } from '../features/sidebar/expansion';
+import { sidebarItemsFloor, useSidebarOperations, type SidebarTarget } from '../features/sidebar/operations';
+import { useSidebarListings, useSidebarState } from '../features/sidebar/queries';
+import { buildSidebarTree, folderOutline, isWithin, type SidebarRow, type SidebarSection } from '../features/sidebar/tree';
+import { useFilesNamespace } from '../features/files/useFilesNamespace';
+import { filesQueryKeys, lookUpFileNode } from '../features/files/queries';
+import { fileChangesItem } from '@pulpo/client-core/files';
+import { FileDocumentScreen } from '../features/files/screens/FileDocumentScreen';
+import { FileMarkdownScreen } from '../features/files/screens/FileMarkdownScreen';
+import { FilesFolderScreen } from '../features/files/screens/FilesFolderScreen';
 import { timeAgo } from '../features/chat/format';
 import {
   MAX_COMPOSER_ATTACHMENTS,
@@ -262,7 +287,6 @@ import {
   historyChatSummary,
   resolveHistoryChatExpiryMenuAction,
   createHistoryProjector,
-  historyFolderItems,
   topChatSortOrder,
   visibleHistoryChats,
   type HistoryChatExpiryMenuAction,
@@ -791,10 +815,12 @@ function NativeComposerShelfButton({ disabled, onPress }: { disabled: boolean; o
   );
 }
 
-function NativeAttachmentMenu({ onTakePhoto, onPickPhotos, onPickFiles }: {
+function NativeAttachmentMenu({ onTakePhoto, onPickPhotos, onPickFiles, onAddFromFiles }: {
   onTakePhoto: () => void;
   onPickPhotos: () => void;
   onPickFiles: () => void;
+  /** Lets the agent work with Files items; absent where a chat cannot take Files. */
+  onAddFromFiles?: () => void;
 }) {
   const { styles } = useChatStyles();
   return (
@@ -813,6 +839,8 @@ function NativeAttachmentMenu({ onTakePhoto, onPickPhotos, onPickFiles }: {
         <SwiftUIButton label="Take Photo" systemImage="camera" onPress={onTakePhoto} />
         <SwiftUIButton label="Photo Library" systemImage="photo.on.rectangle" onPress={onPickPhotos} />
         <SwiftUIButton label="Choose Files" systemImage="doc" onPress={onPickFiles} />
+        {onAddFromFiles ? <SwiftUIDivider /> : null}
+        {onAddFromFiles ? <SwiftUIButton label="Add from Files…" systemImage="folder.badge.plus" onPress={onAddFromFiles} /> : null}
       </SwiftUIMenu>
     </SwiftUIHost>
   );
@@ -1668,7 +1696,10 @@ function PrototypeRoot() {
         <RootStack.Screen name="Passkeys" component={PasskeysScreen} options={{ headerShown: false }} />
         <RootStack.Screen name="InstanceDetails" component={InstanceDetailsScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Pulpo Instance', headerBackTitle: 'Account' }} />
         <RootStack.Screen name="SettingsDetail" component={SettingsDetailScreen} options={{ headerShown: Platform.OS === 'ios', headerBackTitle: 'Settings' }} />
-        <RootStack.Screen name="Trash" component={TrashScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Trash', headerBackTitle: 'Settings' }} />
+        <RootStack.Screen name="Trash" component={TrashScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Trash' }} />
+        <RootStack.Screen name="FilesFolder" component={FilesFolderScreen} options={{ headerShown: Platform.OS === 'ios', headerLargeTitle: true, title: 'My files' }} />
+        <RootStack.Screen name="FileDocument" component={FileDocumentScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Document' }} />
+        <RootStack.Screen name="FileMarkdown" component={FileMarkdownScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Markdown' }} />
       </RootStack.Navigator>
     </NavigationContainer>
   );
@@ -2300,6 +2331,38 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     composerFocusRevision.current += 1;
     setComposerFocusRequest({ revision: composerFocusRevision.current, target: 'composer' });
   }, [activeChatId, animatePanel, navigation, newChat, pendingImports, productionInstanceUrl, productionScopeReady, productionUserId]);
+  // Files links (pulpo://files/…) open their screen once the account's data is ready.
+  const filesLink = useFilesLinkInbox((state) => state.pending);
+  const openFileItem = useOpenFileItem();
+  const filesLinkGeneration = useRef(0);
+  // A lookup still running when the account changes opens nothing.
+  useEffect(() => { filesLinkGeneration.current += 1; }, [productionUserId]);
+  useEffect(() => {
+    if (!filesLink || !productionScopeReady || !productionUserId) return;
+    const url = useFilesLinkInbox.getState().take();
+    const destination = url ? parseFilesLink(url, productionInstanceUrl) : null;
+    if (!destination) return;
+    const generation = ++filesLinkGeneration.current;
+    animatePanel(false);
+    Keyboard.dismiss();
+    if (destination.type === 'trash') navigation.navigate('Trash');
+    else if (destination.type === 'folder') navigation.push('FilesFolder', { folderId: destination.id });
+    else {
+      // As on the web, a file link is any kind of file: what it is decides where it opens. Items seen
+      // before are known offline too; anything else says why it can't open. Looked up once and at
+      // once, outside the shared query, which would wait for the connection to come back; dropped if
+      // another link came (or the account changed) meanwhile.
+      const namespace = cacheNamespace(productionInstanceUrl, productionUserId);
+      void lookUpFileNode(namespace, destination.id).then(
+        (value) => {
+          if (generation !== filesLinkGeneration.current) return;
+          queryClient.setQueryData(filesQueryKeys.node(namespace, destination.id), value);
+          void openFileItem(value.node);
+        },
+        (error: unknown) => { if (generation === filesLinkGeneration.current) Alert.alert('Can’t open this link', filesErrorMessage(error)); },
+      );
+    }
+  }, [animatePanel, filesLink, navigation, openFileItem, productionInstanceUrl, productionScopeReady, productionUserId, queryClient]);
   const shortcutDestination = useShortcutInbox((state) => state.pending[0]);
   const shortcutActions = useRef({ animatePanel, dismissComposer, finishExistingChatTransition, interruptDrawerTransition, navigation, newChat, abandonActiveTemporaryChat });
   shortcutActions.current = { animatePanel, dismissComposer, finishExistingChatTransition, interruptDrawerTransition, navigation, newChat, abandonActiveTemporaryChat };
@@ -2361,6 +2424,37 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     Keyboard.dismiss();
     navigation.navigate('Settings');
   }, [abandonActiveTemporaryChat, animatePanel, navigation]);
+
+  const openFilesFromHistory = useCallback(() => {
+    animatePanel(false);
+    Keyboard.dismiss();
+    navigation.navigate('FilesFolder', { folderId: null });
+  }, [animatePanel, navigation]);
+
+  const openFilesFolderFromHistory = useCallback((folderId: string, name: string) => {
+    animatePanel(false);
+    Keyboard.dismiss();
+    navigation.push('FilesFolder', { folderId, name });
+  }, [animatePanel, navigation]);
+
+  const openNewDocumentFromHistory = useCallback((node: FileNode) => {
+    animatePanel(false);
+    Keyboard.dismiss();
+    navigation.push('FileDocument', { fileId: node.id, name: node.name, created: true });
+  }, [animatePanel, navigation]);
+
+  const openFileItemFromHistory = useCallback((node: FileNode) => {
+    const target = fileOpenTarget(node);
+    const chat = target.type === 'chat' ? historyChats.find((item) => item.id === target.id) : undefined;
+    // A shortcut to a chat opens it here, like picking the chat itself.
+    if (chat) {
+      selectChat(chat);
+      return;
+    }
+    animatePanel(false);
+    Keyboard.dismiss();
+    void openFileItem(node);
+  }, [animatePanel, historyChats, openFileItem, selectChat]);
 
   const saveActiveTemporaryChat = useCallback(async () => {
     if (!activeChatId || savingTemporaryChatId) return;
@@ -2469,11 +2563,16 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
       ? timestamp + 48 * 60 * 60 * 1_000
       : options?.autoExpire ? automaticExpirationDeadline(automaticChatExpiration, timestamp) : null;
     const productionNamespace = productionUserId ? cacheNamespace(productionInstanceUrl, productionUserId) : null;
-    const { chats: currentChats, folders: currentFolders } = usePrototypeStore.getState();
-    // New chats open at the top of the unfiled list, matching the server's placement.
+    const { chats: currentChats } = usePrototypeStore.getState();
+    // New chats open at the top of the sidebar, above its Files items too, matching the server's placement.
     const initialSortOrder = activePrototypeChat?.sortOrder ?? (options?.temporary ? 0 : topChatSortOrder(
-      visibleHistoryChats(currentChats), new Set(currentFolders.map((folder) => folder.id)), null,
+      visibleHistoryChats(currentChats), null, { floor: productionNamespace ? sidebarItemsFloor(queryClient, productionNamespace, null) : undefined },
     ));
+    // A new chat starts with the Files items picked for it (temporary chats get no Files), minus any
+    // known to be gone since: the server refuses a scope naming them.
+    const startingFileScope = !activeChat && !options?.temporary && productionNamespace
+      ? liveFileScope(queryClient, productionNamespace, newChatFileScope(productionNamespace))
+      : null;
     if (!activeChat) {
       upsertChat({
         id: key,
@@ -2489,6 +2588,8 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
         deletedAt: null,
         purgeAt: null,
         messages: [],
+        fileScopeIds: startingFileScope?.ids ?? [],
+        fileScopeAccess: startingFileScope?.access ?? {},
       });
       setActiveChatId(key);
     }
@@ -2549,6 +2650,8 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
             sizeBytes: attachment.size ?? 0,
           })),
           createdAt: timestamp,
+          fileScopeIds: startingFileScope?.ids,
+          fileScopeAccess: startingFileScope?.access,
         });
       }
       let serverChatId = activeChat?.id;
@@ -2566,6 +2669,8 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
           attachmentIds: prepared.map((attachment) => attachment.serverId),
           agentMode,
           usedDictation: options?.usedDictation,
+          fileScopeIds: startingFileScope?.ids,
+          fileScopeAccess: startingFileScope?.access,
         });
         if (options?.temporary) pendingTemporaryStart.current = { chatId: key, promise: startPromise };
         let started: Awaited<typeof startPromise>;
@@ -2577,6 +2682,8 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
         serverChatId = started.chat.id;
         response = started.response;
         serverChatCreated = true;
+        // The draft's items now belong to the chat (the start request carried them, or is queued with them).
+        if (startingFileScope?.ids.length && productionNamespace) clearNewChatFileScope(productionNamespace);
         setActiveChatId(serverChatId);
       } else {
         response = await sendServerMessage({
@@ -2812,6 +2919,10 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
               onSelectChat={selectChat}
               onNewChat={newChatFromHistory}
               onOpenSettings={openSettingsFromHistory}
+              onOpenFiles={openFilesFromHistory}
+              onOpenFilesFolder={openFilesFolderFromHistory}
+              onOpenFileItem={openFileItemFromHistory}
+              onOpenNewDocument={openNewDocumentFromHistory}
               onPreviewRequest={loadHistoryPreview}
             />
           </Reanimated.View>
@@ -3219,7 +3330,7 @@ function WorkTriggerIcon({ steps, active }: { steps: TimelineStep[]; active: boo
   const tools = steps.filter((step) => step.kind === 'tool');
   const runningTool = tools.find((step) => step.tool.status === 'running');
   if (runningTool?.kind === 'tool') {
-    const RunningToolIcon = toolActivityPresentation(runningTool.tool.tool).icon;
+    const RunningToolIcon = toolActivityPresentation(runningTool.tool.tool, runningTool.tool.arguments).icon;
     return <PulsingIcon reduceMotion={reduceMotion}><RunningToolIcon color={COLORS.muted} size={14} /></PulsingIcon>;
   }
   if (active && tools.length > 0) return <PulsingIcon reduceMotion={reduceMotion}><Wrench color={COLORS.muted} size={14} /></PulsingIcon>;
@@ -3280,7 +3391,7 @@ function workLabel(steps: TimelineStep[], active: boolean, durationMs?: number):
   const paused = pausedCostLimit(steps, active);
   if (paused) return costLimitLabel(paused, true);
   const runningTool = steps.find((step) => step.kind === 'tool' && step.tool.status === 'running');
-  if (runningTool?.kind === 'tool') return toolActivityPresentation(runningTool.tool.tool).label;
+  if (runningTool?.kind === 'tool') return toolActivityPresentation(runningTool.tool.tool, runningTool.tool.arguments).label;
   if (active) return steps.some((step) => step.kind === 'tool') ? 'Working…' : 'Thinking…';
   return completedActivityLabel(steps, durationMs);
 }
@@ -3312,7 +3423,7 @@ const ToolStepRow = memo(function ToolStepRow({ step }: { step: Extract<Timeline
     step.tool.output ?? '',
   ].filter(Boolean).join('\n'), [step.tool.arguments, step.tool.output]);
   const seconds = step.tool.durationMs === undefined ? null : Math.max(0, Math.round(step.tool.durationMs / 1000));
-  const ToolIcon = toolActivityPresentation(step.tool.tool).icon;
+  const ToolIcon = toolActivityPresentation(step.tool.tool, step.tool.arguments).icon;
   return (
     <View style={styles.workStep}>
       <Pressable
@@ -3456,7 +3567,7 @@ function WorkBlock({ steps, active, durationMs, initialWork, onOpenChat }: {
 }
 
 function otherOutputItems(outputItems?: unknown[]): Array<Record<string, unknown>> {
-  const known = new Set(['message', 'reasoning', 'pulpo_tool', 'pulpo_workspace', 'pulpo_attachment', 'pulpo_compaction', 'pulpo_recall', 'pulpo_cost_limit']);
+  const known = new Set(['message', 'reasoning', 'pulpo_tool', 'pulpo_workspace', 'pulpo_attachment', 'pulpo_compaction', 'pulpo_recall', 'pulpo_cost_limit', 'pulpo_file_changes']);
   return (outputItems ?? []).filter((item): item is Record<string, unknown> => {
     const type = (item as { type?: unknown }).type;
     return typeof type === 'string' && !known.has(type);
@@ -3561,6 +3672,9 @@ const MessageRow = memo(function MessageRow({
   const streaming = message.status === 'streaming' || message.status === 'queued';
   const responseStartedAt = useMemo(() => message.requestReceivedAt ? Date.parse(message.requestReceivedAt) : message.createdAt ?? Date.now(), [message.createdAt, message.requestReceivedAt]);
   const extraOutput = useMemo(() => otherOutputItems(message.outputItems), [message.outputItems]);
+  // A reply's Files changes are reviewed under it once it finished (see FileChangesCard).
+  const filesNamespace = useFilesNamespace();
+  const filesEnabled = useFilesEnabled();
   const costLimit = useMemo(() => findCostLimitItem(message.outputItems), [message.outputItems]);
   const [costLimitPending, setCostLimitPending] = useState(false);
   const costLimitKey = costLimit ? `${costLimit.limit_micros}:${costLimit.status}` : undefined;
@@ -3701,6 +3815,9 @@ const MessageRow = memo(function MessageRow({
                 ))}
               </>}</SentAttachmentWindow>
             )}
+            {filesNamespace && filesEnabled && !streaming && fileChangesItem(message.outputItems) ? (
+              <FileChangesCard namespace={filesNamespace} responseId={message.id} />
+            ) : null}
             {costLimit?.status === 'awaiting_confirmation' && streaming && !timeline.some((segment) => segment.kind === 'activity' && segment.steps.some((step) => step.kind === 'cost_limit')) && <View style={styles.workRow}><Pause color={COLORS.muted} size={13} /><Text style={styles.workRowTitle}>{costLimitLabel(costLimit, true)}</Text></View>}
             {costLimit?.status === 'awaiting_confirmation' && streaming && (
               <View style={styles.costLimitActions}>
@@ -4335,6 +4452,11 @@ function ChatView({
     setAgentSelection((current) => current.enabled === enabled ? current : { ...current, enabled });
   }, []);
   const activeAgentEnabled = canUseAgent && agentEnabled;
+  // The Files items this chat's agent works with (the unsent chat keeps a draft of them).
+  const filesNamespace = useFilesNamespace();
+  const fileScope = useChatFileScope(filesNamespace, chatId, temporary);
+  const showFileScopePicker = useFileScopePicker((state) => state.show);
+  const openFileItem = useOpenFileItem();
   const [attachments, setAttachmentState] = useState<ComposerAttachment[]>([]);
   const attachmentsRequireAgent = attachments.some((attachment) => attachment.kind === 'file')
     || imageBatchNeedsWorkspace(attachments.filter((attachment) => attachment.kind !== 'file').map((attachment) => ({ sizeBytes: attachment.size })), maxInlineImages);
@@ -6086,6 +6208,14 @@ function ChatView({
                   </Pressable>
                 </View>
               ) : null}
+              <FileScopeBar
+                namespace={filesNamespace}
+                scope={fileScope}
+                agentActive={activeAgentEnabled}
+                canUseAgent={canUseAgent}
+                onTurnOnAgent={() => setAgentEnabled(true)}
+                onOpenItem={(node) => { void openFileItem(node); }}
+              />
               <AttachmentStrip
                 attachments={attachments}
                 onPreviewFile={openFilePreview}
@@ -6145,12 +6275,13 @@ function ChatView({
                   style={[styles.composerToolbar, composerToolbarStyle]}
                 >
                 {Platform.OS === 'ios' ? (
-                  <NativeAttachmentMenu onTakePhoto={takePhoto} onPickFiles={pickFiles} onPickPhotos={pickPhotos} />
+                  <NativeAttachmentMenu onTakePhoto={takePhoto} onPickFiles={pickFiles} onPickPhotos={pickPhotos} onAddFromFiles={fileScope.available ? showFileScopePicker : undefined} />
                 ) : (
                   <MaterialMenu label="Add attachment" icon="plus" actions={[
                     { label: 'Take photo', icon: 'camera', onPress: takePhoto },
                     { label: 'Photos', icon: 'photo.on.rectangle', onPress: pickPhotos },
                     { label: 'Choose files', icon: 'doc', onPress: pickFiles },
+                    ...(fileScope.available ? [{ label: 'Add from Files', icon: 'folder', onPress: showFileScopePicker }] : []),
                   ]} />
                 )}
                 {hasGenerationPresets && (Platform.OS === 'ios' ? (
@@ -6288,99 +6419,30 @@ function NativeDrawerSearch({ value, focused, onChange, onFocusChange, fieldRef 
   </SwiftUIHost>;
 }
 
-function NativeFoldersDisclosure({ folders, onCreate, onSelectChat }: {
-  folders: Array<{ id: string; name: string; chats: HistoryChatSummary[] }>;
-  onCreate: () => void;
-  onSelectChat: (chat: HistoryChatSummary) => void;
-}) {
+/** The drawer's way into Files, like the web sidebar's Files button. */
+function NativeFilesRow({ onOpen }: { onOpen: () => void }) {
   const { styles } = useChatStyles();
-  const [expanded, setExpanded] = useState(false);
-  const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
-  const { reduceMotion } = useAccessibilityPreferences();
-  const entering = reduceMotion ? undefined : FadeInUp.duration(200);
-  const exiting = reduceMotion ? undefined : FadeOutUp.duration(150);
-  const layout = reduceMotion ? undefined : LinearTransition.duration(200);
-  return <Reanimated.View layout={layout} style={styles.nativeFoldersDisclosureHost}>
-    <SwiftUIHost ignoreSafeArea="all" style={styles.nativeFoldersHeaderHost}>
-      <SwiftUIContextMenu>
-        <SwiftUIContextMenu.Trigger>
-          <SwiftUIButton onPress={() => { Haptics.selectionAsync(); setExpanded((current) => !current); }} modifiers={[buttonStyle('plain'), foregroundStyle('primary'), swiftUIAccessibilityLabel(`Folders, ${folders.length}, ${expanded ? 'expanded' : 'collapsed'}`)]}>
-            <SwiftUIHStack spacing={12} modifiers={[frame({ maxWidth: Infinity, minHeight: DRAWER_ACTION_HEIGHT }), contentShape(shapes.rectangle())]}>
-              <SwiftUIImage systemName={expanded ? 'folder.fill' : 'folder'} size={17} modifiers={[frame({ width: 20, height: 20 })]} />
-              <SwiftUIText>Folders</SwiftUIText>
-              <SwiftUISpacer />
-              <SwiftUIText modifiers={[foregroundStyle('secondary')]}>{String(folders.length)}</SwiftUIText>
-            </SwiftUIHStack>
-          </SwiftUIButton>
-        </SwiftUIContextMenu.Trigger>
-        <SwiftUIContextMenu.Items><SwiftUIButton label="New folder" systemImage="folder.badge.plus" onPress={onCreate} /></SwiftUIContextMenu.Items>
-      </SwiftUIContextMenu>
-    </SwiftUIHost>
-    {expanded ? <Reanimated.View entering={entering} exiting={exiting} layout={layout} style={styles.nativeFoldersContent}>
-      {folders.map((folder) => {
-        const folderExpanded = expandedFolders[folder.id] ?? false;
-        return <Reanimated.View key={folder.id} layout={layout} style={styles.nativeFolderGroup}>
-          <SwiftUIHost ignoreSafeArea="all" style={styles.nativeFolderRowHost}>
-            <SwiftUIButton onPress={() => { Haptics.selectionAsync(); setExpandedFolders((current) => ({ ...current, [folder.id]: !folderExpanded })); }} modifiers={[buttonStyle('plain'), foregroundStyle('primary'), swiftUIAccessibilityLabel(`${folder.name}, ${folder.chats.length} chats, ${folderExpanded ? 'expanded' : 'collapsed'}`)]}>
-              <SwiftUIHStack spacing={10} modifiers={[padding({ leading: 24 }), frame({ maxWidth: Infinity, minHeight: 40 }), contentShape(shapes.rectangle())]}>
-                <SwiftUIImage systemName={folderExpanded ? 'folder.fill' : 'folder'} size={15} modifiers={[frame({ width: 20, height: 20 }), foregroundStyle('secondary')]} />
-                <SwiftUIText>{folder.name}</SwiftUIText>
-                <SwiftUISpacer />
-                <SwiftUIText modifiers={[foregroundStyle('secondary')]}>{String(folder.chats.length)}</SwiftUIText>
-              </SwiftUIHStack>
-            </SwiftUIButton>
-          </SwiftUIHost>
-          {folderExpanded ? <Reanimated.View entering={entering} exiting={exiting} layout={layout} style={styles.nativeFoldersContent}>
-            {folder.chats.length > 0 ? folder.chats.map((chat) =>
-              <SwiftUIHost ignoreSafeArea="all" key={chat.id} style={styles.nativeFolderChatRowHost}>
-                <SwiftUIButton onPress={() => onSelectChat(chat)} modifiers={[buttonStyle('plain'), foregroundStyle('primary'), swiftUIAccessibilityLabel(`Open ${chat.title}`)]}>
-                  <SwiftUIHStack spacing={10} modifiers={[padding({ leading: 48 }), frame({ maxWidth: Infinity, minHeight: 38 }), contentShape(shapes.rectangle())]}><SwiftUIImage systemName="bubble.left" size={14} modifiers={[frame({ width: 20, height: 20 }), foregroundStyle('secondary')]} /><SwiftUIText>{chat.title}</SwiftUIText><SwiftUISpacer /></SwiftUIHStack>
-                </SwiftUIButton>
-              </SwiftUIHost>
-            ) : <SwiftUIHost ignoreSafeArea="all" style={styles.nativeFolderEmptyRowHost}><SwiftUIHStack modifiers={[padding({ leading: 78 }), frame({ maxWidth: Infinity, minHeight: 34 })]}><SwiftUIText modifiers={[foregroundStyle('secondary'), font({ textStyle: 'footnote' })]}>No chats yet</SwiftUIText><SwiftUISpacer /></SwiftUIHStack></SwiftUIHost>}
-          </Reanimated.View> : null}
-        </Reanimated.View>;
-      })}
-      <SwiftUIHost ignoreSafeArea="all" style={styles.nativeFolderRowHost}>
-        <SwiftUIButton onPress={onCreate} modifiers={[buttonStyle('plain'), foregroundStyle('secondary'), swiftUIAccessibilityLabel('New folder')]}>
-          <SwiftUIHStack spacing={10} modifiers={[padding({ leading: 24 }), frame({ maxWidth: Infinity, minHeight: 40 }), contentShape(shapes.rectangle())]}><SwiftUIImage systemName="folder.badge.plus" size={15} modifiers={[frame({ width: 20, height: 20 })]} /><SwiftUIText>New folder</SwiftUIText><SwiftUISpacer /></SwiftUIHStack>
-        </SwiftUIButton>
-      </SwiftUIHost>
-    </Reanimated.View> : null}
-  </Reanimated.View>;
-}
-
-function AndroidFoldersDisclosure({ folders, onSelectChat, onCreate }: {
-  folders: { id: string; name: string; chats: HistoryChatSummary[] }[];
-  onSelectChat: (chat: HistoryChatSummary) => void;
-  onCreate: () => void;
-}) {
-  const { COLORS } = useChatStyles();
-  const [expanded, setExpanded] = useState(false);
-  const [openFolders, setOpenFolders] = useState<Set<string>>(() => new Set());
-  const toggleFolder = (id: string) => setOpenFolders((current) => {
-    const next = new Set(current);
-    if (next.has(id)) next.delete(id); else next.add(id);
-    return next;
-  });
-  return <View>
-    <MaterialNavigationRow title="Folders" icon="folder" value={String(folders.length)} expanded={expanded} onPress={() => setExpanded(!expanded)} />
-    {expanded ? <ScrollView nestedScrollEnabled style={{ maxHeight: 220 }}>
-      {folders.map((folder) => <View key={folder.id} style={{ paddingLeft: 16 }}>
-        <MaterialNavigationRow title={folder.name} icon="folder" value={String(folder.chats.length)} expanded={openFolders.has(folder.id)} onPress={() => toggleFolder(folder.id)} />
-        {openFolders.has(folder.id) ? <View style={{ paddingLeft: 16 }}>{folder.chats.length ? folder.chats.map((chat) => <MaterialNavigationRow key={chat.id} title={chat.title} icon="bubble.left" onPress={() => onSelectChat(chat)} />) : <Text style={{ color: COLORS.muted, padding: 16 }}>No chats yet</Text>}</View> : null}
-      </View>)}
-      <View style={{ paddingLeft: 16 }}><MaterialNavigationRow title="New folder" icon="folder.badge.plus" onPress={onCreate} /></View>
-    </ScrollView> : null}
-  </View>;
+  return <SwiftUIHost ignoreSafeArea="all" style={styles.nativeFilesRowHost}>
+    <SwiftUIButton onPress={() => { Haptics.selectionAsync(); onOpen(); }} modifiers={[buttonStyle('plain'), foregroundStyle('primary'), swiftUIAccessibilityLabel('Files')]}>
+      <SwiftUIHStack spacing={12} modifiers={[frame({ maxWidth: Infinity, minHeight: DRAWER_ACTION_HEIGHT }), contentShape(shapes.rectangle())]}>
+        <SwiftUIImage systemName="doc.on.doc" size={17} modifiers={[frame({ width: 20, height: 20 })]} />
+        <SwiftUIText>Files</SwiftUIText>
+        <SwiftUISpacer />
+      </SwiftUIHStack>
+    </SwiftUIButton>
+  </SwiftUIHost>;
 }
 
 type HistoryChatAction = HistoryChatContextMenuAction;
 const DEFAULT_HISTORY_PREVIEW = 'Start a new conversation with your selected model.';
 
-const HistoryChatRow = memo(function HistoryChatRow({ active, chat, expirationMenuAction, previewModelImageURI, previewModelName, previewText, removeChatLabel, onChatAction, onOpenActions, onPreviewRequest, onSelectChat }: {
+const HistoryChatRow = memo(function HistoryChatRow({ active, archiveAvailable, chat, depth = 0, expirationMenuAction, previewModelImageURI, previewModelName, previewText, removeChatLabel, onChatAction, onOpenActions, onPreviewRequest, onSelectChat }: {
   active: boolean;
+  /** Offers Move to archive. */
+  archiveAvailable: boolean;
   chat: HistoryChatSummary;
+  /** How deeply the chat's folder is nested in the drawer. */
+  depth?: number;
   expirationMenuAction: HistoryChatExpiryMenuAction;
   previewModelImageURI: string;
   previewModelName: string;
@@ -6394,7 +6456,7 @@ const HistoryChatRow = memo(function HistoryChatRow({ active, chat, expirationMe
   const { styles } = useChatStyles();
   const { fontScale } = useWindowDimensions();
   const previewLease = useRef<(() => void) | null>(null);
-  useEffect(() => () => { previewLease.current?.(); previewLease.current = null; }, [chat.id]);
+  useEffect(() => () => { previewLease.current?.(); previewLease.current = null; }, [chat.id, fontScale]);
   const endPreview = () => { previewLease.current?.(); previewLease.current = null; };
   const largeAndroidText = Platform.OS === 'android' && fontScale >= 1.5;
   const expirationAction = expirationMenuAction?.kind ?? 'hidden';
@@ -6408,11 +6470,14 @@ const HistoryChatRow = memo(function HistoryChatRow({ active, chat, expirationMe
   </>;
   if (Platform.OS === 'ios') return (
     <HistoryChatContextMenuView
+      // Recreate the native host so a live text-size change measures the row again.
+      key={fontScale}
       accessibilityLabel={chat.title}
       accessibilityHint="Double tap to open. Long press for more actions."
       accessibilityRole="button"
       accessibilityState={{ selected: active }}
       pinned={chat.pinned}
+      archiveAvailable={archiveAvailable}
       removeChatLabel={removeChatLabel}
       expirationAction={expirationAction}
       expirationPeriodLabel={expirationMenuAction?.kind === 'enable' ? expirationMenuAction.periodLabel : ''}
@@ -6431,7 +6496,7 @@ const HistoryChatRow = memo(function HistoryChatRow({ active, chat, expirationMe
         onPreviewRequest(chat);
       }}
       onPreviewEnd={endPreview}
-      style={styles.chatContextMenuHost}
+      style={[styles.chatContextMenuHost, depth ? { marginLeft: sidebarIndent(depth), width: 'auto', alignSelf: 'stretch' } : null]}
     >
       <View pointerEvents="none" style={[styles.chatRow, active && styles.chatRowActive]}>
         {rowContent}
@@ -6446,14 +6511,14 @@ const HistoryChatRow = memo(function HistoryChatRow({ active, chat, expirationMe
       delayLongPress={350}
       onLongPress={(event) => onOpenActions(chat, { x: event.nativeEvent.pageX, y: event.nativeEvent.pageY })}
       onPress={() => onSelectChat(chat)}
-      style={({ pressed }) => [styles.chatRow, { paddingVertical: largeAndroidText ? 10 : 4 }, active && styles.chatRowActive, pressed && styles.navRowPressed]}
+      style={({ pressed }) => [styles.chatRow, { paddingVertical: largeAndroidText ? 10 : 4 }, depth ? { marginLeft: sidebarIndent(depth) } : null, active && styles.chatRowActive, pressed && styles.navRowPressed]}
     >
       {rowContent}
     </Pressable>
   );
 });
 
-const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpen, loading, onSelectChat, onNewChat, onOpenSettings, onPreviewRequest }: {
+const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpen, loading, onSelectChat, onNewChat, onOpenSettings, onOpenFiles, onOpenFilesFolder, onOpenFileItem, onOpenNewDocument, onPreviewRequest }: {
   chats: HistoryChatSummary[];
   activeChatId: string | null;
   drawerOpen: boolean;
@@ -6461,13 +6526,24 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
   onSelectChat: (chat: HistoryChatSummary) => void;
   onNewChat: () => void;
   onOpenSettings: () => void;
+  onOpenFiles: () => void;
+  onOpenFilesFolder: (folderId: string, name: string) => void;
+  /** Opens a folder, file, or shortcut from the drawer. */
+  onOpenFileItem: (node: FileNode) => void;
+  /** Opens a document just created from the drawer, ready to write in. */
+  onOpenNewDocument: (node: FileNode) => void;
   onPreviewRequest: (chatId: string) => void;
 }) {
   const { styles, COLORS } = useChatStyles();
+  const filesEnabled = useFilesEnabled();
+  const filesNamespace = useFilesNamespace();
+  const queryClient = useQueryClient();
+  useFilesCapabilityRefresh();
   const insets = useSafeAreaInsets();
   const { fontScale } = useWindowDimensions();
   const newChatWidth = Platform.OS === 'android' ? Math.min(240, 160 + Math.max(0, fontScale - 1) * 70) : undefined;
-  const folders = usePrototypeStore((state) => state.folders);
+  // Chat folders from servers without the sidebar (/api/folders).
+  const legacyFolders = usePrototypeStore((state) => state.folders);
   const trashChat = usePrototypeStore((state) => state.trashChat);
   const trashRetention = usePrototypeStore((state) => state.preferences.trashRetention);
   const automaticChatExpiration = usePrototypeStore((state) => state.preferences.automaticChatExpiration);
@@ -6478,11 +6554,29 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
   const themePreference = usePrototypeStore((state) => state.preferences.theme);
   const appearance = useColorScheme();
   const isDark = themePreference === 'dark' || (themePreference === 'system' && appearance !== 'light');
-  const togglePin = usePrototypeStore((state) => state.togglePin);
   const renameChat = usePrototypeStore((state) => state.renameChat);
   const upsertChat = usePrototypeStore((state) => state.upsertChat);
-  const addFolder = usePrototypeStore((state) => state.addFolder);
-  const [folderSheet, setFolderSheet] = useState<{ chatId: string; folderId: string | null } | null>(null);
+  // The drawer is the web's sidebar: the Chats folder's chats, folders, files, and shortcuts.
+  const { state: loadedSidebar, unavailable: sidebarMissing } = useSidebarState(filesNamespace);
+  // Offline before the sidebar was ever kept on the device (just after updating the app), the chat
+  // folders last seen through /api/folders stand in for it.
+  const usingCachedFolders = loadedSidebar === undefined && Boolean(sidebarMissing);
+  const sidebar = usingCachedFolders ? null : loadedSidebar;
+  const sidebarFocused = useIsFocused();
+  // A toast's Undo acts for the account it was shown for.
+  useEffect(() => () => useFilesToasts.getState().dismiss(), [filesNamespace]);
+  const sidebarOperations = useSidebarOperations(filesNamespace);
+  const fileOperations = useFileOperations(filesNamespace);
+  const expandedFolders = useSidebarExpansion((state) => state.expanded);
+  const setFolderExpanded = useSidebarExpansion((state) => state.setExpanded);
+  useEffect(() => { useSidebarExpansion.getState().load(filesNamespace); }, [filesNamespace]);
+  const [moveTarget, setMoveTarget] = useState<SidebarTarget | null>(null);
+  const [pickingFolderFor, setPickingFolderFor] = useState<SidebarTarget | null>(null);
+  // Sheets open for one account's items close when switching to another.
+  useEffect(() => () => {
+    setMoveTarget(null);
+    setPickingFolderFor(null);
+  }, [filesNamespace]);
   const [search, setSearch] = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
   const [hideNewChatButton, setHideNewChatButton] = useState(
@@ -6500,7 +6594,22 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
     setHideNewChatButton(KeyboardController.isVisible());
     return () => subscriptions.forEach((subscription) => subscription.remove());
   }, []);
-  const folderItems = useMemo(() => historyFolderItems(folders, chats), [chats, folders]);
+  // Building the drawer finds which folder listings it needs, so contents load as folders open.
+  // They belong to an account: another one's are never asked of the next one's server.
+  const [listed, setListed] = useState<{ namespace: string; ids: readonly string[] }>({ namespace: filesNamespace, ids: NO_FOLDERS });
+  const listedFolderIds = listed.namespace === filesNamespace ? listed.ids : NO_FOLDERS;
+  const { listings, unavailable: unavailableListings } = useSidebarListings(filesNamespace, listedFolderIds, sidebar?.chatsFolderId);
+  const tree = useMemo(() => buildSidebarTree({
+    chats, sidebar, legacyFolders, listings, unavailable: unavailableListings, expanded: expandedFolders, order: chatSortMode, filesEnabled,
+  }), [chatSortMode, chats, expandedFolders, filesEnabled, legacyFolders, listings, sidebar, unavailableListings]);
+  useEffect(() => {
+    setListed((current) => current.namespace === filesNamespace && current.ids.join('\n') === tree.folderIds.join('\n')
+      ? current
+      : { namespace: filesNamespace, ids: tree.folderIds });
+  }, [filesNamespace, tree.folderIds]);
+  const outline = useMemo(() => sidebar
+    ? folderOutline(sidebar, filesEnabled)
+    : legacyFolders.map((folder) => ({ id: folder.id, name: folder.name, depth: 0 })), [filesEnabled, legacyFolders, sidebar]);
   const searchActive = searchFocused || search.length > 0;
   const searchActiveProgress = useSharedValue(searchActive ? 1 : 0);
   const nativeSearchRef = useRef<SwiftUITextFieldRef>(null);
@@ -6537,10 +6646,27 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
     },
     [chats, search],
   );
-  const sections = useMemo(() => {
-    // Search also surfaces filed chats, since the folder list is hidden while searching.
-    return historyChatSections(filtered, folders, search.length > 0, chatSortMode);
-  }, [chatSortMode, filtered, folders, search]);
+  const sections = useMemo((): SidebarSection[] => {
+    if (search) {
+      // Search looks through chats only, filed ones included, since folders are hidden meanwhile.
+      return historyChatSections(filtered, outline, true, chatSortMode).map((section) => ({
+        key: `search:${section.title}`,
+        title: section.title,
+        data: section.data.map((chat): SidebarRow => ({ type: 'chat', key: chat.id, depth: 0, chat })),
+      }));
+    }
+    // Until chats load, the list says so instead.
+    return loading && !chats.length ? [] : tree.sections;
+  }, [chatSortMode, chats.length, filtered, loading, outline, search, tree.sections]);
+  const chatTarget = useCallback((chat: HistoryChatSummary): SidebarTarget => ({
+    kind: 'chat', id: chat.id, name: chat.title, folderId: chat.folderId, inFilesRoot: chat.inFilesRoot, pinned: chat.pinned,
+  }), []);
+  const archivedFolderIds = useMemo(() => new Set(sidebar
+    ? sidebar.folders.filter((folder) => isWithin(sidebar, folder.id, sidebar.archiveFolderId)).map((folder) => folder.id)
+    : []), [sidebar]);
+  /** Whether something in this folder (null: the top of the sidebar) is already in the Archive. */
+  const inArchive = useCallback((folderId: string | null) => Boolean(folderId && archivedFolderIds.has(folderId)), [archivedFolderIds]);
+  const chatArchivable = useCallback((chat: HistoryChatSummary) => filesEnabled && Boolean(sidebar) && !inArchive(chat.folderId), [filesEnabled, inArchive, sidebar]);
   const { label: removeChatLabel, requiresConfirmation } = chatRemovalBehavior(trashRetention);
 
   const runChatAction = useCallback((chat: HistoryChatSummary, action: HistoryChatAction) => {
@@ -6563,7 +6689,11 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
       return;
     }
     if (action === 'pin') {
-      togglePin(chat.id);
+      void sidebarOperations.setPinned(chatTarget(chat), !chat.pinned);
+      return;
+    }
+    if (action === 'archive') {
+      void sidebarOperations.archive(chatTarget(chat));
       return;
     }
     if (action === 'rename') {
@@ -6579,16 +6709,16 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
       return;
     }
     if (action === 'move') {
-      setFolderSheet({ chatId: chat.id, folderId: chat.folderId });
+      setMoveTarget(chatTarget(chat));
       return;
     }
     if (action === 'duplicate') {
       void duplicateServerChat(chat.id).then((copy) => {
         const source = usePrototypeStore.getState().chats.find((item) => item.id === chat.id);
-        upsertChat({ id: copy.id, title: copy.title, modelId: copy.modelId, pinned: copy.pinned, folderId: copy.folderId, sortOrder: copy.sortOrder, temporary: copy.temporary, createdAt: Date.parse(copy.createdAt), updatedAt: Date.parse(copy.updatedAt), deletedAt: null, purgeAt: null, messages: source?.messages ?? [] });
+        upsertChat({ id: copy.id, title: copy.title, modelId: copy.modelId, pinned: copy.pinned, folderId: copy.folderId, inFilesRoot: copy.inFilesRoot ?? false, sortOrder: copy.sortOrder, temporary: copy.temporary, createdAt: Date.parse(copy.createdAt), updatedAt: Date.parse(copy.updatedAt), deletedAt: null, purgeAt: null, messages: source?.messages ?? [] });
       }).catch((error) => Alert.alert('Couldn’t duplicate chat', error instanceof Error ? error.message : undefined));
     }
-  }, [renameChat, requiresConfirmation, togglePin, trashChat, upsertChat]);
+  }, [chatTarget, renameChat, requiresConfirmation, sidebarOperations, trashChat, upsertChat]);
 
   const showChatActions = useCallback((chat: HistoryChatSummary, anchor?: MenuAnchor) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -6597,12 +6727,13 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
       { label: chat.pinned ? 'Unpin chat' : 'Pin chat', icon: 'pin', onPress: () => runChatAction(chat, 'pin') },
       { label: 'Rename', icon: 'pencil', onPress: () => runChatAction(chat, 'rename') },
       { label: 'Move to folder', icon: 'folder', onPress: () => runChatAction(chat, 'move') },
+      ...(chatArchivable(chat) ? [{ label: 'Move to archive', icon: 'archivebox', onPress: () => runChatAction(chat, 'archive') }] : []),
       { label: 'Duplicate', icon: 'doc.on.doc', onPress: () => runChatAction(chat, 'duplicate') },
       { label: 'Share', icon: 'square.and.arrow.up', onPress: () => runChatAction(chat, 'share') },
       ...(expiry ? [{ label: expiry.kind === 'disable' ? 'Disable automatic expiration' : 'Enable automatic expiration', icon: 'hourglass', onPress: () => runChatAction(chat, expiry.kind === 'disable' ? 'disable-expiration' : 'enable-expiration') }] : []),
       { label: removeChatLabel, icon: 'trash', destructive: true, onPress: () => runChatAction(chat, 'delete') },
     ], anchor);
-  }, [automaticChatExpiration, removeChatLabel, runChatAction]);
+  }, [automaticChatExpiration, chatArchivable, removeChatLabel, runChatAction]);
 
   const selectHistoryChat = useCallback((chat: HistoryChatSummary) => {
     dismissSearch();
@@ -6610,7 +6741,129 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
   }, [dismissSearch, onSelectChat]);
 
   const requestHistoryPreview = useCallback((chat: HistoryChatSummary) => onPreviewRequest(chat.id), [onPreviewRequest]);
-  const renderHistoryChat = useCallback(({ item }: { item: HistoryChatSummary }) => {
+  const openSidebarItem = useCallback((node: FileNode) => {
+    dismissSearch();
+    onOpenFileItem(node);
+  }, [dismissSearch, onOpenFileItem]);
+  const promptName = useCallback((title: string, onSubmit: (name: string) => void, value?: string) => {
+    dismissSearch();
+    promptText({ title, value, confirmLabel: value === undefined ? 'Create' : 'Rename', onSubmit: (name) => { if (name.trim()) onSubmit(name.trim()); } });
+  }, [dismissSearch]);
+  /** A new folder at the top of `parentId`, or (null) of the sidebar. */
+  const newFolder = useCallback((parentId: string | null) => {
+    promptName('New folder', (name) => {
+      if (sidebar) void sidebarOperations.createFolder(parentId, name);
+      else usePrototypeStore.getState().addFolder(name);
+    });
+  }, [promptName, sidebar, sidebarOperations]);
+  const newDocument = useCallback(async () => {
+    if (!sidebar) return;
+    dismissSearch();
+    const created = await fileOperations.createDocument(sidebar.chatsFolderId, listings.get(sidebar.chatsFolderId) ?? []);
+    if (created) onOpenNewDocument(created);
+  }, [dismissSearch, fileOperations, listings, onOpenNewDocument, sidebar]);
+  const upload = useCallback(async (source: 'photos' | 'camera' | 'files') => {
+    if (!sidebar || !filesNamespace) return;
+    dismissSearch();
+    try {
+      const picked = await pickUploads(source);
+      if (!picked.length) return;
+      await enqueueUploads(filesNamespace, sidebar.chatsFolderId, picked, queryClient);
+      useFilesToasts.getState().show({ message: picked.length === 1 ? `Uploading “${picked[0]!.name}”…` : `Uploading ${picked.length} files…` });
+    } catch (error) {
+      Alert.alert('Couldn’t add files', filesErrorMessage(error));
+    }
+  }, [dismissSearch, filesNamespace, queryClient, sidebar]);
+  const openSidebarInFiles = useCallback(() => {
+    if (!sidebar) return;
+    dismissSearch();
+    onOpenFilesFolder(sidebar.chatsFolderId, sidebar.folders.find((folder) => folder.id === sidebar.chatsFolderId)?.name ?? 'Sidebar');
+  }, [dismissSearch, onOpenFilesFolder, sidebar]);
+
+  type NodeRow = Extract<SidebarRow, { type: 'folder' | 'item' }>;
+  const itemActions = useCallback((row: NodeRow) => row.type === 'folder' && row.legacy && usingCachedFolders
+    // Cached chat folders standing in offline may be the Archive or nested ones: shown, not changed.
+    ? []
+    : sidebarItemActions(row.node, {
+      folder: row.type === 'folder',
+      filesEnabled,
+      archived: Boolean(sidebar && (row.node.id === sidebar.archiveFolderId || inArchive(row.node.parentId))),
+      legacy: row.type === 'folder' && row.legacy,
+    }), [filesEnabled, inArchive, sidebar, usingCachedFolders]);
+  const runItemAction = useCallback((row: NodeRow, action: SidebarItemActionId) => {
+    const node = row.node;
+    const legacy = row.type === 'folder' && row.legacy;
+    Haptics.selectionAsync();
+    if (action === 'new-folder') {
+      if (row.type === 'folder') newFolder(row.folderId);
+    } else if (action === 'open') {
+      openSidebarItem(node);
+    } else if (action === 'pin' || action === 'unpin') {
+      void sidebarOperations.setPinned({ kind: 'node', node }, action === 'pin');
+    } else if (action === 'rename') {
+      promptName(row.type === 'folder' ? 'Rename folder' : 'Rename', (name) => {
+        if (legacy) usePrototypeStore.getState().renameFolder(node.id, name);
+        else void sidebarOperations.rename(node, name);
+      }, node.name);
+    } else if (action === 'move') {
+      setMoveTarget({ kind: 'node', node });
+    } else if (action === 'archive') {
+      void sidebarOperations.archive({ kind: 'node', node });
+    } else if (action === 'trash') {
+      if (!legacy) {
+        void sidebarOperations.trash(node);
+        return;
+      }
+      Alert.alert('Delete folder?', `The chats in “${node.name}” stay in your history.`, [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: () => usePrototypeStore.getState().deleteFolder(node.id) },
+      ]);
+    }
+  }, [newFolder, openSidebarItem, promptName, sidebarOperations]);
+  const pressSidebarRow = useCallback((row: NodeRow) => {
+    // A folder opens and closes in place, as on the web; Open in Files is in its menu.
+    if (row.type === 'folder') {
+      Haptics.selectionAsync();
+      setFolderExpanded(row.expansionKey, !row.expanded);
+      return;
+    }
+    if (!sidebarItemTapOpens(row.node, filesEnabled)) return;
+    openSidebarItem(row.node);
+  }, [filesEnabled, openSidebarItem, setFolderExpanded]);
+  const showItemActions = useCallback((row: NodeRow, anchor?: MenuAnchor) => {
+    const actions = itemActions(row);
+    if (!actions.length) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    showActions(row.node.name, actions.map((action) => ({
+      label: action.title,
+      icon: action.systemImage,
+      destructive: action.destructive,
+      onPress: () => runItemAction(row, action.id as SidebarItemActionId),
+    })), anchor);
+  }, [itemActions, runItemAction]);
+  const sidebarRowStyles = useMemo((): SidebarRowStyles => ({
+    row: styles.chatRow, active: styles.chatRowActive, pressed: styles.navRowPressed, title: styles.chatTitle, count: styles.chatTime, menuHost: styles.chatContextMenuHost,
+  }), [styles]);
+  const renderHistoryRow = useCallback(({ item: row }: { item: SidebarRow }) => {
+    if (row.type === 'empty') return <SidebarMessageRow label={row.label} depth={row.depth} style={row.key === 'root/empty' ? styles.noResults : styles.sidebarMessage} />;
+    if (row.type === 'folder' || row.type === 'item') {
+      const node = row.node;
+      return <SidebarNodeRow
+        node={node}
+        depth={row.depth}
+        styles={sidebarRowStyles}
+        actions={itemActions(row)}
+        folder={row.type === 'folder' ? { expanded: row.expanded, chatCount: row.chatCount } : undefined}
+        active={node.kind === 'shortcut' && node.target?.kind === 'chat' && node.target.id === activeChatId}
+        unavailable={node.kind === 'shortcut' && !node.target?.available}
+        // A chat folder from /api/folders has no date of its own.
+        subtitle={row.type === 'folder' && row.legacy ? `${row.chatCount} chat${row.chatCount === 1 ? '' : 's'}` : undefined}
+        onPress={() => pressSidebarRow(row)}
+        onAction={(_node, action) => runItemAction(row, action as SidebarItemActionId)}
+        onLongPress={(_node, anchor) => showItemActions(row, anchor)}
+      />;
+    }
+    const item = row.chat;
     const source = previewChatsById.get(item.id);
     const previewText = source?.detailLoaded === false
       ? 'Loading preview…'
@@ -6626,7 +6879,9 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
     )).uri;
     return <HistoryChatRow
       active={activeChatId === item.id}
+      archiveAvailable={chatArchivable(item)}
       chat={item}
+      depth={row.depth}
       expirationMenuAction={resolveHistoryChatExpiryMenuAction(item.expiresAt, automaticChatExpiration)}
       previewModelImageURI={previewModelImageURI}
       previewModelName={previewModelName}
@@ -6637,7 +6892,37 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
       onPreviewRequest={requestHistoryPreview}
       onSelectChat={selectHistoryChat}
     />;
-  }, [activeChatId, automaticChatExpiration, isDark, models, requestHistoryPreview, previewChatsById, removeChatLabel, runChatAction, selectHistoryChat, showChatActions]);
+  }, [activeChatId, automaticChatExpiration, chatArchivable, isDark, itemActions, models, pressSidebarRow, requestHistoryPreview, previewChatsById, removeChatLabel, runChatAction, runItemAction, selectHistoryChat, showChatActions, showItemActions, sidebarRowStyles, styles]);
+  const renderSectionHeader = useCallback(({ section }: { section: SidebarSection }) => section.heading ? <SidebarHeading
+    title={section.title}
+    titleStyle={styles.sectionLabel}
+    order={chatSortMode}
+    filesEnabled={filesEnabled && Boolean(sidebar)}
+    canCreate={sidebar !== undefined}
+    onNewFolder={() => newFolder(null)}
+    onNewDocument={() => { void newDocument(); }}
+    onUpload={(source) => { void upload(source); }}
+    onOrderChange={(order) => usePrototypeStore.getState().setPreference('chatSortMode', order)}
+    onOpenInFiles={openSidebarInFiles}
+  /> : <Text style={styles.sectionLabel}>{section.title}</Text>, [chatSortMode, filesEnabled, newDocument, newFolder, openSidebarInFiles, sidebar, styles, upload]);
+  /**
+   * Where a chat or item being moved is now: a folder, null for the top of the sidebar, or
+   * undefined for the top of My files, outside the sidebar.
+   */
+  const moveSource = (target: SidebarTarget): string | null | undefined => {
+    if (target.kind === 'chat') return target.inFilesRoot ? undefined : target.folderId;
+    if (target.node.parentId === null) return undefined;
+    return target.node.parentId === sidebar?.chatsFolderId ? null : target.node.parentId;
+  };
+  /** The same, as Files names it (null: the top of My files). */
+  const moveSourceInFiles = (target: SidebarTarget): string | null => {
+    const source = moveSource(target);
+    return source === undefined ? null : source ?? sidebar?.chatsFolderId ?? null;
+  };
+  const moveBlocked = useMemo(() => moveTarget?.kind === 'node' && moveTarget.node.kind === 'folder'
+    ? new Set(outline.filter((folder) => isWithin(sidebar, folder.id, moveTarget.node.id)).map((folder) => folder.id))
+    : undefined, [moveTarget, outline, sidebar]);
+  const moveTo = (target: SidebarTarget, folderId: string | null) => { void sidebarOperations.move(target, folderId); };
 
   return (
     <View style={styles.panelRoot}>
@@ -6670,23 +6955,26 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
         </View>}
 
         <Reanimated.View pointerEvents={searchActive ? 'none' : 'auto'} style={searchActionsAnimatedStyle}>
-          {Platform.OS === 'ios' ? <NativeFoldersDisclosure folders={folderItems} onSelectChat={selectHistoryChat} onCreate={() => { dismissSearch(); Alert.prompt('New folder', 'Create a folder for related chats.', (name) => name.trim() && addFolder(name)); }} /> : <AndroidFoldersDisclosure folders={folderItems} onSelectChat={selectHistoryChat} onCreate={() => { dismissSearch(); promptText({ title: 'New folder', confirmLabel: 'Create', onSubmit: (name) => addFolder(name) }); }} />}
+          {/* Folders are in the list below, with the chats, as in the web sidebar. */}
+          {filesEnabled ? Platform.OS === 'ios'
+            ? <NativeFilesRow onOpen={() => { dismissSearch(); onOpenFiles(); }} />
+            : <MaterialNavigationRow title="Files" icon="folder.badge.person.crop" onPress={() => { dismissSearch(); onOpenFiles(); }} /> : null}
 
         </Reanimated.View>
 
-        <SectionList
+        <SectionList<SidebarRow, SidebarSection>
           contentContainerStyle={[styles.chatList, { paddingBottom: insets.bottom + 82 }]}
           keyboardDismissMode="on-drag"
           keyboardShouldPersistTaps="handled"
-          keyExtractor={(chat) => chat.id}
+          keyExtractor={(row) => row.key}
           ListEmptyComponent={loading && !search ? (
             <View accessibilityLabel="Loading chats" accessibilityRole="progressbar" style={styles.historyLoading}>
               <ActivityIndicator color={COLORS.muted} size="small" />
               <Text style={styles.noResults}>Loading chats…</Text>
             </View>
           ) : <Text style={styles.noResults}>{search ? `No chats match “${search}”` : 'No chats yet'}</Text>}
-          renderItem={renderHistoryChat}
-          renderSectionHeader={({ section }) => <Text style={styles.sectionLabel}>{section.title}</Text>}
+          renderItem={renderHistoryRow}
+          renderSectionHeader={renderSectionHeader}
           sections={sections}
           showsVerticalScrollIndicator={false}
           stickySectionHeadersEnabled={false}
@@ -6702,10 +6990,37 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
           <DrawerNewChatButton isDark={isDark} onPress={() => { dismissSearch(); onNewChat(); }} />
         </View>
       </SafeAreaView>
-      {folderSheet ? <MoveToFolderSheet chatId={folderSheet.chatId} folderId={folderSheet.folderId} folders={folders} onClose={() => setFolderSheet(null)} /> : null}
+      {/* Only while the drawer is what's on screen: Files screens show (and announce) their own. */}
+      {drawerOpen && sidebarFocused ? <FilesToastHost bottomOffset={64} glass={false} /> : null}
+      {moveTarget ? <MoveToFolderSheet
+        folderId={moveSource(moveTarget)}
+        folders={outline}
+        disabledIds={moveBlocked}
+        onMove={(folderId) => moveTo(moveTarget, folderId)}
+        onOther={filesEnabled && sidebar ? () => setPickingFolderFor(moveTarget) : undefined}
+        onClose={() => setMoveTarget(null)}
+      /> : null}
+      {pickingFolderFor && filesNamespace ? <FolderPickerSheet
+        namespace={filesNamespace}
+        mode="destination"
+        title={`Move “${pickingFolderFor.kind === 'chat' ? pickingFolderFor.name : pickingFolderFor.node.name}”`}
+        confirmLabel="Move Here"
+        initialFolderId={moveSourceInFiles(pickingFolderFor)}
+        excludeIds={pickingFolderFor.kind === 'node' ? [pickingFolderFor.node.id] : []}
+        sourceFolderIds={[moveSourceInFiles(pickingFolderFor)]}
+        onCancel={() => setPickingFolderFor(null)}
+        // My files itself, like the Chats folder, is the top of the sidebar (as on the web).
+        onConfirm={(folderId) => {
+          const target = pickingFolderFor;
+          setPickingFolderFor(null);
+          moveTo(target, folderId);
+        }}
+      /> : null}
     </View>
   );
 });
+
+const NO_FOLDERS: readonly string[] = [];
 
 function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   flex: { flex: 1 },
@@ -6966,13 +7281,7 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   profileName: { color: COLORS.text, fontSize: 17, fontWeight: '600', letterSpacing: -0.3 },
   searchBox: { height: DRAWER_ACTION_HEIGHT, marginHorizontal: 10, marginTop: 6, borderRadius: 13, backgroundColor: COLORS.panel, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.lineSoft, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 12 },
   nativeDrawerSearchHost: { height: DRAWER_ACTION_HEIGHT, marginHorizontal: 22, marginTop: 6, borderRadius: 13, backgroundColor: COLORS.panel },
-  nativeFoldersDisclosureHost: { alignSelf: 'stretch', minHeight: DRAWER_ACTION_HEIGHT, marginHorizontal: 22 },
-  nativeFoldersHeaderHost: { alignSelf: 'stretch', height: DRAWER_ACTION_HEIGHT },
-  nativeFoldersContent: { alignSelf: 'stretch', overflow: 'hidden' },
-  nativeFolderGroup: { alignSelf: 'stretch', overflow: 'hidden' },
-  nativeFolderRowHost: { alignSelf: 'stretch', height: 40 },
-  nativeFolderChatRowHost: { alignSelf: 'stretch', height: 38 },
-  nativeFolderEmptyRowHost: { alignSelf: 'stretch', height: 34 },
+  nativeFilesRowHost: { alignSelf: 'stretch', height: DRAWER_ACTION_HEIGHT, marginHorizontal: 22 },
   searchInput: { flex: 1, color: COLORS.text, fontSize: 15, fontWeight: '500', padding: 0 },
   navRow: { minHeight: DRAWER_ACTION_HEIGHT, marginHorizontal: 10, borderRadius: 13, paddingHorizontal: 12, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 12 },
   folderContextMenuHost: { height: DRAWER_ACTION_HEIGHT, marginHorizontal: 10 },
@@ -6989,12 +7298,13 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   drawerNewChatButtonFallback: { width: 123.75, height: 48.75, borderRadius: 24.375, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7.5 },
   drawerNewChatButtonText: { color: COLORS.text, fontSize: 14.0625, fontWeight: '600' },
   sectionLabel: { color: COLORS.muted, fontSize: 11, fontWeight: '600', marginTop: 16, marginBottom: 5, marginHorizontal: 12 },
-  chatContextMenuHost: { width: '100%', height: 44 },
-  chatRow: { minHeight: Platform.OS === 'android' ? 48 : 44, borderRadius: 13, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  chatContextMenuHost: { width: '100%', minHeight: 44 },
+  chatRow: { minHeight: Platform.OS === 'android' ? 48 : 44, borderRadius: 13, paddingHorizontal: 12, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 10 },
   chatRowActive: { backgroundColor: COLORS.secondary },
   chatTitle: { color: COLORS.textSoft, fontSize: 15 },
   chatTime: { color: COLORS.muted, fontSize: 12 },
   noResults: { color: COLORS.muted, fontSize: 13.5, textAlign: 'center', marginTop: 30 },
+  sidebarMessage: { color: COLORS.muted, fontSize: 13, paddingHorizontal: 12, paddingVertical: 8 },
   smallIconButton: { width: 44, height: 44, marginRight: -12, alignItems: 'center', justifyContent: 'center' },
 }); }
 

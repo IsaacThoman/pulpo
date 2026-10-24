@@ -27,6 +27,7 @@ describe('provider prompt caching', () => {
 describe('provider cache request options', () => {
   it('maps OpenAI affinity to the Responses prompt cache key', () => {
     expect(providerCacheRequestOptions({
+      apiFormat: 'openai_responses',
       cacheAffinityMode: 'openai_prompt_cache_key',
       cacheAffinityScope: 'chat',
       cacheIsolationMode: 'none',
@@ -36,6 +37,7 @@ describe('provider cache request options', () => {
 
   it('maps Fireworks affinity and isolation to provider headers', () => {
     expect(providerCacheRequestOptions({
+      apiFormat: 'openai_responses',
       cacheAffinityMode: 'fireworks_session_affinity',
       cacheAffinityScope: 'agent_run',
       cacheIsolationMode: 'fireworks_prompt_cache_isolation',
@@ -50,9 +52,20 @@ describe('provider cache request options', () => {
 
   it('omits cache controls when both modes are disabled', () => {
     expect(providerCacheRequestOptions({
+      apiFormat: 'openai_responses',
       cacheAffinityMode: 'none',
       cacheAffinityScope: 'chat',
       cacheIsolationMode: 'none',
+      cacheIsolationScope: 'user',
+    }, identity)).toEqual({})
+  })
+
+  it('ignores affinity and isolation settings for Anthropic providers', () => {
+    expect(providerCacheRequestOptions({
+      apiFormat: 'anthropic_messages',
+      cacheAffinityMode: 'fireworks_session_affinity',
+      cacheAffinityScope: 'chat',
+      cacheIsolationMode: 'fireworks_prompt_cache_isolation',
       cacheIsolationScope: 'user',
     }, identity)).toEqual({})
   })

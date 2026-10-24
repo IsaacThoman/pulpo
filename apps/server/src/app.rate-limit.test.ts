@@ -56,3 +56,17 @@ describe('HTTP rate limits', () => {
     expect(Number(response.headers['retry-after'])).toBeGreaterThan(0)
   })
 })
+
+describe('malformed JSON bodies', () => {
+  it('are rejected with 400 in the envelope the endpoint uses', async () => {
+    const app = await buildApp()
+    apps.push(app)
+    const body = { payload: '{"model":', headers: { 'content-type': 'application/json' } }
+    const anthropic = await app.inject({ method: 'POST', url: '/v1/messages', ...body })
+    expect(anthropic.statusCode).toBe(400)
+    expect(anthropic.json()).toEqual({ type: 'error', error: { type: 'invalid_request_error', message: 'Request body is not valid JSON' } })
+    const openai = await app.inject({ method: 'POST', url: '/v1/chat/completions', ...body })
+    expect(openai.statusCode).toBe(400)
+    expect(openai.json()).toMatchObject({ error: { type: 'invalid_request_error', code: 'invalid_json' } })
+  })
+})

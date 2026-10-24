@@ -9,7 +9,7 @@ import { openAIResponsesApi } from '@earendil-works/pi-ai/api/openai-responses.l
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy'
 import { anthropicMessagesApi } from '@earendil-works/pi-ai/api/anthropic-messages.lazy'
 import { mistralConversationsApi } from '@earendil-works/pi-ai/api/mistral-conversations.lazy'
-import { chatCompletionsSamplingParameters, explicitReasoningEffort, mistralAgentPayload, piModelForProvider } from '../upstream/pi-model.js'
+import { anthropicAgentReasoning, chatCompletionsSamplingParameters, explicitReasoningEffort, mistralAgentPayload, piModelForProvider } from '../upstream/pi-model.js'
 import type { Api, AssistantMessage, Context, Message, Model, SimpleStreamOptions, ThinkingLevel, ToolChoice } from '@earendil-works/pi-ai'
 import { agentCostLimitMicros, findCostLimitItem, findCostLimitItems, toolImagePreviewSchema, type ToolImagePreview, type CompactionItem, type CostLimitItem, type FileChangesItem, type RecallItem, type ResponseSnapshot } from '@pulpo/contracts'
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm'
@@ -37,9 +37,7 @@ import { basename } from 'node:path'
 import { storeToolImagePreview } from '../attachments/tool-image-preview.js'
 import { storeGeneratedAttachment } from '../attachments/generated.js'
 import type { AttachmentTimelineItem } from './timeline.js'
-import { KagiClient } from './kagi.js'
-import { createWebTools, type WebProviderExecution } from './web-tools.js'
-import { FirecrawlClient, firecrawlCloudRequiresApiKey } from './firecrawl.js'
+import { createWebProviderClients, createWebTools, type WebProviderExecution } from './web-tools.js'
 import { createModelImageInterceptor, interceptAgentContextImages } from '../responses/image-ocr.js'
 import { agentSummaryContext, agentSummaryText, completeAgentSummary, createAgentCompactor, interruptedCompactionItems, type AgentRequestFrame } from './compaction.js'
 import { hardContextLimit, summaryMaxOutputTokens } from '../compaction/policy.js'
@@ -594,6 +592,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     if (active.piModel.api === 'anthropic-messages') {
       return providerStreams['anthropic-messages'].streamSimple(active.piModel, context, {
         ...streamOptions,
+        reasoning: anthropicAgentReasoning(active.piModel, request.parameters, request.reasoning),
         samplingParams: undefined,
         // Pi marks Anthropic cache breakpoints itself; follow the model's caching switch.
         cacheRetention: active.model.promptCachingEnabled ? 'short' : 'none',
@@ -724,18 +723,8 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     await snapshotIfDue()
   }
   const webProviderExecutions = new Map<string, WebProviderExecution>()
-  const firecrawlApiKey = webToolsSettings.encryptedFirecrawlApiKey
-    ? decryptSecret(webToolsSettings.encryptedFirecrawlApiKey, config.ENCRYPTION_KEY)
-    : undefined
   const configuredWebTools = createWebTools({
-    clients: {
-      ...(webToolsSettings.encryptedKagiApiKey ? {
-        kagi: new KagiClient(decryptSecret(webToolsSettings.encryptedKagiApiKey, config.ENCRYPTION_KEY)),
-      } : {}),
-      ...((firecrawlApiKey || !firecrawlCloudRequiresApiKey(webToolsSettings.firecrawl.baseUrl)) ? {
-        firecrawl: new FirecrawlClient(webToolsSettings.firecrawl.baseUrl, firecrawlApiKey),
-      } : {}),
-    },
+    clients: createWebProviderClients(webToolsSettings, config.ENCRYPTION_KEY),
     settings: webToolsSettings,
     maxOutputBytes: settings.maxToolOutputBytes,
     onOperationStarted: markToolStarted,

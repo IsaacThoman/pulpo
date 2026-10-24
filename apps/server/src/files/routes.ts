@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { updateFileFolderLayoutSchema, copyFileNodesSchema, createFileDocSchema, createFileFolderSchema, fileNodeIdsSchema, moveFileNodesSchema, updateFileNodeSchema, type FileChangeConflictBody } from '@pulpo/contracts'
+import { updateFileFolderLayoutSchema, copyFileNodesSchema, createFileDocSchema, createFileFolderSchema, fileNodeIdsSchema, importFileUrlSchema, moveFileNodesSchema, updateFileNodeSchema, type FileChangeConflictBody } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { getBlobStore } from '../storage/index.js'
@@ -26,6 +26,7 @@ import {
   updateFileNode,
 } from './tree-service.js'
 import { registerFileUploadRoutes } from './upload-routes.js'
+import { importUrlAsDoc } from './url-import.js'
 import { listTrashedFiles } from '../trash/service.js'
 import { getFolderLayout, normalizeInput, updateFolderLayout } from './layout-service.js'
 import { liveChatIds } from './chat-items.js'
@@ -156,6 +157,15 @@ export async function registerFileRoutes(app: FastifyInstance): Promise<void> {
     const input = parseFileInput(createFileDocSchema, request.body)
     reply.code(201)
     return createDoc(user.id, input)
+  })
+
+  // A web page becomes a document, fetched by the providers the agent's web_fetch uses.
+  app.post('/api/files/import-url', { config: { rateLimit: { max: 20, timeWindow: '1 minute' } } }, async (request, reply) => {
+    const user = await requireFilesUser(request)
+    const input = importFileUrlSchema.parse(request.body)
+    const node = await importUrlAsDoc(user.id, input, request.log)
+    reply.code(201)
+    return node
   })
 
   // Uploaded Markdown keeps its bytes until someone edits it. The dry run shows what converting

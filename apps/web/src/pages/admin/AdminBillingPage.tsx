@@ -1,18 +1,24 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { AlertTriangle, CreditCard, ExternalLink, Gauge, Minus, Plus, RefreshCw, Repeat2, UsersRound, WalletCards } from 'lucide-react'
+import { AlertTriangle, CreditCard, ExternalLink, Gauge, Minus, Pencil, Plus, RefreshCw, Repeat2, SlidersHorizontal, Trash2, UsersRound, WalletCards } from 'lucide-react'
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, matchByDataKey } from 'recharts'
 import { apiRequest } from '@/lib/api'
 import { formatBalance, formatDate } from '@/lib/format'
-import type { UsageTier } from '@/lib/billing'
+import { billingPlanName, type BillingPlan, type CustomLimitPeriod, type UsageTier } from '@/lib/billing'
 import { stripeDashboardUrl, stripePaymentUrl, stripeSubscriptionUrl, stripeWebhooksUrl, type StripeMode } from '@/lib/stripe-dashboard'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
 import { ToggleGroup } from '@/components/usage/ToggleGroup'
 import { ui, uit, activeLocale } from '@/i18n/ui'
 import { useSettings } from '@/stores/settings'
 import { DEFAULT_CHART_ANIMATION_DURATION_MS, scaledAnimationDuration } from '@/lib/animation-speed'
+import { UserListEditor } from './ModelAccessEditor'
+import { useAdminUserDirectory, type UserDirectory } from './user-directory'
 
 type Range = '7d' | '30d' | '90d' | 'all'
 /** animate bars by full date so a range change keeps each day in place */
@@ -334,6 +340,8 @@ export function AdminBillingPage() {
 
       {settingsQuery.data && <UsageTiersPanel tiers={settingsQuery.data.usageTiers} onSaved={() => void settingsQuery.refetch()} />}
 
+      <CustomLimitsPanel />
+
       <Panel icon={<CreditCard className="size-3" />} title={ui("Recent payments")} extra={<span className="text-xs text-muted-foreground">{(data?.recentOrders.length ?? 0).toLocaleString(activeLocale())}</span>}>
         {data?.recentOrders.length ? (
           <div className="max-h-96 overflow-auto">
@@ -584,6 +592,285 @@ function UsageTiersPanel({ tiers, onSaved }: { tiers: UsageTier[]; onSaved: () =
         </div>
       </div>
     </Panel>
+  )
+}
+
+type CustomLimitTarget = 'everyone' | 'plans' | 'users'
+
+interface CustomLimit {
+  id: string
+  name: string
+  period: CustomLimitPeriod
+  limitMicros: number
+  modelIds: string[]
+  target: CustomLimitTarget
+  plans: BillingPlan[]
+  userIds: string[]
+  enabled: boolean
+}
+
+type CustomLimitInput = Omit<CustomLimit, 'id'>
+
+const CUSTOM_LIMIT_PERIODS: CustomLimitPeriod[] = ['five_hour', 'daily', 'weekly']
+const BILLING_PLANS: BillingPlan[] = ['baby', 'eight', 'fat']
+
+function customLimitPeriodLabel(period: CustomLimitPeriod) {
+  if (period === 'five_hour') return ui("5 hours (rolling)")
+  if (period === 'daily') return ui("Daily")
+  return ui("Weekly")
+}
+
+function customLimitInput(limit: CustomLimit): CustomLimitInput {
+  const { id: _id, ...input } = limit
+  return input
+}
+
+function CustomLimitsPanel() {
+  const [editing, setEditing] = useState<CustomLimit | 'new' | null>(null)
+  const [message, setMessage] = useState('')
+  const limitsQuery = useQuery({
+    queryKey: ['admin-billing-custom-limits'],
+    queryFn: () => apiRequest<{ data: CustomLimit[] }>('/api/admin/billing/custom-limits'),
+  })
+  const modelsQuery = useQuery({
+    queryKey: ['admin-billing-custom-limit-models'],
+    queryFn: async ({ signal }) => (await apiRequest<{ data: { id: string; name: string }[] }>('/api/admin/models', { signal }))
+      .data.map(({ id, name }) => ({ id, name })),
+  })
+  const limits = limitsQuery.data?.data ?? []
+  const directory = useAdminUserDirectory(editing !== null || limits.some((limit) => limit.target === 'users'))
+  const modelName = (id: string) => modelsQuery.data?.find((model) => model.id === id)?.name ?? id
+
+  const save = async (id: string | null, input: CustomLimitInput) => {
+    await apiRequest(id ? `/api/admin/billing/custom-limits/${id}` : '/api/admin/billing/custom-limits', {
+      method: id ? 'PATCH' : 'POST',
+      body: input,
+    })
+    await limitsQuery.refetch()
+  }
+
+  const toggle = async (limit: CustomLimit, enabled: boolean) => {
+    setMessage('')
+    try {
+      await save(limit.id, { ...customLimitInput(limit), enabled })
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : ui("Could not update the limit."))
+    }
+  }
+
+  const remove = async (limit: CustomLimit) => {
+    if (!confirm(ui("Delete the “{{name}}” limit?", { name: limit.name }))) return
+    setMessage('')
+    try {
+      await apiRequest(`/api/admin/billing/custom-limits/${limit.id}`, { method: 'DELETE' })
+      await limitsQuery.refetch()
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : ui("Could not delete the limit."))
+    }
+  }
+
+  const audience = (limit: CustomLimit) => {
+    if (limit.target === 'everyone') return ui("Everyone")
+    if (limit.target === 'plans') return limit.plans.map(billingPlanName).join(', ')
+    const names = limit.userIds.map((id) => directory.users.find((user) => user.id === id)?.name).filter(Boolean)
+    return names.length === limit.userIds.length && names.length <= 2
+      ? names.join(', ')
+      : ui("{{count}} users", { count: limit.userIds.length })
+  }
+
+  return (
+    <Panel
+      icon={<SlidersHorizontal className="size-3" />}
+      title={ui("Custom limits")}
+      extra={<Button size="sm" variant="outline" onClick={() => setEditing('new')}><Plus />{ui("Add limit")}</Button>}
+    >
+      <div className="space-y-3 px-3 py-3">
+        <p className="text-xs text-muted-foreground">{ui("Each limit caps what the users it covers spend on its models within its period, whether plan usage, credits, or a pool pays. Users see the percentage left with their other limits on the billing page. Admins are exempt unless you choose them as specific users.")}</p>
+        {limitsQuery.isError && <p className="text-xs text-destructive">{ui("Could not load custom limits.")}</p>}
+        {limits.length ? (
+          <div className="overflow-x-auto">
+            <table className="data-table min-w-max text-xs">
+              <thead>
+                <tr className="border-b text-left text-muted-foreground">
+                  <th className="px-2 py-1.5 font-normal">{ui("Name")}</th>
+                  <th className="px-2 py-1.5 text-right font-normal">{ui("Limit")}</th>
+                  <th className="px-2 py-1.5 font-normal">{ui("Period")}</th>
+                  <th className="px-2 py-1.5 font-normal">{ui("Models")}</th>
+                  <th className="px-2 py-1.5 font-normal">{ui("Applies to")}</th>
+                  <th className="px-2 py-1.5 font-normal">{ui("Enabled")}</th>
+                  <th className="px-2 py-1.5 font-normal" />
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {limits.map((limit) => (
+                  <tr key={limit.id} className={limit.enabled ? undefined : 'text-muted-foreground'}>
+                    <td className="max-w-48 truncate px-2 py-1.5">{limit.name}</td>
+                    <td className="px-2 py-1.5 text-right tabular-nums">{formatBalance(limit.limitMicros / 1_000_000)}</td>
+                    <td className="px-2 py-1.5">{customLimitPeriodLabel(limit.period)}</td>
+                    <td className="max-w-56 truncate px-2 py-1.5">{limit.modelIds.length ? limit.modelIds.map(modelName).join(', ') : ui("All models")}</td>
+                    <td className="max-w-48 truncate px-2 py-1.5">{audience(limit)}</td>
+                    <td className="px-2 py-1.5"><Switch checked={limit.enabled} aria-label={ui("Enable {{name}}", { name: limit.name })} onCheckedChange={(enabled) => void toggle(limit, enabled)} /></td>
+                    <td className="whitespace-nowrap px-2 py-1.5 text-right">
+                      <Button size="icon-sm" variant="ghost" aria-label={ui("Edit {{name}}", { name: limit.name })} onClick={() => setEditing(limit)}><Pencil /></Button>
+                      <Button size="icon-sm" variant="ghost" aria-label={ui("Delete {{name}}", { name: limit.name })} onClick={() => void remove(limit)}><Trash2 /></Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : !limitsQuery.isPending && !limitsQuery.isError && <p className="text-xs text-muted-foreground">{ui("No custom limits yet.")}</p>}
+        {message && <p className="text-xs text-destructive">{message}</p>}
+      </div>
+      {editing !== null && <CustomLimitDialog
+        limit={editing === 'new' ? null : editing}
+        models={modelsQuery.data ?? []}
+        directory={directory}
+        onSave={(input) => save(editing === 'new' ? null : editing.id, input)}
+        onClose={() => setEditing(null)}
+      />}
+    </Panel>
+  )
+}
+
+function CustomLimitDialog({ limit, models, directory, onSave, onClose }: {
+  limit: CustomLimit | null
+  models: Array<{ id: string; name: string }>
+  directory: UserDirectory
+  onSave: (input: CustomLimitInput) => Promise<void>
+  onClose: () => void
+}) {
+  const [name, setName] = useState(limit?.name ?? '')
+  const [amount, setAmount] = useState(limit ? (limit.limitMicros / 1_000_000).toFixed(2) : '5.00')
+  const [period, setPeriod] = useState<CustomLimitPeriod>(limit?.period ?? 'daily')
+  const [allModels, setAllModels] = useState(!limit?.modelIds.length)
+  const [modelIds, setModelIds] = useState(limit?.modelIds ?? [])
+  const [target, setTarget] = useState<CustomLimitTarget>(limit?.target ?? 'everyone')
+  const [plans, setPlans] = useState<BillingPlan[]>(limit?.plans ?? [])
+  const [userIds, setUserIds] = useState(limit?.userIds ?? [])
+  const [enabled, setEnabled] = useState(limit?.enabled ?? true)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const limitMicros = Math.round(Number(amount) * 1_000_000)
+  const toggleIn = <T,>(values: T[], value: T, checked: boolean) => checked ? [...values, value] : values.filter((item) => item !== value)
+  const problem = !name.trim()
+    ? ui("Enter a name.")
+    : amount.trim() === '' || !Number.isFinite(limitMicros) || limitMicros < 0
+      ? ui("Enter a limit of $0.00 or more.")
+      : !allModels && !modelIds.length
+        ? ui("Choose at least one model.")
+        : target === 'plans' && !plans.length
+          ? ui("Choose at least one plan.")
+          : target === 'users' && !userIds.length
+            ? ui("Choose at least one user.")
+            : null
+
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (problem || saving) return
+    setSaving(true)
+    setError('')
+    try {
+      await onSave({
+        name: name.trim(), period, limitMicros, enabled, target,
+        modelIds: allModels ? [] : modelIds,
+        plans: target === 'plans' ? plans : [],
+        userIds: target === 'users' ? userIds : [],
+      })
+      onClose()
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : ui("Could not save the limit."))
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
+      <DialogContent className="sm:max-w-lg">
+        <form onSubmit={(event) => void submit(event)} className="space-y-4">
+          <DialogHeader>
+            <DialogTitle>{limit ? ui("Edit custom limit") : ui("Add custom limit")}</DialogTitle>
+            <DialogDescription>{ui("Cap spending on some or all models for everyone, a subscription plan, or specific users.")}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-1.5">
+            <Label htmlFor="custom-limit-name">{ui("Name")}</Label>
+            <Input id="custom-limit-name" value={name} maxLength={80} placeholder={ui("Shown to users, like “Opus daily”")} onChange={(event) => setName(event.target.value)} autoFocus />
+          </div>
+          <div className="grid grid-cols-[8rem_minmax(0,1fr)] items-start gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="custom-limit-amount">{ui("Limit")}</Label>
+              <div className="relative">
+                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">$</span>
+                <Input id="custom-limit-amount" className="w-full pl-6 tabular-nums" type="number" min="0" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="custom-limit-period">{ui("Period")}</Label>
+              <Select value={period} onValueChange={(value) => setPeriod(value as CustomLimitPeriod)}>
+                <SelectTrigger id="custom-limit-period" className="w-full"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {CUSTOM_LIMIT_PERIODS.map((option) => <SelectItem key={option} value={option}>{customLimitPeriodLabel(option)}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <p className="-mt-2 text-xs text-muted-foreground">{period === 'five_hour'
+            ? ui("Counts usage from the last 5 hours.")
+            : period === 'daily' ? ui("Resets at 00:00 UTC.") : ui("Resets Monday at 00:00 UTC.")}</p>
+          <div className="space-y-1.5">
+            <Label htmlFor="custom-limit-models">{ui("Models")}</Label>
+            <Select value={allModels ? 'all' : 'selected'} onValueChange={(value) => setAllModels(value === 'all')}>
+              <SelectTrigger id="custom-limit-models" className="w-full"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{ui("All models")}</SelectItem>
+                <SelectItem value="selected">{ui("Selected models")}</SelectItem>
+              </SelectContent>
+            </Select>
+            {!allModels && <div role="group" aria-label={ui("Models")} className="max-h-48 space-y-1 overflow-y-auto rounded-md border p-2">
+              {models.map((model) => <label key={model.id} className="flex min-w-0 cursor-pointer items-center gap-2 text-sm">
+                <input type="checkbox" className="size-4 shrink-0 accent-primary" checked={modelIds.includes(model.id)} onChange={(event) => setModelIds((current) => toggleIn(current, model.id, event.target.checked))} />
+                <span className="truncate">{model.name}</span>
+              </label>)}
+              {!models.length && <p className="text-xs text-muted-foreground">{ui("Loading models…")}</p>}
+            </div>}
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="custom-limit-target">{ui("Applies to")}</Label>
+            <Select value={target} onValueChange={(value) => setTarget(value as CustomLimitTarget)}>
+              <SelectTrigger id="custom-limit-target" className="w-full"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="everyone">{ui("Everyone")}</SelectItem>
+                <SelectItem value="plans">{ui("Subscription plans")}</SelectItem>
+                <SelectItem value="users">{ui("Specific users")}</SelectItem>
+              </SelectContent>
+            </Select>
+            {target === 'plans' && <div role="group" aria-label={ui("Subscription plans")} className="flex flex-wrap gap-x-4 gap-y-1 rounded-md border p-2">
+              {BILLING_PLANS.map((plan) => <label key={plan} className="flex cursor-pointer items-center gap-2 text-sm">
+                <input type="checkbox" className="size-4 accent-primary" checked={plans.includes(plan)} onChange={(event) => setPlans((current) => toggleIn(current, plan, event.target.checked))} />
+                {billingPlanName(plan)}
+              </label>)}
+            </div>}
+            {target === 'users' && <UserListEditor
+              title={ui("Users")}
+              emptyText={ui("No users selected.")}
+              includeAdmins
+              userIds={userIds}
+              directory={directory}
+              onChange={setUserIds}
+            />}
+          </div>
+          <label className="flex cursor-pointer items-center justify-between gap-3 text-sm">
+            {ui("Enabled")}
+            <Switch checked={enabled} onCheckedChange={setEnabled} />
+          </label>
+          {(error || (problem && name)) && <p className="text-xs text-destructive">{error || problem}</p>}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose}>{ui("Cancel")}</Button>
+            <Button type="submit" disabled={saving || problem !== null}>{saving ? ui("Saving…") : ui("Save")}</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   )
 }
 

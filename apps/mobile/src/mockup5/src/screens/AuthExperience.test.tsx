@@ -24,6 +24,7 @@ vi.mock('../../../platform/MaterialUI', () => ({ MaterialButton: () => null, Mat
 vi.mock('../../../platform/useSubpageBack', () => ({ useSubpageBack: () => {} }))
 vi.mock('../../../platform/SymbolView', () => ({ SymbolView: () => null }))
 vi.mock('../../../components/DeleteAccount', () => ({ DeleteAccountAction: () => createElement('button', null, 'Delete account') }))
+vi.mock('../../../features/files/doc/accountSessions', () => ({ unsyncedEditsNote: async () => '' }))
 vi.mock('../theme', () => ({ useAppTheme: () => ({ isDark: false }) }))
 vi.mock('../domain', () => ({ normalizeInstanceUrl: (value: string) => value }))
 vi.mock('../../../api/client', () => ({ mobileApi: { redeemInviteCode: mocks.redeem } }))

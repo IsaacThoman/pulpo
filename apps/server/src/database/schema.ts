@@ -1519,6 +1519,30 @@ export const sharedFiveHourUsagePeriods = pgTable('shared_five_hour_usage_period
   check('shared_five_hour_usage_periods_spent_check', sql`${table.spentMicros} >= 0`),
 ])
 
+/**
+ * Admin-defined spend caps on model usage. Each limit caps what matching users spend
+ * on matching models within its period, whichever balance or allowance pays for it.
+ */
+export const billingCustomLimits = pgTable('billing_custom_limits', {
+  id: uuid('id').primaryKey(),
+  name: text('name').notNull(),
+  // `five_hour` is a rolling window; `daily` and `weekly` follow UTC days and Monday weeks.
+  period: text('period').notNull(),
+  limitMicros: bigint('limit_micros', { mode: 'number' }).notNull(),
+  // Empty applies the limit to every model.
+  modelIds: jsonb('model_ids').$type<string[]>().notNull().default([]),
+  target: text('target').notNull(),
+  plans: jsonb('plans').$type<string[]>().notNull().default([]),
+  userIds: jsonb('user_ids').$type<string[]>().notNull().default([]),
+  enabled: boolean('enabled').notNull().default(true),
+  createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+  ...timestamps,
+}, (table) => [
+  check('billing_custom_limits_period_check', sql`${table.period} in ('five_hour', 'daily', 'weekly')`),
+  check('billing_custom_limits_target_check', sql`${table.target} in ('everyone', 'plans', 'users')`),
+  check('billing_custom_limits_amount_check', sql`${table.limitMicros} >= 0`),
+])
+
 export const dailyUsageRollups = pgTable('daily_usage_rollups', {
   day: timestamp('day', { withTimezone: true }).notNull(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),

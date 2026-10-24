@@ -1,0 +1,183 @@
+/* Document typography, matching the web editor (apps/web/src/features/files/editor/doc-editor.css). */
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+  --muted: #f4f4f5;
+  --muted-foreground: #71717a;
+  --border: #e4e4e7;
+  --primary: #2563eb;
+  --code: #f4f4f5;
+  --code-foreground: #171717;
+  --font-size: 17px;
+  --bottom-padding: 0px;
+  color-scheme: light;
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html, body { margin: 0; padding: 0; background: var(--background); color: var(--foreground); }
+body {
+  font: -apple-system-body;
+  font-family: -apple-system, system-ui, 'Roboto', sans-serif;
+  font-size: var(--font-size);
+  min-height: 100vh;
+}
+/* As wide as the web's document page (max-w-5xl), so lines stay readable on iPad and tablets. */
+#editor { box-sizing: border-box; max-width: 64rem; margin: 0 auto; padding: 12px max(20px, env(safe-area-inset-right)) calc(48px + var(--bottom-padding)) max(20px, env(safe-area-inset-left)); }
+
+.pulpo-doc-editor {
+  min-height: calc(100vh - 80px);
+  outline: none;
+  color: var(--foreground);
+  font-size: 1em;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  caret-color: var(--primary);
+}
+.pulpo-doc-editor > * + * { margin-top: 0.75em; }
+.pulpo-doc-editor p, .pulpo-doc-editor h1, .pulpo-doc-editor h2, .pulpo-doc-editor h3, .pulpo-doc-editor h4,
+.pulpo-doc-editor h5, .pulpo-doc-editor h6, .pulpo-doc-editor ul, .pulpo-doc-editor ol, .pulpo-doc-editor pre,
+.pulpo-doc-editor blockquote { margin-bottom: 0; }
+.pulpo-doc-editor p { margin-top: 0; }
+.pulpo-doc-editor > * + p { margin-top: 0.75em; }
+.pulpo-doc-editor h1 { font-size: 1.75em; font-weight: 700; line-height: 1.25; margin-top: 1.1em; letter-spacing: -0.02em; }
+.pulpo-doc-editor h2 { font-size: 1.4em; font-weight: 650; line-height: 1.3; margin-top: 1.1em; letter-spacing: -0.01em; }
+.pulpo-doc-editor h3 { font-size: 1.2em; font-weight: 600; line-height: 1.35; margin-top: 1em; }
+.pulpo-doc-editor h4, .pulpo-doc-editor h5, .pulpo-doc-editor h6 { font-weight: 600; margin-top: 1em; }
+.pulpo-doc-editor > :first-child { margin-top: 0; }
+
+.pulpo-doc-editor a { color: var(--primary); text-decoration: underline; text-underline-offset: 3px; }
+.pulpo-doc-editor strong { font-weight: 650; }
+.pulpo-doc-editor code {
+  border-radius: 0.3rem;
+  background: var(--muted);
+  padding: 0.1em 0.35em;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.875em;
+}
+.pulpo-doc-editor pre {
+  border: 1px solid var(--border);
+  border-radius: 0.6rem;
+  background: var(--code);
+  color: var(--code-foreground);
+  padding: 0.75rem 1rem;
+  overflow-x: auto;
+  font-size: 0.85em;
+  line-height: 1.55;
+  -webkit-overflow-scrolling: touch;
+}
+.pulpo-doc-editor pre code { background: none; padding: 0; font-size: inherit; }
+
+.pulpo-doc-editor ul, .pulpo-doc-editor ol { padding-left: 1.5rem; }
+.pulpo-doc-editor ul { list-style: disc; }
+.pulpo-doc-editor ol { list-style: decimal; }
+.pulpo-doc-editor li > p { margin: 0; }
+.pulpo-doc-editor li + li { margin-top: 0.25em; }
+.pulpo-doc-editor ul[data-type='taskList'] { list-style: none; padding-left: 0.1rem; }
+.pulpo-doc-editor ul[data-type='taskList'] li { display: flex; align-items: flex-start; gap: 0.55rem; }
+.pulpo-doc-editor ul[data-type='taskList'] li > label { margin-top: 0.18em; user-select: none; -webkit-user-select: none; }
+.pulpo-doc-editor ul[data-type='taskList'] li > div { flex: 1; min-width: 0; }
+.pulpo-doc-editor ul[data-type='taskList'] input[type='checkbox'] { width: 1.15em; height: 1.15em; margin: 0; accent-color: var(--primary); }
+.pulpo-doc-editor ul[data-type='taskList'] li[data-checked='true'] > div { color: var(--muted-foreground); text-decoration: line-through; }
+
+.pulpo-doc-editor blockquote { margin-left: 0; margin-right: 0; border-left: 3px solid var(--border); padding-left: 1rem; color: var(--muted-foreground); }
+.pulpo-doc-editor hr { border: none; border-top: 1px solid var(--border); margin: 1.5rem 0; }
+.pulpo-doc-editor hr.ProseMirror-selectednode { border-top-color: var(--primary); }
+
+.pulpo-doc-editor .tableWrapper { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.pulpo-doc-editor table { width: 100%; min-width: 24rem; border-collapse: collapse; table-layout: fixed; }
+.pulpo-doc-editor th, .pulpo-doc-editor td { border: 1px solid var(--border); padding: 0.4rem 0.6rem; vertical-align: top; position: relative; }
+.pulpo-doc-editor th { background: var(--muted); font-weight: 600; text-align: left; }
+.pulpo-doc-editor th > p, .pulpo-doc-editor td > p { margin: 0; }
+.pulpo-doc-editor .selectedCell::after { content: ''; position: absolute; inset: 0; background: color-mix(in srgb, var(--primary) 18%, transparent); pointer-events: none; }
+
+.pulpo-doc-editor p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  color: var(--muted-foreground);
+  pointer-events: none;
+}
+
+.collaboration-carets__caret {
+  position: relative;
+  margin-left: -1px;
+  margin-right: -1px;
+  border-left: 1px solid;
+  border-right: 1px solid;
+  word-break: normal;
+  pointer-events: none;
+}
+.collaboration-carets__label {
+  position: absolute;
+  top: -1.4em;
+  left: -1px;
+  border-radius: 3px 3px 3px 0;
+  padding: 0.05rem 0.35rem;
+  color: white;
+  font-size: 0.7rem;
+  font-style: normal;
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.pulpo-doc-editor {
+  --pulpo-suggestion-insert: #15803d;
+  --pulpo-suggestion-insert-bg: rgba(34, 197, 94, 0.16);
+  --pulpo-suggestion-delete: #b91c1c;
+  --pulpo-suggestion-delete-bg: rgba(239, 68, 68, 0.12);
+  --pulpo-suggestion-focus: #3b82f6;
+}
+.dark .pulpo-doc-editor {
+  --pulpo-suggestion-insert: #86efac;
+  --pulpo-suggestion-insert-bg: rgba(34, 197, 94, 0.2);
+  --pulpo-suggestion-delete: #fca5a5;
+  --pulpo-suggestion-delete-bg: rgba(239, 68, 68, 0.18);
+  --pulpo-suggestion-focus: #60a5fa;
+}
+.pulpo-doc-editor .pulpo-suggestion-insert {
+  color: var(--pulpo-suggestion-insert);
+  background: var(--pulpo-suggestion-insert-bg);
+  text-decoration: underline;
+  text-decoration-color: var(--pulpo-suggestion-insert);
+  text-underline-offset: 3px;
+}
+.pulpo-doc-editor .pulpo-suggestion-delete {
+  color: var(--pulpo-suggestion-delete);
+  background: var(--pulpo-suggestion-delete-bg);
+  text-decoration: line-through;
+  text-decoration-color: var(--pulpo-suggestion-delete);
+}
+.pulpo-doc-editor .pulpo-suggestion-insert a, .pulpo-doc-editor a .pulpo-suggestion-insert { color: var(--pulpo-suggestion-insert); }
+.pulpo-doc-editor .pulpo-suggestion-delete a, .pulpo-doc-editor a .pulpo-suggestion-delete { color: var(--pulpo-suggestion-delete); }
+.pulpo-doc-editor [data-suggestion] { position: relative; }
+.pulpo-doc-editor [data-suggestion='insert'] { background: var(--pulpo-suggestion-insert-bg); }
+.pulpo-doc-editor [data-suggestion='delete'] {
+  background: var(--pulpo-suggestion-delete-bg);
+  color: var(--pulpo-suggestion-delete);
+  text-decoration: line-through;
+  text-decoration-color: var(--pulpo-suggestion-delete);
+}
+.pulpo-doc-editor [data-suggestion]:not(table, tr, td, th, pre, hr)::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -0.6rem;
+  width: 3px;
+  border-radius: 2px;
+  pointer-events: none;
+}
+.pulpo-doc-editor li[data-suggestion]::before { left: -2.1rem; }
+.pulpo-doc-editor ul[data-type='taskList'] > li[data-suggestion]::before { left: -0.6rem; }
+.pulpo-doc-editor [data-suggestion='insert']::before { background: var(--pulpo-suggestion-insert); }
+.pulpo-doc-editor [data-suggestion='delete']::before { background: var(--pulpo-suggestion-delete); }
+.pulpo-doc-editor table[data-suggestion] { outline: 2px solid; outline-offset: -1px; }
+.pulpo-doc-editor pre[data-suggestion] { border-left-width: 3px; }
+.pulpo-doc-editor table[data-suggestion='insert'], .pulpo-doc-editor pre[data-suggestion='insert'] { outline-color: var(--pulpo-suggestion-insert); border-left-color: var(--pulpo-suggestion-insert); }
+.pulpo-doc-editor table[data-suggestion='delete'], .pulpo-doc-editor pre[data-suggestion='delete'] { outline-color: var(--pulpo-suggestion-delete); border-left-color: var(--pulpo-suggestion-delete); }
+.pulpo-doc-editor hr[data-suggestion='insert'] { border-top: 2px solid var(--pulpo-suggestion-insert); }
+.pulpo-doc-editor hr[data-suggestion='delete'] { border-top: 2px dashed var(--pulpo-suggestion-delete); }

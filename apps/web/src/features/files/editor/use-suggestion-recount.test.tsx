@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, renderHook } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
-import type { DocSyncStatus } from './socket-provider'
+import type { DocSyncStatus } from '@pulpo/client-core/doc-sync'
 import { useSuggestionRecount } from './use-suggestion-recount'
 
 const invalidateQueries = vi.hoisted(() => vi.fn())

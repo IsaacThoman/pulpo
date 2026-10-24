@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { startChatSchema } from '@pulpo/contracts'
 import { createOptimisticSendIdentity } from './optimisticAttachmentSend'
 
@@ -48,6 +48,9 @@ vi.mock('expo-crypto', () => ({ randomUUID: () => 'generated-id', CryptoDigestAl
 vi.mock('expo/fetch', () => ({ fetch: mocks.thumbnailFetch }))
 vi.mock('expo-sharing', () => ({}))
 vi.mock('../../api/client', () => ({
+  ApiError: class ApiError extends Error {
+    constructor(readonly status: number, readonly code: string, message: string) { super(message) }
+  },
   apiOrigin: () => 'https://example.com',
   apiRequest: mocks.apiRequest,
   apiUrl: (path: string) => path,
@@ -75,6 +78,7 @@ vi.mock('../../store/session', () => ({
   useSessionStore: { getState: () => ({ instanceUrl: 'https://example.com', user: { id: 'user-1' } }) },
 }))
 
+import { UPLOAD_STALL_TIMEOUT_MS } from './nativeUpload'
 import { downloadAttachmentThumbnail, cacheUploadedAttachment, deleteUnreferencedAttachment, editMessage, persistChat, regenerateResponse, safeAttachmentFilename, sendMessage, startChat, uploadAttachment } from './api'
 
 beforeEach(() => {
@@ -236,9 +240,76 @@ describe('attachment uploads', () => {
     await expect(uploadAttachment(draft, null)).resolves.toMatchObject({
       id: 'reserved-1', mimeType: 'text/plain',
     })
-    expect(mocks.recordCachedAttachment).toHaveBeenCalledWith(
+    expect(mocks.fileUpload).toHaveBeenCalledWith('/upload/reserved-1', expect.objectContaining({
+      httpMethod: 'PUT', sessionType: 'foreground',
+    }))
+    await vi.waitFor(() => expect(mocks.recordCachedAttachment).toHaveBeenCalledWith(
       'namespace', 'reserved-1', 'file:///cache/attachments/reserved-1/notes.bin', 8, 256 * 1024 * 1024,
-    )
+    ))
+  })
+
+  it('finishes an upload without waiting for its local cache copy', async () => {
+    mocks.apiRequest
+      .mockResolvedValueOnce(reservation)
+      .mockResolvedValueOnce({ id: 'reserved-1', mimeType: 'text/plain' })
+    mocks.fileUpload.mockResolvedValueOnce({ status: 204 })
+    mocks.recordCachedAttachment.mockReturnValueOnce(new Promise(() => {}))
+
+    await expect(uploadAttachment(draft, null)).resolves.toMatchObject({ id: 'reserved-1' })
+  })
+
+  it('records a just-finished cache copy before an unreferenced upload removes it', async () => {
+    let finishCache: (evicted: string[]) => void = () => {}
+    mocks.apiRequest
+      .mockResolvedValueOnce(reservation)
+      .mockResolvedValueOnce({ id: 'reserved-1', mimeType: 'text/plain' })
+      .mockResolvedValueOnce(undefined)
+    mocks.fileUpload.mockResolvedValueOnce({ status: 204 })
+    mocks.recordCachedAttachment.mockReturnValueOnce(new Promise((resolve) => { finishCache = resolve }))
+    await uploadAttachment(draft, null)
+
+    const deletion = deleteUnreferencedAttachment('reserved-1')
+    await vi.waitFor(() => expect(mocks.recordCachedAttachment).toHaveBeenCalled())
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(mocks.removeCachedAttachment).not.toHaveBeenCalled()
+
+    finishCache([])
+    await deletion
+    expect(mocks.removeCachedAttachment).toHaveBeenCalledWith('namespace', 'reserved-1')
+  })
+
+  describe('when a transfer stalls', () => {
+    beforeEach(() => { vi.useFakeTimers() })
+    afterEach(() => { vi.useRealTimers() })
+
+    it('fails the attachment, releases its reservation, and frees the upload slot', async () => {
+      const signals: AbortSignal[] = []
+      mocks.fileUpload.mockImplementation((_url: string, options: { signal: AbortSignal }) => {
+        signals.push(options.signal)
+        return new Promise(() => {})
+      })
+      mocks.apiRequest.mockImplementation(async (path: string, options?: { method?: string }) => {
+        if (path === '/api/attachments' && options?.method === 'POST') return reservation
+        return undefined
+      })
+
+      // Three stalled transfers fill every upload slot; a fourth waits behind them.
+      const stalled = [1, 2, 3].map(() => uploadAttachment(draft, null))
+      const assertions = stalled.map((upload) => expect(upload).rejects.toMatchObject({ code: 'request_timeout' }))
+      const queued = uploadAttachment(draft, null)
+      const queuedAssertion = expect(queued).rejects.toMatchObject({ code: 'request_timeout' })
+      await vi.advanceTimersByTimeAsync(0)
+      expect(mocks.fileUpload).toHaveBeenCalledTimes(3)
+
+      await vi.advanceTimersByTimeAsync(UPLOAD_STALL_TIMEOUT_MS)
+      await Promise.all(assertions)
+      expect(signals.slice(0, 3).every((signal) => signal.aborted)).toBe(true)
+      expect(mocks.apiRequest).toHaveBeenCalledWith('/api/attachments/reserved-1', { method: 'DELETE' })
+      expect(mocks.fileUpload).toHaveBeenCalledTimes(4)
+
+      await vi.advanceTimersByTimeAsync(UPLOAD_STALL_TIMEOUT_MS)
+      await queuedAssertion
+    })
   })
 
   it('deletes an unreferenced reservation when transfer fails', async () => {

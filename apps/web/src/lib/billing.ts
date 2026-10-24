@@ -65,6 +65,23 @@ export interface DailySpendSummary {
   } | null
 }
 
+export type CustomLimitPeriod = 'five_hour' | 'daily' | 'weekly'
+
+/** An admin-defined spend cap that covers this account. */
+export interface CustomLimitSummary {
+  id: string
+  name: string
+  period: CustomLimitPeriod
+  /** Names of the models the limit covers; empty when it covers every model. */
+  models: string[]
+  remainingPercentage: number
+  availableBarPercentage: number
+  pendingMicros: number
+  pendingBarPercentage: number
+  /** Null for the rolling five-hour window. */
+  resetsAt: string | null
+}
+
 export interface BillingSummary {
   plan: BillingPlan
   planOverridden: boolean
@@ -100,6 +117,8 @@ export interface BillingSummary {
   sharedWeeklyPercent: number
   /** Null when the account has no daily cap. */
   daily: DailySpendSummary | null
+  /** Older servers omit custom limits. */
+  customLimits?: CustomLimitSummary[]
   usageTiers: UsageTier[]
   onHold: boolean
   /** Admin-configured file storage included with each plan. */

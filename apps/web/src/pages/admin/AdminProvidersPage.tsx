@@ -24,6 +24,9 @@ const DEFAULT_BASE_URLS: Record<ApiFormat, string> = {
   anthropic_messages: 'https://api.anthropic.com/v1',
 }
 
+// Anthropic caches by request prefix, so the OpenAI and Fireworks cache routing settings do not apply.
+const usesCacheRouting = (format: ApiFormat) => format !== 'anthropic_messages'
+
 function apiFormatLabel(format: ApiFormat): string {
   if (format === 'openai_chat_completions') return ui("Chat Completions")
   if (format === 'mistral_chat_completions') return ui("Mistral Chat Completions")
@@ -178,9 +181,9 @@ export function AdminProvidersPage() {
       await apiRequest(`/api/admin/providers/${draft.id}`, {
         method: 'PATCH', body: {
           name: draft.name.trim(), apiFormat: draft.apiFormat, baseUrl: draft.baseUrl.trim(),
-          cacheAffinityMode: draft.cacheAffinityMode,
+          cacheAffinityMode: usesCacheRouting(draft.apiFormat) ? draft.cacheAffinityMode : 'none',
           cacheAffinityScope: draft.cacheAffinityScope,
-          cacheIsolationMode: draft.cacheIsolationMode,
+          cacheIsolationMode: usesCacheRouting(draft.apiFormat) ? draft.cacheIsolationMode : 'none',
           cacheIsolationScope: draft.cacheIsolationScope,
           toolResultImageMode: draft.toolResultImageMode,
           convertImagesToWebp: draft.convertImagesToWebp,
@@ -192,9 +195,9 @@ export function AdminProvidersPage() {
       await apiRequest('/api/admin/providers', {
         method: 'POST', body: {
           name: draft.name.trim(), apiFormat: draft.apiFormat, baseUrl: draft.baseUrl.trim(), apiKey: draft.apiKey, requestTimeoutMs: 120_000,
-          cacheAffinityMode: draft.cacheAffinityMode,
+          cacheAffinityMode: usesCacheRouting(draft.apiFormat) ? draft.cacheAffinityMode : 'none',
           cacheAffinityScope: draft.cacheAffinityScope,
-          cacheIsolationMode: draft.cacheIsolationMode,
+          cacheIsolationMode: usesCacheRouting(draft.apiFormat) ? draft.cacheIsolationMode : 'none',
           cacheIsolationScope: draft.cacheIsolationScope,
           toolResultImageMode: draft.toolResultImageMode,
           convertImagesToWebp: draft.convertImagesToWebp,
@@ -255,8 +258,10 @@ export function AdminProvidersPage() {
                     </Badge>
                   </td>
                   <td className="px-3 py-2">
-                    <Badge variant={p.cacheAffinityMode === 'none' ? 'outline' : 'secondary'} className="font-normal">
-                      {p.cacheAffinityMode === 'openai_prompt_cache_key'
+                    <Badge variant={p.cacheAffinityMode === 'none' || !usesCacheRouting(p.apiFormat ?? 'openai_responses') ? 'outline' : 'secondary'} className="font-normal">
+                      {!usesCacheRouting(p.apiFormat ?? 'openai_responses')
+                        ? ui("Per model")
+                        : p.cacheAffinityMode === 'openai_prompt_cache_key'
                         ? uit`OpenAI · ${p.cacheAffinityScope}`
                         : p.cacheAffinityMode === 'fireworks_session_affinity'
                           ? uit`Fireworks · ${p.cacheAffinityScope}`
@@ -330,8 +335,8 @@ export function AdminProvidersPage() {
                     apiFormat,
                     // Follow the protocol's default endpoint unless the URL was customized.
                     baseUrl: Object.values(DEFAULT_BASE_URLS).includes(draft.baseUrl.trim()) ? DEFAULT_BASE_URLS[apiFormat] : draft.baseUrl,
-                    // Anthropic has no prompt_cache_key; drop that transport when it is selected.
-                    cacheAffinityMode: apiFormat === 'anthropic_messages' && draft.cacheAffinityMode === 'openai_prompt_cache_key' ? 'none' : draft.cacheAffinityMode,
+                    cacheAffinityMode: usesCacheRouting(apiFormat) ? draft.cacheAffinityMode : 'none',
+                    cacheIsolationMode: usesCacheRouting(apiFormat) ? draft.cacheIsolationMode : 'none',
                   })}
                 >
                   <SelectTrigger id="prov-format" className="w-full"><SelectValue /></SelectTrigger>
@@ -344,6 +349,7 @@ export function AdminProvidersPage() {
                 </Select>
                 <p className="text-xs text-muted-foreground">{ui("The protocol Pulpo uses for text generation with this provider. Pulpo translates requests and responses, so chats and the public API work the same with every format.")}</p>
               </div>
+              {usesCacheRouting(draft.apiFormat) && <>
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-1.5">
                   <Label>{ui("Cache affinity transport")}</Label>
@@ -392,6 +398,7 @@ export function AdminProvidersPage() {
                   </Select>
                 </div>
               </div>
+              </>}
               <div className="space-y-1.5">
                 <Label>{ui("Tool-result images")}</Label>
                 <Select value={draft.toolResultImageMode} onValueChange={(toolResultImageMode: ToolResultImageMode) => setDraft({ ...draft, toolResultImageMode })}>

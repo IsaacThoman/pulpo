@@ -25,13 +25,7 @@ export type { TableKitOptions } from '@tiptap/extension-table'
 export type { CodeOptions } from '@tiptap/extension-code'
 export type { CodeBlockOptions } from '@tiptap/extension-code-block'
 
-/**
- * Bump whenever the editor's node or mark set changes. Servers refuse collaborative joins from
- * other versions, because y-prosemirror silently drops content an older schema cannot represent.
- */
-export const DOC_SCHEMA_VERSION = 2
-/** The Y.XmlFragment that holds a document; matches TipTap Collaboration's default field. */
-export const DOC_FRAGMENT_NAME = 'default'
+export { DOC_FRAGMENT_NAME, DOC_SCHEMA_VERSION } from './version.js'
 
 /** The schema-defining extensions shared by the web editor and the server. */
 export function createDocExtensions(): AnyExtension[] {

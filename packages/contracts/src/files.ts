@@ -99,6 +99,8 @@ export const fileNodeSchema = z.object({
   status: fileNodeStatusSchema,
   mimeType: z.string().nullable(),
   sizeBytes: z.number().int().nonnegative(),
+  /** Uploaded bytes' checksum; unchanged by renames or moves. Older servers may omit it. */
+  contentChecksum: z.string().nullable().optional(),
   revision: z.number().int().nonnegative(),
   trashedAt: z.string().nullable(),
   createdAt: z.string(),
@@ -143,6 +145,14 @@ export const createFileDocSchema = z.object({
   name: fileNameSchema.optional(),
   /** Initial content, e.g. when importing an uploaded .md file. */
   markdown: z.string().max(FILE_DOC_MAX_MARKDOWN_LENGTH).optional(),
+})
+
+export const FILE_IMPORT_URL_MAX_LENGTH = 2048
+
+/** Imports a public web page as a document, fetched by the same providers as the agent's web_fetch. */
+export const importFileUrlSchema = z.object({
+  parentId: z.uuid().nullable().default(null),
+  url: z.string().trim().min(1).max(FILE_IMPORT_URL_MAX_LENGTH),
 })
 
 /** A file's or folder's color and icon; null puts back its kind's own. */
@@ -235,6 +245,7 @@ export type FileNode = z.infer<typeof fileNodeSchema>
 export type CreateFileFolder = z.input<typeof createFileFolderSchema>
 export type UpdateFileNode = z.input<typeof updateFileNodeSchema>
 export type CreateFileDoc = z.input<typeof createFileDocSchema>
+export type ImportFileUrl = z.input<typeof importFileUrlSchema>
 export type ReserveFileUpload = z.input<typeof reserveFileUploadSchema>
 export type MoveFileNodes = z.input<typeof moveFileNodesSchema>
 

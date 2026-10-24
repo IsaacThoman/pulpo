@@ -7,7 +7,7 @@
 export type NeutralPart =
   | { type: 'text'; text: string }
   | { type: 'image'; url: string; detail?: string }
-  | { type: 'file'; filename?: string; fileData?: string; fileId?: string }
+  | { type: 'file'; filename?: string; fileData?: string; fileId?: string; fileUrl?: string }
 
 export type NeutralReasoning = {
   text: string
@@ -56,8 +56,9 @@ function contentParts(content: unknown): NeutralPart[] {
         ...(typeof part.filename === 'string' ? { filename: part.filename } : {}),
         ...(typeof part.file_data === 'string' ? { fileData: part.file_data } : {}),
         ...(typeof part.file_id === 'string' ? { fileId: part.file_id } : {}),
+        ...(typeof part.file_url === 'string' ? { fileUrl: part.file_url } : {}),
       }
-      if (file.fileData || file.fileId) parts.push(file)
+      if (file.fileData || file.fileId || file.fileUrl) parts.push(file)
     }
   }
   return parts
@@ -209,6 +210,11 @@ export function neutralTextFormat(text: unknown): NeutralTextFormat {
 export function reasoningEffort(reasoning: unknown): string | undefined {
   const effort = record(reasoning)?.effort
   return typeof effort === 'string' ? effort : undefined
+}
+
+/** An Anthropic-protocol client sent `thinking: {type: "disabled"}`; see the public Anthropic codec. */
+export function clientDisabledThinking(reasoning: unknown): boolean {
+  return record(reasoning)?.pulpo_thinking === 'disabled'
 }
 
 const MEDIA_TOKEN_ESTIMATE = 1_600

@@ -9,6 +9,7 @@ public final class HistoryChatContextMenuView: ExpoView, UIContextMenuInteractio
 
   private var pendingAction: String?
   private var pinned = false
+  private var archiveAvailable = false
   private var removeChatLabel = "Delete chat"
   private var expirationAction = "hidden"
   private var expirationPeriodLabel = ""
@@ -32,6 +33,10 @@ public final class HistoryChatContextMenuView: ExpoView, UIContextMenuInteractio
 
   public func setPinned(_ value: Bool) {
     pinned = value
+  }
+
+  public func setArchiveAvailable(_ value: Bool) {
+    archiveAvailable = value
   }
 
   public func setRemoveChatLabel(_ value: String) {
@@ -137,6 +142,11 @@ public final class HistoryChatContextMenuView: ExpoView, UIContextMenuInteractio
           action: "duplicate"
         )
       )
+      if archiveAvailable {
+        standardActionChildren.append(
+          menuAction(title: "Move to archive", systemImage: "archivebox", action: "archive")
+        )
+      }
 
       let standardActions = UIMenu(
         title: "",

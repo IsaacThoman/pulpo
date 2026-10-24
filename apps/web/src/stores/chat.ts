@@ -43,7 +43,7 @@ import { pinnedItemsCeiling, sidebarItemsFloor } from '@/features/sidebar/cache'
 import { useFileToasts } from '@/features/files/browser/toasts'
 import { filesErrorMessage } from '@/features/files/file-display'
 import { adminChatAccessActive, adminChatAccountKey } from '@/features/admin-chat/access'
-import { scopedFileAccess } from '@/features/files/file-scope'
+import { scopedFileAccess } from '@pulpo/client-core/files'
 
 function applySortOrders(ids: string[]): Map<string, number> {
   return new Map(ids.map((id, index) => [id, index]))

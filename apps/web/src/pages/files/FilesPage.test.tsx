@@ -8,6 +8,7 @@ import { useSettings, type FileDoubleClickAction } from '@/stores/settings'
 import { useSidePanel } from '@/features/side-panel/store'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { useFileClipboard } from '@/features/files/browser/clipboard'
+import { ApiError } from '@/lib/api'
 
 vi.hoisted(() => {
   Object.defineProperty(window, 'matchMedia', {
@@ -15,8 +16,9 @@ vi.hoisted(() => {
     value: () => ({ matches: false, addEventListener: () => undefined }),
   })
 })
+const authState = vi.hoisted(() => ({ user: { id: 'user' }, filesEnabled: true, urlImportEnabled: false }))
 vi.mock('@/stores/auth', () => ({
-  useAuth: (selector: (state: unknown) => unknown) => selector({ user: { id: 'user' }, filesEnabled: true }),
+  useAuth: (selector: (state: unknown) => unknown) => selector(authState),
 }))
 vi.mock('@/features/side-panel/agent', async (importOriginal) => ({
   ...await importOriginal<typeof import('@/features/side-panel/agent')>(),
@@ -29,9 +31,11 @@ vi.mock('@/features/side-panel/AgentActions', async (importOriginal) => ({
 }))
 vi.mock('@/features/side-panel/PanelControls', () => ({ PanelWindowButtons: () => null }))
 const resolveFileSuggestion = vi.hoisted(() => vi.fn(async () => null))
+const importFromUrl = vi.hoisted(() => vi.fn())
 vi.mock('@/features/files/api', async (importOriginal) => ({
   ...await importOriginal<typeof import('@/features/files/api')>(),
   resolveFileSuggestion,
+  importFromUrl,
   fetchFolder: async (folderId: string | null) => folderId === 'plan-drafts' ? {
     // A folder inside the suggested folder Plan, holding more of the same suggestion.
     folder: { id: 'plan-drafts', parentId: 'plan', name: 'Drafts', kind: 'folder', updatedAt: '2026-10-06T00:00:00Z', suggestion: { changeId: 'plan-change' } },
@@ -91,7 +95,7 @@ beforeEach(() => {
   useSettings.setState({ fileDoubleClickAction: 'open' })
   useSidePanel.setState({ content: null, lastContent: null, splitAvailable: true })
 })
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.clearAllMocks() })
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.clearAllMocks(); authState.urlImportEnabled = false })
 
 async function doubleClick(name: string, ctrlKey = false) {
   const item = await screen.findByRole('option', { name: new RegExp(name) })
@@ -179,6 +183,46 @@ describe('menus of built-in folders', () => {
     fireEvent.contextMenu(await screen.findByRole('option', { name: /Projects/ }))
     await screen.findByRole('menuitem', { name: /^Copy/ })
     for (const name of [...unavailable, 'Color and icon…']) expect(menuItem(name).getAttribute('aria-disabled')).toBeNull()
+  })
+})
+
+describe('importing from a URL', () => {
+  const openNewMenu = async () => {
+    await screen.findByRole('option', { name: /Notes.md/ })
+    fireEvent.keyDown(screen.getByRole('button', { name: 'New' }), { key: 'Enter' })
+    await screen.findByRole('menuitem', { name: 'Upload files' })
+  }
+  const importPage = async (address: string) => {
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Import from URL' }))
+    fireEvent.change(await screen.findByLabelText('Web address'), { target: { value: address } })
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Import' })) })
+  }
+
+  it('is offered only when the server can fetch pages', async () => {
+    showFiles()
+    await openNewMenu()
+    expect(screen.queryByRole('menuitem', { name: 'Import from URL' })).toBeNull()
+  })
+
+  it('saves the page in the open folder and selects it', async () => {
+    authState.urlImportEnabled = true
+    importFromUrl.mockResolvedValue({ id: 'imported', parentId: null, name: 'Article.md', kind: 'doc', sizeBytes: 10, updatedAt: '2026-10-06T00:00:00Z' })
+    showFiles()
+    await openNewMenu()
+    await importPage('example.com/article')
+    expect(importFromUrl).toHaveBeenCalledWith(null, 'https://example.com/article')
+    expect((await screen.findByRole('option', { name: /Article.md/ })).getAttribute('aria-selected')).toBe('true')
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('keeps the address and explains when the page cannot be imported', async () => {
+    authState.urlImportEnabled = true
+    importFromUrl.mockRejectedValue(new ApiError(502, 'url_import_failed', 'upstream'))
+    showFiles()
+    await openNewMenu()
+    await importPage('https://example.com/missing')
+    expect(await screen.findByText('This page could not be imported. Check the link and try again.')).toBeTruthy()
+    expect((screen.getByLabelText('Web address') as HTMLInputElement).value).toBe('https://example.com/missing')
   })
 })
 

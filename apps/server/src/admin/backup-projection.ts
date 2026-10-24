@@ -89,7 +89,7 @@ export const FULL_BACKUP_TEMPORARY_DATA_POLICY = {
   workspace_leases: 'workspace-lease',
   agent_runs: 'agent-run',
   tool_executions: 'tool-execution',
-  billing_accounts: 'preserve', billing_subscriptions: 'preserve', billing_checkouts: 'preserve', billing_auto_top_ups: 'preserve', billing_orders: 'preserve', billing_webhook_events: 'preserve',
+  billing_accounts: 'preserve', billing_subscriptions: 'preserve', billing_checkouts: 'preserve', billing_auto_top_ups: 'preserve', billing_orders: 'preserve', billing_webhook_events: 'preserve', billing_custom_limits: 'preserve',
   weekly_usage_periods: 'preserve', daily_usage_periods: 'preserve', five_hour_usage_periods: 'preserve', shared_allowance_periods: 'preserve', shared_five_hour_usage_periods: 'preserve',
   request_analytics: 'redact-response', request_analytics_tools: 'preserve', analytics_hourly_rollups: 'preserve', idempotency_records: 'preserve',
 } as const satisfies Record<FullBackupTable, TemporaryDataPolicy>

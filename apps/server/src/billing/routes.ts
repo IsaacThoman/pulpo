@@ -14,6 +14,7 @@ import { AppError } from '../lib/errors.js'
 import { parseBillingSettings } from '../settings/application-settings.js'
 import { getBillingEntitlements } from './entitlements.js'
 import { loadDailySpend, type DailySpend } from './usage-tiers.js'
+import { customLimitModelNames, loadCustomLimitUsage, type CustomLimitUsage } from './custom-limits.js'
 import { loadOwnerSharedAllowance, sharedAllowanceBar } from './shared-allowance.js'
 import { getAutoTopUpSummary, removeAutoTopUpPaymentMethod, updateAutoTopUpSettings } from './auto-top-up.js'
 import {
@@ -134,6 +135,22 @@ export function dailySpendSummary(spend: DailySpend | null) {
   }
 }
 
+export function customLimitSummary(limit: CustomLimitUsage, modelNames: Map<string, string>) {
+  const pendingMicros = Math.min(limit.pendingMicros, Math.max(0, limit.limitMicros - limit.spentMicros))
+  return {
+    id: limit.id,
+    name: limit.name,
+    period: limit.period,
+    // Empty when the limit covers every model.
+    models: limit.modelIds.map((id) => modelNames.get(id) ?? id),
+    remainingPercentage: Math.round(billingLimitPercentage(limit.remainingMicros, limit.limitMicros)),
+    availableBarPercentage: billingLimitPercentage(limit.remainingMicros, limit.limitMicros),
+    pendingMicros,
+    pendingBarPercentage: billingLimitPercentage(pendingMicros, limit.limitMicros),
+    resetsAt: limit.resetAt?.toISOString() ?? null,
+  }
+}
+
 export async function registerBillingRoutes(app: FastifyInstance): Promise<void> {
   const config = getConfig()
   if (!config.PULPO_BILLING_ENABLED) return
@@ -166,6 +183,11 @@ export async function registerBillingRoutes(app: FastifyInstance): Promise<void>
     const settings = parseBillingSettings(billingSetting?.value)
     const dailySpend = await db.transaction((tx) => loadDailySpend(tx, { userId: user.id, role: user.role, weeklyLimitMicros: entitlements.weeklyLimitMicros }))
     const sharedAllowance = poolBalance ? await db.transaction((tx) => loadOwnerSharedAllowance(tx, user.id, entitlements, settings)) : null
+    const customLimits = await db.transaction(async (tx) => {
+      const usage = await loadCustomLimitUsage(tx, { userId: user.id, role: user.role, plan: entitlements.plan })
+      const modelNames = await customLimitModelNames(tx, usage)
+      return usage.map((limit) => customLimitSummary(limit, modelNames))
+    })
     const subscription = selectSummarySubscription(subscriptions, entitlements.subscriptionPlan)
     const fiveHour = entitlements.fiveHourRemainingPercentage === null
       ? null
@@ -194,6 +216,7 @@ export async function registerBillingRoutes(app: FastifyInstance): Promise<void>
       shared: sharedAllowance ? sharedAllowanceBar(sharedAllowance) : null,
       sharedWeeklyPercent: settings.fatSharedWeeklyPercent,
       daily: dailySpendSummary(dailySpend),
+      customLimits,
       usageTiers: settings.usageTiers,
       onHold: entitlements.onHold,
       planStorageLimitBytes: {

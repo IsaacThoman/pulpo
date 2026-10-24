@@ -3,14 +3,16 @@ import { useSubpageBack } from '../../../platform/useSubpageBack';
 import { DeleteAccountAction } from '../../../components/DeleteAccount';
 import type { ComponentProps, PropsWithChildren, ReactNode } from 'react';
 import { useRef, useState } from 'react';
-import { ActivityIndicator, Image, KeyboardAvoidingView, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SymbolView } from '../../../platform/SymbolView';
 import { useAppTheme } from '../theme';
 import { normalizeInstanceUrl } from '../domain';
+import { normalizeInstanceUrl as normalizeServerAddress } from '@pulpo/client-core';
 import { mobileApi } from '../../../api/client';
 import { NativePasskeyError, PasskeyCancelledError } from '../../../auth/passkeys';
 import { useSessionStore } from '../../../store/session';
+import { unsyncedEditsNote } from '../../../features/files/doc/accountSessions';
 import { FORM_CONTENT_MAX } from '../../../responsive';
 
 type AuthPage = 'login' | 'login-options' | 'two-factor' | 'signup' | 'forgot' | 'instance';
@@ -287,11 +289,34 @@ export function AuthExperience() {
       setError(nextError instanceof Error ? nextError.message : 'Invalid URL.');
       return;
     }
-    void run(async () => {
+    // The same server (compared as the session stores it, path included): nothing to switch, and
+    // nobody is signed out.
+    let sameServer = false;
+    try {
+      sameServer = normalizeServerAddress(instanceUrl, true) === productionInstanceUrl;
+    } catch {
+      // Not a valid address for the session; the switch reports it.
+    }
+    if (sameServer) {
+      setInstanceUrl(normalized);
+      setPage('login');
+      return;
+    }
+    const change = () => void run(async () => {
       await switchInstance(normalized);
       setInstanceUrl(normalized);
       setPage('login');
     });
+    if (!signedInAccounts.length) {
+      change();
+      return;
+    }
+    // Every signed-in account belongs to this server, so switching signs them all out.
+    void unsyncedEditsNote(productionInstanceUrl, signedInAccounts.map((account) => account.id)).then((note) => Alert.alert(
+      'Change server?',
+      `Using another server signs out of every account on this one.${note}`,
+      [{ text: 'Cancel', style: 'cancel' }, { text: 'Change Server', style: 'destructive', onPress: change }],
+    ));
   };
   const runPendingAction = async (action: PendingAction, task: () => Promise<void>) => {
     // A ref, not state, so two taps in the same frame cannot both start.

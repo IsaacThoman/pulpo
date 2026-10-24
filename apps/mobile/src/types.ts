@@ -48,6 +48,11 @@ export interface ServerChat {
   attachments?: ServerAttachment[]
   queuedMessages?: MobileQueuedMessage[]
   responses?: ServerResponse[]
+  /** Files items the chat's agent works with (`root` is all of My files), and how. */
+  fileScopeIds?: string[]
+  fileScopeAccess?: Partial<Record<string, import('@pulpo/contracts').FileAccessMode>>
+  /** Filed at the top of My files rather than in a folder. */
+  inFilesRoot?: boolean
 }
 
 export interface ServerDeletedChat {
