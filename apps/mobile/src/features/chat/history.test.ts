@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   createHistoryProjector,
+  filterHistoryChats,
   historyFolderItems,
   historyChatSections,
   historyChatSummary,
@@ -17,6 +18,22 @@ function summary(id: string, patch: Partial<HistoryChatSummary> = {}): HistoryCh
     pinned: false, folderId: null, sortOrder: 0, createdAt: 1_000, updatedAt: 1_000, expiresAt: null, ...patch,
   }
 }
+
+describe('filterHistoryChats', () => {
+  const chats = [summary('a', { title: 'Tide pools' }), summary('b', { title: 'Trip plan' }), summary('c', { title: 'Recipes' })]
+
+  it('returns every chat for a blank query', () => {
+    expect(filterHistoryChats(chats, '  ')).toBe(chats)
+  })
+
+  it('matches titles case-insensitively, ignoring surrounding whitespace', () => {
+    expect(filterHistoryChats(chats, ' TIDE ').map((chat) => chat.id)).toEqual(['a'])
+  })
+
+  it('includes chats whose messages matched', () => {
+    expect(filterHistoryChats(chats, 'tide', new Set(['c', 'missing'])).map((chat) => chat.id)).toEqual(['a', 'c'])
+  })
+})
 
 describe('historyChatSections', () => {
   it('always places pinned chats in the first section', () => {

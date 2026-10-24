@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   fileUpload: vi.fn(),
   recordCachedAttachment: vi.fn(),
   removeCachedAttachment: vi.fn(),
+  searchCachedChats: vi.fn(),
 }))
 
 vi.mock('expo-file-system', () => {
@@ -59,6 +60,7 @@ vi.mock('../../data/database', () => ({
   cachedAttachmentUri: vi.fn(),
   recordCachedAttachment: mocks.recordCachedAttachment,
   removeCachedAttachment: mocks.removeCachedAttachment,
+  searchCachedChats: mocks.searchCachedChats,
 }))
 vi.mock('../../data/mutations', () => ({ queueOfflineMutation: mocks.queueOfflineMutation }))
 vi.mock('../../providers/realtimeStore', () => ({
@@ -75,7 +77,7 @@ vi.mock('../../store/session', () => ({
   useSessionStore: { getState: () => ({ instanceUrl: 'https://example.com', user: { id: 'user-1' } }) },
 }))
 
-import { downloadAttachmentThumbnail, cacheUploadedAttachment, deleteUnreferencedAttachment, editMessage, persistChat, regenerateResponse, safeAttachmentFilename, sendMessage, startChat, uploadAttachment } from './api'
+import { downloadAttachmentThumbnail, cacheUploadedAttachment, deleteUnreferencedAttachment, editMessage, persistChat, regenerateResponse, safeAttachmentFilename, searchChatIds, sendMessage, startChat, uploadAttachment } from './api'
 
 beforeEach(() => {
   mocks.apiRequest.mockReset().mockRejectedValue(new TypeError('offline'))
@@ -330,5 +332,32 @@ describe('thumbnail downloads', () => {
     mocks.thumbnailExists = true
     await downloadAttachmentThumbnail('thumbnail-0')
     expect(mocks.thumbnailFetch).toHaveBeenCalledTimes(500)
+  })
+})
+
+describe('chat search', () => {
+  it('merges server and cached matches without duplicates', async () => {
+    const signal = new AbortController().signal
+    mocks.apiRequest.mockResolvedValueOnce({ data: [{ id: 'server' }, { id: 'both' }] })
+    mocks.searchCachedChats.mockResolvedValueOnce(['both', 'cached'])
+
+    await expect(searchChatIds('namespace', 'tide pools', signal)).resolves.toEqual(['server', 'both', 'cached'])
+    expect(mocks.apiRequest).toHaveBeenCalledWith('/api/chats/search?q=tide%20pools', { signal })
+    expect(mocks.searchCachedChats).toHaveBeenCalledWith('namespace', 'tide pools')
+  })
+
+  it('falls back to cached matches offline', async () => {
+    mocks.apiRequest.mockRejectedValueOnce(new TypeError('Network request failed'))
+    mocks.searchCachedChats.mockResolvedValueOnce(['cached'])
+
+    await expect(searchChatIds('namespace', 'tide')).resolves.toEqual(['cached'])
+  })
+
+  it('fails only when both sources fail', async () => {
+    const error = new TypeError('Network request failed')
+    mocks.apiRequest.mockRejectedValueOnce(error)
+    mocks.searchCachedChats.mockRejectedValueOnce(new Error('fts syntax error'))
+
+    await expect(searchChatIds('namespace', 'tide')).rejects.toBe(error)
   })
 })

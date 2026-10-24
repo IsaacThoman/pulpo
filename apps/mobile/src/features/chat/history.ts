@@ -2,6 +2,20 @@ export function visibleHistoryChats<T extends { deletedAt: number | null; tempor
   return chats.filter((chat) => chat.deletedAt === null && !chat.temporary)
 }
 
+/**
+ * Chats whose title contains `query`, plus chats a full-text search matched by message content.
+ * Title matches are immediate; content matches arrive asynchronously.
+ */
+export function filterHistoryChats<T extends { id: string; title: string }>(
+  chats: T[],
+  query: string,
+  contentMatchIds?: ReadonlySet<string>,
+): T[] {
+  const normalized = query.trim().toLowerCase()
+  if (!normalized) return chats
+  return chats.filter((chat) => chat.title.toLowerCase().includes(normalized) || contentMatchIds?.has(chat.id))
+}
+
 export type HistoryChatSummary = {
   id: string
   title: string

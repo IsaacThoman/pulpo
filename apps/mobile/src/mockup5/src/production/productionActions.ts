@@ -17,6 +17,8 @@ type ProductionActions = {
   deleteFolder: AsyncAction
   setPreference: AsyncAction
   toggleFavoriteModel: AsyncAction
+  /** Ids of chats whose title or messages match the query. */
+  searchChats: (query: string, signal?: AbortSignal) => Promise<string[]>
 }
 
 const noop: AsyncAction = async () => undefined
@@ -25,6 +27,7 @@ export const productionActions: ProductionActions = {
   renameChat: noop, togglePin: noop, moveChat: noop, setChatAutoExpiration: noop, trashChat: noop, trashAllChats: noop, restoreChat: noop,
   permanentlyDeleteChat: noop, duplicateChat: noop, shareChat: noop, createFolder: noop,
   renameFolder: noop, deleteFolder: noop, emptyTrash: noop, setPreference: noop, toggleFavoriteModel: noop,
+  searchChats: async () => [],
 }
 
 export function configureProductionActions(actions: Partial<ProductionActions>): void {

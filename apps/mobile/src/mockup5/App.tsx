@@ -258,6 +258,7 @@ import {
   deleteCachedComposerDraft,
 } from '../features/chat/composerDraftCache';
 import {
+  filterHistoryChats,
   historyChatSections,
   historyChatSummary,
   resolveHistoryChatExpiryMenuAction,
@@ -6530,12 +6531,31 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
       transform: [{ translateY: interpolate(collapseProgress, [0, 1], [0, -DRAWER_ACTION_HEIGHT]) }],
     };
   });
+  const searchQuery = search.trim();
+  // Message matches come from the server index and local cache. Keep the previous
+  // matches until the next query settles so the list does not flash empty while typing.
+  const [contentMatches, setContentMatches] = useState<{ query: string; ids: ReadonlySet<string> } | null>(null);
+  useEffect(() => {
+    if (!searchQuery) {
+      setContentMatches(null);
+      return;
+    }
+    const controller = new AbortController();
+    const timeout = setTimeout(() => {
+      const settle = (ids: string[]) => {
+        if (!controller.signal.aborted) setContentMatches({ query: searchQuery, ids: new Set(ids) });
+      };
+      productionActions.searchChats(searchQuery, controller.signal).then(settle, () => settle([]));
+    }, 220);
+    return () => {
+      clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [searchQuery]);
+  const contentSearchPending = searchQuery.length > 0 && contentMatches?.query !== searchQuery;
   const filtered = useMemo(
-    () => {
-      const query = search.toLowerCase();
-      return query ? chats.filter((chat) => chat.title.toLowerCase().includes(query)) : chats;
-    },
-    [chats, search],
+    () => filterHistoryChats(chats, searchQuery, contentMatches?.ids),
+    [chats, contentMatches, searchQuery],
   );
   const sections = useMemo(() => {
     // Search also surfaces filed chats, since the folder list is hidden while searching.
@@ -6684,7 +6704,7 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
               <ActivityIndicator color={COLORS.muted} size="small" />
               <Text style={styles.noResults}>Loading chats…</Text>
             </View>
-          ) : <Text style={styles.noResults}>{search ? `No chats match “${search}”` : 'No chats yet'}</Text>}
+          ) : <Text style={styles.noResults}>{search ? contentSearchPending ? 'Searching…' : `No chats match “${search}”` : 'No chats yet'}</Text>}
           renderItem={renderHistoryChat}
           renderSectionHeader={({ section }) => <Text style={styles.sectionLabel}>{section.title}</Text>}
           sections={sections}

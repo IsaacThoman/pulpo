@@ -7,7 +7,7 @@ import * as Sharing from 'expo-sharing'
 import { attachmentValidationError, createUploadQueue, retryBusyUpload } from '@pulpo/client-core'
 import type { ResponseSnapshot } from '@pulpo/contracts'
 import { apiOrigin, apiRequest, apiUrl, isNetworkError, nativeAuthorizationHeaders } from '../../api/client'
-import { cacheNamespace, cachedAttachmentUri, recordCachedAttachment, removeCachedAttachment } from '../../data/database'
+import { cacheNamespace, cachedAttachmentUri, recordCachedAttachment, removeCachedAttachment, searchCachedChats } from '../../data/database'
 import { queueOfflineMutation } from '../../data/mutations'
 import type { AttachmentDraft, BranchActivationResult, ServerAttachment, ServerChat, ServerFolder } from '../../types'
 import { useRealtimeStore } from '../../providers/realtimeStore'
@@ -63,6 +63,22 @@ export async function restoreChat(id: string): Promise<ServerChat> {
 
 export async function permanentlyDeleteChat(id: string): Promise<void> {
   await apiRequest(`/api/chats/${id}/permanent`, { method: 'DELETE' })
+}
+
+/**
+ * Ids of chats whose title or messages match `query`. Combines the server's full-text index with
+ * the local cache, so opened chats stay searchable offline. Fails only when both sources fail.
+ */
+export async function searchChatIds(namespace: string, query: string, signal?: AbortSignal): Promise<string[]> {
+  const [remote, local] = await Promise.allSettled([
+    apiRequest<{ data: ServerChat[] }>(`/api/chats/search?q=${encodeURIComponent(query)}`, { signal }),
+    searchCachedChats(namespace, query),
+  ])
+  if (remote.status === 'rejected' && local.status === 'rejected') throw remote.reason
+  return [...new Set([
+    ...(remote.status === 'fulfilled' ? remote.value.data.map((chat) => chat.id) : []),
+    ...(local.status === 'fulfilled' ? local.value : []),
+  ])]
 }
 
 export async function duplicateChat(id: string): Promise<ServerChat> {

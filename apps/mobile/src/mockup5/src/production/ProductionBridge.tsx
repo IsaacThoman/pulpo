@@ -12,7 +12,7 @@ import { chatQuery, chatsQuery, deletedChatsQuery, foldersQuery, modelsQuery, qu
 import { ApiError, isNetworkError, mobileApi } from '../../../api/client'
 import { queueOfflineMutation } from '../../../data/mutations'
 import { type DisplayMessage } from '../../../features/chat/projection'
-import { createFolder, deleteFolder, permanentlyDeleteChat, restoreChat, trashChat, updateChat, updateFolder } from '../../../features/chat/api'
+import { createFolder, deleteFolder, permanentlyDeleteChat, restoreChat, searchChatIds, trashChat, updateChat, updateFolder } from '../../../features/chat/api'
 import { useRealtimeStore, subscribeToChat, subscribeToResponse } from '../../../providers/realtimeStore'
 import { preferencePatchForServer, preferencesFromServer, usePreferencesStore } from '../../../store/preferences'
 import { useSessionStore } from '../../../store/session'
@@ -403,6 +403,7 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
       createFolder: (name, clientId) => offlineCapableMutation({ namespace, entityKey: `folder:${clientId}`, method: 'POST', path: '/api/folders', body: { name, clientId }, request: () => createFolder(name, clientId) }),
       renameFolder: (id, name) => offlineCapableMutation({ namespace, entityKey: `folder:${id}`, method: 'PATCH', path: `/api/folders/${id}`, body: { name }, request: () => updateFolder(id, { name }) }),
       deleteFolder: (id) => offlineCapableMutation({ namespace, entityKey: `folder:${id}`, method: 'DELETE', path: `/api/folders/${id}`, request: () => deleteFolder(id) }),
+      searchChats: (query, signal) => searchChatIds(namespace, query, signal),
       setPreference: async (key, value) => {
         const persisted = usePreferencesStore.getState().setPreference(key, value)
         const body = preferencePatchForServer(key, value)
