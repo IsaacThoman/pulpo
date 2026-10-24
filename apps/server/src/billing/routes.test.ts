@@ -158,14 +158,23 @@ describe('daily spend summary', () => {
 describe('custom limit summaries', () => {
   it('shows percentages, reserved usage within the remaining limit, and model names', () => {
     const summary = customLimitSummary({
-      id: 'limit-1', name: 'Opus daily', period: 'daily', limitMicros: 1_000_000, modelIds: ['opus', 'gone'],
-      spentMicros: 700_000, pendingMicros: 500_000, remainingMicros: 0,
+      id: 'limit-1', name: 'Opus daily', period: 'daily', limitMicros: 1_000_000, modelIds: ['opus', 'gone'], poolSharePercent: 25,
+      spentMicros: 700_000, pendingMicros: 500_000, remainingMicros: 0, poolUsedMicros: 0,
       resetAt: new Date('2026-10-23T00:00:00.000Z'), freesAt: null,
     }, new Map([['opus', 'Claude Opus']]))
     expect(summary).toEqual({
-      id: 'limit-1', name: 'Opus daily', period: 'daily', models: ['Claude Opus', 'gone'],
+      id: 'limit-1', name: 'Opus daily', period: 'daily', models: ['Claude Opus', 'gone'], poolSharePercent: 0,
       remainingPercentage: 0, availableBarPercentage: 0, pendingMicros: 300_000, pendingBarPercentage: 30,
       resetsAt: '2026-10-23T00:00:00.000Z',
     })
+  })
+
+  it('only mentions the pool share to pool members', () => {
+    const usage = {
+      id: 'limit-1', name: 'Opus weekly', period: 'weekly' as const, limitMicros: 1_000_000, modelIds: [], poolSharePercent: 25,
+      spentMicros: 0, pendingMicros: 0, remainingMicros: 1_000_000, poolUsedMicros: 0, resetAt: null, freesAt: null,
+    }
+    expect(customLimitSummary(usage, new Map(), true).poolSharePercent).toBe(25)
+    expect(customLimitSummary(usage, new Map(), false).poolSharePercent).toBe(0)
   })
 })

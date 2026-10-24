@@ -606,6 +606,7 @@ interface CustomLimit {
   target: CustomLimitTarget
   plans: BillingPlan[]
   userIds: string[]
+  poolSharePercent: number
   enabled: boolean
 }
 
@@ -697,6 +698,7 @@ function CustomLimitsPanel() {
                   <th className="px-2 py-1.5 font-normal">{ui("Period")}</th>
                   <th className="px-2 py-1.5 font-normal">{ui("Models")}</th>
                   <th className="px-2 py-1.5 font-normal">{ui("Applies to")}</th>
+                  <th className="px-2 py-1.5 text-right font-normal">{ui("Pool share")}</th>
                   <th className="px-2 py-1.5 font-normal">{ui("Enabled")}</th>
                   <th className="px-2 py-1.5 font-normal" />
                 </tr>
@@ -709,6 +711,7 @@ function CustomLimitsPanel() {
                     <td className="px-2 py-1.5">{customLimitPeriodLabel(limit.period)}</td>
                     <td className="max-w-56 truncate px-2 py-1.5">{limit.modelIds.length ? limit.modelIds.map(modelName).join(', ') : ui("All models")}</td>
                     <td className="max-w-48 truncate px-2 py-1.5">{audience(limit)}</td>
+                    <td className="px-2 py-1.5 text-right tabular-nums">{limit.poolSharePercent ? `${limit.poolSharePercent}%` : ui("None")}</td>
                     <td className="px-2 py-1.5"><Switch checked={limit.enabled} aria-label={ui("Enable {{name}}", { name: limit.name })} onCheckedChange={(enabled) => void toggle(limit, enabled)} /></td>
                     <td className="whitespace-nowrap px-2 py-1.5 text-right">
                       <Button size="icon-sm" variant="ghost" aria-label={ui("Edit {{name}}", { name: limit.name })} onClick={() => setEditing(limit)}><Pencil /></Button>
@@ -748,10 +751,12 @@ function CustomLimitDialog({ limit, models, directory, onSave, onClose }: {
   const [target, setTarget] = useState<CustomLimitTarget>(limit?.target ?? 'everyone')
   const [plans, setPlans] = useState<BillingPlan[]>(limit?.plans ?? [])
   const [userIds, setUserIds] = useState(limit?.userIds ?? [])
+  const [poolShare, setPoolShare] = useState(String(limit?.poolSharePercent ?? 0))
   const [enabled, setEnabled] = useState(limit?.enabled ?? true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const limitMicros = Math.round(Number(amount) * 1_000_000)
+  const poolSharePercent = Number(poolShare)
   const toggleIn = <T,>(values: T[], value: T, checked: boolean) => checked ? [...values, value] : values.filter((item) => item !== value)
   const problem = !name.trim()
     ? ui("Enter a name.")
@@ -763,7 +768,9 @@ function CustomLimitDialog({ limit, models, directory, onSave, onClose }: {
           ? ui("Choose at least one plan.")
           : target === 'users' && !userIds.length
             ? ui("Choose at least one user.")
-            : null
+            : poolShare.trim() === '' || !Number.isInteger(poolSharePercent) || poolSharePercent < 0 || poolSharePercent > 100
+              ? ui("Enter a pool share from 0% to 100%.")
+              : null
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -772,7 +779,7 @@ function CustomLimitDialog({ limit, models, directory, onSave, onClose }: {
     setError('')
     try {
       await onSave({
-        name: name.trim(), period, limitMicros, enabled, target,
+        name: name.trim(), period, limitMicros, poolSharePercent, enabled, target,
         modelIds: allModels ? [] : modelIds,
         plans: target === 'plans' ? plans : [],
         userIds: target === 'users' ? userIds : [],
@@ -858,6 +865,14 @@ function CustomLimitDialog({ limit, models, directory, onSave, onClose }: {
               directory={directory}
               onChange={setUserIds}
             />}
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="custom-limit-pool-share">{ui("Share with pool")}</Label>
+            <div className="relative w-32">
+              <Input id="custom-limit-pool-share" className="w-full pr-7 tabular-nums" type="number" min="0" max="100" step="1" value={poolShare} onChange={(event) => setPoolShare(event.target.value)} />
+              <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">%</span>
+            </div>
+            <p className="text-xs text-muted-foreground">{ui("Pool members who reach their own limits on these models can use up to this share of a covered member's limit. Their usage counts against that member's limit.")}</p>
           </div>
           <label className="flex cursor-pointer items-center justify-between gap-3 text-sm">
             {ui("Enabled")}

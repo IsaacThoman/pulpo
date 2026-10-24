@@ -12,7 +12,7 @@ export const FULL_BACKUP_TABLES = [
   'banners', 'request_logs', 'generation_attempts', 'ocr_attempts', 'ocr_cache_entries', 'chat_import_sources',
   'workspace_leases', 'agent_runs', 'tool_executions', 'diagnostic_policy', 'provider_diagnostics',
   'billing_accounts', 'billing_subscriptions', 'billing_checkouts', 'billing_auto_top_ups', 'billing_orders', 'billing_webhook_events', 'billing_custom_limits',
-  'weekly_usage_periods', 'daily_usage_periods', 'five_hour_usage_periods', 'shared_allowance_periods', 'shared_five_hour_usage_periods',
+  'weekly_usage_periods', 'daily_usage_periods', 'five_hour_usage_periods', 'shared_allowance_periods', 'shared_five_hour_usage_periods', 'custom_limit_pool_usage',
   'request_analytics', 'request_analytics_tools', 'analytics_hourly_rollups', 'idempotency_records',
 ] as const
 
@@ -48,7 +48,7 @@ export const OPTIONAL_TABLES_IN_LEGACY_BACKUPS: readonly FullBackupTable[] = [
   'file_nodes', 'file_docs', 'file_doc_updates', 'file_folder_layouts',
   'queued_messages', 'composer_drafts', 'composer_draft_attachments', 'shelved_drafts', 'shelved_draft_attachments', 'shelf_operations',
   'billing_accounts', 'billing_subscriptions', 'billing_checkouts', 'billing_auto_top_ups', 'billing_orders', 'billing_webhook_events', 'billing_custom_limits',
-  'weekly_usage_periods', 'daily_usage_periods', 'five_hour_usage_periods', 'shared_allowance_periods', 'shared_five_hour_usage_periods',
+  'weekly_usage_periods', 'daily_usage_periods', 'five_hour_usage_periods', 'shared_allowance_periods', 'shared_five_hour_usage_periods', 'custom_limit_pool_usage',
   'request_analytics', 'request_analytics_tools', 'analytics_hourly_rollups', 'idempotency_records',
 ]
 
@@ -106,6 +106,7 @@ export function applyFullBackupCompatibilityDefaults(database: Record<string, Ar
     order.provider ??= 'stripe'
   }
   for (const event of database.billing_webhook_events ?? []) event.provider ??= 'stripe'
+  for (const limit of database.billing_custom_limits ?? []) limit.pool_share_percent ??= 0
   scrubFullBackupDetailedPayloads(database)
 }
 

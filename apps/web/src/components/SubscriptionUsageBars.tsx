@@ -39,7 +39,10 @@ export function SubscriptionUsageBars({ weekly, fiveHour, shared = null, sharedW
         limit={limit}
         compact={compact}
         showResetDate={limit.period === 'weekly'}
-        hint={limit.models.length ? ui("Applies to {{models}}", { models: limit.models.join(', ') }) : undefined}
+        hint={[
+          limit.models.length ? ui("Applies to {{models}}", { models: limit.models.join(', ') }) : null,
+          limit.poolSharePercent ? ui("Pool members can use up to {{percent}}% of this limit", { percent: limit.poolSharePercent }) : null,
+        ].filter(Boolean).join(' · ') || undefined}
         resetNote={limit.period === 'five_hour' ? ui("Rolling 5-hour window") : undefined}
       />)}
     </div>

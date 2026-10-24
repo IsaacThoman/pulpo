@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
+  allocateCustomLimitDraws,
   customLimitAppliesToModels,
   customLimitAppliesToUser,
   customLimitMessage,
   customLimitPeriodStart,
   customLimitResetAt,
+  poolShareAvailableMicros,
+  shrinkCustomLimitDraws,
   tightestCustomLimit,
   type CustomLimitUsage,
 } from './custom-limits.js'
@@ -56,7 +59,7 @@ describe('custom limit periods', () => {
 
 describe('custom limit enforcement helpers', () => {
   const usage = (id: string, remainingMicros: number): CustomLimitUsage => ({
-    id, name: id, period: 'daily', limitMicros: 10, modelIds: [], spentMicros: 0, pendingMicros: 0, remainingMicros, resetAt: null, freesAt: null,
+    id, name: id, period: 'daily', limitMicros: 10, modelIds: [], poolSharePercent: 0, spentMicros: 0, pendingMicros: 0, remainingMicros, poolUsedMicros: 0, resetAt: null, freesAt: null,
   })
 
   it('picks the limit with the least room left', () => {
@@ -71,5 +74,45 @@ describe('custom limit enforcement helpers', () => {
       .toBe('You\'ve reached the "Opus" weekly usage limit. It resets Monday at 00:00 UTC.')
     expect(customLimitMessage({ name: 'Opus', period: 'five_hour', resetAt: null, freesAt: new Date('2026-10-22T17:05:00.000Z') }))
       .toBe('You\'ve reached the "Opus" usage limit for the last 5 hours. Usage starts to free up at 17:05 UTC.')
+  })
+})
+
+describe('pool shares of custom limits', () => {
+  it('offers the share left, capped by what the owner has left', () => {
+    const limit = { limitMicros: 1_000, poolSharePercent: 25, poolUsedMicros: 0, remainingMicros: 1_000 }
+    expect(poolShareAvailableMicros(limit)).toBe(250)
+    expect(poolShareAvailableMicros({ ...limit, poolUsedMicros: 200 })).toBe(50)
+    expect(poolShareAvailableMicros({ ...limit, poolUsedMicros: 300 })).toBe(0)
+    expect(poolShareAvailableMicros({ ...limit, remainingMicros: 100 })).toBe(100)
+    expect(poolShareAvailableMicros({ ...limit, poolSharePercent: 0 })).toBe(0)
+  })
+
+  it('draws on shares in order, each up to what it has left', () => {
+    const shares = [
+      { limitId: 'a', ownerUserId: 'owner-1', availableMicros: 30 },
+      { limitId: 'b', ownerUserId: 'owner-2', availableMicros: 50 },
+    ]
+    expect(allocateCustomLimitDraws(0, shares)).toEqual([])
+    expect(allocateCustomLimitDraws(-5, shares)).toEqual([])
+    expect(allocateCustomLimitDraws(40, shares)).toEqual([
+      { limitId: 'a', ownerUserId: 'owner-1', micros: 30 },
+      { limitId: 'b', ownerUserId: 'owner-2', micros: 10 },
+    ])
+    expect(allocateCustomLimitDraws(500, shares).reduce((sum, draw) => sum + draw.micros, 0)).toBe(80)
+  })
+
+  it('uses the member\'s own room first when a reservation shrinks or settles', () => {
+    // A 100 reservation with 60 of the member's own room and 40 drawn from two owners.
+    const draws = [
+      { limitId: 'a', ownerUserId: 'owner-1', reservedMicros: 30 },
+      { limitId: 'b', ownerUserId: 'owner-2', reservedMicros: 10 },
+    ]
+    expect(shrinkCustomLimitDraws(100, 100, draws)).toEqual([
+      { limitId: 'a', ownerUserId: 'owner-1', micros: 30 },
+      { limitId: 'b', ownerUserId: 'owner-2', micros: 10 },
+    ])
+    expect(shrinkCustomLimitDraws(75, 100, draws)).toEqual([{ limitId: 'a', ownerUserId: 'owner-1', micros: 15 }])
+    expect(shrinkCustomLimitDraws(60, 100, draws)).toEqual([])
+    expect(shrinkCustomLimitDraws(0, 100, draws)).toEqual([])
   })
 })

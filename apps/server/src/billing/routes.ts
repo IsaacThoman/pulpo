@@ -135,7 +135,7 @@ export function dailySpendSummary(spend: DailySpend | null) {
   }
 }
 
-export function customLimitSummary(limit: CustomLimitUsage, modelNames: Map<string, string>) {
+export function customLimitSummary(limit: CustomLimitUsage, modelNames: Map<string, string>, inPool = false) {
   const pendingMicros = Math.min(limit.pendingMicros, Math.max(0, limit.limitMicros - limit.spentMicros))
   return {
     id: limit.id,
@@ -143,6 +143,8 @@ export function customLimitSummary(limit: CustomLimitUsage, modelNames: Map<stri
     period: limit.period,
     // Empty when the limit covers every model.
     models: limit.modelIds.map((id) => modelNames.get(id) ?? id),
+    // Only meaningful to someone with pool members to share with.
+    poolSharePercent: inPool ? limit.poolSharePercent : 0,
     remainingPercentage: Math.round(billingLimitPercentage(limit.remainingMicros, limit.limitMicros)),
     availableBarPercentage: billingLimitPercentage(limit.remainingMicros, limit.limitMicros),
     pendingMicros,
@@ -186,7 +188,7 @@ export async function registerBillingRoutes(app: FastifyInstance): Promise<void>
     const customLimits = await db.transaction(async (tx) => {
       const usage = await loadCustomLimitUsage(tx, { userId: user.id, role: user.role, plan: entitlements.plan })
       const modelNames = await customLimitModelNames(tx, usage)
-      return usage.map((limit) => customLimitSummary(limit, modelNames))
+      return usage.map((limit) => customLimitSummary(limit, modelNames, poolBalance !== null))
     })
     const subscription = selectSummarySubscription(subscriptions, entitlements.subscriptionPlan)
     const fiveHour = entitlements.fiveHourRemainingPercentage === null

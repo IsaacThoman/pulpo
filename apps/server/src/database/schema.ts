@@ -1534,6 +1534,8 @@ export const billingCustomLimits = pgTable('billing_custom_limits', {
   target: text('target').notNull(),
   plans: jsonb('plans').$type<string[]>().notNull().default([]),
   userIds: jsonb('user_ids').$type<string[]>().notNull().default([]),
+  // Part of each covered user's limit that their pool members may use once past their own limits.
+  poolSharePercent: integer('pool_share_percent').notNull().default(0),
   enabled: boolean('enabled').notNull().default(true),
   createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
   ...timestamps,
@@ -1541,6 +1543,32 @@ export const billingCustomLimits = pgTable('billing_custom_limits', {
   check('billing_custom_limits_period_check', sql`${table.period} in ('five_hour', 'daily', 'weekly')`),
   check('billing_custom_limits_target_check', sql`${table.target} in ('everyone', 'plans', 'users')`),
   check('billing_custom_limits_amount_check', sql`${table.limitMicros} >= 0`),
+  check('billing_custom_limits_pool_share_check', sql`${table.poolSharePercent} between 0 and 100`),
+])
+
+/** Pool owners whose shared custom limit covers part of a member's pending reservation. */
+export const budgetReservationCustomLimitDraws = pgTable('budget_reservation_custom_limit_draws', {
+  reservationId: uuid('reservation_id').notNull().references(() => budgetReservations.id, { onDelete: 'cascade' }),
+  limitId: uuid('limit_id').notNull().references(() => billingCustomLimits.id, { onDelete: 'cascade' }),
+  ownerUserId: uuid('owner_user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  reservedMicros: bigint('reserved_micros', { mode: 'number' }).notNull(),
+}, (table) => [
+  primaryKey({ name: 'budget_reservation_custom_limit_draws_pk', columns: [table.reservationId, table.limitId, table.ownerUserId] }),
+  index('budget_reservation_custom_limit_draws_owner_idx').on(table.limitId, table.ownerUserId),
+  check('budget_reservation_custom_limit_draws_amount_check', sql`${table.reservedMicros} >= 0`),
+])
+
+/** Settled pool member usage counted against an owner's shared custom limit. */
+export const customLimitPoolUsage = pgTable('custom_limit_pool_usage', {
+  id: uuid('id').primaryKey(),
+  limitId: uuid('limit_id').notNull().references(() => billingCustomLimits.id, { onDelete: 'cascade' }),
+  ownerUserId: uuid('owner_user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  micros: bigint('micros', { mode: 'number' }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('custom_limit_pool_usage_owner_idx').on(table.limitId, table.ownerUserId, table.createdAt),
+  check('custom_limit_pool_usage_amount_check', sql`${table.micros} > 0`),
 ])
 
 export const dailyUsageRollups = pgTable('daily_usage_rollups', {

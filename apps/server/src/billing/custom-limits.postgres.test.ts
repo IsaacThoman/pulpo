@@ -2,8 +2,8 @@ import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { and, eq, inArray, ne } from 'drizzle-orm'
 import { db, queryClient } from '../database/client.js'
-import { billingAccounts, billingCustomLimits, chats, modelPricingVersions, models, providerConnections, responses, usageEvents, users } from '../database/schema.js'
-import { reserveBudget, resizeBudgetReservation, settleBudget } from '../accounting/service.js'
+import { billingAccounts, billingCustomLimits, budgetReservationCustomLimitDraws, budgetReservations, chats, customLimitPoolUsage, modelPricingVersions, models, poolMembers, pools, providerConnections, responses, usageEvents, users } from '../database/schema.js'
+import { releaseBudget, reserveBudget, resizeBudgetReservation, retainBudgetReservation, settleBudget } from '../accounting/service.js'
 import { CUSTOM_LIMIT_CODE, loadCustomLimitUsage } from './custom-limits.js'
 
 vi.mock('../responses/events.js', () => ({ publishStateChange: vi.fn() }))
@@ -20,7 +20,7 @@ if (enabled && new URL(process.env.DATABASE_URL ?? 'http://invalid').pathname !=
 const providerId = randomUUID()
 const limitedModelId = `custom-limit-${randomUUID()}`
 const otherModelId = `custom-limit-other-${randomUUID()}`
-const userIds: string[] = [], limitIds: string[] = []
+const userIds: string[] = [], limitIds: string[] = [], poolIds: string[] = []
 const pricing = (modelId: string) => ({ id: randomUUID(), modelId, inputPriceMicros: 1_000_000, cachedInputPriceMicros: 0, cacheWritePriceMicros: 0, outputPriceMicros: 1_000_000, perRequestPriceMicros: 0 })
 const limitedPricing = pricing(limitedModelId), otherPricing = pricing(otherModelId)
 const usage = { inputTokens: 1, cachedInputTokens: 0, cacheWriteTokens: 0, outputTokens: 100, reasoningTokens: 0, totalTokens: 101 }
@@ -42,6 +42,16 @@ async function limit(values: Partial<typeof billingCustomLimits.$inferInsert> & 
   await db.insert(billingCustomLimits).values({ id, name: 'QA limit', period: 'daily', target: 'everyone', modelIds: [limitedModelId], ...values })
   return id
 }
+async function pool(...members: string[]) {
+  const id = randomUUID(); poolIds.push(id)
+  await db.insert(pools).values({ id, ownerUserId: members[0]! })
+  await db.insert(poolMembers).values(members.map((userId) => ({ id: randomUUID(), poolId: id, userId })))
+}
+async function draws(responseId: string) {
+  return db.select({ limitId: budgetReservationCustomLimitDraws.limitId, ownerUserId: budgetReservationCustomLimitDraws.ownerUserId, reservedMicros: budgetReservationCustomLimitDraws.reservedMicros })
+    .from(budgetReservationCustomLimitDraws).innerJoin(budgetReservations, eq(budgetReservations.id, budgetReservationCustomLimitDraws.reservationId))
+    .where(eq(budgetReservations.responseId, responseId))
+}
 async function spend(userId: string, costMicros: number, createdAt: Date, modelId = limitedModelId, requestedModelId = modelId) {
   await db.insert(usageEvents).values({ id: randomUUID(), userId, modelId, requestedModelId, inputTokens: 1, outputTokens: 1, costMicros, latencyMs: 1, createdAt })
 }
@@ -53,6 +63,7 @@ describe.skipIf(!enabled)('custom limits in PostgreSQL', () => {
     await db.insert(modelPricingVersions).values([limitedPricing, otherPricing])
   })
   afterAll(async () => {
+    if (poolIds.length) await db.delete(pools).where(inArray(pools.id, poolIds))
     if (limitIds.length) await db.delete(billingCustomLimits).where(inArray(billingCustomLimits.id, limitIds))
     if (userIds.length) {
       await db.delete(usageEvents).where(inArray(usageEvents.userId, userIds))
@@ -127,5 +138,76 @@ describe.skipIf(!enabled)('custom limits in PostgreSQL', () => {
     expect(byName.get('Weekly')).toMatchObject({ spentMicros: 650, remainingMicros: 350, resetAt: new Date('2026-10-26T00:00:00.000Z') })
     const forOtherModel = await db.transaction((tx) => loadCustomLimitUsage(tx, { userId, role: 'user', plan: 'baby', modelIds: [otherModelId], now }))
     expect(forOtherModel.map((row) => row.name)).toEqual(['Weekly'])
+  })
+
+  describe('pool shares', () => {
+    it('lets a pool member past their own limit use the shared part of a member\'s limit', async () => {
+      const owner = await account({ plan: 'fat' }), member = await account()
+      await pool(owner, member)
+      const shared = await limit({ limitMicros: 40_000, target: 'users', userIds: [owner], poolSharePercent: 25 })
+      await limit({ limitMicros: 5_000, target: 'users', userIds: [member] })
+      const input = await request(member)
+      // 5,000 of the member's own room plus a quarter of the owner's 40,000.
+      expect(await reserveBudget(input)).toEqual({ amountMicros: 15_000, maxOutputTokens: 14_999 })
+      expect(await draws(input.responseId)).toEqual([{ limitId: shared, ownerUserId: owner, reservedMicros: 10_000 }])
+      // Resizing in place does not count the reservation's own draws against it.
+      expect(await resizeBudgetReservation({ ...input, accruedCostMicros: 0 })).toEqual({ amountMicros: 15_000, maxOutputTokens: 14_999 })
+      expect(await draws(input.responseId)).toEqual([{ limitId: shared, ownerUserId: owner, reservedMicros: 10_000 }])
+      await expect(reserveBudget(await request(member))).rejects.toMatchObject({ code: CUSTOM_LIMIT_CODE })
+
+      // The owner's pending share counts against their own limit.
+      const ownerPending = (await db.transaction((tx) => loadCustomLimitUsage(tx, { userId: owner, role: 'user', plan: 'fat' }))).find((row) => row.id === shared)
+      expect(ownerPending).toMatchObject({ pendingMicros: 10_000, remainingMicros: 30_000, poolUsedMicros: 10_000 })
+
+      // 6,000 settles: the member's own 5,000 first, then 1,000 of the share.
+      await settleBudget({ responseId: input.responseId, usage, latencyMs: 1, costMicrosOverride: 6_000 })
+      const ownerSettled = (await db.transaction((tx) => loadCustomLimitUsage(tx, { userId: owner, role: 'user', plan: 'fat' }))).find((row) => row.id === shared)
+      expect(ownerSettled).toMatchObject({ spentMicros: 1_000, pendingMicros: 0, remainingMicros: 39_000, poolUsedMicros: 1_000 })
+      expect(await db.select({ userId: customLimitPoolUsage.userId, micros: customLimitPoolUsage.micros }).from(customLimitPoolUsage)
+        .where(eq(customLimitPoolUsage.limitId, shared))).toEqual([{ userId: member, micros: 1_000 }])
+      // The member's own limit is used up, and 9,000 of the share is left.
+      expect(await reserveBudget(await request(member))).toEqual({ amountMicros: 9_000, maxOutputTokens: 8_999 })
+    })
+
+    it('shares nothing at 0% or outside the pool', async () => {
+      const owner = await account(), member = await account(), stranger = await account()
+      await pool(owner, member)
+      await limit({ limitMicros: 10_000, target: 'users', userIds: [owner] })
+      await limit({ limitMicros: 10_000, target: 'users', userIds: [stranger], poolSharePercent: 50 })
+      await limit({ limitMicros: 0, target: 'users', userIds: [member] })
+      await expect(reserveBudget(await request(member))).rejects.toMatchObject({ code: CUSTOM_LIMIT_CODE })
+    })
+
+    it('never shares more than the owner has left', async () => {
+      const owner = await account(), member = await account()
+      await pool(owner, member)
+      await limit({ limitMicros: 100_000, target: 'users', userIds: [owner], poolSharePercent: 50 })
+      await limit({ limitMicros: 0, target: 'users', userIds: [member] })
+      await spend(owner, 91_000, new Date())
+      expect((await reserveBudget(await request(member))).amountMicros).toBe(9_000)
+    })
+
+    it('leaves members without a limit of their own alone', async () => {
+      const owner = await account(), member = await account()
+      await pool(owner, member)
+      await limit({ limitMicros: 10_000, target: 'users', userIds: [owner], poolSharePercent: 25 })
+      const input = await request(member)
+      expect((await reserveBudget(input)).amountMicros).toBe(16_001)
+      expect(await draws(input.responseId)).toEqual([])
+    })
+
+    it('gives back draws when a reservation shrinks or is released', async () => {
+      const owner = await account(), member = await account()
+      await pool(owner, member)
+      const shared = await limit({ limitMicros: 40_000, target: 'users', userIds: [owner], poolSharePercent: 25 })
+      await limit({ limitMicros: 5_000, target: 'users', userIds: [member] })
+      const input = await request(member)
+      expect((await reserveBudget(input)).amountMicros).toBe(15_000)
+      await retainBudgetReservation(input.responseId, 6_000)
+      expect(await draws(input.responseId)).toEqual([{ limitId: shared, ownerUserId: owner, reservedMicros: 1_000 }])
+      await releaseBudget(input.responseId)
+      const [ownerUsage] = await db.transaction((tx) => loadCustomLimitUsage(tx, { userId: owner, role: 'user', plan: 'baby' }))
+      expect(ownerUsage).toMatchObject({ pendingMicros: 0, remainingMicros: 40_000, poolUsedMicros: 0 })
+    })
   })
 })

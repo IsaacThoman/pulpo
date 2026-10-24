@@ -74,6 +74,8 @@ export interface CustomLimitSummary {
   period: CustomLimitPeriod
   /** Names of the models the limit covers; empty when it covers every model. */
   models: string[]
+  /** Share pool members may use once past their own limits; 0 outside a pool. Older servers omit it. */
+  poolSharePercent?: number
   remainingPercentage: number
   availableBarPercentage: number
   pendingMicros: number
