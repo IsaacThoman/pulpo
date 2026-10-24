@@ -32,9 +32,11 @@ function scopedKey(scope: string, identity: ProviderCacheIdentity): string {
 }
 
 export function providerCacheRequestOptions(
-  provider: Pick<Provider, 'cacheAffinityMode' | 'cacheAffinityScope' | 'cacheIsolationMode' | 'cacheIsolationScope'>,
+  provider: Pick<Provider, 'apiFormat' | 'cacheAffinityMode' | 'cacheAffinityScope' | 'cacheIsolationMode' | 'cacheIsolationScope'>,
   identity: ProviderCacheIdentity,
 ): ProviderCacheRequestOptions {
+  // Anthropic caches by request prefix, so the OpenAI and Fireworks routing keys have no effect there.
+  if (provider.apiFormat === 'anthropic_messages') return {}
   const headers: Record<string, string> = {}
   let promptCacheKey: string | undefined
   let sessionId: string | undefined

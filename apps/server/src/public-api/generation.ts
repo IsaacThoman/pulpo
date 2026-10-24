@@ -155,7 +155,7 @@ export async function executePublicGeneration(input: {
   if (!created) {
     // The temporary chat references the model, so reject unknown ids before inserting it.
     const [model] = await db.select({ id: models.id }).from(models).where(eq(models.id, input.request.model)).limit(1)
-    if (!model) throw new AppError(400, 'model_not_found', 'The selected model is unavailable', 'invalid_request_error', 'model')
+    if (!model) throw new AppError(input.request.protocol === 'anthropic_messages' ? 404 : 400, 'model_not_found', 'The selected model is unavailable', 'invalid_request_error', 'model')
     await assertModelsAccessibleToUser([model.id], input.key.userId)
     const chatId = newId()
     await db.insert(chats).values({
