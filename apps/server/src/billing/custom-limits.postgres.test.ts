@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
-import { eq, inArray } from 'drizzle-orm'
+import { and, eq, inArray, ne } from 'drizzle-orm'
 import { db, queryClient } from '../database/client.js'
 import { billingAccounts, billingCustomLimits, chats, modelPricingVersions, models, providerConnections, responses, usageEvents, users } from '../database/schema.js'
 import { reserveBudget, resizeBudgetReservation, settleBudget } from '../accounting/service.js'
@@ -57,9 +57,9 @@ describe.skipIf(!enabled)('custom limits in PostgreSQL', () => {
     if (userIds.length) {
       await db.delete(usageEvents).where(inArray(usageEvents.userId, userIds))
       await db.delete(chats).where(inArray(chats.userId, userIds))
-      // Accounts cannot delete the last administrator, so demote the fixture admin first.
-      await db.update(users).set({ role: 'user' }).where(inArray(users.id, userIds))
-      await db.delete(users).where(inArray(users.id, userIds))
+      // The database refuses to remove its last unblocked administrator, so the
+      // fixture admin stays in this disposable database, like other admin fixtures.
+      await db.delete(users).where(and(inArray(users.id, userIds), ne(users.role, 'admin')))
     }
     await db.delete(models).where(inArray(models.id, [limitedModelId, otherModelId]))
     await db.delete(providerConnections).where(eq(providerConnections.id, providerId))
