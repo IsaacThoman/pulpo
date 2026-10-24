@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, inArray, isNull, ne, notInArray, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { chatPresetsSchema, createModelSchema, createProviderSchema, modelAllowedUserIdsSchema, modelHiddenPlatformsSchema, secretRevealInputSchema, updateProviderSchema, type ChatPreset } from '@pulpo/contracts'
+import { chatPresetsSchema, createModelSchema, createProviderSchema, DATA_RETENTION_TAG_NONE, DATA_RETENTION_TAGS_SETTING_KEY, modelAllowedUserIdsSchema, modelDataRetentionTagIdSchema, modelHiddenPlatformsSchema, parseDataRetentionTags, resolveDataRetentionTag, secretRevealInputSchema, updateProviderSchema, type ChatPreset } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import {
   auditEvents,
@@ -100,6 +100,19 @@ async function validateWarningLinks(modelId: string, warningMessage: string | un
   const catalog = await db.select({ id: models.id, enabled: models.enabled }).from(models)
   const error = modelWarningLinkError(modelId, warningMessage, catalog)
   if (error) throw new AppError(409, 'invalid_warning_link', error)
+}
+
+async function readDataRetentionTags() {
+  const [row] = await db.select({ value: applicationSettings.value }).from(applicationSettings)
+    .where(eq(applicationSettings.key, DATA_RETENTION_TAGS_SETTING_KEY)).limit(1)
+  return parseDataRetentionTags(row?.value)
+}
+
+async function validateDataRetentionTagId(tagId: string | null | undefined): Promise<void> {
+  if (!tagId || tagId === DATA_RETENTION_TAG_NONE) return
+  if (!(await readDataRetentionTags()).some((tag) => tag.id === tagId)) {
+    throw new AppError(400, 'unknown_data_retention_tag', 'Choose an existing data retention tag')
+  }
 }
 
 async function nextModelSortOrder(labId: string): Promise<number> {
@@ -224,6 +237,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
       // Lab order is the default model-menu lab order for accounts that have not reordered labs.
       .orderBy(sql`${labs.sortOrder} asc nulls last`, asc(models.sortOrder), asc(models.createdAt))
     const [agentRow] = await db.select().from(applicationSettings).where(eq(applicationSettings.key, 'agent')).limit(1)
+    const dataRetentionTags = await readDataRetentionTags()
     const iconRows = await db.select().from(catalogIcons)
     const iconById = new Map(iconRows.map((icon) => [icon.id, icon]))
     const customIcon = (id: string | null) => id && iconById.has(id) ? catalogIconUrls(iconById.get(id)!) : null
@@ -250,6 +264,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
       tags: model.tags,
       agentEnabled: model.agentEnabled,
       provider: { id: provider.id, name: provider.name },
+      dataRetention: resolveDataRetentionTag(dataRetentionTags, provider.dataRetentionTagId, model.dataRetentionTagId),
       lab: lab ? { id: lab.id, name: lab.name, logo: lab.logo, customIcon: customIcon(lab.customIconId) } : null,
       iconLight: model.iconLight,
       iconDark: model.iconDark,
@@ -308,6 +323,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
     const admin = requireAdmin(request)
     const input = createProviderSchema.parse(request.body)
     await assertSafeProviderUrl(input.baseUrl)
+    await validateDataRetentionTagId(input.dataRetentionTagId)
     const id = newId()
     await db.transaction(async (tx) => {
       await tx.insert(providerConnections).values({
@@ -326,6 +342,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
         toolResultImageMode: input.toolResultImageMode,
         convertImagesToWebp: input.convertImagesToWebp,
         webpQuality: input.webpQuality,
+        dataRetentionTagId: input.dataRetentionTagId,
       })
       await tx.insert(auditEvents).values({
         id: newId(), actorUserId: admin.id, action: 'provider.create', targetType: 'provider', targetId: id,
@@ -341,6 +358,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
     if (id === INTERNAL_PROVIDER_ID || isManagedProviderId(id)) throw notFound('Provider')
     const body = updateProviderSchema.parse(request.body)
     if (body.baseUrl) await assertSafeProviderUrl(body.baseUrl)
+    await validateDataRetentionTagId(body.dataRetentionTagId)
     const [updated] = await db.update(providerConnections).set({
       name: body.name, apiFormat: body.apiFormat, baseUrl: body.baseUrl,
       encryptedApiKey: body.apiKey ? encryptSecret(body.apiKey, getConfig().ENCRYPTION_KEY) : undefined,
@@ -353,6 +371,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
       toolResultImageMode: body.toolResultImageMode,
       convertImagesToWebp: body.convertImagesToWebp,
       webpQuality: body.webpQuality,
+      dataRetentionTagId: body.dataRetentionTagId,
       enabled: body.enabled,
       updatedAt: new Date(),
     }).where(eq(providerConnections.id, id)).returning()
@@ -648,6 +667,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
     await validateFallback(input.id, input.fallbackModelId)
     await validateWarningLinks(input.id, input.warningMessage)
     if (input.customIconId) await requireCatalogIcon(input.customIconId)
+    await validateDataRetentionTagId(input.dataRetentionTagId)
     await validatePresets(input.id, raw.presets, input.allowedParameters)
     await validateGrantUsers(input.allowedUserIds)
     const pricingId = newId()
@@ -670,6 +690,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
         restricted: input.restricted,
         logo: input.logo,
         customIconId: input.customIconId,
+        dataRetentionTagId: input.dataRetentionTagId,
         systemPrompt: input.systemPrompt,
         agentEnabled: input.agentEnabled,
         agentInstructions: input.agentInstructions,
@@ -732,6 +753,8 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
     const warningDismissDays = createModelSchema.shape.warningDismissDays.removeDefault().optional().parse(body.warningDismissDays)
     const hiddenPlatforms = modelHiddenPlatformsSchema.optional().parse(body.hiddenPlatforms)
     const restricted = z.boolean().optional().parse(body.restricted)
+    const dataRetentionTagId = modelDataRetentionTagIdSchema.optional().parse(body.dataRetentionTagId)
+    await validateDataRetentionTagId(dataRetentionTagId)
     const allowedUserIds = modelAllowedUserIdsSchema.optional().parse(body.allowedUserIds)
     const compactionPatch = z.object({
       compactionEnabled: z.boolean().optional(),
@@ -767,6 +790,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
       restricted,
       logo: typeof body.logo === 'string' ? body.logo : body.logo === null ? null : undefined,
       customIconId: typeof body.customIconId === 'string' ? body.customIconId : body.customIconId === null ? null : undefined,
+      dataRetentionTagId,
       systemPrompt: typeof body.systemPrompt === 'string' ? body.systemPrompt : undefined,
       agentEnabled: typeof body.agentEnabled === 'boolean' ? body.agentEnabled : undefined,
       agentInstructions: typeof body.agentInstructions === 'string' ? body.agentInstructions : undefined,

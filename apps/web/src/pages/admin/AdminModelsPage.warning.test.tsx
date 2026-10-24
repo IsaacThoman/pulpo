@@ -16,7 +16,7 @@ function mockModels(warningMessage = '', extraModels: Record<string, unknown>[] 
     contextWindow: 200000, maxOutputTokens: 16000, warningMessage,
     inputPriceMicros: 0, cachedInputPriceMicros: 0, cacheWritePriceMicros: 0, outputPriceMicros: 0,
   }), presets: [] }
-  mocks.api.mockImplementation(async (path: string) => ({ data:
+  mocks.api.mockImplementation(async (path: string) => ({ values: {}, data:
     path === '/api/admin/models' ? [model, ...extraModels.map((extra) => ({ ...model, ...extra }))]
       : path === '/api/admin/providers' ? [{ id: model.providerConnectionId, name: 'OpenRouter' }]
         : path === '/api/admin/labs' ? [{ id: model.labId, name: 'Anthropic', customIconId: null }] : [],

@@ -7,6 +7,8 @@ export * from './avatar-crop.js'
 export * from './response-timing.js'
 export * from './usage-cost.js'
 export * from './admin-analytics.js'
+export * from './data-retention.js'
+import { dataRetentionTagSchema, modelDataRetentionTagIdSchema, providerDataRetentionTagIdSchema } from './data-retention.js'
 import type { ComposerAck, ComposerSnapshot, ComposerWrite } from './composer.js'
 import type { DocAck, DocClosedEvent, DocJoinInput, DocJoinResult, DocUpdateMessage } from './files.js'
 import { fileAccessModeSchema, fileColorSchema, type FileColor } from './files.js'
@@ -924,6 +926,8 @@ export const modelSchema = z.object({
   agentEnabled: z.boolean().default(false),
   warningMessage: z.string().default(''),
   warningDismissDays: z.number().int().nonnegative().default(DEFAULT_MODEL_WARNING_DISMISS_DAYS),
+  /** The data retention tag shown beside the provider, resolved from the model override or provider default. */
+  dataRetention: dataRetentionTagSchema.nullable().optional(),
 })
 export type Model = z.infer<typeof modelSchema>
 
@@ -1022,6 +1026,7 @@ export const createProviderSchema = z.object({
   toolResultImageMode: providerToolResultImageModeSchema.default('native'),
   convertImagesToWebp: z.boolean().default(false),
   webpQuality: z.number().int().min(1).max(100).default(80),
+  dataRetentionTagId: providerDataRetentionTagIdSchema.default(null),
 })
 
 export const updateProviderSchema = z.object({
@@ -1039,6 +1044,7 @@ export const updateProviderSchema = z.object({
   toolResultImageMode: providerToolResultImageModeSchema.optional(),
   convertImagesToWebp: z.boolean().optional(),
   webpQuality: z.number().int().min(1).max(100).optional(),
+  dataRetentionTagId: providerDataRetentionTagIdSchema.optional(),
   enabled: z.boolean().optional(),
 })
 
@@ -1135,6 +1141,7 @@ export const createModelSchema = z.object({
   allowedUserIds: modelAllowedUserIdsSchema.default([]),
   logo: z.string().max(120).nullable().default(null),
   customIconId: idSchema.nullable().default(null),
+  dataRetentionTagId: modelDataRetentionTagIdSchema.default(null),
   systemPrompt: z.string().max(100_000).default(''),
   agentEnabled: z.boolean().default(false),
   agentInstructions: z.string().max(100_000).default(''),

@@ -10,6 +10,9 @@ import { apiRequest } from '@/lib/api'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { hideProviderApiKey, providerApiKeyPatch } from './provider-key-state'
 import { SensitiveRevealDialog, type SensitiveRevealCredentials } from '@/components/admin/SensitiveRevealDialog'
+import { DATA_RETENTION_TAGS_SETTING_KEY, parseDataRetentionTags, type DataRetentionTag } from '@pulpo/contracts'
+import { DataRetentionBadgeMark } from '@/components/chat/DataRetentionBadge'
+import { DataRetentionTagsEditor } from './DataRetentionTagsEditor'
 
 type CacheAffinityMode = 'none' | 'openai_prompt_cache_key' | 'fireworks_session_affinity'
 type CacheIsolationMode = 'none' | 'fireworks_prompt_cache_isolation'
@@ -48,8 +51,11 @@ interface AdminProvider {
   toolResultImageMode: ToolResultImageMode
   convertImagesToWebp: boolean
   webpQuality: number
+  dataRetentionTagId: string | null
   lastHealthStatus?: string | null
 }
+
+const NO_RETENTION_TAG = '__none__'
 import {
   Dialog,
   DialogContent,
@@ -74,6 +80,7 @@ type Draft = {
   toolResultImageMode: ToolResultImageMode
   convertImagesToWebp: boolean
   webpQuality: string
+  dataRetentionTagId: string | null
 }
 
 const emptyDraft = (): Draft => ({
@@ -90,6 +97,7 @@ const emptyDraft = (): Draft => ({
   toolResultImageMode: 'native',
   convertImagesToWebp: false,
   webpQuality: '80',
+  dataRetentionTagId: null,
 })
 
 export function AdminProvidersPage() {
@@ -97,13 +105,16 @@ export function AdminProvidersPage() {
   const [draft, setDraft] = useState<Draft | null>(null)
   const [showKey, setShowKey] = useState(false)
   const [revealOpen, setRevealOpen] = useState(false)
+  const [retentionTags, setRetentionTags] = useState<DataRetentionTag[]>([])
 
   const load = async () => {
-    const [providerResponse, modelResponse, speechResponse] = await Promise.all([
+    const [providerResponse, modelResponse, speechResponse, settingsResponse] = await Promise.all([
       apiRequest<{ data: Omit<AdminProvider, 'modelCount'>[] }>('/api/admin/providers'),
       apiRequest<{ data: Array<{ providerConnectionId: string }> }>('/api/admin/models'),
       apiRequest<{ data: Array<{ providerConnectionId: string }> }>('/api/admin/speech-models'),
+      apiRequest<{ values: Record<string, unknown> }>('/api/admin/settings'),
     ])
+    setRetentionTags(parseDataRetentionTags(settingsResponse.values[DATA_RETENTION_TAGS_SETTING_KEY]))
     setProviders(providerResponse.data.map((provider) => ({
       ...provider,
       modelCount: [...modelResponse.data, ...speechResponse.data].filter((model) => model.providerConnectionId === provider.id).length,
@@ -111,6 +122,18 @@ export function AdminProvidersPage() {
   }
 
   useEffect(() => { void load() }, [])
+
+  const saveRetentionTags = async (tags: DataRetentionTag[]) => {
+    const response = await apiRequest<{ values: Record<string, unknown> }>('/api/admin/settings', {
+      method: 'PATCH', body: { [DATA_RETENTION_TAGS_SETTING_KEY]: tags },
+    })
+    setRetentionTags(parseDataRetentionTags(response.values[DATA_RETENTION_TAGS_SETTING_KEY]))
+  }
+
+  const retentionTagUsage = new Map<string, number>()
+  for (const provider of providers) {
+    if (provider.dataRetentionTagId) retentionTagUsage.set(provider.dataRetentionTagId, (retentionTagUsage.get(provider.dataRetentionTagId) ?? 0) + 1)
+  }
 
   const openAdd = () => {
     setShowKey(false)
@@ -135,6 +158,8 @@ export function AdminProvidersPage() {
       toolResultImageMode: p.toolResultImageMode,
       convertImagesToWebp: p.convertImagesToWebp ?? false,
       webpQuality: String(p.webpQuality ?? 80),
+      // A tag deleted since it was assigned no longer shows, so saving clears it.
+      dataRetentionTagId: retentionTags.some((tag) => tag.id === p.dataRetentionTagId) ? p.dataRetentionTagId : null,
     })
   }
 
@@ -188,6 +213,7 @@ export function AdminProvidersPage() {
           toolResultImageMode: draft.toolResultImageMode,
           convertImagesToWebp: draft.convertImagesToWebp,
           webpQuality: qualityValid ? quality : 80,
+          dataRetentionTagId: draft.dataRetentionTagId,
           ...providerApiKeyPatch(draft),
         },
       })
@@ -202,6 +228,7 @@ export function AdminProvidersPage() {
           toolResultImageMode: draft.toolResultImageMode,
           convertImagesToWebp: draft.convertImagesToWebp,
           webpQuality: qualityValid ? quality : 80,
+          dataRetentionTagId: draft.dataRetentionTagId,
         },
       })
     }
@@ -236,6 +263,7 @@ export function AdminProvidersPage() {
                 <th className="px-3 py-2">{ui("Linked models")}</th>
                 <th className="px-3 py-2">{ui("API key")}</th>
                 <th className="px-3 py-2">{ui("Prompt cache")}</th>
+                <th className="px-3 py-2">{ui("Data retention")}</th>
                 <th className="px-3 py-2 text-right">{ui("Actions")}</th>
               </tr>
             </thead>
@@ -267,6 +295,14 @@ export function AdminProvidersPage() {
                           ? uit`Fireworks · ${p.cacheAffinityScope}`
                           : ui("Disabled")}
                     </Badge>
+                  </td>
+                  <td className="px-3 py-2">
+                    {(() => {
+                      const tag = retentionTags.find((candidate) => candidate.id === p.dataRetentionTagId)
+                      return tag
+                        ? <span className="flex items-center gap-1.5 whitespace-nowrap"><DataRetentionBadgeMark tag={tag} />{tag.name}</span>
+                        : <span className="text-muted-foreground">{ui("None")}</span>
+                    })()}
                   </td>
                   <td className="px-3 py-2">
                     <div className="flex justify-end gap-1">
@@ -301,13 +337,15 @@ export function AdminProvidersPage() {
               ))}
               {!providers.length && (
                 <tr>
-                  <td colSpan={7} className="px-3 py-8 text-center text-muted-foreground"> {ui("No providers yet. Add one to reuse it across models.")} </td>
+                  <td colSpan={8} className="px-3 py-8 text-center text-muted-foreground"> {ui("No providers yet. Add one to reuse it across models.")} </td>
                 </tr>
               )}
             </tbody>
           </table>
         </CardContent>
       </Card>
+
+      <DataRetentionTagsEditor tags={retentionTags} providerUsage={retentionTagUsage} onSave={saveRetentionTags} />
 
       <Dialog open={!!draft} onOpenChange={(v) => !v && closeEditor()}>
         <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg">
@@ -325,6 +363,24 @@ export function AdminProvidersPage() {
                   onChange={(e) => setDraft({ ...draft, name: e.target.value })}
                   autoFocus
                 />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="prov-retention">{ui("Data retention tag")}</Label>
+                <Select
+                  value={draft.dataRetentionTagId ?? NO_RETENTION_TAG}
+                  onValueChange={(value) => setDraft({ ...draft, dataRetentionTagId: value === NO_RETENTION_TAG ? null : value })}
+                >
+                  <SelectTrigger id="prov-retention" className="w-full"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NO_RETENTION_TAG}>{ui("None")}</SelectItem>
+                    {retentionTags.map((tag) => (
+                      <SelectItem key={tag.id} value={tag.id}>
+                        <DataRetentionBadgeMark tag={tag} className="size-3.5" />{tag.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">{ui("Default badge shown beside this provider. Models can override it.")}</p>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="prov-format">{ui("API format")}</Label>

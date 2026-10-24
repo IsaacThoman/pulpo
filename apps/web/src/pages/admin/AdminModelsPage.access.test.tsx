@@ -25,7 +25,7 @@ function mockModels(extra: Record<string, unknown> = {}) {
     contextWindow: 200000, maxOutputTokens: 16000,
     inputPriceMicros: 0, cachedInputPriceMicros: 0, cacheWritePriceMicros: 0, outputPriceMicros: 0,
   }), presets: [], ...extra }
-  mocks.api.mockImplementation(async (path: string) => ({ data:
+  mocks.api.mockImplementation(async (path: string) => ({ values: {}, data:
     path === '/api/admin/models' ? [model]
       : path === '/api/admin/providers' ? [{ id: model.providerConnectionId, name: 'OpenRouter' }]
         : path === '/api/admin/labs' ? [{ id: model.labId, name: 'Anthropic', customIconId: null }]

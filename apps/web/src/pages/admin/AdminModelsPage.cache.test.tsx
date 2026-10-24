@@ -16,7 +16,7 @@ function mockModels(promptCachingEnabled: boolean) {
     contextWindow: 200000, maxOutputTokens: 16000, promptCachingEnabled,
     inputPriceMicros: 0, cachedInputPriceMicros: 0, cacheWritePriceMicros: 0, outputPriceMicros: 0,
   }), presets: [] }
-  mocks.api.mockImplementation(async (path: string) => ({ data:
+  mocks.api.mockImplementation(async (path: string) => ({ values: {}, data:
     path === '/api/admin/models' ? [model]
       : path === '/api/admin/providers' ? [{ id: model.providerConnectionId, name: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1' }]
         : path === '/api/admin/labs' ? [{ id: model.labId, name: 'Anthropic', customIconId: null }] : [],
