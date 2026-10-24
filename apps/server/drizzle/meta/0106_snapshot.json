@@ -1,5 +1,5 @@
 {
-  "id": "458c7021-eb7b-4d39-8bd6-221f7b902f83",
+  "id": "b967a009-fbcc-4ab6-a1af-d9dd1b7f7ad6",
   "prevId": "9f009765-8c0a-4fc7-928d-863815d50888",
   "version": "7",
   "dialect": "postgresql",
@@ -1710,13 +1710,6 @@
           "notNull": true,
           "default": 0
         },
-        "covers_extras": {
-          "name": "covers_extras",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
-        },
         "enabled": {
           "name": "enabled",
           "type": "boolean",
@@ -2453,13 +2446,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "covers_extras": {
-          "name": "covers_extras",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
-        },
         "reserved_micros": {
           "name": "reserved_micros",
           "type": "bigint",
@@ -2724,13 +2710,6 @@
           "notNull": true,
           "default": 0
         },
-        "extra_reserved_micros": {
-          "name": "extra_reserved_micros",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
         "shared_five_hour_period_start": {
           "name": "shared_five_hour_period_start",
           "type": "timestamp with time zone",
@@ -2898,10 +2877,6 @@
         "reservation_five_hour_match_check": {
           "name": "reservation_five_hour_match_check",
           "value": "\"budget_reservations\".\"five_hour_reserved_micros\" >= 0 and \"budget_reservations\".\"five_hour_reserved_micros\" = \"budget_reservations\".\"weekly_reserved_micros\""
-        },
-        "reservation_extra_check": {
-          "name": "reservation_extra_check",
-          "value": "\"budget_reservations\".\"extra_reserved_micros\" >= 0"
         }
       },
       "isRLSEnabled": false
@@ -7793,6 +7768,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "data_retention_tag_id": {
+          "name": "data_retention_tag_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "system_prompt": {
           "name": "system_prompt",
           "type": "text",
@@ -8996,6 +8977,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": 80
+        },
+        "data_retention_tag_id": {
+          "name": "data_retention_tag_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "enabled": {
           "name": "enabled",

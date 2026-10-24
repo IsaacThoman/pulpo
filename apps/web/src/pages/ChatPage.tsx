@@ -21,6 +21,7 @@ import { apiRequest } from '@/lib/api'
 import { resolveDefaultModelId } from '@/lib/default-model'
 import { newChatLocationState, type NewChatLocationState } from '@/lib/new-chat-navigation'
 import { modelSubtitle } from '@/lib/catalog-model'
+import { DataRetentionBadge } from '@/components/chat/DataRetentionBadge'
 import {
   resolveConfiguredChatExpirationPeriod,
   resolveChatLandingBadge,
@@ -113,9 +114,10 @@ function Placeholder({
         <ModelIcon model={model} className="size-12" boxed={false} />
         <h1 className="text-3xl font-semibold tracking-tight">{model.name}</h1>
       </div>
-      <p className="mt-1.5 text-sm text-muted-foreground">
-        {modelSubtitle(model)}
-      </p>
+      <div className="mt-1.5 flex items-center gap-1.5 text-sm text-muted-foreground">
+        <p>{modelSubtitle(model)}</p>
+        {model.dataRetention && <DataRetentionBadge tag={model.dataRetention} />}
+      </div>
       {suggestions.length > 0 && (
         <div className="mt-8 grid w-full max-w-xl grid-cols-1 gap-2 sm:grid-cols-2">
           {suggestions.map((s, i) => (

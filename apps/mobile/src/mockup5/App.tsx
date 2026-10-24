@@ -140,7 +140,8 @@ import { PulsingIcon, SpinningLoader } from '../components/SpinningLoader';
 import { DarkTheme as NavigationDarkTheme, DefaultTheme as NavigationLightTheme, NavigationContainer, useIsFocused } from '@react-navigation/native';
 import { createNativeStackNavigator, type NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useQueryClient } from '@tanstack/react-query';
-import { findCostLimitItem, workspaceContinueWithoutAgentAvailableAtMs, type CostLimitItem } from '@pulpo/contracts';
+import { findCostLimitItem, workspaceContinueWithoutAgentAvailableAtMs, type CostLimitItem, type DataRetentionTag } from '@pulpo/contracts';
+import { DataRetentionBadge } from '../components/DataRetentionBadge';
 import {
   Brain,
   Ghost,
@@ -554,7 +555,7 @@ function useAccessibilityPreferences() {
 
 type SymbolName = ComponentProps<typeof SymbolView>['name'];
 
-type Model = { id: string; redirectTargetModelIds?: string[]; name: string; providerGroupId: string; provider: string; lab: string; icon: ImageSourcePropType; labIcon?: ImageSourcePropType; menuIcon?: ImageSourcePropType; tintColor?: ColorValue; detail: string; agentEnabled: boolean };
+type Model = { id: string; redirectTargetModelIds?: string[]; name: string; providerGroupId: string; provider: string; lab: string; icon: ImageSourcePropType; labIcon?: ImageSourcePropType; menuIcon?: ImageSourcePropType; tintColor?: ColorValue; detail: string; agentEnabled: boolean; dataRetention?: DataRetentionTag | null };
 type ModelSection = string;
 type Attachment = {
   id: string;
@@ -665,7 +666,7 @@ const LOADING_MODEL: Model = {
 
 function prototypeModelToLegacy(model: PrototypeModel, isDark: boolean): Model {
   const icon = aiIconSource(model.modelLogo ?? model.labLogo, isDark, model.modelCustomIcon);
-  return { id: model.id, redirectTargetModelIds: model.redirectTargetModelIds, name: model.name, providerGroupId: model.providerGroupId, provider: model.provider, lab: model.lab, detail: model.description, icon, menuIcon: icon, labIcon: aiIconSource(model.labLogo, isDark, model.labCustomIcon), agentEnabled: model.agentEnabled };
+  return { id: model.id, redirectTargetModelIds: model.redirectTargetModelIds, name: model.name, providerGroupId: model.providerGroupId, provider: model.provider, lab: model.lab, detail: model.description, icon, menuIcon: icon, labIcon: aiIconSource(model.labLogo, isDark, model.labCustomIcon), agentEnabled: model.agentEnabled, dataRetention: model.dataRetention ?? null };
 }
 
 const legacyMessageCache = new WeakMap<PrototypeMessage, { chatId: string; chatModelId: string; value: Message }>();
@@ -5894,7 +5895,10 @@ function ChatView({
             <Text maxFontSizeMultiplier={1.6} style={styles.emptyTitle}>{model.name}</Text>
           </View>
         </View>
-        <Text maxFontSizeMultiplier={1.6} style={styles.emptyProvider}>{modelSubtitle(model)}</Text>
+        <View style={styles.emptyProviderLine}>
+          <Text maxFontSizeMultiplier={1.6} style={styles.emptyProvider}>{modelSubtitle(model)}</Text>
+          {model.dataRetention && <DataRetentionBadge tag={model.dataRetention} />}
+        </View>
       </Reanimated.View>
       {/* iOS retains its grid-based landing transition. Android centers from the
           actual keyboard lift, independently of this hidden grid measurement. */}
@@ -7088,7 +7092,8 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   emptyModelLine: { flexDirection: 'row', alignItems: 'center', gap: 13 },
   emptyModelLineAccessible: { flexDirection: 'column', width: '100%' },
   emptyTitle: { color: COLORS.text, fontSize: 26, fontWeight: '600', letterSpacing: -0.8, textAlign: 'center' },
-  emptyProvider: { color: COLORS.muted, fontSize: 13.5, marginTop: 7 },
+  emptyProviderLine: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 7 },
+  emptyProvider: { color: COLORS.muted, fontSize: 13.5 },
   userRow: { width: '100%', minWidth: 0, alignItems: 'flex-end', marginBottom: 30 },
   userMessageContent: { alignItems: 'flex-end', maxWidth: '88%', minWidth: 0, gap: 7 },
   userMessageContextHost: { maxWidth: '85%', minWidth: 0, alignSelf: 'flex-end' },

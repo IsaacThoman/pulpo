@@ -20,7 +20,7 @@ async function chooseFormat(label: string) {
 const baseUrlInput = () => screen.getByLabelText('Provider base URL') as HTMLInputElement
 
 function mockProviders(providers: unknown[] = []) {
-  mocks.api.mockImplementation(async (path: string) => ({ data: path === '/api/admin/providers' ? providers : [] }))
+  mocks.api.mockImplementation(async (path: string) => path === '/api/admin/settings' ? { values: {} } : { data: path === '/api/admin/providers' ? providers : [] })
 }
 
 it('creates a provider with opt-in WebP conversion and rejects invalid quality', async () => {
@@ -126,4 +126,29 @@ it('creates an explicitly configured native Mistral provider with its default en
   fireEvent.change(screen.getByLabelText('Provider API key'), { target: { value: 'fixture-key' } })
   fireEvent.click(screen.getByRole('button', { name: 'Create' }))
   await waitFor(() => expect(mocks.api).toHaveBeenCalledWith('/api/admin/providers', { method: 'POST', body: expect.objectContaining({ apiFormat: 'mistral_chat_completions', baseUrl: 'https://api.mistral.ai/v1' }) }))
+})
+
+it('assigns a default data retention tag when creating a provider', async () => {
+  mockProviders()
+  render(<AdminProvidersPage />)
+  expect(await screen.findByText('Zero data retention')).toBeTruthy()
+  fireEvent.click(await screen.findByRole('button', { name: 'Add provider' }))
+  fireEvent.keyDown(screen.getByRole('combobox', { name: 'Data retention tag' }), { key: 'ArrowDown' })
+  fireEvent.click(await screen.findByRole('option', { name: '30-day safety retention' }))
+  fireEvent.change(screen.getByLabelText('Provider name'), { target: { value: 'OpenAI' } })
+  fireEvent.change(screen.getByLabelText('Provider API key'), { target: { value: 'fixture-key' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+  await waitFor(() => expect(mocks.api).toHaveBeenCalledWith('/api/admin/providers', { method: 'POST', body: expect.objectContaining({ dataRetentionTagId: 'safety-retention-30d' }) }))
+})
+
+it('saves an edited data retention tag to the application settings', async () => {
+  mockProviders()
+  render(<AdminProvidersPage />)
+  fireEvent.click((await screen.findAllByTitle('Edit tag'))[0]!)
+  fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'ZDR' } })
+  fireEvent.change(screen.getByLabelText('Color'), { target: { value: '#7c3aed' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+  await waitFor(() => expect(mocks.api).toHaveBeenCalledWith('/api/admin/settings', { method: 'PATCH', body: {
+    dataRetentionTags: expect.arrayContaining([expect.objectContaining({ id: 'zero-data-retention', name: 'ZDR', color: '#7c3aed', icon: 'shield-check' })]),
+  } }))
 })

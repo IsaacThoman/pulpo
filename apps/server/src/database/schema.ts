@@ -285,6 +285,8 @@ export const providerConnections = pgTable('provider_connections', {
   toolResultImageMode: text('tool_result_image_mode').notNull().default('native'),
   convertImagesToWebp: boolean('convert_images_to_webp').notNull().default(false),
   webpQuality: integer('webp_quality').notNull().default(80),
+  // Default data retention tag for this provider's models; tags live in application settings.
+  dataRetentionTagId: text('data_retention_tag_id'),
   enabled: boolean('enabled').notNull().default(true),
   lastHealthStatus: text('last_health_status'),
   lastHealthAt: timestamp('last_health_at', { withTimezone: true }),
@@ -371,6 +373,8 @@ export const models = pgTable('models', {
   restricted: boolean('restricted').notNull().default(false),
   logo: text('logo'),
   customIconId: uuid('custom_icon_id').references(() => catalogIcons.id),
+  // Null follows the provider's data retention tag; `none` hides it.
+  dataRetentionTagId: text('data_retention_tag_id'),
   systemPrompt: text('system_prompt').notNull().default(''),
   agentEnabled: boolean('agent_enabled').notNull().default(false),
   agentInstructions: text('agent_instructions').notNull().default(''),

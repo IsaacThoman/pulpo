@@ -38,6 +38,7 @@ interface ServerModel {
   lab: { id: string; name: string; logo: string; customIcon?: CatalogIconReference | null } | null
   presets: Model['presets']
   agentEnabled: boolean
+  dataRetention?: Model['dataRetention']
 }
 
 function fromServer(model: ServerModel): Model {
@@ -56,6 +57,7 @@ function fromServer(model: ServerModel): Model {
     outputPrice: model.outputPriceMicros / 1_000_000,
     perMessagePrice: model.perRequestPriceMicros / 1_000_000,
     enabled: model.enabled, agentEnabled: model.agentEnabled, presets: model.presets,
+    dataRetention: model.dataRetention ?? null,
   }
 }
 

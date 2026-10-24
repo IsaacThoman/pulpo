@@ -9,7 +9,7 @@ import { registerRestoreUploadRoutes } from './restore-upload-routes.js'
 import { and, desc, eq, gt, inArray, isNull, lt, ne, or, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { agentSettingsSchema, backupSettingsTestInputSchema, bannerCreateInputSchema, bannerUpdateInputSchema, bannerWindowIsValid, backupSettingsUpdateSchema, dictationSettingsSchema, episodicMemorySettingsSchema, episodicMemoryStatisticsRangeSchema, personalizationSettingsSchema, secretRevealInputSchema, webToolProviderSchema, webToolsSettingsSchema } from '@pulpo/contracts'
+import { agentSettingsSchema, backupSettingsTestInputSchema, DATA_RETENTION_TAGS_SETTING_KEY, dataRetentionTagsSchema, bannerCreateInputSchema, bannerUpdateInputSchema, bannerWindowIsValid, backupSettingsUpdateSchema, dictationSettingsSchema, episodicMemorySettingsSchema, episodicMemoryStatisticsRangeSchema, personalizationSettingsSchema, secretRevealInputSchema, webToolProviderSchema, webToolsSettingsSchema } from '@pulpo/contracts'
 import { requireAdmin } from '../auth/service.js'
 import { requireSecretRevealAuth } from '../auth/sensitive-action.js'
 import { db } from '../database/client.js'
@@ -155,6 +155,9 @@ export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise
     }
     if (values.personalization !== undefined) values.personalization = personalizationSettingsSchema.parse(values.personalization)
     if (values.agent !== undefined) values.agent = agentSettingsSchema.parse(values.agent)
+    if (values[DATA_RETENTION_TAGS_SETTING_KEY] !== undefined) {
+      values[DATA_RETENTION_TAGS_SETTING_KEY] = dataRetentionTagsSchema.parse(values[DATA_RETENTION_TAGS_SETTING_KEY])
+    }
     // OCR settings use the dedicated endpoint and never pass through this generic settings API.
     if (values.ocr !== undefined) throw new AppError(400, 'dedicated_ocr_endpoint', 'Use /api/admin/settings/ocr for OCR settings')
     if (values.webTools !== undefined) throw new AppError(400, 'dedicated_web_tools_endpoint', 'Use /api/admin/settings/web-tools for web tool settings')
