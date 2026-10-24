@@ -2,6 +2,8 @@
 
 Web and mobile support up to 500 attachments per message, including synchronized composer drafts and shelved drafts. Uploads run three at a time per client, including reservation, transfer, confirmation, and bounded retries for server capacity errors.
 
+Mobile transfers use a foreground network session. Expo's default iOS background session lets the system defer a transfer indefinitely. A transfer that makes no progress for 45 seconds is cancelled and reported as a timeout, which frees its upload slot and offers Retry. Saving the local cache copy no longer delays completion of the upload.
+
 In **Admin → Settings → Authentication**, configure:
 
 - **Maximum attachment size**: defaults to 25 MiB; supports up to 1,000 MiB per file. A value of zero disables new attachments. User storage quotas still apply, including pending upload reservations.

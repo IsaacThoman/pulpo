@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { ApiError } from '../../api/client'
 import { attachmentUploadErrorMessage } from './attachmentUploadError'
+import { uploadFileWithStallTimeout } from './nativeUpload'
 
 describe('attachmentUploadErrorMessage', () => {
   it('explains unreadable provider files', () => {
@@ -21,6 +22,12 @@ describe('attachmentUploadErrorMessage', () => {
   it('gives network failures a retry action', () => {
     expect(attachmentUploadErrorMessage(new TypeError('Network request failed')))
       .toBe('Connection lost during upload. Check your connection and try again.')
+  })
+
+  it('tells the user to retry a stalled transfer', async () => {
+    const stalled = uploadFileWithStallTimeout({ upload: () => new Promise(() => {}) }, 'https://example.com/upload', { httpMethod: 'PUT' }, 1)
+    const error = await stalled.catch((cause: unknown) => cause)
+    expect(attachmentUploadErrorMessage(error)).toBe('The upload timed out. Check your connection and try again.')
   })
 
   it('preserves an actionable configured size limit', () => {
