@@ -1,5 +1,6 @@
 import type Anthropic from '@anthropic-ai/sdk'
 import {
+  clientDisabledThinking,
   functionTools,
   isTextMediaType,
   neutralConversation,
@@ -43,6 +44,23 @@ function imageBlock(url: string): Block {
   return { type: 'image', source: { type: 'url', url } }
 }
 
+// Extensions start with a letter, so ids such as arXiv's `2401.00001` are not mistaken for one.
+const EXTENSION = /\.([a-z][a-z0-9]{0,7})$/i
+
+/** URL documents are PDFs unless the filename or URL path names another extension (arXiv-style URLs have none). */
+function urlDocumentMayBePdf(part: Extract<NeutralPart, { type: 'file' }>): boolean {
+  let path = ''
+  try {
+    path = new URL(part.fileUrl!).pathname
+  } catch {
+    return false
+  }
+  return [part.filename ?? '', path].every((name) => {
+    const extension = EXTENSION.exec(name)?.[1]?.toLowerCase()
+    return !extension || extension === 'pdf'
+  })
+}
+
 function fileBlock(part: Extract<NeutralPart, { type: 'file' }>): Block {
   const parsed = part.fileData ? parseDataUrl(part.fileData) : undefined
   const title = part.filename ? { title: part.filename } : {}
@@ -50,8 +68,8 @@ function fileBlock(part: Extract<NeutralPart, { type: 'file' }>): Block {
   if (parsed && isTextMediaType(parsed.mediaType)) {
     return { type: 'document', source: { type: 'text', media_type: 'text/plain', data: Buffer.from(parsed.data, 'base64').toString('utf8') }, ...title }
   }
-  // Anthropic fetches URL documents itself; URL sources are PDFs.
-  if (!parsed && part.fileUrl) return { type: 'document', source: { type: 'url', url: part.fileUrl }, ...title }
+  // Anthropic fetches URL documents itself, but only PDFs.
+  if (!parsed && part.fileUrl && urlDocumentMayBePdf(part)) return { type: 'document', source: { type: 'url', url: part.fileUrl }, ...title }
   const label = part.filename ?? part.fileId ?? 'attachment'
   return { type: 'text', text: `[Attachment ${label}${parsed ? ` (${parsed.mediaType})` : ''} cannot be read by this model]` }
 }
@@ -153,10 +171,9 @@ export function anthropicMessagesRequest(payload: JsonRecord, options: { stream:
   const maxTokens = typeof payload.max_output_tokens === 'number' && payload.max_output_tokens > 0
     ? payload.max_output_tokens
     : ANTHROPIC_DEFAULT_MAX_TOKENS
-  const effort = reasoningEffort(payload.reasoning)
+  // A client's explicitly disabled thinking wins over any effort, including a model default.
+  const effort = clientDisabledThinking(payload.reasoning) ? 'none' : reasoningEffort(payload.reasoning)
   const disableThinking = effort === 'none'
-  // A reasoning summary without an effort asks for thinking at the model's default depth.
-  const wantsThinking = !effort && record(payload.reasoning)?.summary !== undefined
   let thinking: JsonRecord | undefined
   const outputConfig: JsonRecord = {}
   if (effort && capabilities.adaptiveThinking) {
@@ -179,7 +196,9 @@ export function anthropicMessagesRequest(payload: JsonRecord, options: { stream:
   // Forced tool use is rejected alongside thinking, and by models that always think.
   // Models that think by default can force tools once thinking is disabled explicitly.
   const forcing = tools.length > 0 && (toolChoice === 'required' || (Boolean(toolChoice) && typeof toolChoice === 'object'))
-  if (forcing && !thinking && !passthrough.thinking && !wantsThinking && capabilities.thinksByDefault && !capabilities.thinkingAlwaysOn) thinking = { type: 'disabled' }
+  // A reasoning summary without an effort asks for thinking at the model's default depth, unless a tool is forced.
+  const wantsThinking = !effort && !forcing && record(payload.reasoning)?.summary !== undefined
+  if (forcing && !thinking && !passthrough.thinking && capabilities.thinksByDefault && !capabilities.thinkingAlwaysOn) thinking = { type: 'disabled' }
   if (!thinking && !passthrough.thinking && !effort) {
     // Models that think by default would otherwise return empty (display-omitted) thinking.
     if (capabilities.adaptiveThinking && (wantsThinking || capabilities.thinksByDefault)) thinking = { type: 'adaptive', display: 'summarized' }

@@ -279,7 +279,7 @@ describe('parseAnthropicMessagesRequest', () => {
     expect(reasoning({ thinking: { type: 'adaptive' }, output_config: { effort: 'max' } })).toEqual({ effort: 'max', summary: 'auto' })
     expect(reasoning({ thinking: { type: 'adaptive' } })).toEqual({ summary: 'auto' })
     expect(reasoning({ output_config: { effort: 'low' } })).toEqual({ effort: 'low' })
-    expect(reasoning({ thinking: { type: 'disabled' } })).toEqual({ effort: 'none' })
+    expect(reasoning({ thinking: { type: 'disabled' } })).toEqual({ pulpo_thinking: 'disabled' })
     expectAppError(() => parseAnthropicMessagesRequest(base({ thinking: 'yes' })), { param: 'thinking' })
     expect(() => parseAnthropicMessagesRequest(base({ output_config: { effort: 'extreme' } }))).toThrow(ZodError)
   })

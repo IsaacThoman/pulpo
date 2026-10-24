@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('../config.js', () => ({ getConfig: () => ({ ENCRYPTION_KEY: 'a sufficiently long deployment master key for tests' }) }))
 
-import { chatCompletionsSamplingParameters, explicitReasoningEffort, piModelForProvider, reasoningDisabled } from './pi-model.js'
+import { anthropicAgentReasoning, chatCompletionsSamplingParameters, explicitReasoningEffort, piModelForProvider, reasoningDisabled } from './pi-model.js'
 
 const model = { upstreamModelId: 'claude-opus-4-6', name: 'Opus', contextWindow: 200_000, maxOutputTokens: 32_000 }
 
@@ -72,6 +72,23 @@ describe('reasoningDisabled', () => {
     expect(reasoningDisabled({ reasoning: { effort: 'none' } })).toBe(true)
     expect(reasoningDisabled({ reasoning: { effort: 'low' } })).toBe(false)
     expect(reasoningDisabled({})).toBe(false)
+  })
+})
+
+describe('anthropicAgentReasoning', () => {
+  const anthropic = (upstreamModelId: string) => piModelForProvider({ ...model, upstreamModelId }, { apiFormat: 'anthropic_messages', baseUrl: 'https://x/v1' })
+  const none = { reasoning: { effort: 'none' } }
+
+  it('keeps the configured level unless effort is none', () => {
+    expect(anthropicAgentReasoning(anthropic('claude-opus-4-7'), { reasoning: { effort: 'high' } }, 'high')).toBe('high')
+    expect(anthropicAgentReasoning(anthropic('claude-opus-4-7'), {}, 'medium')).toBe('medium')
+  })
+
+  it('turns thinking off for effort none, or uses low effort on models that always think', () => {
+    expect(anthropicAgentReasoning(anthropic('claude-opus-4-7'), none, 'medium')).toBeUndefined()
+    expect(anthropicAgentReasoning(anthropic('claude-haiku-4-5'), none, 'medium')).toBeUndefined()
+    expect(anthropicAgentReasoning(anthropic('claude-opus-5-5'), none, 'medium')).toBe('low')
+    expect(anthropicAgentReasoning(anthropic('claude-sonnet-5-5'), none, 'medium')).toBe('low')
   })
 })
 

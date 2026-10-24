@@ -68,9 +68,10 @@ export function resolveModelParameters(
   for (const [key, value] of Object.entries(record(responseParameters))) {
     const publicApiPassthrough = context.publicApi && publicApiParameter(key)
     if (!(allowed.has(key) || publicApiPassthrough) || RESERVED_PARAMETERS.has(key)) continue
-    // A request that sets only part of `reasoning` (such as a summary) keeps the model's default effort.
-    const merge = key === 'reasoning' && Object.keys(record(result[key])).length > 0 && Object.keys(record(value)).length > 0
-    result[key] = merge ? { ...record(result[key]), ...record(value) } : value
+    // A request that sets `reasoning` without an effort (such as only a summary) keeps the model's default effort.
+    const defaultEffort = key === 'reasoning' ? record(result[key]).effort : undefined
+    const inherit = defaultEffort !== undefined && Object.keys(record(value)).length > 0 && record(value).effort === undefined
+    result[key] = inherit ? { ...record(value), effort: defaultEffort } : value
   }
   return result
 }

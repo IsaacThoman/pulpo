@@ -259,6 +259,8 @@ describe('chatCompletionsRequest', () => {
     expect(schema.response_format).toEqual({ type: 'json_schema', json_schema: { name: 'out', schema: { type: 'object' }, description: 'd', strict: true } })
     expect(schema.reasoning_effort).toBe('high')
     expect(schema.verbosity).toBe('low')
+    // The Anthropic API's disabled-thinking marker leaves other formats on the model's effort.
+    expect(chatCompletionsRequest({ model: 'm', input: 'x', reasoning: { pulpo_thinking: 'disabled' } }, { baseUrl: OTHER, stream: false })).not.toHaveProperty('reasoning_effort')
     expect(schema).not.toHaveProperty('reasoning')
     expect(schema).not.toHaveProperty('text')
     const object = chatCompletionsRequest({ model: 'm', input: 'x', text: { format: { type: 'json_object' } } }, { baseUrl: OTHER, stream: false })

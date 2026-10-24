@@ -236,8 +236,8 @@ function budgetEffort(budget: unknown): string | undefined {
 function reasoningParameter(thinking: unknown, effort: string | null | undefined): JsonRecord | undefined {
   const config = record(thinking)
   if (thinking !== undefined && (!config || typeof config.type !== 'string')) invalid('Invalid thinking configuration', 'thinking')
-  // Explicitly disabled thinking overrides a model's default reasoning.
-  if (config?.type === 'disabled') return { effort: 'none' }
+  // Only Anthropic providers can express disabled thinking; other formats strip this Pulpo-only marker.
+  if (config?.type === 'disabled') return { pulpo_thinking: 'disabled' }
   const enabled = config?.type === 'enabled' || config?.type === 'adaptive'
   const level = effort ?? (config?.type === 'enabled' ? budgetEffort(config.budget_tokens) : undefined)
   if (!enabled && !level) return undefined
@@ -451,7 +451,7 @@ export class AnthropicStreamProjector implements StreamProjector {
       type: 'message_start',
       message: {
         id: `msg_${this.row.id}`, type: 'message', role: 'assistant', model: this.row.modelId, content: [],
-        stop_reason: null, stop_sequence: null,
+        stop_reason: null, stop_sequence: null, stop_details: null,
         usage: { input_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0, output_tokens: 0 },
       },
     })

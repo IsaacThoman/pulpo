@@ -93,8 +93,9 @@ the failure are still billed.
   Anthropic-compatible endpoint, get `budget_tokens`. Effort levels the model
   does not accept fall back to the nearest one it does.
 - A request that asks for a reasoning summary without an effort thinks at the
-  model's default depth. Models that think by default always get
-  `display: "summarized"`, so their reasoning appears in chats.
+  model's default depth, unless it forces a tool. Models that think by default
+  get `display: "summarized"` when Pulpo sets no other thinking configuration,
+  so their reasoning appears in chats.
 - Custom `temperature` and `top_p` are omitted where the model rejects them
   (Claude Opus 4.7 and later, Sonnet 5 and later, Haiku 5.5) and whenever
   thinking is on, including thinking set as a model default parameter.
@@ -155,15 +156,18 @@ Supported request features:
 
 - Text, base64 or URL images, and system prompts.
 - Base64 or URL PDF documents and text documents. Document URLs reach
-  Responses and Anthropic providers directly. Chat Completions providers see a
+  Responses providers directly, and Anthropic providers too unless the URL or
+  title names a file type other than PDF. Chat Completions providers see a
   reference instead.
 - Search results, tool references, and client-side compaction summaries, which
   are passed on as text.
 - Custom tools, `tool_choice` (`auto`, `any`, `tool`, `none`), and
   `disable_parallel_tool_use`.
 - `thinking` (`enabled`, `adaptive`, or `disabled`) and `output_config.effort`.
-  `adaptive` without an effort uses the model's default effort, and `disabled`
-  turns off reasoning the model would otherwise use by default.
+  `adaptive` without an effort uses the model's default effort. `disabled`
+  turns off thinking on Anthropic providers, including thinking a model does
+  by default, or uses the lowest effort on models that always think. Other
+  provider formats keep the model's configured reasoning.
 - `output_config.format` JSON schemas, `temperature`, and `top_p`.
 - `metadata.user_id`, which becomes the safety identifier.
 

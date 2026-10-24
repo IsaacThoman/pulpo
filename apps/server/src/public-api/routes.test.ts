@@ -237,6 +237,11 @@ describe('public OpenAI-compatible routes', () => {
     expect(page).toMatchObject({ data: [{ id: 'claude-b' }], has_more: true, first_id: 'claude-b', last_id: 'claude-b' })
     const next = await routes.get('GET /v1/models')!(request({ headers: { 'anthropic-version': '2023-06-01' }, query: { limit: '1', after_id: 'claude-b' } }), {} as FastifyReply)
     expect(next).toMatchObject({ data: [{ id: 'claude-a' }], has_more: false })
+    const previous = await routes.get('GET /v1/models')!(request({ headers: { 'anthropic-version': '2023-06-01' }, query: { before_id: 'claude-a' } }), {} as FastifyReply)
+    expect(previous).toMatchObject({ data: [{ id: 'claude-b' }], has_more: false })
+    const unknown = await routes.get('GET /v1/models')!(request({ headers: { 'anthropic-version': '2023-06-01' }, query: { after_id: 'gone' } }), {} as FastifyReply)
+    expect(unknown).toEqual({ data: [], has_more: false, first_id: null, last_id: null })
+    await expect(routes.get('GET /v1/models')!(request({ headers: { 'anthropic-version': '2023-06-01' }, query: { limit: '0' } }), {} as FastifyReply)).rejects.toThrow()
     const openai = await routes.get('GET /v1/models')!(request(), {} as FastifyReply) as { object: string; data: Array<{ object: string }> }
     expect(openai.object).toBe('list')
     expect(openai.data[0]!.object).toBe('model')

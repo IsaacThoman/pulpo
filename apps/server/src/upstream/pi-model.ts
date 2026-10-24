@@ -1,4 +1,4 @@
-import type { Api, Model } from '@earendil-works/pi-ai'
+import type { Api, Model, ThinkingLevel } from '@earendil-works/pi-ai'
 import type { models, providerConnections } from '../database/schema.js'
 import { anthropicModelCapabilities } from './anthropic-models.js'
 import { anthropicSdkBaseUrl } from './anthropic-messages.js'
@@ -82,6 +82,16 @@ export function explicitReasoningEffort(parameters: Record<string, unknown>): bo
 export function reasoningDisabled(parameters: Record<string, unknown>): boolean {
   const reasoning = parameters.reasoning
   return Boolean(reasoning && typeof reasoning === 'object' && (reasoning as Record<string, unknown>).effort === 'none')
+}
+
+/**
+ * Pi reasoning level for an Anthropic Agent turn. Effort `none` turns thinking
+ * off, or runs at the lowest effort on models that always think (their Pi
+ * model maps `off` to null so Pi never sends disabled thinking).
+ */
+export function anthropicAgentReasoning(model: Model<Api>, parameters: Record<string, unknown>, level: ThinkingLevel): ThinkingLevel | undefined {
+  if (!reasoningDisabled(parameters)) return level
+  return model.thinkingLevelMap?.off === null ? 'low' : undefined
 }
 
 /** Pi's native Mistral adapter uses camelCase options, then serializes the wire body. */

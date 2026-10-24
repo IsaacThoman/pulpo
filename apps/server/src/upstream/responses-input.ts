@@ -212,6 +212,11 @@ export function reasoningEffort(reasoning: unknown): string | undefined {
   return typeof effort === 'string' ? effort : undefined
 }
 
+/** An Anthropic-protocol client sent `thinking: {type: "disabled"}`; see the public Anthropic codec. */
+export function clientDisabledThinking(reasoning: unknown): boolean {
+  return record(reasoning)?.pulpo_thinking === 'disabled'
+}
+
 const MEDIA_TOKEN_ESTIMATE = 1_600
 
 /**
