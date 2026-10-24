@@ -2478,6 +2478,10 @@ const esUi: Record<string, string> = {
   "Schedule": "Programación",
   "Loading banners…": "Cargando banners…",
   "No banners yet.": "Todavía no hay banners.",
+  "Unable to transcribe the recording": "No se ha podido transcribir la grabación",
+  "Microphone permission was denied": "Se ha denegado el permiso del micrófono",
+  "Unable to access the microphone": "No se puede acceder al micrófono",
+  "The document can't be edited right now, so the dictation wasn't added.": "Ahora no se puede editar el documento, así que no se ha añadido el dictado.",
 }
 
 export default esUi
