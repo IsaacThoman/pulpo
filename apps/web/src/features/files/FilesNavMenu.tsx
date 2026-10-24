@@ -1,8 +1,9 @@
 import { useRef } from 'react'
 import { FILE_SCOPE_ROOT } from '@pulpo/contracts'
-import { FilePlus2, FolderPlus, PanelRight, SquarePen, Upload } from 'lucide-react'
+import { FilePlus2, FolderPlus, Link2, PanelRight, SquarePen, Upload } from 'lucide-react'
 import { DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu'
 import { ui } from '@/i18n/ui'
+import { useAuth } from '@/stores/auth'
 import { FileContextMenu, type ContextMenuPoint } from '@/features/files/browser/FileContextMenu'
 import { useFilesPageRequest, type FilesPageRequest } from '@/features/files/files-page-request'
 import { openInNewChat } from '@/features/side-panel/agent'
@@ -20,6 +21,7 @@ export function FilesNavMenu({ point, onClose, go }: {
 }) {
   const fileInput = useRef<HTMLInputElement>(null)
   const splitAvailable = useSidePanel((state) => state.splitAvailable)
+  const urlImportEnabled = useAuth((state) => state.urlImportEnabled)
   // The page carries the request out, so new items are renamed in place and uploads show progress.
   const request = (next: FilesPageRequest) => {
     useFilesPageRequest.setState({ request: next })
@@ -32,6 +34,7 @@ export function FilesNavMenu({ point, onClose, go }: {
         <DropdownMenuItem onSelect={() => request({ kind: 'newFolder' })}><FolderPlus /> {ui("New folder")}</DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={() => fileInput.current?.click()}><Upload /> {ui("Upload files")}</DropdownMenuItem>
+        {urlImportEnabled && <DropdownMenuItem onSelect={() => request({ kind: 'importUrl' })}><Link2 /> {ui("Import from URL")}</DropdownMenuItem>}
         <DropdownMenuSeparator />
         {splitAvailable && <DropdownMenuItem onSelect={() => openBeside({ kind: 'folder', id: null }, go)}><PanelRight /> {ui("Open to the right")}</DropdownMenuItem>}
         <DropdownMenuItem onSelect={() => openInNewChat([FILE_SCOPE_ROOT], null, go)}><SquarePen /> {ui("Open in new chat")}</DropdownMenuItem>

@@ -18,6 +18,7 @@ import {
   FolderPlus,
   HardDrive,
   LayoutGrid,
+  Link2,
   List,
   Maximize2,
   PanelRight,
@@ -58,6 +59,7 @@ import { createDoc, createFolder, fetchFolder, fetchFolderLayout, folderLayoutQu
 import { arrangeGrid, GRID_CELL, moveInGrid, readingOrder } from '@/features/files/browser/grid-layout'
 import { dropFolderOf, filesErrorMessage } from '@/features/files/file-display'
 import { FileMoveDialog } from '@/features/files/FileMoveDialog'
+import { ImportUrlDialog } from '@/features/files/ImportUrlDialog'
 import { FileSuggestionBanner } from '@/features/files/FileSuggestion'
 import { useResolveFileSuggestion } from '@/features/files/use-file-suggestion'
 import { useFilesPageRequest } from '@/features/files/files-page-request'
@@ -199,6 +201,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
   const queryClient = useQueryClient()
   const userId = useAuth((state) => state.user?.id)
   const filesEnabled = useAuth((state) => state.filesEnabled)
+  const urlImportEnabled = useAuth((state) => state.urlImportEnabled)
   const trash = trashLocation(folderId)
   const inTrash = trash !== null
   const folderListing = useQuery({
@@ -237,6 +240,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
     return () => window.clearInterval(timer)
   }, [inTrash])
   const [uploads, setUploads] = useState<UploadEntry[]>([])
+  const [importingUrl, setImportingUrl] = useState(false)
   const [dropTarget, setDropTarget] = useState<string | null>(null)
   const [marquee, setMarquee] = useState<Marquee | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
@@ -435,6 +439,15 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
     }
   }
 
+  /** The page lands in the folder the dialog was opened from, selected like a new file. */
+  const imported = (node: FileNode) => {
+    if (node.parentId === folderId) {
+      insertIntoListing(node)
+      setSelection(selectOnly(node.id))
+    }
+    ops.notify(uit`Imported "${node.name}"`)
+  }
+
   const upload = async (files: File[], parentId: string | null = folderId) => {
     if (!files.length) return
     const queue = files.map((file) => ({ file, entry: { id: crypto.randomUUID(), name: file.name } }))
@@ -467,6 +480,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
     if (requestStatus === 'error') return
     if (request.kind === 'newFile') void newFile()
     else if (request.kind === 'newFolder') void newFolder()
+    else if (request.kind === 'importUrl') setImportingUrl(true)
     else void upload(request.files)
     // oxlint-disable-next-line react/exhaustive-deps -- the actions read this render's listing
   }, [pageRequest, requestStatus])
@@ -912,6 +926,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
       <DropdownMenuItem onSelect={() => void newFolder()}><FolderPlus /> {ui("New folder")}<DropdownMenuShortcut>{shortcutLabel('N', { mod: true, shift: true })}</DropdownMenuShortcut></DropdownMenuItem>
       <DropdownMenuSeparator />
       <DropdownMenuItem onSelect={() => fileInput.current?.click()}><Upload /> {ui("Upload files")}</DropdownMenuItem>
+      {urlImportEnabled && <DropdownMenuItem onSelect={() => setImportingUrl(true)}><Link2 /> {ui("Import from URL")}</DropdownMenuItem>}
       <DropdownMenuSeparator />
       <DropdownMenuItem disabled={!clip} onSelect={() => void paste()}>
         <ClipboardPaste /> {clip ? (clip.nodes.length === 1 ? uit`Paste "${clip.nodes[0]!.name}"` : uit`Paste ${clip.nodes.length} items`) : ui("Paste")}
@@ -1194,6 +1209,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
           </>
         )}
       </FileContextMenu>
+      <ImportUrlDialog open={importingUrl} parentId={folderId} onOpenChange={setImportingUrl} onImported={imported} />
       <FileMoveDialog nodes={moving} onOpenChange={(open) => { if (!open) setMoving(null) }} onMove={(targets, parentId) => ops.move(targets, parentId)} />
       <FileMoveDialog restore nodes={restoring} onOpenChange={(open) => { if (!open) setRestoring(null) }} onMove={(targets, parentId) => restoreSelection(targets, { parentId })} />
       <TrashDeleteDialog pending={pendingDeletion} onCancel={() => setPendingDeletion(null)} onConfirm={confirmDeletion} />
