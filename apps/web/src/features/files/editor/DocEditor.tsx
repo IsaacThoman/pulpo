@@ -12,6 +12,7 @@ import {
   List,
   ListChecks,
   ListOrdered,
+  Mic,
   Minus,
   Quote,
   Redo2,
@@ -20,8 +21,11 @@ import {
   Table,
   Undo2,
 } from 'lucide-react'
+import { useTranslation } from '@/i18n/useAppTranslation'
 import { ui } from '@/i18n/ui'
 import { cn } from '@/lib/utils'
+import { DictationKeys, dictationShortcut, useDocDictation, type DocDictation } from './doc-dictation'
+import { DocDictationBar } from './DocDictationBar'
 import { sessionColor, sessionLabel } from './presence'
 import { revealSuggestion } from './suggestion-layout'
 import { SuggestionReviewKeys, useSuggestionReview } from './suggestion-review'
@@ -29,8 +33,9 @@ import { SuggestionBar, SuggestionCard } from './SuggestionReview'
 import type { DocSession } from './use-doc-session'
 import './doc-editor.css'
 
-function ToolbarButton({ label, active, disabled, onClick, children }: {
+function ToolbarButton({ label, shortcut, active, disabled, onClick, children }: {
   label: string
+  shortcut?: { label: string; aria: string }
   active?: boolean
   disabled?: boolean
   onClick: () => void
@@ -40,7 +45,8 @@ function ToolbarButton({ label, active, disabled, onClick, children }: {
     <button
       type="button"
       aria-label={label}
-      title={label}
+      aria-keyshortcuts={shortcut?.aria}
+      title={shortcut ? `${label} (${shortcut.label})` : label}
       aria-pressed={active}
       disabled={disabled}
       onMouseDown={(event) => event.preventDefault()}
@@ -105,21 +111,42 @@ function DocToolbar({ editor }: { editor: Editor }) {
   )
 }
 
+/** Pinned after the formatting buttons, where Word keeps Dictate. Red while it is listening; pressing it again finishes. */
+function DictateButton({ dictation, editable }: { dictation: DocDictation; editable: boolean }) {
+  const { t } = useTranslation()
+  const { phase } = dictation.recorder
+  return (
+    <ToolbarButton
+      // A toggle keeps its name; being pressed says it is on.
+      label={t('chat.dictate')}
+      shortcut={dictationShortcut()}
+      active={phase !== 'idle'}
+      // Waiting for the microphone or the transcript, the floating bar can still cancel.
+      disabled={!editable || (phase !== 'idle' && phase !== 'recording')}
+      onClick={dictation.toggle}
+    >
+      <Mic className={cn('size-4', phase === 'recording' && 'text-red-600 dark:text-red-400')} />
+    </ToolbarButton>
+  )
+}
+
 /** CSS for the hunk being looked at; marks and blocks carry its id, so one rule covers every piece. */
 function activeHunkStyle(id: string): string {
   const selector = `.pulpo-doc-editor [data-suggestion-id="${id.replace(/[^\w-]/g, '')}"]`
   return `${selector} { outline: 1.5px solid var(--pulpo-suggestion-focus); outline-offset: 1px; border-radius: 2px; }`
 }
 
-function DocEditorView({ editor, editable, width, toolbarSlot, onSuggestionsResolved }: {
+function DocEditorView({ editor, editable, dictationEnabled, width, toolbarSlot, onSuggestionsResolved }: {
   editor: Editor
   /** Viewers who cannot edit still see suggestions, without the actions. */
   editable: boolean
+  dictationEnabled: boolean
   width: 'narrow' | 'wide' | 'fill'
   toolbarSlot?: ReactNode
   onSuggestionsResolved?: () => void
 }) {
   const review = useSuggestionReview(editor, onSuggestionsResolved)
+  const dictation = useDocDictation(editor, editable, dictationEnabled)
   const header = useRef<HTMLDivElement>(null)
   const content = useRef<HTMLDivElement>(null)
   const active = review.active
@@ -128,9 +155,11 @@ function DocEditorView({ editor, editable, width, toolbarSlot, onSuggestionsReso
     if (target) revealSuggestion(editor.view, target, header.current)
   }
   return (
-    <div className="flex min-h-0 flex-1 flex-col" onKeyDown={review.onKeyDown}>
+    // At least as tall as the view, so the dictation bar floats at its bottom under a short document.
+    <div className="flex min-h-full flex-1 flex-col" onKeyDown={(event) => { review.onKeyDown(event); dictation.onKeyDown(event) }}>
       <div ref={header} className="sticky top-0 z-10 flex flex-wrap items-center gap-2 border-b bg-background/95 px-4 py-1.5 backdrop-blur sm:px-6">
         <div className="min-w-0 flex-1 overflow-x-auto"><DocToolbar editor={editor} /></div>
+        {dictation.enabled && <DictateButton dictation={dictation} editable={editable} />}
         {toolbarSlot}
         {review.hunks.length > 0 && (
           <div className="basis-full border-t pt-1.5">
@@ -170,13 +199,16 @@ function DocEditorView({ editor, editable, width, toolbarSlot, onSuggestionsReso
           )}
         </div>
       </div>
+      {dictation.enabled && <DocDictationBar dictation={dictation} />}
     </div>
   )
 }
 
-export function DocEditor({ session, editable, width = 'narrow', toolbarSlot, onSuggestionsResolved }: {
+export function DocEditor({ session, editable, dictation = false, width = 'narrow', toolbarSlot, onSuggestionsResolved }: {
   session: DocSession
   editable: boolean
+  /** Offers Pulpo dictation, when the administrator has enabled it. */
+  dictation?: boolean
   /** `narrow` and `wide` follow the chat width preference (64rem or 90rem); `fill` uses the side panel's width. */
   width?: 'narrow' | 'wide' | 'fill'
   /** Rendered next to the toolbar, e.g. presence and sync status. */
@@ -193,6 +225,7 @@ export function DocEditor({ session, editable, width = 'narrow', toolbarSlot, on
         placeholder: ui("Start writing…"),
       }),
       SuggestionReviewKeys,
+      DictationKeys,
     ],
     editable,
     editorProps: {
@@ -205,5 +238,5 @@ export function DocEditor({ session, editable, width = 'narrow', toolbarSlot, on
   }, [editor, editable])
 
   if (!editor) return null
-  return <DocEditorView editor={editor} editable={editable} width={width} toolbarSlot={toolbarSlot} onSuggestionsResolved={onSuggestionsResolved} />
+  return <DocEditorView editor={editor} editable={editable} dictationEnabled={dictation} width={width} toolbarSlot={toolbarSlot} onSuggestionsResolved={onSuggestionsResolved} />
 }

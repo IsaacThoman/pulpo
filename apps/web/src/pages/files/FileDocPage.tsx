@@ -255,6 +255,7 @@ function OpenDoc({ userId, docId, view }: { userId: string; docId: string; view:
   const [everSynced, setEverSynced] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
   const chatWidth = useSettings((state) => state.chatWidth)
+  const dictationEnabled = useAuth((state) => state.dictationEnabled)
 
   useEffect(() => setEverSynced(false), [docId])
   useEffect(() => { if (status.state === 'synced') setEverSynced(true) }, [status.state])
@@ -299,6 +300,7 @@ function OpenDoc({ userId, docId, view }: { userId: string; docId: string; view:
             key={docId}
             session={session}
             editable={editable}
+            dictation={dictationEnabled}
             width={view.layout === 'panel' ? 'fill' : chatWidth === 'full' ? 'wide' : 'narrow'}
             onSuggestionsResolved={recountSuggestions}
           />
