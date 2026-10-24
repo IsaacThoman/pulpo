@@ -36,6 +36,8 @@ import { itemizeUsageCost } from './cost-breakdown.js'
 import { loadBillingEntitlements } from '../billing/entitlements.js'
 import { addDailyUsage, DAILY_SPEND_LIMIT_CODE, dailySpendLimitMessage, loadDailySpend } from '../billing/usage-tiers.js'
 import { queueAutoTopUpChecks } from '../billing/auto-top-up.js'
+import { CUSTOM_LIMIT_CODE, customLimitMessage, loadCustomLimitUsage, responseLimitModelIds, tightestCustomLimit } from '../billing/custom-limits.js'
+import type { BillingPlan } from '../billing/plans.js'
 import {
   allocateReservationMicros,
   allocateResizedReservationMicros,
@@ -112,7 +114,7 @@ function reserveBudgetTransaction(
       availableMicros: Math.max(0, availableAccountBalanceMicros({ balanceMicros: row.balanceMicros, pendingBalanceMicros: pendingByUser.get(row.id) ?? 0 })),
     }))
     const poolAllowance = await loadPoolAllowance(tx, input.userId, sharingCandidates(lockedUsers, held, input.userId))
-    const capacity = await reservationCapacity(tx, { userId: user.id, role: user.role, apiKeyId: input.apiKeyId, weeklyLimitMicros: entitlements.weeklyLimitMicros },
+    const capacity = await reservationCapacity(tx, { userId: user.id, role: user.role, plan: entitlements.plan, responseId: input.responseId, apiKeyId: input.apiKeyId, weeklyLimitMicros: entitlements.weeklyLimitMicros },
       Math.min(entitlements.weeklyRemainingMicros, entitlements.fiveHourRemainingMicros)
         + poolAllowance.availableMicros
         + balances.reduce((sum, row) => sum + row.availableMicros, 0))
@@ -171,6 +173,8 @@ async function addWeeklyUsage(tx: Transaction, userId: string, periodStart: Date
 async function reservationCapacity(tx: Transaction, caller: {
   userId: string
   role: string
+  plan: BillingPlan
+  responseId: string
   apiKeyId: string | null | undefined
   weeklyLimitMicros: number
 }, accountCapacity: number, currentReservationMicros = 0) {
@@ -180,6 +184,12 @@ async function reservationCapacity(tx: Transaction, caller: {
   // daily remainder excludes the reservation being resized.
   if (daily?.remainingMicros != null && daily.remainingMicros < capacity.amountMicros) {
     capacity = { amountMicros: daily.remainingMicros, code: DAILY_SPEND_LIMIT_CODE, message: dailySpendLimitMessage(daily) }
+  }
+  const custom = tightestCustomLimit(await loadCustomLimitUsage(tx, {
+    ...caller, modelIds: await responseLimitModelIds(tx, caller.responseId), currentReservationMicros,
+  }))
+  if (custom && custom.remainingMicros < capacity.amountMicros) {
+    capacity = { amountMicros: custom.remainingMicros, code: CUSTOM_LIMIT_CODE, message: customLimitMessage(custom) }
   }
   const apiKeyId = caller.apiKeyId
   if (!apiKeyId) return capacity
@@ -560,7 +570,7 @@ async function resizeLockedReservation<T extends { amountMicros: number }>(
   })
   const subscriptionCapacity = allocate(Number.MAX_SAFE_INTEGER).weeklyMicros
   const sharedCapacity = totalMicros(allocateShared(Number.MAX_SAFE_INTEGER))
-  const capacity = await reservationCapacity(tx, { userId: caller.id, role: caller.role, apiKeyId: reservation.apiKeyId, weeklyLimitMicros: entitlements.weeklyLimitMicros },
+  const capacity = await reservationCapacity(tx, { userId: caller.id, role: caller.role, plan: entitlements.plan, responseId: reservation.responseId, apiKeyId: reservation.apiKeyId, weeklyLimitMicros: entitlements.weeklyLimitMicros },
     subscriptionCapacity + sharedCapacity + balances.reduce((sum, row) => sum + row.availableMicros, 0), reservation.amountMicros)
   const result = calculate(capacity.amountMicros, reservation.amountMicros)
   if (!result || result.amountMicros > capacity.amountMicros) throw new AppError(402, capacity.code, capacity.message)

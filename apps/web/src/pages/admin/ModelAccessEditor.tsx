@@ -10,17 +10,35 @@ import { ProfileAvatar } from '@/components/ProfileAvatar'
 import { ui, uit } from '@/i18n/ui'
 import { matchesUserQuery, type UserDirectory } from './user-directory'
 
-export function ModelAccessEditor({ allowedUserIds, directory: { users, loading }, onChange }: {
+export function ModelAccessEditor({ allowedUserIds, directory, onChange }: {
   allowedUserIds: string[]
   directory: UserDirectory
   onChange: (allowedUserIds: string[]) => void
+}) {
+  // Admins always have access, so they are never offered as grants.
+  return <UserListEditor
+    title={ui("Allowed users")}
+    emptyText={ui("No users selected. Only admins can use this model.")}
+    userIds={allowedUserIds}
+    directory={directory}
+    onChange={onChange}
+  />
+}
+
+/** A searchable list of chosen users from the admin user directory. */
+export function UserListEditor({ title, emptyText, includeAdmins = false, userIds: allowedUserIds, directory: { users, loading }, onChange }: {
+  title: string
+  emptyText: string
+  includeAdmins?: boolean
+  userIds: string[]
+  directory: UserDirectory
+  onChange: (userIds: string[]) => void
 }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [portalContainer, setPortalContainer] = useState<HTMLElement | null>(null)
   const allowed = new Set(allowedUserIds)
-  // Admins always have access, so they are never offered as grants.
-  const grantable = users.filter((user) => user.role !== 'admin' && !user.deletionRequestedAt)
+  const grantable = users.filter((user) => (includeAdmins || user.role !== 'admin') && !user.deletionRequestedAt)
     .sort((left, right) => left.name.localeCompare(right.name))
   const selected = allowedUserIds.flatMap((id) => users.find((user) => user.id === id) ?? [])
   const options = grantable.filter((user) => matchesUserQuery(user, query))
@@ -29,7 +47,7 @@ export function ModelAccessEditor({ allowedUserIds, directory: { users, loading 
   return (
     <div className="space-y-2 rounded-md border p-3">
       <div className="flex items-center gap-2">
-        <span className="text-sm font-medium">{ui("Allowed users")}</span>
+        <span className="text-sm font-medium">{title}</span>
         <Badge variant="secondary" className="font-normal">{selected.length}</Badge>
         <div className="flex-1" />
         <Popover open={open} onOpenChange={(next) => {
@@ -114,7 +132,7 @@ export function ModelAccessEditor({ allowedUserIds, directory: { users, loading 
         </ul>
       ) : (
         <p className="text-xs text-muted-foreground">
-          {loading && allowedUserIds.length ? ui("Loading users…") : ui("No users selected. Only admins can use this model.")}
+          {loading && allowedUserIds.length ? ui("Loading users…") : emptyText}
         </p>
       )}
     </div>

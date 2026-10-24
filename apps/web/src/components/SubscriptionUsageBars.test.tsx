@@ -59,4 +59,20 @@ describe('SubscriptionUsageBars', () => {
     expect(markup).toContain('Pool members can use up to 50% of your weekly usage')
     expect(renderToStaticMarkup(<SubscriptionUsageBars weekly={weekly} fiveHour={null} />)).not.toContain('Shared usage')
   })
+
+  it('shows admin-defined limits with the other limits', () => {
+    const custom = [
+      { ...weekly, id: 'opus', name: 'Opus daily', period: 'daily' as const, models: ['Claude Opus', 'GPT-5'], remainingPercentage: 12 },
+      { ...fiveHour, id: 'rolling', name: 'Burst', period: 'five_hour' as const, models: [], resetsAt: null },
+    ]
+    const markup = renderToStaticMarkup(<SubscriptionUsageBars weekly={null} fiveHour={null} custom={custom} />)
+
+    expect(markup).toContain('Opus daily')
+    expect(markup).toContain('12% left')
+    expect(markup).toContain('Applies to Claude Opus, GPT-5')
+    expect(markup).toContain('Burst')
+    expect(markup).toContain('Rolling 5-hour window')
+    expect(markup).not.toContain('Starts on first use')
+    expect(renderToStaticMarkup(<SubscriptionUsageBars compact weekly={null} fiveHour={null} custom={custom} />)).not.toContain('Applies to')
+  })
 })

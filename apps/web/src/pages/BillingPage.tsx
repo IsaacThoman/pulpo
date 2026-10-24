@@ -301,7 +301,7 @@ export function BillingPage() {
                 <div className="text-xs font-medium text-muted-foreground">{ui("Your plan")}</div>
                 <div className="mt-1 text-base font-semibold">{billingPlanName(currentPlan)}</div>
                 <div className="mt-0.5 text-sm text-muted-foreground">{subscriptionSubtitle}</div>
-                <SubscriptionUsageBars className="mt-4" weekly={summary?.weekly ?? null} fiveHour={summary?.fiveHour ?? null} shared={summary?.shared ?? null} sharedWeeklyPercent={summary?.sharedWeeklyPercent} />
+                <SubscriptionUsageBars className="mt-4" weekly={summary?.weekly ?? null} fiveHour={summary?.fiveHour ?? null} shared={summary?.shared ?? null} sharedWeeklyPercent={summary?.sharedWeeklyPercent} custom={summary?.customLimits} />
               </div>
               {!subscribed && (
                 <ul className="space-y-2 text-sm">
