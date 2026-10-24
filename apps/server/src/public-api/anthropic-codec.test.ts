@@ -279,7 +279,7 @@ describe('parseAnthropicMessagesRequest', () => {
     expect(reasoning({ thinking: { type: 'adaptive' }, output_config: { effort: 'max' } })).toEqual({ effort: 'max', summary: 'auto' })
     expect(reasoning({ thinking: { type: 'adaptive' } })).toEqual({ summary: 'auto' })
     expect(reasoning({ output_config: { effort: 'low' } })).toEqual({ effort: 'low' })
-    expect(reasoning({ thinking: { type: 'disabled' } })).toBeUndefined()
+    expect(reasoning({ thinking: { type: 'disabled' } })).toEqual({ effort: 'none' })
     expectAppError(() => parseAnthropicMessagesRequest(base({ thinking: 'yes' })), { param: 'thinking' })
     expect(() => parseAnthropicMessagesRequest(base({ output_config: { effort: 'extreme' } }))).toThrow(ZodError)
   })
@@ -319,7 +319,7 @@ describe('serializeAnthropicMessage', () => {
     { type: 'function_call', id: 'fc_2', name: 'broken', arguments: '{oops' },
   ]
 
-  it('includes thinking only when requested and parses tool input', () => {
+  it('includes unsigned thinking only when requested and parses tool input', () => {
     const message = serializeAnthropicMessage(responseRow({ output, parameters: { reasoning: { summary: 'auto' } } }))
     expect(message).toEqual({
       id: `msg_${RESPONSE_ID}`, type: 'message', role: 'assistant', model: 'model-1',
@@ -330,16 +330,21 @@ describe('serializeAnthropicMessage', () => {
         { type: 'tool_use', id: 'call_1', name: 'lookup', input: { q: 1 } },
         { type: 'tool_use', id: 'fc_2', name: 'broken', input: {} },
       ],
-      stop_reason: 'tool_use', stop_sequence: null,
+      stop_reason: 'tool_use', stop_sequence: null, stop_details: null,
       usage: { input_tokens: 60, cache_creation_input_tokens: 10, cache_read_input_tokens: 30, output_tokens: 5 },
     })
-    expect(serializeAnthropicMessage(responseRow({ output })).content.map((block) => block.type)).toEqual(['text', 'tool_use', 'tool_use'])
+    // Signed thinking is still needed for replay, so it is returned without a request for it.
+    expect(serializeAnthropicMessage(responseRow({ output })).content.map((block) => block.type))
+      .toEqual(['thinking', 'redacted_thinking', 'text', 'tool_use', 'tool_use'])
   })
 
   it('maps stop reasons', () => {
     expect(serializeAnthropicMessage(responseRow()).stop_reason).toBe('end_turn')
     expect(serializeAnthropicMessage(responseRow({ status: 'incomplete', incompleteDetails: { reason: 'max_output_tokens' } })).stop_reason).toBe('max_tokens')
-    expect(serializeAnthropicMessage(responseRow({ status: 'incomplete', incompleteDetails: { reason: 'content_filter' } })).stop_reason).toBe('refusal')
+    const refusal = serializeAnthropicMessage(responseRow({ status: 'incomplete', incompleteDetails: { reason: 'content_filter' } }))
+    expect(refusal.stop_reason).toBe('refusal')
+    expect(refusal.stop_details).toEqual({ type: 'refusal', category: null, explanation: null })
+    expect(serializeAnthropicMessage(responseRow()).stop_details).toBeNull()
   })
 
   it('reads Responses-shaped usage too', () => {
@@ -471,18 +476,19 @@ describe('AnthropicStreamProjector', () => {
     ])
     expect(payloads.at(-2)).toEqual({
       type: 'message_delta',
-      delta: { stop_reason: 'tool_use', stop_sequence: null },
+      delta: { stop_reason: 'tool_use', stop_sequence: null, stop_details: null },
       usage: { input_tokens: 25, cache_creation_input_tokens: 5, cache_read_input_tokens: 20, output_tokens: 7 },
     })
     expect(projector.project(wrap(scriptedEvents())[0]!)).toEqual([])
     expect(projector.finish(thinkingRow())).toEqual([])
   })
 
-  it('omits thinking when the client did not ask for it', () => {
+  it('returns signed thinking whole when the client did not ask for it', () => {
     const { payloads } = project(responseRow(), scriptedEvents())
     assertValidAnthropicStream(payloads)
     expect(payloads.filter((payload) => payload.type === 'content_block_start').map((payload) => (payload.content_block as Payload).type))
-      .toEqual(['text', 'text', 'tool_use', 'tool_use'])
+      .toEqual(['text', 'thinking', 'text', 'tool_use', 'tool_use'])
+    expect(payloads.some((payload) => (payload.delta as Payload | undefined)?.type === 'signature_delta')).toBe(true)
   })
 
   it('accumulates into the expected final message with the Anthropic SDK', async () => {
@@ -600,6 +606,16 @@ describe('AnthropicStreamProjector backfill and dedup', () => {
     expect(blocks(payloads)).toEqual([{ type: 'text', text: 'Hi' }, { type: 'thinking', text: 'hmm' }])
   })
 
+  it('streams tool input as a JSON object even when the provider sends malformed arguments', () => {
+    const payloads = projectRaw(responseRow(), [
+      rawEvent(1, 'response.output_item.done', { item: { type: 'function_call', id: 'fc_x', call_id: 'c1', name: 'bad', arguments: 'not json' } }),
+      rawEvent(2, 'response.output_item.done', { item: { type: 'function_call', id: 'fc_y', call_id: 'c2', name: 'array', arguments: '[1,2]' } }),
+      rawEvent(3, 'response.output_item.done', { item: { type: 'function_call', id: 'fc_z', call_id: 'c3', name: 'ok', arguments: '{ "a": 1 }' } }),
+    ])
+    const json = payloads.filter((payload) => (payload.delta as Payload | undefined)?.type === 'input_json_delta').map((payload) => (payload.delta as Payload).partial_json)
+    expect(json).toEqual(['{}', '{}', '{"a":1}'])
+  })
+
   it('does not duplicate streamed thinking when its done event arrives out of order', () => {
     const reasoning = { type: 'reasoning', id: 'rs_d', summary: [{ type: 'summary_text', text: 'plan' }], pulpo_signature: 'SIG' }
     const payloads = projectRaw(thinkingRow(), [
@@ -613,7 +629,7 @@ describe('AnthropicStreamProjector backfill and dedup', () => {
     expect(blocks(payloads).map((block) => block.type)).toEqual(['thinking', 'text'])
   })
 
-  it('emits display-omitted and redacted thinking whole, only when thinking was requested', () => {
+  it('emits display-omitted and redacted thinking whole, whether or not thinking was requested', () => {
     const omitted = { type: 'reasoning', id: 'rs_e', summary: [], pulpo_signature: 'SIG_E' }
     const redacted = { type: 'reasoning', id: 'rs_f', summary: [], pulpo_redacted_data: 'OPAQUE' }
     const events = [
@@ -629,9 +645,10 @@ describe('AnthropicStreamProjector backfill and dedup', () => {
       { type: 'redacted_thinking', text: '' },
     ])
     expect(shown.find((payload) => (payload.content_block as Payload | undefined)?.type === 'redacted_thinking')!.content_block).toEqual({ type: 'redacted_thinking', data: 'OPAQUE' })
-    const hidden = projectRaw(responseRow(), events)
-    assertValidAnthropicStream(hidden)
-    expect(blocks(hidden)).toEqual([{ type: 'text', text: 'ok' }])
+    // Signed and redacted thinking is needed for replay, so it is returned unrequested too.
+    const unrequested = projectRaw(responseRow(), events)
+    assertValidAnthropicStream(unrequested)
+    expect(blocks(unrequested)).toEqual(blocks(shown))
   })
 
   it('ignores finished items without ids and items with no content', () => {
@@ -685,6 +702,13 @@ describe('Anthropic helpers', () => {
       'request_too_large', 'invalid_request_error', 'rate_limit_error', 'api_error', 'api_error', 'overloaded_error',
     ])
     expect(anthropicErrorBody(429, 'slow down')).toEqual({ type: 'error', error: { type: 'rate_limit_error', message: 'slow down' } })
+  })
+
+  it('answers /v1/models errors in the Anthropic envelope only for Anthropic clients', () => {
+    expect(isAnthropicApiRequest('/v1/models', { 'anthropic-version': '2023-06-01' })).toBe(true)
+    expect(isAnthropicApiRequest('/v1/models/m?x=1', { 'anthropic-version': '2023-06-01' })).toBe(true)
+    expect(isAnthropicApiRequest('/v1/models')).toBe(false)
+    expect(isAnthropicApiRequest('/v1/chat/completions', { 'anthropic-version': '2023-06-01' })).toBe(false)
   })
 
   it('recognises Anthropic API paths', () => {

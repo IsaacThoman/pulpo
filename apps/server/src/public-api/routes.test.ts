@@ -51,10 +51,11 @@ async function handlers(): Promise<Map<string, Handler>> {
   return registered
 }
 
-function request(input: { body?: unknown; params?: unknown; idempotencyKey?: string; headers?: Record<string, string> } = {}): FastifyRequest {
+function request(input: { body?: unknown; params?: unknown; query?: unknown; idempotencyKey?: string; headers?: Record<string, string> } = {}): FastifyRequest {
   return {
     body: input.body,
     params: input.params ?? {},
+    query: input.query ?? {},
     headers: { ...input.headers, ...(input.idempotencyKey ? { 'idempotency-key': input.idempotencyKey } : {}) },
     log: { info: mocks.logInfo },
   } as unknown as FastifyRequest
@@ -220,24 +221,28 @@ describe('public OpenAI-compatible routes', () => {
   })
 
   it('lists models in the Anthropic shape when the anthropic-version header is present', async () => {
-    const first = { id: 'claude-a', name: 'Claude A', enabled: true, visible: true, createdAt: new Date('2026-01-01T00:00:00.000Z') }
-    const second = { id: 'claude-b', name: 'Claude B', enabled: true, visible: true, createdAt: new Date('2026-02-01T00:00:00.000Z') }
+    const first = { id: 'claude-a', name: 'Claude A', enabled: true, visible: true, contextWindow: 200_000, maxOutputTokens: 64_000, createdAt: new Date('2026-01-01T00:00:00.000Z') }
+    const second = { id: 'claude-b', name: 'Claude B', enabled: true, visible: true, contextWindow: 1_000_000, maxOutputTokens: 128_000, createdAt: new Date('2026-02-01T00:00:00.000Z') }
     mocks.selectRows = [first, second]
     const routes = await handlers()
     const result = await routes.get('GET /v1/models')!(request({ headers: { 'anthropic-version': '2023-06-01' } }), {} as FastifyReply)
     expect(result).toEqual({
       data: [
-        { id: 'claude-a', type: 'model', display_name: 'Claude A', created_at: '2026-01-01T00:00:00.000Z' },
-        { id: 'claude-b', type: 'model', display_name: 'Claude B', created_at: '2026-02-01T00:00:00.000Z' },
+        { id: 'claude-b', type: 'model', display_name: 'Claude B', created_at: '2026-02-01T00:00:00.000Z', max_input_tokens: 1_000_000, max_tokens: 128_000 },
+        { id: 'claude-a', type: 'model', display_name: 'Claude A', created_at: '2026-01-01T00:00:00.000Z', max_input_tokens: 200_000, max_tokens: 64_000 },
       ],
-      has_more: false, first_id: 'claude-a', last_id: 'claude-b',
+      has_more: false, first_id: 'claude-b', last_id: 'claude-a',
     })
+    const page = await routes.get('GET /v1/models')!(request({ headers: { 'anthropic-version': '2023-06-01' }, query: { limit: '1' } }), {} as FastifyReply)
+    expect(page).toMatchObject({ data: [{ id: 'claude-b' }], has_more: true, first_id: 'claude-b', last_id: 'claude-b' })
+    const next = await routes.get('GET /v1/models')!(request({ headers: { 'anthropic-version': '2023-06-01' }, query: { limit: '1', after_id: 'claude-b' } }), {} as FastifyReply)
+    expect(next).toMatchObject({ data: [{ id: 'claude-a' }], has_more: false })
     const openai = await routes.get('GET /v1/models')!(request(), {} as FastifyReply) as { object: string; data: Array<{ object: string }> }
     expect(openai.object).toBe('list')
     expect(openai.data[0]!.object).toBe('model')
 
     mocks.selectRows = [first]
     await expect(routes.get('GET /v1/models/:model')!(request({ params: { model: 'claude-a' }, headers: { 'anthropic-version': '2023-06-01' } }), {} as FastifyReply))
-      .resolves.toEqual({ id: 'claude-a', type: 'model', display_name: 'Claude A', created_at: '2026-01-01T00:00:00.000Z' })
+      .resolves.toEqual({ id: 'claude-a', type: 'model', display_name: 'Claude A', created_at: '2026-01-01T00:00:00.000Z', max_input_tokens: 200_000, max_tokens: 64_000 })
   })
 })

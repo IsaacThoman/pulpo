@@ -65,7 +65,7 @@ describe('public generation execution', () => {
         protocol: 'anthropic_messages', model: 'missing-model', rawInput: 'hello', displayInput: 'hello', parameters: {},
         stream: false, background: false, publiclyStored: true, ignoredParameters: [], fingerprintValue: {},
       },
-    })).rejects.toMatchObject({ statusCode: 400, code: 'model_not_found' })
+    })).rejects.toMatchObject({ statusCode: 404, code: 'model_not_found' })
     expect(mocks.insertedChats).toEqual([])
     expect(mocks.createResponse).not.toHaveBeenCalled()
   })

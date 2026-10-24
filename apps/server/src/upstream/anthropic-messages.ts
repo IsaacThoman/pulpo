@@ -155,6 +155,8 @@ export function anthropicMessagesRequest(payload: JsonRecord, options: { stream:
     : ANTHROPIC_DEFAULT_MAX_TOKENS
   const effort = reasoningEffort(payload.reasoning)
   const disableThinking = effort === 'none'
+  // A reasoning summary without an effort asks for thinking at the model's default depth.
+  const wantsThinking = !effort && record(payload.reasoning)?.summary !== undefined
   let thinking: JsonRecord | undefined
   const outputConfig: JsonRecord = {}
   if (effort && capabilities.adaptiveThinking) {
@@ -177,7 +179,15 @@ export function anthropicMessagesRequest(payload: JsonRecord, options: { stream:
   // Forced tool use is rejected alongside thinking, and by models that always think.
   // Models that think by default can force tools once thinking is disabled explicitly.
   const forcing = tools.length > 0 && (toolChoice === 'required' || (Boolean(toolChoice) && typeof toolChoice === 'object'))
-  if (forcing && !thinking && !passthrough.thinking && capabilities.thinksByDefault && !capabilities.thinkingAlwaysOn) thinking = { type: 'disabled' }
+  if (forcing && !thinking && !passthrough.thinking && !wantsThinking && capabilities.thinksByDefault && !capabilities.thinkingAlwaysOn) thinking = { type: 'disabled' }
+  if (!thinking && !passthrough.thinking && !effort) {
+    // Models that think by default would otherwise return empty (display-omitted) thinking.
+    if (capabilities.adaptiveThinking && (wantsThinking || capabilities.thinksByDefault)) thinking = { type: 'adaptive', display: 'summarized' }
+    else if (wantsThinking) {
+      const budget = thinkingBudget('medium', maxTokens)
+      if (budget) thinking = { type: 'enabled', budget_tokens: budget }
+    }
+  }
   // An operator default fills `thinking` when Pulpo sets none, so it constrains sampling and tool choice too.
   const effectiveThinking = thinking ?? record(passthrough.thinking)
   const thinkingOn = Boolean(effectiveThinking) && effectiveThinking?.type !== 'disabled'

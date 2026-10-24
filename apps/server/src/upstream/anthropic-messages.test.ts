@@ -566,16 +566,16 @@ describe('Anthropic request constraints', () => {
     const thinking = anthropicMessagesRequest({ ...base, model: 'claude-opus-5', tool_choice: 'required', reasoning: { effort: 'high' } }, { stream: true })
     expect(thinking.thinking).toEqual({ type: 'adaptive', display: 'summarized' })
     expect(thinking).not.toHaveProperty('tool_choice')
-    // Auto tool choice leaves default thinking alone.
-    expect(anthropicMessagesRequest({ ...base, model: 'claude-opus-5', tool_choice: 'auto' }, { stream: true })).not.toHaveProperty('thinking')
-    // Forcing without tools changes nothing.
-    expect(anthropicMessagesRequest({ model: 'claude-opus-5', input: 'q', tool_choice: 'required' }, { stream: true })).not.toHaveProperty('thinking')
+    // Auto tool choice keeps default thinking, with summaries shown.
+    expect(anthropicMessagesRequest({ ...base, model: 'claude-opus-5', tool_choice: 'auto' }, { stream: true }).thinking).toEqual({ type: 'adaptive', display: 'summarized' })
+    // Forcing without tools does not disable thinking.
+    expect(anthropicMessagesRequest({ model: 'claude-opus-5', input: 'q', tool_choice: 'required' }, { stream: true }).thinking).toEqual({ type: 'adaptive', display: 'summarized' })
   })
 
   it('downgrades forced tool use to auto on always-thinking models without disabling thinking', () => {
     for (const model of ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-fable-1']) {
       const body = anthropicMessagesRequest({ ...base, model, tool_choice: 'required' }, { stream: true })
-      expect(body).not.toHaveProperty('thinking')
+      expect(body.thinking).toEqual({ type: 'adaptive', display: 'summarized' })
       expect(body).not.toHaveProperty('tool_choice')
     }
   })
@@ -605,6 +605,19 @@ describe('Anthropic request constraints', () => {
     const opus5 = anthropicMessagesRequest({ ...base, model: 'claude-opus-5', thinking: { type: 'adaptive' }, tool_choice: 'required' }, { stream: true })
     expect(opus5.thinking).toEqual({ type: 'adaptive' })
     expect(opus5).not.toHaveProperty('tool_choice')
+  })
+
+  it('turns on thinking at the default depth when a summary is requested without an effort', () => {
+    const summary = { reasoning: { summary: 'auto' } }
+    expect(anthropicMessagesRequest({ model: 'claude-opus-4-6', input: 'q', ...summary }, { stream: true }).thinking).toEqual({ type: 'adaptive', display: 'summarized' })
+    expect(anthropicMessagesRequest({ model: 'claude-opus-4-6', input: 'q', ...summary }, { stream: true })).not.toHaveProperty('output_config')
+    expect(anthropicMessagesRequest({ model: 'claude-haiku-4-5', input: 'q', max_output_tokens: 32_000, ...summary }, { stream: true }).thinking).toEqual({ type: 'enabled', budget_tokens: 8_192 })
+    // Without a summary request, models that do not think by default stay without thinking.
+    expect(anthropicMessagesRequest({ model: 'claude-opus-4-6', input: 'q' }, { stream: true })).not.toHaveProperty('thinking')
+    // A requested summary wins over forced tool use on models that think by default.
+    const forced = anthropicMessagesRequest({ ...base, model: 'claude-opus-5', tool_choice: 'required', ...summary }, { stream: true })
+    expect(forced.thinking).toEqual({ type: 'adaptive', display: 'summarized' })
+    expect(forced).not.toHaveProperty('tool_choice')
   })
 
   it('drops custom sampling whenever thinking is on', () => {

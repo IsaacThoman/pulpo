@@ -236,6 +236,8 @@ function budgetEffort(budget: unknown): string | undefined {
 function reasoningParameter(thinking: unknown, effort: string | null | undefined): JsonRecord | undefined {
   const config = record(thinking)
   if (thinking !== undefined && (!config || typeof config.type !== 'string')) invalid('Invalid thinking configuration', 'thinking')
+  // Explicitly disabled thinking overrides a model's default reasoning.
+  if (config?.type === 'disabled') return { effort: 'none' }
   const enabled = config?.type === 'enabled' || config?.type === 'adaptive'
   const level = effort ?? (config?.type === 'enabled' ? budgetEffort(config.budget_tokens) : undefined)
   if (!enabled && !level) return undefined
@@ -320,6 +322,19 @@ function showsThinking(row: ResponseRow): boolean {
   return record(record(row.parameters)?.reasoning)?.summary !== undefined
 }
 
+/**
+ * Signed thinking from Claude must be replayed on the next turn, so it is
+ * returned even when the request did not enable thinking, as Anthropic does
+ * for models that think by default.
+ */
+function signedThinking(item: JsonRecord): boolean {
+  return item.type === 'reasoning' && (typeof item.pulpo_signature === 'string' || typeof item.pulpo_redacted_data === 'string')
+}
+
+function stopDetails(stop: string) {
+  return stop === 'refusal' ? { type: 'refusal', category: null, explanation: null } : null
+}
+
 function stopReason(row: Pick<ResponseRow, 'status' | 'incompleteDetails'>, hasToolUse: boolean): string {
   const reason = record(row.incompleteDetails)?.reason
   if (row.status === 'incomplete' && reason === 'max_output_tokens') return 'max_tokens'
@@ -340,7 +355,7 @@ export function anthropicContent(output: unknown, includeThinking: boolean): Jso
   const items = Array.isArray(output) ? output.map(record).filter((item): item is JsonRecord => Boolean(item)) : []
   const content: JsonRecord[] = []
   for (const item of items) {
-    if (item.type === 'reasoning' && includeThinking) {
+    if (item.type === 'reasoning' && (includeThinking || signedThinking(item))) {
       const text = Array.isArray(item.summary) ? item.summary.map((part) => record(part)?.text).filter((part): part is string => typeof part === 'string').join('\n') : ''
       if (typeof item.pulpo_redacted_data === 'string') content.push({ type: 'redacted_thinking', data: item.pulpo_redacted_data })
       else if (text || typeof item.pulpo_signature === 'string') content.push({ type: 'thinking', thinking: text, signature: typeof item.pulpo_signature === 'string' ? item.pulpo_signature : '' })
@@ -381,14 +396,16 @@ export function serializeAnthropicMessage(row: ResponseRow) {
     throw new AppError(failure.status, 'generation_failed', failure.message, failure.type)
   }
   const content = anthropicContent(row.output, showsThinking(row))
+  const stop = stopReason(row, content.some((block) => block.type === 'tool_use'))
   return {
     id: `msg_${row.id}`,
     type: 'message',
     role: 'assistant',
     model: row.modelId,
     content,
-    stop_reason: stopReason(row, content.some((block) => block.type === 'tool_use')),
+    stop_reason: stop,
     stop_sequence: null,
+    stop_details: stopDetails(stop),
     usage: anthropicUsageBody(row.usage),
   }
 }
@@ -464,7 +481,8 @@ export class AnthropicStreamProjector implements StreamProjector {
     this.sawToolUse = true
     this.close(output)
     const index = this.nextIndex++
-    const args = typeof item.arguments === 'string' && item.arguments.trim() ? item.arguments : '{}'
+    // Clients parse the streamed input as a JSON object; some providers emit malformed arguments.
+    const args = JSON.stringify(parsedArguments(item.arguments))
     output.push({ type: 'content_block_start', index, content_block: { type: 'tool_use', id: typeof item.call_id === 'string' ? item.call_id : id, name: item.name, input: {} } })
     output.push({ type: 'content_block_delta', index, delta: { type: 'input_json_delta', partial_json: args } })
     output.push({ type: 'content_block_stop', index })
@@ -522,7 +540,7 @@ export class AnthropicStreamProjector implements StreamProjector {
   private emitWhole(item: JsonRecord, output: unknown[]): void {
     const id = typeof item.id === 'string' ? item.id : ''
     if (!id || this.streamedItems.has(id)) return
-    if (item.type === 'reasoning' && !this.thinking) return
+    if (item.type === 'reasoning' && !this.thinking && !signedThinking(item)) return
     if (item.type !== 'reasoning' && item.type !== 'message') return
     const [block] = anthropicContent([item], true)
     this.streamedItems.add(id)
@@ -555,9 +573,10 @@ export class AnthropicStreamProjector implements StreamProjector {
       }
     }
     this.close(output)
+    const stop = stopReason(state, this.sawToolUse)
     output.push({
       type: 'message_delta',
-      delta: { stop_reason: stopReason(state, this.sawToolUse), stop_sequence: null },
+      delta: { stop_reason: stop, stop_sequence: null, stop_details: stopDetails(stop) },
       usage: anthropicUsageBody(usage),
     })
     output.push({ type: 'message_stop' })
@@ -592,8 +611,14 @@ export function anthropicErrorBody(status: number, message: string) {
   return { type: 'error', error: { type: anthropicErrorType(status), message } }
 }
 
-export function isAnthropicApiRequest(url: string): boolean {
+/** Anthropic SDKs send `anthropic-version`; answer them in Anthropic's shapes on shared endpoints such as `/v1/models`. */
+export function wantsAnthropicShape(headers: Record<string, unknown>): boolean {
+  return typeof headers['anthropic-version'] === 'string'
+}
+
+export function isAnthropicApiRequest(url: string, headers: Record<string, unknown> = {}): boolean {
   const path = url.split('?')[0] ?? ''
+  if (path === '/v1/models' || path.startsWith('/v1/models/')) return wantsAnthropicShape(headers)
   return path === '/v1/messages' || path.startsWith('/v1/messages/')
 }
 

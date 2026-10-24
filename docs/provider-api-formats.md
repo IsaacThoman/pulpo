@@ -92,6 +92,9 @@ the failure are still billed.
   with `output_config.effort`. Older models, and other models behind an
   Anthropic-compatible endpoint, get `budget_tokens`. Effort levels the model
   does not accept fall back to the nearest one it does.
+- A request that asks for a reasoning summary without an effort thinks at the
+  model's default depth. Models that think by default always get
+  `display: "summarized"`, so their reasoning appears in chats.
 - Custom `temperature` and `top_p` are omitted where the model rejects them
   (Claude Opus 4.7 and later, Sonnet 5 and later, Haiku 5.5) and whenever
   thinking is on, including thinking set as a model default parameter.
@@ -126,7 +129,7 @@ Alongside the OpenAI-compatible endpoints, API keys can call:
 | --- | --- |
 | `POST /v1/messages` | Anthropic Messages, streaming and non-streaming |
 | `POST /v1/messages/count_tokens` | Estimated input tokens for a Messages request |
-| `GET /v1/models` | With an `anthropic-version` header, returns Anthropic's model-list shape |
+| `GET /v1/models` | With an `anthropic-version` header, returns Anthropic's model-list shape, including `max_input_tokens` and `max_tokens`, with `limit`, `after_id`, and `before_id` paging. Without `limit`, every model is returned |
 
 Point an Anthropic SDK at the instance root with a Pulpo API key:
 
@@ -158,24 +161,31 @@ Supported request features:
   are passed on as text.
 - Custom tools, `tool_choice` (`auto`, `any`, `tool`, `none`), and
   `disable_parallel_tool_use`.
-- `thinking` (`enabled` or `adaptive`) and `output_config.effort`.
+- `thinking` (`enabled`, `adaptive`, or `disabled`) and `output_config.effort`.
+  `adaptive` without an effort uses the model's default effort, and `disabled`
+  turns off reasoning the model would otherwise use by default.
 - `output_config.format` JSON schemas, `temperature`, and `top_p`.
 - `metadata.user_id`, which becomes the safety identifier.
 
-Responses include `thinking` blocks only when the request enabled thinking.
-Signatures are present when the model behind the endpoint is an Anthropic
-model, so you can send the blocks back unchanged.
+Responses include `thinking` blocks when the request enabled thinking. Signed
+and redacted thinking from an Anthropic model is always included, because it
+must be sent back unchanged on the next turn. Anthropic does the same for
+models that think by default. Refusals carry
+`stop_details: {type: "refusal"}`.
 
 Accepted but ignored: `stop_sequences`, `top_k`, `service_tier`, `container`,
 `context_management`, `inference_geo`, `speed`, and `cache_control`.
-Anthropic-hosted server tools (web search, code execution, and others) are
-also ignored, so clients that always advertise them still work. Their custom
+Anthropic-defined tools are also ignored. These are the tools declared with a
+`type`, such as web search, code execution, bash, text editor, memory, and
+computer use. Clients that always advertise them still work, and their custom
 tools are kept. `max_tokens: 0` (cache pre-warming) generates a single token.
 
 Rejected with HTTP 400: `mcp_servers` and file-ID sources.
 
 Errors use Anthropic's `{"type": "error", "error": {...}}` envelope, so SDK
-error classes work as usual. Upstream overloads become `overloaded_error`
+error classes work as usual. An unknown model returns `not_found_error` (404),
+and a body that is not valid JSON returns `invalid_request_error` (400).
+Upstream overloads become `overloaded_error`
 (529) and rate limits become `rate_limit_error` (429), so clients back off and
 retry as they would with Anthropic. `count_tokens` returns an estimate, because Pulpo
 serves models with different tokenizers.
