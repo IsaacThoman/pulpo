@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import type { FileNode } from '@pulpo/contracts'
+import { create } from 'zustand'
 
 /** Pointer travel before a press on an item becomes a drag, so plain clicks still select. */
 const DRAG_THRESHOLD_PX = 5
@@ -57,6 +58,9 @@ function rowRect(id: string, scope: ParentNode): DOMRect | null {
   return scope.querySelector<HTMLElement>(`[data-file-id="${CSS.escape(id)}"]`)?.getBoundingClientRect() ?? null
 }
 
+/** The drop target under a drag, for targets outside the view the drag started in (e.g. tabs). */
+export const useItemDropTarget = create<{ target: string | null }>()(() => ({ target: null }))
+
 /**
  * Drive-style dragging for items already in Files: a press that travels a few pixels lifts the
  * selection into a chip that follows the pointer, highlights folders and breadcrumbs under it
@@ -107,6 +111,7 @@ export function useItemDrag(options: {
   const setTarget = (target: string | null) => {
     activeTargetRef.current = target
     setActiveTarget(target)
+    useItemDropTarget.setState({ target })
   }
   // Whether the pointer is over the drop zone, which then decides where items land.
   const overZone = useRef(false)

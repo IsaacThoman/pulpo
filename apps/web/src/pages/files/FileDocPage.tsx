@@ -30,12 +30,10 @@ import { useDocSession, type PresencePeer } from '@/features/files/editor/use-do
 import { useSuggestionRecount } from '@/features/files/editor/use-suggestion-recount'
 import { FilePreviewBody } from '@/features/files/FilePreview'
 import { FileSuggestionBanner } from '@/features/files/FileSuggestion'
-import { FilesTabBar } from '@/features/files/FilesTabBar'
 import { MarkdownConversionDialog } from '@/features/files/MarkdownConversionDialog'
 import { revealFileInPlace } from '@/features/files/reveal'
-import { useFollowFilesTab } from '@/features/files/tabs'
-import { PanelWindowButtons } from '@/features/side-panel/PanelControls'
-import { locationIsCurrent, openBeside, panelContentPath, useMainNavigate } from '@/features/side-panel/use-panel-actions'
+import { showInMainView } from '@/features/side-panel/main-tabs'
+import { locationIsCurrent, openBeside, useMainNavigate } from '@/features/side-panel/use-panel-actions'
 import { SplitViewButton } from '@/features/side-panel/AgentActions'
 import { usePublishFilesView, type AgentItem, type FilesViewPlace } from '@/features/side-panel/agent'
 import { useSidePanel, type PanelContent } from '@/features/side-panel/store'
@@ -162,15 +160,13 @@ function FilePath({ ancestors, inPanel }: { ancestors: FileNode[]; inPanel: bool
     const folder = { kind: 'folder' as const, id }
     if (event.altKey) {
       event.preventDefault()
-      if (inPanel) {
-        useSidePanel.getState().close()
-        goMain(panelContentPath(folder))
-      } else {
+      if (inPanel) showInMainView(folder, goMain)
+      else {
         openBeside(folder, goMain)
       }
     } else if (inPanel) {
       event.preventDefault()
-      useSidePanel.getState().open(folder)
+      useSidePanel.getState().navigate(folder)
     }
   }
   return (
@@ -207,17 +203,14 @@ function SuggestionBanner({ node, ancestors, view }: { node: FileNode | undefine
       node={node}
       ancestors={ancestors}
       onRejected={(root) => {
-        if (view.layout === 'panel') useSidePanel.getState().close()
+        if (view.panel) useSidePanel.getState().removeContent(view.panel)
         else navigate(root.parentId ? `/files/f/${root.parentId}` : '/files', { replace: true })
       }}
     />
   )
 }
 
-/**
- * Title bar shared by every file view; in the side panel it adds full-page and close buttons. On
- * the page the Files tabs sit under it.
- */
+/** Title bar shared by every file view; on the page it adds Split view (the panel's controls sit on its tabs). */
 function FileHeader({ node, ancestors, view, onDownload, children }: {
   node: FileNode | undefined
   ancestors: FileNode[]
@@ -230,8 +223,7 @@ function FileHeader({ node, ancestors, view, onDownload, children }: {
   usePublishFilesView(place ?? { layout: view.layout, view: { kind: 'folder', id: null } }, item)
   const goMain = useMainNavigate()
   return (
-    <>
-    <header className={cn('flex items-center gap-1.5 border-b px-4 py-1.5', view.layout === 'panel' ? 'side-panel-header' : 'mobile-page-content')}>
+    <header className={cn('flex items-center gap-1.5 border-b px-4 py-1.5', view.layout === 'page' && 'mobile-page-content')}>
       <div className="min-w-0 flex-1">
         <FilePath ancestors={ancestors} inPanel={view.layout === 'panel'} />
         {node ? <DocTitle node={node} /> : <div className="h-8" />}
@@ -249,10 +241,8 @@ function FileHeader({ node, ancestors, view, onDownload, children }: {
         </TooltipTrigger>
         <TooltipContent side="bottom">{ui("Download")}</TooltipContent>
       </Tooltip>
-      {view.panel ? <PanelWindowButtons content={view.panel} /> : place && <SplitViewButton view={place.view} />}
+      {view.layout === 'page' && place && <SplitViewButton view={place.view} />}
     </header>
-    {view.layout === 'page' && <FilesTabBar />}
-    </>
   )
 }
 
@@ -431,17 +421,13 @@ function BlobFileView({ node, ancestors, view }: { node: FileNode; ancestors: Fi
 
 function FileViewMessage({ message, view, back }: { message: string; view: FileViewContext; back: string }) {
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      {/* Without a header, the tabs still lead back to the other ones. */}
-      {view.layout === 'page' && <div className="mobile-page-content"><FilesTabBar /></div>}
-      <div className="grid min-h-0 flex-1 place-items-center p-8">
+    <div className="grid h-full place-items-center p-8">
       <div className="max-w-md rounded-xl border p-6 text-center">
         <TriangleAlert className="mx-auto size-8 text-amber-500" />
         <p className="mt-3 text-sm text-muted-foreground">{message}</p>
         {view.layout === 'panel'
-          ? <Button variant="outline" size="sm" className="mt-4" onClick={() => useSidePanel.getState().close()}>{ui("Close")}</Button>
+          ? <Button variant="outline" size="sm" className="mt-4" onClick={() => view.panel && useSidePanel.getState().removeContent(view.panel)}>{ui("Close tab")}</Button>
           : <Button asChild variant="outline" size="sm" className="mt-4"><Link to={back}>{ui("Back to My files")}</Link></Button>}
-      </div>
       </div>
     </div>
   )
@@ -475,14 +461,12 @@ export function FileDocPage() {
   const location = useLocation()
   const userId = useAuth((state) => state.user?.id)
   const filesEnabled = useAuth((state) => state.filesEnabled)
-  const shown = useSidePanel((state) => state.content)
-  // Opening the side panel's file full page moves it here instead of showing it twice.
+  const panelTabs = useSidePanel((state) => state.tabs)
+  // Opening a side panel tab's file full page moves it here instead of showing it twice.
   useEffect(() => {
     if (!locationIsCurrent(location)) return
-    if (docId && shown?.kind === 'file' && shown.id.toLowerCase() === docId) useSidePanel.getState().close()
-  }, [docId, location, shown])
-  // The page's file is the active Files tab.
-  useFollowFilesTab(userId, filesEnabled && docId ? { kind: 'file', id: docId } : null)
+    if (docId) useSidePanel.getState().removeContent({ kind: 'file', id: docId })
+  }, [docId, location, panelTabs])
   if (!filesEnabled) {
     return <div className="grid h-full place-items-center p-8 text-sm text-muted-foreground">{ui("Files are disabled by the administrator")}</div>
   }

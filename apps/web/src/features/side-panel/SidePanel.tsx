@@ -3,7 +3,10 @@ import { Loader2 } from 'lucide-react'
 import { ui } from '@/i18n/ui'
 import { cn } from '@/lib/utils'
 import { clampPanelWidth, DEFAULT_PANEL_WIDTH, readPanelWidth, splitFits, useSidePanel, writePanelWidth, type PanelContent } from './store'
-import { panelContentPath, useMainNavigate } from './use-panel-actions'
+import { movePanelTabToMain } from './main-tabs'
+import { activeTab } from './pane-tabs'
+import { PanelTabStrip } from './PanelControls'
+import { useMainNavigate } from './use-panel-actions'
 
 // Panel views are heavy (editor, chat); load each only once something of that kind opens.
 const FilePanelView = lazy(() => import('@/pages/files/FileDocPage').then((module) => ({ default: module.FilePanelView })))
@@ -55,9 +58,8 @@ export function SidePanel({ available, full = false }: { available: number; full
         void import('./agent').then((agent) => agent.runAgentShortcut(goRef.current))
       } else if (event.key === 'Enter' && event.shiftKey && state.content) {
         event.preventDefault()
-        const target = panelContentPath(state.content)
-        state.close()
-        goRef.current(target)
+        const tab = activeTab(state)
+        if (tab) movePanelTabToMain(tab, goRef.current)
       }
     }
     window.addEventListener('keydown', onKey)
@@ -94,7 +96,14 @@ export function SidePanel({ available, full = false }: { available: number; full
     handle.addEventListener('pointercancel', end)
   }
 
-  const content = <PanelView panel={panel} />
+  const content = (
+    <>
+      <PanelTabStrip />
+      <div className="flex min-h-0 flex-1 flex-col">
+        <PanelView panel={panel} />
+      </div>
+    </>
+  )
 
   if (full) {
     return (

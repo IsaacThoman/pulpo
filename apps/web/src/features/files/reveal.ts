@@ -23,6 +23,6 @@ export function revealFile(node: Pick<FileNode, 'id' | 'parentId'>, go: (pathnam
 export function revealFileInPlace(node: Pick<FileNode, 'id' | 'parentId'>, inPanel: boolean, go: (pathname: string) => void): void {
   useFileReveal.setState({ target: { folderId: node.parentId, nodeId: node.id, layout: inPanel ? 'panel' : 'page' } })
   const folder = { kind: 'folder' as const, id: node.parentId }
-  if (inPanel) useSidePanel.getState().open(folder)
+  if (inPanel) useSidePanel.getState().navigate(folder)
   else go(panelContentPath(folder))
 }

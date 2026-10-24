@@ -11,6 +11,7 @@ vi.mock('@/stores/settings', () => ({
   useSettings: (select: (state: { doubleShiftSearch: boolean; animationSpeed: number }) => unknown) =>
     select({ doubleShiftSearch: false, animationSpeed: 1 }),
 }))
+vi.mock('@/stores/auth', () => ({ useAuth: Object.assign((select: (state: unknown) => unknown) => select({ user: null }), { getState: () => ({ user: null }) }) }))
 vi.mock('@/features/chat/ChatDataBridge', () => ({ ChatDataBridge: () => null }))
 vi.mock('@/features/settings/SettingsBridge', () => ({ SettingsBridge: () => null }))
 vi.mock('./BannerBar', () => ({ BannerBar: () => null }))

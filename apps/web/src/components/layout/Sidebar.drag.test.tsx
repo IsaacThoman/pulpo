@@ -191,7 +191,7 @@ afterEach(() => {
   cleanup()
   restoreLayout()
   vi.clearAllMocks()
-  useSidePanel.setState({ content: null, lastContent: null })
+  useSidePanel.setState({ content: null, tabs: [], activeId: null, hidden: false, closed: { tabs: [], activeId: null }, userId: null })
 })
 
 const fileRow = () => screen.getByRole('button', { name: 'Notes.md' }).parentElement!
@@ -466,10 +466,10 @@ describe('menus of folders, files, and chats', () => {
     expect(sidebarActions.moveSidebarSelection).toHaveBeenCalledWith(['f1'], 'f2')
   })
 
-  it('opens files and folders in a new tab', async () => {
+  it('opens files and folders in a new browser tab', async () => {
     const open = vi.spyOn(window, 'open').mockReturnValue(null)
     fireEvent.contextMenu(fileRow(), { clientX: 20, clientY: 240 })
-    fireEvent.click(await screen.findByRole('menuitem', { name: 'Open in new tab' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Open in new browser tab' }))
     expect(open).toHaveBeenCalledWith('/files/d/doc-1', '_blank', 'noopener')
     open.mockRestore()
   })

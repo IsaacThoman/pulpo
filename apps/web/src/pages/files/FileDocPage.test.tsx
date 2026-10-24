@@ -61,7 +61,7 @@ beforeEach(() => {
   sessions.session = null
   downloadDocMarkdown.mockClear()
   window.history.replaceState(null, '')
-  useSidePanel.setState({ content: null, lastContent: { kind: 'file', id: 'plan' } })
+  useSidePanel.setState({ content: null, tabs: [], activeId: null, hidden: false, closed: { tabs: [{ id: 'plan-tab', content: { kind: 'file', id: 'plan' } }], activeId: 'plan-tab' }, userId: null })
 })
 afterEach(cleanup)
 

@@ -1,5 +1,4 @@
 import { useLocation, useNavigate } from 'react-router-dom'
-import { isDesktopRuntime } from '@/lib/runtime'
 import { folderPath, trashFolderRef } from '@/features/trash/folder'
 import { SIDE_PANEL_PARAM, useSidePanel, type PanelContent } from './store'
 
@@ -59,18 +58,4 @@ export function openBeside(content: PanelContent, go: (pathname: string) => void
 export function useOpenBeside(): (content: PanelContent) => void {
   const go = useMainNavigate()
   return (content) => openBeside(content, go)
-}
-
-/** Panel header actions shared by every kind of panel content. */
-export function usePanelActions(content: PanelContent) {
-  const go = useMainNavigate()
-  const target = panelContentPath(content)
-
-  return {
-    close: () => useSidePanel.getState().close(),
-    /** Makes the panel's content the main view: the panel closes and the page opens it. */
-    openInMain: () => { useSidePanel.getState().close(); go(target) },
-    /** A new browser tab; the desktop app has no tabs. */
-    openInNewTab: isDesktopRuntime() ? null : () => { window.open(target, '_blank', 'noopener') },
-  }
 }

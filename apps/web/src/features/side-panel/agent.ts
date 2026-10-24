@@ -2,7 +2,9 @@ import { useEffect } from 'react'
 import { create } from 'zustand'
 import { focusComposer } from '@/components/chat/composer-focus'
 import { addFileScope, NO_FILE_ACCESS, type FileScopeAccess } from '@/features/files/file-scope'
+import { useAuth } from '@/stores/auth'
 import { useChat } from '@/stores/chat'
+import { mainTabs } from './main-tabs'
 import { useSidePanel, type PanelContent } from './store'
 
 /*
@@ -74,12 +76,19 @@ export function targetScope(target: ChatTarget | null, chats = useChat.getState(
   return chats.find((chat) => chat.id === target.id)?.fileScopeIds ?? []
 }
 
+/** A main view tab moves into the side panel: it opens there and leaves the main view's tabs. */
+function moveMainTabToPanel(view: PanelContent): void {
+  useSidePanel.getState().open(view)
+  const userId = useAuth.getState().user?.id
+  if (userId) mainTabs.removeContent(userId, view)
+}
+
 /** Navigates the main view (see `useMainNavigate`). */
 type Go = (pathname: string) => void
 
 /** Moves a files view from the main view into the panel, leaving the main view for a chat: a new one, or `chatId`. */
 export function splitView(view: PanelContent, go: Go, chatId?: string): void {
-  useSidePanel.getState().open(view)
+  moveMainTabToPanel(view)
   go(chatId ? `/c/${chatId}` : '/')
 }
 
@@ -89,7 +98,7 @@ export function splitView(view: PanelContent, go: Go, chatId?: string): void {
  * outside any files view) only the chat opens.
  */
 export function openInNewChat(ids: string[], place: FilesViewPlace | null, go: Go): void {
-  if (place?.layout === 'page' && useSidePanel.getState().splitAvailable) useSidePanel.getState().open(place.view)
+  if (place?.layout === 'page' && useSidePanel.getState().splitAvailable) moveMainTabToPanel(place.view)
   useNewChatScope.setState({ scopeIds: addFileScope([], ids), access: NO_FILE_ACCESS })
   go('/')
   // Already on the new-chat page, nothing remounts to take focus.

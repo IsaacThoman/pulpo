@@ -70,7 +70,7 @@ import { billingPlanTier, fetchBillingSummary } from '@/lib/billing'
 import { isDesktopRuntime } from '@/lib/runtime'
 import { ui, uit } from '@/i18n/ui'
 import { FilesNavMenu } from '@/features/files/FilesNavMenu'
-import { filesHomePath } from '@/features/files/tabs'
+import { filesHomePath } from '@/features/side-panel/main-tabs'
 import { NavItemMenu, type NavItemMenuKey, type NavItemMenuState } from '@/features/sidebar/NavItemMenu'
 import { FileNodeIcon } from '@/features/files/FileNodeIcon'
 import { SuggestedBadge } from '@/features/files/FileSuggestion'
@@ -458,7 +458,7 @@ function ChatMenu({ chat, onRename, atPointer = false }: { chat: Chat; onRename:
       {!isDesktopRuntime() && (
         <DropdownMenuItem onClick={() => { window.open(`/c/${chat.id}`, '_blank', 'noopener') }}>
           <ExternalLink />
-          {ui("Open in new tab")}
+          {ui("Open in new browser tab")}
         </DropdownMenuItem>
       )}
       <OpenChatToLeftItem chatId={chat.id} />
@@ -980,7 +980,7 @@ function ItemMenu({ node, folder, sidebar, atPointer = false, onRename, onNewFol
       {opens && !isDesktopRuntime() && (
         <DropdownMenuItem onClick={() => { window.open(opens, '_blank', 'noopener') }}>
           <ExternalLink />
-          {ui("Open in new tab")}
+          {ui("Open in new browser tab")}
         </DropdownMenuItem>
       )}
       {besideId && splitAvailable && (

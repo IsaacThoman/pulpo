@@ -8,7 +8,7 @@ import { useSettings, type FileDoubleClickAction } from '@/stores/settings'
 import { useSidePanel } from '@/features/side-panel/store'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { useFileClipboard } from '@/features/files/browser/clipboard'
-import { useFilesTabs } from '@/features/files/tabs'
+import { useMainTabs } from '@/features/side-panel/main-tabs'
 
 vi.hoisted(() => {
   Object.defineProperty(window, 'matchMedia', {
@@ -16,9 +16,10 @@ vi.hoisted(() => {
     value: () => ({ matches: false, addEventListener: () => undefined }),
   })
 })
-vi.mock('@/stores/auth', () => ({
-  useAuth: (selector: (state: unknown) => unknown) => selector({ user: { id: 'user' }, filesEnabled: true }),
-}))
+vi.mock('@/stores/auth', () => {
+  const state = { user: { id: 'user' }, filesEnabled: true }
+  return { useAuth: Object.assign((selector: (value: unknown) => unknown) => selector(state), { getState: () => state }) }
+})
 vi.mock('@/features/side-panel/agent', async (importOriginal) => ({
   ...await importOriginal<typeof import('@/features/side-panel/agent')>(),
   usePublishFilesView: () => undefined,
@@ -90,8 +91,8 @@ beforeEach(() => {
     disconnect() {}
   })
   useSettings.setState({ fileDoubleClickAction: 'open' })
-  useSidePanel.setState({ content: null, lastContent: null, splitAvailable: true })
-  useFilesTabs.setState({ userId: null, tabs: [], activeId: null }, true)
+  useSidePanel.setState({ content: null, tabs: [], activeId: null, hidden: false, closed: { tabs: [], activeId: null }, userId: null, splitAvailable: true })
+  useMainTabs.setState({ userId: null, tabs: [], activeId: null }, true)
 })
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.clearAllMocks() })
 
@@ -135,11 +136,13 @@ describe.each(['list', 'grid'])('file double-click in %s view', (view) => {
   it.each(cases)('setting %s with Ctrl=%s keeps panel behavior', async (action, modifier) => {
     localStorage.setItem('pulpo.files.view', view)
     useSettings.setState({ fileDoubleClickAction: action })
-    useSidePanel.setState({ content: { kind: 'folder', id: null } })
+    useSidePanel.getState().open({ kind: 'folder', id: null })
     showFiles(true)
     await doubleClick('Notes.md', modifier)
     expect(screen.getByTestId('location').textContent).toBe(modifier ? '/files/d/document' : '/files')
-    expect(useSidePanel.getState().content).toEqual(modifier ? null : { kind: 'file', id: 'document' })
+    // The file opens in a main view tab, and the panel keeps its folder; otherwise the panel's tab moves to it.
+    expect(useSidePanel.getState().content).toEqual(modifier ? { kind: 'folder', id: null } : { kind: 'file', id: 'document' })
+    expect(useSidePanel.getState().tabs).toHaveLength(1)
   })
 
   it.each(cases)('setting %s with Ctrl=%s browses folders in place', async (action, modifier) => {
@@ -222,7 +225,7 @@ describe('the trash in My files', () => {
   })
 
   it('opens in the panel like any folder', async () => {
-    useSidePanel.setState({ content: { kind: 'folder', id: null } })
+    useSidePanel.getState().open({ kind: 'folder', id: null })
     showFiles(true)
     await doubleClick('Trash')
     expect(useSidePanel.getState().content).toEqual({ kind: 'folder', id: 'trash' })
@@ -247,7 +250,7 @@ describe('items an agent suggested', () => {
 
 describe('inside a folder an agent suggested', () => {
   it('reviews the folder as a whole and then shows the folder that held it', async () => {
-    useSidePanel.setState({ content: { kind: 'folder', id: 'plan-drafts' } })
+    useSidePanel.getState().open({ kind: 'folder', id: 'plan-drafts' })
     showFiles(true, 'plan-drafts')
     const item = await screen.findByRole('option', { name: /notes\.md/ })
     fireEvent.contextMenu(item)
@@ -306,7 +309,7 @@ describe('chats in Files', () => {
   })
 
   it('leaves a chat in the panel to Open, which already shows it to the left', async () => {
-    useSidePanel.setState({ content: { kind: 'folder', id: null } })
+    useSidePanel.getState().open({ kind: 'folder', id: null })
     showFiles(true)
     fireEvent.contextMenu(await screen.findByRole('option', { name: /Trip/ }))
     expect(await screen.findByRole('menuitem', { name: 'Copy share link' })).toBeTruthy()
@@ -322,34 +325,37 @@ describe('chats in Files', () => {
     useSettings.setState({ trashRetention: '30d' })
   })
 
-  it('opens folders and files in new Files tabs: in the background with a middle-click, or shown from the menu', async () => {
+  it('opens folders and files in new tabs: in the background with a middle-click, or shown from the menu', async () => {
     showFiles()
-    // One tab (My files) shows no tab bar.
     await screen.findByRole('option', { name: /Projects/ })
-    expect(screen.queryByRole('tablist')).toBeNull()
+    useMainTabs.setState({ userId: 'user', tabs: [{ id: 'home', content: { kind: 'folder', id: null } }], activeId: 'home' }, true)
 
     fireEvent(screen.getByRole('option', { name: /Projects/ }), new MouseEvent('auxclick', { bubbles: true, button: 1 }))
     expect(screen.getByTestId('location').textContent).toBe('/files')
-    expect(screen.getAllByRole('tab').map((tab) => tab.getAttribute('aria-selected'))).toEqual(['true', 'false'])
-    // Chats are not Files tabs.
+    // Chats are not tabs.
     fireEvent(screen.getByRole('option', { name: /Trip/ }), new MouseEvent('auxclick', { bubbles: true, button: 1 }))
-    expect(screen.getAllByRole('tab')).toHaveLength(2)
 
     fireEvent.contextMenu(screen.getByRole('option', { name: /Notes\.md/ }))
-    fireEvent.click(await screen.findByRole('menuitem', { name: /^Open in new Files tab/ }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: /^Open in new tab/ }))
     expect(screen.getByTestId('location').textContent).toBe('/files/d/document')
-    expect(useFilesTabs.getState().tabs.map((tab) => tab.content)).toEqual([
+    expect(useMainTabs.getState().tabs.map((tab) => tab.content)).toEqual([
       { kind: 'folder', id: null },
       { kind: 'file', id: 'document' },
       { kind: 'folder', id: 'folder' },
     ])
+    expect(useMainTabs.getState().activeId).toBe(useMainTabs.getState().tabs[1]!.id)
   })
 
-  it('offers no Files tabs in the side panel', async () => {
-    useSidePanel.setState({ content: { kind: 'folder', id: null } })
+  it('opens new tabs in the side panel from a folder there, and browses in place', async () => {
+    useSidePanel.getState().open({ kind: 'folder', id: null })
     showFiles(true)
-    fireEvent.contextMenu(await screen.findByRole('option', { name: /Projects/ }))
-    await screen.findByRole('menuitem', { name: /^Open in main view/ })
-    expect(screen.queryByRole('menuitem', { name: /^Open in new Files tab/ })).toBeNull()
+    fireEvent(await screen.findByRole('option', { name: /Projects/ }), new MouseEvent('auxclick', { bubbles: true, button: 1 }))
+    expect(useSidePanel.getState().tabs.map((tab) => tab.content)).toEqual([{ kind: 'folder', id: null }, { kind: 'folder', id: 'folder' }])
+    expect(useSidePanel.getState().content).toEqual({ kind: 'folder', id: null })
+    fireEvent.contextMenu(screen.getByRole('option', { name: /Notes\.md/ }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: /^Open in new tab/ }))
+    expect(useSidePanel.getState().content).toEqual({ kind: 'file', id: 'document' })
+    expect(useSidePanel.getState().tabs).toHaveLength(3)
+    expect(screen.getByTestId('location').textContent).toBe('/files')
   })
 })

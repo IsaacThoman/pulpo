@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { parsePanelContent, serializePanelContent, SIDE_PANEL_PARAM, useSidePanel } from './store'
+import { useAuth } from '@/stores/auth'
 import { locationIsCurrent } from './use-panel-actions'
 
 /**
@@ -12,6 +13,7 @@ export function useSidePanelUrl(): void {
   const location = useLocation()
   const navigate = useNavigate()
   const content = useSidePanel((state) => state.content)
+  const userId = useAuth((state) => state.user?.id)
   const lastApplied = useRef<string | null>(null)
 
   useEffect(() => {
@@ -19,6 +21,13 @@ export function useSidePanelUrl(): void {
     if (!locationIsCurrent(location)) return
     const params = new URLSearchParams(location.search)
     const current = params.get(SIDE_PANEL_PARAM)
+    // The first time for an account, the tabs kept on this device come back: open when the
+    // address names one of them, otherwise ready for Cmd/Ctrl+\\.
+    if (userId && useSidePanel.getState().userId !== userId) {
+      useSidePanel.getState().restore(userId, parsePanelContent(current))
+      lastApplied.current = current
+      return
+    }
     // Read the store now, not the rendered value: a child effect in this same commit (a full page
     // taking over the panel's file) may already have closed it.
     const desired = serializePanelContent(useSidePanel.getState().content)
@@ -40,5 +49,5 @@ export function useSidePanelUrl(): void {
     // `:` and `,` are valid in a query; keep the panel readable (`?side=chat:new:<id>,<id>`).
     const search = params.toString().replace(/%3A/gi, ':').replace(/%2C/gi, ',')
     navigate({ pathname: location.pathname, search: search ? `?${search}` : '', hash: location.hash }, { replace: true, state: location.state })
-  }, [content, location, navigate])
+  }, [content, location, navigate, userId])
 }

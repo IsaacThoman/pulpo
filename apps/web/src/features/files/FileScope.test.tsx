@@ -9,7 +9,7 @@ import { useAuth } from '@/stores/auth'
 import { useFilesViews } from '@/features/side-panel/agent'
 import { FileScopeChip } from './FileScope'
 import { useOpenFileOffer } from './open-file-offer'
-import { useFilesTabs } from './tabs'
+import { useMainTabs } from '@/features/side-panel/main-tabs'
 
 vi.hoisted(() => {
   window.matchMedia = (() => ({ matches: false, addEventListener: () => undefined, removeEventListener: () => undefined })) as never
@@ -80,7 +80,7 @@ describe('the open file offered to the composer', () => {
   const notes: FileNode = { ...plan, id: '00000000-0000-4000-8000-0000000000b2', name: 'Notes.md' }
   beforeEach(() => {
     api.fetchFileNode.mockImplementation(async (id: string) => ({ node: id === notes.id ? notes : plan, ancestors: [] }))
-    useFilesTabs.setState({ userId: 'user', tabs: [{ id: 'tab', content: { kind: 'file', id: notes.id } }], activeId: 'tab' }, true)
+    useMainTabs.setState({ userId: 'user', tabs: [{ id: 'tab', content: { kind: 'file', id: notes.id } }], activeId: 'tab' }, true)
     useFilesViews.setState({ page: null, panel: null })
   })
 
@@ -99,7 +99,7 @@ describe('the open file offered to the composer', () => {
     renderOffer([notes.id])
     expect(screen.getByText('none')).toBeTruthy()
     cleanup()
-    useFilesTabs.setState({ tabs: [{ id: 'tab', content: { kind: 'folder', id: null } }] })
+    useMainTabs.setState({ tabs: [{ id: 'tab', content: { kind: 'folder', id: null } }] })
     renderOffer()
     expect(screen.getByText('none')).toBeTruthy()
   })

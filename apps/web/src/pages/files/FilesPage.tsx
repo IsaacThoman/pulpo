@@ -64,8 +64,6 @@ import { useResolveFileSuggestion } from '@/features/files/use-file-suggestion'
 import { useFilesPageRequest } from '@/features/files/files-page-request'
 import { useFileReveal } from '@/features/files/reveal'
 import { useFileClipboard } from '@/features/files/browser/clipboard'
-import { FilesTabBar } from '@/features/files/FilesTabBar'
-import { filesTabs, useFollowFilesTab, type FilesTabContent } from '@/features/files/tabs'
 import { FileContextMenu, type ContextMenuPoint } from '@/features/files/browser/FileContextMenu'
 import { FileDragOverlay } from '@/features/files/browser/FileDragOverlay'
 import { FileItem, type FileDropHandlers } from '@/features/files/browser/FileItem'
@@ -88,7 +86,7 @@ import { hasPrimaryModifier, isAppleShortcut, isEditableTarget, shortcutLabel } 
 import { useSidePanel, type PanelContent } from '@/features/side-panel/store'
 import { AgentMenuItems, OpenChatToLeftItem, SplitViewButton } from '@/features/side-panel/AgentActions'
 import { splitView, usePublishFilesView, type FilesViewPlace } from '@/features/side-panel/agent'
-import { PanelWindowButtons } from '@/features/side-panel/PanelControls'
+import { mainTabs, showInMainView } from '@/features/side-panel/main-tabs'
 import { openBeside, panelContentPath, useMainNavigate } from '@/features/side-panel/use-panel-actions'
 import { SelectionAction } from '@/features/files/browser/SelectionAction'
 import { useFileOperations } from '@/features/files/browser/use-file-operations'
@@ -216,8 +214,6 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
   const agentItem = useMemo(() => ({ id: folderId ?? FILE_SCOPE_ROOT }), [folderId])
   // Trashed items are not files the agent can work on.
   usePublishFilesView(place, filesEnabled && !inTrash && !listing.isError ? agentItem : null)
-  // The page is the active Files tab; browsing moves it along.
-  useFollowFilesTab(userId, panel ? null : place.view as FilesTabContent)
   const ops = useFileOperations()
   const trashOps = useTrashOperations()
   const resolveFileSuggestion = useResolveFileSuggestion()
@@ -346,15 +342,15 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
    * when browsing in the panel. Alt/Option-click, and "Open to the right" or "Open in main view".
    */
   const openElsewhere = (content: PanelContent) => {
-    // From the panel it becomes the only view, as with the header's maximize button.
+    // From the panel it opens in a main view tab; the panel's tab showing it moves there.
     if (panel) {
-      useSidePanel.getState().close()
-      goMain(panelContentPath(content))
+      useSidePanel.getState().removeContent(content)
+      showInMainView(content, goMain)
     } else {
       openBeside(content, goMain)
     }
   }
-  const nodeContent = (node: FileNode): FilesTabContent => node.kind === 'folder'
+  const nodeContent = (node: FileNode): PanelContent => node.kind === 'folder'
     ? { kind: 'folder', id: inTrash ? trashFolderRef(node.id) : node.id }
     : { kind: 'file', id: node.id }
   const elsewhereLabel = panel ? ui("Open in main view") : ui("Open to the right")
@@ -362,26 +358,29 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
   const splitAvailable = useSidePanel((state) => state.splitAvailable)
   const canOpenElsewhere = panel || splitAvailable
   const ElsewhereIcon = panel ? Maximize2 : PanelRight
-  /**
-   * Whether an item opens in a tab of the page: folders and files, not chats. In the trash only
-   * folders open. The side panel has no tabs.
-   */
+  /** Whether an item opens in a tab: folders and files, not chats. In the trash only folders open. */
   const opensInTab = (node: FileNode) => {
     const opens = resolveShortcut(node)
-    return !panel && (inTrash ? opens.kind === 'folder' : opens.kind !== 'chat' && opens.kind !== 'shortcut')
+    return inTrash ? opens.kind === 'folder' : opens.kind !== 'chat' && opens.kind !== 'shortcut'
   }
-  /** Opens an item in a new tab after this one; `background` keeps this tab showing, as a middle-click does in browsers. */
+  /**
+   * Opens an item in a new tab of this view, after this one; `background` keeps this tab showing,
+   * as a middle-click does in browsers.
+   */
   const openInNewTab = (node: FileNode, background = false) => {
-    if (!userId || !opensInTab(node)) return
+    if (!opensInTab(node)) return
     const content = nodeContent(resolveShortcut(node))
-    filesTabs.add(userId, content, { background })
-    if (!background) goMain(panelContentPath(content))
+    if (panel) useSidePanel.getState().openTab(content, { background })
+    else if (userId) {
+      mainTabs.add(userId, content, { background })
+      if (!background) goMain(panelContentPath(content))
+    }
   }
   const elsewhereShortcut = isAppleShortcut() ? '⌥ Click' : 'Alt+Click'
 
   /** Shows a folder (or a trash reference) here: the page follows the route, the panel keeps its own place. */
   const showFolder = (id: string | null) => {
-    if (panel) useSidePanel.getState().open({ kind: 'folder', id })
+    if (panel) useSidePanel.getState().navigate({ kind: 'folder', id })
     else navigate(folderPath(id))
   }
 
@@ -403,7 +402,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
     if (node.kind === 'chat') goMain(`/c/${node.id}`)
     else if (node.kind === 'folder') showFolder(node.id)
     // The panel shows every file in place, with a way back to its folder.
-    else if (panel) useSidePanel.getState().open({ kind: 'file', id: node.id })
+    else if (panel) useSidePanel.getState().navigate({ kind: 'file', id: node.id })
     else navigate(`/files/d/${node.id}`)
   }
 
@@ -894,7 +893,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
           <ElsewhereIcon /> {elsewhereLabel}<DropdownMenuShortcut>{elsewhereShortcut}</DropdownMenuShortcut>
         </DropdownMenuItem>
       )}
-      {single && opensInTab(single) && <DropdownMenuItem onSelect={() => openInNewTab(single)}><PanelTop /> {ui("Open in new Files tab")}</DropdownMenuItem>}
+      {single && opensInTab(single) && <DropdownMenuItem onSelect={() => openInNewTab(single)}><PanelTop /> {ui("Open in new tab")}</DropdownMenuItem>}
       {/* In the panel, Open already shows a chat beside it. */}
       {single && resolveShortcut(single).kind === 'chat' && !panel && <OpenChatToLeftItem chatId={resolveShortcut(single).id} shortcut={elsewhereShortcut} />}
       {suggestionRootItem && (
@@ -957,7 +956,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
       {single?.kind === 'folder' && canOpenElsewhere && (
         <DropdownMenuItem onSelect={() => openElsewhere(nodeContent(single))}><ElsewhereIcon /> {elsewhereLabel}<DropdownMenuShortcut>{elsewhereShortcut}</DropdownMenuShortcut></DropdownMenuItem>
       )}
-      {single?.kind === 'folder' && opensInTab(single) && <DropdownMenuItem onSelect={() => openInNewTab(single)}><PanelTop /> {ui("Open in new Files tab")}</DropdownMenuItem>}
+      {single?.kind === 'folder' && opensInTab(single) && <DropdownMenuItem onSelect={() => openInNewTab(single)}><PanelTop /> {ui("Open in new tab")}</DropdownMenuItem>}
       {single?.kind === 'folder' && <DropdownMenuSeparator />}
       <DropdownMenuItem onSelect={() => void restoreSelection()}><RotateCcw /> {ui("Restore")}</DropdownMenuItem>
       {restoreTo && <DropdownMenuItem onSelect={restoreTo}><FolderInput /> {ui("Restore to…")}</DropdownMenuItem>}
@@ -1246,14 +1245,15 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
     </>
   )
 
-  // The page and the panel share one layout; only the window controls at the end differ.
+  // The page and the panel share one layout; only the page has Split view (the panel's controls sit on its tabs).
   return (
     <div ref={rootRef} className="flex h-full min-h-0 flex-col">
       <header className={cn(
         '@container flex min-w-0 items-center gap-1 border-b',
         // The same padding in both, so the path, title, and buttons line up between the views.
         'px-4 py-1.5',
-        panel ? 'side-panel-header' : 'mobile-page-content',
+        // In the panel its tabs sit above, as the panel's own header.
+        !panel && 'mobile-page-content',
       )}>
         <div className="min-w-0 flex-1 pr-1">
           {path}
@@ -1262,10 +1262,9 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
         {selectionBar}
         {/* With room the controls stay beside the selection bar; in a narrow header the bar takes their place. */}
         <div className={cn('flex shrink-0 items-center gap-0.5', selectedNodes.length > 0 && '@max-[40rem]:hidden')}>{toolbar}</div>
-        {panel ? <PanelWindowButtons content={place.view} /> : <SplitViewButton view={place.view} />}
+        {!panel && <SplitViewButton view={place.view} />}
         {fileInputElement}
       </header>
-      {!panel && <FilesTabBar dropTarget={drag.activeTarget} />}
       {trashView && <TrashBanner view={trashView} now={now} onRestoreFolder={() => void restoreShownFolder()} className={cn(!panel && 'mobile-page-content')} />}
       {!inTrash && listing.data?.folder?.suggestion && (
         <FileSuggestionBanner
@@ -1273,7 +1272,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
           ancestors={listing.data.ancestors}
           onRejected={(root) => {
             // The suggested folder is gone with everything in it; show the folder that held it.
-            if (panel) useSidePanel.getState().open({ kind: 'folder', id: root.parentId })
+            if (panel) useSidePanel.getState().navigate({ kind: 'folder', id: root.parentId })
             else navigate(root.parentId ? `/files/f/${root.parentId}` : '/files', { replace: true })
           }}
         />
