@@ -69,7 +69,10 @@ function fileBlock(part: Extract<NeutralPart, { type: 'file' }>): Block {
     return { type: 'document', source: { type: 'text', media_type: 'text/plain', data: Buffer.from(parsed.data, 'base64').toString('utf8') }, ...title }
   }
   // Anthropic fetches URL documents itself, but only PDFs.
-  if (!parsed && part.fileUrl && urlDocumentMayBePdf(part)) return { type: 'document', source: { type: 'url', url: part.fileUrl }, ...title }
+  if (!parsed && part.fileUrl) {
+    if (urlDocumentMayBePdf(part)) return { type: 'document', source: { type: 'url', url: part.fileUrl }, ...title }
+    return { type: 'text', text: `[Document${part.filename ? ` ${part.filename}` : ''}: ${part.fileUrl}]` }
+  }
   const label = part.filename ?? part.fileId ?? 'attachment'
   return { type: 'text', text: `[Attachment ${label}${parsed ? ` (${parsed.mediaType})` : ''} cannot be read by this model]` }
 }
@@ -172,7 +175,8 @@ export function anthropicMessagesRequest(payload: JsonRecord, options: { stream:
     ? payload.max_output_tokens
     : ANTHROPIC_DEFAULT_MAX_TOKENS
   // A client's explicitly disabled thinking wins over any effort, including a model default.
-  const effort = clientDisabledThinking(payload.reasoning) ? 'none' : reasoningEffort(payload.reasoning)
+  const clientDisabled = clientDisabledThinking(payload.reasoning)
+  const effort = clientDisabled ? 'none' : reasoningEffort(payload.reasoning)
   const disableThinking = effort === 'none'
   let thinking: JsonRecord | undefined
   const outputConfig: JsonRecord = {}
@@ -199,6 +203,8 @@ export function anthropicMessagesRequest(payload: JsonRecord, options: { stream:
   // A reasoning summary without an effort asks for thinking at the model's default depth, unless a tool is forced.
   const wantsThinking = !effort && !forcing && record(payload.reasoning)?.summary !== undefined
   if (forcing && !thinking && !passthrough.thinking && capabilities.thinksByDefault && !capabilities.thinkingAlwaysOn) thinking = { type: 'disabled' }
+  // The client's choice also overrides a `thinking` default set on the model.
+  if (clientDisabled && !thinking && passthrough.thinking && !capabilities.thinkingAlwaysOn) thinking = { type: 'disabled' }
   if (!thinking && !passthrough.thinking && !effort) {
     // Models that think by default would otherwise return empty (display-omitted) thinking.
     if (capabilities.adaptiveThinking && (wantsThinking || capabilities.thinksByDefault)) thinking = { type: 'adaptive', display: 'summarized' }

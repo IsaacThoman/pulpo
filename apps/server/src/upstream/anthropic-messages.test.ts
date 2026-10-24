@@ -308,7 +308,7 @@ describe('anthropicMessagesFromEntries', () => {
       { type: 'text', text: '[Attachment file-9 cannot be read by this model]' },
       { type: 'document', source: { type: 'url', url: 'https://example.com/paper.pdf' }, title: 'paper.pdf' },
       { type: 'document', source: { type: 'url', url: 'https://arxiv.org/pdf/2401.00001' }, title: 'document.pdf' },
-      { type: 'text', text: '[Attachment notes.docx cannot be read by this model]' },
+      { type: 'text', text: '[Document notes.docx: https://example.com/notes.docx]' },
     ])
   })
 
@@ -631,6 +631,9 @@ describe('Anthropic request constraints', () => {
     const withDefault = anthropicMessagesRequest({ ...base, model: 'claude-opus-4-6', reasoning: { ...disabled, effort: 'medium' }, tool_choice: { type: 'function', name: 'read' } }, { stream: true })
     expect(withDefault.thinking).toEqual({ type: 'disabled' })
     expect(withDefault.tool_choice).toEqual({ type: 'tool', name: 'read' })
+    // It also overrides a thinking default set on the model.
+    const operator = anthropicMessagesRequest({ model: 'claude-haiku-4-5', input: 'q', reasoning: disabled, thinking: { type: 'enabled', budget_tokens: 2_000 } }, { stream: true })
+    expect(operator.thinking).toEqual({ type: 'disabled' })
     // Models that always think run at low effort instead.
     const opus = anthropicMessagesRequest({ model: 'claude-opus-5-5', input: 'q', reasoning: disabled }, { stream: true })
     expect(opus.thinking).toEqual({ type: 'adaptive', display: 'summarized' })

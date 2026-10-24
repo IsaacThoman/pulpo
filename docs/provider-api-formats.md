@@ -166,15 +166,16 @@ Supported request features:
 - `thinking` (`enabled`, `adaptive`, or `disabled`) and `output_config.effort`.
   `adaptive` without an effort uses the model's default effort. `disabled`
   turns off thinking on Anthropic providers, including thinking a model does
-  by default, or uses the lowest effort on models that always think. Other
-  provider formats keep the model's configured reasoning.
+  by default or as a model default parameter, or uses the lowest effort on
+  models that always think. Other provider formats keep the model's default
+  reasoning effort.
 - `output_config.format` JSON schemas, `temperature`, and `top_p`.
 - `metadata.user_id`, which becomes the safety identifier.
 
 Responses include `thinking` blocks when the request enabled thinking. Signed
 and redacted thinking from an Anthropic model is always included, because it
-must be sent back unchanged on the next turn. Anthropic does the same for
-models that think by default. Refusals carry
+must be sent back unchanged on the next turn. Unlike Anthropic, which leaves
+unrequested thinking text empty, Pulpo includes its summary. Refusals carry
 `stop_details: {type: "refusal"}`.
 
 Accepted but ignored: `stop_sequences`, `top_k`, `service_tier`, `container`,
