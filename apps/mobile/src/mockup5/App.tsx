@@ -6428,7 +6428,6 @@ function NativeFilesRow({ onOpen }: { onOpen: () => void }) {
         <SwiftUIImage systemName="doc.on.doc" size={17} modifiers={[frame({ width: 20, height: 20 })]} />
         <SwiftUIText>Files</SwiftUIText>
         <SwiftUISpacer />
-        <SwiftUIImage systemName="chevron.right" size={13} modifiers={[foregroundStyle('secondary')]} />
       </SwiftUIHStack>
     </SwiftUIButton>
   </SwiftUIHost>;
