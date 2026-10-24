@@ -100,6 +100,12 @@ describe('withoutPulpoReasoning', () => {
     const text = { model: 'm', input: 'hi' }
     expect(withoutPulpoReasoning(text)).toBe(text)
   })
+
+  it('strips Pulpo-only reasoning fields and drops a reasoning object they leave empty', () => {
+    expect(withoutPulpoReasoning({ model: 'm', input: 'hi', reasoning: { pulpo_thinking: 'disabled', effort: 'low' } }))
+      .toEqual({ model: 'm', input: 'hi', reasoning: { effort: 'low' } })
+    expect(withoutPulpoReasoning({ model: 'm', input: 'hi', reasoning: { pulpo_thinking: 'disabled' } })).toEqual({ model: 'm', input: 'hi' })
+  })
 })
 
 describe('collectResponse', () => {

@@ -1,4 +1,4 @@
-import type { Api, Model } from '@earendil-works/pi-ai'
+import type { Api, Model, ThinkingLevel } from '@earendil-works/pi-ai'
 import type { models, providerConnections } from '../database/schema.js'
 import { anthropicModelCapabilities } from './anthropic-models.js'
 import { anthropicSdkBaseUrl } from './anthropic-messages.js'
@@ -39,6 +39,8 @@ export function piModelForProvider(model: CatalogModel, provider: Provider): Mod
         supportsTemperature: capabilities.sampling,
       },
       thinkingLevelMap: {
+        // Always-thinking models reject `thinking: {type: "disabled"}`; omit it instead.
+        ...(capabilities.thinkingAlwaysOn ? { off: null } : {}),
         xhigh: capabilities.efforts.has('xhigh') ? 'xhigh' : 'high',
         max: capabilities.efforts.has('max') ? 'max' : 'high',
       },
@@ -74,6 +76,22 @@ export function chatCompletionsSamplingParameters(parameters: Record<string, unk
 export function explicitReasoningEffort(parameters: Record<string, unknown>): boolean {
   const reasoning = parameters.reasoning
   return Boolean(reasoning && typeof reasoning === 'object' && typeof (reasoning as Record<string, unknown>).effort === 'string')
+}
+
+/** The model was configured with reasoning effort `none`, which Pi's thinking levels cannot express. */
+export function reasoningDisabled(parameters: Record<string, unknown>): boolean {
+  const reasoning = parameters.reasoning
+  return Boolean(reasoning && typeof reasoning === 'object' && (reasoning as Record<string, unknown>).effort === 'none')
+}
+
+/**
+ * Pi reasoning level for an Anthropic Agent turn. Effort `none` turns thinking
+ * off, or runs at the lowest effort on models that always think (their Pi
+ * model maps `off` to null so Pi never sends disabled thinking).
+ */
+export function anthropicAgentReasoning(model: Model<Api>, parameters: Record<string, unknown>, level: ThinkingLevel): ThinkingLevel | undefined {
+  if (!reasoningDisabled(parameters)) return level
+  return model.thinkingLevelMap?.off === null ? 'low' : undefined
 }
 
 /** Pi's native Mistral adapter uses camelCase options, then serializes the wire body. */

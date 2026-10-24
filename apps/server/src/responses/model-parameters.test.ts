@@ -43,6 +43,16 @@ describe('model request parameters', () => {
     })
   })
 
+  it('merges a partial reasoning request into the model default', () => {
+    const model = { allowedParameters: ['reasoning'], defaultParameters: { reasoning: { effort: 'medium' } } }
+    expect(resolveModelParameters(model, { reasoning: { summary: 'auto' } })).toEqual({ reasoning: { effort: 'medium', summary: 'auto' } })
+    expect(resolveModelParameters(model, { reasoning: { effort: 'none' } })).toEqual({ reasoning: { effort: 'none' } })
+    // A request effort replaces the default object, so a default summary does not survive it.
+    expect(resolveModelParameters({ allowedParameters: ['reasoning'], defaultParameters: { reasoning: { effort: 'high', summary: 'auto' } } }, { reasoning: { effort: 'low' } }))
+      .toEqual({ reasoning: { effort: 'low' } })
+    expect(resolveModelParameters({ allowedParameters: ['reasoning'], defaultParameters: {} }, { reasoning: { summary: 'auto' } })).toEqual({ reasoning: { summary: 'auto' } })
+  })
+
   it('re-resolves defaults for a fallback while preserving allowed selections', () => {
     const responseParameters = { reasoning: { effort: 'xhigh' } }
     const primary = resolveModelParameters({

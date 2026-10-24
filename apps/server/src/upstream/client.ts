@@ -104,10 +104,17 @@ export function createUpstreamTextClient(provider: UpstreamProvider, options: { 
  * unresolvable items. Drop them and strip Pulpo-only fields.
  */
 export function withoutPulpoReasoning<T extends Record<string, unknown>>(body: T): T {
-  if (!Array.isArray(body.input)) return body
-  const input = body.input.filter((raw) => {
+  let result = body
+  const reasoning = body.reasoning as Record<string, unknown> | null | undefined
+  if (reasoning && typeof reasoning === 'object' && Object.keys(reasoning).some((key) => key.startsWith('pulpo_'))) {
+    const kept = Object.fromEntries(Object.entries(reasoning).filter(([key]) => !key.startsWith('pulpo_')))
+    const { reasoning: _, ...rest } = result
+    result = (Object.keys(kept).length ? { ...rest, reasoning: kept } : rest) as T
+  }
+  if (!Array.isArray(result.input)) return result
+  const input = result.input.filter((raw) => {
     const item = raw as Record<string, unknown> | null
     return !(item && item.type === 'reasoning' && typeof item.pulpo_format === 'string')
   })
-  return input.length === body.input.length ? body : { ...body, input }
+  return input.length === result.input.length ? result : { ...result, input }
 }
