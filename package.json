@@ -63,6 +63,9 @@
     "vitepress": "1.6.4"
   },
   "overrides": {
+    "@expo/cli": {
+      "zod": "^4.6.7"
+    },
     "braces": "$braces",
     "expo-modules-core": "57.0.9",
     "image-size": "$image-size",
