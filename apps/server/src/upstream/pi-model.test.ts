@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('../config.js', () => ({ getConfig: () => ({ ENCRYPTION_KEY: 'a sufficiently long deployment master key for tests' }) }))
 
-import { chatCompletionsSamplingParameters, explicitReasoningEffort, piModelForProvider } from './pi-model.js'
+import { anthropicAgentReasoning, chatCompletionsSamplingParameters, explicitReasoningEffort, piModelForProvider, reasoningDisabled } from './pi-model.js'
 
 const model = { upstreamModelId: 'claude-opus-4-6', name: 'Opus', contextWindow: 200_000, maxOutputTokens: 32_000 }
 
@@ -20,6 +20,12 @@ describe('piModelForProvider', () => {
     expect(modern).toMatchObject({ compat: { forceAdaptiveThinking: true, supportsTemperature: false }, thinkingLevelMap: { xhigh: 'xhigh', max: 'max' } })
     const legacy = piModelForProvider({ ...model, upstreamModelId: 'claude-haiku-4-5' }, { apiFormat: 'anthropic_messages', baseUrl: 'https://x/v1' })
     expect(legacy).toMatchObject({ compat: { forceAdaptiveThinking: false, supportsTemperature: true }, thinkingLevelMap: { xhigh: 'high', max: 'high' } })
+    expect(legacy.thinkingLevelMap).not.toHaveProperty('off')
+    const haiku = piModelForProvider({ ...model, upstreamModelId: 'claude-haiku-5-5' }, { apiFormat: 'anthropic_messages', baseUrl: 'https://x/v1' })
+    expect(haiku).toMatchObject({ compat: { forceAdaptiveThinking: true, supportsTemperature: false }, thinkingLevelMap: { xhigh: 'xhigh', max: 'max' } })
+    // Models that always think must never be sent `thinking: {type: "disabled"}`.
+    const alwaysOn = piModelForProvider({ ...model, upstreamModelId: 'claude-opus-5-5' }, { apiFormat: 'anthropic_messages', baseUrl: 'https://x/v1' })
+    expect(alwaysOn.thinkingLevelMap).toMatchObject({ off: null })
   })
 
   it('builds Chat Completions and Responses models with the base URL unchanged', () => {
@@ -58,6 +64,31 @@ describe('chatCompletionsSamplingParameters', () => {
     expect(chatCompletionsSamplingParameters(parameters, 'https://openrouter.ai/api/v1'))
       .toEqual({ temperature: 0.4, cache_control: { type: 'ephemeral' } })
     expect(chatCompletionsSamplingParameters(parameters, 'http://localhost:11434/v1')).toEqual({ temperature: 0.4 })
+  })
+})
+
+describe('reasoningDisabled', () => {
+  it('is true only for effort none', () => {
+    expect(reasoningDisabled({ reasoning: { effort: 'none' } })).toBe(true)
+    expect(reasoningDisabled({ reasoning: { effort: 'low' } })).toBe(false)
+    expect(reasoningDisabled({})).toBe(false)
+  })
+})
+
+describe('anthropicAgentReasoning', () => {
+  const anthropic = (upstreamModelId: string) => piModelForProvider({ ...model, upstreamModelId }, { apiFormat: 'anthropic_messages', baseUrl: 'https://x/v1' })
+  const none = { reasoning: { effort: 'none' } }
+
+  it('keeps the configured level unless effort is none', () => {
+    expect(anthropicAgentReasoning(anthropic('claude-opus-4-7'), { reasoning: { effort: 'high' } }, 'high')).toBe('high')
+    expect(anthropicAgentReasoning(anthropic('claude-opus-4-7'), {}, 'medium')).toBe('medium')
+  })
+
+  it('turns thinking off for effort none, or uses low effort on models that always think', () => {
+    expect(anthropicAgentReasoning(anthropic('claude-opus-4-7'), none, 'medium')).toBeUndefined()
+    expect(anthropicAgentReasoning(anthropic('claude-haiku-4-5'), none, 'medium')).toBeUndefined()
+    expect(anthropicAgentReasoning(anthropic('claude-opus-5-5'), none, 'medium')).toBe('low')
+    expect(anthropicAgentReasoning(anthropic('claude-sonnet-5-5'), none, 'medium')).toBe('low')
   })
 })
 

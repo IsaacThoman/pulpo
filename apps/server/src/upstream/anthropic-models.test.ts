@@ -51,6 +51,8 @@ describe('anthropicModelCapabilities', () => {
     ['claude-sonnet-5', { adaptiveThinking: true, thinkingAlwaysOn: false, thinksByDefault: true, sampling: false, efforts: [...base, 'max', 'xhigh'].sort() }],
     ['claude-sonnet-5-5', { adaptiveThinking: true, thinkingAlwaysOn: true, thinksByDefault: true, sampling: false, efforts: [...base, 'max', 'xhigh'].sort() }],
     ['claude-haiku-4-5', { adaptiveThinking: false, thinkingAlwaysOn: false, thinksByDefault: false, sampling: true, efforts: base }],
+    ['claude-haiku-5-5', { adaptiveThinking: true, thinkingAlwaysOn: false, thinksByDefault: true, sampling: false, efforts: [...base, 'max', 'xhigh'].sort() }],
+    ['us.anthropic.claude-haiku-5-5-v1:0', { adaptiveThinking: true, thinkingAlwaysOn: false, thinksByDefault: true, sampling: false, efforts: [...base, 'max', 'xhigh'].sort() }],
     ['glm-4.6', { adaptiveThinking: false, thinkingAlwaysOn: false, thinksByDefault: false, sampling: true, efforts: base }],
   ])('%s', (id, expected) => {
     expect(capabilities(id)).toEqual(expected)

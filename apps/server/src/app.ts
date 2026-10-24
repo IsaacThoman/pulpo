@@ -72,8 +72,8 @@ export async function buildApp() {
     request.rawBody = rawBody
     try {
       done(null, rawBody.length > 0 ? JSON.parse(rawBody) : null)
-    } catch (error) {
-      done(error as Error)
+    } catch {
+      done(new AppError(400, 'invalid_json', 'Request body is not valid JSON'))
     }
   })
 
@@ -118,7 +118,7 @@ export async function buildApp() {
   })
 
   app.setErrorHandler((error, request, reply) => {
-    if (isAnthropicApiRequest(request.url)) {
+    if (isAnthropicApiRequest(request.url, request.headers)) {
       // Anthropic SDKs expect their own error envelope on the Messages endpoints.
       if (error instanceof ZodError) {
         const issue = error.issues[0]
