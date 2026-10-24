@@ -7,8 +7,9 @@ charge for tokens that were never generated.
 
 The accounting transaction chooses the largest affordable output limit up to the
 request/catalog ceiling, and reserves its entire estimated cost. Available funds
-include the tighter of the weekly and five-hour subscription allowances, then
-eligible account/pool balances. Other pending reservations, API-key monthly
+include matching [custom limit allowances](stripe-billing-operations.md#custom-limits),
+which are spent first, the tighter of the weekly and five-hour subscription
+allowances, then eligible account/pool balances. Other pending reservations, API-key monthly
 and lifetime budgets, and the caller's daily usage tier cap (see
 [Usage tiers](stripe-billing-operations.md#usage-tiers)) constrain the same calculation. Account locks cover reading
 availability and writing reservations, including resizes and settlement.

@@ -177,7 +177,7 @@ export async function registerAdminUsageRoutes(app: FastifyInstance): Promise<vo
           outputTokens: row.usage.outputTokens,
           costMicros: Number(row.usage.costMicros),
           inferenceReferenceCostMicros: Number(row.usage.inferenceReferenceCostMicros),
-          subscriptionCoveredMicros: Number(row.usage.weeklyCostMicros) + Number(row.usage.sharedCostMicros),
+          subscriptionCoveredMicros: Number(row.usage.weeklyCostMicros) + Number(row.usage.sharedCostMicros) + Number(row.usage.customCostMicros),
           costBreakdown: row.usage.costBreakdown,
         }
       }),

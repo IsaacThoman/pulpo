@@ -1134,19 +1134,22 @@ export const budgetReservations = pgTable('budget_reservations', {
   balanceReservedMicros: bigint('balance_reserved_micros', { mode: 'number' }).notNull().default(0),
   // Drawn from pool members' shared Fat allowances; split per owner in budget_reservation_allowance_funders.
   sharedReservedMicros: bigint('shared_reserved_micros', { mode: 'number' }).notNull().default(0),
+  // Drawn from custom limit allowances before anything else; split per allowance in budget_reservation_custom_funders.
+  customReservedMicros: bigint('custom_reserved_micros', { mode: 'number' }).notNull().default(0),
   sharedFiveHourPeriodStart: timestamp('shared_five_hour_period_start', { withTimezone: true }),
   settledAmountMicros: bigint('settled_amount_micros', { mode: 'number' }),
   settledWeeklyMicros: bigint('settled_weekly_micros', { mode: 'number' }),
   settledFiveHourMicros: bigint('settled_five_hour_micros', { mode: 'number' }),
   settledBalanceMicros: bigint('settled_balance_micros', { mode: 'number' }),
   settledSharedMicros: bigint('settled_shared_micros', { mode: 'number' }),
+  settledCustomMicros: bigint('settled_custom_micros', { mode: 'number' }),
   status: reservationStatusEnum('status').notNull().default('pending'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   settledAt: timestamp('settled_at', { withTimezone: true }),
 }, (table) => [
   uniqueIndex('reservation_response_unique').on(table.responseId),
   index('reservation_user_status_idx').on(table.userId, table.status),
-  check('reservation_source_split_check', sql`${table.weeklyReservedMicros} >= 0 and ${table.sharedReservedMicros} >= 0 and ${table.balanceReservedMicros} >= 0 and ${table.weeklyReservedMicros} + ${table.sharedReservedMicros} + ${table.balanceReservedMicros} = ${table.amountMicros}`),
+  check('reservation_source_split_check', sql`${table.weeklyReservedMicros} >= 0 and ${table.sharedReservedMicros} >= 0 and ${table.balanceReservedMicros} >= 0 and ${table.customReservedMicros} >= 0 and ${table.customReservedMicros} + ${table.weeklyReservedMicros} + ${table.sharedReservedMicros} + ${table.balanceReservedMicros} = ${table.amountMicros}`),
   check('reservation_five_hour_match_check', sql`${table.fiveHourReservedMicros} >= 0 and ${table.fiveHourReservedMicros} = ${table.weeklyReservedMicros}`),
 ])
 
@@ -1172,6 +1175,25 @@ export const budgetReservationAllowanceFunders = pgTable('budget_reservation_all
   primaryKey({ columns: [table.reservationId, table.ownerUserId] }),
   index('budget_reservation_allowance_funders_owner_idx').on(table.ownerUserId, table.weeklyPeriodStart),
   check('budget_reservation_allowance_funders_amount_check', sql`${table.reservedMicros} >= 0 and (${table.settledMicros} is null or ${table.settledMicros} >= 0)`),
+])
+
+/**
+ * Custom limit allowances funding part of a reservation: the caller's own, or a pool
+ * member's shared one. Settled draws are kept in custom_limit_spend.
+ */
+export const budgetReservationCustomFunders = pgTable('budget_reservation_custom_funders', {
+  reservationId: uuid('reservation_id').notNull().references(() => budgetReservations.id, { onDelete: 'cascade' }),
+  // Not a foreign key: a reservation keeps what it drew even if the limit is deleted meanwhile.
+  limitId: uuid('limit_id').notNull(),
+  ownerUserId: uuid('owner_user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  // The daily or weekly period drawn from; null for the rolling five-hour window.
+  periodStart: timestamp('period_start', { withTimezone: true }),
+  reservedMicros: bigint('reserved_micros', { mode: 'number' }).notNull(),
+  settledMicros: bigint('settled_micros', { mode: 'number' }),
+}, (table) => [
+  primaryKey({ columns: [table.reservationId, table.limitId, table.ownerUserId] }),
+  index('budget_reservation_custom_funders_allowance_idx').on(table.limitId, table.ownerUserId),
+  check('budget_reservation_custom_funders_amount_check', sql`${table.reservedMicros} >= 0 and (${table.settledMicros} is null or ${table.settledMicros} >= 0)`),
 ])
 
 export const creditLedger = pgTable('credit_ledger', {
@@ -1206,6 +1228,7 @@ export const usageEvents = pgTable('usage_events', {
   fiveHourCostMicros: bigint('five_hour_cost_micros', { mode: 'number' }).notNull().default(0),
   balanceCostMicros: bigint('balance_cost_micros', { mode: 'number' }).notNull().default(0),
   sharedCostMicros: bigint('shared_cost_micros', { mode: 'number' }).notNull().default(0),
+  customCostMicros: bigint('custom_cost_micros', { mode: 'number' }).notNull().default(0),
   // Itemized charges snapshotted at settlement; null for events settled before itemization.
   costBreakdown: jsonb('cost_breakdown').$type<import('@pulpo/contracts').UsageCostItem[]>(),
   poolBalanceAfterMicros: bigint('pool_balance_after_micros', { mode: 'number' }),
@@ -1520,8 +1543,9 @@ export const sharedFiveHourUsagePeriods = pgTable('shared_five_hour_usage_period
 ])
 
 /**
- * Admin-defined spend caps on model usage. Each limit caps what matching users spend
- * on matching models within its period, whichever balance or allowance pays for it.
+ * Admin-defined allowances for model usage. Each covered user gets the limit's amount
+ * per period, spent on matching models before plan usage, shared allowances, or credits.
+ * Pool members may draw up to `sharePercent` of a member's allowance.
  */
 export const billingCustomLimits = pgTable('billing_custom_limits', {
   id: uuid('id').primaryKey(),
@@ -1534,6 +1558,7 @@ export const billingCustomLimits = pgTable('billing_custom_limits', {
   target: text('target').notNull(),
   plans: jsonb('plans').$type<string[]>().notNull().default([]),
   userIds: jsonb('user_ids').$type<string[]>().notNull().default([]),
+  sharePercent: integer('share_percent').notNull().default(0),
   enabled: boolean('enabled').notNull().default(true),
   createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
   ...timestamps,
@@ -1541,6 +1566,26 @@ export const billingCustomLimits = pgTable('billing_custom_limits', {
   check('billing_custom_limits_period_check', sql`${table.period} in ('five_hour', 'daily', 'weekly')`),
   check('billing_custom_limits_target_check', sql`${table.target} in ('everyone', 'plans', 'users')`),
   check('billing_custom_limits_amount_check', sql`${table.limitMicros} >= 0`),
+  check('billing_custom_limits_share_check', sql`${table.sharePercent} between 0 and 100`),
+])
+
+/**
+ * Settled draws on custom limit allowances, kept apart from reservations so deleting
+ * a response never returns spent allowance. `userId` differs from `ownerUserId` when a
+ * pool member drew on the owner's shared allowance.
+ */
+export const customLimitSpend = pgTable('custom_limit_spend', {
+  id: uuid('id').primaryKey(),
+  limitId: uuid('limit_id').notNull().references(() => billingCustomLimits.id, { onDelete: 'cascade' }),
+  ownerUserId: uuid('owner_user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  // The daily or weekly period drawn from; null for the rolling five-hour window.
+  periodStart: timestamp('period_start', { withTimezone: true }),
+  spentMicros: bigint('spent_micros', { mode: 'number' }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('custom_limit_spend_allowance_idx').on(table.limitId, table.ownerUserId, table.createdAt),
+  check('custom_limit_spend_amount_check', sql`${table.spentMicros} >= 0`),
 ])
 
 export const dailyUsageRollups = pgTable('daily_usage_rollups', {

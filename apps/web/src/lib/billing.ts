@@ -67,11 +67,13 @@ export interface DailySpendSummary {
 
 export type CustomLimitPeriod = 'five_hour' | 'daily' | 'weekly'
 
-/** An admin-defined spend cap that covers this account. */
+/** An admin-defined allowance this account spends before plan usage and credits. */
 export interface CustomLimitSummary {
   id: string
   name: string
   period: CustomLimitPeriod
+  /** Share of the allowance pool members can draw on. */
+  sharePercent?: number
   /** Names of the models the limit covers; empty when it covers every model. */
   models: string[]
   remainingPercentage: number

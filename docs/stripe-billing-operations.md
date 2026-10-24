@@ -41,10 +41,22 @@ Fat subscribers share part of their weekly allowance with the other members of t
 
 - **Shared limit.** `fatSharedWeeklyPercent` (default 50%) of the owner's weekly limit, after any per-user override. It resets with the weekly allowance. The owner can still use their whole weekly allowance themselves.
 - **Member five-hour limit.** Each member draws within their own five-hour window, capped by `sharedFiveHourLimitMicros` (default $1.00), so one member cannot use up the shared limit in one sitting.
-- **Funding order.** A request is paid from the member's own plan allowance, then shared usage, then their balance, then the Pool balance. With several Fat subscribers in a Pool, members draw from each in proportion to what they have left.
+- **Funding order.** A request is paid from custom limit allowances (see below), then the member's own plan allowance, then shared usage, then their balance, then the Pool balance. With several Fat subscribers in a Pool, members draw from each in proportion to what they have left.
 - **Records.** Reservations record each owner's share in `budget_reservation_allowance_funders`. Settlement adds it to the owner's `weekly_usage_periods` and `shared_allowance_periods` and to the member's `shared_five_hour_usage_periods`. `usage_events.shared_cost_micros` counts as covered by a subscription.
 
 Owners see a **Shared usage** bar on the billing page. The Pool section on the Friends page shows shared usage across every Fat subscriber in the Pool, plus the viewer's own five-hour shared limit.
+
+## Custom limits
+
+Admins can give users extra allowances in **Admin → Billing → Custom limits**. Each limit has an amount, a period, the models it covers (or all models), and an audience: everyone, some subscription plans, or specific users. Admins are covered like anyone else.
+
+- **Allowance.** Every covered user gets the full amount each period: a UTC day, a Monday-to-Monday UTC week, or a rolling five hours. It is spent on the limit's models before anything else. Once it runs out, requests continue on plan usage, shared usage, and credits as usual, so a limit never blocks a request.
+- **Order.** When several allowances cover a request, model-specific ones are spent before those covering every model, then the soonest to reset. A fallback answer from a covered model can draw on its allowance. Metered charges such as speech are not model usage and never draw on allowances.
+- **Sharing.** A limit's shared percentage (default 0%) lets the other members of a user's Pool draw that part of the user's allowance for the same models, after their own allowances. A member's draw counts against the owner's allowance.
+- **Daily cap.** Allowances are included usage, so they neither count toward nor are limited by the usage tier cap.
+- **Records.** Reservations record each allowance's share in `budget_reservation_custom_funders`. Settled draws are kept in `custom_limit_spend` (included in backups) so deleting a chat never returns spent allowance. `usage_events.custom_cost_micros` counts as covered by a subscription.
+
+Users see one bar per allowance on the billing page. The chart button beside a limit shows each user's spending, what Pool members drew from them, and what is reserved in the current period.
 
 ## Usage tiers
 
@@ -59,7 +71,7 @@ Every account has a daily spend cap set by its usage tier. It limits how much on
 | 4 | $500 paid and 30 days | $250 |
 
 - **Payments.** "Paid" is the lifetime total of `billing_orders.net_amount_cents` (before tax, including the platform fee) minus refunds, across credit purchases, automatic top-ups, and subscription invoices. The waiting period counts from the first payment that was not fully refunded. A refund lowers the tier on the next request.
-- **What counts.** The cap covers everything the account spends in a UTC day: plan allowance, shared usage, its own balance, and Pool balance. Settled generation and metered charges accumulate in `daily_usage_periods`, and pending reservations count until they settle.
+- **What counts.** The cap covers everything the account spends in a UTC day: plan allowance, shared usage, its own balance, and Pool balance. Custom limit allowances do not count. Settled generation and metered charges accumulate in `daily_usage_periods`, and pending reservations count until they settle.
 - **Enforcement.** Reservations, resizes, and tool holds are limited to what remains, so a request near the cap gets a shorter output limit before it is refused with `402 daily_spend_limit_reached`. Optional calls such as titles skip instead of failing. Speech and dictation, charged after the provider call, are refused up front once the cap is used up.
 - **Exceptions.** A cap never falls below the plan's weekly allowance. Admins are exempt. An admin can set a per-user daily limit in **Admin → Users**, which replaces the tier cap.
 - **Configuration.** Edit the tiers in **Admin → Billing → Usage tiers** (`usageTiers` in the `billing` setting). Requirements cannot decrease from one tier to the next. Caps apply only when billing is enabled.
