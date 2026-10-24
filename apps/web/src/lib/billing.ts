@@ -74,6 +74,8 @@ export interface CustomLimitSummary {
   period: CustomLimitPeriod
   /** Share of the allowance pool members can draw on. */
   sharePercent?: number
+  /** False when it funds only model usage, not tools, workspace time, or background tasks. */
+  coversExtras?: boolean
   /** Names of the models the limit covers; empty when it covers every model. */
   models: string[]
   remainingPercentage: number

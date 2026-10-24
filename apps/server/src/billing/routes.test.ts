@@ -158,14 +158,14 @@ describe('daily spend summary', () => {
 describe('custom limit summaries', () => {
   it('shows percentages, reserved usage within the remaining limit, and model names', () => {
     const summary = customLimitSummary({
-      limitId: 'limit-1', name: 'Opus daily', period: 'daily', limitMicros: 1_000_000, modelIds: ['opus', 'gone'], sharePercent: 25,
+      limitId: 'limit-1', name: 'Opus daily', period: 'daily', limitMicros: 1_000_000, modelIds: ['opus', 'gone'], sharePercent: 25, coversExtras: false,
       ownerUserId: 'user-1', periodStart: new Date('2026-10-22T00:00:00.000Z'),
       spentMicros: 700_000, pendingMicros: 500_000, remainingMicros: 0,
       sharedLimitMicros: 250_000, sharedSpentMicros: 0, sharedPendingMicros: 0, sharedAvailableMicros: 0,
       resetAt: new Date('2026-10-23T00:00:00.000Z'), freesAt: null,
     }, new Map([['opus', 'Claude Opus']]))
     expect(summary).toEqual({
-      id: 'limit-1', name: 'Opus daily', period: 'daily', sharePercent: 25, models: ['Claude Opus', 'gone'],
+      id: 'limit-1', name: 'Opus daily', period: 'daily', sharePercent: 25, coversExtras: false, models: ['Claude Opus', 'gone'],
       remainingPercentage: 0, availableBarPercentage: 0, pendingMicros: 300_000, pendingBarPercentage: 30,
       resetsAt: '2026-10-23T00:00:00.000Z',
     })

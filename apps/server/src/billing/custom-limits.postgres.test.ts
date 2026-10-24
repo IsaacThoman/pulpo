@@ -18,7 +18,7 @@ import {
   usageEvents,
   users,
 } from '../database/schema.js'
-import { reserveBudget, resizeBudgetReservation, retainBudgetReservation, settleBudget } from '../accounting/service.js'
+import { extendBudgetReservationFixedCost, releaseBudgetReservationFixedCost, reserveBudget, resizeBudgetReservation, retainBudgetReservation, settleBudget } from '../accounting/service.js'
 import { loadCustomAllowances, loadCustomLimitUserUsage } from './custom-limits.js'
 
 vi.mock('../responses/events.js', () => ({ publishStateChange: vi.fn() }))
@@ -192,6 +192,72 @@ describe.skipIf(!enabled)('custom limit allowances in PostgreSQL', () => {
     expect(await db.transaction((tx) => loadCustomLimitUserUsage(tx, limitRow!))).toEqual([
       { userId: owner, ownSpentMicros: 0, sharedSpentMicros: 101, pendingMicros: 10_000 },
     ])
+  })
+
+  it('holds extras apart from allowances that do not cover them', async () => {
+    const userId = await account()
+    const limitId = await limit({ limitMicros: 100_000, coversExtras: false, target: 'users', userIds: [userId] })
+    const input = await request(userId)
+    await reserveBudget(input)
+    expect(await reservation(input.responseId)).toMatchObject({ amountMicros: 16_001, customReservedMicros: 16_001, extraReservedMicros: 0 })
+    // A tool hold is funded by credits, not the allowance.
+    await extendBudgetReservationFixedCost(input.responseId, 5_000)
+    expect(await reservation(input.responseId)).toMatchObject({ amountMicros: 21_001, customReservedMicros: 16_001, extraReservedMicros: 5_000, balanceReservedMicros: 5_000 })
+    expect(await customFunders(input.responseId)).toMatchObject([{ limitId, coversExtras: false, reservedMicros: 16_001 }])
+    // Retaining keeps the extras apart, so the allowance shrinks before credits do.
+    await retainBudgetReservation(input.responseId, 8_000, 5_000)
+    expect(await reservation(input.responseId)).toMatchObject({ amountMicros: 8_000, customReservedMicros: 3_000, extraReservedMicros: 5_000, balanceReservedMicros: 5_000 })
+    // A later turn reports the extras actually spent so far.
+    await resizeBudgetReservation({ ...input, accruedCostMicros: 3_000, accruedExtraCostMicros: 3_000 })
+    expect(await reservation(input.responseId)).toMatchObject({ amountMicros: 19_001, customReservedMicros: 16_001, extraReservedMicros: 3_000, balanceReservedMicros: 3_000 })
+
+    await settleBudget({ responseId: input.responseId, usage, latencyMs: 1, additionalCostMicros: 3_000, workspace: { minutes: 3, costMicros: 3_000 } })
+    expect(await reservation(input.responseId)).toMatchObject({ status: 'settled', settledAmountMicros: 3_101, settledCustomMicros: 101, settledBalanceMicros: 3_000 })
+    expect(await balance(userId)).toBe(997_000)
+    const [allowance] = await db.transaction((tx) => loadCustomAllowances(tx, { userId, plan: 'baby' }))
+    expect(allowance).toMatchObject({ coversExtras: false, spentMicros: 101 })
+  })
+
+  it('refuses extras an allowance does not cover when nothing else can fund them', async () => {
+    const userId = await account({ balanceMicros: 0 })
+    await limit({ limitMicros: 100_000, coversExtras: false, target: 'users', userIds: [userId] })
+    const input = await request(userId)
+    await reserveBudget(input)
+    await expect(extendBudgetReservationFixedCost(input.responseId, 5_000)).rejects.toMatchObject({ code: 'insufficient_balance' })
+    expect(await reservation(input.responseId)).toMatchObject({ amountMicros: 16_001, customReservedMicros: 16_001, extraReservedMicros: 0 })
+  })
+
+  it('covers extras by default', async () => {
+    const userId = await account({ balanceMicros: 0 })
+    await limit({ limitMicros: 100_000, target: 'users', userIds: [userId] })
+    const input = await request(userId)
+    await reserveBudget(input)
+    await extendBudgetReservationFixedCost(input.responseId, 5_000)
+    expect(await reservation(input.responseId)).toMatchObject({ amountMicros: 21_001, customReservedMicros: 21_001, extraReservedMicros: 5_000 })
+    // A failed call gives its hold back.
+    await releaseBudgetReservationFixedCost(input.responseId, 2_000)
+    expect(await reservation(input.responseId)).toMatchObject({ amountMicros: 19_001, customReservedMicros: 19_001, extraReservedMicros: 3_000 })
+    await settleBudget({ responseId: input.responseId, usage, latencyMs: 1, additionalCostMicros: 3_000, workspace: { minutes: 3, costMicros: 3_000 } })
+    expect(await reservation(input.responseId)).toMatchObject({ status: 'settled', settledCustomMicros: 3_101, settledBalanceMicros: 0 })
+  })
+
+  it('moves extras that outran their hold off allowances that do not cover them', async () => {
+    const userId = await account()
+    await limit({ limitMicros: 100_000, coversExtras: false, target: 'users', userIds: [userId] })
+    const input = await request(userId)
+    await reserveBudget(input)
+    // Nothing was held for the workspace time, so settlement draws credits for it.
+    await settleBudget({ responseId: input.responseId, usage, latencyMs: 1, additionalCostMicros: 3_000, workspace: { minutes: 3, costMicros: 3_000 } })
+    expect(await reservation(input.responseId)).toMatchObject({ status: 'settled', settledCustomMicros: 101, settledBalanceMicros: 3_000 })
+    expect(await balance(userId)).toBe(997_000)
+
+    // Without credits to move to, the allowance pays rather than leaving the cost unfunded.
+    const broke = await account({ balanceMicros: 0 })
+    await limit({ limitMicros: 100_000, coversExtras: false, target: 'users', userIds: [broke] })
+    const unfunded = await request(broke)
+    await reserveBudget(unfunded)
+    await settleBudget({ responseId: unfunded.responseId, usage, latencyMs: 1, additionalCostMicros: 3_000, workspace: { minutes: 3, costMicros: 3_000 } })
+    expect(await reservation(unfunded.responseId)).toMatchObject({ status: 'settled', settledCustomMicros: 3_101, settledBalanceMicros: 0 })
   })
 
   it('keeps spent allowance when the response is deleted', async () => {

@@ -98,17 +98,48 @@ export function allocateSharedAllowanceMicros(
   return allocateProportionallyMicros(sharedMicros, owners)
 }
 
-/** Draw on custom limit allowances in the given spend order, each up to what it has available. */
-export function allocateInOrderMicros(amountMicros: number, sources: Array<{ key: string; availableMicros: number }>): Map<string, number> {
+/**
+ * Draw on custom limit allowances in the given spend order, each up to what it has
+ * available. Allowances that don't cover extras fund at most `inferenceMicros` between
+ * them; the others are counted against the extras first, so any split is fundable.
+ */
+export function allocateInOrderMicros(
+  amountMicros: number,
+  sources: Array<{ key: string; availableMicros: number; coversExtras?: boolean }>,
+  inferenceMicros = amountMicros,
+): Map<string, number> {
   const result = new Map<string, number>()
   let remaining = Math.max(0, amountMicros)
+  let inferenceRemaining = Math.max(0, inferenceMicros)
   for (const source of sources) {
     if (remaining <= 0) break
-    const micros = Math.min(remaining, Math.max(0, source.availableMicros))
+    const coversExtras = source.coversExtras ?? true
+    const micros = Math.min(remaining, Math.max(0, source.availableMicros), coversExtras ? remaining : inferenceRemaining)
     if (micros <= 0) continue
     result.set(source.key, (result.get(source.key) ?? 0) + micros)
     remaining -= micros
+    if (!coversExtras) inferenceRemaining -= micros
   }
+  return result
+}
+
+/**
+ * Charge settled or retained cost to the custom limit allowances a reservation drew on,
+ * never beyond what each reserved. Allowances that don't cover extras are charged at
+ * most `inferenceMicros` between them, and the rest falls to those that do.
+ */
+export function allocateCustomSettlementSplit<T extends { key: string; reservedMicros: number; coversExtras: boolean }>(
+  amountMicros: number,
+  inferenceMicros: number,
+  funders: T[],
+): Map<string, number> {
+  const inferenceOnly = funders.filter((row) => !row.coversExtras)
+  const inferenceOnlyReserved = inferenceOnly.reduce((sum, row) => sum + Math.max(0, row.reservedMicros), 0)
+  const inferenceOnlyMicros = Math.min(Math.max(0, amountMicros), Math.max(0, inferenceMicros), inferenceOnlyReserved)
+  const result = allocateSharedSettlementMicros(inferenceOnlyMicros, inferenceOnly.map((row) => ({ userId: row.key, reservedMicros: row.reservedMicros })))
+  const covering = allocateSharedSettlementMicros(Math.max(0, amountMicros) - inferenceOnlyMicros,
+    funders.filter((row) => row.coversExtras).map((row) => ({ userId: row.key, reservedMicros: row.reservedMicros })))
+  for (const [key, micros] of covering) result.set(key, micros)
   return result
 }
 
