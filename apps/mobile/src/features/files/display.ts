@@ -2,6 +2,7 @@ import type { FileColor, FileIcon, FileNameError, FileNode } from '@pulpo/contra
 import { isMarkdownName } from '@pulpo/contracts'
 import { ARCHIVE_EXTENSIONS, CODE_EXTENSIONS, fileExtension, SHEET_EXTENSIONS } from '@pulpo/client-core/files'
 import { ApiError, isNetworkError } from '../../api/client'
+import { TRASH_FOLDER_ID } from '../trash/folder'
 
 /** The iOS system colors behind each Files color. */
 export const FILE_COLOR_HEX: Record<FileColor, string> = {
@@ -50,7 +51,7 @@ const ICON_SYMBOLS: Record<FileIcon, string> = {
   coffee: 'cup.and.saucer.fill',
 }
 
-type IconSubject = Pick<FileNode, 'kind' | 'name' | 'mimeType'> & Partial<Pick<FileNode, 'systemRole' | 'color' | 'icon' | 'target'>>
+type IconSubject = Pick<FileNode, 'kind' | 'name' | 'mimeType'> & Partial<Pick<FileNode, 'id' | 'systemRole' | 'color' | 'icon' | 'target'>>
 
 /** The kind an item opens as: a shortcut takes its target's. */
 export function openedKind(node: Pick<FileNode, 'kind' | 'target'>): FileNode['kind'] {
@@ -69,6 +70,7 @@ export function fileIcon(node: IconSubject, fallbackTint = SYSTEM_BLUE): { symbo
   if (source.icon) return { symbol: ICON_SYMBOLS[source.icon], tint: tint ?? fallbackTint }
   const kind = source.kind
   if (kind === 'folder') {
+    if (source.id === TRASH_FOLDER_ID) return { symbol: 'trash.fill', tint: tint ?? fallbackTint }
     if (source.systemRole === 'chats') return { symbol: 'bubble.left.and.bubble.right.fill', tint: tint ?? fallbackTint }
     if (source.systemRole === 'archive') return { symbol: 'archivebox.fill', tint: tint ?? fallbackTint }
     return { symbol: 'folder.fill', tint: tint ?? fallbackTint }
@@ -125,6 +127,8 @@ export function formatModified(iso: string, now = new Date()): string {
 
 /** The line under an item's name in a list. */
 export function fileSubtitle(node: FileNode): string {
+  // The trash is not stored in Files, so it has no date of its own.
+  if (node.id === TRASH_FOLDER_ID) return 'Deleted chats and files'
   if (node.kind === 'shortcut') return node.target?.available === false ? 'Shortcut · In the trash' : fileKindLabel(node)
   const modified = formatModified(node.updatedAt)
   if (node.kind === 'folder' || node.kind === 'chat') return modified
@@ -132,9 +136,9 @@ export function fileSubtitle(node: FileNode): string {
   return [modified, node.kind === 'blob' ? formatBytes(node.sizeBytes) : null].filter(Boolean).join(' · ')
 }
 
-/** Built-in folders cannot be renamed, moved, or trashed. */
-export function isBuiltIn(node: Pick<FileNode, 'systemRole'>): boolean {
-  return Boolean(node.systemRole)
+/** Built-in folders (the trash among them) cannot be renamed, moved, or trashed. */
+export function isBuiltIn(node: Pick<FileNode, 'id' | 'systemRole'>): boolean {
+  return Boolean(node.systemRole) || node.id === TRASH_FOLDER_ID
 }
 
 const FILE_NAME_ERRORS: Record<FileNameError, string> = {

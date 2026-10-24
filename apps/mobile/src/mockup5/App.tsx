@@ -189,7 +189,6 @@ import {
   SettingsDetailScreen,
   TwoFactorScreen,
   DeleteAccountScreen,
-  TrashScreen,
 } from './src/screens/MemberScreens';
 import type { RootStackParamList } from './src/navigation';
 import { usePrototypeStore } from './src/store/prototypeStore';
@@ -221,6 +220,7 @@ import { ModelWarningBanner } from './src/components/ModelWarningBanner';
 import { AttachmentImageViewer, type AttachmentImagePreviewItem, type AttachmentImageTransitionOrigin } from '../components/AttachmentImageViewer';
 import { useFilesCapabilityRefresh, useFilesEnabled } from '../features/files/availability';
 import { parseFilesLink, useFilesLinkInbox } from '../features/files/links';
+import { trashFolderRef } from '../features/trash/folder';
 import { clearNewChatFileScope, liveFileScope, newChatFileScope, useChatFileScope } from '../features/files/chatScope';
 import { FileChangesCard } from '../features/files/components/FileChangesCard';
 import { FileScopeBar } from '../features/files/components/FileScopeBar';
@@ -1696,7 +1696,6 @@ function PrototypeRoot() {
         <RootStack.Screen name="Passkeys" component={PasskeysScreen} options={{ headerShown: false }} />
         <RootStack.Screen name="InstanceDetails" component={InstanceDetailsScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Pulpo Instance', headerBackTitle: 'Account' }} />
         <RootStack.Screen name="SettingsDetail" component={SettingsDetailScreen} options={{ headerShown: Platform.OS === 'ios', headerBackTitle: 'Settings' }} />
-        <RootStack.Screen name="Trash" component={TrashScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Trash' }} />
         <RootStack.Screen name="FilesFolder" component={FilesFolderScreen} options={{ headerShown: Platform.OS === 'ios', headerLargeTitle: true, title: 'My files' }} />
         <RootStack.Screen name="FileDocument" component={FileDocumentScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Document' }} />
         <RootStack.Screen name="FileMarkdown" component={FileMarkdownScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Markdown' }} />
@@ -2345,7 +2344,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     const generation = ++filesLinkGeneration.current;
     animatePanel(false);
     Keyboard.dismiss();
-    if (destination.type === 'trash') navigation.navigate('Trash');
+    if (destination.type === 'trash') navigation.push('FilesFolder', { folderId: trashFolderRef(destination.folderId) });
     else if (destination.type === 'folder') navigation.push('FilesFolder', { folderId: destination.id });
     else {
       // As on the web, a file link is any kind of file: what it is decides where it opens. Items seen

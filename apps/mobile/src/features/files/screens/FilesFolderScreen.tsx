@@ -1,4 +1,4 @@
-import type { FileNode } from '@pulpo/contracts'
+import type { FileNode, TrashItem } from '@pulpo/contracts'
 import { DEFAULT_FILE_SORT, parseFileSort, sortFileNodes, type FileSort, type FileSortKey } from '@pulpo/client-core/files'
 import type { NativeStackHeaderItem, NativeStackScreenProps } from '@react-navigation/native-stack'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -10,6 +10,9 @@ import { create } from 'zustand'
 import { getValue, setValue } from '../../../data/database'
 import type { RootStackParamList } from '../../../mockup5/src/navigation'
 import { usePrototypeStore } from '../../../mockup5/src/store/prototypeStore'
+import { legacyTrashView, trashDeletesLabel, trashItemSubtitle, trashQuery, trashRetentionSummary } from '../../trash/api'
+import { TRASH_FOLDER_ID, trashFolderNode, trashFolderRef, trashLocation } from '../../trash/folder'
+import { useTrashOperations } from '../../trash/operations'
 import { PageHeader, Screen } from '../../../mockup5/src/components/PrototypeUI'
 import { showActions, promptText } from '../../../platform/materialActions'
 import { MaterialIconButton, MaterialSearchField } from '../../../platform/MaterialUI'
@@ -21,7 +24,7 @@ import { FileRow } from '../components/FileRow'
 import { FilesToastHost } from '../components/FilesToastHost'
 import { FolderPickerSheet } from '../components/FolderPickerSheet'
 import { filesErrorMessage, isBuiltIn } from '../display'
-import { fileItemActions, type FileItemActionId } from '../itemActions'
+import { fileItemActions, trashItemActions, type FileItemActionId, type TrashItemActionId } from '../itemActions'
 import { shareFileItem, useFileDownloads, useOpenFileItem } from '../open'
 import { useFileOperations } from '../operations'
 import { folderQuery } from '../queries'
@@ -34,21 +37,26 @@ type Props = NativeStackScreenProps<RootStackParamList, 'FilesFolder'>
 const BOTTOM_SEARCH_HEIGHT = Platform.OS === 'ios' && !Platform.isPad && Number.parseInt(String(Platform.Version), 10) >= 26 ? 64 : 0
 
 const SORT_LABELS: Record<FileSortKey, string> = { name: 'Name', modified: 'Date Modified', size: 'Size', kind: 'Kind' }
+/** The trash sorts by when items were trashed in place of when they changed. */
+const TRASH_SORT_LABELS: Record<FileSortKey, string> = { ...SORT_LABELS, modified: 'Date Trashed' }
 
-/** The sort Files lists use, kept per account. */
-const useFileSort = create<{ sort: FileSort; loaded: string | null; set: (namespace: string, sort: FileSort) => void; load: (namespace: string) => void }>((set, get) => ({
-  sort: DEFAULT_FILE_SORT,
+/** A sort for Files lists, kept per account under `key`. */
+const createSortStore = (key: string, fallback: FileSort) => create<{ sort: FileSort; loaded: string | null; set: (namespace: string, sort: FileSort) => void; load: (namespace: string) => void }>((set, get) => ({
+  sort: fallback,
   loaded: null,
   set: (namespace, sort) => {
     set({ sort })
-    void setValue(namespace, 'files:sort', sort).catch(() => undefined)
+    void setValue(namespace, key, sort).catch(() => undefined)
   },
   load: (namespace) => {
     if (get().loaded === namespace) return
     set({ loaded: namespace })
-    void getValue(namespace, 'files:sort').then((value) => set({ sort: parseFileSort(value) })).catch(() => undefined)
+    void getValue(namespace, key).then((value) => set({ sort: parseFileSort(value, fallback) })).catch(() => undefined)
   },
 }))
+const useFileSort = createSortStore('files:sort', DEFAULT_FILE_SORT)
+/** The trash keeps its own order, newest trashed first until changed (as on the web). */
+const useTrashSort = createSortStore('trash:sort', { key: 'modified', direction: 'desc' })
 
 function promptName(title: string, value: string, confirm: string, onSubmit: (name: string) => void) {
   if (Platform.OS === 'ios') {
@@ -61,44 +69,78 @@ function promptName(title: string, value: string, confirm: string, onSubmit: (na
   }
 }
 
-/** A Files folder, as a native screen: one per folder, so Back walks up the path. */
+/**
+ * A Files folder, as a native screen: one per folder, so Back walks up the path. The trash is one
+ * of them, a built-in folder of My files (as on the web): its items are restored or deleted for
+ * good, and its trashed folders are looked through like any other.
+ */
 export function FilesFolderScreen({ navigation, route }: Props) {
   const theme = useAppTheme()
   const insets = useSafeAreaInsets()
   const queryClient = useQueryClient()
   const namespace = useFilesNamespace()
   const filesEnabled = useFilesEnabled()
-  const folderId = route.params?.folderId ?? null
-  const listing = useQuery({ ...folderQuery(namespace, folderId), enabled: Boolean(namespace) && filesEnabled })
+  const ref = route.params?.folderId ?? null
+  // Where this screen is in the trash, if it is: the trash itself, or a trashed folder in it.
+  const trash = trashLocation(ref)
+  const inTrash = trash !== null
+  const folderId = inTrash ? null : ref
+  const folderListing = useQuery({ ...folderQuery(namespace, folderId), enabled: Boolean(namespace) && filesEnabled && !inTrash })
+  const trashListing = useQuery({ ...trashQuery(namespace, trash?.folderId ?? null), enabled: Boolean(namespace) && inTrash })
+  const listing = inTrash ? trashListing : folderListing
+  // Servers that predate the shared trash list no trash; there it holds the chat store's trashed chats.
+  const legacyTrash = inTrash && trashListing.data === null
+  const legacyChats = usePrototypeStore((state) => legacyTrash ? state.chats : null)
+  const retention = usePrototypeStore((state) => state.preferences.trashRetention)
+  const legacyView = useMemo(() => legacyChats ? legacyTrashView(legacyChats, retention) : null, [legacyChats, retention])
+  const trashView = !inTrash ? undefined : legacyView ?? trashListing.data ?? undefined
   const operations = useFileOperations(namespace)
+  const trashOperations = useTrashOperations(namespace, legacyTrash)
   const openItem = useOpenFileItem()
   const downloads = useFileDownloads((state) => state.active)
   const uploads = useFileUploads((state) => state.items)
-  const { sort, set: setSortValue, load: loadSort } = useFileSort()
+  const fileSort = useFileSort()
+  const trashSort = useTrashSort()
+  const { sort, set: setSortValue, load: loadSort } = inTrash ? trashSort : fileSort
   const [search, setSearch] = useState('')
   const [selecting, setSelecting] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(() => new Set())
   const [moving, setMoving] = useState<FileNode[] | null>(null)
+  const [restoring, setRestoring] = useState<FileNode[] | null>(null)
   const [refreshing, setRefreshing] = useState(false)
+  // Trash deadlines count down while the trash is shown.
+  const [now, setNow] = useState(() => Date.now())
 
   useEffect(() => { if (namespace) loadSort(namespace) }, [loadSort, namespace])
   useEffect(() => { if (namespace) void resumeUploads(namespace, queryClient) }, [namespace, queryClient])
   useEffect(() => {
-    if (isFilesDisabledError(listing.error)) void refreshFilesCapability()
-  }, [listing.error])
+    if (isFilesDisabledError(folderListing.error)) void refreshFilesCapability()
+  }, [folderListing.error])
+  useEffect(() => {
+    if (!inTrash) return
+    const timer = setInterval(() => setNow(Date.now()), 30_000)
+    return () => clearInterval(timer)
+  }, [inTrash])
 
-  const folder = listing.data?.folder ?? null
-  const title = folderId === null ? 'My files' : folder?.name ?? route.params?.name ?? 'Folder'
-  const children = useMemo(() => listing.data?.children ?? [], [listing.data?.children])
+  const folder = inTrash ? trashView?.folder ?? null : folderListing.data?.folder ?? null
+  const title = inTrash
+    ? trash.folderId ? folder?.name ?? route.params?.name ?? 'Folder' : 'Trash'
+    : folderId === null ? 'My files' : folder?.name ?? route.params?.name ?? 'Folder'
+  const children: FileNode[] = useMemo(() => {
+    if (inTrash) return trashView?.children ?? []
+    const listed = folderListing.data?.children ?? []
+    // The trash sits in My files with the other built-in folders.
+    return folderId === null && folderListing.data ? [...listed, trashFolderNode()] : listed
+  }, [folderId, folderListing.data, inTrash, trashView?.children])
   const items = useMemo(() => {
     const query = search.trim().toLocaleLowerCase()
     const visible = query ? children.filter((node) => node.name.toLocaleLowerCase().includes(query)) : children
-    return sortFileNodes(visible, sort)
-  }, [children, search, sort])
+    return inTrash ? sortFileNodes(visible as TrashItem[], sort, (node) => node.trashedAt) : sortFileNodes(visible, sort)
+  }, [children, inTrash, search, sort])
   // Uploads into this folder that the listing does not show yet (or that failed).
-  const localUploads = useMemo(() => uploads.filter((upload) => (
+  const localUploads = useMemo(() => inTrash ? [] : uploads.filter((upload) => (
     upload.namespace === namespace && upload.parentId === folderId && !children.some((node) => node.id === upload.reservedNodeId)
-  )), [children, folderId, namespace, uploads])
+  )), [children, folderId, inTrash, namespace, uploads])
   const selectedNodes = useMemo(() => items.filter((node) => selected.has(node.id)), [items, selected])
 
   const setSort = useCallback((next: FileSort) => setSortValue(namespace, next), [namespace, setSortValue])
@@ -169,14 +211,88 @@ export function FilesFolderScreen({ navigation, route }: Props) {
     ])
   }, [operations])
 
-  const runAction = useCallback((node: FileNode, action: string) => {
+  /** In the trash, folders can be looked through; anything else has to be restored first. */
+  const openNode = useCallback((node: FileNode) => {
+    if (!inTrash) {
+      void openItem(node)
+      return
+    }
+    if (node.kind === 'folder') navigation.push('FilesFolder', { folderId: trashFolderRef(node.id), name: node.name })
+    else operations.notify(`“${node.name}” is in the trash. Restore it to open it.`)
+  }, [inTrash, navigation, openItem, operations])
+
+  /** Back to the trash itself from a trashed folder in it (after it is emptied or restored). */
+  const showTrashRoot = useCallback(() => {
+    const state = navigation.getState()
+    for (let index = state.index - 1; index >= 0; index -= 1) {
+      const candidate = state.routes[index]!
+      if (candidate.name === 'FilesFolder' && (candidate.params as Props['route']['params'] | undefined)?.folderId === TRASH_FOLDER_ID) {
+        navigation.pop(state.index - index)
+        return
+      }
+    }
+    navigation.replace('FilesFolder', { folderId: TRASH_FOLDER_ID, name: 'Trash' })
+  }, [navigation])
+
+  const confirmDeleteForever = useCallback((nodes: readonly FileNode[], then?: () => void) => {
+    if (!nodes.length) return
+    const [first] = nodes
+    const message = nodes.length !== 1
+      ? `${nodes.length} items and everything inside them will be permanently deleted. This cannot be undone.`
+      : first!.kind === 'folder'
+        ? `“${first!.name}” and everything inside it will be permanently deleted. This cannot be undone.`
+        : `“${first!.name}” will be permanently deleted. This cannot be undone.`
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning)
+    Alert.alert('Delete forever?', message, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete Forever', style: 'destructive', onPress: () => { void trashOperations.deleteForever(nodes).then(() => then?.()) } },
+    ])
+  }, [trashOperations])
+
+  const confirmEmptyTrash = useCallback(() => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning)
+    Alert.alert('Empty the trash?', 'Everything in the trash will be permanently deleted. This cannot be undone.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete Forever',
+        style: 'destructive',
+        onPress: () => { void trashOperations.empty().then((done) => {
+          // The trashed folder shown goes with everything else.
+          if (done && trash?.folderId) showTrashRoot()
+        }) },
+      },
+    ])
+  }, [showTrashRoot, trash?.folderId, trashOperations])
+
+  /** Restores the trashed folder shown, then shows it where it went (without Files, it is back in the drawer). */
+  const restoreShownFolder = useCallback(async () => {
+    if (!trashView?.folder) return
+    const [restored] = await trashOperations.restore([trashView.folder]) ?? []
+    if (!restored) return
+    if (filesEnabled) navigation.replace('FilesFolder', { folderId: restored.id, name: restored.name })
+    else showTrashRoot()
+  }, [filesEnabled, navigation, showTrashRoot, trashOperations, trashView?.folder])
+
+  const startSelection = useCallback((node: FileNode) => {
+    setSelecting(true)
+    setSelected(new Set([node.id]))
+  }, [])
+
+  const runTrashAction = useCallback((node: FileNode, action: string) => {
+    switch (action as TrashItemActionId) {
+      case 'open': openNode(node); return
+      case 'restore': void trashOperations.restore([node]); return
+      case 'restore-to': setRestoring([node]); return
+      case 'select': startSelection(node); return
+      case 'delete-forever': confirmDeleteForever([node])
+    }
+  }, [confirmDeleteForever, openNode, startSelection, trashOperations])
+
+  const runFileAction = useCallback((node: FileNode, action: string) => {
     const id = action as FileItemActionId
     switch (id) {
-      case 'open': void openItem(node); return
-      case 'select':
-        setSelecting(true)
-        setSelected(new Set([node.id]))
-        return
+      case 'open': openNode(node); return
+      case 'select': startSelection(node); return
       case 'rename':
         promptName('Rename', node.name, 'Rename', (name) => { void operations.rename(node, name) })
         return
@@ -197,12 +313,17 @@ export function FilesFolderScreen({ navigation, route }: Props) {
       case 'open-in-new-chat':
         return
     }
-  }, [openItem, operations, trashItems])
+  }, [openNode, operations, startSelection, trashItems])
+  const runAction = inTrash ? runTrashAction : runFileAction
 
-  const actionsFor = useCallback((node: FileNode) => fileItemActions(node, { agent: 'none', selectable: true }), [])
+  // Trashed items are restored into a chosen folder only while Files is on.
+  const restoreTo = Boolean(trashView?.files && filesEnabled)
+  const actionsFor = useCallback((node: FileNode) => inTrash
+    ? trashItemActions(node, { files: restoreTo, selectable: true })
+    : fileItemActions(node, { agent: 'none', selectable: true }), [inTrash, restoreTo])
   const press = useCallback((node: FileNode) => {
     if (!selecting) {
-      void openItem(node)
+      openNode(node)
       return
     }
     Haptics.selectionAsync()
@@ -212,7 +333,7 @@ export function FilesFolderScreen({ navigation, route }: Props) {
       else next.add(node.id)
       return next
     })
-  }, [openItem, selecting])
+  }, [openNode, selecting])
   const longPress = useCallback((node: FileNode) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)
     showActions(node.name, actionsFor(node).map((action) => ({
@@ -223,6 +344,7 @@ export function FilesFolderScreen({ navigation, route }: Props) {
     })))
   }, [actionsFor, runAction])
 
+  const sortLabels = inTrash ? TRASH_SORT_LABELS : SORT_LABELS
   const sortMenu: NativeStackHeaderItem = {
     type: 'menu',
     label: 'More',
@@ -230,14 +352,23 @@ export function FilesFolderScreen({ navigation, route }: Props) {
     menu: {
       items: [
         { type: 'action', label: 'Select', icon: { type: 'sfSymbol', name: 'checkmark.circle' }, onPress: () => setSelecting(true), disabled: !items.length },
+        ...(inTrash ? [{
+          type: 'action',
+          label: 'Empty Trash',
+          icon: { type: 'sfSymbol', name: 'trash' },
+          destructive: true,
+          // A trashed folder's own contents may be empty while the trash is not.
+          disabled: !trash.folderId && !items.length,
+          onPress: confirmEmptyTrash,
+        } as const] : []),
         {
           type: 'submenu',
           label: 'Sort By',
           icon: { type: 'sfSymbol', name: 'arrow.up.arrow.down' },
           inline: true,
-          items: (Object.keys(SORT_LABELS) as FileSortKey[]).map((key) => ({
+          items: (Object.keys(sortLabels) as FileSortKey[]).map((key) => ({
             type: 'action' as const,
-            label: SORT_LABELS[key],
+            label: sortLabels[key],
             state: sort.key === key ? 'on' as const : 'off' as const,
             icon: sort.key === key ? { type: 'sfSymbol' as const, name: sort.direction === 'asc' ? 'chevron.up' : 'chevron.down' } : undefined,
             onPress: () => setSort(sort.key === key
@@ -279,16 +410,17 @@ export function FilesFolderScreen({ navigation, route }: Props) {
       headerBackTitle: 'Back',
       // While selecting, the selection actions take the bottom of the screen, where iOS 26 keeps
       // the search field, as in the Files app.
-      headerSearchBarOptions: Platform.OS === 'ios' && filesEnabled && !selecting ? {
-        placeholder: folderId === null ? 'Search My files' : `Search ${title}`,
+      headerSearchBarOptions: Platform.OS === 'ios' && (filesEnabled || inTrash) && !selecting ? {
+        placeholder: !inTrash && folderId === null ? 'Search My files' : `Search ${title}`,
         hideWhenScrolling: true,
         onChangeText: (event) => setSearch(event.nativeEvent.text),
         onCancelButtonPress: () => setSearch(''),
       } : undefined,
       headerLeft: selecting ? () => null : undefined,
-      unstable_headerRightItems: Platform.OS !== 'ios' || !filesEnabled ? undefined : () => selecting
+      unstable_headerRightItems: Platform.OS !== 'ios' || (!filesEnabled && !inTrash) ? undefined : () => selecting
         ? [{ type: 'button', label: 'Done', variant: 'done', onPress: exitSelection }]
-        : [addMenu, sortMenu],
+        // Nothing is added to the trash here: items are moved to it from where they are.
+        : inTrash ? [sortMenu] : [addMenu, sortMenu],
     })
   })
 
@@ -301,7 +433,8 @@ export function FilesFolderScreen({ navigation, route }: Props) {
     }
   }, [listing])
 
-  if (!filesEnabled) {
+  // Without Files, the trash still holds chats and drawer folders.
+  if (!filesEnabled && !inTrash) {
     return Platform.OS === 'android'
       ? <Screen scroll={false}><PageHeader title={title} onBack={() => navigation.goBack()} /><FilesTurnedOff /></Screen>
       : <FilesTurnedOff />
@@ -350,24 +483,25 @@ export function FilesFolderScreen({ navigation, route }: Props) {
         title={title}
         onBack={() => navigation.goBack()}
         right={<View style={styles.androidActions}>
-          <MaterialIconButton icon="plus" label="Add" onPress={() => showActions('Add', [
+          {inTrash ? null : <MaterialIconButton icon="plus" label="Add" onPress={() => showActions('Add', [
             { label: 'New document', icon: 'doc.badge.plus', onPress: () => { void newDocument() } },
             { label: 'New folder', icon: 'folder.badge.plus', onPress: newFolder },
             { label: 'Photo library', icon: 'photo.on.rectangle', onPress: () => { void upload('photos') } },
             { label: 'Take photo', icon: 'camera', onPress: () => { void upload('camera') } },
             { label: 'Choose files', icon: 'folder', onPress: () => { void upload('files') } },
-          ])} />
+          ])} />}
           <MaterialIconButton icon="ellipsis" label="More" onPress={() => showActions(title, [
             ...(items.length ? [{ label: 'Select', icon: 'checkmark.circle', onPress: () => setSelecting(true) }] : []),
-            ...(Object.keys(SORT_LABELS) as FileSortKey[]).map((key) => ({
-              label: `Sort by ${SORT_LABELS[key].toLowerCase()}`,
+            ...(inTrash && (trash.folderId || items.length) ? [{ label: 'Empty trash', icon: 'trash', destructive: true, onPress: confirmEmptyTrash }] : []),
+            ...(Object.keys(sortLabels) as FileSortKey[]).map((key) => ({
+              label: `Sort by ${sortLabels[key].toLowerCase()}`,
               selected: sort.key === key,
               onPress: () => setSort(sort.key === key ? { key, direction: sort.direction === 'asc' ? 'desc' : 'asc' } : { key, direction: key === 'modified' || key === 'size' ? 'desc' : 'asc' }),
             })),
           ])} />
         </View>}
       />
-      <MaterialSearchField value={search} onChange={setSearch} onFocusChange={() => {}} placeholder={folderId === null ? 'Search My files' : `Search ${title}`} />
+      <MaterialSearchField value={search} onChange={setSearch} onFocusChange={() => {}} placeholder={!inTrash && folderId === null ? 'Search My files' : `Search ${title}`} />
     </View>
   )
 
@@ -378,32 +512,35 @@ export function FilesFolderScreen({ navigation, route }: Props) {
       {listing.data?.offline ? (
         <View style={[styles.banner, { backgroundColor: theme.fill }]}>
           <SymbolView name="icloud.slash" size={15} tintColor={theme.secondary} />
-          <Text style={[styles.bannerText, { color: theme.secondary }]}>You’re offline. Showing this folder as you last saw it.</Text>
+          <Text style={[styles.bannerText, { color: theme.secondary }]}>You’re offline. Showing {inTrash && !trash.folderId ? 'the trash' : 'this folder'} as you last saw it.</Text>
         </View>
       ) : null}
-      {folder?.suggestion ? (
+      {/* What happens to items in the trash, or, in a trashed folder, when it goes and a way to bring it back. */}
+      {trashView && !search ? (
+        <View style={[styles.banner, { backgroundColor: theme.fill }]} testID="files-trash-banner">
+          <SymbolView name={trashView.folder ? 'trash' : 'clock'} size={15} tintColor={theme.secondary} />
+          {trashView.folder ? (
+            <>
+              <Text style={[styles.bannerText, { color: theme.secondary }]}>This folder is in the trash. {trashDeletesLabel(trashView.folder.purgeAt, now)}.</Text>
+              <Pressable accessibilityRole="button" onPress={() => { void restoreShownFolder() }}><Text style={[styles.bannerAction, { color: theme.blue }]}>Restore</Text></Pressable>
+            </>
+          ) : (
+            <>
+              <Text style={[styles.bannerText, { color: theme.secondary }]}>
+                {trashRetentionSummary(trashView.retention, trashView.files)}{trashView.files ? ' Files in the trash still count toward your storage.' : ''}
+              </Text>
+              <Pressable accessibilityRole="button" accessibilityLabel="Change retention" onPress={() => navigation.navigate('SettingsDetail', { section: 'trash' })}><Text style={[styles.bannerAction, { color: theme.blue }]}>Change</Text></Pressable>
+            </>
+          )}
+        </View>
+      ) : null}
+      {!inTrash && folder?.suggestion ? (
         <View style={[styles.banner, { backgroundColor: theme.fill }]}>
           <SymbolView name="sparkles" size={15} tintColor={theme.green} />
           <Text style={[styles.bannerText, { color: theme.text }]}>The agent suggested this folder.</Text>
           <Pressable accessibilityRole="button" onPress={() => runAction(folder, 'accept-suggestion')}><Text style={[styles.bannerAction, { color: theme.blue }]}>Keep</Text></Pressable>
           <Pressable accessibilityRole="button" onPress={() => runAction(folder, 'reject-suggestion')}><Text style={[styles.bannerAction, { color: theme.red }]}>Remove</Text></Pressable>
         </View>
-      ) : null}
-      {folderId === null && !search ? (
-        <Pressable
-          accessibilityHint="Opens deleted chats and files"
-          accessibilityLabel="Trash"
-          accessibilityRole="button"
-          onPress={() => navigation.navigate('Trash')}
-          style={({ pressed }) => [styles.trashRow, pressed && { opacity: 0.6 }]}
-          testID="files-trash"
-        >
-          <View style={styles.trashIcon}><SymbolView name="trash.fill" size={24} tintColor="#FF3B30" /></View>
-          <View style={[styles.trashText, { borderBottomColor: theme.separator }]}>
-            <Text style={[styles.trashName, { color: theme.text }]}>Trash</Text>
-            <SymbolView name="chevron.right" size={13} tintColor={theme.tertiary} />
-          </View>
-        </Pressable>
       ) : null}
       {localUploads.map(renderUpload)}
     </View>
@@ -414,9 +551,11 @@ export function FilesFolderScreen({ navigation, route }: Props) {
   ) : listing.isError && !listing.data ? (
     <View style={styles.center}>
       <SymbolView name={isFilesDisabledError(listing.error) ? 'folder.badge.questionmark' : 'exclamationmark.triangle'} size={40} tintColor={theme.tertiary} />
-      <Text style={[styles.emptyTitle, { color: theme.text }]}>Couldn’t open this folder</Text>
+      <Text style={[styles.emptyTitle, { color: theme.text }]}>{inTrash && !trash.folderId ? 'Couldn’t open the trash' : 'Couldn’t open this folder'}</Text>
       <Text style={[styles.emptyBody, { color: theme.secondary }]}>{filesErrorMessage(listing.error)}</Text>
       <Pressable accessibilityRole="button" onPress={() => { void listing.refetch() }} style={styles.retry}><Text style={[styles.retryLabel, { color: theme.blue }]}>Try Again</Text></Pressable>
+      {/* A trashed folder that was restored or deleted meanwhile is gone from the trash. */}
+      {trash?.folderId ? <Pressable accessibilityRole="button" onPress={showTrashRoot} style={styles.retry}><Text style={[styles.retryLabel, { color: theme.blue }]}>Back to Trash</Text></Pressable> : null}
     </View>
   ) : (
     <FlatList
@@ -427,7 +566,12 @@ export function FilesFolderScreen({ navigation, route }: Props) {
       ListHeaderComponent={header}
       contentContainerStyle={{ paddingBottom: bottomInset + (selecting ? 96 : 32) }}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { void onRefresh() }} />}
-      ListEmptyComponent={localUploads.length ? null : (
+      ListEmptyComponent={localUploads.length ? null : inTrash ? (
+        <View style={styles.empty}>
+          <SymbolView name={search ? 'magnifyingglass' : trash.folderId ? 'folder' : 'trash'} size={44} tintColor={theme.tertiary} />
+          <Text style={[styles.emptyTitle, { color: theme.text }]}>{search ? 'No matches' : trash.folderId ? 'This folder is empty' : 'The trash is empty'}</Text>
+        </View>
+      ) : (
         <View style={styles.empty}>
           <SymbolView name={search ? 'magnifyingglass' : 'folder'} size={44} tintColor={theme.tertiary} />
           <Text style={[styles.emptyTitle, { color: theme.text }]}>{search ? 'No matches' : 'This folder is empty'}</Text>
@@ -448,6 +592,8 @@ export function FilesFolderScreen({ navigation, route }: Props) {
           selected={selected.has(item.id)}
           busy={Boolean(downloads[item.id])}
           last={index === items.length - 1}
+          subtitle={inTrash ? trashItemSubtitle(item as TrashItem, now) : undefined}
+          opensFolder={inTrash ? item.kind === 'folder' : undefined}
           onPress={press}
           onAction={runAction}
           onLongPress={longPress}
@@ -460,12 +606,16 @@ export function FilesFolderScreen({ navigation, route }: Props) {
     <View style={[styles.selectionBar, { paddingBottom: bottomInset + 8, backgroundColor: theme.isDark ? theme.elevated : theme.elevated, borderTopColor: theme.separator }]}>
       <Text style={[styles.selectionCount, { color: theme.secondary }]}>{selectedNodes.length ? `${selectedNodes.length} selected` : 'Select items'}</Text>
       <View style={styles.selectionActions}>
-        {[
+        {(inTrash ? [
+          { icon: 'arrow.uturn.backward.circle', label: 'Restore', disabled: !selectedNodes.length, onPress: () => { void trashOperations.restore(selectedNodes).then(exitSelection) } },
+          ...(restoreTo ? [{ icon: 'folder', label: 'Restore To', disabled: !selectedNodes.length, onPress: () => setRestoring(selectedNodes) }] : []),
+          { icon: 'trash', label: 'Delete', destructive: true, disabled: !selectedNodes.length, onPress: () => confirmDeleteForever(selectedNodes, exitSelection) },
+        ] : [
           { icon: 'folder', label: 'Move', disabled: !selectedNodes.length || selectedNodes.some(isBuiltIn), onPress: () => setMoving(selectedNodes) },
           { icon: 'plus.square.on.square', label: 'Duplicate', disabled: !selectedNodes.some((node) => node.kind !== 'chat') || selectedNodes.some(isBuiltIn), onPress: () => { void operations.duplicate(selectedNodes, folderId).then(exitSelection) } },
           { icon: 'trash', label: 'Trash', destructive: true, disabled: !selectedNodes.length || selectedNodes.some(isBuiltIn), onPress: () => trashItems(selectedNodes, { confirm: true, then: exitSelection }) },
-        ].map((action) => (
-          <Pressable key={action.label} accessibilityLabel={action.label} accessibilityRole="button" accessibilityState={{ disabled: action.disabled }} disabled={action.disabled} onPress={action.onPress} style={({ pressed }) => [styles.selectionAction, pressed && { opacity: 0.6 }]} testID={`files-selection-${action.label.toLowerCase()}`}>
+        ]).map((action: { icon: string; label: string; destructive?: boolean; disabled: boolean; onPress: () => void }) => (
+          <Pressable key={action.label} accessibilityLabel={action.label} accessibilityRole="button" accessibilityState={{ disabled: action.disabled }} disabled={action.disabled} onPress={action.onPress} style={({ pressed }) => [styles.selectionAction, pressed && { opacity: 0.6 }]} testID={`files-selection-${action.label.toLowerCase().replace(/ /g, '-')}`}>
             <SymbolView name={action.icon as never} size={22} tintColor={action.disabled ? theme.tertiary : action.destructive ? theme.red : theme.blue} />
             <Text style={[styles.selectionLabel, { color: action.disabled ? theme.tertiary : action.destructive ? theme.red : theme.blue }]}>{action.label}</Text>
           </Pressable>
@@ -498,6 +648,21 @@ export function FilesFolderScreen({ navigation, route }: Props) {
           }}
         />
       ) : null}
+      {restoring ? (
+        <FolderPickerSheet
+          namespace={namespace}
+          mode="destination"
+          title={restoring.length === 1 ? `Restore “${restoring[0]!.name}”` : `Restore ${restoring.length} items`}
+          confirmLabel="Restore Here"
+          onCancel={() => setRestoring(null)}
+          onConfirm={(destination) => {
+            const nodes = restoring
+            setRestoring(null)
+            exitSelection()
+            void trashOperations.restore(nodes, { parentId: destination })
+          }}
+        />
+      ) : null}
     </View>
   )
   return Platform.OS === 'android' ? <Screen scroll={false}>{body}</Screen> : body
@@ -521,10 +686,6 @@ const styles = StyleSheet.create({
   uploadName: { fontSize: 17 },
   uploadState: { fontSize: 13, marginTop: 1 },
   androidActions: { flexDirection: 'row', alignItems: 'center' },
-  trashRow: { flexDirection: 'row', alignItems: 'center', paddingLeft: 16, minHeight: 56 },
-  trashIcon: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', marginRight: 14 },
-  trashText: { flex: 1, alignSelf: 'stretch', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingRight: 16, borderBottomWidth: StyleSheet.hairlineWidth },
-  trashName: { fontSize: 17 },
   selectionBar: { position: 'absolute', left: 0, right: 0, bottom: 0, borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 8, paddingHorizontal: 16 },
   selectionCount: { textAlign: 'center', fontSize: 13, marginBottom: 4 },
   selectionActions: { flexDirection: 'row', justifyContent: 'space-around' },

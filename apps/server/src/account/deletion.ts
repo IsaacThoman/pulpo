@@ -1,6 +1,6 @@
 import { and, eq, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm'
 import { db } from '../database/client.js'
-import { apiKeys, applicationSettings, auditEvents, attachments, backupJobs, budgetReservationAllowanceFunders, budgetReservationFunders, budgetReservations, chats, chatShares, exportJobs, fileNodes, fileVersions, managementTokens, poolInvitations, poolMembers, pools, queuedMessages, responses, sessions, users, workspaceLeases } from '../database/schema.js'
+import { apiKeys, applicationSettings, auditEvents, attachments, backupJobs, budgetReservationAllowanceFunders, budgetReservationCustomFunders, budgetReservationFunders, budgetReservations, chats, chatShares, exportJobs, fileNodes, fileVersions, managementTokens, poolInvitations, poolMembers, pools, queuedMessages, responses, sessions, users, workspaceLeases } from '../database/schema.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { parseAuthSettings } from '../settings/application-settings.js'
@@ -101,6 +101,10 @@ export async function deleteAccountData(userId: string): Promise<void> {
       .innerJoin(budgetReservations, eq(budgetReservations.id, budgetReservationAllowanceFunders.reservationId))
       .where(and(eq(budgetReservationAllowanceFunders.ownerUserId, userId), eq(budgetReservations.status, 'pending'))).limit(1)
     if (sharedFunding) throw new Error('Waiting for existing Pool contributions to settle.')
+    const [customFunding] = await db.select({ id: budgetReservations.id }).from(budgetReservationCustomFunders)
+      .innerJoin(budgetReservations, eq(budgetReservations.id, budgetReservationCustomFunders.reservationId))
+      .where(and(eq(budgetReservationCustomFunders.ownerUserId, userId), eq(budgetReservations.status, 'pending'))).limit(1)
+    if (customFunding) throw new Error('Waiting for existing Pool contributions to settle.')
     const leases = await db.select().from(workspaceLeases).where(eq(workspaceLeases.userId, userId))
     for (const lease of leases) {
       if (lease.controllerLeaseId) {
@@ -125,6 +129,7 @@ export async function deleteAccountData(userId: string): Promise<void> {
     await db.transaction(async (tx) => {
       await tx.delete(budgetReservationFunders).where(eq(budgetReservationFunders.userId, userId))
       await tx.delete(budgetReservationAllowanceFunders).where(eq(budgetReservationAllowanceFunders.ownerUserId, userId))
+      await tx.delete(budgetReservationCustomFunders).where(eq(budgetReservationCustomFunders.ownerUserId, userId))
       await tx.delete(pools).where(eq(pools.ownerUserId, userId))
       // Backup archives belong to the instance retention policy, not the account.
       await tx.update(backupJobs).set({ userId: null }).where(eq(backupJobs.userId, userId))

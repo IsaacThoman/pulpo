@@ -19,18 +19,30 @@ const preview = { COOLIFY_BRANCH: 'pull/672/head' }
 const fixtures: string[] = []
 const client = enabled ? postgres(process.env.DATABASE_URL!, { max: 2, onnotice: () => {} }) : null
 
-function fixture(entries: typeof journal.entries): string {
+/** Copies the listed migrations; `written` supplies SQL for migrations that are not in the folder. */
+function fixture(entries: typeof journal.entries, written: Record<string, string> = {}): string {
   const path = mkdtempSync(join(tmpdir(), 'pulpo-migrations-'))
   fixtures.push(path); mkdirSync(join(path, 'meta'))
   writeFileSync(join(path, 'meta/_journal.json'), JSON.stringify({ ...journal, entries }))
-  for (const entry of entries) copyFileSync(join(folder, `${entry.tag}.sql`), join(path, `${entry.tag}.sql`))
+  for (const entry of entries) {
+    const target = join(path, `${entry.tag}.sql`)
+    if (entry.tag in written) writeFileSync(target, written[entry.tag]!)
+    else copyFileSync(join(folder, `${entry.tag}.sql`), target)
+  }
   return path
 }
 
-/** A preview that applied the newest migration before dev inserted the one before it. */
+/**
+ * A preview that applied its branch's migration before dev inserted the newest one.
+ * The branch migration is synthetic: the newest real one may depend on the one
+ * before it, and drift detection only compares hashes and timestamps.
+ */
 async function seedRenumberedPreview() {
-  const upstream = journal.entries.at(-2)!, feature = journal.entries.at(-1)!
-  const legacy = fixture([...journal.entries.slice(0, -2), { ...feature, when: upstream.when + 1 }])
+  const upstream = journal.entries.at(-1)!
+  const feature = { ...upstream, idx: upstream.idx, tag: `${upstream.tag}_preview_feature`, when: upstream.when + 1 }
+  const legacy = fixture([...journal.entries.slice(0, -1), feature], {
+    [feature.tag]: 'CREATE TABLE "preview_feature_fixture" ("id" integer PRIMARY KEY);',
+  })
   await migrate(drizzle(client!), { migrationsFolder: legacy })
   await client!`insert into users (id, email, name, username) values (gen_random_uuid(), 'preview@example.test', 'Preview', 'preview')`
 }

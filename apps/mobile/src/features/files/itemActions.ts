@@ -1,6 +1,7 @@
 import type { FileNode } from '@pulpo/contracts'
 import { isMarkdownName } from '@pulpo/contracts'
 import type { ContextMenuAction } from '../../native/ItemContextMenuView'
+import { isTrashFolder } from '../trash/folder'
 import { isBuiltIn, openedKind } from './display'
 
 export type FileItemActionId =
@@ -41,8 +42,9 @@ export function fileItemActions(node: FileNode, context: FileItemActionContext):
     actions.push({ id: 'reject-suggestion', title: 'Remove Suggested Item', systemImage: 'xmark.circle', section: 1, destructive: true })
   }
   if (isBuiltIn(node)) {
-    // The Chats folder is the sidebar's own list of chats, so it can't be pinned to it (as on the web).
-    if (node.systemRole !== 'chats') actions.push({ id: node.pinned ? 'unpin' : 'pin', title: node.pinned ? 'Unpin' : 'Pin', systemImage: node.pinned ? 'pin.slash' : 'pin', section: 2 })
+    // The Chats folder is the sidebar's own list of chats, so it can't be pinned to it, and the
+    // trash isn't stored in Files (as on the web).
+    if (node.systemRole !== 'chats' && !isTrashFolder(node)) actions.push({ id: node.pinned ? 'unpin' : 'pin', title: node.pinned ? 'Unpin' : 'Pin', systemImage: node.pinned ? 'pin.slash' : 'pin', section: 2 })
     return actions
   }
   actions.push({ id: 'rename', title: 'Rename', systemImage: 'pencil', section: 2 })
@@ -52,6 +54,22 @@ export function fileItemActions(node: FileNode, context: FileItemActionContext):
   if ((node.kind === 'blob' || node.kind === 'doc') && node.status === 'ready') actions.push({ id: 'share', title: node.kind === 'doc' ? 'Export…' : 'Share…', systemImage: 'square.and.arrow.up', section: 2 })
   if (context.selectable) actions.push({ id: 'select', title: 'Select', systemImage: 'checkmark.circle', section: 3 })
   actions.push({ id: 'trash', title: node.kind === 'chat' ? 'Delete Chat' : 'Move to Trash', systemImage: 'trash', section: 4, destructive: true })
+  return actions
+}
+
+export type TrashItemActionId = 'open' | 'restore' | 'restore-to' | 'select' | 'delete-forever'
+
+/**
+ * The menu for an item in the trash, as on the web: trashed folders can be looked through, and
+ * anything can be restored (into a chosen folder while Files is on) or deleted for good.
+ */
+export function trashItemActions(node: FileNode, context: { files: boolean; selectable: boolean }): ContextMenuAction[] {
+  const actions: ContextMenuAction[] = []
+  if (node.kind === 'folder') actions.push({ id: 'open', title: 'Open', systemImage: 'folder', section: 0 })
+  actions.push({ id: 'restore', title: 'Restore', systemImage: 'arrow.uturn.backward.circle', section: 1 })
+  if (context.files) actions.push({ id: 'restore-to', title: 'Restore To…', systemImage: 'folder', section: 1 })
+  if (context.selectable) actions.push({ id: 'select', title: 'Select', systemImage: 'checkmark.circle', section: 2 })
+  actions.push({ id: 'delete-forever', title: 'Delete Forever', systemImage: 'trash', section: 3, destructive: true })
   return actions
 }
 

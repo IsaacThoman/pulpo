@@ -98,6 +98,20 @@ export function allocateSharedAllowanceMicros(
   return allocateProportionallyMicros(sharedMicros, owners)
 }
 
+/** Draw on custom limit allowances in the given spend order, each up to what it has available. */
+export function allocateInOrderMicros(amountMicros: number, sources: Array<{ key: string; availableMicros: number }>): Map<string, number> {
+  const result = new Map<string, number>()
+  let remaining = Math.max(0, amountMicros)
+  for (const source of sources) {
+    if (remaining <= 0) break
+    const micros = Math.min(remaining, Math.max(0, source.availableMicros))
+    if (micros <= 0) continue
+    result.set(source.key, (result.get(source.key) ?? 0) + micros)
+    remaining -= micros
+  }
+  return result
+}
+
 /** Charge settled or retained cost to shared allowances, never beyond what each owner reserved. */
 export function allocateSharedSettlementMicros(amountMicros: number, funders: Array<{ userId: string; reservedMicros: number }>): Map<string, number> {
   const reserved = funders.reduce((sum, row) => sum + Math.max(0, row.reservedMicros), 0)
