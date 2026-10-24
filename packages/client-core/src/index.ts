@@ -297,6 +297,12 @@ export function attachmentUploadErrorMessage(failure: AttachmentUploadFailure): 
   if (failure.status !== undefined && failure.status >= 500) return 'The server couldn’t accept the upload right now. Try again in a moment.'
   if (failure.network) return 'Connection lost during upload. Check your connection and try again.'
 
+  // Native transfers report network failures as "Unable to upload…: <reason>"; match the
+  // reason before that prefix is read as an unreadable file.
+  if (/timed out/i.test(message)) return 'The upload timed out. Check your connection and try again.'
+  if (/connection was lost|appears to be offline|not connected to the internet|could not connect to the server|hostname could not be found|network/i.test(message)) {
+    return 'Connection lost during upload. Check your connection and try again.'
+  }
   if (/attachment is empty|file does not exist|unable to upload|failed to access|couldn.t open|cannot read/i.test(message)) {
     return unreadableAttachmentMessage
   }

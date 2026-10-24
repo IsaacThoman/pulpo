@@ -239,6 +239,19 @@ describe('client core', () => {
       .toBe('Attachment exceeds the 25 MB limit')
   })
 
+  it('reads native transfer failures as network problems, not unreadable files', () => {
+    expect(attachmentUploadErrorMessage({ message: 'Unable to upload a file: The request timed out.' }))
+      .toBe('The upload timed out. Check your connection and try again.')
+    expect(attachmentUploadErrorMessage({ message: 'Unable to upload a file: The network connection was lost.' }))
+      .toBe('Connection lost during upload. Check your connection and try again.')
+    expect(attachmentUploadErrorMessage({ message: 'Unable to upload a file: The Internet connection appears to be offline.' }))
+      .toBe('Connection lost during upload. Check your connection and try again.')
+    expect(attachmentUploadErrorMessage({ message: 'Unable to upload a file: Could not connect to the server.' }))
+      .toBe('Connection lost during upload. Check your connection and try again.')
+    expect(attachmentUploadErrorMessage({ message: 'Unable to upload a file: The file couldn’t be opened.' }))
+      .toBe('Pulpo couldn’t read this file. Save a copy to Files, then select the copy and try again.')
+  })
+
   it('sends management bearer tokens and parses API errors', async () => {
     const fetcher = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({

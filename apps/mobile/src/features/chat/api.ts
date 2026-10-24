@@ -1,6 +1,7 @@
 import { fetch as expoFetch } from 'expo/fetch'
 import { deviceTimeZone } from '@pulpo/client-core'
 import { mobileChatStarted } from './chatStarted'
+import { uploadFileWithStallTimeout } from './nativeUpload'
 import { Directory, File, Paths } from 'expo-file-system'
 import * as Crypto from 'expo-crypto'
 import * as Sharing from 'expo-sharing'
@@ -281,6 +282,8 @@ export async function editMessage(input: {
 
 export async function deleteUnreferencedAttachment(id: string): Promise<void> {
   await apiRequest(`/api/attachments/${id}`, { method: 'DELETE' })
+  // Let a just-finished upload record its cache copy first, so the removal below sees it.
+  await pendingUploadCaches.get(id)
   const { instanceUrl, user } = useSessionStore.getState()
   if (!user) return
   const uri = await removeCachedAttachment(cacheNamespace(instanceUrl, user.id), id)
@@ -342,7 +345,7 @@ async function performAttachmentUpload(draft: AttachmentDraft, chatId: string | 
     const uploadUrl = apiUrl(reservation.uploadUrl)
     const result = await retryBusyUpload(async () => {
       await assertSession()
-      const response = await file.upload(uploadUrl, {
+      const response = await uploadFileWithStallTimeout(file, uploadUrl, {
         httpMethod: 'PUT',
         mimeType: draft.mimeType,
         headers: { ...reservation.uploadHeaders, ...nativeAuthorizationHeaders(uploadUrl) },
@@ -353,11 +356,7 @@ async function performAttachmentUpload(draft: AttachmentDraft, chatId: string | 
     if (result.status < 200 || result.status >= 300) throw new Error(`Upload failed (${result.status})`)
     await assertSession()
     const confirmed = await retryBusyUpload(() => apiRequest<ServerAttachment>(`/api/attachments/${reservation.attachment.id}/confirm`, { method: 'POST' }))
-    await cacheUploadedAttachment(
-      confirmed.id,
-      confirmed.originalName || draft.name,
-      draft.uri,
-    ).catch(() => undefined)
+    cacheUploadedAttachmentInBackground(confirmed.id, confirmed.originalName || draft.name, draft.uri)
     return confirmed
   } catch (error) {
     // Reservations are created before transferring bytes. Failed attempts are
@@ -407,6 +406,20 @@ export async function cacheUploadedAttachment(id: string, name: string, sourceUr
   const destination = attachmentCacheDestination(id, name)
   if (source.uri !== destination.uri) await source.copy(destination, { overwrite: true })
   await recordDownloadedAttachment(cacheNamespace(instanceUrl, user.id), id, destination)
+}
+
+const pendingUploadCaches = new Map<string, Promise<void>>()
+
+/**
+ * Keeps a local copy of a confirmed upload without making the upload wait for it: the copy goes
+ * through the serial SQLite queue, and a slow or stuck queue must not leave the file uploading.
+ */
+function cacheUploadedAttachmentInBackground(id: string, name: string, sourceUri: string): void {
+  const pending = cacheUploadedAttachment(id, name, sourceUri).catch(() => undefined)
+  pendingUploadCaches.set(id, pending)
+  void pending.then(() => {
+    if (pendingUploadCaches.get(id) === pending) pendingUploadCaches.delete(id)
+  })
 }
 
 const enqueueDownload = createUploadQueue(2)
