@@ -1,4 +1,4 @@
-FROM node:22-bookworm-slim AS build
+FROM node:22.23.4-bookworm-slim AS build
 ARG NODE_ENV
 WORKDIR /app
 COPY package.json package-lock.json ./
@@ -17,7 +17,7 @@ COPY packages/client-core packages/client-core
 COPY apps/server apps/server
 RUN npm run build -w @pulpo/contracts && npm run build -w @pulpo/client-core && npm run build -w @pulpo/server
 
-FROM node:22-bookworm-slim AS runtime
+FROM node:22.23.4-bookworm-slim AS runtime
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 ENV NODE_ENV=production

@@ -32,6 +32,16 @@ export function fallbackModelAttemptLimit(source: Pick<AttemptPolicyModel, 'maxR
   return Math.max(1, source.maxRetries)
 }
 
+/** A connection that dropped before the provider finished the response; a resend usually succeeds. */
+export function isIncompleteStreamError(errorMessage: string | undefined): boolean {
+  return /\bstream ended (?:before|without)\b/i.test(errorMessage ?? '')
+}
+
+/** Incomplete streams get one resend on the same model even when no retries are configured. */
+export function incompleteStreamAttemptLimit(attemptLimit: number, errorMessage: string | undefined): number {
+  return isIncompleteStreamError(errorMessage) ? Math.max(attemptLimit, 2) : attemptLimit
+}
+
 type StickyStore = {
   get(key: string): Promise<string | null>
   set(key: string, value: string, expiryMode: 'EX', ttlSeconds: number): Promise<unknown>

@@ -93,6 +93,19 @@ export function applyFullBackupCompatibilityDefaults(database: Record<string, Ar
     event.inference_reference_cost_micros ??= 0
     event.requested_model_id ??= requestedModelByResponse.get(event.response_id) ?? event.model_id
   }
+  // Billing identifiers became provider-neutral; earlier archives only hold Stripe rows.
+  for (const subscription of database.billing_subscriptions ?? []) {
+    subscription.provider_subscription_id ??= subscription.stripe_subscription_id
+    subscription.provider_product_id ??= subscription.stripe_price_id
+    subscription.provider ??= 'stripe'
+  }
+  for (const order of database.billing_orders ?? []) {
+    order.provider_payment_id ??= order.stripe_payment_id
+    order.provider_subscription_id ??= order.stripe_subscription_id ?? null
+    order.provider_product_id ??= order.stripe_price_id
+    order.provider ??= 'stripe'
+  }
+  for (const event of database.billing_webhook_events ?? []) event.provider ??= 'stripe'
   scrubFullBackupDetailedPayloads(database)
 }
 

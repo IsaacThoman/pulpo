@@ -8,6 +8,7 @@ import { ModelWarningBanner } from './ModelWarningBanner'
 import { webShelf, shelfDraftAttachments } from '@/lib/local-first/shelf'
 import type { ShelfAttachment } from '@pulpo/client-core'
 import { useComposerSync } from './use-composer-sync'
+import { useComposerToolbarFit } from './use-composer-toolbar-fit'
 import { useFollowStartedChat } from './use-follow-started-chat'
 import { useMenuTriggerFocus } from './use-menu-trigger-focus'
 import { registerComposerFocus } from './composer-focus'
@@ -324,6 +325,10 @@ export function Composer({
 
   const [editAgentMode, setEditAgentMode] = useState(false)
   const activeAgentMode = messageEdit ? editAgentMode : agentModeEnabled
+  const toolbarFit = useComposerToolbarFit(
+    `${activeAgentMode && canUseAgent}:${activePresets.map((preset) => preset.choices.find((c) => c.id === selections[preset.id])?.displayName ?? '').join('|')}`,
+    activePresets.length > 0,
+  )
   const generationSelection: ResponseGenerationSelection = {
     modelId,
     presetSelections: selections,
@@ -1421,7 +1426,7 @@ export function Composer({
           className="hidden"
           onChange={(event) => addFiles(event.target.files)}
         />
-        <div className="flex min-w-0 select-none items-center gap-1 px-2.5 pb-2.5">
+        <div ref={toolbarFit.toolbarRef} className="flex min-w-0 select-none items-center gap-1 px-2.5 pb-2.5">
           {canScopeFiles ? (
             <DropdownMenu>
               <Tooltip>
@@ -1476,8 +1481,12 @@ export function Composer({
               <DropdownMenuTrigger asChild>
                 <button
                   {...presetMenuFocus.triggerProps}
+                  ref={toolbarFit.presetsRef}
                   type="button"
-                  className="group/generation-options flex h-8 min-w-0 cursor-pointer items-center gap-1.5 overflow-hidden rounded-full px-2.5 text-xs text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-ring/50 focus-visible:ring-[3px] data-[pointer-focus]:focus-visible:ring-0"
+                  className={cn(
+                    'group/generation-options flex h-8 min-w-0 cursor-pointer items-center gap-1.5 overflow-hidden rounded-full px-2.5 text-xs text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-ring/50 focus-visible:ring-[3px] data-[pointer-focus]:focus-visible:ring-0',
+                    toolbarFit.fit === 2 && 'px-2',
+                  )}
                   aria-label={t('chat.generationOptions')}
                 >
                   {activePresets.map((preset, i) => {
@@ -1487,11 +1496,11 @@ export function Composer({
                       <span key={preset.id} className="flex min-w-0 items-center gap-1">
                         {i > 0 && <span className="text-border">·</span>}
                         <PresetIcon name={icon} />
-                        {choice && <span className="min-w-0 truncate">{choice.displayName}</span>}
+                        {choice && toolbarFit.fit < 2 && <span data-preset-label className="min-w-0 truncate">{choice.displayName}</span>}
                       </span>
                     )
                   })}
-                  <ChevronDown className="size-3 shrink-0 rotate-180 opacity-60 transition-transform duration-200 group-data-[state=open]/generation-options:rotate-0 motion-reduce:transition-none" />
+                  {toolbarFit.fit < 2 && <ChevronDown className="size-3 shrink-0 rotate-180 opacity-60 transition-transform duration-200 group-data-[state=open]/generation-options:rotate-0 motion-reduce:transition-none" />}
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent {...presetMenuFocus.contentProps} align="start" side="top" className="w-48">
@@ -1524,7 +1533,10 @@ export function Composer({
             </DropdownMenu>
           )}
 
+          {/* In a narrow composer (e.g. beside a split view), the agent menu collapses to its icon first, then the presets do. */}
           <AgentMenu
+            ref={toolbarFit.agentRef}
+            compact={toolbarFit.fit > 0}
             onSelectClose={focusComposer}
             enabled={activeAgentMode}
             disabled={!canUseAgent}
@@ -1536,8 +1548,8 @@ export function Composer({
           />
 
           {/* Attachments, presets, and agent stay usable while dictating; only the trailing actions flip to the dictation bar. */}
-          {/* While dictating, reserve room for a readable waveform; presets truncate rather than squeeze it. */}
-          <div className={cn(
+          {/* While dictating, reserve room for a readable waveform; presets collapse rather than squeeze it. */}
+          <div ref={toolbarFit.spacerRef} className={cn(
             'grid flex-1 transition-[min-width] duration-[260ms] ease-[cubic-bezier(0.65,0,0.35,1)] motion-reduce:transition-none',
             dictationState !== 'idle' ? 'min-w-44' : dictationEnabled ? 'min-w-[4.25rem]' : 'min-w-8',
           )}>

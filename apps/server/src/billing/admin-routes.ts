@@ -45,7 +45,8 @@ async function billingSettings() {
   return parseBillingSettings(row?.value)
 }
 
-function productKind(priceId: string): 'eight' | 'fat' | 'credits' | 'unknown' {
+function productKind(provider: string, priceId: string): 'eight' | 'fat' | 'credits' | 'unknown' {
+  if (provider !== 'stripe') return 'unknown'
   const plan = planForPriceId(priceId)
   if (plan) return plan
   if (priceId === getConfig().STRIPE_CREDIT_PRODUCT_ID) return 'credits'
@@ -93,12 +94,13 @@ export async function registerAdminBillingRoutes(app: FastifyInstance): Promise<
       db.select({ count: sql<number>`count(*)::int` }).from(billingWebhookEvents)
         .where(eq(billingWebhookEvents.status, 'failed')),
       db.select({
-        stripePaymentId: billingOrders.stripePaymentId,
+        paymentId: billingOrders.providerPaymentId,
+        provider: billingOrders.provider,
         userId: billingOrders.userId,
         userName: users.name,
         userEmail: users.email,
-        stripePriceId: billingOrders.stripePriceId,
-        stripeSubscriptionId: billingOrders.stripeSubscriptionId,
+        productId: billingOrders.providerProductId,
+        subscriptionId: billingOrders.providerSubscriptionId,
         billingReason: billingOrders.billingReason,
         status: billingOrders.status,
         totalAmountCents: billingOrders.totalAmountCents,
@@ -112,7 +114,8 @@ export async function registerAdminBillingRoutes(app: FastifyInstance): Promise<
         userId: billingSubscriptions.userId,
         userName: users.name,
         userEmail: users.email,
-        stripeSubscriptionId: billingSubscriptions.stripeSubscriptionId,
+        subscriptionId: billingSubscriptions.providerSubscriptionId,
+        provider: billingSubscriptions.provider,
         plan: billingSubscriptions.plan,
         status: billingSubscriptions.status,
         cancelAtPeriodEnd: billingSubscriptions.cancelAtPeriodEnd,
@@ -131,6 +134,7 @@ export async function registerAdminBillingRoutes(app: FastifyInstance): Promise<
       billingSettings(),
       db.select({
         providerEventId: billingWebhookEvents.providerEventId,
+        provider: billingWebhookEvents.provider,
         type: billingWebhookEvents.type,
         resourceId: billingWebhookEvents.resourceId,
         error: billingWebhookEvents.error,
@@ -173,7 +177,7 @@ export async function registerAdminBillingRoutes(app: FastifyInstance): Promise<
       },
       subscribers: { eight: Number(eight?.count ?? 0), fat: Number(fat?.count ?? 0) },
       trend: trend.map((item) => ({ ...item, totalCents: Number(item.totalCents), payments: Number(item.payments) })),
-      recentOrders: recentOrders.map((order) => ({ ...order, product: productKind(order.stripePriceId) })),
+      recentOrders: recentOrders.map((order) => ({ ...order, product: productKind(order.provider, order.productId) })),
       recentSubscriptions,
       failedEvents: failedWebhookRows,
       holds: holdRows,

@@ -1,4 +1,78 @@
-# Live network verification — September 17, 2026
+# Live network verification
+
+## October 22, 2026 — source identity and ARP
+
+The shared network-discovery transcript prompted additional checks on
+`pulpo-agents`. Two disposable `network-check` pods used the same bounded Kata
+runtime, image, proxy configuration, resources and startup guard as production.
+No user workspace was used as a probe target or deleted.
+
+The pre-install baseline reproduced, in both directions:
+
+- A raw UDP packet claiming the node's `10.42.0.1` source IP reached the other
+  pod's UDP application. A genuine host packet was a positive control.
+- A TCP SYN claiming the controller's source IP reached the peer's daemon port.
+- Forged ARP sender IP/MAC frames and peer ARP discovery reached the other pod.
+- Ordinary peer UDP and packets with an unused IPv4 source were already blocked.
+
+The node-source result bypassed kube-router's local-node ingress exception.
+Ordinary TCP/UDP connection checks had not exercised forged identities or ARP.
+Twelve controlled attempts to the transcript's controller port 7520 did not
+reproduce its reported connection. That historical anomaly remains unexplained;
+it is not evidence that a listener was successfully identified.
+
+Installed the host CNI identity guard described in `README.md`, first as a
+diagnostic-only canary, then across the live bridge. The new guard validates
+source identity before bridge learning and enforces proxy-only new workspace
+egress on native bridge and routed paths. It restricts ARP/broadcast delivery
+and validates workspace IPv6 neighbor discovery. Existing pods were adopted
+without restarting K3s or their VMs.
+
+Protected runs blocked all eight raw-frame cases in both directions while real
+host UDP controls still reached the application. The existing verifier passed
+all 54 connectivity assertions and eight host/controller positive controls,
+including proxied HTTPS, blocked direct/DNS/private/peer traffic and preserved
+host IPv6 controls. Repeating after service reload and recreating diagnostic B
+confirmed that a new IP/interface was registered automatically and its old
+identity was removed. The fresh guest's ARP cache initially contained only the
+gateway. CNI CHECK succeeded against the live rule/identity ledger.
+
+An additional real-kernel regression uses disposable network namespaces rather
+than the production bridge. With bridge-to-iptables filtering disabled, it
+checks direct and service proxy connections, host/controller replies, blocked
+peer/node connections, forged frames and an unregistered interface cloning a
+valid workspace identity. Raw peer frames are checked in both directions with
+known destination MACs, so blocked ARP cannot conceal a forwarding-policy gap.
+Source-port egress checks run before any destination-port accept rule. The
+guard loads twice in one namespace to exercise
+atomic replacement. CI includes this test, 31 unprivileged identity/installer
+tests, and a real systemd test using private cache files and unique temporary
+units. The systemd test observes two separate late cache completions without
+touching the production CNI directory or firewall.
+
+The pre-merge independent review also reproduced two installer availability
+defects: early failure before service creation could abort rollback, and upgrade
+rollback could discard identities created after its backup. Regression tests
+now cover recovery before unit creation and rebuilding the previous guard's
+rules from the current pod inventory during upgrade rollback. These were
+installer defects rather than additional demonstrated packet-policy bypasses.
+The next review reproduced a first-install race with an ADD using the old CNI
+configuration completing after the final reload. A systemd cache-change watcher
+now starts before handoff and reconciles these late identities while unknown
+ports remain denied. This addresses availability without weakening the boundary.
+
+The pre-install host configuration is retained at:
+
+```text
+/var/backups/pulpo-workspace-guard/20261022T210421191951Z
+```
+
+The systemd and K3s startup configuration are installed; an actual host reboot
+or K3s restart was not performed. Multi-node, other bridges/CNIs and dual-stack
+remain outside this deployment's verified scope. Raw traces and ephemeral pod
+specifications are not retained in Git.
+
+## September 17, 2026 — ICMP and IPv6
 
 Target: `pulpo-agents` (`192.168.8.198`), Ubuntu 24.04, K3s 1.36.2+k3s1,
 nftables 1.0.9, `kata-pulpo-bounded`. The existing workspace used

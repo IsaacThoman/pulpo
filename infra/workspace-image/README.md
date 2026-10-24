@@ -12,7 +12,7 @@ authenticated Pulpo workspace daemon that executes requested tools.
 ## Contents
 
 - Ubuntu 24.04 LTS
-- Node.js 24.18.1 LTS (Pi requires Node.js 22.19.0 or newer)
+- Node.js 24.22.1 LTS (Pi requires Node.js 22.19.0 or newer)
 - Python 3, Git, ripgrep, curl, compilers, and common shell utilities
 - An unprivileged `agent` user with UID/GID 1000
 - A writable `/workspace`
