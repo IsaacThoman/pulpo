@@ -1,5 +1,6 @@
 import type {
   ChatPreset,
+  DataRetentionTag,
   FileAccessMode,
   QueuedMessage as ServerQueuedMessage,
   QueuedMessageAttachment as ServerQueuedMessageAttachment,
@@ -40,6 +41,8 @@ export interface Model {
   pinned?: boolean
   /** Composer presets (admin-configured; empty = no extra controls). */
   presets: ChatPreset[]
+  /** Data retention tag shown beside the provider. */
+  dataRetention?: DataRetentionTag | null
 }
 
 export interface Attachment {

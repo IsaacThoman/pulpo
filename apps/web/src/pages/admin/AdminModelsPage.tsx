@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { DEFAULT_MINIMUM_OUTPUT_RESERVATION_TOKENS, DEFAULT_MODEL_WARNING_DISMISS_DAYS, minimumOutputReservationTokensSchema, chatPresetsSchema, type ChatPreset, type ChatPresetAction, type ChatPresetChoice, type ChatPresetIcon, type ModelHiddenPlatform } from '@pulpo/contracts'
+import { DATA_RETENTION_TAG_NONE, DATA_RETENTION_TAGS_SETTING_KEY, parseDataRetentionTags, type DataRetentionTag, DEFAULT_MINIMUM_OUTPUT_RESERVATION_TOKENS, DEFAULT_MODEL_WARNING_DISMISS_DAYS, minimumOutputReservationTokensSchema, chatPresetsSchema, type ChatPreset, type ChatPresetAction, type ChatPresetChoice, type ModelHiddenPlatform } from '@pulpo/contracts'
 import { modelWarningLinkError } from '@pulpo/client-core'
-import { ArrowDown, ArrowUp, Check, ChevronsUpDown, ChevronRight, Copy, Lock, Pencil, Plus, Search, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, Check, ChevronRight, Copy, Lock, Pencil, Plus, Search, Trash2 } from 'lucide-react'
 import { apiRequest } from '@/lib/api'
 import { formatNumber } from '@/lib/format'
 import { cn } from '@/lib/utils'
@@ -17,7 +17,6 @@ import { Separator } from '@/components/ui/separator'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -26,9 +25,9 @@ import {
 import { useCatalog } from '@/stores/catalog'
 import { AI_ICONS, isAiIconAvailable, type AiIconKind } from '@/lib/ai-icons'
 import { AiLogo } from '@/components/ProviderLogo'
-import { PresetIcon } from '@/components/chat/PresetIcon'
+import { LucideIconSelect } from '@/components/admin/LucideIconSelect'
+import { DataRetentionBadgeMark } from '@/components/chat/DataRetentionBadge'
 import { ModelWarningNotice } from '@/components/chat/ModelWarningNotice'
-import { filterPresetIconOptions, formatPresetIconLabel } from '@/components/chat/preset-icon-options'
 import { UpstreamModelField } from '@/components/admin/UpstreamModelField'
 import { useCatalogIcons } from '@/stores/catalogIcons'
 import type { AdminCatalogIcon, CatalogIconReference } from '@/lib/catalog-icons'
@@ -61,6 +60,8 @@ interface AdminModel {
   allowedUserIds: string[]
   logo: string | null
   customIconId: string | null
+  /** Null follows the provider's tag; `none` hides it. */
+  dataRetentionTagId: string | null
   systemPrompt: string
   agentEnabled: boolean
   agentInstructions: string
@@ -93,11 +94,13 @@ interface AdminModel {
   slowStickyMinTokensPerSecond: number
   slowStickyMinCompletionSeconds: number
 }
-interface Provider { id: string; name: string; baseUrl?: string }
+interface Provider { id: string; name: string; baseUrl?: string; dataRetentionTagId?: string | null }
+
+const INHERIT_RETENTION_TAG = '__provider__'
 interface Lab { id: string; name: string; logo?: string; customIconId: string | null }
 
 const empty = (providerConnectionId = '', labId: string | null = null): AdminModel => ({
-  id: '', providerConnectionId, labId, upstreamModelId: '', name: '', description: '', warningMessage: '', warningDismissDays: DEFAULT_MODEL_WARNING_DISMISS_DAYS, enabled: true, visible: true, hiddenPlatforms: [], restricted: false, allowedUserIds: [], logo: null, customIconId: null, systemPrompt: '', agentEnabled: false, agentInstructions: '', defaultParameters: {}, interceptImagesWithOcr: false,
+  id: '', providerConnectionId, labId, upstreamModelId: '', name: '', description: '', warningMessage: '', warningDismissDays: DEFAULT_MODEL_WARNING_DISMISS_DAYS, enabled: true, visible: true, hiddenPlatforms: [], restricted: false, allowedUserIds: [], logo: null, customIconId: null, dataRetentionTagId: null, systemPrompt: '', agentEnabled: false, agentInstructions: '', defaultParameters: {}, interceptImagesWithOcr: false,
   contextWindow: 128_000, maxOutputTokens: 16_384, minimumOutputReservationTokens: DEFAULT_MINIMUM_OUTPUT_RESERVATION_TOKENS, executionMode: 'stream', tags: [], allowedParameters: [],
   compactionEnabled: true, compactionThresholdTokens: 100_000, compactionRetainedUserTokens: DEFAULT_RETAINED_USER_TOKENS,
   useProviderCost: false, promptCachingEnabled: false,
@@ -113,6 +116,7 @@ export function AdminModelsPage() {
   const [codexModels, setCodexModels] = useState<ManagedCodexModelSettings[]>([])
   const [providers, setProviders] = useState<Provider[]>([])
   const [labs, setLabs] = useState<Lab[]>([])
+  const [retentionTags, setRetentionTags] = useState<DataRetentionTag[]>([])
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<'all' | 'visible' | 'hidden' | 'enabled' | 'disabled' | 'restricted'>('visible')
   const [draft, setDraft] = useState<AdminModel | null>(null)
@@ -125,13 +129,15 @@ export function AdminModelsPage() {
   const loadIcons = useCatalogIcons((state) => state.load)
 
   const load = async () => {
-    const [modelResult, codexResult, providerResult, labResult] = await Promise.all([
+    const [modelResult, codexResult, providerResult, labResult, settingsResult] = await Promise.all([
       apiRequest<{ data: AdminModel[] }>('/api/admin/models'),
       apiRequest<{ data: ManagedCodexModelSettings[] }>('/api/admin/codex-model-settings'),
       apiRequest<{ data: Provider[] }>('/api/admin/providers'),
       apiRequest<{ data: Lab[] }>('/api/admin/labs'),
+      apiRequest<{ values: Record<string, unknown> }>('/api/admin/settings'),
     ])
     setModels(modelResult.data); setCodexModels(codexResult.data); setProviders(providerResult.data); setLabs(labResult.data)
+    setRetentionTags(parseDataRetentionTags(settingsResult.values[DATA_RETENTION_TAGS_SETTING_KEY]))
   }
   useEffect(() => { void Promise.all([load(), loadIcons()]) }, [loadIcons])
   useEffect(() => { setPresetEditorValid(true); setParamsValid(true) }, [draft?.id])
@@ -141,7 +147,11 @@ export function AdminModelsPage() {
 
   const save = async () => {
     if (!draft) return
-    const body = { ...draft, tags: draft.tags, allowedParameters: draft.allowedParameters }
+    // Saving clears an override whose tag was deleted, matching what the editor showed.
+    const dataRetentionTagId = draft.dataRetentionTagId === DATA_RETENTION_TAG_NONE || retentionTags.some((tag) => tag.id === draft.dataRetentionTagId)
+      ? draft.dataRetentionTagId
+      : null
+    const body = { ...draft, tags: draft.tags, allowedParameters: draft.allowedParameters, dataRetentionTagId }
     await apiRequest(creating ? '/api/admin/models' : `/api/admin/models/${draft.id}`, { method: creating ? 'POST' : 'PATCH', body })
     setDraft(null); await Promise.all([load(), useCatalog.getState().load()])
   }
@@ -278,6 +288,7 @@ export function AdminModelsPage() {
                 creating={creating}
                 providers={providers}
                 labs={labs}
+                retentionTags={retentionTags}
                 customIcons={customIcons}
                 models={models}
                 userDirectory={userDirectory}
@@ -404,6 +415,7 @@ function ModelEditorBody({
   creating,
   providers,
   labs,
+  retentionTags,
   customIcons,
   models,
   userDirectory,
@@ -417,6 +429,7 @@ function ModelEditorBody({
   creating: boolean
   providers: Provider[]
   labs: Lab[]
+  retentionTags: DataRetentionTag[]
   customIcons: AdminCatalogIcon[]
   models: AdminModel[]
   userDirectory: UserDirectory
@@ -428,6 +441,11 @@ function ModelEditorBody({
   const [jsonOpen, setJsonOpen] = useState(false)
   const selectedProvider = providers.find((provider) => provider.id === draft.providerConnectionId)
   const selectedLab = labs.find((lab) => lab.id === draft.labId)
+  const providerRetentionTag = retentionTags.find((tag) => tag.id === selectedProvider?.dataRetentionTagId)
+  // A deleted override tag no longer shows, so the editor treats it as following the provider.
+  const retentionValue = draft.dataRetentionTagId === DATA_RETENTION_TAG_NONE || retentionTags.some((tag) => tag.id === draft.dataRetentionTagId)
+    ? draft.dataRetentionTagId!
+    : INHERIT_RETENTION_TAG
   const stickySeconds = draft.stickyFallbackSeconds
   const retryEnabled =
     draft.maxRetries > 0 ||
@@ -581,6 +599,20 @@ function ModelEditorBody({
             )}
           </div>
         )}
+        <Field label={ui("Data retention tag")}>
+          <Select value={retentionValue} onValueChange={(value) => setDraft({ ...draft, dataRetentionTagId: value === INHERIT_RETENTION_TAG ? null : value })}>
+            <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value={INHERIT_RETENTION_TAG}>{uit`Provider default (${providerRetentionTag?.name ?? ui("None")})`}</SelectItem>
+              <SelectItem value={DATA_RETENTION_TAG_NONE}>{ui("None")}</SelectItem>
+              {retentionTags.map((tag) => (
+                <SelectItem key={tag.id} value={tag.id}>
+                  <DataRetentionBadgeMark tag={tag} className="size-4 [&_svg]:size-2.5" />{tag.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
         <Field label={ui("Upstream model")}>
           <UpstreamModelField
             providerConnectionId={draft.providerConnectionId}
@@ -1166,109 +1198,6 @@ function validatePresetDrafts(presets: ChatPreset[], modelId: string, allowedPar
   return [...new Set(errors)]
 }
 
-function IconSelect({
-  value,
-  allowDefault = false,
-  onChange,
-}: {
-  value: ChatPresetIcon | null | undefined
-  allowDefault?: boolean
-  onChange: (value: ChatPresetIcon | null) => void
-}) {
-  const [open, setOpen] = useState(false)
-  const [query, setQuery] = useState('')
-  // Keep the portal inside Radix Dialog's scroll-lock boundary so its viewport receives wheel events.
-  const [portalContainer, setPortalContainer] = useState<HTMLElement | null>(null)
-  const selected = value ?? (allowDefault ? null : 'circle')
-  const options = useMemo(() => filterPresetIconOptions(query), [query])
-
-  const select = (icon: ChatPresetIcon | null) => {
-    onChange(icon)
-    setOpen(false)
-    setQuery('')
-  }
-
-  return (
-    <Popover open={open} onOpenChange={(next) => {
-      setOpen(next)
-      if (!next) setQuery('')
-    }}>
-      <PopoverAnchor asChild>
-        <Button
-          type="button"
-          variant="outline"
-          role="combobox"
-          aria-expanded={open}
-          aria-label={ui("Choose preset icon")}
-          className="h-8 w-full justify-between px-2 font-normal"
-          onClick={(event) => {
-            setPortalContainer(event.currentTarget.closest<HTMLElement>('[data-slot="dialog-content"]'))
-            setOpen((current) => !current)
-          }}
-        >
-          <span className="flex min-w-0 items-center gap-2">
-            {selected ? <PresetIcon name={selected} /> : <CircleIconPlaceholder />}
-            <span className="truncate">{selected ? formatPresetIconLabel(selected) : ui("Default")}</span>
-          </span>
-          <ChevronsUpDown className="size-3.5 shrink-0 opacity-50" />
-        </Button>
-      </PopoverAnchor>
-      <PopoverContent
-        align="start"
-        container={portalContainer}
-        sideOffset={2}
-        className="w-[min(22rem,var(--radix-popper-available-width))] p-0"
-        onOpenAutoFocus={(event) => event.preventDefault()}
-      >
-        <div className="relative border-b p-2">
-          <Search className="absolute left-4 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            autoFocus
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder={ui("Search Lucide icons…")}
-            aria-label={ui("Search Lucide icons")}
-            className="h-8 pl-8"
-          />
-        </div>
-        <ScrollArea className="h-64">
-          <div className="grid grid-cols-2 gap-1 p-1">
-            {allowDefault && !query.trim() && (
-              <button
-                type="button"
-                className={cn('flex items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs hover:bg-accent', selected === null && 'bg-accent')}
-                onClick={() => select(null)}
-              >
-                <CircleIconPlaceholder />
-                <span>{ui("Default")}</span>
-                {selected === null && <Check className="ml-auto size-3.5" />}
-              </button>
-            )}
-            {options.map((option) => (
-              <button
-                key={option.id}
-                type="button"
-                title={option.id}
-                className={cn('flex min-w-0 items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs hover:bg-accent', selected === option.id && 'bg-accent')}
-                onClick={() => select(option.id)}
-              >
-                <PresetIcon name={option.id} className="shrink-0" />
-                <span className="truncate">{option.label}</span>
-                {selected === option.id && <Check className="ml-auto size-3.5 shrink-0" />}
-              </button>
-            ))}
-          </div>
-          {!options.length && <div className="px-2 py-8 text-center text-xs text-muted-foreground">{ui("No matching icons")}</div>}
-        </ScrollArea>
-      </PopoverContent>
-    </Popover>
-  )
-}
-
-function CircleIconPlaceholder() {
-  return <span aria-hidden className="size-3.5 shrink-0 rounded-full border border-current opacity-50" />
-}
-
 function PresetsEditor({
   value: presets,
   modelId,
@@ -1324,7 +1253,7 @@ function PresetsEditor({
                   />
                 </Field>
                 <Field label={ui("Default icon")}>
-                  <IconSelect value={preset.icon} onChange={(icon) => update(index, { icon: icon ?? 'circle' })} />
+                  <LucideIconSelect value={preset.icon} onChange={(icon) => update(index, { icon: icon ?? 'circle' })} />
                 </Field>
               </div>
               <div className="mt-6 flex items-center">
@@ -1384,7 +1313,7 @@ function PresetsEditor({
                         value={choice.displayName}
                         onChange={(e) => patchChoice({ displayName: e.target.value })}
                       />
-                      <IconSelect value={choice.icon} allowDefault onChange={(icon) => patchChoice({ icon })} />
+                      <LucideIconSelect value={choice.icon} allowDefault onChange={(icon) => patchChoice({ icon })} />
                       <div className="flex items-center">
                         <Button
                           type="button"
