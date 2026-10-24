@@ -510,7 +510,7 @@ async function processCodexGenerationAttempt(
     .where(eq(responses.id, responseId))
   try {
     const reservation = await resizeBudgetReservation({
-      responseId, accruedCostMicros: sidecarCostMicros, requestInput: context,
+      responseId, accruedCostMicros: sidecarCostMicros, accruedExtraCostMicros: sidecarCostMicros, requestInput: context,
       maxOutputTokens: publicOutputTokenLimit(record.model.maxOutputTokens, record.response.parameters as Record<string, unknown>).max_output_tokens,
       minimumOutputReservationTokens: record.model.minimumOutputReservationTokens,
       pricing: await getActivePricing(record.model.id),
@@ -741,7 +741,7 @@ async function processGenerationAttempt(
   const priorGenerationCostMicros = Number(priorGeneration?.total ?? 0)
   // Free excess output headroom while required preprocessing reserves its own calls.
   await resizeBudgetReservation({
-    responseId, accruedCostMicros: sidecarCostMicros + priorGenerationCostMicros, requestInput: record.response.input,
+    responseId, accruedCostMicros: sidecarCostMicros + priorGenerationCostMicros, accruedExtraCostMicros: sidecarCostMicros, requestInput: record.response.input,
     maxOutputTokens: Math.min(record.model.minimumOutputReservationTokens, publicOutputTokenLimit(record.model.maxOutputTokens, record.response.parameters as Record<string, unknown>).max_output_tokens),
     minimumOutputReservationTokens: record.model.minimumOutputReservationTokens,
     pricing: await getActivePricing(record.model.id),
@@ -837,6 +837,7 @@ async function processGenerationAttempt(
     const reservation = await resizeBudgetReservation({
       responseId,
       accruedCostMicros: sidecarCostMicros + priorGenerationCostMicros,
+      accruedExtraCostMicros: sidecarCostMicros,
       // Inlined file bytes are not text tokens; reserve for them as the Responses path does for a file_id.
       requestInput: { input: client.openai ? input : inlineFilesAsReferences(input), parameters },
       maxOutputTokens: publicOutputTokenLimit(record.model.maxOutputTokens, {
@@ -945,7 +946,7 @@ async function processGenerationAttempt(
       updatedAt: completedAt,
     }).where(eq(responses.id, responseId))
     // The answer is already completed; releasing unused budget is best effort.
-    await retainBudgetReservation(responseId, sidecarCostMicros + priorGenerationCostMicros + (usage ? providerCostMicros ?? calculateCostMicros(usage, pricing) : 0)).catch((error) => {
+    await retainBudgetReservation(responseId, sidecarCostMicros + priorGenerationCostMicros + (usage ? providerCostMicros ?? calculateCostMicros(usage, pricing) : 0), sidecarCostMicros).catch((error) => {
       console.warn(JSON.stringify({ level: 'warn', service: 'pulpo-worker', event: 'billing.retain_failed', responseId, error: safeErrorMessage(error) }))
     })
     const postTasks: PostResponseTaskResult = terminalStatus === 'completed' ? await runPostResponseTasks(record, record, output, requestLog.id) : { costMicros: 0 }

@@ -49,6 +49,7 @@ export function SubscriptionUsageBars({ weekly, fiveHour, shared = null, sharedW
 function customLimitHint(limit: CustomLimitSummary): string | undefined {
   const hints = [
     limit.models.length ? ui("Applies to {{models}}", { models: limit.models.join(', ') }) : null,
+    limit.coversExtras === false ? ui("Model usage only, not tools or workspace time") : null,
     limit.sharePercent ? ui("Pool members can use up to {{percent}}% of it", { percent: limit.sharePercent }) : null,
   ].filter((hint): hint is string => hint !== null)
   return hints.length ? hints.join(' · ') : undefined

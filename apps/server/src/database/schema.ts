@@ -1136,6 +1136,10 @@ export const budgetReservations = pgTable('budget_reservations', {
   sharedReservedMicros: bigint('shared_reserved_micros', { mode: 'number' }).notNull().default(0),
   // Drawn from custom limit allowances before anything else; split per allowance in budget_reservation_custom_funders.
   customReservedMicros: bigint('custom_reserved_micros', { mode: 'number' }).notNull().default(0),
+  // The part of the amount held for extras (tools, workspace time, and background model
+  // calls) rather than the response's own inference. Allowances that don't cover extras
+  // fund only the rest.
+  extraReservedMicros: bigint('extra_reserved_micros', { mode: 'number' }).notNull().default(0),
   sharedFiveHourPeriodStart: timestamp('shared_five_hour_period_start', { withTimezone: true }),
   settledAmountMicros: bigint('settled_amount_micros', { mode: 'number' }),
   settledWeeklyMicros: bigint('settled_weekly_micros', { mode: 'number' }),
@@ -1151,6 +1155,7 @@ export const budgetReservations = pgTable('budget_reservations', {
   index('reservation_user_status_idx').on(table.userId, table.status),
   check('reservation_source_split_check', sql`${table.weeklyReservedMicros} >= 0 and ${table.sharedReservedMicros} >= 0 and ${table.balanceReservedMicros} >= 0 and ${table.customReservedMicros} >= 0 and ${table.customReservedMicros} + ${table.weeklyReservedMicros} + ${table.sharedReservedMicros} + ${table.balanceReservedMicros} = ${table.amountMicros}`),
   check('reservation_five_hour_match_check', sql`${table.fiveHourReservedMicros} >= 0 and ${table.fiveHourReservedMicros} = ${table.weeklyReservedMicros}`),
+  check('reservation_extra_check', sql`${table.extraReservedMicros} >= 0`),
 ])
 
 export const budgetReservationFunders = pgTable('budget_reservation_funders', {
@@ -1188,6 +1193,8 @@ export const budgetReservationCustomFunders = pgTable('budget_reservation_custom
   ownerUserId: uuid('owner_user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
   // The daily or weekly period drawn from; null for the rolling five-hour window.
   periodStart: timestamp('period_start', { withTimezone: true }),
+  // Copied from the limit, so a reservation settles by the terms it drew under.
+  coversExtras: boolean('covers_extras').notNull().default(true),
   reservedMicros: bigint('reserved_micros', { mode: 'number' }).notNull(),
   settledMicros: bigint('settled_micros', { mode: 'number' }),
 }, (table) => [
@@ -1545,7 +1552,9 @@ export const sharedFiveHourUsagePeriods = pgTable('shared_five_hour_usage_period
 /**
  * Admin-defined allowances for model usage. Each covered user gets the limit's amount
  * per period, spent on matching models before plan usage, shared allowances, or credits.
- * Pool members may draw up to `sharePercent` of a member's allowance.
+ * Pool members may draw up to `sharePercent` of a member's allowance. Unless
+ * `coversExtras`, only the inference of matching requests is funded; their tools,
+ * workspace time, and background model calls are paid as usual.
  */
 export const billingCustomLimits = pgTable('billing_custom_limits', {
   id: uuid('id').primaryKey(),
@@ -1559,6 +1568,7 @@ export const billingCustomLimits = pgTable('billing_custom_limits', {
   plans: jsonb('plans').$type<string[]>().notNull().default([]),
   userIds: jsonb('user_ids').$type<string[]>().notNull().default([]),
   sharePercent: integer('share_percent').notNull().default(0),
+  coversExtras: boolean('covers_extras').notNull().default(true),
   enabled: boolean('enabled').notNull().default(true),
   createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
   ...timestamps,

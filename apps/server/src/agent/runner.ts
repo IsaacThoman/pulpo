@@ -853,6 +853,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
       const reservation = await resizeBudgetReservation({
         responseId,
         accruedCostMicros: accruedCostMicros + accruedToolCostMicros + sidecarCostMicros + workspaceHoldMicrosAmount,
+        accruedExtraCostMicros: accruedToolCostMicros + sidecarCostMicros + workspaceHoldMicrosAmount,
         requestInput: preparedContext,
         maxOutputTokens: publicOutputTokenLimit(active.model.maxOutputTokens, {
           ...resolvedParameters.parameters,
@@ -979,7 +980,8 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
         : undefined
       const turnCost = providerTurnCost ?? configuredTurnCost
       accruedCostMicros += turnCost
-      await retainBudgetReservation(responseId, accruedCostMicros + accruedToolCostMicros + sidecarCostMicros + workspaceHoldMicrosAmount)
+      await retainBudgetReservation(responseId, accruedCostMicros + accruedToolCostMicros + sidecarCostMicros + workspaceHoldMicrosAmount,
+        accruedToolCostMicros + sidecarCostMicros + workspaceHoldMicrosAmount)
       if (completedRuntime.runtime.codex) {
         inferenceReferenceCostMicros += codexInferenceReferenceCostMicros(completedRuntime.runtime.piModel, turnUsage)
       }
@@ -1092,6 +1094,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
   try {
     await resizeBudgetReservation({
       responseId, accruedCostMicros: accruedCostMicros + accruedToolCostMicros + sidecarCostMicros,
+      accruedExtraCostMicros: accruedToolCostMicros + sidecarCostMicros,
       requestInput: record.response.input,
       maxOutputTokens: Math.min(active.model.minimumOutputReservationTokens, publicOutputTokenLimit(active.model.maxOutputTokens, record.response.parameters as Record<string, unknown>).max_output_tokens),
       minimumOutputReservationTokens: active.model.minimumOutputReservationTokens,

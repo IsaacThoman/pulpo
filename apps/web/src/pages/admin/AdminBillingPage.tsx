@@ -607,6 +607,7 @@ interface CustomLimit {
   plans: BillingPlan[]
   userIds: string[]
   sharePercent: number
+  coversExtras: boolean
   enabled: boolean
 }
 
@@ -714,6 +715,7 @@ function CustomLimitsPanel() {
                   <th className="px-2 py-1.5 text-right font-normal">{ui("Limit")}</th>
                   <th className="px-2 py-1.5 font-normal">{ui("Period")}</th>
                   <th className="px-2 py-1.5 font-normal">{ui("Models")}</th>
+                  <th className="px-2 py-1.5 font-normal">{ui("Extras")}</th>
                   <th className="px-2 py-1.5 font-normal">{ui("Applies to")}</th>
                   <th className="px-2 py-1.5 text-right font-normal">{ui("Shared")}</th>
                   <th className="px-2 py-1.5 font-normal">{ui("Enabled")}</th>
@@ -727,6 +729,7 @@ function CustomLimitsPanel() {
                     <td className="px-2 py-1.5 text-right tabular-nums">{formatBalance(limit.limitMicros / 1_000_000)}</td>
                     <td className="px-2 py-1.5">{customLimitPeriodLabel(limit.period)}</td>
                     <td className="max-w-56 truncate px-2 py-1.5">{limit.modelIds.length ? limit.modelIds.map(modelName).join(', ') : ui("All models")}</td>
+                    <td className="px-2 py-1.5">{limit.coversExtras ? ui("Covered") : '—'}</td>
                     <td className="max-w-48 truncate px-2 py-1.5">{audience(limit)}</td>
                     <td className="px-2 py-1.5 text-right tabular-nums">{limit.sharePercent ? `${limit.sharePercent}%` : '—'}</td>
                     <td className="px-2 py-1.5"><Switch checked={limit.enabled} aria-label={ui("Enable {{name}}", { name: limit.name })} onCheckedChange={(enabled) => void toggle(limit, enabled)} /></td>
@@ -836,6 +839,7 @@ function CustomLimitDialog({ limit, models, directory, onSave, onClose }: {
   const [plans, setPlans] = useState<BillingPlan[]>(limit?.plans ?? [])
   const [userIds, setUserIds] = useState(limit?.userIds ?? [])
   const [sharePercent, setSharePercent] = useState(String(limit?.sharePercent ?? 0))
+  const [coversExtras, setCoversExtras] = useState(limit?.coversExtras ?? true)
   const [enabled, setEnabled] = useState(limit?.enabled ?? true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -862,7 +866,7 @@ function CustomLimitDialog({ limit, models, directory, onSave, onClose }: {
     setError('')
     try {
       await onSave({
-        name: name.trim(), period, limitMicros, enabled, target, sharePercent: Number(sharePercent),
+        name: name.trim(), period, limitMicros, enabled, target, sharePercent: Number(sharePercent), coversExtras,
         modelIds: allModels ? [] : modelIds,
         plans: target === 'plans' ? plans : [],
         userIds: target === 'users' ? userIds : [],
@@ -923,6 +927,15 @@ function CustomLimitDialog({ limit, models, directory, onSave, onClose }: {
               </label>)}
               {!models.length && <p className="text-xs text-muted-foreground">{ui("Loading models…")}</p>}
             </div>}
+          </div>
+          <div className="space-y-1.5">
+            <label className="flex cursor-pointer items-center justify-between gap-3 text-sm">
+              {ui("Cover tools and extras")}
+              <Switch checked={coversExtras} onCheckedChange={setCoversExtras} />
+            </label>
+            <p className="text-xs text-muted-foreground">{coversExtras
+              ? ui("Also pays for web search, image generation, workspace time, and background tasks like summaries and titles in these requests.")
+              : ui("Pays only for the models' own usage. Web search, image generation, workspace time, and background tasks like summaries and titles come from plan usage and credits.")}</p>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="custom-limit-target">{ui("Applies to")}</Label>

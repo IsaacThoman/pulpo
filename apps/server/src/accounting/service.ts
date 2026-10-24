@@ -127,10 +127,11 @@ function reserveBudgetTransaction(
       userId: user.id, plan: entitlements.plan, modelIds: await responseLimitModelIds(tx, input.responseId), sharingOwnerIds,
     })
     const capacity = await reservationCapacity(tx, { userId: user.id, role: user.role, apiKeyId: input.apiKeyId, weeklyLimitMicros: entitlements.weeklyLimitMicros }, {
-      customMicros: totalMicros(allocateCustomFunding(Number.MAX_SAFE_INTEGER, customSources)),
+      ...customCapacity(customSources),
       otherMicros: Math.min(entitlements.weeklyRemainingMicros, entitlements.fiveHourRemainingMicros)
         + poolAllowance.availableMicros
         + balances.reduce((sum, row) => sum + row.availableMicros, 0),
+      extraMicros: 0,
     })
     const reservation = budgetOutputReservation({ ...input, capacityMicros: capacity.amountMicros })
     if (!reservation) throw new AppError(402, capacity.code, capacity.message)
@@ -176,13 +177,22 @@ function reserveBudgetTransaction(
 
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
 
-function allocateCustomFunding(amountMicros: number, sources: CustomFundingSource[]): Map<string, number> {
-  return allocateInOrderMicros(amountMicros, sources.map((source) => ({ key: customFundingKey(source), availableMicros: source.availableMicros })))
+/** Allowances that don't cover extras fund at most `inferenceMicros` of the amount. */
+function allocateCustomFunding(amountMicros: number, sources: CustomFundingSource[], inferenceMicros = amountMicros): Map<string, number> {
+  return allocateInOrderMicros(amountMicros, sources.map((source) => ({ key: customFundingKey(source), availableMicros: source.availableMicros, coversExtras: source.coversExtras })), inferenceMicros)
+}
+
+/** What the allowances can fund in total, split by whether they cover extras. */
+function customCapacity(sources: CustomFundingSource[]): { coveringMicros: number; inferenceOnlyMicros: number } {
+  return {
+    coveringMicros: totalMicros(allocateCustomFunding(Number.MAX_SAFE_INTEGER, sources.filter((source) => source.coversExtras))),
+    inferenceOnlyMicros: totalMicros(allocateCustomFunding(Number.MAX_SAFE_INTEGER, sources.filter((source) => !source.coversExtras))),
+  }
 }
 
 async function insertCustomFunders(tx: Transaction, reservationId: string, sources: CustomFundingSource[], allocation: Map<string, number>): Promise<void> {
   const rows = sources.filter((source) => (allocation.get(customFundingKey(source)) ?? 0) > 0).map((source) => ({
-    reservationId, limitId: source.limitId, ownerUserId: source.ownerUserId, periodStart: source.periodStart, reservedMicros: allocation.get(customFundingKey(source))!,
+    reservationId, limitId: source.limitId, ownerUserId: source.ownerUserId, periodStart: source.periodStart, coversExtras: source.coversExtras, reservedMicros: allocation.get(customFundingKey(source))!,
   }))
   if (rows.length) await tx.insert(budgetReservationCustomFunders).values(rows)
 }
@@ -199,7 +209,7 @@ function resizedCustomSources(
   const held = new Map(current.map((row) => [customFundingKey(row), row]))
   const freshKeys = new Set(fresh.map(customFundingKey))
   const heldOnly = current.filter((row) => !freshKeys.has(customFundingKey(row)))
-    .map((row) => ({ limitId: row.limitId, ownerUserId: row.ownerUserId, periodStart: row.periodStart, availableMicros: row.reservedMicros }))
+    .map((row) => ({ limitId: row.limitId, ownerUserId: row.ownerUserId, periodStart: row.periodStart, coversExtras: row.coversExtras, availableMicros: row.reservedMicros }))
   return [...heldOnly, ...fresh.map((source) => {
     const row = held.get(customFundingKey(source))
     if (!row) return source
@@ -222,23 +232,27 @@ async function addWeeklyUsage(tx: Transaction, userId: string, periodStart: Date
 
 /**
  * Called only after locking the billing users, so pending holds cannot race.
- * `funding` splits what the account can fund into custom limit allowances and the rest.
+ * `funding` splits what the account can fund into custom limit allowances, by whether
+ * they cover extras, and the rest; `extraMicros` is the part held for extras.
  */
 async function reservationCapacity(tx: Transaction, caller: {
   userId: string
   role: string
   apiKeyId: string | null | undefined
   weeklyLimitMicros: number
-}, funding: { customMicros: number; otherMicros: number }, current = { amountMicros: 0, customMicros: 0 }) {
+}, funding: { coveringMicros: number; inferenceOnlyMicros: number; otherMicros: number; extraMicros: number }, current = { amountMicros: 0, customMicros: 0 }) {
   const currentReservationMicros = current.amountMicros
-  let capacity = { amountMicros: funding.customMicros + funding.otherMicros, code: 'insufficient_balance', message: 'Insufficient balance for input and the minimum output allowance' }
+  let capacity = { amountMicros: funding.otherMicros, code: 'insufficient_balance', message: 'Insufficient balance for input and the minimum output allowance' }
   // Like the API key budgets, capacity is the reservation's total size, so the
   // daily remainder excludes the reservation being resized. Custom limit
   // allowances are included usage, so the daily cap only limits the rest.
   const daily = await loadDailySpend(tx, { ...caller, currentReservationMicros: current.amountMicros - current.customMicros })
-  if (daily?.remainingMicros != null && funding.customMicros + daily.remainingMicros < capacity.amountMicros) {
-    capacity = { amountMicros: funding.customMicros + daily.remainingMicros, code: DAILY_SPEND_LIMIT_CODE, message: dailySpendLimitMessage(daily) }
+  if (daily?.remainingMicros != null && daily.remainingMicros < capacity.amountMicros) {
+    capacity = { amountMicros: daily.remainingMicros, code: DAILY_SPEND_LIMIT_CODE, message: dailySpendLimitMessage(daily) }
   }
+  // Allowances that don't cover extras add capacity only once the extras are funded otherwise.
+  const extrasFunded = funding.extraMicros - funding.coveringMicros <= Math.max(0, capacity.amountMicros)
+  capacity = { ...capacity, amountMicros: capacity.amountMicros + funding.coveringMicros + (extrasFunded ? funding.inferenceOnlyMicros : 0) }
   const apiKeyId = caller.apiKeyId
   if (!apiKeyId) return capacity
   const [key] = await tx.select().from(apiKeys).where(eq(apiKeys.id, apiKeyId)).for('update')
@@ -389,10 +403,32 @@ export async function settleBudget(input: {
     if (!response || !pricing) throw new AppError(409, 'pricing_snapshot_missing', 'Pricing snapshot is missing')
     const generationCost = input.costMicrosOverride ?? (calculateCostMicros(input.usage, pricing) + Math.max(0, (input.requestCount ?? 1) - 1) * pricing.perRequestPriceMicros)
     const incurredCost = generationCost + Math.max(0, input.additionalCostMicros ?? 0)
+    const [toolCharges, taskCharges] = await Promise.all([
+      tx.select({ name: toolExecutions.toolName, calls: sql<number>`count(*)::int`, costMicros: sql<number>`sum(${toolExecutions.billedCostMicros})::bigint` })
+        .from(toolExecutions).innerJoin(agentRuns, eq(agentRuns.id, toolExecutions.agentRunId))
+        .where(and(eq(agentRuns.responseId, response.id), gt(toolExecutions.billedCostMicros, 0)))
+        .groupBy(toolExecutions.toolName),
+      tx.select({ name: generationAttempts.purpose, calls: sql<number>`count(*)::int`, costMicros: sql<number>`sum(${generationAttempts.costMicros})::bigint` })
+        .from(generationAttempts).innerJoin(requestLogs, eq(requestLogs.id, generationAttempts.requestLogId))
+        .where(and(eq(requestLogs.responseId, response.id), eq(generationAttempts.source, 'tool'), gt(generationAttempts.costMicros, 0)))
+        .groupBy(generationAttempts.purpose),
+    ])
+    const numeric = (rows: Array<{ name: string; calls: number; costMicros: number }>) => rows.map((row) => ({ ...row, calls: Number(row.calls), costMicros: Number(row.costMicros) }))
+    const tools = numeric(toolCharges), tasks = numeric(taskCharges)
+    // Extras are what the usage record itemizes apart from the model: tools, background
+    // model calls, and workspace time. Allowances that don't cover extras fund only the rest.
+    const extraCost = Math.min(incurredCost, [...tools, ...tasks].reduce((sum, row) => sum + row.costMicros, 0) + Math.max(0, input.workspace?.costMicros ?? 0))
+    const inferenceCost = incurredCost - extraCost
     // Reservations are estimates. Actual usage above the estimate is funded from
     // whatever the account can still cover; only the unfundable rest is absorbed.
-    const reservation = lockedReservation.status === 'pending' && incurredCost > lockedReservation.amountMicros
-      ? await coverReservationOverrun(tx, lockedReservation, incurredCost)
+    // Extras above what was held for them are refunded the same way, so allowances
+    // that don't cover them are not charged for them.
+    const pendingCustomFunders = lockedReservation.status === 'pending' && lockedReservation.customReservedMicros > 0
+      ? await tx.select().from(budgetReservationCustomFunders).where(eq(budgetReservationCustomFunders.reservationId, lockedReservation.id))
+      : []
+    const reservation = lockedReservation.status === 'pending' && (incurredCost > lockedReservation.amountMicros
+      || customSettlementShortfall(lockedReservation, pendingCustomFunders, Math.min(incurredCost, lockedReservation.amountMicros), inferenceCost) > 0)
+      ? await coverReservationOverrun(tx, lockedReservation, incurredCost, extraCost)
       : lockedReservation
     const cost = Math.min(incurredCost, reservation.amountMicros)
     const uncoveredCostMicros = incurredCost - cost
@@ -410,7 +446,10 @@ export async function settleBudget(input: {
     const fundingUsers = funderIds.length ? await tx.select().from(users).where(inArray(users.id, funderIds)).orderBy(users.id).for('update') : []
     const user = fundingUsers.find((row) => row.id === reservation.userId) ?? (await tx.select().from(users).where(eq(users.id, reservation.userId)).limit(1))[0]
     if (!user) throw new AppError(409, 'user_missing', 'User is missing')
-    const customFunding = allocateCustomSettlementMicros(Math.min(cost, reservation.customReservedMicros), customFunders)
+    // If the reservation could not be refunded, allowances that don't cover extras pay
+    // for the extras that outran their hold rather than leaving them unfunded.
+    const shortfall = customSettlementShortfall(reservation, customFunders, cost, inferenceCost)
+    const customFunding = allocateCustomSettlementMicros(cost, inferenceCost + shortfall, customFunders)
     const customCost = totalMicros(customFunding)
     const allocation = allocateSettlementMicros(cost - customCost, reservation.weeklyReservedMicros, reservation.fiveHourReservedMicros)
     const weeklyCost = allocation.weeklyMicros
@@ -501,23 +540,12 @@ export async function settleBudget(input: {
       )) : []
     const [requestLog] = await tx.select({ requestedModelId: requestLogs.requestedModelId })
       .from(requestLogs).where(eq(requestLogs.responseId, response.id)).limit(1)
-    const [toolCharges, taskCharges] = await Promise.all([
-      tx.select({ name: toolExecutions.toolName, calls: sql<number>`count(*)::int`, costMicros: sql<number>`sum(${toolExecutions.billedCostMicros})::bigint` })
-        .from(toolExecutions).innerJoin(agentRuns, eq(agentRuns.id, toolExecutions.agentRunId))
-        .where(and(eq(agentRuns.responseId, response.id), gt(toolExecutions.billedCostMicros, 0)))
-        .groupBy(toolExecutions.toolName),
-      tx.select({ name: generationAttempts.purpose, calls: sql<number>`count(*)::int`, costMicros: sql<number>`sum(${generationAttempts.costMicros})::bigint` })
-        .from(generationAttempts).innerJoin(requestLogs, eq(requestLogs.id, generationAttempts.requestLogId))
-        .where(and(eq(requestLogs.responseId, response.id), eq(generationAttempts.source, 'tool'), gt(generationAttempts.costMicros, 0)))
-        .groupBy(generationAttempts.purpose),
-    ])
-    const numeric = (rows: Array<{ name: string; calls: number; costMicros: number }>) => rows.map((row) => ({ ...row, calls: Number(row.calls), costMicros: Number(row.costMicros) }))
     const costBreakdown = itemizeUsageCost({
       incurredMicros: incurredCost,
       chargedMicros: cost,
       tokens: input.usage.inputTokens + input.usage.outputTokens,
-      tools: numeric(toolCharges),
-      tasks: numeric(taskCharges),
+      tools,
+      tasks,
       workspace: input.workspace,
     })
     await tx.insert(usageEvents).values({
@@ -567,6 +595,20 @@ export async function settleBudget(input: {
   return settlement.cost
 }
 
+/**
+ * How much of `costMicros` neither the custom limit allowances, held to inference
+ * where they don't cover extras, nor the reservation's other funding could pay.
+ */
+function customSettlementShortfall(
+  reservation: typeof budgetReservations.$inferSelect,
+  customFunders: Array<typeof budgetReservationCustomFunders.$inferSelect>,
+  costMicros: number,
+  inferenceMicros: number,
+): number {
+  const customMicros = totalMicros(allocateCustomSettlementMicros(costMicros, inferenceMicros, customFunders))
+  return Math.max(0, costMicros - customMicros - (reservation.amountMicros - reservation.customReservedMicros))
+}
+
 async function lockReservationBalances(
   tx: Transaction,
   reservation: typeof budgetReservations.$inferSelect,
@@ -593,10 +635,12 @@ async function lockReservationBalances(
   return { caller, balances, allowanceFunders, customFunders, sharingOwnerIds }
 }
 
+/** `extraMicros` is the part of the new amount held for extras. */
 async function resizeLockedReservation<T extends { amountMicros: number }>(
   tx: Transaction,
   reservation: typeof budgetReservations.$inferSelect,
   calculate: (capacityMicros: number, currentAmountMicros: number) => T | null,
+  extraMicros = reservation.extraReservedMicros,
 ): Promise<T> {
   const { caller, balances, allowanceFunders, customFunders, sharingOwnerIds } = await lockReservationBalances(tx, reservation)
   const entitlements = await loadBillingEntitlements(tx, reservation.userId)
@@ -635,12 +679,14 @@ async function resizeLockedReservation<T extends { amountMicros: number }>(
   const subscriptionCapacity = allocate(Number.MAX_SAFE_INTEGER).weeklyMicros
   const sharedCapacity = totalMicros(allocateShared(Number.MAX_SAFE_INTEGER))
   const capacity = await reservationCapacity(tx, { userId: caller.id, role: caller.role, apiKeyId: reservation.apiKeyId, weeklyLimitMicros: entitlements.weeklyLimitMicros }, {
-    customMicros: totalMicros(allocateCustomFunding(Number.MAX_SAFE_INTEGER, customSources)),
+    ...customCapacity(customSources),
     otherMicros: subscriptionCapacity + sharedCapacity + balances.reduce((sum, row) => sum + row.availableMicros, 0),
+    extraMicros: Math.max(0, extraMicros),
   }, { amountMicros: reservation.amountMicros, customMicros: reservation.customReservedMicros })
   const result = calculate(capacity.amountMicros, reservation.amountMicros)
   if (!result || result.amountMicros > capacity.amountMicros) throw new AppError(402, capacity.code, capacity.message)
-  const custom = allocateCustomFunding(result.amountMicros, customSources)
+  const extra = Math.min(Math.max(0, extraMicros), result.amountMicros)
+  const custom = allocateCustomFunding(result.amountMicros, customSources, result.amountMicros - extra)
   const customMicros = totalMicros(custom)
   const allocation = allocate(result.amountMicros - customMicros)
   const shared = allocateShared(allocation.balanceMicros)
@@ -659,6 +705,7 @@ async function resizeLockedReservation<T extends { amountMicros: number }>(
   await tx.update(budgetReservations).set({
     amountMicros: result.amountMicros,
     customReservedMicros: customMicros,
+    extraReservedMicros: extra,
     weeklyReservedMicros: allocation.weeklyMicros,
     fiveHourReservedMicros: allocation.fiveHourMicros,
     sharedReservedMicros: sharedMicros,
@@ -673,28 +720,31 @@ async function resizeLockedReservation<T extends { amountMicros: number }>(
 async function updateReservationAmount<T extends { amountMicros: number }>(
   responseId: string,
   calculate: (capacityMicros: number, currentAmountMicros: number) => T | null,
+  extraMicros?: (currentExtraMicros: number) => number,
 ): Promise<T> {
   return db.transaction(async tx => {
     const [reservation] = await tx.select().from(budgetReservations).where(eq(budgetReservations.responseId, responseId)).for('update')
     if (!reservation || reservation.status !== 'pending') throw new AppError(409, 'reservation_missing', 'Budget reservation is unavailable')
-    return resizeLockedReservation(tx, reservation, calculate)
+    return resizeLockedReservation(tx, reservation, calculate, extraMicros?.(reservation.extraReservedMicros))
   })
 }
 
 /**
  * Grow a locked pending reservation toward the actual cost, as far as the
- * subscription allowance, balances, and API-key limits permit. Settlement must
- * not fail over an estimate, so an unfundable overrun leaves it unchanged.
+ * subscription allowance, balances, and API-key limits permit, and refund it with
+ * the actual extras held apart. Settlement must not fail over an estimate, so an
+ * unfundable overrun leaves it unchanged.
  */
 async function coverReservationOverrun(
   tx: Transaction,
   reservation: typeof budgetReservations.$inferSelect,
   costMicros: number,
+  extraMicros: number,
 ): Promise<typeof budgetReservations.$inferSelect> {
   try {
     await resizeLockedReservation(tx, reservation, (capacityMicros, currentAmountMicros) => ({
       amountMicros: Math.max(currentAmountMicros, Math.min(costMicros, capacityMicros)),
-    }))
+    }), extraMicros)
   } catch (error) {
     if (!(error instanceof AppError)) throw error
     return reservation
@@ -706,29 +756,40 @@ async function coverReservationOverrun(
 export async function resizeBudgetReservation(input: {
   responseId: string
   accruedCostMicros: number
+  /** The part of `accruedCostMicros` spent or held on extras; unchanged when omitted. */
+  accruedExtraCostMicros?: number
   requestInput: unknown
   maxOutputTokens: number
   minimumOutputReservationTokens?: number
   pricing: ActivePricing
 }): Promise<{ amountMicros: number; maxOutputTokens: number }> {
-  return updateReservationAmount(input.responseId, capacityMicros => budgetOutputReservation({ ...input, capacityMicros }))
+  return updateReservationAmount(input.responseId, capacityMicros => budgetOutputReservation({ ...input, capacityMicros }),
+    input.accruedExtraCostMicros === undefined ? undefined : () => input.accruedExtraCostMicros!)
 }
 
-/** Release unused generation capacity only once its provider call has finished. */
-export async function retainBudgetReservation(responseId: string, amountMicros: number): Promise<void> {
+/**
+ * Release unused generation capacity only once its provider call has finished.
+ * `extraMicros` is the part of the retained amount spent or held on extras.
+ */
+export async function retainBudgetReservation(responseId: string, amountMicros: number, extraMicros?: number): Promise<void> {
   if (!Number.isSafeInteger(amountMicros) || amountMicros < 0) throw new AppError(400, 'invalid_reservation_amount', 'Retained reservation must be a non-negative integer')
   await db.transaction(async tx => {
     const [reservation] = await tx.select().from(budgetReservations).where(eq(budgetReservations.responseId, responseId)).for('update')
     if (!reservation || reservation.status !== 'pending') throw new AppError(409, 'reservation_missing', 'Budget reservation is unavailable')
-    await shrinkLockedReservation(tx, reservation, amountMicros)
+    await shrinkLockedReservation(tx, reservation, amountMicros, extraMicros ?? reservation.extraReservedMicros)
   })
 }
 
-/** Lower a locked pending reservation to `amountMicros` among its existing funders. */
+/**
+ * Lower a locked pending reservation to `amountMicros` among its existing funders.
+ * The part held for extras can only shrink, so what the remaining funders cover
+ * always fits what they reserved.
+ */
 async function shrinkLockedReservation(
   tx: Transaction,
   reservation: typeof budgetReservations.$inferSelect,
   amountMicros: number,
+  extraMicros: number,
 ): Promise<void> {
   // Nothing to release when usage outran the estimate; settlement covers the overrun.
   if (amountMicros >= reservation.amountMicros) return
@@ -741,7 +802,8 @@ async function shrinkLockedReservation(
   // This only returns unused funds; revoked keys and billing holds must not
   // prevent retaining already incurred costs or change the original funders.
   // Custom limit allowances are kept first, so balances are released first.
-  const custom = allocateCustomSettlementMicros(Math.min(amountMicros, reservation.customReservedMicros), customFunders)
+  const extra = Math.min(Math.max(0, extraMicros), reservation.extraReservedMicros, amountMicros)
+  const custom = allocateCustomSettlementMicros(amountMicros, amountMicros - extra, customFunders)
   const customMicros = totalMicros(custom)
   const allocation = allocateSettlementMicros(amountMicros - customMicros, reservation.weeklyReservedMicros, reservation.fiveHourReservedMicros)
   const shared = allocateSharedSettlementMicros(allocation.balanceMicros, allowanceFunders.map(row => ({ userId: row.ownerUserId, reservedMicros: row.reservedMicros })))
@@ -755,15 +817,16 @@ async function shrinkLockedReservation(
     .where(and(eq(budgetReservationAllowanceFunders.reservationId, reservation.id), eq(budgetReservationAllowanceFunders.ownerUserId, funder.ownerUserId)))
   for (const funder of customFunders) await tx.update(budgetReservationCustomFunders).set({ reservedMicros: custom.get(customFundingKey(funder)) ?? 0 })
     .where(and(eq(budgetReservationCustomFunders.reservationId, reservation.id), eq(budgetReservationCustomFunders.limitId, funder.limitId), eq(budgetReservationCustomFunders.ownerUserId, funder.ownerUserId)))
-  await tx.update(budgetReservations).set({ amountMicros, customReservedMicros: customMicros, weeklyReservedMicros: allocation.weeklyMicros,
+  await tx.update(budgetReservations).set({ amountMicros, customReservedMicros: customMicros, extraReservedMicros: extra, weeklyReservedMicros: allocation.weeklyMicros,
     fiveHourReservedMicros: allocation.fiveHourMicros, sharedReservedMicros: sharedMicros, balanceReservedMicros: balanceMicros,
   }).where(eq(budgetReservations.id, reservation.id))
 }
 
+/** Hold a known cost for an extra: a tool call, workspace time, or a background model call. */
 export async function extendBudgetReservationFixedCost(responseId: string, additionalMicros: number): Promise<void> {
   if (!Number.isSafeInteger(additionalMicros) || additionalMicros < 0) throw new AppError(400, 'invalid_reservation_amount', 'Additional reservation must be a non-negative integer')
   if (additionalMicros === 0) return
-  await updateReservationAmount(responseId, (_capacity, amountMicros) => ({ amountMicros: amountMicros + additionalMicros }))
+  await updateReservationAmount(responseId, (_capacity, amountMicros) => ({ amountMicros: amountMicros + additionalMicros }), (extra) => extra + additionalMicros)
 }
 
 /**
@@ -777,7 +840,7 @@ export async function releaseBudgetReservationFixedCost(responseId: string, rele
   await db.transaction(async tx => {
     const [reservation] = await tx.select().from(budgetReservations).where(eq(budgetReservations.responseId, responseId)).for('update')
     if (!reservation || reservation.status !== 'pending') return
-    await shrinkLockedReservation(tx, reservation, Math.max(0, reservation.amountMicros - releasedMicros))
+    await shrinkLockedReservation(tx, reservation, Math.max(0, reservation.amountMicros - releasedMicros), Math.max(0, reservation.extraReservedMicros - releasedMicros))
   })
 }
 
