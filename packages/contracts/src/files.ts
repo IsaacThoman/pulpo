@@ -147,6 +147,14 @@ export const createFileDocSchema = z.object({
   markdown: z.string().max(FILE_DOC_MAX_MARKDOWN_LENGTH).optional(),
 })
 
+export const FILE_IMPORT_URL_MAX_LENGTH = 2048
+
+/** Imports a public web page as a document, fetched by the same providers as the agent's web_fetch. */
+export const importFileUrlSchema = z.object({
+  parentId: z.uuid().nullable().default(null),
+  url: z.string().trim().min(1).max(FILE_IMPORT_URL_MAX_LENGTH),
+})
+
 /** A file's or folder's color and icon; null puts back its kind's own. */
 const fileAppearanceFields = {
   color: fileColorSchema.nullable().optional(),
@@ -237,6 +245,7 @@ export type FileNode = z.infer<typeof fileNodeSchema>
 export type CreateFileFolder = z.input<typeof createFileFolderSchema>
 export type UpdateFileNode = z.input<typeof updateFileNodeSchema>
 export type CreateFileDoc = z.input<typeof createFileDocSchema>
+export type ImportFileUrl = z.input<typeof importFileUrlSchema>
 export type ReserveFileUpload = z.input<typeof reserveFileUploadSchema>
 export type MoveFileNodes = z.input<typeof moveFileNodesSchema>
 

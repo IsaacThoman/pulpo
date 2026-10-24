@@ -1,5 +1,4 @@
-import type { KagiSearchInput, KagiResult } from './kagi.js'
-import { truncateUtf8 } from './output.js'
+import { publicHttpsUrl, webFetchOutput, type KagiSearchInput, type KagiResult, type WebPage } from './kagi.js'
 
 export const FIRECRAWL_DEFAULT_API_BASE = 'https://api.firecrawl.dev/v2'
 
@@ -21,7 +20,7 @@ type FirecrawlScrapeResponse = {
   success?: boolean
   data?: {
     markdown?: string | null
-    metadata?: { sourceURL?: string; url?: string; error?: string }
+    metadata?: { sourceURL?: string; url?: string; title?: string; error?: string }
   }
   id?: string
   error?: string
@@ -114,8 +113,11 @@ export class FirecrawlClient {
   }
 
   async extract(url: string, maxBytes: number, maxAgeSeconds: number, signal?: AbortSignal): Promise<FirecrawlResult> {
-    const parsed = new URL(url)
-    if (parsed.protocol !== 'https:' || !parsed.hostname) throw new Error('web_fetch requires a public HTTPS URL')
+    return webFetchOutput(await this.fetchPage(url, maxAgeSeconds, signal), maxBytes)
+  }
+
+  async fetchPage(url: string, maxAgeSeconds: number, signal?: AbortSignal): Promise<WebPage> {
+    const parsed = publicHttpsUrl(url)
     const payload = await this.post<FirecrawlScrapeResponse>('/scrape', {
       url: parsed.toString(),
       formats: ['markdown'],
@@ -126,16 +128,18 @@ export class FirecrawlClient {
       removeBase64Images: true,
     }, signal)
     const markdown = payload.data?.markdown
+    const metadata = payload.data?.metadata
+    const sourceUrl = metadata?.sourceURL || metadata?.url || parsed.toString()
     if (!markdown?.trim()) return {
       output: '',
+      sourceUrl,
       requestId: payload.id,
-      emptyReason: payload.data?.metadata?.error || 'missing page content',
+      emptyReason: metadata?.error || 'missing page content',
     }
-    const truncated = Buffer.byteLength(markdown, 'utf8') > maxBytes
-    const content = truncated ? truncateUtf8(markdown, maxBytes) : markdown
-    const sourceUrl = payload.data?.metadata?.sourceURL || payload.data?.metadata?.url || parsed.toString()
     return {
-      output: [`Source: ${sourceUrl}`, '', content, ...(truncated ? ['', `[Content truncated at ${maxBytes} bytes]`] : [])].join('\n'),
+      output: markdown,
+      sourceUrl,
+      ...(metadata?.title?.trim() ? { title: metadata.title.trim() } : {}),
       requestId: payload.id,
     }
   }
