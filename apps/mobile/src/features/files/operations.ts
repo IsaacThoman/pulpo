@@ -23,11 +23,10 @@ function count(nodes: readonly Pick<FileNode, 'name'>[], one: (name: string) => 
   return nodes.length === 1 ? one(nodes[0]!.name) : many(nodes.length)
 }
 
-/** Refetches every Files view, and the chat lists when chats moved or were trashed through Files. */
+/** Refetches every Files view (the trash among them), and the chat lists when chats moved or were trashed through Files. */
 export function refreshFiles(queryClient: QueryClient, namespace: string, chats = false): Promise<unknown> {
   return Promise.all([
     queryClient.invalidateQueries({ queryKey: filesQueryKeys.all(namespace) }),
-    queryClient.invalidateQueries({ queryKey: ['trashed-files', namespace] }),
     chats ? queryClient.invalidateQueries({ queryKey: ['chats', namespace] }) : null,
     chats ? queryClient.invalidateQueries({ queryKey: ['folders', namespace] }) : null,
   ])

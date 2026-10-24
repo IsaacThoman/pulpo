@@ -9,7 +9,8 @@ describe('Files links', () => {
     expect(parseFilesLink('pulpo://files', instance)).toEqual({ type: 'folder', id: null })
     expect(parseFilesLink(`pulpo://files/f/${id}`, instance)).toEqual({ type: 'folder', id: id.toLowerCase() })
     expect(parseFilesLink(`pulpo://files/d/${id}`, instance)).toEqual({ type: 'file', id: id.toLowerCase() })
-    expect(parseFilesLink('pulpo://files/trash', instance)).toEqual({ type: 'trash' })
+    expect(parseFilesLink('pulpo://files/trash', instance)).toEqual({ type: 'trash', folderId: null })
+    expect(parseFilesLink(`${instance}/files/trash/f/${id}`, instance)).toEqual({ type: 'trash', folderId: id.toLowerCase() })
     expect(parseFilesLink(`${instance}/files/d/${id}`, instance)).toEqual({ type: 'file', id: id.toLowerCase() })
   })
 

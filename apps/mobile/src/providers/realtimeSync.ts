@@ -27,14 +27,16 @@ export function stateInvalidationQueryKeys(
     return [
       ['chats', namespace],
       ['deleted-chats', namespace],
+      // The trash lists trashed chats too.
+      ['files', namespace, 'trash'],
       ...(activeChatId ? [['chat', namespace, activeChatId]] : []),
     ]
   }
   if (scope === 'shelved-drafts') return [['shelved-drafts', namespace]]
-  // Files changes refresh Files listings, documents' details, replies' change lists, and the trash
-  // screen's Files section. Folder changes move chats, which Files lists too.
-  if (scope === 'files') return [['files', namespace], ['trashed-files', namespace]]
-  if (scope === 'folders') return [['folders', namespace], ['files', namespace], ['trashed-files', namespace]]
+  // Files changes refresh Files listings (the trash among them), documents' details, and replies'
+  // change lists. Folder changes move chats, which Files lists too.
+  if (scope === 'files') return [['files', namespace]]
+  if (scope === 'folders') return [['folders', namespace], ['files', namespace]]
   if (scope === 'models' || scope === 'settings') return [[scope, namespace]]
   return []
 }
