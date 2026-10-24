@@ -8,9 +8,11 @@ import {
   applicationSettings,
   auditEvents,
   billingAccounts,
+  billingCustomLimits,
   billingOrders,
   billingSubscriptions,
   billingWebhookEvents,
+  models,
   users,
 } from '../database/schema.js'
 import { maintenanceQueue } from '../jobs.js'
@@ -21,6 +23,8 @@ import { parseAuthSettings, parseBillingSettings, usageTiersSchema } from '../se
 import { getBillingEntitlements, loadBillingEntitlements } from './entitlements.js'
 import { loadDailySpend } from './usage-tiers.js'
 import { planForPriceId, stripeMode } from './stripe.js'
+import { BILLING_PLANS } from './plans.js'
+import { CUSTOM_LIMIT_PERIODS, CUSTOM_LIMIT_TARGETS, type CustomLimit } from './custom-limits.js'
 import { refreshStorageLimit } from './storage-entitlements.js'
 import { mapWithConcurrency } from '../lib/concurrency.js'
 
@@ -38,6 +42,54 @@ const settingsPatchSchema = z.object({
   fatStorageLimitBytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
   usageTiers: usageTiersSchema.optional(),
 })
+
+const uniqueStrings = (values: string[]) => [...new Set(values)]
+
+const customLimitSchema = z.object({
+  name: z.string().trim().min(1).max(80),
+  period: z.enum(CUSTOM_LIMIT_PERIODS),
+  limitMicros: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  modelIds: z.array(z.string().min(1).max(200)).max(500).transform(uniqueStrings),
+  target: z.enum(CUSTOM_LIMIT_TARGETS),
+  plans: z.array(z.enum(BILLING_PLANS)).max(BILLING_PLANS.length).default([]).transform(uniqueStrings),
+  userIds: z.array(z.string().uuid()).max(5_000).default([]).transform(uniqueStrings),
+  enabled: z.boolean().default(true),
+}).superRefine((value, context) => {
+  if (value.target === 'plans' && !value.plans.length) context.addIssue({ code: 'custom', path: ['plans'], message: 'Choose at least one plan' })
+  if (value.target === 'users' && !value.userIds.length) context.addIssue({ code: 'custom', path: ['userIds'], message: 'Choose at least one user' })
+}).transform((value) => ({
+  ...value,
+  // Only the chosen audience is stored, so switching targets cannot leave a stale list behind.
+  plans: value.target === 'plans' ? value.plans : [],
+  userIds: value.target === 'users' ? value.userIds : [],
+}))
+
+type CustomLimitInput = z.infer<typeof customLimitSchema>
+
+function customLimitResponse(limit: CustomLimit) {
+  return { ...limit, createdAt: limit.createdAt.toISOString(), updatedAt: limit.updatedAt.toISOString() }
+}
+
+async function assertCustomLimitReferences(input: CustomLimitInput): Promise<void> {
+  const [modelRows, userRows] = await Promise.all([
+    input.modelIds.length ? db.select({ id: models.id }).from(models).where(inArray(models.id, input.modelIds)) : [],
+    input.userIds.length ? db.select({ id: users.id }).from(users).where(inArray(users.id, input.userIds)) : [],
+  ])
+  if (modelRows.length !== input.modelIds.length) throw new AppError(400, 'model_not_found', 'One or more models do not exist')
+  if (userRows.length !== input.userIds.length) throw new AppError(400, 'user_not_found', 'One or more users do not exist')
+}
+
+/** Refresh the billing pages of everyone a limit covered before or covers now. */
+async function notifyCustomLimitChange(...limits: Array<Pick<CustomLimit, 'target' | 'userIds'> | undefined>): Promise<void> {
+  const present = limits.filter((limit) => limit !== undefined)
+  if (!present.length) return
+  const everyone = present.some((limit) => limit.target !== 'users')
+  const ids = uniqueStrings(present.flatMap((limit) => limit.userIds))
+  if (!everyone && !ids.length) return
+  const changes = await db.update(users).set({ stateRevision: sql`${users.stateRevision} + 1` })
+    .where(everyone ? undefined : inArray(users.id, ids)).returning({ userId: users.id, revision: users.stateRevision })
+  await Promise.all(changes.map((change) => publishStateChange({ ...change, scopes: ['billing', 'usage'] })))
+}
 
 async function billingSettings() {
   const [row] = await db.select({ value: applicationSettings.value }).from(applicationSettings)
@@ -436,6 +488,65 @@ export async function registerAdminBillingRoutes(app: FastifyInstance): Promise<
     })
     await notifyBillingChange(id)
     return { cleared: true }
+  })
+
+  app.get('/api/admin/billing/custom-limits', async (request) => {
+    requireAdmin(request)
+    const rows = await db.select().from(billingCustomLimits).orderBy(billingCustomLimits.createdAt)
+    return { data: rows.map(customLimitResponse) }
+  })
+
+  app.post('/api/admin/billing/custom-limits', async (request, reply) => {
+    const admin = requireAdmin(request)
+    const input = customLimitSchema.parse(request.body)
+    await assertCustomLimitReferences(input)
+    const limit = await db.transaction(async (tx) => {
+      const [created] = await tx.insert(billingCustomLimits).values({ id: newId(), ...input, createdBy: admin.id }).returning()
+      await tx.insert(auditEvents).values({
+        id: newId(), actorUserId: admin.id, action: 'billing.custom_limit.create', targetType: 'billing_custom_limit', targetId: created!.id,
+        metadata: { next: input },
+      })
+      return created!
+    })
+    await notifyCustomLimitChange(limit)
+    reply.code(201)
+    return customLimitResponse(limit)
+  })
+
+  app.patch('/api/admin/billing/custom-limits/:id', async (request) => {
+    const admin = requireAdmin(request)
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    const input = customLimitSchema.parse(request.body)
+    await assertCustomLimitReferences(input)
+    const result = await db.transaction(async (tx) => {
+      const [previous] = await tx.select().from(billingCustomLimits).where(eq(billingCustomLimits.id, id)).for('update')
+      if (!previous) throw new AppError(404, 'custom_limit_not_found', 'Custom limit not found')
+      const [updated] = await tx.update(billingCustomLimits).set({ ...input, updatedAt: new Date() })
+        .where(eq(billingCustomLimits.id, id)).returning()
+      await tx.insert(auditEvents).values({
+        id: newId(), actorUserId: admin.id, action: 'billing.custom_limit.update', targetType: 'billing_custom_limit', targetId: id,
+        metadata: { previous: customLimitResponse(previous), next: input },
+      })
+      return { previous, updated: updated! }
+    })
+    await notifyCustomLimitChange(result.previous, result.updated)
+    return customLimitResponse(result.updated)
+  })
+
+  app.delete('/api/admin/billing/custom-limits/:id', async (request, reply) => {
+    const admin = requireAdmin(request)
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    const previous = await db.transaction(async (tx) => {
+      const [deleted] = await tx.delete(billingCustomLimits).where(eq(billingCustomLimits.id, id)).returning()
+      if (!deleted) throw new AppError(404, 'custom_limit_not_found', 'Custom limit not found')
+      await tx.insert(auditEvents).values({
+        id: newId(), actorUserId: admin.id, action: 'billing.custom_limit.delete', targetType: 'billing_custom_limit', targetId: id,
+        metadata: { previous: customLimitResponse(deleted) },
+      })
+      return deleted
+    })
+    await notifyCustomLimitChange(previous)
+    reply.code(204)
   })
 
   app.post('/api/admin/billing/reconcile', async (request, reply) => {
