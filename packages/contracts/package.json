@@ -17,7 +17,7 @@
     "test": "vitest run --exclude \"**/dist/**\""
   },
   "dependencies": {
-    "zod": "^4.0.5"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/node": "^24.13.2",

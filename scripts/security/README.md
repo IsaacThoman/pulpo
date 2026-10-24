@@ -3,6 +3,51 @@
 Run `npm run test:dependency-security`. These tests also run at the start of
 `npm test` and exercise the installed dependencies through their consumers.
 
+## Zod collection validation and Expo compatibility
+
+Direct consumers now require Zod 4.6.7 or later to address
+[GHSA-mrhx-c7xc-m3w5](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5).
+Oversized arrays, maps, and sets with upper size bounds are rejected before
+validating their elements. Unconstrained collections still need application
+limits; upgrading does not impose a universal collection-size limit.
+
+Expo CLI 57.0.17 still requests Zod `^3.25.76`, which has no patched release.
+The scoped `@expo/cli` override selects Zod `^4.6.7`. The CLI's runtime Zod
+consumers use APIs supported by both major versions: devtools plugin metadata,
+plugin output validation, and MCP command schema construction. Regression tests
+load those actual CLI modules and cover valid and invalid metadata, text/audio/
+image output, typed command parameters, command enums, strict objects, and JSON
+Schema conversion. They also verify early rejection through each direct
+consumer's installed Zod, synchronously and asynchronously. Recheck these paths
+when Expo CLI changes, and remove the scoped override when Expo requests a
+patched Zod version itself. The collection regression parses elements beyond
+the upper bound against the previous Zod 4.4.3 release.
+
+## Undici response handling
+
+The server requires Undici `^8.12.2`; the lockfile selects 8.12.3 and updates
+the existing 7.x and 6.x consumers to 7.30.1 and 6.29.1. Each remains on its
+existing major version. These patches address
+[GHSA-xjj6-f33q-929c](https://github.com/advisories/GHSA-xjj6-f33q-929c),
+[GHSA-4qv8-2p9j-2685](https://github.com/advisories/GHSA-4qv8-2p9j-2685), and
+[GHSA-f72v-6w45-q472](https://github.com/advisories/GHSA-f72v-6w45-q472).
+
+Regression tests resolve Undici through the server, Electron downloader,
+semantic-release GitHub plugin, and node-gyp. Each runs in a child process and
+checks an ordinary response, then a malicious response with six content
+encodings and an early connection close. The fetch rejection must be handled
+without an unhandled stream error terminating the process. This follows
+[upstream's regression](https://github.com/nodejs/undici/commit/07ded49).
+The previous 8.10.2, 7.30.0, and 6.29.0 releases fail this crash regression.
+
+## Electron certificate mitigation
+
+The desktop application pins Electron 43.8.3, which includes the certificate
+distrust mitigation for
+[GHSA-jr5w-w6x2-84p9](https://github.com/advisories/GHSA-jr5w-w6x2-84p9).
+The CI audit continues to check development dependencies because Electron is
+declared as a build dependency but ships as the desktop application's runtime.
+
 ## Release-note Handlebars compiler
 
 The lockfile updates Handlebars from 4.7.9 to 4.7.10 within
