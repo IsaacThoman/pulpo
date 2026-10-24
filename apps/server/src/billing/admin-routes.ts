@@ -24,7 +24,7 @@ import { getBillingEntitlements, loadBillingEntitlements } from './entitlements.
 import { loadDailySpend } from './usage-tiers.js'
 import { planForPriceId, stripeMode } from './stripe.js'
 import { BILLING_PLANS } from './plans.js'
-import { CUSTOM_LIMIT_PERIODS, CUSTOM_LIMIT_TARGETS, type CustomLimit } from './custom-limits.js'
+import { CUSTOM_LIMIT_PERIODS, CUSTOM_LIMIT_TARGETS, customLimitResetAt, loadCustomLimitUserUsage, sharedCustomLimitMicros, type CustomLimit } from './custom-limits.js'
 import { refreshStorageLimit } from './storage-entitlements.js'
 import { mapWithConcurrency } from '../lib/concurrency.js'
 
@@ -53,6 +53,7 @@ const customLimitSchema = z.object({
   target: z.enum(CUSTOM_LIMIT_TARGETS),
   plans: z.array(z.enum(BILLING_PLANS)).max(BILLING_PLANS.length).default([]).transform(uniqueStrings),
   userIds: z.array(z.string().uuid()).max(5_000).default([]).transform(uniqueStrings),
+  sharePercent: z.number().int().min(0).max(100).default(0),
   enabled: z.boolean().default(true),
 }).superRefine((value, context) => {
   if (value.target === 'plans' && !value.plans.length) context.addIssue({ code: 'custom', path: ['plans'], message: 'Choose at least one plan' })
@@ -494,6 +495,31 @@ export async function registerAdminBillingRoutes(app: FastifyInstance): Promise<
     requireAdmin(request)
     const rows = await db.select().from(billingCustomLimits).orderBy(billingCustomLimits.createdAt)
     return { data: rows.map(customLimitResponse) }
+  })
+
+  app.get('/api/admin/billing/custom-limits/:id/usage', async (request) => {
+    requireAdmin(request)
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    const [limit] = await db.select().from(billingCustomLimits).where(eq(billingCustomLimits.id, id)).limit(1)
+    if (!limit) throw new AppError(404, 'custom_limit_not_found', 'Custom limit not found')
+    const now = new Date()
+    const usage = await db.transaction((tx) => loadCustomLimitUserUsage(tx, limit, now))
+    const people = usage.length
+      ? await db.select({ id: users.id, name: users.name, email: users.email }).from(users).where(inArray(users.id, usage.map((row) => row.userId)))
+      : []
+    const byId = new Map(people.map((person) => [person.id, person]))
+    const data = usage.flatMap((row) => {
+      const person = byId.get(row.userId)
+      if (!person) return []
+      const usedMicros = row.ownSpentMicros + row.sharedSpentMicros
+      return [{ ...row, name: person.name, email: person.email, usedMicros, remainingMicros: Math.max(0, limit.limitMicros - usedMicros - row.pendingMicros) }]
+    }).sort((a, b) => b.usedMicros + b.pendingMicros - (a.usedMicros + a.pendingMicros) || a.name.localeCompare(b.name))
+    return {
+      limitMicros: limit.limitMicros,
+      sharedLimitMicros: sharedCustomLimitMicros(limit),
+      resetsAt: customLimitResetAt(limit.period, now)?.toISOString() ?? null,
+      data,
+    }
   })
 
   app.post('/api/admin/billing/custom-limits', async (request, reply) => {

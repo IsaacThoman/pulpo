@@ -1,7 +1,10 @@
-import { and, eq, gte, inArray, or, sql, type SQL } from 'drizzle-orm'
+import { and, eq, gt, inArray, sql } from 'drizzle-orm'
 import { getConfig } from '../config.js'
 import { db } from '../database/client.js'
-import { billingCustomLimits, budgetReservations, models, responses, usageEvents } from '../database/schema.js'
+import { billingCustomLimits, budgetReservationCustomFunders, budgetReservations, customLimitSpend, models, responses } from '../database/schema.js'
+import { newId } from '../lib/ids.js'
+import { allocateSharedSettlementMicros } from './allocation.js'
+import { loadBillingEntitlements } from './entitlements.js'
 import { FIVE_HOURS_MS, utcDayEnd, utcDayStart, utcWeekEnd, utcWeekStart, type BillingPlan } from './plans.js'
 
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
@@ -11,22 +14,15 @@ export type CustomLimitPeriod = typeof CUSTOM_LIMIT_PERIODS[number]
 export const CUSTOM_LIMIT_TARGETS = ['everyone', 'plans', 'users'] as const
 export type CustomLimitTarget = typeof CUSTOM_LIMIT_TARGETS[number]
 
-export const CUSTOM_LIMIT_CODE = 'custom_limit_reached'
-
 export type CustomLimit = typeof billingCustomLimits.$inferSelect
 
-/**
- * Whether a limit covers this user. Admins are exempt unless a limit names them,
- * so a limit for everyone or a plan never locks out the people managing it.
- */
+/** Whether a limit gives this user an allowance. */
 export function customLimitAppliesToUser(limit: Pick<CustomLimit, 'enabled' | 'target' | 'plans' | 'userIds'>, user: {
   userId: string
-  role: string
   plan: BillingPlan
 }): boolean {
   if (!limit.enabled) return false
   if (limit.target === 'users') return limit.userIds.includes(user.userId)
-  if (user.role === 'admin') return false
   if (limit.target === 'plans') return limit.plans.includes(user.plan)
   return limit.target === 'everyone'
 }
@@ -36,10 +32,11 @@ export function customLimitAppliesToModels(limit: Pick<CustomLimit, 'modelIds'>,
   return limit.modelIds.length === 0 || modelIds.some((modelId) => limit.modelIds.includes(modelId))
 }
 
-export function customLimitPeriodStart(period: string, now: Date): Date {
+/** Daily and weekly allowances follow UTC periods; the rolling five-hour window has none. */
+export function customLimitPeriodStart(period: string, now: Date): Date | null {
   if (period === 'weekly') return utcWeekStart(now)
   if (period === 'daily') return utcDayStart(now)
-  return new Date(now.getTime() - FIVE_HOURS_MS)
+  return null
 }
 
 /** Daily and weekly limits reset at the period end; the rolling five-hour window has no fixed reset. */
@@ -49,97 +46,183 @@ export function customLimitResetAt(period: string, now: Date): Date | null {
   return null
 }
 
-export interface CustomLimitUsage {
-  id: string
+/** The part of each allowance pool members may draw on. */
+export function sharedCustomLimitMicros(limit: Pick<CustomLimit, 'limitMicros' | 'sharePercent'>): number {
+  return Math.floor((limit.limitMicros * limit.sharePercent) / 100)
+}
+
+const PERIOD_ORDER: Record<string, number> = { five_hour: 0, daily: 1, weekly: 2 }
+
+/**
+ * Spend order across allowances: model-specific ones before those covering every
+ * model, so general allowances last longer, then the soonest to reset.
+ */
+export function compareCustomLimits(a: Pick<CustomLimit, 'id' | 'modelIds' | 'period' | 'createdAt'>, b: Pick<CustomLimit, 'id' | 'modelIds' | 'period' | 'createdAt'>): number {
+  return Number(a.modelIds.length === 0) - Number(b.modelIds.length === 0)
+    || (PERIOD_ORDER[a.period] ?? 3) - (PERIOD_ORDER[b.period] ?? 3)
+    || a.createdAt.getTime() - b.createdAt.getTime()
+    || a.id.localeCompare(b.id)
+}
+
+/** One user's allowance under one limit, in the current period. */
+export interface CustomAllowance {
+  limitId: string
   name: string
   period: CustomLimitPeriod
   limitMicros: number
   modelIds: string[]
+  sharePercent: number
+  ownerUserId: string
+  /** Null for the rolling five-hour window. */
+  periodStart: Date | null
+  /** Settled spend, by the owner and by pool members. */
   spentMicros: number
   pendingMicros: number
   remainingMicros: number
+  sharedLimitMicros: number
+  sharedSpentMicros: number
+  sharedPendingMicros: number
+  /** What pool members can draw now: the shared part or the allowance left, whichever is lower. */
+  sharedAvailableMicros: number
   resetAt: Date | null
-  /** For the rolling window, when the oldest counted usage stops counting. */
+  /** For the rolling window, when the oldest counted spend stops counting. */
   freesAt: Date | null
 }
 
-/**
- * Usage of every custom limit that covers the user, or only the limits that also
- * cover `modelIds` when given. Usage counts the requested and answered models, so
- * a fallback or preset redirect cannot step around a model's limit.
- */
-export async function loadCustomLimitUsage(tx: Transaction, input: {
-  userId: string
-  role: string
-  plan: BillingPlan
-  modelIds?: readonly string[]
-  /** A reservation being resized already counts in the pending total. */
-  currentReservationMicros?: number
-  now?: Date
-}): Promise<CustomLimitUsage[]> {
+async function enabledCustomLimits(tx: Transaction): Promise<CustomLimit[]> {
   if (!getConfig().PULPO_BILLING_ENABLED) return []
-  const now = input.now ?? new Date()
-  const limits = (await tx.select().from(billingCustomLimits).where(eq(billingCustomLimits.enabled, true)))
-    .filter((limit) => customLimitAppliesToUser(limit, input)
-      && (!input.modelIds || customLimitAppliesToModels(limit, input.modelIds)))
-  return Promise.all(limits.map(async (limit) => {
-    const periodStart = customLimitPeriodStart(limit.period, now)
-    const spentModels: SQL | undefined = limit.modelIds.length
-      ? or(inArray(usageEvents.modelId, limit.modelIds), inArray(usageEvents.requestedModelId, limit.modelIds))
-      : undefined
-    const pendingModels: SQL | undefined = limit.modelIds.length
-      ? or(inArray(responses.modelId, limit.modelIds), inArray(responses.actualModelId, limit.modelIds))
-      : undefined
-    const [[spent], [pending]] = await Promise.all([
-      tx.select({
-        total: sql<number>`coalesce(sum(${usageEvents.costMicros}), 0)::bigint`,
-        oldest: sql<Date | null>`min(${usageEvents.createdAt})`.mapWith(usageEvents.createdAt),
-      }).from(usageEvents).where(and(
-        eq(usageEvents.userId, input.userId),
-        gte(usageEvents.createdAt, periodStart),
-        spentModels,
+  const rows = await tx.select().from(billingCustomLimits).where(eq(billingCustomLimits.enabled, true))
+  return rows.sort(compareCustomLimits)
+}
+
+export async function loadCustomAllowance(tx: Transaction, limit: CustomLimit, ownerUserId: string, now: Date): Promise<CustomAllowance> {
+  const periodStart = customLimitPeriodStart(limit.period, now)
+  const [[spent], [pending]] = await Promise.all([
+    tx.select({
+      total: sql<number>`coalesce(sum(${customLimitSpend.spentMicros}), 0)::bigint`,
+      shared: sql<number>`coalesce(sum(${customLimitSpend.spentMicros}) filter (where ${customLimitSpend.userId} <> ${customLimitSpend.ownerUserId}), 0)::bigint`,
+      oldest: sql<Date | null>`min(${customLimitSpend.createdAt})`.mapWith(customLimitSpend.createdAt),
+    }).from(customLimitSpend).where(and(
+      eq(customLimitSpend.limitId, limit.id),
+      eq(customLimitSpend.ownerUserId, ownerUserId),
+      periodStart ? eq(customLimitSpend.periodStart, periodStart) : gt(customLimitSpend.createdAt, new Date(now.getTime() - FIVE_HOURS_MS)),
+    )),
+    tx.select({
+      total: sql<number>`coalesce(sum(${budgetReservationCustomFunders.reservedMicros}), 0)::bigint`,
+      shared: sql<number>`coalesce(sum(${budgetReservationCustomFunders.reservedMicros}) filter (where ${budgetReservations.userId} <> ${budgetReservationCustomFunders.ownerUserId}), 0)::bigint`,
+    }).from(budgetReservationCustomFunders)
+      .innerJoin(budgetReservations, eq(budgetReservations.id, budgetReservationCustomFunders.reservationId))
+      .where(and(
+        eq(budgetReservationCustomFunders.limitId, limit.id),
+        eq(budgetReservationCustomFunders.ownerUserId, ownerUserId),
+        eq(budgetReservations.status, 'pending'),
+        periodStart ? eq(budgetReservationCustomFunders.periodStart, periodStart) : undefined,
       )),
-      tx.select({ total: sql<number>`coalesce(sum(${budgetReservations.amountMicros}), 0)::bigint` })
-        .from(budgetReservations).innerJoin(responses, eq(responses.id, budgetReservations.responseId))
-        .where(and(eq(budgetReservations.userId, input.userId), eq(budgetReservations.status, 'pending'), pendingModels)),
-    ])
-    const spentMicros = Number(spent?.total ?? 0)
-    const pendingMicros = Math.max(0, Number(pending?.total ?? 0) - (input.currentReservationMicros ?? 0))
-    const oldest = spent?.oldest ?? null
-    return {
-      id: limit.id,
-      name: limit.name,
-      period: limit.period as CustomLimitPeriod,
-      limitMicros: limit.limitMicros,
-      modelIds: limit.modelIds,
-      spentMicros,
-      pendingMicros,
-      remainingMicros: Math.max(0, limit.limitMicros - spentMicros - pendingMicros),
-      resetAt: customLimitResetAt(limit.period, now),
-      freesAt: limit.period === 'five_hour' && oldest ? new Date(oldest.getTime() + FIVE_HOURS_MS) : null,
-    }
-  }))
-}
-
-/** The applicable limit with the least room left, which bounds a new reservation. */
-export function tightestCustomLimit(usage: CustomLimitUsage[]): CustomLimitUsage | null {
-  return usage.reduce<CustomLimitUsage | null>((tightest, limit) =>
-    !tightest || limit.remainingMicros < tightest.remainingMicros ? limit : tightest, null)
-}
-
-function utcTime(value: Date): string {
-  return `${value.toISOString().slice(11, 16)} UTC`
-}
-
-export function customLimitMessage(limit: Pick<CustomLimitUsage, 'name' | 'period' | 'resetAt' | 'freesAt'>): string {
-  if (limit.period === 'five_hour') {
-    return `You've reached the "${limit.name}" usage limit for the last 5 hours.${limit.freesAt ? ` Usage starts to free up at ${utcTime(limit.freesAt)}.` : ''}`
+  ])
+  const spentMicros = Number(spent?.total ?? 0)
+  const pendingMicros = Number(pending?.total ?? 0)
+  const sharedSpentMicros = Number(spent?.shared ?? 0)
+  const sharedPendingMicros = Number(pending?.shared ?? 0)
+  const remainingMicros = Math.max(0, limit.limitMicros - spentMicros - pendingMicros)
+  const sharedLimitMicros = sharedCustomLimitMicros(limit)
+  const oldest = spent?.oldest ?? null
+  return {
+    limitId: limit.id,
+    name: limit.name,
+    period: limit.period as CustomLimitPeriod,
+    limitMicros: limit.limitMicros,
+    modelIds: limit.modelIds,
+    sharePercent: limit.sharePercent,
+    ownerUserId,
+    periodStart,
+    spentMicros,
+    pendingMicros,
+    remainingMicros,
+    sharedLimitMicros,
+    sharedSpentMicros,
+    sharedPendingMicros,
+    sharedAvailableMicros: Math.min(remainingMicros, Math.max(0, sharedLimitMicros - sharedSpentMicros - sharedPendingMicros)),
+    resetAt: customLimitResetAt(limit.period, now),
+    freesAt: !periodStart && oldest ? new Date(oldest.getTime() + FIVE_HOURS_MS) : null,
   }
-  const when = limit.period === 'weekly' ? 'Monday at 00:00 UTC' : 'at 00:00 UTC'
-  return `You've reached the "${limit.name}" ${limit.period === 'weekly' ? 'weekly' : 'daily'} usage limit. It resets ${when}.`
 }
 
-/** The models a response is billed against for custom limits: requested and, after a fallback, answered. */
+/** Every allowance the user has, in spend order, for the billing page. */
+export async function loadCustomAllowances(tx: Transaction, input: {
+  userId: string
+  plan: BillingPlan
+  now?: Date
+}): Promise<CustomAllowance[]> {
+  const now = input.now ?? new Date()
+  const limits = (await enabledCustomLimits(tx)).filter((limit) => customLimitAppliesToUser(limit, input))
+  return Promise.all(limits.map((limit) => loadCustomAllowance(tx, limit, input.userId, now)))
+}
+
+/** An allowance a reservation can draw on, keyed by limit and owner. */
+export interface CustomFundingSource {
+  limitId: string
+  ownerUserId: string
+  periodStart: Date | null
+  availableMicros: number
+}
+
+export function customFundingKey(source: Pick<CustomFundingSource, 'limitId' | 'ownerUserId'>): string {
+  return `${source.limitId}:${source.ownerUserId}`
+}
+
+/**
+ * Allowances that can fund a request on `modelIds`, in spend order: the caller's own,
+ * then the shared part of other pool members' allowances. Callers pass the active,
+ * unblocked pool members and must already hold the pool lock and their user rows.
+ */
+export async function loadCustomFunding(tx: Transaction, input: {
+  userId: string
+  plan: BillingPlan
+  modelIds: readonly string[]
+  sharingOwnerIds: readonly string[]
+  now?: Date
+}): Promise<CustomFundingSource[]> {
+  const now = input.now ?? new Date()
+  const limits = (await enabledCustomLimits(tx)).filter((limit) => customLimitAppliesToModels(limit, input.modelIds))
+  const sources: CustomFundingSource[] = []
+  for (const limit of limits.filter((row) => customLimitAppliesToUser(row, input))) {
+    const allowance = await loadCustomAllowance(tx, limit, input.userId, now)
+    sources.push({ limitId: limit.id, ownerUserId: input.userId, periodStart: allowance.periodStart, availableMicros: allowance.remainingMicros })
+  }
+  const shareable = limits.filter((limit) => limit.sharePercent > 0)
+  if (!shareable.length) return sources
+  for (const ownerUserId of [...new Set(input.sharingOwnerIds)].filter((id) => id !== input.userId).sort()) {
+    const entitlements = await loadBillingEntitlements(tx, ownerUserId, now)
+    if (entitlements.onHold) continue
+    for (const limit of shareable.filter((row) => customLimitAppliesToUser(row, { userId: ownerUserId, plan: entitlements.plan }))) {
+      const allowance = await loadCustomAllowance(tx, limit, ownerUserId, now)
+      sources.push({ limitId: limit.id, ownerUserId, periodStart: allowance.periodStart, availableMicros: allowance.sharedAvailableMicros })
+    }
+  }
+  return sources
+}
+
+/** Charge settled or retained cost to a reservation's allowances, never beyond what each reserved. */
+export function allocateCustomSettlementMicros(amountMicros: number, funders: Array<{ limitId: string; ownerUserId: string; reservedMicros: number }>): Map<string, number> {
+  return allocateSharedSettlementMicros(amountMicros, funders.map((row) => ({ userId: customFundingKey(row), reservedMicros: row.reservedMicros })))
+}
+
+/** Keep settled draws on allowances whose limit still exists. */
+export async function recordCustomLimitSpend(tx: Transaction, input: {
+  userId: string
+  draws: Array<{ limitId: string; ownerUserId: string; periodStart: Date | null; micros: number }>
+}): Promise<void> {
+  const draws = input.draws.filter((draw) => draw.micros > 0)
+  if (!draws.length) return
+  const existing = new Set((await tx.select({ id: billingCustomLimits.id }).from(billingCustomLimits)
+    .where(inArray(billingCustomLimits.id, [...new Set(draws.map((draw) => draw.limitId))]))).map((row) => row.id))
+  const rows = draws.filter((draw) => existing.has(draw.limitId)).map((draw) => ({
+    id: newId(), limitId: draw.limitId, ownerUserId: draw.ownerUserId, userId: input.userId, periodStart: draw.periodStart, spentMicros: draw.micros,
+  }))
+  if (rows.length) await tx.insert(customLimitSpend).values(rows)
+}
+
+/** The models a response draws allowances for: requested and, after a fallback, answered. */
 export async function responseLimitModelIds(tx: Transaction, responseId: string): Promise<string[]> {
   const [row] = await tx.select({ modelId: responses.modelId, actualModelId: responses.actualModelId })
     .from(responses).where(eq(responses.id, responseId)).limit(1)
@@ -147,10 +230,57 @@ export async function responseLimitModelIds(tx: Transaction, responseId: string)
   return [...new Set([row.modelId, row.actualModelId].filter((id): id is string => Boolean(id)))]
 }
 
-/** Display names for the models a set of limits names, for the billing page. */
-export async function customLimitModelNames(tx: Transaction, usage: CustomLimitUsage[]): Promise<Map<string, string>> {
-  const ids = [...new Set(usage.flatMap((limit) => limit.modelIds))]
+/** Display names for the models a set of allowances names, for the billing page. */
+export async function customLimitModelNames(tx: Transaction, allowances: Array<Pick<CustomAllowance, 'modelIds'>>): Promise<Map<string, string>> {
+  const ids = [...new Set(allowances.flatMap((allowance) => allowance.modelIds))]
   if (!ids.length) return new Map()
   const rows = await tx.select({ id: models.id, name: models.name }).from(models).where(inArray(models.id, ids))
   return new Map(rows.map((row) => [row.id, row.name]))
+}
+
+/** Per-user spend on one limit in its current period, for admins. */
+export interface CustomLimitUserUsage {
+  userId: string
+  /** Spent by the user from their own allowance. */
+  ownSpentMicros: number
+  /** Spent by pool members from the user's shared allowance. */
+  sharedSpentMicros: number
+  pendingMicros: number
+}
+
+export async function loadCustomLimitUserUsage(tx: Transaction, limit: CustomLimit, now = new Date()): Promise<CustomLimitUserUsage[]> {
+  const periodStart = customLimitPeriodStart(limit.period, now)
+  const [spent, pending] = await Promise.all([
+    tx.select({
+      userId: customLimitSpend.ownerUserId,
+      own: sql<number>`coalesce(sum(${customLimitSpend.spentMicros}) filter (where ${customLimitSpend.userId} = ${customLimitSpend.ownerUserId}), 0)::bigint`,
+      shared: sql<number>`coalesce(sum(${customLimitSpend.spentMicros}) filter (where ${customLimitSpend.userId} <> ${customLimitSpend.ownerUserId}), 0)::bigint`,
+    }).from(customLimitSpend).where(and(
+      eq(customLimitSpend.limitId, limit.id),
+      periodStart ? eq(customLimitSpend.periodStart, periodStart) : gt(customLimitSpend.createdAt, new Date(now.getTime() - FIVE_HOURS_MS)),
+    )).groupBy(customLimitSpend.ownerUserId),
+    tx.select({
+      userId: budgetReservationCustomFunders.ownerUserId,
+      total: sql<number>`coalesce(sum(${budgetReservationCustomFunders.reservedMicros}), 0)::bigint`,
+    }).from(budgetReservationCustomFunders)
+      .innerJoin(budgetReservations, eq(budgetReservations.id, budgetReservationCustomFunders.reservationId))
+      .where(and(
+        eq(budgetReservationCustomFunders.limitId, limit.id),
+        eq(budgetReservations.status, 'pending'),
+        periodStart ? eq(budgetReservationCustomFunders.periodStart, periodStart) : undefined,
+      )).groupBy(budgetReservationCustomFunders.ownerUserId),
+  ])
+  const usage = new Map<string, CustomLimitUserUsage>()
+  const row = (userId: string) => {
+    const existing = usage.get(userId)
+    if (existing) return existing
+    const created = { userId, ownSpentMicros: 0, sharedSpentMicros: 0, pendingMicros: 0 }
+    usage.set(userId, created)
+    return created
+  }
+  for (const entry of spent) Object.assign(row(entry.userId), { ownSpentMicros: Number(entry.own), sharedSpentMicros: Number(entry.shared) })
+  for (const entry of pending) row(entry.userId).pendingMicros = Number(entry.total)
+  // Named users are listed even before they spend anything.
+  if (limit.target === 'users') for (const userId of limit.userIds) row(userId)
+  return [...usage.values()]
 }

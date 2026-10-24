@@ -18,6 +18,7 @@ const excluded = {
   budget_reservations: 'Reservations belong to live generation jobs',
   budget_reservation_funders: 'Live generation reservation accounting',
   budget_reservation_allowance_funders: 'Live generation reservation accounting',
+  budget_reservation_custom_funders: 'Live generation reservation accounting',
   export_jobs: 'Operational transfer jobs',
   backup_jobs: 'Operational transfer jobs',
   restore_uploads: 'The active restore transfer must survive its own import',

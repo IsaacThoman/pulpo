@@ -79,6 +79,7 @@ export interface DailySpend extends UsageTierProgress {
 
 /**
  * The caller's daily spend across subscription allowances, credits, and pool funding.
+ * Custom limit allowances are left out: like plan usage they are included, not paid.
  * Returns null when billing is disabled, since nobody can pay to move up a tier.
  */
 export async function loadDailySpend(tx: Transaction, input: {
@@ -86,7 +87,7 @@ export async function loadDailySpend(tx: Transaction, input: {
   role: string
   /** The plan's weekly allowance; a tier cap never cuts into included usage. */
   weeklyLimitMicros: number
-  /** A reservation being resized already counts in the pending total. */
+  /** The part of a reservation being resized that already counts in the pending total. */
   currentReservationMicros?: number
   now?: Date
 }): Promise<DailySpend | null> {
@@ -108,7 +109,7 @@ export async function loadDailySpend(tx: Transaction, input: {
     )),
     tx.select({ spentMicros: dailyUsagePeriods.spentMicros }).from(dailyUsagePeriods)
       .where(and(eq(dailyUsagePeriods.userId, input.userId), eq(dailyUsagePeriods.periodStart, periodStart))).limit(1),
-    tx.select({ total: sql<number>`coalesce(sum(${budgetReservations.amountMicros}), 0)::bigint` }).from(budgetReservations)
+    tx.select({ total: sql<number>`coalesce(sum(${budgetReservations.amountMicros} - ${budgetReservations.customReservedMicros}), 0)::bigint` }).from(budgetReservations)
       .where(and(eq(budgetReservations.userId, input.userId), eq(budgetReservations.status, 'pending'))),
   ])
   const tiers = parseBillingSettings(setting?.value).usageTiers
