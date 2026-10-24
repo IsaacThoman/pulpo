@@ -70,6 +70,7 @@ import { billingPlanTier, fetchBillingSummary } from '@/lib/billing'
 import { isDesktopRuntime } from '@/lib/runtime'
 import { ui, uit } from '@/i18n/ui'
 import { FilesNavMenu } from '@/features/files/FilesNavMenu'
+import { filesHomePath } from '@/features/files/tabs'
 import { NavItemMenu, type NavItemMenuKey, type NavItemMenuState } from '@/features/sidebar/NavItemMenu'
 import { FileNodeIcon } from '@/features/files/FileNodeIcon'
 import { SuggestedBadge } from '@/features/files/FileSuggestion'
@@ -1972,7 +1973,7 @@ export function Sidebar({
         <div className="space-y-0.5 px-2" data-sidebar-nav>
           {iconBtn(t('chat.newChat'), () => startNewChat(), <SquarePen className="size-4" />, undefined, openNavMenu('newChat'))}
           {sidebarPins.searchChats && iconBtn(t('sidebar.searchChats'), onOpenSearch, <Search className="size-4" />, undefined, openNavMenu('searchChats'))}
-          {filesEnabled && sidebarPins.files && iconBtn(t('sidebar.files'), () => go('/files'), <FolderIcon className="size-4" />, undefined, (event) => {
+          {filesEnabled && sidebarPins.files && iconBtn(t('sidebar.files'), () => go(filesHomePath(window.location.pathname)), <FolderIcon className="size-4" />, undefined, (event) => {
             event.preventDefault()
             setFilesMenuPoint({ x: event.clientX, y: event.clientY })
           })}
@@ -2110,7 +2111,7 @@ export function Sidebar({
           <DropdownMenuContent side="top" align="start" className="w-56">
             <AccountSwitcherMenuItems open={accountMenuOpen} />
             {accountNavItem('searchChats', t('sidebar.searchChats'), onOpenSearch, <Search />)}
-            {filesEnabled && accountNavItem('files', t('sidebar.files'), '/files', <FolderIcon />)}
+            {filesEnabled && accountNavItem('files', t('sidebar.files'), () => go(filesHomePath(window.location.pathname)), <FolderIcon />)}
             {accountNavItem('usage', t('sidebar.usage'), '/usage', <BarChart3 />)}
             {accountNavItem('friends', t('sidebar.friends'), '/friends', <UsersRound />, pendingSocialCount)}
             {apiKeysEnabled && accountNavItem('apiKeys', t('sidebar.apiKeys'), '/api-keys', <KeyRound />)}

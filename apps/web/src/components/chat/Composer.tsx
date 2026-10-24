@@ -66,6 +66,7 @@ import { canSubmitComposerDraft } from '@/components/chat/composer-upload-policy
 import type { Attachment } from '@/lib/types'
 import { useUploadOutbox, type UploadRecord } from '@/stores/upload-outbox'
 import { FileScopeChip, FileScopePicker } from '@/features/files/FileScope'
+import { OpenFileMenuItem } from '@/features/files/OpenFileMenuItem'
 import { addFileScope, fileAccessMode, NO_FILE_ACCESS, scopedFileAccess, type FileScopeAccess } from '@/features/files/file-scope'
 import { apiRequest } from '@/lib/api'
 import { dictationFilename, insertDictationText, preferredDictationMimeType } from '@/lib/dictation'
@@ -315,6 +316,11 @@ export function Composer({
   const filesEnabled = useAuth((s) => s.filesEnabled)
   const [folderPickerOpen, setFolderPickerOpen] = useState(false)
   const canScopeFiles = filesEnabled && Boolean(onFileScopeChange) && !temporary
+  const addFileScopeItems = (ids: string[]) => {
+    onFileScopeChange?.(addFileScope(fileScopeIds, ids))
+    // Files are reached through agent tools; adding some implies agent mode.
+    if (canUseAgent && !messageEdit) setAgentMode(modelId, true)
+  }
   const instanceReady = useAuth((s) => s.instanceReady)
   const desktopCanMutate = !isDesktopRuntime() || instanceReady
   uploadsRef.current = uploads
@@ -1444,6 +1450,7 @@ export function Composer({
                 <TooltipContent side="top">{ui("Add files or folders")}</TooltipContent>
               </Tooltip>
               <DropdownMenuContent align="start" side="top">
+                <OpenFileMenuItem selected={fileScopeIds} onAdd={addFileScopeItems} />
                 <DropdownMenuItem onSelect={() => fileInputRef.current?.click()}><Paperclip /> {t('chat.attachFiles')}</DropdownMenuItem>
                 <DropdownMenuItem onSelect={() => setFolderPickerOpen(true)}><FolderPlus /> {ui("Add from Files…")}</DropdownMenuItem>
               </DropdownMenuContent>
@@ -1468,11 +1475,7 @@ export function Composer({
               open={folderPickerOpen}
               onOpenChange={(open) => { setFolderPickerOpen(open); if (!open) requestAnimationFrame(focusComposer) }}
               selected={fileScopeIds}
-              onAdd={(ids) => {
-                onFileScopeChange?.(addFileScope(fileScopeIds, ids))
-                // Files are reached through agent tools; adding some implies agent mode.
-                if (canUseAgent && !messageEdit) setAgentMode(modelId, true)
-              }}
+              onAdd={addFileScopeItems}
             />
           )}
 

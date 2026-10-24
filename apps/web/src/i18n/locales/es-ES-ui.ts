@@ -2469,6 +2469,14 @@ const esUi: Record<string, string> = {
   "Schedule": "Programación",
   "Loading banners…": "Cargando banners…",
   "No banners yet.": "Todavía no hay banners.",
+  "Open in new Files tab": "Abrir en una pestaña nueva de Archivos",
+  "Files tabs": "Pestañas de Archivos",
+  "New tab": "Pestaña nueva",
+  "Close tab": "Cerrar pestaña",
+  "Close other tabs": "Cerrar las demás pestañas",
+  "Close tabs to the right": "Cerrar las pestañas de la derecha",
+  "Duplicate tab": "Duplicar pestaña",
+  "Add {{0}}": "Añadir {{0}}",
 }
 
 export default esUi

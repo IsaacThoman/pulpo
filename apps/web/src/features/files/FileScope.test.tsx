@@ -6,7 +6,10 @@ import type { FileAccessMode, FileNode } from '@pulpo/contracts'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { useAuth } from '@/stores/auth'
+import { useFilesViews } from '@/features/side-panel/agent'
 import { FileScopeChip } from './FileScope'
+import { useOpenFileOffer } from './open-file-offer'
+import { useFilesTabs } from './tabs'
 
 vi.hoisted(() => {
   window.matchMedia = (() => ({ matches: false, addEventListener: () => undefined, removeEventListener: () => undefined })) as never
@@ -59,5 +62,45 @@ describe('Files scope chips', () => {
     renderChip({ mode: 'read' })
     expect(await screen.findByRole('img', { name: 'Agent access to Plan.md: Read only' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: /Agent access/ })).toBeNull()
+  })
+})
+
+const NONE: string[] = []
+
+function Offer({ selected = NONE }: { selected?: string[] }) {
+  const offer = useOpenFileOffer(selected)
+  return <output>{offer ? `${offer.id} ${offer.name}` : 'none'}</output>
+}
+
+function renderOffer(selected?: string[]) {
+  return render(<QueryClientProvider client={new QueryClient()}><Offer selected={selected} /></QueryClientProvider>)
+}
+
+describe('the open file offered to the composer', () => {
+  const notes: FileNode = { ...plan, id: '00000000-0000-4000-8000-0000000000b2', name: 'Notes.md' }
+  beforeEach(() => {
+    api.fetchFileNode.mockImplementation(async (id: string) => ({ node: id === notes.id ? notes : plan, ancestors: [] }))
+    useFilesTabs.setState({ userId: 'user', tabs: [{ id: 'tab', content: { kind: 'file', id: notes.id } }], activeId: 'tab' }, true)
+    useFilesViews.setState({ page: null, panel: null })
+  })
+
+  it('is what the side panel shows beside the chat', async () => {
+    useFilesViews.setState({ panel: { layout: 'panel', view: { kind: 'file', id: plan.id }, item: { id: plan.id } } })
+    renderOffer()
+    expect((await screen.findByText(`${plan.id} Plan.md`))).toBeTruthy()
+  })
+
+  it('is the active Files tab’s file without a panel', async () => {
+    renderOffer()
+    expect((await screen.findByText(`${notes.id} Notes.md`))).toBeTruthy()
+  })
+
+  it('is nothing once it is attached, or when the active tab is a folder', async () => {
+    renderOffer([notes.id])
+    expect(screen.getByText('none')).toBeTruthy()
+    cleanup()
+    useFilesTabs.setState({ tabs: [{ id: 'tab', content: { kind: 'folder', id: null } }] })
+    renderOffer()
+    expect(screen.getByText('none')).toBeTruthy()
   })
 })
