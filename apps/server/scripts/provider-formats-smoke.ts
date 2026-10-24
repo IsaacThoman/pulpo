@@ -495,7 +495,9 @@ try {
     assert(thinking?.type === 'thinking')
     assert.equal(thinking.thinking, 'Deep thought'); assert.equal(thinking.signature, 'sig-sdk')
     const plain = await anthropic.messages.create({ model: claudeModel, max_tokens: 2000, messages: [{ role: 'user', content: 'Think' }] })
-    assert(!plain.content.some(block => block.type === 'thinking'), 'thinking shown without being requested')
+    // Signed thinking must be replayable, so it is returned even when the request did not enable thinking.
+    const unrequested = plain.content.find(block => block.type === 'thinking')
+    assert(unrequested?.type === 'thinking' && unrequested.signature === 'sig-sdk', 'signed thinking returned without being requested')
     fixture = () => ({ text: 'Next' })
     await anthropic.messages.create({ model: claudeModel, max_tokens: 2000, thinking: { type: 'adaptive' }, messages: [
       { role: 'user', content: 'Think' }, { role: 'assistant', content: streamed.content }, { role: 'user', content: 'More' },
@@ -508,7 +510,7 @@ try {
     await assert.rejects(anthropic.messages.create({ model: claudeModel, messages: [{ role: 'user', content: 'Hi' }] } as never), (error: unknown) => error instanceof Anthropic.BadRequestError && /max_tokens/.test(error.message))
     const badKey = new Anthropic({ baseURL: base, apiKey: 'sk-pulpo-invalid.secret', maxRetries: 0 })
     await assert.rejects(badKey.messages.create({ model: claudeModel, max_tokens: 10, messages: [{ role: 'user', content: 'Hi' }] }), (error: unknown) => error instanceof Anthropic.AuthenticationError)
-    await assert.rejects(anthropic.messages.create({ model: 'missing-model', max_tokens: 10, messages: [{ role: 'user', content: 'Hi' }] }), (error: unknown) => error instanceof Anthropic.BadRequestError && /unavailable/.test(error.message))
+    await assert.rejects(anthropic.messages.create({ model: 'missing-model', max_tokens: 10, messages: [{ role: 'user', content: 'Hi' }] }), (error: unknown) => error instanceof Anthropic.NotFoundError && /unavailable/.test(error.message))
     fixture = () => ({ errorStatus: 400, errorBody: { error: { message: 'Context too long', type: 'invalid_request_error' } } })
     await assert.rejects(anthropic.messages.create({ model: chatModel, max_tokens: 10, messages: [{ role: 'user', content: 'Hi' }] }), (error: unknown) => error instanceof Anthropic.BadRequestError && /Context too long/.test(error.message))
     const models = await anthropic.models.list()

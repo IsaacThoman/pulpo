@@ -38,6 +38,7 @@ const esUi: Record<string, string> = {
   "Image billing unit": "Unidad de facturación de imágenes",
   "Per image": "Por imagen",
   "Per token": "Por token",
+  "Per model": "Por modelo",
   "image": "imagen",
   "Input tokens": "Tokens de entrada",
   "Cached input tokens": "Tokens de entrada en caché",

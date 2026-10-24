@@ -284,7 +284,7 @@ describe('anthropicMessagesFromEntries', () => {
     ])
   })
 
-  it('maps images, PDFs, text documents, and unreadable files', () => {
+  it('maps images, PDFs, URL documents, text documents, and unreadable files', () => {
     const text = Buffer.from('hello file').toString('base64')
     const [message] = anthropicMessagesFromEntries([{ kind: 'user', parts: [
       { type: 'image', url: 'data:image/png;base64,iVBOR' },
@@ -293,7 +293,11 @@ describe('anthropicMessagesFromEntries', () => {
       { type: 'file', filename: 'notes.md', fileData: `data:text/markdown;base64,${text}` },
       { type: 'file', filename: 'sheet.xlsx', fileData: 'data:application/vnd.ms-excel;base64,AAAA' },
       { type: 'file', fileId: 'file-9' },
+      { type: 'file', filename: 'paper.pdf', fileUrl: 'https://example.com/paper.pdf' },
+      { type: 'file', filename: 'document.pdf', fileUrl: 'https://arxiv.org/pdf/2401.00001' },
+      { type: 'file', filename: 'notes.docx', fileUrl: 'https://example.com/notes.docx' },
       { type: 'text', text: '' },
+      { type: 'text', text: ' \n\n ' },
     ] }], options)
     expect(message!.content).toEqual([
       { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'iVBOR' } },
@@ -302,7 +306,18 @@ describe('anthropicMessagesFromEntries', () => {
       { type: 'document', source: { type: 'text', media_type: 'text/plain', data: 'hello file' }, title: 'notes.md' },
       { type: 'text', text: '[Attachment sheet.xlsx (application/vnd.ms-excel) cannot be read by this model]' },
       { type: 'text', text: '[Attachment file-9 cannot be read by this model]' },
+      { type: 'document', source: { type: 'url', url: 'https://example.com/paper.pdf' }, title: 'paper.pdf' },
+      { type: 'document', source: { type: 'url', url: 'https://arxiv.org/pdf/2401.00001' }, title: 'document.pdf' },
+      { type: 'text', text: '[Document notes.docx: https://example.com/notes.docx]' },
     ])
+  })
+
+  it('drops whitespace-only assistant text', () => {
+    expect(anthropicMessagesFromEntries([
+      { kind: 'user', parts: [{ type: 'text', text: 'hi' }] },
+      { kind: 'assistant', text: '\n\n' },
+      { kind: 'user', parts: [{ type: 'text', text: 'again' }] },
+    ], options)).toEqual([{ role: 'user', content: [{ type: 'text', text: 'hi' }, { type: 'text', text: 'again' }] }])
   })
 })
 
@@ -555,18 +570,74 @@ describe('Anthropic request constraints', () => {
     const thinking = anthropicMessagesRequest({ ...base, model: 'claude-opus-5', tool_choice: 'required', reasoning: { effort: 'high' } }, { stream: true })
     expect(thinking.thinking).toEqual({ type: 'adaptive', display: 'summarized' })
     expect(thinking).not.toHaveProperty('tool_choice')
-    // Auto tool choice leaves default thinking alone.
-    expect(anthropicMessagesRequest({ ...base, model: 'claude-opus-5', tool_choice: 'auto' }, { stream: true })).not.toHaveProperty('thinking')
-    // Forcing without tools changes nothing.
-    expect(anthropicMessagesRequest({ model: 'claude-opus-5', input: 'q', tool_choice: 'required' }, { stream: true })).not.toHaveProperty('thinking')
+    // Auto tool choice keeps default thinking, with summaries shown.
+    expect(anthropicMessagesRequest({ ...base, model: 'claude-opus-5', tool_choice: 'auto' }, { stream: true }).thinking).toEqual({ type: 'adaptive', display: 'summarized' })
+    // Forcing without tools does not disable thinking.
+    expect(anthropicMessagesRequest({ model: 'claude-opus-5', input: 'q', tool_choice: 'required' }, { stream: true }).thinking).toEqual({ type: 'adaptive', display: 'summarized' })
   })
 
   it('downgrades forced tool use to auto on always-thinking models without disabling thinking', () => {
     for (const model of ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-fable-1']) {
       const body = anthropicMessagesRequest({ ...base, model, tool_choice: 'required' }, { stream: true })
-      expect(body).not.toHaveProperty('thinking')
+      expect(body.thinking).toEqual({ type: 'adaptive', display: 'summarized' })
       expect(body).not.toHaveProperty('tool_choice')
     }
+  })
+
+  it('treats Claude Haiku 5.5 as an adaptive model that thinks by default', () => {
+    const effort = anthropicMessagesRequest({ model: 'claude-haiku-5-5', input: 'q', reasoning: { effort: 'high' }, temperature: 0.5 }, { stream: true })
+    expect(effort.thinking).toEqual({ type: 'adaptive', display: 'summarized' })
+    expect(effort.output_config).toEqual({ effort: 'high' })
+    expect(effort).not.toHaveProperty('temperature')
+    expect(anthropicMessagesRequest({ model: 'claude-haiku-5-5', input: 'q', temperature: 0.5 }, { stream: true })).not.toHaveProperty('temperature')
+    const forced = anthropicMessagesRequest({ ...base, model: 'claude-haiku-5-5', tool_choice: 'required' }, { stream: true })
+    expect(forced.thinking).toEqual({ type: 'disabled' })
+    expect(forced.tool_choice).toEqual({ type: 'any' })
+  })
+
+  it('applies sampling and tool-choice limits to an operator-set thinking default', () => {
+    const operator = { type: 'enabled', budget_tokens: 2_000 }
+    const body = anthropicMessagesRequest({ ...base, model: 'claude-sonnet-4-5', thinking: operator, temperature: 0.3, tool_choice: 'required' }, { stream: true })
+    expect(body.thinking).toEqual(operator)
+    expect(body).not.toHaveProperty('temperature')
+    expect(body).not.toHaveProperty('tool_choice')
+    // An operator default that disables thinking still allows both.
+    const disabled = anthropicMessagesRequest({ ...base, model: 'claude-sonnet-4-5', thinking: { type: 'disabled' }, temperature: 0.3, tool_choice: 'required' }, { stream: true })
+    expect(disabled.temperature).toBe(0.3)
+    expect(disabled.tool_choice).toEqual({ type: 'any' })
+    // An operator thinking default on a model that thinks by default is left alone.
+    const opus5 = anthropicMessagesRequest({ ...base, model: 'claude-opus-5', thinking: { type: 'adaptive' }, tool_choice: 'required' }, { stream: true })
+    expect(opus5.thinking).toEqual({ type: 'adaptive' })
+    expect(opus5).not.toHaveProperty('tool_choice')
+  })
+
+  it('turns on thinking at the default depth when a summary is requested without an effort', () => {
+    const summary = { reasoning: { summary: 'auto' } }
+    expect(anthropicMessagesRequest({ model: 'claude-opus-4-6', input: 'q', ...summary }, { stream: true }).thinking).toEqual({ type: 'adaptive', display: 'summarized' })
+    expect(anthropicMessagesRequest({ model: 'claude-opus-4-6', input: 'q', ...summary }, { stream: true })).not.toHaveProperty('output_config')
+    expect(anthropicMessagesRequest({ model: 'claude-haiku-4-5', input: 'q', max_output_tokens: 32_000, ...summary }, { stream: true }).thinking).toEqual({ type: 'enabled', budget_tokens: 8_192 })
+    // Without a summary request, models that do not think by default stay without thinking.
+    expect(anthropicMessagesRequest({ model: 'claude-opus-4-6', input: 'q' }, { stream: true })).not.toHaveProperty('thinking')
+    // Forced tool use wins over a summary-only request.
+    const forced = anthropicMessagesRequest({ ...base, model: 'claude-opus-5', tool_choice: 'required', ...summary }, { stream: true })
+    expect(forced.thinking).toEqual({ type: 'disabled' })
+    expect(forced.tool_choice).toEqual({ type: 'any' })
+    expect(anthropicMessagesRequest({ ...base, tool_choice: 'required', ...summary }, { stream: true }).tool_choice).toEqual({ type: 'any' })
+  })
+
+  it('disables thinking when an Anthropic-protocol client turned it off, over any effort', () => {
+    const disabled = { pulpo_thinking: 'disabled' }
+    expect(anthropicMessagesRequest({ model: 'claude-opus-5', input: 'q', reasoning: disabled }, { stream: true }).thinking).toEqual({ type: 'disabled' })
+    const withDefault = anthropicMessagesRequest({ ...base, model: 'claude-opus-4-6', reasoning: { ...disabled, effort: 'medium' }, tool_choice: { type: 'function', name: 'read' } }, { stream: true })
+    expect(withDefault.thinking).toEqual({ type: 'disabled' })
+    expect(withDefault.tool_choice).toEqual({ type: 'tool', name: 'read' })
+    // It also overrides a thinking default set on the model.
+    const operator = anthropicMessagesRequest({ model: 'claude-haiku-4-5', input: 'q', reasoning: disabled, thinking: { type: 'enabled', budget_tokens: 2_000 } }, { stream: true })
+    expect(operator.thinking).toEqual({ type: 'disabled' })
+    // Models that always think run at low effort instead.
+    const opus = anthropicMessagesRequest({ model: 'claude-opus-5-5', input: 'q', reasoning: disabled }, { stream: true })
+    expect(opus.thinking).toEqual({ type: 'adaptive', display: 'summarized' })
+    expect(opus.output_config).toEqual({ effort: 'low' })
   })
 
   it('drops custom sampling whenever thinking is on', () => {

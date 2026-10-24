@@ -93,6 +93,7 @@ function userContent(parts: NeutralPart[]): string | JsonRecord[] {
       }
       return { type: 'file', file: { ...(part.filename ? { filename: part.filename } : {}), file_data: part.fileData } }
     }
+    if (!part.fileId && part.fileUrl) return { type: 'text', text: `[Document${part.filename ? ` ${part.filename}` : ''}: ${part.fileUrl}]` }
     return { type: 'file', file: { file_id: part.fileId } }
   })
 }

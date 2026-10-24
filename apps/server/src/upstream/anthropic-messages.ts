@@ -1,5 +1,6 @@
 import type Anthropic from '@anthropic-ai/sdk'
 import {
+  clientDisabledThinking,
   functionTools,
   isTextMediaType,
   neutralConversation,
@@ -43,6 +44,23 @@ function imageBlock(url: string): Block {
   return { type: 'image', source: { type: 'url', url } }
 }
 
+// Extensions start with a letter, so ids such as arXiv's `2401.00001` are not mistaken for one.
+const EXTENSION = /\.([a-z][a-z0-9]{0,7})$/i
+
+/** URL documents are PDFs unless the filename or URL path names another extension (arXiv-style URLs have none). */
+function urlDocumentMayBePdf(part: Extract<NeutralPart, { type: 'file' }>): boolean {
+  let path = ''
+  try {
+    path = new URL(part.fileUrl!).pathname
+  } catch {
+    return false
+  }
+  return [part.filename ?? '', path].every((name) => {
+    const extension = EXTENSION.exec(name)?.[1]?.toLowerCase()
+    return !extension || extension === 'pdf'
+  })
+}
+
 function fileBlock(part: Extract<NeutralPart, { type: 'file' }>): Block {
   const parsed = part.fileData ? parseDataUrl(part.fileData) : undefined
   const title = part.filename ? { title: part.filename } : {}
@@ -50,13 +68,19 @@ function fileBlock(part: Extract<NeutralPart, { type: 'file' }>): Block {
   if (parsed && isTextMediaType(parsed.mediaType)) {
     return { type: 'document', source: { type: 'text', media_type: 'text/plain', data: Buffer.from(parsed.data, 'base64').toString('utf8') }, ...title }
   }
+  // Anthropic fetches URL documents itself, but only PDFs.
+  if (!parsed && part.fileUrl) {
+    if (urlDocumentMayBePdf(part)) return { type: 'document', source: { type: 'url', url: part.fileUrl }, ...title }
+    return { type: 'text', text: `[Document${part.filename ? ` ${part.filename}` : ''}: ${part.fileUrl}]` }
+  }
   const label = part.filename ?? part.fileId ?? 'attachment'
   return { type: 'text', text: `[Attachment ${label}${parsed ? ` (${parsed.mediaType})` : ''} cannot be read by this model]` }
 }
 
 function partBlocks(parts: NeutralPart[]): Block[] {
   return parts.flatMap((part): Block[] => {
-    if (part.type === 'text') return part.text ? [{ type: 'text', text: part.text }] : []
+    // Anthropic rejects text blocks without non-whitespace text.
+    if (part.type === 'text') return part.text.trim() ? [{ type: 'text', text: part.text }] : []
     if (part.type === 'image') return [imageBlock(part.url)]
     return [fileBlock(part)]
   })
@@ -89,7 +113,7 @@ export function anthropicMessagesFromEntries(
   for (const entry of entries) {
     if (entry.kind === 'system') continue
     if (entry.kind === 'user') append('user', partBlocks(entry.parts))
-    else if (entry.kind === 'assistant') append('assistant', entry.text ? [{ type: 'text', text: entry.text }] : [])
+    else if (entry.kind === 'assistant') append('assistant', entry.text.trim() ? [{ type: 'text', text: entry.text }] : [])
     else if (entry.kind === 'function_call') {
       append('assistant', [{ type: 'tool_use', id: anthropicToolId(entry.callId), name: entry.name, input: toolInput(entry.arguments) }])
     } else if (entry.kind === 'function_output') {
@@ -150,7 +174,9 @@ export function anthropicMessagesRequest(payload: JsonRecord, options: { stream:
   const maxTokens = typeof payload.max_output_tokens === 'number' && payload.max_output_tokens > 0
     ? payload.max_output_tokens
     : ANTHROPIC_DEFAULT_MAX_TOKENS
-  const effort = reasoningEffort(payload.reasoning)
+  // A client's explicitly disabled thinking wins over any effort, including a model default.
+  const clientDisabled = clientDisabledThinking(payload.reasoning)
+  const effort = clientDisabled ? 'none' : reasoningEffort(payload.reasoning)
   const disableThinking = effort === 'none'
   let thinking: JsonRecord | undefined
   const outputConfig: JsonRecord = {}
@@ -167,18 +193,34 @@ export function anthropicMessagesRequest(payload: JsonRecord, options: { stream:
     if (budget) thinking = { type: 'enabled', budget_tokens: budget }
   }
   if (format?.type === 'json_schema') outputConfig.format = { type: 'json_schema', schema: format.schema }
-  // Thinking rejects custom sampling; newer models reject it outright.
-  const sampling = capabilities.sampling && (!thinking || thinking.type === 'disabled')
-  const temperature = sampling && typeof payload.temperature === 'number' ? Math.min(1, Math.max(0, payload.temperature)) : undefined
-  const topP = sampling && temperature === undefined && typeof payload.top_p === 'number' ? payload.top_p : undefined
+  const passthrough = passthroughParameters(payload)
   const tools = functionTools(payload.tools)
   const toolChoice = neutralToolChoice(payload.tool_choice)
   const disableParallel = payload.parallel_tool_calls === false
   // Forced tool use is rejected alongside thinking, and by models that always think.
   // Models that think by default can force tools once thinking is disabled explicitly.
   const forcing = tools.length > 0 && (toolChoice === 'required' || (Boolean(toolChoice) && typeof toolChoice === 'object'))
-  if (forcing && !thinking && capabilities.thinksByDefault && !capabilities.thinkingAlwaysOn) thinking = { type: 'disabled' }
-  const canForceTools = !capabilities.thinkingAlwaysOn && (!thinking || thinking.type === 'disabled')
+  // A reasoning summary without an effort asks for thinking at the model's default depth, unless a tool is forced.
+  const wantsThinking = !effort && !forcing && record(payload.reasoning)?.summary !== undefined
+  if (forcing && !thinking && !passthrough.thinking && capabilities.thinksByDefault && !capabilities.thinkingAlwaysOn) thinking = { type: 'disabled' }
+  // The client's choice also overrides a `thinking` default set on the model.
+  if (clientDisabled && !thinking && passthrough.thinking && !capabilities.thinkingAlwaysOn) thinking = { type: 'disabled' }
+  if (!thinking && !passthrough.thinking && !effort) {
+    // Models that think by default would otherwise return empty (display-omitted) thinking.
+    if (capabilities.adaptiveThinking && (wantsThinking || capabilities.thinksByDefault)) thinking = { type: 'adaptive', display: 'summarized' }
+    else if (wantsThinking) {
+      const budget = thinkingBudget('medium', maxTokens)
+      if (budget) thinking = { type: 'enabled', budget_tokens: budget }
+    }
+  }
+  // An operator default fills `thinking` when Pulpo sets none, so it constrains sampling and tool choice too.
+  const effectiveThinking = thinking ?? record(passthrough.thinking)
+  const thinkingOn = Boolean(effectiveThinking) && effectiveThinking?.type !== 'disabled'
+  const canForceTools = !capabilities.thinkingAlwaysOn && !thinkingOn
+  // Thinking rejects custom sampling; newer models reject it outright.
+  const sampling = capabilities.sampling && !thinkingOn
+  const temperature = sampling && typeof payload.temperature === 'number' ? Math.min(1, Math.max(0, payload.temperature)) : undefined
+  const topP = sampling && temperature === undefined && typeof payload.top_p === 'number' ? payload.top_p : undefined
   let anthropicToolChoice: JsonRecord | undefined
   if (tools.length) {
     if (toolChoice === 'none') anthropicToolChoice = { type: 'none' }
@@ -189,7 +231,7 @@ export function anthropicMessagesRequest(payload: JsonRecord, options: { stream:
   const messages = anthropicMessagesFromEntries(entries, { upstreamModel: model, replayThinking: true })
   return {
     // Operator defaults fill fields Pulpo leaves unset; translated values win.
-    ...passthroughParameters(payload),
+    ...passthrough,
     model,
     max_tokens: maxTokens,
     ...(systemTexts.length ? { system: [{ type: 'text', text: systemTexts.join('\n\n') }] } : {}),

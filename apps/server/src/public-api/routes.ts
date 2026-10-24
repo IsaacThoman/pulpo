@@ -1,4 +1,5 @@
 import { assertPublicIdentifier } from './identifiers.js'
+import { z } from 'zod'
 import { and, eq, isNull, ne } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { db } from '../database/client.js'
@@ -19,17 +20,40 @@ import {
   serializePublicResponse,
 } from './codecs.js'
 import { executePublicGeneration } from './generation.js'
-import { estimateAnthropicInputTokens, parseAnthropicMessagesRequest } from './anthropic-codec.js'
+import { estimateAnthropicInputTokens, parseAnthropicMessagesRequest, wantsAnthropicShape } from './anthropic-codec.js'
 import { CODEX_PROVIDER_ID } from '../codex/constants.js'
 import { modelAccessibleToUserCondition } from '../catalog/model-access.js'
 
-/** Anthropic SDKs send `anthropic-version`; answer them in the Anthropic model-list shape. */
-function wantsAnthropicShape(headers: Record<string, unknown>): boolean {
-  return typeof headers['anthropic-version'] === 'string'
+function anthropicModel(model: typeof models.$inferSelect) {
+  return {
+    id: model.id, type: 'model', display_name: model.name, created_at: model.createdAt.toISOString(),
+    max_input_tokens: model.contextWindow, max_tokens: model.maxOutputTokens,
+  }
 }
 
-function anthropicModel(model: typeof models.$inferSelect) {
-  return { id: model.id, type: 'model', display_name: model.name, created_at: model.createdAt.toISOString() }
+const anthropicModelPageQuery = z.object({
+  limit: z.coerce.number().int().min(1).max(1_000).optional(),
+  after_id: z.string().optional(),
+  before_id: z.string().optional(),
+}).refine((query) => !(query.after_id && query.before_id), { message: 'Use either after_id or before_id', path: ['before_id'] })
+
+/**
+ * Anthropic's cursor pagination: newest first, `after_id` / `before_id`
+ * exclusive. Without `limit` every model is returned, so clients that read
+ * one page still see the whole catalog. An unknown cursor id yields an empty page.
+ */
+export function anthropicModelPage<T extends { id: string; createdAt: Date }>(rows: T[], rawQuery: unknown) {
+  const query = anthropicModelPageQuery.parse(rawQuery ?? {})
+  const sorted = [...rows].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime() || a.id.localeCompare(b.id))
+  const limit = query.limit ?? Math.max(1, sorted.length)
+  if (query.before_id !== undefined) {
+    const end = sorted.findIndex((row) => row.id === query.before_id)
+    if (end < 0) return { data: [], has_more: false }
+    return { data: sorted.slice(Math.max(0, end - limit), end), has_more: end - limit > 0 }
+  }
+  const after = query.after_id === undefined ? -1 : sorted.findIndex((row) => row.id === query.after_id)
+  if (query.after_id !== undefined && after < 0) return { data: [], has_more: false }
+  return { data: sorted.slice(after + 1, after + 1 + limit), has_more: after + 1 + limit < sorted.length }
 }
 
 function publicModel(model: typeof models.$inferSelect) {
@@ -71,8 +95,9 @@ export async function registerPublicApiRoutes(app: FastifyInstance): Promise<voi
     ))
     const allowed = await filterApiKeyAllowedModels(key.id, rows)
     if (wantsAnthropicShape(request.headers)) {
-      const data = allowed.map(anthropicModel)
-      return { data, has_more: false, first_id: data[0]?.id ?? null, last_id: data.at(-1)?.id ?? null }
+      const page = anthropicModelPage(allowed, request.query)
+      const data = page.data.map(anthropicModel)
+      return { data, has_more: page.has_more, first_id: data[0]?.id ?? null, last_id: data.at(-1)?.id ?? null }
     }
     return { object: 'list', data: allowed.map(publicModel) }
   })

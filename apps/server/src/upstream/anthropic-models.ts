@@ -63,6 +63,10 @@ export function anthropicModelCapabilities(upstreamModelId: string): AnthropicMo
       efforts: new Set([...BASE_EFFORTS, ...(adaptive ? ['max'] : []), ...(atLeast(version, 5, 0) ? ['xhigh'] : [])]),
     }
   }
+  if (family === 'haiku' && atLeast(version, 5, 0)) {
+    // Claude Haiku 5.5 thinks adaptively by default and rejects budgets and custom sampling.
+    return { adaptiveThinking: true, thinkingAlwaysOn: false, thinksByDefault: true, sampling: false, efforts: new Set([...BASE_EFFORTS, 'xhigh', 'max']) }
+  }
   return { adaptiveThinking: false, thinkingAlwaysOn: false, thinksByDefault: false, sampling: true, efforts: new Set(BASE_EFFORTS) }
 }
 
