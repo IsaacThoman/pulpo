@@ -56,3 +56,75 @@ describe('queued-message outbox replay', () => {
     expect(mocks.fail).toHaveBeenCalledOnce()
   })
 })
+describe('chat start outbox replay', () => {
+  const start = { id: 'response', namespace: 'account', entityKey: 'response:response', method: 'POST', path: '/api/chats/start', body: JSON.stringify({ chat: { clientId: 'started', fileScopeIds: ['kept', 'trashed', 'gone'], fileScopeAccess: { kept: 'write' } }, response: { clientId: 'response', input: 'Summarize these' } }), createdAt: 1, attempts: 0, nextAttemptAt: 0 }
+  it('starts a chat whose Files items were trashed or deleted elsewhere with the items that remain', async () => {
+    mocks.pending.mockResolvedValue([start])
+    mocks.request.mockImplementation(async (path: string, options?: { body?: { chat: { fileScopeIds: string[] } } }) => {
+      if (path === '/api/files/kept') return { node: { id: 'kept', kind: 'doc', status: 'ready', trashedAt: null } }
+      if (path === '/api/files/trashed') return { node: { id: 'trashed', kind: 'doc', status: 'ready', trashedAt: '2026-10-17T00:00:00.000Z' } }
+      if (path === '/api/files/gone') throw new ApiError(404, 'not_found', 'Not found')
+      if (options?.body?.chat.fileScopeIds.length !== 1) throw new ApiError(400, 'invalid_file_scope', 'Choose items from your files')
+      return {}
+    })
+    await expect(replayOutbox('account', client)).resolves.toEqual({ replayed: 1, rejected: 0 })
+    expect(mocks.request).toHaveBeenLastCalledWith('/api/chats/start', expect.objectContaining({
+      idempotencyKey: 'response',
+      body: expect.objectContaining({ chat: expect.objectContaining({ fileScopeIds: ['kept'], fileScopeAccess: { kept: 'write' } }), response: expect.objectContaining({ input: 'Summarize these' }) }),
+    }))
+  })
+  it('tries the start again later when its Files items cannot be checked', async () => {
+    mocks.pending.mockResolvedValue([start])
+    mocks.request.mockImplementation(async (path: string) => {
+      if (path.startsWith('/api/files/')) throw new TypeError('offline')
+      throw new ApiError(400, 'invalid_file_scope', 'Choose items from your files')
+    })
+    await expect(replayOutbox('account', client)).resolves.toEqual({ replayed: 0, rejected: 0 })
+    expect(mocks.complete).not.toHaveBeenCalled()
+    expect(mocks.fail).toHaveBeenCalledOnce()
+  })
+  it('keeps a Files scope change made offline with the items that remain', async () => {
+    const change = { id: 'scope-change', namespace: 'account', entityKey: 'chat:chat:file-scope', method: 'PATCH', path: '/api/chats/chat', body: JSON.stringify({ fileScopeIds: ['kept', 'gone'] }), createdAt: 1, attempts: 0, nextAttemptAt: 0 }
+    mocks.pending.mockResolvedValue([change])
+    mocks.request.mockImplementation(async (path: string, options?: { body?: { fileScopeIds: string[] } }) => {
+      if (path === '/api/files/kept') return { node: { id: 'kept', kind: 'folder', status: 'ready', trashedAt: null } }
+      if (path === '/api/files/gone') throw new ApiError(404, 'not_found', 'Not found')
+      if (options?.body?.fileScopeIds.includes('gone')) throw new ApiError(400, 'invalid_file_scope', 'Choose items from your files')
+      return {}
+    })
+    await expect(replayOutbox('account', client)).resolves.toEqual({ replayed: 1, rejected: 0 })
+    expect(mocks.request).toHaveBeenLastCalledWith('/api/chats/chat', expect.objectContaining({ method: 'PATCH', body: { fileScopeIds: ['kept'] } }))
+  })
+  it('checks the scope again when another item went away in between', async () => {
+    mocks.pending.mockResolvedValue([start])
+    const trashed = new Set(['trashed'])
+    let lookups = 0
+    mocks.request.mockImplementation(async (path: string, options?: { body?: { chat: { fileScopeIds: string[] } } }) => {
+      if (path.startsWith('/api/files/')) {
+        const id = path.slice('/api/files/'.length)
+        const node = { id, kind: 'doc', status: 'ready', trashedAt: trashed.has(id) ? '2026-10-17T00:00:00.000Z' : null }
+        // "kept" is trashed elsewhere right after the first check.
+        if (++lookups === 3) trashed.add('kept')
+        return { node }
+      }
+      if (options?.body?.chat.fileScopeIds.some((id) => trashed.has(id))) throw new ApiError(400, 'invalid_file_scope', 'Choose items from your files')
+      return {}
+    })
+    await expect(replayOutbox('account', client)).resolves.toEqual({ replayed: 1, rejected: 0 })
+    expect(mocks.request).toHaveBeenLastCalledWith('/api/chats/start', expect.objectContaining({ body: expect.objectContaining({ chat: expect.objectContaining({ fileScopeIds: ['gone'] }) }) }))
+  })
+  it('leaves a chat\'s scope alone, and still starts chats, while Files is turned off', async () => {
+    const change = { id: 'scope-change', namespace: 'account', entityKey: 'chat:chat:file-scope', method: 'PATCH', path: '/api/chats/chat', body: JSON.stringify({ fileScopeIds: ['live', 'gone'] }), createdAt: 1, attempts: 0, nextAttemptAt: 0 }
+    mocks.pending.mockResolvedValue([change, { ...start, createdAt: 2 }])
+    mocks.request.mockImplementation(async (path: string, options?: { body?: { fileScopeIds?: string[]; chat?: { fileScopeIds: string[] } } }) => {
+      if (path.startsWith('/api/files/')) throw new ApiError(403, 'files_disabled', 'Files are disabled by the administrator')
+      const scope = options?.body?.fileScopeIds ?? options?.body?.chat?.fileScopeIds ?? []
+      if (scope.length) throw new ApiError(400, 'invalid_file_scope', 'Choose items from your files')
+      return {}
+    })
+    await expect(replayOutbox('account', client)).resolves.toEqual({ replayed: 1, rejected: 1 })
+    const patches = mocks.request.mock.calls.filter(([path]) => path === '/api/chats/chat')
+    expect(patches.map(([, options]) => options.body)).toEqual([{ fileScopeIds: ['live', 'gone'] }])
+    expect(mocks.request).toHaveBeenLastCalledWith('/api/chats/start', expect.objectContaining({ body: expect.objectContaining({ chat: expect.objectContaining({ fileScopeIds: [] }) }) }))
+  })
+})

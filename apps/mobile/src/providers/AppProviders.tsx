@@ -1,4 +1,5 @@
 import { listenForShortcutLinks } from '../shortcuts/inbox'
+import { listenForFilesLinks } from '../features/files/links'
 import { MaterialOverlays } from '../platform/MaterialUI'
 import { useEffect, useMemo } from 'react'
 import { AppState, Keyboard, Linking, View } from 'react-native'
@@ -47,6 +48,7 @@ function KeyboardStateReconciler({ children }: { children: React.ReactNode }) {
 
 function Bootstrap({ children }: { children: React.ReactNode }) {
   useEffect(() => listenForShortcutLinks(Linking), [])
+  useEffect(() => listenForFilesLinks(Linking), [])
   const hydrateSession = useSessionStore((state) => state.hydrate)
   const sessionStatus = useSessionStore((state) => state.status)
   const hydratePreferences = usePreferencesStore((state) => state.hydrate)

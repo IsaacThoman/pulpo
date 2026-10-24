@@ -21,6 +21,7 @@ vi.mock('../mockup5/src/components/PrototypeUI', () => ({
 vi.mock('../mockup5/src/theme', () => ({ useAppTheme: () => ({ text: '#111', secondary: '#555', red: '#b00', blue: '#00b' }) }))
 vi.mock('../api/client', () => ({ mobileApi: { sessions: mocks.sessions, revokeSession: mocks.revoke, revokeOtherSessions: mocks.others } }))
 vi.mock('../store/session', () => ({ useSessionStore: { getState: () => ({ logout: mocks.logout }) } }))
+vi.mock('../features/files/doc/accountSessions', () => ({ unsyncedEditsNote: async () => '' }))
 import { DevicesScreen } from './Devices'
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 let root: Root, container: HTMLDivElement

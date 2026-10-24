@@ -80,6 +80,33 @@ CREATE TABLE IF NOT EXISTS attachment_cache (
   PRIMARY KEY (namespace, attachment_id)
 );
 CREATE INDEX IF NOT EXISTS attachment_cache_lru ON attachment_cache(namespace, last_accessed);
+CREATE TABLE IF NOT EXISTS file_docs (
+  namespace TEXT NOT NULL,
+  doc_id TEXT NOT NULL,
+  state BLOB NOT NULL,
+  schema_version INTEGER NOT NULL,
+  dirty INTEGER NOT NULL DEFAULT 0,
+  size_bytes INTEGER NOT NULL,
+  opened_at INTEGER NOT NULL,
+  PRIMARY KEY (namespace, doc_id)
+);
+CREATE TABLE IF NOT EXISTS file_doc_updates (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  namespace TEXT NOT NULL,
+  doc_id TEXT NOT NULL,
+  data BLOB NOT NULL
+);
+CREATE INDEX IF NOT EXISTS file_doc_updates_doc ON file_doc_updates(namespace, doc_id, id);
+CREATE TABLE IF NOT EXISTS file_cache (
+  namespace TEXT NOT NULL,
+  node_id TEXT NOT NULL,
+  version TEXT NOT NULL,
+  local_uri TEXT NOT NULL,
+  size_bytes INTEGER NOT NULL,
+  last_accessed INTEGER NOT NULL,
+  PRIMARY KEY (namespace, node_id)
+);
+CREATE INDEX IF NOT EXISTS file_cache_lru ON file_cache(namespace, last_accessed);
 `
 
 export function cacheNamespace(instanceUrl: string, userId: string): string {

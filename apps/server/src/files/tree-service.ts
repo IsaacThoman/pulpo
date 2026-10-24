@@ -30,6 +30,7 @@ export function toFileNode(row: FileNodeRow): FileNode {
     status: row.status as FileNode['status'],
     mimeType: row.mimeType,
     sizeBytes: row.sizeBytes,
+    contentChecksum: row.kind === 'blob' ? row.checksum : null,
     revision: row.revision,
     trashedAt: row.trashedAt?.toISOString() ?? null,
     createdAt: row.createdAt.toISOString(),

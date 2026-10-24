@@ -1,3 +1,5 @@
+import { truncateUtf8 } from './output.js'
+
 const KAGI_API_BASE = 'https://kagi.com/api/v1'
 
 export const KAGI_SEARCH_COST_MICROS = 12_000
@@ -20,6 +22,30 @@ export interface KagiResult {
   output: string
   trace?: string
   emptyReason?: string
+}
+
+/** A fetched page whose `output` is its whole Markdown, before anything trims it for the model. */
+export interface WebPage extends KagiResult {
+  sourceUrl: string
+  title?: string
+  requestId?: string
+}
+
+/** What web_fetch gives the model: the page's source, then its Markdown cut at `maxBytes`. */
+export function webFetchOutput(page: WebPage, maxBytes: number): WebPage {
+  if (!page.output) return page
+  const truncated = Buffer.byteLength(page.output, 'utf8') > maxBytes
+  const content = truncated ? truncateUtf8(page.output, maxBytes) : page.output
+  return {
+    ...page,
+    output: [`Source: ${page.sourceUrl}`, '', content, ...(truncated ? ['', `[Content truncated at ${maxBytes} bytes]`] : [])].join('\n'),
+  }
+}
+
+export function publicHttpsUrl(url: string): URL {
+  const parsed = new URL(url)
+  if (parsed.protocol !== 'https:' || !parsed.hostname) throw new Error('web_fetch requires a public HTTPS URL')
+  return parsed
 }
 
 function errorMessage(status: number, payload: unknown): string {
@@ -83,8 +109,11 @@ export class KagiClient {
   }
 
   async extract(url: string, maxBytes: number, signal?: AbortSignal): Promise<KagiResult> {
-    const parsed = new URL(url)
-    if (parsed.protocol !== 'https:' || !parsed.hostname) throw new Error('web_fetch requires a public HTTPS URL')
+    return webFetchOutput(await this.fetchPage(url, signal), maxBytes)
+  }
+
+  async fetchPage(url: string, signal?: AbortSignal): Promise<WebPage> {
+    const parsed = publicHttpsUrl(url)
     const payload = await this.post<KagiExtractResponse>('/extract', {
       pages: [{ url: parsed.toString() }],
       format: 'json',
@@ -92,15 +121,10 @@ export class KagiClient {
     const page = payload.data?.[0]
     if (!page?.markdown) return {
       output: '',
+      sourceUrl: page?.url || parsed.toString(),
       trace: payload.meta?.trace,
       emptyReason: page?.error || errorMessage(502, payload),
     }
-    const bytes = Buffer.from(page.markdown, 'utf8')
-    const truncated = bytes.byteLength > maxBytes
-    const markdown = truncated ? bytes.subarray(0, maxBytes).toString('utf8').replace(/\uFFFD$/u, '') : page.markdown
-    return {
-      output: [`Source: ${page.url}`, '', markdown, ...(truncated ? ['', `[Content truncated at ${maxBytes} bytes]`] : [])].join('\n'),
-      trace: payload.meta?.trace,
-    }
+    return { output: page.markdown, sourceUrl: page.url || parsed.toString(), trace: payload.meta?.trace }
   }
 }

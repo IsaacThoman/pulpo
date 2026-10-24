@@ -6,8 +6,8 @@ import { afterEach, describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
 import type { PulpoSocket } from '@/lib/realtime-socket'
 import { DocEditor } from './DocEditor'
-import { FakeServer, FakeSocket } from './fake-doc-server.test.helpers'
-import { SocketIOYProvider } from './socket-provider'
+import { FakeServer, FakeSocket } from '@pulpo/client-core/doc-sync/testing'
+import { SocketIOYProvider } from '@pulpo/client-core/doc-sync'
 
 afterEach(cleanup)
 

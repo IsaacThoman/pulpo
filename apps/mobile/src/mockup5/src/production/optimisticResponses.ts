@@ -39,6 +39,9 @@ interface CacheOptimisticTurnInput {
   agentMode: boolean
   attachments: OptimisticAttachment[]
   createdAt: number
+  /** A new chat's Files items, so its chips stay until the server's copy arrives. */
+  fileScopeIds?: string[]
+  fileScopeAccess?: Partial<Record<string, import('@pulpo/contracts').FileAccessMode>>
 }
 
 interface CacheOptimisticBranchInput {
@@ -245,6 +248,7 @@ export function cacheOptimisticTurn(input: CacheOptimisticTurnInput): void {
     updatedAt: createdAt,
     responses: [response],
     attachments: attachmentRows,
+    ...(input.fileScopeIds?.length ? { fileScopeIds: input.fileScopeIds, fileScopeAccess: input.fileScopeAccess ?? {} } : {}),
   }
   input.queryClient.setQueryData(chatKey(input.namespace, input.chatId), detail)
   useRealtimeStore.getState().receiveSnapshot(snapshot)

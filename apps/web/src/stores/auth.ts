@@ -62,6 +62,7 @@ interface PublicAuthSettings {
   inviteCodesEnabled: boolean
   codexEnabled: boolean
   dictationEnabled: boolean
+  urlImportEnabled: boolean
 }
 type AuthResult = { ok: true } | { ok: false; error: string }
 export type LoginResult = AuthResult | { ok: false; twoFactorRequired: true }
@@ -82,6 +83,7 @@ interface AuthState {
   inviteCodesEnabled: boolean
   codexEnabled: boolean
   dictationEnabled: boolean
+  urlImportEnabled: boolean
   instanceUrl: string
   instanceName: string
   instanceReady: boolean
@@ -180,6 +182,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
   inviteCodesEnabled: false,
   codexEnabled: false,
   dictationEnabled: false,
+  urlImportEnabled: false,
   instanceUrl: runtimeInstanceUrl(),
   instanceName: 'Pulpo',
   instanceReady: !isDesktopRuntime(),
@@ -248,6 +251,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
           inviteCodesEnabled: config.auth.inviteCodesEnabled,
           codexEnabled: false,
           dictationEnabled: false,
+          urlImportEnabled: false,
         }
         if (!stored) {
           set({
@@ -320,6 +324,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
         inviteCodesEnabled: get().inviteCodesEnabled,
         codexEnabled: false,
         dictationEnabled: get().dictationEnabled,
+        urlImportEnabled: get().urlImportEnabled,
       }
       try {
         if (!authResult.ok) throw authResult.error
@@ -491,6 +496,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
         inviteCodesEnabled: config.auth.inviteCodesEnabled,
         codexEnabled: false,
         dictationEnabled: false,
+        urlImportEnabled: false,
       }
       set({ checkingSession: false, setupRequired: config.setupRequired, instanceUrl, instanceName: config.instance.name, instanceReady: true, instanceError: '', ...settings, codexEnabled: settings.codexEnabled === true })
       window.location.reload()

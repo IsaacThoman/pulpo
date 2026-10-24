@@ -46,7 +46,7 @@ export async function createChat(input: { clientId?: string; modelId: string; te
   }
 }
 
-export async function updateChat(id: string, patch: Partial<Pick<ServerChat, 'title' | 'pinned' | 'folderId' | 'modelId' | 'sortOrder'>> & { autoExpire?: boolean }): Promise<ServerChat> {
+export async function updateChat(id: string, patch: Partial<Pick<ServerChat, 'title' | 'pinned' | 'folderId' | 'modelId' | 'sortOrder' | 'fileScopeIds' | 'fileScopeAccess'>> & { autoExpire?: boolean }): Promise<ServerChat> {
   return apiRequest(`/api/chats/${id}`, { method: 'PATCH', body: patch })
 }
 
@@ -152,6 +152,9 @@ export async function startChat(input: {
   attachmentIds?: string[]
   agentMode?: boolean
   usedDictation?: boolean
+  /** The Files items the new chat's agent may work with, set on the unsent chat. */
+  fileScopeIds?: string[]
+  fileScopeAccess?: Partial<Record<string, import('@pulpo/contracts').FileAccessMode>>
 }): Promise<{ chat: ServerChat; response: ResponseSnapshot }> {
   const session = useSessionStore.getState()
   if (session.user) mobileChatStarted.ignoreLocal(cacheNamespace(session.instanceUrl, session.user.id), input.chatId)
@@ -173,6 +176,7 @@ export async function startChat(input: {
       title: input.title,
       temporary: input.temporary ?? false,
       autoExpire: input.autoExpire ?? false,
+      ...(input.fileScopeIds?.length ? { fileScopeIds: input.fileScopeIds, fileScopeAccess: input.fileScopeAccess ?? {} } : {}),
     },
     response: {
       timeZone: deviceTimeZone(),
@@ -226,6 +230,8 @@ export async function startChat(input: {
         updatedAt: now,
         responses: [],
         attachments: [],
+        // Queued with the start request, so the chat keeps its Files items while offline.
+        ...(input.fileScopeIds?.length ? { fileScopeIds: input.fileScopeIds, fileScopeAccess: input.fileScopeAccess ?? {} } : {}),
       },
       response: useRealtimeStore.getState().snapshots[input.responseId] ?? queued,
     }

@@ -1,37 +1,27 @@
-import type { FileChangeConflict, FileChangeConflictBody, FileChangeSummary, FileChangesItem } from '@pulpo/contracts'
+import type { FileChangeConflict, FileChangeSummary } from '@pulpo/contracts'
+import { fileChangeConflictsOf, fileChangeLabelOf } from '@pulpo/client-core/files'
 import { ui, uit } from '@/i18n/ui'
 import { ApiError } from '@/lib/api'
 
-/** The output item a reply carries once it changed Files; the changes themselves come from the API. */
-export function fileChangesItem(outputItems: readonly unknown[] | undefined): FileChangesItem | null {
-  const item = (outputItems ?? []).find((entry) => (entry as { type?: string } | null)?.type === 'pulpo_file_changes')
-  return (item as FileChangesItem | undefined) ?? null
-}
+export { fileChangesItem, pendingSuggestion } from '@pulpo/client-core/files'
 
 /** The items an undo or redo was refused for, or null for any other failure. */
 export function fileChangeConflicts(error: unknown): FileChangeConflict[] | null {
-  if (!(error instanceof ApiError) || error.code !== 'file_changes_conflict') return null
-  return (error.body as FileChangeConflictBody | undefined)?.error?.conflicts ?? []
-}
-
-export function pendingSuggestion(change: FileChangeSummary): boolean {
-  return change.mode === 'suggest' && change.status === 'pending'
-}
-
-function parentPath(path: string): string {
-  return path.replace(/\/+$/, '').split('/').slice(0, -1).join('/')
+  return error instanceof ApiError ? fileChangeConflictsOf(error.code, error.body) : null
 }
 
 /** A short word for what happened to the item, e.g. "edited" or "3 suggestions". */
 export function fileChangeLabel(change: FileChangeSummary): string {
-  if (pendingSuggestion(change) && change.nodeKind === 'doc' && change.kind === 'update' && change.pendingSuggestions !== undefined) {
-    return change.pendingSuggestions === 1 ? ui("1 suggestion") : uit`${change.pendingSuggestions} suggestions`
-  }
-  switch (change.kind) {
-    case 'create': return change.nodeKind === 'folder' ? ui("new folder") : ui("new")
-    case 'update': return change.nodeKind === 'blob' ? ui("new version") : ui("edited")
-    case 'move': return change.fromPath && change.toPath && parentPath(change.fromPath) === parentPath(change.toPath) ? ui("renamed") : ui("moved")
-    case 'trash': return ui("deleted")
+  const label = fileChangeLabelOf(change)
+  switch (label.kind) {
+    case 'suggestions': return label.count === 1 ? ui("1 suggestion") : uit`${label.count} suggestions`
+    case 'new-folder': return ui("new folder")
+    case 'new': return ui("new")
+    case 'new-version': return ui("new version")
+    case 'edited': return ui("edited")
+    case 'renamed': return ui("renamed")
+    case 'moved': return ui("moved")
+    case 'deleted': return ui("deleted")
   }
 }
 

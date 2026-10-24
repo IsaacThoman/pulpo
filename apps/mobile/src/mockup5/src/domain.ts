@@ -124,6 +124,8 @@ export interface PrototypeChat {
   updatedAt: number;
   pinned: boolean;
   folderId: string | null;
+  /** Filed at the top of My files: outside the sidebar, which lists the Chats folder. */
+  inFilesRoot?: boolean;
   /** Manual position within the pinned list, its folder, or the unfiled list. */
   sortOrder: number;
   temporary: boolean;
@@ -135,6 +137,9 @@ export interface PrototypeChat {
   messages: PrototypeMessage[];
   deletedAt: number | null;
   purgeAt: number | null;
+  /** Files items the chat's agent works with, and what it may do with each (see FileScopeChips). */
+  fileScopeIds?: string[];
+  fileScopeAccess?: Partial<Record<string, import('@pulpo/contracts').FileAccessMode>>;
 }
 
 export interface PrototypeFolder {

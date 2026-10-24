@@ -48,6 +48,11 @@ function withDatabase<T>(operation: (database: SQLite.SQLiteDatabase) => Promise
   return enqueueDatabaseOperation(async () => operation(await mobileDatabase()))
 }
 
+/** Runs an operation in the shared database queue, for feature stores (e.g. Files documents). */
+export function withMobileDatabase<T>(operation: (database: SQLite.SQLiteDatabase) => Promise<T>): Promise<T> {
+  return withDatabase(operation)
+}
+
 export { cacheNamespace }
 
 export async function getValue<T>(namespace: string, key: string): Promise<T | null> {
@@ -72,7 +77,7 @@ export async function setValue(namespace: string, key: string, value: unknown): 
 export async function clearNamespace(namespace: string): Promise<string[]> {
   return withDatabase(async (database) => {
     const files = await database.getAllAsync<{ local_uri: string }>(
-      'SELECT local_uri FROM attachment_cache WHERE namespace = ?', namespace,
+      'SELECT local_uri FROM attachment_cache WHERE namespace = ? UNION ALL SELECT local_uri FROM file_cache WHERE namespace = ?', namespace, namespace,
     )
     const shelfRow = await database.getFirstAsync<{ value: string }>('SELECT value FROM kv WHERE namespace = ? AND key = ?', namespace, 'shelved-drafts')
     const shelf = shelfRow ? JSON.parse(shelfRow.value) as ShelfCheckpoint : undefined
@@ -82,7 +87,7 @@ export async function clearNamespace(namespace: string): Promise<string[]> {
     const draftRows = await database.getAllAsync<{ attachments: string }>('SELECT attachments FROM drafts WHERE namespace = ?', namespace)
     for (const row of draftRows) for (const a of JSON.parse(row.attachments) as Array<{ uri?: string }>) if (a.uri?.includes('/shelved-drafts/')) shelfSources.push(a.uri)
     await database.withTransactionAsync(async () => {
-      for (const table of ['kv', 'drafts', 'response_cursors', 'outbox', 'chat_cache', 'chat_access', 'attachment_cache']) {
+      for (const table of ['kv', 'drafts', 'response_cursors', 'outbox', 'chat_cache', 'chat_access', 'attachment_cache', 'file_docs', 'file_doc_updates', 'file_cache']) {
         await database.runAsync(`DELETE FROM ${table} WHERE namespace = ?`, namespace)
       }
       await database.runAsync('DELETE FROM chat_fts WHERE namespace = ?', namespace)
@@ -94,13 +99,17 @@ export async function clearNamespace(namespace: string): Promise<string[]> {
 export async function clearDownloadedData(namespace: string): Promise<string[]> {
   return withDatabase(async (database) => {
     const files = await database.getAllAsync<{ local_uri: string }>(
-      'SELECT local_uri FROM attachment_cache WHERE namespace = ?', namespace,
+      'SELECT local_uri FROM attachment_cache WHERE namespace = ? UNION ALL SELECT local_uri FROM file_cache WHERE namespace = ?', namespace, namespace,
     )
     await database.withTransactionAsync(async () => {
-      for (const table of ['chat_cache', 'chat_access', 'attachment_cache']) {
+      for (const table of ['chat_cache', 'chat_access', 'attachment_cache', 'file_cache']) {
         await database.runAsync(`DELETE FROM ${table} WHERE namespace = ?`, namespace)
       }
       await database.runAsync('DELETE FROM chat_fts WHERE namespace = ?', namespace)
+      // Documents with edits not yet uploaded are the user's work, not downloaded data.
+      await database.runAsync(`DELETE FROM file_doc_updates WHERE namespace = ? AND doc_id IN
+        (SELECT doc_id FROM file_docs WHERE namespace = ? AND dirty = 0)`, namespace, namespace)
+      await database.runAsync('DELETE FROM file_docs WHERE namespace = ? AND dirty = 0', namespace)
     })
     return files.map((file) => file.local_uri)
   })
