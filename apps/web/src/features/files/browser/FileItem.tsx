@@ -38,6 +38,8 @@ export interface FileItemProps {
   onClick: (event: MouseEvent) => void
   onDoubleClick: (event: MouseEvent) => void
   onContextMenu: (event: MouseEvent) => void
+  /** Middle-click. */
+  onAuxClick?: (event: MouseEvent) => void
   onMenuButton: (event: MouseEvent<HTMLButtonElement>) => void
   /** Accepts files dropped in from the operating system (folders only). */
   dropHandlers?: FileDropHandlers
@@ -91,6 +93,7 @@ export function FileItem(props: FileItemProps) {
     onClick: props.onClick,
     onDoubleClick: props.onDoubleClick,
     onContextMenu: props.onContextMenu,
+    onAuxClick: props.onAuxClick,
     ...props.dropHandlers,
   }
 

@@ -8,6 +8,7 @@ import { useSettings, type FileDoubleClickAction } from '@/stores/settings'
 import { useSidePanel } from '@/features/side-panel/store'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { useFileClipboard } from '@/features/files/browser/clipboard'
+import { useFilesTabs } from '@/features/files/tabs'
 
 vi.hoisted(() => {
   Object.defineProperty(window, 'matchMedia', {
@@ -90,6 +91,7 @@ beforeEach(() => {
   })
   useSettings.setState({ fileDoubleClickAction: 'open' })
   useSidePanel.setState({ content: null, lastContent: null, splitAvailable: true })
+  useFilesTabs.setState({ userId: null, tabs: [], activeId: null }, true)
 })
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.clearAllMocks() })
 
@@ -318,5 +320,36 @@ describe('chats in Files', () => {
     expect(await screen.findByRole('menuitem', { name: /^Delete/ })).toBeTruthy()
     expect(screen.queryByRole('menuitem', { name: /^Move to trash/ })).toBeNull()
     useSettings.setState({ trashRetention: '30d' })
+  })
+
+  it('opens folders and files in new Files tabs: in the background with a middle-click, or shown from the menu', async () => {
+    showFiles()
+    // One tab (My files) shows no tab bar.
+    await screen.findByRole('option', { name: /Projects/ })
+    expect(screen.queryByRole('tablist')).toBeNull()
+
+    fireEvent(screen.getByRole('option', { name: /Projects/ }), new MouseEvent('auxclick', { bubbles: true, button: 1 }))
+    expect(screen.getByTestId('location').textContent).toBe('/files')
+    expect(screen.getAllByRole('tab').map((tab) => tab.getAttribute('aria-selected'))).toEqual(['true', 'false'])
+    // Chats are not Files tabs.
+    fireEvent(screen.getByRole('option', { name: /Trip/ }), new MouseEvent('auxclick', { bubbles: true, button: 1 }))
+    expect(screen.getAllByRole('tab')).toHaveLength(2)
+
+    fireEvent.contextMenu(screen.getByRole('option', { name: /Notes\.md/ }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: /^Open in new Files tab/ }))
+    expect(screen.getByTestId('location').textContent).toBe('/files/d/document')
+    expect(useFilesTabs.getState().tabs.map((tab) => tab.content)).toEqual([
+      { kind: 'folder', id: null },
+      { kind: 'file', id: 'document' },
+      { kind: 'folder', id: 'folder' },
+    ])
+  })
+
+  it('offers no Files tabs in the side panel', async () => {
+    useSidePanel.setState({ content: { kind: 'folder', id: null } })
+    showFiles(true)
+    fireEvent.contextMenu(await screen.findByRole('option', { name: /Projects/ }))
+    await screen.findByRole('menuitem', { name: /^Open in main view/ })
+    expect(screen.queryByRole('menuitem', { name: /^Open in new Files tab/ })).toBeNull()
   })
 })

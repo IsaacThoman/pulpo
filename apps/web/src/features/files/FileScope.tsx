@@ -9,22 +9,10 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { ui, uit } from '@/i18n/ui'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/stores/auth'
-import { fetchFileNode, fetchFolder, fileNodeQueryKey, folderQueryKey } from './api'
+import { fetchFolder, folderQueryKey } from './api'
 import { FileNodeIcon } from './FileNodeIcon'
 import { useOpenBeside } from '@/features/side-panel/use-panel-actions'
-
-function useScopeNode(id: string): { node: FileNode | null; missing: boolean } {
-  const userId = useAuth((state) => state.user?.id)
-  const root = id === FILE_SCOPE_ROOT
-  const query = useQuery({
-    queryKey: fileNodeQueryKey(userId, id),
-    queryFn: () => fetchFileNode(id),
-    enabled: Boolean(userId && !root),
-    retry: false,
-  })
-  const node = query.data?.node ?? null
-  return { node, missing: !root && (query.isError || Boolean(node?.trashedAt)) }
-}
+import { useScopeNode } from './scope-node'
 
 const ACCESS_ICONS: Record<FileAccessMode, LucideIcon> = { read: Eye, suggest: MessageSquareDiff, write: PencilLine }
 
