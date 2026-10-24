@@ -160,3 +160,24 @@
 .pulpo-doc-editor table[data-suggestion='delete'], .pulpo-doc-editor pre[data-suggestion='delete'] { outline-color: var(--pulpo-suggestion-delete); border-left-color: var(--pulpo-suggestion-delete); }
 .pulpo-doc-editor hr[data-suggestion='insert'] { border-top: 2px solid var(--pulpo-suggestion-insert); }
 .pulpo-doc-editor hr[data-suggestion='delete'] { border-top: 2px dashed var(--pulpo-suggestion-delete); }
+
+/* The floating dictation bar rises into place while dictating, like the composer's toolbar faces. */
+.pulpo-doc-dictation {
+  pointer-events: auto;
+  transition:
+    opacity 200ms cubic-bezier(0.65, 0, 0.35, 1),
+    transform 200ms cubic-bezier(0.65, 0, 0.35, 1),
+    visibility 0s;
+}
+.pulpo-doc-dictation[data-active='false'] {
+  opacity: 0;
+  transform: translateY(0.5rem) scale(0.98);
+  visibility: hidden;
+  transition:
+    opacity 200ms cubic-bezier(0.65, 0, 0.35, 1),
+    transform 200ms cubic-bezier(0.65, 0, 0.35, 1),
+    visibility 0s 200ms;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pulpo-doc-dictation, .pulpo-doc-dictation[data-active='false'] { transform: none; }
+}
