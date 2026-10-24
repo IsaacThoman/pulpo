@@ -3,7 +3,7 @@ import { getConfig } from '../config.js'
 import { db } from '../database/client.js'
 import { billingCustomLimits, budgetReservationCustomFunders, budgetReservations, customLimitSpend, models, responses } from '../database/schema.js'
 import { newId } from '../lib/ids.js'
-import { allocateSharedSettlementMicros } from './allocation.js'
+import { allocateCustomSettlementSplit } from './allocation.js'
 import { loadBillingEntitlements } from './entitlements.js'
 import { FIVE_HOURS_MS, utcDayEnd, utcDayStart, utcWeekEnd, utcWeekStart, type BillingPlan } from './plans.js'
 
@@ -72,6 +72,8 @@ export interface CustomAllowance {
   limitMicros: number
   modelIds: string[]
   sharePercent: number
+  /** Whether it also funds the tools, workspace time, and background model calls of matching requests. */
+  coversExtras: boolean
   ownerUserId: string
   /** Null for the rolling five-hour window. */
   periodStart: Date | null
@@ -133,6 +135,7 @@ export async function loadCustomAllowance(tx: Transaction, limit: CustomLimit, o
     limitMicros: limit.limitMicros,
     modelIds: limit.modelIds,
     sharePercent: limit.sharePercent,
+    coversExtras: limit.coversExtras,
     ownerUserId,
     periodStart,
     spentMicros,
@@ -163,6 +166,7 @@ export interface CustomFundingSource {
   limitId: string
   ownerUserId: string
   periodStart: Date | null
+  coversExtras: boolean
   availableMicros: number
 }
 
@@ -187,7 +191,7 @@ export async function loadCustomFunding(tx: Transaction, input: {
   const sources: CustomFundingSource[] = []
   for (const limit of limits.filter((row) => customLimitAppliesToUser(row, input))) {
     const allowance = await loadCustomAllowance(tx, limit, input.userId, now)
-    sources.push({ limitId: limit.id, ownerUserId: input.userId, periodStart: allowance.periodStart, availableMicros: allowance.remainingMicros })
+    sources.push({ limitId: limit.id, ownerUserId: input.userId, periodStart: allowance.periodStart, coversExtras: limit.coversExtras, availableMicros: allowance.remainingMicros })
   }
   const shareable = limits.filter((limit) => limit.sharePercent > 0)
   if (!shareable.length) return sources
@@ -196,15 +200,22 @@ export async function loadCustomFunding(tx: Transaction, input: {
     if (entitlements.onHold) continue
     for (const limit of shareable.filter((row) => customLimitAppliesToUser(row, { userId: ownerUserId, plan: entitlements.plan }))) {
       const allowance = await loadCustomAllowance(tx, limit, ownerUserId, now)
-      sources.push({ limitId: limit.id, ownerUserId, periodStart: allowance.periodStart, availableMicros: allowance.sharedAvailableMicros })
+      sources.push({ limitId: limit.id, ownerUserId, periodStart: allowance.periodStart, coversExtras: limit.coversExtras, availableMicros: allowance.sharedAvailableMicros })
     }
   }
   return sources
 }
 
-/** Charge settled or retained cost to a reservation's allowances, never beyond what each reserved. */
-export function allocateCustomSettlementMicros(amountMicros: number, funders: Array<{ limitId: string; ownerUserId: string; reservedMicros: number }>): Map<string, number> {
-  return allocateSharedSettlementMicros(amountMicros, funders.map((row) => ({ userId: customFundingKey(row), reservedMicros: row.reservedMicros })))
+/**
+ * Charge settled or retained cost to a reservation's allowances, never beyond what each
+ * reserved. Allowances that don't cover extras are charged only for the inference part.
+ */
+export function allocateCustomSettlementMicros(
+  amountMicros: number,
+  inferenceMicros: number,
+  funders: Array<{ limitId: string; ownerUserId: string; reservedMicros: number; coversExtras: boolean }>,
+): Map<string, number> {
+  return allocateCustomSettlementSplit(amountMicros, inferenceMicros, funders.map((row) => ({ key: customFundingKey(row), reservedMicros: row.reservedMicros, coversExtras: row.coversExtras })))
 }
 
 /** Keep settled draws on allowances whose limit still exists. */

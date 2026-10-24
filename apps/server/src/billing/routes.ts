@@ -142,6 +142,7 @@ export function customLimitSummary(limit: CustomAllowance, modelNames: Map<strin
     name: limit.name,
     period: limit.period,
     sharePercent: limit.sharePercent,
+    coversExtras: limit.coversExtras,
     // Empty when the limit covers every model.
     models: limit.modelIds.map((id) => modelNames.get(id) ?? id),
     remainingPercentage: Math.round(billingLimitPercentage(limit.remainingMicros, limit.limitMicros)),

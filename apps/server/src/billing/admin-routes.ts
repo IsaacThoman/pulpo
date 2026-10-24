@@ -54,6 +54,7 @@ const customLimitSchema = z.object({
   plans: z.array(z.enum(BILLING_PLANS)).max(BILLING_PLANS.length).default([]).transform(uniqueStrings),
   userIds: z.array(z.string().uuid()).max(5_000).default([]).transform(uniqueStrings),
   sharePercent: z.number().int().min(0).max(100).default(0),
+  coversExtras: z.boolean().default(true),
   enabled: z.boolean().default(true),
 }).superRefine((value, context) => {
   if (value.target === 'plans' && !value.plans.length) context.addIssue({ code: 'custom', path: ['plans'], message: 'Choose at least one plan' })

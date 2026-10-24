@@ -1,4 +1,4 @@
-import type { ChatPreset, QueuedMessage, EmbeddedResponseSnapshot, ResponseSnapshot, User } from '@pulpo/contracts'
+import type { ChatPreset, DataRetentionTag, QueuedMessage, EmbeddedResponseSnapshot, ResponseSnapshot, User } from '@pulpo/contracts'
 
 export type { User }
 
@@ -26,6 +26,7 @@ export interface MobileModel {
   provider: { id: string; name: string }
   lab: { id: string; name: string; logo: string; customIcon?: MobileCatalogIcon | null } | null
   presets: ChatPreset[]
+  dataRetention?: DataRetentionTag | null
 }
 
 export type MobileQueuedMessage = QueuedMessage & { pendingSubmissionId?: string; localFailure?: boolean }

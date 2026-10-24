@@ -743,6 +743,20 @@
       "when": 1792823274843,
       "tag": "0105_custom_limit_allowances",
       "breakpoints": true
+    },
+    {
+      "idx": 106,
+      "version": "7",
+      "when": 1792861967489,
+      "tag": "0106_data_retention_tags",
+      "breakpoints": true
+    },
+    {
+      "idx": 107,
+      "version": "7",
+      "when": 1792866793437,
+      "tag": "0107_custom_limit_extras",
+      "breakpoints": true
     }
   ]
 }

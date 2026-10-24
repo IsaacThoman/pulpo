@@ -63,6 +63,8 @@ export interface PrototypeModel {
   modelCustomIcon?: import('../../types').MobileCatalogIcon | null;
   labCustomIcon?: import('../../types').MobileCatalogIcon | null;
   presets: GenerationPreset[];
+  /** Data retention tag shown beside the provider. */
+  dataRetention?: import('@pulpo/contracts').DataRetentionTag | null;
 }
 
 export type AttachmentStatus = 'uploading' | 'ready' | 'failed' | 'cached';

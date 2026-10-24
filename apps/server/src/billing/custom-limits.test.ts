@@ -80,12 +80,34 @@ describe('custom limit allowances', () => {
     expect(allocateInOrderMicros(0, sources).size).toBe(0)
   })
 
+  it('holds allowances that do not cover extras to the inference part, in order', () => {
+    const sources = [
+      { key: 'model-only', availableMicros: 100, coversExtras: false },
+      { key: 'covering', availableMicros: 30 },
+      { key: 'model-only-2', availableMicros: 100, coversExtras: false },
+    ]
+    // 70 of 100 is inference: the model-only allowances fund at most that between them.
+    expect([...allocateInOrderMicros(100, sources, 70)]).toEqual([['model-only', 70], ['covering', 30]])
+    expect([...allocateInOrderMicros(100, sources.slice(1), 70)]).toEqual([['covering', 30], ['model-only-2', 70]])
+    expect([...allocateInOrderMicros(100, [sources[0]!], 0)]).toEqual([])
+  })
+
   it('settles within what each allowance reserved', () => {
     const funders = [
-      { limitId: 'limit-1', ownerUserId: 'owner', reservedMicros: 30 },
-      { limitId: 'limit-1', ownerUserId: 'member', reservedMicros: 10 },
+      { limitId: 'limit-1', ownerUserId: 'owner', reservedMicros: 30, coversExtras: true },
+      { limitId: 'limit-1', ownerUserId: 'member', reservedMicros: 10, coversExtras: true },
     ]
-    expect(Object.fromEntries(allocateCustomSettlementMicros(20, funders))).toEqual({ 'limit-1:owner': 15, 'limit-1:member': 5 })
-    expect(Object.fromEntries(allocateCustomSettlementMicros(100, funders))).toEqual({ 'limit-1:owner': 30, 'limit-1:member': 10 })
+    expect(Object.fromEntries(allocateCustomSettlementMicros(20, 20, funders))).toEqual({ 'limit-1:owner': 15, 'limit-1:member': 5 })
+    expect(Object.fromEntries(allocateCustomSettlementMicros(100, 100, funders))).toEqual({ 'limit-1:owner': 30, 'limit-1:member': 10 })
+  })
+
+  it('settles only inference to allowances that do not cover extras, and extras to those that do', () => {
+    const funders = [
+      { limitId: 'model-only', ownerUserId: 'user', reservedMicros: 80, coversExtras: false },
+      { limitId: 'covering', ownerUserId: 'user', reservedMicros: 30, coversExtras: true },
+    ]
+    expect(Object.fromEntries(allocateCustomSettlementMicros(60, 40, funders))).toEqual({ 'model-only:user': 40, 'covering:user': 20 })
+    expect(Object.fromEntries(allocateCustomSettlementMicros(100, 90, funders))).toEqual({ 'model-only:user': 80, 'covering:user': 20 })
+    expect(Object.fromEntries(allocateCustomSettlementMicros(100, 10, funders))).toEqual({ 'model-only:user': 10, 'covering:user': 30 })
   })
 })
