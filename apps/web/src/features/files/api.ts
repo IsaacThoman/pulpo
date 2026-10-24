@@ -47,6 +47,17 @@ export function createDoc(parentId: string | null, name: string, markdown?: stri
   return apiRequest<FileNode>('/api/files/docs', { method: 'POST', body: { parentId, name, markdown } })
 }
 
+/** A web page saved as a document; the server fetches it with the providers the agent's web_fetch uses. */
+export function importFromUrl(parentId: string | null, url: string): Promise<FileNode> {
+  return apiRequest<FileNode>('/api/files/import-url', { method: 'POST', body: { parentId, url } })
+}
+
+/** Typed addresses often leave out the scheme; pages are only fetched over HTTPS. */
+export function normalizeImportUrl(value: string): string {
+  const trimmed = value.trim()
+  return !trimmed || /^[a-z][a-z\d+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`
+}
+
 /** Dry run of making an uploaded Markdown file editable; nothing changes on the server. */
 export function fetchConversionPreview(id: string): Promise<FileConversionPreview> {
   return apiRequest<FileConversionPreview>(`/api/files/${id}/conversion`)

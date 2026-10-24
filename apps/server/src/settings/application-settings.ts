@@ -124,6 +124,7 @@ export const storedBackupSettingsSchema = z.object({
 })
 
 export type StoredBackupSettings = z.infer<typeof storedBackupSettingsSchema>
+export type StoredWebToolsSettings = z.infer<typeof storedWebToolsSettingsSchema>
 
 export type AuthSettings = z.infer<typeof authSettingsSchema>
 export type InterfaceSettings = z.infer<typeof interfaceSettingsSchema>
@@ -160,7 +161,7 @@ export function parseEpisodicMemorySettings(value: unknown): z.infer<typeof epis
   return parsed.success ? parsed.data : episodicMemorySettingsSchema.parse({})
 }
 
-export function parseWebToolsSettings(value: unknown): z.infer<typeof storedWebToolsSettingsSchema> {
+export function parseWebToolsSettings(value: unknown): StoredWebToolsSettings {
   const legacy = value && typeof value === 'object' ? value as Record<string, unknown> : {}
   const legacyKagi = legacy.kagi && typeof legacy.kagi === 'object' ? legacy.kagi as Record<string, unknown> : {}
   const legacyFirecrawl = legacy.firecrawl && typeof legacy.firecrawl === 'object' ? legacy.firecrawl as Record<string, unknown> : {}
