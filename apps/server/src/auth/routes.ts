@@ -27,7 +27,8 @@ import { AppError, unauthorized } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { hashToken, randomToken } from '../lib/crypto.js'
 import { sendPasswordReset } from '../lib/mail.js'
-import { parseAuthSettings, parseCodexSettings, parseDictationSettings } from '../settings/application-settings.js'
+import { parseAuthSettings, parseCodexSettings, parseDictationSettings, parseWebToolsSettings } from '../settings/application-settings.js'
+import { webExtractAvailable } from '../agent/web-tools.js'
 import { newUserStorageLimit } from '../billing/storage-entitlements.js'
 import { insertNewAccountPreferences } from '../settings/new-account-defaults.js'
 import { publishStateChange } from '../responses/events.js'
@@ -96,7 +97,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/auth/settings', async () => {
     const rows = await db.select({ key: applicationSettings.key, value: applicationSettings.value })
       .from(applicationSettings)
-      .where(inArray(applicationSettings.key, ['auth', 'dictation', 'codex']))
+      .where(inArray(applicationSettings.key, ['auth', 'dictation', 'codex', 'webTools']))
     const byKey = new Map(rows.map((row) => [row.key, row.value]))
     const { accountDeletionEnabled, signupEnabled, pendingDetails, adminEmail, pendingMessage, apiKeysEnabled, filesEnabled, maxAttachmentBytes, maxInlineImages, inviteCodesEnabled } = parseAuthSettings(byKey.get('auth'))
     const dictation = parseDictationSettings(byKey.get('dictation'))
@@ -115,6 +116,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
       billingEnabled,
       inviteCodesEnabled: billingEnabled && inviteCodesEnabled,
       dictationEnabled: dictation.enabled && Boolean(dictation.encryptedGroqApiKey),
+      urlImportEnabled: filesEnabled && webExtractAvailable(parseWebToolsSettings(byKey.get('webTools'))),
     }
   })
 

@@ -85,6 +85,11 @@ export function filesErrorMessage(error: unknown, name?: string): string {
       case 'not_found': return ui("This item no longer exists")
       case 'file_system_folder': return ui("This folder is built in and cannot be renamed, moved, trashed, or recolored")
       case 'file_chat_copy': return ui("Chats cannot be copied here; duplicate them from the chat menu")
+      case 'url_import_invalid': return ui("Enter a full web address, like https://example.com")
+      case 'url_import_not_https': return ui("Only https:// links can be imported")
+      case 'url_import_credentials': return ui("Links with a username or password cannot be imported")
+      case 'url_import_failed': return ui("This page could not be imported. Check the link and try again.")
+      case 'url_import_unavailable': return ui("Importing from a URL is not available")
       case 'file_shortcut_to_shortcut': return ui("Create a shortcut to the item this shortcut opens instead")
       default: return error.message
     }

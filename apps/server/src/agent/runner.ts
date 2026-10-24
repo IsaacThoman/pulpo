@@ -37,9 +37,7 @@ import { basename } from 'node:path'
 import { storeToolImagePreview } from '../attachments/tool-image-preview.js'
 import { storeGeneratedAttachment } from '../attachments/generated.js'
 import type { AttachmentTimelineItem } from './timeline.js'
-import { KagiClient } from './kagi.js'
-import { createWebTools, type WebProviderExecution } from './web-tools.js'
-import { FirecrawlClient, firecrawlCloudRequiresApiKey } from './firecrawl.js'
+import { createWebProviderClients, createWebTools, type WebProviderExecution } from './web-tools.js'
 import { createModelImageInterceptor, interceptAgentContextImages } from '../responses/image-ocr.js'
 import { agentSummaryContext, agentSummaryText, completeAgentSummary, createAgentCompactor, interruptedCompactionItems, type AgentRequestFrame } from './compaction.js'
 import { hardContextLimit, summaryMaxOutputTokens } from '../compaction/policy.js'
@@ -725,18 +723,8 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     await snapshotIfDue()
   }
   const webProviderExecutions = new Map<string, WebProviderExecution>()
-  const firecrawlApiKey = webToolsSettings.encryptedFirecrawlApiKey
-    ? decryptSecret(webToolsSettings.encryptedFirecrawlApiKey, config.ENCRYPTION_KEY)
-    : undefined
   const configuredWebTools = createWebTools({
-    clients: {
-      ...(webToolsSettings.encryptedKagiApiKey ? {
-        kagi: new KagiClient(decryptSecret(webToolsSettings.encryptedKagiApiKey, config.ENCRYPTION_KEY)),
-      } : {}),
-      ...((firecrawlApiKey || !firecrawlCloudRequiresApiKey(webToolsSettings.firecrawl.baseUrl)) ? {
-        firecrawl: new FirecrawlClient(webToolsSettings.firecrawl.baseUrl, firecrawlApiKey),
-      } : {}),
-    },
+    clients: createWebProviderClients(webToolsSettings, config.ENCRYPTION_KEY),
     settings: webToolsSettings,
     maxOutputBytes: settings.maxToolOutputBytes,
     onOperationStarted: markToolStarted,
