@@ -5,6 +5,7 @@ import {
   autoTopUpSettingsSchema,
   availableBillingBalanceMicros,
   billingLimitPercentage,
+  customLimitSummary,
   dailySpendSummary,
   fiveHourSummaryPercentages,
   isCreditOrderReason,
@@ -151,5 +152,20 @@ describe('daily spend summary', () => {
     expect(dailySpendSummary({ ...spend, limitMicros: 0, remainingMicros: 0, limitOverridden: true })).toMatchObject({ remainingPercentage: 0, availableBarPercentage: 0 })
     expect(dailySpendSummary({ ...spend, limitMicros: null, remainingMicros: null })).toBeNull()
     expect(dailySpendSummary(null)).toBeNull()
+  })
+})
+
+describe('custom limit summaries', () => {
+  it('shows percentages, reserved usage within the remaining limit, and model names', () => {
+    const summary = customLimitSummary({
+      id: 'limit-1', name: 'Opus daily', period: 'daily', limitMicros: 1_000_000, modelIds: ['opus', 'gone'],
+      spentMicros: 700_000, pendingMicros: 500_000, remainingMicros: 0,
+      resetAt: new Date('2026-10-23T00:00:00.000Z'), freesAt: null,
+    }, new Map([['opus', 'Claude Opus']]))
+    expect(summary).toEqual({
+      id: 'limit-1', name: 'Opus daily', period: 'daily', models: ['Claude Opus', 'gone'],
+      remainingPercentage: 0, availableBarPercentage: 0, pendingMicros: 300_000, pendingBarPercentage: 30,
+      resetsAt: '2026-10-23T00:00:00.000Z',
+    })
   })
 })

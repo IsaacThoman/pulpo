@@ -146,6 +146,7 @@ export function PersonalPage() {
             className="w-full sm:w-60 sm:border-r sm:pr-6"
             weekly={billingQuery.data?.weekly ?? null}
             fiveHour={billingQuery.data?.fiveHour ?? null}
+            custom={billingQuery.data?.customLimits}
           />
           <div className="text-right">
             <div className="mb-1 text-xs text-muted-foreground">{activity?.balanceKind === 'pool' ? ui("Balance (pooled)") : ui("Balance")}</div>
