@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { AlertTriangle, CreditCard, ExternalLink, Gauge, Minus, Pencil, Plus, RefreshCw, Repeat2, SlidersHorizontal, Trash2, UsersRound, WalletCards } from 'lucide-react'
+import { AlertTriangle, ChartColumn, CreditCard, ExternalLink, Gauge, Minus, Pencil, Plus, RefreshCw, Repeat2, Search, SlidersHorizontal, Trash2, UsersRound, WalletCards } from 'lucide-react'
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, matchByDataKey } from 'recharts'
 import { apiRequest } from '@/lib/api'
 import { formatBalance, formatDate } from '@/lib/format'
@@ -606,10 +606,27 @@ interface CustomLimit {
   target: CustomLimitTarget
   plans: BillingPlan[]
   userIds: string[]
+  sharePercent: number
   enabled: boolean
 }
 
 type CustomLimitInput = Omit<CustomLimit, 'id'>
+
+interface CustomLimitUsage {
+  limitMicros: number
+  sharedLimitMicros: number
+  resetsAt: string | null
+  data: Array<{
+    userId: string
+    name: string
+    email: string
+    usedMicros: number
+    ownSpentMicros: number
+    sharedSpentMicros: number
+    pendingMicros: number
+    remainingMicros: number
+  }>
+}
 
 const CUSTOM_LIMIT_PERIODS: CustomLimitPeriod[] = ['five_hour', 'daily', 'weekly']
 const BILLING_PLANS: BillingPlan[] = ['baby', 'eight', 'fat']
@@ -627,6 +644,7 @@ function customLimitInput(limit: CustomLimit): CustomLimitInput {
 
 function CustomLimitsPanel() {
   const [editing, setEditing] = useState<CustomLimit | 'new' | null>(null)
+  const [viewing, setViewing] = useState<CustomLimit | null>(null)
   const [message, setMessage] = useState('')
   const limitsQuery = useQuery({
     queryKey: ['admin-billing-custom-limits'],
@@ -685,7 +703,7 @@ function CustomLimitsPanel() {
       extra={<Button size="sm" variant="outline" onClick={() => setEditing('new')}><Plus />{ui("Add limit")}</Button>}
     >
       <div className="space-y-3 px-3 py-3">
-        <p className="text-xs text-muted-foreground">{ui("Each limit caps what the users it covers spend on its models within its period, whether plan usage, credits, or a pool pays. Users see the percentage left with their other limits on the billing page. Admins are exempt unless you choose them as specific users.")}</p>
+        <p className="text-xs text-muted-foreground">{ui("Each limit gives the users it covers an allowance for its models within its period. It is spent before plan usage, shared pool usage, and credits, which take over once it runs out, and it does not count toward the daily usage tier cap. Pool members can draw the shared percentage of a member's allowance. Users see the percentage left with their other limits on the billing page.")}</p>
         {limitsQuery.isError && <p className="text-xs text-destructive">{ui("Could not load custom limits.")}</p>}
         {limits.length ? (
           <div className="overflow-x-auto">
@@ -697,6 +715,7 @@ function CustomLimitsPanel() {
                   <th className="px-2 py-1.5 font-normal">{ui("Period")}</th>
                   <th className="px-2 py-1.5 font-normal">{ui("Models")}</th>
                   <th className="px-2 py-1.5 font-normal">{ui("Applies to")}</th>
+                  <th className="px-2 py-1.5 text-right font-normal">{ui("Shared")}</th>
                   <th className="px-2 py-1.5 font-normal">{ui("Enabled")}</th>
                   <th className="px-2 py-1.5 font-normal" />
                 </tr>
@@ -709,8 +728,10 @@ function CustomLimitsPanel() {
                     <td className="px-2 py-1.5">{customLimitPeriodLabel(limit.period)}</td>
                     <td className="max-w-56 truncate px-2 py-1.5">{limit.modelIds.length ? limit.modelIds.map(modelName).join(', ') : ui("All models")}</td>
                     <td className="max-w-48 truncate px-2 py-1.5">{audience(limit)}</td>
+                    <td className="px-2 py-1.5 text-right tabular-nums">{limit.sharePercent ? `${limit.sharePercent}%` : '—'}</td>
                     <td className="px-2 py-1.5"><Switch checked={limit.enabled} aria-label={ui("Enable {{name}}", { name: limit.name })} onCheckedChange={(enabled) => void toggle(limit, enabled)} /></td>
                     <td className="whitespace-nowrap px-2 py-1.5 text-right">
+                      <Button size="icon-sm" variant="ghost" aria-label={ui("Usage of {{name}}", { name: limit.name })} title={ui("Usage")} onClick={() => setViewing(limit)}><ChartColumn /></Button>
                       <Button size="icon-sm" variant="ghost" aria-label={ui("Edit {{name}}", { name: limit.name })} onClick={() => setEditing(limit)}><Pencil /></Button>
                       <Button size="icon-sm" variant="ghost" aria-label={ui("Delete {{name}}", { name: limit.name })} onClick={() => void remove(limit)}><Trash2 /></Button>
                     </td>
@@ -729,7 +750,73 @@ function CustomLimitsPanel() {
         onSave={(input) => save(editing === 'new' ? null : editing.id, input)}
         onClose={() => setEditing(null)}
       />}
+      {viewing && <CustomLimitUsageDialog limit={viewing} onClose={() => setViewing(null)} />}
     </Panel>
+  )
+}
+
+function CustomLimitUsageDialog({ limit, onClose }: { limit: CustomLimit; onClose: () => void }) {
+  const [query, setQuery] = useState('')
+  const usageQuery = useQuery({
+    queryKey: ['admin-billing-custom-limit-usage', limit.id],
+    queryFn: ({ signal }) => apiRequest<CustomLimitUsage>(`/api/admin/billing/custom-limits/${limit.id}/usage`, { signal }),
+  })
+  const needle = query.trim().toLowerCase()
+  const rows = (usageQuery.data?.data ?? []).filter((row) => !needle || row.name.toLowerCase().includes(needle) || row.email.toLowerCase().includes(needle))
+  const money = (micros: number) => formatBalance(micros / 1_000_000)
+  const resetsAt = usageQuery.data?.resetsAt
+
+  return (
+    <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
+      <DialogContent className="sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>{ui("Usage of “{{name}}”", { name: limit.name })}</DialogTitle>
+          <DialogDescription>
+            {limit.period === 'five_hour'
+              ? ui("Spending from each user's {{amount}} allowance in the last 5 hours.", { amount: money(limit.limitMicros) })
+              : ui("Spending from each user's {{amount}} allowance this period, which resets {{date}}.", {
+                amount: money(limit.limitMicros),
+                date: resetsAt ? new Date(resetsAt).toLocaleString(activeLocale(), { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—',
+              })}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input className="pl-8" placeholder={ui("Search users…")} value={query} onChange={(event) => setQuery(event.target.value)} />
+        </div>
+        {usageQuery.isError && <p className="text-xs text-destructive">{ui("Could not load usage.")}</p>}
+        {usageQuery.isPending ? <p className="text-xs text-muted-foreground">{ui("Loading usage…")}</p> : rows.length ? (
+          <div className="max-h-96 overflow-auto">
+            <table className="data-table min-w-max text-xs">
+              <thead>
+                <tr className="border-b text-left text-muted-foreground">
+                  <th className="px-2 py-1.5 font-normal">{ui("User")}</th>
+                  <th className="px-2 py-1.5 text-right font-normal">{ui("Used")}</th>
+                  {limit.sharePercent > 0 && <th className="px-2 py-1.5 text-right font-normal">{ui("By pool members")}</th>}
+                  <th className="px-2 py-1.5 text-right font-normal">{ui("Reserved")}</th>
+                  <th className="px-2 py-1.5 text-right font-normal">{ui("Left")}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {rows.map((row) => (
+                  <tr key={row.userId}>
+                    <td className="max-w-56 px-2 py-1.5">
+                      <div className="truncate">{row.name}</div>
+                      <div className="truncate text-muted-foreground">{row.email}</div>
+                    </td>
+                    <td className="px-2 py-1.5 text-right tabular-nums">{money(row.usedMicros)} / {money(limit.limitMicros)}</td>
+                    {limit.sharePercent > 0 && <td className="px-2 py-1.5 text-right tabular-nums">{money(row.sharedSpentMicros)}</td>}
+                    <td className="px-2 py-1.5 text-right tabular-nums">{row.pendingMicros > 0 ? money(row.pendingMicros) : '—'}</td>
+                    <td className="px-2 py-1.5 text-right tabular-nums">{money(row.remainingMicros)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : !usageQuery.isError && <p className="text-xs text-muted-foreground">{needle ? ui("No matching users.") : ui("Nobody has used this allowance yet this period.")}</p>}
+        {limit.target !== 'users' && <p className="text-xs text-muted-foreground">{ui("Users who haven't used it this period aren't listed; they have the full allowance.")}</p>}
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -748,6 +835,7 @@ function CustomLimitDialog({ limit, models, directory, onSave, onClose }: {
   const [target, setTarget] = useState<CustomLimitTarget>(limit?.target ?? 'everyone')
   const [plans, setPlans] = useState<BillingPlan[]>(limit?.plans ?? [])
   const [userIds, setUserIds] = useState(limit?.userIds ?? [])
+  const [sharePercent, setSharePercent] = useState(String(limit?.sharePercent ?? 0))
   const [enabled, setEnabled] = useState(limit?.enabled ?? true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -763,7 +851,9 @@ function CustomLimitDialog({ limit, models, directory, onSave, onClose }: {
           ? ui("Choose at least one plan.")
           : target === 'users' && !userIds.length
             ? ui("Choose at least one user.")
-            : null
+            : !/^\d+$/.test(sharePercent.trim()) || Number(sharePercent) > 100
+              ? ui("Enter a shared percentage from 0 to 100.")
+              : null
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -772,7 +862,7 @@ function CustomLimitDialog({ limit, models, directory, onSave, onClose }: {
     setError('')
     try {
       await onSave({
-        name: name.trim(), period, limitMicros, enabled, target,
+        name: name.trim(), period, limitMicros, enabled, target, sharePercent: Number(sharePercent),
         modelIds: allModels ? [] : modelIds,
         plans: target === 'plans' ? plans : [],
         userIds: target === 'users' ? userIds : [],
@@ -790,7 +880,7 @@ function CustomLimitDialog({ limit, models, directory, onSave, onClose }: {
         <form onSubmit={(event) => void submit(event)} className="space-y-4">
           <DialogHeader>
             <DialogTitle>{limit ? ui("Edit custom limit") : ui("Add custom limit")}</DialogTitle>
-            <DialogDescription>{ui("Cap spending on some or all models for everyone, a subscription plan, or specific users.")}</DialogDescription>
+            <DialogDescription>{ui("Give everyone, a subscription plan, or specific users an allowance for some or all models, spent before plan usage and credits.")}</DialogDescription>
           </DialogHeader>
           <div className="space-y-1.5">
             <Label htmlFor="custom-limit-name">{ui("Name")}</Label>
@@ -858,6 +948,14 @@ function CustomLimitDialog({ limit, models, directory, onSave, onClose }: {
               directory={directory}
               onChange={setUserIds}
             />}
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="custom-limit-share">{ui("Shared with pool members")}</Label>
+            <div className="relative w-32">
+              <Input id="custom-limit-share" className="w-full pr-7 tabular-nums" type="number" min="0" max="100" step="1" value={sharePercent} onChange={(event) => setSharePercent(event.target.value)} />
+              <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">%</span>
+            </div>
+            <p className="text-xs text-muted-foreground">{ui("Pool members can draw this share of each covered user's allowance for the same models.")}</p>
           </div>
           <label className="flex cursor-pointer items-center justify-between gap-3 text-sm">
             {ui("Enabled")}

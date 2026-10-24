@@ -13,7 +13,7 @@ interface SubscriptionUsageBarsProps {
   /** Shown only to Fat subscribers; not extra usage, just the part of weekly usage pool members can draw on. */
   shared?: BillingSummary['shared']
   sharedWeeklyPercent?: number
-  /** Admin-defined limits that cover this account. */
+  /** Admin-defined allowances this account spends first. */
   custom?: CustomLimitSummary[]
   compact?: boolean
   className?: string
@@ -39,11 +39,19 @@ export function SubscriptionUsageBars({ weekly, fiveHour, shared = null, sharedW
         limit={limit}
         compact={compact}
         showResetDate={limit.period === 'weekly'}
-        hint={limit.models.length ? ui("Applies to {{models}}", { models: limit.models.join(', ') }) : undefined}
+        hint={customLimitHint(limit)}
         resetNote={limit.period === 'five_hour' ? ui("Rolling 5-hour window") : undefined}
       />)}
     </div>
   )
+}
+
+function customLimitHint(limit: CustomLimitSummary): string | undefined {
+  const hints = [
+    limit.models.length ? ui("Applies to {{models}}", { models: limit.models.join(', ') }) : null,
+    limit.sharePercent ? ui("Pool members can use up to {{percent}}% of it", { percent: limit.sharePercent }) : null,
+  ].filter((hint): hint is string => hint !== null)
+  return hints.length ? hints.join(' · ') : undefined
 }
 
 export function SubscriptionUsageBar({ label, limit, compact, showResetDate = false, hint, resetNote }: { label: string; limit: UsageLimit; compact: boolean; showResetDate?: boolean; hint?: string; resetNote?: string }) {
