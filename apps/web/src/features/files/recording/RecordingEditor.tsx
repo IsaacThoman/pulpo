@@ -168,10 +168,14 @@ export function RecordingEditor({ recording, editable, layout }: {
       .catch(() => setNotice(ui("The transcript couldn't be copied")))
   }
 
-  // Space plays and pauses, the arrows move, S marks a skip, and R records, unless typing.
+  // Space plays and pauses, the arrows move, S marks a skip, and R records: from within the
+  // recording, or with nothing focused, but not while typing or working in a view beside it.
+  const root = useRef<HTMLDivElement>(null)
   const shortcuts = useRef<(event: KeyboardEvent) => void>(() => undefined)
   shortcuts.current = (event) => {
     if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey || isEditableTarget(event.target)) return
+    const target = event.target instanceof Node ? event.target : null
+    if (target && target !== document.body && !root.current?.contains(target)) return
     const key = event.key.toLowerCase()
     if (key === ' ' && !(event.target instanceof HTMLButtonElement)) {
       if (recordingActive) return
@@ -404,7 +408,7 @@ export function RecordingEditor({ recording, editable, layout }: {
 
   return (
     // Side by side, the player and the transcript scroll on their own; stacked, the page scrolls.
-    <div className={cn('flex min-h-0 flex-1 flex-col overflow-y-auto', wide && 'lg:flex-row lg:overflow-hidden')}>
+    <div ref={root} className={cn('flex min-h-0 flex-1 flex-col overflow-y-auto', wide && 'lg:flex-row lg:overflow-hidden')}>
       <div className={cn('min-w-0 shrink-0', wide ? 'p-4 sm:p-6 lg:flex-1 lg:shrink lg:overflow-y-auto' : 'p-4')}>
         {notice && (
           <div role="alert" className="mx-auto mb-4 flex max-w-3xl items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">

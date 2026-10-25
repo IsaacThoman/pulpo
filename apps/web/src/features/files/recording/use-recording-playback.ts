@@ -21,30 +21,42 @@ function loaded(element: HTMLAudioElement, signal: AbortSignal): Promise<void> {
   })
 }
 
-/** A take's audio in an audio element, from a local copy so seeking never waits on the network. */
-export async function webClipAudio(audio: Blob, signal: AbortSignal): Promise<RecordingClipAudio> {
+/**
+ * A take's audio, from a local copy so seeking never waits on the network. Every take plays in
+ * the same audio element, swapping its source: Safari only lets an element play without a click
+ * once a click has started it, so a new element per take would stop at the second take.
+ */
+export function webClipAudio(audio: Blob, element: HTMLAudioElement, signal: AbortSignal): RecordingClipAudio {
   const url = URL.createObjectURL(audio)
-  const element = new Audio()
-  element.preload = 'auto'
-  element.preservesPitch = true
-  element.src = url
-  try {
+  const active = () => element.src === url
+  const activate = async () => {
+    if (active()) return
+    element.src = url
     await loaded(element, signal)
-  } catch (error) {
-    URL.revokeObjectURL(url)
-    throw error
   }
   return {
-    play: () => element.play(),
-    pause: () => element.pause(),
-    seek: (seconds) => { element.currentTime = seconds },
-    currentTime: () => element.currentTime,
-    ended: () => element.ended,
-    setRate: (rate) => { element.playbackRate = rate },
+    play: async () => {
+      await activate()
+      await element.play()
+    },
+    pause: () => { if (active()) element.pause() },
+    seek: async (seconds) => {
+      await activate()
+      element.currentTime = seconds
+    },
+    currentTime: () => active() ? element.currentTime : 0,
+    ended: () => active() && element.ended,
+    setRate: (rate) => {
+      // Loading another take resets the rate to the default one, so that changes too.
+      element.defaultPlaybackRate = rate
+      element.playbackRate = rate
+    },
     dispose: () => {
-      element.pause()
-      element.removeAttribute('src')
-      element.load()
+      if (active()) {
+        element.pause()
+        element.removeAttribute('src')
+        element.load()
+      }
       URL.revokeObjectURL(url)
     },
   }
@@ -52,10 +64,15 @@ export async function webClipAudio(audio: Blob, signal: AbortSignal): Promise<Re
 
 /** Plays a recording's takes as one; the controller follows the recording as it changes. */
 export function useRecordingPlayback(recordingId: string, timeline: RecordingTimeline) {
-  const [playback] = useState(() => new RecordingPlayback({
-    load: async (clip, signal) => webClipAudio(await fetchRecordingClipBlob(recordingId, clip.id, signal), signal),
-    errorMessage: (error) => filesErrorMessage(error),
-  }))
+  const [playback] = useState(() => {
+    const element = new Audio()
+    element.preload = 'auto'
+    element.preservesPitch = true
+    return new RecordingPlayback({
+      load: async (clip, signal) => webClipAudio(await fetchRecordingClipBlob(recordingId, clip.id, signal), element, signal),
+      errorMessage: (error) => filesErrorMessage(error),
+    })
+  })
   useEffect(() => playback.setTimeline(timeline), [playback, timeline])
   useEffect(() => () => playback.dispose(), [playback])
   const state = useSyncExternalStore(playback.subscribe, playback.getSnapshot)
