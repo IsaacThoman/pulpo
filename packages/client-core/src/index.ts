@@ -534,7 +534,7 @@ export class PulpoManagementClient {
 export * from "./composer-sync.js"
 export * from './chat-started.js'
 
-export { initialActivityTiming } from './activity-timing.js'
+export { collapseIntermediateReplies, collapsedWorkDurationMs, initialActivityTiming, type IntermediateReplyStep } from './activity-timing.js'
 export * from "./shelf.js"
 
 export * from './dictation.js'

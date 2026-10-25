@@ -18,7 +18,7 @@ import { setComposerSelection } from '../features/chat/composerSelection';
 import { ToolImagePreview } from '../components/ToolImagePreview';
 import { localComposerDraftId, mergePendingAttachments } from '@pulpo/client-core';
 import { DevicesScreen } from '../components/Devices';
-import { initialActivityTiming } from '@pulpo/client-core';
+import { collapseIntermediateReplies, collapsedWorkDurationMs, initialActivityTiming } from '@pulpo/client-core';
 import { mobileShelf, durableShelfAttachments, shelfComposerAttachments } from '../features/chat/shelf';
 import { useAppTheme } from './src/theme';
 import { MaterialSearchField, MaterialSuggestionButton, MaterialNavigationRow, MaterialButton, MaterialContextMenu, MaterialIconButton, MaterialLoading, MaterialMenu, type Action as MaterialAction } from '../platform/MaterialUI';
@@ -293,7 +293,7 @@ import {
   type HistoryChatExpiryMenuAction,
   type HistoryChatSummary,
 } from '../features/chat/history';
-import { activityDurationMs, buildLegacyMessageTimeline, buildMessageTimeline, completedActivityLabel, timelineActivityIsActive, workspaceIsActive, type TimelineStep } from '../features/chat/timeline';
+import { activityDurationMs, buildLegacyMessageTimeline, buildMessageTimeline, completedActivityLabel, timelineActivityIsActive, workspaceIsActive, type TimelineSegment, type TimelineStep } from '../features/chat/timeline';
 import { toolActivityPresentation } from '../features/chat/toolActivityPresentation';
 import { CHAT_RESUME_FOLLOW_THRESHOLD, CHAT_SCROLL_TO_BOTTOM_THRESHOLD, type ChatViewportMetrics, chatBottomDistance, chatLandingKeyboardTranslation, chatKeyboardBlankSpace, isNearChatBottom, resolveKeyboardLayoutProgress, shouldFollowChatContent, shouldResumeChatFollow } from '../features/chat/viewport';
 import {
@@ -3543,6 +3543,9 @@ function WorkBlock({ steps, active, durationMs, initialWork, onOpenChat }: {
             if (step.kind === 'reasoning') {
               return <SafeMarkdown selectable={Platform.OS !== 'android'} compact key={`reasoning:${index}`} streaming={step.active}>{step.text || (step.active ? 'Thinking…' : '')}</SafeMarkdown>;
             }
+            if (step.kind === 'message') {
+              return <SafeMarkdown selectable={Platform.OS !== 'android'} compact key={`message:${index}`}>{step.text}</SafeMarkdown>;
+            }
             if (step.kind === 'workspace') {
               const detail = step.workspace.error ?? step.workspace.state?.replaceAll('_', ' ') ?? 'Workspace';
               const failed = ['expired', 'unavailable'].includes(step.workspace.state ?? '');
@@ -3689,7 +3692,7 @@ const MessageRow = memo(function MessageRow({
     continueWithoutAgentAvailableAt,
     streaming && capacityWorkspace?.state === 'waiting',
   );
-  const timeline = useMemo(() => {
+  const responseTimeline = useMemo((): TimelineSegment[] => {
     if (message.role !== 'assistant') return [];
     if (message.outputItems?.length) return buildMessageTimeline(message.outputItems, showReasoning);
     return buildLegacyMessageTimeline({
@@ -3700,9 +3703,20 @@ const MessageRow = memo(function MessageRow({
       reasoningDurationMs: message.thinkSeconds === undefined ? undefined : message.thinkSeconds * 1000,
     });
   }, [message.outputItems, message.reasoning, message.role, message.text, message.thinkSeconds, showReasoning, streaming]);
+  // Interim replies stay inline while streaming, then fold into the work before the final reply.
+  const timeline: TimelineSegment[] = useMemo(
+    () => streaming ? responseTimeline : collapseIntermediateReplies(responseTimeline),
+    [responseTimeline, streaming],
+  );
+  const collapsedWork = timeline !== responseTimeline ? timeline[0] : undefined;
   const elapsedMs = useElapsedMs(responseStartedAt, streaming && message.role === 'assistant', message.latencyMs);
   const initialActivity = initialActivityTiming(timeline);
-  const initialDurationMs = message.initialResponseDurationMs;
+  const initialDurationMs = collapsedWork?.kind === 'activity'
+    ? collapsedWorkDurationMs(collapsedWork.steps, {
+      requestReceivedAt: message.requestReceivedAt,
+      initialDurationMs: message.initialResponseDurationMs,
+    })
+    : message.initialResponseDurationMs;
   const activitySegments = timeline.filter((segment) => segment.kind === 'activity');
   const firstTextTimelineIndex = timeline.findIndex((segment) => segment.kind === 'text');
   const lastActivityTimelineIndex = timeline.reduce(
@@ -3771,7 +3785,7 @@ const MessageRow = memo(function MessageRow({
                         && (!streaming || activityFinishedDuringStream);
                       return <WorkBlock
                         active={active}
-                        initialWork={initial ? initialActivity.worked : undefined}
+                        initialWork={initial ? collapsedWork !== undefined || initialActivity.worked : undefined}
                         durationMs={initial ? initialDurationMs : segmentDurationMs ?? (useResponseDurationFallback
                           ? streamingFallbackDurationMs ?? elapsedMs
                           : undefined)}
