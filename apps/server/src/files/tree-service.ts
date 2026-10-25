@@ -2,7 +2,7 @@ import { and, asc, desc, eq, inArray, isNotNull, isNull, lt, ne, sql, type SQL }
 import { FILE_TREE_MAX_DEPTH, isMarkdownName, nextAvailableName, type FileColor, type FileIcon, type FileListing, type FileNode, type FileNodeKind, type FileSystemRole, type StateInvalidationScope } from '@pulpo/contracts'
 import { assertStorageCapacity } from '../attachments/storage-quota.js'
 import { db } from '../database/client.js'
-import { chats, fileNodes, fileVersions, userPreferences } from '../database/schema.js'
+import { chats, fileNodes, fileRecordingClips, fileVersions, userPreferences } from '../database/schema.js'
 import { bumpAccountRevisions, publishScopedStateChanges, type AccountRevisionChange } from '../friends/sync.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
@@ -474,7 +474,7 @@ export async function listTrashedFolder(userId: string, id: string): Promise<Fil
 
 /**
  * Permanently deletes items and everything below them, live or trashed, inside a tree
- * transaction. Stored objects (current contents and kept versions) go before rows so a failed
+ * transaction. Stored objects (current contents, kept versions, and recordings' takes) go before rows so a failed
  * purge can be retried without orphaning blobs; a transaction that does more work after the
  * purge passes `deferredKeys` instead and deletes them after commit, so a rollback never leaves
  * rows without their objects. Returns the purged document ids so open editors can be closed
@@ -489,10 +489,12 @@ export async function purgeNodesInTx(tx: DatabaseTransaction, userId: string, ro
     .where(and(eq(fileNodes.ownerUserId, userId), inArray(fileNodes.id, [...ids])))
   const versions = await tx.select({ key: fileVersions.objectKey }).from(fileVersions)
     .where(and(eq(fileVersions.userId, userId), inArray(fileVersions.nodeId, [...ids])))
-  const keys = [...rows.flatMap((row) => row.key ?? []), ...versions.map((version) => version.key)]
+  const takes = await tx.select({ key: fileRecordingClips.objectKey }).from(fileRecordingClips)
+    .where(and(eq(fileRecordingClips.userId, userId), inArray(fileRecordingClips.nodeId, [...ids])))
+  const keys = [...rows.flatMap((row) => row.key ?? []), ...versions.map((version) => version.key), ...takes.map((take) => take.key)]
   if (deferredKeys) deferredKeys.push(...keys)
   else for (const key of keys) await getBlobStore().delete(key)
-  // Children, document state, update logs, versions, and change rows cascade from their nodes.
+  // Children, document state, update logs, versions, takes, and change rows cascade from their nodes.
   await tx.delete(fileNodes).where(and(eq(fileNodes.ownerUserId, userId), inArray(fileNodes.id, rootIds)))
   return rows.filter((row) => row.kind === 'doc').map((row) => row.id)
 }

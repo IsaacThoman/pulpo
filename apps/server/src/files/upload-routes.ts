@@ -18,6 +18,7 @@ import { resolveFileAccess } from './access.js'
 import { parseFileInput, requireFilesUser } from './request.js'
 import { availableName, deleteFileNode, lockFileTree, mutateFileTree, toFileNode } from './tree-service.js'
 import { topSortOrder } from './order.js'
+import { ownedRecordingClipByKey, recordingClipExtension } from './recordings.js'
 
 const idParams = z.object({ id: z.uuid() })
 
@@ -143,9 +144,11 @@ export async function registerFileUploadRoutes(app: FastifyInstance): Promise<vo
     if (getConfig().STORAGE_DRIVER !== 'local') throw notFound('Download')
     const { key } = request.params as { key: string }
     const node = await ownedBlobByKey(user.id, key, 'ready')
-    if (!node) throw notFound('File')
-    reply.type(node.mimeType ?? 'application/octet-stream')
-      .header('content-disposition', fileContentDisposition('attachment', node.name))
+    // A voice recording's takes are stored under Files too.
+    const take = node ? null : await ownedRecordingClipByKey(user.id, key)
+    if (!node && !take) throw notFound('File')
+    reply.type(node?.mimeType ?? take!.mimeType)
+      .header('content-disposition', fileContentDisposition('attachment', node?.name ?? `take.${recordingClipExtension(take!.mimeType)}`))
       .header('x-content-type-options', 'nosniff')
     return reply.send(await getBlobStore().getStream(key))
   })

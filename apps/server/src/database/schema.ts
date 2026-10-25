@@ -898,7 +898,7 @@ export const fileNodes = pgTable('file_nodes', {
   index('file_nodes_owner_parent_idx').on(table.ownerUserId, table.parentId).where(sql`${table.trashedAt} is null`),
   index('file_nodes_owner_trash_idx').on(table.ownerUserId, table.trashRootId).where(sql`${table.trashedAt} is not null`),
   index('file_nodes_object_key_idx').on(table.objectKey),
-  check('file_nodes_kind_check', sql`${table.kind} in ('folder', 'doc', 'blob', 'shortcut')`),
+  check('file_nodes_kind_check', sql`${table.kind} in ('folder', 'doc', 'blob', 'shortcut', 'recording')`),
   // Shortcuts have exactly one target; nothing else has one.
   check('file_nodes_shortcut_check', sql`num_nonnulls(${table.targetNodeId}, ${table.targetChatId}) = case when ${table.kind} = 'shortcut' then 1 else 0 end`),
   index('file_nodes_target_chat_idx').on(table.targetChatId).where(sql`${table.targetChatId} is not null`),
@@ -911,6 +911,37 @@ export const fileNodes = pgTable('file_nodes', {
   // The Sidebar folder is the sidebar itself, so it cannot be pinned there.
   check('file_nodes_pinned_check', sql`not ${table.pinned} or ${table.systemRole} is distinct from 'chats'`),
   index('file_nodes_owner_pinned_idx').on(table.ownerUserId).where(sql`${table.pinned}`),
+])
+
+/**
+ * The takes of a voice recording (`file_nodes.kind = 'recording'`), played in `position` order.
+ * Each holds its audio object, waveform, transcript, and the parts of it playback skips. The
+ * recording's `size_bytes` is the sum of its takes', so they count toward the owner's storage.
+ */
+export const fileRecordingClips = pgTable('file_recording_clips', {
+  id: uuid('id').primaryKey(),
+  nodeId: uuid('node_id').notNull().references(() => fileNodes.id, { onDelete: 'cascade' }),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  position: integer('position').notNull(),
+  objectKey: text('object_key').notNull(),
+  mimeType: text('mime_type').notNull(),
+  sizeBytes: bigint('size_bytes', { mode: 'number' }).notNull(),
+  checksum: text('checksum'),
+  durationMs: integer('duration_ms').notNull(),
+  levels: jsonb('levels').$type<number[]>().notNull().default([]),
+  skips: jsonb('skips').$type<Array<{ startMs: number; endMs: number }>>().notNull().default([]),
+  transcriptStatus: text('transcript_status').notNull(),
+  transcript: jsonb('transcript').$type<Array<{ startMs: number; endMs: number; text: string }>>().notNull().default([]),
+  transcriptError: text('transcript_error'),
+  recordedAt: timestamp('recorded_at', { withTimezone: true }).notNull(),
+  ...timestamps,
+}, (table) => [
+  uniqueIndex('file_recording_clips_node_position_unique').on(table.nodeId, table.position),
+  uniqueIndex('file_recording_clips_object_key_unique').on(table.objectKey),
+  index('file_recording_clips_user_idx').on(table.userId),
+  check('file_recording_clips_size_check', sql`${table.sizeBytes} >= 0`),
+  check('file_recording_clips_duration_check', sql`${table.durationMs} > 0`),
+  check('file_recording_clips_transcript_status_check', sql`${table.transcriptStatus} in ('pending', 'ready', 'failed', 'unavailable')`),
 ])
 
 /** Collaborative document state: a compacted Yjs update plus Markdown derived from it. */

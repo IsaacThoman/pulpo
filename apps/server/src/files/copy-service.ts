@@ -4,7 +4,7 @@ import { DOC_SCHEMA_VERSION, ydocToMarkdown } from '@pulpo/client-core/doc-schem
 import { FILE_TREE_MAX_DEPTH, nextAvailableName, type FileNode } from '@pulpo/contracts'
 import { assertStorageCapacity, lockAccountStorage } from '../attachments/storage-quota.js'
 import { db } from '../database/client.js'
-import { fileDocs, fileNodes } from '../database/schema.js'
+import { fileDocs, fileNodes, fileRecordingClips } from '../database/schema.js'
 import { bumpAccountRevisions, publishScopedStateChanges } from '../friends/sync.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
@@ -22,6 +22,7 @@ import {
   treeTooDeep,
 } from './tree-service.js'
 import { topSortOrder } from './order.js'
+import { RECORDING_COPIED_PENDING, recordingClipKey } from './recordings.js'
 
 type DatabaseTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
 
@@ -58,8 +59,9 @@ function docMarkdown(state: Uint8Array): string {
  * Copies items (with their contents) into `parentId`, keeping both when names clash.
  *
  * Folders and documents are written in one transaction that also reserves storage. Uploaded
- * files are inserted as pending, copied in the object store after commit, then marked ready,
- * so a failed object copy never leaves a visible file without bytes.
+ * files and recordings are inserted as pending, copied in the object store after commit, then
+ * marked ready (a recording's takes are written then too), so a failed object copy never leaves
+ * a visible file without bytes.
  */
 export async function copyFileNodes(userId: string, ids: string[], parentId: string | null): Promise<FileNode[]> {
   const planned = await db.transaction(async (tx) => {
@@ -83,6 +85,7 @@ export async function copyFileNodes(userId: string, ids: string[], parentId: str
     const rootIds: string[] = []
     let top = await topSortOrder(tx, userId, parentId)
     const blobCopies: Array<{ id: string; source: string; target: string }> = []
+    const recordingCopies: Array<{ id: string; takes: Array<{ source: string; row: typeof fileRecordingClips.$inferInsert }> }> = []
     for (const tree of trees) {
       for (const node of tree) {
         const id = newId()
@@ -97,7 +100,7 @@ export async function copyFileNodes(userId: string, ids: string[], parentId: str
         await tx.insert(fileNodes).values({
           id, ownerUserId: userId, parentId: root ? parentId : newIds.get(node.parentId!)!,
           kind: node.kind, name, mimeType: node.mimeType, sizeBytes: node.sizeBytes,
-          checksum: node.checksum, objectKey, status: node.kind === 'blob' ? 'pending' : 'ready',
+          checksum: node.checksum, objectKey, status: node.kind === 'blob' || node.kind === 'recording' ? 'pending' : 'ready',
           // A copied shortcut still opens the same item.
           targetNodeId: node.targetNodeId, targetChatId: node.targetChatId,
           color: node.color, icon: node.icon,
@@ -111,9 +114,21 @@ export async function copyFileNodes(userId: string, ids: string[], parentId: str
           })
         }
         if (objectKey) blobCopies.push({ id, source: node.objectKey!, target: objectKey })
+        if (node.kind === 'recording') {
+          const takes = await tx.select().from(fileRecordingClips).where(eq(fileRecordingClips.nodeId, node.id))
+          recordingCopies.push({
+            id,
+            takes: takes.map(({ createdAt: _createdAt, updatedAt: _updatedAt, ...take }) => {
+              const takeId = newId()
+              // A transcript still being made belongs to the original; the copy's can be made again.
+              const transcript = take.transcriptStatus === 'pending' ? { transcriptStatus: 'failed', transcriptError: RECORDING_COPIED_PENDING } : {}
+              return { source: take.objectKey, row: { ...take, ...transcript, id: takeId, nodeId: id, objectKey: recordingClipKey(userId, id, takeId) } }
+            }),
+          })
+        }
       }
     }
-    return { rootIds, blobCopies, changes: await bumpAccountRevisions(tx, [userId]) }
+    return { rootIds, blobCopies, recordingCopies, changes: await bumpAccountRevisions(tx, [userId]) }
   })
   await publishScopedStateChanges(planned.changes, ['files'])
 
@@ -127,7 +142,26 @@ export async function copyFileNodes(userId: string, ids: string[], parentId: str
       failed.push(blob.id)
     }
   }
+  // A recording is ready once all of its takes are copied; their rows are written with it.
+  const copiedRecordings: typeof planned.recordingCopies = []
+  for (const recording of planned.recordingCopies) {
+    const stored: string[] = []
+    try {
+      for (const take of recording.takes) {
+        await getBlobStore().copy(take.source, take.row.objectKey)
+        stored.push(take.row.objectKey)
+      }
+      copied.push(recording.id)
+      copiedRecordings.push(recording)
+    } catch {
+      for (const key of stored) await getBlobStore().delete(key).catch(() => undefined)
+      failed.push(recording.id)
+    }
+  }
   const nodes = await mutateFileTree(userId, async (tx) => {
+    for (const recording of copiedRecordings) {
+      if (recording.takes.length) await tx.insert(fileRecordingClips).values(recording.takes.map((take) => take.row))
+    }
     if (copied.length) {
       await tx.update(fileNodes).set({ status: 'ready', updatedAt: new Date() })
         .where(and(eq(fileNodes.ownerUserId, userId), inArray(fileNodes.id, copied)))

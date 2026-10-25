@@ -28,6 +28,10 @@ export interface FileDocJob {
   nodeId: string
 }
 
+export interface FileRecordingJob {
+  clipId: string
+}
+
 const connection = { url: getConfig().REDIS_URL }
 
 export const generationQueue = new Queue<GenerationJob>('generation', {
@@ -82,4 +86,10 @@ export const analyticsQueue = new Queue<AnalyticsJob>('analytics', {
 export const fileDocQueue = new Queue<FileDocJob>('file-docs', {
   connection,
   defaultJobOptions: { attempts: 3, backoff: { type: 'exponential', delay: 2_000 }, removeOnComplete: true, removeOnFail: 1_000 },
+})
+
+/** Transcribes the takes of voice recordings. Rate-limited or failed provider calls are retried. */
+export const fileRecordingQueue = new Queue<FileRecordingJob>('file-recordings', {
+  connection,
+  defaultJobOptions: { attempts: 3, backoff: { type: 'exponential', delay: 15_000 }, removeOnComplete: true, removeOnFail: 1_000 },
 })

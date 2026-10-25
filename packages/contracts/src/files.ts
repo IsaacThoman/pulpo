@@ -64,8 +64,10 @@ export function nextAvailableName(desired: string, takenLowercase: ReadonlySet<s
  * `chat` items are chats filed in a folder. They are listed beside files and can be moved,
  * renamed, and trashed with them, but they live in the chats table, not the Files tree.
  * `shortcut` items open another item (a folder, file, or chat) from wherever they are placed.
+ * `recording` items are voice recordings: takes of audio played one after another, each with
+ * its transcript (see recordings.ts).
  */
-export const fileNodeKindSchema = z.enum(['folder', 'doc', 'blob', 'chat', 'shortcut'])
+export const fileNodeKindSchema = z.enum(['folder', 'doc', 'blob', 'chat', 'shortcut', 'recording'])
 export const fileNodeStatusSchema = z.enum(['pending', 'ready'])
 
 /**
@@ -122,7 +124,7 @@ export const fileNodeSchema = z.object({
   suggestion: z.object({ changeId: z.uuid() }).nullable().optional(),
   /** What a shortcut opens. `available` is false while the target is in the trash. */
   target: z.object({
-    kind: z.enum(['folder', 'doc', 'blob', 'chat']),
+    kind: z.enum(['folder', 'doc', 'blob', 'chat', 'recording']),
     id: z.uuid(),
     name: z.string(),
     mimeType: z.string().nullable(),
@@ -422,7 +424,7 @@ export interface FileChangeSummary {
   nodeId: string
   /** The item's current name; it may since have been renamed. */
   name: string
-  nodeKind: 'folder' | 'doc' | 'blob'
+  nodeKind: 'folder' | 'doc' | 'blob' | 'recording'
   mimeType: string | null
   kind: FileChangeKind
   mode: 'write' | 'suggest'

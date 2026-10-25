@@ -6,7 +6,7 @@ vi.mock('./bootstrap/ci-preview.js', () => ({ ensureBootstrapPreset: vi.fn() }))
 vi.mock('./redis.js', () => ({ redis: {}, createRedis: () => ({ quit: vi.fn() }) }))
 vi.mock('./jobs.js', () => ({
   generationQueue: {}, codexLoginQueue: {}, maintenanceQueue: {}, embeddingQueue: {},
-  payloadRetentionQueue: {}, analyticsQueue: {}, fileDocQueue: {},
+  payloadRetentionQueue: {}, analyticsQueue: {}, fileDocQueue: {}, fileRecordingQueue: {},
 }))
 
 import { buildApp } from './app.js'

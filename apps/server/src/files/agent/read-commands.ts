@@ -1,10 +1,12 @@
 import { Readable } from 'node:stream'
 import { and, asc, eq, inArray } from 'drizzle-orm'
+import { recordingTranscriptText } from '@pulpo/client-core/files'
 import { FILE_TREE_MAX_DEPTH } from '@pulpo/contracts'
 import { db } from '../../database/client.js'
 import { fileChanges } from '../../database/schema.js'
 import { getBlobStore } from '../../storage/index.js'
 import type { FileNodeRow } from '../access.js'
+import { recordingClipRows, toRecordingClip } from '../recordings.js'
 import { parsePlace } from './changes.js'
 import { formatSize, joinPath, type CommandContext, type CommandOutput } from './command-context.js'
 import { readProposedMarkdown } from './docs.js'
@@ -46,7 +48,7 @@ async function pendingNotes(ctx: CommandContext, nodes: FileNodeRow[]): Promise<
 
 function describeNode(ctx: CommandContext, node: FileNodeRow, notes: Map<string, string[]>): string {
   const parts = node.kind === 'folder' ? ['folder'] : [
-    node.kind === 'doc' ? 'Markdown document' : node.mimeType ?? 'file',
+    node.kind === 'doc' ? 'Markdown document' : node.kind === 'recording' ? 'voice recording; cat prints its transcript' : node.mimeType ?? 'file',
     formatSize(node.sizeBytes),
     `updated ${node.updatedAt.toISOString().slice(0, 10)}`,
   ]
@@ -89,7 +91,7 @@ export async function treeCommand(ctx: CommandContext, args: { path?: string; de
   let truncated = false
   for (const start of starts) {
     if (lines.length >= TREE_LIMIT) break
-    lines.push(`${start.path || 'My files'}${start.node?.kind === 'doc' || start.node?.kind === 'blob' ? '' : '/'}`)
+    lines.push(`${start.path || 'My files'}${start.node?.kind === 'doc' || start.node?.kind === 'blob' || start.node?.kind === 'recording' ? '' : '/'}`)
     if (start.node && start.node.kind !== 'folder') continue
     const walked = await walkTree(ctx.userId, { id: start.node?.id ?? null, path: start.path }, {
       maxDepth: args.depth ?? 3, maxNodes: Math.max(0, TREE_LIMIT - lines.length),
@@ -113,6 +115,8 @@ async function readBlobText(key: string): Promise<string> {
  */
 async function agentText(ctx: CommandContext, node: FileNodeRow): Promise<string | null> {
   if (node.kind === 'doc') return readProposedMarkdown(node.id)
+  // What the user kept: the parts they marked to skip are left out.
+  if (node.kind === 'recording') return recordingTranscriptText((await recordingClipRows(db, node.id)).map((row) => toRecordingClip(row)), { omitSkipped: true })
   const view = await agentBlobView(db, ctx.chatId, node, () => modeFor(ctx.scope, node.id))
   if (!readsAsText(node.name, view.mimeType) || view.sizeBytes > TEXT_READ_LIMIT_BYTES) return null
   try {
@@ -122,7 +126,7 @@ async function agentText(ctx: CommandContext, node: FileNodeRow): Promise<string
   }
 }
 
-/** `cat <path>`: a document's Markdown or a text file. */
+/** `cat <path>`: a document's Markdown, a text file, or a voice recording's transcript. */
 export async function catCommand(ctx: CommandContext, args: { path: string }): Promise<CommandOutput> {
   const located = await locateExisting(ctx.scope, args.path)
   if (!located.node || located.node.kind === 'folder') throw new FilesCommandError(`"${located.path || 'My files'}" is a folder; list it with pulpo files ls`)

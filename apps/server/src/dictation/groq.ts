@@ -11,6 +11,8 @@ export class GroqTranscriptionError extends Error {
 export interface GroqTranscript {
   text: string
   durationSeconds: number
+  /** Timed pieces of the transcript, in seconds from the start of the audio. */
+  segments: Array<{ start: number; end: number; text: string }>
 }
 
 export async function transcribeWithGroq(input: {
@@ -36,7 +38,7 @@ export async function transcribeWithGroq(input: {
   const body = await response.json().catch(() => null) as {
     text?: unknown
     duration?: unknown
-    segments?: Array<{ end?: unknown }>
+    segments?: Array<{ start?: unknown; end?: unknown; text?: unknown }>
     error?: { message?: unknown }
   } | null
   if (!response.ok) {
@@ -48,5 +50,11 @@ export async function transcribeWithGroq(input: {
   const segmentDuration = Math.max(0, ...(body.segments ?? []).map((segment) => typeof segment.end === 'number' ? segment.end : 0))
   const durationSeconds = Number.isFinite(reportedDuration) && reportedDuration > 0 ? reportedDuration : segmentDuration
   if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) throw new GroqTranscriptionError('Groq returned invalid audio duration', 502)
-  return { text: body.text.trim(), durationSeconds }
+  const segments = (body.segments ?? []).flatMap((segment) => (
+    typeof segment.start === 'number' && typeof segment.end === 'number' && typeof segment.text === 'string'
+      && Number.isFinite(segment.start) && Number.isFinite(segment.end)
+      ? [{ start: Math.max(0, segment.start), end: Math.max(segment.start, segment.end), text: segment.text.trim() }]
+      : []
+  ))
+  return { text: body.text.trim(), durationSeconds, segments }
 }
