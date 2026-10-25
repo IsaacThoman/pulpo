@@ -247,6 +247,7 @@ import { filesQueryKeys, lookUpFileNode } from '../features/files/queries';
 import { fileChangesItem } from '@pulpo/client-core/files';
 import { FileDocumentScreen } from '../features/files/screens/FileDocumentScreen';
 import { FileMarkdownScreen } from '../features/files/screens/FileMarkdownScreen';
+import { FileRecordingScreen } from '../features/files/screens/FileRecordingScreen';
 import { FilesFolderScreen } from '../features/files/screens/FilesFolderScreen';
 import { timeAgo } from '../features/chat/format';
 import {
@@ -1700,6 +1701,7 @@ function PrototypeRoot() {
         <RootStack.Screen name="FilesFolder" component={FilesFolderScreen} options={{ headerShown: Platform.OS === 'ios', headerLargeTitle: true, title: 'My files' }} />
         <RootStack.Screen name="FileDocument" component={FileDocumentScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Document' }} />
         <RootStack.Screen name="FileMarkdown" component={FileMarkdownScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Markdown' }} />
+        <RootStack.Screen name="FileRecording" component={FileRecordingScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Voice Recording' }} />
       </RootStack.Navigator>
     </NavigationContainer>
   );
@@ -2440,7 +2442,8 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   const openNewDocumentFromHistory = useCallback((node: FileNode) => {
     animatePanel(false);
     Keyboard.dismiss();
-    navigation.push('FileDocument', { fileId: node.id, name: node.name, created: true });
+    if (node.kind === 'recording') navigation.push('FileRecording', { fileId: node.id, name: node.name });
+    else navigation.push('FileDocument', { fileId: node.id, name: node.name, created: true });
   }, [animatePanel, navigation]);
 
   const openFileItemFromHistory = useCallback((node: FileNode) => {
@@ -6534,6 +6537,7 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
   /** Opens a folder, file, or shortcut from the drawer. */
   onOpenFileItem: (node: FileNode) => void;
   /** Opens a document just created from the drawer, ready to write in. */
+  /** A document or voice recording just created from the sidebar's menu. */
   onOpenNewDocument: (node: FileNode) => void;
   onPreviewRequest: (chatId: string) => void;
 }) {
@@ -6765,6 +6769,12 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
     const created = await fileOperations.createDocument(sidebar.chatsFolderId, listings.get(sidebar.chatsFolderId) ?? []);
     if (created) onOpenNewDocument(created);
   }, [dismissSearch, fileOperations, listings, onOpenNewDocument, sidebar]);
+  const newRecording = useCallback(async () => {
+    if (!sidebar) return;
+    dismissSearch();
+    const created = await fileOperations.createRecording(sidebar.chatsFolderId);
+    if (created) onOpenNewDocument(created);
+  }, [dismissSearch, fileOperations, onOpenNewDocument, sidebar]);
   const upload = useCallback(async (source: 'photos' | 'camera' | 'files') => {
     if (!sidebar || !filesNamespace) return;
     dismissSearch();
@@ -6904,10 +6914,11 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
     canCreate={sidebar !== undefined}
     onNewFolder={() => newFolder(null)}
     onNewDocument={() => { void newDocument(); }}
+    onNewRecording={() => { void newRecording(); }}
     onUpload={(source) => { void upload(source); }}
     onOrderChange={(order) => usePrototypeStore.getState().setPreference('chatSortMode', order)}
     onOpenInFiles={openSidebarInFiles}
-  /> : <Text style={styles.sectionLabel}>{section.title}</Text>, [chatSortMode, filesEnabled, newDocument, newFolder, openSidebarInFiles, sidebar, styles, upload]);
+  /> : <Text style={styles.sectionLabel}>{section.title}</Text>, [chatSortMode, filesEnabled, newDocument, newFolder, newRecording, openSidebarInFiles, sidebar, styles, upload]);
   /**
    * Where a chat or item being moved is now: a folder, null for the top of the sidebar, or
    * undefined for the top of My files, outside the sidebar.

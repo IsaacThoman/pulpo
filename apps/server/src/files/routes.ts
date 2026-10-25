@@ -26,6 +26,7 @@ import {
   updateFileNode,
 } from './tree-service.js'
 import { registerFileUploadRoutes } from './upload-routes.js'
+import { registerRecordingRoutes } from './recording-routes.js'
 import { importUrlAsDoc } from './url-import.js'
 import { listTrashedFiles } from '../trash/service.js'
 import { getFolderLayout, normalizeInput, updateFolderLayout } from './layout-service.js'
@@ -221,4 +222,5 @@ export async function registerFileRoutes(app: FastifyInstance): Promise<void> {
   })
 
   await registerFileUploadRoutes(app)
+  await registerRecordingRoutes(app)
 }

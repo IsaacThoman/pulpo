@@ -167,6 +167,10 @@ export function FilesFolderScreen({ navigation, route }: Props) {
     const created = await operations.createDocument(folderId, children)
     if (created) navigation.push('FileDocument', { fileId: created.id, name: created.name, created: true })
   }, [children, folderId, navigation, operations])
+  const newRecording = useCallback(async () => {
+    const created = await operations.createRecording(folderId)
+    if (created) navigation.push('FileRecording', { fileId: created.id, name: created.name })
+  }, [folderId, navigation, operations])
   const upload = useCallback(async (source: 'photos' | 'camera' | 'files') => {
     try {
       const picked = await pickUploads(source)
@@ -387,6 +391,7 @@ export function FilesFolderScreen({ navigation, route }: Props) {
     menu: {
       items: [
         { type: 'action', label: 'New Document', icon: { type: 'sfSymbol', name: 'doc.badge.plus' }, onPress: () => { void newDocument() } },
+        { type: 'action', label: 'New Voice Recording', icon: { type: 'sfSymbol', name: 'mic.badge.plus' }, onPress: () => { void newRecording() } },
         { type: 'action', label: 'New Folder', icon: { type: 'sfSymbol', name: 'folder.badge.plus' }, onPress: newFolder },
         {
           type: 'submenu',
@@ -485,6 +490,7 @@ export function FilesFolderScreen({ navigation, route }: Props) {
         right={<View style={styles.androidActions}>
           {inTrash ? null : <MaterialIconButton icon="plus" label="Add" onPress={() => showActions('Add', [
             { label: 'New document', icon: 'doc.badge.plus', onPress: () => { void newDocument() } },
+            { label: 'New voice recording', icon: 'mic.badge.plus', onPress: () => { void newRecording() } },
             { label: 'New folder', icon: 'folder.badge.plus', onPress: newFolder },
             { label: 'Photo library', icon: 'photo.on.rectangle', onPress: () => { void upload('photos') } },
             { label: 'Take photo', icon: 'camera', onPress: () => { void upload('camera') } },
@@ -575,12 +581,18 @@ export function FilesFolderScreen({ navigation, route }: Props) {
         <View style={styles.empty}>
           <SymbolView name={search ? 'magnifyingglass' : 'folder'} size={44} tintColor={theme.tertiary} />
           <Text style={[styles.emptyTitle, { color: theme.text }]}>{search ? 'No matches' : 'This folder is empty'}</Text>
-          {!search ? <Text style={[styles.emptyBody, { color: theme.secondary }]}>Create a document or folder, or upload photos and files.</Text> : null}
+          {!search ? <Text style={[styles.emptyBody, { color: theme.secondary }]}>Create a document, voice recording, or folder, or upload photos and files.</Text> : null}
           {!search ? (
-            <Pressable accessibilityRole="button" onPress={() => { void newDocument() }} style={[styles.emptyButton, { backgroundColor: theme.fillStrong }]} testID="files-empty-new-document">
-              <SymbolView name="doc.badge.plus" size={17} tintColor={theme.blue} />
-              <Text style={[styles.emptyButtonLabel, { color: theme.blue }]}>New Document</Text>
-            </Pressable>
+            <View style={styles.emptyButtons}>
+              <Pressable accessibilityRole="button" onPress={() => { void newDocument() }} style={[styles.emptyButton, { backgroundColor: theme.fillStrong }]} testID="files-empty-new-document">
+                <SymbolView name="doc.badge.plus" size={17} tintColor={theme.blue} />
+                <Text style={[styles.emptyButtonLabel, { color: theme.blue }]}>New Document</Text>
+              </Pressable>
+              <Pressable accessibilityRole="button" onPress={() => { void newRecording() }} style={[styles.emptyButton, { backgroundColor: theme.fillStrong }]} testID="files-empty-new-recording">
+                <SymbolView name="mic.badge.plus" size={17} tintColor={theme.blue} />
+                <Text style={[styles.emptyButtonLabel, { color: theme.blue }]}>New Voice Recording</Text>
+              </Pressable>
+            </View>
           ) : null}
         </View>
       )}
@@ -674,6 +686,7 @@ const styles = StyleSheet.create({
   empty: { alignItems: 'center', paddingTop: 80, paddingHorizontal: 32, gap: 10 },
   emptyTitle: { fontSize: 20, fontWeight: '600', textAlign: 'center' },
   emptyBody: { fontSize: 15, lineHeight: 21, textAlign: 'center' },
+  emptyButtons: { alignItems: 'center' },
   emptyButton: { marginTop: 10, flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 20, paddingHorizontal: 18, paddingVertical: 10 },
   emptyButtonLabel: { fontSize: 16, fontWeight: '600' },
   retry: { marginTop: 8, padding: 8 },

@@ -10,6 +10,7 @@ export const MODE_LABELS: Record<FileAccessMode, string> = {
 
 function describeKind(node: FileNodeRow): string {
   if (node.kind === 'folder') return 'folder, with everything inside it'
+  if (node.kind === 'recording') return 'voice recording; cat prints its transcript'
   return node.kind === 'doc' ? 'Markdown document' : 'uploaded file'
 }
 
@@ -29,7 +30,7 @@ export function describeFileScope(scope: FileScope): string {
     'The user attached these items from their Files to this chat:',
     ...lines,
     `${start} Work with them through the \`pulpo files\` command in bash; run \`pulpo files --help\` for details:`,
-    '  pulpo files ls|tree [path]         list items          pulpo files cat <path>    print a document or text file',
+    '  pulpo files ls|tree [path]         list items          pulpo files cat <path>    print a document, text file, or transcript',
     '  pulpo files grep <pattern> [path]  search text         pulpo files pull <path>   copy into /workspace/files/<path>',
     '  pulpo files status                 local changes       pulpo files push [path]   save changes back to Files',
     '  pulpo files mkdir|mv|rm            folders, moves and renames, trash',

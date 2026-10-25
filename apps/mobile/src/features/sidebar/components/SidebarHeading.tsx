@@ -19,6 +19,7 @@ interface Props {
   canCreate: boolean
   onNewFolder: () => void
   onNewDocument: () => void
+  onNewRecording: () => void
   onUpload: (source: UploadSource) => void
   onOrderChange: (order: SidebarOrder) => void
   onOpenInFiles: () => void
@@ -31,9 +32,10 @@ const ORDERS: ReadonlyArray<{ value: SidebarOrder; label: string }> = [
 
 /**
  * The heading above the drawer's chats, as on the web: a New Folder button, and a menu with what
- * the web offers on the sidebar's empty space (new document, upload, sort order, open in Files).
+ * the web offers on the sidebar's empty space (new document or voice recording, upload, sort
+ * order, open in Files).
  */
-export function SidebarHeading({ title, titleStyle, order, filesEnabled, canCreate, onNewFolder, onNewDocument, onUpload, onOrderChange, onOpenInFiles }: Props) {
+export function SidebarHeading({ title, titleStyle, order, filesEnabled, canCreate, onNewFolder, onNewDocument, onNewRecording, onUpload, onOrderChange, onOpenInFiles }: Props) {
   const theme = useAppTheme()
   const creates = canCreate && filesEnabled
   const setOrder = (next: string) => {
@@ -65,6 +67,7 @@ export function SidebarHeading({ title, titleStyle, order, filesEnabled, canCrea
             modifiers={[accessibilityLabel('Chat list options')]}
           >
             {creates ? <SwiftUIButton label="New Document" systemImage="doc.badge.plus" onPress={onNewDocument} /> : null}
+            {creates ? <SwiftUIButton label="New Voice Recording" systemImage="mic.badge.plus" onPress={onNewRecording} /> : null}
             {creates ? (
               <SwiftUIMenu label="Upload" systemImage="square.and.arrow.up">
                 <SwiftUIButton label="Photo Library" systemImage="photo.on.rectangle" onPress={() => onUpload('photos')} />
@@ -89,6 +92,7 @@ export function SidebarHeading({ title, titleStyle, order, filesEnabled, canCrea
   if (creates) {
     sections.push({ id: 'create', actions: [
       { label: 'New document', icon: 'doc.badge.plus', onPress: onNewDocument },
+      { label: 'New voice recording', icon: 'mic.badge.plus', onPress: onNewRecording },
       { label: 'Upload', icon: 'square.and.arrow.up', onPress: () => undefined, submenu: { title: 'Upload', actions: [
         { label: 'Photo library', icon: 'photo.on.rectangle', onPress: () => onUpload('photos') },
         { label: 'Take photo or video', icon: 'camera', onPress: () => onUpload('camera') },

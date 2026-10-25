@@ -9,7 +9,7 @@ describe('Groq transcription client', () => {
     const text = await transcribeWithGroq({
       apiKey: 'groq-secret', audio: new Uint8Array([1, 2, 3]), filename: 'dictation.webm', mimeType: 'audio/webm', fetchImpl: fetch,
     })
-    expect(text).toEqual({ text: 'Hello world.', durationSeconds: 12.1 })
+    expect(text).toEqual({ text: 'Hello world.', durationSeconds: 12.1, segments: [] })
     expect(fetch).toHaveBeenCalledOnce()
     const [url, init] = fetch.mock.calls[0]!
     expect(url).toBe('https://api.groq.com/openai/v1/audio/transcriptions')
@@ -24,7 +24,22 @@ describe('Groq transcription client', () => {
     const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ text: 'Hello', segments: [{ end: 4.2 }, { end: 9.75 }] }), { status: 200 }))
     await expect(transcribeWithGroq({
       apiKey: 'secret', audio: new Uint8Array([1]), filename: 'audio.webm', mimeType: 'audio/webm', fetchImpl: fetch,
-    })).resolves.toEqual({ text: 'Hello', durationSeconds: 9.75 })
+    })).resolves.toEqual({ text: 'Hello', durationSeconds: 9.75, segments: [] })
+  })
+
+  it('keeps the timed segments, trimmed, for recordings', async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      text: 'Hello there. Bye.',
+      duration: 6,
+      segments: [{ start: 0, end: 2.5, text: ' Hello there.' }, { start: 3, end: 2, text: ' Bye. ' }, { start: 'x', end: 4, text: 'bad' }],
+    }), { status: 200 }))
+    await expect(transcribeWithGroq({
+      apiKey: 'secret', audio: new Uint8Array([1]), filename: 'take.webm', mimeType: 'audio/webm', fetchImpl: fetch,
+    })).resolves.toEqual({
+      text: 'Hello there. Bye.',
+      durationSeconds: 6,
+      segments: [{ start: 0, end: 2.5, text: 'Hello there.' }, { start: 3, end: 3, text: 'Bye.' }],
+    })
   })
 
   it('maps provider errors without accepting an invalid transcript', async () => {

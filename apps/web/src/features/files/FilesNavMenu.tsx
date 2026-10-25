@@ -1,6 +1,6 @@
 import { useRef } from 'react'
 import { FILE_SCOPE_ROOT } from '@pulpo/contracts'
-import { FilePlus2, FolderPlus, Link2, PanelRight, SquarePen, Upload } from 'lucide-react'
+import { FilePlus2, FolderPlus, Link2, Mic, PanelRight, SquarePen, Upload } from 'lucide-react'
 import { DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu'
 import { ui } from '@/i18n/ui'
 import { useAuth } from '@/stores/auth'
@@ -30,7 +30,8 @@ export function FilesNavMenu({ point, onClose, go }: {
   return (
     <>
       <FileContextMenu point={point} onClose={onClose}>
-        <DropdownMenuItem onSelect={() => request({ kind: 'newFile' })}><FilePlus2 /> {ui("New file")}</DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => request({ kind: 'newFile' })}><FilePlus2 /> {ui("New document")}</DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => request({ kind: 'newRecording' })}><Mic /> {ui("New voice recording")}</DropdownMenuItem>
         <DropdownMenuItem onSelect={() => request({ kind: 'newFolder' })}><FolderPlus /> {ui("New folder")}</DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={() => fileInput.current?.click()}><Upload /> {ui("Upload files")}</DropdownMenuItem>

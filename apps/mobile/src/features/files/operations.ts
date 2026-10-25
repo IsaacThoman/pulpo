@@ -7,6 +7,7 @@ import {
   copyFileNodes,
   createDoc,
   createFolder,
+  createRecording,
   deleteFileNodes,
   moveFileNodes,
   pinItems,
@@ -79,6 +80,11 @@ export function useFileOperations(namespace: string) {
       /** A new empty document named after `siblings`' free "Untitled.md". */
       async createDocument(parentId: string | null, siblings: readonly FileNode[], name = 'Untitled.md'): Promise<FileNode | undefined> {
         return run(() => createDoc(parentId, uniqueChildName(name, siblings)))
+      },
+
+      /** A new, empty voice recording; the server names it ("Untitled recording", or a free variant). */
+      async createRecording(parentId: string | null): Promise<FileNode | undefined> {
+        return run(() => createRecording(parentId))
       },
 
       /** Resolves false when the rename was refused, so a prompt can offer it again. */

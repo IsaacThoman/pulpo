@@ -1,0 +1,4 @@
+/* Skipped parts of a recording, hatched over the waveform. */
+.pulpo-recording-skip {
+  background-image: repeating-linear-gradient(135deg, transparent 0 4px, rgb(245 158 11 / 0.22) 4px 6px);
+}

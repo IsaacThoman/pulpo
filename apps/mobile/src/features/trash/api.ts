@@ -96,7 +96,7 @@ export function legacyTrashView(chats: readonly TrashedChat[], retention: TrashR
 
 /** The line under a trashed item's name: when it was trashed, when it goes, and a file's size. */
 export function trashItemSubtitle(item: Pick<TrashItem, 'kind' | 'trashedAt' | 'purgeAt' | 'sizeBytes'>, now = Date.now()): string {
-  return [formatModified(item.trashedAt, new Date(now)), trashDeletesLabel(item.purgeAt, now), item.kind === 'blob' ? formatBytes(item.sizeBytes) : null].filter(Boolean).join(' · ')
+  return [formatModified(item.trashedAt, new Date(now)), trashDeletesLabel(item.purgeAt, now), item.kind === 'blob' || item.kind === 'recording' ? formatBytes(item.sizeBytes) : null].filter(Boolean).join(' · ')
 }
 
 /** When a trashed item is deleted for good, relative to `now`. */

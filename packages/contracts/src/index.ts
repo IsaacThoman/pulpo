@@ -2089,4 +2089,5 @@ export interface ServerToClientEvents {
 
 export * from "./shelf.js"
 export * from "./files.js"
+export * from "./recordings.js"
 export * from "./trash.js"

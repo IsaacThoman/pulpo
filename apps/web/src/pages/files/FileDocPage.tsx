@@ -3,8 +3,10 @@ import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ydocToMarkdown } from '@pulpo/client-core/doc-schema'
 import { isMarkdownName, type FileConversionPreview, type FileNode } from '@pulpo/contracts'
-import { ChevronRight, CloudCheck, CloudOff, Download, FolderOpen, HardDrive, Loader2, Pencil, TriangleAlert } from 'lucide-react'
+import { ChevronRight, CloudCheck, CloudOff, Download, FileAudio, FileText, FolderOpen, HardDrive, Loader2, Pencil, TriangleAlert } from 'lucide-react'
+import { recordingTranscriptText } from '@pulpo/client-core/files'
 import { Button } from '@/components/ui/button'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { ui, uit } from '@/i18n/ui'
 import { formatBytes } from '@/lib/attachments'
@@ -31,6 +33,9 @@ import { useSuggestionRecount } from '@/features/files/editor/use-suggestion-rec
 import { FilePreviewBody } from '@/features/files/FilePreview'
 import { FileSuggestionBanner } from '@/features/files/FileSuggestion'
 import { MarkdownConversionDialog } from '@/features/files/MarkdownConversionDialog'
+import { downloadRecordingClip, downloadText } from '@/features/files/recording/api'
+import { RecordingEditor } from '@/features/files/recording/RecordingEditor'
+import { useRecordingQuery } from '@/features/files/recording/use-recording-query'
 import { revealFileInPlace } from '@/features/files/reveal'
 import { PanelWindowButtons } from '@/features/side-panel/PanelControls'
 import { locationIsCurrent, openBeside, panelContentPath, useMainNavigate } from '@/features/side-panel/use-panel-actions'
@@ -212,12 +217,15 @@ function SuggestionBanner({ node, ancestors, view }: { node: FileNode | undefine
   )
 }
 
-/** Title bar shared by every file view; in the side panel it adds full-page and close buttons. */
+/**
+ * Title bar shared by every file view; in the side panel it adds full-page and close buttons.
+ * Without `onDownload` the view puts its own download control among `children`.
+ */
 function FileHeader({ node, ancestors, view, onDownload, children }: {
   node: FileNode | undefined
   ancestors: FileNode[]
   view: FileViewContext
-  onDownload: () => void
+  onDownload?: () => void
   children?: ReactNode
 }) {
   const place = useMemo<FilesViewPlace | null>(() => node ? { layout: view.layout, view: { kind: 'file', id: node.id } } : null, [node, view.layout])
@@ -237,12 +245,14 @@ function FileHeader({ node, ancestors, view, onDownload, children }: {
         </TooltipTrigger>
         <TooltipContent side="bottom">{ui("Show in folder")}</TooltipContent>
       </Tooltip>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button variant="ghost" size="icon-sm" aria-label={ui("Download")} disabled={!node} onClick={onDownload}><Download /></Button>
-        </TooltipTrigger>
-        <TooltipContent side="bottom">{ui("Download")}</TooltipContent>
-      </Tooltip>
+      {onDownload && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button variant="ghost" size="icon-sm" aria-label={ui("Download")} disabled={!node} onClick={onDownload}><Download /></Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">{ui("Download")}</TooltipContent>
+        </Tooltip>
+      )}
       {view.panel ? <PanelWindowButtons content={view.panel} /> : place && <SplitViewButton view={place.view} />}
     </header>
   )
@@ -423,6 +433,61 @@ function BlobFileView({ node, ancestors, view }: { node: FileNode; ancestors: Fi
   )
 }
 
+/** A voice recording: the recorder and player, with its transcript beside them. */
+function RecordingFileView({ userId, fileId, view }: { userId: string; fileId: string; view: FileViewContext }) {
+  const recording = useRecordingQuery(userId, fileId)
+  const nodeQuery = useQuery({ queryKey: fileNodeQueryKey(userId, fileId), queryFn: () => fetchFileNode(fileId) })
+  const [notice, setNotice] = useState<string | null>(null)
+  const node = recording.data?.node ?? nodeQuery.data?.node
+  const ancestors = nodeQuery.data?.ancestors ?? []
+  const trashed = Boolean(node?.trashedAt)
+  const clips = recording.data?.clips ?? []
+  const download = (run: () => Promise<void> | void) => {
+    void (async () => run())().catch((cause: unknown) => setNotice(filesErrorMessage(cause)))
+  }
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <FileHeader node={node} ancestors={ancestors} view={view}>
+        <DropdownMenu>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon-sm" aria-label={ui("Download")} disabled={!node || !clips.length}><Download /></Button>
+              </DropdownMenuTrigger>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">{ui("Download")}</TooltipContent>
+          </Tooltip>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onSelect={() => node && download(() => downloadText(recordingTranscriptText(clips, { title: `# ${node.name}` }), `${node.name}.md`))}>
+              <FileText /> {ui("Transcript")}
+            </DropdownMenuItem>
+            {clips.map((clip, index) => (
+              <DropdownMenuItem key={clip.id} onSelect={() => download(() => downloadRecordingClip(fileId, clip.id))}>
+                <FileAudio /> {clips.length === 1 ? ui("Audio") : uit`Audio of take ${index + 1}`}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </FileHeader>
+      <SuggestionBanner node={node} ancestors={ancestors} view={view} />
+      {(trashed || notice) && (
+        <div role="alert" className={cn('flex items-center gap-2 border-b px-4 py-2 text-sm sm:px-6', trashed ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300' : 'bg-destructive/5 text-destructive')}>
+          <TriangleAlert className="size-4 shrink-0" />
+          <span className="min-w-0 flex-1">{trashed ? ui("This recording is in the trash. Restore it to record or mark skips.") : notice}</span>
+          {trashed && <Button asChild size="sm" variant="outline"><Link to="/files/trash">{ui("Open trash")}</Link></Button>}
+        </div>
+      )}
+      {recording.isPending ? (
+        <div className="grid h-64 place-items-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
+      ) : recording.isError || !recording.data ? (
+        <p className="p-6 text-sm text-destructive">{filesErrorMessage(recording.error)}</p>
+      ) : (
+        <RecordingEditor key={fileId} recording={recording.data} editable={!trashed} layout={view.layout} />
+      )}
+    </div>
+  )
+}
+
 function FileViewMessage({ message, view, back }: { message: string; view: FileViewContext; back: string }) {
   return (
     <div className="grid h-full place-items-center p-8">
@@ -437,7 +502,7 @@ function FileViewMessage({ message, view, back }: { message: string; view: FileV
   )
 }
 
-/** Opens a file by what its name says it is: Markdown is edited, anything else previews. */
+/** Opens a file by what its name says it is: Markdown is edited, recordings play, anything else previews. */
 function FileRoute({ userId, fileId, view }: { userId: string; fileId: string; view: FileViewContext }) {
   const nodeQuery = useQuery({ queryKey: fileNodeQueryKey(userId, fileId), queryFn: () => fetchFileNode(fileId) })
   if (nodeQuery.isPending) return <div className="grid h-full place-items-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
@@ -446,6 +511,7 @@ function FileRoute({ userId, fileId, view }: { userId: string; fileId: string; v
   if (nodeQuery.isError || !node) return <FileViewMessage message={filesErrorMessage(nodeQuery.error)} view={view} back={back} />
   if (node.kind === 'folder') return <FileViewMessage message={ui("Folders open in the Files view.")} view={view} back={`/files/f/${node.id}`} />
   if (node.kind === 'doc') return <OpenDoc key={`doc:${fileId}`} userId={userId} docId={fileId} view={view} />
+  if (node.kind === 'recording') return <RecordingFileView key={`recording:${fileId}`} userId={userId} fileId={fileId} view={view} />
   const ancestors = nodeQuery.data.ancestors
   if (isMarkdownName(node.name)) return <MarkdownFileView key={`md:${fileId}`} node={node} ancestors={ancestors} view={view} />
   return <BlobFileView key={`blob:${fileId}`} node={node} ancestors={ancestors} view={view} />

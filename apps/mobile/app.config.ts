@@ -119,7 +119,7 @@ const config: ExpoConfig = {
     'expo-router',
     'expo-secure-store',
     ['expo-audio', {
-      microphonePermission: 'Allow Pulpo to use the microphone for dictation.',
+      microphonePermission: 'Allow Pulpo to use the microphone for dictation and voice recordings.',
       recordAudioAndroid: true,
       enableBackgroundRecording: false,
       enableBackgroundPlayback: false,
@@ -135,7 +135,7 @@ const config: ExpoConfig = {
       {
         photosPermission: 'Allow Pulpo to attach photos to your chats.',
         cameraPermission: 'Allow Pulpo to take photos to attach to your chats.',
-        microphonePermission: 'Allow Pulpo to use the microphone for dictation.',
+        microphonePermission: 'Allow Pulpo to use the microphone for dictation and voice recordings.',
       },
     ],
     [

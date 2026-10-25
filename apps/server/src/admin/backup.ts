@@ -8,7 +8,7 @@ import { and, eq, getTableName, is, ne, sql } from 'drizzle-orm'
 import { getTableConfig, PgTable } from 'drizzle-orm/pg-core'
 import * as schema from '../database/schema.js'
 import { db } from '../database/client.js'
-import { attachments, backupJobs, catalogIcons, fileNodes, fileVersions, speechModels, users } from '../database/schema.js'
+import { attachments, backupJobs, catalogIcons, fileNodes, fileRecordingClips, fileVersions, speechModels, users } from '../database/schema.js'
 import { getBlobStore } from '../storage/index.js'
 import { deleteRedisKeysByPattern } from '../redis-keys.js'
 import { redis } from '../redis.js'
@@ -86,7 +86,7 @@ export async function createFullBackup(jobId: string, finalAttempt = true): Prom
     }
     temporaryDirectory = await mkdtemp(join(tmpdir(), 'pulpo-backup-'))
     const archivePath = join(temporaryDirectory, `${job.id}.tar.gz`)
-    const { database: rawDatabase, avatarBlobRows, iconRows, speechBlobRows, fileBlobRows } = await db.transaction(async (tx) => {
+    const { database: rawDatabase, avatarBlobRows, iconRows, speechBlobRows, fileBlobRows, recordingBlobRows } = await db.transaction(async (tx) => {
       const database: Record<string, unknown[]> = {}
       for (const [index, table] of FULL_BACKUP_TABLES.entries()) {
         const columns = FULL_BACKUP_EXPLICIT_COLUMNS[table]
@@ -106,6 +106,8 @@ export async function createFullBackup(jobId: string, finalAttempt = true): Prom
         speechBlobRows: (await tx.select({ previews: speechModels.voicePreviews, assets: speechModels.voiceAssets }).from(speechModels)).flatMap(row => [...row.previews, ...row.assets.flatMap(asset => [asset.clone, asset.watermark].filter((blob): blob is NonNullable<typeof blob> => Boolean(blob)))]),
         fileBlobRows: await tx.select({ objectKey: fileNodes.objectKey, checksum: fileNodes.checksum }).from(fileNodes)
           .where(and(eq(fileNodes.kind, 'blob'), eq(fileNodes.status, 'ready'))),
+        // Takes are stored before their rows are written, so every row has its audio.
+        recordingBlobRows: await tx.select({ objectKey: fileRecordingClips.objectKey, checksum: fileRecordingClips.checksum }).from(fileRecordingClips),
       }
     }, { isolationLevel: 'repeatable read', accessMode: 'read only' })
     const { database, attachmentBlobs } = projectFullBackup(rawDatabase as FullBackupDatabase)
@@ -116,6 +118,7 @@ export async function createFullBackup(jobId: string, finalAttempt = true): Prom
     const blobRows = [
       ...attachmentBlobs,
       ...fileBlobRows.map(row => ({ objectKey: row.objectKey!, checksum: row.checksum })),
+      ...recordingBlobRows,
       ...speechBlobRows.map(row => ({ objectKey: row.objectKey!, checksum: row.checksum })),
       ...avatarBlobRows.map((avatar) => ({ objectKey: avatar.objectKey!, checksum: null })),
       ...iconRows.flatMap((icon) => [
@@ -225,6 +228,9 @@ export async function restoreFullBackup(jobId: string): Promise<void> {
         rootFileNames.set(owner, (rootFileNames.get(owner) ?? new Set()).add(String(row.name).toLowerCase()))
       }
     }
+    for await (const row of restoreRows(tables.get('file_recording_clips'))) {
+      if (typeof row.object_key === 'string') fileBlobKeys.add(row.object_key)
+    }
     const legacyChatFolders = legacyChatFolderRows(await readSmallRestoreTable(tables.get('folders')), rootFileNames, randomUUID)
     for (const [index, blob] of manifest.blobs.entries()) {
       const file = files.get(blob.entry)!
@@ -273,7 +279,7 @@ export async function restoreFullBackup(jobId: string): Promise<void> {
         if (table === 'ocr_attempts' && logCapture.get(String(row.request_log_id)) === false) {
           row.request_payload = null; row.response_payload = null
         }
-        const blobFields = table === 'users' ? ['avatar_object_key'] : table === 'attachments' || table === 'file_nodes' ? ['object_key']
+        const blobFields = table === 'users' ? ['avatar_object_key'] : table === 'attachments' || table === 'file_nodes' || table === 'file_recording_clips' ? ['object_key']
           : table === 'speech_models' ? ['preview_object_key'] : table === 'catalog_icons' ? ['original_object_key', 'monochrome_light_object_key', 'monochrome_dark_object_key'] : []
         for (const field of blobFields) {
           if (row[field] == null) continue
@@ -298,6 +304,7 @@ export async function restoreFullBackup(jobId: string): Promise<void> {
     const oldFileBlobs = await db.select({ key: fileNodes.objectKey }).from(fileNodes).where(sql`${fileNodes.objectKey} is not null`)
     // Kept versions of uploaded files are not in backups; the restore truncates them with their files.
     const oldFileVersionBlobs = await db.select({ key: fileVersions.objectKey }).from(fileVersions)
+    const oldRecordingBlobs = await db.select({ key: fileRecordingClips.objectKey }).from(fileRecordingClips)
     const oldAvatarBlobs = await db.select({ key: users.avatarObjectKey }).from(users).where(sql`${users.avatarObjectKey} is not null`)
     const oldIconRows = await db.select().from(catalogIcons)
     const oldSpeechBlobs = (await db.select({ previews: speechModels.voicePreviews, assets: speechModels.voiceAssets }).from(speechModels)).flatMap(row => [...row.previews, ...row.assets.flatMap(asset => [asset.clone, asset.watermark].filter((blob): blob is NonNullable<typeof blob> => Boolean(blob)))].map(clip => ({ key: clip.objectKey })))
@@ -305,6 +312,7 @@ export async function restoreFullBackup(jobId: string): Promise<void> {
       ...oldAttachmentBlobs,
       ...oldFileBlobs.map(row => ({ key: row.key! })),
       ...oldFileVersionBlobs,
+      ...oldRecordingBlobs,
       ...oldSpeechBlobs.map(row => ({ key: row.key! })),
       ...oldAvatarBlobs.map((avatar) => ({ key: avatar.key! })),
       ...oldIconRows.flatMap((icon) => [

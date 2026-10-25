@@ -39,7 +39,7 @@ export const useAppearanceEditor = create<{ nodes: FileNode[] | null }>()(() => 
 
 /** Whether an item can be given a color and icon: files and folders, not chats or shortcuts. */
 export function hasAppearance(node: Pick<FileNode, 'kind'>): boolean {
-  return node.kind === 'folder' || node.kind === 'doc' || node.kind === 'blob'
+  return node.kind === 'folder' || node.kind === 'doc' || node.kind === 'blob' || node.kind === 'recording'
 }
 
 /** Opens the color and icon dialog for files and folders; anything else among `nodes` is left out. */

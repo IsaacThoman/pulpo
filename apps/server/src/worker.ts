@@ -11,10 +11,11 @@ import { and, inArray, isNull, eq, sql } from 'drizzle-orm'
 import { getConfig } from './config.js'
 import { db } from './database/client.js'
 import { applicationSettings, chats, responses } from './database/schema.js'
-import { analyticsQueue, generationQueue, maintenanceQueue, payloadRetentionQueue, type AnalyticsJob, type CodexLoginJob, type EmbeddingJob, type FileDocJob, type GenerationJob, type MaintenanceJob } from './jobs.js'
+import { analyticsQueue, generationQueue, maintenanceQueue, payloadRetentionQueue, type AnalyticsJob, type CodexLoginJob, type EmbeddingJob, type FileDocJob, type FileRecordingJob, type GenerationJob, type MaintenanceJob } from './jobs.js'
 import { sweepRequestAnalytics } from './analytics/capture.js'
 import { RECENT_ROLLUP_HOURS, refreshAnalyticsRollups } from './analytics/rollups.js'
 import { compactDoc } from './files/doc-store.js'
+import { transcribeRecordingClip } from './files/recordings.js'
 import { cleanupFiles } from './files/tree-service.js'
 import { purgeExpiredDetailedPayloads } from './logging/detailed-payload-retention.js'
 import { processGeneration } from './responses/worker.js'
@@ -163,6 +164,11 @@ const fileDocWorker = new Worker<FileDocJob>('file-docs', async (job) => {
   await compactDoc(job.data.nodeId)
 }, { connection: { url: config.REDIS_URL }, concurrency: 4 })
 
+// Each job is one provider request of up to a few minutes; a few at once keeps takes moving.
+const fileRecordingWorker = new Worker<FileRecordingJob>('file-recordings', async (job) => {
+  await transcribeRecordingClip(job.data.clipId, { finalAttempt: job.attemptsMade + 1 >= (job.opts.attempts ?? 1) })
+}, { connection: { url: config.REDIS_URL }, concurrency: 4 })
+
 const codexLoginWorker = new Worker<CodexLoginJob>('codex-login', async (job) => {
   await processCodexLogin(job.data)
 }, { connection: { url: config.REDIS_URL }, concurrency: 10 })
@@ -226,7 +232,7 @@ for (const response of recoverable) {
 await recoverMessageQueues()
 if ((await readEpisodicMemorySettings()).enabled) await enqueueEpisodicReconciliation()
 
-const workers = [generationWorker, codexLoginWorker, embeddingWorker, maintenanceWorker, payloadRetentionWorker, fileDocWorker, analyticsWorker]
+const workers = [generationWorker, codexLoginWorker, embeddingWorker, maintenanceWorker, payloadRetentionWorker, fileDocWorker, fileRecordingWorker, analyticsWorker]
 await Promise.all(workers.map((worker) => worker.waitUntilReady()))
 let stopping = false
 // Private health endpoint used by Docker/Coolify, never routed publicly.

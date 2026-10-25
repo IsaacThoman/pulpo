@@ -97,6 +97,7 @@ async function pushExisting(ctx: CommandContext, node: FileNodeRow, path: string
   const mode = await modeFor(ctx.scope, node.id)
   if (mode !== 'write' && mode !== 'suggest') return { status: 'denied', message: readOnlyMessage(path), nodeId: node.id }
   if (node.kind === 'folder') throw new FilesCommandError(`"${path}" is a folder; push the files inside it`)
+  if (node.kind === 'recording') throw new FilesCommandError(`"${path}" is a voice recording; it can be renamed or moved, not replaced`)
   if (!item.force) {
     if (!item.base) return { status: 'conflict', nodeId: node.id, message: `"${path}" already exists in Files. Pull it, make your change, and push; push with --force only to replace it` }
     if (item.base.nodeId !== node.id) return { status: 'conflict', nodeId: node.id, message: `"${path}" is now a different item than the one you pulled; pull it again` }

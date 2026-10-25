@@ -1,7 +1,7 @@
-import type { FileChangesResponse, FileListing, FileNode } from '@pulpo/contracts'
+import type { FileChangesResponse, FileListing, FileNode, FileRecording } from '@pulpo/contracts'
 import { queryOptions } from '@tanstack/react-query'
 import { isNetworkError } from '../../api/client'
-import { fetchFileChanges, fetchFileNode, fetchFolder } from './api'
+import { fetchFileChanges, fetchFileNode, fetchFolder, fetchRecording } from './api'
 import { cachedListing, cachedNode, cacheListing, cacheNode, forgetStaleDocCopies } from './cache'
 
 /** Every Files query starts with ['files', namespace], so the `files` realtime scope refreshes them all. */
@@ -11,6 +11,7 @@ export const filesQueryKeys = {
   node: (namespace: string, id: string) => ['files', namespace, 'node', id.toLowerCase()] as const,
   changes: (namespace: string) => ['files', namespace, 'changes'] as const,
   responseChanges: (namespace: string, responseId: string) => ['files', namespace, 'changes', responseId] as const,
+  recording: (namespace: string, id: string) => ['files', namespace, 'recording', id.toLowerCase()] as const,
 }
 
 /** A listing, from the server when reachable; offline, the last one seen on this device. */
@@ -67,3 +68,15 @@ export function fileChangesQuery(namespace: string, responseId: string) {
   })
 }
 
+
+/** How often a recording is fetched again while a take is being transcribed, besides realtime refreshes. */
+export const RECORDING_TRANSCRIPT_POLL_MS = 4_000
+
+/** A voice recording's takes. Refetched while any transcript is still being made. */
+export function recordingQuery(namespace: string, id: string) {
+  return queryOptions({
+    queryKey: filesQueryKeys.recording(namespace, id),
+    queryFn: ({ signal }): Promise<FileRecording> => fetchRecording(id, signal),
+    refetchInterval: (query) => query.state.data?.clips.some((clip) => clip.transcript.status === 'pending') ? RECORDING_TRANSCRIPT_POLL_MS : false,
+  })
+}

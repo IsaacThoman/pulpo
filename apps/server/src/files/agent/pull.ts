@@ -59,11 +59,16 @@ export async function pullCommand(ctx: CommandContext, args: { path: string; des
   const destination = workspacePath(args.dest)
   const located = await locateExisting(ctx.scope, args.path)
   const items: Array<{ node: FileNodeRow; remote: string; local: string }> = []
-  if (located.node && located.node.kind !== 'folder') {
+  let recordings = 0
+  if (located.node?.kind === 'recording') {
+    throw new FilesCommandError(`"${located.path}" is a voice recording; print its transcript with pulpo files cat`)
+  } else if (located.node && located.node.kind !== 'folder') {
     items.push({ node: located.node, remote: located.path, local: destination })
   } else {
     const { nodes, truncated } = await walkTree(ctx.userId, { id: located.node?.id ?? null, path: located.path }, { maxDepth: FILE_TREE_MAX_DEPTH, maxNodes: PULL_MAX_NODES })
-    const files = nodes.filter((item) => item.node.kind !== 'folder')
+    // Recordings are audio the workspace cannot use; their transcripts are read with cat.
+    recordings = nodes.filter((item) => item.node.kind === 'recording').length
+    const files = nodes.filter((item) => item.node.kind !== 'folder' && item.node.kind !== 'recording')
     if (truncated || files.length > PULL_MAX_FILES) {
       throw new FilesCommandError(`"${located.path || 'My files'}" holds more than ${PULL_MAX_FILES} files; pull the folders inside it one at a time`)
     }
@@ -81,5 +86,6 @@ export async function pullCommand(ctx: CommandContext, args: { path: string; des
   const what = located.node && located.node.kind !== 'folder' ? `"${located.path}"` : `${files.length} file${files.length === 1 ? '' : 's'} from "${located.path || 'My files'}"`
   const listed = files.length > 1 ? files.slice(0, 50).map((file) => `  ${file.local}`) : []
   if (files.length > 50) listed.push(`  … and ${files.length - 50} more`)
+  if (recordings) listed.push(`Left out ${recordings} voice recording${recordings === 1 ? '' : 's'}; print a transcript with pulpo files cat`)
   return { output: [files.length ? `Pulled ${what} into ${destination}` : `"${located.path || 'My files'}" has no files to pull`, ...listed].join('\n'), data: { files } }
 }
