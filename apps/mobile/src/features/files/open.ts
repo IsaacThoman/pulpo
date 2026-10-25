@@ -2,12 +2,13 @@ import type { FileNode } from '@pulpo/contracts'
 import { useNavigation } from '@react-navigation/native'
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack'
 import * as Sharing from 'expo-sharing'
+import { recordingTranscriptText } from '@pulpo/client-core/files'
 import { useCallback } from 'react'
-import { Alert } from 'react-native'
+import { Alert, Share } from 'react-native'
 import { create } from 'zustand'
 import type { RootStackParamList } from '../../mockup5/src/navigation'
 import { openAttachmentFile } from '../../native/openFile'
-import { downloadFile, fetchDocMarkdown, fetchFileNode, markdownExportFile } from './api'
+import { downloadFile, fetchDocMarkdown, fetchFileNode, fetchRecording, markdownExportFile } from './api'
 import { filesErrorMessage } from './display'
 import { fileOpenTarget } from './itemActions'
 
@@ -37,8 +38,15 @@ export async function previewUploadedFile(node: FileNode): Promise<void> {
   await openAttachmentFile(file.uri, node.name, node.mimeType ?? undefined)
 }
 
+/** Shares a voice recording's transcript as text, with timestamps and the skipped parts marked. */
+export async function shareRecordingTranscript(node: Pick<FileNode, 'id' | 'name'>): Promise<void> {
+  const recording = await fetchRecording(node.id)
+  await Share.share({ title: node.name, message: recordingTranscriptText(recording.clips, { title: node.name }) })
+}
+
 /** Shares an uploaded file's bytes, or a document's Markdown (`markdown` from an open editor wins). */
 export async function shareFileItem(node: FileNode, markdown?: string): Promise<void> {
+  if (node.kind === 'recording') return shareRecordingTranscript(node)
   if (!(await Sharing.isAvailableAsync())) throw new Error('Sharing isn’t available on this device.')
   if (node.kind === 'doc') {
     const text = markdown ?? (await fetchDocMarkdown(node.id)).markdown
@@ -60,6 +68,7 @@ export function useOpenFileItem() {
         case 'folder': navigation.push('FilesFolder', { folderId: target.id, name: target.name }); return
         case 'document': navigation.push('FileDocument', { fileId: target.id, name: target.name }); return
         case 'markdown': navigation.push('FileMarkdown', { fileId: target.id, name: target.name }); return
+        case 'recording': navigation.push('FileRecording', { fileId: target.id, name: target.name }); return
         // Back to the one chat screen, which opens the chat (pushing would stack a second one).
         case 'chat': navigation.popTo('Chat', { chatId: target.id }); return
         case 'unavailable': Alert.alert('Can’t open this item', target.reason); return

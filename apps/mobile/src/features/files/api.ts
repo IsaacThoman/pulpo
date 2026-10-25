@@ -3,8 +3,11 @@ import type {
   FileConversionPreview,
   FileListing,
   FileNode,
+  FileRecording,
   FileUploadReservation,
   MoveFileNodes,
+  RecordingClip,
+  RecordingSkipUpdate,
   UpdateFileNode,
 } from '@pulpo/contracts'
 import { attachmentValidationError, retryBusyUpload } from '@pulpo/client-core'
@@ -33,6 +36,85 @@ export function createFolder(parentId: string | null, name: string): Promise<Fil
 
 export function createDoc(parentId: string | null, name: string, markdown?: string): Promise<FileNode> {
   return apiRequest<FileNode>('/api/files/docs', { method: 'POST', body: { parentId, name, markdown } })
+}
+
+/** A new, empty voice recording; the server picks a free name when none is given. */
+export function createRecording(parentId: string | null, name?: string): Promise<FileNode> {
+  return apiRequest<FileNode>('/api/files/recordings', { method: 'POST', body: { parentId, name } })
+}
+
+export function fetchRecording(id: string, signal?: AbortSignal): Promise<FileRecording> {
+  return apiRequest<FileRecording>(`/api/files/${encodeURIComponent(id)}/recording`, { signal })
+}
+
+/** Replaces every skipped part of the recording (see `updateTimelineSkips`). */
+export function updateRecordingSkips(id: string, skips: RecordingSkipUpdate[]): Promise<FileRecording> {
+  return apiRequest<FileRecording>(`/api/files/${id}/recording`, { method: 'PATCH', body: { skips } })
+}
+
+export function deleteRecordingClip(id: string, clipId: string): Promise<FileRecording> {
+  return apiRequest<FileRecording>(`/api/files/${id}/recording/clips/${clipId}`, { method: 'DELETE' })
+}
+
+/** Transcribes a take again after it failed or was recorded while transcription was off. */
+export function retryRecordingTranscript(id: string, clipId: string): Promise<RecordingClip> {
+  return apiRequest<RecordingClip>(`/api/files/${id}/recording/clips/${clipId}/transcribe`, { method: 'POST' })
+}
+
+export interface RecordedTake {
+  uri: string
+  durationMs: number
+  /** Loudness, RECORDING_LEVELS_PER_SECOND times a second, 0–100. */
+  levels: number[]
+  recordedAt: string
+}
+
+/**
+ * Appends a take to the recording. Its metadata goes before the audio, which the server reads
+ * as it arrives; the server converts the audio and measures its length itself.
+ */
+export function uploadRecordingClip(id: string, take: RecordedTake, signal?: AbortSignal): Promise<RecordingClip> {
+  const form = new FormData()
+  form.append('metadata', JSON.stringify({ durationMs: Math.max(1, Math.round(take.durationMs)), levels: take.levels, recordedAt: take.recordedAt }))
+  // SDK 57 uses standards-based fetch; URI descriptors are not multipart Blobs.
+  const audio = new File(take.uri)
+  Object.defineProperties(audio, { type: { value: 'audio/mp4' }, name: { value: 'take.m4a' } })
+  form.append('file', audio, 'take.m4a')
+  // Long takes are converted before the server answers.
+  return apiRequest<RecordingClip>(`/api/files/${id}/recording/clips`, { method: 'POST', body: form, signal, timeoutMs: 180_000 })
+}
+
+const TAKE_EXTENSIONS: Record<string, string> = { 'audio/mp4': 'm4a', 'audio/webm': 'webm', 'audio/ogg': 'ogg', 'audio/wav': 'wav', 'audio/mpeg': 'mp3' }
+const takeDownloads = new Map<string, Promise<File>>()
+
+/** A take's audio on this device. Takes never change, so a downloaded one is kept by its id. */
+export function downloadRecordingClip(recordingId: string, clip: Pick<RecordingClip, 'id' | 'mimeType' | 'sizeBytes'>): Promise<File> {
+  if (!ITEM_ID.test(clip.id) || !ITEM_ID.test(recordingId)) return Promise.reject(new Error('This take’s id isn’t valid.'))
+  const existing = takeDownloads.get(clip.id)
+  if (existing) return existing
+  const pending = (async () => {
+    const directory = new Directory(Paths.cache, 'recording-takes')
+    directory.create({ idempotent: true, intermediates: true })
+    const destination = new File(directory, `${clip.id.toLowerCase()}.${TAKE_EXTENSIONS[clip.mimeType] ?? 'audio'}`)
+    if (destination.exists && destination.size === clip.sizeBytes) return destination
+    if (destination.exists) destination.delete()
+    const { url: rawUrl } = await apiRequest<{ url: string }>(`/api/files/${recordingId}/recording/clips/${clip.id}/download`)
+    const url = apiUrl(rawUrl)
+    return File.downloadFileAsync(url, destination, { idempotent: true, headers: nativeAuthorizationHeaders(url) })
+  })()
+  takeDownloads.set(clip.id, pending)
+  void pending.then(() => takeDownloads.delete(clip.id), () => takeDownloads.delete(clip.id))
+  return pending
+}
+
+/** Removes downloaded takes (signing out). */
+export function clearRecordingDownloads(): void {
+  try {
+    const directory = new Directory(Paths.cache, 'recording-takes')
+    if (directory.exists) directory.delete()
+  } catch {
+    // Nothing to remove.
+  }
 }
 
 export function updateFileNode(id: string, input: UpdateFileNode): Promise<FileNode> {

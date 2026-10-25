@@ -18,4 +18,6 @@ export type RootStackParamList = {
   FileDocument: { fileId: string; name?: string; created?: boolean };
   /** An uploaded Markdown file: read only until it is made editable. */
   FileMarkdown: { fileId: string; name?: string };
+  /** A voice recording: its takes, player, recorder, and transcript. */
+  FileRecording: { fileId: string; name?: string };
 };

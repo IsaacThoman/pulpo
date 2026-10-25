@@ -77,6 +77,7 @@ export function fileIcon(node: IconSubject, fallbackTint = SYSTEM_BLUE): { symbo
   }
   if (kind === 'chat') return { symbol: 'bubble.left.fill', tint: tint ?? '#8E8E93' }
   if (kind === 'doc') return { symbol: 'doc.text.fill', tint: tint ?? SYSTEM_BLUE }
+  if (kind === 'recording') return { symbol: 'waveform', tint: tint ?? '#FF2D55' }
   const mime = (source.mimeType ?? '').toLowerCase()
   const extension = fileExtension(source.name)
   if (mime.startsWith('image/')) return { symbol: 'photo.fill', tint: tint ?? '#34C759' }
@@ -95,6 +96,7 @@ export function fileKindLabel(node: Pick<FileNode, 'kind' | 'name' | 'target'>):
   if (node.kind === 'chat') return 'Chat'
   if (node.kind === 'shortcut') return `Shortcut to ${node.target?.name ?? 'an item'}`
   if (node.kind === 'doc') return 'Document'
+  if (node.kind === 'recording') return 'Voice Recording'
   if (isMarkdownName(node.name)) return 'Markdown'
   const extension = fileExtension(node.name)
   return extension ? `${extension.toUpperCase()} file` : 'File'
@@ -133,6 +135,7 @@ export function fileSubtitle(node: FileNode): string {
   const modified = formatModified(node.updatedAt)
   if (node.kind === 'folder' || node.kind === 'chat') return modified
   if (node.status === 'pending') return 'Uploading…'
+  if (node.kind === 'recording') return [modified, node.sizeBytes ? formatBytes(node.sizeBytes) : 'Nothing recorded yet'].filter(Boolean).join(' · ')
   return [modified, node.kind === 'blob' ? formatBytes(node.sizeBytes) : null].filter(Boolean).join(' · ')
 }
 
@@ -173,6 +176,13 @@ export function filesErrorMessage(error: unknown, name?: string): string {
       case 'file_not_text': return 'This file isn’t plain text, so it can’t be edited.'
       case 'file_not_markdown': return 'Only .md and .markdown files can be edited.'
       case 'not_found': return 'This item no longer exists.'
+      case 'file_trashed': return 'Restore this recording from the trash to change it.'
+      case 'recording_audio_too_large': return 'This take is too large to save. Takes can be up to 25 MB.'
+      case 'recording_audio_type_unsupported':
+      case 'recording_audio_invalid': return 'This take couldn’t be read as audio.'
+      case 'recording_too_many_takes': return 'This recording can’t hold any more takes. Start a new recording.'
+      case 'recording_audio_busy': return 'Saving takes is busy right now. Try again shortly.'
+      case 'dictation_disabled': return 'Transcription is turned off by your administrator.'
       case 'file_system_folder': return 'Built-in folders can’t be renamed, moved, or trashed.'
       case 'file_chat_copy': return 'Chats can’t be copied here. Duplicate them from the chat menu.'
       case 'file_shortcut_to_shortcut': return 'Create a shortcut to the item this shortcut opens instead.'

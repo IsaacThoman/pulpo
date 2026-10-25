@@ -52,6 +52,7 @@ export function fileItemActions(node: FileNode, context: FileItemActionContext):
   if (node.kind !== 'chat') actions.push({ id: 'duplicate', title: 'Duplicate', systemImage: 'plus.square.on.square', section: 2 })
   actions.push({ id: node.pinned ? 'unpin' : 'pin', title: node.pinned ? 'Unpin' : 'Pin', systemImage: node.pinned ? 'pin.slash' : 'pin', section: 2 })
   if ((node.kind === 'blob' || node.kind === 'doc') && node.status === 'ready') actions.push({ id: 'share', title: node.kind === 'doc' ? 'Export…' : 'Share…', systemImage: 'square.and.arrow.up', section: 2 })
+  if (node.kind === 'recording' && node.status === 'ready') actions.push({ id: 'share', title: 'Share Transcript…', systemImage: 'square.and.arrow.up', section: 2 })
   if (context.selectable) actions.push({ id: 'select', title: 'Select', systemImage: 'checkmark.circle', section: 3 })
   actions.push({ id: 'trash', title: node.kind === 'chat' ? 'Delete Chat' : 'Move to Trash', systemImage: 'trash', section: 4, destructive: true })
   return actions
@@ -78,6 +79,7 @@ export type FileOpenTarget =
   | { type: 'folder'; id: string; name: string }
   | { type: 'document'; id: string; name: string }
   | { type: 'markdown'; id: string; name: string }
+  | { type: 'recording'; id: string; name: string }
   /** An uploaded file; `node` is missing behind a shortcut, whose target's details load first. */
   | { type: 'file'; id: string; node?: FileNode }
   | { type: 'chat'; id: string }
@@ -91,12 +93,14 @@ export function fileOpenTarget(node: FileNode): FileOpenTarget {
     if (target.kind === 'folder') return { type: 'folder', id: target.id, name: target.name }
     if (target.kind === 'chat') return { type: 'chat', id: target.id }
     if (target.kind === 'doc') return { type: 'document', id: target.id, name: target.name }
+    if (target.kind === 'recording') return { type: 'recording', id: target.id, name: target.name }
     return isMarkdownName(target.name) ? { type: 'markdown', id: target.id, name: target.name } : { type: 'file', id: target.id }
   }
   if (node.status === 'pending') return { type: 'unavailable', reason: `“${node.name}” is still uploading.` }
   if (node.kind === 'folder') return { type: 'folder', id: node.id, name: node.name }
   if (node.kind === 'chat') return { type: 'chat', id: node.id }
   if (node.kind === 'doc') return { type: 'document', id: node.id, name: node.name }
+  if (node.kind === 'recording') return { type: 'recording', id: node.id, name: node.name }
   if (isMarkdownName(node.name)) return { type: 'markdown', id: node.id, name: node.name }
   return { type: 'file', id: node.id, node }
 }
