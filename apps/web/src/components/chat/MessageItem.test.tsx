@@ -743,6 +743,28 @@ describe('initial server receipt timing', () => {
     expect(markup).not.toContain('Worked for 3 seconds')
   })
 
+  it('folds interim replies into one work block once the response completes', async () => {
+    const { MessageItem } = await import('./MessageItem')
+    const { container } = render(<MessageItem chat={chat} onRegenerate={() => undefined} streaming={false}
+      message={assistant({
+        content: 'Final reply', initialResponseDurationMs: 2_000, requestReceivedAt: '2026-01-01T00:00:00.000Z',
+        outputItems: [
+          { type: 'reasoning', status: 'completed', summary: [{ text: 'Plan' }], durationMs: 1_000 },
+          { type: 'message', content: [{ type: 'output_text', text: 'One sec' }] },
+          { type: 'pulpo_tool', status: 'completed', tool: 'web_search', startedAt: '2026-01-01T00:00:03.000Z', durationMs: 4_000 },
+          { type: 'message', content: [{ type: 'output_text', text: 'Final reply' }] },
+        ],
+      })} />)
+    const triggers = container.querySelectorAll('[data-slot="collapsible-trigger"]')
+    expect(triggers).toHaveLength(1)
+    expect(triggers[0]?.textContent).toContain('Worked for 7 seconds')
+    expect(container.textContent).not.toContain('One sec')
+    expect(container.textContent).toContain('Final reply')
+
+    fireEvent.click(triggers[0]!)
+    expect(container.textContent).toContain('One sec')
+  })
+
   it.each([true, false])('hides timing-only labels with reasoning visibility %s', async (showReasoning) => {
     useSettings.setState({ showReasoning })
     const { MessageItem } = await import('./MessageItem')
@@ -832,6 +854,7 @@ describe('context compaction details', () => {
       streaming={false}
       onRegenerate={() => undefined}
     /></TooltipProvider>)
+    fireEvent.click(view.getByText(/^Worked for/))
     fireEvent.click(view.getByText('Compacted context'))
     return view
   }

@@ -31,6 +31,7 @@ export type TimelineStep =
   | { kind: 'compaction'; compaction: CompactionItem }
   | { kind: 'recall'; recall: RecallItem }
   | { kind: 'cost_limit'; costLimit: CostLimitItem }
+  | { kind: 'message'; text: string }
 
 export type TimelineSegment =
   | { kind: 'activity'; steps: TimelineStep[]; active: boolean }
@@ -208,7 +209,7 @@ export function buildMessageTimeline(output: unknown[], showReasoning: boolean):
 
 export function activityDurationMs(steps: TimelineStep[]): number | undefined {
   const durations = steps.flatMap((step) => {
-    if (step.kind === 'recall' || step.kind === 'cost_limit') return []
+    if (step.kind === 'recall' || step.kind === 'cost_limit' || step.kind === 'message') return []
     if (step.kind === 'reasoning') return step.durationMs === undefined ? [] : [step.durationMs]
     const duration = step.kind === 'tool'
       ? step.tool.durationMs

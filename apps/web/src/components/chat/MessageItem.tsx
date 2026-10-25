@@ -4,7 +4,7 @@ import { SpeechPlayer } from '@/features/speech/SpeechPlayer'
 import { ActionButton } from './ActionButton'
 import { speechPlayback } from '@/features/speech/state'
 import { ToolImagePreview } from './ToolImagePreview'
-import { initialActivityTiming } from '@pulpo/client-core'
+import { collapseIntermediateReplies, collapsedWorkDurationMs, initialActivityTiming } from '@pulpo/client-core'
 import { memo, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from '@/i18n/useAppTranslation'
 import {
@@ -45,6 +45,7 @@ import {
   workspaceIsActive,
   type ActivitySegment,
   type ActivityStep,
+  type MessageStep,
   type ReasoningStep,
   type TimelineSegment,
   type ToolItem,
@@ -393,6 +394,14 @@ function ReasoningStepRow({ step }: { step: ReasoningStep }) {
   )
 }
 
+function MessageStepRow({ step }: { step: MessageStep }) {
+  return (
+    <div className="min-w-0 text-[13px] leading-5 text-foreground/80 [&_p]:my-1 [&_p]:leading-5">
+      <Markdown content={step.text} streaming={false} />
+    </div>
+  )
+}
+
 function recallDate(value: string): string {
   const date = new Date(value)
   return Number.isNaN(date.getTime())
@@ -473,6 +482,7 @@ function ActivityBlock({
     ? lastStep.costLimit
     : undefined
   const hasReasoning = steps.some((step) => step.kind === 'reasoning' && step.text)
+  const hasMessages = steps.some((step) => step.kind === 'message')
   const workspaceBusy = workspaceIsActive(workspace?.state)
   const workspaceFailed = workspaceIsFailed(workspace?.state)
   const isWaiting = workspace?.state === 'waiting'
@@ -500,7 +510,7 @@ function ActivityBlock({
   const needsWorkspaceActions = isWaiting && showWorkspaceActions
   const hasTools = tools.length > 0
   const hasWorkspace = Boolean(workspace)
-  const hasOtherActivity = hasReasoning || hasTools || hasWorkspace
+  const hasOtherActivity = hasReasoning || hasTools || hasWorkspace || hasMessages
   const runningTool = tools.find((tool) => tool.status === 'running')
 
   const label = (() => {
@@ -575,6 +585,9 @@ function ActivityBlock({
             {steps.map((step, index) => {
               if (step.kind === 'reasoning') {
                 return <ReasoningStepRow key={`reasoning:${index}`} step={step} />
+              }
+              if (step.kind === 'message') {
+                return <MessageStepRow key={`message:${index}`} step={step} />
               }
               if (step.kind === 'workspace') {
                 return <WorkspaceStepRow key={`workspace:${index}`} workspace={step.workspace} />
@@ -655,7 +668,7 @@ export const MessageItem = memo(function MessageItem({
   }, [editDrafts, message.id, editing, draft])
   const [capacityActionPending, setCapacityActionPending] = useState(false)
   const [streamingFallbackDurationMs, setStreamingFallbackDurationMs] = useState<number>()
-  const timeline = useMemo(() => {
+  const responseTimeline = useMemo(() => {
     if (message.role !== 'assistant') return [] as TimelineSegment[]
     const items = message.outputItems ?? []
     if (items.length > 0) return buildTimeline(items, showReasoning)
@@ -676,9 +689,20 @@ export const MessageItem = memo(function MessageItem({
     if (message.content) segments.push({ kind: 'text', text: message.content })
     return segments
   }, [message.role, message.outputItems, showReasoning, message.reasoning, message.content, streaming])
+  // Interim replies stay inline while streaming, then fold into the work before the final reply.
+  const timeline: TimelineSegment[] = useMemo(
+    () => streaming ? responseTimeline : collapseIntermediateReplies(responseTimeline),
+    [responseTimeline, streaming],
+  )
+  const collapsedWork = timeline !== responseTimeline ? timeline[0] : undefined
   const elapsedMs = useElapsedMs(message.requestReceivedAt ? Date.parse(message.requestReceivedAt) : message.timestamp, streaming && message.role === 'assistant', message.latencyMs)
   const initialActivity = initialActivityTiming(timeline)
-  const initialDurationMs = message.initialResponseDurationMs
+  const initialDurationMs = collapsedWork?.kind === 'activity'
+    ? collapsedWorkDurationMs(collapsedWork.steps, {
+        requestReceivedAt: message.requestReceivedAt,
+        initialDurationMs: message.initialResponseDurationMs,
+      })
+    : message.initialResponseDurationMs
   const activitySegments = timeline.filter((segment): segment is ActivitySegment => segment.kind === 'activity')
   const lastActivityTimelineIndex = timeline.reduce(
     (lastIndex, segment, index) => segment.kind === 'activity' ? index : lastIndex,
@@ -844,7 +868,7 @@ export const MessageItem = memo(function MessageItem({
                       active={active}
                       showDuration={!active && (initial || segmentDurationMs !== undefined || useResponseDurationFallback)}
                       durationMs={initial ? initialDurationMs : segmentDurationMs ?? streamingFallbackDurationMs ?? elapsedMs}
-                      initialWork={initial ? initialActivity.worked : undefined}
+                      initialWork={initial ? collapsedWork !== undefined || initialActivity.worked : undefined}
                       messageId={message.id}
                       onStop={stopStreaming}
                       onContinue={(id) => {
