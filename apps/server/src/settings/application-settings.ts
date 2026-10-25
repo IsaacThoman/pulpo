@@ -3,6 +3,7 @@ import {
   agentSettingsSchema,
   codexSettingsSchema,
   authSettingsSchema,
+  backupFullArchiveIntervalDaysSchema,
   backupIntervalHoursSchema,
   dictationSettingsSchema,
   episodicMemorySettingsSchema,
@@ -120,6 +121,7 @@ export const storedBackupSettingsSchema = z.object({
   recipient: z.string().default(''),
   intervalHours: backupIntervalHoursSchema.default(24),
   retentionDays: z.number().int().min(1).max(3_000).default(30),
+  fullArchiveIntervalDays: backupFullArchiveIntervalDaysSchema.default(7),
   nextRunAt: z.string().datetime().nullable().default(null),
 })
 

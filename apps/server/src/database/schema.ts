@@ -797,6 +797,7 @@ export const backupJobs = pgTable('backup_jobs', {
   userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }),
   operation: text('operation').notNull(),
   destination: text('destination').notNull().default('local'),
+  format: text('format').notNull().default('archive'),
   trigger: text('trigger').notNull().default('manual'),
   status: text('status').notNull().default('queued'),
   progress: integer('progress').notNull().default(0),
@@ -818,6 +819,30 @@ export const backupJobs = pgTable('backup_jobs', {
   index('backup_jobs_expiry_idx').on(table.expiresAt),
   index('backup_jobs_lock_expiry_idx').on(table.lockedUntil),
   uniqueIndex('backup_jobs_scheduled_slot_idx').on(table.destination, table.trigger, table.scheduledFor),
+])
+
+/** Encrypted offsite copies of blobs, uploaded once and shared by every snapshot that references them. */
+export const backupBlobs = pgTable('backup_blobs', {
+  id: uuid('id').primaryKey(),
+  storageEndpoint: text('storage_endpoint').notNull(),
+  storageBucket: text('storage_bucket').notNull(),
+  storagePrefix: text('storage_prefix').notNull(),
+  recipientFingerprint: text('recipient_fingerprint').notNull(),
+  /** SHA-256 hex of the plaintext. Never sent to Backblaze. */
+  contentChecksum: text('content_checksum').notNull(),
+  sizeBytes: bigint('size_bytes', { mode: 'number' }).notNull(),
+  objectKey: text('object_key').notNull(),
+  /** At least the lock of every snapshot that references this blob. */
+  lockedUntil: timestamp('locked_until', { withTimezone: true }).notNull(),
+  uploadedAt: timestamp('uploaded_at', { withTimezone: true }),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  ...timestamps,
+}, (table) => [
+  uniqueIndex('backup_blobs_live_content_idx')
+    .on(table.storageEndpoint, table.storageBucket, table.storagePrefix, table.recipientFingerprint, table.contentChecksum)
+    .where(sql`${table.deletedAt} is null`),
+  uniqueIndex('backup_blobs_object_key_idx').on(table.storageEndpoint, table.storageBucket, table.objectKey),
+  index('backup_blobs_lock_idx').on(table.lockedUntil).where(sql`${table.deletedAt} is null`),
 ])
 
 export const userMemoryDocuments = pgTable('user_memory_documents', {

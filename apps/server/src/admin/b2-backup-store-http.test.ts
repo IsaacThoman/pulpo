@@ -70,7 +70,7 @@ describe('Backblaze Object Lock upload requests', () => {
     store = new B2BackupStore({
       enabled: false, endpoint: `http://127.0.0.1:${address.port}`, region: 'us-east-005',
       bucket: 'test-backups', prefix: 'pulpo', keyId: 'test-key', applicationKey: 'test-secret',
-      encryptedApplicationKey: null, recipient: '', intervalHours: 6, retentionDays: 30, nextRunAt: null,
+      encryptedApplicationKey: null, recipient: '', intervalHours: 6, retentionDays: 30, fullArchiveIntervalDays: 7 as const, nextRunAt: null,
     }, { partSizeBytes: 1_024, retryDelayMs: 0 })
   })
 
@@ -128,6 +128,25 @@ describe('Backblaze Object Lock upload requests', () => {
     await expect(store.putEncrypted('pulpo/large.age', Readable.from([Buffer.alloc(2_000, 7)]), 2_000, 'job-1', 'fingerprint', new Date(Date.now() + 30_000)))
       .rejects.toThrow('did not apply Compliance retention')
     expect(deletedVersions).toEqual(['pulpo/large.age'])
+  })
+
+  it('extends Compliance retention with a Content-MD5 instead of a flexible checksum', async () => {
+    const requests: Array<{ url: URL; headers: IncomingHttpHeaders; body: string }> = []
+    server.removeAllListeners('request')
+    server.on('request', async (request, response) => {
+      const chunks: Buffer[] = []
+      for await (const chunk of request) chunks.push(Buffer.from(chunk))
+      requests.push({ url: new URL(request.url!, 'http://localhost'), headers: request.headers, body: Buffer.concat(chunks).toString() })
+      response.writeHead(200).end()
+    })
+    await store.extendRetention('pulpo/blobs/blob.age', new Date('2030-01-02T03:04:05.000Z'))
+    const [request] = requests
+    expect(request!.url.pathname).toBe('/test-backups/pulpo/blobs/blob.age')
+    expect(request!.url.searchParams.has('retention')).toBe(true)
+    expect(request!.body).toContain('<Mode>COMPLIANCE</Mode><RetainUntilDate>2030-01-02T03:04:05Z</RetainUntilDate>')
+    expect(request!.headers['content-md5']).toBe(createHash('md5').update(request!.body).digest('base64'))
+    expect(Object.keys(request!.headers).filter(name => name.includes('checksum'))).toEqual([])
+    expect(request!.headers.authorization).toContain('content-md5')
   })
 
   it('retries a failed part with a fresh read of the spooled ciphertext', async () => {

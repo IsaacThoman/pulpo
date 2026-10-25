@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { and, eq, getTableName, is, ne, sql } from 'drizzle-orm'
 import { getTableConfig, PgTable } from 'drizzle-orm/pg-core'
+import type { BackupSnapshotManifest } from '@pulpo/contracts'
 import * as schema from '../database/schema.js'
 import { db } from '../database/client.js'
 import { attachments, backupJobs, catalogIcons, fileNodes, fileVersions, speechModels, users } from '../database/schema.js'
@@ -30,6 +31,7 @@ import { projectFullBackup, type FullBackupDatabase } from './backup-projection.
 import { B2BackupStore } from './b2-backup-store.js'
 import { ageRecipientDetails, readStoredBackupSettings, resolveBackupSettings } from './backup-settings.js'
 import { createAgeEncryptionStream } from './backup-encryption.js'
+import { ensureOffsiteBlobs } from './backup-blobs.js'
 import { extractRestoreArchive, readSmallRestoreTable, restoreBatches, restoreRows, splitRestoreDatabase, type RestoreRow } from './restore-archive.js'
 import { finishRestoreUpload, openRestoreUpload } from './restore-uploads.js'
 
@@ -48,6 +50,7 @@ export async function createFullBackup(jobId: string, finalAttempt = true): Prom
   let offsiteStore: B2BackupStore | undefined
   let offsiteRecipient: string | undefined
   let offsiteRecipientFingerprint: string | undefined
+  let offsitePrefix: string | undefined
   try {
     if (!objectKey) throw new Error('Backup object key is missing')
     if (offsite) {
@@ -63,6 +66,7 @@ export async function createFullBackup(jobId: string, finalAttempt = true): Prom
       offsiteStore = new B2BackupStore(settings)
       offsiteRecipient = settings.recipient
       offsiteRecipientFingerprint = recipient.fingerprint
+      offsitePrefix = settings.prefix
       const existing = await offsiteStore.head(objectKey)
       if (existing) {
         if (existing.jobId !== job.id || existing.recipientFingerprint !== recipient.fingerprint) {
@@ -86,6 +90,18 @@ export async function createFullBackup(jobId: string, finalAttempt = true): Prom
     }
     temporaryDirectory = await mkdtemp(join(tmpdir(), 'pulpo-backup-'))
     const archivePath = join(temporaryDirectory, `${job.id}.tar.gz`)
+    const uploadOffsite = async (lockedUntil: Date) => {
+      if (!offsiteStore || !offsiteRecipient || !offsiteRecipientFingerprint) throw new Error('Offsite backup configuration is unavailable')
+      const inputSize = (await stat(archivePath)).size
+      const encrypted = await createAgeEncryptionStream(createReadStream(archivePath), inputSize, offsiteRecipient)
+      await db.update(backupJobs).set({ progress: 92, updatedAt: new Date() }).where(eq(backupJobs.id, jobId))
+      await offsiteStore.putEncrypted(objectKey, encrypted.body, encrypted.sizeBytes, job.id, offsiteRecipientFingerprint, lockedUntil)
+      uploaded = true
+      await db.update(backupJobs).set({
+        status: 'completed', progress: 100, archiveSizeBytes: encrypted.sizeBytes,
+        archiveChecksum: await encrypted.checksum, completedAt: new Date(), error: null, updatedAt: new Date(),
+      }).where(eq(backupJobs.id, jobId))
+    }
     const { database: rawDatabase, avatarBlobRows, iconRows, speechBlobRows, fileBlobRows } = await db.transaction(async (tx) => {
       const database: Record<string, unknown[]> = {}
       for (const [index, table] of FULL_BACKUP_TABLES.entries()) {
@@ -124,6 +140,42 @@ export async function createFullBackup(jobId: string, finalAttempt = true): Prom
         { objectKey: icon.monochromeDarkObjectKey, checksum: icon.monochromeDarkChecksum },
       ]),
     ]
+    if (offsite && job.format === 'snapshot') {
+      if (!offsiteStore || !offsiteRecipient || !offsiteRecipientFingerprint || !offsitePrefix || !job.lockedUntil) throw new Error('Offsite backup configuration is unavailable')
+      const lockedUntil = job.lockedUntil
+      let reportedProgress = 55
+      const { blobs, uploadedCount, uploadedBytes } = await ensureOffsiteBlobs({
+        jobId,
+        store: offsiteStore,
+        destination: {
+          endpoint: job.storageEndpoint!, bucket: job.storageBucket!, prefix: offsitePrefix,
+          recipient: offsiteRecipient, recipientFingerprint: offsiteRecipientFingerprint,
+        },
+        lockedUntil,
+        sources: blobRows,
+        directory: temporaryDirectory,
+        readSource: (key) => getBlobStore().getStream(key),
+        onProgress: async (completed, total) => {
+          const progress = 55 + Math.floor((completed / total) * 35)
+          if (progress <= reportedProgress) return
+          reportedProgress = progress
+          await db.update(backupJobs).set({ progress, updatedAt: new Date() }).where(eq(backupJobs.id, jobId))
+        },
+      })
+      console.info(JSON.stringify({
+        level: 'info', service: 'pulpo-worker', event: 'backup.snapshot_blobs', jobId,
+        referenced: blobs.length, uploaded: uploadedCount, uploadedBytes,
+      }))
+      const manifest: BackupSnapshotManifest = {
+        format: 'pulpo-instance-snapshot', version: 1, createdAt: new Date().toISOString(), tables: [...FULL_BACKUP_TABLES], blobs,
+      }
+      await writeBackupArchive(archivePath, (async function* (): AsyncGenerator<BackupArchiveEntry> {
+        yield { name: 'database.json', body: createReadStream(databasePath), sizeBytes: databaseSize }
+        yield { name: 'manifest.json', body: Buffer.from(json(manifest)) }
+      })())
+      await uploadOffsite(lockedUntil)
+      return
+    }
     async function* archiveEntries(): AsyncGenerator<BackupArchiveEntry> {
       const blobs: Array<{ entry: string; objectKey: string; checksum: string }> = []
       const includedKeys = new Set<string>()
@@ -144,16 +196,8 @@ export async function createFullBackup(jobId: string, finalAttempt = true): Prom
     }
     const { sizeBytes: archiveSizeBytes, checksum: archiveChecksum } = await writeBackupArchive(archivePath, archiveEntries())
     if (offsite) {
-      if (!offsiteStore || !offsiteRecipient || !offsiteRecipientFingerprint || !job.lockedUntil) throw new Error('Offsite backup configuration is unavailable')
-      const inputSize = (await stat(archivePath)).size
-      const encrypted = await createAgeEncryptionStream(createReadStream(archivePath), inputSize, offsiteRecipient)
-      await db.update(backupJobs).set({ progress: 92, updatedAt: new Date() }).where(eq(backupJobs.id, jobId))
-      await offsiteStore.putEncrypted(objectKey, encrypted.body, encrypted.sizeBytes, job.id, offsiteRecipientFingerprint, job.lockedUntil)
-      uploaded = true
-      await db.update(backupJobs).set({
-        status: 'completed', progress: 100, archiveSizeBytes: encrypted.sizeBytes,
-        archiveChecksum: await encrypted.checksum, completedAt: new Date(), error: null, updatedAt: new Date(),
-      }).where(eq(backupJobs.id, jobId))
+      if (!job.lockedUntil) throw new Error('Offsite backup configuration is unavailable')
+      await uploadOffsite(job.lockedUntil)
     } else {
       await getBlobStore().putStream(objectKey, createReadStream(archivePath), {
         contentType: 'application/gzip', contentLength: archiveSizeBytes, contentDisposition: 'attachment',

@@ -75,6 +75,7 @@ async function publicBackupSettings() {
     recipient: settings.recipient,
     intervalHours: settings.intervalHours,
     retentionDays: settings.retentionDays,
+    fullArchiveIntervalDays: settings.fullArchiveIntervalDays,
     applicationKeyConfigured: Boolean(settings.encryptedApplicationKey),
     recipientType: recipient?.type ?? null,
     recipientFingerprint: recipient?.fingerprint ?? null,
@@ -653,7 +654,7 @@ export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise
       const object = await new B2BackupStore(settings).getStream(job.objectKey)
       if (object.contentLength !== undefined) reply.header('content-length', object.contentLength)
       return reply.type('application/octet-stream')
-        .header('content-disposition', `attachment; filename="pulpo-instance-${job.createdAt.toISOString().slice(0, 10)}-${job.id}.tar.gz.age"`)
+        .header('content-disposition', `attachment; filename="pulpo-${job.format === 'snapshot' ? 'snapshot' : 'instance'}-${job.createdAt.toISOString().slice(0, 10)}-${job.id}.tar.gz.age"`)
         .send(object.body)
     }
     if (job.userId !== admin.id) throw notFound('Backup')

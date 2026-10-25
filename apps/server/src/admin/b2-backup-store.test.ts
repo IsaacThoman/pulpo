@@ -32,6 +32,7 @@ const settings = {
   recipient: 'age1recipient',
   intervalHours: 24 as const,
   retentionDays: 30,
+  fullArchiveIntervalDays: 7 as const,
   nextRunAt: null,
 }
 

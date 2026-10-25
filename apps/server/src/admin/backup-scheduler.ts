@@ -1,20 +1,41 @@
-import { and, eq, inArray, isNull, lt, sql } from 'drizzle-orm'
+import { and, eq, gte, inArray, isNull, lt, sql } from 'drizzle-orm'
 import { db } from '../database/client.js'
-import { applicationSettings, backupJobs } from '../database/schema.js'
+import { applicationSettings, backupBlobs, backupJobs } from '../database/schema.js'
 import { maintenanceQueue } from '../jobs.js'
 import { AppError } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { parseBackupSettings } from '../settings/application-settings.js'
 import { B2BackupStore } from './b2-backup-store.js'
-import { ageRecipientDetails, normalizeBackupPrefix, readStoredBackupSettings, resolveBackupSettings } from './backup-settings.js'
+import { deleteUnlockedOffsiteBlobs } from './backup-blobs.js'
+import { ageRecipientDetails, normalizeBackupPrefix, readStoredBackupSettings, resolveBackupSettings, type ResolvedBackupSettings } from './backup-settings.js'
 
 const SCHEDULE_LOCK = 1_886_747_745
 
-function objectKey(prefix: string, when: Date, id: string): string {
+type BackupFormat = 'archive' | 'snapshot'
+type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
+
+function objectKey(prefix: string, when: Date, id: string, format: BackupFormat): string {
   const year = String(when.getUTCFullYear())
   const month = String(when.getUTCMonth() + 1).padStart(2, '0')
   const stamp = when.toISOString().replaceAll(/[-:.]/g, '')
-  return `${normalizeBackupPrefix(prefix)}/${year}/${month}/${stamp}-${id}.tar.gz.age`
+  return `${normalizeBackupPrefix(prefix)}/${year}/${month}/${stamp}-${id}${format === 'snapshot' ? '.snapshot' : ''}.tar.gz.age`
+}
+
+/**
+ * Scheduled runs are incremental snapshots, plus a self-contained archive when
+ * none was attempted within the configured interval. Counting failed attempts
+ * keeps a broken archive from starving snapshots.
+ */
+async function scheduledFormat(tx: Transaction, settings: ResolvedBackupSettings, now: Date): Promise<BackupFormat> {
+  if (!settings.fullArchiveIntervalDays) return 'snapshot'
+  const [recent] = await tx.select({ id: backupJobs.id }).from(backupJobs).where(and(
+    eq(backupJobs.destination, 'backblaze_b2'),
+    eq(backupJobs.format, 'archive'),
+    eq(backupJobs.storageEndpoint, settings.endpoint),
+    eq(backupJobs.storageBucket, settings.bucket),
+    gte(backupJobs.createdAt, new Date(now.getTime() - settings.fullArchiveIntervalDays * 86_400_000)),
+  )).limit(1)
+  return recent ? 'snapshot' : 'archive'
 }
 
 export function nextScheduledRun(due: Date, now: Date, intervalHours: 6 | 12 | 24): Date {
@@ -58,13 +79,16 @@ export async function createOffsiteBackup(
       userId,
       operation: 'backup',
       destination: 'backblaze_b2',
+      format: 'snapshot',
       trigger,
-      objectKey: objectKey(settings.prefix, scheduledFor ?? createdAt, id),
+      objectKey: objectKey(settings.prefix, scheduledFor ?? createdAt, id, 'snapshot'),
       storageEndpoint: settings.endpoint,
       storageBucket: settings.bucket,
       recipientFingerprint: recipient.fingerprint,
       scheduledFor,
       lockedUntil,
+      createdAt,
+      updatedAt: createdAt,
     })
     return { id, status: 'queued' as const }
   })
@@ -92,18 +116,22 @@ export async function runOffsiteBackupSchedule(now = new Date()): Promise<void> 
     const recipient = ageRecipientDetails(resolved.recipient)
     const id = newId()
     const lockedUntil = new Date(now.getTime() + resolved.retentionDays * 86_400_000)
+    const format = await scheduledFormat(tx, resolved, now)
     await tx.insert(backupJobs).values({
       id,
       userId: null,
       operation: 'backup',
       destination: 'backblaze_b2',
+      format,
       trigger: 'scheduled',
-      objectKey: objectKey(resolved.prefix, due, id),
+      objectKey: objectKey(resolved.prefix, due, id, format),
       storageEndpoint: resolved.endpoint,
       storageBucket: resolved.bucket,
       recipientFingerprint: recipient.fingerprint,
       scheduledFor: due,
       lockedUntil,
+      createdAt: now,
+      updatedAt: now,
     })
     const next = nextScheduledRun(due, now, resolved.intervalHours)
     await tx.update(applicationSettings).set({ value: { ...settings, nextRunAt: next.toISOString() }, updatedAt: now })
@@ -139,7 +167,9 @@ export async function deleteUnlockedOffsiteBackups(now = new Date()): Promise<vo
     isNull(backupJobs.deletedAt),
     lt(backupJobs.lockedUntil, now),
   ))
-  if (!jobs.length) return
+  const [expiredBlob] = await db.select({ id: backupBlobs.id }).from(backupBlobs)
+    .where(and(isNull(backupBlobs.deletedAt), lt(backupBlobs.lockedUntil, now))).limit(1)
+  if (!jobs.length && !expiredBlob) return
 
   let settings
   try {
@@ -167,4 +197,5 @@ export async function deleteUnlockedOffsiteBackups(now = new Date()): Promise<vo
       }))
     }
   }
+  await deleteUnlockedOffsiteBlobs(store, settings, now)
 }

@@ -10,6 +10,7 @@ import {
   ListObjectsV2Command,
   ListObjectVersionsCommand,
   PutObjectCommand,
+  PutObjectRetentionCommand,
   S3Client,
   UploadPartCommand,
   type CompletedPart,
@@ -29,6 +30,20 @@ const MULTIPART_PART_BYTES = 128 * 1024 * 1024
 const MAX_MULTIPART_PARTS = 10_000
 const PART_UPLOAD_ATTEMPTS = 3
 const PART_RETRY_DELAY_MS = 1_000
+
+/**
+ * Current SDKs add a CRC32 checksum to operations that require one. Send the
+ * Content-MD5 that S3-compatible stores have always accepted instead.
+ */
+function withContentMd5(command: PutObjectRetentionCommand): PutObjectRetentionCommand {
+  command.middlewareStack.add((next) => async (args) => {
+    const request = args.request as { headers: Record<string, string>; body?: unknown }
+    for (const name of Object.keys(request.headers)) if (/^x-amz-(sdk-)?checksum-/i.test(name)) delete request.headers[name]
+    request.headers['content-md5'] = createHash('md5').update(typeof request.body === 'string' ? request.body : '').digest('base64')
+    return next(args)
+  }, { step: 'build', priority: 'low', name: 'pulpoContentMd5' })
+  return command
+}
 
 export interface B2BackupObjectMetadata {
   sizeBytes: number
@@ -225,6 +240,15 @@ export class B2BackupStore {
         body.destroy()
       }
     }
+  }
+
+  /** Compliance retention can only grow, so callers must never pass an earlier date. */
+  async extendRetention(key: string, lockedUntil: Date): Promise<void> {
+    await this.client.send(withContentMd5(new PutObjectRetentionCommand({
+      Bucket: this.settings.bucket,
+      Key: key,
+      Retention: { Mode: 'COMPLIANCE', RetainUntilDate: lockedUntil },
+    })))
   }
 
   async getStream(key: string): Promise<{ body: Readable; contentLength?: number }> {
