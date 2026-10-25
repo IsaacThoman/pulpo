@@ -58,7 +58,7 @@ Blob names are random. File names, owners, and content hashes exist only in the 
 
 Each snapshot is locked for the configured retention. Each blob is locked for at least as long as every snapshot that references it. When a newer snapshot outlives a blob's lock, Pulpo extends the lock to that snapshot's expiry plus up to seven days, so locks are extended about once a week instead of on every run. A blob is deleted only after its lock expires, and therefore after every snapshot that used it has expired. Content deleted from Pulpo can remain in Backblaze for up to the retention period plus seven days.
 
-Pulpo tracks blob copies in its own database. They survive an in-place restore, but a replacement instance starts a new set. It does not delete objects created by the previous instance; remove them in Backblaze after their locks expire.
+Pulpo tracks offsite backups and blob copies in its own database. That history survives an in-place restore, so earlier snapshots still expire on schedule, but a replacement instance starts a new set. It does not delete objects created by the previous instance; remove them in Backblaze after their locks expire. Multipart uploads left unfinished by a crashed worker are aborted after a day.
 
 Full backups include account credentials (including passkeys and connected provider credentials), chats and attachments, Files trees and binary files, collaborative document snapshots and pending edits, drafts and queued messages, billing and pool records, usage and analytics, memory, catalog configuration, and application settings. Temporary chat content and temporary unsent drafts are excluded. Active sessions, unfinished authentication exchanges, live budget reservations, and operational transfer jobs are not restored.
 
