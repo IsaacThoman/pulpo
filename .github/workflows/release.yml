@@ -310,8 +310,8 @@ jobs:
           export DATABASE_URL=postgres://postgres:search-test@localhost:5432/pulpo_backup_snapshot PULPO_BACKUP_SNAPSHOT_TESTS=true
           npm run db:migrate -w @pulpo/server
           npm run test -w @pulpo/server -- src/admin/backup-snapshot.postgres.test.ts
-          npm run test -w @pulpo/server -- src/admin/backup-snapshot-s3.postgres.test.ts
           npm run test -w @pulpo/server -- src/admin/b2-backup-store.s3.test.ts
+          npm run test -w @pulpo/server -- src/admin/backup-snapshot-s3.postgres.test.ts
 
   cli-package:
     name: CLI package / Node ${{ matrix.node }}

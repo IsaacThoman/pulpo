@@ -7,10 +7,10 @@ import { join } from 'node:path'
 import { pipeline } from 'node:stream/promises'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
-import { ListObjectsV2Command, S3Client } from '@aws-sdk/client-s3'
+import { CreateBucketCommand, HeadBucketCommand, ListObjectsV2Command, S3Client } from '@aws-sdk/client-s3'
 import { eq, sql } from 'drizzle-orm'
 import { generateIdentity, identityToRecipient } from 'age-encryption'
-import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db, queryClient } from '../database/client.js'
 import * as schema from '../database/schema.js'
 import { LocalBlobStore } from '../storage/local.js'
@@ -76,6 +76,15 @@ async function snapshot() {
 }
 
 describe.skipIf(!enabled)('incremental snapshots end to end against S3 Object Lock', () => {
+  beforeAll(async () => {
+    const client = new S3Client({
+      endpoint: s3.endpoint, region: s3.region, forcePathStyle: true, credentials: { accessKeyId: s3.keyId, secretAccessKey: s3.key },
+    })
+    await client.send(new HeadBucketCommand({ Bucket: s3.bucket })).catch(async () => {
+      if (process.env.PULPO_BACKUP_S3_TEST_CREATE_BUCKET !== 'true') throw new Error(`Bucket ${s3.bucket} does not exist`)
+      await client.send(new CreateBucketCommand({ Bucket: s3.bucket, ObjectLockEnabledForBucket: true }))
+    })
+  })
   beforeEach(async () => {
     await db.execute(sql`set client_min_messages = warning`)
     await db.execute(sql.raw(`truncate ${FULL_BACKUP_TABLES.join(', ')}, restore_uploads, backup_jobs, backup_blobs restart identity cascade`))
