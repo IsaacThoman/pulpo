@@ -292,7 +292,7 @@ jobs:
           node --input-type=module -e 'import postgres from "postgres"; const sql = postgres(process.env.DATABASE_URL); for (const name of ["pulpo_backup_audit", "pulpo_backup_snapshot"]) await sql.unsafe("CREATE DATABASE " + name); await sql.end();'
           printf '%s' '{"identities":[{"name":"ci","credentials":[{"accessKey":"pulpo-ci","secretKey":"pulpo-ci-secret"}],"actions":["Admin","Read","Write","List","Tagging"]}]}' > "${RUNNER_TEMP}/s3.json"
           docker run -d --name pulpo-backup-s3 -p 8333:8333 -v "${RUNNER_TEMP}/s3.json:/etc/s3.json:ro" chrislusf/seaweedfs:4.29 server -s3 -s3.config=/etc/s3.json -ip.bind=0.0.0.0
-          for attempt in $(seq 1 60); do curl -s -o /dev/null http://localhost:8333/ && exit 0; sleep 2; done
+          for attempt in $(seq 1 60); do curl -sf -o /dev/null http://localhost:8333/healthz && exit 0; sleep 2; done
           docker logs pulpo-backup-s3; exit 1
       - name: Test full archives and incremental snapshots end to end
         env:

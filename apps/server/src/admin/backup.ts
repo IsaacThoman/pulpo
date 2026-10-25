@@ -35,9 +35,17 @@ import { ensureOffsiteBlobs } from './backup-blobs.js'
 import { extractRestoreArchive, readSmallRestoreTable, restoreBatches, restoreRows, splitRestoreDatabase, type RestoreRow } from './restore-archive.js'
 import { finishRestoreUpload, openRestoreUpload } from './restore-uploads.js'
 
+const LOCK_SAFETY_MARGIN_MS = 3_600_000
 const json = (value: unknown) => JSON.stringify(value, (_, item) => typeof item === 'bigint' ? item.toString() : item)
 const backupColumns = new Map((Object.values(schema) as unknown[]).filter((value): value is PgTable => is(value, PgTable))
   .map(table => [getTableName(table), getTableConfig(table).columns.filter(column => !column.generated).map(column => column.name)]))
+
+/** Offsite locks are fixed when a job is queued; a run delayed past them must not upload. */
+function assertLockAhead(lockedUntil: Date): void {
+  if (lockedUntil.getTime() - Date.now() < LOCK_SAFETY_MARGIN_MS) {
+    throw new Error('This backup was delayed past its retention window; the next scheduled run will replace it')
+  }
+}
 
 export async function createFullBackup(jobId: string, finalAttempt = true): Promise<void> {
   const [job] = await db.select().from(backupJobs).where(eq(backupJobs.id, jobId)).limit(1)
@@ -63,6 +71,7 @@ export async function createFullBackup(jobId: string, finalAttempt = true): Prom
         throw new Error('Age recipient changed while this backup was queued')
       }
       if (!job.lockedUntil) throw new Error('Backup retention date is missing')
+      assertLockAhead(job.lockedUntil)
       offsiteStore = new B2BackupStore(settings)
       offsiteRecipient = settings.recipient
       offsiteRecipientFingerprint = recipient.fingerprint
@@ -167,6 +176,8 @@ export async function createFullBackup(jobId: string, finalAttempt = true): Prom
         level: 'info', service: 'pulpo-worker', event: 'backup.snapshot_blobs', jobId,
         referenced: blobs.length, uploaded: uploadedCount, uploadedBytes,
       }))
+      // Cleanup may remove blobs once this lock passes, so never publish a snapshot that late.
+      assertLockAhead(lockedUntil)
       const manifest: BackupSnapshotManifest = {
         format: 'pulpo-instance-snapshot', version: 1, createdAt: new Date().toISOString(), tables: [...FULL_BACKUP_TABLES], blobs,
       }

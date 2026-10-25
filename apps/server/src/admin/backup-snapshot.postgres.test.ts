@@ -28,6 +28,7 @@ const context = vi.hoisted(() => ({
   mirror: '',
   calls: { put: [] as string[], extend: [] as string[], delete: [] as string[] },
   failPut: undefined as ((key: string) => boolean) | undefined,
+  failDelete: undefined as ((key: string) => boolean) | undefined,
   /** Safety failures: deleting a locked object. */
   violations: [] as string[],
   /** Requests Backblaze rejects because they would shorten a lock. */
@@ -71,6 +72,7 @@ vi.mock('./b2-backup-store.js', async () => {
     }
     async abortStaleUploads() { return 0 }
     async delete(key: string) {
+      if (context.failDelete?.(key)) throw new Error('Simulated delete failure')
       const entry = context.remote.get(key)
       if (entry && entry.lockedUntil > new Date()) {
         context.violations.push(`deleted locked ${key}`)
@@ -186,7 +188,7 @@ describe.skipIf(!enabled)('incremental offsite snapshots with PostgreSQL', () =>
     await mkdir(context.mirror)
     context.store = new LocalBlobStore(join(directory, 'primary'))
     context.enqueue.mockReset(); context.enqueue.mockResolvedValue(undefined)
-    context.remote.clear(); context.violations = []; context.shortened = []; context.failPut = undefined
+    context.remote.clear(); context.violations = []; context.shortened = []; context.failPut = undefined; context.failDelete = undefined
     context.calls = { put: [], extend: [], delete: [] }
     identity = await generateIdentity()
     userId = randomUUID()
@@ -398,8 +400,8 @@ describe.skipIf(!enabled)('incremental offsite snapshots with PostgreSQL', () =>
   it('keeps scheduling after restoring a backup whose schedule slot already ran', async () => {
     await addFile('scheduled.txt', Buffer.from('scheduled'), null)
     await configure({ enabled: true, nextRunAt: T0.toISOString() })
-    const runScheduled = async (day: number) => {
-      vi.setSystemTime(new Date(T0.getTime() + day * DAY + 60_000))
+    const runScheduled = async (day: number, minute = 1) => {
+      vi.setSystemTime(new Date(T0.getTime() + day * DAY + minute * 60_000))
       await runOffsiteBackupSchedule(new Date())
       const [job] = await db.select().from(schema.backupJobs).where(eq(schema.backupJobs.status, 'queued'))
       if (job) await createFullBackup(job.id)
@@ -410,12 +412,12 @@ describe.skipIf(!enabled)('incremental offsite snapshots with PostgreSQL', () =>
     await runScheduled(1)
     // The restored settings point at the day-0 slot this instance already ran.
     await restore(bytes)
-    const skipped = await runScheduled(1)
-    expect(skipped).toBeUndefined()
-    const [settings] = await db.select().from(schema.applicationSettings).where(eq(schema.applicationSettings.key, 'backups'))
-    expect(Date.parse((settings!.value as { nextRunAt: string }).nextRunAt)).toBeGreaterThan(Date.now())
-    expect(await runScheduled(2)).toMatchObject({ trigger: 'scheduled' })
-    expect(await db.select().from(schema.backupJobs).where(eq(schema.backupJobs.trigger, 'scheduled'))).toHaveLength(3)
+    expect(await runScheduled(1, 2)).toBeUndefined()
+    // The next tick runs the overdue backup under a fresh slot instead of waiting a day.
+    expect(await runScheduled(1, 3)).toMatchObject({ trigger: 'scheduled', status: 'queued' })
+    expect(await runScheduled(2, 4)).toMatchObject({ trigger: 'scheduled' })
+    expect(await db.select().from(schema.backupJobs).where(eq(schema.backupJobs.trigger, 'scheduled'))).toHaveLength(4)
+    expect((await db.select().from(schema.backupJobs).where(eq(schema.backupJobs.trigger, 'scheduled'))).every(job => job.status === 'completed')).toBe(true)
   })
 
   it('restores in place with years of offsite history', async () => {
@@ -441,5 +443,27 @@ describe.skipIf(!enabled)('incremental offsite snapshots with PostgreSQL', () =>
     const [cleaned] = await db.select().from(schema.backupJobs).where(eq(schema.backupJobs.id, job.id))
     expect(cleaned).toMatchObject({ status: 'failed', error: 'Lost the completion response', updatedAt: failedAt })
     expect(cleaned!.deletedAt).not.toBeNull()
+  })
+
+  it('keeps blobs while an expired snapshot that uses them could not be deleted', async () => {
+    const body = Buffer.from('held by a stuck snapshot')
+    await addFile('held.txt', body, digest(body).digest('hex'))
+    const job = await snapshot()
+    vi.setSystemTime(new Date(T0.getTime() + 38 * DAY))
+    context.failDelete = key => key === job.objectKey
+    await deleteUnlockedOffsiteBackups(new Date())
+    expect(context.remote.size).toBe(2)
+    context.failDelete = undefined
+    await deleteUnlockedOffsiteBackups(new Date())
+    expect(context.remote.size).toBe(0)
+  })
+
+  it('refuses to upload a backup delayed past its retention window', async () => {
+    await addFile('late.txt', Buffer.from('late'), null)
+    const { id } = await createOffsiteBackup('manual', userId)
+    vi.setSystemTime(new Date(T0.getTime() + 31 * DAY))
+    await expect(createFullBackup(id)).rejects.toThrow('delayed past its retention window')
+    expect(context.remote.size).toBe(0)
+    expect((await db.select().from(schema.backupJobs).where(eq(schema.backupJobs.id, id)))[0]!.status).toBe('failed')
   })
 })

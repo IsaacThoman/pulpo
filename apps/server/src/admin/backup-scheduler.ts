@@ -138,7 +138,8 @@ export async function runOffsiteBackupSchedule(now = new Date()): Promise<void> 
       createdAt: now,
       updatedAt: now,
     }).onConflictDoNothing().returning({ id: backupJobs.id })
-    const next = nextScheduledRun(due, now, resolved.intervalHours)
+    // A taken slot runs again on the next tick under a fresh slot.
+    const next = inserted ? nextScheduledRun(due, now, resolved.intervalHours) : now
     await tx.update(applicationSettings).set({ value: { ...settings, nextRunAt: next.toISOString() }, updatedAt: now })
       .where(eq(applicationSettings.key, 'backups'))
     queuedId = inserted?.id ?? null
@@ -188,6 +189,7 @@ export async function deleteUnlockedOffsiteBackups(now = new Date()): Promise<vo
     return
   }
   const store = new B2BackupStore(settings)
+  let snapshotDeletionFailed = false
   for (const job of jobs) {
     if (!job.objectKey || job.storageEndpoint !== settings.endpoint || job.storageBucket !== settings.bucket) continue
     // A failed job keeps its error and timestamp so cleanup never resurfaces it as the latest failure.
@@ -196,6 +198,7 @@ export async function deleteUnlockedOffsiteBackups(now = new Date()): Promise<vo
       await store.delete(job.objectKey)
       await db.update(backupJobs).set(failed ? { deletedAt: now } : { deletedAt: now, error: null, updatedAt: now }).where(eq(backupJobs.id, job.id))
     } catch (error) {
+      snapshotDeletionFailed = true
       if (!failed) {
         await db.update(backupJobs).set({
           error: 'Remote deletion failed; the cleanup worker will retry', updatedAt: now,
@@ -207,7 +210,8 @@ export async function deleteUnlockedOffsiteBackups(now = new Date()): Promise<vo
       }))
     }
   }
-  await deleteUnlockedOffsiteBlobs(store, settings, now)
+  // A snapshot whose deletion failed is still listed for download; keep its blobs until it is gone.
+  if (!snapshotDeletionFailed) await deleteUnlockedOffsiteBlobs(store, settings, now)
   try {
     await store.abortStaleUploads(`${settings.prefix}/`, new Date(now.getTime() - STALE_UPLOAD_MS))
   } catch (error) {

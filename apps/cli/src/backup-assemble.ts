@@ -1,6 +1,6 @@
 import { createHash, createHmac, randomUUID } from 'node:crypto'
-import { constants, createReadStream, createWriteStream } from 'node:fs'
-import { copyFile, link, mkdtemp, open, readFile, rm, stat } from 'node:fs/promises'
+import { createReadStream, createWriteStream } from 'node:fs'
+import { link, mkdtemp, open, readFile, rename, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { Readable, Transform } from 'node:stream'
@@ -262,8 +262,12 @@ async function publish(source: string, destination: string): Promise<void> {
   try {
     await link(source, destination)
   } catch (error) {
-    // Some removable-drive filesystems have no hard links; an exclusive copy is equally safe.
     if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw error
-    await copyFile(source, destination, constants.COPYFILE_EXCL)
+    // Some removable-drive filesystems have no hard links. Rename is still
+    // atomic; only a file created in the instant after this check is at risk.
+    if (await stat(destination).then(() => true, () => false)) {
+      throw Object.assign(new Error(`${destination} already exists`), { code: 'EEXIST' })
+    }
+    await rename(source, destination)
   }
 }

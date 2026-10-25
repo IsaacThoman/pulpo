@@ -60,7 +60,8 @@ async function publicBackupSettings() {
   const lastSuccess = jobs.find((job) => job.status === 'completed')
   const lastFailure = jobs.find((job) => job.status === 'failed')
   const active = jobs.find((job) => job.status === 'queued' || job.status === 'in_progress')
-  const failureIsLatest = Boolean(lastFailure && (!lastSuccess || lastFailure.updatedAt > lastSuccess.updatedAt))
+  // Retention cleanup touches old rows, so compare when each run actually finished.
+  const failureIsLatest = Boolean(lastFailure && (!lastSuccess || lastFailure.updatedAt > (lastSuccess.completedAt ?? lastSuccess.updatedAt)))
   const health = !configured ? 'unconfigured'
     : !settings.enabled ? 'disabled'
       : failureIsLatest ? 'failed'
