@@ -149,6 +149,26 @@ describe('Backblaze Object Lock upload requests', () => {
     expect(request!.headers.authorization).toContain('content-md5')
   })
 
+  it('aborts only multipart uploads that started before the cutoff', async () => {
+    const aborted: string[] = []
+    server.removeAllListeners('request')
+    server.on('request', async (request, response) => {
+      const url = new URL(request.url!, 'http://localhost')
+      for await (const chunk of request) void chunk
+      if (request.method === 'DELETE') {
+        aborted.push(url.searchParams.get('uploadId')!)
+        response.writeHead(204).end()
+        return
+      }
+      const upload = (key: string, id: string, initiated?: string) => `<Upload><Key>${key}</Key><UploadId>${id}</UploadId>${initiated ? `<Initiated>${initiated}</Initiated>` : ''}</Upload>`
+      response.writeHead(200, { 'content-type': 'application/xml' }).end(url.searchParams.get('key-marker')
+        ? `<ListMultipartUploadsResult><IsTruncated>false</IsTruncated>${upload('pulpo/blobs/b.age', 'old-2', '2026-10-01T00:00:00.000Z')}</ListMultipartUploadsResult>`
+        : `<ListMultipartUploadsResult><IsTruncated>true</IsTruncated><NextKeyMarker>pulpo/blobs/a.age</NextKeyMarker><NextUploadIdMarker>new</NextUploadIdMarker>${upload('pulpo/a.age', 'old-1', '2026-10-01T00:00:00.000Z')}${upload('pulpo/blobs/a.age', 'new', '2026-10-25T00:00:00.000Z')}${upload('pulpo/undated.age', 'undated')}</ListMultipartUploadsResult>`)
+    })
+    expect(await store.abortStaleUploads('pulpo/', new Date('2026-10-24T00:00:00.000Z'))).toBe(2)
+    expect(aborted).toEqual(['old-1', 'old-2'])
+  })
+
   it('retries a failed part with a fresh read of the spooled ciphertext', async () => {
     failNextPart = true
     const ciphertext = Buffer.alloc(2_000, 5)

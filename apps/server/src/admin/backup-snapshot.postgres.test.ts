@@ -28,7 +28,10 @@ const context = vi.hoisted(() => ({
   mirror: '',
   calls: { put: [] as string[], extend: [] as string[], delete: [] as string[] },
   failPut: undefined as ((key: string) => boolean) | undefined,
+  /** Safety failures: deleting a locked object. */
   violations: [] as string[],
+  /** Requests Backblaze rejects because they would shorten a lock. */
+  shortened: [] as string[],
 }))
 vi.mock('../storage/index.js', () => ({ getBlobStore: () => context.store! }))
 vi.mock('../jobs.js', () => ({ maintenanceQueue: { add: context.enqueue, getJob: vi.fn(async () => undefined) } }))
@@ -56,12 +59,17 @@ vi.mock('./b2-backup-store.js', async () => {
       const entry = context.remote.get(key)
       if (!entry) throw Object.assign(new Error('The specified key does not exist.'), { name: 'NoSuchKey', $metadata: { httpStatusCode: 404 } })
       if (lockedUntil < entry.lockedUntil) {
-        context.violations.push(`shortened ${key}`)
-        throw new Error('Compliance retention cannot be shortened')
+        context.shortened.push(key)
+        throw Object.assign(new Error('Compliance retention cannot be shortened'), { name: 'AccessDenied', $metadata: { httpStatusCode: 403 } })
       }
       entry.lockedUntil = lockedUntil
       context.calls.extend.push(key)
     }
+    async retention(key: string) {
+      const entry = context.remote.get(key)
+      return entry ? { mode: 'COMPLIANCE', retainUntil: entry.lockedUntil } : null
+    }
+    async abortStaleUploads() { return 0 }
     async delete(key: string) {
       const entry = context.remote.get(key)
       if (entry && entry.lockedUntil > new Date()) {
@@ -142,6 +150,7 @@ async function expectRetainedSnapshotsComplete() {
     for (const blob of manifest.blobs) expect(context.remote.has(blob.storageKey), `${job.id} needs ${blob.storageKey}`).toBe(true)
   }
   expect(context.violations).toEqual([])
+  expect(context.shortened).toEqual([])
 }
 
 async function assemble(objectKey: string) {
@@ -177,7 +186,7 @@ describe.skipIf(!enabled)('incremental offsite snapshots with PostgreSQL', () =>
     await mkdir(context.mirror)
     context.store = new LocalBlobStore(join(directory, 'primary'))
     context.enqueue.mockReset(); context.enqueue.mockResolvedValue(undefined)
-    context.remote.clear(); context.violations = []; context.failPut = undefined
+    context.remote.clear(); context.violations = []; context.shortened = []; context.failPut = undefined
     context.calls = { put: [], extend: [], delete: [] }
     identity = await generateIdentity()
     userId = randomUUID()
@@ -328,5 +337,61 @@ describe.skipIf(!enabled)('incremental offsite snapshots with PostgreSQL', () =>
     const job = await snapshot()
     const decrypter = new Decrypter(); decrypter.addIdentity(identity)
     await expect(restore(await decrypter.decrypt(context.remote.get(job.objectKey!)!.bytes))).rejects.toThrow('pulpo backup assemble')
+  })
+
+  it('keeps tracking snapshots after an in-place restore so they expire with their blobs', async () => {
+    const body = Buffer.from('survives restore')
+    await addFile('kept.txt', body, digest(body).digest('hex'))
+    const first = await snapshot()
+    const { bytes } = await assemble(first.objectKey!)
+    await restore(bytes)
+    const tracked = await db.select().from(schema.backupJobs).where(eq(schema.backupJobs.id, first.id))
+    expect(tracked).toMatchObject([{ status: 'completed', format: 'snapshot', userId, deletedAt: null }])
+
+    for (const day of [20, 31, 38]) {
+      vi.setSystemTime(new Date(T0.getTime() + day * DAY))
+      await deleteUnlockedOffsiteBackups(new Date())
+      await expectRetainedSnapshotsComplete()
+    }
+    expect(context.remote.size).toBe(0)
+  })
+
+  it('cleans up blobs stored under an earlier prefix', async () => {
+    const body = Buffer.from('old prefix')
+    await addFile('old.txt', body, digest(body).digest('hex'))
+    await snapshot()
+    await configure({ prefix: 'moved' })
+    vi.setSystemTime(new Date(T0.getTime() + 38 * DAY))
+    await deleteUnlockedOffsiteBackups(new Date())
+    expect(context.remote.size).toBe(0)
+    expect(await liveBlobs()).toEqual([])
+  })
+
+  it('accepts a later lock that an interrupted attempt applied but never recorded', async () => {
+    const body = Buffer.from('extended twice')
+    await addFile('twice.txt', body, digest(body).digest('hex'))
+    await snapshot()
+    const [blob] = await liveBlobs()
+    // Backblaze holds a later lock than the database knows about.
+    const actual = new Date(T0.getTime() + 90 * DAY)
+    context.remote.get(blob!.objectKey)!.lockedUntil = actual
+    vi.setSystemTime(new Date(T0.getTime() + 10 * DAY))
+    const later = await snapshot()
+    expect(context.shortened).toEqual([blob!.objectKey])
+    const [recorded] = await liveBlobs()
+    expect(recorded).toMatchObject({ id: blob!.id, lockedUntil: actual })
+    expect(recorded!.lockedUntil >= later.lockedUntil!).toBe(true)
+    context.shortened = []
+    await expectRetainedSnapshotsComplete()
+  })
+
+  it('locks to whole seconds so stored dates match Object Lock exactly', async () => {
+    vi.setSystemTime(new Date(T0.getTime() + 321))
+    const body = Buffer.from('precise')
+    await addFile('precise.txt', body, digest(body).digest('hex'))
+    const job = await snapshot()
+    const [blob] = await liveBlobs()
+    expect(job.lockedUntil!.getTime() % 1_000).toBe(0)
+    expect(blob!.lockedUntil.getTime() % 1_000).toBe(0)
   })
 })

@@ -4,7 +4,7 @@ import { createReadStream } from 'node:fs'
 import { mkdtemp, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { and, eq, getTableName, is, ne, sql } from 'drizzle-orm'
+import { and, eq, getTableName, inArray, is, ne, sql } from 'drizzle-orm'
 import { getTableConfig, PgTable } from 'drizzle-orm/pg-core'
 import type { BackupSnapshotManifest } from '@pulpo/contracts'
 import * as schema from '../database/schema.js'
@@ -152,6 +152,7 @@ export async function createFullBackup(jobId: string, finalAttempt = true): Prom
           recipient: offsiteRecipient, recipientFingerprint: offsiteRecipientFingerprint,
         },
         lockedUntil,
+        retentionMs: lockedUntil.getTime() - job.createdAt.getTime(),
         sources: blobRows,
         directory: temporaryDirectory,
         readSource: (key) => getBlobStore().getStream(key),
@@ -357,6 +358,9 @@ export async function restoreFullBackup(jobId: string): Promise<void> {
     ]
     importStarted = true
     await db.transaction(async (tx) => {
+      // Offsite objects outlive this database. Keep their history so retained
+      // snapshots stay tracked and are deleted, with their blobs, on schedule.
+      const offsiteJobs = await tx.select().from(backupJobs).where(and(eq(backupJobs.destination, 'backblaze_b2'), ne(backupJobs.id, jobId)))
       await tx.delete(backupJobs).where(ne(backupJobs.id, jobId))
       await tx.execute(sql.raw(`truncate table ${[...FULL_BACKUP_TABLES].reverse().join(', ')} restart identity cascade`))
       // One final INSERT lets PostgreSQL validate self-referencing parents after
@@ -367,6 +371,15 @@ export async function restoreFullBackup(jobId: string): Promise<void> {
         if (table === 'file_nodes') await tx.execute(sql`insert into file_nodes select * from pulpo_restore_file_nodes`)
         if (table === 'users') {
           await tx.insert(backupJobs).values({ ...job, userId: restoredAdminId!, status: 'in_progress', progress: 40, error: null, updatedAt: new Date() })
+          const requesters = [...new Set(offsiteJobs.flatMap(offsiteJob => offsiteJob.userId ? [offsiteJob.userId] : []))]
+          const restoredUsers = new Set(requesters.length
+            ? (await tx.select({ id: users.id }).from(users).where(inArray(users.id, requesters))).map(user => user.id)
+            : [])
+          if (offsiteJobs.length) {
+            await tx.insert(backupJobs).values(offsiteJobs.map(offsiteJob => ({
+              ...offsiteJob, userId: offsiteJob.userId && restoredUsers.has(offsiteJob.userId) ? offsiteJob.userId : null,
+            })))
+          }
         }
         await tx.update(backupJobs).set({ progress: 40 + Math.round(((index + 1) / FULL_BACKUP_TABLES.length) * 55), updatedAt: new Date() }).where(eq(backupJobs.id, jobId))
       }

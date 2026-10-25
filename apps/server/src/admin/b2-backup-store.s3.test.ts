@@ -1,8 +1,9 @@
 import { randomBytes, randomUUID } from 'node:crypto'
 import { Readable } from 'node:stream'
-import { CreateBucketCommand, GetObjectRetentionCommand, HeadBucketCommand, ListObjectVersionsCommand, S3Client } from '@aws-sdk/client-s3'
+import { AbortMultipartUploadCommand, CreateBucketCommand, CreateMultipartUploadCommand, GetObjectRetentionCommand, HeadBucketCommand, ListMultipartUploadsCommand, ListObjectVersionsCommand, S3Client } from '@aws-sdk/client-s3'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { B2BackupStore } from './b2-backup-store.js'
+import { wholeSecondLock } from './backup-retention.js'
 
 /**
  * Runs the Backblaze store against a real S3 implementation with Compliance
@@ -31,7 +32,8 @@ const client = new S3Client({
 })
 const store = new B2BackupStore(settings, { partSizeBytes: PART_BYTES, retryDelayMs: 100 })
 const created: string[] = []
-const seconds = (count: number) => new Date(Math.ceil((Date.now() + count * 1_000) / 1_000) * 1_000)
+// Production lock dates carry milliseconds; Object Lock stores whole seconds.
+const seconds = (count: number) => new Date(Date.now() + count * 1_000 + 321)
 const read = async (key: string) => {
   const { body } = await store.getStream(key)
   const chunks: Buffer[] = []; for await (const chunk of body) chunks.push(Buffer.from(chunk))
@@ -68,14 +70,14 @@ describe.skipIf(!env.endpoint)('Backblaze store against S3 Compliance Object Loc
     await put(key, Buffer.from('small ciphertext'), lockedUntil)
     expect(await read(key)).toEqual(Buffer.from('small ciphertext'))
     expect(await store.head(key)).toEqual({ sizeBytes: 16, jobId: 'job-1', recipientFingerprint: 'fingerprint' })
-    expect(await retention(key)).toEqual({ Mode: 'COMPLIANCE', RetainUntilDate: lockedUntil })
+    expect(await retention(key)).toEqual({ Mode: 'COMPLIANCE', RetainUntilDate: wholeSecondLock(lockedUntil) })
   }, 30_000)
 
   it('uploads a large backup as locked multipart parts', async () => {
     const key = `${env.prefix}/large.age`, body = randomBytes(2 * PART_BYTES + 12_345), lockedUntil = seconds(4)
     await put(key, body, lockedUntil)
     expect((await read(key)).equals(body)).toBe(true)
-    expect(await retention(key)).toEqual({ Mode: 'COMPLIANCE', RetainUntilDate: lockedUntil })
+    expect(await retention(key)).toEqual({ Mode: 'COMPLIANCE', RetainUntilDate: wholeSecondLock(lockedUntil) })
   }, 60_000)
 
   it('extends Compliance retention, refuses to shorten it, and refuses deletion while locked', async () => {
@@ -83,10 +85,35 @@ describe.skipIf(!env.endpoint)('Backblaze store against S3 Compliance Object Loc
     await put(key, Buffer.from('blob'), seconds(2))
     const extended = seconds(5)
     await store.extendRetention(key, extended)
-    expect(await retention(key)).toEqual({ Mode: 'COMPLIANCE', RetainUntilDate: extended })
+    expect(await retention(key)).toEqual({ Mode: 'COMPLIANCE', RetainUntilDate: wholeSecondLock(extended) })
+    expect(await store.retention(key)).toEqual({ mode: 'COMPLIANCE', retainUntil: wholeSecondLock(extended) })
     await expect(store.extendRetention(key, seconds(3))).rejects.toThrow()
     await expect(store.delete(key)).rejects.toThrow()
     expect(await read(key)).toEqual(Buffer.from('blob'))
+  }, 30_000)
+
+  it('aborts only multipart uploads older than the cutoff', async () => {
+    const stale = `${env.prefix}/stale.age`, fresh = `${env.prefix}/fresh.age`
+    for (const key of [stale, fresh]) {
+      // Upload start times are reported to the second.
+      if (key === fresh) await new Promise(resolve => setTimeout(resolve, 1_100))
+      await client.send(new CreateMultipartUploadCommand({ Bucket: env.bucket, Key: key, ObjectLockMode: 'COMPLIANCE', ObjectLockRetainUntilDate: seconds(4) }))
+    }
+    const pending = async () => (await client.send(new ListMultipartUploadsCommand({ Bucket: env.bucket, Prefix: `${env.prefix}/` }))).Uploads ?? []
+    const cutoff = (await pending()).find(upload => upload.Key === fresh)!.Initiated
+    try {
+      if (!cutoff) {
+        // SeaweedFS omits start times; an upload of unknown age is never aborted.
+        expect(await store.abortStaleUploads(`${env.prefix}/`, new Date(Date.now() + 60_000))).toBe(0)
+        return
+      }
+      expect(await store.abortStaleUploads(`${env.prefix}/`, cutoff)).toBe(1)
+      expect((await pending()).map(upload => upload.Key)).toEqual([fresh])
+      expect(await store.abortStaleUploads(`${env.prefix}/`, new Date(Date.now() + 60_000))).toBe(1)
+    } finally {
+      for (const upload of await pending()) await client.send(new AbortMultipartUploadCommand({ Bucket: env.bucket, Key: upload.Key!, UploadId: upload.UploadId! }))
+    }
+    expect(await pending()).toEqual([])
   }, 30_000)
 
   it('reports a missing object so a vanished blob can be replaced', async () => {

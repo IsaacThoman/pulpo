@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { gunzipSync, gzipSync } from 'node:zlib'
@@ -94,6 +94,7 @@ describe('pulpo backup assemble', () => {
       expect(files.get(entry.entry)).toEqual(index === 2 ? unique : shared)
     }
     expect(files.get('database.json')!.toString()).toBe('{"users":[]}')
+    expect((await readdir(directory)).filter(name => name.endsWith('.partial'))).toEqual([])
     expect([...files.keys()][0]).toBe('database.json')
     expect([...files.keys()].at(-1)).toBe('manifest.json')
   })
@@ -116,6 +117,7 @@ describe('pulpo backup assemble', () => {
     await expect(assembleSnapshot({ snapshotPath, identityPath: await identityFile(identity), outputPath, blobs: { kind: 'directory', path: bucket } }))
       .rejects.toThrow('failed its checksum')
     await expect(readFile(outputPath)).rejects.toMatchObject({ code: 'ENOENT' })
+    expect((await readdir(directory)).filter(name => name.endsWith('.partial'))).toEqual([])
   })
 
   it('names the missing blob', async () => {

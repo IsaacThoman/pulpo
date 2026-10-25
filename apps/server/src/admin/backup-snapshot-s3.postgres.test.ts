@@ -20,7 +20,7 @@ import { FULL_BACKUP_TABLES } from './backup-format.js'
 import { createFullBackup, restoreFullBackup } from './backup.js'
 import { B2BackupStore } from './b2-backup-store.js'
 import { resolveBackupSettings } from './backup-settings.js'
-import { completeRestoreUpload, putRestoreChunk, startRestoreUpload } from './restore-uploads.js'
+import { completeRestoreUpload, putRestoreChunk, RESTORE_CHUNK_SIZE, startRestoreUpload } from './restore-uploads.js'
 import { createOffsiteBackup } from './backup-scheduler.js'
 
 /**
@@ -125,7 +125,11 @@ describe.skipIf(!enabled)('incremental snapshots end to end against S3 Object Lo
     const bytes = await readFile(outputPath), fingerprint = createHash('sha256').update(bytes).digest('hex')
     const restoreId = randomUUID()
     await startRestoreUpload(userId, { id: restoreId, originalName: 'restorable.tar.gz', sizeBytes: bytes.byteLength, fingerprint })
-    await putRestoreChunk(restoreId, userId, 0, fingerprint, bytes)
+    // Upload in the browser's chunk size so archives of any size restore.
+    for (let index = 0; index * RESTORE_CHUNK_SIZE < bytes.byteLength; index++) {
+      const chunk = bytes.subarray(index * RESTORE_CHUNK_SIZE, (index + 1) * RESTORE_CHUNK_SIZE)
+      await putRestoreChunk(restoreId, userId, index, createHash('sha256').update(chunk).digest('hex'), chunk)
+    }
     await completeRestoreUpload(restoreId, userId)
     await restoreFullBackup(restoreId)
     const restored = new Map((await db.select().from(schema.fileNodes)).map(file => [file.name, file.objectKey!]))

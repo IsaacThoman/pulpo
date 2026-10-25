@@ -7,6 +7,7 @@ import {
   GetObjectLockConfigurationCommand,
   GetObjectRetentionCommand,
   HeadObjectCommand,
+  ListMultipartUploadsCommand,
   ListObjectsV2Command,
   ListObjectVersionsCommand,
   PutObjectCommand,
@@ -23,6 +24,7 @@ import { join } from 'node:path'
 import { Readable, Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { AppError } from '../lib/errors.js'
+import { wholeSecondLock } from './backup-retention.js'
 import type { ResolvedBackupSettings } from './backup-settings.js'
 
 // S3 caps a single PUT at 5 GiB, so larger backups are uploaded in parts.
@@ -154,6 +156,7 @@ export class B2BackupStore {
     // Object Lock requires a checksum header on every PUT. Spool ciphertext so
     // each part's digest is known before upload, without buffering the backup
     // in memory or using trailers.
+    const retainUntil = wholeSecondLock(lockedUntil)
     const partSize = Math.max(this.multipart.partSizeBytes, Math.ceil(contentLength / MAX_MULTIPART_PARTS))
     const directory = await mkdtemp(join(tmpdir(), 'pulpo-encrypted-upload-'))
     const file = join(directory, 'backup.age')
@@ -181,7 +184,7 @@ export class B2BackupStore {
         ContentType: 'application/octet-stream',
         ContentDisposition: 'attachment',
         ObjectLockMode: 'COMPLIANCE' as const,
-        ObjectLockRetainUntilDate: lockedUntil,
+        ObjectLockRetainUntilDate: retainUntil,
         Metadata: { 'pulpo-job-id': jobId, 'pulpo-recipient': recipientFingerprint },
       }
       if (digests.length <= 1) {
@@ -211,9 +214,10 @@ export class B2BackupStore {
         throw error
       }
       // Never leave an unlocked backup behind: a retry would otherwise accept it as complete.
-      const { Retention } = await this.client.send(new GetObjectRetentionCommand({ Bucket: this.settings.bucket, Key: key }))
-      if (Retention?.Mode !== 'COMPLIANCE' || !Retention.RetainUntilDate || Retention.RetainUntilDate < lockedUntil) {
-        await this.delete(key)
+      const retention = await this.retention(key)
+      if (retention?.mode !== 'COMPLIANCE' || retention.retainUntil < retainUntil) {
+        // Without Compliance retention the object can be removed; a weaker lock keeps it until cleanup.
+        await this.delete(key).catch(() => undefined)
         throw new Error('Backblaze did not apply Compliance retention to the multipart backup')
       }
     } finally {
@@ -247,8 +251,33 @@ export class B2BackupStore {
     await this.client.send(withContentMd5(new PutObjectRetentionCommand({
       Bucket: this.settings.bucket,
       Key: key,
-      Retention: { Mode: 'COMPLIANCE', RetainUntilDate: lockedUntil },
+      Retention: { Mode: 'COMPLIANCE', RetainUntilDate: wholeSecondLock(lockedUntil) },
     })))
+  }
+
+  async retention(key: string): Promise<{ mode: string; retainUntil: Date } | null> {
+    const { Retention } = await this.client.send(new GetObjectRetentionCommand({ Bucket: this.settings.bucket, Key: key }))
+    return Retention?.Mode && Retention.RetainUntilDate ? { mode: Retention.Mode, retainUntil: Retention.RetainUntilDate } : null
+  }
+
+  /** Abort multipart uploads that a crashed worker left behind; their parts are not locked. */
+  async abortStaleUploads(prefix: string, initiatedBefore: Date): Promise<number> {
+    let aborted = 0
+    let keyMarker: string | undefined, uploadIdMarker: string | undefined
+    do {
+      const page = await this.client.send(new ListMultipartUploadsCommand({
+        Bucket: this.settings.bucket, Prefix: prefix, KeyMarker: keyMarker, UploadIdMarker: uploadIdMarker,
+      }))
+      for (const upload of page.Uploads ?? []) {
+        if (!upload.Key || !upload.UploadId || !upload.Initiated || upload.Initiated >= initiatedBefore) continue
+        await this.client.send(new AbortMultipartUploadCommand({ Bucket: this.settings.bucket, Key: upload.Key, UploadId: upload.UploadId }))
+        aborted += 1
+      }
+      if (!page.IsTruncated) break
+      if (page.NextKeyMarker === keyMarker && page.NextUploadIdMarker === uploadIdMarker) throw new Error('Backblaze upload listing did not advance')
+      keyMarker = page.NextKeyMarker; uploadIdMarker = page.NextUploadIdMarker
+    } while (keyMarker || uploadIdMarker)
+    return aborted
   }
 
   async getStream(key: string): Promise<{ body: Readable; contentLength?: number }> {

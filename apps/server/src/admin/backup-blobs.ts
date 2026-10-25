@@ -10,6 +10,7 @@ import { backupBlobs } from '../database/schema.js'
 import { stageBackupBlob } from './backup-archive.js'
 import { createAgeEncryptionStream } from './backup-encryption.js'
 import type { B2BackupStore } from './b2-backup-store.js'
+import { wholeSecondLock } from './backup-retention.js'
 
 const DAY_MS = 86_400_000
 /** Extending a lock costs one request per blob, so extend a little past the snapshot's own lock. */
@@ -42,26 +43,24 @@ export function sha256Hex(checksum: string | null | undefined): string | null {
   return null
 }
 
-/** Lock target for blobs referenced by a snapshot locked until `lockedUntil`. */
-export function blobLockTarget(lockedUntil: Date, now: Date): Date {
-  const slack = Math.min(MAX_LOCK_SLACK_MS, Math.max(0, lockedUntil.getTime() - now.getTime()))
-  return new Date(lockedUntil.getTime() + slack)
+/**
+ * Lock target for blobs referenced by a snapshot locked until `lockedUntil`
+ * with `retentionMs` of retention. It depends only on the snapshot, so a
+ * retried job never asks for an earlier date than an attempt already applied.
+ */
+export function blobLockTarget(lockedUntil: Date, retentionMs: number): Date {
+  const slack = Math.min(MAX_LOCK_SLACK_MS, Math.max(0, retentionMs))
+  return wholeSecondLock(new Date(lockedUntil.getTime() + slack))
 }
 
 function isMissingObject(error: unknown): boolean {
   const name = error instanceof Error ? error.name : ''
   const status = (error as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode
-  return name === 'NoSuchKey' || name === 'NotFound' || status === 404
+  return name === 'NoSuchKey' || name === 'NotFound' || (status === 404 && name !== 'NoSuchBucket')
 }
 
-type BlobLocation = Pick<OffsiteBlobDestination, 'endpoint' | 'bucket' | 'prefix'>
-
-function destinationMatches(destination: BlobLocation) {
-  return and(
-    eq(backupBlobs.storageEndpoint, destination.endpoint),
-    eq(backupBlobs.storageBucket, destination.bucket),
-    eq(backupBlobs.storagePrefix, destination.prefix),
-  )
+function inBucket(destination: Pick<OffsiteBlobDestination, 'endpoint' | 'bucket'>) {
+  return and(eq(backupBlobs.storageEndpoint, destination.endpoint), eq(backupBlobs.storageBucket, destination.bucket))
 }
 
 /**
@@ -75,6 +74,7 @@ export async function ensureOffsiteBlobs(input: {
   store: B2BackupStore
   destination: OffsiteBlobDestination
   lockedUntil: Date
+  retentionMs: number
   sources: SnapshotBlobSource[]
   directory: string
   readSource: (objectKey: string) => Promise<Readable>
@@ -82,14 +82,15 @@ export async function ensureOffsiteBlobs(input: {
   now?: () => Date
 }): Promise<{ blobs: SnapshotBlobEntry[]; uploadedCount: number; uploadedBytes: number }> {
   const now = input.now ?? (() => new Date())
-  const target = blobLockTarget(input.lockedUntil, now())
+  const target = blobLockTarget(input.lockedUntil, input.retentionMs)
   const sources = [...new Map(input.sources.map(source => [source.objectKey, source])).values()]
   const byContent = new Map<string, Promise<BackupBlobRow>>()
   const entries: SnapshotBlobEntry[] = new Array(sources.length)
   let uploadedCount = 0, uploadedBytes = 0, completed = 0, staged = 0
 
   const live = (checksum: string) => and(
-    destinationMatches(input.destination),
+    inBucket(input.destination),
+    eq(backupBlobs.storagePrefix, input.destination.prefix),
     eq(backupBlobs.recipientFingerprint, input.destination.recipientFingerprint),
     eq(backupBlobs.contentChecksum, checksum),
     isNull(backupBlobs.deletedAt),
@@ -104,14 +105,24 @@ export async function ensureOffsiteBlobs(input: {
       if (!row) return null
       if (!row.uploadedAt) return 'pending'
       if (row.lockedUntil >= input.lockedUntil) return row
+      let lockedUntil = target
       try {
         await input.store.extendRetention(row.objectKey, target)
       } catch (error) {
-        if (!isMissingObject(error)) throw error
-        await tx.update(backupBlobs).set({ deletedAt: now(), updatedAt: now() }).where(eq(backupBlobs.id, row.id))
-        return null
+        if (isMissingObject(error)) {
+          // Cleanup deleted the object but crashed before recording it. Remove
+          // any remaining versions so nothing is left untracked, then replace it.
+          await input.store.delete(row.objectKey)
+          await tx.update(backupBlobs).set({ deletedAt: now(), updatedAt: now() }).where(eq(backupBlobs.id, row.id))
+          return null
+        }
+        // An earlier attempt may have applied a later lock without recording it;
+        // Backblaze then rejects this date as a shortening. Accept the real lock.
+        const current = await input.store.retention(row.objectKey).catch(() => null)
+        if (current?.mode !== 'COMPLIANCE' || current.retainUntil < input.lockedUntil) throw error
+        lockedUntil = current.retainUntil
       }
-      const [extended] = await tx.update(backupBlobs).set({ lockedUntil: target, updatedAt: now() })
+      const [extended] = await tx.update(backupBlobs).set({ lockedUntil, updatedAt: now() })
         .where(eq(backupBlobs.id, row.id)).returning()
       return extended!
     })
@@ -186,12 +197,16 @@ export async function ensureOffsiteBlobs(input: {
     }
   }
 
-  let next = 0
+  let next = 0, failed = false
   async function worker(): Promise<void> {
-    while (next < sources.length) {
+    while (!failed && next < sources.length) {
       const index = next++
       const source = sources[index]!
-      const row = await resolve(source)
+      const row = await resolve(source).catch((error: unknown) => {
+        // Stop the other workers from starting new blobs once one has failed.
+        failed = true
+        throw error
+      })
       entries[index] = { objectKey: source.objectKey, checksum: row.contentChecksum, sizeBytes: row.sizeBytes, storageKey: row.objectKey }
       completed += 1
       await input.onProgress?.(completed, sources.length)
@@ -207,9 +222,10 @@ export async function ensureOffsiteBlobs(input: {
 }
 
 /** Delete blob copies whose lock, and therefore every snapshot that used them, has expired. */
-export async function deleteUnlockedOffsiteBlobs(store: B2BackupStore, destination: BlobLocation, now = new Date()): Promise<void> {
+export async function deleteUnlockedOffsiteBlobs(store: B2BackupStore, destination: Pick<OffsiteBlobDestination, 'endpoint' | 'bucket'>, now = new Date()): Promise<void> {
+  // Ignore the prefix, like snapshot cleanup does, so changing it never strands old blobs.
   const expired = await db.select({ id: backupBlobs.id }).from(backupBlobs).where(and(
-    destinationMatches(destination),
+    inBucket(destination),
     isNull(backupBlobs.deletedAt),
     lt(backupBlobs.lockedUntil, now),
   ))

@@ -1,15 +1,18 @@
 import { and, eq, gte, inArray, isNull, lt, sql } from 'drizzle-orm'
 import { db } from '../database/client.js'
-import { applicationSettings, backupBlobs, backupJobs } from '../database/schema.js'
+import { applicationSettings, backupJobs } from '../database/schema.js'
 import { maintenanceQueue } from '../jobs.js'
 import { AppError } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { parseBackupSettings } from '../settings/application-settings.js'
 import { B2BackupStore } from './b2-backup-store.js'
 import { deleteUnlockedOffsiteBlobs } from './backup-blobs.js'
+import { wholeSecondLock } from './backup-retention.js'
 import { ageRecipientDetails, normalizeBackupPrefix, readStoredBackupSettings, resolveBackupSettings, type ResolvedBackupSettings } from './backup-settings.js'
 
 const SCHEDULE_LOCK = 1_886_747_745
+/** Multipart uploads still unfinished after a day belong to a crashed worker. */
+const STALE_UPLOAD_MS = 86_400_000
 
 type BackupFormat = 'archive' | 'snapshot'
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
@@ -73,7 +76,7 @@ export async function createOffsiteBackup(
     const recipient = ageRecipientDetails(settings.recipient)
     const id = newId()
     const createdAt = new Date()
-    const lockedUntil = new Date(createdAt.getTime() + settings.retentionDays * 86_400_000)
+    const lockedUntil = wholeSecondLock(new Date(createdAt.getTime() + settings.retentionDays * 86_400_000))
     await tx.insert(backupJobs).values({
       id,
       userId,
@@ -115,7 +118,7 @@ export async function runOffsiteBackupSchedule(now = new Date()): Promise<void> 
     const resolved = resolveBackupSettings(settings)
     const recipient = ageRecipientDetails(resolved.recipient)
     const id = newId()
-    const lockedUntil = new Date(now.getTime() + resolved.retentionDays * 86_400_000)
+    const lockedUntil = wholeSecondLock(new Date(now.getTime() + resolved.retentionDays * 86_400_000))
     const format = await scheduledFormat(tx, resolved, now)
     await tx.insert(backupJobs).values({
       id,
@@ -161,19 +164,19 @@ export async function reconcileOffsiteBackupJobs(): Promise<void> {
 }
 
 export async function deleteUnlockedOffsiteBackups(now = new Date()): Promise<void> {
+  // Removing the configuration intentionally leaves locked objects in Backblaze.
+  const stored = await readStoredBackupSettings()
+  if (!stored.encryptedApplicationKey || !stored.endpoint || !stored.bucket) return
   const jobs = await db.select().from(backupJobs).where(and(
     eq(backupJobs.destination, 'backblaze_b2'),
     eq(backupJobs.status, 'completed'),
     isNull(backupJobs.deletedAt),
     lt(backupJobs.lockedUntil, now),
   ))
-  const [expiredBlob] = await db.select({ id: backupBlobs.id }).from(backupBlobs)
-    .where(and(isNull(backupBlobs.deletedAt), lt(backupBlobs.lockedUntil, now))).limit(1)
-  if (!jobs.length && !expiredBlob) return
 
   let settings
   try {
-    settings = resolveBackupSettings(await readStoredBackupSettings())
+    settings = resolveBackupSettings(stored)
   } catch (error) {
     console.error(JSON.stringify({
       level: 'error', service: 'pulpo-worker', event: 'backup.retention_credentials_unavailable',
@@ -198,4 +201,12 @@ export async function deleteUnlockedOffsiteBackups(now = new Date()): Promise<vo
     }
   }
   await deleteUnlockedOffsiteBlobs(store, settings, now)
+  try {
+    await store.abortStaleUploads(`${settings.prefix}/`, new Date(now.getTime() - STALE_UPLOAD_MS))
+  } catch (error) {
+    console.error(JSON.stringify({
+      level: 'error', service: 'pulpo-worker', event: 'backup.stale_upload_abort_failed',
+      error: error instanceof Error ? error.message : String(error),
+    }))
+  }
 }

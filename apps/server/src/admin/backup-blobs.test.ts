@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { blobLockTarget, sha256Hex } from './backup-blobs.js'
+import { wholeSecondLock } from './backup-retention.js'
 
 describe('offsite blob identity', () => {
   it('normalizes every stored SHA-256 encoding to lowercase hex', () => {
@@ -17,15 +18,21 @@ describe('offsite blob identity', () => {
 })
 
 describe('offsite blob lock target', () => {
-  const now = new Date('2026-11-01T00:00:00.000Z')
-  const days = (count: number) => new Date(now.getTime() + count * 86_400_000)
+  const day = 86_400_000
+  const lockedUntil = new Date('2026-12-01T00:00:00.000Z')
+  const after = (ms: number) => new Date(lockedUntil.getTime() + ms)
 
   it('extends at most a week past the snapshot lock', () => {
-    expect(blobLockTarget(days(30), now)).toEqual(days(37))
+    expect(blobLockTarget(lockedUntil, 30 * day)).toEqual(after(7 * day))
   })
 
   it('never more than doubles a short retention', () => {
-    expect(blobLockTarget(days(1), now)).toEqual(days(2))
-    expect(blobLockTarget(now, now)).toEqual(now)
+    expect(blobLockTarget(lockedUntil, day)).toEqual(after(day))
+  })
+
+  it('rounds up to the whole second that Object Lock stores', () => {
+    const precise = new Date('2026-12-01T00:00:00.321Z')
+    expect(blobLockTarget(precise, 0)).toEqual(new Date('2026-12-01T00:00:01.000Z'))
+    expect(wholeSecondLock(lockedUntil)).toEqual(lockedUntil)
   })
 })

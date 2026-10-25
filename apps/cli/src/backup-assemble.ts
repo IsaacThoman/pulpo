@@ -1,8 +1,8 @@
-import { createHash, createHmac } from 'node:crypto'
-import { createReadStream, createWriteStream } from 'node:fs'
-import { mkdtemp, open, readFile, rm, stat } from 'node:fs/promises'
+import { createHash, createHmac, randomUUID } from 'node:crypto'
+import { constants, createReadStream, createWriteStream } from 'node:fs'
+import { copyFile, link, mkdtemp, open, readFile, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { basename, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { Readable, Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import type { ReadableStream as NodeReadableStream } from 'node:stream/web'
@@ -184,8 +184,13 @@ async function stageBlob(source: BlobSource, identities: string[], blob: BackupS
  */
 export async function assembleSnapshot(options: AssembleOptions): Promise<AssembleResult> {
   const identities = await readIdentities(options.identityPath)
-  // Refuse to overwrite: only a file this run created may be removed on failure.
-  const output = await open(options.outputPath, 'wx', 0o600)
+  if (await stat(options.outputPath).then(() => true, () => false)) {
+    throw Object.assign(new Error(`${options.outputPath} already exists`), { code: 'EEXIST' })
+  }
+  // Write beside the destination and publish only a complete archive, so an
+  // interrupted run never leaves a truncated file under the requested name.
+  const partialPath = join(dirname(options.outputPath), `.${basename(options.outputPath)}.${randomUUID()}.partial`)
+  const output = await open(partialPath, 'wx', 0o600)
   const directory = await mkdtemp(join(tmpdir(), 'pulpo-assemble-'))
   const pack = tar.pack()
   const written = pipeline(pack, createGzip(), output.createWriteStream())
@@ -230,6 +235,7 @@ export async function assembleSnapshot(options: AssembleOptions): Promise<Assemb
     await addEntry('manifest.json', Readable.from([Buffer.from(JSON.stringify(archiveManifest))]), Buffer.byteLength(JSON.stringify(archiveManifest)))
     pack.finalize()
     await written
+    await publish(partialPath, options.outputPath)
     return {
       createdAt: manifest.createdAt, blobs: manifest.blobs.length, storedObjects: stored.length,
       outputPath: options.outputPath, sizeBytes: (await stat(options.outputPath)).size,
@@ -238,10 +244,20 @@ export async function assembleSnapshot(options: AssembleOptions): Promise<Assemb
     pack.destroy(error instanceof Error ? error : new Error('Assembly failed'))
     await written.catch(() => undefined)
     await output.close().catch(() => undefined)
-    // Never leave a partial archive that looks restorable.
-    await rm(options.outputPath, { force: true })
     throw error
   } finally {
+    await rm(partialPath, { force: true })
     await rm(directory, { recursive: true, force: true })
+  }
+}
+
+/** Move a finished file into place without ever replacing an existing one. */
+async function publish(source: string, destination: string): Promise<void> {
+  try {
+    await link(source, destination)
+  } catch (error) {
+    // Some removable-drive filesystems have no hard links; an exclusive copy is equally safe.
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw error
+    await copyFile(source, destination, constants.COPYFILE_EXCL)
   }
 }
