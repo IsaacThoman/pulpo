@@ -1,5 +1,6 @@
 import { isMarkdownName, type FileNode } from '@pulpo/contracts'
 import {
+  AudioLines,
   File as FileIconGlyph,
   FileArchive,
   FileAudio,
@@ -65,6 +66,7 @@ function ItemIcon({ node, className }: { node: IconNode; className?: string }) {
 
 /** A file's glyph and color from its type: the extension decides, then the MIME type. */
 function fileGlyph(node: IconNode): [LucideIcon, string] {
+  if (node.kind === 'recording') return [AudioLines, 'text-rose-500']
   // Markdown looks the same before and after it becomes editable.
   if (isMarkdownName(node.name)) return [FileText, 'text-muted-foreground']
   const mime = (node.mimeType ?? '').toLowerCase()

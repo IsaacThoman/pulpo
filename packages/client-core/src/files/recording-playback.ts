@@ -70,7 +70,6 @@ export class RecordingPlayback {
   /** A skipped part entered on purpose, which plays instead of being jumped over. */
   private entered: RecordingRange | null = null
   private uses = 0
-  private disposed = false
 
   constructor(private readonly options: RecordingPlaybackOptions) {}
 
@@ -104,7 +103,7 @@ export class RecordingPlayback {
   }
 
   play = () => {
-    if (!this.timeline.clips.length || this.disposed) return
+    if (!this.timeline.clips.length) return
     let position = this.state.positionMs
     if (position >= this.timeline.durationMs - 50) position = 0
     if (this.state.skipping && !sameRange(skipAt(this.timeline.skips, position), this.entered)) position = playablePosition(this.timeline.skips, position)
@@ -150,15 +149,15 @@ export class RecordingPlayback {
     this.update({ skipping })
   }
 
+  /** Stops and releases all loaded audio. Playing again loads it again. */
   dispose = () => {
-    this.disposed = true
     this.halt('idle')
     for (const cached of this.audio.values()) {
       cached.controller.abort()
       void cached.promise.then((audio) => audio.dispose(), () => undefined)
     }
     this.audio.clear()
-    this.listeners.clear()
+    this.current = null
   }
 
   /** The position now, read from the playing audio rather than the last update. */

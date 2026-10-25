@@ -429,7 +429,7 @@ describe('right-clicking empty sidebar space', () => {
   it('offers the top-level actions on empty space', async () => {
     fireEvent.contextMenu(document.querySelector('aside .overflow-y-auto')!, { clientX: 20, clientY: 600 })
     expect(await screen.findByRole('menuitem', { name: /Sort by/ })).toBeTruthy()
-    expect(menuItems()).toEqual(expect.arrayContaining(['New chat', 'New folder', 'New file', 'Upload files', 'Paste', 'Open in Files']))
+    expect(menuItems()).toEqual(expect.arrayContaining(['New chat', 'New folder', 'New document', 'New voice recording', 'Upload files', 'Paste', 'Open in Files']))
   })
 
   it('scopes the menu to an open folder, without sorting or a new chat', async () => {

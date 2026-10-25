@@ -16,6 +16,7 @@ import {
 } from '../api'
 import { trashQueryKey } from '@/features/trash/api'
 import { filesErrorMessage } from '../file-display'
+import { downloadRecordingClip, fetchRecording } from '../recording/api'
 import { useFileToasts } from './toasts'
 
 function count(nodes: readonly FileNode[], one: (name: string) => string, many: (count: number) => string): string {
@@ -132,7 +133,10 @@ export function useFileOperations() {
       if (node.kind === 'folder' || node.kind === 'chat' || node.kind === 'shortcut') continue
       try {
         if (node.kind === 'doc') await downloadDocMarkdown(node)
-        else await downloadFile(node)
+        else if (node.kind === 'recording') {
+          // A recording downloads as the audio of its takes.
+          for (const clip of (await fetchRecording(node.id)).clips) await downloadRecordingClip(node.id, clip.id)
+        } else await downloadFile(node)
       } catch (cause) {
         show({ message: filesErrorMessage(cause, node.name), tone: 'error' })
       }

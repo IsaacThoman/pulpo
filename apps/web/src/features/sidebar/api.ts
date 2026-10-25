@@ -10,6 +10,7 @@ import { pinnedItemsCeiling, sidebarItemsKey, sidebarQueryKey } from './cache'
 import { useSettings } from '@/stores/settings'
 import { ui, uit } from '@/i18n/ui'
 import { createDoc, folderQueryKey, moveFileNodes, uploadFile } from '@/features/files/api'
+import { createRecording } from '@/features/files/recording/api'
 import { filesErrorMessage } from '@/features/files/file-display'
 import { useFileToasts } from '@/features/files/browser/toasts'
 
@@ -353,6 +354,11 @@ export function orderPinnedItems(ids: string[], incoming: readonly FileNode[] = 
 export function newSidebarFile(folderId: string): Promise<FileNode | undefined> {
   useFolderExpansion.getState().setExpanded(folderId, true)
   return mutate(null, () => createDoc(folderId, `${ui("Untitled")}.md`))
+}
+
+export function newSidebarRecording(folderId: string): Promise<FileNode | undefined> {
+  useFolderExpansion.getState().setExpanded(folderId, true)
+  return mutate(null, () => createRecording(folderId, ui("Untitled recording")))
 }
 
 /** Uploads files to the top of `folderId`, one at a time, reporting failures as toasts. */

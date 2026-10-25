@@ -26,6 +26,7 @@ export function fileKindLabel(node: Pick<FileNode, 'kind' | 'name'>): string {
   if (node.kind === 'folder') return ui("Folder")
   if (node.kind === 'chat') return ui("Chat")
   if (node.kind === 'shortcut') return ui("Shortcut")
+  if (node.kind === 'recording') return ui("Recording")
   // The extension alone decides the type, whether or not the file is editable yet.
   if (isMarkdownName(node.name)) return ui("Markdown")
   const extension = fileExtension(node.name)
@@ -69,6 +70,14 @@ export function filesErrorMessage(error: unknown, name?: string): string {
       case 'url_import_failed': return ui("This page could not be imported. Check the link and try again.")
       case 'url_import_unavailable': return ui("Importing from a URL is not available")
       case 'file_shortcut_to_shortcut': return ui("Create a shortcut to the item this shortcut opens instead")
+      case 'file_trashed': return ui("Restore this recording from the trash to change it")
+      case 'recording_audio_too_large': return ui("A take must be 25 MB or smaller")
+      case 'recording_audio_type_unsupported':
+      case 'recording_audio_invalid': return ui("The take could not be read as audio")
+      case 'recording_audio_busy': return ui("Saving takes is busy right now. Try again shortly.")
+      case 'recording_too_many_takes': return ui("This recording has as many takes as it can hold")
+      case 'recording_transcript_busy': return ui("This take already has a transcript")
+      case 'dictation_disabled': return ui("Transcription is turned off by the administrator")
       default: return error.message
     }
   }

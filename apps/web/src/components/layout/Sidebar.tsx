@@ -21,6 +21,7 @@ import {
   KeyRound,
   LogOut,
   Loader2,
+  Mic,
   MoreHorizontal,
   Palette,
   Pencil,
@@ -100,6 +101,7 @@ import {
   isWithin,
   moveSidebarSelection,
   newSidebarFile,
+  newSidebarRecording,
   orderPinnedItems,
   orderSidebarItems,
   pinSidebarItems,
@@ -919,8 +921,8 @@ function itemPath(node: FileNode): string | null {
 
 /** A file's or shortcut's file target, for opening beside the main view. */
 function fileTargetId(node: FileNode): string | null {
-  if (node.kind === 'doc' || node.kind === 'blob') return node.id
-  if (node.kind === 'shortcut' && node.target?.available && (node.target.kind === 'doc' || node.target.kind === 'blob')) return node.target.id
+  if (node.kind === 'doc' || node.kind === 'blob' || node.kind === 'recording') return node.id
+  if (node.kind === 'shortcut' && node.target?.available && (node.target.kind === 'doc' || node.target.kind === 'blob' || node.target.kind === 'recording')) return node.target.id
   return null
 }
 
@@ -1090,7 +1092,11 @@ function SpaceMenuContent({ folderId, onNewChat, onNewFolder, onUpload, onImport
         <>
           <DropdownMenuItem onClick={() => void newSidebarFile(folderId).then((node) => { if (node) go(`/files/d/${node.id}`) })}>
             <FilePlus2 />
-            {ui("New file")}
+            {ui("New document")}
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => void newSidebarRecording(folderId).then((node) => { if (node) go(`/files/d/${node.id}`) })}>
+            <Mic />
+            {ui("New voice recording")}
           </DropdownMenuItem>
           <DropdownMenuItem onClick={onUpload}>
             <Upload />

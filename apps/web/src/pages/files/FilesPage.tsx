@@ -14,6 +14,7 @@ import {
   Download,
   Eye,
   FilePlus2,
+  Mic,
   FolderInput,
   FolderPlus,
   HardDrive,
@@ -56,6 +57,7 @@ import { cn } from '@/lib/utils'
 import { useAuth } from '@/stores/auth'
 import { useSettings } from '@/stores/settings'
 import { createDoc, createFolder, fetchFolder, fetchFolderLayout, folderLayoutQueryKey, folderQueryKey, updateFolderLayout, uploadFile } from '@/features/files/api'
+import { createRecording } from '@/features/files/recording/api'
 import { arrangeGrid, GRID_CELL, moveInGrid, readingOrder } from '@/features/files/browser/grid-layout'
 import { dropFolderOf, filesErrorMessage } from '@/features/files/file-display'
 import { FileMoveDialog } from '@/features/files/FileMoveDialog'
@@ -439,6 +441,17 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
     }
   }
 
+  /** Creates a voice recording and opens it, ready to record. */
+  const newRecording = async () => {
+    try {
+      const node = await createRecording(folderId, uniqueChildName(ui("Untitled recording"), nodes))
+      insertIntoListing(node)
+      open(node)
+    } catch (cause) {
+      ops.fail(cause)
+    }
+  }
+
   /** The page lands in the folder the dialog was opened from, selected like a new file. */
   const imported = (node: FileNode) => {
     if (node.parentId === folderId) {
@@ -479,6 +492,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
     // Without My files there is nowhere to put it; the page already shows the error.
     if (requestStatus === 'error') return
     if (request.kind === 'newFile') void newFile()
+    else if (request.kind === 'newRecording') void newRecording()
     else if (request.kind === 'newFolder') void newFolder()
     else if (request.kind === 'importUrl') setImportingUrl(true)
     else void upload(request.files)
@@ -922,7 +936,8 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
   )
   const backgroundMenu = (
     <>
-      <DropdownMenuItem onSelect={() => void newFile()}><FilePlus2 /> {ui("New file")}</DropdownMenuItem>
+      <DropdownMenuItem onSelect={() => void newFile()}><FilePlus2 /> {ui("New document")}</DropdownMenuItem>
+      <DropdownMenuItem onSelect={() => void newRecording()}><Mic /> {ui("New voice recording")}</DropdownMenuItem>
       <DropdownMenuItem onSelect={() => void newFolder()}><FolderPlus /> {ui("New folder")}<DropdownMenuShortcut>{shortcutLabel('N', { mod: true, shift: true })}</DropdownMenuShortcut></DropdownMenuItem>
       <DropdownMenuSeparator />
       <DropdownMenuItem onSelect={() => fileInput.current?.click()}><Upload /> {ui("Upload files")}</DropdownMenuItem>
