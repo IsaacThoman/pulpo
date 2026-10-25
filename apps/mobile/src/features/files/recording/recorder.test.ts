@@ -141,6 +141,19 @@ describe('TakeRecorderController', () => {
     expect(controller.getSnapshot()).toMatchObject({ phase: 'idle', error: expect.stringContaining('Microphone access is denied') })
   })
 
+  it('explains a microphone that fails to open in plain words', async () => {
+    deps.recorder = () => {
+      const recorder = new FakeRecorder(`file:///take-${recorders.length + 1}.m4a`)
+      recorder.prepare = vi.fn(async () => { throw new Error("FunctionCallException: Calling the 'prepareToRecordAsync' function has failed") })
+      recorders.push(recorder)
+      return recorder
+    }
+    controller = new TakeRecorderController(deps)
+    await controller.start((take) => takes.push(take))
+    expect(controller.getSnapshot()).toMatchObject({ phase: 'idle', error: expect.stringContaining('The microphone couldn’t start') })
+    expect(takes).toHaveLength(0)
+  })
+
   it('stops cleanly if cancelled while the microphone opens', async () => {
     let grant!: (value: boolean) => void
     deps.permission = () => new Promise((resolve) => { grant = resolve })

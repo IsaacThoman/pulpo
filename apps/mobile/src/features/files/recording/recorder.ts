@@ -46,6 +46,8 @@ export interface TakeRecorderDependencies {
 export const MIN_TAKE_MS = 500
 const TAKE_MAX_MS = RECORDING_TAKE_MAX_SECONDS * 1000
 const INTERRUPTED = 'Recording paused: another app is using the microphone. Resume or stop when you’re ready.'
+const START_INTERRUPTED = 'Recording was interrupted. Please try again.'
+const MICROPHONE_UNAVAILABLE = 'The microphone couldn’t start. Check that no other app is using it, then try again.'
 
 interface Take {
   recorder: NativeTakeRecorder
@@ -138,12 +140,13 @@ export class TakeRecorderController implements DictationLevelSource {
     try {
       await recorder.prepare()
       if (session.cancelled) throw new Error('Cancelled')
-      if (this.deps.isForeground?.() === false) throw new Error('Recording was interrupted. Please try again.')
+      if (this.deps.isForeground?.() === false) throw new Error(START_INTERRUPTED)
       recorder.record()
     } catch (error) {
       this.discard(recorder)
       if (session.cancelled) return
-      throw error
+      // Native failures (no input device, the microphone held elsewhere) read as one plain message.
+      throw error instanceof Error && error.message === START_INTERRUPTED ? error : new Error(MICROPHONE_UNAVAILABLE)
     }
     session.take = { recorder, recordedAt: new Date(this.now()).toISOString(), levels: [], durationMs: 0 }
     this.deps.keepAwake?.(true)
