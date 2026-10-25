@@ -49,9 +49,10 @@ export function collapseIntermediateReplies<Step extends { kind: string }>(
 function stepTiming(step: { kind: string }): { startedAt?: string; durationMs?: number } {
   const value = step as Record<string, unknown>
   const item = (value.tool ?? value.workspace ?? value.compaction ?? value) as Record<string, unknown>
+  const startedAt = item.startedAt ?? item.started_at
   const durationMs = item.durationMs ?? item.duration_ms
   return {
-    startedAt: typeof item.startedAt === 'string' ? item.startedAt : undefined,
+    startedAt: typeof startedAt === 'string' ? startedAt : undefined,
     durationMs: typeof durationMs === 'number' && durationMs >= 0 ? durationMs : undefined,
   }
 }

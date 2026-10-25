@@ -70,6 +70,12 @@ describe('collapsed work duration', () => {
       { kind: 'reasoning', durationMs: 500 } as { kind: string },
     ], { requestReceivedAt, initialDurationMs: 2_000 })).toBe(7_500)
   })
+  it('reads snake_case compaction timestamps', () => {
+    expect(collapsedWorkDurationMs([
+      { kind: 'message' },
+      { kind: 'compaction', compaction: { started_at: '2026-01-01T00:00:10.000Z', duration_ms: 5_000 } } as { kind: string },
+    ], { requestReceivedAt, initialDurationMs: 2_000 })).toBe(15_000)
+  })
   it('sums step durations when timestamps are unavailable', () => {
     expect(collapsedWorkDurationMs([
       { kind: 'tool', tool: { durationMs: 1_000 } } as { kind: string },
