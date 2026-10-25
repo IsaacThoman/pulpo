@@ -14,6 +14,7 @@ import { backupSnapshotManifestSchema, type BackupSnapshotManifest } from '@pulp
 const MAX_MANIFEST_BYTES = 64 * 1024 ** 2
 const PREFETCH = 4
 const FETCH_ATTEMPTS = 3
+const ALREADY_ARCHIVE = 'This is already a self-contained archive. Decrypt it with age and upload it to Pulpo directly.'
 
 export interface S3Location {
   endpoint: string
@@ -141,6 +142,8 @@ async function readSnapshot(path: string, identities: string[], directory: strin
       } else if (name === 'database.json' && databaseSize === undefined) {
         await pipeline(entry, createWriteStream(databasePath, { flags: 'wx', mode: 0o600 }))
         databaseSize = size
+      } else if (name.startsWith('blobs/')) {
+        throw new Error(ALREADY_ARCHIVE)
       } else {
         throw new Error(`The snapshot contains an unexpected entry: ${name}`)
       }
@@ -154,7 +157,7 @@ async function readSnapshot(path: string, identities: string[], directory: strin
   if (manifestText === undefined || databaseSize === undefined) throw new Error('The snapshot is missing its manifest or database')
   const raw: unknown = JSON.parse(manifestText)
   if ((raw as { format?: unknown } | null)?.format === 'pulpo-instance-backup') {
-    throw new Error('This is already a self-contained archive. Decrypt it with age and upload it to Pulpo directly.')
+    throw new Error(ALREADY_ARCHIVE)
   }
   return { manifest: backupSnapshotManifestSchema.parse(raw), databasePath, databaseSize }
 }
@@ -190,8 +193,11 @@ export async function assembleSnapshot(options: AssembleOptions): Promise<Assemb
   // Write beside the destination and publish only a complete archive, so an
   // interrupted run never leaves a truncated file under the requested name.
   const partialPath = join(dirname(options.outputPath), `.${basename(options.outputPath)}.${randomUUID()}.partial`)
-  const output = await open(partialPath, 'wx', 0o600)
   const directory = await mkdtemp(join(tmpdir(), 'pulpo-assemble-'))
+  const output = await open(partialPath, 'wx', 0o600).catch(async (error: unknown) => {
+    await rm(directory, { recursive: true, force: true })
+    throw error
+  })
   const pack = tar.pack()
   const written = pipeline(pack, createGzip(), output.createWriteStream())
   void written.catch(() => undefined)

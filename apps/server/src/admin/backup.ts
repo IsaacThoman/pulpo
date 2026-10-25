@@ -375,8 +375,9 @@ export async function restoreFullBackup(jobId: string): Promise<void> {
           const restoredUsers = new Set(requesters.length
             ? (await tx.select({ id: users.id }).from(users).where(inArray(users.id, requesters))).map(user => user.id)
             : [])
-          if (offsiteJobs.length) {
-            await tx.insert(backupJobs).values(offsiteJobs.map(offsiteJob => ({
+          // Batch to stay under PostgreSQL's bind-parameter limit with years of history.
+          for (let start = 0; start < offsiteJobs.length; start += 500) {
+            await tx.insert(backupJobs).values(offsiteJobs.slice(start, start + 500).map(offsiteJob => ({
               ...offsiteJob, userId: offsiteJob.userId && restoredUsers.has(offsiteJob.userId) ? offsiteJob.userId : null,
             })))
           }

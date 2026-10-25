@@ -394,4 +394,52 @@ describe.skipIf(!enabled)('incremental offsite snapshots with PostgreSQL', () =>
     expect(job.lockedUntil!.getTime() % 1_000).toBe(0)
     expect(blob!.lockedUntil.getTime() % 1_000).toBe(0)
   })
+
+  it('keeps scheduling after restoring a backup whose schedule slot already ran', async () => {
+    await addFile('scheduled.txt', Buffer.from('scheduled'), null)
+    await configure({ enabled: true, nextRunAt: T0.toISOString() })
+    const runScheduled = async (day: number) => {
+      vi.setSystemTime(new Date(T0.getTime() + day * DAY + 60_000))
+      await runOffsiteBackupSchedule(new Date())
+      const [job] = await db.select().from(schema.backupJobs).where(eq(schema.backupJobs.status, 'queued'))
+      if (job) await createFullBackup(job.id)
+      return job
+    }
+    const first = await runScheduled(0)
+    const { bytes } = await assemble(first!.objectKey!)
+    await runScheduled(1)
+    // The restored settings point at the day-0 slot this instance already ran.
+    await restore(bytes)
+    const skipped = await runScheduled(1)
+    expect(skipped).toBeUndefined()
+    const [settings] = await db.select().from(schema.applicationSettings).where(eq(schema.applicationSettings.key, 'backups'))
+    expect(Date.parse((settings!.value as { nextRunAt: string }).nextRunAt)).toBeGreaterThan(Date.now())
+    expect(await runScheduled(2)).toMatchObject({ trigger: 'scheduled' })
+    expect(await db.select().from(schema.backupJobs).where(eq(schema.backupJobs.trigger, 'scheduled'))).toHaveLength(3)
+  })
+
+  it('restores in place with years of offsite history', async () => {
+    await addFile('history.txt', Buffer.from('history'), null)
+    const job = await snapshot()
+    const { bytes } = await assemble(job.objectKey!)
+    await db.execute(sql`insert into backup_jobs (id, user_id, operation, destination, format, trigger, status, object_key, storage_endpoint, storage_bucket, locked_until, deleted_at)
+      select gen_random_uuid(), ${userId}, 'backup', 'backblaze_b2', 'snapshot', 'manual', 'completed', 'audit/old-' || n, ${job.storageEndpoint}, ${job.storageBucket}, ${T0.toISOString()}::timestamptz, ${T0.toISOString()}::timestamptz
+      from generate_series(1, 3000) as n`)
+    await restore(bytes)
+    expect(await db.select({ id: schema.backupJobs.id }).from(schema.backupJobs).where(eq(schema.backupJobs.destination, 'backblaze_b2'))).toHaveLength(3001)
+  })
+
+  it('deletes an object that a failed final attempt left behind, keeping the failure as reported', async () => {
+    const body = Buffer.from('uploaded then failed')
+    await addFile('failed.txt', body, digest(body).digest('hex'))
+    const job = await snapshot()
+    const failedAt = new Date(T0.getTime() + 1_000)
+    await db.update(schema.backupJobs).set({ status: 'failed', error: 'Lost the completion response', updatedAt: failedAt }).where(eq(schema.backupJobs.id, job.id))
+    vi.setSystemTime(new Date(T0.getTime() + 38 * DAY))
+    await deleteUnlockedOffsiteBackups(new Date())
+    expect(context.remote.size).toBe(0)
+    const [cleaned] = await db.select().from(schema.backupJobs).where(eq(schema.backupJobs.id, job.id))
+    expect(cleaned).toMatchObject({ status: 'failed', error: 'Lost the completion response', updatedAt: failedAt })
+    expect(cleaned!.deletedAt).not.toBeNull()
+  })
 })

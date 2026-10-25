@@ -137,6 +137,10 @@ describe('pulpo backup assemble', () => {
     await expect(assembleSnapshot({ ...options, identityPath: publicKeyPath })).rejects.toThrow('AGE-SECRET-KEY')
     const archive = await fixture(recipient, [], { format: 'pulpo-instance-backup', version: 1, blobs: [] })
     await expect(assembleSnapshot({ ...options, snapshotPath: archive.snapshotPath, identityPath: await identityFile(identity) })).rejects.toThrow('already a self-contained archive')
+    // A real full archive stores blobs before its manifest.
+    const fullArchive = join(directory, 'full.tar.gz.age')
+    await writeFile(fullArchive, await encrypt(recipient, await tarGz([['database.json', Buffer.from('{}')], ['blobs/YQ', Buffer.from('a')], ['manifest.json', Buffer.from('{}')]])))
+    await expect(assembleSnapshot({ ...options, snapshotPath: fullArchive, identityPath: await identityFile(identity) })).rejects.toThrow('already a self-contained archive')
   })
 
   it('accepts a snapshot that was already decrypted with the age CLI', async () => {

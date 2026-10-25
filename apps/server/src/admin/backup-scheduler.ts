@@ -11,8 +11,8 @@ import { wholeSecondLock } from './backup-retention.js'
 import { ageRecipientDetails, normalizeBackupPrefix, readStoredBackupSettings, resolveBackupSettings, type ResolvedBackupSettings } from './backup-settings.js'
 
 const SCHEDULE_LOCK = 1_886_747_745
-/** Multipart uploads still unfinished after a day belong to a crashed worker. */
-const STALE_UPLOAD_MS = 86_400_000
+/** Multipart uploads unfinished after a week belong to a crashed worker, not a slow one. */
+const STALE_UPLOAD_MS = 7 * 86_400_000
 
 type BackupFormat = 'archive' | 'snapshot'
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
@@ -120,7 +120,9 @@ export async function runOffsiteBackupSchedule(now = new Date()): Promise<void> 
     const id = newId()
     const lockedUntil = wholeSecondLock(new Date(now.getTime() + resolved.retentionDays * 86_400_000))
     const format = await scheduledFormat(tx, resolved, now)
-    await tx.insert(backupJobs).values({
+    // An in-place restore can bring back a schedule whose slot this instance
+    // already ran. Skip that slot instead of failing on it forever.
+    const [inserted] = await tx.insert(backupJobs).values({
       id,
       userId: null,
       operation: 'backup',
@@ -135,11 +137,11 @@ export async function runOffsiteBackupSchedule(now = new Date()): Promise<void> 
       lockedUntil,
       createdAt: now,
       updatedAt: now,
-    })
+    }).onConflictDoNothing().returning({ id: backupJobs.id })
     const next = nextScheduledRun(due, now, resolved.intervalHours)
     await tx.update(applicationSettings).set({ value: { ...settings, nextRunAt: next.toISOString() }, updatedAt: now })
       .where(eq(applicationSettings.key, 'backups'))
-    queuedId = id
+    queuedId = inserted?.id ?? null
   })
   if (queuedId) await enqueue(queuedId)
 }
@@ -167,9 +169,10 @@ export async function deleteUnlockedOffsiteBackups(now = new Date()): Promise<vo
   // Removing the configuration intentionally leaves locked objects in Backblaze.
   const stored = await readStoredBackupSettings()
   if (!stored.encryptedApplicationKey || !stored.endpoint || !stored.bucket) return
+  // Failed jobs are included: a final attempt can fail after its object was stored.
   const jobs = await db.select().from(backupJobs).where(and(
     eq(backupJobs.destination, 'backblaze_b2'),
-    eq(backupJobs.status, 'completed'),
+    inArray(backupJobs.status, ['completed', 'failed']),
     isNull(backupJobs.deletedAt),
     lt(backupJobs.lockedUntil, now),
   ))
@@ -187,13 +190,17 @@ export async function deleteUnlockedOffsiteBackups(now = new Date()): Promise<vo
   const store = new B2BackupStore(settings)
   for (const job of jobs) {
     if (!job.objectKey || job.storageEndpoint !== settings.endpoint || job.storageBucket !== settings.bucket) continue
+    // A failed job keeps its error and timestamp so cleanup never resurfaces it as the latest failure.
+    const failed = job.status === 'failed'
     try {
       await store.delete(job.objectKey)
-      await db.update(backupJobs).set({ deletedAt: now, error: null, updatedAt: now }).where(eq(backupJobs.id, job.id))
+      await db.update(backupJobs).set(failed ? { deletedAt: now } : { deletedAt: now, error: null, updatedAt: now }).where(eq(backupJobs.id, job.id))
     } catch (error) {
-      await db.update(backupJobs).set({
-        error: 'Remote deletion failed; the cleanup worker will retry', updatedAt: now,
-      }).where(eq(backupJobs.id, job.id))
+      if (!failed) {
+        await db.update(backupJobs).set({
+          error: 'Remote deletion failed; the cleanup worker will retry', updatedAt: now,
+        }).where(eq(backupJobs.id, job.id))
+      }
       console.error(JSON.stringify({
         level: 'error', service: 'pulpo-worker', event: 'backup.retention_delete_failed', jobId: job.id,
         error: error instanceof Error ? error.message : String(error),
