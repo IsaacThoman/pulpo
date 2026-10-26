@@ -70,6 +70,23 @@ binaries built before the web preview, fall back to Quick Look. See
 [the validation notes](e2e/html-preview-validation.md) for the security checks
 and the seeded flash card example.
 
+### iPhone Duo
+
+On iPhone Duo, iOS 27.1 moves the status bar into a vertical bar on one side of
+the screen and reserves that column in the safe area. Chat content stays out of
+the column. The temporary chat and expiration buttons move into it as a vertical
+capsule, just under the status bar and camera, where system apps put their bar
+items. When the device is half open, the persistent sidebar fills the page
+before the fold and the chat fills the page after it. Both keep the fold's
+margin clear.
+
+The native `DisplayGeometryView` reports the vertical bar edge and the system's
+reserved regions: occlusions for the camera and status bar, and divisions for
+the fold. It looks these APIs up at runtime, so the module still builds with
+older SDKs, and earlier systems report neither. `src/displayGeometry.ts` turns
+the report into layout. Check changes to the chat layout in the iPhone Duo
+simulator's closed, open, and half-open poses.
+
 ### Files and the document editor
 
 Files screens live in `src/features/files`; [docs/files.md](../../docs/files.md#mobile)

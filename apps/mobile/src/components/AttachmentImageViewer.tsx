@@ -523,7 +523,8 @@ export function AttachmentImageViewer({
           pointerEvents={presentationReady && chromeVisible ? 'box-none' : 'none'}
           style={[styles.chrome, { paddingTop: chromeTop }, chromeStyle]}
         >
-          <View style={styles.topBar}>
+          {/* Side insets keep the buttons out of the iPhone Duo's vertical bar. */}
+          <View style={[styles.topBar, { paddingLeft: 16 + insets.left, paddingRight: 16 + insets.right }]}>
             <GlassIconButton colorScheme="dark" icon="xmark" label="Close image preview" onPress={requestClose} />
             <GalleryMetadata
               count={items.length > 1 ? `${index + 1} of ${items.length}` : undefined}
