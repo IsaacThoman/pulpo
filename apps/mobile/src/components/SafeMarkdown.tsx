@@ -9,6 +9,7 @@ import { beginsWithMarkdownHeading, linkMarkdownImages, normalizeMathDelimiters,
 export const SafeMarkdown = memo(function SafeMarkdown({
   children,
   compact = false,
+  large = false,
   selectable = true,
   containerStyle,
   tightenLeadingHeading = false,
@@ -17,6 +18,8 @@ export const SafeMarkdown = memo(function SafeMarkdown({
   children: string
   streaming?: boolean
   compact?: boolean
+  /** Larger, semibold paragraphs, for a heading-like line such as a quiz question. */
+  large?: boolean
   selectable?: boolean
   containerStyle?: ViewStyle | TextStyle
   tightenLeadingHeading?: boolean
@@ -34,7 +37,9 @@ export const SafeMarkdown = memo(function SafeMarkdown({
     const fontSize = compact ? 13 : 16
     const lineHeight = compact ? 19 : 24
     return {
-      paragraph: { color: compact ? theme.secondary : theme.text, fontSize, lineHeight, marginBottom: compact ? 6 : 10 },
+      paragraph: large
+        ? { color: theme.text, fontSize: 18, lineHeight: 25, fontWeight: '600', marginBottom: 10 }
+        : { color: compact ? theme.secondary : theme.text, fontSize, lineHeight, marginBottom: compact ? 6 : 10 },
       h1: { color: theme.text, fontSize: compact ? 18 : 24, lineHeight: compact ? 23 : 30, marginTop: 11, marginBottom: 8 },
       h2: { color: theme.text, fontSize: compact ? 16 : 21, lineHeight: compact ? 22 : 27, marginTop: 11, marginBottom: 7 },
       h3: { color: theme.text, fontSize: compact ? 14 : 18, lineHeight: compact ? 20 : 24, marginTop: 10, marginBottom: 6 },
@@ -54,7 +59,7 @@ export const SafeMarkdown = memo(function SafeMarkdown({
       math: { color: theme.text, backgroundColor: theme.fill, padding: 12, marginTop: 8, marginBottom: 12, textAlign: 'center' },
       inlineMath: { color: theme.text },
     }
-  }, [compact, theme])
+  }, [compact, large, theme])
 
   if (!markdown) return null
   return <EnrichedMarkdownText

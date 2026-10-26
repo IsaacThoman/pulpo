@@ -55,7 +55,12 @@ export type CostLimitStep = {
   costLimit: CostLimitItem
 }
 
-export type ActivityStep = ReasoningStep | ToolStep | WorkspaceStep | CompactionStep | RecallStep | CostLimitStep
+export type MessageStep = {
+  kind: 'message'
+  text: string
+}
+
+export type ActivityStep = ReasoningStep | ToolStep | WorkspaceStep | CompactionStep | RecallStep | CostLimitStep | MessageStep
 
 export type ActivitySegment = {
   kind: 'activity'
