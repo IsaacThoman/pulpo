@@ -22,6 +22,7 @@ function previewLabel(kind: AttachmentPreviewKind): string {
   if (kind === 'pdf') return ui("PDF preview")
   if (kind === 'table') return ui("Table preview")
   if (kind === 'markdown') return ui("Markdown preview")
+  if (kind === 'quiz') return ui("Quiz")
   if (kind === 'text') return ui("Text preview")
   if (kind === 'sandbox') return ui("Live preview")
   return `${kind[0]!.toUpperCase()}${kind.slice(1)} preview`

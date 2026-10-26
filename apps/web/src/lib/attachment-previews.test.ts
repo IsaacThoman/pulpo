@@ -13,6 +13,7 @@ describe('attachmentPreviewKind', () => {
     ['README.md', 'application/octet-stream', 'markdown'],
     ['notes.txt', 'text/markdown', 'markdown'],
     ['payload.json', 'application/json', 'text'],
+    ['Chapter 1.quiz', 'application/json', 'quiz'],
     ['landing.html', 'text/html', 'sandbox'],
     ['Dashboard.jsx', 'text/javascript', 'sandbox'],
     ['Widget.tsx', 'application/octet-stream', 'sandbox'],

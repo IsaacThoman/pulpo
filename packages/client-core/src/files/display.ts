@@ -1,6 +1,6 @@
 import type { FileNode } from '@pulpo/contracts'
 
-export type FilePreviewKind = 'image' | 'pdf' | 'video' | 'audio' | 'markdown' | 'text' | null
+export type FilePreviewKind = 'image' | 'pdf' | 'video' | 'audio' | 'markdown' | 'quiz' | 'text' | null
 
 /** Largest file that is fetched into memory for an inline preview. */
 export const MAX_INLINE_PREVIEW_BYTES = 50 * 1024 * 1024
@@ -30,6 +30,7 @@ export function filePreviewKind(node: Pick<FileNode, 'kind' | 'name' | 'mimeType
   if (mime === 'application/pdf' || extension === 'pdf') return 'pdf'
   if (node.sizeBytes > MAX_TEXT_PREVIEW_BYTES) return null
   if (extension === 'md' || extension === 'markdown' || mime === 'text/markdown') return 'markdown'
+  if (extension === 'quiz') return 'quiz'
   if (mime.startsWith('text/') || mime === 'application/json' || TEXT_EXTENSIONS.has(extension)) return 'text'
   return null
 }
