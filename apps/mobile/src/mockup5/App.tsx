@@ -137,8 +137,8 @@ import { useNetworkOffline } from '../providers/useNetworkOffline';
 import { StatusBar } from 'expo-status-bar';
 import { SymbolView } from '../platform/SymbolView';
 import { PulsingIcon, SpinningLoader } from '../components/SpinningLoader';
-import { DarkTheme as NavigationDarkTheme, DefaultTheme as NavigationLightTheme, NavigationContainer, useIsFocused } from '@react-navigation/native';
-import { createNativeStackNavigator, type NativeStackScreenProps } from '@react-navigation/native-stack';
+import { DarkTheme as NavigationDarkTheme, DefaultTheme as NavigationLightTheme, NavigationContainer, useIsFocused, useNavigation } from '@react-navigation/native';
+import { createNativeStackNavigator, type NativeStackNavigationProp, type NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useQueryClient } from '@tanstack/react-query';
 import { findCostLimitItem, workspaceContinueWithoutAgentAvailableAtMs, type CostLimitItem, type DataRetentionTag } from '@pulpo/contracts';
 import { DataRetentionBadge } from '../components/DataRetentionBadge';
@@ -217,6 +217,9 @@ import { usePreferencesStore } from '../store/preferences';
 import { FAVORITES_SECTION, resolveModelMenu } from '../features/chat/modelMenu';
 import { aiIconSource, useCatalogIconCacheRevision } from './src/production/AiIconAssets';
 import { SafeMarkdown } from '../components/SafeMarkdown';
+import { AssistantMarkdown } from '../features/quiz/AssistantMarkdown';
+import { appendDraftText, QuizComposerContext } from '../features/quiz/composer';
+import { isQuizFileName } from '@pulpo/client-core/quiz';
 import { ModelWarningBanner } from './src/components/ModelWarningBanner';
 import { AttachmentImageViewer, type AttachmentImagePreviewItem, type AttachmentImageTransitionOrigin } from '../components/AttachmentImageViewer';
 import { useFilesCapabilityRefresh, useFilesEnabled } from '../features/files/availability';
@@ -247,6 +250,7 @@ import { filesQueryKeys, lookUpFileNode } from '../features/files/queries';
 import { fileChangesItem } from '@pulpo/client-core/files';
 import { FileDocumentScreen } from '../features/files/screens/FileDocumentScreen';
 import { FileMarkdownScreen } from '../features/files/screens/FileMarkdownScreen';
+import { FileQuizScreen } from '../features/files/screens/FileQuizScreen';
 import { FilesFolderScreen } from '../features/files/screens/FilesFolderScreen';
 import { timeAgo } from '../features/chat/format';
 import {
@@ -1700,6 +1704,7 @@ function PrototypeRoot() {
         <RootStack.Screen name="FilesFolder" component={FilesFolderScreen} options={{ headerShown: Platform.OS === 'ios', headerLargeTitle: true, title: 'My files' }} />
         <RootStack.Screen name="FileDocument" component={FileDocumentScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Document' }} />
         <RootStack.Screen name="FileMarkdown" component={FileMarkdownScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Markdown' }} />
+        <RootStack.Screen name="FileQuiz" component={FileQuizScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Quiz' }} />
       </RootStack.Navigator>
     </NavigationContainer>
   );
@@ -3794,12 +3799,12 @@ const MessageRow = memo(function MessageRow({
                         onOpenChat={onOpenChat}
                       />;
                     }
-                    return <SafeMarkdown selectable={Platform.OS !== 'android'}
+                    return <AssistantMarkdown selectable={Platform.OS !== 'android'}
                       containerStyle={styles.assistantMarkdown}
                       key={`text:${index}`}
                       streaming={streaming && !timeline.slice(index + 1).some((item) => item.kind === 'text')}
                       tightenLeadingHeading={index === firstTextTimelineIndex}
-                    >{segment.text}</SafeMarkdown>;
+                    >{segment.text}</AssistantMarkdown>;
                   })}
                 </View>
               </MessageContextMenu>
@@ -4471,6 +4476,7 @@ function ChatView({
   const fileScope = useChatFileScope(filesNamespace, chatId, temporary);
   const showFileScopePicker = useFileScopePicker((state) => state.show);
   const openFileItem = useOpenFileItem();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [attachments, setAttachmentState] = useState<ComposerAttachment[]>([]);
   const attachmentsRequireAgent = attachments.some((attachment) => attachment.kind === 'file')
     || imageBatchNeedsWorkspace(attachments.filter((attachment) => attachment.kind !== 'file').map((attachment) => ({ sizeBytes: attachment.size })), maxInlineImages);
@@ -4597,6 +4603,14 @@ function ChatView({
     const end = body.length;
     setComposerSelection(setInputSelection, inputSelectionRef, { start: end, end });
   }, []);
+  // A quiz's "Send results" leaves its message in the draft for the user to edit and send.
+  const appendToComposer = useCallback((text: string) => {
+    const next = appendDraftText(inputRef.current, text);
+    inputRef.current = next;
+    onChangeInput(next);
+    placeComposerCursorAtEnd(next);
+    requestAnimationFrame(() => composerInputRef.current?.focus());
+  }, [composerInputRef, onChangeInput, placeComposerCursorAtEnd]);
   const showPromptSuggestions = usePrototypeStore((state) => state.preferences.showPromptSuggestions);
   const isEmptyConversation = messages.length === 0;
   const suggestions = useMemo(
@@ -5098,7 +5112,9 @@ function ChatView({
   const openFilePreview = useCallback((attachment: Attachment) => {
     void (async () => {
       const uri = attachment.uri || (await downloadAttachment(attachment.id, attachment.name)).uri;
-      await openAttachmentFile(uri, attachment.name, attachment.mimeType);
+      // Quizzes open in the app, where they can be taken.
+      if (isQuizFileName(attachment.name)) navigation.push('FileQuiz', { uri, name: attachment.name });
+      else await openAttachmentFile(uri, attachment.name, attachment.mimeType);
     })().catch((error) => {
       const message = error instanceof AttachmentPreviewError
         ? previewFallbackMessage(error.code)
@@ -5108,7 +5124,7 @@ function ChatView({
         { text: 'Share…', onPress: () => shareResolvedAttachment(attachment) },
       ]);
     });
-  }, [shareResolvedAttachment]);
+  }, [navigation, shareResolvedAttachment]);
 
   const addAttachments = useCallback((incoming: Array<Omit<ComposerAttachment, 'ownerId' | 'attempt' | 'managed'>>) => {
     const coordinated = incoming.map((attachment) => ({
@@ -5812,23 +5828,25 @@ function ChatView({
 
   const renderMessage = useCallback(({ item }: { item: Message }) => (
     <View ref={item.id === latestMessageId ? latestRowRef : undefined} testID={`chat-message-${item.id}`} style={styles.transcriptColumn}>
-      <MessageRow
-        message={item}
-        model={responseModel(item, models, model)}
-        onEdit={expired ? () => Alert.alert('Temporary chat expired', 'This conversation is read-only.') : handleMessageEditAction}
-        onPreviewFile={openFilePreview}
-        onPreviewImages={openImageViewer}
-        onRegenerate={expired ? () => Alert.alert('Temporary chat expired', 'This conversation is read-only.') : onRegenerate}
-        onActivateBranch={expired
-          ? async () => { Alert.alert('Temporary chat expired', 'This conversation is read-only.'); }
-          : onActivateBranch}
-        onOpenChat={onOpenChat}
-        onStop={onStop}
-        sideRail={assistantSideRail}
-        editingLocked={Boolean(messageEdit) || dictationBusy}
-      />
+      <QuizComposerContext.Provider value={expired ? null : appendToComposer}>
+        <MessageRow
+          message={item}
+          model={responseModel(item, models, model)}
+          onEdit={expired ? () => Alert.alert('Temporary chat expired', 'This conversation is read-only.') : handleMessageEditAction}
+          onPreviewFile={openFilePreview}
+          onPreviewImages={openImageViewer}
+          onRegenerate={expired ? () => Alert.alert('Temporary chat expired', 'This conversation is read-only.') : onRegenerate}
+          onActivateBranch={expired
+            ? async () => { Alert.alert('Temporary chat expired', 'This conversation is read-only.'); }
+            : onActivateBranch}
+          onOpenChat={onOpenChat}
+          onStop={onStop}
+          sideRail={assistantSideRail}
+          editingLocked={Boolean(messageEdit) || dictationBusy}
+        />
+      </QuizComposerContext.Provider>
     </View>
-  ), [assistantSideRail, expired, handleMessageEditAction, latestMessageId, messageEdit, dictationBusy, model, models, onActivateBranch, onOpenChat, onRegenerate, onStop, openFilePreview, openImageViewer, styles.transcriptColumn]);
+  ), [appendToComposer, assistantSideRail, expired, handleMessageEditAction, latestMessageId, messageEdit, dictationBusy, model, models, onActivateBranch, onOpenChat, onRegenerate, onStop, openFilePreview, openImageViewer, styles.transcriptColumn]);
 
   const empty = isEmptyConversation && assistantStatus === 'idle';
   const headerAction = resolveChatHeaderAction(chatId, messages.length, temporary);

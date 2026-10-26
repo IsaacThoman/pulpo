@@ -18,4 +18,6 @@ export type RootStackParamList = {
   FileDocument: { fileId: string; name?: string; created?: boolean };
   /** An uploaded Markdown file: read only until it is made editable. */
   FileMarkdown: { fileId: string; name?: string };
+  /** A quiz to take: a `.quiz` file in Files, or one already on the device (a chat attachment). */
+  FileQuiz: { fileId: string; name?: string } | { uri: string; name: string };
 };
