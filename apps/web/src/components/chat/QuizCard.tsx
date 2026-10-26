@@ -1,4 +1,4 @@
-import { useMemo, useState, useSyncExternalStore } from 'react'
+import { useMemo, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { quizFileName, quizFlashcards, quizResultsMessage, quizScore, type Quiz } from '@pulpo/client-core/quiz'
 import { Check, ChevronLeft, ChevronRight, Download, FolderDown, FolderInput, MessageSquareText, RotateCcw, X } from 'lucide-react'
 import { Markdown } from '@/components/chat/Markdown'
@@ -225,6 +225,23 @@ function QuizQuestions({ quiz, progress, update }: {
   )
 }
 
+/** One side of a flashcard. Both sides share a grid cell, so the card is as tall as the longer one. */
+function FlashcardFace({ side, hidden, back = false, children }: { side: string; hidden: boolean; back?: boolean; children: ReactNode }) {
+  return (
+    <div
+      aria-hidden={hidden}
+      data-testid={back ? 'quiz-flashcard-back' : 'quiz-flashcard-front'}
+      className={cn(
+        'col-start-1 row-start-1 flex min-h-48 flex-col items-center justify-center gap-3 rounded-xl border bg-muted/30 px-6 py-8 backface-hidden transition-colors group-hover/flashcard:bg-muted/50 group-focus-visible/flashcard:ring-[3px] group-focus-visible/flashcard:ring-ring/50',
+        back && 'rotate-y-180',
+      )}
+    >
+      <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">{side}</span>
+      {children}
+    </div>
+  )
+}
+
 function QuizFlashcards({ quiz, progress, update }: {
   quiz: Quiz
   progress: QuizProgress
@@ -236,15 +253,26 @@ function QuizFlashcards({ quiz, progress, update }: {
   const go = (next: number) => update({ card: next, flipped: false })
   return (
     <div className="flex flex-col gap-3">
+      {/* Keyed by card so a new card starts on its front instead of flipping back with its answer showing. */}
       <button
+        key={index}
         type="button"
         onClick={() => update((current) => ({ flipped: !current.flipped }))}
         aria-label={progress.flipped ? ui("Show front") : ui("Show back")}
         data-testid="quiz-flashcard"
-        className="flex min-h-48 w-full cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border bg-muted/30 px-6 py-8 text-center transition-colors hover:bg-muted/50"
+        className="group/flashcard w-full cursor-pointer rounded-xl text-center perspective-[1200px] focus-visible:outline-none"
       >
-        <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">{progress.flipped ? ui("Back side") : ui("Front side")}</span>
-        <QuizText text={progress.flipped ? card.back : card.front} className={cn('max-w-full', !progress.flipped && 'text-lg font-medium')} />
+        <div className={cn(
+          'grid transition-transform duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] transform-3d motion-reduce:transition-none',
+          progress.flipped && 'rotate-y-180',
+        )}>
+          <FlashcardFace side={ui("Front side")} hidden={progress.flipped}>
+            <QuizText text={card.front} className="max-w-full text-lg font-medium" />
+          </FlashcardFace>
+          <FlashcardFace side={ui("Back side")} hidden={!progress.flipped} back>
+            <QuizText text={card.back} className="max-w-full" />
+          </FlashcardFace>
+        </div>
       </button>
       <div className="flex items-center justify-between gap-3">
         <Button type="button" variant="ghost" size="icon-sm" className="rounded-full" aria-label={ui("Previous card")} disabled={index === 0} onClick={() => go(index - 1)}>

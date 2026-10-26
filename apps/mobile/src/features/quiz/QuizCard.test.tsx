@@ -16,6 +16,27 @@ vi.mock('react-native', () => ({
   Pressable: ({ children, onPress, disabled, accessibilityLabel }: { children?: ReactNode; onPress: () => void; disabled?: boolean; accessibilityLabel?: string }) =>
     createElement('button', { onClick: onPress, disabled, 'aria-label': accessibilityLabel }, children),
 }))
+vi.mock('react-native-reanimated', async () => {
+  const { createElement: h, useRef } = await import('react')
+  return {
+    default: {
+      View: ({ children, style, accessibilityElementsHidden }: { children?: ReactNode; style: unknown; accessibilityElementsHidden?: boolean }) => {
+        const flat = (Array.isArray(style) ? style : [style]).reduce<Record<string, unknown>>((acc, part) => Object.assign(acc, part), {})
+        return h('div', { 'data-face': '', 'data-style': JSON.stringify(flat), 'aria-hidden': accessibilityElementsHidden }, children)
+      },
+    },
+    // Animations land at once, so a style shows where the card ends up.
+    useSharedValue: (initial: number) => {
+      const ref = useRef<{ value: number } | null>(null)
+      ref.current ??= { value: initial }
+      return ref.current
+    },
+    useAnimatedStyle: (factory: () => unknown) => factory(),
+    withTiming: (value: number) => value,
+    Easing: { inOut: (easing: unknown) => easing, cubic: 'cubic' },
+    ReduceMotion: { System: 'system' },
+  }
+})
 vi.mock('../../components/SafeMarkdown', () => ({ SafeMarkdown: ({ children }: { children: string }) => createElement('p', null, children) }))
 vi.mock('../../mockup5/src/components/PrototypeUI', () => ({
   PrimaryButton: ({ label, onPress }: { label: string; onPress: () => void }) => createElement('button', { onClick: onPress }, label),
@@ -131,9 +152,20 @@ describe('mobile quiz card', () => {
     expect(container.textContent).toContain('Capital of France?')
     await press('Next card')
     expect(container.textContent).toContain('Capital of Italy?')
+    const faces = () => Array.from(container.querySelectorAll<HTMLElement>('[data-face]'))
+    const shown = () => faces().find((face) => face.getAttribute('aria-hidden') !== 'true')!
+    const style = (face: HTMLElement) => JSON.parse(face.dataset.style!) as { opacity: number; transform: Record<string, unknown>[] }
+    expect(shown().textContent).toContain('Front')
     const card = Array.from(container.querySelectorAll('button')).find((item) => item.textContent?.includes('Tap to flip'))!
     await act(async () => card.click())
-    expect(container.textContent).toContain('Rome')
-    expect(container.textContent).toContain('Back')
+    expect(shown().textContent).toContain('Back')
+    expect(shown().textContent).toContain('Rome')
+    const [front, back] = faces()
+    expect(style(front!)).toMatchObject({ opacity: 0, transform: [{ perspective: 1000 }, { rotateY: '180deg' }] })
+    expect(style(back!)).toMatchObject({ opacity: 1, transform: [{ perspective: 1000 }, { rotateY: '360deg' }] })
+    // Another card starts on its front.
+    await press('Previous card')
+    expect(shown().textContent).toContain('Front')
+    expect(style(faces()[0]!).opacity).toBe(1)
   })
 })

@@ -2,7 +2,8 @@ import { quizFlashcards, quizResultsMessage, quizScore, type Quiz, type QuizCard
 import { useQueryClient } from '@tanstack/react-query'
 import * as Haptics from 'expo-haptics'
 import { useContext, useEffect, useMemo, useRef, useState } from 'react'
-import { AccessibilityInfo, ActivityIndicator, Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { AccessibilityInfo, ActivityIndicator, Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native'
+import Reanimated, { Easing, ReduceMotion, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated'
 import { SafeMarkdown } from '../../components/SafeMarkdown'
 import { PrimaryButton, Segmented } from '../../mockup5/src/components/PrototypeUI'
 import { SymbolView } from '../../platform/SymbolView'
@@ -15,6 +16,9 @@ import { saveQuizToFiles, shareQuiz } from './export'
 import { EMPTY_QUIZ_PROGRESS, useQuizProgress, type QuizProgress } from './progress'
 
 type Mode = NonNullable<QuizProgress['mode']>
+const FLASHCARD_MIN_HEIGHT = 170
+const FLIP_PERSPECTIVE = 1000
+const FLIP_TIMING = { duration: 450, easing: Easing.inOut(Easing.cubic), reduceMotion: ReduceMotion.System } as const
 const MODES = [{ value: 'quiz', label: 'Quiz' }, { value: 'flashcards', label: 'Flashcards' }] as const
 
 /**
@@ -214,30 +218,67 @@ function QuizResults({ quiz, progress, progressKey }: { quiz: Quiz; progress: Qu
 function Flashcards({ cards, index, onChange }: { cards: Flashcard[]; index: number; onChange: (card: number) => void }) {
   const theme = useAppTheme()
   const current = Math.min(index, cards.length - 1)
-  // Which card shows its back; moving to another card shows its front.
-  const [flipped, setFlipped] = useState<number | null>(null)
-  const card = cards[current]!
-  const back = flipped === current
   return (
     <View style={styles.body}>
-      <Pressable
-        accessibilityHint={back ? 'Shows the front' : 'Shows the back'}
-        accessibilityRole="button"
-        onPress={() => setFlipped(back ? null : current)}
-        style={({ pressed }) => [styles.flashcard, { backgroundColor: theme.elevated, borderColor: theme.separator }, pressed && styles.pressed]}
-      >
-        <Text style={[styles.face, { color: theme.secondary }]}>{back ? 'Back' : 'Front'}</Text>
-        <View pointerEvents="none" style={styles.faceText}>
-          <SafeMarkdown large={!back} selectable={false}>{back ? card.back : card.front}</SafeMarkdown>
-        </View>
-        <Text style={[styles.flipHint, { color: theme.tertiary }]}>Tap to flip</Text>
-      </Pressable>
+      {/* Keyed by card so a new card starts on its front instead of turning back over with its answer showing. */}
+      <FlipCard key={current} card={cards[current]!} />
       <View style={styles.cardNav}>
         <RoundButton disabled={current === 0} icon="chevron.left" label="Previous card" onPress={() => onChange(current - 1)} />
         <Text style={[styles.cardCount, { color: theme.secondary }]}>{`${current + 1} / ${cards.length}`}</Text>
         <RoundButton disabled={current === cards.length - 1} icon="chevron.right" label="Next card" onPress={() => onChange(current + 1)} />
       </View>
     </View>
+  )
+}
+
+/** A flashcard that turns over in 3D when tapped. Its height fits the taller side, so it keeps its size as it turns. */
+function FlipCard({ card }: { card: Flashcard }) {
+  const theme = useAppTheme()
+  const [back, setBack] = useState(false)
+  const [height, setHeight] = useState(FLASHCARD_MIN_HEIGHT)
+  const rotation = useSharedValue(0)
+  const flip = () => {
+    setBack(!back)
+    rotation.value = withTiming(back ? 0 : 180, FLIP_TIMING)
+  }
+  const measure = (event: LayoutChangeEvent) => {
+    const next = Math.ceil(event.nativeEvent.layout.height)
+    setHeight((current) => Math.max(current, next))
+  }
+  // Each side also hides past the halfway point: Android doesn't always honor backfaceVisibility.
+  const frontStyle = useAnimatedStyle(() => ({
+    opacity: rotation.value < 90 ? 1 : 0,
+    transform: [{ perspective: FLIP_PERSPECTIVE }, { rotateY: `${rotation.value}deg` }],
+  }))
+  const backStyle = useAnimatedStyle(() => ({
+    opacity: rotation.value < 90 ? 0 : 1,
+    transform: [{ perspective: FLIP_PERSPECTIVE }, { rotateY: `${rotation.value + 180}deg` }],
+  }))
+  const face = (side: 'Front' | 'Back', text: string, animatedStyle: typeof frontStyle) => (
+    <Reanimated.View
+      accessibilityElementsHidden={(side === 'Back') !== back}
+      importantForAccessibility={(side === 'Back') === back ? 'auto' : 'no-hide-descendants'}
+      onLayout={measure}
+      pointerEvents="none"
+      style={[styles.flashcard, { minHeight: height, backgroundColor: theme.elevated, borderColor: theme.separator }, animatedStyle]}
+    >
+      <Text style={[styles.face, { color: theme.secondary }]}>{side}</Text>
+      <View style={styles.faceText}>
+        <SafeMarkdown large={side === 'Front'} selectable={false}>{text}</SafeMarkdown>
+      </View>
+      <Text style={[styles.flipHint, { color: theme.tertiary }]}>Tap to flip</Text>
+    </Reanimated.View>
+  )
+  return (
+    <Pressable
+      accessibilityHint={back ? 'Shows the front' : 'Shows the back'}
+      accessibilityRole="button"
+      onPress={flip}
+      style={({ pressed }) => [{ height }, pressed && styles.pressedCard]}
+    >
+      {face('Front', card.front, frontStyle)}
+      {face('Back', card.back, backStyle)}
+    </Pressable>
   )
 }
 
@@ -324,7 +365,7 @@ const styles = StyleSheet.create({
   score: { fontSize: 34, fontWeight: '700', letterSpacing: -0.5, marginTop: 4 },
   scoreDetail: { fontSize: 14 },
   resultActions: { alignSelf: 'stretch', gap: 8, marginTop: 4 },
-  flashcard: { minHeight: 170, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, padding: 14, gap: 8 },
+  flashcard: { position: 'absolute', top: 0, left: 0, right: 0, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, padding: 14, gap: 8, backfaceVisibility: 'hidden' },
   face: { fontSize: 11, fontWeight: '700', letterSpacing: 0.6, textTransform: 'uppercase' },
   faceText: { flex: 1, justifyContent: 'center' },
   flipHint: { fontSize: 12, textAlign: 'center' },
@@ -336,4 +377,5 @@ const styles = StyleSheet.create({
   dimmed: { opacity: 0.6 },
   disabled: { opacity: 0.4 },
   pressed: { opacity: 0.6 },
+  pressedCard: { opacity: 0.85 },
 })
