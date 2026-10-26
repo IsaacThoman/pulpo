@@ -53,8 +53,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Run one package's tests at a time: the large suites already use every core,
+          # and running them side by side starves timing-sensitive tests.
           - name: Test
-            command: npm test
+            command: npm test -- --concurrency=1
             turbo: true
           - name: Build
             command: npm run build
