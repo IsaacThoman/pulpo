@@ -1,8 +1,9 @@
 import { attachmentKind } from './attachments'
 import { previewKindForFile } from './code-preview'
+import { QUIZ_EXTENSION } from '@pulpo/client-core/quiz'
 
 /** `sandbox` files (HTML, JSX) run in the isolated code preview sandbox; SVG stays a plain image. */
-export type AttachmentPreviewKind = 'image' | 'pdf' | 'markdown' | 'text' | 'table' | 'audio' | 'video' | 'sandbox'
+export type AttachmentPreviewKind = 'image' | 'pdf' | 'markdown' | 'quiz' | 'text' | 'table' | 'audio' | 'video' | 'sandbox'
 
 export const MAX_TEXT_PREVIEW_BYTES = 2 * 1024 * 1024
 export const MAX_MEDIA_PREVIEW_BYTES = 100 * 1024 * 1024
@@ -32,6 +33,7 @@ export function attachmentPreviewKind(name: string, mimeType: string): Attachmen
   if (kind === 'video') return 'video'
   if (mime === 'text/csv' || mime === 'text/tab-separated-values' || ext === 'csv' || ext === 'tsv') return 'table'
   if (ext === 'md' || mime === 'text/markdown') return 'markdown'
+  if (ext === QUIZ_EXTENSION) return 'quiz'
   if (previewKindForFile(name, mimeType)) return 'sandbox'
   if (
     mime.startsWith('text/') || mime.includes('javascript') || mime.includes('json')
@@ -42,7 +44,7 @@ export function attachmentPreviewKind(name: string, mimeType: string): Attachmen
 }
 
 export function isTextPreviewKind(kind: AttachmentPreviewKind): boolean {
-  return kind === 'markdown' || kind === 'text' || kind === 'table' || kind === 'sandbox'
+  return kind === 'markdown' || kind === 'quiz' || kind === 'text' || kind === 'table' || kind === 'sandbox'
 }
 
 export function previewSizeLimit(kind: AttachmentPreviewKind): number {
