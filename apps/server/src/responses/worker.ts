@@ -83,6 +83,7 @@ import { codexInferenceReferenceCostMicros } from '../codex/reference-cost.js'
 import { agentThinkingLevel } from '../agent/model-parameters.js'
 import { calculateCostMicros } from '../accounting/pricing.js'
 import { generationTimeContext, TIME_CONTEXT_INSTRUCTIONS, withGenerationTimeContext } from './time-context.js'
+import { quizInstructions } from './quiz-instructions.js'
 
 type UpstreamEvent = { type: string; [key: string]: unknown }
 
@@ -280,6 +281,8 @@ async function contextualInput(
   const customInstructions = publicApi ? '' : composeCustomInstructions(parsePersonalizationSettings(personalizationRow?.value), values)
   const context: unknown[] = []
   if (record.model.systemPrompt.trim()) context.push({ role: 'developer', content: record.model.systemPrompt.trim() })
+  const quiz = publicApi ? '' : quizInstructions(record.response)
+  if (quiz) context.push({ role: 'developer', content: quiz })
   if (customInstructions) context.push({ role: 'developer', content: `User-provided custom instructions:\n${customInstructions}` })
   if (memoryContext) context.push({ role: 'developer', content: memoryContext })
   const recallContext = recalledChatContext(recallItem)
@@ -434,7 +437,8 @@ async function processCodexGenerationAttempt(
   const publishResponseEvent = createResponseEventPublisher(record.response)
   const lineage = await responseLineage(record.response)
   const currentMessage = await codexCurrentUserMessage(record.response)
-  const systemPrompt = withGenerationTimeContext(record.model.systemPrompt, record.response, startedAt) || undefined
+  const basePrompt = [record.model.systemPrompt.trim(), quizInstructions(record.response)].filter(Boolean).join('\n\n')
+  const systemPrompt = withGenerationTimeContext(basePrompt, record.response, startedAt) || undefined
   const codex = createCodexModels(record.response.userId)
   const piModel = codex.getModel('openai-codex', record.model.upstreamModelId)
   if (!piModel) throw new Error('The pinned Pi Codex catalog no longer contains this model')
