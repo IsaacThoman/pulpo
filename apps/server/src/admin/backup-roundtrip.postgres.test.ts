@@ -41,6 +41,7 @@ vi.mock('./b2-backup-store.js', () => ({ B2BackupStore: class {
     context.remote.set(key, { bytes, jobId, recipientFingerprint, lockedUntil })
   }
   async delete(key: string) { context.remote.delete(key) }
+  async abortStaleUploads() { return 0 }
 } }))
 vi.mock('../redis.js', () => ({ redis: {} }))
 vi.mock('../redis-keys.js', () => ({ deleteRedisKeysByPattern: vi.fn() }))
