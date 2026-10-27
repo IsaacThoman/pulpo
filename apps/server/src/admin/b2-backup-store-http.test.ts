@@ -253,6 +253,16 @@ describe('Backblaze Object Lock upload requests', () => {
     expect(requests.filter(request => request.method === 'DELETE' && request.query.includes('versionId=probe-version'))).toHaveLength(1)
   })
 
+  it('deletes a single-PUT backup and fails when Compliance retention did not apply', async () => {
+    server.prependListener('request', (request) => {
+      if (request.method === 'PUT' && !request.url?.includes('retention')) delete request.headers['x-amz-object-lock-mode']
+    })
+    await expect(store.putEncrypted('pulpo/unlocked.age', Readable.from([Buffer.from('x')]), 1, 'job-1', 'fingerprint', new Date(Date.now() + 30_000)))
+      .rejects.toThrow('Backblaze did not apply Compliance retention to the backup')
+    expect(uploads).toHaveLength(1)
+    expect(requests.filter(request => request.method === 'DELETE' && request.query.includes('versionId=probe-version'))).toHaveLength(1)
+  })
+
   it('aborts only multipart uploads started before the cutoff, across pages', async () => {
     const cutoff = new Date('2030-01-02T00:00:00.000Z')
     pendingUploads = [

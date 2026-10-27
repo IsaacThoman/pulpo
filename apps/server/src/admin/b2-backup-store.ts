@@ -12,6 +12,7 @@ import {
   ListObjectVersionsCommand,
   PutObjectCommand,
   S3Client,
+  type PutObjectCommandInput,
   UploadPartCommand,
   type CompletedPart,
 } from '@aws-sdk/client-s3'
@@ -196,9 +197,25 @@ export class B2BackupStore {
         ContentLength: upload.length,
         ContentMD5: createHash('md5').update(upload).digest('base64'),
       }))
-      return
+    } else {
+      await this.uploadParts(key, body, contentLength, partSize, object)
     }
+    try {
+      await this.verifyRetention(key, retainUntil)
+    } catch (error) {
+      // Without Compliance retention the object can be removed, so a retry uploads it again.
+      await this.delete(key).catch(() => undefined)
+      throw error
+    }
+  }
 
+  private async uploadParts(
+    key: string,
+    body: Readable,
+    contentLength: number,
+    partSize: number,
+    object: Omit<PutObjectCommandInput, 'Body'>,
+  ): Promise<void> {
     const { UploadId } = await this.client.send(new CreateMultipartUploadCommand(object))
     if (!UploadId) throw new Error('Backblaze did not return a multipart upload ID')
     try {
@@ -215,13 +232,6 @@ export class B2BackupStore {
       }))
     } catch (error) {
       await this.client.send(new AbortMultipartUploadCommand({ Bucket: this.settings.bucket, Key: key, UploadId })).catch(() => undefined)
-      throw error
-    }
-    try {
-      await this.verifyRetention(key, retainUntil)
-    } catch (error) {
-      // Without Compliance retention the object can be removed, so a retry uploads it again.
-      await this.delete(key).catch(() => undefined)
       throw error
     }
   }

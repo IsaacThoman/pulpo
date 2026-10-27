@@ -155,8 +155,9 @@ export async function createFullBackup(jobId: string, finalAttempt = true): Prom
     if (offsite) {
       if (!offsiteStore || !offsiteRecipient || !offsiteRecipientFingerprint || !job.lockedUntil) throw new Error('Offsite backup configuration is unavailable')
       const inputSize = (await stat(archivePath)).size
-      const encrypted = await createAgeEncryptionStream(createReadStream(archivePath), inputSize, offsiteRecipient)
       await db.update(backupJobs).set({ progress: 92, updatedAt: new Date() }).where(eq(backupJobs.id, jobId))
+      // putEncrypted releases the archive on failure, so nothing may fail between opening it and the upload.
+      const encrypted = await createAgeEncryptionStream(createReadStream(archivePath), inputSize, offsiteRecipient)
       await offsiteStore.putEncrypted(objectKey, encrypted.body, encrypted.sizeBytes, job.id, offsiteRecipientFingerprint, job.lockedUntil)
       uploaded = true
       await db.update(backupJobs).set({
