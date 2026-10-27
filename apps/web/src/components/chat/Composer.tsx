@@ -10,7 +10,7 @@ import { useComposerSync } from './use-composer-sync'
 import { useComposerToolbarFit } from './use-composer-toolbar-fit'
 import { useFollowStartedChat } from './use-follow-started-chat'
 import { useMenuTriggerFocus } from './use-menu-trigger-focus'
-import { registerComposerFocus } from './composer-focus'
+import { appendToDraft, registerComposerFocus, registerComposerInsert } from './composer-focus'
 import { webComposerSync } from '@/lib/local-first/composer-sync'
 import { MAX_MESSAGE_ATTACHMENTS, type ComposerState, type FileAccessMode } from '@pulpo/contracts'
 import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, useSyncExternalStore, type Ref, type DragEvent as ReactDragEvent } from 'react'
@@ -372,6 +372,15 @@ export function Composer({
     el.style.height = 'auto'
     el.style.height = `${Math.min(el.scrollHeight, 220)}px`
   }, [])
+  useEffect(() => registerComposerInsert((text) => {
+    setValue((current) => appendToDraft(current, text))
+    requestAnimationFrame(() => {
+      autosize()
+      const textarea = ref.current
+      textarea?.focus()
+      textarea?.setSelectionRange(textarea.value.length, textarea.value.length)
+    })
+  }), [autosize])
 
   const sharedComposerState: ComposerState = {
     content: preservedDraftRef.current?.value ?? value,

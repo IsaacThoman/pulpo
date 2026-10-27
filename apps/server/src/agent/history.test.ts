@@ -98,7 +98,7 @@ describe('Agent parent history', () => {
 
     expect(text(resolved)).toContain('inspect this')
     expect(text(resolved)).toContain('chart.png')
-    expect(text(resolved)).toContain('/workspace/attachme-chart.png')
+    expect(text(resolved)).toContain('/workspace/attachment-1-chart.png')
     expect(text(resolved)).toContain('answer edited')
   })
 
