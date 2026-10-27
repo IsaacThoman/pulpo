@@ -68,11 +68,20 @@ export async function createFullBackup(jobId: string, finalAttempt = true): Prom
         if (existing.jobId !== job.id || existing.recipientFingerprint !== recipient.fingerprint) {
           throw new Error('Backblaze object key is already occupied by another backup')
         }
-        await db.update(backupJobs).set({
-          status: 'completed', progress: 100, archiveSizeBytes: existing.sizeBytes,
-          completedAt: new Date(), error: null, updatedAt: new Date(),
-        }).where(eq(backupJobs.id, jobId))
-        return
+        // An earlier attempt may have stopped before confirming the lock. Replace
+        // an unlocked object; a locked one refuses deletion and fails the job.
+        const store = offsiteStore
+        const locked = await store.verifyRetention(objectKey, job.lockedUntil).then(() => true, async (error: unknown) => {
+          await store.delete(objectKey).catch(() => { throw error })
+          return false
+        })
+        if (locked) {
+          await db.update(backupJobs).set({
+            status: 'completed', progress: 100, archiveSizeBytes: existing.sizeBytes,
+            completedAt: new Date(), error: null, updatedAt: new Date(),
+          }).where(eq(backupJobs.id, jobId))
+          return
+        }
       }
     }
     try {

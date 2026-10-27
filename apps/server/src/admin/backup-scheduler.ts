@@ -136,18 +136,20 @@ export async function reconcileOffsiteBackupJobs(): Promise<void> {
 
 export async function deleteUnlockedOffsiteBackups(now = new Date()): Promise<void> {
   const stored = await readStoredBackupSettings()
-  if (!stored.encryptedApplicationKey || !stored.endpoint || !stored.bucket) return
   const jobs = await db.select().from(backupJobs).where(and(
     eq(backupJobs.destination, 'backblaze_b2'),
     eq(backupJobs.status, 'completed'),
     isNull(backupJobs.deletedAt),
     lt(backupJobs.lockedUntil, now),
   ))
+  // With nothing expired, still visit a configured bucket to cancel stale uploads.
+  if (!jobs.length && !stored.encryptedApplicationKey) return
 
   let settings
   try {
     settings = resolveBackupSettings(stored)
   } catch (error) {
+    if (!jobs.length) return
     console.error(JSON.stringify({
       level: 'error', service: 'pulpo-worker', event: 'backup.retention_credentials_unavailable',
       error: error instanceof Error ? error.message : String(error),

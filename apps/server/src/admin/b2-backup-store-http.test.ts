@@ -155,8 +155,28 @@ describe('Backblaze Object Lock upload requests', () => {
 
   it('refuses a small upload whose ciphertext is longer than declared', async () => {
     await expect(store.putEncrypted('pulpo/long.age', Readable.from([Buffer.alloc(20)]), 10, 'job-1', 'fingerprint', new Date()))
-      .rejects.toThrow('Encrypted backup is 20 bytes; expected 10')
+      .rejects.toThrow('Encrypted backup is longer than the expected 10 bytes')
     expect(uploads).toHaveLength(0)
+  })
+
+  it('releases the ciphertext source when the multipart upload cannot start', async () => {
+    server.prependListener('request', (request) => {
+      if (request.method === 'POST' && request.url?.includes('uploads')) delete request.headers.authorization
+    })
+    const body = Readable.from((function* () { while (true) yield Buffer.alloc(1_024) })())
+    await expect(store.putEncrypted('pulpo/denied.age', body, 2 * PART_BYTES, 'job-1', 'fingerprint', new Date(Date.now() + 30_000))).rejects.toThrow()
+    expect(body.destroyed).toBe(true)
+    expect(uploads).toHaveLength(0)
+  })
+
+  it('verifies Compliance retention down to whole seconds', async () => {
+    retention = { mode: 'COMPLIANCE', retainUntil: new Date('2030-01-02T03:04:05.000Z') }
+    await store.verifyRetention('pulpo/backup.age', new Date('2030-01-02T03:04:05.900Z'))
+    await expect(store.verifyRetention('pulpo/backup.age', new Date('2030-01-02T03:04:06.000Z'))).rejects.toThrow('did not apply Compliance retention')
+    retention = { mode: 'GOVERNANCE', retainUntil: new Date('2031-01-01T00:00:00.000Z') }
+    await expect(store.verifyRetention('pulpo/backup.age', new Date('2030-01-02T03:04:05.000Z'))).rejects.toThrow('did not apply Compliance retention')
+    retention = null
+    await expect(store.verifyRetention('pulpo/backup.age', new Date('2030-01-02T03:04:05.000Z'))).rejects.toThrow('did not apply Compliance retention')
   })
 
   it('uploads a backup larger than one part as locked multipart parts with per-part checksums', async () => {
@@ -228,7 +248,7 @@ describe('Backblaze Object Lock upload requests', () => {
     })
     const bytes = ciphertext(PART_BYTES + 5)
     await expect(store.putEncrypted('pulpo/unlocked.age', chunked(bytes), bytes.length, 'job-1', 'fingerprint', new Date(Date.now() + 30_000)))
-      .rejects.toThrow('Backblaze did not apply Compliance retention to the multipart backup')
+      .rejects.toThrow('Backblaze did not apply Compliance retention to the backup')
     expect(completed).toHaveLength(1)
     expect(requests.filter(request => request.method === 'DELETE' && request.query.includes('versionId=probe-version'))).toHaveLength(1)
   })

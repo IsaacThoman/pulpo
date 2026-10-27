@@ -160,7 +160,16 @@ export class B2BackupStore {
   ): Promise<void> {
     // Object Lock requires a checksum header on every PUT. Buffer one part at a
     // time so its digest is known before upload, without spooling to disk or using trailers.
-    const retainUntil = wholeSecondLock(lockedUntil)
+    try {
+      await this.upload(key, body, contentLength, jobId, recipientFingerprint, wholeSecondLock(lockedUntil))
+    } catch (error) {
+      // Release the source even when the upload failed before reading it.
+      body.destroy()
+      throw error
+    }
+  }
+
+  private async upload(key: string, body: Readable, contentLength: number, jobId: string, recipientFingerprint: string, retainUntil: Date): Promise<void> {
     const partSize = Math.max(this.partSizeBytes, Math.ceil(contentLength / MAX_MULTIPART_PARTS))
     const object = {
       Bucket: this.settings.bucket,
@@ -171,16 +180,16 @@ export class B2BackupStore {
       ObjectLockRetainUntilDate: retainUntil,
       Metadata: { 'pulpo-job-id': jobId, 'pulpo-recipient': recipientFingerprint },
     }
-    const assertLength = (received: number) => {
-      if (received !== contentLength) throw new Error(`Encrypted backup is ${received} bytes; expected ${contentLength}`)
-    }
 
     if (contentLength <= partSize) {
-      // Size the buffer to this backup; a longer stream spills into a second part and fails the length check.
-      const parts: Buffer[] = []
-      for await (const part of fixedSizeParts(body, Math.max(contentLength, 1))) parts.push(part)
-      const upload = parts.length === 1 ? parts[0]! : Buffer.concat(parts)
-      assertLength(upload.length)
+      // Size the buffer to this backup; a longer stream spills into a second part.
+      let upload: Buffer | undefined
+      for await (const part of fixedSizeParts(body, Math.max(contentLength, 1))) {
+        if (upload) throw new Error(`Encrypted backup is longer than the expected ${contentLength} bytes`)
+        upload = part
+      }
+      upload ??= Buffer.alloc(0)
+      if (upload.length !== contentLength) throw new Error(`Encrypted backup is ${upload.length} bytes; expected ${contentLength}`)
       await this.client.send(new PutObjectCommand({
         ...object,
         Body: upload,
@@ -200,7 +209,7 @@ export class B2BackupStore {
         completed.push({ PartNumber: partNumber, ETag: await this.uploadPart(key, UploadId, partNumber, part) })
         received += part.length
       }
-      assertLength(received)
+      if (received !== contentLength) throw new Error(`Encrypted backup is ${received} bytes; expected ${contentLength}`)
       await this.client.send(new CompleteMultipartUploadCommand({
         Bucket: this.settings.bucket, Key: key, UploadId, MultipartUpload: { Parts: completed },
       }))
@@ -208,11 +217,22 @@ export class B2BackupStore {
       await this.client.send(new AbortMultipartUploadCommand({ Bucket: this.settings.bucket, Key: key, UploadId })).catch(() => undefined)
       throw error
     }
-    // A retry accepts an existing object as complete, so never leave one without Compliance retention.
-    const { Retention } = await this.client.send(new GetObjectRetentionCommand({ Bucket: this.settings.bucket, Key: key }))
-    if (Retention?.Mode !== 'COMPLIANCE' || !Retention.RetainUntilDate || Retention.RetainUntilDate < retainUntil) {
+    try {
+      await this.verifyRetention(key, retainUntil)
+    } catch (error) {
+      // Without Compliance retention the object can be removed, so a retry uploads it again.
       await this.delete(key).catch(() => undefined)
-      throw new Error('Backblaze did not apply Compliance retention to the multipart backup')
+      throw error
+    }
+  }
+
+  /** Fail unless the object is under Compliance retention until at least `lockedUntil`. */
+  async verifyRetention(key: string, lockedUntil: Date): Promise<void> {
+    const { Retention } = await this.client.send(new GetObjectRetentionCommand({ Bucket: this.settings.bucket, Key: key }))
+    // Object Lock stores whole seconds, so compare at that precision.
+    const required = Math.floor(lockedUntil.getTime() / 1_000) * 1_000
+    if (Retention?.Mode !== 'COMPLIANCE' || !Retention.RetainUntilDate || Retention.RetainUntilDate.getTime() < required) {
+      throw new Error('Backblaze did not apply Compliance retention to the backup')
     }
   }
 

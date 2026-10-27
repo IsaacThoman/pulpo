@@ -41,6 +41,10 @@ vi.mock('./b2-backup-store.js', () => ({ B2BackupStore: class {
     context.remote.set(key, { bytes, jobId, recipientFingerprint, lockedUntil })
   }
   async delete(key: string) { context.remote.delete(key) }
+  async verifyRetention(key: string, lockedUntil: Date) {
+    const entry = context.remote.get(key)
+    if (!entry || entry.lockedUntil < lockedUntil) throw new Error('Backblaze did not apply Compliance retention to the backup')
+  }
   async abortStaleUploads() { return 0 }
 } }))
 vi.mock('../redis.js', () => ({ redis: {} }))
@@ -299,6 +303,13 @@ describe.skipIf(!enabled)('full application backup audit with PostgreSQL and loc
     const plaintext = await decrypter.decrypt(ciphertext)
     await createFullBackup(manual!.id)
     expect(context.remote.size).toBe(1)
+    expect(context.remote.get(manual!.objectKey!)!.bytes.equals(ciphertext)).toBe(true)
+    // A retry replaces an object that an earlier attempt left without its lock.
+    context.remote.get(manual!.objectKey!)!.lockedUntil = new Date(0)
+    await createFullBackup(manual!.id)
+    expect(context.remote.get(manual!.objectKey!)!.lockedUntil).toEqual(completed!.lockedUntil)
+    expect(context.remote.get(manual!.objectKey!)!.bytes.equals(ciphertext)).toBe(false)
+    expect((await db.select().from(schema.backupJobs).where(eq(schema.backupJobs.id, manual!.id)))[0]!.status).toBe('completed')
     await Promise.all([runOffsiteBackupSchedule(now), runOffsiteBackupSchedule(now)])
     const jobs = await db.select().from(schema.backupJobs)
     expect(jobs.filter(job => job.trigger === 'scheduled')).toHaveLength(1)
