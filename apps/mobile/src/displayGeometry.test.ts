@@ -17,7 +17,7 @@ const COVER: DisplayGeometry = {
   ],
   divisions: [],
 }
-const COVER_INSETS = { top: 0, left: 0, right: 84 }
+const INSETS = { top: 0, left: 0, right: 84 }
 const INNER: DisplayGeometry = {
   verticalBarEdge: 'trailing',
   occlusions: [{ x: 867, y: 0, width: 84, height: 124 }],
@@ -33,17 +33,17 @@ describe('vertical bar', () => {
     expect(resolveVerticalBar(EMPTY_DISPLAY_GEOMETRY, { top: 62, left: 0, right: 0 }, 402)).toBeNull()
   })
 
-  it('reserves the trailing column and starts items below the status bar on the cover display', () => {
-    expect(resolveVerticalBar(COVER, COVER_INSETS, 466)).toEqual({ side: 'right', width: 84, itemsTop: 174, itemEdgeInset: 24 })
+  it('reserves the trailing column and finds the bottom of the status bar on the cover display', () => {
+    expect(resolveVerticalBar(COVER, INSETS, 466)).toEqual({ side: 'right', width: 84, statusBottom: 174 })
   })
 
-  it('starts items below the shorter status bar on the inner display', () => {
-    expect(resolveVerticalBar(INNER, COVER_INSETS, 951)?.itemsTop).toBe(124)
+  it('finds the bottom of the shorter status bar on the inner display', () => {
+    expect(resolveVerticalBar(INNER, INSETS, 951)?.statusBottom).toBe(124)
   })
 
   it('ignores occlusions outside the column', () => {
     const geometry = { ...INNER, occlusions: [...INNER.occlusions, { x: 677, y: 21, width: 58, height: 300 }] }
-    expect(resolveVerticalBar(geometry, COVER_INSETS, 951)?.itemsTop).toBe(124)
+    expect(resolveVerticalBar(geometry, INSETS, 951)?.statusBottom).toBe(124)
   })
 
   it('follows the layout direction for a trailing bar', () => {

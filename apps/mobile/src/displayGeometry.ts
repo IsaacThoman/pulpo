@@ -20,24 +20,18 @@ export type DisplayGeometry = {
 
 export const EMPTY_DISPLAY_GEOMETRY: DisplayGeometry = { verticalBarEdge: 'none', occlusions: [], divisions: [] }
 
-/** System bar items are this wide in the vertical bar. */
-export const VERTICAL_BAR_ITEM_WIDTH = 48
-/** System bar items center this far from the display edge, under the status bar. */
-export const VERTICAL_BAR_ITEM_CENTER_INSET = 48
 /** A fold only splits the window when the page after it can still hold a chat. */
 export const FOLD_PAGE_MIN_WIDTH = 360
 
 /**
  * The column iOS reserves on one side of the window for the status bar and
- * bar items. Content stays out of it; the bar's own items start at `itemsTop`.
+ * bar items. Below the sensors and status bar at its top, it is empty.
  */
 export type VerticalBar = {
   side: 'left' | 'right'
   width: number
-  /** Below the sensors and status bar at the top of the column. */
-  itemsTop: number
-  /** Offset from the display edge to an item's near side, centering it under the status bar. */
-  itemEdgeInset: number
+  /** Where the sensors and status bar at the top of the column end. */
+  statusBottom: number
 }
 
 export function resolveVerticalBar(
@@ -52,11 +46,10 @@ export function resolveVerticalBar(
   if (width <= 0) return null
   const columnStart = side === 'right' ? windowWidth - width : 0
   const columnEnd = columnStart + width
-  const itemsTop = geometry.occlusions
+  const statusBottom = geometry.occlusions
     .filter((region) => region.x < columnEnd && region.x + region.width > columnStart)
-    .reduce((top, region) => Math.max(top, region.y + region.height), insets.top)
-  const itemEdgeInset = Math.max(0, Math.min(VERTICAL_BAR_ITEM_CENTER_INSET, width - VERTICAL_BAR_ITEM_WIDTH / 2) - VERTICAL_BAR_ITEM_WIDTH / 2)
-  return { side, width, itemsTop, itemEdgeInset }
+    .reduce((bottom, region) => Math.max(bottom, region.y + region.height), insets.top)
+  return { side, width, statusBottom }
 }
 
 /** An active fold running the height of the window, splitting it into left and right pages. */

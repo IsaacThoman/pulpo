@@ -87,19 +87,9 @@ private struct TemporaryChatHeaderContent: View {
     return model.active ? "New temporary chat" : "New chat"
   }
 
-  /// In the vertical bar the capsule hangs from its top edge, like the bar's
-  /// other items, and the secondary action slides in below the primary one.
+  /// Stacked, the capsule hangs from the header row and the secondary action
+  /// slides in below the primary one.
   private var vertical: Bool { model.axis == "vertical" }
-
-  /// System vertical bar items are 48 points wide; header items are 44.
-  private var itemWidth: CGFloat { vertical ? 48 : 44 }
-
-  private var itemLength: CGFloat {
-    guard vertical else { return 44 }
-    return model.expanded ? 52 : 48
-  }
-
-  private var glyphSize: CGFloat { vertical ? 20 : 18 }
 
   var body: some View {
     Group {
@@ -124,7 +114,7 @@ private struct TemporaryChatHeaderContent: View {
           trailingButton
           leadingButton
         }
-        .frame(width: 48, height: model.expanded ? 104 : 48, alignment: .top)
+        .frame(width: 44, height: model.expanded ? 88 : 44, alignment: .top)
       } else {
         HStack(spacing: 0) {
           leadingButton
@@ -144,25 +134,25 @@ private struct TemporaryChatHeaderContent: View {
     Button(action: model.leadingAction == "expiration" ? onToggleExpiration : onSave) {
       ZStack {
         Image(systemName: "bookmark")
-          .font(.system(size: glyphSize))
+          .font(.system(size: 18))
           .opacity(model.leadingAction == "save" && !model.saving ? 1 : 0)
 
         Image(systemName: "hourglass")
-          .font(.system(size: glyphSize))
+          .font(.system(size: 18))
           .opacity(model.leadingAction == "expiration" ? 1 : 0)
 
         ProgressView()
           .controlSize(.small)
           .opacity(model.leadingAction == "save" && model.saving ? 1 : 0)
       }
-      .frame(width: itemWidth, height: vertical ? 52 : 44)
+      .frame(width: 44, height: 44)
       .foregroundStyle(leadingIconColor)
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
     .frame(
-      width: vertical ? itemWidth : model.expanded ? 44 : 0,
-      height: vertical ? model.expanded ? 52 : 0 : 44
+      width: vertical || model.expanded ? 44 : 0,
+      height: !vertical || model.expanded ? 44 : 0
     )
     .opacity(model.expanded ? 1 : 0)
     .scaleEffect(model.expanded ? 1 : 0.78)
@@ -177,16 +167,16 @@ private struct TemporaryChatHeaderContent: View {
       ZStack {
         PulpoGhostShape()
           .stroke(style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
-          .frame(width: glyphSize, height: glyphSize)
+          .frame(width: 18, height: 18)
           .opacity(model.trailingAction == "ghost" ? 1 : 0)
           .scaleEffect(model.trailingAction == "ghost" ? 1 : 0.72)
 
         Image(systemName: "square.and.pencil")
-          .font(.system(size: glyphSize))
+          .font(.system(size: 18))
           .opacity(model.trailingAction == "new-chat" ? 1 : 0)
           .scaleEffect(model.trailingAction == "new-chat" ? 1 : 0.72)
       }
-      .frame(width: itemWidth, height: itemLength)
+      .frame(width: 44, height: 44)
       .foregroundStyle(iconColor)
       .contentShape(Rectangle())
     }
@@ -240,8 +230,8 @@ public final class TemporaryChatHeaderView: ExpoView {
       onNewChat: { [weak self] in self?.onNewChat([:]) }
     )
     let host = UIHostingController(rootView: content)
-    // In the vertical bar the view lies wholly outside the safe area, which
-    // would otherwise squeeze the capsule toward the content edge.
+    // The chat can slide the view into iPhone Duo's vertical bar column, whose
+    // safe area would otherwise squeeze the capsule toward the content edge.
     host.safeAreaRegions = []
     host.view.backgroundColor = .clear
     host.view.translatesAutoresizingMaskIntoConstraints = false

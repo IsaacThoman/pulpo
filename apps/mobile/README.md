@@ -73,12 +73,15 @@ and the seeded flash card example.
 ### iPhone Duo
 
 On iPhone Duo, iOS 27.1 moves the status bar into a vertical bar on one side of
-the screen and reserves that column in the safe area. Chat content stays out of
-the column. The temporary chat and expiration buttons move into it as a vertical
-capsule, just under the status bar and camera, where system apps put their bar
-items. When the device is half open, the persistent sidebar fills the page
-before the fold and the chat fills the page after it. Both keep the fold's
-margin clear.
+the screen and reserves that column in the safe area. The chat header stays
+beside the column, and its temporary chat and expiration buttons stack into a
+vertical capsule that hangs below the header row. The transcript and composer
+run under the column, which is empty below the camera and status bar. iOS
+frosts a pill behind the status bar while content passes under it. Screens
+with native navigation bars keep their content out of the column, because UIKit
+moves their bar buttons into it. When the device is half open, the persistent
+sidebar fills the page before the fold and the chat fills the page after it.
+Both keep the fold's margin clear.
 
 The native `DisplayGeometryView` reports the vertical bar edge and the system's
 reserved regions: occlusions for the camera and status bar, and divisions for

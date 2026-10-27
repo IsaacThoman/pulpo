@@ -329,7 +329,7 @@ import {
   usesAssistantSideRail,
   usesPersistentSidebar,
 } from '../responsive';
-import { persistentSidebarWidth, VERTICAL_BAR_ITEM_WIDTH } from '../displayGeometry';
+import { persistentSidebarWidth } from '../displayGeometry';
 import { useVerticalBar, useVerticalFold } from '../providers/displayGeometryContext';
 
 const CHAT_COMPOSER_BOTTOM_PADDING = 156;
@@ -1462,8 +1462,8 @@ function TemporaryChatHeaderControl({ axis = 'horizontal', ...props }: Temporary
         {...props}
         axis={axis}
         reduceMotion={reduceMotion}
-        // Vertically the capsule grows down from one 48-point item to two.
-        style={axis === 'vertical' ? { width: VERTICAL_BAR_ITEM_WIDTH, height: 104 } : { width: 88, height: 44 }}
+        // Stacked, the capsule grows down from one item to two.
+        style={axis === 'vertical' ? { width: 44, height: 88 } : { width: 88, height: 44 }}
       />
     )
     : <FallbackTemporaryChatHeaderControl {...props} />;
@@ -4418,12 +4418,12 @@ function ChatView({
   const { reduceMotion, reduceTransparency } = useAccessibilityPreferences();
   const { fontScale, height: windowHeight, width: windowWidth } = useWindowDimensions();
   const horizontalPadding = responsiveHorizontalPadding(windowWidth);
-  // iPhone Duo reserves a column on one side for its vertical status bar. Chat
-  // content stays out of it; the header's trailing actions move into it.
+  // iPhone Duo reserves a column on one side for its vertical status bar. The
+  // header stays beside it, with its trailing actions stacked; the transcript
+  // and composer run under the column, which is empty below the status bar.
   const verticalBar = useVerticalBar();
   const availableChatWidth = windowWidth
     - (persistentSidebar && sidebarVisible ? sidebarWidth : 0)
-    - (verticalBar?.width ?? 0)
     - foldMargin;
   const assistantSideRail = usesAssistantSideRail(Math.max(0, availableChatWidth - horizontalPadding * 2));
   const accessibilityLayout = fontScale >= 1.6;
@@ -5875,15 +5875,22 @@ function ChatView({
   const headerAction = resolveChatHeaderAction(chatId, messages.length, temporary);
   const headerControl = resolveChatHeaderControl(headerAction, showAutoExpirationControl);
   const headerExpansionProgress = useSharedValue(headerControl.expanded ? 1 : 0);
-  const headerActionsInVerticalBar = verticalBar !== null;
+  const stackedHeaderControl = verticalBar !== null;
+  // Where the transcript comes to rest when scrolled to its start: below the
+  // header, the stacked control's second item hanging under the header row,
+  // and the status bar at the top of the vertical bar.
+  const transcriptStart = Math.max(
+    headerOverlayHeight + (stackedHeaderControl && headerControl.expanded ? 44 : 0),
+    verticalBar?.statusBottom ?? 0,
+  );
   const modelTriggerAnimatedStyle = useAnimatedStyle(() => Platform.OS === 'android' ? {
     // Match the available space between the 48 dp history/trailing targets.
     // Removing the hourglass frees 48 dp and moves the midpoint right by 24 dp.
     right: interpolate(headerExpansionProgress.value, [0, 1], [66, 114]),
   } : {
-    // With the trailing control in the vertical bar, center in the header.
-    transform: [{ translateX: headerActionsInVerticalBar ? 22 : interpolate(headerExpansionProgress.value, [0, 1], [22, 0]) }],
-  }, [headerActionsInVerticalBar]);
+    // A stacked trailing control stays one item wide.
+    transform: [{ translateX: stackedHeaderControl ? 22 : interpolate(headerExpansionProgress.value, [0, 1], [22, 0]) }],
+  }, [stackedHeaderControl]);
   const loadingExistingChat = Boolean(chatId && isEmptyConversation && !chatLoaded);
   useEffect(() => {
     // Empty chats have no transcript list to emit a native layout event.
@@ -5920,7 +5927,12 @@ function ChatView({
 
   const emptyLandingContent = (
     <View style={styles.emptyState}>
-      <Reanimated.View style={[styles.emptyIdentity, !scrollLanding && emptyStateAnimatedStyle]}>
+      <Reanimated.View style={[
+        styles.emptyIdentity,
+        // Stays centered under the header's model menu, which keeps beside the vertical bar.
+        verticalBar && { [verticalBar.side === 'right' ? 'paddingRight' : 'paddingLeft']: verticalBar.width },
+        !scrollLanding && emptyStateAnimatedStyle,
+      ]}>
         <View style={[styles.emptyModelLineWrap, Platform.OS === 'android' && { paddingTop: Math.max(40, 24 * fontScale + 16) }]}>
           <Reanimated.View
             accessible={temporary}
@@ -5985,39 +5997,16 @@ function ChatView({
     </View>
   );
 
-  const temporaryChatControl = (
-    <TemporaryChatHeaderControl
-      axis={verticalBar ? 'vertical' : 'horizontal'}
-      active={temporary}
-      expanded={headerControl.expanded}
-      expirationEnabled={autoExpire}
-      leadingAction={headerControl.leadingAction}
-      trailingAction={headerControl.trailingAction}
-      onToggleExpiration={() => {
-        onAutoExpirationChange(!autoExpire);
-        Haptics.selectionAsync();
-      }}
-      onToggleTemporary={() => { void toggleTemporary(); }}
-      onNewChat={onNewChat}
-      onSave={onSaveTemporary}
-      saveDisabled={expired}
-      saving={savingTemporary}
-    />
-  );
-
   return (
     <Reanimated.View style={[styles.chatRoot, temporarySurfaceAnimatedStyle]}>
-      <View style={[styles.flex, {
-        marginLeft: (verticalBar?.side === 'left' ? verticalBar.width : 0) + foldMargin,
-        marginRight: verticalBar?.side === 'right' ? verticalBar.width : 0,
-      }]}>
+      <View style={[styles.flex, { marginLeft: foldMargin }]}>
       <View
         onLayout={(event) => {
           const height = event.nativeEvent.layout.height;
           setHeaderOverlayHeight((current) => current === height ? current : height);
         }}
         pointerEvents="box-none"
-        style={[styles.chatHeaderOverlay, { paddingTop: insets.top }]}
+        style={[styles.chatHeaderOverlay, { paddingTop: insets.top }, verticalBar && { [verticalBar.side]: verticalBar.width }]}
       >
         {Platform.OS === 'ios' && (
           // Spans the whole pane, past the content inset, so tinted chats show no seam.
@@ -6046,14 +6035,28 @@ function ChatView({
               <AndroidModelMenu model={model} models={models} onSelectModel={onSelectModel} />
             )}
           </Reanimated.View>
-          {!verticalBar && (
-            <Reanimated.View
-              pointerEvents="box-none"
-              style={styles.headerActionExpanded}
-            >
-              {temporaryChatControl}
-            </Reanimated.View>
-          )}
+          <Reanimated.View
+            pointerEvents="box-none"
+            style={stackedHeaderControl ? styles.headerActionStacked : styles.headerActionExpanded}
+          >
+            <TemporaryChatHeaderControl
+              axis={stackedHeaderControl ? 'vertical' : 'horizontal'}
+              active={temporary}
+              expanded={headerControl.expanded}
+              expirationEnabled={autoExpire}
+              leadingAction={headerControl.leadingAction}
+              trailingAction={headerControl.trailingAction}
+              onToggleExpiration={() => {
+                onAutoExpirationChange(!autoExpire);
+                Haptics.selectionAsync();
+              }}
+              onToggleTemporary={() => { void toggleTemporary(); }}
+              onNewChat={onNewChat}
+              onSave={onSaveTemporary}
+              saveDisabled={expired}
+              saving={savingTemporary}
+            />
+          </Reanimated.View>
         </AppHeader>
 
         {showConnectionBanner && (
@@ -6090,7 +6093,7 @@ function ChatView({
         scrollLanding ? (
           <ScrollView
             alwaysBounceVertical
-            contentContainerStyle={[styles.emptyConversationAccessible, { paddingHorizontal: horizontalPadding, paddingTop: Platform.OS === 'android' ? 16 : headerOverlayHeight + 16 }]}
+            contentContainerStyle={[styles.emptyConversationAccessible, { paddingHorizontal: horizontalPadding, paddingTop: Platform.OS === 'android' ? 16 : transcriptStart + 16 }]}
             keyboardDismissMode="interactive"
             keyboardShouldPersistTaps="handled"
             onTouchStart={Keyboard.dismiss}
@@ -6116,8 +6119,8 @@ function ChatView({
           bounces
           contentContainerStyle={[styles.conversation, {
             paddingHorizontal: horizontalPadding,
-            paddingTop: bottomAnchored ? CHAT_COMPOSER_BOTTOM_PADDING : Platform.OS === 'android' ? 16 : headerOverlayHeight + 16,
-            paddingBottom: bottomAnchored ? Platform.OS === 'android' ? 16 : headerOverlayHeight + 16 : CHAT_COMPOSER_BOTTOM_PADDING,
+            paddingTop: bottomAnchored ? CHAT_COMPOSER_BOTTOM_PADDING : Platform.OS === 'android' ? 16 : transcriptStart + 16,
+            paddingBottom: bottomAnchored ? Platform.OS === 'android' ? 16 : transcriptStart + 16 : CHAT_COMPOSER_BOTTOM_PADDING,
           }]}
           contentInsetAdjustmentBehavior="never"
           data={visibleMessages}
@@ -6169,7 +6172,7 @@ function ChatView({
         <View
           pointerEvents="none"
           style={[styles.chatOpeningOverlay, {
-            top: Platform.OS === 'android' ? 36 : headerOverlayHeight + 36,
+            top: Platform.OS === 'android' ? 36 : transcriptStart + 36,
             left: horizontalPadding,
             right: horizontalPadding,
           }]}
@@ -6449,16 +6452,6 @@ function ChatView({
         </View>
       </KeyboardStickyView>
       </View>
-
-      {verticalBar && (
-        // Hangs under the status bar like the system's own bar items.
-        <View
-          pointerEvents="box-none"
-          style={[styles.verticalBarActions, { top: verticalBar.itemsTop, [verticalBar.side]: verticalBar.itemEdgeInset }]}
-        >
-          {temporaryChatControl}
-        </View>
-      )}
 
       <AttachmentImageViewer
         initialIndex={imageViewer?.initialIndex ?? 0}
@@ -7138,7 +7131,8 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   appHeader: { width: '100%', maxWidth: CHAT_CONTENT_MAX, alignSelf: 'center', height: 64, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
   appHeaderEdgeAligned: { maxWidth: '100%' },
   headerActionExpanded: { width: Platform.OS === 'android' ? 96 : 88, height: Platform.OS === 'android' ? 48 : 44, alignItems: 'flex-end' },
-  verticalBarActions: { position: 'absolute', zIndex: 3, width: VERTICAL_BAR_ITEM_WIDTH },
+  // The stacked control hangs below the row from a single item's space.
+  headerActionStacked: { width: 44, height: 44 },
   roundButton: { alignItems: 'center', justifyContent: 'center' },
   roundButtonCustomIcon: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center' },
   roundButtonSelected: { backgroundColor: 'rgba(175,82,222,0.18)' },
