@@ -33,7 +33,7 @@ describe.skipIf(!enabled)('message report routes', () => {
   beforeAll(async () => {
     if (!process.env.DATABASE_URL?.endsWith('/pulpo_message_reports_test')) throw new Error('Use the disposable pulpo_message_reports_test database')
     app = Fastify()
-    app.decorateRequest('user', undefined)
+    app.decorateRequest('user', null)
     app.addHook('onRequest', async (request) => { (request as { user?: AuthenticatedUser }).user = actor })
     app.setErrorHandler((error, _request, reply) => {
       if (error instanceof ZodError) return reply.code(400).send({ code: 'invalid_request' })
@@ -53,7 +53,11 @@ describe.skipIf(!enabled)('message report routes', () => {
     chatId = randomUUID()
     responseId = randomUUID()
     await db.insert(chats).values({ id: chatId, userId: owner.id, modelId, title: 'Reported chat' })
-    await db.insert(responses).values({ id: responseId, chatId, userId: owner.id, modelId, input: [], status: 'completed' })
+    await db.insert(responses).values({
+      id: responseId, chatId, userId: owner.id, modelId, status: 'completed',
+      input: [{ role: 'user', content: [{ type: 'input_text', text: 'Cite a source for this.' }] }],
+      output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: `  ${'Here is a made-up citation. '.repeat(40)}` }] }],
+    })
     await setReportsEnabled(true)
     actor = owner
   })
@@ -81,6 +85,10 @@ describe.skipIf(!enabled)('message report routes', () => {
       ['assistant', 'Made up a citation.', owner.id],
       ['user', '', owner.id],
     ])
+    const excerpts = Object.fromEntries(rows.map((row) => [row.messageRole, row.excerpt]))
+    expect(excerpts.user).toBe('Cite a source for this.')
+    expect(excerpts.assistant).toHaveLength(500)
+    expect(excerpts.assistant!.startsWith('Here is a made-up citation.')).toBe(true)
     const audits = await db.select().from(auditEvents).where(eq(auditEvents.targetId, chatId))
     expect(audits.filter((event) => event.action === 'chat.report.created')).toHaveLength(2)
   })
@@ -91,6 +99,8 @@ describe.skipIf(!enabled)('message report routes', () => {
     actor = owner
     expect((await report({ messageId: randomUUID() })).statusCode).toBe(404)
     expect((await report({ messageId: 'not-a-message' })).statusCode).toBe(400)
+    expect((await report({ messageId: '-'.repeat(36) })).statusCode).toBe(400)
+    expect((await report({ messageId: `${'a'.repeat(36)}:input` })).statusCode).toBe(400)
     expect((await report({ messageId: responseId, context: 'x'.repeat(2_001) })).statusCode).toBe(400)
     await db.update(chats).set({ deletedAt: new Date() }).where(eq(chats.id, chatId))
     expect((await report({ messageId: responseId })).statusCode).toBe(404)
@@ -107,7 +117,7 @@ describe.skipIf(!enabled)('message report routes', () => {
     expect((await app.inject({ method: 'GET', url: '/api/admin/message-reports' })).statusCode).toBe(403)
     actor = admin
     const [open] = await list('open')
-    expect(open).toMatchObject({ chatTitle: 'Reported chat', responseId, messageRole: 'assistant', context: 'Please look', resolvedAt: null, reporter: { id: owner.id, email: owner.email } })
+    expect(open).toMatchObject({ chatTitle: 'Reported chat', responseId, messageRole: 'assistant', excerpt: expect.stringMatching(/^Here is a made-up citation\./), context: 'Please look', resolvedAt: null, reporter: { id: owner.id, email: owner.email } })
 
     actor = owner
     expect((await app.inject({ method: 'PATCH', url: `/api/admin/message-reports/${open!.id}`, payload: { resolved: true } })).statusCode).toBe(403)
@@ -115,9 +125,28 @@ describe.skipIf(!enabled)('message report routes', () => {
     expect((await app.inject({ method: 'PATCH', url: `/api/admin/message-reports/${open!.id}`, payload: { resolved: true } })).statusCode).toBe(200)
     expect(await list('open')).toEqual([])
     expect((await list('resolved'))[0]?.resolvedAt).toEqual(expect.any(String))
+    // Resolving again changes nothing and records nothing.
+    expect((await app.inject({ method: 'PATCH', url: `/api/admin/message-reports/${open!.id}`, payload: { resolved: true } })).statusCode).toBe(200)
+    const audits = await db.select().from(auditEvents).where(eq(auditEvents.targetId, chatId))
+    expect(audits.filter((event) => event.action === 'chat.report.resolved')).toHaveLength(1)
     expect((await app.inject({ method: 'PATCH', url: `/api/admin/message-reports/${open!.id}`, payload: { resolved: false } })).statusCode).toBe(200)
     expect(await list('open')).toHaveLength(1)
     expect((await app.inject({ method: 'PATCH', url: `/api/admin/message-reports/${randomUUID()}`, payload: { resolved: true } })).statusCode).toBe(404)
+  })
+
+  it('lists only reports admins can still open', async () => {
+    await report({ messageId: responseId })
+    actor = admin
+    const listed = async () => {
+      const result = await app.inject({ method: 'GET', url: '/api/admin/message-reports?status=open' })
+      return (result.json() as { data: AdminMessageReport[] }).data.filter((item) => item.chatId === chatId)
+    }
+    expect(await listed()).toHaveLength(1)
+    await db.update(chats).set({ temporary: true, expiresAt: new Date(Date.now() - 1_000) }).where(eq(chats.id, chatId))
+    expect(await listed()).toEqual([])
+    await db.update(chats).set({ temporary: false, expiresAt: null }).where(eq(chats.id, chatId))
+    await db.update(responses).set({ deletedAt: new Date() }).where(eq(responses.id, responseId))
+    expect(await listed()).toEqual([])
   })
 
   it('goes away with the reported chat', async () => {

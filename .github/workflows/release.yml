@@ -199,6 +199,15 @@ jobs:
         run: |
           npm run db:migrate -w @pulpo/server
           npm run test -w @pulpo/server -- src/files src/trash
+      - name: Create disposable message reports database
+        run: node --input-type=module -e 'import postgres from "postgres"; const sql = postgres(process.env.DATABASE_URL); await sql.unsafe("CREATE DATABASE pulpo_message_reports_test"); await sql.end();'
+      - name: Verify message reports against PostgreSQL
+        env:
+          DATABASE_URL: postgres://postgres:search-test@localhost:5432/pulpo_message_reports_test
+          PULPO_MESSAGE_REPORT_TESTS: 'true'
+        run: |
+          npm run db:migrate -w @pulpo/server
+          npm run test -w @pulpo/server -- src/message-reports
       - name: Create disposable account switching database
         run: node --input-type=module -e 'import postgres from "postgres"; const sql = postgres(process.env.DATABASE_URL); await sql.unsafe("CREATE DATABASE pulpo_account_switching_test"); await sql.end();'
       - name: Verify browser account switching against PostgreSQL

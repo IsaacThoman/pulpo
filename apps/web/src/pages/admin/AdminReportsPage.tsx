@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Check, Loader2, MessageSquareText, RefreshCw, RotateCcw } from 'lucide-react'
 import type { AdminMessageReport, AdminMessageReportStatus } from '@pulpo/contracts'
@@ -18,14 +18,17 @@ export function AdminReportsPage() {
   const [reports, setReports] = useState<AdminMessageReport[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [pendingId, setPendingId] = useState<string | null>(null)
+  // Only the latest request may fill the list, so a slow load for the other tab can't land in this one.
+  const latestLoad = useRef(0)
 
   const load = useCallback(async () => {
+    const request = ++latestLoad.current
     setError(null)
     try {
       const result = await apiRequest<{ data: AdminMessageReport[] }>(`/api/admin/message-reports?status=${status}`)
-      setReports(result.data)
+      if (request === latestLoad.current) setReports(result.data)
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : ui('Unable to load reports.'))
+      if (request === latestLoad.current) setError(cause instanceof Error ? cause.message : ui('Unable to load reports.'))
     }
   }, [status])
   useEffect(() => { setReports(null); void load() }, [load])
@@ -95,6 +98,11 @@ export function AdminReportsPage() {
                     </Button>
                   </div>
                 </div>
+                {report.excerpt && (
+                  <blockquote className="line-clamp-3 border-l-2 pl-3 text-sm text-muted-foreground [overflow-wrap:anywhere]" title={report.excerpt}>
+                    {report.excerpt}
+                  </blockquote>
+                )}
                 {report.context
                   ? <p className="whitespace-pre-wrap break-words rounded-md bg-muted/40 px-3 py-2 text-sm">{report.context}</p>
                   : <p className="text-sm text-muted-foreground">{ui('No context provided.')}</p>}

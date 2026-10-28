@@ -1,5 +1,5 @@
 {
-  "id": "da530877-9e63-46e3-9ed4-a620212d00f2",
+  "id": "a671da31-9358-4717-b49b-ed2fc2b7bf2f",
   "prevId": "9e0beab3-653a-47c7-b474-327c9cf8a819",
   "version": "7",
   "dialect": "postgresql",
@@ -7238,6 +7238,13 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "excerpt": {
+          "name": "excerpt",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
         },
         "context": {
           "name": "context",

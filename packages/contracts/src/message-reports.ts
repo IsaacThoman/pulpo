@@ -1,6 +1,8 @@
 import { z } from 'zod'
 
 export const MESSAGE_REPORT_CONTEXT_MAX_LENGTH = 2_000
+/** How much of the reported message's text a report keeps, so admins can tell which message it was. */
+export const MESSAGE_REPORT_EXCERPT_MAX_LENGTH = 500
 
 /**
  * A user's report of one message. `messageId` is the client message id: a response id for a
@@ -8,7 +10,7 @@ export const MESSAGE_REPORT_CONTEXT_MAX_LENGTH = 2_000
  * whole chat with administrators, who open it through the audited admin chat viewer.
  */
 export const messageReportInputSchema = z.object({
-  messageId: z.string().regex(/^[0-9a-f-]{36}(:input)?$/i),
+  messageId: z.string().refine((value) => z.uuid().safeParse(value.replace(/:input$/, '')).success, 'Invalid message id'),
   context: z.string().trim().max(MESSAGE_REPORT_CONTEXT_MAX_LENGTH).default(''),
 })
 export type MessageReportInput = z.infer<typeof messageReportInputSchema>
@@ -22,6 +24,8 @@ export const adminMessageReportSchema = z.object({
   chatTitle: z.string(),
   responseId: z.uuid(),
   messageRole: messageReportRoleSchema,
+  /** The start of the message's text when it was reported. */
+  excerpt: z.string(),
   context: z.string(),
   reporter: z.object({
     id: z.uuid(),

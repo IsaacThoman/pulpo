@@ -597,6 +597,7 @@ export const messageReports = pgTable('message_reports', {
   responseId: uuid('response_id').notNull().references(() => responses.id, { onDelete: 'cascade' }),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   messageRole: text('message_role').notNull(),
+  excerpt: text('excerpt').notNull().default(''),
   context: text('context').notNull().default(''),
   resolvedAt: timestamp('resolved_at', { withTimezone: true }),
   resolvedByUserId: uuid('resolved_by_user_id').references(() => users.id, { onDelete: 'set null' }),

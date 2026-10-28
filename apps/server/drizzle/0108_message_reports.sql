@@ -4,6 +4,7 @@ CREATE TABLE "message_reports" (
 	"response_id" uuid NOT NULL,
 	"user_id" uuid NOT NULL,
 	"message_role" text NOT NULL,
+	"excerpt" text DEFAULT '' NOT NULL,
 	"context" text DEFAULT '' NOT NULL,
 	"resolved_at" timestamp with time zone,
 	"resolved_by_user_id" uuid,
