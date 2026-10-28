@@ -295,6 +295,30 @@ jobs:
           npm run test -w @pulpo/server -- src/database/migration-recovery.postgres.test.ts
           npm run test -w @pulpo/server -- src/database/preview-reset.postgres.test.ts
 
+      - name: Create disposable backup audit database
+        run: node --input-type=module -e 'import postgres from "postgres"; const sql = postgres(process.env.DATABASE_URL); await sql.unsafe("CREATE DATABASE pulpo_backup_audit"); await sql.end();'
+      - name: Test full backups, offsite scheduling and retention cleanup
+        env:
+          DATABASE_URL: postgres://postgres:search-test@localhost:5432/pulpo_backup_audit
+          PULPO_BACKUP_AUDIT_TESTS: 'true'
+        run: |
+          npm run db:migrate -w @pulpo/server
+          npm run test -w @pulpo/server -- src/admin/backup-roundtrip.postgres.test.ts
+      - name: Start disposable S3 storage with Object Lock
+        run: |
+          set -euo pipefail
+          printf '%s' '{"identities":[{"name":"ci","credentials":[{"accessKey":"pulpo-ci","secretKey":"pulpo-ci-secret"}],"actions":["Admin","Read","Write","List","Tagging"]}]}' > "${RUNNER_TEMP}/s3.json"
+          docker run -d --name pulpo-backup-s3 -p 8333:8333 -v "${RUNNER_TEMP}/s3.json:/etc/s3.json:ro" chrislusf/seaweedfs:4.29 server -s3 -s3.config=/etc/s3.json -ip.bind=0.0.0.0
+          for attempt in $(seq 1 60); do curl -sf -o /dev/null http://localhost:8333/healthz && exit 0; sleep 2; done
+          docker logs pulpo-backup-s3; exit 1
+      - name: Test offsite uploads against S3 Compliance Object Lock
+        env:
+          PULPO_BACKUP_S3_TEST_ENDPOINT: http://localhost:8333
+          PULPO_BACKUP_S3_TEST_KEY_ID: pulpo-ci
+          PULPO_BACKUP_S3_TEST_KEY: pulpo-ci-secret
+          PULPO_BACKUP_S3_TEST_CREATE_BUCKET: 'true'
+        run: npm run test -w @pulpo/server -- src/admin/b2-backup-store.s3.test.ts
+
   cli-package:
     name: CLI package / Node ${{ matrix.node }}
     if: >-
