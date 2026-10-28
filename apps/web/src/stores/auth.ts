@@ -60,6 +60,7 @@ interface PublicAuthSettings {
   maxAttachmentBytes: number
   billingEnabled: boolean
   inviteCodesEnabled: boolean
+  messageReportsEnabled: boolean
   codexEnabled: boolean
   dictationEnabled: boolean
   urlImportEnabled: boolean
@@ -81,6 +82,7 @@ interface AuthState {
   maxAttachmentBytes: number
   billingEnabled: boolean
   inviteCodesEnabled: boolean
+  messageReportsEnabled: boolean
   codexEnabled: boolean
   dictationEnabled: boolean
   urlImportEnabled: boolean
@@ -180,6 +182,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
   maxAttachmentBytes: DEFAULT_MAX_ATTACHMENT_BYTES,
   billingEnabled: false,
   inviteCodesEnabled: false,
+  messageReportsEnabled: false,
   codexEnabled: false,
   dictationEnabled: false,
   urlImportEnabled: false,
@@ -249,6 +252,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
           maxInlineImages: config.limits.maxInlineImages ?? DEFAULT_MAX_INLINE_IMAGES,
           billingEnabled: false,
           inviteCodesEnabled: config.auth.inviteCodesEnabled,
+          messageReportsEnabled: config.capabilities.messageReports === true,
           codexEnabled: false,
           dictationEnabled: false,
           urlImportEnabled: false,
@@ -322,6 +326,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
         maxInlineImages: get().maxInlineImages,
         billingEnabled: get().billingEnabled,
         inviteCodesEnabled: get().inviteCodesEnabled,
+        messageReportsEnabled: get().messageReportsEnabled,
         codexEnabled: false,
         dictationEnabled: get().dictationEnabled,
         urlImportEnabled: get().urlImportEnabled,
@@ -494,6 +499,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
         maxInlineImages: config.limits.maxInlineImages ?? DEFAULT_MAX_INLINE_IMAGES,
         billingEnabled: false,
         inviteCodesEnabled: config.auth.inviteCodesEnabled,
+        messageReportsEnabled: config.capabilities.messageReports === true,
         codexEnabled: false,
         dictationEnabled: false,
         urlImportEnabled: false,

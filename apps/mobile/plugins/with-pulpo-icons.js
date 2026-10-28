@@ -9,6 +9,8 @@ const ICON_SETS = [
   'FavoriteStarWhite.imageset',
   'LucideFlaskConical.imageset',
   'LucideFlaskConicalWhite.imageset',
+  'PulpoFrown.imageset',
+  'PulpoFrownWhite.imageset',
 ]
 
 module.exports = function withPulpoIcons(config) {

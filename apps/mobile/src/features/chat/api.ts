@@ -6,7 +6,7 @@ import { Directory, File, Paths } from 'expo-file-system'
 import * as Crypto from 'expo-crypto'
 import * as Sharing from 'expo-sharing'
 import { attachmentValidationError, createUploadQueue, retryBusyUpload } from '@pulpo/client-core'
-import type { ResponseSnapshot } from '@pulpo/contracts'
+import { MESSAGE_REPORT_CONTEXT_MAX_LENGTH, type ResponseSnapshot } from '@pulpo/contracts'
 import { apiOrigin, apiRequest, apiUrl, isNetworkError, nativeAuthorizationHeaders } from '../../api/client'
 import { cacheNamespace, cachedAttachmentUri, recordCachedAttachment, removeCachedAttachment } from '../../data/database'
 import { queueOfflineMutation } from '../../data/mutations'
@@ -314,6 +314,11 @@ export async function continueWithoutAgent(id: string): Promise<ResponseSnapshot
   const snapshot = await apiRequest<ResponseSnapshot>(`/api/responses/${id}/continue-without-agent`, { method: 'POST' })
   useRealtimeStore.getState().receiveSnapshot(snapshot)
   return snapshot
+}
+
+/** Reports a message, sharing its chat with the instance's administrators. */
+export async function reportMessage(messageId: string, context: string): Promise<void> {
+  await apiRequest('/api/message-reports', { method: 'POST', body: { messageId, context: context.trim().slice(0, MESSAGE_REPORT_CONTEXT_MAX_LENGTH) } })
 }
 
 export async function shareChat(id: string): Promise<string> {
