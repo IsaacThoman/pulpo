@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
+import type { Attachment } from '@/lib/types'
 import { Markdown } from './Markdown'
+import { linkedAttachment, MarkdownAttachmentsContext } from './markdown-file-links'
 
 describe('Markdown responsive containment', () => {
   it('renders currency signs as prose instead of pairing them as inline math', () => {
@@ -168,5 +170,55 @@ describe('Markdown line breaks', () => {
     expect(markup).not.toContain('<br/>')
     expect(markup).toContain('line one')
     expect(markup).toContain('katex-display')
+  })
+})
+
+describe('Markdown file links', () => {
+  const chart: Attachment = { id: 'att-1', name: 'chart.png', mimeType: 'image/png', type: 'image', size: 10 }
+  const withAttachments = (content: string, attachments: Attachment[]) => renderToStaticMarkup(
+    <MarkdownAttachmentsContext.Provider value={{ attachments, download: () => {} }}><Markdown content={content} /></MarkdownAttachmentsContext.Provider>,
+  )
+
+  it('downloads the attached file a workspace link names instead of opening a tab', () => {
+    for (const href of ['sandbox:/mnt/data/chart.png', '/workspace/chart.png', 'chart.png', 'file:///workspace/out/chart.png']) {
+      const markup = withAttachments(`[Download PNG](${href})`, [chart])
+      expect(markup).toContain('<button type="button" title="Download chart.png"')
+      expect(markup).not.toContain('<a ')
+    }
+  })
+
+  it('renders links to files that were not attached as plain text', () => {
+    for (const href of ['sandbox:/mnt/data/chart.png', '/workspace/chart.png', 'javascript:alert(1)']) {
+      const markup = renderToStaticMarkup(<Markdown content={`[Download PNG](${href})`} />)
+      expect(markup).toContain('<span>Download PNG</span>')
+      expect(markup).not.toContain('href')
+    }
+  })
+
+  it('keeps web links as links', () => {
+    const markup = withAttachments('[chart.png](https://example.com/chart.png)', [chart])
+    expect(markup).toContain('href="https://example.com/chart.png"')
+  })
+
+  it('downloads an attached image the model embedded by workspace path', () => {
+    const markup = withAttachments('![Sales chart](sandbox:/mnt/data/chart.png)', [chart])
+    expect(markup).toContain('<button type="button" title="Download chart.png"')
+    expect(markup).not.toContain('href')
+  })
+})
+
+describe('linkedAttachment', () => {
+  const file = (name: string): Attachment => ({ id: name, name, mimeType: 'application/octet-stream', type: 'file', size: 1 })
+
+  it('matches by file name, then by the only attachment of that type', () => {
+    expect(linkedAttachment('sandbox:/mnt/data/Report%20Final.PDF', [file('a.pdf'), file('report final.pdf')])?.name).toBe('report final.pdf')
+    expect(linkedAttachment('/workspace/chart.png', [file('sales-chart.png'), file('data.csv')])?.name).toBe('sales-chart.png')
+    expect(linkedAttachment('/workspace/chart.png', [file('a.png'), file('b.png')])).toBeNull()
+  })
+
+  it('ignores web links and in-page anchors', () => {
+    expect(linkedAttachment('https://example.com/a.png', [file('a.png')])).toBeNull()
+    expect(linkedAttachment('//example.com/a.png', [file('a.png')])).toBeNull()
+    expect(linkedAttachment('#a.png', [file('a.png')])).toBeNull()
   })
 })

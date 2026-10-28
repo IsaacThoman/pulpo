@@ -37,6 +37,8 @@ import { useSettings } from '@/stores/settings'
 import { useAuth } from '@/stores/auth'
 import { useUploadOutbox } from '@/stores/upload-outbox'
 import { Markdown } from './Markdown'
+import { MarkdownAttachmentsContext } from './markdown-file-links'
+import { downloadChatAttachment } from './attachment-actions'
 import { MessageAttachmentList } from './AttachmentImage'
 import { activityDurationMs } from './activity-timing'
 import { canSubmitMessageEdit } from './message-edit'
@@ -694,6 +696,10 @@ export const MessageItem = memo(function MessageItem({
     () => streaming ? responseTimeline : collapseIntermediateReplies(responseTimeline),
     [responseTimeline, streaming],
   )
+  const markdownFiles = useMemo(
+    () => message.attachments?.length ? { attachments: message.attachments, download: downloadChatAttachment } : null,
+    [message.attachments],
+  )
   const collapsedWork = timeline !== responseTimeline ? timeline[0] : undefined
   const elapsedMs = useElapsedMs(message.requestReceivedAt ? Date.parse(message.requestReceivedAt) : message.timestamp, streaming && message.role === 'assistant', message.latencyMs)
   const initialActivity = initialActivityTiming(timeline)
@@ -847,7 +853,7 @@ export const MessageItem = memo(function MessageItem({
               </div>
             </div>
           ) : (
-            <>
+            <MarkdownAttachmentsContext.Provider value={markdownFiles}>
               {timeline.map((segment, index) => {
                 if (segment.kind === 'activity') {
                   activityOrdinal += 1
@@ -894,7 +900,7 @@ export const MessageItem = memo(function MessageItem({
                   <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:300ms]" />
                 </span>
               )}
-            </>
+            </MarkdownAttachmentsContext.Provider>
           )}
 
           {!editing && message.attachments && message.attachments.length > 0 && (

