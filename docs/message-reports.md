@@ -8,7 +8,7 @@ When reports are on, every sent user message and finished response has a report 
 
 Reporting asks for optional context (up to 2,000 characters), then shares the whole chat with the instance's administrators. A report stores the chat, the reported message (its response, and whether it was the user's message or the response), the first 500 characters of that message's text, the reporter, and the context. It does not copy the rest of the conversation. Admins see the chat as it is when they open it. Users can only report messages in their own chats that are not trashed, purging, or expired. Each account can send 20 reports an hour to each API server.
 
-Deleting the reported message or trashing its chat withdraws the report from the admin list. Requesting account deletion trashes every chat, so it withdraws all of that account's reports. Reports are removed when their chat is permanently deleted and when the reporting account is deleted. They follow the chat in full backups, so reports on temporary chats are left out.
+Deleting the reported message withdraws its report from the admin list, and trashing the chat hides it until the chat is restored. Requesting account deletion trashes every chat, so it withdraws all of that account's reports. Reports are removed when their chat is permanently deleted and when the reporting account is deleted. They follow the chat in full backups, so reports on temporary chats are left out.
 
 ## Reviewing
 

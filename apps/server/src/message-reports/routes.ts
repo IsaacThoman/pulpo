@@ -68,7 +68,7 @@ export async function registerMessageReportRoutes(app: FastifyInstance): Promise
     const input = messageReportInputSchema.parse(request.body)
     const responseId = input.messageId.replace(/:input$/, '')
     const messageRole = input.messageId.endsWith(':input') ? 'user' : 'assistant'
-    const [row] = await db.select({ chatId: chats.id, input: responses.input, output: responses.output }).from(responses)
+    const [row] = await db.select({ chatId: chats.id, status: responses.status, input: responses.input, output: responses.output }).from(responses)
       .innerJoin(chats, eq(chats.id, responses.chatId))
       .where(and(
         eq(responses.id, responseId),
@@ -81,8 +81,12 @@ export async function registerMessageReportRoutes(app: FastifyInstance): Promise
       ))
       .limit(1)
     if (!row) throw notFound('Message')
+    if (messageRole === 'assistant' && (row.status === 'queued' || row.status === 'in_progress')) {
+      throw new AppError(409, 'message_report_unfinished', 'Wait for the response to finish before reporting it')
+    }
     const text = messageRole === 'user' ? responseInputText(row.input) : assistantOutputText(row.output)
-    const excerpt = text.trim().slice(0, MESSAGE_REPORT_EXCERPT_MAX_LENGTH)
+    // Do not leave half of a surrogate pair at the cut.
+    const excerpt = text.trim().slice(0, MESSAGE_REPORT_EXCERPT_MAX_LENGTH).replace(/[\uD800-\uDBFF]$/, '')
     const id = newId()
     await db.transaction(async (tx) => {
       await tx.insert(messageReports).values({

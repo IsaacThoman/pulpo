@@ -102,6 +102,9 @@ describe.skipIf(!enabled)('message report routes', () => {
     expect((await report({ messageId: '-'.repeat(36) })).statusCode).toBe(400)
     expect((await report({ messageId: `${'a'.repeat(36)}:input` })).statusCode).toBe(400)
     expect((await report({ messageId: responseId, context: 'x'.repeat(2_001) })).statusCode).toBe(400)
+    await db.update(responses).set({ status: 'in_progress' }).where(eq(responses.id, responseId))
+    expect((await report({ messageId: responseId })).statusCode).toBe(409)
+    expect((await report({ messageId: `${responseId}:input` })).statusCode).toBe(201)
     await db.update(chats).set({ deletedAt: new Date() }).where(eq(chats.id, chatId))
     expect((await report({ messageId: responseId })).statusCode).toBe(404)
     actor = undefined
