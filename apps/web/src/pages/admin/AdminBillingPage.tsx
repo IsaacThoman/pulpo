@@ -298,7 +298,7 @@ export function AdminBillingPage() {
         <Panel icon={<UsersRound className="size-3" />} title={ui("Subscription health")}>
           <div className="divide-y">
             <Stat label={ui("Pulpo Eight")} value={data?.subscribers.eight ?? 0} />
-            <Stat label={ui("Le Pulpo Fat")} value={data?.subscribers.fat ?? 0} />
+            <Stat label={ui("Pulpo Fat")} value={data?.subscribers.fat ?? 0} />
             <Stat label={ui("Canceling")} value={totals?.canceling ?? 0} />
             <Stat label={ui("Past due")} value={totals?.pastDue ?? 0} alert={(totals?.pastDue ?? 0) > 0} />
             <Stat label={ui("Billing holds")} value={totals?.holds ?? 0} alert={(totals?.holds ?? 0) > 0} />
@@ -315,12 +315,12 @@ export function AdminBillingPage() {
             <p className="text-xs font-medium">{ui("Weekly limits")}</p>
             <div className="flex flex-wrap items-end gap-3">
               <LimitInput label={ui("Pulpo Eight")} value={eightLimit} onChange={setEightLimit} />
-              <LimitInput label={ui("Le Pulpo Fat")} value={fatLimit} onChange={setFatLimit} />
+              <LimitInput label={ui("Pulpo Fat")} value={fatLimit} onChange={setFatLimit} />
             </div>
             <p className="pt-1 text-xs font-medium">{ui("5-hour limits")}</p>
             <div className="flex flex-wrap items-end gap-3">
               <LimitInput label={ui("Pulpo Eight")} value={eightFiveHourLimit} onChange={setEightFiveHourLimit} />
-              <LimitInput label={ui("Le Pulpo Fat")} value={fatFiveHourLimit} onChange={setFatFiveHourLimit} />
+              <LimitInput label={ui("Pulpo Fat")} value={fatFiveHourLimit} onChange={setFatFiveHourLimit} />
             </div>
             <p className="pt-1 text-xs font-medium">{ui("Shared usage")}</p>
             <p className="text-xs text-muted-foreground">{ui("Pool members can draw this share of a Fat subscriber's weekly usage, each within their own 5-hour limit.")}</p>
@@ -332,7 +332,7 @@ export function AdminBillingPage() {
             <div className="flex flex-wrap items-end gap-3">
               <StorageInput label={ui("Pulpo Baby")} value={babyStorage} onChange={setBabyStorage} />
               <StorageInput label={ui("Pulpo Eight")} value={eightStorage} onChange={setEightStorage} />
-              <StorageInput label={ui("Le Pulpo Fat")} value={fatStorage} onChange={setFatStorage} />
+              <StorageInput label={ui("Pulpo Fat")} value={fatStorage} onChange={setFatStorage} />
             </div>
           </div>
         </Panel>
