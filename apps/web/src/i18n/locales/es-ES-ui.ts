@@ -2594,7 +2594,7 @@ const esUi: Record<string, string> = {
   "Unable to send the report.": "No se pudo enviar la denuncia.",
   "Report message": "Denunciar mensaje",
   "This shares the whole chat with the administrators of this instance so they can review it.": "Esto comparte el chat completo con los administradores de esta instancia para que puedan revisarlo.",
-  "What went wrong?": "¿Qué salió mal?",
+  "What went wrong?": "¿Qué ha salido mal?",
   "Add any context that would help an admin (optional)": "Añade cualquier contexto que ayude a un administrador (opcional)",
   "Share with admin": "Compartir con el administrador",
   "Enable message reports": "Activar denuncias de mensajes",
@@ -2614,7 +2614,7 @@ const esUi: Record<string, string> = {
   "Open chat": "Abrir chat",
   "Reopen": "Reabrir",
   "Resolve": "Resolver",
-  "No context provided.": "No se proporcionó contexto.",
+  "No context provided.": "No se ha proporcionado contexto.",
   "Reports": "Denuncias",
 }
 

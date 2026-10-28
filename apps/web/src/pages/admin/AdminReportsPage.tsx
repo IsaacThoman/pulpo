@@ -17,7 +17,7 @@ export function AdminReportsPage() {
   const [status, setStatus] = useState<AdminMessageReportStatus>('open')
   const [reports, setReports] = useState<AdminMessageReport[] | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [pendingId, setPendingId] = useState<string | null>(null)
+  const [pendingIds, setPendingIds] = useState<ReadonlySet<string>>(new Set())
   // Only the latest request may fill the list, so a slow load for the other tab can't land in this one.
   const latestLoad = useRef(0)
 
@@ -34,14 +34,15 @@ export function AdminReportsPage() {
   useEffect(() => { setReports(null); void load() }, [load])
 
   const setResolved = async (report: AdminMessageReport, resolved: boolean) => {
-    setPendingId(report.id)
+    setPendingIds((current) => new Set(current).add(report.id))
     try {
       await apiRequest(`/api/admin/message-reports/${report.id}`, { method: 'PATCH', body: { resolved } })
       setReports((current) => current?.filter((item) => item.id !== report.id) ?? null)
+      setError(null)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : ui('Unable to update this report.'))
     } finally {
-      setPendingId(null)
+      setPendingIds((current) => { const next = new Set(current); next.delete(report.id); return next })
     }
   }
 
@@ -92,8 +93,8 @@ export function AdminReportsPage() {
                     <Button asChild size="sm" variant="outline">
                       <Link to={`/admin/chats/${report.chatId}`}><MessageSquareText />{ui('Open chat')}</Link>
                     </Button>
-                    <Button size="sm" variant="ghost" disabled={pendingId === report.id} onClick={() => void setResolved(report, !report.resolvedAt)}>
-                      {pendingId === report.id ? <Loader2 className="animate-spin" /> : report.resolvedAt ? <RotateCcw /> : <Check />}
+                    <Button size="sm" variant="ghost" disabled={pendingIds.has(report.id)} onClick={() => void setResolved(report, !report.resolvedAt)}>
+                      {pendingIds.has(report.id) ? <Loader2 className="animate-spin" /> : report.resolvedAt ? <RotateCcw /> : <Check />}
                       {report.resolvedAt ? ui('Reopen') : ui('Resolve')}
                     </Button>
                   </div>

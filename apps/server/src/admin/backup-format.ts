@@ -50,6 +50,7 @@ export const OPTIONAL_TABLES_IN_LEGACY_BACKUPS: readonly FullBackupTable[] = [
   'billing_accounts', 'billing_subscriptions', 'billing_checkouts', 'billing_auto_top_ups', 'billing_orders', 'billing_webhook_events', 'billing_custom_limits', 'custom_limit_spend',
   'weekly_usage_periods', 'daily_usage_periods', 'five_hour_usage_periods', 'shared_allowance_periods', 'shared_five_hour_usage_periods',
   'request_analytics', 'request_analytics_tools', 'analytics_hourly_rollups', 'idempotency_records',
+  'message_reports',
 ]
 
 /**

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import Fastify, { type FastifyInstance } from 'fastify'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { ZodError } from 'zod'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import type { AdminMessageReport } from '@pulpo/contracts'
@@ -117,6 +117,8 @@ describe.skipIf(!enabled)('message report routes', () => {
     expect((await app.inject({ method: 'GET', url: '/api/admin/message-reports' })).statusCode).toBe(403)
     actor = admin
     const [open] = await list('open')
+    const [viewed] = await db.select().from(auditEvents).where(and(eq(auditEvents.actorUserId, admin.id), eq(auditEvents.action, 'chat.report.list_viewed')))
+    expect(viewed?.metadata).toMatchObject({ status: 'open', reportIds: expect.arrayContaining([open!.id]) })
     expect(open).toMatchObject({ chatTitle: 'Reported chat', responseId, messageRole: 'assistant', excerpt: expect.stringMatching(/^Here is a made-up citation\./), context: 'Please look', resolvedAt: null, reporter: { id: owner.id, email: owner.email } })
 
     actor = owner
@@ -145,6 +147,9 @@ describe.skipIf(!enabled)('message report routes', () => {
     await db.update(chats).set({ temporary: true, expiresAt: new Date(Date.now() - 1_000) }).where(eq(chats.id, chatId))
     expect(await listed()).toEqual([])
     await db.update(chats).set({ temporary: false, expiresAt: null }).where(eq(chats.id, chatId))
+    await db.update(chats).set({ deletedAt: new Date() }).where(eq(chats.id, chatId))
+    expect(await listed()).toEqual([])
+    await db.update(chats).set({ deletedAt: null }).where(eq(chats.id, chatId))
     await db.update(responses).set({ deletedAt: new Date() }).where(eq(responses.id, responseId))
     expect(await listed()).toEqual([])
   })

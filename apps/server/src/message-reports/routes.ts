@@ -102,7 +102,7 @@ export async function registerMessageReportRoutes(app: FastifyInstance): Promise
   })
 
   app.get('/api/admin/message-reports', async (request) => {
-    requireAdmin(request)
+    const admin = requireAdmin(request)
     const { status } = z.object({ status: adminMessageReportStatusSchema.default('open') }).parse(request.query)
     const rows = await db.select({
       report: messageReports,
@@ -112,16 +112,26 @@ export async function registerMessageReportRoutes(app: FastifyInstance): Promise
       .innerJoin(chats, eq(chats.id, messageReports.chatId))
       .innerJoin(responses, eq(responses.id, messageReports.responseId))
       .innerJoin(users, eq(users.id, messageReports.userId))
-      // Only reports admins can open: deleting the message withdraws its report, and expired or
-      // purging chats can no longer be opened through admin chat access.
+      // Deleting the message or trashing the chat (as account deletion does) withdraws a report.
+      // Expired and purging chats can no longer be opened through admin chat access.
       .where(and(
         status === 'open' ? isNull(messageReports.resolvedAt) : isNotNull(messageReports.resolvedAt),
         isNull(responses.deletedAt),
+        isNull(chats.deletedAt),
         isNull(chats.purgeStartedAt),
         accessibleChatCondition(),
       ))
       .orderBy(desc(messageReports.createdAt))
       .limit(200)
+    // The list shows reported excerpts and context outside the 2FA-gated chat viewer, so record who read it.
+    await db.insert(auditEvents).values({
+      id: newId(),
+      actorUserId: admin.id,
+      action: 'chat.report.list_viewed',
+      targetType: 'message_reports',
+      targetId: null,
+      metadata: { status, reportIds: rows.map((row) => row.report.id) },
+    })
     return { data: rows.map(serializeReport) }
   })
 

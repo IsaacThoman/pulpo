@@ -3000,8 +3000,8 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   );
 }
 
-/** Whether this transcript's messages can be reported; an expired temporary chat is read-only. */
-const MessageReportsContext = createContext(true);
+/** Whether this transcript's messages can be reported; an expired temporary chat is read-only. Off unless a transcript opts in. */
+const MessageReportsContext = createContext(false);
 
 function useCanReportMessage(message: Message): boolean {
   const enabled = useSessionStore((state) => state.config?.capabilities.messageReports === true);

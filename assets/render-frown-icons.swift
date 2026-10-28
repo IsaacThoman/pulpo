@@ -8,8 +8,10 @@
 // the keyboard glyph, the face fills 66% of the ring's outer radius, and each ring follows its
 // platform's icons:
 // - iOS: SF Symbols' `circle`, written as template PNGs to the app's PulpoIcons.xcassets.
-// - Web: Lucide's 24-unit grid and 2-unit stroke. Prints the face path for PulpoFrownIcon.tsx.
-// - Android: Material Symbols' 24dp grid and 2dp ring. Prints the paths for pulpo_frown.xml.
+// - Web: Lucide's 24-unit grid and 2-unit stroke. Prints the face path for PulpoFrownIcon.tsx,
+//   whose ring is Lucide's circle.
+// - Android: Material Symbols' 24dp grid and 2dp ring. Prints the face path for pulpo_frown.xml,
+//   whose ring is drawn as two opposite-wound circles.
 
 import AppKit
 
