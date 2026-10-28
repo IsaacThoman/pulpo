@@ -87,7 +87,7 @@ export function PoolSection({ query, currentUserId, friends, busy, act, inviteTa
         </div>
       </div>
       {pool.sharedUsage && <div className="space-y-4 border-b px-4 py-3">
-        <SubscriptionUsageBar label={ui('Shared usage')} limit={pool.sharedUsage.total} compact={false} showResetDate hint={ui('Weekly usage shared by Le Pulpo Fat subscribers in this Pool')} />
+        <SubscriptionUsageBar label={ui('Shared usage')} limit={pool.sharedUsage.total} compact={false} showResetDate hint={ui('Weekly usage shared by Pulpo Fat subscribers in this Pool')} />
         {pool.sharedUsage.fiveHour && <SubscriptionUsageBar label={ui('Your 5-hour shared limit')} limit={pool.sharedUsage.fiveHour} compact={false} />}
       </div>}
       <div className="divide-y">{pool.members.map((member) => {

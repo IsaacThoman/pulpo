@@ -467,7 +467,7 @@ function InviteQuotaCell({ user, onChanged }: { user: MonitorUser; onChanged: ()
 }
 
 function planLabel(plan: AdminBillingUser['plan']): string {
-  return plan === 'fat' ? 'Le Pulpo Fat' : plan === 'eight' ? 'Pulpo Eight' : 'Pulpo Baby'
+  return plan === 'fat' ? 'Pulpo Fat' : plan === 'eight' ? 'Pulpo Eight' : 'Pulpo Baby'
 }
 
 function BillingPlanCell({ row, onChanged }: { row: AdminBillingUser | undefined; onChanged: () => void }) {

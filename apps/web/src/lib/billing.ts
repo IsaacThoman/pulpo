@@ -275,7 +275,7 @@ export function formatPlanStorage(bytes: number): string {
 
 export function billingPlanName(plan: BillingPlan): string {
   if (plan === 'eight') return 'Pulpo Eight'
-  if (plan === 'fat') return 'Le Pulpo Fat'
+  if (plan === 'fat') return 'Pulpo Fat'
   return 'Pulpo Baby'
 }
 
