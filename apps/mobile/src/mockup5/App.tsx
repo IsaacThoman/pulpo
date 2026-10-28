@@ -208,7 +208,7 @@ import { activateOptimisticBranch } from './src/production/optimisticBranches';
 import { cacheNamespace, cacheOpenedChat, deleteResponseCursor, loadDraft, saveDraft } from '../data/database';
 import { queryKeys } from '../data/queries';
 import { enqueueCacheWrite } from '../data/writeBehind';
-import { activateBranch as activateServerBranch, cancelResponse, continuePastCostLimit, continueWithoutAgent, deleteMessageCascade as deleteServerMessage, deleteUnreferencedAttachment, downloadAttachment, downloadAttachmentThumbnail, duplicateChat as duplicateServerChat, editMessage as editServerMessage, persistChat as persistServerChat, regenerateResponse as regenerateServerResponse, sendMessage as sendServerMessage, shareAttachment as shareServerAttachment, shareChat as shareServerChat, startChat as startServerChat, uploadAttachment } from '../features/chat/api';
+import { activateBranch as activateServerBranch, cancelResponse, continuePastCostLimit, continueWithoutAgent, deleteMessageCascade as deleteServerMessage, deleteUnreferencedAttachment, downloadAttachment, downloadAttachmentThumbnail, duplicateChat as duplicateServerChat, editMessage as editServerMessage, persistChat as persistServerChat, regenerateResponse as regenerateServerResponse, reportMessage as reportServerMessage, sendMessage as sendServerMessage, shareAttachment as shareServerAttachment, shareChat as shareServerChat, startChat as startServerChat, uploadAttachment } from '../features/chat/api';
 import { attachmentUploadErrorMessage } from '../features/chat/attachmentUploadError';
 import { subscribeToResponse, useRealtimeStore } from '../providers/realtimeStore';
 import { shouldShowConnectionBanner } from '../providers/realtimeConnection';
@@ -3000,7 +3000,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   );
 }
 
-type MessageAction = 'copy' | 'share' | 'share-options' | 'share-chat' | 'reply' | 'edit' | 'regenerate' | 'delete';
+type MessageAction = 'copy' | 'share' | 'share-options' | 'share-chat' | 'reply' | 'edit' | 'regenerate' | 'delete' | 'report';
 
 function useMessageActionRunner({ message, onEdit, onRegenerate }: {
   message: Message;
@@ -3087,6 +3087,25 @@ function useMessageActionRunner({ message, onEdit, onRegenerate }: {
       void copyText(`> ${message.text.split('\n')[0]}\n\n`, 'Reply quote copied');
       return;
     }
+    if (action === 'report') {
+      promptText({
+        title: 'Report message',
+        message: 'This shares the whole chat with the administrators of this instance so they can review it. Add any context that would help (optional).',
+        multiline: true,
+        optional: true,
+        fieldLabel: 'What went wrong?',
+        confirmLabel: 'Share with admin',
+        onSubmit: (context) => {
+          void reportServerMessage(message.id, context.trim())
+            .then(() => {
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              Alert.alert('Report sent', 'An admin will review this chat.');
+            })
+            .catch((error) => Alert.alert('Couldn’t send report', error instanceof Error ? error.message : undefined));
+        },
+      });
+      return;
+    }
     Haptics.selectionAsync();
     const labels = {
       reply: 'Reply to message',
@@ -3120,6 +3139,9 @@ function MessageContextMenu({
   const speak = () => { void readAloud(speechKey, message.text).then(() => { const error = speechPlayback.getSnapshot().error; if (error) Alert.alert('Read aloud', error); }).catch(error => Alert.alert('Read aloud', error.message)); };
   const speechLabel = speaking ? (speechState.phase === 'loading' ? 'Stop preparing speech' : 'Stop reading') : 'Read aloud';
   const runAction = useMessageActionRunner({ message, onEdit, onRegenerate });
+  const colorScheme = useColorScheme();
+  const reportsEnabled = useSessionStore((state) => state.config?.capabilities.messageReports === true);
+  const canReport = reportsEnabled && Boolean(message.chatId);
   // A response can only be deleted as one of several versions; the user message owns the last one.
   const canDelete = message.role === 'user' || (message.branches?.length ?? 0) > 1;
   const deleteLabel = message.role === 'user' ? 'Delete message' : 'Delete version';
@@ -3139,6 +3161,7 @@ function MessageContextMenu({
         { label: message.role === 'user' ? 'Edit message' : 'Edit response', icon: 'pencil', onPress: () => runAction('edit') },
         ...(message.role === 'assistant' ? [{ label: 'Regenerate response', icon: 'arrow.clockwise', onPress: () => runAction('regenerate') }] : []),
         ...(canSpeak ? [{ label: speechLabel, icon: speaking ? 'stop.fill' : 'speaker.wave.2', onPress: speak }] : []),
+        ...(canReport ? [{ label: 'Report message', icon: 'pulpo.frown', onPress: () => runAction('report') }] : []),
         ...(canDelete ? [{ label: deleteLabel, icon: 'trash', destructive: true, onPress: () => runAction('delete') }] : []),
       ]}
       style={message.role === 'user' ? styles.userMessageContextHost : styles.assistantMessageContextHost}
@@ -3168,6 +3191,11 @@ function MessageContextMenu({
               <SwiftUIButton label="Regenerate response" systemImage="arrow.clockwise" onPress={() => runAction('regenerate')} />
             </>}
           {canSpeak && <SwiftUIButton label={speechLabel} systemImage={speaking ? 'stop.fill' : 'speaker.wave.2'} onPress={speak} />}
+          {canReport && (
+            <SwiftUIButton onPress={() => runAction('report')}>
+              <SwiftUILabel title="Report message" icon={<SwiftUIImage assetName={colorScheme === 'dark' ? 'PulpoFrownWhite' : 'PulpoFrown'} />} />
+            </SwiftUIButton>
+          )}
           {canDelete && <SwiftUIButton label={deleteLabel} role="destructive" systemImage="trash" onPress={() => runAction('delete')} />}
         </>
       )}

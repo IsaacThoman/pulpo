@@ -316,6 +316,11 @@ export async function continueWithoutAgent(id: string): Promise<ResponseSnapshot
   return snapshot
 }
 
+/** Reports a message, sharing its chat with the instance's administrators. */
+export async function reportMessage(messageId: string, context: string): Promise<void> {
+  await apiRequest('/api/message-reports', { method: 'POST', body: { messageId, context } })
+}
+
 export async function shareChat(id: string): Promise<string> {
   const result = await apiRequest<{ token: string }>('/api/chat-shares', {
     method: 'POST', idempotencyKey: Crypto.randomUUID(), body: { chatId: id, expiresAt: null },
