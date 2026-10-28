@@ -1731,6 +1731,25 @@ export const backupDestinationSchema = z.enum(['local', 'backblaze_b2'])
 export const backupTriggerSchema = z.enum(['manual', 'scheduled'])
 export const backupHealthSchema = z.enum(['unconfigured', 'disabled', 'pending', 'healthy', 'failed'])
 export const backupIntervalHoursSchema = z.union([z.literal(6), z.literal(12), z.literal(24)])
+/** How often a self-contained archive is kept beside incremental snapshots; 0 turns it off. */
+export const backupFullArchiveIntervalDaysSchema = z.union([z.literal(0), z.literal(7), z.literal(30)])
+/** `archive` is one self-contained .tar.gz; `snapshot` holds the database and references separately stored blobs. */
+export const backupFormatSchema = z.enum(['archive', 'snapshot'])
+const sha256HexSchema = z.string().regex(/^[0-9a-f]{64}$/)
+/** Manifest inside an encrypted snapshot. `pulpo backup assemble` turns it into a restorable archive. */
+export const backupSnapshotManifestSchema = z.object({
+  format: z.literal('pulpo-instance-snapshot'),
+  version: z.literal(1),
+  createdAt: isoDateSchema,
+  tables: z.array(z.string()),
+  blobs: z.array(z.object({
+    objectKey: z.string().min(1),
+    checksum: sha256HexSchema,
+    sizeBytes: z.number().int().nonnegative(),
+    storageKey: z.string().min(1),
+  })),
+})
+export type BackupSnapshotManifest = z.infer<typeof backupSnapshotManifestSchema>
 export const ageRecipientSchema = z.string().trim().max(4_096).refine(
   (value) => /^age1(?:pq1)?[023456789acdefghjklmnpqrstuvwxyz]+$/.test(value),
   'Enter a classic or post-quantum age recipient',
@@ -1746,6 +1765,7 @@ export const backupSettingsUpdateSchema = z.object({
   recipient: ageRecipientSchema,
   intervalHours: backupIntervalHoursSchema.default(24),
   retentionDays: z.number().int().min(1).max(3_000).default(30),
+  fullArchiveIntervalDays: backupFullArchiveIntervalDaysSchema.default(7),
 })
 export type BackupSettingsUpdate = z.infer<typeof backupSettingsUpdateSchema>
 export const backupSettingsTestInputSchema = backupSettingsUpdateSchema
@@ -1773,6 +1793,7 @@ export const backupJobSchema = z.object({
   userId: idSchema.nullable(),
   operation: z.enum(['backup', 'restore']),
   destination: backupDestinationSchema,
+  format: backupFormatSchema,
   trigger: backupTriggerSchema,
   status: z.enum(['queued', 'in_progress', 'completed', 'failed']),
   progress: z.number().int().min(0).max(100),

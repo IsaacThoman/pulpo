@@ -108,7 +108,11 @@ const maintenanceWorker = new Worker<MaintenanceJob>('maintenance', async (job) 
   if (job.data.type === 'export') await createExport(String(job.data.payload?.exportId))
   if (job.data.type === 'delete-account') await deleteAccountData(String(job.data.payload?.userId))
   if (job.data.type === 'cleanup') { await resumeAccountDeletions(); await runCleanup() }
-  if (job.data.type === 'backup-schedule') await runOffsiteBackupSchedule()
+  if (job.data.type === 'backup-schedule') {
+    // Also recover jobs stranded by a restore or crash without waiting for a worker restart.
+    await reconcileOffsiteBackupJobs()
+    await runOffsiteBackupSchedule()
+  }
   if (job.data.type === 'scrub-response-binary-context') await scrubPersistedResponseBinaryContext()
   if (job.data.type === 'purge-chats') {
     const userId = typeof job.data.payload?.userId === 'string' ? job.data.payload.userId : undefined

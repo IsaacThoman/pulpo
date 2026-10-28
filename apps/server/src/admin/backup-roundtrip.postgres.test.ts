@@ -285,7 +285,9 @@ describe.skipIf(!enabled)('full application backup audit with PostgreSQL and loc
     context.enqueue.mockRejectedValueOnce(new Error('queue offline'))
     await expect(createOffsiteBackup('manual', userId)).rejects.toThrow('queue offline')
     const [manual] = await db.select().from(schema.backupJobs)
-    expect(manual!.status).toBe('queued')
+    expect(manual!).toMatchObject({ status: 'queued', format: 'snapshot' })
+    // This test covers the self-contained archive; snapshots have their own suite.
+    await db.update(schema.backupJobs).set({ format: 'archive' }).where(eq(schema.backupJobs.id, manual!.id))
     await reconcileOffsiteBackupJobs()
     expect(context.enqueue).toHaveBeenCalledTimes(2)
     await expect(createOffsiteBackup('manual', userId)).rejects.toMatchObject({ code: 'backup_already_running' })

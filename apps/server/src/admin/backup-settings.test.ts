@@ -45,6 +45,7 @@ describe('offsite backup settings', () => {
       recipient,
       intervalHours: 24 as const,
       retentionDays: 30,
+      fullArchiveIntervalDays: 7 as const,
       nextRunAt: null,
     }
     const exported = backupSettingsForExport(settings)

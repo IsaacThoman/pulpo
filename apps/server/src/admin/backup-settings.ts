@@ -79,6 +79,7 @@ export function backupSettingsAuditMetadata(settings: StoredBackupSettings, appl
     prefix: settings.prefix,
     intervalHours: settings.intervalHours,
     retentionDays: settings.retentionDays,
+    fullArchiveIntervalDays: settings.fullArchiveIntervalDays,
     recipientFingerprint: ageRecipientDetails(settings.recipient).fingerprint,
     applicationKeyChanged,
   }

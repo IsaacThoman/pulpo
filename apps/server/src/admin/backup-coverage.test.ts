@@ -21,6 +21,7 @@ const excluded = {
   budget_reservation_custom_funders: 'Live generation reservation accounting',
   export_jobs: 'Operational transfer jobs',
   backup_jobs: 'Operational transfer jobs',
+  backup_blobs: 'Tracks offsite copies that outlive any restore of this database',
   restore_uploads: 'The active restore transfer must survive its own import',
   file_changes: 'Undo history and pending agent suggestions for Files; inline document suggestions are kept in file_docs',
   file_versions: 'Earlier and proposed contents of uploaded files, kept only for undo and review',
