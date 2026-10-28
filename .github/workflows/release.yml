@@ -46,14 +46,21 @@ jobs:
       github.event_name != 'pull_request' ||
       github.event.action != 'closed'
     runs-on: ubuntu-24.04
+    env:
+      TURBO_TELEMETRY_DISABLED: 1
+      TURBO_RUN_SUMMARY: true
     strategy:
       fail-fast: false
       matrix:
         include:
+          # Run one package's tests at a time: the large suites already use every core,
+          # and running them side by side starves timing-sensitive tests.
           - name: Test
-            command: npm test
+            command: npm test -- --concurrency=1
+            turbo: true
           - name: Build
             command: npm run build
+            turbo: true
           - name: Lint
             command: npm run lint
           - name: Docs
@@ -63,6 +70,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Node.js
+        id: node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24.22.1
@@ -75,8 +83,39 @@ jobs:
         if: matrix.name == 'Test'
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
 
+      # Turborepo skips tasks whose inputs match an earlier run. Pull requests restore
+      # their own latest cache, falling back to the newest one from their base branch.
+      - name: Restore Turborepo cache
+        if: matrix.turbo
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .turbo/cache
+          key: turbo-${{ runner.os }}-node-${{ steps.node.outputs.node-version }}-${{ matrix.name }}-${{ github.sha }}-${{ github.run_attempt }}
+          restore-keys: |
+            turbo-${{ runner.os }}-node-${{ steps.node.outputs.node-version }}-${{ matrix.name }}-
+
       - name: ${{ matrix.name }}
         run: ${{ matrix.command }}
+
+      # Keep only the entries this run used, so the saved cache stays the size of one run.
+      - name: Prune Turborepo cache
+        if: matrix.turbo && !cancelled()
+        run: |
+          set -euo pipefail
+          [[ -d .turbo/cache ]] || exit 0
+          used="$(jq -r '.tasks[].hash' .turbo/runs/*.json | sort -u)"
+          for entry in .turbo/cache/*; do
+            name="$(basename "${entry}")"
+            grep -qxF "${name%%[-.]*}" <<< "${used}" || rm -f "${entry}"
+          done
+          du -sh .turbo/cache
+
+      - name: Save Turborepo cache
+        if: matrix.turbo && !cancelled()
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .turbo/cache
+          key: turbo-${{ runner.os }}-node-${{ steps.node.outputs.node-version }}-${{ matrix.name }}-${{ github.sha }}-${{ github.run_attempt }}
 
       - name: Validate Compose runtime environment precedence
         if: matrix.name == 'Build'
@@ -310,11 +349,11 @@ jobs:
         run: npm clean-install
 
       - name: Build and smoke-test packed CLI
+        env:
+          TURBO_TELEMETRY_DISABLED: 1
         run: |
           set -euo pipefail
-          npm run build -w @pulpo/contracts
-          npm run build -w @pulpo/client-core
-          npm run build -w @isaacthoman/pulpo
+          npx turbo run build --filter=@isaacthoman/pulpo
           tarball="$(npm pack ./apps/cli --pack-destination "${RUNNER_TEMP}" --silent)"
           smoke_dir="$(mktemp -d "${RUNNER_TEMP}/pulpo-cli-smoke.XXXXXX")"
           trap 'rm -rf "${smoke_dir}"' EXIT
