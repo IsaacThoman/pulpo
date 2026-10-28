@@ -80,8 +80,10 @@ describe('Backblaze backup store', () => {
   })
 
   it('applies per-object Compliance retention and non-secret recovery metadata', async () => {
-    mocks.send.mockResolvedValue({})
     const lockedUntil = new Date('2026-10-02T00:00:00.000Z')
+    mocks.send.mockImplementation(async (command: unknown) => command instanceof GetObjectRetentionCommand
+      ? { Retention: { Mode: 'COMPLIANCE', RetainUntilDate: lockedUntil } }
+      : {})
     await new B2BackupStore(settings).putEncrypted('backup.age', Readable.from(['ciphertext']), 10, 'job-1', 'fingerprint', lockedUntil)
     const command = mocks.send.mock.calls[0]![0] as PutObjectCommand
     expect(command.input).toMatchObject({
