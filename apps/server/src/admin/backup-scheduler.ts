@@ -9,6 +9,8 @@ import { B2BackupStore } from './b2-backup-store.js'
 import { ageRecipientDetails, normalizeBackupPrefix, readStoredBackupSettings, resolveBackupSettings } from './backup-settings.js'
 
 const SCHEDULE_LOCK = 1_886_747_745
+/** Multipart uploads still unfinished after a day belong to a crashed worker, not a slow one. */
+const STALE_UPLOAD_MS = 86_400_000
 
 function objectKey(prefix: string, when: Date, id: string): string {
   const year = String(when.getUTCFullYear())
@@ -133,18 +135,21 @@ export async function reconcileOffsiteBackupJobs(): Promise<void> {
 }
 
 export async function deleteUnlockedOffsiteBackups(now = new Date()): Promise<void> {
+  const stored = await readStoredBackupSettings()
   const jobs = await db.select().from(backupJobs).where(and(
     eq(backupJobs.destination, 'backblaze_b2'),
     eq(backupJobs.status, 'completed'),
     isNull(backupJobs.deletedAt),
     lt(backupJobs.lockedUntil, now),
   ))
-  if (!jobs.length) return
+  // With nothing expired, still visit a configured bucket to cancel stale uploads.
+  if (!jobs.length && !stored.encryptedApplicationKey) return
 
   let settings
   try {
-    settings = resolveBackupSettings(await readStoredBackupSettings())
+    settings = resolveBackupSettings(stored)
   } catch (error) {
+    if (!jobs.length) return
     console.error(JSON.stringify({
       level: 'error', service: 'pulpo-worker', event: 'backup.retention_credentials_unavailable',
       error: error instanceof Error ? error.message : String(error),
@@ -166,5 +171,18 @@ export async function deleteUnlockedOffsiteBackups(now = new Date()): Promise<vo
         error: error instanceof Error ? error.message : String(error),
       }))
     }
+  }
+  try {
+    // Never trust upload start times alone while a backup could still be uploading.
+    const [running] = await db.select({ id: backupJobs.id }).from(backupJobs).where(and(
+      eq(backupJobs.destination, 'backblaze_b2'),
+      eq(backupJobs.status, 'in_progress'),
+    )).limit(1)
+    if (!running) await store.abortStaleUploads(new Date(now.getTime() - STALE_UPLOAD_MS))
+  } catch (error) {
+    console.error(JSON.stringify({
+      level: 'error', service: 'pulpo-worker', event: 'backup.stale_upload_abort_failed',
+      error: error instanceof Error ? error.message : String(error),
+    }))
   }
 }

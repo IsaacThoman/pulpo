@@ -4,7 +4,7 @@ export const FULL_BACKUP_TABLES = [
   'catalog_icons', 'labs', 'provider_connections', 'image_models', 'speech_models', 'speech_requests', 'speech_resource_cleanup',
   // Chats are filed in Files folders, so the Files tree is restored before them.
   'models', 'model_user_grants', 'model_pricing_versions', 'model_presets', 'model_preset_choices', 'file_nodes', 'chats', 'responses',
-  'response_items', 'response_content_parts', 'chat_shares', 'attachments', 'image_generation_requests', 'user_memory_documents', 'user_memory_document_revisions',
+  'response_items', 'response_content_parts', 'chat_shares', 'message_reports', 'attachments', 'image_generation_requests', 'user_memory_documents', 'user_memory_document_revisions',
   'file_docs', 'file_doc_updates', 'file_folder_layouts',
   'queued_messages', 'composer_drafts', 'composer_draft_attachments', 'shelved_drafts', 'shelved_draft_attachments', 'shelf_operations',
   'episodic_memory_generations', 'chat_turn_embeddings', 'episodic_memory_metric_buckets',
@@ -50,6 +50,7 @@ export const OPTIONAL_TABLES_IN_LEGACY_BACKUPS: readonly FullBackupTable[] = [
   'billing_accounts', 'billing_subscriptions', 'billing_checkouts', 'billing_auto_top_ups', 'billing_orders', 'billing_webhook_events', 'billing_custom_limits', 'custom_limit_spend',
   'weekly_usage_periods', 'daily_usage_periods', 'five_hour_usage_periods', 'shared_allowance_periods', 'shared_five_hour_usage_periods',
   'request_analytics', 'request_analytics_tools', 'analytics_hourly_rollups', 'idempotency_records',
+  'message_reports',
 ]
 
 /**

@@ -41,6 +41,7 @@ const AdminInsightsPage = lazy(() => import('@/pages/admin/AdminInsightsPage').t
 const AdminWorkspacesPage = lazy(() => import('@/pages/admin/AdminWorkspacesPage').then((module) => ({ default: module.AdminWorkspacesPage })))
 const AdminSettingsPage = lazy(() => import('@/pages/admin/settings/AdminSettingsPage').then((module) => ({ default: module.AdminSettingsPage })))
 const AdminBillingPage = lazy(() => import('@/pages/admin/AdminBillingPage').then((module) => ({ default: module.AdminBillingPage })))
+const AdminReportsPage = lazy(() => import('@/pages/admin/AdminReportsPage').then((module) => ({ default: module.AdminReportsPage })))
 const AdminChatsPage = lazy(() => import('@/pages/admin/AdminChatsPage').then((module) => ({ default: module.AdminChatsPage })))
 const AdminChatPage = lazy(() => import('@/pages/admin/AdminChatPage').then((module) => ({ default: module.AdminChatPage })))
 const AccountDeletionPage = lazy(() => import('@/pages/auth/AccountDeletionPage').then((module) => ({ default: module.AccountDeletionPage })))
@@ -150,6 +151,7 @@ export default function App() {
                 <Route path="users" element={<LocalizedRoute><AdminUsersPage /></LocalizedRoute>} />
                 <Route path="chats" element={<LocalizedRoute><AdminChatsPage /></LocalizedRoute>} />
                 <Route path="chats/:chatId" element={<LocalizedRoute><AdminChatPage /></LocalizedRoute>} />
+                <Route path="reports" element={<LocalizedRoute><AdminReportsPage /></LocalizedRoute>} />
                 <Route path="image-models" element={<LocalizedRoute><AdminImageModelsPage /></LocalizedRoute>} />
                 <Route path="speech-models" element={<LocalizedRoute><AdminSpeechModelsPage /></LocalizedRoute>} />
                 <Route path="providers" element={<LocalizedRoute><AdminProvidersPage /></LocalizedRoute>} />

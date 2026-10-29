@@ -51,7 +51,8 @@ export function withoutAgentTools<T extends { systemPrompt?: string; tools?: unk
 
 export function attachmentWorkspacePath(name: string, id: string): string {
   const cleaned = name.normalize('NFKC').replace(/[^a-zA-Z0-9._-]+/g, '_').replace(/^\.+/, '').slice(0, 160) || 'attachment'
-  return `/workspace/${id.slice(0, 8)}-${cleaned}`
+  // Use the full ID: a UUIDv7 prefix is only a timestamp, so same-named files uploaded together would share a path.
+  return `/workspace/${id}-${cleaned}`
 }
 
 export function restoredAttachmentWorkspacePath(attachment: {

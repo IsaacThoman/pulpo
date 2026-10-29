@@ -76,7 +76,7 @@ describe('combined Friends and Pool page', () => {
     await mount()
     expect(within(poolRegion()).getByRole('progressbar', { name: 'Shared usage' }).getAttribute('aria-valuenow')).toBe('64')
     expect(within(poolRegion()).getByRole('progressbar', { name: 'Your 5-hour shared limit' }).getAttribute('aria-valuenow')).toBe('80')
-    expect(within(poolRegion()).getByText('Weekly usage shared by Le Pulpo Fat subscribers in this Pool')).toBeTruthy()
+    expect(within(poolRegion()).getByText('Weekly usage shared by Pulpo Fat subscribers in this Pool')).toBeTruthy()
   })
 
   it('hides shared usage when nobody in the Pool shares', async () => {
