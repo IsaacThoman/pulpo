@@ -36,7 +36,7 @@ export default function SharedChatRoute() {
         setData(await response.json() as SharedChat)
       }).catch((cause) => setError(cause instanceof Error ? cause.message : 'Could not open this share.'))
   }, [instance, token])
-  return <SafeAreaView style={[styles.root, { backgroundColor: theme.background }]} edges={['top', 'bottom']}>
+  return <SafeAreaView style={[styles.root, { backgroundColor: theme.background }]} edges={['top', 'bottom', 'left', 'right']}>
     <View style={styles.header}><GlassIconButton icon="xmark" label="Close" onPress={() => router.replace('/')} /><Text style={[styles.headerTitle, { color: theme.text }]}>Shared Chat</Text><GlassIconButton icon="square.and.arrow.up" label="Share link" onPress={() => { void Share.share({ message: data ? `${data.chat.title}\n${url}` : url, url }) }} /></View>
     {!data && !error ? <View style={styles.center}><ActivityIndicator /></View> : null}
     {error ? <View style={styles.center}><Text style={[styles.errorTitle, { color: theme.text }]}>Link unavailable</Text><Text style={[styles.error, { color: theme.secondary }]}>{error}</Text></View> : null}
