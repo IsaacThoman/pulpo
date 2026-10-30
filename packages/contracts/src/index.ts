@@ -176,6 +176,8 @@ export const mobileConfigSchema = z.object({
     dictation: z.boolean().optional().default(false),
     twoFactorAuth: z.boolean().optional().default(false),
     passkeys: z.boolean().optional().default(false),
+    /** Whether users can report messages to administrators. Older servers omit it. */
+    messageReports: z.boolean().optional().default(false),
     /**
      * Files and its collaborative documents. Older servers omit it; clients then hide Files.
      * `docSchemaVersion` is the document schema the server accepts edits in, so a client whose
@@ -1479,6 +1481,7 @@ export const authSettingsSchema = z.object({
   apiKeysEnabled: z.boolean().default(true),
   filesEnabled: z.boolean().default(true),
   inviteCodesEnabled: z.boolean().default(false),
+  messageReportsEnabled: z.boolean().default(false),
   newAccountModelDefaults: newAccountModelDefaultsSchema.default(() => newAccountModelDefaultsSchema.parse({})),
 })
 
@@ -2090,3 +2093,4 @@ export interface ServerToClientEvents {
 export * from "./shelf.js"
 export * from "./files.js"
 export * from "./trash.js"
+export * from "./message-reports.js"

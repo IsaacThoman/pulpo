@@ -127,6 +127,7 @@ export const materialSymbolNames: Record<string, string> = {
   "ghost": "ghost_outline",
   "bot": "bot",
   "bot-off": "bot-off",
+  "pulpo.frown": "pulpo_frown",
   "chevron.up.chevron.down": "unfold_more",
   "circle": "radio_button_unchecked",
   "checkmark.seal": "verified",

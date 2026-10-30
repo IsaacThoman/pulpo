@@ -1,0 +1,14 @@
+<!-- Pulpo's face with its smile turned into a frown, in Material Symbols' outlined ring (outer clockwise, inner counterclockwise, since Expo UI ignores fillType); from assets/render-frown-icons.swift. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="?attr/colorControlNormal">
+  <path
+      android:fillColor="@android:color/white"
+      android:pathData="M12,2 C17.523,2 22,6.477 22,12 C22,17.523 17.523,22 12,22 C6.477,22 2,17.523 2,12 C2,6.477 6.477,2 12,2 Z M12,4 C7.582,4 4,7.582 4,12 C4,16.418 7.582,20 12,20 C16.418,20 20,16.418 20,12 C20,7.582 16.418,4 12,4 Z"/>
+  <path
+      android:fillColor="@android:color/white"
+      android:pathData="M13.861,9.05 C13.109,9.4 12.944,10.251 13.465,11.03 C13.921,11.71 15.082,11.657 15.478,10.951 C16.079,9.881 14.944,8.548 13.861,9.05 Z M8.918,9.089 C7.697,9.723 7.948,11.498 9.254,11.498 C9.961,11.498 10.383,11.083 10.502,10.264 C10.634,9.4 9.677,8.693 8.918,9.089 Z M7.763,17.537 C7.486,16.514 8.436,15.01 9.802,14.29 C11.927,13.175 14.647,13.94 15.722,15.973 C15.993,16.475 16.132,17.412 15.96,17.59 C15.887,17.65 15.419,17.207 15.234,16.91 C14.402,15.604 12.343,14.812 10.871,15.227 C10.04,15.458 8.951,16.237 8.522,16.91 C8.245,17.346 7.809,17.702 7.763,17.537 Z"/>
+</vector>

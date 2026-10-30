@@ -590,6 +590,24 @@ export const chatShares = pgTable('chat_shares', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [uniqueIndex('share_token_unique').on(table.tokenHash)])
 
+/** A user's report of a message, which shares its chat with administrators. */
+export const messageReports = pgTable('message_reports', {
+  id: uuid('id').primaryKey(),
+  chatId: uuid('chat_id').notNull().references(() => chats.id, { onDelete: 'cascade' }),
+  responseId: uuid('response_id').notNull().references(() => responses.id, { onDelete: 'cascade' }),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  messageRole: text('message_role').notNull(),
+  excerpt: text('excerpt').notNull().default(''),
+  context: text('context').notNull().default(''),
+  resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+  resolvedByUserId: uuid('resolved_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('message_reports_created_idx').on(table.createdAt),
+  index('message_reports_chat_idx').on(table.chatId),
+  check('message_reports_role_check', sql`${table.messageRole} in ('user', 'assistant')`),
+])
+
 export const attachments = pgTable('attachments', {
   id: uuid('id').primaryKey(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),

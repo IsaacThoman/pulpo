@@ -7,7 +7,7 @@ export type FieldProps = TextInputProps & { label?: string; error?: string; icon
 export type DialogProps = { visible: boolean; title: string; onClose: () => void; children: ReactNode; contentHeight?: number; fullScreen?: boolean };
 export type RowProps = { title: string; detail?: string; detailLines?: number; value?: string; image?: ImageSourcePropType; icon?: string; destructive?: boolean; selected?: boolean; onPress?: () => void };
 export type ContextMenuProps = { children: ReactNode; title: string; actions: Action[]; style?: StyleProp<ViewStyle> };
-export type PromptOptions = { title: string; message?: string; value?: string; multiline?: boolean; confirmLabel?: string; onSubmit: (value: string) => void };
+export type PromptOptions = { title: string; message?: string; value?: string; multiline?: boolean; confirmLabel?: string; fieldLabel?: string; /** Allows submitting an empty value. */ optional?: boolean; onSubmit: (value: string) => void };
 
 export type MenuAnchor = { x: number; y: number };
 
