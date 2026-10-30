@@ -280,9 +280,9 @@ async function contextualInput(
   const values = (preferences?.values ?? {}) as { customInstructions?: string; memoryEnabled?: boolean; instructionPresetSelections?: unknown }
   const customInstructions = publicApi ? '' : composeCustomInstructions(parsePersonalizationSettings(personalizationRow?.value), values)
   const context: unknown[] = []
-  if (record.model.systemPrompt.trim()) context.push({ role: 'developer', content: record.model.systemPrompt.trim() })
-  const quiz = publicApi ? '' : quizInstructions(record.response)
-  if (quiz) context.push({ role: 'developer', content: quiz })
+  // Quiz instructions share the model prompt's message so they don't stand out as their own directive.
+  const basePrompt = [record.model.systemPrompt.trim(), publicApi ? '' : quizInstructions(record.response)].filter(Boolean).join('\n\n')
+  if (basePrompt) context.push({ role: 'developer', content: basePrompt })
   if (customInstructions) context.push({ role: 'developer', content: `User-provided custom instructions:\n${customInstructions}` })
   if (memoryContext) context.push({ role: 'developer', content: memoryContext })
   const recallContext = recalledChatContext(recallItem)
