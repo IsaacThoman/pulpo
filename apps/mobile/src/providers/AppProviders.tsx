@@ -16,6 +16,7 @@ import { useAppTheme } from '../theme'
 import { purgeLegacyPrototypeSnapshots } from '../mockup5/src/store/prototypeStore'
 import { RealtimeProvider } from './RealtimeProvider'
 import { ConnectivityProvider } from './ConnectivityProvider'
+import { DisplayGeometryProvider } from './DisplayGeometryProvider'
 import { startKeyboardStateReconciliation } from './keyboardStateReconciliation'
 import { runWhenAppActive } from './runWhenAppActive'
 
@@ -99,9 +100,11 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
     <KeyboardProvider>
       <KeyboardStateReconciler>
         <SafeAreaProvider>
-          <QueryClientProvider client={queryClient}>
-            <ConnectivityProvider><Bootstrap><RealtimeProvider>{children}<MaterialOverlays /></RealtimeProvider></Bootstrap></ConnectivityProvider>
-          </QueryClientProvider>
+          <DisplayGeometryProvider>
+            <QueryClientProvider client={queryClient}>
+              <ConnectivityProvider><Bootstrap><RealtimeProvider>{children}<MaterialOverlays /></RealtimeProvider></Bootstrap></ConnectivityProvider>
+            </QueryClientProvider>
+          </DisplayGeometryProvider>
         </SafeAreaProvider>
       </KeyboardStateReconciler>
     </KeyboardProvider>

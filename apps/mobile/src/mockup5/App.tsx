@@ -326,10 +326,11 @@ import {
   DRAWER_MAX_WIDTH,
   DRAWER_TRAILING_PEEK,
   responsiveHorizontalPadding,
-  SIDEBAR_WIDTH,
   usesAssistantSideRail,
   usesPersistentSidebar,
 } from '../responsive';
+import { persistentSidebarWidth } from '../displayGeometry';
+import { useVerticalBar, useVerticalFold } from '../providers/displayGeometryContext';
 
 const CHAT_COMPOSER_BOTTOM_PADDING = 156;
 const CHAT_COMPOSER_MESSAGE_GAP = 12;
@@ -1181,7 +1182,9 @@ function RoundButton({ icon, onPress, accessibilityLabel, selected = false, sele
   const selectedTint = selectedColor === 'teal' ? 'rgba(20,184,166,0.20)' : 'rgba(175,82,222,0.22)';
   if (Platform.OS === 'ios') {
     return (
-      <SwiftUIHost key={selected ? 'selected' : tinted ? 'tinted' : 'default'} matchContents style={{ width: size, height: size }}>
+      // React Native positions these; SwiftUI must not also inset them. On iPhone Duo
+      // the drawer slides the chat under the vertical bar's safe area.
+      <SwiftUIHost key={selected ? 'selected' : tinted ? 'tinted' : 'default'} ignoreSafeArea="all" matchContents style={{ width: size, height: size }}>
         <SwiftUIButton
           onPress={onPress}
           modifiers={[
@@ -1269,6 +1272,8 @@ function HeaderActionGlyph({ name, color = COLORS.text }: { name: 'bookmark' | '
 }
 
 type TemporaryChatHeaderControlProps = {
+  /** Vertical stacks the actions in the iOS vertical bar. */
+  axis?: 'horizontal' | 'vertical';
   active: boolean;
   expanded: boolean;
   expirationEnabled: boolean;
@@ -1448,15 +1453,17 @@ function AndroidTemporaryChatHeaderControl(props: TemporaryChatHeaderControlProp
   </View>;
 }
 
-function TemporaryChatHeaderControl(props: TemporaryChatHeaderControlProps) {
+function TemporaryChatHeaderControl({ axis = 'horizontal', ...props }: TemporaryChatHeaderControlProps) {
   const { reduceMotion } = useAccessibilityPreferences();
   if (Platform.OS === 'android') return <AndroidTemporaryChatHeaderControl {...props} />;
   return Platform.OS === 'ios'
     ? (
       <PersistentNativeTemporaryChatHeaderView
         {...props}
+        axis={axis}
         reduceMotion={reduceMotion}
-        style={{ width: 88, height: 44 }}
+        // Stacked, the capsule grows down from one item to two.
+        style={axis === 'vertical' ? { width: 44, height: 88 } : { width: 88, height: 44 }}
       />
     )
     : <FallbackTemporaryChatHeaderControl {...props} />;
@@ -1722,6 +1729,10 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   const isDark = useColorScheme() === 'dark';
   const { reduceMotion } = useAccessibilityPreferences();
   const persistentSidebar = usesPersistentSidebar(width);
+  const fold = useVerticalFold();
+  const sidebarWidth = persistentSidebarWidth(fold, width);
+  // Half open, the sidebar and the chat each keep their side of the fold clear.
+  const foldMargin = persistentSidebar && fold && sidebarWidth === fold.center ? fold.end - fold.center : 0;
   const compactDrawerCorners = height <= COMPACT_DRAWER_HEIGHT;
   const drawerWidth = Math.min(Math.max(width - DRAWER_TRAILING_PEEK, 0), DRAWER_MAX_WIDTH);
   const openOffset = drawerWidth;
@@ -1978,13 +1989,13 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     const target = visible ? 1 : 0;
     wideSidebarProgress.value = reduceMotion ? target : withSpring(target, {
-      velocity: velocity / SIDEBAR_WIDTH,
+      velocity: velocity / sidebarWidth,
       damping: 26,
       stiffness: 240,
       mass: 0.9,
       overshootClamping: true,
     });
-  }, [reduceMotion, wideSidebarProgress]);
+  }, [reduceMotion, sidebarWidth, wideSidebarProgress]);
 
   const togglePanel = useCallback(() => {
     if (persistentSidebar) {
@@ -2081,14 +2092,14 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
         : wideSidebarProgress.value > 0.45;
     const target = visible ? 1 : 0;
     wideSidebarProgress.value = reduceMotion ? target : withSpring(target, {
-      velocity: velocityX / SIDEBAR_WIDTH,
+      velocity: velocityX / sidebarWidth,
       damping: 26,
       stiffness: 240,
       mass: 0.9,
       overshootClamping: true,
     });
     runOnJS(finishWideSidebarGesture)(visible);
-  }, [finishWideSidebarGesture, reduceMotion, wideSidebarProgress]);
+  }, [finishWideSidebarGesture, reduceMotion, sidebarWidth, wideSidebarProgress]);
 
   const wideSidebarGesture = useMemo(() => Gesture.Pan()
     .enabled(persistentSidebar)
@@ -2102,13 +2113,14 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     .onUpdate((event) => {
       wideSidebarProgress.value = Math.max(
         0,
-        Math.min(1, wideSidebarGestureStart.value + event.translationX / SIDEBAR_WIDTH),
+        Math.min(1, wideSidebarGestureStart.value + event.translationX / sidebarWidth),
       );
     })
     .onEnd((event) => settleWideSidebarGesture(event.velocityX)), [
       dismissKeyboard,
       persistentSidebar,
       settleWideSidebarGesture,
+      sidebarWidth,
       wideSidebarGestureStart,
       wideSidebarProgress,
     ]);
@@ -2149,19 +2161,19 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   }), [openOffset, persistentSidebar, reduceMotion, wideSidebarProgress]);
   const sidebarFrameAnimatedStyle = useAnimatedStyle(() => ({
     width: persistentSidebar
-      ? interpolate(wideSidebarProgress.value, [0, 1], [0, SIDEBAR_WIDTH])
+      ? interpolate(wideSidebarProgress.value, [0, 1], [0, sidebarWidth])
       : drawerWidth,
     borderRightWidth: persistentSidebar
       ? interpolate(wideSidebarProgress.value, [0, 1], [0, StyleSheet.hairlineWidth])
       : 0,
-  }), [drawerWidth, persistentSidebar, wideSidebarProgress]);
+  }), [drawerWidth, persistentSidebar, sidebarWidth, wideSidebarProgress]);
   const sidebarContentAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{
       translateX: persistentSidebar
-        ? interpolate(wideSidebarProgress.value, [0, 1], [-SIDEBAR_WIDTH, 0])
+        ? interpolate(wideSidebarProgress.value, [0, 1], [-sidebarWidth, 0])
         : 0,
     }],
-  }), [persistentSidebar, wideSidebarProgress]);
+  }), [persistentSidebar, sidebarWidth, wideSidebarProgress]);
   const historyVisible = persistentSidebar ? wideSidebarVisible : panelOpen;
   const historyChats = useMemo(() => projectHistory(storedChats), [projectHistory, storedChats]);
   const loadHistoryPreview = useCallback((chatId: string) => {
@@ -2915,7 +2927,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
             panelAnimatedStyle,
           ]}
         >
-          <Reanimated.View style={[styles.historyPanelContent, persistentSidebar && styles.persistentPanelContent, sidebarContentAnimatedStyle]}>
+          <Reanimated.View style={[styles.historyPanelContent, persistentSidebar && { width: sidebarWidth, paddingRight: foldMargin }, sidebarContentAnimatedStyle]}>
             <HistoryPanel
               chats={historyChats}
               activeChatId={activeChatId}
@@ -2971,6 +2983,8 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
             onTogglePanel={togglePanel}
             persistentSidebar={persistentSidebar}
             sidebarVisible={historyVisible}
+            sidebarWidth={sidebarWidth}
+            foldMargin={historyVisible ? foldMargin : 0}
             onSelectModel={selectModel}
             temporary={activePrototypeChat?.temporary ?? newChatTemporary}
             autoExpire={chatAutoExpire}
@@ -3962,7 +3976,7 @@ const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectM
   const { sections: modelSections, section, sectionLabel, visibleModels, setSection } = useModelMenu(models);
 
   return (
-    <SwiftUIHost key={tinted ? 'tinted' : 'default'} matchContents style={styles.modelMenuHost}>
+    <SwiftUIHost key={tinted ? 'tinted' : 'default'} ignoreSafeArea="all" matchContents style={styles.modelMenuHost}>
       <SwiftUIMenu
         label={(
           <SwiftUILabel
@@ -4083,7 +4097,7 @@ function SuggestedPromptButton({ label, accessible, onPress, temporary = false }
     : undefined;
   if (Platform.OS === 'ios') {
     return (
-      <SwiftUIHost ignoreSafeArea="keyboard" style={[styles.suggestionCard, temporaryStyle, accessible && styles.suggestionCardAccessible]}>
+      <SwiftUIHost ignoreSafeArea="all" style={[styles.suggestionCard, temporaryStyle, accessible && styles.suggestionCardAccessible]}>
         <SwiftUIButton
           onPress={onPress}
           modifiers={[
@@ -4344,7 +4358,7 @@ function ComposerQueueSection({ title, subject, visible, collapsed, onToggle, fa
 
 function ChatView({
   acceptIncomingFiles, messages, queuedMessages, chatId, chatLoaded, onTranscriptReady, openingChatId, draftNamespace, keyboardLayoutEnabled, transcriptTransitionActive, model, models, prototypeModel, presetSelections: defaultPresetSelections, input, composerInputRef, composerFocusSuppressed, composerFocusRequest, onChangeInput, onSend, onRemoteChatStarted, assistantStatus,
-  onEdit, onRegenerate, onActivateBranch, onOpenChat, onStop, onTogglePanel, onSelectModel, onSavePresetDefault, onNewChat, onSaveTemporary, persistentSidebar, sidebarVisible, temporary, autoExpire, expirationPeriod, showAutoExpirationControl, expired, savingTemporary, onTemporaryChange, onAutoExpirationChange,
+  onEdit, onRegenerate, onActivateBranch, onOpenChat, onStop, onTogglePanel, onSelectModel, onSavePresetDefault, onNewChat, onSaveTemporary, persistentSidebar, sidebarVisible, sidebarWidth, foldMargin, temporary, autoExpire, expirationPeriod, showAutoExpirationControl, expired, savingTemporary, onTemporaryChange, onAutoExpirationChange,
 }: {
   acceptIncomingFiles: boolean;
   messages: Message[];
@@ -4376,6 +4390,9 @@ function ChatView({
   onTogglePanel: () => void;
   persistentSidebar: boolean;
   sidebarVisible: boolean;
+  sidebarWidth: number;
+  /** Space to keep clear beside the half-open fold, at the leading edge. */
+  foldMargin: number;
   onSelectModel: (model: Model) => void;
   /** Saves an explicit new-chat choice as the account's default for that model. */
   onSavePresetDefault: (modelId: string, presetId: string, choiceId: string) => void;
@@ -4446,7 +4463,13 @@ function ChatView({
   const { reduceMotion, reduceTransparency } = useAccessibilityPreferences();
   const { fontScale, height: windowHeight, width: windowWidth } = useWindowDimensions();
   const horizontalPadding = responsiveHorizontalPadding(windowWidth);
-  const availableChatWidth = windowWidth - (persistentSidebar && sidebarVisible ? SIDEBAR_WIDTH : 0);
+  // iPhone Duo reserves a column on one side for its vertical status bar. The
+  // header stays beside it, with its trailing actions stacked; the transcript
+  // and composer run under the column, which is empty below the status bar.
+  const verticalBar = useVerticalBar();
+  const availableChatWidth = windowWidth
+    - (persistentSidebar && sidebarVisible ? sidebarWidth : 0)
+    - foldMargin;
   const assistantSideRail = usesAssistantSideRail(Math.max(0, availableChatWidth - horizontalPadding * 2));
   const accessibilityLayout = fontScale >= 1.6;
   const scrollLanding = accessibilityLayout || (Platform.OS === 'android' && windowHeight < 650);
@@ -5899,13 +5922,22 @@ function ChatView({
   const headerAction = resolveChatHeaderAction(chatId, messages.length, temporary);
   const headerControl = resolveChatHeaderControl(headerAction, showAutoExpirationControl);
   const headerExpansionProgress = useSharedValue(headerControl.expanded ? 1 : 0);
+  const stackedHeaderControl = verticalBar !== null;
+  // Where the transcript comes to rest when scrolled to its start: below the
+  // header, the stacked control's second item hanging under the header row,
+  // and the status bar at the top of the vertical bar.
+  const transcriptStart = Math.max(
+    headerOverlayHeight + (stackedHeaderControl && headerControl.expanded ? 44 : 0),
+    verticalBar?.statusBottom ?? 0,
+  );
   const modelTriggerAnimatedStyle = useAnimatedStyle(() => Platform.OS === 'android' ? {
     // Match the available space between the 48 dp history/trailing targets.
     // Removing the hourglass frees 48 dp and moves the midpoint right by 24 dp.
     right: interpolate(headerExpansionProgress.value, [0, 1], [66, 114]),
   } : {
-    transform: [{ translateX: interpolate(headerExpansionProgress.value, [0, 1], [22, 0]) }],
-  });
+    // A stacked trailing control stays one item wide.
+    transform: [{ translateX: stackedHeaderControl ? 22 : interpolate(headerExpansionProgress.value, [0, 1], [22, 0]) }],
+  }, [stackedHeaderControl]);
   const loadingExistingChat = Boolean(chatId && isEmptyConversation && !chatLoaded);
   useEffect(() => {
     // Empty chats have no transcript list to emit a native layout event.
@@ -5942,7 +5974,12 @@ function ChatView({
 
   const emptyLandingContent = (
     <View style={styles.emptyState}>
-      <Reanimated.View style={[styles.emptyIdentity, !scrollLanding && emptyStateAnimatedStyle]}>
+      <Reanimated.View style={[
+        styles.emptyIdentity,
+        // Stays centered under the header's model menu, which keeps beside the vertical bar.
+        verticalBar && { [verticalBar.side === 'right' ? 'paddingRight' : 'paddingLeft']: verticalBar.width },
+        !scrollLanding && emptyStateAnimatedStyle,
+      ]}>
         <View style={[styles.emptyModelLineWrap, Platform.OS === 'android' && { paddingTop: Math.max(40, 24 * fontScale + 16) }]}>
           <Reanimated.View
             accessible={temporary}
@@ -6009,16 +6046,24 @@ function ChatView({
 
   return (
     <Reanimated.View style={[styles.chatRoot, temporarySurfaceAnimatedStyle]}>
+      <View style={[styles.flex, { marginLeft: foldMargin }]}>
       <View
         onLayout={(event) => {
           const height = event.nativeEvent.layout.height;
           setHeaderOverlayHeight((current) => current === height ? current : height);
         }}
         pointerEvents="box-none"
-        style={[styles.chatHeaderOverlay, { paddingTop: insets.top }]}
+        style={[styles.chatHeaderOverlay, { paddingTop: insets.top }, verticalBar && { [verticalBar.side]: verticalBar.width }]}
       >
         {Platform.OS === 'ios' && (
-          <StatusBarGradientView style={{ position: 'absolute', top: 0, left: 0, right: 0, height: insets.top + 16 }} />
+          // Spans the whole pane, past the content inset, so tinted chats show no seam.
+          <StatusBarGradientView style={{
+            position: 'absolute',
+            top: 0,
+            left: -foldMargin - (verticalBar?.side === 'left' ? verticalBar.width : 0),
+            right: verticalBar?.side === 'right' ? -verticalBar.width : 0,
+            height: insets.top + 16,
+          }} />
         )}
         {/* Header */}
         <AppHeader edgeAligned>
@@ -6039,9 +6084,10 @@ function ChatView({
           </Reanimated.View>
           <Reanimated.View
             pointerEvents="box-none"
-            style={styles.headerActionExpanded}
+            style={stackedHeaderControl ? styles.headerActionStacked : styles.headerActionExpanded}
           >
             <TemporaryChatHeaderControl
+              axis={stackedHeaderControl ? 'vertical' : 'horizontal'}
               active={temporary}
               expanded={headerControl.expanded}
               expirationEnabled={autoExpire}
@@ -6094,7 +6140,7 @@ function ChatView({
         scrollLanding ? (
           <ScrollView
             alwaysBounceVertical
-            contentContainerStyle={[styles.emptyConversationAccessible, { paddingHorizontal: horizontalPadding, paddingTop: Platform.OS === 'android' ? 16 : headerOverlayHeight + 16 }]}
+            contentContainerStyle={[styles.emptyConversationAccessible, { paddingHorizontal: horizontalPadding, paddingTop: Platform.OS === 'android' ? 16 : transcriptStart + 16 }]}
             keyboardDismissMode="interactive"
             keyboardShouldPersistTaps="handled"
             onTouchStart={Keyboard.dismiss}
@@ -6120,8 +6166,8 @@ function ChatView({
           bounces
           contentContainerStyle={[styles.conversation, {
             paddingHorizontal: horizontalPadding,
-            paddingTop: bottomAnchored ? CHAT_COMPOSER_BOTTOM_PADDING : Platform.OS === 'android' ? 16 : headerOverlayHeight + 16,
-            paddingBottom: bottomAnchored ? Platform.OS === 'android' ? 16 : headerOverlayHeight + 16 : CHAT_COMPOSER_BOTTOM_PADDING,
+            paddingTop: bottomAnchored ? CHAT_COMPOSER_BOTTOM_PADDING : Platform.OS === 'android' ? 16 : transcriptStart + 16,
+            paddingBottom: bottomAnchored ? Platform.OS === 'android' ? 16 : transcriptStart + 16 : CHAT_COMPOSER_BOTTOM_PADDING,
           }]}
           contentInsetAdjustmentBehavior="never"
           data={visibleMessages}
@@ -6173,7 +6219,7 @@ function ChatView({
         <View
           pointerEvents="none"
           style={[styles.chatOpeningOverlay, {
-            top: Platform.OS === 'android' ? 36 : headerOverlayHeight + 36,
+            top: Platform.OS === 'android' ? 36 : transcriptStart + 36,
             left: horizontalPadding,
             right: horizontalPadding,
           }]}
@@ -6452,6 +6498,7 @@ function ChatView({
             </ComposerSurface>
         </View>
       </KeyboardStickyView>
+      </View>
 
       <AttachmentImageViewer
         initialIndex={imageViewer?.initialIndex ?? 0}
@@ -7110,7 +7157,6 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   drawerPanel: { position: 'absolute', top: 0, bottom: 0, left: 0 },
   persistentPanel: { borderRightColor: COLORS.lineSoft, overflow: 'hidden' },
   historyPanelContent: { flex: 1 },
-  persistentPanelContent: { width: SIDEBAR_WIDTH },
   historyLoading: { alignItems: 'center', gap: 8, paddingVertical: 20 },
 
   // Main chat view
@@ -7132,6 +7178,8 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   appHeader: { width: '100%', maxWidth: CHAT_CONTENT_MAX, alignSelf: 'center', height: 64, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
   appHeaderEdgeAligned: { maxWidth: '100%' },
   headerActionExpanded: { width: Platform.OS === 'android' ? 96 : 88, height: Platform.OS === 'android' ? 48 : 44, alignItems: 'flex-end' },
+  // The stacked control hangs below the row from a single item's space.
+  headerActionStacked: { width: 44, height: 44 },
   roundButton: { alignItems: 'center', justifyContent: 'center' },
   roundButtonCustomIcon: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center' },
   roundButtonSelected: { backgroundColor: 'rgba(175,82,222,0.18)' },

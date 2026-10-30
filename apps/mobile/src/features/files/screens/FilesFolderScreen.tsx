@@ -507,6 +507,9 @@ export function FilesFolderScreen({ navigation, route }: Props) {
 
   // Android's screen already keeps clear of the bottom inset.
   const bottomInset = Platform.OS === 'android' ? 0 : insets.bottom
+  // Automatic content adjustment covers only the top and bottom; iPhone Duo's vertical bar takes a side.
+  const leftInset = Platform.OS === 'android' ? 0 : insets.left
+  const rightInset = Platform.OS === 'android' ? 0 : insets.right
   const header = (
     <View>
       {listing.data?.offline ? (
@@ -564,7 +567,7 @@ export function FilesFolderScreen({ navigation, route }: Props) {
       contentInsetAdjustmentBehavior="automatic"
       keyboardDismissMode="on-drag"
       ListHeaderComponent={header}
-      contentContainerStyle={{ paddingBottom: bottomInset + (selecting ? 96 : 32) }}
+      contentContainerStyle={{ paddingLeft: leftInset, paddingRight: rightInset, paddingBottom: bottomInset + (selecting ? 96 : 32) }}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { void onRefresh() }} />}
       ListEmptyComponent={localUploads.length ? null : inTrash ? (
         <View style={styles.empty}>
@@ -603,7 +606,7 @@ export function FilesFolderScreen({ navigation, route }: Props) {
   )
 
   const selectionBar = selecting ? (
-    <View style={[styles.selectionBar, { paddingBottom: bottomInset + 8, backgroundColor: theme.isDark ? theme.elevated : theme.elevated, borderTopColor: theme.separator }]}>
+    <View style={[styles.selectionBar, { paddingLeft: 16 + leftInset, paddingRight: 16 + rightInset, paddingBottom: bottomInset + 8, backgroundColor: theme.isDark ? theme.elevated : theme.elevated, borderTopColor: theme.separator }]}>
       <Text style={[styles.selectionCount, { color: theme.secondary }]}>{selectedNodes.length ? `${selectedNodes.length} selected` : 'Select items'}</Text>
       <View style={styles.selectionActions}>
         {(inTrash ? [
