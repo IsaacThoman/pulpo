@@ -13,6 +13,8 @@ type TemporaryChatHeaderNativeProps = ViewProps & {
   saveDisabled: boolean
   reduceMotion: boolean
   trailingAction: 'ghost' | 'new-chat'
+  /** Vertical stacks the actions for the system's vertical bar on iPhone Duo. */
+  axis?: 'horizontal' | 'vertical'
   onToggleExpiration: (event: NativeEvent) => void
   onToggleTemporary: (event: NativeEvent) => void
   onSave: (event: NativeEvent) => void
