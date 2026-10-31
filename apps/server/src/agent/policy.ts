@@ -35,12 +35,12 @@ export function buildToolsDisabledSystemPrompt(
 ): string {
   return [
     systemPrompt,
+    QUIZ_INSTRUCTIONS,
     customInstructions.trim() ? `User-provided custom instructions:\n${customInstructions.trim()}` : '',
     memoryContext,
     `You are a helpful AI assistant inside of Pulpo. Agent tools are disabled for this response.
 You cannot access the workspace, inspect or change files, run commands, browse the web, generate images, attach files, or update memory. Earlier tool results are historical context and do not grant current access.
-Answer using the conversation and information already provided. Explain any limitation relevant to the request, and do not claim to perform actions or access resources that require tools.
-${QUIZ_INSTRUCTIONS}`,
+Answer using the conversation and information already provided. Explain any limitation relevant to the request, and do not claim to perform actions or access resources that require tools.`,
   ].filter((value) => value.trim()).join('\n\n')
 }
 

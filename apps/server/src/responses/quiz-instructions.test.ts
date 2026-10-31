@@ -9,6 +9,11 @@ describe('quiz instructions', () => {
     expect(parseQuiz(example)?.questions).toHaveLength(1)
   })
 
+  it('only offer quizzes the user asks for', () => {
+    expect(QUIZ_INSTRUCTIONS).toContain('only when the user asks')
+    expect(QUIZ_INSTRUCTIONS).not.toMatch(/would help them learn/)
+  })
+
   it('are only given to conversations shown in Pulpo', () => {
     expect(quizInstructions({ origin: 'web' })).toBe(QUIZ_INSTRUCTIONS)
     expect(quizInstructions({ origin: 'api' })).toBe('')
