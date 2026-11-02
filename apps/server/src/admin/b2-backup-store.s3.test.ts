@@ -12,6 +12,7 @@ import {
 } from '@aws-sdk/client-s3'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { B2BackupStore } from './b2-backup-store.js'
+import { wholeSecondLock } from './backup-retention.js'
 
 /**
  * Runs the Backblaze store against a real S3 implementation with Compliance
@@ -32,7 +33,7 @@ const PART_BYTES = 5 * 1024 * 1024
 const settings = {
   enabled: false, endpoint: env.endpoint ?? '', region: env.region, bucket: env.bucket, prefix: env.prefix,
   keyId: env.keyId, applicationKey: env.applicationKey, encryptedApplicationKey: null, recipient: '',
-  intervalHours: 24 as const, retentionDays: 1, nextRunAt: null,
+  intervalHours: 24 as const, retentionDays: 1, fullArchiveIntervalDays: 0 as const, nextRunAt: null,
 }
 const client = new S3Client({
   endpoint: settings.endpoint, region: settings.region, forcePathStyle: true,
@@ -43,7 +44,6 @@ const store = new B2BackupStore(settings, PART_BYTES)
 const created: string[] = []
 // Production lock dates carry milliseconds; Object Lock stores whole seconds.
 const seconds = (count: number) => new Date(Date.now() + count * 1_000 + 321)
-const wholeSeconds = (date: Date) => new Date(Math.ceil(date.getTime() / 1_000) * 1_000)
 const read = async (key: string) => {
   const { body } = await store.getStream(key)
   const chunks: Buffer[] = []
@@ -87,7 +87,7 @@ describe.skipIf(!env.endpoint)('Backblaze store against S3 Compliance Object Loc
     await put(key, Buffer.from('small ciphertext'), lockedUntil)
     expect(await read(key)).toEqual(Buffer.from('small ciphertext'))
     expect(await store.head(key)).toEqual({ sizeBytes: 16, jobId: 'job-1', recipientFingerprint: 'fingerprint' })
-    expect(await retention(key)).toEqual({ Mode: 'COMPLIANCE', RetainUntilDate: wholeSeconds(lockedUntil) })
+    expect(await retention(key)).toEqual({ Mode: 'COMPLIANCE', RetainUntilDate: wholeSecondLock(lockedUntil) })
   }, 30_000)
 
   it('uploads a large backup as locked multipart parts with recovery metadata', async () => {
@@ -95,10 +95,22 @@ describe.skipIf(!env.endpoint)('Backblaze store against S3 Compliance Object Loc
     await put(key, body, lockedUntil)
     expect((await read(key)).equals(body)).toBe(true)
     expect(await store.head(key)).toEqual({ sizeBytes: body.length, jobId: 'job-1', recipientFingerprint: 'fingerprint' })
-    expect(await retention(key)).toEqual({ Mode: 'COMPLIANCE', RetainUntilDate: wholeSeconds(lockedUntil) })
+    expect(await retention(key)).toEqual({ Mode: 'COMPLIANCE', RetainUntilDate: wholeSecondLock(lockedUntil) })
     await expect(store.delete(key)).rejects.toThrow()
     expect((await read(key)).equals(body)).toBe(true)
   }, 120_000)
+
+  it('extends Compliance retention, refuses to shorten it, and refuses deletion while locked', async () => {
+    const key = `${env.prefix}/extended.age`
+    await put(key, Buffer.from('blob'), seconds(2))
+    const extended = seconds(5)
+    await store.extendRetention(key, extended)
+    expect(await retention(key)).toEqual({ Mode: 'COMPLIANCE', RetainUntilDate: wholeSecondLock(extended) })
+    expect(await store.retention(key)).toEqual({ mode: 'COMPLIANCE', retainUntil: wholeSecondLock(extended) })
+    await expect(store.extendRetention(key, seconds(3))).rejects.toThrow()
+    await expect(store.delete(key)).rejects.toThrow()
+    expect(await read(key)).toEqual(Buffer.from('blob'))
+  }, 30_000)
 
   it('aborts an upload that fails partway and leaves nothing behind', async () => {
     const key = `${env.prefix}/failed.age`
@@ -135,5 +147,24 @@ describe.skipIf(!env.endpoint)('Backblaze store against S3 Compliance Object Loc
       for (const upload of await pending()) await client.send(new AbortMultipartUploadCommand({ Bucket: env.bucket, Key: upload.Key!, UploadId: upload.UploadId! }))
     }
     expect(await pending()).toEqual([])
+  }, 30_000)
+
+  it('reports a missing object so a vanished blob can be replaced', async () => {
+    await expect(store.extendRetention(`${env.prefix}/missing.age`, seconds(5))).rejects.toSatisfy((error: unknown) => {
+      const status = (error as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode
+      return status === 404 || (error instanceof Error && ['NoSuchKey', 'NotFound'].includes(error.name))
+    })
+  }, 30_000)
+
+  it('serves blobs to the offline assembler through its own SigV4 signer', async () => {
+    const key = `${env.prefix}/blobs/it's (1)*.age`
+    await put(key, Buffer.from('signed download'), seconds(4))
+    const { fetchS3Object } = await import(/* @vite-ignore */ new URL('../../../cli/src/backup-assemble.ts', import.meta.url).href) as {
+      fetchS3Object(location: { endpoint: string; region: string; bucket: string; accessKeyId: string; secretAccessKey: string }, key: string): Promise<AsyncIterable<Uint8Array>>
+    }
+    const body = await fetchS3Object({ endpoint: env.endpoint!, region: env.region, bucket: env.bucket, accessKeyId: env.keyId, secretAccessKey: env.applicationKey }, key)
+    const chunks: Buffer[] = []
+    for await (const chunk of body) chunks.push(Buffer.from(chunk))
+    expect(Buffer.concat(chunks).toString()).toBe('signed download')
   }, 30_000)
 })

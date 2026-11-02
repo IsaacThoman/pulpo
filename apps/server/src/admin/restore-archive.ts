@@ -69,7 +69,11 @@ export async function extractRestoreArchive(source: Readable, directory: string,
   if (expected.checksum && archiveHash.digest('hex') !== expected.checksum) throw new Error('Backup archive checksum failed')
   const manifestFile = files.get('manifest.json'), databaseFile = files.get('database.json')
   if (!manifestFile || !databaseFile) throw new Error('Backup is missing its manifest or database')
-  const manifest = manifestSchema.parse(JSON.parse(await readFile(manifestFile.path, 'utf8')))
+  const rawManifest: unknown = JSON.parse(await readFile(manifestFile.path, 'utf8'))
+  if ((rawManifest as { format?: unknown } | null)?.format === 'pulpo-instance-snapshot') {
+    throw new Error('This is an incremental snapshot. Run `pulpo backup assemble` to build a restorable archive from it first.')
+  }
+  const manifest = manifestSchema.parse(rawManifest)
   const objectKeys = new Map<string, string>(), entries = new Map<string, string>()
   const uniqueBlobs: typeof manifest.blobs = []
   for (const blob of manifest.blobs) {

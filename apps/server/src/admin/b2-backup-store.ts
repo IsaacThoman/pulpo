@@ -11,6 +11,7 @@ import {
   ListObjectsV2Command,
   ListObjectVersionsCommand,
   PutObjectCommand,
+  PutObjectRetentionCommand,
   S3Client,
   type PutObjectCommandInput,
   UploadPartCommand,
@@ -19,6 +20,7 @@ import {
 import { createHash, randomUUID } from 'node:crypto'
 import { Readable } from 'node:stream'
 import { AppError } from '../lib/errors.js'
+import { wholeSecondLock } from './backup-retention.js'
 import type { ResolvedBackupSettings } from './backup-settings.js'
 
 // S3 caps a single PUT at 5 GiB, so larger backups are uploaded in parts.
@@ -27,9 +29,18 @@ import type { ResolvedBackupSettings } from './backup-settings.js'
 const MULTIPART_PART_BYTES = 32 * 1024 * 1024
 const MAX_MULTIPART_PARTS = 10_000
 
-/** Object Lock stores whole seconds. Round up so the lock reads back exactly as sent and never ends early. */
-function wholeSecondLock(date: Date): Date {
-  return new Date(Math.ceil(date.getTime() / 1_000) * 1_000)
+/**
+ * Current SDKs add a CRC32 checksum to operations that require one. Send the
+ * Content-MD5 that S3-compatible stores have always accepted instead.
+ */
+function withContentMd5(command: PutObjectRetentionCommand): PutObjectRetentionCommand {
+  command.middlewareStack.add((next) => async (args) => {
+    const request = args.request as { headers: Record<string, string>; body?: unknown }
+    for (const name of Object.keys(request.headers)) if (/^x-amz-(sdk-)?checksum-/i.test(name)) delete request.headers[name]
+    request.headers['content-md5'] = createHash('md5').update(typeof request.body === 'string' ? request.body : '').digest('base64')
+    return next(args)
+  }, { step: 'build', priority: 'low', name: 'pulpoContentMd5' })
+  return command
 }
 
 /** Split a stream into buffers of exactly `size` bytes, except a shorter final one. */
@@ -244,6 +255,20 @@ export class B2BackupStore {
     if (Retention?.Mode !== 'COMPLIANCE' || !Retention.RetainUntilDate || Retention.RetainUntilDate.getTime() < required) {
       throw new Error('Backblaze did not apply Compliance retention to the backup')
     }
+  }
+
+  /** Compliance retention can only grow, so callers must never pass an earlier date. */
+  async extendRetention(key: string, lockedUntil: Date): Promise<void> {
+    await this.client.send(withContentMd5(new PutObjectRetentionCommand({
+      Bucket: this.settings.bucket,
+      Key: key,
+      Retention: { Mode: 'COMPLIANCE', RetainUntilDate: wholeSecondLock(lockedUntil) },
+    })))
+  }
+
+  async retention(key: string): Promise<{ mode: string; retainUntil: Date } | null> {
+    const { Retention } = await this.client.send(new GetObjectRetentionCommand({ Bucket: this.settings.bucket, Key: key }))
+    return Retention?.Mode && Retention.RetainUntilDate ? { mode: Retention.Mode, retainUntil: Retention.RetainUntilDate } : null
   }
 
   private async uploadPart(key: string, uploadId: string, partNumber: number, body: Buffer): Promise<string> {
