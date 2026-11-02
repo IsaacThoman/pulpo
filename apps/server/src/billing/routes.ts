@@ -1,6 +1,7 @@
 import { desc, eq } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
+import { usageLimitsSchema, type UsageLimits } from '@pulpo/contracts'
 import { requireUser } from '../auth/service.js'
 import { getConfig } from '../config.js'
 import { db } from '../database/client.js'
@@ -12,7 +13,7 @@ import {
 } from '../database/schema.js'
 import { AppError } from '../lib/errors.js'
 import { parseBillingSettings } from '../settings/application-settings.js'
-import { getBillingEntitlements } from './entitlements.js'
+import { getBillingEntitlements, type BillingEntitlements } from './entitlements.js'
 import { loadDailySpend, type DailySpend } from './usage-tiers.js'
 import { customLimitModelNames, loadCustomAllowances, type CustomAllowance } from './custom-limits.js'
 import { loadOwnerSharedAllowance, sharedAllowanceBar } from './shared-allowance.js'
@@ -153,6 +154,64 @@ export function customLimitSummary(limit: CustomAllowance, modelNames: Map<strin
   }
 }
 
+type WeeklyLimitInput = Pick<BillingEntitlements, 'weeklyRemainingPercentage' | 'weeklyRemainingMicros' | 'weeklyLimitMicros' | 'weeklyPendingMicros' | 'weeklyResetAt'>
+type FiveHourLimitInput = Parameters<typeof fiveHourSummaryPercentages>[0] & Pick<BillingEntitlements, 'fiveHourRemainingPercentage' | 'fiveHourResetAt'>
+
+export function weeklyLimitSummary(entitlements: WeeklyLimitInput) {
+  if (entitlements.weeklyRemainingPercentage === null) return null
+  return {
+    remainingPercentage: entitlements.weeklyRemainingPercentage,
+    availableBarPercentage: billingLimitPercentage(entitlements.weeklyRemainingMicros, entitlements.weeklyLimitMicros),
+    pendingMicros: entitlements.weeklyPendingMicros,
+    pendingBarPercentage: billingLimitPercentage(entitlements.weeklyPendingMicros, entitlements.weeklyLimitMicros),
+    resetsAt: entitlements.weeklyResetAt.toISOString(),
+  }
+}
+
+export function fiveHourLimitSummary(entitlements: FiveHourLimitInput) {
+  if (entitlements.fiveHourRemainingPercentage === null) return null
+  return {
+    ...fiveHourSummaryPercentages(entitlements),
+    resetsAt: entitlements.fiveHourResetAt?.toISOString() ?? null,
+  }
+}
+
+/** Plan usage limits as percentages only, for native apps that must not show balances or prices. */
+export function usageLimitsResponse(
+  entitlements: WeeklyLimitInput & FiveHourLimitInput & Pick<BillingEntitlements, 'plan'>,
+  customLimits: ReturnType<typeof customLimitSummary>[],
+): UsageLimits {
+  const bar = <T extends { remainingPercentage: number; availableBarPercentage: number; pendingBarPercentage: number; resetsAt: string | null }>(limit: T) => ({
+    remainingPercentage: limit.remainingPercentage,
+    availableBarPercentage: limit.availableBarPercentage,
+    pendingBarPercentage: limit.pendingBarPercentage,
+    resetsAt: limit.resetsAt,
+  })
+  const weekly = weeklyLimitSummary(entitlements)
+  const fiveHour = fiveHourLimitSummary(entitlements)
+  return usageLimitsSchema.parse({
+    plan: entitlements.plan,
+    weekly: weekly ? bar(weekly) : null,
+    fiveHour: fiveHour ? bar(fiveHour) : null,
+    custom: customLimits.map((limit) => ({
+      ...bar(limit),
+      id: limit.id,
+      name: limit.name,
+      period: limit.period,
+      coversExtras: limit.coversExtras,
+      models: limit.models,
+    })),
+  })
+}
+
+async function loadCustomLimitSummaries(userId: string, plan: BillingEntitlements['plan']) {
+  return db.transaction(async (tx) => {
+    const usage = await loadCustomAllowances(tx, { userId, plan })
+    const modelNames = await customLimitModelNames(tx, usage)
+    return usage.map((limit) => customLimitSummary(limit, modelNames))
+  })
+}
+
 export async function registerBillingRoutes(app: FastifyInstance): Promise<void> {
   const config = getConfig()
   if (!config.PULPO_BILLING_ENABLED) return
@@ -185,15 +244,8 @@ export async function registerBillingRoutes(app: FastifyInstance): Promise<void>
     const settings = parseBillingSettings(billingSetting?.value)
     const dailySpend = await db.transaction((tx) => loadDailySpend(tx, { userId: user.id, role: user.role, weeklyLimitMicros: entitlements.weeklyLimitMicros }))
     const sharedAllowance = poolBalance ? await db.transaction((tx) => loadOwnerSharedAllowance(tx, user.id, entitlements, settings)) : null
-    const customLimits = await db.transaction(async (tx) => {
-      const usage = await loadCustomAllowances(tx, { userId: user.id, plan: entitlements.plan })
-      const modelNames = await customLimitModelNames(tx, usage)
-      return usage.map((limit) => customLimitSummary(limit, modelNames))
-    })
+    const customLimits = await loadCustomLimitSummaries(user.id, entitlements.plan)
     const subscription = selectSummarySubscription(subscriptions, entitlements.subscriptionPlan)
-    const fiveHour = entitlements.fiveHourRemainingPercentage === null
-      ? null
-      : fiveHourSummaryPercentages(entitlements)
     return {
       plan: entitlements.plan,
       planOverridden: entitlements.planOverridden,
@@ -203,17 +255,8 @@ export async function registerBillingRoutes(app: FastifyInstance): Promise<void>
       poolBalanceMicros: poolBalance?.balanceMicros ?? null,
       poolBalancePendingMicros: poolBalance?.pendingMicros ?? null,
       availablePoolBalanceMicros: poolBalance?.availableMicros ?? null,
-      weekly: entitlements.weeklyRemainingPercentage === null ? null : {
-        remainingPercentage: entitlements.weeklyRemainingPercentage,
-        availableBarPercentage: billingLimitPercentage(entitlements.weeklyRemainingMicros, entitlements.weeklyLimitMicros),
-        pendingMicros: entitlements.weeklyPendingMicros,
-        pendingBarPercentage: billingLimitPercentage(entitlements.weeklyPendingMicros, entitlements.weeklyLimitMicros),
-        resetsAt: entitlements.weeklyResetAt.toISOString(),
-      },
-      fiveHour: fiveHour ? {
-        ...fiveHour,
-        resetsAt: entitlements.fiveHourResetAt?.toISOString() ?? null,
-      } : null,
+      weekly: weeklyLimitSummary(entitlements),
+      fiveHour: fiveHourLimitSummary(entitlements),
       // How much of this user's weekly usage pool members can still draw on.
       shared: sharedAllowance ? sharedAllowanceBar(sharedAllowance) : null,
       sharedWeeklyPercent: settings.fatSharedWeeklyPercent,
@@ -251,6 +294,13 @@ export async function registerBillingRoutes(app: FastifyInstance): Promise<void>
         createdAt: order.createdAt.toISOString(),
       })),
     }
+  })
+
+  // The native apps show plan limits from here: it carries no balances, prices, or payments.
+  app.get('/api/billing/limits', async (request) => {
+    const user = requireUser(request)
+    const entitlements = await getBillingEntitlements(user.id)
+    return usageLimitsResponse(entitlements, await loadCustomLimitSummaries(user.id, entitlements.plan))
   })
 
   app.post('/api/billing/credit-quote', {

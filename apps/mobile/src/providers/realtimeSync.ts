@@ -38,6 +38,8 @@ export function stateInvalidationQueryKeys(
   if (scope === 'files') return [['files', namespace]]
   if (scope === 'folders') return [['folders', namespace], ['files', namespace]]
   if (scope === 'models' || scope === 'settings') return [[scope, namespace]]
+  // Usage settles into billing; refresh the plan usage limits.
+  if (scope === 'billing') return [['usage-limits', namespace]]
   return []
 }
 

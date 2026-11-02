@@ -178,6 +178,8 @@ export const mobileConfigSchema = z.object({
     passkeys: z.boolean().optional().default(false),
     /** Whether users can report messages to administrators. Older servers omit it. */
     messageReports: z.boolean().optional().default(false),
+    /** Whether the instance bills usage, so accounts can have plan usage limits. Older servers omit it. */
+    usageLimits: z.boolean().optional().default(false),
     /**
      * Files and its collaborative documents. Older servers omit it; clients then hide Files.
      * `docSchemaVersion` is the document schema the server accepts edits in, so a client whose
@@ -190,6 +192,40 @@ export const mobileConfigSchema = z.object({
   }),
 })
 export type MobileConfig = z.infer<typeof mobileConfigSchema>
+
+/**
+ * How much of a plan usage limit is left, as percentages only. Native apps show these, never
+ * amounts of money, so the payload carries no balances or micros.
+ */
+export const usageLimitPercentagesSchema = z.object({
+  remainingPercentage: z.number().int().min(0).max(100),
+  availableBarPercentage: z.number().min(0).max(100),
+  /** Part of the limit held by responses still running. */
+  pendingBarPercentage: z.number().min(0).max(100),
+  /** Null for a rolling window that starts on first use. */
+  resetsAt: isoDateSchema.nullable(),
+})
+export type UsageLimitPercentages = z.infer<typeof usageLimitPercentagesSchema>
+
+export const customUsageLimitSchema = usageLimitPercentagesSchema.extend({
+  id: z.string(),
+  name: z.string(),
+  period: z.enum(['five_hour', 'daily', 'weekly']),
+  /** False when it funds only model usage, not tools, workspace time, or background tasks. */
+  coversExtras: z.boolean(),
+  /** Names of the models the limit covers; empty when it covers every model. */
+  models: z.array(z.string()),
+})
+export type CustomUsageLimit = z.infer<typeof customUsageLimitSchema>
+
+export const usageLimitsSchema = z.object({
+  plan: z.enum(['baby', 'eight', 'fat']),
+  weekly: usageLimitPercentagesSchema.nullable(),
+  fiveHour: usageLimitPercentagesSchema.nullable(),
+  /** Admin-defined allowances the account spends first. */
+  custom: z.array(customUsageLimitSchema),
+})
+export type UsageLimits = z.infer<typeof usageLimitsSchema>
 
 export const twoFactorStatusSchema = z.object({
   enabled: z.boolean(),
