@@ -73,7 +73,8 @@ function useCompactAuthLayout() {
 function AuthShell({ title, subtitle, children, footer, colors }: PropsWithChildren<{ title: string; subtitle: string; footer?: ReactNode; colors: AuthColors }>) {
   const insets = useSafeAreaInsets();
   const compact = useCompactAuthLayout();
-  return <KeyboardAvoidingView behavior={Platform.OS === 'android' ? 'padding' : undefined} style={[styles.root, { backgroundColor: colors.background }]}>
+  // Side insets keep the form out of iPhone Duo's vertical status bar.
+  return <KeyboardAvoidingView behavior={Platform.OS === 'android' ? 'padding' : undefined} style={[styles.root, { backgroundColor: colors.background, paddingLeft: insets.left, paddingRight: insets.right }]}>
     <ScrollView alwaysBounceVertical={false} automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'} keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.content, compact && styles.compactContent, { paddingTop: insets.top + (compact ? 14 : 42), paddingBottom: insets.bottom + (compact ? 8 : 24) }]}>
       <View style={[styles.brand, compact && styles.compactBrand]}>
         <Image source={require('../../assets/pulpo-smiley.png')} style={[styles.logo, compact && styles.compactLogo]} />

@@ -208,7 +208,7 @@ import { activateOptimisticBranch } from './src/production/optimisticBranches';
 import { cacheNamespace, cacheOpenedChat, deleteResponseCursor, loadDraft, saveDraft } from '../data/database';
 import { queryKeys } from '../data/queries';
 import { enqueueCacheWrite } from '../data/writeBehind';
-import { activateBranch as activateServerBranch, cancelResponse, continuePastCostLimit, continueWithoutAgent, deleteMessageCascade as deleteServerMessage, deleteUnreferencedAttachment, downloadAttachment, downloadAttachmentThumbnail, duplicateChat as duplicateServerChat, editMessage as editServerMessage, persistChat as persistServerChat, regenerateResponse as regenerateServerResponse, sendMessage as sendServerMessage, shareAttachment as shareServerAttachment, shareChat as shareServerChat, startChat as startServerChat, uploadAttachment } from '../features/chat/api';
+import { activateBranch as activateServerBranch, cancelResponse, continuePastCostLimit, continueWithoutAgent, deleteMessageCascade as deleteServerMessage, deleteUnreferencedAttachment, downloadAttachment, downloadAttachmentThumbnail, duplicateChat as duplicateServerChat, editMessage as editServerMessage, persistChat as persistServerChat, regenerateResponse as regenerateServerResponse, reportMessage as reportServerMessage, sendMessage as sendServerMessage, shareAttachment as shareServerAttachment, shareChat as shareServerChat, startChat as startServerChat, uploadAttachment } from '../features/chat/api';
 import { attachmentUploadErrorMessage } from '../features/chat/attachmentUploadError';
 import { subscribeToResponse, useRealtimeStore } from '../providers/realtimeStore';
 import { shouldShowConnectionBanner } from '../providers/realtimeConnection';
@@ -326,10 +326,11 @@ import {
   DRAWER_MAX_WIDTH,
   DRAWER_TRAILING_PEEK,
   responsiveHorizontalPadding,
-  SIDEBAR_WIDTH,
   usesAssistantSideRail,
   usesPersistentSidebar,
 } from '../responsive';
+import { persistentSidebarWidth } from '../displayGeometry';
+import { useVerticalBar, useVerticalFold } from '../providers/displayGeometryContext';
 
 const CHAT_COMPOSER_BOTTOM_PADDING = 156;
 const CHAT_COMPOSER_MESSAGE_GAP = 12;
@@ -1181,7 +1182,9 @@ function RoundButton({ icon, onPress, accessibilityLabel, selected = false, sele
   const selectedTint = selectedColor === 'teal' ? 'rgba(20,184,166,0.20)' : 'rgba(175,82,222,0.22)';
   if (Platform.OS === 'ios') {
     return (
-      <SwiftUIHost key={selected ? 'selected' : tinted ? 'tinted' : 'default'} matchContents style={{ width: size, height: size }}>
+      // React Native positions these; SwiftUI must not also inset them. On iPhone Duo
+      // the drawer slides the chat under the vertical bar's safe area.
+      <SwiftUIHost key={selected ? 'selected' : tinted ? 'tinted' : 'default'} ignoreSafeArea="all" matchContents style={{ width: size, height: size }}>
         <SwiftUIButton
           onPress={onPress}
           modifiers={[
@@ -1269,6 +1272,8 @@ function HeaderActionGlyph({ name, color = COLORS.text }: { name: 'bookmark' | '
 }
 
 type TemporaryChatHeaderControlProps = {
+  /** Vertical stacks the actions in the iOS vertical bar. */
+  axis?: 'horizontal' | 'vertical';
   active: boolean;
   expanded: boolean;
   expirationEnabled: boolean;
@@ -1448,15 +1453,17 @@ function AndroidTemporaryChatHeaderControl(props: TemporaryChatHeaderControlProp
   </View>;
 }
 
-function TemporaryChatHeaderControl(props: TemporaryChatHeaderControlProps) {
+function TemporaryChatHeaderControl({ axis = 'horizontal', ...props }: TemporaryChatHeaderControlProps) {
   const { reduceMotion } = useAccessibilityPreferences();
   if (Platform.OS === 'android') return <AndroidTemporaryChatHeaderControl {...props} />;
   return Platform.OS === 'ios'
     ? (
       <PersistentNativeTemporaryChatHeaderView
         {...props}
+        axis={axis}
         reduceMotion={reduceMotion}
-        style={{ width: 88, height: 44 }}
+        // Stacked, the capsule grows down from one item to two.
+        style={axis === 'vertical' ? { width: 44, height: 88 } : { width: 88, height: 44 }}
       />
     )
     : <FallbackTemporaryChatHeaderControl {...props} />;
@@ -1722,6 +1729,10 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   const isDark = useColorScheme() === 'dark';
   const { reduceMotion } = useAccessibilityPreferences();
   const persistentSidebar = usesPersistentSidebar(width);
+  const fold = useVerticalFold();
+  const sidebarWidth = persistentSidebarWidth(fold, width);
+  // Half open, the sidebar and the chat each keep their side of the fold clear.
+  const foldMargin = persistentSidebar && fold && sidebarWidth === fold.center ? fold.end - fold.center : 0;
   const compactDrawerCorners = height <= COMPACT_DRAWER_HEIGHT;
   const drawerWidth = Math.min(Math.max(width - DRAWER_TRAILING_PEEK, 0), DRAWER_MAX_WIDTH);
   const openOffset = drawerWidth;
@@ -1978,13 +1989,13 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     const target = visible ? 1 : 0;
     wideSidebarProgress.value = reduceMotion ? target : withSpring(target, {
-      velocity: velocity / SIDEBAR_WIDTH,
+      velocity: velocity / sidebarWidth,
       damping: 26,
       stiffness: 240,
       mass: 0.9,
       overshootClamping: true,
     });
-  }, [reduceMotion, wideSidebarProgress]);
+  }, [reduceMotion, sidebarWidth, wideSidebarProgress]);
 
   const togglePanel = useCallback(() => {
     if (persistentSidebar) {
@@ -2081,14 +2092,14 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
         : wideSidebarProgress.value > 0.45;
     const target = visible ? 1 : 0;
     wideSidebarProgress.value = reduceMotion ? target : withSpring(target, {
-      velocity: velocityX / SIDEBAR_WIDTH,
+      velocity: velocityX / sidebarWidth,
       damping: 26,
       stiffness: 240,
       mass: 0.9,
       overshootClamping: true,
     });
     runOnJS(finishWideSidebarGesture)(visible);
-  }, [finishWideSidebarGesture, reduceMotion, wideSidebarProgress]);
+  }, [finishWideSidebarGesture, reduceMotion, sidebarWidth, wideSidebarProgress]);
 
   const wideSidebarGesture = useMemo(() => Gesture.Pan()
     .enabled(persistentSidebar)
@@ -2102,13 +2113,14 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     .onUpdate((event) => {
       wideSidebarProgress.value = Math.max(
         0,
-        Math.min(1, wideSidebarGestureStart.value + event.translationX / SIDEBAR_WIDTH),
+        Math.min(1, wideSidebarGestureStart.value + event.translationX / sidebarWidth),
       );
     })
     .onEnd((event) => settleWideSidebarGesture(event.velocityX)), [
       dismissKeyboard,
       persistentSidebar,
       settleWideSidebarGesture,
+      sidebarWidth,
       wideSidebarGestureStart,
       wideSidebarProgress,
     ]);
@@ -2149,19 +2161,19 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   }), [openOffset, persistentSidebar, reduceMotion, wideSidebarProgress]);
   const sidebarFrameAnimatedStyle = useAnimatedStyle(() => ({
     width: persistentSidebar
-      ? interpolate(wideSidebarProgress.value, [0, 1], [0, SIDEBAR_WIDTH])
+      ? interpolate(wideSidebarProgress.value, [0, 1], [0, sidebarWidth])
       : drawerWidth,
     borderRightWidth: persistentSidebar
       ? interpolate(wideSidebarProgress.value, [0, 1], [0, StyleSheet.hairlineWidth])
       : 0,
-  }), [drawerWidth, persistentSidebar, wideSidebarProgress]);
+  }), [drawerWidth, persistentSidebar, sidebarWidth, wideSidebarProgress]);
   const sidebarContentAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{
       translateX: persistentSidebar
-        ? interpolate(wideSidebarProgress.value, [0, 1], [-SIDEBAR_WIDTH, 0])
+        ? interpolate(wideSidebarProgress.value, [0, 1], [-sidebarWidth, 0])
         : 0,
     }],
-  }), [persistentSidebar, wideSidebarProgress]);
+  }), [persistentSidebar, sidebarWidth, wideSidebarProgress]);
   const historyVisible = persistentSidebar ? wideSidebarVisible : panelOpen;
   const historyChats = useMemo(() => projectHistory(storedChats), [projectHistory, storedChats]);
   const loadHistoryPreview = useCallback((chatId: string) => {
@@ -2915,7 +2927,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
             panelAnimatedStyle,
           ]}
         >
-          <Reanimated.View style={[styles.historyPanelContent, persistentSidebar && styles.persistentPanelContent, sidebarContentAnimatedStyle]}>
+          <Reanimated.View style={[styles.historyPanelContent, persistentSidebar && { width: sidebarWidth, paddingRight: foldMargin }, sidebarContentAnimatedStyle]}>
             <HistoryPanel
               chats={historyChats}
               activeChatId={activeChatId}
@@ -2971,6 +2983,8 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
             onTogglePanel={togglePanel}
             persistentSidebar={persistentSidebar}
             sidebarVisible={historyVisible}
+            sidebarWidth={sidebarWidth}
+            foldMargin={historyVisible ? foldMargin : 0}
             onSelectModel={selectModel}
             temporary={activePrototypeChat?.temporary ?? newChatTemporary}
             autoExpire={chatAutoExpire}
@@ -3000,7 +3014,27 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   );
 }
 
-type MessageAction = 'copy' | 'share' | 'share-options' | 'share-chat' | 'reply' | 'edit' | 'regenerate' | 'delete';
+/** Whether this transcript's messages can be reported; an expired temporary chat is read-only. Off unless a transcript opts in. */
+const MessageReportsContext = createContext(false);
+
+function useCanReportMessage(message: Message): boolean {
+  const enabled = useSessionStore((state) => state.config?.capabilities.messageReports === true);
+  const transcriptAllows = useContext(MessageReportsContext);
+  // Like on web, a response can be reported once it has finished.
+  const settled = message.role === 'user' || (message.status !== 'queued' && message.status !== 'streaming');
+  return enabled && transcriptAllows && Boolean(message.chatId) && settled;
+}
+
+function NativeReportMessageButton({ onPress }: { onPress: () => void }) {
+  const colorScheme = useColorScheme();
+  return (
+    <SwiftUIButton onPress={onPress}>
+      <SwiftUILabel title="Report message" icon={<SwiftUIImage assetName={colorScheme === 'dark' ? 'PulpoFrownWhite' : 'PulpoFrown'} />} />
+    </SwiftUIButton>
+  );
+}
+
+type MessageAction = 'copy' | 'share' | 'share-options' | 'share-chat' | 'reply' | 'edit' | 'regenerate' | 'delete' | 'report';
 
 function useMessageActionRunner({ message, onEdit, onRegenerate }: {
   message: Message;
@@ -3087,6 +3121,25 @@ function useMessageActionRunner({ message, onEdit, onRegenerate }: {
       void copyText(`> ${message.text.split('\n')[0]}\n\n`, 'Reply quote copied');
       return;
     }
+    if (action === 'report') {
+      promptText({
+        title: 'Report message',
+        message: 'This shares the whole chat with the administrators of this instance so they can review it. Add any context that would help (optional).',
+        multiline: true,
+        optional: true,
+        fieldLabel: 'What went wrong?',
+        confirmLabel: 'Share with admin',
+        onSubmit: (context) => {
+          void reportServerMessage(message.id, context.trim())
+            .then(() => {
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              Alert.alert('Report sent', 'An admin will review this chat.');
+            })
+            .catch((error) => Alert.alert('Couldn’t send report', error instanceof Error ? error.message : undefined));
+        },
+      });
+      return;
+    }
     Haptics.selectionAsync();
     const labels = {
       reply: 'Reply to message',
@@ -3120,6 +3173,7 @@ function MessageContextMenu({
   const speak = () => { void readAloud(speechKey, message.text).then(() => { const error = speechPlayback.getSnapshot().error; if (error) Alert.alert('Read aloud', error); }).catch(error => Alert.alert('Read aloud', error.message)); };
   const speechLabel = speaking ? (speechState.phase === 'loading' ? 'Stop preparing speech' : 'Stop reading') : 'Read aloud';
   const runAction = useMessageActionRunner({ message, onEdit, onRegenerate });
+  const canReport = useCanReportMessage(message);
   // A response can only be deleted as one of several versions; the user message owns the last one.
   const canDelete = message.role === 'user' || (message.branches?.length ?? 0) > 1;
   const deleteLabel = message.role === 'user' ? 'Delete message' : 'Delete version';
@@ -3139,6 +3193,7 @@ function MessageContextMenu({
         { label: message.role === 'user' ? 'Edit message' : 'Edit response', icon: 'pencil', onPress: () => runAction('edit') },
         ...(message.role === 'assistant' ? [{ label: 'Regenerate response', icon: 'arrow.clockwise', onPress: () => runAction('regenerate') }] : []),
         ...(canSpeak ? [{ label: speechLabel, icon: speaking ? 'stop.fill' : 'speaker.wave.2', onPress: speak }] : []),
+        ...(canReport ? [{ label: 'Report message', icon: 'pulpo.frown', onPress: () => runAction('report') }] : []),
         ...(canDelete ? [{ label: deleteLabel, icon: 'trash', destructive: true, onPress: () => runAction('delete') }] : []),
       ]}
       style={message.role === 'user' ? styles.userMessageContextHost : styles.assistantMessageContextHost}
@@ -3168,6 +3223,7 @@ function MessageContextMenu({
               <SwiftUIButton label="Regenerate response" systemImage="arrow.clockwise" onPress={() => runAction('regenerate')} />
             </>}
           {canSpeak && <SwiftUIButton label={speechLabel} systemImage={speaking ? 'stop.fill' : 'speaker.wave.2'} onPress={speak} />}
+          {canReport && <NativeReportMessageButton onPress={() => runAction('report')} />}
           {canDelete && <SwiftUIButton label={deleteLabel} role="destructive" systemImage="trash" onPress={() => runAction('delete')} />}
         </>
       )}
@@ -3186,6 +3242,7 @@ function SentAttachmentContextMenu({ attachment, message, onEdit, onRegenerate, 
 }) {
   const { styles, COLORS } = useChatStyles();
   const runMessageAction = useMessageActionRunner({ message, onEdit, onRegenerate });
+  const canReport = useCanReportMessage(message) && message.role === 'user' && !message.text;
   const shareAttachment = () => {
     if (attachment.uri) void (Platform.OS === 'android' ? shareLocalFile(attachment.uri, attachment.name, attachment.mimeType) : Share.share({ message: attachment.name, url: attachment.uri })).catch((error) => Alert.alert('Couldn’t share attachment', error instanceof Error ? error.message : undefined));
     else void shareServerAttachment(attachment.id, attachment.name, attachment.mimeType).catch((error) => Alert.alert('Couldn’t share attachment', error instanceof Error ? error.message : undefined));
@@ -3207,6 +3264,7 @@ function SentAttachmentContextMenu({ attachment, message, onEdit, onRegenerate, 
           { label: 'Edit message', icon: 'pencil', onPress: () => runMessageAction('edit') },
           { label: 'Delete message', icon: 'trash', destructive: true, onPress: () => runMessageAction('delete') },
         ] : []),
+        ...(canReport ? [{ label: 'Report message', icon: 'pulpo.frown', onPress: () => runMessageAction('report') }] : []),
       ]}
       preview={attachment.kind === 'image' ? (
         <ResolvedAttachmentImage attachment={attachment} variant="preview" />
@@ -3228,6 +3286,7 @@ function SentAttachmentContextMenu({ attachment, message, onEdit, onRegenerate, 
             <SwiftUIButton label="Edit message" systemImage="pencil" onPress={() => runMessageAction('edit')} />
             <SwiftUIButton label="Delete message" role="destructive" systemImage="trash" onPress={() => runMessageAction('delete')} />
           </> : null}
+          {canReport && <NativeReportMessageButton onPress={() => runMessageAction('report')} />}
         </>
       )}
     >
@@ -3917,7 +3976,7 @@ const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectM
   const { sections: modelSections, section, sectionLabel, visibleModels, setSection } = useModelMenu(models);
 
   return (
-    <SwiftUIHost key={tinted ? 'tinted' : 'default'} matchContents style={styles.modelMenuHost}>
+    <SwiftUIHost key={tinted ? 'tinted' : 'default'} ignoreSafeArea="all" matchContents style={styles.modelMenuHost}>
       <SwiftUIMenu
         label={(
           <SwiftUILabel
@@ -4038,7 +4097,7 @@ function SuggestedPromptButton({ label, accessible, onPress, temporary = false }
     : undefined;
   if (Platform.OS === 'ios') {
     return (
-      <SwiftUIHost ignoreSafeArea="keyboard" style={[styles.suggestionCard, temporaryStyle, accessible && styles.suggestionCardAccessible]}>
+      <SwiftUIHost ignoreSafeArea="all" style={[styles.suggestionCard, temporaryStyle, accessible && styles.suggestionCardAccessible]}>
         <SwiftUIButton
           onPress={onPress}
           modifiers={[
@@ -4299,7 +4358,7 @@ function ComposerQueueSection({ title, subject, visible, collapsed, onToggle, fa
 
 function ChatView({
   acceptIncomingFiles, messages, queuedMessages, chatId, chatLoaded, onTranscriptReady, openingChatId, draftNamespace, keyboardLayoutEnabled, transcriptTransitionActive, model, models, prototypeModel, presetSelections: defaultPresetSelections, input, composerInputRef, composerFocusSuppressed, composerFocusRequest, onChangeInput, onSend, onRemoteChatStarted, assistantStatus,
-  onEdit, onRegenerate, onActivateBranch, onOpenChat, onStop, onTogglePanel, onSelectModel, onSavePresetDefault, onNewChat, onSaveTemporary, persistentSidebar, sidebarVisible, temporary, autoExpire, expirationPeriod, showAutoExpirationControl, expired, savingTemporary, onTemporaryChange, onAutoExpirationChange,
+  onEdit, onRegenerate, onActivateBranch, onOpenChat, onStop, onTogglePanel, onSelectModel, onSavePresetDefault, onNewChat, onSaveTemporary, persistentSidebar, sidebarVisible, sidebarWidth, foldMargin, temporary, autoExpire, expirationPeriod, showAutoExpirationControl, expired, savingTemporary, onTemporaryChange, onAutoExpirationChange,
 }: {
   acceptIncomingFiles: boolean;
   messages: Message[];
@@ -4331,6 +4390,9 @@ function ChatView({
   onTogglePanel: () => void;
   persistentSidebar: boolean;
   sidebarVisible: boolean;
+  sidebarWidth: number;
+  /** Space to keep clear beside the half-open fold, at the leading edge. */
+  foldMargin: number;
   onSelectModel: (model: Model) => void;
   /** Saves an explicit new-chat choice as the account's default for that model. */
   onSavePresetDefault: (modelId: string, presetId: string, choiceId: string) => void;
@@ -4401,7 +4463,13 @@ function ChatView({
   const { reduceMotion, reduceTransparency } = useAccessibilityPreferences();
   const { fontScale, height: windowHeight, width: windowWidth } = useWindowDimensions();
   const horizontalPadding = responsiveHorizontalPadding(windowWidth);
-  const availableChatWidth = windowWidth - (persistentSidebar && sidebarVisible ? SIDEBAR_WIDTH : 0);
+  // iPhone Duo reserves a column on one side for its vertical status bar. The
+  // header stays beside it, with its trailing actions stacked; the transcript
+  // and composer run under the column, which is empty below the status bar.
+  const verticalBar = useVerticalBar();
+  const availableChatWidth = windowWidth
+    - (persistentSidebar && sidebarVisible ? sidebarWidth : 0)
+    - foldMargin;
   const assistantSideRail = usesAssistantSideRail(Math.max(0, availableChatWidth - horizontalPadding * 2));
   const accessibilityLayout = fontScale >= 1.6;
   const scrollLanding = accessibilityLayout || (Platform.OS === 'android' && windowHeight < 650);
@@ -5829,6 +5897,7 @@ function ChatView({
   const renderMessage = useCallback(({ item }: { item: Message }) => (
     <View ref={item.id === latestMessageId ? latestRowRef : undefined} testID={`chat-message-${item.id}`} style={styles.transcriptColumn}>
       <QuizComposerContext.Provider value={expired ? null : appendToComposer}>
+        <MessageReportsContext.Provider value={!expired}>
         <MessageRow
           message={item}
           model={responseModel(item, models, model)}
@@ -5844,6 +5913,7 @@ function ChatView({
           sideRail={assistantSideRail}
           editingLocked={Boolean(messageEdit) || dictationBusy}
         />
+        </MessageReportsContext.Provider>
       </QuizComposerContext.Provider>
     </View>
   ), [appendToComposer, assistantSideRail, expired, handleMessageEditAction, latestMessageId, messageEdit, dictationBusy, model, models, onActivateBranch, onOpenChat, onRegenerate, onStop, openFilePreview, openImageViewer, styles.transcriptColumn]);
@@ -5852,13 +5922,22 @@ function ChatView({
   const headerAction = resolveChatHeaderAction(chatId, messages.length, temporary);
   const headerControl = resolveChatHeaderControl(headerAction, showAutoExpirationControl);
   const headerExpansionProgress = useSharedValue(headerControl.expanded ? 1 : 0);
+  const stackedHeaderControl = verticalBar !== null;
+  // Where the transcript comes to rest when scrolled to its start: below the
+  // header, the stacked control's second item hanging under the header row,
+  // and the status bar at the top of the vertical bar.
+  const transcriptStart = Math.max(
+    headerOverlayHeight + (stackedHeaderControl && headerControl.expanded ? 44 : 0),
+    verticalBar?.statusBottom ?? 0,
+  );
   const modelTriggerAnimatedStyle = useAnimatedStyle(() => Platform.OS === 'android' ? {
     // Match the available space between the 48 dp history/trailing targets.
     // Removing the hourglass frees 48 dp and moves the midpoint right by 24 dp.
     right: interpolate(headerExpansionProgress.value, [0, 1], [66, 114]),
   } : {
-    transform: [{ translateX: interpolate(headerExpansionProgress.value, [0, 1], [22, 0]) }],
-  });
+    // A stacked trailing control stays one item wide.
+    transform: [{ translateX: stackedHeaderControl ? 22 : interpolate(headerExpansionProgress.value, [0, 1], [22, 0]) }],
+  }, [stackedHeaderControl]);
   const loadingExistingChat = Boolean(chatId && isEmptyConversation && !chatLoaded);
   useEffect(() => {
     // Empty chats have no transcript list to emit a native layout event.
@@ -5895,7 +5974,12 @@ function ChatView({
 
   const emptyLandingContent = (
     <View style={styles.emptyState}>
-      <Reanimated.View style={[styles.emptyIdentity, !scrollLanding && emptyStateAnimatedStyle]}>
+      <Reanimated.View style={[
+        styles.emptyIdentity,
+        // Stays centered under the header's model menu, which keeps beside the vertical bar.
+        verticalBar && { [verticalBar.side === 'right' ? 'paddingRight' : 'paddingLeft']: verticalBar.width },
+        !scrollLanding && emptyStateAnimatedStyle,
+      ]}>
         <View style={[styles.emptyModelLineWrap, Platform.OS === 'android' && { paddingTop: Math.max(40, 24 * fontScale + 16) }]}>
           <Reanimated.View
             accessible={temporary}
@@ -5962,16 +6046,24 @@ function ChatView({
 
   return (
     <Reanimated.View style={[styles.chatRoot, temporarySurfaceAnimatedStyle]}>
+      <View style={[styles.flex, { marginLeft: foldMargin }]}>
       <View
         onLayout={(event) => {
           const height = event.nativeEvent.layout.height;
           setHeaderOverlayHeight((current) => current === height ? current : height);
         }}
         pointerEvents="box-none"
-        style={[styles.chatHeaderOverlay, { paddingTop: insets.top }]}
+        style={[styles.chatHeaderOverlay, { paddingTop: insets.top }, verticalBar && { [verticalBar.side]: verticalBar.width }]}
       >
         {Platform.OS === 'ios' && (
-          <StatusBarGradientView style={{ position: 'absolute', top: 0, left: 0, right: 0, height: insets.top + 16 }} />
+          // Spans the whole pane, past the content inset, so tinted chats show no seam.
+          <StatusBarGradientView style={{
+            position: 'absolute',
+            top: 0,
+            left: -foldMargin - (verticalBar?.side === 'left' ? verticalBar.width : 0),
+            right: verticalBar?.side === 'right' ? -verticalBar.width : 0,
+            height: insets.top + 16,
+          }} />
         )}
         {/* Header */}
         <AppHeader edgeAligned>
@@ -5992,9 +6084,10 @@ function ChatView({
           </Reanimated.View>
           <Reanimated.View
             pointerEvents="box-none"
-            style={styles.headerActionExpanded}
+            style={stackedHeaderControl ? styles.headerActionStacked : styles.headerActionExpanded}
           >
             <TemporaryChatHeaderControl
+              axis={stackedHeaderControl ? 'vertical' : 'horizontal'}
               active={temporary}
               expanded={headerControl.expanded}
               expirationEnabled={autoExpire}
@@ -6047,7 +6140,7 @@ function ChatView({
         scrollLanding ? (
           <ScrollView
             alwaysBounceVertical
-            contentContainerStyle={[styles.emptyConversationAccessible, { paddingHorizontal: horizontalPadding, paddingTop: Platform.OS === 'android' ? 16 : headerOverlayHeight + 16 }]}
+            contentContainerStyle={[styles.emptyConversationAccessible, { paddingHorizontal: horizontalPadding, paddingTop: Platform.OS === 'android' ? 16 : transcriptStart + 16 }]}
             keyboardDismissMode="interactive"
             keyboardShouldPersistTaps="handled"
             onTouchStart={Keyboard.dismiss}
@@ -6073,8 +6166,8 @@ function ChatView({
           bounces
           contentContainerStyle={[styles.conversation, {
             paddingHorizontal: horizontalPadding,
-            paddingTop: bottomAnchored ? CHAT_COMPOSER_BOTTOM_PADDING : Platform.OS === 'android' ? 16 : headerOverlayHeight + 16,
-            paddingBottom: bottomAnchored ? Platform.OS === 'android' ? 16 : headerOverlayHeight + 16 : CHAT_COMPOSER_BOTTOM_PADDING,
+            paddingTop: bottomAnchored ? CHAT_COMPOSER_BOTTOM_PADDING : Platform.OS === 'android' ? 16 : transcriptStart + 16,
+            paddingBottom: bottomAnchored ? Platform.OS === 'android' ? 16 : transcriptStart + 16 : CHAT_COMPOSER_BOTTOM_PADDING,
           }]}
           contentInsetAdjustmentBehavior="never"
           data={visibleMessages}
@@ -6126,7 +6219,7 @@ function ChatView({
         <View
           pointerEvents="none"
           style={[styles.chatOpeningOverlay, {
-            top: Platform.OS === 'android' ? 36 : headerOverlayHeight + 36,
+            top: Platform.OS === 'android' ? 36 : transcriptStart + 36,
             left: horizontalPadding,
             right: horizontalPadding,
           }]}
@@ -6405,6 +6498,7 @@ function ChatView({
             </ComposerSurface>
         </View>
       </KeyboardStickyView>
+      </View>
 
       <AttachmentImageViewer
         initialIndex={imageViewer?.initialIndex ?? 0}
@@ -7063,7 +7157,6 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   drawerPanel: { position: 'absolute', top: 0, bottom: 0, left: 0 },
   persistentPanel: { borderRightColor: COLORS.lineSoft, overflow: 'hidden' },
   historyPanelContent: { flex: 1 },
-  persistentPanelContent: { width: SIDEBAR_WIDTH },
   historyLoading: { alignItems: 'center', gap: 8, paddingVertical: 20 },
 
   // Main chat view
@@ -7085,6 +7178,8 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   appHeader: { width: '100%', maxWidth: CHAT_CONTENT_MAX, alignSelf: 'center', height: 64, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
   appHeaderEdgeAligned: { maxWidth: '100%' },
   headerActionExpanded: { width: Platform.OS === 'android' ? 96 : 88, height: Platform.OS === 'android' ? 48 : 44, alignItems: 'flex-end' },
+  // The stacked control hangs below the row from a single item's space.
+  headerActionStacked: { width: 44, height: 44 },
   roundButton: { alignItems: 'center', justifyContent: 'center' },
   roundButtonCustomIcon: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center' },
   roundButtonSelected: { backgroundColor: 'rgba(175,82,222,0.18)' },

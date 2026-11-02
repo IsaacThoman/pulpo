@@ -53,6 +53,7 @@
     "@semantic-release/release-notes-generator": "^14.1.1",
     "braces": "file:scripts/security/vendor/braces",
     "conventional-changelog-conventionalcommits": "^10.2.1",
+    "decode-uri-component": "file:scripts/security/vendor/decode-uri-component",
     "image-size": "file:apps/desktop/vendor/appdmg-image-size",
     "oxlint": "^1.71.0",
     "react": "19.2.3",
@@ -67,6 +68,7 @@
       "zod": "^4.6.7"
     },
     "braces": "$braces",
+    "decode-uri-component": "$decode-uri-component",
     "expo-modules-core": "57.0.9",
     "image-size": "$image-size",
     "linkify-it": "6.1.0",

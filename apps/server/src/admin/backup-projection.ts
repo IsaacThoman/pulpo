@@ -62,6 +62,7 @@ export const FULL_BACKUP_TEMPORARY_DATA_POLICY = {
   response_items: 'response-item',
   response_content_parts: 'response-content-part',
   chat_shares: 'chat-reference',
+  message_reports: 'chat-reference',
   attachments: 'attachment',
   user_memory_documents: 'redact-source-response',
   user_memory_document_revisions: 'redact-source-response',

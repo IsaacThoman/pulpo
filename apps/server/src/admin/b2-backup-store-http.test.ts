@@ -4,63 +4,84 @@ import { Readable } from 'node:stream'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { B2BackupStore } from './b2-backup-store.js'
 
+interface Upload { key: string; partNumber: number | null; headers: IncomingHttpHeaders; body: Buffer }
+
 describe('Backblaze Object Lock upload requests', () => {
   let server: Server
   let store: B2BackupStore
-  let uploads: Array<{ url: URL; headers: IncomingHttpHeaders; body: Buffer }>
-  let multipartRequests: Array<{ url: URL; method: string; headers: IncomingHttpHeaders; body: string }>
-  let failNextPart: boolean
-  let retentionMode: string
-  let deletedVersions: string[]
+  let uploads: Array<Upload>
+  let requests: Array<{ method: string; key: string; query: string }>
+  let created: IncomingHttpHeaders[]
+  let completed: string[]
+  let failPartOnce: Set<number>
+  let retention: { mode: string; retainUntil: Date | null } | null
+  let pendingUploads: Array<{ key: string; uploadId: string; initiated: Date }>
+  const PART_BYTES = 64 * 1024
 
   beforeEach(async () => {
-    retentionMode = 'COMPLIANCE'
-    deletedVersions = []
     uploads = []
-    multipartRequests = []
-    failNextPart = false
+    requests = []
+    created = []
+    completed = []
+    failPartOnce = new Set()
+    retention = null
+    pendingUploads = []
     server = createServer(async (request, response) => {
       const url = new URL(request.url!, 'http://localhost')
+      const key = decodeURIComponent(url.pathname.replace(/^\/test-backups\/?/, ''))
+      requests.push({ method: request.method!, key, query: url.search })
       if (!request.headers.authorization) {
         response.writeHead(403).end()
         return
       }
-      if (request.method === 'PUT') {
-        const chunks: Buffer[] = []
-        for await (const chunk of request) chunks.push(Buffer.from(chunk))
-        const body = Buffer.concat(chunks)
-        if (url.searchParams.has('partNumber') && failNextPart) {
-          failNextPart = false
-          response.writeHead(400, { 'content-type': 'application/xml' }).end('<Error><Code>InvalidRequest</Code><Message>Temporary part failure</Message></Error>')
+      const chunks: Buffer[] = []
+      for await (const chunk of request) chunks.push(Buffer.from(chunk))
+      const body = Buffer.concat(chunks)
+      const xml = (status: number, payload: string) => response.writeHead(status, { 'content-type': 'application/xml' }).end(payload)
+      if (request.method === 'PUT' && !url.searchParams.has('retention')) {
+        const partNumber = url.searchParams.has('partNumber') ? Number(url.searchParams.get('partNumber')) : null
+        if (partNumber !== null && failPartOnce.delete(partNumber)) {
+          xml(500, '<Error><Code>InternalError</Code><Message>Try again</Message></Error>')
           return
         }
-        uploads.push({ url, headers: request.headers, body })
+        uploads.push({ key, partNumber, headers: request.headers, body })
         if (request.headers['content-md5'] !== createHash('md5').update(body).digest('base64')) {
-          response.writeHead(400, { 'content-type': 'application/xml' }).end('<Error><Code>InvalidRequest</Code><Message>Object Lock requires a valid checksum</Message></Error>')
+          xml(400, '<Error><Code>InvalidRequest</Code><Message>Object Lock requires a valid checksum</Message></Error>')
           return
         }
-        response.writeHead(200, { etag: `"etag-${url.searchParams.get('partNumber') ?? 'object'}"` }).end()
-      } else if (request.method === 'POST' || (request.method === 'DELETE' && url.searchParams.has('uploadId'))) {
-        const chunks: Buffer[] = []
-        for await (const chunk of request) chunks.push(Buffer.from(chunk))
-        multipartRequests.push({ url, method: request.method, headers: request.headers, body: Buffer.concat(chunks).toString() })
-        if (request.method === 'DELETE') response.writeHead(204).end()
-        else if (url.searchParams.has('uploads')) {
-          response.writeHead(200, { 'content-type': 'application/xml' }).end('<InitiateMultipartUploadResult><Bucket>test-backups</Bucket><Key>pulpo/large.age</Key><UploadId>upload-1</UploadId></InitiateMultipartUploadResult>')
-        } else response.writeHead(200, { 'content-type': 'application/xml' }).end('<CompleteMultipartUploadResult><Key>pulpo/large.age</Key><ETag>"final"</ETag></CompleteMultipartUploadResult>')
+        if (partNumber === null && request.headers['x-amz-object-lock-mode']) {
+          retention = { mode: String(request.headers['x-amz-object-lock-mode']), retainUntil: new Date(String(request.headers['x-amz-object-lock-retain-until-date'])) }
+        }
+        response.writeHead(200, { etag: `"${createHash('md5').update(body).digest('hex')}"` }).end()
+      } else if (request.method === 'POST' && url.searchParams.has('uploads')) {
+        created.push(request.headers)
+        if (request.headers['x-amz-object-lock-mode']) {
+          retention = { mode: String(request.headers['x-amz-object-lock-mode']), retainUntil: new Date(String(request.headers['x-amz-object-lock-retain-until-date'])) }
+        }
+        xml(200, `<InitiateMultipartUploadResult><Bucket>test-backups</Bucket><Key>${key}</Key><UploadId>upload-1</UploadId></InitiateMultipartUploadResult>`)
+      } else if (request.method === 'POST' && url.searchParams.has('uploadId')) {
+        completed.push(body.toString('utf8'))
+        xml(200, `<CompleteMultipartUploadResult><Bucket>test-backups</Bucket><Key>${key}</Key><ETag>"done"</ETag></CompleteMultipartUploadResult>`)
       } else if (request.method === 'DELETE') {
-        if (url.searchParams.has('versionId')) deletedVersions.push(url.pathname.split('/').slice(2).join('/'))
         response.writeHead(204).end()
       } else if (request.method === 'HEAD') {
         response.writeHead(200, { 'content-length': '0' }).end()
       } else if (url.searchParams.has('object-lock')) {
-        response.writeHead(200, { 'content-type': 'application/xml' }).end('<ObjectLockConfiguration><ObjectLockEnabled>Enabled</ObjectLockEnabled></ObjectLockConfiguration>')
+        xml(200, '<ObjectLockConfiguration><ObjectLockEnabled>Enabled</ObjectLockEnabled></ObjectLockConfiguration>')
       } else if (url.searchParams.has('retention')) {
-        response.writeHead(200, { 'content-type': 'application/xml' }).end(`<Retention><Mode>${retentionMode}</Mode><RetainUntilDate>2099-01-01T00:00:00.000Z</RetainUntilDate></Retention>`)
+        xml(200, `<Retention>${retention ? `<Mode>${retention.mode}</Mode>` : ''}${retention?.retainUntil ? `<RetainUntilDate>${retention.retainUntil.toISOString()}</RetainUntilDate>` : ''}</Retention>`)
+      } else if (url.searchParams.has('uploads')) {
+        // Two uploads per page, to exercise pagination.
+        const keyMarker = url.searchParams.get('key-marker') ?? ''
+        const remaining = pendingUploads.filter(upload => upload.key > keyMarker)
+        const page = remaining.slice(0, 2), truncated = remaining.length > 2
+        xml(200, `<ListMultipartUploadsResult><Bucket>test-backups</Bucket><IsTruncated>${truncated}</IsTruncated>${truncated ? `<NextKeyMarker>${page.at(-1)!.key}</NextKeyMarker><NextUploadIdMarker>${page.at(-1)!.uploadId}</NextUploadIdMarker>` : ''}${
+          page.map(upload => `<Upload><Key>${upload.key}</Key><UploadId>${upload.uploadId}</UploadId><Initiated>${upload.initiated.toISOString()}</Initiated></Upload>`).join('')
+        }</ListMultipartUploadsResult>`)
       } else if (url.searchParams.has('list-type')) {
-        response.writeHead(200, { 'content-type': 'application/xml' }).end('<ListBucketResult><KeyCount>0</KeyCount></ListBucketResult>')
+        xml(200, '<ListBucketResult><KeyCount>0</KeyCount></ListBucketResult>')
       } else if (url.searchParams.has('versions')) {
-        response.writeHead(200, { 'content-type': 'application/xml' }).end(`<ListVersionsResult><IsTruncated>false</IsTruncated><Version><Key>${url.searchParams.get('prefix')}</Key><VersionId>probe-version</VersionId></Version></ListVersionsResult>`)
+        xml(200, `<ListVersionsResult><IsTruncated>false</IsTruncated><Version><Key>${url.searchParams.get('prefix')}</Key><VersionId>probe-version</VersionId></Version></ListVersionsResult>`)
       } else {
         response.writeHead(200).end()
       }
@@ -71,13 +92,24 @@ describe('Backblaze Object Lock upload requests', () => {
       enabled: false, endpoint: `http://127.0.0.1:${address.port}`, region: 'us-east-005',
       bucket: 'test-backups', prefix: 'pulpo', keyId: 'test-key', applicationKey: 'test-secret',
       encryptedApplicationKey: null, recipient: '', intervalHours: 6, retentionDays: 30, fullArchiveIntervalDays: 7 as const, nextRunAt: null,
-    }, { partSizeBytes: 1_024, retryDelayMs: 0 })
+    }, PART_BYTES)
   })
 
   afterEach(async () => {
     server.closeAllConnections()
     await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
   })
+
+  /** Ciphertext arrives in chunks that do not line up with part boundaries. */
+  function chunked(bytes: Buffer, size = 10_007): Readable {
+    return Readable.from((function* () {
+      for (let offset = 0; offset < bytes.length; offset += size) yield bytes.subarray(offset, offset + size)
+    })())
+  }
+
+  function ciphertext(length: number): Buffer {
+    return Buffer.from(Array.from({ length }, (_, index) => (index * 31 + 7) % 251))
+  }
 
   it('sends a valid checksum header for the empty connection probe', async () => {
     await store.testConnection()
@@ -87,15 +119,29 @@ describe('Backblaze Object Lock upload requests', () => {
   })
 
   it('uploads streamed ciphertext with a precomputed checksum and no chunked checksum trailer', async () => {
-    const chunks = [Buffer.alloc(1_000, 17), Buffer.from('encrypted final chunk')]
+    const chunks = [Buffer.alloc(30_000, 17), Buffer.from('encrypted final chunk')]
     const ciphertext = Buffer.concat(chunks)
     await store.putEncrypted('pulpo/backup.age', Readable.from(chunks), ciphertext.length, 'job-1', 'fingerprint', new Date(Date.now() + 30_000))
     expect(uploads).toHaveLength(1)
+    expect(uploads[0]!.partNumber).toBeNull()
     expect(uploads[0]!.body).toEqual(ciphertext)
     expect(uploads[0]!.headers['content-length']).toBe(String(ciphertext.length))
     expect(uploads[0]!.headers['x-amz-object-lock-mode']).toBe('COMPLIANCE')
     expect(uploads[0]!.headers['x-amz-trailer']).toBeUndefined()
     expect(uploads[0]!.headers['content-encoding']).toBeUndefined()
+    expect(created).toHaveLength(0)
+  })
+
+  it('uploads an empty backup in one locked PUT', async () => {
+    await store.putEncrypted('pulpo/empty.age', Readable.from([]), 0, 'job-1', 'fingerprint', new Date(Date.now() + 30_000))
+    expect(uploads).toHaveLength(1)
+    expect(uploads[0]!.body.length).toBe(0)
+  })
+
+  it('rounds the lock up to whole seconds, which is what Object Lock stores', async () => {
+    const lockedUntil = new Date('2030-01-02T03:04:05.321Z')
+    await store.putEncrypted('pulpo/backup.age', Readable.from([Buffer.from('x')]), 1, 'job-1', 'fingerprint', lockedUntil)
+    expect(uploads[0]!.headers['x-amz-object-lock-retain-until-date']).toBe('2030-01-02T03:04:06Z')
   })
 
   it('propagates ciphertext stream failures before sending an upload', async () => {
@@ -107,27 +153,127 @@ describe('Backblaze Object Lock upload requests', () => {
     expect(uploads).toHaveLength(0)
   })
 
-  it('uploads ciphertext larger than one part as a locked multipart upload with per-part checksums', async () => {
-    const chunks = [Buffer.alloc(1_500, 3), Buffer.alloc(1_000, 4)]
-    const ciphertext = Buffer.concat(chunks)
-    await store.putEncrypted('pulpo/large.age', Readable.from(chunks), ciphertext.length, 'job-1', 'fingerprint', new Date(Date.now() + 30_000))
-    const [create, complete] = multipartRequests
-    expect(create!.url.searchParams.has('uploads')).toBe(true)
-    expect(create!.headers['x-amz-object-lock-mode']).toBe('COMPLIANCE')
-    expect(create!.headers['x-amz-meta-pulpo-job-id']).toBe('job-1')
-    expect(uploads.map(upload => [upload.url.searchParams.get('partNumber'), upload.body.length])).toEqual([['1', 1_024], ['2', 1_024], ['3', 452]])
-    expect(Buffer.concat(uploads.map(upload => upload.body))).toEqual(ciphertext)
-    expect(uploads.every(upload => upload.url.searchParams.get('uploadId') === 'upload-1' && !upload.headers['x-amz-trailer'])).toBe(true)
-    expect(complete!.url.searchParams.get('uploadId')).toBe('upload-1')
-    expect(complete!.body).toContain('<PartNumber>3</PartNumber>')
-    expect(complete!.body).toContain('&quot;etag-3&quot;')
+  it('refuses a small upload whose ciphertext is longer than declared', async () => {
+    await expect(store.putEncrypted('pulpo/long.age', Readable.from([Buffer.alloc(20)]), 10, 'job-1', 'fingerprint', new Date()))
+      .rejects.toThrow('Encrypted backup is longer than the expected 10 bytes')
+    expect(uploads).toHaveLength(0)
   })
 
-  it('deletes a multipart backup that Backblaze stored without Compliance retention', async () => {
-    retentionMode = 'GOVERNANCE'
-    await expect(store.putEncrypted('pulpo/large.age', Readable.from([Buffer.alloc(2_000, 7)]), 2_000, 'job-1', 'fingerprint', new Date(Date.now() + 30_000)))
-      .rejects.toThrow('did not apply Compliance retention')
-    expect(deletedVersions).toEqual(['pulpo/large.age'])
+  it('releases the ciphertext source when the multipart upload cannot start', async () => {
+    server.prependListener('request', (request) => {
+      if (request.method === 'POST' && request.url?.includes('uploads')) delete request.headers.authorization
+    })
+    const body = Readable.from((function* () { while (true) yield Buffer.alloc(1_024) })())
+    await expect(store.putEncrypted('pulpo/denied.age', body, 2 * PART_BYTES, 'job-1', 'fingerprint', new Date(Date.now() + 30_000))).rejects.toThrow()
+    expect(body.destroyed).toBe(true)
+    expect(uploads).toHaveLength(0)
+  })
+
+  it('verifies Compliance retention down to whole seconds', async () => {
+    retention = { mode: 'COMPLIANCE', retainUntil: new Date('2030-01-02T03:04:05.000Z') }
+    await store.verifyRetention('pulpo/backup.age', new Date('2030-01-02T03:04:05.900Z'))
+    await expect(store.verifyRetention('pulpo/backup.age', new Date('2030-01-02T03:04:06.000Z'))).rejects.toThrow('did not apply Compliance retention')
+    retention = { mode: 'GOVERNANCE', retainUntil: new Date('2031-01-01T00:00:00.000Z') }
+    await expect(store.verifyRetention('pulpo/backup.age', new Date('2030-01-02T03:04:05.000Z'))).rejects.toThrow('did not apply Compliance retention')
+    retention = null
+    await expect(store.verifyRetention('pulpo/backup.age', new Date('2030-01-02T03:04:05.000Z'))).rejects.toThrow('did not apply Compliance retention')
+  })
+
+  it('uploads a backup larger than one part as locked multipart parts with per-part checksums', async () => {
+    const bytes = ciphertext(2 * PART_BYTES + 1_234)
+    const lockedUntil = new Date('2030-01-02T03:04:05.321Z')
+    await store.putEncrypted('pulpo/large.age', chunked(bytes), bytes.length, 'job-1', 'fingerprint', lockedUntil)
+
+    expect(created).toHaveLength(1)
+    expect(created[0]!['x-amz-object-lock-mode']).toBe('COMPLIANCE')
+    expect(created[0]!['x-amz-object-lock-retain-until-date']).toBe('2030-01-02T03:04:06Z')
+    expect(created[0]!['x-amz-meta-pulpo-job-id']).toBe('job-1')
+    expect(created[0]!['x-amz-meta-pulpo-recipient']).toBe('fingerprint')
+    expect(uploads.map(upload => [upload.partNumber, upload.body.length])).toEqual([[1, PART_BYTES], [2, PART_BYTES], [3, 1_234]])
+    expect(uploads.every(upload => upload.headers['x-amz-trailer'] === undefined)).toBe(true)
+    expect(Buffer.concat(uploads.map(upload => upload.body)).equals(bytes)).toBe(true)
+    expect(completed).toHaveLength(1)
+    for (const upload of uploads) {
+      expect(completed[0]).toContain(`<PartNumber>${upload.partNumber}</PartNumber>`)
+      expect(completed[0]).toContain(createHash('md5').update(upload.body).digest('hex'))
+    }
+    expect(requests.some(request => request.query.includes('retention'))).toBe(true)
+  })
+
+  it('retries a failed part with the same bytes', async () => {
+    failPartOnce.add(2)
+    const bytes = ciphertext(PART_BYTES + 10)
+    await store.putEncrypted('pulpo/retry.age', chunked(bytes), bytes.length, 'job-1', 'fingerprint', new Date(Date.now() + 30_000))
+    expect(uploads.map(upload => upload.partNumber)).toEqual([1, 2])
+    expect(Buffer.concat(uploads.map(upload => upload.body)).equals(bytes)).toBe(true)
+    expect(completed).toHaveLength(1)
+  })
+
+  it('aborts the multipart upload when encryption fails partway', async () => {
+    const body = Readable.from((async function* () {
+      yield ciphertext(PART_BYTES + 5)
+      throw new Error('encryption failed')
+    })())
+    await expect(store.putEncrypted('pulpo/failed.age', body, 3 * PART_BYTES, 'job-1', 'fingerprint', new Date(Date.now() + 30_000)))
+      .rejects.toThrow('encryption failed')
+    expect(completed).toHaveLength(0)
+    expect(requests.filter(request => request.method === 'DELETE' && request.query.includes('uploadId=upload-1'))).toHaveLength(1)
+  })
+
+  it('aborts the multipart upload when the ciphertext is shorter than declared', async () => {
+    const bytes = ciphertext(PART_BYTES + 5)
+    await expect(store.putEncrypted('pulpo/short.age', chunked(bytes), bytes.length + 1, 'job-1', 'fingerprint', new Date(Date.now() + 30_000)))
+      .rejects.toThrow(`Encrypted backup is ${bytes.length} bytes; expected ${bytes.length + 1}`)
+    expect(completed).toHaveLength(0)
+    expect(requests.filter(request => request.method === 'DELETE' && request.query.includes('uploadId=upload-1'))).toHaveLength(1)
+  })
+
+  it('aborts the multipart upload when a part keeps failing', async () => {
+    const bytes = ciphertext(PART_BYTES + 5)
+    let failures = 0
+    server.prependListener('request', (request) => {
+      if (request.method === 'PUT' && request.url?.includes('partNumber=2')) { failPartOnce.add(2); failures += 1 }
+    })
+    await expect(store.putEncrypted('pulpo/broken.age', chunked(bytes), bytes.length, 'job-1', 'fingerprint', new Date(Date.now() + 30_000))).rejects.toThrow()
+    // The SDK's standard retry policy makes three attempts.
+    expect(failures).toBe(3)
+    expect(completed).toHaveLength(0)
+    expect(requests.filter(request => request.method === 'DELETE' && request.query.includes('uploadId=upload-1'))).toHaveLength(1)
+  })
+
+  it('deletes a multipart backup and fails when Compliance retention did not apply', async () => {
+    server.prependListener('request', (request) => {
+      // Simulate a store that ignores Object Lock headers on multipart uploads.
+      if (request.method === 'POST' && request.url?.includes('uploads')) delete request.headers['x-amz-object-lock-mode']
+    })
+    const bytes = ciphertext(PART_BYTES + 5)
+    await expect(store.putEncrypted('pulpo/unlocked.age', chunked(bytes), bytes.length, 'job-1', 'fingerprint', new Date(Date.now() + 30_000)))
+      .rejects.toThrow('Backblaze did not apply Compliance retention to the backup')
+    expect(completed).toHaveLength(1)
+    expect(requests.filter(request => request.method === 'DELETE' && request.query.includes('versionId=probe-version'))).toHaveLength(1)
+  })
+
+  it('deletes a single-PUT backup and fails when Compliance retention did not apply', async () => {
+    server.prependListener('request', (request) => {
+      if (request.method === 'PUT' && !request.url?.includes('retention')) delete request.headers['x-amz-object-lock-mode']
+    })
+    await expect(store.putEncrypted('pulpo/unlocked.age', Readable.from([Buffer.from('x')]), 1, 'job-1', 'fingerprint', new Date(Date.now() + 30_000)))
+      .rejects.toThrow('Backblaze did not apply Compliance retention to the backup')
+    expect(uploads).toHaveLength(1)
+    expect(requests.filter(request => request.method === 'DELETE' && request.query.includes('versionId=probe-version'))).toHaveLength(1)
+  })
+
+  it('aborts only multipart uploads started before the cutoff, across pages', async () => {
+    const cutoff = new Date('2030-01-02T00:00:00.000Z')
+    pendingUploads = [
+      { key: 'pulpo/a.age', uploadId: 'old-a', initiated: new Date('2030-01-01T00:00:00.000Z') },
+      { key: 'pulpo/b.age', uploadId: 'new-b', initiated: new Date('2030-01-02T00:00:00.000Z') },
+      { key: 'pulpo/c.age', uploadId: 'old-c', initiated: new Date('2029-12-01T00:00:00.000Z') },
+    ]
+    expect(await store.abortStaleUploads(cutoff)).toBe(2)
+    expect(requests.filter(request => request.method === 'GET' && request.query.includes('uploads')).every(request => request.query.includes('prefix=pulpo%2F'))).toBe(true)
+    expect(requests.filter(request => request.method === 'DELETE').map(request => [request.key, new URLSearchParams(request.query).get('uploadId')]))
+      .toEqual([['pulpo/a.age', 'old-a'], ['pulpo/c.age', 'old-c']])
   })
 
   it('extends Compliance retention with a Content-MD5 instead of a flexible checksum', async () => {
@@ -147,50 +293,5 @@ describe('Backblaze Object Lock upload requests', () => {
     expect(request!.headers['content-md5']).toBe(createHash('md5').update(request!.body).digest('base64'))
     expect(Object.keys(request!.headers).filter(name => name.includes('checksum'))).toEqual([])
     expect(request!.headers.authorization).toContain('content-md5')
-  })
-
-  it('aborts only multipart uploads that started before the cutoff', async () => {
-    const aborted: string[] = []
-    server.removeAllListeners('request')
-    server.on('request', async (request, response) => {
-      const url = new URL(request.url!, 'http://localhost')
-      for await (const chunk of request) void chunk
-      if (request.method === 'DELETE') {
-        aborted.push(url.searchParams.get('uploadId')!)
-        response.writeHead(204).end()
-        return
-      }
-      const upload = (key: string, id: string, initiated?: string) => `<Upload><Key>${key}</Key><UploadId>${id}</UploadId>${initiated ? `<Initiated>${initiated}</Initiated>` : ''}</Upload>`
-      response.writeHead(200, { 'content-type': 'application/xml' }).end(url.searchParams.get('key-marker')
-        ? `<ListMultipartUploadsResult><IsTruncated>false</IsTruncated>${upload('pulpo/blobs/b.age', 'old-2', '2026-10-01T00:00:00.000Z')}</ListMultipartUploadsResult>`
-        : `<ListMultipartUploadsResult><IsTruncated>true</IsTruncated><NextKeyMarker>pulpo/blobs/a.age</NextKeyMarker><NextUploadIdMarker>new</NextUploadIdMarker>${upload('pulpo/a.age', 'old-1', '2026-10-01T00:00:00.000Z')}${upload('pulpo/blobs/a.age', 'new', '2026-10-25T00:00:00.000Z')}${upload('pulpo/undated.age', 'undated')}</ListMultipartUploadsResult>`)
-    })
-    expect(await store.abortStaleUploads('pulpo/', new Date('2026-10-24T00:00:00.000Z'))).toBe(2)
-    expect(aborted).toEqual(['old-1', 'old-2'])
-  })
-
-  it('retries a failed part with a fresh read of the spooled ciphertext', async () => {
-    failNextPart = true
-    const ciphertext = Buffer.alloc(2_000, 5)
-    await store.putEncrypted('pulpo/large.age', Readable.from([ciphertext]), ciphertext.length, 'job-1', 'fingerprint', new Date(Date.now() + 30_000))
-    expect(Buffer.concat(uploads.map(upload => upload.body))).toEqual(ciphertext)
-    expect(multipartRequests.map(request => request.method)).toEqual(['POST', 'POST'])
-  })
-
-  it('aborts the multipart upload when a part keeps failing', async () => {
-    server.removeAllListeners('request')
-    server.on('request', async (request, response) => {
-      const url = new URL(request.url!, 'http://localhost')
-      for await (const chunk of request) void chunk
-      if (request.method === 'PUT') {
-        response.writeHead(400, { 'content-type': 'application/xml' }).end('<Error><Code>InvalidRequest</Code><Message>Part rejected</Message></Error>')
-      } else {
-        multipartRequests.push({ url, method: request.method!, headers: request.headers, body: '' })
-        if (request.method === 'DELETE') response.writeHead(204).end()
-        else response.writeHead(200, { 'content-type': 'application/xml' }).end('<InitiateMultipartUploadResult><UploadId>upload-1</UploadId></InitiateMultipartUploadResult>')
-      }
-    })
-    await expect(store.putEncrypted('pulpo/large.age', Readable.from([Buffer.alloc(2_000, 6)]), 2_000, 'job-1', 'fingerprint', new Date())).rejects.toThrow('Part rejected')
-    expect(multipartRequests.map(request => [request.method, request.url.searchParams.get('uploadId')])).toEqual([['POST', null], ['DELETE', 'upload-1']])
   })
 })

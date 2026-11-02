@@ -1,6 +1,15 @@
 import { randomBytes, randomUUID } from 'node:crypto'
 import { Readable } from 'node:stream'
-import { AbortMultipartUploadCommand, CreateBucketCommand, CreateMultipartUploadCommand, GetObjectRetentionCommand, HeadBucketCommand, ListMultipartUploadsCommand, ListObjectVersionsCommand, S3Client } from '@aws-sdk/client-s3'
+import {
+  AbortMultipartUploadCommand,
+  CreateBucketCommand,
+  CreateMultipartUploadCommand,
+  GetObjectRetentionCommand,
+  HeadBucketCommand,
+  ListMultipartUploadsCommand,
+  ListObjectVersionsCommand,
+  S3Client,
+} from '@aws-sdk/client-s3'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { B2BackupStore } from './b2-backup-store.js'
 import { wholeSecondLock } from './backup-retention.js'
@@ -18,6 +27,7 @@ const env = {
   applicationKey: process.env.PULPO_BACKUP_S3_TEST_KEY ?? '',
   prefix: `${process.env.PULPO_BACKUP_S3_TEST_PREFIX ?? 'pulpo-test'}/${randomUUID()}`,
 }
+// The smallest part S3 accepts, so multipart runs without large fixtures.
 const PART_BYTES = 5 * 1024 * 1024
 
 const settings = {
@@ -30,19 +40,26 @@ const client = new S3Client({
   credentials: { accessKeyId: settings.keyId, secretAccessKey: settings.applicationKey },
   requestChecksumCalculation: 'WHEN_REQUIRED', responseChecksumValidation: 'WHEN_REQUIRED',
 })
-const store = new B2BackupStore(settings, { partSizeBytes: PART_BYTES, retryDelayMs: 100 })
+const store = new B2BackupStore(settings, PART_BYTES)
 const created: string[] = []
 // Production lock dates carry milliseconds; Object Lock stores whole seconds.
 const seconds = (count: number) => new Date(Date.now() + count * 1_000 + 321)
 const read = async (key: string) => {
   const { body } = await store.getStream(key)
-  const chunks: Buffer[] = []; for await (const chunk of body) chunks.push(Buffer.from(chunk))
+  const chunks: Buffer[] = []
+  for await (const chunk of body) chunks.push(Buffer.from(chunk))
   return Buffer.concat(chunks)
 }
 const retention = (key: string) => client.send(new GetObjectRetentionCommand({ Bucket: env.bucket, Key: key })).then(result => result.Retention)
+/** Ciphertext arrives in chunks that do not line up with part boundaries. */
+function chunked(bytes: Buffer, size = 1_000_003): Readable {
+  return Readable.from((function* () {
+    for (let offset = 0; offset < bytes.length; offset += size) yield bytes.subarray(offset, offset + size)
+  })())
+}
 async function put(key: string, body: Buffer, lockedUntil: Date) {
   created.push(key)
-  await store.putEncrypted(key, Readable.from([body]), body.length, 'job-1', 'fingerprint', lockedUntil)
+  await store.putEncrypted(key, chunked(body), body.length, 'job-1', 'fingerprint', lockedUntil)
 }
 
 describe.skipIf(!env.endpoint)('Backblaze store against S3 Compliance Object Lock', () => {
@@ -73,12 +90,15 @@ describe.skipIf(!env.endpoint)('Backblaze store against S3 Compliance Object Loc
     expect(await retention(key)).toEqual({ Mode: 'COMPLIANCE', RetainUntilDate: wholeSecondLock(lockedUntil) })
   }, 30_000)
 
-  it('uploads a large backup as locked multipart parts', async () => {
+  it('uploads a large backup as locked multipart parts with recovery metadata', async () => {
     const key = `${env.prefix}/large.age`, body = randomBytes(2 * PART_BYTES + 12_345), lockedUntil = seconds(4)
     await put(key, body, lockedUntil)
     expect((await read(key)).equals(body)).toBe(true)
+    expect(await store.head(key)).toEqual({ sizeBytes: body.length, jobId: 'job-1', recipientFingerprint: 'fingerprint' })
     expect(await retention(key)).toEqual({ Mode: 'COMPLIANCE', RetainUntilDate: wholeSecondLock(lockedUntil) })
-  }, 60_000)
+    await expect(store.delete(key)).rejects.toThrow()
+    expect((await read(key)).equals(body)).toBe(true)
+  }, 120_000)
 
   it('extends Compliance retention, refuses to shorten it, and refuses deletion while locked', async () => {
     const key = `${env.prefix}/extended.age`
@@ -92,6 +112,19 @@ describe.skipIf(!env.endpoint)('Backblaze store against S3 Compliance Object Loc
     expect(await read(key)).toEqual(Buffer.from('blob'))
   }, 30_000)
 
+  it('aborts an upload that fails partway and leaves nothing behind', async () => {
+    const key = `${env.prefix}/failed.age`
+    created.push(key)
+    const body = Readable.from((async function* () {
+      yield randomBytes(PART_BYTES + 10)
+      throw new Error('encryption failed')
+    })())
+    await expect(store.putEncrypted(key, body, 3 * PART_BYTES, 'job-1', 'fingerprint', seconds(4))).rejects.toThrow('encryption failed')
+    expect(await store.head(key)).toBeNull()
+    const uploads = await client.send(new ListMultipartUploadsCommand({ Bucket: env.bucket, Prefix: key }))
+    expect(uploads.Uploads ?? []).toEqual([])
+  }, 60_000)
+
   it('aborts only multipart uploads older than the cutoff', async () => {
     const stale = `${env.prefix}/stale.age`, fresh = `${env.prefix}/fresh.age`
     for (const key of [stale, fresh]) {
@@ -104,12 +137,12 @@ describe.skipIf(!env.endpoint)('Backblaze store against S3 Compliance Object Loc
     try {
       if (!cutoff) {
         // SeaweedFS omits start times; an upload of unknown age is never aborted.
-        expect(await store.abortStaleUploads(`${env.prefix}/`, new Date(Date.now() + 60_000))).toBe(0)
+        expect(await store.abortStaleUploads(new Date(Date.now() + 60_000))).toBe(0)
         return
       }
-      expect(await store.abortStaleUploads(`${env.prefix}/`, cutoff)).toBe(1)
+      expect(await store.abortStaleUploads(cutoff)).toBe(1)
       expect((await pending()).map(upload => upload.Key)).toEqual([fresh])
-      expect(await store.abortStaleUploads(`${env.prefix}/`, new Date(Date.now() + 60_000))).toBe(1)
+      expect(await store.abortStaleUploads(new Date(Date.now() + 60_000))).toBe(1)
     } finally {
       for (const upload of await pending()) await client.send(new AbortMultipartUploadCommand({ Bucket: env.bucket, Key: upload.Key!, UploadId: upload.UploadId! }))
     }
@@ -130,7 +163,8 @@ describe.skipIf(!env.endpoint)('Backblaze store against S3 Compliance Object Loc
       fetchS3Object(location: { endpoint: string; region: string; bucket: string; accessKeyId: string; secretAccessKey: string }, key: string): Promise<AsyncIterable<Uint8Array>>
     }
     const body = await fetchS3Object({ endpoint: env.endpoint!, region: env.region, bucket: env.bucket, accessKeyId: env.keyId, secretAccessKey: env.applicationKey }, key)
-    const chunks: Buffer[] = []; for await (const chunk of body) chunks.push(Buffer.from(chunk))
+    const chunks: Buffer[] = []
+    for await (const chunk of body) chunks.push(Buffer.from(chunk))
     expect(Buffer.concat(chunks).toString()).toBe('signed download')
   }, 30_000)
 })

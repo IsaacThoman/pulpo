@@ -13,25 +13,21 @@ import {
   PutObjectCommand,
   PutObjectRetentionCommand,
   S3Client,
+  type PutObjectCommandInput,
   UploadPartCommand,
   type CompletedPart,
 } from '@aws-sdk/client-s3'
-import { createHash, randomUUID, type Hash } from 'node:crypto'
-import { createReadStream, createWriteStream } from 'node:fs'
-import { mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { Readable, Transform } from 'node:stream'
-import { pipeline } from 'node:stream/promises'
+import { createHash, randomUUID } from 'node:crypto'
+import { Readable } from 'node:stream'
 import { AppError } from '../lib/errors.js'
 import { wholeSecondLock } from './backup-retention.js'
 import type { ResolvedBackupSettings } from './backup-settings.js'
 
 // S3 caps a single PUT at 5 GiB, so larger backups are uploaded in parts.
-const MULTIPART_PART_BYTES = 128 * 1024 * 1024
+// Each part is held in memory so its Content-MD5 is known before sending, and
+// so the SDK can resend it when retrying a failed request.
+const MULTIPART_PART_BYTES = 32 * 1024 * 1024
 const MAX_MULTIPART_PARTS = 10_000
-const PART_UPLOAD_ATTEMPTS = 3
-const PART_RETRY_DELAY_MS = 1_000
 
 /**
  * Current SDKs add a CRC32 checksum to operations that require one. Send the
@@ -45,6 +41,27 @@ function withContentMd5(command: PutObjectRetentionCommand): PutObjectRetentionC
     return next(args)
   }, { step: 'build', priority: 'low', name: 'pulpoContentMd5' })
   return command
+}
+
+/** Split a stream into buffers of exactly `size` bytes, except a shorter final one. */
+async function* fixedSizeParts(source: AsyncIterable<Uint8Array | string>, size: number): AsyncGenerator<Buffer> {
+  let part = Buffer.allocUnsafe(size)
+  let filled = 0
+  for await (const value of source) {
+    const chunk = typeof value === 'string' ? Buffer.from(value) : value
+    for (let offset = 0; offset < chunk.length;) {
+      const length = Math.min(size - filled, chunk.length - offset)
+      part.set(chunk.subarray(offset, offset + length), filled)
+      filled += length
+      offset += length
+      if (filled === size) {
+        yield part
+        part = Buffer.allocUnsafe(size)
+        filled = 0
+      }
+    }
+  }
+  if (filled) yield part.subarray(0, filled)
 }
 
 export interface B2BackupObjectMetadata {
@@ -73,7 +90,7 @@ export class B2BackupStore {
 
   constructor(
     private readonly settings: ResolvedBackupSettings,
-    private readonly multipart = { partSizeBytes: MULTIPART_PART_BYTES, retryDelayMs: PART_RETRY_DELAY_MS },
+    private readonly partSizeBytes = MULTIPART_PART_BYTES,
   ) {
     this.client = new S3Client({
       endpoint: settings.endpoint,
@@ -153,96 +170,90 @@ export class B2BackupStore {
     recipientFingerprint: string,
     lockedUntil: Date,
   ): Promise<void> {
-    // Object Lock requires a checksum header on every PUT. Spool ciphertext so
-    // each part's digest is known before upload, without buffering the backup
-    // in memory or using trailers.
-    const retainUntil = wholeSecondLock(lockedUntil)
-    const partSize = Math.max(this.multipart.partSizeBytes, Math.ceil(contentLength / MAX_MULTIPART_PARTS))
-    const directory = await mkdtemp(join(tmpdir(), 'pulpo-encrypted-upload-'))
-    const file = join(directory, 'backup.age')
-    const partHashes: Hash[] = []
-    let written = 0
-    let upload: Readable | undefined
+    // Object Lock requires a checksum header on every PUT. Buffer one part at a
+    // time so its digest is known before upload, without spooling to disk or using trailers.
     try {
-      await pipeline(body, new Transform({
-        transform(chunk: Buffer, _encoding, callback) {
-          for (let offset = 0; offset < chunk.length;) {
-            const index = Math.floor(written / partSize)
-            const length = Math.min(chunk.length - offset, (index + 1) * partSize - written)
-            ;(partHashes[index] ??= createHash('md5')).update(chunk.subarray(offset, offset + length))
-            offset += length
-            written += length
-          }
-          callback(null, chunk)
-        },
-      }), createWriteStream(file, { mode: 0o600 }))
-      if (written !== contentLength) throw new Error(`Encrypted backup is ${written} bytes; expected ${contentLength}`)
-      const digests = partHashes.map(hash => hash.digest('base64'))
-      const object = {
-        Bucket: this.settings.bucket,
-        Key: key,
-        ContentType: 'application/octet-stream',
-        ContentDisposition: 'attachment',
-        ObjectLockMode: 'COMPLIANCE' as const,
-        ObjectLockRetainUntilDate: retainUntil,
-        Metadata: { 'pulpo-job-id': jobId, 'pulpo-recipient': recipientFingerprint },
-      }
-      if (digests.length <= 1) {
-        upload = createReadStream(file)
-        await this.client.send(new PutObjectCommand({
-          ...object,
-          Body: upload,
-          ContentLength: contentLength,
-          ContentMD5: digests[0] ?? createHash('md5').digest('base64'),
-        }))
-        return
-      }
-      const { UploadId } = await this.client.send(new CreateMultipartUploadCommand(object))
-      if (!UploadId) throw new Error('Backblaze did not return a multipart upload ID')
-      try {
-        const parts: CompletedPart[] = []
-        for (const [index, digest] of digests.entries()) {
-          const start = index * partSize
-          const end = Math.min(start + partSize, contentLength)
-          parts.push({ PartNumber: index + 1, ETag: await this.uploadPart(file, key, UploadId, index + 1, start, end, digest) })
-        }
-        await this.client.send(new CompleteMultipartUploadCommand({
-          Bucket: this.settings.bucket, Key: key, UploadId, MultipartUpload: { Parts: parts },
-        }))
-      } catch (error) {
-        await this.client.send(new AbortMultipartUploadCommand({ Bucket: this.settings.bucket, Key: key, UploadId })).catch(() => undefined)
-        throw error
-      }
-      // Never leave an unlocked backup behind: a retry would otherwise accept it as complete.
-      const retention = await this.retention(key)
-      if (retention?.mode !== 'COMPLIANCE' || retention.retainUntil < retainUntil) {
-        // Without Compliance retention the object can be removed; a weaker lock keeps it until cleanup.
-        await this.delete(key).catch(() => undefined)
-        throw new Error('Backblaze did not apply Compliance retention to the multipart backup')
-      }
-    } finally {
-      upload?.destroy()
-      await rm(directory, { recursive: true, force: true })
+      await this.upload(key, body, contentLength, jobId, recipientFingerprint, wholeSecondLock(lockedUntil))
+    } catch (error) {
+      // Release the source even when the upload failed before reading it.
+      body.destroy()
+      throw error
     }
   }
 
-  private async uploadPart(file: string, key: string, uploadId: string, partNumber: number, start: number, end: number, digest: string): Promise<string> {
-    // A consumed stream cannot be resent, so retry each part with a fresh read.
-    for (let attempt = 1; ; attempt++) {
-      const body = createReadStream(file, { start, end: end - 1 })
-      try {
-        const { ETag } = await this.client.send(new UploadPartCommand({
-          Bucket: this.settings.bucket, Key: key, UploadId: uploadId, PartNumber: partNumber,
-          Body: body, ContentLength: end - start, ContentMD5: digest,
-        }))
-        if (!ETag) throw new Error(`Backblaze did not return an ETag for part ${partNumber}`)
-        return ETag
-      } catch (error) {
-        if (attempt >= PART_UPLOAD_ATTEMPTS) throw error
-        await new Promise((resolve) => setTimeout(resolve, attempt * this.multipart.retryDelayMs))
-      } finally {
-        body.destroy()
+  private async upload(key: string, body: Readable, contentLength: number, jobId: string, recipientFingerprint: string, retainUntil: Date): Promise<void> {
+    const partSize = Math.max(this.partSizeBytes, Math.ceil(contentLength / MAX_MULTIPART_PARTS))
+    const object = {
+      Bucket: this.settings.bucket,
+      Key: key,
+      ContentType: 'application/octet-stream',
+      ContentDisposition: 'attachment',
+      ObjectLockMode: 'COMPLIANCE' as const,
+      ObjectLockRetainUntilDate: retainUntil,
+      Metadata: { 'pulpo-job-id': jobId, 'pulpo-recipient': recipientFingerprint },
+    }
+
+    if (contentLength <= partSize) {
+      // Size the buffer to this backup; a longer stream spills into a second part.
+      let upload: Buffer | undefined
+      for await (const part of fixedSizeParts(body, Math.max(contentLength, 1))) {
+        if (upload) throw new Error(`Encrypted backup is longer than the expected ${contentLength} bytes`)
+        upload = part
       }
+      upload ??= Buffer.alloc(0)
+      if (upload.length !== contentLength) throw new Error(`Encrypted backup is ${upload.length} bytes; expected ${contentLength}`)
+      await this.client.send(new PutObjectCommand({
+        ...object,
+        Body: upload,
+        ContentLength: upload.length,
+        ContentMD5: createHash('md5').update(upload).digest('base64'),
+      }))
+    } else {
+      await this.uploadParts(key, body, contentLength, partSize, object)
+    }
+    try {
+      await this.verifyRetention(key, retainUntil)
+    } catch (error) {
+      // Without Compliance retention the object can be removed, so a retry uploads it again.
+      await this.delete(key).catch(() => undefined)
+      throw error
+    }
+  }
+
+  private async uploadParts(
+    key: string,
+    body: Readable,
+    contentLength: number,
+    partSize: number,
+    object: Omit<PutObjectCommandInput, 'Body'>,
+  ): Promise<void> {
+    const { UploadId } = await this.client.send(new CreateMultipartUploadCommand(object))
+    if (!UploadId) throw new Error('Backblaze did not return a multipart upload ID')
+    try {
+      const completed: CompletedPart[] = []
+      let received = 0
+      for await (const part of fixedSizeParts(body, partSize)) {
+        const partNumber = completed.length + 1
+        completed.push({ PartNumber: partNumber, ETag: await this.uploadPart(key, UploadId, partNumber, part) })
+        received += part.length
+      }
+      if (received !== contentLength) throw new Error(`Encrypted backup is ${received} bytes; expected ${contentLength}`)
+      await this.client.send(new CompleteMultipartUploadCommand({
+        Bucket: this.settings.bucket, Key: key, UploadId, MultipartUpload: { Parts: completed },
+      }))
+    } catch (error) {
+      await this.client.send(new AbortMultipartUploadCommand({ Bucket: this.settings.bucket, Key: key, UploadId })).catch(() => undefined)
+      throw error
+    }
+  }
+
+  /** Fail unless the object is under Compliance retention until at least `lockedUntil`. */
+  async verifyRetention(key: string, lockedUntil: Date): Promise<void> {
+    const { Retention } = await this.client.send(new GetObjectRetentionCommand({ Bucket: this.settings.bucket, Key: key }))
+    // Object Lock stores whole seconds, so compare at that precision.
+    const required = Math.floor(lockedUntil.getTime() / 1_000) * 1_000
+    if (Retention?.Mode !== 'COMPLIANCE' || !Retention.RetainUntilDate || Retention.RetainUntilDate.getTime() < required) {
+      throw new Error('Backblaze did not apply Compliance retention to the backup')
     }
   }
 
@@ -260,15 +271,25 @@ export class B2BackupStore {
     return Retention?.Mode && Retention.RetainUntilDate ? { mode: Retention.Mode, retainUntil: Retention.RetainUntilDate } : null
   }
 
-  /** Abort multipart uploads that a crashed worker left behind; their parts are not locked. */
-  async abortStaleUploads(prefix: string, initiatedBefore: Date): Promise<number> {
+  private async uploadPart(key: string, uploadId: string, partNumber: number, body: Buffer): Promise<string> {
+    const { ETag } = await this.client.send(new UploadPartCommand({
+      Bucket: this.settings.bucket, Key: key, UploadId: uploadId, PartNumber: partNumber,
+      Body: body, ContentLength: body.length, ContentMD5: createHash('md5').update(body).digest('base64'),
+    }))
+    if (!ETag) throw new Error(`Backblaze did not return an ETag for part ${partNumber}`)
+    return ETag
+  }
+
+  /** Abort multipart uploads that a crashed worker left behind; their parts are billed but never locked. */
+  async abortStaleUploads(initiatedBefore: Date): Promise<number> {
     let aborted = 0
     let keyMarker: string | undefined, uploadIdMarker: string | undefined
     do {
       const page = await this.client.send(new ListMultipartUploadsCommand({
-        Bucket: this.settings.bucket, Prefix: prefix, KeyMarker: keyMarker, UploadIdMarker: uploadIdMarker,
+        Bucket: this.settings.bucket, Prefix: `${this.settings.prefix}/`, KeyMarker: keyMarker, UploadIdMarker: uploadIdMarker,
       }))
       for (const upload of page.Uploads ?? []) {
+        // An upload of unknown age might still be running, so leave it alone.
         if (!upload.Key || !upload.UploadId || !upload.Initiated || upload.Initiated >= initiatedBefore) continue
         await this.client.send(new AbortMultipartUploadCommand({ Bucket: this.settings.bucket, Key: upload.Key, UploadId: upload.UploadId }))
         aborted += 1

@@ -23,6 +23,7 @@ import { registerApiKeyRoutes } from './api-keys/routes.js'
 import { registerPublicApiRoutes } from './public-api/routes.js'
 import { registerSettingsRoutes } from './settings/routes.js'
 import { registerShareRoutes } from './shares/routes.js'
+import { registerMessageReportRoutes } from './message-reports/routes.js'
 import { registerUsageRoutes } from './usage/routes.js'
 import { registerAdminRoutes } from './admin/routes.js'
 import { registerAdminSettingsRoutes } from './admin/settings-routes.js'
@@ -190,6 +191,7 @@ export async function buildApp() {
   await registerApiKeyRoutes(app)
   await registerSettingsRoutes(app)
   await registerShareRoutes(app)
+  await registerMessageReportRoutes(app)
   await registerUsageRoutes(app)
   await registerAdminRoutes(app)
   await registerAdminSettingsRoutes(app)

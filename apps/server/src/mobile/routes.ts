@@ -77,6 +77,7 @@ export async function registerMobileRoutes(app: FastifyInstance): Promise<void> 
         folders: true,
         twoFactorAuth: true,
         passkeys: true,
+        messageReports: auth.messageReportsEnabled,
         files: { enabled: auth.filesEnabled, docSchemaVersion: DOC_SCHEMA_VERSION },
       },
     })

@@ -9,6 +9,7 @@ private final class TemporaryChatHeaderModel: ObservableObject {
   @Published var saving = false
   @Published var saveDisabled = false
   @Published var trailingAction = "ghost"
+  @Published var axis = "horizontal"
   var reduceMotion = false
 }
 
@@ -86,6 +87,10 @@ private struct TemporaryChatHeaderContent: View {
     return model.active ? "New temporary chat" : "New chat"
   }
 
+  /// Stacked, the capsule hangs from the header row and the secondary action
+  /// slides in below the primary one.
+  private var vertical: Bool { model.axis == "vertical" }
+
   var body: some View {
     Group {
       if #available(iOS 26.0, *) {
@@ -94,64 +99,89 @@ private struct TemporaryChatHeaderContent: View {
         capsule
       }
     }
-    .frame(maxWidth: .infinity, minHeight: 44, maxHeight: 44, alignment: .trailing)
+    .frame(
+      maxWidth: .infinity,
+      minHeight: vertical ? nil : 44,
+      maxHeight: vertical ? .infinity : 44,
+      alignment: vertical ? .top : .trailing
+    )
   }
 
   private var capsule: some View {
-    HStack(spacing: 0) {
-      Button(action: model.leadingAction == "expiration" ? onToggleExpiration : onSave) {
-        ZStack {
-          Image(systemName: "bookmark")
-            .font(.system(size: 18))
-            .opacity(model.leadingAction == "save" && !model.saving ? 1 : 0)
-
-          Image(systemName: "hourglass")
-            .font(.system(size: 18))
-            .opacity(model.leadingAction == "expiration" ? 1 : 0)
-
-          ProgressView()
-            .controlSize(.small)
-            .opacity(model.leadingAction == "save" && model.saving ? 1 : 0)
+    Group {
+      if vertical {
+        VStack(spacing: 0) {
+          trailingButton
+          leadingButton
         }
-        .frame(width: 44, height: 44)
-        .foregroundStyle(leadingIconColor)
-        .contentShape(Rectangle())
-      }
-      .buttonStyle(.plain)
-      .frame(width: model.expanded ? 44 : 0, height: 44)
-      .opacity(model.expanded ? 1 : 0)
-      .scaleEffect(model.expanded ? 1 : 0.78)
-      .clipped()
-      .disabled(!model.expanded || (model.leadingAction == "save" && (model.saveDisabled || model.saving)))
-      .accessibilityHidden(!model.expanded)
-      .accessibilityLabel(leadingAccessibilityLabel)
-
-      Button(action: model.trailingAction == "ghost" ? onToggleTemporary : onNewChat) {
-        ZStack {
-          PulpoGhostShape()
-            .stroke(style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
-            .frame(width: 18, height: 18)
-            .opacity(model.trailingAction == "ghost" ? 1 : 0)
-            .scaleEffect(model.trailingAction == "ghost" ? 1 : 0.72)
-
-          Image(systemName: "square.and.pencil")
-            .font(.system(size: 18))
-            .opacity(model.trailingAction == "new-chat" ? 1 : 0)
-            .scaleEffect(model.trailingAction == "new-chat" ? 1 : 0.72)
+        .frame(width: 44, height: model.expanded ? 88 : 44, alignment: .top)
+      } else {
+        HStack(spacing: 0) {
+          leadingButton
+          trailingButton
         }
-        .frame(width: 44, height: 44)
-        .foregroundStyle(iconColor)
-        .contentShape(Rectangle())
+        .frame(width: model.expanded ? 88 : 44, height: 44, alignment: .trailing)
       }
-      .buttonStyle(.plain)
-      .accessibilityLabel(trailingAccessibilityLabel)
     }
-    .frame(width: model.expanded ? 88 : 44, height: 44, alignment: .trailing)
     .modifier(TemporaryChatHeaderGlass(tint: glassTint, namespace: glassNamespace))
     .animation(spring, value: model.expanded)
     .animation(spring, value: model.leadingAction)
     .animation(spring, value: model.saving)
     .animation(spring, value: model.trailingAction)
+  }
+
+  private var leadingButton: some View {
+    Button(action: model.leadingAction == "expiration" ? onToggleExpiration : onSave) {
+      ZStack {
+        Image(systemName: "bookmark")
+          .font(.system(size: 18))
+          .opacity(model.leadingAction == "save" && !model.saving ? 1 : 0)
+
+        Image(systemName: "hourglass")
+          .font(.system(size: 18))
+          .opacity(model.leadingAction == "expiration" ? 1 : 0)
+
+        ProgressView()
+          .controlSize(.small)
+          .opacity(model.leadingAction == "save" && model.saving ? 1 : 0)
+      }
+      .frame(width: 44, height: 44)
+      .foregroundStyle(leadingIconColor)
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .frame(
+      width: vertical || model.expanded ? 44 : 0,
+      height: !vertical || model.expanded ? 44 : 0
+    )
+    .opacity(model.expanded ? 1 : 0)
+    .scaleEffect(model.expanded ? 1 : 0.78)
+    .clipped()
+    .disabled(!model.expanded || (model.leadingAction == "save" && (model.saveDisabled || model.saving)))
+    .accessibilityHidden(!model.expanded)
+    .accessibilityLabel(leadingAccessibilityLabel)
+  }
+
+  private var trailingButton: some View {
+    Button(action: model.trailingAction == "ghost" ? onToggleTemporary : onNewChat) {
+      ZStack {
+        PulpoGhostShape()
+          .stroke(style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
+          .frame(width: 18, height: 18)
+          .opacity(model.trailingAction == "ghost" ? 1 : 0)
+          .scaleEffect(model.trailingAction == "ghost" ? 1 : 0.72)
+
+        Image(systemName: "square.and.pencil")
+          .font(.system(size: 18))
+          .opacity(model.trailingAction == "new-chat" ? 1 : 0)
+          .scaleEffect(model.trailingAction == "new-chat" ? 1 : 0.72)
+      }
+      .frame(width: 44, height: 44)
+      .foregroundStyle(iconColor)
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .accessibilityLabel(trailingAccessibilityLabel)
   }
 }
 
@@ -200,6 +230,9 @@ public final class TemporaryChatHeaderView: ExpoView {
       onNewChat: { [weak self] in self?.onNewChat([:]) }
     )
     let host = UIHostingController(rootView: content)
+    // The chat can slide the view into iPhone Duo's vertical bar column, whose
+    // safe area would otherwise squeeze the capsule toward the content edge.
+    host.safeAreaRegions = []
     host.view.backgroundColor = .clear
     host.view.translatesAutoresizingMaskIntoConstraints = false
     addSubview(host.view)
@@ -259,5 +292,10 @@ public final class TemporaryChatHeaderView: ExpoView {
 
   public func setReduceMotion(_ value: Bool) {
     model.reduceMotion = value
+  }
+
+  public func setAxis(_ value: String) {
+    guard model.axis != value else { return }
+    model.axis = value
   }
 }

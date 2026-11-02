@@ -115,6 +115,7 @@ export function AuthenticationSection() {
       apiKeysEnabled: true,
       filesEnabled: true,
       inviteCodesEnabled: false,
+      messageReportsEnabled: false,
       newAccountModelDefaults: {
       defaultModelId: null as string | null,
       favoriteModelIds: [] as string[],
@@ -172,6 +173,7 @@ export function AuthenticationSection() {
         <SelectField label={ui("Default user role")} hint="Role assigned to future public signups." value={t.defaultSignupRole} onChange={(v) => s('defaultSignupRole', v as 'pending' | 'user')} options={[{ value: 'pending', label: ui("Pending approval") }, { value: 'user', label: ui("User") }]} />
         <Toggle label={ui("Enable API keys")} hint="Suspends API-key creation and authentication without deleting existing keys." checked={t.apiKeysEnabled} onChange={(v) => s('apiKeysEnabled', v)} />
         <Toggle label={ui("Enable Files")} hint="Hides the Files tab and blocks Files requests without deleting stored files." checked={t.filesEnabled} onChange={(v) => s('filesEnabled', v)} />
+        <Toggle label={ui("Enable message reports")} hint={ui("Adds a report button to messages. Reporting shares the chat with admins, who review it from the Reports tab.")} checked={t.messageReportsEnabled} onChange={(v) => s('messageReportsEnabled', v)} />
       </Section>
 
       <Section title={ui("Pending accounts")}>
@@ -201,7 +203,7 @@ export function AuthenticationSection() {
         onChange={(value) => s('newAccountModelDefaults', value)}
       />
 
-      <SaveBar onSave={async () => { await save(); auth.setSignupEnabled(t.signupEnabled); useAuth.setState({ pendingDetails: t.pendingDetails, adminEmail: t.adminEmail, pendingMessage: t.pendingMessage, apiKeysEnabled: t.apiKeysEnabled, filesEnabled: t.filesEnabled, maxAttachmentBytes: t.maxAttachmentBytes, maxInlineImages: t.maxInlineImages }) }} />
+      <SaveBar onSave={async () => { await save(); auth.setSignupEnabled(t.signupEnabled); useAuth.setState({ pendingDetails: t.pendingDetails, adminEmail: t.adminEmail, pendingMessage: t.pendingMessage, apiKeysEnabled: t.apiKeysEnabled, filesEnabled: t.filesEnabled, messageReportsEnabled: t.messageReportsEnabled, maxAttachmentBytes: t.maxAttachmentBytes, maxInlineImages: t.maxInlineImages }) }} />
     </div>
   )
 }

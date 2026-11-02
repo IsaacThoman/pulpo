@@ -11,8 +11,8 @@ import { wholeSecondLock } from './backup-retention.js'
 import { ageRecipientDetails, normalizeBackupPrefix, readStoredBackupSettings, resolveBackupSettings, type ResolvedBackupSettings } from './backup-settings.js'
 
 const SCHEDULE_LOCK = 1_886_747_745
-/** Multipart uploads unfinished after a week belong to a crashed worker, not a slow one. */
-const STALE_UPLOAD_MS = 7 * 86_400_000
+/** Multipart uploads still unfinished after a day belong to a crashed worker, not a slow one. */
+const STALE_UPLOAD_MS = 86_400_000
 
 type BackupFormat = 'archive' | 'snapshot'
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
@@ -182,6 +182,7 @@ export async function deleteUnlockedOffsiteBackups(now = new Date()): Promise<vo
   try {
     settings = resolveBackupSettings(stored)
   } catch (error) {
+    if (!jobs.length) return
     console.error(JSON.stringify({
       level: 'error', service: 'pulpo-worker', event: 'backup.retention_credentials_unavailable',
       error: error instanceof Error ? error.message : String(error),
@@ -213,7 +214,12 @@ export async function deleteUnlockedOffsiteBackups(now = new Date()): Promise<vo
   // A snapshot whose deletion failed is still listed for download; keep its blobs until it is gone.
   if (!snapshotDeletionFailed) await deleteUnlockedOffsiteBlobs(store, settings, now)
   try {
-    await store.abortStaleUploads(`${settings.prefix}/`, new Date(now.getTime() - STALE_UPLOAD_MS))
+    // Never trust upload start times alone while a backup could still be uploading.
+    const [running] = await db.select({ id: backupJobs.id }).from(backupJobs).where(and(
+      eq(backupJobs.destination, 'backblaze_b2'),
+      eq(backupJobs.status, 'in_progress'),
+    )).limit(1)
+    if (!running) await store.abortStaleUploads(new Date(now.getTime() - STALE_UPLOAD_MS))
   } catch (error) {
     console.error(JSON.stringify({
       level: 'error', service: 'pulpo-worker', event: 'backup.stale_upload_abort_failed',

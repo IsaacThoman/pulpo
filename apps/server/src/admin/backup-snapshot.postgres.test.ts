@@ -70,6 +70,10 @@ vi.mock('./b2-backup-store.js', async () => {
       const entry = context.remote.get(key)
       return entry ? { mode: 'COMPLIANCE', retainUntil: entry.lockedUntil } : null
     }
+    async verifyRetention(key: string, lockedUntil: Date) {
+      const entry = context.remote.get(key)
+      if (!entry || entry.lockedUntil < lockedUntil) throw new Error('Backblaze did not apply Compliance retention to the backup')
+    }
     async abortStaleUploads() { return 0 }
     async delete(key: string) {
       if (context.failDelete?.(key)) throw new Error('Simulated delete failure')

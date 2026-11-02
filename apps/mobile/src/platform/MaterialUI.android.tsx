@@ -196,12 +196,12 @@ function MenuItems({ actions, onDismiss, onSelect }: { actions: Action[]; onDism
 function Prompt({ options }: {options: PromptOptions}) {
   const [text, setText] = useState(options.value ?? '');
   const value = useNativeState(options.value ?? '');
-  const submit = () => { const next = text.trim(); if (next) { update(null); options.onSubmit(next); } };
+  const submit = () => { const next = text.trim(); if (next || options.optional) { update(null); options.onSubmit(next); } };
   return <AlertDialog onDismissRequest={() => update(null)}>
     <AlertDialog.Title><Text>{options.title}</Text></AlertDialog.Title>
-    <AlertDialog.Text><Column>{options.message ? <Text>{options.message}</Text> : null}<OutlinedTextField value={value} onValueChange={setText} singleLine={!options.multiline} minLines={options.multiline ? 4 : 1} maxLines={options.multiline ? 10 : 1} modifiers={[fillMaxWidth()]}><OutlinedTextField.Label><Text>{options.multiline ? 'Message' : 'Name'}</Text></OutlinedTextField.Label></OutlinedTextField></Column></AlertDialog.Text>
+    <AlertDialog.Text><Column>{options.message ? <Text>{options.message}</Text> : null}<OutlinedTextField value={value} onValueChange={setText} singleLine={!options.multiline} minLines={options.multiline ? 4 : 1} maxLines={options.multiline ? 10 : 1} modifiers={[fillMaxWidth()]}><OutlinedTextField.Label><Text>{options.fieldLabel ?? (options.multiline ? 'Message' : 'Name')}</Text></OutlinedTextField.Label></OutlinedTextField></Column></AlertDialog.Text>
     <AlertDialog.DismissButton><TextButton onClick={() => update(null)}><Text>Cancel</Text></TextButton></AlertDialog.DismissButton>
-    <AlertDialog.ConfirmButton><TextButton enabled={Boolean(text.trim())} onClick={submit}><Text>{options.confirmLabel ?? 'Save'}</Text></TextButton></AlertDialog.ConfirmButton>
+    <AlertDialog.ConfirmButton><TextButton enabled={Boolean(text.trim()) || Boolean(options.optional)} onClick={submit}><Text>{options.confirmLabel ?? 'Save'}</Text></TextButton></AlertDialog.ConfirmButton>
   </AlertDialog>;
 }
 export function MaterialOverlays() {

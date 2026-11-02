@@ -3,6 +3,7 @@ import { materialSymbolNames } from './symbolNames';
 const icons: Record<string, ImageSourcePropType> = {
   'bot': require('../../assets/material/bot.xml'),
   'bot-off': require('../../assets/material/bot-off.xml'),
+  'pulpo_frown': require('../../assets/material/pulpo_frown.xml'),
   'play_arrow': require('../../assets/material/play_arrow.xml'),
   'pause': require('../../assets/material/pause.xml'),
   'volume_up': require('../../assets/material/volume_up.xml'),
