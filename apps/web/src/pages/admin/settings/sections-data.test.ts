@@ -11,6 +11,7 @@ const configured: BackupForm = {
   recipient: 'age1example',
   intervalHours: 24,
   retentionDays: 30,
+  fullArchiveIntervalDays: 7,
 }
 
 describe('offsite backup settings form', () => {

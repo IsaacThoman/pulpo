@@ -24,6 +24,7 @@ import {
   saveConfig,
   setCredential,
 } from './config.js'
+import { assembleSnapshot, type BlobSource } from './backup-assemble.js'
 import { confirmExact, processIo, readSecret, writeError, writeOutput, type CliIo } from './io.js'
 import {
   explicitAgentMode,
@@ -863,8 +864,40 @@ export function createProgram(io: CliIo = processIo, dependencies: CliDependenci
     await writeFile(options.output, result.bytes, { mode: 0o600 })
     emit(io, command, { id, output: options.output, filename: result.filename ?? basename(options.output) })
   })
+  backup.command('assemble <snapshot>')
+    .description('Rebuild a restorable .tar.gz from an encrypted offsite snapshot, locally')
+    .requiredOption('-i, --identity <path>', 'age identity file (AGE-SECRET-KEY-…)')
+    .requiredOption('-o, --output <path>', 'archive to create; never overwritten')
+    .option('--blobs-dir <path>', 'local copy of the bucket or of its blobs/ folder')
+    .option('--endpoint <url>', 'S3 endpoint, such as https://s3.us-west-004.backblazeb2.com')
+    .option('--bucket <name>', 'bucket that holds the snapshot blobs')
+    .option('--region <region>', 'S3 region; inferred for Backblaze endpoints')
+    .addHelpText('after', '\nWith --endpoint, credentials are read from B2_APPLICATION_KEY_ID and B2_APPLICATION_KEY.')
+    .action(async (snapshot, options, command) => {
+      const result = await assembleSnapshot({
+        snapshotPath: snapshot,
+        identityPath: options.identity,
+        outputPath: options.output,
+        blobs: assembleBlobSource(options),
+        onProgress: (completed, total) => {
+          if (!globalOptions(command).json) io.stderr.write(`\rBlobs ${completed}/${total}${completed === total ? '\n' : ''}`)
+        },
+      })
+      emit(io, command, result)
+    })
 
   return program
+}
+
+function assembleBlobSource(options: { blobsDir?: string; endpoint?: string; bucket?: string; region?: string }): BlobSource {
+  if (options.blobsDir && options.endpoint) throw new Error('Use either --blobs-dir or --endpoint, not both')
+  if (options.blobsDir) return { kind: 'directory', path: options.blobsDir }
+  if (!options.endpoint || !options.bucket) throw new Error('Pass --blobs-dir, or --endpoint and --bucket to download blobs')
+  const accessKeyId = process.env.B2_APPLICATION_KEY_ID, secretAccessKey = process.env.B2_APPLICATION_KEY
+  if (!accessKeyId || !secretAccessKey) throw new Error('Set B2_APPLICATION_KEY_ID and B2_APPLICATION_KEY to download blobs')
+  const region = options.region ?? /^s3\.([a-z0-9-]+)\.backblazeb2\.com$/.exec(new URL(options.endpoint).hostname)?.[1]
+  if (!region) throw new Error('Pass --region for endpoints other than Backblaze B2')
+  return { kind: 's3', endpoint: options.endpoint, bucket: options.bucket, region, accessKeyId, secretAccessKey }
 }
 
 export async function main(argv = process.argv, io: CliIo = processIo): Promise<void> {
