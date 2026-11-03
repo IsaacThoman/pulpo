@@ -69,6 +69,11 @@ describe('App Store configuration', () => {
       .toThrow('Use the .p8 In-App Purchase key')
   })
 
+  it('explains a key cut off after its first line', () => {
+    expect(() => parseConfig({ ...stripeEnvironment, ...appStoreEnvironment, APP_STORE_PRIVATE_KEY: '-----BEGIN PRIVATE KEY-----' }))
+      .toThrow('The key was cut off after its first line')
+  })
+
   it('refuses a partial App Store configuration', () => {
     expect(() => parseConfig({ ...stripeEnvironment, ...appStoreEnvironment, APP_STORE_KEY_ID: '' }))
       .toThrow('App Store billing is partly configured; missing: APP_STORE_KEY_ID')
