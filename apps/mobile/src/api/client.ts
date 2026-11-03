@@ -1,6 +1,6 @@
 import { protectTranscriptRequest } from '../data/transcriptResidency'
 import { CLIENT_PLATFORM_HEADER } from '@pulpo/contracts'
-import type { NativeDevice, DeviceSessionList, MobileConfig, NativeAuthResponse, PasskeyAuthenticationResponse, PasskeyCeremony, PasskeyList, PasskeyRegistrationResponse, PasskeySummary, TwoFactorEnrollment, TwoFactorRecoveryCodes, TwoFactorStatus, User } from '@pulpo/contracts'
+import type { NativeDevice, DeviceSessionList, MobileConfig, NativeAuthResponse, PasskeyAuthenticationResponse, PasskeyCeremony, PasskeyList, PasskeyRegistrationResponse, PasskeySummary, TwoFactorEnrollment, TwoFactorRecoveryCodes, TwoFactorStatus, UsageLimits, User } from '@pulpo/contracts'
 import type { MobileModel, ServerChat, ServerDeletedChat, ServerFolder } from '../types'
 
 export class ApiError extends Error {
@@ -184,6 +184,8 @@ export const mobileApi = {
   disableTwoFactor: (currentPassword: string, verificationCode: string) => apiRequest<void>('/api/me/two-factor', {
     method: 'DELETE', verifySessionOnUnauthorized: true, body: { currentPassword, verificationCode },
   }),
+  /** Plan usage limits as percentages; the app never shows balances or prices. */
+  usageLimits: () => apiRequest<UsageLimits>('/api/billing/limits'),
   passkeys: () => apiRequest<PasskeyList>('/api/me/passkeys'),
   beginPasskeyRegistration: (name: string, currentPassword: string, verificationCode?: string) =>
     apiRequest<PasskeyCeremony>('/api/me/passkeys/registration/options', {

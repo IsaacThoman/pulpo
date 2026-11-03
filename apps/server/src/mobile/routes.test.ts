@@ -5,7 +5,18 @@ const mocks = vi.hoisted(() => ({
   createInitialAdmin: vi.fn(),
   createNativeSession: vi.fn(),
   select: vi.fn(),
+  billingEnabled: undefined as boolean | undefined,
 }))
+
+vi.mock('../config.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../config.js')>()
+  return {
+    ...actual,
+    getConfig: () => mocks.billingEnabled === undefined
+      ? actual.getConfig()
+      : { ...actual.getConfig(), PULPO_BILLING_ENABLED: mocks.billingEnabled },
+  }
+})
 
 vi.mock('../database/client.js', () => ({ db: { select: mocks.select } }))
 
@@ -61,6 +72,28 @@ describe('mobile Files capability', () => {
       post: vi.fn(),
     } as unknown as FastifyInstance)
     expect(await handler()).toMatchObject({ capabilities: { files: { enabled, docSchemaVersion: DOC_SCHEMA_VERSION } } })
+  })
+})
+
+describe('mobile usage limits capability', () => {
+  it.each([true, false])('advertises plan usage limits only when billing is enabled (%s)', async (billingEnabled) => {
+    mocks.billingEnabled = billingEnabled
+    const values = [[{ id: 'user' }], [{ value: {} }], []]
+    mocks.select.mockImplementation(() => {
+      const rows = values.shift()
+      const chain = { from: () => chain, where: () => chain, limit: async () => rows }
+      return chain
+    })
+    let handler!: () => Promise<unknown>
+    await registerMobileRoutes({
+      get: (path: string, callback: () => Promise<unknown>) => { if (path === '/api/mobile/config') handler = callback },
+      post: vi.fn(),
+    } as unknown as FastifyInstance)
+    try {
+      expect(await handler()).toMatchObject({ capabilities: { usageLimits: billingEnabled } })
+    } finally {
+      mocks.billingEnabled = undefined
+    }
   })
 })
 

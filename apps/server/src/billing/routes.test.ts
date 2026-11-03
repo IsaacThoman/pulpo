@@ -12,6 +12,7 @@ import {
   registerBillingRoutes,
   resolvedCheckoutStatus,
   selectSummarySubscription,
+  usageLimitsResponse,
 } from './routes.js'
 
 const apps: ReturnType<typeof Fastify>[] = []
@@ -27,6 +28,8 @@ describe('billing feature gate', () => {
     await registerBillingRoutes(app)
     const response = await app.inject({ method: 'GET', url: '/api/billing/summary' })
     expect(response.statusCode).toBe(404)
+    const limits = await app.inject({ method: 'GET', url: '/api/billing/limits' })
+    expect(limits.statusCode).toBe(404)
     const autoTopUp = await app.inject({ method: 'PUT', url: '/api/billing/auto-top-up', payload: {} })
     expect(autoTopUp.statusCode).toBe(404)
   })
@@ -169,5 +172,49 @@ describe('custom limit summaries', () => {
       remainingPercentage: 0, availableBarPercentage: 0, pendingMicros: 300_000, pendingBarPercentage: 30,
       resetsAt: '2026-10-23T00:00:00.000Z',
     })
+  })
+})
+
+describe('usage limits for native apps', () => {
+  const entitlements = {
+    plan: 'eight' as const,
+    weeklyRemainingPercentage: 60,
+    weeklyRemainingMicros: 6_000_000,
+    weeklyLimitMicros: 10_000_000,
+    weeklySpentMicros: 3_000_000,
+    weeklyPendingMicros: 1_000_000,
+    weeklyResetAt: new Date('2026-11-09T00:00:00.000Z'),
+    fiveHourRemainingPercentage: 50,
+    fiveHourLimitMicros: 2_000_000,
+    fiveHourSpentMicros: 500_000,
+    fiveHourPendingMicros: 500_000,
+    fiveHourRemainingMicros: 1_000_000,
+    fiveHourResetAt: new Date('2026-11-02T15:00:00.000Z'),
+  }
+
+  it('reports percentages and reset times without any amounts', () => {
+    const custom = customLimitSummary({
+      limitId: 'limit-1', name: 'Opus daily', period: 'daily', limitMicros: 1_000_000, modelIds: ['opus'], sharePercent: 25, coversExtras: false,
+      ownerUserId: 'user-1', periodStart: new Date('2026-11-02T00:00:00.000Z'),
+      spentMicros: 250_000, pendingMicros: 250_000, remainingMicros: 500_000,
+      sharedLimitMicros: 250_000, sharedSpentMicros: 0, sharedPendingMicros: 0, sharedAvailableMicros: 0,
+      resetAt: new Date('2026-11-03T00:00:00.000Z'), freesAt: null,
+    }, new Map([['opus', 'Claude Opus']]))
+    const limits = usageLimitsResponse(entitlements, [custom])
+    expect(limits).toEqual({
+      plan: 'eight',
+      weekly: { remainingPercentage: 60, availableBarPercentage: 60, pendingBarPercentage: 10, resetsAt: '2026-11-09T00:00:00.000Z' },
+      fiveHour: { remainingPercentage: 50, availableBarPercentage: 50, pendingBarPercentage: 25, resetsAt: '2026-11-02T15:00:00.000Z' },
+      custom: [{
+        id: 'limit-1', name: 'Opus daily', period: 'daily', coversExtras: false, models: ['Claude Opus'],
+        remainingPercentage: 50, availableBarPercentage: 50, pendingBarPercentage: 25, resetsAt: '2026-11-03T00:00:00.000Z',
+      }],
+    })
+    expect(JSON.stringify(limits)).not.toMatch(/micros|balance|cents/i)
+  })
+
+  it('omits limits the plan does not have', () => {
+    expect(usageLimitsResponse({ ...entitlements, plan: 'baby', weeklyRemainingPercentage: null, fiveHourRemainingPercentage: null, fiveHourResetAt: null }, []))
+      .toEqual({ plan: 'baby', weekly: null, fiveHour: null, custom: [] })
   })
 })
