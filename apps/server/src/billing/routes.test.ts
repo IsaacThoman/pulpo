@@ -14,6 +14,7 @@ import {
   selectSummarySubscription,
   usageLimitsResponse,
 } from './routes.js'
+import { hasRenewingAppStoreSubscription } from './app-store-sync.js'
 
 const apps: ReturnType<typeof Fastify>[] = []
 
@@ -73,6 +74,23 @@ describe('billing summary subscription recovery', () => {
 
   it('does not surface terminal subscriptions as manageable fallbacks', () => {
     expect(selectSummarySubscription([{ plan: 'fat', status: 'canceled' }], 'baby')).toBeNull()
+  })
+
+  it('shows the Stripe subscription that plan changes act on when an App Store one also exists', () => {
+    const appStore = { plan: 'fat', status: 'active', provider: 'app_store', id: 'apple' }
+    const stripe = { plan: 'eight', status: 'active', provider: 'stripe', id: 'sub_stripe' }
+    expect(selectSummarySubscription([appStore, stripe], 'fat')?.id).toBe('sub_stripe')
+    expect(selectSummarySubscription([appStore], 'fat')?.id).toBe('apple')
+  })
+})
+
+describe('App Store renewal warning', () => {
+  it('reports only App Store subscriptions that will renew', () => {
+    const row = { provider: 'app_store', status: 'active', cancelAtPeriodEnd: false }
+    expect(hasRenewingAppStoreSubscription([row])).toBe(true)
+    expect(hasRenewingAppStoreSubscription([{ ...row, cancelAtPeriodEnd: true }])).toBe(false)
+    expect(hasRenewingAppStoreSubscription([{ ...row, status: 'canceled' }])).toBe(false)
+    expect(hasRenewingAppStoreSubscription([{ ...row, provider: 'stripe' }])).toBe(false)
   })
 })
 

@@ -3,7 +3,7 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { usageLimitsSchema, type UsageLimits } from '@pulpo/contracts'
 import { requireUser } from '../auth/service.js'
-import { getConfig } from '../config.js'
+import { appStoreBillingEnabled, getConfig } from '../config.js'
 import { db } from '../database/client.js'
 import {
   applicationSettings,
@@ -33,8 +33,11 @@ import {
   createCustomerPortalUrl,
   createPaymentMethodCheckout,
   createSubscriptionCheckout,
+  planForPriceId,
   verifyStripeWebhookSignature,
 } from './stripe.js'
+import { appStorePlanForProduct } from './app-store.js'
+import { appStoreAccountToken, hasRenewingAppStoreSubscription, processAppStoreNotification, syncAppStorePurchase } from './app-store-sync.js'
 import { processStripeWebhookEvent } from './webhooks.js'
 import { activePoolMembers, activePoolMembership, pendingFundingByUser } from '../pools/service.js'
 
@@ -75,13 +78,19 @@ export function resolvedCheckoutStatus(
   return checkoutStatus ?? null
 }
 
-export function selectSummarySubscription<T extends { plan: string; paidPlan?: string | null; status: string }>(
+/**
+ * The subscription the billing page shows. Stripe rows come first because Stripe plan changes act
+ * on the Stripe subscription; App Store subscriptions are managed in the iOS app instead.
+ */
+export function selectSummarySubscription<T extends { plan: string; paidPlan?: string | null; status: string; provider?: string }>(
   subscriptions: T[],
   entitlementPlan: string,
 ): T | null {
   const actionable = subscriptions.filter((item) => item.status === 'active' || item.status === 'past_due')
-  return actionable.find((item) => subscriptionPaidPlan(item) === entitlementPlan)
-    ?? actionable[0]
+  const stripe = actionable.filter((item) => item.provider !== 'app_store')
+  const candidates = stripe.length ? stripe : actionable
+  return candidates.find((item) => subscriptionPaidPlan(item) === entitlementPlan)
+    ?? candidates[0]
     ?? null
 }
 
@@ -270,6 +279,7 @@ export async function registerBillingRoutes(app: FastifyInstance): Promise<void>
         fat: settings.fatStorageLimitBytes,
       },
       subscription: subscription ? {
+        provider: subscription.provider,
         // The plan whose benefits apply now; `pendingPlan` is the price the next renewal bills.
         plan: subscriptionPaidPlan(subscription) === 'fat' ? 'fat' : 'eight',
         pendingPlan: subscriptionPendingPlan(subscription),
@@ -277,16 +287,16 @@ export async function registerBillingRoutes(app: FastifyInstance): Promise<void>
         cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
         currentPeriodEnd: subscription.currentPeriodEnd?.toISOString() ?? null,
       } : null,
+      appStoreSubscriptionRenews: hasRenewingAppStoreSubscription(subscriptions),
       autoTopUp,
       payments: orders.map((order) => ({
         id: order.providerPaymentId,
+        provider: order.provider,
         kind: isCreditOrderReason(order.billingReason) ? 'credits' : 'subscription',
         automatic: order.billingReason === 'auto_top_up',
-        plan: order.providerProductId === config.STRIPE_FAT_PRICE_ID
-          ? 'fat'
-          : order.providerProductId === config.STRIPE_EIGHT_PRICE_ID
-            ? 'eight'
-            : null,
+        plan: order.provider === 'app_store'
+          ? appStorePlanForProduct(order.providerProductId)
+          : planForPriceId(order.providerProductId),
         requestedCreditCents: order.requestedCreditCents,
         amountCents: order.totalAmountCents,
         taxCents: order.taxAmountCents,
@@ -386,6 +396,33 @@ export async function registerBillingRoutes(app: FastifyInstance): Promise<void>
     const status = resolvedCheckoutStatus(checkout?.status, order?.status)
     if (!ownerId || ownerId !== user.id || !status) throw new AppError(404, 'checkout_not_found', 'Checkout not found')
     return { status }
+  })
+
+  // The app sends this as `appAccountToken` with every purchase, so Apple's records name the account.
+  app.get('/api/billing/app-store/account-token', async (request) => {
+    const user = requireUser(request)
+    if (!appStoreBillingEnabled(config)) throw new AppError(404, 'app_store_billing_disabled', 'App Store billing is not available')
+    return { token: await appStoreAccountToken(user.id) }
+  })
+
+  // The app reports purchases, renewals it sees, and restored purchases here.
+  app.post('/api/billing/app-store/transactions', {
+    config: { rateLimit: { max: 30, timeWindow: '1 minute' } },
+  }, async (request) => {
+    const user = requireUser(request)
+    if (!appStoreBillingEnabled(config)) throw new AppError(404, 'app_store_billing_disabled', 'App Store billing is not available')
+    const { signedTransaction } = z.object({ signedTransaction: z.string().min(1).max(20_000) }).parse(request.body)
+    return syncAppStorePurchase(user.id, signedTransaction)
+  })
+
+  // App Store Server Notifications V2. Apple retries anything but a 2xx response.
+  app.post('/api/billing/webhooks/app-store', async (request, reply) => {
+    if (!appStoreBillingEnabled(config)) throw new AppError(404, 'app_store_billing_disabled', 'App Store billing is not available')
+    const parsed = z.object({ signedPayload: z.string().min(1).max(100_000) }).safeParse(request.body)
+    if (!parsed.success) throw new AppError(400, 'invalid_webhook', 'Invalid webhook request')
+    await processAppStoreNotification(parsed.data.signedPayload)
+    reply.code(200)
+    return { received: true }
   })
 
   app.post('/api/billing/webhooks/stripe', async (request, reply) => {
