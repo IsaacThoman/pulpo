@@ -47,9 +47,19 @@ const configSchema = z.object({
   APP_STORE_KEY_ID: optionalEnvironmentValue(z.string().trim().min(1)),
   // The In-App Purchase key (.p8). Single-line forms (escaped \\n, or line breaks flattened to spaces) are accepted.
   APP_STORE_PRIVATE_KEY: optionalEnvironmentValue(z.string().transform(normalizePrivateKeyPem)
-    .pipe(z.string().startsWith('-----BEGIN PRIVATE KEY-----').refine((value) => {
-      try { createPrivateKey(value); return true } catch { return false }
-    }, 'Use the .p8 In-App Purchase key from App Store Connect'))),
+    .pipe(z.string().superRefine((value, context) => {
+      // Hosts whose env editors keep one line per variable leave only the BEGIN line of a pasted key.
+      if (value === '-----BEGIN PRIVATE KEY-----') {
+        context.addIssue({ code: 'custom', message: 'The key was cut off after its first line. Paste the whole .p8 on one line, with spaces between its lines' })
+        return
+      }
+      try {
+        if (!value.startsWith('-----BEGIN PRIVATE KEY-----')) throw new Error('not a PKCS #8 key')
+        createPrivateKey(value)
+      } catch {
+        context.addIssue({ code: 'custom', message: 'Use the .p8 In-App Purchase key from App Store Connect' })
+      }
+    }))),
   APP_STORE_EIGHT_PRODUCT_ID: optionalEnvironmentValue(z.string().trim().min(1)),
   APP_STORE_FAT_PRODUCT_ID: optionalEnvironmentValue(z.string().trim().min(1)),
   // Environments whose purchases this server accepts. Staging takes only sandbox purchases so a
