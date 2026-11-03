@@ -147,17 +147,34 @@ export async function runOffsiteBackupSchedule(now = new Date()): Promise<void> 
   if (queuedId) await enqueue(queuedId)
 }
 
-export async function reconcileOffsiteBackupJobs(): Promise<void> {
-  const rows = await db.select({ id: backupJobs.id, status: backupJobs.status }).from(backupJobs).where(and(
-    eq(backupJobs.destination, 'backblaze_b2'),
+export async function reconcileBackupJobs(): Promise<void> {
+  const rows = await db.select({ id: backupJobs.id, status: backupJobs.status, destination: backupJobs.destination }).from(backupJobs).where(and(
+    eq(backupJobs.operation, 'backup'),
     inArray(backupJobs.status, ['queued', 'in_progress']),
   ))
   for (const row of rows) {
+    const offsite = row.destination === 'backblaze_b2'
     const existing = await maintenanceQueue.getJob(`backup-${row.id}`)
     if (existing) {
       const state = await existing.getState()
       if (['active', 'delayed', 'prioritized', 'waiting', 'waiting-children'].includes(state)) continue
+      if (state === 'failed') {
+        // The queue gave up without the backup recording a failure, so the
+        // worker stopped during it, for example by running out of memory.
+        // Re-queuing it could crash the worker again.
+        await db.update(backupJobs).set({
+          status: 'failed', error: 'The worker stopped while running this backup, possibly out of memory', updatedAt: new Date(),
+        }).where(and(eq(backupJobs.id, row.id), inArray(backupJobs.status, ['queued', 'in_progress'])))
+        console.error(JSON.stringify({
+          level: 'error', service: 'pulpo-worker', event: 'backup.abandoned', jobId: row.id, reason: existing.failedReason,
+        }))
+        continue
+      }
+      if (!offsite) continue
       await existing.remove().catch(() => undefined)
+    } else if (!offsite) {
+      // Local backups are enqueued right after their row is inserted, so a missing job may be on its way.
+      continue
     }
     if (row.status === 'in_progress') {
       await db.update(backupJobs).set({ status: 'queued', updatedAt: new Date() }).where(eq(backupJobs.id, row.id))
