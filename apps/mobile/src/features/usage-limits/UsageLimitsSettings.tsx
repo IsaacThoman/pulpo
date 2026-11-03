@@ -33,7 +33,8 @@ function UsageLimitCard({ row, last }: { row: UsageLimitRow; last: boolean }) {
     <View style={styles.line}><Text style={[styles.title, { color: theme.text }]}>{row.label}</Text><Text style={[styles.percent, { color: theme.secondary }]}>{remainingLabel(row)}</Text></View>
     <View style={[styles.track, { backgroundColor: theme.fillStrong }]}>
       <View style={{ backgroundColor: theme.green, width: `${row.availableBarPercentage}%` }} />
-      <View style={{ backgroundColor: theme.orange, width: `${row.pendingBarPercentage}%` }} />
+      {/* Material maps green and orange to the same tertiary role, so fade the reserved segment to keep it distinct. */}
+      <View style={{ backgroundColor: theme.orange, opacity: 0.45, width: `${row.pendingBarPercentage}%` }} />
     </View>
     {row.hint ? <Text style={[styles.helper, { color: theme.secondary }]}>{row.hint}</Text> : null}
     <Text style={[styles.helper, { color: theme.secondary }]}>{row.reset}</Text>
