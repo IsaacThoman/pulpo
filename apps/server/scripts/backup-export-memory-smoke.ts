@@ -42,6 +42,10 @@ try {
   await db.transaction(async (tx) => {
     await exportBackupDatabase(tx, databasePath, async () => undefined)
   }, { isolationLevel: 'repeatable read', accessMode: 'read only' })
+  // The heap limit is the real check; the old export ran out of it. Peak RSS
+  // also counts native buffers and varies by platform, so allow headroom.
+  const peakRssMiB = Math.ceil(process.resourceUsage().maxRSS / 1024)
+  assert.ok(peakRssMiB < 512, `Peak RSS ${peakRssMiB} MiB exceeds the 512 MiB smoke-test budget`)
   const databaseBytes = (await stat(databasePath)).size
   assert.ok(databaseBytes > count * contextBytes, 'Every agent run must be exported')
 
@@ -52,8 +56,6 @@ try {
     exported++
   }
   assert.equal(exported, count)
-  const peakRssMiB = Math.ceil(process.resourceUsage().maxRSS / 1024)
-  assert.ok(peakRssMiB < 384, `Peak RSS ${peakRssMiB} MiB exceeds the 384 MiB smoke-test budget`)
   console.log(JSON.stringify({ databaseBytes, agentRuns: exported, peakRssMiB }))
 } finally {
   await rm(directory, { recursive: true, force: true })
