@@ -1,3 +1,11 @@
+/**
+ * Object Lock dates are stored with whole-second precision. Round up so the
+ * lock never ends before the requested time and reads back exactly as sent.
+ */
+export function wholeSecondLock(date: Date): Date {
+  return new Date(Math.ceil(date.getTime() / 1_000) * 1_000)
+}
+
 export interface ExpiredBackupObject {
   id: string
   objectKey: string | null

@@ -35,6 +35,7 @@ const EMPTY_BACKUP_FORM: Omit<BackupForm, 'applicationKey'> = {
   recipient: '',
   intervalHours: 24,
   retentionDays: 30,
+  fullArchiveIntervalDays: 7,
 }
 
 function OffsiteBackupSection() {
@@ -62,6 +63,7 @@ function OffsiteBackupSection() {
         recipient: next.recipient,
         intervalHours: next.intervalHours,
         retentionDays: next.retentionDays,
+        fullArchiveIntervalDays: next.fullArchiveIntervalDays,
       })
       hydrated.current = true
     }
@@ -126,6 +128,9 @@ function OffsiteBackupSection() {
         { value: '6', label: ui('Every 6 hours') }, { value: '12', label: ui('Every 12 hours') }, { value: '24', label: ui('Every 24 hours') },
       ]} />
       <NumField label={ui('Compliance retention')} hint="Applies to future backups and cannot be shortened later." value={form.retentionDays} onChange={(value) => update('retentionDays', Math.round(value))} min={1} max={3000} suffix={ui('days')} />
+      <SelectField label={ui('Full archive copy')} hint="Snapshots upload only new files. A self-contained archive is also uploaded on this schedule." value={String(form.fullArchiveIntervalDays)} onChange={(value) => update('fullArchiveIntervalDays', Number(value) as 0 | 7 | 30)} options={[
+        { value: '7', label: ui('Weekly') }, { value: '30', label: ui('Monthly') }, { value: '0', label: ui('Off') },
+      ]} />
       <Field label={ui('Next automatic run')}>
         <span className="text-xs tabular-nums">{settings?.nextRunAt ? formatDateTime(Date.parse(settings.nextRunAt)) : '—'}</span>
       </Field>
@@ -148,13 +153,13 @@ function OffsiteBackupSection() {
     <Section title={ui('Offsite backup history')} hint="Recipient fingerprints identify which offline private identity is required for recovery.">
       {jobs.length === 0 ? <div className="text-xs text-muted-foreground">{ui('No offsite backups yet.')}</div> : jobs.map((job) => <div key={job.id} className="flex items-center justify-between gap-4">
         <div className="min-w-0">
-          <div className="flex items-center gap-2 text-sm"><span className="capitalize">{job.status.replace('_', ' ')}</span><span className="text-xs text-muted-foreground">{job.trigger}</span></div>
+          <div className="flex items-center gap-2 text-sm"><span className="capitalize">{job.status.replace('_', ' ')}</span><span className="text-xs text-muted-foreground">{job.format === 'snapshot' ? ui('Snapshot') : ui('Full archive')} · {job.trigger}</span></div>
           <div className="mt-1 break-all font-mono text-[11px] text-muted-foreground">{job.storageEndpoint}/{job.storageBucket}/{job.objectKey}</div>
           <div className="mt-0.5 break-all text-[11px] text-muted-foreground">{formatDateTime(Date.parse(job.createdAt))} · {ui('recipient')} {job.recipientFingerprint ?? '—'} · {ui('locked until')} {job.lockedUntil ? formatDateTime(Date.parse(job.lockedUntil)) : '—'}</div>
           <div className="mt-0.5 break-all text-[11px] text-muted-foreground">{ui('ciphertext')} {job.archiveSizeBytes ?? '—'} {ui('bytes')} · {ui('SHA-256')} {job.archiveChecksum ?? '—'}{job.deletedAt ? ` · ${ui('deleted')} ${formatDateTime(Date.parse(job.deletedAt))}` : ''}</div>
           {job.error && <div className="mt-1 text-xs text-destructive">{job.error}</div>}
         </div>
-        {job.status === 'completed' && !job.deletedAt && <Button variant="outline" size="sm" onClick={() => void downloadApiFile(`/api/admin/backups/${job.id}/download`, `pulpo-instance-${job.createdAt.slice(0, 10)}.tar.gz.age`).catch(error => setMessage(error instanceof Error ? error.message : 'Backup download failed'))}><Download />{ui('Encrypted')}</Button>}
+        {job.status === 'completed' && !job.deletedAt && <Button variant="outline" size="sm" onClick={() => void downloadApiFile(`/api/admin/backups/${job.id}/download`, `pulpo-${job.format === 'snapshot' ? 'snapshot' : 'instance'}-${job.createdAt.slice(0, 10)}.tar.gz.age`).catch(error => setMessage(error instanceof Error ? error.message : 'Backup download failed'))}><Download />{ui('Encrypted')}</Button>}
       </div>)}
     </Section>
   </>
