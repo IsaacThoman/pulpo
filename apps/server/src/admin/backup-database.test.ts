@@ -25,6 +25,20 @@ describe('backup database serialization', () => {
     expect((await stat(path)).mode & 0o777).toBe(0o600)
   })
 
+  it('writes async tables in order, reading each only after the previous one is written', async () => {
+    const read: string[] = []
+    async function* rows(table: string, count: number) {
+      for (let id = 0; id < count; id++) {
+        read.push(`${table}:${id}`)
+        yield { id }
+      }
+    }
+    const path = await outputPath()
+    await writeBackupDatabase(path, { first: rows('first', 2), empty: rows('empty', 0), last: rows('last', 1) })
+    expect(await readFile(path, 'utf8')).toBe('{"first":[{"id":0},{"id":1}],"empty":[],"last":[{"id":0}]}')
+    expect(read).toEqual(['first:0', 'first:1', 'last:0'])
+  })
+
   it('writes an empty database', async () => {
     const path = await outputPath()
     await writeBackupDatabase(path, {})

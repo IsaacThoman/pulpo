@@ -1,4 +1,4 @@
-import { decodePayloadRow, encodePayloadRow } from '../database/lossless-json.js'
+import { encodePayloadRow } from '../database/lossless-json.js'
 import { createHash, randomInt, randomUUID } from 'node:crypto'
 import { createReadStream } from 'node:fs'
 import { mkdtemp, rm, stat } from 'node:fs/promises'
@@ -17,17 +17,14 @@ import { fillMissingUsernames } from '../profile/username.js'
 import { markExpiredChatsForPurge, purgePendingChats } from '../chats/trash.js'
 import {
   applyFullBackupCompatibilityDefaults,
-  scrubFullBackupDetailedPayloads,
   FULL_BACKUP_EXPLICIT_COLUMNS,
-  FULL_BACKUP_BINARY_COLUMNS,
   FULL_BACKUP_TABLES,
   legacyChatFolderRows,
   OPTIONAL_TABLES_IN_LEGACY_BACKUPS,
   type FullBackupTable,
 } from './backup-format.js'
 import { stageBackupBlob, writeBackupArchive, type BackupArchiveEntry } from './backup-archive.js'
-import { writeBackupDatabase } from './backup-database.js'
-import { projectFullBackup, type FullBackupDatabase } from './backup-projection.js'
+import { exportBackupDatabase } from './backup-export.js'
 import { B2BackupStore } from './b2-backup-store.js'
 import { ageRecipientDetails, readStoredBackupSettings, resolveBackupSettings } from './backup-settings.js'
 import { createAgeEncryptionStream } from './backup-encryption.js'
@@ -121,21 +118,14 @@ export async function createFullBackup(jobId: string, finalAttempt = true): Prom
         archiveChecksum: await encrypted.checksum, completedAt: new Date(), error: null, updatedAt: new Date(),
       }).where(eq(backupJobs.id, jobId))
     }
-    const { database: rawDatabase, avatarBlobRows, iconRows, speechBlobRows, fileBlobRows } = await db.transaction(async (tx) => {
-      const database: Record<string, unknown[]> = {}
-      for (const [index, table] of FULL_BACKUP_TABLES.entries()) {
-        const columns = FULL_BACKUP_EXPLICIT_COLUMNS[table]
-        database[table] = [...await tx.execute(sql.raw(`select ${columns?.join(', ') ?? '*'} from ${table}`))].map(row => {
-          const decoded = decodePayloadRow(table, row)
-          for (const column of FULL_BACKUP_BINARY_COLUMNS[table] ?? []) {
-            if (decoded[column] != null) decoded[column] = `\\x${Buffer.from(decoded[column] as Uint8Array).toString('hex')}`
-          }
-          return decoded
-        })
+    const databasePath = join(temporaryDirectory, 'database.json')
+    const { attachmentBlobs, avatarBlobRows, iconRows, speechBlobRows, fileBlobRows } = await db.transaction(async (tx) => {
+      // Rows stream to disk: the whole database no longer fits in the worker's heap.
+      const attachmentBlobs = await exportBackupDatabase(tx, databasePath, async (index) => {
         await db.update(backupJobs).set({ progress: Math.round(((index + 1) / FULL_BACKUP_TABLES.length) * 55), updatedAt: new Date() }).where(eq(backupJobs.id, jobId))
-      }
+      })
       return {
-        database,
+        attachmentBlobs,
         avatarBlobRows: await tx.select({ objectKey: users.avatarObjectKey }).from(users).where(sql`${users.avatarObjectKey} is not null`),
         iconRows: await tx.select().from(catalogIcons),
         speechBlobRows: (await tx.select({ previews: speechModels.voicePreviews, assets: speechModels.voiceAssets }).from(speechModels)).flatMap(row => [...row.previews, ...row.assets.flatMap(asset => [asset.clone, asset.watermark].filter((blob): blob is NonNullable<typeof blob> => Boolean(blob)))]),
@@ -143,10 +133,6 @@ export async function createFullBackup(jobId: string, finalAttempt = true): Prom
           .where(and(eq(fileNodes.kind, 'blob'), eq(fileNodes.status, 'ready'))),
       }
     }, { isolationLevel: 'repeatable read', accessMode: 'read only' })
-    const { database, attachmentBlobs } = projectFullBackup(rawDatabase as FullBackupDatabase)
-    scrubFullBackupDetailedPayloads(database)
-    const databasePath = join(temporaryDirectory, 'database.json')
-    await writeBackupDatabase(databasePath, database)
     const databaseSize = (await stat(databasePath)).size
     const blobRows = [
       ...attachmentBlobs,
