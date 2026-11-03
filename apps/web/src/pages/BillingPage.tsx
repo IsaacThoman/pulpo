@@ -12,6 +12,7 @@ import {
   ReceiptText,
   RefreshCw,
   ShieldCheck,
+  Smartphone,
   Wallet,
   UsersRound,
   Zap,
@@ -21,7 +22,7 @@ import { formatBalance, formatDate } from '@/lib/format'
 import { creditCentsFromInput } from '@/lib/billing-pricing'
 import { apiRequest } from '@/lib/api'
 import { openExternalUrl } from '@/lib/runtime'
-import { autoTopUpActionLabel, autoTopUpSettingsError, billingPlanName, defaultAutoTopUpSettings, fetchBillingSummary, formatPlanStorage, managedBillingPlan, openBillingPortal, paymentStatusLabel, pendingBillingPlan, planChoiceDisabled, planChoiceLabel, saveAutoTopUpSettings, type BillingPlan } from '@/lib/billing'
+import { APP_STORE_SUBSCRIPTIONS_URL, appStoreSubscriptionSubtitle, autoTopUpActionLabel, autoTopUpSettingsError, billedByAppStore, billingPlanName, defaultAutoTopUpSettings, fetchBillingSummary, formatPlanStorage, managedBillingPlan, openBillingPortal, paymentStatusLabel, pendingBillingPlan, planChoiceDisabled, planChoiceLabel, saveAutoTopUpSettings, type BillingPlan } from '@/lib/billing'
 import { queryClient } from '@/lib/query-client'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
@@ -209,7 +210,7 @@ export function BillingPage() {
   }
 
   const changePlan = async (plan: BillingPlan) => {
-    if (!summary) return
+    if (!summary || billedByAppStore(summary)) return
     const managedPlan = managedBillingPlan(summary)
     if (plan === managedPlan && !summary.subscription?.cancelAtPeriodEnd && !pendingBillingPlan(summary)) return
     if (!summary.subscription) {
@@ -233,8 +234,11 @@ export function BillingPage() {
 
   const managedPlan = summary ? managedBillingPlan(summary) : 'baby'
   const pendingPlan = summary ? pendingBillingPlan(summary) : null
+  const appStoreBilled = billedByAppStore(summary)
   const subscriptionSubtitle = !summary
     ? ui("Free · No subscription")
+    : appStoreBilled && summary.subscription
+      ? appStoreSubscriptionSubtitle(summary.subscription)
     : summary.subscription?.status === 'past_due'
       ? `Payment past due${summary.subscription.currentPeriodEnd ? ` · ${summary.planOverridden ? 'billing period' : 'access'} through ${formatDate(Date.parse(summary.subscription.currentPeriodEnd))}` : ''}`
       : !summary.subscription
@@ -310,12 +314,22 @@ export function BillingPage() {
                   ))}
                 </ul>
               )}
-              <div className="flex flex-wrap gap-2 pt-1">
-                <Button variant="default" disabled={!summary || submitting} onClick={() => setPlanOpen(true)}>
-                  {subscribed ? ui("Manage plan") : ui("Compare plans")}
-                </Button>
-                {subscribed && <Button variant="ghost" onClick={() => void openPortal()} disabled={submitting}><CreditCard />{ui("Billing portal")}</Button>}
-              </div>
+              {appStoreBilled ? (
+                <div className="space-y-3 pt-1">
+                  <div className="flex items-start gap-2.5 rounded-lg border bg-muted/30 px-3 py-2.5 text-sm">
+                    <Smartphone className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
+                    <p>{ui("Your plan is billed through the App Store. Change or cancel it in Pulpo on your iPhone, or in your Apple account’s subscription settings.")}</p>
+                  </div>
+                  <Button variant="outline" onClick={() => void openExternalUrl(APP_STORE_SUBSCRIPTIONS_URL)}><Smartphone />{ui("Manage in the App Store")}</Button>
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-2 pt-1">
+                  <Button variant="default" disabled={!summary || submitting} onClick={() => setPlanOpen(true)}>
+                    {subscribed ? ui("Manage plan") : ui("Compare plans")}
+                  </Button>
+                  {subscribed && <Button variant="ghost" onClick={() => void openPortal()} disabled={submitting}><CreditCard />{ui("Billing portal")}</Button>}
+                </div>
+              )}
             </PaymentOption>
 
             <PaymentOption
@@ -360,7 +374,7 @@ export function BillingPage() {
               <div className="hidden grid-cols-[minmax(0,1fr)_140px_100px_90px] border-b px-4 py-2.5 text-xs text-muted-foreground sm:grid"><div>{ui("Description")}</div><div>{ui("Date")}</div><div className="text-right">{ui("Amount")}</div><div className="text-right">{ui("Status")}</div></div>
               {summary?.payments.length ? <div className="divide-y">{summary.payments.map((payment) => (
                 <div key={payment.id} className="grid gap-3 px-4 py-3 text-sm sm:grid-cols-[minmax(0,1fr)_140px_100px_90px] sm:items-center">
-                  <div className="flex min-w-0 items-center gap-3"><ReceiptText className="size-4 shrink-0 text-muted-foreground" /><div className="truncate font-medium">{payment.kind === 'credits' ? payment.automatic ? uit`${formatBalance((payment.requestedCreditCents ?? 0) / 100)} auto top-up` : uit`${formatBalance((payment.requestedCreditCents ?? 0) / 100)} credit top-up` : uit`${billingPlanName(payment.plan ?? 'baby')} subscription`}</div></div>
+                  <div className="flex min-w-0 items-center gap-3"><ReceiptText className="size-4 shrink-0 text-muted-foreground" /><div className="truncate font-medium">{payment.kind === 'credits' ? payment.automatic ? uit`${formatBalance((payment.requestedCreditCents ?? 0) / 100)} auto top-up` : uit`${formatBalance((payment.requestedCreditCents ?? 0) / 100)} credit top-up` : payment.provider === 'app_store' ? ui("{{plan}} subscription · App Store", { plan: billingPlanName(payment.plan ?? 'baby') }) : uit`${billingPlanName(payment.plan ?? 'baby')} subscription`}</div></div>
                   <div className="text-muted-foreground">{formatDate(Date.parse(payment.createdAt))}</div>
                   <div className="font-medium tabular-nums sm:text-right">{formatBalance(payment.amountCents / 100)}</div>
                   <div className="text-muted-foreground sm:text-right">{paymentStatusLabel(payment.status)}</div>

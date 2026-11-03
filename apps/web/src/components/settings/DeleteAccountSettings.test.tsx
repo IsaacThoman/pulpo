@@ -52,6 +52,19 @@ describe('web account deletion', () => {
     await password('secret'); await click('Close'); await click('Delete account')
     expect(document.querySelector<HTMLInputElement>('#delete-account-password')!.value).toBe('')
   })
+  it('warns that deletion does not cancel an App Store subscription', async () => {
+    await mount({ accountDeletionEnabled: true })
+    mocks.request.mockImplementation(async (path: string) => path === '/api/me/deletion'
+      ? { twoFactorEnabled: false, appStoreSubscriptionRenews: true }
+      : { accountDeletionEnabled: true })
+    await click('Delete account')
+    expect(document.body.textContent).toContain('deleting your account does not cancel it')
+    expect(document.body.textContent).toContain('Manage in the App Store')
+  })
+  it('does not warn about the App Store without a renewing App Store subscription', async () => {
+    await mount({ accountDeletionEnabled: true }); await click('Delete account')
+    expect(document.body.textContent).not.toContain('Manage in the App Store')
+  })
   it('does not send a request when final confirmation is canceled', async () => {
     await mount({ accountDeletionEnabled: true }); await click('Delete account'); await password('secret')
     await click('Close')

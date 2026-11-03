@@ -37,7 +37,7 @@ import {
   verifyStripeWebhookSignature,
 } from './stripe.js'
 import { appStorePlanForProduct } from './app-store.js'
-import { appStoreAccountToken, processAppStoreNotification, syncAppStorePurchase } from './app-store-sync.js'
+import { appStoreAccountToken, hasRenewingAppStoreSubscription, processAppStoreNotification, syncAppStorePurchase } from './app-store-sync.js'
 import { processStripeWebhookEvent } from './webhooks.js'
 import { activePoolMembers, activePoolMembership, pendingFundingByUser } from '../pools/service.js'
 
@@ -92,13 +92,6 @@ export function selectSummarySubscription<T extends { plan: string; paidPlan?: s
   return candidates.find((item) => subscriptionPaidPlan(item) === entitlementPlan)
     ?? candidates[0]
     ?? null
-}
-
-/** Whether Apple will keep billing the account, which deleting it does not stop. */
-export function hasRenewingAppStoreSubscription(subscriptions: Array<{ provider: string; status: string; cancelAtPeriodEnd: boolean }>): boolean {
-  return subscriptions.some((item) => item.provider === 'app_store'
-    && (item.status === 'active' || item.status === 'past_due')
-    && !item.cancelAtPeriodEnd)
 }
 
 export function availableBillingBalanceMicros(balanceMicros: number, pendingMicros: number): number {

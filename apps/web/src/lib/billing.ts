@@ -7,6 +7,11 @@ import { ui } from '@/i18n/ui'
 
 export type BillingPlan = 'baby' | 'eight' | 'fat'
 
+export type BillingProvider = 'stripe' | 'app_store'
+
+/** Apple's page for managing App Store subscriptions; it opens the App Store on Apple devices. */
+export const APP_STORE_SUBSCRIPTIONS_URL = 'https://apps.apple.com/account/subscriptions'
+
 export type AutoTopUpState = 'off' | 'active' | 'limit_reached' | 'payment_failed' | 'payment_method_removed'
 
 export interface AutoTopUpSettings {
@@ -129,6 +134,8 @@ export interface BillingSummary {
   planStorageLimitBytes: Record<BillingPlan, number>
   autoTopUp: AutoTopUpSummary
   subscription: {
+    /** Older servers omit it; their subscriptions are all Stripe. */
+    provider?: BillingProvider
     /** Plan whose benefits apply now. */
     plan: 'eight' | 'fat'
     /** Plan the next renewal bills after a downgrade, or null when unchanged. */
@@ -137,8 +144,11 @@ export interface BillingSummary {
     cancelAtPeriodEnd: boolean
     currentPeriodEnd: string | null
   } | null
+  /** An App Store subscription will keep renewing, which deleting the account does not stop. */
+  appStoreSubscriptionRenews?: boolean
   payments: Array<{
     id: string
+    provider?: BillingProvider
     kind: 'credits' | 'subscription'
     /** Charged by an automatic top-up rather than a checkout. */
     automatic: boolean
@@ -262,6 +272,24 @@ export function autoTopUpStatusLine(summary: AutoTopUpSummary): { text: string; 
     default:
       return null
   }
+}
+
+/** The plan is billed by Apple, so it can only be changed from the iOS app or Apple account settings. */
+export function billedByAppStore(summary: Pick<BillingSummary, 'subscription'> | undefined): boolean {
+  return summary?.subscription?.provider === 'app_store'
+}
+
+/** Status line for an App Store subscription. Apple sets the price, so it is not shown. */
+export function appStoreSubscriptionSubtitle(subscription: NonNullable<BillingSummary['subscription']>): string {
+  const date = subscription.currentPeriodEnd ? formatDate(Date.parse(subscription.currentPeriodEnd)) : null
+  if (subscription.status === 'past_due') return date ? ui("App Store · payment past due · access through {{date}}", { date }) : ui("App Store · payment past due")
+  if (subscription.cancelAtPeriodEnd) return date ? ui("App Store · ends {{date}}", { date }) : ui("App Store · ends at the end of this period")
+  if (subscription.pendingPlan && subscription.pendingPlan !== subscription.plan) {
+    return date
+      ? ui("App Store · switches to {{plan}} on {{date}}", { plan: billingPlanName(subscription.pendingPlan), date })
+      : ui("App Store · switches to {{plan}} at renewal", { plan: billingPlanName(subscription.pendingPlan) })
+  }
+  return date ? ui("App Store · renews {{date}}", { date }) : ui("Billed through the App Store")
 }
 
 export function managedBillingPlan(summary: Pick<BillingSummary, 'subscription'>): BillingPlan {

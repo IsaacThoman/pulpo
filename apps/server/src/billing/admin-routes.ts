@@ -238,6 +238,7 @@ export async function registerAdminBillingRoutes(app: FastifyInstance): Promise<
     return {
       range,
       stripe: { mode: stripeMode() },
+      appStore: acceptedAppStoreEnvironments().length ? { environments: acceptedAppStoreEnvironments() } : null,
       totals: {
         grossCollectedCents: Number(orderTotals?.grossCollectedCents ?? 0),
         salesBeforeTaxCents: Number(orderTotals?.salesBeforeTaxCents ?? 0),
@@ -357,7 +358,8 @@ export async function registerAdminBillingRoutes(app: FastifyInstance): Promise<
         appStoreSandboxAllowed: sandboxAllowed.has(id),
       }
     })
-    return { data }
+    // Whether this server accepts App Store sandbox purchases, which the per-account flag gates.
+    return { data, appStoreSandbox: acceptedAppStoreEnvironments().includes('sandbox') }
   })
 
   app.patch('/api/admin/billing/users/:id/plan', async (request) => {

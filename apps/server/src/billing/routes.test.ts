@@ -11,10 +11,10 @@ import {
   isCreditOrderReason,
   registerBillingRoutes,
   resolvedCheckoutStatus,
-  hasRenewingAppStoreSubscription,
   selectSummarySubscription,
   usageLimitsResponse,
 } from './routes.js'
+import { hasRenewingAppStoreSubscription } from './app-store-sync.js'
 
 const apps: ReturnType<typeof Fastify>[] = []
 

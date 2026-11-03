@@ -35,6 +35,8 @@ const RANGES: { id: Range; label: string }[] = [
 
 interface Dashboard {
   stripe: { mode: StripeMode }
+  /** Null when this server does not take App Store purchases. Older servers omit it. */
+  appStore?: { environments: Array<'production' | 'sandbox'> } | null
   totals: {
     grossCollectedCents: number
     salesBeforeTaxCents: number
@@ -52,7 +54,7 @@ interface Dashboard {
     holds: number
     failedWebhooks: number
   }
-  subscribers: { eight: number; fat: number }
+  subscribers: { eight: number; fat: number; appStore?: number }
   trend: Array<{ day: string; totalCents: number; payments: number }>
   recentOrders: Array<{
     paymentId: string
@@ -192,6 +194,18 @@ export function AdminBillingPage() {
     }
   }
 
+  const testAppStoreNotifications = async (environment: 'production' | 'sandbox') => {
+    setMessage('')
+    try {
+      await apiRequest('/api/admin/billing/app-store/test-notification', { method: 'POST', body: { environment } })
+      setMessage(environment === 'production'
+        ? ui("Apple is sending a test notification to the production notification URL.")
+        : ui("Apple is sending a test notification to the sandbox notification URL."))
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : ui("Could not request an App Store test notification."))
+    }
+  }
+
   const clearHold = async (userId: string) => {
     const note = prompt('Reconciliation note required to clear this billing hold:')
     if (!note?.trim()) return
@@ -225,7 +239,8 @@ export function AdminBillingPage() {
     { label: ui("Sales before tax"), value: formatBalance((totals?.salesBeforeTaxCents ?? 0) / 100) },
     { label: ui("Tax collected"), value: formatBalance((totals?.taxCollectedCents ?? 0) / 100) },
     { label: ui("Platform fees"), value: formatBalance((totals?.platformFeesCents ?? 0) / 100) },
-    { label: ui("Stripe fees"), value: formatBalance((totals?.processingFeesCents ?? 0) / 100) },
+    // Apple's commission is recorded with card processing fees.
+    { label: data?.appStore ? ui("Processing fees") : ui("Stripe fees"), value: formatBalance((totals?.processingFeesCents ?? 0) / 100) },
     { label: ui("Refunded"), value: formatBalance((totals?.refundedCents ?? 0) / 100) },
     { label: ui("Top-ups"), value: (totals?.topUps ?? 0).toLocaleString(activeLocale()) },
   ]
@@ -239,6 +254,11 @@ export function AdminBillingPage() {
             <div className="h-4 w-px bg-border" />
             <StripeLink href={stripeDashboardUrl(stripeMode)} />
             <StripeLink href={stripeWebhooksUrl(stripeMode)} label={ui("Webhooks")} />
+          </>}
+          {data?.appStore && <>
+            <div className="h-4 w-px bg-border" />
+            {/* This server's notification URL is registered for its first environment. */}
+            <button type="button" className="text-xs text-muted-foreground hover:text-foreground" onClick={() => void testAppStoreNotifications(data.appStore!.environments[0]!)}>{ui("Test App Store notifications")}</button>
           </>}
         </div>
         <div className="flex items-center gap-2">
@@ -299,6 +319,7 @@ export function AdminBillingPage() {
           <div className="divide-y">
             <Stat label={ui("Pulpo Eight")} value={data?.subscribers.eight ?? 0} />
             <Stat label={ui("Pulpo Fat")} value={data?.subscribers.fat ?? 0} />
+            {data?.appStore && <Stat label={ui("Billed by the App Store")} value={data.subscribers.appStore ?? 0} />}
             <Stat label={ui("Canceling")} value={totals?.canceling ?? 0} />
             <Stat label={ui("Past due")} value={totals?.pastDue ?? 0} alert={(totals?.pastDue ?? 0) > 0} />
             <Stat label={ui("Billing holds")} value={totals?.holds ?? 0} alert={(totals?.holds ?? 0) > 0} />
@@ -374,7 +395,7 @@ export function AdminBillingPage() {
                     <td className="px-3 py-2 text-right tabular-nums">{order.grantedCreditMicros > 0 ? formatBalance(order.grantedCreditMicros / 1_000_000) : '—'}</td>
                     <td className="px-3 py-2"><Badge variant={order.refundedAmountCents > 0 ? 'destructive' : 'outline'}>{order.refundedAmountCents > 0 ? ui("refunded") : order.status}</Badge></td>
                     <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{formatDate(Date.parse(order.createdAt))}</td>
-                    <td className="px-3 py-2 text-right">{stripeMode && order.provider === 'stripe' && <StripeLink href={stripePaymentUrl(stripeMode, order.paymentId)} />}</td>
+                    <td className="px-3 py-2 text-right">{order.provider === 'app_store' ? <AppStoreLabel /> : stripeMode && <StripeLink href={stripePaymentUrl(stripeMode, order.paymentId)} />}</td>
                   </tr>
                 ))}
               </tbody>
@@ -408,7 +429,7 @@ export function AdminBillingPage() {
                     <td className="px-3 py-2"><Badge variant={row.status === 'past_due' ? 'destructive' : 'outline'}>{row.cancelAtPeriodEnd ? ui("canceling") : row.status}</Badge></td>
                     <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{row.paidThrough ? formatDate(Date.parse(row.paidThrough)) : '—'}</td>
                     <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{row.currentPeriodEnd ? formatDate(Date.parse(row.currentPeriodEnd)) : '—'}</td>
-                    <td className="px-3 py-2 text-right">{stripeMode && row.provider === 'stripe' && <StripeLink href={stripeSubscriptionUrl(stripeMode, row.subscriptionId)} />}</td>
+                    <td className="px-3 py-2 text-right">{row.provider === 'app_store' ? <AppStoreLabel /> : stripeMode && <StripeLink href={stripeSubscriptionUrl(stripeMode, row.subscriptionId)} />}</td>
                   </tr>
                 ))}
               </tbody>
@@ -446,7 +467,8 @@ export function AdminBillingPage() {
                     {hold.holdReference && <div className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">{hold.holdReference}</div>}
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
-                    {stripeMode && hold.holdReference && <StripeLink href={stripeDashboardUrl(stripeMode, `/search?query=${encodeURIComponent(hold.holdReference)}`)} />}
+                    {/* App Store holds reference a numeric transaction ID that Stripe cannot find. */}
+                    {stripeMode && hold.holdReference && !/^\d+$/.test(hold.holdReference) && <StripeLink href={stripeDashboardUrl(stripeMode, `/search?query=${encodeURIComponent(hold.holdReference)}`)} />}
                     <Button size="sm" variant="outline" onClick={() => void clearHold(hold.userId)}>{ui("Clear")}</Button>
                   </div>
                 </div>
@@ -479,6 +501,10 @@ function productLabel(product: ProductKind | 'eight' | 'fat') {
 
 function ProductBadge({ product }: { product: ProductKind | 'eight' | 'fat' }) {
   return <Badge variant={product === 'fat' ? 'secondary' : 'outline'}>{productLabel(product)}</Badge>
+}
+
+function AppStoreLabel() {
+  return <span className="text-xs text-muted-foreground">{ui("App Store")}</span>
 }
 
 function StripeLink({ href, label = 'Stripe' }: { href: string; label?: string }) {
