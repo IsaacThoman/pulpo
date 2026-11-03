@@ -58,7 +58,7 @@ import { loadChatFileScope } from '../files/agent/scope.js'
 import { readEpisodicMemorySettings } from '../episodic-memory/settings.js'
 import { generationSystemPrompt, loadGenerationMemory } from '../responses/memory-context.js'
 import { withGenerationTimeContext } from '../responses/time-context.js'
-import { agentRunDisplayState, messagesFromAgentContext, resolveAgentParentMessages, resumedRunContinues, systemPromptFromAgentContext, withoutMemoryToolMessages } from './history.js'
+import { agentRunDisplayState, INTERRUPTED_TOOL_RESULT_TEXT, messagesFromAgentContext, resolveAgentParentMessages, resumableAgentMessages, resumedRunContinues, systemPromptFromAgentContext, withoutMemoryToolMessages } from './history.js'
 import { agentSamplingParameters, resolveAgentModelParameters } from './model-parameters.js'
 import { redis } from '../redis.js'
 import {
@@ -1123,8 +1123,24 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
       agent.state.model = active.piModel
       skipMessageCount = resumedMessages.length
     }
-    if (existingRun && resumedRunContinues({ promptRecorded }, resumedMessages.length, skipMessageCount)) await agent.continue()
-    else await agent.prompt(initialMessage)
+    if (existingRun && resumedRunContinues({ promptRecorded }, resumedMessages.length, skipMessageCount)) {
+      // A crash mid-tool saves the tool-call message last; pi-agent-core cannot continue from it.
+      const resumable = resumableAgentMessages(agent.state.messages)
+      if (resumable.interruptedToolCalls.length) {
+        agent.state.messages = resumable.messages
+        const completedAt = new Date()
+        for (const call of resumable.interruptedToolCalls) {
+          const item = toolItems.get(call.id)
+          const durationMs = item?.startedAt ? Math.max(0, completedAt.getTime() - Date.parse(item.startedAt)) : undefined
+          if (item) Object.assign(item, { output: INTERRUPTED_TOOL_RESULT_TEXT, status: 'failed', isError: true, ...(durationMs !== undefined ? { durationMs } : {}) })
+          await db.update(toolExecutions).set({ status: 'failed', completedAt, updatedAt: completedAt })
+            .where(and(eq(toolExecutions.agentRunId, runId), eq(toolExecutions.operationId, call.id)))
+          await emit('pulpo.agent.tool.completed', { id: call.id, output: INTERRUPTED_TOOL_RESULT_TEXT, isError: true, durationMs })
+        }
+        await persistRunContext(true)
+      }
+      if (resumable.continues) await agent.continue()
+    } else await agent.prompt(initialMessage)
     let last = agent.state.messages.at(-1)
     // Any context recovery disables ordinary retries and fallback for the rest of the run.
     let contextRecovered = false
