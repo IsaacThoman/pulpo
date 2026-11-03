@@ -15,7 +15,7 @@ import {
 } from './app-store.js'
 import { appStoreSubscriptionOwner } from './app-store-sync.js'
 import { APPLE_ROOT_CA_G3_PEM } from './apple-root-certificates.js'
-import { signAppStorePayload, testAppStoreRoot } from './app-store-test-signing.js'
+import { signAppStorePayload, testAppStoreRoot, testSigningKey } from './app-store-test-signing.js'
 
 const stripeEnvironment = {
   PULPO_BILLING_ENABLED: 'true',
@@ -30,7 +30,7 @@ const appStoreEnvironment = {
   APP_STORE_APP_APPLE_ID: '1234567890',
   APP_STORE_ISSUER_ID: 'issuer',
   APP_STORE_KEY_ID: 'KEY123',
-  APP_STORE_PRIVATE_KEY: '-----BEGIN PRIVATE KEY-----\\nkey\\n-----END PRIVATE KEY-----',
+  APP_STORE_PRIVATE_KEY: testSigningKey.trim().replaceAll('\n', '\\n'),
   APP_STORE_EIGHT_PRODUCT_ID: 'pulpoEight',
   APP_STORE_FAT_PRODUCT_ID: 'pulpoFat',
 }
@@ -64,14 +64,21 @@ describe('App Store configuration', () => {
     expect(appStoreBillingEnabled(parseConfig({ ...appStoreEnvironment }))).toBe(false)
   })
 
+  it('refuses a private key that does not parse', () => {
+    expect(() => parseConfig({ ...stripeEnvironment, ...appStoreEnvironment, APP_STORE_PRIVATE_KEY: '-----BEGIN PRIVATE KEY-----\\nkey\\n-----END PRIVATE KEY-----' }))
+      .toThrow('Use the .p8 In-App Purchase key')
+  })
+
   it('refuses a partial App Store configuration', () => {
     expect(() => parseConfig({ ...stripeEnvironment, ...appStoreEnvironment, APP_STORE_KEY_ID: '' }))
       .toThrow('App Store billing is partly configured; missing: APP_STORE_KEY_ID')
   })
 
-  it('reads escaped newlines in the private key and limits environments', () => {
+  it('reads a private key stored on one line and limits environments', () => {
     const staging = parseConfig({ ...stripeEnvironment, ...appStoreEnvironment, APP_STORE_ENVIRONMENTS: 'sandbox' })
-    expect(staging.APP_STORE_PRIVATE_KEY).toBe('-----BEGIN PRIVATE KEY-----\nkey\n-----END PRIVATE KEY-----')
+    expect(staging.APP_STORE_PRIVATE_KEY).toBe(testSigningKey.trim())
+    const flattened = parseConfig({ ...stripeEnvironment, ...appStoreEnvironment, APP_STORE_PRIVATE_KEY: testSigningKey.trim().replaceAll('\n', ' ') })
+    expect(flattened.APP_STORE_PRIVATE_KEY).toBe(testSigningKey.trim())
     expect(acceptedAppStoreEnvironments(staging)).toEqual(['sandbox'])
     expect(() => parseConfig({ ...stripeEnvironment, ...appStoreEnvironment, APP_STORE_ENVIRONMENTS: 'xcode' })).toThrow()
   })

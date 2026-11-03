@@ -13,7 +13,8 @@ function fixture(name: string): string {
 
 const chain = ['test-signing.pem', 'test-intermediate.pem', 'test-root.pem']
   .map((name) => new X509Certificate(fixture(name)).raw.toString('base64'))
-const signingKey = createPrivateKey(fixture('test-signing-key.pem'))
+export const testSigningKey = fixture('test-signing-key.pem')
+const signingKey = createPrivateKey(testSigningKey)
 
 export const testAppStoreRoot = Buffer.from(fixture('test-root.pem'))
 

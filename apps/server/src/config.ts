@@ -1,4 +1,5 @@
 import { androidCertificateFingerprints } from './auth/android-app.js'
+import { createPrivateKey } from 'node:crypto'
 import { z } from 'zod'
 import { trustedProxyAddresses } from './lib/client-ip.js'
 
@@ -9,6 +10,16 @@ const booleanString = z
 
 function optionalEnvironmentValue<T extends z.ZodType>(schema: T) {
   return z.preprocess((value) => value === '' ? undefined : value, schema.optional())
+}
+
+/** Rebuilds a PKCS #8 PEM whose line breaks were escaped or flattened when stored in one line. */
+export function normalizePrivateKeyPem(value: string): string {
+  const header = '-----BEGIN PRIVATE KEY-----'
+  const footer = '-----END PRIVATE KEY-----'
+  const trimmed = value.trim()
+  if (!trimmed.startsWith(header) || !trimmed.endsWith(footer)) return trimmed
+  const body = trimmed.slice(header.length, -footer.length).replace(/\\n|\s+/g, '')
+  return `${header}\n${body.match(/.{1,64}/g)?.join('\n') ?? ''}\n${footer}`
 }
 
 const configSchema = z.object({
@@ -34,9 +45,11 @@ const configSchema = z.object({
   APP_STORE_APP_APPLE_ID: optionalEnvironmentValue(z.coerce.number().int().positive()),
   APP_STORE_ISSUER_ID: optionalEnvironmentValue(z.string().trim().min(1)),
   APP_STORE_KEY_ID: optionalEnvironmentValue(z.string().trim().min(1)),
-  // The In-App Purchase key (.p8). Escaped newlines (\\n) are accepted for single-line variables.
-  APP_STORE_PRIVATE_KEY: optionalEnvironmentValue(z.string().transform((value) => value.replace(/\\n/g, '\n').trim())
-    .pipe(z.string().startsWith('-----BEGIN PRIVATE KEY-----'))),
+  // The In-App Purchase key (.p8). Single-line forms (escaped \\n, or line breaks flattened to spaces) are accepted.
+  APP_STORE_PRIVATE_KEY: optionalEnvironmentValue(z.string().transform(normalizePrivateKeyPem)
+    .pipe(z.string().startsWith('-----BEGIN PRIVATE KEY-----').refine((value) => {
+      try { createPrivateKey(value); return true } catch { return false }
+    }, 'Use the .p8 In-App Purchase key from App Store Connect'))),
   APP_STORE_EIGHT_PRODUCT_ID: optionalEnvironmentValue(z.string().trim().min(1)),
   APP_STORE_FAT_PRODUCT_ID: optionalEnvironmentValue(z.string().trim().min(1)),
   // Environments whose purchases this server accepts. Staging takes only sandbox purchases so a
