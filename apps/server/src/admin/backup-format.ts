@@ -99,6 +99,11 @@ export function applyFullBackupCompatibilityDefaults(database: Record<string, Ar
     subscription.provider_subscription_id ??= subscription.stripe_subscription_id
     subscription.provider_product_id ??= subscription.stripe_price_id
     subscription.provider ??= 'stripe'
+    subscription.provider_environment ??= null
+  }
+  for (const account of database.billing_accounts ?? []) {
+    account.app_store_account_token ??= null
+    account.app_store_sandbox_allowed ??= false
   }
   for (const order of database.billing_orders ?? []) {
     order.provider_payment_id ??= order.stripe_payment_id

@@ -640,7 +640,7 @@ async function applyCheckoutStatus(tx: Transaction, checkout: Stripe.Checkout.Se
   }).where(eq(billingCheckouts.stripeCheckoutSessionId, checkout.id))
 }
 
-async function placeBillingHold(
+export async function placeBillingHold(
   tx: Transaction,
   userId: string,
   reason: string,
@@ -833,6 +833,31 @@ async function applyEvent(
   }
 }
 
+/** Refreshes storage limits for changed accounts and bumps their state revisions (and pool peers'). */
+export async function commitBillingChanges(tx: Transaction, changedUsers: Set<string>, at: Date) {
+  for (const userId of changedUsers) await refreshStorageLimit(tx, userId, at)
+  for (const userId of [...changedUsers]) for (const peerId of await poolPeerIds(tx, userId)) changedUsers.add(peerId)
+  return changedUsers.size > 0
+    ? await tx.update(users).set({ stateRevision: sql`${users.stateRevision} + 1` })
+      .where(inArray(users.id, [...changedUsers]))
+      .returning({ userId: users.id, revision: users.stateRevision })
+    : []
+}
+
+/** Tells clients about committed billing changes. */
+export async function publishBillingChanges(changes: Array<{ userId: string; revision: number }>): Promise<void> {
+  await Promise.all(changes.map((change) => publishStateChange({
+    ...change,
+    scopes: ['usage', 'pool', 'billing'],
+  })))
+  if (changes.length) {
+    // A newly saved card tops up right away when the balance is already below the
+    // threshold. Imported lazily because auto top-ups record payments through here.
+    const { queueAutoTopUpChecks } = await import('./auto-top-up.js')
+    await queueAutoTopUpChecks(changes.map((change) => change.userId))
+  }
+}
+
 export async function processStripeWebhookEvent(event: Stripe.Event): Promise<void> {
   const providerEventId = event.id
   const context = await hydrateEvent(event)
@@ -851,28 +876,13 @@ export async function processStripeWebhookEvent(event: Stripe.Event): Promise<vo
       await tx.update(billingWebhookEvents).set({ status: 'processing', error: null, updatedAt: new Date() })
         .where(eq(billingWebhookEvents.providerEventId, providerEventId))
       await applyEvent(tx, event, context, changedUsers)
-      for (const userId of changedUsers) await refreshStorageLimit(tx, userId, new Date(event.created * 1_000))
-      for (const userId of [...changedUsers]) for (const peerId of await poolPeerIds(tx, userId)) changedUsers.add(peerId)
-      const revisions = changedUsers.size > 0
-        ? await tx.update(users).set({ stateRevision: sql`${users.stateRevision} + 1` })
-          .where(inArray(users.id, [...changedUsers]))
-          .returning({ userId: users.id, revision: users.stateRevision })
-        : []
+      const revisions = await commitBillingChanges(tx, changedUsers, new Date(event.created * 1_000))
       await tx.update(billingWebhookEvents).set({
         status: 'processed', processedAt: new Date(), updatedAt: new Date(),
       }).where(eq(billingWebhookEvents.providerEventId, providerEventId))
       return revisions
     })
-    await Promise.all(changes.map((change) => publishStateChange({
-      ...change,
-      scopes: ['usage', 'pool', 'billing'],
-    })))
-    if (changes.length) {
-      // A newly saved card tops up right away when the balance is already below the
-      // threshold. Imported lazily because auto top-ups record payments through here.
-      const { queueAutoTopUpChecks } = await import('./auto-top-up.js')
-      await queueAutoTopUpChecks(changes.map((change) => change.userId))
-    }
+    await publishBillingChanges(changes)
   } catch (error) {
     const message = error instanceof Error ? error.message.slice(0, 2_000) : String(error).slice(0, 2_000)
     await db.insert(billingWebhookEvents).values({

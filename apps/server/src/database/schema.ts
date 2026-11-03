@@ -1392,6 +1392,10 @@ export const billingAccounts = pgTable('billing_accounts', {
   holdReference: text('hold_reference'),
   holdClearedAt: timestamp('hold_cleared_at', { withTimezone: true }),
   holdClearedBy: uuid('hold_cleared_by').references(() => users.id, { onDelete: 'set null' }),
+  // Sent with every App Store purchase as `appAccountToken`, so Apple's records name the account.
+  appStoreAccountToken: uuid('app_store_account_token').unique(),
+  // App Store sandbox purchases grant a plan only when an admin allows it (admins, App Review).
+  appStoreSandboxAllowed: boolean('app_store_sandbox_allowed').notNull().default(false),
   // Card saved for off-session charges (automatic top-ups).
   stripePaymentMethodId: text('stripe_payment_method_id'),
   paymentMethodBrand: text('payment_method_brand'),
@@ -1417,6 +1421,7 @@ export const billingAccounts = pgTable('billing_accounts', {
 ])
 
 export type BillingProvider = 'stripe' | 'app_store'
+export type AppStoreEnvironment = 'production' | 'sandbox'
 
 export const billingSubscriptions = pgTable('billing_subscriptions', {
   // Stripe subscription ID (`sub_…`) or App Store original transaction ID.
@@ -1425,6 +1430,8 @@ export const billingSubscriptions = pgTable('billing_subscriptions', {
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   // Stripe price ID or App Store product ID.
   providerProductId: text('provider_product_id').notNull(),
+  // App Store environment (`production` or `sandbox`); null for Stripe.
+  providerEnvironment: text('provider_environment').$type<AppStoreEnvironment>(),
   plan: text('plan').notNull(),
   status: text('status').notNull(),
   cancelAtPeriodEnd: boolean('cancel_at_period_end').notNull().default(false),
@@ -1441,6 +1448,7 @@ export const billingSubscriptions = pgTable('billing_subscriptions', {
   index('billing_subscriptions_user_idx').on(table.userId),
   index('billing_subscriptions_status_idx').on(table.status),
   check('billing_subscriptions_provider_check', sql`${table.provider} in ('stripe', 'app_store')`),
+  check('billing_subscriptions_provider_environment_check', sql`${table.providerEnvironment} is null or ${table.providerEnvironment} in ('production', 'sandbox')`),
   check('billing_subscriptions_plan_check', sql`${table.plan} in ('eight', 'fat')`),
   check('billing_subscriptions_paid_plan_check', sql`${table.paidPlan} is null or ${table.paidPlan} in ('eight', 'fat')`),
 ])

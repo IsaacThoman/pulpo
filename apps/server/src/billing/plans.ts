@@ -7,6 +7,15 @@ export const PLAN_MONTHLY_PRICE_CENTS: Record<PaidBillingPlan, number> = {
   fat: 2_400,
 }
 
+// US App Store prices. Used for usage tiers and revenue when a purchase is in another currency.
+export const APP_STORE_PLAN_PRICE_CENTS: Record<PaidBillingPlan, number> = {
+  eight: 999,
+  fat: 2_999,
+}
+
+// Apple's commission under the App Store Small Business Program.
+export const APP_STORE_COMMISSION_BASIS_POINTS = 1_500
+
 // Plans include weekly and five-hour allowances instead of monthly platform credits.
 export const PLAN_MONTHLY_CREDIT_MICROS: Record<PaidBillingPlan, number> = {
   eight: 0,

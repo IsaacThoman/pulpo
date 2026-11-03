@@ -189,6 +189,13 @@ export const mobileConfigSchema = z.object({
       enabled: z.boolean(),
       docSchemaVersion: z.number().int().positive(),
     }).optional(),
+    /**
+     * App Store subscriptions, with the StoreKit environments whose purchases this server accepts.
+     * The app offers purchases only when its own environment is listed. Null or omitted: no purchases.
+     */
+    appStoreBilling: z.object({
+      environments: z.array(z.enum(['production', 'sandbox'])).min(1),
+    }).nullable().optional().default(null),
   }),
 })
 export type MobileConfig = z.infer<typeof mobileConfigSchema>

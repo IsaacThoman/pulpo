@@ -1,20 +1,23 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   createInitialAdmin: vi.fn(),
   createNativeSession: vi.fn(),
   select: vi.fn(),
   billingEnabled: undefined as boolean | undefined,
+  config: {} as Record<string, unknown>,
 }))
 
 vi.mock('../config.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../config.js')>()
   return {
     ...actual,
-    getConfig: () => mocks.billingEnabled === undefined
-      ? actual.getConfig()
-      : { ...actual.getConfig(), PULPO_BILLING_ENABLED: mocks.billingEnabled },
+    getConfig: () => ({
+      ...actual.getConfig(),
+      ...(mocks.billingEnabled === undefined ? {} : { PULPO_BILLING_ENABLED: mocks.billingEnabled }),
+      ...mocks.config,
+    }),
   }
 })
 
@@ -94,6 +97,42 @@ describe('mobile usage limits capability', () => {
     } finally {
       mocks.billingEnabled = undefined
     }
+  })
+})
+
+describe('mobile App Store billing capability', () => {
+  async function capabilities() {
+    const values = [[{ id: 'user' }], [{ value: {} }], []]
+    mocks.select.mockImplementation(() => {
+      const rows = values.shift()
+      const chain = { from: () => chain, where: () => chain, limit: async () => rows }
+      return chain
+    })
+    let handler!: () => Promise<{ capabilities: Record<string, unknown> }>
+    await registerMobileRoutes({
+      get: (path: string, callback: () => Promise<{ capabilities: Record<string, unknown> }>) => { if (path === '/api/mobile/config') handler = callback },
+      post: vi.fn(),
+    } as unknown as FastifyInstance)
+    return (await handler()).capabilities
+  }
+
+  afterEach(() => {
+    mocks.billingEnabled = undefined
+    mocks.config = {}
+  })
+
+  it('lists the StoreKit environments the server accepts purchases from', async () => {
+    mocks.billingEnabled = true
+    mocks.config = { APP_STORE_PRIVATE_KEY: '-----BEGIN PRIVATE KEY-----', APP_STORE_ENVIRONMENTS: ['sandbox'] }
+    expect((await capabilities()).appStoreBilling).toEqual({ environments: ['sandbox'] })
+  })
+
+  it('offers no purchases without App Store configuration or billing', async () => {
+    mocks.billingEnabled = true
+    expect((await capabilities()).appStoreBilling).toBeNull()
+    mocks.billingEnabled = false
+    mocks.config = { APP_STORE_PRIVATE_KEY: '-----BEGIN PRIVATE KEY-----', APP_STORE_ENVIRONMENTS: ['production'] }
+    expect((await capabilities()).appStoreBilling).toBeNull()
   })
 })
 
