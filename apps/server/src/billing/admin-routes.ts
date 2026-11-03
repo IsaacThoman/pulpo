@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, isNotNull, isNull, sql } from 'drizzle-orm'
+import { and, desc, eq, gte, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { requireAdmin } from '../auth/service.js'
@@ -23,7 +23,9 @@ import { parseAuthSettings, parseBillingSettings, usageTiersSchema } from '../se
 import { getBillingEntitlements, loadBillingEntitlements } from './entitlements.js'
 import { loadDailySpend } from './usage-tiers.js'
 import { planForPriceId, stripeMode } from './stripe.js'
-import { BILLING_PLANS } from './plans.js'
+import { APP_STORE_COMMISSION_BASIS_POINTS, APP_STORE_PLAN_PRICE_CENTS, BILLING_PLANS, isPaidPlan, PLAN_MONTHLY_PRICE_CENTS } from './plans.js'
+import { acceptedAppStoreEnvironments, appStorePlanForProduct, getAppStoreGateway } from './app-store.js'
+import { revokeSandboxSubscriptions } from './app-store-sync.js'
 import { CUSTOM_LIMIT_PERIODS, CUSTOM_LIMIT_TARGETS, customLimitResetAt, loadCustomLimitUserUsage, sharedCustomLimitMicros, type CustomLimit } from './custom-limits.js'
 import { refreshStorageLimit } from './storage-entitlements.js'
 import { mapWithConcurrency } from '../lib/concurrency.js'
@@ -100,11 +102,33 @@ async function billingSettings() {
 }
 
 function productKind(provider: string, priceId: string): 'eight' | 'fat' | 'credits' | 'unknown' {
+  if (provider === 'app_store') return appStorePlanForProduct(priceId) ?? 'unknown'
   if (provider !== 'stripe') return 'unknown'
   const plan = planForPriceId(priceId)
   if (plan) return plan
   if (priceId === getConfig().STRIPE_CREDIT_PRODUCT_ID) return 'credits'
   return 'unknown'
+}
+
+/**
+ * Subscriber counts and monthly recurring revenue after store fees. App Store revenue is Apple's
+ * price less its commission; Stripe revenue is the list price.
+ */
+export function subscriberTotals(rows: Array<{ plan: string; provider: string; count: number; canceling: number; pastDue: number }>) {
+  const totals = { eight: 0, fat: 0, appStore: 0, canceling: 0, pastDue: 0, monthlyRecurringCents: 0 }
+  for (const row of rows) {
+    if (!isPaidPlan(row.plan)) continue
+    const count = Number(row.count)
+    const appStore = row.provider === 'app_store'
+    totals[row.plan] += count
+    if (appStore) totals.appStore += count
+    totals.canceling += Number(row.canceling)
+    totals.pastDue += Number(row.pastDue)
+    totals.monthlyRecurringCents += count * (appStore
+      ? Math.round(APP_STORE_PLAN_PRICE_CENTS[row.plan] * (10_000 - APP_STORE_COMMISSION_BASIS_POINTS) / 10_000)
+      : PLAN_MONTHLY_PRICE_CENTS[row.plan])
+  }
+  return totals
 }
 
 async function notifyBillingChange(userId: string): Promise<void> {
@@ -136,13 +160,16 @@ export async function registerAdminBillingRoutes(app: FastifyInstance): Promise<
       }).from(billingOrders).where(orderFilter),
       db.select({
         plan: billingSubscriptions.plan,
+        provider: billingSubscriptions.provider,
         count: sql<number>`count(distinct ${billingSubscriptions.userId})::int`,
         canceling: sql<number>`count(distinct ${billingSubscriptions.userId}) filter (where ${billingSubscriptions.cancelAtPeriodEnd})::int`,
         pastDue: sql<number>`count(distinct ${billingSubscriptions.userId}) filter (where ${billingSubscriptions.status} = 'past_due')::int`,
       }).from(billingSubscriptions).where(and(
         inArray(billingSubscriptions.status, ['active', 'past_due']),
         gte(billingSubscriptions.paidThrough, new Date()),
-      )).groupBy(billingSubscriptions.plan),
+        // Sandbox App Store subscriptions are test purchases.
+        or(isNull(billingSubscriptions.providerEnvironment), ne(billingSubscriptions.providerEnvironment, 'sandbox')),
+      )).groupBy(billingSubscriptions.plan, billingSubscriptions.provider),
       db.select({ count: sql<number>`count(*)::int` }).from(billingAccounts)
         .where(and(isNotNull(billingAccounts.holdAt), isNull(billingAccounts.holdClearedAt))),
       db.select({ count: sql<number>`count(*)::int` }).from(billingWebhookEvents)
@@ -206,8 +233,7 @@ export async function registerAdminBillingRoutes(app: FastifyInstance): Promise<
         .where(and(isNotNull(billingAccounts.holdAt), isNull(billingAccounts.holdClearedAt)))
         .orderBy(desc(billingAccounts.holdAt)),
     ])
-    const eight = subscriberCounts.find((item) => item.plan === 'eight')
-    const fat = subscriberCounts.find((item) => item.plan === 'fat')
+    const subscribers = subscriberTotals(subscriberCounts)
     const orderTotals = totals[0]
     return {
       range,
@@ -222,14 +248,14 @@ export async function registerAdminBillingRoutes(app: FastifyInstance): Promise<
         creditsGrantedMicros: Number(orderTotals?.creditsGrantedMicros ?? 0),
         payments: Number(orderTotals?.payments ?? 0),
         topUps: Number(orderTotals?.topUps ?? 0),
-        activeSubscribers: Number(eight?.count ?? 0) + Number(fat?.count ?? 0),
-        monthlyRecurringCents: Number(eight?.count ?? 0) * 800 + Number(fat?.count ?? 0) * 2_400,
-        canceling: Number(eight?.canceling ?? 0) + Number(fat?.canceling ?? 0),
-        pastDue: Number(eight?.pastDue ?? 0) + Number(fat?.pastDue ?? 0),
+        activeSubscribers: subscribers.eight + subscribers.fat,
+        monthlyRecurringCents: subscribers.monthlyRecurringCents,
+        canceling: subscribers.canceling,
+        pastDue: subscribers.pastDue,
         holds: Number(holds[0]?.count ?? 0),
         failedWebhooks: Number(failedEvents[0]?.count ?? 0),
       },
-      subscribers: { eight: Number(eight?.count ?? 0), fat: Number(fat?.count ?? 0) },
+      subscribers: { eight: subscribers.eight, fat: subscribers.fat, appStore: subscribers.appStore },
       trend: trend.map((item) => ({ ...item, totalCents: Number(item.totalCents), payments: Number(item.payments) })),
       recentOrders: recentOrders.map((order) => ({ ...order, product: productKind(order.provider, order.productId) })),
       recentSubscriptions,
@@ -295,6 +321,9 @@ export async function registerAdminBillingRoutes(app: FastifyInstance): Promise<
         holdReference: billingAccounts.holdReference,
       }).from(billingAccounts).where(isNotNull(billingAccounts.holdAt)),
     ])
+    const sandboxRows = await db.select({ userId: billingAccounts.userId }).from(billingAccounts)
+      .where(eq(billingAccounts.appStoreSandboxAllowed, true))
+    const sandboxAllowed = new Set(sandboxRows.map((row) => row.userId))
     const holds = new Map(holdRows.map(({ userId, ...hold }) => [userId, hold]))
     // Entitlements run a transaction per user; bound concurrency so a large
     // instance cannot exhaust the connection pool from one admin page load.
@@ -325,6 +354,7 @@ export async function registerAdminBillingRoutes(app: FastifyInstance): Promise<
         dailySpentMicros: daily?.spentMicros ?? 0,
         dailyLimitOverridden: daily?.limitOverridden ?? false,
         hold: entitlements.onHold ? account ?? null : null,
+        appStoreSandboxAllowed: sandboxAllowed.has(id),
       }
     })
     return { data }
@@ -471,6 +501,54 @@ export async function registerAdminBillingRoutes(app: FastifyInstance): Promise<
       storageLimitBytes: entitlements.storageLimitBytes,
       storageLimitOverridden: entitlements.storageLimitOverridden,
     }
+  })
+
+  // Confirms the App Store notification URL for an environment reaches this server's webhook.
+  app.post('/api/admin/billing/app-store/test-notification', async (request, reply) => {
+    const admin = requireAdmin(request)
+    const { environment } = z.object({ environment: z.enum(['production', 'sandbox']) }).parse(request.body)
+    if (!acceptedAppStoreEnvironments().includes(environment)) {
+      throw new AppError(409, 'app_store_environment_not_supported', 'This server does not accept that App Store environment')
+    }
+    try {
+      await getAppStoreGateway().requestTestNotification(environment)
+    } catch (error) {
+      throw new AppError(502, 'app_store_unavailable', `The App Store refused the request: ${error instanceof Error ? error.message : String(error)}`)
+    }
+    await db.insert(auditEvents).values({
+      id: newId(), actorUserId: admin.id, action: 'billing.app_store.test_notification', targetType: 'billing', targetId: environment, metadata: {},
+    })
+    reply.code(202)
+    return { requested: true }
+  })
+
+  // Lets an account's App Store sandbox purchases (TestFlight, App Review) grant a plan.
+  app.patch('/api/admin/billing/users/:id/app-store-sandbox', async (request) => {
+    const admin = requireAdmin(request)
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    const { allowed } = z.object({ allowed: z.boolean() }).parse(request.body)
+    const [user] = await db.select({ id: users.id }).from(users).where(eq(users.id, id)).limit(1)
+    if (!user) throw new AppError(404, 'user_not_found', 'User not found')
+    const revision = await db.transaction(async (tx) => {
+      const [account] = await tx.select({ allowed: billingAccounts.appStoreSandboxAllowed })
+        .from(billingAccounts).where(eq(billingAccounts.userId, id)).limit(1).for('update')
+      await tx.insert(billingAccounts).values({ userId: id, appStoreSandboxAllowed: allowed })
+        .onConflictDoUpdate({
+          target: billingAccounts.userId,
+          set: { appStoreSandboxAllowed: allowed, updatedAt: new Date() },
+        })
+      const revoked = allowed ? false : await revokeSandboxSubscriptions(tx, id)
+      if (revoked) await refreshStorageLimit(tx, id)
+      await tx.insert(auditEvents).values({
+        id: newId(), actorUserId: admin.id, action: 'billing.app_store_sandbox.update', targetType: 'user', targetId: id,
+        metadata: { previous: account?.allowed ?? false, allowed, revokedSubscriptions: revoked },
+      })
+      const [change] = await tx.update(users).set({ stateRevision: sql`${users.stateRevision} + 1` })
+        .where(eq(users.id, id)).returning({ userId: users.id, revision: users.stateRevision })
+      return change
+    })
+    if (revision) await publishStateChange({ ...revision, scopes: ['billing', 'usage'] })
+    return { appStoreSandboxAllowed: allowed }
   })
 
   app.post('/api/admin/billing/users/:id/clear-hold', async (request) => {

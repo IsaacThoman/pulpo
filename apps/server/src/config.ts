@@ -29,6 +29,27 @@ const configSchema = z.object({
   STRIPE_CREDIT_PRODUCT_ID: optionalEnvironmentValue(z.string().startsWith('prod_')),
   STRIPE_EIGHT_PRICE_ID: optionalEnvironmentValue(z.string().startsWith('price_')),
   STRIPE_FAT_PRICE_ID: optionalEnvironmentValue(z.string().startsWith('price_')),
+  // App Store subscriptions for the iOS app. All of these or none; see appStoreBillingEnabled.
+  APP_STORE_BUNDLE_ID: optionalEnvironmentValue(z.string().trim().min(1)),
+  APP_STORE_APP_APPLE_ID: optionalEnvironmentValue(z.coerce.number().int().positive()),
+  APP_STORE_ISSUER_ID: optionalEnvironmentValue(z.string().trim().min(1)),
+  APP_STORE_KEY_ID: optionalEnvironmentValue(z.string().trim().min(1)),
+  // The In-App Purchase key (.p8). Escaped newlines (\\n) are accepted for single-line variables.
+  APP_STORE_PRIVATE_KEY: optionalEnvironmentValue(z.string().transform((value) => value.replace(/\\n/g, '\n').trim())
+    .pipe(z.string().startsWith('-----BEGIN PRIVATE KEY-----'))),
+  APP_STORE_EIGHT_PRODUCT_ID: optionalEnvironmentValue(z.string().trim().min(1)),
+  APP_STORE_FAT_PRODUCT_ID: optionalEnvironmentValue(z.string().trim().min(1)),
+  // Environments whose purchases this server accepts. Staging takes only sandbox purchases so a
+  // real purchase is never granted on a server the production notifications do not reach.
+  APP_STORE_ENVIRONMENTS: z.string().default('production,sandbox').transform((value, context) => {
+    const environments = [...new Set(value.split(',').map((item) => item.trim()).filter(Boolean))]
+    const invalid = environments.filter((item) => item !== 'production' && item !== 'sandbox')
+    if (invalid.length || environments.length === 0) {
+      context.addIssue({ code: 'custom', message: 'Use production, sandbox, or both, separated by commas' })
+      return z.NEVER
+    }
+    return environments as Array<'production' | 'sandbox'>
+  }),
   DATABASE_URL: z.string().min(1).optional(),
   POSTGRES_HOST: z.string().min(1).default('localhost'),
   POSTGRES_PORT: z.coerce.number().int().positive().default(5432),
@@ -113,10 +134,31 @@ export function parseConfig(environment: NodeJS.ProcessEnv): Config {
       throw new Error(`Billing is enabled but required configuration is missing: ${missing.join(', ')}`)
     }
   }
+  const appStoreKeys = [
+    'APP_STORE_BUNDLE_ID',
+    'APP_STORE_APP_APPLE_ID',
+    'APP_STORE_ISSUER_ID',
+    'APP_STORE_KEY_ID',
+    'APP_STORE_PRIVATE_KEY',
+    'APP_STORE_EIGHT_PRODUCT_ID',
+    'APP_STORE_FAT_PRODUCT_ID',
+  ] as const
+  const appStoreMissing = appStoreKeys.filter((key) => !config[key])
+  if (appStoreMissing.length > 0 && appStoreMissing.length < appStoreKeys.length) {
+    throw new Error(`App Store billing is partly configured; missing: ${appStoreMissing.join(', ')}`)
+  }
+  if (config.APP_STORE_EIGHT_PRODUCT_ID && config.APP_STORE_EIGHT_PRODUCT_ID === config.APP_STORE_FAT_PRODUCT_ID) {
+    throw new Error('APP_STORE_EIGHT_PRODUCT_ID and APP_STORE_FAT_PRODUCT_ID must differ')
+  }
   if (config.PULPO_CLIENT_IP_MODE !== 'direct' && !config.PULPO_TRUSTED_PROXY_CIDRS.trim()) {
     throw new Error('PULPO_TRUSTED_PROXY_CIDRS is required when forwarded or Cloudflare client IP detection is enabled')
   }
   return config
+}
+
+/** App Store subscriptions are on when billing is enabled and every App Store setting is present. */
+export function appStoreBillingEnabled(config = getConfig()): boolean {
+  return config.PULPO_BILLING_ENABLED && Boolean(config.APP_STORE_PRIVATE_KEY)
 }
 
 export function getConfig(): Config {
