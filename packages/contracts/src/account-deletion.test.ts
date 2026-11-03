@@ -19,7 +19,12 @@ describe('account deletion contracts', () => {
   it('does not interpret missing second-factor status as disabled', () => {
     expect(accountDeletionRequirementsSchema.safeParse({}).success).toBe(false)
     expect(accountDeletionRequirementsSchema.safeParse({ twoFactorEnabled: null }).success).toBe(false)
-    expect(accountDeletionRequirementsSchema.parse({ twoFactorEnabled: false })).toEqual({ twoFactorEnabled: false })
+    expect(accountDeletionRequirementsSchema.parse({ twoFactorEnabled: false })).toEqual({ twoFactorEnabled: false, appStoreSubscriptionRenews: false })
+  })
+  it('treats a missing App Store renewal flag from older servers as not renewing', () => {
+    expect(accountDeletionRequirementsSchema.parse({ twoFactorEnabled: true, appStoreSubscriptionRenews: true }))
+      .toEqual({ twoFactorEnabled: true, appStoreSubscriptionRenews: true })
+    expect(accountDeletionRequirementsSchema.safeParse({ twoFactorEnabled: true, appStoreSubscriptionRenews: 'yes' }).success).toBe(false)
   })
 
 })
