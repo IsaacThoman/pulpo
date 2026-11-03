@@ -1497,6 +1497,8 @@ export type ManagementToken = z.infer<typeof managementTokenSchema>
 
 export const accountDeletionRequirementsSchema = z.object({
   twoFactorEnabled: z.boolean(),
+  /** Apple keeps billing an App Store subscription after deletion. Older servers omit it. */
+  appStoreSubscriptionRenews: z.boolean().optional().default(false),
 })
 export type AccountDeletionRequirements = z.infer<typeof accountDeletionRequirementsSchema>
 

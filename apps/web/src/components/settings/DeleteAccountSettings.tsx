@@ -6,7 +6,10 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger } 
 import { Separator } from '@/components/ui/separator'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { AlertTriangle } from 'lucide-react'
 import { apiRequest } from '@/lib/api'
+import { APP_STORE_SUBSCRIPTIONS_URL } from '@/lib/billing'
+import { openExternalUrl } from '@/lib/runtime'
 import { useAuth } from '@/stores/auth'
 import { ui } from '@/i18n/ui'
 
@@ -100,6 +103,13 @@ export function DeleteAccountSettings() {
       <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); void submit() }}>
         <div className="min-w-0 text-sm"><p className="break-words">{user?.email}</p><p className="break-words text-xs text-muted-foreground [overflow-wrap:anywhere]">{useAuth.getState().instanceUrl || window.location.origin}</p></div>
         <p className="text-sm text-muted-foreground">{ui('Deletion is permanent. Your chats, files, memories, and shared links will be removed. Subscriptions will be canceled and unused credits forfeited, with no automatic refunds. Access ends immediately; background cleanup may take time. Backups and payment records follow existing retention policies.')}</p>
+        {requirements?.appStoreSubscriptionRenews && <div className="flex items-start gap-2.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-sm">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden />
+          <div className="min-w-0 space-y-1">
+            <p>{ui('Your plan is billed through the App Store, and deleting your account does not cancel it. Cancel it in your Apple account’s subscription settings first, or Apple will keep charging you.')}</p>
+            <button type="button" className="text-xs font-medium underline underline-offset-4" onClick={() => void openExternalUrl(APP_STORE_SUBSCRIPTIONS_URL)}>{ui('Manage in the App Store')}</button>
+          </div>
+        </div>}
         {checking && <p role="status">{ui('Loading…')}</p>}
         {!checking && !requirements && <Button type="button" variant="outline" onClick={() => { setError(''); void loadRequirements() }}>{ui('Retry')}</Button>}
         {settings && !settings.accountDeletionEnabled && <p>{settings.accountDeletionEnabled === false ? ui('Account deletion is disabled by the instance administrator.') : ui('This server does not support account deletion.')}{settings.adminEmail && <> <a href={`mailto:${settings.adminEmail}`}>{settings.adminEmail}</a></>}</p>}

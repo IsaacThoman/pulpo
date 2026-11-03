@@ -438,3 +438,21 @@ export async function revokeSandboxSubscriptions(tx: Transaction, userId: string
     .returning({ id: billingSubscriptions.providerSubscriptionId })
   return revoked.length > 0
 }
+
+/** Whether Apple will keep billing the account, which deleting it does not stop. */
+export function hasRenewingAppStoreSubscription(subscriptions: Array<{ provider: string; status: string; cancelAtPeriodEnd: boolean }>): boolean {
+  return subscriptions.some((item) => item.provider === 'app_store'
+    && (item.status === 'active' || item.status === 'past_due')
+    && !item.cancelAtPeriodEnd)
+}
+
+/** Whether deleting this account would leave Apple billing it. */
+export async function appStoreSubscriptionRenews(userId: string): Promise<boolean> {
+  const rows = await db.select({
+    provider: billingSubscriptions.provider,
+    status: billingSubscriptions.status,
+    cancelAtPeriodEnd: billingSubscriptions.cancelAtPeriodEnd,
+  }).from(billingSubscriptions)
+    .where(and(eq(billingSubscriptions.userId, userId), eq(billingSubscriptions.provider, 'app_store')))
+  return hasRenewingAppStoreSubscription(rows)
+}
