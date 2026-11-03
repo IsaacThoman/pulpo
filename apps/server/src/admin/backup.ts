@@ -46,7 +46,8 @@ function assertLockAhead(lockedUntil: Date): void {
 
 export async function createFullBackup(jobId: string, finalAttempt = true): Promise<void> {
   const [job] = await db.select().from(backupJobs).where(eq(backupJobs.id, jobId)).limit(1)
-  if (!job) return
+  // A leftover queue entry must not revive a backup that already finished or was given up on.
+  if (!job || (job.status !== 'queued' && job.status !== 'in_progress')) return
   await db.update(backupJobs).set({ status: 'in_progress', progress: 1, updatedAt: new Date() }).where(eq(backupJobs.id, jobId))
   const offsite = job.destination === 'backblaze_b2'
   const objectKey = offsite ? job.objectKey : `backups/${job.userId}/${job.id}.tar.gz`
