@@ -7,7 +7,7 @@ The iOS app sells Eight and Fat as App Store auto-renewable subscriptions. Pulpo
 1. Join the App Store Small Business Program. Pulpo books App Store revenue after a 15% commission.
 2. Create one subscription group with two monthly auto-renewable subscriptions, Eight and Fat, priced at $9.99 and $29.99 in the US. Rank Fat above Eight so moving between them is an upgrade or downgrade. Save their product IDs as `APP_STORE_EIGHT_PRODUCT_ID` and `APP_STORE_FAT_PRODUCT_ID`. Product IDs cannot be changed or reused after they are created.
 3. Leave Family Sharing off for both products. Shared purchases never create payments.
-4. Under **Users and Access → Integrations → In-App Purchase**, create a key. Save the downloaded `.p8` file's contents as `APP_STORE_PRIVATE_KEY`. Multi-line, escaped `\n`, and line breaks flattened to spaces all work; the server refuses to start if the key does not parse, its key ID as `APP_STORE_KEY_ID`, and the issuer ID as `APP_STORE_ISSUER_ID`. The `.p8` can be downloaded only once.
+4. Under **Users and Access → Integrations → In-App Purchase**, create a key. Save the downloaded `.p8` file's contents as `APP_STORE_PRIVATE_KEY`, its key ID as `APP_STORE_KEY_ID`, and the issuer ID as `APP_STORE_ISSUER_ID`. The key may be multi-line, use escaped `\n`, or have its line breaks flattened to spaces; the server refuses to start if it does not parse. The `.p8` can be downloaded only once.
 5. Save the bundle ID (`com.isaacthoman.pulpo`) as `APP_STORE_BUNDLE_ID` and the app's Apple ID from **App Information** as `APP_STORE_APP_APPLE_ID`.
 
 ## Server notifications
