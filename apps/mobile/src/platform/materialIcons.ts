@@ -93,6 +93,7 @@ const icons: Record<string, ImageSourcePropType> = {
   'star_outline': require('../../assets/material/star_outline.xml'),
   'stop': require('../../assets/material/stop.xml'),
   'stop_circle': require('../../assets/material/stop_circle.xml'),
+  'speed': require('../../assets/material/speed.xml'),
   'storage': require('../../assets/material/storage.xml'),
   'sync': require('../../assets/material/sync.xml'),
   'table_chart': require('../../assets/material/table_chart.xml'),

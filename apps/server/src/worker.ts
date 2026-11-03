@@ -31,7 +31,7 @@ import { processEmbeddingJob } from './episodic-memory/processor.js'
 import { scheduleChatIndex } from './episodic-memory/queue.js'
 import { readEpisodicMemorySettings, enqueueEpisodicReconciliation } from './episodic-memory/settings.js'
 import { processCodexLogin } from './codex/login.js'
-import { reconcileOffsiteBackupJobs, runOffsiteBackupSchedule } from './admin/backup-scheduler.js'
+import { reconcileBackupJobs, runOffsiteBackupSchedule } from './admin/backup-scheduler.js'
 
 const config = getConfig()
 await refreshDiagnosticPolicy()
@@ -110,7 +110,7 @@ const maintenanceWorker = new Worker<MaintenanceJob>('maintenance', async (job) 
   if (job.data.type === 'cleanup') { await resumeAccountDeletions(); await runCleanup() }
   if (job.data.type === 'backup-schedule') {
     // Also recover jobs stranded by a restore or crash without waiting for a worker restart.
-    await reconcileOffsiteBackupJobs()
+    await reconcileBackupJobs()
     await runOffsiteBackupSchedule()
   }
   if (job.data.type === 'scrub-response-binary-context') await scrubPersistedResponseBinaryContext()
@@ -194,7 +194,7 @@ await maintenanceQueue.add('startup-response-context-scrub', { type: 'scrub-resp
   attempts: 3,
   removeOnFail: true,
 })
-await reconcileOffsiteBackupJobs()
+await reconcileBackupJobs()
 
 generationWorker.on('failed', (job, error) => {
   console.error(JSON.stringify({

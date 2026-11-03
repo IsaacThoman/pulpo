@@ -17,6 +17,7 @@
     "test:provider-formats": "tsx scripts/provider-formats-smoke.ts",
     "test:restore-memory": "node --max-old-space-size=96 --import tsx scripts/restore-memory-smoke.ts",
     "test:backup-memory": "node --max-old-space-size=96 --import tsx scripts/backup-memory-smoke.ts",
+    "test:backup-export-memory": "node --max-old-space-size=128 --import tsx scripts/backup-export-memory-smoke.ts",
     "test:episodic-search": "PULPO_SEARCH_POSTGRES_TEST=1 vitest run --exclude \"**/dist/**\" src/episodic-memory/retrieval.postgres.test.ts"
   },
   "dependencies": {

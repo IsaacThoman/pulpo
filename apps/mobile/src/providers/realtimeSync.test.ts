@@ -64,4 +64,8 @@ describe('mobile realtime sync helpers', () => {
     ])
     expect(stateInvalidationQueryKeys('files', 'instance|user')).toEqual([['files', 'instance|user']])
   })
+
+  it('refreshes plan usage limits when billing changes', () => {
+    expect(stateInvalidationQueryKeys('billing', 'instance|user')).toEqual([['usage-limits', 'instance|user']])
+  })
 })

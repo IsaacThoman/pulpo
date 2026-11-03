@@ -84,6 +84,7 @@ export const materialSymbolNames: Record<string, string> = {
   "server.rack": "dns",
   "externaldrive": "storage",
   "internaldrive": "storage",
+  "gauge.with.dots.needle.33percent": "speed",
   "at": "alternate_email",
   "envelope": "mail",
   "person": "person",
