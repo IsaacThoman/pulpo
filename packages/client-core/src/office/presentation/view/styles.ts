@@ -57,6 +57,7 @@ const CSS = `
 .pp-presenter-notes{flex:1;overflow:auto;white-space:pre-wrap;font-size:18px;line-height:1.5;background:#2a2a2d;border-radius:8px;padding:12px}
 .pp-notes .pp-text-editor{outline:none;min-height:100%;white-space:pre-wrap;padding:8px 12px;font:14px/1.5 system-ui,sans-serif;user-select:text;-webkit-user-select:text}
 .pp-notes{height:100%;overflow:auto;position:relative}
+.pp-notes .pp-p{color:inherit!important;font-family:inherit!important}
 .pp-notes-empty::before{content:attr(data-placeholder);position:absolute;left:12px;top:8px;opacity:.5;pointer-events:none;font:14px/1.5 system-ui,sans-serif}
 .pp-media-player{background:#000}
 @media print{.pp-print-page{page-break-after:always;break-after:page}}

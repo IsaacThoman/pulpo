@@ -113,7 +113,7 @@ function PresentationEditorView({ controller, startInShow, toolbarSlot, classNam
   })
 
   return (
-    <div className={cn('flex h-full min-h-0 flex-col bg-background', className)} data-presentation-editor="">
+    <div className={cn('flex h-full min-h-0 flex-col bg-background [--pp-canvas-bg:var(--muted)] [--pp-muted:var(--muted-foreground)]', className)} data-presentation-editor="">
       <div className="flex items-center gap-2 border-b px-2 py-1">
         <PresentationToolbar
           controller={controller}
