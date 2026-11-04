@@ -22,7 +22,7 @@ import { formatBalance, formatDate } from '@/lib/format'
 import { creditCentsFromInput } from '@/lib/billing-pricing'
 import { apiRequest } from '@/lib/api'
 import { openExternalUrl } from '@/lib/runtime'
-import { APP_STORE_SUBSCRIPTIONS_URL, appStoreSubscriptionSubtitle, autoTopUpActionLabel, autoTopUpSettingsError, billedByAppStore, billingPlanName, defaultAutoTopUpSettings, fetchBillingSummary, formatPlanStorage, managedBillingPlan, openBillingPortal, paymentStatusLabel, pendingBillingPlan, planChoiceDisabled, planChoiceLabel, saveAutoTopUpSettings, type BillingPlan } from '@/lib/billing'
+import { APP_STORE_SUBSCRIPTIONS_URL, appStoreSubscriptionSubtitle, autoTopUpActionLabel, autoTopUpSettingsError, billedByAppStore, billingPlanName, billingPlanTextClass, defaultAutoTopUpSettings, fetchBillingSummary, formatPlanStorage, managedBillingPlan, openBillingPortal, paymentStatusLabel, pendingBillingPlan, planChoiceDisabled, planChoiceLabel, saveAutoTopUpSettings, type BillingPlan } from '@/lib/billing'
 import { queryClient } from '@/lib/query-client'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
@@ -303,7 +303,7 @@ export function BillingPage() {
             >
               <div>
                 <div className="text-xs font-medium text-muted-foreground">{ui("Your plan")}</div>
-                <div className="mt-1 text-base font-semibold">{billingPlanName(currentPlan)}</div>
+                <div className={cn('mt-1 text-base font-semibold', billingPlanTextClass(currentPlan))}>{billingPlanName(currentPlan)}</div>
                 <div className="mt-0.5 text-sm text-muted-foreground">{subscriptionSubtitle}</div>
                 <SubscriptionUsageBars className="mt-4" weekly={summary?.weekly ?? null} fiveHour={summary?.fiveHour ?? null} shared={summary?.shared ?? null} sharedWeeklyPercent={summary?.sharedWeeklyPercent} custom={summary?.customLimits} />
               </div>
@@ -495,7 +495,7 @@ function PlanBadge({ plan, overridden, pastDue }: { plan: BillingPlan; overridde
 function PlanColumn({ plan, current, pendingPlan, cancelAtPeriodEnd, benefits, onChoose, disabled }: { plan: BillingPlan; current: BillingPlan; pendingPlan: BillingPlan | null; cancelAtPeriodEnd: boolean; benefits: string[]; onChoose: () => void; disabled: boolean }) {
   const price = plan === 'baby' ? null : plan === 'eight' ? 8 : 24
   return <div className={cn('flex flex-col', plan === 'baby' ? 'md:pr-5' : plan === 'eight' ? 'md:px-5' : 'md:pl-5')}>
-    <h3 className={cn('text-xl font-semibold tracking-tight', plan === 'baby' ? 'text-yellow-700 dark:text-yellow-300' : plan === 'eight' ? 'text-teal-700 dark:text-teal-300' : 'text-pink-700 dark:text-pink-300')}>{billingPlanName(plan)}</h3>
+    <h3 className={cn('text-xl font-semibold tracking-tight', billingPlanTextClass(plan))}>{billingPlanName(plan)}</h3>
     <div className="mt-3 text-2xl font-semibold">{price === null ? ui("Free") : <>${price} <span className="text-sm font-normal text-muted-foreground">{ui("/ month")}</span></>}</div>
     <div className="mt-5 flex-1 space-y-3 text-sm">{benefits.map((benefit) => <div key={benefit} className="flex items-start gap-2"><Check className="mt-0.5 size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />{benefit}</div>)}</div>
     <Button className="mt-6 w-full" variant={plan === 'baby' ? 'outline' : 'default'} disabled={disabled || planChoiceDisabled(plan, current, cancelAtPeriodEnd, pendingPlan)} onClick={onChoose}>{planChoiceLabel(plan, current, cancelAtPeriodEnd, pendingPlan)}</Button>
