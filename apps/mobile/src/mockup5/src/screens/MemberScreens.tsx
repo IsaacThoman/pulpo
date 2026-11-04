@@ -10,9 +10,10 @@ import { MaterialToggleRow } from '../../../platform/MaterialUI';
 import { showActions } from '../../../platform/materialActions';
 import { useSubpageBack } from '../../../platform/useSubpageBack';
 import { DeleteAccountForm } from '../../../components/DeleteAccount';
+export { EditProfileScreen } from '../../../features/profile/EditProfileScreen';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import {
-  Alert, Pressable, Button as RNButton, Image, Platform, StyleSheet, Text, View,
+  Alert, Pressable, Image, Platform, StyleSheet, Text, View,
 } from 'react-native';
 import { useNetworkOffline } from '../../../providers/useNetworkOffline';
 import * as Clipboard from 'expo-clipboard';
@@ -33,12 +34,11 @@ import {
   SecureField as SwiftUISecureField,
   Spacer as SwiftUISpacer,
   Text as SwiftUIText,
-  TextField as SwiftUITextField,
   Toggle as SwiftUIToggle,
   VStack as SwiftUIVStack,
   useNativeState,
 } from '@expo/ui/swift-ui';
-import { accessibilityHint, accessibilityLabel, accessibilityValue, background, buttonStyle, contentShape, font, foregroundStyle, frame, labelStyle, lineLimit, multilineTextAlignment, scrollDismissesKeyboard, shapes, textFieldStyle, tint } from '@expo/ui/swift-ui/modifiers';
+import { accessibilityHint, accessibilityLabel, accessibilityValue, background, buttonStyle, contentShape, font, foregroundStyle, frame, labelStyle, lineLimit, scrollDismissesKeyboard, shapes, tint } from '@expo/ui/swift-ui/modifiers';
 import { Card, EmptyState, Field, ListRow, NativeSwitch, PageHeader, PrimaryButton, Screen, SectionTitle, Segmented } from '../components/PrototypeUI';
 import { useAppTheme } from '../theme';
 import { ProfileAvatar } from '../components/ProfileAvatar';
@@ -202,33 +202,6 @@ export function PasskeysScreen({ navigation }: NativeStackScreenProps<RootStackP
   </Screen>;
 }
 
-export function EditProfileScreen({ navigation }: NativeStackScreenProps<RootStackParamList, 'EditProfile'>) {
-  const theme = useAppTheme();
-  const session = usePrototypeStore((state) => state.session);
-  const updateProfile = usePrototypeStore((state) => state.updateProfile);
-  const setProductionUser = useSessionStore((state) => state.setUser);
-  const [name, setName] = useState(session.user?.name ?? '');
-  const save = useCallback(() => {
-    if (!name.trim()) return;
-    void mobileApi.updateProfile(name.trim()).then(({ user }) => {
-      setProductionUser(user);
-      updateProfile({ name: user.name });
-      navigation.goBack();
-    }).catch((error) => Alert.alert('Couldn’t update profile', error instanceof Error ? error.message : undefined));
-  }, [name, navigation, setProductionUser, updateProfile]);
-
-  useLayoutEffect(() => {
-    if (Platform.OS !== 'ios') return;
-    navigation.setOptions({
-      headerLeft: () => <RNButton title="Cancel" onPress={() => navigation.goBack()} />,
-      headerRight: () => <RNButton title="Done" disabled={!name.trim()} onPress={save} />,
-    });
-  }, [name, navigation, save]);
-
-  if (Platform.OS === 'ios') return <SwiftUIHost modifiers={[tint(theme.blue)]} style={styles.flex}><SwiftUIForm><SwiftUISection title="Profile" footer={<SwiftUIText modifiers={[foregroundStyle('secondary')]}>This is the name shown on your Pulpo account.</SwiftUIText>}><NativeFormTextField title="Name" value={name} onChange={setName} /><SwiftUILabeledContent label="Email"><SwiftUIText modifiers={[foregroundStyle('secondary')]}>{session.user?.email ?? ''}</SwiftUIText></SwiftUILabeledContent></SwiftUISection></SwiftUIForm></SwiftUIHost>;
-  return <Screen><PageHeader title="Edit Profile" onBack={() => navigation.goBack()} /><Field label="Display name" autoComplete="name" value={name} onChangeText={setName} /><Text style={[styles.helper, { color: theme.secondary, marginBottom: 16 }]}>This is the name shown on your Pulpo account.</Text><Card style={{ marginBottom: 24 }}><ListRow title="Email" value={session.user?.email ?? ''} last /></Card><PrimaryButton label="Save" disabled={!name.trim()} onPress={save} /></Screen>;
-}
-
 function NativePasswordField({ placeholder, value, onChange }: { placeholder: string; value: string; onChange: (value: string) => void }) {
   const theme = useAppTheme();
   const nativeText = useNativeState(value);
@@ -354,12 +327,6 @@ function NativeChoiceRow<T extends string>({ title, value, options, onChange, ic
 function NativeToggleRow({ title, detail, value, onChange, icon }: { title: string; detail: string; value: boolean; onChange: (value: boolean) => void; icon?: string }) {
   const theme = useAppTheme();
   return <SwiftUIToggle isOn={value} onIsOnChange={onChange} systemImage={icon as never} modifiers={[tint(theme.green)]}><SwiftUIText>{title}</SwiftUIText><SwiftUIText modifiers={[foregroundStyle('secondary'), font({ textStyle: 'footnote' })]}>{detail}</SwiftUIText></SwiftUIToggle>;
-}
-
-function NativeFormTextField({ title, value, onChange }: { title: string; value: string; onChange: (value: string) => void }) {
-  const nativeText = useNativeState(value);
-  useEffect(() => { if (nativeText.get() !== value) nativeText.set(value); }, [nativeText, value]);
-  return <SwiftUIHStack spacing={12}><SwiftUIText>{title}</SwiftUIText><SwiftUISpacer /><SwiftUITextField onTextChange={onChange} text={nativeText} modifiers={[textFieldStyle('plain'), multilineTextAlignment('trailing'), frame({ minWidth: 150 })]} /></SwiftUIHStack>;
 }
 
 export function SettingsDetailScreen({ navigation, route }: NativeStackScreenProps<RootStackParamList, 'SettingsDetail'>) {

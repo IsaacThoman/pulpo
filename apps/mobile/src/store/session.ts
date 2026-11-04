@@ -498,7 +498,11 @@ export const useSessionStore = create<SessionState>((set, get) => {
     },
 
     setUser: async (user) => {
+      // A profile response can arrive after the user switched or left this account; applying it then
+      // would show one account while requests authenticate as another.
+      if (get().user?.id !== user.id) return
       await persistAccount(get().instanceUrl, user)
+      if (get().user?.id !== user.id) return
       set({ user, status: sessionStatus(user) })
     },
 

@@ -9,6 +9,9 @@ export const avatarCropSettingsSchema = z.object({
 
 export type AvatarCropSettings = z.infer<typeof avatarCropSettingsSchema>
 
+/** Largest profile picture upload the server accepts. */
+export const PROFILE_AVATAR_MAX_BYTES = 5 * 1024 * 1024
+
 export const DEFAULT_AVATAR_CROP: AvatarCropSettings = {
   cropToCircle: true,
   zoom: 1,
