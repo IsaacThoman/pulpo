@@ -92,8 +92,17 @@ beforeEach(() => {
   friends = { friends: ['Alice', 'Bob', 'Cara'].map(connection), incoming: [connection('Dan')], outgoing: [connection('Eve')], blocked: [profile('Finn')] }
   summary = { accountBalanceMicros: 5_000_000, incomingInvitations: [], pool: { id: 'pool', ownerUserId: 'me', pooledBalanceMicros: 10_000_000, members: [member('me', true), member('Alice')], pendingInvitations: [], sharedUsage: null } }
   searchResults = []
-  mocks.apiRequest.mockImplementation(async (path: string, options?: { method?: string }) => {
-    if (options?.method === 'POST' && path === '/api/friends/requests') return { requestId: 'new', status: 'pending' }
+  mocks.apiRequest.mockImplementation(async (path: string, options?: { method?: string; body?: { userId?: string } }) => {
+    if (options?.method === 'POST' && path === '/api/friends/requests') {
+      searchResults = searchResults.map((result) => result.profile.id === options.body?.userId ? { ...result, relationship: 'outgoing', requestId: 'new' } : result)
+      return { requestId: 'new', status: 'pending' }
+    }
+    if (options?.method === 'DELETE' && path.startsWith('/api/friends/requests/')) {
+      const requestId = path.split('/').at(-1)
+      friends = { ...friends, incoming: friends.incoming.filter((item) => item.requestId !== requestId), outgoing: friends.outgoing.filter((item) => item.requestId !== requestId) }
+      searchResults = searchResults.map((result) => result.requestId === requestId ? { ...result, relationship: 'none', requestId: null } : result)
+      return {}
+    }
     if (options?.method) return {}
     if (path === '/api/friends') return structuredClone(friends)
     if (path === '/api/pools/me') return structuredClone(summary)
@@ -220,6 +229,18 @@ describe.each(['ios', 'android'])('Friends on %s', (platform) => {
     expect(mocks.apiRequest).not.toHaveBeenCalledWith('/api/pools/me')
     expect(screen.queryByText(/of 6 members/)).toBeNull()
     expect(screen.queryByText('Invite to Pool')).toBeNull()
+  })
+
+  it('updates a search result when its request is declined in the list below', async () => {
+    searchResults = [{ profile: profile('Dan'), relationship: 'incoming', requestId: 'request-Dan', matchedOn: 'username' }]
+    mount()
+    await screen.findByText('Dan')
+    fireEvent.change(screen.getByLabelText('Search friends'), { target: { value: '@Dan' } })
+    await waitFor(() => expect(screen.getAllByText('Accept')).toHaveLength(2))
+    menuAction('Dan', 'Decline Request')
+    await waitFor(() => expect(writes()).toEqual([['/api/friends/requests/request-Dan', { method: 'DELETE' }]]))
+    await screen.findByText('Add')
+    expect(screen.queryByText('Accept')).toBeNull()
   })
 
   it('cancels a sent request from the collapsed list', async () => {

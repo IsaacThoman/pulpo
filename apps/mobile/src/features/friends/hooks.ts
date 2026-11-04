@@ -23,8 +23,12 @@ export function useFriendsContext() {
 
 export type FriendSearchState = 'idle' | 'loading' | 'success' | 'error'
 
-/** People matching the search field, fetched once typing pauses. */
-export function useFriendSearch(input: string) {
+/**
+ * People matching the search field, fetched once typing pauses. `revision` changes whenever the
+ * friends lists reload; the shown results are then fetched again quietly, so a request declined or
+ * cancelled below (or on another device) doesn't leave a stale Accept or "Request sent" here.
+ */
+export function useFriendSearch(input: string, revision = 0) {
   const query = useMemo(() => normalizedFriendSearchQuery(input), [input])
   const ready = shouldSearchFriends(input)
   const [results, setResults] = useState<FriendSearchResult[]>([])
@@ -58,6 +62,19 @@ export function useFriendSearch(input: string) {
       controller.abort()
     }
   }, [query, ready])
+
+  const searchedRevision = useRef(revision)
+  useEffect(() => {
+    if (revision === searchedRevision.current) return
+    searchedRevision.current = revision
+    if (!ready) return
+    const controller = new AbortController()
+    void searchFriends(query, controller.signal)
+      .then((response) => { if (!controller.signal.aborted) setResults(response.results) })
+      // Keep what is shown; the next change or search tries again.
+      .catch(() => undefined)
+    return () => controller.abort()
+  }, [query, ready, revision])
 
   const update = useCallback((profileId: string, patch: Partial<FriendSearchResult>) => {
     setResults((current) => current.map((result) => result.profile.id === profileId ? { ...result, ...patch } : result))

@@ -31,7 +31,7 @@ export function useFriendsScreen() {
   const poolSummary = poolsEnabled ? pool.data : undefined
   const overview = friendsOverview(list.data, poolSummary, viewerId)
   const [searchInput, setSearchInput] = useState('')
-  const search = useFriendSearch(searchInput)
+  const search = useFriendSearch(searchInput, list.dataUpdatedAt)
   const { run, pending, busy } = useFriendActions(namespace)
   const [copied, setCopied] = useState<string | null>(null)
   const copiedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
