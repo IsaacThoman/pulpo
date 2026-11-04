@@ -103,9 +103,11 @@ export function addSlide(doc: Y.Doc, deck: DeckResources, layoutPath: string, in
 export function cloneSlide(slide: SlideSnapshot): SlideSnapshot {
   const { sldId: _sldId, part: _part, source: _source, relsSource: _relsSource, ...rest } = slide
   const notes = slide.notes ? cloneNotes(slide.notes) : undefined
-  // Comments belong to one slide; a copy starts without them.
-  const rels = Object.fromEntries(Object.entries(slide.rels).filter(([, rel]) => rel.type !== REL_TYPES.comments))
-  return { ...rest, key: newKey('slide-'), rels, shapes: slide.shapes.map(cloneShape), ...(notes ? { notes } : {}) }
+  // Comments (legacy and modern) belong to one slide; a copy starts without them.
+  const rels = Object.fromEntries(Object.entries(slide.rels).filter(([, rel]) => !/\/comments$|\/commentAuthors$/.test(rel.type)))
+  // Shape ids stay: they are unique within the slide already, and the copied animations and
+  // connector glue refer to them.
+  return { ...rest, key: newKey('slide-'), rels, shapes: slide.shapes.map((shape) => cloneShape(shape, true)), ...(notes ? { notes } : {}) }
 }
 
 function cloneNotes(notes: NotesSnapshot): NotesSnapshot {
@@ -113,10 +115,11 @@ function cloneNotes(notes: NotesSnapshot): NotesSnapshot {
   return rest
 }
 
-export function cloneShape(shape: ShapeSnapshot): ShapeSnapshot {
+/** A copy of a shape with fresh keys; `keepIds` keeps file shape ids (when the whole slide is copied). */
+export function cloneShape(shape: ShapeSnapshot, keepIds = false): ShapeSnapshot {
   const copy: ShapeSnapshot = { ...shape, key: newKey('s') }
-  delete copy.nvId
-  if (shape.children) copy.children = shape.children.map(cloneShape)
+  if (!keepIds) delete copy.nvId
+  if (shape.children) copy.children = shape.children.map((member) => cloneShape(member, keepIds))
   if (shape.table) {
     const columnKeys = new Map(shape.table.columns.map((column) => [column.key, newKey('c')]))
     copy.table = {
@@ -260,6 +263,14 @@ export function ensureNotes(doc: Y.Doc, slideKey: string, origin?: unknown): Y.X
   if (existing) return existing.get('text') as Y.XmlFragment
   doc.transact(() => setNotes(map, { xml: '', rels: {}, text: EMPTY_TEXT }), origin)
   return (map.get('notes') as YMap).get('text') as Y.XmlFragment
+}
+
+/** Rewrites a slide's speaker notes as a minimal diff. */
+export function setNotesText(doc: Y.Doc, slideKey: string, text: TextJSON, origin?: unknown): void {
+  doc.transact(() => {
+    const fragment = ensureNotes(doc, slideKey, origin)
+    if (fragment) updateYFragment(doc, fragment, textNode(text), { mapping: new Map(), isOMark: new Map() })
+  }, origin)
 }
 
 // ---------------------------------------------------------------------------------------------

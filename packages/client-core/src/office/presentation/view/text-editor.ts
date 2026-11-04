@@ -1,4 +1,4 @@
-import { baseKeymap, chainCommands, createParagraphNear, liftEmptyBlock, newlineInCode, splitBlockKeepMarks } from '@tiptap/pm/commands'
+import { baseKeymap, chainCommands, createParagraphNear, liftEmptyBlock, newlineInCode, splitBlockAs } from '@tiptap/pm/commands'
 import { keymap } from '@tiptap/pm/keymap'
 import type { Mark, Node as ProseMirrorNode } from '@tiptap/pm/model'
 import { EditorState, TextSelection, type Command as PmCommand } from '@tiptap/pm/state'
@@ -90,7 +90,7 @@ export class InlineTextEditor {
         'Mod-i': () => (options.onToggleMark?.('i'), true),
         'Mod-u': () => (options.onToggleMark?.('u'), true),
         'Shift-Enter': insertLineBreak,
-        Enter: chainCommands(newlineInCode, createParagraphNear, liftEmptyBlock, splitBlockKeepMarks),
+        Enter: chainCommands(newlineInCode, createParagraphNear, liftEmptyBlock, splitParagraph),
         Tab: listLevel(1),
         'Shift-Tab': listLevel(-1),
         Escape: () => (options.onEscape?.(), true),
@@ -247,6 +247,19 @@ export class InlineTextEditor {
     }
     return views
   }
+}
+
+/**
+ * Enter: the new paragraph keeps the paragraph's properties (list level, bullets, alignment,
+ * spacing) and the formatting at the cursor, as in PowerPoint.
+ */
+export const splitParagraph: PmCommand = (state, dispatch, view) => {
+  const marks = state.storedMarks ?? state.selection.$from.marks()
+  return splitBlockAs((node) => ({ type: node.type, attrs: node.attrs }))(
+    state,
+    dispatch && ((transaction) => dispatch(marks.length ? transaction.ensureMarks(marks) : transaction)),
+    view,
+  )
 }
 
 const insertLineBreak: PmCommand = (state, dispatch) => {

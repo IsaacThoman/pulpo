@@ -54,34 +54,68 @@ const MACRO_FORMATS = new Set<PresentationFormat>(['pptm', 'potm', 'ppsm'])
  * contain when it matches a pushed file back to the document.
  */
 export function assignIdentifiers(snapshot: PresentationSnapshot): PresentationSnapshot {
-  const usedSlideIds = new Set<number>()
+  // Every part name already taken, including slides and notes later in the deck: a new slide must
+  // never take an existing slide's name, or links to that slide would silently point elsewhere.
   const usedParts = new Set<string>(Object.keys(snapshot.parts))
-  let nextSlideId = 256
-  for (const slide of snapshot.slides) if (slide.sldId !== undefined) nextSlideId = Math.max(nextSlideId, slide.sldId + 1)
+  for (const slide of snapshot.slides) {
+    if (slide.part) usedParts.add(slide.part)
+    if (slide.notes?.part) usedParts.add(slide.notes.part)
+  }
+  const claimedParts = new Set<string>()
+  const claim = (part: string | undefined) => {
+    if (!part || claimedParts.has(part)) return false
+    claimedParts.add(part)
+    return true
+  }
+  const usedSlideIds = new Set<number>()
+  const slideIds = new SlideIdAllocator(snapshot.slides.flatMap((slide) => (slide.sldId === undefined ? [] : [slide.sldId])))
   const slides = snapshot.slides.map((original) => {
     const slide: SlideSnapshot = { ...original }
-    if (slide.sldId === undefined || usedSlideIds.has(slide.sldId) || slide.sldId < 256) slide.sldId = nextSlideId++
+    if (slide.sldId === undefined || usedSlideIds.has(slide.sldId) || slide.sldId < 256 || slide.sldId > MAX_SLIDE_ID) slide.sldId = slideIds.next()
     usedSlideIds.add(slide.sldId)
-    if (!slide.part || usedParts.has(slide.part)) {
+    if (!claim(slide.part)) {
       delete slide.source
       delete slide.relsSource
       slide.part = freePartName(usedParts, 'ppt/slides/slide', '.xml')
+      claim(slide.part)
     }
-    usedParts.add(slide.part)
+    usedParts.add(slide.part!)
     if (slide.notes) {
       const notes = { ...slide.notes }
-      if (!notes.part || usedParts.has(notes.part)) {
+      if (!claim(notes.part)) {
         delete notes.source
         delete notes.relsSource
         notes.part = freePartName(usedParts, 'ppt/notesSlides/notesSlide', '.xml')
+        claim(notes.part)
       }
-      usedParts.add(notes.part)
+      usedParts.add(notes.part!)
       slide.notes = notes
     }
     slide.shapes = assignShapeIds(slide.shapes)
     return slide
   })
   return { ...snapshot, slides }
+}
+
+/** `ST_SlideId`: 256 through 2147483647. */
+const MAX_SLIDE_ID = 2_147_483_647
+
+/** New slide ids: after the highest one in use, or the lowest free one once the range is exhausted. */
+class SlideIdAllocator {
+  private readonly used: Set<number>
+  private candidate: number
+
+  constructor(existing: number[]) {
+    this.used = new Set(existing)
+    this.candidate = Math.max(255, ...existing.filter((id) => id <= MAX_SLIDE_ID)) + 1
+  }
+
+  next(): number {
+    if (this.candidate > MAX_SLIDE_ID) this.candidate = 256
+    while (this.used.has(this.candidate)) this.candidate++
+    this.used.add(this.candidate)
+    return this.candidate++
+  }
 }
 
 function freePartName(used: Set<string>, prefix: string, suffix: string): string {
@@ -285,6 +319,17 @@ function xfrmElement(document: XmlDocument, xfrm: Xfrm, name: 'a:xfrm' | 'p:xfrm
 
 const EMPTY_CELL = '<a:tc><a:txBody><a:bodyPr/><a:lstStyle/><a:p/></a:txBody><a:tcPr/></a:tc>'
 
+/** What a cell's template says, in model terms. */
+function templateCell(tc: XmlElement, rels: RelationshipTable): { text: TableSnapshot['rows'][number]['cells'][string]['text']; tcPr?: string } {
+  const txBody = child(tc, 'txBody', NS.a)
+  const tcPr = child(tc, 'tcPr', NS.a)
+  const resolver = { target: (id: string) => {
+    const rel = rels.entries.get(id)
+    return rel && { target: rel.target, external: rel.external === true, type: rel.type }
+  } }
+  return { text: txBody ? readTextBody(txBody, resolver) : readTextBody(tc, resolver), ...(tcPr ? { tcPr: serializeNode(tcPr) } : {}) }
+}
+
 function writeTable(tbl: XmlElement, table: TableSnapshot, derived: TableSnapshot | undefined, rels: RelationshipTable): void {
   const document = tbl.ownerDocument as unknown as XmlDocument
   if (differs(table.tblPr, derived?.tblPr)) replaceOrInsert(tbl, child(tbl, 'tblPr', NS.a), fragment(document, table.tblPr), ['tblGrid', 'tr'])
@@ -295,7 +340,6 @@ function writeTable(tbl: XmlElement, table: TableSnapshot, derived: TableSnapsho
     element.setAttribute('w', String(Math.round(column.w)))
     grid.appendChild(element)
   }
-  const derivedRows = new Map((derived?.rows ?? []).map((row) => [row.key, row]))
   const anchor = childElements(tbl).find((element) => element.localName === 'extLst') ?? null
   for (const row of childElements(tbl)) if (row.localName === 'tr') tbl.removeChild(row)
   for (const row of table.rows) {
@@ -304,8 +348,10 @@ function writeTable(tbl: XmlElement, table: TableSnapshot, derived: TableSnapsho
     const rowExtLst = child(element, 'extLst', NS.a)
     for (const column of table.columns) {
       const cell = row.cells[column.key]
-      const before = derivedRows.get(row.key)?.cells[column.key]
       const tc = importFragment(document, cell?.xml ?? EMPTY_CELL)
+      // Compare with this cell's own template, not a row matched by key: keys from a pushed file
+      // are positional and need not match the template's row.
+      const before = cell ? templateCell(tc, rels) : undefined
       if (cell) {
         const setOrRemove = (name: string, value: string | undefined) => (value === undefined ? tc.removeAttribute(name) : tc.setAttribute(name, value))
         setOrRemove('gridSpan', cell.gridSpan && cell.gridSpan > 1 ? String(cell.gridSpan) : undefined)
@@ -337,8 +383,8 @@ interface WrittenPart {
 }
 
 /** Writes a slide; returns its original bytes when nothing the model covers has changed. */
-function writeSlide(slide: SlideSnapshot): WrittenPart {
-  if (slide.source && slideUnchanged(slide)) {
+function writeSlide(slide: SlideSnapshot, liveParts: ReadonlySet<string>): WrittenPart {
+  if (slide.source && !linksToDeletedSlides(slide, liveParts) && slideUnchanged(slide)) {
     return { xml: slide.source, rels: slide.relsSource ?? strToU8(new RelationshipTable().toXml(slide.part!)) }
   }
   const part = slide.part!
@@ -365,9 +411,91 @@ function writeSlide(slide: SlideSnapshot): WrittenPart {
     cSld.appendChild(tree)
   }
   const treeExtLst = child(tree, 'extLst', NS.p) ?? null
-  for (const shape of slide.shapes) tree.insertBefore(buildShapeElement(document, shape, prefixes, table), treeExtLst)
+  for (const shape of slide.shapes) {
+    // A shape whose stored XML cannot be built (corrupt data from a bad paste or a buggy client)
+    // is left out rather than making the whole deck impossible to save.
+    let element: XmlElement
+    try {
+      element = buildShapeElement(document, shape, prefixes, table)
+    } catch {
+      continue
+    }
+    tree.insertBefore(element, treeExtLst)
+  }
+  dropDeadSlideLinks(root, table, liveParts)
+  pruneShapeReferences(root)
   pruneRedundantNamespaces(root)
   return { xml: strToU8(serializeDocument(document)), rels: sameRelationships(slide.relsSource, part, table) ?? strToU8(table.toXml(part)) }
+}
+
+/** Whether a slide (as stored) links to a slide part that is not in the deck any more. */
+function linksToDeletedSlides(slide: SlideSnapshot, liveParts: ReadonlySet<string>): boolean {
+  const dead = (rel: RelTarget) => rel.type === REL_TYPES.slide && !rel.external && !liveParts.has(rel.target)
+  if (Object.values(slide.rels).some(dead)) return true
+  const shapes = (list: ShapeSnapshot[]): boolean => list.some((shape) => Object.values(shape.rels).some(dead) || shapes(shape.children ?? []) || linkMarksDead(shape.text))
+  const linkMarksDead = (text: ShapeSnapshot['text']): boolean =>
+    JSON.stringify(text ?? '').includes('"link"') &&
+    (text?.content ?? []).some((paragraph) => (paragraph.content ?? []).some((inline) => (inline.marks ?? []).some((mark) => mark.type === 'link' && mark.attrs?.external === false && (mark.attrs.relType ?? REL_TYPES.slide) === REL_TYPES.slide && typeof mark.attrs.target === 'string' && !liveParts.has(mark.attrs.target))))
+  return shapes(slide.shapes)
+}
+
+/**
+ * Links to slides that were deleted lose their relationship; the link keeps its action with an
+ * empty id, which is how PowerPoint itself leaves a link whose target slide is gone.
+ */
+function dropDeadSlideLinks(root: XmlElement, table: RelationshipTable, liveParts: ReadonlySet<string>): void {
+  const dead = new Set<string>()
+  for (const [id, rel] of table.entries) {
+    if (rel.type === REL_TYPES.slide && !rel.external && !liveParts.has(rel.target)) dead.add(id)
+  }
+  if (!dead.size) return
+  for (const id of dead) table.entries.delete(id)
+  const stack: XmlElement[] = [root]
+  while (stack.length) {
+    const node = stack.pop()!
+    for (let index = 0; index < node.attributes.length; index++) {
+      const attribute = node.attributes.item(index)!
+      if (attribute.namespaceURI === NS.r && dead.has(attribute.value)) attribute.value = ''
+    }
+    stack.push(...childElements(node))
+  }
+}
+
+/**
+ * Animations and connector glue name shapes by id. When those shapes are gone, the references
+ * go too (as when deleting a shape in PowerPoint), so the file never points at missing shapes.
+ */
+function pruneShapeReferences(root: XmlElement): void {
+  const ids = new Set<string>()
+  const all: XmlElement[] = []
+  const stack: XmlElement[] = [root]
+  while (stack.length) {
+    const node = stack.pop()!
+    all.push(node)
+    if (node.localName === 'cNvPr') ids.add(node.getAttribute('id') ?? '')
+    stack.push(...childElements(node))
+  }
+  for (const node of all) {
+    if (!node.parentNode) continue
+    const name = node.localName
+    if ((name === 'stCxn' || name === 'endCxn') && !ids.has(node.getAttribute('id') ?? '')) node.parentNode.removeChild(node)
+    else if (name === 'bldP' && !ids.has(node.getAttribute('spid') ?? '')) node.parentNode.removeChild(node)
+    else if (name === 'spTgt' && !ids.has(node.getAttribute('spid') ?? '')) removeAnimation(node)
+  }
+}
+
+/** Removes the effect a target belongs to, then any time nodes it leaves empty (never the timing root). */
+function removeAnimation(target: XmlElement): void {
+  let par: XmlElement | null = target
+  while (par && par.localName !== 'par') par = par.parentNode as XmlElement | null
+  while (par && (par.parentNode as XmlElement | null)?.localName === 'childTnLst') {
+    const list = par.parentNode as XmlElement
+    list.removeChild(par)
+    if (childElements(list).length) break
+    // childTnLst → cTn → par: the enclosing time node, now empty.
+    par = (list.parentNode?.parentNode as XmlElement | null) ?? null
+    if (par?.localName !== 'par') break
+  }
 }
 
 /** The original relationships bytes, when the rewritten part links to exactly the same things. */
@@ -478,8 +606,9 @@ export async function writePresentation(input: PresentationSnapshot, options: Wr
   let notesMaster = pkg.relatedParts(snapshot.mainPart, REL_TYPES.notesMaster)[0]
   if (!notesMaster && snapshot.slides.some((slide) => slide.notes)) notesMaster = addNotesMaster(pkg, snapshot.mainPart)
 
+  const liveParts = new Set(snapshot.slides.map((slide) => slide.part!))
   for (const slide of snapshot.slides) {
-    const written = writeSlide(slide)
+    const written = writeSlide(slide, liveParts)
     pkg.set(slide.part!, written.xml)
     pkg.set(relationshipsPathFor(slide.part!), written.rels)
     if (slide.notes) {
@@ -620,6 +749,13 @@ function writePresentationPart(pkg: OoxmlPackage, snapshot: PresentationSnapshot
     list.appendChild(entry)
   }
 
+  // Custom shows list slides through relationships; entries for removed slides go with them.
+  const liveIds = new Set(pkg.relationships(mainPart).map((rel) => rel.id))
+  for (const show of childElements(child(presentation, 'custShowLst', NS.p))) {
+    for (const entry of childElements(child(show, 'sldLst', NS.p))) {
+      if (!liveIds.has(entry.getAttributeNS(NS.r, 'id') ?? '')) entry.parentNode!.removeChild(entry)
+    }
+  }
   setSize(document, presentation, 'sldSz', wanted.slideWidth, wanted.slideHeight, 'notesSz')
   setSize(document, presentation, 'notesSz', wanted.notesWidth, wanted.notesHeight)
   if (differs(before.sections, wanted.sections)) writeSections(document, presentation, wanted.sections)

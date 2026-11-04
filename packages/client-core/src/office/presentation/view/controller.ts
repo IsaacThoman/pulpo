@@ -8,7 +8,7 @@ import { editAllParagraphs, markAll, markValueAt, markValueIn, paragraphAt, para
 import type { PartSnapshot, ShapeSnapshot, SlideSnapshot, Xfrm } from '../model.js'
 import { DeckResources } from '../render/deck.js'
 import { mergeBag, resolveLevel } from '../render/props.js'
-import { DEFAULT_RENDER_LABELS, EMU_PER_PX, type RenderLabels } from '../render/env.js'
+import { assetObjectUrl, DEFAULT_RENDER_LABELS, displayableMediaType, EMU_PER_PX, type RenderLabels } from '../render/env.js'
 import { renderSlide, slideShapeText, slideShapeXfrm, type SlideRenderOptions } from '../render/slide.js'
 import { textToPlain } from '../text.js'
 import { orderedKeys, presentationRoot, readSlideMap } from '../ydoc.js'
@@ -160,7 +160,7 @@ export class PresentationController {
     this.awareness?.off('change', this.onAwarenessChange)
     this.awareness?.setLocalStateField('presentation', null)
     this.undoManager.destroy()
-    for (const url of this.urls.values()) if (url) URL.revokeObjectURL(url)
+    for (const url of this.urls.values()) if (url?.startsWith('blob:')) URL.revokeObjectURL(url)
     this.listeners.clear()
   }
 
@@ -317,7 +317,7 @@ export class PresentationController {
     if (cached !== undefined) return cached ?? undefined
     const part = (presentationRoot(this.doc).get('parts') as Y.Map<PartSnapshot>).get(partPath)
     const asset = part?.asset
-    if (!asset || /x-emf|x-wmf|tiff/.test(asset.mimeType)) {
+    if (!asset || !displayableMediaType(asset.mimeType)) {
       this.urls.set(partPath, null)
       return undefined
     }
@@ -325,7 +325,7 @@ export class PresentationController {
     void this.assets.get(asset.hash).then(
       (bytes) => {
         if (this.destroyed) return
-        this.urls.set(partPath, URL.createObjectURL(new Blob([bytes as BlobPart], { type: asset.mimeType })))
+        this.urls.set(partPath, assetObjectUrl(bytes, asset.mimeType) ?? null)
         this.assetVersion++
         this.emit({ assets: true })
       },

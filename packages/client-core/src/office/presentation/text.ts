@@ -150,7 +150,7 @@ const marks: Record<string, MarkSpec> = {
   fill: valueMark('fill'),
   highlight: valueMark('highlight'),
   /** `a:hlinkClick` as XML, with its relationship resolved into `target`. */
-  link: { attrs: { xml: {}, target: { default: null }, external: { default: true } }, inclusive: false, ...markDom('link') },
+  link: { attrs: { xml: {}, target: { default: null }, external: { default: true }, relType: { default: null } }, inclusive: false, ...markDom('link') },
   /** Whatever else `a:rPr` holds (lang, effects, east Asian fonts, …), as XML. */
   rPr: valueMark('rPr'),
 }
@@ -188,7 +188,7 @@ export function textNode(json: TextJSON): ProseMirrorNode {
 
 export interface RelationshipResolver {
   /** The target of a relationship of the part the text lives in. */
-  target(id: string): { target: string; external: boolean } | undefined
+  target(id: string): { target: string; external: boolean; type?: string } | undefined
 }
 
 /** Reads an `a:txBody` (or `p:txBody`) as a text document. */
@@ -279,7 +279,7 @@ function readRunMarks(rPr: XmlElement | undefined, rels?: RelationshipResolver):
     } else if (name === 'hlinkClick') {
       const id = relAttr(element, 'id')
       const resolved = id ? rels?.target(id) : undefined
-      result.push({ type: 'link', attrs: { xml: serializeNode(element), target: resolved?.target ?? null, external: resolved?.external ?? true } })
+      result.push({ type: 'link', attrs: { xml: serializeNode(element), target: resolved?.target ?? null, external: resolved?.external ?? true, relType: resolved?.type ?? null } })
       rest.removeChild(element)
     }
   }
@@ -318,7 +318,7 @@ function writeParagraph(document: XmlDocument, paragraph: TextJSON, rels?: Relat
   const pPr = paragraph.attrs?.pPr
   if (typeof pPr === 'string' && pPr) element.appendChild(importFragment(document, pPr))
   for (const inline of paragraph.content ?? []) {
-    if (inline.type === 'text') element.appendChild(writeRun(document, inline, rels))
+    if (inline.type === 'text') for (const run of writeRuns(document, inline, rels)) element.appendChild(run)
     else if (inline.type === 'br') {
       const br = createElement(document, 'a:br')
       const rPr = inline.attrs?.rPr
@@ -344,19 +344,55 @@ function writeField(document: XmlDocument, field: TextJSON): XmlElement {
   if (typeof attrs.rPr === 'string' && attrs.rPr) element.appendChild(importFragment(document, attrs.rPr))
   if (typeof attrs.pPr === 'string' && attrs.pPr) element.appendChild(importFragment(document, attrs.pPr))
   const text = createElement(document, 'a:t')
-  text.appendChild(document.createTextNode(String(attrs.text ?? '')))
+  text.appendChild(document.createTextNode(xmlSafeText(String(attrs.text ?? ''))))
   element.appendChild(text)
   return element
 }
 
-function writeRun(document: XmlDocument, run: TextJSON, rels?: RelationshipAllocator): XmlElement {
-  const element = createElement(document, 'a:r')
-  const rPr = buildRunProperties(document, run.marks ?? [], rels)
-  if (rPr) element.appendChild(rPr)
-  const text = createElement(document, 'a:t')
-  text.appendChild(document.createTextNode(run.text ?? ''))
-  element.appendChild(text)
-  return element
+/**
+ * Text XML 1.0 can hold: control characters other than tab and newlines, noncharacters, and lone
+ * surrogates are dropped. (Vertical tabs, PowerPoint's soft breaks, become `a:br` before this.)
+ */
+export function xmlSafeText(value: string): string {
+  let result = ''
+  for (let index = 0; index < value.length; index++) {
+    const code = value.charCodeAt(index)
+    if (code < 0x20 && code !== 0x09 && code !== 0x0a && code !== 0x0d) continue
+    if (code === 0xfffe || code === 0xffff) continue
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = value.charCodeAt(index + 1)
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        result += value.slice(index, index + 2)
+        index++
+      }
+      continue
+    }
+    if (code >= 0xdc00 && code <= 0xdfff) continue
+    result += value[index]
+  }
+  return result
+}
+
+function writeRuns(document: XmlDocument, run: TextJSON, rels?: RelationshipAllocator): XmlElement[] {
+  const pieces = (run.text ?? '').split('\u000b')
+  const elements: XmlElement[] = []
+  pieces.forEach((piece, index) => {
+    if (index > 0) {
+      const br = createElement(document, 'a:br')
+      const rPr = buildRunProperties(document, run.marks ?? [], rels)
+      if (rPr) br.appendChild(rPr)
+      elements.push(br)
+    }
+    if (!piece && pieces.length > 1) return
+    const element = createElement(document, 'a:r')
+    const rPr = buildRunProperties(document, run.marks ?? [], rels)
+    if (rPr) element.appendChild(rPr)
+    const text = createElement(document, 'a:t')
+    text.appendChild(document.createTextNode(xmlSafeText(piece)))
+    element.appendChild(text)
+    elements.push(element)
+  })
+  return elements
 }
 
 /** Builds `a:rPr` from marks: the raw remainder first, then each modeled property in schema order. */
@@ -385,7 +421,10 @@ export function buildRunProperties(document: XmlDocument, runMarks: NonNullable<
       const target = mark.attrs.target
       if (typeof target === 'string' && rels) {
         const external = mark.attrs.external !== false
-        const type = external ? 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink' : 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide'
+        // Keep the relationship type the file used: internal targets are not always slides
+        // (Word-style `#bookmark` hyperlinks, for example).
+        const relType = typeof mark.attrs.relType === 'string' ? mark.attrs.relType : undefined
+        const type = relType ?? (external ? 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink' : 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide')
         link.setAttributeNS(NS.r, 'r:id', rels.allocate(type, target, external, relAttr(link, 'id')))
       }
       insertChild(link)

@@ -11,7 +11,7 @@ import {
   deleteSlides,
   deleteTableColumns,
   duplicateSlides,
-  ensureNotes,
+  setNotesText,
   groupShapes,
   insertShapes,
   insertTableColumn,
@@ -92,7 +92,7 @@ describe('editing a presentation', () => {
     const [table] = insertShapes(doc, content, [tableShape(2, 3, { x: 6000000, y: 4000000, cx: 3000000, cy: 800000 }, 'Table 6')], LOCAL)
     insertTableRow(doc, content, table!, 2, LOCAL)
     insertTableColumn(doc, content, table!, 0, LOCAL)
-    ensureNotes(doc, content, LOCAL)
+    setNotesText(doc, content, plainToText('Remember the demo'), LOCAL)
 
     const out = await presentationCodec.exportFile(doc, context)
     const reread = await open(out)
@@ -111,7 +111,7 @@ describe('editing a presentation', () => {
     const tableShapeSnapshot = snapshot.slides[1]!.shapes[5]!
     expect(tableShapeSnapshot.table!.rows.length).toBe(3)
     expect(tableShapeSnapshot.table!.columns.length).toBe(4)
-    expect(snapshot.slides[1]!.notes).toBeDefined()
+    expect(textToPlain(snapshot.slides[1]!.notes!.text)).toBe('Remember the demo')
     // Ids stay unique per slide.
     const ids = snapshot.slides[1]!.shapes.map((shape) => shape.nvId)
     expect(new Set(ids).size).toBe(ids.length)

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { LiveAssetStore } from '@pulpo/client-core/office'
-import { DeckResources, renderSlide, type PresentationDiff, type PresentationSnapshot, type ShapeChangeKind, type SlideDiff } from '@pulpo/client-core/office/presentation'
+import { assetObjectUrl, DeckResources, displayableMediaType, renderSlide, type PresentationDiff, type PresentationSnapshot, type ShapeChangeKind, type SlideDiff } from '@pulpo/client-core/office/presentation'
 import { ui, uit } from '@/i18n/ui'
 import { cn } from '@/lib/utils'
 import { MarkdownDiff } from '@/features/files/MarkdownDiff'
@@ -55,10 +55,11 @@ function useAssetUrls(snapshot: PresentationSnapshot, assets: LiveAssetStore | u
     void (async () => {
       const next = new Map<string, string>()
       for (const [path, part] of Object.entries(snapshot.parts)) {
-        if (!part.asset?.mimeType.startsWith('image/') || /emf|wmf|tiff/.test(part.asset.mimeType)) continue
+        if (!part.asset?.mimeType.startsWith('image/') || !displayableMediaType(part.asset.mimeType)) continue
         try {
-          const url = URL.createObjectURL(new Blob([(await assets.get(part.asset.hash)) as BlobPart], { type: part.asset.mimeType }))
-          created.push(url)
+          const url = assetObjectUrl(await assets.get(part.asset.hash), part.asset.mimeType)
+          if (!url) continue
+          if (url.startsWith('blob:')) created.push(url)
           next.set(path, url)
         } catch {
           // A missing image draws as a gray box.

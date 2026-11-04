@@ -5,7 +5,9 @@ import { cloneShape, cloneSlide, insertShapes, insertSlides, partsMap } from './
 import type { PartSnapshot, RelTarget, ShapeSnapshot, SlideSnapshot } from './model.js'
 import { DeckResources } from './render/deck.js'
 import { readSnapshot } from './ydoc.js'
-import { attr, childElements, parseXmlDocument, REL_TYPES, serializeNode } from './xml.js'
+import { normalizeText } from './text.js'
+import { buildShapeElement, RelationshipTable } from './write.js'
+import { attr, childElements, parseFragment, parseXmlDocument, REL_TYPES, serializeNode } from './xml.js'
 
 /**
  * Copying shapes and slides, within a deck or to another one. The payload carries the parts the
@@ -100,14 +102,56 @@ export async function copyContent(doc: Y.Doc, assets: LiveAssetStore, content: {
   }
 }
 
+/**
+ * Reads a clipboard payload. Any web page can put data on the clipboard under our type, so the
+ * payload is untrusted: shapes and slides that cannot be built into valid XML are dropped here,
+ * before they reach the shared document where they would break every collaborator's saves.
+ */
 export function parseClipboard(json: string): PresentationClipboard | undefined {
+  let value: PresentationClipboard
   try {
-    const value = JSON.parse(json) as PresentationClipboard
-    if (value?.version !== 1 || (value.kind !== 'shapes' && value.kind !== 'slides') || typeof value.parts !== 'object') return undefined
-    return value
+    value = JSON.parse(json) as PresentationClipboard
   } catch {
     return undefined
   }
+  if (value?.version !== 1 || (value.kind !== 'shapes' && value.kind !== 'slides') || typeof value.parts !== 'object' || value.parts === null) return undefined
+  const parts: Record<string, ClipboardPart> = {}
+  for (const [path, part] of Object.entries(value.parts)) {
+    if (typeof part?.data !== 'string' || !/^[\w./-]+$/.test(path) || path.includes('..')) continue
+    parts[path] = part
+  }
+  const shapes = Array.isArray(value.shapes) ? value.shapes.filter(validShape) : undefined
+  const slides = Array.isArray(value.slides) ? value.slides.filter(validSlide) : undefined
+  return { version: 1, source: String(value.source ?? ''), kind: value.kind, ...(shapes ? { shapes } : {}), ...(slides ? { slides } : {}), parts, text: String(value.text ?? '') }
+}
+
+const SHAPE_KINDS = new Set(['sp', 'pic', 'cxnSp', 'grpSp', 'graphicFrame', 'opaque'])
+
+function validShape(shape: ShapeSnapshot): boolean {
+  if (!shape || typeof shape !== 'object' || typeof shape.xml !== 'string' || !SHAPE_KINDS.has(shape.kind) || typeof shape.rels !== 'object' || shape.rels === null) return false
+  try {
+    if (shape.text) normalizeText(shape.text)
+    if (shape.children && (!Array.isArray(shape.children) || !shape.children.every(validShape))) return false
+    // Building the element exercises every XML-valued property and the text writer.
+    buildShapeElement(parseXmlDocument('<w/>'), shape, {}, new RelationshipTable())
+    return true
+  } catch {
+    return false
+  }
+}
+
+function validSlide(slide: SlideSnapshot): boolean {
+  if (!slide || typeof slide !== 'object' || typeof slide.xml !== 'string' || typeof slide.layout !== 'string' || !Array.isArray(slide.shapes)) return false
+  try {
+    if (parseXmlDocument(slide.xml).documentElement?.localName !== 'sld') return false
+    if (slide.background) parseFragment(slide.background)
+    if (slide.notes?.text) normalizeText(slide.notes.text)
+    if (slide.notes?.xml) parseXmlDocument(slide.notes.xml)
+  } catch {
+    return false
+  }
+  slide.shapes = slide.shapes.filter(validShape)
+  return typeof slide.rels === 'object' && slide.rels !== null
 }
 
 /** Brings the clipboard's parts into `doc` under fresh names; returns old path → new path. */

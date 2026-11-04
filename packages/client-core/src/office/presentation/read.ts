@@ -254,7 +254,7 @@ function resolverFor(rels: Map<string, RelTarget>): RelationshipResolver {
   return {
     target(id) {
       const rel = rels.get(id)
-      return rel && { target: rel.target, external: rel.external === true }
+      return rel && { target: rel.target, external: rel.external === true, type: rel.type }
     },
   }
 }

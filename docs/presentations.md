@@ -23,6 +23,8 @@ The engine models what people edit and keeps everything else verbatim:
 - **Relationships are resolved, not copied by id.** Shapes record what each `r:` attribute points at (a part path or URL). On export the slide's relationships are rebuilt, reusing the original ids where the target is the same, so shapes can be copied between slides and decks.
 - **Identifiers are assigned on export.** New slides get the next free `p:sldId` and part name; new shapes the next free `cNvPr/@id` on their slide. Duplicates that concurrent edits can create are repaired the same way. Assignment is deterministic, so `applyFile` can predict which file ids belong to which document keys.
 - **Garbage collection is conservative.** Parts that only a deleted slide used (its chart, its notes) are dropped; parts that were already unreachable in the imported file are kept.
+- **No dangling references.** Links to deleted slides keep their action with an empty relationship id (as PowerPoint leaves them), custom shows drop deleted slides, and animations and connector glue that name deleted shapes are removed. Duplicated slides keep their shape ids, so their animations still apply; comments are not duplicated.
+- **Text is valid XML.** Vertical tabs (PowerPoint's soft line breaks) are written as `a:br`; characters XML cannot hold are dropped.
 
 Saving a `.pptm` as `.pptx` drops the VBA project and its content type, because macro-free formats cannot hold it. Macros are never run.
 
@@ -72,7 +74,7 @@ The view core (`@pulpo/client-core/office/presentation/view`) is imperative DOM,
 - `SlideCanvas`: select, shift-click and marquee multi-select, move with smart guides to the slide's edges and center and other shapes, resize (Shift keeps the aspect ratio; pictures keep it from corners), rotate (Shift snaps to 15°), arrow-key nudge, Delete, Cmd/Ctrl+D, G, Shift+G, A, Z, Y, copy, cut, paste (shapes and images), collaborators' selections with names, pinch and Ctrl-wheel zoom, double-click or double-tap to edit text, typing to replace a selected shape's text, and clicking links (http, https, mailto only) and media.
 - `InlineTextEditor`: ProseMirror over the shape's text fragment, styled by the renderer's own functions so editing looks like the slide. Enter, Shift+Enter (line break), Tab and Shift+Tab (list level), Cmd/Ctrl+B/I/U, collaborators' carets. Autofit runs while typing: "shrink text on overflow" lowers the font scale in 10% steps and "resize shape to fit text" grows the shape, both written to the model.
 - `SlideList`: the thumbnail strip and the slide sorter (lazy thumbnails, sections, hidden slides, collaborators' positions, multi-select, drag to reorder, keyboard).
-- `NotesEditor`: speaker notes; a notes page is created on the first edit.
+- `NotesEditor`: speaker notes. Every slide (and every shape that can hold text) has its text fragment from the start, so two people who start typing notes at once both keep their text; a notes page is written only when there are notes.
 - `Presenter`: full screen, keyboard (arrows, space, Page Up/Down, Home, End, number + Enter, Esc), click, tap, and swipe; hidden slides are skipped; slides with a transition fade in. The presenter view adds the next slide, notes, a timer, and the count. `.ppsx` decks open in the show.
 - `printSlides`: one slide per page at the slide's size, for Save as PDF.
 
@@ -108,6 +110,7 @@ Known limitations, most important first:
 - Text layout uses the browser's line breaking and the fonts available; without Calibri, Carlito or system fallbacks change line breaks slightly.
 - Charts do not draw error bars, trendlines, data tables, or leader lines; date axes are spaced evenly; 3-D charts are drawn flat.
 - The Y.Doc keeps templates and each slide's original bytes beside the model, about 4× the uncompressed package for shape-heavy decks.
+- `applyFile` reconciles the document with the pushed file, not with the version the agent pulled: edits other people made between the agent's pull and its push are overwritten where the agent's file differs. Concurrent edits that are still in flight merge. A three-way merge needs the pulled version, which the agent integration can provide later.
 
 ## Limits and hostile files
 
@@ -115,6 +118,7 @@ Every file is untrusted. Reading refuses (with a `LiveFormatError`) packages ove
 
 ## Testing
 
+- **Regressions** (`regressions.test.ts`): cases from review, such as slide links after inserting slides, cleared table cells after a push, non-slide internal hyperlinks, animations on duplicated slides, dangling references, simultaneous first notes, Enter keeping paragraph properties, control characters, hostile clipboard payloads, and slide id limits.
 - **Unit and round trip** (`packages/client-core`, `npm test`): every corpus deck exports byte-identical parts after an import through a second replica; edits through commands (text, shapes, images, tables, notes, grouping, layout changes, slide moves, sections) read back correctly; untouched slides stay byte-identical when another slide changes; macros are kept or dropped by format.
 - **`applyFile`**: an agent-style edit merges with a concurrent user edit on another replica; re-applying the document's own export changes nothing; keys of slides and shapes the document created survive the round trip.
 - **Concurrency**: three replicas make random edits (typing, moving, formatting, inserting, deleting, grouping, slide moves, table rows) with random partial syncs, converge to the same state, and export a valid deck with unique ids that exports identically again.

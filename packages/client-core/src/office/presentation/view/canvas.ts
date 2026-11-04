@@ -791,7 +791,7 @@ async function readPulpoClipboard(): Promise<string | undefined> {
   try {
     const items = await navigator.clipboard?.read?.()
     for (const item of items ?? []) {
-      const type = item.types.find((entry) => entry.includes('x-pulpo-presentation'))
+      const type = item.types.find((entry) => entry === 'web application/x-pulpo-presentation+json')
       if (type) return await (await item.getType(type)).text()
     }
   } catch {

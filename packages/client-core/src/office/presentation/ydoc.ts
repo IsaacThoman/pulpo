@@ -14,7 +14,7 @@ import type {
   Xfrm,
 } from './model.js'
 import { PRESENTATION_SCHEMA_VERSION } from './model.js'
-import { EMPTY_TEXT, normalizeText, slideTextSchema, textNode, type TextJSON } from './text.js'
+import { EMPTY_TEXT, normalizeText, slideTextSchema, textNode, textToPlain, type TextJSON } from './text.js'
 import { stableStringify } from './xml.js'
 
 /**
@@ -86,7 +86,16 @@ function fillSlide(map: YSlide, slide: SlideSnapshot): void {
   map.set('shapeOrder', shapeOrder)
   shapeOrder.push(slide.shapes.map((shape) => shape.key))
   for (const shape of slide.shapes) addShape(shapes, shape)
-  if (slide.notes) setNotes(map, slide.notes)
+  // Every slide has a notes map and every text shape a text fragment from the start: created
+  // lazily, two people starting notes at once would each make one and Yjs would keep only one.
+  setNotes(map, slide.notes ?? NO_NOTES)
+}
+
+const NO_NOTES: NotesSnapshot = { xml: '', rels: {}, text: { type: 'doc' } }
+
+/** A text body with no paragraphs is a placeholder for text nobody has written yet. */
+function isBlank(fragment: unknown): boolean {
+  return !(fragment instanceof Y.XmlFragment) || fragment.length === 0
 }
 
 /** Attaches a map under `key` first and fills it after: Yjs types are only readable once integrated. */
@@ -104,7 +113,8 @@ export function setNotes(slide: Y.Map<unknown>, notes: NotesSnapshot): void {
     map.set('rels', notes.rels)
     if (notes.source) map.set('source', notes.source)
     if (notes.relsSource) map.set('relsSource', notes.relsSource)
-    setText(map, 'text', notes.text)
+    if (notes.text.content?.length) setText(map, 'text', notes.text)
+    else map.set('text', new Y.XmlFragment())
   })
 }
 
@@ -126,6 +136,7 @@ function fillShape(map: YShape, shape: ShapeSnapshot): void {
   for (const key of SHAPE_SCALARS) if (shape[key] !== undefined) map.set(key, shape[key])
   if (shape.xfrm) map.set('xfrm', xfrmMap(shape.xfrm))
   if (shape.text) setText(map, 'text', shape.text)
+  else if (shape.kind === 'sp') map.set('text', new Y.XmlFragment())
   if (shape.table) setTable(map, shape.table)
   if (shape.children) {
     const children = new Y.Array<string>()
@@ -192,6 +203,10 @@ export function orderedKeys(array: Y.Array<string> | undefined, map: Y.Map<any> 
   return keys
 }
 
+function textToPlainSafe(fragment: unknown): string {
+  return textToPlain(readText(fragment))
+}
+
 export function readText(fragment: unknown): TextJSON {
   if (!(fragment instanceof Y.XmlFragment) || fragment.length === 0) return EMPTY_TEXT
   try {
@@ -232,7 +247,8 @@ export function readSlideMap(key: string, map: YSlide): SlideSnapshot {
     .map((shapeKey) => readShapeMap(shapeKey, shapes!, visited, 0))
     .filter((shape): shape is ShapeSnapshot => shape !== undefined)
   const notes = map.get('notes') as Y.Map<unknown> | undefined
-  if (notes) {
+  const noNotes = notes && notes.get('part') === undefined && !notes.get('xml') && (isBlank(notes.get('text')) || textToPlainSafe(notes.get('text')) === '')
+  if (notes && !noNotes) {
     slide.notes = {
       ...(notes.get('part') !== undefined ? { part: notes.get('part') } : {}),
       xml: notes.get('xml'),
@@ -256,7 +272,7 @@ function readShapeMap(key: string, shapes: Y.Map<YShape>, visited: Set<string>, 
   shape.rels ??= {}
   const xfrm = map.get('xfrm')
   if (xfrm instanceof Y.Map) shape.xfrm = readXfrmMap(xfrm)
-  if (map.has('text')) shape.text = readText(map.get('text'))
+  if (!isBlank(map.get('text'))) shape.text = readText(map.get('text'))
   const table = map.get('table')
   if (table instanceof Y.Map) shape.table = readTableMap(table)
   const children = map.get('children')
@@ -369,7 +385,14 @@ function reconcileSlide(map: YSlide, slide: SlideSnapshot): void {
   for (const key of [...shapes.keys()]) if (!all.has(key)) shapes.delete(key)
   const notes = map.get('notes') as Y.Map<unknown> | undefined
   if (!slide.notes) {
-    if (notes) map.delete('notes')
+    // Keep the map (see fillSlide); clear what it says.
+    if (!notes) setNotes(map, NO_NOTES)
+    else {
+      for (const key of ['part', 'source', 'relsSource']) if (notes.has(key)) notes.delete(key)
+      setIfChanged(notes, 'xml', '')
+      const text = notes.get('text')
+      if (text instanceof Y.XmlFragment && text.length) text.delete(0, text.length)
+    }
   } else if (!notes) {
     setNotes(map, slide.notes)
   } else {
@@ -393,7 +416,12 @@ function reconcileShape(map: YShape, shape: ShapeSnapshot): void {
     } else map.set('xfrm', xfrmMap(shape.xfrm))
   }
   if (shape.text) reconcileText(map, 'text', shape.text)
-  else if (map.has('text')) map.delete('text')
+  else {
+    const text = map.get('text')
+    if (text instanceof Y.XmlFragment) {
+      if (text.length) text.delete(0, text.length)
+    } else if (shape.kind === 'sp') map.set('text', new Y.XmlFragment())
+  }
   if (shape.table) {
     const table = map.get('table')
     if (table instanceof Y.Map) reconcileTable(table, shape.table)

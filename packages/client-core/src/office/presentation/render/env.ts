@@ -89,3 +89,30 @@ const FONT_FALLBACKS: Record<string, string[]> = {
   'tw cen mt': ['Futura', 'Arial'],
   'open sans': ['Arial'],
 }
+
+/** Media types the views may hand to the browser as object URLs: images and media it plays natively. */
+const DISPLAYABLE_MEDIA = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/bmp', 'image/webp', 'video/mp4', 'video/webm', 'video/quicktime', 'audio/mpeg', 'audio/mp4', 'audio/wav', 'audio/x-wav', 'audio/ogg'])
+
+/**
+ * How a view may show an asset: as an object URL of a known raster or media type, as a data URL
+ * for SVG (which top-level navigation refuses, so "open image in new tab" cannot run its
+ * scripts with the app's origin), or not at all. Anything else a file declares (HTML, unknown
+ * types) is never turned into a URL.
+ */
+export function displayableMediaType(mimeType: string): 'blob' | 'svg' | undefined {
+  const type = mimeType.toLowerCase().split(';')[0]!.trim()
+  if (type === 'image/svg+xml') return 'svg'
+  return DISPLAYABLE_MEDIA.has(type) ? 'blob' : undefined
+}
+
+/** An object or data URL for an asset's bytes, or undefined when it must not be shown. */
+export function assetObjectUrl(bytes: Uint8Array, mimeType: string): string | undefined {
+  const kind = displayableMediaType(mimeType)
+  if (kind === 'svg') {
+    let binary = ''
+    for (let index = 0; index < bytes.length; index += 0x8000) binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000))
+    return `data:image/svg+xml;base64,${btoa(binary)}`
+  }
+  if (kind === 'blob') return URL.createObjectURL(new Blob([bytes as BlobPart], { type: mimeType.toLowerCase().split(';')[0]!.trim() }))
+  return undefined
+}
