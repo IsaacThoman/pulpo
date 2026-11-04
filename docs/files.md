@@ -90,6 +90,10 @@ Markdown is derived, not authoritative. Export and previews use it; imports and 
 
 Web keeps each opened document in IndexedDB (`pulpo-doc:<account>:<doc>`) for instant loads and offline editing; these databases are removed on sign-out.
 
+## Presentations
+
+PowerPoint decks (`.pptx`, `.potx`, `.ppsx`, `.pptm`) have a collaborative engine in `@pulpo/client-core/office/presentation`: a lossless codec, a Yjs layout built for co-editing, a renderer, an editor view core, and review diffs. It is not wired into Files routes yet; see [Presentations](./presentations.md).
+
 ## Mobile
 
 The iOS and Android app (`apps/mobile/src/features/files`) browses and edits Files natively. It shares the logic the web uses through `@pulpo/client-core`: `doc-sync` (the provider and session controller), `doc-editor` (the TipTap extensions, formatting commands, and suggestion review), and `files` (scopes, sorting, change labels, and Markdown diffs). `GET /api/mobile/config` reports `capabilities.files` (`enabled` and the server's `docSchemaVersion`). With Files off, the drawer hides its Files row and lists only folders and shortcuts to folders or chats, and Files screens say so. An app built for another schema version opens documents read-only and asks for an update.

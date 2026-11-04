@@ -10,6 +10,7 @@ const sidebar = [
       { text: 'Agent image generation', link: '/image-generation' },
       { text: 'Quizzes and flashcards', link: '/quizzes' },
       { text: 'Provider API formats', link: '/provider-api-formats' },
+      { text: 'Presentations', link: '/presentations' },
       { text: 'Support', link: '/support' },
     ],
   },
