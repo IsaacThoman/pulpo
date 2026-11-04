@@ -113,13 +113,25 @@ function Grid({ table, text, toolbarStart, className }: { table: DelimitedTable;
   const currentRow = matchRows[current]
   const listRef = useRef<TableVirtuosoHandle>(null)
   const containerRef = useRef<HTMLDivElement>(null)
-  const scrollToRow = useCallback((row: number | undefined) => {
-    // Row 0 is the sticky header, always in view.
-    if (row !== undefined && row > 0) listRef.current?.scrollToIndex({ index: row - 1, align: 'center' })
-  }, [])
+  const revealMatch = useCallback((row: number | undefined, search: string) => {
+    if (row === undefined) return
+    // Row 0 is the sticky header, always in view vertically.
+    if (row > 0) listRef.current?.scrollToIndex({ index: row - 1, align: 'center' })
+    // Only nearby columns render, so a match off to the side must be scrolled into view too.
+    const lowered = search.toLowerCase()
+    const column = table.row(row).findIndex((cell) => cell.toLowerCase().includes(lowered))
+    const scroller = scrollerRef.current
+    if (column < 0 || !scroller) return
+    const start = offsets[column]!
+    const end = offsets[column + 1]!
+    // The sticky row numbers cover the left edge of the scroller.
+    const visible = scroller.clientWidth - ROW_NUMBER_WIDTH
+    if (start >= scroller.scrollLeft && end <= scroller.scrollLeft + visible) return
+    scroller.scrollLeft = Math.max(0, start - Math.max(0, visible - (end - start)) / 2)
+  }, [offsets, table])
   const goTo = (index: number) => {
     setCurrent(index)
-    scrollToRow(matchRows[index])
+    revealMatch(matchRows[index], query)
   }
   const step = (direction: 1 | -1) => {
     if (!findOpen) setFindOpen(true)
@@ -186,7 +198,7 @@ function Grid({ table, text, toolbarStart, className }: { table: DelimitedTable;
           onQueryChange={(value) => {
             setQuery(value)
             setCurrent(0)
-            scrollToRow(value ? table.findRows(value, 1)[0] : undefined)
+            revealMatch(value ? table.findRows(value, 1)[0] : undefined, value)
           }}
           current={current}
           total={matchRows.length}
