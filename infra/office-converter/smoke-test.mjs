@@ -67,6 +67,18 @@ function lingeringOffice() {
   })
 }
 
+/** Processes that exited but were never reaped (state Z). Linux only. */
+function zombies() {
+  if (process.platform !== 'linux') return []
+  return readdirSync('/proc').filter((entry) => /^\d+$/.test(entry)).filter((pid) => {
+    try {
+      return /^\d+ \(.*\) Z /.test(readFileSync(`/proc/${pid}/stat`, 'utf8'))
+    } catch {
+      return false
+    }
+  })
+}
+
 try {
   await waitForHealth()
   check(true, 'converter became healthy')
@@ -93,6 +105,18 @@ try {
 
   const parallel = await Promise.all(['SampleDoc.doc', 'SampleSS.xls', 'basic_test_ppt_file.ppt', 'sample.docx'].map((name) => convert(name, 'pdf')))
   check(parallel.every((result) => result.status === 200 && magic(result.bytes) === '%PDF-'), 'four simultaneous conversions succeed')
+
+  // A client that goes away mid-conversion has its job killed; nothing may be left behind,
+  // not even zombies (tini, PID 1 in the image, reaps the orphans).
+  const cancelled = new AbortController()
+  const abandoned = fetch(`${base}/v1/convert?from=key&to=pdf`, {
+    method: 'POST', body: readFileSync(join(fixtures, 'keynote5-file.key')), headers: { authorization: `Bearer ${token}` }, signal: cancelled.signal,
+  }).catch(() => null)
+  await new Promise((resolve) => setTimeout(resolve, 400))
+  cancelled.abort()
+  await abandoned
+  await new Promise((resolve) => setTimeout(resolve, 1_500))
+  check(zombies().length === 0, `no zombie processes are left (${zombies().join(', ') || 'none'})`)
 
   await new Promise((resolve) => setTimeout(resolve, 500))
   check(lingeringOffice().length === 0, 'no LibreOffice process outlives its job')

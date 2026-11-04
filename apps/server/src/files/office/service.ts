@@ -12,30 +12,7 @@ import { resolveFileAccess, type FileExecutor, type FileNodeRow } from '../acces
 import { storeBlob } from '../agent/versions.js'
 import { topSortOrder } from '../order.js'
 import { assertDestination, availableName, mutateFileTree, toFileNode } from '../tree-service.js'
-import { convertOfficeDocument, OFFICE_CONVERTER_MAX_INPUT_BYTES, officeConversionAvailable } from './converter.js'
-
-/**
- * Conversions run inline in the request: they take seconds, the user is waiting for the result,
- * and the converter service already bounds and queues work across the instance (answering
- * "busy" when full). This cap keeps one account from taking all of an API instance's share.
- */
-const MAX_CONVERSIONS_PER_ACCOUNT = 2
-const running = new Map<string, number>()
-
-async function withConversionSlot<T>(userId: string, run: () => Promise<T>): Promise<T> {
-  const count = running.get(userId) ?? 0
-  if (count >= MAX_CONVERSIONS_PER_ACCOUNT) {
-    throw new AppError(429, 'office_conversion_rate_limited', 'Wait for your other conversions to finish, then try again')
-  }
-  running.set(userId, count + 1)
-  try {
-    return await run()
-  } finally {
-    const left = (running.get(userId) ?? 1) - 1
-    if (left > 0) running.set(userId, left)
-    else running.delete(userId)
-  }
-}
+import { convertOfficeDocument, OFFICE_CONVERTER_MAX_INPUT_BYTES, officeConversionAvailable, withConversionSlot } from './converter.js'
 
 export async function readStoredObject(key: string): Promise<Uint8Array> {
   const chunks: Buffer[] = []
@@ -94,7 +71,9 @@ export async function convertFileToEditable(userId: string, id: string, to: Offi
       return toFileNode(row!)
     }, ['files', 'folders'], { reserveBytes: converted.byteLength })
   } catch (error) {
-    await getBlobStore().delete(content.objectKey).catch(() => undefined)
+    // Announcing the change happens after commit and can fail too; keep the bytes of a file that exists.
+    const [committed] = await db.select({ id: fileNodes.id }).from(fileNodes).where(eq(fileNodes.objectKey, content.objectKey)).limit(1).catch(() => [undefined])
+    if (!committed) await getBlobStore().delete(content.objectKey).catch(() => undefined)
     throw error
   }
 }

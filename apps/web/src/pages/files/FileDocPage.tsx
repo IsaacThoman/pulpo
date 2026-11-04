@@ -23,7 +23,7 @@ import {
   filesQueryKey,
   updateFileNode,
 } from '@/features/files/api'
-import { filePreviewKind, filesErrorMessage } from '@/features/files/file-display'
+import { filePreviewKind, filesErrorMessage, MAX_INLINE_PREVIEW_BYTES } from '@/features/files/file-display'
 import { OfficeConversionBanner, OfficeFileHeaderActions, OfficePdfPreview } from '@/features/files/OfficeFile'
 import { officeFileActions, useOfficeConversion } from '@/features/files/office-file'
 import { DocEditor } from '@/features/files/editor/DocEditor'
@@ -432,7 +432,8 @@ function BlobFileView({ node, ancestors, view }: { node: FileNode; ancestors: Fi
       <OfficeConversionBanner node={node} />
       {notice && <p role="alert" className="border-b bg-destructive/5 px-4 py-2 text-sm text-destructive sm:px-6">{notice}</p>}
       <div className="min-h-0 flex-1 overflow-auto bg-muted/20 p-4">
-        {office.pdf && !filePreviewKind(node) ? <OfficePdfPreview node={node} /> : <FilePreviewBody node={node} />}
+        {/* Large files are not rendered on every open, as other previews are not downloaded. */}
+        {office.pdf && !filePreviewKind(node) && node.sizeBytes <= MAX_INLINE_PREVIEW_BYTES ? <OfficePdfPreview node={node} /> : <FilePreviewBody node={node} />}
       </div>
     </div>
   )

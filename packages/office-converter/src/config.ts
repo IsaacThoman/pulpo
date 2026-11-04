@@ -27,6 +27,8 @@ function positiveInteger(environment: NodeJS.ProcessEnv, name: string, fallback:
 export function parseConfig(environment: NodeJS.ProcessEnv): ConverterConfig {
   const token = environment.OFFICE_CONVERTER_TOKEN?.trim() || null
   if (token && token.length < 32) throw new Error('OFFICE_CONVERTER_TOKEN must be at least 32 characters')
+  // Deployments on a shared network set this so a missing token stops the service instead of opening it.
+  if (!token && environment.OFFICE_CONVERTER_REQUIRE_TOKEN?.trim() === 'true') throw new Error('OFFICE_CONVERTER_TOKEN is required')
   const memoryLimitMb = environment.OFFICE_CONVERTER_MEMORY_LIMIT_MB?.trim() ? positiveInteger(environment, 'OFFICE_CONVERTER_MEMORY_LIMIT_MB', 0) : undefined
   return {
     host: environment.HOST?.trim() || '0.0.0.0',
@@ -35,7 +37,7 @@ export function parseConfig(environment: NodeJS.ProcessEnv): ConverterConfig {
     sofficePath: environment.OFFICE_CONVERTER_SOFFICE?.trim() || 'soffice',
     workRoot: environment.OFFICE_CONVERTER_WORK_DIR?.trim() || join(tmpdir(), 'pulpo-office-converter'),
     maxInputBytes: positiveInteger(environment, 'OFFICE_CONVERTER_MAX_INPUT_MB', 100) * 1024 * 1024,
-    maxOutputBytes: positiveInteger(environment, 'OFFICE_CONVERTER_MAX_OUTPUT_MB', 200) * 1024 * 1024,
+    maxOutputBytes: positiveInteger(environment, 'OFFICE_CONVERTER_MAX_OUTPUT_MB', 100) * 1024 * 1024,
     timeoutMs: positiveInteger(environment, 'OFFICE_CONVERTER_TIMEOUT_SECONDS', 60) * 1000,
     concurrency: positiveInteger(environment, 'OFFICE_CONVERTER_CONCURRENCY', 2),
     maxQueued: positiveInteger(environment, 'OFFICE_CONVERTER_MAX_QUEUED', 8),

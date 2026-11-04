@@ -24,7 +24,11 @@ const FAILURES: Record<string, { status: number; code: string; message: string }
   starting: { status: 503, code: 'office_converter_busy', message: 'The converter is starting. Try again in a moment' },
 }
 
-const unavailable = () => new AppError(502, 'office_converter_unavailable', "The converter isn't available right now. Try again later", 'server_error')
+/** Misconfiguration (wrong URL or token) and outages look the same to users; operators need the cause. */
+function unavailable(cause: unknown): AppError {
+  console.error(JSON.stringify({ level: 'error', event: 'files.office_converter_unavailable', cause: cause instanceof Error ? cause.message : String(cause) }))
+  return new AppError(502, 'office_converter_unavailable', "The converter isn't available right now. Try again later", 'server_error')
+}
 
 /**
  * Converts one document with the office converter service. Its failures become AppErrors with
@@ -53,11 +57,35 @@ export async function convertOfficeDocument(input: { bytes: Uint8Array; from: st
   } catch (cause) {
     if (timeout.aborted) throw new AppError(504, FAILURES.timeout!.code, FAILURES.timeout!.message, 'server_error')
     if (input.signal?.aborted) throw cause
-    throw unavailable()
+    throw unavailable(cause)
   }
   if (response.ok) return new Uint8Array(await response.arrayBuffer())
   const body = await response.json().catch(() => null) as { error?: { code?: unknown } } | null
   const failure = typeof body?.error?.code === 'string' && Object.hasOwn(FAILURES, body.error.code) ? FAILURES[body.error.code]! : null
-  if (!failure) throw unavailable()
+  if (!failure) throw unavailable(`HTTP ${response.status}${typeof body?.error?.code === 'string' ? ` ${body.error.code}` : ''}`)
   throw new AppError(failure.status, failure.code, failure.message, failure.status >= 500 ? 'server_error' : 'invalid_request_error')
+}
+
+/**
+ * Conversions run inline in the request: they take seconds, the user is waiting for the result,
+ * and the converter service already bounds and queues work across the instance (answering
+ * "busy" when full). This cap keeps one account (its previews, exports, conversions, and its
+ * agents' conversions) from taking the whole converter.
+ */
+const MAX_CONVERSIONS_PER_ACCOUNT = 3
+const running = new Map<string, number>()
+
+export async function withConversionSlot<T>(userId: string, run: () => Promise<T>): Promise<T> {
+  const count = running.get(userId) ?? 0
+  if (count >= MAX_CONVERSIONS_PER_ACCOUNT) {
+    throw new AppError(429, 'office_conversion_rate_limited', 'Wait for your other conversions to finish, then try again')
+  }
+  running.set(userId, count + 1)
+  try {
+    return await run()
+  } finally {
+    const left = (running.get(userId) ?? 1) - 1
+    if (left > 0) running.set(userId, left)
+    else running.delete(userId)
+  }
 }

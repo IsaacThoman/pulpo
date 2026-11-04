@@ -136,15 +136,20 @@ services:
         aliases:
           - pulpo-dev-seaweed-s3
   # Optional (set COMPOSE_PROFILES=office): converts legacy and OpenDocument files in Files.
-  # API/worker reach it at http://pulpo-dev-office-converter:8790 with OFFICE_CONVERTER_URL and
-  # the same OFFICE_CONVERTER_TOKEN. Pin the image by digest from the office-converter workflow.
-  # It keeps nothing, so it has no volume; see infra/office-converter/README.md.
+  # Untrusted documents are parsed here, so it runs read-only and unprivileged, needs a token, and
+  # sits alone on an internal network with no route out: attach the API and worker containers to
+  # pulpo-dev-office (they reach it at http://pulpo-dev-office-converter:8790 with
+  # OFFICE_CONVERTER_URL and the same OFFICE_CONVERTER_TOKEN). Pin the image by digest from the
+  # office-converter workflow. It keeps nothing, so it has no volume; see
+  # infra/office-converter/README.md.
   office-converter:
     image: ${PULPO_OFFICE_CONVERTER_IMAGE:-ghcr.io/isaacthoman/pulpo-office-converter:main}
     profiles:
       - office
     environment:
       OFFICE_CONVERTER_TOKEN: ${OFFICE_CONVERTER_TOKEN:-}
+      # Startup fails without a token, rather than serving anyone who can reach it.
+      OFFICE_CONVERTER_REQUIRE_TOKEN: "true"
     read_only: true
     tmpfs:
       - /tmp:rw,nosuid,nodev,size=1g,mode=1777
@@ -152,7 +157,7 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
-    mem_limit: 2g
+    mem_limit: 3g
     pids_limit: 512
     # Resolves no outside names; LibreOffice also routes HTTP(S) to a dead proxy.
     dns:
@@ -160,18 +165,14 @@ services:
     expose:
       - "8790"
     healthcheck:
-      test:
-        - CMD
-        - node
-        - -e
-        - fetch('http://127.0.0.1:8790/healthz').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8790/healthz').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
       interval: 15s
       timeout: 5s
       retries: 3
       start_period: 60s
     restart: unless-stopped
     networks:
-      coolify:
+      office:
         aliases:
           - pulpo-dev-office-converter
 volumes:
@@ -200,3 +201,7 @@ networks:
   coolify:
     external: true
     name: coolify
+  # Only the converter and the containers allowed to call it; no internet route.
+  office:
+    internal: true
+    name: pulpo-dev-office

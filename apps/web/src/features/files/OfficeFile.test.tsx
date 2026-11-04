@@ -91,7 +91,7 @@ describe('office files', () => {
 
   it('explains the read-only state of legacy files', () => {
     renderWithProviders(<OfficeConversionBanner node={legacy} />)
-    expect(screen.getByRole('note').textContent).toBe("Pulpo can't edit .xls files. Convert it to .xlsx to edit it; the original stays as it is.")
+    expect(screen.getByRole('note').textContent).toBe(".xls files open read only. Converting makes a .xlsx copy beside it; the original stays as it is.")
   })
 
   it('previews as PDF, with a retry when rendering fails', async () => {

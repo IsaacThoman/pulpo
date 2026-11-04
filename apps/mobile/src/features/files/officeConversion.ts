@@ -1,6 +1,7 @@
 import { convertedFileName, type FileNode, type MobileConfig, type OfficeEditableFormat } from '@pulpo/contracts'
 import { Directory, File, Paths } from 'expo-file-system'
 import * as Sharing from 'expo-sharing'
+import { fetch as expoFetch } from 'expo/fetch'
 import { ApiError, apiRequest, apiUrl, nativeAuthorizationHeaders } from '../../api/client'
 import { useSessionStore } from '../../store/session'
 import { filesCapability } from './availability'
@@ -29,31 +30,30 @@ export function convertOfficeFile(id: string, to: OfficeEditableFormat): Promise
   return apiRequest<FileNode>(`/api/files/${id}/conversions`, { method: 'POST', body: { to }, timeoutMs: OFFICE_CONVERSION_TIMEOUT_MS })
 }
 
-/** Why a PDF export failed, from the HTTP status the download reported (its body isn't readable there). */
-export function pdfExportErrorMessage(error: unknown): string {
-  const status = Number(/\b([45]\d\d)\b/.exec(error instanceof Error ? error.message : String(error))?.[1])
-  if (status === 422) return 'This file can’t be exported as PDF. It may be password-protected or damaged.'
-  if (status === 413) return 'This file is too large to export as PDF.'
-  if (status === 503 || status === 429) return 'The converter is busy. Try again in a moment.'
-  if (status === 504) return 'Exporting took too long. Try again later.'
-  if (status === 404) return 'This file no longer exists, or this server can’t export it.'
-  return 'This file couldn’t be exported as PDF. Try again later.'
-}
-
 const PDF_DIRECTORY = 'files-pdf'
 
-/** Downloads the server's PDF of an office file into the cache, named "<name>.pdf". */
+/**
+ * Downloads the server's PDF of an office file into the cache, named "<name>.pdf". The server
+ * answers only once the conversion finished, which can take a while, so this uses a fetch with
+ * its own long timeout (React Native's HTTP client has none; expo-file-system's download gives
+ * up after 10 seconds on Android) and keeps the server's error for the message.
+ */
 export async function downloadOfficePdf(node: Pick<FileNode, 'id' | 'name'>): Promise<File> {
-  const url = apiUrl(`/api/files/${encodeURIComponent(node.id)}/pdf`)
-  const directory = new Directory(Paths.cache, PDF_DIRECTORY, node.id.replace(/[^\da-f-]/gi, ''))
+  if (!/^[\da-f-]{36}$/i.test(node.id)) throw new Error('This item’s id isn’t valid.')
+  const url = apiUrl(`/api/files/${node.id}/pdf`)
+  const response = await expoFetch(url, { headers: nativeAuthorizationHeaders(url), signal: AbortSignal.timeout(OFFICE_CONVERSION_TIMEOUT_MS) })
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { error?: { code?: string; message?: string } } | null
+    throw new ApiError(response.status, body?.error?.code ?? 'office_pdf_export_failed', body?.error?.message ?? `PDF export failed (${response.status})`)
+  }
+  const bytes = new Uint8Array(await response.arrayBuffer())
+  const directory = new Directory(Paths.cache, PDF_DIRECTORY, node.id.toLowerCase())
   directory.create({ idempotent: true, intermediates: true })
   const destination = new File(directory, convertedFileName(node.name, 'pdf').replace(/[\\/:*?"<>|]+/g, '-'))
   if (destination.exists) destination.delete()
-  try {
-    return await File.downloadFileAsync(url, destination, { idempotent: true, headers: nativeAuthorizationHeaders(url) })
-  } catch (error) {
-    throw new ApiError(0, 'office_pdf_export_failed', pdfExportErrorMessage(error))
-  }
+  destination.create()
+  destination.write(bytes)
+  return destination
 }
 
 /** Exports an office file as PDF through the share sheet (save to Files, AirDrop, print, …). */

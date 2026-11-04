@@ -35,6 +35,7 @@ RUN apt-get update \
         fonts-noto-cjk \
         fonts-noto-color-emoji \
         fontconfig \
+        tini \
     && fc-cache --force \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* \
@@ -66,4 +67,6 @@ USER 10001:10001
 EXPOSE 8790
 HEALTHCHECK --interval=15s --timeout=5s --start-period=60s --retries=3 \
     CMD ["node", "-e", "fetch('http://127.0.0.1:' + (process.env.PORT || 8790) + '/healthz').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+# LibreOffice processes orphaned by a killed job are re-parented to PID 1; tini reaps them.
+ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["node", "dist/index.js"]

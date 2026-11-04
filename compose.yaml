@@ -84,12 +84,12 @@ services:
     <<: *server
     command: ["npm", "run", "start:worker", "-w", "@pulpo/server"]
 
-  # Optional: converts legacy and OpenDocument files in Files (docs/files.md). Start it with
-  # `docker compose --profile office up -d` and set OFFICE_CONVERTER_URL to
+  # Optional, for local use: converts legacy and OpenDocument files in Files (docs/files.md).
+  # Start it with `docker compose --profile office up -d` and set OFFICE_CONVERTER_URL to
   # http://office-converter:8790 in the server environment. Documents are untrusted, so it runs
-  # read-only, unprivileged, and without capabilities, and needs no network access: its DNS
-  # resolves nothing outside Compose and LibreOffice's own proxy setting blocks HTTP(S)
-  # (infra/office-converter/README.md).
+  # read-only, unprivileged, and without capabilities; its DNS resolves nothing outside Compose and
+  # LibreOffice's own proxy setting blocks HTTP(S). It shares the default network here; the
+  # infrastructure Compose files isolate it properly (infra/office-converter/README.md).
   office-converter:
     profiles: ["office"]
     build:
@@ -100,7 +100,7 @@ services:
       - /tmp:rw,nosuid,nodev,size=1g,mode=1777
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
-    mem_limit: 2g
+    mem_limit: 3g
     pids_limit: 512
     dns: [127.0.0.1]
     expose:

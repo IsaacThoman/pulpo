@@ -52,7 +52,7 @@ a token is configured.
 | `OFFICE_CONVERTER_CONCURRENCY` | `2` | Jobs running at once |
 | `OFFICE_CONVERTER_MAX_QUEUED` | `8` | Jobs waiting; more get `503 busy` |
 | `OFFICE_CONVERTER_MAX_INPUT_MB` | `100` | |
-| `OFFICE_CONVERTER_MAX_OUTPUT_MB` | `200` | |
+| `OFFICE_CONVERTER_MAX_OUTPUT_MB` | `100` | |
 | `OFFICE_CONVERTER_MEMORY_LIMIT_MB` | `4096` in the image | Address-space limit (`ulimit -v`) per job, Linux only |
 | `OFFICE_CONVERTER_WORK_DIR` | `/tmp/office-converter` | Profiles and job directories |
 
@@ -83,12 +83,17 @@ other files, reach the network, or exhaust resources.
 - **Limits.** Per-job timeout with the whole process group killed (and killed again after a
   normal exit so no helper survives), a cancelled request kills its job, a concurrency limit
   with a bounded queue, input and output size limits, and a per-job address-space limit.
-- **Container.** Runs as UID 10001 with a read-only root file system, a 1 GB tmpfs at `/tmp`,
-  no capabilities, `no-new-privileges`, and memory and process limits. It needs no network
-  access at all: the Compose services resolve no outside names (`dns: 127.0.0.1`) and publish
-  no ports. CI runs the smoke test with `--network=none` under the same restrictions. Where
-  the platform allows, also put it on a network without a route out (a Docker `internal`
-  network, or a Kubernetes `NetworkPolicy` with no egress) shared only with the API and worker.
+- **Container.** Runs as UID 10001 under `tini` (which reaps processes orphaned by killed
+  jobs), with a read-only root file system, a 1 GB tmpfs at `/tmp`, no capabilities,
+  `no-new-privileges`, and memory and process limits. A request's body is read only once its
+  job has a slot, so queued uploads wait in their sockets rather than in memory.
+- **Network.** The service needs no network access of its own. In the infrastructure Compose
+  files it sits alone on an `internal` network (`pulpo-prod-office`, `pulpo-dev-office`) with
+  no route out, which the API and worker containers must join to reach it, and it refuses to
+  start without `OFFICE_CONVERTER_TOKEN` (`OFFICE_CONVERTER_REQUIRE_TOKEN=true`). Its DNS also
+  resolves no outside names (`dns: 127.0.0.1`). CI runs the smoke test with `--network=none`
+  under the same restrictions. The `office` profile in the root `compose.yaml` is for local use
+  and shares the default network.
 
 ## Fonts
 
@@ -125,7 +130,9 @@ digest (`PULPO_OFFICE_CONVERTER_IMAGE`) in the infrastructure Compose files.
 
 - Local Compose: `docker compose --profile office up -d`, then set
   `OFFICE_CONVERTER_URL=http://office-converter:8790` in the server environment.
-- Production and persistent development: set `COMPOSE_PROFILES=office` (and optionally
-  `OFFICE_CONVERTER_TOKEN`) on the infrastructure application, then give the API and worker
-  `OFFICE_CONVERTER_URL=http://pulpo-prod-office-converter:8790` (`pulpo-dev-…` for
-  development) and the same token.
+- Production and persistent development: on the infrastructure application set
+  `COMPOSE_PROFILES=office`, `OFFICE_CONVERTER_TOKEN` (32+ random characters), and
+  `PULPO_OFFICE_CONVERTER_IMAGE` (pinned by digest). Attach the API and worker containers to the
+  `pulpo-prod-office` network (`pulpo-dev-office` for development) as well as `coolify`, and
+  give them `OFFICE_CONVERTER_URL=http://pulpo-prod-office-converter:8790` (`pulpo-dev-…`) and
+  the same token.

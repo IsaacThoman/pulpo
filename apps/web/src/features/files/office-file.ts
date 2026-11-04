@@ -21,11 +21,18 @@ export function useOfficeConversion(onOpen: (node: FileNode) => void) {
   const queryClient = useQueryClient()
   const userId = useAuth((state) => state.user?.id)
   const show = useFileToasts((state) => state.show)
-  const [converting, setConverting] = useState<string | null>(null)
-  const [exporting, setExporting] = useState<string | null>(null)
+  // Ids of files being converted or exported; several can run at once.
+  const [converting, setConverting] = useState<ReadonlySet<string>>(new Set())
+  const [exporting, setExporting] = useState<ReadonlySet<string>>(new Set())
+  const toggle = (set: typeof setConverting, id: string, on: boolean) => set((current) => {
+    const next = new Set(current)
+    if (on) next.add(id)
+    else next.delete(id)
+    return next
+  })
 
   const convert = async (node: FileNode, to: OfficeEditableFormat) => {
-    setConverting(node.id)
+    toggle(setConverting, node.id, true)
     try {
       const created = await convertOfficeFile(node.id, to)
       await queryClient.invalidateQueries({ queryKey: filesQueryKey(userId) })
@@ -35,18 +42,18 @@ export function useOfficeConversion(onOpen: (node: FileNode) => void) {
       show({ message: filesErrorMessage(cause, node.name), tone: 'error' })
       return null
     } finally {
-      setConverting(null)
+      toggle(setConverting, node.id, false)
     }
   }
 
   const downloadPdf = async (node: FileNode) => {
-    setExporting(node.id)
+    toggle(setExporting, node.id, true)
     try {
       await downloadFileAsPdf(node)
     } catch (cause) {
       show({ message: filesErrorMessage(cause, node.name), tone: 'error' })
     } finally {
-      setExporting(null)
+      toggle(setExporting, node.id, false)
     }
   }
 

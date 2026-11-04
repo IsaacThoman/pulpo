@@ -192,10 +192,16 @@ describe.skipIf(!enabled)('office file conversion', () => {
       expect(await appError(convertFileToEditable(files.userId, capped, 'docx'))).toEqual({ status: 413, code: 'office_file_too_large' })
     })
 
-    it('limits each account to two conversions at a time', async () => {
+    it('limits each account to three conversions at a time, agents included', async () => {
+      const projects = await files.folder('Projects')
+      await files.blob('agent.odt', projects, 'agent')
+      await files.attach({ [projects]: 'write' })
       const ids = await Promise.all(['a', 'b', 'c'].map((name) => files.blob(`${name}.odt`, null, name)))
       reply = () => ({ status: 200, body: DOCX, delayMs: 300 })
+      const agent = files.relay('convert', { path: 'Projects/agent.odt', to: 'docx' })
+      await new Promise((resolve) => setTimeout(resolve, 50))
       const results = await Promise.allSettled(ids.map((id) => convertFileToEditable(files.userId, id, 'docx')))
+      expect((await agent).ok).toBe(true)
       expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(2)
       const refused = results.find((result) => result.status === 'rejected') as PromiseRejectedResult
       expect(refused.reason).toMatchObject({ statusCode: 429, code: 'office_conversion_rate_limited' })
@@ -263,6 +269,17 @@ describe.skipIf(!enabled)('office file conversion', () => {
       const [created] = await nodesNamed('Deck.pdf')
       expect(created!.suggestionChangeId).not.toBeNull()
       expect(await files.content(deck)).toBe('original ppt')
+    })
+
+    it('picks the free name once the conversion is done', async () => {
+      const projects = await files.folder('Projects')
+      await files.blob('Slides.odp', projects, 'odp')
+      await files.attach({ [projects]: 'write' })
+      reply = () => ({ status: 200, body: DOCX, delayMs: 300 })
+      const converting = files.ok('convert', { path: 'Projects/Slides.odp', to: 'pptx' })
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      await files.blob('Slides.pptx', projects, 'someone else')
+      expect((await converting).output).toBe('Converted "Projects/Slides.odp" to "Projects/Slides (2).pptx"')
     })
 
     it('honours read-only folders, the scope, and --output', async () => {

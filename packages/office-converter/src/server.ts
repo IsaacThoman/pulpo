@@ -109,12 +109,18 @@ export function createConverterServer(config: Pick<ConverterConfig, 'token' | 'm
     if (!isTargetFormat(to) || !supportsConversion(from, to)) {
       throw new RequestError('unsupported_conversion', `Converting .${from.slice(0, 16)} files to .${to.slice(0, 16)} is not supported`)
     }
-    const input = await readBody(request, config.maxInputBytes)
-    if (!input.byteLength) throw new RequestError('unexpected_content', 'The file is empty')
+    const declared = Number(request.headers['content-length'])
+    if (Number.isFinite(declared) && declared > config.maxInputBytes) throw new RequestError('input_too_large', 'The file is too large to convert')
     // A client that disconnects cancels its job, queued or running.
     const controller = new AbortController()
     response.once('close', () => { if (!response.writableFinished) controller.abort() })
-    const output = await limiter.run(() => convert({ input, from, to, signal: controller.signal }), controller.signal)
+    // The body is read only once the job has a slot, so queued uploads wait in the socket
+    // instead of in memory: at most `concurrency` inputs are held at once.
+    const output = await limiter.run(async () => {
+      const input = await readBody(request, config.maxInputBytes)
+      if (!input.byteLength) throw new RequestError('unexpected_content', 'The file is empty')
+      return convert({ input, from, to, signal: controller.signal })
+    }, controller.signal)
     if (response.destroyed) return
     response.writeHead(200, { 'content-type': TARGET_CONTENT_TYPES[to], 'content-length': output.byteLength, 'cache-control': 'no-store' })
     response.end(output)

@@ -906,12 +906,12 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
         </DropdownMenuItem>
       )}
       {single && office.pdf && (
-        <DropdownMenuItem disabled={officeConversion.exporting === single.id} onSelect={() => void officeConversion.downloadPdf(single)}>
+        <DropdownMenuItem disabled={officeConversion.exporting.has(single.id)} onSelect={() => void officeConversion.downloadPdf(single)}>
           <FileDown /> {ui("Download as PDF")}
         </DropdownMenuItem>
       )}
       {single && office.target && (
-        <DropdownMenuItem disabled={officeConversion.converting === single.id} onSelect={() => void officeConversion.convert(single, office.target!)}>
+        <DropdownMenuItem disabled={officeConversion.converting.has(single.id)} onSelect={() => void officeConversion.convert(single, office.target!)}>
           <FileOutput /> {uit`Convert to .${office.target}`}
         </DropdownMenuItem>
       )}

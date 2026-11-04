@@ -18,8 +18,8 @@ export function OfficeFileHeaderActions({ node, conversion, compact }: {
 }) {
   const enabled = useAuth((state) => state.officeConversionEnabled)
   const { target, pdf } = officeFileActions(node, enabled)
-  const converting = conversion.converting === node.id
-  const exporting = conversion.exporting === node.id
+  const converting = conversion.converting.has(node.id)
+  const exporting = conversion.exporting.has(node.id)
   const trashed = node.trashedAt !== null
   return (
     <>
@@ -43,7 +43,7 @@ export function OfficeFileHeaderActions({ node, conversion, compact }: {
   )
 }
 
-/** Says why a legacy or OpenDocument file is read-only here, and what converting does. */
+/** Says that a legacy or OpenDocument file is read only here, and what converting does. */
 export function OfficeConversionBanner({ node }: { node: FileNode }) {
   const enabled = useAuth((state) => state.officeConversionEnabled)
   const { target } = officeFileActions(node, enabled)
@@ -52,7 +52,7 @@ export function OfficeConversionBanner({ node }: { node: FileNode }) {
     <div role="note" className="flex items-center gap-2 border-b bg-muted/40 px-4 py-2 text-sm text-muted-foreground sm:px-6">
       <Info className="size-4 shrink-0" />
       <span className="min-w-0 flex-1">
-        {uit`Pulpo can't edit .${fileExtension(node.name)} files. Convert it to .${target} to edit it; the original stays as it is.`}
+        {uit`.${fileExtension(node.name)} files open read only. Converting makes a .${target} copy beside it; the original stays as it is.`}
       </span>
     </div>
   )

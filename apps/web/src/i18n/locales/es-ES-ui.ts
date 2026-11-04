@@ -2646,7 +2646,7 @@ const esUi: Record<string, string> = {
   "Converting…": "Convirtiendo…",
   "Convert to .{{0}}": "Convertir a .{{0}}",
   "Download as PDF": "Descargar como PDF",
-  "Pulpo can't edit .{{0}} files. Convert it to .{{1}} to edit it; the original stays as it is.": "Pulpo no puede editar archivos .{{0}}. Conviértelo a .{{1}} para editarlo; el original se conserva tal cual.",
+  ".{{0}} files open read only. Converting makes a .{{1}} copy beside it; the original stays as it is.": "Los archivos .{{0}} se abren en modo de solo lectura. Al convertirlo se crea una copia .{{1}} a su lado; el original se conserva tal cual.",
   "No preview: {{0}}": "Sin vista previa: {{0}}",
   "Preparing preview…": "Preparando la vista previa…",
   "Password-protected files can't be converted": "Los archivos protegidos con contraseña no se pueden convertir",

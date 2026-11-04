@@ -58,7 +58,7 @@ try {
 
   // The legacy file opens read only, previewed as PDF, and explains converting.
   await page.goto(new URL(`/files/d/${legacy.id}`, base).href)
-  await page.getByText("Pulpo can't edit .doc files. Convert it to .docx to edit it; the original stays as it is.").waitFor()
+  await page.getByText(".doc files open read only. Converting makes a .docx copy beside it; the original stays as it is.").waitFor()
   await page.locator(`iframe[title="SampleDoc.doc"]`).waitFor({ timeout: 60_000 })
   await shot('legacy-file-view')
 

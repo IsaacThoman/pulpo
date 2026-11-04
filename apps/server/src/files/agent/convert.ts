@@ -1,8 +1,7 @@
 import { canExportOfficePdf, convertedFileName, fileExtension, officeConversionTarget, type OfficeEditableFormat } from '@pulpo/contracts'
 import { db } from '../../database/client.js'
-import { officeConversionAvailable, convertOfficeDocument, OFFICE_CONVERTER_MAX_INPUT_BYTES } from '../office/converter.js'
+import { convertOfficeDocument, OFFICE_CONVERTER_MAX_INPUT_BYTES, officeConversionAvailable, withConversionSlot } from '../office/converter.js'
 import { assertConvertedSizeAllowed, readStoredObject } from '../office/service.js'
-import { availableName } from '../tree-service.js'
 import { changeMode, guardedReply, joinPath, type CommandContext, type CommandOutput } from './command-context.js'
 import { createBlobChange } from './mutations.js'
 import { FilesCommandError, locateExisting, locateOptional, locateParent, modeFor } from './scope.js'
@@ -36,8 +35,8 @@ async function destination(ctx: CommandContext, sourcePath: string, sourceName: 
     if (await locateOptional(ctx.scope, args.output)) throw new FilesCommandError(`"${place.path}" already exists; choose another --output path`)
     return { parentId, parentPath: place.parent.path, name: place.name, path: place.path }
   }
-  const name = await availableName(db, ctx.userId, parentId, place.name)
-  return { parentId, parentPath: place.parent.path, name, path: joinPath(place.parent.path, name) }
+  // The free name is picked again when the file is created, after the conversion.
+  return { parentId, parentPath: place.parent.path, name: place.name, path: place.path }
 }
 
 /**
@@ -63,14 +62,17 @@ export async function convertCommand(ctx: CommandContext, args: ConvertArgs): Pr
 
   const target = await destination(ctx, located.path, node.name, args)
   const mode = changeMode(await modeFor(ctx.scope, target.parentId), target.parentPath)
-  const converted = await convertOfficeDocument({ bytes: await readStoredObject(view.objectKey), from: fileExtension(node.name), to: args.to, signal: ctx.signal })
+  const converted = await withConversionSlot(ctx.userId, async () =>
+    convertOfficeDocument({ bytes: await readStoredObject(view.objectKey), from: fileExtension(node.name), to: args.to, signal: ctx.signal }))
   await assertConvertedSizeAllowed(db, converted.byteLength)
-  const created = await createBlobChange(guardedReply(ctx, mode, (executor) => modeFor(ctx.scope, target.parentId, executor)), target.parentId, target.name, converted, mode)
+  const reply = guardedReply(ctx, mode, (executor) => modeFor(ctx.scope, target.parentId, executor))
+  const created = await createBlobChange(reply, target.parentId, target.name, converted, mode, { pickFreeName: !args.output })
+  const path = joinPath(target.parentPath, created.node.name)
   ctx.changed = true
   return {
     output: created.status === 'created'
-      ? `Converted "${located.path}" to "${target.path}"`
-      : `Suggested the new file "${target.path}", converted from "${located.path}"; it waits for the user to accept it`,
-    data: { path: target.path, nodeId: created.node.id, version: created.version, status: created.status },
+      ? `Converted "${located.path}" to "${path}"`
+      : `Suggested the new file "${path}", converted from "${located.path}"; it waits for the user to accept it`,
+    data: { path, nodeId: created.node.id, version: created.version, status: created.status },
   }
 }

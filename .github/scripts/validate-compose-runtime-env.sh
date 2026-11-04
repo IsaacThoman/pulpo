@@ -152,7 +152,7 @@ for compose_file in compose.yaml deploy/compose.production-infra.yaml deploy/com
       SERVICE_PASSWORD_64_POSTGRES='preview-database-magic-password' \
       SERVICE_USER_S3='preview-storage-user' \
       SERVICE_PASSWORD_64_S3='preview-storage-magic-password' \
-      POSTGRES_USER=user POSTGRES_PASSWORD=password S3_ACCESS_KEY_ID=key S3_SECRET_ACCESS_KEY=secret PULPO_DATA_PREFIX=prefix \
+      POSTGRES_USER=user POSTGRES_PASSWORD=password S3_ACCESS_KEY_ID=key S3_SECRET_ACCESS_KEY=secret PULPO_DATA_PREFIX=prefix PULPO_S3_DATA_VOLUME=volume \
       PULPO_ENV_FILE="${runtime_env}" \
       docker compose --env-file .env.example --file "${compose_file}" --profile office config --format json
   )"
@@ -165,11 +165,28 @@ for compose_file in compose.yaml deploy/compose.production-infra.yaml deploy/com
       and ($service.dns | index("127.0.0.1")) != null
       and ($service.ports // [] | length) == 0
       and ($service.volumes // [] | length) == 0
-      and $service.healthcheck != null
+      and ($service.healthcheck.test | all(type == "string"))
   ' <<< "${office_config}" >/dev/null || {
     echo "${compose_file} must keep the office converter read-only, unprivileged, without host ports or volumes, and health-checked." >&2
     exit 1
   }
+done
+for compose_file in deploy/compose.production-infra.yaml deploy/compose.development-infra.yaml; do
+  infra_config="$(
+    POSTGRES_USER=user POSTGRES_PASSWORD=password S3_ACCESS_KEY_ID=key S3_SECRET_ACCESS_KEY=secret PULPO_DATA_PREFIX=prefix PULPO_S3_DATA_VOLUME=volume \
+      docker compose --file "${compose_file}" --profile office config --format json
+  )"
+  jq -e '
+    (.services["office-converter"].networks | keys) == ["office"]
+      and .networks.office.internal == true
+      and .services["office-converter"].environment.OFFICE_CONVERTER_REQUIRE_TOKEN == "true"
+  ' <<< "${infra_config}" >/dev/null || {
+    echo "${compose_file} must keep the office converter alone on an internal network and require a token." >&2
+    exit 1
+  }
+  # Without the profile, the infrastructure must still parse exactly as before.
+  POSTGRES_USER=user POSTGRES_PASSWORD=password S3_ACCESS_KEY_ID=key S3_SECRET_ACCESS_KEY=secret PULPO_DATA_PREFIX=prefix PULPO_S3_DATA_VOLUME=volume \
+    docker compose --file "${compose_file}" config --quiet
 done
 
 bash -n scripts/local-preview.sh

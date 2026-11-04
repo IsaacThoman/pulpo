@@ -4,8 +4,9 @@ import { describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   requests: [] as Array<{ path: string; body: unknown; timeoutMs?: number; method?: string }>,
-  downloads: [] as Array<{ url: string; headers: Record<string, string> }>,
-  downloadError: null as Error | null,
+  downloads: [] as Array<{ url: string; headers: Record<string, string>; signal?: AbortSignal }>,
+  downloadAnswer: null as { status: number; body: unknown } | null,
+  written: [] as Uint8Array[],
   shared: [] as Array<{ uri: string; options: Record<string, unknown> }>,
 }))
 
@@ -29,6 +30,14 @@ vi.mock('./availability', () => ({
   filesCapability: (config: MobileConfig | null | undefined) => ({ enabled: config?.capabilities.files?.enabled === true, docSchemaVersion: 1 }),
 }))
 vi.mock('../../store/session', () => ({ useSessionStore: Object.assign(() => undefined, { getState: () => ({}) }) }))
+vi.mock('expo/fetch', () => ({
+  fetch: async (url: string, init: { headers: Record<string, string>; signal?: AbortSignal }) => {
+    mocks.downloads.push({ url, ...init })
+    const answer = mocks.downloadAnswer
+    if (answer) return { ok: false, status: answer.status, json: async () => answer.body }
+    return { ok: true, status: 200, arrayBuffer: async () => new TextEncoder().encode('%PDF-1.7').buffer }
+  },
+}))
 vi.mock('expo-sharing', () => ({
   isAvailableAsync: async () => true,
   shareAsync: async (uri: string, options: Record<string, unknown>) => { mocks.shared.push({ uri, options }) },
@@ -46,17 +55,14 @@ vi.mock('expo-file-system', () => {
     constructor(directory: { uri: string }, name: string) { this.uri = `${directory.uri}/${name}` }
     get exists() { return false }
     delete() {}
-    static async downloadFileAsync(url: string, destination: File, options: { headers: Record<string, string> }) {
-      if (mocks.downloadError) throw mocks.downloadError
-      mocks.downloads.push({ url, headers: options.headers })
-      return destination
-    }
+    create() {}
+    write(bytes: Uint8Array) { mocks.written.push(bytes) }
   }
   return { Directory, File, Paths: { cache: { uri: 'cache' } } }
 })
 
 const { ApiError } = await import('../../api/client')
-const { convertOfficeFile, officeConversionAvailable, pdfExportErrorMessage, shareOfficePdf, OFFICE_CONVERSION_TIMEOUT_MS } = await import('./officeConversion')
+const { convertOfficeFile, officeConversionAvailable, shareOfficePdf, OFFICE_CONVERSION_TIMEOUT_MS } = await import('./officeConversion')
 const { fileItemActions, officeActions } = await import('./itemActions')
 const { filesErrorMessage } = await import('./display')
 
@@ -89,13 +95,18 @@ describe('office conversion on mobile', () => {
     expect(OFFICE_CONVERSION_TIMEOUT_MS).toBeGreaterThan(180_000)
   })
 
-  it('shares the PDF under the original name', async () => {
+  it('shares the PDF under the original name, waiting as long as the conversion may take', async () => {
     await shareOfficePdf(legacy)
-    expect(mocks.downloads.at(-1)).toEqual({ url: `https://pulpo.test/api/files/${legacy.id}/pdf`, headers: { authorization: 'Bearer token' } })
+    expect(mocks.downloads.at(-1)).toMatchObject({ url: `https://pulpo.test/api/files/${legacy.id}/pdf`, headers: { authorization: 'Bearer token' } })
+    expect(mocks.downloads.at(-1)!.signal).toBeInstanceOf(AbortSignal)
+    expect(new TextDecoder().decode(mocks.written.at(-1))).toBe('%PDF-1.7')
     expect(mocks.shared.at(-1)).toMatchObject({ uri: expect.stringMatching(/\/Budget\.pdf$/), options: { mimeType: 'application/pdf' } })
-    mocks.downloadError = new Error('Unable to download: response has status 422')
-    await expect(shareOfficePdf(legacy)).rejects.toMatchObject({ message: 'This file can’t be exported as PDF. It may be password-protected or damaged.' })
-    mocks.downloadError = null
+    mocks.downloadAnswer = { status: 422, body: { error: { code: 'office_file_encrypted', message: 'locked' } } }
+    const failure = await shareOfficePdf(legacy).catch((error: unknown) => error)
+    expect(filesErrorMessage(failure)).toMatch(/^Password-protected files/)
+    mocks.downloadAnswer = { status: 503, body: null }
+    expect(await shareOfficePdf(legacy).catch((error: unknown) => error)).toMatchObject({ status: 503, code: 'office_pdf_export_failed' })
+    mocks.downloadAnswer = null
   })
 
   it('explains converter failures instead of reporting the device offline', () => {
@@ -103,7 +114,5 @@ describe('office conversion on mobile', () => {
     expect(filesErrorMessage(new ApiError(504, 'office_conversion_timeout', 'slow'))).toBe('Converting took too long. Try again later.')
     expect(filesErrorMessage(new ApiError(422, 'office_file_encrypted', 'locked'))).toMatch(/^Password-protected files/)
     expect(filesErrorMessage(new ApiError(502, 'bad_gateway', 'x'))).toMatch(/offline/)
-    expect(pdfExportErrorMessage(new Error('status 503'))).toBe('The converter is busy. Try again in a moment.')
-    expect(pdfExportErrorMessage(new Error('socket hang up'))).toBe('This file couldn’t be exported as PDF. Try again later.')
   })
 })
