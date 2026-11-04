@@ -5,6 +5,7 @@ import {
   createChatSchema,
   truncateChatTitle,
   agentCostLimitMicros,
+  parseAgentCostLimit,
   findCostLimitItem,
   findCostLimitItems,
   adminUsageEventSchema,
@@ -809,6 +810,15 @@ describe('response snapshot accumulation', () => {
     expect(agentCostLimitMicros({ agentCostLimitEnabled: false })).toBeUndefined()
     expect(agentCostLimitMicros({ agentCostLimitEnabled: true, agentCostLimitMicros: 250_000 })).toBe(250_000)
     expect(agentCostLimitMicros({ agentCostLimitMicros: 1 })).toBeUndefined()
+  })
+
+  it('parses typed Agent cost limits into whole-cent micros within range', () => {
+    expect(parseAgentCostLimit('2.5')).toBe(2_500_000)
+    expect(parseAgentCostLimit(' $0.126 ')).toBe(130_000)
+    expect(parseAgentCostLimit('0')).toBe(10_000)
+    expect(parseAgentCostLimit('5000')).toBe(1_000_000_000)
+    expect(parseAgentCostLimit('')).toBeUndefined()
+    expect(parseAgentCostLimit('abc')).toBeUndefined()
   })
 
   it('accepts terminal output as authoritative', () => {

@@ -1,4 +1,4 @@
-export type SettingsSection = 'general' | 'interface' | 'personalization' | 'data' | 'trash' | 'usage';
+export type SettingsSection = 'general' | 'interface' | 'agent' | 'personalization' | 'data' | 'trash' | 'usage';
 
 export type RootStackParamList = {
   Chat: { chatId?: string } | undefined;
