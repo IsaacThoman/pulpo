@@ -29,7 +29,9 @@ function gridText(): string {
 function codeText(): string {
   const lines = Number(params.get('lines') ?? 40)
   const body = Array.from({ length: lines }, (_, index) => `export function value${index}(input: number): number {\n  // Doubles line ${index}\n  return input * ${index} + 0.5\n}\n`)
-  return `/* A long generated module\n   that opens with a block comment */\n${body.join('\n')}`
+  // A minified-style line whose end is far past the right edge.
+  const long = params.has('long') ? `\nconst padding = '${'x'.repeat(3000)}' // far marker\n` : ''
+  return `/* A long generated module\n   that opens with a block comment */\n${body.join('\n')}${long}`
 }
 
 const PROBE = `<!doctype html><html><head><title>Probe</title></head><body><pre id="probe">running</pre><script>

@@ -120,12 +120,42 @@ export function CodeViewer({
   }, [current, matches])
 
   const listRef = useRef<VirtuosoHandle>(null)
+  const scrollerRef = useRef<HTMLElement | null>(null)
+  const attachScroller = useCallback((element: HTMLElement | Window | null) => {
+    scrollerRef.current = element instanceof HTMLElement ? element : null
+  }, [])
   const containerRef = useRef<HTMLDivElement>(null)
+  const reveal = useRef(0)
+  // Unwrapped lines scroll sideways, so the current match may sit past either edge. Its line
+  // renders only after scrolling to it, so look for its mark over the next few frames.
+  const revealCurrentMatch = useCallback(() => {
+    const token = ++reveal.current
+    let frames = 0
+    const tick = () => {
+      if (token !== reveal.current) return
+      const scroller = scrollerRef.current
+      const mark = scroller?.querySelector<HTMLElement>('mark.find-match-current')
+      if (!scroller || !mark) {
+        if (++frames < 12) requestAnimationFrame(tick)
+        return
+      }
+      const view = scroller.getBoundingClientRect()
+      // The sticky line numbers cover the left edge.
+      const left = view.left + (scroller.querySelector<HTMLElement>('[data-line] > span[aria-hidden]')?.offsetWidth ?? 0)
+      const box = mark.getBoundingClientRect()
+      if (box.left >= left && box.right <= view.right) return
+      scroller.scrollLeft += box.left - left - Math.max(0, (view.right - left - box.width) / 2)
+    }
+    requestAnimationFrame(tick)
+  }, [])
   const goTo = useCallback((index: number) => {
     setCurrent(index)
     const match = matches[index]
-    if (match) listRef.current?.scrollToIndex({ index: match.line, align: 'center' })
-  }, [matches])
+    if (match) {
+      listRef.current?.scrollToIndex({ index: match.line, align: 'center' })
+      revealCurrentMatch()
+    }
+  }, [matches, revealCurrentMatch])
   const step = (direction: 1 | -1) => {
     if (!findOpen) setFindOpen(true)
     else goTo(stepIndex(current, matches.length, direction))
@@ -182,7 +212,10 @@ export function CodeViewer({
             setQuery(value)
             setCurrent(0)
             const first = findInLines(plainLines, value, 1)[0]
-            if (first) listRef.current?.scrollToIndex({ index: first.line, align: 'center' })
+            if (first) {
+              listRef.current?.scrollToIndex({ index: first.line, align: 'center' })
+              revealCurrentMatch()
+            }
           }}
           current={current}
           total={matches.length}
@@ -204,6 +237,7 @@ export function CodeViewer({
       )}
       <Virtuoso
         ref={listRef}
+        scrollerRef={attachScroller}
         className="code-highlight min-h-0 flex-1"
         style={{ overflowX: wrap ? 'hidden' : 'auto' }}
         totalCount={lines.length}

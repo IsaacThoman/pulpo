@@ -121,6 +121,32 @@ try {
     await page.getByRole('search').getByText('2 of 11').waitFor()
     await page.close()
   }
+  // --- Find scrolls unwrapped lines sideways to the current match, and back.
+  {
+    const page = await open('viewer=code&lines=40&long=1')
+    const code = page.locator('[data-preview-kind="code"]')
+    await code.locator('.hljs-keyword').first().waitFor()
+    const scroller = code.locator('[data-virtuoso-scroller="true"]')
+    await code.click()
+    await page.keyboard.press(`${modifier}+f`)
+    const findBox = page.getByRole('textbox', { name: 'Find' })
+    const inView = () => page.evaluate(() => {
+      const mark = document.querySelector('mark.find-match-current')
+      const scroller = document.querySelector('[data-preview-kind="code"] [data-virtuoso-scroller="true"]')
+      if (!mark || !scroller) return false
+      const box = mark.getBoundingClientRect()
+      const view = scroller.getBoundingClientRect()
+      return box.left >= view.left && box.right <= view.right
+    })
+    await findBox.fill('far marker')
+    await page.waitForFunction(() => document.querySelector('[data-preview-kind="code"] [data-virtuoso-scroller="true"]').scrollLeft > 1000)
+    assert.ok(await inView(), 'the far match is scrolled into view')
+    assert.ok(await scroller.evaluate((element) => element.scrollWidth > element.clientWidth * 2), 'the long line overflows')
+    await findBox.fill('doubles line 7')
+    await page.waitForFunction(() => document.querySelector('[data-preview-kind="code"] [data-virtuoso-scroller="true"]').scrollLeft < 100)
+    assert.ok(await inView(), 'a match near the start scrolls back')
+    await page.close()
+  }
   {
     const page = await open('viewer=code&lines=60000')
     const code = page.locator('[data-preview-kind="code"]')
