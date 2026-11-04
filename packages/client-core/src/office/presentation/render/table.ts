@@ -3,6 +3,7 @@ import { resolveColor, toCss } from './color.js'
 import { emuToPx, px, type RenderEnv } from './env.js'
 import { fillElementOf, paintFill, styleReference, themeFill } from './fill.js'
 import { emptyBag, type PropertyBag } from './props.js'
+import { builtInTableStyle } from './table-styles.js'
 import { bodyLayout, renderParagraphs, type TextStyleContext } from './text.js'
 
 /**
@@ -11,36 +12,12 @@ import { bodyLayout, renderParagraphs, type TextStyleContext } from './text.js'
  * formatting from cell properties over the table style's parts.
  */
 
-const ACCENT_STYLES: Record<string, string> = {
-  '{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}': 'accent1',
-  '{21E4AEA4-8DFA-4A89-87EB-49C32662AFE8}': 'accent2',
-  '{F5AB1C69-6EDB-4FF4-983F-18BD219EF322}': 'accent3',
-  '{00A15C55-8517-42AA-B614-E9B94910E393}': 'accent4',
-  '{7DF18680-E054-41AD-8BC1-D1AEF772440D}': 'accent5',
-  '{93296810-A885-4BE3-A3E7-6D5BEEA58F35}': 'accent6',
-  '{073A0DAA-6AF3-43AB-8588-CEC1D06C72B9}': 'dk1',
-}
-
-/** PowerPoint's "Medium Style 2" family, which files reference by GUID without defining it. */
-function mediumStyle2(styleId: string, color: string): string {
-  const border = (side: string, width = 12700) => `<a:${side}><a:ln w="${width}" cmpd="sng"><a:solidFill><a:schemeClr val="lt1"/></a:solidFill></a:ln></a:${side}>`
-  const text = (bold: boolean) =>
-    `<a:tcTxStyle${bold ? ' b="on"' : ''}><a:fontRef idx="minor"><a:prstClr val="black"/></a:fontRef><a:schemeClr val="${bold ? 'lt1' : 'dk1'}"/></a:tcTxStyle>`
-  const fill = (tint?: number) => `<a:fill><a:solidFill><a:schemeClr val="${color}">${tint ? `<a:tint val="${tint}"/>` : ''}</a:schemeClr></a:solidFill></a:fill>`
-  return `<a:tblStyle xmlns:a="${NS.a}" styleId="${styleId}"><a:wholeTbl>${text(false)}<a:tcStyle><a:tcBdr>${['left', 'right', 'top', 'bottom', 'insideH', 'insideV'].map((side) => border(side)).join('')}</a:tcBdr>${fill(20000)}</a:tcStyle></a:wholeTbl><a:band1H><a:tcStyle><a:tcBdr/>${fill(40000)}</a:tcStyle></a:band1H><a:band2H><a:tcStyle><a:tcBdr/></a:tcStyle></a:band2H><a:band1V><a:tcStyle><a:tcBdr/>${fill(40000)}</a:tcStyle></a:band1V><a:band2V><a:tcStyle><a:tcBdr/></a:tcStyle></a:band2V><a:lastCol>${text(true)}<a:tcStyle><a:tcBdr/>${fill()}</a:tcStyle></a:lastCol><a:firstCol>${text(true)}<a:tcStyle><a:tcBdr/>${fill()}</a:tcStyle></a:firstCol><a:lastRow>${text(true)}<a:tcStyle><a:tcBdr>${border('top', 38100)}</a:tcBdr>${fill()}</a:tcStyle></a:lastRow><a:firstRow>${text(true)}<a:tcStyle><a:tcBdr>${border('bottom', 38100)}</a:tcBdr>${fill()}</a:tcStyle></a:firstRow></a:tblStyle>`
-}
-
-const TABLE_GRID = `<a:tblStyle xmlns:a="${NS.a}" styleId="{5940675A-B579-460E-94D1-54222C63F5DA}"><a:wholeTbl><a:tcTxStyle><a:fontRef idx="minor"><a:scrgbClr r="0" g="0" b="0"/></a:fontRef><a:schemeClr val="tx1"/></a:tcTxStyle><a:tcStyle><a:tcBdr>${['left', 'right', 'top', 'bottom', 'insideH', 'insideV']
-  .map((side) => `<a:${side}><a:ln w="12700" cmpd="sng"><a:solidFill><a:schemeClr val="tx1"/></a:solidFill></a:ln></a:${side}>`)
-  .join('')}</a:tcBdr><a:fill><a:noFill/></a:fill></a:tcStyle></a:wholeTbl></a:tblStyle>`
-
 const builtInCache = new Map<string, XmlElement | undefined>()
 
 function builtInStyle(styleId: string): XmlElement | undefined {
   if (builtInCache.has(styleId)) return builtInCache.get(styleId)
-  let style: XmlElement | undefined
-  if (ACCENT_STYLES[styleId]) style = parseFragment(mediumStyle2(styleId, ACCENT_STYLES[styleId]!))
-  else if (styleId === '{5940675A-B579-460E-94D1-54222C63F5DA}') style = parseFragment(TABLE_GRID)
+  const xml = builtInTableStyle(styleId)
+  const style = xml ? parseFragment(xml) : undefined
   builtInCache.set(styleId, style)
   return style
 }
@@ -219,6 +196,9 @@ function renderCell(cell: XmlElement, env: RenderEnv, style: XmlElement | undefi
     const value = intAttr(cell, name)
     return value && value > 1 ? ` ${html}="${Math.min(value, 1000)}"` : ''
   }
-  return `<td${span('gridSpan', 'colspan')}${span('rowSpan', 'rowspan')} style="${styles.join(';')}"><div style="--pp-fs:1">${content}</div></td>`
+  // Vertical cell text turns the text block: `vert` reads top to bottom, `vert270` bottom to top.
+  const vertical = attr(tcPr, 'vert')
+  const turn = vertical === 'vert' || vertical === 'eaVert' ? ';writing-mode:vertical-rl' : vertical === 'vert270' ? ';writing-mode:vertical-rl;transform:rotate(180deg)' : ''
+  return `<td${span('gridSpan', 'colspan')}${span('rowSpan', 'rowspan')} style="${styles.join(';')}"><div style="--pp-fs:1${turn}">${content}</div></td>`
 }
 
