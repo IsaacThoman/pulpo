@@ -23,7 +23,9 @@ import {
   filesQueryKey,
   updateFileNode,
 } from '@/features/files/api'
-import { filesErrorMessage } from '@/features/files/file-display'
+import { filePreviewKind, filesErrorMessage } from '@/features/files/file-display'
+import { OfficeConversionBanner, OfficeFileHeaderActions, OfficePdfPreview } from '@/features/files/OfficeFile'
+import { officeFileActions, useOfficeConversion } from '@/features/files/office-file'
 import { DocEditor } from '@/features/files/editor/DocEditor'
 import type { DocSyncStatus } from '@pulpo/client-core/doc-sync'
 import { useDocSession, type PresencePeer } from '@/features/files/editor/use-doc-session'
@@ -401,9 +403,20 @@ function MarkdownFileView({ node, ancestors, view }: { node: FileNode; ancestors
   )
 }
 
-/** Any other uploaded file: a preview filling the page or panel, with download. */
+/**
+ * Any other uploaded file: a preview filling the page or panel, with download. Office files the
+ * browser cannot show are previewed as PDF and offer conversion, when the server can convert.
+ */
 function BlobFileView({ node, ancestors, view }: { node: FileNode; ancestors: FileNode[]; view: FileViewContext }) {
   const [notice, setNotice] = useState<string | null>(null)
+  const navigate = useNavigate()
+  const officeEnabled = useAuth((state) => state.officeConversionEnabled)
+  const conversion = useOfficeConversion((created) => {
+    // The copy opens where the original is shown.
+    if (view.layout === 'panel') useSidePanel.getState().open({ kind: 'file', id: created.id })
+    else navigate(`/files/d/${created.id}`)
+  })
+  const office = officeFileActions(node, officeEnabled)
   return (
     <div className="flex h-full min-h-0 flex-col">
       <FileHeader
@@ -413,11 +426,13 @@ function BlobFileView({ node, ancestors, view }: { node: FileNode; ancestors: Fi
         onDownload={() => void downloadFile(node).catch((cause: unknown) => setNotice(filesErrorMessage(cause)))}
       >
         <span className="hidden text-xs text-muted-foreground tabular-nums sm:inline">{formatBytes(node.sizeBytes)}</span>
+        <OfficeFileHeaderActions node={node} conversion={conversion} compact={view.layout === 'panel'} />
       </FileHeader>
       <SuggestionBanner node={node} ancestors={ancestors} view={view} />
+      <OfficeConversionBanner node={node} />
       {notice && <p role="alert" className="border-b bg-destructive/5 px-4 py-2 text-sm text-destructive sm:px-6">{notice}</p>}
       <div className="min-h-0 flex-1 overflow-auto bg-muted/20 p-4">
-        <FilePreviewBody node={node} />
+        {office.pdf && !filePreviewKind(node) ? <OfficePdfPreview node={node} /> : <FilePreviewBody node={node} />}
       </div>
     </div>
   )

@@ -13,6 +13,8 @@ import {
   CopyPlus,
   Download,
   Eye,
+  FileDown,
+  FileOutput,
   FilePlus2,
   FolderInput,
   FolderPlus,
@@ -59,6 +61,7 @@ import { createDoc, createFolder, fetchFolder, fetchFolderLayout, folderLayoutQu
 import { arrangeGrid, GRID_CELL, moveInGrid, readingOrder } from '@/features/files/browser/grid-layout'
 import { dropFolderOf, filesErrorMessage } from '@/features/files/file-display'
 import { FileMoveDialog } from '@/features/files/FileMoveDialog'
+import { officeFileActions, useOfficeConversion } from '@/features/files/office-file'
 import { ImportUrlDialog } from '@/features/files/ImportUrlDialog'
 import { FileSuggestionBanner } from '@/features/files/FileSuggestion'
 import { useResolveFileSuggestion } from '@/features/files/use-file-suggestion'
@@ -217,6 +220,9 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
   // Trashed items are not files the agent can work on.
   usePublishFilesView(place, filesEnabled && !inTrash && !listing.isError ? agentItem : null)
   const ops = useFileOperations()
+  const officeEnabled = useAuth((state) => state.officeConversionEnabled)
+  // Converted copies appear beside the original; the toast opens them like any item.
+  const officeConversion = useOfficeConversion((created) => open(created))
   const trashOps = useTrashOperations()
   const resolveFileSuggestion = useResolveFileSuggestion()
   const sidebar = useSidebarState().data
@@ -837,6 +843,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
 
   const single = selectedNodes.length === 1 ? selectedNodes[0]! : null
   const canDownload = selectedNodes.length > 0 && selectedNodes.every((node) => node.kind !== 'folder' && node.kind !== 'chat')
+  const office = single && !inTrash ? officeFileActions(single, officeEnabled) : { target: null, pdf: false }
   // Chats, shortcuts, and the trash are not files the agent can be given, and built-in folders stay where they are.
   const fileSelection = selectedNodes.filter((node) => node.kind !== 'chat' && node.kind !== 'shortcut' && !isTrashFolder(node))
   const hasChats = selectedNodes.some((node) => node.kind === 'chat')
@@ -896,6 +903,16 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
       {canDownload && (
         <DropdownMenuItem onSelect={() => void ops.download(selectedNodes)}>
           <Download /> {ui("Download")}
+        </DropdownMenuItem>
+      )}
+      {single && office.pdf && (
+        <DropdownMenuItem disabled={officeConversion.exporting === single.id} onSelect={() => void officeConversion.downloadPdf(single)}>
+          <FileDown /> {ui("Download as PDF")}
+        </DropdownMenuItem>
+      )}
+      {single && office.target && (
+        <DropdownMenuItem disabled={officeConversion.converting === single.id} onSelect={() => void officeConversion.convert(single, office.target!)}>
+          <FileOutput /> {uit`Convert to .${office.target}`}
         </DropdownMenuItem>
       )}
       <DropdownMenuItem disabled={hasTrash || selectedNodes.some((node) => node.systemRole === 'chats')} onSelect={() => void pinSidebarItems(selectedNodes.map((node) => node.id), pinning, selectedNodes)}>

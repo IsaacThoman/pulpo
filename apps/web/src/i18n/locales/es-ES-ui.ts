@@ -2642,6 +2642,23 @@ const esUi: Record<string, string> = {
   "App Store": "App Store",
   "App Store sandbox purchases": "Compras de sandbox del App Store",
   "TestFlight and App Review purchases grant this account a plan. Turning this off ends its sandbox subscriptions.": "Las compras de TestFlight y de la revisión de App Store otorgan un plan a esta cuenta. Al desactivarlo, finalizan sus suscripciones de sandbox.",
+  "Converted to “{{0}}”": "Convertido en «{{0}}»",
+  "Converting…": "Convirtiendo…",
+  "Convert to .{{0}}": "Convertir a .{{0}}",
+  "Download as PDF": "Descargar como PDF",
+  "Pulpo can't edit .{{0}} files. Convert it to .{{1}} to edit it; the original stays as it is.": "Pulpo no puede editar archivos .{{0}}. Conviértelo a .{{1}} para editarlo; el original se conserva tal cual.",
+  "No preview: {{0}}": "Sin vista previa: {{0}}",
+  "Preparing preview…": "Preparando la vista previa…",
+  "Password-protected files can't be converted": "Los archivos protegidos con contraseña no se pueden convertir",
+  "This file couldn't be converted. It may be damaged.": "No se ha podido convertir este archivo. Puede que esté dañado.",
+  "This file's contents don't match its name": "El contenido de este archivo no coincide con su nombre",
+  "This file is too large to convert": "Este archivo es demasiado grande para convertirlo",
+  "Converting took too long. Try again later.": "La conversión tardó demasiado. Inténtalo más tarde.",
+  "The converter is busy. Try again in a moment.": "El conversor está ocupado. Inténtalo dentro de un momento.",
+  "The converter isn't available. Try again later.": "El conversor no está disponible. Inténtalo más tarde.",
+  "This server can't convert office files": "Este servidor no puede convertir archivos de Office",
+  "This file can't be converted to that format": "Este archivo no se puede convertir a ese formato",
+  "Wait for your other conversions to finish": "Espera a que terminen tus otras conversiones",
 }
 
 export default esUi

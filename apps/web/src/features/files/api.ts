@@ -6,10 +6,12 @@ import type {
   FileNode,
   FileUploadReservation,
   MoveFileNodes,
+  OfficeEditableFormat,
   UpdateFileFolderLayout,
   UpdateFileNode,
 } from '@pulpo/contracts'
 import { formatAttachmentSizeLimit } from '@pulpo/client-core'
+import { convertedFileName } from '@pulpo/contracts'
 import { ApiError, apiRequest, authenticatedFetch, downloadApiFile, fetchApiBlob } from '@/lib/api'
 import { uit } from '@/i18n/ui'
 import { useAuth } from '@/stores/auth'
@@ -62,6 +64,27 @@ export function fetchConversionPreview(id: string): Promise<FileConversionPrevie
 /** Makes an uploaded Markdown file an editable document. */
 export function convertToDoc(id: string): Promise<FileNode> {
   return apiRequest<FileNode>(`/api/files/${id}/convert`, { method: 'POST' })
+}
+
+/** A converted copy of an office file beside it ("Report.doc" gets "Report.docx"); the original stays. */
+export function convertOfficeFile(id: string, to: OfficeEditableFormat): Promise<FileNode> {
+  return apiRequest<FileNode>(`/api/files/${id}/conversions`, { method: 'POST', body: { to } })
+}
+
+/** An office file rendered as PDF by the server, for previews. Nothing is stored. */
+export function fetchFilePdf(node: Pick<FileNode, 'id'>): Promise<Blob> {
+  return fetchApiBlob(`/api/files/${node.id}/pdf?inline=1`)
+}
+
+/** Saves an office file as "<name>.pdf". Failures carry the server's reason (password-protected, damaged…). */
+export async function downloadFileAsPdf(node: Pick<FileNode, 'id' | 'name'>): Promise<void> {
+  const blob = await fetchApiBlob(`/api/files/${node.id}/pdf`)
+  const url = URL.createObjectURL(blob.slice(0, blob.size, 'application/pdf'))
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = convertedFileName(node.name, 'pdf')
+  anchor.click()
+  window.setTimeout(() => URL.revokeObjectURL(url), 1_000)
 }
 
 /** An open editor exports its local snapshot, including offline edits; the browser fetches others. */

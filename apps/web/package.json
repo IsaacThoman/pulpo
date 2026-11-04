@@ -16,6 +16,7 @@
     "test:sidebar-animation": "node tests/sidebar-animation.browser.mjs",
     "test:suggestion-card": "node tests/suggestion-card.browser.mjs",
     "test:doc-dictation": "node tests/doc-dictation.browser.mjs",
+    "test:office-conversion": "node tests/office-conversion.browser.mjs",
     "capture:landing": "node scripts/capture-landing-screenshots.mjs"
   },
   "dependencies": {
