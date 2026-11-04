@@ -53,7 +53,7 @@ export function planBenefits(plan: 'eight' | 'fat', plans: UsageLimitsPlans | nu
   return [
     'Everything in Pulpo Eight',
     'Highest usage limits',
-    plans ? `Share ${plans.fatSharedWeeklyPercent}% of your weekly usage with your Pool` : null,
+    plans ? `Share ${plans.fatSharedWeeklyPercent}% of your weekly usage` : null,
     storage,
   ].filter((line): line is string => Boolean(line))
 }
@@ -71,4 +71,10 @@ export function planFillColor(plan: 'eight' | 'fat', dark: boolean): string {
 export function planButtonColors(plan: 'eight' | 'fat', dark: boolean): { background: string; text: string } {
   if (plan === 'eight') return dark ? { background: '#2DD4BF', text: '#042F2E' } : { background: '#0D9488', text: '#FFFFFF' }
   return dark ? { background: '#F472B6', text: '#500724' } : { background: '#EC4899', text: '#FFFFFF' }
+}
+
+/** A light wash of each plan's color, for its "Current plan" badge and Manage Subscription button (Tailwind 500 at 15%). */
+export function planTintColor(plan: 'eight' | 'fat', dark: boolean): string {
+  if (plan === 'eight') return dark ? 'rgba(45,212,191,0.18)' : 'rgba(20,184,166,0.14)'
+  return dark ? 'rgba(244,114,182,0.18)' : 'rgba(236,72,153,0.12)'
 }

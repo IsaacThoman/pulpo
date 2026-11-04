@@ -718,6 +718,14 @@ export const costLimitItemSchema = z.object({
 })
 export type CostLimitItem = z.infer<typeof costLimitItemSchema>
 
+/** Parses a typed dollar amount ("2.5", "$0.13") into a clamped Agent cost limit in USD micros, or undefined when it is not a number. */
+export function parseAgentCostLimit(raw: string): number | undefined {
+  const dollars = Number(raw.trim().replace(/^\$/, ''))
+  if (!raw.trim() || !Number.isFinite(dollars)) return undefined
+  const micros = Math.round(dollars * 100) * 10_000
+  return Math.min(AGENT_COST_LIMIT_MAX_MICROS, Math.max(AGENT_COST_LIMIT_MIN_MICROS, micros))
+}
+
 /** The enabled Agent cost limit from stored account preferences, if any. Accounts that never chose are enabled. */
 export function agentCostLimitMicros(preferences: Record<string, unknown>): number | undefined {
   if (preferences.agentCostLimitEnabled === false) return undefined
@@ -1618,6 +1626,9 @@ Avoid sounding like customer support, a textbook, or a stereotypical AI assistan
 Don't over-explain simple things.
 When the user asks a technical or serious question, become clearer and more detailed while keeping the conversational tone.`
 
+/** Longest account custom instructions text clients may save. */
+export const CUSTOM_INSTRUCTIONS_MAX_LENGTH = 100_000
+
 export const instructionPresetSchema = z.object({
   id: z.string().trim().min(1).max(120),
   title: z.string().trim().min(1).max(80),
@@ -1702,7 +1713,7 @@ export const managementAccountSettingsSchema = z.object({
   agentCostLimitMicros: agentCostLimitMicrosSchema,
   chatWidth: z.enum(['full', 'narrow']).default('narrow'),
   animationSpeed: animationSpeedSchema,
-  customInstructions: z.string().max(100_000).default(''),
+  customInstructions: z.string().max(CUSTOM_INSTRUCTIONS_MAX_LENGTH).default(''),
   nickname: z.string().max(80).default(''),
   username: usernameSchema,
   profileColor: profileColorSchema.nullable().default(null),
