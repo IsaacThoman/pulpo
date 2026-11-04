@@ -58,6 +58,9 @@ const MIME_BY_EXTENSION: Record<string, string> = {
 /** Fills an empty Y.Doc from xlsx/xlsm/xltx bytes. */
 export async function readXlsx(doc: Y.Doc, bytes: Uint8Array, assets: LiveAssetStore, options: XlsxReadOptions = {}): Promise<void> {
   const pkg = OoxmlPackage.read(bytes, options.limits)
+  if (pkg.relationships('').some((rel) => rel.type === 'http://purl.oclc.org/ooxml/officeDocument/relationships/officeDocument')) {
+    throw new LiveFormatError('unsupported', 'Strict Open XML workbooks are not supported; save as a regular .xlsx')
+  }
   const workbookPath = pkg.mainPart()
   if (!workbookPath || !pkg.has(workbookPath)) throw new LiveFormatError('corrupt', 'This package has no workbook')
   const format = formatOfContentType(pkg.contentType(workbookPath))
@@ -145,6 +148,11 @@ export async function readXlsx(doc: Y.Doc, bytes: Uint8Array, assets: LiveAssetS
     }
   })
 
+  // Macro and dialog sheets are kept as parts but index into the shared string table, which is
+  // rebuilt on export: keep its original entries first so their indexes stay valid.
+  if (sharedStringsText && sheets.some((entry) => entry.kind === 'macrosheet' || entry.kind === 'dialogsheet')) {
+    doc.transact(() => model.meta.set('sharedStringsSeed', sharedStringsText))
+  }
   for (const entry of sheets) {
     const sheet = model.sheet(entry.id)!
     if (entry.kind !== 'worksheet' || !entry.path || !pkg.has(entry.path)) {

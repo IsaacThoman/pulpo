@@ -44,8 +44,14 @@ export interface AxisSnapshot {
   readonly index: ReadonlyMap<string, number>
 }
 
+interface MutableSnapshot {
+  ids: string[]
+  next: number
+  index: Map<string, number>
+}
+
 export class Axis {
-  private snapshot: AxisSnapshot | undefined
+  private snapshot: MutableSnapshot | undefined
 
   constructor(
     readonly order: Y.Array<string>,
@@ -59,6 +65,10 @@ export class Axis {
   /** The current resolved order. Cached until the axis changes. */
   resolve(): AxisSnapshot {
     if (this.snapshot) return this.snapshot
+    return this.rebuild()
+  }
+
+  private rebuild(): MutableSnapshot {
     const ids: string[] = []
     const index = new Map<string, number>()
     let next = 0
@@ -113,7 +123,14 @@ export class Axis {
     const added: string[] = []
     for (let n = ids.length; n < count; n++) added.push(String(next + n - ids.length))
     this.order.push(added)
-    this.invalidate()
+    // Appending virtual ids extends the snapshot as it is; no need to rebuild it (imports call
+    // this for every row they touch).
+    const snapshot = this.snapshot!
+    for (const id of added) {
+      snapshot.index.set(id, snapshot.ids.length)
+      snapshot.ids.push(id)
+    }
+    snapshot.next += added.length
   }
 
   /** Our own changes take effect at once; Yjs only notifies observers when the transaction ends. */

@@ -7,7 +7,7 @@ import { WorkbookModel, type SheetModel } from '../model/workbook.js'
 import { DEFAULT_STYLES_XML, Stylesheet } from '../styles/stylesheet.js'
 import { writeDrawing } from './drawing.js'
 import { writeComments, writeNotesVml } from './notes.js'
-import { SharedStringTable } from './strings.js'
+import { readSharedStrings, SharedStringTable } from './strings.js'
 import { writeTablePart, writeWorksheet, type ValueSource, type WorksheetWriteContext } from './write-worksheet.js'
 import { children, CONTENT_TYPES, escapeXml, REL_TYPES, SHEET_NS, type XmlElement } from './xml.js'
 import { DEFAULT_THEME_XML } from './default-theme.js'
@@ -164,7 +164,8 @@ export async function writeXlsx(doc: Y.Doc, assets: LiveAssetStore, options: Xls
   // Keep the workbook relationship first, as Excel writes it.
   const rootElement = rootRels.document.documentElement!
   const officeRel = children(rootElement, 'Relationship').find((element) => element.getAttribute('Type') === REL_TYPES.officeDocument)!
-  rootElement.insertBefore(officeRel, rootElement.firstChild)
+  // (xmldom breaks when a node is inserted before itself.)
+  if (rootElement.firstChild !== officeRel) rootElement.insertBefore(officeRel, rootElement.firstChild)
   types.override(workbookPath, MAIN_CONTENT_TYPE[outputFormat])
 
   const workbookRels = new Rels(model.metaValue('workbookRels'))
@@ -174,6 +175,8 @@ export async function writeXlsx(doc: Y.Doc, assets: LiveAssetStore, options: Xls
 
   const styles = new Stylesheet(model.metaValue('stylesXml') ?? DEFAULT_STYLES_XML)
   const strings = new SharedStringTable()
+  const seed = model.metaValue('sharedStringsSeed')
+  if (seed) for (const item of readSharedStrings(seed)) strings.add(item, true)
   const sheets = model.sheets()
   const sheetEntries: string[] = []
   const usedSheetIds = new Set(sheets.map((sheet) => sheet.raw.get('sheetId') as number | undefined).filter((id): id is number => id !== undefined))

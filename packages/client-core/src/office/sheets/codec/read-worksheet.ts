@@ -55,7 +55,7 @@ export function readWorksheet(sheet: SheetModel, path: string, context: ReadCont
   const text = context.pkg.text(path)
   if (text === undefined) throw new LiveFormatError('corrupt', `The worksheet ${path} is missing`)
   const sheetData = locateElement(text, 'sheetData')
-  const skeletonText = sheetData ? text.slice(0, sheetData.start) + '<sheetData/>' + text.slice(sheetData.end) : text
+  const skeletonText = sheetData ? text.slice(0, sheetData.start) + `<${sheetData.prefix}sheetData/>` + text.slice(sheetData.end) : text
   const document = parseXml(skeletonText)
   const root = document.documentElement!
   if (root.localName !== 'worksheet') throw new LiveFormatError('corrupt', `${path} is not a worksheet`)
@@ -277,12 +277,16 @@ function readCell(
   const raw = valueNode?.text
   switch (type) {
     case 's': {
+      if (raw === undefined || raw.trim() === '') break
       const item = context.sharedStrings[Number(raw)]
       if (item) {
         data.v = item.text
         if (item.runs) data.runs = item.runs
         if (item.phonetic) data.phonetic = item.phonetic
-      } else if (raw !== undefined) throw new LiveFormatError('corrupt', 'A cell refers to a shared string that does not exist')
+      } else if (raw !== undefined) {
+        // A dangling shared string index; Excel and LibreOffice show the cell empty.
+        data.v = ''
+      }
       break
     }
     case 'inlineStr': {
@@ -329,6 +333,11 @@ function readCell(
   if (Number.isFinite(style) && style > 0) {
     sheet.ensure(row, col)
     sheet.xf.set(sheet.keyAt(row, col), style)
+  } else if (inheritsStyle(sheet, row, col)) {
+    // A cell without `s` has format 0 even in a formatted row or column; say so explicitly,
+    // since cells without a format of their own take the row's or column's.
+    sheet.ensure(row, col)
+    sheet.xf.set(sheet.keyAt(row, col), 0)
   }
   if (formulaNode) {
     const formulaType = formulaNode.attrs.t ?? 'normal'
@@ -373,6 +382,13 @@ function readCell(
     return
   }
   sheet.cells.set(key, data)
+}
+
+function inheritsStyle(sheet: SheetModel, row: number, col: number): boolean {
+  if (sheet.rowMeta.get(`${sheet.rows.idAt(row)}|xf`) !== undefined) return true
+  if (sheet.colMeta.get(`${sheet.cols.idAt(col)}|xf`) !== undefined) return true
+  const tail = sheet.raw.get('colTail') as { from: number; props: Partial<AxisProps> } | undefined
+  return !!tail?.props.xf && col >= tail.from
 }
 
 /** Array formula results live on the anchor (spillCache), not in member cells. */

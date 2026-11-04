@@ -74,7 +74,7 @@ function mergeStyles(target: WorkbookModel, incoming: WorkbookModel): StyleMap {
   }
 }
 
-const META_KEYS = ['format', 'date1904', 'iterate', 'iterateCount', 'iterateDelta', 'csv', 'workbookXml', 'workbookRels', 'themeXml', 'contentTypesXml', 'workbookPath', 'stylesPath', 'themePath', 'sharedStringsPath'] as const
+const META_KEYS = ['format', 'date1904', 'iterate', 'iterateCount', 'iterateDelta', 'csv', 'workbookXml', 'workbookRels', 'themeXml', 'contentTypesXml', 'workbookPath', 'stylesPath', 'themePath', 'sharedStringsPath', 'sharedStringsSeed'] as const
 
 function syncMeta(target: WorkbookModel, incoming: WorkbookModel): void {
   for (const key of META_KEYS) setIfDifferent(target.meta, key, incoming.metaValue(key))

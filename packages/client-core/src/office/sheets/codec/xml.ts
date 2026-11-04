@@ -112,7 +112,8 @@ export function boolAttr(element: XmlElement | undefined, name: string, fallback
 }
 
 export function serializeNode(node: XmlNode): string {
-  return new XMLSerializer().serializeToString(node)
+  // Documents keep their XML declaration as a node; callers add their own.
+  return new XMLSerializer().serializeToString(node).replace(/^<\?xml[^?]*\?>\s*/, '')
 }
 
 /** The XML of an element's children (its inner XML). */
@@ -137,7 +138,8 @@ export function encodeSheetText(text: string): string {
     text
       .replace(/_x([0-9A-Fa-f]{4})_/g, '_x005F_x$1_')
       // eslint-disable-next-line no-control-regex
-      .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F￾￿]/g, (char) => `_x${char.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')}_`),
+      // Carriage returns too: XML parsers turn a literal one into a line feed.
+      .replace(/[\u0000-\u0008\u000B\u000C\u000D\u000E-\u001F\uFFFE\uFFFF]/g, (char) => `_x${char.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')}_`),
   )
 }
 

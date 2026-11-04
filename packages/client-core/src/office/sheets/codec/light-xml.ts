@@ -20,7 +20,9 @@ export interface LightNode {
 
 const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" }
 
-export function decodeEntities(text: string): string {
+export function decodeEntities(raw: string): string {
+  // XML parsers report every line ending as a line feed (XML 1.0 §2.11); entities are decoded after.
+  const text = raw.includes('\r') ? raw.replace(/\r\n?/g, '\n') : raw
   if (!text.includes('&')) return text
   return text.replace(/&(#x[0-9a-fA-F]+|#\d+|\w+);/g, (match, entity: string) => {
     if (entity[0] === '#') {
@@ -133,15 +135,16 @@ export function lightChild(node: LightNode, name: string): LightNode | undefined
  * Finds an element in a document's text by local name: its start, the end of its start tag, the
  * start of its end tag, and its end. Used to cut `<sheetData>` out before DOM parsing.
  */
-export function locateElement(xml: string, name: string): { start: number; innerStart: number; innerEnd: number; end: number } | undefined {
+export function locateElement(xml: string, name: string): { start: number; innerStart: number; innerEnd: number; end: number; prefix: string } | undefined {
   const open = new RegExp(`<((?:[\\w.-]+:)?)${name}(?=[\\s/>])`).exec(xml)
   if (!open) return undefined
   const start = open.index
   const tagEnd = findTagEnd(xml, start + 1)
   if (tagEnd < 0) return undefined
-  if (xml[tagEnd - 1] === '/') return { start, innerStart: tagEnd + 1, innerEnd: tagEnd + 1, end: tagEnd + 1 }
+  const prefix = open[1] ?? ''
+  if (xml[tagEnd - 1] === '/') return { start, innerStart: tagEnd + 1, innerEnd: tagEnd + 1, end: tagEnd + 1, prefix }
   const closing = `</${open[1]}${name}>`
   const closeAt = xml.indexOf(closing, tagEnd)
   if (closeAt < 0) return undefined
-  return { start, innerStart: tagEnd + 1, innerEnd: closeAt, end: closeAt + closing.length }
+  return { start, innerStart: tagEnd + 1, innerEnd: closeAt, end: closeAt + closing.length, prefix }
 }

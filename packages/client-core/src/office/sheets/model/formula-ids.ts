@@ -169,12 +169,23 @@ export function idTokenToA1(token: IdToken, sheet: SheetModel | undefined, workb
   const from = resolveEnd(target, token.from, isRange ? 'start' : 'single')
   const to = token.to && resolveEnd(target, token.to, 'end')
   if (!from || (token.to && !to)) return (prefix ? formatSheetPrefix(prefix) : '') + '#REF!'
-  if (to) {
-    // A range whose rows or columns were all deleted.
-    if (from.row !== undefined && to.row !== undefined && to.row < from.row) return (prefix ? formatSheetPrefix(prefix) : '') + '#REF!'
-    if (from.col !== undefined && to.col !== undefined && to.col < from.col) return (prefix ? formatSheetPrefix(prefix) : '') + '#REF!'
+  if (to && collapsed(target, token)) {
+    // A range whose rows or columns were all deleted concurrently.
+    return (prefix ? formatSheetPrefix(prefix) : '') + '#REF!'
   }
   return formatA1Reference({ ...(prefix ? { sheet: prefix } : {}), from, ...(to ? { to } : {}) })
+}
+
+/** A range whose edges were deleted and resolved past each other (reversed ranges as written are fine). */
+function collapsed(sheet: SheetModel, token: IdToken): boolean {
+  const gone = (axis: SheetModel['rows'], id: string | undefined) => id !== undefined && axis.indexOf(id) < 0
+  const rowsGone = gone(sheet.rows, token.from.row) || gone(sheet.rows, token.to?.row)
+  const colsGone = gone(sheet.cols, token.from.col) || gone(sheet.cols, token.to?.col)
+  if (!rowsGone && !colsGone) return false
+  const from = resolveEnd(sheet, token.from, 'start')
+  const to = token.to && resolveEnd(sheet, token.to, 'end')
+  if (!from || !to) return true
+  return (rowsGone && from.row !== undefined && to.row !== undefined && to.row < from.row) || (colsGone && from.col !== undefined && to.col !== undefined && to.col < from.col)
 }
 
 function resolveEnd(sheet: SheetModel, end: IdEnd, side: 'start' | 'end' | 'single'): RefEnd | undefined {

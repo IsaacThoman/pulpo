@@ -131,14 +131,15 @@ export class SharedStringTable {
   /** Every reference, counted (the `count` attribute). */
   private references = 0
 
-  add(value: SheetString): number {
+  /** Adds a string; `keepIndex` appends it even when equal to an earlier one (seeding). */
+  add(value: SheetString, keepIndex = false): number {
     this.references++
     const xml = writeStringItem(value)
-    let id = this.index.get(xml)
+    let id = keepIndex ? undefined : this.index.get(xml)
     if (id === undefined) {
       id = this.items.length
       this.items.push(xml)
-      this.index.set(xml, id)
+      if (!this.index.has(xml)) this.index.set(xml, id)
     }
     return id
   }

@@ -107,6 +107,9 @@ function columnTailXf(sheet: SheetModel, colId: string): number | undefined {
 export function writeWorksheet(sheet: SheetModel, context: WorksheetWriteContext): string {
   const document = parseXml((sheet.raw.get('xml') as string | undefined) ?? DEFAULT_WORKSHEET_XML)
   const root = document.documentElement!
+  // Some writers prefix every element (`<x:worksheet>`); declaring the namespace as the default
+  // too lets the unprefixed rows and elements written here sit in it.
+  if (root.prefix && !root.hasAttribute('xmlns')) root.setAttribute('xmlns', SHEET_NS)
   const { rowsXml, used, maxRowLevel } = writeSheetData(sheet, context)
 
   patchSheetProperties(document, root, sheet)
@@ -221,7 +224,10 @@ function patchSheetViews(document: XmlDocument, root: XmlElement, sheet: SheetMo
   const pane = child(view, 'pane')
   const wasFrozen = pane && /^frozen/.test(attr(pane, 'state') ?? '')
   const selectionRef = sheet.viewProp('selection') ?? undefined
-  if (rows || cols) {
+  const unchanged = wasFrozen && Number(attr(pane, 'ySplit') ?? 0) === rows && Number(attr(pane, 'xSplit') ?? 0) === cols
+  if (unchanged) {
+    // Same frozen panes as read: keep the pane's scroll position and selections.
+  } else if (rows || cols) {
     for (const node of [...children(view, 'pane'), ...children(view, 'selection')]) view.removeChild(node)
     const activePane = rows && cols ? 'bottomRight' : rows ? 'bottomLeft' : 'topRight'
     const paneXml = `<pane${xmlAttrs({ xSplit: cols || undefined, ySplit: rows || undefined, topLeftCell: cellName(rows, cols), activePane, state: 'frozen' })}/>`
@@ -478,7 +484,7 @@ function writeCell(sheet: SheetModel, row: number, col: number, data: CellData, 
     const fAttrText = Object.entries(fAttrs)
       .map(([name, value]) => ` ${name}="${escapeXml(value)}"`)
       .join('')
-    return `<c r="${ref}"${s}${valueType(v, error, true)}${extraAttrs}><f${refAttr}${fAttrText}>${encodeSheetText(formula)}</f>${valueXml(v, context, true)}${extra}</c>`
+    return `<c r="${ref}"${s}${valueType(v, error, true)}${extraAttrs}><f${refAttr}${fAttrText}>${escapeXml(formula)}</f>${valueXml(v, context, true)}${extra}</c>`
   }
   if (data.runs?.length || typeof data.v === 'string') {
     if (data.t === 'e') return `<c r="${ref}"${s} t="e"${extraAttrs}><v>${escapeXml(String(data.v))}</v>${extra}</c>`
