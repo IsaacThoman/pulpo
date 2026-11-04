@@ -60,6 +60,7 @@ export const materialSymbolNames: Record<string, string> = {
   "camera": "photo_camera",
   "camera.fill": "photo_camera",
   "square.and.arrow.up": "share",
+  "square.and.arrow.down": "download",
   "arrowshape.turn.up.left": "reply",
   "arrow.clockwise": "refresh",
   "arrow.counterclockwise": "restore",
