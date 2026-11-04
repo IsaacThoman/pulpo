@@ -1,0 +1,6 @@
+*
+!packages/office-converter/package.json
+!packages/office-converter/tsconfig.json
+!packages/office-converter/src
+!packages/office-converter/fixtures
+!infra/office-converter/smoke-test.mjs

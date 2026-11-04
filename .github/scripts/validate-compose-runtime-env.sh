@@ -141,6 +141,37 @@ for service in api worker; do
   }
 done
 
+# The office converter is opt-in, and runs untrusted documents only under its restrictions.
+jq -e '.services | has("office-converter") | not' <<< "${compose_config}" >/dev/null || {
+  echo 'The office converter must only start with the office profile.' >&2
+  exit 1
+}
+for compose_file in compose.yaml deploy/compose.production-infra.yaml deploy/compose.development-infra.yaml; do
+  office_config="$(
+    SERVICE_USER_POSTGRES='preview-db-user' \
+      SERVICE_PASSWORD_64_POSTGRES='preview-database-magic-password' \
+      SERVICE_USER_S3='preview-storage-user' \
+      SERVICE_PASSWORD_64_S3='preview-storage-magic-password' \
+      POSTGRES_USER=user POSTGRES_PASSWORD=password S3_ACCESS_KEY_ID=key S3_SECRET_ACCESS_KEY=secret PULPO_DATA_PREFIX=prefix \
+      PULPO_ENV_FILE="${runtime_env}" \
+      docker compose --env-file .env.example --file "${compose_file}" --profile office config --format json
+  )"
+  jq -e '
+    .services["office-converter"] as $service
+    | $service.read_only == true
+      and ($service.cap_drop | index("ALL")) != null
+      and ($service.security_opt | index("no-new-privileges:true")) != null
+      and ($service.tmpfs | length) == 1
+      and ($service.dns | index("127.0.0.1")) != null
+      and ($service.ports // [] | length) == 0
+      and ($service.volumes // [] | length) == 0
+      and $service.healthcheck != null
+  ' <<< "${office_config}" >/dev/null || {
+    echo "${compose_file} must keep the office converter read-only, unprivileged, without host ports or volumes, and health-checked." >&2
+    exit 1
+  }
+done
+
 bash -n scripts/local-preview.sh
 
 echo 'Validated Compose runtime environment precedence for application and infrastructure services.'

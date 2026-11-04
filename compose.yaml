@@ -84,6 +84,35 @@ services:
     <<: *server
     command: ["npm", "run", "start:worker", "-w", "@pulpo/server"]
 
+  # Optional: converts legacy and OpenDocument files in Files (docs/files.md). Start it with
+  # `docker compose --profile office up -d` and set OFFICE_CONVERTER_URL to
+  # http://office-converter:8790 in the server environment. Documents are untrusted, so it runs
+  # read-only, unprivileged, and without capabilities, and needs no network access: its DNS
+  # resolves nothing outside Compose and LibreOffice's own proxy setting blocks HTTP(S)
+  # (infra/office-converter/README.md).
+  office-converter:
+    profiles: ["office"]
+    build:
+      context: .
+      dockerfile: infra/office-converter/Dockerfile
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=1g,mode=1777
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 2g
+    pids_limit: 512
+    dns: [127.0.0.1]
+    expose:
+      - "8790"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8790/healthz').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+
   postgres:
     image: pgvector/pgvector:0.8.6-pg17
     # Coolify generates deployment-scoped credentials that are reused by the

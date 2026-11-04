@@ -133,6 +133,45 @@ services:
       coolify:
         aliases:
           - pulpo-prod-seaweed-s3
+  # Optional (set COMPOSE_PROFILES=office): converts legacy and OpenDocument files in Files.
+  # API/worker reach it at http://pulpo-prod-office-converter:8790 with OFFICE_CONVERTER_URL and
+  # the same OFFICE_CONVERTER_TOKEN. Pin the image by digest from the office-converter workflow.
+  # It keeps nothing, so it has no volume; see infra/office-converter/README.md.
+  office-converter:
+    image: ${PULPO_OFFICE_CONVERTER_IMAGE:-ghcr.io/isaacthoman/pulpo-office-converter:main}
+    profiles:
+      - office
+    environment:
+      OFFICE_CONVERTER_TOKEN: ${OFFICE_CONVERTER_TOKEN:-}
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=1g,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 2g
+    pids_limit: 512
+    # Resolves no outside names; LibreOffice also routes HTTP(S) to a dead proxy.
+    dns:
+      - 127.0.0.1
+    expose:
+      - "8790"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:8790/healthz').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+    networks:
+      coolify:
+        aliases:
+          - pulpo-prod-office-converter
 volumes:
   postgres_data:
     external: true

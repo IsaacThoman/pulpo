@@ -1,0 +1,239 @@
+name: Build and publish office converter image
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Pulpo semantic version tag to publish (for example, v0.1.1)
+        required: true
+        type: string
+  pull_request:
+    paths:
+      - infra/office-converter/**
+      - packages/office-converter/**
+      - .github/workflows/office-converter.yml
+  push:
+    branches: [main]
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
+    paths:
+      - infra/office-converter/**
+      - packages/office-converter/**
+      - .github/workflows/office-converter.yml
+
+permissions:
+  contents: read
+
+env:
+  IMAGE_NAME: ghcr.io/isaacthoman/pulpo-office-converter
+
+jobs:
+  build:
+    name: Build and test ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-24.04
+            suffix: amd64
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+            suffix: arm64
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Validate dispatched release tag
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          if [[ ! "${RELEASE_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid release tag: ${RELEASE_TAG}" >&2
+            exit 1
+          fi
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Generate image metadata
+        id: metadata
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          labels: |
+            org.opencontainers.image.title=Pulpo Office Converter
+            org.opencontainers.image.description=Locked-down LibreOffice conversion service for Pulpo Files
+
+      # The unit tests, including real conversions, timeouts, and the untrusted-content checks,
+      # run against the image's own LibreOffice.
+      - name: Run unit tests in the image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: infra/office-converter/Dockerfile
+          target: test
+          platforms: ${{ matrix.platform }}
+          cache-from: type=gha,scope=office-converter-${{ matrix.suffix }}
+          cache-to: type=gha,mode=max,scope=office-converter-${{ matrix.suffix }}
+          provenance: false
+          sbom: false
+
+      - name: Build local test image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: infra/office-converter/Dockerfile
+          load: true
+          platforms: ${{ matrix.platform }}
+          tags: pulpo-office-converter:test
+          labels: ${{ steps.metadata.outputs.labels }}
+          cache-from: type=gha,scope=office-converter-${{ matrix.suffix }}
+          provenance: false
+          sbom: false
+
+      - name: Report image size
+        run: docker image inspect pulpo-office-converter:test --format 'Image size {{.Size}} bytes' | tee -a "${GITHUB_STEP_SUMMARY}"
+
+      # The same restrictions as the Compose services: no network, read-only root, a tmpfs work
+      # directory, no capabilities, and memory and process limits.
+      - name: Run smoke test under deployment restrictions
+        run: |
+          docker run --rm --network=none --read-only \
+            --tmpfs /tmp:rw,nosuid,nodev,size=1g,mode=1777 \
+            --cap-drop=ALL --security-opt=no-new-privileges:true \
+            --memory=2g --pids-limit=512 \
+            pulpo-office-converter:test office-converter-smoke-test
+
+      - name: Log in to GitHub Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish platform image by digest
+        if: github.event_name != 'pull_request'
+        id: publish
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: infra/office-converter/Dockerfile
+          platforms: ${{ matrix.platform }}
+          labels: ${{ steps.metadata.outputs.labels }}
+          cache-from: type=gha,scope=office-converter-${{ matrix.suffix }}
+          outputs: type=image,name=${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
+          provenance: mode=max
+          sbom: true
+
+      - name: Export platform digest
+        if: github.event_name != 'pull_request'
+        env:
+          DIGEST: ${{ steps.publish.outputs.digest }}
+        run: |
+          mkdir -p "${RUNNER_TEMP}/digests"
+          touch "${RUNNER_TEMP}/digests/${DIGEST#sha256:}"
+
+      - name: Upload platform digest
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: office-converter-digest-${{ matrix.suffix }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    name: Publish multi-platform manifest
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Download platform digests
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: office-converter-digest-*
+          path: ${{ runner.temp }}/digests
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate manifest metadata
+        id: metadata
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          flavor: |
+            latest=false
+          tags: |
+            type=ref,event=branch,enable=${{ github.event_name == 'push' && startsWith(github.ref, 'refs/heads/') }}
+            type=semver,pattern={{version}},enable=${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') }}
+            type=semver,pattern={{major}}.{{minor}},enable=${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') }}
+            type=semver,pattern={{version}},value=${{ inputs.release_tag }},enable=${{ github.event_name == 'workflow_dispatch' }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ inputs.release_tag }},enable=${{ github.event_name == 'workflow_dispatch' }}
+
+      - name: Create multi-platform manifest
+        id: manifest
+        env:
+          TAGS: ${{ steps.metadata.outputs.tags }}
+          DIGEST_DIRECTORY: ${{ runner.temp }}/digests
+        run: |
+          tag_arguments=()
+          while IFS= read -r tag; do
+            tag_arguments+=("-t" "${tag}")
+          done <<< "${TAGS}"
+
+          sources=()
+          for digest_file in "${DIGEST_DIRECTORY}"/*; do
+            sources+=("${IMAGE_NAME}@sha256:$(basename "${digest_file}")")
+          done
+
+          docker buildx imagetools create "${tag_arguments[@]}" "${sources[@]}"
+
+          primary_tag="${TAGS%%$'\n'*}"
+          manifest_digest=$(docker buildx imagetools inspect "${primary_tag}" \
+            | sed -n 's/^Digest:[[:space:]]*//p' \
+            | head -n 1)
+          test -n "${manifest_digest}"
+          echo "digest=${manifest_digest}" >> "${GITHUB_OUTPUT}"
+
+      - name: Attest published manifest
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-name: ${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.manifest.outputs.digest }}
+          push-to-registry: true
+
+      - name: Record immutable image reference
+        env:
+          DIGEST: ${{ steps.manifest.outputs.digest }}
+          TAGS: ${{ steps.metadata.outputs.tags }}
+        run: |
+          {
+            echo '## Published Pulpo office converter'
+            echo
+            echo '```text'
+            echo "${IMAGE_NAME}@${DIGEST}"
+            echo '```'
+            echo
+            echo 'Tags:'
+            while IFS= read -r tag; do echo "- \`${tag}\`"; done <<< "${TAGS}"
+          } >> "${GITHUB_STEP_SUMMARY}"
