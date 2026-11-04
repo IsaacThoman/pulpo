@@ -18,6 +18,7 @@ import { useDictation } from '../features/chat/useDictation';
 import { DictationCancelButton, DictationStrip } from '../features/chat/DictationStrip';
 import { useDictationToolbarStyle } from '../features/chat/dictationMotion';
 import { setComposerSelection } from '../features/chat/composerSelection';
+import { responseMetaLabel } from '../features/chat/responseCost';
 import { ToolImagePreview } from '../components/ToolImagePreview';
 import { localComposerDraftId, mergePendingAttachments } from '@pulpo/client-core';
 import { DevicesScreen } from '../components/Devices';
@@ -619,6 +620,7 @@ type Message = {
   thinkSeconds?: number;
   reasoning?: string;
   meta?: string;
+  costMicros?: number;
   activity?: ActivityStep[];
   outputItems?: unknown[];
   status?: PrototypeMessage['status'];
@@ -711,6 +713,7 @@ function prototypeMessageToLegacy(message: PrototypeMessage, chatId: string, cha
       : undefined,
     reasoning,
     meta: message.meta,
+    costMicros: message.costMicros,
     error: message.error,
     activity: message.activity,
     outputItems: message.outputItems,
@@ -3733,6 +3736,8 @@ const MessageRow = memo(function MessageRow({
 }) {
   const { styles, COLORS } = useChatStyles();
   const { showReasoning } = useAppPreferences();
+  const showResponseCost = usePrototypeStore((state) => state.preferences.showResponseCost);
+  const metaLabel = message.role === 'assistant' ? responseMetaLabel(message.meta, message.costMicros, showResponseCost) : undefined;
   const branches = message.branches ?? [];
   const branchIndex = message.activeBranch ?? 0;
   const [capacityPending, setCapacityPending] = useState(false);
@@ -3936,7 +3941,7 @@ const MessageRow = memo(function MessageRow({
                 <Text style={styles.continueButtonText}>{capacityPending ? 'Continuing…' : 'Continue without agent tools'}</Text>
               </Pressable>
             )}
-            {message.text && message.meta && <Text style={styles.messageMeta}>{message.meta}</Text>}
+            {message.text && metaLabel && <Text style={styles.messageMeta}>{metaLabel}</Text>}
         </AssistantFrame>
       )}
       {branches.length > 1 && message.chatId ? (

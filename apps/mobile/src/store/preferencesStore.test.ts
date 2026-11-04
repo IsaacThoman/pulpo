@@ -54,6 +54,14 @@ describe('realtime preference reconciliation', () => {
     await usePreferencesStore.getState().resetSynchronizedPreferences('other-account')
     expect(usePreferencesStore.getState()).toMatchObject({ modelWarningDismissals: {}, showModelWarnings: true })
   })
+  it('returns cost settings to web defaults for another account', async () => {
+    await usePreferencesStore.getState().setPreference('showResponseCost', true)
+    await usePreferencesStore.getState().setPreference('agentCostLimitEnabled', false)
+    await usePreferencesStore.getState().setPreference('agentCostLimitMicros', 5_000_000)
+    expect(usePreferencesStore.getState().pendingServerPreferenceKeys).toEqual(expect.arrayContaining(['showResponseCost', 'agentCostLimitEnabled', 'agentCostLimitMicros']))
+    await usePreferencesStore.getState().resetSynchronizedPreferences('other-account')
+    expect(usePreferencesStore.getState()).toMatchObject({ showResponseCost: false, agentCostLimitEnabled: true, agentCostLimitMicros: 1_000_000 })
+  })
   it('persists remote composer opt-out and retires pending checkpoints', async () => {
     const before = usePreferencesStore.getState().composerSyncGeneration
     await usePreferencesStore.getState().applyServerPreferences({ composerSyncEnabled: false })
