@@ -8,6 +8,13 @@ import { useQueryClient } from '@tanstack/react-query'
 import { apiRequest, mobileApi } from '../api/client'
 import { useSessionStore } from '../store/session'
 import { cacheNamespace } from '../data/database'
+import { APP_STORE_SUBSCRIPTIONS_URL } from '../features/app-store/availability'
+import { storeKit } from '../features/app-store/storeKit'
+
+function manageAppStoreSubscription() {
+  const open = () => Linking.openURL(APP_STORE_SUBSCRIPTIONS_URL)
+  void (storeKit ? storeKit.showManageSubscriptions().catch(open) : open())
+}
 
 function Button({ title, color, ...props }: { title: string; color?: string; disabled?: boolean; onPress: () => void }) {
   return Platform.OS === 'android' ? <MaterialButton label={title} variant={color ? 'destructive' : 'secondary'} {...props} /> : <RNButton title={title} color={color} {...props} />
@@ -86,7 +93,11 @@ export function DeleteAccountForm({ onClose }: { onClose: () => void }) {
     {settings?.accountDeletionEnabled && !requirements && !error ? <Text style={{ color: theme.secondary }}>Loading…</Text> : null}
     {!requirements && error ? <Button title="Retry" disabled={checking} onPress={() => { setError(''); void loadRequirements() }} /> : null}
     {settings?.accountDeletionEnabled && requirements ? <>
-      <Text style={{ color: theme.secondary }}>Deletion is permanent. Your chats, files, memories, and shared links will be removed. Subscriptions will be canceled and unused credits forfeited, with no automatic refunds. Access ends immediately; background cleanup may take time. Backups and payment records follow existing retention policies.</Text>
+      <Text style={{ color: theme.secondary }}>Deletion is permanent. Your chats, files, memories, and shared links will be removed. Subscriptions billed by Pulpo will be canceled, with no automatic refunds. Access ends immediately; background cleanup may take time. Backups and payment records follow existing retention policies.</Text>
+      {requirements.appStoreSubscriptionRenews ? <View accessibilityRole="alert" style={{ gap: 8, padding: 12, borderRadius: 8, borderWidth: 1, borderColor: theme.orange }}>
+        <Text style={{ color: theme.text }}>Your App Store subscription keeps renewing after you delete your account. Cancel it in your Apple Account to stop being charged.</Text>
+        <Button title="Manage Subscription" onPress={manageAppStoreSubscription} />
+      </View> : null}
       {Platform.OS === 'android' ? <MaterialField label="Current password" secureTextEntry autoComplete="current-password" value={password} onChangeText={setPassword} editable={!busy} /> : <><Text style={{ color: theme.text }}>Current password</Text>
       <TextInput accessibilityLabel="Current password" secureTextEntry textContentType="password" autoCapitalize="none" value={password} onChangeText={setPassword} editable={!busy} style={{ borderWidth: 1, borderColor: theme.separator, padding: 12, borderRadius: 8, color: theme.text }} /></>}
       {requirements.twoFactorEnabled ? Platform.OS === 'android' ? <MaterialField label="Authenticator or recovery code" autoComplete="one-time-code" autoCapitalize="none" autoCorrect={false} value={code} onChangeText={setCode} editable={!busy} /> : <><Text style={{ color: theme.text }}>Authenticator or recovery code</Text>

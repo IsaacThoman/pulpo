@@ -15,6 +15,7 @@ import { isNetworkError } from '../api/client'
 import { useAppTheme } from '../theme'
 import { purgeLegacyPrototypeSnapshots } from '../mockup5/src/store/prototypeStore'
 import { RealtimeProvider } from './RealtimeProvider'
+import { AppStoreTransactionObserver } from '../features/app-store/AppStoreTransactionObserver'
 import { ConnectivityProvider } from './ConnectivityProvider'
 import { DisplayGeometryProvider } from './DisplayGeometryProvider'
 import { startKeyboardStateReconciliation } from './keyboardStateReconciliation'
@@ -102,7 +103,7 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
         <SafeAreaProvider>
           <DisplayGeometryProvider>
             <QueryClientProvider client={queryClient}>
-              <ConnectivityProvider><Bootstrap><RealtimeProvider>{children}<MaterialOverlays /></RealtimeProvider></Bootstrap></ConnectivityProvider>
+              <ConnectivityProvider><Bootstrap><RealtimeProvider>{children}<MaterialOverlays /><AppStoreTransactionObserver /></RealtimeProvider></Bootstrap></ConnectivityProvider>
             </QueryClientProvider>
           </DisplayGeometryProvider>
         </SafeAreaProvider>

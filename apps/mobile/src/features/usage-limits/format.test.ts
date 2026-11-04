@@ -9,6 +9,8 @@ describe('usage limit rows', () => {
   it('lists weekly, five-hour, then custom limits with their reset times', () => {
     const limits: UsageLimits = {
       plan: 'eight',
+      subscription: null,
+      plans: null,
       weekly: { ...bar, resetsAt: '2026-11-09T00:00:00.000Z' },
       fiveHour: { ...bar, remainingPercentage: 40, resetsAt: '2026-11-02T15:00:00.000Z' },
       custom: [
@@ -29,12 +31,12 @@ describe('usage limit rows', () => {
   })
 
   it('waits for first use before a five-hour window has a reset time', () => {
-    const [row] = usageLimitRows({ plan: 'fat', weekly: null, fiveHour: { ...bar, resetsAt: null }, custom: [] })
+    const [row] = usageLimitRows({ plan: 'fat', subscription: null, plans: null, weekly: null, fiveHour: { ...bar, resetsAt: null }, custom: [] })
     expect(row).toMatchObject({ key: 'five-hour', reset: 'Starts on first use' })
   })
 
   it('has no rows for a plan without limits', () => {
-    expect(usageLimitRows({ plan: 'baby', weekly: null, fiveHour: null, custom: [] })).toEqual([])
+    expect(usageLimitRows({ plan: 'baby', subscription: null, plans: null, weekly: null, fiveHour: null, custom: [] })).toEqual([])
   })
 
   it('names plans and remaining usage without amounts', () => {
