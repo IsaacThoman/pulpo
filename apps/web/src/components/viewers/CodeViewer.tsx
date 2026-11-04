@@ -4,7 +4,7 @@ import { Fragment, jsx, jsxs } from 'react/jsx-runtime'
 import { toJsxRuntime } from 'hast-util-to-jsx-runtime'
 import { Braces, FileCode2, WrapText } from 'lucide-react'
 import { codeLanguageFor, fileExtension } from '@pulpo/client-core/files'
-import { highlightTree, markLineRanges, splitHighlightedLines, type HighlightedLine } from '@pulpo/client-core/highlight'
+import { highlightTree, lineText, markLineRanges, splitHighlightedLines, type HighlightedLine } from '@pulpo/client-core/highlight'
 import { activeLocale, ui, uit } from '@/i18n/ui'
 import { cn } from '@/lib/utils'
 import { findInLines, formatJson, MAX_FIND_MATCHES, stepIndex, useFindShortcut } from './find'
@@ -22,6 +22,7 @@ import {
 /** Files up to this many characters are highlighted; larger ones show as plain text. */
 const MAX_VIEWER_HIGHLIGHT_CHARACTERS = 300_000
 const WRAP_KEY = 'pulpo:viewer:wrap'
+const MAX_LINE_DISPLAY = 20_000
 
 function isJsonName(name: string, mimeType: string | null | undefined): boolean {
   const extension = fileExtension(name)
@@ -44,7 +45,10 @@ const Line = memo(function Line({ line, ranges, wrap, number, gutter }: {
   number: number
   gutter: number
 }) {
-  const content = ranges?.length ? markLineRanges(line, ranges) : line
+  // A single enormous line (minified files) shows its start; copy still has all of it.
+  const text = lineText(line)
+  const shown = text.length > MAX_LINE_DISPLAY ? [{ type: 'text' as const, value: `${text.slice(0, MAX_LINE_DISPLAY)}…` }] : line
+  const content = ranges?.length ? markLineRanges(shown, ranges.filter((range) => range.end <= MAX_LINE_DISPLAY)) : shown
   return (
     <div className={cn('flex min-h-5 font-mono text-xs leading-5', !wrap && 'w-max min-w-full')} data-line={number}>
       <span

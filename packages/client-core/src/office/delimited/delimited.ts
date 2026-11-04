@@ -122,10 +122,11 @@ export function parseDelimitedRow(text: string, start: number, end: number, deli
  */
 export function sniffDelimiter(text: string, declared: Delimiter = ',', sampleRows = 50): Delimiter {
   const sample = text.slice(0, 64 * 1024)
-  const measure = (candidate: Delimiter): { columns: number; consistency: number } => {
+  const measure = (candidate: Delimiter): { columns: number; consistency: number; header: number } => {
     const code = candidate.charCodeAt(0)
     const counts = new Map<number, number>()
     let rows = 0
+    let header = 0
     let index = sample.charCodeAt(0) === 0xfeff ? 1 : 0
     while (index < sample.length && rows < sampleRows) {
       const span = scanRow(sample, index, code)
@@ -134,6 +135,7 @@ export function sniffDelimiter(text: string, declared: Delimiter = ',', sampleRo
       // A row cut by the end of the sample would skew the count.
       if (span.end === sample.length && sample.length < text.length) break
       rows += 1
+      if (rows === 1) header = span.fields
       counts.set(span.fields, (counts.get(span.fields) ?? 0) + 1)
     }
     let columns = 1
@@ -144,10 +146,12 @@ export function sniffDelimiter(text: string, declared: Delimiter = ',', sampleRo
         most = count
       }
     }
-    return { columns, consistency: rows ? most / rows : 0 }
+    return { columns, consistency: rows ? most / rows : 0, header }
   }
   const own = measure(declared)
-  if (own.columns > 1 && own.consistency >= 0.8) return declared
+  // The header must split like the rows too: `Datum;Betrag` over `01.01.2024;-12,50` splits on
+  // commas steadily in the data, but not in its header.
+  if (own.columns > 1 && own.consistency >= 0.8 && own.header === own.columns) return declared
   let best = declared
   let bestScore = own.columns > 1 ? own.consistency : 0
   for (const candidate of DELIMITER_CANDIDATES) {
@@ -247,9 +251,16 @@ export function indexDelimited(source: string, options: DelimitedOptions = {}): 
 
   // Lower-cased once, on the first search, and kept for the next keystrokes.
   let lowered: string | undefined
+  // Views ask for the same rows on every render; a few recent ones are kept parsed.
+  const cache = new Map<number, string[]>()
   const parse = (row: number): string[] => {
+    const cached = cache.get(row)
+    if (cached) return cached
     const { start, end } = rowAt(row)
-    return parseDelimitedRow(text, start, end, delimiter, maxColumns)
+    const cells = parseDelimitedRow(text, start, end, delimiter, maxColumns)
+    if (cache.size >= 512) cache.delete(cache.keys().next().value!)
+    cache.set(row, cells)
+    return cells
   }
 
   return {

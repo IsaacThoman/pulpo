@@ -96,7 +96,7 @@ describe('attachment notebook previews', () => {
   it('renders HTML in Markdown cells sanitized, keeping math', async () => {
     const notebook = JSON.stringify({
       nbformat: 4,
-      cells: [{ cell_type: 'markdown', source: 'Line<br>with <b>bold</b> and $x^2$\n\n<div class="alert">Note</div>\n\n<img src=x onerror="alert(1)">\n\n<script>window.pwned = true</script>\n\n<a href="javascript:alert(1)">bad link</a>' }],
+      cells: [{ cell_type: 'markdown', source: 'Line<br>with <b>bold</b> and $x^2$\n\n<div class="alert">Note</div>\n\n<img src=x onerror="alert(1)">\n\n<script>window.pwned = true</script>\n\n<a href="javascript:alert(1)">bad link</a>\n\n<picture><source srcset="https://tracker.example/p.png"><img src="https://tracker.example/i.png" alt="remote"></picture>\n\n<style>.markdown-content{display:none}</style>' }],
     })
     const view = renderPreview('cells.ipynb', notebook)
     const bold = await view.findByText('bold')
@@ -106,7 +106,11 @@ describe('attachment notebook previews', () => {
     expect(cell.querySelector('.katex')).toBeTruthy()
     expect(cell.textContent).toContain('Note')
     expect(cell.querySelector('script')).toBeNull()
-    expect(cell.innerHTML).not.toMatch(/onerror|javascript:/)
+    expect(cell.innerHTML).not.toMatch(/onerror|javascript:|srcset|tracker\.example\/p/)
+    // Remote images stay links the user can choose to open; nothing loads by itself.
+    expect(cell.querySelector('img[src^="http"]')).toBeNull()
+    expect(cell.querySelector('style')).toBeNull()
+    expect(cell.textContent).not.toContain('display:none')
     expect((window as unknown as { pwned?: boolean }).pwned).toBeUndefined()
   })
 })

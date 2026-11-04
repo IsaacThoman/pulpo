@@ -167,7 +167,8 @@ const REMARK_PLUGINS: NonNullable<Options['remarkPlugins']> = [remarkGfm, remark
 const BREAKS_REMARK_PLUGINS: NonNullable<Options['remarkPlugins']> = [...REMARK_PLUGINS, remarkSoftBreaks]
 const REHYPE_PLUGINS: NonNullable<Options['rehypePlugins']> = [
   rehypeMarkDisplayMath,
-  [rehypeKatex, { throwOnError: false, errorColor: 'var(--muted-foreground)' }],
+  // Sizes and macro expansion are bounded, so a formula cannot paint over the page or stall it.
+  [rehypeKatex, { throwOnError: false, errorColor: 'var(--muted-foreground)', maxSize: 50, maxExpand: 1000 }],
   rehypeDisplayMathFallback,
 ]
 const CARET_REHYPE_PLUGINS: NonNullable<Options['rehypePlugins']> = [...REHYPE_PLUGINS, rehypeStreamCaret]

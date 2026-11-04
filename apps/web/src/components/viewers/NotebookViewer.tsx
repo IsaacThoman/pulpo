@@ -138,8 +138,12 @@ function NotebookImage(props: ComponentProps<'img'>) {
 const NOTEBOOK_MARKDOWN_COMPONENTS: Components = { img: NotebookImage }
 const NO_ATTACHMENTS: Record<string, MimeBundle> = {}
 
+/** Markdown longer than this shows as plain text; real prose is far shorter, and parsers slow down. */
+const MAX_MARKDOWN_CHARACTERS = 100_000
+
 function NotebookMarkdown({ source, attachments = NO_ATTACHMENTS }: { source: string; attachments?: Record<string, MimeBundle> }) {
   const transform = useMemo(() => notebookUrlTransform(attachments), [attachments])
+  if (source.length > MAX_MARKDOWN_CHARACTERS) return <pre className="font-mono text-xs whitespace-pre-wrap break-words">{source}</pre>
   return <Markdown content={source} components={NOTEBOOK_MARKDOWN_COMPONENTS} urlTransform={transform} html />
 }
 
@@ -209,8 +213,8 @@ function OutputBody({ output, dark }: { output: NotebookOutput; dark: boolean })
       return <div className="px-1 text-sm" data-output="markdown"><NotebookMarkdown source={String(data)} /></div>
     case 'text/latex': {
       const tex = String(data).trim()
-      // LaTeX output is usually already delimited ($…$ or \begin…); bare TeX gets display delimiters.
-      const source = /^\$|^\\\[|^\\begin/.test(tex) ? tex : `$$\n${tex}\n$$`
+      // LaTeX output is usually already delimited ($…$); bare TeX and environments get display delimiters.
+      const source = /^\$|^\\\[/.test(tex) ? tex : `$$\n${tex}\n$$`
       return <div className="overflow-x-auto px-1 text-sm" data-output="latex"><Markdown content={source} /></div>
     }
     case 'application/json':

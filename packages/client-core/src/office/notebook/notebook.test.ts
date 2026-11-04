@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { parseAnsi, stripAnsi } from './ansi.js'
-import { ansiHtml, renderNotebookHtml } from './html.js'
+import { ansiHtml, extractMath, renderNotebookHtml } from './html.js'
 import {
   applyConsoleControls,
   imageDataUrl,
@@ -245,14 +245,24 @@ describe('renderNotebookHtml', () => {
 
   it('renders many block-math lines in linear time', () => {
     const started = performance.now()
-    const html = renderNotebookHtml(normalizeNotebook({ nbformat: 4, cells: [{ cell_type: 'markdown', source: '$$a$$b\n'.repeat(8_000) }] }), { title: 'x' })
-    expect(html.length).toBeGreaterThan(0)
-    expect(performance.now() - started).toBeLessThan(2_000)
+    for (const source of ['$$a$$b\n'.repeat(8_000), 'Here $$x^2$$ and '.repeat(8_000), '$$x\n'.repeat(20_000)]) {
+      const html = renderNotebookHtml(normalizeNotebook({ nbformat: 4, cells: [{ cell_type: 'markdown', source }] }), { title: 'x' })
+      expect(html.length).toBeGreaterThan(0)
+    }
+    expect(performance.now() - started).toBeLessThan(3_000)
   })
 
   it('keys cells uniquely when a notebook repeats ids', () => {
-    const notebook = normalizeNotebook({ nbformat: 4, cells: [{ cell_type: 'raw', id: 'x', source: '' }, { cell_type: 'raw', id: 'x', source: '' }] })
-    expect(new Set(notebook.cells.map((cell) => cell.id)).size).toBe(2)
+    const notebook = normalizeNotebook({ nbformat: 4, cells: [{ cell_type: 'raw', id: 'x', source: '' }, { cell_type: 'raw', id: 'x', source: '' }, { cell_type: 'raw', id: 'x-1', source: '' }] })
+    expect(new Set(notebook.cells.map((cell) => cell.id)).size).toBe(3)
+  })
+
+  it('extracts math outside code, and leaves money and code alone', () => {
+    const { text, formulas } = extractMath('Cost $5 and $6, area $a^2$ and `$x$`\n```\n$$y$$\n```\n$$\n\\int x\n$$\nEnd $$z$$.')
+    expect(formulas).toEqual([{ tex: 'a^2', display: false }, { tex: '\\int x', display: true }, { tex: 'z', display: true }])
+    expect(text).toContain('Cost $5 and $6')
+    expect(text).toContain('`$x$`')
+    expect(text).toContain('```\n$$y$$\n```')
   })
 
   it('says when a notebook is empty and when widgets are left out', () => {

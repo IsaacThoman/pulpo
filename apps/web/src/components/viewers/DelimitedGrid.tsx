@@ -10,6 +10,7 @@ import { FindBar, FindButton, ViewerCopyButton, ViewerStatus, ViewerToolbar, Vie
 import { columnWindow, initialColumnWidths, MAX_FIND_ROWS, stepIndex, useFindShortcut } from './find'
 
 const ROW_NUMBER_WIDTH = 56
+const MAX_CELL_DISPLAY = 2_000
 const MIN_COLUMN_WIDTH = 48
 const MAX_COLUMN_WIDTH = 640
 
@@ -241,7 +242,7 @@ function Grid({ table, text, toolbarStart, className }: { table: DelimitedTable;
               </th>
               {spacer(leftPad, 'th')}
               {columns.map((column) => {
-                const value = header[column] ?? ''
+                const value = (header[column] ?? '').slice(0, MAX_CELL_DISPLAY)
                 return (
                   <th
                     key={column}
@@ -271,7 +272,9 @@ function Grid({ table, text, toolbarStart, className }: { table: DelimitedTable;
               </td>
               {spacer(leftPad, 'td')}
               {columns.map((column) => {
-                const value = row[column] ?? ''
+                const full = row[column] ?? ''
+                // A runaway cell (an unclosed quote swallows the rest of the file) shows its start.
+                const value = full.length > MAX_CELL_DISPLAY ? `${full.slice(0, MAX_CELL_DISPLAY)}…` : full
                 return (
                   <td
                     key={column}
@@ -280,7 +283,7 @@ function Grid({ table, text, toolbarStart, className }: { table: DelimitedTable;
                     className={cn(
                       'truncate border-r border-b px-2 py-1 group-hover/row:bg-muted/40',
                       /^-?[\d.,]+%?$/.test(value) && 'text-right tabular-nums',
-                      highlight(value) && (isCurrent ? 'bg-amber-300/70 dark:bg-amber-500/50' : 'bg-amber-200/60 dark:bg-amber-400/25'),
+                      highlight(full) && (isCurrent ? 'bg-amber-300/70 dark:bg-amber-500/50' : 'bg-amber-200/60 dark:bg-amber-400/25'),
                     )}
                   >
                     {value}

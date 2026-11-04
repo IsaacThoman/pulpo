@@ -241,7 +241,8 @@ export function normalizeNotebook(raw: unknown): NotebookModel {
     const normalized = normalizeCell(cell, index, v3)
     if (!normalized) return
     // Ids are unique in valid notebooks, but views key cells by them, so copies get their position.
-    if (ids.has(normalized.id)) normalized.id = `${normalized.id}-${index}`
+    let suffix = index
+    while (ids.has(normalized.id)) normalized.id = `${normalized.id.replace(/~\d+$/, '')}~${suffix++}`
     ids.add(normalized.id)
     cells.push(normalized)
   })

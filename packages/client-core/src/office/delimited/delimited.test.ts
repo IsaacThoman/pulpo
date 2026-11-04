@@ -118,6 +118,12 @@ describe('sniffDelimiter', () => {
     expect(indexDelimited(tsv, { declared: '\t' }).row(1)).toEqual(['Person 0', '0 Main St, Springfield, IL'])
   })
 
+  it('finds semicolons when only the header gives them away', () => {
+    const rows = ['Datum;Betrag;Saldo', ...Array.from({ length: 30 }, (_, index) => `0${(index % 9) + 1}.01.2024;-12,50;1.234,56`)]
+    expect(sniffDelimiter(rows.join('\n'), ',')).toBe(';')
+    expect(indexDelimited(rows.join('\n')).row(1)).toEqual(['01.01.2024', '-12,50', '1.234,56'])
+  })
+
   it('finds pipes and tabs in files named .csv', () => {
     expect(sniffDelimiter('a|b|c\n1|2|3\n', ',')).toBe('|')
     expect(sniffDelimiter('a\tb\tc\n1\t2\t3\n', ',')).toBe('\t')

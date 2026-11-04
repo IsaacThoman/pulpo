@@ -1,4 +1,4 @@
-import { HIGHLIGHT_COLORS, highlightRuns, type HighlightedLine, type LineMatch } from '@pulpo/client-core/highlight'
+import { HIGHLIGHT_COLORS, highlightRuns, type HighlightedLine, type HighlightRun, type LineMatch } from '@pulpo/client-core/highlight'
 import { forwardRef, memo, useCallback, useImperativeHandle, useMemo, useRef } from 'react'
 import { FlatList, Platform, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { useAppTheme, type AppTheme } from '../../../theme'
@@ -15,6 +15,23 @@ export interface CodeViewHandle {
 
 type Ranges = { start: number; end: number; current?: boolean }[]
 
+/** One enormous line (minified files) shows its start; copy still has all of it. */
+const MAX_LINE_DISPLAY = 10_000
+
+function capRuns(runs: HighlightRun[]): HighlightRun[] {
+  let length = 0
+  const capped: HighlightRun[] = []
+  for (const run of runs) {
+    if (length + run.text.length > MAX_LINE_DISPLAY) {
+      capped.push({ ...run, text: `${run.text.slice(0, MAX_LINE_DISPLAY - length)}…` })
+      return capped
+    }
+    capped.push(run)
+    length += run.text.length
+  }
+  return capped
+}
+
 const CodeLine = memo(function CodeLine({ line, number, gutter, ranges, wrap, theme }: {
   line: HighlightedLine
   number: number
@@ -24,7 +41,7 @@ const CodeLine = memo(function CodeLine({ line, number, gutter, ranges, wrap, th
   theme: AppTheme
 }) {
   const colors = HIGHLIGHT_COLORS[theme.isDark ? 'dark' : 'light']
-  const runs = highlightRuns(line, ranges)
+  const runs = capRuns(highlightRuns(line, ranges))
   return (
     <View style={styles.line}>
       <Text style={[styles.number, { width: gutter, color: theme.tertiary }]} accessibilityElementsHidden importantForAccessibility="no">{number}</Text>
@@ -61,7 +78,7 @@ export const CodeView = forwardRef<CodeViewHandle, {
   const theme = useAppTheme()
   const listRef = useRef<FlatList<number>>(null)
   const gutter = Math.max(2, String(lines.length).length) * CHARACTER_WIDTH + 16
-  const longest = useMemo(() => plain.reduce((max, line) => Math.max(max, Math.min(line.length, 4_000)), 0), [plain])
+  const longest = useMemo(() => plain.reduce((max, line) => Math.max(max, Math.min(line.length, MAX_LINE_DISPLAY)), 0), [plain])
   const width = gutter + longest * CHARACTER_WIDTH + 32
   const indexes = useMemo(() => Array.from({ length: lines.length }, (_, index) => index), [lines.length])
   const rangesByLine = useMemo(() => {

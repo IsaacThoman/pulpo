@@ -1,4 +1,4 @@
-import { Marked, type TokenizerAndRendererExtension } from 'marked'
+import { Marked } from 'marked'
 import { escapeHtml, highlightCss, highlightHtml } from '../../highlight.js'
 import { normalizeMathDelimiters } from '../../markdown.js'
 import { parseAnsi, type AnsiColor } from './ansi.js'
@@ -83,62 +83,153 @@ function ansiCss(): string {
   return rules.join('\n')
 }
 
-function mathExtensions(renderMath: NotebookHtmlOptions['renderMath']): TokenizerAndRendererExtension[] {
-  const render = (tex: string, display: boolean) => {
-    if (renderMath) {
-      try {
-        return renderMath(tex, display)
-      } catch {
-        // Fall through to the TeX source.
+/** Markdown longer than this shows as plain text. */
+const MAX_MARKDOWN_CHARACTERS = 100_000
+/** Block math may span at most this many lines; longer runs are left as text. */
+const MAX_MATH_LINES = 200
+
+/**
+ * Takes TeX out of Markdown before it is parsed, in one pass, so marked never sees it (marked's own
+ * extension hooks rescan the rest of a cell at every `$$`, which is quadratic on hostile input).
+ * Fenced code and inline code are left alone. Each formula becomes a placeholder word that
+ * `restoreMath` swaps for its rendering after parsing.
+ */
+export function extractMath(markdown: string): { text: string; formulas: { tex: string; display: boolean }[]; token: string } {
+  const formulas: { tex: string; display: boolean }[] = []
+  // A token that cannot occur in the cell, so placeholders never collide with its text.
+  let token = 'PULPOMATH'
+  while (markdown.includes(token)) token += 'X'
+  const placeholder = (tex: string, display: boolean) => {
+    formulas.push({ tex, display })
+    return `${token}${formulas.length - 1}${token}`
+  }
+  const lines = markdown.split('\n')
+  const out: string[] = []
+  let fence: string | null = null
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]!
+    const fenceMatch = /^ {0,3}(`{3,}|~{3,})/.exec(line)
+    if (fence) {
+      out.push(line)
+      if (fenceMatch && fenceMatch[1]![0] === fence[0] && fenceMatch[1]!.length >= fence.length) fence = null
+      continue
+    }
+    if (fenceMatch) {
+      fence = fenceMatch[1]!
+      out.push(line)
+      continue
+    }
+    const trimmed = line.trim()
+    // Block math: a line opening with `$$`, closed by a line ending with `$$` (possibly the same).
+    if (trimmed.startsWith('$$')) {
+      const sameLine = trimmed.length > 4 && trimmed.endsWith('$$') && !trimmed.slice(2, -2).includes('$$')
+      if (sameLine) {
+        out.push(placeholder(trimmed.slice(2, -2).trim(), true))
+        continue
+      }
+      if (trimmed === '$$' || !trimmed.slice(2).includes('$')) {
+        let close = -1
+        for (let next = index + 1; next < lines.length && next <= index + MAX_MATH_LINES; next += 1) {
+          if (lines[next]!.trim().endsWith('$$')) {
+            close = next
+            break
+          }
+        }
+        if (close > index) {
+          const body = [trimmed.slice(2), ...lines.slice(index + 1, close), lines[close]!.trim().slice(0, -2)].join('\n').trim()
+          out.push(placeholder(body, true))
+          index = close
+          continue
+        }
       }
     }
-    return display ? `<div class="math">${escapeHtml(tex)}</div>` : `<code class="math">${escapeHtml(tex)}</code>`
+    out.push(inlineMath(line, placeholder))
   }
-  return [
-    {
-      name: 'blockMath',
-      level: 'block',
-      start: (source) => source.indexOf('$$'),
-      tokenizer(source) {
-        // indexOf rather than a lazy regex, which rescans the rest of the cell at every `$$`.
-        if (!source.startsWith('$$')) return undefined
-        const close = source.indexOf('$$', 2)
-        if (close <= 2) return undefined
-        const after = /^[ \t]*(?:\n|$)/.exec(source.slice(close + 2, close + 2 + 64))
-        if (!after) return undefined
-        const raw = source.slice(0, close + 2 + after[0].length)
-        return { type: 'blockMath', raw, text: source.slice(2, close).trim() }
-      },
-      renderer: (token) => render(String(token.text), true),
-    },
-    {
-      name: 'inlineMath',
-      level: 'inline',
-      start: (source) => source.indexOf('$'),
-      tokenizer(source) {
-        const display = /^\$\$([^$]+?)\$\$/.exec(source)
-        if (display) return { type: 'inlineMath', raw: display[0], text: display[1]!.trim(), display: true }
-        // `$5 and $6` is money, not math: math may not start or end with a space or end before a digit.
-        const match = /^\$(?!\s)([^$\n]+?)(?<!\s)\$(?!\d)/.exec(source)
-        return match ? { type: 'inlineMath', raw: match[0], text: match[1]!, display: false } : undefined
-      },
-      renderer: (token) => render(String(token.text), Boolean(token.display)),
-    },
-  ]
+  return { text: out.join('\n'), formulas, token }
+}
+
+/** Inline `$…$` and `$$…$$` in one line, outside code spans. `$5 and $6` stays money. */
+function inlineMath(line: string, placeholder: (tex: string, display: boolean) => string): string {
+  if (!line.includes('$')) return line
+  let result = ''
+  let index = 0
+  while (index < line.length) {
+    const character = line[index]!
+    if (character === '`') {
+      // Skip a code span: the run of backticks up to the same run closing it.
+      let length = 1
+      while (line[index + length] === '`') length += 1
+      const run = '`'.repeat(length)
+      const close = line.indexOf(run, index + length)
+      // An unclosed run is literal backticks; skipping just the run keeps the scan linear.
+      const end = close < 0 ? index + length : close + length
+      result += line.slice(index, end)
+      index = end
+      continue
+    }
+    if (character === '\\' && index + 1 < line.length) {
+      result += line.slice(index, index + 2)
+      index += 2
+      continue
+    }
+    if (character === '$') {
+      const display = line[index + 1] === '$'
+      const open = display ? 2 : 1
+      const delimiter = display ? '$$' : '$'
+      const close = line.indexOf(delimiter, index + open)
+      const tex = close < 0 ? '' : line.slice(index + open, close)
+      const after = line.charCodeAt(close + 1)
+      const valid = close > index + open && (display || (!/^\s/.test(tex) && !/\s$/.test(tex) && !(after >= 48 && after <= 57)))
+      if (valid) {
+        result += placeholder(display ? tex.trim() : tex, display)
+        index = close + open
+        continue
+      }
+    }
+    result += character
+    index += 1
+  }
+  return result
+}
+
+/** Puts rendered formulas back in place of `extractMath`'s placeholders. */
+export function restoreMath(html: string, formulas: readonly { tex: string; display: boolean }[], token: string, render: (tex: string, display: boolean) => string): string {
+  if (!formulas.length) return html
+  const pattern = new RegExp(`(<p>)?${token}(\\d+)${token}(</p>)?`, 'g')
+  return html.replace(pattern, (match, open: string | undefined, number: string, close: string | undefined) => {
+    const formula = formulas[Number(number)]
+    if (!formula) return match
+    const rendered = render(formula.tex, formula.display)
+    // A display formula alone in a paragraph replaces the paragraph.
+    if (formula.display && open && close) return rendered
+    return `${open ?? ''}${rendered}${close ?? ''}`
+  })
 }
 
 function markdownRenderer(options: NotebookHtmlOptions) {
   const marked = new Marked({ gfm: true, breaks: false, async: false })
   marked.use({
-    extensions: mathExtensions(options.renderMath),
     renderer: {
       code({ text, lang }) {
         return `<pre class="code-highlight"><code>${highlightHtml(text, lang?.split(/\s/)[0] || null)}</code></pre>`
       },
     },
   })
+  const render = (tex: string, display: boolean) => {
+    if (options.renderMath) {
+      try {
+        return options.renderMath(tex, display)
+      } catch {
+        // Fall through to the TeX source.
+      }
+    }
+    return display ? `<div class="math">${escapeHtml(tex)}</div>` : `<code class="math">${escapeHtml(tex)}</code>`
+  }
   return (source: string, cellAttachments: Record<string, MimeBundle> = {}) => {
-    const html = marked.parse(normalizeMathDelimiters(source)) as string
+    // marked slows down sharply on some huge, hostile cells; real prose is far shorter.
+    if (source.length > MAX_MARKDOWN_CHARACTERS) return `<pre>${escapeHtml(source)}</pre>`
+    const { text, formulas, token } = extractMath(normalizeMathDelimiters(source))
+    const html = restoreMath(marked.parse(text) as string, formulas, token, render)
     // Cell attachments (`![](attachment:plot.png)`) are carried inside the notebook.
     return html.replace(/(src|href)="(attachment:[^"]*)"/g, (match, attribute: string, url: string) => {
       const resolved = resolveAttachmentUrl(url.replace(/&amp;/g, '&'), cellAttachments)

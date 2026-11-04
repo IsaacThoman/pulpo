@@ -14,6 +14,12 @@ export interface GridViewHandle {
   scrollToRow(row: number): void
 }
 
+/** A cell as one short line: its start, with line breaks as spaces (no regex, so huge cells stay fast). */
+function oneLine(value: string): string {
+  const start = value.length > 500 ? `${value.slice(0, 500)}…` : value
+  return start.includes('\n') ? start.split('\n').map((part) => part.trim()).filter(Boolean).join(' ') : start
+}
+
 function isNumeric(value: string): boolean {
   return /^-?[\d.,]+%?$/.test(value)
 }
@@ -41,7 +47,7 @@ const GridRow = memo(function GridRow({ cells, number, widths, header, match, th
             accessibilityRole={value ? 'button' : undefined}
           >
             <Text numberOfLines={1} style={[styles.cellText, { color: theme.text, textAlign: !header && isNumeric(value) ? 'right' : 'left' }, header ? styles.headerText : null]}>
-              {value.replace(/\s*\n\s*/g, ' ')}
+              {oneLine(value)}
             </Text>
           </Pressable>
         )
@@ -79,7 +85,7 @@ export const GridView = forwardRef<GridViewHandle, {
   }), [])
 
   const showCell = useCallback((column: number, value: string) => {
-    Alert.alert(header[column] || columnLabel(column), value, [
+    Alert.alert(header[column] || columnLabel(column), value.length > 5_000 ? `${value.slice(0, 5_000)}…` : value, [
       { text: 'Copy', onPress: () => { void Clipboard.setStringAsync(value) } },
       { text: 'Done', style: 'cancel' },
     ])

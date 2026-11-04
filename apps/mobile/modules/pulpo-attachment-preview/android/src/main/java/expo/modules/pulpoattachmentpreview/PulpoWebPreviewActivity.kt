@@ -33,6 +33,7 @@ import android.widget.TextView
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.FileInputStream
+import java.io.IOException
 import java.util.UUID
 
 /*
@@ -182,7 +183,11 @@ class PulpoWebPreviewActivity : Activity() {
         if (!isDocument(request.url) || request.method != "GET") {
           return WebResourceResponse("text/plain", "utf-8", 404, "Not Found", headers, ByteArrayInputStream(ByteArray(0)))
         }
-        return WebResourceResponse("text/html", "utf-8", 200, "OK", headers, FileInputStream(document))
+        // No charset: the page's own <meta charset> decides, as when it is opened from disk. A file
+        // removed meanwhile (the cache was cleared while this activity was in the background) is a 404.
+        val stream = try { FileInputStream(document) } catch (_: IOException) { null }
+          ?: return WebResourceResponse("text/plain", "utf-8", 404, "Not Found", headers, ByteArrayInputStream(ByteArray(0)))
+        return WebResourceResponse("text/html", null, 200, "OK", headers, stream)
       }
 
       // The page may reload itself; anything else leaves the preview, and links the user taps open in the browser.

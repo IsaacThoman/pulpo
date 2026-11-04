@@ -125,10 +125,10 @@ export function decodeTextBytes(bytes: Uint8Array): DecodedText {
   if (bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) return { text: decodeUtf8Lossy(bytes.subarray(3)), encoding: 'utf-8', bom: true }
   if (bytes[0] === 0xff && bytes[1] === 0xfe) return { text: decodeUtf16(bytes, true, 2), encoding: 'utf-16le', bom: true }
   if (bytes[0] === 0xfe && bytes[1] === 0xff) return { text: decodeUtf16(bytes, false, 2), encoding: 'utf-16be', bom: true }
-  // One pass decides: text with no invalid sequences, or far more valid multibyte characters than
+  // One pass decides: text with no invalid sequences, or more valid multibyte characters than
   // invalid bytes (a UTF-8 file with a stray corrupt byte), is UTF-8. Windows-1252 text has accents
   // as lone high bytes, which are invalid UTF-8 and rarely form valid sequences by chance.
   const { multibyte, invalid } = scanUtf8(bytes, null)
-  if (invalid === 0 || multibyte > invalid * 4) return { text: decodeUtf8Lossy(bytes), encoding: 'utf-8', bom: false }
+  if (invalid === 0 || multibyte > invalid) return { text: decodeUtf8Lossy(bytes), encoding: 'utf-8', bom: false }
   return { text: decodeWindows1252(bytes), encoding: 'windows-1252', bom: false }
 }
