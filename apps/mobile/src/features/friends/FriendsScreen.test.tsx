@@ -40,7 +40,7 @@ vi.mock('@expo/ui/swift-ui', () => ({
   useNativeState: (value: string) => ({ get: () => value, set: vi.fn() }),
 }))
 vi.mock('@expo/ui/swift-ui/modifiers', () => Object.fromEntries([
-  'accessibilityLabel', 'autocorrectionDisabled', 'buttonStyle', 'controlSize', 'disabled', 'font', 'foregroundStyle', 'frame', 'labelStyle', 'lineLimit', 'textFieldStyle', 'textInputAutocapitalization', 'tint',
+  'accessibilityLabel', 'autocorrectionDisabled', 'buttonStyle', 'controlSize', 'disabled', 'font', 'foregroundStyle', 'frame', 'labelStyle', 'lineLimit', 'scrollDismissesKeyboard', 'textFieldStyle', 'textInputAutocapitalization', 'tint',
 ].map((type) => [type, (value: unknown) => ({ type, value })])))
 vi.mock('../../platform/MaterialUI', () => ({
   MaterialButton: ({ label, onPress, disabled, loading }: { label: string; onPress: () => void; disabled?: boolean; loading?: boolean }) => createElement('button', { onClick: onPress, disabled: disabled || loading }, label),

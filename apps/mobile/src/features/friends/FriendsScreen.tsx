@@ -31,6 +31,7 @@ import {
   frame,
   labelStyle,
   lineLimit,
+  scrollDismissesKeyboard,
   textFieldStyle,
   textInputAutocapitalization,
   tint,
@@ -143,7 +144,7 @@ function NativeFriends({ model }: { model: FriendsScreenModel }) {
   const status = search.ready ? searchStatus(model) : null
   const viewerId = user?.id
 
-  return <SwiftUIHost modifiers={[tint(theme.blue)]} style={styles.flex}><SwiftUIForm>
+  return <SwiftUIHost modifiers={[tint(theme.blue)]} style={styles.flex}><SwiftUIForm modifiers={[scrollDismissesKeyboard('interactively')]}>
     <SwiftUISection title="Find your friends" footer={<SwiftUIText modifiers={[foregroundStyle('secondary')]}>Friends can find you by your name or handle.</SwiftUIText>}>
       {user ? <SwiftUIButton onPress={actions.copyHandle} modifiers={[buttonStyle('plain'), accessibilityLabel(`Copy @${user.username}`)]}>
         <SwiftUIHStack spacing={12}>
@@ -165,7 +166,7 @@ function NativeFriends({ model }: { model: FriendsScreenModel }) {
         <SwiftUIButton label={copied === code.id ? 'Copied' : 'Copy'} systemImage={copied === code.id ? 'checkmark' : 'doc.on.doc'} onPress={() => actions.copyInviteCode(code.id, code.code)} modifiers={[labelStyle('iconOnly'), buttonStyle('borderless'), accessibilityLabel(`Copy ${code.code}`)]} />
         <SwiftUIButton label="Revoke" systemImage="trash" role="destructive" onPress={() => actions.revokeInviteCode(code.id)} modifiers={[labelStyle('iconOnly'), buttonStyle('borderless'), disabled(busy), accessibilityLabel(`Revoke ${code.code}`)]} />
       </SwiftUIHStack>)}
-      <SwiftUIButton label="Generate Invite Code" systemImage="plus" onPress={actions.generateInviteCode} modifiers={[disabled(busy || model.inviteCodesRemaining <= 0)]} />
+      <SwiftUIButton label="Generate Invite Code" systemImage="plus" onPress={actions.generateInviteCode} modifiers={[disabled(busy || model.inviteCodesRemaining <= 0), foregroundStyle(busy || model.inviteCodesRemaining <= 0 ? theme.tertiary : theme.blue)]} />
     </SwiftUISection> : null}
 
     {list.isLoading ? <SwiftUISection><SwiftUIHStack spacing={10}><SwiftUIProgressView /><SwiftUIText modifiers={[foregroundStyle('secondary')]}>Loading friends…</SwiftUIText></SwiftUIHStack></SwiftUISection> : null}
@@ -199,7 +200,8 @@ function NativeFriends({ model }: { model: FriendsScreenModel }) {
         {currentPool.pendingInvitations.map((invitation) => <NativePersonRow key={invitation.id} profile={invitation.invitee} trailing={<NativeRowButton label="Cancel" isDisabled={busy} onPress={() => actions.cancelPoolInvitation(invitation)} />} />)}
       </SwiftUISection> : null}
       <SwiftUISection footer={overview.mustTransfer ? <SwiftUIText modifiers={[foregroundStyle('secondary')]}>{TRANSFER_FIRST}</SwiftUIText> : undefined}>
-        <SwiftUIButton label="Leave Pool" systemImage="rectangle.portrait.and.arrow.right" role="destructive" onPress={actions.leavePool} modifiers={[disabled(busy || overview.mustTransfer)]} />
+        {/* A disabled form button keeps its colors; dim it like the rest of the app does. */}
+        <SwiftUIButton label="Leave Pool" systemImage="rectangle.portrait.and.arrow.right" role="destructive" onPress={actions.leavePool} modifiers={[disabled(busy || overview.mustTransfer), foregroundStyle(busy || overview.mustTransfer ? theme.tertiary : theme.red)]} />
       </SwiftUISection>
     </> : null}
 
