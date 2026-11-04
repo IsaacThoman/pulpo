@@ -7,10 +7,12 @@ const mocks = vi.hoisted(() => ({
   apiRequest: vi.fn(async (_path: string, _options?: unknown): Promise<unknown> => ({})),
   refreshFiles: vi.fn(async () => undefined),
   setPreference: vi.fn(async () => undefined),
+  session: { instanceUrl: 'https://pulpo.test', user: { id: 'a' } as { id: string } | null },
 }))
 
 vi.mock('../../api/client', () => ({ ApiError: class extends Error {}, isNetworkError: () => false, apiRequest: mocks.apiRequest }))
 vi.mock('./operations', () => ({ refreshFiles: mocks.refreshFiles }))
+vi.mock('../../store/session', () => ({ useSessionStore: { getState: () => mocks.session } }))
 vi.mock('./queries', () => ({ filesQueryKeys: { all: (namespace: string) => ['files', namespace] } }))
 
 const { applyItemAppearance, restyleCachedItems } = await import('./itemAppearance')
@@ -30,6 +32,7 @@ beforeEach(() => {
   mocks.apiRequest.mockClear()
   mocks.refreshFiles.mockClear()
   mocks.setPreference.mockClear()
+  mocks.session = { instanceUrl: 'https://pulpo.test', user: { id: 'a' } }
   configureProductionActions({ setPreference: mocks.setPreference })
 })
 
@@ -92,6 +95,21 @@ describe('changing an item’s color and icon', () => {
     await done
     expect(show).toHaveBeenCalledWith({ message: 'Nope', tone: 'error' })
     expect(mocks.refreshFiles).toHaveBeenCalledTimes(1)
+  })
+
+  it('drops a queued choice when another account became active before it was sent', async () => {
+    let finishFirst!: () => void
+    mocks.apiRequest.mockImplementationOnce(() => new Promise((resolve) => { finishFirst = () => resolve({}) }))
+    const show = vi.fn()
+    const first = applyItemAppearance(client, NAMESPACE, show, [node()], { color: 'red' })
+    const second = applyItemAppearance(client, NAMESPACE, show, [node()], { color: 'blue' })
+    await vi.waitFor(() => expect(mocks.apiRequest).toHaveBeenCalledTimes(1))
+    mocks.session = { instanceUrl: 'https://pulpo.test', user: { id: 'b' } }
+    finishFirst()
+    await Promise.all([first, second])
+    expect(mocks.apiRequest).toHaveBeenCalledTimes(1)
+    expect(show).not.toHaveBeenCalled()
+    expect(mocks.refreshFiles).not.toHaveBeenCalled()
   })
 
   it('keeps the trash’s color as a setting', async () => {

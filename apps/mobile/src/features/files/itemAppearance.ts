@@ -2,7 +2,9 @@ import type { FileListing, FileNode, SidebarState } from '@pulpo/contracts'
 import { useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { useMemo } from 'react'
 import { apiRequest } from '../../api/client'
+import { cacheNamespace } from '../../data/schema'
 import { productionActions, runProductionAction } from '../../mockup5/src/production/productionActions'
+import { useSessionStore } from '../../store/session'
 import { isTrashFolder } from '../trash/folder'
 import { restyled, storedAppearanceIds, type AppearanceChange } from './appearance'
 import { filesErrorMessage } from './display'
@@ -48,16 +50,29 @@ export function restyleCachedItems(client: QueryClient, namespace: string, ids: 
 /** Each item's latest appearance save, so successive choices reach the server in the order they were made. */
 const appearanceWrites = new Map<string, Promise<unknown>>()
 
+function activeNamespace(): string | null {
+  const { instanceUrl, user } = useSessionStore.getState()
+  return user ? cacheNamespace(instanceUrl, user.id) : null
+}
+
+/** A queued change dropped because its account is no longer the active one. */
+class AccountChangedError extends Error {}
+
 /**
  * Sends a change after any earlier one for the same item has settled. Tapping colors quickly would
- * otherwise send overlapping requests, and the server keeps whichever arrives last.
+ * otherwise send overlapping requests, and the server keeps whichever arrives last. Requests use the
+ * active account's credentials, so a change still waiting when the account switches is dropped.
  */
-function queueItemAppearance(id: string, change: AppearanceChange): Promise<FileNode> {
-  const write = (appearanceWrites.get(id) ?? Promise.resolve())
+function queueItemAppearance(namespace: string, id: string, change: AppearanceChange): Promise<FileNode> {
+  const key = `${namespace}\u0000${id}`
+  const write = (appearanceWrites.get(key) ?? Promise.resolve())
     .catch(() => undefined)
-    .then(() => setItemAppearance(id, change))
-  appearanceWrites.set(id, write)
-  const settle = () => { if (appearanceWrites.get(id) === write) appearanceWrites.delete(id) }
+    .then(() => {
+      if (activeNamespace() !== namespace) throw new AccountChangedError()
+      return setItemAppearance(id, change)
+    })
+  appearanceWrites.set(key, write)
+  const settle = () => { if (appearanceWrites.get(key) === write) appearanceWrites.delete(key) }
   write.then(settle, settle)
   return write
 }
@@ -81,12 +96,14 @@ export async function applyItemAppearance(client: QueryClient, namespace: string
   restyleCachedItems(client, namespace, ids, change)
   // Every save in the batch settles before deciding whether to refresh, so a refused item is put back
   // even while another one was still being saved.
-  const results = await Promise.allSettled(ids.map((id) => queueItemAppearance(id, change)))
-  const refused = results.find((result): result is PromiseRejectedResult => result.status === 'rejected')
+  const results = await Promise.allSettled(ids.map((id) => queueItemAppearance(namespace, id, change)))
+  // Another account is active now; its screens and caches aren't this change's to touch.
+  if (activeNamespace() !== namespace) return
+  const refused = results.find((result): result is PromiseRejectedResult => result.status === 'rejected' && !(result.reason instanceof AccountChangedError))
   if (refused) show({ message: filesErrorMessage(refused.reason, nodes.length === 1 ? nodes[0]!.name : undefined), tone: 'error' })
   // A later choice for these items is still on its way; refetching now would briefly show this one.
   // That later change refreshes once it is saved.
-  if (!ids.some((id) => appearanceWrites.has(id))) await refreshFiles(client, namespace)
+  if (!ids.some((id) => appearanceWrites.has(`${namespace}\u0000${id}`))) await refreshFiles(client, namespace)
 }
 
 export function useItemAppearance(namespace: string) {
