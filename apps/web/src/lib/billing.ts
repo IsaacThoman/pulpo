@@ -307,6 +307,13 @@ export function billingPlanName(plan: BillingPlan): string {
   return 'Pulpo Baby'
 }
 
+/** Text color that identifies a plan wherever its name is shown. */
+export function billingPlanTextClass(plan: BillingPlan): string {
+  if (plan === 'eight') return 'text-teal-700 dark:text-teal-300'
+  if (plan === 'fat') return 'text-pink-700 dark:text-pink-300'
+  return 'text-yellow-700 dark:text-yellow-300'
+}
+
 /** Tier word shown after the Pulpo wordmark. */
 export function billingPlanTier(plan: BillingPlan): string {
   if (plan === 'eight') return 'Eight'

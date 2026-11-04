@@ -6,6 +6,7 @@ import { cacheNamespace } from '../../data/schema'
 import { useSessionStore } from '../../store/session'
 import { useAppTheme } from '../../mockup5/src/theme'
 import { Card, ListRow, SectionTitle } from '../../mockup5/src/components/PrototypeUI'
+import { AppStoreSubscriptionSection } from '../app-store/AppStoreSubscriptionSection'
 import { usageLimitsQuery } from './api'
 import { planName, remainingLabel, usageLimitRows, type UsageLimitRow } from './format'
 
@@ -56,6 +57,7 @@ export function UsageLimitsSettings() {
       <LabeledContent label="Plan"><NativeText modifiers={[foregroundStyle('secondary')]}>{plan}</NativeText></LabeledContent>
       {limits.isError ? <Button label="Usage limits could not be loaded. Tap to retry." onPress={() => void limits.refetch()} /> : null}
     </Section>
+    {limits.data ? <AppStoreSubscriptionSection limits={limits.data} onChanged={() => limits.refetch()} /> : null}
     {rows.length ? <Section title="Usage limits" footer={<NativeText modifiers={[foregroundStyle('secondary')]}>{FOOTER}</NativeText>}>
       {rows.map(row => <NativeUsageLimit key={row.key} row={row} />)}
     </Section> : null}

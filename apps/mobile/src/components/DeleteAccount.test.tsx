@@ -2,7 +2,7 @@
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-const mocks = vi.hoisted(() => ({ request: vi.fn(), deleteAccount: vi.fn(), logout: vi.fn(), alert: vi.fn(), cancelQueries: vi.fn(), removeQueries: vi.fn() }))
+const mocks = vi.hoisted(() => ({ request: vi.fn(), deleteAccount: vi.fn(), logout: vi.fn(), alert: vi.fn(), cancelQueries: vi.fn(), removeQueries: vi.fn(), manage: vi.fn() }))
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
   KeyboardAvoidingView: ({ children }: { children: import('react').ReactNode }) => createElement('div', null, children),
@@ -19,6 +19,7 @@ vi.mock('react-native-safe-area-context', () => ({ SafeAreaView: ({ children }: 
 vi.mock('../mockup5/src/theme', () => ({ useAppTheme: () => ({ background: '#fff', text: '#111', secondary: '#333', separator: '#888', red: '#b00' }) }))
 vi.mock('../api/client', () => ({ apiRequest: mocks.request, mobileApi: { deleteAccount: mocks.deleteAccount } }))
 vi.mock('../data/database', () => ({ cacheNamespace: () => 'instance|user' }))
+vi.mock('../features/app-store/storeKit', () => ({ storeKit: { showManageSubscriptions: mocks.manage } }))
 vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => ({ cancelQueries: mocks.cancelQueries, removeQueries: mocks.removeQueries }) }))
 vi.mock('../store/session', () => ({ useSessionStore: Object.assign((select: (state: unknown) => unknown) => select({ user: { id: 'user', email: 'me@example.test' }, instanceUrl: 'https://instance.test' }), { getState: () => ({ logout: mocks.logout }) }) }))
 import { DeleteAccountForm } from './DeleteAccount'
@@ -82,6 +83,20 @@ describe('mobile account deletion', () => {
   it('does not display a second-factor field when two-factor authentication is disabled', async () => {
     await mount({ accountDeletionEnabled: true })
     expect(container.querySelectorAll('input')).toHaveLength(1)
+  })
+  it('warns that an App Store subscription keeps renewing and opens its settings', async () => {
+    mocks.manage.mockResolvedValue(undefined)
+    mocks.request.mockImplementation(async (path: string) => path === '/api/me/deletion' ? { twoFactorEnabled: false, appStoreSubscriptionRenews: true } : { accountDeletionEnabled: true })
+    await act(async () => root.render(<DeleteAccountForm onClose={() => {}} />))
+    expect(container.textContent).toContain('Your App Store subscription keeps renewing after you delete your account.')
+    expect(container.textContent).not.toMatch(/credit/i)
+    const manage = Array.from(container.querySelectorAll('button')).find((value) => value.textContent === 'Manage Subscription')!
+    await act(async () => manage.click())
+    expect(mocks.manage).toHaveBeenCalled()
+  })
+  it('shows no App Store warning without a renewing App Store subscription', async () => {
+    await mount({ accountDeletionEnabled: true })
+    expect(container.textContent).not.toContain('App Store subscription')
   })
   it('requires an enabled second factor before final confirmation', async () => {
     mocks.request.mockImplementation(async (path: string) => path === '/api/me/deletion' ? { twoFactorEnabled: true } : { accountDeletionEnabled: true })

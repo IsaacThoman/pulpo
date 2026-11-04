@@ -3,6 +3,7 @@ import { hydrateEmbeddedResponseSnapshot, lineageFromLeaf } from '@pulpo/client-
 import { mergeResponseSnapshots, type ResponseSnapshot } from '@pulpo/contracts'
 import type { ServerAttachment, ServerChat, ServerResponse } from '../../types'
 import { recalledChatLabel } from './recall-label'
+import { responseErrorMessage } from '../usage-limits/errors'
 
 export interface DisplayAttachment {
   id: string
@@ -230,8 +231,7 @@ export function createChatProjector() {
           sizeBytes: attachment.sizeBytes, generated: false,
         }] : []
       })
-      const errorMessage = error && typeof error === 'object' && 'message' in error
-        ? String((error as { message?: unknown }).message ?? '') : undefined
+      const errorMessage = responseErrorMessage(error)
       const projected: DisplayMessage[] = [{
         id: `${response.id}:input`, responseId: response.id, role: 'user', text: inputText(response.input),
         modelId: response.displayModelId ?? response.modelId, status: 'completed', createdAt: response.createdAt,

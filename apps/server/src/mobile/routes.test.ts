@@ -121,10 +121,15 @@ describe('mobile App Store billing capability', () => {
     mocks.config = {}
   })
 
-  it('lists the StoreKit environments the server accepts purchases from', async () => {
+  it('lists the StoreKit environments and products the server accepts purchases of', async () => {
     mocks.billingEnabled = true
-    mocks.config = { APP_STORE_PRIVATE_KEY: '-----BEGIN PRIVATE KEY-----', APP_STORE_ENVIRONMENTS: ['sandbox'] }
-    expect((await capabilities()).appStoreBilling).toEqual({ environments: ['sandbox'] })
+    mocks.config = {
+      APP_STORE_PRIVATE_KEY: '-----BEGIN PRIVATE KEY-----',
+      APP_STORE_ENVIRONMENTS: ['sandbox'],
+      APP_STORE_EIGHT_PRODUCT_ID: 'pulpoEight',
+      APP_STORE_FAT_PRODUCT_ID: 'pulpoFat',
+    }
+    expect((await capabilities()).appStoreBilling).toEqual({ environments: ['sandbox'], products: { eight: 'pulpoEight', fat: 'pulpoFat' } })
   })
 
   it('offers no purchases without App Store configuration or billing', async () => {

@@ -94,6 +94,27 @@ export function selectSummarySubscription<T extends { plan: string; paidPlan?: s
     ?? null
 }
 
+/** The subscription the native apps show: who bills it and when, never its price. */
+export function usageLimitsSubscription<T extends {
+  plan: string
+  paidPlan?: string | null
+  status: string
+  provider?: string
+  cancelAtPeriodEnd: boolean
+  currentPeriodEnd: Date | null
+}>(subscriptions: T[], entitlementPlan: string): UsageLimits['subscription'] {
+  const subscription = selectSummarySubscription(subscriptions, entitlementPlan)
+  if (!subscription) return null
+  return {
+    provider: subscription.provider === 'app_store' ? 'app_store' : 'stripe',
+    plan: subscriptionPaidPlan(subscription) === 'fat' ? 'fat' : 'eight',
+    pendingPlan: subscriptionPendingPlan(subscription),
+    status: subscription.status === 'past_due' ? 'past_due' : 'active',
+    cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
+    currentPeriodEnd: subscription.currentPeriodEnd?.toISOString() ?? null,
+  }
+}
+
 export function availableBillingBalanceMicros(balanceMicros: number, pendingMicros: number): number {
   return Math.max(0, balanceMicros - pendingMicros)
 }
@@ -189,6 +210,7 @@ export function fiveHourLimitSummary(entitlements: FiveHourLimitInput) {
 export function usageLimitsResponse(
   entitlements: WeeklyLimitInput & FiveHourLimitInput & Pick<BillingEntitlements, 'plan'>,
   customLimits: ReturnType<typeof customLimitSummary>[],
+  { subscription = null, plans = null }: Partial<Pick<UsageLimits, 'subscription' | 'plans'>> = {},
 ): UsageLimits {
   const bar = <T extends { remainingPercentage: number; availableBarPercentage: number; pendingBarPercentage: number; resetsAt: string | null }>(limit: T) => ({
     remainingPercentage: limit.remainingPercentage,
@@ -200,6 +222,8 @@ export function usageLimitsResponse(
   const fiveHour = fiveHourLimitSummary(entitlements)
   return usageLimitsSchema.parse({
     plan: entitlements.plan,
+    subscription,
+    plans,
     weekly: weekly ? bar(weekly) : null,
     fiveHour: fiveHour ? bar(fiveHour) : null,
     custom: customLimits.map((limit) => ({
@@ -211,6 +235,18 @@ export function usageLimitsResponse(
       models: limit.models,
     })),
   })
+}
+
+/** Plan storage and the Fat Pool share, which the native apps use to describe the plans they sell. */
+export function usageLimitsPlans(settings: Pick<ReturnType<typeof parseBillingSettings>, 'babyStorageLimitBytes' | 'eightStorageLimitBytes' | 'fatStorageLimitBytes' | 'fatSharedWeeklyPercent'>): NonNullable<UsageLimits['plans']> {
+  return {
+    storageLimitBytes: {
+      baby: settings.babyStorageLimitBytes,
+      eight: settings.eightStorageLimitBytes,
+      fat: settings.fatStorageLimitBytes,
+    },
+    fatSharedWeeklyPercent: settings.fatSharedWeeklyPercent,
+  }
 }
 
 async function loadCustomLimitSummaries(userId: string, plan: BillingEntitlements['plan']) {
@@ -309,8 +345,21 @@ export async function registerBillingRoutes(app: FastifyInstance): Promise<void>
   // The native apps show plan limits from here: it carries no balances, prices, or payments.
   app.get('/api/billing/limits', async (request) => {
     const user = requireUser(request)
-    const entitlements = await getBillingEntitlements(user.id)
-    return usageLimitsResponse(entitlements, await loadCustomLimitSummaries(user.id, entitlements.plan))
+    const [entitlements, subscriptions, [billingSetting]] = await Promise.all([
+      getBillingEntitlements(user.id),
+      db.select().from(billingSubscriptions).where(eq(billingSubscriptions.userId, user.id))
+        .orderBy(desc(billingSubscriptions.updatedAt)),
+      db.select({ value: applicationSettings.value }).from(applicationSettings)
+        .where(eq(applicationSettings.key, 'billing')).limit(1),
+    ])
+    return usageLimitsResponse(
+      entitlements,
+      await loadCustomLimitSummaries(user.id, entitlements.plan),
+      {
+        subscription: usageLimitsSubscription(subscriptions, entitlements.subscriptionPlan),
+        plans: usageLimitsPlans(parseBillingSettings(billingSetting?.value)),
+      },
+    )
   })
 
   app.post('/api/billing/credit-quote', {

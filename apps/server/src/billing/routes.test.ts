@@ -12,7 +12,9 @@ import {
   registerBillingRoutes,
   resolvedCheckoutStatus,
   selectSummarySubscription,
+  usageLimitsPlans,
   usageLimitsResponse,
+  usageLimitsSubscription,
 } from './routes.js'
 import { hasRenewingAppStoreSubscription } from './app-store-sync.js'
 
@@ -221,6 +223,8 @@ describe('usage limits for native apps', () => {
     const limits = usageLimitsResponse(entitlements, [custom])
     expect(limits).toEqual({
       plan: 'eight',
+      subscription: null,
+      plans: null,
       weekly: { remainingPercentage: 60, availableBarPercentage: 60, pendingBarPercentage: 10, resetsAt: '2026-11-09T00:00:00.000Z' },
       fiveHour: { remainingPercentage: 50, availableBarPercentage: 50, pendingBarPercentage: 25, resetsAt: '2026-11-02T15:00:00.000Z' },
       custom: [{
@@ -233,6 +237,31 @@ describe('usage limits for native apps', () => {
 
   it('omits limits the plan does not have', () => {
     expect(usageLimitsResponse({ ...entitlements, plan: 'baby', weeklyRemainingPercentage: null, fiveHourRemainingPercentage: null, fiveHourResetAt: null }, []))
-      .toEqual({ plan: 'baby', weekly: null, fiveHour: null, custom: [] })
+      .toEqual({ plan: 'baby', subscription: null, plans: null, weekly: null, fiveHour: null, custom: [] })
+  })
+
+  it('describes plan storage and the Fat Pool share without prices', () => {
+    const plans = usageLimitsPlans({ babyStorageLimitBytes: 2_147_483_648, eightStorageLimitBytes: 10_737_418_240, fatStorageLimitBytes: 26_843_545_600, fatSharedWeeklyPercent: 50 })
+    expect(plans).toEqual({ storageLimitBytes: { baby: 2_147_483_648, eight: 10_737_418_240, fat: 26_843_545_600 }, fatSharedWeeklyPercent: 50 })
+    expect(usageLimitsResponse({ ...entitlements, plan: 'baby', weeklyRemainingPercentage: null, fiveHourRemainingPercentage: null, fiveHourResetAt: null }, [], { plans }).plans).toEqual(plans)
+  })
+})
+
+describe('usage limits subscription', () => {
+  const periodEnd = new Date('2026-12-01T00:00:00.000Z')
+  const row = (overrides: Record<string, unknown>) => ({
+    plan: 'eight', paidPlan: 'eight', status: 'active', provider: 'stripe', cancelAtPeriodEnd: false, currentPeriodEnd: periodEnd, ...overrides,
+  })
+
+  it('names the store that bills the plan, with its renewal state and no price', () => {
+    expect(usageLimitsSubscription([row({ provider: 'app_store', plan: 'eight', paidPlan: 'fat', cancelAtPeriodEnd: true })], 'fat')).toEqual({
+      provider: 'app_store', plan: 'fat', pendingPlan: 'eight', status: 'active', cancelAtPeriodEnd: true, currentPeriodEnd: periodEnd.toISOString(),
+    })
+  })
+
+  it('prefers a web subscription and ignores ended ones', () => {
+    expect(usageLimitsSubscription([row({ provider: 'app_store' }), row({ provider: 'stripe', status: 'past_due' })], 'eight'))
+      .toMatchObject({ provider: 'stripe', status: 'past_due' })
+    expect(usageLimitsSubscription([row({ status: 'canceled' })], 'baby')).toBeNull()
   })
 })
