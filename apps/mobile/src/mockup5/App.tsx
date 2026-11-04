@@ -236,6 +236,7 @@ import { useOpenFileItem } from '../features/files/open';
 import { fileOpenTarget } from '../features/files/itemActions';
 import { FilesToastHost } from '../features/files/components/FilesToastHost';
 import { FolderPickerSheet } from '../features/files/components/FolderPickerSheet';
+import { saveAttachmentToFiles } from '../features/files/api';
 import { filesErrorMessage } from '../features/files/display';
 import { useFileOperations } from '../features/files/operations';
 import { enqueueUploads, pickUploads } from '../features/files/uploads';
@@ -312,6 +313,7 @@ import {
   type ChatHeaderTrailingAction,
 } from '../features/chat/headerAction';
 import { copyFile, supportsFileClipboard } from '../native/fileClipboard';
+import { saveFileToDevice, saveImageToPhotos, supportsSaveToDevice, supportsSaveToPhotos } from '../native/fileSaving';
 import {
   AttachmentPreviewError,
   previewImages as previewNativeImages,
@@ -3292,65 +3294,122 @@ function MessageContextMenu({
   );
 }
 
-function SentAttachmentContextMenu({ attachment, message, onEdit, onRegenerate, children }: {
+function SentAttachmentContextMenu({ attachment, message, onEdit, onOpen, onRegenerate, children }: {
   attachment: Attachment;
   message: Message;
   onEdit: (message: Message, content: string) => void;
+  /** What tapping the attachment does. */
+  onOpen: () => void;
   onRegenerate: (message: Message) => void;
   children: ReactNode;
 }) {
   const { styles, COLORS } = useChatStyles();
+  const queryClient = useQueryClient();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const filesNamespace = useFilesNamespace();
+  const filesEnabled = useFilesEnabled();
+  const [pickingFolder, setPickingFolder] = useState(false);
   const runMessageAction = useMessageActionRunner({ message, onEdit, onRegenerate });
   const canReport = useCanReportMessage(message) && message.role === 'user' && !message.text;
+  // Saving to Files copies the uploaded original on the server, so the upload has to be done.
+  const uploaded = !attachment.state || attachment.state === 'ready';
+  const canSaveToFiles = Boolean(filesNamespace && filesEnabled && uploaded);
+  const canSaveToPhotos = supportsSaveToPhotos && attachment.kind === 'image';
+  const localFile = async () => attachment.uri || (await downloadAttachment(attachment.id, attachment.name)).uri;
+  const reportFailure = (title: string) => (error: unknown) => Alert.alert(title, error instanceof Error ? error.message : undefined);
   const shareAttachment = () => {
-    if (attachment.uri) void (Platform.OS === 'android' ? shareLocalFile(attachment.uri, attachment.name, attachment.mimeType) : Share.share({ message: attachment.name, url: attachment.uri })).catch((error) => Alert.alert('Couldn’t share attachment', error instanceof Error ? error.message : undefined));
-    else void shareServerAttachment(attachment.id, attachment.name, attachment.mimeType).catch((error) => Alert.alert('Couldn’t share attachment', error instanceof Error ? error.message : undefined));
+    if (attachment.uri) void (Platform.OS === 'android' ? shareLocalFile(attachment.uri, attachment.name, attachment.mimeType) : Share.share({ message: attachment.name, url: attachment.uri })).catch(reportFailure('Couldn’t share attachment'));
+    else void shareServerAttachment(attachment.id, attachment.name, attachment.mimeType).catch(reportFailure('Couldn’t share attachment'));
   };
   const copyAttachment = () => {
     void (async () => {
-      const uri = attachment.uri || (await downloadAttachment(attachment.id, attachment.name)).uri;
-      await copyFile(uri);
+      await copyFile(await localFile());
       AccessibilityInfo.announceForAccessibility('File copied');
-    })().catch((error) => Alert.alert('Couldn’t copy file', error instanceof Error ? error.message : undefined));
+    })().catch(reportFailure('Couldn’t copy file'));
+  };
+  const saveToPhotos = () => {
+    void (async () => {
+      await saveImageToPhotos(await localFile());
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      AccessibilityInfo.announceForAccessibility('Saved to Photos');
+    })().catch(reportFailure('Couldn’t save image'));
+  };
+  const saveToDevice = () => {
+    void (async () => {
+      if (!(await saveFileToDevice(await localFile(), attachment.name, attachment.mimeType))) return;
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      AccessibilityInfo.announceForAccessibility('File saved');
+    })().catch(reportFailure('Couldn’t save file'));
+  };
+  const saveToFiles = (folderId: string | null, folderName: string) => {
+    setPickingFolder(false);
+    void saveAttachmentToFiles(attachment.id, { parentId: folderId }).then(({ node }) => {
+      if (filesNamespace) void queryClient.invalidateQueries({ queryKey: filesQueryKeys.all(filesNamespace) });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Alert.alert('Saved to Files', `“${node.name}” is in ${folderName}.`, [
+        { text: 'Show', onPress: () => navigation.push('FilesFolder', { folderId, name: folderName }) },
+        { text: 'OK', style: 'cancel' },
+      ]);
+    }, (error) => Alert.alert('Couldn’t save to Files', filesErrorMessage(error, attachment.name)));
   };
   return (
-    <NativeObjectContextMenu
-      style={attachment.kind === 'image' ? styles.sentImageContextHost : styles.sentFileContextHost}
-      title={attachment.name}
-      androidActions={[
-        { label: 'Share file', icon: 'square.and.arrow.up', onPress: shareAttachment },
-        ...(message.role === 'user' && !message.text ? [
-          { label: 'Edit message', icon: 'pencil', onPress: () => runMessageAction('edit') },
-          { label: 'Delete message', icon: 'trash', destructive: true, onPress: () => runMessageAction('delete') },
-        ] : []),
-        ...(canReport ? [{ label: 'Report message', icon: 'pulpo.frown', onPress: () => runMessageAction('report') }] : []),
-      ]}
-      preview={attachment.kind === 'image' ? (
-        <ResolvedAttachmentImage attachment={attachment} variant="preview" />
-      ) : (
-        <View style={styles.attachmentContextFilePreview}>
-          <Icon name="doc.fill" size={38} color={COLORS.muted} />
-          <Text numberOfLines={2} style={styles.attachmentContextFileName}>{attachment.name}</Text>
-          <Text style={styles.attachmentContextFileMeta}>{formatAttachmentSize(attachment.size)}</Text>
-        </View>
-      )}
-      items={(
-        <>
-          <SwiftUIControlGroup>
-            <SwiftUIButton label="Share" systemImage="square.and.arrow.up" onPress={shareAttachment} />
-            {supportsFileClipboard ? <SwiftUIButton label="Copy file" systemImage="doc.on.doc" onPress={copyAttachment} /> : null}
-          </SwiftUIControlGroup>
-          <SwiftUIDivider />
-          {message.role === 'user' && !message.text ? <>
-            <SwiftUIButton label="Edit message" systemImage="pencil" onPress={() => runMessageAction('edit')} />
-            <SwiftUIButton label="Delete message" role="destructive" systemImage="trash" onPress={() => runMessageAction('delete')} />
-          </> : null}
-          {canReport && <NativeReportMessageButton onPress={() => runMessageAction('report')} />}
-        </>
-      )}
-    >
-      {children}
-    </NativeObjectContextMenu>
+    <>
+      <NativeObjectContextMenu
+        style={attachment.kind === 'image' ? styles.sentImageContextHost : styles.sentFileContextHost}
+        title={attachment.name}
+        androidActions={[
+          { label: 'Open', icon: 'eye', onPress: onOpen },
+          { label: 'Share file', icon: 'square.and.arrow.up', onPress: shareAttachment },
+          ...(supportsSaveToDevice ? [{ label: 'Download…', icon: 'square.and.arrow.down', onPress: saveToDevice }] : []),
+          ...(canSaveToFiles ? [{ label: 'Save to My Files…', icon: 'folder.badge.plus', onPress: () => setPickingFolder(true) }] : []),
+          ...(message.role === 'user' && !message.text ? [
+            { label: 'Edit message', icon: 'pencil', onPress: () => runMessageAction('edit') },
+            { label: 'Delete message', icon: 'trash', destructive: true, onPress: () => runMessageAction('delete') },
+          ] : []),
+          ...(canReport ? [{ label: 'Report message', icon: 'pulpo.frown', onPress: () => runMessageAction('report') }] : []),
+        ]}
+        preview={attachment.kind === 'image' ? (
+          <ResolvedAttachmentImage attachment={attachment} variant="preview" />
+        ) : (
+          <View style={styles.attachmentContextFilePreview}>
+            <Icon name="doc.fill" size={38} color={COLORS.muted} />
+            <Text numberOfLines={2} style={styles.attachmentContextFileName}>{attachment.name}</Text>
+            <Text style={styles.attachmentContextFileMeta}>{formatAttachmentSize(attachment.size)}</Text>
+          </View>
+        )}
+        items={(
+          <>
+            <SwiftUIControlGroup>
+              <SwiftUIButton label="Open" systemImage="eye" onPress={onOpen} />
+              {supportsFileClipboard ? <SwiftUIButton label="Copy" systemImage="doc.on.doc" onPress={copyAttachment} /> : null}
+              <SwiftUIButton label="Share" systemImage="square.and.arrow.up" onPress={shareAttachment} />
+            </SwiftUIControlGroup>
+            <SwiftUIDivider />
+            {canSaveToPhotos ? <SwiftUIButton label="Save to Photos" systemImage="photo.badge.arrow.down" onPress={saveToPhotos} /> : null}
+            {supportsSaveToDevice ? <SwiftUIButton label="Download…" systemImage="square.and.arrow.down" onPress={saveToDevice} /> : null}
+            {canSaveToFiles ? <SwiftUIButton label="Save to My Files…" systemImage="folder.badge.plus" onPress={() => setPickingFolder(true)} /> : null}
+            {message.role === 'user' && !message.text ? <>
+              <SwiftUIDivider />
+              <SwiftUIButton label="Edit message" systemImage="pencil" onPress={() => runMessageAction('edit')} />
+              <SwiftUIButton label="Delete message" role="destructive" systemImage="trash" onPress={() => runMessageAction('delete')} />
+            </> : null}
+            {canReport && <NativeReportMessageButton onPress={() => runMessageAction('report')} />}
+          </>
+        )}
+      >
+        {children}
+      </NativeObjectContextMenu>
+      {pickingFolder && filesNamespace ? (
+        <FolderPickerSheet
+          namespace={filesNamespace}
+          mode="destination"
+          title={`Save “${attachment.name}”`}
+          confirmLabel="Save Here"
+          onCancel={() => setPickingFolder(false)}
+          onConfirm={saveToFiles}
+        />
+      ) : null}
+    </>
   );
 }
 
@@ -3891,7 +3950,14 @@ const MessageRow = memo(function MessageRow({
           {message.attachments && message.attachments.length > 0 && (
             <SentAttachmentWindow attachments={message.attachments}>{(visible) => <>
               {visible.map((attachment) => (
-                <SentAttachmentContextMenu attachment={attachment} key={attachment.id} message={message} onEdit={onEdit} onRegenerate={onRegenerate}>
+                <SentAttachmentContextMenu
+                  attachment={attachment}
+                  key={attachment.id}
+                  message={message}
+                  onEdit={onEdit}
+                  onOpen={() => attachment.kind === 'image' ? onPreviewImages(message.attachments ?? [], attachment) : onPreviewFile(attachment)}
+                  onRegenerate={onRegenerate}
+                >
                   <SentAttachmentPreview
                     attachment={attachment}
                     group={message.attachments ?? []}
@@ -3960,7 +4026,14 @@ const MessageRow = memo(function MessageRow({
             {message.attachments && message.attachments.length > 0 && (
               <SentAttachmentWindow attachments={message.attachments} assistant>{(visible) => <>
                 {visible.map((attachment) => (
-                  <SentAttachmentContextMenu attachment={attachment} key={attachment.id} message={message} onEdit={onEdit} onRegenerate={onRegenerate}>
+                  <SentAttachmentContextMenu
+                  attachment={attachment}
+                  key={attachment.id}
+                  message={message}
+                  onEdit={onEdit}
+                  onOpen={() => attachment.kind === 'image' ? onPreviewImages(message.attachments ?? [], attachment) : onPreviewFile(attachment)}
+                  onRegenerate={onRegenerate}
+                >
                     <SentAttachmentPreview
                       attachment={attachment}
                       group={message.attachments ?? []}

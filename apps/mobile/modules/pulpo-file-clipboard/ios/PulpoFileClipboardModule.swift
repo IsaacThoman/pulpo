@@ -28,6 +28,15 @@ public final class PulpoFileClipboardModule: Module {
     }
     .runOnQueue(DispatchQueue.main)
 
+    AsyncFunction("saveImageToPhotos") { (uri: URL, promise: Promise) in
+      saveImageToPhotos(uri, promise: promise)
+    }
+
+    AsyncFunction("exportFile") { (uri: URL, name: String, promise: Promise) in
+      exportFile(uri, name: name, presenter: self.appContext?.utilities?.currentViewController(), promise: promise)
+    }
+    .runOnQueue(DispatchQueue.main)
+
     View(StatusBarGradientView.self) {}
 
     View(ComposerPasteView.self) {
