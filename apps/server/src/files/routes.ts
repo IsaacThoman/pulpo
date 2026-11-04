@@ -1,6 +1,6 @@
-import type { FastifyInstance } from 'fastify'
+import type { FastifyInstance, FastifyReply } from 'fastify'
 import { z } from 'zod'
-import { updateFileFolderLayoutSchema, copyFileNodesSchema, createFileDocSchema, createFileFolderSchema, fileNodeIdsSchema, importFileUrlSchema, moveFileNodesSchema, updateFileNodeSchema, type FileChangeConflictBody } from '@pulpo/contracts'
+import { convertOfficeFileSchema, updateFileFolderLayoutSchema, copyFileNodesSchema, createFileDocSchema, createFileFolderSchema, fileNodeIdsSchema, importFileUrlSchema, moveFileNodesSchema, updateFileNodeSchema, type FileChangeConflictBody } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { getBlobStore } from '../storage/index.js'
@@ -25,7 +25,8 @@ import {
   toFileNode,
   updateFileNode,
 } from './tree-service.js'
-import { registerFileUploadRoutes } from './upload-routes.js'
+import { exportFileAsPdf, convertFileToEditable } from './office/service.js'
+import { fileContentDisposition, registerFileUploadRoutes } from './upload-routes.js'
 import { importUrlAsDoc } from './url-import.js'
 import { listTrashedFiles } from '../trash/service.js'
 import { getFolderLayout, normalizeInput, updateFolderLayout } from './layout-service.js'
@@ -38,6 +39,14 @@ import { reviewFileChange, reviewNodeSuggestion, reviewReplyChanges } from './ag
 const idParams = z.object({ id: z.uuid() })
 const changeParams = z.object({ changeId: z.uuid() })
 const reviewParams = z.object({ id: z.uuid(), action: z.enum(['accept', 'reject']) })
+const officeConversionRateLimit = { rateLimit: { max: 20, timeWindow: '1 minute' } }
+
+/** Aborted when the client goes away before the answer is sent, so its conversion stops. */
+function clientSignal(reply: FastifyReply): AbortSignal {
+  const controller = new AbortController()
+  reply.raw.once('close', () => { if (!reply.raw.writableFinished) controller.abort() })
+  return controller.signal
+}
 
 export async function registerFileRoutes(app: FastifyInstance): Promise<void> {
   // What an agent reply changed in Files: undo and redo its direct changes, review its suggestions.
@@ -190,6 +199,29 @@ export async function registerFileRoutes(app: FastifyInstance): Promise<void> {
     // The uploaded object goes only after the document is committed, so a failure keeps the file.
     if (result.objectKey) await getBlobStore().delete(result.objectKey).catch(() => undefined)
     return result.node
+  })
+
+  // Office files: a converted copy beside the original (docx/xlsx/pptx), or a PDF export, made by
+  // the office converter service (files/office). Both run while the client waits.
+  app.post('/api/files/:id/conversions', { config: officeConversionRateLimit }, async (request, reply) => {
+    const user = await requireFilesUser(request)
+    const { id } = idParams.parse(request.params)
+    const { to } = convertOfficeFileSchema.parse(request.body)
+    const node = await convertFileToEditable(user.id, id, to, clientSignal(reply))
+    reply.code(201)
+    return node
+  })
+
+  app.get('/api/files/:id/pdf', { config: officeConversionRateLimit }, async (request, reply) => {
+    const user = await requireFilesUser(request)
+    const { id } = idParams.parse(request.params)
+    const { inline } = z.object({ inline: z.enum(['1', 'true']).optional() }).parse(request.query)
+    const pdf = await exportFileAsPdf(user.id, id, clientSignal(reply))
+    reply.type('application/pdf')
+      .header('content-disposition', fileContentDisposition(inline ? 'inline' : 'attachment', pdf.name))
+      .header('x-content-type-options', 'nosniff')
+      .header('cache-control', 'private, no-store')
+    return reply.send(Buffer.from(pdf.bytes.buffer, pdf.bytes.byteOffset, pdf.bytes.byteLength))
   })
 
   app.get('/api/files/:id/markdown', async (request) => {

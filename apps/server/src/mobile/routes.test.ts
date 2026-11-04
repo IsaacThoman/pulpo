@@ -99,6 +99,30 @@ describe('mobile Files capability', () => {
   })
 })
 
+describe('mobile office conversion capability', () => {
+  afterEach(() => { mocks.config = {} })
+
+  it.each([
+    [{}, undefined, false],
+    [{ filesEnabled: false }, 'http://office-converter:8790', false],
+    [{}, 'http://office-converter:8790', true],
+  ])('advertises office conversion only when Files is on and the converter is configured (%j, %s)', async (auth, url, officeConversion) => {
+    mocks.config = { OFFICE_CONVERTER_URL: url }
+    const values = [[{ id: 'user' }], [{ value: auth }], [], []]
+    mocks.select.mockImplementation(() => {
+      const rows = values.shift()
+      const chain = { from: () => chain, where: () => chain, limit: async () => rows }
+      return chain
+    })
+    let handler!: () => Promise<unknown>
+    await registerMobileRoutes({
+      get: (path: string, callback: () => Promise<unknown>) => { if (path === '/api/mobile/config') handler = callback },
+      post: vi.fn(),
+    } as unknown as FastifyInstance)
+    expect(await handler()).toMatchObject({ capabilities: { files: { officeConversion } } })
+  })
+})
+
 describe('mobile usage limits capability', () => {
   it.each([true, false])('advertises plan usage limits only when billing is enabled (%s)', async (billingEnabled) => {
     mocks.billingEnabled = billingEnabled

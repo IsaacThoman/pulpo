@@ -2,6 +2,7 @@ import { z } from 'zod'
 import type { RelayRequest, RelayResult } from '../../agent/controller.js'
 import { truncateUtf8 } from '../../agent/output.js'
 import { countFileChanges } from './changes.js'
+import { convertCommand } from './convert.js'
 import type { CommandContext, CommandOutput, FilesWorkspace } from './command-context.js'
 import { mkdirCommand, mvCommand, rmCommand } from './edit-commands.js'
 import { failureMessage } from './failures.js'
@@ -33,6 +34,7 @@ export const relayCommandArgs = {
   mkdir: z.strictObject({ path: remotePath.min(1), parents: z.boolean().optional() }),
   mv: z.strictObject({ from: remotePath.min(1), to: remotePath.min(1) }),
   rm: z.strictObject({ path: remotePath.min(1), recursive: z.boolean().optional() }),
+  convert: z.strictObject({ path: remotePath.min(1), to: z.enum(['docx', 'xlsx', 'pptx', 'pdf']), output: remotePath.min(1).optional() }),
 } satisfies Record<string, z.ZodType>
 
 type RelayCommand = keyof typeof relayCommandArgs
@@ -47,6 +49,7 @@ const handlers: { [Command in RelayCommand]: (ctx: CommandContext, args: z.outpu
   mkdir: mkdirCommand,
   mv: mvCommand,
   rm: rmCommand,
+  convert: convertCommand,
 }
 
 function isRelayCommand(command: string): command is RelayCommand {

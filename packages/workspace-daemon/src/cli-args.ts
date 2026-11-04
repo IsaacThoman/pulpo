@@ -13,6 +13,10 @@ export type Invocation =
   | { command: 'mkdir'; paths: string[]; parents: boolean }
   | { command: 'mv'; from: string; to: string }
   | { command: 'rm'; paths: string[]; recursive: boolean }
+  | { command: 'convert'; path: string; to: ConvertFormat; output?: string }
+
+export const CONVERT_FORMATS = ['docx', 'xlsx', 'pptx', 'pdf'] as const
+export type ConvertFormat = typeof CONVERT_FORMATS[number]
 
 /** Exit status 2: the command line itself is wrong, so the model should reread the help. */
 export class UsageError extends Error {
@@ -34,13 +38,14 @@ const COMMANDS: Record<CommandName, { options: Options; min: number; max: number
   mkdir: { options: { parents: flag('p') }, min: 1, max: Infinity, operands: '<path>...' },
   mv: { options: {}, min: 2, max: 2, operands: '<from> <to>' },
   rm: { options: { recursive: flag('r'), R: flag('R'), force: flag('f') }, min: 1, max: Infinity, operands: '<path>...' },
+  convert: { options: { to: { type: 'string', short: 't' }, output: { type: 'string', short: 'o' } }, min: 1, max: 1, operands: '<path>' },
 }
 
 const SUGGESTIONS: Record<string, CommandName> = {
   list: 'ls', dir: 'ls', find: 'grep', search: 'grep', read: 'cat', show: 'cat', view: 'cat', get: 'pull',
   download: 'pull', fetch: 'pull', clone: 'pull', checkout: 'pull', upload: 'push', save: 'push', put: 'push',
   commit: 'push', sync: 'push', diff: 'status', move: 'mv', rename: 'mv', delete: 'rm', remove: 'rm', trash: 'rm',
-  del: 'rm', mkdirs: 'mkdir', md: 'mkdir', 'new-folder': 'mkdir',
+  del: 'rm', mkdirs: 'mkdir', md: 'mkdir', 'new-folder': 'mkdir', export: 'convert', 'to-pdf': 'convert', transform: 'convert',
 }
 
 const isHelp = (value: string | undefined) => value === '--help' || value === '-h' || value === 'help'
@@ -97,6 +102,13 @@ export function parseCli(argv: string[]): Invocation {
     case 'mkdir': return { command: 'mkdir', paths: operands, parents: Boolean(values.parents) }
     case 'mv': return { command: 'mv', from: operands[0]!, to: operands[1]! }
     case 'rm': return { command: 'rm', paths: operands, recursive }
+    case 'convert': {
+      const to = typeof values.to === 'string' ? values.to.trim().toLowerCase().replace(/^\./, '') : ''
+      if (!to) throw new UsageError(`--to is required (${CONVERT_FORMATS.join(', ')}).`, name)
+      if (!(CONVERT_FORMATS as readonly string[]).includes(to)) throw new UsageError(`--to must be one of ${CONVERT_FORMATS.join(', ')}, not "${to}".`, name)
+      if (values.output !== undefined && (typeof values.output !== 'string' || !values.output.trim())) throw new UsageError('--output needs a Files path.', name)
+      return { command: 'convert', path: operands[0]!, to: to as ConvertFormat, ...(typeof values.output === 'string' ? { output: values.output } : {}) }
+    }
   }
 }
 

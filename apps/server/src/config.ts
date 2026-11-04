@@ -103,6 +103,10 @@ const configSchema = z.object({
   RESPONSE_EVENT_RETENTION_SECONDS: z.coerce.number().int().positive().default(86_400),
   RESPONSE_SNAPSHOT_INTERVAL_MS: z.coerce.number().int().positive().default(1_500),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
+  // The office converter (infra/office-converter). Without a URL, office conversion is hidden.
+  OFFICE_CONVERTER_URL: optionalEnvironmentValue(z.url()),
+  OFFICE_CONVERTER_TOKEN: optionalEnvironmentValue(z.string().min(32)),
+  OFFICE_CONVERTER_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(180),
   WORKSPACE_CONTROLLER_URL: optionalEnvironmentValue(z.url()),
   WORKSPACE_CONTROLLER_TOKEN: optionalEnvironmentValue(z.string().min(32)),
   WORKSPACE_CONTROLLER_CA_CERT_BASE64: optionalEnvironmentValue(z.string().min(1)),

@@ -23,6 +23,8 @@ describe('pulpo files argument parsing', () => {
     expect(parseCli(['files', 'mkdir', '-p', 'A/B', 'C'])).toEqual({ command: 'mkdir', paths: ['A/B', 'C'], parents: true })
     expect(parseCli(['files', 'mv', 'a', 'b'])).toEqual({ command: 'mv', from: 'a', to: 'b' })
     expect(parseCli(['files', 'rm', '-rf', 'Old'])).toEqual({ command: 'rm', paths: ['Old'], recursive: true })
+    expect(parseCli(['files', 'convert', 'Old.doc', '--to', 'docx'])).toEqual({ command: 'convert', path: 'Old.doc', to: 'docx' })
+    expect(parseCli(['files', 'convert', 'Deck.key', '-t', '.PDF', '-o', 'Out/Deck.pdf'])).toEqual({ command: 'convert', path: 'Deck.key', to: 'pdf', output: 'Out/Deck.pdf' })
   })
 
   it('answers help requests at every level', () => {
@@ -46,5 +48,11 @@ describe('pulpo files argument parsing', () => {
     expect(usageError(['files', 'cat']).message).toBe('expected <path>..., got nothing.')
     expect(usageError(['files', 'push', '--to']).command).toBe('push')
     expect(usageError(['files', 'grep', '']).message).toContain('empty')
+    expect(usageError(['files', 'convert', 'a.doc'])).toMatchObject({ command: 'convert', message: expect.stringContaining('--to is required') })
+    expect(usageError(['files', 'convert', 'a.doc', '--to', 'odt']).message).toContain('docx, xlsx, pptx, pdf')
+    expect(usageError(['files', 'convert', 'a.doc', 'b.doc', '--to', 'docx']).message).toBe('expected <path>, got "a.doc" "b.doc".')
+    expect(usageError(['files', 'export', 'a.doc']).message).toContain('Did you mean `pulpo files convert`?')
+    expect(helpText('convert')).toContain('soffice --headless')
+    expect(helpText()).toContain('convert <path> --to <format>')
   })
 })
