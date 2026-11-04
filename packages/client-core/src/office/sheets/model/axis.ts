@@ -57,6 +57,13 @@ export class Axis {
     readonly order: Y.Array<string>,
     /** Tombstones: deleted id → the index it had when it was deleted. */
     readonly dead: Y.Map<number>,
+    /**
+     * Stores entries in chunks of this many. Two replicas storing the same virtual ids at once
+     * keep both copies until one is ignored, and a row inserted next to a copy that loses can end
+     * up on the wrong side of it; storing well ahead of where people work keeps that race far
+     * past the data.
+     */
+    readonly chunk = 1,
   ) {
     order.observe(() => this.invalidate())
     dead.observe(() => this.invalidate())
@@ -120,8 +127,10 @@ export class Axis {
   ensure(count: number): void {
     const { ids, next } = this.resolve()
     if (ids.length >= count) return
+    // Round up to the next chunk boundary (deterministic, so concurrent extensions agree).
+    const target = Math.ceil(count / this.chunk) * this.chunk
     const added: string[] = []
-    for (let n = ids.length; n < count; n++) added.push(String(next + n - ids.length))
+    for (let n = ids.length; n < target; n++) added.push(String(next + n - ids.length))
     this.order.push(added)
     // Appending virtual ids extends the snapshot as it is; no need to rebuild it (imports call
     // this for every row they touch).

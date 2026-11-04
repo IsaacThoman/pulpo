@@ -41,16 +41,19 @@ describe('axis', () => {
   it('addresses rows past the stored end with virtual ids that survive materialization', () => {
     const { model } = newWorkbook()
     const sheet = model.sheets()[0]!
-    expect(sheet.rows.length).toBe(0)
-    const virtual = sheet.rows.idAt(500)
-    expect(sheet.rows.indexOf(virtual)).toBe(500)
+    expect(sheet.rows.length).toBe(1024)
+    const virtual = sheet.rows.idAt(5000)
+    expect(sheet.rows.indexOf(virtual)).toBe(5000)
     sheet.setCell(10, 0, { v: 1 })
-    expect(sheet.rows.length).toBe(11)
-    expect(sheet.rows.idAt(500)).toBe(virtual)
+    expect(sheet.rows.length).toBe(1024)
+    expect(sheet.rows.indexOf(virtual)).toBe(5000)
+    sheet.setCell(4500, 0, { v: 1 })
+    expect(sheet.rows.length).toBe(5120)
+    expect(sheet.rows.idAt(5000)).toBe(virtual)
     insertAxis(sheet, 'row', 0, 2)
-    expect(sheet.rows.indexOf(virtual)).toBe(502)
+    expect(sheet.rows.indexOf(virtual)).toBe(5002)
     deleteAxis(sheet, 'row', 0, 5)
-    expect(sheet.rows.indexOf(virtual)).toBe(497)
+    expect(sheet.rows.indexOf(virtual)).toBe(4997)
   })
 
   it('merges concurrent materialization without duplicating rows', () => {
@@ -62,8 +65,16 @@ describe('axis', () => {
       const sheet = model.sheets()[0]!
       expect(sheet.cell(20, 0)?.v).toBe('a')
       expect(sheet.cell(15, 1)?.v).toBe('b')
-      expect(sheet.rows.length).toBe(21)
+      expect(sheet.rows.length).toBe(1024)
     }
+  })
+
+  it('keeps a cell typed past the stored rows concurrently with a row inserted above it', () => {
+    const { a, b, sync } = replicas()
+    insertAxis(a.sheets()[0]!, 'row', 29, 1)
+    b.sheets()[0]!.setCell(30, 0, { v: 'typed' })
+    sync()
+    for (const model of [a, b]) expect(model.sheets()[0]!.cell(31, 0)?.v).toBe('typed')
   })
 
   it('keeps a cell typed concurrently with a row insert above it', () => {

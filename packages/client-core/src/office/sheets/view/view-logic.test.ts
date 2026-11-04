@@ -18,7 +18,7 @@ function sheet(): SheetModel {
   return model.addSheet('Sheet1')
 }
 
-function put(target: SheetModel, rows: (string | number | null)[][]): void {
+function put(target: SheetModel, rows: (string | number | boolean | null)[][]): void {
   rows.forEach((row, r) => row.forEach((value, c) => value !== null && target.setCell(r, c, typeof value === 'string' && value.startsWith('=') ? { f: value.slice(1) } : { v: value })))
 }
 

@@ -36,6 +36,10 @@ function splitPropKey(key: string): [owner: string, prop: string] {
   return [key.slice(0, bar), key.slice(bar + 1)]
 }
 
+/** Rows and columns are stored in chunks (see Axis). */
+export const ROW_CHUNK = 1024
+export const COL_CHUNK = 64
+
 /** Row/column style overrides live in the axis meta maps under `s.<prop>`. */
 const AXIS_STYLE_PREFIX = 's.'
 
@@ -63,8 +67,8 @@ export class SheetModel {
     readonly id: string,
     readonly map: Y.Map<unknown>,
   ) {
-    this.rows = new Axis(map.get('rows') as Y.Array<string>, map.get('deadRows') as Y.Map<number>)
-    this.cols = new Axis(map.get('cols') as Y.Array<string>, map.get('deadCols') as Y.Map<number>)
+    this.rows = new Axis(map.get('rows') as Y.Array<string>, map.get('deadRows') as Y.Map<number>, ROW_CHUNK)
+    this.cols = new Axis(map.get('cols') as Y.Array<string>, map.get('deadCols') as Y.Map<number>, COL_CHUNK)
     this.cells = map.get('cells') as Y.Map<CellData>
     this.xf = map.get('xf') as Y.Map<number>
     this.fmt = map.get('fmt') as Y.Map<unknown>
@@ -85,7 +89,14 @@ export class SheetModel {
   static create(map: Y.Map<unknown>, name: string): void {
     map.set('name', name)
     map.set('state', 'visible')
-    for (const key of ['rows', 'cols']) map.set(key, new Y.Array<string>())
+    // The first chunk of rows and columns exists from the start, so people working on a new sheet
+    // at the same time never race to store it (see Axis).
+    const rows = new Y.Array<string>()
+    rows.push(Array.from({ length: ROW_CHUNK }, (_, index) => String(index)))
+    const cols = new Y.Array<string>()
+    cols.push(Array.from({ length: COL_CHUNK }, (_, index) => String(index)))
+    map.set('rows', rows)
+    map.set('cols', cols)
     for (const key of ['deadRows', 'deadCols', 'cells', 'xf', 'fmt', 'rowMeta', 'colMeta', 'view', 'merges', 'cf', 'dv', 'tables', 'drawings', 'links', 'notes', 'filter', 'raw']) {
       map.set(key, new Y.Map())
     }

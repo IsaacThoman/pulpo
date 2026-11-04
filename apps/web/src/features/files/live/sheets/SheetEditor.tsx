@@ -150,7 +150,8 @@ export function SheetEditor({ doc, awareness, readOnly, assets, user, values, fu
     if (!element) return
     const onMenu = (event: Event) => {
       const detail = (event as CustomEvent<{ x: number; y: number; area: string }>).detail
-      setMenu(detail)
+      // Open once the click that asked for it is over, so its release can't dismiss the menu.
+      setTimeout(() => setMenu(detail), 0)
     }
     element.addEventListener('sheetcontextmenu', onMenu)
     return () => element.removeEventListener('sheetcontextmenu', onMenu)
@@ -201,7 +202,16 @@ export function SheetEditor({ doc, awareness, readOnly, assets, user, values, fu
         <>
           <FindDialog view={view} open={findOpen} onOpenChange={(open) => { setFindOpen(open); if (!open) view.focus() }} />
           <NoteDialog view={view} open={noteOpen} onOpenChange={setNoteOpen} />
-          <DropdownMenu open={!!menu} onOpenChange={(open) => !open && setMenu(undefined)}>
+          <DropdownMenu
+            open={!!menu}
+            modal={false}
+            onOpenChange={(open) => {
+              if (open) return
+              setMenu(undefined)
+              // Keys go back to the grid once the menu is gone (Cmd+Z right after Insert row).
+              setTimeout(() => view.focus(), 0)
+            }}
+          >
             <DropdownMenuTrigger asChild>
               <span aria-hidden style={{ position: 'fixed', left: menu?.x ?? 0, top: menu?.y ?? 0, width: 1, height: 1 }} />
             </DropdownMenuTrigger>

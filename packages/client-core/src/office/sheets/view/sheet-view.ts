@@ -507,12 +507,10 @@ export class SheetView {
     let styles = false
     const sheetMap = this.sheet.map
     for (const event of events) {
-      const path = event.path
       // Changes in other sheets only matter for formulas (values) and tabs.
-      if (event.target === sheetMap || path[0] === this.sheetIdValue || (event.target as Y.AbstractType<unknown>)._item?.parentSub === this.sheetIdValue) {
-        const key = typeof path[1] === 'string' ? path[1] : undefined
+      {
         const target = event.target as unknown
-        if (target === this.sheet.rowMeta || target === this.sheet.colMeta || target === this.sheet.rows.order || target === this.sheet.cols.order || target === this.sheet.view || key === 'raw') layout = true
+        if (target === this.sheet.rowMeta || target === this.sheet.colMeta || target === this.sheet.rows.order || target === this.sheet.cols.order || target === this.sheet.view || target === this.sheet.raw || target === sheetMap) layout = true
         if (target === this.sheet.xf || target === this.sheet.fmt || target === this.sheet.rowMeta || target === this.sheet.colMeta || target === this.sheet.rows.order || target === this.sheet.cols.order) styles = true
         if (target === this.sheet.view) this.zoom = (this.sheet.viewProp('zoom') ?? 100) / 100
         // Font size changes resize rows that fit their content.
@@ -1432,8 +1430,13 @@ export class SheetView {
       const copy = this.workbook.addSheet(this.workbook.uniqueSheetName(source.name), this.workbook.sheetIds().indexOf(id) + 1)
       copyId = copy.id
       // Same row and column ids, so cell keys and id-form formulas carry over unchanged.
+      copy.rows.order.delete(0, copy.rows.order.length)
       copy.rows.order.push(source.rows.resolve().ids.slice())
+      copy.cols.order.delete(0, copy.cols.order.length)
       copy.cols.order.push(source.cols.resolve().ids.slice())
+      // Deleted ids stay deleted in the copy, so virtual rows past the end line up too.
+      for (const [id, index] of source.rows.dead) copy.rows.dead.set(id, index)
+      for (const [id, index] of source.cols.dead) copy.cols.dead.set(id, index)
       for (const name of ['cells', 'xf', 'fmt', 'rowMeta', 'colMeta', 'view', 'merges', 'cf', 'dv', 'links', 'notes'] as const) {
         const from = source.map.get(name) as Y.Map<unknown>
         const to = copy.map.get(name) as Y.Map<unknown>
