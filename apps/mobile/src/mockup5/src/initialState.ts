@@ -23,6 +23,8 @@ export function createInitialState(): PersistedPrototypeState {
       streamResponses: true,
       showPromptSuggestions: true, showModelWarnings: true, modelWarningDismissals: {}, showReasoning: true,
       memoryEnabled: false,
+      customInstructions: '',
+      instructionPresetSelections: {},
       haptics: true,
       localChatLimit: 50,
       attachmentCacheMb: 50,

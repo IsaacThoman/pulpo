@@ -543,3 +543,5 @@ export * from './dictation.js'
 export * from "./speech.js"
 
 export * from './model-warnings.js'
+
+export * from './instruction-presets.js'

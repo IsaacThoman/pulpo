@@ -201,6 +201,8 @@ export async function hydrateProductionScope(namespace: string): Promise<void> {
           modelWarningDismissals: preferences.modelWarningDismissals,
           showReasoning: preferences.showReasoning,
           memoryEnabled: preferences.memoryEnabled,
+          customInstructions: preferences.customInstructions,
+          instructionPresetSelections: preferences.instructionPresetSelections,
           haptics: preferences.haptics,
           sendWithEnter: preferences.sendWithEnter,
           attachmentCacheMb: preferences.attachmentCacheMb,
@@ -323,6 +325,8 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
     modelWarningDismissals: state.modelWarningDismissals,
     showReasoning: state.showReasoning,
     memoryEnabled: state.memoryEnabled,
+    customInstructions: state.customInstructions,
+    instructionPresetSelections: state.instructionPresetSelections,
     haptics: state.haptics,
     sendWithEnter: state.sendWithEnter,
     attachmentCacheMb: state.attachmentCacheMb,
@@ -496,6 +500,8 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
           modelWarningDismissals: preferences.modelWarningDismissals,
           showReasoning: preferences.showReasoning,
           memoryEnabled: preferences.memoryEnabled,
+          customInstructions: preferences.customInstructions,
+          instructionPresetSelections: preferences.instructionPresetSelections,
           haptics: preferences.haptics,
           sendWithEnter: preferences.sendWithEnter,
           attachmentCacheMb: preferences.attachmentCacheMb,
@@ -555,12 +561,14 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
   useEffect(() => {
     if (!activeChatId || !(detail.error instanceof ApiError)) return
     if (detail.error.code !== 'temporary_chat_expired' && detail.error.status !== 404) return
+    // A chat whose first send was refused for a usage limit exists only here until it is sent again.
+    if (detail.error.status === 404 && pendingOptimisticChatIds(namespace).has(activeChatId)) return
     usePrototypeStore.setState((state) => ({
       chats: state.chats.map((chat) => chat.id === activeChatId && chat.temporary
         ? { ...chat, expired: true }
         : chat),
     }))
-  }, [activeChatId, detail.error])
+  }, [activeChatId, detail.error, namespace])
 
   useEffect(() => {
     if (!reconciledDetail || usePrototypeStore.getState().productionNamespace !== namespace) return
