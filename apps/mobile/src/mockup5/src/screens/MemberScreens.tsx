@@ -36,7 +36,7 @@ import {
   VStack as SwiftUIVStack,
   useNativeState,
 } from '@expo/ui/swift-ui';
-import { accessibilityHint, accessibilityLabel, accessibilityValue, background, buttonStyle, contentShape, font, foregroundStyle, frame, labelStyle, lineLimit, multilineTextAlignment, shapes, textFieldStyle, tint } from '@expo/ui/swift-ui/modifiers';
+import { accessibilityHint, accessibilityLabel, accessibilityValue, background, buttonStyle, contentShape, font, foregroundStyle, frame, labelStyle, lineLimit, multilineTextAlignment, scrollDismissesKeyboard, shapes, textFieldStyle, tint } from '@expo/ui/swift-ui/modifiers';
 import { Card, EmptyState, Field, ListRow, NativeSwitch, PageHeader, PrimaryButton, Screen, SectionTitle, Segmented } from '../components/PrototypeUI';
 import { useAppTheme } from '../theme';
 import { ProfileAvatar } from '../components/ProfileAvatar';
@@ -386,7 +386,7 @@ export function SettingsDetailScreen({ navigation, route }: NativeStackScreenPro
   }, [navigation, section]);
   const appStorePlans = useAppStorePlans(section === 'usage');
   if (appStorePlans) return <AppStorePlans {...appStorePlans} />;
-  if (Platform.OS === 'ios') return <SwiftUIHost key={section === 'data' ? storageLabel : section} modifiers={[tint(theme.blue)]} style={styles.flex}><SwiftUIForm>
+  if (Platform.OS === 'ios') return <SwiftUIHost key={section === 'data' ? storageLabel : section} modifiers={[tint(theme.blue)]} style={styles.flex}><SwiftUIForm modifiers={[scrollDismissesKeyboard('immediately')]}>
     {section === 'general' && <>
       <SwiftUISection title="Appearance">
         <NativeChoiceRow icon="circle.lefthalf.filled" title="Theme" value={preferences.theme} options={[{ value: 'system', label: 'System' }, { value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }] as const} onChange={(value) => setPreference('theme', value)} />
