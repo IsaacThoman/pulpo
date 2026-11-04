@@ -22,7 +22,7 @@ export function remainingLabel(limit: Pick<UsageLimitPercentages, 'remainingPerc
   return `${limit.remainingPercentage}% left`
 }
 
-function resetLabel(resetsAt: string | null, withDate: boolean, locale?: string): string {
+export function resetLabel(resetsAt: string | null, withDate: boolean, locale?: string): string {
   if (!resetsAt) return 'Starts on first use'
   const time = new Date(resetsAt).toLocaleString(locale, withDate
     ? { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }
