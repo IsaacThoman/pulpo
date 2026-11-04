@@ -18,6 +18,7 @@ import { useDictation } from '../features/chat/useDictation';
 import { DictationCancelButton, DictationStrip } from '../features/chat/DictationStrip';
 import { useDictationToolbarStyle } from '../features/chat/dictationMotion';
 import { setComposerSelection } from '../features/chat/composerSelection';
+import { responseMetaLabel } from '../features/chat/responseCost';
 import { ToolImagePreview } from '../components/ToolImagePreview';
 import { localComposerDraftId, mergePendingAttachments } from '@pulpo/client-core';
 import { DevicesScreen } from '../components/Devices';
@@ -255,6 +256,7 @@ import { FileDocumentScreen } from '../features/files/screens/FileDocumentScreen
 import { FileMarkdownScreen } from '../features/files/screens/FileMarkdownScreen';
 import { FileQuizScreen } from '../features/files/screens/FileQuizScreen';
 import { FilesFolderScreen } from '../features/files/screens/FilesFolderScreen';
+import { FriendsScreen } from '../features/friends/FriendsScreen';
 import { timeAgo } from '../features/chat/format';
 import {
   MAX_COMPOSER_ATTACHMENTS,
@@ -619,6 +621,7 @@ type Message = {
   thinkSeconds?: number;
   reasoning?: string;
   meta?: string;
+  costMicros?: number;
   activity?: ActivityStep[];
   outputItems?: unknown[];
   status?: PrototypeMessage['status'];
@@ -721,6 +724,7 @@ function prototypeMessageToLegacy(message: PrototypeMessage, chatId: string, cha
       : undefined,
     reasoning,
     meta: message.meta,
+    costMicros: message.costMicros,
     error: message.error,
     activity: message.activity,
     outputItems: message.outputItems,
@@ -1721,6 +1725,7 @@ function PrototypeRoot() {
         <RootStack.Screen name="Passkeys" component={PasskeysScreen} options={{ headerShown: false }} />
         <RootStack.Screen name="InstanceDetails" component={InstanceDetailsScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Pulpo Instance', headerBackTitle: 'Account' }} />
         <RootStack.Screen name="SettingsDetail" component={SettingsDetailScreen} options={{ headerShown: Platform.OS === 'ios', headerBackTitle: 'Settings' }} />
+        <RootStack.Screen name="Friends" component={FriendsScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Friends', headerBackTitle: 'Settings' }} />
         <RootStack.Screen name="FilesFolder" component={FilesFolderScreen} options={{ headerShown: Platform.OS === 'ios', headerLargeTitle: true, title: 'My files' }} />
         <RootStack.Screen name="FileDocument" component={FileDocumentScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Document' }} />
         <RootStack.Screen name="FileMarkdown" component={FileMarkdownScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Markdown' }} />
@@ -3810,6 +3815,10 @@ const MessageRow = memo(function MessageRow({
 }) {
   const { styles, COLORS } = useChatStyles();
   const { showReasoning } = useAppPreferences();
+  const showResponseCost = usePrototypeStore((state) => state.preferences.showResponseCost);
+  // Token counts only accompany answer text, but a settled cost shows even when a reply stopped or failed
+  // before writing any, as on web.
+  const metaLabel = message.role === 'assistant' ? responseMetaLabel(message.text ? message.meta : undefined, message.costMicros, showResponseCost) : undefined;
   const branches = message.branches ?? [];
   const branchIndex = message.activeBranch ?? 0;
   const [capacityPending, setCapacityPending] = useState(false);
@@ -4013,7 +4022,7 @@ const MessageRow = memo(function MessageRow({
                 <Text style={styles.continueButtonText}>{capacityPending ? 'Continuing…' : 'Continue without agent tools'}</Text>
               </Pressable>
             )}
-            {message.text && message.meta && <Text style={styles.messageMeta}>{message.meta}</Text>}
+            {metaLabel && <Text style={styles.messageMeta}>{metaLabel}</Text>}
         </AssistantFrame>
       )}
       {branches.length > 1 && message.chatId ? (

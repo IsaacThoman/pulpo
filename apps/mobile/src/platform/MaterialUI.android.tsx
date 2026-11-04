@@ -49,7 +49,7 @@ export function MaterialField({ label, error, icon, trailingAction, ...props }: 
     if (next !== lastNativeText.current) { lastNativeText.current = next; value.set(next); }
   }, [value, props.value]);
   const onValueChange = (next: string) => { lastNativeText.current = next; props.onChangeText?.(next); };
-  const keyboardType = props.secureTextEntry ? 'password' : props.keyboardType === 'email-address' ? 'email' : props.keyboardType === 'url' ? 'uri' : props.keyboardType === 'number-pad' || props.keyboardType === 'numeric' ? 'number' : props.keyboardType === 'phone-pad' ? 'phone' : 'text';
+  const keyboardType = props.secureTextEntry ? 'password' : props.keyboardType === 'email-address' ? 'email' : props.keyboardType === 'url' ? 'uri' : props.keyboardType === 'number-pad' || props.keyboardType === 'numeric' ? 'number' : props.keyboardType === 'decimal-pad' ? 'decimal' : props.keyboardType === 'phone-pad' ? 'phone' : 'text';
   const submit = () => {
     if (props.onSubmitEditing) props.onSubmitEditing({ nativeEvent: { text: value.get() } } as never);
     else Keyboard.dismiss();
