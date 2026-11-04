@@ -71,7 +71,7 @@ export const GridView = forwardRef<GridViewHandle, {
   const listRef = useRef<FlatList<number>>(null)
   const columnCount = Math.min(table.columnCount, MAX_NATIVE_GRID_COLUMNS)
   const widths = useMemo(
-    () => suggestColumnWidths(table, { characterWidth: 7.4, padding: 22, min: 56, max: 280 }).slice(0, columnCount),
+    () => suggestColumnWidths(table, { characterWidth: 8.2, padding: 24, min: 56, max: 300 }).slice(0, columnCount),
     [columnCount, table],
   )
   const header = useMemo(() => table.row(0), [table])

@@ -326,8 +326,11 @@ pre.output{padding:2px 2px}
 pre.output.stderr{background:var(--error);border-radius:6px;padding:6px 8px}
 pre.output.error{background:var(--error);border-radius:6px;padding:8px 10px}
 .output.html{background:#fff;color:#1f2328;border-radius:6px}
-.output.html table{border-collapse:collapse;font-size:13px}
-.output.html th,.output.html td{border:1px solid #d0d7de;padding:4px 8px;text-align:right}
+.output.html{padding:6px 8px}
+.output.html table.dataframe{border:none;border-collapse:collapse;font-size:12.5px}
+.output.html table.dataframe thead{border-bottom:1px solid #d0d7de}
+.output.html table.dataframe th,.output.html table.dataframe td{border:none;padding:4px 10px;text-align:right;white-space:nowrap}
+.output.html table.dataframe tbody tr:nth-child(odd){background:#f6f8fa}
 .output.note{color:var(--muted);font-size:13px;margin:0}
 .markdown table{border-collapse:collapse}
 .markdown th,.markdown td{border:1px solid var(--border);padding:4px 8px}

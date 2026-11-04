@@ -170,7 +170,8 @@ export function FileViewerScreen({ navigation, route }: Props) {
     : lines ? `${lines.plain.length.toLocaleString()} ${lines.plain.length === 1 ? 'line' : 'lines'}` : ''
 
   return (
-    <View style={[styles.flex, { backgroundColor: theme.isDark ? theme.background : theme.elevated, paddingTop: Platform.OS === 'android' ? insets.top : 0 }]}>
+    // Kept clear of side insets too: on foldables the status bar is a column at the side.
+    <View style={[styles.flex, { backgroundColor: theme.isDark ? theme.background : theme.elevated, paddingTop: Platform.OS === 'android' ? insets.top : 0, paddingLeft: insets.left, paddingRight: insets.right }]}>
       {Platform.OS === 'android' ? (
         <PageHeader
           title={name}
