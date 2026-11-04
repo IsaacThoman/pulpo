@@ -11,6 +11,7 @@ import {
   type AttachmentPreviewKind,
 } from '@/lib/attachment-previews'
 import { ui } from '@/i18n/ui'
+import { mediaMimeType } from '@pulpo/client-core/files'
 
 export type PreviewContent =
   | { status: 'idle' }
@@ -92,9 +93,15 @@ export function usePreviewContent(
           return
         }
 
-        const typedBlob = blob.type || !attachment.mimeType
-          ? blob
-          : new Blob([blob], { type: attachment.mimeType })
+        // Media saved under a generic type is retyped from its extension so every browser plays it.
+        const mediaType = kind === 'audio' || kind === 'video'
+          ? mediaMimeType(attachment.name, blob.type) ?? mediaMimeType(attachment.name, attachment.mimeType)
+          : null
+        const typedBlob = mediaType && mediaType !== blob.type
+          ? new Blob([blob], { type: mediaType })
+          : blob.type || !attachment.mimeType
+            ? blob
+            : new Blob([blob], { type: attachment.mimeType })
         objectUrl = URL.createObjectURL(typedBlob)
         setContent({ status: 'ready', url: objectUrl, text: null, textTruncated: false })
       } catch (cause) {
