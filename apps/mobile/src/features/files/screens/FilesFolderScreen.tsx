@@ -343,7 +343,7 @@ export function FilesFolderScreen({ navigation, route }: Props) {
       case 'open-in-new-chat':
         return
     }
-  }, [openNode, operations, startSelection, trashItems])
+  }, [namespace, navigation, openNode, operations, queryClient, startSelection, trashItems])
   const runAction = inTrash ? runTrashAction : runFileAction
 
   // Trashed items are restored into a chosen folder only while Files is on.

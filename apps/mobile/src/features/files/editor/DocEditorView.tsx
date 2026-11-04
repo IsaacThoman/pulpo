@@ -11,29 +11,9 @@ import { EditorBridge, type EditorBridgeState } from './bridge'
 import { EDITOR_BUNDLES, type MobileEditorFormat } from './bundles'
 import { editorTheme, normalizeHref } from './presentation'
 import type { ReviewAction, TextCommand } from './protocol'
+import { TEXT_TOOLBAR, textToolbarState, type NativeToolbarItem } from './textToolbar'
 
-/** A toolbar button the native bar shows for formats with their own toolbar (SF Symbol name). */
-type NativeToolbarItem = { command: string; label: string; systemImage: string }
 type NativeToolbar = { visible: boolean; active: string[]; disabled: string[]; tint: string; items: NativeToolbarItem[] }
-
-/** The text and code editor's bar: no formatting, but the keys a phone keyboard lacks. */
-export const TEXT_TOOLBAR: ReadonlyArray<NativeToolbarItem & { command: TextCommand }> = [
-  { command: 'undo', label: 'Undo', systemImage: 'arrow.uturn.backward' },
-  { command: 'redo', label: 'Redo', systemImage: 'arrow.uturn.forward' },
-  { command: 'indentLess', label: 'Outdent', systemImage: 'decrease.indent' },
-  { command: 'indentMore', label: 'Indent', systemImage: 'increase.indent' },
-  { command: 'find', label: 'Find and replace', systemImage: 'magnifyingglass' },
-  { command: 'wrap', label: 'Wrap lines', systemImage: 'arrow.turn.down.left' },
-]
-
-/** What a text editor's toolbar shows as on or unavailable. */
-export function textToolbarState(state: EditorBridgeState): { active: string[]; disabled: string[] } {
-  const text = state.text
-  return {
-    active: text?.wrap ? ['wrap'] : [],
-    disabled: [...!text?.canUndo ? ['undo'] : [], ...!text?.canRedo ? ['redo'] : []],
-  }
-}
 type NativeProps = {
   ref?: Ref<NativeRef>
   style?: StyleProp<ViewStyle>
