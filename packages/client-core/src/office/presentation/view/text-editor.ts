@@ -98,8 +98,7 @@ export class InlineTextEditor {
       keymap(baseKeymap),
     ]
     const state = EditorState.create({ schema: slideTextSchema(), plugins })
-    // eslint-disable-next-line @typescript-eslint/no-this-alias
-    const editor = this
+    const refreshNumbers = () => this.refreshNumbers()
     // A child of the host, not the host itself: ProseMirror takes over the element it mounts on.
     const dom = document.createElement('div')
     options.mount.append(dom)
@@ -114,9 +113,11 @@ export class InlineTextEditor {
         handleKeyDown: (_view, event) => options.onKey?.(event) ?? false,
         // y-tiptap dispatches while the view is still being constructed, before `this.view` is set.
         dispatchTransaction(this: EditorView, transaction) {
+          // y-tiptap flushes deferred updates on a timer, which can land after the editor closed.
+          if (this.isDestroyed) return
           const next = this.state.apply(transaction)
           this.updateState(next)
-          if (transaction.docChanged && transaction.getMeta(ySyncPluginKey) === undefined) editor.refreshNumbers()
+          if (transaction.docChanged && transaction.getMeta(ySyncPluginKey) === undefined) refreshNumbers()
           options.onSelectionChange?.(next)
         },
       },
@@ -169,33 +170,40 @@ export class InlineTextEditor {
 
   private nodeViews(): Record<string, NodeViewConstructor> {
     const editorStyle = () => this.style
-    const editor = this
     return {
       paragraph: (node, view, getPos) => {
         const dom = document.createElement('div')
         dom.className = 'pp-p'
         const contentDOM = document.createElement('span')
+        let bullet: HTMLSpanElement | undefined
+        dom.appendChild(contentDOM)
+        // Updates touch only the bullet and the paragraph's style: moving contentDOM would make
+        // ProseMirror re-read the DOM mid-update.
         const render = (current: ProseMirrorNode) => {
           const style = styleOfParagraph(current, editorStyle())
           dom.setAttribute('style', style.css)
-          dom.replaceChildren()
-          if (style.bullet) {
-            const bullet = document.createElement('span')
+          if (!style.bullet) {
+            bullet?.remove()
+            bullet = undefined
+            return
+          }
+          if (!bullet) {
+            bullet = document.createElement('span')
             bullet.className = 'pp-bullet'
             bullet.contentEditable = 'false'
-            bullet.setAttribute('style', style.bullet.css)
-            if (style.bullet.kind === 'char') bullet.textContent = style.bullet.char
-            else if (style.bullet.kind === 'number') {
-              const position = getPos()
-              const index = position === undefined ? 0 : view.state.doc.resolve(position).index(0)
-              bullet.dataset.numberLabel = String(index)
-              const styles: ParagraphStyle[] = []
-              view.state.doc.forEach((child) => styles.push(styleOfParagraph(child, editorStyle())))
-              bullet.textContent = autoNumberLabel(style.bullet.scheme, autoNumbers(styles)[index] ?? style.bullet.startAt)
-            } else bullet.textContent = '•'
-            dom.appendChild(bullet)
+            dom.insertBefore(bullet, contentDOM)
           }
-          dom.appendChild(contentDOM)
+          bullet.setAttribute('style', style.bullet.css)
+          delete bullet.dataset.numberLabel
+          if (style.bullet.kind === 'char') bullet.textContent = style.bullet.char
+          else if (style.bullet.kind === 'number') {
+            const position = getPos()
+            const index = position === undefined ? 0 : view.state.doc.resolve(position).index(0)
+            bullet.dataset.numberLabel = String(index)
+            const styles: ParagraphStyle[] = []
+            view.state.doc.forEach((child) => styles.push(styleOfParagraph(child, editorStyle())))
+            bullet.textContent = autoNumberLabel(style.bullet.scheme, autoNumbers(styles)[index] ?? style.bullet.startAt)
+          } else bullet.textContent = '•'
         }
         render(node)
         return {
@@ -206,7 +214,7 @@ export class InlineTextEditor {
             render(next)
             return true
           },
-          ignoreMutation: (mutation) => mutation.type === 'attributes' && mutation.target === dom,
+          ignoreMutation: (mutation) => (mutation.type === 'attributes' && mutation.target === dom) || (bullet !== undefined && (mutation.target === bullet || bullet.contains(mutation.target as globalThis.Node)) ) || (mutation.type === 'childList' && mutation.target === dom),
         }
       },
       field: (node) => {
@@ -214,7 +222,7 @@ export class InlineTextEditor {
         dom.className = 'pp-field'
         dom.contentEditable = 'false'
         const element = parsed(`<a:fld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" type="${String(node.attrs.fieldType ?? '').replace(/[^\w]/g, '')}"><a:t>${String(node.attrs.text ?? '').replace(/[<&]/g, '')}</a:t></a:fld>`)
-        dom.textContent = element && editor.style.env ? fieldText(element, editor.style.env) : String(node.attrs.text ?? '')
+        dom.textContent = element && editorStyle().env ? fieldText(element, editorStyle().env!) : String(node.attrs.text ?? '')
         return { dom }
       },
       opaque: (node) => {

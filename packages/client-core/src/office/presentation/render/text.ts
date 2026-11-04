@@ -466,7 +466,7 @@ function renderRun(text: string, rPr: XmlElement | undefined, input: TextFrameIn
   const bag = mergeInto(emptyBag(), rPr)
   const hyperlink = !!bag.children.hlinkClick
   const css = runCss(bag, input.context, { hyperlink })
-  const content = escapeText(text).replace(/\u000b/g, '<br/>')
+  const content = escapeText(text).replaceAll('\v', '<br/>')
   const href = hyperlink ? linkTarget(bag.children.hlinkClick!, input.env) : undefined
   return `<span${css ? ` style="${escapeAttribute(css)}"` : ''}${href ? ` data-href="${escapeAttribute(href)}"` : ''}>${content}</span>`
 }

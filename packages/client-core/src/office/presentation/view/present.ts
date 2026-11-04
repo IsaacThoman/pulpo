@@ -39,7 +39,8 @@ export class Presenter {
     document.body.append(this.element)
     const slides = this.visibleSlides()
     this.index = Math.max(0, options.startAt ? slides.indexOf(options.startAt) : 0)
-    this.element.addEventListener('keydown', this.onKeyDown)
+    // On the document, not the element: menus that opened the show hand focus back to their trigger.
+    document.addEventListener('keydown', this.onKeyDown, true)
     this.element.addEventListener('click', this.onClick)
     this.element.addEventListener('pointerdown', this.onPointerDown)
     this.element.addEventListener('pointerup', this.onPointerUp)
@@ -84,6 +85,7 @@ export class Presenter {
     if (this.timer) clearInterval(this.timer)
     this.unsubscribe()
     window.removeEventListener('resize', this.draw)
+    document.removeEventListener('keydown', this.onKeyDown, true)
     document.removeEventListener('fullscreenchange', this.onFullscreenChange)
     if (document.fullscreenElement === this.element) void document.exitFullscreen?.().catch(() => undefined)
     this.element.remove()
@@ -143,6 +145,7 @@ export class Presenter {
   }
 
   private readonly onKeyDown = (event: KeyboardEvent): void => {
+    event.stopPropagation()
     const key = event.key
     if (/^\d$/.test(key)) {
       this.numberBuffer += key

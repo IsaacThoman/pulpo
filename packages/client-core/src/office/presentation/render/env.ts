@@ -58,7 +58,7 @@ export { escapeAttribute, escapeText }
 
 /** A font family list safe to put in a style attribute, with metric-compatible fallbacks. */
 export function cssFontFamily(typeface: string | undefined): string {
-  const clean = (typeface ?? '').replace(/[^\p{L}\p{N} _.\-]/gu, '').trim()
+  const clean = (typeface ?? '').replace(/[^\p{L}\p{N} _.-]/gu, '').trim()
   const fallbacks = FONT_FALLBACKS[clean.toLowerCase()] ?? []
   const generic = /mono|courier|consol/i.test(clean) ? 'monospace' : /times|georgia|cambria|garamond|serif|book|palatino/i.test(clean) && !/sans/i.test(clean) ? 'serif' : 'sans-serif'
   return [...(clean ? [clean] : []), ...fallbacks, generic].map((name) => (name.includes(' ') ? `'${name}'` : name)).join(', ')

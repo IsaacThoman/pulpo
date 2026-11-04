@@ -428,7 +428,6 @@ function writeNotes(notes: NotesSnapshot, slidePart: string, notesMaster: string
   for (const [id, rel] of Object.entries(notes.rels)) table.set(id, rel.type === REL_TYPES.slide ? { ...rel, target: slidePart } : rel)
   table.allocate(REL_TYPES.notesMaster, notesMaster, false)
   table.allocate(REL_TYPES.slide, slidePart, false)
-  const relsXml = strToU8(table.toXml(part))
   if (notes.source && notes.xml) {
     try {
       const original = parseXmlDocument(new TextDecoder().decode(notes.source)).documentElement!

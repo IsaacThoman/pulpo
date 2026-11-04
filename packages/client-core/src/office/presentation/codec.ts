@@ -1,7 +1,7 @@
 import type * as Y from 'yjs'
 import { LiveFormatError, type LiveFormatCodec, type LiveFormatContext } from '../live-format.js'
 import { blankPresentation } from './blank.js'
-import type { PresentationFormat, PresentationSnapshot, ShapeSnapshot, SlideSnapshot, TableSnapshot } from './model.js'
+import type { PresentationFormat, PresentationSnapshot, ShapeSnapshot, TableSnapshot } from './model.js'
 import { PRESENTATION_SCHEMA_VERSION } from './model.js'
 import { readPresentation } from './read.js'
 import { textToPlain } from './text.js'
@@ -158,7 +158,7 @@ export function presentationText(snapshot: PresentationSnapshot): string {
   return snapshot.slides
     .map((slide, index) => {
       const lines = [`--- Slide ${index + 1}${slide.hidden ? ' (hidden)' : ''} ---`]
-      for (const shape of slide.shapes) appendShapeText(lines, shape, snapshot, slide)
+      for (const shape of slide.shapes) appendShapeText(lines, shape, snapshot)
       const notes = slide.notes ? textToPlain(slide.notes.text).trim() : ''
       if (notes) lines.push('', 'Notes:', notes)
       return lines.join('\n')
@@ -166,7 +166,7 @@ export function presentationText(snapshot: PresentationSnapshot): string {
     .join('\n\n')
 }
 
-function appendShapeText(lines: string[], shape: ShapeSnapshot, snapshot: PresentationSnapshot, slide: SlideSnapshot): void {
+function appendShapeText(lines: string[], shape: ShapeSnapshot, snapshot: PresentationSnapshot): void {
   if (shape.text) {
     const text = textToPlain(shape.text).trim()
     if (text) lines.push(text)
@@ -185,5 +185,5 @@ function appendShapeText(lines: string[], shape: ShapeSnapshot, snapshot: Presen
     }
   }
   if (shape.kind === 'pic' && shape.descr) lines.push(`[Image: ${shape.descr}]`)
-  for (const member of shape.children ?? []) appendShapeText(lines, member, snapshot, slide)
+  for (const member of shape.children ?? []) appendShapeText(lines, member, snapshot)
 }

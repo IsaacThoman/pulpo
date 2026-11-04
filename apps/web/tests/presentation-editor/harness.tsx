@@ -4,17 +4,16 @@
 //
 // Query parameters: deck=<path under packages/client-core/fixtures/presentation> (or blank=1),
 // split=1 (both collaborators side by side), view=diff, theme=dark, lang=es, readonly=1.
-import { StrictMode, useState } from 'react'
+import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import * as Y from 'yjs'
 import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from 'y-protocols/awareness'
 import type { LiveAssetStore } from '@pulpo/client-core/office'
-import { blankPresentation, diffDocuments, presentationCodec, presentationCommands } from '@pulpo/client-core/office/presentation'
+import { blankPresentation, presentationCodec, presentationCommands } from '@pulpo/client-core/office/presentation'
 import type { PresentationController } from '@pulpo/client-core/office/presentation/view'
 import '../../src/index.css'
 import i18n from '../../src/i18n'
-import { PresentationDiffView } from '../../src/features/files/live/presentation/PresentationDiffView'
-import { PresentationEditor } from '../../src/features/files/live/presentation/PresentationEditor'
+import { HarnessApp } from './HarnessApp'
 
 const params = new URLSearchParams(location.search)
 if (params.get('theme') === 'dark') document.documentElement.classList.add('dark')
@@ -52,6 +51,17 @@ const assets = memoryAssets()
 const { bytes, name } = await loadDeck()
 const original = new Y.Doc()
 await presentationCodec.importFile(original, bytes, { name, assets })
+// big=N grows the deck to N slides by duplicating its slides, for performance checks.
+const big = Number(params.get('big') ?? 0)
+if (big > 0) {
+  const keys = presentationCommands.slideKeys(original)
+  const copies = []
+  for (let index = keys.length; index < big; index++) {
+    const slide = presentationCommands.readSlide(original, keys[index % keys.length]!)
+    if (slide) copies.push(presentationCommands.cloneSlide(slide))
+  }
+  presentationCommands.insertSlides(original, copies, keys.length)
+}
 const docA = new Y.Doc()
 const docB = new Y.Doc()
 Y.applyUpdate(docA, Y.encodeStateAsUpdate(original))
@@ -104,45 +114,8 @@ Object.assign(window, {
   },
 })
 
-function Harness() {
-  const [view, setView] = useState(params.get('view') === 'diff' ? 'diff' : 'editor')
-  const readOnly = params.get('readonly') === '1'
-  const split = params.get('split') === '1'
-  return (
-    <div className="flex h-full flex-col bg-background text-foreground">
-      <div className="flex items-center gap-2 border-b px-3 py-1 text-xs text-muted-foreground">
-        <span>{name}</span>
-        <button type="button" className="ml-auto rounded border px-2 py-0.5" onClick={() => setView(view === 'diff' ? 'editor' : 'diff')}>
-          {view === 'diff' ? 'Editor' : 'Changes'}
-        </button>
-      </div>
-      {view === 'diff' ? (
-        <div className="min-h-0 flex-1 overflow-auto p-4">
-          <PresentationDiffView diff={diffDocuments(original, docA)} beforeAssets={assets} />
-        </div>
-      ) : (
-        <div className={split ? 'grid min-h-0 flex-1 grid-cols-2 divide-x' : 'flex min-h-0 flex-1'}>
-          <PresentationEditor
-            className="min-w-0 flex-1"
-            doc={docA}
-            awareness={awarenessA}
-            readOnly={readOnly}
-            assets={assets}
-            user={{ name: 'Ada', color: '#2f6fed' }}
-            startInShow={name.endsWith('.ppsx') && params.get('show') !== '0'}
-            onReady={(controller) => (controllers.a = controller)}
-          />
-          {split && (
-            <PresentationEditor className="min-w-0" doc={docB} awareness={awarenessB} readOnly={readOnly} assets={assets} user={{ name: 'Grace', color: '#d9480f' }} onReady={(controller) => (controllers.b = controller)} />
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
-
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <Harness />
+    <HarnessApp name={name} original={original} docA={docA} docB={docB} awarenessA={awarenessA} awarenessB={awarenessB} assets={assets} controllers={controllers} params={params} />
   </StrictMode>,
 )

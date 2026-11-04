@@ -5,7 +5,7 @@ import type { RelTarget } from '../model.js'
 import { attr, boolAttr, child, childElements, intAttr, NS, path, REL_TYPES, type XmlElement } from '../xml.js'
 import { resolveColor, toCss, type ColorContext } from './color.js'
 import { matchPlaceholder, placeholderOf, placeholderType, type LayoutInfo, type MasterInfo } from './deck.js'
-import { EMU_PER_PX, emuToPx, escapeAttribute, escapeText, num, px, type RenderEnv } from './env.js'
+import { cssFontFamily, emuToPx, escapeAttribute, escapeText, num, px, type RenderEnv } from './env.js'
 import {
   blipFilter,
   blipOpacity,
@@ -21,7 +21,7 @@ import {
   type Box,
   type Paint,
 } from './fill.js'
-import { emptyBag, mergeInto, type PropertyBag } from './props.js'
+import { emptyBag, type PropertyBag } from './props.js'
 import { renderTable } from './table.js'
 import { bodyLayout, renderTextFrame, type TextStyleContext } from './text.js'
 
@@ -550,7 +550,7 @@ function renderChart(data: XmlElement, env: RenderEnv, width: number, height: nu
     },
     accents: ['accent1', 'accent2', 'accent3', 'accent4', 'accent5', 'accent6'].map((name) => `#${env.theme.colors[colorsTheme.colorMap[name] ?? name] ?? '000000'}`),
     textColor: toCss(resolveColor(paintElement(data, 'tx1'), colorsTheme) ?? { r: 89, g: 89, b: 89, a: 1 }),
-    fontFamily: env.theme.minor.latin,
+    fontFamily: cssFontFamily(env.theme.minor.latin),
   })
   return `<div class="pp-chart" style="position:absolute;inset:0">${svg}</div>`
 }

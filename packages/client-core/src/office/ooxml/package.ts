@@ -141,6 +141,9 @@ export class OoxmlPackage {
         filter: (file) => {
           entries++
           declared += file.originalSize
+          // Deflate never makes data much bigger, so an entry whose compressed size dwarfs the size
+          // it declares is lying about it (fflate trusts the declared size and skips the CRC).
+          if (file.size > file.originalSize * 1.1 + 1024) throw new LiveFormatError('corrupt', 'This file has a damaged zip entry')
           if (entries > limits.maxEntries) throw new LiveFormatError('too_large', 'This file has too many parts')
           if (declared > limits.maxUncompressedBytes) throw new LiveFormatError('too_large', 'This file expands to too much data')
           return !file.name.endsWith('/')

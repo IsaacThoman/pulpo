@@ -78,6 +78,16 @@ describe('OoxmlPackage', () => {
     expect(() => OoxmlPackage.read(zipSync({ 'a.xml': strToU8('<a/>') }))).toThrow(expect.objectContaining({ code: 'corrupt' }))
     expect(() => OoxmlPackage.read(samplePackage(), { maxEntries: 2, maxUncompressedBytes: 1e9 })).toThrow(expect.objectContaining({ code: 'too_large' }))
     expect(() => OoxmlPackage.read(samplePackage(), { maxEntries: 100, maxUncompressedBytes: 100 })).toThrow(expect.objectContaining({ code: 'too_large' }))
+    // An entry claiming a tiny size while carrying far more data (an understated zip bomb).
+    const understated = zipSync({ '[Content_Types].xml': strToU8(CONTENT_TYPES), 'big.bin': crypto.getRandomValues(new Uint8Array(60_000)) }, { level: 0 })
+    const view = new DataView(understated.buffer)
+    for (let offset = 0; offset < understated.length - 4; offset++) {
+      // Rewrite the uncompressed size in both the local and central headers of big.bin.
+      const signature = view.getUint32(offset, true)
+      if (signature === 0x04034b50 && new TextDecoder().decode(understated.subarray(offset + 30, offset + 37)) === 'big.bin') view.setUint32(offset + 22, 10, true)
+      if (signature === 0x02014b50 && new TextDecoder().decode(understated.subarray(offset + 46, offset + 53)) === 'big.bin') view.setUint32(offset + 24, 10, true)
+    }
+    expect(() => OoxmlPackage.read(understated)).toThrow(expect.objectContaining({ code: 'corrupt' }))
     const pkg = OoxmlPackage.read(samplePackage({ 'word/bad.xml': strToU8('<a><b></a>') }))
     expect(() => pkg.xml('word/bad.xml')).toThrow(expect.objectContaining({ code: 'corrupt' }))
   })

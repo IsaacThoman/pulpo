@@ -53,7 +53,7 @@ export function runTool(tool: string, args: string[], options: { allowFailure?: 
   } catch (error) {
     const failure = error as { status?: number; stdout?: string; stderr?: string }
     if (options.allowFailure) return { status: failure.status ?? 1, output: `${failure.stdout ?? ''}${failure.stderr ?? ''}` }
-    throw new Error(`${tool} failed (${failure.status}): ${failure.stdout ?? ''}${failure.stderr ?? ''}`)
+    throw new Error(`${tool} failed (${failure.status}): ${failure.stdout ?? ''}${failure.stderr ?? ''}`, { cause: error })
   }
 }
 

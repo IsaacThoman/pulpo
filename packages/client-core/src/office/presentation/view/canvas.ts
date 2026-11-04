@@ -2,6 +2,7 @@ import * as Y from 'yjs'
 import { cellFragment, ensureNotes, readXfrm, setXfrm, shapeFragment } from '../commands.js'
 import type { Xfrm } from '../model.js'
 import { EMU_PER_PX } from '../render/env.js'
+import { slideEnvironment } from '../render/slide.js'
 import { bodyLayout, textFrameStyles } from '../render/text.js'
 import { serializeNode, parseFragment } from '../xml.js'
 import { LOCAL_ORIGIN, type ChangeSet, type PresentationController } from './controller.js'
@@ -541,8 +542,9 @@ export class SlideCanvas {
       if (column === columnIndex) cell = candidate
       column += candidate.colSpan || 1
     }
-    const layout = this.controller.textLayout(editing.slide, shapeKey)
-    if (!cell || !shapeElement || !layout) return undefined
+    const slide = this.controller.slide(editing.slide)
+    if (!cell || !shapeElement || !slide) return undefined
+    const { env } = slideEnvironment(slide, this.controller.renderOptions('edit', 'editor', editing.slide))
     const left = shapeElement.offsetLeft + cell.offsetLeft
     const top = shapeElement.offsetTop + cell.offsetTop
     const computed = getComputedStyle(cell)
@@ -550,9 +552,9 @@ export class SlideCanvas {
     frame.innerHTML = '<div class="pp-editor-inner"></div>'
     const deck = this.controller.deck()
     return {
-      context: { chain: [deck.defaultTextStyle()], theme: layout.context.theme, colors: layout.context.colors },
+      context: { chain: [deck.defaultTextStyle()], theme: env.theme, colors: env.colors },
       body: bodyLayout([]),
-      env: layout.env,
+      env,
     }
   }
 
