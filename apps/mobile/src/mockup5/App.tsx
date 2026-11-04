@@ -3737,7 +3737,9 @@ const MessageRow = memo(function MessageRow({
   const { styles, COLORS } = useChatStyles();
   const { showReasoning } = useAppPreferences();
   const showResponseCost = usePrototypeStore((state) => state.preferences.showResponseCost);
-  const metaLabel = message.role === 'assistant' ? responseMetaLabel(message.meta, message.costMicros, showResponseCost) : undefined;
+  // Token counts only accompany answer text, but a settled cost shows even when a reply stopped or failed
+  // before writing any, as on web.
+  const metaLabel = message.role === 'assistant' ? responseMetaLabel(message.text ? message.meta : undefined, message.costMicros, showResponseCost) : undefined;
   const branches = message.branches ?? [];
   const branchIndex = message.activeBranch ?? 0;
   const [capacityPending, setCapacityPending] = useState(false);
@@ -3941,7 +3943,7 @@ const MessageRow = memo(function MessageRow({
                 <Text style={styles.continueButtonText}>{capacityPending ? 'Continuing…' : 'Continue without agent tools'}</Text>
               </Pressable>
             )}
-            {message.text && metaLabel && <Text style={styles.messageMeta}>{metaLabel}</Text>}
+            {metaLabel && <Text style={styles.messageMeta}>{metaLabel}</Text>}
         </AssistantFrame>
       )}
       {branches.length > 1 && message.chatId ? (
