@@ -6,8 +6,8 @@ import { nativeAuthorizationHeaders } from '../../../api/client';
 import { useSessionStore } from '../../../store/session';
 import { useAppTheme } from '../theme';
 
-/** Shows the active user unless another signed-in account is given. */
-export function ProfileAvatar({ size, user: account }: { size: number; user?: User }) {
+/** Shows the active user unless another account, or a friend's profile, is given. */
+export function ProfileAvatar({ size, user: account }: { size: number; user?: Pick<User, 'id' | 'name' | 'avatarUrl'> }) {
   const theme = useAppTheme();
   const activeUser = useSessionStore((state) => state.user);
   const user = account ?? activeUser;
