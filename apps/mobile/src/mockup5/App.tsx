@@ -243,6 +243,7 @@ import { filesErrorMessage } from '../features/files/display';
 import { useFileOperations } from '../features/files/operations';
 import { enqueueUploads, pickUploads } from '../features/files/uploads';
 import { useFilesToasts } from '../features/files/toasts';
+import { promptUrlImport, useUrlImportEnabled } from '../features/files/urlImport';
 import { sidebarItemActions, sidebarItemTapOpens, type SidebarItemActionId } from '../features/sidebar/actions';
 import { SidebarHeading } from '../features/sidebar/components/SidebarHeading';
 import { SidebarMessageRow, SidebarNodeRow, type SidebarRowStyles } from '../features/sidebar/components/SidebarNodeRow';
@@ -6769,6 +6770,7 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
 }) {
   const { styles, COLORS } = useChatStyles();
   const filesEnabled = useFilesEnabled();
+  const urlImportEnabled = useUrlImportEnabled();
   const filesNamespace = useFilesNamespace();
   const queryClient = useQueryClient();
   useFilesCapabilityRefresh();
@@ -7010,6 +7012,12 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
       Alert.alert('Couldn’t add files', filesErrorMessage(error));
     }
   }, [dismissSearch, filesNamespace, queryClient, sidebar]);
+  const importUrl = useCallback(() => {
+    if (!sidebar || !filesNamespace) return;
+    dismissSearch();
+    // Opens the page like a new document, as the web sidebar does.
+    promptUrlImport({ namespace: filesNamespace, parentId: sidebar.chatsFolderId, queryClient, onImported: onOpenFileItem, announce: true });
+  }, [dismissSearch, filesNamespace, onOpenFileItem, queryClient, sidebar]);
   const openSidebarInFiles = useCallback(() => {
     if (!sidebar) return;
     dismissSearch();
@@ -7140,9 +7148,10 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
     onNewFolder={() => newFolder(null)}
     onNewDocument={() => { void newDocument(); }}
     onUpload={(source) => { void upload(source); }}
+    onImportUrl={urlImportEnabled ? importUrl : undefined}
     onOrderChange={(order) => usePrototypeStore.getState().setPreference('chatSortMode', order)}
     onOpenInFiles={openSidebarInFiles}
-  /> : <Text style={styles.sectionLabel}>{section.title}</Text>, [chatSortMode, filesEnabled, newDocument, newFolder, openSidebarInFiles, sidebar, styles, upload]);
+  /> : <Text style={styles.sectionLabel}>{section.title}</Text>, [chatSortMode, filesEnabled, importUrl, newDocument, newFolder, openSidebarInFiles, sidebar, styles, upload, urlImportEnabled]);
   /**
    * Where a chat or item being moved is now: a folder, null for the top of the sidebar, or
    * undefined for the top of My files, outside the sidebar.

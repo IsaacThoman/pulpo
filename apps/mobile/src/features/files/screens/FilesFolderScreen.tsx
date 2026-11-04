@@ -26,6 +26,7 @@ import { FilesTurnedOff } from '../components/FilesTurnedOff'
 import { FileRow } from '../components/FileRow'
 import { FilesToastHost } from '../components/FilesToastHost'
 import { FolderPickerSheet } from '../components/FolderPickerSheet'
+import { UrlImportRows } from '../components/UrlImportRows'
 import { filesErrorMessage, isBuiltIn } from '../display'
 import { fileItemActions, trashItemActions, type FileItemActionId, type TrashItemActionId } from '../itemActions'
 import { shareFileItem, useFileDownloads, useOpenFileItem } from '../open'
@@ -34,6 +35,7 @@ import { useItemAppearance } from '../itemAppearance'
 import { folderQuery } from '../queries'
 import { cancelUpload, enqueueUploads, pickUploads, resumeUploads, retryUpload, useFileUploads, type QueuedUpload } from '../uploads'
 import { useFilesNamespace } from '../useFilesNamespace'
+import { promptUrlImport, usePendingUrlImports, useUrlImportEnabled } from '../urlImport'
 
 type Props = NativeStackScreenProps<RootStackParamList, 'FilesFolder'>
 
@@ -84,6 +86,7 @@ export function FilesFolderScreen({ navigation, route }: Props) {
   const queryClient = useQueryClient()
   const namespace = useFilesNamespace()
   const filesEnabled = useFilesEnabled()
+  const urlImportEnabled = useUrlImportEnabled()
   const ref = route.params?.folderId ?? null
   // Where this screen is in the trash, if it is: the trash itself, or a trashed folder in it.
   const trash = trashLocation(ref)
@@ -148,6 +151,9 @@ export function FilesFolderScreen({ navigation, route }: Props) {
   const localUploads = useMemo(() => inTrash ? [] : uploads.filter((upload) => (
     upload.namespace === namespace && upload.parentId === folderId && !children.some((node) => node.id === upload.reservedNodeId)
   )), [children, folderId, inTrash, namespace, uploads])
+  // Pages being imported here; the trash's own root is null too, but nothing is imported into it.
+  const importsHere = usePendingUrlImports(namespace, folderId)
+  const pendingImports = inTrash ? [] : importsHere
   const selectedNodes = useMemo(() => items.filter((node) => selected.has(node.id)), [items, selected])
   // Files and folders among the selection can be given a color and icon; chats and shortcuts are left out.
   const styledSelection = useMemo(() => styledNodes(selectedNodes), [selectedNodes])
@@ -176,6 +182,7 @@ export function FilesFolderScreen({ navigation, route }: Props) {
     const created = await operations.createDocument(folderId, children)
     if (created) navigation.push('FileDocument', { fileId: created.id, name: created.name, created: true })
   }, [children, folderId, navigation, operations])
+  const importUrl = useCallback(() => promptUrlImport({ namespace, parentId: folderId, queryClient }), [folderId, namespace, queryClient])
   const upload = useCallback(async (source: 'photos' | 'camera' | 'files') => {
     try {
       const picked = await pickUploads(source)
@@ -398,6 +405,7 @@ export function FilesFolderScreen({ navigation, route }: Props) {
       items: [
         { type: 'action', label: 'New Document', icon: { type: 'sfSymbol', name: 'doc.badge.plus' }, onPress: () => { void newDocument() } },
         { type: 'action', label: 'New Folder', icon: { type: 'sfSymbol', name: 'folder.badge.plus' }, onPress: newFolder },
+        ...(urlImportEnabled ? [{ type: 'action', label: 'Import from URL', icon: { type: 'sfSymbol', name: 'link' }, onPress: importUrl } as const] : []),
         {
           type: 'submenu',
           label: 'Upload',
@@ -496,6 +504,7 @@ export function FilesFolderScreen({ navigation, route }: Props) {
           {inTrash ? null : <MaterialIconButton icon="plus" label="Add" onPress={() => showActions('Add', [
             { label: 'New document', icon: 'doc.badge.plus', onPress: () => { void newDocument() } },
             { label: 'New folder', icon: 'folder.badge.plus', onPress: newFolder },
+            ...(urlImportEnabled ? [{ label: 'Import from URL', icon: 'link', onPress: importUrl }] : []),
             { label: 'Photo library', icon: 'photo.on.rectangle', onPress: () => { void upload('photos') } },
             { label: 'Take photo', icon: 'camera', onPress: () => { void upload('camera') } },
             { label: 'Choose files', icon: 'folder', onPress: () => { void upload('files') } },
@@ -556,6 +565,7 @@ export function FilesFolderScreen({ navigation, route }: Props) {
         </View>
       ) : null}
       {localUploads.map(renderUpload)}
+      <UrlImportRows items={pendingImports} />
     </View>
   )
 
@@ -579,7 +589,7 @@ export function FilesFolderScreen({ navigation, route }: Props) {
       ListHeaderComponent={header}
       contentContainerStyle={{ paddingLeft: leftInset, paddingRight: rightInset, paddingBottom: bottomInset + (selecting ? 96 : 32) }}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { void onRefresh() }} />}
-      ListEmptyComponent={localUploads.length ? null : inTrash ? (
+      ListEmptyComponent={localUploads.length || pendingImports.length ? null : inTrash ? (
         <View style={styles.empty}>
           <SymbolView name={search ? 'magnifyingglass' : trash.folderId ? 'folder' : 'trash'} size={44} tintColor={theme.tertiary} />
           <Text style={[styles.emptyTitle, { color: theme.text }]}>{search ? 'No matches' : trash.folderId ? 'This folder is empty' : 'The trash is empty'}</Text>

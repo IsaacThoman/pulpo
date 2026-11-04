@@ -5,7 +5,7 @@ export function promptText(options: PromptOptions) {
   const buttons: AlertButton[] | ((value: string) => void) = options.confirmLabel
     ? [{ text: 'Cancel', style: 'cancel' }, { text: options.confirmLabel, isPreferred: true, onPress: (value?: string) => options.onSubmit(value ?? '') }]
     : options.onSubmit;
-  Alert.prompt(options.title, options.message, buttons, 'plain-text', options.value);
+  Alert.prompt(options.title, options.message, buttons, 'plain-text', options.value, options.keyboardType === 'url' ? 'url' : undefined);
 }
 
 export function selectText(text: string) { Alert.alert('Select text', text); }
