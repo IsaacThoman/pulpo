@@ -3346,7 +3346,7 @@ function SentAttachmentContextMenu({ attachment, message, onEdit, onOpen, onRege
     void saveAttachmentToFiles(attachment.id, { parentId: folderId }).then(({ node }) => {
       if (filesNamespace) void queryClient.invalidateQueries({ queryKey: filesQueryKeys.all(filesNamespace) });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert('Saved to Files', `“${node.name}” is in ${folderName}.`, [
+      Alert.alert('Saved to My Files', `“${node.name}” is in ${folderName}.`, [
         { text: 'Show', onPress: () => navigation.push('FilesFolder', { folderId, name: folderName }) },
         { text: 'OK', style: 'cancel' },
       ]);
