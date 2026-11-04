@@ -1,4 +1,4 @@
-import { imageGenerationPreferencesSchema, type ImageGenerationPreferences, modelWarningDismissalsSchema, type ModelWarningDismissals, speechPreferencesSchema, type SpeechPreferences } from '@pulpo/contracts'
+import { DEFAULT_TRASH_COLOR, type FileColor, imageGenerationPreferencesSchema, trashColorSchema, type ImageGenerationPreferences, modelWarningDismissalsSchema, type ModelWarningDismissals, speechPreferencesSchema, type SpeechPreferences } from '@pulpo/contracts'
 export type ThemePreference = 'system' | 'light' | 'dark'
 export type TextSizePreference = 'default' | 'large' | 'extra-large'
 export type TrashRetentionPreference = 'instant' | '24h' | '7d' | '30d' | '90d' | 'indefinite'
@@ -27,6 +27,8 @@ export interface Preferences {
   automaticChatExpiration: AutomaticChatExpirationPreference
   newChatAutoExpire: boolean
   chatSortMode: ChatSortModePreference
+  /** The trash's color in Files (it isn't stored in Files, so it is a setting); null is the default. */
+  trashColor: FileColor | null
   favoriteModelIds: string[]
   providerOrder: string[]
   defaultModelId: string | null
@@ -41,7 +43,7 @@ export const defaultPreferences: Preferences = {
   speech: speechPreferencesSchema.parse(undefined),
   theme: 'system', textSize: 'default', streamResponses: true, showPromptSuggestions: true, showModelWarnings: true, modelWarningDismissals: {}, showReasoning: true, memoryEnabled: false,
   haptics: true, composerSyncEnabled: true, sendWithEnter: true, attachmentCacheMb: 256, localChatLimit: 50,
-  trashRetention: '30d', automaticChatExpiration: '24h', newChatAutoExpire: false, chatSortMode: 'default', favoriteModelIds: [], providerOrder: [], defaultModelId: null, agentModes: {},
+  trashRetention: '30d', automaticChatExpiration: '24h', newChatAutoExpire: false, chatSortMode: 'default', trashColor: DEFAULT_TRASH_COLOR, favoriteModelIds: [], providerOrder: [], defaultModelId: null, agentModes: {},
   generation: {},
 }
 
@@ -81,6 +83,7 @@ export function preferencesFromServer(values: Record<string, unknown>): Partial<
   }
   if (typeof values.newChatAutoExpire === 'boolean') result.newChatAutoExpire = values.newChatAutoExpire
   if (values.chatSortMode === 'default' || values.chatSortMode === 'recent') result.chatSortMode = values.chatSortMode
+  if (values.trashColor !== undefined) result.trashColor = trashColorSchema.catch(DEFAULT_TRASH_COLOR).parse(values.trashColor)
   return result
 }
 
@@ -109,7 +112,7 @@ function validAgentModes(value: unknown): Preferences['agentModes'] {
 
 export function serverPreferenceKey(key: keyof Preferences): string | null {
   return key === 'attachmentCacheMb' ? 'localAttachmentCacheMb'
-    : ['imageGeneration', 'speech', 'composerSyncEnabled', 'theme', 'sendWithEnter', 'streamResponses', 'showPromptSuggestions', 'showModelWarnings', 'modelWarningDismissals', 'showReasoning', 'memoryEnabled', 'localChatLimit', 'trashRetention', 'automaticChatExpiration', 'newChatAutoExpire', 'chatSortMode', 'defaultModelId', 'favoriteModelIds', 'providerOrder', 'generation', 'agentModes'].includes(key)
+    : ['imageGeneration', 'speech', 'composerSyncEnabled', 'theme', 'sendWithEnter', 'streamResponses', 'showPromptSuggestions', 'showModelWarnings', 'modelWarningDismissals', 'showReasoning', 'memoryEnabled', 'localChatLimit', 'trashRetention', 'automaticChatExpiration', 'newChatAutoExpire', 'chatSortMode', 'trashColor', 'defaultModelId', 'favoriteModelIds', 'providerOrder', 'generation', 'agentModes'].includes(key)
       ? key
       : null
 }

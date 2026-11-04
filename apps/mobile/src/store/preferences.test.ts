@@ -26,6 +26,13 @@ describe('production preference mapping', () => {
     expect(preferencesFromServer({ chatSortMode: 'recent' }).chatSortMode).toBe('recent')
     expect(preferencesFromServer({ chatSortMode: 'alphabetical' }).chatSortMode).toBeUndefined()
   })
+  it('shares the trash color with the web, where null is the default and unknown colors fall back to red', () => {
+    expect(preferencesFromServer({ trashColor: 'teal' }).trashColor).toBe('teal')
+    expect(preferencesFromServer({ trashColor: null }).trashColor).toBeNull()
+    expect(preferencesFromServer({ trashColor: 'chartreuse' }).trashColor).toBe('red')
+    expect(preferencesFromServer({}).trashColor).toBeUndefined()
+    expect(preferencePatchForServer('trashColor', 'purple')).toEqual({ trashColor: 'purple' })
+  })
   it('hydrates the mobile names used by the web settings bridge', () => {
     expect(preferencesFromServer({
       theme: 'dark', localAttachmentCacheMb: 96, localChatLimit: 200,

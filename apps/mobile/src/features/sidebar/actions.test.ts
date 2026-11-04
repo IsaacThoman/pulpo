@@ -12,19 +12,28 @@ const on = { folder: true, filesEnabled: true, archived: false }
 
 describe('the drawer’s item menu', () => {
   it('offers what the web sidebar offers for a folder', () => {
-    expect(ids(sidebarItemActions(node(), on))).toEqual(['new-folder', 'open', 'pin', 'rename', 'move', 'archive', 'trash'])
-    expect(ids(sidebarItemActions(node({ pinned: true }), { ...on, archived: true }))).toEqual(['new-folder', 'open', 'unpin', 'rename', 'move', 'trash'])
+    expect(ids(sidebarItemActions(node(), on))).toEqual(['new-folder', 'open', 'pin', 'rename', 'appearance', 'move', 'archive', 'trash'])
+    expect(ids(sidebarItemActions(node({ pinned: true }), { ...on, archived: true }))).toEqual(['new-folder', 'open', 'unpin', 'rename', 'appearance', 'move', 'trash'])
   })
 
   it('leaves out Files-only actions without Files', () => {
     const actions = sidebarItemActions(node(), { ...on, filesEnabled: false })
-    expect(ids(actions)).toEqual(['new-folder', 'pin', 'rename', 'move', 'trash'])
+    expect(ids(actions)).toEqual(['new-folder', 'pin', 'rename', 'appearance', 'move', 'trash'])
     expect(actions.at(-1)?.title).toBe('Delete')
   })
 
-  it('lets built-in folders be opened and pinned, but not the Chats folder pinned', () => {
-    expect(ids(sidebarItemActions(node({ systemRole: 'archive' }), on))).toEqual(['new-folder', 'open', 'pin'])
-    expect(ids(sidebarItemActions(node({ systemRole: 'chats' }), on))).toEqual(['new-folder', 'open'])
+  it('lets built-in folders be opened, pinned, and given a color, but not the Chats folder pinned', () => {
+    const archive = sidebarItemActions(node({ systemRole: 'archive' }), on)
+    expect(ids(archive)).toEqual(['new-folder', 'open', 'pin', 'appearance'])
+    expect(archive.at(-1)?.title).toBe('Color…')
+    expect(ids(sidebarItemActions(node({ systemRole: 'chats' }), on))).toEqual(['new-folder', 'open', 'appearance'])
+  })
+
+  it('offers a color and icon for files and folders, as the web sidebar does, but not shortcuts', () => {
+    expect(sidebarItemActions(node(), on).find((action) => action.id === 'appearance')?.title).toBe('Color and Icon…')
+    expect(ids(sidebarItemActions(node({ kind: 'doc' }), { ...on, folder: false }))).toContain('appearance')
+    const shortcut = node({ kind: 'shortcut', target: { kind: 'folder', id: 't', name: 't', mimeType: null, systemRole: null, available: true } })
+    expect(ids(sidebarItemActions(shortcut, on))).not.toContain('appearance')
   })
 
   it('deletes shortcuts, which open what they point at unless it is in the trash', () => {

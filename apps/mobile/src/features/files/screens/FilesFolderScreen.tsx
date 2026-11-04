@@ -13,12 +13,15 @@ import { usePrototypeStore } from '../../../mockup5/src/store/prototypeStore'
 import { legacyTrashView, trashDeletesLabel, trashItemSubtitle, trashQuery, trashRetentionSummary } from '../../trash/api'
 import { TRASH_FOLDER_ID, trashFolderNode, trashFolderRef, trashLocation } from '../../trash/folder'
 import { useTrashOperations } from '../../trash/operations'
+import { usePreferencesStore } from '../../../store/preferences'
 import { PageHeader, Screen } from '../../../mockup5/src/components/PrototypeUI'
 import { showActions, promptText } from '../../../platform/materialActions'
 import { MaterialIconButton, MaterialSearchField } from '../../../platform/MaterialUI'
 import { SymbolView } from '../../../platform/SymbolView'
 import { useAppTheme } from '../../../theme'
 import { refreshFilesCapability, useFilesEnabled, isFilesDisabledError } from '../availability'
+import { appearanceShortTitle, styledNodes } from '../appearance'
+import { FileAppearanceSheet } from '../components/FileAppearanceSheet'
 import { FilesTurnedOff } from '../components/FilesTurnedOff'
 import { FileRow } from '../components/FileRow'
 import { FilesToastHost } from '../components/FilesToastHost'
@@ -27,6 +30,7 @@ import { filesErrorMessage, isBuiltIn } from '../display'
 import { fileItemActions, trashItemActions, type FileItemActionId, type TrashItemActionId } from '../itemActions'
 import { shareFileItem, useFileDownloads, useOpenFileItem } from '../open'
 import { useFileOperations } from '../operations'
+import { useItemAppearance } from '../itemAppearance'
 import { folderQuery } from '../queries'
 import { cancelUpload, enqueueUploads, pickUploads, resumeUploads, retryUpload, useFileUploads, type QueuedUpload } from '../uploads'
 import { useFilesNamespace } from '../useFilesNamespace'
@@ -96,6 +100,8 @@ export function FilesFolderScreen({ navigation, route }: Props) {
   const trashView = !inTrash ? undefined : legacyView ?? trashListing.data ?? undefined
   const operations = useFileOperations(namespace)
   const trashOperations = useTrashOperations(namespace, legacyTrash)
+  const setAppearance = useItemAppearance(namespace)
+  const trashColor = usePreferencesStore((state) => state.trashColor)
   const openItem = useOpenFileItem()
   const downloads = useFileDownloads((state) => state.active)
   const uploads = useFileUploads((state) => state.items)
@@ -107,6 +113,7 @@ export function FilesFolderScreen({ navigation, route }: Props) {
   const [selected, setSelected] = useState<Set<string>>(() => new Set())
   const [moving, setMoving] = useState<FileNode[] | null>(null)
   const [restoring, setRestoring] = useState<FileNode[] | null>(null)
+  const [styling, setStyling] = useState<FileNode[] | null>(null)
   const [refreshing, setRefreshing] = useState(false)
   // Trash deadlines count down while the trash is shown.
   const [now, setNow] = useState(() => Date.now())
@@ -130,8 +137,8 @@ export function FilesFolderScreen({ navigation, route }: Props) {
     if (inTrash) return trashView?.children ?? []
     const listed = folderListing.data?.children ?? []
     // The trash sits in My files with the other built-in folders.
-    return folderId === null && folderListing.data ? [...listed, trashFolderNode()] : listed
-  }, [folderId, folderListing.data, inTrash, trashView?.children])
+    return folderId === null && folderListing.data ? [...listed, trashFolderNode(trashColor)] : listed
+  }, [folderId, folderListing.data, inTrash, trashColor, trashView?.children])
   const items = useMemo(() => {
     const query = search.trim().toLocaleLowerCase()
     const visible = query ? children.filter((node) => node.name.toLocaleLowerCase().includes(query)) : children
@@ -142,6 +149,8 @@ export function FilesFolderScreen({ navigation, route }: Props) {
     upload.namespace === namespace && upload.parentId === folderId && !children.some((node) => node.id === upload.reservedNodeId)
   )), [children, folderId, inTrash, namespace, uploads])
   const selectedNodes = useMemo(() => items.filter((node) => selected.has(node.id)), [items, selected])
+  // Files and folders among the selection can be given a color and icon; chats and shortcuts are left out.
+  const styledSelection = useMemo(() => styledNodes(selectedNodes), [selectedNodes])
 
   const setSort = useCallback((next: FileSort) => setSortValue(namespace, next), [namespace, setSortValue])
   const exitSelection = useCallback(() => {
@@ -297,6 +306,7 @@ export function FilesFolderScreen({ navigation, route }: Props) {
         promptName('Rename', node.name, 'Rename', (name) => { void operations.rename(node, name) })
         return
       case 'move': setMoving([node]); return
+      case 'appearance': setStyling([node]); return
       case 'duplicate': void operations.duplicate([node], node.parentId); return
       case 'pin': void operations.setPinned([node], true); return
       case 'unpin': void operations.setPinned([node], false); return
@@ -615,6 +625,7 @@ export function FilesFolderScreen({ navigation, route }: Props) {
           { icon: 'trash', label: 'Delete', destructive: true, disabled: !selectedNodes.length, onPress: () => confirmDeleteForever(selectedNodes, exitSelection) },
         ] : [
           { icon: 'folder', label: 'Move', disabled: !selectedNodes.length || selectedNodes.some(isBuiltIn), onPress: () => setMoving(selectedNodes) },
+          { icon: 'paintpalette', label: appearanceShortTitle(styledSelection), disabled: !styledSelection.length, onPress: () => setStyling(styledSelection) },
           { icon: 'plus.square.on.square', label: 'Duplicate', disabled: !selectedNodes.some((node) => node.kind !== 'chat') || selectedNodes.some(isBuiltIn), onPress: () => { void operations.duplicate(selectedNodes, folderId).then(exitSelection) } },
           { icon: 'trash', label: 'Trash', destructive: true, disabled: !selectedNodes.length || selectedNodes.some(isBuiltIn), onPress: () => trashItems(selectedNodes, { confirm: true, then: exitSelection }) },
         ]).map((action: { icon: string; label: string; destructive?: boolean; disabled: boolean; onPress: () => void }) => (
@@ -649,6 +660,13 @@ export function FilesFolderScreen({ navigation, route }: Props) {
             exitSelection()
             void operations.move(nodes, destination)
           }}
+        />
+      ) : null}
+      {styling ? (
+        <FileAppearanceSheet
+          nodes={styling}
+          onChange={(change) => { void setAppearance(styling, change) }}
+          onClose={() => setStyling(null)}
         />
       ) : null}
       {restoring ? (

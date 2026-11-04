@@ -17,8 +17,19 @@ describe('Files item menus', () => {
     expect(ids(folder(null))).toContain('pin')
   })
 
-  it('leave the trash where it is, offering only to open it', () => {
-    expect(fileItemActions(trashFolderNode(), { agent: 'none', selectable: true }).map((action) => action.id)).toEqual(['open'])
+  it('leave the trash where it is, offering only to open it and give it a color', () => {
+    const actions = fileItemActions(trashFolderNode(), { agent: 'none', selectable: true })
+    expect(actions.map((action) => action.id)).toEqual(['open', 'appearance'])
+    expect(actions.at(-1)?.title).toBe('Color…')
+  })
+
+  it('offer a color and icon for files and folders, but not chats or shortcuts (as on the web)', () => {
+    const appearance = (node: FileNode) => fileItemActions(node, { agent: 'none', selectable: true }).find((action) => action.id === 'appearance')?.title
+    expect(appearance(folder(null))).toBe('Color and Icon…')
+    expect(appearance({ ...folder(null), kind: 'doc' } as FileNode)).toBe('Color and Icon…')
+    expect(appearance(folder('archive'))).toBe('Color…')
+    expect(appearance({ ...folder(null), kind: 'chat' } as FileNode)).toBeUndefined()
+    expect(appearance({ ...folder(null), kind: 'shortcut' } as FileNode)).toBeUndefined()
   })
 
   it('restore or delete trashed items, and open trashed folders', () => {

@@ -236,6 +236,8 @@ import { useOpenFileItem } from '../features/files/open';
 import { fileOpenTarget } from '../features/files/itemActions';
 import { FilesToastHost } from '../features/files/components/FilesToastHost';
 import { FolderPickerSheet } from '../features/files/components/FolderPickerSheet';
+import { FileAppearanceSheet } from '../features/files/components/FileAppearanceSheet';
+import { useItemAppearance } from '../features/files/itemAppearance';
 import { filesErrorMessage } from '../features/files/display';
 import { useFileOperations } from '../features/files/operations';
 import { enqueueUploads, pickUploads } from '../features/files/uploads';
@@ -6789,15 +6791,18 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
   useEffect(() => () => useFilesToasts.getState().dismiss(), [filesNamespace]);
   const sidebarOperations = useSidebarOperations(filesNamespace);
   const fileOperations = useFileOperations(filesNamespace);
+  const setItemAppearance = useItemAppearance(filesNamespace);
   const expandedFolders = useSidebarExpansion((state) => state.expanded);
   const setFolderExpanded = useSidebarExpansion((state) => state.setExpanded);
   useEffect(() => { useSidebarExpansion.getState().load(filesNamespace); }, [filesNamespace]);
   const [moveTarget, setMoveTarget] = useState<SidebarTarget | null>(null);
   const [pickingFolderFor, setPickingFolderFor] = useState<SidebarTarget | null>(null);
+  const [stylingNode, setStylingNode] = useState<FileNode | null>(null);
   // Sheets open for one account's items close when switching to another.
   useEffect(() => () => {
     setMoveTarget(null);
     setPickingFolderFor(null);
+    setStylingNode(null);
   }, [filesNamespace]);
   const [search, setSearch] = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
@@ -7029,6 +7034,8 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
       }, node.name);
     } else if (action === 'move') {
       setMoveTarget({ kind: 'node', node });
+    } else if (action === 'appearance') {
+      setStylingNode(node);
     } else if (action === 'archive') {
       void sidebarOperations.archive({ kind: 'node', node });
     } else if (action === 'trash') {
@@ -7221,6 +7228,11 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
         onMove={(folderId) => moveTo(moveTarget, folderId)}
         onOther={filesEnabled && sidebar ? () => setPickingFolderFor(moveTarget) : undefined}
         onClose={() => setMoveTarget(null)}
+      /> : null}
+      {stylingNode ? <FileAppearanceSheet
+        nodes={[stylingNode]}
+        onChange={(change) => { void setItemAppearance([stylingNode], change); }}
+        onClose={() => setStylingNode(null)}
       /> : null}
       {pickingFolderFor && filesNamespace ? <FolderPickerSheet
         namespace={filesNamespace}
