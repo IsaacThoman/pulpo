@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest'
 import { filePreviewKind } from './files/display.js'
 import { parseQuiz, quizFileName, quizFlashcards, quizResultsMessage, quizScore, serializeQuiz, splitQuizBlocks } from './quiz.js'
 
-const question = { prompt: 'Which cipher is unconditionally secure?', options: ['AES', 'One-time pad', 'RSA'], answer: 1 }
+// Kept in order so the tests below can name options by index.
+const question = { prompt: 'Which cipher is unconditionally secure?', options: ['AES', 'One-time pad', 'RSA'], answer: 1, shuffle: false as const }
+const correctOption = (item: { options: string[]; answer: number }) => item.options[item.answer]
 
 describe('parseQuiz', () => {
   it('reads questions, cards, and a title', () => {
@@ -25,7 +27,7 @@ describe('parseQuiz', () => {
       ],
       flashcards: [{ term: 'Nonce', definition: 'Number used once' }],
     }))
-    expect(quiz?.questions.map((item) => item.answer)).toEqual([1, 2])
+    expect(quiz?.questions.map(correctOption)).toEqual(['no', 'z'])
     expect(quiz?.cards).toEqual([{ front: 'Nonce', back: 'Number used once' }])
   })
 
@@ -52,10 +54,64 @@ describe('parseQuiz', () => {
   })
 })
 
+describe('option shuffling', () => {
+  const parseQuestion = (item: Record<string, unknown>) => parseQuiz(JSON.stringify({ questions: [item] }))!.questions[0]!
+
+  it('spreads correct answers evenly across positions', () => {
+    const counts = [0, 0, 0, 0]
+    for (let index = 0; index < 800; index += 1) {
+      const item = parseQuestion({ prompt: `Question ${index}?`, options: ['Right', 'Wrong 1', 'Wrong 2', 'Wrong 3'], answer: 0 })
+      expect(correctOption(item)).toBe('Right')
+      expect([...item.options].sort()).toEqual(['Right', 'Wrong 1', 'Wrong 2', 'Wrong 3'])
+      counts[item.answer]! += 1
+    }
+    for (const count of counts) expect(count).toBeGreaterThan(150)
+  })
+
+  it('shuffles the same way every time, whatever order the options came in', () => {
+    const item = { prompt: 'Largest planet?', options: ['Jupiter', 'Mars', 'Venus', 'Saturn', 'Earth'], answer: 0 }
+    const first = parseQuestion(item)
+    expect(parseQuestion(item)).toEqual(first)
+    expect(parseQuestion({ ...item, options: [...item.options].reverse(), answer: 4 })).toEqual(first)
+    const quiz = parseQuiz(JSON.stringify({ questions: [item] }))!
+    expect(parseQuiz(serializeQuiz(quiz))).toEqual(quiz)
+  })
+
+  it('keeps the written order when a question turns shuffling off', () => {
+    const item = parseQuestion({ prompt: 'Order these', options: ['First', 'Second', 'Third'], answer: 2, shuffle: false })
+    expect(item).toEqual({ prompt: 'Order these', options: ['First', 'Second', 'Third'], answer: 2, shuffle: false })
+    expect(serializeQuiz({ questions: [item], cards: [] })).toContain('"shuffle": false')
+  })
+
+  it('keeps "of the above" options in place', () => {
+    for (let index = 0; index < 50; index += 1) {
+      const item = parseQuestion({ prompt: `Prime ${index}?`, options: ['2', 'Nine', 'Fifteen', 'All of the above', 'None of these'], answer: 0 })
+      expect(item.options.slice(3)).toEqual(['All of the above', 'None of these'])
+      expect(correctOption(item)).toBe('2')
+    }
+  })
+
+  it('keeps true/false, yes/no, and options that name others by letter in order', () => {
+    expect(parseQuestion({ prompt: 'Is it?', options: ['False', 'True'], answer: 1 }).options).toEqual(['False', 'True'])
+    expect(parseQuestion({ prompt: 'Is it?', options: ['Yes', 'No'], answer: 1 }).options).toEqual(['Yes', 'No'])
+    for (const reference of ['A and C', 'B, C, and D only', 'Both A and B', 'Option B', 'neither (A) nor (B)']) {
+      const options = ['Red', 'Green', 'Blue', reference]
+      expect(parseQuestion({ prompt: `Which colors? ${reference}`, options, answer: 0 }).options).toEqual(options)
+    }
+  })
+
+  it('sorts options that are all plain numbers', () => {
+    const item = parseQuestion({ prompt: '6 × 7?', options: ['42', '36', '$48$', '1,000', '-3.5'], answer: 0 })
+    expect(item.options).toEqual(['-3.5', '36', '42', '$48$', '1,000'])
+    expect(correctOption(item)).toBe('42')
+    expect(parseQuestion({ prompt: 'Rate?', options: ['50%', '$5', '25%'], answer: 1 }).options).toEqual(['$5', '25%', '50%'])
+  })
+})
+
 describe('quiz helpers', () => {
   const quiz = parseQuiz(JSON.stringify({
     title: 'Crypto: ch/1',
-    questions: [question, { prompt: '2 + 2?', options: ['3', '4'], answer: 1, explanation: 'Arithmetic.' }, { prompt: 'Skip me', options: ['a', 'b'], answer: 0 }],
+    questions: [question, { prompt: '2 + 2?', options: ['3', '4'], answer: 1, explanation: 'Arithmetic.' }, { prompt: 'Skip me', options: ['a', 'b'], answer: 0, shuffle: false }],
   }))!
 
   it('builds flashcards from questions when the quiz has none', () => {
