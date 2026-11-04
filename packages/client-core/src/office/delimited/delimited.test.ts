@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { columnLabel, indexDelimited, parseDelimitedRow, sniffDelimiter } from './delimited.js'
+import { columnLabel, indexDelimited, parseDelimitedRow, sniffDelimiter, suggestColumnWidths } from './delimited.js'
 
 const rows = (text: string, options?: Parameters<typeof indexDelimited>[1]) => {
   const table = indexDelimited(text, options)
@@ -126,5 +126,15 @@ describe('parseDelimitedRow', () => {
 describe('columnLabel', () => {
   it('counts like a spreadsheet', () => {
     expect([0, 1, 25, 26, 27, 51, 52, 701, 702].map(columnLabel)).toEqual(['A', 'B', 'Z', 'AA', 'AB', 'AZ', 'BA', 'ZZ', 'AAA'])
+  })
+})
+
+describe('suggestColumnWidths', () => {
+  it('fits the widest sampled value, clamped, and can measure one column', () => {
+    const table = indexDelimited('id,description\n1,a fairly long description of the item\n22,"two\nlines"\n')
+    const options = { characterWidth: 7, padding: 20, min: 40, max: 200 }
+    expect(suggestColumnWidths(table, options)).toEqual([40, 200])
+    expect(suggestColumnWidths(table, { ...options, max: 1000 })[1]).toBe(Math.round(37 * 7 + 20))
+    expect(suggestColumnWidths(table, { ...options, onlyColumn: 1 })[0]).toBe(40)
   })
 })

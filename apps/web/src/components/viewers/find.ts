@@ -1,36 +1,13 @@
 import type { KeyboardEvent } from 'react'
-import type { DelimitedTable } from '@pulpo/client-core/office/delimited'
+import { suggestColumnWidths, type DelimitedTable } from '@pulpo/client-core/office/delimited'
 
 /** Find stops counting here so a one-letter query in a huge file stays responsive. */
 export const MAX_FIND_MATCHES = 10_000
 /** JSON larger than this is not pretty-printed automatically. */
 const MAX_FORMAT_CHARACTERS = 5_000_000
 
-export interface FindMatch {
-  line: number
-  start: number
-  end: number
-}
-
-/** Case-insensitive matches of `query` in each line, up to `limit`. */
-export function findInLines(lines: readonly string[], query: string, limit = MAX_FIND_MATCHES): FindMatch[] {
-  const needle = query.toLowerCase()
-  if (!needle) return []
-  const matches: FindMatch[] = []
-  for (let line = 0; line < lines.length && matches.length < limit; line += 1) {
-    const haystack = lines[line]!.toLowerCase()
-    // Lower-casing can change length (İ); such lines are searched as written.
-    const text = haystack.length === lines[line]!.length ? haystack : lines[line]!
-    let from = 0
-    while (matches.length < limit) {
-      const found = text.indexOf(needle, from)
-      if (found < 0) break
-      matches.push({ line, start: found, end: found + needle.length })
-      from = found + Math.max(1, needle.length)
-    }
-  }
-  return matches
-}
+export type { LineMatch as FindMatch } from '@pulpo/client-core/highlight'
+export { findInLines } from '@pulpo/client-core/highlight'
 
 /** JSON pretty-printed with two spaces, or null when the text isn't JSON (or is too large). */
 export function formatJson(text: string): string | null {
@@ -70,28 +47,9 @@ export function stepIndex(current: number, total: number, direction: 1 | -1): nu
 /** Grid find stops at this many matching rows. */
 export const MAX_FIND_ROWS = 10_000
 
-/** Rows sampled to size columns to their content. */
-const WIDTH_SAMPLE_ROWS = 200
-
-/**
- * Column widths fitted to the header and the first rows' text, clamped to `[min, max]`. With
- * `onlyColumn`, only that column is measured (the others keep `min`).
- */
+/** Column widths for the grid's 12px font: about 7.5px per character plus padding and border. */
 export function initialColumnWidths(table: DelimitedTable, min: number, max: number, onlyColumn?: number): number[] {
-  const characters = new Array<number>(table.columnCount).fill(0)
-  const rows = Math.min(table.rowCount, WIDTH_SAMPLE_ROWS)
-  for (let row = 0; row < rows; row += 1) {
-    const cells = table.row(row)
-    for (let column = 0; column < table.columnCount; column += 1) {
-      if (onlyColumn !== undefined && column !== onlyColumn) continue
-      const value = cells[column] ?? ''
-      // Long values are truncated anyway; only the first line counts.
-      const length = Math.min(80, value.split('\n', 1)[0]!.length)
-      if (length > characters[column]!) characters[column] = length
-    }
-  }
-  // About 7.5px per character at the grid's 12px font, plus the cell's padding and border.
-  return characters.map((count) => Math.min(max, Math.max(min, Math.round(count * 7.5 + 28))))
+  return suggestColumnWidths(table, { characterWidth: 7.5, padding: 28, min, max, onlyColumn })
 }
 
 /**

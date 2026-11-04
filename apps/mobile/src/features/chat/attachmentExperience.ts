@@ -1,4 +1,14 @@
 import { MAX_MESSAGE_ATTACHMENTS } from '@pulpo/contracts'
+import {
+  ARCHIVE_EXTENSIONS,
+  AUDIO_EXTENSIONS,
+  CODE_EXTENSIONS,
+  DOCUMENT_EXTENSIONS,
+  fileTypeForName,
+  PRESENTATION_EXTENSIONS,
+  SHEET_EXTENSIONS,
+  VIDEO_EXTENSIONS,
+} from '@pulpo/client-core/files'
 
 export const MAX_COMPOSER_ATTACHMENTS = MAX_MESSAGE_ATTACHMENTS
 
@@ -14,18 +24,10 @@ export type AttachmentVisualKind =
   | 'video'
   | 'file'
 
+// Images the app can draw inline; other image types still open in the system viewer.
 const IMAGE_EXTENSIONS = new Set(['gif', 'jpeg', 'jpg', 'png', 'webp'])
-const CODE_EXTENSIONS = new Set([
-  'c', 'cc', 'cpp', 'cs', 'css', 'go', 'h', 'hpp', 'html', 'java', 'js', 'jsx',
-  'json', 'kt', 'kts', 'php', 'py', 'rb', 'rs', 'sh', 'sql', 'swift', 'toml',
-  'ts', 'tsx', 'vue', 'xml', 'yaml', 'yml',
-])
-const TEXT_EXTENSIONS = new Set(['log', 'md', 'rtf', 'txt'])
-const SPREADSHEET_EXTENSIONS = new Set(['csv', 'numbers', 'ods', 'tsv', 'xls', 'xlsx'])
-const PRESENTATION_EXTENSIONS = new Set(['key', 'odp', 'ppt', 'pptx'])
-const ARCHIVE_EXTENSIONS = new Set(['7z', 'bz2', 'gz', 'rar', 'tar', 'tgz', 'zip'])
-const AUDIO_EXTENSIONS = new Set(['aac', 'aiff', 'flac', 'm4a', 'mp3', 'ogg', 'wav'])
-const VIDEO_EXTENSIONS = new Set(['avi', 'm4v', 'mkv', 'mov', 'mp4', 'webm'])
+// Text documents as opposed to source code: notes, logs, and word-processing files.
+const isTextDocument = (ext: string) => DOCUMENT_EXTENSIONS.has(ext) || ['text', 'markdown'].includes(fileTypeForName(`file.${ext}`)?.family ?? '')
 
 function extension(name: string): string | null {
   return name.trim().toLowerCase().match(/\.([a-z0-9]{1,8})$/)?.[1] ?? null
@@ -40,7 +42,7 @@ export function attachmentVisualKind(name: string, mimeType: string): Attachment
   if (mime.startsWith('video/') || (ext && VIDEO_EXTENSIONS.has(ext))) return 'video'
   if (
     mime.includes('spreadsheet') || mime.includes('excel') || mime.includes('numbers')
-    || (ext && SPREADSHEET_EXTENSIONS.has(ext))
+    || (ext && SHEET_EXTENSIONS.has(ext))
   ) return 'spreadsheet'
   if (
     mime.includes('presentation') || mime.includes('powerpoint') || mime.includes('keynote')
@@ -51,7 +53,7 @@ export function attachmentVisualKind(name: string, mimeType: string): Attachment
     mime.includes('javascript') || mime.includes('json') || mime.includes('yaml')
     || mime.includes('xml') || (ext && CODE_EXTENSIONS.has(ext))
   ) return 'code'
-  if (mime.startsWith('text/') || mime.includes('word') || mime.includes('opendocument.text') || (ext && TEXT_EXTENSIONS.has(ext))) return 'text'
+  if (mime.startsWith('text/') || mime.includes('word') || mime.includes('opendocument.text') || (ext && isTextDocument(ext))) return 'text'
   return 'file'
 }
 

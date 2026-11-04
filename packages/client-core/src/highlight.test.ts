@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
+  findInLines,
   highlightCss,
+  highlightedHtml,
   highlightHtml,
+  highlightRuns,
   highlightTokenOf,
   highlightTree,
   lineText,
@@ -9,7 +12,6 @@ import {
   normalizeLanguage,
   splitHighlightedLines,
 } from './highlight.js'
-import { highlightedHtml } from './highlight.js'
 
 describe('highlightTree', () => {
   it('highlights known grammars and aliases, and refuses plain text and oversized input', () => {
@@ -63,5 +65,26 @@ describe('HTML output', () => {
     expect(highlightTokenOf(['hljs-unknown'])).toBeNull()
     expect(highlightCss('.x', 'dark')).toContain('.x .hljs-keyword')
     expect(highlightCss('.x', 'dark')).toContain('#ff7b72')
+  })
+})
+
+describe('highlightRuns', () => {
+  it('flattens a line into colored runs with find matches', () => {
+    const code = 'return "hi" // done'
+    const [line] = splitHighlightedLines(code, highlightTree(code, 'javascript'))
+    const runs = highlightRuns(line!, [{ start: 8, end: 10, current: true }])
+    expect(runs.map((run) => run.text).join('')).toBe(code)
+    expect(runs[0]).toEqual({ text: 'return', token: 'keyword' })
+    expect(runs.find((run) => run.match)).toEqual({ text: 'hi', token: 'string', match: 'current' })
+    expect(runs[runs.length - 1]).toEqual({ text: '// done', token: 'comment' })
+  })
+})
+
+describe('findInLines', () => {
+  it('finds every case-insensitive match, up to a limit', () => {
+    expect(findInLines(['Aa aA', 'b', 'xaa'], 'aa')).toEqual([{ line: 0, start: 0, end: 2 }, { line: 0, start: 3, end: 5 }, { line: 2, start: 1, end: 3 }])
+    expect(findInLines(['aaaa'], 'aa')).toHaveLength(2)
+    expect(findInLines(['aaaa'], 'a', 3)).toHaveLength(3)
+    expect(findInLines(['x'], '')).toEqual([])
   })
 })

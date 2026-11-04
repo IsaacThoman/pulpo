@@ -250,3 +250,60 @@ export function highlightCss(selector: string, scheme: 'light' | 'dark'): string
     return `${selectors}{color:${colors[token]};${extra}}`
   }).join('\n')
 }
+
+/** A run of text in one token color, for clients that draw text without HTML (React Native). */
+export interface HighlightRun {
+  text: string
+  token: HighlightToken | null
+  /** Inside a find match; `current` is the selected one. */
+  match?: 'match' | 'current'
+}
+
+/**
+ * Flattens a highlighted line into runs, each colored by its innermost token that has a color,
+ * with find ranges applied (see `markLineRanges`).
+ */
+export function highlightRuns(line: HighlightedLine, ranges: readonly { start: number; end: number; current?: boolean }[] = []): HighlightRun[] {
+  const runs: HighlightRun[] = []
+  const visit = (nodes: readonly ElementContent[], token: HighlightToken | null, match: HighlightRun['match']) => {
+    for (const node of nodes) {
+      if (node.type === 'text') {
+        const last = runs[runs.length - 1]
+        if (last && last.token === token && last.match === match) last.text += node.value
+        else runs.push(match ? { text: node.value, token, match } : { text: node.value, token })
+      } else if (node.type === 'element') {
+        const classes = Array.isArray(node.properties?.className) ? node.properties.className : []
+        if (node.tagName === 'mark') visit(node.children, token, classes.includes('find-match-current') ? 'current' : 'match')
+        else visit(node.children, highlightTokenOf(classes) ?? token, match)
+      }
+    }
+  }
+  visit(ranges.length ? markLineRanges(line, ranges) : line, null, undefined)
+  return runs
+}
+
+export interface LineMatch {
+  line: number
+  start: number
+  end: number
+}
+
+/** Case-insensitive matches of `query` in each line, up to `limit`, for find in code views. */
+export function findInLines(lines: readonly string[], query: string, limit = 10_000): LineMatch[] {
+  const needle = query.toLowerCase()
+  if (!needle) return []
+  const matches: LineMatch[] = []
+  for (let line = 0; line < lines.length && matches.length < limit; line += 1) {
+    const lowered = lines[line]!.toLowerCase()
+    // Lower-casing can change length (İ); such lines are searched as written.
+    const text = lowered.length === lines[line]!.length ? lowered : lines[line]!
+    let from = 0
+    while (matches.length < limit) {
+      const found = text.indexOf(needle, from)
+      if (found < 0) break
+      matches.push({ line, start: found, end: found + needle.length })
+      from = found + needle.length
+    }
+  }
+  return matches
+}

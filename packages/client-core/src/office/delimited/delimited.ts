@@ -287,3 +287,32 @@ export function columnLabel(index: number): string {
   }
   return label
 }
+
+export interface ColumnWidthOptions {
+  /** Average width of one character in the grid's font. */
+  characterWidth: number
+  /** Cell padding and border, added to every column. */
+  padding: number
+  min: number
+  max: number
+  /** Rows sampled from the top (header included). */
+  sampleRows?: number
+  /** Measure only this column (the others get `min`), as double-clicking a divider does. */
+  onlyColumn?: number
+}
+
+/** Column widths that fit the header and the first rows' text (first lines only), clamped. */
+export function suggestColumnWidths(table: DelimitedTable, options: ColumnWidthOptions): number[] {
+  const characters = new Array<number>(table.columnCount).fill(0)
+  const rows = Math.min(table.rowCount, options.sampleRows ?? 200)
+  for (let row = 0; row < rows; row += 1) {
+    const cells = table.row(row)
+    for (let column = 0; column < table.columnCount; column += 1) {
+      if (options.onlyColumn !== undefined && column !== options.onlyColumn) continue
+      // Long values are truncated anyway, so a few dozen characters is enough.
+      const length = Math.min(80, (cells[column] ?? '').split('\n', 1)[0]!.length)
+      if (length > characters[column]!) characters[column] = length
+    }
+  }
+  return characters.map((count) => Math.min(options.max, Math.max(options.min, Math.round(count * options.characterWidth + options.padding))))
+}
