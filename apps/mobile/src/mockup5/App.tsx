@@ -1,5 +1,6 @@
 import { imageBatchNeedsWorkspace, DEFAULT_MAX_INLINE_IMAGES } from '@pulpo/contracts';
 import { speechPlayback, readAloud } from '../features/speech/playback';
+import { saveSpeechToFiles, shareSpeechAudio } from '../features/speech/save';
 import { SPEECH_SEEK_SECONDS, nextSpeechRate, speechRateLabel, speechText, speechTimeLabel, type SpeechProgress } from '@pulpo/client-core';
 import { INITIAL_TRANSCRIPT_ROWS, hasLargeInitialMessage, transcriptListMessages, usesBottomAnchoredTranscript } from '../features/chat/transcriptWindow';
 import { hasChatSelectionObserver, recordChatSelection, hasTranscriptPositionObserver, recordTranscriptPosition } from '../features/chat/selectionTiming';
@@ -4383,20 +4384,63 @@ const EMPTY_MOBILE_QUEUE: MobileQueuedMessage[] = [];
 const COMPOSER_MAX_FONT_SIZE_MULTIPLIER = 1.6;
 const COMPOSER_SECTION_SPRING = { damping: 24, stiffness: 260, mass: 0.8, overshootClamping: true };
 
-function SpeechPlayerButton({ label, icon, disabled = false, onPress }: { label: string; icon: SymbolName; disabled?: boolean; onPress: () => void }) {
+function SpeechPlayerButton({ label, icon, disabled = false, busy = false, onPress }: { label: string; icon: SymbolName; disabled?: boolean; busy?: boolean; onPress: () => void }) {
   const { styles, COLORS } = useChatStyles();
   return (
     <Pressable
       accessibilityLabel={label}
       accessibilityRole="button"
-      accessibilityState={{ disabled }}
-      disabled={disabled}
+      accessibilityState={{ disabled, busy }}
+      disabled={disabled || busy}
       hitSlop={4}
       onPress={() => { Haptics.selectionAsync(); onPress(); }}
       style={({ pressed }) => [styles.speechPlayerButton, disabled && styles.disabledIconAction, pressed && styles.pressed]}
     >
-      <Icon name={icon} size={17} color={COLORS.text} />
+      {busy ? <ActivityIndicator color={COLORS.muted} size="small" /> : <Icon name={icon} size={17} color={COLORS.text} />}
     </Pressable>
+  );
+}
+
+// Shares the message's speech (the share sheet can save it to the device) or saves it to My files,
+// from a menu that opens out of the button. Audio not yet generated is generated first, in order,
+// while reading carries on.
+function SpeechSaveButton({ ready }: { ready: boolean }) {
+  const { styles } = useChatStyles();
+  const queryClient = useQueryClient();
+  const namespace = useFilesNamespace();
+  const filesEnabled = useFilesEnabled();
+  const [preparing, setPreparing] = useState(false);
+  const run = (action: 'share' | 'files') => {
+    setPreparing(true);
+    const task = action === 'share' ? shareSpeechAudio() : saveSpeechToFiles(namespace, queryClient).then(() => {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      AccessibilityInfo.announceForAccessibility('Saving to My files');
+    });
+    void task
+      .catch((error) => Alert.alert(action === 'share' ? 'Couldn’t share audio' : 'Couldn’t save to Files', filesErrorMessage(error)))
+      .finally(() => setPreparing(false));
+  };
+  const share = () => run('share');
+  const save = () => run('files');
+  if (preparing || !namespace || !filesEnabled) {
+    return <SpeechPlayerButton label={preparing ? 'Preparing audio' : 'Share audio'} icon="square.and.arrow.down" disabled={!ready} busy={preparing} onPress={share} />;
+  }
+  if (Platform.OS !== 'ios') {
+    return <MaterialMenu label="Save audio" icon="square.and.arrow.down" disabled={!ready} actions={[
+      { label: 'Share audio', icon: 'square.and.arrow.up', onPress: share },
+      { label: 'Save to Files', icon: 'folder.badge.plus', onPress: save },
+    ]} />;
+  }
+  return (
+    <SwiftUIHost ignoreSafeArea="all" style={styles.speechPlayerButton}>
+      <SwiftUIMenu
+        label={<SwiftUIImage systemName="square.and.arrow.down" size={14} modifiers={[frame({ width: 36, height: 40 }), contentShape(shapes.rectangle())]} />}
+        modifiers={[buttonStyle('plain'), foregroundStyle('primary'), swiftUIDisabled(!ready), swiftUIAccessibilityLabel('Save audio')]}
+      >
+        <SwiftUIButton label="Share Audio…" systemImage="square.and.arrow.up" onPress={share} />
+        <SwiftUIButton label="Save to Files" systemImage="folder.badge.plus" onPress={save} />
+      </SwiftUIMenu>
+    </SwiftUIHost>
   );
 }
 
@@ -4462,20 +4506,27 @@ function SpeechPlayerBar() {
     const timer = setInterval(refresh, 250);
     return () => clearInterval(timer);
   }, [visible, state]);
+  // On narrow phones the status shares its line with the time; it is left out rather than cut off.
+  const [widths, setWidths] = useState({ meta: 0, status: 0, time: 0 });
+  const measure = (key: keyof typeof widths) => ({ nativeEvent: { layout } }: { nativeEvent: { layout: { width: number } } }) => {
+    setWidths((current) => current[key] === layout.width ? current : { ...current, [key]: layout.width });
+  };
   if (!visible) return null;
   const loading = state.phase === 'loading';
   const ended = state.phase === 'ended';
   const time = speechTimeLabel(progress);
   const status = ended ? 'Finished' : state.paused ? 'Paused' : loading ? 'Preparing speech…' : 'Reading aloud';
+  const statusFits = !widths.meta || widths.status + 6 + widths.time <= widths.meta;
   return (
     <View accessibilityLabel="Read aloud controls" style={styles.speechPlayer}>
       <SpeechPlayerButton label={`Back ${SPEECH_SEEK_SECONDS} seconds`} icon="gobackward.10" disabled={loading} onPress={() => speechPlayback.seekBy(-SPEECH_SEEK_SECONDS)} />
       <SpeechPlayerButton label={ended ? 'Replay' : state.paused ? 'Resume reading' : 'Pause reading'} icon={ended || state.paused ? 'play.fill' : 'pause.fill'} onPress={speechPlayback.togglePause} />
       <SpeechPlayerButton label={`Forward ${SPEECH_SEEK_SECONDS} seconds`} icon="goforward.10" disabled={loading || ended} onPress={() => speechPlayback.seekBy(SPEECH_SEEK_SECONDS)} />
       <View style={styles.speechPlayerInfo}>
-        <View style={styles.speechPlayerMeta}>
-          <Text accessibilityLiveRegion="polite" numberOfLines={1} style={styles.speechPlayerStatus}>{status}</Text>
-          <Text style={styles.speechPlayerTime}>{time}</Text>
+        <View onLayout={measure('meta')} style={styles.speechPlayerMeta}>
+          <Text accessibilityElementsHidden importantForAccessibility="no-hide-descendants" numberOfLines={1} onLayout={measure('status')} style={[styles.speechPlayerStatus, styles.speechPlayerStatusMeasure]}>{status}</Text>
+          {statusFits ? <Text accessibilityLiveRegion="polite" numberOfLines={1} style={styles.speechPlayerStatus}>{status}</Text> : <View />}
+          <Text accessibilityLabel={statusFits ? undefined : `${status}, ${time}`} onLayout={measure('time')} style={styles.speechPlayerTime}>{time}</Text>
         </View>
         <SpeechScrubTrack progress={progress} />
       </View>
@@ -4489,6 +4540,7 @@ function SpeechPlayerBar() {
       >
         <Text style={styles.speechPlayerRate}>{speechRateLabel(state.rate)}</Text>
       </Pressable>
+      <SpeechSaveButton ready={Boolean(progress?.total)} />
       <SpeechPlayerButton label="Close player" icon="xmark" onPress={speechPlayback.stop} />
     </View>
   );
@@ -7637,6 +7689,7 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   speechPlayerInfo: { flex: 1, minWidth: 0, gap: 1, paddingHorizontal: 6 },
   speechPlayerMeta: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 6 },
   speechPlayerStatus: { flexShrink: 1, color: COLORS.muted, fontSize: 12, fontWeight: '500' },
+  speechPlayerStatusMeasure: { position: 'absolute', left: 0, opacity: 0 },
   speechPlayerTime: { color: COLORS.muted, fontSize: 12, fontVariant: ['tabular-nums'] },
   speechPlayerScrub: { height: 18, justifyContent: 'center' },
   speechPlayerTrack: { height: 4, borderRadius: 2, overflow: 'hidden', backgroundColor: COLORS.fill },
