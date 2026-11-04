@@ -33,7 +33,7 @@ import { SuggestionBar, SuggestionCard } from './SuggestionReview'
 import type { DocSession } from './use-doc-session'
 import './doc-editor.css'
 
-function ToolbarButton({ label, shortcut, active, disabled, onClick, children }: {
+export function ToolbarButton({ label, shortcut, active, disabled, onClick, children }: {
   label: string
   shortcut?: { label: string; aria: string }
   active?: boolean

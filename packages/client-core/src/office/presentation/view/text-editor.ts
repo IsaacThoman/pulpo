@@ -40,6 +40,8 @@ export interface InlineTextEditorOptions {
   onSelectionChange?(state: EditorState): void
   /** Ctrl/Cmd shortcuts the editor does not handle itself (copy shapes, save, …). */
   onKey?(event: KeyboardEvent): boolean
+  /** Bold, italic, and underline shortcuts; the host knows the inherited formatting to toggle against. */
+  onToggleMark?(mark: 'b' | 'i' | 'u'): void
 }
 
 const scratch = parseXmlDocument('<w/>')
@@ -84,6 +86,9 @@ export class InlineTextEditor {
         'Mod-z': () => (options.onUndo(), true),
         'Mod-y': () => (options.onRedo(), true),
         'Shift-Mod-z': () => (options.onRedo(), true),
+        'Mod-b': () => (options.onToggleMark?.('b'), true),
+        'Mod-i': () => (options.onToggleMark?.('i'), true),
+        'Mod-u': () => (options.onToggleMark?.('u'), true),
         'Shift-Enter': insertLineBreak,
         Enter: chainCommands(newlineInCode, createParagraphNear, liftEmptyBlock, splitBlockKeepMarks),
         Tab: listLevel(1),
@@ -93,8 +98,13 @@ export class InlineTextEditor {
       keymap(baseKeymap),
     ]
     const state = EditorState.create({ schema: slideTextSchema(), plugins })
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const editor = this
+    // A child of the host, not the host itself: ProseMirror takes over the element it mounts on.
+    const dom = document.createElement('div')
+    options.mount.append(dom)
     this.view = new EditorView(
-      { mount: options.mount },
+      { mount: dom },
       {
         state,
         editable: () => !options.readOnly,
@@ -102,10 +112,11 @@ export class InlineTextEditor {
         markViews: this.markViews(),
         attributes: { class: 'pp-text-editor', spellcheck: 'true', role: 'textbox', 'aria-multiline': 'true' },
         handleKeyDown: (_view, event) => options.onKey?.(event) ?? false,
-        dispatchTransaction: (transaction) => {
-          const next = this.view.state.apply(transaction)
-          this.view.updateState(next)
-          if (transaction.docChanged && transaction.getMeta(ySyncPluginKey) === undefined) this.refreshNumbers()
+        // y-tiptap dispatches while the view is still being constructed, before `this.view` is set.
+        dispatchTransaction(this: EditorView, transaction) {
+          const next = this.state.apply(transaction)
+          this.updateState(next)
+          if (transaction.docChanged && transaction.getMeta(ySyncPluginKey) === undefined) editor.refreshNumbers()
           options.onSelectionChange?.(next)
         },
       },
@@ -139,10 +150,11 @@ export class InlineTextEditor {
 
   destroy(): void {
     this.view.destroy()
+    this.view.dom.remove()
   }
 
   /** Auto-numbered paragraphs depend on their neighbors, so number labels refresh after edits. */
-  private refreshNumbers(): void {
+  refreshNumbers(): void {
     const labels = this.view.dom.querySelectorAll<HTMLElement>('[data-number-label]')
     if (!labels.length) return
     const styles: ParagraphStyle[] = []

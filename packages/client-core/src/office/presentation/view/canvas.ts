@@ -447,8 +447,10 @@ export class SlideCanvas {
 
   private readonly onDoubleClick = (event: MouseEvent): void => {
     if (this.controller.readOnly) return
-    const key = this.shapeAt(event.target)
-    if (key) this.beginEditing(key, event)
+    // Pointer capture during the click retargets it to the canvas; find what is under the pointer.
+    const target = this.element.ownerDocument.elementFromPoint(event.clientX, event.clientY)
+    const key = this.shapeAt(target)
+    if (key) this.beginEditing(key, { target })
   }
 
   /** Enters text editing in a shape (or the table cell under the pointer). */
@@ -504,6 +506,7 @@ export class SlideCanvas {
       onUndo: () => this.controller.undo(),
       onRedo: () => this.controller.redo(),
       onEscape: () => this.controller.setState({ editing: undefined }),
+      onToggleMark: (mark) => this.controller.toggleMark(mark),
       onSelectionChange: () => {
         this.autofit()
         this.controller.setState({})
@@ -746,7 +749,7 @@ export class SlideCanvas {
   }
 
   private readonly onClick = (event: MouseEvent): void => {
-    const target = event.target as Element
+    const target = (this.element.ownerDocument.elementFromPoint(event.clientX, event.clientY) ?? event.target) as Element
     const media = target.closest<HTMLElement>('.pp-media')
     if (media) {
       event.preventDefault()
