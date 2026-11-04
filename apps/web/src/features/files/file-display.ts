@@ -9,6 +9,7 @@ export {
   filePreviewKind,
   MAX_INLINE_PREVIEW_BYTES,
   MAX_TEXT_PREVIEW_BYTES,
+  mediaMimeType,
   SHEET_EXTENSIONS,
   type FilePreviewKind,
 } from '@pulpo/client-core/files'
