@@ -39,7 +39,12 @@ vi.mock('@expo/ui/swift-ui', () => ({
 }))
 vi.mock('@expo/ui/swift-ui/modifiers', () => Object.fromEntries(['accessibilityLabel', 'autocorrectionDisabled', 'disabled', 'font', 'foregroundStyle', 'frame', 'listRowBackground', 'multilineTextAlignment', 'scrollDismissesKeyboard', 'textFieldStyle', 'textInputAutocapitalization', 'tint'].map(name => [name, vi.fn()])))
 vi.mock('../../api/client', () => ({ mobileApi: { updateProfile: mocks.updateProfile, uploadAvatar: mocks.uploadAvatar, removeAvatar: mocks.removeAvatar } }))
-vi.mock('../../store/session', () => ({ useSessionStore: (selector: (state: unknown) => unknown) => selector({ user: mocks.user, setUser: mocks.setUser }) }))
+vi.mock('../../store/session', () => ({
+  useSessionStore: Object.assign(
+    (selector: (state: unknown) => unknown) => selector({ user: mocks.user, setUser: mocks.setUser }),
+    { getState: () => ({ user: mocks.user, setUser: mocks.setUser }) },
+  ),
+}))
 vi.mock('../../platform/materialActions', () => ({ showActions: mocks.showActions }))
 vi.mock('../../mockup5/src/store/prototypeStore', () => ({ usePrototypeStore: (selector: (state: unknown) => unknown) => selector({ updateProfile: vi.fn() }) }))
 vi.mock('../../mockup5/src/theme', () => ({ useAppTheme: () => ({ blue: 'blue', red: 'red', secondary: 'gray' }) }))

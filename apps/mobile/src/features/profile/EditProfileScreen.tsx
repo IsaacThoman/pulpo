@@ -129,7 +129,8 @@ export function EditProfileScreen({ navigation }: NativeStackScreenProps<RootSta
     setSaving(true);
     void mobileApi.updateProfile(draft.patch).then(async ({ user: next }) => {
       await setUser(next);
-      updatePrototypeProfile({ name: next.name });
+      // setUser drops a reply for an account that is no longer active; so does the name shown here.
+      if (useSessionStore.getState().user?.id === next.id) updatePrototypeProfile({ name: next.name });
       navigation.goBack();
     }).catch((error) => Alert.alert('Couldn’t update profile', errorMessage(error))).finally(() => setSaving(false));
   }, [draft.canSave, draft.patch, navigation, saving, setUser, updatePrototypeProfile]);
