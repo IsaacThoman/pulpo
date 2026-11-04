@@ -249,7 +249,7 @@ export class GridRenderer {
         if (scene.cols.isHidden(col)) continue
         const render = get(row, col)
         if (render.borders.top || render.borders.bottom || render.borders.left || render.borders.right || render.borders.diagonalUp || render.borders.diagonalDown) {
-          this.drawBorders(render, this.cellRect(scene, row, col), scene.zoom)
+          this.drawBorders(render, this.cellRect(scene, row, col), scene.zoom, scene.palette.text)
         }
       }
     }
@@ -331,11 +331,13 @@ export class GridRenderer {
     }
   }
 
-  private drawBorders(render: CellRender, rect: { x: number; y: number; width: number; height: number }, zoom: number): void {
+  private drawBorders(render: CellRender, rect: { x: number; y: number; width: number; height: number }, zoom: number, ink: string): void {
     const { x, y, width, height } = rect
     const right = x + width - 1
     const bottom = y + height - 1
-    const { borders } = render
+    // Black borders follow the text color, so they stay visible on a dark grid.
+    const fix = (edge: CssBorder | undefined) => (edge && edge.color === '#000000' ? { ...edge, color: ink } : edge)
+    const borders = { top: fix(render.borders.top), bottom: fix(render.borders.bottom), left: fix(render.borders.left), right: fix(render.borders.right), diagonalUp: fix(render.borders.diagonalUp), diagonalDown: fix(render.borders.diagonalDown) }
     if (borders.top) this.line(borders.top, x - 1, y - 1, right, y - 1, zoom)
     if (borders.bottom) this.line(borders.bottom, x - 1, bottom, right, bottom, zoom)
     if (borders.left) this.line(borders.left, x - 1, y - 1, x - 1, bottom, zoom)
@@ -654,7 +656,7 @@ export class GridRenderer {
       ctx.fillRect(rect.x, rect.y, rect.width - 1, rect.height - 1)
     }
     ctx.globalAlpha = 1
-    const active = this.cellRect(scene, remote.active.row, remote.active.col)
+    const active = this.activeRect(scene, remote.active)
     ctx.strokeStyle = remote.color
     ctx.lineWidth = 2
     ctx.strokeRect(active.x - 0.5, active.y - 0.5, active.width, active.height)
@@ -687,7 +689,7 @@ export class GridRenderer {
       ctx.lineWidth = 2
       ctx.strokeRect(rect.x - 0.5, rect.y - 0.5, rect.width, rect.height)
       // The active cell stays clear inside a larger selection.
-      const cell = this.cellRect(scene, active.row, active.col)
+      const cell = this.activeRect(scene, active)
       ctx.lineWidth = 1
       if (ranges.length > 1 || last.top !== last.bottom || last.left !== last.right) ctx.strokeRect(cell.x + 0.5, cell.y + 0.5, cell.width - 2, cell.height - 2)
       if (scene.fillHandle) {
@@ -699,6 +701,12 @@ export class GridRenderer {
       }
     }
     ctx.restore()
+  }
+
+  /** The active cell's rectangle: its whole merge when it is merged. */
+  private activeRect(scene: Scene, active: { row: number; col: number }): { x: number; y: number; width: number; height: number } {
+    const merge = scene.merges.find((range) => rangeContains(range, active.row, active.col))
+    return merge ? this.rangeRect(scene, merge) : this.cellRect(scene, active.row, active.col)
   }
 
   private drawFrozenLines(scene: Scene): void {
@@ -908,7 +916,8 @@ export function drawIcon(ctx: CanvasRenderingContext2D, set: string, index: numb
   const r = size * 0.42
   if (/Arrows/.test(set)) {
     const gray = /Gray/.test(set)
-    const angle = count === 3 ? [Math.PI / 2, 0, -Math.PI / 2][index]! : -Math.PI / 2 + (Math.PI * index) / (count - 1)
+    // Lowest points down, highest up.
+    const angle = -Math.PI / 2 + (Math.PI * index) / (count - 1)
     ctx.fillStyle = gray ? ICON_COLORS.gray : level >= 0.99 ? ICON_COLORS.green : level <= 0.01 ? ICON_COLORS.red : ICON_COLORS.yellow
     ctx.translate(cx, cy)
     ctx.rotate(-angle)

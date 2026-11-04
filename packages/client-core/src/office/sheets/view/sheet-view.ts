@@ -86,6 +86,15 @@ export interface EditState {
   enterMode: boolean
 }
 
+export interface FindOptions {
+  matchCase?: boolean
+  /** The whole cell must match. */
+  entireCell?: boolean
+  /** Search formulas rather than shown values. */
+  formulas?: boolean
+  allSheets?: boolean
+}
+
 export interface SheetSummary {
   count: number
   numbers: number
@@ -405,6 +414,17 @@ export class SheetView {
     const defaultCol = format.defaultColWidth ? columnWidthToPixels(format.defaultColWidth, this.digitWidth) : defaultColumnPixels(format.baseColWidth ?? 8, this.digitWidth)
     const rowSizes = new Map<number, number>()
     const colSizes = new Map<number, number>()
+    // Rows without a stored height grow to fit their largest font, as Excel sizes them.
+    const autoHeights = new Map<number, number>()
+    const owners = new Set<string>([...sheet.xf.keys(), ...[...sheet.fmt.keys()].filter((key) => key.endsWith('|fontSize')).map((key) => key.slice(0, key.lastIndexOf('|')))])
+    for (const key of owners) {
+      const position = sheet.position(key)
+      if (!position || sheet.rowMeta.has(`${sheet.rows.idAt(position.row)}|size`)) continue
+      const size = this.display.style(position.row, position.col).fontSize
+      const pixels = Math.round(size * 1.3 * POINTS_TO_PIXELS)
+      if (pixels > defaultRow && pixels > (autoHeights.get(position.row) ?? 0)) autoHeights.set(position.row, pixels)
+    }
+    for (const [row, pixels] of autoHeights) rowSizes.set(row, pixels)
     for (const [key, value] of sheet.rowMeta) {
       const bar = key.lastIndexOf('|')
       const prop = key.slice(bar + 1)
@@ -495,6 +515,8 @@ export class SheetView {
         if (target === this.sheet.rowMeta || target === this.sheet.colMeta || target === this.sheet.rows.order || target === this.sheet.cols.order || target === this.sheet.view || key === 'raw') layout = true
         if (target === this.sheet.xf || target === this.sheet.fmt || target === this.sheet.rowMeta || target === this.sheet.colMeta || target === this.sheet.rows.order || target === this.sheet.cols.order) styles = true
         if (target === this.sheet.view) this.zoom = (this.sheet.viewProp('zoom') ?? 100) / 100
+        // Font size changes resize rows that fit their content.
+        if (target === this.sheet.fmt && [...(event as Y.YMapEvent<unknown>).keysChanged].some((changed) => changed.endsWith('|fontSize'))) layout = true
       }
     }
     if (styles) this.display.invalidateStyles()
@@ -783,9 +805,10 @@ export class SheetView {
     const stored = this.sheet.viewProp('selection')
     const first = stored?.split(/\s+/)[0]
     const range = first ? parseRangeName(first) : undefined
-    if (range) {
-      this.selection = { ranges: [range], active: { row: range.top, col: range.left }, anchor: { row: range.top, col: range.left } }
-    }
+    if (range) this.selection = { ranges: [range], active: { row: range.top, col: range.left }, anchor: { row: range.top, col: range.left } }
+    // A selection on a merged cell covers the whole merge.
+    const merges = this.sheet.mergedRanges().map((merge) => merge.range)
+    this.selection = { ...this.selection, ranges: this.selection.ranges.map((entry) => commands.expandToMerges(entry, merges)) }
     this.scroller.scrollLeft = 0
     this.scroller.scrollTop = 0
   }
@@ -1448,6 +1471,105 @@ export class SheetView {
       }
       sheet.drawings.set(Math.random().toString(36).slice(2, 10), drawing)
     })
+  }
+
+  // ── Find and replace ─────────────────────────────────────────────────────
+
+  /** Cells whose shown text (or formula, with `formulas`) matches, in row order. */
+  find(query: string, options: FindOptions = {}): { sheetId: string; row: number; col: number }[] {
+    if (!query) return []
+    const matches: { sheetId: string; row: number; col: number }[] = []
+    const needle = options.matchCase ? query : query.toLowerCase()
+    const sheets = options.allSheets ? this.workbook.sheets().filter((sheet) => (sheet.map.get('kind') ?? 'worksheet') === 'worksheet') : [this.sheet]
+    for (const sheet of sheets) {
+      const found: { row: number; col: number }[] = []
+      for (const [key, data] of sheet.cells) {
+        const position = sheet.position(key)
+        if (!position) continue
+        let text: string
+        if (options.formulas && data.f !== undefined) text = `=${toA1Form(data.f, sheet)}`
+        else if (sheet.id === this.sheetIdValue) text = this.display.render(position.row, position.col).text
+        else text = String(data.v ?? '')
+        const haystack = options.matchCase ? text : text.toLowerCase()
+        if (options.entireCell ? haystack === needle : haystack.includes(needle)) found.push(position)
+      }
+      found.sort((a, b) => a.row - b.row || a.col - b.col)
+      for (const position of found) matches.push({ sheetId: sheet.id, ...position })
+    }
+    return matches
+  }
+
+  /** Replaces matches in what was typed (values and formulas); returns how many cells changed. */
+  replace(query: string, replacement: string, options: FindOptions = {}, only?: { sheetId: string; row: number; col: number }): number {
+    if (!query || this.readOnly) return 0
+    const targets = only ? [only] : this.find(query, { ...options, formulas: true })
+    const pattern = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), options.matchCase ? 'g' : 'gi')
+    let changed = 0
+    this.commitEdit()
+    this.workbook.transact(() => {
+      for (const target of targets) {
+        const sheet = this.workbook.sheet(target.sheetId)
+        if (!sheet) continue
+        const data = sheet.cell(target.row, target.col)
+        if (!data) continue
+        const input = data.f !== undefined ? `=${toA1Form(data.f, sheet)}` : String(data.v ?? '')
+        const next = options.entireCell ? (input.toLowerCase() === query.toLowerCase() || (options.matchCase && input === query) ? replacement : input) : input.replace(pattern, () => replacement)
+        if (next === input) continue
+        commands.setCellInput(sheet, target.row, target.col, next, { valuesOnly: this.valuesOnly, date1904: this.workbook.date1904 })
+        changed++
+      }
+    })
+    this.notify()
+    return changed
+  }
+
+  // ── Printing ─────────────────────────────────────────────────────────────
+
+  /** The used part of the sheet as a self-contained HTML table, for printing and PDF export. */
+  printHtml(): string {
+    const sheet = this.sheet
+    const used = sheet.usedRange()
+    const escape = (text: string) => text.replace(/[&<>"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[char]!)
+    if (!used) return `<!doctype html><title>${escape(sheet.name)}</title><p></p>`
+    const merges = sheet.mergedRanges().map((merge) => merge.range)
+    const covered = new Set<string>()
+    for (const merge of merges) for (let row = merge.top; row <= merge.bottom; row++) for (let col = merge.left; col <= merge.right; col++) if (row !== merge.top || col !== merge.left) covered.add(`${row},${col}`)
+    const border = (edge: { style: string; color: string } | undefined) => (edge ? `${edge.style === 'thick' ? 3 : edge.style.startsWith('medium') ? 2 : 1}px ${edge.style === 'double' ? 'double' : /dash|dot|hair/i.test(edge.style) ? 'dashed' : 'solid'} ${edge.color}` : '')
+    let colgroup = '<colgroup>'
+    for (let col = 0; col <= used.right; col++) colgroup += `<col style="width:${this.colLayout.size(col)}px">`
+    colgroup += '</colgroup>'
+    let body = ''
+    for (let row = 0; row <= used.bottom; row++) {
+      if (this.rowLayout.isHidden(row)) continue
+      body += `<tr style="height:${this.rowLayout.size(row)}px">`
+      for (let col = 0; col <= used.right; col++) {
+        if (covered.has(`${row},${col}`) || this.colLayout.isHidden(col)) continue
+        const merge = merges.find((entry) => entry.top === row && entry.left === col)
+        const render = this.display.render(row, col)
+        const style = render.style
+        const css = [
+          `font-family:${cssFontFamily(style.fontName).replace(/"/g, "'")}`,
+          `font-size:${style.fontSize}pt`,
+          style.bold ? 'font-weight:bold' : '',
+          style.italic ? 'font-style:italic' : '',
+          style.underline || style.strike ? `text-decoration:${style.underline ? 'underline' : ''} ${style.strike ? 'line-through' : ''}` : '',
+          `color:${render.color}`,
+          render.fill ? `background:${render.fill}` : '',
+          `text-align:${render.hAlign === 'centerContinuous' ? 'center' : render.hAlign === 'fill' || render.hAlign === 'distributed' ? 'left' : render.hAlign}`,
+          `vertical-align:${style.vAlign === 'center' ? 'middle' : style.vAlign === 'top' ? 'top' : 'bottom'}`,
+          style.wrap ? 'white-space:pre-wrap' : 'white-space:pre',
+          render.borders.top ? `border-top:${border(render.borders.top)}` : '',
+          render.borders.bottom ? `border-bottom:${border(render.borders.bottom)}` : '',
+          render.borders.left ? `border-left:${border(render.borders.left)}` : '',
+          render.borders.right ? `border-right:${border(render.borders.right)}` : '',
+        ].filter(Boolean).join(';')
+        const span = merge ? ` rowspan="${merge.bottom - merge.top + 1}" colspan="${merge.right - merge.left + 1}"` : ''
+        body += `<td${span} style="${escape(css)}">${escape(render.text)}</td>`
+      }
+      body += '</tr>'
+    }
+    const gridlines = sheet.viewProp('showGridLines') === false ? '' : 'td{outline:0.5px solid #d9d9d9}'
+    return `<!doctype html><html><head><meta charset="utf-8"><title>${escape(sheet.name)}</title><style>@page{margin:0.7in 0.7in 0.75in}body{margin:0}table{border-collapse:collapse;table-layout:fixed}td{padding:0 3px;overflow:hidden}${gridlines}</style></head><body><table>${colgroup}${body}</table></body></html>`
   }
 
   focus(): void {
