@@ -192,6 +192,19 @@ describe.each(['ios', 'android'])('Friends on %s', (platform) => {
     await waitFor(() => expect(writes()).toEqual([['/api/pools/invitations/invite/accept', { method: 'POST', body: { balanceDisclosureAccepted: true } }]]))
   })
 
+  it('separates the owner’s Pool actions from friend actions on a member', async () => {
+    mount()
+    await screen.findByText(/2 of 6 members/)
+    if (mocks.platform === 'ios') {
+      const menu = screen.getByRole('menu', { name: 'More options for Alice' })
+      expect([...menu.children].map((child) => child.tagName === 'HR' ? '—' : child.textContent)).toEqual(['Make Owner', 'Remove from Pool', '—', 'Remove Friend', 'Block'])
+      return
+    }
+    fireEvent.click(screen.getByRole('button', { name: 'More options for Alice' }))
+    const [, actions] = mocks.showActions.mock.calls.at(-1) as [string, { label: string }[]]
+    expect(actions.map((action) => action.label)).toEqual(['Make Owner', 'Remove from Pool', 'Remove Friend', 'Block'])
+  })
+
   it('shows the Pool’s shared usage as percentages', async () => {
     const bar = { remainingPercentage: 64, availableBarPercentage: 64, pendingMicros: 0, pendingBarPercentage: 0, resetsAt: null }
     summary.pool!.sharedUsage = { total: bar, fiveHour: null }

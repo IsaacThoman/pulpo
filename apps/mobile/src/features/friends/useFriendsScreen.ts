@@ -15,6 +15,8 @@ export interface FriendMenuAction {
   onPress: () => void
   destructive?: boolean
   disabled?: boolean
+  /** Starts a new group, as the web's menus separate Pool actions from friend actions. */
+  separated?: boolean
 }
 
 const COPIED_MS = 1_500
@@ -112,12 +114,14 @@ export function useFriendsScreen() {
       { label: 'Make Owner', icon: 'crown', onPress: () => actions.makeOwner(member), disabled: busy },
       { label: 'Remove from Pool', icon: 'person.crop.circle.badge.minus', onPress: () => actions.removeMember(member), destructive: true, disabled: busy },
     ] : []),
-    ...(overview.friendIds.has(member.profile.id) ? friendMenu(member.profile) : []),
+    ...(overview.friendIds.has(member.profile.id)
+      ? friendMenu(member.profile).map((action, index) => index === 0 && overview.isOwner ? { ...action, separated: true } : action)
+      : []),
   ]
 
   const requestMenu = (connection: FriendConnection): FriendMenuAction[] => [
     { label: 'Decline Request', icon: 'xmark', onPress: () => actions.decline(connection), disabled: pending.has(`decline:${connection.requestId}`) },
-    { label: 'Block', icon: 'hand.raised', onPress: () => actions.block(connection.profile), destructive: true, disabled: busy },
+    { label: 'Block', icon: 'hand.raised', onPress: () => actions.block(connection.profile), destructive: true, disabled: busy, separated: true },
   ]
 
   const poolInvitationMenu = (invitation: PoolInvitation): FriendMenuAction[] => [

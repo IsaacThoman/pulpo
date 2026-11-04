@@ -78,10 +78,9 @@ export function FriendsScreen({ navigation }: NativeStackScreenProps<RootStackPa
 
 function NativeMenu({ name, actions }: { name: string; actions: FriendMenuAction[] }) {
   if (!actions.length) return null
-  const destructiveFrom = actions.findIndex((action) => action.destructive)
   return <SwiftUIMenu label="More" systemImage="ellipsis.circle" modifiers={[labelStyle('iconOnly'), buttonStyle('borderless'), foregroundStyle('secondary'), accessibilityLabel(`More options for ${name}`)]}>
-    {actions.map((action, index) => [
-      index > 0 && index === destructiveFrom ? <SwiftUIDivider key={`${action.label}-divider`} /> : null,
+    {actions.map((action) => [
+      action.separated ? <SwiftUIDivider key={`${action.label}-divider`} /> : null,
       <SwiftUIButton key={action.label} label={action.label} systemImage={action.icon as never} role={action.destructive ? 'destructive' : 'default'} onPress={action.onPress} modifiers={action.disabled ? [disabled(true)] : []} />,
     ])}
   </SwiftUIMenu>
