@@ -115,14 +115,14 @@ export function parseDelimitedRow(text: string, start: number, end: number, deli
 }
 
 /**
- * Guesses the delimiter from the first rows: the candidate that splits them into the same number
- * of columns most often wins, and the declared one (comma for `.csv`, tab for `.tsv`) wins ties.
+ * Guesses the delimiter from the first rows. The declared one (comma for `.csv`, tab for `.tsv`)
+ * is kept whenever it splits the rows into a steady number of columns, so a TSV with commas in its
+ * text stays a TSV. Only when it leaves the rows unsplit or ragged (a `.csv` written with semicolons
+ * in a decimal-comma locale) does the candidate that splits them most consistently win.
  */
 export function sniffDelimiter(text: string, declared: Delimiter = ',', sampleRows = 50): Delimiter {
   const sample = text.slice(0, 64 * 1024)
-  let best = declared
-  let bestScore = -1
-  for (const candidate of [declared, ...DELIMITER_CANDIDATES.filter((value) => value !== declared)]) {
+  const measure = (candidate: Delimiter): { columns: number; consistency: number } => {
     const code = candidate.charCodeAt(0)
     const counts = new Map<number, number>()
     let rows = 0
@@ -136,11 +136,27 @@ export function sniffDelimiter(text: string, declared: Delimiter = ',', sampleRo
       rows += 1
       counts.set(span.fields, (counts.get(span.fields) ?? 0) + 1)
     }
-    let score = 0
-    for (const [fields, count] of counts) if (fields > 1) score = Math.max(score, count * Math.min(fields, 8))
-    if (score > bestScore) {
+    let columns = 1
+    let most = 0
+    for (const [fields, count] of counts) {
+      if (count > most || (count === most && fields > columns)) {
+        columns = fields
+        most = count
+      }
+    }
+    return { columns, consistency: rows ? most / rows : 0 }
+  }
+  const own = measure(declared)
+  if (own.columns > 1 && own.consistency >= 0.8) return declared
+  let best = declared
+  let bestScore = own.columns > 1 ? own.consistency : 0
+  for (const candidate of DELIMITER_CANDIDATES) {
+    if (candidate === declared) continue
+    const { columns, consistency } = measure(candidate)
+    // A challenger must split the rows steadily, and more steadily than the declared delimiter.
+    if (columns > 1 && consistency >= 0.8 && consistency > bestScore) {
       best = candidate
-      bestScore = score
+      bestScore = consistency
     }
   }
   return best
@@ -229,6 +245,8 @@ export function indexDelimited(source: string, options: DelimitedOptions = {}): 
     return low
   }
 
+  // Lower-cased once, on the first search, and kept for the next keystrokes.
+  let lowered: string | undefined
   const parse = (row: number): string[] => {
     const { start, end } = rowAt(row)
     return parseDelimitedRow(text, start, end, delimiter, maxColumns)
@@ -256,7 +274,8 @@ export function indexDelimited(source: string, options: DelimitedOptions = {}): 
         for (let row = 0; row < rowCount && rows.length < limit; row += 1) if (matches(row)) rows.push(row)
         return rows
       }
-      const haystack = text.toLowerCase()
+      lowered ??= text.toLowerCase()
+      const haystack = lowered
       // Lower-casing can change length for a few characters (İ); then offsets no longer line up.
       if (haystack.length !== text.length) {
         for (let row = 0; row < rowCount && rows.length < limit; row += 1) if (matches(row)) rows.push(row)

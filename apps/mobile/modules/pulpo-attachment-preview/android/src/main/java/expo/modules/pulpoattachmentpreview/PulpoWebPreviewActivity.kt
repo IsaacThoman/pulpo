@@ -2,6 +2,7 @@ package expo.modules.pulpoattachmentpreview
 
 import android.app.Activity
 import android.content.ActivityNotFoundException
+import android.content.ComponentName
 import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.Color
@@ -16,6 +17,8 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.WindowInsets
 import android.webkit.CookieManager
+import android.webkit.JsPromptResult
+import android.webkit.JsResult
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
@@ -47,6 +50,7 @@ class PulpoWebPreviewActivity : Activity() {
   private val host = "${UUID.randomUUID()}.pulpo-preview.invalid"
   private val documentUrl get() = "https://$host/"
   private var restartedAfterCrash = false
+  private var dialogCount = 0
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
@@ -154,7 +158,17 @@ class PulpoWebPreviewActivity : Activity() {
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) safeBrowsingEnabled = true
     }
     CookieManager.getInstance().setAcceptThirdPartyCookies(view, false)
-    view.webChromeClient = WebChromeClient()
+    view.webChromeClient = object : WebChromeClient() {
+      // A page may show a few dialogs, as on iOS; past that they are refused, so a loop of alerts
+      // cannot trap the user.
+      override fun onJsAlert(view: WebView, url: String?, message: String?, result: JsResult): Boolean = limitDialogs(result)
+      override fun onJsConfirm(view: WebView, url: String?, message: String?, result: JsResult): Boolean = limitDialogs(result)
+      override fun onJsPrompt(view: WebView, url: String?, message: String?, defaultValue: String?, result: JsPromptResult): Boolean = limitDialogs(result)
+      override fun onJsBeforeUnload(view: WebView, url: String?, message: String?, result: JsResult): Boolean {
+        result.confirm()
+        return true
+      }
+    }
     view.webViewClient = object : WebViewClient() {
       override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
         if (request.url.host != host) return null
@@ -176,11 +190,7 @@ class PulpoWebPreviewActivity : Activity() {
         if (request.isForMainFrame && isDocument(request.url)) return false
         val scheme = request.url.scheme
         if (request.hasGesture() && request.isForMainFrame && (scheme == "https" || scheme == "http" || scheme == "mailto")) {
-          try {
-            startActivity(Intent(Intent.ACTION_VIEW, request.url).addCategory(Intent.CATEGORY_BROWSABLE))
-          } catch (_: ActivityNotFoundException) {
-            // Nothing can open it; the tap does nothing.
-          }
+          openExternally(request.url)
         }
         return true
       }
@@ -197,6 +207,31 @@ class PulpoWebPreviewActivity : Activity() {
     return view
   }
 
+  /** Returns false (show the dialog) for the first few, then cancels the rest unseen. */
+  private fun limitDialogs(result: JsResult): Boolean {
+    dialogCount += 1
+    if (dialogCount <= MAX_DIALOGS) return false
+    result.cancel()
+    return true
+  }
+
+  /**
+   * Opens a link the user tapped in another app, never in Pulpo itself: a link to this instance would
+   * otherwise come back through the app's own link handling, carrying whatever the page put in it.
+   */
+  private fun openExternally(uri: Uri) {
+    val intent = Intent(Intent.ACTION_VIEW, uri).addCategory(Intent.CATEGORY_BROWSABLE)
+    val ownComponents = packageManager.queryIntentActivities(intent, 0)
+      .filter { it.activityInfo.packageName == packageName }
+      .map { ComponentName(it.activityInfo.packageName, it.activityInfo.name) }
+    val target = if (ownComponents.isEmpty()) intent else Intent.createChooser(intent, null).putExtra(Intent.EXTRA_EXCLUDE_COMPONENTS, ownComponents.toTypedArray())
+    try {
+      startActivity(target)
+    } catch (_: ActivityNotFoundException) {
+      // Nothing can open it; the tap does nothing.
+    }
+  }
+
   override fun onDestroy() {
     webView?.let {
       container.removeView(it)
@@ -210,5 +245,6 @@ class PulpoWebPreviewActivity : Activity() {
     const val EXTRA_PATH = "expo.modules.pulpoattachmentpreview.PATH"
     const val EXTRA_TITLE = "expo.modules.pulpoattachmentpreview.TITLE"
     const val EXTRA_POLICY = "expo.modules.pulpoattachmentpreview.POLICY"
+    private const val MAX_DIALOGS = 3
   }
 }

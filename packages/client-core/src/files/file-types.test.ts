@@ -45,7 +45,9 @@ describe('file type table', () => {
   })
 
   it('never lists binary office files as text', () => {
-    for (const extension of [...DOCUMENT_EXTENSIONS, ...PRESENTATION_EXTENSIONS]) expect(isTextFile(`a.${extension}`), extension).toBe(false)
+    for (const extension of [...DOCUMENT_EXTENSIONS, ...PRESENTATION_EXTENSIONS]) {
+      if (extension !== 'rtf') expect(isTextFile(`a.${extension}`), extension).toBe(false)
+    }
     expect(isTextFile('a.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')).toBe(false)
   })
 
@@ -57,6 +59,19 @@ describe('file type table', () => {
     expect(fileFamily('noext', 'text/x-unknown')).toBe('text')
     expect(fileFamily('noext', 'application/octet-stream')).toBeNull()
     expect(fileFamily('photo', 'image/heic')).toBe('image')
+  })
+
+  it('settles ambiguous and hostile names', () => {
+    expect(isTextFile('a.out', 'application/octet-stream')).toBe(false)
+    expect(isTextFile('server.key', 'text/plain')).toBe(true)
+    expect(isTextFile('Deck.key', 'application/vnd.apple.keynote')).toBe(false)
+    expect(isTextFile('letter.rtf', 'text/rtf')).toBe(true)
+    expect(isTextFile('constructor')).toBe(false)
+    expect(isTextFile('__proto__')).toBe(false)
+    expect(codeLanguageFor('constructor')).toBeNull()
+    expect(previewKindOf('app.ts', 'video/mp2t')).toBe('text')
+    expect(previewKindOf('clip.mts', 'video/mp2t')).toBe('text')
+    expect(previewKindOf('clip.mp4', 'video/mp4')).toBe('video')
   })
 
   it('recognizes whole-name text files and dotfiles', () => {
@@ -105,6 +120,8 @@ describe('Files preview kinds', () => {
     expect(filePreviewKind(blob('Report.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'))).toBeNull()
     expect(filePreviewKind(blob('Budget.xlsx', null))).toBeNull()
     expect(filePreviewKind(blob('Deck.pptx', null))).toBeNull()
+    expect(filePreviewKind(blob('letter.rtf', 'text/rtf'))).toBeNull()
+    expect(filePreviewKind(blob('old.doc', 'application/msword'))).toBeNull()
   })
 
   it('refuses an image extension whose confirmed type is something else', () => {

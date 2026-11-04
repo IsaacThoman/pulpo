@@ -10,7 +10,7 @@ import { openAttachmentFile } from '../../native/openFile'
 import { downloadFile, fetchDocMarkdown, fetchFileNode, markdownExportFile } from './api'
 import { filesErrorMessage } from './display'
 import { fileOpenTarget } from './itemActions'
-import { decodeFileText } from './viewers/content'
+import { decodeFileText, MAX_IN_APP_VIEWER_BYTES } from './viewers/content'
 import { openNotebook } from './viewers/notebook'
 
 /** Uploaded files being fetched to open or share, so their rows can show progress. */
@@ -68,7 +68,13 @@ export function useOpenFileItem() {
         case 'quiz': navigation.push('FileQuiz', { fileId: target.id, name: target.name }); return
         case 'viewer': navigation.push('FileViewer', { fileId: target.id, name: target.name }); return
         case 'notebook': {
-          const file = await withDownload(target.id, async () => downloadFile(node.id === target.id ? node : (await fetchFileNode(target.id)).node))
+          const notebook = node.id === target.id ? node : (await fetchFileNode(target.id)).node
+          // Behind a shortcut the size is only known now; huge notebooks go to the system viewer.
+          if (notebook.sizeBytes > MAX_IN_APP_VIEWER_BYTES) {
+            await previewUploadedFile(notebook)
+            return
+          }
+          const file = await withDownload(target.id, () => downloadFile(notebook))
           const fallback = await openNotebook(decodeFileText(await file.bytes()), target.name)
           if (fallback) navigation.push('FileViewer', { fileId: target.id, name: target.name, notice: fallback.notice })
           return

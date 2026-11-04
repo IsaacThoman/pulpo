@@ -125,7 +125,10 @@ function notebookUrlTransform(attachments: Record<string, MimeBundle>): UrlTrans
   }
 }
 
-/** Embedded images show inline; remote ones stay links, as in chat, so opening a notebook fetches nothing. */
+/**
+ * Embedded images show inline; remote ones stay links, as in chat, so Markdown cells fetch nothing.
+ * (HTML and JavaScript outputs run in the sandbox, whose policy lets them load what they link.)
+ */
 function NotebookImage(props: ComponentProps<'img'>) {
   const src = typeof props.src === 'string' ? props.src : ''
   if (src.startsWith('data:image/')) return <img src={src} alt={props.alt ?? ''} className="my-2 max-w-full rounded" />
@@ -137,7 +140,7 @@ const NO_ATTACHMENTS: Record<string, MimeBundle> = {}
 
 function NotebookMarkdown({ source, attachments = NO_ATTACHMENTS }: { source: string; attachments?: Record<string, MimeBundle> }) {
   const transform = useMemo(() => notebookUrlTransform(attachments), [attachments])
-  return <Markdown content={source} components={NOTEBOOK_MARKDOWN_COMPONENTS} urlTransform={transform} />
+  return <Markdown content={source} components={NOTEBOOK_MARKDOWN_COMPONENTS} urlTransform={transform} html />
 }
 
 function Prompt({ kind, count }: { kind: 'in' | 'out'; count: number | null }) {
@@ -149,8 +152,7 @@ function Prompt({ kind, count }: { kind: 'in' | 'out'; count: number | null }) {
   )
 }
 
-function OutputBody({ output }: { output: NotebookOutput }) {
-  const dark = useDarkTheme()
+function OutputBody({ output, dark }: { output: NotebookOutput; dark: boolean }) {
   if (output.type === 'stream') {
     return (
       <pre className={cn('overflow-x-auto rounded-md px-3 py-2 font-mono text-xs leading-5 whitespace-pre-wrap break-words', output.name === 'stderr' ? 'bg-destructive/10' : '')} data-output="stream">
@@ -230,7 +232,7 @@ function OutputBody({ output }: { output: NotebookOutput }) {
   }
 }
 
-const Cell = memo(function Cell({ cell, language }: { cell: NotebookCell; language: string }) {
+const Cell = memo(function Cell({ cell, language, dark }: { cell: NotebookCell; language: string; dark: boolean }) {
   if (cell.type === 'markdown') {
     return (
       <section className="pl-10 text-sm sm:pl-14 [content-visibility:auto]" data-cell="markdown">
@@ -257,7 +259,7 @@ const Cell = memo(function Cell({ cell, language }: { cell: NotebookCell; langua
         <div key={index} className="flex min-w-0 gap-2">
           <Prompt kind="out" count={output.type === 'execute_result' ? output.executionCount : null} />
           <div className="min-w-0 flex-1 overflow-x-auto">
-            <OutputBody output={output} />
+            <OutputBody output={output} dark={dark} />
           </div>
         </div>
       ))}
@@ -266,11 +268,13 @@ const Cell = memo(function Cell({ cell, language }: { cell: NotebookCell; langua
 })
 
 function NotebookBody({ notebook }: { notebook: NotebookModel }) {
+  // One theme subscription for the notebook; HTML outputs are styled to match it.
+  const dark = useDarkTheme()
   const language = notebook.language ?? 'python'
   if (!notebook.cells.length) return <p className="p-8 text-center text-sm text-muted-foreground">{ui("This notebook has no cells.")}</p>
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-4 px-3 py-5 sm:px-6">
-      {notebook.cells.map((cell) => <Cell key={cell.id} cell={cell} language={language} />)}
+      {notebook.cells.map((cell) => <Cell key={cell.id} cell={cell} language={language} dark={dark} />)}
     </div>
   )
 }

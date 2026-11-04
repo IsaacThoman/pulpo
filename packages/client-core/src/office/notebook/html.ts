@@ -100,8 +100,14 @@ function mathExtensions(renderMath: NotebookHtmlOptions['renderMath']): Tokenize
       level: 'block',
       start: (source) => source.indexOf('$$'),
       tokenizer(source) {
-        const match = /^\$\$([\s\S]+?)\$\$[ \t]*(?:\n|$)/.exec(source)
-        return match ? { type: 'blockMath', raw: match[0], text: match[1]!.trim() } : undefined
+        // indexOf rather than a lazy regex, which rescans the rest of the cell at every `$$`.
+        if (!source.startsWith('$$')) return undefined
+        const close = source.indexOf('$$', 2)
+        if (close <= 2) return undefined
+        const after = /^[ \t]*(?:\n|$)/.exec(source.slice(close + 2, close + 2 + 64))
+        if (!after) return undefined
+        const raw = source.slice(0, close + 2 + after[0].length)
+        return { type: 'blockMath', raw, text: source.slice(2, close).trim() }
       },
       renderer: (token) => render(String(token.text), true),
     },

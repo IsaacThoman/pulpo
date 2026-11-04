@@ -31,54 +31,68 @@ function fromCodeUnits(units: ArrayLike<number>, length: number): string {
   return text
 }
 
-/** Strict UTF-8, or null when the bytes are not valid UTF-8. */
-export function decodeUtf8Strict(bytes: Uint8Array): string | null {
-  if (typeof TextDecoder !== 'undefined') {
-    try {
-      return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes)
-    } catch (error) {
-      if (error instanceof TypeError) return null
-      // A runtime whose TextDecoder lacks `fatal` falls through to the manual decoder.
-    }
-  }
-  const units = new Uint16Array(bytes.length)
+/**
+ * Walks UTF-8, appending code units to `units` (when given) and counting well-formed multibyte
+ * sequences and invalid bytes. Invalid bytes become U+FFFD, as browsers decode them.
+ */
+function scanUtf8(bytes: Uint8Array, units: Uint16Array | null): { length: number; multibyte: number; invalid: number } {
   let length = 0
+  let multibyte = 0
+  let invalid = 0
+  const emit = (unit: number) => {
+    if (units) units[length] = unit
+    length += 1
+  }
   for (let index = 0; index < bytes.length;) {
     const lead = bytes[index]!
-    let codePoint: number
-    let size: number
+    let size = 0
+    let codePoint = 0
     if (lead < 0x80) {
-      codePoint = lead
-      size = 1
-    } else if (lead >= 0xc2 && lead <= 0xdf) {
-      codePoint = lead & 0x1f
-      size = 2
-    } else if (lead >= 0xe0 && lead <= 0xef) {
-      codePoint = lead & 0x0f
-      size = 3
-    } else if (lead >= 0xf0 && lead <= 0xf4) {
-      codePoint = lead & 0x07
-      size = 4
-    } else {
-      return null
+      emit(lead)
+      index += 1
+      continue
     }
-    if (index + size > bytes.length) return null
-    for (let offset = 1; offset < size; offset += 1) {
+    if (lead >= 0xc2 && lead <= 0xdf) [size, codePoint] = [2, lead & 0x1f]
+    else if (lead >= 0xe0 && lead <= 0xef) [size, codePoint] = [3, lead & 0x0f]
+    else if (lead >= 0xf0 && lead <= 0xf4) [size, codePoint] = [4, lead & 0x07]
+    let valid = size > 0 && index + size <= bytes.length
+    for (let offset = 1; valid && offset < size; offset += 1) {
       const next = bytes[index + offset]!
-      if ((next & 0xc0) !== 0x80) return null
-      codePoint = (codePoint << 6) | (next & 0x3f)
+      if ((next & 0xc0) !== 0x80) valid = false
+      else codePoint = (codePoint << 6) | (next & 0x3f)
     }
     // Overlong forms, surrogates, and code points past U+10FFFF are invalid.
-    if ((size === 3 && codePoint < 0x800) || (size === 4 && (codePoint < 0x10000 || codePoint > 0x10ffff)) || (codePoint >= 0xd800 && codePoint <= 0xdfff)) return null
+    if (valid && ((size === 3 && codePoint < 0x800) || (size === 4 && (codePoint < 0x10000 || codePoint > 0x10ffff)) || (codePoint >= 0xd800 && codePoint <= 0xdfff))) valid = false
+    if (!valid) {
+      invalid += 1
+      emit(0xfffd)
+      index += 1
+      continue
+    }
+    multibyte += 1
     if (codePoint > 0xffff) {
       const offset = codePoint - 0x10000
-      units[length++] = 0xd800 + (offset >> 10)
-      units[length++] = 0xdc00 + (offset & 0x3ff)
+      emit(0xd800 + (offset >> 10))
+      emit(0xdc00 + (offset & 0x3ff))
     } else {
-      units[length++] = codePoint
+      emit(codePoint)
     }
     index += size
   }
+  return { length, multibyte, invalid }
+}
+
+/** Strict UTF-8, or null when the bytes are not valid UTF-8. */
+export function decodeUtf8Strict(bytes: Uint8Array): string | null {
+  if (scanUtf8(bytes, null).invalid > 0) return null
+  return decodeUtf8Lossy(bytes)
+}
+
+/** UTF-8 with each invalid byte replaced by U+FFFD. */
+export function decodeUtf8Lossy(bytes: Uint8Array): string {
+  if (typeof TextDecoder !== 'undefined') return new TextDecoder('utf-8', { ignoreBOM: true }).decode(bytes)
+  const units = new Uint16Array(bytes.length)
+  const { length } = scanUtf8(bytes, units)
   return fromCodeUnits(units, length)
 }
 
@@ -103,19 +117,18 @@ export function decodeWindows1252(bytes: Uint8Array): string {
 }
 
 /**
- * Decodes a text file: a byte order mark wins, then strict UTF-8, then Windows-1252, which maps
- * every byte, so decoding never fails.
+ * Decodes a text file: a byte order mark wins, then UTF-8, then Windows-1252, which maps every
+ * byte, so decoding never fails.
  */
 export function decodeTextBytes(bytes: Uint8Array): DecodedText {
-  if (bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
-    const text = decodeUtf8Strict(bytes.subarray(3))
-    return text === null
-      ? { text: decodeWindows1252(bytes.subarray(3)), encoding: 'windows-1252', bom: true }
-      : { text, encoding: 'utf-8', bom: true }
-  }
+  // A UTF-8 byte order mark is decisive, even if some bytes after it are damaged.
+  if (bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) return { text: decodeUtf8Lossy(bytes.subarray(3)), encoding: 'utf-8', bom: true }
   if (bytes[0] === 0xff && bytes[1] === 0xfe) return { text: decodeUtf16(bytes, true, 2), encoding: 'utf-16le', bom: true }
   if (bytes[0] === 0xfe && bytes[1] === 0xff) return { text: decodeUtf16(bytes, false, 2), encoding: 'utf-16be', bom: true }
-  const utf8 = decodeUtf8Strict(bytes)
-  if (utf8 !== null) return { text: utf8, encoding: 'utf-8', bom: false }
+  // One pass decides: text with no invalid sequences, or far more valid multibyte characters than
+  // invalid bytes (a UTF-8 file with a stray corrupt byte), is UTF-8. Windows-1252 text has accents
+  // as lone high bytes, which are invalid UTF-8 and rarely form valid sequences by chance.
+  const { multibyte, invalid } = scanUtf8(bytes, null)
+  if (invalid === 0 || multibyte > invalid * 4) return { text: decodeUtf8Lossy(bytes), encoding: 'utf-8', bom: false }
   return { text: decodeWindows1252(bytes), encoding: 'windows-1252', bom: false }
 }

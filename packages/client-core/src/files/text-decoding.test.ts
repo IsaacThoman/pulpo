@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { decodeTextBytes, decodeUtf8Strict, decodeWindows1252 } from './text-decoding.js'
+import { decodeTextBytes, decodeUtf8Lossy, decodeUtf8Strict, decodeWindows1252 } from './text-decoding.js'
 
 const bytes = (...values: number[]) => new Uint8Array(values)
 
@@ -20,6 +20,15 @@ describe('decodeTextBytes', () => {
     expect(decodeTextBytes(ansi)).toEqual({ text: 'Café – €5', encoding: 'windows-1252', bom: false })
   })
 
+  it('keeps UTF-8 when a mostly UTF-8 file has a stray bad byte', () => {
+    const good = new TextEncoder().encode('Café crème — 日本語 '.repeat(50))
+    const damaged = new Uint8Array([...good.subarray(0, 100), 0xff, ...good.subarray(100)])
+    const decoded = decodeTextBytes(damaged)
+    expect(decoded.encoding).toBe('utf-8')
+    expect(decoded.text).toContain('Café crème')
+    expect(decoded.text).toContain('\uFFFD')
+  })
+
   it('decodes large inputs without overflowing the call stack', () => {
     const large = new Uint8Array(1_000_000).fill(0xe9)
     expect(decodeTextBytes(large).text.length).toBe(1_000_000)
@@ -36,6 +45,7 @@ describe('without TextDecoder', () => {
     expect(decodeUtf8Strict(bytes(0xed, 0xa0, 0x80))).toBeNull() // surrogate
     expect(decodeUtf8Strict(bytes(0xe2, 0x82))).toBeNull() // truncated
     expect(decodeUtf8Strict(bytes(0xf5, 0x80, 0x80, 0x80))).toBeNull() // past U+10FFFF
+    expect(decodeUtf8Lossy(bytes(0x61, 0xff, 0x62))).toBe('a\uFFFDb')
   })
 
   it('maps every Windows-1252 byte', () => {

@@ -196,6 +196,10 @@ export function AttachmentPreviewDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         showCloseButton={false}
+        // Escape in a viewer's find bar closes the find bar, not the preview.
+        onEscapeKeyDown={(event) => {
+          if (event.target instanceof Element && event.target.closest('[data-viewer-find]')) event.preventDefault()
+        }}
         data-testid="attachment-preview-dialog"
         className="flex h-[min(88dvh,52rem)] w-[min(calc(100vw-2rem),64rem)] max-w-none grid-rows-none flex-col gap-0 overflow-hidden rounded-2xl p-0 shadow-2xl sm:max-w-none"
       >

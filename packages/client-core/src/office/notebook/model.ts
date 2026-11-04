@@ -97,9 +97,13 @@ export function applyConsoleControls(text: string): string {
       current = segments.reverse().find((segment) => segment.length > 0) ?? ''
     }
     if (current.includes('\b')) {
-      let result = ''
-      for (const character of current) result = character === '\b' ? result.slice(0, -1) : result + character
-      current = result
+      // A stack, so a long run of backspaces costs linear time.
+      const characters: string[] = []
+      for (const character of current) {
+        if (character === '\b') characters.pop()
+        else characters.push(character)
+      }
+      current = characters.join('')
     }
     return current
   }).join('\n')
@@ -232,9 +236,14 @@ export function normalizeNotebook(raw: unknown): NotebookModel {
   const v3Language = v3 ? cellsSource.find((cell): cell is Json => isObject(cell) && typeof cell.language === 'string')?.language : undefined
   const language = [languageInfo.name, kernelspec.language, v3Language].find((value): value is string => typeof value === 'string' && value.length > 0)
   const cells: NotebookCell[] = []
+  const ids = new Set<string>()
   cellsSource.forEach((cell, index) => {
     const normalized = normalizeCell(cell, index, v3)
-    if (normalized) cells.push(normalized)
+    if (!normalized) return
+    // Ids are unique in valid notebooks, but views key cells by them, so copies get their position.
+    if (ids.has(normalized.id)) normalized.id = `${normalized.id}-${index}`
+    ids.add(normalized.id)
+    cells.push(normalized)
   })
   return {
     nbformat: nbformat ?? (v3 ? 3 : 4),

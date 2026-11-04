@@ -143,6 +143,13 @@ describe('applyConsoleControls', () => {
     expect(applyConsoleControls('abc\b\bd')).toBe('ad')
     expect(applyConsoleControls('plain')).toBe('plain')
   })
+
+  it('stays linear on long runs of backspaces', () => {
+    const text = 'a'.repeat(320_000) + 'x\b'.repeat(320_000)
+    const started = performance.now()
+    expect(applyConsoleControls(text)).toBe('a'.repeat(320_000))
+    expect(performance.now() - started).toBeLessThan(1_000)
+  })
 })
 
 describe('data URLs', () => {
@@ -234,6 +241,18 @@ describe('renderNotebookHtml', () => {
     expect(html).toContain('$5 and $6')
     expect(html).toContain('<m d="true">\\int x</m>')
     expect(html).toContain(`src="data:image/png;base64,${PNG}"`)
+  })
+
+  it('renders many block-math lines in linear time', () => {
+    const started = performance.now()
+    const html = renderNotebookHtml(normalizeNotebook({ nbformat: 4, cells: [{ cell_type: 'markdown', source: '$$a$$b\n'.repeat(8_000) }] }), { title: 'x' })
+    expect(html.length).toBeGreaterThan(0)
+    expect(performance.now() - started).toBeLessThan(2_000)
+  })
+
+  it('keys cells uniquely when a notebook repeats ids', () => {
+    const notebook = normalizeNotebook({ nbformat: 4, cells: [{ cell_type: 'raw', id: 'x', source: '' }, { cell_type: 'raw', id: 'x', source: '' }] })
+    expect(new Set(notebook.cells.map((cell) => cell.id)).size).toBe(2)
   })
 
   it('says when a notebook is empty and when widgets are left out', () => {

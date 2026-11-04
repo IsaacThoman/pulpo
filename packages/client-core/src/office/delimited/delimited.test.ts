@@ -110,6 +110,14 @@ describe('sniffDelimiter', () => {
     expect(sniffDelimiter('"a;b;c",d\n"e;f;g",h\n', ',')).toBe(',')
   })
 
+  it('keeps the declared delimiter when other characters appear in the text', () => {
+    const tsv = ['name\taddress', ...Array.from({ length: 20 }, (_, index) => `Person ${index}\t${index} Main St, Springfield, IL`)].join('\n')
+    expect(sniffDelimiter(tsv, '\t')).toBe('\t')
+    const csv = ['id,tags', ...Array.from({ length: 20 }, (_, index) => `${index},a|b|c`)].join('\n')
+    expect(sniffDelimiter(csv, ',')).toBe(',')
+    expect(indexDelimited(tsv, { declared: '\t' }).row(1)).toEqual(['Person 0', '0 Main St, Springfield, IL'])
+  })
+
   it('finds pipes and tabs in files named .csv', () => {
     expect(sniffDelimiter('a|b|c\n1|2|3\n', ',')).toBe('|')
     expect(sniffDelimiter('a\tb\tc\n1\t2\t3\n', ',')).toBe('\t')

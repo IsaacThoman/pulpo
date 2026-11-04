@@ -58,7 +58,9 @@ export function previewByteLimit(kind: Exclude<FilePreviewKind, null>): number {
 export function previewKindOf(name: string, mimeType: string | null | undefined): Exclude<FilePreviewKind, null> | null {
   const mime = baseMimeType(mimeType)
   const type = fileTypeOf(name, mimeType)
-  // Streams are played by the browser, whatever the extension claims.
+  // Streams are played by the browser, whatever the extension claims, except source code whose
+  // extension a media type shares (`.ts` is TypeScript, but browsers upload it as `video/mp2t`).
+  if (type?.family === 'code' && (mime.startsWith('video/') || mime.startsWith('audio/'))) return 'text'
   if (mime.startsWith('video/')) return 'video'
   if (mime.startsWith('audio/')) return 'audio'
   if (isQuizFileName(name)) return 'quiz'
@@ -72,6 +74,10 @@ export function previewKindOf(name: string, mimeType: string | null | undefined)
     case 'image': return mime.startsWith('image/') || !mime || mime === 'application/octet-stream' ? 'image' : null
     case 'video': return 'video'
     case 'audio': return 'audio'
+    // Office files (RTF included, though it is text) keep their download until their viewers exist.
+    case 'document':
+    case 'spreadsheet':
+    case 'presentation': return null
     default: break
   }
   if (mime === 'application/pdf') return 'pdf'

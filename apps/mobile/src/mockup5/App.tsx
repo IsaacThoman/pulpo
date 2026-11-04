@@ -5276,12 +5276,13 @@ function ChatView({
     void (async () => {
       const uri = attachment.uri || (await downloadAttachment(attachment.id, attachment.name)).uri;
       // Quizzes open in the app, where they can be taken; tables, code, and notebooks in its viewers.
-      const viewer = inAppViewer(attachment.name, attachment.mimeType);
+      const fits = (attachment.size ?? new LocalFile(uri).size ?? 0) <= MAX_IN_APP_VIEWER_BYTES;
+      const viewer = fits ? inAppViewer(attachment.name, attachment.mimeType) : null;
       if (isQuizFileName(attachment.name)) navigation.push('FileQuiz', { uri, name: attachment.name });
       else if (viewer === 'notebook') {
         const fallback = await openNotebook(decodeFileText(await new LocalFile(uri).bytes()), attachment.name);
         if (fallback) navigation.push('FileViewer', { uri, name: attachment.name, mimeType: attachment.mimeType, notice: fallback.notice });
-      } else if (viewer && (attachment.size ?? 0) <= MAX_IN_APP_VIEWER_BYTES) navigation.push('FileViewer', { uri, name: attachment.name, mimeType: attachment.mimeType });
+      } else if (viewer) navigation.push('FileViewer', { uri, name: attachment.name, mimeType: attachment.mimeType });
       else await openAttachmentFile(uri, attachment.name, attachment.mimeType);
     })().catch((error) => {
       const message = error instanceof AttachmentPreviewError

@@ -58,7 +58,7 @@ const TYPES: readonly FileType[] = [
   { family: 'notebook', extensions: ['ipynb'], mimeTypes: ['application/x-ipynb+json'], text: true, language: 'json' },
 
   { family: 'text', extensions: ['txt', 'text'], mimeTypes: ['text/plain'], text: true },
-  { family: 'text', extensions: ['log', 'out'], mimeTypes: ['text/plain'], text: true },
+  { family: 'text', extensions: ['log'], mimeTypes: ['text/plain'], text: true },
   { family: 'text', extensions: ['env', 'properties', 'conf', 'cfg'], mimeTypes: ['text/plain'], text: true, language: 'ini' },
   { family: 'text', extensions: ['rst', 'adoc', 'tex', 'bib'], mimeTypes: ['text/plain'], text: true },
   { family: 'text', extensions: ['srt', 'vtt'], mimeTypes: ['text/vtt'], text: true },
@@ -100,7 +100,8 @@ const TYPES: readonly FileType[] = [
   { family: 'document', extensions: ['docx', 'docm', 'dotx', 'dotm'], mimeTypes: ['application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.ms-word.document.macroenabled.12', 'application/vnd.openxmlformats-officedocument.wordprocessingml.template'], text: false, office: 'ooxml' },
   { family: 'document', extensions: ['doc', 'dot'], mimeTypes: ['application/msword'], text: false, office: 'legacy' },
   { family: 'document', extensions: ['odt', 'ott'], mimeTypes: ['application/vnd.oasis.opendocument.text'], text: false, office: 'odf' },
-  { family: 'document', extensions: ['rtf'], mimeTypes: ['application/rtf', 'text/rtf'], text: false, office: 'rtf' },
+  // RTF is 7-bit markup, so it stays readable (and searchable by agents) as text until it has a viewer.
+  { family: 'document', extensions: ['rtf'], mimeTypes: ['application/rtf', 'text/rtf'], text: true, office: 'rtf' },
   { family: 'document', extensions: ['pages'], mimeTypes: ['application/vnd.apple.pages'], text: false, office: 'iwork' },
   { family: 'spreadsheet', extensions: ['xlsx', 'xlsm', 'xltx', 'xltm'], mimeTypes: ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.ms-excel.sheet.macroenabled.12', 'application/vnd.openxmlformats-officedocument.spreadsheetml.template'], text: false, office: 'ooxml' },
   { family: 'spreadsheet', extensions: ['xls', 'xlt'], mimeTypes: ['application/vnd.ms-excel'], text: false, office: 'legacy' },
@@ -139,8 +140,8 @@ const TYPES: readonly FileType[] = [
   { family: 'archive', extensions: ['bz2', 'xz', 'zst'], mimeTypes: ['application/x-bzip2', 'application/x-xz', 'application/zstd'], text: false },
 ]
 
-/** Files known by their whole name rather than an extension, all of them text. */
-const TEXT_FILE_NAMES: Record<string, string | undefined> = {
+/** Files known by their whole name rather than an extension, all of them text, with their grammar. */
+const TEXT_FILE_NAMES = new Map<string, string | undefined>(Object.entries({
   dockerfile: undefined,
   containerfile: undefined,
   makefile: 'makefile',
@@ -162,7 +163,7 @@ const TEXT_FILE_NAMES: Record<string, string | undefined> = {
   '.bashrc': 'bash',
   '.zshrc': 'bash',
   '.profile': 'bash',
-}
+}))
 
 const BY_EXTENSION = new Map<string, FileType>()
 const BY_MIME = new Map<string, FileType>()
@@ -238,8 +239,10 @@ export function fileTypeForMime(mimeType: string | null | undefined): FileType |
 /** A file's type: by its extension, then by a known whole name (`Dockerfile`), then by its MIME type. */
 export function fileTypeOf(name: string, mimeType?: string | null): FileType | null {
   const byName = fileTypeForName(name)
+  // `.key` is both a Keynote package and a PEM private key; a text type says which.
+  if (byName && !byName.text && fileExtension(name) === 'key' && baseMimeType(mimeType).startsWith('text/')) return BY_EXTENSION.get('txt')!
   if (byName) return byName
-  if (baseName(name) in TEXT_FILE_NAMES) return { family: 'code', extensions: [], mimeTypes: ['text/plain'], text: true }
+  if (TEXT_FILE_NAMES.has(baseName(name))) return { family: 'code', extensions: [], mimeTypes: ['text/plain'], text: true }
   return fileTypeForMime(mimeType)
 }
 
@@ -266,7 +269,7 @@ export function codeLanguageFor(name: string, mimeType?: string | null): string 
   const byName = fileTypeForName(name)
   if (byName) return byName.language ?? null
   const whole = baseName(name)
-  if (whole in TEXT_FILE_NAMES) return TEXT_FILE_NAMES[whole] ?? null
+  if (TEXT_FILE_NAMES.has(whole)) return TEXT_FILE_NAMES.get(whole) ?? null
   return fileTypeForMime(mimeType)?.language ?? null
 }
 

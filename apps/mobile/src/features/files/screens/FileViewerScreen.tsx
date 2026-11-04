@@ -8,7 +8,7 @@ import { File } from 'expo-file-system'
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ActivityIndicator, Alert, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { GlassIconButton, PageHeader, Segmented } from '../../../mockup5/src/components/PrototypeUI'
+import { GlassIconButton, PageHeader, PrimaryButton, Segmented } from '../../../mockup5/src/components/PrototypeUI'
 import type { RootStackParamList } from '../../../mockup5/src/navigation'
 import { MaterialIconButton } from '../../../platform/MaterialUI'
 import { SymbolView } from '../../../platform/SymbolView'
@@ -17,11 +17,11 @@ import { downloadFile } from '../api'
 import { useFilesEnabled } from '../availability'
 import { FilesTurnedOff } from '../components/FilesTurnedOff'
 import { filesErrorMessage } from '../display'
-import { shareFileItem } from '../open'
+import { previewUploadedFile, shareFileItem } from '../open'
 import { fileNodeQuery, filesQueryKeys } from '../queries'
 import { useFilesNamespace } from '../useFilesNamespace'
 import { CodeView, type CodeViewHandle } from '../viewers/CodeView'
-import { decodeFileText, formattedJson, inAppViewer, viewerLines } from '../viewers/content'
+import { decodeFileText, formattedJson, inAppViewer, MAX_IN_APP_VIEWER_BYTES, viewerLines } from '../viewers/content'
 import { GridView, MAX_NATIVE_GRID_COLUMNS, type GridViewHandle } from '../viewers/GridView'
 
 type Props = NativeStackScreenProps<RootStackParamList, 'FileViewer'>
@@ -99,10 +99,12 @@ export function FileViewerScreen({ navigation, route }: Props) {
   const node = nodeQuery.data?.node
   const name = node?.name ?? route.params.name ?? 'File'
   const mimeType = node?.mimeType ?? ('mimeType' in route.params ? route.params.mimeType : undefined)
+  // Opened through a shortcut, the size is only known here; such files go to the system viewer.
+  const tooLarge = Boolean(node && node.sizeBytes > MAX_IN_APP_VIEWER_BYTES)
   const content = useQuery({
     queryKey: fileId ? [...filesQueryKeys.node(namespace, fileId), 'text', node?.updatedAt ?? ''] : ['viewer-file', uri],
     queryFn: async () => decodeFileText(await (fileId ? await downloadFile(node!) : new File(uri!)).bytes()),
-    enabled: fileId ? node?.kind === 'blob' && filesEnabled : true,
+    enabled: fileId ? node?.kind === 'blob' && filesEnabled && !tooLarge : true,
   })
   const text = content.data
   const viewer = inAppViewer(name, mimeType) ?? 'text'
@@ -181,7 +183,13 @@ export function FileViewerScreen({ navigation, route }: Props) {
           ) : null}
         />
       ) : null}
-      {unavailable ? <FilesTurnedOff /> : text !== undefined ? (
+      {unavailable ? <FilesTurnedOff /> : tooLarge && node ? (
+        <View style={styles.center}>
+          <SymbolView name="doc.text.magnifyingglass" size={36} tintColor={theme.tertiary} />
+          <Text style={[styles.centerText, { color: theme.secondary }]}>This file is too large to show in Pulpo.</Text>
+          <PrimaryButton label="Open in Another App" variant="secondary" onPress={() => { void previewUploadedFile(node).catch((error) => Alert.alert('Couldn’t open', filesErrorMessage(error))) }} />
+        </View>
+      ) : text !== undefined ? (
         <>
           {findOpen ? (
             <FindBar
@@ -211,7 +219,7 @@ export function FileViewerScreen({ navigation, route }: Props) {
                 <Segmented options={[{ value: 'table', label: 'Table' }, { value: 'text', label: 'Text' }]} value={mode} onChange={(value) => { setMode(value); setCurrent(0) }} />
               </View>
             ) : null}
-            {formatted !== null ? <ToolbarToggle label="Formatted" selected={showFormatted} onPress={() => setShowFormatted((value) => !value)} /> : null}
+            {formatted !== null ? <ToolbarToggle label="Formatted" selected={showFormatted} onPress={() => { setShowFormatted((value) => !value); setCurrent(0) }} /> : null}
             <Text numberOfLines={1} style={[styles.status, { color: theme.secondary }]}>{status}</Text>
             {!showGrid ? <ToolbarToggle label="Wrap" selected={wrap} onPress={() => setWrap((value) => !value)} /> : null}
             {Platform.OS === 'ios'

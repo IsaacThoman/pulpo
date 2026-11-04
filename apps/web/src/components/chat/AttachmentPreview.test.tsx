@@ -65,6 +65,17 @@ describe('attachment text previews', () => {
   })
 })
 
+describe('find in attachment previews', () => {
+  it('closes the find bar on Escape without closing the preview', async () => {
+    const view = renderPreview('main.py', 'print(1)\n')
+    fireEvent.click(await view.findByRole('button', { name: 'Find' }))
+    const input = view.getByRole('textbox', { name: 'Find' })
+    fireEvent.keyDown(input, { key: 'Escape' })
+    await waitFor(() => expect(view.queryByRole('search')).toBeNull())
+    expect(view.getByTestId('attachment-preview-dialog')).toBeTruthy()
+  })
+})
+
 describe('attachment notebook previews', () => {
   it('renders a notebook with its cells and outputs', async () => {
     const notebook = JSON.stringify({
@@ -80,6 +91,23 @@ describe('attachment notebook previews', () => {
     expect(await view.findByRole('heading', { name: 'Results' })).toBeTruthy()
     expect(view.getByText('42')).toBeTruthy()
     expect(view.getByText('[3]:')).toBeTruthy()
+  })
+
+  it('renders HTML in Markdown cells sanitized, keeping math', async () => {
+    const notebook = JSON.stringify({
+      nbformat: 4,
+      cells: [{ cell_type: 'markdown', source: 'Line<br>with <b>bold</b> and $x^2$\n\n<div class="alert">Note</div>\n\n<img src=x onerror="alert(1)">\n\n<script>window.pwned = true</script>\n\n<a href="javascript:alert(1)">bad link</a>' }],
+    })
+    const view = renderPreview('cells.ipynb', notebook)
+    const bold = await view.findByText('bold')
+    expect(bold.tagName).toBe('B')
+    const cell = view.container.ownerDocument.querySelector('[data-cell="markdown"]')!
+    expect(cell.querySelector('br')).toBeTruthy()
+    expect(cell.querySelector('.katex')).toBeTruthy()
+    expect(cell.textContent).toContain('Note')
+    expect(cell.querySelector('script')).toBeNull()
+    expect(cell.innerHTML).not.toMatch(/onerror|javascript:/)
+    expect((window as unknown as { pwned?: boolean }).pwned).toBeUndefined()
   })
 })
 

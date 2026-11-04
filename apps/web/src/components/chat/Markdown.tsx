@@ -17,6 +17,7 @@ import { previewKindForLanguage, previewTitle } from '@/lib/code-preview'
 import { rehypeDisplayMathFallback, rehypeMarkDisplayMath } from '@/lib/display-math-fallback'
 import { remarkSoftBreaks } from '@/lib/soft-breaks'
 import { rehypeStreamCaret, STREAM_CARET_CLASS } from '@/lib/stream-caret'
+import { SANITIZED_HTML_PLUGINS } from '@/lib/markdown-html'
 import { useCodePreview } from '@/stores/codePreview'
 
 function CodeBlock({ language, code, caret }: { language: string; code: string; caret: boolean }) {
@@ -170,6 +171,8 @@ const REHYPE_PLUGINS: NonNullable<Options['rehypePlugins']> = [
   rehypeDisplayMathFallback,
 ]
 const CARET_REHYPE_PLUGINS: NonNullable<Options['rehypePlugins']> = [...REHYPE_PLUGINS, rehypeStreamCaret]
+// Raw HTML is parsed and sanitized first, so math and the display fallbacks see the final tree.
+const HTML_REHYPE_PLUGINS: NonNullable<Options['rehypePlugins']> = [...SANITIZED_HTML_PLUGINS, ...REHYPE_PLUGINS]
 
 function useRenderedContent(content: string, streaming: boolean): string {
   const latest = useRef(content)
@@ -198,6 +201,7 @@ export const Markdown = memo(function Markdown({
   breaks = false,
   components,
   urlTransform,
+  html = false,
 }: {
   content: string
   streaming?: boolean
@@ -208,6 +212,8 @@ export const Markdown = memo(function Markdown({
   /** Element overrides layered over the chat defaults. */
   components?: Components
   urlTransform?: UrlTransform
+  /** Renders HTML in the Markdown, sanitized (notebook cells); otherwise it shows as text. */
+  html?: boolean
 }) {
   const rendered = useRenderedContent(content, streaming)
   const normalized = useMemo(() => normalizeMathDelimiters(unwrapBoxedMinipages(rendered), { displayMathStyle: 'multiline' }), [rendered])
@@ -219,14 +225,14 @@ export const Markdown = memo(function Markdown({
     <div className="markdown-content min-w-0 max-w-full [overflow-wrap:anywhere]">
       <ReactMarkdown
         remarkPlugins={breaks ? BREAKS_REMARK_PLUGINS : REMARK_PLUGINS}
-        rehypePlugins={caret ? CARET_REHYPE_PLUGINS : REHYPE_PLUGINS}
+        rehypePlugins={html ? HTML_REHYPE_PLUGINS : caret ? CARET_REHYPE_PLUGINS : REHYPE_PLUGINS}
         components={mergedComponents}
         urlTransform={urlTransform}
       >
         {normalized}
       </ReactMarkdown>
     </div>
-  ), [normalized, breaks, caret, mergedComponents, urlTransform])
+  ), [normalized, breaks, caret, html, mergedComponents, urlTransform])
   // Blocks waiting for the stream to end hear about it through context, without a second parse.
   return <MarkdownStreamingContext.Provider value={streaming}>{body}</MarkdownStreamingContext.Provider>
 })
