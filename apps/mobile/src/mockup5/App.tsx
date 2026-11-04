@@ -4337,20 +4337,27 @@ function SpeechPlayerBar() {
     const timer = setInterval(refresh, 250);
     return () => clearInterval(timer);
   }, [visible, state]);
+  // On narrow phones the status shares its line with the time; it is left out rather than cut off.
+  const [widths, setWidths] = useState({ meta: 0, status: 0, time: 0 });
+  const measure = (key: keyof typeof widths) => ({ nativeEvent: { layout } }: { nativeEvent: { layout: { width: number } } }) => {
+    setWidths((current) => current[key] === layout.width ? current : { ...current, [key]: layout.width });
+  };
   if (!visible) return null;
   const loading = state.phase === 'loading';
   const ended = state.phase === 'ended';
   const time = speechTimeLabel(progress);
   const status = ended ? 'Finished' : state.paused ? 'Paused' : loading ? 'Preparing speech…' : 'Reading aloud';
+  const statusFits = !widths.meta || widths.status + 6 + widths.time <= widths.meta;
   return (
     <View accessibilityLabel="Read aloud controls" style={styles.speechPlayer}>
       <SpeechPlayerButton label={`Back ${SPEECH_SEEK_SECONDS} seconds`} icon="gobackward.10" disabled={loading} onPress={() => speechPlayback.seekBy(-SPEECH_SEEK_SECONDS)} />
       <SpeechPlayerButton label={ended ? 'Replay' : state.paused ? 'Resume reading' : 'Pause reading'} icon={ended || state.paused ? 'play.fill' : 'pause.fill'} onPress={speechPlayback.togglePause} />
       <SpeechPlayerButton label={`Forward ${SPEECH_SEEK_SECONDS} seconds`} icon="goforward.10" disabled={loading || ended} onPress={() => speechPlayback.seekBy(SPEECH_SEEK_SECONDS)} />
       <View style={styles.speechPlayerInfo}>
-        <View style={styles.speechPlayerMeta}>
-          <Text accessibilityLiveRegion="polite" numberOfLines={1} style={styles.speechPlayerStatus}>{status}</Text>
-          <Text style={styles.speechPlayerTime}>{time}</Text>
+        <View onLayout={measure('meta')} style={styles.speechPlayerMeta}>
+          <Text accessibilityElementsHidden importantForAccessibility="no-hide-descendants" numberOfLines={1} onLayout={measure('status')} style={[styles.speechPlayerStatus, styles.speechPlayerStatusMeasure]}>{status}</Text>
+          {statusFits ? <Text accessibilityLiveRegion="polite" numberOfLines={1} style={styles.speechPlayerStatus}>{status}</Text> : <View />}
+          <Text accessibilityLabel={statusFits ? undefined : `${status}, ${time}`} onLayout={measure('time')} style={styles.speechPlayerTime}>{time}</Text>
         </View>
         <SpeechScrubTrack progress={progress} />
       </View>
@@ -7513,6 +7520,7 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   speechPlayerInfo: { flex: 1, minWidth: 0, gap: 1, paddingHorizontal: 6 },
   speechPlayerMeta: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 6 },
   speechPlayerStatus: { flexShrink: 1, color: COLORS.muted, fontSize: 12, fontWeight: '500' },
+  speechPlayerStatusMeasure: { position: 'absolute', left: 0, opacity: 0 },
   speechPlayerTime: { color: COLORS.muted, fontSize: 12, fontVariant: ['tabular-nums'] },
   speechPlayerScrub: { height: 18, justifyContent: 'center' },
   speechPlayerTrack: { height: 4, borderRadius: 2, overflow: 'hidden', backgroundColor: COLORS.fill },
