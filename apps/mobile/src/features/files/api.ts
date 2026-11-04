@@ -267,6 +267,22 @@ export function textExportFile(name: string, text: string): File {
   return file
 }
 
+/** Writes bytes to a shareable temporary file with the given name. */
+export function bytesExportFile(name: string, bytes: Uint8Array): File {
+  const directory = new Directory(Paths.cache, EXPORT_DIRECTORY)
+  directory.create({ idempotent: true, intermediates: true })
+  const file = new File(directory, safeName(name))
+  if (file.exists) file.delete()
+  file.create()
+  file.write(bytes)
+  return file
+}
+
+/** Both versions of a live document's agent change as plain text, for the review diff. */
+export function fetchChangeText(changeId: string): Promise<{ name: string; format: string; before: string; after: string }> {
+  return apiRequest(`/api/file-changes/${changeId}/text`)
+}
+
 /** Writes Markdown to a shareable temporary file named after the document. */
 export function markdownExportFile(name: string, markdown: string): File {
   return textExportFile(/\.(md|markdown)$/i.test(name) ? name : `${name}.md`, markdown)

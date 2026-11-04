@@ -13,7 +13,8 @@ import { getBlobStore } from '../storage/index.js'
 import { resolveFileAccess } from './access.js'
 import { parseLiveSnapshot } from './agent/live.js'
 import { hasVersion } from './agent/versions.js'
-import { DocAssetStore, exportStoredDoc } from './live-docs.js'
+import { readObject } from './agent/live.js'
+import { DocAssetStore, exportStoredDoc, textOfFile } from './live-docs.js'
 import { requireFilesUser } from './request.js'
 import { mutateFileTree } from './tree-service.js'
 import { fileContentDisposition } from './upload-routes.js'
@@ -110,6 +111,21 @@ export async function registerLiveDocRoutes(app: FastifyInstance): Promise<void>
       await store.flush(tx, user.id, id)
       return ref
     }, ['files'], { reserveBytes: bytes.byteLength })
+  })
+
+  // Both sides of a live document's agent change as plain text (`codec.toText`): the diff any
+  // client can show, whatever the format, until it has the format's own.
+  app.get('/api/file-changes/:changeId/text', { config: attachmentRateLimit }, async (request) => {
+    const user = await requireFilesUser(request)
+    const { changeId } = contentParams.pick({ changeId: true }).parse(request.params)
+    const [row] = await db.select().from(fileChanges).where(and(eq(fileChanges.id, changeId), eq(fileChanges.userId, user.id))).limit(1)
+    const before = parseLiveSnapshot(row?.before)
+    const after = parseLiveSnapshot(row?.after)
+    const access = row ? await resolveFileAccess(db, user.id, row.nodeId) : null
+    if (!row || !before || !after || !access || access.node.kind !== 'doc') throw notFound('Version')
+    if (!await hasVersion(db, before.objectKey) || !await hasVersion(db, after.objectKey)) throw notFound('Version')
+    const text = async (key: string) => textOfFile(db, access.node, await readObject(key))
+    return { name: access.node.name, format: before.format, before: await text(before.objectKey), after: await text(after.objectKey) }
   })
 
   // One side of a live document's agent change, for the review diff.

@@ -73,6 +73,8 @@ export class DocSessionRegistry {
     private readonly namespace: string,
     private readonly store: DocStore,
     private readonly schemaVersion: number,
+    /** Each live format's schema this app edits (`MOBILE_SCHEMA_VERSIONS`), announced on joins. */
+    private readonly schemaVersions?: Record<string, number>,
   ) {}
 
   acquire(docId: string, options: { background?: boolean } = {}): DocHandle {
@@ -202,6 +204,7 @@ export class DocSessionRegistry {
     const controller = new DocSessionController({
       docId,
       schemaVersion: this.schemaVersion,
+      schemaVersions: this.schemaVersions,
       persistence: (doc) => {
         persistence = new SqliteDocPersistence(this.store, this.namespace, docId, doc, this.schemaVersion)
         return persistence

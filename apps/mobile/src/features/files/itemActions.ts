@@ -1,13 +1,16 @@
 import type { FileNode } from '@pulpo/contracts'
 import { isMarkdownName } from '@pulpo/contracts'
+import { liveFormatOfName } from '@pulpo/client-core/office'
 import { isQuizFileName } from '@pulpo/client-core/quiz'
 import type { ContextMenuAction } from '../../native/ItemContextMenuView'
 import { isTrashFolder } from '../trash/folder'
 import { appearanceActionTitle, hasAppearance } from './appearance'
 import { isBuiltIn, openedKind } from './display'
+import { editorBundleFor } from './editor/bundles'
 
 export type FileItemActionId =
   | 'open'
+  | 'edit'
   | 'add-to-chat'
   | 'open-in-new-chat'
   | 'rename'
@@ -32,6 +35,7 @@ export interface FileItemActionContext {
 /** The menu for an item, as on the web's context menu, in the order iOS menus put them. */
 export function fileItemActions(node: FileNode, context: FileItemActionContext): ContextMenuAction[] {
   const actions: ContextMenuAction[] = [{ id: 'open', title: 'Open', systemImage: openedKind(node) === 'folder' ? 'folder' : 'arrow.up.forward.app', section: 0 }]
+  if (editableUpload(node)) actions.push({ id: 'edit', title: 'Edit', systemImage: 'pencil.line', section: 0 })
   // Chats and shortcuts cannot be attached to a chat; trashed shortcut targets cannot be opened.
   const attachable = node.kind !== 'chat' && node.kind !== 'shortcut' && node.status === 'ready'
   if (attachable && context.agent === 'current-chat') {
@@ -61,6 +65,16 @@ export function fileItemActions(node: FileNode, context: FileItemActionContext):
   if (context.selectable) actions.push({ id: 'select', title: 'Select', systemImage: 'checkmark.circle', section: 3 })
   actions.push({ id: 'trash', title: node.kind === 'chat' ? 'Delete Chat' : 'Move to Trash', systemImage: 'trash', section: 4, destructive: true })
   return actions
+}
+
+/**
+ * An uploaded file of a format whose codec keeps every byte (text and code), which becomes an
+ * editable document without asking, as on the web. Uploaded Markdown has its own screen.
+ */
+export function editableUpload(node: FileNode): boolean {
+  if (node.kind !== 'blob' || node.status !== 'ready' || node.trashedAt) return false
+  const format = liveFormatOfName(node.name)
+  return Boolean(format?.lossless && editorBundleFor(format.id)) && node.sizeBytes <= (format?.maxFileBytes ?? 0)
 }
 
 /** Color and Icon… (Color… for a built-in folder), for files and folders as on the web. */

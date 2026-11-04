@@ -1,10 +1,18 @@
 import ExpoModulesCore
 
+struct DocEditorToolbarItemRecord: Record {
+  @Field var command: String = ""
+  @Field var label: String = ""
+  @Field var systemImage: String = ""
+}
+
 struct DocEditorToolbarState: Record {
   @Field var visible: Bool = false
   @Field var active: [String] = []
   @Field var disabled: [String] = []
   @Field var tint: String = "#007AFF"
+  /** A live format's own buttons; empty shows the document editor's formatting bar. */
+  @Field var items: [DocEditorToolbarItemRecord] = []
 }
 
 public final class PulpoDocEditorModule: Module {

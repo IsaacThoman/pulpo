@@ -1,6 +1,6 @@
 /// <reference lib="dom" />
 import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete'
-import { defaultKeymap, indentWithTab } from '@codemirror/commands'
+import { defaultKeymap, indentLess, indentMore, indentWithTab } from '@codemirror/commands'
 import { bracketMatching, foldGutter, foldKeymap, HighlightStyle, indentOnInput, indentUnit, syntaxHighlighting } from '@codemirror/language'
 import { highlightSelectionMatches, openSearchPanel, search, searchKeymap } from '@codemirror/search'
 import { Compartment, EditorState, type Extension } from '@codemirror/state'
@@ -86,6 +86,8 @@ export interface TextEditor {
   setName(name: string): void
   undo(): void
   redo(): void
+  /** Indents or outdents the selected lines, for keyboards without a Tab key. */
+  indent(direction: 'more' | 'less'): void
   openSearch(): void
   focus(): void
   destroy(): void
@@ -375,6 +377,9 @@ export function createTextEditor(options: TextEditorOptions): TextEditor {
     },
     redo() {
       if (!current.readOnly) undoManager.redo()
+    },
+    indent(direction) {
+      if (!current.readOnly) (direction === 'more' ? indentMore : indentLess)(view)
     },
     openSearch() {
       openSearchPanel(view)

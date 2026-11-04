@@ -8,11 +8,32 @@ import PulpoDocEditor from '../../../../modules/pulpo-doc-editor'
 import { useAppTheme } from '../../../theme'
 import type { DocHandle } from '../doc/sessions'
 import { EditorBridge, type EditorBridgeState } from './bridge'
-import { EDITOR_BUNDLE } from './editorBundle.generated'
+import { EDITOR_BUNDLES, type MobileEditorFormat } from './bundles'
 import { editorTheme, normalizeHref } from './presentation'
-import type { ReviewAction } from './protocol'
+import type { ReviewAction, TextCommand } from './protocol'
 
-type NativeToolbar = { visible: boolean; active: string[]; disabled: string[]; tint: string }
+/** A toolbar button the native bar shows for formats with their own toolbar (SF Symbol name). */
+type NativeToolbarItem = { command: string; label: string; systemImage: string }
+type NativeToolbar = { visible: boolean; active: string[]; disabled: string[]; tint: string; items: NativeToolbarItem[] }
+
+/** The text and code editor's bar: no formatting, but the keys a phone keyboard lacks. */
+export const TEXT_TOOLBAR: ReadonlyArray<NativeToolbarItem & { command: TextCommand }> = [
+  { command: 'undo', label: 'Undo', systemImage: 'arrow.uturn.backward' },
+  { command: 'redo', label: 'Redo', systemImage: 'arrow.uturn.forward' },
+  { command: 'indentLess', label: 'Outdent', systemImage: 'decrease.indent' },
+  { command: 'indentMore', label: 'Indent', systemImage: 'increase.indent' },
+  { command: 'find', label: 'Find and replace', systemImage: 'magnifyingglass' },
+  { command: 'wrap', label: 'Wrap lines', systemImage: 'arrow.turn.down.left' },
+]
+
+/** What a text editor's toolbar shows as on or unavailable. */
+export function textToolbarState(state: EditorBridgeState): { active: string[]; disabled: string[] } {
+  const text = state.text
+  return {
+    active: text?.wrap ? ['wrap'] : [],
+    disabled: [...!text?.canUndo ? ['undo'] : [], ...!text?.canRedo ? ['redo'] : []],
+  }
+}
 type NativeProps = {
   ref?: Ref<NativeRef>
   style?: StyleProp<ViewStyle>
@@ -60,11 +81,13 @@ PulpoDocEditor?.addListener('onFinalState', ({ instanceId, state }) => {
 })
 
 const noSubscription = () => () => {}
-const INITIAL: EditorBridgeState = { loaded: false, formatting: null, focused: false, suggestions: { count: 0, index: null, active: null }, incompatible: false }
+const INITIAL: EditorBridgeState = { loaded: false, formatting: null, focused: false, suggestions: { count: 0, index: null, active: null }, text: null, incompatible: false }
 const initialState = () => INITIAL
 
 export interface DocEditorHandle {
   format(command: FormatCommand, href?: string): void
+  /** A text editor's command (text and code files). */
+  command(command: TextCommand): void
   /** A formatting bar's command, asking for a link's address where needed. */
   toolbar(command: FormatCommand): void
   review(action: ReviewAction): void
@@ -75,6 +98,10 @@ export interface DocEditorHandle {
 }
 
 interface Props {
+  /** The document's live format, which picks the editor page (Markdown unless given). */
+  format?: MobileEditorFormat
+  /** The file name, for editors that depend on it (a code file's language). */
+  name?: string
   /** The document's session; the editor takes its own hold on it while it closes. */
   acquire: () => DocHandle
   editable: boolean
@@ -90,6 +117,8 @@ interface Props {
 }
 
 export const DocEditorView = forwardRef<DocEditorHandle, Props>(function DocEditorView({
+  format = 'markdown',
+  name,
   acquire,
   editable,
   placeholder,
@@ -103,8 +132,9 @@ export const DocEditorView = forwardRef<DocEditorHandle, Props>(function DocEdit
 }, ref) {
   const native = useRef<NativeRef>(null)
   const theme = useAppTheme()
-  const latest = useRef({ acquire, editable, placeholder, sessionLabel, sessionColor, theme, bottomPadding, onLink, onResolved })
-  latest.current = { acquire, editable, placeholder, sessionLabel, sessionColor, theme, bottomPadding, onLink, onResolved }
+  const bundle = EDITOR_BUNDLES[format]
+  const latest = useRef({ acquire, editable, placeholder, sessionLabel, sessionColor, theme, bottomPadding, onLink, onResolved, bundle, name })
+  latest.current = { acquire, editable, placeholder, sessionLabel, sessionColor, theme, bottomPadding, onLink, onResolved, bundle, name }
   const [instance, setInstance] = useState<{ id: string; bridge: EditorBridge; handle: DocHandle } | null>(null)
 
   // The session and page are made once per mounted editor, in an effect so that a discarded
@@ -122,7 +152,9 @@ export const DocEditorView = forwardRef<DocEditorHandle, Props>(function DocEdit
       placeholder: props.placeholder,
       user: { name: props.sessionLabel, color: props.sessionColor },
       theme: editorTheme(props.theme, props.bottomPadding),
-      schemaVersion: EDITOR_BUNDLE.schemaVersion,
+      schemaVersion: props.bundle.schemaVersion,
+      format: props.bundle.format,
+      name: props.name,
       onLink: (href) => latest.current.onLink?.(href),
       onResolved: () => latest.current.onResolved?.(),
     })
@@ -157,8 +189,16 @@ export const DocEditorView = forwardRef<DocEditorHandle, Props>(function DocEdit
     bridge?.setTheme(editorTheme(theme, bottomPadding))
   }, [bridge, theme, bottomPadding])
 
+  useEffect(() => {
+    if (name) bridge?.setName(name)
+  }, [bridge, name])
+
   const runToolbar = (command: string) => {
     if (!bridge) return
+    if (format === 'text') {
+      bridge.command(command as TextCommand)
+      return
+    }
     if (command !== 'link') {
       bridge.format(command as FormatCommand)
       return
@@ -187,6 +227,7 @@ export const DocEditorView = forwardRef<DocEditorHandle, Props>(function DocEdit
 
   useImperativeHandle(ref, () => ({
     format: (command, href) => bridge?.format(command, href),
+    command: (command) => bridge?.command(command),
     toolbar: (command) => runToolbarRef.current(command),
     review: (action) => bridge?.review(action),
     focus: (at) => bridge?.focus(at),
@@ -196,19 +237,20 @@ export const DocEditorView = forwardRef<DocEditorHandle, Props>(function DocEdit
   }), [bridge])
 
   if (!NativeDocEditor || !instance || !bridge) return null
-  const formatting = state.formatting
+  const formatting = format === 'text' ? textToolbarState(state) : state.formatting
   return (
     <NativeDocEditor
       ref={native}
       style={style}
       instanceId={instance.id}
-      html={EDITOR_BUNDLE.html}
+      html={bundle.html}
       pageBackground={editorTheme(theme).background}
       toolbar={{
         visible: editable && state.loaded,
         active: formatting?.active ?? [],
         disabled: formatting?.disabled ?? [],
         tint: theme.blue,
+        items: format === 'text' ? [...TEXT_TOOLBAR] : [],
       }}
       onMessage={({ nativeEvent }) => bridge.receive(nativeEvent.data)}
       onTerminate={() => bridge.reset()}
