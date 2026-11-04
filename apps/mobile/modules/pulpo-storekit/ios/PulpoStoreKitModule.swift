@@ -138,8 +138,16 @@ public final class PulpoStoreKitModule: Module {
       return transactions
     }
 
-    AsyncFunction("sync") { () async throws in
-      try await AppStore.sync()
+    // False when the person dismisses the Apple Account sign-in instead of signing in.
+    AsyncFunction("sync") { () async throws -> Bool in
+      do {
+        try await AppStore.sync()
+        return true
+      } catch StoreKitError.userCancelled {
+        return false
+      } catch let error as SKError where error.code == .paymentCancelled {
+        return false
+      }
     }
 
     AsyncFunction("showManageSubscriptions") { () async throws in

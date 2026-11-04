@@ -58,14 +58,15 @@ export async function purchaseProduct(productId: string, deps: TransactionReport
   return { status: 'purchased', report: await reportTransaction(result, deps) }
 }
 
-export type RestoreOutcome = 'restored' | 'nothing' | 'retry' | { rejected: string }
+export type RestoreOutcome = 'restored' | 'nothing' | 'retry' | 'cancelled' | { rejected: string }
 
 /** Reports this Apple Account's active Pulpo subscriptions, as Restore Purchases. */
 export async function restorePurchases(productIds: string[], deps: TransactionReporter & {
-  syncAppStore: () => Promise<void>
+  /** False when the person declines to sign in to their Apple Account. */
+  syncAppStore: () => Promise<boolean>
   currentEntitlements: () => Promise<StoreKitTransaction[]>
 }): Promise<RestoreOutcome> {
-  await deps.syncAppStore()
+  if (!(await deps.syncAppStore())) return 'cancelled'
   const transactions = (await deps.currentEntitlements()).filter((item) => productIds.includes(item.productId))
   if (!transactions.length) return 'nothing'
   const reports = await reportTransactions(transactions, deps)
