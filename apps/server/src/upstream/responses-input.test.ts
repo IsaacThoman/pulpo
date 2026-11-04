@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { estimateTokensExcludingMedia, passthroughParameters, withoutInlineMedia } from './responses-input.js'
+import { estimateTokensExcludingMedia, passthroughParameters, withMirroredReasoningEffort, withoutInlineMedia } from './responses-input.js'
 
 describe('passthroughParameters', () => {
   it('keeps provider knobs, including stop sequences, and drops fields Pulpo derives itself', () => {
@@ -8,6 +8,24 @@ describe('passthroughParameters', () => {
       max_tokens: 10, max_completion_tokens: 10, messages: [], system: 'x', stop: ['a'], stop_sequences: ['b'], tool_choice: 'auto',
       model: 'm', input: 'hi', temperature: 0.1,
     })).toEqual({ top_k: 20, repetition_penalty: 1.1, thinking: { type: 'enabled' }, stop: ['a'], stop_sequences: ['b'] })
+  })
+})
+
+describe('withMirroredReasoningEffort', () => {
+  it('copies a string reasoning_effort into reasoning.effort, keeping other reasoning fields', () => {
+    expect(withMirroredReasoningEffort({ reasoning_effort: 'none', top_p: 0.95 }))
+      .toEqual({ reasoning_effort: 'none', top_p: 0.95, reasoning: { effort: 'none' } })
+    expect(withMirroredReasoningEffort({ reasoning_effort: 'max', reasoning: { summary: 'auto' } }))
+      .toEqual({ reasoning_effort: 'max', reasoning: { summary: 'auto', effort: 'max' } })
+  })
+
+  it('leaves an explicit reasoning.effort and non-string efforts alone', () => {
+    const explicit = { reasoning_effort: 'high', reasoning: { effort: 'low' } }
+    expect(withMirroredReasoningEffort(explicit)).toBe(explicit)
+    const boolean = { reasoning_effort: false }
+    expect(withMirroredReasoningEffort(boolean)).toBe(boolean)
+    const none = { reasoning: { effort: 'high' } }
+    expect(withMirroredReasoningEffort(none)).toBe(none)
   })
 })
 
