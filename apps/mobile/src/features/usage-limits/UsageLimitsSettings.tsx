@@ -22,7 +22,7 @@ function NativeUsageLimit({ row }: { row: UsageLimitRow }) {
   </VStack>
 }
 
-function UsageLimitCard({ row, last }: { row: UsageLimitRow; last: boolean }) {
+export function UsageLimitCard({ row, last }: { row: UsageLimitRow; last: boolean }) {
   const theme = useAppTheme()
   return <View
     accessible
@@ -57,7 +57,7 @@ export function UsageLimitsSettings() {
       <LabeledContent label="Plan"><NativeText modifiers={[foregroundStyle('secondary')]}>{plan}</NativeText></LabeledContent>
       {limits.isError ? <Button label="Usage limits could not be loaded. Tap to retry." onPress={() => void limits.refetch()} /> : null}
     </Section>
-    {limits.data ? <AppStoreSubscriptionSection limits={limits.data} onChanged={() => limits.refetch()} /> : null}
+    {limits.data ? <AppStoreSubscriptionSection limits={limits.data} /> : null}
     {rows.length ? <Section title="Usage limits" footer={<NativeText modifiers={[foregroundStyle('secondary')]}>{FOOTER}</NativeText>}>
       {rows.map(row => <NativeUsageLimit key={row.key} row={row} />)}
     </Section> : null}

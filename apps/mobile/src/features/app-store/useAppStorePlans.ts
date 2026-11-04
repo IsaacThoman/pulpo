@@ -8,7 +8,8 @@ import { useAppStoreOffer } from './useAppStoreOffer'
 
 /**
  * Whether the Usage screen shows `AppStorePlans` instead of its form: iOS, hosted Pulpo, and an account
- * on Pulpo Baby with no subscription. Subscribers and administrator-set plans keep the form.
+ * on Pulpo Baby with no subscription or with an App Store subscription. Web subscribers and
+ * administrator-set plans keep the form.
  */
 export function useAppStorePlans(enabled: boolean) {
   const instanceUrl = useSessionStore((state) => state.instanceUrl)
@@ -17,6 +18,9 @@ export function useAppStorePlans(enabled: boolean) {
   const limits = useQuery({ ...usageLimitsQuery(namespace), enabled: enabled && Boolean(namespace) })
   const offer = useAppStoreOffer()
   if (Platform.OS !== 'ios' || !enabled || !offer || !storeKit) return null
-  if (!limits.data || limits.data.plan !== 'baby' || limits.data.subscription) return null
-  return { kit: storeKit, offer, plans: limits.data.plans, onChanged: () => limits.refetch() }
+  const data = limits.data
+  if (!data) return null
+  const sellable = data.subscription ? data.subscription.provider === 'app_store' : data.plan === 'baby'
+  if (!sellable) return null
+  return { kit: storeKit, offer, limits: data, onChanged: () => limits.refetch() }
 }
