@@ -89,6 +89,13 @@ describe('office conversion on mobile', () => {
     expect(officeActions({ ...legacy, status: 'pending' }, true)).toEqual({ target: null, pdf: false })
   })
 
+  it('uses icons that have a Material equivalent on Android', async () => {
+    const { materialSymbolNames } = await import('../../platform/symbolNames')
+    for (const action of fileItemActions(legacy, { agent: 'none', selectable: true, officeConversion: true }).filter((item) => item.id === 'export-pdf' || item.id === 'convert-office')) {
+      expect(materialSymbolNames[action.systemImage!], action.systemImage).toBeTruthy()
+    }
+  })
+
   it('asks the server for the copy, waiting as long as the converter may take', async () => {
     await convertOfficeFile(legacy.id, 'xlsx')
     expect(mocks.requests.at(-1)).toEqual({ path: `/api/files/${legacy.id}/conversions`, method: 'POST', body: { to: 'xlsx' }, timeoutMs: OFFICE_CONVERSION_TIMEOUT_MS })

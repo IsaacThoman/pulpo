@@ -63,8 +63,8 @@ export function fileItemActions(node: FileNode, context: FileItemActionContext):
   actions.push({ id: node.pinned ? 'unpin' : 'pin', title: node.pinned ? 'Unpin' : 'Pin', systemImage: node.pinned ? 'pin.slash' : 'pin', section: 2 })
   if ((node.kind === 'blob' || node.kind === 'doc') && node.status === 'ready') actions.push({ id: 'share', title: node.kind === 'doc' ? 'Export…' : 'Share…', systemImage: 'square.and.arrow.up', section: 2 })
   const office = officeActions(node, context.officeConversion === true)
-  if (office.pdf) actions.push({ id: 'export-pdf', title: 'Export as PDF…', systemImage: 'doc.richtext', section: 2 })
-  if (office.target) actions.push({ id: 'convert-office', title: `Convert to .${office.target}`, systemImage: 'doc.badge.arrow.up', section: 2 })
+  if (office.pdf) actions.push({ id: 'export-pdf', title: 'Export as PDF…', systemImage: 'doc.richtext.fill', section: 2 })
+  if (office.target) actions.push({ id: 'convert-office', title: `Convert to .${office.target}`, systemImage: 'arrow.up.doc', section: 2 })
   if (context.selectable) actions.push({ id: 'select', title: 'Select', systemImage: 'checkmark.circle', section: 3 })
   actions.push({ id: 'trash', title: node.kind === 'chat' ? 'Delete Chat' : 'Move to Trash', systemImage: 'trash', section: 4, destructive: true })
   return actions
