@@ -18,6 +18,9 @@ authenticated Pulpo workspace daemon that executes requested tools.
 - A writable `/workspace`
 - A preinstalled Python environment for data analysis, images, spreadsheets, PDFs, Word, and PowerPoint
 - Poppler PDF inspection and rendering tools
+- LibreOffice headless Writer, Calc, and Impress for document rendering and format conversion
+- Carlito, Caladea, Liberation, DejaVu, Noto CJK, and Noto Color Emoji fonts, with a prebuilt fontconfig cache
+- Jupyter nbformat, nbclient, ipykernel, and nbconvert for executing notebooks, with a registered Python 3 kernel
 - FFmpeg and ffprobe for audio/video processing and inspection
 - An installed-package inventory at `/opt/pulpo/PACKAGES.md`
 - The `pulpo files` CLI (`/usr/local/bin/pulpo`) for the Files attached to a chat
@@ -26,6 +29,27 @@ authenticated Pulpo workspace daemon that executes requested tools.
 The image supports `linux/amd64` and `linux/arm64`. Node.js archives are pinned
 to an exact version and checked against the SHA-256 values published by the
 Node.js project before installation.
+
+The office, font, and notebook additions increase installed image size by an
+estimated **535 MB** on amd64: about 467 MB from Ubuntu noble `main`/`universe`
+package `Installed-Size` metadata for new packages and their required dependencies
+(excluding dependencies already bundled), plus 67 MB of unpacked new Python
+wheels. Those wheels total about 17 MB compressed; registry layer sizes will
+depend on compression. This is an estimate, not a measured image build.
+
+### Rendering and converting documents
+
+Run conversions and notebook execution inside the workspace:
+
+```bash
+soffice --headless --convert-to pdf file.docx
+pdftoppm -png -r 80 file.pdf page
+jupyter nbconvert --to notebook --execute --inplace analysis.ipynb
+```
+
+Writer, Calc, and Impress also support format conversions such as DOCX to ODT
+and back. For concurrent LibreOffice commands, give each process its own profile
+with `-env:UserInstallation=file:///tmp/unique-lo-profile` to avoid profile locks.
 
 ## Build and test locally
 
@@ -154,6 +178,12 @@ Passwordless `sudo` is intentional because this image runs in a dedicated,
 disposable Kata microVM. It is not an appropriate default for a shared
 ordinary-container deployment.
 
+Run LibreOffice as the sandbox's `agent` user, never as root; it operates under
+the sandbox's own network and egress limits. Documents may contain macros:
+workspace `soffice` runs them only if a user or agent explicitly enables them.
+[LibreOffice's default macro security](https://help.libreoffice.org/latest/en-US/text/shared/optionen/macrosecurity_sl.html)
+blocks unsigned document macros.
+
 ## Updating the base image
 
 The Ubuntu tag can receive security updates without changing its name. Run a
@@ -175,7 +205,7 @@ new sessions should switch to the validated replacement digest.
 `requirements.txt` pins the Python runtime dependencies, including transitives.
 They are installed into `/opt/pulpo/python` at image build time, using binary
 wheels only so missing architecture support fails the build instead of compiling
-packages during user requests. `/usr/local/bin/{python,python3,pip,pip3}` wrap
+packages during user requests. `/usr/local/bin/{python,python3,pip,pip3,jupyter}` wrap
 the executables in that environment, including for the daemon's `bash -lc` commands. Agents
 can install extra dependencies in their own disposable environment.
 
@@ -185,7 +215,8 @@ older and custom images without the inventory remain supported.
 
 Run `npm run workspace-image:build` followed by `npm run workspace-image:test`.
 The smoke test disables networking and exercises spreadsheet, chart, image,
-Word, PowerPoint, PDF extraction, and PDF rendering workflows. CI runs these
+Word, PowerPoint, LibreOffice PDF conversion and document round trips, PDF
+extraction and rendering, and notebook execution and HTML export. CI runs these
 checks on both amd64 and arm64. Update the pins together and run both architecture
 checks when refreshing packages.
 

@@ -35,6 +35,18 @@ cmp /opt/pulpo/PACKAGES.md "${temporary_directory}/PACKAGES.md"
 git --version
 rg --version | head -n 1
 curl --version | head -n 1
+soffice --version | head -n 1
+jupyter --version
+# Consume all fontconfig output: grep -q can otherwise cause SIGPIPE under pipefail.
+installed_fonts="$(fc-list)"
+if ! grep -qi carlito <<< "${installed_fonts}"; then
+  echo 'FAIL: Carlito font is missing' >&2
+  exit 1
+fi
+if ! grep -qi 'Noto Sans CJK' <<< "${installed_fonts}"; then
+  echo 'FAIL: Noto Sans CJK font is missing' >&2
+  exit 1
+fi
 
 # Exercise audio/video encoding, inspection, and decoding without network access.
 media_probe="${temporary_directory}/media.mp4"
