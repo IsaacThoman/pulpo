@@ -1,11 +1,23 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render as renderElement, screen, waitFor } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import type { ReactElement } from 'react'
+import { MemoryRouter } from 'react-router-dom'
 import type { SpeechAudio } from '@pulpo/client-core'
+import { downloadBlob } from '@/lib/code-download'
+import { useFileToasts } from '@/features/files/browser/toasts'
+import { useAuth } from '@/stores/auth'
 import { SpeechPlayer } from './SpeechPlayer'
 import { speechPlayback } from './state'
 
-afterEach(() => { cleanup(); speechPlayback.stop(); speechPlayback.setRate(1) })
+vi.hoisted(() => {
+  window.matchMedia = (() => ({ matches: false, addEventListener: () => undefined, removeEventListener: () => undefined })) as never
+})
+vi.mock('@/lib/code-download', () => ({ downloadBlob: vi.fn() }))
+const render = (element: ReactElement) => renderElement(<QueryClientProvider client={new QueryClient()}><MemoryRouter>{element}</MemoryRouter></QueryClientProvider>)
+
+afterEach(() => { cleanup(); speechPlayback.stop(); speechPlayback.setRate(1); vi.mocked(downloadBlob).mockClear(); useFileToasts.setState({ toasts: [] }); useAuth.setState({ filesEnabled: true }) })
 
 function clip() {
   const audio = { time: 3, dispose: vi.fn(), play: (signal: AbortSignal) => new Promise<void>(resolve => signal.addEventListener('abort', () => resolve(), { once: true })),
@@ -65,4 +77,38 @@ it('stays after a retained playback ends, replays its audio, and closes', async 
   fireEvent.click(screen.getByRole('button', { name: 'Close player' }))
   expect(speechPlayback.getSnapshot().key).toBeNull()
   expect(screen.queryByRole('region', { name: 'Read aloud controls' })).toBeNull()
+})
+
+it('downloads the whole message as one file, generating the rest first', async () => {
+  const wav = (sample: number) => new Uint8Array([...'RIFF'].map(c => c.charCodeAt(0)).concat([36, 0, 0, 0], [...'WAVEfmt '].map(c => c.charCodeAt(0)), [16, 0, 0, 0, 1, 0, 1, 0, 0xc0, 0x5d, 0, 0, 0x80, 0xbb, 0, 0, 2, 0, 16, 0], [...'data'].map(c => c.charCodeAt(0)), [2, 0, 0, 0, sample, 0]))
+  let first: (audio: SpeechAudio) => void = () => {}
+  const generate = vi.fn()
+    .mockReturnValueOnce(new Promise<SpeechAudio>(resolve => { first = resolve }))
+    .mockImplementation(async () => ({ ...clip(), format: 'wav' as const, bytes: () => wav(generate.mock.calls.length) }))
+  render(<SpeechPlayer messageKey="chat:message" />)
+  await act(async () => { void speechPlayback.start('chat:message', ['Hello there', 'and', 'goodbye'], generate, { retain: true }) })
+  // With Files, one menu offers a download or a copy in Files; until the first chunk exists there is nothing to save.
+  expect((screen.getByRole('button', { name: 'Save audio' }) as HTMLButtonElement).disabled).toBe(true)
+  act(() => useAuth.setState({ filesEnabled: false }))
+  expect((screen.getByRole('button', { name: 'Download audio' }) as HTMLButtonElement).disabled).toBe(true)
+  await act(async () => { first({ ...clip(), format: 'wav', bytes: () => wav(1) }) })
+
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Download audio' })) })
+  await waitFor(() => expect(downloadBlob).toHaveBeenCalledOnce())
+  const [blob, name] = vi.mocked(downloadBlob).mock.calls[0]!
+  expect(name).toBe('Hello there and goodbye.wav'); expect(blob.type).toBe('audio/wav')
+  // jsdom's Blob has no arrayBuffer().
+  const bytes = await new Promise<ArrayBuffer>(resolve => { const reader = new FileReader(); reader.onload = () => resolve(reader.result as ArrayBuffer); reader.readAsArrayBuffer(blob) })
+  expect(Array.from(new Uint8Array(bytes).slice(44))).toEqual([1, 0, 2, 0, 3, 0])
+  expect(generate).toHaveBeenCalledTimes(3)
+  expect(speechPlayback.getSnapshot()).toMatchObject({ key: 'chat:message', phase: 'playing' })
+})
+
+it('reports audio that cannot be saved', async () => {
+  useAuth.setState({ filesEnabled: false })
+  render(<SpeechPlayer messageKey="chat:message" />)
+  await act(async () => { void speechPlayback.start('chat:message', ['Hello'], async () => clip()) })
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Download audio' })) })
+  await waitFor(() => expect(useFileToasts.getState().toasts).toMatchObject([{ message: 'This speech audio cannot be saved', tone: 'error' }]))
+  expect(downloadBlob).not.toHaveBeenCalled()
 })

@@ -1,6 +1,6 @@
 import type { FileNode } from '@pulpo/contracts'
 import { isQuizFileName } from '../quiz.js'
-import { baseMimeType, fileTypeOf, isTextFile } from './file-types.js'
+import { baseMimeType, fileExtension, fileTypeOf, isTextFile } from './file-types.js'
 
 export {
   ARCHIVE_EXTENSIONS,
@@ -54,6 +54,23 @@ export function previewByteLimit(kind: Exclude<FilePreviewKind, null>): number {
   }
 }
 
+/** Browser-playable media types by extension, for files stored under a generic type. */
+const MEDIA_MIME_TYPES: Record<string, string> = {
+  aac: 'audio/aac', flac: 'audio/flac', m4a: 'audio/mp4', mp3: 'audio/mpeg', oga: 'audio/ogg', ogg: 'audio/ogg',
+  opus: 'audio/ogg', wav: 'audio/wav', m4v: 'video/mp4', mov: 'video/quicktime', mp4: 'video/mp4', webm: 'video/webm',
+}
+
+/**
+ * The audio or video type to play a file as: its stored type when that is already media, otherwise
+ * the one its extension implies. Agent-written and untyped uploads are often stored as
+ * `application/octet-stream`, which some browsers refuse to play.
+ */
+export function mediaMimeType(name: string, mimeType: string | null | undefined): string | null {
+  const mime = baseMimeType(mimeType)
+  if (mime.startsWith('audio/') || mime.startsWith('video/')) return mime
+  return MEDIA_MIME_TYPES[fileExtension(name)] ?? null
+}
+
 /** The preview a file gets by its name and type, before size limits. */
 export function previewKindOf(name: string, mimeType: string | null | undefined): Exclude<FilePreviewKind, null> | null {
   const mime = baseMimeType(mimeType)
@@ -61,8 +78,10 @@ export function previewKindOf(name: string, mimeType: string | null | undefined)
   // Streams are played by the browser, whatever the extension claims, except source code whose
   // extension a media type shares (`.ts` is TypeScript, but browsers upload it as `video/mp2t`).
   if (type?.family === 'code' && (mime.startsWith('video/') || mime.startsWith('audio/'))) return 'text'
-  if (mime.startsWith('video/')) return 'video'
-  if (mime.startsWith('audio/')) return 'audio'
+  // Media is played by its stored type, or the one its extension implies for untyped uploads.
+  const media = mime.startsWith('image/') ? null : mediaMimeType(name, mime)
+  if (media?.startsWith('video/')) return 'video'
+  if (media?.startsWith('audio/')) return 'audio'
   if (isQuizFileName(name)) return 'quiz'
   switch (type?.family) {
     case 'markdown': return 'markdown'
@@ -72,8 +91,9 @@ export function previewKindOf(name: string, mimeType: string | null | undefined)
     case 'notebook': return 'notebook'
     case 'pdf': return 'pdf'
     case 'image': return mime.startsWith('image/') || !mime || mime === 'application/octet-stream' ? 'image' : null
-    case 'video': return 'video'
-    case 'audio': return 'audio'
+    // Other media (WMA, MKV) only plays where its stored type says so; otherwise it's a download.
+    case 'video':
+    case 'audio': return null
     // Office files (RTF included, though it is text) keep their download until their viewers exist.
     case 'document':
     case 'spreadsheet':

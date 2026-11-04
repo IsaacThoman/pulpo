@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { ApiError } from '@/lib/api'
-import { filePreviewKind, filesErrorMessage, isTextPreview, MAX_INLINE_PREVIEW_BYTES, MAX_TEXT_PREVIEW_BYTES, previewFillsView } from './file-display'
+import { filePreviewKind, filesErrorMessage, isTextPreview, MAX_INLINE_PREVIEW_BYTES, MAX_TEXT_PREVIEW_BYTES, mediaMimeType, previewFillsView } from './file-display'
 
 const blob = (name: string, mimeType: string | null, sizeBytes = 100) => ({ kind: 'blob' as const, name, mimeType, sizeBytes })
 
@@ -18,6 +18,21 @@ describe('Files previews', () => {
     expect(filePreviewKind(blob('huge.png', 'image/png', MAX_INLINE_PREVIEW_BYTES + 1))).toBeNull()
     expect(filePreviewKind(blob('big.log', 'text/plain', MAX_TEXT_PREVIEW_BYTES + 1))).toBeNull()
     expect(filePreviewKind(blob('movie.mp4', 'video/mp4', MAX_INLINE_PREVIEW_BYTES + 1))).toBe('video')
+  })
+
+  it('previews audio and video stored under a generic type by extension', () => {
+    expect(filePreviewKind(blob('memo.m4a', 'application/octet-stream'))).toBe('audio')
+    expect(filePreviewKind(blob('memo.M4A', null, MAX_INLINE_PREVIEW_BYTES + 1))).toBe('audio')
+    expect(filePreviewKind(blob('memo.m4a', 'audio/x-m4a'))).toBe('audio')
+    expect(filePreviewKind(blob('clip.webm', 'application/octet-stream'))).toBe('video')
+    expect(filePreviewKind(blob('song.wma', 'application/octet-stream'))).toBeNull()
+  })
+
+  it('plays media as its stored media type, or the type its extension implies', () => {
+    expect(mediaMimeType('memo.m4a', 'audio/x-m4a')).toBe('audio/x-m4a')
+    expect(mediaMimeType('memo.m4a', 'application/octet-stream')).toBe('audio/mp4')
+    expect(mediaMimeType('memo.m4a', null)).toBe('audio/mp4')
+    expect(mediaMimeType('notes.txt', 'text/plain')).toBeNull()
   })
 
   it('opens CSV, HTML, SVG, notebooks, and code in viewers that fill the view', () => {
