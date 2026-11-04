@@ -212,7 +212,8 @@ export function adjustDecimals(code: string, delta: 1 | -1, value?: CellValue): 
   return sections
     .map((section) => {
       if (/[dmyhs]/i.test(section.replace(/"[^"]*"|\[[^\]]*\]/g, ''))) return section
-      const match = /(0|#)(\.(0+))?(?![^"]*")/.exec(section)
+      // The integer digits (with grouping) and the decimals after them.
+      const match = /([#0,]*[0#])(\.([0#]+))?/.exec(section.replace(/"[^"]*"/g, (quoted) => ' '.repeat(quoted.length)))
       if (!match) return section
       const decimals = match[3]?.length ?? 0
       const next = Math.max(0, decimals + delta)

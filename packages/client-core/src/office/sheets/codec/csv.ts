@@ -190,7 +190,8 @@ export function readCsv(doc: Y.Doc, bytes: Uint8Array, format: 'csv' | 'tsv'): v
     parsed.rows.forEach((row, rowIndex) => {
       const rowId = sheet.rows.idAt(rowIndex)
       // Rows shorter than the widest keep their field count, so ragged files come back ragged.
-      if (row.fields.length !== width) sheet.rowMeta.set(`${rowId}|keep`, { fields: String(row.fields.length) })
+      // Empty rows too, so trailing ones survive.
+      if (row.fields.length !== width || row.fields.every((field) => field === '')) sheet.rowMeta.set(`${rowId}|keep`, { fields: String(row.fields.length) })
       row.fields.forEach((field, colIndex) => {
         if (field === '') return
         sheet.cells.set(`${rowId}:${sheet.cols.idAt(colIndex)}`, fieldData(field, row.quoted[colIndex]!))
@@ -262,7 +263,7 @@ function sheetLines(sheet: SheetModel, dialect: CsvDialect, values?: ValueSource
     for (let col = 0; col < Math.max(width, declared); col++) {
       const data = sheet.cell(row, col)
       if (!data) {
-        fields.push('')
+        fields.push(dialect.quoting === 'always' ? dialect.quote + dialect.quote : '')
         continue
       }
       last = col

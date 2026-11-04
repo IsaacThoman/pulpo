@@ -39,7 +39,9 @@ export function sheetsToText(doc: Y.Doc, display?: (sheet: SheetModel, row: numb
           }
           const value = data.t === 'e' ? String(data.v) : (data.v ?? null)
           const xf = cellStyleIndex(sheet, styles, sheet.rows.idAt(row), sheet.cols.idAt(col), key)
-          fields.push(data.raw ?? formatValue(value, styles.resolve(xf).numFmt, { date1904: model.date1904 }).text)
+          // CSV fields keep their text as written (without the quotes they were read with).
+          const raw = data.raw?.startsWith('"') ? undefined : data.raw
+          fields.push(raw ?? formatValue(value, styles.resolve(xf).numFmt, { date1904: model.date1904 }).text)
         }
         lines.push(fields.join('\t').replace(/\t+$/, ''))
       }
