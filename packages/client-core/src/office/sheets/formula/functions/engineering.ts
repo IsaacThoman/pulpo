@@ -171,8 +171,8 @@ const UNITS: Record<string, Unit> = {
   cal: { category: 'energy', factor: 4.1868, prefixable: true },
   eV: { category: 'energy', factor: 1.602176634e-19, prefixable: true },
   ev: { category: 'energy', factor: 1.602176634e-19, prefixable: true },
-  HPh: { category: 'energy', factor: 2684519.537696172792 },
-  hh: { category: 'energy', factor: 2684519.537696172792 },
+  HPh: { category: 'energy', factor: 2684519.5376961729 },
+  hh: { category: 'energy', factor: 2684519.5376961729 },
   Wh: { category: 'energy', factor: 3600, prefixable: true },
   wh: { category: 'energy', factor: 3600, prefixable: true },
   flb: { category: 'energy', factor: FT * LBM * G },
@@ -181,8 +181,8 @@ const UNITS: Record<string, Unit> = {
   // Power, base watt.
   W: { category: 'power', factor: 1, prefixable: true },
   w: { category: 'power', factor: 1, prefixable: true },
-  HP: { category: 'power', factor: 745.69987158227022 },
-  h: { category: 'power', factor: 745.69987158227022 },
+  HP: { category: 'power', factor: 745.6998715822702 },
+  h: { category: 'power', factor: 745.6998715822702 },
   PS: { category: 'power', factor: 735.49875 },
   // Magnetism, base tesla.
   T: { category: 'magnetism', factor: 1, prefixable: true },

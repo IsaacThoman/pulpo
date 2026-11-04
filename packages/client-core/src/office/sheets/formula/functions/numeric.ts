@@ -136,11 +136,14 @@ export function factorial(n: number): number {
   return result
 }
 
-/** Binomial coefficient, rounded to an integer when it is exactly representable. */
+/** Binomial coefficient (exact while it fits in a double; ∞ once it overflows). */
 export function combin(n: number, k: number): number {
   if (k < 0 || k > n) return 0
   k = Math.min(k, n - k)
   let result = 1
-  for (let i = 1; i <= k; i++) result = (result * (n - k + i)) / i
-  return Math.round(result) === result || result > 1e15 ? Math.round(result) : result
+  for (let i = 1; i <= k; i++) {
+    result = (result * (n - k + i)) / i
+    if (!Number.isFinite(result)) return Infinity
+  }
+  return Math.round(result)
 }

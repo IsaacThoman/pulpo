@@ -13,8 +13,9 @@ const CP1252_HIGH: Record<number, number> = {
 }
 const CP1252_REVERSE = new Map(Object.entries(CP1252_HIGH).map(([byte, code]) => [code, Number(byte)]))
 
+/** Excel strings are UTF-16: lengths and positions count code units, so an emoji is 2 characters. */
 function chars(s: string): string[] {
-  return Array.from(s)
+  return s.split('')
 }
 
 function lengthArg(ctx: FunctionContext, args: Args, index: number, fallback: number): number {
@@ -217,7 +218,13 @@ export const TEXT_FUNCTIONS: FunctionSpec[] = [
   define({ name: 'UPPER', min: 1, max: 1, fn: (ctx, args) => text(args[0], ctx).toUpperCase() }),
   define({ name: 'PROPER', min: 1, max: 1, fn: (ctx, args) => proper(text(args[0], ctx)) }),
   define({ name: 'TRIM', min: 1, max: 1, fn: (ctx, args) => text(args[0], ctx).replace(/ +/g, ' ').replace(/^ | $/g, '') }),
-  define({ name: 'CLEAN', min: 1, max: 1, fn: (ctx, args) => text(args[0], ctx).replace(/[\u0000-\u001f]/g, '') }),
+  define({
+    name: 'CLEAN',
+    min: 1,
+    max: 1,
+    // Drops the non-printable ASCII characters 0–31.
+    fn: (ctx, args) => Array.from(text(args[0], ctx)).filter((ch) => ch.charCodeAt(0) >= 32).join(''),
+  }),
   define({
     name: 'SUBSTITUTE',
     min: 3,
@@ -271,7 +278,7 @@ export const TEXT_FUNCTIONS: FunctionSpec[] = [
         const rest = haystack.slice(start - 1).join('')
         const at = rest.indexOf(needle)
         if (at < 0) return fail(Errors.VALUE)
-        return start + chars(rest.slice(0, at)).length
+        return start + at
       },
     }),
   ),
@@ -289,7 +296,7 @@ export const TEXT_FUNCTIONS: FunctionSpec[] = [
         const rest = haystack.slice(start - 1).join('')
         const match = wildcardRegex(needle, 'none').exec(rest)
         if (!match) return fail(Errors.VALUE)
-        return start + chars(rest.slice(0, match.index)).length
+        return start + match.index
       },
     }),
   ),

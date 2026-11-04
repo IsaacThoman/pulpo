@@ -8,6 +8,7 @@ import { Errors, isError, matrix, type FunctionContext, type FunctionSpec, type 
 import {
   cell,
   check,
+  checkArraySize,
   compareScalars,
   defBool,
   defInt,
@@ -156,13 +157,11 @@ function sequence(ctx: FunctionContext, args: Args): Value {
   const step = omitted(args, 3) ? 1 : num(args[3], ctx)
   check(rows >= 0 && cols >= 0, Errors.VALUE)
   if (rows === 0 || cols === 0) return fail(Errors.CALC)
-  check(rows * cols <= MAX_CELLS, Errors.NUM)
+  checkArraySize(rows, cols)
   const data: number[] = []
   for (let i = 0; i < rows * cols; i++) data.push(start + i * step)
   return matrix(rows, cols, data)
 }
-
-const MAX_CELLS = 1_048_576 * 16_384
 
 /** Indexes kept by TAKE (count > 0 from the start, < 0 from the end). */
 function takeRange(total: number, count: number): [number, number] {
@@ -200,6 +199,7 @@ function expand(ctx: FunctionContext, args: Args): Value {
   const cols = omitted(args, 2) ? m.cols : int(args[2], ctx)
   const pad: Scalar = args.length > 3 ? scalarOf(args[3], ctx) : Errors.NA
   if (rows < m.rows || cols < m.cols) return fail(Errors.VALUE)
+  checkArraySize(rows, cols)
   const data: Scalar[] = []
   for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) data.push(r < m.rows && c < m.cols ? cell(m, r, c) : pad)
   return matrix(rows, cols, data)
@@ -238,6 +238,7 @@ function wrap(ctx: FunctionContext, args: Args, byRows: boolean): Value {
   const pad: Scalar = args.length > 2 ? scalarOf(args[2], ctx) : Errors.NA
   const values = m.data
   const lines = Math.ceil(values.length / count)
+  checkArraySize(lines, count)
   const data: Scalar[] = []
   for (let i = 0; i < lines * count; i++) data.push(i < values.length ? (values[i] ?? null) : pad)
   const result = matrix(lines, count, data)

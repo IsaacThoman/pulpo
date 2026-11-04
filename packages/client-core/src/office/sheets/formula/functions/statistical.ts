@@ -308,7 +308,7 @@ function lognormDist(x: number, mu: number, sigma: number, cumulative: boolean):
 function binomPmf(k: number, n: number, p: number): number {
   if (p === 0) return k === 0 ? 1 : 0
   if (p === 1) return k === n ? 1 : 0
-  const c = combin(n, k)
+  const c = n <= 1030 ? combin(n, k) : Infinity
   if (Number.isFinite(c) && c < 1e15) {
     const direct = c * p ** k * (1 - p) ** (n - k)
     if (direct > 1e-300) return direct
@@ -367,11 +367,13 @@ function hypgeom(ctx: FunctionContext, args: Args, cumulativeIndex: number | und
   const n = int(args[1], ctx)
   const K = int(args[2], ctx)
   const N = int(args[3], ctx)
-  check(k >= 0 && n >= 0 && K >= 0 && N >= 0 && k <= n && k <= K && n <= N && K <= N && n - k <= N - K)
+  check(k >= 0 && n >= 0 && K >= 0 && N >= 0 && k <= n && k <= K && n <= N && K <= N && n - k <= N - K && N < 2 ** 31)
   const cumulative = cumulativeIndex === undefined ? false : bool(args[cumulativeIndex], ctx)
   if (!cumulative) return roundTiny(hypgeomPmf(k, n, K, N))
+  const first = Math.max(0, n - (N - K))
+  check(k - first <= 10_000_000)
   let total = 0
-  for (let i = Math.max(0, n - (N - K)); i <= k; i++) total += hypgeomPmf(i, n, K, N)
+  for (let i = first; i <= k; i++) total += hypgeomPmf(i, n, K, N)
   return Math.min(1, total)
 }
 
@@ -385,7 +387,7 @@ function negbinom(ctx: FunctionContext, args: Args, cumulative: boolean): number
   const s = int(args[1], ctx)
   const p = num(args[2], ctx)
   check(f >= 0 && s >= 1 && p >= 0 && p <= 1)
-  const pmf = (i: number): number => combin(i + s - 1, s - 1) * p ** s * (1 - p) ** i
+  const pmf = (i: number): number => Math.exp(lnCombin(i + s - 1, s - 1) + s * Math.log(p) + i * Math.log1p(-p))
   if (!cumulative) return pmf(f)
   return Math.min(1, betaI(p, s, f + 1))
 }
@@ -891,6 +893,7 @@ export const STATISTICAL_FUNCTIONS: FunctionSpec[] = [
       const s1 = int(args[2], ctx)
       const s2 = args.length > 3 && args[3] !== undefined ? int(args[3], ctx) : s1
       check(n >= 0 && p >= 0 && p <= 1 && s1 >= 0 && s1 <= n && s2 >= s1 && s2 <= n)
+      if (s2 - s1 > 1000) return binomCdf(s2, n, p) - (s1 > 0 ? binomCdf(s1 - 1, n, p) : 0)
       let total = 0
       for (let k = s1; k <= s2; k++) total += binomPmf(k, n, p)
       return total
@@ -907,6 +910,17 @@ export const STATISTICAL_FUNCTIONS: FunctionSpec[] = [
         const p = num(args[1], ctx)
         const alpha = num(args[2], ctx)
         check(n >= 0 && p >= 0 && p <= 1 && alpha >= 0 && alpha <= 1)
+        if (n > 1000) {
+          // Bisect on the CDF (an incomplete beta) instead of summing terms.
+          let lo = 0
+          let hi = n
+          while (lo < hi) {
+            const mid = Math.floor((lo + hi) / 2)
+            if (binomCdf(mid, n, p) >= alpha) hi = mid
+            else lo = mid + 1
+          }
+          return lo
+        }
         let total = 0
         for (let k = 0; k <= n; k++) {
           total += binomPmf(k, n, p)

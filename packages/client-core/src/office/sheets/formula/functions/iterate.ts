@@ -71,15 +71,6 @@ export function collectNumbers(ctx: FunctionContext, args: Args, options: Collec
 }
 
 /**
- * Values of a range-like argument in row-major order, for SUMIF/COUNTIFS-style functions where
- * the ranges must line up. Scalars count as a 1×1 range.
- */
-export function rangeValues(ctx: FunctionContext, value: Value | undefined): { rows: number; cols: number; data: Scalar[] } {
-  const m = toMatrix(ctx, value)
-  return { rows: m.rows, cols: m.cols, data: m.data }
-}
-
-/**
  * Pairs of numbers from two equally long arrays, keeping only positions where both are numbers
  * (CORREL, SLOPE, COVAR, …). Errors propagate; different counts are #N/A.
  */

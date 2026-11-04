@@ -1,9 +1,9 @@
 /** Math and trigonometry functions. */
 
-import { Errors, isError, isMatrix, isReference, matrix, type FunctionContext, type FunctionSpec, type Matrix, type Reference, type Scalar, type Value } from '../types.js'
+import { Errors, isError, isReference, matrix, type FunctionContext, type FunctionSpec, type Matrix, type Reference, type Scalar, type Value } from '../types.js'
 import {
-  bool,
   check,
+  checkArraySize,
   defBool,
   defNum,
   define,
@@ -502,7 +502,7 @@ export const MATH_FUNCTIONS: FunctionSpec[] = [
     },
   }),
   ...['CEILING.PRECISE', 'ISO.CEILING'].map((name) =>
-    define({ name, min: 1, max: 2, xlfn: name === 'CEILING.PRECISE', fn: (ctx, args) => ceilingSig(num(args[0], ctx), Math.abs(defNum(args, 1, 1, ctx))) }),
+    define({ name, min: 1, max: 2, xlfn: true, fn: (ctx, args) => ceilingSig(num(args[0], ctx), Math.abs(defNum(args, 1, 1, ctx))) }),
   ),
   define({ name: 'FLOOR.PRECISE', min: 1, max: 2, xlfn: true, fn: (ctx, args) => floorSig(num(args[0], ctx), Math.abs(defNum(args, 1, 1, ctx))) }),
   unary('EVEN', (x) => {
@@ -569,6 +569,7 @@ export const MATH_FUNCTIONS: FunctionSpec[] = [
       check(lo <= hi, Errors.VALUE)
       const r = Math.trunc(rows)
       const c = Math.trunc(cols)
+      checkArraySize(r, c)
       const data: Scalar[] = []
       for (let i = 0; i < r * c; i++) {
         if (whole) {
@@ -589,7 +590,7 @@ export const MATH_FUNCTIONS: FunctionSpec[] = [
   }),
   unary('FACTDOUBLE', (x) => {
     const n = Math.trunc(x)
-    check(n >= -1)
+    check(n >= -1 && n <= 300)
     let r = 1
     for (let i = n; i > 1; i -= 2) r *= i
     return r
@@ -627,7 +628,10 @@ export const MATH_FUNCTIONS: FunctionSpec[] = [
       const k = int(args[1], ctx)
       check(n > 0 && k >= 0 && n >= k)
       let r = 1
-      for (let i = n - k + 1; i <= n; i++) r *= i
+      for (let i = n - k + 1; i <= n; i++) {
+        r *= i
+        if (!Number.isFinite(r)) return fail(Errors.NUM)
+      }
       return r
     },
   }),
@@ -743,6 +747,9 @@ export const MATH_FUNCTIONS: FunctionSpec[] = [
     args: ['any'],
     fn: (ctx, args) => ifsAggregate(ctx, args[0], args.slice(1), (values) => sum(numbersOnly(values))),
   }),
+  // SUBTOTAL and AGGREGATE see values, not rows: the evaluator has no row visibility, so the
+  // "ignore hidden rows" variants (101–111, AGGREGATE options 1/3/5/7) behave like their plain
+  // forms, and nested SUBTOTAL/AGGREGATE results inside the ranges are not skipped.
   define({
     name: 'SUBTOTAL',
     min: 2,
@@ -869,6 +876,7 @@ export const MATH_FUNCTIONS: FunctionSpec[] = [
     fn: (ctx, args) => {
       const n = int(args[0], ctx)
       check(n >= 1, Errors.VALUE)
+      checkArraySize(n, n)
       const data: number[] = []
       for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) data.push(i === j ? 1 : 0)
       return matrix(n, n, data)

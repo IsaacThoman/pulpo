@@ -26,6 +26,14 @@ export type Args = (Value | undefined)[]
 /** Excel's cell text limit. Longer results are #VALUE!. */
 export const MAX_TEXT_LENGTH = 32_767
 
+/** The most cells an array result may have (a whole sheet). */
+export const MAX_ARRAY_CELLS = 1_048_576 * 16_384
+
+/** Fails with `error` unless a rows×cols array result fits on a sheet. */
+export function checkArraySize(rows: number, cols: number, error: FormulaError = Errors.NUM): void {
+  if (!(rows * cols <= MAX_ARRAY_CELLS)) fail(error)
+}
+
 /** Stops the current function with an Excel error. `define` catches it and returns it. */
 export function fail(error: FormulaError): never {
   throw error
@@ -258,11 +266,6 @@ export function matrixCol(m: Matrix, col: number): Scalar[] {
   return out
 }
 
-/** A 1-D view of a row or column vector; anything wider and taller is #N/A unless `allow2d`. */
-export function vectorOf(m: Matrix): Scalar[] {
-  return m.data.slice()
-}
-
 export function transpose(m: Matrix): Matrix {
   const data: Scalar[] = new Array(m.rows * m.cols)
   for (let row = 0; row < m.rows; row++) for (let col = 0; col < m.cols; col++) data[col * m.rows + row] = m.data[row * m.cols + col] ?? null
@@ -278,17 +281,6 @@ export function numericMatrix(ctx: FunctionContext, value: Value | undefined): {
     return fail(Errors.VALUE)
   })
   return { rows: m.rows, cols: m.cols, data }
-}
-
-/** Builds a number matrix result. */
-export function numberMatrix(rows: number, cols: number, data: number[]): Matrix {
-  return matrix(rows, cols, data)
-}
-
-/** Shape of an argument without resolving references twice. */
-export function shapeOf(ctx: FunctionContext, value: Value | undefined): { rows: number; cols: number } {
-  const m = toMatrix(ctx, value)
-  return { rows: m.rows, cols: m.cols }
 }
 
 // ---------------------------------------------------------------------------------------------

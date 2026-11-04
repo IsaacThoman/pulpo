@@ -180,7 +180,7 @@ export function rowsOf(value: Value): Scalar[][] {
 
 /**
  * Compares a result with an expectation and describes the first mismatch (undefined when they
- * match). Numbers match within a relative tolerance; `FormulaError`s match by code; nested arrays
+ * match). Numbers match within a relative tolerance (absolute when negative); `FormulaError`s match by code; nested arrays
  * describe a matrix result row by row.
  */
 export function mismatch(actual: Value, expected: unknown, tolerance = 1e-9): string | undefined {
@@ -199,6 +199,8 @@ export function mismatch(actual: Value, expected: unknown, tolerance = 1e-9): st
   if (typeof expected === 'number') {
     if (typeof actual !== 'number') return `expected ${expected}, got ${describe(actual)}`
     if (actual === expected) return undefined
+    // A negative tolerance is absolute (documented values rounded to cents, say).
+    if (tolerance < 0) return Math.abs(actual - expected) <= -tolerance ? undefined : `expected ${expected} ± ${-tolerance}, got ${actual}`
     const scale = Math.max(Math.abs(expected), tolerance >= 1e-6 ? 1 : 1e-300)
     return Math.abs(actual - expected) <= tolerance * scale ? undefined : `expected ${expected}, got ${actual}`
   }

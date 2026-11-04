@@ -136,7 +136,8 @@ function weekendMask(ctx: FunctionContext, value: Value | undefined, present: bo
   }
   const v = toMatrix(ctx, value).data[0] ?? null
   if (isError(v)) return fail(v)
-  if (typeof v === 'string' && !/^\s*-?\d+(\.\d+)?\s*$/.test(v)) {
+  if (typeof v === 'string') {
+    // Text is always a Monday-first mask of seven 0/1 characters.
     if (!/^[01]{7}$/.test(v) || v === '1111111') return fail(Errors.VALUE)
     // Monday first.
     for (let i = 0; i < 7; i++) mask[(i + 1) % 7] = v[i] === '1'
@@ -175,6 +176,8 @@ function workday(ctx: FunctionContext, args: Args, intl: boolean): number {
   const mask = intl ? weekendMask(ctx, args[2], !omitted(args, 2)) : weekendMask(ctx, undefined, false)
   const holidays = holidaySet(ctx, intl ? args[3] : args[2])
   if (mask.every(Boolean)) return fail(Errors.VALUE)
+  // More working days than there are days in Excel's calendar can only land outside it.
+  check(Math.abs(days) <= 3_000_000)
   let serial = start
   let remaining = Math.abs(days)
   const step = days < 0 ? -1 : 1

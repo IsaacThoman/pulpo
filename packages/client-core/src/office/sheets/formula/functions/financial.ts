@@ -197,16 +197,14 @@ function db(ctx: FunctionContext, args: Args): number {
   check(cost >= 0 && salvage >= 0 && life > 0 && period >= 1 && month >= 1 && month <= 12)
   check(period <= (month === 12 ? life : life + 1))
   if (cost === 0) return 0
+  // Excel rounds the rate to three decimals; after the first (partial) year the book value
+  // declines geometrically, and the year after the life gets the rest of the last year.
   const rateValue = Math.round((1 - (salvage / cost) ** (1 / life)) * 1000) / 1000
-  let total = 0
-  let dep = 0
-  for (let p = 1; p <= period; p++) {
-    if (p === 1) dep = (cost * rateValue * month) / 12
-    else if (p === Math.floor(life) + 1) dep = ((cost - total) * rateValue * (12 - month)) / 12
-    else dep = (cost - total) * rateValue
-    total += dep
-  }
-  return dep
+  const first = (cost * rateValue * month) / 12
+  if (period === 1) return first
+  const afterFirst = cost - first
+  if (period === Math.floor(life) + 1) return (afterFirst * (1 - rateValue) ** (period - 2) * rateValue * (12 - month)) / 12
+  return afterFirst * (1 - rateValue) ** (period - 2) * rateValue
 }
 
 function ddbPeriod(cost: number, salvage: number, life: number, period: number, factor: number): number {
@@ -414,6 +412,7 @@ export const FINANCIAL_FUNCTIONS: FunctionSpec[] = [
         const end = int(args[4], ctx)
         const type = int(args[5], ctx)
         check(r > 0 && nper > 0 && pvValue > 0 && start >= 1 && end >= start && end <= nper && (type === 0 || type === 1))
+        check(end - start <= 1_000_000 && end < 2 ** 31)
         const payment = pmt(r, nper, pvValue, 0, type)
         let total = 0
         for (let per = start; per <= end; per++) {
@@ -520,6 +519,7 @@ export const FINANCIAL_FUNCTIONS: FunctionSpec[] = [
       const factor = defNum(args, 5, 2, ctx)
       const noSwitch = omitted(args, 6) ? false : bool(args[6], ctx)
       check(cost >= 0 && salvage >= 0 && life > 0 && start >= 0 && end >= start && end <= life && factor > 0)
+      check(end <= 1_000_000)
       return vdbCumulative(cost, salvage, life, end, factor, noSwitch) - vdbCumulative(cost, salvage, life, start, factor, noSwitch)
     },
   }),

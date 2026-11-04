@@ -14,7 +14,7 @@
  */
 
 import { errorFromCode, isError, type FunctionContext, type Scalar } from '../types.js'
-import { compareText, numberToText, parseNumber } from './coerce.js'
+import { compareText, parseNumber } from './coerce.js'
 
 export type Predicate = (value: Scalar) => boolean
 
@@ -41,7 +41,8 @@ export function wildcardRegex(pattern: string, anchored: 'full' | 'start' | 'non
     else source += escapeRegex(char)
   }
   const full = anchored === 'full' ? `^${source}$` : anchored === 'start' ? `^${source}` : source
-  const regex = new RegExp(full, 'iu')
+  // No `u` flag: like Excel, `?` matches one UTF-16 code unit.
+  const regex = new RegExp(full, 'i')
   if (wildcardCache.size > 500) wildcardCache.clear()
   wildcardCache.set(key, regex)
   return regex
@@ -154,11 +155,4 @@ function numericEquals(value: Scalar, target: number, ctx?: FunctionContext): bo
     return parsed !== undefined && parsed === target
   }
   return false
-}
-
-/** Renders a criterion back to text, for messages and tests. */
-export function criterionText(criterion: Scalar): string {
-  if (typeof criterion === 'number') return numberToText(criterion)
-  if (criterion === null) return ''
-  return String(criterion)
 }
