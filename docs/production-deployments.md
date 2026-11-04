@@ -22,6 +22,8 @@ Services connect on the `coolify` network with unique `pulpo-prod-*` aliases.
 API/worker use `pulpo-prod-postgres`, `pulpo-prod-redis`, `pulpo-prod-ollama`, and
 `pulpo-prod-seaweed-s3`. No infrastructure service publishes a host port. Set the infrastructure's custom build command to `true`: it uses prebuilt images and needs no build-time secret interpolation.
 
+The infrastructure files also define the optional office converter (`office` Compose profile), which Files uses to convert legacy and OpenDocument files and export PDFs. To run it, set `COMPOSE_PROFILES=office`, `PULPO_OFFICE_CONVERTER_IMAGE` (the digest the `office-converter` workflow publishes), and optionally `OFFICE_CONVERTER_TOKEN` on the infrastructure application, then give the API and worker `OFFICE_CONVERTER_URL=http://pulpo-prod-office-converter:8790` and the same token. It is read-only, unprivileged, keeps no state, and needs no network access; see `infra/office-converter/README.md`.
+
 Traefik routes `/api`, `/v1`, `/socket.io`, `/health`, and `/ready` on the public
 hostname directly to the API. The web application handles remaining paths.
 The API route needs higher priority than the web route and a sticky load-balancer

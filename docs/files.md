@@ -37,7 +37,7 @@ Files views offer their items to the chat in the main view, which `ChatPage` pub
 
 ### The `pulpo files` command
 
-The agent has no Files tools of its own. In its workspace it runs `pulpo files ls|tree|cat|grep|pull|status|push|mkdir|mv|rm` in bash; the CLI (`packages/workspace-daemon`) hands each command to the workspace daemon, which holds it until the server, already polling the running bash operation, answers (see `infra/workspace-image/README.md`). No Pulpo credential enters the sandbox, and the sandbox is the agent's to control, so the server (`apps/server/src/files/agent/relay.ts`) is the only trust boundary:
+The agent has no Files tools of its own. In its workspace it runs `pulpo files ls|tree|cat|grep|pull|status|push|mkdir|mv|rm|convert` in bash; the CLI (`packages/workspace-daemon`) hands each command to the workspace daemon, which holds it until the server, already polling the running bash operation, answers (see `infra/workspace-image/README.md`). No Pulpo credential enters the sandbox, and the sandbox is the agent's to control, so the server (`apps/server/src/files/agent/relay.ts`) is the only trust boundary:
 
 - Every command's arguments are validated with zod. Paths are walked one child at a time from the chat's scope, re-read for every command, so nothing outside it can be named; `.` and `..` segments are refused and shortcuts are invisible. The only id the sandbox sends is a push's `base.nodeId`, which must match the item its path resolves to. Local paths must be normalized absolute paths under `/workspace/`.
 - Paths start with an attached item's name (made unique as `Name (2)`), or at the top of My files for a `root` scope. New items must go inside an attached folder. The system prompt (`files/agent/prompt.ts`) lists every attached item with its access and explains the command.
@@ -72,6 +72,27 @@ Uploads use the attachment flow (reserve, PUT, confirm) with `users/<id>/files/<
 A file's name decides what it is: names ending in `.md` or `.markdown` are Markdown files, and everything else is an ordinary file. New files start as empty editable Markdown documents. Uploaded Markdown keeps its original bytes and opens read-only until someone chooses **Edit**. `GET /api/files/:id/conversion` then does a dry run: it converts the text and reports whether anything would change beyond line endings and trailing whitespace, so the client can show a line diff before `POST /api/files/:id/convert` makes the document. The uploaded object is deleted only after the document commits.
 
 Renaming an editable document to a name without a Markdown extension turns it back into an ordinary file holding its Markdown, and open editors receive `doc.closed` with reason `converted`. Renaming a file to `.md` never converts it; it waits for **Edit**.
+
+## Office files
+
+With the office converter configured (`OFFICE_CONVERTER_URL`; see `infra/office-converter/README.md`), Files converts office files that Pulpo cannot edit into ones it can, and exports any office file as PDF. `/api/auth/settings` reports `officeConversionEnabled` and `/api/mobile/config` reports `capabilities.files.officeConversion`; without the converter, clients hide all of it.
+
+| From | Converts to |
+| --- | --- |
+| `.doc`, `.rtf`, `.odt`, `.ott`, `.wpd`, `.pages`, `.dotx` | `.docx` |
+| `.xls`, `.ods`, `.ots`, `.numbers`, `.xltx` | `.xlsx` |
+| `.ppt`, `.pps`, `.odp`, `.otp`, `.key`, `.potx` | `.pptx` |
+
+These, and `.docx`, `.xlsx`, and `.pptx`, export as PDF. The table lives in `@pulpo/contracts` (`officeConversionTarget`, `canExportOfficePdf`) and must match the converter's (`packages/office-converter/src/formats.ts`; a test checks).
+
+- `POST /api/files/:id/conversions` with `{ to }` adds the converted file beside the original, which is kept, under the next free name (`Report.docx`, else `Report (2).docx`). It lands where the original is when the conversion finishes, and nothing is created if the original was trashed meanwhile. The bytes are stored first and deleted again unless the new file commits; the file counts toward storage and must fit the per-file cap.
+- `GET /api/files/:id/pdf` (`?inline=1` for previews) returns the file as PDF; nothing is stored.
+
+Both run while the client waits rather than as a queued job: conversions take a few seconds, the person is waiting for the result, and the converter service already limits and queues work for the whole instance (answering busy when full). Each account may run two conversions at a time per API instance, both routes are rate limited (20 a minute), and a client that disconnects cancels its conversion. Failures have their own codes: `office_file_encrypted` (password-protected), `office_conversion_failed` (damaged), `office_file_unreadable` (the content is not what the extension says), `office_file_too_large`, `office_conversion_timeout`, `office_converter_busy`, `office_converter_unavailable`, `office_conversion_unsupported`, and `office_conversion_rate_limited`.
+
+On the web, an office file the browser cannot show opens with a PDF preview rendered by the server, a note that converting makes an editable copy, **Convert to .docx** (or .xlsx, .pptx) and **Download as PDF** in its header; the Files menu offers both too. The button shows progress, and the result's toast opens the copy. On mobile, office files already open in Quick Look (or the Android viewer); their item menus add **Export as PDF…** (the share sheet) and **Convert to .docx**, with progress on the row.
+
+Agents run `pulpo files convert <path> --to docx|xlsx|pptx|pdf [--output <path>]`. The copy is created like a pushed file, in the mode its folder allows (so in Suggest mode it waits for the user), recorded for undo and review, from the content the agent sees (its chat's pending proposal, if any). Without `--output` it goes beside the original under a free name, which must be inside an attached folder. Without the converter the command says so and suggests converting in the workspace, whose image has LibreOffice (and Jupyter for notebooks); the system prompt tells the agent to render documents and slides to PDF and PNG there to check how they look.
 
 ## Documents
 

@@ -20,6 +20,8 @@ Use the `production-api`, `production-worker`, and `production-web` Dockerfile
 targets, readiness routing, and shutdown budgets described in
 [production deployments](production-deployments.md). These targets describe
 runtime roles and are also appropriate for persistent development.
+The optional office converter is enabled the same way as in production, reached at
+`pulpo-dev-office-converter:8790`.
 
 ## CI configuration
 
