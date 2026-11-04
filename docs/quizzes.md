@@ -16,6 +16,12 @@ every missed or skipped question into the composer, so you can ask about them; n
 sent until you send it. **Retake** clears your answers; on web, **Review answers** goes
 back through them, and on mobile the dots under the score do.
 
+Each question's options are shuffled, because models tend to put the correct answer
+first. The order stays the same every time the quiz opens. Pulpo doesn't shuffle true/false
+or yes/no pairs, or options that name others by letter ("A and C"). Options like "None of
+the above" keep their place, and options that are all plain numbers are sorted from lowest
+to highest.
+
 **Flashcards** shows one card at a time; select a card to flip it. A quiz without its
 own flashcards makes one from each question and its answer.
 
@@ -52,8 +58,10 @@ A quiz is JSON. In a reply it sits in a fenced code block whose language is `qui
 
 - `answer` is the zero-based index of the correct option. Each question has 2 to 8
   options and one correct answer.
-- `title`, `hint`, `explanation`, `cards`, and `version` are optional. A quiz needs at
-  least one question or card.
+- Set `"shuffle": false` on a question to keep its options in the order written, such as
+  steps in a sequence.
+- `title`, `hint`, `explanation`, `shuffle`, `cards`, and `version` are optional. A quiz
+  needs at least one question or card.
 - Text may use Markdown and `$...$` math.
 
 Pulpo skips questions or cards it can't use and shows the rest. A block with nothing
