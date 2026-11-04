@@ -16,7 +16,7 @@ import {
   VStack as SwiftUIVStack,
   useNativeState,
 } from '@expo/ui/swift-ui';
-import { autocorrectionDisabled, disabled, foregroundStyle, frame, listRowBackground, multilineTextAlignment, textFieldStyle, textInputAutocapitalization, tint } from '@expo/ui/swift-ui/modifiers';
+import { accessibilityLabel, autocorrectionDisabled, disabled, foregroundStyle, frame, listRowBackground, multilineTextAlignment, textFieldStyle, textInputAutocapitalization, tint } from '@expo/ui/swift-ui/modifiers';
 import { normalizeUsername } from '@pulpo/client-core';
 import { mobileApi } from '../../api/client';
 import { useSessionStore } from '../../store/session';
@@ -85,14 +85,23 @@ function EditableAvatar({ busy }: { busy: boolean }) {
   </View>;
 }
 
-function NativeTextRow({ title, value, onChange, prefix, username = false }: { title: string; value: string; onChange: (value: string) => void; prefix?: string; username?: boolean }) {
+function NativeNameRow({ value, onChange }: { value: string; onChange: (value: string) => void }) {
   const nativeText = useNativeState(value);
   useEffect(() => { if (nativeText.get() !== value) nativeText.set(value); }, [nativeText, value]);
   return <SwiftUIHStack spacing={12}>
-    <SwiftUIText>{title}</SwiftUIText>
+    <SwiftUIText>Name</SwiftUIText>
     <SwiftUISpacer />
-    {prefix ? <SwiftUIText modifiers={[foregroundStyle('secondary')]}>{prefix}</SwiftUIText> : null}
-    <SwiftUITextField onTextChange={onChange} text={nativeText} modifiers={[textFieldStyle('plain'), multilineTextAlignment('trailing'), frame({ minWidth: 150 }), ...(username ? [textInputAutocapitalization('never'), autocorrectionDisabled()] : [])]} />
+    <SwiftUITextField onTextChange={onChange} text={nativeText} modifiers={[textFieldStyle('plain'), multilineTextAlignment('trailing'), frame({ minWidth: 150 })]} />
+  </SwiftUIHStack>;
+}
+
+/** Reads as a handle: the @ sits right before the text, like web's username field. */
+function NativeUsernameRow({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const nativeText = useNativeState(value);
+  useEffect(() => { if (nativeText.get() !== value) nativeText.set(value); }, [nativeText, value]);
+  return <SwiftUIHStack spacing={1}>
+    <SwiftUIText modifiers={[foregroundStyle('secondary')]}>@</SwiftUIText>
+    <SwiftUITextField onTextChange={onChange} text={nativeText} placeholder="username" modifiers={[textFieldStyle('plain'), textInputAutocapitalization('never'), autocorrectionDisabled(), accessibilityLabel('Username')]} />
   </SwiftUIHStack>;
 }
 
@@ -142,11 +151,11 @@ export function EditProfileScreen({ navigation }: NativeStackScreenProps<RootSta
       </SwiftUIVStack>
     </SwiftUISection>
     <SwiftUISection title="Profile" footer={<SwiftUIText modifiers={[foregroundStyle('secondary')]}>{NAME_HINT}</SwiftUIText>}>
-      <NativeTextRow title="Name" value={name} onChange={setName} />
+      <NativeNameRow value={name} onChange={setName} />
       <SwiftUILabeledContent label="Email"><SwiftUIText modifiers={[foregroundStyle('secondary')]}>{user?.email ?? ''}</SwiftUIText></SwiftUILabeledContent>
     </SwiftUISection>
     <SwiftUISection title="Username" footer={<SwiftUIText modifiers={[foregroundStyle(draft.usernameError ? theme.red : 'secondary')]}>{usernameFooter}</SwiftUIText>}>
-      <NativeTextRow title="Username" value={username} onChange={changeUsername} prefix="@" username />
+      <NativeUsernameRow value={username} onChange={changeUsername} />
     </SwiftUISection>
   </SwiftUIForm></SwiftUIHost>;
 

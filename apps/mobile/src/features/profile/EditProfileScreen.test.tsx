@@ -37,7 +37,7 @@ vi.mock('@expo/ui/swift-ui', () => ({
   TextField: ({ text, onTextChange }: { text: { get: () => string }; onTextChange: (value: string) => void }) => createElement('input', { defaultValue: text.get(), onChange: (event: { target: { value: string } }) => onTextChange(event.target.value) }),
   useNativeState: (value: string) => ({ get: () => value, set: vi.fn() }),
 }))
-vi.mock('@expo/ui/swift-ui/modifiers', () => Object.fromEntries(['autocorrectionDisabled', 'disabled', 'foregroundStyle', 'frame', 'listRowBackground', 'multilineTextAlignment', 'textFieldStyle', 'textInputAutocapitalization', 'tint'].map(name => [name, vi.fn()])))
+vi.mock('@expo/ui/swift-ui/modifiers', () => Object.fromEntries(['accessibilityLabel', 'autocorrectionDisabled', 'disabled', 'foregroundStyle', 'frame', 'listRowBackground', 'multilineTextAlignment', 'textFieldStyle', 'textInputAutocapitalization', 'tint'].map(name => [name, vi.fn()])))
 vi.mock('../../api/client', () => ({ mobileApi: { updateProfile: mocks.updateProfile, uploadAvatar: mocks.uploadAvatar, removeAvatar: mocks.removeAvatar } }))
 vi.mock('../../store/session', () => ({ useSessionStore: (selector: (state: unknown) => unknown) => selector({ user: mocks.user, setUser: mocks.setUser }) }))
 vi.mock('../../platform/materialActions', () => ({ showActions: mocks.showActions }))
