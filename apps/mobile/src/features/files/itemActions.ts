@@ -1,5 +1,5 @@
 import type { FileNode } from '@pulpo/contracts'
-import { isMarkdownName } from '@pulpo/contracts'
+import { canExportOfficePdf, isMarkdownName, officeConversionTarget, type OfficeEditableFormat } from '@pulpo/contracts'
 import { isQuizFileName } from '@pulpo/client-core/quiz'
 import type { ContextMenuAction } from '../../native/ItemContextMenuView'
 import { isTrashFolder } from '../trash/folder'
@@ -17,6 +17,8 @@ export type FileItemActionId =
   | 'pin'
   | 'unpin'
   | 'share'
+  | 'convert-office'
+  | 'export-pdf'
   | 'accept-suggestion'
   | 'reject-suggestion'
   | 'trash'
@@ -27,6 +29,8 @@ export interface FileItemActionContext {
   agent: 'new-chat' | 'current-chat' | 'none'
   /** Whether the list can enter selection mode from this menu. */
   selectable: boolean
+  /** Whether the server can convert office files (capabilities.files.officeConversion). */
+  officeConversion?: boolean
 }
 
 /** The menu for an item, as on the web's context menu, in the order iOS menus put them. */
@@ -58,9 +62,18 @@ export function fileItemActions(node: FileNode, context: FileItemActionContext):
   if (node.kind !== 'chat') actions.push({ id: 'duplicate', title: 'Duplicate', systemImage: 'plus.square.on.square', section: 2 })
   actions.push({ id: node.pinned ? 'unpin' : 'pin', title: node.pinned ? 'Unpin' : 'Pin', systemImage: node.pinned ? 'pin.slash' : 'pin', section: 2 })
   if ((node.kind === 'blob' || node.kind === 'doc') && node.status === 'ready') actions.push({ id: 'share', title: node.kind === 'doc' ? 'Export…' : 'Share…', systemImage: 'square.and.arrow.up', section: 2 })
+  const office = officeActions(node, context.officeConversion === true)
+  if (office.pdf) actions.push({ id: 'export-pdf', title: 'Export as PDF…', systemImage: 'doc.richtext', section: 2 })
+  if (office.target) actions.push({ id: 'convert-office', title: `Convert to .${office.target}`, systemImage: 'doc.badge.arrow.up', section: 2 })
   if (context.selectable) actions.push({ id: 'select', title: 'Select', systemImage: 'checkmark.circle', section: 3 })
   actions.push({ id: 'trash', title: node.kind === 'chat' ? 'Delete Chat' : 'Move to Trash', systemImage: 'trash', section: 4, destructive: true })
   return actions
+}
+
+/** What can be done with an item: convert it (to `target`) and export it as PDF. */
+export function officeActions(node: Pick<FileNode, 'kind' | 'name' | 'status'>, enabled: boolean): { target: OfficeEditableFormat | null; pdf: boolean } {
+  if (!enabled || node.kind !== 'blob' || node.status !== 'ready') return { target: null, pdf: false }
+  return { target: officeConversionTarget(node.name), pdf: canExportOfficePdf(node.name) }
 }
 
 /** Color and Icon… (Color… for a built-in folder), for files and folders as on the web. */
