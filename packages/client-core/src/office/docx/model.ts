@@ -37,6 +37,8 @@ export interface StoryMeta {
   part?: string
   /** Attributes of the story's root element (`w:hdr`, `w:footnote`, `w:comment`). */
   attrs?: Record<string, string>
+  /** The file's story had no paragraphs; the editor's placeholder paragraph is not written back. */
+  empty?: boolean
 }
 
 export interface CommentMeta {
@@ -73,6 +75,8 @@ export type DocxMetaKey =
   | 'sectPr'
   /** Markers after the last block of the body. */
   | 'bodyTrail'
+  /** '1' when the file's body had no blocks (see StoryMeta.empty). */
+  | 'emptyBody'
   /** JSON `ThemeInfo`, read from the theme part for rendering. */
   | 'theme'
   | `fingerprint:${string}`

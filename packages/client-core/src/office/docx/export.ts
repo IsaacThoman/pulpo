@@ -595,6 +595,13 @@ export class DocxExport {
   }
 }
 
+/** The single empty paragraph the importer gives an empty story, still untouched. */
+function isPlaceholder(doc: ProseMirrorNode): boolean {
+  if (doc.childCount !== 1) return false
+  const only = doc.firstChild!
+  return only.type.name === 'paragraph' && only.content.size === 0 && Object.values(only.attrs).every((value) => value === null)
+}
+
 function mainPart(model: DocxModel): string {
   return model.maps.docx.get('mainPart') ?? 'word/document.xml'
 }
@@ -674,7 +681,7 @@ export function generateParts(state: DocxExport): void {
     const tail = unpackJml<JmlElement[]>(meta.get('documentTail')) ?? []
     const bodyTrail = unpackJml<JmlElement[]>(meta.get('bodyTrail')) ?? []
     const sectPr = unpackJml<JmlElement>(meta.get('sectPr'))
-    let body = story.blocks(model.body)
+    let body = meta.get('emptyBody') && isPlaceholder(model.body) ? '' : story.blocks(model.body)
     body += bodyTrail.map((element) => jmlToXml(element)).join('')
     if (sectPr) body += jmlToXml(sectPr)
     const bodyAttrs = parseJson<Record<string, string>>(meta.get('bodyAttrs'))
@@ -688,7 +695,7 @@ export function generateParts(state: DocxExport): void {
     const part = story.meta.part
     if (!part) continue
     const writer = new StoryWriter(state.writer(part), ids)
-    const inner = writer.blocks(story.doc) || '<w:p/>'
+    const inner = story.meta.empty && isPlaceholder(story.doc) ? '' : writer.blocks(story.doc) || '<w:p/>'
     state.generated.set(part, rootXml(story.meta.kind === 'header' ? 'w:hdr' : 'w:ftr', story.meta.attrs ?? NEW_PART_NAMESPACES, inner))
     if (!pkg.has(part)) pkg.setContentType(part, story.meta.kind === 'header' ? CONTENT_TYPE.header : CONTENT_TYPE.footer)
     void id

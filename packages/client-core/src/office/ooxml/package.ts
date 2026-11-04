@@ -112,6 +112,54 @@ export function decodePartText(bytes: Uint8Array): string {
   return strFromU8(bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf ? bytes.subarray(3) : bytes)
 }
 
+/**
+ * Refuses zips whose central directory and local headers name an entry differently. Readers
+ * disagree on which to trust, so such a file shows one document to Pulpo and another to Word
+ * (or to a virus scanner): a known way to smuggle content.
+ */
+function assertConsistentZip(bytes: Uint8Array): void {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+  let end = -1
+  for (let offset = bytes.length - 22; offset >= Math.max(0, bytes.length - 65_557); offset--) {
+    if (view.getUint32(offset, true) === 0x06054b50) {
+      end = offset
+      break
+    }
+  }
+  if (end < 0) return
+  const count = view.getUint16(end + 10, true)
+  let offset = view.getUint32(end + 16, true)
+  // Zip64 archives keep these in another record; fflate validates those itself.
+  if (count === 0xffff || offset === 0xffffffff) return
+  // Readers that find the directory by its size and readers that follow its offset must agree.
+  if (offset + view.getUint32(end + 12, true) !== end) throw new LiveFormatError('corrupt', 'This zip package has a misplaced directory')
+  const decoder = new TextDecoder()
+  for (let index = 0; index < count; index++) {
+    if (offset + 46 > bytes.length || view.getUint32(offset, true) !== 0x02014b50) throw new LiveFormatError('corrupt', 'This zip package has a damaged directory')
+    const nameLength = view.getUint16(offset + 28, true)
+    const extraLength = view.getUint16(offset + 30, true)
+    const commentLength = view.getUint16(offset + 32, true)
+    const local = view.getUint32(offset + 42, true)
+    const name = bytes.subarray(offset + 46, offset + 46 + nameLength)
+    // An Info-ZIP Unicode Path field renames the entry for readers that honor it.
+    for (let field = offset + 46 + nameLength; field + 4 <= offset + 46 + nameLength + extraLength;) {
+      const id = view.getUint16(field, true)
+      const size = view.getUint16(field + 2, true)
+      if (id === 0x7075 && size >= 5 && decoder.decode(bytes.subarray(field + 9, field + 4 + size)) !== decoder.decode(name)) {
+        throw new LiveFormatError('corrupt', 'This zip package names its parts inconsistently')
+      }
+      field += 4 + size
+    }
+    if (local !== 0xffffffff) {
+      if (local + 30 > bytes.length || view.getUint32(local, true) !== 0x04034b50) throw new LiveFormatError('corrupt', 'This zip package has a damaged entry')
+      const localLength = view.getUint16(local + 26, true)
+      const localName = bytes.subarray(local + 30, local + 30 + localLength)
+      if (decoder.decode(localName) !== decoder.decode(name)) throw new LiveFormatError('corrupt', 'This zip package names its parts inconsistently')
+    }
+    offset += 46 + nameLength + extraLength + commentLength
+  }
+}
+
 export class OoxmlPackage {
   /** Part bytes by normalized path, in the order they were read or added. */
   private readonly parts: Map<string, Uint8Array>
@@ -130,6 +178,7 @@ export class OoxmlPackage {
       throw new LiveFormatError('encrypted', 'This file is password protected or in a legacy binary format')
     }
     if (!startsWith(bytes, ZIP_SIGNATURE)) throw new LiveFormatError('corrupt', 'This is not an Office Open XML package')
+    assertConsistentZip(bytes)
     let entries = 0
     let declared = 0
     let files: Record<string, Uint8Array>

@@ -70,4 +70,23 @@ describe('OoxmlPackage', () => {
     const pkg = OoxmlPackage.read(samplePackage({ 'word/bad.xml': strToU8('<a><b></a>') }))
     expect(() => pkg.xml('word/bad.xml')).toThrow(expect.objectContaining({ code: 'corrupt' }))
   })
+
+  it('refuses zips whose directory and entries disagree on names', () => {
+    const bytes = samplePackage()
+    // Rename one local header so it no longer matches the central directory.
+    const local = bytes.findIndex((_, index) => bytes[index] === 0x50 && bytes[index + 1] === 0x4b && bytes[index + 2] === 3 && bytes[index + 3] === 4 && new TextDecoder().decode(bytes.subarray(index + 30, index + 30 + 17)) === 'word/document.xml')
+    const tampered = bytes.slice()
+    tampered[local + 30 + 5] = 'X'.charCodeAt(0)
+    expect(() => OoxmlPackage.read(tampered)).toThrow(expect.objectContaining({ code: 'corrupt' }))
+  })
+
+  it('refuses Unicode Path fields that rename an entry', () => {
+    const renamed = new Uint8Array([1, 0, 0, 0, 0, ...strToU8('word/other.xml')])
+    const bytes = zipSync({
+      '[Content_Types].xml': strToU8(CONTENT_TYPES),
+      '_rels/.rels': strToU8(ROOT_RELS),
+      'word/document.xml': [strToU8(DOCUMENT), { extra: { 0x7075: renamed } }],
+    })
+    expect(() => OoxmlPackage.read(bytes)).toThrow(expect.objectContaining({ code: 'corrupt' }))
+  })
 })

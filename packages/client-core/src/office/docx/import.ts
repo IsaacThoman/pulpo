@@ -618,7 +618,10 @@ export async function importDocx(bytes: Uint8Array, assets: LiveAssetStore): Pro
   const sectOut: { sectPr?: JmlElement; trail?: JmlElement[] } = {}
   const blocks = builder.blocks(body ? (body.slice(2) as JmlNode[]) : [], 0, sectOut)
   const schema = docxSchema()
-  if (!blocks.length) blocks.push(schema.node('paragraph'))
+  if (!blocks.length) {
+    blocks.push(schema.node('paragraph'))
+    meta.set('emptyBody', '1')
+  }
   if (sectOut.sectPr) meta.set('sectPr', packJml(sectOut.sectPr))
   if (sectOut.trail?.length) meta.set('bodyTrail', packJml(sectOut.trail))
   const theme = readTheme(pkg, main)
@@ -643,7 +646,8 @@ export async function importDocx(bytes: Uint8Array, assets: LiveAssetStore): Pro
     const kind: StoryMeta['kind'] = rel.type === REL.header ? 'header' : 'footer'
     const id = `${kind}:${part}`
     if (stories.has(id)) continue
-    stories.set(id, { meta: { kind, part, attrs: root[1] }, doc: storyDoc(part, root.slice(2) as JmlNode[]) })
+    const empty = !jmlElements(root).length
+    stories.set(id, { meta: { kind, part, attrs: root[1], ...(empty ? { empty } : {}) }, doc: storyDoc(part, root.slice(2) as JmlNode[]) })
   }
 
   // Footnotes and endnotes.
