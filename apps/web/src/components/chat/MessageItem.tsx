@@ -2,6 +2,7 @@ import { useSyncExternalStore } from 'react'
 import { SpeechButton } from '@/features/speech/SpeechButton'
 import { SpeechPlayer } from '@/features/speech/SpeechPlayer'
 import { ActionButton } from './ActionButton'
+import { ReportMessageButton } from './ReportMessageButton'
 import { speechPlayback } from '@/features/speech/state'
 import { ToolImagePreview } from './ToolImagePreview'
 import { collapseIntermediateReplies, collapsedWorkDurationMs, initialActivityTiming } from '@pulpo/client-core'
@@ -787,6 +788,7 @@ export const MessageItem = memo(function MessageItem({
                       <Trash2 className="size-3.5" />
                     </ActionButton>
                   )}
+                  {!pendingDelivery && <ReportMessageButton messageId={message.id} />}
                 </>
               )}
             </div>
@@ -964,6 +966,7 @@ export const MessageItem = memo(function MessageItem({
                   </>
                 )}
                 <SpeechButton messageKey={`${chat.id}:${message.id}`} text={message.content} />
+                {!chat.expired && <ReportMessageButton messageId={message.id} />}
                 {(message.tokensIn !== undefined || (showResponseCost && message.cost !== undefined)) && (
                   <span className="min-w-0 break-words text-[11px] text-muted-foreground sm:ml-1">
                     {message.tokensIn !== undefined &&

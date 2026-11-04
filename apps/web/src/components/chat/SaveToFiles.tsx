@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { fileNameError, normalizeFileName, type FileNode } from '@pulpo/contracts'
 import { Download, FolderDown, FolderInput, Loader2, TriangleAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -9,36 +9,22 @@ import { Input } from '@/components/ui/input'
 import { uit, ui } from '@/i18n/ui'
 import type { Attachment } from '@/lib/types'
 import { useAuth } from '@/stores/auth'
-import { deleteFileNodes, fetchFolder, filesQueryKey, folderQueryKey, restoreFileNodes, trashFileNodes } from '@/features/files/api'
+import { fetchFolder, folderQueryKey } from '@/features/files/api'
 import { fileNameErrorMessage, filesErrorMessage } from '@/features/files/file-display'
 import { FolderBrowser } from '@/features/files/FileMoveDialog'
 import { uniqueChildName } from '@/features/files/browser/sort'
-import { useFileToasts } from '@/features/files/browser/toasts'
-import { revealFile } from '@/features/files/reveal'
-import { useSidePanel } from '@/features/side-panel/store'
-import { useMainNavigate } from '@/features/side-panel/use-panel-actions'
 import { saveAttachmentToFiles } from './attachment-actions'
-
-type Saved = Awaited<ReturnType<typeof saveAttachmentToFiles>>
-
-/**
- * Whether attachments can be saved to Files here. Admin chat views, the only screens without a
- * side panel, show another account's chat, whose attachments must not land in anyone's Files.
- */
-function useCanSaveToFiles(): boolean {
-  const filesEnabled = useAuth((state) => state.filesEnabled)
-  const panelEnabled = useSidePanel((state) => state.enabled)
-  return filesEnabled && panelEnabled
-}
+import { useCanSaveToFiles, useSavedToFilesToast, type Saved, type SaveToFilesInput } from './use-save-to-files'
 
 /**
- * Picks a folder and a name. The name starts as the attachment's, numbered (" (n)") when the
- * folder already has it. The folder's files show grayed out; picking one takes its name. A name
- * already in use asks first: overwrite that file (it moves to the trash), save separately (the
- * server adds the number), or go back.
+ * Picks a folder and a name. The name starts as the item's, numbered (" (n)") when the folder
+ * already has it. The folder's files show grayed out; picking one takes its name. A name already in
+ * use asks first: overwrite that file (it moves to the trash), save separately (`save` adds the
+ * number), or go back.
  */
-export function SaveToFilesDialog({ attachment, open, onOpenChange, onSaved }: {
-  attachment: Attachment
+export function SaveToFilesDialog({ name: initialName, save: saveTo, open, onOpenChange, onSaved }: {
+  name: string
+  save: (input: SaveToFilesInput) => Promise<Saved>
   open: boolean
   onOpenChange: (open: boolean) => void
   onSaved: (saved: Saved) => void
@@ -57,11 +43,11 @@ export function SaveToFilesDialog({ attachment, open, onOpenChange, onSaved }: {
     setChosen(null)
     setClash(null)
     setError(null)
-  }, [attachment.name, open])
+  }, [initialName, open])
 
   // The same listing the browser shows, to check the name against.
   const listing = useQuery({ queryKey: folderQueryKey(userId, folderId), queryFn: () => fetchFolder(folderId), enabled: Boolean(open && userId) })
-  const name = chosen?.name ?? (listing.data ? uniqueChildName(attachment.name, listing.data.children) : attachment.name)
+  const name = chosen?.name ?? (listing.data ? uniqueChildName(initialName, listing.data.children) : initialName)
   const normalized = normalizeFileName(name)
   const match = listing.data?.children.find((node) => node.name.toLowerCase() === normalized.toLowerCase()) ?? null
 
@@ -77,7 +63,7 @@ export function SaveToFilesDialog({ attachment, open, onOpenChange, onSaved }: {
     setSaving(true)
     setError(null)
     try {
-      onSaved(await saveAttachmentToFiles(attachment.id, { parentId: folderId, name: normalized, replaceId }))
+      onSaved(await saveTo({ parentId: folderId, name: normalized, replaceId }))
       onOpenChange(false)
     } catch (cause) {
       setClash(null)
@@ -98,7 +84,7 @@ export function SaveToFilesDialog({ attachment, open, onOpenChange, onSaved }: {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle className="truncate">{uit`Save "${attachment.name}" to Files`}</DialogTitle>
+          <DialogTitle className="truncate">{uit`Save "${initialName}" to Files`}</DialogTitle>
           <DialogDescription>{ui("Choose a folder and a name.")}</DialogDescription>
         </DialogHeader>
         {open && (
@@ -164,10 +150,7 @@ export function AttachmentSaveMenu({ attachment, onDownload, className }: {
   className: string
 }) {
   const [picking, setPicking] = useState(false)
-  const queryClient = useQueryClient()
-  const userId = useAuth((state) => state.user?.id)
-  const show = useFileToasts((state) => state.show)
-  const go = useMainNavigate()
+  const saved = useSavedToFilesToast()
   const canSave = useCanSaveToFiles()
 
   if (!canSave) {
@@ -176,23 +159,6 @@ export function AttachmentSaveMenu({ attachment, onDownload, className }: {
         <Download className="size-4" aria-hidden="true" />
       </button>
     )
-  }
-
-  const refresh = () => queryClient.invalidateQueries({ queryKey: filesQueryKey(userId) })
-  const saved = ({ node, replacedId }: Saved) => {
-    void refresh()
-    show({
-      message: replacedId ? uit`Overwrote "${node.name}"` : uit`Saved "${node.name}" to Files`,
-      action: { label: ui("Show"), run: () => revealFile(node, go) },
-      undo: async () => {
-        try {
-          await deleteFileNodes(await trashFileNodes([node.id]))
-          if (replacedId) await restoreFileNodes([replacedId])
-        } finally {
-          await refresh()
-        }
-      },
-    })
   }
 
   return (
@@ -208,7 +174,13 @@ export function AttachmentSaveMenu({ attachment, onDownload, className }: {
           <DropdownMenuItem onSelect={() => setPicking(true)}><FolderInput /> {ui("Save to Files…")}</DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
-      <SaveToFilesDialog attachment={attachment} open={picking} onOpenChange={setPicking} onSaved={saved} />
+      <SaveToFilesDialog
+        name={attachment.name}
+        save={(input) => saveAttachmentToFiles(attachment.id, input)}
+        open={picking}
+        onOpenChange={setPicking}
+        onSaved={saved}
+      />
     </>
   )
 }

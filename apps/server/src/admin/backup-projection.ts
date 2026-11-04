@@ -62,6 +62,7 @@ export const FULL_BACKUP_TEMPORARY_DATA_POLICY = {
   response_items: 'response-item',
   response_content_parts: 'response-content-part',
   chat_shares: 'chat-reference',
+  message_reports: 'chat-reference',
   attachments: 'attachment',
   user_memory_documents: 'redact-source-response',
   user_memory_document_revisions: 'redact-source-response',
@@ -110,16 +111,39 @@ export interface FullBackupProjectionOptions {
 
 const stringValue = (value: unknown): string | undefined => typeof value === 'string' ? value : undefined
 const ids = (rows: FullBackupRow[]): Set<string> => new Set(rows.map((row) => stringValue(row.id)).filter((id): id is string => Boolean(id)))
-const references = (rows: FullBackupRow[], field: string, excluded: Set<string>): FullBackupRow[] => rows.filter((row) => {
-  const value = stringValue(row[field])
-  return !value || !excluded.has(value)
-})
-const redactReference = (rows: FullBackupRow[], field: string, excluded: Set<string>): FullBackupRow[] => rows.map((row) => {
-  const value = stringValue(row[field])
-  return value && excluded.has(value) ? { ...row, [field]: null } : row
-})
 
-export function projectFullBackup(database: FullBackupDatabase, options: FullBackupProjectionOptions = {}): FullBackupProjection {
+/** Rows of temporary chats and everything derived from them, which full backups exclude. */
+export interface TemporaryBackupData {
+  chatIds: Set<string>
+  responseIds: Set<string>
+  responseItemIds: Set<string>
+  draftIds: Set<string>
+  attachmentIds: Set<string>
+  attachmentChecksums: Set<string>
+  requestLogIds: Set<string>
+  workspaceLeaseIds: Set<string>
+  agentRunIds: Set<string>
+}
+
+/**
+ * The columns that identify temporary data. Selecting only these keeps large
+ * payloads out of memory while the full rows are streamed.
+ */
+export const TEMPORARY_BACKUP_KEY_COLUMNS = {
+  chats: ['id', 'temporary'],
+  responses: ['id', 'chat_id'],
+  response_items: ['id', 'response_id'],
+  composer_drafts: ['id', 'chat_id', 'state'],
+  queued_messages: ['chat_id', 'attachment_ids'],
+  attachments: ['id', 'chat_id', 'source_response_id', 'checksum'],
+  request_logs: ['id', 'response_id'],
+  workspace_leases: ['id', 'chat_id'],
+  agent_runs: ['id', 'response_id', 'workspace_lease_id'],
+} as const satisfies Partial<Record<FullBackupTable, readonly string[]>>
+
+export type TemporaryBackupKeys = Pick<FullBackupDatabase, keyof typeof TEMPORARY_BACKUP_KEY_COLUMNS>
+
+export function findTemporaryBackupData(database: TemporaryBackupKeys, options: FullBackupProjectionOptions = {}): TemporaryBackupData {
   const temporaryChats = database.chats.filter((row) => row.temporary === true)
   const temporaryChatIds = ids(temporaryChats)
   const temporaryResponses = database.responses.filter((row) => temporaryChatIds.has(String(row.chat_id)))
@@ -146,10 +170,7 @@ export function projectFullBackup(database: FullBackupDatabase, options: FullBac
       || (responseId && temporaryResponseIds.has(responseId)),
     )
   })
-  const temporaryAttachmentIds = ids(temporaryAttachments)
-  const temporaryAttachmentChecksums = new Set(temporaryAttachments.map((row) => stringValue(row.checksum)).filter((value): value is string => Boolean(value)))
   const temporaryRequestLogs = database.request_logs.filter((row) => temporaryResponseIds.has(String(row.response_id)))
-  const temporaryRequestLogIds = ids(temporaryRequestLogs)
   const temporaryWorkspaceLeases = database.workspace_leases.filter((row) => temporaryChatIds.has(String(row.chat_id)))
   const temporaryWorkspaceLeaseIds = ids(temporaryWorkspaceLeases)
   const temporaryAgentRuns = database.agent_runs.filter((row) => {
@@ -157,63 +178,78 @@ export function projectFullBackup(database: FullBackupDatabase, options: FullBac
     const leaseId = stringValue(row.workspace_lease_id)
     return Boolean((responseId && temporaryResponseIds.has(responseId)) || (leaseId && temporaryWorkspaceLeaseIds.has(leaseId)))
   })
-  const temporaryAgentRunIds = ids(temporaryAgentRuns)
+  return {
+    chatIds: temporaryChatIds,
+    responseIds: temporaryResponseIds,
+    responseItemIds: temporaryResponseItemIds,
+    draftIds: temporaryDraftIds,
+    attachmentIds: ids(temporaryAttachments),
+    attachmentChecksums: new Set(temporaryAttachments.map((row) => stringValue(row.checksum)).filter((value): value is string => Boolean(value))),
+    requestLogIds: ids(temporaryRequestLogs),
+    workspaceLeaseIds: temporaryWorkspaceLeaseIds,
+    agentRunIds: ids(temporaryAgentRuns),
+  }
+}
 
+const excludes = (row: FullBackupRow, field: string, excluded: Set<string>): boolean => {
+  const value = stringValue(row[field])
+  return Boolean(value && excluded.has(value))
+}
+const withoutReference = (row: FullBackupRow, field: string, excluded: Set<string>): FullBackupRow =>
+  excludes(row, field, excluded) ? { ...row, [field]: null } : row
+
+/** Project one row of `table`, or return null when it belongs to temporary data. */
+export function projectBackupRow(table: FullBackupTable, row: FullBackupRow, temporary: TemporaryBackupData): FullBackupRow | null {
+  const keep = (excluded: boolean) => excluded ? null : row
+  switch (FULL_BACKUP_TEMPORARY_DATA_POLICY[table]) {
+    case 'preserve': return row
+    case 'chat': return keep(temporary.chatIds.has(String(row.id)))
+    case 'response': return keep(temporary.responseIds.has(String(row.id)))
+    case 'response-reference': return keep(excludes(row, 'response_id', temporary.responseIds))
+    case 'response-item': return keep(temporary.responseItemIds.has(String(row.id)))
+    case 'response-content-part': return keep(excludes(row, 'response_item_id', temporary.responseItemIds))
+    case 'chat-reference': return keep(excludes(row, 'chat_id', temporary.chatIds))
+    case 'composer-draft': {
+      if (temporary.draftIds.has(String(row.id))) return null
+      const state = row.state as { attachments?: Array<{ id: string }> }
+      return state?.attachments ? { ...row, state: { ...state, attachments: state.attachments.filter(attachment => !temporary.attachmentIds.has(attachment.id)) } } : row
+    }
+    case 'composer-draft-attachment': return keep(temporary.draftIds.has(String(row.draft_id)) || temporary.attachmentIds.has(String(row.attachment_id)))
+    case 'shelved-draft': return Array.isArray(row.attachment_data)
+      ? { ...row, attachment_data: (row.attachment_data as Array<{ id: string }>).filter(attachment => !temporary.attachmentIds.has(attachment.id)) } : row
+    case 'shelved-draft-attachment': return keep(excludes(row, 'attachment_id', temporary.attachmentIds))
+    case 'queued-message': {
+      if (excludes(row, 'chat_id', temporary.chatIds)) return null
+      return Array.isArray(row.attachment_ids)
+        ? { ...row, attachment_ids: (row.attachment_ids as string[]).filter(id => !temporary.attachmentIds.has(id)) } : row
+    }
+    case 'attachment': return keep(temporary.attachmentIds.has(String(row.id)))
+    case 'redact-source-response': return withoutReference(row, 'source_response_id', temporary.responseIds)
+    case 'redact-response': return withoutReference(row, 'response_id', temporary.responseIds)
+    case 'chat-turn-embedding': return keep(excludes(row, 'chat_id', temporary.chatIds) || excludes(row, 'response_id', temporary.responseIds))
+    case 'request-log': return keep(temporary.requestLogIds.has(String(row.id)))
+    case 'generation-attempt': return keep(excludes(row, 'request_log_id', temporary.requestLogIds))
+    case 'ocr-attempt': return keep(excludes(row, 'request_log_id', temporary.requestLogIds) || excludes(row, 'attachment_id', temporary.attachmentIds))
+    case 'ocr-cache': return keep(temporary.attachmentChecksums.has(String(row.checksum)))
+    case 'workspace-lease': return temporary.workspaceLeaseIds.has(String(row.id)) ? null : withoutReference(row, 'response_id', temporary.responseIds)
+    case 'agent-run': return keep(temporary.agentRunIds.has(String(row.id)))
+    case 'tool-execution': return keep(excludes(row, 'agent_run_id', temporary.agentRunIds) || excludes(row, 'workspace_lease_id', temporary.workspaceLeaseIds))
+  }
+}
+
+/** The stored blob of a projected attachment row, if it has one. */
+export function backupAttachmentBlob(row: FullBackupRow): BackupAttachmentBlob | null {
+  const objectKey = stringValue(row.object_key)
+  if (row.status !== 'ready' || !objectKey) return null
+  return { objectKey, checksum: stringValue(row.checksum) ?? null }
+}
+
+export function projectFullBackup(database: FullBackupDatabase, options: FullBackupProjectionOptions = {}): FullBackupProjection {
+  const temporary = findTemporaryBackupData(database, options)
   const projected = {} as FullBackupDatabase
   for (const table of FULL_BACKUP_TABLES) {
-    const rows = database[table]
-    switch (FULL_BACKUP_TEMPORARY_DATA_POLICY[table]) {
-      case 'preserve': projected[table] = [...rows]; break
-      case 'chat': projected[table] = rows.filter((row) => !temporaryChatIds.has(String(row.id))); break
-      case 'response': projected[table] = rows.filter((row) => !temporaryResponseIds.has(String(row.id))); break
-      case 'response-reference': projected[table] = references(rows, 'response_id', temporaryResponseIds); break
-      case 'response-item': projected[table] = rows.filter((row) => !temporaryResponseItemIds.has(String(row.id))); break
-      case 'response-content-part': projected[table] = references(rows, 'response_item_id', temporaryResponseItemIds); break
-      case 'chat-reference': projected[table] = references(rows, 'chat_id', temporaryChatIds); break
-      case 'composer-draft': projected[table] = rows.filter((row) => !temporaryDraftIds.has(String(row.id))).map(row => {
-        const state = row.state as { attachments?: Array<{ id: string }> }
-        return state?.attachments ? { ...row, state: { ...state, attachments: state.attachments.filter(attachment => !temporaryAttachmentIds.has(attachment.id)) } } : row
-      }); break
-      case 'composer-draft-attachment': projected[table] = rows.filter((row) => !temporaryDraftIds.has(String(row.draft_id)) && !temporaryAttachmentIds.has(String(row.attachment_id))); break
-      case 'shelved-draft': projected[table] = rows.map(row => Array.isArray(row.attachment_data)
-        ? { ...row, attachment_data: (row.attachment_data as Array<{ id: string }>).filter(attachment => !temporaryAttachmentIds.has(attachment.id)) } : row); break
-      case 'shelved-draft-attachment': projected[table] = references(rows, 'attachment_id', temporaryAttachmentIds); break
-      case 'queued-message': projected[table] = references(rows, 'chat_id', temporaryChatIds).map(row => Array.isArray(row.attachment_ids)
-        ? { ...row, attachment_ids: (row.attachment_ids as string[]).filter(id => !temporaryAttachmentIds.has(id)) } : row); break
-      case 'attachment': projected[table] = rows.filter((row) => !temporaryAttachmentIds.has(String(row.id))); break
-      case 'redact-source-response': projected[table] = redactReference(rows, 'source_response_id', temporaryResponseIds); break
-      case 'redact-response': projected[table] = redactReference(rows, 'response_id', temporaryResponseIds); break
-      case 'chat-turn-embedding': projected[table] = rows.filter((row) => {
-        const chatId = stringValue(row.chat_id)
-        const responseId = stringValue(row.response_id)
-        return !((chatId && temporaryChatIds.has(chatId)) || (responseId && temporaryResponseIds.has(responseId)))
-      }); break
-      case 'request-log': projected[table] = rows.filter((row) => !temporaryRequestLogIds.has(String(row.id))); break
-      case 'generation-attempt': projected[table] = references(rows, 'request_log_id', temporaryRequestLogIds); break
-      case 'ocr-attempt': projected[table] = rows.filter((row) => {
-        const requestLogId = stringValue(row.request_log_id)
-        const attachmentId = stringValue(row.attachment_id)
-        return !((requestLogId && temporaryRequestLogIds.has(requestLogId)) || (attachmentId && temporaryAttachmentIds.has(attachmentId)))
-      }); break
-      case 'ocr-cache': projected[table] = rows.filter((row) => !temporaryAttachmentChecksums.has(String(row.checksum))); break
-      case 'workspace-lease': projected[table] = redactReference(
-        rows.filter((row) => !temporaryWorkspaceLeaseIds.has(String(row.id))),
-        'response_id',
-        temporaryResponseIds,
-      ); break
-      case 'agent-run': projected[table] = rows.filter((row) => !temporaryAgentRunIds.has(String(row.id))); break
-      case 'tool-execution': projected[table] = rows.filter((row) => {
-        const agentRunId = stringValue(row.agent_run_id)
-        const leaseId = stringValue(row.workspace_lease_id)
-        return !((agentRunId && temporaryAgentRunIds.has(agentRunId)) || (leaseId && temporaryWorkspaceLeaseIds.has(leaseId)))
-      }); break
-    }
+    projected[table] = database[table].flatMap<FullBackupRow>((row) => projectBackupRow(table, row, temporary) ?? [])
   }
-
-  const attachmentBlobs = projected.attachments.flatMap((row) => {
-    const objectKey = stringValue(row.object_key)
-    if (row.status !== 'ready' || !objectKey) return []
-    return [{ objectKey, checksum: stringValue(row.checksum) ?? null }]
-  })
+  const attachmentBlobs = projected.attachments.flatMap((row) => backupAttachmentBlob(row) ?? [])
   return { database: projected, attachmentBlobs }
 }

@@ -12,7 +12,11 @@ import {
   registerBillingRoutes,
   resolvedCheckoutStatus,
   selectSummarySubscription,
+  usageLimitsPlans,
+  usageLimitsResponse,
+  usageLimitsSubscription,
 } from './routes.js'
+import { hasRenewingAppStoreSubscription } from './app-store-sync.js'
 
 const apps: ReturnType<typeof Fastify>[] = []
 
@@ -27,6 +31,8 @@ describe('billing feature gate', () => {
     await registerBillingRoutes(app)
     const response = await app.inject({ method: 'GET', url: '/api/billing/summary' })
     expect(response.statusCode).toBe(404)
+    const limits = await app.inject({ method: 'GET', url: '/api/billing/limits' })
+    expect(limits.statusCode).toBe(404)
     const autoTopUp = await app.inject({ method: 'PUT', url: '/api/billing/auto-top-up', payload: {} })
     expect(autoTopUp.statusCode).toBe(404)
   })
@@ -70,6 +76,23 @@ describe('billing summary subscription recovery', () => {
 
   it('does not surface terminal subscriptions as manageable fallbacks', () => {
     expect(selectSummarySubscription([{ plan: 'fat', status: 'canceled' }], 'baby')).toBeNull()
+  })
+
+  it('shows the Stripe subscription that plan changes act on when an App Store one also exists', () => {
+    const appStore = { plan: 'fat', status: 'active', provider: 'app_store', id: 'apple' }
+    const stripe = { plan: 'eight', status: 'active', provider: 'stripe', id: 'sub_stripe' }
+    expect(selectSummarySubscription([appStore, stripe], 'fat')?.id).toBe('sub_stripe')
+    expect(selectSummarySubscription([appStore], 'fat')?.id).toBe('apple')
+  })
+})
+
+describe('App Store renewal warning', () => {
+  it('reports only App Store subscriptions that will renew', () => {
+    const row = { provider: 'app_store', status: 'active', cancelAtPeriodEnd: false }
+    expect(hasRenewingAppStoreSubscription([row])).toBe(true)
+    expect(hasRenewingAppStoreSubscription([{ ...row, cancelAtPeriodEnd: true }])).toBe(false)
+    expect(hasRenewingAppStoreSubscription([{ ...row, status: 'canceled' }])).toBe(false)
+    expect(hasRenewingAppStoreSubscription([{ ...row, provider: 'stripe' }])).toBe(false)
   })
 })
 
@@ -169,5 +192,76 @@ describe('custom limit summaries', () => {
       remainingPercentage: 0, availableBarPercentage: 0, pendingMicros: 300_000, pendingBarPercentage: 30,
       resetsAt: '2026-10-23T00:00:00.000Z',
     })
+  })
+})
+
+describe('usage limits for native apps', () => {
+  const entitlements = {
+    plan: 'eight' as const,
+    weeklyRemainingPercentage: 60,
+    weeklyRemainingMicros: 6_000_000,
+    weeklyLimitMicros: 10_000_000,
+    weeklySpentMicros: 3_000_000,
+    weeklyPendingMicros: 1_000_000,
+    weeklyResetAt: new Date('2026-11-09T00:00:00.000Z'),
+    fiveHourRemainingPercentage: 50,
+    fiveHourLimitMicros: 2_000_000,
+    fiveHourSpentMicros: 500_000,
+    fiveHourPendingMicros: 500_000,
+    fiveHourRemainingMicros: 1_000_000,
+    fiveHourResetAt: new Date('2026-11-02T15:00:00.000Z'),
+  }
+
+  it('reports percentages and reset times without any amounts', () => {
+    const custom = customLimitSummary({
+      limitId: 'limit-1', name: 'Opus daily', period: 'daily', limitMicros: 1_000_000, modelIds: ['opus'], sharePercent: 25, coversExtras: false,
+      ownerUserId: 'user-1', periodStart: new Date('2026-11-02T00:00:00.000Z'),
+      spentMicros: 250_000, pendingMicros: 250_000, remainingMicros: 500_000,
+      sharedLimitMicros: 250_000, sharedSpentMicros: 0, sharedPendingMicros: 0, sharedAvailableMicros: 0,
+      resetAt: new Date('2026-11-03T00:00:00.000Z'), freesAt: null,
+    }, new Map([['opus', 'Claude Opus']]))
+    const limits = usageLimitsResponse(entitlements, [custom])
+    expect(limits).toEqual({
+      plan: 'eight',
+      subscription: null,
+      plans: null,
+      weekly: { remainingPercentage: 60, availableBarPercentage: 60, pendingBarPercentage: 10, resetsAt: '2026-11-09T00:00:00.000Z' },
+      fiveHour: { remainingPercentage: 50, availableBarPercentage: 50, pendingBarPercentage: 25, resetsAt: '2026-11-02T15:00:00.000Z' },
+      custom: [{
+        id: 'limit-1', name: 'Opus daily', period: 'daily', coversExtras: false, models: ['Claude Opus'],
+        remainingPercentage: 50, availableBarPercentage: 50, pendingBarPercentage: 25, resetsAt: '2026-11-03T00:00:00.000Z',
+      }],
+    })
+    expect(JSON.stringify(limits)).not.toMatch(/micros|balance|cents/i)
+  })
+
+  it('omits limits the plan does not have', () => {
+    expect(usageLimitsResponse({ ...entitlements, plan: 'baby', weeklyRemainingPercentage: null, fiveHourRemainingPercentage: null, fiveHourResetAt: null }, []))
+      .toEqual({ plan: 'baby', subscription: null, plans: null, weekly: null, fiveHour: null, custom: [] })
+  })
+
+  it('describes plan storage and the Fat Pool share without prices', () => {
+    const plans = usageLimitsPlans({ babyStorageLimitBytes: 2_147_483_648, eightStorageLimitBytes: 10_737_418_240, fatStorageLimitBytes: 26_843_545_600, fatSharedWeeklyPercent: 50 })
+    expect(plans).toEqual({ storageLimitBytes: { baby: 2_147_483_648, eight: 10_737_418_240, fat: 26_843_545_600 }, fatSharedWeeklyPercent: 50 })
+    expect(usageLimitsResponse({ ...entitlements, plan: 'baby', weeklyRemainingPercentage: null, fiveHourRemainingPercentage: null, fiveHourResetAt: null }, [], { plans }).plans).toEqual(plans)
+  })
+})
+
+describe('usage limits subscription', () => {
+  const periodEnd = new Date('2026-12-01T00:00:00.000Z')
+  const row = (overrides: Record<string, unknown>) => ({
+    plan: 'eight', paidPlan: 'eight', status: 'active', provider: 'stripe', cancelAtPeriodEnd: false, currentPeriodEnd: periodEnd, ...overrides,
+  })
+
+  it('names the store that bills the plan, with its renewal state and no price', () => {
+    expect(usageLimitsSubscription([row({ provider: 'app_store', plan: 'eight', paidPlan: 'fat', cancelAtPeriodEnd: true })], 'fat')).toEqual({
+      provider: 'app_store', plan: 'fat', pendingPlan: 'eight', status: 'active', cancelAtPeriodEnd: true, currentPeriodEnd: periodEnd.toISOString(),
+    })
+  })
+
+  it('prefers a web subscription and ignores ended ones', () => {
+    expect(usageLimitsSubscription([row({ provider: 'app_store' }), row({ provider: 'stripe', status: 'past_due' })], 'eight'))
+      .toMatchObject({ provider: 'stripe', status: 'past_due' })
+    expect(usageLimitsSubscription([row({ status: 'canceled' })], 'baby')).toBeNull()
   })
 })

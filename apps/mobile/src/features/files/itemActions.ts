@@ -1,5 +1,6 @@
 import type { FileNode } from '@pulpo/contracts'
 import { isMarkdownName } from '@pulpo/contracts'
+import { isQuizFileName } from '@pulpo/client-core/quiz'
 import type { ContextMenuAction } from '../../native/ItemContextMenuView'
 import { isTrashFolder } from '../trash/folder'
 import { isBuiltIn, openedKind } from './display'
@@ -78,6 +79,8 @@ export type FileOpenTarget =
   | { type: 'folder'; id: string; name: string }
   | { type: 'document'; id: string; name: string }
   | { type: 'markdown'; id: string; name: string }
+  /** A `.quiz` file, taken in the app. */
+  | { type: 'quiz'; id: string; name: string }
   /** An uploaded file; `node` is missing behind a shortcut, whose target's details load first. */
   | { type: 'file'; id: string; node?: FileNode }
   | { type: 'chat'; id: string }
@@ -91,12 +94,14 @@ export function fileOpenTarget(node: FileNode): FileOpenTarget {
     if (target.kind === 'folder') return { type: 'folder', id: target.id, name: target.name }
     if (target.kind === 'chat') return { type: 'chat', id: target.id }
     if (target.kind === 'doc') return { type: 'document', id: target.id, name: target.name }
-    return isMarkdownName(target.name) ? { type: 'markdown', id: target.id, name: target.name } : { type: 'file', id: target.id }
+    if (isMarkdownName(target.name)) return { type: 'markdown', id: target.id, name: target.name }
+    return isQuizFileName(target.name) ? { type: 'quiz', id: target.id, name: target.name } : { type: 'file', id: target.id }
   }
   if (node.status === 'pending') return { type: 'unavailable', reason: `“${node.name}” is still uploading.` }
   if (node.kind === 'folder') return { type: 'folder', id: node.id, name: node.name }
   if (node.kind === 'chat') return { type: 'chat', id: node.id }
   if (node.kind === 'doc') return { type: 'document', id: node.id, name: node.name }
   if (isMarkdownName(node.name)) return { type: 'markdown', id: node.id, name: node.name }
+  if (isQuizFileName(node.name)) return { type: 'quiz', id: node.id, name: node.name }
   return { type: 'file', id: node.id, node }
 }

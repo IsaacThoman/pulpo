@@ -9,6 +9,7 @@ import { createServer, type IncomingHttpHeaders, type ServerResponse } from 'nod
 import { once } from 'node:events'
 import OpenAI from 'openai'
 import Anthropic from '@anthropic-ai/sdk'
+import { DEFAULT_TITLE_PROMPT } from '@pulpo/contracts'
 import { Queue, Worker } from 'bullmq'
 
 if (new URL(process.env.DATABASE_URL ?? 'http://invalid').pathname !== '/pulpo_provider_formats_test'
@@ -208,8 +209,10 @@ const anthropic = new Anthropic({ baseURL: base, apiKey: key.secret, maxRetries:
 const readTool = { name: 'read_file', description: 'Read a file', input_schema: { type: 'object' as const, properties: { path: { type: 'string' } }, required: ['path'] } }
 const lastRequest = () => upstreamRequests.at(-1)!
 // Browser turns also make post-response requests (chat titles), so locate the generation itself.
+// Match the title task's own wording: replies' instructions can mention titles too (a quiz's title).
+const titleTask = DEFAULT_TITLE_PROMPT.split('\n')[1]!
 const requestContaining = (text: string) => {
-  const found = upstreamRequests.findLast(request => JSON.stringify(request.body).includes(text) && !JSON.stringify(request.body).includes('title'))
+  const found = upstreamRequests.findLast(request => JSON.stringify(request.body).includes(text) && !JSON.stringify(request.body).includes(titleTask))
   assert(found, `No upstream request contained ${text}`)
   return found
 }

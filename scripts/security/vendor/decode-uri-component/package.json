@@ -1,0 +1,11 @@
+{
+  "name": "@pulpo/decode-uri-component",
+  "version": "0.2.2-pulpo.1",
+  "private": true,
+  "description": "CommonJS port of the linear-time decode-uri-component 0.5.1 decoder for query-string 7",
+  "main": "index.js",
+  "license": "MIT",
+  "engines": {
+    "node": ">=14.16"
+  }
+}

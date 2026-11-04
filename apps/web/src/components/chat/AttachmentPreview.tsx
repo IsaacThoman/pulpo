@@ -24,6 +24,8 @@ import { SandboxFrame } from '@/components/chat/SandboxFrame'
 import { CodeSource, PreviewModeToggle } from '@/components/chat/CodePreviewPanel'
 import { HighlightedCode } from '@/components/chat/HighlightedCode'
 import { previewKindForFile } from '@/lib/code-preview'
+import { parseQuiz } from '@pulpo/client-core/quiz'
+import { QuizCard } from '@/components/chat/QuizCard'
 import { languageForFile } from '@/lib/syntax-highlight'
 
 const TABLE_ROW_BATCH = 200
@@ -128,6 +130,18 @@ function TextPreview({
   )
 }
 
+function QuizPreview({ attachment, text, truncated }: { attachment: Attachment; text: string; truncated: boolean }) {
+  const quiz = useMemo(() => truncated ? null : parseQuiz(text), [text, truncated])
+  if (!quiz) return <TextPreview attachment={attachment} text={text} truncated={truncated} markdown={false} />
+  return (
+    <div className="size-full overflow-auto bg-background" data-preview-kind="quiz">
+      <div className="mx-auto w-full max-w-3xl p-4 sm:p-8">
+        <QuizCard quiz={quiz} progressKey={`attachment:${attachment.id}`} className="my-0" />
+      </div>
+    </div>
+  )
+}
+
 function SandboxPreview({ attachment, text, truncated }: { attachment: Attachment; text: string; truncated: boolean }) {
   const [mode, setMode] = useState<'preview' | 'code'>(truncated ? 'code' : 'preview')
   const kind = previewKindForFile(attachment.name, attachment.mimeType)
@@ -187,6 +201,9 @@ export function PreviewBody({
     // Single-column files are not really tables; show them as text, capped like any other text preview.
     const fallback = formatTextPreview(attachment.name, attachment.mimeType, content.text)
     return <TextPreview attachment={attachment} text={fallback.text} truncated={fallback.truncated} markdown={false} />
+  }
+  if (kind === 'quiz' && content.text !== null) {
+    return <QuizPreview attachment={attachment} text={content.text} truncated={content.textTruncated} />
   }
   if ((kind === 'markdown' || kind === 'text') && content.text !== null) {
     return <TextPreview attachment={attachment} text={content.text} truncated={content.textTruncated} markdown={kind === 'markdown'} />

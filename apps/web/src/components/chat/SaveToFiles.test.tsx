@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { FileNode } from '@pulpo/contracts'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAuth } from '@/stores/auth'
+import { saveAttachmentToFiles } from './attachment-actions'
 import { SaveToFilesDialog } from './SaveToFiles'
 
 vi.hoisted(() => {
@@ -23,7 +24,7 @@ function renderDialog() {
   const onSaved = vi.fn()
   render(
     <QueryClientProvider client={new QueryClient()}>
-      <SaveToFilesDialog attachment={attachment} open onOpenChange={() => undefined} onSaved={onSaved} />
+      <SaveToFilesDialog name={attachment.name} save={(input) => saveAttachmentToFiles(attachment.id, input)} open onOpenChange={() => undefined} onSaved={onSaved} />
     </QueryClientProvider>,
   )
   return { onSaved, name: () => screen.getByRole('textbox') as HTMLInputElement }

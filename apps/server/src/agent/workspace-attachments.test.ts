@@ -17,3 +17,9 @@ it('uses conversation order for colliding deliverables and supplies explicit att
     ['new', '/workspace/report.txt'], ['old', attachmentWorkspacePath('old.txt', 'old')], ['preview', attachmentWorkspacePath('preview.txt', 'preview')],
   ])
 })
+
+it('stages every same-named upload from one message', () => {
+  const ids = ['019a2b3c-4d5e-7f00-8a11-111111111111', '019a2b3c-4d5e-7f00-9b22-222222222222', '019a2b3c-4d5e-7f01-a333-333333333333']
+  const files = ids.map(id => ({ ...file(id), originalName: 'image.png' }))
+  expect(workspaceAttachments([{ id: 'a', input: input(...ids) }], files).map(f => f.id)).toEqual(ids)
+})

@@ -1,5 +1,6 @@
 import { protectTranscriptRequest } from '../data/transcriptResidency'
-import { CLIENT_PLATFORM_HEADER } from '@pulpo/contracts'
+import { nativeUsageErrorMessage } from '../features/usage-limits/errors'
+import { CLIENT_PLATFORM_HEADER, usageLimitsSchema } from '@pulpo/contracts'
 import type { NativeDevice, DeviceSessionList, MobileConfig, NativeAuthResponse, PasskeyAuthenticationResponse, PasskeyCeremony, PasskeyList, PasskeyRegistrationResponse, PasskeySummary, TwoFactorEnrollment, TwoFactorRecoveryCodes, TwoFactorStatus, User } from '@pulpo/contracts'
 import type { MobileModel, ServerChat, ServerDeletedChat, ServerFolder } from '../types'
 
@@ -127,12 +128,9 @@ async function performApiRequest<T>(path: string, options: RequestOptions): Prom
         await apiRequest('/api/mobile/me').catch(() => undefined)
       } else requestUnauthorizedHandler?.()
     }
-    throw new ApiError(
-      response.status,
-      body?.error?.code ?? 'request_failed',
-      body?.error?.message ?? `Request failed (${response.status})`,
-      body,
-    )
+    const code = body?.error?.code ?? 'request_failed'
+    const message = body?.error?.message ?? `Request failed (${response.status})`
+    throw new ApiError(response.status, code, response.status === 402 ? nativeUsageErrorMessage(code, message) : message, body)
   }
   return body as T
 }
@@ -183,6 +181,16 @@ export const mobileApi = {
     }),
   disableTwoFactor: (currentPassword: string, verificationCode: string) => apiRequest<void>('/api/me/two-factor', {
     method: 'DELETE', verifySessionOnUnauthorized: true, body: { currentPassword, verificationCode },
+  }),
+  /** Plan usage limits as percentages; the app never shows balances or prices. */
+  usageLimits: () => apiRequest<unknown>('/api/billing/limits').then((value) => usageLimitsSchema.parse(value)),
+  /** The UUID StoreKit attaches to purchases so Apple's records name this account. */
+  appStoreAccountToken: () => apiRequest<{ token: string }>('/api/billing/app-store/account-token').then((value) => value.token),
+  /** Reports a StoreKit transaction; the server verifies it with Apple before changing the plan. */
+  syncAppStoreTransaction: (signedTransaction: string) => apiRequest<{ plan: string }>('/api/billing/app-store/transactions', {
+    method: 'POST',
+    body: { signedTransaction },
+    timeoutMs: 30_000,
   }),
   passkeys: () => apiRequest<PasskeyList>('/api/me/passkeys'),
   beginPasskeyRegistration: (name: string, currentPassword: string, verificationCode?: string) =>

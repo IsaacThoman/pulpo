@@ -1,11 +1,25 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   createInitialAdmin: vi.fn(),
   createNativeSession: vi.fn(),
   select: vi.fn(),
+  billingEnabled: undefined as boolean | undefined,
+  config: {} as Record<string, unknown>,
 }))
+
+vi.mock('../config.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../config.js')>()
+  return {
+    ...actual,
+    getConfig: () => ({
+      ...actual.getConfig(),
+      ...(mocks.billingEnabled === undefined ? {} : { PULPO_BILLING_ENABLED: mocks.billingEnabled }),
+      ...mocks.config,
+    }),
+  }
+})
 
 vi.mock('../database/client.js', () => ({ db: { select: mocks.select } }))
 
@@ -61,6 +75,69 @@ describe('mobile Files capability', () => {
       post: vi.fn(),
     } as unknown as FastifyInstance)
     expect(await handler()).toMatchObject({ capabilities: { files: { enabled, docSchemaVersion: DOC_SCHEMA_VERSION } } })
+  })
+})
+
+describe('mobile usage limits capability', () => {
+  it.each([true, false])('advertises plan usage limits only when billing is enabled (%s)', async (billingEnabled) => {
+    mocks.billingEnabled = billingEnabled
+    const values = [[{ id: 'user' }], [{ value: {} }], []]
+    mocks.select.mockImplementation(() => {
+      const rows = values.shift()
+      const chain = { from: () => chain, where: () => chain, limit: async () => rows }
+      return chain
+    })
+    let handler!: () => Promise<unknown>
+    await registerMobileRoutes({
+      get: (path: string, callback: () => Promise<unknown>) => { if (path === '/api/mobile/config') handler = callback },
+      post: vi.fn(),
+    } as unknown as FastifyInstance)
+    try {
+      expect(await handler()).toMatchObject({ capabilities: { usageLimits: billingEnabled } })
+    } finally {
+      mocks.billingEnabled = undefined
+    }
+  })
+})
+
+describe('mobile App Store billing capability', () => {
+  async function capabilities() {
+    const values = [[{ id: 'user' }], [{ value: {} }], []]
+    mocks.select.mockImplementation(() => {
+      const rows = values.shift()
+      const chain = { from: () => chain, where: () => chain, limit: async () => rows }
+      return chain
+    })
+    let handler!: () => Promise<{ capabilities: Record<string, unknown> }>
+    await registerMobileRoutes({
+      get: (path: string, callback: () => Promise<{ capabilities: Record<string, unknown> }>) => { if (path === '/api/mobile/config') handler = callback },
+      post: vi.fn(),
+    } as unknown as FastifyInstance)
+    return (await handler()).capabilities
+  }
+
+  afterEach(() => {
+    mocks.billingEnabled = undefined
+    mocks.config = {}
+  })
+
+  it('lists the StoreKit environments and products the server accepts purchases of', async () => {
+    mocks.billingEnabled = true
+    mocks.config = {
+      APP_STORE_PRIVATE_KEY: '-----BEGIN PRIVATE KEY-----',
+      APP_STORE_ENVIRONMENTS: ['sandbox'],
+      APP_STORE_EIGHT_PRODUCT_ID: 'pulpoEight',
+      APP_STORE_FAT_PRODUCT_ID: 'pulpoFat',
+    }
+    expect((await capabilities()).appStoreBilling).toEqual({ environments: ['sandbox'], products: { eight: 'pulpoEight', fat: 'pulpoFat' } })
+  })
+
+  it('offers no purchases without App Store configuration or billing', async () => {
+    mocks.billingEnabled = true
+    expect((await capabilities()).appStoreBilling).toBeNull()
+    mocks.billingEnabled = false
+    mocks.config = { APP_STORE_PRIVATE_KEY: '-----BEGIN PRIVATE KEY-----', APP_STORE_ENVIRONMENTS: ['production'] }
+    expect((await capabilities()).appStoreBilling).toBeNull()
   })
 })
 

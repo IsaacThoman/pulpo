@@ -5,8 +5,11 @@ import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
 import { Check, Copy, Download, ImageIcon, Play } from 'lucide-react'
 import { normalizeMathDelimiters, unwrapBoxedMinipages } from '@pulpo/client-core'
+import { QUIZ_LANGUAGE } from '@pulpo/client-core/quiz'
 import 'katex/dist/katex.min.css'
 import { HighlightedCode } from '@/components/chat/HighlightedCode'
+import { MarkdownStreamingContext } from '@/components/chat/markdown-streaming'
+import { QuizBlock } from '@/components/chat/QuizBlock'
 import { ui } from '@/i18n/ui'
 import { writeClipboardText } from '@/lib/clipboard'
 import { codeFileExtension, downloadCode } from '@/lib/code-download'
@@ -120,7 +123,8 @@ const markdownComponents: Components = {
         </code>
       )
     }
-    return <CodeBlock language={match?.[1] ?? ''} code={text} caret={Boolean(caret)} />
+    const block = <CodeBlock language={match?.[1] ?? ''} code={text} caret={Boolean(caret)} />
+    return match?.[1]?.toLowerCase() === QUIZ_LANGUAGE ? <QuizBlock source={text} fallback={block} /> : block
   },
   p: ({ children }) => <p className="my-2 leading-7 first:mt-0 last:mb-0">{children}</p>,
   ul: ({ children }) => <ul className="my-2 list-disc space-y-1 pl-6">{children}</ul>,
@@ -211,7 +215,7 @@ export const Markdown = memo(function Markdown({
 
   // Incoming chunks update `latest` before the 100 ms display tick. Reuse the element while
   // its displayed content is unchanged so ReactMarkdown does not parse the same text again.
-  return useMemo(() => (
+  const body = useMemo(() => (
     <div className="markdown-content min-w-0 max-w-full [overflow-wrap:anywhere]">
       <ReactMarkdown
         remarkPlugins={breaks ? BREAKS_REMARK_PLUGINS : REMARK_PLUGINS}
@@ -223,4 +227,6 @@ export const Markdown = memo(function Markdown({
       </ReactMarkdown>
     </div>
   ), [normalized, breaks, caret, mergedComponents, urlTransform])
+  // Blocks waiting for the stream to end hear about it through context, without a second parse.
+  return <MarkdownStreamingContext.Provider value={streaming}>{body}</MarkdownStreamingContext.Provider>
 })

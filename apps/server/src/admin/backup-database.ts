@@ -2,16 +2,19 @@ import { createWriteStream } from 'node:fs'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 
-/** Preserve the v1 database object without constructing a database-sized string. */
-export async function writeBackupDatabase(path: string, database: Record<string, Iterable<unknown>>): Promise<void> {
-  function* chunks(): Generator<string> {
+/**
+ * Preserve the v1 database object without constructing a database-sized
+ * string. Tables may be async so their rows are read only as they are written.
+ */
+export async function writeBackupDatabase(path: string, database: Record<string, Iterable<unknown> | AsyncIterable<unknown>>): Promise<void> {
+  async function* chunks(): AsyncGenerator<string> {
     yield '{'
     let firstTable = true
     for (const [table, rows] of Object.entries(database)) {
       yield `${firstTable ? '' : ','}${JSON.stringify(table)}:[`
       firstTable = false
       let firstRow = true
-      for (const row of rows) {
+      for await (const row of rows) {
         const serialized = JSON.stringify(row, (_, item) => typeof item === 'bigint' ? item.toString() : item) ?? 'null'
         yield `${firstRow ? '' : ','}${serialized}`
         firstRow = false

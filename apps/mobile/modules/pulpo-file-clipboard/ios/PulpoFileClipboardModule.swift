@@ -30,6 +30,14 @@ public final class PulpoFileClipboardModule: Module {
 
     View(StatusBarGradientView.self) {}
 
+    View(ComposerPasteView.self) {
+      Events("onPasteStart", "onPasteFiles")
+    }
+
+    View(DisplayGeometryView.self) {
+      Events("onGeometryChange")
+    }
+
     View(QueuedMessagesView.self) {
       Events("onAction", "onContentHeightChange")
       Prop("rows") { (view, value: [QueuedMessageRow]) in
@@ -70,6 +78,9 @@ public final class PulpoFileClipboardModule: Module {
       }
       Prop("reduceMotion") { (view, value: Bool) in
         view.setReduceMotion(value)
+      }
+      Prop("axis") { (view, value: String) in
+        view.setAxis(value)
       }
     }
 

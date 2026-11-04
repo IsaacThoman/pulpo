@@ -3,18 +3,22 @@ import { speechPlayback, readAloud } from '../features/speech/playback';
 import { SPEECH_SEEK_SECONDS, nextSpeechRate, speechRateLabel, speechText, speechTimeLabel, type SpeechProgress } from '@pulpo/client-core';
 import { INITIAL_TRANSCRIPT_ROWS, hasLargeInitialMessage, transcriptListMessages, usesBottomAnchoredTranscript } from '../features/chat/transcriptWindow';
 import { hasChatSelectionObserver, recordChatSelection, hasTranscriptPositionObserver, recordTranscriptPosition } from '../features/chat/selectionTiming';
+import { isUsageLimitMessage, isUsageLimitRejection, responseErrorMessage, usageLimitNoticeText } from '../features/usage-limits/errors';
 import { prepareChatSelection } from '../data/prepareChat';
 import { createDrawerTransition } from '../features/chat/drawerTransition';
 import { protectTranscript } from '../data/transcriptResidency';
 import { incomingFiles, releaseImportedFile } from '../native/incomingFiles';
 import { useIncomingFileImport } from '../features/chat/useIncomingFileImport';
 import { incomingFileAttachment } from '../features/chat/incomingFileAttachment';
+import { pastedFileAttachments, type PastedFiles } from '../features/chat/pastedFileAttachments';
+import { ComposerPasteView } from '../native/ComposerPasteView';
 import { useShortcutInbox } from '../shortcuts/inbox';
 import { shortcutsScope } from '../shortcuts/native';
 import { useDictation } from '../features/chat/useDictation';
 import { DictationCancelButton, DictationStrip } from '../features/chat/DictationStrip';
 import { useDictationToolbarStyle } from '../features/chat/dictationMotion';
 import { setComposerSelection } from '../features/chat/composerSelection';
+import { responseMetaLabel } from '../features/chat/responseCost';
 import { ToolImagePreview } from '../components/ToolImagePreview';
 import { localComposerDraftId, mergePendingAttachments } from '@pulpo/client-core';
 import { DevicesScreen } from '../components/Devices';
@@ -137,8 +141,8 @@ import { useNetworkOffline } from '../providers/useNetworkOffline';
 import { StatusBar } from 'expo-status-bar';
 import { SymbolView } from '../platform/SymbolView';
 import { PulsingIcon, SpinningLoader } from '../components/SpinningLoader';
-import { DarkTheme as NavigationDarkTheme, DefaultTheme as NavigationLightTheme, NavigationContainer, useIsFocused } from '@react-navigation/native';
-import { createNativeStackNavigator, type NativeStackScreenProps } from '@react-navigation/native-stack';
+import { DarkTheme as NavigationDarkTheme, DefaultTheme as NavigationLightTheme, NavigationContainer, useIsFocused, useNavigation } from '@react-navigation/native';
+import { createNativeStackNavigator, type NativeStackNavigationProp, type NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useQueryClient } from '@tanstack/react-query';
 import { findCostLimitItem, workspaceContinueWithoutAgentAvailableAtMs, type CostLimitItem, type DataRetentionTag } from '@pulpo/contracts';
 import { DataRetentionBadge } from '../components/DataRetentionBadge';
@@ -203,12 +207,12 @@ import { apiRequest, ApiError } from '../api/client';
 import { useFollowStartedChat } from '../features/chat/useFollowStartedChat';
 import { clearProductionScope, hydrateProductionChatPreview, hydrateProductionScope, ProductionBridge } from './src/production/ProductionBridge';
 import { productionActions, runProductionAction } from './src/production/productionActions';
-import { applyConfirmedMessageDeletion, cacheOptimisticBranch, cacheOptimisticTurn, discardOptimisticChat, rejectOptimisticTurn } from './src/production/optimisticResponses';
+import { applyConfirmedMessageDeletion, cacheOptimisticBranch, cacheOptimisticTurn, discardOptimisticChat, failOptimisticTurn, rejectOptimisticTurn } from './src/production/optimisticResponses';
 import { activateOptimisticBranch } from './src/production/optimisticBranches';
 import { cacheNamespace, cacheOpenedChat, deleteResponseCursor, loadDraft, saveDraft } from '../data/database';
 import { queryKeys } from '../data/queries';
 import { enqueueCacheWrite } from '../data/writeBehind';
-import { activateBranch as activateServerBranch, cancelResponse, continuePastCostLimit, continueWithoutAgent, deleteMessageCascade as deleteServerMessage, deleteUnreferencedAttachment, downloadAttachment, downloadAttachmentThumbnail, duplicateChat as duplicateServerChat, editMessage as editServerMessage, persistChat as persistServerChat, regenerateResponse as regenerateServerResponse, sendMessage as sendServerMessage, shareAttachment as shareServerAttachment, shareChat as shareServerChat, startChat as startServerChat, uploadAttachment } from '../features/chat/api';
+import { activateBranch as activateServerBranch, cancelResponse, continuePastCostLimit, continueWithoutAgent, deleteMessageCascade as deleteServerMessage, deleteUnreferencedAttachment, downloadAttachment, downloadAttachmentThumbnail, duplicateChat as duplicateServerChat, editMessage as editServerMessage, persistChat as persistServerChat, regenerateResponse as regenerateServerResponse, reportMessage as reportServerMessage, sendMessage as sendServerMessage, shareAttachment as shareServerAttachment, shareChat as shareServerChat, startChat as startServerChat, uploadAttachment } from '../features/chat/api';
 import { attachmentUploadErrorMessage } from '../features/chat/attachmentUploadError';
 import { subscribeToResponse, useRealtimeStore } from '../providers/realtimeStore';
 import { shouldShowConnectionBanner } from '../providers/realtimeConnection';
@@ -217,6 +221,9 @@ import { usePreferencesStore } from '../store/preferences';
 import { FAVORITES_SECTION, resolveModelMenu } from '../features/chat/modelMenu';
 import { aiIconSource, useCatalogIconCacheRevision } from './src/production/AiIconAssets';
 import { SafeMarkdown } from '../components/SafeMarkdown';
+import { AssistantMarkdown } from '../features/quiz/AssistantMarkdown';
+import { appendDraftText, QuizComposerContext } from '../features/quiz/composer';
+import { isQuizFileName } from '@pulpo/client-core/quiz';
 import { ModelWarningBanner } from './src/components/ModelWarningBanner';
 import { AttachmentImageViewer, type AttachmentImagePreviewItem, type AttachmentImageTransitionOrigin } from '../components/AttachmentImageViewer';
 import { useFilesCapabilityRefresh, useFilesEnabled } from '../features/files/availability';
@@ -247,7 +254,9 @@ import { filesQueryKeys, lookUpFileNode } from '../features/files/queries';
 import { fileChangesItem } from '@pulpo/client-core/files';
 import { FileDocumentScreen } from '../features/files/screens/FileDocumentScreen';
 import { FileMarkdownScreen } from '../features/files/screens/FileMarkdownScreen';
+import { FileQuizScreen } from '../features/files/screens/FileQuizScreen';
 import { FilesFolderScreen } from '../features/files/screens/FilesFolderScreen';
+import { FriendsScreen } from '../features/friends/FriendsScreen';
 import { timeAgo } from '../features/chat/format';
 import {
   MAX_COMPOSER_ATTACHMENTS,
@@ -322,10 +331,11 @@ import {
   DRAWER_MAX_WIDTH,
   DRAWER_TRAILING_PEEK,
   responsiveHorizontalPadding,
-  SIDEBAR_WIDTH,
   usesAssistantSideRail,
   usesPersistentSidebar,
 } from '../responsive';
+import { persistentSidebarWidth } from '../displayGeometry';
+import { useVerticalBar, useVerticalFold } from '../providers/displayGeometryContext';
 
 const CHAT_COMPOSER_BOTTOM_PADDING = 156;
 const CHAT_COMPOSER_MESSAGE_GAP = 12;
@@ -611,6 +621,7 @@ type Message = {
   thinkSeconds?: number;
   reasoning?: string;
   meta?: string;
+  costMicros?: number;
   activity?: ActivityStep[];
   outputItems?: unknown[];
   status?: PrototypeMessage['status'];
@@ -629,6 +640,16 @@ type SendOptions = {
   onStartDiscarded?: () => void;
 };
 type PrepareAttachments = () => Promise<PreparedAttachment[]>;
+/** A send the server refused for a usage limit. It stays in the chat, and Try again sends it again. */
+type RejectedSend = {
+  chatId: string;
+  inputMessageId: string;
+  value: string;
+  attachments: PreparedAttachment[];
+  options?: Omit<SendOptions, 'onStartDiscarded'>;
+  /** The send would have started the chat, which the server therefore never created. */
+  startsChat: boolean;
+};
 
 function automaticExpirationDeadline(preference: 'disabled' | '24h' | '7d', now = Date.now()): number | null {
   if (preference === '24h') return now + 86_400_000;
@@ -703,6 +724,7 @@ function prototypeMessageToLegacy(message: PrototypeMessage, chatId: string, cha
       : undefined,
     reasoning,
     meta: message.meta,
+    costMicros: message.costMicros,
     error: message.error,
     activity: message.activity,
     outputItems: message.outputItems,
@@ -1177,7 +1199,9 @@ function RoundButton({ icon, onPress, accessibilityLabel, selected = false, sele
   const selectedTint = selectedColor === 'teal' ? 'rgba(20,184,166,0.20)' : 'rgba(175,82,222,0.22)';
   if (Platform.OS === 'ios') {
     return (
-      <SwiftUIHost key={selected ? 'selected' : tinted ? 'tinted' : 'default'} matchContents style={{ width: size, height: size }}>
+      // React Native positions these; SwiftUI must not also inset them. On iPhone Duo
+      // the drawer slides the chat under the vertical bar's safe area.
+      <SwiftUIHost key={selected ? 'selected' : tinted ? 'tinted' : 'default'} ignoreSafeArea="all" matchContents style={{ width: size, height: size }}>
         <SwiftUIButton
           onPress={onPress}
           modifiers={[
@@ -1265,6 +1289,8 @@ function HeaderActionGlyph({ name, color = COLORS.text }: { name: 'bookmark' | '
 }
 
 type TemporaryChatHeaderControlProps = {
+  /** Vertical stacks the actions in the iOS vertical bar. */
+  axis?: 'horizontal' | 'vertical';
   active: boolean;
   expanded: boolean;
   expirationEnabled: boolean;
@@ -1444,15 +1470,17 @@ function AndroidTemporaryChatHeaderControl(props: TemporaryChatHeaderControlProp
   </View>;
 }
 
-function TemporaryChatHeaderControl(props: TemporaryChatHeaderControlProps) {
+function TemporaryChatHeaderControl({ axis = 'horizontal', ...props }: TemporaryChatHeaderControlProps) {
   const { reduceMotion } = useAccessibilityPreferences();
   if (Platform.OS === 'android') return <AndroidTemporaryChatHeaderControl {...props} />;
   return Platform.OS === 'ios'
     ? (
       <PersistentNativeTemporaryChatHeaderView
         {...props}
+        axis={axis}
         reduceMotion={reduceMotion}
-        style={{ width: 88, height: 44 }}
+        // Stacked, the capsule grows down from one item to two.
+        style={axis === 'vertical' ? { width: 44, height: 88 } : { width: 88, height: 44 }}
       />
     )
     : <FallbackTemporaryChatHeaderControl {...props} />;
@@ -1697,9 +1725,11 @@ function PrototypeRoot() {
         <RootStack.Screen name="Passkeys" component={PasskeysScreen} options={{ headerShown: false }} />
         <RootStack.Screen name="InstanceDetails" component={InstanceDetailsScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Pulpo Instance', headerBackTitle: 'Account' }} />
         <RootStack.Screen name="SettingsDetail" component={SettingsDetailScreen} options={{ headerShown: Platform.OS === 'ios', headerBackTitle: 'Settings' }} />
+        <RootStack.Screen name="Friends" component={FriendsScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Friends', headerBackTitle: 'Settings' }} />
         <RootStack.Screen name="FilesFolder" component={FilesFolderScreen} options={{ headerShown: Platform.OS === 'ios', headerLargeTitle: true, title: 'My files' }} />
         <RootStack.Screen name="FileDocument" component={FileDocumentScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Document' }} />
         <RootStack.Screen name="FileMarkdown" component={FileMarkdownScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Markdown' }} />
+        <RootStack.Screen name="FileQuiz" component={FileQuizScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Quiz' }} />
       </RootStack.Navigator>
     </NavigationContainer>
   );
@@ -1717,6 +1747,10 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   const isDark = useColorScheme() === 'dark';
   const { reduceMotion } = useAccessibilityPreferences();
   const persistentSidebar = usesPersistentSidebar(width);
+  const fold = useVerticalFold();
+  const sidebarWidth = persistentSidebarWidth(fold, width);
+  // Half open, the sidebar and the chat each keep their side of the fold clear.
+  const foldMargin = persistentSidebar && fold && sidebarWidth === fold.center ? fold.end - fold.center : 0;
   const compactDrawerCorners = height <= COMPACT_DRAWER_HEIGHT;
   const drawerWidth = Math.min(Math.max(width - DRAWER_TRAILING_PEEK, 0), DRAWER_MAX_WIDTH);
   const openOffset = drawerWidth;
@@ -1973,13 +2007,13 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     const target = visible ? 1 : 0;
     wideSidebarProgress.value = reduceMotion ? target : withSpring(target, {
-      velocity: velocity / SIDEBAR_WIDTH,
+      velocity: velocity / sidebarWidth,
       damping: 26,
       stiffness: 240,
       mass: 0.9,
       overshootClamping: true,
     });
-  }, [reduceMotion, wideSidebarProgress]);
+  }, [reduceMotion, sidebarWidth, wideSidebarProgress]);
 
   const togglePanel = useCallback(() => {
     if (persistentSidebar) {
@@ -2076,14 +2110,14 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
         : wideSidebarProgress.value > 0.45;
     const target = visible ? 1 : 0;
     wideSidebarProgress.value = reduceMotion ? target : withSpring(target, {
-      velocity: velocityX / SIDEBAR_WIDTH,
+      velocity: velocityX / sidebarWidth,
       damping: 26,
       stiffness: 240,
       mass: 0.9,
       overshootClamping: true,
     });
     runOnJS(finishWideSidebarGesture)(visible);
-  }, [finishWideSidebarGesture, reduceMotion, wideSidebarProgress]);
+  }, [finishWideSidebarGesture, reduceMotion, sidebarWidth, wideSidebarProgress]);
 
   const wideSidebarGesture = useMemo(() => Gesture.Pan()
     .enabled(persistentSidebar)
@@ -2097,13 +2131,14 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     .onUpdate((event) => {
       wideSidebarProgress.value = Math.max(
         0,
-        Math.min(1, wideSidebarGestureStart.value + event.translationX / SIDEBAR_WIDTH),
+        Math.min(1, wideSidebarGestureStart.value + event.translationX / sidebarWidth),
       );
     })
     .onEnd((event) => settleWideSidebarGesture(event.velocityX)), [
       dismissKeyboard,
       persistentSidebar,
       settleWideSidebarGesture,
+      sidebarWidth,
       wideSidebarGestureStart,
       wideSidebarProgress,
     ]);
@@ -2144,19 +2179,19 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   }), [openOffset, persistentSidebar, reduceMotion, wideSidebarProgress]);
   const sidebarFrameAnimatedStyle = useAnimatedStyle(() => ({
     width: persistentSidebar
-      ? interpolate(wideSidebarProgress.value, [0, 1], [0, SIDEBAR_WIDTH])
+      ? interpolate(wideSidebarProgress.value, [0, 1], [0, sidebarWidth])
       : drawerWidth,
     borderRightWidth: persistentSidebar
       ? interpolate(wideSidebarProgress.value, [0, 1], [0, StyleSheet.hairlineWidth])
       : 0,
-  }), [drawerWidth, persistentSidebar, wideSidebarProgress]);
+  }), [drawerWidth, persistentSidebar, sidebarWidth, wideSidebarProgress]);
   const sidebarContentAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{
       translateX: persistentSidebar
-        ? interpolate(wideSidebarProgress.value, [0, 1], [-SIDEBAR_WIDTH, 0])
+        ? interpolate(wideSidebarProgress.value, [0, 1], [-sidebarWidth, 0])
         : 0,
     }],
-  }), [persistentSidebar, wideSidebarProgress]);
+  }), [persistentSidebar, sidebarWidth, wideSidebarProgress]);
   const historyVisible = persistentSidebar ? wideSidebarVisible : panelOpen;
   const historyChats = useMemo(() => projectHistory(storedChats), [projectHistory, storedChats]);
   const loadHistoryPreview = useCallback((chatId: string) => {
@@ -2523,6 +2558,20 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     });
   }, []);
 
+  const rejectedSends = useRef(new Map<string, RejectedSend>());
+  // Drop a refused turn from the transcript, once the chat moves on or Try again sends it again.
+  const dropRejectedSend = (responseId: string, rejected: RejectedSend) => {
+    rejectedSends.current.delete(responseId);
+    if (productionUserId) {
+      rejectOptimisticTurn({ queryClient, namespace: cacheNamespace(productionInstanceUrl, productionUserId), responseId, discardChat: false });
+    }
+    usePrototypeStore.setState((state) => ({
+      chats: state.chats.map((chat) => chat.id === rejected.chatId
+        ? { ...chat, messages: chat.messages.filter((message) => message.id !== responseId && message.id !== rejected.inputMessageId) }
+        : chat),
+    }));
+  };
+
   const sendMessage = async (
     value = input,
     attachments: ComposerAttachment[] = [],
@@ -2547,6 +2596,12 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     composerFollowsDefaultModel.current = false;
     Keyboard.dismiss();
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Soft);
+    // Turns refused for a usage limit give way to the next send. If one of them was meant to start
+    // this chat, the server never created it, so this send starts it under the same id.
+    const rejectedHere = activeChat ? [...rejectedSends.current.entries()].filter(([, item]) => item.chatId === activeChat.id) : [];
+    const startsChat = !activeChat || rejectedHere.some(([, item]) => item.startsChat);
+    const rejectedIds = new Set(rejectedHere.flatMap(([responseId, item]) => [responseId, item.inputMessageId]));
+    for (const [rejectedId, item] of rejectedHere) dropRejectedSend(rejectedId, item);
     const timestamp = Date.now();
     const identity = createOptimisticSendIdentity({
       activeChatId: activeChat?.id,
@@ -2556,7 +2611,8 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     });
     const { chatId: key, responseId, inputMessageId, title } = identity;
     const modelId = selectedModel.id;
-    const parentResponseId = activePrototypeChat?.messages.filter((message) => message.role === 'assistant').at(-1)?.id ?? null;
+    const parentResponseId = startsChat ? null
+      : activePrototypeChat?.messages.filter((message) => message.role === 'assistant' && !rejectedIds.has(message.id)).at(-1)?.id ?? null;
     const agentMode = Boolean(options?.agentEnabled && agentAvailable && selectedPrototypeModel?.agentEnabled);
     const selections = options?.presetSelections ?? presetSelections;
     const initialExpiresAt = options?.temporary
@@ -2570,7 +2626,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     ));
     // A new chat starts with the Files items picked for it (temporary chats get no Files), minus any
     // known to be gone since: the server refuses a scope naming them.
-    const startingFileScope = !activeChat && !options?.temporary && productionNamespace
+    const startingFileScope = startsChat && !options?.temporary && productionNamespace
       ? liveFileScope(queryClient, productionNamespace, newChatFileScope(productionNamespace))
       : null;
     if (!activeChat) {
@@ -2617,9 +2673,10 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     });
     activeResponseId.current = responseId;
     setAssistantStatus('thinking');
-    let serverChatCreated = Boolean(activeChat);
+    let serverChatCreated = !startsChat;
+    let prepared: PreparedAttachment[] = [];
     try {
-      const prepared = prepareAttachments
+      prepared = prepareAttachments
         ? await prepareAttachments()
         : attachments.filter((attachment): attachment is PreparedAttachment => (
           attachment.state === 'ready' && Boolean(attachment.serverId)
@@ -2654,7 +2711,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
           fileScopeAccess: startingFileScope?.access,
         });
       }
-      let serverChatId = activeChat?.id;
+      let serverChatId = startsChat ? undefined : activeChat?.id;
       let response: Awaited<ReturnType<typeof sendServerMessage>>;
       if (!serverChatId) {
         const startPromise = startServerChat({
@@ -2706,9 +2763,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
             : response.status === 'cancelled' || response.status === 'incomplete' ? 'stopped'
               : response.status === 'queued' ? 'queued' : 'streaming',
         outputItems: response.output,
-        error: response.error && typeof response.error === 'object' && 'message' in response.error
-          ? String((response.error as { message?: unknown }).message ?? '')
-          : undefined,
+        error: responseErrorMessage(response.error),
       });
       const responseActive = trackActiveResponse(response);
       setAssistantStatus(responseActive ? 'streaming' : 'idle');
@@ -2722,18 +2777,33 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
       activeResponseSubscription.current?.();
       activeResponseSubscription.current = null;
       setAssistantStatus('idle');
+      // Like the web, a send refused for a usage limit stays in the chat with the error under it.
+      if (isUsageLimitRejection(error) && productionNamespace) {
+        failOptimisticTurn({ queryClient, namespace: productionNamespace, responseId, error: { code: error.code, message: error.message } });
+        updateStoredMessage(key, responseId, { status: 'failed', error: error.message });
+        const { onStartDiscarded: _discarded, ...retryOptions } = options ?? {};
+        rejectedSends.current.set(responseId, {
+          chatId: key,
+          inputMessageId,
+          value: trimmed,
+          attachments: prepared,
+          options: options ? retryOptions as Omit<SendOptions, 'onStartDiscarded'> : undefined,
+          startsChat: !serverChatCreated,
+        });
+        return true;
+      }
       // Must run before the chat is removed and navigation returns, so ChatView can restore the draft's presets.
-      if (!activeChat && !serverChatCreated) options?.onStartDiscarded?.();
+      if (startsChat && !serverChatCreated) options?.onStartDiscarded?.();
       if (productionNamespace) {
         rejectOptimisticTurn({
           queryClient,
           namespace: productionNamespace,
           responseId,
-          discardChat: !activeChat && !serverChatCreated,
+          discardChat: startsChat && !serverChatCreated,
         });
       }
       usePrototypeStore.setState((state) => ({
-        chats: activeChat || serverChatCreated
+        chats: !startsChat || serverChatCreated
           ? state.chats.map((chat) => chat.id === key
             ? {
               ...chat,
@@ -2746,7 +2816,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
             : chat)
           : state.chats.filter((chat) => chat.id !== key),
       }));
-      if (!activeChat && !serverChatCreated) setActiveChatId((current) => current === key ? null : current);
+      if (startsChat && !serverChatCreated) setActiveChatId((current) => current === key ? null : current);
       throw error;
     }
   };
@@ -2787,6 +2857,17 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
       Alert.alert('Couldn’t regenerate response', error instanceof Error ? error.message : undefined);
     });
   }, [activeChatId, agentAvailable, effectiveAssistantStatus, presetSelections, productionInstanceUrl, productionUserId, queryClient, selectedModel.id, selectedPrototypeModel?.agentEnabled, trackActiveResponse]);
+
+  // Try again on a turn refused for a usage limit sends it again; other failed turns regenerate.
+  const sendMessageRef = useRef(sendMessage);
+  sendMessageRef.current = sendMessage;
+  const regenerateOrResend = useCallback((message: Message) => {
+    const rejected = rejectedSends.current.get(message.id);
+    if (!rejected) return regenerateMessage(message);
+    if (effectiveAssistantStatus !== 'idle') return;
+    void sendMessageRef.current(rejected.value, rejected.attachments, rejected.options)
+      .catch((error) => Alert.alert('Couldn’t send message', error instanceof Error ? error.message : undefined));
+  }, [effectiveAssistantStatus, regenerateMessage]);
 
   const editMessage = useCallback(async (
     message: Message,
@@ -2910,7 +2991,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
             panelAnimatedStyle,
           ]}
         >
-          <Reanimated.View style={[styles.historyPanelContent, persistentSidebar && styles.persistentPanelContent, sidebarContentAnimatedStyle]}>
+          <Reanimated.View style={[styles.historyPanelContent, persistentSidebar && { width: sidebarWidth, paddingRight: foldMargin }, sidebarContentAnimatedStyle]}>
             <HistoryPanel
               chats={historyChats}
               activeChatId={activeChatId}
@@ -2959,13 +3040,15 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
             onRemoteChatStarted={openStartedChat}
             onStop={stopGeneration}
             assistantStatus={effectiveAssistantStatus}
-            onRegenerate={regenerateMessage}
+            onRegenerate={regenerateOrResend}
             onEdit={editMessage}
             onActivateBranch={activateMessageBranch}
             onOpenChat={openRecalledChat}
             onTogglePanel={togglePanel}
             persistentSidebar={persistentSidebar}
             sidebarVisible={historyVisible}
+            sidebarWidth={sidebarWidth}
+            foldMargin={historyVisible ? foldMargin : 0}
             onSelectModel={selectModel}
             temporary={activePrototypeChat?.temporary ?? newChatTemporary}
             autoExpire={chatAutoExpire}
@@ -2995,7 +3078,27 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   );
 }
 
-type MessageAction = 'copy' | 'share' | 'share-options' | 'share-chat' | 'reply' | 'edit' | 'regenerate' | 'delete';
+/** Whether this transcript's messages can be reported; an expired temporary chat is read-only. Off unless a transcript opts in. */
+const MessageReportsContext = createContext(false);
+
+function useCanReportMessage(message: Message): boolean {
+  const enabled = useSessionStore((state) => state.config?.capabilities.messageReports === true);
+  const transcriptAllows = useContext(MessageReportsContext);
+  // Like on web, a response can be reported once it has finished.
+  const settled = message.role === 'user' || (message.status !== 'queued' && message.status !== 'streaming');
+  return enabled && transcriptAllows && Boolean(message.chatId) && settled;
+}
+
+function NativeReportMessageButton({ onPress }: { onPress: () => void }) {
+  const colorScheme = useColorScheme();
+  return (
+    <SwiftUIButton onPress={onPress}>
+      <SwiftUILabel title="Report message" icon={<SwiftUIImage assetName={colorScheme === 'dark' ? 'PulpoFrownWhite' : 'PulpoFrown'} />} />
+    </SwiftUIButton>
+  );
+}
+
+type MessageAction = 'copy' | 'share' | 'share-options' | 'share-chat' | 'reply' | 'edit' | 'regenerate' | 'delete' | 'report';
 
 function useMessageActionRunner({ message, onEdit, onRegenerate }: {
   message: Message;
@@ -3082,6 +3185,25 @@ function useMessageActionRunner({ message, onEdit, onRegenerate }: {
       void copyText(`> ${message.text.split('\n')[0]}\n\n`, 'Reply quote copied');
       return;
     }
+    if (action === 'report') {
+      promptText({
+        title: 'Report message',
+        message: 'This shares the whole chat with the administrators of this instance so they can review it. Add any context that would help (optional).',
+        multiline: true,
+        optional: true,
+        fieldLabel: 'What went wrong?',
+        confirmLabel: 'Share with admin',
+        onSubmit: (context) => {
+          void reportServerMessage(message.id, context.trim())
+            .then(() => {
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              Alert.alert('Report sent', 'An admin will review this chat.');
+            })
+            .catch((error) => Alert.alert('Couldn’t send report', error instanceof Error ? error.message : undefined));
+        },
+      });
+      return;
+    }
     Haptics.selectionAsync();
     const labels = {
       reply: 'Reply to message',
@@ -3115,6 +3237,7 @@ function MessageContextMenu({
   const speak = () => { void readAloud(speechKey, message.text).then(() => { const error = speechPlayback.getSnapshot().error; if (error) Alert.alert('Read aloud', error); }).catch(error => Alert.alert('Read aloud', error.message)); };
   const speechLabel = speaking ? (speechState.phase === 'loading' ? 'Stop preparing speech' : 'Stop reading') : 'Read aloud';
   const runAction = useMessageActionRunner({ message, onEdit, onRegenerate });
+  const canReport = useCanReportMessage(message);
   // A response can only be deleted as one of several versions; the user message owns the last one.
   const canDelete = message.role === 'user' || (message.branches?.length ?? 0) > 1;
   const deleteLabel = message.role === 'user' ? 'Delete message' : 'Delete version';
@@ -3134,6 +3257,7 @@ function MessageContextMenu({
         { label: message.role === 'user' ? 'Edit message' : 'Edit response', icon: 'pencil', onPress: () => runAction('edit') },
         ...(message.role === 'assistant' ? [{ label: 'Regenerate response', icon: 'arrow.clockwise', onPress: () => runAction('regenerate') }] : []),
         ...(canSpeak ? [{ label: speechLabel, icon: speaking ? 'stop.fill' : 'speaker.wave.2', onPress: speak }] : []),
+        ...(canReport ? [{ label: 'Report message', icon: 'pulpo.frown', onPress: () => runAction('report') }] : []),
         ...(canDelete ? [{ label: deleteLabel, icon: 'trash', destructive: true, onPress: () => runAction('delete') }] : []),
       ]}
       style={message.role === 'user' ? styles.userMessageContextHost : styles.assistantMessageContextHost}
@@ -3163,6 +3287,7 @@ function MessageContextMenu({
               <SwiftUIButton label="Regenerate response" systemImage="arrow.clockwise" onPress={() => runAction('regenerate')} />
             </>}
           {canSpeak && <SwiftUIButton label={speechLabel} systemImage={speaking ? 'stop.fill' : 'speaker.wave.2'} onPress={speak} />}
+          {canReport && <NativeReportMessageButton onPress={() => runAction('report')} />}
           {canDelete && <SwiftUIButton label={deleteLabel} role="destructive" systemImage="trash" onPress={() => runAction('delete')} />}
         </>
       )}
@@ -3181,6 +3306,7 @@ function SentAttachmentContextMenu({ attachment, message, onEdit, onRegenerate, 
 }) {
   const { styles, COLORS } = useChatStyles();
   const runMessageAction = useMessageActionRunner({ message, onEdit, onRegenerate });
+  const canReport = useCanReportMessage(message) && message.role === 'user' && !message.text;
   const shareAttachment = () => {
     if (attachment.uri) void (Platform.OS === 'android' ? shareLocalFile(attachment.uri, attachment.name, attachment.mimeType) : Share.share({ message: attachment.name, url: attachment.uri })).catch((error) => Alert.alert('Couldn’t share attachment', error instanceof Error ? error.message : undefined));
     else void shareServerAttachment(attachment.id, attachment.name, attachment.mimeType).catch((error) => Alert.alert('Couldn’t share attachment', error instanceof Error ? error.message : undefined));
@@ -3202,6 +3328,7 @@ function SentAttachmentContextMenu({ attachment, message, onEdit, onRegenerate, 
           { label: 'Edit message', icon: 'pencil', onPress: () => runMessageAction('edit') },
           { label: 'Delete message', icon: 'trash', destructive: true, onPress: () => runMessageAction('delete') },
         ] : []),
+        ...(canReport ? [{ label: 'Report message', icon: 'pulpo.frown', onPress: () => runMessageAction('report') }] : []),
       ]}
       preview={attachment.kind === 'image' ? (
         <ResolvedAttachmentImage attachment={attachment} variant="preview" />
@@ -3223,6 +3350,7 @@ function SentAttachmentContextMenu({ attachment, message, onEdit, onRegenerate, 
             <SwiftUIButton label="Edit message" systemImage="pencil" onPress={() => runMessageAction('edit')} />
             <SwiftUIButton label="Delete message" role="destructive" systemImage="trash" onPress={() => runMessageAction('delete')} />
           </> : null}
+          {canReport && <NativeReportMessageButton onPress={() => runMessageAction('report')} />}
         </>
       )}
     >
@@ -3641,6 +3769,25 @@ function AssistantFrame({ children, model, sideRail, time }: {
   );
 }
 
+/** A failed response's error with Try again, plus View Usage when a plan's usage limit stopped it. */
+function ResponseErrorNotice({ message, onRetry }: { message: Message; onRetry: (message: Message) => void }) {
+  const { styles, COLORS } = useChatStyles();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const limited = isUsageLimitMessage(message.error);
+  return <View style={styles.responseError}>
+    <Icon name="exclamationmark.triangle" size={15} color={COLORS.critical} />
+    <View style={styles.responseErrorBody}>
+      <Text style={styles.responseErrorMessage}>{limited && message.error ? usageLimitNoticeText(message.error) : message.error}</Text>
+      <View style={styles.responseErrorActions}>
+        {limited ? <Pressable accessibilityRole="button" hitSlop={8} onPress={() => { Keyboard.dismiss(); navigation.navigate('SettingsDetail', { section: 'usage' }); }}>
+          <Text style={styles.tryAgainText}>View Usage</Text>
+        </Pressable> : null}
+        <Pressable accessibilityRole="button" hitSlop={8} onPress={() => onRetry(message)}><Text style={styles.tryAgainText}>Try again</Text></Pressable>
+      </View>
+    </View>
+  </View>;
+}
+
 const MessageRow = memo(function MessageRow({
   message,
   model,
@@ -3668,6 +3815,10 @@ const MessageRow = memo(function MessageRow({
 }) {
   const { styles, COLORS } = useChatStyles();
   const { showReasoning } = useAppPreferences();
+  const showResponseCost = usePrototypeStore((state) => state.preferences.showResponseCost);
+  // Token counts only accompany answer text, but a settled cost shows even when a reply stopped or failed
+  // before writing any, as on web.
+  const metaLabel = message.role === 'assistant' ? responseMetaLabel(message.text ? message.meta : undefined, message.costMicros, showResponseCost) : undefined;
   const branches = message.branches ?? [];
   const branchIndex = message.activeBranch ?? 0;
   const [capacityPending, setCapacityPending] = useState(false);
@@ -3794,18 +3945,18 @@ const MessageRow = memo(function MessageRow({
                         onOpenChat={onOpenChat}
                       />;
                     }
-                    return <SafeMarkdown selectable={Platform.OS !== 'android'}
+                    return <AssistantMarkdown selectable={Platform.OS !== 'android'}
                       containerStyle={styles.assistantMarkdown}
                       key={`text:${index}`}
                       streaming={streaming && !timeline.slice(index + 1).some((item) => item.kind === 'text')}
                       tightenLeadingHeading={index === firstTextTimelineIndex}
-                    >{segment.text}</SafeMarkdown>;
+                    >{segment.text}</AssistantMarkdown>;
                   })}
                 </View>
               </MessageContextMenu>
             ) : message.error ? (
               <MessageContextMenu message={message} model={model} onEdit={onEdit} onRegenerate={onRegenerate}>
-                <View style={styles.responseError}><Icon name="exclamationmark.triangle" size={15} color={COLORS.critical} /><Text style={styles.responseErrorText}>{message.error}</Text><Pressable accessibilityRole="button" onPress={() => onRegenerate(message)}><Text style={styles.tryAgainText}>Try again</Text></Pressable></View>
+                <ResponseErrorNotice message={message} onRetry={onRegenerate} />
               </MessageContextMenu>
             ) : streaming ? <ResponsePendingIndicator /> : null}
             {showReasoning && extraOutput.map((item, index) => {
@@ -3854,7 +4005,7 @@ const MessageRow = memo(function MessageRow({
                 </Pressable>
               </View>
             )}
-            {message.error && timeline.length > 0 && <View style={styles.responseError}><Icon name="exclamationmark.triangle" size={15} color={COLORS.critical} /><Text style={styles.responseErrorText}>{message.error}</Text><Pressable accessibilityRole="button" onPress={() => onRegenerate(message)}><Text style={styles.tryAgainText}>Try again</Text></Pressable></View>}
+            {message.error && timeline.length > 0 && <ResponseErrorNotice message={message} onRetry={onRegenerate} />}
             {!message.error && message.status === 'stopped' && <MessageContextMenu message={message} model={model} onEdit={onEdit} onRegenerate={onRegenerate}><View style={styles.responseError}><Icon name="stop.circle" size={15} color={COLORS.muted} /><Text style={styles.responseErrorText}>Response stopped before completion.</Text><Pressable accessibilityRole="button" onPress={() => onRegenerate(message)}><Text style={styles.tryAgainText}>Try again</Text></Pressable></View></MessageContextMenu>}
             {message.agentMode && streaming && capacityWorkspace?.state === 'waiting' && canContinueWithoutAgent && (
               <Pressable
@@ -3871,7 +4022,7 @@ const MessageRow = memo(function MessageRow({
                 <Text style={styles.continueButtonText}>{capacityPending ? 'Continuing…' : 'Continue without agent tools'}</Text>
               </Pressable>
             )}
-            {message.text && message.meta && <Text style={styles.messageMeta}>{message.meta}</Text>}
+            {metaLabel && <Text style={styles.messageMeta}>{metaLabel}</Text>}
         </AssistantFrame>
       )}
       {branches.length > 1 && message.chatId ? (
@@ -3912,7 +4063,7 @@ const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectM
   const { sections: modelSections, section, sectionLabel, visibleModels, setSection } = useModelMenu(models);
 
   return (
-    <SwiftUIHost key={tinted ? 'tinted' : 'default'} matchContents style={styles.modelMenuHost}>
+    <SwiftUIHost key={tinted ? 'tinted' : 'default'} ignoreSafeArea="all" matchContents style={styles.modelMenuHost}>
       <SwiftUIMenu
         label={(
           <SwiftUILabel
@@ -4033,7 +4184,7 @@ function SuggestedPromptButton({ label, accessible, onPress, temporary = false }
     : undefined;
   if (Platform.OS === 'ios') {
     return (
-      <SwiftUIHost ignoreSafeArea="keyboard" style={[styles.suggestionCard, temporaryStyle, accessible && styles.suggestionCardAccessible]}>
+      <SwiftUIHost ignoreSafeArea="all" style={[styles.suggestionCard, temporaryStyle, accessible && styles.suggestionCardAccessible]}>
         <SwiftUIButton
           onPress={onPress}
           modifiers={[
@@ -4294,7 +4445,7 @@ function ComposerQueueSection({ title, subject, visible, collapsed, onToggle, fa
 
 function ChatView({
   acceptIncomingFiles, messages, queuedMessages, chatId, chatLoaded, onTranscriptReady, openingChatId, draftNamespace, keyboardLayoutEnabled, transcriptTransitionActive, model, models, prototypeModel, presetSelections: defaultPresetSelections, input, composerInputRef, composerFocusSuppressed, composerFocusRequest, onChangeInput, onSend, onRemoteChatStarted, assistantStatus,
-  onEdit, onRegenerate, onActivateBranch, onOpenChat, onStop, onTogglePanel, onSelectModel, onSavePresetDefault, onNewChat, onSaveTemporary, persistentSidebar, sidebarVisible, temporary, autoExpire, expirationPeriod, showAutoExpirationControl, expired, savingTemporary, onTemporaryChange, onAutoExpirationChange,
+  onEdit, onRegenerate, onActivateBranch, onOpenChat, onStop, onTogglePanel, onSelectModel, onSavePresetDefault, onNewChat, onSaveTemporary, persistentSidebar, sidebarVisible, sidebarWidth, foldMargin, temporary, autoExpire, expirationPeriod, showAutoExpirationControl, expired, savingTemporary, onTemporaryChange, onAutoExpirationChange,
 }: {
   acceptIncomingFiles: boolean;
   messages: Message[];
@@ -4326,6 +4477,9 @@ function ChatView({
   onTogglePanel: () => void;
   persistentSidebar: boolean;
   sidebarVisible: boolean;
+  sidebarWidth: number;
+  /** Space to keep clear beside the half-open fold, at the leading edge. */
+  foldMargin: number;
   onSelectModel: (model: Model) => void;
   /** Saves an explicit new-chat choice as the account's default for that model. */
   onSavePresetDefault: (modelId: string, presetId: string, choiceId: string) => void;
@@ -4396,7 +4550,13 @@ function ChatView({
   const { reduceMotion, reduceTransparency } = useAccessibilityPreferences();
   const { fontScale, height: windowHeight, width: windowWidth } = useWindowDimensions();
   const horizontalPadding = responsiveHorizontalPadding(windowWidth);
-  const availableChatWidth = windowWidth - (persistentSidebar && sidebarVisible ? SIDEBAR_WIDTH : 0);
+  // iPhone Duo reserves a column on one side for its vertical status bar. The
+  // header stays beside it, with its trailing actions stacked; the transcript
+  // and composer run under the column, which is empty below the status bar.
+  const verticalBar = useVerticalBar();
+  const availableChatWidth = windowWidth
+    - (persistentSidebar && sidebarVisible ? sidebarWidth : 0)
+    - foldMargin;
   const assistantSideRail = usesAssistantSideRail(Math.max(0, availableChatWidth - horizontalPadding * 2));
   const accessibilityLayout = fontScale >= 1.6;
   const scrollLanding = accessibilityLayout || (Platform.OS === 'android' && windowHeight < 650);
@@ -4471,6 +4631,7 @@ function ChatView({
   const fileScope = useChatFileScope(filesNamespace, chatId, temporary);
   const showFileScopePicker = useFileScopePicker((state) => state.show);
   const openFileItem = useOpenFileItem();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [attachments, setAttachmentState] = useState<ComposerAttachment[]>([]);
   const attachmentsRequireAgent = attachments.some((attachment) => attachment.kind === 'file')
     || imageBatchNeedsWorkspace(attachments.filter((attachment) => attachment.kind !== 'file').map((attachment) => ({ sizeBytes: attachment.size })), maxInlineImages);
@@ -4597,6 +4758,14 @@ function ChatView({
     const end = body.length;
     setComposerSelection(setInputSelection, inputSelectionRef, { start: end, end });
   }, []);
+  // A quiz's "Send results" leaves its message in the draft for the user to edit and send.
+  const appendToComposer = useCallback((text: string) => {
+    const next = appendDraftText(inputRef.current, text);
+    inputRef.current = next;
+    onChangeInput(next);
+    placeComposerCursorAtEnd(next);
+    requestAnimationFrame(() => composerInputRef.current?.focus());
+  }, [composerInputRef, onChangeInput, placeComposerCursorAtEnd]);
   const showPromptSuggestions = usePrototypeStore((state) => state.preferences.showPromptSuggestions);
   const isEmptyConversation = messages.length === 0;
   const suggestions = useMemo(
@@ -5098,7 +5267,9 @@ function ChatView({
   const openFilePreview = useCallback((attachment: Attachment) => {
     void (async () => {
       const uri = attachment.uri || (await downloadAttachment(attachment.id, attachment.name)).uri;
-      await openAttachmentFile(uri, attachment.name, attachment.mimeType);
+      // Quizzes open in the app, where they can be taken.
+      if (isQuizFileName(attachment.name)) navigation.push('FileQuiz', { uri, name: attachment.name });
+      else await openAttachmentFile(uri, attachment.name, attachment.mimeType);
     })().catch((error) => {
       const message = error instanceof AttachmentPreviewError
         ? previewFallbackMessage(error.code)
@@ -5108,7 +5279,7 @@ function ChatView({
         { text: 'Share…', onPress: () => shareResolvedAttachment(attachment) },
       ]);
     });
-  }, [shareResolvedAttachment]);
+  }, [navigation, shareResolvedAttachment]);
 
   const addAttachments = useCallback((incoming: Array<Omit<ComposerAttachment, 'ownerId' | 'attempt' | 'managed'>>) => {
     const coordinated = incoming.map((attachment) => ({
@@ -5251,6 +5422,19 @@ function ChatView({
       Alert.alert('Couldn’t open Files', 'Please try choosing the file again.');
     }
   }, [addAttachments, attachments.length]);
+
+  const pasteContext = useCallback(() => activeDraftRef.current?.scope ?? null, []);
+  const pasteFiles = useCallback((pasted: PastedFiles, startedInScope: string | null) => {
+    // Never let a slow paste land in a draft the user moved to meanwhile.
+    if (startedInScope !== (activeDraftRef.current?.scope ?? null)) {
+      if (pasted.files.length) Alert.alert('Couldn’t paste', 'The draft changed before the pasted files were ready. Paste them again.');
+      return;
+    }
+    const result = pastedFileAttachments(pasted, () => Crypto.randomUUID(),
+      useSessionStore.getState().config?.limits.maxAttachmentBytes);
+    if (result.attachments.length) addAttachments(result.attachments);
+    if (result.error) Alert.alert('Couldn’t paste', result.error);
+  }, [addAttachments]);
 
   const armSubmittedTurnFollow = useCallback((): ChatFollowSnapshot => {
     submittedTurnFollowRevision.current += 1;
@@ -5812,35 +5996,48 @@ function ChatView({
 
   const renderMessage = useCallback(({ item }: { item: Message }) => (
     <View ref={item.id === latestMessageId ? latestRowRef : undefined} testID={`chat-message-${item.id}`} style={styles.transcriptColumn}>
-      <MessageRow
-        message={item}
-        model={responseModel(item, models, model)}
-        onEdit={expired ? () => Alert.alert('Temporary chat expired', 'This conversation is read-only.') : handleMessageEditAction}
-        onPreviewFile={openFilePreview}
-        onPreviewImages={openImageViewer}
-        onRegenerate={expired ? () => Alert.alert('Temporary chat expired', 'This conversation is read-only.') : onRegenerate}
-        onActivateBranch={expired
-          ? async () => { Alert.alert('Temporary chat expired', 'This conversation is read-only.'); }
-          : onActivateBranch}
-        onOpenChat={onOpenChat}
-        onStop={onStop}
-        sideRail={assistantSideRail}
-        editingLocked={Boolean(messageEdit) || dictationBusy}
-      />
+      <QuizComposerContext.Provider value={expired ? null : appendToComposer}>
+        <MessageReportsContext.Provider value={!expired}>
+        <MessageRow
+          message={item}
+          model={responseModel(item, models, model)}
+          onEdit={expired ? () => Alert.alert('Temporary chat expired', 'This conversation is read-only.') : handleMessageEditAction}
+          onPreviewFile={openFilePreview}
+          onPreviewImages={openImageViewer}
+          onRegenerate={expired ? () => Alert.alert('Temporary chat expired', 'This conversation is read-only.') : onRegenerate}
+          onActivateBranch={expired
+            ? async () => { Alert.alert('Temporary chat expired', 'This conversation is read-only.'); }
+            : onActivateBranch}
+          onOpenChat={onOpenChat}
+          onStop={onStop}
+          sideRail={assistantSideRail}
+          editingLocked={Boolean(messageEdit) || dictationBusy}
+        />
+        </MessageReportsContext.Provider>
+      </QuizComposerContext.Provider>
     </View>
-  ), [assistantSideRail, expired, handleMessageEditAction, latestMessageId, messageEdit, dictationBusy, model, models, onActivateBranch, onOpenChat, onRegenerate, onStop, openFilePreview, openImageViewer, styles.transcriptColumn]);
+  ), [appendToComposer, assistantSideRail, expired, handleMessageEditAction, latestMessageId, messageEdit, dictationBusy, model, models, onActivateBranch, onOpenChat, onRegenerate, onStop, openFilePreview, openImageViewer, styles.transcriptColumn]);
 
   const empty = isEmptyConversation && assistantStatus === 'idle';
   const headerAction = resolveChatHeaderAction(chatId, messages.length, temporary);
   const headerControl = resolveChatHeaderControl(headerAction, showAutoExpirationControl);
   const headerExpansionProgress = useSharedValue(headerControl.expanded ? 1 : 0);
+  const stackedHeaderControl = verticalBar !== null;
+  // Where the transcript comes to rest when scrolled to its start: below the
+  // header, the stacked control's second item hanging under the header row,
+  // and the status bar at the top of the vertical bar.
+  const transcriptStart = Math.max(
+    headerOverlayHeight + (stackedHeaderControl && headerControl.expanded ? 44 : 0),
+    verticalBar?.statusBottom ?? 0,
+  );
   const modelTriggerAnimatedStyle = useAnimatedStyle(() => Platform.OS === 'android' ? {
     // Match the available space between the 48 dp history/trailing targets.
     // Removing the hourglass frees 48 dp and moves the midpoint right by 24 dp.
     right: interpolate(headerExpansionProgress.value, [0, 1], [66, 114]),
   } : {
-    transform: [{ translateX: interpolate(headerExpansionProgress.value, [0, 1], [22, 0]) }],
-  });
+    // A stacked trailing control stays one item wide.
+    transform: [{ translateX: stackedHeaderControl ? 22 : interpolate(headerExpansionProgress.value, [0, 1], [22, 0]) }],
+  }, [stackedHeaderControl]);
   const loadingExistingChat = Boolean(chatId && isEmptyConversation && !chatLoaded);
   useEffect(() => {
     // Empty chats have no transcript list to emit a native layout event.
@@ -5877,7 +6074,12 @@ function ChatView({
 
   const emptyLandingContent = (
     <View style={styles.emptyState}>
-      <Reanimated.View style={[styles.emptyIdentity, !scrollLanding && emptyStateAnimatedStyle]}>
+      <Reanimated.View style={[
+        styles.emptyIdentity,
+        // Stays centered under the header's model menu, which keeps beside the vertical bar.
+        verticalBar && { [verticalBar.side === 'right' ? 'paddingRight' : 'paddingLeft']: verticalBar.width },
+        !scrollLanding && emptyStateAnimatedStyle,
+      ]}>
         <View style={[styles.emptyModelLineWrap, Platform.OS === 'android' && { paddingTop: Math.max(40, 24 * fontScale + 16) }]}>
           <Reanimated.View
             accessible={temporary}
@@ -5944,16 +6146,24 @@ function ChatView({
 
   return (
     <Reanimated.View style={[styles.chatRoot, temporarySurfaceAnimatedStyle]}>
+      <View style={[styles.flex, { marginLeft: foldMargin }]}>
       <View
         onLayout={(event) => {
           const height = event.nativeEvent.layout.height;
           setHeaderOverlayHeight((current) => current === height ? current : height);
         }}
         pointerEvents="box-none"
-        style={[styles.chatHeaderOverlay, { paddingTop: insets.top }]}
+        style={[styles.chatHeaderOverlay, { paddingTop: insets.top }, verticalBar && { [verticalBar.side]: verticalBar.width }]}
       >
         {Platform.OS === 'ios' && (
-          <StatusBarGradientView style={{ position: 'absolute', top: 0, left: 0, right: 0, height: insets.top + 16 }} />
+          // Spans the whole pane, past the content inset, so tinted chats show no seam.
+          <StatusBarGradientView style={{
+            position: 'absolute',
+            top: 0,
+            left: -foldMargin - (verticalBar?.side === 'left' ? verticalBar.width : 0),
+            right: verticalBar?.side === 'right' ? -verticalBar.width : 0,
+            height: insets.top + 16,
+          }} />
         )}
         {/* Header */}
         <AppHeader edgeAligned>
@@ -5974,9 +6184,10 @@ function ChatView({
           </Reanimated.View>
           <Reanimated.View
             pointerEvents="box-none"
-            style={styles.headerActionExpanded}
+            style={stackedHeaderControl ? styles.headerActionStacked : styles.headerActionExpanded}
           >
             <TemporaryChatHeaderControl
+              axis={stackedHeaderControl ? 'vertical' : 'horizontal'}
               active={temporary}
               expanded={headerControl.expanded}
               expirationEnabled={autoExpire}
@@ -6029,7 +6240,7 @@ function ChatView({
         scrollLanding ? (
           <ScrollView
             alwaysBounceVertical
-            contentContainerStyle={[styles.emptyConversationAccessible, { paddingHorizontal: horizontalPadding, paddingTop: Platform.OS === 'android' ? 16 : headerOverlayHeight + 16 }]}
+            contentContainerStyle={[styles.emptyConversationAccessible, { paddingHorizontal: horizontalPadding, paddingTop: Platform.OS === 'android' ? 16 : transcriptStart + 16 }]}
             keyboardDismissMode="interactive"
             keyboardShouldPersistTaps="handled"
             onTouchStart={Keyboard.dismiss}
@@ -6055,8 +6266,8 @@ function ChatView({
           bounces
           contentContainerStyle={[styles.conversation, {
             paddingHorizontal: horizontalPadding,
-            paddingTop: bottomAnchored ? CHAT_COMPOSER_BOTTOM_PADDING : Platform.OS === 'android' ? 16 : headerOverlayHeight + 16,
-            paddingBottom: bottomAnchored ? Platform.OS === 'android' ? 16 : headerOverlayHeight + 16 : CHAT_COMPOSER_BOTTOM_PADDING,
+            paddingTop: bottomAnchored ? CHAT_COMPOSER_BOTTOM_PADDING : Platform.OS === 'android' ? 16 : transcriptStart + 16,
+            paddingBottom: bottomAnchored ? Platform.OS === 'android' ? 16 : transcriptStart + 16 : CHAT_COMPOSER_BOTTOM_PADDING,
           }]}
           contentInsetAdjustmentBehavior="never"
           data={visibleMessages}
@@ -6108,7 +6319,7 @@ function ChatView({
         <View
           pointerEvents="none"
           style={[styles.chatOpeningOverlay, {
-            top: Platform.OS === 'android' ? 36 : headerOverlayHeight + 36,
+            top: Platform.OS === 'android' ? 36 : transcriptStart + 36,
             left: horizontalPadding,
             right: horizontalPadding,
           }]}
@@ -6255,31 +6466,33 @@ function ChatView({
               ) : null}
               {dictation.error && <Text accessibilityRole="alert" style={styles.attachmentErrorText}>{dictation.error}</Text>}
               <View style={[styles.composerInputRow, showShelf && styles.composerShelfInputRow]}>
-                <TextInput
-                  ref={composerInputRef}
-                  accessibilityLabel="Message"
-                  disableFullscreenUI
-                  // Toggling editable off resigns focus and dismisses the keyboard, so stay editable during
-                  // shelf actions and temporary handoffs. transferShelf checks for edits before replacing content;
-                  // toggleTemporary moves draft ownership up front, so edits persist to the destination draft once it settles.
-                  editable={!composerFocusSuppressed && !(messageEdit && sending)}
-                  maxFontSizeMultiplier={COMPOSER_MAX_FONT_SIZE_MULTIPLIER}
-                  multiline
-                  maxLength={1_000_000}
-                  onFocus={() => { setQueueCollapsed(true); setShelfCollapsed(true); }}
-                  onBlur={() => { setQueueCollapsed(false); setShelfCollapsed(false); }}
-                  onChangeText={(value) => { inputRef.current = value; onChangeInput(value); }}
-                  selection={{ start: Math.min(inputSelection.start, input.length), end: Math.min(inputSelection.end, input.length) }}
-                  onSelectionChange={(event) => { setComposerSelection(setInputSelection, inputSelectionRef, event.nativeEvent.selection); }}
-                  placeholder={attachments.length > 0 ? 'Add a caption…' : messageEdit ? 'Edit message…' : temporary ? 'Temporary message…' : 'Message…'}
-                  placeholderTextColor={COLORS.muted}
-                  // iOS multiline measurement can retain the previous draft's height after a clear.
-                  // Derive the reset from the controlled value so synced clears work too, without remounting.
-                  style={[styles.input, styles.composerTextInput, Platform.OS === 'ios' && input.length === 0 && {
-                    height: Math.max(styles.input.minHeight, Math.ceil(styles.input.lineHeight * Math.min(fontScale, COMPOSER_MAX_FONT_SIZE_MULTIPLIER))),
-                  }]}
-                  value={input}
-                />
+                <ComposerPasteView onPasteFiles={pasteFiles} pasteContext={pasteContext} style={styles.composerPasteTarget}>
+                  <TextInput
+                    ref={composerInputRef}
+                    accessibilityLabel="Message"
+                    disableFullscreenUI
+                    // Toggling editable off resigns focus and dismisses the keyboard, so stay editable during
+                    // shelf actions and temporary handoffs. transferShelf checks for edits before replacing content;
+                    // toggleTemporary moves draft ownership up front, so edits persist to the destination draft once it settles.
+                    editable={!composerFocusSuppressed && !(messageEdit && sending)}
+                    maxFontSizeMultiplier={COMPOSER_MAX_FONT_SIZE_MULTIPLIER}
+                    multiline
+                    maxLength={1_000_000}
+                    onFocus={() => { setQueueCollapsed(true); setShelfCollapsed(true); }}
+                    onBlur={() => { setQueueCollapsed(false); setShelfCollapsed(false); }}
+                    onChangeText={(value) => { inputRef.current = value; onChangeInput(value); }}
+                    selection={{ start: Math.min(inputSelection.start, input.length), end: Math.min(inputSelection.end, input.length) }}
+                    onSelectionChange={(event) => { setComposerSelection(setInputSelection, inputSelectionRef, event.nativeEvent.selection); }}
+                    placeholder={attachments.length > 0 ? 'Add a caption…' : messageEdit ? 'Edit message…' : temporary ? 'Temporary message…' : 'Message…'}
+                    placeholderTextColor={COLORS.muted}
+                    // iOS multiline measurement can retain the previous draft's height after a clear.
+                    // Derive the reset from the controlled value so synced clears work too, without remounting.
+                    style={[styles.input, styles.composerTextInput, Platform.OS === 'ios' && input.length === 0 && {
+                      height: Math.max(styles.input.minHeight, Math.ceil(styles.input.lineHeight * Math.min(fontScale, COMPOSER_MAX_FONT_SIZE_MULTIPLIER))),
+                    }]}
+                    value={input}
+                  />
+                </ComposerPasteView>
                 {showShelf && (Platform.OS === 'ios'
                   ? <NativeComposerShelfButton disabled={!(input.trim() || attachments.length) || shelfBusy || sending || dictationBusy} onPress={() => { void transferShelf(); }} />
                   : <MaterialIconButton label="Shelve draft" icon="archivebox" disabled={!(input.trim() || attachments.length) || shelfBusy || sending || dictationBusy} onPress={() => { void transferShelf(); }} />)}
@@ -6387,6 +6600,7 @@ function ChatView({
             </ComposerSurface>
         </View>
       </KeyboardStickyView>
+      </View>
 
       <AttachmentImageViewer
         initialIndex={imageViewer?.initialIndex ?? 0}
@@ -7045,7 +7259,6 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   drawerPanel: { position: 'absolute', top: 0, bottom: 0, left: 0 },
   persistentPanel: { borderRightColor: COLORS.lineSoft, overflow: 'hidden' },
   historyPanelContent: { flex: 1 },
-  persistentPanelContent: { width: SIDEBAR_WIDTH },
   historyLoading: { alignItems: 'center', gap: 8, paddingVertical: 20 },
 
   // Main chat view
@@ -7067,6 +7280,8 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   appHeader: { width: '100%', maxWidth: CHAT_CONTENT_MAX, alignSelf: 'center', height: 64, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
   appHeaderEdgeAligned: { maxWidth: '100%' },
   headerActionExpanded: { width: Platform.OS === 'android' ? 96 : 88, height: Platform.OS === 'android' ? 48 : 44, alignItems: 'flex-end' },
+  // The stacked control hangs below the row from a single item's space.
+  headerActionStacked: { width: 44, height: 44 },
   roundButton: { alignItems: 'center', justifyContent: 'center' },
   roundButtonCustomIcon: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center' },
   roundButtonSelected: { backgroundColor: 'rgba(175,82,222,0.18)' },
@@ -7196,8 +7411,11 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   reasoningContextPreviewTitle: { color: COLORS.muted, fontSize: 10.5, fontWeight: '600', letterSpacing: 0.8, marginBottom: 12 },
   reasoningContextPreviewText: { color: COLORS.textSoft, fontSize: 14.5, lineHeight: 21 },
   messageMeta: { color: COLORS.muted, fontSize: 11, marginTop: 12, fontFamily: COLORS.mono, letterSpacing: -0.2 },
-  responseError: { flexDirection: 'row', gap: 8, alignItems: 'flex-start', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,92,92,0.35)', backgroundColor: 'rgba(255,92,92,0.10)', borderRadius: 12, padding: 11, marginTop: 6 },
+  responseError: { flexDirection: 'row', gap: 8, alignItems: 'flex-start', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,92,92,0.35)', backgroundColor: 'rgba(255,92,92,0.10)', borderRadius: 12, padding: 11, marginTop: 10 },
+  responseErrorBody: { flex: 1, gap: 6 },
   responseErrorText: { color: COLORS.critical, flex: 1, fontSize: 12.5, lineHeight: 18 },
+  responseErrorMessage: { color: COLORS.critical, fontSize: 12.5, lineHeight: 18 },
+  responseErrorActions: { flexDirection: 'row', gap: 16 },
   tryAgainText: { color: COLORS.criticalAction, fontSize: 12.5, fontWeight: '700', lineHeight: 18 },
   otherOutput: { borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.line, borderRadius: 12, padding: 10, gap: 7, marginTop: 6 },
   continueButton: { alignSelf: 'stretch', minHeight: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 14, backgroundColor: COLORS.fillStrong, marginTop: 8 },
@@ -7267,6 +7485,8 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   composerInputRow: { flexDirection: 'row', alignItems: 'flex-end' },
   composerShelfInputRow: { flexGrow: 1 },
   composerTextInput: { flex: 1, minWidth: 0, alignSelf: 'flex-start' },
+  // Lays out its input exactly as the input row would.
+  composerPasteTarget: { flex: 1, minWidth: 0, alignSelf: 'flex-start', flexDirection: 'row' },
   composerBar: { flexDirection: 'row', alignItems: 'center', marginTop: 'auto' },
   composerToolbar: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 1 },
   // Preserve composer row measurements while Shelve occupies the top-right corner.

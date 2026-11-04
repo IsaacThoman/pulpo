@@ -16,6 +16,21 @@ pulpo model test acme-model "Reply with a short greeting" --no-agent --preset re
 
 Use `pulpo help` or `pulpo <command> --help` for the complete command reference.
 
+Rebuild a restorable archive from an encrypted offsite snapshot with
+`pulpo backup assemble`. It runs entirely on your machine, using the age identity
+that Pulpo never sees, and needs no Pulpo context:
+
+```bash
+B2_APPLICATION_KEY_ID=… B2_APPLICATION_KEY=… pulpo backup assemble \
+  pulpo-snapshot.tar.gz.age \
+  --identity pulpo-backup-identity.txt \
+  --endpoint https://s3.us-west-004.backblazeb2.com --bucket pulpo-backups \
+  --output pulpo-instance.tar.gz
+```
+
+Use `--blobs-dir <folder>` instead of `--endpoint` and `--bucket` to read blobs
+from a local download of the bucket.
+
 Model create and update files may configure chat preset and choice icons with any
 canonical [Lucide](https://lucide.dev/icons/) name. Discover available names with
 `pulpo model icons`, or filter them locally with a query such as

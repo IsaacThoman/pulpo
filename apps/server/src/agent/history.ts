@@ -128,3 +128,36 @@ export function withoutMemoryToolMessages(messages: AgentMessage[]): AgentMessag
     return content.length ? [{ ...message, content }] : []
   })
 }
+
+export const INTERRUPTED_TOOL_RESULT_TEXT = 'This tool call was interrupted before it returned (the server restarted). Its effects are unknown; check the current state before retrying it.'
+
+/**
+ * Prepare a resumed run's saved messages for agent.continue(), which rejects a transcript ending in an
+ * assistant message. A crash during tool execution leaves the tool-call message last with no results, so
+ * each unanswered call gets an error result. Any other assistant tail is a finished or failed model turn
+ * that the caller's completion and retry handling resolves without continuing.
+ */
+export function resumableAgentMessages(messages: AgentMessage[], now = Date.now()): {
+  messages: AgentMessage[]
+  interruptedToolCalls: Array<{ id: string; name: string }>
+  continues: boolean
+} {
+  const last = messages.at(-1)
+  if (last?.role !== 'assistant') return { messages, interruptedToolCalls: [], continues: true }
+  const interruptedToolCalls = last.stopReason === 'error' || last.stopReason === 'aborted'
+    ? []
+    : last.content.flatMap((part) => part.type === 'toolCall' ? [{ id: part.id, name: part.name }] : [])
+  if (!interruptedToolCalls.length) return { messages, interruptedToolCalls, continues: false }
+  return {
+    messages: [...messages, ...interruptedToolCalls.map((call): AgentMessage => ({
+      role: 'toolResult',
+      toolCallId: call.id,
+      toolName: call.name,
+      content: [{ type: 'text', text: INTERRUPTED_TOOL_RESULT_TEXT }],
+      isError: true,
+      timestamp: now,
+    }))],
+    interruptedToolCalls,
+    continues: true,
+  }
+}

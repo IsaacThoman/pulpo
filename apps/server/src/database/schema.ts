@@ -590,6 +590,24 @@ export const chatShares = pgTable('chat_shares', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [uniqueIndex('share_token_unique').on(table.tokenHash)])
 
+/** A user's report of a message, which shares its chat with administrators. */
+export const messageReports = pgTable('message_reports', {
+  id: uuid('id').primaryKey(),
+  chatId: uuid('chat_id').notNull().references(() => chats.id, { onDelete: 'cascade' }),
+  responseId: uuid('response_id').notNull().references(() => responses.id, { onDelete: 'cascade' }),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  messageRole: text('message_role').notNull(),
+  excerpt: text('excerpt').notNull().default(''),
+  context: text('context').notNull().default(''),
+  resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+  resolvedByUserId: uuid('resolved_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('message_reports_created_idx').on(table.createdAt),
+  index('message_reports_chat_idx').on(table.chatId),
+  check('message_reports_role_check', sql`${table.messageRole} in ('user', 'assistant')`),
+])
+
 export const attachments = pgTable('attachments', {
   id: uuid('id').primaryKey(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
@@ -797,6 +815,7 @@ export const backupJobs = pgTable('backup_jobs', {
   userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }),
   operation: text('operation').notNull(),
   destination: text('destination').notNull().default('local'),
+  format: text('format').notNull().default('archive'),
   trigger: text('trigger').notNull().default('manual'),
   status: text('status').notNull().default('queued'),
   progress: integer('progress').notNull().default(0),
@@ -818,6 +837,30 @@ export const backupJobs = pgTable('backup_jobs', {
   index('backup_jobs_expiry_idx').on(table.expiresAt),
   index('backup_jobs_lock_expiry_idx').on(table.lockedUntil),
   uniqueIndex('backup_jobs_scheduled_slot_idx').on(table.destination, table.trigger, table.scheduledFor),
+])
+
+/** Encrypted offsite copies of blobs, uploaded once and shared by every snapshot that references them. */
+export const backupBlobs = pgTable('backup_blobs', {
+  id: uuid('id').primaryKey(),
+  storageEndpoint: text('storage_endpoint').notNull(),
+  storageBucket: text('storage_bucket').notNull(),
+  storagePrefix: text('storage_prefix').notNull(),
+  recipientFingerprint: text('recipient_fingerprint').notNull(),
+  /** SHA-256 hex of the plaintext. Never sent to Backblaze. */
+  contentChecksum: text('content_checksum').notNull(),
+  sizeBytes: bigint('size_bytes', { mode: 'number' }).notNull(),
+  objectKey: text('object_key').notNull(),
+  /** At least the lock of every snapshot that references this blob. */
+  lockedUntil: timestamp('locked_until', { withTimezone: true }).notNull(),
+  uploadedAt: timestamp('uploaded_at', { withTimezone: true }),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  ...timestamps,
+}, (table) => [
+  uniqueIndex('backup_blobs_live_content_idx')
+    .on(table.storageEndpoint, table.storageBucket, table.storagePrefix, table.recipientFingerprint, table.contentChecksum)
+    .where(sql`${table.deletedAt} is null`),
+  uniqueIndex('backup_blobs_object_key_idx').on(table.storageEndpoint, table.storageBucket, table.objectKey),
+  index('backup_blobs_lock_idx').on(table.lockedUntil).where(sql`${table.deletedAt} is null`),
 ])
 
 export const userMemoryDocuments = pgTable('user_memory_documents', {
@@ -1349,6 +1392,10 @@ export const billingAccounts = pgTable('billing_accounts', {
   holdReference: text('hold_reference'),
   holdClearedAt: timestamp('hold_cleared_at', { withTimezone: true }),
   holdClearedBy: uuid('hold_cleared_by').references(() => users.id, { onDelete: 'set null' }),
+  // Sent with every App Store purchase as `appAccountToken`, so Apple's records name the account.
+  appStoreAccountToken: uuid('app_store_account_token').unique(),
+  // App Store sandbox purchases grant a plan only when an admin allows it (admins, App Review).
+  appStoreSandboxAllowed: boolean('app_store_sandbox_allowed').notNull().default(false),
   // Card saved for off-session charges (automatic top-ups).
   stripePaymentMethodId: text('stripe_payment_method_id'),
   paymentMethodBrand: text('payment_method_brand'),
@@ -1374,6 +1421,7 @@ export const billingAccounts = pgTable('billing_accounts', {
 ])
 
 export type BillingProvider = 'stripe' | 'app_store'
+export type AppStoreEnvironment = 'production' | 'sandbox'
 
 export const billingSubscriptions = pgTable('billing_subscriptions', {
   // Stripe subscription ID (`sub_…`) or App Store original transaction ID.
@@ -1382,6 +1430,8 @@ export const billingSubscriptions = pgTable('billing_subscriptions', {
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   // Stripe price ID or App Store product ID.
   providerProductId: text('provider_product_id').notNull(),
+  // App Store environment (`production` or `sandbox`); null for Stripe.
+  providerEnvironment: text('provider_environment').$type<AppStoreEnvironment>(),
   plan: text('plan').notNull(),
   status: text('status').notNull(),
   cancelAtPeriodEnd: boolean('cancel_at_period_end').notNull().default(false),
@@ -1398,6 +1448,7 @@ export const billingSubscriptions = pgTable('billing_subscriptions', {
   index('billing_subscriptions_user_idx').on(table.userId),
   index('billing_subscriptions_status_idx').on(table.status),
   check('billing_subscriptions_provider_check', sql`${table.provider} in ('stripe', 'app_store')`),
+  check('billing_subscriptions_provider_environment_check', sql`${table.providerEnvironment} is null or ${table.providerEnvironment} in ('production', 'sandbox')`),
   check('billing_subscriptions_plan_check', sql`${table.plan} in ('eight', 'fat')`),
   check('billing_subscriptions_paid_plan_check', sql`${table.paidPlan} is null or ${table.paidPlan} in ('eight', 'fat')`),
 ])

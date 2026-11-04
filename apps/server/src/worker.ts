@@ -25,13 +25,15 @@ import { parseAgentSettings } from './settings/application-settings.js'
 import { accessibleChatCondition } from './chats/temporary.js'
 import { advanceMessageQueue, recoverMessageQueues } from './chats/message-queue.js'
 import { isTerminalResponseStatus } from './chats/message-queue-policy.js'
-import { reconcileStripeBilling } from './billing/reconciliation.js'
+import { reconcileBilling } from './billing/reconciliation.js'
+import { reconcileAppStoreBilling } from './billing/app-store-sync.js'
+import { acceptedAppStoreEnvironments } from './billing/app-store.js'
 import { runAutoTopUp, sweepAutoTopUps } from './billing/auto-top-up.js'
 import { processEmbeddingJob } from './episodic-memory/processor.js'
 import { scheduleChatIndex } from './episodic-memory/queue.js'
 import { readEpisodicMemorySettings, enqueueEpisodicReconciliation } from './episodic-memory/settings.js'
 import { processCodexLogin } from './codex/login.js'
-import { reconcileOffsiteBackupJobs, runOffsiteBackupSchedule } from './admin/backup-scheduler.js'
+import { reconcileBackupJobs, runOffsiteBackupSchedule } from './admin/backup-scheduler.js'
 
 const config = getConfig()
 await refreshDiagnosticPolicy()
@@ -108,7 +110,11 @@ const maintenanceWorker = new Worker<MaintenanceJob>('maintenance', async (job) 
   if (job.data.type === 'export') await createExport(String(job.data.payload?.exportId))
   if (job.data.type === 'delete-account') await deleteAccountData(String(job.data.payload?.userId))
   if (job.data.type === 'cleanup') { await resumeAccountDeletions(); await runCleanup() }
-  if (job.data.type === 'backup-schedule') await runOffsiteBackupSchedule()
+  if (job.data.type === 'backup-schedule') {
+    // Also recover jobs stranded by a restore or crash without waiting for a worker restart.
+    await reconcileBackupJobs()
+    await runOffsiteBackupSchedule()
+  }
   if (job.data.type === 'scrub-response-binary-context') await scrubPersistedResponseBinaryContext()
   if (job.data.type === 'purge-chats') {
     const userId = typeof job.data.payload?.userId === 'string' ? job.data.payload.userId : undefined
@@ -139,7 +145,8 @@ const maintenanceWorker = new Worker<MaintenanceJob>('maintenance', async (job) 
     await createFullBackup(String(job.data.payload?.jobId), finalAttempt)
   }
   if (job.data.type === 'restore') await restoreFullBackup(String(job.data.payload?.jobId))
-  if (job.data.type === 'billing-reconcile') await reconcileStripeBilling()
+  if (job.data.type === 'billing-reconcile') await reconcileBilling()
+  if (job.data.type === 'app-store-sandbox-sync') await reconcileAppStoreBilling({ sandboxRenewals: true })
   if (job.data.type === 'auto-top-up' && typeof job.data.payload?.userId === 'string') await runAutoTopUp(job.data.payload.userId)
   if (job.data.type === 'auto-top-up-sweep') await sweepAutoTopUps()
 }, { connection: { url: config.REDIS_URL }, concurrency: 1 })
@@ -184,13 +191,21 @@ if (config.PULPO_BILLING_ENABLED) {
     name: 'auto-top-up-sweep', data: { type: 'auto-top-up-sweep' },
   })
 }
+if (config.PULPO_BILLING_ENABLED && acceptedAppStoreEnvironments(config).includes('sandbox')) {
+  // Sandbox subscriptions renew every few minutes and this server may not get their notifications.
+  await maintenanceQueue.upsertJobScheduler('app-store-sandbox-sync', { every: 5 * 60 * 1_000 }, {
+    name: 'app-store-sandbox-sync', data: { type: 'app-store-sandbox-sync' },
+  })
+} else {
+  await maintenanceQueue.removeJobScheduler('app-store-sandbox-sync')
+}
 await maintenanceQueue.add('startup-cleanup', { type: 'cleanup' }, { jobId: `startup-cleanup-${Date.now()}` })
 await maintenanceQueue.add('startup-response-context-scrub', { type: 'scrub-response-binary-context' }, {
   jobId: 'response-context-scrub-v1',
   attempts: 3,
   removeOnFail: true,
 })
-await reconcileOffsiteBackupJobs()
+await reconcileBackupJobs()
 
 generationWorker.on('failed', (job, error) => {
   console.error(JSON.stringify({

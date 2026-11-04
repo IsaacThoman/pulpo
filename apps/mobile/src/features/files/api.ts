@@ -256,18 +256,23 @@ export function downloadFile(node: FileNode): Promise<File> {
 
 const EXPORT_DIRECTORY = 'files-export'
 
-/** Writes Markdown to a shareable temporary file named after the document. */
-export function markdownExportFile(name: string, markdown: string): File {
+/** Writes text to a shareable temporary file with the given name. */
+export function textExportFile(name: string, text: string): File {
   const directory = new Directory(Paths.cache, EXPORT_DIRECTORY)
   directory.create({ idempotent: true, intermediates: true })
-  const file = new File(directory, safeName(/\.(md|markdown)$/i.test(name) ? name : `${name}.md`))
+  const file = new File(directory, safeName(name))
   if (file.exists) file.delete()
   file.create()
-  file.write(markdown)
+  file.write(text)
   return file
 }
 
-/** Removes exported Markdown (signing out); exports are only kept for the share sheet. */
+/** Writes Markdown to a shareable temporary file named after the document. */
+export function markdownExportFile(name: string, markdown: string): File {
+  return textExportFile(/\.(md|markdown)$/i.test(name) ? name : `${name}.md`, markdown)
+}
+
+/** Removes exported files (signing out); exports are only kept for the share sheet. */
 export function clearMarkdownExports(): void {
   try {
     const directory = new Directory(Paths.cache, EXPORT_DIRECTORY)

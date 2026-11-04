@@ -16,12 +16,16 @@ function sameIds(left: string[], right: string[]): boolean {
   return left.length === right.length && left.every((id) => right.includes(id))
 }
 
-export function EditUserDialog({ user, billingEnabled, onSave, onClose }: {
+export function EditUserDialog({ user, billingEnabled, appStoreSandboxAllowed = null, onSave, onBillingSaved, onClose }: {
   user: MonitorUser
   billingEnabled: boolean
+  /** Whether the account's App Store sandbox purchases grant a plan; null when the server takes none. */
+  appStoreSandboxAllowed?: boolean | null
   onSave: (id: string, patch: Record<string, unknown>) => Promise<void>
+  onBillingSaved?: () => void
   onClose: () => void
 }) {
+  const [sandboxAllowed, setSandboxAllowed] = useState(appStoreSandboxAllowed ?? false)
   const initialModelId = user.defaultModelId || null
   const [defaultModelId, setDefaultModelId] = useState(initialModelId)
   const [resetFavorites, setResetFavorites] = useState(false)
@@ -61,6 +65,10 @@ export function EditUserDialog({ user, billingEnabled, onSave, onClose }: {
           grantedModelIds: grantedModelIds.filter((id) => restrictedModels.data?.some((model) => model.id === id)),
         } : {}),
       })
+      if (appStoreSandboxAllowed !== null && sandboxAllowed !== appStoreSandboxAllowed) {
+        await apiRequest(`/api/admin/billing/users/${user.id}/app-store-sandbox`, { method: 'PATCH', body: { allowed: sandboxAllowed } })
+        onBillingSaved?.()
+      }
       onClose()
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : ui('Could not save user.'))
@@ -139,6 +147,13 @@ export function EditUserDialog({ user, billingEnabled, onSave, onClose }: {
             <Label htmlFor="edit-user-invite-quota">{ui('Invite code quota')}</Label>
             <Input id="edit-user-invite-quota" name="inviteCodeQuota" type="number" min={0} max={1000} defaultValue={user.inviteCodeQuota ?? 0} />
           </div>}
+          {billingEnabled && appStoreSandboxAllowed !== null && <label className="flex cursor-pointer items-start gap-2 text-sm">
+            <input type="checkbox" className="mt-0.5 size-4 shrink-0 accent-primary" checked={sandboxAllowed} onChange={(event) => setSandboxAllowed(event.target.checked)} />
+            <span>
+              <span className="font-medium">{ui('App Store sandbox purchases')}</span>
+              <span className="mt-0.5 block text-xs text-muted-foreground">{ui('TestFlight and App Review purchases grant this account a plan. Turning this off ends its sandbox subscriptions.')}</span>
+            </span>
+          </label>}
         </fieldset>
         {saveError && <p role="alert" className="text-sm text-destructive">{saveError}</p>}
         <DialogFooter><Button type="submit" disabled={saving}>{saving ? ui('Saving…') : ui('Save')}</Button></DialogFooter>

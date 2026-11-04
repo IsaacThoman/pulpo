@@ -6,6 +6,7 @@ import { hasTwoFactor } from '../auth/two-factor.js'
 import { requireSensitiveAuth } from '../auth/sensitive-action.js'
 import { getConfig } from '../config.js'
 import { acceptAccountDeletion } from './deletion.js'
+import { appStoreSubscriptionRenews } from '../billing/app-store-sync.js'
 
 async function requireAccountSession(request: FastifyRequest): Promise<string> {
   if (!request.user || request.apiKeyId || request.managementTokenId || request.adminChatAccess) throw unauthorized()
@@ -17,7 +18,12 @@ async function requireAccountSession(request: FastifyRequest): Promise<string> {
 export async function registerAccountDeletionRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/me/deletion', async (request) => {
     const userId = await requireAccountSession(request)
-    return { twoFactorEnabled: await hasTwoFactor(userId) }
+    const [twoFactorEnabled, appStoreRenews] = await Promise.all([
+      hasTwoFactor(userId),
+      getConfig().PULPO_BILLING_ENABLED ? appStoreSubscriptionRenews(userId) : false,
+    ])
+    // Deletion cannot cancel an App Store subscription, so clients warn about it first.
+    return { twoFactorEnabled, appStoreSubscriptionRenews: appStoreRenews }
   })
   app.delete('/api/me', { config: { rateLimit: { max: 5, timeWindow: '15 minutes' } } }, async (request, reply) => {
     const userId = await requireAccountSession(request)

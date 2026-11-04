@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentMessage } from '@earendil-works/pi-agent-core'
-import { agentRunDisplayState, resolveAgentParentMessages, resumedRunContinues, systemPromptFromAgentContext, withoutMemoryToolMessages, type AgentHistoryResponse } from './history.js'
+import { agentRunDisplayState, INTERRUPTED_TOOL_RESULT_TEXT, resolveAgentParentMessages, resumableAgentMessages, resumedRunContinues, systemPromptFromAgentContext, withoutMemoryToolMessages, type AgentHistoryResponse } from './history.js'
 
 const now = new Date('2026-08-08T12:00:00.000Z')
 
@@ -98,7 +98,7 @@ describe('Agent parent history', () => {
 
     expect(text(resolved)).toContain('inspect this')
     expect(text(resolved)).toContain('chart.png')
-    expect(text(resolved)).toContain('/workspace/attachme-chart.png')
+    expect(text(resolved)).toContain('/workspace/attachment-1-chart.png')
     expect(text(resolved)).toContain('answer edited')
   })
 
@@ -154,4 +154,43 @@ it('removes memory calls and results from resumed checkpoints while preserving o
   expect(JSON.stringify(filtered)).not.toMatch(/Captain Violet|secret|search_chats|read_chat|update_memory/)
   expect(JSON.stringify(filtered)).toContain('/workspace')
   expect(JSON.stringify(messages)).toContain('Captain Violet')
+})
+
+describe('resumableAgentMessages', () => {
+  const user = { role: 'user', content: 'go', timestamp: 1 } as AgentMessage
+  const assistant = (content: unknown[], stopReason = 'toolUse') => ({ role: 'assistant', content, stopReason, timestamp: 2 }) as unknown as AgentMessage
+
+  it('continues a run whose last message is a user prompt or tool result', () => {
+    const toolResult = { role: 'toolResult', toolCallId: 'a', toolName: 'bash', content: [], isError: false, timestamp: 3 } as AgentMessage
+    for (const messages of [[user], [user, assistant([{ type: 'toolCall', id: 'a', name: 'bash', arguments: {} }]), toolResult]]) {
+      expect(resumableAgentMessages(messages)).toEqual({ messages, interruptedToolCalls: [], continues: true })
+    }
+  })
+
+  it('answers tool calls a crash left without results so the run can continue', () => {
+    const calls = assistant([
+      { type: 'text', text: 'Rebuilding now.' },
+      { type: 'toolCall', id: 'a', name: 'bash', arguments: { command: 'ls' } },
+      { type: 'toolCall', id: 'b', name: 'read', arguments: {} },
+    ])
+    const resumed = resumableAgentMessages([user, calls], 9)
+    expect(resumed.continues).toBe(true)
+    expect(resumed.interruptedToolCalls).toEqual([{ id: 'a', name: 'bash' }, { id: 'b', name: 'read' }])
+    expect(resumed.messages.slice(0, 2)).toEqual([user, calls])
+    expect(resumed.messages.slice(2)).toEqual(['a', 'b'].map((id, index) => ({
+      role: 'toolResult', toolCallId: id, toolName: index ? 'read' : 'bash',
+      content: [{ type: 'text', text: INTERRUPTED_TOOL_RESULT_TEXT }], isError: true, timestamp: 9,
+    })))
+  })
+
+  it('leaves finished and failed model turns to completion and retry handling', () => {
+    for (const last of [
+      assistant([{ type: 'text', text: 'done' }], 'stop'),
+      assistant([{ type: 'text', text: 'cut off' }], 'length'),
+      assistant([{ type: 'toolCall', id: 'a', name: 'bash', arguments: {} }], 'error'),
+      assistant([], 'aborted'),
+    ]) {
+      expect(resumableAgentMessages([user, last])).toEqual({ messages: [user, last], interruptedToolCalls: [], continues: false })
+    }
+  })
 })

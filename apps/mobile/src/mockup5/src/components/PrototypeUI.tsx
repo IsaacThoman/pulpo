@@ -48,7 +48,7 @@ export function Screen({ children, scroll = true, style }: { children: ReactNode
   const theme = useAppTheme();
   const insets = useSafeAreaInsets();
   const content = scroll ? <ScrollView contentContainerStyle={[styles.screenContent, style]} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>{children}</ScrollView> : <View style={[styles.screenContent, styles.flex, style]}>{children}</View>;
-  return <SafeAreaView edges={['top', 'bottom']} style={[styles.flex, { backgroundColor: theme.background }]}><KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'android' ? 'padding' : undefined} keyboardVerticalOffset={insets.top}>{content}</KeyboardAvoidingView></SafeAreaView>;
+  return <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={[styles.flex, { backgroundColor: theme.background }]}><KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'android' ? 'padding' : undefined} keyboardVerticalOffset={insets.top}>{content}</KeyboardAvoidingView></SafeAreaView>;
 }
 
 export function PageHeader({ title, subtitle, onBack, right }: { title: string; subtitle?: string; onBack?: () => void; right?: ReactNode }) {

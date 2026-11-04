@@ -20,15 +20,16 @@ import { createFullBackup, restoreFullBackup } from './backup.js'
 import { writeBackupArchive, type BackupArchiveEntry } from './backup-archive.js'
 import { extractRestoreArchive } from './restore-archive.js'
 import { completeRestoreUpload, putRestoreChunk, startRestoreUpload } from './restore-uploads.js'
-import { createOffsiteBackup, deleteUnlockedOffsiteBackups, reconcileOffsiteBackupJobs, runOffsiteBackupSchedule } from './backup-scheduler.js'
+import { createOffsiteBackup, deleteUnlockedOffsiteBackups, reconcileBackupJobs, runOffsiteBackupSchedule } from './backup-scheduler.js'
 
 const context = vi.hoisted(() => ({
   store: undefined as LocalBlobStore | undefined,
   enqueue: vi.fn(async () => undefined),
+  getJob: vi.fn(async (_id: string): Promise<{ getState(): Promise<string>; failedReason?: string; remove(): Promise<void> } | undefined> => undefined),
   remote: new Map<string, { bytes: Buffer; jobId: string; recipientFingerprint: string; lockedUntil: Date }>(),
 }))
 vi.mock('../storage/index.js', () => ({ getBlobStore: () => context.store! }))
-vi.mock('../jobs.js', () => ({ maintenanceQueue: { add: context.enqueue, getJob: vi.fn(async () => undefined) } }))
+vi.mock('../jobs.js', () => ({ maintenanceQueue: { add: context.enqueue, getJob: context.getJob } }))
 vi.mock('./b2-backup-store.js', () => ({ B2BackupStore: class {
   async head(key: string) {
     const entry = context.remote.get(key)
@@ -41,6 +42,11 @@ vi.mock('./b2-backup-store.js', () => ({ B2BackupStore: class {
     context.remote.set(key, { bytes, jobId, recipientFingerprint, lockedUntil })
   }
   async delete(key: string) { context.remote.delete(key) }
+  async verifyRetention(key: string, lockedUntil: Date) {
+    const entry = context.remote.get(key)
+    if (!entry || entry.lockedUntil < lockedUntil) throw new Error('Backblaze did not apply Compliance retention to the backup')
+  }
+  async abortStaleUploads() { return 0 }
 } }))
 vi.mock('../redis.js', () => ({ redis: {} }))
 vi.mock('../redis-keys.js', () => ({ deleteRedisKeysByPattern: vi.fn() }))
@@ -98,6 +104,7 @@ describe.skipIf(!enabled)('full application backup audit with PostgreSQL and loc
     directory = await mkdtemp(join(tmpdir(), 'pulpo-backup-audit-'))
     context.store = new LocalBlobStore(directory)
     context.enqueue.mockReset(); context.enqueue.mockResolvedValue(undefined); context.remote.clear()
+    context.getJob.mockReset(); context.getJob.mockResolvedValue(undefined)
     userId = randomUUID()
     await db.insert(schema.users).values({ id: userId, name: 'Backup auditor', email: 'audit@example.test', username: 'audit', role: 'admin' })
   })
@@ -285,8 +292,10 @@ describe.skipIf(!enabled)('full application backup audit with PostgreSQL and loc
     context.enqueue.mockRejectedValueOnce(new Error('queue offline'))
     await expect(createOffsiteBackup('manual', userId)).rejects.toThrow('queue offline')
     const [manual] = await db.select().from(schema.backupJobs)
-    expect(manual!.status).toBe('queued')
-    await reconcileOffsiteBackupJobs()
+    expect(manual!).toMatchObject({ status: 'queued', format: 'snapshot' })
+    // This test covers the self-contained archive; snapshots have their own suite.
+    await db.update(schema.backupJobs).set({ format: 'archive' }).where(eq(schema.backupJobs.id, manual!.id))
+    await reconcileBackupJobs()
     expect(context.enqueue).toHaveBeenCalledTimes(2)
     await expect(createOffsiteBackup('manual', userId)).rejects.toMatchObject({ code: 'backup_already_running' })
     await createFullBackup(manual!.id)
@@ -296,8 +305,24 @@ describe.skipIf(!enabled)('full application backup audit with PostgreSQL and loc
     expect(ciphertext.toString('utf8', 0, 22)).toBe('age-encryption.org/v1\n')
     const decrypter = new Decrypter(); decrypter.addIdentity(identity)
     const plaintext = await decrypter.decrypt(ciphertext)
+    // A leftover queue entry never reruns a finished backup.
+    context.remote.get(manual!.objectKey!)!.lockedUntil = new Date(0)
+    await createFullBackup(manual!.id)
+    expect(context.remote.get(manual!.objectKey!)!.lockedUntil).toEqual(new Date(0))
+    context.remote.get(manual!.objectKey!)!.lockedUntil = completed!.lockedUntil!
+    // A retry after an attempt stopped once its upload was locked keeps that object.
+    const interrupt = () => db.update(schema.backupJobs).set({ status: 'in_progress' }).where(eq(schema.backupJobs.id, manual!.id))
+    await interrupt()
     await createFullBackup(manual!.id)
     expect(context.remote.size).toBe(1)
+    expect(context.remote.get(manual!.objectKey!)!.bytes.equals(ciphertext)).toBe(true)
+    // A retry replaces an object that an earlier attempt left without its lock.
+    context.remote.get(manual!.objectKey!)!.lockedUntil = new Date(0)
+    await interrupt()
+    await createFullBackup(manual!.id)
+    expect(context.remote.get(manual!.objectKey!)!.lockedUntil).toEqual(completed!.lockedUntil)
+    expect(context.remote.get(manual!.objectKey!)!.bytes.equals(ciphertext)).toBe(false)
+    expect((await db.select().from(schema.backupJobs).where(eq(schema.backupJobs.id, manual!.id)))[0]!.status).toBe('completed')
     await Promise.all([runOffsiteBackupSchedule(now), runOffsiteBackupSchedule(now)])
     const jobs = await db.select().from(schema.backupJobs)
     expect(jobs.filter(job => job.trigger === 'scheduled')).toHaveLength(1)
@@ -310,5 +335,30 @@ describe.skipIf(!enabled)('full application backup audit with PostgreSQL and loc
     expect((await db.select().from(schema.backupJobs).where(eq(schema.backupJobs.id, manual!.id)))[0]!.deletedAt).not.toBeNull()
     await restore(plaintext)
     expect((await db.select().from(schema.users))[0]!.id).toBe(userId)
+  })
+
+  it('gives up on backups whose queue job failed without them recording it, instead of re-queuing them', async () => {
+    const abandoned = [randomUUID(), randomUUID()], waiting = randomUUID(), unqueued = randomUUID()
+    await db.insert(schema.backupJobs).values([
+      { id: abandoned[0]!, userId, operation: 'backup', destination: 'backblaze_b2', status: 'in_progress', progress: 41 },
+      { id: abandoned[1]!, userId, operation: 'backup', status: 'in_progress', progress: 41 },
+      { id: waiting, userId, operation: 'backup', status: 'queued' },
+      { id: unqueued, userId, operation: 'backup', status: 'queued' },
+    ])
+    const states = new Map<string, string>([[abandoned[0]!, 'failed'], [abandoned[1]!, 'failed'], [waiting, 'waiting']])
+    context.getJob.mockImplementation(async (id: string) => {
+      const state = states.get(id.replace(/^backup-/, ''))
+      return state ? { getState: async () => state, failedReason: 'job stalled more than allowable limit', remove: async () => undefined } : undefined
+    })
+    await reconcileBackupJobs()
+    expect(context.enqueue).not.toHaveBeenCalled()
+    const rows = new Map((await db.select().from(schema.backupJobs)).map(row => [row.id, row]))
+    for (const id of abandoned) expect(rows.get(id)).toMatchObject({ status: 'failed', error: expect.stringContaining('out of memory') })
+    // A local backup without a queue job may still be being enqueued.
+    expect(rows.get(waiting)!.status).toBe('queued')
+    expect(rows.get(unqueued)!.status).toBe('queued')
+    // Neither a failed backup nor a leftover queue entry runs it again.
+    await createFullBackup(abandoned[1]!)
+    expect((await db.select().from(schema.backupJobs).where(eq(schema.backupJobs.id, abandoned[1]!)))[0]).toMatchObject({ status: 'failed', progress: 41 })
   })
 })

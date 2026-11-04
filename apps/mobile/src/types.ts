@@ -93,6 +93,9 @@ export interface ServerResponse {
   presetSelections: Record<string, string>
   agentMode: boolean
   usage: { inputTokens: number; outputTokens: number } | null
+  /** Settled usage cost in USD micros; null until the response has a usage event. */
+  costMicros?: number | null
+  inferenceReferenceCostMicros?: number | null
   error: { message?: string } | null
   createdAt: string
   completedAt: string | null

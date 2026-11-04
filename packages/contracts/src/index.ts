@@ -176,6 +176,10 @@ export const mobileConfigSchema = z.object({
     dictation: z.boolean().optional().default(false),
     twoFactorAuth: z.boolean().optional().default(false),
     passkeys: z.boolean().optional().default(false),
+    /** Whether users can report messages to administrators. Older servers omit it. */
+    messageReports: z.boolean().optional().default(false),
+    /** Whether the instance bills usage, so accounts can have plan usage limits. Older servers omit it. */
+    usageLimits: z.boolean().optional().default(false),
     /**
      * Files and its collaborative documents. Older servers omit it; clients then hide Files.
      * `docSchemaVersion` is the document schema the server accepts edits in, so a client whose
@@ -185,9 +189,81 @@ export const mobileConfigSchema = z.object({
       enabled: z.boolean(),
       docSchemaVersion: z.number().int().positive(),
     }).optional(),
+    /**
+     * App Store subscriptions, with the StoreKit environments whose purchases this server accepts.
+     * The app offers purchases only when its own environment is listed. Null or omitted: no purchases.
+     */
+    appStoreBilling: z.object({
+      environments: z.array(z.enum(['production', 'sandbox'])).min(1),
+      /** App Store product IDs for each plan. Servers that omit them offer no purchases. */
+      products: z.object({ eight: z.string().min(1), fat: z.string().min(1) }).optional(),
+    }).nullable().optional().default(null),
   }),
 })
 export type MobileConfig = z.infer<typeof mobileConfigSchema>
+
+/**
+ * How much of a plan usage limit is left, as percentages only. Native apps show these, never
+ * amounts of money, so the payload carries no balances or micros.
+ */
+export const usageLimitPercentagesSchema = z.object({
+  remainingPercentage: z.number().int().min(0).max(100),
+  availableBarPercentage: z.number().min(0).max(100),
+  /** Part of the limit held by responses still running. */
+  pendingBarPercentage: z.number().min(0).max(100),
+  /** Null for a rolling window that starts on first use. */
+  resetsAt: isoDateSchema.nullable(),
+})
+export type UsageLimitPercentages = z.infer<typeof usageLimitPercentagesSchema>
+
+export const customUsageLimitSchema = usageLimitPercentagesSchema.extend({
+  id: z.string(),
+  name: z.string(),
+  period: z.enum(['five_hour', 'daily', 'weekly']),
+  /** False when it funds only model usage, not tools, workspace time, or background tasks. */
+  coversExtras: z.boolean(),
+  /** Names of the models the limit covers; empty when it covers every model. */
+  models: z.array(z.string()),
+})
+export type CustomUsageLimit = z.infer<typeof customUsageLimitSchema>
+
+/** The subscription behind the plan: which store bills it and when, never its price. */
+export const usageLimitsSubscriptionSchema = z.object({
+  provider: z.enum(['stripe', 'app_store']),
+  /** The plan in effect now. */
+  plan: z.enum(['eight', 'fat']),
+  /** The plan the next renewal bills, when it differs. */
+  pendingPlan: z.enum(['eight', 'fat']).nullable(),
+  status: z.enum(['active', 'past_due']),
+  cancelAtPeriodEnd: z.boolean(),
+  currentPeriodEnd: isoDateSchema.nullable(),
+})
+export type UsageLimitsSubscription = z.infer<typeof usageLimitsSubscriptionSchema>
+
+/** What each plan includes, for describing the plans a native app sells. */
+export const usageLimitsPlansSchema = z.object({
+  storageLimitBytes: z.object({
+    baby: z.number().int().nonnegative(),
+    eight: z.number().int().nonnegative(),
+    fat: z.number().int().nonnegative(),
+  }),
+  /** The share of a Pulpo Fat owner's weekly usage their Pool can draw on. */
+  fatSharedWeeklyPercent: z.number().int().min(0).max(100),
+})
+export type UsageLimitsPlans = z.infer<typeof usageLimitsPlansSchema>
+
+export const usageLimitsSchema = z.object({
+  plan: z.enum(['baby', 'eight', 'fat']),
+  /** Null with no subscription, and from servers older than App Store billing. */
+  subscription: usageLimitsSubscriptionSchema.nullable().optional().default(null),
+  /** Null from servers older than App Store billing. */
+  plans: usageLimitsPlansSchema.nullable().optional().default(null),
+  weekly: usageLimitPercentagesSchema.nullable(),
+  fiveHour: usageLimitPercentagesSchema.nullable(),
+  /** Admin-defined allowances the account spends first. */
+  custom: z.array(customUsageLimitSchema),
+})
+export type UsageLimits = z.infer<typeof usageLimitsSchema>
 
 export const twoFactorStatusSchema = z.object({
   enabled: z.boolean(),
@@ -638,6 +714,14 @@ export const costLimitItemSchema = z.object({
   agent_turn: z.number().int().positive().optional(),
 })
 export type CostLimitItem = z.infer<typeof costLimitItemSchema>
+
+/** Parses a typed dollar amount ("2.5", "$0.13") into a clamped Agent cost limit in USD micros, or undefined when it is not a number. */
+export function parseAgentCostLimit(raw: string): number | undefined {
+  const dollars = Number(raw.trim().replace(/^\$/, ''))
+  if (!raw.trim() || !Number.isFinite(dollars)) return undefined
+  const micros = Math.round(dollars * 100) * 10_000
+  return Math.min(AGENT_COST_LIMIT_MAX_MICROS, Math.max(AGENT_COST_LIMIT_MIN_MICROS, micros))
+}
 
 /** The enabled Agent cost limit from stored account preferences, if any. Accounts that never chose are enabled. */
 export function agentCostLimitMicros(preferences: Record<string, unknown>): number | undefined {
@@ -1452,6 +1536,8 @@ export type ManagementToken = z.infer<typeof managementTokenSchema>
 
 export const accountDeletionRequirementsSchema = z.object({
   twoFactorEnabled: z.boolean(),
+  /** Apple keeps billing an App Store subscription after deletion. Older servers omit it. */
+  appStoreSubscriptionRenews: z.boolean().optional().default(false),
 })
 export type AccountDeletionRequirements = z.infer<typeof accountDeletionRequirementsSchema>
 
@@ -1479,6 +1565,7 @@ export const authSettingsSchema = z.object({
   apiKeysEnabled: z.boolean().default(true),
   filesEnabled: z.boolean().default(true),
   inviteCodesEnabled: z.boolean().default(false),
+  messageReportsEnabled: z.boolean().default(false),
   newAccountModelDefaults: newAccountModelDefaultsSchema.default(() => newAccountModelDefaultsSchema.parse({})),
 })
 
@@ -1535,6 +1622,9 @@ It's okay to joke, react, or sound amused.
 Avoid sounding like customer support, a textbook, or a stereotypical AI assistant.
 Don't over-explain simple things.
 When the user asks a technical or serious question, become clearer and more detailed while keeping the conversational tone.`
+
+/** Longest account custom instructions text clients may save. */
+export const CUSTOM_INSTRUCTIONS_MAX_LENGTH = 100_000
 
 export const instructionPresetSchema = z.object({
   id: z.string().trim().min(1).max(120),
@@ -1620,7 +1710,7 @@ export const managementAccountSettingsSchema = z.object({
   agentCostLimitMicros: agentCostLimitMicrosSchema,
   chatWidth: z.enum(['full', 'narrow']).default('narrow'),
   animationSpeed: animationSpeedSchema,
-  customInstructions: z.string().max(100_000).default(''),
+  customInstructions: z.string().max(CUSTOM_INSTRUCTIONS_MAX_LENGTH).default(''),
   nickname: z.string().max(80).default(''),
   username: usernameSchema,
   profileColor: profileColorSchema.nullable().default(null),
@@ -1731,6 +1821,25 @@ export const backupDestinationSchema = z.enum(['local', 'backblaze_b2'])
 export const backupTriggerSchema = z.enum(['manual', 'scheduled'])
 export const backupHealthSchema = z.enum(['unconfigured', 'disabled', 'pending', 'healthy', 'failed'])
 export const backupIntervalHoursSchema = z.union([z.literal(6), z.literal(12), z.literal(24)])
+/** How often a self-contained archive is kept beside incremental snapshots; 0 turns it off. */
+export const backupFullArchiveIntervalDaysSchema = z.union([z.literal(0), z.literal(7), z.literal(30)])
+/** `archive` is one self-contained .tar.gz; `snapshot` holds the database and references separately stored blobs. */
+export const backupFormatSchema = z.enum(['archive', 'snapshot'])
+const sha256HexSchema = z.string().regex(/^[0-9a-f]{64}$/)
+/** Manifest inside an encrypted snapshot. `pulpo backup assemble` turns it into a restorable archive. */
+export const backupSnapshotManifestSchema = z.object({
+  format: z.literal('pulpo-instance-snapshot'),
+  version: z.literal(1),
+  createdAt: isoDateSchema,
+  tables: z.array(z.string()),
+  blobs: z.array(z.object({
+    objectKey: z.string().min(1),
+    checksum: sha256HexSchema,
+    sizeBytes: z.number().int().nonnegative(),
+    storageKey: z.string().min(1),
+  })),
+})
+export type BackupSnapshotManifest = z.infer<typeof backupSnapshotManifestSchema>
 export const ageRecipientSchema = z.string().trim().max(4_096).refine(
   (value) => /^age1(?:pq1)?[023456789acdefghjklmnpqrstuvwxyz]+$/.test(value),
   'Enter a classic or post-quantum age recipient',
@@ -1746,6 +1855,7 @@ export const backupSettingsUpdateSchema = z.object({
   recipient: ageRecipientSchema,
   intervalHours: backupIntervalHoursSchema.default(24),
   retentionDays: z.number().int().min(1).max(3_000).default(30),
+  fullArchiveIntervalDays: backupFullArchiveIntervalDaysSchema.default(7),
 })
 export type BackupSettingsUpdate = z.infer<typeof backupSettingsUpdateSchema>
 export const backupSettingsTestInputSchema = backupSettingsUpdateSchema
@@ -1773,6 +1883,7 @@ export const backupJobSchema = z.object({
   userId: idSchema.nullable(),
   operation: z.enum(['backup', 'restore']),
   destination: backupDestinationSchema,
+  format: backupFormatSchema,
   trigger: backupTriggerSchema,
   status: z.enum(['queued', 'in_progress', 'completed', 'failed']),
   progress: z.number().int().min(0).max(100),
@@ -2090,3 +2201,4 @@ export interface ServerToClientEvents {
 export * from "./shelf.js"
 export * from "./files.js"
 export * from "./trash.js"
+export * from "./message-reports.js"

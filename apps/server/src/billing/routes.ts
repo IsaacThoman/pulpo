@@ -1,8 +1,9 @@
 import { desc, eq } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
+import { usageLimitsSchema, type UsageLimits } from '@pulpo/contracts'
 import { requireUser } from '../auth/service.js'
-import { getConfig } from '../config.js'
+import { appStoreBillingEnabled, getConfig } from '../config.js'
 import { db } from '../database/client.js'
 import {
   applicationSettings,
@@ -12,7 +13,7 @@ import {
 } from '../database/schema.js'
 import { AppError } from '../lib/errors.js'
 import { parseBillingSettings } from '../settings/application-settings.js'
-import { getBillingEntitlements } from './entitlements.js'
+import { getBillingEntitlements, type BillingEntitlements } from './entitlements.js'
 import { loadDailySpend, type DailySpend } from './usage-tiers.js'
 import { customLimitModelNames, loadCustomAllowances, type CustomAllowance } from './custom-limits.js'
 import { loadOwnerSharedAllowance, sharedAllowanceBar } from './shared-allowance.js'
@@ -32,8 +33,11 @@ import {
   createCustomerPortalUrl,
   createPaymentMethodCheckout,
   createSubscriptionCheckout,
+  planForPriceId,
   verifyStripeWebhookSignature,
 } from './stripe.js'
+import { appStorePlanForProduct } from './app-store.js'
+import { appStoreAccountToken, hasRenewingAppStoreSubscription, processAppStoreNotification, syncAppStorePurchase } from './app-store-sync.js'
 import { processStripeWebhookEvent } from './webhooks.js'
 import { activePoolMembers, activePoolMembership, pendingFundingByUser } from '../pools/service.js'
 
@@ -74,14 +78,41 @@ export function resolvedCheckoutStatus(
   return checkoutStatus ?? null
 }
 
-export function selectSummarySubscription<T extends { plan: string; paidPlan?: string | null; status: string }>(
+/**
+ * The subscription the billing page shows. Stripe rows come first because Stripe plan changes act
+ * on the Stripe subscription; App Store subscriptions are managed in the iOS app instead.
+ */
+export function selectSummarySubscription<T extends { plan: string; paidPlan?: string | null; status: string; provider?: string }>(
   subscriptions: T[],
   entitlementPlan: string,
 ): T | null {
   const actionable = subscriptions.filter((item) => item.status === 'active' || item.status === 'past_due')
-  return actionable.find((item) => subscriptionPaidPlan(item) === entitlementPlan)
-    ?? actionable[0]
+  const stripe = actionable.filter((item) => item.provider !== 'app_store')
+  const candidates = stripe.length ? stripe : actionable
+  return candidates.find((item) => subscriptionPaidPlan(item) === entitlementPlan)
+    ?? candidates[0]
     ?? null
+}
+
+/** The subscription the native apps show: who bills it and when, never its price. */
+export function usageLimitsSubscription<T extends {
+  plan: string
+  paidPlan?: string | null
+  status: string
+  provider?: string
+  cancelAtPeriodEnd: boolean
+  currentPeriodEnd: Date | null
+}>(subscriptions: T[], entitlementPlan: string): UsageLimits['subscription'] {
+  const subscription = selectSummarySubscription(subscriptions, entitlementPlan)
+  if (!subscription) return null
+  return {
+    provider: subscription.provider === 'app_store' ? 'app_store' : 'stripe',
+    plan: subscriptionPaidPlan(subscription) === 'fat' ? 'fat' : 'eight',
+    pendingPlan: subscriptionPendingPlan(subscription),
+    status: subscription.status === 'past_due' ? 'past_due' : 'active',
+    cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
+    currentPeriodEnd: subscription.currentPeriodEnd?.toISOString() ?? null,
+  }
 }
 
 export function availableBillingBalanceMicros(balanceMicros: number, pendingMicros: number): number {
@@ -153,6 +184,79 @@ export function customLimitSummary(limit: CustomAllowance, modelNames: Map<strin
   }
 }
 
+type WeeklyLimitInput = Pick<BillingEntitlements, 'weeklyRemainingPercentage' | 'weeklyRemainingMicros' | 'weeklyLimitMicros' | 'weeklyPendingMicros' | 'weeklyResetAt'>
+type FiveHourLimitInput = Parameters<typeof fiveHourSummaryPercentages>[0] & Pick<BillingEntitlements, 'fiveHourRemainingPercentage' | 'fiveHourResetAt'>
+
+export function weeklyLimitSummary(entitlements: WeeklyLimitInput) {
+  if (entitlements.weeklyRemainingPercentage === null) return null
+  return {
+    remainingPercentage: entitlements.weeklyRemainingPercentage,
+    availableBarPercentage: billingLimitPercentage(entitlements.weeklyRemainingMicros, entitlements.weeklyLimitMicros),
+    pendingMicros: entitlements.weeklyPendingMicros,
+    pendingBarPercentage: billingLimitPercentage(entitlements.weeklyPendingMicros, entitlements.weeklyLimitMicros),
+    resetsAt: entitlements.weeklyResetAt.toISOString(),
+  }
+}
+
+export function fiveHourLimitSummary(entitlements: FiveHourLimitInput) {
+  if (entitlements.fiveHourRemainingPercentage === null) return null
+  return {
+    ...fiveHourSummaryPercentages(entitlements),
+    resetsAt: entitlements.fiveHourResetAt?.toISOString() ?? null,
+  }
+}
+
+/** Plan usage limits as percentages only, for native apps that must not show balances or prices. */
+export function usageLimitsResponse(
+  entitlements: WeeklyLimitInput & FiveHourLimitInput & Pick<BillingEntitlements, 'plan'>,
+  customLimits: ReturnType<typeof customLimitSummary>[],
+  { subscription = null, plans = null }: Partial<Pick<UsageLimits, 'subscription' | 'plans'>> = {},
+): UsageLimits {
+  const bar = <T extends { remainingPercentage: number; availableBarPercentage: number; pendingBarPercentage: number; resetsAt: string | null }>(limit: T) => ({
+    remainingPercentage: limit.remainingPercentage,
+    availableBarPercentage: limit.availableBarPercentage,
+    pendingBarPercentage: limit.pendingBarPercentage,
+    resetsAt: limit.resetsAt,
+  })
+  const weekly = weeklyLimitSummary(entitlements)
+  const fiveHour = fiveHourLimitSummary(entitlements)
+  return usageLimitsSchema.parse({
+    plan: entitlements.plan,
+    subscription,
+    plans,
+    weekly: weekly ? bar(weekly) : null,
+    fiveHour: fiveHour ? bar(fiveHour) : null,
+    custom: customLimits.map((limit) => ({
+      ...bar(limit),
+      id: limit.id,
+      name: limit.name,
+      period: limit.period,
+      coversExtras: limit.coversExtras,
+      models: limit.models,
+    })),
+  })
+}
+
+/** Plan storage and the Fat Pool share, which the native apps use to describe the plans they sell. */
+export function usageLimitsPlans(settings: Pick<ReturnType<typeof parseBillingSettings>, 'babyStorageLimitBytes' | 'eightStorageLimitBytes' | 'fatStorageLimitBytes' | 'fatSharedWeeklyPercent'>): NonNullable<UsageLimits['plans']> {
+  return {
+    storageLimitBytes: {
+      baby: settings.babyStorageLimitBytes,
+      eight: settings.eightStorageLimitBytes,
+      fat: settings.fatStorageLimitBytes,
+    },
+    fatSharedWeeklyPercent: settings.fatSharedWeeklyPercent,
+  }
+}
+
+async function loadCustomLimitSummaries(userId: string, plan: BillingEntitlements['plan']) {
+  return db.transaction(async (tx) => {
+    const usage = await loadCustomAllowances(tx, { userId, plan })
+    const modelNames = await customLimitModelNames(tx, usage)
+    return usage.map((limit) => customLimitSummary(limit, modelNames))
+  })
+}
+
 export async function registerBillingRoutes(app: FastifyInstance): Promise<void> {
   const config = getConfig()
   if (!config.PULPO_BILLING_ENABLED) return
@@ -185,15 +289,8 @@ export async function registerBillingRoutes(app: FastifyInstance): Promise<void>
     const settings = parseBillingSettings(billingSetting?.value)
     const dailySpend = await db.transaction((tx) => loadDailySpend(tx, { userId: user.id, role: user.role, weeklyLimitMicros: entitlements.weeklyLimitMicros }))
     const sharedAllowance = poolBalance ? await db.transaction((tx) => loadOwnerSharedAllowance(tx, user.id, entitlements, settings)) : null
-    const customLimits = await db.transaction(async (tx) => {
-      const usage = await loadCustomAllowances(tx, { userId: user.id, plan: entitlements.plan })
-      const modelNames = await customLimitModelNames(tx, usage)
-      return usage.map((limit) => customLimitSummary(limit, modelNames))
-    })
+    const customLimits = await loadCustomLimitSummaries(user.id, entitlements.plan)
     const subscription = selectSummarySubscription(subscriptions, entitlements.subscriptionPlan)
-    const fiveHour = entitlements.fiveHourRemainingPercentage === null
-      ? null
-      : fiveHourSummaryPercentages(entitlements)
     return {
       plan: entitlements.plan,
       planOverridden: entitlements.planOverridden,
@@ -203,17 +300,8 @@ export async function registerBillingRoutes(app: FastifyInstance): Promise<void>
       poolBalanceMicros: poolBalance?.balanceMicros ?? null,
       poolBalancePendingMicros: poolBalance?.pendingMicros ?? null,
       availablePoolBalanceMicros: poolBalance?.availableMicros ?? null,
-      weekly: entitlements.weeklyRemainingPercentage === null ? null : {
-        remainingPercentage: entitlements.weeklyRemainingPercentage,
-        availableBarPercentage: billingLimitPercentage(entitlements.weeklyRemainingMicros, entitlements.weeklyLimitMicros),
-        pendingMicros: entitlements.weeklyPendingMicros,
-        pendingBarPercentage: billingLimitPercentage(entitlements.weeklyPendingMicros, entitlements.weeklyLimitMicros),
-        resetsAt: entitlements.weeklyResetAt.toISOString(),
-      },
-      fiveHour: fiveHour ? {
-        ...fiveHour,
-        resetsAt: entitlements.fiveHourResetAt?.toISOString() ?? null,
-      } : null,
+      weekly: weeklyLimitSummary(entitlements),
+      fiveHour: fiveHourLimitSummary(entitlements),
       // How much of this user's weekly usage pool members can still draw on.
       shared: sharedAllowance ? sharedAllowanceBar(sharedAllowance) : null,
       sharedWeeklyPercent: settings.fatSharedWeeklyPercent,
@@ -227,6 +315,7 @@ export async function registerBillingRoutes(app: FastifyInstance): Promise<void>
         fat: settings.fatStorageLimitBytes,
       },
       subscription: subscription ? {
+        provider: subscription.provider,
         // The plan whose benefits apply now; `pendingPlan` is the price the next renewal bills.
         plan: subscriptionPaidPlan(subscription) === 'fat' ? 'fat' : 'eight',
         pendingPlan: subscriptionPendingPlan(subscription),
@@ -234,16 +323,16 @@ export async function registerBillingRoutes(app: FastifyInstance): Promise<void>
         cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
         currentPeriodEnd: subscription.currentPeriodEnd?.toISOString() ?? null,
       } : null,
+      appStoreSubscriptionRenews: hasRenewingAppStoreSubscription(subscriptions),
       autoTopUp,
       payments: orders.map((order) => ({
         id: order.providerPaymentId,
+        provider: order.provider,
         kind: isCreditOrderReason(order.billingReason) ? 'credits' : 'subscription',
         automatic: order.billingReason === 'auto_top_up',
-        plan: order.providerProductId === config.STRIPE_FAT_PRICE_ID
-          ? 'fat'
-          : order.providerProductId === config.STRIPE_EIGHT_PRICE_ID
-            ? 'eight'
-            : null,
+        plan: order.provider === 'app_store'
+          ? appStorePlanForProduct(order.providerProductId)
+          : planForPriceId(order.providerProductId),
         requestedCreditCents: order.requestedCreditCents,
         amountCents: order.totalAmountCents,
         taxCents: order.taxAmountCents,
@@ -251,6 +340,26 @@ export async function registerBillingRoutes(app: FastifyInstance): Promise<void>
         createdAt: order.createdAt.toISOString(),
       })),
     }
+  })
+
+  // The native apps show plan limits from here: it carries no balances, prices, or payments.
+  app.get('/api/billing/limits', async (request) => {
+    const user = requireUser(request)
+    const [entitlements, subscriptions, [billingSetting]] = await Promise.all([
+      getBillingEntitlements(user.id),
+      db.select().from(billingSubscriptions).where(eq(billingSubscriptions.userId, user.id))
+        .orderBy(desc(billingSubscriptions.updatedAt)),
+      db.select({ value: applicationSettings.value }).from(applicationSettings)
+        .where(eq(applicationSettings.key, 'billing')).limit(1),
+    ])
+    return usageLimitsResponse(
+      entitlements,
+      await loadCustomLimitSummaries(user.id, entitlements.plan),
+      {
+        subscription: usageLimitsSubscription(subscriptions, entitlements.subscriptionPlan),
+        plans: usageLimitsPlans(parseBillingSettings(billingSetting?.value)),
+      },
+    )
   })
 
   app.post('/api/billing/credit-quote', {
@@ -336,6 +445,33 @@ export async function registerBillingRoutes(app: FastifyInstance): Promise<void>
     const status = resolvedCheckoutStatus(checkout?.status, order?.status)
     if (!ownerId || ownerId !== user.id || !status) throw new AppError(404, 'checkout_not_found', 'Checkout not found')
     return { status }
+  })
+
+  // The app sends this as `appAccountToken` with every purchase, so Apple's records name the account.
+  app.get('/api/billing/app-store/account-token', async (request) => {
+    const user = requireUser(request)
+    if (!appStoreBillingEnabled(config)) throw new AppError(404, 'app_store_billing_disabled', 'App Store billing is not available')
+    return { token: await appStoreAccountToken(user.id) }
+  })
+
+  // The app reports purchases, renewals it sees, and restored purchases here.
+  app.post('/api/billing/app-store/transactions', {
+    config: { rateLimit: { max: 30, timeWindow: '1 minute' } },
+  }, async (request) => {
+    const user = requireUser(request)
+    if (!appStoreBillingEnabled(config)) throw new AppError(404, 'app_store_billing_disabled', 'App Store billing is not available')
+    const { signedTransaction } = z.object({ signedTransaction: z.string().min(1).max(20_000) }).parse(request.body)
+    return syncAppStorePurchase(user.id, signedTransaction)
+  })
+
+  // App Store Server Notifications V2. Apple retries anything but a 2xx response.
+  app.post('/api/billing/webhooks/app-store', async (request, reply) => {
+    if (!appStoreBillingEnabled(config)) throw new AppError(404, 'app_store_billing_disabled', 'App Store billing is not available')
+    const parsed = z.object({ signedPayload: z.string().min(1).max(100_000) }).safeParse(request.body)
+    if (!parsed.success) throw new AppError(400, 'invalid_webhook', 'Invalid webhook request')
+    await processAppStoreNotification(parsed.data.signedPayload)
+    reply.code(200)
+    return { received: true }
   })
 
   app.post('/api/billing/webhooks/stripe', async (request, reply) => {

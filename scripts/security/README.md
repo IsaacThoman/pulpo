@@ -100,6 +100,36 @@ parents, and ordinary expansion, escaping, and glob matching. Replace the
 local fork and override with a published fixed braces release once available,
 then rerun these tests and both full and production audits.
 
+## Temporary decode-uri-component fork
+
+As of October 30, 2026, Expo Router 57 parses deep-link and URL query strings
+with query-string 7.1.3, which requests decode-uri-component `^0.2.2`. Every
+0.2.x release is affected by
+[GHSA-vcc3-ghjq-m6fr](https://github.com/advisories/GHSA-vcc3-ghjq-m6fr) and
+[GHSA-qr28-fpjm-wq7f](https://github.com/advisories/GHSA-qr28-fpjm-wq7f).
+Malformed percent-encoded runs make the fallback decoder superlinear: about
+3 KB of input blocks the JavaScript thread for five seconds, and longer input
+overflows the stack. The fixed 0.5.1 release is ESM-only, so query-string 7
+cannot `require` it, and no Expo Router 57 release drops query-string 7.
+
+The root override selects the local `@pulpo/decode-uri-component` fork in
+`vendor/decode-uri-component`. Its decoder and MIT license are copied from the
+published [0.5.1 release](https://www.npmjs.com/package/decode-uri-component/v/0.5.1).
+The runtime changes are a CommonJS export and the 0.2.x conversion of `+` to a
+space, which query-string 7 was written against. Well-formed input still uses
+the built-in `decodeURIComponent`. For malformed runs, 0.5.1's
+corrected output replaces some of 0.2.2's inconsistent output: 0.2.2 sometimes
+left valid neighboring sequences encoded or decoded a sequence twice.
+
+Regression tests resolve the decoder through Expo Router's query-string copy,
+then decode malformed runs directly, through `queryString.parse`, and through
+Expo Router's `getStateFromPath`. Each runs in a VM with a timeout so a
+superlinear hang fails safely; the previous 0.2.2 release times out at 1,000
+repetitions and overflows the stack at 20,000. They also cover the 0.2.x
+decoding contract and ordinary query parsing. Replace the fork and override
+when Expo Router no longer depends on query-string 7, then rerun these tests
+and both full and production audits.
+
 ## Fastify multipart parser
 
 The lockfile updates `@fastify/busboy` from 3.2.0 to 3.2.2 within

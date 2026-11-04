@@ -25,6 +25,10 @@ describe('full backup format', () => {
     expect(FULL_BACKUP_EXPLICIT_COLUMNS.chat_turn_embeddings).toContain('chunk_index')
   })
 
+  it('accepts full backups created before message reports were introduced', () => {
+    expect(OPTIONAL_TABLES_IN_LEGACY_BACKUPS).toContain('message_reports')
+  })
+
   it('accepts full backups created before episodic memory was introduced', () => {
     expect(OPTIONAL_TABLES_IN_LEGACY_BACKUPS).toEqual(expect.arrayContaining([
       'diagnostic_policy', 'provider_diagnostics', 'image_models', 'image_generation_requests',

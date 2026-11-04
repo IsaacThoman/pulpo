@@ -54,6 +54,8 @@ interface AdminBillingUser {
   dailySpentMicros: number
   dailyLimitOverridden: boolean
   hold: { holdAt: string; holdReason: string | null; holdReference: string | null } | null
+  /** Older servers omit it. */
+  appStoreSandboxAllowed?: boolean
 }
 
 const usersViewSchema = z.object({
@@ -121,7 +123,7 @@ function AdminUsersTable({ storageKey }: { storageKey: string | null }) {
   useEffect(() => { void loadAdmin() }, [loadAdmin])
   const billingUsersQuery = useQuery({
     queryKey: ['admin-billing-users'],
-    queryFn: () => apiRequest<{ data: AdminBillingUser[] }>('/api/admin/billing/users'),
+    queryFn: () => apiRequest<{ data: AdminBillingUser[]; appStoreSandbox?: boolean }>('/api/admin/billing/users'),
     enabled: billingEnabled,
   })
   const billingByUser = new Map(billingUsersQuery.data?.data.map((row) => [row.userId, row]) ?? [])
@@ -439,7 +441,9 @@ function AdminUsersTable({ storageKey }: { storageKey: string | null }) {
         key={editUser.id}
         user={editUser}
         billingEnabled={billingEnabled}
+        appStoreSandboxAllowed={billingUsersQuery.data?.appStoreSandbox ? billingByUser.get(editUser.id)?.appStoreSandboxAllowed ?? false : null}
         onSave={patchUser}
+        onBillingSaved={() => void billingUsersQuery.refetch()}
         onClose={() => setEditUser(null)}
       />}
     </div>
@@ -467,7 +471,7 @@ function InviteQuotaCell({ user, onChanged }: { user: MonitorUser; onChanged: ()
 }
 
 function planLabel(plan: AdminBillingUser['plan']): string {
-  return plan === 'fat' ? 'Le Pulpo Fat' : plan === 'eight' ? 'Pulpo Eight' : 'Pulpo Baby'
+  return plan === 'fat' ? 'Pulpo Fat' : plan === 'eight' ? 'Pulpo Eight' : 'Pulpo Baby'
 }
 
 function BillingPlanCell({ row, onChanged }: { row: AdminBillingUser | undefined; onChanged: () => void }) {

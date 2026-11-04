@@ -1,11 +1,12 @@
-import { decodePayloadRow, encodePayloadRow } from '../database/lossless-json.js'
+import { encodePayloadRow } from '../database/lossless-json.js'
 import { createHash, randomInt, randomUUID } from 'node:crypto'
 import { createReadStream } from 'node:fs'
 import { mkdtemp, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { and, eq, getTableName, is, ne, sql } from 'drizzle-orm'
+import { and, eq, getTableName, inArray, is, ne, sql } from 'drizzle-orm'
 import { getTableConfig, PgTable } from 'drizzle-orm/pg-core'
+import type { BackupSnapshotManifest } from '@pulpo/contracts'
 import * as schema from '../database/schema.js'
 import { db } from '../database/client.js'
 import { attachments, backupJobs, catalogIcons, fileNodes, fileVersions, speechModels, users } from '../database/schema.js'
@@ -16,30 +17,37 @@ import { fillMissingUsernames } from '../profile/username.js'
 import { markExpiredChatsForPurge, purgePendingChats } from '../chats/trash.js'
 import {
   applyFullBackupCompatibilityDefaults,
-  scrubFullBackupDetailedPayloads,
   FULL_BACKUP_EXPLICIT_COLUMNS,
-  FULL_BACKUP_BINARY_COLUMNS,
   FULL_BACKUP_TABLES,
   legacyChatFolderRows,
   OPTIONAL_TABLES_IN_LEGACY_BACKUPS,
   type FullBackupTable,
 } from './backup-format.js'
 import { stageBackupBlob, writeBackupArchive, type BackupArchiveEntry } from './backup-archive.js'
-import { writeBackupDatabase } from './backup-database.js'
-import { projectFullBackup, type FullBackupDatabase } from './backup-projection.js'
+import { exportBackupDatabase } from './backup-export.js'
 import { B2BackupStore } from './b2-backup-store.js'
 import { ageRecipientDetails, readStoredBackupSettings, resolveBackupSettings } from './backup-settings.js'
 import { createAgeEncryptionStream } from './backup-encryption.js'
+import { ensureOffsiteBlobs } from './backup-blobs.js'
 import { extractRestoreArchive, readSmallRestoreTable, restoreBatches, restoreRows, splitRestoreDatabase, type RestoreRow } from './restore-archive.js'
 import { finishRestoreUpload, openRestoreUpload } from './restore-uploads.js'
 
+const LOCK_SAFETY_MARGIN_MS = 3_600_000
 const json = (value: unknown) => JSON.stringify(value, (_, item) => typeof item === 'bigint' ? item.toString() : item)
 const backupColumns = new Map((Object.values(schema) as unknown[]).filter((value): value is PgTable => is(value, PgTable))
   .map(table => [getTableName(table), getTableConfig(table).columns.filter(column => !column.generated).map(column => column.name)]))
 
+/** Offsite locks are fixed when a job is queued; a run delayed past them must not upload. */
+function assertLockAhead(lockedUntil: Date): void {
+  if (lockedUntil.getTime() - Date.now() < LOCK_SAFETY_MARGIN_MS) {
+    throw new Error('This backup was delayed past its retention window; the next scheduled run will replace it')
+  }
+}
+
 export async function createFullBackup(jobId: string, finalAttempt = true): Promise<void> {
   const [job] = await db.select().from(backupJobs).where(eq(backupJobs.id, jobId)).limit(1)
-  if (!job) return
+  // A leftover queue entry must not revive a backup that already finished or was given up on.
+  if (!job || (job.status !== 'queued' && job.status !== 'in_progress')) return
   await db.update(backupJobs).set({ status: 'in_progress', progress: 1, updatedAt: new Date() }).where(eq(backupJobs.id, jobId))
   const offsite = job.destination === 'backblaze_b2'
   const objectKey = offsite ? job.objectKey : `backups/${job.userId}/${job.id}.tar.gz`
@@ -48,6 +56,7 @@ export async function createFullBackup(jobId: string, finalAttempt = true): Prom
   let offsiteStore: B2BackupStore | undefined
   let offsiteRecipient: string | undefined
   let offsiteRecipientFingerprint: string | undefined
+  let offsitePrefix: string | undefined
   try {
     if (!objectKey) throw new Error('Backup object key is missing')
     if (offsite) {
@@ -60,19 +69,30 @@ export async function createFullBackup(jobId: string, finalAttempt = true): Prom
         throw new Error('Age recipient changed while this backup was queued')
       }
       if (!job.lockedUntil) throw new Error('Backup retention date is missing')
+      assertLockAhead(job.lockedUntil)
       offsiteStore = new B2BackupStore(settings)
       offsiteRecipient = settings.recipient
       offsiteRecipientFingerprint = recipient.fingerprint
+      offsitePrefix = settings.prefix
       const existing = await offsiteStore.head(objectKey)
       if (existing) {
         if (existing.jobId !== job.id || existing.recipientFingerprint !== recipient.fingerprint) {
           throw new Error('Backblaze object key is already occupied by another backup')
         }
-        await db.update(backupJobs).set({
-          status: 'completed', progress: 100, archiveSizeBytes: existing.sizeBytes,
-          completedAt: new Date(), error: null, updatedAt: new Date(),
-        }).where(eq(backupJobs.id, jobId))
-        return
+        // An earlier attempt may have stopped before confirming the lock. Replace
+        // an unlocked object; a locked one refuses deletion and fails the job.
+        const store = offsiteStore
+        const locked = await store.verifyRetention(objectKey, job.lockedUntil).then(() => true, async (error: unknown) => {
+          await store.delete(objectKey).catch(() => { throw error })
+          return false
+        })
+        if (locked) {
+          await db.update(backupJobs).set({
+            status: 'completed', progress: 100, archiveSizeBytes: existing.sizeBytes,
+            completedAt: new Date(), error: null, updatedAt: new Date(),
+          }).where(eq(backupJobs.id, jobId))
+          return
+        }
       }
     }
     try {
@@ -86,21 +106,27 @@ export async function createFullBackup(jobId: string, finalAttempt = true): Prom
     }
     temporaryDirectory = await mkdtemp(join(tmpdir(), 'pulpo-backup-'))
     const archivePath = join(temporaryDirectory, `${job.id}.tar.gz`)
-    const { database: rawDatabase, avatarBlobRows, iconRows, speechBlobRows, fileBlobRows } = await db.transaction(async (tx) => {
-      const database: Record<string, unknown[]> = {}
-      for (const [index, table] of FULL_BACKUP_TABLES.entries()) {
-        const columns = FULL_BACKUP_EXPLICIT_COLUMNS[table]
-        database[table] = [...await tx.execute(sql.raw(`select ${columns?.join(', ') ?? '*'} from ${table}`))].map(row => {
-          const decoded = decodePayloadRow(table, row)
-          for (const column of FULL_BACKUP_BINARY_COLUMNS[table] ?? []) {
-            if (decoded[column] != null) decoded[column] = `\\x${Buffer.from(decoded[column] as Uint8Array).toString('hex')}`
-          }
-          return decoded
-        })
+    const uploadOffsite = async (lockedUntil: Date) => {
+      if (!offsiteStore || !offsiteRecipient || !offsiteRecipientFingerprint) throw new Error('Offsite backup configuration is unavailable')
+      const inputSize = (await stat(archivePath)).size
+      await db.update(backupJobs).set({ progress: 92, updatedAt: new Date() }).where(eq(backupJobs.id, jobId))
+      // putEncrypted releases the archive on failure, so nothing may fail between opening it and the upload.
+      const encrypted = await createAgeEncryptionStream(createReadStream(archivePath), inputSize, offsiteRecipient)
+      await offsiteStore.putEncrypted(objectKey, encrypted.body, encrypted.sizeBytes, job.id, offsiteRecipientFingerprint, lockedUntil)
+      uploaded = true
+      await db.update(backupJobs).set({
+        status: 'completed', progress: 100, archiveSizeBytes: encrypted.sizeBytes,
+        archiveChecksum: await encrypted.checksum, completedAt: new Date(), error: null, updatedAt: new Date(),
+      }).where(eq(backupJobs.id, jobId))
+    }
+    const databasePath = join(temporaryDirectory, 'database.json')
+    const { attachmentBlobs, avatarBlobRows, iconRows, speechBlobRows, fileBlobRows } = await db.transaction(async (tx) => {
+      // Rows stream to disk: the whole database no longer fits in the worker's heap.
+      const attachmentBlobs = await exportBackupDatabase(tx, databasePath, async (index) => {
         await db.update(backupJobs).set({ progress: Math.round(((index + 1) / FULL_BACKUP_TABLES.length) * 55), updatedAt: new Date() }).where(eq(backupJobs.id, jobId))
-      }
+      })
       return {
-        database,
+        attachmentBlobs,
         avatarBlobRows: await tx.select({ objectKey: users.avatarObjectKey }).from(users).where(sql`${users.avatarObjectKey} is not null`),
         iconRows: await tx.select().from(catalogIcons),
         speechBlobRows: (await tx.select({ previews: speechModels.voicePreviews, assets: speechModels.voiceAssets }).from(speechModels)).flatMap(row => [...row.previews, ...row.assets.flatMap(asset => [asset.clone, asset.watermark].filter((blob): blob is NonNullable<typeof blob> => Boolean(blob)))]),
@@ -108,10 +134,6 @@ export async function createFullBackup(jobId: string, finalAttempt = true): Prom
           .where(and(eq(fileNodes.kind, 'blob'), eq(fileNodes.status, 'ready'))),
       }
     }, { isolationLevel: 'repeatable read', accessMode: 'read only' })
-    const { database, attachmentBlobs } = projectFullBackup(rawDatabase as FullBackupDatabase)
-    scrubFullBackupDetailedPayloads(database)
-    const databasePath = join(temporaryDirectory, 'database.json')
-    await writeBackupDatabase(databasePath, database)
     const databaseSize = (await stat(databasePath)).size
     const blobRows = [
       ...attachmentBlobs,
@@ -124,6 +146,45 @@ export async function createFullBackup(jobId: string, finalAttempt = true): Prom
         { objectKey: icon.monochromeDarkObjectKey, checksum: icon.monochromeDarkChecksum },
       ]),
     ]
+    if (offsite && job.format === 'snapshot') {
+      if (!offsiteStore || !offsiteRecipient || !offsiteRecipientFingerprint || !offsitePrefix || !job.lockedUntil) throw new Error('Offsite backup configuration is unavailable')
+      const lockedUntil = job.lockedUntil
+      let reportedProgress = 55
+      const { blobs, uploadedCount, uploadedBytes } = await ensureOffsiteBlobs({
+        jobId,
+        store: offsiteStore,
+        destination: {
+          endpoint: job.storageEndpoint!, bucket: job.storageBucket!, prefix: offsitePrefix,
+          recipient: offsiteRecipient, recipientFingerprint: offsiteRecipientFingerprint,
+        },
+        lockedUntil,
+        retentionMs: lockedUntil.getTime() - job.createdAt.getTime(),
+        sources: blobRows,
+        directory: temporaryDirectory,
+        readSource: (key) => getBlobStore().getStream(key),
+        onProgress: async (completed, total) => {
+          const progress = 55 + Math.floor((completed / total) * 35)
+          if (progress <= reportedProgress) return
+          reportedProgress = progress
+          await db.update(backupJobs).set({ progress, updatedAt: new Date() }).where(eq(backupJobs.id, jobId))
+        },
+      })
+      console.info(JSON.stringify({
+        level: 'info', service: 'pulpo-worker', event: 'backup.snapshot_blobs', jobId,
+        referenced: blobs.length, uploaded: uploadedCount, uploadedBytes,
+      }))
+      // Cleanup may remove blobs once this lock passes, so never publish a snapshot that late.
+      assertLockAhead(lockedUntil)
+      const manifest: BackupSnapshotManifest = {
+        format: 'pulpo-instance-snapshot', version: 1, createdAt: new Date().toISOString(), tables: [...FULL_BACKUP_TABLES], blobs,
+      }
+      await writeBackupArchive(archivePath, (async function* (): AsyncGenerator<BackupArchiveEntry> {
+        yield { name: 'database.json', body: createReadStream(databasePath), sizeBytes: databaseSize }
+        yield { name: 'manifest.json', body: Buffer.from(json(manifest)) }
+      })())
+      await uploadOffsite(lockedUntil)
+      return
+    }
     async function* archiveEntries(): AsyncGenerator<BackupArchiveEntry> {
       const blobs: Array<{ entry: string; objectKey: string; checksum: string }> = []
       const includedKeys = new Set<string>()
@@ -144,16 +205,8 @@ export async function createFullBackup(jobId: string, finalAttempt = true): Prom
     }
     const { sizeBytes: archiveSizeBytes, checksum: archiveChecksum } = await writeBackupArchive(archivePath, archiveEntries())
     if (offsite) {
-      if (!offsiteStore || !offsiteRecipient || !offsiteRecipientFingerprint || !job.lockedUntil) throw new Error('Offsite backup configuration is unavailable')
-      const inputSize = (await stat(archivePath)).size
-      const encrypted = await createAgeEncryptionStream(createReadStream(archivePath), inputSize, offsiteRecipient)
-      await db.update(backupJobs).set({ progress: 92, updatedAt: new Date() }).where(eq(backupJobs.id, jobId))
-      await offsiteStore.putEncrypted(objectKey, encrypted.body, encrypted.sizeBytes, job.id, offsiteRecipientFingerprint, job.lockedUntil)
-      uploaded = true
-      await db.update(backupJobs).set({
-        status: 'completed', progress: 100, archiveSizeBytes: encrypted.sizeBytes,
-        archiveChecksum: await encrypted.checksum, completedAt: new Date(), error: null, updatedAt: new Date(),
-      }).where(eq(backupJobs.id, jobId))
+      if (!job.lockedUntil) throw new Error('Offsite backup configuration is unavailable')
+      await uploadOffsite(job.lockedUntil)
     } else {
       await getBlobStore().putStream(objectKey, createReadStream(archivePath), {
         contentType: 'application/gzip', contentLength: archiveSizeBytes, contentDisposition: 'attachment',
@@ -313,6 +366,9 @@ export async function restoreFullBackup(jobId: string): Promise<void> {
     ]
     importStarted = true
     await db.transaction(async (tx) => {
+      // Offsite objects outlive this database. Keep their history so retained
+      // snapshots stay tracked and are deleted, with their blobs, on schedule.
+      const offsiteJobs = await tx.select().from(backupJobs).where(and(eq(backupJobs.destination, 'backblaze_b2'), ne(backupJobs.id, jobId)))
       await tx.delete(backupJobs).where(ne(backupJobs.id, jobId))
       await tx.execute(sql.raw(`truncate table ${[...FULL_BACKUP_TABLES].reverse().join(', ')} restart identity cascade`))
       // One final INSERT lets PostgreSQL validate self-referencing parents after
@@ -323,6 +379,16 @@ export async function restoreFullBackup(jobId: string): Promise<void> {
         if (table === 'file_nodes') await tx.execute(sql`insert into file_nodes select * from pulpo_restore_file_nodes`)
         if (table === 'users') {
           await tx.insert(backupJobs).values({ ...job, userId: restoredAdminId!, status: 'in_progress', progress: 40, error: null, updatedAt: new Date() })
+          const requesters = [...new Set(offsiteJobs.flatMap(offsiteJob => offsiteJob.userId ? [offsiteJob.userId] : []))]
+          const restoredUsers = new Set(requesters.length
+            ? (await tx.select({ id: users.id }).from(users).where(inArray(users.id, requesters))).map(user => user.id)
+            : [])
+          // Batch to stay under PostgreSQL's bind-parameter limit with years of history.
+          for (let start = 0; start < offsiteJobs.length; start += 500) {
+            await tx.insert(backupJobs).values(offsiteJobs.slice(start, start + 500).map(offsiteJob => ({
+              ...offsiteJob, userId: offsiteJob.userId && restoredUsers.has(offsiteJob.userId) ? offsiteJob.userId : null,
+            })))
+          }
         }
         await tx.update(backupJobs).set({ progress: 40 + Math.round(((index + 1) / FULL_BACKUP_TABLES.length) * 55), updatedAt: new Date() }).where(eq(backupJobs.id, jobId))
       }

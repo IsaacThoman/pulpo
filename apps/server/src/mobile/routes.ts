@@ -15,6 +15,7 @@ import { DOC_SCHEMA_VERSION } from '@pulpo/client-core/doc-schema'
 import { db } from '../database/client.js'
 import { applicationSettings, passwordCredentials, users } from '../database/schema.js'
 import { getConfig } from '../config.js'
+import { acceptedAppStoreEnvironments } from '../billing/app-store.js'
 import { AppError, unauthorized } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { parseAuthSettings, parseDictationSettings } from '../settings/application-settings.js'
@@ -77,7 +78,17 @@ export async function registerMobileRoutes(app: FastifyInstance): Promise<void> 
         folders: true,
         twoFactorAuth: true,
         passkeys: true,
+        messageReports: auth.messageReportsEnabled,
+        usageLimits: config.PULPO_BILLING_ENABLED,
         files: { enabled: auth.filesEnabled, docSchemaVersion: DOC_SCHEMA_VERSION },
+        appStoreBilling: acceptedAppStoreEnvironments(config).length
+          ? {
+            environments: acceptedAppStoreEnvironments(config),
+            ...(config.APP_STORE_EIGHT_PRODUCT_ID && config.APP_STORE_FAT_PRODUCT_ID
+              ? { products: { eight: config.APP_STORE_EIGHT_PRODUCT_ID, fat: config.APP_STORE_FAT_PRODUCT_ID } }
+              : {}),
+          }
+          : null,
       },
     })
   })

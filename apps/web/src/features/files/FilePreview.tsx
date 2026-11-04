@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { FileNode } from '@pulpo/contracts'
 import { Loader2 } from 'lucide-react'
+import { parseQuiz } from '@pulpo/client-core/quiz'
 import { Markdown } from '@/components/chat/Markdown'
+import { QuizCard } from '@/components/chat/QuizCard'
 import { ui } from '@/i18n/ui'
 import { cn } from '@/lib/utils'
 import { fetchFileBlob, fileUrl, isApiUrl } from './api'
@@ -13,6 +15,17 @@ type PreviewState =
   | { status: 'unsupported' }
   | { status: 'url'; url: string }
   | { status: 'text'; text: string }
+
+/** A `.quiz` file as a quiz, or as text when it isn't one. Progress is kept per file revision. */
+function QuizFilePreview({ node, text }: { node: FileNode; text: string }) {
+  const quiz = useMemo(() => parseQuiz(text), [text])
+  if (!quiz) return <pre className="overflow-auto p-4 font-mono text-xs whitespace-pre-wrap">{text}</pre>
+  return (
+    <div className="mx-auto w-full max-w-3xl px-6 py-4">
+      <QuizCard quiz={quiz} progressKey={`file:${node.id}:${node.revision}`} saveable={false} className="my-0" />
+    </div>
+  )
+}
 
 /**
  * Inline preview of an uploaded file: images, PDFs, media, and text. Used by the side panel and
@@ -32,7 +45,7 @@ export function FilePreviewBody({ node }: { node: FileNode }) {
     setState({ status: 'loading' })
     void (async () => {
       try {
-        if (kind === 'markdown' || kind === 'text') {
+        if (kind === 'markdown' || kind === 'text' || kind === 'quiz') {
           const text = await (await fetchFileBlob(node)).text()
           if (!cancelled) setState({ status: 'text', text })
           return
@@ -75,6 +88,7 @@ export function FilePreviewBody({ node }: { node: FileNode }) {
       {state.status === 'url' && kind === 'audio' && <audio src={state.url} controls className="m-6 w-[calc(100%-3rem)]" />}
       {state.status === 'text' && !state.text.trim() && <p className="p-8 text-center text-sm text-muted-foreground">{ui("This file is empty.")}</p>}
       {state.status === 'text' && state.text.trim() && kind === 'markdown' && <div className="px-6 py-4"><Markdown content={state.text} /></div>}
+      {state.status === 'text' && state.text.trim() && kind === 'quiz' && <QuizFilePreview node={node} text={state.text} />}
       {state.status === 'text' && state.text.trim() && kind === 'text' && <pre className="overflow-auto p-4 font-mono text-xs whitespace-pre-wrap">{state.text}</pre>}
     </>
   )

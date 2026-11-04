@@ -12,6 +12,7 @@ import {
   ReceiptText,
   RefreshCw,
   ShieldCheck,
+  Smartphone,
   Wallet,
   UsersRound,
   Zap,
@@ -21,7 +22,7 @@ import { formatBalance, formatDate } from '@/lib/format'
 import { creditCentsFromInput } from '@/lib/billing-pricing'
 import { apiRequest } from '@/lib/api'
 import { openExternalUrl } from '@/lib/runtime'
-import { autoTopUpActionLabel, autoTopUpSettingsError, billingPlanName, defaultAutoTopUpSettings, fetchBillingSummary, formatPlanStorage, managedBillingPlan, openBillingPortal, paymentStatusLabel, pendingBillingPlan, planChoiceDisabled, planChoiceLabel, saveAutoTopUpSettings, type BillingPlan } from '@/lib/billing'
+import { APP_STORE_SUBSCRIPTIONS_URL, appStoreSubscriptionSubtitle, autoTopUpActionLabel, autoTopUpSettingsError, billedByAppStore, billingPlanName, billingPlanTextClass, defaultAutoTopUpSettings, fetchBillingSummary, formatPlanStorage, managedBillingPlan, openBillingPortal, paymentStatusLabel, pendingBillingPlan, planChoiceDisabled, planChoiceLabel, saveAutoTopUpSettings, type BillingPlan } from '@/lib/billing'
 import { queryClient } from '@/lib/query-client'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
@@ -209,7 +210,7 @@ export function BillingPage() {
   }
 
   const changePlan = async (plan: BillingPlan) => {
-    if (!summary) return
+    if (!summary || billedByAppStore(summary)) return
     const managedPlan = managedBillingPlan(summary)
     if (plan === managedPlan && !summary.subscription?.cancelAtPeriodEnd && !pendingBillingPlan(summary)) return
     if (!summary.subscription) {
@@ -233,8 +234,11 @@ export function BillingPage() {
 
   const managedPlan = summary ? managedBillingPlan(summary) : 'baby'
   const pendingPlan = summary ? pendingBillingPlan(summary) : null
+  const appStoreBilled = billedByAppStore(summary)
   const subscriptionSubtitle = !summary
     ? ui("Free · No subscription")
+    : appStoreBilled && summary.subscription
+      ? appStoreSubscriptionSubtitle(summary.subscription)
     : summary.subscription?.status === 'past_due'
       ? `Payment past due${summary.subscription.currentPeriodEnd ? ` · ${summary.planOverridden ? 'billing period' : 'access'} through ${formatDate(Date.parse(summary.subscription.currentPeriodEnd))}` : ''}`
       : !summary.subscription
@@ -299,7 +303,7 @@ export function BillingPage() {
             >
               <div>
                 <div className="text-xs font-medium text-muted-foreground">{ui("Your plan")}</div>
-                <div className="mt-1 text-base font-semibold">{billingPlanName(currentPlan)}</div>
+                <div className={cn('mt-1 text-base font-semibold', billingPlanTextClass(currentPlan))}>{billingPlanName(currentPlan)}</div>
                 <div className="mt-0.5 text-sm text-muted-foreground">{subscriptionSubtitle}</div>
                 <SubscriptionUsageBars className="mt-4" weekly={summary?.weekly ?? null} fiveHour={summary?.fiveHour ?? null} shared={summary?.shared ?? null} sharedWeeklyPercent={summary?.sharedWeeklyPercent} custom={summary?.customLimits} />
               </div>
@@ -310,12 +314,22 @@ export function BillingPage() {
                   ))}
                 </ul>
               )}
-              <div className="flex flex-wrap gap-2 pt-1">
-                <Button variant="default" disabled={!summary || submitting} onClick={() => setPlanOpen(true)}>
-                  {subscribed ? ui("Manage plan") : ui("Compare plans")}
-                </Button>
-                {subscribed && <Button variant="ghost" onClick={() => void openPortal()} disabled={submitting}><CreditCard />{ui("Billing portal")}</Button>}
-              </div>
+              {appStoreBilled ? (
+                <div className="space-y-3 pt-1">
+                  <div className="flex items-start gap-2.5 rounded-lg border bg-muted/30 px-3 py-2.5 text-sm">
+                    <Smartphone className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
+                    <p>{ui("Your plan is billed through the App Store. Change or cancel it in Pulpo on your iPhone, or in your Apple account’s subscription settings.")}</p>
+                  </div>
+                  <Button variant="outline" onClick={() => void openExternalUrl(APP_STORE_SUBSCRIPTIONS_URL)}><Smartphone />{ui("Manage in the App Store")}</Button>
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-2 pt-1">
+                  <Button variant="default" disabled={!summary || submitting} onClick={() => setPlanOpen(true)}>
+                    {subscribed ? ui("Manage plan") : ui("Compare plans")}
+                  </Button>
+                  {subscribed && <Button variant="ghost" onClick={() => void openPortal()} disabled={submitting}><CreditCard />{ui("Billing portal")}</Button>}
+                </div>
+              )}
             </PaymentOption>
 
             <PaymentOption
@@ -360,7 +374,7 @@ export function BillingPage() {
               <div className="hidden grid-cols-[minmax(0,1fr)_140px_100px_90px] border-b px-4 py-2.5 text-xs text-muted-foreground sm:grid"><div>{ui("Description")}</div><div>{ui("Date")}</div><div className="text-right">{ui("Amount")}</div><div className="text-right">{ui("Status")}</div></div>
               {summary?.payments.length ? <div className="divide-y">{summary.payments.map((payment) => (
                 <div key={payment.id} className="grid gap-3 px-4 py-3 text-sm sm:grid-cols-[minmax(0,1fr)_140px_100px_90px] sm:items-center">
-                  <div className="flex min-w-0 items-center gap-3"><ReceiptText className="size-4 shrink-0 text-muted-foreground" /><div className="truncate font-medium">{payment.kind === 'credits' ? payment.automatic ? uit`${formatBalance((payment.requestedCreditCents ?? 0) / 100)} auto top-up` : uit`${formatBalance((payment.requestedCreditCents ?? 0) / 100)} credit top-up` : uit`${billingPlanName(payment.plan ?? 'baby')} subscription`}</div></div>
+                  <div className="flex min-w-0 items-center gap-3"><ReceiptText className="size-4 shrink-0 text-muted-foreground" /><div className="truncate font-medium">{payment.kind === 'credits' ? payment.automatic ? uit`${formatBalance((payment.requestedCreditCents ?? 0) / 100)} auto top-up` : uit`${formatBalance((payment.requestedCreditCents ?? 0) / 100)} credit top-up` : payment.provider === 'app_store' ? ui("{{plan}} subscription · App Store", { plan: billingPlanName(payment.plan ?? 'baby') }) : uit`${billingPlanName(payment.plan ?? 'baby')} subscription`}</div></div>
                   <div className="text-muted-foreground">{formatDate(Date.parse(payment.createdAt))}</div>
                   <div className="font-medium tabular-nums sm:text-right">{formatBalance(payment.amountCents / 100)}</div>
                   <div className="text-muted-foreground sm:text-right">{paymentStatusLabel(payment.status)}</div>
@@ -468,7 +482,7 @@ function Quote({ credits, fee, charge }: { credits: number; fee: number; charge:
 function PlanBadge({ plan, overridden, pastDue }: { plan: BillingPlan; overridden: boolean; pastDue: boolean }) {
   const badge = pastDue && !overridden
     ? <Badge variant="destructive">{ui("Past due")}</Badge>
-    : <Badge tabIndex={overridden ? 0 : undefined} variant={plan === 'baby' ? 'outline' : 'secondary'} className={plan === 'fat' ? 'border-pink-500/25 bg-pink-500/15 text-pink-700 dark:text-pink-300' : plan === 'eight' ? 'border-yellow-500/25 bg-yellow-500/15 text-yellow-700 dark:text-yellow-300' : undefined}>{overridden ? ui("Admin granted") : plan === 'baby' ? ui("Not subscribed") : ui("Active")}</Badge>
+    : <Badge tabIndex={overridden ? 0 : undefined} variant={plan === 'baby' ? 'outline' : 'secondary'} className={plan === 'fat' ? 'border-pink-500/25 bg-pink-500/15 text-pink-700 dark:text-pink-300' : plan === 'eight' ? 'border-teal-500/25 bg-teal-500/15 text-teal-700 dark:text-teal-300' : undefined}>{overridden ? ui("Admin granted") : plan === 'baby' ? ui("Not subscribed") : ui("Active")}</Badge>
   if (!overridden) return badge
   return (
     <Tooltip>
@@ -481,8 +495,8 @@ function PlanBadge({ plan, overridden, pastDue }: { plan: BillingPlan; overridde
 function PlanColumn({ plan, current, pendingPlan, cancelAtPeriodEnd, benefits, onChoose, disabled }: { plan: BillingPlan; current: BillingPlan; pendingPlan: BillingPlan | null; cancelAtPeriodEnd: boolean; benefits: string[]; onChoose: () => void; disabled: boolean }) {
   const price = plan === 'baby' ? null : plan === 'eight' ? 8 : 24
   return <div className={cn('flex flex-col', plan === 'baby' ? 'md:pr-5' : plan === 'eight' ? 'md:px-5' : 'md:pl-5')}>
-    <div className="flex items-center gap-2"><img src="/pulpo-smiley.png" alt="" className="size-7" /><Badge variant={plan === 'baby' ? 'outline' : 'secondary'} className={plan === 'eight' ? 'border-yellow-500/25 bg-yellow-500/15 text-yellow-700 dark:text-yellow-300' : plan === 'fat' ? 'border-pink-500/25 bg-pink-500/15 text-pink-700 dark:text-pink-300' : undefined}>{billingPlanName(plan)}</Badge></div>
-    <div className="mt-4 text-2xl font-semibold">{price === null ? ui("Free") : <>${price} <span className="text-sm font-normal text-muted-foreground">{ui("/ month")}</span></>}</div>
+    <h3 className={cn('text-xl font-semibold tracking-tight', billingPlanTextClass(plan))}>{billingPlanName(plan)}</h3>
+    <div className="mt-3 text-2xl font-semibold">{price === null ? ui("Free") : <>${price} <span className="text-sm font-normal text-muted-foreground">{ui("/ month")}</span></>}</div>
     <div className="mt-5 flex-1 space-y-3 text-sm">{benefits.map((benefit) => <div key={benefit} className="flex items-start gap-2"><Check className="mt-0.5 size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />{benefit}</div>)}</div>
     <Button className="mt-6 w-full" variant={plan === 'baby' ? 'outline' : 'default'} disabled={disabled || planChoiceDisabled(plan, current, cancelAtPeriodEnd, pendingPlan)} onClick={onChoose}>{planChoiceLabel(plan, current, cancelAtPeriodEnd, pendingPlan)}</Button>
   </div>

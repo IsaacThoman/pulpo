@@ -12,7 +12,8 @@ await build({
   target: 'node22',
   format: 'esm',
   external: ['commander', 'socket.io-client'],
-  banner: { js: '#!/usr/bin/env node' },
+  // Bundled CommonJS dependencies (tar-stream) require Node builtins at runtime.
+  banner: { js: "#!/usr/bin/env node\nimport { createRequire as __pulpoCreateRequire } from 'node:module'\nconst require = __pulpoCreateRequire(import.meta.url)" },
   define: { __PULPO_CLI_VERSION__: JSON.stringify(version), __PULPO_CLI_BUNDLED__: 'true' },
 })
 await chmod(new URL('../dist/index.js', import.meta.url), 0o755)
