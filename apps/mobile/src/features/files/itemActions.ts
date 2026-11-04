@@ -3,6 +3,7 @@ import { isMarkdownName } from '@pulpo/contracts'
 import { isQuizFileName } from '@pulpo/client-core/quiz'
 import type { ContextMenuAction } from '../../native/ItemContextMenuView'
 import { isTrashFolder } from '../trash/folder'
+import { appearanceActionTitle, hasAppearance } from './appearance'
 import { isBuiltIn, openedKind } from './display'
 
 export type FileItemActionId =
@@ -10,6 +11,7 @@ export type FileItemActionId =
   | 'add-to-chat'
   | 'open-in-new-chat'
   | 'rename'
+  | 'appearance'
   | 'move'
   | 'duplicate'
   | 'pin'
@@ -46,9 +48,12 @@ export function fileItemActions(node: FileNode, context: FileItemActionContext):
     // The Chats folder is the sidebar's own list of chats, so it can't be pinned to it, and the
     // trash isn't stored in Files (as on the web).
     if (node.systemRole !== 'chats' && !isTrashFolder(node)) actions.push({ id: node.pinned ? 'unpin' : 'pin', title: node.pinned ? 'Unpin' : 'Pin', systemImage: node.pinned ? 'pin.slash' : 'pin', section: 2 })
+    // They keep their own icons, but can be given a color (the trash's is a setting).
+    actions.push(appearanceAction(node))
     return actions
   }
   actions.push({ id: 'rename', title: 'Rename', systemImage: 'pencil', section: 2 })
+  if (hasAppearance(node)) actions.push(appearanceAction(node))
   actions.push({ id: 'move', title: 'Move…', systemImage: 'folder', section: 2 })
   if (node.kind !== 'chat') actions.push({ id: 'duplicate', title: 'Duplicate', systemImage: 'plus.square.on.square', section: 2 })
   actions.push({ id: node.pinned ? 'unpin' : 'pin', title: node.pinned ? 'Unpin' : 'Pin', systemImage: node.pinned ? 'pin.slash' : 'pin', section: 2 })
@@ -56,6 +61,11 @@ export function fileItemActions(node: FileNode, context: FileItemActionContext):
   if (context.selectable) actions.push({ id: 'select', title: 'Select', systemImage: 'checkmark.circle', section: 3 })
   actions.push({ id: 'trash', title: node.kind === 'chat' ? 'Delete Chat' : 'Move to Trash', systemImage: 'trash', section: 4, destructive: true })
   return actions
+}
+
+/** Color and Icon… (Color… for a built-in folder), for files and folders as on the web. */
+function appearanceAction(node: FileNode): ContextMenuAction {
+  return { id: 'appearance', title: appearanceActionTitle([node]), systemImage: 'paintpalette', section: 2 }
 }
 
 export type TrashItemActionId = 'open' | 'restore' | 'restore-to' | 'select' | 'delete-forever'

@@ -18,7 +18,7 @@ export const FILE_COLOR_HEX: Record<FileColor, string> = {
 }
 
 /** SF Symbols for the icons an item can be given (the web uses Lucide's of the same names). */
-const ICON_SYMBOLS: Record<FileIcon, string> = {
+export const FILE_ICON_SYMBOLS: Record<FileIcon, string> = {
   star: 'star.fill',
   heart: 'heart.fill',
   bookmark: 'bookmark.fill',
@@ -67,14 +67,15 @@ export function fileIcon(node: IconSubject, fallbackTint = SYSTEM_BLUE): { symbo
     ? { ...node.target, color: node.color ?? node.target.color, icon: node.icon ?? node.target.icon }
     : node
   const tint = source.color ? FILE_COLOR_HEX[source.color] : null
-  if (source.icon) return { symbol: ICON_SYMBOLS[source.icon], tint: tint ?? fallbackTint }
   const kind = source.kind
+  // Built-in folders keep their own icons; they can only be given a color.
   if (kind === 'folder') {
     if (source.id === TRASH_FOLDER_ID) return { symbol: 'trash.fill', tint: tint ?? fallbackTint }
     if (source.systemRole === 'chats') return { symbol: 'bubble.left.and.bubble.right.fill', tint: tint ?? fallbackTint }
     if (source.systemRole === 'archive') return { symbol: 'archivebox.fill', tint: tint ?? fallbackTint }
-    return { symbol: 'folder.fill', tint: tint ?? fallbackTint }
   }
+  if (source.icon) return { symbol: FILE_ICON_SYMBOLS[source.icon], tint: tint ?? fallbackTint }
+  if (kind === 'folder') return { symbol: 'folder.fill', tint: tint ?? fallbackTint }
   if (kind === 'chat') return { symbol: 'bubble.left.fill', tint: tint ?? '#8E8E93' }
   if (kind === 'doc') return { symbol: 'doc.text.fill', tint: tint ?? SYSTEM_BLUE }
   const mime = (source.mimeType ?? '').toLowerCase()

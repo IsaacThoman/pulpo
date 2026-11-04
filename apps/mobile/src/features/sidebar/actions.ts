@@ -1,7 +1,8 @@
 import type { FileNode } from '@pulpo/contracts'
 import type { ContextMenuAction } from '../../native/ItemContextMenuView'
+import { appearanceActionTitle, hasAppearance } from '../files/appearance'
 
-export type SidebarItemActionId = 'new-folder' | 'open' | 'pin' | 'unpin' | 'rename' | 'move' | 'archive' | 'trash'
+export type SidebarItemActionId = 'new-folder' | 'open' | 'pin' | 'unpin' | 'rename' | 'appearance' | 'move' | 'archive' | 'trash'
 
 export interface SidebarItemActionContext {
   /** The row opens a folder in place (a folder, or a shortcut to one). */
@@ -56,8 +57,11 @@ export function sidebarItemActions(node: FileNode, context: SidebarItemActionCon
       ? { id: 'unpin', title: 'Unpin', systemImage: 'pin.slash', section: 1 }
       : { id: 'pin', title: 'Pin', systemImage: 'pin', section: 1 })
   }
-  if (system) return actions
+  // Files and folders can be given a color and icon; built-in folders only a color (as on the web).
+  const appearance: ContextMenuAction | null = hasAppearance(node) ? { id: 'appearance', title: appearanceActionTitle([node]), systemImage: 'paintpalette', section: 1 } : null
+  if (system) return appearance ? [...actions, appearance] : actions
   actions.push({ id: 'rename', title: 'Rename', systemImage: 'pencil', section: 1 })
+  if (appearance) actions.push(appearance)
   actions.push({ id: 'move', title: 'Move to Folder…', systemImage: 'folder', section: 1 })
   if (context.filesEnabled && !context.archived) actions.push({ id: 'archive', title: 'Move to Archive', systemImage: 'archivebox', section: 1 })
   actions.push({ id: 'trash', title: sidebarTrashLabel(node, context.filesEnabled), systemImage: 'trash', section: 2, destructive: true })
