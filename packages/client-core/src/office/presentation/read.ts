@@ -16,6 +16,7 @@ import { readTextBody, type RelationshipResolver } from './text.js'
 import {
   attr,
   boolAttr,
+  checkDepth,
   child,
   childElements,
   intAttr,
@@ -61,6 +62,7 @@ export async function readPresentation(bytes: Uint8Array, options: ReadOptions =
   const mainPart = pkg.mainPart()
   if (!mainPart || !pkg.has(mainPart)) throw new LiveFormatError('corrupt', 'This package has no presentation part')
   const presentation = pkg.xml(mainPart)!.documentElement!
+  checkDepth(presentation)
   if (presentation.namespaceURI?.startsWith(STRICT_NAMESPACE_PREFIX)) {
     throw new LiveFormatError('unsupported', 'Strict Office Open XML presentations are not supported')
   }
@@ -256,6 +258,8 @@ export function readSlide(pkg: OoxmlPackage, part: string, sldId: number | undef
   const document = pkg.xml(part)!
   const root = document.documentElement!
   if (root.localName !== 'sld') throw new LiveFormatError('corrupt', `${part} is not a slide`)
+  // Before anything walks or clones the tree: hostile nesting would otherwise cost quadratic memory.
+  checkDepth(root)
   const rels = relationshipMap(pkg, part)
   const frame = root.cloneNode(true) as XmlElement
   const cSld = child(frame, 'cSld', NS.p)
@@ -474,6 +478,7 @@ function readNotes(pkg: OoxmlPackage, part: string): NotesSnapshot | undefined {
   const document = pkg.xml(part)
   const root = document?.documentElement
   if (!root || root.localName !== 'notes') return undefined
+  checkDepth(root)
   const rels = relationshipMap(pkg, part)
   const body = notesBody(root)
   return {

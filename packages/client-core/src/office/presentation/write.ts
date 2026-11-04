@@ -1,7 +1,6 @@
 import { strToU8 } from 'fflate'
 import { LiveFormatError, type LiveAssetStore } from '../live-format.js'
 import {
-  CONTENT_TYPES_NS,
   CONTENT_TYPES_PATH,
   OoxmlPackage,
   PACKAGE_RELATIONSHIPS_NS,
@@ -23,7 +22,6 @@ import {
   intAttr,
   namespaceDeclarations,
   NS,
-  parseFragment,
   parseXmlDocument,
   path,
   pruneRedundantNamespaces,
@@ -369,7 +367,22 @@ function writeSlide(slide: SlideSnapshot): WrittenPart {
   const treeExtLst = child(tree, 'extLst', NS.p) ?? null
   for (const shape of slide.shapes) tree.insertBefore(buildShapeElement(document, shape, prefixes, table), treeExtLst)
   pruneRedundantNamespaces(root)
-  return { xml: strToU8(serializeDocument(document)), rels: strToU8(table.toXml(part)) }
+  return { xml: strToU8(serializeDocument(document)), rels: sameRelationships(slide.relsSource, part, table) ?? strToU8(table.toXml(part)) }
+}
+
+/** The original relationships bytes, when the rewritten part links to exactly the same things. */
+function sameRelationships(source: Uint8Array | undefined, part: string, table: RelationshipTable): Uint8Array | undefined {
+  if (!source) return undefined
+  try {
+    const pkg = new OoxmlPackage()
+    pkg.set(relationshipsPathFor(part), source)
+    const original = Object.fromEntries(
+      pkg.relationships(part).map((rel) => [rel.id, { type: rel.type, target: rel.targetMode === 'External' ? rel.target : resolveTarget(part, rel.target), ...(rel.targetMode === 'External' ? { external: true } : {}) }]),
+    )
+    return stableStringify(original) === stableStringify(Object.fromEntries(table.entries)) ? source : undefined
+  } catch {
+    return undefined
+  }
 }
 
 /** Keeps the relationship id a slide had for its layout or notes. */
@@ -499,7 +512,7 @@ function addNotesMaster(pkg: OoxmlPackage, mainPart: string): string {
   if (theme) pkg.addRelationship(masterPath, REL_TYPES.theme, relativeTarget(masterPath, themePath))
   pkg.setContentType(masterPath, CONTENT_TYPES.notesMaster)
   pkg.setContentType(themePath, CONTENT_TYPES.theme)
-  const id = pkg.addRelationship(snapshot_main(mainPart), REL_TYPES.notesMaster, relativeTarget(mainPart, masterPath))
+  const id = pkg.addRelationship(mainPart, REL_TYPES.notesMaster, relativeTarget(mainPart, masterPath))
   const presentation = pkg.xml(mainPart)!.documentElement!
   const list = createElement(presentation.ownerDocument as unknown as XmlDocument, 'p:notesMasterIdLst')
   const entry = createElement(presentation.ownerDocument as unknown as XmlDocument, 'p:notesMasterId')
@@ -510,7 +523,6 @@ function addNotesMaster(pkg: OoxmlPackage, mainPart: string): string {
   return masterPath
 }
 
-const snapshot_main = (mainPart: string) => mainPart
 
 interface PresentationLists {
   slides: { sldId: number; part: string }[]
@@ -650,10 +662,17 @@ function writeSections(document: XmlDocument, presentation: XmlElement, sections
   extLst.appendChild(replacement)
 }
 
+/** A macro-free format cannot hold a VBA project: unlink it (garbage collection drops the part) and its content type. */
 function dropMacros(pkg: OoxmlPackage, mainPart: string): void {
   for (const rel of pkg.relationships(mainPart)) {
     if (rel.type !== REL_TYPES.vbaProject) continue
     pkg.removeRelationship(mainPart, rel.id)
+  }
+  const types = pkg.xml(CONTENT_TYPES_PATH)?.documentElement
+  for (const entry of childElements(types)) {
+    if ((attr(entry, 'ContentType') ?? '').includes('vbaProject') || (attr(entry, 'ContentType') ?? '').includes('macroEnabled')) {
+      if (entry.localName === 'Default') types!.removeChild(entry)
+    }
   }
 }
 
@@ -719,7 +738,5 @@ function writeContentTypes(pkg: OoxmlPackage, snapshot: PresentationSnapshot, fo
     else if (extension === 'xml') pkg.ensureDefaultContentType('xml', 'application/xml')
     else pkg.ensureDefaultContentType(extension, snapshot.parts[partPath]?.contentType ?? mimeTypeFor(partPath))
   }
-  void CONTENT_TYPES_NS
 }
 
-export { parseFragment }
