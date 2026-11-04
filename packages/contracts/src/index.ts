@@ -240,10 +240,24 @@ export const usageLimitsSubscriptionSchema = z.object({
 })
 export type UsageLimitsSubscription = z.infer<typeof usageLimitsSubscriptionSchema>
 
+/** What each plan includes, for describing the plans a native app sells. */
+export const usageLimitsPlansSchema = z.object({
+  storageLimitBytes: z.object({
+    baby: z.number().int().nonnegative(),
+    eight: z.number().int().nonnegative(),
+    fat: z.number().int().nonnegative(),
+  }),
+  /** The share of a Pulpo Fat owner's weekly usage their Pool can draw on. */
+  fatSharedWeeklyPercent: z.number().int().min(0).max(100),
+})
+export type UsageLimitsPlans = z.infer<typeof usageLimitsPlansSchema>
+
 export const usageLimitsSchema = z.object({
   plan: z.enum(['baby', 'eight', 'fat']),
   /** Null with no subscription, and from servers older than App Store billing. */
   subscription: usageLimitsSubscriptionSchema.nullable().optional().default(null),
+  /** Null from servers older than App Store billing. */
+  plans: usageLimitsPlansSchema.nullable().optional().default(null),
   weekly: usageLimitPercentagesSchema.nullable(),
   fiveHour: usageLimitPercentagesSchema.nullable(),
   /** Admin-defined allowances the account spends first. */

@@ -33,7 +33,7 @@ const products = [
   { id: 'pulpoEight', displayName: 'Pulpo Eight', description: 'Higher usage limits', displayPrice: '$9.99', periodUnit: 'month', periodValue: 1 },
   { id: 'pulpoFat', displayName: 'Pulpo Fat', description: 'The highest usage limits', displayPrice: '$29.99', periodUnit: 'month', periodValue: 1 },
 ]
-const baby: UsageLimits = { plan: 'baby', subscription: null, weekly: null, fiveHour: null, custom: [] }
+const baby: UsageLimits = { plan: 'baby', subscription: null, plans: null, weekly: null, fiveHour: null, custom: [] }
 const appStoreEight: UsageLimits = {
   ...baby,
   plan: 'eight',
@@ -55,27 +55,19 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.resetAllMocks() })
 
 describe('App Store subscriptions on the Usage screen', () => {
-  it('offers both plans at the App Store’s prices, with the required terms and links', async () => {
-    mount(baby)
-    expect(await screen.findByText('$9.99/month')).toBeTruthy()
-    expect(screen.getByText('$29.99/month')).toBeTruthy()
-    expect(screen.getByLabelText('Upgrade')).toBeTruthy()
-    expect(screen.getByText(/renew automatically each month/)).toBeTruthy()
-    expect(screen.getByText('Terms of Use').getAttribute('href')).toBe('https://help.pulpo.baby/terms-hosted')
-    expect(screen.getByText('Privacy Policy').getAttribute('href')).toBe('https://help.pulpo.baby/privacy-hosted')
-    expect(screen.getByText('Restore Purchases')).toBeTruthy()
-    expect(document.body.textContent).not.toMatch(/credit|balance/i)
-  })
-
-  it('buys a plan, reports it, finishes it, and refreshes the plan', async () => {
+  it('changes plans at the App Store’s prices, with the required terms and links', async () => {
     mocks.kit.purchase.mockResolvedValue({ status: 'purchased', transactionId: '9', originalTransactionId: '9', productId: 'pulpoFat', signedTransaction: 'jws' })
-    mount(baby)
+    mount(appStoreEight)
     fireEvent.click((await screen.findByText('$29.99/month')).closest('button')!)
-    await waitFor(() => expect(mocks.alert).toHaveBeenCalledWith('You’re on Pulpo Fat', 'Your new usage limits apply now.'))
+    await waitFor(() => expect(mocks.alert).toHaveBeenCalledWith('Subscription updated', 'Pulpo Fat applies now.'))
     expect(mocks.kit.purchase).toHaveBeenCalledWith('pulpoFat', '7c9e6679-7425-40de-944b-e07fc1f90ae7')
     expect(mocks.api.syncAppStoreTransaction).toHaveBeenCalledWith('jws')
     expect(mocks.kit.finish).toHaveBeenCalledWith('9')
     expect(onChanged).toHaveBeenCalled()
+    expect(screen.getByText(/renew automatically each month/)).toBeTruthy()
+    expect(screen.getByText('Terms of Use').getAttribute('href')).toBe('https://help.pulpo.baby/terms-hosted')
+    expect(screen.getByText('Privacy Policy').getAttribute('href')).toBe('https://help.pulpo.baby/privacy-hosted')
+    expect(document.body.textContent).not.toMatch(/credit|balance/i)
   })
 
   it('marks the current App Store plan and offers subscription management', async () => {
@@ -88,7 +80,10 @@ describe('App Store subscriptions on the Usage screen', () => {
     await waitFor(() => expect(mocks.kit.showManageSubscriptions).toHaveBeenCalled())
   })
 
-  it('offers no purchases for a subscription billed elsewhere or a plan an administrator set', () => {
+  it('leaves Pulpo Baby to the plan cards, and offers no purchases for a subscription billed elsewhere or a plan an administrator set', () => {
+    mount(baby)
+    expect(document.body.textContent).toBe('')
+    cleanup()
     mount({ ...appStoreEight, subscription: { ...appStoreEight.subscription!, provider: 'stripe' } })
     expect(screen.getByText('Your subscription is managed outside the App Store.')).toBeTruthy()
     expect(screen.queryByText('Restore Purchases')).toBeNull()
@@ -100,7 +95,7 @@ describe('App Store subscriptions on the Usage screen', () => {
 
   it('shows nothing where this build may not buy', () => {
     mocks.offer = null
-    mount(baby)
+    mount(appStoreEight)
     expect(document.body.textContent).toBe('')
   })
 })

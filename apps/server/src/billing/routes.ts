@@ -210,7 +210,7 @@ export function fiveHourLimitSummary(entitlements: FiveHourLimitInput) {
 export function usageLimitsResponse(
   entitlements: WeeklyLimitInput & FiveHourLimitInput & Pick<BillingEntitlements, 'plan'>,
   customLimits: ReturnType<typeof customLimitSummary>[],
-  subscription: UsageLimits['subscription'] = null,
+  { subscription = null, plans = null }: Partial<Pick<UsageLimits, 'subscription' | 'plans'>> = {},
 ): UsageLimits {
   const bar = <T extends { remainingPercentage: number; availableBarPercentage: number; pendingBarPercentage: number; resetsAt: string | null }>(limit: T) => ({
     remainingPercentage: limit.remainingPercentage,
@@ -223,6 +223,7 @@ export function usageLimitsResponse(
   return usageLimitsSchema.parse({
     plan: entitlements.plan,
     subscription,
+    plans,
     weekly: weekly ? bar(weekly) : null,
     fiveHour: fiveHour ? bar(fiveHour) : null,
     custom: customLimits.map((limit) => ({
@@ -234,6 +235,18 @@ export function usageLimitsResponse(
       models: limit.models,
     })),
   })
+}
+
+/** Plan storage and the Fat Pool share, which the native apps use to describe the plans they sell. */
+export function usageLimitsPlans(settings: Pick<ReturnType<typeof parseBillingSettings>, 'babyStorageLimitBytes' | 'eightStorageLimitBytes' | 'fatStorageLimitBytes' | 'fatSharedWeeklyPercent'>): NonNullable<UsageLimits['plans']> {
+  return {
+    storageLimitBytes: {
+      baby: settings.babyStorageLimitBytes,
+      eight: settings.eightStorageLimitBytes,
+      fat: settings.fatStorageLimitBytes,
+    },
+    fatSharedWeeklyPercent: settings.fatSharedWeeklyPercent,
+  }
 }
 
 async function loadCustomLimitSummaries(userId: string, plan: BillingEntitlements['plan']) {
@@ -332,15 +345,20 @@ export async function registerBillingRoutes(app: FastifyInstance): Promise<void>
   // The native apps show plan limits from here: it carries no balances, prices, or payments.
   app.get('/api/billing/limits', async (request) => {
     const user = requireUser(request)
-    const [entitlements, subscriptions] = await Promise.all([
+    const [entitlements, subscriptions, [billingSetting]] = await Promise.all([
       getBillingEntitlements(user.id),
       db.select().from(billingSubscriptions).where(eq(billingSubscriptions.userId, user.id))
         .orderBy(desc(billingSubscriptions.updatedAt)),
+      db.select({ value: applicationSettings.value }).from(applicationSettings)
+        .where(eq(applicationSettings.key, 'billing')).limit(1),
     ])
     return usageLimitsResponse(
       entitlements,
       await loadCustomLimitSummaries(user.id, entitlements.plan),
-      usageLimitsSubscription(subscriptions, entitlements.subscriptionPlan),
+      {
+        subscription: usageLimitsSubscription(subscriptions, entitlements.subscriptionPlan),
+        plans: usageLimitsPlans(parseBillingSettings(billingSetting?.value)),
+      },
     )
   })
 

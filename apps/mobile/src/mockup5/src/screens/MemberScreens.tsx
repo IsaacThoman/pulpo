@@ -1,6 +1,8 @@
 import { ImageGenerationSettings } from '../../../features/image-generation/ImageGenerationSettings';
 import { SpeechSettings } from '../../../features/speech/SpeechSettings';
 import { UsageLimitsSettings } from '../../../features/usage-limits/UsageLimitsSettings';
+import { AppStorePlans } from '../../../features/app-store/AppStorePlans';
+import { useAppStorePlans } from '../../../features/app-store/useAppStorePlans';
 import { MaterialToggleRow } from '../../../platform/MaterialUI';
 import { showActions } from '../../../platform/materialActions';
 import { useSubpageBack } from '../../../platform/useSubpageBack';
@@ -381,6 +383,8 @@ export function SettingsDetailScreen({ navigation, route }: NativeStackScreenPro
   useLayoutEffect(() => {
     if (Platform.OS === 'ios') navigation.setOptions({ title: settingTitles[section] });
   }, [navigation, section]);
+  const appStorePlans = useAppStorePlans(section === 'usage');
+  if (appStorePlans) return <AppStorePlans {...appStorePlans} />;
   if (Platform.OS === 'ios') return <SwiftUIHost key={section === 'data' ? storageLabel : section} modifiers={[tint(theme.blue)]} style={styles.flex}><SwiftUIForm>
     {section === 'general' && <>
       <SwiftUISection title="Appearance">

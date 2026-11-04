@@ -12,6 +12,7 @@ import {
   registerBillingRoutes,
   resolvedCheckoutStatus,
   selectSummarySubscription,
+  usageLimitsPlans,
   usageLimitsResponse,
   usageLimitsSubscription,
 } from './routes.js'
@@ -223,6 +224,7 @@ describe('usage limits for native apps', () => {
     expect(limits).toEqual({
       plan: 'eight',
       subscription: null,
+      plans: null,
       weekly: { remainingPercentage: 60, availableBarPercentage: 60, pendingBarPercentage: 10, resetsAt: '2026-11-09T00:00:00.000Z' },
       fiveHour: { remainingPercentage: 50, availableBarPercentage: 50, pendingBarPercentage: 25, resetsAt: '2026-11-02T15:00:00.000Z' },
       custom: [{
@@ -235,7 +237,13 @@ describe('usage limits for native apps', () => {
 
   it('omits limits the plan does not have', () => {
     expect(usageLimitsResponse({ ...entitlements, plan: 'baby', weeklyRemainingPercentage: null, fiveHourRemainingPercentage: null, fiveHourResetAt: null }, []))
-      .toEqual({ plan: 'baby', subscription: null, weekly: null, fiveHour: null, custom: [] })
+      .toEqual({ plan: 'baby', subscription: null, plans: null, weekly: null, fiveHour: null, custom: [] })
+  })
+
+  it('describes plan storage and the Fat Pool share without prices', () => {
+    const plans = usageLimitsPlans({ babyStorageLimitBytes: 2_147_483_648, eightStorageLimitBytes: 10_737_418_240, fatStorageLimitBytes: 26_843_545_600, fatSharedWeeklyPercent: 50 })
+    expect(plans).toEqual({ storageLimitBytes: { baby: 2_147_483_648, eight: 10_737_418_240, fat: 26_843_545_600 }, fatSharedWeeklyPercent: 50 })
+    expect(usageLimitsResponse({ ...entitlements, plan: 'baby', weeklyRemainingPercentage: null, fiveHourRemainingPercentage: null, fiveHourResetAt: null }, [], { plans }).plans).toEqual(plans)
   })
 })
 
