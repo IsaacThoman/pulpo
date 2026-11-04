@@ -348,13 +348,8 @@ export interface TextFrameInput {
   upsideDown?: boolean
 }
 
-/** The text frame: insets, anchoring, columns, vertical text, and the paragraphs. */
-export function renderTextFrame(input: TextFrameInput): string {
-  const { body, rect } = input
-  const paragraphs = childElements(input.txBody).filter((element) => element.localName === 'p' && element.namespaceURI === NS.a)
-  const empty = !paragraphs.some((paragraph) => childElements(paragraph).some((element) => ['r', 'fld', 'br'].includes(element.localName ?? '') && (element.localName !== 'r' || (child(element, 't', NS.a)?.textContent ?? '') !== '')))
-  const showPrompt = empty && input.prompt && input.env.mode === 'edit'
-  if (empty && !showPrompt) return ''
+/** CSS for a text frame and its inner block, shared by the renderer and the inline editor. */
+export function textFrameStyles(body: BodyLayout, rect: TextFrameInput['rect'], options: { upsideDown?: boolean; firstAlign?: string } = {}): { outer: string; inner: string; anchor: string } {
   const insets = bodyInsets(body)
   const vertical = body.bag.attrs.vert ?? 'horz'
   const rotated = vertical === 'vert' || vertical === 'vert270' || vertical === 'wordArtVertRtl'
@@ -365,7 +360,7 @@ export function renderTextFrame(input: TextFrameInput): string {
     box = { x: center.x - box.h / 2, y: center.y - box.w / 2, w: box.h, h: box.w }
     transforms.push(vertical === 'vert270' ? 'rotate(-90deg)' : 'rotate(90deg)')
   }
-  if (input.upsideDown) transforms.push('rotate(180deg)')
+  if (options.upsideDown) transforms.push('rotate(180deg)')
   const anchor = body.bag.attrs.anchor ?? 't'
   const justify = anchor === 'ctr' ? 'center' : anchor === 'b' ? 'flex-end' : 'flex-start'
   const wrap = body.bag.attrs.wrap !== 'none'
@@ -381,23 +376,27 @@ export function renderTextFrame(input: TextFrameInput): string {
     `--pp-fs:${num(body.fontScale)}`,
     `white-space:${wrap ? 'pre-wrap' : 'pre'}`,
     'overflow-wrap:break-word',
-    'pointer-events:none',
   ]
-  if (!wrap) {
-    const firstAlign = attr(child(paragraphs[0], 'pPr', NS.a), 'algn')
-    styles.push(`align-items:${firstAlign === 'ctr' ? 'center' : firstAlign === 'r' ? 'flex-end' : 'flex-start'}`)
-  }
+  if (!wrap) styles.push(`align-items:${options.firstAlign === 'ctr' ? 'center' : options.firstAlign === 'r' ? 'flex-end' : 'flex-start'}`)
   if (transforms.length) styles.push(`transform:${transforms.join(' ')}`)
   if (vertical === 'eaVert' || vertical === 'mongolianVert') styles.push('writing-mode:vertical-rl')
   if (vertical === 'wordArtVert') styles.push('writing-mode:vertical-rl;text-orientation:upright')
   const columns = bagNumber(body.bag, 'numCol') ?? 1
-  const inner = [`width:100%`]
-  if (columns > 1) {
-    inner.push(`column-count:${Math.min(16, columns)}`, `column-gap:${px(emuToPx(bagNumber(body.bag, 'spcCol') ?? 0))}`, 'column-fill:auto', 'height:100%')
-  }
-  if (!wrap) inner.splice(0, 1, 'width:max-content')
+  const inner = [wrap ? 'width:100%' : 'width:max-content']
+  if (columns > 1) inner.push(`column-count:${Math.min(16, columns)}`, `column-gap:${px(emuToPx(bagNumber(body.bag, 'spcCol') ?? 0))}`, 'column-fill:auto', 'height:100%')
+  return { outer: styles.join(';'), inner: inner.join(';'), anchor }
+}
+
+/** The text frame: insets, anchoring, columns, vertical text, and the paragraphs. */
+export function renderTextFrame(input: TextFrameInput): string {
+  const { body, rect } = input
+  const paragraphs = childElements(input.txBody).filter((element) => element.localName === 'p' && element.namespaceURI === NS.a)
+  const empty = !paragraphs.some((paragraph) => childElements(paragraph).some((element) => ['r', 'fld', 'br'].includes(element.localName ?? '') && (element.localName !== 'r' || (child(element, 't', NS.a)?.textContent ?? '') !== '')))
+  const showPrompt = empty && input.prompt && input.env.mode === 'edit'
+  if (empty && !showPrompt) return ''
+  const styles = textFrameStyles(body, rect, { upsideDown: input.upsideDown, firstAlign: attr(child(paragraphs[0], 'pPr', NS.a), 'algn') })
   const content = showPrompt ? renderPrompt(input, paragraphs[0]) : renderParagraphs(paragraphs, input)
-  return `<div class="pp-text" data-anchor="${escapeAttribute(anchor)}" data-autofit="${body.autofit}" style="${styles.join(';')}"><div class="pp-text-inner" style="${inner.join(';')}">${content}</div></div>`
+  return `<div class="pp-text" data-anchor="${escapeAttribute(styles.anchor)}" data-autofit="${body.autofit}" style="${styles.outer};pointer-events:none"><div class="pp-text-inner" style="${styles.inner}">${content}</div></div>`
 }
 
 function renderPrompt(input: TextFrameInput, firstParagraph: XmlElement | undefined): string {

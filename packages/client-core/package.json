@@ -49,6 +49,14 @@
     "./office/ooxml": {
       "types": "./dist/office/ooxml/index.d.ts",
       "import": "./dist/office/ooxml/index.js"
+    },
+    "./office/presentation": {
+      "types": "./dist/office/presentation/index.d.ts",
+      "import": "./dist/office/presentation/index.js"
+    },
+    "./office/presentation/view": {
+      "types": "./dist/office/presentation/view/index.d.ts",
+      "import": "./dist/office/presentation/view/index.js"
     }
   },
   "scripts": {

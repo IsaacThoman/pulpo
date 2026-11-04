@@ -1,11 +1,12 @@
-import type { PresentationSnapshot, SlideSnapshot } from '../model.js'
+import type { PresentationSnapshot, SlideSnapshot, Xfrm } from '../model.js'
 import { RelationshipTable, buildShapeElement } from '../write.js'
 import { child, childElements, namespaceDeclarations, NS, parseXmlDocument, path, type XmlElement } from '../xml.js'
 import { DEFAULT_COLOR_MAP, type ColorContext } from './color.js'
 import { DeckResources, placeholderOf, readColorMap, type LayoutInfo, type MasterInfo } from './deck.js'
 import { DEFAULT_RENDER_LABELS, emuToPx, escapeAttribute, num, px, type RenderEnv, type RenderLabels } from './env.js'
 import { paintFill, styleReference, themeFill } from './fill.js'
-import { renderShape, ROOT_FRAME } from './shape.js'
+import { describeShapeText, effectiveXfrm, inheritanceChain, renderShape, ROOT_FRAME } from './shape.js'
+import { readXfrm } from '../read.js'
 
 /**
  * Whole slides as HTML: background, then the master's and layout's own (non-placeholder)
@@ -143,4 +144,32 @@ export function renderSlide(slide: SlideSnapshot, snapshot: Pick<PresentationSna
     layers.push(renderShape(element, { env, level: 'slide', frame: ROOT_FRAME, key: shape.key, hideText: options.hideTextOf?.has(shape.key) === true }))
   }
   return `<div class="pp-slide" data-slide-key="${escapeAttribute(slide.key)}" style="position:relative;width:${px(width)};height:${px(height)};overflow:hidden;background:white;contain:layout paint">${layers.join('')}</div>`
+}
+
+/** The text layout of one of a slide's shapes, for the inline editor. */
+export function slideShapeText(slide: SlideSnapshot, shapeKey: string, options: SlideRenderOptions) {
+  const shape = slide.shapes.find((entry) => entry.key === shapeKey)
+  if (!shape) return undefined
+  const environment = slideEnvironment(slide, options)
+  const element = buildShapeElement(parseXmlDocument('<w/>'), shape, namespaceDeclarations(environment.root), environment.rels)
+  const layout = describeShapeText(element, environment.env)
+  return layout && { ...layout, env: environment.env }
+}
+
+/** A slide shape's transform, inherited from its layout placeholder when it has none of its own. */
+export function slideShapeXfrm(slide: SlideSnapshot, shapeKey: string, options: SlideRenderOptions): Xfrm | undefined {
+  const find = (shapes: SlideSnapshot['shapes']): SlideSnapshot['shapes'][number] | undefined => {
+    for (const shape of shapes) {
+      if (shape.key === shapeKey) return shape
+      const member = find(shape.children ?? [])
+      if (member) return member
+    }
+    return undefined
+  }
+  const shape = find(slide.shapes)
+  if (!shape) return undefined
+  if (shape.xfrm) return shape.xfrm
+  const environment = slideEnvironment(slide, options)
+  const element = buildShapeElement(parseXmlDocument('<w/>'), shape, namespaceDeclarations(environment.root), environment.rels)
+  return readXfrm(effectiveXfrm(element, inheritanceChain(element, 'slide', environment.env)))
 }

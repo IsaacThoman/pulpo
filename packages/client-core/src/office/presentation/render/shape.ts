@@ -274,6 +274,11 @@ export function boxIn(transform: Transform, frame: Frame): { left: number; top: 
   }
 }
 
+/** Transform facts the editor reads back from the DOM (placeholders inherit theirs). */
+function transformAttributes(transform: Transform): string {
+  return ` data-rot="${num(transform.rot)}"${transform.flipH ? ' data-flip-h=""' : ''}${transform.flipV ? ' data-flip-v=""' : ''}`
+}
+
 function wrapperStyle(box: ReturnType<typeof boxIn>, transform: Transform, hidden: boolean): string {
   const styles = ['position:absolute', `left:${px(box.left)}`, `top:${px(box.top)}`, `width:${px(box.width)}`, `height:${px(box.height)}`]
   if (transform.rot) styles.push(`transform:rotate(${num(transform.rot)}deg)`)
@@ -361,14 +366,32 @@ function renderGeometryShape(element: XmlElement, options: ShapeRenderOptions): 
   const svg = geometrySvg(geometry, appearance, size, transform)
   let text = ''
   if (!options.hideText) text = renderShapeText(element, chain, env, options, geometry, size, transform)
-  return `<div ${attributes(element, options, element.localName ?? 'sp')} style="${wrapperStyle(box, transform, isHidden(element))}">${svg}${text}</div>`
+  return `<div ${attributes(element, options, element.localName ?? 'sp')} ${transformAttributes(transform)} style="${wrapperStyle(box, transform, isHidden(element))}">${svg}${text}</div>`
 }
 
-/** The text frame of a shape, placed in its geometry's text rectangle (or `dsp:txXfrm`). */
-export function renderShapeText(element: XmlElement, chain: readonly XmlElement[], env: RenderEnv, options: Pick<ShapeRenderOptions, 'level' | 'frame'>, geometry: GeometryResult, size: Box, transform: Transform): string {
+export interface ShapeTextLayout {
+  txBody: XmlElement | undefined
+  body: ReturnType<typeof bodyLayout>
+  /** The text rectangle in px, relative to the shape box. */
+  rect: { x: number; y: number; w: number; h: number }
+  context: TextStyleContext
+  prompt?: string
+  upsideDown: boolean
+}
+
+/** Where and how a shape's text is laid out: its geometry's text rectangle (or `dsp:txXfrm`) and styles. */
+export function shapeTextLayout(
+  element: XmlElement,
+  chain: readonly XmlElement[],
+  env: RenderEnv,
+  options: Pick<ShapeRenderOptions, 'level' | 'frame'>,
+  geometry: GeometryResult,
+  size: Box,
+  transform: Transform,
+): ShapeTextLayout | undefined {
   const txBody = childElements(element).find((entry) => entry.localName === 'txBody')
   const isPlaceholder = !!placeholderOf(element)
-  if (!txBody && !isPlaceholder) return ''
+  if (!txBody && !isPlaceholder) return undefined
   const bodyLayers = [...chain.map((ancestor) => child(childElements(ancestor).find((entry) => entry.localName === 'txBody'), 'bodyPr', NS.a)), child(txBody, 'bodyPr', NS.a)]
   const body = bodyLayout(bodyLayers)
   let rect = { x: geometry.textRect.l, y: geometry.textRect.t, w: geometry.textRect.r - geometry.textRect.l, h: geometry.textRect.b - geometry.textRect.t }
@@ -379,16 +402,27 @@ export function renderShapeText(element: XmlElement, chain: readonly XmlElement[
     rect = { x: textBox.left - shapeBox.left, y: textBox.top - shapeBox.top, w: textBox.width, h: textBox.height }
   }
   if (body.bag.attrs.upright === '1') rect = { x: 0, y: 0, w: size.w, h: size.h }
-  const context = textContext(element, chain, env, options.level, env.colors)
-  return renderTextFrame({
-    txBody,
-    context,
-    body,
-    rect,
-    env,
-    ...(options.level === 'slide' ? { prompt: promptFor(element, chain, env) } : {}),
-    upsideDown: transform.flipV,
-  })
+  const prompt = options.level === 'slide' ? promptFor(element, chain, env) : undefined
+  return { txBody, body, rect, context: textContext(element, chain, env, options.level, env.colors), ...(prompt ? { prompt } : {}), upsideDown: transform.flipV }
+}
+
+/** The text frame of a shape, placed in its geometry's text rectangle (or `dsp:txXfrm`). */
+export function renderShapeText(element: XmlElement, chain: readonly XmlElement[], env: RenderEnv, options: Pick<ShapeRenderOptions, 'level' | 'frame'>, geometry: GeometryResult, size: Box, transform: Transform): string {
+  const layout = shapeTextLayout(element, chain, env, options, geometry, size, transform)
+  if (!layout) return ''
+  return renderTextFrame({ ...layout, env })
+}
+
+/** Everything the inline editor needs to overlay a shape's text exactly where the renderer draws it. */
+export function describeShapeText(element: XmlElement, env: RenderEnv): (ShapeTextLayout & { box: ReturnType<typeof boxIn>; transform: Transform }) | undefined {
+  const chain = inheritanceChain(element, 'slide', env)
+  const transform = readTransform(effectiveXfrm(element, chain)) ?? { x: 0, y: 0, w: 0, h: 0, rot: 0, flipH: false, flipV: false }
+  const box = boxIn(transform, ROOT_FRAME)
+  const size: Box = { w: box.width, h: box.height }
+  const spPr = pick(element, chain, (entry) => (child(entry, 'prstGeom', NS.a) || child(entry, 'custGeom', NS.a) ? entry : undefined))
+  const geometry = shapeGeometry(spPr, size.w, size.h)
+  const layout = shapeTextLayout(element, chain, env, { level: 'slide', frame: ROOT_FRAME }, geometry, size, transform)
+  return layout && { ...layout, box, transform }
 }
 
 function renderPicture(element: XmlElement, options: ShapeRenderOptions): string {
@@ -419,7 +453,7 @@ function renderPicture(element: XmlElement, options: ShapeRenderOptions): string
   const overlay = media
     ? `<button type="button" class="pp-media" data-media="${escapeAttribute(media.part)}" data-media-kind="${media.kind}" aria-label="${escapeAttribute(env.labels.mediaPlay)}" style="position:absolute;left:50%;top:50%;width:48px;height:48px;margin:-24px 0 0 -24px;border-radius:50%;border:0;background:rgba(0,0,0,0.55);color:white;font-size:20px;line-height:48px;pointer-events:auto;cursor:pointer">▶</button>`
     : ''
-  return `<div ${attributes(element, options, 'pic')} style="${wrapperStyle(box, transform, isHidden(element))}">${svg}${overlay}</div>`
+  return `<div ${attributes(element, options, 'pic')} ${transformAttributes(transform)} style="${wrapperStyle(box, transform, isHidden(element))}">${svg}${overlay}</div>`
 }
 
 /** The media a picture stands in for (a video or sound poster frame), if any. */
@@ -464,7 +498,7 @@ function renderGroup(element: XmlElement, options: ShapeRenderOptions): string {
     .map((member) => renderShape(member, { ...options, frame, ...(groupFill ? { groupFill } : {}), key: undefined, depth: (options.depth ?? 0) + 1 }))
     .join('')
   const style = wrapperStyle(box, transform, isHidden(element))
-  return `<div ${attributes(element, options, 'grpSp')} style="${style}">${members}</div>`
+  return `<div ${attributes(element, options, 'grpSp')}${transformAttributes(transform)} style="${style}">${members}</div>`
 }
 
 function renderGraphicFrame(element: XmlElement, options: ShapeRenderOptions): string {
@@ -487,7 +521,7 @@ function renderGraphicFrame(element: XmlElement, options: ShapeRenderOptions): s
       content = inner.replace(/^<div ([^>]*?)style="position:absolute;left:[^;]*;top:[^;]*;/, '<div $1style="position:absolute;left:0px;top:0px;')
     }
   }
-  return `<div ${attributes(element, options, 'graphicFrame')} style="${wrapperStyle(box, transform, isHidden(element))}">${content}</div>`
+  return `<div ${attributes(element, options, 'graphicFrame')}${transformAttributes(transform)} style="${wrapperStyle(box, transform, isHidden(element))}">${content}</div>`
 }
 
 function findDescendant(element: XmlElement | undefined, localName: string, depth: number): XmlElement | undefined {

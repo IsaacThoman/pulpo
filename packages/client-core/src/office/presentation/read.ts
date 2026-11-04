@@ -145,12 +145,20 @@ async function readPart(pkg: OoxmlPackage, partPath: string, assets: LiveAssetSt
   const snapshot: PartSnapshot = {}
   if (contentType) snapshot.contentType = contentType
   if (orphan) snapshot.orphan = true
-  if (isXml || !assets) {
-    snapshot.bytes = bytes
-  } else {
-    snapshot.asset = await assets.put(bytes, mimeTypeFor(partPath, contentType))
-  }
+  if (isXml) snapshot.bytes = bytes
+  else snapshot.asset = await (assets ?? HASH_ONLY).put(bytes, mimeTypeFor(partPath, contentType))
   return snapshot
+}
+
+/** Hashes binary parts without keeping them, for reads that only compare (diffs). */
+const HASH_ONLY: LiveAssetStore = {
+  async put(bytes, mimeType) {
+    const digest = new Uint8Array(await globalThis.crypto.subtle.digest('SHA-256', bytes as Uint8Array<ArrayBuffer>))
+    return { hash: Array.from(digest, (byte) => byte.toString(16).padStart(2, '0')).join(''), mimeType, sizeBytes: bytes.byteLength }
+  },
+  async get() {
+    throw new LiveFormatError('corrupt', 'This snapshot was read without an asset store')
+  },
 }
 
 export function mimeTypeFor(partPath: string, contentType?: string): string {

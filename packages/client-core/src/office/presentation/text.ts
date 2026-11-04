@@ -73,7 +73,31 @@ const RPR_CHILD_ORDER = [
   'extLst',
 ]
 
-const valueMark = (): MarkSpec => ({ attrs: { value: {} } })
+/** Marks whose value is XML; pasted values are checked so a bad paste cannot break the file. */
+const XML_MARKS = new Set(['fill', 'highlight', 'rPr'])
+
+function markDom(name: string): Pick<MarkSpec, 'toDOM' | 'parseDOM'> {
+  return {
+    toDOM: (mark) => ['span', { 'data-mark': name, 'data-value': JSON.stringify(mark.attrs) }, 0],
+    parseDOM: [
+      {
+        tag: `span[data-mark="${name}"]`,
+        getAttrs: (dom) => {
+          try {
+            const attrs = JSON.parse((dom as { getAttribute(name: string): string | null }).getAttribute('data-value') ?? '') as Record<string, unknown>
+            if (XML_MARKS.has(name) && typeof attrs.value === 'string') parseFragment(attrs.value)
+            if (name === 'link' && typeof attrs.xml === 'string') parseFragment(attrs.xml)
+            return attrs
+          } catch {
+            return false
+          }
+        },
+      },
+    ],
+  }
+}
+
+const valueMark = (name: string, extra: MarkSpec = {}): MarkSpec => ({ attrs: { value: {} }, ...markDom(name), ...extra })
 
 const nodes: Record<string, NodeSpec> = {
   doc: { content: 'paragraph+' },
@@ -112,23 +136,23 @@ const nodes: Record<string, NodeSpec> = {
 }
 
 const marks: Record<string, MarkSpec> = {
-  b: valueMark(),
-  i: valueMark(),
-  u: valueMark(),
-  strike: valueMark(),
-  sz: valueMark(),
-  baseline: valueMark(),
-  cap: valueMark(),
-  spc: valueMark(),
+  b: valueMark('b', { parseDOM: [...markDom('b').parseDOM!, { tag: 'strong', attrs: { value: true } }, { tag: 'b', attrs: { value: true } }] }),
+  i: valueMark('i', { parseDOM: [...markDom('i').parseDOM!, { tag: 'em', attrs: { value: true } }, { tag: 'i', attrs: { value: true } }] }),
+  u: valueMark('u', { parseDOM: [...markDom('u').parseDOM!, { tag: 'u', attrs: { value: 'sng' } }] }),
+  strike: valueMark('strike', { parseDOM: [...markDom('strike').parseDOM!, { tag: 's', attrs: { value: 'sngStrike' } }] }),
+  sz: valueMark('sz'),
+  baseline: valueMark('baseline'),
+  cap: valueMark('cap'),
+  spc: valueMark('spc'),
   /** Latin typeface (`a:latin/@typeface`). */
-  font: valueMark(),
+  font: valueMark('font'),
   /** The run's fill element (`a:solidFill`, …) as XML. */
-  fill: valueMark(),
-  highlight: valueMark(),
+  fill: valueMark('fill'),
+  highlight: valueMark('highlight'),
   /** `a:hlinkClick` as XML, with its relationship resolved into `target`. */
-  link: { attrs: { xml: {}, target: { default: null }, external: { default: true } }, inclusive: false },
+  link: { attrs: { xml: {}, target: { default: null }, external: { default: true } }, inclusive: false, ...markDom('link') },
   /** Whatever else `a:rPr` holds (lang, effects, east Asian fonts, …), as XML. */
-  rPr: valueMark(),
+  rPr: valueMark('rPr'),
 }
 
 let schema: Schema | undefined
