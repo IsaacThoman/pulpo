@@ -19,7 +19,14 @@ try {
   const table = page.locator('[data-preview-kind="table"]')
   // The whole file is indexed up front, so the count is known before scrolling.
   await table.locator('[data-grid-summary]').getByText('5,001 rows · 20 columns').waitFor()
-  assert.equal(await table.locator('[data-header-row] th').count(), 21, 'row number column plus every header')
+  assert.equal(await table.locator('[data-header-row] th').nth(1).textContent(), 'id', 'first header after the row numbers')
+  // Columns past the viewport render as one spacer until scrolled to.
+  const headerCells = await table.locator('[data-header-row] th').count()
+  assert.ok(headerCells <= 22, `columns are windowed (${headerCells} header cells)`)
+  await table.locator('[data-virtuoso-scroller="true"]').evaluate((element) => { element.scrollLeft = element.scrollWidth })
+  await table.locator('[data-header-row] th', { hasText: /^metric_17$/ }).waitFor()
+  await table.locator('[data-virtuoso-scroller="true"]').evaluate((element) => { element.scrollLeft = 0 })
+  await table.locator('[data-header-row] th', { hasText: /^note$/ }).waitFor()
   // Only the visible slice is in the DOM.
   assert.ok(await table.locator('tbody tr').count() < 100, 'rows are virtualized')
   const firstNote = table.locator('tbody tr').first().locator('td').nth(3)
