@@ -21,10 +21,11 @@ import { readDrawing } from './drawing.js'
 import { lightChild, locateElement, parseFragment, type LightNode } from './light-xml.js'
 import { readNotes } from './notes.js'
 import { readStringItem, type SheetString } from './strings.js'
+import { tidyNamespaces } from './write-worksheet.js'
 import { attr, boolAttr, child, children, numberAttr, otherAttributes, REL_TYPES, serializeNode, textOf, type XmlElement } from './xml.js'
 
 /** Elements of a worksheet the model owns; everything else stays in the preserved skeleton. */
-export const MODELED_WORKSHEET_ELEMENTS = ['dimension', 'cols', 'mergeCells', 'conditionalFormatting', 'dataValidations', 'hyperlinks', 'autoFilter', 'sortState', 'tableParts']
+export const MODELED_WORKSHEET_ELEMENTS = ['dimension', 'cols', 'mergeCells', 'conditionalFormatting', 'dataValidations', 'hyperlinks', 'autoFilter', 'sortState', 'tableParts', 'legacyDrawing']
 
 export interface ReadContext {
   pkg: OoxmlPackage
@@ -77,19 +78,30 @@ export function readWorksheet(sheet: SheetModel, path: string, context: ReadCont
   const drawingPath = drawingId ? context.pkg.relationshipTarget(path, drawingId) : undefined
   if (drawingPath && context.pkg.has(drawingPath)) readDrawing(sheet, drawingPath, context)
   const comments = rels.find((rel) => rel.type === REL_TYPES.comments && rel.targetMode !== 'External')
-  if (comments) {
-    const vmlId = attr(child(root, 'legacyDrawing'), 'r:id')
-    readNotes(sheet, context.pkg.relationshipTarget(path, comments.id)!, vmlId ? context.pkg.relationshipTarget(path, vmlId) : undefined, context)
-  }
+  const vmlId = attr(child(root, 'legacyDrawing'), 'r:id')
+  const vmlPath = vmlId ? context.pkg.relationshipTarget(path, vmlId) : undefined
+  if (comments) readNotes(sheet, context.pkg.relationshipTarget(path, comments.id)!, vmlPath, context)
+  // A legacy drawing without notes (form controls) is kept as it is; the export links it again.
+  if (vmlPath && !sheet.raw.has('vmlPart') && context.pkg.has(vmlPath)) sheet.raw.set('vmlPart', vmlPath)
 
   for (const name of MODELED_WORKSHEET_ELEMENTS) for (const element of children(root, name)) root.removeChild(element)
   sheet.raw.set('part', path)
-  sheet.raw.set('xml', serializeSkeleton(document))
+  sheet.raw.set('xml', tidyNamespaces(serializeSkeleton(document)))
   const relsPath = path.replace(/([^/]+)$/, '_rels/$1.rels')
   const relsText = context.pkg.text(relsPath)
-  if (relsText !== undefined) sheet.raw.set('rels', relsText)
+  // Relationships the export rebuilds from the model are left out, so a file read back after
+  // export has the same skeleton (and applying it changes nothing).
+  if (relsText !== undefined) sheet.raw.set('rels', withoutRelationships(relsText, [REL_TYPES.hyperlink, REL_TYPES.table, REL_TYPES.comments, REL_TYPES.vmlDrawing]))
   context.regenerated.add(path)
   context.regenerated.add(relsPath)
+}
+
+/** A relationships part without relationships of the given types. */
+export function withoutRelationships(xml: string, types: string[]): string {
+  const document = parseXml(xml)
+  const root = document.documentElement!
+  for (const element of children(root, 'Relationship')) if (types.includes(element.getAttribute('Type') ?? '')) root.removeChild(element)
+  return serializeNode(document)
 }
 
 function serializeSkeleton(document: XmlDocument): string {

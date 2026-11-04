@@ -454,6 +454,8 @@ export interface WorkbookMeta {
   stylesPath?: string
   themePath?: string
   sharedStringsPath?: string
+  /** Parts no relationship referred to in the file as read, kept anyway. */
+  looseParts?: string[]
   /** The original shared strings, kept when preserved macro sheets index into them. */
   sharedStringsSeed?: string
 }

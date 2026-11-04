@@ -159,13 +159,16 @@ export async function writeXlsx(doc: Y.Doc, assets: LiveAssetStore, options: Xls
   const workbookPath = model.metaValue('workbookPath') ?? 'xl/workbook.xml'
   const types = new ContentTypes(model.metaValue('contentTypesXml'))
   const rootRels = new Rels(pkg.text('_rels/.rels'))
-  rootRels.remove((rel) => rel.type === REL_TYPES.officeDocument)
-  rootRels.add(REL_TYPES.officeDocument, workbookPath)
-  // Keep the workbook relationship first, as Excel writes it.
-  const rootElement = rootRels.document.documentElement!
-  const officeRel = children(rootElement, 'Relationship').find((element) => element.getAttribute('Type') === REL_TYPES.officeDocument)!
-  // (xmldom breaks when a node is inserted before itself.)
-  if (rootElement.firstChild !== officeRel) rootElement.insertBefore(officeRel, rootElement.firstChild)
+  const pointsAtWorkbook = rootRels.list().some((rel) => rel.type === REL_TYPES.officeDocument && resolveTarget('', rel.target) === workbookPath)
+  if (!pointsAtWorkbook) {
+    rootRels.remove((rel) => rel.type === REL_TYPES.officeDocument)
+    rootRels.add(REL_TYPES.officeDocument, workbookPath)
+    // Keep the workbook relationship first, as Excel writes it.
+    const rootElement = rootRels.document.documentElement!
+    const officeRel = children(rootElement, 'Relationship').find((element) => element.getAttribute('Type') === REL_TYPES.officeDocument)!
+    // (xmldom breaks when a node is inserted before itself.)
+    if (rootElement.firstChild !== officeRel) rootElement.insertBefore(officeRel, rootElement.firstChild)
+  }
   types.override(workbookPath, MAIN_CONTENT_TYPE[outputFormat])
 
   const workbookRels = new Rels(model.metaValue('workbookRels'))
@@ -281,10 +284,13 @@ export async function writeXlsx(doc: Y.Doc, assets: LiveAssetStore, options: Xls
     workbookRels.add(REL_TYPES.sharedStrings, relativeTarget(workbookPath, sharedStringsPath))
   }
   const stylesPath = model.metaValue('stylesPath') ?? 'xl/styles.xml'
-  pkg.set(stylesPath, new TextEncoder().encode(styles.toXml()))
+  // Untouched styles go back exactly as read.
+  const originalStyles = model.metaValue('stylesXml')
+  pkg.set(stylesPath, new TextEncoder().encode(styles.changed || !originalStyles ? styles.toXml() : originalStyles))
   types.override(stylesPath, CONTENT_TYPES.styles)
   workbookRels.ensure(REL_TYPES.styles, relativeTarget(workbookPath, stylesPath))
-  if (!workbookRels.list().some((rel) => rel.type === REL_TYPES.theme)) {
+  // New workbooks get the Office theme; files read without one stay without.
+  if (!model.metaValue('workbookXml') && !workbookRels.list().some((rel) => rel.type === REL_TYPES.theme)) {
     const themePath = 'xl/theme/theme1.xml'
     if (!pkg.has(themePath)) pkg.set(themePath, new TextEncoder().encode(model.metaValue('themeXml') ?? DEFAULT_THEME_XML))
     types.override(themePath, CONTENT_TYPES.theme)
@@ -296,14 +302,23 @@ export async function writeXlsx(doc: Y.Doc, assets: LiveAssetStore, options: Xls
   patchWorkbook(workbook, model, sheetEntries, options)
   pkg.set(workbookPath, new TextEncoder().encode(serializeXml(workbook)))
   pkg.set(relationshipsPathFor(workbookPath), new TextEncoder().encode(workbookRels.toXml()))
-  pkg.set('_rels/.rels', new TextEncoder().encode(rootRels.toXml()))
+  if (!pointsAtWorkbook || !pkg.has('_rels/.rels')) pkg.set('_rels/.rels', new TextEncoder().encode(rootRels.toXml()))
   types.defaultFor('rels', CONTENT_TYPES.relationships)
   types.defaultFor('xml', 'application/xml')
 
-  pruneUnreachable(pkg)
+  pruneUnreachable(pkg, new Set(model.metaValue('looseParts') ?? []))
   types.prune(new Set(pkg.paths()))
   pkg.set('[Content_Types].xml', new TextEncoder().encode(types.toXml()))
   return pkg.write()
+}
+
+/** Parts of a package no relationship reaches. */
+export function looseParts(pkg: OoxmlPackage): string[] {
+  const copy = new OoxmlPackage(new Map(pkg.paths().map((path) => [path, pkg.get(path)!])))
+  const before = new Set(copy.paths())
+  pruneUnreachable(copy)
+  const after = new Set(copy.paths())
+  return [...before].filter((path) => !after.has(path) && path !== '[Content_Types].xml')
 }
 
 function headerNames(sheet: SheetModel, table: SheetTable): string[] | undefined {
@@ -384,8 +399,11 @@ function patchWorkbook(document: XmlDocument, model: WorkbookModel, sheetEntries
   if (options.recalculateOnLoad) calc.setAttribute('fullCalcOnLoad', '1')
 }
 
-/** Removes parts no relationship chain from the package root reaches (left over from deletions). */
-function pruneUnreachable(pkg: OoxmlPackage): void {
+/**
+ * Removes parts no relationship chain from the package root reaches, left over from deleting
+ * sheets or objects. Parts the file already had loose (`keep`) stay.
+ */
+export function pruneUnreachable(pkg: OoxmlPackage, keep: Set<string> = new Set()): void {
   const reachable = new Set<string>(['[Content_Types].xml', '_rels/.rels'])
   const queue = ['']
   while (queue.length) {
@@ -401,7 +419,7 @@ function pruneUnreachable(pkg: OoxmlPackage): void {
       queue.push(target)
     }
   }
-  for (const path of pkg.paths()) if (!reachable.has(path)) pkg.delete(path)
+  for (const path of pkg.paths()) if (!reachable.has(path) && !keep.has(path)) pkg.delete(path)
 }
 
 const DEFAULT_WORKBOOK_XML =

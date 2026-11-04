@@ -1,12 +1,13 @@
 import type * as Y from 'yjs'
 import { LiveFormatError, type LiveAssetStore } from '../../live-format.js'
-import { OoxmlPackage, relationshipsPathFor, type PackageLimits } from '../../ooxml/package.js'
+import { OoxmlPackage, parseXml, relationshipsPathFor, serializeXml, type PackageLimits } from '../../ooxml/package.js'
 import { randomId } from '../model/axis.js'
 import { toIdForm } from '../model/formula-ids.js'
 import type { DefinedName, SheetFormat, SheetKind, WorkbookMeta } from '../model/schema.js'
 import { WorkbookModel } from '../model/workbook.js'
-import { readWorksheet, type ReadContext } from './read-worksheet.js'
+import { readWorksheet, withoutRelationships, type ReadContext } from './read-worksheet.js'
 import { readSharedStrings } from './strings.js'
+import { looseParts } from './write-xlsx.js'
 import { attr, boolAttr, child, children, CONTENT_TYPES, numberAttr, otherAttributes, REL_TYPES, serializeNode, textOf } from './xml.js'
 
 export interface XlsxReadOptions {
@@ -100,8 +101,9 @@ export async function readXlsx(doc: Y.Doc, bytes: Uint8Array, assets: LiveAssetS
     ...(stylesPath && pkg.text(stylesPath) !== undefined ? { stylesXml: pkg.text(stylesPath)!, stylesPath } : {}),
     ...(themePath && pkg.text(themePath) !== undefined ? { themeXml: pkg.text(themePath)!, themePath } : {}),
     ...(sharedStringsPath ? { sharedStringsPath } : {}),
-    contentTypesXml: pkg.text('[Content_Types].xml')!,
-    ...(pkg.text(relationshipsPathFor(workbookPath)) !== undefined ? { workbookRels: pkg.text(relationshipsPathFor(workbookPath))! } : {}),
+    ...(pkg.text(relationshipsPathFor(workbookPath)) !== undefined
+      ? { workbookRels: withoutRelationships(pkg.text(relationshipsPathFor(workbookPath))!, [REL_TYPES.calcChain, REL_TYPES.sharedStrings]) }
+      : {}),
   }
 
   // Binary parts (images and the like) go to the asset store first, so the sheets can then be read
@@ -168,8 +170,11 @@ export async function readXlsx(doc: Y.Doc, bytes: Uint8Array, assets: LiveAssetS
     const views = child(child(workbookRoot, 'bookViews'), 'workbookView')
     const active = numberAttr(views, 'activeTab') ?? 0
     model.meta.set('activeSheet', sheets[Math.min(active, sheets.length - 1)]!.id)
-    // The workbook XML without what the model owns.
+    // The workbook XML without what the model owns (the active tab is the model's too).
     for (const name of ['sheets', 'definedNames']) for (const element of children(workbookRoot, name)) workbookRoot.removeChild(element)
+    for (const view of children(child(workbookRoot, 'bookViews'), 'workbookView')) view.removeAttribute('activeTab')
+    // Whether Excel must recalculate on open depends on how the export was made, not the source.
+    children(workbookRoot, 'calcPr')[0]?.removeAttribute('fullCalcOnLoad')
     model.meta.set('workbookXml', serializeNode(workbookDocument))
   })
 
@@ -184,7 +189,19 @@ export async function readXlsx(doc: Y.Doc, bytes: Uint8Array, assets: LiveAssetS
   }
   doc.transact(() => {
     for (const [path, part] of kept) parts.set(path, part)
+    // Content types without the overrides of rebuilt parts; the export declares what it writes.
+    model.meta.set('contentTypesXml', withoutOverrides(pkg.text('[Content_Types].xml')!, regenerated))
+    const loose = looseParts(pkg).filter((path) => !regenerated.has(path))
+    if (loose.length) model.meta.set('looseParts', loose)
   })
+}
+
+function withoutOverrides(xml: string, paths: Set<string>): string {
+  const document = parseXml(xml)
+  const root = document.documentElement!
+  const lower = new Set([...paths].map((path) => `/${path}`.toLowerCase()))
+  for (const element of children(root, 'Override')) if (lower.has((element.getAttribute('PartName') ?? '').toLowerCase())) root.removeChild(element)
+  return serializeXml(document)
 }
 
 function readDefinedNames(model: WorkbookModel, element: ReturnType<typeof child>, sheetIds: string[]): void {

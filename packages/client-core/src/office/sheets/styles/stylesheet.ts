@@ -221,6 +221,8 @@ export class Stylesheet {
   /** Workbook-specific replacement for the legacy indexed palette, if any (`AARRGGBB`). */
   indexedColors: string[] | undefined
   private resolvedCache = new Map<number, ResolvedStyle>()
+  /** Whether anything was added since the stylesheet was read. */
+  changed = false
   /** Formats added by `intern`, by key, so equal styles share one format. */
   private interned = new Map<string, number>()
 
@@ -548,6 +550,7 @@ export class Stylesheet {
 
   /** A top-level section, created in schema order (before the first of `before` present). */
   private ensureSection(name: string, before: string[]): XmlElement {
+    this.changed = true
     const existing = this.section(name)
     if (existing) return existing
     const root = this.document.documentElement!

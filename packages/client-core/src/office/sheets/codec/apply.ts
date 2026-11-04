@@ -34,6 +34,9 @@ export function applyWorkbook(doc: Y.Doc, incomingDoc: Y.Doc, origin?: unknown):
     const styleMap = mergeStyles(target, incoming)
     syncMeta(target, incoming)
     const pairs = syncSheets(target, incoming)
+    // Rows and columns first, everywhere: formulas in one sheet refer to rows of others, so their
+    // positions must line up before any content is compared.
+    for (const [targetSheet, incomingSheet] of pairs) alignSheet(targetSheet, incomingSheet, styleMap)
     for (const [targetSheet, incomingSheet] of pairs) syncSheet(targetSheet, incomingSheet, styleMap)
     syncNames(target, incoming)
     syncParts(target, incoming)
@@ -74,7 +77,8 @@ function mergeStyles(target: WorkbookModel, incoming: WorkbookModel): StyleMap {
   }
 }
 
-const META_KEYS = ['format', 'date1904', 'iterate', 'iterateCount', 'iterateDelta', 'csv', 'workbookXml', 'workbookRels', 'themeXml', 'contentTypesXml', 'workbookPath', 'stylesPath', 'themePath', 'sharedStringsPath', 'sharedStringsSeed'] as const
+// Part paths are where this copy writes its parts; a new version's paths don't matter.
+const META_KEYS = ['format', 'date1904', 'iterate', 'iterateCount', 'iterateDelta', 'csv', 'workbookXml', 'workbookRels', 'themeXml', 'contentTypesXml', 'sharedStringsSeed', 'looseParts'] as const
 
 function syncMeta(target: WorkbookModel, incoming: WorkbookModel): void {
   for (const key of META_KEYS) setIfDifferent(target.meta, key, incoming.metaValue(key))
@@ -206,8 +210,9 @@ function alignAxis(own: SheetModel, other: SheetModel, kind: AxisKind, styles: S
   const ops: { type: 'delete' | 'insert'; at: number; count: number }[] = []
   let ownCursor = ownLines.length
   let otherCursor = otherLines.length
-  for (let index = pairs.length; index >= 0; index--) {
-    const [ownIndex, otherIndex] = index < pairs.length ? pairs[index]! : [-1, -1]
+  // Gaps between matched lines, last gap first; the gap before the first match ends at -1.
+  for (let index = pairs.length - 1; index >= -1; index--) {
+    const [ownIndex, otherIndex] = index >= 0 ? pairs[index]! : [-1, -1]
     const deleted = ownCursor - ownIndex - 1
     const inserted = otherCursor - otherIndex - 1
     // A changed line (one deleted, one inserted at the same place) is an edit, not a structure change.
@@ -229,15 +234,17 @@ function alignAxis(own: SheetModel, other: SheetModel, kind: AxisKind, styles: S
   return applied
 }
 
+function alignSheet(own: SheetModel, other: SheetModel, styles: StyleMap): void {
+  if ((other.map.get('kind') ?? 'worksheet') !== 'worksheet') return
+  // Align the axis whose lines survived the change best; then the other one.
+  const rowsFirst = alignmentScore(own, other, 'row', styles) >= alignmentScore(own, other, 'col', styles)
+  alignAxis(own, other, rowsFirst ? 'row' : 'col', styles)
+  alignAxis(own, other, rowsFirst ? 'col' : 'row', styles)
+}
+
 function syncSheet(own: SheetModel, other: SheetModel, styles: StyleMap): void {
-  if ((other.map.get('kind') ?? 'worksheet') === 'worksheet') {
-    // Align the axis whose lines survived the change best; then the other one.
-    const rowsFirst = alignmentScore(own, other, 'row', styles) >= alignmentScore(own, other, 'col', styles)
-    alignAxis(own, other, rowsFirst ? 'row' : 'col', styles)
-    alignAxis(own, other, rowsFirst ? 'col' : 'row', styles)
-  }
   const extent = extentOf(other)
-  own.ensure(Math.max(0, extent.rows - 1), Math.max(0, extent.cols - 1))
+  if (extent.rows && extent.cols) own.ensure(extent.rows - 1, extent.cols - 1)
   syncCells(own, other, styles)
   syncAxisMeta(own, other, 'row', styles)
   syncAxisMeta(own, other, 'col', styles)

@@ -29,7 +29,11 @@ export function decodeEntities(raw: string): string {
       const code = entity[1] === 'x' ? parseInt(entity.slice(2), 16) : parseInt(entity.slice(1), 10)
       return Number.isFinite(code) && code >= 0 && code <= 0x10ffff ? String.fromCodePoint(code) : match
     }
-    return ENTITIES[entity] ?? match
+    // Entities a DTD would define are never expanded (no billion laughs); like the DOM parser,
+    // treat them as malformed.
+    const known = ENTITIES[entity]
+    if (known === undefined) throw new LiveFormatError('corrupt', `Malformed XML: entity not found: ${match}`)
+    return known
   })
 }
 

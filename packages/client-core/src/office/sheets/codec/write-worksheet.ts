@@ -173,7 +173,8 @@ export function tidyNamespaces(xml: string): string {
   const rootEnd = xml.indexOf('>', rootStart)
   let head = xml.slice(0, rootEnd)
   let body = xml.slice(rootEnd)
-  if (body.includes(' r:') && !/\sxmlns:r="/.test(head)) head += ` xmlns:r="${R_NS}"`
+  // The root always declares the relationships prefix, as Excel writes it.
+  if (!/\sxmlns:r="/.test(head)) head += ` xmlns:r="${R_NS}"`
   for (const [prefix, uri] of [['', SHEET_NS], [':r', R_NS]] as const) {
     if (!head.includes(`xmlns${prefix}="${uri}"`)) continue
     body = body.split(` xmlns${prefix}="${uri}"`).join('')
@@ -198,6 +199,8 @@ function patchSheetProperties(document: XmlDocument, root: XmlElement, sheet: Sh
 
 function patchSheetViews(document: XmlDocument, root: XmlElement, sheet: SheetModel): void {
   let views = child(root, 'sheetViews')
+  const needed = [...sheet.view.keys()].some((key) => key !== 'topLeft')
+  if (!views && !needed) return
   if (!views) {
     views = fragment(document, '<sheetViews><sheetView workbookViewId="0"/></sheetViews>')
     insertInOrder(root, views)
@@ -218,7 +221,6 @@ function patchSheetViews(document: XmlDocument, root: XmlElement, sheet: SheetMo
   set('rightToLeft', sheet.viewProp('rightToLeft') ? '1' : undefined)
   const zoom = sheet.viewProp('zoom')
   set('zoomScale', zoom && zoom !== 100 ? String(Math.round(zoom)) : undefined)
-  if (zoom && zoom !== 100) set('zoomScaleNormal', String(Math.round(zoom)))
   const rows = sheet.viewProp('frozenRows') ?? 0
   const cols = sheet.viewProp('frozenCols') ?? 0
   const pane = child(view, 'pane')
@@ -251,6 +253,7 @@ function patchSheetViews(document: XmlDocument, root: XmlElement, sheet: SheetMo
 
 function patchSheetFormat(document: XmlDocument, root: XmlElement, maxRowLevel: number, maxColLevel: number): void {
   let format = child(root, 'sheetFormatPr')
+  if (!format && !maxRowLevel && !maxColLevel) return
   if (!format) {
     format = fragment(document, '<sheetFormatPr defaultRowHeight="15"/>')
     insertInOrder(root, format)
