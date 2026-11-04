@@ -82,7 +82,12 @@ export async function registerMobileRoutes(app: FastifyInstance): Promise<void> 
         usageLimits: config.PULPO_BILLING_ENABLED,
         files: { enabled: auth.filesEnabled, docSchemaVersion: DOC_SCHEMA_VERSION },
         appStoreBilling: acceptedAppStoreEnvironments(config).length
-          ? { environments: acceptedAppStoreEnvironments(config) }
+          ? {
+            environments: acceptedAppStoreEnvironments(config),
+            ...(config.APP_STORE_EIGHT_PRODUCT_ID && config.APP_STORE_FAT_PRODUCT_ID
+              ? { products: { eight: config.APP_STORE_EIGHT_PRODUCT_ID, fat: config.APP_STORE_FAT_PRODUCT_ID } }
+              : {}),
+          }
           : null,
       },
     })

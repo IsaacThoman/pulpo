@@ -29,10 +29,12 @@ vi.mock('../../mockup5/src/components/PrototypeUI', () => ({
   SectionTitle: ({ children }: { children: ReactNode }) => createElement('h2', null, children),
   ListRow: ({ title, value, detail, onPress }: { title: string; value?: string; detail?: string; onPress?: () => void }) => createElement(onPress ? 'button' : 'div', { onClick: onPress }, ...[title, value, detail].filter(Boolean).map(text => createElement('span', { key: text }, text))),
 }))
+vi.mock('../app-store/AppStoreSubscriptionSection', () => ({ AppStoreSubscriptionSection: () => null }))
 import { UsageLimitsSettings } from './UsageLimitsSettings'
 
 const limits: UsageLimits = {
   plan: 'eight',
+  subscription: null,
   weekly: { remainingPercentage: 60, availableBarPercentage: 60, pendingBarPercentage: 10, resetsAt: '2026-11-09T00:00:00.000Z' },
   fiveHour: { remainingPercentage: 25, availableBarPercentage: 25, pendingBarPercentage: 0, resetsAt: null },
   custom: [],

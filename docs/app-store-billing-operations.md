@@ -17,9 +17,9 @@ In **App Information → App Store Server Notifications**, choose Version 2 and 
 | Field | URL |
 | --- | --- |
 | Production Server URL | `https://pulpo.baby/api/billing/webhooks/app-store` |
-| Sandbox Server URL | `https://dev.pulpo.baby/api/billing/webhooks/app-store` |
+| Sandbox Server URL | `https://pulpo.baby/api/billing/webhooks/app-store` |
 
-Apple allows one sandbox URL per app, so sandbox purchases made against pulpo.baby (App Review, the demo account, admins) never reach it as notifications. pulpo.baby still learns about them: the app reports each purchase as it completes, and a sync job re-reads sandbox subscriptions about to renew every five minutes. Each server acknowledges and ignores notifications for subscriptions it does not track.
+TestFlight, App Review, and the demo account all make sandbox purchases against pulpo.baby, so both URLs point there. Apple allows one sandbox URL per app. The server acknowledges and ignores notifications for subscriptions it does not track, and a sync job also re-reads sandbox subscriptions about to renew every five minutes.
 
 ## Environments
 
@@ -28,13 +28,27 @@ Apple allows one sandbox URL per app, so sandbox purchases made against pulpo.ba
 | Server | `APP_STORE_ENVIRONMENTS` | Purchases offered to |
 | --- | --- | --- |
 | pulpo.baby | `production,sandbox` | App Store, TestFlight, and App Review builds |
-| dev.pulpo.baby | `sandbox` | TestFlight and development builds only |
+| dev.pulpo.baby | not configured | Nobody: App Store billing is off |
 
-Staging never accepts production purchases, because a real purchase granted there would never reach pulpo.baby.
+Leave every `APP_STORE_*` setting unset on dev.pulpo.baby. If staging ever sells subscriptions, give it `APP_STORE_ENVIRONMENTS=sandbox` so it never accepts a real purchase that pulpo.baby would not know about, and point the sandbox URL at it.
 
 ## Sandbox purchases
 
 Sandbox purchases cost nothing, so they grant a plan only for accounts an admin allows. Turn on **App Store sandbox purchases** for an account in **Admin → Billing → Users** for admins, testers, and the App Review demo account. Without it, the app's purchase is refused and no plan is granted; after an admin allows it, **Restore Purchases** grants the plan. Turning the setting off ends the account's sandbox subscriptions immediately. Sandbox payments are recorded at $0 and never count toward usage tiers or revenue.
+
+## The iOS app
+
+**Settings → Usage** offers Eight and Fat only when all of these hold:
+
+- the app is on iOS and signed in to `https://pulpo.baby` or `https://dev.pulpo.baby`, never a self-hosted instance;
+- `/api/mobile/config` lists `capabilities.appStoreBilling` with the product IDs, and its environments include the build's StoreKit environment (TestFlight and development builds are `sandbox`);
+- the account has no plan, or its plan comes from an App Store subscription. An account billed through Stripe sees "Your subscription is managed outside the App Store", and a plan an admin set shows no purchases.
+
+Prices, names, and descriptions come from the App Store, so edit them in App Store Connect. The section also shows the renewal terms, links to the [hosted Terms of Service](./terms-hosted) and [Privacy Policy](./privacy-hosted), **Restore Purchases**, and, for App Store subscribers, **Manage Subscription**, which opens Apple's subscription sheet.
+
+The app reports every transaction it sees to `POST /api/billing/app-store/transactions` and finishes it only once the server settles it, either by applying it or by refusing it for good (another account's subscription, sandbox purchases not allowed, an unknown product). If the server can't be reached, the transaction stays unfinished and the app reports it again on its next launch. The app also listens for renewals and purchases approved later (Ask to Buy) while it is open. **Restore Purchases** syncs with the App Store and reports the Apple Account's active Pulpo subscriptions.
+
+Plan limit errors in the native apps never show balances or dollar amounts: the app rewords `insufficient_balance` and `daily_spend_limit_reached` as reaching the plan's or today's usage limit.
 
 ## How purchases map to plans
 
@@ -62,7 +76,9 @@ APP_STORE_KEY_ID=...
 APP_STORE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----"
 APP_STORE_EIGHT_PRODUCT_ID=...
 APP_STORE_FAT_PRODUCT_ID=...
-APP_STORE_ENVIRONMENTS=production,sandbox # sandbox on dev.pulpo.baby
+APP_STORE_ENVIRONMENTS=production,sandbox
 ```
 
-App Store billing turns on only when billing is enabled and every value is set; the server refuses to start with some but not all of them. After deploying, use **Admin → Billing → Send App Store test notification** (`POST /api/admin/billing/app-store/test-notification`) for each environment the server's notification URL covers, and confirm a processed `TEST` event appears in `billing_webhook_events`. Apple sends the test to the URL configured for that environment, so the sandbox test lands on dev.pulpo.baby.
+Coolify's environment editor keeps only the first line of a multi-line value, so paste the key on one line with spaces between its lines (`tr '\n' ' ' < AuthKey_XXXXXXXXXX.p8`). The server rebuilds the line breaks and names a key cut off after its first line in its startup error.
+
+App Store billing turns on only when billing is enabled and every value is set; the server refuses to start with some but not all of them. After deploying, use **Admin → Billing → Send App Store test notification** (`POST /api/admin/billing/app-store/test-notification`) for each environment the server's notification URL covers, and confirm a processed `TEST` event appears in `billing_webhook_events`. Apple sends the test to the URL configured for that environment. The admin button tests the first listed environment (production on pulpo.baby); send `{"environment":"sandbox"}` to the endpoint to test the sandbox URL.
