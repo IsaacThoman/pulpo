@@ -1,8 +1,8 @@
 import sharp from 'sharp'
-import { avatarCropSettingsSchema, avatarDrawRect, type AvatarCropSettings } from '@pulpo/contracts'
+import { avatarCropSettingsSchema, avatarDrawRect, PROFILE_AVATAR_MAX_BYTES, type AvatarCropSettings } from '@pulpo/contracts'
 import { AppError } from '../lib/errors.js'
 
-export const PROFILE_AVATAR_MAX_BYTES = 5 * 1024 * 1024
+export { PROFILE_AVATAR_MAX_BYTES }
 const PROFILE_AVATAR_MAX_PIXELS = 25_000_000
 const PROFILE_AVATAR_MAX_FRAMES = 100
 const AVATAR_SIZE = 512

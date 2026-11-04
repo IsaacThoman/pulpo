@@ -578,3 +578,25 @@ describe('multiple signed-in accounts', () => {
     expect(useSessionStore.getState()).toMatchObject({ status: 'anonymous', token: null, accounts: [personal] })
   })
 })
+
+describe('updating the signed-in user', () => {
+  it('applies a newer copy of the active account', async () => {
+    const active = user('11111111-1111-4111-8111-111111111111')
+    useSessionStore.setState({ status: 'authenticated', token: 'session-token', user: active })
+    await useSessionStore.getState().setUser({ ...active, name: 'Renamed' })
+    expect(useSessionStore.getState().user?.name).toBe('Renamed')
+  })
+
+  it('ignores a response for an account that is no longer active', async () => {
+    const active = user('22222222-2222-4222-8222-222222222222')
+    useSessionStore.setState({ status: 'authenticated', token: 'session-token', user: active })
+    await useSessionStore.getState().setUser({ ...user('11111111-1111-4111-8111-111111111111'), name: 'Previous account' })
+    expect(useSessionStore.getState().user).toBe(active)
+  })
+
+  it('ignores a response that arrives after signing out', async () => {
+    useSessionStore.setState({ status: 'anonymous', token: null, user: null })
+    await useSessionStore.getState().setUser(user('11111111-1111-4111-8111-111111111111'))
+    expect(useSessionStore.getState().user).toBeNull()
+  })
+})
