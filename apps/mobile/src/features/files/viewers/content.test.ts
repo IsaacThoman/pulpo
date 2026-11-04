@@ -29,6 +29,8 @@ describe('in-app viewers', () => {
   it('pretty-prints JSON only when it changes something', () => {
     expect(formattedJson('{"a":1}', 'x.json')).toBe('{\n  "a": 1\n}')
     expect(formattedJson('{\n  "a": 1\n}', 'x.json')).toBeNull()
+    // Numbers beyond double precision stay as written.
+    expect(formattedJson('{"id":9007199254740993,"big":1e400}', 'x.json')).toBe('{\n  "id": 9007199254740993,\n  "big": 1e400\n}')
     expect(formattedJson('{"a":1}\n{"b":2}', 'x.jsonl')).toBeNull()
     expect(formattedJson('{oops', 'x.json')).toBeNull()
   })

@@ -3,22 +3,10 @@ import { suggestColumnWidths, type DelimitedTable } from '@pulpo/client-core/off
 
 /** Find stops counting here so a one-letter query in a huge file stays responsive. */
 export const MAX_FIND_MATCHES = 10_000
-/** JSON larger than this is not pretty-printed automatically. */
-const MAX_FORMAT_CHARACTERS = 5_000_000
 
 export type { LineMatch as FindMatch } from '@pulpo/client-core/highlight'
 export { findInLines } from '@pulpo/client-core/highlight'
-
-/** JSON pretty-printed with two spaces, or null when the text isn't JSON (or is too large). */
-export function formatJson(text: string): string | null {
-  if (text.length > MAX_FORMAT_CHARACTERS) return null
-  try {
-    const formatted = JSON.stringify(JSON.parse(text), null, 2)
-    return formatted === text ? null : formatted
-  } catch {
-    return null
-  }
-}
+export { formatJson } from '@pulpo/client-core/files'
 
 /**
  * Opens find with Cmd/Ctrl+F (and steps through matches with Cmd/Ctrl+G) while focus is inside

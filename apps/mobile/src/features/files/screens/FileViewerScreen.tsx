@@ -5,7 +5,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import { useQuery } from '@tanstack/react-query'
 import * as Clipboard from 'expo-clipboard'
 import { File } from 'expo-file-system'
-import { useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ActivityIndicator, Alert, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { GlassIconButton, PageHeader, PrimaryButton, Segmented } from '../../../mockup5/src/components/PrototypeUI'
@@ -140,6 +140,16 @@ export function FileViewerScreen({ navigation, route }: Props) {
       if (match) codeRef.current?.scrollToLine(match.line)
     }
   }
+  // A new query (or view) starts again at its first match, which may be off screen.
+  useEffect(() => {
+    if (showGrid) {
+      const row = rowMatches[0]
+      if (row !== undefined) gridRef.current?.scrollToRow(row)
+    } else {
+      const match = lineMatches[0]
+      if (match) codeRef.current?.scrollToLine(match.line)
+    }
+  }, [lineMatches, rowMatches, showGrid])
   const step = (direction: 1 | -1) => {
     if (!total) return
     const next = (current + direction + total) % total

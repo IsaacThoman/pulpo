@@ -1,4 +1,4 @@
-import { codeLanguageFor, decodeTextBytes, fileExtension, previewKindOf } from '@pulpo/client-core/files'
+import { codeLanguageFor, decodeTextBytes, fileExtension, formatJson, previewKindOf } from '@pulpo/client-core/files'
 import { highlightTree, splitHighlightedLines, type HighlightedLine } from '@pulpo/client-core/highlight'
 
 /** How the app shows a file it opens itself rather than handing to the system viewer. */
@@ -36,11 +36,6 @@ export function viewerLines(text: string, name: string, mimeType?: string | null
 /** JSON pretty-printed, or null when the file isn't JSON (or already formatted, or too large). */
 export function formattedJson(text: string, name: string, mimeType?: string | null): string | null {
   const extension = fileExtension(name)
-  if (extension === 'jsonl' || extension === 'ndjson' || codeLanguageFor(name, mimeType) !== 'json' || text.length > 5_000_000) return null
-  try {
-    const formatted = JSON.stringify(JSON.parse(text), null, 2)
-    return formatted === text ? null : formatted
-  } catch {
-    return null
-  }
+  if (extension === 'jsonl' || extension === 'ndjson' || codeLanguageFor(name, mimeType) !== 'json') return null
+  return formatJson(text)
 }
