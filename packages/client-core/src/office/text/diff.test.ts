@@ -49,12 +49,31 @@ describe('textEdits', () => {
     expect(edits).toEqual([{ from: 0, to: 2, insert: '😃' }])
   })
 
-  it('falls back to one replacement past the distance limit', () => {
+  it('replaces runs with nothing in common whole past the distance limit', () => {
     const before = Array.from({ length: 50 }, (_, index) => `old ${index}`).join('\n')
     const after = Array.from({ length: 50 }, (_, index) => `new ${index}`).join('\n')
     const edits = textEdits(before, after, 10)
-    expect(edits).toHaveLength(1)
     expect(applyTextEdits(before, edits)).toBe(after)
+  })
+
+  it('keeps every unchanged line of a file changed all over (past the distance limit)', () => {
+    const lines = Array.from({ length: 6_000 }, (_, index) => `line ${index}`)
+    const before = lines.join('\n')
+    const after = lines.map((line, index) => index % 2 ? `${line} // agent` : line).join('\n')
+    const edits = textEdits(before, after, 100)
+    expect(applyTextEdits(before, edits)).toBe(after)
+    // Each edit appends to one changed line; none spans an unchanged line.
+    expect(edits).toHaveLength(3_000)
+    expect(edits.every((edit) => edit.to === edit.from && edit.insert === ' // agent')).toBe(true)
+  })
+
+  it('keeps unchanged lines between repeated ones past the distance limit (fuzz)', () => {
+    const next = random(9)
+    for (let round = 0; round < 60; round += 1) {
+      const before = Array.from({ length: 300 }, () => ['x', 'y', `u${Math.floor(next() * 1e6)}`][Math.floor(next() * 3)]).join('\n')
+      const after = before.split('\n').map((line) => next() < 0.3 ? `${line}!` : line).join('\n')
+      expect(applyTextEdits(before, textEdits(before, after, 5))).toBe(after)
+    }
   })
 
   it('round-trips random edits (fuzz)', () => {

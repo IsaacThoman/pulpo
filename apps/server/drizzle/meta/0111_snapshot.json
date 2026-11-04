@@ -1,5 +1,5 @@
 {
-  "id": "08606cc4-1568-407e-be05-0cfd5ffd2cea",
+  "id": "5e9496c0-289f-4fac-97da-84d3ded78222",
   "prevId": "cfd803aa-98ce-4bbc-acb0-11d99124584a",
   "version": "7",
   "dialect": "postgresql",
@@ -5817,6 +5817,12 @@
           "type": "integer",
           "primaryKey": false,
           "notNull": true
+        },
+        "generation": {
+          "name": "generation",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
         },
         "last_edited_at": {
           "name": "last_edited_at",

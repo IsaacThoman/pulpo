@@ -52,10 +52,13 @@ function decode(bytes: Uint8Array): DecodedText {
   return decodeTextFile(bytes)
 }
 
-/** The facts to keep for a decoded file; a mixed one keeps its bytes so it can return unchanged. */
+/**
+ * The facts to keep for a decoded file. A file whose bytes the facts cannot rebuild exactly (mixed
+ * line breaks, or a guessed legacy encoding) keeps them, so it returns unchanged until edited.
+ */
 async function factsFor(decoded: DecodedText, bytes: Uint8Array, context: LiveFormatContext): Promise<TextFileFacts> {
   const facts: TextFileFacts = { encoding: decoded.encoding, lineEnding: decoded.lineEnding }
-  if (decoded.mixed) {
+  if (decoded.mixed || decoded.encoding === 'windows-1252') {
     const ref = await context.assets.put(bytes, 'application/octet-stream')
     facts.original = { asset: ref.hash, textHash: await liveAssetHash(utf8(decoded.text)) }
   }
@@ -139,5 +142,10 @@ export const textCodec: LiveFormatCodec = {
 
   toText(doc) {
     return textOf(doc).toString()
+  },
+
+  referencedAssets(doc) {
+    const original = textFileFacts(doc).original
+    return original ? [original.asset] : []
   },
 }

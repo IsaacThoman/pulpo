@@ -1,5 +1,5 @@
--- Live formats: every document records its format (all existing documents are Markdown), and
--- documents get content-addressed binary parts stored beside their Yjs state.
+-- Live formats: every document records its format (all existing documents are Markdown) and, once
+-- made, a generation; documents get content-addressed binary parts stored beside their Yjs state.
 CREATE TABLE "file_doc_assets" (
 	"node_id" uuid NOT NULL,
 	"hash" text NOT NULL,
@@ -13,6 +13,7 @@ CREATE TABLE "file_doc_assets" (
 	CONSTRAINT "file_doc_assets_size_check" CHECK ("file_doc_assets"."size_bytes" >= 0)
 );
 --> statement-breakpoint
+ALTER TABLE "file_docs" ADD COLUMN "generation" uuid;--> statement-breakpoint
 ALTER TABLE "file_nodes" ADD COLUMN "format" text;--> statement-breakpoint
 UPDATE "file_nodes" SET "format" = 'markdown' WHERE "kind" = 'doc';--> statement-breakpoint
 ALTER TABLE "file_doc_assets" ADD CONSTRAINT "file_doc_assets_node_id_file_docs_node_id_fk" FOREIGN KEY ("node_id") REFERENCES "public"."file_docs"("node_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint

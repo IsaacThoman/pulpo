@@ -78,6 +78,19 @@ describe('text encodings', () => {
     expect(() => decodeTextFile(bytesOf([0xff, 0xfe, 0, 0, 0x41, 0, 0, 0]))).toThrow(LiveFormatError)
   })
 
+  it('refuses UTF-16 with a broken surrogate pair, which documents could not store', () => {
+    expect(() => decodeTextFile(bytesOf([0xff, 0xfe, 0x61, 0, 0x3d, 0xd8, 0x62, 0]))).toThrow(expect.objectContaining({ code: 'unsupported' }))
+    expect(() => decodeTextFile(bytesOf([0xff, 0xfe, 0x00, 0xdc]))).toThrow(LiveFormatError)
+    expect(decodeTextFile(utf16('😀', true)).text).toBe('😀')
+  })
+
+  it('refuses 8-bit text in encodings Windows-1252 would garble', () => {
+    // 日本語 in Shift-JIS, a few times over.
+    const shiftJis = Uint8Array.from(Array.from({ length: 10 }, () => [0x93, 0xfa, 0x96, 0x7b, 0x8c, 0xea, 0x0a]).flat())
+    expect(() => decodeTextFile(shiftJis)).toThrow(/not text/)
+    expect(decodeTextFile(bytesOf('caf', [0xe9], ' cr', [0xe8], 'me ', [0x93], 'ok', [0x94], '\n')).encoding).toBe('windows-1252')
+  })
+
   it('refuses a UTF-16 file cut in the middle of a character', () => {
     expect(() => decodeTextFile(bytesOf([0xff, 0xfe, 0x41]))).toThrow(expect.objectContaining({ code: 'corrupt' }))
   })

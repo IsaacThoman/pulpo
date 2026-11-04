@@ -5,7 +5,7 @@ export interface TextEdit {
   insert: string
 }
 
-/** Above this many differing lines a hunk is replaced whole instead of searched further. */
+/** Above this many differing lines Myers stops, and unique lines anchor the match instead. */
 const MAX_EDIT_DISTANCE = 4_000
 
 /** Splits text into lines that keep their `\n`, so joining them gives the text back. */
@@ -80,6 +80,83 @@ function myers(a: Int32Array, b: Int32Array, maxDistance: number): { keptA: Uint
   return { keptA, keptB }
 }
 
+/** Longest increasing subsequence of `values`, as indexes into it (patience sorting). */
+function longestIncreasing(values: readonly number[]): number[] {
+  const tails: number[] = []
+  const previous = new Int32Array(values.length).fill(-1)
+  for (let index = 0; index < values.length; index += 1) {
+    let low = 0
+    let high = tails.length
+    while (low < high) {
+      const middle = (low + high) >> 1
+      if (values[tails[middle]!]! < values[index]!) low = middle + 1
+      else high = middle
+    }
+    if (low > 0) previous[index] = tails[low - 1]!
+    tails[low] = index
+  }
+  const result: number[] = []
+  for (let index = tails.at(-1) ?? -1; index !== -1; index = previous[index]!) result.push(index)
+  return result.reverse()
+}
+
+/**
+ * Marks matching lines of `a[aStart..aEnd)` and `b[bStart..bEnd)`. Myers finds the minimal match
+ * when the ranges differ in few lines; past that, lines that occur once on each side anchor the
+ * match (patience diff) and the gaps between anchors are matched the same way, so a file changed
+ * all over still keeps every line it did not change.
+ */
+function matchLines(
+  a: Int32Array, b: Int32Array, keptA: Uint8Array, keptB: Uint8Array,
+  aStart: number, aEnd: number, bStart: number, bEnd: number, maxDistance: number, depth = 0,
+): void {
+  while (aStart < aEnd && bStart < bEnd && a[aStart] === b[bStart]) keptA[aStart++] = keptB[bStart++] = 1
+  while (aEnd > aStart && bEnd > bStart && a[aEnd - 1] === b[bEnd - 1]) keptA[--aEnd] = keptB[--bEnd] = 1
+  if (aStart === aEnd || bStart === bEnd) return
+  const matched = myers(a.subarray(aStart, aEnd), b.subarray(bStart, bEnd), maxDistance)
+  if (matched) {
+    keptA.set(matched.keptA, aStart)
+    keptB.set(matched.keptB, bStart)
+    return
+  }
+  if (depth > 16) return
+  const counts = new Map<number, [number, number, number]>()
+  for (let index = aStart; index < aEnd; index += 1) {
+    const entry = counts.get(a[index]!) ?? [0, 0, -1]
+    entry[0] += 1
+    counts.set(a[index]!, entry)
+  }
+  for (let index = bStart; index < bEnd; index += 1) {
+    const entry = counts.get(b[index]!)
+    if (!entry) continue
+    entry[1] += 1
+    entry[2] = index
+  }
+  const anchorsA: number[] = []
+  const anchorsB: number[] = []
+  for (let index = aStart; index < aEnd; index += 1) {
+    const entry = counts.get(a[index]!)!
+    if (entry[0] === 1 && entry[1] === 1) {
+      anchorsA.push(index)
+      anchorsB.push(entry[2])
+    }
+  }
+  const chain = longestIncreasing(anchorsB)
+  // Nothing anchors the ranges: they are one replacement.
+  if (!chain.length) return
+  let lastA = aStart
+  let lastB = bStart
+  for (const position of chain) {
+    const anchorA = anchorsA[position]!
+    const anchorB = anchorsB[position]!
+    matchLines(a, b, keptA, keptB, lastA, anchorA, lastB, anchorB, maxDistance, depth + 1)
+    keptA[anchorA] = keptB[anchorB] = 1
+    lastA = anchorA + 1
+    lastB = anchorB + 1
+  }
+  matchLines(a, b, keptA, keptB, lastA, aEnd, lastB, bEnd, maxDistance, depth + 1)
+}
+
 function commonPrefix(left: string, right: string): number {
   const length = Math.min(left.length, right.length)
   let index = 0
@@ -132,11 +209,10 @@ export function textEdits(before: string, after: string, maxDistance = MAX_EDIT_
     if (id === undefined) ids.set(line, id = ids.size)
     return id
   })
-  const matched = myers(intern(oldLines), intern(newLines), maxDistance)
-  if (!matched) {
-    const edit = narrowed(start, oldMiddle, newMiddle)
-    return edit ? [edit] : []
-  }
+  const oldIds = intern(oldLines)
+  const newIds = intern(newLines)
+  const matched = { keptA: new Uint8Array(oldIds.length), keptB: new Uint8Array(newIds.length) }
+  matchLines(oldIds, newIds, matched.keptA, matched.keptB, 0, oldIds.length, 0, newIds.length, maxDistance)
 
   const edits: TextEdit[] = []
   let oldIndex = 0

@@ -41,11 +41,25 @@ function decodeUtf16(bytes: Uint8Array, start: number, littleEndian: boolean): s
     const high = bytes[start + index * 2 + 1]!
     units[index] = littleEndian ? low | (high << 8) : (low << 8) | high
   }
+  for (let index = 0; index < units.length; index += 1) {
+    const unit = units[index]!
+    // Documents store text as UTF-8, which cannot hold half a surrogate pair: refuse rather than
+    // write back a replacement character.
+    if (unit >= 0xd800 && unit <= 0xdbff) {
+      const next = units[index + 1]
+      if (next === undefined || next < 0xdc00 || next > 0xdfff) throw unpairedSurrogate()
+      index += 1
+    } else if (unit >= 0xdc00 && unit <= 0xdfff) {
+      throw unpairedSurrogate()
+    }
+  }
   let text = ''
   // Chunked: spreading a few million arguments overflows the call stack.
   for (let index = 0; index < units.length; index += 8_192) text += String.fromCharCode(...units.subarray(index, index + 8_192))
   return text
 }
+
+const unpairedSurrogate = () => new LiveFormatError('unsupported', 'This UTF-16 file holds a broken character, so it cannot be edited without changing it')
 
 function encodeUtf16(text: string, littleEndian: boolean): Uint8Array {
   const bytes = new Uint8Array(2 + text.length * 2)
@@ -132,6 +146,12 @@ export function decodeTextFile(bytes: Uint8Array): DecodedText {
       raw = utf8
       encoding = bom ? 'utf-8-bom' : 'utf-8'
     } else {
+      // Western text in a legacy encoding has a few accented letters and smart quotes. A steady
+      // share of high bytes means another encoding (Shift-JIS, GBK, …) that Windows-1252 would
+      // turn into gibberish, so it is refused rather than guessed.
+      let high = 0
+      for (const byte of bytes) if (byte >= 0x80) high += 1
+      if (bom || high > Math.max(4, bytes.length / 10)) throw notText()
       raw = decodeWindows1252(bytes)
       encoding = 'windows-1252'
     }
