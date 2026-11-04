@@ -3,6 +3,7 @@ import { speechPlayback, readAloud } from '../features/speech/playback';
 import { SPEECH_SEEK_SECONDS, nextSpeechRate, speechRateLabel, speechText, speechTimeLabel, type SpeechProgress } from '@pulpo/client-core';
 import { INITIAL_TRANSCRIPT_ROWS, hasLargeInitialMessage, transcriptListMessages, usesBottomAnchoredTranscript } from '../features/chat/transcriptWindow';
 import { hasChatSelectionObserver, recordChatSelection, hasTranscriptPositionObserver, recordTranscriptPosition } from '../features/chat/selectionTiming';
+import { responseErrorMessage } from '../features/usage-limits/errors';
 import { prepareChatSelection } from '../data/prepareChat';
 import { createDrawerTransition } from '../features/chat/drawerTransition';
 import { protectTranscript } from '../data/transcriptResidency';
@@ -2723,9 +2724,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
             : response.status === 'cancelled' || response.status === 'incomplete' ? 'stopped'
               : response.status === 'queued' ? 'queued' : 'streaming',
         outputItems: response.output,
-        error: response.error && typeof response.error === 'object' && 'message' in response.error
-          ? String((response.error as { message?: unknown }).message ?? '')
-          : undefined,
+        error: responseErrorMessage(response.error),
       });
       const responseActive = trackActiveResponse(response);
       setAssistantStatus(responseActive ? 'streaming' : 'idle');

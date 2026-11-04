@@ -195,6 +195,8 @@ export const mobileConfigSchema = z.object({
      */
     appStoreBilling: z.object({
       environments: z.array(z.enum(['production', 'sandbox'])).min(1),
+      /** App Store product IDs for each plan. Servers that omit them offer no purchases. */
+      products: z.object({ eight: z.string().min(1), fat: z.string().min(1) }).optional(),
     }).nullable().optional().default(null),
   }),
 })
@@ -225,8 +227,37 @@ export const customUsageLimitSchema = usageLimitPercentagesSchema.extend({
 })
 export type CustomUsageLimit = z.infer<typeof customUsageLimitSchema>
 
+/** The subscription behind the plan: which store bills it and when, never its price. */
+export const usageLimitsSubscriptionSchema = z.object({
+  provider: z.enum(['stripe', 'app_store']),
+  /** The plan in effect now. */
+  plan: z.enum(['eight', 'fat']),
+  /** The plan the next renewal bills, when it differs. */
+  pendingPlan: z.enum(['eight', 'fat']).nullable(),
+  status: z.enum(['active', 'past_due']),
+  cancelAtPeriodEnd: z.boolean(),
+  currentPeriodEnd: isoDateSchema.nullable(),
+})
+export type UsageLimitsSubscription = z.infer<typeof usageLimitsSubscriptionSchema>
+
+/** What each plan includes, for describing the plans a native app sells. */
+export const usageLimitsPlansSchema = z.object({
+  storageLimitBytes: z.object({
+    baby: z.number().int().nonnegative(),
+    eight: z.number().int().nonnegative(),
+    fat: z.number().int().nonnegative(),
+  }),
+  /** The share of a Pulpo Fat owner's weekly usage their Pool can draw on. */
+  fatSharedWeeklyPercent: z.number().int().min(0).max(100),
+})
+export type UsageLimitsPlans = z.infer<typeof usageLimitsPlansSchema>
+
 export const usageLimitsSchema = z.object({
   plan: z.enum(['baby', 'eight', 'fat']),
+  /** Null with no subscription, and from servers older than App Store billing. */
+  subscription: usageLimitsSubscriptionSchema.nullable().optional().default(null),
+  /** Null from servers older than App Store billing. */
+  plans: usageLimitsPlansSchema.nullable().optional().default(null),
   weekly: usageLimitPercentagesSchema.nullable(),
   fiveHour: usageLimitPercentagesSchema.nullable(),
   /** Admin-defined allowances the account spends first. */
