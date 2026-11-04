@@ -23,7 +23,16 @@ export interface DocSessionOptions {
   cacheWaitMs?: number
   /** See `SocketIOYProviderOptions.schemaVersion`. */
   schemaVersion?: number
+  /** See `SocketIOYProviderOptions.schemaVersions`. */
+  schemaVersions?: Record<string, number>
+  /**
+   * Whether the document holds content, so a cached copy can show before the first sync. Defaults
+   * to Markdown's layout; other live formats pass their `LiveFormatInfo.hasContent`.
+   */
+  hasContent?: (doc: Y.Doc) => boolean
 }
+
+const hasMarkdownContent = (doc: Y.Doc) => doc.getXmlFragment(DOC_FRAGMENT_NAME).length > 0
 
 export interface DocSession {
   doc: Y.Doc
@@ -61,10 +70,12 @@ export class DocSessionController {
   private destroyed = false
   private joinedBeforeCache = false
   private snapshot: DocSessionSnapshot = { session: null, status: { state: 'connecting' }, peers: [] }
+  private readonly hasContent: (doc: Y.Doc) => boolean
 
-  constructor({ docId, persistence, cacheWaitMs = LOCAL_CACHE_WAIT_MS, schemaVersion }: DocSessionOptions) {
+  constructor({ docId, persistence, cacheWaitMs = LOCAL_CACHE_WAIT_MS, schemaVersion, schemaVersions, hasContent = hasMarkdownContent }: DocSessionOptions) {
+    this.hasContent = hasContent
     this.persistence = persistence(this.doc)
-    this.provider = new SocketIOYProvider(docId, this.doc, { ignoredOrigins: [this.persistence.origin], schemaVersion })
+    this.provider = new SocketIOYProvider(docId, this.doc, { ignoredOrigins: [this.persistence.origin], schemaVersion, schemaVersions })
     this.provider.onStatus((status) => {
       if (status.state === 'synced') this.ready = true
       this.publish({ status })
@@ -110,7 +121,7 @@ export class DocSessionController {
 
   private start(): void {
     if (this.destroyed) return
-    this.started = { doc: this.doc, provider: this.provider, hasCachedContent: this.doc.getXmlFragment(DOC_FRAGMENT_NAME).length > 0 }
+    this.started = { doc: this.doc, provider: this.provider, hasCachedContent: this.hasContent(this.doc) }
     this.provider.attach(this.socket)
     this.publish({})
   }

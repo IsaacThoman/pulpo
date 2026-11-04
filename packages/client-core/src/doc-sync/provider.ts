@@ -15,6 +15,12 @@ export interface SocketIOYProviderOptions {
    * clients that ship their editor separately (mobile) pass the version that editor was built with.
    */
   schemaVersion?: number
+  /**
+   * The schema version of each live format this client can edit (`liveSchemaVersions()`), checked
+   * against the document's format. Without it the client is taken to edit only Markdown at
+   * `schemaVersion`, as clients from before live formats do.
+   */
+  schemaVersions?: Record<string, number>
 }
 
 export type DocSyncStatus =
@@ -60,12 +66,14 @@ export class SocketIOYProvider {
   readonly doc: Y.Doc
   private readonly ignoredOrigins: unknown[]
   private readonly schemaVersion: number
+  private readonly schemaVersions: Record<string, number> | undefined
 
-  constructor(docId: string, doc: Y.Doc, { ignoredOrigins = [], schemaVersion = DOC_SCHEMA_VERSION }: SocketIOYProviderOptions = {}) {
+  constructor(docId: string, doc: Y.Doc, { ignoredOrigins = [], schemaVersion = DOC_SCHEMA_VERSION, schemaVersions }: SocketIOYProviderOptions = {}) {
     this.docId = docId.toLowerCase()
     this.doc = doc
     this.ignoredOrigins = ignoredOrigins
-    this.schemaVersion = schemaVersion
+    this.schemaVersion = schemaVersions?.markdown ?? schemaVersion
+    this.schemaVersions = schemaVersions
     this.awareness = new Awareness(doc)
     doc.on('update', this.onDocUpdate)
     this.awareness.on('update', this.onAwarenessUpdate)
@@ -191,6 +199,7 @@ export class SocketIOYProvider {
       stateVector: Y.encodeStateVector(this.doc),
       awarenessClientId: this.doc.clientID,
       schemaVersion: this.schemaVersion,
+      ...this.schemaVersions ? { schemaVersions: this.schemaVersions } : {},
     }, (result) => {
       if (generation !== this.generation || this.isFinal()) return
       clearTimeout(this.ackTimer)

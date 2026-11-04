@@ -191,6 +191,11 @@ export const mobileConfigSchema = z.object({
       enabled: z.boolean(),
       docSchemaVersion: z.number().int().positive(),
       urlImport: z.boolean().optional().default(false),
+      /**
+       * The live formats the server edits, with each one's schema version (Markdown's equals
+       * `docSchemaVersion`). Older servers omit it and edit Markdown only.
+       */
+      liveFormats: z.record(z.string(), z.number().int().positive()).optional(),
     }).optional(),
     /**
      * App Store subscriptions, with the StoreKit environments whose purchases this server accepts.
