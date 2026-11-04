@@ -14,6 +14,8 @@ const MIME_TYPES: Record<string, string> = {
   '.doc': 'application/msword', '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   '.ppt': 'application/vnd.ms-powerpoint', '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
   '.xls': 'application/vnd.ms-excel', '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  '.aac': 'audio/aac', '.flac': 'audio/flac', '.m4a': 'audio/mp4', '.mp3': 'audio/mpeg', '.ogg': 'audio/ogg', '.opus': 'audio/ogg',
+  '.wav': 'audio/wav', '.m4v': 'video/mp4', '.mov': 'video/quicktime', '.mp4': 'video/mp4', '.webm': 'video/webm',
 }
 
 export interface GeneratedAttachment {
