@@ -144,13 +144,13 @@ describe.skipIf(!enabled)('agent file changes', () => {
       const projects = await files.folder('Projects')
       await files.attach({ [projects]: 'write' })
       await files.ok('mkdir', { path: 'Projects/New' })
-      const created = await pushFile('/workspace/a.txt', 'Projects/New/a.txt', 'a')
+      const created = await pushFile('/workspace/a.bin', 'Projects/New/a.bin', 'a')
       const folder = (await files.node(created.nodeId))!.parentId!
       const reply = files.responseId
       // The owner adds a file of their own, and another reply replaces the agent's file.
       const mine = await files.blob('mine.txt', folder, 'mine')
       await files.newReply()
-      await pushFile('/workspace/a.txt', 'Projects/New/a.txt', 'b')
+      await pushFile('/workspace/a.bin', 'Projects/New/a.bin', 'b')
       const conflicts = await conflictsOf(undoFileChanges(files.userId, reply))
       expect(conflicts.map((conflict) => [conflict.nodeId, conflict.reason]).sort()).toEqual([[created.nodeId, 'replaced'], [folder, 'edited']].sort())
       expect(await files.node(folder)).toMatchObject({ trashedAt: null })

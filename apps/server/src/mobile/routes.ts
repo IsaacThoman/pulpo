@@ -12,6 +12,7 @@ import {
   verifyPasskeyAuthenticationInputSchema,
 } from '@pulpo/contracts'
 import { DOC_SCHEMA_VERSION } from '@pulpo/client-core/doc-schema'
+import { liveSchemaVersions } from '@pulpo/client-core/office'
 import { db } from '../database/client.js'
 import { applicationSettings, passwordCredentials, users } from '../database/schema.js'
 import { getConfig } from '../config.js'
@@ -86,6 +87,7 @@ export async function registerMobileRoutes(app: FastifyInstance): Promise<void> 
         files: {
           enabled: auth.filesEnabled,
           docSchemaVersion: DOC_SCHEMA_VERSION,
+          liveFormats: liveSchemaVersions(),
           // As /api/auth/settings tells the web client (urlImportEnabled).
           urlImport: auth.filesEnabled && webExtractAvailable(parseWebToolsSettings(webToolsSetting?.value)),
         },

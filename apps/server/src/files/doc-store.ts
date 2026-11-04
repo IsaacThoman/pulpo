@@ -1,7 +1,8 @@
 import { and, asc, eq, gt, inArray, lt, sql } from 'drizzle-orm'
 import * as Y from 'yjs'
-import { DOC_SCHEMA_VERSION, ydocToMarkdown } from '@pulpo/client-core/doc-schema'
-import { isMarkdownName, type FileNode } from '@pulpo/contracts'
+import { liveMimeType } from '@pulpo/client-core/office'
+import { liveFormatCodec } from '@pulpo/client-core/office/codecs'
+import type { FileNode } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import { fileDocs, fileDocUpdates, fileNodes } from '../database/schema.js'
 import { fileDocQueue } from '../jobs.js'
@@ -9,6 +10,7 @@ import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { resolveFileAccess, type FileNodeRow } from './access.js'
 import { docTooLarge, initialDocState, MAX_DOC_STATE_BYTES } from './doc-state.js'
+import { docFormat, formatForName, initialLiveDoc } from './live-docs.js'
 import { assertDestination, assertNameAvailable, availableName, lockFileTree, mutateFileTree, toFileNode } from './tree-service.js'
 import { topSortOrder } from './order.js'
 
@@ -31,34 +33,36 @@ export type DocUpdateOrigin = 'client' | 'agent' | 'import' | 'restore'
 export const invalidDocUpdate = () => new AppError(400, 'invalid_update', 'The document update is invalid')
 
 /**
- * Creates a document inside a tree transaction. A taken name gets a ` (n)` suffix unless
- * `exactName` is set, in which case it fails.
+ * Creates a document inside a tree transaction, in the live format its name's extension picks: an
+ * empty one, or one holding `markdown` (Markdown documents) or the file `bytes`. A taken name gets
+ * a ` (n)` suffix unless `exactName` is set, in which case it fails.
  */
 export async function createDocInTx(tx: DatabaseTransaction, userId: string, input: {
   parentId: string | null
   name?: string
   markdown?: string
+  bytes?: Uint8Array
   exactName?: boolean
   suggestionChangeId?: string | null
 }): Promise<FileNodeRow> {
-  // Only Markdown names are editable documents; any other name is an ordinary file.
-  if (input.name !== undefined && !isMarkdownName(input.name)) {
-    throw new AppError(400, 'file_not_markdown', 'Only files named .md or .markdown can be edited')
-  }
-  const initial = initialDocState(input.markdown)
-  await assertDestination(tx, userId, input.parentId)
   const desired = input.name ?? DEFAULT_DOC_NAME
+  // Only names of a live format are documents; any other name is an ordinary file.
+  const format = formatForName(desired)
+  if (input.markdown !== undefined && format.id !== 'markdown') throw new AppError(400, 'validation_error', 'Only Markdown documents start from Markdown')
+  const initial = await initialLiveDoc(tx, format, desired, { bytes: input.bytes, markdown: input.markdown })
+  await assertDestination(tx, userId, input.parentId)
   if (input.exactName) await assertNameAvailable(tx, userId, input.parentId, desired)
   const name = input.exactName ? desired : await availableName(tx, userId, input.parentId, desired)
   const [node] = await tx.insert(fileNodes).values({
-    id: newId(), ownerUserId: userId, parentId: input.parentId, kind: 'doc', name,
-    mimeType: 'text/markdown', sizeBytes: initial.state.byteLength,
+    id: newId(), ownerUserId: userId, parentId: input.parentId, kind: 'doc', name, format: format.id,
+    mimeType: liveMimeType(format, name), sizeBytes: initial.state.byteLength,
     sortOrder: await topSortOrder(tx, userId, input.parentId), suggestionChangeId: input.suggestionChangeId ?? null,
   }).returning()
   await tx.insert(fileDocs).values({
     nodeId: node!.id, state: initial.state, stateBytes: initial.state.byteLength,
-    markdown: initial.markdown, schemaVersion: DOC_SCHEMA_VERSION,
+    markdown: initial.text, schemaVersion: format.schemaVersion,
   })
+  await initial.assets.flush(tx, userId, node!.id)
   return node!
 }
 
@@ -150,7 +154,7 @@ export async function loadYDoc(nodeId: string): Promise<Y.Doc> {
 /** Worker: folds logged updates into the snapshot, then deletes exactly the rows it folded. */
 export async function compactDoc(nodeId: string): Promise<void> {
   await db.transaction(async (tx) => {
-    const [node] = await tx.select({ ownerUserId: fileNodes.ownerUserId }).from(fileNodes).where(eq(fileNodes.id, nodeId))
+    const [node] = await tx.select({ ownerUserId: fileNodes.ownerUserId, format: fileNodes.format }).from(fileNodes).where(eq(fileNodes.id, nodeId))
     if (!node) return
     // Tree mutations can lock the node before deleting/converting its document. Match their
     // tree → document → node order so compaction cannot deadlock a rename or subtree purge.
@@ -166,9 +170,9 @@ export async function compactDoc(nodeId: string): Promise<void> {
     const state = Y.encodeStateAsUpdate(ydoc)
     let markdown = doc.markdown
     try {
-      markdown = ydocToMarkdown(ydoc)
+      markdown = liveFormatCodec(docFormat(node)).toText(ydoc)
     } catch (error) {
-      // The snapshot is still authoritative; stale Markdown only affects previews and export.
+      // The snapshot is still authoritative; stale text only affects previews and search.
       console.error(JSON.stringify({ level: 'error', event: 'file_doc.markdown_failed', nodeId, error: error instanceof Error ? error.message : String(error) }))
     }
     await tx.update(fileDocs).set({
@@ -193,12 +197,17 @@ export async function scheduleStaleDocCompactions(now = new Date()): Promise<voi
   for (const doc of stale) await scheduleDocCompaction(doc.nodeId, 0)
 }
 
-export async function readDocMarkdown(userId: string, nodeId: string): Promise<{ name: string; markdown: string }> {
+/**
+ * A document's plain text (`codec.toText`): Markdown for Markdown documents, which is what this
+ * route has always answered with, and the content of text files.
+ */
+export async function readDocMarkdown(userId: string, nodeId: string): Promise<{ name: string; markdown: string; format: string }> {
   const access = await resolveFileAccess(db, userId, nodeId)
   if (!access || access.node.kind !== 'doc') throw notFound('Document')
+  const format = docFormat(access.node)
   const [doc] = await db.select({ markdown: fileDocs.markdown, pendingUpdates: fileDocs.pendingUpdates })
     .from(fileDocs).where(eq(fileDocs.nodeId, nodeId))
   if (!doc) throw notFound('Document')
-  if (!doc.pendingUpdates) return { name: access.node.name, markdown: doc.markdown }
-  return { name: access.node.name, markdown: ydocToMarkdown(await loadYDoc(nodeId)) }
+  if (!doc.pendingUpdates) return { name: access.node.name, markdown: doc.markdown, format: format.id }
+  return { name: access.node.name, markdown: liveFormatCodec(format).toText(await loadYDoc(nodeId)), format: format.id }
 }

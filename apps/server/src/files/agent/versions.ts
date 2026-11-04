@@ -90,13 +90,17 @@ export async function hasVersion(executor: FileExecutor, objectKey: string): Pro
 }
 
 /**
- * Change rows that still need an object: Write-mode rows keep both sides for undo and redo,
- * and pending suggestions keep what they propose.
+ * Change rows that still need an object: Write-mode rows keep both sides for undo and redo, and
+ * pending suggestions keep what they propose (for live documents, also the proposal's update and
+ * the version it was proposed against, which its diff shows).
  */
-function referencesObject(objectKey: string | typeof fileVersions.objectKey) {
+export function referencesObject(objectKey: string | typeof fileVersions.objectKey) {
   return sql`(
     (${fileChanges.mode} = 'write' and (${fileChanges.before}->>'objectKey' = ${objectKey} or ${fileChanges.after}->>'objectKey' = ${objectKey}))
-    or (${fileChanges.status} = 'pending' and ${fileChanges.after}->>'objectKey' = ${objectKey})
+    or (${fileChanges.status} = 'pending' and (
+      ${fileChanges.after}->>'objectKey' = ${objectKey} or ${fileChanges.after}->>'updateKey' = ${objectKey}
+      or (${fileChanges.before}->>'format' is not null and ${fileChanges.before}->>'objectKey' = ${objectKey})
+    ))
   )`
 }
 

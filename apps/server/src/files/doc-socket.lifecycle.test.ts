@@ -29,8 +29,8 @@ function socketFixture() {
     socket,
     emit: (event: string, data?: unknown) => handlers.get(event)!(data),
     request: (event: string, data: unknown) => new Promise<unknown>((resolve) => handlers.get(event)!(data, resolve)),
-    join: (requestedId = docId) => new Promise<unknown>((resolve) => handlers.get('doc.join')!({
-      docId: requestedId, stateVector: Y.encodeStateVector(new Y.Doc()), awarenessClientId: 1, schemaVersion: DOC_SCHEMA_VERSION,
+    join: (requestedId = docId, versions: { schemaVersion?: number; schemaVersions?: Record<string, number> } = {}) => new Promise<unknown>((resolve) => handlers.get('doc.join')!({
+      docId: requestedId, stateVector: Y.encodeStateVector(new Y.Doc()), awarenessClientId: 1, schemaVersion: DOC_SCHEMA_VERSION, ...versions,
     }, resolve)),
   }
 }
@@ -91,6 +91,26 @@ describe('document socket lifecycle', () => {
     vi.mocked(filesFeatureEnabled).mockResolvedValue(false)
     expect(await fixture.request('doc.update', { docId, update: new Uint8Array([0, 0]) })).toMatchObject({ ok: false, error: 'unauthorized' })
     expect(appendDocUpdate).not.toHaveBeenCalled()
+  })
+
+  it('checks the schema version of the document format, letting older Markdown clients keep working', async () => {
+    const asDoc = (format: string | null) => vi.mocked(resolveFileAccess).mockResolvedValue({ role: 'owner', node: { id: docId, kind: 'doc', trashedAt: null, format } } as Awaited<ReturnType<typeof resolveFileAccess>>)
+    asDoc('markdown')
+    // A client from before live formats sends only `schemaVersion`.
+    expect(await socketFixture().join()).toMatchObject({ ok: true, format: 'markdown' })
+    expect(await socketFixture().join(docId, { schemaVersion: DOC_SCHEMA_VERSION - 1 })).toMatchObject({ ok: false, error: 'schema_outdated' })
+    asDoc(null)
+    expect(await socketFixture().join()).toMatchObject({ ok: true, format: 'markdown' })
+    asDoc('text')
+    // An older client cannot edit text documents, and neither can one with another text schema.
+    expect(await socketFixture().join()).toMatchObject({ ok: false, error: 'schema_outdated' })
+    expect(await socketFixture().join(docId, { schemaVersions: { markdown: DOC_SCHEMA_VERSION, text: 99 } })).toMatchObject({ ok: false, error: 'schema_outdated' })
+    expect(await socketFixture().join(docId, { schemaVersions: { markdown: DOC_SCHEMA_VERSION, text: 1 } })).toMatchObject({ ok: true, format: 'text' })
+    // A client announcing only text cannot open Markdown, and nobody can open a format this server lacks.
+    asDoc('markdown')
+    expect(await socketFixture().join(docId, { schemaVersions: { text: 1 } })).toMatchObject({ ok: false, error: 'schema_outdated' })
+    asDoc('sheet')
+    expect(await socketFixture().join(docId, { schemaVersions: { sheet: 1 } })).toMatchObject({ ok: false, error: 'schema_outdated' })
   })
 
   it('drops room membership after a failed join instead of relaying further document updates', async () => {

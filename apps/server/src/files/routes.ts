@@ -26,6 +26,7 @@ import {
   updateFileNode,
 } from './tree-service.js'
 import { registerFileUploadRoutes } from './upload-routes.js'
+import { registerLiveDocRoutes } from './live-routes.js'
 import { importUrlAsDoc } from './url-import.js'
 import { listTrashedFiles } from '../trash/service.js'
 import { getFolderLayout, normalizeInput, updateFolderLayout } from './layout-service.js'
@@ -169,7 +170,8 @@ export async function registerFileRoutes(app: FastifyInstance): Promise<void> {
   })
 
   // Uploaded Markdown keeps its bytes until someone edits it. The dry run shows what converting
-  // to an editable document would change, so clients can warn before reformatting.
+  // to an editable document would change, so clients can warn before reformatting. Formats whose
+  // codec keeps every byte (text and code) convert directly.
   app.get('/api/files/:id/conversion', async (request) => {
     const user = await requireFilesUser(request)
     const access = await resolveFileAccess(db, user.id, idParams.parse(request.params).id)
@@ -221,4 +223,5 @@ export async function registerFileRoutes(app: FastifyInstance): Promise<void> {
   })
 
   await registerFileUploadRoutes(app)
+  await registerLiveDocRoutes(app)
 }
