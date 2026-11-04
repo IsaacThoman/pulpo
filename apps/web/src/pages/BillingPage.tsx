@@ -482,7 +482,7 @@ function Quote({ credits, fee, charge }: { credits: number; fee: number; charge:
 function PlanBadge({ plan, overridden, pastDue }: { plan: BillingPlan; overridden: boolean; pastDue: boolean }) {
   const badge = pastDue && !overridden
     ? <Badge variant="destructive">{ui("Past due")}</Badge>
-    : <Badge tabIndex={overridden ? 0 : undefined} variant={plan === 'baby' ? 'outline' : 'secondary'} className={plan === 'fat' ? 'border-pink-500/25 bg-pink-500/15 text-pink-700 dark:text-pink-300' : plan === 'eight' ? 'border-yellow-500/25 bg-yellow-500/15 text-yellow-700 dark:text-yellow-300' : undefined}>{overridden ? ui("Admin granted") : plan === 'baby' ? ui("Not subscribed") : ui("Active")}</Badge>
+    : <Badge tabIndex={overridden ? 0 : undefined} variant={plan === 'baby' ? 'outline' : 'secondary'} className={plan === 'fat' ? 'border-pink-500/25 bg-pink-500/15 text-pink-700 dark:text-pink-300' : plan === 'eight' ? 'border-teal-500/25 bg-teal-500/15 text-teal-700 dark:text-teal-300' : undefined}>{overridden ? ui("Admin granted") : plan === 'baby' ? ui("Not subscribed") : ui("Active")}</Badge>
   if (!overridden) return badge
   return (
     <Tooltip>
@@ -495,7 +495,7 @@ function PlanBadge({ plan, overridden, pastDue }: { plan: BillingPlan; overridde
 function PlanColumn({ plan, current, pendingPlan, cancelAtPeriodEnd, benefits, onChoose, disabled }: { plan: BillingPlan; current: BillingPlan; pendingPlan: BillingPlan | null; cancelAtPeriodEnd: boolean; benefits: string[]; onChoose: () => void; disabled: boolean }) {
   const price = plan === 'baby' ? null : plan === 'eight' ? 8 : 24
   return <div className={cn('flex flex-col', plan === 'baby' ? 'md:pr-5' : plan === 'eight' ? 'md:px-5' : 'md:pl-5')}>
-    <h3 className={cn('text-xl font-semibold tracking-tight', plan === 'eight' ? 'text-yellow-700 dark:text-yellow-300' : plan === 'fat' ? 'text-pink-700 dark:text-pink-300' : undefined)}>{billingPlanName(plan)}</h3>
+    <h3 className={cn('text-xl font-semibold tracking-tight', plan === 'baby' ? 'text-yellow-700 dark:text-yellow-300' : plan === 'eight' ? 'text-teal-700 dark:text-teal-300' : 'text-pink-700 dark:text-pink-300')}>{billingPlanName(plan)}</h3>
     <div className="mt-3 text-2xl font-semibold">{price === null ? ui("Free") : <>${price} <span className="text-sm font-normal text-muted-foreground">{ui("/ month")}</span></>}</div>
     <div className="mt-5 flex-1 space-y-3 text-sm">{benefits.map((benefit) => <div key={benefit} className="flex items-start gap-2"><Check className="mt-0.5 size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />{benefit}</div>)}</div>
     <Button className="mt-6 w-full" variant={plan === 'baby' ? 'outline' : 'default'} disabled={disabled || planChoiceDisabled(plan, current, cancelAtPeriodEnd, pendingPlan)} onClick={onChoose}>{planChoiceLabel(plan, current, cancelAtPeriodEnd, pendingPlan)}</Button>
