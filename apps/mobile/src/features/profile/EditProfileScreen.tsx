@@ -16,7 +16,7 @@ import {
   VStack as SwiftUIVStack,
   useNativeState,
 } from '@expo/ui/swift-ui';
-import { accessibilityLabel, autocorrectionDisabled, disabled, foregroundStyle, frame, listRowBackground, multilineTextAlignment, textFieldStyle, textInputAutocapitalization, tint } from '@expo/ui/swift-ui/modifiers';
+import { accessibilityLabel, autocorrectionDisabled, disabled, font, foregroundStyle, frame, listRowBackground, multilineTextAlignment, scrollDismissesKeyboard, textFieldStyle, textInputAutocapitalization, tint } from '@expo/ui/swift-ui/modifiers';
 import { normalizeUsername } from '@pulpo/client-core';
 import { mobileApi } from '../../api/client';
 import { useSessionStore } from '../../store/session';
@@ -95,14 +95,20 @@ function NativeNameRow({ value, onChange }: { value: string; onChange: (value: s
   </SwiftUIHStack>;
 }
 
-/** Reads as a handle: the @ sits right before the text, like web's username field. */
-function NativeUsernameRow({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+/**
+ * Reads as a handle: the @ sits right before the text, like web's username field. The error
+ * sits in the row, not the footer, so it stays above the keyboard while typing.
+ */
+function NativeUsernameRow({ value, onChange, error, errorColor }: { value: string; onChange: (value: string) => void; error: string | null; errorColor: string }) {
   const nativeText = useNativeState(value);
   useEffect(() => { if (nativeText.get() !== value) nativeText.set(value); }, [nativeText, value]);
-  return <SwiftUIHStack spacing={1}>
-    <SwiftUIText modifiers={[foregroundStyle('secondary')]}>@</SwiftUIText>
-    <SwiftUITextField onTextChange={onChange} text={nativeText} placeholder="username" modifiers={[textFieldStyle('plain'), textInputAutocapitalization('never'), autocorrectionDisabled(), accessibilityLabel('Username')]} />
-  </SwiftUIHStack>;
+  return <SwiftUIVStack alignment="leading" spacing={4}>
+    <SwiftUIHStack spacing={1}>
+      <SwiftUIText modifiers={[foregroundStyle('secondary')]}>@</SwiftUIText>
+      <SwiftUITextField onTextChange={onChange} text={nativeText} placeholder="username" modifiers={[textFieldStyle('plain'), textInputAutocapitalization('never'), autocorrectionDisabled(), accessibilityLabel('Username')]} />
+    </SwiftUIHStack>
+    {error ? <SwiftUIText modifiers={[font({ textStyle: 'footnote' }), foregroundStyle(errorColor)]}>{error}</SwiftUIText> : null}
+  </SwiftUIVStack>;
 }
 
 export function EditProfileScreen({ navigation }: NativeStackScreenProps<RootStackParamList, 'EditProfile'>) {
@@ -137,9 +143,8 @@ export function EditProfileScreen({ navigation }: NativeStackScreenProps<RootSta
   }, [avatar.busy, draft.canSave, navigation, save, saving]);
 
   const photoLabel = user?.avatarUrl ? 'Edit Photo' : 'Add Photo';
-  const usernameFooter = draft.usernameError ?? USERNAME_HINT;
 
-  if (Platform.OS === 'ios') return <SwiftUIHost modifiers={[tint(theme.blue)]} style={styles.flex}><SwiftUIForm>
+  if (Platform.OS === 'ios') return <SwiftUIHost modifiers={[tint(theme.blue)]} style={styles.flex}><SwiftUIForm modifiers={[scrollDismissesKeyboard('interactively')]}>
     <SwiftUISection>
       <SwiftUIVStack spacing={10} modifiers={[frame({ maxWidth: Infinity }), listRowBackground('clear')]}>
         <SwiftUIRNHostView matchContents><EditableAvatar busy={avatar.busy} /></SwiftUIRNHostView>
@@ -154,8 +159,8 @@ export function EditProfileScreen({ navigation }: NativeStackScreenProps<RootSta
       <NativeNameRow value={name} onChange={setName} />
       <SwiftUILabeledContent label="Email"><SwiftUIText modifiers={[foregroundStyle('secondary')]}>{user?.email ?? ''}</SwiftUIText></SwiftUILabeledContent>
     </SwiftUISection>
-    <SwiftUISection title="Username" footer={<SwiftUIText modifiers={[foregroundStyle(draft.usernameError ? theme.red : 'secondary')]}>{usernameFooter}</SwiftUIText>}>
-      <NativeUsernameRow value={username} onChange={changeUsername} />
+    <SwiftUISection title="Username" footer={<SwiftUIText modifiers={[foregroundStyle('secondary')]}>{USERNAME_HINT}</SwiftUIText>}>
+      <NativeUsernameRow value={username} onChange={changeUsername} error={draft.usernameError} errorColor={theme.red} />
     </SwiftUISection>
   </SwiftUIForm></SwiftUIHost>;
 
