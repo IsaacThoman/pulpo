@@ -7,6 +7,7 @@ import { decryptSecret } from '../lib/crypto.js'
 import { anthropicSdkBaseUrl, openAnthropicMessagesStream } from './anthropic-messages.js'
 import { openChatCompletionsStream } from './chat-completions.js'
 import type { ResponsesResult, ResponsesStreamEvent } from './responses-builder.js'
+import { withMirroredReasoningEffort } from './responses-input.js'
 
 type Provider = typeof providerConnections.$inferSelect
 export type UpstreamProvider = Pick<Provider, 'id' | 'apiFormat' | 'baseUrl' | 'encryptedApiKey' | 'organizationId' | 'projectId' | 'requestTimeoutMs'>
@@ -93,7 +94,7 @@ export function createUpstreamTextClient(provider: UpstreamProvider, options: { 
     format,
     openai,
     responses: {
-      create: ((body: CreateBody, requestOptions?: RequestOptions) => openai.responses.create(withoutPulpoReasoning(body) as never, requestOptions)) as unknown as UpstreamTextClient['responses']['create'],
+      create: ((body: CreateBody, requestOptions?: RequestOptions) => openai.responses.create(withoutPulpoReasoning(withMirroredReasoningEffort(body)) as never, requestOptions)) as unknown as UpstreamTextClient['responses']['create'],
     },
   }
 }

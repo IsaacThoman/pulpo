@@ -10,6 +10,8 @@ import { protectTranscript } from '../data/transcriptResidency';
 import { incomingFiles, releaseImportedFile } from '../native/incomingFiles';
 import { useIncomingFileImport } from '../features/chat/useIncomingFileImport';
 import { incomingFileAttachment } from '../features/chat/incomingFileAttachment';
+import { pastedFileAttachments, type PastedFiles } from '../features/chat/pastedFileAttachments';
+import { ComposerPasteView } from '../native/ComposerPasteView';
 import { useShortcutInbox } from '../shortcuts/inbox';
 import { shortcutsScope } from '../shortcuts/native';
 import { useDictation } from '../features/chat/useDictation';
@@ -5335,6 +5337,19 @@ function ChatView({
     }
   }, [addAttachments, attachments.length]);
 
+  const pasteContext = useCallback(() => activeDraftRef.current?.scope ?? null, []);
+  const pasteFiles = useCallback((pasted: PastedFiles, startedInScope: string | null) => {
+    // Never let a slow paste land in a draft the user moved to meanwhile.
+    if (startedInScope !== (activeDraftRef.current?.scope ?? null)) {
+      if (pasted.files.length) Alert.alert('Couldn’t paste', 'The draft changed before the pasted files were ready. Paste them again.');
+      return;
+    }
+    const result = pastedFileAttachments(pasted, () => Crypto.randomUUID(),
+      useSessionStore.getState().config?.limits.maxAttachmentBytes);
+    if (result.attachments.length) addAttachments(result.attachments);
+    if (result.error) Alert.alert('Couldn’t paste', result.error);
+  }, [addAttachments]);
+
   const armSubmittedTurnFollow = useCallback((): ChatFollowSnapshot => {
     submittedTurnFollowRevision.current += 1;
     const snapshot = {
@@ -6365,31 +6380,33 @@ function ChatView({
               ) : null}
               {dictation.error && <Text accessibilityRole="alert" style={styles.attachmentErrorText}>{dictation.error}</Text>}
               <View style={[styles.composerInputRow, showShelf && styles.composerShelfInputRow]}>
-                <TextInput
-                  ref={composerInputRef}
-                  accessibilityLabel="Message"
-                  disableFullscreenUI
-                  // Toggling editable off resigns focus and dismisses the keyboard, so stay editable during
-                  // shelf actions and temporary handoffs. transferShelf checks for edits before replacing content;
-                  // toggleTemporary moves draft ownership up front, so edits persist to the destination draft once it settles.
-                  editable={!composerFocusSuppressed && !(messageEdit && sending)}
-                  maxFontSizeMultiplier={COMPOSER_MAX_FONT_SIZE_MULTIPLIER}
-                  multiline
-                  maxLength={1_000_000}
-                  onFocus={() => { setQueueCollapsed(true); setShelfCollapsed(true); }}
-                  onBlur={() => { setQueueCollapsed(false); setShelfCollapsed(false); }}
-                  onChangeText={(value) => { inputRef.current = value; onChangeInput(value); }}
-                  selection={{ start: Math.min(inputSelection.start, input.length), end: Math.min(inputSelection.end, input.length) }}
-                  onSelectionChange={(event) => { setComposerSelection(setInputSelection, inputSelectionRef, event.nativeEvent.selection); }}
-                  placeholder={attachments.length > 0 ? 'Add a caption…' : messageEdit ? 'Edit message…' : temporary ? 'Temporary message…' : 'Message…'}
-                  placeholderTextColor={COLORS.muted}
-                  // iOS multiline measurement can retain the previous draft's height after a clear.
-                  // Derive the reset from the controlled value so synced clears work too, without remounting.
-                  style={[styles.input, styles.composerTextInput, Platform.OS === 'ios' && input.length === 0 && {
-                    height: Math.max(styles.input.minHeight, Math.ceil(styles.input.lineHeight * Math.min(fontScale, COMPOSER_MAX_FONT_SIZE_MULTIPLIER))),
-                  }]}
-                  value={input}
-                />
+                <ComposerPasteView onPasteFiles={pasteFiles} pasteContext={pasteContext} style={styles.composerPasteTarget}>
+                  <TextInput
+                    ref={composerInputRef}
+                    accessibilityLabel="Message"
+                    disableFullscreenUI
+                    // Toggling editable off resigns focus and dismisses the keyboard, so stay editable during
+                    // shelf actions and temporary handoffs. transferShelf checks for edits before replacing content;
+                    // toggleTemporary moves draft ownership up front, so edits persist to the destination draft once it settles.
+                    editable={!composerFocusSuppressed && !(messageEdit && sending)}
+                    maxFontSizeMultiplier={COMPOSER_MAX_FONT_SIZE_MULTIPLIER}
+                    multiline
+                    maxLength={1_000_000}
+                    onFocus={() => { setQueueCollapsed(true); setShelfCollapsed(true); }}
+                    onBlur={() => { setQueueCollapsed(false); setShelfCollapsed(false); }}
+                    onChangeText={(value) => { inputRef.current = value; onChangeInput(value); }}
+                    selection={{ start: Math.min(inputSelection.start, input.length), end: Math.min(inputSelection.end, input.length) }}
+                    onSelectionChange={(event) => { setComposerSelection(setInputSelection, inputSelectionRef, event.nativeEvent.selection); }}
+                    placeholder={attachments.length > 0 ? 'Add a caption…' : messageEdit ? 'Edit message…' : temporary ? 'Temporary message…' : 'Message…'}
+                    placeholderTextColor={COLORS.muted}
+                    // iOS multiline measurement can retain the previous draft's height after a clear.
+                    // Derive the reset from the controlled value so synced clears work too, without remounting.
+                    style={[styles.input, styles.composerTextInput, Platform.OS === 'ios' && input.length === 0 && {
+                      height: Math.max(styles.input.minHeight, Math.ceil(styles.input.lineHeight * Math.min(fontScale, COMPOSER_MAX_FONT_SIZE_MULTIPLIER))),
+                    }]}
+                    value={input}
+                  />
+                </ComposerPasteView>
                 {showShelf && (Platform.OS === 'ios'
                   ? <NativeComposerShelfButton disabled={!(input.trim() || attachments.length) || shelfBusy || sending || dictationBusy} onPress={() => { void transferShelf(); }} />
                   : <MaterialIconButton label="Shelve draft" icon="archivebox" disabled={!(input.trim() || attachments.length) || shelfBusy || sending || dictationBusy} onPress={() => { void transferShelf(); }} />)}
@@ -7379,6 +7396,8 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   composerInputRow: { flexDirection: 'row', alignItems: 'flex-end' },
   composerShelfInputRow: { flexGrow: 1 },
   composerTextInput: { flex: 1, minWidth: 0, alignSelf: 'flex-start' },
+  // Lays out its input exactly as the input row would.
+  composerPasteTarget: { flex: 1, minWidth: 0, alignSelf: 'flex-start', flexDirection: 'row' },
   composerBar: { flexDirection: 'row', alignItems: 'center', marginTop: 'auto' },
   composerToolbar: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 1 },
   // Preserve composer row measurements while Shelve occupies the top-right corner.

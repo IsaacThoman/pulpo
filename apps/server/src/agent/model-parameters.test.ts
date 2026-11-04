@@ -27,6 +27,15 @@ describe('agent model parameters', () => {
     expect(standard).toEqual({ parameters: { service_tier: 'default', reasoning: { effort: 'high' } }, reasoning: 'high' })
   })
 
+  it("overrides Pi's default effort with a configured reasoning_effort", () => {
+    expect(agentSamplingParameters('https://api.fireworks.ai/inference/v1', { reasoning_effort: 'none', top_p: 0.95 })).toEqual({
+      reasoning_effort: 'none',
+      top_p: 0.95,
+      reasoning: { effort: 'none' },
+      include: undefined,
+    })
+  })
+
   it('omits encrypted-reasoning includes for strict OpenAI-compatible proxies', () => {
     expect(agentSamplingParameters('https://pulpo.baby/v1', { service_tier: 'flex' })).toEqual({
       service_tier: 'flex',

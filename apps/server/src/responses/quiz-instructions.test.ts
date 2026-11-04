@@ -9,6 +9,11 @@ describe('quiz instructions', () => {
     expect(parseQuiz(example)?.questions).toHaveLength(1)
   })
 
+  it('tell the model that options are shuffled', () => {
+    expect(QUIZ_INSTRUCTIONS).toContain('shuffles')
+    expect(QUIZ_INSTRUCTIONS).toContain('"shuffle": false')
+  })
+
   it('only offer quizzes the user asks for', () => {
     expect(QUIZ_INSTRUCTIONS).toContain('only when the user asks')
     expect(QUIZ_INSTRUCTIONS).not.toMatch(/would help them learn/)

@@ -21,6 +21,8 @@ export interface QuizQuestion {
   answer: number
   hint?: string
   explanation?: string
+  /** False keeps the options in the order written; see `arrangeOptions`. */
+  shuffle?: false
 }
 
 export interface QuizCard {
@@ -86,7 +88,83 @@ function parseQuestion(value: unknown): QuizQuestion | null {
   if (answer === null) return null
   const hint = firstText(item, ['hint'])
   const explanation = firstText(item, ['explanation', 'rationale'])
-  return { prompt, options, answer, ...(hint ? { hint } : {}), ...(explanation ? { explanation } : {}) }
+  const keepOrder = item.shuffle === false
+  return {
+    prompt,
+    ...(keepOrder ? { options, answer } : arrangeOptions(prompt, options, answer)),
+    ...(hint ? { hint } : {}),
+    ...(explanation ? { explanation } : {}),
+    ...(keepOrder ? { shuffle: false as const } : {}),
+  }
+}
+
+// "All of the above", "None of these": keeps its place among the shuffled options.
+const REFERS_TO_OTHERS = /\b(?:above|below)\s*[.!]?$|\bof\s+(?:these|those|them|the\s+(?:others?|options|answers|choices))\b/i
+// "A and C", "B, C, and D only", "Option B": positions that shuffling would make wrong.
+const REFERS_BY_LETTER = /^(?:(?:[Bb]oth|[Nn]either|[Oo]nly)\s+)?\(?[A-H]\)?(?:\s*,\s*\(?[A-H]\)?)*,?\s+(?:and|n?or|&)\s+\(?[A-H]\)?(?:\s+only)?\s*\.?$|\b(?:[Oo]ptions?|[Cc]hoices?|[Aa]nswers?)\s+\(?[A-H]\)?(?![\w'])/
+const FIXED_PAIRS = [['true', 'false'], ['yes', 'no']]
+const PLAIN_NUMBER = /^[-+\u2212]?[$€£]?(?:\d{1,3}(?:,\d{3})+|\d+|(?=\.\d))(?:\.\d+)?%?$/
+
+function numericValue(option: string): number | null {
+  const plain = /^\$[^$]+\$$/.test(option) ? option.slice(1, -1).trim() : option
+  if (!PLAIN_NUMBER.test(plain)) return null
+  const value = Number(plain.replace(/[$€£%,]/g, '').replace('\u2212', '-'))
+  return Number.isFinite(value) ? value : null
+}
+
+/** A 32-bit FNV-1a hash, to seed `seededRandom`. */
+function hash(value: string): number {
+  let result = 0x811c9dc5
+  for (let index = 0; index < value.length; index += 1) {
+    result ^= value.charCodeAt(index)
+    result = Math.imul(result, 0x01000193)
+  }
+  return result >>> 0
+}
+
+/** Mulberry32: the same seed always gives the same sequence in [0, 1). */
+function seededRandom(seed: number): () => number {
+  let state = seed
+  return () => {
+    state = (state + 0x6d2b79f5) | 0
+    let value = Math.imul(state ^ (state >>> 15), 1 | state)
+    value = (value + Math.imul(value ^ (value >>> 7), 61 | value)) ^ value
+    return ((value ^ (value >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+/** The new position of each option, as indexes into the original list. */
+function optionOrder(prompt: string, options: string[]): number[] {
+  const indexes = options.map((_, index) => index)
+  const lower = options.map((option) => option.toLowerCase())
+  if (options.some((option) => REFERS_BY_LETTER.test(option))) return indexes
+  if (FIXED_PAIRS.some((pair) => pair.length === lower.length && pair.every((word) => lower.includes(word)))) return indexes
+  const numbers = options.map(numericValue)
+  if (numbers.every((value) => value !== null)) return indexes.sort((a, b) => numbers[a]! - numbers[b]!)
+
+  const slots = indexes.filter((index) => !REFERS_TO_OTHERS.test(options[index]!))
+  // Starting from a canonical order and seeding with the content, not the order, means a quiz
+  // shuffles the same way every time it renders, on every platform, and again after it is saved.
+  const moving = [...slots].sort((a, b) => options[a]! < options[b]! ? -1 : options[a]! > options[b]! ? 1 : a - b)
+  const random = seededRandom(hash([prompt, ...moving.map((index) => options[index]!)].join('\u0000')))
+  for (let index = moving.length - 1; index > 0; index -= 1) {
+    const other = Math.floor(random() * (index + 1))
+    ;[moving[index], moving[other]] = [moving[other]!, moving[index]!]
+  }
+  const order = [...indexes]
+  slots.forEach((slot, position) => { order[slot] = moving[position]! })
+  return order
+}
+
+/**
+ * Models tend to write the correct option first, so a question's options are shuffled, the same
+ * way on every render. Options are kept in order when shuffling would mislead: true/false and
+ * yes/no pairs, options that name others by letter ("A and C"), and options like "None of the
+ * above", which stay where they are. Plain numbers are sorted instead.
+ */
+export function arrangeOptions(prompt: string, options: string[], answer: number): { options: string[]; answer: number } {
+  const order = optionOrder(prompt, options)
+  return { options: order.map((index) => options[index]!), answer: order.indexOf(answer) }
 }
 
 function parseCard(value: unknown): QuizCard | null {

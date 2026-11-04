@@ -30,6 +30,10 @@ public final class PulpoFileClipboardModule: Module {
 
     View(StatusBarGradientView.self) {}
 
+    View(ComposerPasteView.self) {
+      Events("onPasteStart", "onPasteFiles")
+    }
+
     View(DisplayGeometryView.self) {
       Events("onGeometryChange")
     }
