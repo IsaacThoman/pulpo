@@ -33,6 +33,7 @@ describe('production preference mapping', () => {
       favoriteModelIds: ['model-b', 'model-a', 'model-b'], providerOrder: ['lab-b', 'lab-a'],
       generation: { 'model-a': { reasoning: 'high', style: 'concise' } },
       agentModes: { 'model-a': false, 'model-b': true },
+      customInstructions: 'Be terse.', instructionPresetSelections: { casual: true },
     })).toEqual({
       imageGeneration: { enabled: false, modelId: null }, speech: { modelId: null, models: {} },
       composerSyncEnabled: true, showPromptSuggestions: true, showModelWarnings: true, modelWarningDismissals: {},
@@ -41,7 +42,20 @@ describe('production preference mapping', () => {
       favoriteModelIds: ['model-b', 'model-a'], providerOrder: ['lab-b', 'lab-a'],
       generation: { 'model-a': { reasoning: 'high', style: 'concise' } },
       agentModes: { 'model-a': false, 'model-b': true },
+      customInstructions: 'Be terse.', instructionPresetSelections: { casual: true },
     })
+  })
+
+  it('syncs custom instructions and preset selections with web', () => {
+    expect(preferencesFromServer({}).customInstructions).toBeUndefined()
+    expect(preferencesFromServer({}).instructionPresetSelections).toEqual({})
+    expect(preferencesFromServer({ customInstructions: 42 }).customInstructions).toBeUndefined()
+    expect(preferencesFromServer({ customInstructions: '' }).customInstructions).toBe('')
+    expect(preferencesFromServer({ instructionPresetSelections: { casual: 'yes' } }).instructionPresetSelections).toEqual({})
+    expect(preferencesFromServer({ instructionPresetSelections: { casual: false, formal: true } }).instructionPresetSelections)
+      .toEqual({ casual: false, formal: true })
+    expect(preferencePatchForServer('customInstructions', 'Never apologize.')).toEqual({ customInstructions: 'Never apologize.' })
+    expect(preferencePatchForServer('instructionPresetSelections', { casual: true })).toEqual({ instructionPresetSelections: { casual: true } })
   })
 
   it('maps mobile-only names back to the server and ignores device-only settings', () => {
@@ -62,7 +76,7 @@ describe('production preference mapping', () => {
   })
 
   it('clears synchronized model preferences when older servers omit them', () => {
-    expect(preferencesFromServer({})).toEqual({ imageGeneration: { enabled: false, modelId: null }, speech: { modelId: null, models: {} }, composerSyncEnabled: true, showPromptSuggestions: true, showModelWarnings: true, modelWarningDismissals: {}, favoriteModelIds: [], providerOrder: [], generation: {}, agentModes: {} })
+    expect(preferencesFromServer({})).toEqual({ imageGeneration: { enabled: false, modelId: null }, speech: { modelId: null, models: {} }, composerSyncEnabled: true, showPromptSuggestions: true, showModelWarnings: true, modelWarningDismissals: {}, favoriteModelIds: [], providerOrder: [], generation: {}, agentModes: {}, instructionPresetSelections: {} })
   })
 
   it('filters malformed generation preferences from server settings', () => {

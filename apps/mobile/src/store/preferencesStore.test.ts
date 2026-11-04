@@ -247,3 +247,27 @@ describe('synchronized generation preference', () => {
     expect(usePreferencesStore.getState().generationPreferenceDirty).toBe(false)
   })
 })
+
+describe('synchronized custom instructions', () => {
+  it('keeps newer local typing while an older save echoes back', async () => {
+    await usePreferencesStore.getState().setPreference('customInstructions', 'Be')
+    await usePreferencesStore.getState().setPreference('customInstructions', 'Be terse.')
+    await usePreferencesStore.getState().applyServerPreferences({ customInstructions: 'Be' })
+    expect(usePreferencesStore.getState()).toMatchObject({ customInstructions: 'Be terse.', pendingServerPreferenceKeys: ['customInstructions'] })
+    await usePreferencesStore.getState().markSynchronizedPreferenceSynced('customInstructions', 'Be terse.')
+    await usePreferencesStore.getState().applyServerPreferences({ customInstructions: 'Edited on web' })
+    expect(usePreferencesStore.getState().customInstructions).toBe('Edited on web')
+  })
+
+  it('matches preset selections regardless of record key order', async () => {
+    await usePreferencesStore.getState().setPreference('instructionPresetSelections', { formal: false, casual: true })
+    await usePreferencesStore.getState().applyServerPreferences({ instructionPresetSelections: { casual: true, formal: false } })
+    expect(usePreferencesStore.getState().pendingServerPreferenceKeys).toEqual([])
+  })
+
+  it('clears instructions and preset choices when another account takes ownership', async () => {
+    usePreferencesStore.setState({ customInstructions: 'Private notes', instructionPresetSelections: { casual: true } })
+    await usePreferencesStore.getState().resetSynchronizedPreferences('other-account')
+    expect(usePreferencesStore.getState()).toMatchObject({ customInstructions: '', instructionPresetSelections: {} })
+  })
+})
