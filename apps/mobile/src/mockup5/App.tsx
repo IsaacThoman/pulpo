@@ -3,7 +3,7 @@ import { speechPlayback, readAloud } from '../features/speech/playback';
 import { SPEECH_SEEK_SECONDS, nextSpeechRate, speechRateLabel, speechText, speechTimeLabel, type SpeechProgress } from '@pulpo/client-core';
 import { INITIAL_TRANSCRIPT_ROWS, hasLargeInitialMessage, transcriptListMessages, usesBottomAnchoredTranscript } from '../features/chat/transcriptWindow';
 import { hasChatSelectionObserver, recordChatSelection, hasTranscriptPositionObserver, recordTranscriptPosition } from '../features/chat/selectionTiming';
-import { responseErrorMessage } from '../features/usage-limits/errors';
+import { isUsageLimitMessage, isUsageLimitRejection, responseErrorMessage, usageLimitNoticeText } from '../features/usage-limits/errors';
 import { prepareChatSelection } from '../data/prepareChat';
 import { createDrawerTransition } from '../features/chat/drawerTransition';
 import { protectTranscript } from '../data/transcriptResidency';
@@ -18,6 +18,7 @@ import { useDictation } from '../features/chat/useDictation';
 import { DictationCancelButton, DictationStrip } from '../features/chat/DictationStrip';
 import { useDictationToolbarStyle } from '../features/chat/dictationMotion';
 import { setComposerSelection } from '../features/chat/composerSelection';
+import { responseMetaLabel } from '../features/chat/responseCost';
 import { ToolImagePreview } from '../components/ToolImagePreview';
 import { localComposerDraftId, mergePendingAttachments } from '@pulpo/client-core';
 import { DevicesScreen } from '../components/Devices';
@@ -206,7 +207,7 @@ import { apiRequest, ApiError } from '../api/client';
 import { useFollowStartedChat } from '../features/chat/useFollowStartedChat';
 import { clearProductionScope, hydrateProductionChatPreview, hydrateProductionScope, ProductionBridge } from './src/production/ProductionBridge';
 import { productionActions, runProductionAction } from './src/production/productionActions';
-import { applyConfirmedMessageDeletion, cacheOptimisticBranch, cacheOptimisticTurn, discardOptimisticChat, rejectOptimisticTurn } from './src/production/optimisticResponses';
+import { applyConfirmedMessageDeletion, cacheOptimisticBranch, cacheOptimisticTurn, discardOptimisticChat, failOptimisticTurn, rejectOptimisticTurn } from './src/production/optimisticResponses';
 import { activateOptimisticBranch } from './src/production/optimisticBranches';
 import { cacheNamespace, cacheOpenedChat, deleteResponseCursor, loadDraft, saveDraft } from '../data/database';
 import { queryKeys } from '../data/queries';
@@ -236,10 +237,14 @@ import { useOpenFileItem } from '../features/files/open';
 import { fileOpenTarget } from '../features/files/itemActions';
 import { FilesToastHost } from '../features/files/components/FilesToastHost';
 import { FolderPickerSheet } from '../features/files/components/FolderPickerSheet';
+import { saveAttachmentToFiles } from '../features/files/api';
+import { FileAppearanceSheet } from '../features/files/components/FileAppearanceSheet';
+import { useItemAppearance } from '../features/files/itemAppearance';
 import { filesErrorMessage } from '../features/files/display';
 import { useFileOperations } from '../features/files/operations';
 import { enqueueUploads, pickUploads } from '../features/files/uploads';
 import { useFilesToasts } from '../features/files/toasts';
+import { promptUrlImport, useUrlImportEnabled } from '../features/files/urlImport';
 import { sidebarItemActions, sidebarItemTapOpens, type SidebarItemActionId } from '../features/sidebar/actions';
 import { SidebarHeading } from '../features/sidebar/components/SidebarHeading';
 import { SidebarMessageRow, SidebarNodeRow, type SidebarRowStyles } from '../features/sidebar/components/SidebarNodeRow';
@@ -255,6 +260,7 @@ import { FileDocumentScreen } from '../features/files/screens/FileDocumentScreen
 import { FileMarkdownScreen } from '../features/files/screens/FileMarkdownScreen';
 import { FileQuizScreen } from '../features/files/screens/FileQuizScreen';
 import { FilesFolderScreen } from '../features/files/screens/FilesFolderScreen';
+import { FriendsScreen } from '../features/friends/FriendsScreen';
 import { timeAgo } from '../features/chat/format';
 import {
   MAX_COMPOSER_ATTACHMENTS,
@@ -312,6 +318,7 @@ import {
   type ChatHeaderTrailingAction,
 } from '../features/chat/headerAction';
 import { copyFile, supportsFileClipboard } from '../native/fileClipboard';
+import { saveFileToDevice, saveImageToPhotos, supportsSaveToDevice, supportsSaveToPhotos } from '../native/fileSaving';
 import {
   AttachmentPreviewError,
   previewImages as previewNativeImages,
@@ -619,6 +626,7 @@ type Message = {
   thinkSeconds?: number;
   reasoning?: string;
   meta?: string;
+  costMicros?: number;
   activity?: ActivityStep[];
   outputItems?: unknown[];
   status?: PrototypeMessage['status'];
@@ -637,6 +645,16 @@ type SendOptions = {
   onStartDiscarded?: () => void;
 };
 type PrepareAttachments = () => Promise<PreparedAttachment[]>;
+/** A send the server refused for a usage limit. It stays in the chat, and Try again sends it again. */
+type RejectedSend = {
+  chatId: string;
+  inputMessageId: string;
+  value: string;
+  attachments: PreparedAttachment[];
+  options?: Omit<SendOptions, 'onStartDiscarded'>;
+  /** The send would have started the chat, which the server therefore never created. */
+  startsChat: boolean;
+};
 
 function automaticExpirationDeadline(preference: 'disabled' | '24h' | '7d', now = Date.now()): number | null {
   if (preference === '24h') return now + 86_400_000;
@@ -711,6 +729,7 @@ function prototypeMessageToLegacy(message: PrototypeMessage, chatId: string, cha
       : undefined,
     reasoning,
     meta: message.meta,
+    costMicros: message.costMicros,
     error: message.error,
     activity: message.activity,
     outputItems: message.outputItems,
@@ -939,81 +958,91 @@ function AttachmentStrip({ attachments, onPreviewFile, onPreviewImage, onRemove,
       maxToRenderPerBatch={4}
       windowSize={3}
       keyExtractor={(attachment) => attachment.localId}
-      renderItem={({ item: attachment, index }) => (
-        <View key={attachment.localId} style={styles.attachmentFrame}>
-          <Pressable
-            accessibilityLabel={`Preview ${attachment.name}`}
-            accessibilityRole="button"
-            onPress={() => attachment.kind === 'image' ? previewImage(index, attachment) : onPreviewFile(attachment)}
-            ref={attachment.kind === 'image' ? (view) => {
-              if (view) imageRefs.current.set(attachment.localId, view);
-              else imageRefs.current.delete(attachment.localId);
-            } : undefined}
-            style={({ pressed }) => [
-              attachment.kind === 'image' ? styles.imageAttachment : styles.fileAttachment,
-              attachment.state === 'failed' && styles.failedAttachment,
-              pressed && styles.attachmentPressed,
-            ]}
-          >
-            {attachment.kind === 'image' ? (
-              attachment.uri && !attachment.serverId
-                ? <Image
-                    accessibilityLabel={attachment.name}
-                    nativeID={`pulpo-attachment-preview-${attachment.localId}`}
-                    onLoad={(event) => {
-                      const { height, width } = event.nativeEvent.source;
-                      imageSources.current.set(attachment.localId, { height, uri: attachment.uri!, width });
-                    }}
-                    source={{ uri: attachment.uri }}
-                    style={styles.attachmentImage}
-                  />
-                : <ResolvedAttachmentImage
-                    attachment={attachment}
-                    onResolved={(source) => imageSources.current.set(attachment.localId, source)}
-                    sourceNativeId={`pulpo-attachment-preview-${attachment.localId}`}
-                    variant="composer"
-                  />
-            ) : (
-              <>
-                <View style={styles.fileAttachmentIcon}>
-                  <Icon name={attachmentSymbol(attachmentVisualKind(attachment.name, attachment.mimeType))} size={22} color={attachmentTint(attachmentVisualKind(attachment.name, attachment.mimeType))} />
-                </View>
-                <View style={styles.fileAttachmentCopy}>
-                  <Text numberOfLines={1} style={styles.fileAttachmentName}>{attachment.name}</Text>
-                  <Text numberOfLines={1} style={styles.fileAttachmentMeta}>{attachmentMetadata(attachment.name, attachment.mimeType, attachment.size)}</Text>
-                </View>
-              </>
-            )}
-            {attachment.state === 'uploading' ? (
-              <View style={styles.attachmentLoadingOverlay}><ActivityIndicator color="#ffffff" size="small" /></View>
-            ) : null}
-          </Pressable>
-          <Pressable
-            accessibilityLabel={`Remove ${attachment.name}`}
-            accessibilityRole="button"
-            onPress={(event) => {
-              event.stopPropagation();
-              onRemove(attachment.localId);
-            }}
-            style={styles.removeAttachmentHitTarget}
-          >
-            <View style={styles.removeAttachmentButton}>
-              <Icon name="xmark" size={9} color="#ffffff" weight="bold" />
-            </View>
-          </Pressable>
-          {attachment.state === 'failed' ? (
-            <Pressable
-              accessibilityLabel={`Retry ${attachment.name}`}
-              accessibilityRole="button"
-              onPress={() => onRetry(attachment.localId)}
-              style={styles.attachmentRetryOverlay}
+      renderItem={({ item: attachment, index }) => {
+        const open = () => attachment.kind === 'image' ? previewImage(index, attachment) : onPreviewFile(attachment);
+        return (
+          <View key={attachment.localId} style={styles.attachmentFrame}>
+            <ComposerAttachmentContextMenu
+              attachment={attachment}
+              onOpen={open}
+              onRemove={() => onRemove(attachment.localId)}
+              onRetry={() => onRetry(attachment.localId)}
             >
-              <Icon name="arrow.clockwise" size={11} color="#ffffff" weight="bold" />
-              <Text numberOfLines={1} style={styles.attachmentRetryText}>Retry</Text>
+              <Pressable
+                accessibilityLabel={`Preview ${attachment.name}`}
+                accessibilityRole="button"
+                onPress={open}
+                ref={attachment.kind === 'image' ? (view) => {
+                  if (view) imageRefs.current.set(attachment.localId, view);
+                  else imageRefs.current.delete(attachment.localId);
+                } : undefined}
+                style={({ pressed }) => [
+                  attachment.kind === 'image' ? styles.imageAttachment : styles.fileAttachment,
+                  attachment.state === 'failed' && styles.failedAttachment,
+                  pressed && styles.attachmentPressed,
+                ]}
+              >
+                {attachment.kind === 'image' ? (
+                  attachment.uri && !attachment.serverId
+                    ? <Image
+                        accessibilityLabel={attachment.name}
+                        nativeID={`pulpo-attachment-preview-${attachment.localId}`}
+                        onLoad={(event) => {
+                          const { height, width } = event.nativeEvent.source;
+                          imageSources.current.set(attachment.localId, { height, uri: attachment.uri!, width });
+                        }}
+                        source={{ uri: attachment.uri }}
+                        style={styles.attachmentImage}
+                      />
+                    : <ResolvedAttachmentImage
+                        attachment={attachment}
+                        onResolved={(source) => imageSources.current.set(attachment.localId, source)}
+                        sourceNativeId={`pulpo-attachment-preview-${attachment.localId}`}
+                        variant="composer"
+                      />
+                ) : (
+                  <>
+                    <View style={styles.fileAttachmentIcon}>
+                      <Icon name={attachmentSymbol(attachmentVisualKind(attachment.name, attachment.mimeType))} size={22} color={attachmentTint(attachmentVisualKind(attachment.name, attachment.mimeType))} />
+                    </View>
+                    <View style={styles.fileAttachmentCopy}>
+                      <Text numberOfLines={1} style={styles.fileAttachmentName}>{attachment.name}</Text>
+                      <Text numberOfLines={1} style={styles.fileAttachmentMeta}>{attachmentMetadata(attachment.name, attachment.mimeType, attachment.size)}</Text>
+                    </View>
+                  </>
+                )}
+                {attachment.state === 'uploading' ? (
+                  <View style={styles.attachmentLoadingOverlay}><ActivityIndicator color="#ffffff" size="small" /></View>
+                ) : null}
+              </Pressable>
+            </ComposerAttachmentContextMenu>
+            <Pressable
+              accessibilityLabel={`Remove ${attachment.name}`}
+              accessibilityRole="button"
+              onPress={(event) => {
+                event.stopPropagation();
+                onRemove(attachment.localId);
+              }}
+              style={styles.removeAttachmentHitTarget}
+            >
+              <View style={styles.removeAttachmentButton}>
+                <Icon name="xmark" size={9} color="#ffffff" weight="bold" />
+              </View>
             </Pressable>
-          ) : null}
-        </View>
-      )}
+            {attachment.state === 'failed' ? (
+              <Pressable
+                accessibilityLabel={`Retry ${attachment.name}`}
+                accessibilityRole="button"
+                onPress={() => onRetry(attachment.localId)}
+                style={styles.attachmentRetryOverlay}
+              >
+                <Icon name="arrow.clockwise" size={11} color="#ffffff" weight="bold" />
+                <Text numberOfLines={1} style={styles.attachmentRetryText}>Retry</Text>
+              </Pressable>
+            ) : null}
+          </View>
+        );
+      }}
     />
   );
 }
@@ -1711,6 +1740,7 @@ function PrototypeRoot() {
         <RootStack.Screen name="Passkeys" component={PasskeysScreen} options={{ headerShown: false }} />
         <RootStack.Screen name="InstanceDetails" component={InstanceDetailsScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Pulpo Instance', headerBackTitle: 'Account' }} />
         <RootStack.Screen name="SettingsDetail" component={SettingsDetailScreen} options={{ headerShown: Platform.OS === 'ios', headerBackTitle: 'Settings' }} />
+        <RootStack.Screen name="Friends" component={FriendsScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Friends', headerBackTitle: 'Settings' }} />
         <RootStack.Screen name="FilesFolder" component={FilesFolderScreen} options={{ headerShown: Platform.OS === 'ios', headerLargeTitle: true, title: 'My files' }} />
         <RootStack.Screen name="FileDocument" component={FileDocumentScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Document' }} />
         <RootStack.Screen name="FileMarkdown" component={FileMarkdownScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Markdown' }} />
@@ -2543,6 +2573,20 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     });
   }, []);
 
+  const rejectedSends = useRef(new Map<string, RejectedSend>());
+  // Drop a refused turn from the transcript, once the chat moves on or Try again sends it again.
+  const dropRejectedSend = (responseId: string, rejected: RejectedSend) => {
+    rejectedSends.current.delete(responseId);
+    if (productionUserId) {
+      rejectOptimisticTurn({ queryClient, namespace: cacheNamespace(productionInstanceUrl, productionUserId), responseId, discardChat: false });
+    }
+    usePrototypeStore.setState((state) => ({
+      chats: state.chats.map((chat) => chat.id === rejected.chatId
+        ? { ...chat, messages: chat.messages.filter((message) => message.id !== responseId && message.id !== rejected.inputMessageId) }
+        : chat),
+    }));
+  };
+
   const sendMessage = async (
     value = input,
     attachments: ComposerAttachment[] = [],
@@ -2567,6 +2611,12 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     composerFollowsDefaultModel.current = false;
     Keyboard.dismiss();
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Soft);
+    // Turns refused for a usage limit give way to the next send. If one of them was meant to start
+    // this chat, the server never created it, so this send starts it under the same id.
+    const rejectedHere = activeChat ? [...rejectedSends.current.entries()].filter(([, item]) => item.chatId === activeChat.id) : [];
+    const startsChat = !activeChat || rejectedHere.some(([, item]) => item.startsChat);
+    const rejectedIds = new Set(rejectedHere.flatMap(([responseId, item]) => [responseId, item.inputMessageId]));
+    for (const [rejectedId, item] of rejectedHere) dropRejectedSend(rejectedId, item);
     const timestamp = Date.now();
     const identity = createOptimisticSendIdentity({
       activeChatId: activeChat?.id,
@@ -2576,7 +2626,8 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     });
     const { chatId: key, responseId, inputMessageId, title } = identity;
     const modelId = selectedModel.id;
-    const parentResponseId = activePrototypeChat?.messages.filter((message) => message.role === 'assistant').at(-1)?.id ?? null;
+    const parentResponseId = startsChat ? null
+      : activePrototypeChat?.messages.filter((message) => message.role === 'assistant' && !rejectedIds.has(message.id)).at(-1)?.id ?? null;
     const agentMode = Boolean(options?.agentEnabled && agentAvailable && selectedPrototypeModel?.agentEnabled);
     const selections = options?.presetSelections ?? presetSelections;
     const initialExpiresAt = options?.temporary
@@ -2590,7 +2641,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     ));
     // A new chat starts with the Files items picked for it (temporary chats get no Files), minus any
     // known to be gone since: the server refuses a scope naming them.
-    const startingFileScope = !activeChat && !options?.temporary && productionNamespace
+    const startingFileScope = startsChat && !options?.temporary && productionNamespace
       ? liveFileScope(queryClient, productionNamespace, newChatFileScope(productionNamespace))
       : null;
     if (!activeChat) {
@@ -2637,9 +2688,10 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     });
     activeResponseId.current = responseId;
     setAssistantStatus('thinking');
-    let serverChatCreated = Boolean(activeChat);
+    let serverChatCreated = !startsChat;
+    let prepared: PreparedAttachment[] = [];
     try {
-      const prepared = prepareAttachments
+      prepared = prepareAttachments
         ? await prepareAttachments()
         : attachments.filter((attachment): attachment is PreparedAttachment => (
           attachment.state === 'ready' && Boolean(attachment.serverId)
@@ -2674,7 +2726,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
           fileScopeAccess: startingFileScope?.access,
         });
       }
-      let serverChatId = activeChat?.id;
+      let serverChatId = startsChat ? undefined : activeChat?.id;
       let response: Awaited<ReturnType<typeof sendServerMessage>>;
       if (!serverChatId) {
         const startPromise = startServerChat({
@@ -2740,18 +2792,33 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
       activeResponseSubscription.current?.();
       activeResponseSubscription.current = null;
       setAssistantStatus('idle');
+      // Like the web, a send refused for a usage limit stays in the chat with the error under it.
+      if (isUsageLimitRejection(error) && productionNamespace) {
+        failOptimisticTurn({ queryClient, namespace: productionNamespace, responseId, error: { code: error.code, message: error.message } });
+        updateStoredMessage(key, responseId, { status: 'failed', error: error.message });
+        const { onStartDiscarded: _discarded, ...retryOptions } = options ?? {};
+        rejectedSends.current.set(responseId, {
+          chatId: key,
+          inputMessageId,
+          value: trimmed,
+          attachments: prepared,
+          options: options ? retryOptions as Omit<SendOptions, 'onStartDiscarded'> : undefined,
+          startsChat: !serverChatCreated,
+        });
+        return true;
+      }
       // Must run before the chat is removed and navigation returns, so ChatView can restore the draft's presets.
-      if (!activeChat && !serverChatCreated) options?.onStartDiscarded?.();
+      if (startsChat && !serverChatCreated) options?.onStartDiscarded?.();
       if (productionNamespace) {
         rejectOptimisticTurn({
           queryClient,
           namespace: productionNamespace,
           responseId,
-          discardChat: !activeChat && !serverChatCreated,
+          discardChat: startsChat && !serverChatCreated,
         });
       }
       usePrototypeStore.setState((state) => ({
-        chats: activeChat || serverChatCreated
+        chats: !startsChat || serverChatCreated
           ? state.chats.map((chat) => chat.id === key
             ? {
               ...chat,
@@ -2764,7 +2831,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
             : chat)
           : state.chats.filter((chat) => chat.id !== key),
       }));
-      if (!activeChat && !serverChatCreated) setActiveChatId((current) => current === key ? null : current);
+      if (startsChat && !serverChatCreated) setActiveChatId((current) => current === key ? null : current);
       throw error;
     }
   };
@@ -2805,6 +2872,17 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
       Alert.alert('Couldn’t regenerate response', error instanceof Error ? error.message : undefined);
     });
   }, [activeChatId, agentAvailable, effectiveAssistantStatus, presetSelections, productionInstanceUrl, productionUserId, queryClient, selectedModel.id, selectedPrototypeModel?.agentEnabled, trackActiveResponse]);
+
+  // Try again on a turn refused for a usage limit sends it again; other failed turns regenerate.
+  const sendMessageRef = useRef(sendMessage);
+  sendMessageRef.current = sendMessage;
+  const regenerateOrResend = useCallback((message: Message) => {
+    const rejected = rejectedSends.current.get(message.id);
+    if (!rejected) return regenerateMessage(message);
+    if (effectiveAssistantStatus !== 'idle') return;
+    void sendMessageRef.current(rejected.value, rejected.attachments, rejected.options)
+      .catch((error) => Alert.alert('Couldn’t send message', error instanceof Error ? error.message : undefined));
+  }, [effectiveAssistantStatus, regenerateMessage]);
 
   const editMessage = useCallback(async (
     message: Message,
@@ -2977,7 +3055,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
             onRemoteChatStarted={openStartedChat}
             onStop={stopGeneration}
             assistantStatus={effectiveAssistantStatus}
-            onRegenerate={regenerateMessage}
+            onRegenerate={regenerateOrResend}
             onEdit={editMessage}
             onActivateBranch={activateMessageBranch}
             onOpenChat={openRecalledChat}
@@ -3234,56 +3312,158 @@ function MessageContextMenu({
   );
 }
 
-function SentAttachmentContextMenu({ attachment, message, onEdit, onRegenerate, children }: {
+/**
+ * Long-press actions shared by attachments in messages and in the composer: open, copy, share,
+ * save to Photos, download to the device, and save into Files. `serverId` is the uploaded
+ * attachment, when there is one; a local copy (`attachment.uri`) is used first when present.
+ */
+function AttachmentActionsMenu({ attachment, serverId, onOpen, style, iosItems, androidActions, children }: {
   attachment: Attachment;
-  message: Message;
-  onEdit: (message: Message, content: string) => void;
-  onRegenerate: (message: Message) => void;
+  serverId?: string;
+  onOpen: () => void;
+  style: ComponentProps<typeof View>['style'];
+  /** Actions after the file actions, such as editing the message or removing the attachment. */
+  iosItems?: ReactNode;
+  androidActions?: MaterialAction[];
   children: ReactNode;
 }) {
   const { styles, COLORS } = useChatStyles();
-  const runMessageAction = useMessageActionRunner({ message, onEdit, onRegenerate });
-  const canReport = useCanReportMessage(message) && message.role === 'user' && !message.text;
-  const shareAttachment = () => {
-    if (attachment.uri) void (Platform.OS === 'android' ? shareLocalFile(attachment.uri, attachment.name, attachment.mimeType) : Share.share({ message: attachment.name, url: attachment.uri })).catch((error) => Alert.alert('Couldn’t share attachment', error instanceof Error ? error.message : undefined));
-    else void shareServerAttachment(attachment.id, attachment.name, attachment.mimeType).catch((error) => Alert.alert('Couldn’t share attachment', error instanceof Error ? error.message : undefined));
+  const queryClient = useQueryClient();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const filesNamespace = useFilesNamespace();
+  const filesEnabled = useFilesEnabled();
+  const [pickingFolder, setPickingFolder] = useState(false);
+  const hasFile = Boolean(attachment.uri || serverId);
+  // Saving to Files copies the uploaded original on the server, so the upload has to be done.
+  const canSaveToFiles = Boolean(filesNamespace && filesEnabled && serverId);
+  const canSaveToPhotos = hasFile && supportsSaveToPhotos && attachment.kind === 'image';
+  const canDownload = hasFile && supportsSaveToDevice;
+  const localFile = async () => {
+    if (attachment.uri) return attachment.uri;
+    if (!serverId) throw new Error('The attachment is still uploading.');
+    return (await downloadAttachment(serverId, attachment.name)).uri;
   };
-  const copyAttachment = () => {
+  const reportFailure = (title: string) => (error: unknown) => Alert.alert(title, error instanceof Error ? error.message : undefined);
+  const share = () => {
+    if (attachment.uri) void (Platform.OS === 'android' ? shareLocalFile(attachment.uri, attachment.name, attachment.mimeType) : Share.share({ message: attachment.name, url: attachment.uri })).catch(reportFailure('Couldn’t share attachment'));
+    else if (serverId) void shareServerAttachment(serverId, attachment.name, attachment.mimeType).catch(reportFailure('Couldn’t share attachment'));
+  };
+  const copy = () => {
     void (async () => {
-      const uri = attachment.uri || (await downloadAttachment(attachment.id, attachment.name)).uri;
-      await copyFile(uri);
+      await copyFile(await localFile());
       AccessibilityInfo.announceForAccessibility('File copied');
-    })().catch((error) => Alert.alert('Couldn’t copy file', error instanceof Error ? error.message : undefined));
+    })().catch(reportFailure('Couldn’t copy file'));
+  };
+  const saveToPhotos = () => {
+    void (async () => {
+      await saveImageToPhotos(await localFile());
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      AccessibilityInfo.announceForAccessibility('Saved to Photos');
+    })().catch(reportFailure('Couldn’t save image'));
+  };
+  const download = () => {
+    void (async () => {
+      if (!(await saveFileToDevice(await localFile(), attachment.name, attachment.mimeType))) return;
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      AccessibilityInfo.announceForAccessibility('File saved');
+    })().catch(reportFailure('Couldn’t save file'));
+  };
+  const saveToFiles = (folderId: string | null, folderName: string) => {
+    setPickingFolder(false);
+    if (!serverId) return;
+    void saveAttachmentToFiles(serverId, { parentId: folderId }).then(({ node }) => {
+      if (filesNamespace) void queryClient.invalidateQueries({ queryKey: filesQueryKeys.all(filesNamespace) });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Alert.alert('Saved to My Files', `“${node.name}” is in ${folderName}.`, [
+        { text: 'Show', onPress: () => navigation.push('FilesFolder', { folderId, name: folderName }) },
+        { text: 'OK', style: 'cancel' },
+      ]);
+    }, (error) => Alert.alert('Couldn’t save to Files', filesErrorMessage(error, attachment.name)));
   };
   return (
-    <NativeObjectContextMenu
+    <>
+      <NativeObjectContextMenu
+        style={style}
+        title={attachment.name}
+        androidActions={[
+          { label: 'Open', icon: 'eye', onPress: onOpen },
+          ...(hasFile ? [{ label: 'Share file', icon: 'square.and.arrow.up', onPress: share }] : []),
+          ...(canDownload ? [{ label: 'Download…', icon: 'square.and.arrow.down', onPress: download }] : []),
+          ...(canSaveToFiles ? [{ label: 'Save to My Files…', icon: 'folder.badge.plus', onPress: () => setPickingFolder(true) }] : []),
+          ...(androidActions ?? []),
+        ]}
+        preview={attachment.kind === 'image' ? (
+          <ResolvedAttachmentImage attachment={serverId ? { ...attachment, id: serverId } : attachment} variant="preview" />
+        ) : (
+          <View style={styles.attachmentContextFilePreview}>
+            <Icon name="doc.fill" size={38} color={COLORS.muted} />
+            <Text numberOfLines={2} style={styles.attachmentContextFileName}>{attachment.name}</Text>
+            <Text style={styles.attachmentContextFileMeta}>{formatAttachmentSize(attachment.size)}</Text>
+          </View>
+        )}
+        items={(
+          <>
+            <SwiftUIControlGroup>
+              <SwiftUIButton label="Open" systemImage="eye" onPress={onOpen} />
+              {supportsFileClipboard && hasFile ? <SwiftUIButton label="Copy" systemImage="doc.on.doc" onPress={copy} /> : null}
+              {hasFile ? <SwiftUIButton label="Share" systemImage="square.and.arrow.up" onPress={share} /> : null}
+            </SwiftUIControlGroup>
+            {canSaveToPhotos || canDownload || canSaveToFiles ? <SwiftUIDivider /> : null}
+            {canSaveToPhotos ? <SwiftUIButton label="Save to Photos" systemImage="photo.badge.arrow.down" onPress={saveToPhotos} /> : null}
+            {canDownload ? <SwiftUIButton label="Download…" systemImage="square.and.arrow.down" onPress={download} /> : null}
+            {canSaveToFiles ? <SwiftUIButton label="Save to My Files…" systemImage="folder.badge.plus" onPress={() => setPickingFolder(true)} /> : null}
+            {iosItems}
+          </>
+        )}
+      >
+        {children}
+      </NativeObjectContextMenu>
+      {pickingFolder && filesNamespace ? (
+        <FolderPickerSheet
+          namespace={filesNamespace}
+          mode="destination"
+          title={`Save “${attachment.name}”`}
+          confirmLabel="Save Here"
+          onCancel={() => setPickingFolder(false)}
+          onConfirm={saveToFiles}
+        />
+      ) : null}
+    </>
+  );
+}
+
+function SentAttachmentContextMenu({ attachment, message, onEdit, onOpen, onRegenerate, children }: {
+  attachment: Attachment;
+  message: Message;
+  onEdit: (message: Message, content: string) => void;
+  /** What tapping the attachment does. */
+  onOpen: () => void;
+  onRegenerate: (message: Message) => void;
+  children: ReactNode;
+}) {
+  const { styles } = useChatStyles();
+  const runMessageAction = useMessageActionRunner({ message, onEdit, onRegenerate });
+  const canReport = useCanReportMessage(message) && message.role === 'user' && !message.text;
+  const attachmentOnly = message.role === 'user' && !message.text;
+  // Message attachments carry their server id; optimistic ones are uploading until `ready`.
+  const uploaded = !attachment.state || attachment.state === 'ready';
+  return (
+    <AttachmentActionsMenu
+      attachment={attachment}
+      serverId={uploaded ? attachment.id : undefined}
+      onOpen={onOpen}
       style={attachment.kind === 'image' ? styles.sentImageContextHost : styles.sentFileContextHost}
-      title={attachment.name}
       androidActions={[
-        { label: 'Share file', icon: 'square.and.arrow.up', onPress: shareAttachment },
-        ...(message.role === 'user' && !message.text ? [
+        ...(attachmentOnly ? [
           { label: 'Edit message', icon: 'pencil', onPress: () => runMessageAction('edit') },
           { label: 'Delete message', icon: 'trash', destructive: true, onPress: () => runMessageAction('delete') },
         ] : []),
         ...(canReport ? [{ label: 'Report message', icon: 'pulpo.frown', onPress: () => runMessageAction('report') }] : []),
       ]}
-      preview={attachment.kind === 'image' ? (
-        <ResolvedAttachmentImage attachment={attachment} variant="preview" />
-      ) : (
-        <View style={styles.attachmentContextFilePreview}>
-          <Icon name="doc.fill" size={38} color={COLORS.muted} />
-          <Text numberOfLines={2} style={styles.attachmentContextFileName}>{attachment.name}</Text>
-          <Text style={styles.attachmentContextFileMeta}>{formatAttachmentSize(attachment.size)}</Text>
-        </View>
-      )}
-      items={(
+      iosItems={(
         <>
-          <SwiftUIControlGroup>
-            <SwiftUIButton label="Share" systemImage="square.and.arrow.up" onPress={shareAttachment} />
-            {supportsFileClipboard ? <SwiftUIButton label="Copy file" systemImage="doc.on.doc" onPress={copyAttachment} /> : null}
-          </SwiftUIControlGroup>
-          <SwiftUIDivider />
-          {message.role === 'user' && !message.text ? <>
+          {attachmentOnly ? <>
+            <SwiftUIDivider />
             <SwiftUIButton label="Edit message" systemImage="pencil" onPress={() => runMessageAction('edit')} />
             <SwiftUIButton label="Delete message" role="destructive" systemImage="trash" onPress={() => runMessageAction('delete')} />
           </> : null}
@@ -3292,7 +3472,40 @@ function SentAttachmentContextMenu({ attachment, message, onEdit, onRegenerate, 
       )}
     >
       {children}
-    </NativeObjectContextMenu>
+    </AttachmentActionsMenu>
+  );
+}
+
+/** Long-press actions for an attachment waiting in the composer: the file actions, then retry and remove. */
+function ComposerAttachmentContextMenu({ attachment, onOpen, onRemove, onRetry, children }: {
+  attachment: ComposerAttachment;
+  onOpen: () => void;
+  onRemove: () => void;
+  onRetry: () => void;
+  children: ReactNode;
+}) {
+  const { styles } = useChatStyles();
+  const failed = attachment.state === 'failed';
+  return (
+    <AttachmentActionsMenu
+      attachment={attachment}
+      serverId={attachment.state === 'ready' ? attachment.serverId : undefined}
+      onOpen={onOpen}
+      style={attachment.kind === 'image' ? styles.imageAttachmentContextHost : styles.fileAttachmentContextHost}
+      androidActions={[
+        ...(failed ? [{ label: 'Retry upload', icon: 'arrow.clockwise', onPress: onRetry }] : []),
+        { label: 'Remove', icon: 'xmark', destructive: true, onPress: onRemove },
+      ]}
+      iosItems={(
+        <>
+          <SwiftUIDivider />
+          {failed ? <SwiftUIButton label="Retry Upload" systemImage="arrow.clockwise" onPress={onRetry} /> : null}
+          <SwiftUIButton label="Remove" role="destructive" systemImage="xmark" onPress={onRemove} />
+        </>
+      )}
+    >
+      {children}
+    </AttachmentActionsMenu>
   );
 }
 
@@ -3706,6 +3919,25 @@ function AssistantFrame({ children, model, sideRail, time }: {
   );
 }
 
+/** A failed response's error with Try again, plus View Usage when a plan's usage limit stopped it. */
+function ResponseErrorNotice({ message, onRetry }: { message: Message; onRetry: (message: Message) => void }) {
+  const { styles, COLORS } = useChatStyles();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const limited = isUsageLimitMessage(message.error);
+  return <View style={styles.responseError}>
+    <Icon name="exclamationmark.triangle" size={15} color={COLORS.critical} />
+    <View style={styles.responseErrorBody}>
+      <Text style={styles.responseErrorMessage}>{limited && message.error ? usageLimitNoticeText(message.error) : message.error}</Text>
+      <View style={styles.responseErrorActions}>
+        {limited ? <Pressable accessibilityRole="button" hitSlop={8} onPress={() => { Keyboard.dismiss(); navigation.navigate('SettingsDetail', { section: 'usage' }); }}>
+          <Text style={styles.tryAgainText}>View Usage</Text>
+        </Pressable> : null}
+        <Pressable accessibilityRole="button" hitSlop={8} onPress={() => onRetry(message)}><Text style={styles.tryAgainText}>Try again</Text></Pressable>
+      </View>
+    </View>
+  </View>;
+}
+
 const MessageRow = memo(function MessageRow({
   message,
   model,
@@ -3733,6 +3965,10 @@ const MessageRow = memo(function MessageRow({
 }) {
   const { styles, COLORS } = useChatStyles();
   const { showReasoning } = useAppPreferences();
+  const showResponseCost = usePrototypeStore((state) => state.preferences.showResponseCost);
+  // Token counts only accompany answer text, but a settled cost shows even when a reply stopped or failed
+  // before writing any, as on web.
+  const metaLabel = message.role === 'assistant' ? responseMetaLabel(message.text ? message.meta : undefined, message.costMicros, showResponseCost) : undefined;
   const branches = message.branches ?? [];
   const branchIndex = message.activeBranch ?? 0;
   const [capacityPending, setCapacityPending] = useState(false);
@@ -3814,7 +4050,14 @@ const MessageRow = memo(function MessageRow({
           {message.attachments && message.attachments.length > 0 && (
             <SentAttachmentWindow attachments={message.attachments}>{(visible) => <>
               {visible.map((attachment) => (
-                <SentAttachmentContextMenu attachment={attachment} key={attachment.id} message={message} onEdit={onEdit} onRegenerate={onRegenerate}>
+                <SentAttachmentContextMenu
+                  attachment={attachment}
+                  key={attachment.id}
+                  message={message}
+                  onEdit={onEdit}
+                  onOpen={() => attachment.kind === 'image' ? onPreviewImages(message.attachments ?? [], attachment) : onPreviewFile(attachment)}
+                  onRegenerate={onRegenerate}
+                >
                   <SentAttachmentPreview
                     attachment={attachment}
                     group={message.attachments ?? []}
@@ -3870,7 +4113,7 @@ const MessageRow = memo(function MessageRow({
               </MessageContextMenu>
             ) : message.error ? (
               <MessageContextMenu message={message} model={model} onEdit={onEdit} onRegenerate={onRegenerate}>
-                <View style={styles.responseError}><Icon name="exclamationmark.triangle" size={15} color={COLORS.critical} /><Text style={styles.responseErrorText}>{message.error}</Text><Pressable accessibilityRole="button" onPress={() => onRegenerate(message)}><Text style={styles.tryAgainText}>Try again</Text></Pressable></View>
+                <ResponseErrorNotice message={message} onRetry={onRegenerate} />
               </MessageContextMenu>
             ) : streaming ? <ResponsePendingIndicator /> : null}
             {showReasoning && extraOutput.map((item, index) => {
@@ -3883,7 +4126,14 @@ const MessageRow = memo(function MessageRow({
             {message.attachments && message.attachments.length > 0 && (
               <SentAttachmentWindow attachments={message.attachments} assistant>{(visible) => <>
                 {visible.map((attachment) => (
-                  <SentAttachmentContextMenu attachment={attachment} key={attachment.id} message={message} onEdit={onEdit} onRegenerate={onRegenerate}>
+                  <SentAttachmentContextMenu
+                  attachment={attachment}
+                  key={attachment.id}
+                  message={message}
+                  onEdit={onEdit}
+                  onOpen={() => attachment.kind === 'image' ? onPreviewImages(message.attachments ?? [], attachment) : onPreviewFile(attachment)}
+                  onRegenerate={onRegenerate}
+                >
                     <SentAttachmentPreview
                       attachment={attachment}
                       group={message.attachments ?? []}
@@ -3919,7 +4169,7 @@ const MessageRow = memo(function MessageRow({
                 </Pressable>
               </View>
             )}
-            {message.error && timeline.length > 0 && <View style={styles.responseError}><Icon name="exclamationmark.triangle" size={15} color={COLORS.critical} /><Text style={styles.responseErrorText}>{message.error}</Text><Pressable accessibilityRole="button" onPress={() => onRegenerate(message)}><Text style={styles.tryAgainText}>Try again</Text></Pressable></View>}
+            {message.error && timeline.length > 0 && <ResponseErrorNotice message={message} onRetry={onRegenerate} />}
             {!message.error && message.status === 'stopped' && <MessageContextMenu message={message} model={model} onEdit={onEdit} onRegenerate={onRegenerate}><View style={styles.responseError}><Icon name="stop.circle" size={15} color={COLORS.muted} /><Text style={styles.responseErrorText}>Response stopped before completion.</Text><Pressable accessibilityRole="button" onPress={() => onRegenerate(message)}><Text style={styles.tryAgainText}>Try again</Text></Pressable></View></MessageContextMenu>}
             {message.agentMode && streaming && capacityWorkspace?.state === 'waiting' && canContinueWithoutAgent && (
               <Pressable
@@ -3936,7 +4186,7 @@ const MessageRow = memo(function MessageRow({
                 <Text style={styles.continueButtonText}>{capacityPending ? 'Continuing…' : 'Continue without agent tools'}</Text>
               </Pressable>
             )}
-            {message.text && message.meta && <Text style={styles.messageMeta}>{message.meta}</Text>}
+            {metaLabel && <Text style={styles.messageMeta}>{metaLabel}</Text>}
         </AssistantFrame>
       )}
       {branches.length > 1 && message.chatId ? (
@@ -6681,6 +6931,7 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
 }) {
   const { styles, COLORS } = useChatStyles();
   const filesEnabled = useFilesEnabled();
+  const urlImportEnabled = useUrlImportEnabled();
   const filesNamespace = useFilesNamespace();
   const queryClient = useQueryClient();
   useFilesCapabilityRefresh();
@@ -6712,15 +6963,18 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
   useEffect(() => () => useFilesToasts.getState().dismiss(), [filesNamespace]);
   const sidebarOperations = useSidebarOperations(filesNamespace);
   const fileOperations = useFileOperations(filesNamespace);
+  const setItemAppearance = useItemAppearance(filesNamespace);
   const expandedFolders = useSidebarExpansion((state) => state.expanded);
   const setFolderExpanded = useSidebarExpansion((state) => state.setExpanded);
   useEffect(() => { useSidebarExpansion.getState().load(filesNamespace); }, [filesNamespace]);
   const [moveTarget, setMoveTarget] = useState<SidebarTarget | null>(null);
   const [pickingFolderFor, setPickingFolderFor] = useState<SidebarTarget | null>(null);
+  const [stylingNode, setStylingNode] = useState<FileNode | null>(null);
   // Sheets open for one account's items close when switching to another.
   useEffect(() => () => {
     setMoveTarget(null);
     setPickingFolderFor(null);
+    setStylingNode(null);
   }, [filesNamespace]);
   const [search, setSearch] = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
@@ -6919,6 +7173,12 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
       Alert.alert('Couldn’t add files', filesErrorMessage(error));
     }
   }, [dismissSearch, filesNamespace, queryClient, sidebar]);
+  const importUrl = useCallback(() => {
+    if (!sidebar || !filesNamespace) return;
+    dismissSearch();
+    // Opens the page like a new document, as the web sidebar does.
+    promptUrlImport({ namespace: filesNamespace, parentId: sidebar.chatsFolderId, queryClient, onImported: onOpenFileItem, announce: true });
+  }, [dismissSearch, filesNamespace, onOpenFileItem, queryClient, sidebar]);
   const openSidebarInFiles = useCallback(() => {
     if (!sidebar) return;
     dismissSearch();
@@ -6952,6 +7212,8 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
       }, node.name);
     } else if (action === 'move') {
       setMoveTarget({ kind: 'node', node });
+    } else if (action === 'appearance') {
+      setStylingNode(node);
     } else if (action === 'archive') {
       void sidebarOperations.archive({ kind: 'node', node });
     } else if (action === 'trash') {
@@ -7047,9 +7309,10 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
     onNewFolder={() => newFolder(null)}
     onNewDocument={() => { void newDocument(); }}
     onUpload={(source) => { void upload(source); }}
+    onImportUrl={urlImportEnabled ? importUrl : undefined}
     onOrderChange={(order) => usePrototypeStore.getState().setPreference('chatSortMode', order)}
     onOpenInFiles={openSidebarInFiles}
-  /> : <Text style={styles.sectionLabel}>{section.title}</Text>, [chatSortMode, filesEnabled, newDocument, newFolder, openSidebarInFiles, sidebar, styles, upload]);
+  /> : <Text style={styles.sectionLabel}>{section.title}</Text>, [chatSortMode, filesEnabled, importUrl, newDocument, newFolder, openSidebarInFiles, sidebar, styles, upload, urlImportEnabled]);
   /**
    * Where a chat or item being moved is now: a folder, null for the top of the sidebar, or
    * undefined for the top of My files, outside the sidebar.
@@ -7144,6 +7407,11 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
         onMove={(folderId) => moveTo(moveTarget, folderId)}
         onOther={filesEnabled && sidebar ? () => setPickingFolderFor(moveTarget) : undefined}
         onClose={() => setMoveTarget(null)}
+      /> : null}
+      {stylingNode ? <FileAppearanceSheet
+        nodes={[stylingNode]}
+        onChange={(change) => { void setItemAppearance([stylingNode], change); }}
+        onClose={() => setStylingNode(null)}
       /> : null}
       {pickingFolderFor && filesNamespace ? <FolderPickerSheet
         namespace={filesNamespace}
@@ -7325,8 +7593,11 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   reasoningContextPreviewTitle: { color: COLORS.muted, fontSize: 10.5, fontWeight: '600', letterSpacing: 0.8, marginBottom: 12 },
   reasoningContextPreviewText: { color: COLORS.textSoft, fontSize: 14.5, lineHeight: 21 },
   messageMeta: { color: COLORS.muted, fontSize: 11, marginTop: 12, fontFamily: COLORS.mono, letterSpacing: -0.2 },
-  responseError: { flexDirection: 'row', gap: 8, alignItems: 'flex-start', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,92,92,0.35)', backgroundColor: 'rgba(255,92,92,0.10)', borderRadius: 12, padding: 11, marginTop: 6 },
+  responseError: { flexDirection: 'row', gap: 8, alignItems: 'flex-start', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,92,92,0.35)', backgroundColor: 'rgba(255,92,92,0.10)', borderRadius: 12, padding: 11, marginTop: 10 },
+  responseErrorBody: { flex: 1, gap: 6 },
   responseErrorText: { color: COLORS.critical, flex: 1, fontSize: 12.5, lineHeight: 18 },
+  responseErrorMessage: { color: COLORS.critical, fontSize: 12.5, lineHeight: 18 },
+  responseErrorActions: { flexDirection: 'row', gap: 16 },
   tryAgainText: { color: COLORS.criticalAction, fontSize: 12.5, fontWeight: '700', lineHeight: 18 },
   otherOutput: { borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.line, borderRadius: 12, padding: 10, gap: 7, marginTop: 6 },
   continueButton: { alignSelf: 'stretch', minHeight: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 14, backgroundColor: COLORS.fillStrong, marginTop: 8 },
@@ -7379,6 +7650,8 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   attachmentStrip: { height: 78, marginBottom: 3 },
   attachmentStripContent: { gap: 6, paddingHorizontal: 2 },
   attachmentFrame: { paddingTop: 12, paddingRight: 12 },
+  imageAttachmentContextHost: { width: 64, height: 64 },
+  fileAttachmentContextHost: { width: 160, height: 64 },
   failedAttachment: { borderWidth: 1, borderColor: 'rgba(255,69,58,0.55)' },
   imageAttachment: { width: 64, height: 64, borderRadius: 13, overflow: 'visible', backgroundColor: COLORS.fill },
   attachmentImage: { width: 64, height: 64, borderRadius: 13 },

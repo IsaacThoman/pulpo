@@ -23,6 +23,7 @@ import {
 
 export { linkMarkdownImages, normalizeMathDelimiters, unwrapBoxedMinipages, type MathDelimiterOptions } from './markdown.js'
 export { deviceTimeZone } from './time-zone.js'
+export { normalizeUsername, usernameFormatError } from './profile.js'
 export { createUploadQueue, retryBusyUpload } from './upload-queue.js'
 export { mergePendingAttachments } from './attachment-order.js'
 
@@ -542,3 +543,6 @@ export * from './dictation.js'
 export * from "./speech.js"
 
 export * from './model-warnings.js'
+
+export * from './friends.js'
+export * from './instruction-presets.js'

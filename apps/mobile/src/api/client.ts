@@ -163,7 +163,10 @@ export const mobileApi = {
   meWithToken: (token: string) => apiRequest<{ user: User }>('/api/mobile/me', { auth: false, headers: { authorization: `Bearer ${token}` } }),
   logoutWithToken: (token: string) => apiRequest<void>('/api/mobile/auth/logout', { method: 'POST', auth: false, headers: { authorization: `Bearer ${token}` } }),
   redeemInviteCode: (code: string) => apiRequest<{ user: User }>('/api/invite-codes/redeem', { method: 'POST', body: { code } }),
-  updateProfile: (name: string) => apiRequest<{ user: User }>('/api/me', { method: 'PATCH', body: { name } }),
+  updateProfile: (patch: { name?: string; username?: string }) => apiRequest<{ user: User }>('/api/me', { method: 'PATCH', body: patch }),
+  /** `body` holds an optional `crop` field before the image `file` (see features/profile/avatar). */
+  uploadAvatar: (body: FormData) => apiRequest<{ user: User }>('/api/me/avatar', { method: 'PUT', body, timeoutMs: 60_000 }),
+  removeAvatar: () => apiRequest<{ user: User }>('/api/me/avatar', { method: 'DELETE' }),
   changePassword: (currentPassword: string, newPassword: string) =>
     apiRequest<void>('/api/me/password', { method: 'POST', verifySessionOnUnauthorized: true, body: { currentPassword, newPassword } }),
   deleteAccount: (currentPassword: string, verificationCode?: string) => apiRequest('/api/me', { method: 'DELETE', verifySessionOnUnauthorized: true, body: { currentPassword, verificationCode } }),

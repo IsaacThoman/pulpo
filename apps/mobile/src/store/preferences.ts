@@ -74,8 +74,9 @@ function samePreference<K extends keyof Preferences>(key: K, left: Preferences[K
   if (key === 'generation') {
     return sameGenerationPreferences(left as Preferences['generation'], right as Preferences['generation'])
   }
-  if (key === 'agentModes') {
-    return sameAgentModes(left as Preferences['agentModes'], right as Preferences['agentModes'])
+  if (key === 'agentModes' || key === 'instructionPresetSelections') {
+    // Postgres JSONB reorders object keys, so compare these boolean maps by entry.
+    return sameAgentModes(left as Record<string, boolean>, right as Record<string, boolean>)
   }
   return JSON.stringify(left) === JSON.stringify(right)
 }
@@ -192,6 +193,11 @@ export const usePreferencesStore = create<PreferenceState>((set, get) => ({
       showPromptSuggestions: defaults.showPromptSuggestions,
       showModelWarnings: defaults.showModelWarnings,
       modelWarningDismissals: {},
+      showResponseCost: defaults.showResponseCost,
+      agentCostLimitEnabled: defaults.agentCostLimitEnabled,
+      agentCostLimitMicros: defaults.agentCostLimitMicros,
+      customInstructions: defaults.customInstructions,
+      instructionPresetSelections: {},
       favoriteModelIds: [],
       providerOrder: [],
       generation: {},
