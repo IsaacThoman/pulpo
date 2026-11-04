@@ -23,25 +23,29 @@ export async function saveFileToDevice(uri: string, name: string, mimeType?: str
     if (isPickerCancelled(error)) return false
     throw error
   }
-  // The provider numbers the name when the folder already has it.
-  const destination = directory.createFile(name, mimeType || 'application/octet-stream')
+  // Open the source first: it can disappear while the picker is open (a cached download evicted),
+  // and failing then must not leave an empty file in the user's folder.
   const input = new File(uri).open(FileMode.ReadOnly)
   try {
-    const output = destination.open(FileMode.WriteOnly)
+    // The provider numbers the name when the folder already has it.
+    const destination = directory.createFile(name, mimeType || 'application/octet-stream')
     try {
-      for (;;) {
-        const chunk = input.readBytes(CHUNK_BYTES)
-        if (!chunk.length) break
-        output.writeBytes(chunk)
-        // Large files copy in steps so the interface keeps responding.
-        await new Promise((resolve) => setTimeout(resolve, 0))
+      const output = destination.open(FileMode.WriteOnly)
+      try {
+        for (;;) {
+          const chunk = input.readBytes(CHUNK_BYTES)
+          if (!chunk.length) break
+          output.writeBytes(chunk)
+          // Large files copy in steps so the interface keeps responding.
+          await new Promise((resolve) => setTimeout(resolve, 0))
+        }
+      } finally {
+        output.close()
       }
-    } finally {
-      output.close()
+    } catch (error) {
+      try { destination.delete() } catch { /* The partial copy is the user's to remove. */ }
+      throw error
     }
-  } catch (error) {
-    try { destination.delete() } catch { /* The partial copy is the user's to remove. */ }
-    throw error
   } finally {
     input.close()
   }

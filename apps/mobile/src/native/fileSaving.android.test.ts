@@ -8,12 +8,14 @@ const state = vi.hoisted(() => ({
   closed: 0,
   pick: vi.fn(),
   failWrite: false,
+  failOpen: false,
 }))
 
 vi.mock('expo-file-system', () => {
   class File {
     constructor(readonly uri: string) {}
     open() {
+      if (state.failOpen) throw new Error('The file does not exist')
       let offset = 0
       return {
         readBytes: (length: number) => {
@@ -62,6 +64,7 @@ describe('Android save to device', () => {
     state.deleted = 0
     state.closed = 0
     state.failWrite = false
+    state.failOpen = false
     state.pick.mockReset()
     state.pick.mockResolvedValue({
       createFile: (name: string, mimeType: string | null) => {
@@ -92,5 +95,11 @@ describe('Android save to device', () => {
     await expect(saveFileToDevice('file:///cache/a/report.pdf', 'report.pdf')).rejects.toThrow('Disk full')
     expect(state.deleted).toBe(1)
     expect(state.closed).toBe(2)
+  })
+
+  it('leaves nothing in the folder when the source is gone', async () => {
+    state.failOpen = true
+    await expect(saveFileToDevice('file:///cache/a/report.pdf', 'report.pdf')).rejects.toThrow('The file does not exist')
+    expect(state.created).toEqual([])
   })
 })
