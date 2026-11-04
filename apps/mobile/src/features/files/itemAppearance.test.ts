@@ -79,6 +79,21 @@ describe('changing an item’s color and icon', () => {
     expect(mocks.refreshFiles).toHaveBeenCalledTimes(1)
   })
 
+  it('puts back a refused item in a bulk change once the other saves have finished', async () => {
+    let finishOther!: () => void
+    mocks.apiRequest
+      .mockRejectedValueOnce(new Error('Nope'))
+      .mockImplementationOnce(() => new Promise((resolve) => { finishOther = () => resolve({}) }))
+    const show = vi.fn()
+    const done = applyItemAppearance(client, NAMESPACE, show, [node(), node({ id: 'd1', kind: 'doc' })], { color: 'red' })
+    await vi.waitFor(() => expect(mocks.apiRequest).toHaveBeenCalledTimes(2))
+    expect(mocks.refreshFiles).not.toHaveBeenCalled()
+    finishOther()
+    await done
+    expect(show).toHaveBeenCalledWith({ message: 'Nope', tone: 'error' })
+    expect(mocks.refreshFiles).toHaveBeenCalledTimes(1)
+  })
+
   it('keeps the trash’s color as a setting', async () => {
     await applyItemAppearance(client, NAMESPACE, vi.fn(), [trashFolderNode()], { color: 'purple' })
     expect(mocks.setPreference).toHaveBeenCalledWith('trashColor', 'purple')

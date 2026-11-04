@@ -79,15 +79,14 @@ export async function applyItemAppearance(client: QueryClient, namespace: string
   if (!ids.length) return
   await client.cancelQueries({ queryKey: filesQueryKeys.all(namespace) })
   restyleCachedItems(client, namespace, ids, change)
-  try {
-    await Promise.all(ids.map((id) => queueItemAppearance(id, change)))
-  } catch (cause) {
-    show({ message: filesErrorMessage(cause, nodes.length === 1 ? nodes[0]!.name : undefined), tone: 'error' })
-  } finally {
-    // A later choice for these items is still on its way; refetching now would briefly show this one.
-    // That later change refreshes once it is saved.
-    if (!ids.some((id) => appearanceWrites.has(id))) await refreshFiles(client, namespace)
-  }
+  // Every save in the batch settles before deciding whether to refresh, so a refused item is put back
+  // even while another one was still being saved.
+  const results = await Promise.allSettled(ids.map((id) => queueItemAppearance(id, change)))
+  const refused = results.find((result): result is PromiseRejectedResult => result.status === 'rejected')
+  if (refused) show({ message: filesErrorMessage(refused.reason, nodes.length === 1 ? nodes[0]!.name : undefined), tone: 'error' })
+  // A later choice for these items is still on its way; refetching now would briefly show this one.
+  // That later change refreshes once it is saved.
+  if (!ids.some((id) => appearanceWrites.has(id))) await refreshFiles(client, namespace)
 }
 
 export function useItemAppearance(namespace: string) {
