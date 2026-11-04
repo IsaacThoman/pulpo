@@ -192,17 +192,17 @@ describe.skipIf(!enabled)('office file conversion', () => {
       expect(await appError(convertFileToEditable(files.userId, capped, 'docx'))).toEqual({ status: 413, code: 'office_file_too_large' })
     })
 
-    it('limits each account to three conversions at a time, agents included', async () => {
+    it('limits each account to two conversions at a time, agents included', async () => {
       const projects = await files.folder('Projects')
       await files.blob('agent.odt', projects, 'agent')
       await files.attach({ [projects]: 'write' })
-      const ids = await Promise.all(['a', 'b', 'c'].map((name) => files.blob(`${name}.odt`, null, name)))
+      const ids = await Promise.all(['a', 'b'].map((name) => files.blob(`${name}.odt`, null, name)))
       reply = () => ({ status: 200, body: DOCX, delayMs: 300 })
       const agent = files.relay('convert', { path: 'Projects/agent.odt', to: 'docx' })
       await new Promise((resolve) => setTimeout(resolve, 50))
       const results = await Promise.allSettled(ids.map((id) => convertFileToEditable(files.userId, id, 'docx')))
       expect((await agent).ok).toBe(true)
-      expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(2)
+      expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1)
       const refused = results.find((result) => result.status === 'rejected') as PromiseRejectedResult
       expect(refused.reason).toMatchObject({ statusCode: 429, code: 'office_conversion_rate_limited' })
     })

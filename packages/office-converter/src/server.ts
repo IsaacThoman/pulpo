@@ -126,14 +126,35 @@ export function createConverterServer(config: Pick<ConverterConfig, 'token' | 'm
     response.end(output)
   }
 
+  /**
+   * Reads and discards what is left of a refused request's body (at most the input limit), so
+   * the client receives the answer instead of a broken pipe. An oversized body is not read.
+   */
+  const drain = (request: IncomingMessage, code: ErrorCode) => new Promise<void>((resolve) => {
+    if (request.complete || request.destroyed || code === 'input_too_large') return resolve()
+    let size = 0
+    request.on('data', (chunk: Buffer) => {
+      size += chunk.byteLength
+      if (size > config.maxInputBytes) { request.pause(); resolve() }
+    })
+    request.once('end', () => resolve())
+    request.once('error', () => resolve())
+    request.once('close', () => resolve())
+    request.resume()
+  })
+
+  const fail = async (request: IncomingMessage, response: ServerResponse, error: unknown) => {
+    const known = error instanceof RequestError || error instanceof ConversionError
+      ? { code: error.code, message: error.message }
+      : error instanceof BusyError ? { code: 'busy' as const, message: 'The converter is busy; try again shortly' } : null
+    if (!known && !response.destroyed) console.error('office-converter: request failed', error)
+    const { code, message } = known ?? { code: 'internal_error' as const, message: 'The conversion failed' }
+    await drain(request, code)
+    sendError(response, code, message)
+  }
+
   const server = createServer((request, response) => {
-    handle(request, response).catch((error: unknown) => {
-      if (error instanceof RequestError || error instanceof ConversionError) return sendError(response, error.code, error.message)
-      if (error instanceof BusyError) return sendError(response, 'busy', 'The converter is busy; try again shortly')
-      if (response.destroyed) return
-      console.error('office-converter: request failed', error)
-      sendError(response, 'internal_error', 'The conversion failed')
-    }).finally(() => {
+    handle(request, response).catch((error: unknown) => fail(request, response, error)).finally(() => {
       // An oversized upload is answered before it was read; stop reading once the answer is out.
       if (request.complete) return
       if (response.writableFinished) request.destroy()

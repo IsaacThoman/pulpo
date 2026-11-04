@@ -2659,6 +2659,7 @@ const esUi: Record<string, string> = {
   "This server can't convert office files": "Este servidor no puede convertir archivos de Office",
   "This file can't be converted to that format": "Este archivo no se puede convertir a ese formato",
   "Wait for your other conversions to finish": "Espera a que terminen tus otras conversiones",
+  "Converting “{{0}}”…": "Convirtiendo «{{0}}»…",
 }
 
 export default esUi

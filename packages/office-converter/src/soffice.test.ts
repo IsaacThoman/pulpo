@@ -210,6 +210,18 @@ describe.skipIf(!soffice)('LibreOffice conversions', () => {
       expect(existsSync(marker)).toBe(false)
     }, 180_000)
 
+    it('does not pull local text files into the output through RTF fields', async () => {
+      const secret = join(directory, 'token.txt')
+      await writeFile(secret, 'PULPO-RTF-SECRET')
+      const path = secret.replace(/\\/g, '/')
+      const rtf = new TextEncoder().encode(`{\\rtf1\\ansi Visible {\\field{\\*\\fldinst INCLUDETEXT "${path}"}{\\fldrslt cached}} and {\\field{\\*\\fldinst INCLUDEPICTURE "${path}" \\\\d}{\\fldrslt}}}`)
+      const docx = await convertWithSoffice(options, template, { input: rtf, from: 'rtf', to: 'docx' })
+      const files = unzipSync(docx)
+      const everything = Object.values(files).map((bytes) => new TextDecoder().decode(bytes)).join('\n')
+      expect(ooxmlText(docx)).toContain('Visible')
+      expect(everything).not.toContain('PULPO-RTF-SECRET')
+    }, 120_000)
+
     it('does not fetch linked images or update links to local files', async () => {
       let requests = 0
       const server = createServer((_request, response) => { requests += 1; response.end() })

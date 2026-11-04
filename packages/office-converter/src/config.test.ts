@@ -3,7 +3,7 @@ import { parseConfig } from './config.js'
 
 describe('converter configuration', () => {
   it('has safe defaults', () => {
-    expect(parseConfig({})).toMatchObject({ port: 8790, token: null, timeoutMs: 60_000, concurrency: 2, maxQueued: 8, maxInputBytes: 100 * 1024 * 1024, maxOutputBytes: 100 * 1024 * 1024 })
+    expect(parseConfig({})).toMatchObject({ port: 8790, token: null, timeoutMs: 60_000, concurrency: 3, maxQueued: 8, maxInputBytes: 100 * 1024 * 1024, maxOutputBytes: 100 * 1024 * 1024 })
     expect(parseConfig({}).memoryLimitMb).toBeUndefined()
     expect(parseConfig({ OFFICE_CONVERTER_MEMORY_LIMIT_MB: '4096' }).memoryLimitMb).toBe(4096)
   })

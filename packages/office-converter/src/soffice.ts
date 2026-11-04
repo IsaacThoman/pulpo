@@ -76,11 +76,14 @@ function killGroup(pid: number | undefined): void {
  * Runs one LibreOffice process tree in its own process group. On timeout or abort the whole
  * group is killed, and it is killed again after a normal exit so no helper outlives the job.
  */
-export function runSoffice(options: Pick<SofficeOptions, 'sofficePath' | 'timeoutMs' | 'memoryLimitMb'>, directory: string, args: string[], signal?: AbortSignal): Promise<RunResult> {
+export function runSoffice(options: Pick<SofficeOptions, 'sofficePath' | 'timeoutMs' | 'memoryLimitMb'> & { maxFileBytes?: number }, directory: string, args: string[], signal?: AbortSignal): Promise<RunResult> {
   const limited = options.memoryLimitMb && process.platform === 'linux'
   const command = limited ? '/bin/sh' : options.sofficePath
+  // Address space in KiB; file size in 512-byte blocks, so a hostile file cannot fill the tmpfs
+  // (and the container's memory with it) before the output size is checked.
+  const fileBlocks = Math.ceil((options.maxFileBytes ?? 1024 * 1024 * 1024) / 512)
   const commandArgs = limited
-    ? ['-c', 'ulimit -v "$0" && exec "$@"', String(options.memoryLimitMb! * 1024), options.sofficePath, ...args]
+    ? ['-c', 'ulimit -v "$0" && ulimit -f "$1" && shift && exec "$@"', String(options.memoryLimitMb! * 1024), String(fileBlocks), options.sofficePath, ...args]
     : args
   return new Promise((resolve, reject) => {
     let output = ''
@@ -157,7 +160,7 @@ export async function convertWithSoffice(options: SofficeOptions, templateProfil
     // A fixed name: the user's file name never reaches the command line or the file system.
     const input = join(directory, `input.${job.from}`)
     await writeFile(input, job.input, { mode: 0o600 })
-    const result = await runSoffice(options, directory, [
+    const result = await runSoffice({ ...options, maxFileBytes: options.maxOutputBytes + 1 }, directory, [
       profileUrl(profile), ...BASE_ARGUMENTS,
       `--infilter=${plan.importFilter}`, '--convert-to', plan.exportFilter, '--outdir', join(directory, 'out'), input,
     ], job.signal)

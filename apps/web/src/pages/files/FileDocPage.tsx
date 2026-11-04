@@ -433,7 +433,7 @@ function BlobFileView({ node, ancestors, view }: { node: FileNode; ancestors: Fi
       {notice && <p role="alert" className="border-b bg-destructive/5 px-4 py-2 text-sm text-destructive sm:px-6">{notice}</p>}
       <div className="min-h-0 flex-1 overflow-auto bg-muted/20 p-4">
         {/* Large files are not rendered on every open, as other previews are not downloaded. */}
-        {office.pdf && !filePreviewKind(node) && node.sizeBytes <= MAX_INLINE_PREVIEW_BYTES ? <OfficePdfPreview node={node} /> : <FilePreviewBody node={node} />}
+        {office.pdf && !filePreviewKind(node) && node.sizeBytes <= MAX_INLINE_PREVIEW_BYTES && !node.trashedAt ? <OfficePdfPreview node={node} /> : <FilePreviewBody node={node} />}
       </div>
     </div>
   )

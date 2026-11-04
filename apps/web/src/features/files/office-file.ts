@@ -21,6 +21,7 @@ export function useOfficeConversion(onOpen: (node: FileNode) => void) {
   const queryClient = useQueryClient()
   const userId = useAuth((state) => state.user?.id)
   const show = useFileToasts((state) => state.show)
+  const dismiss = useFileToasts((state) => state.dismiss)
   // Ids of files being converted or exported; several can run at once.
   const [converting, setConverting] = useState<ReadonlySet<string>>(new Set())
   const [exporting, setExporting] = useState<ReadonlySet<string>>(new Set())
@@ -33,6 +34,8 @@ export function useOfficeConversion(onOpen: (node: FileNode) => void) {
 
   const convert = async (node: FileNode, to: OfficeEditableFormat) => {
     toggle(setConverting, node.id, true)
+    // Converting takes a few seconds; from the Files list this is the only sign of progress.
+    const progress = show({ message: uit`Converting “${node.name}”…` })
     try {
       const created = await convertOfficeFile(node.id, to)
       await queryClient.invalidateQueries({ queryKey: filesQueryKey(userId) })
@@ -42,6 +45,7 @@ export function useOfficeConversion(onOpen: (node: FileNode) => void) {
       show({ message: filesErrorMessage(cause, node.name), tone: 'error' })
       return null
     } finally {
+      dismiss(progress)
       toggle(setConverting, node.id, false)
     }
   }

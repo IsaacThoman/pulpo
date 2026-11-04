@@ -72,8 +72,8 @@ export function convertOfficeFile(id: string, to: OfficeEditableFormat): Promise
 }
 
 /** An office file rendered as PDF by the server, for previews. Nothing is stored. */
-export function fetchFilePdf(node: Pick<FileNode, 'id'>): Promise<Blob> {
-  return fetchApiBlob(`/api/files/${node.id}/pdf?inline=1`)
+export function fetchFilePdf(node: Pick<FileNode, 'id'>, signal?: AbortSignal): Promise<Blob> {
+  return fetchApiBlob(`/api/files/${node.id}/pdf?inline=1`, { signal })
 }
 
 /** Saves an office file as "<name>.pdf". Failures carry the server's reason (password-protected, damaged…). */

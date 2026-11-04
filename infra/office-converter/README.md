@@ -49,7 +49,7 @@ a token is configured.
 | `PORT` | `8790` | |
 | `OFFICE_CONVERTER_TOKEN` | none | Shared secret (32+ characters) the server sends |
 | `OFFICE_CONVERTER_TIMEOUT_SECONDS` | `60` | Per job; the whole process tree is killed after it |
-| `OFFICE_CONVERTER_CONCURRENCY` | `2` | Jobs running at once |
+| `OFFICE_CONVERTER_CONCURRENCY` | `3` | Jobs running at once; Pulpo lets one account use two |
 | `OFFICE_CONVERTER_MAX_QUEUED` | `8` | Jobs waiting; more get `503 busy` |
 | `OFFICE_CONVERTER_MAX_INPUT_MB` | `100` | |
 | `OFFICE_CONVERTER_MAX_OUTPUT_MB` | `100` | |
@@ -76,8 +76,15 @@ other files, reach the network, or exhaust resources.
   updated on load in Writer and Calc, links from untrusted documents blocked, and HTTP(S)
   routed to a proxy on the discard port, so linked images or templates cannot be fetched.
   Startup fails if LibreOffice drops any of them. Tests convert documents with an on-load
-  macro, a linked remote image, and a section linked to a local file, and check that none of
-  them had any effect.
+  macro, a linked remote image, a section linked to a local file, and RTF fields including a
+  local file, and check that none of them had any effect.
+- **Local images are not walled off.** LibreOffice still embeds a linked local *image* (an RTF
+  `INCLUDEPICTURE` naming a PNG or SVG, for example) in the output. Text files, sections,
+  spreadsheet links, and DDE are not read. The container is what contains this: its file
+  system holds LibreOffice, fonts, and the job's own files, nothing private, and every job
+  directory has an unguessable name. Do not run the service natively on a machine whose images
+  matter; a mount namespace around each job would close this but needs privileges the
+  container deliberately lacks.
 - **No inherited environment.** LibreOffice gets only `PATH`, `HOME`, `TMPDIR`, and `LANG`,
   never the service's token.
 - **Limits.** Per-job timeout with the whole process group killed (and killed again after a
@@ -135,4 +142,7 @@ digest (`PULPO_OFFICE_CONVERTER_IMAGE`) in the infrastructure Compose files.
   `PULPO_OFFICE_CONVERTER_IMAGE` (pinned by digest). Attach the API and worker containers to the
   `pulpo-prod-office` network (`pulpo-dev-office` for development) as well as `coolify`, and
   give them `OFFICE_CONVERTER_URL=http://pulpo-prod-office-converter:8790` (`pulpo-dev-…`) and
-  the same token.
+  the same token. The attachment has to survive redeploys, so make it part of the API and
+  worker applications' own configuration rather than a one-off `docker network connect`. If
+  the platform cannot attach them to a second network, also put the converter on `coolify`:
+  the token then still guards it, but it gains a route out, so prefer the isolated network.

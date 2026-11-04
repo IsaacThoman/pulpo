@@ -70,9 +70,9 @@ export async function convertOfficeDocument(input: { bytes: Uint8Array; from: st
  * Conversions run inline in the request: they take seconds, the user is waiting for the result,
  * and the converter service already bounds and queues work across the instance (answering
  * "busy" when full). This cap keeps one account (its previews, exports, conversions, and its
- * agents' conversions) from taking the whole converter.
+ * agents' conversions) from taking the whole converter, which runs three at a time by default.
  */
-const MAX_CONVERSIONS_PER_ACCOUNT = 3
+const MAX_CONVERSIONS_PER_ACCOUNT = 2
 const running = new Map<string, number>()
 
 export async function withConversionSlot<T>(userId: string, run: () => Promise<T>): Promise<T> {

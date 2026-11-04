@@ -39,7 +39,7 @@ export function parseConfig(environment: NodeJS.ProcessEnv): ConverterConfig {
     maxInputBytes: positiveInteger(environment, 'OFFICE_CONVERTER_MAX_INPUT_MB', 100) * 1024 * 1024,
     maxOutputBytes: positiveInteger(environment, 'OFFICE_CONVERTER_MAX_OUTPUT_MB', 100) * 1024 * 1024,
     timeoutMs: positiveInteger(environment, 'OFFICE_CONVERTER_TIMEOUT_SECONDS', 60) * 1000,
-    concurrency: positiveInteger(environment, 'OFFICE_CONVERTER_CONCURRENCY', 2),
+    concurrency: positiveInteger(environment, 'OFFICE_CONVERTER_CONCURRENCY', 3),
     maxQueued: positiveInteger(environment, 'OFFICE_CONVERTER_MAX_QUEUED', 8),
     ...(memoryLimitMb ? { memoryLimitMb } : {}),
   }

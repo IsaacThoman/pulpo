@@ -130,6 +130,23 @@ describe('converter HTTP API', () => {
     expect((await queued).status).toBe(200)
   })
 
+  it('answers refusals of large uploads instead of breaking the connection', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const base = await start(async () => { await gate; return new Uint8Array([1]) }, { concurrency: 1, maxQueued: 0, maxInputBytes: 64 * 1024 * 1024 })
+    const running = post(base, 'from=doc&to=docx', DOC)
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    const big = new Uint8Array(8 * 1024 * 1024)
+    big.set(DOC)
+    for (const headers of [{ authorization: `Bearer ${TOKEN}` }, { authorization: 'Bearer wrong' }]) {
+      const refused = await post(base, 'from=doc&to=docx', big, headers)
+      expect([503, 401]).toContain(refused.status)
+      expect((await refused.json()).error.code).toMatch(/busy|unauthorized/)
+    }
+    release()
+    expect((await running).status).toBe(200)
+  })
+
   it('cancels the job when the client disconnects', async () => {
     let signal: AbortSignal | undefined
     const base = await start((job) => {

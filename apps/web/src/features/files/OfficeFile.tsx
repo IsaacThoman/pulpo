@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { ui, uit } from '@/i18n/ui'
 import { useAuth } from '@/stores/auth'
-import { fetchFilePdf, fileNodeQueryKey } from './api'
+import { fetchFilePdf } from './api'
 import { filesErrorMessage } from './file-display'
 import { officeFileActions, type OfficeConversion } from './office-file'
 
@@ -65,8 +65,11 @@ export function OfficeConversionBanner({ node }: { node: FileNode }) {
 export function OfficePdfPreview({ node }: { node: FileNode }) {
   const userId = useAuth((state) => state.user?.id)
   const pdf = useQuery({
-    queryKey: [...fileNodeQueryKey(userId, node.id), 'pdf', node.contentChecksum ?? node.revision],
-    queryFn: () => fetchFilePdf(node),
+    // Outside the ['files', user] tree: Files refreshes invalidate that on every change, and each
+    // refetch would render the document again on the server.
+    queryKey: ['office-pdf', userId, node.id, node.contentChecksum ?? node.revision],
+    // Leaving the view cancels the request, and with it the conversion.
+    queryFn: ({ signal }) => fetchFilePdf(node, signal),
     staleTime: Infinity,
     gcTime: 5 * 60_000,
     retry: false,
