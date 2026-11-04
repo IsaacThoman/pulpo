@@ -9,6 +9,7 @@ import {
   cacheOptimisticTurn,
   clearPendingOptimisticResponses,
   discardOptimisticChat,
+  failOptimisticTurn,
   pendingOptimisticChatIds,
   reconcileOptimisticResponses,
   rejectOptimisticTurn,
@@ -217,6 +218,25 @@ describe('optimistic response reconciliation', () => {
     const cached = queryClient.getQueryData<ServerChat>(chatKey('chat-1'))
     expect(cached?.responses).toEqual([])
     expect(realtime.snapshots['response-1']).toBeUndefined()
+    expect(pendingOptimisticChatIds(namespace)).toEqual(new Set())
+  })
+
+  it('keeps a turn refused for a usage limit as a failed response that chat reads can’t drop', () => {
+    const queryClient = new QueryClient()
+    queryClient.setQueryData(chatKey('chat-1'), staleChat())
+    seed(queryClient)
+
+    failOptimisticTurn({ queryClient, namespace, responseId: 'response-1', error: { code: 'insufficient_balance', message: 'Usage limit reached' } })
+
+    const cached = queryClient.getQueryData<ServerChat>(chatKey('chat-1'))
+    expect(cached?.responses?.[0]).toMatchObject({ id: 'response-1', status: 'failed', error: { code: 'insufficient_balance', message: 'Usage limit reached' } })
+    expect(realtime.snapshots['response-1']).toMatchObject({ status: 'failed', error: { code: 'insufficient_balance' } })
+    expect(pendingOptimisticChatIds(namespace)).toEqual(new Set(['chat-1']))
+    // A server read without the turn still shows it, failed.
+    const reconciled = reconcileOptimisticResponses(namespace, staleChat(), {})
+    expect(reconciled.responses?.map((response) => [response.id, response.status])).toEqual([['response-1', 'failed']])
+
+    rejectOptimisticTurn({ queryClient, namespace, responseId: 'response-1', discardChat: false })
     expect(pendingOptimisticChatIds(namespace)).toEqual(new Set())
   })
 
