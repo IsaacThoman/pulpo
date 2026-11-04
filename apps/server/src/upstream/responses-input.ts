@@ -212,6 +212,18 @@ export function reasoningEffort(reasoning: unknown): string | undefined {
   return typeof effort === 'string' ? effort : undefined
 }
 
+/**
+ * Responses parameters with a top-level `reasoning_effort` (the Chat Completions
+ * spelling some compatible providers expect) also get it as `reasoning.effort`.
+ * Otherwise a second, different effort competes with it: Pi's default Agent
+ * level, or the provider's own default. Fireworks then ignores `none`.
+ */
+export function withMirroredReasoningEffort<T extends JsonRecord>(parameters: T): T {
+  const effort = parameters.reasoning_effort
+  if (typeof effort !== 'string' || !effort || reasoningEffort(parameters.reasoning) !== undefined) return parameters
+  return { ...parameters, reasoning: { ...record(parameters.reasoning), effort } }
+}
+
 /** An Anthropic-protocol client sent `thinking: {type: "disabled"}`; see the public Anthropic codec. */
 export function clientDisabledThinking(reasoning: unknown): boolean {
   return record(reasoning)?.pulpo_thinking === 'disabled'

@@ -239,4 +239,10 @@ describe('createUpstreamTextClient over HTTP', () => {
     expect(requests[0]!.body.input).toEqual([{ role: 'user', content: 'hello' }])
     expect(requests[0]!.body.include).toEqual(['reasoning.encrypted_content'])
   })
+
+  it('sends Responses providers a configured reasoning_effort as reasoning.effort too', async () => {
+    const client = createUpstreamTextClient(provider('openai_responses'), { maxRetries: 0 })
+    await client.responses.create({ model: 'deepseek', input: 'hello', reasoning_effort: 'none' })
+    expect(requests[0]!.body).toMatchObject({ reasoning_effort: 'none', reasoning: { effort: 'none' } })
+  })
 })

@@ -1,5 +1,6 @@
 import type { ThinkingLevel } from '@earendil-works/pi-ai'
 import { resolveModelParameters } from '../responses/model-parameters.js'
+import { withMirroredReasoningEffort } from '../upstream/responses-input.js'
 
 const THINKING_LEVELS = new Set<ThinkingLevel>(['minimal', 'low', 'medium', 'high', 'xhigh', 'max'])
 
@@ -35,12 +36,17 @@ function supportsEncryptedReasoningInclude(baseUrl: string): boolean {
   }
 }
 
-/** Avoid the Agents SDK's encrypted-reasoning projection on strict compatible proxies. */
+/**
+ * Responses sampling parameters for an Agent turn. They override Pi's own
+ * fields, so a configured `reasoning_effort` also replaces Pi's default
+ * `reasoning.effort`. Strict compatible proxies skip the encrypted-reasoning include.
+ */
 export function agentSamplingParameters(
   baseUrl: string,
   parameters: Record<string, unknown>,
 ): Record<string, unknown> {
+  const mirrored = withMirroredReasoningEffort(parameters)
   return supportsEncryptedReasoningInclude(baseUrl)
-    ? parameters
-    : { ...parameters, include: undefined }
+    ? mirrored
+    : { ...mirrored, include: undefined }
 }

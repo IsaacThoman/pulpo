@@ -47,6 +47,15 @@ A stream that ends before the provider reports a finish reason is treated as a
 failed generation, not a complete answer. Tokens the provider reported before
 the failure are still billed.
 
+**Responses**
+
+- Some Responses-compatible providers, such as Fireworks and Baseten, take a
+  top-level `reasoning_effort`. If a model is configured with one, Pulpo also
+  sends it as `reasoning.effort`, in chats and in Agent mode, unless the model
+  sets `reasoning.effort` itself. Otherwise the request would carry a second,
+  different effort (Agent mode defaults to `medium`), and some providers would
+  ignore `reasoning_effort: "none"`.
+
 **Chat Completions**
 
 - System prompts, custom instructions, memory, and the compaction summary are
