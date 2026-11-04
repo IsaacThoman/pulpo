@@ -4,7 +4,7 @@ import type { QueryClient } from '@tanstack/react-query'
 import * as Haptics from 'expo-haptics'
 import { create } from 'zustand'
 import { useShallow } from 'zustand/react/shallow'
-import { apiRequest } from '../../api/client'
+import { ApiError, apiRequest } from '../../api/client'
 import { cacheNamespace } from '../../data/database'
 import { promptText } from '../../platform/materialActions'
 import { useSessionStore } from '../../store/session'
@@ -59,6 +59,15 @@ export const useUrlImports = create<{ items: PendingUrlImport[] }>(() => ({ item
 /** The pages being imported into `parentId` for the account `namespace`. */
 export function usePendingUrlImports(namespace: string, parentId: string | null): PendingUrlImport[] {
   return useUrlImports(useShallow((state) => state.items.filter((item) => item.namespace === namespace && item.parentId === parentId)))
+}
+
+/**
+ * What went wrong, in the server's words for its URL import errors (as the web shows them). Those
+ * include a 502 when the page can't be fetched, which would otherwise read as being offline.
+ */
+export function urlImportErrorMessage(cause: unknown): string {
+  if (cause instanceof ApiError && cause.code.startsWith('url_import_')) return cause.message
+  return filesErrorMessage(cause)
 }
 
 const DESCRIPTION = 'Saves the page’s text in this folder as a document you can edit.'
@@ -124,7 +133,7 @@ export async function runUrlImport(options: UrlImportOptions, typed: string): Pr
   } catch (cause) {
     if (isFilesDisabledError(cause)) void refreshFilesCapability()
     // The account may have signed out meanwhile; its prompt has nowhere to import to.
-    if (signedInNamespace() === namespace) promptUrlImport(options, typed.trim(), filesErrorMessage(cause))
+    if (signedInNamespace() === namespace) promptUrlImport(options, typed.trim(), urlImportErrorMessage(cause))
     return undefined
   } finally {
     useUrlImports.setState((state) => ({ items: state.items.filter((item) => item.id !== pending.id) }))

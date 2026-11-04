@@ -14,6 +14,9 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('expo-haptics', () => ({ notificationAsync: async () => undefined, NotificationFeedbackType: { Success: 'success' } }))
 vi.mock('../../api/client', () => ({
+  ApiError: class extends Error {
+    constructor(readonly status: number, readonly code: string, message: string) { super(message) }
+  },
   apiRequest: async (path: string, options: { body: unknown }) => {
     mocks.requests.push({ path, body: options.body })
     return mocks.respond()
@@ -31,7 +34,8 @@ vi.mock('./display', () => ({ filesErrorMessage: (error: unknown) => (error inst
 vi.mock('./operations', () => ({ refreshFiles: async (_client: unknown, namespace: string) => { mocks.refreshed.push(namespace) } }))
 vi.mock('./toasts', () => ({ useFilesToasts: { getState: () => ({ show: ({ message }: { message: string }) => { mocks.toasts.push(message) } }) } }))
 
-const { promptUrlImport, runUrlImport, urlImportAvailable, urlImportLabel, useUrlImports } = await import('./urlImport')
+const { promptUrlImport, runUrlImport, urlImportAvailable, urlImportErrorMessage, urlImportLabel, useUrlImports } = await import('./urlImport')
+const { ApiError } = await import('../../api/client')
 const { FILE_IMPORT_URL_MAX_LENGTH } = await import('@pulpo/contracts')
 
 const A = 'https://pulpo.test|a'
@@ -112,6 +116,15 @@ describe('Import from URL', () => {
     lastPrompt().onSubmit('https://example.com/found')
     await vi.waitFor(() => expect(mocks.toasts).toEqual(['Imported “Article.md”']))
     expect(mocks.requests.at(-1)).toEqual({ path: '/api/files/import-url', body: { parentId: 'folder', url: 'https://example.com/found' } })
+  })
+
+  it('explains a page that could not be fetched in the server’s words, not as being offline', async () => {
+    const failed = new ApiError(502, 'url_import_failed', 'This page could not be imported. Check the link and try again.')
+    expect(urlImportErrorMessage(failed)).toBe('This page could not be imported. Check the link and try again.')
+    mocks.respond.mockRejectedValue(failed)
+    await runUrlImport({ namespace: A, parentId: null, queryClient: client }, 'example.com/missing')
+    expect(lastPrompt().message).toBe('This page could not be imported. Check the link and try again.')
+    expect(urlImportErrorMessage(new Error('Network request failed'))).toBe('Network request failed')
   })
 
   it('rechecks Files when an administrator turned it off meanwhile', async () => {
