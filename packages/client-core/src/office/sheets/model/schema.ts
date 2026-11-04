@@ -33,6 +33,9 @@
 /** Bumped when the layout changes incompatibly. */
 export const SHEETS_SCHEMA_VERSION = 1
 
+/** What a tab is. Only worksheets are modeled; other sheet kinds are kept as parts. */
+export type SheetKind = 'worksheet' | 'chartsheet' | 'dialogsheet' | 'macrosheet'
+
 export type SheetFormat = 'xlsx' | 'xlsm' | 'xltx' | 'xltm' | 'csv' | 'tsv'
 
 /** A color as SpreadsheetML writes it. Exactly one of rgb/theme/indexed/auto is set. */
@@ -70,6 +73,11 @@ export interface CellData {
   array?: { rows: number; cols: number }
   /** A dynamic-array formula (spills). */
   dynamic?: true
+  /**
+   * The values an array formula last produced, as read from the file (rows of values; errors as
+   * `{ e: code }`). Shown for formulas the engine can't calculate, and written back for them.
+   */
+  spillCache?: (CellScalar | { e: string })[][]
   /** Rich text runs (v is then their concatenated text). */
   runs?: RichRun[]
   /**
@@ -77,6 +85,8 @@ export interface CellData {
    * data-table formula attributes (`f.t="dataTable"`, `r1`, `dt2D`, …), or a cell's `extLst`.
    */
   keep?: { c?: Record<string, string>; f?: Record<string, string>; fText?: string; extra?: string }
+  /** The exact text a CSV/TSV field had, written back while the cell is unchanged ("007", "1.50"). */
+  raw?: string
   /** Phonetic text (`rPh`/`phoneticPr`) of an inline or shared string, kept as XML. */
   phonetic?: string
 }
@@ -387,6 +397,8 @@ export interface DrawingObject {
   chart?: string
   /** Display order (z-order). */
   z: number
+  /** Kept exactly as read (anchors wrapped in mc:AlternateContent); doesn't follow cells. */
+  verbatim?: boolean
 }
 
 export interface DefinedName {

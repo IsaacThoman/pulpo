@@ -139,10 +139,10 @@ export function idTokens(formula: string): IdToken[] {
  * Converts an A1 formula typed or read in `sheet` to id form. References to sheets that don't
  * exist, 3D references, and external references stay as text (they can't follow structure).
  */
-export function toIdForm(formula: string, sheet: SheetModel): string {
-  const workbook = sheet.workbook
+export function toIdForm(formula: string, sheet: SheetModel | undefined, workbook: WorkbookModel = sheet!.workbook): string {
   return rewriteReferences(formula, (ref) => {
     if (ref.external || ref.sheet?.last) return undefined
+    // Defined names have no sheet of their own: their unqualified references stay as text.
     const target = ref.sheet ? workbook.sheetByName(ref.sheet.first) : sheet
     if (!target) return undefined
     const sheetId = ref.sheet ? target.id : undefined
@@ -156,12 +156,11 @@ export function toIdForm(formula: string, sheet: SheetModel): string {
 }
 
 /** Converts an id-form formula stored in `sheet` back to A1 text. */
-export function toA1Form(formula: string, sheet: SheetModel): string {
-  return mapIdTokens(formula, (token) => idTokenToA1(token, sheet))
+export function toA1Form(formula: string, sheet: SheetModel | undefined, workbook: WorkbookModel = sheet!.workbook): string {
+  return mapIdTokens(formula, (token) => idTokenToA1(token, sheet, workbook))
 }
 
-export function idTokenToA1(token: IdToken, sheet: SheetModel): string {
-  const workbook: WorkbookModel = sheet.workbook
+export function idTokenToA1(token: IdToken, sheet: SheetModel | undefined, workbook: WorkbookModel = sheet!.workbook): string {
   const target = token.sheet ? workbook.sheet(token.sheet) : sheet
   if (!target) return '#REF!'
   const prefix = token.sheet ? { first: target.name } : undefined
