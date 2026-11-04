@@ -77,7 +77,8 @@ export function fileIcon(node: IconSubject, fallbackTint = SYSTEM_BLUE): { symbo
   if (source.icon) return { symbol: FILE_ICON_SYMBOLS[source.icon], tint: tint ?? fallbackTint }
   if (kind === 'folder') return { symbol: 'folder.fill', tint: tint ?? fallbackTint }
   if (kind === 'chat') return { symbol: 'bubble.left.fill', tint: tint ?? '#8E8E93' }
-  if (kind === 'doc') return { symbol: 'doc.text.fill', tint: tint ?? SYSTEM_BLUE }
+  // Markdown documents have their own icon; text and code documents look like their files.
+  if (kind === 'doc' && isMarkdownName(source.name)) return { symbol: 'doc.text.fill', tint: tint ?? SYSTEM_BLUE }
   const mime = (source.mimeType ?? '').toLowerCase()
   const extension = fileExtension(source.name)
   if (mime.startsWith('image/')) return { symbol: 'photo.fill', tint: tint ?? '#34C759' }
@@ -95,7 +96,7 @@ export function fileKindLabel(node: Pick<FileNode, 'kind' | 'name' | 'target'>):
   if (node.kind === 'folder') return 'Folder'
   if (node.kind === 'chat') return 'Chat'
   if (node.kind === 'shortcut') return `Shortcut to ${node.target?.name ?? 'an item'}`
-  if (node.kind === 'doc') return 'Document'
+  if (node.kind === 'doc' && isMarkdownName(node.name)) return 'Document'
   if (isMarkdownName(node.name)) return 'Markdown'
   const extension = fileExtension(node.name)
   return extension ? `${extension.toUpperCase()} file` : 'File'
