@@ -84,6 +84,8 @@ try {
   check(true, 'converter became healthy')
   for (const name of readdirSync(fixtures).sort()) {
     const extension = name.split('.').pop()
+    // The fixtures' README is not a sample.
+    if (!EDITABLE[extension] && !['docx', 'xlsx', 'pptx'].includes(extension)) continue
     if (ENCRYPTED.has(name)) {
       const result = await convert(name, 'pdf')
       check(result.status === 422 && result.json().error.code === 'encrypted', `${name} is reported as password-protected (${result.status})`)
