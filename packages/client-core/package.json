@@ -49,6 +49,18 @@
     "./office/ooxml": {
       "types": "./dist/office/ooxml/index.d.ts",
       "import": "./dist/office/ooxml/index.js"
+    },
+    "./highlight": {
+      "types": "./dist/highlight.d.ts",
+      "import": "./dist/highlight.js"
+    },
+    "./office/delimited": {
+      "types": "./dist/office/delimited/index.d.ts",
+      "import": "./dist/office/delimited/index.js"
+    },
+    "./office/notebook": {
+      "types": "./dist/office/notebook/index.d.ts",
+      "import": "./dist/office/notebook/index.js"
     }
   },
   "scripts": {
@@ -69,8 +81,10 @@
     "@tiptap/pm": "^3.31.3",
     "@tiptap/starter-kit": "^3.31.3",
     "@tiptap/y-tiptap": "^3.0.9",
+    "@types/hast": "^3.0.4",
     "@xmldom/xmldom": "^0.9.12",
     "fflate": "^0.8.3",
+    "lowlight": "^3.3.0",
     "marked": "^15.0.12",
     "y-protocols": "^1.0.7",
     "yjs": "^13.6.33"
