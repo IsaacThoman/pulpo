@@ -1,5 +1,6 @@
 import { imageBatchNeedsWorkspace, DEFAULT_MAX_INLINE_IMAGES } from '@pulpo/contracts';
 import { speechPlayback, readAloud } from '../features/speech/playback';
+import { saveSpeechToFiles, shareSpeechAudio } from '../features/speech/save';
 import { SPEECH_SEEK_SECONDS, nextSpeechRate, speechRateLabel, speechText, speechTimeLabel, type SpeechProgress } from '@pulpo/client-core';
 import { INITIAL_TRANSCRIPT_ROWS, hasLargeInitialMessage, transcriptListMessages, usesBottomAnchoredTranscript } from '../features/chat/transcriptWindow';
 import { hasChatSelectionObserver, recordChatSelection, hasTranscriptPositionObserver, recordTranscriptPosition } from '../features/chat/selectionTiming';
@@ -4222,21 +4223,56 @@ const EMPTY_MOBILE_QUEUE: MobileQueuedMessage[] = [];
 const COMPOSER_MAX_FONT_SIZE_MULTIPLIER = 1.6;
 const COMPOSER_SECTION_SPRING = { damping: 24, stiffness: 260, mass: 0.8, overshootClamping: true };
 
-function SpeechPlayerButton({ label, icon, disabled = false, onPress }: { label: string; icon: SymbolName; disabled?: boolean; onPress: () => void }) {
+function SpeechPlayerButton({ label, icon, disabled = false, busy = false, onPress }: { label: string; icon: SymbolName; disabled?: boolean; busy?: boolean; onPress: () => void }) {
   const { styles, COLORS } = useChatStyles();
   return (
     <Pressable
       accessibilityLabel={label}
       accessibilityRole="button"
-      accessibilityState={{ disabled }}
-      disabled={disabled}
+      accessibilityState={{ disabled, busy }}
+      disabled={disabled || busy}
       hitSlop={4}
       onPress={() => { Haptics.selectionAsync(); onPress(); }}
       style={({ pressed }) => [styles.speechPlayerButton, disabled && styles.disabledIconAction, pressed && styles.pressed]}
     >
-      <Icon name={icon} size={17} color={COLORS.text} />
+      {busy ? <ActivityIndicator color={COLORS.muted} size="small" /> : <Icon name={icon} size={17} color={COLORS.text} />}
     </Pressable>
   );
+}
+
+// Shares the message's speech (the share sheet can save it to the device) or saves it to My files.
+// Audio not yet generated is generated first, in order, while reading carries on.
+function SpeechSaveButton({ ready }: { ready: boolean }) {
+  const queryClient = useQueryClient();
+  const namespace = useFilesNamespace();
+  const filesEnabled = useFilesEnabled();
+  const [preparing, setPreparing] = useState(false);
+  const run = (action: 'share' | 'files') => {
+    setPreparing(true);
+    const task = action === 'share' ? shareSpeechAudio() : saveSpeechToFiles(namespace, queryClient).then(() => {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      AccessibilityInfo.announceForAccessibility('Saving to My files');
+    });
+    void task
+      .catch((error) => Alert.alert(action === 'share' ? 'Couldn’t share audio' : 'Couldn’t save to Files', filesErrorMessage(error)))
+      .finally(() => setPreparing(false));
+  };
+  const choose = () => {
+    if (!namespace || !filesEnabled) { run('share'); return; }
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        { options: ['Share Audio…', 'Save to Files', 'Cancel'], cancelButtonIndex: 2 },
+        (index) => { if (index === 0) run('share'); if (index === 1) run('files'); },
+      );
+      return;
+    }
+    Alert.alert('Save audio', undefined, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Save to Files', onPress: () => run('files') },
+      { text: 'Share…', onPress: () => run('share') },
+    ]);
+  };
+  return <SpeechPlayerButton label={preparing ? 'Preparing audio' : 'Save audio'} icon="square.and.arrow.down" disabled={!ready} busy={preparing} onPress={choose} />;
 }
 
 // Drag or tap the track to seek. The lighter band is generated audio, the furthest a seek can
@@ -4328,6 +4364,7 @@ function SpeechPlayerBar() {
       >
         <Text style={styles.speechPlayerRate}>{speechRateLabel(state.rate)}</Text>
       </Pressable>
+      <SpeechSaveButton ready={Boolean(progress?.total)} />
       <SpeechPlayerButton label="Close player" icon="xmark" onPress={speechPlayback.stop} />
     </View>
   );

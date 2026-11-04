@@ -43,8 +43,14 @@ async function playSpeech(key: string, markdown?: string) {
       requestId: crypto.randomUUID(), modelId: model.id, input, playbackOffsetSeconds: offsetSeconds, voice: settings?.voice ?? model.defaultVoice,
       ...(model.supportsInstructions ? { instructions } : {}), ...(model.supportsSpeed ? { speed: settings?.speed ?? 1 } : {}),
     }) })
-    return { ...browserSpeechAudio(await response.blob()), durationSeconds: Number(response.headers.get(SPEECH_DURATION_HEADER)) }
+    const blob = await response.blob()
+    return { ...browserSpeechAudio(blob), durationSeconds: Number(response.headers.get(SPEECH_DURATION_HEADER)), format: model.responseFormat, bytes: async () => new Uint8Array(await blob.arrayBuffer()) }
   }, { retain: markdown !== undefined })
+}
+/** The message being read as one audio file, generating any of it not yet generated. */
+export async function speechAudioBlob(): Promise<{ blob: Blob; name: string }> {
+  const file = await speechPlayback.audioFile()
+  return { blob: new Blob([file.bytes], { type: file.mimeType }), name: file.name }
 }
 document.addEventListener('visibilitychange', () => { if (document.hidden) speechPlayback.stop() })
 useAuth.subscribe((state, previous) => { if (state.user?.id !== previous.user?.id) speechPlayback.stop() })
