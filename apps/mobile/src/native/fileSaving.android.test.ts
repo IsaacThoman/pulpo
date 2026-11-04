@@ -58,7 +58,9 @@ const Destination = (FileSystem as unknown as { __Destination: new () => object 
 
 describe('Android save to device', () => {
   beforeEach(() => {
-    state.source = new Uint8Array(3 * 1024 * 1024 + 5).map((_, index) => index % 251)
+    // Just over three 1 MB chunks, with a pattern so misordered chunks would not compare equal.
+    state.source = new Uint8Array(3 * 1024 * 1024 + 5)
+    for (let index = 0; index < state.source.length; index += 251) state.source[index] = index % 256
     state.written = []
     state.created = []
     state.deleted = 0
@@ -77,10 +79,9 @@ describe('Android save to device', () => {
   it('copies the whole file into the picked folder under its name', async () => {
     await expect(saveFileToDevice('file:///cache/a/report.pdf', 'Q3 report.pdf', 'application/pdf')).resolves.toBe(true)
     expect(state.created).toEqual([{ name: 'Q3 report.pdf', mimeType: 'application/pdf' }])
-    const written = new Uint8Array(state.written.reduce((sum, chunk) => sum + chunk.length, 0))
-    state.written.reduce((offset, chunk) => { written.set(chunk, offset); return offset + chunk.length }, 0)
-    expect(state.written.length).toBeGreaterThan(1)
-    expect(written).toEqual(state.source)
+    expect(state.written).toHaveLength(4)
+    // Byte-wise toEqual on megabytes is slow enough to time out on CI.
+    expect(Buffer.concat(state.written).equals(Buffer.from(state.source))).toBe(true)
     expect(state.closed).toBe(2)
   })
 
