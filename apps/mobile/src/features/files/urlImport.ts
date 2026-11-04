@@ -28,9 +28,16 @@ export function useUrlImportEnabled(): boolean {
   return useSessionStore((state) => urlImportAvailable(state.config))
 }
 
+/**
+ * How long to wait for an import. The server may try each page extraction provider in turn
+ * (Firecrawl alone allows 30 seconds) and keeps going if the app gives up, so a short timeout would
+ * report a failure for a page that is still saved, and a retry would import and bill it twice.
+ */
+export const URL_IMPORT_TIMEOUT_MS = 120_000
+
 /** A web page saved in `parentId` as a document. */
 export function importFromUrl(parentId: string | null, url: string): Promise<FileNode> {
-  return apiRequest<FileNode>('/api/files/import-url', { method: 'POST', body: { parentId, url } })
+  return apiRequest<FileNode>('/api/files/import-url', { method: 'POST', body: { parentId, url }, timeoutMs: URL_IMPORT_TIMEOUT_MS })
 }
 
 /** The address as a row shows it while the page is fetched: its host and path, without the scheme. */

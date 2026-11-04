@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   session: { instanceUrl: 'https://pulpo.test', user: { id: 'a' } as { id: string } | null, config: null as unknown },
   requests: [] as Array<{ path: string; body: unknown }>,
+  timeouts: [] as Array<number | undefined>,
   respond: vi.fn<() => Promise<unknown>>(),
   prompts: [] as Array<{ title: string; message?: string; value?: string; keyboardType?: string; confirmLabel?: string; onSubmit: (value: string) => void }>,
   toasts: [] as string[],
@@ -17,8 +18,9 @@ vi.mock('../../api/client', () => ({
   ApiError: class extends Error {
     constructor(readonly status: number, readonly code: string, message: string) { super(message) }
   },
-  apiRequest: async (path: string, options: { body: unknown }) => {
+  apiRequest: async (path: string, options: { body: unknown; timeoutMs?: number }) => {
     mocks.requests.push({ path, body: options.body })
+    mocks.timeouts.push(options.timeoutMs)
     return mocks.respond()
   },
 }))
@@ -34,7 +36,7 @@ vi.mock('./display', () => ({ filesErrorMessage: (error: unknown) => (error inst
 vi.mock('./operations', () => ({ refreshFiles: async (_client: unknown, namespace: string) => { mocks.refreshed.push(namespace) } }))
 vi.mock('./toasts', () => ({ useFilesToasts: { getState: () => ({ show: ({ message }: { message: string }) => { mocks.toasts.push(message) } }) } }))
 
-const { promptUrlImport, runUrlImport, urlImportAvailable, urlImportErrorMessage, urlImportLabel, useUrlImports } = await import('./urlImport')
+const { URL_IMPORT_TIMEOUT_MS, promptUrlImport, runUrlImport, urlImportAvailable, urlImportErrorMessage, urlImportLabel, useUrlImports } = await import('./urlImport')
 const { ApiError } = await import('../../api/client')
 const { FILE_IMPORT_URL_MAX_LENGTH } = await import('@pulpo/contracts')
 
@@ -46,6 +48,7 @@ const lastPrompt = () => mocks.prompts.at(-1)!
 beforeEach(() => {
   mocks.session.user = { id: 'a' }
   mocks.requests.length = 0
+  mocks.timeouts.length = 0
   mocks.prompts.length = 0
   mocks.toasts.length = 0
   mocks.refreshed.length = 0
@@ -89,6 +92,9 @@ describe('Import from URL', () => {
     finish(page)
     await expect(running).resolves.toEqual(page)
     expect(mocks.requests).toEqual([{ path: '/api/files/import-url', body: { parentId: 'folder', url: 'https://example.com/article' } }])
+    // Longer than the server's provider fallback, so a slow but successful import isn't reported as failed.
+    expect(mocks.timeouts).toEqual([URL_IMPORT_TIMEOUT_MS])
+    expect(URL_IMPORT_TIMEOUT_MS).toBeGreaterThanOrEqual(60_000)
     expect(useUrlImports.getState().items).toEqual([])
     expect(mocks.refreshed).toEqual([A])
     expect(mocks.toasts).toEqual(['Imported “Article.md”'])
