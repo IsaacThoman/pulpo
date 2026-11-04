@@ -10,8 +10,6 @@ import { AppStoreSubscriptionSection } from '../app-store/AppStoreSubscriptionSe
 import { usageLimitsQuery } from './api'
 import { planName, remainingLabel, usageLimitRows, type UsageLimitRow } from './format'
 
-const FOOTER = 'Usage limits refresh as responses finish.'
-
 function NativeUsageLimit({ row }: { row: UsageLimitRow }) {
   const theme = useAppTheme()
   return <VStack alignment="leading" spacing={6} modifiers={[accessibilityElement('combine'), accessibilityLabel(row.label), accessibilityValue(`${remainingLabel(row)}. ${row.reset}`)]}>
@@ -58,7 +56,7 @@ export function UsageLimitsSettings() {
       {limits.isError ? <Button label="Usage limits could not be loaded. Tap to retry." onPress={() => void limits.refetch()} /> : null}
     </Section>
     {limits.data ? <AppStoreSubscriptionSection limits={limits.data} /> : null}
-    {rows.length ? <Section title="Usage limits" footer={<NativeText modifiers={[foregroundStyle('secondary')]}>{FOOTER}</NativeText>}>
+    {rows.length ? <Section title="Usage limits">
       {rows.map(row => <NativeUsageLimit key={row.key} row={row} />)}
     </Section> : null}
   </>
@@ -72,7 +70,6 @@ export function UsageLimitsSettings() {
     {rows.length ? <>
       <SectionTitle>Usage limits</SectionTitle>
       <Card>{rows.map((row, index) => <UsageLimitCard key={row.key} row={row} last={index === rows.length - 1} />)}</Card>
-      <Text style={[styles.helper, styles.footer, { color: theme.secondary }]}>{FOOTER}</Text>
     </> : null}
   </>
 }
@@ -84,5 +81,4 @@ const styles = StyleSheet.create({
   percent: { fontSize: 12, fontVariant: ['tabular-nums'] },
   track: { flexDirection: 'row', height: 8, borderRadius: 4, overflow: 'hidden', marginVertical: 11 },
   helper: { fontSize: 12, lineHeight: 18 },
-  footer: { marginTop: 8 },
 })

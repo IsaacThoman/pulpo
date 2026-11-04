@@ -89,7 +89,6 @@ export function AppStorePlans({ kit, offer, limits, onChanged }: {
       <View style={[styles.limits, { backgroundColor: surface, borderColor: theme.separator }]}>
         {rows.map((row, index) => <UsageLimitCard key={row.key} row={row} last={index === rows.length - 1} />)}
       </View>
-      <Text style={[styles.footnote, { color: theme.secondary }]}>Usage limits refresh as responses finish.</Text>
     </View> : null}
     {subscription ? <Text accessibilityRole="header" style={[styles.heading, { color: theme.secondary }]}>Plans</Text> : null}
     {products.isPending ? <ActivityIndicator style={styles.loading} /> : null}
@@ -128,7 +127,6 @@ const styles = StyleSheet.create({
   heading: { fontSize: 17, fontWeight: '700', marginLeft: 4, marginBottom: -6 },
   groupHeading: { marginBottom: 4 },
   limits: { borderRadius: 22, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden', paddingHorizontal: 5 },
-  footnote: { fontSize: 12, lineHeight: 18, marginLeft: 4 },
   titleLine: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   title: { flexShrink: 1, fontSize: 22, fontWeight: '800' },
   badge: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 },
