@@ -9,8 +9,10 @@ import UniformTypeIdentifiers
 ///
 /// The text view belongs to React Native, so it gets an instance-only subclass
 /// (as PulpoDocEditorView does for its web view) that accepts the paste, saves
-/// the items to files, and reports them through `onPasteFiles`.
+/// the items to files, and reports them through `onPasteFiles`. Loading can take
+/// a while, so `onPasteStart` first reports the paste with the same `id`.
 public final class ComposerPasteView: ExpoView {
+  let onPasteStart = EventDispatcher()
   let onPasteFiles = EventDispatcher()
 
   private weak var textView: UITextView?
@@ -46,8 +48,10 @@ public final class ComposerPasteView: ExpoView {
   }
 
   fileprivate func paste(_ providers: [(NSItemProvider, UTType)]) {
+    let id = UUID().uuidString
+    onPasteStart(["id": id])
     ComposerPastedFiles.save(providers) { [weak self] files, failed in
-      self?.onPasteFiles(["files": files, "failed": failed])
+      self?.onPasteFiles(["id": id, "files": files, "failed": failed])
     }
   }
 }
@@ -200,17 +204,16 @@ private enum ComposerPastedFiles {
 
     var savedType = type
     var data: Data?
-    if type.conforms(to: .image), !ComposerPasteboard.modelImageTypes.contains(type) {
-      // HEIC, TIFF and the like: save a copy chat models can read.
-      guard let image = UIImage(contentsOfFile: source.path) else { throw CocoaError(.fileReadCorruptFile) }
+    // HEIC, TIFF and the like: save a copy chat models can read. Images UIKit
+    // can't decode, such as SVG, attach unchanged, like any other file.
+    if type.conforms(to: .image), !ComposerPasteboard.modelImageTypes.contains(type),
+       let image = UIImage(contentsOfFile: source.path) {
       if let alpha = image.cgImage?.alphaInfo, ![.none, .noneSkipFirst, .noneSkipLast].contains(alpha) {
-        data = image.pngData()
-        savedType = .png
-      } else {
-        data = image.jpegData(compressionQuality: 0.9)
+        if let png = image.pngData() { data = png; savedType = .png }
+      } else if let jpeg = image.jpegData(compressionQuality: 0.9) {
+        data = jpeg
         savedType = .jpeg
       }
-      guard data != nil else { throw CocoaError(.fileWriteUnknown) }
     }
 
     let name = fileName(suggested, type: savedType, fallback: savedType.conforms(to: .image) ? "image-\(fallback)" : "file-\(fallback)")

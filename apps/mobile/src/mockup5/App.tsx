@@ -5337,7 +5337,13 @@ function ChatView({
     }
   }, [addAttachments, attachments.length]);
 
-  const pasteFiles = useCallback((pasted: PastedFiles) => {
+  const pasteContext = useCallback(() => activeDraftRef.current?.scope ?? null, []);
+  const pasteFiles = useCallback((pasted: PastedFiles, startedInScope: string | null) => {
+    // Never let a slow paste land in a draft the user moved to meanwhile.
+    if (startedInScope !== (activeDraftRef.current?.scope ?? null)) {
+      if (pasted.files.length) Alert.alert('Couldn’t paste', 'The draft changed before the pasted files were ready. Paste them again.');
+      return;
+    }
     const result = pastedFileAttachments(pasted, () => Crypto.randomUUID(),
       useSessionStore.getState().config?.limits.maxAttachmentBytes);
     if (result.attachments.length) addAttachments(result.attachments);
@@ -6374,7 +6380,7 @@ function ChatView({
               ) : null}
               {dictation.error && <Text accessibilityRole="alert" style={styles.attachmentErrorText}>{dictation.error}</Text>}
               <View style={[styles.composerInputRow, showShelf && styles.composerShelfInputRow]}>
-                <ComposerPasteView onPasteFiles={pasteFiles} style={styles.composerPasteTarget}>
+                <ComposerPasteView onPasteFiles={pasteFiles} pasteContext={pasteContext} style={styles.composerPasteTarget}>
                   <TextInput
                     ref={composerInputRef}
                     accessibilityLabel="Message"
