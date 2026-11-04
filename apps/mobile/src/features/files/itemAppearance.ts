@@ -45,6 +45,23 @@ export function restyleCachedItems(client: QueryClient, namespace: string, ids: 
   }
 }
 
+/** Each item's latest appearance save, so successive choices reach the server in the order they were made. */
+const appearanceWrites = new Map<string, Promise<unknown>>()
+
+/**
+ * Sends a change after any earlier one for the same item has settled. Tapping colors quickly would
+ * otherwise send overlapping requests, and the server keeps whichever arrives last.
+ */
+function queueItemAppearance(id: string, change: AppearanceChange): Promise<FileNode> {
+  const write = (appearanceWrites.get(id) ?? Promise.resolve())
+    .catch(() => undefined)
+    .then(() => setItemAppearance(id, change))
+  appearanceWrites.set(id, write)
+  const settle = () => { if (appearanceWrites.get(id) === write) appearanceWrites.delete(id) }
+  write.then(settle, settle)
+  return write
+}
+
 type ShowToast = (toast: Omit<FilesToast, 'id' | 'tone'> & { tone?: FilesToast['tone'] }) => void
 
 /**
@@ -63,11 +80,13 @@ export async function applyItemAppearance(client: QueryClient, namespace: string
   await client.cancelQueries({ queryKey: filesQueryKeys.all(namespace) })
   restyleCachedItems(client, namespace, ids, change)
   try {
-    await Promise.all(ids.map((id) => setItemAppearance(id, change)))
+    await Promise.all(ids.map((id) => queueItemAppearance(id, change)))
   } catch (cause) {
     show({ message: filesErrorMessage(cause, nodes.length === 1 ? nodes[0]!.name : undefined), tone: 'error' })
   } finally {
-    await refreshFiles(client, namespace)
+    // A later choice for these items is still on its way; refetching now would briefly show this one.
+    // That later change refreshes once it is saved.
+    if (!ids.some((id) => appearanceWrites.has(id))) await refreshFiles(client, namespace)
   }
 }
 

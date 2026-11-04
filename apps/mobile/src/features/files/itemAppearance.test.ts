@@ -64,6 +64,21 @@ describe('changing an item’s color and icon', () => {
     expect(show).not.toHaveBeenCalled()
   })
 
+  it('saves quick successive choices for an item in order and refreshes once the last is saved', async () => {
+    let finishFirst!: () => void
+    mocks.apiRequest.mockImplementationOnce(() => new Promise((resolve) => { finishFirst = () => resolve({}) }))
+    const first = applyItemAppearance(client, NAMESPACE, vi.fn(), [node()], { color: 'red' })
+    const second = applyItemAppearance(client, NAMESPACE, vi.fn(), [node()], { color: 'blue' })
+    await vi.waitFor(() => expect(mocks.apiRequest).toHaveBeenCalledTimes(1))
+    // The second choice waits for the first save rather than racing it.
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(mocks.apiRequest).toHaveBeenCalledTimes(1)
+    finishFirst()
+    await Promise.all([first, second])
+    expect(mocks.apiRequest.mock.calls.map(([, options]) => (options as { body: unknown }).body)).toEqual([{ color: 'red' }, { color: 'blue' }])
+    expect(mocks.refreshFiles).toHaveBeenCalledTimes(1)
+  })
+
   it('keeps the trash’s color as a setting', async () => {
     await applyItemAppearance(client, NAMESPACE, vi.fn(), [trashFolderNode()], { color: 'purple' })
     expect(mocks.setPreference).toHaveBeenCalledWith('trashColor', 'purple')
