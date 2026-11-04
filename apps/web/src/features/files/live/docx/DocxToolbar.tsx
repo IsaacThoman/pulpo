@@ -184,6 +184,12 @@ export function DocxToolbar({ editor, state, onRequestLink, onTogglePanel, panel
   panels: ToolbarPanels
 }) {
   const imageInput = useRef<HTMLInputElement>(null)
+  const [insertOpen, setInsertOpen] = useState(false)
+  // Menus hand focus back to the document, so typing continues where the command applied.
+  const keepEditorFocus = (event: Event) => {
+    event.preventDefault()
+    editor.focus()
+  }
   const readOnly = state.readOnly
   const button = (label: string, icon: ReactNode, onClick: () => void, options: { active?: boolean; shortcut?: string; disabled?: boolean } = {}) => (
     <ToolbarButton label={label} shortcut={options.shortcut} active={options.active} disabled={options.disabled ?? readOnly} onClick={onClick}>
@@ -219,7 +225,7 @@ export function DocxToolbar({ editor, state, onRequestLink, onTogglePanel, panel
       <Separator />
       <DropdownMenu>
         {menuTrigger(ui("Style"), <span className="w-24 truncate text-left text-foreground" data-docx-style>{styleName}</span>, true)}
-        <DropdownMenuContent align="start" className="max-h-80 w-64">
+        <DropdownMenuContent onCloseAutoFocus={keepEditorFocus} align="start" className="max-h-80 w-64">
           {styles.map((style) => (
             <DropdownMenuItem key={style.id} onSelect={() => editor.setStyle(style.id)} className={cn(style.id === state.styleId && 'bg-accent')}>
               {style.name}
@@ -229,7 +235,7 @@ export function DocxToolbar({ editor, state, onRequestLink, onTogglePanel, panel
       </DropdownMenu>
       <DropdownMenu>
         {menuTrigger(ui("Font"), <span className="w-24 truncate text-left text-foreground" style={{ fontFamily: state.fontFamily ? editor.fontStack(state.fontFamily) : undefined }}>{state.fontFamily ?? ui("Font")}</span>, true)}
-        <DropdownMenuContent align="start" className="max-h-80">
+        <DropdownMenuContent onCloseAutoFocus={keepEditorFocus} align="start" className="max-h-80">
           {fonts.map((font) => (
             <DropdownMenuItem key={font} onSelect={() => editor.setFontFamily(font)} style={{ fontFamily: editor.fontStack(font) }}>
               {font}
@@ -239,7 +245,7 @@ export function DocxToolbar({ editor, state, onRequestLink, onTogglePanel, panel
       </DropdownMenu>
       <DropdownMenu>
         {menuTrigger(ui("Font size"), <span className="w-7 text-right text-foreground tabular-nums">{state.fontSize ?? 11}</span>)}
-        <DropdownMenuContent align="start" className="max-h-80 min-w-20">
+        <DropdownMenuContent onCloseAutoFocus={keepEditorFocus} align="start" className="max-h-80 min-w-20">
           {SIZES.map((size) => (
             <DropdownMenuItem key={size} onSelect={() => editor.setFontSize(size)}>{size}</DropdownMenuItem>
           ))}
@@ -273,13 +279,16 @@ export function DocxToolbar({ editor, state, onRequestLink, onTogglePanel, panel
           event.target.value = ''
         }}
       />
-      <DropdownMenu>
+      <DropdownMenu open={insertOpen} onOpenChange={setInsertOpen}>
         {menuTrigger(ui("Insert"), <span className="text-foreground">{ui("Insert")}</span>)}
-        <DropdownMenuContent align="start" className="w-56">
+        <DropdownMenuContent onCloseAutoFocus={keepEditorFocus} align="start" className="w-56">
           <DropdownMenuSub>
             <DropdownMenuSubTrigger>{ui("Table")}</DropdownMenuSubTrigger>
             <DropdownMenuSubContent>
-              <TableGridPicker onPick={(rows, cols) => editor.insertTable(rows, cols)} />
+              <TableGridPicker onPick={(rows, cols) => {
+                setInsertOpen(false)
+                editor.insertTable(rows, cols)
+              }} />
             </DropdownMenuSubContent>
           </DropdownMenuSub>
           <DropdownMenuItem onSelect={() => editor.insertPageBreak()}>{ui("Page break")}</DropdownMenuItem>
@@ -299,7 +308,10 @@ export function DocxToolbar({ editor, state, onRequestLink, onTogglePanel, panel
             <DropdownMenuSubContent className="w-56">
               <div className="grid grid-cols-8 gap-0.5 p-1">
                 {['©', '®', '™', '§', '¶', '†', '‡', '•', '…', '–', '—', '€', '£', '¥', '°', '±', '×', '÷', '≠', '≤', '≥', '∞', '√', '∑', 'π', 'α', 'β', 'µ', '←', '→', '↑', '↓'].map((symbol) => (
-                  <button key={symbol} type="button" onClick={() => editor.insertSymbol(symbol)} className="size-6 cursor-pointer rounded text-sm hover:bg-accent" aria-label={symbol}>
+                  <button key={symbol} type="button" onClick={() => {
+                    setInsertOpen(false)
+                    editor.insertSymbol(symbol)
+                  }} className="size-6 cursor-pointer rounded text-sm hover:bg-accent" aria-label={symbol}>
                     {symbol}
                   </button>
                 ))}
@@ -318,7 +330,7 @@ export function DocxToolbar({ editor, state, onRequestLink, onTogglePanel, panel
       {button(ui("Justify"), <TextAlignJustify className="size-4" />, () => editor.setAlignment('both'), { active: state.alignment === 'both', shortcut: `${mod}J` })}
       <DropdownMenu>
         {menuTrigger(ui("Line and paragraph spacing"), <span className="text-foreground tabular-nums">{state.lineSpacing ?? '—'}</span>)}
-        <DropdownMenuContent align="start">
+        <DropdownMenuContent onCloseAutoFocus={keepEditorFocus} align="start">
           <DropdownMenuLabel>{ui("Line spacing")}</DropdownMenuLabel>
           {LINE_SPACINGS.map((value) => (
             <DropdownMenuItem key={value} onSelect={() => editor.setLineSpacing(value)} className={cn(state.lineSpacing === value && 'bg-accent')}>{value}</DropdownMenuItem>
@@ -338,7 +350,7 @@ export function DocxToolbar({ editor, state, onRequestLink, onTogglePanel, panel
       {state.inTable && !readOnly && (
         <DropdownMenu>
           {menuTrigger(ui("Table"), <span className="text-foreground">{ui("Table")}</span>)}
-          <DropdownMenuContent align="start" className="w-56">
+          <DropdownMenuContent onCloseAutoFocus={keepEditorFocus} align="start" className="w-56">
             <DropdownMenuItem onSelect={() => editor.addRowBefore()}>{ui("Insert row above")}</DropdownMenuItem>
             <DropdownMenuItem onSelect={() => editor.addRowAfter()}>{ui("Insert row below")}</DropdownMenuItem>
             <DropdownMenuItem onSelect={() => editor.addColumnBefore()}>{ui("Insert column left")}</DropdownMenuItem>
@@ -389,7 +401,7 @@ export function DocxToolbar({ editor, state, onRequestLink, onTogglePanel, panel
             <ChevronDown className="size-3.5 opacity-60" />
           </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-64">
+        <DropdownMenuContent onCloseAutoFocus={keepEditorFocus} align="end" className="w-64">
           {(['editing', 'suggesting', 'viewing'] as const).map((mode) => (
             <DropdownMenuItem key={mode} onSelect={() => editor.setMode(mode)}>
               {modeIcons[mode]}

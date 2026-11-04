@@ -128,8 +128,8 @@ function trackDelete(out: Transaction, from: number, to: number, reviewer: Revie
 }
 
 /** Inserts `slice` at `pos` marked as the reviewer's insertion. */
-function trackInsert(out: Transaction, pos: number, slice: Slice, reviewer: Reviewer): void {
-  if (!slice.size) return
+function trackInsert(out: Transaction, pos: number, slice: Slice, reviewer: Reviewer): number | undefined {
+  if (!slice.size) return undefined
   const before = out.steps.length
   out.replace(pos, pos, slice)
   const map = out.mapping.slice(before)
@@ -146,6 +146,7 @@ function trackInsert(out: Transaction, pos: number, slice: Slice, reviewer: Revi
     }
     return false
   })
+  return end
 }
 
 /** Records the run properties a formatting change replaces, once per text range. */
@@ -168,13 +169,16 @@ export function trackTransaction(state: EditorState, tr: Transaction, reviewer: 
   if (!tr.docChanged) return null
   const out = state.tr
   let toOut = new Mapping()
+  // Where the last insertion ended, so the caret follows typed text.
+  let insertEnd: { pos: number; step: number } | undefined
   for (const step of tr.steps) {
     const before = out.steps.length
     if (step instanceof ReplaceStep) {
       const from = toOut.map(step.from, 1)
       const to = Math.max(from, toOut.map(step.to, -1))
       const deleted = from < to ? trackDelete(out, from, to, reviewer) : { from, to }
-      trackInsert(out, deleted.to, step.slice, reviewer)
+      const end = trackInsert(out, deleted.to, step.slice, reviewer)
+      if (end !== undefined) insertEnd = { pos: end, step: out.steps.length }
     } else if (step instanceof AddMarkStep || step instanceof RemoveMarkStep) {
       const from = toOut.map(step.from, 1)
       const to = toOut.map(step.to, -1)
@@ -197,7 +201,8 @@ export function trackTransaction(state: EditorState, tr: Transaction, reviewer: 
   }
   // Paragraph property changes (setNodeMarkup) get a record of what they replaced.
   recordParagraphChanges(state, out, reviewer)
-  const head = toOut.map(tr.selection.head, -1)
+  const typed = insertEnd && tr.selection.empty ? out.mapping.slice(insertEnd.step).map(insertEnd.pos, 1) : undefined
+  const head = typed ?? toOut.map(tr.selection.head, -1)
   const anchor = tr.selection.empty ? head : toOut.map(tr.selection.anchor, -1)
   try {
     out.setSelection(TextSelection.create(out.doc, Math.min(anchor, out.doc.content.size), Math.min(head, out.doc.content.size)))

@@ -46,6 +46,7 @@ import {
   insertSectionBreak,
   insertSymbol,
   insertTable,
+  listDefinition,
   listKind,
   paragraphStyleOptions,
   pasteFormat,
@@ -416,8 +417,49 @@ export class DocxEditor {
     }
     const before = view.state
     view.updateState(view.state.apply(transaction))
+    if (transaction.getMeta('uiEvent') === 'paste') this.convertPastedLists(view)
     if (transaction.docChanged || before.selection !== view.state.selection || transaction.storedMarksSet) this.emit('update')
     if (transaction.docChanged && !transaction.getMeta(paginationKey) && this.view) this.scheduleLayout()
+  }
+
+  /** Lists pasted from HTML or Word become Word lists: one new list per kind per paste. */
+  private convertPastedLists(view: EditorView): void {
+    const found: { pos: number; node: ProseMirrorNode; kind: 'bullet' | 'decimal'; level: number }[] = []
+    view.state.doc.descendants((node, pos) => {
+      if (node.type.name !== 'paragraph') return true
+      const attrs = parseJson<Record<string, string>>(node.attrs.xmlAttrs as string | null)
+      const kind = attrs?.['pulpo:list']
+      if (kind === 'bullet' || kind === 'decimal') found.push({ pos, node, kind, level: Math.max(0, Math.min(8, Number(attrs?.['pulpo:level']) || 0)) })
+      return false
+    })
+    if (!found.length) return
+    const tr = view.state.tr
+    const edits: MapEdit[] = []
+    const numIds = new Map<string, string>()
+    const numbering = this.options.doc.getMap('numbering')
+    const fresh = (prefix: string) => {
+      for (;;) {
+        const id = String(1000 + Math.floor(Math.random() * 29_000))
+        if (!numbering.has(`${prefix}:${id}`) && !edits.some(([, key]) => key === `${prefix}:${id}`)) return id
+      }
+    }
+    for (const { pos, node, kind, level } of found) {
+      let numId = numIds.get(kind)
+      if (!numId) {
+        const abstractId = fresh('abstract')
+        numId = fresh('num')
+        edits.push(['numbering', `abstract:${abstractId}`, packJml(listDefinition(kind, abstractId))], ['numbering', `num:${numId}`, packJml(['w:num', { 'w:numId': numId }, ['w:abstractNumId', { 'w:val': abstractId }]])])
+        numIds.set(kind, numId)
+      }
+      tr.setNodeMarkup(pos, undefined, {
+        ...node.attrs,
+        xmlAttrs: null,
+        pStyle: node.attrs.pStyle ?? (this.context.styles.get('ListParagraph') ? 'ListParagraph' : null),
+        numPr: packJml(['w:numPr', {}, ['w:ilvl', { 'w:val': String(level) }], ['w:numId', { 'w:val': numId }]]),
+      })
+    }
+    this.applyMapEdits(edits)
+    view.dispatch(tr.setMeta('addToHistory', true))
   }
 
   private reviewer() {
@@ -454,13 +496,21 @@ export class DocxEditor {
     if (result.tr?.docChanged) this.view.dispatch(result.tr)
   }
 
+  /** Commands are undo steps of their own, as in Word, not merged with the typing around them. */
+  private separateUndo(view: EditorView): void {
+    const undo = yUndoPluginKey.getState(view.state) as { undoManager?: { stopCapturing(): void } } | undefined
+    undo?.undoManager?.stopCapturing()
+  }
+
   /** Runs a command against the body; false when it does not apply. */
   run(command: Command): boolean {
     if (this.readOnly) return false
     const target = this.storyEditor?.view ?? this.view
     const tr = command(target.state, this.context)
     if (!tr) return false
+    this.separateUndo(target)
     target.dispatch(tr)
+    this.separateUndo(target)
     target.focus()
     return true
   }
@@ -469,7 +519,9 @@ export class DocxEditor {
     if (!result || this.readOnly) return false
     this.applyMapEdits(result.maps)
     const target = this.storyEditor?.view ?? this.view
+    this.separateUndo(target)
     target.dispatch(result.tr)
+    this.separateUndo(target)
     target.focus()
     return true
   }
@@ -770,7 +822,9 @@ export class DocxEditor {
   private tableCommand(command: (state: EditorState, dispatch?: (tr: Transaction) => void) => boolean): boolean {
     if (this.readOnly) return false
     const view = this.storyEditor?.view ?? this.view
+    this.separateUndo(view)
     const done = command(view.state, (tr) => view.dispatch(tr))
+    this.separateUndo(view)
     view.focus()
     return done
   }

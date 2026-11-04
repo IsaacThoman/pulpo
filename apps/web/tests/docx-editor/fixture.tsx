@@ -1,12 +1,39 @@
 import { StrictMode, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import { docxCodec, MemoryAssetStore, readDocxModel } from '@pulpo/client-core/office/docx'
+import { BODY_FRAGMENT, diffDocxDocs, docxCodec, docxSchema, MemoryAssetStore, packJml, readDocxModel, writeFragment, type DocxDiff } from '@pulpo/client-core/office/docx'
+import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import type { DocxEditor } from '@pulpo/client-core/office/docx/view'
 import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from 'y-protocols/awareness'
 import * as Y from 'yjs'
 import '../../src/index.css'
 import '../../src/i18n'
+import { DocxDiffView } from '../../src/features/files/live/docx/DocxDiffView'
 import { DocxEditorView } from '../../src/features/files/live/docx/DocxEditorView'
+
+/** An agent-style revision of the document for the diff view: reworded, trimmed, extended, bolded. */
+function revised(doc: Y.Doc): Y.Doc {
+  const copy = new Y.Doc()
+  Y.applyUpdate(copy, Y.encodeStateAsUpdate(doc))
+  const schema = docxSchema()
+  const body = readDocxModel(copy).body
+  const children: ProseMirrorNode[] = []
+  body.forEach((node, _offset, index) => {
+    if (node.type.name !== 'paragraph' || !node.textContent) return children.push(node)
+    if (index === 2) return
+    if (index === 1) return children.push(node.type.create(node.attrs, schema.text(node.textContent.replace(/\b(\w+)$/, 'revised $1'))))
+    if (index === 4) children.push(node.type.create(node.attrs, schema.text(node.textContent, [schema.mark('b', { v: packJml(['w:b', {}]) })])))
+    else children.push(node)
+    if (index === 3) children.push(schema.node('paragraph', null, schema.text('A paragraph the agent added.')))
+  })
+  copy.transact(() => writeFragment(copy, copy.getXmlFragment(BODY_FRAGMENT), body.type.create(null, children)))
+  return copy
+}
+
+function DiffHarness({ doc }: { doc: Y.Doc }) {
+  const [diff] = useState<DocxDiff>(() => diffDocxDocs(doc, revised(doc)))
+  useEffect(() => { window.harness = { editors: [], docs: [doc], exportFile: async () => '', text: () => '', model: () => diff, ready: true } }, [doc, diff])
+  return <div className="mx-auto max-w-3xl p-6"><DocxDiffView diff={diff} /></div>
+}
 
 /**
  * A dev-only page for the Word editor: loads a fixture into a Y.Doc and syncs it with a second
@@ -59,6 +86,16 @@ async function load(): Promise<{ peers: [Peer, Peer]; name: string }> {
     await docxCodec.importFile(ada.doc, bytes, { name, assets })
   } else {
     await docxCodec.createEmpty(ada.doc, { name: 'Document.docx', assets })
+    // `?generate=N` fills the document with N paragraphs (headings every 20) for performance runs.
+    const count = Number(params.get('generate') ?? 0)
+    if (count > 0) {
+      const schema = docxSchema()
+      const sentence = 'The quick brown fox jumps over the lazy dog while the editor lays out pages and keeps every paragraph in place. '
+      const blocks = Array.from({ length: count }, (_, index) => index % 20 === 0
+        ? schema.node('paragraph', { pStyle: 'Heading1' }, schema.text(`Section ${index / 20 + 1}`))
+        : schema.node('paragraph', null, schema.text(`${index}. ${sentence.repeat(1 + (index % 3))}`)))
+      ada.doc.transact(() => writeFragment(ada.doc, ada.doc.getXmlFragment(BODY_FRAGMENT), schema.node('doc', null, blocks)))
+    }
   }
   Y.applyUpdate(grace.doc, Y.encodeStateAsUpdate(ada.doc), 'relay')
   connect(ada, grace, Number(params.get('latency') ?? 0))
@@ -100,6 +137,7 @@ function Harness() {
     }
   }, [loaded, editors])
   if (!loaded) return null
+  if (params.get('view') === 'diff') return <DiffHarness doc={loaded.peers[0].doc} />
   const split = params.get('view') === 'split'
   const layout = params.get('layout') === 'web' ? 'web' : 'print'
   const shown = split ? loaded.peers : [loaded.peers[0]]
