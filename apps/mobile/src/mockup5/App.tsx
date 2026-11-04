@@ -18,6 +18,7 @@ import { useDictation } from '../features/chat/useDictation';
 import { DictationCancelButton, DictationStrip } from '../features/chat/DictationStrip';
 import { useDictationToolbarStyle } from '../features/chat/dictationMotion';
 import { setComposerSelection } from '../features/chat/composerSelection';
+import { responseMetaLabel } from '../features/chat/responseCost';
 import { ToolImagePreview } from '../components/ToolImagePreview';
 import { localComposerDraftId, mergePendingAttachments } from '@pulpo/client-core';
 import { DevicesScreen } from '../components/Devices';
@@ -237,10 +238,13 @@ import { fileOpenTarget } from '../features/files/itemActions';
 import { FilesToastHost } from '../features/files/components/FilesToastHost';
 import { FolderPickerSheet } from '../features/files/components/FolderPickerSheet';
 import { saveAttachmentToFiles } from '../features/files/api';
+import { FileAppearanceSheet } from '../features/files/components/FileAppearanceSheet';
+import { useItemAppearance } from '../features/files/itemAppearance';
 import { filesErrorMessage } from '../features/files/display';
 import { useFileOperations } from '../features/files/operations';
 import { enqueueUploads, pickUploads } from '../features/files/uploads';
 import { useFilesToasts } from '../features/files/toasts';
+import { promptUrlImport, useUrlImportEnabled } from '../features/files/urlImport';
 import { sidebarItemActions, sidebarItemTapOpens, type SidebarItemActionId } from '../features/sidebar/actions';
 import { SidebarHeading } from '../features/sidebar/components/SidebarHeading';
 import { SidebarMessageRow, SidebarNodeRow, type SidebarRowStyles } from '../features/sidebar/components/SidebarNodeRow';
@@ -256,6 +260,7 @@ import { FileDocumentScreen } from '../features/files/screens/FileDocumentScreen
 import { FileMarkdownScreen } from '../features/files/screens/FileMarkdownScreen';
 import { FileQuizScreen } from '../features/files/screens/FileQuizScreen';
 import { FilesFolderScreen } from '../features/files/screens/FilesFolderScreen';
+import { FriendsScreen } from '../features/friends/FriendsScreen';
 import { timeAgo } from '../features/chat/format';
 import {
   MAX_COMPOSER_ATTACHMENTS,
@@ -621,6 +626,7 @@ type Message = {
   thinkSeconds?: number;
   reasoning?: string;
   meta?: string;
+  costMicros?: number;
   activity?: ActivityStep[];
   outputItems?: unknown[];
   status?: PrototypeMessage['status'];
@@ -723,6 +729,7 @@ function prototypeMessageToLegacy(message: PrototypeMessage, chatId: string, cha
       : undefined,
     reasoning,
     meta: message.meta,
+    costMicros: message.costMicros,
     error: message.error,
     activity: message.activity,
     outputItems: message.outputItems,
@@ -1733,6 +1740,7 @@ function PrototypeRoot() {
         <RootStack.Screen name="Passkeys" component={PasskeysScreen} options={{ headerShown: false }} />
         <RootStack.Screen name="InstanceDetails" component={InstanceDetailsScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Pulpo Instance', headerBackTitle: 'Account' }} />
         <RootStack.Screen name="SettingsDetail" component={SettingsDetailScreen} options={{ headerShown: Platform.OS === 'ios', headerBackTitle: 'Settings' }} />
+        <RootStack.Screen name="Friends" component={FriendsScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Friends', headerBackTitle: 'Settings' }} />
         <RootStack.Screen name="FilesFolder" component={FilesFolderScreen} options={{ headerShown: Platform.OS === 'ios', headerLargeTitle: true, title: 'My files' }} />
         <RootStack.Screen name="FileDocument" component={FileDocumentScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Document' }} />
         <RootStack.Screen name="FileMarkdown" component={FileMarkdownScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Markdown' }} />
@@ -3957,6 +3965,10 @@ const MessageRow = memo(function MessageRow({
 }) {
   const { styles, COLORS } = useChatStyles();
   const { showReasoning } = useAppPreferences();
+  const showResponseCost = usePrototypeStore((state) => state.preferences.showResponseCost);
+  // Token counts only accompany answer text, but a settled cost shows even when a reply stopped or failed
+  // before writing any, as on web.
+  const metaLabel = message.role === 'assistant' ? responseMetaLabel(message.text ? message.meta : undefined, message.costMicros, showResponseCost) : undefined;
   const branches = message.branches ?? [];
   const branchIndex = message.activeBranch ?? 0;
   const [capacityPending, setCapacityPending] = useState(false);
@@ -4174,7 +4186,7 @@ const MessageRow = memo(function MessageRow({
                 <Text style={styles.continueButtonText}>{capacityPending ? 'Continuing…' : 'Continue without agent tools'}</Text>
               </Pressable>
             )}
-            {message.text && message.meta && <Text style={styles.messageMeta}>{message.meta}</Text>}
+            {metaLabel && <Text style={styles.messageMeta}>{metaLabel}</Text>}
         </AssistantFrame>
       )}
       {branches.length > 1 && message.chatId ? (
@@ -6919,6 +6931,7 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
 }) {
   const { styles, COLORS } = useChatStyles();
   const filesEnabled = useFilesEnabled();
+  const urlImportEnabled = useUrlImportEnabled();
   const filesNamespace = useFilesNamespace();
   const queryClient = useQueryClient();
   useFilesCapabilityRefresh();
@@ -6950,15 +6963,18 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
   useEffect(() => () => useFilesToasts.getState().dismiss(), [filesNamespace]);
   const sidebarOperations = useSidebarOperations(filesNamespace);
   const fileOperations = useFileOperations(filesNamespace);
+  const setItemAppearance = useItemAppearance(filesNamespace);
   const expandedFolders = useSidebarExpansion((state) => state.expanded);
   const setFolderExpanded = useSidebarExpansion((state) => state.setExpanded);
   useEffect(() => { useSidebarExpansion.getState().load(filesNamespace); }, [filesNamespace]);
   const [moveTarget, setMoveTarget] = useState<SidebarTarget | null>(null);
   const [pickingFolderFor, setPickingFolderFor] = useState<SidebarTarget | null>(null);
+  const [stylingNode, setStylingNode] = useState<FileNode | null>(null);
   // Sheets open for one account's items close when switching to another.
   useEffect(() => () => {
     setMoveTarget(null);
     setPickingFolderFor(null);
+    setStylingNode(null);
   }, [filesNamespace]);
   const [search, setSearch] = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
@@ -7157,6 +7173,12 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
       Alert.alert('Couldn’t add files', filesErrorMessage(error));
     }
   }, [dismissSearch, filesNamespace, queryClient, sidebar]);
+  const importUrl = useCallback(() => {
+    if (!sidebar || !filesNamespace) return;
+    dismissSearch();
+    // Opens the page like a new document, as the web sidebar does.
+    promptUrlImport({ namespace: filesNamespace, parentId: sidebar.chatsFolderId, queryClient, onImported: onOpenFileItem, announce: true });
+  }, [dismissSearch, filesNamespace, onOpenFileItem, queryClient, sidebar]);
   const openSidebarInFiles = useCallback(() => {
     if (!sidebar) return;
     dismissSearch();
@@ -7190,6 +7212,8 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
       }, node.name);
     } else if (action === 'move') {
       setMoveTarget({ kind: 'node', node });
+    } else if (action === 'appearance') {
+      setStylingNode(node);
     } else if (action === 'archive') {
       void sidebarOperations.archive({ kind: 'node', node });
     } else if (action === 'trash') {
@@ -7285,9 +7309,10 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
     onNewFolder={() => newFolder(null)}
     onNewDocument={() => { void newDocument(); }}
     onUpload={(source) => { void upload(source); }}
+    onImportUrl={urlImportEnabled ? importUrl : undefined}
     onOrderChange={(order) => usePrototypeStore.getState().setPreference('chatSortMode', order)}
     onOpenInFiles={openSidebarInFiles}
-  /> : <Text style={styles.sectionLabel}>{section.title}</Text>, [chatSortMode, filesEnabled, newDocument, newFolder, openSidebarInFiles, sidebar, styles, upload]);
+  /> : <Text style={styles.sectionLabel}>{section.title}</Text>, [chatSortMode, filesEnabled, importUrl, newDocument, newFolder, openSidebarInFiles, sidebar, styles, upload, urlImportEnabled]);
   /**
    * Where a chat or item being moved is now: a folder, null for the top of the sidebar, or
    * undefined for the top of My files, outside the sidebar.
@@ -7382,6 +7407,11 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
         onMove={(folderId) => moveTo(moveTarget, folderId)}
         onOther={filesEnabled && sidebar ? () => setPickingFolderFor(moveTarget) : undefined}
         onClose={() => setMoveTarget(null)}
+      /> : null}
+      {stylingNode ? <FileAppearanceSheet
+        nodes={[stylingNode]}
+        onChange={(change) => { void setItemAppearance([stylingNode], change); }}
+        onClose={() => setStylingNode(null)}
       /> : null}
       {pickingFolderFor && filesNamespace ? <FolderPickerSheet
         namespace={filesNamespace}

@@ -49,7 +49,7 @@ export function MaterialField({ label, error, icon, trailingAction, ...props }: 
     if (next !== lastNativeText.current) { lastNativeText.current = next; value.set(next); }
   }, [value, props.value]);
   const onValueChange = (next: string) => { lastNativeText.current = next; props.onChangeText?.(next); };
-  const keyboardType = props.secureTextEntry ? 'password' : props.keyboardType === 'email-address' ? 'email' : props.keyboardType === 'url' ? 'uri' : props.keyboardType === 'number-pad' || props.keyboardType === 'numeric' ? 'number' : props.keyboardType === 'phone-pad' ? 'phone' : 'text';
+  const keyboardType = props.secureTextEntry ? 'password' : props.keyboardType === 'email-address' ? 'email' : props.keyboardType === 'url' ? 'uri' : props.keyboardType === 'number-pad' || props.keyboardType === 'numeric' ? 'number' : props.keyboardType === 'decimal-pad' ? 'decimal' : props.keyboardType === 'phone-pad' ? 'phone' : 'text';
   const submit = () => {
     if (props.onSubmitEditing) props.onSubmitEditing({ nativeEvent: { text: value.get() } } as never);
     else Keyboard.dismiss();
@@ -199,7 +199,7 @@ function Prompt({ options }: {options: PromptOptions}) {
   const submit = () => { const next = text.trim(); if (next || options.optional) { update(null); options.onSubmit(next); } };
   return <AlertDialog onDismissRequest={() => update(null)}>
     <AlertDialog.Title><Text>{options.title}</Text></AlertDialog.Title>
-    <AlertDialog.Text><Column>{options.message ? <Text>{options.message}</Text> : null}<OutlinedTextField value={value} onValueChange={setText} singleLine={!options.multiline} minLines={options.multiline ? 4 : 1} maxLines={options.multiline ? 10 : 1} modifiers={[fillMaxWidth()]}><OutlinedTextField.Label><Text>{options.fieldLabel ?? (options.multiline ? 'Message' : 'Name')}</Text></OutlinedTextField.Label></OutlinedTextField></Column></AlertDialog.Text>
+    <AlertDialog.Text><Column>{options.message ? <Text>{options.message}</Text> : null}<OutlinedTextField value={value} onValueChange={setText} keyboardOptions={options.keyboardType === 'url' ? { keyboardType: 'uri', capitalization: 'none', autoCorrectEnabled: false } : undefined} singleLine={!options.multiline} minLines={options.multiline ? 4 : 1} maxLines={options.multiline ? 10 : 1} modifiers={[fillMaxWidth()]}><OutlinedTextField.Label><Text>{options.fieldLabel ?? (options.multiline ? 'Message' : 'Name')}</Text></OutlinedTextField.Label></OutlinedTextField></Column></AlertDialog.Text>
     <AlertDialog.DismissButton><TextButton onClick={() => update(null)}><Text>Cancel</Text></TextButton></AlertDialog.DismissButton>
     <AlertDialog.ConfirmButton><TextButton enabled={Boolean(text.trim()) || Boolean(options.optional)} onClick={submit}><Text>{options.confirmLabel ?? 'Save'}</Text></TextButton></AlertDialog.ConfirmButton>
   </AlertDialog>;

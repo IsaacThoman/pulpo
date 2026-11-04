@@ -1,4 +1,4 @@
-export type SettingsSection = 'general' | 'interface' | 'personalization' | 'data' | 'trash' | 'usage';
+export type SettingsSection = 'general' | 'interface' | 'agent' | 'personalization' | 'data' | 'trash' | 'usage';
 
 export type RootStackParamList = {
   Chat: { chatId?: string } | undefined;
@@ -12,6 +12,8 @@ export type RootStackParamList = {
   Devices: undefined;
   InstanceDetails: undefined;
   SettingsDetail: { section: SettingsSection };
+  /** Friends, friend requests, and the Pool (features/friends). */
+  Friends: undefined;
   /** A Files folder; null is the top of My files, and trash references (features/trash/folder.ts) the trash. */
   FilesFolder: { folderId: string | null; name?: string };
   /** A collaborative document; `created` opens a new one ready to type in. */

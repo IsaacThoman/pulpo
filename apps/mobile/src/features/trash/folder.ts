@@ -1,4 +1,4 @@
-import { DEFAULT_TRASH_COLOR, TRASH_FOLDER_ID, type FileNode } from '@pulpo/contracts'
+import { DEFAULT_TRASH_COLOR, TRASH_FOLDER_ID, type FileColor, type FileNode } from '@pulpo/contracts'
 
 /**
  * The trash is a built-in folder of My files, browsed like any other (as on the web, see
@@ -20,11 +20,11 @@ export const trashFolderRef = (folderId: string | null): string => folderId ? `$
 
 export const isTrashFolder = (node: Pick<FileNode, 'id'>): boolean => node.id === TRASH_FOLDER_ID
 
-/** The trash as an item of My files, in the trash's default color (the web lets it be changed). */
-export function trashFolderNode(): FileNode {
+/** The trash as an item of My files, in the color chosen for it (the synchronized `trashColor` setting). */
+export function trashFolderNode(color: FileColor | null = DEFAULT_TRASH_COLOR): FileNode {
   const epoch = new Date(0).toISOString()
   return {
     id: TRASH_FOLDER_ID, parentId: null, kind: 'folder', name: 'Trash', status: 'ready', mimeType: null, sizeBytes: 0,
-    revision: 0, trashedAt: null, createdAt: epoch, updatedAt: epoch, systemRole: null, color: DEFAULT_TRASH_COLOR,
+    revision: 0, trashedAt: null, createdAt: epoch, updatedAt: epoch, systemRole: null, color,
   }
 }

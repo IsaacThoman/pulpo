@@ -158,6 +158,8 @@ export const materialSymbolNames: Record<string, string> = {
   "calendar": "calendar_today",
   "person.2.fill": "group",
   "paintpalette.fill": "palette",
+  "paintpalette": "palette",
+  "nosign": "block",
   "wrench.fill": "build",
   "leaf.fill": "eco",
   "cup.and.saucer.fill": "coffee",

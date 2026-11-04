@@ -38,6 +38,19 @@ function response(input: {
 }
 
 describe('projectChat branch variants', () => {
+  it('carries the settled response cost with any API-equivalent reference', () => {
+    const settled = { ...response({ id: 'response-cost', text: 'Hi', output: 'Hello', branchIds: ['response-cost'], branchIndex: 0 }), costMicros: 4_200, inferenceReferenceCostMicros: 800 }
+    const pending = { ...response({ id: 'response-pending', text: 'Again', output: 'Hello again', branchIds: ['response-pending'], branchIndex: 0 }), parentResponseId: 'response-cost', costMicros: null }
+    const chat = {
+      id: 'chat-cost', title: 'Cost', modelId: 'model-1', pinned: false, folderId: null,
+      sortOrder: 0, temporary: false, activeResponseId: pending.id, activeBranchLeafId: pending.id,
+      createdAt: '2026-08-27T00:00:00.000Z', updatedAt: '2026-08-27T00:00:01.000Z', responses: [settled, pending],
+    } satisfies ServerChat
+
+    const assistants = projectChat(chat, {}).filter((message) => message.role === 'assistant')
+    expect(assistants.map((message) => message.costMicros)).toEqual([5_000, undefined])
+  })
+
   it('projects persisted recalled-chat activity and raw source metadata', () => {
     const serverResponse = response({
       id: 'response-recall', text: 'What did we decide?', output: 'We chose a parallel rebuild.',

@@ -18,7 +18,8 @@ import { getConfig } from '../config.js'
 import { acceptedAppStoreEnvironments } from '../billing/app-store.js'
 import { AppError, unauthorized } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
-import { parseAuthSettings, parseDictationSettings } from '../settings/application-settings.js'
+import { parseAuthSettings, parseDictationSettings, parseWebToolsSettings } from '../settings/application-settings.js'
+import { webExtractAvailable } from '../agent/web-tools.js'
 import { newUserStorageLimit } from '../billing/storage-entitlements.js'
 import { insertNewAccountPreferences } from '../settings/new-account-defaults.js'
 import {
@@ -46,12 +47,14 @@ export async function registerMobileRoutes(app: FastifyInstance): Promise<void> 
 
   app.get('/api/mobile/config', async () => {
     const config = getConfig()
-    const [[existingUser], [setting], [dictationSetting]] = await Promise.all([
+    const [[existingUser], [setting], [dictationSetting], [webToolsSetting]] = await Promise.all([
       db.select({ id: users.id }).from(users).limit(1),
       db.select({ value: applicationSettings.value }).from(applicationSettings)
         .where(eq(applicationSettings.key, 'auth')).limit(1),
       db.select({ value: applicationSettings.value }).from(applicationSettings)
         .where(eq(applicationSettings.key, 'dictation')).limit(1),
+      db.select({ value: applicationSettings.value }).from(applicationSettings)
+        .where(eq(applicationSettings.key, 'webTools')).limit(1),
     ])
     const auth = parseAuthSettings(setting?.value)
     const dictation = parseDictationSettings(dictationSetting?.value)
@@ -80,7 +83,12 @@ export async function registerMobileRoutes(app: FastifyInstance): Promise<void> 
         passkeys: true,
         messageReports: auth.messageReportsEnabled,
         usageLimits: config.PULPO_BILLING_ENABLED,
-        files: { enabled: auth.filesEnabled, docSchemaVersion: DOC_SCHEMA_VERSION },
+        files: {
+          enabled: auth.filesEnabled,
+          docSchemaVersion: DOC_SCHEMA_VERSION,
+          // As /api/auth/settings tells the web client (urlImportEnabled).
+          urlImport: auth.filesEnabled && webExtractAvailable(parseWebToolsSettings(webToolsSetting?.value)),
+        },
         appStoreBilling: acceptedAppStoreEnvironments(config).length
           ? {
             environments: acceptedAppStoreEnvironments(config),

@@ -52,11 +52,7 @@ export function importFromUrl(parentId: string | null, url: string): Promise<Fil
   return apiRequest<FileNode>('/api/files/import-url', { method: 'POST', body: { parentId, url } })
 }
 
-/** Typed addresses often leave out the scheme; pages are only fetched over HTTPS. */
-export function normalizeImportUrl(value: string): string {
-  const trimmed = value.trim()
-  return !trimmed || /^[a-z][a-z\d+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`
-}
+export { normalizeImportUrl } from '@pulpo/client-core/files'
 
 /** Dry run of making an uploaded Markdown file editable; nothing changes on the server. */
 export function fetchConversionPreview(id: string): Promise<FileConversionPreview> {

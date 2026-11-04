@@ -4,6 +4,7 @@ import { mergeResponseSnapshots, type ResponseSnapshot } from '@pulpo/contracts'
 import type { ServerAttachment, ServerChat, ServerResponse } from '../../types'
 import { recalledChatLabel } from './recall-label'
 import { responseErrorMessage } from '../usage-limits/errors'
+import { responseCostMicros } from './responseCost'
 
 export interface DisplayAttachment {
   id: string
@@ -50,6 +51,8 @@ export interface DisplayMessage {
   /** Generation preset choices the assistant turn was requested with. */
   presetSelections?: Record<string, string>
   usage?: { inputTokens: number; outputTokens: number } | null
+  /** Headline response cost in USD micros, once usage has settled. */
+  costMicros?: number
   outputItems: unknown[]
 }
 
@@ -254,6 +257,7 @@ export function createChatProjector() {
           variants: branchVariants(byId, response.branches.assistant.ids, 'assistant', liveSnapshots),
         },
         error: errorMessage, agentMode: response.agentMode, presetSelections: response.presetSelections, usage: response.usage,
+        costMicros: responseCostMicros(response),
         outputItems: output,
       }]
       if (existing && userDependencies.length === existing.userDependencies.length

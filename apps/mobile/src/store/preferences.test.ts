@@ -17,6 +17,15 @@ describe('production preference mapping', () => {
     expect(preferencePatchForServer('showModelWarnings', false)).toEqual({ showModelWarnings: false })
     expect(preferencePatchForServer('modelWarningDismissals', dismissals)).toEqual({ modelWarningDismissals: dismissals })
   })
+  it('shares response costs and the Agent cost warning with web defaults', () => {
+    expect(preferencesFromServer({})).toMatchObject({ showResponseCost: false, agentCostLimitEnabled: true, agentCostLimitMicros: 1_000_000 })
+    expect(preferencesFromServer({ showResponseCost: true, agentCostLimitEnabled: false, agentCostLimitMicros: 2_500_000 }))
+      .toMatchObject({ showResponseCost: true, agentCostLimitEnabled: false, agentCostLimitMicros: 2_500_000 })
+    expect(preferencesFromServer({ showResponseCost: 'yes', agentCostLimitMicros: 1 })).toMatchObject({ showResponseCost: false, agentCostLimitMicros: 1_000_000 })
+    expect(preferencePatchForServer('showResponseCost', true)).toEqual({ showResponseCost: true })
+    expect(preferencePatchForServer('agentCostLimitEnabled', false)).toEqual({ agentCostLimitEnabled: false })
+    expect(preferencePatchForServer('agentCostLimitMicros', 500_000)).toEqual({ agentCostLimitMicros: 500_000 })
+  })
   it('shares composer sync as an account preference with enabled defaults', () => {
     expect(preferencesFromServer({ composerSyncEnabled: false }).composerSyncEnabled).toBe(false)
     expect(preferencesFromServer({}).composerSyncEnabled).toBe(true)
@@ -26,6 +35,13 @@ describe('production preference mapping', () => {
     expect(preferencesFromServer({ chatSortMode: 'recent' }).chatSortMode).toBe('recent')
     expect(preferencesFromServer({ chatSortMode: 'alphabetical' }).chatSortMode).toBeUndefined()
   })
+  it('shares the trash color with the web, where null is the default and unknown colors fall back to red', () => {
+    expect(preferencesFromServer({ trashColor: 'teal' }).trashColor).toBe('teal')
+    expect(preferencesFromServer({ trashColor: null }).trashColor).toBeNull()
+    expect(preferencesFromServer({ trashColor: 'chartreuse' }).trashColor).toBe('red')
+    expect(preferencesFromServer({}).trashColor).toBeUndefined()
+    expect(preferencePatchForServer('trashColor', 'purple')).toEqual({ trashColor: 'purple' })
+  })
   it('hydrates the mobile names used by the web settings bridge', () => {
     expect(preferencesFromServer({
       theme: 'dark', localAttachmentCacheMb: 96, localChatLimit: 200,
@@ -33,15 +49,30 @@ describe('production preference mapping', () => {
       favoriteModelIds: ['model-b', 'model-a', 'model-b'], providerOrder: ['lab-b', 'lab-a'],
       generation: { 'model-a': { reasoning: 'high', style: 'concise' } },
       agentModes: { 'model-a': false, 'model-b': true },
+      customInstructions: 'Be terse.', instructionPresetSelections: { casual: true },
     })).toEqual({
       imageGeneration: { enabled: false, modelId: null }, speech: { modelId: null, models: {} },
       composerSyncEnabled: true, showPromptSuggestions: true, showModelWarnings: true, modelWarningDismissals: {},
+      showResponseCost: false, agentCostLimitEnabled: true, agentCostLimitMicros: 1_000_000,
       theme: 'dark', attachmentCacheMb: 96, localChatLimit: 50,
       trashRetention: '7d', automaticChatExpiration: '24h', newChatAutoExpire: false, memoryEnabled: true,
       favoriteModelIds: ['model-b', 'model-a'], providerOrder: ['lab-b', 'lab-a'],
       generation: { 'model-a': { reasoning: 'high', style: 'concise' } },
       agentModes: { 'model-a': false, 'model-b': true },
+      customInstructions: 'Be terse.', instructionPresetSelections: { casual: true },
     })
+  })
+
+  it('syncs custom instructions and preset selections with web', () => {
+    expect(preferencesFromServer({}).customInstructions).toBeUndefined()
+    expect(preferencesFromServer({}).instructionPresetSelections).toEqual({})
+    expect(preferencesFromServer({ customInstructions: 42 }).customInstructions).toBeUndefined()
+    expect(preferencesFromServer({ customInstructions: '' }).customInstructions).toBe('')
+    expect(preferencesFromServer({ instructionPresetSelections: { casual: 'yes' } }).instructionPresetSelections).toEqual({})
+    expect(preferencesFromServer({ instructionPresetSelections: { casual: false, formal: true } }).instructionPresetSelections)
+      .toEqual({ casual: false, formal: true })
+    expect(preferencePatchForServer('customInstructions', 'Never apologize.')).toEqual({ customInstructions: 'Never apologize.' })
+    expect(preferencePatchForServer('instructionPresetSelections', { casual: true })).toEqual({ instructionPresetSelections: { casual: true } })
   })
 
   it('maps mobile-only names back to the server and ignores device-only settings', () => {
@@ -62,7 +93,7 @@ describe('production preference mapping', () => {
   })
 
   it('clears synchronized model preferences when older servers omit them', () => {
-    expect(preferencesFromServer({})).toEqual({ imageGeneration: { enabled: false, modelId: null }, speech: { modelId: null, models: {} }, composerSyncEnabled: true, showPromptSuggestions: true, showModelWarnings: true, modelWarningDismissals: {}, favoriteModelIds: [], providerOrder: [], generation: {}, agentModes: {} })
+    expect(preferencesFromServer({})).toEqual({ imageGeneration: { enabled: false, modelId: null }, speech: { modelId: null, models: {} }, composerSyncEnabled: true, showPromptSuggestions: true, showModelWarnings: true, modelWarningDismissals: {}, showResponseCost: false, agentCostLimitEnabled: true, agentCostLimitMicros: 1_000_000, favoriteModelIds: [], providerOrder: [], generation: {}, agentModes: {}, instructionPresetSelections: {} })
   })
 
   it('filters malformed generation preferences from server settings', () => {
