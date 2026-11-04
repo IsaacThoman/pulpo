@@ -37,6 +37,17 @@ describe('OoxmlPackage', () => {
     expect(reread.paths()[0]).toBe('[Content_Types].xml')
   })
 
+  it('keeps parts that were only read as XML byte for byte', () => {
+    const pkg = OoxmlPackage.read(samplePackage())
+    expect(pkg.relationships('').length).toBe(1)
+    pkg.xml('word/document.xml')
+    pkg.contentType('word/document.xml')
+    const reread = OoxmlPackage.read(pkg.write())
+    expect(reread.text('_rels/.rels')).toBe(ROOT_RELS)
+    expect(reread.text('word/document.xml')).toBe(DOCUMENT)
+    expect(reread.text('[Content_Types].xml')).toBe(CONTENT_TYPES)
+  })
+
   it('adds relationships with fresh ids and content type overrides', () => {
     const pkg = OoxmlPackage.read(samplePackage())
     const id = pkg.addRelationship('word/document.xml', 'urn:image', 'media/image1.png')

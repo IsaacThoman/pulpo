@@ -116,6 +116,11 @@ export class OoxmlPackage {
   /** Part bytes by normalized path, in the order they were read or added. */
   private readonly parts: Map<string, Uint8Array>
   private readonly xmlCache = new Map<string, XmlDocument>()
+  /**
+   * How each cached document serialized when it was parsed. Reading a part as XML (relationships
+   * included) must not rewrite it, so documents that still serialize the same keep their bytes.
+   */
+  private readonly xmlBaseline = new Map<string, string>()
 
   constructor(parts: Map<string, Uint8Array> = new Map()) {
     this.parts = parts
@@ -184,19 +189,21 @@ export class OoxmlPackage {
   get(path: string): Uint8Array | undefined {
     const normalized = normalizePartPath(path)
     const cached = this.xmlCache.get(normalized)
-    if (cached) this.parts.set(normalized, strToU8(serializeXml(cached)))
+    if (cached) this.flushPart(normalized, cached)
     return this.parts.get(normalized)
   }
 
   set(path: string, data: Uint8Array): void {
     const normalized = normalizePartPath(path)
     this.xmlCache.delete(normalized)
+    this.xmlBaseline.delete(normalized)
     this.parts.set(normalized, data)
   }
 
   delete(path: string): void {
     const normalized = normalizePartPath(path)
     this.xmlCache.delete(normalized)
+    this.xmlBaseline.delete(normalized)
     this.parts.delete(normalized)
   }
 
@@ -217,6 +224,7 @@ export class OoxmlPackage {
     if (text === undefined) return undefined
     const document = parseXml(text)
     this.xmlCache.set(normalized, document)
+    this.xmlBaseline.set(normalized, serializeXml(document))
     return document
   }
 
@@ -228,10 +236,18 @@ export class OoxmlPackage {
     }
     this.parts.set(normalized, new Uint8Array())
     this.xmlCache.set(normalized, document)
+    this.xmlBaseline.delete(normalized)
   }
 
   private flushXml(): void {
-    for (const [path, document] of this.xmlCache) this.parts.set(path, strToU8(serializeXml(document)))
+    for (const [path, document] of this.xmlCache) this.flushPart(path, document)
+  }
+
+  private flushPart(path: string, document: XmlDocument): void {
+    const serialized = serializeXml(document)
+    if (this.xmlBaseline.get(path) === serialized) return
+    this.parts.set(path, strToU8(serialized))
+    this.xmlBaseline.set(path, serialized)
   }
 
   /** The content type of a part: its Override, else the Default for its extension. */
