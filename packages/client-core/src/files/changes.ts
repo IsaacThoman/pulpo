@@ -12,6 +12,11 @@ export function fileChangeConflictsOf(code: string | undefined, body: unknown): 
   return (body as FileChangeConflictBody | undefined)?.error?.conflicts ?? []
 }
 
+/** A suggested new version of a live document other than Markdown, reviewed as a whole file. */
+export function wholeFileProposal(change: FileChangeSummary): boolean {
+  return change.nodeKind === 'doc' && change.kind === 'update' && change.mode === 'suggest' && Boolean(change.format) && change.format !== 'markdown'
+}
+
 export function pendingSuggestion(change: FileChangeSummary): boolean {
   return change.mode === 'suggest' && change.status === 'pending'
 }
@@ -31,7 +36,8 @@ export function fileChangeLabelOf(change: FileChangeSummary): FileChangeLabel {
   }
   switch (change.kind) {
     case 'create': return { kind: change.nodeKind === 'folder' ? 'new-folder' : 'new' }
-    case 'update': return { kind: change.nodeKind === 'blob' ? 'new-version' : 'edited' }
+    // Uploaded files and live documents other than Markdown change as whole new versions.
+    case 'update': return { kind: change.nodeKind === 'blob' || wholeFileProposal(change) ? 'new-version' : 'edited' }
     case 'move': return { kind: change.fromPath && change.toPath && parentPath(change.fromPath) === parentPath(change.toPath) ? 'renamed' : 'moved' }
     case 'trash': return { kind: 'deleted' }
   }

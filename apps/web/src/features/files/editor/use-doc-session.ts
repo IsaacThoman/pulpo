@@ -1,6 +1,7 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { IndexeddbPersistence } from 'y-indexeddb'
 import { DocSessionController, type DocSessionSnapshot } from '@pulpo/client-core/doc-sync'
+import { MARKDOWN_FORMAT, type LiveFormatInfo } from '@pulpo/client-core/office'
 import { localAccountKey } from '@/lib/local-first/database'
 import { docCacheName } from '@/lib/local-first/doc-cache'
 import { useRealtimeSocket } from '@/lib/realtime-socket'
@@ -10,14 +11,19 @@ export type { DocSession, PresencePeer } from '@pulpo/client-core/doc-sync'
 const CLOSED: DocSessionSnapshot = { session: null, status: { state: 'connecting' }, peers: [] }
 const noSubscription = () => () => {}
 
-/** Owns the Y.Doc, its offline cache (IndexedDB), and the realtime provider for one open document. */
-export function useDocSession(userId: string, docId: string): DocSessionSnapshot {
+/**
+ * Owns the Y.Doc, its offline cache (IndexedDB), and the realtime provider for one open document
+ * of `format` (Markdown unless given), whose schema version the join announces.
+ */
+export function useDocSession(userId: string, docId: string, format: LiveFormatInfo = MARKDOWN_FORMAT): DocSessionSnapshot {
   const socket = useRealtimeSocket((state) => state.socket)
   const [controller, setController] = useState<DocSessionController | null>(null)
 
   useEffect(() => {
     const next = new DocSessionController({
       docId,
+      schemaVersions: { [format.id]: format.schemaVersion },
+      hasContent: format.hasContent,
       persistence: (doc) => {
         const persistence = new IndexeddbPersistence(docCacheName(localAccountKey(userId), docId), doc)
         return { whenLoaded: persistence.whenSynced.then(() => undefined), origin: persistence, destroy: () => persistence.destroy() }
@@ -31,7 +37,7 @@ export function useDocSession(userId: string, docId: string): DocSessionSnapshot
       next.destroy()
       setController(null)
     }
-  }, [userId, docId])
+  }, [userId, docId, format])
 
   useEffect(() => {
     controller?.attach(socket)
