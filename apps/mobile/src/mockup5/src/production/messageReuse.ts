@@ -52,6 +52,7 @@ export function projectedMessageUnchanged(left: PrototypeMessage, right: Prototy
     && left.initialResponseDurationMs === right.initialResponseDurationMs
     && left.createdAt === right.createdAt && left.latencyMs === right.latencyMs && left.modelId === right.modelId
     && left.status === right.status && left.error === right.error && left.meta === right.meta
+    && left.costMicros === right.costMicros
     && left.feedback === right.feedback && left.activeBranch === right.activeBranch
     && left.agentMode === right.agentMode
     && sameSelections(left.presetSelections, right.presetSelections)

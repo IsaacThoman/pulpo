@@ -112,6 +112,8 @@ export interface PrototypeMessage {
   status?: 'complete' | 'streaming' | 'queued' | 'failed' | 'stopped';
   error?: string;
   meta?: string;
+  /** Headline response cost in USD micros, once usage has settled. */
+  costMicros?: number;
   feedback?: 'good' | 'bad' | null;
   outputItems?: unknown[];
   agentMode?: boolean;
@@ -161,6 +163,9 @@ export interface AppPreferences {
   showModelWarnings: boolean;
   modelWarningDismissals: import('@pulpo/contracts').ModelWarningDismissals;
   showReasoning: boolean;
+  showResponseCost: boolean;
+  agentCostLimitEnabled: boolean;
+  agentCostLimitMicros: number;
   memoryEnabled: boolean;
   customInstructions: string;
   instructionPresetSelections: Record<string, boolean>;

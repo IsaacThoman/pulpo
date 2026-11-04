@@ -1,3 +1,4 @@
+import { DEFAULT_AGENT_COST_LIMIT_MICROS } from '@pulpo/contracts';
 import type { PersistedPrototypeState } from './domain';
 
 export function createInitialState(): PersistedPrototypeState {
@@ -22,6 +23,7 @@ export function createInitialState(): PersistedPrototypeState {
       sendWithEnter: true,
       streamResponses: true,
       showPromptSuggestions: true, showModelWarnings: true, modelWarningDismissals: {}, showReasoning: true,
+      showResponseCost: false, agentCostLimitEnabled: true, agentCostLimitMicros: DEFAULT_AGENT_COST_LIMIT_MICROS,
       memoryEnabled: false,
       customInstructions: '',
       instructionPresetSelections: {},

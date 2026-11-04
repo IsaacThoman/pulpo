@@ -87,7 +87,7 @@ const retentionMs: Record<AppPreferences['trashRetention'], number | null> = {
 };
 
 const initialsFor = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('') || '?';
-const productionPreferenceKeys = new Set(['imageGeneration', 'speech', 'theme', 'textSize', 'streamResponses', 'showPromptSuggestions', 'showModelWarnings', 'modelWarningDismissals', 'showReasoning', 'memoryEnabled', 'customInstructions', 'instructionPresetSelections', 'haptics', 'sendWithEnter', 'attachmentCacheMb', 'localChatLimit', 'trashRetention', 'automaticChatExpiration', 'newChatAutoExpire', 'chatSortMode']);
+const productionPreferenceKeys = new Set(['imageGeneration', 'speech', 'theme', 'textSize', 'streamResponses', 'showPromptSuggestions', 'showModelWarnings', 'modelWarningDismissals', 'showReasoning', 'showResponseCost', 'agentCostLimitEnabled', 'agentCostLimitMicros', 'memoryEnabled', 'customInstructions', 'instructionPresetSelections', 'haptics', 'sendWithEnter', 'attachmentCacheMb', 'localChatLimit', 'trashRetention', 'automaticChatExpiration', 'newChatAutoExpire', 'chatSortMode']);
 const actionVersions = new Map<string, number>();
 
 function automaticExpirationDeadline(now = Date.now()): number | null {
