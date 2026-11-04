@@ -4240,9 +4240,11 @@ function SpeechPlayerButton({ label, icon, disabled = false, busy = false, onPre
   );
 }
 
-// Shares the message's speech (the share sheet can save it to the device) or saves it to My files.
-// Audio not yet generated is generated first, in order, while reading carries on.
+// Shares the message's speech (the share sheet can save it to the device) or saves it to My files,
+// from a menu that opens out of the button. Audio not yet generated is generated first, in order,
+// while reading carries on.
 function SpeechSaveButton({ ready }: { ready: boolean }) {
+  const { styles } = useChatStyles();
   const queryClient = useQueryClient();
   const namespace = useFilesNamespace();
   const filesEnabled = useFilesEnabled();
@@ -4257,22 +4259,28 @@ function SpeechSaveButton({ ready }: { ready: boolean }) {
       .catch((error) => Alert.alert(action === 'share' ? 'Couldn’t share audio' : 'Couldn’t save to Files', filesErrorMessage(error)))
       .finally(() => setPreparing(false));
   };
-  const choose = () => {
-    if (!namespace || !filesEnabled) { run('share'); return; }
-    if (Platform.OS === 'ios') {
-      ActionSheetIOS.showActionSheetWithOptions(
-        { options: ['Share Audio…', 'Save to Files', 'Cancel'], cancelButtonIndex: 2 },
-        (index) => { if (index === 0) run('share'); if (index === 1) run('files'); },
-      );
-      return;
-    }
-    Alert.alert('Save audio', undefined, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Save to Files', onPress: () => run('files') },
-      { text: 'Share…', onPress: () => run('share') },
-    ]);
-  };
-  return <SpeechPlayerButton label={preparing ? 'Preparing audio' : 'Save audio'} icon="square.and.arrow.down" disabled={!ready} busy={preparing} onPress={choose} />;
+  const share = () => run('share');
+  const save = () => run('files');
+  if (preparing || !namespace || !filesEnabled) {
+    return <SpeechPlayerButton label={preparing ? 'Preparing audio' : 'Share audio'} icon="square.and.arrow.down" disabled={!ready} busy={preparing} onPress={share} />;
+  }
+  if (Platform.OS !== 'ios') {
+    return <MaterialMenu label="Save audio" icon="square.and.arrow.down" disabled={!ready} actions={[
+      { label: 'Share audio', icon: 'square.and.arrow.up', onPress: share },
+      { label: 'Save to Files', icon: 'folder.badge.plus', onPress: save },
+    ]} />;
+  }
+  return (
+    <SwiftUIHost ignoreSafeArea="all" style={styles.speechPlayerButton}>
+      <SwiftUIMenu
+        label={<SwiftUIImage systemName="square.and.arrow.down" size={14} modifiers={[frame({ width: 36, height: 40 }), contentShape(shapes.rectangle())]} />}
+        modifiers={[buttonStyle('plain'), foregroundStyle('primary'), swiftUIDisabled(!ready), swiftUIAccessibilityLabel('Save audio')]}
+      >
+        <SwiftUIButton label="Share Audio…" systemImage="square.and.arrow.up" onPress={share} />
+        <SwiftUIButton label="Save to Files" systemImage="folder.badge.plus" onPress={save} />
+      </SwiftUIMenu>
+    </SwiftUIHost>
+  );
 }
 
 // Drag or tap the track to seek. The lighter band is generated audio, the furthest a seek can
