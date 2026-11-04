@@ -49,6 +49,10 @@
     "./office/ooxml": {
       "types": "./dist/office/ooxml/index.d.ts",
       "import": "./dist/office/ooxml/index.js"
+    },
+    "./office/docx": {
+      "types": "./dist/office/docx/index.d.ts",
+      "import": "./dist/office/docx/index.js"
     }
   },
   "scripts": {

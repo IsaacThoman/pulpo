@@ -116,6 +116,8 @@ export class OoxmlPackage {
   /** Part bytes by normalized path, in the order they were read or added. */
   private readonly parts: Map<string, Uint8Array>
   private readonly xmlCache = new Map<string, XmlDocument>()
+  /** How each cached document serialized when it was read, so parts only read stay byte for byte. */
+  private readonly pristine = new Map<string, string>()
 
   constructor(parts: Map<string, Uint8Array> = new Map()) {
     this.parts = parts
@@ -184,19 +186,21 @@ export class OoxmlPackage {
   get(path: string): Uint8Array | undefined {
     const normalized = normalizePartPath(path)
     const cached = this.xmlCache.get(normalized)
-    if (cached) this.parts.set(normalized, strToU8(serializeXml(cached)))
+    if (cached) this.flushPart(normalized, cached)
     return this.parts.get(normalized)
   }
 
   set(path: string, data: Uint8Array): void {
     const normalized = normalizePartPath(path)
     this.xmlCache.delete(normalized)
+    this.pristine.delete(normalized)
     this.parts.set(normalized, data)
   }
 
   delete(path: string): void {
     const normalized = normalizePartPath(path)
     this.xmlCache.delete(normalized)
+    this.pristine.delete(normalized)
     this.parts.delete(normalized)
   }
 
@@ -217,6 +221,7 @@ export class OoxmlPackage {
     if (text === undefined) return undefined
     const document = parseXml(text)
     this.xmlCache.set(normalized, document)
+    this.pristine.set(normalized, serializeXml(document))
     return document
   }
 
@@ -227,11 +232,20 @@ export class OoxmlPackage {
       return
     }
     this.parts.set(normalized, new Uint8Array())
+    this.pristine.delete(normalized)
     this.xmlCache.set(normalized, document)
   }
 
+  /** Writes a cached document back to its bytes unless it still reads as it did when parsed. */
+  private flushPart(path: string, document: XmlDocument): void {
+    const xml = serializeXml(document)
+    if (xml === this.pristine.get(path)) return
+    this.parts.set(path, strToU8(xml))
+    this.pristine.set(path, xml)
+  }
+
   private flushXml(): void {
-    for (const [path, document] of this.xmlCache) this.parts.set(path, strToU8(serializeXml(document)))
+    for (const [path, document] of this.xmlCache) this.flushPart(path, document)
   }
 
   /** The content type of a part: its Override, else the Default for its extension. */
