@@ -328,7 +328,7 @@ const nodes: Record<string, NodeSpec> = {
       style: size ? `width:${size.width}pt;height:${size.height}pt` : '',
     }]
   }, { draggable: true }),
-  noteRef: inlineAtom({ kind: { default: 'footnote' }, id: { default: null } }, () => ['sup', { class: 'docx-noteref', contenteditable: 'false' }]),
+  noteRef: inlineAtom({ kind: { default: 'footnote' }, id: { default: null } }, (node) => ['sup', { class: 'docx-noteref', contenteditable: 'false', 'data-note': `${node.attrs.kind}:${node.attrs.id}` }]),
   commentMark: inlineAtom({ edge: { default: 'start' }, id: { default: null } }, hiddenAtom('docx-comment-mark'), { selectable: false }),
   bookmark: inlineAtom({ edge: { default: 'start' }, id: { default: null }, name: { default: null } }, hiddenAtom('docx-bookmark'), { selectable: false }),
   fieldChar: inlineAtom({ charType: { default: 'begin' } }, hiddenAtom('docx-field-char'), { selectable: false }),

@@ -46,6 +46,19 @@ function canonicalElement(element: JmlElement, depth: number): JmlElement {
   if (name === 'w:t' || name === 'w:delText' || name === 'w:instrText') {
     return [name, {}, ...children.filter((child) => child !== '')]
   }
+  // A tab character in text and a `w:tab` are the same to Word.
+  if (name === 'w:r') {
+    const split: JmlNode[] = []
+    for (const child of children) {
+      if (Array.isArray(child) && child[0] === 'w:t' && typeof child[2] === 'string' && child[2].includes('\t')) {
+        child[2].split('\t').forEach((part, index) => {
+          if (index > 0) split.push(['w:tab', {}])
+          if (part) split.push(['w:t', {}, part])
+        })
+      } else split.push(child)
+    }
+    children = split
+  }
   children = mergeRuns(children)
   return [name, attrsWithout(attrs, dropAttr), ...children]
 }

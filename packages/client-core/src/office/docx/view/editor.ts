@@ -1,0 +1,1638 @@
+import { baseKeymap, chainCommands, createParagraphNear, liftEmptyBlock, newlineInCode, splitBlock } from '@tiptap/pm/commands'
+import { dropCursor } from '@tiptap/pm/dropcursor'
+import { gapCursor } from '@tiptap/pm/gapcursor'
+import { keymap } from '@tiptap/pm/keymap'
+import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
+import { EditorState, NodeSelection, Plugin, PluginKey, TextSelection, type Transaction } from '@tiptap/pm/state'
+import {
+  addColumnAfter,
+  addColumnBefore,
+  addRowAfter,
+  addRowBefore,
+  deleteColumn,
+  deleteRow,
+  deleteTable,
+  goToNextCell,
+  isInTable,
+  mergeCells,
+  splitCell,
+  tableEditing,
+} from '@tiptap/pm/tables'
+import { Decoration, DecorationSet, EditorView } from '@tiptap/pm/view'
+import { redo, undo, yCursorPlugin, ySyncPlugin, ySyncPluginKey, yUndoPlugin, yUndoPluginKey } from '@tiptap/y-tiptap'
+import type { Awareness } from 'y-protocols/awareness'
+import type * as Y from 'yjs'
+import type { LiveAssetStore } from '../../live-format.js'
+import { fontStack, latinFont, twipsToPt } from '../css.js'
+import { newInlinePicture } from '../drawing.js'
+import { jmlAttr, jmlChild, jmlNumber, jmlOn, packJml, unpackJml, type JmlElement } from '../jsonml.js'
+import { BODY_FRAGMENT, fragmentToNode, parseJson, readDocxMap, storyFragmentName, writeFragment, type StoryMeta } from '../model.js'
+import { effectiveNumPr, formatNumber } from '../numbering.js'
+import { docxSchema, packMarks, textAreaWidth } from '../schema.js'
+import { inlineText } from '../text.js'
+import { AssetUrls } from './assets.js'
+import { clipboardParser, clipboardSerializer, sanitizePastedHtml } from './clipboard.js'
+import {
+  changeIndent,
+  clearFormatting,
+  copyFormat,
+  createTable,
+  documentOutline,
+  effectiveParagraphProperties,
+  effectiveRunProperties,
+  findMatches,
+  insertInline,
+  insertPageBreak,
+  insertSectionBreak,
+  insertSymbol,
+  insertTable,
+  listKind,
+  paragraphStyleOptions,
+  pasteFormat,
+  replaceMatches,
+  selectedParagraphs,
+  setAlignment,
+  setCellBorders,
+  setCellShading,
+  setFontFamily,
+  setFontSize,
+  setHighlight,
+  setLineSpacing,
+  setLink,
+  setParagraphSpacing,
+  setParagraphStyle,
+  setTextColor,
+  setUnderline,
+  setVerticalAlign,
+  toggleList,
+  toggleRunProperty,
+  wordCount,
+  type Alignment,
+  type BorderPreset,
+  type Command,
+  type CopiedFormat,
+  type EditResult,
+  type FindOptions,
+  type ListKind,
+  type MapEdit,
+  type OutlineEntry,
+  type ToggleProperty,
+} from './commands.js'
+import { DocxViewContext } from './context.js'
+import { computeDecorations, countNotes } from './decorations.js'
+import { DEFAULT_DOCX_LABELS, type DocxLabels } from './labels.js'
+import { PAGE_GAP, PX_PER_PT, type LayoutResult } from './layout.js'
+import { normalizeAtomMarks, selectionMarks } from './marks.js'
+import { DrawingView, MathView } from './nodeviews.js'
+import { documentSections, paginate, storyReference, type RepeatedHeader, type Section } from './paginate.js'
+import { layoutStaticTabs, renderStory } from './static.js'
+import { layoutTabs, paragraphTabs } from './tabs.js'
+import {
+  addComment,
+  addNote,
+  commentThreads,
+  deleteComment,
+  editCommentText,
+  replyToComment,
+  setCommentResolved,
+  type CommentAuthor,
+  type CommentThread,
+  type StoryResult,
+} from './stories.js'
+import { DOCX_BASE_CSS, documentStylesheet } from './stylesheet.js'
+import { listRevisions, resolveRevisions, revisionDate, trackTransaction, type Revision } from './track-changes.js'
+
+export type DocxLayout = 'print' | 'web'
+export type DocxMode = 'editing' | 'suggesting' | 'viewing'
+
+export interface DocxEditorOptions {
+  container: HTMLElement
+  doc: Y.Doc
+  awareness: Awareness
+  readOnly?: boolean
+  assets: LiveAssetStore
+  user: { name: string; color: string }
+  labels?: Partial<DocxLabels>
+  layout?: DocxLayout
+  zoom?: number
+  mode?: DocxMode
+}
+
+export interface DocxFormattingState {
+  styleId: string | null
+  fontFamily: string | null
+  fontSize: number | null
+  bold: boolean
+  italic: boolean
+  underline: boolean
+  strike: boolean
+  superscript: boolean
+  subscript: boolean
+  color: string | null
+  highlight: string | null
+  alignment: Alignment
+  lineSpacing: number | null
+  list: ListKind | null
+  inTable: boolean
+  link: string | null
+  canUndo: boolean
+  canRedo: boolean
+  empty: boolean
+  mode: DocxMode
+  readOnly: boolean
+  layout: DocxLayout
+  zoom: number
+  pages: number
+  formatPainter: boolean
+}
+
+export type DocxRequest = 'link' | 'find' | 'replace' | 'comment' | 'image'
+
+type Listener<T> = (value: T) => void
+
+const decorationsKey = new PluginKey<{ set: DecorationSet; version: number }>('docx-decorations')
+const paginationKey = new PluginKey<DecorationSet>('docx-pagination')
+interface FindState { matches: { from: number; to: number }[]; current: number }
+const findKey = new PluginKey<FindState>('docx-find')
+
+let scopeCounter = 0
+
+function jml(value: unknown): JmlElement | undefined {
+  return typeof value === 'string' ? unpackJml<JmlElement>(value) : undefined
+}
+
+const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
+
+/**
+ * The Word editor core: a ProseMirror view of a document's body bound to its Y.Doc, with page
+ * layout, headers and footers, notes, comments, tracked changes, and a command API for
+ * toolbars. Framework-agnostic: hosts (the web app, the mobile web view) render their own UI
+ * around it from `state()`, `comments()`, and the events.
+ */
+export class DocxEditor {
+  readonly view: EditorView
+  readonly context: DocxViewContext
+  readonly labels: DocxLabels
+  private readonly root: HTMLElement
+  private readonly canvas: HTMLElement
+  private readonly pagesLayer: HTMLElement
+  private readonly bandsLayer: HTMLElement
+  private readonly flowHost: HTMLElement
+  private readonly notesHost: HTMLElement
+  private readonly styleElement: HTMLStyleElement
+  private readonly scope: string
+  private readonly urls: AssetUrls
+  private readonly listeners = { update: new Set<Listener<void>>(), layout: new Set<Listener<LayoutResult | null>>(), request: new Set<Listener<DocxRequest>>(), activeComment: new Set<Listener<string | null>>() }
+  private layoutMode: DocxLayout
+  private zoomLevel: number
+  private modeValue: DocxMode
+  private readOnlyValue: boolean
+  private lastLayout: LayoutResult | null = null
+  /** Measured units of the last layout, for diagnostics and tests. */
+  private lastUnits: unknown[] = []
+  private lastSections: Section[] = []
+  private layoutFrame = 0
+  private layoutTimer: ReturnType<typeof setTimeout> | undefined
+  private lastLayoutAt = 0
+  private activeCommentId: string | null = null
+  private copied: CopiedFormat | null = null
+  private storyEditor: { view: EditorView; element: HTMLElement; storyId: string } | null = null
+  private readonly unsubscribe: (() => void)[] = []
+  private destroyed = false
+  private noteHeights = new Map<string, number>()
+  private printing = false
+  private endnotesHeight = 0
+
+  constructor(private readonly options: DocxEditorOptions) {
+    this.labels = { ...DEFAULT_DOCX_LABELS, ...options.labels }
+    this.layoutMode = options.layout ?? 'print'
+    this.zoomLevel = options.zoom ?? 1
+    this.readOnlyValue = options.readOnly ?? false
+    this.context = new DocxViewContext(options.doc)
+    this.modeValue = options.mode ?? (this.readOnlyValue ? 'viewing' : this.context.trackRevisions ? 'suggesting' : 'editing')
+    this.urls = new AssetUrls(options.assets)
+    this.scope = `docx-scope-${++scopeCounter}`
+    options.awareness.setLocalStateField('user', { name: options.user.name, color: options.user.color })
+
+    this.root = document.createElement('div')
+    this.root.className = `docx-editor ${this.scope}`
+    this.styleElement = document.createElement('style')
+    this.root.appendChild(this.styleElement)
+    this.canvas = document.createElement('div')
+    this.canvas.className = 'docx-canvas'
+    this.pagesLayer = document.createElement('div')
+    this.pagesLayer.className = 'docx-pages'
+    this.bandsLayer = document.createElement('div')
+    this.bandsLayer.className = 'docx-bands'
+    this.flowHost = document.createElement('div')
+    this.flowHost.className = 'docx-flow-host'
+    this.notesHost = document.createElement('div')
+    this.notesHost.className = 'docx-endnotes docx-flow'
+    this.canvas.append(this.pagesLayer, this.flowHost, this.bandsLayer)
+    this.root.appendChild(this.canvas)
+    options.container.appendChild(this.root)
+    this.renderStylesheet()
+
+    const editor = this
+    this.view = new EditorView({ mount: this.flowHost }, {
+      state: EditorState.create({ schema: docxSchema(), plugins: this.plugins(options.doc.getXmlFragment(BODY_FRAGMENT), 'cursor', undefined) }),
+      editable: () => !this.readOnlyValue && this.modeValue !== 'viewing',
+      nodeViews: this.nodeViews(),
+      clipboardSerializer: clipboardSerializer(docxSchema()),
+      clipboardParser: clipboardParser(docxSchema()),
+      transformPastedHTML: sanitizePastedHtml,
+      attributes: { class: 'docx-flow', spellcheck: 'true', role: 'textbox', 'aria-multiline': 'true' },
+      dispatchTransaction: function (this: EditorView, tr: Transaction) { editor.dispatch(this, tr) },
+      handleDOMEvents: {
+        click: (_view, event) => this.handleClick(event),
+      },
+    })
+    this.unsubscribe.push(this.context.onChange(() => {
+      this.renderStylesheet()
+      this.view.dispatch(this.view.state.tr.setMeta(decorationsKey, 'refresh'))
+    }))
+    const storiesMap = options.doc.getMap('stories')
+    const storyObserver = () => this.scheduleLayout()
+    const deepObserver = () => this.scheduleLayout()
+    storiesMap.observe(storyObserver)
+    // Edits to headers, footers, and notes by anyone redraw the pages.
+    options.doc.on('afterTransaction', deepObserver)
+    this.unsubscribe.push(() => storiesMap.unobserve(storyObserver), () => options.doc.off('afterTransaction', deepObserver))
+    if (typeof document !== 'undefined' && document.fonts) void document.fonts.ready.then(() => this.scheduleLayout(true))
+    this.applyLayoutMode()
+    this.scheduleLayout(true)
+  }
+
+  // ── Setup ────────────────────────────────────────────────────────────────
+
+  private plugins(fragment: Y.XmlFragment, cursorField: string, noteNumber: number | undefined): Plugin[] {
+    const editor = this
+    return [
+      ySyncPlugin(fragment),
+      yCursorPlugin(this.options.awareness, {}, cursorField),
+      yUndoPlugin(),
+      keymap(this.shortcuts()),
+      keymap({ Tab: goToNextCell(1), 'Shift-Tab': goToNextCell(-1) }),
+      keymap(baseKeymap),
+      tableEditing(),
+      gapCursor(),
+      dropCursor({ color: '#1a73e8', width: 2 }),
+      new Plugin({
+        key: decorationsKey,
+        state: {
+          init: (_config, state) => ({ set: editor.decorate(state.doc, noteNumber), version: editor.context.version }),
+          apply: (tr, value, _old, state) => {
+            if (!tr.docChanged && !tr.getMeta(decorationsKey) && value.version === editor.context.version) return value
+            return { set: editor.decorate(state.doc, noteNumber), version: editor.context.version }
+          },
+        },
+        props: { decorations: (state) => decorationsKey.getState(state)?.set },
+      }),
+      new Plugin({
+        key: paginationKey,
+        state: {
+          init: () => DecorationSet.empty,
+          apply: (tr, set) => {
+            const meta = tr.getMeta(paginationKey) as Decoration[] | null | undefined
+            if (meta !== undefined) return meta ? DecorationSet.create(tr.doc, meta) : DecorationSet.empty
+            return set.map(tr.mapping, tr.doc)
+          },
+        },
+        props: { decorations: (state) => paginationKey.getState(state) },
+      }),
+      new Plugin<FindState>({
+        key: findKey,
+        state: {
+          init: (): FindState => ({ matches: [], current: -1 }),
+          apply: (tr, value) => {
+            const meta = tr.getMeta(findKey) as { matches: { from: number; to: number }[]; current: number } | undefined
+            if (meta) return meta
+            if (!tr.docChanged || !value.matches.length) return value
+            return { matches: value.matches.map((match) => ({ from: tr.mapping.map(match.from), to: tr.mapping.map(match.to) })).filter((match) => match.from < match.to), current: value.current }
+          },
+        },
+        props: {
+          decorations: (state) => {
+            const find = findKey.getState(state)
+            if (!find?.matches.length) return null
+            return DecorationSet.create(state.doc, find.matches.map((match, index) => Decoration.inline(match.from, match.to, { class: index === find.current ? 'docx-find-match docx-find-current' : 'docx-find-match' })))
+          },
+        },
+      }),
+      new Plugin({
+        appendTransaction: (transactions, _old, state) => transactions.some((tr) => tr.docChanged) ? normalizeAtomMarks(state) : null,
+      }),
+    ]
+  }
+
+  private nodeViews() {
+    return {
+      drawing: (node: ProseMirrorNode, view: EditorView, getPos: () => number | undefined) => new DrawingView(node, view, getPos, { urls: this.urls, labels: this.labels, readOnly: () => this.readOnly }),
+      math: (node: ProseMirrorNode) => new MathView(node, this.labels),
+    }
+  }
+
+  private decorate(doc: ProseMirrorNode, noteNumber: number | undefined): DecorationSet {
+    const body = this.view ? this.view.state.doc : doc
+    const set = computeDecorations(doc, {
+      context: this.context,
+      noteNumbers: countNotes(noteNumber === undefined ? doc : body),
+      noteNumber,
+      activeComment: this.activeCommentId,
+    })
+    if (noteNumber !== undefined || this.layoutMode !== 'print') return set
+    // Sections narrower than the widest are inset on the right.
+    const { sections, sectionOfBlock } = documentSections(doc, this.context.finalSectPr)
+    const widths = sections.map((section) => section.setup.width - section.setup.left - section.setup.right)
+    const widest = Math.max(...widths)
+    if (widths.every((width) => Math.abs(width - widest) < 1)) return set
+    const extra: Decoration[] = []
+    let index = 0
+    doc.forEach((node, offset) => {
+      const inset = widest - (widths[sectionOfBlock[index++] ?? 0] ?? widest)
+      if (inset > 1 && node.type.name !== 'table') extra.push(Decoration.node(offset, offset + node.nodeSize, { style: `--docx-sec-inset:${inset}px` }))
+    })
+    return set.add(doc, extra)
+  }
+
+  private shortcuts(): Record<string, (state: EditorState, dispatch?: (tr: Transaction) => void, view?: EditorView) => boolean> {
+    const run = (command: Command) => () => this.run(command)
+    const bind: Record<string, () => boolean> = {
+      'Mod-z': () => this.undo(),
+      'Mod-y': () => this.redo(),
+      'Shift-Mod-z': () => this.redo(),
+      'Mod-b': run(toggleRunProperty('b')),
+      'Mod-i': run(toggleRunProperty('i')),
+      'Mod-u': () => this.toggleUnderline(),
+      'Alt-Shift-5': run(toggleRunProperty('strike')),
+      'Mod-Shift-x': run(toggleRunProperty('strike')),
+      'Mod-e': run(setAlignment('center')),
+      'Mod-l': run(setAlignment('left')),
+      'Mod-r': run(setAlignment('right')),
+      'Mod-j': run(setAlignment('both')),
+      'Mod-Shift-7': () => this.toggleList('decimal'),
+      'Mod-Shift-8': () => this.toggleList('bullet'),
+      'Mod-Shift-l': () => this.toggleList('bullet'),
+      'Mod-]': () => this.stepFontSize(1),
+      'Mod-[': () => this.stepFontSize(-1),
+      'Mod-Shift-.': () => this.stepFontSize(1),
+      'Mod-Shift-,': () => this.stepFontSize(-1),
+      'Mod-Enter': run(insertPageBreak),
+      'Mod-Alt-1': run(setParagraphStyle('Heading1')),
+      'Mod-Alt-2': run(setParagraphStyle('Heading2')),
+      'Mod-Alt-3': run(setParagraphStyle('Heading3')),
+      'Mod-Alt-0': () => this.setStyle(this.context.styles.defaultStyle('paragraph')?.id ?? null),
+      'Mod-Shift-n': () => this.setStyle(this.context.styles.defaultStyle('paragraph')?.id ?? null),
+      'Mod-=': run(setVerticalAlign('subscript')),
+      'Mod-Shift-=': run(setVerticalAlign('superscript')),
+      'Mod-.': run(setVerticalAlign('superscript')),
+      'Mod-,': run(setVerticalAlign('subscript')),
+      'Mod-\\': run(clearFormatting),
+      'Mod-Space': run(clearFormatting),
+      'Mod-k': () => this.request('link'),
+      'Mod-f': () => this.request('find'),
+      'Mod-h': () => this.request('replace'),
+      'Mod-Alt-m': () => this.request('comment'),
+      'Mod-Alt-f': () => this.insertNote('footnote') !== null,
+      'Mod-Alt-d': () => this.insertNote('endnote') !== null,
+      Tab: () => this.listIndent(1),
+      'Shift-Tab': () => this.listIndent(-1),
+      Enter: () => this.enter(),
+      Backspace: () => this.backspaceInList(),
+      Escape: () => this.closeStoryEditor(),
+    }
+    if (!isMac) bind['Ctrl-Shift-z'] = () => this.redo()
+    return bind as Record<string, () => boolean>
+  }
+
+  // ── Transactions ─────────────────────────────────────────────────────────
+
+  private dispatch(view: EditorView, tr: Transaction): void {
+    if (this.destroyed) return
+    let transaction = tr
+    const fromSync = tr.getMeta(ySyncPluginKey) !== undefined
+    if (this.modeValue === 'suggesting' && tr.docChanged && !fromSync && !tr.getMeta('docx-tracked') && !tr.getMeta('docx-untracked')) {
+      transaction = trackTransaction(view.state, tr, this.reviewer()) ?? tr
+    }
+    const before = view.state
+    view.updateState(view.state.apply(transaction))
+    if (transaction.docChanged || before.selection !== view.state.selection || transaction.storedMarksSet) this.emit('update')
+    if (transaction.docChanged && !transaction.getMeta(paginationKey) && this.view) this.scheduleLayout()
+  }
+
+  private reviewer() {
+    return { author: this.options.user.name || this.labels.unknownAuthor, date: revisionDate() }
+  }
+
+  /** Applies map edits in one Y transaction. */
+  private applyMapEdits(edits: MapEdit[] | undefined): void {
+    if (!edits?.length) return
+    this.options.doc.transact(() => {
+      for (const [map, key, value] of edits) {
+        const target = this.options.doc.getMap<string>(map)
+        if (value === null) target.delete(key)
+        else target.set(key, value)
+      }
+    })
+  }
+
+  private applyStoryEdits(result: StoryResult | EditResult): void {
+    const stories = 'stories' in result ? result.stories : []
+    this.options.doc.transact(() => {
+      for (const story of stories) {
+        const fragment = this.options.doc.getXmlFragment(storyFragmentName(story.id))
+        if (story.meta === null) {
+          this.options.doc.getMap<string>('stories').delete(story.id)
+          if (fragment.length) fragment.delete(0, fragment.length)
+          continue
+        }
+        this.options.doc.getMap<string>('stories').set(story.id, JSON.stringify(story.meta))
+        if (story.doc) writeFragment(this.options.doc, fragment, story.doc)
+      }
+    })
+    this.applyMapEdits(result.maps)
+    if (result.tr?.docChanged) this.view.dispatch(result.tr)
+  }
+
+  /** Runs a command against the body; false when it does not apply. */
+  run(command: Command): boolean {
+    if (this.readOnly) return false
+    const target = this.storyEditor?.view ?? this.view
+    const tr = command(target.state, this.context)
+    if (!tr) return false
+    target.dispatch(tr)
+    target.focus()
+    return true
+  }
+
+  private runResult(result: EditResult | null): boolean {
+    if (!result || this.readOnly) return false
+    this.applyMapEdits(result.maps)
+    const target = this.storyEditor?.view ?? this.view
+    target.dispatch(result.tr)
+    target.focus()
+    return true
+  }
+
+  // ── Keys ─────────────────────────────────────────────────────────────────
+
+  private enter(): boolean {
+    const view = this.storyEditor?.view ?? this.view
+    const { state } = view
+    if (!(state.selection instanceof TextSelection) && !(state.selection instanceof NodeSelection)) return false
+    const paragraph = selectedParagraphs(state)[0]
+    if (!paragraph) return false
+    // Enter in an empty list item ends the list, as in Word.
+    if (paragraph.node.content.size === 0 && effectiveNumPr(jml(paragraph.node.attrs.numPr), paragraph.node.attrs.pStyle as string | null, this.context.styles)) {
+      return this.toggleListOff()
+    }
+    const $from = state.selection.$from
+    const atEnd = $from.parentOffset === $from.parent.content.size
+    const handled = chainCommands(newlineInCode, createParagraphNear, liftEmptyBlock, splitBlock)(state, (tr) => {
+      // Both halves keep the paragraph's formatting; the section end and markers stay with the right half.
+      const first = tr.doc.nodeAt(paragraph.pos)
+      const secondPos = first ? paragraph.pos + first.nodeSize : -1
+      const second = secondPos >= 0 ? tr.doc.nodeAt(secondPos) : null
+      if (first && second?.type.name === 'paragraph') {
+        const attrs = paragraph.node.attrs
+        const nextStyle = atEnd ? this.context.styles.get(attrs.pStyle as string | null)?.next : undefined
+        tr.setNodeMarkup(paragraph.pos, undefined, { ...attrs, sectPr: null, trail: null })
+        tr.setNodeMarkup(secondPos, undefined, {
+          ...attrs,
+          lead: null,
+          xmlAttrs: null,
+          ...(nextStyle && nextStyle !== attrs.pStyle ? { pStyle: nextStyle, outlineLvl: null } : {}),
+        })
+        tr.setSelection(TextSelection.create(tr.doc, secondPos + 1))
+        // Typing continues with the formatting at the split.
+        tr.setStoredMarks(selectionMarks(state).filter((mark) => mark.type.name !== 'link' && mark.type.name !== 'ins' && mark.type.name !== 'del'))
+      }
+      view.dispatch(tr.scrollIntoView())
+    })
+    return handled
+  }
+
+  private backspaceInList(): boolean {
+    const view = this.storyEditor?.view ?? this.view
+    const { state } = view
+    if (!state.selection.empty || state.selection.$from.parentOffset !== 0) return false
+    const paragraph = selectedParagraphs(state)[0]
+    if (!paragraph || !effectiveNumPr(jml(paragraph.node.attrs.numPr), paragraph.node.attrs.pStyle as string | null, this.context.styles)) return false
+    return this.toggleListOff()
+  }
+
+  private toggleListOff(): boolean {
+    const state = (this.storyEditor?.view ?? this.view).state
+    const paragraph = selectedParagraphs(state)[0]
+    if (!paragraph) return false
+    const list = effectiveNumPr(jml(paragraph.node.attrs.numPr), paragraph.node.attrs.pStyle as string | null, this.context.styles)
+    if (!list) return false
+    const kind = listKind(list.numId, this.context) ?? 'bullet'
+    return this.runResult(toggleList(kind, state, this.context))
+  }
+
+  private listIndent(direction: 1 | -1): boolean {
+    const state = (this.storyEditor?.view ?? this.view).state
+    if (isInTable(state)) return false
+    const paragraph = selectedParagraphs(state)[0]
+    if (!paragraph) return false
+    const inList = effectiveNumPr(jml(paragraph.node.attrs.numPr), paragraph.node.attrs.pStyle as string | null, this.context.styles)
+    if (!inList) return direction > 0 && this.run((current) => insertInline(current, current.schema.node('tab', { v: packJml(['w:tab', {}]) })))
+    return this.run(changeIndent(direction))
+  }
+
+  // ── Public state ─────────────────────────────────────────────────────────
+
+  get readOnly(): boolean {
+    return this.readOnlyValue || this.modeValue === 'viewing'
+  }
+
+  get mode(): DocxMode {
+    return this.modeValue
+  }
+
+  get layout(): DocxLayout {
+    return this.layoutMode
+  }
+
+  get zoom(): number {
+    return this.zoomLevel
+  }
+
+  get pages(): number {
+    return this.layoutMode === 'print' ? (this.lastLayout?.pages.length ?? 1) : 1
+  }
+
+  state(): DocxFormattingState {
+    const view = this.storyEditor?.view ?? this.view
+    const { state } = view
+    const run = effectiveRunProperties(state, this.context)
+    const paragraph = selectedParagraphs(state)[0]?.node
+    const paragraphProps = paragraph ? effectiveParagraphProperties(paragraph, this.context) : new Map<string, JmlElement>()
+    const font = latinFont(run.get('w:rFonts'), this.context.theme)
+    const size = jmlNumber(run.get('w:sz'), 'w:val')
+    const vertAlign = jmlAttr(run.get('w:vertAlign'), 'w:val')
+    const underline = jmlAttr(run.get('w:u'), 'w:val')
+    const color = jmlAttr(run.get('w:color'), 'w:val')
+    const highlight = jmlAttr(run.get('w:highlight'), 'w:val')
+    const jc = jmlAttr(paragraphProps.get('w:jc'), 'w:val')
+    const spacing = paragraphProps.get('w:spacing')
+    const line = jmlNumber(spacing, 'w:line')
+    const list = paragraph ? effectiveNumPr(jml(paragraph.attrs.numPr), paragraph.attrs.pStyle as string | null, this.context.styles) : undefined
+    const link = selectionMarks(state).find((mark) => mark.type.name === 'link')
+    const undoState = yUndoPluginKey.getState(state) as { undoManager?: { undoStack: unknown[]; redoStack: unknown[] } } | undefined
+    return {
+      styleId: (paragraph?.attrs.pStyle as string | null) ?? this.context.styles.defaultStyle('paragraph')?.id ?? null,
+      fontFamily: font && !font.startsWith('var(') ? font : (this.context.theme?.fonts.minor ?? null),
+      fontSize: size ? size / 2 : null,
+      bold: jmlOn(run.get('w:b')) === true,
+      italic: jmlOn(run.get('w:i')) === true,
+      underline: underline !== undefined && underline !== 'none',
+      strike: jmlOn(run.get('w:strike')) === true || jmlOn(run.get('w:dstrike')) === true,
+      superscript: vertAlign === 'superscript',
+      subscript: vertAlign === 'subscript',
+      color: color && color !== 'auto' ? `#${color.toLowerCase()}` : null,
+      highlight: highlight && highlight !== 'none' ? highlight : null,
+      alignment: jc === 'center' ? 'center' : jc === 'right' || jc === 'end' ? 'right' : jc === 'both' || jc === 'distribute' ? 'both' : 'left',
+      lineSpacing: line !== undefined && (jmlAttr(spacing, 'w:lineRule') ?? 'auto') === 'auto' ? Math.round((line / 240) * 100) / 100 : null,
+      list: list ? (listKind(list.numId, this.context) ?? null) : null,
+      inTable: isInTable(state),
+      link: (link?.attrs.href as string | null) ?? null,
+      canUndo: (undoState?.undoManager?.undoStack.length ?? 0) > 0,
+      canRedo: (undoState?.undoManager?.redoStack.length ?? 0) > 0,
+      empty: state.selection.empty,
+      mode: this.modeValue,
+      readOnly: this.readOnly,
+      layout: this.layoutMode,
+      zoom: this.zoomLevel,
+      pages: this.pages,
+      formatPainter: this.copied !== null,
+    }
+  }
+
+  styles(): { id: string; name: string }[] {
+    return paragraphStyleOptions(this.context)
+  }
+
+  fontStack(name: string): string {
+    return fontStack(name)
+  }
+
+  on(event: 'update', listener: Listener<void>): () => void
+  on(event: 'layout', listener: Listener<LayoutResult | null>): () => void
+  on(event: 'request', listener: Listener<DocxRequest>): () => void
+  on(event: 'activeComment', listener: Listener<string | null>): () => void
+  on(event: keyof DocxEditor['listeners'], listener: Listener<never>): () => void {
+    const set = this.listeners[event] as Set<Listener<never>>
+    set.add(listener)
+    return () => set.delete(listener)
+  }
+
+  private emit(event: 'update'): void
+  private emit(event: 'layout', value: LayoutResult | null): void
+  private emit(event: 'request', value: DocxRequest): void
+  private emit(event: 'activeComment', value: string | null): void
+  private emit(event: keyof DocxEditor['listeners'], value?: unknown): void {
+    for (const listener of this.listeners[event] as Set<Listener<unknown>>) listener(value)
+  }
+
+  private request(kind: DocxRequest): boolean {
+    if (!this.listeners.request.size) return false
+    this.emit('request', kind)
+    return true
+  }
+
+  // ── Commands ─────────────────────────────────────────────────────────────
+
+  undo(): boolean {
+    const view = this.storyEditor?.view ?? this.view
+    return undo(view.state)
+  }
+
+  redo(): boolean {
+    const view = this.storyEditor?.view ?? this.view
+    return redo(view.state)
+  }
+
+  toggle(property: ToggleProperty): boolean {
+    return this.run(toggleRunProperty(property))
+  }
+
+  toggleBold(): boolean {
+    return this.toggle('b')
+  }
+
+  toggleItalic(): boolean {
+    return this.toggle('i')
+  }
+
+  toggleStrike(): boolean {
+    return this.toggle('strike')
+  }
+
+  toggleUnderline(): boolean {
+    return this.run(setUnderline(this.state().underline ? 'none' : 'single'))
+  }
+
+  setUnderline(style: string | null): boolean {
+    return this.run(setUnderline(style))
+  }
+
+  setFontFamily(font: string | null): boolean {
+    return this.run(setFontFamily(font))
+  }
+
+  setFontSize(points: number | null): boolean {
+    return this.run(setFontSize(points))
+  }
+
+  /** Word's font size steps for Ctrl+] and Ctrl+[. */
+  stepFontSize(direction: 1 | -1): boolean {
+    const sizes = [8, 9, 10, 10.5, 11, 12, 14, 16, 18, 20, 22, 24, 26, 28, 36, 48, 72]
+    const current = this.state().fontSize ?? 11
+    const next = direction > 0 ? (sizes.find((size) => size > current) ?? current + 10) : ([...sizes].reverse().find((size) => size < current) ?? Math.max(1, current - 1))
+    return this.setFontSize(next)
+  }
+
+  setColor(hex: string | null): boolean {
+    return this.run(setTextColor(hex))
+  }
+
+  setHighlight(name: string | null): boolean {
+    return this.run(setHighlight(name))
+  }
+
+  setSuperscript(): boolean {
+    return this.run(setVerticalAlign('superscript'))
+  }
+
+  setSubscript(): boolean {
+    return this.run(setVerticalAlign('subscript'))
+  }
+
+  setAlignment(alignment: Alignment): boolean {
+    return this.run(setAlignment(alignment))
+  }
+
+  setLineSpacing(multiple: number): boolean {
+    return this.run(setLineSpacing({ multiple }))
+  }
+
+  setParagraphSpacing(before: number | undefined, after: number | undefined): boolean {
+    return this.run(setParagraphSpacing(before, after))
+  }
+
+  setStyle(styleId: string | null): boolean {
+    return this.run(setParagraphStyle(styleId))
+  }
+
+  toggleList(kind: ListKind): boolean {
+    const view = this.storyEditor?.view ?? this.view
+    return this.runResult(toggleList(kind, view.state, this.context))
+  }
+
+  indent(): boolean {
+    return this.run(changeIndent(1))
+  }
+
+  outdent(): boolean {
+    return this.run(changeIndent(-1))
+  }
+
+  clearFormatting(): boolean {
+    return this.run(clearFormatting)
+  }
+
+  /** Format painter: the first call copies the selection's format, the next applies it. */
+  formatPainter(): boolean {
+    const view = this.storyEditor?.view ?? this.view
+    if (!this.copied) {
+      this.copied = copyFormat(view.state)
+      this.emit('update')
+      return true
+    }
+    const format = this.copied
+    this.copied = null
+    const applied = this.run(pasteFormat(format))
+    this.emit('update')
+    return applied
+  }
+
+  cancelFormatPainter(): void {
+    this.copied = null
+    this.emit('update')
+  }
+
+  insertTable(rows: number, cols: number): boolean {
+    return this.run(insertTable(rows, cols))
+  }
+
+  private tableCommand(command: (state: EditorState, dispatch?: (tr: Transaction) => void) => boolean): boolean {
+    if (this.readOnly) return false
+    const view = this.storyEditor?.view ?? this.view
+    const done = command(view.state, (tr) => view.dispatch(tr))
+    view.focus()
+    return done
+  }
+
+  addRowBefore(): boolean { return this.tableCommand(addRowBefore) }
+  addRowAfter(): boolean { return this.tableCommand(addRowAfter) }
+  addColumnBefore(): boolean { return this.tableCommand(addColumnBefore) }
+  addColumnAfter(): boolean { return this.tableCommand(addColumnAfter) }
+  deleteRow(): boolean { return this.tableCommand(deleteRow) }
+  deleteColumn(): boolean { return this.tableCommand(deleteColumn) }
+  deleteTable(): boolean { return this.tableCommand(deleteTable) }
+  mergeCells(): boolean { return this.tableCommand(mergeCells) }
+  splitCell(): boolean { return this.tableCommand(splitCell) }
+
+  setCellShading(hex: string | null): boolean {
+    return this.run(setCellShading(hex))
+  }
+
+  setCellBorders(preset: BorderPreset): boolean {
+    return this.run(setCellBorders(preset))
+  }
+
+  setLink(href: string | null, text?: string): boolean {
+    return this.run(setLink(href, text))
+  }
+
+  insertPageBreak(): boolean {
+    return this.run(insertPageBreak)
+  }
+
+  insertSectionBreak(type: 'nextPage' | 'continuous' | 'evenPage' | 'oddPage'): boolean {
+    return this.runResult(insertSectionBreak(type, this.view.state, this.context))
+  }
+
+  insertSymbol(text: string): boolean {
+    return this.run(insertSymbol(text))
+  }
+
+  /** Inserts a picture from a file at the cursor, sized to fit the text width. */
+  async insertImage(file: Blob, description = ''): Promise<boolean> {
+    if (this.readOnly) return false
+    const bytes = new Uint8Array(await file.arrayBuffer())
+    const ref = await this.options.assets.put(bytes, file.type || 'image/png')
+    let width = 300
+    let height = 200
+    try {
+      const bitmap = await createImageBitmap(file)
+      width = bitmap.width * 0.75
+      height = bitmap.height * 0.75
+      bitmap.close()
+    } catch {
+      // Keep the default size for formats the browser cannot decode.
+    }
+    const maxWidth = textAreaWidth(this.context.finalSectPr)
+    if (width > maxWidth) {
+      height = (height * maxWidth) / width
+      width = maxWidth
+    }
+    const view = this.storyEditor?.view ?? this.view
+    const node = view.state.schema.node('drawing', { v: packJml(newInlinePicture(width, height, description || 'Picture', description)), src: ref.hash })
+    view.dispatch(view.state.tr.replaceSelectionWith(node, false).scrollIntoView())
+    view.focus()
+    return true
+  }
+
+  insertNote(kind: 'footnote' | 'endnote', text = ''): string | null {
+    if (this.readOnly || this.storyEditor) return null
+    const result = addNote(this.view.state, this.context, kind, text)
+    this.applyStoryEdits(result)
+    return result.id
+  }
+
+  // ── Comments ─────────────────────────────────────────────────────────────
+
+  private author(): CommentAuthor {
+    return { name: this.options.user.name || this.labels.unknownAuthor }
+  }
+
+  addComment(text: string): string | null {
+    if (this.readOnly && this.modeValue !== 'viewing') return null
+    const result = addComment(this.view.state, this.context, this.author(), text)
+    this.applyStoryEdits(result)
+    this.setActiveComment(result.id)
+    return result.id
+  }
+
+  replyToComment(parentId: string, text: string): string | null {
+    const result = replyToComment(this.view.state, this.context, parentId, this.author(), text)
+    if (!result) return null
+    this.applyStoryEdits(result)
+    return result.id
+  }
+
+  resolveComment(id: string, done = true): void {
+    this.applyStoryEdits(setCommentResolved(this.context, id, done))
+  }
+
+  deleteComment(id: string): void {
+    this.applyStoryEdits(deleteComment(this.view.state, this.context, id))
+    if (this.activeCommentId === id) this.setActiveComment(null)
+  }
+
+  editComment(id: string, text: string): void {
+    this.applyStoryEdits(editCommentText(this.view.state, this.context, id, text))
+  }
+
+  comments(): CommentThread[] {
+    return commentThreads(this.view.state.doc, this.context, (storyId) => {
+      if (!this.options.doc.getMap('stories').has(storyId)) return undefined
+      return fragmentToNode(this.options.doc.getXmlFragment(storyFragmentName(storyId)))
+    })
+  }
+
+  /** Vertical position of each comment's anchor, relative to the editor's root, in screen pixels. */
+  commentPositions(): Map<string, number> {
+    const positions = new Map<string, number>()
+    const rootTop = this.root.getBoundingClientRect().top
+    this.view.state.doc.descendants((node, pos) => {
+      if (node.type.name === 'commentMark' && node.attrs.edge === 'start' && !positions.has(String(node.attrs.id))) {
+        try {
+          positions.set(String(node.attrs.id), this.view.coordsAtPos(pos).top - rootTop)
+        } catch {
+          // Positions inside hidden content have no coordinates.
+        }
+      }
+      return true
+    })
+    return positions
+  }
+
+  get activeComment(): string | null {
+    return this.activeCommentId
+  }
+
+  setActiveComment(id: string | null): void {
+    if (this.destroyed) return
+    if (this.activeCommentId === id) return
+    this.activeCommentId = id
+    this.view.dispatch(this.view.state.tr.setMeta(decorationsKey, 'refresh'))
+    this.emit('activeComment', id)
+  }
+
+  private handleClick(event: MouseEvent): boolean {
+    const target = event.target as HTMLElement | null
+    const range = target?.closest<HTMLElement>('.docx-comment-range')
+    const ids = range?.dataset.comments?.split(' ')
+    this.setActiveComment(ids?.[0] ?? null)
+    // Ctrl/Cmd-click follows links, like Word.
+    const link = target?.closest<HTMLAnchorElement>('a.docx-link')
+    if (link && (event.metaKey || event.ctrlKey)) {
+      const href = link.getAttribute('href') ?? ''
+      if (href.startsWith('#')) this.goToBookmark(href.slice(1))
+      else if (/^(https?:|mailto:)/i.test(href)) window.open(href, '_blank', 'noopener,noreferrer')
+      return true
+    }
+    return false
+  }
+
+  goToBookmark(name: string): void {
+    this.view.state.doc.descendants((node, pos) => {
+      if (node.type.name === 'bookmark' && node.attrs.name === name && node.attrs.edge === 'start') {
+        this.goTo(pos)
+        return false
+      }
+      return true
+    })
+  }
+
+  // ── Tracked changes ──────────────────────────────────────────────────────
+
+  setMode(mode: DocxMode): void {
+    if (this.destroyed) return
+    if (this.readOnlyValue && mode !== 'viewing') return
+    this.modeValue = mode
+    this.view.setProps({ editable: () => !this.readOnly })
+    this.root.classList.toggle('docx-suggesting', mode === 'suggesting')
+    this.emit('update')
+  }
+
+  /** Word's Track Changes setting, stored in the document's settings. */
+  setTrackRevisions(on: boolean): void {
+    this.applyMapEdits([['settings', 'w:trackRevisions', on ? packJml(['w:trackRevisions', {}]) : '']])
+  }
+
+  revisions(): Revision[] {
+    return listRevisions(this.view.state.doc)
+  }
+
+  resolveRevisions(revisions: Revision[], action: 'accept' | 'reject'): boolean {
+    if (this.readOnlyValue) return false
+    const tr = resolveRevisions(this.view.state, revisions, action)
+    if (!tr) return false
+    this.view.dispatch(tr.setMeta('docx-untracked', true))
+    return true
+  }
+
+  acceptAll(): boolean {
+    return this.resolveRevisions(this.revisions(), 'accept')
+  }
+
+  rejectAll(): boolean {
+    return this.resolveRevisions(this.revisions(), 'reject')
+  }
+
+  /** Shows the document as if every change were accepted, without changing it. */
+  setShowMarkup(show: boolean): void {
+    this.view.dom.classList.toggle('docx-final', !show)
+  }
+
+  // ── Find and tools ───────────────────────────────────────────────────────
+
+  find(query: string, options: FindOptions = {}): number {
+    const matches = findMatches(this.view.state.doc, query, options)
+    const head = this.view.state.selection.from
+    const current = matches.length ? Math.max(0, matches.findIndex((match) => match.from >= head)) : -1
+    this.view.dispatch(this.view.state.tr.setMeta(findKey, { matches, current }))
+    if (current >= 0) this.revealMatch(current)
+    return matches.length
+  }
+
+  findStep(direction: 1 | -1): { index: number; count: number } {
+    const find = findKey.getState(this.view.state)
+    if (!find?.matches.length) return { index: -1, count: 0 }
+    const current = (find.current + direction + find.matches.length) % find.matches.length
+    this.view.dispatch(this.view.state.tr.setMeta(findKey, { ...find, current }))
+    this.revealMatch(current)
+    return { index: current, count: find.matches.length }
+  }
+
+  findState(): { index: number; count: number } {
+    const find = findKey.getState(this.view.state)
+    return { index: find?.current ?? -1, count: find?.matches.length ?? 0 }
+  }
+
+  private revealMatch(index: number): void {
+    const match = findKey.getState(this.view.state)?.matches[index]
+    if (!match) return
+    this.view.dispatch(this.view.state.tr.setSelection(TextSelection.create(this.view.state.doc, match.from, match.to)).scrollIntoView())
+  }
+
+  replace(replacement: string, query: string, options: FindOptions = {}): boolean {
+    if (this.readOnly) return false
+    const find = findKey.getState(this.view.state)
+    const match = find?.matches[find.current]
+    if (!match) return false
+    this.view.dispatch(replaceMatches(this.view.state, [match], replacement))
+    this.find(query, options)
+    return true
+  }
+
+  replaceAll(replacement: string, query: string, options: FindOptions = {}): number {
+    if (this.readOnly) return 0
+    const matches = findMatches(this.view.state.doc, query, options)
+    if (!matches.length) return 0
+    this.view.dispatch(replaceMatches(this.view.state, matches, replacement))
+    this.clearFind()
+    return matches.length
+  }
+
+  clearFind(): void {
+    this.view.dispatch(this.view.state.tr.setMeta(findKey, { matches: [], current: -1 }))
+  }
+
+  wordCount() {
+    return wordCount(this.view.state.doc)
+  }
+
+  outline(maxLevel = 9): OutlineEntry[] {
+    return documentOutline(this.view.state.doc, this.context, maxLevel)
+  }
+
+  goTo(pos: number): void {
+    const $pos = this.view.state.doc.resolve(Math.min(pos + 1, this.view.state.doc.content.size))
+    this.view.dispatch(this.view.state.tr.setSelection(TextSelection.near($pos)).scrollIntoView())
+    this.view.focus()
+    try {
+      const coords = this.view.coordsAtPos($pos.pos)
+      const scroller = this.scroller()
+      if (scroller) scroller.scrollTop += coords.top - scroller.getBoundingClientRect().top - 80
+    } catch {
+      // Hidden positions keep the scroll where it is.
+    }
+  }
+
+  /** Page (1-based, as displayed) a position is on, from the last layout. */
+  pageOf(pos: number): number | undefined {
+    if (this.layoutMode !== 'print' || !this.lastLayout) return undefined
+    try {
+      const flow = this.view.dom as HTMLElement
+      const rect = flow.getBoundingClientRect()
+      const scale = flow.offsetWidth ? rect.width / flow.offsetWidth : 1
+      const y = (this.view.coordsAtPos(Math.min(pos + 1, this.view.state.doc.content.size)).top - rect.top) / scale
+      const pages = this.lastLayout.pages
+      let page = pages[0]
+      for (const candidate of pages) if (candidate.contentTop - candidate.setup.top <= y) page = candidate
+      return page?.number
+    } catch {
+      return undefined
+    }
+  }
+
+  /** Inserts a table of contents from the headings at the cursor, as a TOC field Word updates too. */
+  insertTableOfContents(): boolean {
+    if (this.readOnly) return false
+    const state = this.view.state
+    const paragraph = selectedParagraphs(state)[0]
+    if (!paragraph) return false
+    const { tr, paragraphs } = this.tocParagraphs(state)
+    tr.insert(tr.mapping.map(paragraph.pos), paragraphs)
+    this.view.dispatch(tr)
+    return true
+  }
+
+  /** Regenerates the entries of the first table of contents. */
+  updateTableOfContents(): boolean {
+    if (this.readOnly) return false
+    const range = this.tocRange(this.view.state.doc)
+    if (!range) return false
+    const { tr, paragraphs } = this.tocParagraphs(this.view.state)
+    tr.replaceWith(tr.mapping.map(range.from), tr.mapping.map(range.to), paragraphs)
+    this.view.dispatch(tr)
+    return true
+  }
+
+  /** Top-level paragraphs from a TOC field's begin to its end. */
+  private tocRange(doc: ProseMirrorNode): { from: number; to: number } | undefined {
+    let from: number | undefined
+    let to: number | undefined
+    let depth = 0
+    let inToc = false
+    doc.forEach((node, offset) => {
+      if (to !== undefined || node.type.name !== 'paragraph') return
+      node.forEach((child) => {
+        if (child.type.name === 'fieldChar') {
+          if (child.attrs.charType === 'begin') depth++
+          if (child.attrs.charType === 'end') {
+            depth--
+            if (inToc && depth === 0) to = offset + node.nodeSize
+          }
+        }
+        if (child.type.name === 'fieldCode' && depth === 1 && !inToc && /^\s*TOC\b/.test(inlineFieldCode(child))) {
+          inToc = true
+          from = offset
+        }
+      })
+    })
+    return from !== undefined && to !== undefined ? { from, to } : undefined
+  }
+
+  private tocParagraphs(state: EditorState): { tr: Transaction; paragraphs: ProseMirrorNode[] } {
+    const schema = state.schema
+    const tr = state.tr
+    const headings = documentOutline(state.doc, this.context, 3)
+    // Headings get bookmarks the entries link to.
+    const names = new Map<number, string>()
+    for (const heading of [...headings].reverse()) {
+      const node = state.doc.nodeAt(heading.pos)
+      if (!node) continue
+      let existing: string | undefined
+      node.forEach((child) => {
+        if (child.type.name === 'bookmark' && child.attrs.edge === 'start' && String(child.attrs.name).startsWith('_Toc')) existing = String(child.attrs.name)
+      })
+      if (existing) {
+        names.set(heading.pos, existing)
+        continue
+      }
+      const name = `_Toc${Math.floor(Math.random() * 1e9)}`
+      const id = String(Math.floor(Math.random() * 1e8) + 1000)
+      tr.insert(heading.pos + node.nodeSize - 1, schema.node('bookmark', { edge: 'end', id, v: packJml(['w:bookmarkEnd', { 'w:id': id }]) }))
+      tr.insert(heading.pos + 1, schema.node('bookmark', { edge: 'start', id, name, v: packJml(['w:bookmarkStart', { 'w:id': id, 'w:name': name }]) }))
+      names.set(heading.pos, name)
+    }
+    const width = Math.round(textAreaWidth(this.context.finalSectPr) * 20)
+    const tabs = packJml(['w:tabs', {}, ['w:tab', { 'w:val': 'right', 'w:leader': 'dot', 'w:pos': String(width) }]])
+    const fieldChar = (charType: string) => schema.node('fieldChar', { charType, v: packJml(['w:fldChar', { 'w:fldCharType': charType }]) })
+    const begin = [fieldChar('begin'), schema.node('fieldCode', { v: packJml(['w:instrText', { 'xml:space': 'preserve' }, ' TOC \\o "1-3" \\h \\z \\u ']) }), fieldChar('separate')]
+    const style = (level: number) => (this.context.styles.get(`TOC${level + 1}`) ? `TOC${level + 1}` : null)
+    const paragraphs: ProseMirrorNode[] = headings.map((heading, index) => {
+      const name = names.get(heading.pos)
+      const link = schema.marks.link!.create({ v: packJml(['w:hyperlink', { 'w:anchor': name ?? '', 'w:history': '1' }, '\u0000']), href: null })
+      const page = this.pageOf(heading.pos)
+      const content: ProseMirrorNode[] = []
+      if (index === 0) content.push(...begin)
+      content.push(schema.text(heading.text, [link]), schema.node('tab', { v: packJml(['w:tab', {}]), marks: packMarks([link]) }))
+      if (page !== undefined) content.push(schema.text(String(page), [link]))
+      if (index === headings.length - 1) content.push(fieldChar('end'))
+      return schema.node('paragraph', { pStyle: style(heading.level), tabs }, content)
+    })
+    if (!paragraphs.length) paragraphs.push(schema.node('paragraph', null, [...begin, schema.text('No table of contents entries found.'), fieldChar('end')]))
+    return { tr, paragraphs }
+  }
+
+  // ── Layout ───────────────────────────────────────────────────────────────
+
+  setLayout(layout: DocxLayout): void {
+    if (this.destroyed) return
+    if (this.layoutMode === layout) return
+    this.layoutMode = layout
+    this.applyLayoutMode()
+    this.view.dispatch(this.view.state.tr.setMeta(paginationKey, null).setMeta(decorationsKey, 'refresh'))
+    this.scheduleLayout(true)
+    this.emit('update')
+  }
+
+  setZoom(zoom: number): void {
+    if (this.destroyed) return
+    this.zoomLevel = Math.max(0.25, Math.min(4, zoom))
+    this.canvas.style.zoom = String(this.zoomLevel)
+    this.emit('update')
+  }
+
+  setReadOnly(readOnly: boolean): void {
+    if (this.destroyed) return
+    this.readOnlyValue = readOnly
+    if (readOnly) this.modeValue = 'viewing'
+    else if (this.modeValue === 'viewing') this.modeValue = 'editing'
+    this.view.setProps({ editable: () => !this.readOnly })
+    this.emit('update')
+  }
+
+  private applyLayoutMode(): void {
+    const print = this.layoutMode === 'print'
+    this.root.classList.toggle('docx-paginated', print)
+    this.root.classList.toggle('docx-web', !print)
+    this.canvas.style.zoom = String(this.zoomLevel)
+    if (!print) {
+      this.pagesLayer.replaceChildren()
+      this.bandsLayer.replaceChildren()
+      this.canvas.style.width = ''
+      this.canvas.style.height = ''
+      const width = textAreaWidth(this.context.finalSectPr) * PX_PER_PT
+      this.flowHost.style.cssText = `width:${width}px;max-width:100%;box-sizing:content-box`
+      this.canvas.appendChild(this.notesHost)
+    } else {
+      this.notesHost.remove()
+    }
+  }
+
+  private renderStylesheet(): void {
+    this.styleElement.textContent = DOCX_BASE_CSS + documentStylesheet(this.scope, this.context.styles, this.context.theme)
+  }
+
+  private scroller(): HTMLElement | null {
+    for (let element = this.root.parentElement; element; element = element.parentElement) {
+      const style = getComputedStyle(element)
+      if (/(auto|scroll)/.test(style.overflowY) && element.scrollHeight > element.clientHeight) return element
+    }
+    return document.scrollingElement as HTMLElement | null
+  }
+
+  /** Lays pages out on the next frame (at most every 120 ms while typing). */
+  scheduleLayout(immediate = false): void {
+    if (this.destroyed || this.layoutFrame || this.layoutTimer) return
+    const wait = immediate ? 0 : Math.max(0, 120 - (Date.now() - this.lastLayoutAt))
+    const start = () => {
+      this.layoutTimer = undefined
+      this.layoutFrame = requestAnimationFrame(() => {
+        this.layoutFrame = 0
+        this.relayout()
+      })
+    }
+    if (wait) this.layoutTimer = setTimeout(start, wait)
+    else start()
+  }
+
+  /** Runs layout now (tests and hosts that need page numbers right away). */
+  relayout(): void {
+    if (this.destroyed) return
+    this.lastLayoutAt = Date.now()
+    if (this.layoutMode !== 'print') {
+      this.view.dispatch(this.view.state.tr.setMeta(paginationKey, null).setMeta('addToHistory', false))
+      const tabs = this.layoutTabs()
+      this.view.dispatch(this.view.state.tr.setMeta(paginationKey, tabs).setMeta('addToHistory', false))
+      this.renderWebNotes()
+      this.lastLayout = null
+      this.emit('layout', null)
+      return
+    }
+    const scroller = this.scroller()
+    const scrollTop = scroller?.scrollTop
+    this.view.dispatch(this.view.state.tr.setMeta(paginationKey, null).setMeta('addToHistory', false))
+    const sections = documentSections(this.view.state.doc, this.context.finalSectPr).sections
+    const widest = Math.max(...sections.map((section) => section.setup.width - section.setup.left - section.setup.right))
+    const maxLeft = Math.max(...sections.map((section) => section.setup.left))
+    const padding = 24
+    const flowTop = padding + (sections[0]?.setup.top ?? 96)
+    const flowLeft = padding + maxLeft
+    this.flowHost.style.cssText = `left:${flowLeft}px;top:${flowTop}px;width:${widest}px`
+    this.measureNotes(widest)
+    const tabs = this.layoutTabs()
+    const storyHeight = this.storyHeights(widest)
+    const endnotesHeight = this.renderWebNotes(undefined, widest)
+    this.endnotesHeight = endnotesHeight
+    const result = paginate(this.view, this.context, (id) => this.noteHeights.get(id) ?? 0, (setup, index, all) => {
+      // A header or footer taller than its margin pushes the text away, as in Word.
+      const header = Math.max(0, ...(['default', 'first', 'even'] as const).map((type) => storyHeight(all, index, 'header', type)))
+      const footer = Math.max(0, ...(['default', 'first', 'even'] as const).map((type) => storyHeight(all, index, 'footer', type)))
+      return { ...setup, top: Math.max(setup.top, setup.header + header), bottom: Math.max(setup.bottom, setup.footer + footer) }
+    }, endnotesHeight ? endnotesHeight + 16 : 0)
+    this.view.dispatch(this.view.state.tr.setMeta(paginationKey, [...tabs, ...result.decorations]).setMeta('addToHistory', false))
+    if (scroller && scrollTop !== undefined) scroller.scrollTop = scrollTop
+    this.lastLayout = result.layout
+    this.lastUnits = result.units
+    this.lastSections = result.sections
+    this.renderPages(result.layout, flowLeft, flowTop, padding)
+    this.renderRepeatedHeaders(result.repeats, result.layout, flowLeft, flowTop)
+    this.emit('layout', result.layout)
+    this.emit('update')
+  }
+
+  /** Sizes the column's tabs and keeps the sizes as decorations for later renders. */
+  private layoutTabs(): Decoration[] {
+    const view = this.view
+    const sized = layoutTabs(view.dom as HTMLElement, (paragraph) => {
+      try {
+        const $pos = view.state.doc.resolve(view.posAtDOM(paragraph, 0))
+        return $pos.parent.type.name === 'paragraph' ? paragraphTabs($pos.parent, this.context) : undefined
+      } catch {
+        return undefined
+      }
+    })
+    const decorations: Decoration[] = []
+    for (const [element, { width, leader }] of sized) {
+      try {
+        const pos = view.posAtDOM(element, 0)
+        if (view.state.doc.nodeAt(pos)?.type.name !== 'tab') continue
+        decorations.push(Decoration.node(pos, pos + 1, { style: `width:${width}px`, ...(leader ? { 'data-leader': leader } : {}) }))
+      } catch {
+        // A tab that left the document meanwhile.
+      }
+    }
+    return decorations
+  }
+
+  /** Height of the header or footer a section shows on its default, first, or even pages. */
+  private storyHeights(width: number): (sections: Section[], index: number, kind: 'header' | 'footer', type: 'default' | 'first' | 'even') => number {
+    const cache = new Map<string, number>()
+    return (sections, index, kind, type) => {
+      const page = { firstOfSection: type === 'first', number: type === 'even' ? 2 : 1 }
+      if (type === 'first' && !sections[index]?.setup.titlePage) return 0
+      if (type === 'even' && !this.context.evenAndOddHeaders) return 0
+      const reference = storyReference(sections, index, kind, page, this.context.evenAndOddHeaders)
+      const storyId = reference ? this.storyByRel(reference.relId) : undefined
+      if (!storyId) return 0
+      const known = cache.get(storyId)
+      if (known !== undefined) return known
+      const doc = this.storyDoc(storyId)
+      let height = 0
+      if (doc) {
+        const measure = document.createElement('div')
+        measure.style.cssText = `position:absolute;visibility:hidden;left:-10000px;top:0;width:${width}px`
+        measure.appendChild(renderStory(doc, { urls: this.urls, labels: this.labels, fields: { page: 1, pages: 1 } }))
+        this.root.appendChild(measure)
+        height = measure.getBoundingClientRect().height / (this.zoomLevel || 1)
+        measure.remove()
+      }
+      cache.set(storyId, height)
+      return height
+    }
+  }
+
+  private storyDoc(storyId: string): ProseMirrorNode | undefined {
+    if (!this.options.doc.getMap('stories').has(storyId)) return undefined
+    return fragmentToNode(this.options.doc.getXmlFragment(storyFragmentName(storyId)))
+  }
+
+  /** Header and footer stories by the main part's relationship id. */
+  private storyByRel(relId: string): string | undefined {
+    const rel = parseJson<{ type: string; target: string }>(readDocxMap(this.options.doc, 'rels').get(relId))
+    if (!rel) return undefined
+    const main = this.options.doc.getMap<string>('docx').get('mainPart') ?? 'word/document.xml'
+    const folder = main.slice(0, main.lastIndexOf('/') + 1)
+    const part = rel.target.startsWith('/') ? rel.target.slice(1) : folder + rel.target
+    const kind = rel.type.endsWith('/header') ? 'header' : 'footer'
+    return `${kind}:${part.replace(/\/\.\//g, '/')}`
+  }
+
+  private measureNotes(width: number): void {
+    const numbers = countNotes(this.view.state.doc)
+    const measure = document.createElement('div')
+    measure.style.cssText = `position:absolute;visibility:hidden;left:-10000px;top:0;width:${width}px`
+    this.root.appendChild(measure)
+    this.noteHeights = new Map()
+    for (const [key, number] of numbers) {
+      if (!key.startsWith('footnote:')) continue
+      const doc = this.storyDoc(key)
+      if (!doc) continue
+      const element = renderStory(doc, { urls: this.urls, labels: this.labels, noteNumber: number })
+      measure.appendChild(element)
+      this.noteHeights.set(key, element.getBoundingClientRect().height / (this.zoomLevel || 1))
+    }
+    measure.remove()
+  }
+
+  private renderPages(layout: LayoutResult, flowLeft: number, flowTop: number, padding: number): void {
+    const pages = layout.pages
+    const total = pages.length
+    const numbers = countNotes(this.view.state.doc)
+    this.pagesLayer.replaceChildren()
+    this.bandsLayer.replaceChildren()
+    let bottom = 0
+    let maxRight = 0
+    for (const page of pages) {
+      const { setup } = page
+      const top = flowTop + page.contentTop - setup.top
+      const left = flowLeft - setup.left
+      bottom = top + setup.height
+      maxRight = Math.max(maxRight, left + setup.width)
+      const sheet = document.createElement('div')
+      sheet.className = 'docx-page'
+      sheet.style.cssText = `top:${top}px;left:${left}px;width:${setup.width}px;height:${setup.height}px`
+      sheet.dataset.page = String(page.index + 1)
+      this.pagesLayer.appendChild(sheet)
+      // Bands over the margins keep anything that spills past the text area off the margins.
+      const topBand = this.band(top, left, setup.width, setup.top)
+      const bottomBand = this.band(top + setup.height - setup.bottom - page.notesHeight, left, setup.width, setup.bottom + page.notesHeight)
+      const gap = document.createElement('div')
+      gap.className = 'docx-band-gap'
+      gap.style.cssText = `top:${top + setup.height}px;left:0;right:0;height:${PAGE_GAP}px`
+      this.bandsLayer.append(topBand, bottomBand, gap)
+      const fields = { page: page.number, pages: total, format: setup.numberFormat }
+      for (const kind of ['header', 'footer'] as const) {
+        const reference = storyReference(this.lastSections, page.section, kind, page, this.context.evenAndOddHeaders)
+        const storyId = reference ? this.storyByRel(reference.relId) : undefined
+        const doc = storyId ? this.storyDoc(storyId) : undefined
+        if (!doc || !storyId) continue
+        const element = renderStory(doc, { urls: this.urls, labels: this.labels, fields, noteNumbers: numbers, context: this.context })
+        element.classList.add('docx-story')
+        element.dataset.story = storyId
+        element.title = `${kind === 'header' ? this.labels.header : this.labels.footer} · ${this.labels.editStoryHint}`
+        element.style.left = `${setup.left}px`
+        element.style.width = `${setup.width - setup.left - setup.right}px`
+        if (kind === 'header') {
+          element.style.top = `${setup.header}px`
+          topBand.style.overflow = 'visible'
+          topBand.appendChild(element)
+        } else {
+          element.style.bottom = `${setup.footer}px`
+          bottomBand.appendChild(element)
+        }
+        element.addEventListener('dblclick', (event) => {
+          event.preventDefault()
+          this.openStoryEditor(storyId, element)
+        })
+      }
+      if (page.notes.length) {
+        const notes = document.createElement('div')
+        notes.className = 'docx-footnotes docx-flow'
+        notes.style.cssText = `left:${setup.left}px;width:${setup.width - setup.left - setup.right}px;top:0`
+        for (const id of page.notes) {
+          const doc = this.storyDoc(id)
+          if (!doc) continue
+          const element = renderStory(doc, { urls: this.urls, labels: this.labels, noteNumber: numbers.get(id), context: this.context })
+          element.dataset.story = id
+          element.classList.add('docx-note')
+          element.addEventListener('dblclick', (event) => {
+            event.preventDefault()
+            this.openStoryEditor(id, element)
+          })
+          notes.appendChild(element)
+        }
+        bottomBand.appendChild(notes)
+      }
+    }
+    for (const story of this.bandsLayer.querySelectorAll<HTMLElement>('.docx-story')) layoutStaticTabs(story)
+    this.canvas.style.width = `${Math.max(maxRight + padding, flowLeft + padding)}px`
+    this.canvas.style.height = `${bottom + padding}px`
+    this.renderWebNotes({ left: flowLeft, top: flowTop + layout.height - this.endnotesHeight, width: this.flowHost.offsetWidth })
+  }
+
+  /** Copies of header rows at the top of each page a table continues on, as Word repeats them. */
+  private renderRepeatedHeaders(repeats: RepeatedHeader[], layout: LayoutResult, flowLeft: number, flowTop: number): void {
+    const flowRect = this.view.dom.getBoundingClientRect()
+    const scale = (this.view.dom as HTMLElement).offsetWidth ? flowRect.width / (this.view.dom as HTMLElement).offsetWidth : 1
+    for (const repeat of repeats) {
+      const table = this.view.nodeDOM(repeat.tablePos)
+      const page = layout.pages[repeat.page]
+      if (!(table instanceof HTMLTableElement) || !page) continue
+      const copy = table.cloneNode(false) as HTMLTableElement
+      const colgroup = table.querySelector(':scope > colgroup')
+      if (colgroup) copy.appendChild(colgroup.cloneNode(true))
+      const body = document.createElement('tbody')
+      const rows = [...table.querySelectorAll(':scope > tbody > tr')].slice(0, repeat.rows)
+      for (const row of rows) body.appendChild(row.cloneNode(true))
+      copy.appendChild(body)
+      copy.removeAttribute('contenteditable')
+      const holder = document.createElement('div')
+      holder.className = 'docx-flow docx-repeated-header'
+      holder.setAttribute('aria-hidden', 'true')
+      const left = (table.getBoundingClientRect().left - flowRect.left) / scale
+      holder.style.cssText = `position:absolute;left:${flowLeft + left}px;top:${flowTop + page.contentTop}px;width:${table.offsetWidth}px;pointer-events:none`
+      copy.style.margin = '0'
+      holder.appendChild(copy)
+      this.bandsLayer.appendChild(holder)
+    }
+  }
+
+  private band(top: number, left: number, width: number, height: number): HTMLElement {
+    const band = document.createElement('div')
+    band.className = 'docx-band'
+    band.style.cssText = `top:${top}px;left:${left}px;width:${width}px;height:${height}px`
+    return band
+  }
+
+  /** Endnotes (and footnotes in web layout) after the text. */
+  /** Draws endnotes (and footnotes in web layout) and returns their height. */
+  private renderWebNotes(placement?: { left: number; top: number; width: number }, measureWidth?: number): number {
+    const numbers = countNotes(this.view.state.doc)
+    this.notesHost.replaceChildren()
+    const kinds = this.layoutMode === 'print' ? ['endnote'] : ['footnote', 'endnote']
+    let any = false
+    for (const [key, number] of numbers) {
+      if (!kinds.some((kind) => key.startsWith(`${kind}:`))) continue
+      const doc = this.storyDoc(key)
+      if (!doc) continue
+      any = true
+      const format = key.startsWith('endnote') ? (jmlAttr(jmlChild(jmlChild(this.context.finalSectPr, 'w:endnotePr'), 'w:numFmt'), 'w:val') ?? 'lowerRoman') : 'decimal'
+      const element = renderStory(doc, { urls: this.urls, labels: this.labels, noteNumber: formatNumber(number, format), context: this.context })
+      element.dataset.story = key
+      element.addEventListener('dblclick', (event) => {
+        event.preventDefault()
+        this.openStoryEditor(key, element)
+      })
+      this.notesHost.appendChild(element)
+    }
+    if (!any) {
+      this.notesHost.remove()
+      return 0
+    }
+    if (measureWidth !== undefined) {
+      this.notesHost.style.cssText = `position:absolute;visibility:hidden;left:-10000px;top:0;width:${measureWidth}px`
+      this.root.appendChild(this.notesHost)
+      const height = this.notesHost.getBoundingClientRect().height / (this.zoomLevel || 1)
+      this.notesHost.remove()
+      return height
+    }
+    if (this.layoutMode === 'print' && placement) {
+      // Endnotes follow the text on its last page (they are not paginated themselves).
+      this.notesHost.style.cssText = `position:absolute;left:${placement.left}px;top:${placement.top}px;width:${placement.width}px;z-index:3`
+      this.bandsLayer.appendChild(this.notesHost)
+      this.notesHost.style.pointerEvents = 'auto'
+      layoutStaticTabs(this.notesHost)
+    } else {
+      this.notesHost.style.cssText = ''
+      this.canvas.appendChild(this.notesHost)
+    }
+    return this.notesHost.offsetHeight
+  }
+
+  // ── Header, footer, and note editing ─────────────────────────────────────
+
+  /** Edits a header, footer, or note in place; Escape or clicking elsewhere closes it. */
+  openStoryEditor(storyId: string, over?: HTMLElement): boolean {
+    if (this.readOnly) return false
+    this.closeStoryEditor()
+    const meta = parseJson<StoryMeta>(readDocxMap(this.options.doc, 'stories').get(storyId))
+    if (!meta) return false
+    const element = document.createElement('div')
+    element.className = 'docx-story-editor'
+    const host = over?.parentElement ?? this.canvas
+    if (over) {
+      element.style.cssText = `left:${over.offsetLeft}px;top:${over.offsetTop}px;width:${over.offsetWidth}px;min-height:${over.offsetHeight}px`
+      if (over.style.bottom) {
+        element.style.top = ''
+        element.style.bottom = over.style.bottom
+      }
+      over.style.visibility = 'hidden'
+    }
+    host.appendChild(element)
+    const parentBand = host.closest<HTMLElement>('.docx-band')
+    if (parentBand) parentBand.style.overflow = 'visible'
+    const noteNumber = storyId.startsWith('footnote:') || storyId.startsWith('endnote:') ? countNotes(this.view.state.doc).get(storyId) : undefined
+    const view = new EditorView({ mount: element }, {
+      state: EditorState.create({ schema: docxSchema(), plugins: this.plugins(this.options.doc.getXmlFragment(storyFragmentName(storyId)), `cursor:${storyId}`, noteNumber) }),
+      editable: () => !this.readOnly,
+      nodeViews: this.nodeViews(),
+      clipboardSerializer: clipboardSerializer(docxSchema()),
+      clipboardParser: clipboardParser(docxSchema()),
+      transformPastedHTML: sanitizePastedHtml,
+      attributes: { class: 'docx-flow', spellcheck: 'true', role: 'textbox', 'aria-label': meta.kind },
+      dispatchTransaction: (tr) => {
+        let transaction = tr
+        if (this.modeValue === 'suggesting' && tr.docChanged && tr.getMeta(ySyncPluginKey) === undefined && !tr.getMeta('docx-tracked')) transaction = trackTransaction(view.state, tr, this.reviewer()) ?? tr
+        view.updateState(view.state.apply(transaction))
+        this.emit('update')
+      },
+    })
+    this.storyEditor = { view, element, storyId }
+    view.focus()
+    const close = (event: PointerEvent) => {
+      if (!element.contains(event.target as Node)) {
+        document.removeEventListener('pointerdown', close, true)
+        this.closeStoryEditor()
+      }
+    }
+    document.addEventListener('pointerdown', close, true)
+    this.emit('update')
+    return true
+  }
+
+  closeStoryEditor(): boolean {
+    if (!this.storyEditor) return false
+    const { view, element } = this.storyEditor
+    this.storyEditor = null
+    view.destroy()
+    element.remove()
+    this.scheduleLayout(true)
+    this.view.focus()
+    this.emit('update')
+    return true
+  }
+
+  get editingStory(): string | null {
+    return this.storyEditor?.storyId ?? null
+  }
+
+  /** Prints the pages (the browser's dialog also saves PDFs). */
+  print(): void {
+    if (this.printing) return
+    this.printing = true
+    const style = document.createElement('style')
+    const first = this.lastSections[0]?.setup
+    const width = first ? `${first.width / PX_PER_PT}pt` : '8.5in'
+    const height = first ? `${first.height / PX_PER_PT}pt` : '11in'
+    style.textContent = `@page{size:${width} ${height};margin:0}@media print{body *{visibility:hidden!important}.${this.scope},.${this.scope} *{visibility:visible!important}.${this.scope}{position:absolute;left:0;top:0}.${this.scope} .docx-canvas{zoom:1!important;margin:0!important}.${this.scope} .docx-band-gap,.${this.scope} .ProseMirror-yjs-cursor,.${this.scope} .docx-comment-range{background:none!important;border:none!important}.${this.scope} .docx-page{box-shadow:none!important}}`
+    document.head.appendChild(style)
+    const done = () => {
+      style.remove()
+      this.printing = false
+      window.removeEventListener('afterprint', done)
+    }
+    window.addEventListener('afterprint', done)
+    window.print()
+  }
+
+  /** The column's text (for tests and accessibility summaries). */
+  text(): string {
+    const parts: string[] = []
+    this.view.state.doc.forEach((node) => { parts.push(inlineText(node)) })
+    return parts.join('\n')
+  }
+
+  focus(): void {
+    ;(this.storyEditor?.view ?? this.view).focus()
+  }
+
+  destroy(): void {
+    this.destroyed = true
+    if (this.layoutFrame) cancelAnimationFrame(this.layoutFrame)
+    if (this.layoutTimer) clearTimeout(this.layoutTimer)
+    this.closeStoryEditor()
+    for (const stop of this.unsubscribe) stop()
+    this.view.destroy()
+    this.context.destroy()
+    this.urls.destroy()
+    this.root.remove()
+    for (const set of Object.values(this.listeners)) set.clear()
+  }
+}
+
+function inlineFieldCode(node: ProseMirrorNode): string {
+  const element = unpackJml<JmlElement>(node.attrs.v as string)
+  return element ? (element.slice(2) as unknown[]).filter((part): part is string => typeof part === 'string').join('') : ''
+}
+

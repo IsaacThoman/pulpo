@@ -268,7 +268,11 @@ class InlineBuilder {
         case 'w:t':
         case 'w:delText': {
           const text = (child.slice(2) as JmlNode[]).filter((part): part is string => typeof part === 'string').join('')
-          if (text) this.push(this.schema.text(text), marks)
+          // Word treats a tab character in text as a tab.
+          text.split('\t').forEach((part, index) => {
+            if (index > 0) this.atom('tab', { v: packJml(['w:tab', {}]) }, marks)
+            if (part) this.push(this.schema.text(part), marks)
+          })
           break
         }
         case 'w:tab':

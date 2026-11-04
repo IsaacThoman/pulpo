@@ -303,8 +303,9 @@ export function paragraphPropertyCss(element: JmlElement, theme?: ThemeInfo): Cs
       const right = jmlNumber(element, 'w:right') ?? jmlNumber(element, 'w:end')
       const firstLine = jmlNumber(element, 'w:firstLine')
       const hanging = jmlNumber(element, 'w:hanging')
-      if (left !== undefined) props['margin-left'] = pt(twipsToPt(left))
-      if (right !== undefined) props['margin-right'] = pt(twipsToPt(right))
+      // Variables, so layout can add a section's inset to the right indent (see DOCX_BASE_CSS).
+      if (left !== undefined) props['--docx-ind-l'] = pt(twipsToPt(left))
+      if (right !== undefined) props['--docx-ind-r'] = pt(twipsToPt(right))
       if (hanging !== undefined) props['text-indent'] = pt(-twipsToPt(hanging))
       else if (firstLine !== undefined) props['text-indent'] = pt(twipsToPt(firstLine))
       return props
