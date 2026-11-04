@@ -19,7 +19,7 @@ import {
   trashNodeInTx,
 } from '../tree-service.js'
 import { deleteChange, findChange, parsePlace, recordChange, setChangeStatus, updateCreation, type FileChangeRow, type Place, type ReplyContext } from './changes.js'
-import { deleteObjects, mutateAgentFiles, TREE_AND_CHAT_SCOPES, type CommitEffects, type DatabaseTransaction } from './commit.js'
+import { deleteObjects, deleteUnlessCommitted, mutateAgentFiles, TREE_AND_CHAT_SCOPES, type CommitEffects, type DatabaseTransaction } from './commit.js'
 import { baseMarkdown, loadDocInTx, lockDocs, markdownVersion, proposedMarkdown, writeDocInTx } from './docs.js'
 import { FilesCommandError } from './scope.js'
 import {
@@ -142,7 +142,7 @@ export async function createBlobChange(reply: ReplyContext, parentId: string | n
       return { node: node!, status: await recordCreation(tx, reply, node!, plan.rowId, mode, { objectKey: content.objectKey }), version: blobVersion(content) }
     }, { reserveBytes: bytes.byteLength })
   } catch (error) {
-    await deleteObjects([content.objectKey])
+    await deleteUnlessCommitted(content.objectKey)
     throw error
   }
 }

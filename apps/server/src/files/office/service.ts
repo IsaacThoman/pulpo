@@ -9,6 +9,7 @@ import { newId } from '../../lib/ids.js'
 import { parseAuthSettings } from '../../settings/application-settings.js'
 import { getBlobStore } from '../../storage/index.js'
 import { resolveFileAccess, type FileExecutor, type FileNodeRow } from '../access.js'
+import { deleteUnlessCommitted } from '../agent/commit.js'
 import { storeBlob } from '../agent/versions.js'
 import { topSortOrder } from '../order.js'
 import { assertDestination, availableName, mutateFileTree, toFileNode } from '../tree-service.js'
@@ -71,9 +72,7 @@ export async function convertFileToEditable(userId: string, id: string, to: Offi
       return toFileNode(row!)
     }, ['files', 'folders'], { reserveBytes: converted.byteLength })
   } catch (error) {
-    // Announcing the change happens after commit and can fail too; keep the bytes of a file that exists.
-    const [committed] = await db.select({ id: fileNodes.id }).from(fileNodes).where(eq(fileNodes.objectKey, content.objectKey)).limit(1).catch(() => [undefined])
-    if (!committed) await getBlobStore().delete(content.objectKey).catch(() => undefined)
+    await deleteUnlessCommitted(content.objectKey)
     throw error
   }
 }

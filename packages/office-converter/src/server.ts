@@ -132,10 +132,12 @@ export function createConverterServer(config: Pick<ConverterConfig, 'token' | 'm
    */
   const drain = (request: IncomingMessage, code: ErrorCode) => new Promise<void>((resolve) => {
     if (request.complete || request.destroyed || code === 'input_too_large') return resolve()
+    // Callers without the token get less: enough for an answer, not a way to make it read 100 MB.
+    const limit = code === 'unauthorized' ? Math.min(config.maxInputBytes, 16 * 1024 * 1024) : config.maxInputBytes
     let size = 0
     request.on('data', (chunk: Buffer) => {
       size += chunk.byteLength
-      if (size > config.maxInputBytes) { request.pause(); resolve() }
+      if (size > limit) { request.pause(); resolve() }
     })
     request.once('end', () => resolve())
     request.once('error', () => resolve())

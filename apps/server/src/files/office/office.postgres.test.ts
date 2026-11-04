@@ -10,12 +10,12 @@ import { AppError } from '../../lib/errors.js'
 import { filesFixture, requireDisposableDatabase, type FilesFixture } from '../agent/test-fixtures.js'
 
 const objects = vi.hoisted(() => new Map<string, Buffer>())
-const mocks = vi.hoisted(() => ({ config: {} as Record<string, unknown>, userId: '' }))
+const mocks = vi.hoisted(() => ({ config: {} as Record<string, unknown>, userId: '', publish: vi.fn() }))
 vi.mock('../../storage/index.js', async () => {
   const { memoryBlobStore } = await import('../agent/test-blob-store.js')
   return { getBlobStore: () => memoryBlobStore(objects) }
 })
-vi.mock('../../responses/events.js', () => ({ publishStateChange: vi.fn() }))
+vi.mock('../../responses/events.js', () => ({ publishStateChange: mocks.publish }))
 vi.mock('../doc-events.js', () => ({ publishDocsClosed: vi.fn(), publishDocUpdate: vi.fn() }))
 vi.mock('../../jobs.js', () => ({ fileDocQueue: { add: vi.fn() } }))
 vi.mock('../request.js', async (importOriginal) => ({
@@ -134,6 +134,20 @@ describe.skipIf(!enabled)('office file conversion', () => {
       expect(await nodesNamed('Deck.pptx')).toEqual([])
       // The converted bytes were stored and then deleted again.
       expect([...objects.keys()].filter((key) => !keysBefore.has(key))).toEqual([])
+    })
+
+    it('keeps the bytes of a converted file that committed when announcing it fails', async () => {
+      const projects = await files.folder('Projects')
+      const doc = await files.blob('Spec.doc', projects, 'doc bytes')
+      await files.attach({ [projects]: 'write' })
+      mocks.publish.mockRejectedValueOnce(new Error('Redis is down'))
+      await expect(convertFileToEditable(files.userId, doc, 'docx')).rejects.toThrow('Redis is down')
+      const [userCopy] = await nodesNamed('Spec.docx')
+      expect(await files.content(userCopy!.id)).toBe(DOCX.toString())
+      mocks.publish.mockRejectedValueOnce(new Error('Redis is down'))
+      await files.relay('convert', { path: 'Projects/Spec.doc', to: 'pdf' })
+      const [agentCopy] = await nodesNamed('Spec.pdf')
+      expect(await files.content(agentCopy!.id)).toBe(PDF.toString())
     })
 
     it('refuses what it cannot convert without calling the converter', async () => {
