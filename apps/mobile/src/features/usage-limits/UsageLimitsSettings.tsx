@@ -10,7 +10,7 @@ import { AppStoreSubscriptionSection } from '../app-store/AppStoreSubscriptionSe
 import { usageLimitsQuery } from './api'
 import { planName, remainingLabel, usageLimitRows, type UsageLimitRow } from './format'
 
-function NativeUsageLimit({ row }: { row: UsageLimitRow }) {
+export function NativeUsageLimit({ row }: { row: UsageLimitRow }) {
   const theme = useAppTheme()
   return <VStack alignment="leading" spacing={6} modifiers={[accessibilityElement('combine'), accessibilityLabel(row.label), accessibilityValue(`${remainingLabel(row)}. ${row.reset}`)]}>
     <HStack><NativeText>{row.label}</NativeText><Spacer /><NativeText modifiers={[foregroundStyle('secondary'), monospacedDigit()]}>{remainingLabel(row)}</NativeText></HStack>
