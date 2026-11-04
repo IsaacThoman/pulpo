@@ -184,10 +184,13 @@ export const mobileConfigSchema = z.object({
      * Files and its collaborative documents. Older servers omit it; clients then hide Files.
      * `docSchemaVersion` is the document schema the server accepts edits in, so a client whose
      * bundled editor speaks another version can open documents read only instead of failing to join.
+     * `urlImport` is whether Files can save a web page as a document (POST /api/files/import-url),
+     * which needs a page extraction provider; older servers omit it, and clients then hide it.
      */
     files: z.object({
       enabled: z.boolean(),
       docSchemaVersion: z.number().int().positive(),
+      urlImport: z.boolean().optional().default(false),
     }).optional(),
     /**
      * App Store subscriptions, with the StoreKit environments whose purchases this server accepts.
