@@ -43,7 +43,7 @@ describe('mobile dictation capability', () => {
     [{ enabled: true, encryptedGroqApiKey: null }, false],
     [{ enabled: true, encryptedGroqApiKey: 'configured' }, true],
   ])('advertises dictation only when configured and enabled (%j)', async (settings, enabled) => {
-    const values = [[{ id: 'user' }], [{ value: {} }], settings ? [{ value: settings }] : []]
+    const values = [[{ id: 'user' }], [{ value: {} }], settings ? [{ value: settings }] : [], []]
     mocks.select.mockImplementation(() => {
       const rows = values.shift()
       const chain = { from: () => chain, where: () => chain, limit: async () => rows }
@@ -63,7 +63,7 @@ describe('mobile Files capability', () => {
     [{}, true],
     [{ filesEnabled: false }, false],
   ])('advertises Files and the document schema version (%j)', async (auth, enabled) => {
-    const values = [[{ id: 'user' }], [{ value: auth }], []]
+    const values = [[{ id: 'user' }], [{ value: auth }], [], []]
     mocks.select.mockImplementation(() => {
       const rows = values.shift()
       const chain = { from: () => chain, where: () => chain, limit: async () => rows }
@@ -76,12 +76,33 @@ describe('mobile Files capability', () => {
     } as unknown as FastifyInstance)
     expect(await handler()).toMatchObject({ capabilities: { files: { enabled, docSchemaVersion: DOC_SCHEMA_VERSION } } })
   })
+
+  it.each([
+    [{}, undefined, false],
+    [{}, { extractEnabled: false, encryptedKagiApiKey: 'configured' }, false],
+    [{}, { extractEnabled: true }, false],
+    [{}, { extractEnabled: true, encryptedKagiApiKey: 'configured' }, true],
+    [{ filesEnabled: false }, { extractEnabled: true, encryptedKagiApiKey: 'configured' }, false],
+  ])('advertises Import from URL only when Files is on and a page extractor is set up (%j, %j)', async (auth, webTools, urlImport) => {
+    const values = [[{ id: 'user' }], [{ value: auth }], [], webTools ? [{ value: webTools }] : []]
+    mocks.select.mockImplementation(() => {
+      const rows = values.shift()
+      const chain = { from: () => chain, where: () => chain, limit: async () => rows }
+      return chain
+    })
+    let handler!: () => Promise<unknown>
+    await registerMobileRoutes({
+      get: (path: string, callback: () => Promise<unknown>) => { if (path === '/api/mobile/config') handler = callback },
+      post: vi.fn(),
+    } as unknown as FastifyInstance)
+    expect(await handler()).toMatchObject({ capabilities: { files: { urlImport } } })
+  })
 })
 
 describe('mobile usage limits capability', () => {
   it.each([true, false])('advertises plan usage limits only when billing is enabled (%s)', async (billingEnabled) => {
     mocks.billingEnabled = billingEnabled
-    const values = [[{ id: 'user' }], [{ value: {} }], []]
+    const values = [[{ id: 'user' }], [{ value: {} }], [], []]
     mocks.select.mockImplementation(() => {
       const rows = values.shift()
       const chain = { from: () => chain, where: () => chain, limit: async () => rows }
@@ -102,7 +123,7 @@ describe('mobile usage limits capability', () => {
 
 describe('mobile App Store billing capability', () => {
   async function capabilities() {
-    const values = [[{ id: 'user' }], [{ value: {} }], []]
+    const values = [[{ id: 'user' }], [{ value: {} }], [], []]
     mocks.select.mockImplementation(() => {
       const rows = values.shift()
       const chain = { from: () => chain, where: () => chain, limit: async () => rows }

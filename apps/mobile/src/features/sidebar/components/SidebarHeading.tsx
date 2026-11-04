@@ -20,6 +20,8 @@ interface Props {
   onNewFolder: () => void
   onNewDocument: () => void
   onUpload: (source: UploadSource) => void
+  /** Saves a web page as a document; omitted while the instance can't fetch pages. */
+  onImportUrl?: () => void
   onOrderChange: (order: SidebarOrder) => void
   onOpenInFiles: () => void
 }
@@ -33,7 +35,7 @@ const ORDERS: ReadonlyArray<{ value: SidebarOrder; label: string }> = [
  * The heading above the drawer's chats, as on the web: a New Folder button, and a menu with what
  * the web offers on the sidebar's empty space (new document, upload, sort order, open in Files).
  */
-export function SidebarHeading({ title, titleStyle, order, filesEnabled, canCreate, onNewFolder, onNewDocument, onUpload, onOrderChange, onOpenInFiles }: Props) {
+export function SidebarHeading({ title, titleStyle, order, filesEnabled, canCreate, onNewFolder, onNewDocument, onUpload, onImportUrl, onOrderChange, onOpenInFiles }: Props) {
   const theme = useAppTheme()
   const creates = canCreate && filesEnabled
   const setOrder = (next: string) => {
@@ -72,6 +74,7 @@ export function SidebarHeading({ title, titleStyle, order, filesEnabled, canCrea
                 <SwiftUIButton label="Choose Files" systemImage="folder" onPress={() => onUpload('files')} />
               </SwiftUIMenu>
             ) : null}
+            {creates && onImportUrl ? <SwiftUIButton label="Import from URL" systemImage="link" onPress={onImportUrl} /> : null}
             {creates ? <SwiftUIDivider /> : null}
             <Section title="Sort By">
               <Picker label="Sort By" selection={order} onSelectionChange={setOrder} modifiers={[pickerStyle('inline')]}>
@@ -94,6 +97,7 @@ export function SidebarHeading({ title, titleStyle, order, filesEnabled, canCrea
         { label: 'Take photo or video', icon: 'camera', onPress: () => onUpload('camera') },
         { label: 'Choose files', icon: 'folder', onPress: () => onUpload('files') },
       ] } },
+      ...(onImportUrl ? [{ label: 'Import from URL', icon: 'link', onPress: onImportUrl }] : []),
     ] })
   }
   sections.push({ id: 'order', title: 'Sort by', actions: ORDERS.map((option) => ({ label: option.label, selected: order === option.value, onPress: () => setOrder(option.value) })) })
