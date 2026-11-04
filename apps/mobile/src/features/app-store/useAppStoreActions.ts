@@ -66,6 +66,7 @@ export function useAppStoreActions({ kit, offer, current, onChanged }: {
         syncAppStore: () => kit.sync(),
         currentEntitlements: () => kit.currentEntitlements(),
       })
+      if (outcome === 'cancelled') return
       if (outcome === 'nothing') return Alert.alert('No subscription found', 'This Apple Account has no active Pulpo subscription.')
       if (outcome === 'retry') return Alert.alert('Couldn’t restore purchases', 'Pulpo couldn’t be reached. Please try again.')
       if (typeof outcome === 'object') return Alert.alert('Couldn’t restore purchases', outcome.rejected)

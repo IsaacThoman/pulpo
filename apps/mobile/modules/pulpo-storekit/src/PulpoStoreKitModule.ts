@@ -35,8 +35,8 @@ declare class PulpoStoreKitModule extends NativeModule<PulpoStoreKitEvents> {
   finish(transactionId: string): Promise<void>
   unfinished(): Promise<StoreKitTransaction[]>
   currentEntitlements(): Promise<StoreKitTransaction[]>
-  /** Asks the App Store for this Apple Account's purchases; may prompt the user to sign in. */
-  sync(): Promise<void>
+  /** Asks the App Store for this Apple Account's purchases; may prompt the user to sign in. False when they decline. */
+  sync(): Promise<boolean>
   showManageSubscriptions(): Promise<void>
 }
 

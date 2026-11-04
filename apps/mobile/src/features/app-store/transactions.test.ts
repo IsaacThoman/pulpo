@@ -56,7 +56,7 @@ describe('App Store purchases', () => {
 
 describe('Restore Purchases', () => {
   const restore = (entitlements: ReturnType<typeof transaction>[], sync = vi.fn().mockResolvedValue({ plan: 'eight' })) => {
-    const deps = { ...reporter(sync), syncAppStore: vi.fn().mockResolvedValue(undefined), currentEntitlements: vi.fn().mockResolvedValue(entitlements) }
+    const deps = { ...reporter(sync), syncAppStore: vi.fn().mockResolvedValue(true), currentEntitlements: vi.fn().mockResolvedValue(entitlements) }
     return { deps, result: restorePurchases(['pulpoEight', 'pulpoFat'], deps) }
   }
 
@@ -72,5 +72,12 @@ describe('Restore Purchases', () => {
     await expect(restore([transaction('7')], vi.fn().mockRejectedValue(new ApiError(403, 'app_store_sandbox_not_allowed', 'Sandbox purchases are not enabled'))).result)
       .resolves.toEqual({ rejected: 'Sandbox purchases are not enabled' })
     await expect(restore([transaction('8')], vi.fn().mockRejectedValue(new TypeError('offline'))).result).resolves.toBe('retry')
+  })
+
+  it('stops quietly when the person declines to sign in to their Apple Account', async () => {
+    const deps = { ...reporter(), syncAppStore: vi.fn().mockResolvedValue(false), currentEntitlements: vi.fn() }
+    await expect(restorePurchases(['pulpoEight', 'pulpoFat'], deps)).resolves.toBe('cancelled')
+    expect(deps.currentEntitlements).not.toHaveBeenCalled()
+    expect(deps.sync).not.toHaveBeenCalled()
   })
 })
