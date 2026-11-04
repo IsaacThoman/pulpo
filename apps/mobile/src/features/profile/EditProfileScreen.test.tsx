@@ -148,3 +148,15 @@ it('offers photo actions in a Material sheet on Android', async () => {
   expect(mocks.pickAvatar).toHaveBeenCalledWith('library')
   expect(mocks.uploadAvatar).not.toHaveBeenCalled()
 })
+
+it('keeps photo changes off until a profile save finishes on Android', async () => {
+  mocks.platform = 'android'
+  let finishSave!: () => void
+  mocks.updateProfile.mockImplementation(() => new Promise((resolve) => { finishSave = () => resolve({ user: { ...account, name: 'Isaac T' } }) }))
+  mount()
+  fireEvent.change(screen.getByLabelText('Display name'), { target: { value: 'Isaac T' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+  await waitFor(() => expect((screen.getByRole('button', { name: 'Add photo' }) as HTMLButtonElement).disabled).toBe(true))
+  await act(async () => { finishSave() })
+  await waitFor(() => expect(navigation.goBack).toHaveBeenCalled())
+})

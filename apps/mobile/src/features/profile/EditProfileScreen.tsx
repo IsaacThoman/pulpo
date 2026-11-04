@@ -120,11 +120,14 @@ export function EditProfileScreen({ navigation }: NativeStackScreenProps<RootSta
   const [username, setUsername] = useState(user?.username ?? '');
   const [saving, setSaving] = useState(false);
   const avatar = useAvatarActions();
+  // A save and a photo change each reply with the whole profile, so they never overlap: the later
+  // reply could otherwise put back what the other just changed.
+  const photoLocked = avatar.busy || saving;
   const draft = profileDraft(user, name, username);
   const changeUsername = (value: string) => setUsername(normalizeUsername(value));
 
   const save = useCallback(() => {
-    if (!draft.canSave || saving) return;
+    if (!draft.canSave || saving || avatar.busy) return;
     if (!draft.patch.name && !draft.patch.username) { navigation.goBack(); return; }
     setSaving(true);
     void mobileApi.updateProfile(draft.patch).then(async ({ user: next }) => {
@@ -133,7 +136,7 @@ export function EditProfileScreen({ navigation }: NativeStackScreenProps<RootSta
       if (useSessionStore.getState().user?.id === next.id) updatePrototypeProfile({ name: next.name });
       navigation.goBack();
     }).catch((error) => Alert.alert('Couldn’t update profile', errorMessage(error))).finally(() => setSaving(false));
-  }, [draft.canSave, draft.patch, navigation, saving, setUser, updatePrototypeProfile]);
+  }, [avatar.busy, draft.canSave, draft.patch, navigation, saving, setUser, updatePrototypeProfile]);
 
   useLayoutEffect(() => {
     if (Platform.OS !== 'ios') return;
@@ -149,7 +152,7 @@ export function EditProfileScreen({ navigation }: NativeStackScreenProps<RootSta
     <SwiftUISection>
       <SwiftUIVStack spacing={10} modifiers={[frame({ maxWidth: Infinity }), listRowBackground('clear')]}>
         <SwiftUIRNHostView matchContents><EditableAvatar busy={avatar.busy} /></SwiftUIRNHostView>
-        <SwiftUIMenu label={photoLabel} modifiers={[disabled(avatar.busy)]}>
+        <SwiftUIMenu label={photoLabel} modifiers={[disabled(photoLocked)]}>
           <SwiftUIButton label="Choose Photo" systemImage="photo.on.rectangle" onPress={() => void avatar.choose('library')} />
           <SwiftUIButton label="Take Photo" systemImage="camera" onPress={() => void avatar.choose('camera')} />
           {user?.avatarUrl ? <SwiftUIButton label="Remove Photo" role="destructive" systemImage="trash" onPress={() => void avatar.remove()} /> : null}
@@ -173,8 +176,8 @@ export function EditProfileScreen({ navigation }: NativeStackScreenProps<RootSta
 
   return <Screen><PageHeader title="Edit Profile" onBack={() => navigation.goBack()} />
     <View style={styles.avatarSection}>
-      <Pressable accessibilityRole="button" accessibilityLabel="Change profile picture" disabled={avatar.busy} onPress={openPhotoActions}><EditableAvatar busy={avatar.busy} /></Pressable>
-      <PrimaryButton label={user?.avatarUrl ? 'Change photo' : 'Add photo'} variant="plain" disabled={avatar.busy} onPress={openPhotoActions} />
+      <Pressable accessibilityRole="button" accessibilityLabel="Change profile picture" disabled={photoLocked} onPress={openPhotoActions}><EditableAvatar busy={avatar.busy} /></Pressable>
+      <PrimaryButton label={user?.avatarUrl ? 'Change photo' : 'Add photo'} variant="plain" disabled={photoLocked} onPress={openPhotoActions} />
     </View>
     <Field label="Display name" autoComplete="name" maxLength={120} value={name} onChangeText={setName} />
     <Text style={[styles.helper, { color: theme.secondary, marginBottom: 16 }]}>{NAME_HINT}</Text>
