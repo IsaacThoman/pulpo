@@ -8,7 +8,7 @@ This page covers the model and the integration steps. [Files](./files.md) descri
 
 | Piece | Where | What it is |
 | --- | --- | --- |
-| Contract | `packages/client-core/src/office/live-format.ts` | `LiveFormatCodec`, `LiveAssetStore`, and `LiveFormatError`. |
+| Contract | `packages/client-core/src/office/live-format.ts` | `LiveFormatCodec`, `LiveAssetStore`, and `LiveFormatError`. This branch adds one optional codec method, `referencedAssets(doc)`, used for asset collection. |
 | Catalog | `packages/client-core/src/office/formats.ts` (`@pulpo/client-core/office`) | One `LiveFormatInfo` per format: id, schema version, extensions and whole file names, `lossless`, `maxFileBytes`, MIME types, and `hasContent`. It imports no codec, so clients and the mobile app's Hermes bundle can load it. |
 | Codec registry | `packages/client-core/src/office/codecs.ts` (`@pulpo/client-core/office/codecs`) | The codec of each catalog entry. It checks that the two agree. It loads every codec (Markdown pulls in TipTap), so servers import it and clients don't. |
 | Assets | `office/assets.ts`; server `files/live-docs.ts` (`DocAssetStore`); web `features/files/live/assets.ts` | Binary parts addressed by SHA-256, plus `MemoryLiveAssetStore` for scratch documents and tests, and `transactChanges` for codecs' `applyFile`. |
@@ -29,6 +29,7 @@ This page covers the model and the integration steps. [Files](./files.md) descri
 
 - `file_nodes.format`: the live format of a `doc` node. A check constraint requires it for documents and forbids it for anything else. Migration 0111 set every existing document to `markdown`. A document's name always has its format's extension.
 - `file_docs.schema_version` is the format's schema version. `file_docs.markdown` holds the derived plain text (`codec.toText`): Markdown for Markdown documents, the content for text files. Compaction refreshes it. It feeds previews, `/api/files/:id/markdown`, and agents' `cat` and `grep`.
+- `file_docs.generation`: a UUID stamped into the document's state when it is made (the `pulpoDoc` Y.Map, `DOC_META_MAP`). A file made a document again under the same id gets a new one. Join acknowledgements carry it, and the provider refuses (`stale_copy`) to merge a device's cached copy that holds another generation's content. The web then deletes its IndexedDB copy and mobile discards its SQLite copy before joining afresh. Documents from before generations have none and are never refused.
 - `file_doc_assets`: a document's binary parts, one row per `(node_id, hash)`, with the object key, MIME type, and size. Objects are stored per document (`users/<id>/doc-assets/<node>/<hash>`), so copying a document copies its objects and deleting it deletes them. Assets count toward storage, cascade from `file_docs`, and are included in backups (blobs remapped on restore). Account deletion removes them. A document that becomes an ordinary file drops its assets after commit.
 
 ## Sync and schema versions
@@ -50,6 +51,7 @@ This page covers the model and the integration steps. [Files](./files.md) descri
 
 - `GET /api/files/:id/assets/:hash` returns the bytes as `application/octet-stream`, with the stored type in `x-pulpo-asset-type`. It is always a download, never sniffed, and sandboxed, and since a hash always names the same bytes it is cached for good. Editors make object URLs from the bytes; untrusted content is never served inline from the app origin.
 - `PUT /api/files/:id/assets?type=<mime>` (body `application/octet-stream`) stores one. It is checked against the per-file cap (at most 25 MB) and the storage allowance.
+- **Unused assets.** Compaction deletes a document's assets that neither the document nor a pending proposal's fork refers to (`codec.referencedAssets`), once they are an hour old. The grace period lets editors upload an asset before they refer to it. Codecs that don't implement `referencedAssets` keep every asset.
 - On the server, codecs get a `DocAssetStore`. It reads the document's assets, buffers new ones, and writes them with the document's transaction (`flush`). On the web, `ApiLiveAssetStore` fetches and uploads through these routes.
 
 ## Agents
@@ -58,8 +60,9 @@ What agents see and do is in [Files](./files.md#the-pulpo-files-command). Markdo
 
 - `pull` writes the codec's export, or this chat's pending proposal in Suggest mode. Its version is the checksum of those bytes. `cat` and `grep` read `toText`.
 - **Write mode.** `push` applies the file through `codec.applyFile` as a minimal diff with origin `agent`, so users editing at the same time keep their edits. The change row keeps the document's export before and after as kept versions (`file_versions`), and undo and redo apply them back through the codec. Undo refuses when the document no longer exports as the reply left it, and the conflict carries both texts.
-- **Suggest mode.** `push` stores a whole-file proposal: the pushed bytes, the export it was proposed against, and the proposal as a Yjs update against the document then (`updateKey`). Accepting applies the file as is when nothing changed meanwhile. Otherwise it applies the update, which merges with what users wrote since. Rejecting drops the stored versions.
-- New files with a live format's extension become live documents.
+- **Suggest mode.** `push` stores a whole-file proposal: the pushed bytes, the export it was proposed against (`before`), and the proposal's fork (`forkKey`). The fork is the Y.Doc state of a copy of the document as it was, with the file applied as a minimal diff. Accepting applies the file as is when the document still exports as `before`. Otherwise it merges the fork into the document, which keeps what users wrote since. Rejecting drops the stored versions.
+- **Revising a proposal.** A later push from the same chat builds on its pending proposal: it is diffed against that proposal's fork (the version the agent pulled), keeps the chain's `before`, and replaces the earlier proposal. Users' edits made in between are never taken back.
+- **New files.** A new file with a live format's extension becomes a live document, unless it is larger than the format edits or the codec refuses its content (a binary `.plist`, a video `.ts`). Then it is an uploaded file, as before.
 
 Review UIs read `FileChangeSummary.contentDiff` and fetch both versions:
 
@@ -88,10 +91,14 @@ Review UIs read `FileChangeSummary.contentDiff` and fetch both versions:
 ## The text format
 
 - **Layout** (`office/text/layout.ts`). `text` is one Y.Text holding the content, with every line break as `\n`. `textFile` is a Y.Map holding `encoding`, `lineEnding`, and, for files with mixed line breaks, `original`.
-- **Encodings.** UTF-8 with or without a BOM, UTF-16 LE or BE with a BOM, and Windows-1252 for bytes that are not UTF-8 but read as text. A Windows-1252 file that gains a character the encoding lacks is written as UTF-8.
-- **Refusals.** NUL bytes, a steady share of control characters, and files over 4 MB are refused with `LiveFormatError`.
+- **Encodings.** UTF-8 with or without a BOM, UTF-16 LE or BE with a BOM, and Windows-1252 for bytes that are not UTF-8 but read as Western text. Windows-1252 files keep their original bytes as an asset until edited. One that gains a character the encoding lacks is written as UTF-8.
+- **Refusals.** These are refused with `LiveFormatError`:
+  - NUL bytes, or a steady share of control characters;
+  - 8-bit text with more than a tenth high bytes (likely Shift-JIS, GBK, or another encoding Windows-1252 would garble);
+  - UTF-16 with a broken surrogate pair (documents store UTF-8, which cannot hold one);
+  - files over 4 MB.
 - **Byte faithful.** Export is byte for byte when nothing changed, BOM, line breaks, and trailing newline included. For a file with mixed line breaks, the original bytes are kept as an asset and returned while the text still hashes the same. Once edited, every line break takes the dominant style, as most editors do.
-- **`applyFile`** diffs line by line (Myers), then narrows each changed run to the characters that differ, and applies the result as Y.Text inserts and deletes. Concurrent edits elsewhere in the file merge.
+- **`applyFile`** diffs line by line, then narrows each changed run to the characters that differ, and applies the result as Y.Text inserts and deletes. The line diff is Myers for up to 4,000 differing lines. Beyond that, lines that occur once on each side anchor the match (patience diff), so even a file changed all over keeps every line it did not change. Concurrent edits elsewhere in the file merge.
 - **Editor** (`office/text/view`). CodeMirror 6 bound with `y-codemirror.next`:
   - highlighting by extension, each language a lazy import;
   - other sessions' labeled cursors;

@@ -7,7 +7,7 @@ import { Alert } from 'react-native'
 import { create } from 'zustand'
 import type { RootStackParamList } from '../../mockup5/src/navigation'
 import { openAttachmentFile } from '../../native/openFile'
-import { bytesExportFile, downloadFile, fetchDocMarkdown, fetchFileNode, markdownExportFile, textExportFile } from './api'
+import { bytesExportFile, downloadFile, fetchDocMarkdown, fetchFileNode, liveExportFile, markdownExportFile } from './api'
 import { filesErrorMessage } from './display'
 import { fileOpenTarget } from './itemActions'
 
@@ -39,12 +39,12 @@ export async function previewUploadedFile(node: FileNode): Promise<void> {
 
 /**
  * Shares an uploaded file's bytes, or a document's Markdown (`markdown` from an open editor wins).
- * Other live documents share as their file: `bytes` an open editor exported, or else their text.
+ * Other live documents share as their real file: `bytes` an open editor exported, or the server's.
  */
 export async function shareFileItem(node: FileNode, markdown?: string, bytes?: Uint8Array): Promise<void> {
   if (!(await Sharing.isAvailableAsync())) throw new Error('Sharing isn’t available on this device.')
   if (node.kind === 'doc' && node.format && node.format !== 'markdown') {
-    const file = bytes ? bytesExportFile(node.name, bytes) : textExportFile(node.name, (await fetchDocMarkdown(node.id)).markdown)
+    const file = bytes ? bytesExportFile(node.name, bytes) : await withDownload(node.id, () => liveExportFile(node))
     await Sharing.shareAsync(file.uri, { mimeType: node.mimeType ?? 'text/plain', dialogTitle: node.name })
     return
   }

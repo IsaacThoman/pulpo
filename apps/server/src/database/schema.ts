@@ -971,6 +971,9 @@ export const fileDocs = pgTable('file_docs', {
   // text files. Derived at compaction for previews, search, and agents' cat and grep.
   markdown: text('markdown').notNull().default(''),
   schemaVersion: integer('schema_version').notNull(),
+  // Also stored in the Y.Doc (`DOC_META_MAP`), so devices drop copies of an earlier document made
+  // under the same id. Null for documents made before generations.
+  generation: uuid('generation'),
   lastEditedAt: timestamp('last_edited_at', { withTimezone: true }).notNull().defaultNow(),
   ...timestamps,
 })

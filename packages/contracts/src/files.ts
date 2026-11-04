@@ -366,6 +366,8 @@ export type DocSyncError =
   | 'doc_too_large'
   | 'invalid_update'
   | 'rate_limited'
+  /** The device's copy is of an earlier document under the same id; drop it and join afresh. */
+  | 'stale_copy'
   | 'failed'
 
 export interface DocJoinInput {
@@ -385,7 +387,14 @@ export interface DocJoinInput {
 
 export type DocJoinResult =
   /** `format` is the document's live format; older servers omit it (Markdown). */
-  | { ok: true; update: Uint8Array; stateVector: Uint8Array; format?: string }
+  | {
+    ok: true
+    update: Uint8Array
+    stateVector: Uint8Array
+    format?: string
+    /** The document's generation (see `DOC_META_MAP`); absent for documents made before it. */
+    generation?: string
+  }
   | { ok: false; error: DocSyncError }
 
 export type DocAck = { ok: true } | { ok: false; error: DocSyncError }

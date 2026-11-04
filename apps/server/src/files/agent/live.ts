@@ -23,8 +23,10 @@ import { contentChecksum, dropVersion, keepVersion, referencesObject } from './v
  * Change rows keep file versions as exported bytes in the blob store (kept as `file_versions`
  * so they count toward storage and go with the document): Write rows the document before and
  * after the reply, for undo and redo; Suggest rows the document when proposed (`before`) and the
- * whole proposed file (`after`), plus the proposal as a Yjs update against the document as it was
- * then (`updateKey`), so accepting it later merges with what users wrote since.
+ * whole proposed file (`after`), plus the proposal's fork (`forkKey`): the Y.Doc state of a copy
+ * of the document as it was then, with the proposal applied. Accepting merges the fork into the
+ * document, keeping what users wrote since; the agent's next proposal is diffed against the fork,
+ * which is the version it worked from, so it never takes back users' edits it did not see.
  */
 
 export const liveSnapshotSchema = z.object({
@@ -33,7 +35,7 @@ export const liveSnapshotSchema = z.object({
   sizeBytes: z.number().int().nonnegative(),
   checksum: z.string(),
   mimeType: z.string().nullable(),
-  updateKey: z.string().optional(),
+  forkKey: z.string().optional(),
 })
 export type LiveSnapshot = z.infer<typeof liveSnapshotSchema>
 
@@ -83,7 +85,7 @@ export async function storeLiveSnapshot(tx: DatabaseTransaction, written: Writte
 
 /** Objects a snapshot holds. */
 export function snapshotKeys(snapshot: LiveSnapshot): string[] {
-  return [snapshot.objectKey, ...snapshot.updateKey ? [snapshot.updateKey] : []]
+  return [snapshot.objectKey, ...snapshot.forkKey ? [snapshot.forkKey] : []]
 }
 
 /**
@@ -158,18 +160,20 @@ export async function logLiveUpdate(tx: DatabaseTransaction, effects: CommitEffe
 }
 
 /**
- * The proposal as a Yjs update against the document as it is now, written on a scratch copy.
- * Returns null when the proposed file reads the same as the document.
+ * A proposal's fork: the version the agent worked from (the fork of its earlier pending proposal,
+ * or else the document as it is now) with the proposed file applied as a minimal diff. Returns
+ * null when the proposed file reads the same as that version.
  */
-export async function proposalUpdate(tx: DatabaseTransaction, node: FileNodeRow, bytes: Uint8Array): Promise<{ update: Uint8Array; current: Uint8Array } | null> {
+export async function proposalFork(tx: DatabaseTransaction, node: FileNodeRow, bytes: Uint8Array, previous: LiveSnapshot | null): Promise<{ fork: Uint8Array; current: Uint8Array } | null> {
   const { doc, format, context } = await loadLiveDocInTx(tx, node)
   const current = await exportLiveDoc(doc, format, context)
-  const vector = Y.encodeStateVector(doc)
-  const { changed } = await codecCall(() => liveFormatCodec(format).applyFile(doc, bytes, context, 'agent'))
+  const base = previous?.forkKey ? new Y.Doc() : doc
+  if (previous?.forkKey) Y.applyUpdate(base, await readObject(previous.forkKey))
+  const { changed } = await codecCall(() => liveFormatCodec(format).applyFile(base, bytes, context, 'agent'))
   if (!changed) return null
   // Parts the proposal adds are kept with the document now, so accepting it later finds them.
   await context.assets.flush(tx, node.ownerUserId, node.id)
-  return { update: Y.encodeStateAsUpdate(doc, vector), current }
+  return { fork: Y.encodeStateAsUpdate(base), current }
 }
 
 /**
@@ -183,12 +187,13 @@ export async function acceptLiveProposal(tx: DatabaseTransaction, effects: Commi
     await applyLiveFileInTx(tx, effects, { node, bytes: await readObject(after.objectKey), actorUserId: userId, origin: 'agent' })
     return
   }
-  if (!after.updateKey) {
+  if (!after.forkKey) {
     await applyLiveFileInTx(tx, effects, { node, bytes: await readObject(after.objectKey), actorUserId: userId, origin: 'agent' })
     return
   }
   const vector = Y.encodeStateVector(doc)
-  Y.applyUpdate(doc, await readObject(after.updateKey), 'agent')
+  // The fork shares the document's history up to the proposal, so this merges as concurrent edits.
+  Y.applyUpdate(doc, await readObject(after.forkKey), 'agent')
   const update = Y.encodeStateAsUpdate(doc, vector)
   if (update.byteLength > 2) await logLiveUpdate(tx, effects, node.id, update, userId, 'agent')
 }

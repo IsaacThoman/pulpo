@@ -48,7 +48,8 @@ function statusProblem(status: DocSyncStatus): string | null {
     if (status.reason === 'converted') return ui("This file was renamed to another type, so it's no longer editable here.")
     return ui("This document was deleted.")
   }
-  if (status.state !== 'error' || status.error === 'rate_limited') return null
+  // A stale copy is dropped and the session starts over by itself (see useDocSession).
+  if (status.state !== 'error' || status.error === 'rate_limited' || status.error === 'stale_copy') return null
   switch (status.error) {
     case 'schema_outdated': return ui("A newer version of Pulpo is available. Reload to keep editing.")
     case 'doc_too_large': return ui("This document is too large to edit.")

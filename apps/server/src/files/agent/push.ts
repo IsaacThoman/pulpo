@@ -9,7 +9,9 @@ import type { FileNodeRow } from '../access.js'
 import { guardedReply, readOnlyMessage, workspacePath, type CommandContext, type CommandOutput } from './command-context.js'
 import { docFormat } from '../live-docs.js'
 import { isLiveDoc } from './live.js'
-import { createBlobChange, createDocChange, createLiveDocChange, updateBlobChange, updateDocChange, updateLiveDocChange, type ContentResult } from './mutations.js'
+import { createBlobChange, createDocChange, createLiveDocChange, updateBlobChange, updateDocChange, updateLiveDocChange, type ChangeMode, type ContentResult } from './mutations.js'
+import type { ReplyContext } from './changes.js'
+import { AppError } from '../../lib/errors.js'
 import { failureMessage } from './failures.js'
 import { FilesCommandError, locateParent, locateOptional, modeFor } from './scope.js'
 import { agentBlobView, blobVersion, contentChecksum } from './versions.js'
@@ -128,6 +130,24 @@ async function pushExisting(ctx: CommandContext, node: FileNodeRow, path: string
   return contentOutcome(await updateBlobChange(reply, node, bytes, mode, expected), path, node.id)
 }
 
+/** Codec refusals of a file's content: such a file is kept as uploaded bytes instead. */
+const NOT_EDITABLE = new Set(['file_not_editable', 'file_unreadable', 'file_too_large_to_edit', 'file_encrypted'])
+
+/**
+ * A new file named as a live format becomes a document of it, unless it is too large for the
+ * format or its content is not what the name says (a binary `.plist`, a video `.ts`): then it is
+ * an uploaded file, as it was before the format was live.
+ */
+async function createLiveOrUpload(reply: ReplyContext, parentId: string | null, name: string, bytes: Uint8Array, mode: ChangeMode, format: LiveFormatInfo) {
+  if (bytes.byteLength > format.maxFileBytes) return createBlobChange(reply, parentId, name, bytes, mode)
+  try {
+    return await createLiveDocChange(reply, parentId, name, bytes, mode)
+  } catch (error) {
+    if (error instanceof AppError && NOT_EDITABLE.has(error.code)) return createBlobChange(reply, parentId, name, bytes, mode)
+    throw error
+  }
+}
+
 async function pushNew(ctx: CommandContext, local: string, item: PushItem, limits: PushLimits): Promise<Outcome> {
   if (item.base && !item.force) {
     return {
@@ -145,7 +165,7 @@ async function pushNew(ctx: CommandContext, local: string, item: PushItem, limit
   const created = format?.id === 'markdown'
     ? await createDocChange(reply, parentId, name, await readMarkdown(ctx, local, limits), mode)
     : format
-      ? await createLiveDocChange(reply, parentId, name, await readLiveFile(ctx, local, limits, format), mode)
+      ? await createLiveOrUpload(reply, parentId, name, await readUpload(ctx, local, limits), mode, format)
       : await createBlobChange(reply, parentId, name, await readUpload(ctx, local, limits), mode)
   const message = created.status === 'created' ? `Created "${path}"` : `Suggested the new file "${path}"; it waits for the user to accept it`
   return { status: created.status, message, nodeId: created.node.id, version: created.version }

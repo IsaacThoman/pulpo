@@ -63,6 +63,7 @@ function documentProblem(status: DocSyncStatus, node: FileNode | undefined, sche
       case 'doc_too_large': return { title: 'This document is too large', detail: 'Edits can’t be saved until some content is removed on another device.', action: 'retry' }
       case 'not_found': return { title: 'This document was deleted', detail: 'It’s no longer in Files.', action: 'back' }
       case 'rate_limited': return null
+      case 'stale_copy': return null
       default: return { title: 'Changes aren’t being saved', detail: 'Pulpo couldn’t sync this document. Your edits are kept on this device.', action: 'retry' }
     }
   }
@@ -152,6 +153,11 @@ export function FileDocumentScreen({ navigation, route }: Props) {
     focusedNew.current = true
     editor.current?.focus('start')
   }, [editorState, isText, route.params.created])
+
+  // A copy of an earlier document under this id was dropped; start over without it.
+  useEffect(() => {
+    if (status.state === 'error' && status.error === 'stale_copy') restartSession()
+  }, [restartSession, status])
 
   // A document turned into an ordinary file opens as one.
   useEffect(() => {
@@ -345,7 +351,8 @@ export function FileDocumentScreen({ navigation, route }: Props) {
         <Text style={[styles.centerBody, { color: theme.secondary }]}>Open this document once while connected to keep a copy on this device.</Text>
       </View>
     ) : <View style={styles.center}><ActivityIndicator color={theme.secondary} /></View>
-  ) : handle && session ? (
+    // The node says which editor the document needs; wait for it rather than guess Markdown.
+  ) : handle && session && node ? (
     <DocEditorView
       key={`${generation}:${editorFormat}`}
       ref={editor}

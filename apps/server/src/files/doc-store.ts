@@ -10,7 +10,8 @@ import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { resolveFileAccess, type FileNodeRow } from './access.js'
 import { docTooLarge, initialDocState, MAX_DOC_STATE_BYTES } from './doc-state.js'
-import { docFormat, formatForName, initialLiveDoc } from './live-docs.js'
+import { collectUnusedAssets } from './asset-gc.js'
+import { deleteObjects, docFormat, formatForName, initialLiveDoc } from './live-docs.js'
 import { assertDestination, assertNameAvailable, availableName, lockFileTree, mutateFileTree, toFileNode } from './tree-service.js'
 import { topSortOrder } from './order.js'
 
@@ -60,7 +61,7 @@ export async function createDocInTx(tx: DatabaseTransaction, userId: string, inp
   }).returning()
   await tx.insert(fileDocs).values({
     nodeId: node!.id, state: initial.state, stateBytes: initial.state.byteLength,
-    markdown: initial.text, schemaVersion: format.schemaVersion,
+    markdown: initial.text, schemaVersion: format.schemaVersion, generation: initial.generation,
   })
   await initial.assets.flush(tx, userId, node!.id)
   return node!
@@ -145,6 +146,12 @@ export async function loadDocUpdate(nodeId: string): Promise<Uint8Array> {
   }, { isolationLevel: 'repeatable read', accessMode: 'read only' })
 }
 
+/** The document's generation (see `DOC_META_MAP`), or null for documents made before them. */
+export async function docGeneration(nodeId: string): Promise<string | null> {
+  const [doc] = await db.select({ generation: fileDocs.generation }).from(fileDocs).where(eq(fileDocs.nodeId, nodeId))
+  return doc?.generation ?? null
+}
+
 export async function loadYDoc(nodeId: string): Promise<Y.Doc> {
   const doc = new Y.Doc()
   Y.applyUpdate(doc, await loadDocUpdate(nodeId))
@@ -152,18 +159,18 @@ export async function loadYDoc(nodeId: string): Promise<Y.Doc> {
 }
 
 /** Worker: folds logged updates into the snapshot, then deletes exactly the rows it folded. */
-export async function compactDoc(nodeId: string): Promise<void> {
-  await db.transaction(async (tx) => {
+export async function compactDoc(nodeId: string, now = new Date()): Promise<void> {
+  const unusedAssets = await db.transaction(async (tx): Promise<string[]> => {
     const [node] = await tx.select({ ownerUserId: fileNodes.ownerUserId, format: fileNodes.format }).from(fileNodes).where(eq(fileNodes.id, nodeId))
-    if (!node) return
+    if (!node) return []
     // Tree mutations can lock the node before deleting/converting its document. Match their
     // tree → document → node order so compaction cannot deadlock a rename or subtree purge.
     await lockFileTree(tx, node.ownerUserId)
     const [doc] = await tx.select().from(fileDocs).where(eq(fileDocs.nodeId, nodeId)).for('update')
-    if (!doc) return
+    if (!doc) return []
     const rows = await tx.select({ seq: fileDocUpdates.seq, update: fileDocUpdates.update }).from(fileDocUpdates)
       .where(eq(fileDocUpdates.nodeId, nodeId)).orderBy(asc(fileDocUpdates.seq))
-    if (!rows.length) return
+    if (!rows.length) return []
     const ydoc = new Y.Doc()
     Y.applyUpdate(ydoc, doc.state)
     for (const row of rows) Y.applyUpdate(ydoc, row.update)
@@ -185,7 +192,16 @@ export async function compactDoc(nodeId: string): Promise<void> {
     // A seq watermark would be unsafe: identity values can commit out of order.
     await tx.delete(fileDocUpdates).where(inArray(fileDocUpdates.seq, rows.map((row) => row.seq)))
     await tx.update(fileNodes).set({ sizeBytes: state.byteLength, updatedAt: doc.lastEditedAt }).where(eq(fileNodes.id, nodeId))
+    // Parts the document no longer refers to (a mixed-line-break original replaced, say) stop
+    // costing storage.
+    try {
+      return await collectUnusedAssets(tx, nodeId, liveFormatCodec(docFormat(node)), ydoc, now)
+    } catch (error) {
+      console.error(JSON.stringify({ level: 'error', event: 'file_doc.asset_gc_failed', nodeId, error: error instanceof Error ? error.message : String(error) }))
+      return []
+    }
   })
+  await deleteObjects(unusedAssets)
 }
 
 /** Maintenance safety net for compactions a deduplicated schedule may have skipped. */

@@ -79,7 +79,12 @@ export async function mutateFileTree<T>(
     changes = await bumpAccountRevisions(tx, [userId])
     return value
   })
-  await publishScopedStateChanges(changes, scopes)
+  // Committed: a failed notification must not report the change as failed (callers clean up
+  // after failures, and would delete what the change just stored). Clients catch up on the
+  // account revision at their next sync.
+  await publishScopedStateChanges(changes, scopes).catch((error: unknown) => {
+    console.error(JSON.stringify({ level: 'error', event: 'files.publish_failed', error: error instanceof Error ? error.message : String(error) }))
+  })
   return result
 }
 

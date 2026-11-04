@@ -7,7 +7,7 @@ import { db } from '../database/client.js'
 import { AppError } from '../lib/errors.js'
 import type { SocketData } from '../realtime/socket.js'
 import { resolveFileAccess } from './access.js'
-import { appendDocUpdate, loadDocUpdate, MAX_DOC_UPDATE_BYTES } from './doc-store.js'
+import { appendDocUpdate, docGeneration, loadDocUpdate, MAX_DOC_UPDATE_BYTES } from './doc-store.js'
 import { filesFeatureEnabled } from './request.js'
 
 type PulpoServer = Server<ClientToServerEvents, ServerToClientEvents, Record<string, never>, SocketData>
@@ -127,7 +127,7 @@ export function bindDocSocket(socket: PulpoSocket): void {
       if (!current()) return ack({ ok: false, error: 'not_found' })
       // Join before reading so any update committed after the read still reaches this socket.
       await socket.join(docRoom(input.docId))
-      const merged = await loadDocUpdate(input.docId)
+      const [merged, generation] = await Promise.all([loadDocUpdate(input.docId), docGeneration(input.docId)])
       if (!current() || !member(input.docId)) {
         // A leave can race the adapter's asynchronous join. Do not remove a newer join's room.
         if (!joins.has(input.docId)) leave(input.docId)
@@ -140,7 +140,7 @@ export function bindDocSocket(socket: PulpoSocket): void {
         update = merged
       }
       awarenessIds.set(input.docId, input.awarenessClientId)
-      ack({ ok: true, update, stateVector: Y.encodeStateVectorFromUpdate(merged), format })
+      ack({ ok: true, update, stateVector: Y.encodeStateVectorFromUpdate(merged), format, ...generation ? { generation } : {} })
       socket.to(docRoom(input.docId)).emit('doc.awareness-query', { docId: input.docId })
     })().catch((error: unknown) => {
       if (requestedDocId && joins.get(requestedDocId) === request) leave(requestedDocId)

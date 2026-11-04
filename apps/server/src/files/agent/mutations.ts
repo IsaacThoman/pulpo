@@ -23,7 +23,7 @@ import {
 import { deleteChange, findChange, parsePlace, recordChange, setChangeStatus, updateCreation, type FileChangeRow, type Place, type ReplyContext } from './changes.js'
 import { deleteObjects, mutateAgentFiles, TREE_AND_CHAT_SCOPES, type CommitEffects, type DatabaseTransaction } from './commit.js'
 import { baseMarkdown, loadDocInTx, lockDocs, markdownVersion, proposedMarkdown, writeDocInTx } from './docs.js'
-import { applyLiveFileInTx, isLiveDoc, parseLiveSnapshot, pendingLiveProposal, proposalUpdate, releaseLiveSnapshot, storeLiveSnapshot, supersedeLiveProposals, WrittenObjects } from './live.js'
+import { applyLiveFileInTx, isLiveDoc, parseLiveSnapshot, pendingLiveProposal, proposalFork, releaseLiveSnapshot, storeLiveSnapshot, supersedeLiveProposals, WrittenObjects } from './live.js'
 import { FilesCommandError } from './scope.js'
 import {
   blobSnapshot,
@@ -206,17 +206,18 @@ export async function updateLiveDocChange(reply: ReplyContext, nodeId: string, b
         return { status: folded === 'suggestion' ? 'suggested' : 'updated', version: afterVersion }
       }
       assertRowMode(existing, 'suggest')
-      const proposed = await proposalUpdate(tx, node, bytes)
+      // A proposal that revises this chat's pending one builds on what the agent saw: that one's
+      // fork, and the version it was proposed against, so users' edits since are never taken back.
+      const proposed = await proposalFork(tx, node, bytes, proposal?.after ?? null)
       if (!proposed) return { status: 'unchanged', version }
-      await supersedeLiveProposals(tx, effects, reply, node.id)
       const after = await storeLiveSnapshot(tx, written, reply.userId, node, bytes)
-      const updateKey = await written.put(reply.userId, proposed.update, 'application/octet-stream')
-      await keepVersion(tx, reply.userId, node.id, { objectKey: updateKey, sizeBytes: proposed.update.byteLength, checksum: contentChecksum(proposed.update), mimeType: 'application/octet-stream' })
-      // An earlier proposal of this reply still pending is replaced; its base stays the row's.
-      const pending = existing?.status === 'pending'
-      const before = pending ? parseLiveSnapshot(existing.before) : await storeLiveSnapshot(tx, written, reply.userId, node, proposed.current)
-      await recordChange(tx, reply, { nodeId: node.id, mode: 'suggest', kind: 'update', before, after: { ...after, updateKey } })
-      if (pending) await releaseLiveSnapshot(tx, effects, parseLiveSnapshot(existing.after))
+      const forkKey = await written.put(reply.userId, proposed.fork, 'application/octet-stream')
+      await keepVersion(tx, reply.userId, node.id, { objectKey: forkKey, sizeBytes: proposed.fork.byteLength, checksum: contentChecksum(proposed.fork), mimeType: 'application/octet-stream' })
+      const before = proposal?.before ?? await storeLiveSnapshot(tx, written, reply.userId, node, proposed.current)
+      await recordChange(tx, reply, { nodeId: node.id, mode: 'suggest', kind: 'update', before, after: { ...after, forkKey } })
+      // Released after the new row holds what it shares with them (the base version).
+      await supersedeLiveProposals(tx, effects, reply, node.id)
+      if (existing?.status === 'pending') await releaseLiveSnapshot(tx, effects, parseLiveSnapshot(existing.after))
       return { status: 'suggested', version: after.checksum }
     }, { reserveBytes: bytes.byteLength * 3 })
     kept = true

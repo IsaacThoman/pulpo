@@ -2696,6 +2696,11 @@ const esUi: Record<string, string> = {
   "Plain text": "Texto sin formato",
   "This file was renamed to another type, so it's no longer editable here.": "Este archivo se renombró a otro tipo, así que ya no se puede editar aquí.",
   "This document needs a newer version of Pulpo. Reload to open it.": "Este documento necesita una versión más reciente de Pulpo. Recarga para abrirlo.",
+  "Only Markdown, text, and code files can be edited here": "Aquí solo se pueden editar archivos Markdown, de texto y de código",
+  "This file can't be edited as text without changing it": "Este archivo no se puede editar como texto sin cambiarlo",
+  "This file is damaged and can't be opened for editing": "Este archivo está dañado y no se puede abrir para editarlo",
+  "This file is encrypted, so it can't be edited": "Este archivo está cifrado, así que no se puede editar",
+  "This document needs a newer version of Pulpo": "Este documento necesita una versión más reciente de Pulpo",
 }
 
 export default esUi

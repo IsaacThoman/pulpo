@@ -112,8 +112,11 @@ export async function copyFileNodes(userId: string, ids: string[], parentId: str
         })
         if (node.kind === 'doc') {
           const state = await mergedDocState(tx, node.id)
+          // The copy's state carries the original's generation, so it keeps it too.
+          const [source] = await tx.select({ generation: fileDocs.generation }).from(fileDocs).where(eq(fileDocs.nodeId, node.id))
           await tx.insert(fileDocs).values({
             nodeId: id, state, stateBytes: state.byteLength, markdown: docText(node, state), schemaVersion: docFormat(node).schemaVersion,
+            generation: source?.generation ?? null,
           })
           for (const asset of assets.filter((item) => item.nodeId === node.id)) {
             const objectKey = docAssetKey(userId, id, asset.hash)
@@ -130,7 +133,8 @@ export async function copyFileNodes(userId: string, ids: string[], parentId: str
     await deleteObjects(assetCopies)
     throw error
   })
-  await publishScopedStateChanges(planned.changes, ['files'])
+  // Committed: a failed notification must not stop the uploaded files' copies below.
+  await publishScopedStateChanges(planned.changes, ['files']).catch(() => undefined)
 
   const copied: string[] = []
   const failed: string[] = []

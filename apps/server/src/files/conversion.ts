@@ -77,16 +77,14 @@ async function readConvertibleFile(node: FileNodeRow, maxBytes: number): Promise
 export async function convertBlobToDocInTx(tx: DatabaseTransaction, node: FileNodeRow): Promise<{ row: FileNodeRow; objectKey: string }> {
   const format = formatForName(node.name)
   const initial = format.id === 'markdown'
-    ? await (async () => {
-      const markdown = initialDocState(await readMarkdownFile(node))
-      return { state: markdown.state, text: markdown.markdown, assets: null }
-    })()
+    ? await initialLiveDoc(tx, format, node.name, { markdown: await readMarkdownFile(node) })
     : await initialLiveDoc(tx, format, node.name, { bytes: await readConvertibleFile(node, format.maxFileBytes) })
+  // A new generation: devices still holding the document this file once was must not merge it in.
   await tx.insert(fileDocs).values({
     nodeId: node.id, state: initial.state, stateBytes: initial.state.byteLength,
-    markdown: initial.text, schemaVersion: format.schemaVersion,
+    markdown: initial.text, schemaVersion: format.schemaVersion, generation: initial.generation,
   })
-  await initial.assets?.flush(tx, node.ownerUserId, node.id)
+  await initial.assets.flush(tx, node.ownerUserId, node.id)
   const [row] = await tx.update(fileNodes).set({
     kind: 'doc', format: format.id, objectKey: null, checksum: null, mimeType: liveMimeType(format, node.name),
     sizeBytes: initial.state.byteLength, updatedAt: new Date(),

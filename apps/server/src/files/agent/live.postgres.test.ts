@@ -17,7 +17,8 @@ vi.mock('../../storage/index.js', async () => {
   const { memoryBlobStore } = await import('./test-blob-store.js')
   return { getBlobStore: () => memoryBlobStore(objects) }
 })
-vi.mock('../../responses/events.js', () => ({ publishStateChange: vi.fn() }))
+const publishStateChange = vi.hoisted(() => vi.fn())
+vi.mock('../../responses/events.js', () => ({ publishStateChange }))
 vi.mock('../doc-events.js', () => ({
   publishDocsClosed: vi.fn(),
   publishDocUpdate: vi.fn(async (docId: string, update: Uint8Array) => { published.push({ docId, update }) }),
@@ -186,7 +187,7 @@ describe.skipIf(!enabled)('agent edits to live documents', () => {
     const [again] = await pull('Projects/config.yaml', '/workspace/files/Projects/config.yaml')
     expect(again!.version).toBe(suggested!.version)
     const [row] = await db.select().from(fileChanges).where(eq(fileChanges.nodeId, id))
-    expect(row).toMatchObject({ mode: 'suggest', status: 'pending', before: { format: 'text' }, after: { format: 'text', updateKey: expect.any(String) } })
+    expect(row).toMatchObject({ mode: 'suggest', status: 'pending', before: { format: 'text' }, after: { format: 'text', forkKey: expect.any(String) } })
     expect((await listFileChanges(files.userId, files.responseId)).changes[0]).toMatchObject({ contentDiff: true, available: true, status: 'pending' })
     // Maintenance keeps everything a pending proposal needs.
     await deleteUnusedVersions()
@@ -245,5 +246,68 @@ describe.skipIf(!enabled)('agent edits to live documents', () => {
     expect(await files.error('mv', { from: 'Projects/a.txt', to: 'Projects/a.md' })).toMatch(/such as \.txt/)
     expect((await files.ok('mv', { from: 'Projects/a.txt', to: 'Projects/a.log' })).output).toMatch(/Renamed|Moved/)
     expect(await files.node(id)).toMatchObject({ kind: 'doc', name: 'a.log' })
+  })
+
+  it('keeps user edits made between two proposals of the same chat', async () => {
+    const id = await textDoc('plan.txt', projects, 'one\ntwo\nthree\n')
+    await files.attach({ [projects]: 'suggest' })
+    files.put('/workspace/plan.txt', 'one\nTWO\nthree\n')
+    await push([{ local: '/workspace/plan.txt', remote: 'Projects/plan.txt', force: true }])
+    // The owner adds a note; then a later reply revises the proposal it pulled.
+    await clientEdit(id, (content) => content.insert(0, '# owner note\n'))
+    await files.newReply()
+    const [pulled] = await pull('Projects/plan.txt', '/workspace/plan.txt')
+    expect(files.workspace.files.get('/workspace/plan.txt')!.toString()).toBe('one\nTWO\nthree\n')
+    files.put('/workspace/plan.txt', 'one\nTWO\nTHREE\n')
+    expect((await push([{ local: '/workspace/plan.txt', remote: 'Projects/plan.txt', base: { nodeId: id, version: pulled!.version } }]))[0]).toMatchObject({ status: 'suggested' })
+    // The first reply's proposal was superseded; the new one keeps the chain's base.
+    const rows = await db.select().from(fileChanges).where(eq(fileChanges.nodeId, id))
+    expect(rows.map((row) => row.status).sort()).toEqual(['pending', 'rejected'])
+    await reviewReplyChanges(files.userId, files.responseId, 'accept')
+    expect(await text(id)).toBe('# owner note\none\nTWO\nTHREE\n')
+  })
+
+  it('merges a proposal that changes much of a large file with a later user edit on a line it left', async () => {
+    const lines = Array.from({ length: 6_000 }, (_, index) => `line ${index}`)
+    const id = await textDoc('big.txt', projects, `${lines.join('\n')}\n`)
+    await files.attach({ [projects]: 'suggest' })
+    files.put('/workspace/big.txt', `${lines.map((line, index) => index % 2 ? `${line} // agent` : line).join('\n')}\n`)
+    await push([{ local: '/workspace/big.txt', remote: 'Projects/big.txt', force: true }])
+    await clientEdit(id, (content) => {
+      const at = content.toString().indexOf('line 3000\n') + 'line 3000'.length
+      content.insert(at, ' fixed')
+    })
+    await reviewReplyChanges(files.userId, files.responseId, 'accept')
+    const merged = (await text(id)).split('\n')
+    expect(merged[3000]).toBe('line 3000 fixed')
+    expect(merged[3001]).toBe('line 3001 // agent')
+    expect(merged[0]).toBe('line 0')
+    expect(merged).toHaveLength(6_001)
+  })
+
+  it('keeps new files that are too large or not really text as uploaded files', async () => {
+    await files.attach({ [projects]: 'write' })
+    files.put('/workspace/big.json', Buffer.alloc(4_100_000, 0x20))
+    files.put('/workspace/Info.plist', Buffer.from([0x62, 0x70, 0x6c, 0x69, 0x73, 0x74, 0x30, 0x30, 0, 1, 2, 3]))
+    const results = await push([
+      { local: '/workspace/big.json', remote: 'Projects/big.json' },
+      { local: '/workspace/Info.plist', remote: 'Projects/Info.plist' },
+    ])
+    expect(results.map((result) => result.status)).toEqual(['created', 'created'])
+    for (const result of results) expect(await files.node(result.nodeId!)).toMatchObject({ kind: 'blob', format: null })
+  })
+
+  it('keeps a committed change when telling clients about it fails', async () => {
+    const id = await textDoc('a.txt', projects, 'a\n')
+    await files.attach({ [projects]: 'write' })
+    publishStateChange.mockRejectedValueOnce(new Error('redis down'))
+    files.put('/workspace/a.txt', 'b\n')
+    expect((await push([{ local: '/workspace/a.txt', remote: 'Projects/a.txt', force: true }]))[0]).toMatchObject({ status: 'updated' })
+    expect(await text(id)).toBe('b\n')
+    const kept = await db.select().from(fileVersions).where(eq(fileVersions.nodeId, id))
+    expect(kept).toHaveLength(2)
+    for (const version of kept) expect(objects.has(version.objectKey)).toBe(true)
+    await undoFileChanges(files.userId, files.responseId)
+    expect(await text(id)).toBe('a\n')
   })
 })

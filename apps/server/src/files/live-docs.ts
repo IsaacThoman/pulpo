@@ -1,7 +1,9 @@
+import { randomUUID } from 'node:crypto'
 import type { Readable } from 'node:stream'
 import { and, eq, inArray } from 'drizzle-orm'
 import * as Y from 'yjs'
 import { isLiveAssetHash, liveAssetHash, liveFormat, LiveFormatError, liveFormatOfName, type LiveAssetRef, type LiveAssetStore, type LiveFormatContext, type LiveFormatInfo } from '@pulpo/client-core/office'
+import { DOC_GENERATION_KEY, DOC_META_MAP } from '@pulpo/client-core/doc-schema'
 import { liveFormatCodec } from '@pulpo/client-core/office/codecs'
 import { mimeTypeFromName } from '../attachments/generated.js'
 import { db } from '../database/client.js'
@@ -56,7 +58,9 @@ export function formatForName(name: string): LiveFormatInfo {
 
 /** What a document stops being when renamed out of its format: an uploaded file of this type. */
 export function convertedMimeType(name: string, format: LiveFormatInfo): string {
-  return mimeTypeFromName(name) ?? (format.id === 'markdown' || format.id === 'text' ? 'text/plain' : 'application/octet-stream')
+  // Markdown has always become plain text, whatever the new name says.
+  if (format.id === 'markdown') return 'text/plain'
+  return mimeTypeFromName(name) ?? (format.id === 'text' ? 'text/plain' : 'application/octet-stream')
 }
 
 export function docAssetKey(userId: string, nodeId: string, hash: string): string {
@@ -147,6 +151,8 @@ export interface InitialLiveDoc {
   state: Uint8Array
   text: string
   assets: DocAssetStore
+  /** Stamped into the state (`DOC_META_MAP`), and stored beside it in `file_docs.generation`. */
+  generation: string
 }
 
 function encodedState(doc: Y.Doc): Uint8Array {
@@ -161,15 +167,21 @@ function encodedState(doc: Y.Doc): Uint8Array {
  */
 export async function initialLiveDoc(executor: FileExecutor, format: LiveFormatInfo, name: string, source: { bytes?: Uint8Array; markdown?: string } = {}): Promise<InitialLiveDoc> {
   const assets = new DocAssetStore(executor, null)
+  const generation = randomUUID()
+  const doc = new Y.Doc()
+  let text: string
   if (format.id === 'markdown' && source.bytes === undefined) {
     const initial = initialDocState(source.markdown)
-    return { state: initial.state, text: initial.markdown, assets }
+    Y.applyUpdate(doc, initial.state)
+    text = initial.markdown
+  } else {
+    const codec = liveFormatCodec(format)
+    const context: LiveFormatContext = { name, assets }
+    await codecCall(() => source.bytes ? codec.importFile(doc, source.bytes, context) : codec.createEmpty(doc, context))
+    text = codec.toText(doc)
   }
-  const codec = liveFormatCodec(format)
-  const doc = new Y.Doc()
-  const context: LiveFormatContext = { name, assets }
-  await codecCall(() => source.bytes ? codec.importFile(doc, source.bytes, context) : codec.createEmpty(doc, context))
-  return { state: encodedState(doc), text: codec.toText(doc), assets }
+  doc.transact(() => doc.getMap(DOC_META_MAP).set(DOC_GENERATION_KEY, generation), 'import')
+  return { state: encodedState(doc), text, assets, generation }
 }
 
 /** A locked document's full state as a Y.Doc, with the context its codec needs. */

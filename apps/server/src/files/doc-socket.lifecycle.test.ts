@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as Y from 'yjs'
 import { DOC_SCHEMA_VERSION } from '@pulpo/client-core/doc-schema'
 
-vi.mock('./doc-store.js', () => ({ appendDocUpdate: vi.fn(), loadDocUpdate: vi.fn(), MAX_DOC_UPDATE_BYTES: 1_000_000 }))
+vi.mock('./doc-store.js', () => ({ appendDocUpdate: vi.fn(), loadDocUpdate: vi.fn(), docGeneration: vi.fn(async () => null), MAX_DOC_UPDATE_BYTES: 1_000_000 }))
 vi.mock('./request.js', () => ({ filesFeatureEnabled: vi.fn() }))
 vi.mock('./access.js', () => ({ resolveFileAccess: vi.fn() }))
 vi.mock('../database/client.js', () => ({ db: {} }))

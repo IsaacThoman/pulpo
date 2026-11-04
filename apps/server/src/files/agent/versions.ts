@@ -98,7 +98,7 @@ export function referencesObject(objectKey: string | typeof fileVersions.objectK
   return sql`(
     (${fileChanges.mode} = 'write' and (${fileChanges.before}->>'objectKey' = ${objectKey} or ${fileChanges.after}->>'objectKey' = ${objectKey}))
     or (${fileChanges.status} = 'pending' and (
-      ${fileChanges.after}->>'objectKey' = ${objectKey} or ${fileChanges.after}->>'updateKey' = ${objectKey}
+      ${fileChanges.after}->>'objectKey' = ${objectKey} or ${fileChanges.after}->>'forkKey' = ${objectKey}
       or (${fileChanges.before}->>'format' is not null and ${fileChanges.before}->>'objectKey' = ${objectKey})
     ))
   )`

@@ -59,4 +59,8 @@ export const markdownCodec: LiveFormatCodec = {
   toText(doc) {
     return ydocToMarkdown(doc)
   },
+
+  referencedAssets() {
+    return []
+  },
 }

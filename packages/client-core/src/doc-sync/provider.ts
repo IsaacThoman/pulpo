@@ -2,7 +2,7 @@ import type { ClientToServerEvents, DocClosedEvent, DocSyncError, DocUpdateMessa
 import type { Socket } from 'socket.io-client'
 import { applyAwarenessUpdate, Awareness, encodeAwarenessUpdate, removeAwarenessStates } from 'y-protocols/awareness'
 import * as Y from 'yjs'
-import { DOC_SCHEMA_VERSION } from '../doc-schema/version.js'
+import { DOC_GENERATION_KEY, DOC_META_MAP, DOC_SCHEMA_VERSION } from '../doc-schema/version.js'
 
 /** The part of the account's Socket.IO connection that documents use. */
 export type DocSocket = Pick<Socket<ServerToClientEvents, ClientToServerEvents>, 'connected' | 'on' | 'off' | 'emit'>
@@ -30,6 +30,15 @@ export type DocSyncStatus =
   | { state: 'offline' }
   | { state: 'closed'; reason: DocClosedEvent['reason'] }
   | { state: 'error'; error: DocSyncError }
+
+/**
+ * Whether `doc` holds content of a document other than the generation the server has. Copies
+ * without a generation (documents from before it) are only stale when the server has one.
+ */
+export function isStaleCopy(doc: Y.Doc, generation: string | undefined): boolean {
+  if (!generation || doc.store.clients.size === 0) return false
+  return doc.getMap(DOC_META_MAP).get(DOC_GENERATION_KEY) !== generation
+}
 
 /** Local edits are coalesced for this long before one merged update is sent. */
 const SEND_DELAY_MS = 50
@@ -207,6 +216,12 @@ export class SocketIOYProvider {
       this.joining = false
       if (!result.ok) {
         this.setStatus(result.error === 'not_found' ? { state: 'closed', reason: 'deleted' } : { state: 'error', error: result.error })
+        return
+      }
+      // A copy (from this device's cache) of an earlier document made under the same id would
+      // merge its content into this one. Nothing is exchanged; the owner drops the copy.
+      if (isStaleCopy(this.doc, result.generation)) {
+        this.setStatus({ state: 'error', error: 'stale_copy' })
         return
       }
       Y.applyUpdate(this.doc, bytes(result.update), this)
