@@ -162,6 +162,8 @@ export interface AppPreferences {
   modelWarningDismissals: import('@pulpo/contracts').ModelWarningDismissals;
   showReasoning: boolean;
   memoryEnabled: boolean;
+  customInstructions: string;
+  instructionPresetSelections: Record<string, boolean>;
   haptics: boolean;
   localChatLimit: number;
   attachmentCacheMb: number;
