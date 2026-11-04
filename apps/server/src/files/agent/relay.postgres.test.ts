@@ -120,6 +120,28 @@ describe.skipIf(!enabled)('pulpo files relay', () => {
     expect(await files.error('cat', { path: 'Notes/photo.png' })).toMatch(/not a text file/)
     expect(await files.error('cat', { path: 'Notes' })).toMatch(/is a folder/)
     expect((await files.ok('grep', { pattern: 'ship' })).output).toBe('Notes/todo.txt:2: ship it')
+  })
+
+  it('reads code, notebooks, and whole-name text files, but never zipped Office files', async () => {
+    const work = await files.folder('Work')
+    await files.blob('analysis.ipynb', work, '{"nbformat": 4, "cells": []}', 'application/x-ipynb+json')
+    await files.blob('main.rs', work, 'fn main() {}', 'application/octet-stream')
+    await files.blob('Dockerfile', work, 'FROM node:24', 'application/octet-stream')
+    // "openxmlformats" contains "xml"; it must not make a zip read as text.
+    await files.blob('Report.docx', work, Buffer.from([0x50, 0x4b, 0x03, 0x04]), 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+    await files.attach({ [work]: 'read' })
+    expect((await files.ok('cat', { path: 'Work/analysis.ipynb' })).output).toBe('{"nbformat": 4, "cells": []}')
+    expect((await files.ok('cat', { path: 'Work/main.rs' })).output).toBe('fn main() {}')
+    expect((await files.ok('cat', { path: 'Work/Dockerfile' })).output).toBe('FROM node:24')
+    expect(await files.error('cat', { path: 'Work/Report.docx' })).toMatch(/not a text file/)
+  })
+
+  it('searches text files', async () => {
+    const notes = await files.folder('Notes')
+    await files.doc('Plan.md', notes, '# Plan\n\nShip the relay')
+    await files.blob('todo.txt', notes, 'buy milk\nship it\n')
+    await files.blob('long.txt', notes, `${'a'.repeat(30)}!`)
+    await files.attach({ [notes]: 'read' })
     expect((await files.ok('grep', { pattern: 'SHIP', ignoreCase: true, path: 'Notes' })).output).toBe('Notes/Plan.md:3: Ship the relay\nNotes/todo.txt:2: ship it')
     expect((await files.ok('grep', { pattern: 'a.b', fixed: true })).output).toBe('No matches')
     expect(await files.error('grep', { pattern: '(' })).toMatch(/Invalid pattern/)

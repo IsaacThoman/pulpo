@@ -8,6 +8,7 @@ import {
   type SandboxInboundMessage,
 } from '@/lib/code-preview'
 import { ui, uit } from '@/i18n/ui'
+import { cn } from '@/lib/utils'
 
 const READY_TIMEOUT_MS = 15_000
 
@@ -15,9 +16,21 @@ const READY_TIMEOUT_MS = 15_000
  * Renders untrusted HTML/SVG/JSX in an opaque-origin iframe. Remount (change `key`) to render
  * again: each frame accepts exactly one render so no state carries over between previews.
  */
-export function SandboxFrame({ kind, code, title }: { kind: CodePreviewKind; code: string; title: string }) {
+export function SandboxFrame({
+  kind,
+  code,
+  title,
+  fit,
+}: {
+  kind: CodePreviewKind
+  code: string
+  title: string
+  /** Sizes the frame to its page's height within these bounds instead of filling its parent. */
+  fit?: { minHeight: number; maxHeight: number }
+}) {
   const frameRef = useRef<HTMLIFrameElement>(null)
   const [status, setStatus] = useState<'loading' | 'rendered'>('loading')
+  const [contentHeight, setContentHeight] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [missingStyles, setMissingStyles] = useState<string[]>([])
 
@@ -39,6 +52,8 @@ export function SandboxFrame({ kind, code, title }: { kind: CodePreviewKind; cod
         target.postMessage(render, '*')
       } else if (message.type === 'pulpo-sandbox:rendered') {
         setStatus('rendered')
+      } else if (message.type === 'pulpo-sandbox:size') {
+        setContentHeight(message.height)
       } else if (message.type === 'pulpo-sandbox:missing-styles') {
         setMissingStyles(message.files.slice(0, 10).map((file) => file.split('/').pop() || file))
       } else {
@@ -53,8 +68,10 @@ export function SandboxFrame({ kind, code, title }: { kind: CodePreviewKind; cod
     }
   }, [code, kind])
 
+  // The page reports its own height, so it is clamped: a hostile page cannot grow the view without bound.
+  const frameHeight = fit ? Math.min(fit.maxHeight, Math.max(fit.minHeight, contentHeight ?? fit.minHeight)) : null
   return (
-    <div className="relative flex size-full min-h-0 flex-col">
+    <div className={cn('relative flex min-h-0 flex-col', fit ? 'w-full' : 'size-full')}>
       {error && (
         <div role="alert" className="flex shrink-0 items-start gap-2 border-b border-destructive/20 bg-destructive/10 px-3 py-2 text-xs text-destructive">
           <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
@@ -67,7 +84,7 @@ export function SandboxFrame({ kind, code, title }: { kind: CodePreviewKind; cod
           <span className="min-w-0 break-words">{uit`Stylesheet not included: ${missingStyles.join(', ')}. The preview may look unstyled.`}</span>
         </div>
       )}
-      <div className="relative min-h-0 flex-1">
+      <div className={cn('relative min-h-0', !fit && 'flex-1')} style={frameHeight === null ? undefined : { height: frameHeight }}>
         <iframe
           ref={frameRef}
           src={SANDBOX_PATH}

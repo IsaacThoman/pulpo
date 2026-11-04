@@ -59,5 +59,8 @@ describe('sandbox message guards', () => {
     expect(isSandboxOutboundMessage('pulpo-sandbox:ready')).toBe(false)
     expect(isSandboxOutboundMessage({ type: 'pulpo-sandbox:missing-styles', files: ['./styles.css'] })).toBe(true)
     expect(isSandboxOutboundMessage({ type: 'pulpo-sandbox:missing-styles', files: [1] })).toBe(false)
+    expect(isSandboxOutboundMessage({ type: 'pulpo-sandbox:size', height: 320 })).toBe(true)
+    expect(isSandboxOutboundMessage({ type: 'pulpo-sandbox:size', height: Number.NaN })).toBe(false)
+    expect(isSandboxOutboundMessage({ type: 'pulpo-sandbox:size', height: '320' })).toBe(false)
   })
 })

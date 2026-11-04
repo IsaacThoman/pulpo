@@ -1,5 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
-import { TableVirtuoso, type TableComponents } from 'react-virtuoso'
+import { useMemo, useState } from 'react'
 import { Check, Copy, Download, FileWarning, Loader2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Markdown } from '@/components/chat/Markdown'
@@ -12,85 +11,18 @@ import {
 } from '@/components/ui/dialog'
 import type { Attachment } from '@/lib/types'
 import { writeClipboardText } from '@/lib/clipboard'
-import {
-  attachmentPreviewKind,
-  createDelimitedReader,
-  formatTextPreview,
-  type AttachmentPreviewKind,
-} from '@/lib/attachment-previews'
-import { activeLocale, ui, uit } from '@/i18n/ui'
+import { attachmentPreviewKind, type AttachmentPreviewKind } from '@/lib/attachment-previews'
+import { ui, uit } from '@/i18n/ui'
 import { attachmentDescription, usePreviewContent, type PreviewContent } from './use-attachment-preview-content'
 import { SandboxFrame } from '@/components/chat/SandboxFrame'
 import { CodeSource, PreviewModeToggle } from '@/components/chat/CodePreviewPanel'
-import { HighlightedCode } from '@/components/chat/HighlightedCode'
 import { previewKindForFile } from '@/lib/code-preview'
 import { parseQuiz } from '@pulpo/client-core/quiz'
 import { QuizCard } from '@/components/chat/QuizCard'
 import { languageForFile } from '@/lib/syntax-highlight'
-
-const TABLE_ROW_BATCH = 200
-
-// Stable component identities, so loading a batch does not remount the table.
-const tableComponents: TableComponents<string[]> = {
-  Table: (props) => <table {...props} className="min-w-full border-separate border-spacing-0 whitespace-nowrap text-left text-xs" />,
-  TableRow: ({ item: _item, ...props }) => <tr {...props} className="odd:bg-muted/20 hover:bg-muted/35" />,
-}
-
-function TablePreview({ attachment, text }: { attachment: Attachment; text: string }) {
-  // The reader is created inside the initializer so StrictMode's double call cannot consume a batch twice.
-  const [{ reader, firstRows }] = useState(() => {
-    const reader = createDelimitedReader(attachment.name, attachment.mimeType, text)!
-    return { reader, firstRows: reader.next(TABLE_ROW_BATCH) }
-  })
-  const [rows, setRows] = useState(firstRows)
-  const [done, setDone] = useState(reader.done)
-  const loadMore = useCallback(() => {
-    if (reader.done) return
-    const batch = reader.next(TABLE_ROW_BATCH)
-    setRows((current) => current.concat(batch))
-    setDone(reader.done)
-  }, [reader])
-  const loaded = rows.length.toLocaleString(activeLocale())
-  const columns = reader.headers.length.toLocaleString(activeLocale())
-
-  return (
-    <div className="flex size-full flex-col bg-background" data-preview-kind="table">
-      <TableVirtuoso
-        className="min-h-0 flex-1"
-        data={rows}
-        endReached={loadMore}
-        increaseViewportBy={400}
-        initialItemCount={Math.min(rows.length, 50)}
-        components={tableComponents}
-        fixedHeaderContent={() => (
-          <tr className="bg-muted/95 backdrop-blur">
-            <th className="w-px border-r border-b px-2 py-1.5 text-right font-normal text-muted-foreground tabular-nums">#</th>
-            {reader.headers.map((header, column) => (
-              <th key={column} title={header} className="max-w-72 truncate border-r border-b px-3 py-1.5 font-semibold last:border-r-0">
-                {header}
-              </th>
-            ))}
-          </tr>
-        )}
-        itemContent={(rowIndex, row) => (
-          <>
-            <td className="w-px border-r border-b px-2 py-1.5 text-right text-muted-foreground tabular-nums">{rowIndex + 1}</td>
-            {row.map((value, column) => (
-              <td key={column} title={value || undefined} className="max-w-72 truncate border-r border-b px-3 py-1.5 last:border-r-0">
-                {value}
-              </td>
-            ))}
-          </>
-        )}
-      />
-      <p className="shrink-0 border-t bg-background/95 px-3 py-2 text-xs text-muted-foreground tabular-nums" role="status">
-        {done
-          ? uit`${loaded} rows · ${columns} columns`
-          : uit`${loaded} rows loaded · ${columns} columns · scroll for more`}
-      </p>
-    </div>
-  )
-}
+import { CodeViewer } from '@/components/viewers/CodeViewer'
+import { DelimitedGrid } from '@/components/viewers/DelimitedGrid'
+import { NotebookViewer } from '@/components/viewers/NotebookViewer'
 
 function TextPreview({
   attachment,
@@ -118,15 +50,12 @@ function TextPreview({
   }
 
   return (
-    <div className="size-full overflow-auto bg-code text-code-foreground" data-preview-kind="text">
-      <pre className="code-highlight min-h-full p-5 font-mono text-xs leading-5 whitespace-pre-wrap break-words">
-        <HighlightedCode code={text} language={languageForFile(attachment.name, attachment.mimeType)} />
-      </pre>
-      {truncated && (
-        <p className="sticky bottom-0 border-t border-code-border bg-code/95 px-5 py-2 text-xs text-code-muted backdrop-blur"> {ui("Showing the first part of")} {attachment.name}.
-        </p>
-      )}
-    </div>
+    <CodeViewer
+      text={text}
+      name={attachment.name}
+      mimeType={attachment.mimeType}
+      notice={truncated ? <>{ui("Showing the first part of")} {attachment.name}.</> : undefined}
+    />
   )
 }
 
@@ -161,6 +90,11 @@ function SandboxPreview({ attachment, text, truncated }: { attachment: Attachmen
   )
 }
 
+/** Viewers with their own toolbar (copy, find) where the dialog's copy button would repeat theirs. */
+function hasViewerToolbar(kind: AttachmentPreviewKind): boolean {
+  return kind === 'text' || kind === 'table' || kind === 'notebook'
+}
+
 export function PreviewBody({
   attachment,
   kind,
@@ -170,10 +104,6 @@ export function PreviewBody({
   kind: AttachmentPreviewKind
   content: PreviewContent
 }) {
-  const isTable = useMemo(() => content.status === 'ready' && kind === 'table' && !!content.text
-    && createDelimitedReader(attachment.name, attachment.mimeType, content.text) !== null,
-  [attachment.mimeType, attachment.name, content, kind])
-
   if (content.status === 'idle' || content.status === 'loading') {
     return (
       <div role="status" className="flex size-full flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
@@ -196,12 +126,10 @@ export function PreviewBody({
   if (kind === 'sandbox' && content.text !== null) {
     return <SandboxPreview attachment={attachment} text={content.text} truncated={content.textTruncated} />
   }
-  if (isTable && content.text !== null) return <TablePreview key={attachment.id} attachment={attachment} text={content.text} />
   if (kind === 'table' && content.text !== null) {
-    // Single-column files are not really tables; show them as text, capped like any other text preview.
-    const fallback = formatTextPreview(attachment.name, attachment.mimeType, content.text)
-    return <TextPreview attachment={attachment} text={fallback.text} truncated={fallback.truncated} markdown={false} />
+    return <DelimitedGrid key={attachment.id} text={content.text} name={attachment.name} mimeType={attachment.mimeType} />
   }
+  if (kind === 'notebook' && content.text !== null) return <NotebookViewer key={attachment.id} text={content.text} name={attachment.name} />
   if (kind === 'quiz' && content.text !== null) {
     return <QuizPreview attachment={attachment} text={content.text} truncated={content.textTruncated} />
   }
@@ -279,7 +207,7 @@ export function AttachmentPreviewDialog({
             </DialogDescription>
           </div>
           {/* Truncated previews only hold the start of the file, so copying would silently drop the rest. */}
-          {content.status === 'ready' && content.text !== null && !content.textTruncated && (
+          {content.status === 'ready' && content.text !== null && !content.textTruncated && !hasViewerToolbar(kind) && (
             <CopyTextButton text={content.text} />
           )}
           <Button type="button" variant="ghost" size="icon-sm" onClick={onDownload} aria-label={uit`Download ${attachment.name}`} className="rounded-full">

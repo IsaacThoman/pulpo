@@ -48,12 +48,15 @@ export function normalizeLanguage(tag: string | null | undefined): string | null
   return lowlight.registered(language) ? language : null
 }
 
+/** A highlighted tree; `data` says which grammar was used (and how sure a guess was). */
+export type HighlightRoot = Root & { data?: Root['data'] & { language?: string; relevance?: number } }
+
 /**
  * Tokenizes code into a hast tree of `hljs-*` spans. `language` is a fence tag or grammar name;
  * `undefined` guesses the language, `null` means plain text. Returns null when there is nothing
  * worth colouring so callers can render the raw string.
  */
-export function highlightTree(code: string, language?: string | null, maxCharacters = MAX_HIGHLIGHT_CHARACTERS): Root | null {
+export function highlightTree(code: string, language?: string | null, maxCharacters = MAX_HIGHLIGHT_CHARACTERS): HighlightRoot | null {
   if (!code || code.length > maxCharacters || language === null) return null
   try {
     const grammar = normalizeLanguage(language)

@@ -17,9 +17,9 @@ try {
   await page.goto(`${server.resolvedUrls.local[0]}tests/table-preview/index.html?rows=5000`)
 
   const table = page.locator('[data-preview-kind="table"]')
-  const status = table.getByRole('status')
-  await status.getByText('200 rows loaded · 20 columns · scroll for more').waitFor()
-  assert.equal(await table.locator('thead th').count(), 21, 'row number column plus every header')
+  // The whole file is indexed up front, so the count is known before scrolling.
+  await table.locator('[data-grid-summary]').getByText('5,001 rows · 20 columns').waitFor()
+  assert.equal(await table.locator('[data-header-row] th').count(), 21, 'row number column plus every header')
   // Only the visible slice is in the DOM.
   assert.ok(await table.locator('tbody tr').count() < 100, 'rows are virtualized')
   const firstNote = table.locator('tbody tr').first().locator('td').nth(3)
@@ -28,18 +28,7 @@ try {
   assert.ok((await firstNote.boundingBox()).height < 40, 'cells do not wrap')
 
   const scroller = table.locator('[data-virtuoso-scroller="true"]')
-  const scrollToEnd = () => scroller.evaluate((element) => { element.scrollTop = element.scrollHeight })
-  await scrollToEnd()
-  await status.getByText('400 rows loaded · 20 columns · scroll for more').waitFor()
-
-  // Keep scrolling until the whole file has streamed in.
-  for (let attempt = 0; attempt < 100; attempt++) {
-    if (await status.getByText('5,000 rows · 20 columns').isVisible()) break
-    await scrollToEnd()
-    await page.waitForTimeout(50)
-  }
-  await status.getByText('5,000 rows · 20 columns').waitFor({ timeout: 1000 })
-  await scrollToEnd()
+  await scroller.evaluate((element) => { element.scrollTop = element.scrollHeight })
   await table.locator('tbody tr').last().getByText('5000', { exact: true }).first().waitFor()
   // The header stays pinned while scrolled to the bottom.
   const [headerTop, scrollerTop] = await Promise.all([
@@ -48,7 +37,7 @@ try {
   ])
   assert.ok(Math.abs(headerTop - scrollerTop) < 1, 'header stays sticky')
   assert.deepEqual(errors, [])
-  console.log('table preview streams rows while scrolling')
+  console.log('table preview shows the whole file as a virtualized grid')
 } finally {
   await browser?.close()
   await server?.close()
