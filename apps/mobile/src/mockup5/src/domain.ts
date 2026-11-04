@@ -167,6 +167,8 @@ export interface AppPreferences {
   agentCostLimitEnabled: boolean;
   agentCostLimitMicros: number;
   memoryEnabled: boolean;
+  customInstructions: string;
+  instructionPresetSelections: Record<string, boolean>;
   haptics: boolean;
   localChatLimit: number;
   attachmentCacheMb: number;

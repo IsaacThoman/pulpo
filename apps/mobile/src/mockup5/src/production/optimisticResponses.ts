@@ -474,6 +474,42 @@ export function rejectOptimisticTurn(input: {
   })
 }
 
+/**
+ * Keep a turn the server refused (a plan's usage limit) in the transcript as a failed response, the way
+ * the web shows it, instead of rolling it back. It stays pending, so chat reads that lack it keep it.
+ */
+export function failOptimisticTurn(input: {
+  queryClient: QueryClient
+  namespace: string
+  responseId: string
+  error: { code?: string; message: string }
+}): void {
+  const pending = pendingResponses.get(pendingKey(input.namespace, input.responseId))
+  if (!pending) return
+  const failedAt = new Date().toISOString()
+  const snapshot: ResponseSnapshot = {
+    ...pending.response.snapshot,
+    responseId: input.responseId,
+    output: [],
+    status: 'failed',
+    error: input.error,
+    updatedAt: failedAt,
+  }
+  const response: ServerResponse = {
+    ...pending.response,
+    status: 'failed',
+    error: input.error,
+    completedAt: failedAt,
+    snapshot,
+  }
+  pending.response = response
+  useRealtimeStore.getState().receiveSnapshot(snapshot)
+  input.queryClient.setQueryData<ServerChat>(chatKey(input.namespace, pending.chatId), (chat) => chat?.responses ? {
+    ...chat,
+    responses: chat.responses.map((item) => item.id === input.responseId ? response : item),
+  } : chat)
+}
+
 function deletionIds(responses: ServerResponse[], selected: ServerResponse, includeUserVariant: boolean): Set<string> {
   const deleting = new Set(includeUserVariant
     ? responses.filter((response) => response.parentResponseId === selected.parentResponseId

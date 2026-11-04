@@ -25,6 +25,8 @@ export function createInitialState(): PersistedPrototypeState {
       showPromptSuggestions: true, showModelWarnings: true, modelWarningDismissals: {}, showReasoning: true,
       showResponseCost: false, agentCostLimitEnabled: true, agentCostLimitMicros: DEFAULT_AGENT_COST_LIMIT_MICROS,
       memoryEnabled: false,
+      customInstructions: '',
+      instructionPresetSelections: {},
       haptics: true,
       localChatLimit: 50,
       attachmentCacheMb: 50,

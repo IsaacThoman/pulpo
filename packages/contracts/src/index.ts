@@ -1623,6 +1623,9 @@ Avoid sounding like customer support, a textbook, or a stereotypical AI assistan
 Don't over-explain simple things.
 When the user asks a technical or serious question, become clearer and more detailed while keeping the conversational tone.`
 
+/** Longest account custom instructions text clients may save. */
+export const CUSTOM_INSTRUCTIONS_MAX_LENGTH = 100_000
+
 export const instructionPresetSchema = z.object({
   id: z.string().trim().min(1).max(120),
   title: z.string().trim().min(1).max(80),
@@ -1707,7 +1710,7 @@ export const managementAccountSettingsSchema = z.object({
   agentCostLimitMicros: agentCostLimitMicrosSchema,
   chatWidth: z.enum(['full', 'narrow']).default('narrow'),
   animationSpeed: animationSpeedSchema,
-  customInstructions: z.string().max(100_000).default(''),
+  customInstructions: z.string().max(CUSTOM_INSTRUCTIONS_MAX_LENGTH).default(''),
   nickname: z.string().max(80).default(''),
   username: usernameSchema,
   profileColor: profileColorSchema.nullable().default(null),

@@ -32,7 +32,7 @@ describe('App Store formatting', () => {
     expect(planStorageLabel(500 * 1024 ** 2)).toBe('500 MB')
     const plans = { storageLimitBytes: { baby: 2 * 1024 ** 3, eight: 10 * 1024 ** 3, fat: 25 * 1024 ** 3 }, fatSharedWeeklyPercent: 40 }
     expect(planBenefits('eight', plans)).toEqual(['Everything in Pulpo Baby', 'High usage limits', '10 GB of file storage', 'Cancel any time'])
-    expect(planBenefits('fat', plans)).toEqual(['Everything in Pulpo Eight', 'Highest usage limits', 'Share 40% of your weekly usage with your Pool', '25 GB of file storage'])
+    expect(planBenefits('fat', plans)).toEqual(['Everything in Pulpo Eight', 'Highest usage limits', 'Share 40% of your weekly usage', '25 GB of file storage'])
     expect(planBenefits('fat', null)).toEqual(['Everything in Pulpo Eight', 'Highest usage limits'])
   })
 })

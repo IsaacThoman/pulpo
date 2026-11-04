@@ -1,4 +1,4 @@
-import { agentCostLimitMicrosSchema, DEFAULT_AGENT_COST_LIMIT_MICROS, imageGenerationPreferencesSchema, type ImageGenerationPreferences, modelWarningDismissalsSchema, type ModelWarningDismissals, speechPreferencesSchema, type SpeechPreferences } from '@pulpo/contracts'
+import { agentCostLimitMicrosSchema, DEFAULT_AGENT_COST_LIMIT_MICROS, imageGenerationPreferencesSchema, type ImageGenerationPreferences, instructionPresetSelectionsSchema, modelWarningDismissalsSchema, type ModelWarningDismissals, speechPreferencesSchema, type SpeechPreferences } from '@pulpo/contracts'
 export type ThemePreference = 'system' | 'light' | 'dark'
 export type TextSizePreference = 'default' | 'large' | 'extra-large'
 export type TrashRetentionPreference = 'instant' | '24h' | '7d' | '30d' | '90d' | 'indefinite'
@@ -23,6 +23,10 @@ export interface Preferences {
   agentCostLimitEnabled: boolean
   agentCostLimitMicros: number
   memoryEnabled: boolean
+  /** Account custom instructions appended to every conversation. */
+  customInstructions: string
+  /** Account choices for admin instruction presets; missing ids follow the preset default. */
+  instructionPresetSelections: Record<string, boolean>
   haptics: boolean
   composerSyncEnabled: boolean
   sendWithEnter: boolean
@@ -44,7 +48,7 @@ export interface Preferences {
 export const defaultPreferences: Preferences = {
   imageGeneration: imageGenerationPreferencesSchema.parse(undefined),
   speech: speechPreferencesSchema.parse(undefined),
-  theme: 'system', textSize: 'default', streamResponses: true, showPromptSuggestions: true, showModelWarnings: true, modelWarningDismissals: {}, showReasoning: true, memoryEnabled: false,
+  theme: 'system', textSize: 'default', streamResponses: true, showPromptSuggestions: true, showModelWarnings: true, modelWarningDismissals: {}, showReasoning: true, memoryEnabled: false, customInstructions: '', instructionPresetSelections: {},
   showResponseCost: false, agentCostLimitEnabled: true, agentCostLimitMicros: DEFAULT_AGENT_COST_LIMIT_MICROS,
   haptics: true, composerSyncEnabled: true, sendWithEnter: true, attachmentCacheMb: 256, localChatLimit: 50,
   trashRetention: '30d', automaticChatExpiration: '24h', newChatAutoExpire: false, chatSortMode: 'default', favoriteModelIds: [], providerOrder: [], defaultModelId: null, agentModes: {},
@@ -63,6 +67,7 @@ export function preferencesFromServer(values: Record<string, unknown>): Partial<
     generation: validGenerationPreferences(values.generation),
     agentModes: validAgentModes(values.agentModes),
     modelWarningDismissals: modelWarningDismissalsSchema.catch({}).parse(values.modelWarningDismissals ?? {}),
+    instructionPresetSelections: instructionPresetSelectionsSchema.catch({}).parse(values.instructionPresetSelections ?? {}),
   }
   if (values.theme === 'system' || values.theme === 'light' || values.theme === 'dark') result.theme = values.theme
   result.showPromptSuggestions = values.showPromptSuggestions !== false
@@ -76,6 +81,7 @@ export function preferencesFromServer(values: Record<string, unknown>): Partial<
   result.agentCostLimitEnabled = values.agentCostLimitEnabled !== false
   result.agentCostLimitMicros = agentCostLimitMicrosSchema.catch(DEFAULT_AGENT_COST_LIMIT_MICROS).parse(values.agentCostLimitMicros)
   if (typeof values.memoryEnabled === 'boolean') result.memoryEnabled = values.memoryEnabled
+  if (typeof values.customInstructions === 'string') result.customInstructions = values.customInstructions
   if (typeof values.defaultModelId === 'string') result.defaultModelId = values.defaultModelId || null
   if (typeof values.localChatLimit === 'number' && Number.isFinite(values.localChatLimit)) {
     result.localChatLimit = Math.max(0, Math.min(50, Math.floor(values.localChatLimit)))
@@ -119,7 +125,7 @@ function validAgentModes(value: unknown): Preferences['agentModes'] {
 
 export function serverPreferenceKey(key: keyof Preferences): string | null {
   return key === 'attachmentCacheMb' ? 'localAttachmentCacheMb'
-    : ['imageGeneration', 'speech', 'composerSyncEnabled', 'theme', 'sendWithEnter', 'streamResponses', 'showPromptSuggestions', 'showModelWarnings', 'modelWarningDismissals', 'showReasoning', 'showResponseCost', 'agentCostLimitEnabled', 'agentCostLimitMicros', 'memoryEnabled', 'localChatLimit', 'trashRetention', 'automaticChatExpiration', 'newChatAutoExpire', 'chatSortMode', 'defaultModelId', 'favoriteModelIds', 'providerOrder', 'generation', 'agentModes'].includes(key)
+    : ['imageGeneration', 'speech', 'composerSyncEnabled', 'theme', 'sendWithEnter', 'streamResponses', 'showPromptSuggestions', 'showModelWarnings', 'modelWarningDismissals', 'showReasoning', 'showResponseCost', 'agentCostLimitEnabled', 'agentCostLimitMicros', 'memoryEnabled', 'customInstructions', 'instructionPresetSelections', 'localChatLimit', 'trashRetention', 'automaticChatExpiration', 'newChatAutoExpire', 'chatSortMode', 'defaultModelId', 'favoriteModelIds', 'providerOrder', 'generation', 'agentModes'].includes(key)
       ? key
       : null
 }
