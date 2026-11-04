@@ -46,7 +46,15 @@ function connect(): void {
   })
 }
 
-async function load(): Promise<void> {
+let loading: Promise<void> | undefined
+
+/** Imports once, even when StrictMode runs the effect twice. */
+function load(): Promise<void> {
+  loading ??= importWorkbook()
+  return loading
+}
+
+async function importWorkbook(): Promise<void> {
   const bytes = new Uint8Array(await (await fetch(fileUrl)).arrayBuffer())
   await codec.importFile(docs[0]!, bytes, { name: fileName, assets })
   Y.applyUpdate(docs[1]!, Y.encodeStateAsUpdate(docs[0]!), 'remote')

@@ -193,7 +193,7 @@ export class SheetView {
   private notifyFrame = 0
   copyRange: CellRange | undefined
   /** A reference being inserted by pointing while editing a formula. */
-  pointing: { start: number; end: number; anchor: { row: number; col: number } } | undefined
+  pointing: { start: number; end: number; anchor: { row: number; col: number }; corner: { row: number; col: number } } | undefined
   readOnly: boolean
   private destroyed = false
 
@@ -1126,7 +1126,10 @@ export class SheetView {
     if (!this.pointing && !canInsertReference(edit.text, edit.caret)) return false
     const prefix = sheet && sheet.id !== this.workbook.sheet(this.sheetIdValue)?.id ? `${sheet.name}!` : undefined
     const result = insertReference(edit.text, edit.caret, range, prefix, this.pointing)
-    this.pointing = { ...result.inserted, anchor: this.pointing?.anchor ?? { row: range.top, col: range.left } }
+    const anchor = this.pointing?.anchor ?? { row: range.top, col: range.left }
+    // The corner that moves is the one away from the anchor.
+    const corner = { row: range.top === anchor.row ? range.bottom : range.top, col: range.left === anchor.col ? range.right : range.left }
+    this.pointing = { ...result.inserted, anchor, corner }
     this.editing = { ...edit, text: result.text, caret: result.caret }
     this.interactions.onEditText()
     this.scheduleRender()

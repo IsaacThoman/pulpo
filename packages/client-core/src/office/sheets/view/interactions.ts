@@ -640,7 +640,7 @@ export class SheetInteractions {
             const anchor = view.pointing.anchor
             if (view.pointAt({ top: Math.min(anchor.row, next.row), left: Math.min(anchor.col, next.col), bottom: Math.max(anchor.row, next.row), right: Math.max(anchor.col, next.col) })) event.preventDefault()
           } else if (view.pointAt({ top: next.row, left: next.col, bottom: next.row, right: next.col })) {
-            if (view.pointing) view.pointing = { ...view.pointing, anchor: next }
+            if (view.pointing) view.pointing = { ...view.pointing, anchor: next, corner: next }
             event.preventDefault()
           }
           if (event.defaultPrevented) return
@@ -656,14 +656,7 @@ export class SheetInteractions {
   }
 
   private pointedCorner(): { row: number; col: number } {
-    const view = this.view
-    const text = view.editing!.text.slice(view.pointing!.start, view.pointing!.end)
-    const last = text.split(':').pop()!.replace(/^.*!/, '').replace(/\$/g, '')
-    const match = /^([A-Z]+)(\d+)$/i.exec(last)
-    if (!match) return view.pointing!.anchor
-    let col = 0
-    for (const char of match[1]!.toUpperCase()) col = col * 26 + char.charCodeAt(0) - 64
-    return { row: Number(match[2]) - 1, col: col - 1 }
+    return this.view.pointing!.corner
   }
 
   private cycleAbsolute(): void {

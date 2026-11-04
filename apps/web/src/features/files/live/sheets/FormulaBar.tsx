@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import { formulaReferences, type SheetView, type SheetViewState } from '@pulpo/client-core/office/sheets/view'
 import { ui } from '@/i18n/ui'
 import { cn } from '@/lib/utils'
@@ -19,15 +19,16 @@ function highlighted(text: string): { text: string; color?: string }[] {
 
 /** The name box and the formula bar above the grid, editing the same text as the cell editor. */
 export function FormulaBar({ view, state }: { view: SheetView; state: SheetViewState }) {
-  const [name, setName] = useState(state.selectionLabel)
-  const [nameFocused, setNameFocused] = useState(false)
+  const nameBox = useRef<HTMLInputElement>(null)
   const input = useRef<HTMLTextAreaElement>(null)
   const text = state.editing?.text ?? state.activeInput
   const editable = !state.readOnly
 
+  // The name box shows the selection unless someone is typing in it.
   useEffect(() => {
-    if (!nameFocused) setName(state.selectionLabel)
-  }, [state.selectionLabel, nameFocused])
+    const element = nameBox.current
+    if (element && document.activeElement !== element) element.value = state.selectionLabel
+  }, [state.selectionLabel])
 
   // While the cell editor types, the bar follows; while the bar types, the grid follows.
   useEffect(() => {
@@ -66,22 +67,18 @@ export function FormulaBar({ view, state }: { view: SheetView; state: SheetViewS
   return (
     <div className="flex h-8 shrink-0 items-stretch border-b border-border bg-background text-sm">
       <input
+        ref={nameBox}
         aria-label={ui("Name box")}
-        value={name}
-        onChange={(event) => setName(event.target.value)}
-        onFocus={(event) => {
-          setNameFocused(true)
-          event.target.select()
+        defaultValue={state.selectionLabel}
+        onFocus={(event) => event.target.select()}
+        onBlur={(event) => {
+          event.target.value = view.getState().selectionLabel
         }}
-        onBlur={() => setNameFocused(false)}
         onKeyDown={(event) => {
           if (event.key === 'Enter') {
             event.preventDefault()
-            if (view.goTo(name)) view.focus()
-          } else if (event.key === 'Escape') {
-            setName(state.selectionLabel)
-            view.focus()
-          }
+            if (view.goTo(event.currentTarget.value)) view.focus()
+          } else if (event.key === 'Escape') view.focus()
         }}
         className="w-28 shrink-0 border-r border-border bg-transparent px-2 font-mono text-xs outline-none focus:bg-accent/40"
       />
