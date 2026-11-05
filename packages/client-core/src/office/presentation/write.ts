@@ -239,7 +239,7 @@ function remapRelationshipIds(element: XmlElement, local: Record<string, RelTarg
     const node = stack.pop()!
     for (let index = 0; index < node.attributes.length; index++) {
       const attribute = node.attributes.item(index)!
-      if (attribute.namespaceURI !== NS.r) continue
+      if (attribute.namespaceURI !== NS.r && (attribute.namespaceURI || attribute.localName !== 'relId')) continue
       const rel = local[attribute.value]
       if (rel) attribute.value = table.allocate(rel.type, rel.target, rel.external === true, attribute.value)
     }

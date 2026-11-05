@@ -1,14 +1,14 @@
 import type * as Y from 'yjs'
 import { LiveFormatError, type LiveAssetStore } from '../live-format.js'
 import { decodePartText, relationshipsPathFor, relativeTarget, resolveTarget } from '../ooxml/package.js'
-import { cloneShape, cloneSlide, insertShapes, insertSlides, PARTS_ORIGIN, readSlide, slideKeys } from './commands.js'
+import { cloneShape, cloneSlide, insertShapes, insertSlides, PARTS_ORIGIN, readSlide, slideKeys, slideMap } from './commands.js'
 import type { PartSnapshot, RelTarget, ShapeSnapshot, SlideSnapshot } from './model.js'
-import { DEFAULT_PRESENTATION_LIMITS } from './read.js'
+import { DEFAULT_PRESENTATION_LIMITS, relationshipIdsIn } from './read.js'
 import { DeckResources } from './render/deck.js'
 import { presentationRoot, randomId, readPart, readSnapshot, setPart } from './ydoc.js'
 import { normalizeText, type TextJSON } from './text.js'
 import { buildShapeElement, RelationshipTable } from './write.js'
-import { attr, bytesEqual, childElements, parseFragment, parseXmlDocument, REL_TYPES, serializeNode } from './xml.js'
+import { attr, bytesEqual, childElements, NS, parseFragment, parseXmlDocument, REL_TYPES, serializeNode, stableStringify, type XmlElement } from './xml.js'
 
 /**
  * Copying shapes and slides, within a deck or to another one. The payload carries the parts the
@@ -23,6 +23,8 @@ export interface ClipboardPart {
   /** Base64 of the part's bytes. */
   data: string
   mimeType?: string
+  /** References in this part that resolve against its source slide rather than its own .rels. */
+  slideRels?: Record<string, RelTarget>
 }
 
 export interface PresentationClipboard {
@@ -53,17 +55,17 @@ function fromBase64(value: string): Uint8Array {
   return Uint8Array.from(atob(value), (char) => char.charCodeAt(0))
 }
 
-function relTargetsOfShapes(shapes: readonly ShapeSnapshot[]): RelTarget[] {
-  return shapes.flatMap((shape) => [...Object.values(shape.rels), ...relTargetsOfShapes(shape.children ?? [])])
-}
-
 /** Parts reachable from `roots` through relationships (charts link to workbooks, diagrams to drawings). */
 const MAX_COPY_PARTS = 5_000
 const MAX_COPY_BYTES = 256 * 1024 * 1024
 const tooMuchToCopy = () => new LiveFormatError('too_large', 'Too much to copy at once')
 
-function partGraph(parts: Record<string, PartSnapshot>, roots: string[]): string[] {
+interface CopyRoot { part: string; scope: Record<string, RelTarget> }
+
+function partGraph(parts: Record<string, PartSnapshot>, roots: CopyRoot[]): { paths: string[]; slideRels: Map<string, Map<string, RelTarget>> } {
   const seen = new Set<string>()
+  const visited = new Map<string, Set<Record<string, RelTarget>>>()
+  const slideRels = new Map<string, Map<string, RelTarget>>()
   const queue = [...roots]
   const deck = new DeckResources(parts, '')
   let size = 0
@@ -74,45 +76,105 @@ function partGraph(parts: Record<string, PartSnapshot>, roots: string[]): string
     if (seen.size > MAX_COPY_PARTS || size > MAX_COPY_BYTES) throw tooMuchToCopy()
   }
   for (let index = 0; index < queue.length; index++) {
-    const part = queue[index]!
-    if (seen.has(part) || !parts[part]) continue
+    const { part, scope } = queue[index]!
+    if (!parts[part]) continue
+    const contexts = visited.get(part) ?? new Set<Record<string, RelTarget>>()
+    if (contexts.has(scope)) continue
+    contexts.add(scope)
+    visited.set(part, contexts)
     // Never drag a slide layout or another slide along; those are mapped, not copied.
     if (/\/(slideLayouts|slideMasters|slides|notesSlides|notesMasters)\//.test(`/${part}`)) continue
     add(part)
     const relsPath = relationshipsPathFor(part)
     if (parts[relsPath]) add(relsPath)
-    for (const rel of deck.rels(part).values()) if (!rel.external) queue.push(rel.target)
+    const local = deck.rels(part)
+    const xml = deck.xml(part)
+    // Some extensions (including dataModelExt) name a relationship on the owning slide.
+    for (const id of xml ? relationshipIdsIn(xml) : []) {
+      if (local.has(id) || !Object.hasOwn(scope, id)) continue
+      const bindings = slideRels.get(part) ?? new Map<string, RelTarget>()
+      const rel = scope[id]!
+      if (bindings.has(id) && stableStringify(bindings.get(id)) !== stableStringify(rel)) throw new LiveFormatError('corrupt', 'A copied part has ambiguous slide relationships')
+      bindings.set(id, rel)
+      slideRels.set(part, bindings)
+      if (!rel.external) queue.push({ part: rel.target, scope })
+    }
+    for (const rel of local.values()) if (!rel.external) queue.push({ part: rel.target, scope })
   }
-  return [...seen]
+  return { paths: [...seen], slideRels }
 }
 
-export async function copyContent(doc: Y.Doc, assets: LiveAssetStore, content: { shapes?: ShapeSnapshot[]; slides?: SlideSnapshot[] }, text: string): Promise<PresentationClipboard> {
+export async function copyContent(doc: Y.Doc, assets: LiveAssetStore, content: { shapes?: ShapeSnapshot[]; slides?: SlideSnapshot[]; slideKey?: string }, text: string): Promise<PresentationClipboard> {
   const snapshot = readSnapshot(doc)
   const deck = new DeckResources(snapshot.parts, snapshot.mainPart)
-  const roots = [
-    ...relTargetsOfShapes(content.shapes ?? []),
-    ...(content.slides ?? []).flatMap((slide) => [...Object.values(slide.rels), ...relTargetsOfShapes(slide.shapes)]),
-  ]
-    .filter((rel) => !rel.external)
-    .map((rel) => rel.target)
-  // SmartArt drawings are linked from the slide, not the shape; take them along with diagram data.
-  for (const slide of content.slides ?? []) for (const rel of Object.values(slide.rels)) if (rel.type === REL_TYPES.diagramDrawing) roots.push(rel.target)
+  const roots: CopyRoot[] = []
+  const scopes = new Map<SlideSnapshot, Record<string, RelTarget>>()
+  const scopeFor = (slide: SlideSnapshot | undefined): Record<string, RelTarget> => {
+    if (!slide) return {}
+    let scope = scopes.get(slide)
+    if (!scope) {
+      scope = { ...(slide.part ? Object.fromEntries(deck.rels(slide.part)) : {}), ...slide.rels }
+      const add = (shapes: ShapeSnapshot[]) => shapes.forEach((shape) => {
+        // Shape-local ids may collide with the slide's reserved cross-part ids.
+        for (const [id, rel] of Object.entries(shape.rels)) if (!Object.hasOwn(scope!, id)) scope![id] = rel
+        add(shape.children ?? [])
+      })
+      add(slide.shapes)
+      scopes.set(slide, scope)
+    }
+    return scope
+  }
+  const collect = (rels: Record<string, RelTarget>, scope: Record<string, RelTarget>) => {
+    for (const rel of Object.values(rels)) if (!rel.external) roots.push({ part: rel.target, scope })
+  }
+  const copyShape = (shape: ShapeSnapshot, scope: Record<string, RelTarget>): ShapeSnapshot => {
+    const rels = { ...shape.rels }
+    const bind = (entry: ShapeSnapshot): ShapeSnapshot => ({ ...entry, rels: { ...scope, ...entry.rels }, ...(entry.children ? { children: entry.children.map(bind) } : {}) })
+    const table = new RelationshipTable()
+    const xml = buildShapeElement(parseXmlDocument('<w/>'), bind(shape), {}, table)
+    // Building the complete shape includes modeled fills/text/tables and every AlternateContent branch.
+    for (const id of relationshipIdsIn(xml)) {
+      const rel = table.entries.get(id)
+      if (!rel) continue
+      for (const [sourceId, sourceRel] of Object.entries(scope)) if (!Object.hasOwn(rels, sourceId) && stableStringify(sourceRel) === stableStringify(rel)) rels[sourceId] = sourceRel
+    }
+    collect(Object.fromEntries(table.entries), scope)
+    collect(rels, scope)
+    return { ...shape, rels, ...(shape.children ? { children: shape.children.map((child) => copyShape(child, scope)) } : {}) }
+  }
+  const contains = (shapes: ShapeSnapshot[], selected: ShapeSnapshot): boolean => shapes.some((shape) => (shape.key === selected.key && shape.xml === selected.xml && stableStringify(shape.rels) === stableStringify(selected.rels)) || contains(shape.children ?? [], selected))
+  const shapes = content.shapes?.map((shape) => {
+    const owner = content.slideKey ? snapshot.slides.find((slide) => slide.key === content.slideKey) : snapshot.slides.find((slide) => contains(slide.shapes, shape))
+    return copyShape(shape, scopeFor(owner))
+  })
+  const slides = content.slides?.map((slide) => {
+    const scope = scopeFor(slide)
+    collect(slide.rels, scope)
+    if (slide.notes) collect(slide.notes.rels, slide.notes.rels)
+    return { ...slide, rels: { ...slide.rels }, shapes: slide.shapes.map((shape) => copyShape(shape, scope)), layoutName: deck.layout(slide.layout)?.name ?? '' }
+  })
+  const graph = partGraph(snapshot.parts, roots)
+  // Whole-slide copies retain their original relationship scope; shape pastes bind it at insertion.
+  for (const slide of slides ?? []) for (const bindings of graph.slideRels.values()) for (const [id, rel] of bindings) {
+    if (stableStringify(scopeFor(content.slides!.find((entry) => entry.key === slide.key))[id]) === stableStringify(rel)) slide.rels[id] = rel
+  }
   const parts: Record<string, ClipboardPart> = {}
   let size = 0
-  for (const path of partGraph(snapshot.parts, roots)) {
+  for (const path of graph.paths) {
     const part = snapshot.parts[path]!
     const bytes = part.bytes ?? (part.asset ? await assets.get(part.asset.hash) : undefined)
     if (!bytes) continue
     size += bytes.byteLength
     if (size > MAX_COPY_BYTES) throw tooMuchToCopy()
-    parts[path] = { data: toBase64(bytes), ...(part.contentType ? { contentType: part.contentType } : {}), ...(part.asset ? { mimeType: part.asset.mimeType } : {}) }
+    const bindings = graph.slideRels.get(path)
+    parts[path] = { data: toBase64(bytes), ...(part.contentType ? { contentType: part.contentType } : {}), ...(part.asset ? { mimeType: part.asset.mimeType } : {}), ...(bindings ? { slideRels: Object.fromEntries(bindings) } : {}) }
   }
   return {
     version: 1,
     source: documentIdentity(doc),
     kind: content.slides ? 'slides' : 'shapes',
-    ...(content.shapes ? { shapes: content.shapes } : {}),
-    ...(content.slides ? { slides: content.slides.map((slide) => ({ ...slide, layoutName: deck.layout(slide.layout)?.name ?? '' })) } : {}),
+    ...(shapes ? { shapes } : {}),
+    ...(slides ? { slides } : {}),
     parts,
     text,
   }
@@ -145,6 +207,7 @@ export function parseClipboard(json: string): PresentationClipboard | undefined 
   const parts: Record<string, ClipboardPart> = {}
   for (const [path, part] of entries) {
     if (typeof part?.data !== 'string' || !/^[\w./-]+$/.test(path) || path.includes('..')) continue
+    if (part.slideRels && (typeof part.slideRels !== 'object' || Object.values(part.slideRels).some((rel) => !rel || typeof rel.type !== 'string' || typeof rel.target !== 'string' || (rel.external !== undefined && typeof rel.external !== 'boolean')))) return undefined
     parts[path] = part
   }
   const shapes = Array.isArray(value.shapes) ? value.shapes.filter(validShape) : undefined
@@ -232,7 +295,7 @@ function validSlide(slide: SlideSnapshot): boolean {
  * once never overwrite each other's images. The writer runs synchronously right before the shapes
  * are inserted, under `PARTS_ORIGIN`, so undoing the paste never deletes a part someone else uses.
  */
-async function prepareParts(doc: Y.Doc, assets: LiveAssetStore, clipboard: PresentationClipboard): Promise<{ mapping: Map<string, string>; write(): void }> {
+async function prepareParts(doc: Y.Doc, assets: LiveAssetStore, clipboard: PresentationClipboard, destinationSlide?: string): Promise<{ mapping: Map<string, string>; write(): void; attach(): void }> {
   const sameDocument = clipboard.source === documentIdentity(doc)
   const mapping = new Map<string, string>()
   const contentParts = Object.keys(clipboard.parts).filter((path) => !path.endsWith('.rels'))
@@ -240,6 +303,8 @@ async function prepareParts(doc: Y.Doc, assets: LiveAssetStore, clipboard: Prese
   const copies = new Map<string, PartSnapshot>()
   const relationships = new Map<string, Uint8Array>()
   const dependents = new Map<string, Set<string>>()
+  const scoped = destinationSlide !== undefined && Object.values(clipboard.parts).some((part) => part.slideRels && Object.keys(part.slideRels).length)
+  let addedRels: Record<string, RelTarget> = {}
   for (const path of contentParts) {
     const part = clipboard.parts[path]!
     const bytes = fromBase64(part.data)
@@ -264,7 +329,7 @@ async function prepareParts(doc: Y.Doc, assets: LiveAssetStore, clipboard: Prese
       // Recheck after all asset writes: a collaborator can replace a part while they are pending.
       const root = presentationRoot(doc)
       const reusable = new Set(contentParts.filter((path) => {
-        if (!sameDocument) return false
+        if (!sameDocument || scoped) return false
         const current = readPart(root, path)
         const copy = copies.get(path)!
         if (!current || current.contentType !== copy.contentType || current.asset?.hash !== copy.asset?.hash || current.asset?.mimeType !== copy.asset?.mimeType || !bytesEqual(current.bytes, copy.bytes)) return false
@@ -283,6 +348,27 @@ async function prepareParts(doc: Y.Doc, assets: LiveAssetStore, clipboard: Prese
         const extension = dot > slash ? path.slice(dot) : ''
         mapping.set(path, `${path.slice(0, slash + 1)}${stem}-${suffix}${extension}`)
       }
+      if (scoped) {
+        const slide = readSlide(doc, destinationSlide!)!
+        const table = new RelationshipTable()
+        for (const [id, rel] of Object.entries(slide.rels)) table.set(id, rel)
+        const document = parseXmlDocument('<w/>')
+        for (const shape of slide.shapes) buildShapeElement(document, shape, {}, table)
+        addedRels = {}
+        for (const path of contentParts) {
+          const bindings = clipboard.parts[path]!.slideRels
+          if (!bindings || !Object.keys(bindings).length) continue
+          const ids = new Map<string, string>()
+          for (const [id, original] of Object.entries(bindings)) {
+            const rel = { ...original, target: original.external ? original.target : mapping.get(original.target) ?? original.target }
+            const next = table.allocate(rel.type, rel.target, rel.external === true, id)
+            ids.set(id, next)
+            addedRels[next] = rel
+          }
+          const part = copies.get(path)!
+          if (part.bytes) copies.set(path, { ...part, bytes: rewriteScopedIds(part.bytes, ids) })
+        }
+      }
       doc.transact(() => {
         for (const [path, target] of mapping) {
           setPart(root, target, copies.get(path)!)
@@ -291,7 +377,30 @@ async function prepareParts(doc: Y.Doc, assets: LiveAssetStore, clipboard: Prese
         }
       }, PARTS_ORIGIN)
     },
+    attach: () => {
+      if (destinationSlide && Object.keys(addedRels).length) {
+        const slide = slideMap(doc, destinationSlide)!
+        slide.set('rels', { ...(slide.get('rels') as Record<string, RelTarget>), ...addedRels })
+      }
+    },
   }
+}
+
+/** Rebind only the references that were explicitly resolved against the source slide. */
+function rewriteScopedIds(bytes: Uint8Array, ids: Map<string, string>): Uint8Array {
+  const document = parseXmlDocument(decodePartText(bytes))
+  const stack: XmlElement[] = [document.documentElement!]
+  while (stack.length) {
+    const node = stack.pop()!
+    for (let index = 0; index < node.attributes.length; index++) {
+      const attribute = node.attributes.item(index)!
+      if (attribute.namespaceURI !== NS.r && (attribute.namespaceURI || attribute.localName !== 'relId')) continue
+      const next = ids.get(attribute.value)
+      if (next) attribute.value = next
+    }
+    stack.push(...childElements(node))
+  }
+  return new TextEncoder().encode(serializeNode(document))
 }
 
 /** Points a copied part's relationships at the copies of their targets. */
@@ -359,7 +468,7 @@ export async function pasteShapes(doc: Y.Doc, assets: LiveAssetStore, clipboard:
     return slide !== undefined && countShapes(slide.shapes) + countShapes(clipboard.shapes ?? []) <= DEFAULT_PRESENTATION_LIMITS.maxShapesPerSlide
   }
   if (!canApply() || !fits()) return []
-  const { mapping, write } = await prepareParts(doc, assets, clipboard)
+  const { mapping, write, attach } = await prepareParts(doc, assets, clipboard, slideKey)
   // Checked again after storing the pictures: another paste may have filled the slide meanwhile.
   if (!canApply() || !fits()) return []
   write()
@@ -369,7 +478,9 @@ export async function pasteShapes(doc: Y.Doc, assets: LiveAssetStore, clipboard:
     if (copy.xfrm && offset) copy.xfrm = { ...copy.xfrm, x: copy.xfrm.x + offset, y: copy.xfrm.y + offset }
     return copy
   })
-  return insertShapes(doc, slideKey, shapes, origin)
+  let keys: string[] = []
+  doc.transact(() => { attach(); keys = insertShapes(doc, slideKey, shapes, origin) }, origin)
+  return keys
 }
 
 /** Pastes slides at `index`, mapping layouts by name when they come from another deck. */
@@ -390,10 +501,11 @@ export async function pasteSlides(doc: Y.Doc, assets: LiveAssetStore, clipboard:
     const copy = cloneSlide(slide)
     copy.rels = remapRels(copy.rels, mapping, !sameDocument)
     copy.shapes = copy.shapes.map((shape) => remapShape(shape, mapping, !sameDocument))
+    if (copy.notes) copy.notes = { ...copy.notes, rels: remapRels(Object.fromEntries(Object.entries(copy.notes.rels).filter(([, rel]) => sameDocument || rel.type !== REL_TYPES.notesMaster)), mapping, !sameDocument) }
     if (!sameDocument) {
       copy.layout = layouts.find((layout) => deck.layout(layout)?.name === layoutName) ?? layouts.find((layout) => deck.layout(layout)?.type === 'obj') ?? layouts[0] ?? copy.layout
       delete copy.section
-      if (copy.notes) copy.notes = { ...copy.notes, text: unlinkText(copy.notes.text)!, rels: {}, xml: '' }
+      if (copy.notes) copy.notes = { ...copy.notes, text: unlinkText(copy.notes.text)! }
     }
     return copy
   })

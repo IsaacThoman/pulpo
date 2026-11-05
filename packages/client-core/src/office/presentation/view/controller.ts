@@ -818,7 +818,7 @@ export class PresentationController {
       if (what === 'auto' && this.state.shapes.length) {
         const shapes = commands.readShapes(this.doc, this.slideKey, this.state.shapes)
         const text = shapes.map((shape) => (shape.text ? textToPlain(shape.text) : '')).filter(Boolean).join('\n')
-        return { json: JSON.stringify(await copyContent(this.doc, this.assets, { shapes }, text)), text }
+        return { json: JSON.stringify(await copyContent(this.doc, this.assets, { shapes, slideKey: this.slideKey }, text)), text }
       }
       const slides = this.state.slides.map((key) => this.slide(key)).filter((slide): slide is SlideSnapshot => slide !== undefined)
       const text = slides.map((slide) => slide.shapes.map((shape) => (shape.text ? textToPlain(shape.text) : '')).filter(Boolean).join('\n')).join('\n\n')

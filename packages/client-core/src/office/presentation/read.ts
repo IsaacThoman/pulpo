@@ -327,7 +327,7 @@ export function relationshipIdsIn(element: XmlElement): string[] {
     const node = stack.pop()!
     for (let index = 0; index < node.attributes.length; index++) {
       const attribute = node.attributes.item(index)!
-      if (attribute.namespaceURI === NS.r && attribute.value) ids.push(attribute.value)
+      if ((attribute.namespaceURI === NS.r || (!attribute.namespaceURI && attribute.localName === 'relId')) && attribute.value) ids.push(attribute.value)
     }
     stack.push(...childElements(node))
   }
