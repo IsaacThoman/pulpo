@@ -45,7 +45,9 @@ export function orderKeyBetween(before: string | null, after: string | null, ran
     const lowDigit = digit(low, index)
     const highDigit = high === null ? BASE : digit(high, index)
     if (highDigit - lowDigit >= 2) {
-      key += DIGITS[pick(lowDigit + 1, Math.min(highDigit - 1, BASE - 1))]
+      // Without an upper bound (appending), take a small step, so cells added one after another
+      // lengthen keys by a digit every few dozen rather than every few.
+      key += DIGITS[high === null ? pick(lowDigit + 1, Math.min(lowDigit + 2, BASE - 1)) : pick(lowDigit + 1, Math.min(highDigit - 1, BASE - 1))]
       break
     }
     key += DIGITS[lowDigit]

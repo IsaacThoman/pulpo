@@ -101,8 +101,19 @@ export function cellExecutionCount(cell: Y.Map<unknown>): number | null {
   return typeof count === 'number' && Number.isInteger(count) && count >= 0 ? count : null
 }
 
+function isAssetSlot(value: unknown): value is NotebookAssetSlot {
+  if (typeof value !== 'object' || value === null) return false
+  const slot = value as Partial<{ hash: unknown; kind: unknown; mimeType: unknown; trail: unknown; wrap: unknown }>
+  if (typeof slot.hash !== 'string' || !/^[0-9a-f]{64}$/.test(slot.hash)) return false
+  if (slot.kind === 'json') return true
+  return slot.kind === 'base64' && typeof slot.mimeType === 'string' && typeof slot.trail === 'string' && /^\n*$/.test(slot.trail)
+    && typeof slot.wrap === 'number' && Number.isInteger(slot.wrap) && slot.wrap >= 0
+}
+
+/** Whether a value is a well-formed blob; anything else (a damaged or hostile replica's) reads as none. */
 export function isNotebookBlob(value: unknown): value is NotebookBlob {
-  return typeof value === 'object' && value !== null && typeof (value as NotebookBlob).json === 'string' && Array.isArray((value as NotebookBlob).assets)
+  return typeof value === 'object' && value !== null && typeof (value as NotebookBlob).json === 'string'
+    && Array.isArray((value as NotebookBlob).assets) && (value as NotebookBlob).assets.every(isAssetSlot)
 }
 
 export function cellOutputs(cell: Y.Map<unknown>): NotebookBlob {

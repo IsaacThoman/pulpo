@@ -158,3 +158,15 @@ describe('order keys from other clients', () => {
     }
   })
 })
+
+describe('order keys when appending', () => {
+  it('stay short over a thousand appends', () => {
+    let last: string | null = null
+    for (let index = 0; index < 1_000; index += 1) {
+      const next = orderKeyBetween(last, null)
+      if (last) expect(next > last).toBe(true)
+      last = next
+    }
+    expect(last!.length).toBeLessThan(60)
+  })
+})

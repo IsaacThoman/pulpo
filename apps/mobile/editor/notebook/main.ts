@@ -52,6 +52,8 @@ const HOST = 'host'
 const REMOTE = 'remote'
 /** Outputs longer than this show their start; the full text is in the file. */
 const MAX_OUTPUT_CHARACTERS = 20_000
+/** Waits this long before asking the app for outputs' images again after they failed. */
+const OUTPUT_RETRY_MS = 15_000
 
 function post(message: EditorMessage): void {
   const data = JSON.stringify(message)
@@ -464,8 +466,12 @@ function updateOutputs(open: Open, view: CellView, cell: NotebookCellState): voi
   }).catch(() => {
     if (view.outputsKey !== key) return
     view.outputs.innerHTML = '<p class="output note">The outputs are not on this device yet.</p>'
-    // Tried again on the next render (a reconnect brings updates, and with them one).
-    view.outputsKey = null
+    // Tried again a little later, not on every keystroke's render.
+    setTimeout(() => {
+      if (view.outputsKey !== key || current?.views.get(view.key) !== view) return
+      view.outputsKey = null
+      render()
+    }, OUTPUT_RETRY_MS)
   })
 }
 

@@ -523,3 +523,44 @@ describe('audit regressions', () => {
     expect(orderedCells(doc).map((entry) => entry.key)).toEqual(keys)
   })
 })
+
+describe('second review regressions', () => {
+  it('refuses long chains of stored parts with a format error, not a stack overflow', async () => {
+    const { doc, assets, context } = await imported(jupyter(notebook([code('a', 'x')])))
+    const slots = []
+    for (let level = 0; level < 40; level += 1) {
+      const inner = level === 39 ? '1' : `"\\u0000pulpo-asset:${level + 1}"`
+      const ref = await assets.put(utf8(`${'['.repeat(200)}${inner}${']'.repeat(200)}`), 'application/json')
+      slots.push({ hash: ref.hash, kind: 'json' })
+    }
+    orderedCells(doc)[0]!.cell.set('outputs', { json: '"\\u0000pulpo-asset:0"', assets: slots })
+    await expect(notebookCodec.exportFile(doc, context)).rejects.toBeInstanceOf(LiveFormatError)
+  })
+
+  it('reads malformed stored parts as no outputs instead of throwing', async () => {
+    const { doc, context } = await imported(jupyter(notebook([code('a', 'x')])))
+    orderedCells(doc)[0]!.cell.set('outputs', { json: '[]', assets: [null, { hash: 5 }] })
+    expect(notebookCodec.referencedAssets!(doc)).toEqual([])
+    expect(JSON.parse(text(await notebookCodec.exportFile(doc, context))).cells[0].outputs).toEqual([])
+    expect(notebookCodec.toText(doc)).toContain('cell 1')
+  })
+
+  it('exports exactly a pushed 4.5 file without ids until it is edited', async () => {
+    const { doc, context } = await imported(jupyter(notebook([code('a', 'x = 1')])))
+    const pushed = JSON.parse(text(jupyter(notebook([code('a', 'x = 1'), code('b', 'y = 2')]))))
+    delete pushed.cells[1].id
+    const bytes = jupyter(pushed)
+    await notebookCodec.applyFile(doc, bytes, context, 'agent')
+    // The scratch run and the real one made the same document, so the kept original applies.
+    expect(text(await notebookCodec.exportFile(doc, context))).toBe(text(bytes))
+    ;(orderedCells(doc)[0]!.cell.get('source') as Y.Text).insert(0, '# ')
+    const edited = JSON.parse(text(await notebookCodec.exportFile(doc, context)))
+    expect(edited.cells[1].id).toMatch(/^[0-9a-f]{8}$/)
+  })
+
+  it('never shows placeholders inside joined output lines', async () => {
+    const long = 'x'.repeat(20_000)
+    const { doc } = await imported(jupyter(notebook([code('a', 'run()', [{ name: 'stdout', output_type: 'stream', text: ['hi ', `${long}\n`, 'bye'] }], 1)])))
+    expect(notebookCodec.toText(doc)).not.toContain('\u0000')
+  })
+})

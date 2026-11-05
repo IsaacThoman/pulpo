@@ -68,14 +68,26 @@ const mac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator
 const mod = mac ? '⌘' : 'Ctrl+'
 
 /** Outputs (or attachments) with their assets read back, as the viewer's renderers take them. */
+/** Waits this long before reading outputs again after their images failed to load (offline, say). */
+const RETRY_MS = 15_000
+
 function useResolved<T>(read: () => Promise<T>, deps: unknown[], empty: T): T {
   const [value, setValue] = useState<T>(empty)
+  const [attempt, setAttempt] = useState(0)
   useEffect(() => {
     let cancelled = false
-    read().then((next) => { if (!cancelled) setValue(next) }).catch(() => { if (!cancelled) setValue(empty) })
-    return () => { cancelled = true }
+    let timer: number | undefined
+    read().then((next) => { if (!cancelled) setValue(next) }).catch(() => {
+      if (cancelled) return
+      setValue(empty)
+      timer = window.setTimeout(() => setAttempt((current) => current + 1), RETRY_MS)
+    })
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
     // oxlint-disable-next-line react/exhaustive-deps -- `deps` names what the read depends on
-  }, deps)
+  }, [...deps, attempt])
   return value
 }
 
@@ -420,7 +432,9 @@ export function NotebookDocEditor({ session, editable, width, toolbarSlot, asset
     else editors.current.delete(key)
   }, [])
 
-  // Edit mode focuses the active cell's editor; command mode keeps keys on the notebook.
+  // When the active cell or mode changes (never on others' edits, which must not pull focus back
+  // from the chat or a menu), edit mode focuses the cell's editor and command mode keeps keys on
+  // the notebook. A cell mounted to be edited focuses itself (CellSource's autoFocus).
   const active = state?.active ?? null
   const mode = state?.mode ?? 'command'
   useEffect(() => {
@@ -432,7 +446,7 @@ export function NotebookDocEditor({ session, editable, width, toolbarSlot, asset
       // A rendered Markdown cell's editor is gone, which leaves focus on the page: keys stay with the notebook.
       root.current.focus({ preventScroll: true })
     }
-  }, [active, mode, state?.cells])
+  }, [active, mode])
 
   if (!controller || !state) return null
   const selected = new Set(state.selected)

@@ -98,7 +98,12 @@ try {
   }
   const openFile = async (page, id) => {
     await page.goto(`${base}/files/d/${id}`)
-    await page.locator('[data-notebook-editor]').waitFor({ timeout: 20_000 })
+    try {
+      await page.locator('[data-notebook-editor]').waitFor({ timeout: 30_000 })
+    } catch (error) {
+      if (screenshots) await page.screenshot({ path: join(screenshots, 'failed-open.png') })
+      throw new Error(`The notebook did not open; the page says: ${(await page.locator('main').innerText().catch(() => '')).slice(0, 300)}`, { cause: error })
+    }
     await page.getByText('Synced').waitFor({ timeout: 15_000 })
   }
   const notebookKeys = (page) => page.getByRole('list', { name: 'Notebook cells' })

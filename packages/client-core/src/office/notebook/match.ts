@@ -18,13 +18,22 @@ function edgeSimilarity(a: string, b: string): number {
   return (start + end) / longest
 }
 
+/** Likeness looks at most this much of a source (its start and end), so huge cells cost no more than small ones. */
+const LIKENESS_SAMPLE = 8_192
+
+function sample(text: string): string {
+  return text.length > LIKENESS_SAMPLE ? `${text.slice(0, LIKENESS_SAMPLE / 2)}\n${text.slice(-LIKENESS_SAMPLE / 2)}` : text
+}
+
 /**
  * How alike two sources are, from 0 to 1: the share of lines they have in common, or of
  * characters at their start and end when that is higher (a one-line cell edited).
  */
 function similarity(a: string, b: string): number {
   if (a === b) return 1
-  return Math.max(lineSimilarity(a, b), edgeSimilarity(a, b))
+  const left = sample(a)
+  const right = sample(b)
+  return Math.max(lineSimilarity(left, right), edgeSimilarity(left, right))
 }
 
 function lineSimilarity(a: string, b: string): number {

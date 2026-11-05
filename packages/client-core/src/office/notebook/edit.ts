@@ -39,10 +39,23 @@ export interface CellInit {
 }
 
 /** A random cell key: 16 hex digits, so concurrent inserts never collide. */
-export function newCellKey(): string {
+export function newCellKey(random?: () => number): string {
   const bytes = new Uint8Array(8)
-  globalThis.crypto.getRandomValues(bytes)
+  if (random) for (let index = 0; index < bytes.length; index += 1) bytes[index] = Math.floor(random() * 256)
+  else globalThis.crypto.getRandomValues(bytes)
   return [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
+/** A seeded generator (mulberry32), so two runs of the same edit make the same keys. */
+export function seededRandom(seed: number): () => number {
+  let state = seed >>> 0
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0
+    let value = state
+    value = Math.imul(value ^ (value >>> 15), value | 1)
+    value ^= value + Math.imul(value ^ (value >>> 7), value | 61)
+    return ((value ^ (value >>> 14)) >>> 0) / 4_294_967_296
+  }
 }
 
 /** Whether new cells get nbformat ids (nbformat 4.5 and later). */

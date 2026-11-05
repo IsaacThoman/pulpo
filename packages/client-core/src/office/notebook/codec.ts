@@ -2,7 +2,7 @@ import * as Y from 'yjs'
 import { liveAssetHash, transactChanges } from '../assets.js'
 import { LiveFormatError, type LiveAssetStore, type LiveFormatCodec, type LiveFormatContext } from '../live-format.js'
 import { applyTextToYText } from '../text/codec.js'
-import { createCellMap, newCellKey, type CellInit } from './edit.js'
+import { createCellMap, newCellKey, seededRandom, type CellInit } from './edit.js'
 import {
   blobNode,
   CELL_ID_PATTERN,
@@ -289,7 +289,10 @@ export async function exportNotebookFile(doc: Y.Doc, context: Pick<LiveFormatCon
   const bytes = encode(await notebookText(doc, facts, context.assets), facts.style)
   if (facts.original && globalThis.crypto?.subtle && await liveAssetHash(bytes) === facts.original.exportHash) {
     try {
-      return await context.assets.get(facts.original.asset)
+      const original = await context.assets.get(facts.original.asset)
+      // Another client could point `original` at any asset; only a notebook is returned as one.
+      readNotebookFile(original)
+      return original
     } catch {
       // A missing original only costs the file's exact layout; everything in it is still here.
     }
@@ -355,7 +358,11 @@ function updateCell(cell: Y.Map<unknown>, prepared: PreparedCell, keepIds: boole
   setIfChanged(cell, 'extra', parsed.extra.length ? entryPairs(parsed.extra) : undefined)
 }
 
-function applyNotebook(doc: Y.Doc, parsed: ParsedNotebook, prepared: PreparedCell[]): void {
+/**
+ * `random` makes new cells' keys and positions: applyFile seeds it, so the scratch run that works out
+ * the export and the real run make the same document (new 4.5 cells without ids take their key's).
+ */
+function applyNotebook(doc: Y.Doc, parsed: ParsedNotebook, prepared: PreparedCell[], random: () => number): void {
   writeNotebookFacts(doc, parsed)
   const keepIds = (cell: PreparedCell) => parsed.upgraded || (cell.parsed.id === undefined && parsed.nbformatMinor >= 5)
   const current = orderedCells(doc)
@@ -389,13 +396,13 @@ function applyNotebook(doc: Y.Doc, parsed: ParsedNotebook, prepared: PreparedCel
         break
       }
     }
-    const order = orderKeyBetween(previousOrder, nextOrder)
+    const order = orderKeyBetween(previousOrder, nextOrder, random)
     if (key !== null) {
       const target = map.get(key)!
       target.set('order', order)
       updateCell(target, cell, keepIds(cell))
     } else {
-      map.set(newCellKey(), createCellMap(cellInit(cell), order))
+      map.set(newCellKey(random), createCellMap(cellInit(cell), order))
     }
     previousOrder = order
   })
@@ -505,7 +512,9 @@ export function notebookToText(doc: Y.Doc): string {
     if (stored(outputs)) lines.push(`# Outputs: ${STORED}`)
     for (const output of Array.isArray(outputs) ? outputs : []) lines.push(...(stored(output) ? [`# Output: ${STORED}`] : outputLines(output, blob)))
   })
-  return `${lines.join('\n')}\n`
+  // Placeholders inside joined text (one long line of a list) never reach agents as NUL bytes.
+  // oxlint-disable-next-line no-control-regex -- the placeholder starts with NUL
+  return `${lines.join('\n').replace(/\u0000pulpo-asset:\d+/g, '…(long, kept as an asset)')}\n`
 }
 
 function referenced(doc: Y.Doc): string[] {
@@ -563,14 +572,15 @@ export const notebookCodec: LiveFormatCodec = {
     const parsed = readNotebookFile(bytes)
     const cells = uniqueIds(await prepareCells(parsed, context.assets))
     // The original is worked out on a scratch copy, so the document changes in one transaction.
+    const seed = globalThis.crypto.getRandomValues(new Uint32Array(1))[0]!
     const scratch = new Y.Doc()
     Y.applyUpdate(scratch, Y.encodeStateAsUpdate(doc))
-    applyNotebook(scratch, parsed, cells)
+    applyNotebook(scratch, parsed, cells, seededRandom(seed))
     setOriginal(scratch, undefined)
     const original = await keepOriginal(scratch, bytes, context.assets)
     scratch.destroy()
     const changed = transactChanges(doc, () => {
-      applyNotebook(doc, parsed, cells)
+      applyNotebook(doc, parsed, cells, seededRandom(seed))
       setOriginal(doc, original)
     }, origin)
     return { changed }

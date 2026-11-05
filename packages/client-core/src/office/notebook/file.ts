@@ -2,6 +2,7 @@ import type { LiveAssetStore } from '../live-format.js'
 import { LiveFormatError } from '../live-format.js'
 import {
   compactJson,
+  MAX_JSON_DEPTH,
   detectStyle,
   JUPYTER_STYLE,
   jsonNode,
@@ -346,6 +347,9 @@ function dedupe(entries: JsonEntry[]): JsonEntry[] {
 
 // Outputs and attachments: their large parts move to assets.
 
+const MAX_RESTORE_DEPTH = MAX_JSON_DEPTH * 2
+const MAX_PART_NESTING = 16
+
 /** Strings and lists of at least this many characters of JSON become assets. */
 export const BLOB_ASSET_THRESHOLD = 16_384
 /** Base64 data of at least this many characters (about 750 bytes) becomes an asset. */
@@ -514,20 +518,23 @@ export async function blobNode(blob: NotebookBlob, assets: LiveAssetStore, style
   }))
   // Each part is used once, as `makeBlob` writes them: a damaged or hostile blob that refers to
   // one part twice (which could double its size at every level) or to itself fails instead.
+  // Parts nest only a few levels (makeBlob moves a value out after its children); a deeper chain
+  // is damage, refused before it could exhaust the stack.
   const used = new Set<number>()
-  const restore = (node: JsonNode): JsonNode => {
+  const restore = (node: JsonNode, depth: number, nesting: number): JsonNode => {
+    if (depth > MAX_RESTORE_DEPTH) throw new LiveFormatError('corrupt', 'A notebook output is nested too deeply')
     if (node.kind === 'string' && node.value.startsWith(ASSET_MARKER)) {
       const index = Number(node.value.slice(ASSET_MARKER.length))
       const value = values[index]
-      if (!value || used.has(index)) throw new LiveFormatError('corrupt', 'A notebook output refers to a missing part')
+      if (!value || used.has(index) || nesting >= MAX_PART_NESTING) throw new LiveFormatError('corrupt', 'A notebook output refers to a missing part')
       used.add(index)
-      return restore(value)
+      return restore(value, depth + 1, nesting + 1)
     }
-    if (node.kind === 'array') return { kind: 'array', items: node.items.map(restore) }
-    if (node.kind === 'object') return { kind: 'object', entries: node.entries.map((item) => ({ ...item, value: restore(item.value) })) }
+    if (node.kind === 'array') return { kind: 'array', items: node.items.map((item) => restore(item, depth + 1, nesting)) }
+    if (node.kind === 'object') return { kind: 'object', entries: node.entries.map((item) => ({ ...item, value: restore(item.value, depth + 1, nesting) })) }
     return node
   }
-  return restore(root)
+  return restore(root, 0, 0)
 }
 
 /** Lines as Python's `str.splitlines(keepends=True)` makes them, which nbformat writes sources with. */
