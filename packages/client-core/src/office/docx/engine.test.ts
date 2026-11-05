@@ -306,6 +306,42 @@ describe('editing commands', async () => {
     }
   })
 
+  it.each([
+    ['İ foo bar', 'foo', false, 'İ X bar'],
+    ['İ foo', 'foo', false, 'İ X'],
+    ['AİBİC', 'i', false, 'AXBXC'],
+    ['AİBİC', '̇bi̇', false, 'AXC'],
+    ['😀İ AB', 'ab', false, '😀İ X'],
+    ['İ ΟΣ', 'ΟΣ', false, 'İ X'],
+    ['İ😀𐐀Z', '😀𐐨z', false, 'İX'],
+    ['İx İ', 'i', true, 'İx X'],
+  ])('finds original ranges in %s for %s (whole word %s)', async (text, query, wholeWord, expected) => {
+    const { model } = await documentWith(p(run(text)))
+    const state = EditorState.create({ schema, doc: model.body })
+    const matches = findMatches(state.doc, query, { wholeWord })
+    expect(matches.length).toBeGreaterThan(0)
+    expect(matches.every(({ from, to }) => from >= 1 && to <= state.doc.content.size && from < to)).toBe(true)
+    expect(state.apply(replaceMatches(state, matches, 'X')).doc.textContent).toBe(expected)
+  })
+
+  it('maps sparse matches lazily after a long run of expanded characters', () => {
+    const prefix = 'İ'.repeat(500_000)
+    const doc = schema.node('doc', null, [schema.node('paragraph', null, schema.text(`${prefix} target`))])
+    const start = performance.now()
+    const matches = findMatches(doc, 'TARGET')
+    expect(matches).toHaveLength(1)
+    expect(matches[0]).toEqual({ from: prefix.length + 2, to: prefix.length + 8 })
+    expect(performance.now() - start).toBeLessThan(2_000)
+  })
+
+  it('keeps original offsets across marked runs, atoms, and deleted text', () => {
+    const doc = schema.node('doc', null, [p(run('İ '), run('foo', 'b'), schema.node('tab'), run('İ ', 'del'), run('foo'))])
+    const state = EditorState.create({ schema, doc })
+    const matches = findMatches(doc, 'foo')
+    expect(matches.map(({ from, to }) => doc.textBetween(from, to)).join('|')).toBe('foo|foo')
+    expect(state.apply(replaceMatches(state, matches, 'X')).doc.textContent).toBe('İ Xİ X')
+  })
+
   it('inserts page breaks and finds and replaces text', () => {
     const broken = state(6).apply(insertPageBreak(state(6), context)!)
     expect(broken.doc.childCount).toBe(3)

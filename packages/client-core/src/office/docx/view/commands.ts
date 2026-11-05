@@ -1,3 +1,4 @@
+import { originalCaseOffsets } from '../../../case-offsets.js'
 import { chainCommands, createParagraphNear, liftEmptyBlock, newlineInCode, splitBlock } from '@tiptap/pm/commands'
 import type { Attrs, Mark, Node as ProseMirrorNode, Schema } from '@tiptap/pm/model'
 import { NodeSelection, TextSelection, type EditorState, type Transaction } from '@tiptap/pm/state'
@@ -594,31 +595,28 @@ export interface FindOptions {
 export function findMatches(doc: ProseMirrorNode, query: string, options: FindOptions = {}): { from: number; to: number }[] {
   if (!query) return []
   const results: { from: number; to: number }[] = []
-  const needle = options.matchCase ? query : query.toLocaleLowerCase()
+  const needle = options.matchCase ? query : query.toLowerCase()
   doc.descendants((node, pos) => {
     if (!node.isTextblock) return true
-    // Text with a position for each character; atoms break words but not matches of text.
-    let text = ''
-    const positions: number[] = []
-    node.forEach((child, offset) => {
-      if (child.isText) {
-        const deleted = child.marks.some((mark) => mark.type.name === 'del')
-        for (let index = 0; index < child.text!.length; index++) {
-          text += deleted ? '\u0000' : child.text![index]
-          positions.push(pos + 1 + offset + index)
-        }
-      } else {
-        text += '\u0000'
-        positions.push(pos + 1 + offset)
-      }
+    if (results.length >= 10_000) return false
+    // Preserve the paragraph's UTF-16 footprint: text is contiguous in ProseMirror,
+    // and atoms/deletions occupy masked code units rather than a per-character offset array.
+    const pieces: string[] = []
+    node.forEach((child) => {
+      const deleted = child.marks.some((mark) => mark.type.name === 'del')
+      pieces.push(child.isText && !deleted ? child.text! : '\u0000'.repeat(child.nodeSize))
     })
-    const haystack = options.matchCase ? text : text.toLocaleLowerCase()
+    const text = pieces.join('')
+    const haystack = options.matchCase ? text : text.toLowerCase()
+    const originalOffset = haystack.length === text.length ? null : originalCaseOffsets(text)
     let index = haystack.indexOf(needle)
     while (index >= 0 && results.length < 10_000) {
       const end = index + needle.length
-      const word = /[\p{L}\p{N}_]/u
-      const boundary = !options.wholeWord || ((index === 0 || !word.test(haystack[index - 1]!)) && (end >= haystack.length || !word.test(haystack[end]!)))
-      if (boundary) results.push({ from: positions[index]!, to: positions[end - 1]! + 1 })
+      const from = originalOffset ? originalOffset(index, false) : index
+      const to = originalOffset ? originalOffset(end - 1, true) : end
+      // Check source boundaries after rounding matches inside expanded characters outward.
+      const boundary = !options.wholeWord || (!/[\p{L}\p{N}_]$/u.test(text.slice(Math.max(0, from - 2), from)) && !/^[\p{L}\p{N}_]/u.test(text.slice(to, to + 2)))
+      if (boundary) results.push({ from: pos + 1 + from, to: pos + 1 + to })
       index = haystack.indexOf(needle, index + Math.max(1, needle.length))
     }
     return false
