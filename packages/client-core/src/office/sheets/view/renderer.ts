@@ -400,10 +400,16 @@ export class GridRenderer {
     const padding = PADDING * scene.zoom
     const indent = style.indent * 3 * scene.digitWidth * scene.zoom
     let text = render.text
-    const available = rect.width - padding * 2 - indent
+    const icon = render.overlay?.icon
+    // An icon set's icon sits at the left of the cell, beside the value.
+    const iconSpace = icon ? Math.min(rect.height - 4, 16 * scene.zoom) + 2 : 0
+    const available = rect.width - padding * 2 - indent - iconSpace
     // Numbers that don't fit: General shows fewer digits, other formats show ####.
     if (render.numeric && !style.wrap && typeof render.value === 'number') {
-      const fits = (candidate: string) => ctx.measureText(candidate).width * scene.widthScale <= available
+      // With the file's font missing, widths are estimates from the substitute's digit width, so
+      // allow a little slack (drawLine condenses the number into its cell).
+      const slack = scene.widthScale < 1 ? 1.08 : 1
+      const fits = (candidate: string) => ctx.measureText(candidate).width * scene.widthScale <= available * slack
       if (!fits(text)) {
         if (style.numFmt === 'General') {
           const chars = Math.max(1, Math.floor(available / (scene.digitWidth * scene.zoom * (style.fontSize / 11))))
@@ -421,7 +427,6 @@ export class GridRenderer {
       const missing = Math.floor((available - ctx.measureText(text).width) / charWidth)
       if (missing > 0) text = text.slice(0, render.repeat.position) + render.repeat.char.repeat(missing) + text.slice(render.repeat.position)
     }
-    const icon = render.overlay?.icon
     const showText = (!icon || icon.showValue) && (!render.overlay?.dataBar || render.overlay.dataBar.showValue)
     let clip = { ...rect }
     // Overflow into empty neighbors for unwrapped text.
@@ -453,18 +458,16 @@ export class GridRenderer {
     ctx.beginPath()
     ctx.rect(clip.x, clip.y, clip.width - 1, clip.height - 1)
     ctx.clip()
-    ctx.fillStyle = render.color === '#000000' ? scene.palette.text : render.color
-    let iconSpace = 0
+    ctx.fillStyle = ink(scene, render, render.color)
     if (icon) {
-      const size = Math.min(rect.height - 4, 16 * scene.zoom)
+      const size = iconSpace - 2
       drawIcon(ctx, icon.set, icon.index, rect.x + padding, rect.y + (rect.height - size) / 2, size)
-      iconSpace = size + 2
-      ctx.fillStyle = render.color === '#000000' ? scene.palette.text : render.color
+      ctx.fillStyle = ink(scene, render, render.color)
     }
     if (showText && text) {
       if (style.rotation && style.rotation !== 0) this.drawRotated(scene, render, text, rect)
       else if (style.wrap || /\n/.test(text)) this.drawWrapped(scene, render, text, { ...rect, x: rect.x + iconSpace, width: rect.width - iconSpace }, padding, indent)
-      else this.drawLine(scene, render, text, rect, clip, padding + iconSpace, indent)
+      else this.drawLine(scene, render, text, rect, clip, padding, indent, iconSpace)
     }
     ctx.restore()
   }
@@ -483,17 +486,20 @@ export class GridRenderer {
     }
   }
 
-  private drawLine(scene: Scene, render: CellRender, text: string, rect: { x: number; y: number; width: number; height: number }, clip: { x: number; width: number }, padding: number, indent: number): void {
+  private drawLine(scene: Scene, render: CellRender, text: string, rect: { x: number; y: number; width: number; height: number }, clip: { x: number; width: number }, padding: number, indent: number, iconSpace = 0): void {
     const { ctx } = this
     const fontPx = render.style.fontSize * POINTS_TO_PIXELS * scene.zoom
     const lineHeight = fontPx * 1.25
     const top = this.textY(render, rect, lineHeight, 1, scene.zoom)
     ctx.textBaseline = 'middle'
-    const width = ctx.measureText(text).width
+    // Numbers never spill: one that fits in the file's font but not in the font drawn in its
+    // place (a wider substitute) is drawn condensed to its cell.
+    const room = render.numeric ? Math.max(1, rect.width - padding * 2 - indent - iconSpace - 1) : undefined
+    const width = room === undefined ? ctx.measureText(text).width : Math.min(room, ctx.measureText(text).width)
     let x: number
     if (render.hAlign === 'right') x = rect.x + rect.width - padding - indent - width - 1
-    else if (render.hAlign === 'center' || render.hAlign === 'centerContinuous') x = rect.x + (rect.width - width) / 2
-    else x = rect.x + padding + indent
+    else if (render.hAlign === 'center' || render.hAlign === 'centerContinuous') x = rect.x + iconSpace + (rect.width - iconSpace - width) / 2
+    else x = rect.x + padding + iconSpace + indent
     // Text that overflows to the left of a right-aligned cell starts in the neighbor.
     if (render.hAlign === 'right' && x < clip.x + padding) x = Math.max(x, clip.x + padding - (width - (rect.width - padding * 2)))
     const y = top + lineHeight / 2
@@ -501,7 +507,8 @@ export class GridRenderer {
       this.drawRuns(scene, render, x, y)
       return
     }
-    ctx.fillText(text, x, y)
+    if (room === undefined) ctx.fillText(text, x, y)
+    else ctx.fillText(text, x, y, room)
     this.decorate(render, x, y, width, fontPx)
   }
 
@@ -514,7 +521,7 @@ export class GridRenderer {
       const runRender: CellRender = { ...render, style }
       this.setFont(scene, runRender)
       const color = run.color ?? render.color
-      ctx.fillStyle = color === '#000000' ? scene.palette.text : color
+      ctx.fillStyle = ink(scene, render, color)
       const width = ctx.measureText(run.text).width
       const fontPx = style.fontSize * POINTS_TO_PIXELS * scene.zoom
       const shift = run.font?.vertAlign === 'superscript' ? -fontPx * 0.3 : run.font?.vertAlign === 'subscript' ? fontPx * 0.2 : 0
@@ -910,6 +917,28 @@ export function wrapText(ctx: CanvasRenderingContext2D, text: string, width: num
 }
 
 const ICON_COLORS = { red: '#E8453C', yellow: '#F9BB2D', green: '#4CA853', gray: '#7F7F7F', black: '#3C3C3C', blue: '#4A89DC' }
+
+/**
+ * The color text is drawn in. "Automatic" (#000000) follows the grid's text color, except on a
+ * light fill, where it stays dark as it would on paper (a dark-mode grid would otherwise draw light
+ * text on a pale conditional-format color).
+ */
+function ink(scene: Scene, render: CellRender, color: string): string {
+  if (color !== '#000000') return color
+  const fill = render.fill ?? render.pattern?.bg
+  return fill && luminance(fill) > 0.5 ? '#000000' : scene.palette.text
+}
+
+/** Relative luminance (0–1) of a `#RRGGBB` color; 0 for anything else. */
+function luminance(color: string): number {
+  const match = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})/i.exec(color)
+  if (!match) return 0
+  const [r, g, b] = match.slice(1, 4).map((hex) => {
+    const channel = parseInt(hex, 16) / 255
+    return channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4
+  }) as [number, number, number]
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b
+}
 
 /** Draws an icon from one of Excel's icon sets. */
 export function drawIcon(ctx: CanvasRenderingContext2D, set: string, index: number, x: number, y: number, size: number): void {

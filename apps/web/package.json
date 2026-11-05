@@ -18,6 +18,7 @@
     "test:doc-dictation": "node tests/doc-dictation.browser.mjs",
     "capture:landing": "node scripts/capture-landing-screenshots.mjs",
     "test:sheets": "node tests/sheets.browser.mjs",
+    "test:live-sheets": "node tests/live-sheets.browser.mjs",
     "test:live-text": "node tests/live-text.browser.mjs"
   },
   "dependencies": {
