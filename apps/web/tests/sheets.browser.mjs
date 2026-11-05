@@ -303,6 +303,24 @@ try {
     await csvPage.close()
   })
 
+  await step('review diff lists changed cells and inserted rows', async () => {
+    const { page: review, errors: reviewErrors } = await open('?diff=1')
+    await review.evaluate(() => {
+      const sheetView = window.__sheets.views[0]
+      sheetView.select({ top: 6, left: 3, bottom: 6, right: 3 })
+      sheetView.beginEdit('9500', true)
+      sheetView.commitEdit()
+      sheetView.select({ top: 9, left: 0, bottom: 9, right: 0 })
+      sheetView.insert('row', 'before')
+    })
+    const panel = review.getByTestId('sheet-diff')
+    await panel.getByText('Row 10 inserted').waitFor()
+    await panel.getByRole('rowheader', { name: 'D7' }).waitFor()
+    assert.equal(await panel.getByRole('rowheader', { name: 'G11' }).count(), 0, 'formulas that only moved are not changes')
+    assert.deepEqual(reviewErrors, [])
+    await review.close()
+  })
+
   for (const line of results) console.log(line)
   console.log('spreadsheet editor works in the browser')
 } finally {

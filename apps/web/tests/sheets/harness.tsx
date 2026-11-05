@@ -7,11 +7,12 @@ import { createRoot } from 'react-dom/client'
 import * as Y from 'yjs'
 import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from 'y-protocols/awareness'
 import { MemoryAssetStore } from '@pulpo/client-core/office'
-import { SheetCodec } from '@pulpo/client-core/office/sheets'
+import { SheetCodec, diffWorkbooks, type WorkbookDiff } from '@pulpo/client-core/office/sheets'
 import type { SheetView } from '@pulpo/client-core/office/sheets/view'
 import '../../src/index.css'
 import i18n from '../../src/i18n'
 import { SheetEditor } from '../../src/features/files/live/sheets/SheetEditor'
+import { SheetDiff } from '../../src/features/files/live/sheets/SheetDiff'
 import demoUrl from './fixtures/demo.xlsx?url'
 
 const params = new URLSearchParams(location.search)
@@ -25,6 +26,8 @@ if (params.get('lang') === 'es') void i18n.changeLanguage('es-ES')
 const codec = new SheetCodec()
 const assets = new MemoryAssetStore()
 const docs = [new Y.Doc(), new Y.Doc()]
+/** The workbook as loaded, for the changes panel. */
+const original = new Y.Doc()
 const awareness = docs.map((doc) => new Awareness(doc))
 const views: (SheetView | undefined)[] = [undefined, undefined]
 
@@ -58,6 +61,7 @@ async function importWorkbook(): Promise<void> {
   const bytes = new Uint8Array(await (await fetch(fileUrl)).arrayBuffer())
   await codec.importFile(docs[0]!, bytes, { name: fileName, assets })
   Y.applyUpdate(docs[1]!, Y.encodeStateAsUpdate(docs[0]!), 'remote')
+  Y.applyUpdate(original, Y.encodeStateAsUpdate(docs[0]!))
   connect()
 }
 
@@ -86,6 +90,25 @@ const USERS = [
   { name: 'Grace', color: '#D93025' },
 ]
 
+/** What changed since the file was loaded, as a reviewer would see an agent's proposal. */
+function ChangesPanel() {
+  const [diff, setDiff] = useState<WorkbookDiff>(() => diffWorkbooks(original, docs[0]!))
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const update = () => {
+      clearTimeout(timer)
+      timer = setTimeout(() => setDiff(diffWorkbooks(original, docs[0]!)), 200)
+    }
+    docs[0]!.on('update', update)
+    return () => docs[0]!.off('update', update)
+  }, [])
+  return (
+    <aside className="w-[28rem] shrink-0 overflow-auto border-l bg-background p-4">
+      <SheetDiff diff={diff} />
+    </aside>
+  )
+}
+
 function Harness() {
   const [ready, setReady] = useState(false)
   const [error, setError] = useState<string>()
@@ -111,6 +134,7 @@ function Harness() {
           />
         </div>
       ))}
+      {params.get('diff') === '1' && <ChangesPanel />}
     </div>
   )
 }

@@ -1,7 +1,7 @@
 import type * as Y from 'yjs'
 import { matchSequences } from '../diff/sequence.js'
 import { toA1Form, toIdForm } from '../model/formula-ids.js'
-import { rewriteReferences } from '../model/references.js'
+import { relativeFormula } from '../model/references.js'
 import type {
   AnchorPoint,
   AutoFilter,
@@ -166,16 +166,6 @@ function lineSignature(sheet: SheetModel, kind: AxisKind, index: number, cross: 
 function cellSignature(sheet: SheetModel, row: number, col: number, data: CellData): string {
   if (data.f !== undefined) return `f:${relativeFormula(toA1Form(data.f, sheet), row, col)}`
   return `v:${JSON.stringify(data.v ?? null)}${data.t ?? ''}`
-}
-
-/** References as offsets from the cell (`R[-1]C[0]`), absolute parts as they are. */
-function relativeFormula(formula: string, row: number, col: number): string {
-  return rewriteReferences(formula, (ref) => {
-    if (ref.kind !== 'ref') return undefined
-    const end = (value: typeof ref.from) =>
-      `${value.row === undefined ? '' : value.rowAbs ? `R${value.row}` : `R[${value.row - row}]`}${value.col === undefined ? '' : value.colAbs ? `C${value.col}` : `C[${value.col - col}]`}`
-    return `${ref.sheet ? `${ref.sheet.first}!` : ''}${end(ref.from)}${ref.to ? `:${end(ref.to)}` : ''}`
-  })
 }
 
 interface Extent {

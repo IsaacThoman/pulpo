@@ -317,3 +317,13 @@ export function formatA1Reference(ref: Pick<A1Reference, 'sheet' | 'from' | 'to'
   const from = formatRefEnd(ref.from)
   return prefix + (ref.to ? `${from}:${formatRefEnd(ref.to)}` : from)
 }
+
+/** References as offsets from the cell (`R[-1]C[0]`), absolute parts as they are. */
+export function relativeFormula(formula: string, row: number, col: number): string {
+  return rewriteReferences(formula, (ref) => {
+    if (ref.kind !== 'ref') return undefined
+    const end = (value: typeof ref.from) =>
+      `${value.row === undefined ? '' : value.rowAbs ? `R${value.row}` : `R[${value.row - row}]`}${value.col === undefined ? '' : value.colAbs ? `C${value.col}` : `C[${value.col - col}]`}`
+    return `${ref.sheet ? `${ref.sheet.first}!` : ''}${end(ref.from)}${ref.to ? `:${end(ref.to)}` : ''}`
+  })
+}
