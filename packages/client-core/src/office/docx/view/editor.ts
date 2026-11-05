@@ -513,12 +513,24 @@ export class DocxEditor {
   private dispatch(view: EditorView, tr: Transaction): void {
     if (this.destroyed) return
     this.preparePaste(view, tr)
+    const before = view.state
+    const transaction = this.applyTransaction(view, tr)
+    // Suggesting mode tracks the paste in a new transaction; the original says what it was.
+    if (pasted(tr)) {
+      this.convertPastedLists(view)
+      this.dropForeignReferences(view)
+    }
+    if (transaction.docChanged || before.selection !== view.state.selection || transaction.storedMarksSet) this.emit('update')
+    if (transaction.docChanged && !transaction.getMeta(paginationKey) && this.view) this.scheduleLayout()
+  }
+
+  /** Story and body pastes must import list definitions in the same undo step as their content. */
+  private applyTransaction(view: EditorView, tr: Transaction): Transaction {
     let transaction = tr
     const fromSync = tr.getMeta(ySyncPluginKey) !== undefined
     if (this.modeValue === 'suggesting' && tr.docChanged && !fromSync && !tr.getMeta('docx-tracked') && !tr.getMeta('docx-untracked')) {
       transaction = trackTransaction(view.state, tr, this.reviewer()) ?? tr
     }
-    const before = view.state
     const maps = tr.getMeta('docx-paste-maps') as MapEdit[] | undefined
     if (maps?.length) {
       this.separateUndo(view)
@@ -528,13 +540,7 @@ export class DocxEditor {
       }, ySyncPluginKey)
       this.separateUndo(view)
     } else view.updateState(view.state.apply(transaction))
-    // Suggesting mode tracks the paste in a new transaction; the original says what it was.
-    if (pasted(tr)) {
-      this.convertPastedLists(view)
-      this.dropForeignReferences(view)
-    }
-    if (transaction.docChanged || before.selection !== view.state.selection || transaction.storedMarksSet) this.emit('update')
-    if (transaction.docChanged && !transaction.getMeta(paginationKey) && this.view) this.scheduleLayout()
+    return transaction
   }
 
   /**
@@ -558,9 +564,10 @@ export class DocxEditor {
           if (!view.editable || plain) return false
           const copy = recallCopy(event.clipboardData?.getData('text/html'), view.state.schema)
           if (!copy) return false
-          recalled = limitPastedTables(copy.slice, Math.max(0, DOCX_MAX_TABLE_DEPTH - tableDepth(view)))
+          const foreign = copy.origin.split(':', 1)[0] !== this.options.doc.guid
+          recalled = limitPastedTables(foreign ? copy.numberedSlice ?? copy.slice : copy.slice, Math.max(0, DOCX_MAX_TABLE_DEPTH - tableDepth(view)))
           if (copy.origin !== origin) recalled = withoutForeignParts(recalled)
-          if (copy.origin.split(':', 1)[0] !== this.options.doc.guid) {
+          if (foreign) {
             const imported = importCopiedNumbering(withoutStoryReferences(recalled), copy.numbering, this.options.doc.getMap('numbering').keys())
             recalled = imported.slice
             recalledMaps = imported.maps
@@ -578,7 +585,7 @@ export class DocxEditor {
         // after the cut took the last one away.
         const own = documentPictures(this.options.doc)
         for (const src of slicePictures(slice)) if (own.has(src)) this.knownAssets.add(src)
-        return rememberCopy(slice, origin, this.options.doc.getMap('numbering'))
+        return rememberCopy(slice, origin, this.options.doc.getMap('numbering'), this.context.styles)
       },
       transformPasted: (slice, view, plain) => {
         const copy = view.editable && !plain ? recalled : undefined
@@ -604,14 +611,6 @@ export class DocxEditor {
     if (slice) {
       preservePastedMarks(tr, slice.slice)
       tr.setMeta('docx-paste-maps', slice.maps)
-      const first = slice.slice.content.firstChild
-      const $from = view.state.selection.$from
-      // Open slices inherit destination properties; an empty destination must keep the copied list.
-      if (slice.maps?.length && first?.type.name === 'paragraph' && first.attrs.numPr
-        && $from.parent.type.name === 'paragraph' && !$from.parent.content.size) {
-        const $start = tr.doc.resolve(tr.mapping.map($from.pos, -1))
-        if ($start.parent.type.name === 'paragraph') tr.setNodeMarkup($start.before(), undefined, { ...$start.parent.attrs, numPr: first.attrs.numPr })
-      }
     }
   }
 
@@ -1898,9 +1897,7 @@ export class DocxEditor {
     const dispatch = (view: EditorView, tr: Transaction) => {
       if (view.isDestroyed) return
       this.preparePaste(view, tr)
-      let transaction = tr
-      if (this.modeValue === 'suggesting' && tr.docChanged && tr.getMeta(ySyncPluginKey) === undefined && !tr.getMeta('docx-tracked') && !tr.getMeta('docx-untracked')) transaction = trackTransaction(view.state, tr, this.reviewer()) ?? tr
-      view.updateState(view.state.apply(transaction))
+      this.applyTransaction(view, tr)
       if (pasted(tr)) {
         this.convertPastedLists(view)
         this.dropForeignReferences(view)

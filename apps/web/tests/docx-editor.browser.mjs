@@ -940,6 +940,125 @@ try {
     assert.deepEqual(await labels(), [[copied.items[0], '1.'], [copied.items[1], 'a)']])
   })
 
+  await step('keeps multilevel list properties when replacing paragraphs, including story pastes', async () => {
+    await open('?layout=web')
+    const copied = await page.evaluate(() => {
+      const editor = window.harness.editors[0], view = editor.view, schema = view.state.schema
+      const map = editor.options.doc.getMap('numbering')
+      map.set('abstract:4', JSON.stringify(['w:abstractNum', { 'w:abstractNumId': '4' },
+        ['w:lvl', { 'w:ilvl': '0' }, ['w:start', { 'w:val': '1' }], ['w:numFmt', { 'w:val': 'decimal' }], ['w:lvlText', { 'w:val': '%1.' }]],
+        ['w:lvl', { 'w:ilvl': '1' }, ['w:start', { 'w:val': '2' }], ['w:numFmt', { 'w:val': 'upperLetter' }], ['w:lvlText', { 'w:val': '%1-%2!' }]]]))
+      map.set('num:2', JSON.stringify(['w:num', { 'w:numId': '2' }, ['w:abstractNumId', { 'w:val': '4' }],
+        ['w:lvlOverride', { 'w:ilvl': '0' }, ['w:startOverride', { 'w:val': '7' }]]]))
+      const paragraphs = ['Alpha', 'Beta'].map((text, level) => schema.node('paragraph', {
+        numPr: JSON.stringify(['w:numPr', {}, ['w:ilvl', { 'w:val': String(level) }], ['w:numId', { 'w:val': '2' }]]),
+        jc: JSON.stringify(['w:jc', { 'w:val': 'center' }]), spacing: JSON.stringify(['w:spacing', { 'w:after': '240' }]),
+      }, schema.text(text)))
+      view.dispatch(view.state.tr.replaceWith(0, view.state.doc.content.size, paragraphs))
+      view.dispatch(view.state.tr.setSelection(view.state.selection.constructor.create(view.state.doc, 1, view.state.doc.content.size - 1)))
+      const data = new DataTransfer()
+      view.dom.dispatchEvent(new ClipboardEvent('copy', { clipboardData: data, bubbles: true, cancelable: true }))
+      return { html: data.getData('text/html'), text: data.getData('text/plain') }
+    })
+    for (const target of ['empty', 'replace', 'keep', 'header']) for (const mode of ['editing', 'suggesting']) {
+      await open(target === 'header' ? '?file=sections-headers.docx&layout=web' : '?layout=web')
+      const beforeKeys = await page.evaluate(({ target, mode, copied }) => {
+        const editor = window.harness.editors[0]
+        if (target === 'header') editor.openStoryEditor([...editor.options.doc.getMap('stories').keys()].find((id) => id.startsWith('header:')))
+        const view = target === 'header' ? editor.storyEditor.view : editor.view, schema = view.state.schema
+        const text = target === 'empty' ? '' : 'REPLACE'
+        view.dispatch(view.state.tr.replaceWith(0, view.state.doc.content.size, schema.node('paragraph', null, text ? schema.text(text) : null)))
+        const keys = [...editor.options.doc.getMap('numbering').keys()].sort()
+        view.focus()
+        view.dispatch(view.state.tr.setSelection(view.state.selection.constructor.create(view.state.doc, 1, target === 'keep' ? 2 : 1 + text.length)))
+        editor.setMode(mode)
+        const data = new DataTransfer()
+        data.setData('text/html', copied.html); data.setData('text/plain', copied.text)
+        view.dom.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }))
+        return keys
+      }, { target, mode, copied })
+      const after = await page.evaluate((target) => {
+        const e = window.harness.editors[0], v = target === 'header' ? e.storyEditor.view : e.view
+        return { labels: [...v.dom.querySelectorAll('[data-label]')].map((node) => node.dataset.label), attrs: v.state.doc.firstChild.attrs }
+      }, target)
+      assert.deepEqual(after.labels, target === 'keep' ? ['1-B!'] : ['7.', '7-B!'])
+      if (target !== 'keep') assert.equal(after.attrs.jc, JSON.stringify(['w:jc', { 'w:val': 'center' }]))
+      if (target === 'header' && mode === 'editing') {
+        const imported = new Y.Doc()
+        await docxCodec.importFile(imported, Buffer.from(await page.evaluate(() => window.harness.exportFile()), 'base64'), { name: 'header-list.docx', assets: new MemoryAssetStore() })
+        const header = [...readDocxModel(imported).stories.values()].find((story) => story.doc.textContent.includes('Alpha'))
+        assert.ok(header)
+        header.doc.forEach((node) => {
+          const id = JSON.parse(node.attrs.numPr).slice(2).find((child) => child[0] === 'w:numId')[1]['w:val']
+          assert.ok(imported.getMap('numbering').has(`num:${id}`))
+        })
+        imported.destroy()
+        await page.evaluate(() => window.harness.editors[0].undo())
+        assert.deepEqual(await page.evaluate(() => [...window.harness.docs[0].getMap('numbering').keys()].sort()), beforeKeys)
+        assert.equal(await page.evaluate(() => window.harness.editors[0].storyEditor.view.state.doc.textContent), 'REPLACE')
+      }
+    }
+  })
+
+  await step('materializes style numbering only across documents and exports it intact', async () => {
+    await open('?file=lists.docx&layout=web')
+    const copied = await page.evaluate(() => {
+      const editor = window.harness.editors[0], view = editor.view, schema = view.state.schema
+      let numPr
+      view.state.doc.forEach((node) => { if (!numPr && node.attrs.numPr) numPr = node.attrs.numPr })
+      editor.options.doc.getMap('styles').set('style:CopiedList', JSON.stringify(['w:style', { 'w:type': 'paragraph', 'w:styleId': 'CopiedList' }, ['w:pPr', {}, JSON.parse(numPr)]]))
+      view.dispatch(view.state.tr.replaceWith(0, view.state.doc.content.size, ['Style Alpha', 'Style Beta'].map((text) => schema.node('paragraph', { pStyle: 'CopiedList' }, schema.text(text)))))
+      view.dispatch(view.state.tr.setSelection(view.state.selection.constructor.create(view.state.doc, 1, view.state.doc.content.size - 1)))
+      const data = new DataTransfer()
+      view.dom.dispatchEvent(new ClipboardEvent('copy', { clipboardData: data, bubbles: true, cancelable: true }))
+      return { html: data.getData('text/html'), text: data.getData('text/plain') }
+    })
+    await page.evaluate((copied) => {
+      const view = window.harness.editors[0].view
+      view.dispatch(view.state.tr.insert(view.state.doc.content.size, view.state.schema.node('paragraph')))
+      view.dispatch(view.state.tr.setSelection(view.state.selection.constructor.create(view.state.doc, view.state.doc.content.size - 1)))
+      const data = new DataTransfer(); data.setData('text/html', copied.html); data.setData('text/plain', copied.text)
+      view.dom.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }))
+    }, copied)
+    assert.equal(await page.evaluate(() => window.harness.editors[0].view.state.doc.lastChild.attrs.numPr), null)
+    assert.deepEqual(await page.evaluate(() => [...window.harness.editors[0].view.dom.querySelectorAll('[data-label]')].map((node) => node.dataset.label)), ['1.', '2.', '3.', '4.'])
+    await open('?layout=web')
+    await page.evaluate((copied) => {
+      const view = window.harness.editors[0].view, data = new DataTransfer()
+      data.setData('text/html', copied.html); data.setData('text/plain', copied.text)
+      view.dom.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }))
+    }, copied)
+    assert.deepEqual(await page.evaluate(() => [...window.harness.editors[0].view.dom.querySelectorAll('[data-label]')].map((node) => node.dataset.label)), ['1.', '2.'])
+    const imported = new Y.Doc()
+    await docxCodec.importFile(imported, Buffer.from(await page.evaluate(() => window.harness.exportFile()), 'base64'), { name: 'style-list.docx', assets: new MemoryAssetStore() })
+    readDocxModel(imported).body.forEach((node) => {
+      assert.ok(node.attrs.numPr)
+      const id = JSON.parse(node.attrs.numPr).slice(2).find((child) => child[0] === 'w:numId')[1]['w:val']
+      assert.ok(imported.getMap('numbering').has(`num:${id}`))
+    })
+    imported.destroy()
+  })
+
+  await step('keeps first-item HTML list properties when replacing all text in either mode', async () => {
+    for (const mode of ['editing', 'suggesting']) {
+      await open('?layout=web')
+      const labels = await page.evaluate((mode) => {
+        const editor = window.harness.editors[0], view = editor.view
+        view.dispatch(view.state.tr.insertText('REPLACE', 1))
+        view.dispatch(view.state.tr.setSelection(view.state.selection.constructor.create(view.state.doc, 1, 8)))
+        editor.setMode(mode)
+        const data = new DataTransfer()
+        data.setData('text/html', '<ol><li style="text-align:center">Alpha</li><li>Beta</li></ol>')
+        data.setData('text/plain', 'Alpha\nBeta')
+        view.dom.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }))
+        if (mode === 'suggesting') editor.acceptAll()
+        return [...view.dom.querySelectorAll('[data-label]')].map((node) => [node.textContent, node.dataset.label])
+      }, mode)
+      assert.deepEqual(labels, [['Alpha', '1.'], ['Beta', '2.']])
+      assert.equal(await page.evaluate(() => window.harness.editors[0].view.state.doc.firstChild.attrs.jc), JSON.stringify(['w:jc', { 'w:val': 'center' }]))
+    }
+  })
+
   await step('lays out a 100-page document within budget', async () => {
     const started = Date.now()
     await open('?generate=1600')

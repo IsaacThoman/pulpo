@@ -2,6 +2,7 @@ import type { Attrs, Node as ProseMirrorNode, Slice } from '@tiptap/pm/model'
 import { Plugin, type EditorState, type Transaction } from '@tiptap/pm/state'
 import { Mapping, ReplaceAroundStep, ReplaceStep } from '@tiptap/pm/transform'
 import { ySyncPluginKey } from '@tiptap/y-tiptap'
+import { PARAGRAPH_PROPERTY_ATTRS } from '../schema.js'
 
 /** Only closed paragraph ends belong to the clipboard; an open tail has no mark. */
 function paragraphEnds(slice: Slice): { pos: number; attrs: Attrs }[] {
@@ -24,6 +25,18 @@ export function preservePastedMarks(tr: Transaction, slice: Slice): Transaction 
   if (tr.steps.length !== 1) return tr
   const step = tr.steps[0]
   if (!(step instanceof ReplaceStep)) return tr
+  const first = slice.content.firstChild
+  const $from = tr.before.resolve(step.from)
+  // A fully replaced open paragraph inherits the copy's properties, while its end stays its own.
+  if (slice.openStart && first?.type.name === 'paragraph' && $from.parent.type.name === 'paragraph'
+    && !$from.parentOffset && step.to >= $from.end()) {
+    const $start = tr.doc.resolve(tr.mapping.map(step.from, -1))
+    if ($start.parent.type.name === 'paragraph') {
+      const attrs = { ...$start.parent.attrs }
+      for (const key of ['pStyle', ...Object.keys(PARAGRAPH_PROPERTY_ATTRS), 'pPrRest', 'xmlAttrs']) attrs[key] = first.attrs[key]
+      tr.setNodeMarkup($start.before(), undefined, attrs)
+    }
+  }
   const source = paragraphEnds(slice)
   const fitted = paragraphEnds(step.slice)
   // A closed slice can also split off a prefix paragraph. That extra end has no clipboard mark.

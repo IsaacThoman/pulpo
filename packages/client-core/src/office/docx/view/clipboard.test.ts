@@ -2,6 +2,8 @@
 import { Fragment, Slice } from '@tiptap/pm/model'
 import { describe, expect, it, vi } from 'vitest'
 import { jmlAttr, jmlChild, jmlToXml, packJml, unpackJml, type JmlElement } from '../jsonml.js'
+import { effectiveNumPr, ListCounter, Numbering } from '../numbering.js'
+import { StyleSheet } from '../styles.js'
 import { docxSchema } from '../schema.js'
 import { clipboardParser, clipboardSerializer, importCopiedNumbering, limitPastedTables, recallCopy, rememberCopy, sanitizePastedHtml, withoutForeignParts, withoutStoryReferences } from './clipboard.js'
 
@@ -81,6 +83,40 @@ describe('clipboard', () => {
     expect(ids).toEqual(['4', '5', '4'])
     expect(map.get('num:4')).toContain('w:startOverride')
     vi.unstubAllGlobals()
+  })
+
+  it('captures inherited style numbering for foreign documents without changing same-document copies', () => {
+    const numPr = ['w:numPr', {}, ['w:ilvl', { 'w:val': '1' }], ['w:numId', { 'w:val': '2' }]] as JmlElement
+    const styles = new StyleSheet([
+      ['style:ListNumber', packJml(['w:style', { 'w:type': 'paragraph', 'w:styleId': 'ListNumber' }, ['w:pPr', {}, numPr]])],
+      ['style:DerivedList', packJml(['w:style', { 'w:type': 'paragraph', 'w:styleId': 'DerivedList' }, ['w:basedOn', { 'w:val': 'ListNumber' }]])],
+    ])
+    const source = new Map([
+      ['num:2', packJml(['w:num', { 'w:numId': '2' }, ['w:abstractNumId', { 'w:val': '4' }]])],
+      ['abstract:4', packJml(['w:abstractNum', { 'w:abstractNumId': '4' }, ['w:lvl', { 'w:ilvl': '1' }, ['w:start', { 'w:val': '2' }], ['w:numFmt', { 'w:val': 'upperLetter' }], ['w:lvlText', { 'w:val': '%2!' }]]])],
+    ])
+    const paragraph = (style: string) => schema.node('paragraph', { pStyle: style }, schema.text(style))
+    const slice = new Slice(Fragment.from([paragraph('ListNumber'), paragraph('DerivedList')]), 1, 1)
+    rememberCopy(slice, 'source:body', source, styles)
+    const holder = document.createElement('div')
+    holder.appendChild(clipboardSerializer(schema).serializeFragment(slice.content))
+    const recalled = recallCopy(holder.innerHTML, schema)!
+    expect(recalled.slice.eq(slice)).toBe(true)
+    expect(recalled.slice.content.firstChild!.attrs.numPr).toBeNull()
+    expect(recalled.numbering).toEqual(Object.fromEntries(source))
+    expect(recalled.numberedSlice!.content.firstChild!.attrs.numPr).toBe(packJml(numPr))
+    const imported = importCopiedNumbering(recalled.numberedSlice!, recalled.numbering, source.keys())
+    const targetStyles = new StyleSheet([])
+    const numbering = new Numbering(imported.maps.map(([, key, value]) => [key, value!] as [string, string]), targetStyles)
+    const counter = new ListCounter(numbering)
+    const labels: string[] = []
+    imported.slice.content.forEach((node) => {
+      const list = effectiveNumPr(unpackJml<JmlElement>(node.attrs.numPr), node.attrs.pStyle, targetStyles)!
+      expect(list.ilvl).toBe(1)
+      expect(list.numId).not.toBe('2')
+      labels.push(counter.next(list.numId, list.ilvl)!.text)
+    })
+    expect(labels).toEqual(['B!', 'C!'])
   })
 
   it('drops unresolved list references from older or incomplete foreign copies', () => {

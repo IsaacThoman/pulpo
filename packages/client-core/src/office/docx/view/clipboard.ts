@@ -2,6 +2,8 @@ import { DOMParser as PMDOMParser, DOMSerializer, Fragment, Slice, type Node as 
 import { jmlAttr, jmlChild, jmlChildren, packJml, unpackJml, type JmlElement, type JmlNode } from '../jsonml.js'
 import { HIGHLIGHT_COLORS } from '../css.js'
 import { DOCX_MAX_TABLE_DEPTH } from '../format.js'
+import { effectiveNumPr } from '../numbering.js'
+import type { StyleSheet } from '../styles.js'
 import { freshId, type MapEdit } from './commands.js'
 
 /**
@@ -19,12 +21,14 @@ const COPY_ID = /data-docx-copy="([0-9a-f]{32})"/
 const COPY_LIFETIME_MS = 60 * 60 * 1000
 
 /** Recent copies by id: the slice as JSON and where it came from (document and story). */
-interface StoredCopy { json: string; origin: string; numbering?: Record<string, string> }
+interface StoredCopy { json: string; origin: string; numberedJson?: string; numbering?: Record<string, string> }
 const copies = new Map<string, StoredCopy>()
 let currentCopy: string | null = null
 
 export interface RecalledCopy {
   slice: Slice
+  /** Style numbering made explicit only when crossing document boundaries. */
+  numberedSlice?: Slice
   /** `rememberCopy`'s origin: the document and story it was copied from. */
   origin: string
   /** Raw definitions preserve list levels and overrides in another document. */
@@ -37,11 +41,25 @@ export interface RecalledCopy {
  * for other tabs), so nothing another site or app puts on the clipboard is trusted as a Pulpo copy,
  * and a leaked id can only paste back what the user copied.
  */
-export function rememberCopy(slice: Slice, origin: string, numbering?: { get(key: string): unknown }): Slice {
+export function rememberCopy(slice: Slice, origin: string, numbering?: { get(key: string): unknown }, styles?: StyleSheet): Slice {
   const id = Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, '0')).join('')
   const json = JSON.stringify(slice.toJSON())
   const definitions: Record<string, string> = {}
-  slice.content.descendants((node) => {
+  const explicit = (fragment: Fragment): Fragment => {
+    const children: ProseMirrorNode[] = []
+    fragment.forEach((node) => {
+      let attrs = node.attrs
+      if (styles && node.type.name === 'paragraph' && !attrs.numPr) {
+        const list = effectiveNumPr(undefined, attrs.pStyle as string | null, styles)
+        if (list) attrs = { ...attrs, numPr: packJml(['w:numPr', {}, ['w:ilvl', { 'w:val': String(list.ilvl) }], ['w:numId', { 'w:val': list.numId }]]) }
+      }
+      children.push(node.isText ? node : node.type.create(attrs, node.isLeaf ? null : explicit(node.content), node.marks))
+    })
+    return Fragment.fromArray(children)
+  }
+  const numberedSlice = new Slice(explicit(slice.content), slice.openStart, slice.openEnd)
+  const numberedJson = JSON.stringify(numberedSlice.toJSON())
+  numberedSlice.content.descendants((node) => {
     if (node.type.name !== 'paragraph') return true
     const numPr = unpackJml<JmlElement>(node.attrs.numPr as string | null)
     const numId = jmlAttr(jmlChild(numPr, 'w:numId'), 'w:val')
@@ -53,10 +71,10 @@ export function rememberCopy(slice: Slice, origin: string, numbering?: { get(key
     if (typeof abstract === 'string') definitions[`abstract:${abstractId}`] = abstract
     return false
   })
-  copies.set(id, { json, origin, numbering: definitions })
+  copies.set(id, { json, origin, numberedJson, numbering: definitions })
   if (copies.size > 8) copies.delete(copies.keys().next().value!)
   try {
-    localStorage.setItem(COPY_KEY, JSON.stringify({ id, json, origin, numbering: definitions, at: Date.now() }))
+    localStorage.setItem(COPY_KEY, JSON.stringify({ id, json, origin, numberedJson, numbering: definitions, at: Date.now() }))
   } catch {
     // Too large or no storage: other tabs paste the HTML instead.
   }
@@ -71,16 +89,16 @@ export function recallCopy(html: string | undefined, schema: Schema): RecalledCo
   let copy = copies.get(id)
   if (!copy) {
     try {
-      const stored = JSON.parse(localStorage.getItem(COPY_KEY) ?? 'null') as { id?: string; json?: string; origin?: string; numbering?: Record<string, string>; at?: number } | null
+      const stored = JSON.parse(localStorage.getItem(COPY_KEY) ?? 'null') as { id?: string; json?: string; origin?: string; numberedJson?: string; numbering?: Record<string, string>; at?: number } | null
       if (stored && (typeof stored.at !== 'number' || Date.now() - stored.at > COPY_LIFETIME_MS)) localStorage.removeItem(COPY_KEY)
-      else if (stored?.id === id && typeof stored.json === 'string' && typeof stored.origin === 'string') copy = { json: stored.json, origin: stored.origin, numbering: stored.numbering }
+      else if (stored?.id === id && typeof stored.json === 'string' && typeof stored.origin === 'string') copy = { json: stored.json, origin: stored.origin, numberedJson: stored.numberedJson, numbering: stored.numbering }
     } catch {
       return null
     }
   }
   if (!copy) return null
   try {
-    return { slice: Slice.fromJSON(schema, JSON.parse(copy.json)), origin: copy.origin, numbering: copy.numbering }
+    return { slice: Slice.fromJSON(schema, JSON.parse(copy.json)), numberedSlice: copy.numberedJson ? Slice.fromJSON(schema, JSON.parse(copy.numberedJson)) : undefined, origin: copy.origin, numbering: copy.numbering }
   } catch {
     return null
   }

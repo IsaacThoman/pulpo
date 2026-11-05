@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { yUndoPluginKey } from '@tiptap/y-tiptap'
+import { Fragment, Slice } from '@tiptap/pm/model'
 import { TextSelection } from '@tiptap/pm/state'
 import type { EditorView } from '@tiptap/pm/view'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -10,6 +11,7 @@ import { packJml } from '../jsonml.js'
 import { MemoryAssetStore } from '../memory-assets.js'
 import { fragmentToNode, storyFragmentName, writeFragment } from '../model.js'
 import { docxSchema } from '../schema.js'
+import { clipboardSerializer, rememberCopy } from './clipboard.js'
 import { DocxEditor } from './editor.js'
 import { listRevisions } from './track-changes.js'
 
@@ -203,4 +205,84 @@ describe('section undo', () => {
       incoming.destroy()
     }
   })
+})
+
+/** Exercise the DOM paste handler too: programmatic pasteHTML skips the clipboard event. */
+function pasteHtml(view: EditorView, html: string): void {
+  view.someProp('handleDOMEvents', (handlers) => { handlers.paste?.(view, { clipboardData: { getData: () => html } } as unknown as ClipboardEvent) })
+  view.pasteHTML(html, new Event('paste') as ClipboardEvent)
+}
+
+it.each(['header', 'footer', 'footnote', 'endnote'])('imports foreign numbering into a %s in the content undo step', (kind) => {
+  const numbering = new Map([
+    ['num:2', packJml(['w:num', { 'w:numId': '2' }, ['w:abstractNumId', { 'w:val': '4' }]])],
+    ['abstract:4', packJml(['w:abstractNum', { 'w:abstractNumId': '4' }, ['w:lvl', { 'w:ilvl': '0' }, ['w:start', { 'w:val': '7' }], ['w:numFmt', { 'w:val': 'decimal' }], ['w:lvlText', { 'w:val': '%1.' }]]])],
+  ])
+  const numPr = packJml(['w:numPr', {}, ['w:numId', { 'w:val': '2' }]])
+  const slice = new Slice(Fragment.from(schema.node('paragraph', { numPr }, schema.text('Item'))), 1, 1)
+  rememberCopy(slice, 'foreign:body', numbering)
+  const holder = document.createElement('div')
+  holder.appendChild(clipboardSerializer(schema).serializeFragment(slice.content))
+  editor.openStoryEditor(`${kind}:1`)
+  const view = storyView()
+  view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 1, 9)))
+  const before = view.state.doc
+  pasteHtml(view, holder.innerHTML)
+  expect(view.state.doc.textContent).toBe('Item')
+  expect(view.state.doc.firstChild!.attrs.numPr).not.toBe(numPr)
+  expect(doc.getMap('numbering').size).toBe(2)
+  expect(view.dom.querySelector('[data-label]')?.getAttribute('data-label')).toBe('7.')
+  editor.undo()
+  expect(view.state.doc.eq(before)).toBe(true)
+  expect(doc.getMap('numbering').size).toBe(0)
+  editor.redo()
+  expect(view.state.doc.textContent).toBe('Item')
+  expect(doc.getMap('numbering').size).toBe(2)
+})
+
+it.each(['editing', 'suggesting'] as const)('takes open pasted paragraph properties only when replacing all target content in %s', (mode) => {
+  const attrs = {
+    pStyle: 'Heading1', numPr: packJml(['w:numPr', {}, ['w:numId', { 'w:val': '2' }]]),
+    jc: packJml(['w:jc', { 'w:val': 'center' }]), ind: packJml(['w:ind', { 'w:left': '720' }]),
+    spacing: packJml(['w:spacing', { 'w:after': '240' }]), keepNext: packJml(['w:keepNext', {}]),
+  }
+  const sectPr = packJml(['w:sectPr', {}, ['w:type', { 'w:val': 'continuous' }]])
+  const markRPr = packJml(['w:rPr', {}, ['w:b', {}]])
+  for (const text of ['', 'REPLACE', 'KEEP']) {
+    editor.setMode('editing')
+    editor.view.dispatch(editor.view.state.tr.replaceWith(0, editor.view.state.doc.content.size,
+      schema.node('paragraph', { sectPr, markRPr }, text ? schema.text(text) : undefined)))
+    editor.view.dispatch(editor.view.state.tr.setSelection(TextSelection.create(editor.view.state.doc, 1, text === 'KEEP' ? 2 : 1 + text.length)))
+    editor.setMode(mode)
+    const slice = new Slice(Fragment.from([
+      schema.node('paragraph', attrs, schema.text('Alpha')),
+      schema.node('paragraph', attrs, schema.text('Beta')),
+    ]), 1, 1)
+    rememberCopy(slice, `${doc.guid}:body`)
+    const holder = document.createElement('div')
+    holder.appendChild(clipboardSerializer(schema).serializeFragment(slice.content))
+    pasteHtml(editor.view, holder.innerHTML)
+    if (text === 'KEEP') expect(editor.view.state.doc.firstChild!.attrs.numPr).toBeNull()
+    else expect(editor.view.state.doc.firstChild!.attrs).toMatchObject(attrs)
+    expect(editor.view.state.doc.lastChild!.attrs).toMatchObject({ sectPr, markRPr })
+    if (mode === 'suggesting') {
+      editor.rejectAll()
+      expect(editor.view.state.doc.childCount).toBe(1)
+      expect(editor.view.state.doc.textContent).toBe(text)
+      expect(editor.view.state.doc.firstChild!.attrs).toMatchObject({ sectPr, markRPr, numPr: null })
+      expect(editor.revisions()).toEqual([])
+    }
+  }
+})
+
+it.each(['editing', 'suggesting'] as const)('keeps the first HTML list item when replacing a paragraph in %s', (mode) => {
+  editor.view.dispatch(editor.view.state.tr.insertText('REPLACE', 1))
+  editor.view.dispatch(editor.view.state.tr.setSelection(TextSelection.create(editor.view.state.doc, 1, 8)))
+  editor.setMode(mode)
+  pasteHtml(editor.view, '<ol><li style="text-align:center">Alpha</li><li>Beta</li></ol>')
+  expect(Array.from(editor.view.dom.querySelectorAll('[data-label]'), (node) => node.getAttribute('data-label'))).toEqual(['1.', '2.'])
+  expect(editor.view.state.doc.firstChild!.attrs.jc).toBe(packJml(['w:jc', { 'w:val': 'center' }]))
+  if (mode === 'suggesting') editor.acceptAll()
+  expect(editor.view.state.doc.textContent).toBe('AlphaBeta')
+  expect(editor.revisions()).toEqual([])
 })
