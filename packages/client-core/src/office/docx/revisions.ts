@@ -491,7 +491,7 @@ export function listRevisions(doc: ProseMirrorNode, storyId?: string): Revision[
         const element = jmlChild(pr, name)
         if (element) revisions.push({ key: `${kind}:${jmlAttr(element, 'w:id') ?? pos}:${pos}`, kind, author: jmlAttr(element, 'w:author'), date: jmlAttr(element, 'w:date'), from: pos, to: pos + node.nodeSize, text: node.textContent })
       }
-      const continuations = unpackJml<JmlElement[]>(node.attrs.vMergeCells as string | null) ?? []
+      const continuations = (unpackJml<JmlElement[]>(node.attrs.vMergeCells as string | null) ?? []).slice(0, Math.max(0, Number(node.attrs.rowspan) - 1))
       if (continuations.some((cell) => jmlChild(jmlChild(cell, 'w:tcPr'), 'w:cellMerge'))) revisions.push({ key: `cellMerge:continuations:${pos}`, kind: 'cellMerge', from: pos, to: pos + node.nodeSize, text: node.textContent })
     }
     if (node.type.name === 'paragraph') {
@@ -619,7 +619,7 @@ function normalizeVertical(out: Transaction): void {
           owners.add(above)
           next.set(col, above)
           removed.push(pos)
-        } else next.set(col, { node: cell, pos, end: rowIndex + Number(cell.attrs.rowspan) - 1, span: Number(cell.attrs.colspan), kept: [...unpackJml<JmlElement[]>(cell.attrs.vMergeCells as string | null) ?? []], merged: 0 })
+        } else next.set(col, { node: cell, pos, end: rowIndex + Number(cell.attrs.rowspan) - 1, span: Number(cell.attrs.colspan), kept: (unpackJml<JmlElement[]>(cell.attrs.vMergeCells as string | null) ?? []).slice(0, Math.max(0, Number(cell.attrs.rowspan) - 1)), merged: 0 })
       })
       open = next
     })
@@ -645,7 +645,7 @@ function padMissingCells(out: Transaction): void {
     }
     return true
   })
-  for (const entry of missing.reverse()) out.insert(entry.pos, out.doc.type.schema.nodes.tableCell!.create({ phantom: 'pad', colspan: entry.count }, out.doc.type.schema.nodes.paragraph!.create()))
+  for (const entry of missing.reverse()) out.insert(entry.pos, out.doc.type.schema.nodes.tableCell!.create({ phantom: 'after', colspan: entry.count }, out.doc.type.schema.nodes.paragraph!.create()))
 }
 
 /** Accepts or rejects revisions; returns the transaction, or null if none applied. */
@@ -701,7 +701,12 @@ function resolveBatch(state: EditorState, revisions: Revision[], action: 'accept
         const remove = (kind === 'cellInsert' && action === 'reject') || (kind === 'cellDelete' && action === 'accept')
         if (remove) {
           const $cell = out.doc.resolve(from)
-          if ($cell.parent.childCount === 1) deleteRow(out, $cell.before())
+          const table = $cell.node($cell.depth - 1)
+          const tableStart = $cell.start($cell.depth - 1)
+          const map = TableMap.get(table)
+          const rect = map.findCell(from - tableStart)
+          const covered = map.map.slice(rect.top * map.width, (rect.top + 1) * map.width).some((offset) => map.findCell(offset).top < rect.top)
+          if ($cell.parent.childCount === 1 && !covered) deleteRow(out, $cell.before())
           else out.delete(from, from + cell.nodeSize)
         } else {
           const names = kind === 'cellInsert' ? ['w:cellIns'] : kind === 'cellDelete' ? ['w:cellDel', 'w:del'] : ['w:cellMerge']

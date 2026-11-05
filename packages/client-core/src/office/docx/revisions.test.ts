@@ -70,6 +70,16 @@ describe('shared semantic revision views', () => {
     check(doc)
   })
 
+  it('keeps a covered row when its last own cell is deleted', () => {
+    const spanning = schema.node('tableCell', { rowspan: 2 }, [p('source')])
+    const doc = model(table(row([spanning, cell('top')]), row([cell('bottom', change('w:cellDel'))])))
+    const accepted = revisionModel(doc)
+    expect(accepted.body.firstChild!.firstChild!.firstChild!.attrs.rowspan).toBe(2)
+    expect(acceptedText(doc)).toBe('| source | top |\n')
+    expect(baseText(doc)).toBe('| source | top |\n| bottom |\n')
+    check(doc)
+  })
+
   it('accepts a cell merge and rejects it into the original separate cells', () => {
     const doc = model(table(row([cell('left'), cell('top')]), row([cell('right'), cell('bottom', change('w:cellMerge', { 'w:vMerge': 'cont' }))])))
     const accepted = revisionModel(doc)
