@@ -1,10 +1,10 @@
-import { readFileSync } from 'node:fs'
 import { unzipSync } from 'fflate'
 import { describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
 import { blankPresentation } from './blank.js'
 import { presentationCodec } from './codec.js'
 import { memoryAssets } from './testing/assets.js'
+import { fixture } from './testing/fixtures.js'
 
 const context = (name = 'deck.pptx') => ({ name, assets: memoryAssets() })
 
@@ -21,15 +21,12 @@ describe('presentationCodec', () => {
     for (const [path, data] of Object.entries(before)) expect(Buffer.from(after[path]!).equals(Buffer.from(data)), path).toBe(true)
   })
 
-  it('reads text', async () => {
+  it('reads text, including speaker notes', async () => {
     const ctx = context()
     const doc = new Y.Doc()
-    await presentationCodec.importFile(doc, readFileSync('/tmp/pptx-ws6/basic.pptx'), ctx)
-    expect(presentationCodec.toText(doc)).toContain('World\nSecond')
-    expect(presentationCodec.toText(doc)).toContain('My notes')
-    const out = await presentationCodec.exportFile(doc, ctx)
-    const before = unzipSync(readFileSync('/tmp/pptx-ws6/basic.pptx'))
-    const after = unzipSync(out)
-    for (const [path, data] of Object.entries(before)) expect(Buffer.from(after[path]!).equals(Buffer.from(data)), path).toBe(true)
+    await presentationCodec.importFile(doc, fixture('generated/text-formatting.pptx'), ctx)
+    const text = presentationCodec.toText(doc)
+    expect(text).toContain('--- Slide 2 ---\nCharacter formatting')
+    expect(text).toContain('Each line exercises one run property.')
   })
 })
