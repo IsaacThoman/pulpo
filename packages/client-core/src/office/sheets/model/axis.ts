@@ -1,4 +1,5 @@
 import * as Y from 'yjs'
+import { MAX_ROWS } from '../address.js'
 
 /**
  * Stable identity for rows and columns, so that structural edits and content edits made at the
@@ -210,6 +211,9 @@ export class Axis {
 
   /** Stores entries until at least `count` are materialized. Call inside a transaction. */
   ensure(count: number): void {
+    // Callers pass positions read from files; never store past the largest sheet Excel allows.
+    if (!Number.isFinite(count) || count <= 0) return
+    count = Math.min(Math.ceil(count), MAX_ROWS)
     const { ids, next } = this.resolve()
     if (ids.length >= count) return
     // Round up to the next chunk boundary (deterministic, so concurrent extensions agree).

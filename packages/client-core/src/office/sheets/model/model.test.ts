@@ -205,3 +205,18 @@ describe('sheets', () => {
     }
   })
 })
+
+describe('axis bounds', () => {
+  it('never stores past the largest sheet, whatever position it is asked for', () => {
+    const doc = new Y.Doc()
+    const sheet = WorkbookModel.initialize(doc).addSheet('Sheet1')
+    doc.transact(() => {
+      sheet.rows.ensure(Infinity)
+      sheet.rows.ensure(Number.NaN)
+      sheet.cols.ensure(-5)
+    })
+    expect(sheet.rows.length).toBe(1024)
+    doc.transact(() => sheet.rows.ensure(5_000_000))
+    expect(sheet.rows.length).toBe(1_048_576)
+  })
+})
