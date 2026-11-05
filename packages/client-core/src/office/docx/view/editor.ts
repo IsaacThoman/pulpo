@@ -209,6 +209,7 @@ export interface DocxFormattingState {
   list: ListKind | null
   inTable: boolean
   tableColumnsEditable: boolean
+  /** Whether commands without Word revision support (including section breaks) are available. */
   untrackedFormattingEditable: boolean
   link: string | null
   canUndo: boolean
@@ -1077,6 +1078,7 @@ export class DocxEditor {
   }
 
   insertSectionBreak(type: 'nextPage' | 'continuous' | 'evenPage' | 'oddPage'): boolean {
+    if (this.modeValue === 'suggesting') return false
     const view = this.storyEditor?.view ?? this.view
     return this.runResult(insertSectionBreak(type, view.state, this.context))
   }

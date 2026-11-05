@@ -525,6 +525,7 @@ export function sectionOf(doc: ProseMirrorNode, pos: number, finalSectPr: JmlEle
 }
 
 /** Ends the section at the cursor: the paragraph before the break carries a copy of the section's properties. */
+/** Editing only: the caller must refuse Suggesting mode before applying these untracked section maps. */
 export function insertSectionBreak(type: 'nextPage' | 'continuous' | 'evenPage' | 'oddPage', state: EditorState, context: DocxViewContext): EditResult | null {
   const { $from } = state.selection
   let depth = $from.depth

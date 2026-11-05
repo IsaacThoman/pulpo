@@ -293,12 +293,12 @@ export function DocxToolbar({ editor, state, onRequestLink, onTogglePanel, panel
           </DropdownMenuSub>
           <DropdownMenuItem onSelect={() => editor.insertPageBreak()}>{ui("Page break")}</DropdownMenuItem>
           <DropdownMenuSub>
-            <DropdownMenuSubTrigger>{ui("Section break")}</DropdownMenuSubTrigger>
+            <DropdownMenuSubTrigger disabled={!state.untrackedFormattingEditable}>{ui("Section break")}</DropdownMenuSubTrigger>
             <DropdownMenuSubContent>
-              <DropdownMenuItem onSelect={() => editor.insertSectionBreak('nextPage')}>{ui("Next page")}</DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => editor.insertSectionBreak('continuous')}>{ui("Continuous")}</DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => editor.insertSectionBreak('evenPage')}>{ui("Even page")}</DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => editor.insertSectionBreak('oddPage')}>{ui("Odd page")}</DropdownMenuItem>
+              <DropdownMenuItem disabled={!state.untrackedFormattingEditable} onSelect={() => editor.insertSectionBreak('nextPage')}>{ui("Next page")}</DropdownMenuItem>
+              <DropdownMenuItem disabled={!state.untrackedFormattingEditable} onSelect={() => editor.insertSectionBreak('continuous')}>{ui("Continuous")}</DropdownMenuItem>
+              <DropdownMenuItem disabled={!state.untrackedFormattingEditable} onSelect={() => editor.insertSectionBreak('evenPage')}>{ui("Even page")}</DropdownMenuItem>
+              <DropdownMenuItem disabled={!state.untrackedFormattingEditable} onSelect={() => editor.insertSectionBreak('oddPage')}>{ui("Odd page")}</DropdownMenuItem>
             </DropdownMenuSubContent>
           </DropdownMenuSub>
           <DropdownMenuItem onSelect={() => editor.insertNote('footnote')}>{ui("Footnote")}</DropdownMenuItem>

@@ -132,14 +132,14 @@ it('preserves the original final paragraph mark when regenerating a table of con
 })
 
 describe('section undo', () => {
-  it.each(['editing', 'suggesting'] as const)('undoes the final section type and split together in %s mode', async (mode) => {
+  it('undoes the final section type and split together in Editing mode', async () => {
     const sectPr = packJml(['w:sectPr', {}, ['w:type', { 'w:val': 'nextPage' }]])
     const original = schema.node('doc', null, [schema.node('paragraph', null, schema.text('ABC')), schema.node('paragraph', null, schema.text('DEF'))])
     doc.transact(() => {
       doc.getMap('docx').set('sectPr', sectPr)
       writeFragment(doc, doc.getXmlFragment('body'), original)
     }, 'setup')
-    editor.setMode(mode)
+    editor.setMode('editing')
     editor.view.dispatch(editor.view.state.tr.setSelection(TextSelection.create(editor.view.state.doc, 7)))
     expect(editor.insertSectionBreak('continuous')).toBe(true)
     const inserted = editor.view.state.doc
@@ -155,6 +155,25 @@ describe('section undo', () => {
     expect(editor.redo()).toBe(true)
     expect(editor.view.state.doc.eq(inserted)).toBe(true)
     expect(doc.getMap('docx').get('sectPr')).toContain('continuous')
+  })
+
+  it('refuses all section break types in Suggesting mode without changing existing section properties', () => {
+    const sectPr = packJml(['w:sectPr', {}, ['w:type', { 'w:val': 'oddPage' }]])
+    const paragraphSection = packJml(['w:sectPr', {}, ['w:type', { 'w:val': 'nextPage' }]])
+    doc.getMap('docx').set('sectPr', sectPr)
+    const original = schema.node('doc', null, [schema.node('paragraph', { sectPr: paragraphSection }, schema.text('ABC')), schema.node('paragraph', null, schema.text('DEF'))])
+    editor.view.dispatch(editor.view.state.tr.replaceWith(0, editor.view.state.doc.content.size, original.content))
+    editor.setMode('suggesting')
+    expect(editor.state().untrackedFormattingEditable).toBe(false)
+    for (const pos of [2, 7]) {
+      editor.view.dispatch(editor.view.state.tr.setSelection(TextSelection.create(editor.view.state.doc, pos)))
+      for (const type of ['nextPage', 'continuous', 'evenPage', 'oddPage'] as const) expect(editor.insertSectionBreak(type)).toBe(false)
+    }
+    expect(editor.view.state.doc.eq(original)).toBe(true)
+    expect(doc.getMap('docx').get('sectPr')).toBe(sectPr)
+    expect(editor.revisions()).toEqual([])
+    editor.setMode('editing')
+    expect(editor.state().untrackedFormattingEditable).toBe(true)
   })
 
   it('keeps agent applyFile and unrelated map origins outside editor undo', async () => {

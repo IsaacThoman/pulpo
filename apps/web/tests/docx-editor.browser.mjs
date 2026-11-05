@@ -124,6 +124,22 @@ try {
     await page.keyboard.press('Escape')
   })
 
+  await step('refuses section breaks while suggesting and disables their Insert menu', async () => {
+    await open('?file=sections-headers.docx')
+    const result = await page.evaluate(() => {
+      const editor = window.harness.editors[0]
+      editor.setMode('suggesting')
+      const before = JSON.stringify(window.harness.model())
+      const section = window.harness.docs[0].getMap('docx').get('sectPr')
+      const commands = ['nextPage', 'continuous', 'evenPage', 'oddPage'].map((type) => editor.insertSectionBreak(type))
+      return { commands, unchanged: before === JSON.stringify(window.harness.model()), sectionUnchanged: section === window.harness.docs[0].getMap('docx').get('sectPr'), editable: editor.state().untrackedFormattingEditable }
+    })
+    assert.deepEqual(result, { commands: [false, false, false, false], unchanged: true, sectionUnchanged: true, editable: false })
+    await page.getByRole('button', { name: 'Insert', exact: true }).click()
+    assert.equal(await page.getByRole('menuitem', { name: 'Section break', exact: true }).getAttribute('data-disabled'), '')
+    await page.keyboard.press('Escape')
+  })
+
   await step('types, formats with shortcuts, and undoes', async () => {
     await open('?file=basic-formatting.docx')
     if (screenshots) await page.screenshot({ path: `${screenshots}/docx-editor-light.png` })

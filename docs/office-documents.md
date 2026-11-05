@@ -76,7 +76,7 @@ The harness (`apps/web/tests/docx-editor/index.html`, dev server only) loads a f
 
 In rough order of importance:
 
-- Suggesting hyperlink changes, cell shading/borders, column insert/delete, cell merge, and cell split; these commands are disabled in Suggesting mode. Custom transactions that change columns are not tracked as column revisions.
+- Suggesting section breaks, hyperlink changes, cell shading/borders, column insert/delete, cell merge, and cell split; these commands are disabled in Suggesting mode. Section property changes cannot be tracked as Word revisions here. Custom transactions that change columns are not tracked as column revisions.
 - When two people split the same paragraph at the same moment, the collaborative layer (y-prosemirror) merges the splits as a re-insertion of the paragraph’s content, which can duplicate the text after the split points. The same applies to the Markdown editor.
 - Multi-column sections render as one column (the setting is kept). Floating pictures wrap with CSS floats and page-relative positions are approximated against the paragraph. Text boxes, shapes, SmartArt, and charts show their fallback picture or a sized placeholder with their text; they cannot be edited.
 - Table rows taller than a page are not split across pages. Pictures copied from another document are left out when pasted (their assets belong to that document); inserted pictures are PNG, JPEG, GIF, or BMP. Column widths cannot be dragged. Inserting columns spreads the grid evenly.
