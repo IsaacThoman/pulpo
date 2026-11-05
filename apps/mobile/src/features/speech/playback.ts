@@ -52,7 +52,7 @@ async function playSpeech(key: string, markdown?: string) {
     }) })
     if (!response.ok) { const body = await response.json().catch(() => null); throw new Error(body?.error?.message ?? 'Speech generation failed') }
     const bytes = new Uint8Array(await response.arrayBuffer())
-    return { ...nativeSpeechAudio(bytes, model.responseFormat, signal), durationSeconds: Number(response.headers.get(SPEECH_DURATION_HEADER)) }
+    return { ...nativeSpeechAudio(bytes, model.responseFormat, signal), durationSeconds: Number(response.headers.get(SPEECH_DURATION_HEADER)), format: model.responseFormat, bytes: () => bytes }
   }, { retain: markdown !== undefined })
 }
 AppState.addEventListener('change', state => { if (state !== 'active') speechPlayback.stop() })

@@ -1,5 +1,6 @@
 import { imageBatchNeedsWorkspace, DEFAULT_MAX_INLINE_IMAGES } from '@pulpo/contracts';
 import { speechPlayback, readAloud } from '../features/speech/playback';
+import { saveSpeechToFiles, shareSpeechAudio } from '../features/speech/save';
 import { SPEECH_SEEK_SECONDS, nextSpeechRate, speechRateLabel, speechText, speechTimeLabel, type SpeechProgress } from '@pulpo/client-core';
 import { INITIAL_TRANSCRIPT_ROWS, hasLargeInitialMessage, transcriptListMessages, usesBottomAnchoredTranscript } from '../features/chat/transcriptWindow';
 import { hasChatSelectionObserver, recordChatSelection, hasTranscriptPositionObserver, recordTranscriptPosition } from '../features/chat/selectionTiming';
@@ -237,6 +238,7 @@ import { useOpenFileItem } from '../features/files/open';
 import { fileOpenTarget } from '../features/files/itemActions';
 import { FilesToastHost } from '../features/files/components/FilesToastHost';
 import { FolderPickerSheet } from '../features/files/components/FolderPickerSheet';
+import { saveAttachmentToFiles } from '../features/files/api';
 import { FileAppearanceSheet } from '../features/files/components/FileAppearanceSheet';
 import { useItemAppearance } from '../features/files/itemAppearance';
 import { filesErrorMessage } from '../features/files/display';
@@ -317,6 +319,7 @@ import {
   type ChatHeaderTrailingAction,
 } from '../features/chat/headerAction';
 import { copyFile, supportsFileClipboard } from '../native/fileClipboard';
+import { saveFileToDevice, saveImageToPhotos, supportsSaveToDevice, supportsSaveToPhotos } from '../native/fileSaving';
 import {
   AttachmentPreviewError,
   previewImages as previewNativeImages,
@@ -956,81 +959,91 @@ function AttachmentStrip({ attachments, onPreviewFile, onPreviewImage, onRemove,
       maxToRenderPerBatch={4}
       windowSize={3}
       keyExtractor={(attachment) => attachment.localId}
-      renderItem={({ item: attachment, index }) => (
-        <View key={attachment.localId} style={styles.attachmentFrame}>
-          <Pressable
-            accessibilityLabel={`Preview ${attachment.name}`}
-            accessibilityRole="button"
-            onPress={() => attachment.kind === 'image' ? previewImage(index, attachment) : onPreviewFile(attachment)}
-            ref={attachment.kind === 'image' ? (view) => {
-              if (view) imageRefs.current.set(attachment.localId, view);
-              else imageRefs.current.delete(attachment.localId);
-            } : undefined}
-            style={({ pressed }) => [
-              attachment.kind === 'image' ? styles.imageAttachment : styles.fileAttachment,
-              attachment.state === 'failed' && styles.failedAttachment,
-              pressed && styles.attachmentPressed,
-            ]}
-          >
-            {attachment.kind === 'image' ? (
-              attachment.uri && !attachment.serverId
-                ? <Image
-                    accessibilityLabel={attachment.name}
-                    nativeID={`pulpo-attachment-preview-${attachment.localId}`}
-                    onLoad={(event) => {
-                      const { height, width } = event.nativeEvent.source;
-                      imageSources.current.set(attachment.localId, { height, uri: attachment.uri!, width });
-                    }}
-                    source={{ uri: attachment.uri }}
-                    style={styles.attachmentImage}
-                  />
-                : <ResolvedAttachmentImage
-                    attachment={attachment}
-                    onResolved={(source) => imageSources.current.set(attachment.localId, source)}
-                    sourceNativeId={`pulpo-attachment-preview-${attachment.localId}`}
-                    variant="composer"
-                  />
-            ) : (
-              <>
-                <View style={styles.fileAttachmentIcon}>
-                  <Icon name={attachmentSymbol(attachmentVisualKind(attachment.name, attachment.mimeType))} size={22} color={attachmentTint(attachmentVisualKind(attachment.name, attachment.mimeType))} />
-                </View>
-                <View style={styles.fileAttachmentCopy}>
-                  <Text numberOfLines={1} style={styles.fileAttachmentName}>{attachment.name}</Text>
-                  <Text numberOfLines={1} style={styles.fileAttachmentMeta}>{attachmentMetadata(attachment.name, attachment.mimeType, attachment.size)}</Text>
-                </View>
-              </>
-            )}
-            {attachment.state === 'uploading' ? (
-              <View style={styles.attachmentLoadingOverlay}><ActivityIndicator color="#ffffff" size="small" /></View>
-            ) : null}
-          </Pressable>
-          <Pressable
-            accessibilityLabel={`Remove ${attachment.name}`}
-            accessibilityRole="button"
-            onPress={(event) => {
-              event.stopPropagation();
-              onRemove(attachment.localId);
-            }}
-            style={styles.removeAttachmentHitTarget}
-          >
-            <View style={styles.removeAttachmentButton}>
-              <Icon name="xmark" size={9} color="#ffffff" weight="bold" />
-            </View>
-          </Pressable>
-          {attachment.state === 'failed' ? (
-            <Pressable
-              accessibilityLabel={`Retry ${attachment.name}`}
-              accessibilityRole="button"
-              onPress={() => onRetry(attachment.localId)}
-              style={styles.attachmentRetryOverlay}
+      renderItem={({ item: attachment, index }) => {
+        const open = () => attachment.kind === 'image' ? previewImage(index, attachment) : onPreviewFile(attachment);
+        return (
+          <View key={attachment.localId} style={styles.attachmentFrame}>
+            <ComposerAttachmentContextMenu
+              attachment={attachment}
+              onOpen={open}
+              onRemove={() => onRemove(attachment.localId)}
+              onRetry={() => onRetry(attachment.localId)}
             >
-              <Icon name="arrow.clockwise" size={11} color="#ffffff" weight="bold" />
-              <Text numberOfLines={1} style={styles.attachmentRetryText}>Retry</Text>
+              <Pressable
+                accessibilityLabel={`Preview ${attachment.name}`}
+                accessibilityRole="button"
+                onPress={open}
+                ref={attachment.kind === 'image' ? (view) => {
+                  if (view) imageRefs.current.set(attachment.localId, view);
+                  else imageRefs.current.delete(attachment.localId);
+                } : undefined}
+                style={({ pressed }) => [
+                  attachment.kind === 'image' ? styles.imageAttachment : styles.fileAttachment,
+                  attachment.state === 'failed' && styles.failedAttachment,
+                  pressed && styles.attachmentPressed,
+                ]}
+              >
+                {attachment.kind === 'image' ? (
+                  attachment.uri && !attachment.serverId
+                    ? <Image
+                        accessibilityLabel={attachment.name}
+                        nativeID={`pulpo-attachment-preview-${attachment.localId}`}
+                        onLoad={(event) => {
+                          const { height, width } = event.nativeEvent.source;
+                          imageSources.current.set(attachment.localId, { height, uri: attachment.uri!, width });
+                        }}
+                        source={{ uri: attachment.uri }}
+                        style={styles.attachmentImage}
+                      />
+                    : <ResolvedAttachmentImage
+                        attachment={attachment}
+                        onResolved={(source) => imageSources.current.set(attachment.localId, source)}
+                        sourceNativeId={`pulpo-attachment-preview-${attachment.localId}`}
+                        variant="composer"
+                      />
+                ) : (
+                  <>
+                    <View style={styles.fileAttachmentIcon}>
+                      <Icon name={attachmentSymbol(attachmentVisualKind(attachment.name, attachment.mimeType))} size={22} color={attachmentTint(attachmentVisualKind(attachment.name, attachment.mimeType))} />
+                    </View>
+                    <View style={styles.fileAttachmentCopy}>
+                      <Text numberOfLines={1} style={styles.fileAttachmentName}>{attachment.name}</Text>
+                      <Text numberOfLines={1} style={styles.fileAttachmentMeta}>{attachmentMetadata(attachment.name, attachment.mimeType, attachment.size)}</Text>
+                    </View>
+                  </>
+                )}
+                {attachment.state === 'uploading' ? (
+                  <View style={styles.attachmentLoadingOverlay}><ActivityIndicator color="#ffffff" size="small" /></View>
+                ) : null}
+              </Pressable>
+            </ComposerAttachmentContextMenu>
+            <Pressable
+              accessibilityLabel={`Remove ${attachment.name}`}
+              accessibilityRole="button"
+              onPress={(event) => {
+                event.stopPropagation();
+                onRemove(attachment.localId);
+              }}
+              style={styles.removeAttachmentHitTarget}
+            >
+              <View style={styles.removeAttachmentButton}>
+                <Icon name="xmark" size={9} color="#ffffff" weight="bold" />
+              </View>
             </Pressable>
-          ) : null}
-        </View>
-      )}
+            {attachment.state === 'failed' ? (
+              <Pressable
+                accessibilityLabel={`Retry ${attachment.name}`}
+                accessibilityRole="button"
+                onPress={() => onRetry(attachment.localId)}
+                style={styles.attachmentRetryOverlay}
+              >
+                <Icon name="arrow.clockwise" size={11} color="#ffffff" weight="bold" />
+                <Text numberOfLines={1} style={styles.attachmentRetryText}>Retry</Text>
+              </Pressable>
+            ) : null}
+          </View>
+        );
+      }}
     />
   );
 }
@@ -3300,56 +3313,158 @@ function MessageContextMenu({
   );
 }
 
-function SentAttachmentContextMenu({ attachment, message, onEdit, onRegenerate, children }: {
+/**
+ * Long-press actions shared by attachments in messages and in the composer: open, copy, share,
+ * save to Photos, download to the device, and save into Files. `serverId` is the uploaded
+ * attachment, when there is one; a local copy (`attachment.uri`) is used first when present.
+ */
+function AttachmentActionsMenu({ attachment, serverId, onOpen, style, iosItems, androidActions, children }: {
   attachment: Attachment;
-  message: Message;
-  onEdit: (message: Message, content: string) => void;
-  onRegenerate: (message: Message) => void;
+  serverId?: string;
+  onOpen: () => void;
+  style: ComponentProps<typeof View>['style'];
+  /** Actions after the file actions, such as editing the message or removing the attachment. */
+  iosItems?: ReactNode;
+  androidActions?: MaterialAction[];
   children: ReactNode;
 }) {
   const { styles, COLORS } = useChatStyles();
-  const runMessageAction = useMessageActionRunner({ message, onEdit, onRegenerate });
-  const canReport = useCanReportMessage(message) && message.role === 'user' && !message.text;
-  const shareAttachment = () => {
-    if (attachment.uri) void (Platform.OS === 'android' ? shareLocalFile(attachment.uri, attachment.name, attachment.mimeType) : Share.share({ message: attachment.name, url: attachment.uri })).catch((error) => Alert.alert('Couldn’t share attachment', error instanceof Error ? error.message : undefined));
-    else void shareServerAttachment(attachment.id, attachment.name, attachment.mimeType).catch((error) => Alert.alert('Couldn’t share attachment', error instanceof Error ? error.message : undefined));
+  const queryClient = useQueryClient();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const filesNamespace = useFilesNamespace();
+  const filesEnabled = useFilesEnabled();
+  const [pickingFolder, setPickingFolder] = useState(false);
+  const hasFile = Boolean(attachment.uri || serverId);
+  // Saving to Files copies the uploaded original on the server, so the upload has to be done.
+  const canSaveToFiles = Boolean(filesNamespace && filesEnabled && serverId);
+  const canSaveToPhotos = hasFile && supportsSaveToPhotos && attachment.kind === 'image';
+  const canDownload = hasFile && supportsSaveToDevice;
+  const localFile = async () => {
+    if (attachment.uri) return attachment.uri;
+    if (!serverId) throw new Error('The attachment is still uploading.');
+    return (await downloadAttachment(serverId, attachment.name)).uri;
   };
-  const copyAttachment = () => {
+  const reportFailure = (title: string) => (error: unknown) => Alert.alert(title, error instanceof Error ? error.message : undefined);
+  const share = () => {
+    if (attachment.uri) void (Platform.OS === 'android' ? shareLocalFile(attachment.uri, attachment.name, attachment.mimeType) : Share.share({ message: attachment.name, url: attachment.uri })).catch(reportFailure('Couldn’t share attachment'));
+    else if (serverId) void shareServerAttachment(serverId, attachment.name, attachment.mimeType).catch(reportFailure('Couldn’t share attachment'));
+  };
+  const copy = () => {
     void (async () => {
-      const uri = attachment.uri || (await downloadAttachment(attachment.id, attachment.name)).uri;
-      await copyFile(uri);
+      await copyFile(await localFile());
       AccessibilityInfo.announceForAccessibility('File copied');
-    })().catch((error) => Alert.alert('Couldn’t copy file', error instanceof Error ? error.message : undefined));
+    })().catch(reportFailure('Couldn’t copy file'));
+  };
+  const saveToPhotos = () => {
+    void (async () => {
+      await saveImageToPhotos(await localFile());
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      AccessibilityInfo.announceForAccessibility('Saved to Photos');
+    })().catch(reportFailure('Couldn’t save image'));
+  };
+  const download = () => {
+    void (async () => {
+      if (!(await saveFileToDevice(await localFile(), attachment.name, attachment.mimeType))) return;
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      AccessibilityInfo.announceForAccessibility('File saved');
+    })().catch(reportFailure('Couldn’t save file'));
+  };
+  const saveToFiles = (folderId: string | null, folderName: string) => {
+    setPickingFolder(false);
+    if (!serverId) return;
+    void saveAttachmentToFiles(serverId, { parentId: folderId }).then(({ node }) => {
+      if (filesNamespace) void queryClient.invalidateQueries({ queryKey: filesQueryKeys.all(filesNamespace) });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Alert.alert('Saved to My Files', `“${node.name}” is in ${folderName}.`, [
+        { text: 'Show', onPress: () => navigation.push('FilesFolder', { folderId, name: folderName }) },
+        { text: 'OK', style: 'cancel' },
+      ]);
+    }, (error) => Alert.alert('Couldn’t save to Files', filesErrorMessage(error, attachment.name)));
   };
   return (
-    <NativeObjectContextMenu
+    <>
+      <NativeObjectContextMenu
+        style={style}
+        title={attachment.name}
+        androidActions={[
+          { label: 'Open', icon: 'eye', onPress: onOpen },
+          ...(hasFile ? [{ label: 'Share file', icon: 'square.and.arrow.up', onPress: share }] : []),
+          ...(canDownload ? [{ label: 'Download…', icon: 'square.and.arrow.down', onPress: download }] : []),
+          ...(canSaveToFiles ? [{ label: 'Save to My Files…', icon: 'folder.badge.plus', onPress: () => setPickingFolder(true) }] : []),
+          ...(androidActions ?? []),
+        ]}
+        preview={attachment.kind === 'image' ? (
+          <ResolvedAttachmentImage attachment={serverId ? { ...attachment, id: serverId } : attachment} variant="preview" />
+        ) : (
+          <View style={styles.attachmentContextFilePreview}>
+            <Icon name="doc.fill" size={38} color={COLORS.muted} />
+            <Text numberOfLines={2} style={styles.attachmentContextFileName}>{attachment.name}</Text>
+            <Text style={styles.attachmentContextFileMeta}>{formatAttachmentSize(attachment.size)}</Text>
+          </View>
+        )}
+        items={(
+          <>
+            <SwiftUIControlGroup>
+              <SwiftUIButton label="Open" systemImage="eye" onPress={onOpen} />
+              {supportsFileClipboard && hasFile ? <SwiftUIButton label="Copy" systemImage="doc.on.doc" onPress={copy} /> : null}
+              {hasFile ? <SwiftUIButton label="Share" systemImage="square.and.arrow.up" onPress={share} /> : null}
+            </SwiftUIControlGroup>
+            {canSaveToPhotos || canDownload || canSaveToFiles ? <SwiftUIDivider /> : null}
+            {canSaveToPhotos ? <SwiftUIButton label="Save to Photos" systemImage="photo.badge.arrow.down" onPress={saveToPhotos} /> : null}
+            {canDownload ? <SwiftUIButton label="Download…" systemImage="square.and.arrow.down" onPress={download} /> : null}
+            {canSaveToFiles ? <SwiftUIButton label="Save to My Files…" systemImage="folder.badge.plus" onPress={() => setPickingFolder(true)} /> : null}
+            {iosItems}
+          </>
+        )}
+      >
+        {children}
+      </NativeObjectContextMenu>
+      {pickingFolder && filesNamespace ? (
+        <FolderPickerSheet
+          namespace={filesNamespace}
+          mode="destination"
+          title={`Save “${attachment.name}”`}
+          confirmLabel="Save Here"
+          onCancel={() => setPickingFolder(false)}
+          onConfirm={saveToFiles}
+        />
+      ) : null}
+    </>
+  );
+}
+
+function SentAttachmentContextMenu({ attachment, message, onEdit, onOpen, onRegenerate, children }: {
+  attachment: Attachment;
+  message: Message;
+  onEdit: (message: Message, content: string) => void;
+  /** What tapping the attachment does. */
+  onOpen: () => void;
+  onRegenerate: (message: Message) => void;
+  children: ReactNode;
+}) {
+  const { styles } = useChatStyles();
+  const runMessageAction = useMessageActionRunner({ message, onEdit, onRegenerate });
+  const canReport = useCanReportMessage(message) && message.role === 'user' && !message.text;
+  const attachmentOnly = message.role === 'user' && !message.text;
+  // Message attachments carry their server id; optimistic ones are uploading until `ready`.
+  const uploaded = !attachment.state || attachment.state === 'ready';
+  return (
+    <AttachmentActionsMenu
+      attachment={attachment}
+      serverId={uploaded ? attachment.id : undefined}
+      onOpen={onOpen}
       style={attachment.kind === 'image' ? styles.sentImageContextHost : styles.sentFileContextHost}
-      title={attachment.name}
       androidActions={[
-        { label: 'Share file', icon: 'square.and.arrow.up', onPress: shareAttachment },
-        ...(message.role === 'user' && !message.text ? [
+        ...(attachmentOnly ? [
           { label: 'Edit message', icon: 'pencil', onPress: () => runMessageAction('edit') },
           { label: 'Delete message', icon: 'trash', destructive: true, onPress: () => runMessageAction('delete') },
         ] : []),
         ...(canReport ? [{ label: 'Report message', icon: 'pulpo.frown', onPress: () => runMessageAction('report') }] : []),
       ]}
-      preview={attachment.kind === 'image' ? (
-        <ResolvedAttachmentImage attachment={attachment} variant="preview" />
-      ) : (
-        <View style={styles.attachmentContextFilePreview}>
-          <Icon name="doc.fill" size={38} color={COLORS.muted} />
-          <Text numberOfLines={2} style={styles.attachmentContextFileName}>{attachment.name}</Text>
-          <Text style={styles.attachmentContextFileMeta}>{formatAttachmentSize(attachment.size)}</Text>
-        </View>
-      )}
-      items={(
+      iosItems={(
         <>
-          <SwiftUIControlGroup>
-            <SwiftUIButton label="Share" systemImage="square.and.arrow.up" onPress={shareAttachment} />
-            {supportsFileClipboard ? <SwiftUIButton label="Copy file" systemImage="doc.on.doc" onPress={copyAttachment} /> : null}
-          </SwiftUIControlGroup>
-          <SwiftUIDivider />
-          {message.role === 'user' && !message.text ? <>
+          {attachmentOnly ? <>
+            <SwiftUIDivider />
             <SwiftUIButton label="Edit message" systemImage="pencil" onPress={() => runMessageAction('edit')} />
             <SwiftUIButton label="Delete message" role="destructive" systemImage="trash" onPress={() => runMessageAction('delete')} />
           </> : null}
@@ -3358,7 +3473,40 @@ function SentAttachmentContextMenu({ attachment, message, onEdit, onRegenerate, 
       )}
     >
       {children}
-    </NativeObjectContextMenu>
+    </AttachmentActionsMenu>
+  );
+}
+
+/** Long-press actions for an attachment waiting in the composer: the file actions, then retry and remove. */
+function ComposerAttachmentContextMenu({ attachment, onOpen, onRemove, onRetry, children }: {
+  attachment: ComposerAttachment;
+  onOpen: () => void;
+  onRemove: () => void;
+  onRetry: () => void;
+  children: ReactNode;
+}) {
+  const { styles } = useChatStyles();
+  const failed = attachment.state === 'failed';
+  return (
+    <AttachmentActionsMenu
+      attachment={attachment}
+      serverId={attachment.state === 'ready' ? attachment.serverId : undefined}
+      onOpen={onOpen}
+      style={attachment.kind === 'image' ? styles.imageAttachmentContextHost : styles.fileAttachmentContextHost}
+      androidActions={[
+        ...(failed ? [{ label: 'Retry upload', icon: 'arrow.clockwise', onPress: onRetry }] : []),
+        { label: 'Remove', icon: 'xmark', destructive: true, onPress: onRemove },
+      ]}
+      iosItems={(
+        <>
+          <SwiftUIDivider />
+          {failed ? <SwiftUIButton label="Retry Upload" systemImage="arrow.clockwise" onPress={onRetry} /> : null}
+          <SwiftUIButton label="Remove" role="destructive" systemImage="xmark" onPress={onRemove} />
+        </>
+      )}
+    >
+      {children}
+    </AttachmentActionsMenu>
   );
 }
 
@@ -3903,7 +4051,14 @@ const MessageRow = memo(function MessageRow({
           {message.attachments && message.attachments.length > 0 && (
             <SentAttachmentWindow attachments={message.attachments}>{(visible) => <>
               {visible.map((attachment) => (
-                <SentAttachmentContextMenu attachment={attachment} key={attachment.id} message={message} onEdit={onEdit} onRegenerate={onRegenerate}>
+                <SentAttachmentContextMenu
+                  attachment={attachment}
+                  key={attachment.id}
+                  message={message}
+                  onEdit={onEdit}
+                  onOpen={() => attachment.kind === 'image' ? onPreviewImages(message.attachments ?? [], attachment) : onPreviewFile(attachment)}
+                  onRegenerate={onRegenerate}
+                >
                   <SentAttachmentPreview
                     attachment={attachment}
                     group={message.attachments ?? []}
@@ -3972,7 +4127,14 @@ const MessageRow = memo(function MessageRow({
             {message.attachments && message.attachments.length > 0 && (
               <SentAttachmentWindow attachments={message.attachments} assistant>{(visible) => <>
                 {visible.map((attachment) => (
-                  <SentAttachmentContextMenu attachment={attachment} key={attachment.id} message={message} onEdit={onEdit} onRegenerate={onRegenerate}>
+                  <SentAttachmentContextMenu
+                  attachment={attachment}
+                  key={attachment.id}
+                  message={message}
+                  onEdit={onEdit}
+                  onOpen={() => attachment.kind === 'image' ? onPreviewImages(message.attachments ?? [], attachment) : onPreviewFile(attachment)}
+                  onRegenerate={onRegenerate}
+                >
                     <SentAttachmentPreview
                       attachment={attachment}
                       group={message.attachments ?? []}
@@ -4222,20 +4384,63 @@ const EMPTY_MOBILE_QUEUE: MobileQueuedMessage[] = [];
 const COMPOSER_MAX_FONT_SIZE_MULTIPLIER = 1.6;
 const COMPOSER_SECTION_SPRING = { damping: 24, stiffness: 260, mass: 0.8, overshootClamping: true };
 
-function SpeechPlayerButton({ label, icon, disabled = false, onPress }: { label: string; icon: SymbolName; disabled?: boolean; onPress: () => void }) {
+function SpeechPlayerButton({ label, icon, disabled = false, busy = false, onPress }: { label: string; icon: SymbolName; disabled?: boolean; busy?: boolean; onPress: () => void }) {
   const { styles, COLORS } = useChatStyles();
   return (
     <Pressable
       accessibilityLabel={label}
       accessibilityRole="button"
-      accessibilityState={{ disabled }}
-      disabled={disabled}
+      accessibilityState={{ disabled, busy }}
+      disabled={disabled || busy}
       hitSlop={4}
       onPress={() => { Haptics.selectionAsync(); onPress(); }}
       style={({ pressed }) => [styles.speechPlayerButton, disabled && styles.disabledIconAction, pressed && styles.pressed]}
     >
-      <Icon name={icon} size={17} color={COLORS.text} />
+      {busy ? <ActivityIndicator color={COLORS.muted} size="small" /> : <Icon name={icon} size={17} color={COLORS.text} />}
     </Pressable>
+  );
+}
+
+// Shares the message's speech (the share sheet can save it to the device) or saves it to My files,
+// from a menu that opens out of the button. Audio not yet generated is generated first, in order,
+// while reading carries on.
+function SpeechSaveButton({ ready }: { ready: boolean }) {
+  const { styles } = useChatStyles();
+  const queryClient = useQueryClient();
+  const namespace = useFilesNamespace();
+  const filesEnabled = useFilesEnabled();
+  const [preparing, setPreparing] = useState(false);
+  const run = (action: 'share' | 'files') => {
+    setPreparing(true);
+    const task = action === 'share' ? shareSpeechAudio() : saveSpeechToFiles(namespace, queryClient).then(() => {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      AccessibilityInfo.announceForAccessibility('Saving to My files');
+    });
+    void task
+      .catch((error) => Alert.alert(action === 'share' ? 'Couldn’t share audio' : 'Couldn’t save to Files', filesErrorMessage(error)))
+      .finally(() => setPreparing(false));
+  };
+  const share = () => run('share');
+  const save = () => run('files');
+  if (preparing || !namespace || !filesEnabled) {
+    return <SpeechPlayerButton label={preparing ? 'Preparing audio' : 'Share audio'} icon="square.and.arrow.down" disabled={!ready} busy={preparing} onPress={share} />;
+  }
+  if (Platform.OS !== 'ios') {
+    return <MaterialMenu label="Save audio" icon="square.and.arrow.down" disabled={!ready} actions={[
+      { label: 'Share audio', icon: 'square.and.arrow.up', onPress: share },
+      { label: 'Save to Files', icon: 'folder.badge.plus', onPress: save },
+    ]} />;
+  }
+  return (
+    <SwiftUIHost ignoreSafeArea="all" style={styles.speechPlayerButton}>
+      <SwiftUIMenu
+        label={<SwiftUIImage systemName="square.and.arrow.down" size={14} modifiers={[frame({ width: 36, height: 40 }), contentShape(shapes.rectangle())]} />}
+        modifiers={[buttonStyle('plain'), foregroundStyle('primary'), swiftUIDisabled(!ready), swiftUIAccessibilityLabel('Save audio')]}
+      >
+        <SwiftUIButton label="Share Audio…" systemImage="square.and.arrow.up" onPress={share} />
+        <SwiftUIButton label="Save to Files" systemImage="folder.badge.plus" onPress={save} />
+      </SwiftUIMenu>
+    </SwiftUIHost>
   );
 }
 
@@ -4301,20 +4506,27 @@ function SpeechPlayerBar() {
     const timer = setInterval(refresh, 250);
     return () => clearInterval(timer);
   }, [visible, state]);
+  // On narrow phones the status shares its line with the time; it is left out rather than cut off.
+  const [widths, setWidths] = useState({ meta: 0, status: 0, time: 0 });
+  const measure = (key: keyof typeof widths) => ({ nativeEvent: { layout } }: { nativeEvent: { layout: { width: number } } }) => {
+    setWidths((current) => current[key] === layout.width ? current : { ...current, [key]: layout.width });
+  };
   if (!visible) return null;
   const loading = state.phase === 'loading';
   const ended = state.phase === 'ended';
   const time = speechTimeLabel(progress);
   const status = ended ? 'Finished' : state.paused ? 'Paused' : loading ? 'Preparing speech…' : 'Reading aloud';
+  const statusFits = !widths.meta || widths.status + 6 + widths.time <= widths.meta;
   return (
     <View accessibilityLabel="Read aloud controls" style={styles.speechPlayer}>
       <SpeechPlayerButton label={`Back ${SPEECH_SEEK_SECONDS} seconds`} icon="gobackward.10" disabled={loading} onPress={() => speechPlayback.seekBy(-SPEECH_SEEK_SECONDS)} />
       <SpeechPlayerButton label={ended ? 'Replay' : state.paused ? 'Resume reading' : 'Pause reading'} icon={ended || state.paused ? 'play.fill' : 'pause.fill'} onPress={speechPlayback.togglePause} />
       <SpeechPlayerButton label={`Forward ${SPEECH_SEEK_SECONDS} seconds`} icon="goforward.10" disabled={loading || ended} onPress={() => speechPlayback.seekBy(SPEECH_SEEK_SECONDS)} />
       <View style={styles.speechPlayerInfo}>
-        <View style={styles.speechPlayerMeta}>
-          <Text accessibilityLiveRegion="polite" numberOfLines={1} style={styles.speechPlayerStatus}>{status}</Text>
-          <Text style={styles.speechPlayerTime}>{time}</Text>
+        <View onLayout={measure('meta')} style={styles.speechPlayerMeta}>
+          <Text accessibilityElementsHidden importantForAccessibility="no-hide-descendants" numberOfLines={1} onLayout={measure('status')} style={[styles.speechPlayerStatus, styles.speechPlayerStatusMeasure]}>{status}</Text>
+          {statusFits ? <Text accessibilityLiveRegion="polite" numberOfLines={1} style={styles.speechPlayerStatus}>{status}</Text> : <View />}
+          <Text accessibilityLabel={statusFits ? undefined : `${status}, ${time}`} onLayout={measure('time')} style={styles.speechPlayerTime}>{time}</Text>
         </View>
         <SpeechScrubTrack progress={progress} />
       </View>
@@ -4328,6 +4540,7 @@ function SpeechPlayerBar() {
       >
         <Text style={styles.speechPlayerRate}>{speechRateLabel(state.rate)}</Text>
       </Pressable>
+      <SpeechSaveButton ready={Boolean(progress?.total)} />
       <SpeechPlayerButton label="Close player" icon="xmark" onPress={speechPlayback.stop} />
     </View>
   );
@@ -7476,6 +7689,7 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   speechPlayerInfo: { flex: 1, minWidth: 0, gap: 1, paddingHorizontal: 6 },
   speechPlayerMeta: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 6 },
   speechPlayerStatus: { flexShrink: 1, color: COLORS.muted, fontSize: 12, fontWeight: '500' },
+  speechPlayerStatusMeasure: { position: 'absolute', left: 0, opacity: 0 },
   speechPlayerTime: { color: COLORS.muted, fontSize: 12, fontVariant: ['tabular-nums'] },
   speechPlayerScrub: { height: 18, justifyContent: 'center' },
   speechPlayerTrack: { height: 4, borderRadius: 2, overflow: 'hidden', backgroundColor: COLORS.fill },
@@ -7489,6 +7703,8 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   attachmentStrip: { height: 78, marginBottom: 3 },
   attachmentStripContent: { gap: 6, paddingHorizontal: 2 },
   attachmentFrame: { paddingTop: 12, paddingRight: 12 },
+  imageAttachmentContextHost: { width: 64, height: 64 },
+  fileAttachmentContextHost: { width: 160, height: 64 },
   failedAttachment: { borderWidth: 1, borderColor: 'rgba(255,69,58,0.55)' },
   imageAttachment: { width: 64, height: 64, borderRadius: 13, overflow: 'visible', backgroundColor: COLORS.fill },
   attachmentImage: { width: 64, height: 64, borderRadius: 13 },

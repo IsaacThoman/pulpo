@@ -83,9 +83,12 @@ export function pinItems(ids: string[], pinned: boolean): Promise<unknown> {
   return apiRequest('/api/sidebar/pin', { method: 'POST', body: { ids, pinned } })
 }
 
-/** Saves a chat attachment into Files; `replaceId` overwrites that file instead of keeping both. */
-export function saveAttachmentToFiles(attachmentId: string, input: { parentId: string | null; name?: string; replaceId?: string }): Promise<FileNode> {
-  return apiRequest<FileNode>(`/api/attachments/${attachmentId}/save-to-files`, { method: 'POST', body: input })
+/**
+ * Saves a chat attachment into Files; `replaceId` overwrites that file instead of keeping both.
+ * Without it, a name the folder already has is numbered.
+ */
+export function saveAttachmentToFiles(attachmentId: string, input: { parentId: string | null; name?: string; replaceId?: string }): Promise<{ node: FileNode; replacedId: string | null }> {
+  return apiRequest<{ node: FileNode; replacedId: string | null }>(`/api/attachments/${attachmentId}/save-to-files`, { method: 'POST', body: input })
 }
 
 export function fetchFileChanges(responseId: string, signal?: AbortSignal): Promise<FileChangesResponse> {
@@ -256,26 +259,20 @@ export function downloadFile(node: FileNode): Promise<File> {
 
 const EXPORT_DIRECTORY = 'files-export'
 
-/** Writes text to a shareable temporary file with the given name. */
-export function textExportFile(name: string, text: string): File {
+/** Writes text or bytes to a shareable temporary file with the given name. */
+export function exportFile(name: string, content: string | Uint8Array): File {
   const directory = new Directory(Paths.cache, EXPORT_DIRECTORY)
   directory.create({ idempotent: true, intermediates: true })
   const file = new File(directory, safeName(name))
   if (file.exists) file.delete()
   file.create()
-  file.write(text)
+  file.write(content)
   return file
 }
 
 /** Writes bytes to a shareable temporary file with the given name. */
 export function bytesExportFile(name: string, bytes: Uint8Array): File {
-  const directory = new Directory(Paths.cache, EXPORT_DIRECTORY)
-  directory.create({ idempotent: true, intermediates: true })
-  const file = new File(directory, safeName(name))
-  if (file.exists) file.delete()
-  file.create()
-  file.write(bytes)
-  return file
+  return exportFile(name, bytes)
 }
 
 /** A live document as its real file, exported by the server, in a shareable temporary file. */
@@ -291,6 +288,11 @@ export async function liveExportFile(node: FileNode): Promise<File> {
 /** Both versions of a live document's agent change as plain text, for the review diff. */
 export function fetchChangeText(changeId: string): Promise<{ name: string; format: string; before: string; after: string }> {
   return apiRequest(`/api/file-changes/${changeId}/text`)
+}
+
+/** Writes text to a shareable temporary file with the given name. */
+export function textExportFile(name: string, text: string): File {
+  return exportFile(name, text)
 }
 
 /** Writes Markdown to a shareable temporary file named after the document. */

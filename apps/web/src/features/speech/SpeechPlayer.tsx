@@ -1,9 +1,15 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
-import { Pause, Play, RotateCcw, RotateCw, X } from 'lucide-react'
+import { Download, FolderDown, FolderInput, Loader2, Pause, Play, RotateCcw, RotateCw, X } from 'lucide-react'
 import { SPEECH_SEEK_SECONDS, nextSpeechRate, speechRateLabel, speechTimeLabel, type SpeechPlaybackState, type SpeechProgress } from '@pulpo/client-core'
+import { speechAudioBlob } from './playback'
 import { speechPlayback } from './state'
 import { ui } from '@/i18n/ui'
 import { ActionButton } from '@/components/chat/ActionButton'
+import { SaveToFilesDialog } from '@/components/chat/SaveToFiles'
+import { saveContentToFiles, useCanSaveToFiles, useSavedToFilesToast } from '@/components/chat/use-save-to-files'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { useFileToasts } from '@/features/files/browser/toasts'
+import { downloadBlob } from '@/lib/code-download'
 import { cn } from '@/lib/utils'
 
 // Audio time is not observable through the playback store, so poll while visible and
@@ -63,6 +69,40 @@ function SpeechScrubber({ progress }: { progress: SpeechProgress | null }) {
 }
 
 /**
+ * Downloads the message's speech, or saves it to Files. Audio not yet generated is generated
+ * first, in order, while playback carries on; the player keeps it for replay.
+ */
+function SpeechSaveMenu({ ready }: { ready: boolean }) {
+  const canSave = useCanSaveToFiles()
+  const saved = useSavedToFilesToast()
+  const [preparing, setPreparing] = useState(false)
+  const [picking, setPicking] = useState<{ blob: Blob; name: string } | null>(null)
+  const prepare = async (then: (audio: { blob: Blob; name: string }) => void) => {
+    setPreparing(true)
+    try { then(await speechAudioBlob()) }
+    catch (error) { useFileToasts.getState().show({ message: ui(error instanceof Error ? error.message : 'Speech generation failed'), tone: 'error' }) }
+    finally { setPreparing(false) }
+  }
+  const download = () => void prepare(({ blob, name }) => downloadBlob(blob, name))
+  const icon = preparing ? <Loader2 className="size-3.5 animate-spin" /> : canSave ? <FolderDown className="size-3.5" /> : <Download className="size-3.5" />
+  if (!canSave) return <ActionButton label={ui(preparing ? 'Preparing audio…' : 'Download audio')} disabled={!ready || preparing} onClick={download}>{icon}</ActionButton>
+  return (
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <ActionButton label={ui(preparing ? 'Preparing audio…' : 'Save audio')} disabled={!ready || preparing}>{icon}</ActionButton>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onSelect={download}><Download /> {ui('Download')}</DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => void prepare(setPicking)}><FolderInput /> {ui('Save to Files…')}</DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <SaveToFilesDialog name={picking?.name ?? ''} save={input => saveContentToFiles(picking!.blob, input)} open={picking !== null} onOpenChange={open => { if (!open) setPicking(null) }} onSaved={saved} />
+    </>
+  )
+}
+
+/**
  * Controls beneath a message's Read aloud button. They stay after the message ends so it
  * can be replayed or rewound from its generated audio, until closed or another read starts.
  */
@@ -94,6 +134,7 @@ export function SpeechPlayer({ messageKey }: { messageKey: string }) {
       >
         {speechRateLabel(state.rate)}
       </button>
+      <SpeechSaveMenu ready={Boolean(progress?.total)} />
       <ActionButton label={ui('Close player')} onClick={speechPlayback.stop}>
         <X className="size-3.5" />
       </ActionButton>
