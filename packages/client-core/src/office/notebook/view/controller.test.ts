@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { applyAwarenessUpdate, Awareness, encodeAwarenessUpdate } from 'y-protocols/awareness'
 import * as Y from 'yjs'
 import { MemoryLiveAssetStore } from '../../assets.js'
@@ -11,6 +11,8 @@ import { readOutputs } from './outputs.js'
 
 const FIXTURE = join(import.meta.dirname, '../fixtures/generated-analysis.ipynb')
 
+const cleanup: Array<() => void> = []
+
 async function open(bytes?: Uint8Array) {
   const doc = new Y.Doc()
   const assets = new MemoryLiveAssetStore()
@@ -18,6 +20,10 @@ async function open(bytes?: Uint8Array) {
   else await notebookCodec.createEmpty(doc, { name: 'a.ipynb', assets })
   const awareness = new Awareness(doc)
   const controller = new NotebookController({ doc, awareness, assets, readOnly: false, user: { name: 'Ana', color: '#3366ff' } })
+  cleanup.push(() => {
+    controller.destroy()
+    if (!doc.isDestroyed) { awareness.destroy(); doc.destroy() }
+  })
   return { doc, assets, awareness, controller }
 }
 
@@ -25,7 +31,10 @@ const press = (controller: NotebookController, key: string, extra: Partial<{ shi
 const types = (controller: NotebookController) => controller.getState().cells.map((cell) => cell.type)
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
 
-afterEach(() => clearNotebookClipboard())
+afterEach(() => {
+  for (const dispose of cleanup.splice(0).reverse()) dispose()
+  clearNotebookClipboard()
+})
 
 describe('notebook controller', () => {
   it('handles Jupyter command-mode keys', async () => {
@@ -97,17 +106,49 @@ describe('notebook controller', () => {
 
   it('copies cells into another notebook with their images', async () => {
     const from = await open(new Uint8Array(readFileSync(FIXTURE)))
+    const to = await open()
+    const notified = vi.fn()
+    to.controller.subscribe(notified)
+    expect(to.controller.getState().canPaste).toBe(false)
     const plot = from.controller.getState().cells[3]!
     from.controller.select(plot.key)
     expect(from.controller.copy()).toContain('plt.subplots')
-    const to = await open()
     expect(to.controller.getState().canPaste).toBe(true)
+    expect(notified).toHaveBeenCalledWith(expect.objectContaining({ canPaste: true }))
     to.awareness.setLocalStateField('user', { name: 'Ana', color: '#3366ff' })
     await to.controller.paste('below')
     const pasted = to.controller.getState().cells[1]!
     expect(pasted.outputs!.assets.length).toBeGreaterThan(0)
     const outputs = await readOutputs(pasted.outputs!, to.assets)
     expect(outputs.some((output) => output.type === 'display_data' && typeof output.data['image/png'] === 'string')).toBe(true)
+  })
+
+  it('notifies every open notebook when cut fills or clearing empties the clipboard', async () => {
+    const from = await open(), a = await open(), b = await open()
+    const notifyA = vi.fn(), notifyB = vi.fn()
+    a.controller.subscribe(notifyA)
+    b.controller.subscribe(notifyB)
+    from.controller.sourceOf(from.controller.getState().active!)!.insert(0, 'cut source')
+    expect(from.controller.cut()).toBe('cut source')
+    for (const [target, notified] of [[a, notifyA], [b, notifyB]] as const) {
+      expect(target.controller.getState().canPaste).toBe(true)
+      expect(notified).toHaveBeenCalledWith(expect.objectContaining({ canPaste: true }))
+      notified.mockClear()
+    }
+    clearNotebookClipboard()
+    for (const [target, notified] of [[a, notifyA], [b, notifyB]] as const) {
+      expect(target.controller.getState().canPaste).toBe(false)
+      expect(notified).toHaveBeenCalledWith(expect.objectContaining({ canPaste: false }))
+    }
+  })
+
+  it('stops observing clipboard changes after a notebook closes', async () => {
+    const from = await open(), to = await open()
+    to.controller.destroy()
+    const closed = to.controller.getState()
+    from.controller.copy()
+    expect(to.controller.getState()).toBe(closed)
+    expect(to.controller.getState().canPaste).toBe(false)
   })
 
   it('keeps the active cell close when it is deleted elsewhere, and shows where others are', async () => {

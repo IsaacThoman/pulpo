@@ -94,8 +94,14 @@ interface Clipboard {
   cells: CellInit[]
 }
 
-// One clipboard per page, so cells copied in one notebook paste into another.
+// One in-memory clipboard per page; it is neither persisted nor shared across browser tabs.
 let clipboard: Clipboard | null = null
+const clipboardListeners = new Set<() => void>()
+
+function setClipboard(value: Clipboard | null): void {
+  clipboard = value
+  for (const listener of clipboardListeners) listener()
+}
 
 /** Two presses of D within this long delete the selected cells, as in Jupyter. */
 const DOUBLE_KEY_MS = 800
@@ -166,6 +172,7 @@ export class NotebookController {
     this.undoManager.on('stack-item-popped', this.onStack)
     this.awareness.on('change', this.onAwareness)
     this.awareness.on('update', this.onAwarenessUpdate)
+    clipboardListeners.add(this.onClipboard)
     this.onAwareness()
     this.announce()
   }
@@ -223,6 +230,8 @@ export class NotebookController {
   }
 
   private onMetadata = () => this.schedule()
+
+  private onClipboard = () => this.update({ canPaste: clipboard !== null })
 
   private onStack = () => {
     this.update({ canUndo: this.undoManager.undoStack.length > 0, canRedo: this.undoManager.redoStack.length > 0 })
@@ -395,10 +404,10 @@ export class NotebookController {
   copy(): string {
     const keys = new Set(this.targets())
     const cells = orderedCells(this.doc).filter((entry) => keys.has(entry.key))
-    clipboard = { docGuid: this.doc.guid, assets: this.assets, cells: cells.map((entry) => cellInitOf(entry.cell)) }
-    this.update({ canPaste: true })
+    const copied = { docGuid: this.doc.guid, assets: this.assets, cells: cells.map((entry) => cellInitOf(entry.cell)) }
+    setClipboard(copied)
     // Plain text for other apps: the sources, a blank line apart.
-    return clipboard.cells.map((cell) => cell.source ?? '').join('\n\n')
+    return copied.cells.map((cell) => cell.source ?? '').join('\n\n')
   }
 
   cut(): string {
@@ -634,6 +643,7 @@ export class NotebookController {
   destroy(): void {
     if (this.destroyed) return
     this.destroyed = true
+    clipboardListeners.delete(this.onClipboard)
     cellsMap(this.doc).unobserveDeep(this.onCells)
     notebookMetadata(this.doc).unobserve(this.onMetadata)
     notebookMap(this.doc).unobserve(this.onMetadata)
@@ -653,5 +663,5 @@ export class NotebookController {
 
 /** Forgets what was copied (tests). */
 export function clearNotebookClipboard(): void {
-  clipboard = null
+  setClipboard(null)
 }
