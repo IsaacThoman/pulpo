@@ -79,6 +79,8 @@ Spreadsheets (`.xlsx`, `.xlsm`, `.xltx`, `.xltm`, `.csv`, `.tsv`) open in the sp
 
 Text and code files open in CodeMirror (`@pulpo/client-core/office/text/view`). It has syntax highlighting by extension, other sessions' labeled cursors, line numbers, find and replace, line wrapping, and indentation settings. Undo and redo cover the session's own edits. It is read-only for viewers, and colors follow the app's theme. HTML files have a live preview in the opaque-origin sandbox. Mobile runs the same editor in its web view host.
 
+Office engines share the OOXML package reader and writer described in [Live formats](./live-formats.md). ZIP timestamps are fixed so exporting unchanged content keeps the same checksum for agent versions; ambiguous entry names and entries that understate their size are refused.
+
 ## Documents
 
 Markdown documents are edited as rich text (TipTap/ProseMirror) and stored as Yjs state; other live formats keep their own Y.Doc layout (see [Live formats](./live-formats.md)). The editor schema lives in `@pulpo/client-core/doc-schema` so web, server, and future clients agree on it; changing its nodes or marks requires bumping `DOC_SCHEMA_VERSION`. Each live format has its own schema version: joins announce the versions the client edits (`schemaVersions`, or only `schemaVersion` from older clients, which then edit Markdown alone), and the server rejects a join whose version for the document's format differs.
