@@ -22,6 +22,7 @@ This page covers the model and the integration steps. [Files](./files.md) descri
 | --- | --- | --- | --- | --- |
 | `markdown` | `md`, `markdown` | `DOC_SCHEMA_VERSION` | after a preview | TipTap schema in `doc-schema`, unchanged. The codec is an adapter (`office/markdown`). |
 | `text` | most text and code extensions (`office/text/layout.ts`), plus names such as `Dockerfile` and `.gitignore` | 1 | at once | `csv`/`tsv` (sheets), `ipynb` (notebooks), and `svg` (previews as an image) are excluded. |
+| `sheet` | `xlsx`, `xlsm`, `xltx`, `xltm`, `csv`, `tsv` | `SHEETS_SCHEMA_VERSION` (1) | at once | Workbooks keep every part they don't edit; CSV and TSV come back byte for byte. See [Spreadsheets](./sheets.md). |
 
 `liveFormatOfName(name)` decides a name's format, and nothing else does: the server, web, and mobile all call it. This list duplicates the text extension lists in `agent/versions.ts`, `files/display.ts`, `lib/attachment-previews.ts`, and mobile `attachmentExperience.ts`, which decide how an uploaded file previews. Once the shared file-type module lands, those should read the catalog.
 

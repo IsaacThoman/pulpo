@@ -73,6 +73,8 @@ A file's name decides what it is: names of a [live format](./live-formats.md) (`
 
 Renaming a document within its format keeps it (`app.js` → `app.ts`). Renaming it to a name of another format, or of none, turns it back into an ordinary file holding its exported bytes (a Markdown document's Markdown), and open editors receive `doc.closed` with reason `converted`. Renaming a file never converts it to a document; that waits for **Edit**. Downloading a document gives its real file (`GET /api/files/:id/export`, or the open editor's own export).
 
+Spreadsheets (`.xlsx`, `.xlsm`, `.xltx`, `.xltm`, `.csv`, `.tsv`) open in the spreadsheet editor, and **New spreadsheet** starts an empty workbook. They convert on **Edit** at once too: workbooks keep every part the editor doesn't change, macros included (never run), and CSV and TSV files keep their delimiter, quoting, encoding, and line breaks. Formulas are calculated in the editor, in downloads, and in what agents pull. See [Spreadsheets](./sheets.md).
+
 Text and code files open in CodeMirror (`@pulpo/client-core/office/text/view`). It has syntax highlighting by extension, other sessions' labeled cursors, line numbers, find and replace, line wrapping, and indentation settings. Undo and redo cover the session's own edits. It is read-only for viewers, and colors follow the app's theme. HTML files have a live preview in the opaque-origin sandbox. Mobile runs the same editor in its web view host.
 
 ## Documents

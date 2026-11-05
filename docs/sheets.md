@@ -1,6 +1,6 @@
 # Spreadsheets
 
-Spreadsheets (`.xlsx`, `.xlsm`, `.xltx`, `.xltm`, `.csv`, `.tsv`) are a live format: a file opens as a collaborative Y.Doc that people and agents edit at the same time, and it is written back as a real file for downloads, agent `pull`, and exports. Everything lives in `@pulpo/client-core/office/sheets` (codec, model, formula engine, number formats, charts, diff) and `@pulpo/client-core/office/sheets/view` (the editor core). The web editor is `apps/web/src/features/files/live/sheets/`. Integration into Files routes, the document socket, and agent push/pull comes in a follow-up on top of the live-formats foundation; until then the editor runs in a dev harness (`apps/web/tests/sheets`, below).
+Spreadsheets (`.xlsx`, `.xlsm`, `.xltx`, `.xltm`, `.csv`, `.tsv`) are a live format: a file opens as a collaborative Y.Doc that people and agents edit at the same time, and it is written back as a real file for downloads, agent `pull`, and exports. Everything lives in `@pulpo/client-core/office/sheets` (codec, model, formula engine, number formats, charts, diff) and `@pulpo/client-core/office/sheets/view` (the editor core). The web editor is `apps/web/src/features/files/live/sheets/`, and the mobile app's is `apps/mobile/editor/sheet/`. It's the `sheet` format of the [live formats](./live-formats.md) catalog, so Files creates, converts, syncs, exports, and hands spreadsheets to agents like any other live document (see [Files and agents](#files-and-agents)).
 
 ## The collaborative model
 
@@ -24,6 +24,19 @@ The layout is in `office/sheets/model/schema.ts`. Its design follows from two re
 - **CSV and TSV** (`csv.ts`): one sheet of values. The delimiter (sniffed for `.csv`), quoting, encoding (UTF-8, UTF-16 with a byte order mark, Windows-1252), byte order mark, line endings, trailing newline, and ragged rows are kept, and fields nobody edited are written with their exact text (`007`, `1.50`). Formulas typed into a CSV are kept as text.
 - **toText**: each sheet's values as displayed, tab-separated, then its formulas as `B7: =SUM(B2:B6)` lines, for agents, search, and grep. CSV files read as themselves.
 
+## Calculation
+
+`formula/` is the engine, `SheetCalc` (`calc.ts`) binds it to a workbook, and views, `toText`, and exports read values through it.
+
+- **Grammar**: Excel's formula language in full: operators with Excel's precedence (including `%`, `^`, `&`, the range, union, and intersection operators), A1 and whole-row/column references, 3D references (`Sheet1:Sheet3!A1`), defined names (workbook and sheet scope), structured references (`Table[[#This Row],[Qty]]`), array constants, `LET` and `LAMBDA`, and error literals.
+- **Functions**: 404, from `SUM` to `XLOOKUP`, `FILTER`, `SORTBY`, `UNIQUE`, `SEQUENCE`, `TEXTSPLIT`, financial, statistical, engineering, and database functions, with Excel's coercion rules. `formula/functions/docs.ts` describes each for autocomplete and argument hints. Unknown functions and external references keep the values cached in the file.
+- **Dependencies and recalculation**: a dependency graph (ranges indexed once per rectangle, run-time references from `OFFSET` and `INDIRECT` recorded as read), incremental recalculation of what changed and depends on it, volatile functions (`NOW`, `RAND`), and circular references (0, or iteration when the workbook enables it).
+- **Arrays**: dynamic arrays spill into empty cells (`#SPILL!` when blocked), and are written back with the dynamic-array metadata Excel needs; legacy array formulas keep their range. Formulas read from a file without the dynamic-array flag keep pre-365 implicit intersection.
+- **Number formats** (`numfmt/`): Excel's format codes in full: sections and conditions, colors, digit placeholders, thousands and scaling commas, percent, scientific, fractions, dates and times (1900 and 1904 systems, elapsed time, fractional seconds), text sections, fill and padding characters, and the built-in formats. `TEXT` uses the same formatter.
+- **Agreement with Excel**: the corpus test recalculates every cached formula value in the Excel-saved fixtures from scratch: 2,202 of 2,236 (98.5%) agree. The rest are edge cases in Apache POI's test sheets (external workbook references, error precedence in a few functions).
+
+Charts (`chart/`) are parsed from DrawingML (bar, column, line, area, pie, doughnut, scatter, bubble, and radar, including stacked, percent, and 3-D variants drawn flat) and drawn as SVG overlays from the live values, so they follow edits. Other chart types (stock, surface, pie of pie) show as a placeholder, and every chart part is kept as written.
+
 ## Editor
 
 The editor core (`view/sheet-view.ts` and its helpers) is framework-free: web and mobile web views share it. It takes `{ container, doc, awareness, readOnly, assets, user, labels }` plus optional calculated values, function documentation, and a chart renderer, and exposes commands (`setStyle`, `toggleStyle`, `merge`, `insert`, `deleteLines`, `freeze`, `sort`, `toggleFilter`, `setNote`, `setLink`, `find`, `replace`, `undo`, sheet operations, …) and `getState()`/`subscribe()` for toolbars.
@@ -44,10 +57,22 @@ The editor core (`view/sheet-view.ts` and its helpers) is framework-free: web an
 
 `diffWorkbooks(before, after)` and `diffSheetFiles(beforeBytes, afterBytes)` (`diff/workbook-diff.ts`) describe a change the way a person would: sheets added, removed, or renamed (renames are recognized by content); rows and columns inserted or deleted; and cells whose value, formula, or format changed, by address, with shown values. Formulas that only moved with their row aren't reported. The web component `SheetDiff` renders it for agent Suggest-mode review.
 
+## Files and agents
+
+- **Web**: the registry entry (`features/files/live/registry.tsx`) gives the editor (`SheetDocEditor`), the review diff (`SheetFileDiff`, which diffs two versions' bytes), the **New spreadsheet** menu item (an empty `.xlsx`), and a local export that calculates formulas first. `LiveEditorProps` carries the document's asset store (`ApiLiveAssetStore`), which images and kept parts need.
+- **Desktop** runs the web app, so it has the same editor.
+- **Mobile**: `apps/mobile/editor/sheet/` is the web view page (the same editor core) with a native toolbar.
+- **Server**: the codec is registered in `office/codecs.ts`, so creation, conversion of uploads on **Edit** (an upload keeps its bytes until then), export, compaction, and search text (`toText`) need nothing format-specific. Uploads convert at once, since the codec is lossless.
+- **Agents**: `pulpo files pull` gives the real file and `push` applies it with `applyFile`, which merges it with what people typed meanwhile. The agent prompt and `pulpo files --help` say to edit `.xlsx` with openpyxl and `.csv` as text. openpyxl doesn't adjust references when it inserts rows, so row alignment compares formulas by shape (functions and which sheet each reference points at), not by their exact references. `pulpo files cat` prints the values and formulas.
+
 ## Testing
 
 - Unit tests in `packages/client-core/src/office/sheets/**/*.test.ts`: the model and concurrency (two replicas, structural and content edits at once), id-form formulas, the xlsx codec on hand-built packages (preservation of unknown content, byte-identical parts, macros, edits, hostile and fuzzed inputs), `applyFile` merging with a concurrent edit, CSV dialects byte for byte, editing commands, fill series, conditional formats, layout, and the diff.
 - Browser tests: `npm run test:sheets -w @pulpo/web` (build `@pulpo/client-core` first) drives the harness: typing, formulas, pointing, the formula bar, toolbar, undo, clipboard, fill handle, structure, context menu, sheet tabs, find and replace, two collaborators (with simulated latency), export, scrolling a 100,000-row sheet, read-only mode, touch, CSV, and the review diff.
+- The fixture corpus (`corpus.test.ts`, over `packages/client-core/test-fixtures/sheets/manifest.json`: Apache POI's spreadsheet tests, LibreOffice exports, openpyxl-generated workbooks, and CSV dialects): each file opens or is refused as expected, round-trips, and applying its own export loses nothing; CSV files come back byte for byte. The formula oracle above runs here too.
+- Fidelity against openpyxl and LibreOffice (`PULPO_SHEETS_FIDELITY=1`, with the Python environment from `scripts/sheets/setup-fidelity-env.sh`): every fixture's export reads the same in openpyxl and keeps every package part; edits read back; an agent's openpyxl edit merges with a concurrent user edit; exports convert to PDF in LibreOffice.
+- PostgreSQL (`PULPO_FILES_TESTS=true`, `apps/server/src/files/agent/sheets.postgres.test.ts`): agents create, cat, grep, pull, and push spreadsheets; a pushed row insert merges with an unsent edit; CSV stays byte for byte; Suggest-mode proposals; macros are kept.
+- End to end: `npm run test:live-sheets -w @pulpo/web` against a local API and worker (see the file's header) creates a spreadsheet from the Files menu, edits it in two tabs, reloads, downloads it and reads it with openpyxl, merges an offline edit with an agent's openpyxl push, reviews and accepts an agent suggestion, and opens an uploaded workbook with **Edit**.
 - The harness: `npx vite` in `apps/web`, then open `/tests/sheets/index.html`. Parameters: `file` (URL of an xlsx or CSV), `name`, `split=1` (two collaborators side by side), `latency=<ms>`, `dark=1`, `readonly=1`, `lang=es`, `diff=1` (live review diff against the file as loaded).
 
 ## Not supported yet
