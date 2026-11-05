@@ -196,10 +196,18 @@ export function readCsv(doc: Y.Doc, bytes: Uint8Array, format: 'csv' | 'tsv'): v
     if (width > MAX_COLS) throw new LiveFormatError('too_large', 'This file has more columns than a sheet can hold')
     sheet.rows.ensure(parsed.rows.length)
     sheet.cols.ensure(width)
+    // The file's width, trailing empty fields included, by column id so that columns inserted or
+    // deleted later move it. Rows of another width (ragged rows, blank lines) and rows ending in
+    // another line break than the file's keep their own, the same way.
+    if (width > 0) sheet.raw.set('csvLastCol', sheet.cols.idAt(width - 1))
+    // Likewise its last line, which may hold nothing but delimiters.
+    if (parsed.rows.length) sheet.raw.set('csvLastRow', sheet.rows.idAt(parsed.rows.length - 1))
     parsed.rows.forEach((row, rowIndex) => {
       const rowId = sheet.rows.idAt(rowIndex)
-      // Every row keeps its width and separator, including trailing empty fields.
-      sheet.rowMeta.set(`${rowId}|keep`, { fields: String(row.fields.length), ending: row.ending })
+      const keep: { last?: string; ending?: string } = {}
+      if (row.fields.length !== width) keep.last = sheet.cols.idAt(row.fields.length - 1)
+      if (row.ending && row.ending !== dialect.lineEnding) keep.ending = row.ending
+      if (keep.last !== undefined || keep.ending !== undefined) sheet.rowMeta.set(`${rowId}|keep`, keep)
       row.fields.forEach((field, colIndex) => {
         // A quoted empty field ("") keeps its quotes; an unquoted one is just an empty cell.
         if (field === '' && !row.quoted[colIndex]) return
@@ -258,16 +266,22 @@ export function writeCsv(doc: Y.Doc, format: 'csv' | 'tsv', values?: ValueSource
 function sheetLines(sheet: SheetModel, dialect: CsvDialect, values?: ValueSource): string[] {
   const used = sheet.usedRange()
   let lastRow = used ? used.bottom : -1
-  // Rows that were blank lines or ragged keep their shape.
+  // Rows that were blank lines or ragged keep their shape, and the file keeps its last line.
+  const fileLastRow = sheet.raw.get('csvLastRow') as string | undefined
+  if (fileLastRow !== undefined) lastRow = Math.max(lastRow, sheet.rows.indexOf(fileLastRow))
   for (const key of sheet.rowMeta.keys()) {
     const index = sheet.rows.indexOf(key.slice(0, key.lastIndexOf('|')))
     if (index > lastRow) lastRow = index
   }
-  const width = used ? used.right + 1 : 0
+  // Rows are as wide as the file was (trailing empty fields included) or as its content now is:
+  // a value typed into a new column widens every row, as Excel writes it. Rows that had their own
+  // width keep it.
+  const fileLast = sheet.raw.get('csvLastCol') as string | undefined
+  const width = Math.max(used ? used.right + 1 : 0, fileLast !== undefined ? sheet.cols.indexOf(fileLast) + 1 : 0)
   const lines: string[] = []
   for (let row = 0; row <= lastRow; row++) {
-    const keep = sheet.rowProp(row, 'keep') as { fields?: string; ending?: string } | undefined
-    const declared = keep?.fields !== undefined ? Number(keep.fields) : width
+    const keep = sheet.rowProp(row, 'keep') as { last?: string; ending?: string } | undefined
+    const declared = keep?.last !== undefined ? sheet.cols.indexOf(keep.last) + 1 : width
     const fields: string[] = []
     let last = -1
     for (let col = 0; col < Math.max(width, declared); col++) {

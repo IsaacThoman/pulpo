@@ -97,3 +97,26 @@ describe('csv codec', () => {
     expect(codec.toText(doc)).toBe('a\tb\n1\tx,y')
   })
 })
+
+describe('csv row shapes after edits', () => {
+  const edited = async (text: string, edit: (sheet: ReturnType<WorkbookModel['sheets']>[number]) => void) => {
+    const doc = new Y.Doc()
+    await codec.importFile(doc, utf8(text), { name: 'data.csv', assets })
+    doc.transact(() => edit(new WorkbookModel(doc).sheets()[0]!))
+    return new TextDecoder().decode(await codec.exportFile(doc, { name: 'data.csv', assets }))
+  }
+
+  it('widens every row of a rectangular file when a value goes into a new column', async () => {
+    expect(await edited('a,b\n1,2\n3,4\n', (sheet) => sheet.setCell(1, 2, { v: 'x' }))).toBe('a,b,\n1,2,x\n3,4,\n')
+  })
+
+  it('keeps the width of ragged rows that nobody widened', async () => {
+    expect(await edited('a,b,c\n1\n2,3,4\n', (sheet) => sheet.setCell(2, 3, { v: 'x' }))).toBe('a,b,c,\n1\n2,3,4,x\n')
+  })
+
+  it('drops deleted columns, including an empty trailing one', async () => {
+    const { deleteAxis } = await import('../model/structure.js')
+    expect(await edited('a,b\nc,d\n', (sheet) => deleteAxis(sheet, 'col', 1, 1))).toBe('a\nc\n')
+    expect(await edited('a,b,\nc,d,\n', (sheet) => deleteAxis(sheet, 'col', 2, 1))).toBe('a,b\nc,d\n')
+  })
+})
