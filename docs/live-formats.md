@@ -1,6 +1,6 @@
 # Live formats
 
-A live format is a file type that opens as a collaborative document. Its content lives in a Y.Doc synced over the document socket, the same way Markdown documents work, and a codec converts it to and from the file's bytes. Downloads, agent `pull`, and agent `push` therefore still deal in real files. Markdown and text/code are live today. The sheet, document, and presentation engines plug in the same way.
+A live format is a file type that opens as a collaborative document. Its content lives in a Y.Doc synced over the document socket, the same way Markdown documents work, and a codec converts it to and from the file's bytes. Downloads, agent `pull`, and agent `push` therefore still deal in real files. Markdown, text/code, and spreadsheets are live today. The document and presentation engines plug in the same way.
 
 This page covers the model and the integration steps. [Files](./files.md) describes the user-facing behavior.
 
@@ -85,7 +85,7 @@ Review UIs read `FileChangeSummary.contentDiff` and fetch both versions:
 4. **Mobile.**
    - Add `apps/mobile/editor/<format>/` (an `index.html` with `%CSP%` and a `main.ts` speaking `src/features/files/editor/protocol.ts`; send `format` in `ready`).
    - Add its entry to `EDITOR_BUNDLES` in `scripts/doc-editor-inputs.mjs` and to `editor/bundles.ts`.
-   - Give `DocEditorView` its native toolbar items (`textToolbar.ts` shows how; the iOS host draws whatever `items` it gets, and Android's `FormattingBar` takes the same list).
+   - Give `DocEditorView` its native toolbar items (`textToolbar.ts` shows how; the iOS host draws whatever `items` it gets, and Android's `FormattingBar` takes the same list). An item with `options` is a menu of them (`sheetToolbar.ts`).
    - Run `npm run build:editor -w @pulpo/mobile`. `editorBundle.test.ts` checks every bundle is fresh and keeps editors out of the Hermes bundle.
 5. **Agents.** Mention the format and how to edit it in `files/agent/prompt.ts` and `packages/workspace-daemon/src/cli-help.ts`.
 

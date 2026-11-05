@@ -1,11 +1,20 @@
 import SwiftUI
 import UIKit
 
-/** A button a live format puts on the bar (see `DocEditorToolbarState.items`). */
+/** A choice in a live format's toolbar menu. */
+struct DocEditorToolbarOption: Identifiable, Equatable {
+  let command: String
+  let label: String
+  let systemImage: String
+  var id: String { command }
+}
+
+/** A button a live format puts on the bar (see `DocEditorToolbarState.items`); with options, a menu of them. */
 struct DocEditorToolbarItem: Identifiable, Equatable {
   let command: String
   let label: String
   let systemImage: String
+  var options: [DocEditorToolbarOption] = []
   var id: String { command }
 }
 
@@ -47,12 +56,7 @@ private struct ToolbarButton: View {
   }
 }
 
-private struct MenuOption: Identifiable {
-  let command: String
-  let label: String
-  let systemImage: String
-  var id: String { command }
-}
+private typealias MenuOption = DocEditorToolbarOption
 
 private struct ToolbarMenu: View {
   let label: String
@@ -88,6 +92,8 @@ private struct ToolbarMenu: View {
     }
     .menuStyle(.button)
     .buttonStyle(.plain)
+    .disabled(model.disabled.contains(identifier))
+    .opacity(model.disabled.contains(identifier) ? 0.35 : 1)
     .accessibilityLabel(label)
     .accessibilityIdentifier("doc-toolbar-\(identifier)")
   }
@@ -109,7 +115,11 @@ struct DocEditorToolbar: View {
         if !model.items.isEmpty {
           HStack(spacing: 2) {
             ForEach(model.items) { item in
-              ToolbarButton(command: item.command, label: item.label, systemImage: item.systemImage, model: model, action: action)
+              if item.options.isEmpty {
+                ToolbarButton(command: item.command, label: item.label, systemImage: item.systemImage, model: model, action: action)
+              } else {
+                ToolbarMenu(label: item.label, systemImage: item.systemImage, identifier: item.command, options: item.options, model: model, action: action)
+              }
             }
           }
           .padding(.horizontal, 8)

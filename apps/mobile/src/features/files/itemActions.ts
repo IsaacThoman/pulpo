@@ -68,7 +68,7 @@ export function fileItemActions(node: FileNode, context: FileItemActionContext):
 }
 
 /**
- * An uploaded file of a format whose codec keeps every byte (text and code), which becomes an
+ * An uploaded file of a format whose codec keeps every byte (text, code, spreadsheets), which becomes an
  * editable document without asking, as on the web. Uploaded Markdown has its own screen.
  */
 export function editableUpload(node: FileNode): boolean {

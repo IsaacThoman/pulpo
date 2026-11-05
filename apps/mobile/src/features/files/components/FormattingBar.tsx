@@ -11,7 +11,7 @@ export const FORMATTING_BAR_HEIGHT = 52
 
 type Item =
   | { command: FormatCommand; label: string; symbol: string }
-  | { menu: string; label: string; symbol: string; options: Array<{ command: FormatCommand; label: string }> }
+  | { menu: string; label: string; symbol: string; options: ReadonlyArray<{ command: FormatCommand; label: string }> }
   | { separator: true }
 
 const ITEMS: Item[] = [
@@ -44,8 +44,8 @@ const ITEMS: Item[] = [
   { command: 'divider', label: 'Divider', symbol: 'minus' },
 ]
 
-/** A live format's own button (text and code), in place of the document editor's. */
-export type FormattingBarItem = { command: string; label: string; systemImage: string }
+/** A live format's own button (text, code, spreadsheets), in place of the document editor's; with options, a menu. */
+export type FormattingBarItem = { command: string; label: string; systemImage: string; options?: ReadonlyArray<{ command: string; label: string }> }
 
 /**
  * The formatting bar above the keyboard where the platform has no keyboard accessory for web
@@ -61,7 +61,11 @@ export function FormattingBar({ formatting, items: formatItems, visible, onComma
 }) {
   const theme = useAppTheme()
   if (Platform.OS !== 'android' || !visible || !formatting) return null
-  const items: Item[] = formatItems?.length ? formatItems.map((item) => ({ command: item.command as FormatCommand, label: item.label, symbol: item.systemImage })) : ITEMS
+  const items: Item[] = formatItems?.length
+    ? formatItems.map((item): Item => item.options?.length
+      ? { menu: item.command, label: item.label, symbol: item.systemImage, options: item.options.map((option) => ({ command: option.command as FormatCommand, label: option.label })) }
+      : { command: item.command as FormatCommand, label: item.label, symbol: item.systemImage })
+    : ITEMS
   const active = new Set<string>(formatting.active)
   const disabled = new Set<string>(formatting.disabled)
   const run = (command: string) => {
@@ -76,17 +80,22 @@ export function FormattingBar({ formatting, items: formatItems, visible, onComma
             if ('separator' in item) return <View key={`separator-${index}`} style={[styles.separator, { backgroundColor: theme.separator }]} />
             if ('menu' in item) {
               const on = item.options.some((option) => option.command !== 'paragraph' && active.has(option.command))
+              const off = disabled.has(item.menu)
               return (
                 <Pressable
                   key={item.menu}
                   accessibilityLabel={item.label}
                   accessibilityRole="button"
+                  accessibilityState={{ disabled: off, selected: on }}
+                  disabled={off}
                   onPress={() => showActions(item.label, item.options.map((option) => ({
                     label: option.label,
                     selected: active.has(option.command),
+                    disabled: disabled.has(option.command),
                     onPress: () => run(option.command),
                   })))}
-                  style={[styles.button, on && { backgroundColor: theme.fillStrong }]}
+                  style={[styles.button, on && { backgroundColor: theme.fillStrong }, off && { opacity: 0.35 }]}
+                  testID={`formatting-${item.menu}`}
                 >
                   <SymbolView name={item.symbol as never} size={22} tintColor={on ? theme.blue : theme.text} />
                 </Pressable>

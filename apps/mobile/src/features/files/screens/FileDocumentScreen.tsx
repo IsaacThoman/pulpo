@@ -30,6 +30,7 @@ import type { DocHandle } from '../doc/sessions'
 import type { EditorBridgeState } from '../editor/bridge'
 import { editorBundleFor, type MobileEditorFormat } from '../editor/bundles'
 import { docEditorAvailable, DocEditorView, type DocEditorHandle } from '../editor/DocEditorView'
+import { SHEET_TOOLBAR, sheetToolbarState } from '../editor/sheetToolbar'
 import { TEXT_TOOLBAR, textToolbarState } from '../editor/textToolbar'
 import { deviceSessionLabel } from '../editor/presentation'
 import { fetchDocMarkdown } from '../api'
@@ -97,11 +98,12 @@ export function FileDocumentScreen({ navigation, route }: Props) {
   const fileId = route.params.fileId
   const nodeQuery = useQuery({ ...fileNodeQuery(namespace, fileId), enabled: Boolean(namespace) && filesEnabled })
   const node = nodeQuery.data?.node
-  // The document's live format picks its editor; text and code files have no suggestions inline.
+  // The document's live format picks its editor; only Markdown has suggestions inline.
   const formatId = node?.format ?? 'markdown'
   const schemaSupported = useDocSchemaSupported(formatId) && Boolean(editorBundleFor(formatId))
-  const editorFormat: MobileEditorFormat = formatId === 'text' ? 'text' : 'markdown'
+  const editorFormat: MobileEditorFormat = formatId === 'text' || formatId === 'sheet' ? formatId : 'markdown'
   const isText = editorFormat === 'text'
+  const isSheet = editorFormat === 'sheet'
   const editor = useRef<DocEditorHandle>(null)
   const [handle, setHandle] = useState<DocHandle | null>(null)
   const [editorState, setEditorState] = useState<EditorBridgeState | null>(null)
@@ -148,11 +150,11 @@ export function FileDocumentScreen({ navigation, route }: Props) {
   // A document just created opens ready to type in, once.
   const focusedNew = useRef(false)
   useEffect(() => {
-    const ready = editorState?.loaded && (isText ? editorState.text && !editorState.text.readOnly : editorState.formatting?.editable)
+    const ready = editorState?.loaded && (isText ? editorState.text && !editorState.text.readOnly : isSheet ? editorState.sheet && !editorState.sheet.readOnly : editorState.formatting?.editable)
     if (!route.params.created || focusedNew.current || !ready) return
     focusedNew.current = true
     editor.current?.focus('start')
-  }, [editorState, isText, route.params.created])
+  }, [editorState, isSheet, isText, route.params.created])
 
   // A copy of an earlier document under this id was dropped; start over without it.
   useEffect(() => {
@@ -177,8 +179,8 @@ export function FileDocumentScreen({ navigation, route }: Props) {
   const usable = Boolean(session) && (loadedOnce || inMemory || status.state === 'synced' || status.state === 'syncing' || session?.hasCachedContent === true)
   const editable = filesEnabled && !problem && usable && node?.kind === 'doc' && docEditorAvailable
   const title = node?.name ?? route.params.name ?? 'Document'
-  // Markdown documents read without their extension; code files keep theirs, which says what they are.
-  const shownTitle = isText ? title : title.replace(/\.(md|markdown)$/i, '')
+  // Markdown documents read without their extension; code files and spreadsheets keep theirs, which says what they are.
+  const shownTitle = editorFormat !== 'markdown' ? title : title.replace(/\.(md|markdown)$/i, '')
   // Without a usable copy (an outdated app, or offline before the first sync) the server's Markdown is shown.
   const readOnlyFallback = !docEditorAvailable || (!usable && (problem?.action === 'update' || status.state === 'offline'))
   const fallback = useQuery({
@@ -198,7 +200,7 @@ export function FileDocumentScreen({ navigation, route }: Props) {
       }
       // A name of another type turns the document into an ordinary file; say so first.
       if (liveFormatOfName(name)?.id === node.format) void operations.rename(node, name)
-      else Alert.alert('Rename to another type?', `“${name}” isn’t a text or code file name, so it would become an ordinary file you can’t edit here.`, [
+      else Alert.alert('Rename to another type?', `“${name}” isn’t ${node.format === 'sheet' ? 'a spreadsheet' : 'a text or code file'} name, so it would become an ordinary file you can’t edit here.`, [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Rename', style: 'destructive', onPress: () => { void operations.rename(node, name) } },
       ])
@@ -225,12 +227,17 @@ export function FileDocumentScreen({ navigation, route }: Props) {
         await shareFileItem(node, undefined, bytes)
         return
       }
+      // Spreadsheets are written by the server's codec, which the app doesn't ship; edits waiting to sync aren't in it yet.
+      if (isSheet) {
+        await shareFileItem(node)
+        return
+      }
       const markdown = editorState?.loaded ? await editor.current?.exportMarkdown() : undefined
       await shareFileItem(node, markdown)
     } catch (error) {
       operations.fail(error, node.name)
     }
-  }, [editorState?.loaded, handle, isText, node, operations, status.state, usable])
+  }, [editorState?.loaded, handle, isSheet, isText, node, operations, status.state, usable])
   const trash = useCallback(() => {
     if (!node) return
     Alert.alert(`Move “${node.name}” to the trash?`, undefined, [
@@ -252,7 +259,7 @@ export function FileDocumentScreen({ navigation, route }: Props) {
     identifier: 'doc-menu',
     menu: {
       items: [
-        { type: 'action', label: isText ? 'Find and Replace' : 'Find in Document', icon: { type: 'sfSymbol', name: 'magnifyingglass' }, disabled: !editorState?.loaded, onPress: () => { if (isText) editor.current?.command('find'); else editor.current?.showFind() } },
+        { type: 'action', label: isText ? 'Find and Replace' : isSheet ? 'Find in Spreadsheet' : 'Find in Document', icon: { type: 'sfSymbol', name: 'magnifyingglass' }, disabled: !editorState?.loaded, onPress: () => { if (isText || isSheet) editor.current?.command('find'); else editor.current?.showFind() } },
         { type: 'action', label: 'Export…', icon: { type: 'sfSymbol', name: 'square.and.arrow.up' }, disabled: !node, onPress: () => { void exportDocument() } },
         {
           type: 'submenu',
@@ -269,7 +276,7 @@ export function FileDocumentScreen({ navigation, route }: Props) {
         { type: 'action', label: 'Move to Trash', icon: { type: 'sfSymbol', name: 'trash' }, destructive: true, disabled: !node || Boolean(node.trashedAt), onPress: trash },
       ],
     },
-  }), [editorState?.loaded, exportDocument, isText, navigation, node, nodeQuery.data?.ancestors, operations, rename, trash])
+  }), [editorState?.loaded, exportDocument, isSheet, isText, navigation, node, nodeQuery.data?.ancestors, operations, rename, trash])
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -295,11 +302,13 @@ export function FileDocumentScreen({ navigation, route }: Props) {
   })
 
   const suggestions = editorState?.suggestions
-  const reviewVisible = !isText && Boolean(suggestions?.count) && !keyboardVisible && editorState?.loaded
+  const reviewVisible = editorFormat === 'markdown' && Boolean(suggestions?.count) && !keyboardVisible && editorState?.loaded
   const reviewBarHeight = reviewVisible ? 116 : 0
   // Android draws its formatting bar above the keyboard; the editor keeps the caret clear of it.
   const formattingBarVisible = Platform.OS === 'android' && keyboardVisible && editable && Boolean(editorState?.loaded)
-  const editorBottomPadding = reviewBarHeight + (formattingBarVisible ? FORMATTING_BAR_HEIGHT : 0)
+  // Android's web view runs under the navigation bar; a spreadsheet's sheet tabs stay above it.
+  const navigationBarPadding = Platform.OS === 'android' && isSheet && !keyboardVisible ? insets.bottom : 0
+  const editorBottomPadding = reviewBarHeight + (formattingBarVisible ? FORMATTING_BAR_HEIGHT : 0) + navigationBarPadding
   const showAndroidMenu = () => showActions(title, [
     { label: 'Export', icon: 'square.and.arrow.up', onPress: () => { void exportDocument() } },
     { label: 'Rename', icon: 'pencil', onPress: rename },
@@ -343,7 +352,7 @@ export function FileDocumentScreen({ navigation, route }: Props) {
   const body = readOnlyFallback ? (
     fallback.data ? (
       <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={[styles.fallback, { paddingBottom: insets.bottom + 24 }]}>
-        {isText
+        {editorFormat !== 'markdown'
           ? <Text selectable style={[styles.code, { color: theme.text }]}>{fallback.data.markdown}</Text>
           : <SafeMarkdown>{fallback.data.markdown}</SafeMarkdown>}
       </ScrollView>
@@ -439,8 +448,8 @@ export function FileDocumentScreen({ navigation, route }: Props) {
       {banner}
       {Platform.OS === 'android' ? <KeyboardAvoidingView behavior="padding" style={styles.flex}>{body}</KeyboardAvoidingView> : body}
       <FormattingBar
-        formatting={isText ? (editorState?.text ? textToolbarState(editorState) : null) : editorState?.formatting ?? null}
-        items={isText ? TEXT_TOOLBAR : undefined}
+        formatting={isText ? (editorState?.text ? textToolbarState(editorState) : null) : isSheet ? (editorState?.sheet ? sheetToolbarState(editorState) : null) : editorState?.formatting ?? null}
+        items={isText ? TEXT_TOOLBAR : isSheet ? SHEET_TOOLBAR : undefined}
         visible={formattingBarVisible}
         onCommand={(command) => editor.current?.toolbar(command as never)}
         onDismissKeyboard={() => editor.current?.dismissKeyboard()}

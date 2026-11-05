@@ -13,6 +13,7 @@ export interface NewLiveFile {
 
 const NEW_FILES: readonly NewLiveFile[] = [
   { format: 'text', label: 'New Text File', name: 'Untitled.txt', systemImage: 'doc.plaintext' },
+  { format: 'sheet', label: 'New Spreadsheet', name: 'Untitled.xlsx', systemImage: 'tablecells' },
 ]
 
 /** The extra "New …" items this app and its server both support. */

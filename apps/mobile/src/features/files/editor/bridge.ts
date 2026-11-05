@@ -11,6 +11,8 @@ import {
   type EditorTheme,
   type HostMessage,
   type ReviewAction,
+  type SheetCommand,
+  type SheetEditorState,
   type TextCommand,
 } from './protocol'
 
@@ -31,6 +33,8 @@ export interface EditorBridgeState {
   suggestions: { count: number; index: number | null; active: ActiveSuggestion | null }
   /** What a text editor reports (text and code files). */
   text: TextEditorState | null
+  /** What a spreadsheet editor reports. */
+  sheet: SheetEditorState | null
   /** The editor's page reported a protocol or schema this app cannot use. */
   incompatible: boolean
 }
@@ -62,6 +66,7 @@ const INITIAL_STATE: EditorBridgeState = {
   focused: false,
   suggestions: { count: 0, index: null, active: null },
   text: null,
+  sheet: null,
   incompatible: false,
 }
 
@@ -132,8 +137,8 @@ export class EditorBridge {
     this.post({ type: 'format', session: this.session, command, href })
   }
 
-  /** A text editor's toolbar command. */
-  command(command: TextCommand): void {
+  /** A text or spreadsheet editor's toolbar command. */
+  command(command: TextCommand | SheetCommand): void {
     this.post({ type: 'command', session: this.session, command })
   }
 
@@ -183,8 +188,11 @@ export class EditorBridge {
     this.destroyed = true
     this.options.doc.off('update', this.onDocUpdate)
     this.options.awareness.off('update', this.onAwarenessUpdate)
-    // This session's cursor leaves with its editor.
-    if (this.options.awareness.getLocalState()) this.options.awareness.setLocalStateField('cursor', null)
+    // This session's cursor (or spreadsheet selection) leaves with its editor.
+    if (this.options.awareness.getLocalState()) {
+      this.options.awareness.setLocalStateField('cursor', null)
+      if (this.options.format === 'sheet') this.options.awareness.setLocalStateField('sheet', null)
+    }
     this.rejectExports(new Error('The editor closed'))
     this.listeners.clear()
   }
@@ -229,6 +237,13 @@ export class EditorBridge {
         break
       case 'textState':
         this.setState({ ...this.state, text: message.state, focused: message.state.focused })
+        break
+      case 'sheetState':
+        this.setState({ ...this.state, sheet: message.state, focused: message.state.focused })
+        break
+      case 'selection':
+        // Only a spreadsheet page shares a selection; other fields of this session's awareness stay the app's.
+        if (this.options.format === 'sheet') this.options.awareness.setLocalStateField('sheet', message.selection ?? null)
         break
       case 'suggestions':
         this.setState({ ...this.state, suggestions: { count: message.count, index: message.index, active: message.active } })

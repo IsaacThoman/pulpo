@@ -1,0 +1,55 @@
+html, body { margin: 0; height: 100%; overflow: hidden; overscroll-behavior: none; background: var(--background); color: var(--foreground); -webkit-text-size-adjust: 100%; }
+body { font-family: -apple-system, system-ui, sans-serif; -webkit-tap-highlight-color: transparent; }
+[hidden] { display: none !important; }
+
+/* The page fills what the keyboard leaves (main.ts follows the visual viewport). */
+#app { position: fixed; left: 0; top: 0; width: 100%; height: 100%; display: flex; flex-direction: column; }
+#grid { position: relative; flex: 1; min-height: 0; }
+
+.bar {
+  display: flex; align-items: center; gap: 6px; flex-shrink: 0; height: 44px; padding: 0 6px 0 8px;
+  border-bottom: 1px solid var(--border); background: var(--background); box-sizing: border-box;
+}
+.address {
+  flex-shrink: 0; min-width: 44px; max-width: 30%; padding: 4px 8px; border-radius: 8px; box-sizing: border-box;
+  background: var(--muted); color: var(--foreground); text-align: center;
+  font: 600 13px/20px ui-monospace, Menlo, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.fx { flex-shrink: 0; color: var(--muted-foreground); font: italic 15px Georgia, serif; }
+.field {
+  flex: 1; min-width: 0; height: 34px; padding: 0 8px; border: 0; border-radius: 8px; outline: none; box-sizing: border-box;
+  background: transparent; color: var(--foreground); caret-color: var(--ring);
+  /* 16px keeps iOS from zooming in on focus. */
+  font: 16px/34px -apple-system, system-ui, sans-serif; -webkit-appearance: none; appearance: none;
+}
+.field:focus { background: var(--muted); }
+.field[readonly] { color: var(--muted-foreground); }
+.field::-webkit-search-cancel-button { display: none; }
+.count { flex-shrink: 0; color: var(--muted-foreground); font-size: 13px; font-variant-numeric: tabular-nums; }
+
+.icon-button, .text-button {
+  flex-shrink: 0; display: grid; place-items: center; height: 44px; min-width: 40px; padding: 0; margin: 0;
+  border: 0; background: transparent; color: var(--foreground); font: inherit;
+}
+.icon-button svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.icon-button.accent, .text-button { color: var(--ring); }
+.text-button { padding: 0 8px; font-size: 16px; font-weight: 600; }
+.icon-button:active, .text-button:active { opacity: 0.5; }
+
+/* Sheet tabs: a strip above Android's formatting bar (the host already keeps the web view clear of the home indicator). */
+#tabs {
+  display: flex; align-items: stretch; flex-shrink: 0; height: 44px; box-sizing: content-box;
+  padding-bottom: var(--bottom-padding, 0px);
+  border-top: 1px solid var(--border); background: var(--background);
+}
+#tab-list { display: flex; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+#tab-list::-webkit-scrollbar { display: none; }
+.tab {
+  position: relative; flex-shrink: 0; max-width: 60vw; min-width: 64px; padding: 0 16px; border: 0; margin: 0;
+  background: transparent; color: var(--muted-foreground); font: 500 15px -apple-system, system-ui, sans-serif;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.tab[aria-selected="true"] { color: var(--foreground); font-weight: 600; }
+.tab[aria-selected="true"]::after { content: ''; position: absolute; left: 10px; right: 10px; top: 0; height: 3px; border-radius: 0 0 3px 3px; background: var(--tab-color, var(--ring)); }
+.tab .swatch { display: inline-block; width: 8px; height: 8px; margin-right: 6px; border-radius: 50%; vertical-align: 1px; }
+#add-sheet { width: 48px; border-left: 1px solid var(--border); color: var(--muted-foreground); }
