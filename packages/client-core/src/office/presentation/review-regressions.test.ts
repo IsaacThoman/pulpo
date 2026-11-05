@@ -41,7 +41,7 @@ import { DeckResources } from './render/deck.js'
 import { renderSlide } from './render/slide.js'
 import { plainToText, textToPlain } from './text.js'
 import { memoryAssets } from './testing/assets.js'
-import { fidelityAvailable, fixture, runPython, scratchDir, writeScratch } from './testing/fixtures.js'
+import { assertReadableZip, fidelityAvailable, fixture, runPython, scratchDir, writeScratch } from './testing/fixtures.js'
 import { LOCAL_ORIGIN, PresentationController } from './view/controller.js'
 import { NotesEditor } from './view/notes.js'
 import { remoteCaret, remoteSelection, validCursorState } from './view/text-editor.js'
@@ -59,7 +59,11 @@ async function open(bytes: Uint8Array) {
   return doc
 }
 
-const exportBytes = (doc: Y.Doc) => presentationCodec.exportFile(doc, context)
+const exportBytes = async (doc: Y.Doc) => {
+  const bytes = await presentationCodec.exportFile(doc, context)
+  assertReadableZip(bytes)
+  return bytes
+}
 const exported = async (doc: Y.Doc) => unzipSync(await exportBytes(doc))
 
 function replica(doc: Y.Doc): Y.Doc {
@@ -1122,5 +1126,18 @@ describe('identity review', () => {
     const box = shapes.find((shape) => shape.name === 'New Box')!
     expect(textToPlain(box.text!)).toBe('new')
     expect(box.key).not.toBe(old)
+  })
+})
+
+describe('export framing checks', () => {
+  it('rejects an export whose deflate data is damaged, even when its central directory looks fine', async () => {
+    const { assertReadableZip } = await import('./testing/fixtures.js')
+    const bytes = await exportBytes(await open(blankPresentation()))
+    // Flip bytes inside the first entry's compressed data, after its local header.
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+    const start = 30 + view.getUint16(26, true) + view.getUint16(28, true)
+    const damaged = bytes.slice()
+    for (let index = start; index < start + 8; index++) damaged[index] = damaged[index]! ^ 0xff
+    expect(() => assertReadableZip(damaged)).toThrow()
   })
 })

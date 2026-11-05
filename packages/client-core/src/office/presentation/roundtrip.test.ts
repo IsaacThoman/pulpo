@@ -5,7 +5,7 @@ import { LiveFormatError } from '../live-format.js'
 import { presentationCodec } from './codec.js'
 import { readSnapshot } from './ydoc.js'
 import { memoryAssets } from './testing/assets.js'
-import { corpus, fidelityAvailable, fixture, hostileCorpus, runTool, scratchDir, writeScratch } from './testing/fixtures.js'
+import { assertReadableZip, corpus, fidelityAvailable, fixture, hostileCorpus, runTool, scratchDir, writeScratch } from './testing/fixtures.js'
 import { readFileSync } from 'node:fs'
 
 async function roundTrip(bytes: Uint8Array, name: string) {
@@ -15,7 +15,10 @@ async function roundTrip(bytes: Uint8Array, name: string) {
   // Through a second replica, so the test covers what syncs, not just the local document.
   const replica = new Y.Doc()
   Y.applyUpdate(replica, Y.encodeStateAsUpdate(doc))
-  return { doc: replica, out: await presentationCodec.exportFile(replica, context), context }
+  const out = await presentationCodec.exportFile(replica, context)
+  // Every export must be a valid zip for strict readers, whatever its parts hold.
+  assertReadableZip(out, name)
+  return { doc: replica, out, context }
 }
 
 describe('presentation round trip', () => {

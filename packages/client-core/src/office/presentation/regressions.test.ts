@@ -12,7 +12,7 @@ import { DeckResources } from './render/deck.js'
 import { displayableMediaType } from './render/env.js'
 import { plainToText, slideTextSchema, textToPlain } from './text.js'
 import { memoryAssets } from './testing/assets.js'
-import { fidelityAvailable, fixture, runPython, scratchDir, writeScratch } from './testing/fixtures.js'
+import { assertReadableZip, fidelityAvailable, fixture, runPython, scratchDir, writeScratch } from './testing/fixtures.js'
 import { splitParagraph } from './view/text-editor.js'
 import { readSnapshot } from './ydoc.js'
 import { REL_TYPES } from './xml.js'
@@ -28,7 +28,11 @@ async function open(bytes: Uint8Array) {
   return doc
 }
 
-const exported = async (doc: Y.Doc) => unzipSync(await presentationCodec.exportFile(doc, context))
+const exported = async (doc: Y.Doc) => {
+  const bytes = await presentationCodec.exportFile(doc, context)
+  assertReadableZip(bytes)
+  return unzipSync(bytes)
+}
 
 /** Every internal relationship in the package points at a part that exists. */
 function danglingRelationships(files: Record<string, Uint8Array>): string[] {

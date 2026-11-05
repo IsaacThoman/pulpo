@@ -36,7 +36,7 @@ import type { PresentationSnapshot } from './model.js'
 import { DeckResources } from './render/deck.js'
 import { plainToText, textToPlain } from './text.js'
 import { memoryAssets } from './testing/assets.js'
-import { fidelityAvailable, fixture, runPython, runTool, scratchDir, writeScratch } from './testing/fixtures.js'
+import { assertReadableZip, fidelityAvailable, fixture, runPython, runTool, scratchDir, writeScratch } from './testing/fixtures.js'
 import { readSnapshot } from './ydoc.js'
 
 const LOCAL = { local: true }
@@ -95,6 +95,7 @@ describe('editing a presentation', () => {
     setNotesText(doc, content, plainToText('Remember the demo'), LOCAL)
 
     const out = await presentationCodec.exportFile(doc, context)
+    assertReadableZip(out)
     const reread = await open(out)
     const snapshot = readSnapshot(reread.doc)
     expect(snapshot.slides.length).toBe(2)
@@ -163,6 +164,7 @@ print(json.dumps(out))`,
     setSlideHidden(doc, [copy!], true, LOCAL)
     deleteSlides(doc, [keys[5]!], LOCAL)
     const out = await presentationCodec.exportFile(doc, context)
+    assertReadableZip(out)
     const snapshot = readSnapshot((await open(out)).doc)
     const expected = [...originalTexts]
     const [moved] = expected.splice(0, 1)

@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } fro
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { OoxmlPackage } from '../../ooxml/package.js'
 
 /** The committed presentation corpus and the optional Python/LibreOffice fidelity tools. */
 
@@ -63,3 +64,17 @@ export function runPython(script: string, ...args: string[]): string {
 }
 
 export const fidelityAvailable = () => FIDELITY && existsSync(PYTHON)
+
+/**
+ * Checks an exported package's zip framing, not just its parts: our own reader (which inflates
+ * every entry and verifies sizes and CRCs) must accept it, and so must Python's zipfile when the
+ * fidelity tools are available. A writer bug that some readers tolerate would otherwise pass.
+ */
+export function assertReadableZip(bytes: Uint8Array, name = 'export.pptx'): void {
+  const pkg = OoxmlPackage.read(bytes)
+  for (const path of pkg.paths()) pkg.get(path)
+  if (!fidelityAvailable()) return
+  const file = writeScratch(scratchDir(), name.replace(/[^\w.-]/g, '-'), bytes)
+  const broken = runPython('import sys, zipfile\nwith zipfile.ZipFile(sys.argv[1]) as archive:\n    print(archive.testzip() or "")', file).trim()
+  if (broken) throw new Error(`Python's zipfile rejects ${broken} in ${name}`)
+}
