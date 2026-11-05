@@ -30,12 +30,24 @@ The image supports `linux/amd64` and `linux/arm64`. Node.js archives are pinned
 to an exact version and checked against the SHA-256 values published by the
 Node.js project before installation.
 
-The office, font, and notebook additions increase installed image size by an
-estimated **535 MB** on amd64: about 467 MB from Ubuntu noble `main`/`universe`
-package `Installed-Size` metadata for new packages and their required dependencies
-(excluding dependencies already bundled), plus 67 MB of unpacked new Python
-wheels. Those wheels total about 17 MB compressed; registry layer sizes will
-depend on compression. This is an estimate, not a measured image build.
+CI logs provide a measured comparison against the last successful `main` image build
+([baseline run 41704247578](https://github.com/IsaacThoman/pulpo/actions/runs/41704247578),
+[PR run 41937081540](https://github.com/IsaacThoman/pulpo/actions/runs/41937081540)):
+
+| Architecture | Baseline layer-load total | PR layer-load total | Increase |
+| --- | ---: | ---: | ---: |
+| amd64 | 513.95 MB | 771.26 MB | 257.31 MB (50.1%) |
+| arm64 | 498.92 MB | 755.74 MB | 256.82 MB (51.5%) |
+
+These decimal MB totals sum the unique layers reported by BuildKit's `loading layer` lines,
+including unchanged base layers. They measure the reported transfer/load representation,
+not the unpacked Docker `.Size` or a registry manifest. The amd64 apt layer grows from
+376.79 to 611.08 MB, and the Python layer from 107.35 to 130.37 MB. Other repository changes
+between the two commits can affect small application layers, so this is not a controlled
+same-base rebuild. The PR's apt install reports 1,386 MB of installed packages on amd64
+(1,361 MB arm64), which includes packages present before this change. The earlier ~535 MB
+estimate for additional unpacked files is still an estimate; the workspace workflow does
+not log `docker image inspect .Size`. Both architectures pass their offline image smoke tests.
 
 ### Rendering and converting documents
 

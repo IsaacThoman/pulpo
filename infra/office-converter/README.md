@@ -96,7 +96,8 @@ other files, reach the network, or exhaust resources.
   job has a slot, so queued uploads wait in their sockets rather than in memory.
 - **Network.** The service needs no network access of its own. In the infrastructure Compose
   files it sits alone on an `internal` network (`pulpo-prod-office`, `pulpo-dev-office`) with
-  no route out, which the API and worker containers must join to reach it, and it refuses to
+  no route out, reached through callers on that network (the recommended HTTP relay below),
+  and it refuses to
   start without `OFFICE_CONVERTER_TOKEN` (`OFFICE_CONVERTER_REQUIRE_TOKEN=true`). Its DNS also
   resolves no outside names (`dns: 127.0.0.1`). CI runs the smoke test with `--network=none`
   under the same restrictions. The `office` profile in the root `compose.yaml` is for local use
@@ -137,12 +138,97 @@ digest (`PULPO_OFFICE_CONVERTER_IMAGE`) in the infrastructure Compose files.
 
 - Local Compose: `docker compose --profile office up -d`, then set
   `OFFICE_CONVERTER_URL=http://office-converter:8790` in the server environment.
-- Production and persistent development: on the infrastructure application set
-  `COMPOSE_PROFILES=office`, `OFFICE_CONVERTER_TOKEN` (32+ random characters), and
-  `PULPO_OFFICE_CONVERTER_IMAGE` (pinned by digest). Attach the API and worker containers to the
-  `pulpo-prod-office` network (`pulpo-dev-office` for development) as well as `coolify`, and
-  give them `OFFICE_CONVERTER_URL=http://pulpo-prod-office-converter:8790` (`pulpo-dev-…`) and
-  the same token. The attachment has to survive redeploys, so make it part of the API and
-  worker applications' own configuration rather than a one-off `docker network connect`. If
-  the platform cannot attach them to a second network, also put the converter on `coolify`:
-  the token then still guards it, but it gains a route out, so prefer the isolated network.
+- Production and persistent development: enable the `office` profile, pin the converter
+  image by digest, and supply a token. See the verified Coolify wiring below before enabling
+  the server URL. The infrastructure files intentionally leave the converter isolated.
+
+### Coolify networking investigation (read-only, 2026-11-05 UTC)
+
+Inspected running containers, network metadata, generated Compose network sections and the
+installed Coolify **4.4.7** source on `bee`. No production configuration was changed.
+
+- Production API (`alvlghtptjbgenf9kmkisgyp`) and worker (`rh0fvf8mfi97jcjchjhj0y6v`),
+  and the equivalent persistent development apps, are independent Dockerfile applications.
+  Their generated Compose attaches them only to the external `coolify` network. Infrastructure
+  services also use `coolify`, with stable `pulpo-prod-*` / `pulpo-dev-*` aliases.
+- PR #938 API and worker use only `lge7s5gv4obek4lo30319ph4-938`; other previews have their
+  own PR-number network. These are not on `coolify`. The root Compose office profile is not
+  enabled for previews today; do not point previews at the production converter.
+- `ApplicationDeploymentJob.php` generates Dockerfile application networks from the destination.
+  `convertDockerRunToCompose()` in `bootstrap/helpers/docker.php` has no `--network` mapping.
+  Adding `--network pulpo-prod-office` to custom Docker options is silently ignored. Additional
+  destinations deploy extra copies; they do not attach the existing container to another network.
+  A one-off `docker network connect` disappears with the next container replacement.
+
+**Recommendation:** keep LibreOffice exclusively on its internal network. Add a small HTTP
+relay to the infrastructure Compose, attached to both `coolify` and `office`. API/worker reach
+its stable environment-specific alias without changing their Dockerfile application networks.
+The relay forwards only to the converter, passes the Bearer token through, and must never
+provide a general forward proxy. The converter retains `OFFICE_CONVERTER_REQUIRE_TOKEN=true`.
+This avoids giving the document parser an internet route or depending on post-deploy hooks.
+
+The exact proposed addition under `services` in `deploy/compose.production-infra.yaml` is
+below. This is a reviewable deployment recommendation, **not an applied configuration**.
+Use the same block in `deploy/compose.development-infra.yaml`, changing both `pulpo-prod-`
+aliases to `pulpo-dev-`. Pin the relay image by digest before enabling it.
+
+```yaml
+  office-relay:
+    image: ${PULPO_OFFICE_RELAY_IMAGE:?Pin an nginxinc/nginx-unprivileged image by digest}
+    profiles: [office]
+    entrypoint: [/bin/sh, -ec]
+    command:
+      - |
+        cat > /tmp/nginx.conf <<'CONF'
+        pid /tmp/nginx.pid;
+        error_log /dev/stderr warn;
+        events { worker_connections 128; }
+        http {
+          access_log off;
+          client_body_temp_path /tmp/client;
+          proxy_temp_path /tmp/proxy;
+          resolver 127.0.0.11 valid=10s ipv6=off;
+          server {
+            listen 8080;
+            client_max_body_size 100m;
+            client_body_timeout 210s;
+            location / {
+              set $$converter pulpo-prod-office-converter:8790;
+              proxy_pass http://$$converter;
+              proxy_http_version 1.1;
+              proxy_set_header Connection "";
+              proxy_request_buffering off;
+              proxy_buffering off;
+              proxy_connect_timeout 5s;
+              proxy_send_timeout 210s;
+              proxy_read_timeout 210s;
+            }
+          }
+        }
+        CONF
+        exec nginx -c /tmp/nginx.conf -g 'daemon off;'
+    read_only: true
+    tmpfs: [/tmp:rw,nosuid,nodev,size=16m,mode=1777]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 64m
+    pids_limit: 32
+    restart: unless-stopped
+    networks:
+      office: {}
+      coolify:
+        aliases: [pulpo-prod-office-relay]
+```
+
+The doubled dollars preserve nginx variables through Compose interpolation. Set API **and worker**
+`OFFICE_CONVERTER_URL=http://pulpo-prod-office-relay:8080` (development: `pulpo-dev-office-relay`)
+and the same token as their infrastructure converter. Keep host ports and Traefik labels off
+both services. No API/worker network change is needed on redeploy.
+
+The design was checked against the observed generated Compose and Docker network membership;
+the documented snippet was parsed with Compose locally without starting Docker. The fixed
+upstream and runtime Docker DNS resolver let the relay follow converter container replacement.
+No relay container or redeploy was tested on production. Before enabling it, validate the pinned
+relay image/config in CI, then in persistent development check health, an authenticated conversion,
+a wrong-token refusal, and conversion after separately redeploying converter, API and worker.
+Keep previews disabled until their own scoped relay/converter wiring has equivalent coverage.
