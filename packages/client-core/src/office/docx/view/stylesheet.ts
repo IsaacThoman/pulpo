@@ -164,6 +164,7 @@ export const DOCX_BASE_CSS = `
 .docx-flow table.docx-table td.selectedCell{background-image:linear-gradient(rgb(26 115 232 / 0.18),rgb(26 115 232 / 0.18))}
 .docx-flow .docx-page-spacer{display:block;pointer-events:none;user-select:none}
 .docx-flow td.docx-row-spacer::before{content:"";display:block;height:var(--docx-row-spacer,0)}
+.docx-flow td.docx-row-spacer::after{content:"";position:absolute;top:0;left:-6px;right:-6px;height:var(--docx-row-stub,0);background:#fff;pointer-events:none}
 .docx-flow.ProseMirror-hideselection *::selection{background:transparent}
 .docx-flow .ProseMirror-gapcursor{display:none;pointer-events:none;position:absolute}
 .docx-flow .ProseMirror-gapcursor:after{content:"";display:block;position:absolute;top:-2px;width:20px;border-top:1px solid black;animation:ProseMirror-cursor-blink 1.1s steps(2,start) infinite}

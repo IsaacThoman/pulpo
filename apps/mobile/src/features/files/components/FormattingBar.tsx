@@ -44,8 +44,14 @@ const ITEMS: Item[] = [
   { command: 'divider', label: 'Divider', symbol: 'minus' },
 ]
 
-/** A live format's own button (text and code), in place of the document editor's. */
-export type FormattingBarItem = { command: string; label: string; systemImage: string }
+/** A live format's own button (text, code, Word), in place of the document editor's; a menu with `options`. */
+export type FormattingBarItem = {
+  command: string
+  label: string
+  systemImage: string
+  options?: ReadonlyArray<{ command: string; label: string }>
+  separatorBefore?: boolean
+}
 
 /**
  * The formatting bar above the keyboard where the platform has no keyboard accessory for web
@@ -61,7 +67,12 @@ export function FormattingBar({ formatting, items: formatItems, visible, onComma
 }) {
   const theme = useAppTheme()
   if (Platform.OS !== 'android' || !visible || !formatting) return null
-  const items: Item[] = formatItems?.length ? formatItems.map((item) => ({ command: item.command as FormatCommand, label: item.label, symbol: item.systemImage })) : ITEMS
+  const items: Item[] = formatItems?.length ? formatItems.flatMap((item): Item[] => [
+    ...item.separatorBefore ? [{ separator: true } as const] : [],
+    item.options
+      ? { menu: item.command, label: item.label, symbol: item.systemImage, options: item.options.map((option) => ({ command: option.command as FormatCommand, label: option.label })) }
+      : { command: item.command as FormatCommand, label: item.label, symbol: item.systemImage },
+  ]) : ITEMS
   const active = new Set<string>(formatting.active)
   const disabled = new Set<string>(formatting.disabled)
   const run = (command: string) => {

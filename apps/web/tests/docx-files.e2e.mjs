@@ -46,7 +46,7 @@ try {
   const folderId = created.node?.id ?? created.id
   await page.goto(`${base}/files/f/${folderId}`)
   await page.getByRole('button', { name: 'New', exact: true }).click()
-  await page.getByRole('menuitem', { name: 'New document' }).click()
+  await page.getByRole('menuitem', { name: 'New Word document' }).click()
   // New items open for renaming, with the name before the extension selected.
   await page.getByRole('textbox').first().waitFor()
   await page.keyboard.type('Launch plan')

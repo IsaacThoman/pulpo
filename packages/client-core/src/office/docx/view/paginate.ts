@@ -242,7 +242,7 @@ export function breakDecorations(view: EditorView, measured: Measured, layout: L
   const flow = view.dom as HTMLElement
   const rect = flow.getBoundingClientRect()
   const frame: Frame = { top: rect.top, scale: flow.offsetWidth ? rect.width / flow.offsetWidth : 1 }
-  for (const { unit, height } of layout.breaks) {
+  for (const { unit, height, stub } of layout.breaks) {
     const unitIndex = unit
     const anchor = measured.anchors[unit]
     if (!anchor || height <= 0) continue
@@ -269,7 +269,8 @@ export function breakDecorations(view: EditorView, measured: Measured, layout: L
         // The row grows by exactly the spacer: a minimum row height would otherwise absorb part of it.
         const unit = measured.units[unitIndex]
         const rowHeight = unit ? unit.bottom - unit.top : 0
-        decorations.push(Decoration.node(from, from + cell.nodeSize, { class: 'docx-row-spacer', style: `--docx-row-spacer:${height}px;height:${rowHeight + height}px` }))
+        // The stub left on the page before stays blank: the moved row's borders and shading are masked there.
+        decorations.push(Decoration.node(from, from + cell.nodeSize, { class: 'docx-row-spacer', style: `--docx-row-spacer:${height}px;--docx-row-stub:${Math.min(stub, height)}px;height:${rowHeight + height}px` }))
       }
     }
   }

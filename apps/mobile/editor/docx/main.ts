@@ -99,6 +99,7 @@ function phoneState(editor: DocxEditor): DocxPhoneState {
     suggesting: state.mode === 'suggesting',
     layout: state.layout,
     focused: editor.view.hasFocus(),
+    editable: !state.readOnly,
   }
 }
 

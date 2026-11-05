@@ -28,8 +28,13 @@ describe('layoutPages', () => {
   it('breaks between lines and moves the rest to the next text area', () => {
     const result = layoutPages(paragraphs(8), { sections: [setup] })
     expect(result.pages).toHaveLength(2)
-    expect(result.breaks).toEqual([{ unit: 5, height: pitch - 100, page: 1 }])
+    expect(result.breaks).toEqual([{ unit: 5, height: pitch - 100, page: 1, stub: 0 }])
     expect(result.pages[1]!.contentTop).toBe(pitch)
+  })
+
+  it('reports the unused text area a break leaves, which moved table rows mask', () => {
+    // Orphan control moves a 3-line paragraph after 4 lines (80px), leaving 20px empty.
+    expect(layoutPages(paragraphs(4, 3), { sections: [setup] }).breaks[0]!.stub).toBe(20)
   })
 
   it('avoids orphans and widows', () => {

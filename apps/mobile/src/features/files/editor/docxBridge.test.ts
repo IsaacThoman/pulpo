@@ -9,6 +9,7 @@ import { Awareness } from 'y-protocols/awareness'
 import * as Y from 'yjs'
 import { EditorBridge } from './bridge'
 import { DOCX_EDITOR_BUNDLE } from './docxEditorBundle.generated'
+import { docxToolbarCommands } from './docxToolbar'
 import { TEXT_EDITOR_BUNDLE } from './textEditorBundle.generated'
 import type { EditorTheme } from './protocol'
 
@@ -138,6 +139,17 @@ describe('Word editor bridge with the built editor', () => {
     bridge.docxCommand('layout')
     await page.flush()
     expect(bridge.getState().docx?.layout).toBe('print')
+  })
+
+  it('runs every command on the bar, menus included, without errors', async () => {
+    const { bridge, page } = await open('lists.docx')
+    const commands = docxToolbarCommands()
+    expect(commands).toContain('alignCenter')
+    for (const command of commands) {
+      bridge.docxCommand(command, command === 'comment' ? 'A note' : command === 'link' ? 'https://example.com' : undefined)
+      await page.flush()
+    }
+    expect(bridge.getState().docx).toMatchObject({ suggesting: true, layout: 'print' })
   })
 
   it('shows pictures with bytes the app fetches, and refuses malformed requests', async () => {

@@ -40,7 +40,7 @@ export const LIVE_WEB_FORMATS: readonly LiveFormatWeb[] = [
   },
   {
     format: DOCUMENT_FORMAT,
-    newLabel: () => ui("New document"),
+    newLabel: () => ui("New Word document"),
     newName: () => `${ui("Untitled document")}.docx`,
     icon: FileText,
     Editor: lazy(() => import('./docx/LiveDocxEditor')),

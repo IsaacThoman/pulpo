@@ -150,7 +150,7 @@ export function FileDocumentScreen({ navigation, route }: Props) {
   // A document just created opens ready to type in, once.
   const focusedNew = useRef(false)
   useEffect(() => {
-    const ready = editorState?.loaded && (isText ? editorState.text && !editorState.text.readOnly : isWord ? Boolean(editorState.docx) : editorState.formatting?.editable)
+    const ready = editorState?.loaded && (isText ? editorState.text && !editorState.text.readOnly : isWord ? editorState.docx?.editable : editorState.formatting?.editable)
     if (!route.params.created || focusedNew.current || !ready) return
     focusedNew.current = true
     editor.current?.focus('start')

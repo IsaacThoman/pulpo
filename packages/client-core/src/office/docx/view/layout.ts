@@ -106,6 +106,8 @@ export interface LayoutBreak {
   height: number
   /** The page the unit starts. */
   page: number
+  /** Unused text area left above the break on the page before, which a moved row masks. */
+  stub: number
 }
 
 export interface LayoutResult {
@@ -195,6 +197,7 @@ export function layoutPages(units: LayoutUnit[], options: LayoutOptions): Layout
     const overflows = bottom > bottomOf(page) - notesExtra + 0.5
     if (forced || (overflows && index > pageStart)) {
       const at = forced ? index : breakPoint(units, index, pageStart)
+      const stub = Math.max(0, page.contentTop + contentHeight(page.setup) - (units[at]!.top + shift))
       const nextSection = units[at]!.section
       const nextSetup = setupFor(nextSection)
       const startsSection = nextSection !== page.section
@@ -210,7 +213,7 @@ export function layoutPages(units: LayoutUnit[], options: LayoutOptions): Layout
       const height = Math.max(0, contentTop - unitTop) + (units[at]!.kind === 'row' ? (units[at]!.repeatHeader ?? 0) : 0)
       shift += height
       page = newPage(contentTop, nextSection, startsSection, nextNumber)
-      breaks.push({ unit: at, height, page: page.index })
+      breaks.push({ unit: at, height, page: page.index, stub })
       section = nextSection
       pageStart = at
       // Notes of units moved to the new page are placed again from there.

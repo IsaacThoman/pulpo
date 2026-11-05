@@ -94,6 +94,8 @@ export interface DocxPhoneState {
   suggesting: boolean
   layout: 'print' | 'web'
   focused: boolean
+  /** False until the app lets the page edit (and while it is read-only). */
+  editable: boolean
 }
 
 export interface ActiveSuggestion {
