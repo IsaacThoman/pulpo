@@ -1,5 +1,8 @@
 import type { FileNode, MobileConfig } from '@pulpo/contracts'
+import { existsSync, readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
+import { materialSymbolNames } from '../../platform/symbolNames'
+import { TEXT_TOOLBAR } from './editor/textToolbar'
 
 vi.mock('react-native', () => ({ AppState: { addEventListener: () => ({ remove() {} }) }, Platform: { OS: 'ios' } }))
 vi.mock('../../api/client', () => ({ ApiError: class extends Error {}, mobileApi: {} }))
@@ -41,6 +44,17 @@ describe('live formats on mobile', () => {
     const sheet = editorBundleFor('sheet')!.schemaVersion
     expect(newLiveFiles(config({ enabled: true, docSchemaVersion: markdown, liveFormats: { markdown, text: 1, sheet } })).map((entry) => entry.name)).toEqual(['Untitled.txt', 'Untitled.xlsx'])
     expect(formatSupported(config({ enabled: true, docSchemaVersion: markdown, liveFormats: { markdown, text: 1, sheet: sheet + 1 } }), 'sheet')).toBe(false)
+  })
+
+  it('bundles an Android icon for every live-text creation and toolbar item', () => {
+    const entries = newLiveFiles(config({ enabled: true, docSchemaVersion: 1, liveFormats: { text: 1 } }))
+    const registry = readFileSync(new URL('../../platform/materialIcons.ts', import.meta.url), 'utf8')
+    for (const item of [...entries, ...TEXT_TOOLBAR]) {
+      const symbol = materialSymbolNames[item.systemImage]
+      expect(symbol, item.systemImage).toBeDefined()
+      expect(existsSync(new URL(`../../../assets/material/${symbol}.xml`, import.meta.url)), item.systemImage).toBe(true)
+      expect(registry, item.systemImage).toContain(`'${symbol}': require(`)
+    }
   })
 
   it('offers Edit for uploaded text and code files, not Markdown, binaries, or oversized files', () => {
