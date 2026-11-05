@@ -1,3 +1,4 @@
+import { chainCommands, createParagraphNear, liftEmptyBlock, newlineInCode, splitBlock } from '@tiptap/pm/commands'
 import type { Mark, Node as ProseMirrorNode, Schema } from '@tiptap/pm/model'
 import { NodeSelection, TextSelection, type EditorState, type Transaction } from '@tiptap/pm/state'
 import { CellSelection, TableMap, isInTable } from '@tiptap/pm/tables'
@@ -51,6 +52,36 @@ export function selectedParagraphs(state: EditorState): { node: ProseMirrorNode;
       if (node.type.name === 'paragraph') return [{ node, pos: $from.before(depth) }]
     }
   }
+  return result
+}
+
+/** A new paragraph mark precedes the original mark, which retains its section end and markers. */
+export const insertParagraphBreak: Command = (state, context) => {
+  const paragraph = selectedParagraphs(state)[0]
+  if (!paragraph) return null
+  const $from = state.selection.$from
+  const atEnd = $from.parentOffset === $from.parent.content.size
+  let result: Transaction | null = null
+  chainCommands(newlineInCode, createParagraphNear, liftEmptyBlock, splitBlock)(state, (tr) => {
+    const first = tr.doc.nodeAt(paragraph.pos)
+    const secondPos = first ? paragraph.pos + first.nodeSize : -1
+    const second = secondPos >= 0 ? tr.doc.nodeAt(secondPos) : null
+    if (first && second?.type.name === 'paragraph') {
+      const attrs = paragraph.node.attrs
+      const nextStyle = atEnd ? context.styles.get(attrs.pStyle as string | null)?.next : undefined
+      tr.setNodeMarkup(paragraph.pos, undefined, { ...attrs, sectPr: null, trail: null })
+      tr.setNodeMarkup(secondPos, undefined, {
+        ...attrs,
+        lead: null,
+        xmlAttrs: null,
+        ...(nextStyle && nextStyle !== attrs.pStyle ? { pStyle: nextStyle, outlineLvl: null } : {}),
+      })
+      tr.setSelection(TextSelection.create(tr.doc, secondPos + 1))
+      // Typing continues with the formatting at the split.
+      tr.setStoredMarks(selectionMarks(state).filter((mark) => mark.type.name !== 'link' && mark.type.name !== 'ins' && mark.type.name !== 'del'))
+    }
+    result = tr
+  })
   return result
 }
 

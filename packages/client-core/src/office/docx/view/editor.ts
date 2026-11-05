@@ -1,4 +1,4 @@
-import { baseKeymap, chainCommands, createParagraphNear, liftEmptyBlock, newlineInCode, splitBlock } from '@tiptap/pm/commands'
+import { baseKeymap } from '@tiptap/pm/commands'
 import { dropCursor } from '@tiptap/pm/dropcursor'
 import { gapCursor } from '@tiptap/pm/gapcursor'
 import { keymap } from '@tiptap/pm/keymap'
@@ -44,6 +44,7 @@ import {
   freshId,
   insertInline,
   insertPageBreak,
+  insertParagraphBreak,
   insertSectionBreak,
   insertSymbol,
   insertTable,
@@ -721,30 +722,10 @@ export class DocxEditor {
     if (paragraph.node.content.size === 0 && effectiveNumPr(jml(paragraph.node.attrs.numPr), paragraph.node.attrs.pStyle as string | null, this.context.styles)) {
       return this.toggleListOff()
     }
-    const $from = state.selection.$from
-    const atEnd = $from.parentOffset === $from.parent.content.size
-    const handled = chainCommands(newlineInCode, createParagraphNear, liftEmptyBlock, splitBlock)(state, (tr) => {
-      // Both halves keep the paragraph's formatting; the section end and markers stay with the right half.
-      const first = tr.doc.nodeAt(paragraph.pos)
-      const secondPos = first ? paragraph.pos + first.nodeSize : -1
-      const second = secondPos >= 0 ? tr.doc.nodeAt(secondPos) : null
-      if (first && second?.type.name === 'paragraph') {
-        const attrs = paragraph.node.attrs
-        const nextStyle = atEnd ? this.context.styles.get(attrs.pStyle as string | null)?.next : undefined
-        tr.setNodeMarkup(paragraph.pos, undefined, { ...attrs, sectPr: null, trail: null })
-        tr.setNodeMarkup(secondPos, undefined, {
-          ...attrs,
-          lead: null,
-          xmlAttrs: null,
-          ...(nextStyle && nextStyle !== attrs.pStyle ? { pStyle: nextStyle, outlineLvl: null } : {}),
-        })
-        tr.setSelection(TextSelection.create(tr.doc, secondPos + 1))
-        // Typing continues with the formatting at the split.
-        tr.setStoredMarks(selectionMarks(state).filter((mark) => mark.type.name !== 'link' && mark.type.name !== 'ins' && mark.type.name !== 'del'))
-      }
-      view.dispatch(tr.scrollIntoView())
-    })
-    return handled
+    const tr = insertParagraphBreak(state, this.context)
+    if (!tr) return false
+    view.dispatch(tr.scrollIntoView())
+    return true
   }
 
   private backspaceInList(): boolean {

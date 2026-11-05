@@ -11,7 +11,7 @@ import { BODY_FRAGMENT, readDocxModel, writeFragment, type DocxModel } from './m
 import { ListCounter, Numbering, formatNumber } from './numbering.js'
 import { docxSchema, inlineMarks } from './schema.js'
 import { StyleSheet, cellConditions, mergeElement, tableLook } from './styles.js'
-import { clearFormatting, freshId, findMatches, insertTable, insertPageBreak, listDefinition, replaceMatches, setAlignment, setFontSize, toggleList, toggleRunProperty, wordCount } from './view/commands.js'
+import { clearFormatting, freshId, findMatches, insertTable, insertPageBreak, insertParagraphBreak, listDefinition, replaceMatches, setAlignment, setFontSize, toggleList, toggleRunProperty, wordCount } from './view/commands.js'
 import { DocxViewContext } from './view/context.js'
 import { listRevisions, resolveRevisions, trackTransaction } from './view/track-changes.js'
 
@@ -402,6 +402,69 @@ describe('tracked changes', async () => {
     expect(listRevisions(accepted.doc)).toEqual([])
     expect(TableMap.get(accepted.doc.firstChild!).width).toBe(2)
     expect(TableMap.get(accepted.doc.firstChild!).problems).toBeNull()
+  })
+
+  it.each(['editing', 'suggesting'] as const)('keeps the section end on the second paragraph after Enter in %s mode', async (mode) => {
+    const sectPr = packJml(['w:sectPr', {}, ['w:type', { 'w:val': 'continuous' }]])
+    const lead = packJml([['w:bookmarkStart', { 'w:id': '1', 'w:name': 'start' }]])
+    const trail = packJml([['w:bookmarkEnd', { 'w:id': '1' }]])
+    const { doc } = await documentWith(schema.node('paragraph', { sectPr, lead, trail, xmlAttrs: '{"w14:paraId":"12345678"}' }, schema.text('Hello world')))
+    const context = new DocxViewContext(doc)
+    const assets = new MemoryAssetStore()
+    try {
+      for (const pos of [1, 6, 12]) {
+        let state = EditorState.create({ schema, doc: readDocxModel(doc).body })
+        state = state.apply(state.tr.setSelection(TextSelection.create(state.doc, pos)))
+        const tr = insertParagraphBreak(state, context)!
+        state = state.apply(mode === 'suggesting' ? trackTransaction(state, tr, reviewer)! : tr)
+        expect(state.doc.childCount).toBe(2)
+        expect(state.doc.child(0).attrs).toMatchObject({ sectPr: null, trail: null })
+        expect(state.doc.child(1).attrs).toMatchObject({ sectPr, trail, lead: null, xmlAttrs: null })
+        if (mode === 'suggesting') {
+          expect(listRevisions(state.doc).map(({ kind }) => kind)).toEqual(['paragraphInsert'])
+          state = state.apply(resolveRevisions(state, listRevisions(state.doc), 'accept')!)
+        }
+        const target = new Y.Doc()
+        await docxCodec.createEmpty(target, { name: 'a.docx', assets })
+        target.transact(() => writeFragment(target, target.getXmlFragment(BODY_FRAGMENT), state.doc))
+        const { OoxmlPackage } = await import('../ooxml/package.js')
+        const xml = OoxmlPackage.read(await docxCodec.exportFile(target, { name: 'a.docx', assets })).text('word/document.xml')!
+        // One paragraph section end and the final body section, as before Enter.
+        expect(xml.match(/<w:sectPr[ >]/g)).toHaveLength(2)
+        target.destroy()
+      }
+    } finally {
+      context.destroy()
+      doc.destroy()
+    }
+  })
+
+  it('keeps the second inserted paragraph mark when rejecting only the first split', () => {
+    let state = initial()
+    for (const pos of [6, 10]) state = state.apply(trackTransaction(state, state.tr.split(pos), reviewer)!)
+    const [first, second] = listRevisions(state.doc)
+    state = state.apply(resolveRevisions(state, [first!], 'reject')!)
+    expect(state.doc.childCount).toBe(2)
+    expect(state.doc.child(0).textContent).toBe('Hello w')
+    expect(state.doc.child(1).textContent).toBe('orld')
+    expect(listRevisions(state.doc)).toHaveLength(1)
+    expect(listRevisions(state.doc)[0]!.key.split(':')[1]).toBe(second!.key.split(':')[1])
+    state = state.apply(resolveRevisions(state, listRevisions(state.doc), 'reject')!)
+    expect(state.doc.eq(initial().doc)).toBe(true)
+    expect(listRevisions(state.doc)).toEqual([])
+  })
+
+  it.each(['accept', 'reject'] as const)('keeps the surviving mark and section end when revisions join paragraphs on %s', (action) => {
+    const name = action === 'reject' ? 'w:ins' : 'w:del'
+    const markRPr = packJml(['w:rPr', {}, ['w:b', {}], ['w:ins', { 'w:id': '42', 'w:author': 'Grace' }]])
+    const sectPr = packJml(['w:sectPr', {}, ['w:type', { 'w:val': 'continuous' }]])
+    const trail = packJml([['w:bookmarkEnd', { 'w:id': '1' }]])
+    const first = schema.node('paragraph', { markRPr: packJml(['w:rPr', {}, [name, { 'w:id': '41', 'w:author': 'Ada' }]]) }, schema.text('Hello'))
+    const second = schema.node('paragraph', { markRPr, sectPr, trail }, schema.text(' world'))
+    const state = EditorState.create({ schema, doc: schema.node('doc', null, [first, second]) })
+    const joined = state.apply(resolveRevisions(state, [listRevisions(state.doc)[0]!], action)!)
+    expect(joined.doc.firstChild!.attrs).toMatchObject({ markRPr, sectPr, trail })
+    expect(listRevisions(joined.doc).map(({ kind, author }) => ({ kind, author }))).toEqual([{ kind: 'paragraphInsert', author: 'Grace' }])
   })
 
   it('records Enter as an inserted paragraph mark', () => {

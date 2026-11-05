@@ -1,7 +1,7 @@
 import type { Mark, Node as ProseMirrorNode, Slice } from '@tiptap/pm/model'
 import { TextSelection, type EditorState, type Transaction } from '@tiptap/pm/state'
 import { removeRow, TableMap } from '@tiptap/pm/tables'
-import { AddMarkStep, Mapping, RemoveMarkStep, ReplaceStep, type Step } from '@tiptap/pm/transform'
+import { AddMarkStep, Mapping, RemoveMarkStep, ReplaceAroundStep, ReplaceStep, StepMap, type Step } from '@tiptap/pm/transform'
 import { jmlAttr, jmlChild, jmlElements, packJml, unpackJml, type JmlElement } from '../jsonml.js'
 import { PARAGRAPH_PROPERTY_ATTRS, RUN_MARK_BY_ELEMENT, RUN_PROPERTY_MARKS, inlineMarks } from '../schema.js'
 import { RPR_ORDER, PPR_ORDER, sortByOrder } from '../names.js'
@@ -109,6 +109,20 @@ function deleteRow(out: Transaction, pos: number): void {
   }
 }
 
+/** Removing a paragraph mark leaves the following paragraph's mark and section end. */
+function joinParagraphs(out: Transaction, at: number): void {
+  const { nodeBefore, nodeAfter } = out.doc.resolve(at)
+  if (nodeBefore?.type.name !== 'paragraph' || nodeAfter?.type.name !== 'paragraph') return
+  const pos = at - nodeBefore.nodeSize
+  out.join(at)
+  out.setNodeMarkup(pos, undefined, {
+    ...out.doc.nodeAt(pos)!.attrs,
+    markRPr: nodeAfter.attrs.markRPr,
+    sectPr: nodeAfter.attrs.sectPr,
+    trail: nodeAfter.attrs.trail,
+  })
+}
+
 /** Marks [from, to) of `out` deleted, actually removing the reviewer's own insertions. */
 function trackDelete(out: Transaction, from: number, to: number, reviewer: Reviewer): { from: number; to: number } {
   const before = out.steps.length
@@ -159,12 +173,7 @@ function trackDelete(out: Transaction, from: number, to: number, reviewer: Revie
   const beforeJoins = out.steps.length
   for (const at of joins.reverse()) {
     try {
-      const { nodeBefore, nodeAfter } = out.doc.resolve(at)
-      if (nodeBefore?.type.name !== 'paragraph' || nodeAfter?.type.name !== 'paragraph') continue
-      const pos = at - nodeBefore.nodeSize
-      out.join(at)
-      // The second paragraph's mark survives; the first mark was the insertion being removed.
-      out.setNodeMarkup(pos, undefined, { ...out.doc.nodeAt(pos)!.attrs, markRPr: nodeAfter.attrs.markRPr })
+      joinParagraphs(out, at)
     } catch {
       // Paragraphs that cannot join (a table between them) keep their boundary.
     }
@@ -173,7 +182,7 @@ function trackDelete(out: Transaction, from: number, to: number, reviewer: Revie
 }
 
 /** Inserts `slice` at `pos` marked as the reviewer's insertion. */
-function trackInsert(out: Transaction, pos: number, slice: Slice, reviewer: Reviewer): number | undefined {
+function trackInsert(out: Transaction, pos: number, slice: Slice, reviewer: Reviewer): { end: number; step: number } | undefined {
   if (!slice.size) return undefined
   const before = out.steps.length
   out.replace(pos, pos, slice)
@@ -197,7 +206,7 @@ function trackInsert(out: Transaction, pos: number, slice: Slice, reviewer: Revi
     }
     return false
   })
-  return end
+  return { end, step: before }
 }
 
 /** Records the run properties a formatting change replaces, once per text range. */
@@ -248,6 +257,12 @@ function restoreDeletedRows(state: EditorState, tr: Transaction, out: Transactio
   }
 }
 
+/** setNodeMarkup replaces only the node's shell; it does not move its content. */
+function isNodeMarkup(step: Step): step is ReplaceAroundStep {
+  return step instanceof ReplaceAroundStep && step.gapFrom === step.from + 1 && step.gapTo === step.to - 1
+    && step.insert === 1 && step.slice.size === 2 && step.slice.content.childCount === 1
+}
+
 /**
  * Rewrites a user transaction into tracked changes. Returns null when it has nothing to track
  * (selection only, or from collaboration/undo, which callers filter before).
@@ -258,14 +273,29 @@ export function trackTransaction(state: EditorState, tr: Transaction, reviewer: 
   let toOut = new Mapping()
   // Where the last insertion ended, so the caret follows typed text.
   let insertEnd: { pos: number; step: number } | undefined
-  for (const step of tr.steps) {
+  for (const [index, step] of tr.steps.entries()) {
+    let insertionStep: number | undefined
     const before = out.steps.length
     if (step instanceof ReplaceStep) {
       const from = toOut.map(step.from, 1)
       const to = Math.max(from, toOut.map(step.to, -1))
       const deleted = from < to ? trackDelete(out, from, to, reviewer) : { from, to }
-      const end = trackInsert(out, deleted.to, step.slice, reviewer)
-      if (end !== undefined) insertEnd = { pos: end, step: out.steps.length }
+      const inserted = trackInsert(out, deleted.to, step.slice, reviewer)
+      if (inserted) {
+        insertEnd = { pos: inserted.end, step: out.steps.length }
+        insertionStep = inserted.step
+      }
+    } else if (isNodeMarkup(step)) {
+      const pos = toOut.map(step.from, 1)
+      const node = out.doc.nodeAt(pos)
+      const old = tr.docs[index]!.nodeAt(step.from)
+      const replacement = step.slice.content.firstChild!
+      if (node && old && node.type === replacement.type) {
+        // Apply only changed attributes so Enter's cleanup keeps the tracked paragraph mark.
+        const attrs = { ...node.attrs }
+        for (const key of Object.keys(replacement.attrs)) if (replacement.attrs[key] !== old.attrs[key]) attrs[key] = replacement.attrs[key]
+        out.setNodeMarkup(pos, undefined, attrs, replacement.marks)
+      }
     } else if (step instanceof AddMarkStep || step instanceof RemoveMarkStep) {
       const from = toOut.map(step.from, 1)
       const to = toOut.map(step.to, -1)
@@ -281,9 +311,13 @@ export function trackTransaction(state: EditorState, tr: Transaction, reviewer: 
       }
     }
     const next = new Mapping()
-    next.appendMap(step.getMap().invert())
+    next.appendMap(isNodeMarkup(step) ? StepMap.empty : step.getMap().invert())
     next.appendMapping(toOut)
-    for (let index = before; index < out.steps.length; index++) next.appendMap(out.steps[index]!.getMap())
+    for (let index = before; index < out.steps.length; index++) {
+      const mapped = out.steps[index]!
+      // Recover positions inside the inserted slice, including the new paragraph's opening token.
+      next.appendMap(isNodeMarkup(mapped) ? StepMap.empty : mapped.getMap(), index === insertionStep ? 0 : undefined)
+    }
     toOut = next
   }
   restoreDeletedRows(state, tr, out, reviewer)
@@ -470,7 +504,7 @@ export function resolveRevisions(state: EditorState, revisions: Revision[], acti
           const after = out.doc.nodeAt(at)
           if (after?.type.name === 'paragraph') {
             try {
-              out.join(at)
+              joinParagraphs(out, at)
             } catch {
               // A boundary that cannot join stays.
             }
