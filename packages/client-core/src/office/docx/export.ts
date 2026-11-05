@@ -170,7 +170,7 @@ export class StoryWriter {
   }
 
   private markers(value: unknown): string {
-    return jmlList(value).map((element) => jmlToXml(this.mapIds(element))).join('')
+    return jmlList(value).map((element) => jmlToXml(this.mapIds(element, undefined))).join('')
   }
 
   block(node: ProseMirrorNode): string {
@@ -344,7 +344,7 @@ export class StoryWriter {
         return jmlToXml([base[0], { ...base[1], 'w:id': id }, ...(base.slice(2) as JmlNode[])])
       }
       case 'commentMark':
-        return jmlToXml(this.mapIds(element ?? ['w:commentReference', { 'w:id': String(node.attrs.id) }]))
+        return jmlToXml(this.mapIds(element ?? ['w:commentReference', {}], node.attrs.id))
       case 'fieldCode': {
         const base: JmlElement = element ?? ['w:instrText', {}]
         const name = deleted ? 'w:delInstrText' : 'w:instrText'
@@ -375,12 +375,15 @@ export class StoryWriter {
     return copy
   }
 
-  /** Replaces comment ids with their file numbers. */
-  private mapIds(element: JmlElement): JmlElement {
+  /**
+   * Writes a comment marker with its comment's file number. The node's id is the truth (stored
+   * XML keeps whatever number the file it came from used, which renumbering makes stale).
+   */
+  private mapIds(element: JmlElement, nodeId: unknown): JmlElement {
     if (!/^w:comment(RangeStart|RangeEnd|Reference)$/.test(element[0])) return element
-    const id = element[1]['w:id']
-    const mapped = id === undefined ? undefined : this.ids.comments.get(id)
-    if (mapped === undefined || mapped === id) return element
+    const id = nodeId === null || nodeId === undefined ? element[1]['w:id'] : String(nodeId)
+    const mapped = id === undefined ? undefined : this.ids.comments.get(id) ?? id
+    if (mapped === undefined || mapped === element[1]['w:id']) return element
     return [element[0], { ...element[1], 'w:id': mapped }, ...(element.slice(2) as JmlNode[])]
   }
 
@@ -388,7 +391,7 @@ export class StoryWriter {
     const element = jml(item.node.attrs?.v)
     if (item.node.type.name === 'commentMark') {
       const edge = item.node.attrs.edge === 'end' ? 'End' : 'Start'
-      return jmlToXml(this.mapIds(element ?? [`w:commentRange${edge}`, { 'w:id': String(item.node.attrs.id) }]))
+      return jmlToXml(this.mapIds(element ?? [`w:commentRange${edge}`, {}], item.node.attrs.id))
     }
     if (item.node.type.name === 'bookmark' && !element) {
       return item.node.attrs.edge === 'end'

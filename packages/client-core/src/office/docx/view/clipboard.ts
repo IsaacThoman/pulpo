@@ -144,6 +144,7 @@ const PASTE_MAX_TABLE_DEPTH = DOCX_MAX_TABLE_DEPTH
  * deeper than `maxDepth` more levels, become their cells' paragraphs.
  */
 export function limitPastedTables(slice: Slice, maxDepth = PASTE_MAX_TABLE_DEPTH): Slice {
+  let flattened = false
   const shrink = (fragment: Fragment, depth: number): Fragment => {
     const children: ProseMirrorNode[] = []
     fragment.forEach((child) => {
@@ -155,6 +156,7 @@ export function limitPastedTables(slice: Slice, maxDepth = PASTE_MAX_TABLE_DEPTH
           width = Math.max(width, span)
         })
         if (width > PASTE_MAX_SPAN.columns || width * child.childCount > PASTE_MAX_TABLE_CELLS || depth >= maxDepth) {
+          flattened = true
           child.forEach((row) => row.forEach((cell) => shrink(cell.content, depth).forEach((block) => { children.push(block) })))
           return
         }
@@ -165,7 +167,11 @@ export function limitPastedTables(slice: Slice, maxDepth = PASTE_MAX_TABLE_DEPTH
     })
     return Fragment.fromArray(children)
   }
-  return new Slice(shrink(slice.content, 0), slice.openStart, slice.openEnd)
+  const content = shrink(slice.content, 0)
+  if (!flattened) return slice
+  // A copy that started or ended inside a flattened table is open no deeper than its content now is.
+  const open = Slice.maxOpen(content)
+  return new Slice(content, Math.min(slice.openStart, open.openStart), Math.min(slice.openEnd, open.openEnd))
 }
 
 const span = (value: string | null, max: number) => Math.min(max, Math.max(1, Number(value) || 1))

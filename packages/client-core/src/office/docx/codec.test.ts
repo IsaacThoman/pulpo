@@ -1,5 +1,5 @@
-import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
-import { strToU8, zipSync } from 'fflate'
+import { Fragment, type Node as ProseMirrorNode } from '@tiptap/pm/model'
+import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate'
 import { describe, expect, it, vi } from 'vitest'
 import * as Y from 'yjs'
 import { LiveFormatError } from '../live-format.js'
@@ -232,6 +232,82 @@ describe('docxCodec', () => {
     expect(JSON.parse(one.getMap<string>('comments').get('naaa2')!).parentId).toBe('nzzz1')
     expect(one.getXmlFragment('story:comment:nzzz1').toString()).toContain('From A')
     expect((await docxCodec.applyFile(one, await docxCodec.exportFile(one, context), context, 'agent')).changed).toBe(false)
+  })
+
+  it('keeps comment ranges on their comments after a push, when later edits renumber them', async () => {
+    const assets = new MemoryAssetStore()
+    const context = { name: 'a.docx', assets }
+    const doc = new Y.Doc()
+    await docxCodec.createEmpty(doc, context)
+    const words: Record<string, string> = { nAAA: 'alpha', nBBB: 'beta', nCCC: 'gamma' }
+    doc.transact(() => {
+      for (const [id, word] of Object.entries(words)) {
+        doc.getMap('comments').set(id, JSON.stringify({ author: 'Ada' }))
+        doc.getMap('stories').set(`comment:${id}`, JSON.stringify({ kind: 'comment' }))
+        writeFragment(doc, doc.getXmlFragment(`story:comment:${id}`), schema.node('doc', null, [schema.node('paragraph', null, schema.text(`about ${word}`))]))
+      }
+      writeFragment(doc, doc.getXmlFragment(BODY_FRAGMENT), schema.node('doc', null, Object.entries(words).map(([id, word]) => schema.node('paragraph', null, [
+        schema.node('commentMark', { edge: 'start', id }), schema.text(word), schema.node('commentMark', { edge: 'end', id }),
+      ]))))
+    })
+    // An agent pushes the file back with a line added.
+    const agent = new Y.Doc()
+    await docxCodec.importFile(agent, await docxCodec.exportFile(doc, context), context)
+    const body = readDocxModel(agent).body
+    agent.transact(() => writeFragment(agent, agent.getXmlFragment(BODY_FRAGMENT), body.copy(body.content.addToEnd(schema.node('paragraph', null, schema.text('agent line'))))))
+    await docxCodec.applyFile(doc, await docxCodec.exportFile(agent, context), context, 'agent')
+    // The user deletes the first comment; the others are numbered again from 0.
+    doc.transact(() => {
+      doc.getMap('comments').delete('nAAA')
+      doc.getMap('stories').delete('comment:nAAA')
+      const current = readDocxModel(doc).body
+      const paragraphs: ProseMirrorNode[] = []
+      current.forEach((paragraph) => {
+        const inline: ProseMirrorNode[] = []
+        paragraph.forEach((child) => { if (!(child.type.name === 'commentMark' && child.attrs.id === 'nAAA')) inline.push(child) })
+        paragraphs.push(paragraph.copy(Fragment.fromArray(inline)))
+      })
+      writeFragment(doc, doc.getXmlFragment(BODY_FRAGMENT), current.copy(Fragment.fromArray(paragraphs)))
+    })
+    const files = unzipSync(await docxCodec.exportFile(doc, context))
+    const xml = strFromU8(files['word/document.xml']!)
+    const comments = strFromU8(files['word/comments.xml']!)
+    const anchored = (word: string) => new RegExp(`<w:commentRangeStart w:id="(\\d+)"/><w:r><w:t>${word}</w:t>`).exec(xml)?.[1]
+    expect(comments).toMatch(new RegExp(`<w:comment w:id="${anchored('beta')}"[^>]*>.*about beta`))
+    expect(comments).toMatch(new RegExp(`<w:comment w:id="${anchored('gamma')}"[^>]*>.*about gamma`))
+  })
+
+  it('keeps comment ids through a second proposal made from the agent own earlier file', async () => {
+    const assets = new MemoryAssetStore()
+    const context = { name: 'a.docx', assets }
+    const doc = new Y.Doc()
+    await docxCodec.createEmpty(doc, context)
+    doc.transact(() => {
+      for (const [id, text] of [['nAAA', 'first comment'], ['nBBB', 'second comment']]) {
+        doc.getMap('comments').set(id!, JSON.stringify({ author: 'Ada' }))
+        doc.getMap('stories').set(`comment:${id}`, JSON.stringify({ kind: 'comment' }))
+        writeFragment(doc, doc.getXmlFragment(`story:comment:${id}`), schema.node('doc', null, [schema.node('paragraph', null, schema.text(text!))]))
+      }
+    })
+    // The agent's first file adds a comment (numbered 2 in its file); its second edits comment 0.
+    const first = new Y.Doc()
+    await docxCodec.importFile(first, await docxCodec.exportFile(doc, context), context)
+    first.transact(() => {
+      first.getMap('comments').set('2', JSON.stringify({ author: 'Agent' }))
+      first.getMap('stories').set('comment:2', JSON.stringify({ kind: 'comment' }))
+      writeFragment(first, first.getXmlFragment('story:comment:2'), schema.node('doc', null, [schema.node('paragraph', null, schema.text('agent comment'))]))
+    })
+    const firstBytes = await docxCodec.exportFile(first, context)
+    const fork = new Y.Doc()
+    Y.applyUpdate(fork, Y.encodeStateAsUpdate(doc))
+    await docxCodec.applyFile(fork, firstBytes, context, 'agent')
+    const second = new Y.Doc()
+    await docxCodec.importFile(second, firstBytes, context)
+    second.transact(() => writeFragment(second, second.getXmlFragment('story:comment:0'), schema.node('doc', null, [schema.node('paragraph', null, schema.text('first comment, edited'))])))
+    await docxCodec.applyFile(fork, await docxCodec.exportFile(second, context), context, 'agent')
+    const stories = [...fork.getMap('stories').keys()].filter((id) => id.startsWith('comment:')).sort()
+    expect(stories).toEqual(['comment:2', 'comment:nAAA', 'comment:nBBB'])
+    expect(fork.getXmlFragment('story:comment:nAAA').toString()).toContain('first comment, edited')
   })
 
   describe('hostile files', () => {

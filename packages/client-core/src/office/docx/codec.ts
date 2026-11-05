@@ -110,36 +110,128 @@ export function referencedAssets(doc: Y.Doc): Set<string> {
 
 /**
  * Comments and notes made in Pulpo have string ids that export numbers. A file pushed back uses
- * those numbers; mapping them back to the current ids keeps the same stories (and edits in
- * progress on them) instead of deleting them and creating numbered copies.
+ * numbers; mapping them back to the document's own ids keeps the same stories (and edits in
+ * progress on them, and replies to them) instead of deleting them and creating numbered copies.
+ * Each is matched by content first (author, date, and text), which holds whatever numbering the
+ * file was made from, then by the number the current document would export.
  */
 export function keepCurrentIds(model: DocxModel, current: DocxModel): DocxModel {
   const numbered = idMaps(current)
-  const back = (map: Map<string, string>) => {
+  const storyText = (doc: DocxModel, id: string) => doc.stories.get(id)?.doc.textContent ?? ''
+  const commentKey = (doc: DocxModel, id: string) => {
+    const meta = parseJson<CommentMeta>(doc.maps.comments.get(id)) ?? {}
+    return JSON.stringify([meta.author ?? '', meta.initials ?? '', meta.date ?? '', storyText(doc, `comment:${id}`)])
+  }
+  const match = (imported: string[], existing: string[], key: (doc: DocxModel, id: string) => string, numbers: Map<string, string>) => {
     const result = new Map<string, string>()
-    for (const [id, number] of map) if (id !== number) result.set(number, id)
+    const existingSet = new Set(existing)
+    const importedSet = new Set(imported)
+    const claimed = new Set<string>()
+    const free = new Map<string, string[]>()
+    for (const id of existing) {
+      if (/^-?\d+$/.test(id) || importedSet.has(id)) continue
+      const k = key(current, id)
+      free.set(k, [...free.get(k) ?? [], id])
+    }
+    for (const id of imported) {
+      if (existingSet.has(id)) continue
+      const target = free.get(key(model, id))?.shift()
+      if (target) {
+        result.set(id, target)
+        claimed.add(target)
+      }
+    }
+    const back = new Map<string, string>()
+    for (const [id, number] of numbers) if (id !== number) back.set(number, id)
+    for (const id of imported) {
+      if (result.has(id) || existingSet.has(id)) continue
+      const target = back.get(id)
+      if (target && !claimed.has(target) && !importedSet.has(target)) {
+        result.set(id, target)
+        claimed.add(target)
+      }
+    }
+    // A file made from another numbering (an earlier proposal's), with edited text: the numbers
+    // left over pair in order with the comments left over, in the order export numbers them.
+    const leftover = imported.filter((id) => !result.has(id) && !existingSet.has(id) && /^-?\d+$/.test(id)).sort((a, b) => Number(a) - Number(b))
+    const unclaimed = existing.filter((id) => !claimed.has(id) && !importedSet.has(id) && !/^-?\d+$/.test(id)).sort()
+    leftover.forEach((id, index) => {
+      const target = unclaimed[index]
+      if (target) result.set(id, target)
+    })
     return result
   }
-  const comments = back(numbered.comments)
-  const notes = { footnote: back(numbered.footnote), endnote: back(numbered.endnote) }
+  const noteIds = (doc: DocxModel, kind: string) => [...doc.stories.keys()].filter((id) => id.startsWith(`${kind}:`)).map((id) => id.slice(kind.length + 1))
+  const noteKey = (kind: string) => (doc: DocxModel, id: string) => storyText(doc, `${kind}:${id}`)
+  const comments = match([...model.maps.comments.keys()], [...current.maps.comments.keys()], commentKey, numbered.comments)
+  const notes = {
+    footnote: match(noteIds(model, 'footnote'), noteIds(current, 'footnote'), noteKey('footnote'), numbered.footnote),
+    endnote: match(noteIds(model, 'endnote'), noteIds(current, 'endnote'), noteKey('endnote'), numbered.endnote),
+  }
   if (!comments.size && !notes.footnote.size && !notes.endnote.size) return model
   const commentId = (id: string) => comments.get(id) ?? id
   const noteId = (kind: string, id: string) => (kind === 'footnote' || kind === 'endnote' ? notes[kind].get(id) : undefined) ?? id
   const storyId = (id: string) => {
-    const [kind, rest] = [id.slice(0, id.indexOf(':')), id.slice(id.indexOf(':') + 1)]
+    const kind = id.slice(0, id.indexOf(':'))
+    const rest = id.slice(id.indexOf(':') + 1)
     if (kind === 'comment') return `comment:${commentId(rest)}`
     if (kind === 'footnote' || kind === 'endnote') return `${kind}:${noteId(kind, rest)}`
     return id
   }
+  // Ids also live in stored XML: comment markers between blocks and cells exist only there.
+  const MARKER = /^w:comment(RangeStart|RangeEnd|Reference)$/
+  const rewrite = (value: unknown): unknown => {
+    if (typeof value !== 'string' || !/"w:(comment|footnoteReference|endnoteReference)/.test(value)) return value
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(value)
+    } catch {
+      return value
+    }
+    let touched = false
+    const visit = (node: unknown) => {
+      if (!Array.isArray(node)) return
+      const [name, attrs] = node as [unknown, unknown]
+      if (typeof name === 'string' && attrs && typeof attrs === 'object' && !Array.isArray(attrs)) {
+        const record = attrs as Record<string, unknown>
+        const id = record['w:id']
+        if (typeof id === 'string') {
+          const next = MARKER.test(name) ? commentId(id) : name === 'w:footnoteReference' ? noteId('footnote', id) : name === 'w:endnoteReference' ? noteId('endnote', id) : id
+          if (next !== id) {
+            record['w:id'] = next
+            touched = true
+          }
+        }
+      }
+      for (const child of node) visit(child)
+    }
+    visit(parsed)
+    return touched ? JSON.stringify(parsed) : value
+  }
+  const renameAttrs = <T extends Record<string, unknown>>(attrs: T): T => {
+    let result = attrs
+    for (const [key, value] of Object.entries(attrs)) {
+      const next = rewrite(value)
+      if (next !== value) {
+        if (result === attrs) result = { ...attrs }
+        ;(result as Record<string, unknown>)[key] = next
+      }
+    }
+    return result
+  }
   const rename = (node: ProseMirrorNode): ProseMirrorNode => {
-    if (node.isText) return node
-    let attrs = node.attrs
+    const marks = node.marks.map((mark) => {
+      const attrs = renameAttrs(mark.attrs)
+      return attrs === mark.attrs ? mark : mark.type.create(attrs)
+    })
+    if (node.isText) return node.mark(marks)
+    let attrs = renameAttrs(node.attrs)
     if (node.type.name === 'commentMark' && typeof attrs.id === 'string') attrs = { ...attrs, id: commentId(attrs.id) }
     else if (node.type.name === 'noteRef' && typeof attrs.id === 'string') attrs = { ...attrs, id: noteId(String(attrs.kind), attrs.id) }
-    if (node.isLeaf) return attrs === node.attrs ? node : node.type.create(attrs, null, node.marks)
+    if (node.isLeaf) return node.type.create(attrs, null, marks)
     const children: ProseMirrorNode[] = []
     node.forEach((child) => { children.push(rename(child)) })
-    return node.type.create(attrs, children, node.marks)
+    return node.type.create(attrs, children, marks)
   }
   const stories = new Map<string, { meta: StoryMeta; doc: ProseMirrorNode }>()
   for (const [id, story] of model.stories) stories.set(storyId(id), { meta: story.meta, doc: rename(story.doc) })

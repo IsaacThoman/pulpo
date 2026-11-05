@@ -358,6 +358,174 @@ try {
     await page.evaluate(() => window.harness.editors[0].setMode('editing'))
   })
 
+  await step('cuts and pastes the only copy of a picture while offline', async () => {
+    await open('?file=objects.docx')
+    await flow.locator('p.docx-p').first().click()
+    const pictures = () => page.evaluate(() => {
+      const sources = []
+      window.harness.editors[0].view.state.doc.descendants((node) => {
+        if (node.type.name === 'drawing' && node.attrs.src) sources.push(node.attrs.src)
+      })
+      return sources
+    })
+    // This fixture repeats its picture. Keep only its first occurrence so cutting it leaves none.
+    await page.evaluate(() => {
+      const view = window.harness.editors[0].view
+      const positions = []
+      view.state.doc.descendants((node, pos) => {
+        if (node.type.name === 'drawing' && node.attrs.src) positions.push(pos)
+      })
+      const tr = view.state.tr
+      for (const pos of positions.slice(1).reverse()) tr.delete(pos, pos + 1)
+      view.dispatch(tr)
+    })
+    const before = await pictures()
+    assert.equal(before.length, 1)
+    const html = await page.evaluate(() => {
+      const editor = window.harness.editors[0]
+      editor.options.assets.get = () => new Promise((_, reject) => setTimeout(() => reject(new Error('offline')), 200))
+      const view = editor.view
+      let at
+      view.state.doc.descendants((node, pos) => {
+        if (node.type.name === 'drawing' && node.attrs.src) at = pos
+      })
+      const Selection = view.state.selection.constructor
+      view.focus()
+      view.dispatch(view.state.tr.setSelection(Selection.create(view.state.doc, at, at + 1)))
+      const data = new DataTransfer()
+      view.dom.dispatchEvent(new ClipboardEvent('cut', { clipboardData: data, bubbles: true, cancelable: true }))
+      return data.getData('text/html')
+    })
+    assert.match(html, /data-docx-copy="[0-9a-f]{32}"/)
+    assert.deepEqual(await pictures(), [])
+    await page.evaluate((markup) => {
+      const data = new DataTransfer()
+      data.setData('text/html', markup)
+      data.setData('text/plain', 'picture')
+      window.harness.editors[0].view.dom.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }))
+    }, html)
+    assert.deepEqual(await pictures(), before)
+    await page.waitForTimeout(500)
+    assert.deepEqual(await pictures(), before)
+  })
+
+  await step('pastes a Pulpo bold copy as plain text with Shift, and keeps bold normally', async () => {
+    await open('?file=basic-formatting.docx')
+    await flow.locator('p.docx-p').first().click()
+    const copy = await page.evaluate(() => {
+      const view = window.harness.editors[0].view
+      const schema = view.state.schema
+      const Selection = view.state.selection.constructor
+      const text = 'Bold clipboard regression'
+      const doc = schema.node('doc', null, [schema.node('paragraph', null, schema.text(text, [schema.mark('b')]))])
+      view.focus()
+      view.dispatch(view.state.tr.replaceWith(0, view.state.doc.content.size, doc.content))
+      view.dispatch(view.state.tr.setSelection(Selection.create(view.state.doc, 1, 1 + text.length)))
+      const data = new DataTransfer()
+      view.dom.dispatchEvent(new ClipboardEvent('copy', { clipboardData: data, bubbles: true, cancelable: true }))
+      return { html: data.getData('text/html'), text: data.getData('text/plain') }
+    })
+    assert.match(copy.html, /data-docx-copy="[0-9a-f]{32}"/)
+    assert.equal(copy.text, 'Bold clipboard regression')
+    const paste = () => page.evaluate(({ html, text }) => {
+      const data = new DataTransfer()
+      data.setData('text/html', html)
+      data.setData('text/plain', text)
+      window.harness.editors[0].view.dom.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }))
+    }, copy)
+    const lastParagraph = () => page.evaluate(() => {
+      const paragraph = window.harness.editors[0].view.state.doc.lastChild
+      const marks = new Set()
+      paragraph.descendants((node) => { for (const mark of node.marks) marks.add(mark.type.name) })
+      return { text: paragraph.textContent, marks: [...marks] }
+    })
+    // Use an unformatted insertion point, so inherited marks cannot mask the paste behavior.
+    const appendParagraph = () => page.evaluate(() => {
+      const view = window.harness.editors[0].view
+      const Selection = view.state.selection.constructor
+      const tr = view.state.tr.insert(view.state.doc.content.size, view.state.schema.node('paragraph'))
+      view.focus()
+      view.dispatch(tr.setSelection(Selection.atEnd(tr.doc)).setStoredMarks([]))
+    })
+    await appendParagraph()
+    await page.keyboard.down('Shift')
+    try {
+      assert.equal(await page.evaluate(() => window.harness.editors[0].view.input.shiftKey), true)
+      await paste()
+    } finally {
+      await page.keyboard.up('Shift')
+    }
+    assert.deepEqual(await lastParagraph(), { text: copy.text, marks: [] })
+    await appendParagraph()
+    await paste()
+    assert.deepEqual(await lastParagraph(), { text: copy.text, marks: ['b'] })
+  })
+
+  await step('pastes a remembered slice starting inside a table wider than Word allows', async () => {
+    await open('?file=basic-formatting.docx')
+    await clickEnd('Line spacing double')
+    const id = 'e2'.repeat(16)
+    const errorCount = errors.length
+    const slice = await page.evaluate((id) => {
+      const schema = window.harness.editors[0].view.state.schema
+      const p = (text) => schema.node('paragraph', null, schema.text(text))
+      const table = schema.node('table', null, [schema.node('tableRow', null,
+        Array.from({ length: 70 }, (_, column) => schema.node('tableCell', null, [p(`Wide cell ${column}`)])))])
+      const doc = schema.node('doc', null, [table, p('After wide table')])
+      let start, end
+      doc.descendants((node, pos) => {
+        if (node.isText && node.text === 'Wide cell 0') start = pos + 2
+        if (node.isText && node.text === 'After wide table') end = pos + 5
+      })
+      const slice = doc.slice(start, end)
+      localStorage.setItem('pulpo-docx-copy', JSON.stringify({ id, json: JSON.stringify(slice.toJSON()), origin: 'another:body', at: Date.now() }))
+      return { openStart: slice.openStart, columns: table.firstChild.childCount }
+    }, id)
+    assert.ok(slice.openStart > 1)
+    assert.ok(slice.columns > 63)
+    await page.evaluate((id) => {
+      const data = new DataTransfer()
+      data.setData('text/html', `<p data-docx-copy="${id}">Wide table fallback</p>`)
+      data.setData('text/plain', 'Wide table fallback')
+      window.harness.editors[0].view.dom.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }))
+    }, id)
+    await paragraph('Wide cell 69').waitFor()
+    assert.match(await text(), /Wide cell 1/)
+    assert.doesNotMatch(await text(), /Wide table fallback/)
+    assert.equal(errors.length, errorCount)
+  })
+
+  await step('leaves pre-existing orphan comment markers alone when pasting elsewhere', async () => {
+    await open('?file=basic-formatting.docx')
+    await flow.locator('p.docx-p').first().click()
+    const id = 'pre-existing-orphan'
+    await page.evaluate((id) => {
+      const editor = window.harness.editors[0]
+      if (editor.options.doc.getMap('stories').has(`comment:${id}`)) throw new Error('orphan story exists')
+      const view = editor.view
+      const schema = view.state.schema
+      view.dispatch(view.state.tr.insert(1, schema.node('commentMark', { edge: 'start', id })))
+    }, id)
+    const markers = () => page.evaluate((id) => {
+      const found = []
+      window.harness.editors[0].view.state.doc.descendants((node, pos) => {
+        if (node.type.name === 'commentMark' && node.attrs.id === id) found.push({ pos, edge: node.attrs.edge })
+      })
+      return found
+    }, id)
+    const before = await markers()
+    assert.equal(before.length, 1)
+    await clickEnd('Line spacing double')
+    await page.evaluate(() => {
+      const data = new DataTransfer()
+      data.setData('text/html', '<p>Orphan-safe paste</p>')
+      data.setData('text/plain', 'Orphan-safe paste')
+      window.harness.editors[0].view.dom.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }))
+    })
+    await paragraph('Orphan-safe paste').waitFor()
+    assert.deepEqual(await markers(), before)
+  })
+
   await step('lays out a 100-page document within budget', async () => {
     const started = Date.now()
     await open('?generate=1600')

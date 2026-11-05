@@ -127,6 +127,23 @@ function tableDepth(view: EditorView): number {
   return depth
 }
 
+/** The pictures in a slice, by asset hash. */
+function slicePictures(slice: Slice): Set<string> {
+  const found = new Set<string>()
+  slice.content.descendants((node) => {
+    if (node.type.name === 'drawing' && typeof node.attrs.src === 'string') found.add(node.attrs.src)
+    return true
+  })
+  return found
+}
+
+/** The story a note reference or comment marker points at. */
+function referencedStory(node: ProseMirrorNode): string | null {
+  if (node.type.name === 'noteRef') return `${node.attrs.kind}:${node.attrs.id}`
+  if (node.type.name === 'commentMark') return `comment:${node.attrs.id}`
+  return null
+}
+
 /** Every picture a document's body and stories show, by asset hash. */
 function documentPictures(doc: Y.Doc): Set<string> {
   const found = new Set<string>()
@@ -240,8 +257,10 @@ export class DocxEditor {
   private zoomLevel: number
   private modeValue: DocxMode
   private readOnlyValue: boolean
-  /** Asset hashes known to load, so pasting them again checks nothing. */
+  /** Asset hashes known to be this document's, so pasting them checks nothing. */
   private readonly knownAssets = new Set<string>()
+  /** Stories the last paste's references point at. */
+  private readonly pastedReferences = new Set<string>()
   private lastLayout: LayoutResult | null = null
   /** Measured units of the last layout, for diagnostics and tests. */
   private lastUnits: unknown[] = []
@@ -495,17 +514,27 @@ export class DocxEditor {
       clipboardSerializer: clipboardSerializer(schema),
       clipboardParser: clipboardParser(schema),
       transformPastedHTML: sanitizePastedHtml,
-      transformCopied: (slice) => rememberCopy(slice, origin),
+      transformCopied: (slice) => {
+        // A copy or cut of this document's pictures: they are its own when pasted back, even
+        // after the cut took the last one away.
+        const own = documentPictures(this.options.doc)
+        for (const src of slicePictures(slice)) if (own.has(src)) this.knownAssets.add(src)
+        return rememberCopy(slice, origin)
+      },
       transformPasted: (slice, view) => {
         const limited = limitPastedTables(slice, Math.max(0, DOCX_MAX_TABLE_DEPTH - tableDepth(view)))
+        this.notePastedReferences(limited)
         this.checkPastedPictures(limited)
         return limited
       },
       handlePaste: (view, event) => {
+        // Shift pastes plain text, which ProseMirror has already made of the clipboard.
+        if ((view as unknown as { input?: { shiftKey?: boolean } }).input?.shiftKey) return false
         const copy = recallCopy(event.clipboardData?.getData('text/html'), view.state.schema)
         if (!copy || !view.editable) return false
         let slice = limitPastedTables(copy.slice, Math.max(0, DOCX_MAX_TABLE_DEPTH - tableDepth(view)))
         if (copy.origin !== origin) slice = withoutForeignParts(slice)
+        this.notePastedReferences(slice)
         this.checkPastedPictures(slice)
         view.dispatch(view.state.tr.replaceSelection(slice).scrollIntoView().setMeta('paste', true).setMeta('uiEvent', 'paste'))
         return true
@@ -518,11 +547,7 @@ export class DocxEditor {
    * cannot be loaded are taken out again rather than left to break every export.
    */
   private checkPastedPictures(slice: Slice): void {
-    const sources = new Set<string>()
-    slice.content.descendants((node) => {
-      if (node.type.name === 'drawing' && typeof node.attrs.src === 'string') sources.add(node.attrs.src)
-      return true
-    })
+    const sources = slicePictures(slice)
     if (!sources.size) return
     // Pictures this document already shows are its own; only new ones are checked, and only those
     // are taken out (all their copies came with pastes) if this document cannot load them.
@@ -549,14 +574,28 @@ export class DocxEditor {
     }
   }
 
-  /** Note references and comment ranges pasted from another document point at nothing here. */
+  /** The stories a paste's note references and comment ranges point at, checked once it lands. */
+  private notePastedReferences(slice: Slice): void {
+    slice.content.descendants((node) => {
+      const story = referencedStory(node)
+      if (story) this.pastedReferences.add(story)
+      return true
+    })
+  }
+
+  /**
+   * Note references and comment ranges pasted from another document point at nothing here. Only
+   * what the paste brought is looked at; markers already in the document are left alone.
+   */
   private dropForeignReferences(view: EditorView): void {
+    const pasted = new Set(this.pastedReferences)
+    this.pastedReferences.clear()
+    if (!pasted.size) return
     const stories = this.options.doc.getMap('stories')
     const ranges: [number, number][] = []
     view.state.doc.descendants((node, pos) => {
-      const missing = node.type.name === 'noteRef' ? !stories.has(`${node.attrs.kind}:${node.attrs.id}`)
-        : node.type.name === 'commentMark' ? !stories.has(`comment:${node.attrs.id}`) : false
-      if (missing) ranges.push([pos, pos + node.nodeSize])
+      const story = referencedStory(node)
+      if (story && pasted.has(story) && !stories.has(story)) ranges.push([pos, pos + node.nodeSize])
       return true
     })
     if (!ranges.length) return
