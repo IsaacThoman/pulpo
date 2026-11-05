@@ -66,9 +66,12 @@ export const GridView = forwardRef<GridViewHandle, {
   matchRows: ReadonlySet<number>
   currentRow: number | undefined
   bottomInset: number
-}>(function GridView({ table, matchRows, currentRow, bottomInset }, ref) {
+  query: string
+}>(function GridView({ table, matchRows, currentRow, bottomInset, query }, ref) {
   const theme = useAppTheme()
   const listRef = useRef<FlatList<number>>(null)
+  const horizontalRef = useRef<ScrollView>(null)
+  const viewportWidth = useRef(0)
   const columnCount = Math.min(table.columnCount, MAX_NATIVE_GRID_COLUMNS)
   const widths = useMemo(
     () => suggestColumnWidths(table, { characterWidth: 8.2, padding: 24, min: 56, max: 300 }).slice(0, columnCount),
@@ -81,8 +84,15 @@ export const GridView = forwardRef<GridViewHandle, {
   useImperativeHandle(ref, () => ({
     scrollToRow(row) {
       if (row > 0) listRef.current?.scrollToIndex({ index: row - 1, viewPosition: 0.4, animated: true })
+      // The selected row can match a cell beyond the screen, including in the sticky header.
+      const needle = query.toLowerCase()
+      const column = needle ? table.row(row).slice(0, columnCount).findIndex((cell) => cell.toLowerCase().includes(needle)) : -1
+      if (column < 0) return
+      const left = widths.slice(0, column).reduce((sum, value) => sum + value, 0)
+      const available = Math.max(0, viewportWidth.current - NUMBER_WIDTH)
+      horizontalRef.current?.scrollTo({ x: Math.max(0, left - Math.max(0, available - widths[column]!) / 2), animated: true })
     },
-  }), [])
+  }), [columnCount, query, table, widths])
 
   const showCell = useCallback((column: number, value: string) => {
     Alert.alert(header[column] || columnLabel(column), value.length > 5_000 ? `${value.slice(0, 5_000)}…` : value, [
@@ -113,7 +123,7 @@ export const GridView = forwardRef<GridViewHandle, {
   )
 
   return (
-    <ScrollView horizontal style={styles.flex} contentContainerStyle={styles.horizontal} directionalLockEnabled>
+    <ScrollView ref={horizontalRef} horizontal style={styles.flex} contentContainerStyle={styles.horizontal} directionalLockEnabled onLayout={(event) => { viewportWidth.current = event.nativeEvent.layout.width }}>
       <FlatList
         ref={listRef}
         style={{ width }}
@@ -128,7 +138,7 @@ export const GridView = forwardRef<GridViewHandle, {
             <GridRow cells={header} number={1} widths={widths} header match={currentRow === 0 ? 'current' : matchRows.has(0) ? 'match' : null} theme={theme} onPressCell={showCell} />
           </View>
         )}
-        getItemLayout={(_, index) => ({ length: ROW_HEIGHT, offset: ROW_HEIGHT * index, index })}
+        getItemLayout={(_, index) => ({ length: ROW_HEIGHT, offset: ROW_HEIGHT * index + 26 + ROW_HEIGHT, index })}
         initialNumToRender={30}
         maxToRenderPerBatch={40}
         windowSize={11}

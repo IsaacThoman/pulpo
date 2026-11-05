@@ -20,6 +20,33 @@ type Ranges = { start: number; end: number; current?: boolean }[]
 /** One enormous line (minified files) shows its start; copy still has all of it. */
 const MAX_LINE_DISPLAY = 10_000
 
+const TAB_COLUMNS = 4
+
+/** Display width of the visible prefix; search offsets and copying still use the original text. */
+function codeColumns(text: string, end = text.length): number {
+  let columns = 0
+  const length = Math.min(end, text.length, MAX_LINE_DISPLAY)
+  for (let index = 0; index < length; index++) columns += text[index] === '\t' ? TAB_COLUMNS - columns % TAB_COLUMNS : 1
+  return columns
+}
+
+/** Android Text collapses tabs; expand only the capped visible runs, retaining token/find styles. */
+function expandCodeTabs(runs: HighlightRun[]): HighlightRun[] {
+  let columns = 0
+  return runs.map((run) => ({
+    ...run,
+    text: run.text.replace(/\t|[^\t]+/g, (part) => {
+      if (part !== '\t') {
+        columns += part.length
+        return part
+      }
+      const spaces = TAB_COLUMNS - columns % TAB_COLUMNS
+      columns += spaces
+      return ' '.repeat(spaces)
+    }),
+  }))
+}
+
 function capRuns(runs: HighlightRun[]): HighlightRun[] {
   let length = 0
   const capped: HighlightRun[] = []
@@ -43,7 +70,7 @@ const CodeLine = memo(function CodeLine({ line, number, gutter, ranges, wrap, th
   theme: AppTheme
 }) {
   const colors = HIGHLIGHT_COLORS[theme.isDark ? 'dark' : 'light']
-  const runs = capRuns(highlightRuns(line, ranges))
+  const runs = expandCodeTabs(capRuns(highlightRuns(line, ranges)))
   return (
     <View style={styles.line}>
       <Text style={[styles.number, { width: gutter, color: theme.tertiary }]} accessibilityElementsHidden importantForAccessibility="no">{number}</Text>
@@ -83,7 +110,7 @@ export const CodeView = forwardRef<CodeViewHandle, {
   // Where the sideways scroll sits and how wide the screen is, to tell whether a match shows.
   const horizontal = useRef({ x: 0, width: 0 })
   const gutter = Math.max(2, String(lines.length).length) * CHARACTER_WIDTH + 16
-  const longest = useMemo(() => plain.reduce((max, line) => Math.max(max, Math.min(line.length, MAX_LINE_DISPLAY)), 0), [plain])
+  const longest = useMemo(() => plain.reduce((max, line) => Math.max(max, codeColumns(line)), 0), [plain])
   const width = gutter + longest * CHARACTER_WIDTH + 32
   const indexes = useMemo(() => Array.from({ length: lines.length }, (_, index) => index), [lines.length])
   const rangesByLine = useMemo(() => {
@@ -106,14 +133,15 @@ export const CodeView = forwardRef<CodeViewHandle, {
         scrollToLine(match.line)
         if (wrap || match.start >= MAX_LINE_DISPLAY) return
         // Monospaced, so a column's position follows from the character width the layout uses.
-        const left = gutter + match.start * CHARACTER_WIDTH
-        const right = gutter + Math.min(match.end, MAX_LINE_DISPLAY) * CHARACTER_WIDTH
+        const source = plain[match.line] ?? ''
+        const left = gutter + codeColumns(source, match.start) * CHARACTER_WIDTH
+        const right = gutter + codeColumns(source, match.end) * CHARACTER_WIDTH
         const { x, width: view } = horizontal.current
         if (!view || (left >= x && right <= x + view)) return
         horizontalRef.current?.scrollTo({ x: Math.max(0, left - view * 0.3), animated: true })
       },
     }
-  }, [gutter, lines.length, wrap])
+  }, [gutter, lines.length, plain, wrap])
 
   const renderItem = useCallback(({ item }: { item: number }) => (
     <CodeLine line={lines[item]!} number={item + 1} gutter={gutter} ranges={rangesByLine.get(item)} wrap={wrap} theme={theme} />

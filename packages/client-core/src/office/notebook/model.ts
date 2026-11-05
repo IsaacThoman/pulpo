@@ -1,3 +1,5 @@
+import { formatJson } from '../../files/json-format.js'
+
 /**
  * Jupyter notebooks (`.ipynb`) read into one normalized model, whatever nbformat wrote them: multi-
  * line strings joined, nbformat 3's worksheets and output names mapped to 4's, consecutive stream
@@ -20,7 +22,7 @@ export type NotebookOutput =
 export type NotebookCell =
   | { type: 'markdown'; id: string; source: string; attachments: Record<string, MimeBundle> }
   | { type: 'code'; id: string; source: string; executionCount: number | null; outputs: NotebookOutput[] }
-  | { type: 'raw'; id: string; source: string; attachments?: Record<string, MimeBundle> }
+  | { type: 'raw'; id: string; source: string }
 
 export interface NotebookModel {
   nbformat: number
@@ -78,8 +80,7 @@ function mimeBundle(value: unknown): MimeBundle {
   for (const [mime, data] of Object.entries(value)) {
     if (!/^[a-z0-9.+-]+\/[a-z0-9.+-]+$/i.test(mime)) continue
     const key = mime.toLowerCase()
-    // JSON types hold a JSON value (an array too); nbformat never splits them into lines.
-    bundle[key] = isJsonMime(key) && typeof data !== 'string' ? data : joinText(data)
+    bundle[key] = isJsonMime(key) ? data : joinText(data)
   }
   return bundle
 }
@@ -124,10 +125,22 @@ const V3_MIME: Record<string, string> = {
   pdf: 'application/pdf',
 }
 
+/** nbformat 3 stored JSON as serialized text, including lists of text lines. */
+function v3Json(value: unknown): unknown {
+  if (typeof value === 'string' || (Array.isArray(value) && value.every((line) => typeof line === 'string'))) {
+    try {
+      return JSON.parse(joinText(value))
+    } catch {
+      // Keep malformed or already-decoded values readable instead of failing the notebook.
+    }
+  }
+  return value
+}
+
 function v3Bundle(output: Json): MimeBundle {
   const bundle: MimeBundle = {}
   for (const [key, mime] of Object.entries(V3_MIME)) {
-    if (key in output) bundle[mime] = mime === 'application/json' && isObject(output[key]) ? output[key] : joinText(output[key])
+    if (key in output) bundle[mime] = isJsonMime(mime) ? v3Json(output[key]) : joinText(output[key])
   }
   return bundle
 }
@@ -156,8 +169,7 @@ function normalizeOutput(raw: unknown, v3: boolean): NotebookOutput | null {
   return null
 }
 
-/** Outputs of a code cell, normalized (nbformat 4 unless `v3`). */
-export function normalizeOutputs(value: unknown, v3 = false): NotebookOutput[] {
+function normalizeOutputs(value: unknown, v3: boolean): NotebookOutput[] {
   if (!Array.isArray(value)) return []
   const outputs: NotebookOutput[] = []
   for (const raw of value.slice(0, MAX_CELL_OUTPUTS)) {
@@ -175,8 +187,7 @@ export function normalizeOutputs(value: unknown, v3 = false): NotebookOutput[] {
   return outputs
 }
 
-/** A Markdown cell's attachments, each a MIME bundle. */
-export function normalizeAttachments(value: unknown): Record<string, MimeBundle> {
+function attachments(value: unknown): Record<string, MimeBundle> {
   if (!isObject(value)) return {}
   const result: Record<string, MimeBundle> = {}
   for (const [name, bundle] of Object.entries(value)) result[name] = mimeBundle(bundle)
@@ -196,14 +207,14 @@ function normalizeCell(raw: unknown, index: number, v3: boolean): NotebookCell |
         outputs: normalizeOutputs(raw.outputs, v3),
       }
     case 'markdown':
-      return { type: 'markdown', id, source: joinText(raw.source), attachments: normalizeAttachments(raw.attachments) }
+      return { type: 'markdown', id, source: joinText(raw.source), attachments: attachments(raw.attachments) }
     case 'heading': {
       // nbformat 3 kept headings as their own cells.
       const level = Math.min(6, Math.max(1, integerOrNull(raw.level) ?? 1))
       return { type: 'markdown', id, source: `${'#'.repeat(level)} ${joinText(raw.source)}`, attachments: {} }
     }
     case 'raw':
-      return { type: 'raw', id, source: joinText(raw.source), attachments: normalizeAttachments(raw.attachments) }
+      return { type: 'raw', id, source: joinText(raw.source) }
     default:
       return null
   }
@@ -325,11 +336,14 @@ export function resolveAttachmentUrl(url: string, cellAttachments: Record<string
 
 /** Text output shown as text: JSON pretty-printed, anything else as it is. */
 export function outputText(mime: string, data: unknown): string {
-  if (typeof data === 'string') return data
+  if (!isJsonMime(mime) && typeof data === 'string') return data
   try {
-    return JSON.stringify(data, null, 2) ?? ''
+    // Serialize compactly first: indentation can grow quadratically with nesting.
+    const compact = JSON.stringify(data) ?? ''
+    return formatJson(compact) ?? compact
   } catch {
-    return String(data)
+    // Deep arrays can also overflow in Array.toString; use a non-recursive type label.
+    return Object.prototype.toString.call(data)
   }
 }
 

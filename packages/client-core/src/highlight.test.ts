@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process'
 import { describe, expect, it } from 'vitest'
 import {
   findInLines,
@@ -98,6 +99,44 @@ describe('findInLines', () => {
     // Characters outside the BMP keep their two code units.
     expect(findInLines(['😀İ AB'], 'ab')).toEqual([{ line: 0, start: 4, end: 6 }])
   })
+})
+
+describe('Unicode search offsets', () => {
+  it('maps matches before, inside, across and after multiple expansions', () => {
+    const lines = ['AİBİC', '😀İ ERROR İ ERROR']
+    expect(findInLines(lines, 'a')).toEqual([{ line: 0, start: 0, end: 1 }])
+    expect(findInLines(lines, 'i')).toEqual([
+      { line: 0, start: 1, end: 2 }, { line: 0, start: 3, end: 4 },
+      { line: 1, start: 2, end: 3 }, { line: 1, start: 10, end: 11 },
+    ])
+    expect(findInLines(lines, '̇bi̇')).toEqual([{ line: 0, start: 1, end: 4 }])
+    expect(findInLines(lines, 'error')).toEqual([{ line: 1, start: 4, end: 9 }, { line: 1, start: 12, end: 17 }])
+    expect(findInLines(['İİ'], 'i', 1)).toEqual([{ line: 0, start: 0, end: 1 }])
+  })
+
+  it('keeps whole-string lowercasing context and supplementary characters', () => {
+    expect(findInLines(['İ ΟΣ'], 'ΟΣ')).toEqual([{ line: 0, start: 2, end: 4 }])
+    expect(findInLines(['İ😀𐐀Z'], '😀𐐨z')).toEqual([{ line: 0, start: 1, end: 6 }])
+  })
+})
+
+describe('Unicode search resource limits', () => {
+  it('searches huge expanding lines within a small heap, keeping original offsets', () => {
+    // A separate heap makes the regression deterministic without risking the test runner's heap.
+    const result = spawnSync(process.execPath, ['--max-old-space-size=64', '--input-type=module', '--eval', `
+      import assert from 'node:assert/strict'
+      import { findInLines } from ${JSON.stringify(new URL('./highlight.ts', import.meta.url).href)}
+      const sparse = 'İ' + 'a'.repeat(5 * 1024 * 1024) + ' ERROR'
+      assert.deepEqual(findInLines([sparse], 'missing'), [])
+      assert.deepEqual(findInLines([sparse], 'error'), [{ line: 0, start: sparse.length - 5, end: sparse.length }])
+      const dense = 'İ'.repeat(1024 * 1024) + ' ERROR'
+      assert.deepEqual(findInLines([dense], 'error'), [{ line: 0, start: dense.length - 5, end: dense.length }])
+      assert.equal(findInLines([dense], 'i', 3).length, 3)
+    `], { encoding: 'utf8', timeout: 15_000 })
+    expect(result.error).toBeUndefined()
+    expect(result.signal, result.stderr.slice(-2000)).toBeNull()
+    expect(result.status, result.stderr.slice(-2000)).toBe(0)
+  }, 20_000)
 })
 
 describe('limitLines', () => {
