@@ -209,8 +209,7 @@ export function readCsv(doc: Y.Doc, bytes: Uint8Array, format: 'csv' | 'tsv'): v
       if (row.ending && row.ending !== dialect.lineEnding) keep.ending = row.ending
       if (keep.last !== undefined || keep.ending !== undefined) sheet.rowMeta.set(`${rowId}|keep`, keep)
       row.fields.forEach((field, colIndex) => {
-        // A quoted empty field ("") keeps its quotes; an unquoted one is just an empty cell.
-        if (field === '' && !row.quoted[colIndex]) return
+        // Empty fields keep their source too, independently of the policy for newly typed cells.
         sheet.cells.set(`${rowId}:${sheet.cols.idAt(colIndex)}`, fieldData(field, row.quoted[colIndex]!, row.sources[colIndex]!))
       })
     })
@@ -219,6 +218,7 @@ export function readCsv(doc: Y.Doc, bytes: Uint8Array, format: 'csv' | 'tsv'): v
 
 /** A field's cell: its value, and its exact text when writing the value back would differ. */
 function fieldData(field: string, quoted: boolean, source: string): CellData {
+  if (field === '' && !quoted) return { raw: source }
   if (NUMBER.test(field)) {
     const n = Number(field)
     if (Number.isFinite(n)) return String(n) === field && !quoted ? { v: n } : { v: n, raw: source }

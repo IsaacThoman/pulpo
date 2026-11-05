@@ -540,9 +540,9 @@ export class SheetView {
 
   private onDocChange(events: Y.YEvent<Y.AbstractType<unknown>>[], transaction: Y.Transaction): void {
     this.valuesRevision++
-    if (!this.workbook.sheet(this.sheetIdValue)) {
+    if (this.workbook.sheet(this.sheetIdValue)?.state !== 'visible') {
       this.cancelEdit()
-      // The sheet was deleted (here or by someone else): show another.
+      // Remote deletion or hiding must move the selection to a live visible sheet.
       this.sheetIdValue = this.workbook.sheets().find((sheet) => sheet.state === 'visible')?.id ?? this.workbook.sheetIds()[0] ?? ''
       this.selection = { ranges: [{ top: 0, left: 0, bottom: 0, right: 0 }], active: { row: 0, col: 0 }, anchor: { row: 0, col: 0 } }
       this.rebuildSheet()

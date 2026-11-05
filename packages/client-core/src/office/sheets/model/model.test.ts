@@ -177,6 +177,20 @@ describe('id-form formulas', () => {
 })
 
 describe('sheets', () => {
+  it('resolves names case-insensitively, reserves suffixes, and respects the Excel length limit', () => {
+    const { model } = newWorkbook()
+    model.addSheet('Data')
+    const duplicate = model.addSheet('DATA')
+    model.addSheet('data (2)')
+    expect(duplicate.name).toBe('DATA (3)')
+    const long = 'A'.repeat(31)
+    model.addSheet(long)
+    const longDuplicate = model.addSheet(long.toLowerCase())
+    expect(longDuplicate.name).toBe('a'.repeat(27) + ' (2)')
+    expect(model.sheetByName(longDuplicate.name.toUpperCase())?.id).toBe(longDuplicate.id)
+    expect(longDuplicate.map.get('name')).toBe(long.toLowerCase())
+  })
+
   it('adds, renames, moves, hides, and deletes sheets with Excel naming rules', () => {
     const { model } = newWorkbook()
     const second = model.addSheet(model.nextSheetName())

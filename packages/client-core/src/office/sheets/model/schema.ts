@@ -10,7 +10,7 @@
  *   parts     Y.Map   package path → PreservedPart (bytes in the asset store)
  *
  * sheet Y.Map
- *   name, state, tabColor              plain values
+ *   name, state, tabColor, deleted     plain values (deleted is an optional tombstone)
  *   rows, cols                         Y.Array axis order (see axis.ts)
  *   deadRows, deadCols                 Y.Map tombstones
  *   cells     Y.Map  "row:col"         → CellData (content: value, formula, rich text)

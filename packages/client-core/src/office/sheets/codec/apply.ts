@@ -115,17 +115,18 @@ function syncSheets(target: WorkbookModel, incoming: WorkbookModel): [SheetModel
       used.add(candidate)
     }
   })
-  // Sheets the new version doesn't have go (unless that would leave none).
+  // Sheets omitted by the new version stay stored as tombstones.
   for (const sheet of own) {
     if (used.has(sheet)) continue
-    target.sheetsMap.delete(sheet.id)
-    const order = target.order.toArray()
-    for (let index = order.length - 1; index >= 0; index--) if (order[index] === sheet.id) target.order.delete(index, 1)
+    // File replacement follows the same tombstone policy as interactive deletion.
+    sheet.map.set('deleted', true)
   }
   const result: [SheetModel, SheetModel][] = []
   theirs.forEach((sheet, index) => {
     let match = pairs.get(sheet)
     if (!match) match = target.addSheet(target.sheetByName(sheet.name) ? target.uniqueSheetName(sheet.name) : sheet.name, index)
+    // A paired fallback must stay live when the incoming file adds other live sheets.
+    if (theirs.length > 1 && match.map.get('deleted') === true) match.map.delete('deleted')
     if (match.name !== sheet.name) match.map.set('name', sheet.name)
     result.push([match, sheet])
   })
@@ -137,7 +138,10 @@ function syncSheets(target: WorkbookModel, incoming: WorkbookModel): [SheetModel
     })
   }
   for (const [own, other] of result) {
-    for (const key of ['state', 'tabColor', 'kind']) setIfDifferent(own.map, key, other.map.get(key))
+    for (const key of ['state', 'tabColor', 'kind']) {
+      if (key === 'state' && own.state === other.state) continue
+      setIfDifferent(own.map, key, other.map.get(key))
+    }
   }
   const active = incoming.metaValue('activeSheet')
   const activeIndex = active ? incoming.sheetIds().indexOf(active) : -1
@@ -260,7 +264,12 @@ function syncSheet(own: SheetModel, other: SheetModel, styles: StyleMap): void {
   syncAxisMeta(own, other, 'col', styles)
   syncView(own, other)
   syncCollections(own, other, styles)
-  for (const key of new Set([...own.raw.keys(), ...other.raw.keys()])) setIfDifferent(own.raw, key, other.raw.get(key))
+  for (const key of new Set([...own.raw.keys(), ...other.raw.keys()])) {
+    let value = other.raw.get(key)
+    if (key === 'csvLastRow') value = translateAxisId(own.rows, other.rows, value as string | undefined)
+    if (key === 'csvLastCol') value = translateAxisId(own.cols, other.cols, value as string | undefined)
+    setIfDifferent(own.raw, key, value)
+  }
 }
 
 function alignmentScore(own: SheetModel, other: SheetModel, kind: AxisKind, styles: StyleMap): number {
@@ -342,7 +351,12 @@ function syncAxisMeta(own: SheetModel, other: SheetModel, kind: AxisKind, styles
     if (index < 0) continue
     const prop = key.slice(bar + 1)
     last = Math.max(last, index)
-    wanted.set(`${ownAxis.idAt(index)}|${prop}`, prop === 'xf' ? styles.xf(value as number) : value)
+    let translated = prop === 'xf' ? styles.xf(value as number) : value
+    if (kind === 'row' && prop === 'keep') {
+      const keep = value as { last?: string; ending?: string }
+      translated = { ...keep, ...(keep.last !== undefined ? { last: translateAxisId(own.cols, other.cols, keep.last) } : {}) }
+    }
+    wanted.set(`${ownAxis.idAt(index)}|${prop}`, translated)
   }
   for (const key of [...ownMeta.keys()]) if (!wanted.has(key)) ownMeta.delete(key)
   if (last >= 0) ownAxis.ensure(last + 1)
@@ -369,6 +383,15 @@ function translateRange(own: SheetModel, other: SheetModel, range: RangeIds): Ra
     ids.right = own.cols.idAt(resolved.right)
   }
   return ids
+}
+
+/** CSV extents and ragged row widths follow the aligned axes just like ranges do. */
+function translateAxisId(own: SheetModel['rows'], other: SheetModel['rows'], id: string | undefined): string | undefined {
+  if (id === undefined) return undefined
+  const index = other.indexOf(id)
+  if (index < 0) return undefined
+  own.ensure(index + 1)
+  return own.idAt(index)
 }
 
 function translatePoint(own: SheetModel, other: SheetModel, point: AnchorPoint | undefined): AnchorPoint | undefined {

@@ -104,11 +104,11 @@ export class SheetModel {
   }
 
   get name(): string {
-    return (this.map.get('name') as string | undefined) ?? ''
+    return this.workbook.resolvedSheetName(this.id) ?? ''
   }
 
   get state(): SheetState {
-    return (this.map.get('state') as SheetState | undefined) ?? 'visible'
+    return this.workbook.resolvedSheetState(this.id)
   }
 
   get tabColor(): SheetColor | undefined {
@@ -357,6 +357,7 @@ export function isEmptyCell(data: CellData): boolean {
 export class WorkbookModel {
   readonly root: Y.Map<unknown>
   private readonly sheetCache = new Map<string, SheetModel>()
+  readonly names = new DefinedNames(this)
 
   constructor(
     readonly doc: Y.Doc,
@@ -415,10 +416,6 @@ export class WorkbookModel {
     return this.root.get('sheets') as Y.Map<Y.Map<unknown>>
   }
 
-  get names(): Y.Map<DefinedName> {
-    return this.root.get('names') as Y.Map<DefinedName>
-  }
-
   get parts(): Y.Map<PreservedPart> {
     return this.root.get('parts') as Y.Map<PreservedPart>
   }
@@ -430,8 +427,8 @@ export class WorkbookModel {
 
   // ── Sheets ───────────────────────────────────────────────────────────────
 
-  /** Sheet ids in tab order, without duplicates (two replicas may move the same sheet at once). */
-  sheetIds(): string[] {
+  /** The stored tab order includes tombstones so concurrent deletions retain a fallback. */
+  private orderedSheetIds(): string[] {
     const seen = new Set<string>()
     const ids: string[] = []
     for (const id of this.order) {
@@ -440,8 +437,42 @@ export class WorkbookModel {
       ids.push(id)
     }
     // A sheet whose id fell out of the order (concurrent move and delete) stays reachable at the end.
-    for (const id of this.sheetsMap.keys()) if (!seen.has(id)) ids.push(id)
+    for (const id of [...this.sheetsMap.keys()].sort()) if (!seen.has(id)) ids.push(id)
     return ids
+  }
+
+  /** Live sheet ids in tab order, with the first stored sheet surviving if all were deleted. */
+  sheetIds(): string[] {
+    const ordered = this.orderedSheetIds()
+    const live = ordered.filter((id) => this.sheetsMap.get(id)!.get('deleted') !== true)
+    return live.length ? live : ordered.slice(0, 1)
+  }
+
+  /** Resolves collisions without rewriting names or formulas stored by another replica. */
+  resolvedSheetName(id: string): string | undefined {
+    const ids = this.sheetIds()
+    const stored = (sheetId: string) => (this.sheetsMap.get(sheetId)!.get('name') as string | undefined) ?? ''
+    // Reserve original names first so a generated suffix never takes another sheet's name.
+    const taken = new Set(ids.map((sheetId) => stored(sheetId).toLowerCase()))
+    const seen = new Set<string>()
+    for (const sheetId of ids) {
+      const base = stored(sheetId)
+      const lower = base.toLowerCase()
+      const name = seen.has(lower) ? availableSheetName(base, taken) : base
+      seen.add(lower)
+      taken.add(name.toLowerCase())
+      if (sheetId === id) return name
+    }
+    return undefined
+  }
+
+  /** Concurrent hiding cannot leave the workbook without a visible tab. */
+  resolvedSheetState(id: string): SheetState {
+    const stored = (sheetId: string) => (this.sheetsMap.get(sheetId)?.get('state') as SheetState | undefined) ?? 'visible'
+    const state = stored(id)
+    if (state === 'visible') return state
+    const ids = this.sheetIds()
+    return ids[0] === id && !ids.some((sheetId) => stored(sheetId) === 'visible') ? 'visible' : state
   }
 
   sheets(): SheetModel[] {
@@ -454,6 +485,7 @@ export class WorkbookModel {
       this.sheetCache.delete(id)
       return undefined
     }
+    if (map.get('deleted') === true && !this.sheetIds().includes(id)) return undefined
     let sheet = this.sheetCache.get(id)
     if (!sheet || sheet.map !== map) {
       sheet = new SheetModel(this, id, map)
@@ -470,11 +502,7 @@ export class WorkbookModel {
   /** A sheet name not taken yet: `base`, else `base (2)`, … (Excel uses `Sheet1 (2)` for copies). */
   uniqueSheetName(base: string): string {
     const taken = new Set(this.sheets().map((sheet) => sheet.name.toLowerCase()))
-    if (!taken.has(base.toLowerCase())) return base
-    for (let n = 2; ; n++) {
-      const candidate = `${base.slice(0, 31 - ` (${n})`.length)} (${n})`
-      if (!taken.has(candidate.toLowerCase())) return candidate
-    }
+    return availableSheetName(base, taken)
   }
 
   /** The next free `SheetN` name. */
@@ -521,6 +549,7 @@ export class WorkbookModel {
   }
 
   moveSheet(id: string, position: number): void {
+    if (!this.sheet(id)) return
     this.transact(() => {
       this.removeFromOrder(id)
       this.order.insert(this.storedSheetIndex(position), [id])
@@ -528,13 +557,14 @@ export class WorkbookModel {
   }
 
   deleteSheet(id: string): void {
+    const sheet = this.sheet(id)
+    if (!sheet) return
     if (this.sheets().filter((sheet) => sheet.id !== id && sheet.state === 'visible').length === 0) {
       throw new Error('A workbook must keep at least one visible sheet')
     }
     this.transact(() => {
-      this.removeFromOrder(id)
-      this.sheetsMap.delete(id)
-      for (const [nameId, name] of this.names) if (name.scope === id) this.names.delete(nameId)
+      // Retain contents and scoped names in case concurrent deletions make this the fallback.
+      sheet.map.set('deleted', true)
       if (this.metaValue('activeSheet') === id) this.setMeta('activeSheet', this.sheetIds()[0])
     })
   }
@@ -569,6 +599,52 @@ export class WorkbookModel {
 
   overridePropsOf(map: Y.Map<unknown>, owner: string, prefix = ''): StyleProp[] {
     return STYLE_PROP_LIST.filter((prop) => map.has(`${owner}|${prefix}${prop}`))
+  }
+}
+
+/** Defined names keep their storage while names scoped to deleted sheets stay out of readers. */
+class DefinedNames {
+  constructor(private readonly workbook: WorkbookModel) {}
+
+  private get map(): Y.Map<DefinedName> {
+    return this.workbook.root.get('names') as Y.Map<DefinedName>
+  }
+
+  get(id: string): DefinedName | undefined {
+    const name = this.map.get(id)
+    return name && (!name.scope || this.workbook.sheet(name.scope)) ? name : undefined
+  }
+
+  set(id: string, name: DefinedName): void {
+    this.map.set(id, name)
+  }
+
+  delete(id: string): void {
+    this.map.delete(id)
+  }
+
+  *entries(): IterableIterator<[string, DefinedName]> {
+    for (const [id, name] of this.map) if (!name.scope || this.workbook.sheet(name.scope)) yield [id, name]
+  }
+
+  *keys(): IterableIterator<string> {
+    for (const [id] of this) yield id
+  }
+
+  *values(): IterableIterator<DefinedName> {
+    for (const [, name] of this) yield name
+  }
+
+  [Symbol.iterator](): IterableIterator<[string, DefinedName]> {
+    return this.entries()
+  }
+}
+
+function availableSheetName(base: string, taken: Set<string>): string {
+  if (!taken.has(base.toLowerCase())) return base
+  for (let n = 2; ; n++) {
+    const candidate = `${base.slice(0, 31 - ` (${n})`.length)} (${n})`
+    if (!taken.has(candidate.toLowerCase())) return candidate
   }
 }
 

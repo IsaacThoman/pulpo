@@ -263,3 +263,69 @@ it.each([false, true])('deduplicates image loads and cleans up when destroyed be
   expect(create).toHaveBeenCalledTimes(destroyEarly ? 0 : 1)
   expect(revoke).toHaveBeenCalledTimes(destroyEarly ? 0 : 1)
 })
+
+describe('concurrent sheet tab changes', () => {
+  for (const count of [2, 3]) for (const descending of [false, true]) for (const reverse of [false, true]) {
+    const clientIds = Array.from({ length: count }, (_, index) => index + 1)
+    if (descending) clientIds.reverse()
+    const label = `clients ${clientIds}, ${reverse ? 'reverse' : 'forward'} delivery`
+    for (const operation of ['delete', 'hide'] as const) {
+      it(`keeps the active grid on the fallback visible tab after concurrent ${operation} (${label})`, () => {
+        const base = new Y.Doc()
+        base.clientID = 100
+        const book = WorkbookModel.initialize(base)
+        const ids = Array.from({ length: count }, (_, index) => {
+          const sheet = book.addSheet(`Sheet${index + 1}`)
+          sheet.setCell(0, 0, { v: `value${index + 1}` })
+          return sheet.id
+        })
+        const docs = clientIds.map((clientID) => {
+          const doc = new Y.Doc()
+          doc.clientID = clientID
+          Y.applyUpdate(doc, Y.encodeStateAsUpdate(base))
+          return doc
+        })
+        const editors = docs.map((doc, index) => {
+          const container = document.createElement('div')
+          document.body.appendChild(container)
+          const view = new SheetView({ container, doc, assets: new MemoryLiveAssetStore(), user: { name: 'Test', color: '#123456' } })
+          views.push(view)
+          view.setActiveSheet(ids[index]!)
+          return view
+        })
+        editors.forEach((view, index) => {
+          if (operation === 'delete') view.deleteSheet(ids[index]!)
+          else view.setSheetHidden(ids[index]!, true)
+        })
+        const updates = docs.map((doc) => Y.encodeStateAsUpdate(doc))
+        if (reverse) updates.reverse()
+        for (const doc of docs) for (const update of updates) Y.applyUpdate(doc, update)
+        for (const view of editors) {
+          expect(view.getState().sheetId).toBe(ids[0])
+          expect(view.getState().sheets.filter((sheet) => sheet.state === 'visible').map((sheet) => sheet.id)).toEqual([ids[0]])
+          expect(view.inputText(0, 0)).toBe('value1')
+          view.beginEdit('updated fallback')
+          expect(view.commitEdit()).toBe(true)
+          expect(view.inputText(0, 0)).toBe('updated fallback')
+        }
+      })
+    }
+
+    it(`shows resolved names in tabs after concurrent additions (${label})`, () => {
+      const { doc, book, view } = setup()
+      const replicas = clientIds.map((clientID) => {
+        const replica = new Y.Doc()
+        replica.clientID = clientID
+        Y.applyUpdate(replica, Y.encodeStateAsUpdate(doc))
+        new WorkbookModel(replica).addSheet('Sheet2')
+        return replica
+      })
+      const updates = replicas.map((replica) => Y.encodeStateAsUpdate(replica))
+      if (reverse) updates.reverse()
+      for (const update of updates) Y.applyUpdate(doc, update)
+      expect(view.getState().sheets.map((sheet) => sheet.name)).toEqual(['Sheet1', 'Sheet2', ...Array.from({ length: count - 1 }, (_, index) => `Sheet2 (${index + 2})`)])
+      expect(view.getState().sheets.map((sheet) => sheet.name)).toEqual(book.sheets().map((sheet) => sheet.name))
+      for (const replica of replicas) replica.destroy()
+    })
+  }
+})
