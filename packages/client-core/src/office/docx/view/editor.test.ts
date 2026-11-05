@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Awareness } from 'y-protocols/awareness'
 import * as Y from 'yjs'
 import { docxCodec } from '../codec.js'
+import { packJml } from '../jsonml.js'
 import { MemoryAssetStore } from '../memory-assets.js'
 import { fragmentToNode, storyFragmentName, writeFragment } from '../model.js'
 import { docxSchema } from '../schema.js'
@@ -111,4 +112,19 @@ it('disables column and cell structure commands in Suggesting mode', () => {
   for (const command of ['addColumnBefore', 'addColumnAfter', 'deleteColumn', 'mergeCells', 'splitCell'] as const) expect(editor[command]()).toBe(false)
   expect(editor.view.state.doc.eq(before)).toBe(true)
   expect(editor.revisions()).toEqual([])
+})
+
+it('preserves the original final paragraph mark when regenerating a table of contents', () => {
+  const sectPr = packJml(['w:sectPr', {}, ['w:pgSz', { 'w:orient': 'landscape', 'w:w': '15840', 'w:h': '12240' }]])
+  const markRPr = packJml(['w:rPr', {}, ['w:b', {}], ['w:ins', { 'w:id': '42', 'w:author': 'Grace' }]])
+  editor.view.dispatch(editor.view.state.tr.replaceWith(0, editor.view.state.doc.content.size, [
+    schema.node('paragraph', { outlineLvl: packJml(['w:outlineLvl', { 'w:val': '0' }]) }, schema.text('Heading')),
+    schema.node('paragraph', { sectPr }, schema.text('Final')),
+  ]))
+  expect(editor.insertTableOfContents()).toBe(true)
+  const first = editor.view.state.doc.firstChild!
+  editor.view.dispatch(editor.view.state.tr.setNodeMarkup(0, undefined, { ...first.attrs, sectPr, markRPr }))
+  expect(editor.updateTableOfContents()).toBe(true)
+  expect(editor.view.state.doc.firstChild!.attrs).toMatchObject({ sectPr, markRPr })
+  expect(editor.view.state.doc.lastChild!.attrs.sectPr).toBe(sectPr)
 })

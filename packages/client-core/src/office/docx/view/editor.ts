@@ -67,6 +67,7 @@ import {
   setTextColor,
   setUnderline,
   setVerticalAlign,
+  splitParagraphAttrs,
   toggleList,
   toggleRunProperty,
   wordCount,
@@ -1368,6 +1369,10 @@ export class DocxEditor {
     const range = this.tocRange(this.view.state.doc)
     if (!range) return false
     const { tr, paragraphs } = this.tocParagraphs(this.view.state)
+    // Regenerating entries replaces their text, while the last paragraph still owns the original end.
+    const originalEnd = this.view.state.doc.resolve(range.to).nodeBefore!
+    const last = paragraphs[paragraphs.length - 1]!
+    paragraphs[paragraphs.length - 1] = last.type.create(splitParagraphAttrs(last.attrs, originalEnd.attrs)[1], last.content, last.marks)
     tr.replaceWith(tr.mapping.map(range.from), tr.mapping.map(range.to), paragraphs)
     this.view.dispatch(tr)
     return true

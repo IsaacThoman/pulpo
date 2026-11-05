@@ -14,7 +14,7 @@ import { BODY_FRAGMENT, readDocxModel, writeFragment, type DocxModel } from './m
 import { ListCounter, Numbering, formatNumber } from './numbering.js'
 import { docxSchema, inlineMarks } from './schema.js'
 import { StyleSheet, cellConditions, mergeElement, tableLook } from './styles.js'
-import { clearFormatting, freshId, findMatches, insertTable, insertPageBreak, insertParagraphBreak, listDefinition, replaceMatches, setAlignment, setFontSize, toggleList, toggleRunProperty, wordCount } from './view/commands.js'
+import { clearFormatting, freshId, findMatches, insertTable, insertPageBreak, insertParagraphBreak, insertSectionBreak, listDefinition, replaceMatches, setAlignment, setFontSize, toggleList, toggleRunProperty, wordCount } from './view/commands.js'
 import { DocxViewContext } from './view/context.js'
 import { sectionEndsPlugin } from './view/sections.js'
 import { listRevisions, resolveRevisions, trackTransaction } from './view/track-changes.js'
@@ -590,6 +590,99 @@ describe('section ends', () => {
     expect(state.doc.child(0).attrs).toMatchObject({ sectPr, pStyle: 'Heading1' })
     expect(undo(state, (tr) => { state = state.apply(tr) })).toBe(true)
     expect(state.doc.eq(original)).toBe(true)
+  })
+
+  it('does not let Reject All remove an original end after an Editing join of a suggested split', () => {
+    const doc = new Y.Doc()
+    const context = new DocxViewContext(doc)
+    try {
+      const original = schema.node('doc', null, [paragraph('AlphaBravoCharlie', sectPr), paragraph('Final')])
+      const reviewer = { author: 'Ada', date: '2026-11-04T10:00:00Z' }
+      let state = EditorState.create({ schema, doc: original, plugins: [sectionEndsPlugin()] })
+      state = state.apply(state.tr.setSelection(TextSelection.create(state.doc, 6)))
+      state = state.apply(trackTransaction(state, insertParagraphBreak(state, context)!, reviewer)!)
+      state = state.apply(state.tr.setSelection(TextSelection.create(state.doc, 8)))
+      expect(joinBackward(state, (tr) => { state = state.apply(tr) })).toBe(true)
+      expect(state.doc.eq(original)).toBe(true)
+      expect(listRevisions(state.doc)).toEqual([])
+      expect(resolveRevisions(state, listRevisions(state.doc), 'reject')).toBeNull()
+    } finally {
+      context.destroy()
+      doc.destroy()
+    }
+  })
+
+  it.each([null, 'w:ins', 'w:del'])('restores exactly the surviving end’s mark properties (%s) across multiple steps', (revision) => {
+    const markRPr = revision ? packJml(['w:rPr', {}, ['w:b', {}], [revision, { 'w:id': '42', 'w:author': 'Grace' }]]) : null
+    const original = schema.node('doc', null, [
+      schema.node('paragraph', { markRPr: packJml(['w:rPr', {}, ['w:i', {}]]) }, schema.text('A')),
+      schema.node('paragraph', { markRPr, sectPr }, schema.text('B')),
+      paragraph('Final'),
+    ])
+    const state = EditorState.create({ schema, doc: original, plugins: [sectionEndsPlugin()] })
+    const next = state.apply(state.tr.insertText('x', 1).join(4).insertText('y', 1))
+    expect(next.doc.firstChild!.textContent).toBe('yxAB')
+    expect(next.doc.firstChild!.attrs).toMatchObject({ markRPr, sectPr })
+  })
+
+  it.each(['editing', 'suggesting'] as const)('shares Enter’s mark ownership with page and section breaks in %s mode', (mode) => {
+    const doc = new Y.Doc()
+    const context = new DocxViewContext(doc)
+    const markRPr = packJml(['w:rPr', {}, ['w:b', {}], ['w:ins', { 'w:id': '42', 'w:author': 'Grace' }]])
+    const reviewer = { author: 'Ada', date: '2026-11-04T10:00:00Z' }
+    try {
+      for (const pos of [1, 2, 4]) for (const section of [false, true]) {
+        let state = EditorState.create({ schema, doc: schema.node('doc', null, [schema.node('paragraph', { sectPr, markRPr }, schema.text('ABC')), paragraph('Final')]), plugins: [sectionEndsPlugin()] })
+        state = state.apply(state.tr.setSelection(TextSelection.create(state.doc, pos)))
+        const tr = section ? insertSectionBreak('continuous', state, context)!.tr : insertPageBreak(state, context)!
+        state = state.apply(mode === 'suggesting' ? trackTransaction(state, tr, reviewer)! : tr)
+        expect(state.doc.child(0).attrs.sectPr !== null).toBe(section)
+        expect(state.doc.child(1).attrs.sectPr).not.toBeNull()
+        expect(state.doc.child(1).attrs.markRPr).toBe(markRPr)
+        expect(state.doc.child(0).attrs.markRPr).not.toBe(markRPr)
+        if (mode === 'suggesting') expect(state.doc.child(0).attrs.markRPr).toContain('Ada')
+        else expect(state.doc.child(0).attrs.markRPr).toBeNull()
+        if (section) {
+          expect(state.doc.child(1).attrs.sectPr, `section at ${pos} in ${mode}`).toContain('continuous')
+          expect(state.doc.child(0).attrs.sectPr).toBe(sectPr)
+        }
+      }
+    } finally {
+      context.destroy()
+      doc.destroy()
+    }
+  })
+
+  it('keeps an empty paragraph’s original end after an inserted table', () => {
+    const doc = new Y.Doc()
+    const context = new DocxViewContext(doc)
+    const markRPr = packJml(['w:rPr', {}, ['w:b', {}], ['w:del', { 'w:id': '42', 'w:author': 'Grace' }]])
+    try {
+      const state = EditorState.create({ schema, doc: schema.node('doc', null, [schema.node('paragraph', { sectPr, markRPr }), paragraph('Final')]), plugins: [sectionEndsPlugin()] })
+      const next = state.apply(insertTable(2, 2)(state, context)!)
+      expect(next.doc.child(0).type.name).toBe('table')
+      expect(next.doc.child(1).attrs).toMatchObject({ sectPr, markRPr })
+      expect(next.doc.child(2).textContent).toBe('Final')
+    } finally {
+      context.destroy()
+      doc.destroy()
+    }
+  })
+
+  it('skips paragraph traversal for inline replacement in a 40,000-paragraph document', () => {
+    const doc = schema.node('doc', null, Array.from({ length: 40_000 }, () => paragraph('Paragraph text.')))
+    const state = EditorState.create({ schema, doc, plugins: [sectionEndsPlugin()] })
+    const tr = state.tr.insertText('x', 2, 3)
+    const between = vi.spyOn(doc, 'nodesBetween')
+    const descendants = vi.spyOn(doc, 'descendants')
+    try {
+      state.apply(tr)
+      expect(between).not.toHaveBeenCalled()
+      expect(descendants).not.toHaveBeenCalled()
+    } finally {
+      between.mockRestore()
+      descendants.mockRestore()
+    }
   })
 
   it('keeps the last paragraph section end when a selection deletes from A into C', () => {

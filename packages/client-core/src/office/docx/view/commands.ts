@@ -1,5 +1,5 @@
 import { chainCommands, createParagraphNear, liftEmptyBlock, newlineInCode, splitBlock } from '@tiptap/pm/commands'
-import type { Mark, Node as ProseMirrorNode, Schema } from '@tiptap/pm/model'
+import type { Attrs, Mark, Node as ProseMirrorNode, Schema } from '@tiptap/pm/model'
 import { NodeSelection, TextSelection, type EditorState, type Transaction } from '@tiptap/pm/state'
 import { CellSelection, TableMap, isInTable } from '@tiptap/pm/tables'
 import { canSplit } from '@tiptap/pm/transform'
@@ -55,6 +55,24 @@ export function selectedParagraphs(state: EditorState): { node: ProseMirrorNode;
   return result
 }
 
+/** A split creates a fresh mark before the original end, without duplicating revisions or section ends. */
+export function splitParagraphAttrs(attrs: Attrs, endAttrs: Attrs = attrs): [Attrs, Attrs] {
+  return [
+    { ...attrs, markRPr: null, sectPr: null, trail: null },
+    { ...attrs, markRPr: endAttrs.markRPr, sectPr: endAttrs.sectPr, trail: endAttrs.trail, lead: null, xmlAttrs: null },
+  ]
+}
+
+/** Share Enter's mark ownership with commands that split an existing paragraph. */
+function splitParagraph(tr: Transaction, pos: number): void {
+  const $pos = tr.doc.resolve(pos)
+  if ($pos.parent.type.name !== 'paragraph' || !canSplit(tr.doc, pos)) return
+  const [first, second] = splitParagraphAttrs($pos.parent.attrs)
+  tr.split(pos, 1, [{ type: $pos.parent.type, attrs: second }])
+  tr.setNodeMarkup($pos.before(), undefined, first)
+  tr.setMeta('docx-paragraph-split-cleanup', [tr.steps.length - 1])
+}
+
 /** A new paragraph mark precedes the original mark, which retains its section end and markers. */
 export const insertParagraphBreak: Command = (state, context) => {
   const paragraph = selectedParagraphs(state)[0]
@@ -70,14 +88,10 @@ export const insertParagraphBreak: Command = (state, context) => {
     if (first && second?.type.name === 'paragraph') {
       const attrs = paragraph.node.attrs
       const nextStyle = atEnd ? context.styles.get(attrs.pStyle as string | null)?.next : undefined
-      tr.setNodeMarkup(paragraph.pos, undefined, { ...attrs, markRPr: null, sectPr: null, trail: null })
+      const [firstAttrs, secondAttrs] = splitParagraphAttrs(attrs, endAttrs)
+      tr.setNodeMarkup(paragraph.pos, undefined, firstAttrs)
       tr.setNodeMarkup(secondPos, undefined, {
-        ...attrs,
-        markRPr: endAttrs.markRPr,
-        sectPr: endAttrs.sectPr,
-        trail: endAttrs.trail,
-        lead: null,
-        xmlAttrs: null,
+        ...secondAttrs,
         ...(nextStyle && nextStyle !== attrs.pStyle ? { pStyle: nextStyle, outlineLvl: null } : {}),
       })
       tr.setSelection(TextSelection.create(tr.doc, secondPos + 1))
@@ -398,7 +412,7 @@ export const insertTable = (rows: number, cols: number): Command => (state, cont
   while (depth > 0 && $from.node(depth).type.name !== 'paragraph') depth--
   const paragraph = depth > 0 ? $from.node(depth) : undefined
   if (paragraph && paragraph.content.size === 0) {
-    tr.replaceWith($from.before(depth), $from.after(depth), [table, state.schema.node('paragraph')])
+    tr.replaceWith($from.before(depth), $from.after(depth), [table, state.schema.node('paragraph', splitParagraphAttrs(paragraph.attrs)[1])])
   } else {
     const at = depth > 0 ? $from.after(depth) : $from.pos
     tr.insert(at, [table, state.schema.node('paragraph')])
@@ -488,7 +502,7 @@ export const insertSymbol = (text: string): Command => (state) => insertInline(s
 export const insertPageBreak: Command = (state) => {
   const tr = insertInline(state, state.schema.node('break', { type: 'page', v: packJml(['w:br', { 'w:type': 'page' }]) }))
   const pos = tr.selection.from
-  if (canSplit(tr.doc, pos)) tr.split(pos)
+  splitParagraph(tr, pos)
   return tr.scrollIntoView()
 }
 
@@ -520,7 +534,7 @@ export function insertSectionBreak(type: 'nextPage' | 'continuous' | 'evenPage' 
   const base = section.sectPr ?? ['w:sectPr', {}]
   // The new section (after the break) gets the type; the ended one keeps its own.
   const tr = state.tr
-  if (canSplit(tr.doc, $from.pos)) tr.split($from.pos)
+  splitParagraph(tr, $from.pos)
   const paragraphPos = $from.before(depth)
   const paragraph = tr.doc.nodeAt(paragraphPos)!
   const ended: JmlElement = [base[0], base[1], ...jmlElements(base).filter((child) => child[0] !== 'w:type')]
@@ -532,10 +546,12 @@ export function insertSectionBreak(type: 'nextPage' | 'continuous' | 'evenPage' 
   if (section.endPos === null) {
     return { tr, maps: [['docx', 'sectPr', packJml(sortSect([base[0], base[1], ...jmlElements(base).filter((child) => child[0] !== 'w:type'), nextType]))]] }
   }
-  const endNode = tr.doc.nodeAt(tr.mapping.map(section.endPos))
+  const originalEnd = section.endPos + state.doc.nodeAt(section.endPos)!.nodeSize - 1
+  const endPos = tr.doc.resolve(tr.mapping.map(originalEnd)).before()
+  const endNode = tr.doc.nodeAt(endPos)
   if (endNode?.attrs.sectPr) {
     const next = jml(endNode.attrs.sectPr)!
-    tr.setNodeMarkup(tr.mapping.map(section.endPos), undefined, { ...endNode.attrs, sectPr: packJml(sortSect([next[0], next[1], ...jmlElements(next).filter((child) => child[0] !== 'w:type'), nextType])) })
+    tr.setNodeMarkup(endPos, undefined, { ...endNode.attrs, sectPr: packJml(sortSect([next[0], next[1], ...jmlElements(next).filter((child) => child[0] !== 'w:type'), nextType])) })
   }
   return { tr }
 }

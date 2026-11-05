@@ -310,7 +310,7 @@ export function trackTransaction(state: EditorState, tr: Transaction, reviewer: 
         const attrs = { ...node.attrs }
         for (const key of Object.keys(replacement.attrs)) {
           // Split tracking already assigned each mark to its surviving end; command positions may differ.
-          if (tr.getMeta('docx-paragraph-split') && ['markRPr', 'sectPr', 'trail'].includes(key)) continue
+          if ((tr.getMeta('docx-paragraph-split') || tr.getMeta('docx-paragraph-split-cleanup')?.includes(index)) && ['markRPr', 'sectPr', 'trail'].includes(key)) continue
           if (replacement.attrs[key] !== old.attrs[key]) attrs[key] = replacement.attrs[key]
         }
         out.setNodeMarkup(pos, undefined, attrs, replacement.marks)
