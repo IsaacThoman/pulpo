@@ -10,6 +10,8 @@ import {
   type EditorMessage,
   type EditorTheme,
   type HostMessage,
+  type NotebookCommand,
+  type NotebookToolbarState,
   type ReviewAction,
   type TextCommand,
 } from './protocol'
@@ -31,6 +33,8 @@ export interface EditorBridgeState {
   suggestions: { count: number; index: number | null; active: ActiveSuggestion | null }
   /** What a text editor reports (text and code files). */
   text: TextEditorState | null
+  /** What a notebook editor reports. */
+  notebook: NotebookToolbarState | null
   /** The editor's page reported a protocol or schema this app cannot use. */
   incompatible: boolean
 }
@@ -62,6 +66,7 @@ const INITIAL_STATE: EditorBridgeState = {
   focused: false,
   suggestions: { count: 0, index: null, active: null },
   text: null,
+  notebook: null,
   incompatible: false,
 }
 
@@ -133,7 +138,7 @@ export class EditorBridge {
   }
 
   /** A text editor's toolbar command. */
-  command(command: TextCommand): void {
+  command(command: TextCommand | NotebookCommand): void {
     this.post({ type: 'command', session: this.session, command })
   }
 
@@ -229,6 +234,9 @@ export class EditorBridge {
         break
       case 'textState':
         this.setState({ ...this.state, text: message.state, focused: message.state.focused })
+        break
+      case 'notebookState':
+        this.setState({ ...this.state, notebook: message.state, focused: message.state.editing })
         break
       case 'suggestions':
         this.setState({ ...this.state, suggestions: { count: message.count, index: message.index, active: message.active } })
