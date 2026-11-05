@@ -8,7 +8,7 @@ import { blankDocx } from './blank.js'
 import { docxCodec } from './codec.js'
 import { packJml } from './jsonml.js'
 import { MemoryAssetStore } from './memory-assets.js'
-import { BODY_FRAGMENT, readDocxModel, writeFragment } from './model.js'
+import { BODY_FRAGMENT, readDocxModel, writeDocxModel, writeFragment } from './model.js'
 import { docxSchema } from './schema.js'
 
 const schema = docxSchema()
@@ -284,7 +284,7 @@ describe('docxCodec', () => {
     await docxCodec.createEmpty(doc, context)
     doc.transact(() => {
       for (const [id, text] of [['nAAA', 'first comment'], ['nBBB', 'second comment']]) {
-        doc.getMap('comments').set(id!, JSON.stringify({ author: 'Ada' }))
+        doc.getMap('comments').set(id!, JSON.stringify({ author: 'Ada', date: id === 'nAAA' ? '2026-11-01T00:00:00Z' : '2026-11-02T00:00:00Z' }))
         doc.getMap('stories').set(`comment:${id}`, JSON.stringify({ kind: 'comment' }))
         writeFragment(doc, doc.getXmlFragment(`story:comment:${id}`), schema.node('doc', null, [schema.node('paragraph', null, schema.text(text!))]))
       }
@@ -308,6 +308,66 @@ describe('docxCodec', () => {
     const stories = [...fork.getMap('stories').keys()].filter((id) => id.startsWith('comment:')).sort()
     expect(stories).toEqual(['comment:2', 'comment:nAAA', 'comment:nBBB'])
     expect(fork.getXmlFragment('story:comment:nAAA').toString()).toContain('first comment, edited')
+  })
+
+  it.each([['comment', '3'], ['comment', '0'], ['footnote', '3']] as const)('does not give a replacement %s %s the deleted story identity', async (kind, newId) => {
+    const { doc, assets } = await fromBlank()
+    const ctx = context(assets)
+    const story = (text: string) => schema.node('doc', null, [paragraph({}, run(text))])
+    const model = readDocxModel(doc)
+    model.stories.set(`${kind}:nOLD`, { meta: { kind }, doc: story('Original story') })
+    if (kind === 'comment') model.maps.comments.set('nOLD', JSON.stringify({ author: 'Ada' }))
+    else model.body = schema.node('doc', null, [paragraph({}, schema.node('noteRef', { kind, id: 'nOLD' }))])
+    doc.transact(() => writeDocxModel(doc, model))
+    const proposal = new Y.Doc()
+    await docxCodec.importFile(proposal, await docxCodec.exportFile(doc, ctx), ctx)
+    const changed = readDocxModel(proposal)
+    const oldId = kind === 'comment' ? '0' : '1'
+    changed.stories.delete(`${kind}:${oldId}`)
+    changed.stories.set(`${kind}:${newId}`, { meta: { kind }, doc: story('Unrelated new story') })
+    if (kind === 'comment') {
+      changed.maps.comments.delete(oldId)
+      changed.maps.comments.set(newId, JSON.stringify({ author: 'Agent' }))
+    } else changed.body = schema.node('doc', null, [paragraph({}, schema.node('noteRef', { kind, id: newId }))])
+    proposal.transact(() => writeDocxModel(proposal, changed))
+    const collaborator = new Y.Doc()
+    Y.applyUpdate(collaborator, Y.encodeStateAsUpdate(doc))
+    collaborator.transact(() => writeFragment(collaborator, collaborator.getXmlFragment(`story:${kind}:nOLD`), story('Original story collaborator edit')))
+    await docxCodec.applyFile(doc, await docxCodec.exportFile(proposal, ctx), ctx, 'agent')
+    Y.applyUpdate(doc, Y.encodeStateAsUpdate(collaborator))
+    const result = readDocxModel(doc)
+    expect(result.stories.has(`${kind}:nOLD`)).toBe(false)
+    expect(result.stories.get(`${kind}:${newId}`)?.doc.textContent).toBe('Unrelated new story')
+  })
+
+  it('numbers a first footnote above the reserved separator ids', async () => {
+    const { readFile } = await import('node:fs/promises')
+    const { addNote } = await import('./view/stories.js')
+    const { DocxViewContext } = await import('./view/context.js')
+    const { EditorState } = await import('@tiptap/pm/state')
+    const assets = new MemoryAssetStore()
+    const ctx = context(assets)
+    const doc = new Y.Doc()
+    await docxCodec.importFile(doc, await readFile(new URL('../../../fixtures/docx/basic-formatting.docx', import.meta.url)), ctx)
+    const viewContext = new DocxViewContext(doc)
+    try {
+      const result = addNote(EditorState.create({ schema, doc: readDocxModel(doc).body }), viewContext, 'footnote', 'First note')
+      doc.transact(() => {
+        writeFragment(doc, doc.getXmlFragment(BODY_FRAGMENT), result.tr!.doc)
+        for (const story of result.stories) {
+          doc.getMap('stories').set(story.id, JSON.stringify(story.meta))
+          writeFragment(doc, doc.getXmlFragment(`story:${story.id}`), story.doc!)
+        }
+      })
+      const pkg = OoxmlPackage.read(await docxCodec.exportFile(doc, ctx))
+      const ids = [...pkg.text('word/footnotes.xml')!.matchAll(/<w:footnote\b[^>]*w:id="(-?\d+)"/g)].map((match) => match[1]!)
+      expect(new Set(ids).size).toBe(ids.length)
+      const reference = /<w:footnoteReference w:id="(\d+)"/.exec(pkg.text('word/document.xml')!)![1]!
+      expect(Number(reference)).toBeGreaterThanOrEqual(1)
+      expect(ids).toContain(reference)
+    } finally {
+      viewContext.destroy()
+    }
   })
 
   describe('hostile files', () => {

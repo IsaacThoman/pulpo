@@ -122,7 +122,7 @@ export function keepCurrentIds(model: DocxModel, current: DocxModel): DocxModel 
     const meta = parseJson<CommentMeta>(doc.maps.comments.get(id)) ?? {}
     return JSON.stringify([meta.author ?? '', meta.initials ?? '', meta.date ?? '', storyText(doc, `comment:${id}`)])
   }
-  const match = (imported: string[], existing: string[], key: (doc: DocxModel, id: string) => string, numbers: Map<string, string>) => {
+  const match = (imported: string[], existing: string[], key: (doc: DocxModel, id: string) => string, numbers: Map<string, string>, comments = false) => {
     const result = new Map<string, string>()
     const existingSet = new Set(existing)
     const importedSet = new Set(imported)
@@ -141,29 +141,37 @@ export function keepCurrentIds(model: DocxModel, current: DocxModel): DocxModel 
         claimed.add(target)
       }
     }
+    if (comments) {
+      for (const id of imported) {
+        if (result.has(id) || existingSet.has(id)) continue
+        const meta = parseJson<CommentMeta>(model.maps.comments.get(id))
+        if (!meta?.date) continue
+        const target = existing.find((candidate) => {
+          if (/^-?\d+$/.test(candidate) || claimed.has(candidate) || importedSet.has(candidate)) return false
+          const other = parseJson<CommentMeta>(current.maps.comments.get(candidate))
+          return (meta.author ?? '') === (other?.author ?? '') && (meta.initials ?? '') === (other?.initials ?? '') && meta.date === other?.date
+        })
+        if (target) {
+          result.set(id, target)
+          claimed.add(target)
+        }
+      }
+    }
     const back = new Map<string, string>()
     for (const [id, number] of numbers) if (id !== number) back.set(number, id)
     for (const id of imported) {
       if (result.has(id) || existingSet.has(id)) continue
       const target = back.get(id)
-      if (target && !claimed.has(target) && !importedSet.has(target)) {
+      if (target && !claimed.has(target) && !importedSet.has(target) && (!comments || parseJson<CommentMeta>(model.maps.comments.get(id))?.author === parseJson<CommentMeta>(current.maps.comments.get(target))?.author)) {
         result.set(id, target)
         claimed.add(target)
       }
     }
-    // A file made from another numbering (an earlier proposal's), with edited text: the numbers
-    // left over pair in order with the comments left over, in the order export numbers them.
-    const leftover = imported.filter((id) => !result.has(id) && !existingSet.has(id) && /^-?\d+$/.test(id)).sort((a, b) => Number(a) - Number(b))
-    const unclaimed = existing.filter((id) => !claimed.has(id) && !importedSet.has(id) && !/^-?\d+$/.test(id)).sort()
-    leftover.forEach((id, index) => {
-      const target = unclaimed[index]
-      if (target) result.set(id, target)
-    })
     return result
   }
   const noteIds = (doc: DocxModel, kind: string) => [...doc.stories.keys()].filter((id) => id.startsWith(`${kind}:`)).map((id) => id.slice(kind.length + 1))
   const noteKey = (kind: string) => (doc: DocxModel, id: string) => storyText(doc, `${kind}:${id}`)
-  const comments = match([...model.maps.comments.keys()], [...current.maps.comments.keys()], commentKey, numbered.comments)
+  const comments = match([...model.maps.comments.keys()], [...current.maps.comments.keys()], commentKey, numbered.comments, true)
   const notes = {
     footnote: match(noteIds(model, 'footnote'), noteIds(current, 'footnote'), noteKey('footnote'), numbered.footnote),
     endnote: match(noteIds(model, 'endnote'), noteIds(current, 'endnote'), noteKey('endnote'), numbered.endnote),

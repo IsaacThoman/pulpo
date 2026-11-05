@@ -66,10 +66,10 @@ export interface IdMaps {
   endnote: Map<string, string>
 }
 
-function numericIds(ids: Iterable<string>): Map<string, string> {
+function numericIds(ids: Iterable<string>, first = 0): Map<string, string> {
   const all = [...ids]
   const result = new Map<string, string>()
-  let next = 0
+  let next = first
   for (const id of all) if (/^-?\d+$/.test(id)) {
     result.set(id, id)
     next = Math.max(next, Number(id) + 1)
@@ -82,7 +82,7 @@ function numericIds(ids: Iterable<string>): Map<string, string> {
 
 export function idMaps(model: DocxModel): IdMaps {
   const notes = (kind: string) => [...model.stories.keys()].filter((id) => id.startsWith(`${kind}:`)).map((id) => id.slice(kind.length + 1))
-  return { comments: numericIds(model.maps.comments.keys()), footnote: numericIds(notes('footnote')), endnote: numericIds(notes('endnote')) }
+  return { comments: numericIds(model.maps.comments.keys()), footnote: numericIds(notes('footnote'), 1), endnote: numericIds(notes('endnote'), 1) }
 }
 
 /** Relationships and media a part's content needs, allocated while it is written. */
