@@ -120,6 +120,19 @@ export function withoutForeignParts(slice: Slice): Slice {
   return new Slice(clean(slice.content), slice.openStart, slice.openEnd)
 }
 
+/** Notes and comments belong to their document; a copied id could name an unrelated story here. */
+export function withoutStoryReferences(slice: Slice): Slice {
+  const clean = (fragment: Fragment): Fragment => {
+    const children: ProseMirrorNode[] = []
+    fragment.forEach((child) => {
+      if (child.type.name === 'noteRef' || child.type.name === 'commentMark') return
+      children.push(child.isLeaf ? child : child.copy(clean(child.content)))
+    })
+    return Fragment.fromArray(children)
+  }
+  return new Slice(clean(slice.content), slice.openStart, slice.openEnd)
+}
+
 /** Serializes copies as ordinary HTML for other apps, marked with the copy's id for Pulpo. */
 export function clipboardSerializer(schema: Schema): DOMSerializer {
   const base = DOMSerializer.fromSchema(schema)

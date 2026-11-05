@@ -637,6 +637,42 @@ try {
     assert.deepEqual(await markers(), before)
   })
 
+  await step('drops colliding note and comment references only for cross-document copies', async () => {
+    await open('?file=notes-fields.docx')
+    const result = await page.evaluate(() => {
+      const editor = window.harness.editors[0]
+      const view = editor.view
+      let note
+      view.state.doc.descendants((node) => { if (!note && node.type.name === 'noteRef') note = node.toJSON() })
+      const commentId = editor.addComment('Destination comment')
+      const count = () => {
+        let found = 0
+        view.state.doc.descendants((node) => { if (node.type.name === 'noteRef' || node.type.name === 'commentMark') found++ })
+        return found
+      }
+      const before = count()
+      const paste = (origin, id) => {
+        const slice = { content: [{ type: 'paragraph', content: [note, { type: 'commentMark', attrs: { id: commentId, edge: 'ref' } }] }], openStart: 1, openEnd: 1 }
+        localStorage.setItem('pulpo-docx-copy', JSON.stringify({ id, json: JSON.stringify(slice), origin, at: Date.now() }))
+        const data = new DataTransfer()
+        data.setData('text/html', `<p data-docx-copy="${id}">fallback</p>`)
+        data.setData('text/plain', '*')
+        const Selection = view.state.selection.constructor
+        view.focus()
+        view.dispatch(view.state.tr.setSelection(Selection.atEnd(view.state.doc)))
+        view.dom.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }))
+      }
+      paste('another:body', 'f3'.repeat(16))
+      const foreign = count()
+      // A different story in this document still shares its notes and comments.
+      paste(`${editor.options.doc.guid}:header:1`, 'f4'.repeat(16))
+      return { before, foreign, same: count(), commentId }
+    })
+    assert.ok(result.commentId)
+    assert.equal(result.foreign, result.before)
+    assert.equal(result.same, result.before + 2)
+  })
+
   await step('lays out a 100-page document within budget', async () => {
     const started = Date.now()
     await open('?generate=1600')

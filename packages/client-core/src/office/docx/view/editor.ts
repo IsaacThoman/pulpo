@@ -32,7 +32,7 @@ import { effectiveNumPr, formatNumber } from '../numbering.js'
 import { docxSchema, packMarks, textAreaWidth } from '../schema.js'
 import { inlineText } from '../text.js'
 import { AssetUrls } from './assets.js'
-import { clipboardParser, clipboardSerializer, limitPastedTables, recallCopy, rememberCopy, sanitizePastedHtml, withoutForeignParts } from './clipboard.js'
+import { clipboardParser, clipboardSerializer, limitPastedTables, recallCopy, rememberCopy, sanitizePastedHtml, withoutForeignParts, withoutStoryReferences } from './clipboard.js'
 import {
   changeIndent,
   clearFormatting,
@@ -536,6 +536,7 @@ export class DocxEditor {
         if (!copy || !view.editable) return false
         let slice = limitPastedTables(copy.slice, Math.max(0, DOCX_MAX_TABLE_DEPTH - tableDepth(view)))
         if (copy.origin !== origin) slice = withoutForeignParts(slice)
+        if (copy.origin.split(':', 1)[0] !== this.options.doc.guid) slice = withoutStoryReferences(slice)
         this.notePastedReferences(slice)
         this.checkPastedPictures(slice)
         view.dispatch(view.state.tr.replaceSelection(slice).scrollIntoView().setMeta('paste', true).setMeta('uiEvent', 'paste'))

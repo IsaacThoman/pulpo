@@ -3,7 +3,7 @@ import { Fragment, Slice } from '@tiptap/pm/model'
 import { describe, expect, it } from 'vitest'
 import { jmlToXml, packJml } from '../jsonml.js'
 import { docxSchema } from '../schema.js'
-import { clipboardParser, clipboardSerializer, limitPastedTables, recallCopy, rememberCopy, sanitizePastedHtml, withoutForeignParts } from './clipboard.js'
+import { clipboardParser, clipboardSerializer, limitPastedTables, recallCopy, rememberCopy, sanitizePastedHtml, withoutForeignParts, withoutStoryReferences } from './clipboard.js'
 
 const schema = docxSchema()
 
@@ -87,6 +87,30 @@ describe('content from another part', () => {
     expect(inline).toEqual(['text:link', 'drawing'])
     // The cell lost its only block and got an empty paragraph instead.
     expect(cleaned.content.lastChild!.firstChild!.firstChild!.firstChild!.type.name).toBe('paragraph')
+  })
+
+  it('strips document story references recursively while keeping text, formatting and slice openness', () => {
+    const paragraph = schema.node('paragraph', null, [
+      schema.node('commentMark', { edge: 'start', id: '1' }),
+      schema.text('Keep this', [schema.mark('b')]),
+      schema.node('noteRef', { kind: 'footnote', id: '1' }),
+      schema.node('noteRef', { kind: 'endnote', id: '2' }),
+      schema.node('commentMark', { edge: 'end', id: '1' }),
+      schema.node('commentMark', { edge: 'ref', id: '1' }),
+    ])
+    const table = schema.node('table', null, [schema.node('tableRow', null, [schema.node('tableCell', null, [paragraph])])])
+    const slice = new Slice(Fragment.from([paragraph, table]), 1, 3)
+    const cleaned = withoutStoryReferences(slice)
+    const names: string[] = []
+    cleaned.content.descendants((node) => { names.push(node.type.name) })
+    expect(names).not.toContain('noteRef')
+    expect(names).not.toContain('commentMark')
+    expect(cleaned.openStart).toBe(1)
+    expect(cleaned.openEnd).toBe(3)
+    expect(cleaned.content.firstChild!.firstChild!.eq(paragraph.child(1))).toBe(true)
+    expect(cleaned.content.lastChild!.firstChild!.firstChild!.firstChild!.eq(cleaned.content.firstChild!)).toBe(true)
+    // Recalling within the source document keeps the original references available.
+    expect(recallCopy(copy(slice), schema)?.slice.eq(slice)).toBe(true)
   })
 
   it('nests pasted tables no deeper than a document may', () => {
