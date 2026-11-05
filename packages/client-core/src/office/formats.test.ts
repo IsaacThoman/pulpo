@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
+import { blankDocx } from './docx/blank.js'
 import { DOC_SCHEMA_VERSION } from '../doc-schema/version.js'
 import { MemoryLiveAssetStore } from './assets.js'
 import { liveFormatCodec, liveFormatCodecOfName } from './codecs.js'
@@ -28,10 +29,11 @@ describe('live format catalog', () => {
     expect(liveMimeType(liveFormat('text')!, 'a.py')).toBe('text/x-python')
     expect(liveMimeType(liveFormat('text')!, 'Dockerfile')).toBe('text/plain')
     expect(liveMimeType(liveFormat('markdown')!, 'a.md')).toBe('text/markdown')
+    expect(liveMimeType(liveFormat('document')!, 'Letter.DOTX')).toBe('application/vnd.openxmlformats-officedocument.wordprocessingml.template')
   })
 
   it('announces each format schema version, Markdown keeping the document schema version', () => {
-    expect(liveSchemaVersions()).toEqual({ markdown: DOC_SCHEMA_VERSION, text: 1 })
+    expect(liveSchemaVersions()).toEqual({ markdown: DOC_SCHEMA_VERSION, text: 1, document: 1 })
   })
 
   it('reads extensions the way file names are split elsewhere', () => {
@@ -57,7 +59,9 @@ describe('live format catalog', () => {
       const doc = new Y.Doc()
       expect(format.hasContent(doc)).toBe(false)
       const codec = liveFormatCodec(format.id)
-      await codec.importFile(doc, new TextEncoder().encode('# Title\n\nbody\n'), { name: `a.${format.extensions[0]}`, assets: new MemoryLiveAssetStore() })
+      // Text formats read text; binary ones start from their blank file.
+      const bytes = format.id === 'document' ? blankDocx() : new TextEncoder().encode('# Title\n\nbody\n')
+      await codec.importFile(doc, bytes, { name: `a.${format.extensions[0]}`, assets: new MemoryLiveAssetStore() })
       expect(format.hasContent(doc)).toBe(true)
     }
   })

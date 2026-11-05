@@ -2,6 +2,7 @@ import { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import { updateYFragment, yXmlFragmentToProsemirrorJSON } from '@tiptap/y-tiptap'
 import * as Y from 'yjs'
 import type { ThemeInfo } from './css.js'
+import { DOCX_BODY_FRAGMENT } from './format.js'
 import { docxSchema } from './schema.js'
 
 /**
@@ -24,7 +25,7 @@ import { docxSchema } from './schema.js'
  * replaced whole, last writer wins, which is what Word does too.
  */
 
-export const BODY_FRAGMENT = 'body'
+export const BODY_FRAGMENT = DOCX_BODY_FRAGMENT
 export const STORY_PREFIX = 'story:'
 export const DOCX_MAPS = ['stories', 'styles', 'numbering', 'comments', 'settings', 'rels', 'parts', 'docx'] as const
 export type DocxMapName = (typeof DOCX_MAPS)[number]

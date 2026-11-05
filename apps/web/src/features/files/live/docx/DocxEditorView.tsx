@@ -11,7 +11,7 @@ import { useDocxEditor, useDocxState, type DocxEditorProps } from './use-docx-ed
  * panels around the client-core editor. The document, its awareness, and its assets come from
  * the host (the Files page, or the test harness).
  */
-export function DocxEditorView({ className, onEditor, ...props }: DocxEditorProps & { className?: string; onEditor?: (editor: DocxEditor | null) => void }) {
+export function DocxEditorView({ className, onEditor, toolbarSlot, ...props }: DocxEditorProps & { className?: string; onEditor?: (editor: DocxEditor | null) => void; toolbarSlot?: React.ReactNode }) {
   const host = useRef<HTMLDivElement>(null)
   const editor = useDocxEditor(host, props)
   const state = useDocxState(editor)
@@ -50,7 +50,10 @@ export function DocxEditorView({ className, onEditor, ...props }: DocxEditorProp
     <div className={cn('flex h-full min-h-0 flex-col bg-background', className)} data-docx-editor>
       <div className="z-10 border-b bg-background/95 px-3 py-1.5 backdrop-blur">
         {editor && state ? (
-          <DocxToolbar editor={editor} state={state} onRequestLink={requestLink} onTogglePanel={togglePanel} panels={panels} />
+          <div className="flex items-start gap-2">
+            <div className="min-w-0 flex-1"><DocxToolbar editor={editor} state={state} onRequestLink={requestLink} onTogglePanel={togglePanel} panels={panels} /></div>
+            {toolbarSlot}
+          </div>
         ) : (
           <div className="h-8" />
         )}

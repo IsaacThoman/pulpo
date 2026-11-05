@@ -1,16 +1,17 @@
 import * as Y from 'yjs'
+import { transactChanges } from '../assets.js'
 import { LiveFormatError, type LiveFormatCodec, type LiveFormatContext } from '../live-format.js'
 import { blankDocx } from './blank.js'
 import { exportDocx, fingerprintParts } from './export.js'
 import { importDocx } from './import.js'
 import { readDocxMap, readDocxModel, writeDocxModel, type DocxModel } from './model.js'
-import { MIME_TYPES } from './names.js'
+import { DOCX_EXTENSIONS, DOCX_SCHEMA_VERSION, docxMimeType } from './format.js'
+import { BODY_FRAGMENT, STORY_PREFIX, parseJson, type PartRef } from './model.js'
 import { docxToText } from './text.js'
 
-/** Bump when the Y.Doc layout or the schema changes in a way older clients would misread. */
-export const DOCX_SCHEMA_VERSION = 1
+export { DOCX_SCHEMA_VERSION }
 
-const EXTENSIONS = ['docx', 'dotx', 'docm', 'dotm'] as const
+const EXTENSIONS = DOCX_EXTENSIONS
 
 function extensionOf(name: string): string {
   const index = name.lastIndexOf('.')
@@ -53,9 +54,7 @@ export const docxCodec: LiveFormatCodec = {
   id: 'document',
   schemaVersion: DOCX_SCHEMA_VERSION,
   extensions: EXTENSIONS,
-  mimeType(extension) {
-    return MIME_TYPES[extension.toLowerCase() as keyof typeof MIME_TYPES] ?? MIME_TYPES.docx
-  },
+  mimeType: docxMimeType,
   async createEmpty(doc, context) {
     assertEmpty(doc)
     const model = await importWithFingerprints(blankDocx(), context)
@@ -71,16 +70,39 @@ export const docxCodec: LiveFormatCodec = {
   },
   async applyFile(doc, bytes, context, origin) {
     const model = await importWithFingerprints(bytes, context)
-    let changed = false
-    doc.transact(() => {
+    const changed = transactChanges(doc, () => {
       // The bytes of parts the model regenerates only matter when content changed: a file that
       // reads the same must not count as a change because the earlier export was regenerated.
-      changed = writeDocxModel(doc, withCurrentRegeneratedParts(doc, model))
-      if (changed) writeDocxModel(doc, model)
+      if (writeDocxModel(doc, withCurrentRegeneratedParts(doc, model))) writeDocxModel(doc, model)
     }, origin)
     return { changed }
   },
   toText(doc) {
     return docxToText(readDocxModel(doc))
   },
+  referencedAssets(doc) {
+    return [...referencedAssets(doc)]
+  },
+}
+
+/** Every asset a document still uses: its package's parts and the pictures in its stories. */
+export function referencedAssets(doc: Y.Doc): Set<string> {
+  const hashes = new Set<string>()
+  doc.getMap<string>('parts').forEach((json) => {
+    const ref = parseJson<PartRef>(json)
+    if (ref?.hash) hashes.add(ref.hash)
+  })
+  const visit = (node: Y.XmlElement | Y.XmlFragment) => {
+    for (const child of node.toArray()) {
+      if (!(child instanceof Y.XmlElement)) continue
+      if (child.nodeName === 'drawing') {
+        const src = child.getAttribute('src')
+        if (typeof src === 'string' && src) hashes.add(src)
+      }
+      visit(child)
+    }
+  }
+  visit(doc.getXmlFragment(BODY_FRAGMENT))
+  doc.getMap<string>('stories').forEach((_meta, id) => visit(doc.getXmlFragment(STORY_PREFIX + id)))
+  return hashes
 }
