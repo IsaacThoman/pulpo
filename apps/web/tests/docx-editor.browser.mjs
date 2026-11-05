@@ -1166,6 +1166,24 @@ try {
     assert.equal(await page.evaluate(() => window.harness.editors[0].revisions().filter((revision) => revision.kind === 'rowDelete' || revision.kind === 'rowInsert').length), 2)
   })
 
+  await step('uses the same paragraph-join semantics for text, Find, and Accept all', async () => {
+    await open('')
+    await page.evaluate(() => {
+      const view = window.harness.editors[0].view
+      const schema = view.state.schema
+      const first = schema.node('paragraph', { markRPr: JSON.stringify(['w:rPr', {}, ['w:del', { 'w:id': '801', 'w:author': 'Ada' }]]) }, schema.text('foo'))
+      const second = schema.node('paragraph', null, schema.text('bar'))
+      view.dispatch(view.state.tr.replaceWith(0, view.state.doc.content.size, [first, second]))
+    })
+    assert.equal(await text(), 'foobar\n')
+    assert.equal(await exported(), 'foobar\n')
+    assert.equal(await page.evaluate(() => window.harness.editors[0].find('foobar')), 1)
+    assert.equal(await page.evaluate(() => window.harness.editors[0].acceptAll()), true)
+    assert.equal(await page.evaluate(() => window.harness.editors[0].view.state.doc.childCount), 1)
+    assert.equal(await text(), 'foobar\n')
+    assert.equal(await page.evaluate(() => window.harness.editors[0].revisions().length), 0)
+  })
+
   await step('lays out a 100-page document within budget', async () => {
     const started = Date.now()
     await open('?generate=1600')

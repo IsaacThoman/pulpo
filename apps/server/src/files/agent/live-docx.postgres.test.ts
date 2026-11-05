@@ -185,6 +185,23 @@ describe.skipIf(!enabled)('agent edits to Word documents', () => {
     expect((await files.ok('cat', { path: 'Projects/Tracked.docx' })).output).toBe(expected('base'))
   })
 
+  it('reads semantic paragraph joins from stored and proposed Word versions', async () => {
+    const joined = (tail: string) => [schema.node('paragraph', { markRPr: packJml(['w:rPr', {}, ['w:del', { 'w:id': '12', 'w:author': 'Ada' }]]) }, schema.text('foo')), paragraph(tail)]
+    const id = await wordDoc('Joined.docx', projects, [['Initial']])
+    await userEdit(id, () => joined('bar'))
+    await files.attach({ [projects]: 'suggest' })
+    expect((await files.ok('cat', { path: 'Projects/Joined.docx' })).output).toBe('foobar\n')
+    expect((await files.ok('grep', { pattern: 'foobar' })).output).toContain('foobar')
+    const path = '/workspace/files/Projects/Joined.docx'
+    const [pulled] = await pull('Projects/Joined.docx', path)
+    files.put(path, await agentEdit(files.workspace.files.get(path)!, () => joined('baz')))
+    expect((await push([{ local: path, remote: 'Projects/Joined.docx', base: { nodeId: id, version: pulled!.version } }]))[0]).toMatchObject({ status: 'suggested' })
+    expect((await files.ok('cat', { path: 'Projects/Joined.docx' })).output).toBe('foobaz\n')
+    expect(docxCodec.toText(await loadYDoc(id))).toBe('foobar\n')
+    // Reading either view is a projection; the editable base still has both paragraph nodes.
+    expect(readDocxModel(await loadYDoc(id)).body.childCount).toBe(2)
+  })
+
   it('keeps pictures an agent adds as document assets', async () => {
     const id = await wordDoc('Report.docx', projects, [['Report']])
     await files.attach({ [projects]: 'write' })
