@@ -188,6 +188,22 @@ describe('shared semantic revision views', () => {
     check(doc)
   })
 
+  it.each(['x', 'long replacement', ''])('replaces all matches in source order across deleted and inserted rows with %j', (replacement) => {
+    const spanning = schema.node('tableCell', { rowspan: 2 }, [p('cat')])
+    const doc = model(table(row([cell('hidden cat'), spanning], change('w:del')), row([cell('cat')], change('w:ins'))), p('cat'))
+    const matches = findMatches(doc.body, 'cat')
+    expect(matches).toHaveLength(3)
+    // The second visible cell comes from the deleted row, before the first cell in the source.
+    expect(matches[0]!.from).toBeGreaterThan(matches[1]!.from)
+    const originalOrder = matches.map(({ from }) => from)
+    const state = EditorState.create({ schema, doc: doc.body })
+    const changed = state.apply(replaceMatches(state, matches, replacement, 'cat'))
+    expect(acceptedText({ ...doc, body: changed.doc })).toBe(`| ${replacement} | ${replacement} |\n${replacement}\n`)
+    expect(changed.doc.firstChild!.firstChild!.firstChild!.textContent).toBe('hidden cat')
+    expect(matches.map(({ from }) => from)).toEqual(originalOrder)
+    expect(findMatches(changed.doc, 'cat')).toHaveLength(0)
+  })
+
   it('uses resolved paragraph boundaries for both sides of a review', () => {
     const before = model(p('foo'), p('bar'))
     const after = model(p('foo', { markRPr: packJml(['w:rPr', {}, change('w:del')]) }), p('bar'))

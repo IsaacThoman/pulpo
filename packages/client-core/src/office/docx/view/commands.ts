@@ -641,7 +641,8 @@ export function validFindMatches(doc: ProseMirrorNode, matches: FindMatch[], que
 export function replaceMatches(state: EditorState, matches: { from: number; to: number }[], replacement: string, query?: string, options: FindOptions = {}): Transaction {
   const tr = state.tr
   const valid = query === undefined ? matches : validFindMatches(state.doc, matches, query, options)
-  for (const match of [...valid].reverse()) {
+  // Accepted traversal can move rowspan cells ahead of earlier source positions.
+  for (const match of [...valid].sort((a, b) => b.from - a.from || b.to - a.to)) {
     const marks = [...inlineMarks(state.doc.nodeAt(match.from) ?? state.schema.text(' '))]
     if (replacement) tr.replaceWith(match.from, match.to, state.schema.text(replacement, marks))
     else tr.delete(match.from, match.to)
