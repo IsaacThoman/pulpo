@@ -125,10 +125,22 @@ const V3_MIME: Record<string, string> = {
   pdf: 'application/pdf',
 }
 
+/** nbformat 3 stored JSON as serialized text, including lists of text lines. */
+function v3Json(value: unknown): unknown {
+  if (typeof value === 'string' || (Array.isArray(value) && value.every((line) => typeof line === 'string'))) {
+    try {
+      return JSON.parse(joinText(value))
+    } catch {
+      // Keep malformed or already-decoded values readable instead of failing the notebook.
+    }
+  }
+  return value
+}
+
 function v3Bundle(output: Json): MimeBundle {
   const bundle: MimeBundle = {}
   for (const [key, mime] of Object.entries(V3_MIME)) {
-    if (key in output) bundle[mime] = isJsonMime(mime) ? output[key] : joinText(output[key])
+    if (key in output) bundle[mime] = isJsonMime(mime) ? v3Json(output[key]) : joinText(output[key])
   }
   return bundle
 }
@@ -324,7 +336,7 @@ export function resolveAttachmentUrl(url: string, cellAttachments: Record<string
 
 /** Text output shown as text: JSON pretty-printed, anything else as it is. */
 export function outputText(mime: string, data: unknown): string {
-  if (typeof data === 'string') return data
+  if (!isJsonMime(mime) && typeof data === 'string') return data
   try {
     // Serialize compactly first: indentation can grow quadratically with nesting.
     const compact = JSON.stringify(data) ?? ''

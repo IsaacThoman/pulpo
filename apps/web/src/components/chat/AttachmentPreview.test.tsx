@@ -93,6 +93,20 @@ describe('attachment notebook previews', () => {
     expect(view.getByText('[3]:')).toBeTruthy()
   })
 
+  it('keeps JSON string values quoted and text output unquoted', async () => {
+    const values = ['null', null, '{"id":1}', { id: 1 }, '', 'a"\n\\b']
+    const notebook = JSON.stringify({ nbformat: 4, cells: [{ cell_type: 'code', source: '', outputs: [
+      ...values.map((value) => ({ output_type: 'display_data', data: { 'application/json': value } })),
+      { output_type: 'display_data', data: { 'text/plain': 'null' } },
+    ] }] })
+    const view = renderPreview('json-strings.ipynb', notebook)
+    await waitFor(() => {
+      const doc = view.container.ownerDocument
+      expect([...doc.querySelectorAll('[data-output="json"]')].map((output) => output.textContent)).toEqual(values.map((value) => JSON.stringify(value, null, 2)))
+      expect(doc.querySelector('[data-output="text"]')?.textContent).toBe('null')
+    })
+  })
+
   it('renders HTML in Markdown cells sanitized, keeping math', async () => {
     const notebook = JSON.stringify({
       nbformat: 4,

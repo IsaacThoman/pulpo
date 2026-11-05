@@ -118,10 +118,10 @@ describe('normalizeNotebook', () => {
   })
 
   it('preserves JSON arrays and primitives in v4 and v3 output bundles', () => {
-    for (const value of [[1, 2, { x: 3 }], ['a', 'b'], [], null, false, 42]) {
+    for (const value of [[1, 2, { x: 3 }], ['a', 'b'], [], null, false, 42, 'null', '{"id":1}', '', 'a"\n\\b']) {
       for (const v3 of [false, true]) {
         const output = v3
-          ? { output_type: 'pyout', json: value }
+          ? { output_type: 'pyout', json: JSON.stringify(value) }
           : { output_type: 'display_data', data: { 'application/json': value, 'application/vnd.custom+json': value, 'text/plain': ['a', 'b'] } }
         const cell = { cell_type: 'code', outputs: [output] }
         const model = normalizeNotebook(v3 ? { nbformat: 3, worksheets: [{ cells: [cell] }] } : { nbformat: 4, cells: [cell] })
@@ -135,6 +135,27 @@ describe('normalizeNotebook', () => {
         expect(JSON.parse(outputText('application/json', normalized.data['application/json']))).toEqual(value)
       }
     }
+  })
+
+  it('serializes JSON strings, including vendor JSON, while leaving text strings as written', () => {
+    for (const value of ['null', 'true', '42', '{"id":1}', '', 'a"\n\\b', '<script>']) {
+      expect(outputText('application/json', value)).toBe(JSON.stringify(value))
+      expect(outputText('application/vnd.custom+json', value)).toBe(JSON.stringify(value))
+      expect(outputText('text/plain', value)).toBe(value)
+      expect(outputText('text/html', value)).toBe(value)
+    }
+    expect(outputText('application/json', null)).toBe('null')
+  })
+
+  it('decodes serialized v3 JSON split into lines once, retaining string values', () => {
+    const notebook = normalizeNotebook({ nbformat: 3, worksheets: [{ cells: [{ cell_type: 'code', outputs: [
+      { output_type: 'pyout', json: ['{\n', '"id": 1\n', '}'] },
+      { output_type: 'display_data', json: JSON.stringify('null') },
+    ] }] }] })
+    expect(code(notebook.cells[0]).outputs).toMatchObject([
+      { type: 'execute_result', data: { 'application/json': { id: 1 } } },
+      { type: 'display_data', data: { 'application/json': 'null' } },
+    ])
   })
 
   it('bounds indentation when rendering deeply nested JSON outputs', () => {
@@ -268,6 +289,20 @@ describe('renderNotebookHtml', () => {
     expect(html).toContain('<div class="output html"><b>bold</b></div>')
     expect(html).toContain('<script>console.log("<\\/script><b>")</script>')
     expect(html).toContain('&lt;i&gt;raw&lt;/i&gt;')
+  })
+
+  it('keeps JSON strings distinct from other values in the mobile HTML renderer', () => {
+    const notebook = parseNotebook(JSON.stringify({ nbformat: 4, cells: [{ cell_type: 'code', source: '', outputs: [
+      { output_type: 'display_data', data: { 'application/json': 'null' } },
+      { output_type: 'display_data', data: { 'application/json': null } },
+      { output_type: 'display_data', data: { 'application/json': '' } },
+      { output_type: 'display_data', data: { 'text/plain': 'null' } },
+    ] }] }))
+    const html = renderNotebookHtml(notebook, { title: 'JSON values' })
+    const json = [...html.matchAll(/<pre class="output json code-highlight">([\s\S]*?)<\/pre>/g)]
+      .map((match) => match[1]!.replace(/<\/?span[^>]*>/g, ''))
+    expect(json).toEqual(['&quot;null&quot;', 'null', '&quot;&quot;'])
+    expect(html).toContain('<pre class="output text">null</pre>')
   })
 
   it('renders math through the given renderer and resolves attachments', () => {
