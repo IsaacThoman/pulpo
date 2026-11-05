@@ -759,6 +759,36 @@ try {
     assert.equal(await page.evaluate(() => window.harness.editors[0].editingStory), null)
   })
 
+  await step('removes picture resize handles and blocks stale gestures when read-only', async () => {
+    await open('?file=objects.docx')
+    const drawing = flow.locator('.docx-drawing').filter({ has: page.locator('img') }).first()
+    await drawing.click()
+    const handle = page.locator('.docx-resize-handle')
+    await handle.waitFor()
+    const before = await page.evaluate(() => JSON.stringify(window.harness.model()))
+    // A permission change during a drag must cancel the pending resize too.
+    const box = await handle.boundingBox()
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(box.x + 40, box.y + 30)
+    await page.evaluate(() => {
+      const handle = document.querySelector('.docx-resize-handle')
+      window.harness.editors[0].setReadOnly(true)
+      handle.dispatchEvent(new PointerEvent('pointerup', { clientX: 600, clientY: 500 }))
+      // Detached handles can still receive a queued pointerdown after permissions change.
+      handle.dispatchEvent(new PointerEvent('pointerdown', { clientX: 600, clientY: 500 }))
+    })
+    await page.mouse.up()
+    assert.equal(await handle.count(), 0)
+    assert.equal(await page.evaluate(() => JSON.stringify(window.harness.model())), before)
+    assert.equal(await page.evaluate(() => window.harness.editors[0].state().readOnly), true)
+    await page.evaluate(() => window.harness.editors[0].setReadOnly(false))
+    await handle.waitFor()
+    await page.evaluate(() => window.harness.editors[0].setMode('viewing'))
+    assert.equal(await handle.count(), 0)
+    assert.equal(await page.evaluate(() => JSON.stringify(window.harness.model())), before)
+  })
+
   await step('lays out a 100-page document within budget', async () => {
     const started = Date.now()
     await open('?generate=1600')

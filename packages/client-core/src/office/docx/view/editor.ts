@@ -410,7 +410,7 @@ export class DocxEditor {
 
   private nodeViews() {
     return {
-      drawing: (node: ProseMirrorNode, view: EditorView, getPos: () => number | undefined) => new DrawingView(node, view, getPos, { urls: this.urls, labels: this.labels, readOnly: () => this.readOnly }),
+      drawing: (node: ProseMirrorNode, view: EditorView, getPos: () => number | undefined) => new DrawingView(node, view, getPos, { urls: this.urls, labels: this.labels, readOnly: () => this.readOnly, onUpdate: (listener) => this.on('update', listener) }),
       math: (node: ProseMirrorNode) => new MathView(node, this.labels),
     }
   }

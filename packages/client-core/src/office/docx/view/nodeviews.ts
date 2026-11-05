@@ -17,6 +17,7 @@ interface DrawingViewOptions {
   urls: AssetUrls
   labels: DocxLabels
   readOnly: () => boolean
+  onUpdate?: (listener: () => void) => () => void
 }
 
 /**
@@ -30,6 +31,8 @@ export class DrawingView implements NodeView {
   private frame: HTMLElement
   private info: DrawingInfo
   private handle: HTMLElement | undefined
+  private selected = false
+  private readonly unsubscribe: (() => void) | undefined
 
   constructor(
     private node: ProseMirrorNode,
@@ -41,6 +44,13 @@ export class DrawingView implements NodeView {
     this.dom = document.createElement('span')
     this.frame = document.createElement('span')
     this.render()
+    // Permission changes refresh the handle without rebuilding the editor's DOM and selection.
+    this.unsubscribe = options.onUpdate?.(() => {
+      if (this.options.readOnly()) {
+        this.handle?.remove()
+        this.handle = undefined
+      } else if (this.selected && !this.handle?.isConnected) this.selectNode()
+    })
   }
 
   private render(): void {
@@ -140,8 +150,9 @@ export class DrawingView implements NodeView {
   }
 
   selectNode(): void {
+    this.selected = true
     this.frame.classList.add('ProseMirror-selectednode')
-    if (this.options.readOnly() || this.info.placement !== 'inline') return
+    if (this.options.readOnly() || this.info.placement !== 'inline' || this.handle?.isConnected) return
     this.handle = document.createElement('span')
     this.handle.className = 'docx-resize-handle'
     Object.assign(this.handle.style, {
@@ -153,12 +164,14 @@ export class DrawingView implements NodeView {
   }
 
   deselectNode(): void {
+    this.selected = false
     this.frame.classList.remove('ProseMirror-selectednode')
     this.handle?.remove()
     this.handle = undefined
   }
 
   private startResize = (event: PointerEvent) => {
+    if (this.options.readOnly()) return
     event.preventDefault()
     event.stopPropagation()
     const handle = event.currentTarget as HTMLElement
@@ -169,6 +182,7 @@ export class DrawingView implements NodeView {
     const scale = rect.width / this.info.width || 4 / 3
     const ratio = start.height / start.width
     const move = (moveEvent: PointerEvent) => {
+      if (this.options.readOnly()) return
       const width = Math.max(8, start.width + (moveEvent.clientX - start.x) / scale)
       const height = moveEvent.shiftKey ? Math.max(8, start.height + (moveEvent.clientY - start.y) / scale) : width * ratio
       this.frame.style.width = pt(width)
@@ -182,7 +196,7 @@ export class DrawingView implements NodeView {
       const height = endEvent.shiftKey ? Math.max(8, start.height + (endEvent.clientY - start.y) / scale) : width * ratio
       const pos = this.getPos()
       const element = jml(this.node.attrs.v)
-      if (pos === undefined || !element || endEvent.type === 'pointercancel') {
+      if (this.options.readOnly() || pos === undefined || !element || endEvent.type === 'pointercancel') {
         this.render()
         return
       }
@@ -213,6 +227,10 @@ export class DrawingView implements NodeView {
 
   ignoreMutation(): boolean {
     return true
+  }
+
+  destroy(): void {
+    this.unsubscribe?.()
   }
 }
 
