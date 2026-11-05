@@ -426,7 +426,7 @@ function updateBody(open: Open, view: CellView, cell: NotebookCellState, editing
   }
   if (view.editor) unmountEditor(view)
   const source = open.controller.sourceOf(cell.key)?.toString() ?? ''
-  const signature = `md:${source}:${cell.attachments?.json ?? ''}`
+  const signature = `md:${source}:${JSON.stringify(cell.attachments)}`
   if (view.rendered === signature) return
   view.rendered = signature
   if (!source.trim()) {

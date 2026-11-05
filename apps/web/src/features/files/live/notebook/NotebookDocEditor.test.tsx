@@ -2,7 +2,7 @@
 import { act, cleanup, render, waitFor } from '@testing-library/react'
 import { SocketIOYProvider } from '@pulpo/client-core/doc-sync'
 import { MemoryLiveAssetStore } from '@pulpo/client-core/office'
-import { notebookCodec } from '@pulpo/client-core/office/notebook'
+import { cellsMap, notebookCodec } from '@pulpo/client-core/office/notebook'
 import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
 import { NotebookDocEditor } from './NotebookDocEditor'
@@ -51,4 +51,33 @@ describe('notebook output frames', () => {
       doc.destroy()
     }
   })
+})
+
+
+it('refreshes a Markdown image when only its attachment asset changes', async () => {
+  const doc = new Y.Doc()
+  const assets = new MemoryLiveAssetStore()
+  const provider = new SocketIOYProvider('notebook', doc)
+  const file = (image: string) => new TextEncoder().encode(JSON.stringify({
+    nbformat: 4, nbformat_minor: 5, metadata: {}, cells: [{
+      id: 'a', cell_type: 'markdown', source: '![plot](attachment:plot.png)', metadata: {},
+      attachments: { 'plot.png': { 'image/png': image } },
+    }],
+  }))
+  await notebookCodec.importFile(doc, file('AAAA'.repeat(300)), { name: 'a.ipynb', assets })
+  const view = render(<NotebookDocEditor session={{ doc, provider }} name="a.ipynb" editable={false} width="fill" assets={assets} />)
+  try {
+    const image = () => view.container.querySelector('img')?.getAttribute('src')
+    await waitFor(() => expect(image()).toBe(`data:image/png;base64,${'AAAA'.repeat(300)}`))
+    const before = cellsMap(doc).values().next().value!.get('attachments')
+    await act(async () => { await notebookCodec.applyFile(doc, file('AQEB'.repeat(300)), { name: 'a.ipynb', assets }) })
+    const after = cellsMap(doc).values().next().value!.get('attachments')
+    expect(after.json).toBe(before.json)
+    expect(after.assets).not.toEqual(before.assets)
+    await waitFor(() => expect(image()).toBe(`data:image/png;base64,${'AQEB'.repeat(300)}`))
+  } finally {
+    view.unmount()
+    provider.destroy()
+    doc.destroy()
+  }
 })

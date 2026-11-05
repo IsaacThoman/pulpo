@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { MemoryLiveAssetStore } from '@pulpo/client-core/office'
-import { notebookCodec } from '@pulpo/client-core/office/notebook'
+import { cellsMap, notebookCodec } from '@pulpo/client-core/office/notebook'
 // @ts-expect-error jsdom ships without type declarations; the test needs only its constructor.
 import { JSDOM as UntypedJSDOM } from 'jsdom'
 import { describe, expect, it } from 'vitest'
@@ -60,4 +60,53 @@ describe('built notebook page', () => {
       doc.destroy()
     }
   })
+})
+
+
+it('refreshes a Markdown image when only its attachment asset changes', async () => {
+  const doc = new Y.Doc()
+  const assets = new MemoryLiveAssetStore()
+  const file = (image: string) => new TextEncoder().encode(JSON.stringify({
+    nbformat: 4, nbformat_minor: 5, metadata: {}, cells: [{
+      id: 'a', cell_type: 'markdown', source: '![plot](attachment:plot.png)', metadata: {},
+      attachments: { 'plot.png': { 'image/png': image } },
+    }],
+  }))
+  await notebookCodec.importFile(doc, file('AAAA'.repeat(300)), { name: 'a.ipynb', assets })
+  let dom!: { window: PageWindow }
+  dom = new JSDOM(NOTEBOOK_EDITOR_BUNDLE.html, {
+    runScripts: 'dangerously',
+    beforeParse: (window) => {
+      Object.assign(window, {
+        webkit: { messageHandlers: { pulpoEditor: { postMessage: (raw: string) => {
+          const message = JSON.parse(raw) as EditorMessage
+          if (message.type === 'asset') void assets.get(message.hash).then((bytes) => {
+            dom.window.pulpoEditor.receive(JSON.stringify({ type: 'asset', session: message.session, hash: message.hash, data: Buffer.from(bytes).toString('base64') }))
+          })
+        } } } },
+        IntersectionObserver: class { observe() {} unobserve() {} disconnect() {} },
+        requestAnimationFrame: (callback: FrameRequestCallback) => setTimeout(callback, 0),
+      })
+      window.Element.prototype.scrollIntoView = () => {}
+    },
+  })
+  try {
+    dom.window.pulpoEditor.receive(JSON.stringify({
+      type: 'init', session: 1, update: Buffer.from(Y.encodeStateAsUpdate(doc)).toString('base64'),
+      editable: false, placeholder: '', user: { name: 'Ana', color: '#3366ff' }, theme,
+    }))
+    const image = () => dom.window.document.querySelector('.markdown img')?.getAttribute('src')
+    await expect.poll(image).toBe(`data:image/png;base64,${'AAAA'.repeat(300)}`)
+    const before = cellsMap(doc).values().next().value!.get('attachments')
+    const vector = Y.encodeStateVector(doc)
+    await notebookCodec.applyFile(doc, file('AQEB'.repeat(300)), { name: 'a.ipynb', assets })
+    const after = cellsMap(doc).values().next().value!.get('attachments')
+    expect(after.json).toBe(before.json)
+    expect(after.assets).not.toEqual(before.assets)
+    dom.window.pulpoEditor.receive(JSON.stringify({ type: 'update', session: 1, update: Buffer.from(Y.encodeStateAsUpdate(doc, vector)).toString('base64') }))
+    await expect.poll(image).toBe(`data:image/png;base64,${'AQEB'.repeat(300)}`)
+  } finally {
+    dom.window.close()
+    doc.destroy()
+  }
 })
