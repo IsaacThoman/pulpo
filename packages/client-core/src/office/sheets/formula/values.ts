@@ -4,7 +4,8 @@
  */
 
 import { parseNumberText } from '../numfmt/parse.js'
-import { Errors, FormulaError, isError, logicalSize, matrix, matrixGet, type Matrix, type Scalar } from './types.js'
+import { consumeWork } from './budget.js'
+import { checkArraySize, Errors, FormulaError, isError, logicalSize, matrix, matrixGet, type Matrix, type Scalar } from './types.js'
 
 /** Longest text a cell can hold. */
 export const MAX_TEXT_LENGTH = 32_767
@@ -129,6 +130,7 @@ export type ScalarOp = '+' | '-' | '*' | '/' | '^' | '&' | '=' | '<>' | '<' | '>
  * `=0.5-0.4-0.1` shows 0 while `=(0.5-0.4-0.1)*1` shows -2.78E-17.
  */
 export function binaryScalar(op: ScalarOp, a: Scalar, b: Scalar, date1904 = false, snapToZero = false): Scalar {
+  consumeWork()
   switch (op) {
     case '&': {
       const x = toText(a)
@@ -195,11 +197,13 @@ export function power(base: number, exponent: number): number | FormulaError {
 }
 
 export function negate(value: Scalar, date1904 = false): Scalar {
+  consumeWork()
   const x = toNumber(value, date1904)
   return isError(x) ? x : x === 0 ? 0 : -x
 }
 
 export function percent(value: Scalar, date1904 = false): Scalar {
+  consumeWork()
   const x = toNumber(value, date1904)
   return isError(x) ? x : x / 100
 }
@@ -212,6 +216,7 @@ export function elementwise(a: Scalar | Matrix, b: Scalar | Matrix, fn: (x: Scal
   if (!isMatrixValue(a) && !isMatrixValue(b)) return fn(a, b)
   const rows = Math.max(isMatrixValue(a) ? a.rows : 1, isMatrixValue(b) ? b.rows : 1)
   const cols = Math.max(isMatrixValue(a) ? a.cols : 1, isMatrixValue(b) ? b.cols : 1)
+  checkArraySize(rows, cols)
   const data: Scalar[] = new Array(rows * cols)
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {

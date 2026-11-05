@@ -117,6 +117,7 @@ export function writeNotesVml(sheet: SheetModel): string | undefined {
     if (position) notes.push({ ...position, note: raw as Note })
   }
   if (!notes.length && !skeleton) return undefined
+  notes.sort((a, b) => a.row - b.row || a.col - b.col)
   const document = parseXml(skeleton ?? DEFAULT_VML)
   const root = document.documentElement!
   let nextId = 1025

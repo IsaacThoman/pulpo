@@ -1,5 +1,6 @@
 /** Math and trigonometry functions. */
 
+import { consumeWork } from '../budget.js'
 import { logicalSize, matrixGet } from '../types.js'
 import { Errors, isError, isReference, matrix, type FunctionContext, type FunctionSpec, type Matrix, type Reference, type Scalar, type Value } from '../types.js'
 import {
@@ -63,6 +64,7 @@ export function criteriaRange(ctx: FunctionContext, value: Value | undefined): M
 export function sizedLike(ctx: FunctionContext, value: Value | undefined, rows: number, cols: number): Scalar[] {
   if (isReference(value)) return ctx.resolve(resizeReference(value, rows, cols)).data
   const m = toMatrix(ctx, value)
+  checkArraySize(rows, cols)
   const out: Scalar[] = []
   for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) out.push(r < m.rows && c < m.cols ? (m.data[r * m.cols + c] ?? null) : null)
   return out
@@ -106,6 +108,7 @@ export function ifsAggregate(
       }
       const rows = ranges.reduce((max, range) => Math.max(max, range.rows), 0)
       const cols = ranges.reduce((max, range) => Math.max(max, range.cols), 0)
+      consumeWork(rows * cols * ranges.length)
       const predicates = criteria.map((criterion) => parseCriteria(criterion, ctx))
       let count = predicates.every((predicate, i) => predicate(ranges[i]!.omittedValue ?? null)) ? first.rows * first.cols - rows * cols : 0
       for (let row = 0; row < rows; row++) for (let col = 0; col < cols; col++) if (predicates.every((predicate, i) => predicate(matrixGet(ranges[i]!, row, col)))) count++
@@ -283,6 +286,7 @@ export function luDeterminant(n: number, a: number[]): number {
   const m = a.slice()
   let det = 1
   for (let col = 0; col < n; col++) {
+    consumeWork(n * n)
     let pivot = col
     for (let row = col + 1; row < n; row++) if (Math.abs(m[row * n + col]!) > Math.abs(m[pivot * n + col]!)) pivot = row
     if (m[pivot * n + col] === 0) return 0
@@ -304,9 +308,12 @@ export function luDeterminant(n: number, a: number[]): number {
 /** Gauss-Jordan inverse; undefined for singular matrices. */
 export function invertMatrix(n: number, a: number[]): number[] | undefined {
   const m = a.slice()
+  checkArraySize(n, n)
+  consumeWork(n * n * n)
   const inv = new Array<number>(n * n).fill(0)
   for (let i = 0; i < n; i++) inv[i * n + i] = 1
   for (let col = 0; col < n; col++) {
+    consumeWork(n * n)
     let pivot = col
     for (let row = col + 1; row < n; row++) if (Math.abs(m[row * n + col]!) > Math.abs(m[pivot * n + col]!)) pivot = row
     const p = m[pivot * n + col]!
@@ -335,6 +342,8 @@ export function invertMatrix(n: number, a: number[]): number[] | undefined {
 }
 
 export function multiply(a: { rows: number; cols: number; data: number[] }, b: { rows: number; cols: number; data: number[] }): number[] {
+  checkArraySize(a.rows, b.cols)
+  consumeWork(a.rows * a.cols * b.cols)
   const out = new Array<number>(a.rows * b.cols).fill(0)
   for (let i = 0; i < a.rows; i++)
     for (let k = 0; k < a.cols; k++) {
@@ -417,6 +426,7 @@ export const MATH_FUNCTIONS: FunctionSpec[] = [
         }
         return product
       }
+      consumeWork(rows * cols * mats.length)
       for (let row = 0; row < rows; row++) for (let col = 0; col < cols; col++) total += productAt(row, col)
       const omitted = size.rows * size.cols - rows * cols
       if (omitted) total += omitted * productAt(rows, cols)

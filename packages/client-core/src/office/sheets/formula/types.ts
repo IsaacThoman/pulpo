@@ -1,3 +1,5 @@
+import { consumeWork } from './budget.js'
+
 /**
  * Values that flow through the formula engine, and the contract between the evaluator and the
  * function library. Functions are pure: they get evaluated arguments and a small context, and
@@ -123,12 +125,22 @@ export function isLambda(value: unknown): value is LambdaValue {
   return typeof value === 'object' && value !== null && (value as LambdaValue).kind === 'lambda'
 }
 
+/** A practical allocation limit applies to intermediate arrays as well as spilled results. */
+export const MAX_ARRAY_CELLS = 1_000_000
+
+export function checkArraySize(rows: number, cols: number): void {
+  if (!Number.isInteger(rows) || !Number.isInteger(cols) || rows < 0 || cols < 0 || rows * cols > MAX_ARRAY_CELLS) throw Errors.NUM
+  consumeWork(rows * cols)
+}
+
 export function matrix(rows: number, cols: number, data: Scalar[]): Matrix {
+  checkArraySize(rows, cols)
   return { kind: 'matrix', rows, cols, data }
 }
 
 export function matrixFromRows(rows: Scalar[][]): Matrix {
   const cols = rows.reduce((max, row) => Math.max(max, row.length), 0)
+  checkArraySize(rows.length, cols)
   const data: Scalar[] = []
   for (const row of rows) for (let col = 0; col < cols; col++) data.push(col < row.length ? row[col]! : Errors.NA)
   return { kind: 'matrix', rows: rows.length, cols, data }

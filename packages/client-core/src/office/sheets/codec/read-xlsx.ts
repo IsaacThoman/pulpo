@@ -1,6 +1,7 @@
 import type * as Y from 'yjs'
 import { LiveFormatError, type LiveAssetStore } from '../../live-format.js'
 import { OoxmlPackage, parseXml, relationshipsPathFor, serializeXml, type PackageLimits } from '../../ooxml/package.js'
+import { IMPORT_ORIGIN } from '../model/edits.js'
 import { randomId } from '../model/axis.js'
 import { toIdForm } from '../model/formula-ids.js'
 import type { DefinedName, SheetFormat, SheetKind, WorkbookMeta } from '../model/schema.js'
@@ -127,7 +128,13 @@ export async function readXlsx(doc: Y.Doc, bytes: Uint8Array, assets: LiveAssetS
     },
   }
 
-  const model = WorkbookModel.initialize(doc, meta)
+  const coreXml = pkg.text('docProps/core.xml')
+  const core = coreXml ? parseXml(coreXml) : undefined
+  const modified = core?.getElementsByTagNameNS('http://purl.org/dc/terms/', 'modified')[0]?.textContent
+  const calcTime = modified ? Date.parse(modified) : NaN
+  if (Number.isFinite(calcTime)) meta.calcTime = calcTime
+  let model!: WorkbookModel
+  doc.transact(() => { model = WorkbookModel.initialize(doc, meta) }, IMPORT_ORIGIN)
   const sheetElements = children(child(workbookRoot, 'sheets'), 'sheet')
   if (!sheetElements.length) throw new LiveFormatError('corrupt', 'This workbook has no sheets')
   const sheets: { id: string; path?: string; kind: SheetKind }[] = []
@@ -148,21 +155,21 @@ export async function readXlsx(doc: Y.Doc, bytes: Uint8Array, assets: LiveAssetS
       if (keep) sheet.raw.set('keep', keep)
       sheets.push({ id: sheet.id, ...(path ? { path } : {}), kind })
     }
-  })
+  }, IMPORT_ORIGIN)
 
   // Macro and dialog sheets are kept as parts but index into the shared string table, which is
   // rebuilt on export: keep its original entries first so their indexes stay valid.
   if (sharedStringsText && sheets.some((entry) => entry.kind === 'macrosheet' || entry.kind === 'dialogsheet')) {
-    doc.transact(() => model.meta.set('sharedStringsSeed', sharedStringsText))
+    doc.transact(() => model.meta.set('sharedStringsSeed', sharedStringsText), IMPORT_ORIGIN)
   }
   for (const entry of sheets) {
     const sheet = model.sheet(entry.id)!
     if (entry.kind !== 'worksheet' || !entry.path || !pkg.has(entry.path)) {
       // Chart sheets, dialog sheets, and macro sheets are kept as parts and shown as tabs.
-      if (entry.path) sheet.raw.set('part', entry.path)
+      if (entry.path) doc.transact(() => sheet.raw.set('part', entry.path), IMPORT_ORIGIN)
       continue
     }
-    doc.transact(() => readWorksheet(sheet, entry.path!, context))
+    doc.transact(() => readWorksheet(sheet, entry.path!, context), IMPORT_ORIGIN)
   }
 
   doc.transact(() => {
@@ -179,7 +186,7 @@ export async function readXlsx(doc: Y.Doc, bytes: Uint8Array, assets: LiveAssetS
     // The date system is the model's.
     children(workbookRoot, 'workbookPr')[0]?.removeAttribute('date1904')
     model.meta.set('workbookXml', serializeNode(workbookDocument))
-  })
+  }, IMPORT_ORIGIN)
 
   // Everything not rebuilt on export is kept as bytes.
   const parts = model.parts
@@ -196,7 +203,7 @@ export async function readXlsx(doc: Y.Doc, bytes: Uint8Array, assets: LiveAssetS
     model.meta.set('contentTypesXml', withoutOverrides(pkg.text('[Content_Types].xml')!, regenerated))
     const loose = looseParts(pkg).filter((path) => !regenerated.has(path))
     if (loose.length) model.meta.set('looseParts', loose)
-  })
+  }, IMPORT_ORIGIN)
 }
 
 function withoutOverrides(xml: string, paths: Set<string>): string {

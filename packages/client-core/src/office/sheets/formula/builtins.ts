@@ -10,6 +10,7 @@ import { parseFormula, type Node } from './parse.js'
 import { r1c1ToA1 } from './translate.js'
 import {
   Errors,
+  checkArraySize,
   isError,
   isLambda,
   isMatrix,
@@ -26,9 +27,6 @@ import {
 import { broadcastAt, compareScalars, toBoolean, toNumber, toText } from './values.js'
 
 export type OwnedFunction = (it: Interpreter, args: readonly (Node | null)[], scope: Scope | undefined) => Value
-
-/** Largest array MAKEARRAY and friends will build. */
-const MAX_ARRAY_CELLS = 1 << 24
 
 type Args = readonly (Node | null)[]
 
@@ -52,6 +50,7 @@ function liftAll(values: Liftable[], fn: (row: Scalar[]) => Scalar): Matrix {
       cols = Math.max(cols, value.cols)
     }
   }
+  checkArraySize(rows, cols)
   const data: Scalar[] = new Array(rows * cols)
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
@@ -305,7 +304,7 @@ const MAP: OwnedFunction = (it, args, scope) => {
   }
   const rows = Math.max(...grids.map((grid) => grid.rows))
   const cols = Math.max(...grids.map((grid) => grid.cols))
-  if (rows * cols > MAX_ARRAY_CELLS) return Errors.NUM
+  checkArraySize(rows, cols)
   const data: Scalar[] = new Array(rows * cols)
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
@@ -335,6 +334,7 @@ function reduceLike(collect: boolean): OwnedFunction {
     let acc: Value = initial === undefined ? null : isReference(initial) ? it.operand(initial) : initial
     const grid = gridOf(it, it.arg(args[offset], scope) ?? null)
     if (isError(grid)) return grid
+    if (collect) checkArraySize(grid.rows, grid.cols)
     const data: Scalar[] = []
     for (let r = 0; r < grid.rows; r++) {
       for (let c = 0; c < grid.cols; c++) {
@@ -354,6 +354,7 @@ function byLine(rows: boolean): OwnedFunction {
     const grid = gridOf(it, it.arg(args[0], scope) ?? null)
     if (isError(grid)) return grid
     const count = rows ? grid.rows : grid.cols
+    checkArraySize(count, 1)
     const data: Scalar[] = []
     for (let i = 0; i < count; i++) data.push(it.elementResult(it.invoke(lambda, [rows ? grid.row(i) : grid.col(i)])))
     return rows ? matrix(count, 1, data) : matrix(1, count, data)
@@ -367,9 +368,10 @@ const MAKEARRAY: OwnedFunction = (it, args, scope) => {
   const cols = integer(it.toScalar(it.arg(args[1], scope)), it.host.date1904)
   if (isError(cols)) return cols
   if (rows < 1 || cols < 1) return Errors.VALUE
-  if (rows * cols > MAX_ARRAY_CELLS) return Errors.NUM
+  checkArraySize(rows, cols)
   const lambda = lambdaArg(it, args[2], scope, 2)
   if (isError(lambda)) return lambda
+  checkArraySize(rows, cols)
   const data: Scalar[] = new Array(rows * cols)
   for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) data[r * cols + c] = it.elementResult(it.invoke(lambda, [r + 1, c + 1]))
   return matrix(rows, cols, data)
@@ -395,6 +397,7 @@ function rowOrColumn(rows: boolean): OwnedFunction {
     const start = rows ? area.top : area.left
     const count = rows ? areaRows(area) : areaCols(area)
     if (count === 1 || it.legacy) return start + 1
+    checkArraySize(count, 1)
     const data: Scalar[] = []
     for (let i = 0; i < count; i++) data.push(start + i + 1)
     return rows ? matrix(count, 1, data) : matrix(1, count, data)

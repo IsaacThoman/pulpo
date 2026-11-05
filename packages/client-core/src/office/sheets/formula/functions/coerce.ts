@@ -4,9 +4,11 @@
  * which keeps Excel's "first error wins" propagation out of every function body.
  */
 
+import { consumeWork } from '../budget.js'
 import { parseNumberText } from '../../numfmt/parse.js'
 import {
   Errors,
+  checkArraySize,
   FormulaError,
   isError,
   isLambda,
@@ -26,13 +28,7 @@ export type Args = (Value | undefined)[]
 /** Excel's cell text limit. Longer results are #VALUE!. */
 export const MAX_TEXT_LENGTH = 32_767
 
-/** The most cells an array result may have (a whole sheet). */
-export const MAX_ARRAY_CELLS = 1_048_576 * 16_384
-
-/** Fails with `error` unless a rows×cols array result fits on a sheet. */
-export function checkArraySize(rows: number, cols: number, error: FormulaError = Errors.NUM): void {
-  if (!(rows * cols <= MAX_ARRAY_CELLS)) fail(error)
-}
+export { MAX_ARRAY_CELLS, checkArraySize } from '../types.js'
 
 /** Stops the current function with an Excel error. `define` catches it and returns it. */
 export function fail(error: FormulaError): never {
@@ -57,6 +53,7 @@ export function define(def: FunctionDef): FunctionSpec {
     maxArgs: def.max,
     fn: (ctx, args) => {
       try {
+        for (const arg of args) if (isMatrix(arg)) consumeWork(arg.data.length)
         return normalizeResult(def.fn(ctx, args))
       } catch (error) {
         if (isError(error)) return error
@@ -370,6 +367,7 @@ export function liftOver(ctx: FunctionContext, values: (Value | undefined)[], fn
       return v === undefined ? null : scalarOf(v, ctx)
     })
   if (rows === 1 && cols === 1) return fn(pick(0, 0))
+  checkArraySize(rows, cols)
   const data: Scalar[] = []
   for (let row = 0; row < rows; row++) for (let col = 0; col < cols; col++) data.push(attempt(() => fn(pick(row, col))))
   return matrix(rows, cols, data)

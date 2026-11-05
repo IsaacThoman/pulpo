@@ -19,12 +19,13 @@
 import { MAX_COLS, MAX_ROWS } from '../address.js'
 import { MAX_EXPANDED_CELLS } from '../limits.js'
 import { epochMsToSerial } from '../dates.js'
+import { calculationBudget, CalculationStopped, consumeWork } from './budget.js'
 import { OWNED_FUNCTIONS, VOLATILE_EVALUATOR_FUNCTIONS } from './builtins.js'
 import { Interpreter, refRect, type EvalHost } from './evaluate.js'
 import { parseFormula, type Node, type ParseError } from './parse.js'
 import { RangeIndex, newQueryToken, type Rect } from './range-index.js'
 import { structuredArea, tableAt, type TableDefinition } from './tables.js'
-import { Errors, isError, isLambda, isMatrix, isReference, matrix, type Area, type FunctionSpec, type Matrix, type Scalar, type Value } from './types.js'
+import { checkArraySize, MAX_ARRAY_CELLS, Errors, isError, isLambda, isMatrix, isReference, matrix, type Area, type FunctionSpec, type Matrix, type Scalar, type Value } from './types.js'
 import { broadcastAt, sameScalar } from './values.js'
 
 export interface FormulaEngineOptions {
@@ -38,6 +39,8 @@ export interface FormulaEngineOptions {
   random?: () => number
   /** Iterative calculation for circular references (Excel's File → Options → Formulas). */
   iterative?: { maxIterations: number; maxChange: number }
+  /** A smaller allowance may be used by hosts with tighter latency constraints. */
+  maxWork?: number
 }
 
 export type CellInput =
@@ -84,6 +87,7 @@ export interface RecalcOptions {
 export interface RecalcResult {
   /** Cells whose value changed, spilled cells included. */
   changed: CellPosition[]
+  stoppedEarly: boolean
 }
 
 const CLEAN = 0
@@ -97,7 +101,7 @@ const MAX_ATTEMPTS = 1000
 /** Area reads at least this large are cached within one recalc. */
 const AREA_CACHE_MIN_CELLS = 256
 /** Areas larger than this are trimmed to the used range when read. */
-const MAX_AREA_CELLS = 1 << 22
+const MAX_AREA_CELLS = MAX_ARRAY_CELLS
 
 interface Dep extends Rect {
   sheet: SheetData
@@ -631,16 +635,25 @@ export class FormulaEngine {
   evaluateFormula(formula: string, sheetIndex = 0, row = 0, col = 0): Scalar | Matrix {
     const parsed = parseFormula(formula.startsWith('=') ? formula.slice(1) : formula)
     if (!parsed.ok) return Errors.NAME
-    const raw = this.interpreter.run(parsed.ast, sheetIndex, row, col, false)
-    if (isReference(raw)) {
-      if (raw.areas.length !== 1) return Errors.VALUE
-      const area = raw.areas[0]!
-      if (isSingle(area)) return this.host.readCell(area.sheet, area.top, area.left) ?? 0
-      return zeroBlanks(this.host.readArea(area))
+    const restoreBudget = calculationBudget(this.options.maxWork)
+    try {
+      const raw = this.interpreter.run(parsed.ast, sheetIndex, row, col, false)
+      if (isReference(raw)) {
+        if (raw.areas.length !== 1) return Errors.VALUE
+        const area = raw.areas[0]!
+        if (isSingle(area)) return this.host.readCell(area.sheet, area.top, area.left) ?? 0
+        return zeroBlanks(this.host.readArea(area))
+      }
+      if (isLambda(raw)) return Errors.CALC
+      if (isMatrix(raw)) return raw.rows === 1 && raw.cols === 1 ? (raw.data[0] ?? 0) : zeroBlanks(raw)
+      return raw ?? 0
+    } catch (error) {
+      if (isError(error)) return error
+      if (error instanceof CalculationStopped) return Errors.NUM
+      throw error
+    } finally {
+      restoreBudget()
     }
-    if (isLambda(raw)) return Errors.CALC
-    if (isMatrix(raw)) return raw.rows === 1 && raw.cols === 1 ? (raw.data[0] ?? 0) : zeroBlanks(raw)
-    return raw ?? 0
   }
 
   // -------------------------------------------------------------------------------------------
@@ -662,6 +675,8 @@ export class FormulaEngine {
       iterating: false,
     }
     this.calc = calc
+    const restoreBudget = calculationBudget(this.options.maxWork)
+    let stoppedEarly = false
     try {
       if (options.full) {
         for (const cell of this.formulaCells) this.pend(cell)
@@ -684,8 +699,13 @@ export class FormulaEngine {
         else this.resolveCycle(group.filter((cell) => cell.state === PENDING))
       }
       for (let i = 0; i < calc.worklist.length; i++) this.runPull(calc.worklist[i]!)
+    } catch (error) {
+      if (!(error instanceof CalculationStopped)) throw error
+      stoppedEarly = true
     } finally {
+      restoreBudget()
       for (const cell of calc.pending) {
+        if (stoppedEarly && cell.state !== CLEAN) this.dirty.add(cell)
         cell.state = CLEAN
         cell.onStack = false
         cell.tIndex = -1
@@ -695,7 +715,7 @@ export class FormulaEngine {
       for (const sheet of this.sheets) sheet.pendingIndex = undefined
       this.calc = undefined
     }
-    return { changed: [...calc.changed.values()] }
+    return { changed: [...calc.changed.values()], stoppedEarly }
   }
 
   private pend(cell: Cell): void {
@@ -910,8 +930,9 @@ export class FormulaEngine {
     let result: Finalized
     try {
       result = this.evaluate(cell, formula)
-    } catch {
-      result = { value: Errors.VALUE }
+    } catch (error) {
+      if (error instanceof CalculationStopped) throw error
+      result = { value: isError(error) ? error : Errors.VALUE }
     } finally {
       calc.current = undefined
     }
@@ -935,6 +956,7 @@ export class FormulaEngine {
       else if (isLambda(raw)) source = Errors.CALC
       else source = raw
       const { rows, cols } = formula.array
+      checkArraySize(rows, cols)
       const data: Scalar[] = new Array(rows * cols)
       for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) data[r * cols + c] = broadcastAt(source, r, c) ?? Errors.NA
       for (let k = 0; k < data.length; k++) if (data[k] === null) data[k] = 0
@@ -1117,8 +1139,9 @@ export class FormulaEngine {
         let result: Finalized
         try {
           result = this.evaluate(member, member.formula!)
-        } catch {
-          result = { value: Errors.VALUE }
+        } catch (error) {
+          if (error instanceof CalculationStopped) throw error
+          result = { value: isError(error) ? error : Errors.VALUE }
         } finally {
           calc.current = undefined
         }
@@ -1287,6 +1310,7 @@ export class FormulaEngine {
   }
 
   private fill(source: Scalar | Matrix, size: { rows: number; cols: number }): Matrix {
+    checkArraySize(size.rows, size.cols)
     const data: Scalar[] = new Array(size.rows * size.cols)
     for (let r = 0; r < size.rows; r++) for (let c = 0; c < size.cols; c++) data[r * size.cols + c] = broadcastAt(source, r, c) ?? Errors.NA
     return matrix(size.rows, size.cols, data)
@@ -1503,9 +1527,13 @@ export class FormulaEngine {
     const key = cacheable ? `${sheet.id}:${area.top},${area.left},${area.bottom},${area.right}` : ''
     if (cacheable) {
       const hit = calc.areas.get(key)
-      if (hit) return hit
+      if (hit) {
+        consumeWork(hit.rows * hit.cols)
+        return hit
+      }
     }
     const needsBefore = calc?.needs.length ?? 0
+    checkArraySize(rows, cols)
     const data: Scalar[] = new Array(rows * cols).fill(null)
     const lastCol = Math.min(used.right, sheet.columns.length - 1)
     for (let col = used.left; col <= lastCol; col++) {

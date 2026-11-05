@@ -2,10 +2,11 @@ import type * as Y from 'yjs'
 import type { LiveAssetStore } from '../../live-format.js'
 import { CONTENT_TYPES_NS, OoxmlPackage, PACKAGE_RELATIONSHIPS_NS, parseXml, relationshipsPathFor, relativeTarget, resolveTarget, serializeXml, type XmlDocument } from '../../ooxml/package.js'
 import { toA1Form } from '../model/formula-ids.js'
-import type { DefinedName, SheetFormat, SheetKind, SheetTable } from '../model/schema.js'
+import type { DefinedName, DrawingObject, SheetFormat, SheetKind, SheetTable } from '../model/schema.js'
 import { WorkbookModel, type SheetModel } from '../model/workbook.js'
 import { DEFAULT_STYLES_XML, Stylesheet } from '../styles/stylesheet.js'
 import { writeDrawing } from './drawing.js'
+import { orderedEntries } from './order.js'
 import { writeComments, writeNotesVml } from './notes.js'
 import { readSharedStrings, SharedStringTable } from './strings.js'
 import { writeTablePart, writeWorksheet, type ValueSource, type WorksheetWriteContext } from './write-worksheet.js'
@@ -182,11 +183,12 @@ export async function writeXlsx(doc: Y.Doc, assets: LiveAssetStore, options: Xls
   const format = options.format && options.format !== 'csv' && options.format !== 'tsv' ? options.format : (model.metaValue('format') ?? 'xlsx')
   const outputFormat: SheetFormat = format === 'csv' || format === 'tsv' ? 'xlsx' : format
   const pkg = new OoxmlPackage()
-  for (const [path, part] of model.parts) pkg.set(path, await assets.get(part.hash))
+  for (const [path, part] of [...model.parts].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)) pkg.set(path, await assets.get(part.hash))
 
   const workbookPath = model.metaValue('workbookPath') ?? 'xl/workbook.xml'
   const types = new ContentTypes(model.metaValue('contentTypesXml'))
   const rootRels = new Rels(pkg.text('_rels/.rels'))
+  const originalRootRels = rootRels.toXml()
   const pointsAtWorkbook = rootRels.list().some((rel) => rel.type === REL_TYPES.officeDocument && resolveTarget('', rel.target) === workbookPath)
   if (!pointsAtWorkbook) {
     rootRels.remove((rel) => rel.type === REL_TYPES.officeDocument)
@@ -272,7 +274,7 @@ export async function writeXlsx(doc: Y.Doc, assets: LiveAssetStore, options: Xls
     // Rebuilt below from the model.
     rels.remove((rel) => rel.type === REL_TYPES.hyperlink || rel.type === REL_TYPES.table || rel.type === REL_TYPES.comments || rel.type === REL_TYPES.vmlDrawing)
     const tableRelationships = new Map<string, string>()
-    for (const [id, raw] of sheet.tables) {
+    for (const [id, raw] of orderedEntries(sheet, sheet.tables, (value) => (value as SheetTable).range)) {
       const table = raw as SheetTable
       let name = table.name
       while (tableNames.has(name.toLowerCase())) name = `${table.name}_${tableNames.size + 1}`
@@ -321,7 +323,10 @@ export async function writeXlsx(doc: Y.Doc, assets: LiveAssetStore, options: Xls
         return drawingRels.add(REL_TYPES.image, relativeTarget(drawingPath!, mediaPath))
       }
       const embedded = new Map<string, string>()
-      for (const raw of sheet.drawings.values()) {
+      for (const [, raw] of orderedEntries(sheet, sheet.drawings, (value) => {
+        const from = (value as DrawingObject).from
+        return from ? { top: from.row, left: from.col } : undefined
+      })) {
         const drawing = raw as { xml: string; image?: { hash: string; mimeType: string } }
         if (!drawing.xml && drawing.image && !embedded.has(drawing.image.hash)) embedded.set(drawing.image.hash, await embed(drawing.image))
       }
@@ -374,14 +379,41 @@ export async function writeXlsx(doc: Y.Doc, assets: LiveAssetStore, options: Xls
   patchWorkbook(workbook, model, sheetEntries, options)
   pkg.set(workbookPath, new TextEncoder().encode(serializeXml(workbook)))
   pkg.set(relationshipsPathFor(workbookPath), new TextEncoder().encode(workbookRels.toXml()))
-  if (!pointsAtWorkbook || !pkg.has('_rels/.rels')) pkg.set('_rels/.rels', new TextEncoder().encode(rootRels.toXml()))
+  const calcTime = model.metaValue('calcTime')
+  if (calcTime !== undefined) {
+    const corePath = 'docProps/core.xml'
+    const terms = 'http://purl.org/dc/terms/'
+    const core = parseXml(pkg.text(corePath) ?? '<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"/>')
+    let modified = core.getElementsByTagNameNS(terms, 'modified')[0]
+    if (!modified || Date.parse(modified.textContent ?? '') !== calcTime) {
+      if (!modified) {
+        modified = core.createElementNS(terms, 'dcterms:modified')
+        modified.setAttributeNS('http://www.w3.org/2001/XMLSchema-instance', 'xsi:type', 'dcterms:W3CDTF')
+        core.documentElement!.appendChild(modified)
+      }
+      modified.textContent = new Date(calcTime).toISOString()
+      pkg.set(corePath, new TextEncoder().encode(serializeXml(core)))
+    }
+    types.override(corePath, 'application/vnd.openxmlformats-package.core-properties+xml')
+    rootRels.ensure('http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties', corePath)
+  }
+  if (rootRels.toXml() !== originalRootRels || !pointsAtWorkbook || !pkg.has('_rels/.rels')) pkg.set('_rels/.rels', new TextEncoder().encode(rootRels.toXml()))
   types.defaultFor('rels', CONTENT_TYPES.relationships)
   types.defaultFor('xml', 'application/xml')
 
   pruneUnreachable(pkg, new Set(model.metaValue('looseParts') ?? []))
   types.prune(new Set(pkg.paths()))
+  // Preserved overrides and rebuilt overrides must have the same order on a fresh import.
+  const typesRoot = types.document.documentElement!
+  const overrides = children(typesRoot, 'Override').sort((a, b) => {
+    const left = a.getAttribute('PartName') ?? ''
+    const right = b.getAttribute('PartName') ?? ''
+    return left < right ? -1 : left > right ? 1 : 0
+  })
+  for (const override of overrides) typesRoot.appendChild(override)
   pkg.set('[Content_Types].xml', new TextEncoder().encode(types.toXml()))
-  return pkg.write()
+  // ZIP entry order is part of the checksum too, including preserved parts.
+  return new OoxmlPackage(new Map(pkg.paths().sort().map((path) => [path, pkg.get(path)!]))).write()
 }
 
 /** Parts of a package no relationship reaches. */
@@ -424,7 +456,7 @@ function patchWorkbook(document: XmlDocument, model: WorkbookModel, sheetEntries
     ) as XmlElement
   insertWorkbookChild(root, wrap(`<sheets>${sheetEntries.join('')}</sheets>`))
   const sheetIds = model.sheetIds()
-  const names = [...model.names.values()]
+  const names = [...model.names.values()].sort((a, b) => sheetIds.indexOf(a.scope ?? '') - sheetIds.indexOf(b.scope ?? '') || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
     .map((name: DefinedName) => {
       const scopeIndex = name.scope ? sheetIds.indexOf(name.scope) : -1
       if (name.scope && scopeIndex < 0) return ''

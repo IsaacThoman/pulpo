@@ -1,7 +1,7 @@
 /** Text functions (the number-formatting ones, TEXT/VALUE/FIXED/…, live in text-format.ts). */
 
 import { Errors, isError, matrix, type FunctionContext, type FunctionSpec, type Scalar, type Value } from '../types.js'
-import { MAX_TEXT_LENGTH, bool, check, defBool, defInt, define, fail, int, omitted, optInt, scalarOf, text, toMatrix, type Args } from './coerce.js'
+import { MAX_TEXT_LENGTH, bool, check, checkArraySize, defBool, defInt, define, fail, int, omitted, optInt, scalarOf, text, toMatrix, type Args } from './coerce.js'
 import { wildcardRegex } from './criteria.js'
 
 /** Windows-1252 for 0x80–0x9F, which Excel's CHAR/CODE use on Windows; the rest matches Latin-1. */
@@ -38,13 +38,23 @@ function proper(s: string): string {
 /** All values of `any` arguments flattened to text, for CONCAT and TEXTJOIN. */
 function flatTexts(ctx: FunctionContext, args: Args): string[] {
   const out: string[] = []
+  let length = 0
   for (const arg of args) {
     for (const v of toMatrix(ctx, arg).data) {
       if (isError(v)) fail(v)
-      out.push(text(v))
+      const part = text(v)
+      length += part.length
+      if (length > MAX_TEXT_LENGTH) fail(Errors.VALUE)
+      out.push(part)
     }
   }
   return out
+}
+
+function joinText(parts: string[], separator = ''): string {
+  const length = parts.reduce((total, part) => total + part.length, 0) + Math.max(0, parts.length - 1) * separator.length
+  if (length > MAX_TEXT_LENGTH) fail(Errors.VALUE)
+  return parts.join(separator)
 }
 
 function checkLength(s: string): string {
@@ -136,6 +146,7 @@ function textSplit(ctx: FunctionContext, args: Args): Value {
   grid = grid.filter((row) => row.length > 0)
   if (!grid.length) return fail(Errors.CALC)
   const width = Math.max(...grid.map((r) => r.length))
+  checkArraySize(grid.length, width)
   const data: Scalar[] = []
   for (const row of grid) for (let c = 0; c < width; c++) data.push(c < row.length ? row[c]! : pad)
   return matrix(grid.length, width, data)
@@ -151,15 +162,17 @@ function arrayToText(ctx: FunctionContext, args: Args): string {
     if (typeof v === 'string') return strict ? `"${v.replace(/"/g, '""')}"` : v
     return text(v)
   }
-  if (format === 0) return m.data.map((v) => render(v, false)).join(', ')
+  if (format === 0) return joinText(m.data.map((v) => render(v, false)), ', ')
   const rows: string[] = []
-  for (let r = 0; r < m.rows; r++) rows.push(m.data.slice(r * m.cols, (r + 1) * m.cols).map((v) => render(v, true)).join(','))
-  return `{${rows.join(';')}}`
+  for (let r = 0; r < m.rows; r++) rows.push(joinText(m.data.slice(r * m.cols, (r + 1) * m.cols).map((v) => render(v, true)), ','))
+  const body = joinText(rows, ';')
+  if (body.length + 2 > MAX_TEXT_LENGTH) fail(Errors.VALUE)
+  return `{${body}}`
 }
 
 export const TEXT_FUNCTIONS: FunctionSpec[] = [
-  define({ name: 'CONCATENATE', min: 1, max: 255, fn: (ctx, args) => checkLength(args.map((a) => text(a, ctx)).join('')) }),
-  define({ name: 'CONCAT', min: 1, max: 254, args: ['any'], xlfn: true, fn: (ctx, args) => checkLength(flatTexts(ctx, args).join('')) }),
+  define({ name: 'CONCATENATE', min: 1, max: 255, fn: (ctx, args) => joinText(args.map((a) => text(a, ctx))) }),
+  define({ name: 'CONCAT', min: 1, max: 254, args: ['any'], xlfn: true, fn: (ctx, args) => joinText(flatTexts(ctx, args)) }),
   define({
     name: 'TEXTJOIN',
     min: 3,
@@ -173,8 +186,9 @@ export const TEXT_FUNCTIONS: FunctionSpec[] = [
       if (ignoreEmpty) values = values.filter((v) => v !== '')
       let out = ''
       values.forEach((v, i) => {
-        if (i > 0) out += delims.length ? delims[(i - 1) % delims.length] : ''
-        out += v
+        const delimiter = i > 0 && delims.length ? delims[(i - 1) % delims.length]! : ''
+        if (out.length + delimiter.length + v.length > MAX_TEXT_LENGTH) fail(Errors.VALUE)
+        out += delimiter + v
       })
       return checkLength(out)
     },
@@ -247,7 +261,9 @@ export const TEXT_FUNCTIONS: FunctionSpec[] = [
         return checkLength(source.slice(0, at) + replacement + source.slice(at + old.length))
       }
       if (!old) return source
-      return checkLength(source.split(old).join(replacement))
+      const parts = source.split(old)
+      check(source.length + (parts.length - 1) * (replacement.length - old.length) <= MAX_TEXT_LENGTH, Errors.VALUE)
+      return parts.join(replacement)
     },
   }),
   ...['REPLACE', 'REPLACEB'].map((name) =>

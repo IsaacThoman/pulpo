@@ -1,6 +1,7 @@
 /** Statistical functions: aggregates, ranks, regressions, and probability distributions. */
 
-import { omittedCells } from '../types.js'
+import { consumeWork } from '../budget.js'
+import { checkArraySize, omittedCells } from '../types.js'
 import { Errors, isError, matrix, type FunctionContext, type FunctionSpec, type Scalar, type Value } from '../types.js'
 import { bool, check, defNum, define, fail, int, num, optNum, scalarOf, toMatrix, type Args } from './coerce.js'
 import { parseCriteria } from './criteria.js'
@@ -180,6 +181,9 @@ function leastSquares(x: number[][], y: number[], withConstant: boolean): Fit {
   const n = y.length
   const k = x[0]?.length ?? 0
   const p = k + (withConstant ? 1 : 0)
+  checkArraySize(n, p)
+  checkArraySize(p, p)
+  consumeWork(n * p * p)
   const design = x.map((row) => (withConstant ? [...row, 1] : row))
   const xtx = new Array<number>(p * p).fill(0)
   const xty = new Array<number>(p).fill(0)
@@ -516,6 +520,7 @@ function frequency(ctx: FunctionContext, args: Args): Value {
   const data = arrayNumbers(ctx, args[0])
   const bins = arrayNumbers(ctx, args[1])
   const order = bins.map((b, i) => ({ b, i })).sort((x, y) => x.b - y.b)
+  checkArraySize(bins.length + 1, 1)
   const counts = new Array<number>(bins.length + 1).fill(0)
   for (const v of data) {
     const slot = order.find((o) => v <= o.b)

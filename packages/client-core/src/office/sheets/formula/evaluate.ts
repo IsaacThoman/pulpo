@@ -7,12 +7,14 @@
  * evaluated iteratively, and LAMBDA/name recursion is capped at `MAX_CALL_DEPTH` (#NUM! beyond).
  */
 
+import { CalculationStopped, consumeWork } from './budget.js'
 import { OWNED_FUNCTIONS } from './builtins.js'
 import type { Node } from './parse.js'
 import { structuredArea, type TableDefinition } from './tables.js'
 import type { RefParts, StructuredRef } from './tokenize.js'
 import {
   Errors,
+  checkArraySize,
   errorFromCode,
   isError,
   isLambda,
@@ -120,6 +122,8 @@ export class Interpreter {
     try {
       return this.eval(ast, undefined)
     } catch (error) {
+      if (error instanceof CalculationStopped) throw error
+      if (isError(error)) return error
       if (error instanceof DepthExceeded || error instanceof RangeError) return Errors.NUM
       return Errors.VALUE
     } finally {
@@ -128,6 +132,7 @@ export class Interpreter {
   }
 
   eval(node: Node, scope: Scope | undefined): Value {
+    consumeWork()
     switch (node.type) {
       case 'number':
         return Number.isFinite(node.value) ? node.value : Errors.NUM
@@ -450,6 +455,7 @@ export class Interpreter {
         cols = Math.max(cols, value.cols)
       }
     }
+    checkArraySize(rows, cols)
     const data: Scalar[] = new Array(rows * cols)
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
@@ -468,9 +474,12 @@ export class Interpreter {
 
   private apply(spec: FunctionSpec, values: (Value | undefined)[]): Value {
     try {
+      consumeWork()
       const result = spec.fn(this.ctx, values)
       return result === undefined ? Errors.VALUE : result
     } catch (error) {
+      if (error instanceof CalculationStopped) throw error
+      if (isError(error)) return error
       if (error instanceof DepthExceeded || error instanceof RangeError) throw error
       return Errors.VALUE
     }
