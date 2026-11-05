@@ -18,6 +18,7 @@ import {
   TRPR_ORDER,
   sortByOrder,
 } from './names.js'
+import { MAX_COPY_BYTES, MAX_COPY_PARTS, isPictureReference, manifestsIn, relationshipReferences, remapStoredXml, type CopyPart, type CopyRelationship } from './relationships.js'
 import { PARAGRAPH_PROPERTY_ATTRS, RUN_PROPERTY_MARKS, WRAPPER_MARKS, inlineMarks, type ParagraphPropertyAttr } from './schema.js'
 
 const XML_DECLARATION = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n'
@@ -123,6 +124,15 @@ class PartWriter {
     return this.export_.pkg.addRelationship(this.part, REL.image, target)
   }
 
+  /** Bind any copied relationship in this destination part, independent of XML vocabulary. */
+  copiedRel(rel: CopyRelationship): string {
+    const target = rel.targetMode === 'External' ? rel.target : relativeTarget(this.part, rel.target)
+    const reuse = this.relationships().find((entry) => entry.type === rel.type && entry.targetMode === rel.targetMode && entry.target === target)
+    if (reuse) return reuse.id
+    this.allocated++
+    return this.export_.pkg.addRelationship(this.part, rel.type, target, rel.targetMode)
+  }
+
   get changedRelationships(): boolean {
     return this.allocated > 0
   }
@@ -160,6 +170,14 @@ export class StoryWriter {
     readonly ids: IdMaps,
   ) {}
 
+  private remap(value: unknown): unknown {
+    return remapStoredXml(value, (rel) => this.writer.copiedRel(rel))
+  }
+
+  private jml(value: unknown): JmlElement | undefined { return jml(this.remap(value)) }
+  private jmlList(value: unknown): JmlElement[] { return jmlList(this.remap(value)) }
+  private attrsOf(value: unknown): Record<string, string> | undefined { return attrsOf(this.remap(value)) }
+
   blocks(content: ProseMirrorNode | readonly ProseMirrorNode[]): string {
     let xml = ''
     const nodes: ProseMirrorNode[] = []
@@ -170,7 +188,7 @@ export class StoryWriter {
   }
 
   private markers(value: unknown): string {
-    return jmlList(value).map((element) => jmlToXml(this.mapIds(element, undefined))).join('')
+    return this.jmlList(value).map((element) => jmlToXml(this.mapIds(element, undefined))).join('')
   }
 
   block(node: ProseMirrorNode): string {
@@ -182,12 +200,12 @@ export class StoryWriter {
       case 'table':
         return lead + this.table(node) + trail
       case 'blockWrapper': {
-        const shell = jml(node.attrs.v)
+        const shell = this.jml(node.attrs.v)
         const inner = this.blocks(node)
         return lead + (shell ? jmlToXml(shell, inner) : inner) + trail
       }
       case 'blockXml': {
-        const element = jml(node.attrs.v)
+        const element = this.jml(node.attrs.v)
         return lead + (element ? jmlToXml(element) : '') + trail
       }
       default:
@@ -196,7 +214,7 @@ export class StoryWriter {
   }
 
   private paragraphAttrs(node: ProseMirrorNode): Record<string, string> | undefined {
-    const attrs = attrsOf(node.attrs.xmlAttrs)
+    const attrs = this.attrsOf(node.attrs.xmlAttrs)
     if (!attrs) return undefined
     const paraId = attrs['w14:paraId']
     if (paraId) {
@@ -214,12 +232,12 @@ export class StoryWriter {
     const elements: JmlElement[] = []
     if (node.attrs.pStyle) elements.push(['w:pStyle', { 'w:val': String(node.attrs.pStyle) }])
     for (const key of Object.keys(PARAGRAPH_PROPERTY_ATTRS) as ParagraphPropertyAttr[]) {
-      const element = jml(node.attrs[key])
+      const element = this.jml(node.attrs[key])
       if (element) elements.push(element)
     }
-    elements.push(...jmlList(node.attrs.pPrRest))
+    elements.push(...this.jmlList(node.attrs.pPrRest))
     for (const key of ['markRPr', 'sectPr', 'pPrChange']) {
-      const element = jml(node.attrs[key])
+      const element = this.jml(node.attrs[key])
       if (element) elements.push(element)
     }
     return sortByOrder(elements, PPR_ORDER)
@@ -282,7 +300,7 @@ export class StoryWriter {
   }
 
   private wrapper(mark: Mark, inner: string): string {
-    let shell = jml(mark.attrs.v)
+    let shell = this.jml(mark.attrs.v)
     if (!shell) {
       const name = WRAPPER_MARKS[mark.type.name as keyof typeof WRAPPER_MARKS]
       if (!name) return inner
@@ -301,9 +319,9 @@ export class StoryWriter {
   runProperties(marks: readonly Mark[]): JmlElement[] {
     const elements: JmlElement[] = []
     for (const mark of marks) {
-      if (mark.type.name === 'rPrRest') elements.push(...jmlList(mark.attrs.v))
+      if (mark.type.name === 'rPrRest') elements.push(...this.jmlList(mark.attrs.v))
       else {
-        const element = jml(mark.attrs.v)
+        const element = this.jml(mark.attrs.v)
         if (element) elements.push(element)
       }
     }
@@ -320,7 +338,7 @@ export class StoryWriter {
   }
 
   private runContent(node: ProseMirrorNode, deleted: boolean): string {
-    const element = jml(node.attrs?.v)
+    const element = this.jml(node.attrs?.v)
     switch (node.type.name) {
       case 'text': {
         const text = node.text ?? ''
@@ -336,7 +354,7 @@ export class StoryWriter {
         return type === 'textWrapping' ? '<w:br/>' : `<w:br w:type="${type}"/>`
       }
       case 'drawing':
-        return element ? jmlToXml(this.drawingElement(element, node.attrs.src as string | null)) : ''
+        return element ? jmlToXml(manifestsIn(node.attrs.v).length ? element : this.drawingElement(element, node.attrs.src as string | null)) : ''
       case 'noteRef': {
         const kind = node.attrs.kind === 'endnote' ? 'endnote' : 'footnote'
         const id = this.ids[kind].get(String(node.attrs.id)) ?? String(node.attrs.id)
@@ -355,22 +373,27 @@ export class StoryWriter {
     }
   }
 
-  /** Points a drawing's picture at the right relationship for this part. */
+  /** New/legacy pictures without copy metadata still need a binding in the target story. */
   private drawingElement(element: JmlElement, src: string | null): JmlElement {
     if (!src) return element
-    let current: string | undefined
-    walkJml(element, (child) => {
-      if (current) return false
-      if (child[0] === 'a:blip') current = jmlAttr(child, 'r:embed')
-      return undefined
-    })
-    if (!current) return element
-    const relId = this.writer.imageRel(src, current)
-    if (relId === current) return element
+    const refs = relationshipReferences(element).filter(isPictureReference)
+    const primary = refs.find((ref) => ref.attribute !== 'r:link')
+    if (!primary) return element
+    const ids = new Map<string, string>()
+    for (const ref of refs) {
+      if (ref.attribute === 'r:link') continue
+      // AlternateContent may hold different preview assets. Keep each existing binding when
+      // it resolves; src supplies the primary image and legacy foreign/unbound pictures only.
+      const rel = this.writer.export_.pkg.relationships(this.writer.part).find((rel) => rel.id === ref.id)
+      const existing = rel?.targetMode !== 'External' && rel ? this.writer.export_.hashOf(resolveTarget(this.writer.part, rel.target)) : undefined
+      ids.set(ref.id, this.writer.imageRel(ref.id === primary.id || !existing ? src : existing, ref.id))
+    }
     const copy = structuredClone(element)
     walkJml(copy, (child) => {
-      if (child[0] === 'a:blip' && child[1]['r:embed'] === current) child[1]['r:embed'] = relId
-      if (child[0] === 'v:imagedata' && child[1]['r:id'] === current) child[1]['r:id'] = relId
+      for (const ref of relationshipReferences([child[0], child[1]])) {
+        const id = ids.get(ref.id)
+        if (id && isPictureReference(ref)) child[1][ref.attribute] = id
+      }
     })
     return copy
   }
@@ -388,7 +411,7 @@ export class StoryWriter {
   }
 
   private bare(item: InlineItem): string {
-    const element = jml(item.node.attrs?.v)
+    const element = this.jml(item.node.attrs?.v)
     if (item.node.type.name === 'commentMark') {
       const edge = item.node.attrs.edge === 'end' ? 'End' : 'Start'
       return jmlToXml(this.mapIds(element ?? [`w:commentRange${edge}`, {}], item.node.attrs.id))
@@ -403,15 +426,15 @@ export class StoryWriter {
 
   private table(node: ProseMirrorNode): string {
     const map = TableMap.get(node)
-    const tblPr = jml(node.attrs.tblPr)
-    let xml = openTag('w:tbl', attrsOf(node.attrs.xmlAttrs))
+    const tblPr = this.jml(node.attrs.tblPr)
+    let xml = openTag('w:tbl', this.attrsOf(node.attrs.xmlAttrs))
     if (tblPr) xml += jmlToXml(tblPr)
-    xml += this.grid(jml(node.attrs.tblGrid), map.width)
+    xml += this.grid(this.jml(node.attrs.tblGrid), map.width)
     let pendingWrap: string | null = null
     let wrapped = ''
     const flushWrap = () => {
       if (pendingWrap === null) return
-      const shell = jml(pendingWrap)
+      const shell = this.jml(pendingWrap)
       xml += shell ? jmlToXml(shell, wrapped) : wrapped
       pendingWrap = null
       wrapped = ''
@@ -452,7 +475,7 @@ export class StoryWriter {
     let wrapped = ''
     const flushWrap = () => {
       if (pendingWrap === null) return
-      const shell = jml(pendingWrap)
+      const shell = this.jml(pendingWrap)
       cells += shell ? jmlToXml(shell, wrapped) : wrapped
       pendingWrap = null
       wrapped = ''
@@ -493,12 +516,12 @@ export class StoryWriter {
     }
     flushWrap()
     cells += this.markers(rowNode.attrs.cellTrail)
-    const trPr = jml(rowNode.attrs.trPr)
+    const trPr = this.jml(rowNode.attrs.trPr)
     const trPrChildren = (trPr ? jmlElements(trPr) : []).filter((child) => child[0] !== 'w:gridBefore' && child[0] !== 'w:gridAfter')
     if (before) trPrChildren.push(['w:gridBefore', { 'w:val': String(before) }])
     if (after) trPrChildren.push(['w:gridAfter', { 'w:val': String(after) }])
-    let xml = openTag('w:tr', attrsOf(rowNode.attrs.xmlAttrs))
-    const tblPrEx = jml(rowNode.attrs.tblPrEx)
+    let xml = openTag('w:tr', this.attrsOf(rowNode.attrs.xmlAttrs))
+    const tblPrEx = this.jml(rowNode.attrs.tblPrEx)
     if (tblPrEx) xml += jmlToXml(tblPrEx)
     if (trPr || trPrChildren.length) xml += jmlToXml(['w:trPr', trPr?.[1] ?? {}, ...sortByOrder(trPrChildren, TRPR_ORDER)])
     // Word refuses rows without cells.
@@ -516,21 +539,21 @@ export class StoryWriter {
 
   private cell(cell: ProseMirrorNode, span: number): string {
     const rowspan = cell.attrs.rowspan as number
-    const tcPr = jml(cell.attrs.tcPr)
+    const tcPr = this.jml(cell.attrs.tcPr)
     const properties = this.cellProperties(tcPr, span, rowspan > 1 ? 'restart' : undefined, rowspan <= 1)
     const content = this.blocks(cell)
-    return `${openTag('w:tc', attrsOf(cell.attrs.xmlAttrs))}${properties}${content || '<w:p/>'}</w:tc>`
+    return `${openTag('w:tc', this.attrsOf(cell.attrs.xmlAttrs))}${properties}${content || '<w:p/>'}</w:tc>`
   }
 
   /** A cell hidden under a vertical merge: the original one, or a new one like its restart cell. */
   private continuation(cell: ProseMirrorNode, index: number, span: number): string {
-    const kept = jmlList(cell.attrs.vMergeCells)[index]
+    const kept = this.jmlList(cell.attrs.vMergeCells)[index]
     if (kept) {
       const tcPr = jmlChild(kept, 'w:tcPr')
       const content = jmlElements(kept).filter((child) => child[0] !== 'w:tcPr')
       return `${openTag('w:tc', kept[1])}${this.cellProperties(tcPr, span, '', false)}${content.map((child) => jmlToXml(child)).join('') || '<w:p/>'}</w:tc>`
     }
-    const restart = jml(cell.attrs.tcPr)
+    const restart = this.jml(cell.attrs.tcPr)
     const width = jmlChild(restart, 'w:tcW')
     const base: JmlElement = ['w:tcPr', {}, ...(width ? [width] : [])]
     return `<w:tc>${this.cellProperties(base, span, '', false)}<w:p/></w:tc>`
@@ -961,6 +984,7 @@ export async function exportDocx(model: DocxModel, assets: LiveAssetStore, exten
   if (!parts.has(CONTENT_TYPES_PATH)) throw new LiveFormatError('corrupt', 'This document has lost its package')
   const pkg = new OoxmlPackage(parts)
   const state = new DocxExport(pkg, model)
+  await hydrateCopiedParts(pkg, model, assets)
   generateParts(state)
   for (const [hash, path] of state.newMedia()) {
     const bytes = await assets.get(hash)
@@ -980,6 +1004,35 @@ export async function exportDocx(model: DocxModel, assets: LiveAssetStore, exten
   if (pkg.contentType(main) !== contentType) pkg.setContentType(main, contentType)
   if (extension === 'docx' || extension === 'dotx') removeMacros(pkg, main)
   return pkg.write()
+}
+
+/** Portable XML owns its part graph until it is deleted; export materializes that graph. */
+async function hydrateCopiedParts(pkg: OoxmlPackage, model: DocxModel, assets: LiveAssetStore): Promise<void> {
+  const parts = new Map<string, CopyPart>()
+  const scan = (node: ProseMirrorNode) => {
+    for (const value of [...Object.values(node.attrs), ...node.marks.flatMap((mark) => Object.values(mark.attrs))]) {
+      for (const manifest of manifestsIn(value)) for (const [path, part] of Object.entries(manifest.parts)) {
+        const existing = parts.get(path)
+        if (existing && JSON.stringify(existing) !== JSON.stringify(part)) throw new LiveFormatError('corrupt', 'Ambiguous copied part')
+        parts.set(path, part)
+      }
+    }
+  }
+  model.body.descendants(scan)
+  for (const story of model.stories.values()) story.doc.descendants(scan)
+  let size = 0
+  for (const [path, part] of parts) {
+    size += part.size
+    if (parts.size > MAX_COPY_PARTS || size > MAX_COPY_BYTES) throw new LiveFormatError('too_large', 'Too many copied parts')
+    const bytes = await assets.get(part.hash)
+    if (bytes.length !== part.size || await sha256Hex(bytes) !== part.hash) throw new LiveFormatError('corrupt', 'Invalid copied part')
+    pkg.set(path, bytes)
+    pkg.setContentType(path, part.contentType)
+    if (!Object.keys(part.rels).length) continue
+    const rels: JmlElement = ['Relationships', { xmlns: 'http://schemas.openxmlformats.org/package/2006/relationships' }]
+    for (const [id, rel] of Object.entries(part.rels)) rels.push(['Relationship', { Id: id, Type: rel.type, Target: rel.targetMode === 'External' ? rel.target : relativeTarget(path, rel.target), ...(rel.targetMode ? { TargetMode: rel.targetMode } : {}) }])
+    pkg.setXml(relationshipsPathFor(path), XML_DECLARATION + jmlToXml(rels))
+  }
 }
 
 /** Relationship targets were written before the image's extension was known. */

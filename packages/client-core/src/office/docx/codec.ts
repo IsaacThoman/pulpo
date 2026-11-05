@@ -8,6 +8,7 @@ import { importDocx } from './import.js'
 import { readDocxMap, readDocxModel, writeDocxModel, type CommentMeta, type DocxModel, type StoryMeta } from './model.js'
 import { DOCX_EXTENSIONS, DOCX_SCHEMA_VERSION, docxMimeType } from './format.js'
 import { BODY_FRAGMENT, STORY_PREFIX, parseJson, type PartRef } from './model.js'
+import { manifestsIn } from './relationships.js'
 import { docxToText } from './text.js'
 
 export { DOCX_SCHEMA_VERSION }
@@ -95,7 +96,11 @@ export function referencedAssets(doc: Y.Doc): Set<string> {
   })
   const visit = (node: Y.XmlElement | Y.XmlFragment) => {
     for (const child of node.toArray()) {
+      if (child instanceof Y.XmlText) {
+        for (const delta of child.toDelta()) for (const value of Object.values(delta.attributes ?? {})) for (const manifest of manifestsIn(value)) for (const part of Object.values(manifest.parts)) hashes.add(part.hash)
+      }
       if (!(child instanceof Y.XmlElement)) continue
+      for (const value of Object.values(child.getAttributes())) for (const manifest of manifestsIn(value)) for (const part of Object.values(manifest.parts)) hashes.add(part.hash)
       if (child.nodeName === 'drawing') {
         const src = child.getAttribute('src')
         if (typeof src === 'string' && src) hashes.add(src)

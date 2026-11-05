@@ -1,4 +1,5 @@
 import { Mark, type Node as ProseMirrorNode } from '@tiptap/pm/model'
+import { COPY_RELATIONSHIPS, isPictureReference, relationshipReferences } from './relationships.js'
 import { DOCX_MAX_TABLE_DEPTH } from './format.js'
 import { LiveFormatError, type LiveAssetStore } from '../live-format.js'
 import { OoxmlPackage, relationshipsPathFor, resolveTarget, type Relationship } from '../ooxml/package.js'
@@ -108,7 +109,11 @@ function readXml(pkg: OoxmlPackage, path: string): JmlElement | undefined {
   if (/<!DOCTYPE/i.test(text.slice(0, 4096))) throw new LiveFormatError('corrupt', `${path} declares a DTD`)
   const document = pkg.xml(path)
   const root = document?.documentElement
-  return root ? elementToJml(root) : undefined
+  if (!root) return undefined
+  const value = elementToJml(root)
+  // A file cannot forge the private relationship metadata used by our clipboard.
+  walkJml(value, (child) => { delete child[1][COPY_RELATIONSHIPS] })
+  return value
 }
 
 function relationshipMap(pkg: OoxmlPackage, part: string): Map<string, Relationship> {
@@ -117,17 +122,13 @@ function relationshipMap(pkg: OoxmlPackage, part: string): Map<string, Relations
 
 /** The asset hash of the image a drawing or VML object shows, if its part is in the package. */
 function imageHash(element: JmlElement, context: PartContext): string | null {
-  let relId: string | undefined
-  walkJml(element, (child) => {
-    if (relId) return false
-    if (child[0] === 'a:blip') relId = jmlAttr(child, 'r:embed')
-    else if (child[0] === 'v:imagedata') relId = jmlAttr(child, 'r:id') ?? jmlAttr(child, 'o:relid')
-    // A text box's fallback picture comes after its own content; prefer it when nothing else shows.
-    return undefined
-  })
-  const rel = relId ? context.rels.get(relId) : undefined
-  if (!rel || rel.targetMode === 'External') return null
-  return context.hashes.get(resolveTarget(context.part, rel.target)) ?? null
+  for (const ref of relationshipReferences(element).filter(isPictureReference)) {
+    const rel = context.rels.get(ref.id)
+    if (!rel || rel.type !== REL.image || rel.targetMode === 'External') continue
+    const hash = context.hashes.get(resolveTarget(context.part, rel.target))
+    if (hash) return hash
+  }
+  return null
 }
 
 /** A wrapper element's JsonML with its content replaced by CONTENT_SLOT. */
