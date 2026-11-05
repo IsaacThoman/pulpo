@@ -10,6 +10,8 @@ import {
   type EditorMessage,
   type EditorTheme,
   type HostMessage,
+  type PresentationCommand,
+  type PresentationEditorState,
   type ReviewAction,
   type TextCommand,
 } from './protocol'
@@ -31,6 +33,8 @@ export interface EditorBridgeState {
   suggestions: { count: number; index: number | null; active: ActiveSuggestion | null }
   /** What a text editor reports (text and code files). */
   text: TextEditorState | null
+  /** What a presentation editor reports. */
+  presentation: PresentationEditorState | null
   /** The editor's page reported a protocol or schema this app cannot use. */
   incompatible: boolean
 }
@@ -54,6 +58,8 @@ export interface EditorBridgeOptions {
   /** The owner resolved suggestions in the editor; replies' change counts may be stale. */
   onResolved?: () => void
   onError?: (message: string) => void
+  /** Fetches one of the document's assets (images in a deck) for the page, by hash. */
+  fetchAsset?: (hash: string) => Promise<Uint8Array>
 }
 
 const INITIAL_STATE: EditorBridgeState = {
@@ -62,6 +68,7 @@ const INITIAL_STATE: EditorBridgeState = {
   focused: false,
   suggestions: { count: 0, index: null, active: null },
   text: null,
+  presentation: null,
   incompatible: false,
 }
 
@@ -132,8 +139,8 @@ export class EditorBridge {
     this.post({ type: 'format', session: this.session, command, href })
   }
 
-  /** A text editor's toolbar command. */
-  command(command: TextCommand): void {
+  /** A text or presentation editor's toolbar command. */
+  command(command: TextCommand | PresentationCommand): void {
     this.post({ type: 'command', session: this.session, command })
   }
 
@@ -230,6 +237,12 @@ export class EditorBridge {
       case 'textState':
         this.setState({ ...this.state, text: message.state, focused: message.state.focused })
         break
+      case 'presentationState':
+        this.setState({ ...this.state, presentation: message.state })
+        break
+      case 'asset':
+        void this.sendAsset(message.requestId, message.hash)
+        break
       case 'suggestions':
         this.setState({ ...this.state, suggestions: { count: message.count, index: message.index, active: message.active } })
         break
@@ -249,6 +262,22 @@ export class EditorBridge {
         else pending?.resolve(message.markdown)
         break
       }
+    }
+  }
+
+  /** Answers the page's request for an asset, from the app's own fetch (the page has no network). */
+  private async sendAsset(requestId: string, hash: string): Promise<void> {
+    const session = this.session
+    const fetchAsset = this.options.fetchAsset
+    if (!/^[0-9a-f]{64}$/.test(hash) || !fetchAsset) {
+      this.post({ type: 'asset', session, requestId, error: 'Unavailable' })
+      return
+    }
+    try {
+      const bytes = await fetchAsset(hash)
+      if (session === this.session) this.post({ type: 'asset', session, requestId, data: bytesToBase64(bytes) })
+    } catch (error) {
+      if (session === this.session) this.post({ type: 'asset', session, requestId, error: error instanceof Error ? error.message : 'Unavailable' })
     }
   }
 

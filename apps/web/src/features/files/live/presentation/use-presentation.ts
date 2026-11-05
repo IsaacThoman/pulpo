@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type { LiveAssetStore } from '@pulpo/client-core/office'
 import { PresentationController, type PresentationUser } from '@pulpo/client-core/office/presentation/view'
 import type { Awareness } from 'y-protocols/awareness'
@@ -12,8 +12,10 @@ import { presentationLabels } from './labels'
 export function usePresentationController(options: { doc: Y.Doc; awareness?: Awareness; readOnly: boolean; assets: LiveAssetStore; user: PresentationUser }): PresentationController | null {
   const { doc, awareness, readOnly, assets, user } = options
   const [controller, setController] = useState<PresentationController | null>(null)
+  const initialReadOnly = useRef(readOnly)
+  initialReadOnly.current = readOnly
   useEffect(() => {
-    const created = new PresentationController({ doc, ...(awareness ? { awareness } : {}), readOnly, assets, user, labels: presentationLabels() })
+    const created = new PresentationController({ doc, ...(awareness ? { awareness } : {}), readOnly: initialReadOnly.current, assets, user, labels: presentationLabels() })
     setController(created)
     return () => {
       created.destroy()
@@ -21,7 +23,9 @@ export function usePresentationController(options: { doc: Y.Doc; awareness?: Awa
     }
     // The user's name and color only seed presence; changing them should not remount the editor.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [doc, awareness, readOnly, assets])
+  }, [doc, awareness, assets])
+  // Access changes (sync state, trash) switch the same editor between viewing and editing.
+  useEffect(() => controller?.setReadOnly(readOnly), [controller, readOnly])
   return controller
 }
 

@@ -63,12 +63,32 @@ export type HostMessage =
   | { type: 'blur'; session: number }
   /** Asks for the document's Markdown, without pending suggestions (the base view). */
   | { type: 'export'; session: number; requestId: string }
-  /** A text editor command from the app's toolbar. */
-  | { type: 'command'; session: number; command: TextCommand }
+  /** A text or presentation editor command from the app's toolbar. */
+  | { type: 'command'; session: number; command: TextCommand | PresentationCommand }
+  /** The answer to the editor's `asset` request: the bytes (base64), or why there are none. */
+  | { type: 'asset'; session: number; requestId: string; data?: string; error?: string }
   /** The file was renamed; text editors pick their language from the name. */
   | { type: 'name'; session: number; name: string }
 
 export type TextCommand = 'undo' | 'redo' | 'indentMore' | 'indentLess' | 'find' | 'wrap'
+
+/** The presentation editor's toolbar. */
+export type PresentationCommand = 'undo' | 'redo' | 'newSlide' | 'textBox' | 'shape' | 'bold' | 'italic' | 'bullets' | 'delete' | 'present'
+
+/** What a presentation editor's toolbar shows. */
+export interface PresentationEditorState {
+  canUndo: boolean
+  canRedo: boolean
+  bold: boolean
+  italic: boolean
+  bullets: boolean
+  /** Text formatting applies (text is being edited, or a shape with text is selected). */
+  canFormatText: boolean
+  /** Shapes are selected, so Delete removes them (otherwise it removes the slide). */
+  hasSelection: boolean
+  slideCount: number
+  readOnly: boolean
+}
 
 export interface ActiveSuggestion {
   id: string
@@ -89,6 +109,13 @@ export type EditorMessage =
   | { type: 'formatting'; session: number; formatting: FormattingState; focused: boolean }
   /** What a text editor's toolbar shows: undo state, cursor position, wrapping. */
   | { type: 'textState'; session: number; state: TextEditorState }
+  /** What a presentation editor's toolbar shows. */
+  | { type: 'presentationState'; session: number; state: PresentationEditorState }
+  /**
+   * Asks the app for an asset's bytes (an image in a deck): the page has no network access, so the
+   * app fetches them from the document's assets.
+   */
+  | { type: 'asset'; session: number; requestId: string; hash: string }
   | { type: 'suggestions'; session: number; count: number; index: number | null; active: ActiveSuggestion | null }
   /** The editor's own cursor, as Yjs relative positions, for other sessions' awareness. */
   | { type: 'cursor'; session: number; cursor: { anchor: unknown; head: unknown } | null }

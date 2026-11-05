@@ -10,7 +10,8 @@ import type { DocHandle } from '../doc/sessions'
 import { EditorBridge, type EditorBridgeState } from './bridge'
 import { EDITOR_BUNDLES, type MobileEditorFormat } from './bundles'
 import { editorTheme, normalizeHref } from './presentation'
-import type { ReviewAction, TextCommand } from './protocol'
+import type { PresentationCommand, ReviewAction, TextCommand } from './protocol'
+import { presentationToolbarState } from './presentationToolbar'
 import { TEXT_TOOLBAR, textToolbarState, type NativeToolbarItem } from './textToolbar'
 
 type NativeToolbar = { visible: boolean; active: string[]; disabled: string[]; tint: string; items: NativeToolbarItem[] }
@@ -61,13 +62,13 @@ PulpoDocEditor?.addListener('onFinalState', ({ instanceId, state }) => {
 })
 
 const noSubscription = () => () => {}
-const INITIAL: EditorBridgeState = { loaded: false, formatting: null, focused: false, suggestions: { count: 0, index: null, active: null }, text: null, incompatible: false }
+const INITIAL: EditorBridgeState = { loaded: false, formatting: null, focused: false, suggestions: { count: 0, index: null, active: null }, text: null, presentation: null, incompatible: false }
 const initialState = () => INITIAL
 
 export interface DocEditorHandle {
   format(command: FormatCommand, href?: string): void
-  /** A text editor's command (text and code files). */
-  command(command: TextCommand): void
+  /** A text or presentation editor's command. */
+  command(command: TextCommand | PresentationCommand): void
   /** A formatting bar's command, asking for a link's address where needed. */
   toolbar(command: FormatCommand): void
   review(action: ReviewAction): void
@@ -94,6 +95,8 @@ interface Props {
   onStateChange?: (state: EditorBridgeState) => void
   onLink?: (href: string) => void
   onResolved?: () => void
+  /** Fetches the document's assets (a deck's images) for the page, which has no network. */
+  fetchAsset?: (hash: string) => Promise<Uint8Array>
 }
 
 export const DocEditorView = forwardRef<DocEditorHandle, Props>(function DocEditorView({
@@ -109,12 +112,13 @@ export const DocEditorView = forwardRef<DocEditorHandle, Props>(function DocEdit
   onStateChange,
   onLink,
   onResolved,
+  fetchAsset,
 }, ref) {
   const native = useRef<NativeRef>(null)
   const theme = useAppTheme()
   const bundle = EDITOR_BUNDLES[format]
-  const latest = useRef({ acquire, editable, placeholder, sessionLabel, sessionColor, theme, bottomPadding, onLink, onResolved, bundle, name })
-  latest.current = { acquire, editable, placeholder, sessionLabel, sessionColor, theme, bottomPadding, onLink, onResolved, bundle, name }
+  const latest = useRef({ acquire, editable, placeholder, sessionLabel, sessionColor, theme, bottomPadding, onLink, onResolved, bundle, name, fetchAsset })
+  latest.current = { acquire, editable, placeholder, sessionLabel, sessionColor, theme, bottomPadding, onLink, onResolved, bundle, name, fetchAsset }
   const [instance, setInstance] = useState<{ id: string; bridge: EditorBridge; handle: DocHandle } | null>(null)
 
   // The session and page are made once per mounted editor, in an effect so that a discarded
@@ -137,6 +141,7 @@ export const DocEditorView = forwardRef<DocEditorHandle, Props>(function DocEdit
       name: props.name,
       onLink: (href) => latest.current.onLink?.(href),
       onResolved: () => latest.current.onResolved?.(),
+      fetchAsset: (hash) => latest.current.fetchAsset ? latest.current.fetchAsset(hash) : Promise.reject(new Error('Unavailable')),
     })
     // This session's caret is labeled for other devices viewing the document.
     controller.provider.awareness.setLocalStateField('user', { name: props.sessionLabel, color: props.sessionColor })
@@ -175,8 +180,8 @@ export const DocEditorView = forwardRef<DocEditorHandle, Props>(function DocEdit
 
   const runToolbar = (command: string) => {
     if (!bridge) return
-    if (format === 'text') {
-      bridge.command(command as TextCommand)
+    if (format === 'text' || format === 'presentation') {
+      bridge.command(command as TextCommand | PresentationCommand)
       return
     }
     if (command !== 'link') {
@@ -217,7 +222,7 @@ export const DocEditorView = forwardRef<DocEditorHandle, Props>(function DocEdit
   }), [bridge])
 
   if (!NativeDocEditor || !instance || !bridge) return null
-  const formatting = format === 'text' ? textToolbarState(state) : state.formatting
+  const formatting = format === 'text' ? textToolbarState(state) : format === 'presentation' ? presentationToolbarState(state) : state.formatting
   return (
     <NativeDocEditor
       ref={native}
@@ -226,7 +231,8 @@ export const DocEditorView = forwardRef<DocEditorHandle, Props>(function DocEdit
       html={bundle.html}
       pageBackground={editorTheme(theme).background}
       toolbar={{
-        visible: editable && state.loaded,
+        // Decks have an always-on bar of their own (PresentationBar), not a keyboard accessory.
+        visible: editable && state.loaded && format !== 'presentation',
         active: formatting?.active ?? [],
         disabled: formatting?.disabled ?? [],
         tint: theme.blue,

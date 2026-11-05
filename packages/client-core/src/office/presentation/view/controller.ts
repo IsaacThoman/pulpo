@@ -119,7 +119,7 @@ export class PresentationController {
   readonly doc: Y.Doc
   readonly awareness?: Awareness
   readonly assets: LiveAssetStore
-  readonly readOnly: boolean
+  readOnly: boolean
   readonly user: PresentationUser
   readonly labels: PresentationLabels
   readonly undoManager: Y.UndoManager
@@ -321,15 +321,16 @@ export class PresentationController {
       return undefined
     }
     this.urls.set(partPath, null)
-    void this.assets.get(asset.hash).then(
-      (bytes) => {
+    void this.assets
+      .get(asset.hash)
+      .then((bytes) => {
         if (this.destroyed) return
         this.urls.set(partPath, assetObjectUrl(bytes, asset.mimeType) ?? null)
         this.assetVersion++
         this.emit({ assets: true })
-      },
-      () => undefined,
-    )
+      })
+      // A picture that cannot be loaded stays a gray box.
+      .catch(() => undefined)
     return undefined
   }
 
@@ -424,6 +425,15 @@ export class PresentationController {
 
   canRedo(): boolean {
     return this.undoManager.redoStack.length > 0
+  }
+
+  /** Switches between viewing and editing (access changed, or the connection allows edits again). */
+  setReadOnly(readOnly: boolean): void {
+    if (this.readOnly === readOnly) return
+    this.readOnly = readOnly
+    if (readOnly) this.state = { ...this.state, editing: undefined }
+    this.globalVersion++
+    this.emit({ selection: true, order: true })
   }
 
   /** Groups everything until `end()` into one undo step (a drag, a resize). */
