@@ -113,6 +113,7 @@ function close(): void {
   current.awareness.destroy()
   current.doc.destroy()
   root.replaceChildren()
+  root.classList.remove('docx-empty')
 }
 
 /** A style by id, else by its name (documents from other editors name theirs differently). */
@@ -173,8 +174,17 @@ function start(message: Extract<HostMessage, { type: 'init' }>): void {
     user: message.user,
     layout: 'web',
   })
+  // An empty document shows the app's placeholder, as the other editors do.
+  root.style.setProperty('--docx-placeholder', JSON.stringify(message.placeholder))
+  const showPlaceholder = () => {
+    const body = editor.view.state.doc
+    const only = body.childCount === 1 ? body.firstChild : null
+    root.classList.toggle('docx-empty', body.childCount === 0 || (only?.type.name === 'paragraph' && only.content.size === 0))
+  }
+  showPlaceholder()
   let frame = 0
   editor.on('update', () => {
+    showPlaceholder()
     if (frame) return
     frame = requestAnimationFrame(() => {
       frame = 0

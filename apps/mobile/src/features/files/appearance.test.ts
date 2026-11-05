@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 vi.mock('../../api/client', () => ({ ApiError: class extends Error {}, isNetworkError: () => false }))
 
 const { FILE_COLOR_LABELS, FILE_COLORS, FILE_ICON_LABELS, FILE_ICONS, appearanceActionTitle, appearanceShortTitle, offersIcon, restyled, sharedAppearance, storedAppearanceIds, styledNodes } = await import('./appearance')
-const { FILE_COLOR_HEX, FILE_ICON_SYMBOLS, fileIcon } = await import('./display')
+const { FILE_COLOR_HEX, FILE_ICON_SYMBOLS, fileIcon, fileKindLabel } = await import('./display')
 const { materialSymbolNames } = await import('../../platform/symbolNames')
 const { trashFolderNode } = await import('../trash/folder')
 
@@ -71,5 +71,13 @@ describe('file and folder appearance', () => {
     expect(fileIcon(node({ color: 'purple', icon: 'rocket' }))).toEqual({ symbol: FILE_ICON_SYMBOLS.rocket, tint: FILE_COLOR_HEX.purple })
     expect(fileIcon(node({ systemRole: 'archive', icon: 'rocket', color: 'teal' }))).toEqual({ symbol: 'archivebox.fill', tint: FILE_COLOR_HEX.teal })
     expect(fileIcon(trashFolderNode('pink'))).toEqual({ symbol: 'trash.fill', tint: FILE_COLOR_HEX.pink })
+  })
+
+  it('shows Word files as Word documents, with an icon Android has too', () => {
+    const word = fileIcon(node({ kind: 'doc', name: 'Plan.docx' }))
+    expect(word.symbol).toBe('doc.text.image.fill')
+    expect(fileIcon(node({ kind: 'blob', name: 'Old.DOC' })).symbol).toBe(word.symbol)
+    expect(materialSymbolNames[word.symbol]).toBeTruthy()
+    expect(fileKindLabel(node({ kind: 'doc', name: 'Plan.docx' }))).toBe('Word document')
   })
 })

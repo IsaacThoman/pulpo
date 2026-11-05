@@ -4,3 +4,4 @@ body { min-height: 100vh; }
 /* Phones show the document pageless: white to the edges and the bottom of the screen. */
 .docx-web .docx-flow-host { padding: 20px 16px 48px !important; box-shadow: none; width: auto !important; min-height: 100vh; box-sizing: border-box; }
 .docx-flow { -webkit-user-select: text; user-select: text; }
+.docx-empty .docx-flow p:first-of-type:not([data-label])::before { content: var(--docx-placeholder); float: left; height: 0; pointer-events: none; color: #8e8e93; }

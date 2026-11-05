@@ -3,7 +3,7 @@
 import { JSDOM as UntypedJSDOM } from 'jsdom'
 import { readFileSync } from 'node:fs'
 import { MemoryLiveAssetStore } from '@pulpo/client-core/office'
-import { docxCodec } from '@pulpo/client-core/office/docx'
+import { blankDocx, docxCodec } from '@pulpo/client-core/office/docx'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Awareness } from 'y-protocols/awareness'
 import * as Y from 'yjs'
@@ -150,6 +150,32 @@ describe('Word editor bridge with the built editor', () => {
       await page.flush()
     }
     expect(bridge.getState().docx).toMatchObject({ suggesting: true, layout: 'print' })
+  })
+
+  it('shows the placeholder only while the document is empty', async () => {
+    const doc = new Y.Doc()
+    const assets = new MemoryLiveAssetStore()
+    await docxCodec.importFile(doc, blankDocx(), { name: 'New.docx', assets })
+    const awareness = new Awareness(doc)
+    let page!: Page
+    const bridge = new EditorBridge({
+      doc, awareness, send: (message) => page.send(message), editable: true, placeholder: 'Start writing…',
+      user: { name: 'Pulpo on iPhone', color: '#123456' }, theme, schemaVersion: DOCX_EDITOR_BUNDLE.schemaVersion, format: 'document', name: 'New.docx',
+      onError: (message) => { throw new Error(`editor error: ${message}`) },
+    })
+    page = new Page(bridge)
+    pages.push(page)
+    await page.flush()
+    const root = page.document.getElementById('editor')!
+    expect(root.classList.contains('docx-empty')).toBe(true)
+    expect(root.style.getPropertyValue('--docx-placeholder')).toBe('"Start writing…"')
+    doc.transact(() => {
+      const paragraph = new Y.XmlElement('paragraph')
+      paragraph.insert(0, [new Y.XmlText('Hello')])
+      doc.getXmlFragment('body').insert(0, [paragraph])
+    })
+    await page.flush()
+    expect(root.classList.contains('docx-empty')).toBe(false)
   })
 
   it('shows pictures with bytes the app fetches, and refuses malformed requests', async () => {

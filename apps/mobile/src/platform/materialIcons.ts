@@ -139,6 +139,8 @@ const icons: Record<string, ImageSourcePropType> = {
   'cloud_sync': require('../../assets/material/cloud_sync.xml'),
   'checklist': require('../../assets/material/checklist.xml'),
   'format_size': require('../../assets/material/format_size.xml'),
+  'format_align_left': require('../../assets/material/format_align_left.xml'),
+  'format_underlined': require('../../assets/material/format_underlined.xml'),
   'format_bold': require('../../assets/material/format_bold.xml'),
   'format_italic': require('../../assets/material/format_italic.xml'),
   'format_strikethrough': require('../../assets/material/format_strikethrough.xml'),
