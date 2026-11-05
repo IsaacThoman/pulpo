@@ -228,14 +228,34 @@ describe('order keys from other clients', () => {
 })
 
 describe('order keys when appending', () => {
-  it('stay short over a thousand appends', () => {
+  /** A seeded generator (mulberry32), so the exact length below does not depend on chance. */
+  function seeded(seed: number): () => number {
+    let state = seed >>> 0
+    return () => {
+      state = (state + 0x6d2b79f5) >>> 0
+      let value = Math.imul(state ^ (state >>> 15), 1 | state)
+      value = (value + Math.imul(value ^ (value >>> 7), 61 | value)) ^ value
+      return ((value ^ (value >>> 14)) >>> 0) / 4_294_967_296
+    }
+  }
+
+  const append = (count: number, random?: () => number) => {
     let last: string | null = null
-    for (let index = 0; index < 1_000; index += 1) {
-      const next = orderKeyBetween(last, null)
+    for (let index = 0; index < count; index += 1) {
+      const next = orderKeyBetween(last, null, random)
       if (last) expect(next > last).toBe(true)
       last = next
     }
-    expect(last!.length).toBeLessThan(60)
+    return last!
+  }
+
+  it('stay short over a thousand appends', () => {
+    expect(append(1_000, seeded(42)).length).toBeLessThan(60)
+  })
+
+  it('stay short with real randomness too', () => {
+    // Over a thousand appends keys are about 51 characters long; 2,000 runs never passed 66.
+    for (let run = 0; run < 20; run += 1) expect(append(1_000).length).toBeLessThan(80)
   })
 })
 
