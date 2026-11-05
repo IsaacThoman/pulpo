@@ -113,6 +113,36 @@ describe('content from another part', () => {
     expect(recallCopy(copy(slice), schema)?.slice.eq(slice)).toBe(true)
   })
 
+  it('strips story markers from packed block attributes without losing unrelated XML', () => {
+    const markers = packJml([
+      ['w:commentRangeStart', { 'w:id': '0' }], ['w:commentRangeEnd', { 'w:id': '0' }],
+      ['w:commentReference', { 'w:id': '0' }], ['w:footnoteReference', { 'w:id': '1' }], ['w:endnoteReference', { 'w:id': '2' }],
+    ])
+    const bookmark: [string, Record<string, string>] = ['w:bookmarkStart', { 'w:id': '3', 'w:name': 'keep' }]
+    const mixed = packJml([['w:commentRangeStart', { 'w:id': '0' }], bookmark])
+    const nested = packJml(['w:rPr', {}, ['w:b', {}], ['w:r', {}, ['w:commentReference', { 'w:id': '0' }]]])
+    const paragraph = schema.node('paragraph', { lead: mixed, trail: markers, markRPr: nested }, schema.text('Keep text', [schema.mark('b')]))
+    const cell = schema.node('tableCell', { lead: markers }, paragraph)
+    const row = schema.node('tableRow', { lead: mixed, cellTrail: markers }, cell)
+    const table = schema.node('table', { lead: markers, trail: mixed, rowTrail: markers, tblPr: packJml(['w:footnoteReference', { 'w:id': '1' }]) }, row)
+    const slice = new Slice(Fragment.from([paragraph, table]), 1, 3)
+    const cleaned = withoutStoryReferences(slice)
+    const kept = cleaned.content.firstChild!
+    expect(kept.attrs.lead).toBe(packJml([bookmark]))
+    expect(kept.attrs.trail).toBeNull()
+    expect(kept.attrs.markRPr).toBe(packJml(['w:rPr', {}, ['w:b', {}], ['w:r', {}]]))
+    expect(kept.firstChild!.eq(paragraph.firstChild!)).toBe(true)
+    const keptTable = cleaned.content.lastChild!
+    expect(keptTable.attrs).toMatchObject({ lead: null, trail: packJml([bookmark]), rowTrail: null, tblPr: null })
+    expect(keptTable.firstChild!.attrs).toMatchObject({ lead: packJml([bookmark]), cellTrail: null })
+    expect(keptTable.firstChild!.firstChild!.attrs.lead).toBeNull()
+    expect(keptTable.firstChild!.firstChild!.firstChild!.eq(kept)).toBe(true)
+    expect(cleaned.openStart).toBe(1)
+    expect(cleaned.openEnd).toBe(3)
+    expect(recallCopy(copy(slice), schema)?.slice.eq(slice)).toBe(true)
+    expect(JSON.stringify(cleaned.toJSON())).not.toMatch(/commentRange|commentReference|footnoteReference|endnoteReference/)
+  })
+
   it('nests pasted tables no deeper than a document may', () => {
     let html = 'x'
     for (let level = 0; level < 40; level++) html = `<table><tr><td>${html}</td></tr></table>`

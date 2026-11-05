@@ -1,5 +1,5 @@
 import { DOMParser as PMDOMParser, DOMSerializer, Fragment, Slice, type Node as ProseMirrorNode, type ParseRule, type Schema } from '@tiptap/pm/model'
-import { packJml, type JmlElement } from '../jsonml.js'
+import { jmlChildren, packJml, unpackJml, type JmlElement, type JmlNode } from '../jsonml.js'
 import { HIGHLIGHT_COLORS } from '../css.js'
 import { DOCX_MAX_TABLE_DEPTH } from '../format.js'
 
@@ -120,13 +120,37 @@ export function withoutForeignParts(slice: Slice): Slice {
   return new Slice(clean(slice.content), slice.openStart, slice.openEnd)
 }
 
+const STORY_REFERENCES = new Set(['w:commentRangeStart', 'w:commentRangeEnd', 'w:commentReference', 'w:footnoteReference', 'w:endnoteReference'])
+
+/** Opaque XML can carry the same story references as the inline nodes. */
+function withoutPackedStoryReferences(value: unknown, fallback: unknown): unknown {
+  if (typeof value !== 'string') return value
+  const parsed = unpackJml<JmlNode | JmlNode[]>(value)
+  if (!Array.isArray(parsed)) return value
+  let changed = false
+  const clean = (node: JmlNode): JmlNode[] => {
+    if (!Array.isArray(node)) return [node]
+    if (STORY_REFERENCES.has(node[0])) {
+      changed = true
+      return []
+    }
+    return [[node[0], node[1], ...jmlChildren(node).flatMap(clean)]]
+  }
+  const elements = typeof parsed[0] === 'string' ? clean(parsed as JmlElement) : (parsed as JmlNode[]).flatMap(clean)
+  if (!changed) return value
+  return elements.length ? packJml(typeof parsed[0] === 'string' ? elements[0]! : elements) : fallback
+}
+
 /** Notes and comments belong to their document; a copied id could name an unrelated story here. */
 export function withoutStoryReferences(slice: Slice): Slice {
   const clean = (fragment: Fragment): Fragment => {
     const children: ProseMirrorNode[] = []
     fragment.forEach((child) => {
       if (child.type.name === 'noteRef' || child.type.name === 'commentMark') return
-      children.push(child.isLeaf ? child : child.copy(clean(child.content)))
+      const attrs = Object.fromEntries(Object.entries(child.attrs).map(([key, value]) => [
+        key, withoutPackedStoryReferences(value, (child.type.spec.attrs?.[key] as { default?: unknown } | undefined)?.default ?? null),
+      ]))
+      children.push(child.isText ? child : child.type.create(attrs, child.isLeaf ? null : clean(child.content), child.marks))
     })
     return Fragment.fromArray(children)
   }
