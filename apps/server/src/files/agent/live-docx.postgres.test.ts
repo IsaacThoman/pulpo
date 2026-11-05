@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm'
 import { BODY_FRAGMENT, docxCodec, docxSchema, readDocxModel, writeFragment } from '@pulpo/client-core/office/docx'
 import { MemoryLiveAssetStore } from '@pulpo/client-core/office'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as Y from 'yjs'
 import { db, queryClient } from '../../database/client.js'
 import { fileChanges, fileDocAssets, fileNodes } from '../../database/schema.js'
@@ -96,6 +96,7 @@ describe.skipIf(!enabled)('agent edits to Word documents', () => {
     published.length = 0
   })
   afterAll(async () => { await queryClient.end() })
+  afterEach(() => { vi.useRealTimers() })
 
   it('creates documents, pulls real .docx bytes, and cats and greps their text', async () => {
     const id = await wordDoc('Plan.docx', projects, [['Quarterly plan', 'Heading1'], ['Ship the editor.'], ['Write the docs.']])
@@ -118,6 +119,9 @@ describe.skipIf(!enabled)('agent edits to Word documents', () => {
     const id = await wordDoc('Plan.docx', projects, [['One'], ['Two'], ['Three']])
     await files.attach({ [projects]: 'write' })
     const [pulled] = await pull('Projects/Plan.docx', '/workspace/files/Projects/Plan.docx')
+    // A minute passes before the push: the export the version is checked against must not change with the clock.
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(Date.now() + 60_000)
     // A user's editor holds an edit it has not sent yet while the agent pushes.
     const editor = await loadYDoc(id)
     const vector = Y.encodeStateVector(editor)

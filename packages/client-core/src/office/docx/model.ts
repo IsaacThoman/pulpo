@@ -203,6 +203,23 @@ export function parseJson<T>(value: string | undefined | null): T | undefined {
   }
 }
 
+/**
+ * The document's theme, as names to `#rrggbb` colors and font names. Collaborators write it too,
+ * so anything else is dropped here rather than reaching the style sheet.
+ */
 export function readTheme(doc: Y.Doc): ThemeInfo | undefined {
-  return parseJson<ThemeInfo>(doc.getMap<string>('docx').get('theme'))
+  const raw = parseJson<{ colors?: unknown; fonts?: unknown }>(doc.getMap<string>('docx').get('theme'))
+  if (!raw || typeof raw !== 'object') return undefined
+  const theme: ThemeInfo = { colors: {}, fonts: {} }
+  if (raw.colors && typeof raw.colors === 'object') {
+    for (const [name, color] of Object.entries(raw.colors as Record<string, unknown>)) {
+      if (/^[A-Za-z0-9]+$/.test(name) && typeof color === 'string' && /^#[0-9a-fA-F]{6}$/.test(color)) theme.colors[name] = color
+    }
+  }
+  if (raw.fonts && typeof raw.fonts === 'object') {
+    for (const [slot, font] of Object.entries(raw.fonts as Record<string, unknown>)) {
+      if (typeof font === 'string') (theme.fonts as Record<string, string>)[slot] = font
+    }
+  }
+  return theme
 }

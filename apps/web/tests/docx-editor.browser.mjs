@@ -133,6 +133,64 @@ try {
     assert.equal(await page.evaluate(() => window.pwned), undefined)
   })
 
+  await step('copies and pastes within Pulpo exactly, and drops what another document refers to', async () => {
+    // Character spacing does not survive HTML; it does survive a Pulpo copy.
+    const html = await page.evaluate(() => {
+      const view = window.harness.editors[0].view
+      let from
+      view.state.doc.descendants((node, pos) => {
+        if (from === undefined && node.isText && node.text.startsWith('Expanded character spacing')) from = pos
+        return from === undefined
+      })
+      const Selection = view.state.selection.constructor
+      view.focus()
+      view.dispatch(view.state.tr.setSelection(Selection.create(view.state.doc, from, from + 'Expanded character spacing'.length)))
+      const data = new DataTransfer()
+      view.dom.dispatchEvent(new ClipboardEvent('copy', { clipboardData: data, bubbles: true, cancelable: true }))
+      return data.getData('text/html')
+    })
+    assert.match(html, /data-docx-copy="[0-9a-f]{32}"/)
+    assert.doesNotMatch(html, /w:spacing/)
+    const pasteHtml = (markup) => page.evaluate((markup) => {
+      const data = new DataTransfer()
+      data.setData('text/html', markup)
+      data.setData('text/plain', 'pasted')
+      document.querySelector('.docx-flow.ProseMirror').dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }))
+    }, markup)
+    await clickEnd('Line spacing double')
+    await page.keyboard.press('Enter')
+    await pasteHtml(html)
+    const spaced = () => page.evaluate(() => {
+      let count = 0
+      window.harness.editors[0].view.state.doc.descendants((node) => {
+        if (node.isText && node.text.includes('Expanded character spacing') && node.marks.some((mark) => mark.type.name === 'spacing')) count++
+      })
+      return count
+    })
+    assert.equal(await spaced(), 2)
+
+    // A copy from another document (another tab, through local storage) with a picture this one
+    // has no asset for, and a footnote it does not have.
+    const id = 'c0'.repeat(16)
+    await page.evaluate((id) => {
+      const drawing = JSON.stringify(['wp:inline', {}, ['wp:extent', { cx: '952500', cy: '952500' }], ['wp:docPr', { id: '1', name: 'Picture' }]])
+      const slice = { content: [{ type: 'paragraph', content: [{ type: 'text', text: 'From another document ' }, { type: 'drawing', attrs: { v: drawing, src: 'f'.repeat(64) } }, { type: 'noteRef', attrs: { kind: 'footnote', id: '999' } }] }], openStart: 1, openEnd: 1 }
+      localStorage.setItem('pulpo-docx-copy', JSON.stringify({ id, json: JSON.stringify(slice) }))
+    }, id)
+    await page.keyboard.press('Enter')
+    await pasteHtml(`<p data-docx-copy="${id}">Plain HTML fallback</p>`)
+    await paragraph('From another document').waitFor()
+    assert.equal(await flow.locator('p', { hasText: 'Plain HTML fallback' }).count(), 0)
+    await page.waitForFunction(() => {
+      let refs = 0
+      window.harness.editors[0].view.state.doc.descendants((node) => {
+        if ((node.type.name === 'drawing' && node.attrs.src === 'f'.repeat(64)) || (node.type.name === 'noteRef' && node.attrs.id === '999')) refs++
+      })
+      return refs === 0
+    })
+    assert.match(await exported(), /From another document/)
+  })
+
   await step('finds and replaces', async () => {
     await flow.click()
     await page.keyboard.press(`${mod}+h`)
@@ -161,6 +219,8 @@ try {
     const before = await flow.locator('.docx-drawing').count()
     const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>')
     assert.equal(await page.evaluate(async (bytes) => window.harness.editors[0].insertImage(new Blob([new Uint8Array(bytes)], { type: 'image/svg+xml' })), [...svg]), false)
+    // TIFF (or anything else that is not PNG, JPEG, GIF, or BMP) is refused too, whatever its type says.
+    assert.equal(await page.evaluate(() => window.harness.editors[0].insertImage(new Blob([new Uint8Array([0x49, 0x49, 0x2a, 0, 8, 0, 0, 0])], { type: 'image/png' }))), false)
     await page.locator('input[type=file][accept^="image/"]').setInputFiles({ name: 'dot.png', mimeType: 'image/png', buffer: png })
     await page.waitForFunction((count) => document.querySelectorAll('.docx-flow .docx-drawing').length > count, before)
     assert.match(await page.locator('input[type=file][accept^="image/"]').getAttribute('accept'), /^image\/png,image\/jpeg,image\/gif,image\/bmp$/)
@@ -218,6 +278,21 @@ try {
     })
     assert.deepEqual(comments, { added: null, before: comments.before, after: comments.before, canComment: false })
     assert.ok(comments.before > 0)
+  })
+
+  await step('opens links in a new tab, never in place of the app', async () => {
+    const follow = async (query, modifiers) => {
+      await open(query)
+      await page.evaluate(() => { window.opened = []; window.open = (url) => { window.opened.push(url); return null } })
+      const before = page.url()
+      await flow.locator('a[href="https://example.com/"]').click({ modifiers })
+      await page.waitForTimeout(200)
+      assert.equal(page.url(), before)
+      return page.evaluate(() => window.opened)
+    }
+    assert.deepEqual(await follow('?file=notes-fields.docx&readonly=1'), ['https://example.com/'])
+    assert.deepEqual(await follow('?file=notes-fields.docx'), [])
+    assert.deepEqual(await follow('?file=notes-fields.docx', [process.platform === 'darwin' ? 'Meta' : 'Control']), ['https://example.com/'])
   })
 
   await step('lays out a 100-page document within budget', async () => {

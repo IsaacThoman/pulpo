@@ -1,73 +1,108 @@
-import { DOMParser as PMDOMParser, DOMSerializer, type DOMOutputSpec, type Mark, type Node as ProseMirrorNode, type ParseRule, type Schema, type TagParseRule } from '@tiptap/pm/model'
+import { DOMParser as PMDOMParser, DOMSerializer, Fragment, Slice, type Node as ProseMirrorNode, type ParseRule, type Schema } from '@tiptap/pm/model'
 import { packJml, type JmlElement } from '../jsonml.js'
 import { HIGHLIGHT_COLORS } from '../css.js'
 
 /**
- * Copy and paste. Between docx editors everything round-trips exactly: the clipboard HTML
- * carries each node's and mark's attributes. From Word, Google Docs, and web pages, the HTML is
+ * Copy and paste. Between docx editors everything round-trips exactly: the clipboard carries a
+ * copy id and the content comes from memory (`rememberCopy`). From Word, Google Docs, and web pages, the HTML is
  * first made inert (no scripts, styles, frames, event handlers, or remote URLs) and then read
  * into paragraphs, headings, lists, tables, links, and the run formatting the schema models.
  */
 
-const DATA_NODE = 'data-docx-node'
-const DATA_MARK = 'data-docx-mark'
-const DATA_ATTRS = 'data-docx-attrs'
-const DATA_TOKEN = 'data-docx-clip'
-const TOKEN_KEY = 'pulpo-docx-clipboard'
+const COPY_ATTR = 'data-docx-copy'
+const COPY_KEY = 'pulpo-docx-copy'
+const COPY_ID = /data-docx-copy="([0-9a-f]{32})"/
 
-let memoryToken: string | undefined
+/** Recent copies by id, as slice JSON. */
+const copies = new Map<string, string>()
+let currentCopy: string | null = null
 
 /**
- * A secret this origin stamps on what it copies. Attributes carry raw WordprocessingML, so they
- * are trusted only from Pulpo's own copies (in any tab, through local storage), never from HTML
- * another site put on the clipboard; those paste as ordinary sanitized HTML.
+ * Remembers a slice being copied or dragged, for pasting it back exactly. The clipboard only
+ * carries the copy's random id; the content comes from this origin's memory (and local storage,
+ * for other tabs), so nothing another site or app puts on the clipboard is trusted as a Pulpo copy,
+ * and a leaked id can only paste back what the user copied.
  */
-export function clipboardToken(): string {
-  const make = () => Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, '0')).join('')
+export function rememberCopy(slice: Slice): Slice {
+  const id = Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, '0')).join('')
+  const json = JSON.stringify(slice.toJSON())
+  copies.set(id, json)
+  if (copies.size > 8) copies.delete(copies.keys().next().value!)
   try {
-    let token = localStorage.getItem(TOKEN_KEY)
-    if (!token || !/^[0-9a-f]{32}$/.test(token)) {
-      token = make()
-      localStorage.setItem(TOKEN_KEY, token)
-    }
-    return token
+    localStorage.setItem(COPY_KEY, JSON.stringify({ id, json }))
   } catch {
-    memoryToken ??= make()
-    return memoryToken
+    // Too large or no storage: other tabs paste the HTML instead.
+  }
+  currentCopy = id
+  return slice
+}
+
+/** The remembered slice clipboard HTML refers to, if it is one of this origin's copies. */
+export function recallCopy(html: string | undefined, schema: Schema): Slice | null {
+  const id = html ? COPY_ID.exec(html)?.[1] : undefined
+  if (!id) return null
+  let json = copies.get(id)
+  if (!json) {
+    try {
+      const stored = JSON.parse(localStorage.getItem(COPY_KEY) ?? 'null') as { id?: string; json?: string } | null
+      if (stored?.id === id) json = stored.json
+    } catch {
+      return null
+    }
+  }
+  if (!json) return null
+  try {
+    return Slice.fromJSON(schema, JSON.parse(json))
+  } catch {
+    return null
   }
 }
 
-function withData(spec: DOMOutputSpec, data: Record<string, string>): DOMOutputSpec {
-  if (!Array.isArray(spec)) return spec
-  const [tag, maybeAttrs, ...rest] = spec as unknown as [string, unknown, ...unknown[]]
-  if (maybeAttrs && typeof maybeAttrs === 'object' && !Array.isArray(maybeAttrs) && !(typeof Node !== 'undefined' && maybeAttrs instanceof Node)) {
-    return [tag, { ...(maybeAttrs as Record<string, string>), ...data }, ...rest] as unknown as DOMOutputSpec
-  }
-  return [tag, data, ...(maybeAttrs === undefined ? [] : [maybeAttrs]), ...rest] as unknown as DOMOutputSpec
-}
-
-/** Serializes slices with their full attributes, for pasting into another docx editor. */
+/** Serializes copies as ordinary HTML for other apps, marked with the copy's id for Pulpo. */
 export function clipboardSerializer(schema: Schema): DOMSerializer {
   const base = DOMSerializer.fromSchema(schema)
-  const nodes: Record<string, (node: ProseMirrorNode) => DOMOutputSpec> = {}
-  for (const [name, serialize] of Object.entries(base.nodes)) {
-    nodes[name] = (node) => withData(serialize(node), { [DATA_NODE]: name, [DATA_ATTRS]: JSON.stringify(node.attrs), [DATA_TOKEN]: clipboardToken() })
-  }
-  const marks: Record<string, (mark: Mark, inline: boolean) => DOMOutputSpec> = {}
-  for (const [name, serialize] of Object.entries(base.marks)) {
-    marks[name] = (mark, inline) => withData(serialize(mark, inline), { [DATA_MARK]: name, [DATA_ATTRS]: JSON.stringify(mark.attrs), [DATA_TOKEN]: clipboardToken() })
-  }
-  return new DOMSerializer(nodes, marks)
+  return new (class extends DOMSerializer {
+    override serializeFragment(...args: Parameters<DOMSerializer['serializeFragment']>) {
+      const result = super.serializeFragment(...args)
+      if (currentCopy) for (const child of Array.from(result.childNodes)) if (child.nodeType === 1) (child as HTMLElement).setAttribute(COPY_ATTR, currentCopy)
+      return result
+    }
+  })(base.nodes, base.marks)
 }
 
-function dataAttrs(dom: HTMLElement): Record<string, unknown> | false {
-  if (dom.getAttribute(DATA_TOKEN) !== clipboardToken()) return false
-  try {
-    return JSON.parse(dom.getAttribute(DATA_ATTRS) ?? '{}') as Record<string, unknown>
-  } catch {
-    return false
+/** Most columns and rows a pasted table may span; Word allows 63 columns. */
+const PASTE_MAX_SPAN = { columns: 63, rows: 1_000 }
+/** Most grid positions in one pasted table, as for imported files. */
+const PASTE_MAX_TABLE_CELLS = 250_000
+
+/**
+ * Pasted tables too large to keep as tables (which editors fill out cell by cell) become their
+ * cells' paragraphs.
+ */
+export function limitPastedTables(slice: Slice): Slice {
+  const shrink = (fragment: Fragment): Fragment => {
+    const children: ProseMirrorNode[] = []
+    fragment.forEach((child) => {
+      if (child.type.name === 'table') {
+        let width = 0
+        child.forEach((row) => {
+          let span = 0
+          row.forEach((cell) => { span += Math.max(1, Number(cell.attrs.colspan) || 1) })
+          width = Math.max(width, span)
+        })
+        if (width > PASTE_MAX_SPAN.columns || width * child.childCount > PASTE_MAX_TABLE_CELLS) {
+          child.forEach((row) => row.forEach((cell) => cell.forEach((block) => { children.push(block) })))
+          return
+        }
+      }
+      children.push(child.isLeaf ? child : child.copy(shrink(child.content)))
+    })
+    return Fragment.fromArray(children)
   }
+  return new Slice(shrink(slice.content), slice.openStart, slice.openEnd)
 }
+
+const span = (value: string | null, max: number) => Math.min(max, Math.max(1, Number(value) || 1))
 
 const element = (name: string, attrs: Record<string, string> = {}): string => packJml([name, attrs])
 
@@ -123,16 +158,9 @@ function paragraphAttrs(dom: HTMLElement, pStyle: string | null): Record<string,
   return attrs
 }
 
-/** Parse rules for pasted HTML; internal copies match the data attributes first. */
+/** Parse rules for pasted HTML (Pulpo's own copies come back through `recallCopy` instead). */
 export function clipboardParser(schema: Schema): PMDOMParser {
   const rules: ParseRule[] = []
-  for (const name of Object.keys(schema.nodes)) {
-    if (name === 'text' || name === 'doc') continue
-    rules.push({ tag: `[${DATA_NODE}="${name}"]`, node: name, priority: 100, getAttrs: (dom) => dataAttrs(dom as HTMLElement) } as TagParseRule)
-  }
-  for (const name of Object.keys(schema.marks)) {
-    rules.push({ tag: `[${DATA_MARK}="${name}"]`, mark: name, priority: 100, getAttrs: (dom) => dataAttrs(dom as HTMLElement) } as TagParseRule)
-  }
   for (let level = 1; level <= 6; level++) {
     rules.push({ tag: `h${level}`, node: 'paragraph', getAttrs: (dom) => paragraphAttrs(dom as HTMLElement, `Heading${level}`) })
   }
@@ -143,8 +171,8 @@ export function clipboardParser(schema: Schema): PMDOMParser {
     { tag: 'pre', node: 'paragraph', preserveWhitespace: 'full', getAttrs: (dom) => paragraphAttrs(dom as HTMLElement, null) },
     { tag: 'table', node: 'table' },
     { tag: 'tr', node: 'tableRow' },
-    { tag: 'td', node: 'tableCell', getAttrs: (dom) => ({ colspan: Number((dom as HTMLElement).getAttribute('colspan')) || 1, rowspan: Number((dom as HTMLElement).getAttribute('rowspan')) || 1 }) },
-    { tag: 'th', node: 'tableCell', getAttrs: (dom) => ({ colspan: Number((dom as HTMLElement).getAttribute('colspan')) || 1, rowspan: Number((dom as HTMLElement).getAttribute('rowspan')) || 1 }) },
+    { tag: 'td', node: 'tableCell', getAttrs: (dom) => ({ colspan: span((dom as HTMLElement).getAttribute('colspan'), PASTE_MAX_SPAN.columns), rowspan: span((dom as HTMLElement).getAttribute('rowspan'), PASTE_MAX_SPAN.rows) }) },
+    { tag: 'th', node: 'tableCell', getAttrs: (dom) => ({ colspan: span((dom as HTMLElement).getAttribute('colspan'), PASTE_MAX_SPAN.columns), rowspan: span((dom as HTMLElement).getAttribute('rowspan'), PASTE_MAX_SPAN.rows) }) },
     { tag: 'br', node: 'break', getAttrs: () => ({ type: 'textWrapping', v: element('w:br') }) },
     { tag: 'a[href]', mark: 'link', getAttrs: (dom) => {
       const href = (dom as HTMLElement).getAttribute('href') ?? ''

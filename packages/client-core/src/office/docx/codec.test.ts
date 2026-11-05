@@ -1,6 +1,6 @@
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import { strToU8, zipSync } from 'fflate'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import * as Y from 'yjs'
 import { LiveFormatError } from '../live-format.js'
 import { OoxmlPackage } from '../ooxml/package.js'
@@ -179,6 +179,22 @@ describe('docxCodec', () => {
       expect(doc.getMap<string>('styles').get('style:Agent')).toContain('"Agent"')
       expect(JSON.parse(doc.getMap<string>('comments').get('0')!)).toMatchObject({ author: 'Agent' })
     })
+  })
+
+  it('exports the same document to the same bytes at any time, so versions only change with content', async () => {
+    const doc = new Y.Doc()
+    const assets = new MemoryAssetStore()
+    await docxCodec.importFile(doc, blankDocx(), { name: 'a.docx', assets })
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(new Date('2026-01-01T10:00:00Z'))
+      const first = await docxCodec.exportFile(doc, { name: 'a.docx', assets })
+      vi.setSystemTime(new Date('2026-01-01T10:00:09Z'))
+      const second = await docxCodec.exportFile(doc, { name: 'a.docx', assets })
+      expect(Buffer.from(second).equals(Buffer.from(first))).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   describe('hostile files', () => {

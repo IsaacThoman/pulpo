@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { cssString, fontStack, latinFont, runPropertiesCss, cssText, type ThemeInfo } from './css.js'
+import * as Y from 'yjs'
+import { cssString, fontStack, latinFont, resolveColor, runPropertiesCss, cssText, type ThemeInfo } from './css.js'
+import { readTheme } from './model.js'
 import { packJml } from './jsonml.js'
 import { StyleSheet } from './styles.js'
 import { documentStylesheet, themeVariables } from './view/stylesheet.js'
@@ -39,5 +41,17 @@ describe('CSS from document values', () => {
     const sheet = new StyleSheet([['docDefaults', packJml(['w:docDefaults', {}, ['w:rPrDefault', {}, ['w:rPr', {}, ['w:color', { 'w:val': 'auto', 'w:themeColor': 'x)}body{color:red}.q{color:var(--z' }]]]])]])
     const css = documentStylesheet('docx-scope-test', sheet, theme)
     expect(css.replace(/"[^"]*"/g, '""')).not.toMatch(/body\{/)
+  })
+
+  it('reads only names and hex colors from a theme a collaborator wrote', () => {
+    const doc = new Y.Doc()
+    const evil = 'red}body{background:url(https://attacker.example/x)}.q{color:blue'
+    doc.getMap('docx').set('theme', JSON.stringify({ colors: { accent1: evil, accent2: '#00ff00', 'x}y': '#000000' }, fonts: { major: 'Cambria', minor: 42 } }))
+    const theme = readTheme(doc)!
+    expect(theme).toEqual({ colors: { accent2: '#00ff00' }, fonts: { major: 'Cambria' } })
+    expect(resolveColor(undefined, 'accent1', undefined, undefined, { colors: { accent1: evil }, fonts: {} })).toBe('var(--docx-theme-accent1)')
+    doc.getMap('docx').set('theme', JSON.stringify({}))
+    expect(readTheme(doc)).toEqual({ colors: {}, fonts: {} })
+    expect(themeVariables(readTheme(doc))).toBe('')
   })
 })

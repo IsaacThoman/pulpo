@@ -101,7 +101,7 @@ export function resolveColor(
   const key = themeColor ? THEME_COLOR_VARS[themeColor] ?? (THEME_COLOR_KEYS.has(themeColor) ? themeColor : undefined) : undefined
   if (key) {
     const base = theme?.colors[key]
-    if (base) return tintShade(base, tint, shade)
+    if (base && /^#[0-9a-fA-F]{6}$/.test(base)) return tintShade(base, tint, shade)
     const literal = hexColor(value)
     if (literal) return literal
     return `var(--docx-theme-${key})`

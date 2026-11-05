@@ -2,6 +2,9 @@ import { DOMParser, XMLSerializer, type Document as XmlDocument } from '@xmldom/
 import { strFromU8, strToU8, unzipSync, zipSync, type Zippable } from 'fflate'
 import { LiveFormatError } from '../live-format.js'
 
+/** The time every written entry carries (local, so the DOS date fields are the same everywhere). */
+const ZIP_TIME = new Date(1980, 0, 1)
+
 /**
  * Open Packaging Conventions (the zip container of .docx, .xlsx, and .pptx): parts, content types,
  * and relationships. Parts nobody touches are written back byte for byte.
@@ -212,19 +215,23 @@ export class OoxmlPackage {
     return new OoxmlPackage(parts)
   }
 
-  /** Writes the package. `[Content_Types].xml` goes first, as some readers expect. */
+  /**
+   * Writes the package. `[Content_Types].xml` goes first, as some readers expect. Entries carry a
+   * fixed time, so the same content always writes the same bytes: versions are checksums of
+   * exports, and an export that changed with the clock would look like an edit.
+   */
   write(): Uint8Array {
     this.flushXml()
     const files: Zippable = {}
     const contentTypes = this.parts.get(CONTENT_TYPES_PATH)
-    if (contentTypes) files[CONTENT_TYPES_PATH] = [contentTypes, { level: 6 }]
+    if (contentTypes) files[CONTENT_TYPES_PATH] = [contentTypes, { level: 6, mtime: ZIP_TIME }]
     for (const [path, data] of this.parts) {
       if (path === CONTENT_TYPES_PATH) continue
       // Media is usually compressed already; storing it saves time without growing the file.
       const stored = /\.(png|jpe?g|gif|mp4|mp3|m4a|wdp|zip)$/i.test(path)
-      files[path] = [data, { level: stored ? 0 : 6 }]
+      files[path] = [data, { level: stored ? 0 : 6, mtime: ZIP_TIME }]
     }
-    return zipSync(files)
+    return zipSync(files, { mtime: ZIP_TIME })
   }
 
   paths(): string[] {

@@ -1,5 +1,5 @@
 import { strToU8, zipSync } from 'fflate'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { LiveFormatError } from '../live-format.js'
 import { OoxmlPackage, relationshipsPathFor, relativeTarget, resolveTarget } from './package.js'
 
@@ -18,6 +18,19 @@ function samplePackage(extra: Record<string, Uint8Array> = {}): Uint8Array {
 }
 
 describe('OoxmlPackage', () => {
+  it('writes the same bytes for the same content, whenever it writes', () => {
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(new Date('2026-01-01T10:00:00Z'))
+      const first = OoxmlPackage.read(samplePackage()).write()
+      vi.setSystemTime(new Date('2026-06-30T23:59:58Z'))
+      const second = OoxmlPackage.read(samplePackage()).write()
+      expect(Buffer.from(second).equals(Buffer.from(first))).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('reads parts, content types, and relationships', () => {
     const pkg = OoxmlPackage.read(samplePackage())
     expect(pkg.mainPart()).toBe('word/document.xml')

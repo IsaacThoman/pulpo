@@ -2,7 +2,7 @@ import { baseKeymap, chainCommands, createParagraphNear, liftEmptyBlock, newline
 import { dropCursor } from '@tiptap/pm/dropcursor'
 import { gapCursor } from '@tiptap/pm/gapcursor'
 import { keymap } from '@tiptap/pm/keymap'
-import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
+import type { Node as ProseMirrorNode, Slice } from '@tiptap/pm/model'
 import { EditorState, NodeSelection, Plugin, PluginKey, TextSelection, type Transaction } from '@tiptap/pm/state'
 import {
   addColumnAfter,
@@ -18,21 +18,20 @@ import {
   splitCell,
   tableEditing,
 } from '@tiptap/pm/tables'
-import { Decoration, DecorationSet, EditorView } from '@tiptap/pm/view'
+import { Decoration, DecorationSet, EditorView, type EditorProps } from '@tiptap/pm/view'
 import { redo, undo, yCursorPlugin, ySyncPlugin, ySyncPluginKey, yUndoPlugin, yUndoPluginKey } from '@tiptap/y-tiptap'
 import type { Awareness } from 'y-protocols/awareness'
 import type * as Y from 'yjs'
 import type { LiveAssetStore } from '../../live-format.js'
 import { fontStack, isThemeFontVar, latinFont } from '../css.js'
 import { newInlinePicture } from '../drawing.js'
-import { sniffImage } from '../export.js'
 import { jmlAttr, jmlChild, jmlNumber, jmlOn, packJml, unpackJml, type JmlElement } from '../jsonml.js'
 import { BODY_FRAGMENT, fragmentToNode, parseJson, readDocxMap, storyFragmentName, writeFragment, type StoryMeta } from '../model.js'
 import { effectiveNumPr, formatNumber } from '../numbering.js'
 import { docxSchema, packMarks, textAreaWidth } from '../schema.js'
 import { inlineText } from '../text.js'
 import { AssetUrls } from './assets.js'
-import { clipboardParser, clipboardSerializer, sanitizePastedHtml } from './clipboard.js'
+import { clipboardParser, clipboardSerializer, limitPastedTables, recallCopy, rememberCopy, sanitizePastedHtml } from './clipboard.js'
 import {
   changeIndent,
   clearFormatting,
@@ -106,8 +105,18 @@ import { listRevisions, resolveRevisions, revisionDate, trackTransaction, type R
 export type DocxLayout = 'print' | 'web'
 export type DocxMode = 'editing' | 'suggesting' | 'viewing'
 
-/** Picture formats `insertImage` accepts. */
-export const INSERTABLE_IMAGES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/bmp'])
+/**
+ * The type of a picture `insertImage` accepts, by its signature: PNG, JPEG, GIF, or BMP, which Word
+ * shows as they are. Anything else (SVG, which Word needs a PNG beside, TIFF, HEIC, PDF) is refused.
+ */
+export function insertablePicture(bytes: Uint8Array): string | null {
+  const starts = (...signature: number[]) => signature.every((byte, index) => bytes[index] === byte)
+  if (starts(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a)) return 'image/png'
+  if (starts(0xff, 0xd8, 0xff)) return 'image/jpeg'
+  if (starts(0x47, 0x49, 0x46, 0x38)) return 'image/gif'
+  if (starts(0x42, 0x4d) && bytes.length > 26) return 'image/bmp'
+  return null
+}
 
 /** Content that came in from outside: pasted, or dropped from another app. */
 function pasted(tr: Transaction): boolean {
@@ -204,6 +213,8 @@ export class DocxEditor {
   private zoomLevel: number
   private modeValue: DocxMode
   private readOnlyValue: boolean
+  /** Asset hashes known to load, so pasting them again checks nothing. */
+  private readonly knownAssets = new Set<string>()
   private lastLayout: LayoutResult | null = null
   /** Measured units of the last layout, for diagnostics and tests. */
   private lastUnits: unknown[] = []
@@ -249,15 +260,14 @@ export class DocxEditor {
     this.root.appendChild(this.canvas)
     options.container.appendChild(this.root)
     this.renderStylesheet()
+    this.root.addEventListener('click', (event) => this.followLink(event))
 
     const dispatch = (view: EditorView, tr: Transaction) => this.dispatch(view, tr)
     this.view = new EditorView({ mount: this.flowHost }, {
       state: EditorState.create({ schema: docxSchema(), plugins: this.plugins(options.doc.getXmlFragment(BODY_FRAGMENT), 'cursor', undefined) }),
       editable: () => !this.readOnlyValue && this.modeValue !== 'viewing',
       nodeViews: this.nodeViews(),
-      clipboardSerializer: clipboardSerializer(docxSchema()),
-      clipboardParser: clipboardParser(docxSchema()),
-      transformPastedHTML: sanitizePastedHtml,
+      ...this.clipboardProps(),
       attributes: { class: 'docx-flow', spellcheck: 'true', role: 'textbox', 'aria-multiline': 'true' },
       // y-tiptap dispatches while the view is constructed, before `this.view` is set.
       dispatchTransaction: function (this: EditorView, tr: Transaction) { dispatch(this, tr) },
@@ -437,9 +447,83 @@ export class DocxEditor {
     }
     const before = view.state
     view.updateState(view.state.apply(transaction))
-    if (pasted(transaction)) this.convertPastedLists(view)
+    if (pasted(transaction)) {
+      this.convertPastedLists(view)
+      this.dropForeignReferences(view)
+    }
     if (transaction.docChanged || before.selection !== view.state.selection || transaction.storedMarksSet) this.emit('update')
     if (transaction.docChanged && !transaction.getMeta(paginationKey) && this.view) this.scheduleLayout()
+  }
+
+  /**
+   * Copy and paste for the body and the story editors: Pulpo's own copies come back exactly from
+   * memory, everything else as sanitized HTML, with tables kept to a size editors can hold.
+   */
+  private clipboardProps(): Partial<EditorProps> {
+    const schema = docxSchema()
+    return {
+      clipboardSerializer: clipboardSerializer(schema),
+      clipboardParser: clipboardParser(schema),
+      transformPastedHTML: sanitizePastedHtml,
+      transformCopied: (slice) => rememberCopy(slice),
+      transformPasted: (slice) => {
+        const limited = limitPastedTables(slice)
+        this.checkPastedPictures(limited)
+        return limited
+      },
+      handlePaste: (view, event) => {
+        const slice = recallCopy(event.clipboardData?.getData('text/html'), view.state.schema)
+        if (!slice || !view.editable) return false
+        this.checkPastedPictures(slice)
+        view.dispatch(view.state.tr.replaceSelection(slice).scrollIntoView().setMeta('paste', true).setMeta('uiEvent', 'paste'))
+        return true
+      },
+    }
+  }
+
+  /**
+   * Pictures pasted from another document refer to assets this one may not have; those that
+   * cannot be loaded are taken out again rather than left to break every export.
+   */
+  private checkPastedPictures(slice: Slice): void {
+    const sources = new Set<string>()
+    slice.content.descendants((node) => {
+      if (node.type.name === 'drawing' && typeof node.attrs.src === 'string') sources.add(node.attrs.src)
+      return true
+    })
+    for (const src of sources) {
+      if (this.knownAssets.has(src)) continue
+      this.options.assets.get(src).then(() => { this.knownAssets.add(src) }, () => {
+        if (this.destroyed) return
+        for (const view of [this.view, this.storyEditor?.view]) {
+          if (!view) continue
+          const ranges: [number, number][] = []
+          view.state.doc.descendants((node, pos) => {
+            if (node.type.name === 'drawing' && node.attrs.src === src) ranges.push([pos, pos + node.nodeSize])
+          })
+          if (!ranges.length) continue
+          const tr = view.state.tr
+          for (const [from, to] of ranges.reverse()) tr.delete(from, to)
+          view.dispatch(tr.setMeta('addToHistory', false))
+        }
+      })
+    }
+  }
+
+  /** Note references and comment ranges pasted from another document point at nothing here. */
+  private dropForeignReferences(view: EditorView): void {
+    const stories = this.options.doc.getMap('stories')
+    const ranges: [number, number][] = []
+    view.state.doc.descendants((node, pos) => {
+      const missing = node.type.name === 'noteRef' ? !stories.has(`${node.attrs.kind}:${node.attrs.id}`)
+        : node.type.name === 'commentMark' ? !stories.has(`comment:${node.attrs.id}`) : false
+      if (missing) ranges.push([pos, pos + node.nodeSize])
+      return true
+    })
+    if (!ranges.length) return
+    const tr = view.state.tr
+    for (const [from, to] of ranges.reverse()) tr.delete(from, to)
+    view.dispatch(tr)
   }
 
   /** Lists pasted from HTML or Word become Word lists: one new list per kind per paste. */
@@ -893,8 +977,8 @@ export class DocxEditor {
     if (this.readOnly) return false
     const bytes = new Uint8Array(await file.arrayBuffer())
     // Formats Word shows as plain pictures (SVG would need a PNG fallback beside it).
-    const { mimeType } = sniffImage(bytes)
-    if (!INSERTABLE_IMAGES.has(mimeType)) return false
+    const mimeType = insertablePicture(bytes)
+    if (!mimeType) return false
     const ref = await this.options.assets.put(bytes, mimeType)
     let width = 300
     let height = 200
@@ -1005,15 +1089,23 @@ export class DocxEditor {
     const range = target?.closest<HTMLElement>('.docx-comment-range')
     const ids = range?.dataset.comments?.split(' ')
     this.setActiveComment(ids?.[0] ?? null)
-    // Ctrl/Cmd-click follows links, like Word.
-    const link = target?.closest<HTMLAnchorElement>('a.docx-link')
-    if (link && (event.metaKey || event.ctrlKey)) {
-      const href = link.getAttribute('href') ?? ''
-      if (href.startsWith('#')) this.goToBookmark(href.slice(1))
-      else if (/^(https?:|mailto:)/i.test(href)) window.open(href, '_blank', 'noopener,noreferrer')
-      return true
-    }
     return false
+  }
+
+  /**
+   * Links never navigate the page the editor is in. While editing, Ctrl/Cmd-click follows them
+   * (like Word) and a plain click places the caret; read-only, and in headers and footers, a click
+   * follows them. They open in a new tab, or move to the bookmark they name.
+   */
+  private followLink(event: MouseEvent): void {
+    const link = (event.target as Element | null)?.closest?.('a[href]')
+    if (!link || !this.root.contains(link)) return
+    event.preventDefault()
+    const editable = link.closest('[contenteditable]')?.getAttribute('contenteditable') === 'true'
+    if (editable && !event.metaKey && !event.ctrlKey) return
+    const href = link.getAttribute('href') ?? ''
+    if (href.startsWith('#')) this.goToBookmark(decodeURIComponent(href.slice(1)))
+    else if (/^(https?:|mailto:)/i.test(href)) window.open(href, '_blank', 'noopener,noreferrer')
   }
 
   goToBookmark(name: string): void {
@@ -1634,15 +1726,16 @@ export class DocxEditor {
       state: EditorState.create({ schema: docxSchema(), plugins: this.plugins(this.options.doc.getXmlFragment(storyFragmentName(storyId)), `cursor:${storyId}`, noteNumber) }),
       editable: () => !this.readOnly,
       nodeViews: this.nodeViews(),
-      clipboardSerializer: clipboardSerializer(docxSchema()),
-      clipboardParser: clipboardParser(docxSchema()),
-      transformPastedHTML: sanitizePastedHtml,
+      ...this.clipboardProps(),
       attributes: { class: 'docx-flow', spellcheck: 'true', role: 'textbox', 'aria-label': meta.kind },
       dispatchTransaction: (tr) => {
         let transaction = tr
         if (this.modeValue === 'suggesting' && tr.docChanged && tr.getMeta(ySyncPluginKey) === undefined && !tr.getMeta('docx-tracked')) transaction = trackTransaction(view.state, tr, this.reviewer()) ?? tr
         view.updateState(view.state.apply(transaction))
-        if (pasted(transaction)) this.convertPastedLists(view)
+        if (pasted(transaction)) {
+          this.convertPastedLists(view)
+          this.dropForeignReferences(view)
+        }
         this.emit('update')
       },
     })

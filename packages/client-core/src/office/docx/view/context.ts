@@ -1,7 +1,7 @@
 import type * as Y from 'yjs'
 import type { ThemeInfo } from '../css.js'
 import { jmlAttr, jmlNumber, unpackJml, type JmlElement } from '../jsonml.js'
-import { parseJson, readDocxMap, type CommentMeta } from '../model.js'
+import { parseJson, readDocxMap, readTheme, type CommentMeta } from '../model.js'
 import { Numbering } from '../numbering.js'
 import { StyleSheet } from '../styles.js'
 
@@ -42,7 +42,7 @@ export class DocxViewContext {
     this.styles = new StyleSheet(readDocxMap(this.doc, 'styles'))
     this.numbering = new Numbering(readDocxMap(this.doc, 'numbering'), this.styles)
     const meta = readDocxMap(this.doc, 'docx')
-    this.theme = parseJson<ThemeInfo>(meta.get('theme'))
+    this.theme = readTheme(this.doc)
     this.finalSectPr = unpackJml<JmlElement>(meta.get('sectPr'))
     const settings = readDocxMap(this.doc, 'settings')
     const tab = jmlNumber(unpackJml<JmlElement>(settings.get('w:defaultTabStop')), 'w:val')
