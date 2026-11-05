@@ -35,6 +35,13 @@ describe('formatJson', () => {
     expect(formatJson(`"${'x'.repeat(MAX_JSON_FORMAT_CHARACTERS)}"`)).toBeNull()
   })
 
+  it('gives up when indentation would grow the file far beyond its size', () => {
+    const deep = `${'['.repeat(2_000)}${']'.repeat(2_000)}`
+    expect(formatJson(deep)).toBeNull()
+    const moderate = `${'['.repeat(100)}1${']'.repeat(100)}`
+    expect(formatJson(moderate)).toBe(JSON.stringify(JSON.parse(moderate), null, 2))
+  })
+
   it('drops a leading byte order mark', () => {
     expect(formatJson('﻿{"a":1}')).toBe('{\n  "a": 1\n}')
   })

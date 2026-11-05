@@ -1,9 +1,13 @@
 /** JSON larger than this is not pretty-printed automatically. */
 export const MAX_JSON_FORMAT_CHARACTERS = 5_000_000
+/** Formatted output may grow to this multiple of the input (deep nesting grows indentation fast). */
+const MAX_FORMAT_GROWTH = 4
+/** Formatting stops past this many characters, however small the input. */
+const MAX_FORMATTED_CHARACTERS = 10_000_000
 
 /**
- * JSON re-indented with two spaces, or null when the text isn't valid JSON, is too large, or is
- * already formatted that way.
+ * JSON re-indented with two spaces, or null when the text isn't valid JSON, is too large (before
+ * or after formatting), or is already formatted that way.
  *
  * Only whitespace between tokens changes: strings and numbers are copied exactly as written. A
  * parse/stringify round trip would show (and let users copy) different data, since numbers beyond
@@ -18,12 +22,19 @@ export function formatJson(text: string): string | null {
   } catch {
     return null
   }
+  // Indentation grows with depth on every line, so a small, deeply nested file could expand
+  // enormously; past this budget the file is shown as written instead.
+  const budget = Math.min(MAX_FORMATTED_CHARACTERS, Math.max(1_000_000, source.length * MAX_FORMAT_GROWTH))
   const out: string[] = []
+  let size = 0
   let depth = 0
   const newline = () => {
+    size += 1 + depth * 2
     out.push('\n', '  '.repeat(depth))
   }
   for (let index = 0; index < source.length; index++) {
+    // Tokens are copied from the input, so only indentation can push the output past the budget.
+    if (size + index > budget) return null
     const char = source[index]!
     if (char === '"') {
       // Valid JSON, so the string ends at the first quote not escaped by a backslash.
