@@ -67,6 +67,10 @@ What the agent may do with an item follows the nearest attached entry at or abov
 
 Uploads use the attachment flow (reserve, PUT, confirm) with `users/<id>/files/<node>` object keys and the same per-file cap. Content written later (agent changes, documents turned back into files) gets a fresh `users/<id>/files/<id>` key, so a kept version is never overwritten. Files blobs, including trashed ones, kept versions, and document state count toward the account storage allowance together with chat attachments. They do not reuse the `attachments` table, because chat purges delete attachments claimed by a chat.
 
+## Spreadsheets
+
+Spreadsheets (`.xlsx`, `.xlsm`, `.xltx`, `.xltm`, `.csv`, `.tsv`) have a collaborative editor and a lossless codec in `@pulpo/client-core/office/sheets`, described in [Spreadsheets](./sheets.md). They are not yet wired into Files: uploads still open in the read-only preview until the live-format integration lands.
+
 ## Markdown files
 
 A file's name decides what it is: names ending in `.md` or `.markdown` are Markdown files, and everything else is an ordinary file. New files start as empty editable Markdown documents. Uploaded Markdown keeps its original bytes and opens read-only until someone chooses **Edit**. `GET /api/files/:id/conversion` then does a dry run: it converts the text and reports whether anything would change beyond line endings and trailing whitespace, so the client can show a line diff before `POST /api/files/:id/convert` makes the document. The uploaded object is deleted only after the document commits.
