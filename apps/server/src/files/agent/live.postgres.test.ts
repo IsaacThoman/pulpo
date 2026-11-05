@@ -8,7 +8,7 @@ import { storageUsedBytes } from '../../attachments/storage-quota.js'
 import { appendDocUpdate, createDoc, loadYDoc } from '../doc-store.js'
 import { convertBlobToDocInTx } from '../conversion.js'
 import { mutateFileTree, updateFileNode } from '../tree-service.js'
-import { exportStoredDoc } from '../live-docs.js'
+import { exportStoredDoc, textOfFile } from '../live-docs.js'
 import { listFileChanges } from './changes.js'
 import { mutateAgentFiles } from './commit.js'
 import { FileChangesConflictError, redoFileChanges, undoFileChanges } from './history.js'
@@ -158,6 +158,37 @@ describe.skipIf(!enabled)('agent edits to live documents', () => {
     const [conflict] = await conflictsOf(undoFileChanges(files.userId, files.responseId))
     expect(conflict).toMatchObject({ nodeId: id, reason: 'edited', expected: 'first\nsecond\nthird\n', current: 'first\nsecond\nthird\nmine\n' })
     expect(await text(id)).toBe('first\nsecond\nthird\nmine\n')
+  })
+
+  it('undoes and redoes snapshots grown beyond the external text import limit', async () => {
+    const big = 'x'.repeat(4_000_100)
+    const id = await textDoc('grown.txt', projects, big)
+    await files.attach({ [projects]: 'write' })
+    files.put('/workspace/grown.txt', 'small')
+    expect((await push([{ local: '/workspace/grown.txt', remote: 'Projects/grown.txt', force: true }]))[0]).toMatchObject({ status: 'updated' })
+    await undoFileChanges(files.userId, files.responseId)
+    expect(await text(id)).toBe(big)
+    const [node] = await db.select().from(fileNodes).where(eq(fileNodes.id, id))
+    expect((await textOfFile(db, node!, Buffer.from(big))).length).toBe(big.length)
+    await redoFileChanges(files.userId, files.responseId)
+    expect(await text(id)).toBe('small')
+    // Previously stored snapshots may be large; external pushes still obey the import cap.
+    files.put('/workspace/grown.txt', big)
+    expect((await push([{ local: '/workspace/grown.txt', remote: 'Projects/grown.txt', force: true }]))[0]).toMatchObject({ status: 'error' })
+    expect(await text(id)).toBe('small')
+  })
+
+  it('accepts growth at quota when settling the proposal releases enough storage', async () => {
+    const id = await textDoc('quota-proposal.txt', projects, 'start')
+    await files.attach({ [projects]: 'suggest' })
+    const proposed = 'x'.repeat(5_000)
+    files.put('/workspace/proposal.txt', proposed)
+    expect((await push([{ local: '/workspace/proposal.txt', remote: 'Projects/quota-proposal.txt', force: true }]))[0]).toMatchObject({ status: 'suggested' })
+    const usage = await storageUsedBytes(db, files.userId)
+    await db.update(users).set({ storageLimitBytes: usage }).where(eq(users.id, files.userId))
+    await reviewReplyChanges(files.userId, files.responseId, 'accept')
+    expect(await text(id)).toBe(proposed)
+    expect(await storageUsedBytes(db, files.userId)).toBeLessThan(usage)
   })
 
   it('creates live documents from new files and undoes their creation', async () => {
