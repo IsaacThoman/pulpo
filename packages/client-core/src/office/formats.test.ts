@@ -18,7 +18,7 @@ describe('live format catalog', () => {
   })
 
   it('leaves formats other workstreams own, and binary files, as ordinary files', () => {
-    for (const name of ['data.csv', 'data.tsv', 'notebook.ipynb', 'logo.svg', 'photo.png', 'Budget.xlsx', 'archive.zip', 'noextension']) {
+    for (const name of ['data.csv', 'data.tsv', 'logo.svg', 'photo.png', 'Budget.xlsx', 'archive.zip', 'noextension']) {
       expect(liveFormatOfName(name), name).toBeNull()
     }
   })
@@ -31,7 +31,8 @@ describe('live format catalog', () => {
   })
 
   it('announces each format schema version, Markdown keeping the document schema version', () => {
-    expect(liveSchemaVersions()).toEqual({ markdown: DOC_SCHEMA_VERSION, text: 1 })
+    expect(liveSchemaVersions()).toEqual({ markdown: DOC_SCHEMA_VERSION, text: 1, notebook: 1 })
+    expect(liveFormatOfName('Analysis.IPYNB')?.id).toBe('notebook')
   })
 
   it('reads extensions the way file names are split elsewhere', () => {
@@ -57,7 +58,8 @@ describe('live format catalog', () => {
       const doc = new Y.Doc()
       expect(format.hasContent(doc)).toBe(false)
       const codec = liveFormatCodec(format.id)
-      await codec.importFile(doc, new TextEncoder().encode('# Title\n\nbody\n'), { name: `a.${format.extensions[0]}`, assets: new MemoryLiveAssetStore() })
+      const sample = format.id === 'notebook' ? '{"cells": [], "metadata": {}, "nbformat": 4, "nbformat_minor": 5}' : '# Title\n\nbody\n'
+      await codec.importFile(doc, new TextEncoder().encode(sample), { name: `a.${format.extensions[0]}`, assets: new MemoryLiveAssetStore() })
       expect(format.hasContent(doc)).toBe(true)
     }
   })

@@ -155,7 +155,8 @@ function normalizeOutput(raw: unknown, v3: boolean): NotebookOutput | null {
   return null
 }
 
-function normalizeOutputs(value: unknown, v3: boolean): NotebookOutput[] {
+/** Outputs of a code cell, normalized (nbformat 4 unless `v3`). */
+export function normalizeOutputs(value: unknown, v3 = false): NotebookOutput[] {
   if (!Array.isArray(value)) return []
   const outputs: NotebookOutput[] = []
   for (const raw of value.slice(0, MAX_CELL_OUTPUTS)) {
@@ -173,7 +174,8 @@ function normalizeOutputs(value: unknown, v3: boolean): NotebookOutput[] {
   return outputs
 }
 
-function attachments(value: unknown): Record<string, MimeBundle> {
+/** A Markdown cell's attachments, each a MIME bundle. */
+export function normalizeAttachments(value: unknown): Record<string, MimeBundle> {
   if (!isObject(value)) return {}
   const result: Record<string, MimeBundle> = {}
   for (const [name, bundle] of Object.entries(value)) result[name] = mimeBundle(bundle)
@@ -193,7 +195,7 @@ function normalizeCell(raw: unknown, index: number, v3: boolean): NotebookCell |
         outputs: normalizeOutputs(raw.outputs, v3),
       }
     case 'markdown':
-      return { type: 'markdown', id, source: joinText(raw.source), attachments: attachments(raw.attachments) }
+      return { type: 'markdown', id, source: joinText(raw.source), attachments: normalizeAttachments(raw.attachments) }
     case 'heading': {
       // nbformat 3 kept headings as their own cells.
       const level = Math.min(6, Math.max(1, integerOrNull(raw.level) ?? 1))
