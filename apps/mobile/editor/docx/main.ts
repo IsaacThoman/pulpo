@@ -97,9 +97,10 @@ function phoneState(editor: DocxEditor): DocxPhoneState {
     link: state.link,
     canUndo: state.canUndo,
     canRedo: state.canRedo,
+    canComment: state.canComment,
     suggesting: state.mode === 'suggesting',
     layout: state.layout,
-    focused: editor.view.hasFocus(),
+    focused: editor.hasFocus,
     editable: !state.readOnly,
   }
 }

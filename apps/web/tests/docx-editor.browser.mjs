@@ -84,6 +84,40 @@ try {
     assert.deepEqual(errors, [])
   })
 
+  await step('repaginates local story edits, keeps static lists, and searches only the active story', async () => {
+    await open('?file=sections-headers.docx')
+    const before = await page.evaluate(() => {
+      const editor = window.harness.editors[0]
+      return { body: JSON.stringify(editor.view.state.doc.toJSON()), top: editor.lastLayout.pages[0].setup.top }
+    })
+    await page.locator('.docx-band .docx-story', { hasText: 'First-page header' }).first().dblclick()
+    await page.waitForFunction(() => document.querySelector('button[aria-label="Comment"]')?.disabled)
+    await page.evaluate(() => window.harness.editors[0].toggleList('decimal'))
+    for (let index = 0; index < 7; index++) {
+      await page.keyboard.type(`Local header paragraph ${index} `)
+      if (index < 6) await page.keyboard.press('Enter')
+    }
+    await page.waitForFunction(() => {
+      const editor = window.harness.editors[0]
+      return editor.root.querySelector('[data-story="' + editor.editingStory + '"]')?.textContent.includes('Local header paragraph 6')
+    })
+    assert.equal(await page.evaluate(({ body, top }) => {
+      const editor = window.harness.editors[0]
+      const staticStory = editor.root.querySelector('[data-story="' + editor.editingStory + '"]')
+      return JSON.stringify(editor.view.state.doc.toJSON()) === body && editor.lastLayout.pages[0].setup.top > top &&
+        staticStory.querySelectorAll('[data-label]').length >= 7 && editor.hasFocus
+    }, before), true)
+    await page.keyboard.press(`${mod}+f`)
+    await page.getByRole('textbox', { name: 'Find in document' }).fill('Local header paragraph')
+    await page.waitForFunction(() => window.harness.editors[0].findState().count === 7)
+    assert.equal(await page.evaluate(() => window.harness.editors[0].replaceAll('Replaced header', 'Local header paragraph')), 7)
+    assert.equal(await page.evaluate((body) => JSON.stringify(window.harness.editors[0].view.state.doc.toJSON()) === body, before.body), true)
+    await page.keyboard.press('Escape')
+    await page.keyboard.press('Escape')
+    assert.match(await exported('header'), /Replaced header 6/)
+    assert.deepEqual(errors, [])
+  })
+
   await step('keeps a header focused and positioned while a collaborator repaginates the body', async () => {
     await open('?file=sections-headers.docx&view=split')
     await page.locator('.docx-band .docx-story', { hasText: 'First-page header' }).first().dblclick()

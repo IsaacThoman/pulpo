@@ -81,6 +81,8 @@ export type DocxCommand =
 
 /** What a Word editor's toolbar shows as on or unavailable. */
 export interface DocxPhoneState {
+  /** Older bundles omit this; false disables unsupported comment creation in stories. */
+  canComment?: boolean
   bold: boolean
   italic: boolean
   underline: boolean

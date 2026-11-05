@@ -54,7 +54,7 @@ export function OutlinePanel({ editor, onClose }: { editor: DocxEditor; onClose:
             <button
               key={entry.pos}
               type="button"
-              onClick={() => editor.goTo(entry.pos)}
+              onClick={() => editor.goTo(entry.pos, entry.storyId)}
               className="block w-full cursor-pointer truncate rounded-md py-1 pr-2 text-left text-sm hover:bg-accent"
               style={{ paddingLeft: `${8 + entry.level * 12}px` }}
             >
@@ -228,12 +228,13 @@ export function FindBar({ editor, replaceOpen, onClose }: { editor: DocxEditor; 
   const [showReplace, setShowReplace] = useState(replaceOpen)
   const options = useMemo(() => ({ matchCase, wholeWord }), [matchCase, wholeWord])
   const status = useEditorValue(editor, () => editor.findState())
+  const story = useEditorValue(editor, () => editor.editingStory)
   const input = useRef<HTMLInputElement>(null)
   useEffect(() => { input.current?.focus() }, [])
   useEffect(() => { setShowReplace((open) => open || replaceOpen) }, [replaceOpen])
   useEffect(() => {
     editor.find(query, options)
-  }, [editor, query, options])
+  }, [editor, query, options, story])
   useEffect(() => () => editor.clearFind(), [editor])
   const close = () => {
     editor.clearFind()

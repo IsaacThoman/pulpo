@@ -266,7 +266,7 @@ export function DocxToolbar({ editor, state, onRequestLink, onTogglePanel, panel
       )}
       <Separator />
       {button(ui("Link"), <Link2 className="size-4" />, onRequestLink, { active: Boolean(state.link), disabled: !state.untrackedFormattingEditable, shortcut: `${mod}K` })}
-      {button(ui("Comment"), <MessageSquarePlus className="size-4" />, () => onTogglePanel('comments'), { active: panels.comments, disabled: false })}
+      {button(ui("Comment"), <MessageSquarePlus className="size-4" />, () => onTogglePanel('comments'), { active: panels.comments, disabled: Boolean(editor.editingStory) })}
       {button(ui("Image"), <ImagePlus className="size-4" />, () => imageInput.current?.click())}
       <input
         ref={imageInput}
@@ -295,14 +295,14 @@ export function DocxToolbar({ editor, state, onRequestLink, onTogglePanel, panel
           <DropdownMenuSub>
             <DropdownMenuSubTrigger disabled={!state.untrackedFormattingEditable}>{ui("Section break")}</DropdownMenuSubTrigger>
             <DropdownMenuSubContent>
-              <DropdownMenuItem disabled={!state.untrackedFormattingEditable} onSelect={() => editor.insertSectionBreak('nextPage')}>{ui("Next page")}</DropdownMenuItem>
-              <DropdownMenuItem disabled={!state.untrackedFormattingEditable} onSelect={() => editor.insertSectionBreak('continuous')}>{ui("Continuous")}</DropdownMenuItem>
-              <DropdownMenuItem disabled={!state.untrackedFormattingEditable} onSelect={() => editor.insertSectionBreak('evenPage')}>{ui("Even page")}</DropdownMenuItem>
-              <DropdownMenuItem disabled={!state.untrackedFormattingEditable} onSelect={() => editor.insertSectionBreak('oddPage')}>{ui("Odd page")}</DropdownMenuItem>
+              <DropdownMenuItem disabled={!state.untrackedFormattingEditable || !state.bodyCommandsEditable} onSelect={() => editor.insertSectionBreak('nextPage')}>{ui("Next page")}</DropdownMenuItem>
+              <DropdownMenuItem disabled={!state.untrackedFormattingEditable || !state.bodyCommandsEditable} onSelect={() => editor.insertSectionBreak('continuous')}>{ui("Continuous")}</DropdownMenuItem>
+              <DropdownMenuItem disabled={!state.untrackedFormattingEditable || !state.bodyCommandsEditable} onSelect={() => editor.insertSectionBreak('evenPage')}>{ui("Even page")}</DropdownMenuItem>
+              <DropdownMenuItem disabled={!state.untrackedFormattingEditable || !state.bodyCommandsEditable} onSelect={() => editor.insertSectionBreak('oddPage')}>{ui("Odd page")}</DropdownMenuItem>
             </DropdownMenuSubContent>
           </DropdownMenuSub>
-          <DropdownMenuItem onSelect={() => editor.insertNote('footnote')}>{ui("Footnote")}</DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => editor.insertNote('endnote')}>{ui("Endnote")}</DropdownMenuItem>
+          <DropdownMenuItem disabled={!state.bodyCommandsEditable} onSelect={() => editor.insertNote('footnote')}>{ui("Footnote")}</DropdownMenuItem>
+          <DropdownMenuItem disabled={!state.bodyCommandsEditable} onSelect={() => editor.insertNote('endnote')}>{ui("Endnote")}</DropdownMenuItem>
           <DropdownMenuSub>
             <DropdownMenuSubTrigger>{ui("Symbol")}</DropdownMenuSubTrigger>
             <DropdownMenuSubContent className="w-56">
@@ -319,7 +319,7 @@ export function DocxToolbar({ editor, state, onRequestLink, onTogglePanel, panel
             </DropdownMenuSubContent>
           </DropdownMenuSub>
           <DropdownMenuSeparator />
-          <DropdownMenuItem onSelect={() => editor.insertTableOfContents()}>{ui("Table of contents")}</DropdownMenuItem>
+          <DropdownMenuItem disabled={!state.bodyCommandsEditable} onSelect={() => editor.insertTableOfContents()}>{ui("Table of contents")}</DropdownMenuItem>
           <DropdownMenuItem onSelect={() => editor.updateTableOfContents()}>{ui("Update table of contents")}</DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

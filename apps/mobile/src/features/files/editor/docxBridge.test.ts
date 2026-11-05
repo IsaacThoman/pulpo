@@ -156,6 +156,25 @@ describe('Word editor bridge with the built editor', () => {
     expect(docxToolbarState(bridge.getState()).disabled).not.toContain('link')
   })
 
+  it('uses story focus and disables unsupported story comments on the native toolbar', async () => {
+    const { doc, bridge, page } = await open('notes-fields.docx')
+    const note = page.document.querySelector('[data-story^="footnote:"]')!
+    expect(note).toBeTruthy()
+    const event = page.document.createEvent('MouseEvents')
+    event.initEvent('dblclick', true, true)
+    note.dispatchEvent(event)
+    await page.flush()
+    expect(page.document.querySelector('.docx-story-editor')).toBeTruthy()
+    expect(bridge.getState().docx).toMatchObject({ canComment: false, focused: true })
+    expect(docxToolbarState(bridge.getState()).disabled).toContain('comment')
+    const body = doc.getXmlFragment('body').toString()
+    const comments = doc.getMap('comments').size
+    bridge.docxCommand('comment', 'Must not annotate the old body selection')
+    await page.flush()
+    expect(doc.getXmlFragment('body').toString()).toBe(body)
+    expect(doc.getMap('comments').size).toBe(comments)
+  })
+
   it('runs every command on the bar, menus included, without errors', async () => {
     const { bridge, page } = await open('lists.docx')
     const commands = docxToolbarCommands()
