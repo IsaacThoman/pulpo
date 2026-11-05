@@ -120,6 +120,165 @@ it.each(['header', 'footer', 'footnote', 'endnote'])('keeps the active %s editor
   }
 })
 
+describe('active story commands', () => {
+  it.each(['header', 'footer', 'footnote', 'endnote'])('schedules pagination for local %s edits, including undo', (kind) => {
+    editor.openStoryEditor(`${kind}:1`)
+    const layout = vi.spyOn(editor, 'scheduleLayout')
+    const view = storyView()
+    view.dispatch(view.state.tr.insertText('New ', 1))
+    expect(layout).toHaveBeenCalled()
+    layout.mockClear()
+    editor.undo()
+    expect(layout).toHaveBeenCalled()
+    layout.mockClear()
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 2)))
+    expect(layout).not.toHaveBeenCalled()
+  })
+
+  it.each(['header', 'footer', 'footnote', 'endnote'])('rejects unsupported %s comments without touching the stale body selection', (kind) => {
+    editor.view.dispatch(editor.view.state.tr.insertText('Body selection', 1))
+    editor.view.dispatch(editor.view.state.tr.setSelection(TextSelection.create(editor.view.state.doc, 1, 5)))
+    const body = editor.view.state.doc
+    editor.openStoryEditor(`${kind}:1`)
+    const story = storyView().state.doc
+    storyView().dispatch(storyView().state.tr.setSelection(TextSelection.create(story, 1, 5)))
+    expect(editor.canComment).toBe(false)
+    expect(editor.addComment('Must not comment on body')).toBeNull()
+    expect(editor.view.state.doc.eq(body)).toBe(true)
+    expect(storyView().state.doc.eq(story)).toBe(true)
+    expect(doc.getMap('comments').size).toBe(0)
+  })
+
+  it.each(['header', 'footer', 'footnote', 'endnote'])('targets %s find/replace, formatting state, and undo without editing body', (kind) => {
+    editor.view.dispatch(editor.view.state.tr.insertText('Original body', 1))
+    const body = editor.view.state.doc
+    editor.openStoryEditor(`${kind}:1`)
+    expect(editor.find('Original')).toBe(1)
+    expect(storyView().state.selection.from).toBe(1)
+    expect(editor.replaceAll('Story', 'Original')).toBe(1)
+    expect(storyView().state.doc.textContent).toBe('Story')
+    expect(editor.view.state.doc.eq(body)).toBe(true)
+    expect(editor.undo()).toBe(true)
+    expect(storyView().state.doc.textContent).toBe('Original')
+    expect(editor.redo()).toBe(true)
+    expect(storyView().state.doc.textContent).toBe('Story')
+    expect(editor.find('Story')).toBe(1)
+    expect(editor.replace('New story', 'Story')).toBe(true)
+    expect(storyView().state.doc.textContent).toBe('New story')
+    editor.toggleBold()
+    expect(editor.state().bold).toBe(true)
+    expect(editor.view.state.doc.eq(body)).toBe(true)
+  })
+
+  it('refreshes story decorations and toolbar state after style/numbering map edits', () => {
+    editor.openStoryEditor('header:1')
+    editor.toggleList('decimal')
+    const view = storyView()
+    const node = view.state.doc.firstChild!
+    view.dispatch(view.state.tr.setNodeMarkup(0, undefined, { ...node.attrs, pStyle: 'StoryStyle' }))
+    doc.getMap('styles').set('style:StoryStyle', packJml(['w:style', { 'w:styleId': 'StoryStyle', 'w:type': 'paragraph' }, ['w:rPr', {}, ['w:b', {}]]]))
+    expect(editor.state().bold).toBe(true)
+    const numberKey = [...doc.getMap<string>('numbering').keys()].find((key) => key.startsWith('abstract:'))!
+    const definition = JSON.parse(doc.getMap<string>('numbering').get(numberKey)!)
+    definition.find((child: unknown) => Array.isArray(child) && child[0] === 'w:lvl')[2] = ['w:start', { 'w:val': '7' }]
+    doc.getMap('numbering').set(numberKey, JSON.stringify(definition))
+    expect(view.dom.querySelector('[data-label]')?.getAttribute('data-label')).toBe('7.')
+  })
+
+  it('does not apply document-only TOC or section commands through a story selection', () => {
+    editor.view.dispatch(editor.view.state.tr.insertText('Body', 1))
+    const body = editor.view.state.doc
+    const section = doc.getMap('docx').get('sectPr')
+    editor.openStoryEditor('header:1')
+    expect(editor.insertTableOfContents()).toBe(false)
+    expect(editor.updateTableOfContents()).toBe(false)
+    expect(editor.insertSectionBreak('continuous')).toBe(false)
+    expect(editor.insertNote('footnote')).toBeNull()
+    expect(editor.view.state.doc.eq(body)).toBe(true)
+    expect(doc.getMap('docx').get('sectPr')).toBe(section)
+  })
+
+  it('shows and hides suggestion markup in active and static story surfaces', () => {
+    editor.openStoryEditor('header:1')
+    editor.setMode('suggesting')
+    storyView().dispatch(storyView().state.tr.insertText('Suggested ', 1))
+    editor.setShowMarkup(false)
+    expect(storyView().dom.closest('.docx-final')).toBeTruthy()
+    editor.setShowMarkup(true)
+    expect(storyView().dom.closest('.docx-final')).toBeNull()
+  })
+})
+
+it('notifies find panels when a story search has no matches or is cleared', () => {
+  editor.openStoryEditor('header:1')
+  editor.find('Original')
+  const update = vi.fn()
+  editor.on('update', update)
+  editor.find('Absent')
+  expect(editor.findState().count).toBe(0)
+  expect(update).toHaveBeenCalled()
+  update.mockClear()
+  editor.clearFind()
+  expect(update).toHaveBeenCalled()
+})
+
+it('does not put story numbering changes in the body undo stack', () => {
+  editor.openStoryEditor('header:1')
+  editor.toggleList('decimal')
+  expect(yUndoPluginKey.getState(storyView().state).undoManager.undoStack.length).toBeGreaterThan(0)
+  expect(yUndoPluginKey.getState(editor.view.state).undoManager.undoStack.length).toBe(0)
+  const numbering = JSON.stringify([...doc.getMap('numbering')])
+  editor.closeStoryEditor()
+  expect(editor.state().canUndo).toBe(false)
+  editor.undo()
+  expect(JSON.stringify([...doc.getMap('numbering')])).toBe(numbering)
+})
+
+it('keeps outline and bookmark navigation in the active story', () => {
+  editor.openStoryEditor('header:1')
+  const view = storyView()
+  view.dispatch(view.state.tr.replaceWith(0, view.state.doc.content.size, schema.node('paragraph', { outlineLvl: packJml(['w:outlineLvl', { 'w:val': '0' }]) }, [schema.node('bookmark', { edge: 'start', id: '5', name: 'StoryBookmark' }), schema.text('Story heading') ])))
+  const entry = editor.outline()[0]!
+  expect(entry.storyId).toBe('header:1')
+  editor.goTo(entry.pos, entry.storyId)
+  expect(editor.editingStory).toBe('header:1')
+  editor.goToBookmark('StoryBookmark')
+  expect(editor.editingStory).toBe('header:1')
+  expect(editor.hasFocus).toBe(true)
+  editor.blur()
+  expect(editor.hasFocus).toBe(false)
+})
+
+it('refreshes an open note number when the body gains an earlier reference', () => {
+  editor.view.dispatch(editor.view.state.tr.insert(1, schema.node('noteRef', { kind: 'footnote', id: '1' })))
+  const fragment = doc.getXmlFragment(storyFragmentName('footnote:1'))
+  writeFragment(doc, fragment, schema.node('doc', null, [schema.node('paragraph', null, [schema.node('inlineXml', { v: packJml(['w:footnoteRef', {}]) }), schema.text('Note')])]))
+  editor.openStoryEditor('footnote:1')
+  expect(storyView().dom.querySelector('[data-label]')?.getAttribute('data-label')).toBe('1')
+  editor.view.dispatch(editor.view.state.tr.insert(1, schema.node('noteRef', { kind: 'footnote', id: 'other' })))
+  expect(storyView().dom.querySelector('[data-label]')?.getAttribute('data-label')).toBe('2')
+})
+
+it('uses the configured note number format while editing an endnote', () => {
+  editor.view.dispatch(editor.view.state.tr.insert(1, schema.node('noteRef', { kind: 'endnote', id: '1' })))
+  writeFragment(doc, doc.getXmlFragment(storyFragmentName('endnote:1')), schema.node('doc', null, [schema.node('paragraph', null, [schema.node('inlineXml', { v: packJml(['w:endnoteRef', {}]) }), schema.text('Note')])]))
+  editor.openStoryEditor('endnote:1')
+  expect(storyView().dom.querySelector('[data-label]')?.getAttribute('data-label')).toBe('i')
+})
+
+it('does not insert a delayed story picture into the body after that story closes', async () => {
+  editor.openStoryEditor('header:1')
+  const body = editor.view.state.doc
+  let release!: (bytes: ArrayBuffer) => void
+  const pending = new Promise<ArrayBuffer>((resolve) => { release = resolve })
+  const file = { arrayBuffer: () => pending } as Blob
+  const inserted = editor.insertImage(file)
+  editor.closeStoryEditor()
+  release(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).buffer)
+  expect(await inserted).toBe(false)
+  expect(editor.view.state.doc.eq(body)).toBe(true)
+})
+
 it('refreshes an open story immediately when permissions become read-only', () => {
   editor.openStoryEditor('header:1')
   const view = storyView()

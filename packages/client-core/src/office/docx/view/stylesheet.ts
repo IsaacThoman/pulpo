@@ -150,8 +150,8 @@ export const DOCX_BASE_CSS = `
 .docx-flow .docx-move-to{text-decoration-style:double}
 .docx-flow .docx-move-from{text-decoration-style:double}
 .docx-flow .docx-format-change{border-bottom:1px dotted #9334e6}
-.docx-flow.docx-final .docx-del,.docx-flow.docx-final .docx-move-from{display:none}
-.docx-flow.docx-final .docx-ins,.docx-flow.docx-final .docx-move-to{color:inherit;text-decoration:inherit}
+.docx-final .docx-del,.docx-final .docx-move-from{display:none}
+.docx-final .docx-ins,.docx-final .docx-move-to{color:inherit;text-decoration:inherit}
 .docx-flow .docx-p[data-para-rev="ins"]::after{content:"\\00b6";color:var(--docx-rev-color,#188038);font-size:0.8em}
 .docx-flow .docx-p[data-para-rev="del"]::after{content:"\\00b6";color:var(--docx-rev-color,#c5221f);text-decoration:line-through;font-size:0.8em}
 .docx-flow .docx-p[data-rev-bar]{box-shadow:inset 2px 0 0 #9aa0a6}

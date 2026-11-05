@@ -209,6 +209,8 @@ export interface DocxFormattingState {
   list: ListKind | null
   inTable: boolean
   tableColumnsEditable: boolean
+  bodyCommandsEditable: boolean
+  canComment: boolean
   /** Whether commands without Word revision support (including section breaks) are available. */
   untrackedFormattingEditable: boolean
   link: string | null
@@ -334,8 +336,9 @@ export class DocxEditor {
     this.unsubscribe.push(this.context.onChange(() => {
       this.renderStylesheet()
       // Map observers can run before body observers; refreshing must not write the old body back.
-      const { binding } = ySyncPluginKey.getState(this.view.state)
-      binding.mux(() => this.view.dispatch(this.view.state.tr.setMeta(decorationsKey, 'refresh')))
+      for (const view of [this.view, this.storyEditor?.view]) if (view) this.refreshDecorations(view)
+      this.scheduleLayout()
+      this.emit('update')
     }))
     const storiesMap = options.doc.getMap('stories')
     const storyObserver = () => this.scheduleLayout()
@@ -353,9 +356,18 @@ export class DocxEditor {
     this.scheduleLayout(true)
   }
 
+  private get activeView(): EditorView {
+    return this.storyEditor?.view ?? this.view
+  }
+
+  private refreshDecorations(view: EditorView): void {
+    const { binding } = ySyncPluginKey.getState(view.state)
+    binding.mux(() => view.dispatch(view.state.tr.setMeta(decorationsKey, 'refresh')))
+  }
+
   // ── Setup ────────────────────────────────────────────────────────────────
 
-  private plugins(fragment: Y.XmlFragment, cursorField: string, noteNumber: number | undefined): Plugin[] {
+  private plugins(fragment: Y.XmlFragment, cursorField: string, storyId: string | undefined): Plugin[] {
     return [
       ySyncPlugin(fragment),
       yCursorPlugin(this.options.awareness, {}, cursorField),
@@ -363,7 +375,12 @@ export class DocxEditor {
       new Plugin({
         state: {
           init: (_config, state) => {
-            yUndoPluginKey.getState(state).undoManager.addToScope(this.options.doc.getMap('numbering'))
+            const manager = yUndoPluginKey.getState(state).undoManager as Y.UndoManager
+            const scope = manager.scope[0]!
+            const capture = manager.captureTransaction
+            // Numbering is shared, but its undo belongs to the fragment edited with it.
+            manager.captureTransaction = (tr: Y.Transaction) => capture(tr) && scope instanceof Y.AbstractType && tr.changedParentTypes.has(scope)
+            manager.addToScope(this.options.doc.getMap('numbering'))
             // The final section lives outside the body but must share its undo step.
             if (fragment === this.options.doc.getXmlFragment(BODY_FRAGMENT)) {
               yUndoPluginKey.getState(state).undoManager.addToScope(this.options.doc.getMap('docx'))
@@ -383,10 +400,10 @@ export class DocxEditor {
       new Plugin({
         key: decorationsKey,
         state: {
-          init: (_config, state) => ({ set: this.decorate(state.doc, noteNumber), version: this.context.version }),
+          init: (_config, state) => ({ set: this.decorate(state.doc, storyId), version: this.context.version }),
           apply: (tr, value, _old, state) => {
             if (!tr.docChanged && !tr.getMeta(decorationsKey) && value.version === this.context.version) return value
-            return { set: this.decorate(state.doc, noteNumber), version: this.context.version }
+            return { set: this.decorate(state.doc, storyId), version: this.context.version }
           },
         },
         props: { decorations: (state) => decorationsKey.getState(state)?.set },
@@ -435,15 +452,16 @@ export class DocxEditor {
     }
   }
 
-  private decorate(doc: ProseMirrorNode, noteNumber: number | undefined): DecorationSet {
-    const body = this.view ? this.view.state.doc : doc
+  private decorate(doc: ProseMirrorNode, storyId: string | undefined): DecorationSet {
+    const body = storyId && this.view ? this.view.state.doc : doc
+    const numbers = countNotes(body)
     const set = computeDecorations(doc, {
       context: this.context,
-      noteNumbers: countNotes(noteNumber === undefined ? doc : body),
-      noteNumber,
+      noteNumbers: numbers,
+      noteNumber: storyId ? numbers.get(storyId) : undefined,
       activeComment: this.activeCommentId,
     })
-    if (noteNumber !== undefined || this.layoutMode !== 'print') return set
+    if (storyId !== undefined || this.layoutMode !== 'print') return set
     // Sections narrower than the widest are inset on the right.
     const { sections, sectionOfBlock } = documentSections(doc, this.context.finalSectPr)
     const widths = sections.map((section) => section.setup.width - section.setup.left - section.setup.right)
@@ -511,7 +529,7 @@ export class DocxEditor {
   // ── Transactions ─────────────────────────────────────────────────────────
 
   private dispatch(view: EditorView, tr: Transaction): void {
-    if (this.destroyed) return
+    if (this.destroyed || view.isDestroyed) return
     this.preparePaste(view, tr)
     const before = view.state
     const transaction = this.applyTransaction(view, tr)
@@ -520,8 +538,11 @@ export class DocxEditor {
       this.convertPastedLists(view)
       this.dropForeignReferences(view)
     }
-    if (transaction.docChanged || before.selection !== view.state.selection || transaction.storedMarksSet) this.emit('update')
-    if (transaction.docChanged && !transaction.getMeta(paginationKey) && this.view) this.scheduleLayout()
+    if (transaction.docChanged || before.selection !== view.state.selection || transaction.storedMarksSet || transaction.getMeta(findKey) !== undefined) this.emit('update')
+    if (transaction.docChanged && !transaction.getMeta(paginationKey) && this.view) {
+      this.scheduleLayout()
+      if (view === this.view && this.storyEditor) this.refreshDecorations(this.storyEditor.view)
+    }
   }
 
   /** Story and body pastes must import list definitions in the same undo step as their content. */
@@ -729,7 +750,7 @@ export class DocxEditor {
     })
   }
 
-  private applyStoryEdits(result: StoryResult | EditResult): void {
+  private applyStoryEdits(result: StoryResult | EditResult, view = this.activeView): void {
     const stories = 'stories' in result ? result.stories : []
     this.options.doc.transact(() => {
       for (const story of stories) {
@@ -744,7 +765,7 @@ export class DocxEditor {
       }
     })
     this.applyMapEdits(result.maps)
-    if (result.tr?.docChanged) this.view.dispatch(result.tr)
+    if (result.tr?.docChanged) view.dispatch(result.tr)
   }
 
   /** Commands are undo steps of their own, as in Word, not merged with the typing around them. */
@@ -756,7 +777,7 @@ export class DocxEditor {
   /** Runs a command against the active story; false when it does not apply. */
   run(command: Command): boolean {
     if (this.readOnly) return false
-    const target = this.storyEditor?.view ?? this.view
+    const target = this.activeView
     const tr = command(target.state, this.context)
     if (!tr) return false
     this.separateUndo(target)
@@ -768,7 +789,7 @@ export class DocxEditor {
 
   private runResult(result: EditResult | null): boolean {
     if (!result || this.readOnly) return false
-    const target = this.storyEditor?.view ?? this.view
+    const target = this.activeView
     this.separateUndo(target)
     this.options.doc.transact(() => {
       this.applyMapEdits(result.maps)
@@ -782,7 +803,7 @@ export class DocxEditor {
   // ── Keys ─────────────────────────────────────────────────────────────────
 
   private enter(): boolean {
-    const view = this.storyEditor?.view ?? this.view
+    const view = this.activeView
     const { state } = view
     if (!(state.selection instanceof TextSelection) && !(state.selection instanceof NodeSelection)) return false
     const paragraph = selectedParagraphs(state)[0]
@@ -798,7 +819,7 @@ export class DocxEditor {
   }
 
   private backspaceInList(): boolean {
-    const view = this.storyEditor?.view ?? this.view
+    const view = this.activeView
     const { state } = view
     if (!state.selection.empty || state.selection.$from.parentOffset !== 0) return false
     const paragraph = selectedParagraphs(state)[0]
@@ -807,7 +828,7 @@ export class DocxEditor {
   }
 
   private toggleListOff(): boolean {
-    const state = (this.storyEditor?.view ?? this.view).state
+    const state = (this.activeView).state
     const paragraph = selectedParagraphs(state)[0]
     if (!paragraph) return false
     const list = effectiveNumPr(jml(paragraph.node.attrs.numPr), paragraph.node.attrs.pStyle as string | null, this.context.styles)
@@ -817,7 +838,7 @@ export class DocxEditor {
   }
 
   private listIndent(direction: 1 | -1): boolean {
-    const state = (this.storyEditor?.view ?? this.view).state
+    const state = (this.activeView).state
     if (isInTable(state)) return false
     const paragraph = selectedParagraphs(state)[0]
     if (!paragraph) return false
@@ -830,7 +851,7 @@ export class DocxEditor {
 
   /** Comments can be added and changed in Viewing mode, but not when the document is read-only. */
   get canComment(): boolean {
-    return !this.readOnlyValue && !this.destroyed
+    return !this.readOnlyValue && !this.destroyed && !this.storyEditor
   }
 
   get readOnly(): boolean {
@@ -854,7 +875,7 @@ export class DocxEditor {
   }
 
   state(): DocxFormattingState {
-    const view = this.storyEditor?.view ?? this.view
+    const view = this.activeView
     const { state } = view
     const run = effectiveRunProperties(state, this.context)
     const paragraph = selectedParagraphs(state)[0]?.node
@@ -887,6 +908,8 @@ export class DocxEditor {
       lineSpacing: line !== undefined && (jmlAttr(spacing, 'w:lineRule') ?? 'auto') === 'auto' ? Math.round((line / 240) * 100) / 100 : null,
       list: list ? (listKind(list.numId, this.context) ?? null) : null,
       inTable: isInTable(state),
+      bodyCommandsEditable: !this.readOnly && !this.storyEditor,
+      canComment: this.canComment,
       tableColumnsEditable: !this.readOnly && this.modeValue !== 'suggesting',
       untrackedFormattingEditable: !this.readOnly && this.modeValue !== 'suggesting',
       link: (link?.attrs.href as string | null) ?? null,
@@ -929,6 +952,7 @@ export class DocxEditor {
   }
 
   private request(kind: DocxRequest): boolean {
+    if (kind === 'comment' && !this.canComment) return false
     if (kind === 'link' && (this.readOnly || this.modeValue === 'suggesting')) return false
     if (!this.listeners.request.size) return false
     this.emit('request', kind)
@@ -939,7 +963,7 @@ export class DocxEditor {
 
   undo(): boolean {
     if (this.readOnly) return false
-    const view = this.storyEditor?.view ?? this.view
+    const view = this.activeView
     const done = undo(view.state)
     view.focus()
     return done
@@ -947,7 +971,7 @@ export class DocxEditor {
 
   redo(): boolean {
     if (this.readOnly) return false
-    const view = this.storyEditor?.view ?? this.view
+    const view = this.activeView
     const done = redo(view.state)
     view.focus()
     return done
@@ -1026,7 +1050,7 @@ export class DocxEditor {
   }
 
   toggleList(kind: ListKind): boolean {
-    const view = this.storyEditor?.view ?? this.view
+    const view = this.activeView
     return this.runResult(toggleList(kind, view.state, this.context))
   }
 
@@ -1044,7 +1068,7 @@ export class DocxEditor {
 
   /** Format painter: the first call copies the selection's format, the next applies it. */
   formatPainter(): boolean {
-    const view = this.storyEditor?.view ?? this.view
+    const view = this.activeView
     if (!this.copied) {
       this.copied = copyFormat(view.state)
       this.emit('update')
@@ -1068,7 +1092,7 @@ export class DocxEditor {
 
   private tableCommand(command: (state: EditorState, dispatch?: (tr: Transaction) => void) => boolean): boolean {
     if (this.readOnly) return false
-    const view = this.storyEditor?.view ?? this.view
+    const view = this.activeView
     this.separateUndo(view)
     const done = command(view.state, (tr) => view.dispatch(tr))
     this.separateUndo(view)
@@ -1104,8 +1128,8 @@ export class DocxEditor {
   }
 
   insertSectionBreak(type: 'nextPage' | 'continuous' | 'evenPage' | 'oddPage'): boolean {
-    if (this.modeValue === 'suggesting') return false
-    const view = this.storyEditor?.view ?? this.view
+    if (this.modeValue === 'suggesting' || this.storyEditor) return false
+    const view = this.activeView
     return this.runResult(insertSectionBreak(type, view.state, this.context))
   }
 
@@ -1116,6 +1140,7 @@ export class DocxEditor {
   /** Inserts a picture from a file at the cursor, sized to fit the text width. */
   async insertImage(file: Blob, description = ''): Promise<boolean> {
     if (this.readOnly) return false
+    const target = this.activeView
     const bytes = new Uint8Array(await file.arrayBuffer())
     // Formats Word shows as plain pictures (SVG would need a PNG fallback beside it).
     const mimeType = insertablePicture(bytes)
@@ -1136,8 +1161,8 @@ export class DocxEditor {
       height = (height * maxWidth) / width
       width = maxWidth
     }
-    if (this.destroyed || this.readOnly) return false
-    const view = this.storyEditor?.view ?? this.view
+    if (this.destroyed || this.readOnly || target.isDestroyed) return false
+    const view = target
     const node = view.state.schema.node('drawing', { v: packJml(newInlinePicture(width, height, description || 'Picture', description)), src: ref.hash })
     view.dispatch(view.state.tr.replaceSelectionWith(node, false).scrollIntoView())
     view.focus()
@@ -1159,7 +1184,7 @@ export class DocxEditor {
 
   addComment(text: string): string | null {
     if (!this.canComment) return null
-    const result = addComment(this.view.state, this.context, this.author(), text)
+    const result = addComment(this.activeView.state, this.context, this.author(), text)
     this.applyStoryEdits(result)
     this.setActiveComment(result.id)
     return result.id
@@ -1167,7 +1192,7 @@ export class DocxEditor {
 
   replyToComment(parentId: string, text: string): string | null {
     if (!this.canComment) return null
-    const result = replyToComment(this.view.state, this.context, parentId, this.author(), text)
+    const result = replyToComment(this.activeView.state, this.context, parentId, this.author(), text)
     if (!result) return null
     this.applyStoryEdits(result)
     return result.id
@@ -1180,13 +1205,13 @@ export class DocxEditor {
 
   deleteComment(id: string): void {
     if (!this.canComment) return
-    this.applyStoryEdits(deleteComment(this.view.state, this.context, id))
+    this.applyStoryEdits(deleteComment(this.activeView.state, this.context, id))
     if (this.activeCommentId === id) this.setActiveComment(null)
   }
 
   editComment(id: string, text: string): void {
     if (!this.canComment) return
-    this.applyStoryEdits(editCommentText(this.view.state, this.context, id, text))
+    this.applyStoryEdits(editCommentText(this.activeView.state, this.context, id, text))
   }
 
   comments(): CommentThread[] {
@@ -1221,7 +1246,7 @@ export class DocxEditor {
     if (this.destroyed) return
     if (this.activeCommentId === id) return
     this.activeCommentId = id
-    this.view.dispatch(this.view.state.tr.setMeta(decorationsKey, 'refresh'))
+    for (const view of [this.view, this.storyEditor?.view]) if (view) this.refreshDecorations(view)
     this.emit('activeComment', id)
   }
 
@@ -1250,13 +1275,16 @@ export class DocxEditor {
   }
 
   goToBookmark(name: string): void {
-    this.view.state.doc.descendants((node, pos) => {
-      if (node.type.name === 'bookmark' && node.attrs.name === name && node.attrs.edge === 'start') {
-        this.goTo(pos)
-        return false
-      }
-      return true
-    })
+    const targets = [{ view: this.activeView, storyId: this.editingStory ?? undefined }]
+    if (this.storyEditor) targets.push({ view: this.view, storyId: undefined })
+    for (const { view, storyId } of targets) {
+      let found: number | undefined
+      view.state.doc.descendants((node, pos) => {
+        if (found === undefined && node.type.name === 'bookmark' && node.attrs.name === name && node.attrs.edge === 'start') found = pos
+        return found === undefined
+      })
+      if (found !== undefined) { this.goTo(found, storyId); return }
+    }
   }
 
   // ── Tracked changes ──────────────────────────────────────────────────────
@@ -1320,69 +1348,75 @@ export class DocxEditor {
 
   /** Shows the document as if every change were accepted, without changing it. */
   setShowMarkup(show: boolean): void {
+    this.root.classList.toggle('docx-final', !show)
     this.view.dom.classList.toggle('docx-final', !show)
+    this.scheduleLayout()
   }
 
   // ── Find and tools ───────────────────────────────────────────────────────
 
   find(query: string, options: FindOptions = {}): number {
-    const matches = findMatches(this.view.state.doc, query, options)
-    const head = this.view.state.selection.from
+    const matches = findMatches(this.activeView.state.doc, query, options)
+    const head = this.activeView.state.selection.from
     const current = matches.length ? Math.max(0, matches.findIndex((match) => match.from >= head)) : -1
-    this.view.dispatch(this.view.state.tr.setMeta(findKey, { matches, current }))
+    this.activeView.dispatch(this.activeView.state.tr.setMeta(findKey, { matches, current }))
     if (current >= 0) this.revealMatch(current)
     return matches.length
   }
 
   findStep(direction: 1 | -1): { index: number; count: number } {
-    const find = findKey.getState(this.view.state)
+    const find = findKey.getState(this.activeView.state)
     if (!find?.matches.length) return { index: -1, count: 0 }
     const current = (find.current + direction + find.matches.length) % find.matches.length
-    this.view.dispatch(this.view.state.tr.setMeta(findKey, { ...find, current }))
+    this.activeView.dispatch(this.activeView.state.tr.setMeta(findKey, { ...find, current }))
     this.revealMatch(current)
     return { index: current, count: find.matches.length }
   }
 
   findState(): { index: number; count: number } {
-    const find = findKey.getState(this.view.state)
+    const find = findKey.getState(this.activeView.state)
     return { index: find?.current ?? -1, count: find?.matches.length ?? 0 }
   }
 
   private revealMatch(index: number): void {
-    const match = findKey.getState(this.view.state)?.matches[index]
+    const match = findKey.getState(this.activeView.state)?.matches[index]
     if (!match) return
-    this.view.dispatch(this.view.state.tr.setSelection(TextSelection.create(this.view.state.doc, match.from, match.to)).scrollIntoView())
+    this.activeView.dispatch(this.activeView.state.tr.setSelection(TextSelection.create(this.activeView.state.doc, match.from, match.to)).scrollIntoView())
   }
 
   replace(replacement: string, query: string, options: FindOptions = {}): boolean {
     if (this.readOnly) return false
-    const find = findKey.getState(this.view.state)
+    const find = findKey.getState(this.activeView.state)
     const match = find?.matches[find.current]
     if (!match) return false
-    this.view.dispatch(replaceMatches(this.view.state, [match], replacement))
+    this.separateUndo(this.activeView)
+    this.activeView.dispatch(replaceMatches(this.activeView.state, [match], replacement))
+    this.separateUndo(this.activeView)
     this.find(query, options)
     return true
   }
 
   replaceAll(replacement: string, query: string, options: FindOptions = {}): number {
     if (this.readOnly) return 0
-    const matches = findMatches(this.view.state.doc, query, options)
+    const matches = findMatches(this.activeView.state.doc, query, options)
     if (!matches.length) return 0
-    this.view.dispatch(replaceMatches(this.view.state, matches, replacement))
+    this.separateUndo(this.activeView)
+    this.activeView.dispatch(replaceMatches(this.activeView.state, matches, replacement))
+    this.separateUndo(this.activeView)
     this.clearFind()
     return matches.length
   }
 
   clearFind(): void {
-    this.view.dispatch(this.view.state.tr.setMeta(findKey, { matches: [], current: -1 }))
+    this.activeView.dispatch(this.activeView.state.tr.setMeta(findKey, { matches: [], current: -1 }))
   }
 
   wordCount() {
-    return wordCount(this.view.state.doc)
+    return wordCount(this.activeView.state.doc)
   }
 
   outline(maxLevel = 9): OutlineEntry[] {
-    return documentOutline(this.view.state.doc, this.context, maxLevel)
+    return documentOutline(this.activeView.state.doc, this.context, maxLevel).map((entry) => this.editingStory ? { ...entry, storyId: this.editingStory } : entry)
   }
 
   goTo(pos: number, storyId?: string): void {
@@ -1402,7 +1436,8 @@ export class DocxEditor {
   }
 
   /** Page (1-based, as displayed) a position is on, from the last layout. */
-  pageOf(pos: number): number | undefined {
+  pageOf(pos: number, storyId?: string): number | undefined {
+    if (storyId) return undefined
     if (this.layoutMode !== 'print' || !this.lastLayout) return undefined
     try {
       const flow = this.view.dom as HTMLElement
@@ -1420,7 +1455,7 @@ export class DocxEditor {
 
   /** Inserts a table of contents from the headings at the cursor, as a TOC field Word updates too. */
   insertTableOfContents(): boolean {
-    if (this.readOnly) return false
+    if (this.readOnly || this.storyEditor) return false
     const state = this.view.state
     const paragraph = selectedParagraphs(state)[0]
     if (!paragraph) return false
@@ -1432,7 +1467,7 @@ export class DocxEditor {
 
   /** Regenerates the entries of the first table of contents. */
   updateTableOfContents(): boolean {
-    if (this.readOnly) return false
+    if (this.readOnly || this.storyEditor) return false
     const range = this.tocRange(this.view.state.doc)
     if (!range) return false
     const { tr, paragraphs } = this.tocParagraphs(this.view.state)
@@ -1675,7 +1710,7 @@ export class DocxEditor {
       if (doc) {
         const measure = document.createElement('div')
         measure.style.cssText = `position:absolute;visibility:hidden;left:-10000px;top:0;width:${width}px`
-        measure.appendChild(renderStory(doc, { urls: this.urls, labels: this.labels, fields: { page: 1, pages: 1 } }))
+        measure.appendChild(renderStory(doc, { urls: this.urls, labels: this.labels, fields: { page: 1, pages: 1 }, context: this.context }))
         this.root.appendChild(measure)
         height = measure.getBoundingClientRect().height / (this.zoomLevel || 1)
         measure.remove()
@@ -1711,7 +1746,7 @@ export class DocxEditor {
       if (!key.startsWith('footnote:')) continue
       const doc = this.storyDoc(key)
       if (!doc) continue
-      const element = renderStory(doc, { urls: this.urls, labels: this.labels, noteNumber: number })
+      const element = renderStory(doc, { urls: this.urls, labels: this.labels, noteNumber: number, noteNumbers: numbers, context: this.context })
       measure.appendChild(element)
       this.noteHeights.set(key, element.getBoundingClientRect().height / (this.zoomLevel || 1))
     }
@@ -1886,19 +1921,9 @@ export class DocxEditor {
     // Keep the live editor outside the page bands and notes host, which pagination rebuilds.
     // Moving its DOM during layout would interrupt focus and composition.
     this.canvas.appendChild(element)
-    const noteNumber = storyId.startsWith('footnote:') || storyId.startsWith('endnote:') ? countNotes(this.view.state.doc).get(storyId) : undefined
-    const dispatch = (view: EditorView, tr: Transaction) => {
-      if (view.isDestroyed) return
-      this.preparePaste(view, tr)
-      this.applyTransaction(view, tr)
-      if (pasted(tr)) {
-        this.convertPastedLists(view)
-        this.dropForeignReferences(view)
-      }
-      this.emit('update')
-    }
+    const dispatch = (view: EditorView, tr: Transaction) => this.dispatch(view, tr)
     const view = new EditorView({ mount: element }, {
-      state: EditorState.create({ schema: docxSchema(), plugins: this.plugins(this.options.doc.getXmlFragment(storyFragmentName(storyId)), `cursor:${storyId}`, noteNumber) }),
+      state: EditorState.create({ schema: docxSchema(), plugins: this.plugins(this.options.doc.getXmlFragment(storyFragmentName(storyId)), `cursor:${storyId}`, storyId) }),
       editable: () => !this.readOnly,
       nodeViews: this.nodeViews(),
       ...this.clipboardProps(storyId),
@@ -1986,8 +2011,16 @@ export class DocxEditor {
     return parts.join('\n')
   }
 
+  get hasFocus(): boolean {
+    return this.activeView.hasFocus()
+  }
+
+  blur(): void {
+    this.activeView.dom.blur()
+  }
+
   focus(): void {
-    ;(this.storyEditor?.view ?? this.view).focus()
+    this.activeView.focus()
   }
 
   destroy(): void {

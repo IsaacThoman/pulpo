@@ -658,6 +658,7 @@ export function wordCount(doc: ProseMirrorNode): { words: number; characters: nu
 export interface OutlineEntry {
   level: number
   text: string
+  storyId?: string
   pos: number
 }
 
