@@ -23,6 +23,7 @@ import { redo, undo, yCursorPlugin, ySyncPlugin, ySyncPluginKey, yUndoPlugin, yU
 import type { Awareness } from 'y-protocols/awareness'
 import * as Y from 'yjs'
 import type { LiveAssetStore } from '../../live-format.js'
+import { resolveTarget, type Relationship } from '../../ooxml/package.js'
 import { copyRelatedParts, needsRelatedParts, receiveCopiedParts } from '../copy-relationships.js'
 import { fontStack, isThemeFontVar, latinFont } from '../css.js'
 import { DOCX_MAX_TABLE_DEPTH } from '../format.js'
@@ -1793,13 +1794,12 @@ export class DocxEditor {
 
   /** Header and footer stories by the main part's relationship id. */
   private storyByRel(relId: string): string | undefined {
-    const rel = parseJson<{ type: string; target: string }>(readDocxMap(this.options.doc, 'rels').get(relId))
-    if (!rel) return undefined
+    const rel = parseJson<Omit<Relationship, 'id'>>(readDocxMap(this.options.doc, 'rels').get(relId))
+    if (!rel || rel.targetMode === 'External') return undefined
     const main = this.options.doc.getMap<string>('docx').get('mainPart') ?? 'word/document.xml'
-    const folder = main.slice(0, main.lastIndexOf('/') + 1)
-    const part = rel.target.startsWith('/') ? rel.target.slice(1) : folder + rel.target
+    const part = resolveTarget(main, rel.target)
     const kind = rel.type.endsWith('/header') ? 'header' : 'footer'
-    return `${kind}:${part.replace(/\/\.\//g, '/')}`
+    return `${kind}:${part}`
   }
 
   private measureNotes(width: number): void {
@@ -1822,6 +1822,8 @@ export class DocxEditor {
   private renderPages(layout: LayoutResult, flowLeft: number, flowTop: number, padding: number): void {
     const pages = layout.pages
     const total = pages.length
+    const sectionPages = new Map<number, number>()
+    for (const page of pages) sectionPages.set(page.section, (sectionPages.get(page.section) ?? 0) + 1)
     const numbers = countNotes(this.view.state.doc)
     this.pagesLayer.replaceChildren()
     this.bandsLayer.replaceChildren()
@@ -1845,7 +1847,7 @@ export class DocxEditor {
       gap.className = 'docx-band-gap'
       gap.style.cssText = `top:${top + setup.height}px;left:0;right:0;height:${PAGE_GAP}px`
       this.bandsLayer.append(topBand, bottomBand, gap)
-      const fields = { page: page.number, pages: total, format: setup.numberFormat }
+      const fields = { page: page.number, pages: total, sectionPages: sectionPages.get(page.section), format: setup.numberFormat }
       for (const kind of ['header', 'footer'] as const) {
         const reference = storyReference(this.lastSections, page.section, kind, page, this.context.evenAndOddHeaders)
         const storyId = reference ? this.storyByRel(reference.relId) : undefined

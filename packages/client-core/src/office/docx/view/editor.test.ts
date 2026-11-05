@@ -8,11 +8,11 @@ import { Awareness } from 'y-protocols/awareness'
 import * as Y from 'yjs'
 import { OoxmlPackage, resolveTarget } from '../../ooxml/package.js'
 import { blankDocx } from '../blank.js'
-import { NEW_PART_NAMESPACES, REL } from '../names.js'
+import { CONTENT_TYPE, NEW_PART_NAMESPACES, REL, W_NS } from '../names.js'
 import { relationshipReferences } from '../relationships.js'
 import { acceptedText, baseText, docxToText } from '../text.js'
 import { docxCodec } from '../codec.js'
-import { elementToJml, packJml } from '../jsonml.js'
+import { elementToJml, packJml, type JmlElement } from '../jsonml.js'
 import { MemoryAssetStore } from '../memory-assets.js'
 import { readDocxModel, fragmentToNode, storyFragmentName, writeFragment } from '../model.js'
 import { docxSchema } from '../schema.js'
@@ -52,6 +52,64 @@ afterEach(() => {
   awareness.destroy()
   doc.destroy()
   vi.unstubAllGlobals()
+})
+
+describe('header and footer fields and targets', () => {
+  it('renders section counts separately from total pages with restarted page numbers', () => {
+    const field = (code: string) => schema.text('999', [schema.mark('fldSimple', { v: packJml(['w:fldSimple', { 'w:instr': code }, '\u0000']) })])
+    const fields = schema.node('doc', null, [schema.node('paragraph', null, [field('PAGE'), schema.text('/'), field('NUMPAGES'), schema.text('/'), field('SECTIONPAGES'), schema.text('/'), field('SECTIONPAGES \\* ROMAN')])])
+    const references: JmlElement[] = []
+    doc.transact(() => {
+      for (const kind of ['header', 'footer'] as const) {
+        references.push([`w:${kind}Reference`, { 'w:type': 'default', 'r:id': kind }])
+        doc.getMap('rels').set(kind, JSON.stringify({ type: REL[kind], target: '/1' }))
+        writeFragment(doc, doc.getXmlFragment(storyFragmentName(`${kind}:1`)), fields)
+      }
+      doc.getMap('docx').set('sectPr', packJml(['w:sectPr', {}, ['w:pgNumType', { 'w:start': '1' }]]))
+    })
+    const firstSection = packJml(['w:sectPr', {}, ...references, ['w:pgNumType', { 'w:start': '1', 'w:fmt': 'lowerRoman' }]])
+    editor.view.dispatch(editor.view.state.tr.replaceWith(0, editor.view.state.doc.content.size, [
+      schema.node('paragraph', null, schema.text('First page')),
+      schema.node('paragraph', { pageBreakBefore: packJml(['w:pageBreakBefore', {}]), sectPr: firstSection }, schema.text('Second page')),
+      schema.node('paragraph', null, schema.text('New section')),
+    ]))
+    editor.setLayout('print')
+    editor.relayout()
+    expect(editor.pages).toBe(3)
+    for (const kind of ['header', 'footer']) {
+      const stories = [...document.querySelectorAll(`[data-story="${kind}:1"]`)]
+      expect(stories.map((element) => element.textContent)).toEqual(['i/3/2/II', 'ii/3/2/II', '1/3/1/I'])
+    }
+  })
+
+  it.each([
+    ['header', '../headers/header.xml'], ['footer', '../footers/footer.xml'],
+    ['header', '../headers/./nested/../header.xml'], ['footer', '/footers/./footer.xml'],
+    ['header', '..\\headers\\header.xml'],
+  ] as const)('renders and edits imported %s with target %s', async (kind, target) => {
+    const pkg = OoxmlPackage.read(blankDocx())
+    const part = resolveTarget('word/document.xml', target)
+    const id = pkg.addRelationship('word/document.xml', REL[kind], target)
+    pkg.setXml(part, `<w:${kind === 'header' ? 'hdr' : 'ftr'} xmlns:w="${W_NS}"><w:p><w:r><w:t>Normalized story</w:t></w:r></w:p></w:${kind === 'header' ? 'hdr' : 'ftr'}>`)
+    pkg.setContentType(part, CONTENT_TYPE[kind])
+    pkg.setXml('word/document.xml', `<w:document xmlns:w="${W_NS}" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body><w:p/><w:sectPr><w:${kind}Reference w:type="default" r:id="${id}"/></w:sectPr></w:body></w:document>`)
+    editor.destroy()
+    awareness.destroy()
+    doc.destroy()
+    doc = new Y.Doc()
+    awareness = new Awareness(doc)
+    await docxCodec.importFile(doc, pkg.write(), { name: 'targets.docx', assets })
+    editor = new DocxEditor({ container: document.body, doc, awareness, assets, user: { name: 'Ada', color: '#ff0000' }, layout: 'print' })
+    editor.relayout()
+    const key = `${kind}:${part}`
+    expect(readDocxModel(doc).stories.has(key)).toBe(true)
+    const rendered = document.querySelector<HTMLElement>(`[data-story="${key}"]`)
+    expect(rendered?.textContent).toBe('Normalized story')
+    rendered!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true }))
+    expect(editor.editingStory).toBe(key)
+    storyView().dispatch(storyView().state.tr.insertText('Edited '))
+    expect(fragmentToNode(doc.getXmlFragment(storyFragmentName(key))).textContent).toBe('Edited Normalized story')
+  })
 })
 
 describe('story review', () => {
