@@ -7,6 +7,7 @@ import {
   highlightRuns,
   highlightTokenOf,
   highlightTree,
+  limitLines,
   lineText,
   markLineRanges,
   normalizeLanguage,
@@ -86,5 +87,34 @@ describe('findInLines', () => {
     expect(findInLines(['aaaa'], 'aa')).toHaveLength(2)
     expect(findInLines(['aaaa'], 'a', 3)).toHaveLength(3)
     expect(findInLines(['x'], '')).toEqual([])
+  })
+
+  it('stays case-insensitive on lines whose lower case is longer, with offsets in the original', () => {
+    const line = 'İ ERROR: connection refused'
+    expect(findInLines([line], 'error')).toEqual([{ line: 0, start: 2, end: 7 }])
+    expect(line.slice(2, 7)).toBe('ERROR')
+    // A match that includes the expanding character covers all of it.
+    expect(findInLines(['xİy'], 'i̇y')).toEqual([{ line: 0, start: 1, end: 3 }])
+    // Characters outside the BMP keep their two code units.
+    expect(findInLines(['😀İ AB'], 'ab')).toEqual([{ line: 0, start: 4, end: 6 }])
+  })
+})
+
+describe('limitLines', () => {
+  it('keeps the first lines, whatever the line breaks', () => {
+    expect(limitLines('a\nb\r\nc\rd', 2)).toEqual({ text: 'a\nb', truncated: true })
+    expect(limitLines('a\r\nb\r\nc', 1)).toEqual({ text: 'a', truncated: true })
+    expect(limitLines('a\nb', 5)).toEqual({ text: 'a\nb', truncated: false })
+  })
+
+  it('does not count a final line break as cutting anything', () => {
+    expect(limitLines('a\nb\n', 2)).toEqual({ text: 'a\nb', truncated: false })
+    expect(limitLines('a\nb\n\n', 2)).toEqual({ text: 'a\nb', truncated: true })
+  })
+
+  it('bounds files of millions of empty lines', () => {
+    const { text, truncated } = limitLines('\n'.repeat(5 * 1024 * 1024))
+    expect(truncated).toBe(true)
+    expect(text.split('\n')).toHaveLength(500_000)
   })
 })

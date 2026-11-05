@@ -4,7 +4,7 @@ import { Fragment, jsx, jsxs } from 'react/jsx-runtime'
 import { toJsxRuntime } from 'hast-util-to-jsx-runtime'
 import { Braces, FileCode2, WrapText } from 'lucide-react'
 import { codeLanguageFor, fileExtension } from '@pulpo/client-core/files'
-import { highlightTree, lineText, markLineRanges, splitHighlightedLines, type HighlightedLine } from '@pulpo/client-core/highlight'
+import { highlightTree, limitLines, lineText, markLineRanges, MAX_VIEWER_LINES, splitHighlightedLines, type HighlightedLine } from '@pulpo/client-core/highlight'
 import { activeLocale, ui, uit } from '@/i18n/ui'
 import { cn } from '@/lib/utils'
 import { findInLines, formatJson, MAX_FIND_MATCHES, stepIndex, useFindShortcut } from './find'
@@ -97,7 +97,9 @@ export function CodeViewer({
   const language = languageOverride !== undefined ? languageOverride : codeLanguageFor(name, mimeType)
 
   // One line-ending style, so highlighted lines and searched lines split the same way.
-  const normalized = useMemo(() => shown.replace(/\r\n?/g, '\n'), [shown])
+  // Only the first lines of a huge file are shown: every line costs memory before virtualization.
+  const limited = useMemo(() => limitLines(shown), [shown])
+  const normalized = useMemo(() => limited.text.replace(/\r\n?/g, '\n'), [limited])
   const tooLargeToHighlight = language !== null && normalized.length > MAX_VIEWER_HIGHLIGHT_CHARACTERS
   const lines = useMemo(() => {
     const tree = language === null ? null : highlightTree(normalized, language, MAX_VIEWER_HIGHLIGHT_CHARACTERS)
@@ -228,10 +230,12 @@ export function CodeViewer({
           }}
         />
       )}
-      {(notice || tooLargeToHighlight) && (
+      {(notice || tooLargeToHighlight || limited.truncated) && (
         <p className="shrink-0 border-b border-code-border bg-code px-4 py-1.5 text-xs text-code-muted">
           {notice}
-          {notice && tooLargeToHighlight ? ' ' : null}
+          {notice && (tooLargeToHighlight || limited.truncated) ? ' ' : null}
+          {limited.truncated && uit`Showing the first ${MAX_VIEWER_LINES.toLocaleString(locale)} lines; download the file to see the rest.`}
+          {limited.truncated && tooLargeToHighlight ? ' ' : null}
           {tooLargeToHighlight && ui("Syntax highlighting is off for files this large.")}
         </p>
       )}
