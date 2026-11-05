@@ -1,7 +1,7 @@
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import { TableMap } from '@tiptap/pm/tables'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
-import { borderCss, cssIdent, cssText, fontStack, latinFont, runPropertiesCss, shadingColor, twipsToPt, type CssProps } from '../css.js'
+import { borderCss, cssIdent, cssText, fontStack, isThemeFontVar, latinFont, runPropertiesCss, shadingColor, twipsToPt, type CssProps } from '../css.js'
 import { jmlAttr, jmlChild, jmlNumber, unpackJml, type JmlElement } from '../jsonml.js'
 import { ListCounter, effectiveNumPr, formatNumber } from '../numbering.js'
 import { inlineMarks } from '../schema.js'
@@ -85,7 +85,7 @@ function listDecoration(node: ProseMirrorNode, pos: number, counter: ListCounter
   props['--docx-label-w'] = pt(labelWidth)
   const labelRun = runPropertiesCss(level.rPr, input.context.theme)
   const font = latinFont(jmlChild(level.rPr, 'w:rFonts'), input.context.theme)
-  if (font && !/symbol|wingdings/i.test(font)) props['--docx-label-font'] = font.startsWith('var(') ? font : fontStack(font)
+  if (font && !/symbol|wingdings/i.test(font)) props['--docx-label-font'] = isThemeFontVar(font) ? font : fontStack(font)
   if (labelRun['font-weight']) props['--docx-label-weight'] = labelRun['font-weight']
   if (labelRun.color) props['--docx-label-color'] = labelRun.color
   if (labelRun['font-size']) props['--docx-label-size'] = labelRun['font-size']

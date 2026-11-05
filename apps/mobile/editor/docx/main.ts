@@ -69,6 +69,7 @@ interface Open {
   awareness: Awareness
   editor: DocxEditor
   assets: BridgeAssetStore
+  listeners: AbortController
 }
 
 let open: Open | null = null
@@ -107,6 +108,7 @@ function close(): void {
   if (!open) return
   const current = open
   open = null
+  current.listeners.abort()
   current.editor.destroy()
   current.assets.dispose()
   removeAwarenessStates(current.awareness, [current.doc.clientID], 'local')
@@ -165,6 +167,7 @@ function start(message: Extract<HostMessage, { type: 'init' }>): void {
     const cursor = (awareness.getLocalState() as { cursor?: { anchor: unknown; head: unknown } | null } | null)?.cursor ?? null
     post({ type: 'cursor', session, cursor })
   })
+  const listeners = new AbortController()
   const editor = new DocxEditor({
     container: root,
     doc,
@@ -191,7 +194,19 @@ function start(message: Extract<HostMessage, { type: 'init' }>): void {
       if (open?.session === session) post({ type: 'docxState', session, state: phoneState(editor) })
     })
   })
-  open = { session, doc, awareness, editor, assets }
+  // Read-only, a tapped link opens through the app (as in the Markdown page); editing, a tap
+  // places the caret and the bar's Link button edits it.
+  root.addEventListener('click', (event) => {
+    if (open?.session !== session || !editor.readOnly) return
+    const link = (event.target as Element | null)?.closest?.('a[href]')
+    const href = link?.getAttribute('href')
+    if (!href) return
+    event.preventDefault()
+    event.stopPropagation()
+    if (href.startsWith('#')) editor.goToBookmark(decodeURIComponent(href.slice(1)))
+    else if (/^(https?:|mailto:)/i.test(href)) post({ type: 'link', session, href })
+  }, { capture: true, signal: listeners.signal })
+  open = { session, doc, awareness, editor, assets, listeners }
   post({ type: 'loaded', session })
   post({ type: 'sync', session, stateVector: bytesToBase64(Y.encodeStateVector(doc)) })
   post({ type: 'docxState', session, state: phoneState(editor) })

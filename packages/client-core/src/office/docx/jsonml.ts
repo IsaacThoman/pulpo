@@ -128,9 +128,20 @@ export function stripInvalidXmlChars(text: string): string {
   return text.replace(INVALID_XML_CHARS, '')
 }
 
+/** XML names as WordprocessingML uses them (ASCII, at most one prefix). */
+const XML_NAME = /^[A-Za-z_][\w.-]*(?::[A-Za-z_][\w.-]*)?$/
+
+/**
+ * Names that can be written: valid XML, and not the editor's own `pulpo:` markers (an undeclared
+ * prefix would make the file unreadable). Values come from documents and collaborators.
+ */
+export function writableXmlName(name: string): boolean {
+  return XML_NAME.test(name) && !name.startsWith('pulpo:')
+}
+
 export function openTag(name: string, attrs: Record<string, string> | undefined, selfClose = false): string {
   let tag = `<${name}`
-  if (attrs) for (const key in attrs) tag += ` ${key}="${escapeXmlAttr(stripInvalidXmlChars(attrs[key]!))}"`
+  if (attrs) for (const key in attrs) if (writableXmlName(key) && typeof attrs[key] === 'string') tag += ` ${key}="${escapeXmlAttr(stripInvalidXmlChars(attrs[key]!))}"`
   return tag + (selfClose ? '/>' : '>')
 }
 
@@ -140,6 +151,8 @@ export function openTag(name: string, attrs: Record<string, string> | undefined,
 export function jmlToXml(node: JmlNode, slot?: string): string {
   if (typeof node === 'string') return node === CONTENT_SLOT ? (slot ?? '') : escapeXmlText(stripInvalidXmlChars(node))
   const [name, attrs] = node
+  // An element that cannot be named is left out, with its content.
+  if (typeof name !== 'string' || !writableXmlName(name)) return ''
   if (node.length <= 2) return openTag(name, attrs, true)
   let body = ''
   for (let index = 2; index < node.length; index++) body += jmlToXml(node[index] as JmlNode, slot)

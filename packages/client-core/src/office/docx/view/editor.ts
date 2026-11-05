@@ -23,8 +23,9 @@ import { redo, undo, yCursorPlugin, ySyncPlugin, ySyncPluginKey, yUndoPlugin, yU
 import type { Awareness } from 'y-protocols/awareness'
 import type * as Y from 'yjs'
 import type { LiveAssetStore } from '../../live-format.js'
-import { fontStack, latinFont } from '../css.js'
+import { fontStack, isThemeFontVar, latinFont } from '../css.js'
 import { newInlinePicture } from '../drawing.js'
+import { sniffImage } from '../export.js'
 import { jmlAttr, jmlChild, jmlNumber, jmlOn, packJml, unpackJml, type JmlElement } from '../jsonml.js'
 import { BODY_FRAGMENT, fragmentToNode, parseJson, readDocxMap, storyFragmentName, writeFragment, type StoryMeta } from '../model.js'
 import { effectiveNumPr, formatNumber } from '../numbering.js'
@@ -104,6 +105,22 @@ import { listRevisions, resolveRevisions, revisionDate, trackTransaction, type R
 
 export type DocxLayout = 'print' | 'web'
 export type DocxMode = 'editing' | 'suggesting' | 'viewing'
+
+/** Picture formats `insertImage` accepts. */
+export const INSERTABLE_IMAGES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/bmp'])
+
+/** Content that came in from outside: pasted, or dropped from another app. */
+function pasted(tr: Transaction): boolean {
+  const event = tr.getMeta('uiEvent')
+  return event === 'paste' || event === 'drop'
+}
+
+/** The largest value, without spreading (a document can have a section per paragraph). */
+function maxOf(values: number[]): number {
+  let max = -Infinity
+  for (const value of values) if (value > max) max = value
+  return max
+}
 
 export interface DocxEditorOptions {
   container: HTMLElement
@@ -348,7 +365,7 @@ export class DocxEditor {
     // Sections narrower than the widest are inset on the right.
     const { sections, sectionOfBlock } = documentSections(doc, this.context.finalSectPr)
     const widths = sections.map((section) => section.setup.width - section.setup.left - section.setup.right)
-    const widest = Math.max(...widths)
+    const widest = maxOf(widths)
     if (widths.every((width) => Math.abs(width - widest) < 1)) return set
     const extra: Decoration[] = []
     let index = 0
@@ -420,7 +437,7 @@ export class DocxEditor {
     }
     const before = view.state
     view.updateState(view.state.apply(transaction))
-    if (transaction.getMeta('uiEvent') === 'paste') this.convertPastedLists(view)
+    if (pasted(transaction)) this.convertPastedLists(view)
     if (transaction.docChanged || before.selection !== view.state.selection || transaction.storedMarksSet) this.emit('update')
     if (transaction.docChanged && !transaction.getMeta(paginationKey) && this.view) this.scheduleLayout()
   }
@@ -598,6 +615,11 @@ export class DocxEditor {
 
   // ── Public state ─────────────────────────────────────────────────────────
 
+  /** Comments can be added and changed in Viewing mode, but not when the document is read-only. */
+  get canComment(): boolean {
+    return !this.readOnlyValue && !this.destroyed
+  }
+
   get readOnly(): boolean {
     return this.readOnlyValue || this.modeValue === 'viewing'
   }
@@ -638,7 +660,7 @@ export class DocxEditor {
     const undoState = yUndoPluginKey.getState(state) as { undoManager?: { undoStack: unknown[]; redoStack: unknown[] } } | undefined
     return {
       styleId: (paragraph?.attrs.pStyle as string | null) ?? this.context.styles.defaultStyle('paragraph')?.id ?? null,
-      fontFamily: font && !font.startsWith('var(') ? font : (this.context.theme?.fonts.minor ?? null),
+      fontFamily: font && !isThemeFontVar(font) ? font : (this.context.theme?.fonts.minor ?? null),
       fontSize: size ? size / 2 : null,
       bold: jmlOn(run.get('w:b')) === true,
       italic: jmlOn(run.get('w:i')) === true,
@@ -870,7 +892,10 @@ export class DocxEditor {
   async insertImage(file: Blob, description = ''): Promise<boolean> {
     if (this.readOnly) return false
     const bytes = new Uint8Array(await file.arrayBuffer())
-    const ref = await this.options.assets.put(bytes, file.type || 'image/png')
+    // Formats Word shows as plain pictures (SVG would need a PNG fallback beside it).
+    const { mimeType } = sniffImage(bytes)
+    if (!INSERTABLE_IMAGES.has(mimeType)) return false
+    const ref = await this.options.assets.put(bytes, mimeType)
     let width = 300
     let height = 200
     try {
@@ -886,6 +911,7 @@ export class DocxEditor {
       height = (height * maxWidth) / width
       width = maxWidth
     }
+    if (this.destroyed || this.readOnly) return false
     const view = this.storyEditor?.view ?? this.view
     const node = view.state.schema.node('drawing', { v: packJml(newInlinePicture(width, height, description || 'Picture', description)), src: ref.hash })
     view.dispatch(view.state.tr.replaceSelectionWith(node, false).scrollIntoView())
@@ -907,7 +933,7 @@ export class DocxEditor {
   }
 
   addComment(text: string): string | null {
-    if (this.readOnly && this.modeValue !== 'viewing') return null
+    if (!this.canComment) return null
     const result = addComment(this.view.state, this.context, this.author(), text)
     this.applyStoryEdits(result)
     this.setActiveComment(result.id)
@@ -915,6 +941,7 @@ export class DocxEditor {
   }
 
   replyToComment(parentId: string, text: string): string | null {
+    if (!this.canComment) return null
     const result = replyToComment(this.view.state, this.context, parentId, this.author(), text)
     if (!result) return null
     this.applyStoryEdits(result)
@@ -922,15 +949,18 @@ export class DocxEditor {
   }
 
   resolveComment(id: string, done = true): void {
+    if (!this.canComment) return
     this.applyStoryEdits(setCommentResolved(this.context, id, done))
   }
 
   deleteComment(id: string): void {
+    if (!this.canComment) return
     this.applyStoryEdits(deleteComment(this.view.state, this.context, id))
     if (this.activeCommentId === id) this.setActiveComment(null)
   }
 
   editComment(id: string, text: string): void {
+    if (!this.canComment) return
     this.applyStoryEdits(editCommentText(this.view.state, this.context, id, text))
   }
 
@@ -1310,8 +1340,8 @@ export class DocxEditor {
     const scrollTop = scroller?.scrollTop
     this.view.dispatch(this.view.state.tr.setMeta(paginationKey, null).setMeta('addToHistory', false))
     const sections = documentSections(this.view.state.doc, this.context.finalSectPr).sections
-    const widest = Math.max(...sections.map((section) => section.setup.width - section.setup.left - section.setup.right))
-    const maxLeft = Math.max(...sections.map((section) => section.setup.left))
+    const widest = maxOf(sections.map((section) => section.setup.width - section.setup.left - section.setup.right))
+    const maxLeft = maxOf(sections.map((section) => section.setup.left))
     const padding = 24
     const flowTop = padding + (sections[0]?.setup.top ?? 96)
     const flowLeft = padding + maxLeft
@@ -1612,6 +1642,7 @@ export class DocxEditor {
         let transaction = tr
         if (this.modeValue === 'suggesting' && tr.docChanged && tr.getMeta(ySyncPluginKey) === undefined && !tr.getMeta('docx-tracked')) transaction = trackTransaction(view.state, tr, this.reviewer()) ?? tr
         view.updateState(view.state.apply(transaction))
+        if (pasted(transaction)) this.convertPastedLists(view)
         this.emit('update')
       },
     })

@@ -24,8 +24,10 @@ export const DOCX_LIMITS = {
   maxTableDepth: 30,
   /** Most blocks in one story. */
   maxBlocks: 400_000,
-  /** Most columns in one table row. */
+  /** Most columns in one table row (cells, grid columns, and skipped grid columns). */
   maxColumns: 1_000,
+  /** Most grid positions in one table (rows × columns), which editors allocate per table. */
+  maxTableCells: 250_000,
   /** Largest XML part we parse, in bytes. */
   maxXmlPartBytes: 64 * 1024 * 1024,
 }
@@ -399,14 +401,17 @@ class BlockBuilder {
     const tblPr = jmlChild(element, 'w:tblPr')
     const tblGrid = jmlChild(element, 'w:tblGrid')
     const gridCount = tblGrid ? jmlElements(tblGrid).filter((col) => col[0] === 'w:gridCol').length : 0
+    const tooWide = () => new LiveFormatError('too_large', 'This table has too many columns')
+    if (gridCount > DOCX_LIMITS.maxColumns) throw tooWide()
     interface RawCell { tc: JmlElement; col: number; span: number; vMerge?: string; wrap?: string; lead: JmlElement[] }
     interface RawRow { tr: JmlElement; cells: RawCell[]; before: number; after: number; wrap?: string; lead: JmlElement[]; cellTrail: JmlElement[] }
     const rows: RawRow[] = []
     let pendingLead: JmlElement[] = []
     const addRow = (tr: JmlElement, wrap?: string) => {
       const trPr = jmlChild(tr, 'w:trPr')
-      const before = jmlNumber(jmlChild(trPr, 'w:gridBefore'), 'w:val') ?? 0
-      const after = jmlNumber(jmlChild(trPr, 'w:gridAfter'), 'w:val') ?? 0
+      const before = Math.max(0, jmlNumber(jmlChild(trPr, 'w:gridBefore'), 'w:val') ?? 0)
+      const after = Math.max(0, jmlNumber(jmlChild(trPr, 'w:gridAfter'), 'w:val') ?? 0)
+      if (before > DOCX_LIMITS.maxColumns || after > DOCX_LIMITS.maxColumns) throw tooWide()
       const cells: RawCell[] = []
       // Bookmarks, empty content controls, and the like between cells ride on the next cell.
       let cellLead: JmlElement[] = []
@@ -418,7 +423,7 @@ class BlockBuilder {
         cells.push({ tc, col, span, vMerge: vMergeElement ? (jmlAttr(vMergeElement, 'w:val') ?? 'continue') : undefined, wrap: cellWrap, lead: cellLead })
         cellLead = []
         col += span
-        if (col > DOCX_LIMITS.maxColumns) throw new LiveFormatError('too_large', 'This table has too many columns')
+        if (col > DOCX_LIMITS.maxColumns) throw tooWide()
       }
       for (const child of jmlElements(tr)) {
         if (child[0] === 'w:tc') addCell(child)
@@ -432,6 +437,7 @@ class BlockBuilder {
           else if (outside.length) cells[count]!.lead.splice(before, 0, ...outside)
         } else if (child[0] !== 'w:trPr' && child[0] !== 'w:tblPrEx') cellLead.push(child)
       }
+      if (col + after > DOCX_LIMITS.maxColumns) throw tooWide()
       rows.push({ tr, cells, before, after, wrap, lead: pendingLead, cellTrail: cellLead })
       pendingLead = []
     }
@@ -446,7 +452,12 @@ class BlockBuilder {
       }
       else if (BLOCK_MARKERS.has(child[0])) pendingLead.push(child)
     }
-    const width = Math.max(gridCount, ...rows.map((row) => (row.cells.at(-1) ? row.cells.at(-1)!.col + row.cells.at(-1)!.span : row.before) + row.after))
+    let width = gridCount
+    for (const row of rows) {
+      const last = row.cells.at(-1)
+      width = Math.max(width, (last ? last.col + last.span : row.before) + row.after)
+    }
+    if (width * Math.max(1, rows.length) > DOCX_LIMITS.maxTableCells) throw new LiveFormatError('too_large', 'This table is too large')
 
     // Vertical merges become rowspans, as prosemirror-tables models them, when every row keeps a
     // cell of its own; otherwise the table keeps its continuation cells as they are.

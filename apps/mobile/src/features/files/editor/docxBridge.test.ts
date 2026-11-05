@@ -73,7 +73,7 @@ class Page {
 const pages: Page[] = []
 afterEach(() => { for (const page of pages.splice(0)) page.dom.window.close() })
 
-async function open(file: string, options: { schemaVersion?: number; fetchAsset?: (hash: string) => Promise<Uint8Array>; format?: string } = {}) {
+async function open(file: string, options: { schemaVersion?: number; fetchAsset?: (hash: string) => Promise<Uint8Array>; format?: string; editable?: boolean; onLink?: (href: string) => void } = {}) {
   const doc = new Y.Doc()
   const assets = new MemoryLiveAssetStore()
   await docxCodec.importFile(doc, fixture(file), { name: file, assets })
@@ -84,10 +84,11 @@ async function open(file: string, options: { schemaVersion?: number; fetchAsset?
     doc,
     awareness,
     send: (message) => page.send(message),
-    editable: true,
+    editable: options.editable ?? true,
     placeholder: '',
     user: { name: 'Pulpo on iPhone', color: '#123456' },
     theme,
+    onLink: options.onLink,
     schemaVersion: options.schemaVersion ?? DOCX_EDITOR_BUNDLE.schemaVersion,
     format: options.format ?? 'document',
     name: file,
@@ -176,6 +177,20 @@ describe('Word editor bridge with the built editor', () => {
     })
     await page.flush()
     expect(root.classList.contains('docx-empty')).toBe(false)
+  })
+
+  it('opens tapped links through the app and keeps comments out while read-only', async () => {
+    const links: string[] = []
+    const { doc, bridge, page } = await open('notes-fields.docx', { editable: false, onLink: (href) => links.push(href) })
+    const anchor = [...page.document.querySelectorAll('.docx-flow a[href]')].find((element) => element.getAttribute('href') === 'https://example.com/')!
+    expect(anchor).toBeTruthy()
+    anchor.dispatchEvent(new (page.dom.window as unknown as typeof globalThis).MouseEvent('click', { bubbles: true, cancelable: true }))
+    await page.flush()
+    expect(links).toEqual(['https://example.com/'])
+    const stories = doc.getMap('stories').size
+    bridge.docxCommand('comment', 'Not allowed')
+    await page.flush()
+    expect(doc.getMap('stories').size).toBe(stories)
   })
 
   it('shows pictures with bytes the app fetches, and refuses malformed requests', async () => {

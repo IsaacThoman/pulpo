@@ -1,4 +1,4 @@
-import { cssIdent, cssText, mergeCss, paragraphPropertiesCss, runPropertiesCss, type CssProps, type ThemeInfo } from '../css.js'
+import { cssIdent, cssString, cssText, mergeCss, paragraphPropertiesCss, runPropertiesCss, type CssProps, type ThemeInfo } from '../css.js'
 import type { JmlElement } from '../jsonml.js'
 import { TABLE_CONDITIONS, type PropertyMap, type StyleSheet } from '../styles.js'
 
@@ -26,9 +26,12 @@ function ruleBody(pPr: PropertyMap | undefined, rPr: PropertyMap | undefined, th
 export function themeVariables(theme: ThemeInfo | undefined): string {
   if (!theme) return ''
   const vars: string[] = []
-  for (const [name, color] of Object.entries(theme.colors)) vars.push(`--docx-theme-${name}:${color}`)
-  if (theme.fonts.major) vars.push(`--docx-font-major:"${theme.fonts.major.replace(/"/g, '')}"`)
-  if (theme.fonts.minor) vars.push(`--docx-font-minor:"${theme.fonts.minor.replace(/"/g, '')}"`)
+  // The theme can come from a collaborator's copy as well as the file: only names and hex colors.
+  for (const [name, color] of Object.entries(theme.colors)) {
+    if (/^[A-Za-z0-9]+$/.test(name) && /^#[0-9a-fA-F]{6}$/.test(color)) vars.push(`--docx-theme-${name}:${color}`)
+  }
+  if (theme.fonts.major) vars.push(`--docx-font-major:${cssString(theme.fonts.major)}`)
+  if (theme.fonts.minor) vars.push(`--docx-font-minor:${cssString(theme.fonts.minor)}`)
   return vars.join(';')
 }
 

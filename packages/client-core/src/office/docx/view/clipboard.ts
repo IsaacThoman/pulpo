@@ -12,6 +12,30 @@ import { HIGHLIGHT_COLORS } from '../css.js'
 const DATA_NODE = 'data-docx-node'
 const DATA_MARK = 'data-docx-mark'
 const DATA_ATTRS = 'data-docx-attrs'
+const DATA_TOKEN = 'data-docx-clip'
+const TOKEN_KEY = 'pulpo-docx-clipboard'
+
+let memoryToken: string | undefined
+
+/**
+ * A secret this origin stamps on what it copies. Attributes carry raw WordprocessingML, so they
+ * are trusted only from Pulpo's own copies (in any tab, through local storage), never from HTML
+ * another site put on the clipboard; those paste as ordinary sanitized HTML.
+ */
+export function clipboardToken(): string {
+  const make = () => Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, '0')).join('')
+  try {
+    let token = localStorage.getItem(TOKEN_KEY)
+    if (!token || !/^[0-9a-f]{32}$/.test(token)) {
+      token = make()
+      localStorage.setItem(TOKEN_KEY, token)
+    }
+    return token
+  } catch {
+    memoryToken ??= make()
+    return memoryToken
+  }
+}
 
 function withData(spec: DOMOutputSpec, data: Record<string, string>): DOMOutputSpec {
   if (!Array.isArray(spec)) return spec
@@ -27,16 +51,17 @@ export function clipboardSerializer(schema: Schema): DOMSerializer {
   const base = DOMSerializer.fromSchema(schema)
   const nodes: Record<string, (node: ProseMirrorNode) => DOMOutputSpec> = {}
   for (const [name, serialize] of Object.entries(base.nodes)) {
-    nodes[name] = (node) => withData(serialize(node), { [DATA_NODE]: name, [DATA_ATTRS]: JSON.stringify(node.attrs) })
+    nodes[name] = (node) => withData(serialize(node), { [DATA_NODE]: name, [DATA_ATTRS]: JSON.stringify(node.attrs), [DATA_TOKEN]: clipboardToken() })
   }
   const marks: Record<string, (mark: Mark, inline: boolean) => DOMOutputSpec> = {}
   for (const [name, serialize] of Object.entries(base.marks)) {
-    marks[name] = (mark, inline) => withData(serialize(mark, inline), { [DATA_MARK]: name, [DATA_ATTRS]: JSON.stringify(mark.attrs) })
+    marks[name] = (mark, inline) => withData(serialize(mark, inline), { [DATA_MARK]: name, [DATA_ATTRS]: JSON.stringify(mark.attrs), [DATA_TOKEN]: clipboardToken() })
   }
   return new DOMSerializer(nodes, marks)
 }
 
 function dataAttrs(dom: HTMLElement): Record<string, unknown> | false {
+  if (dom.getAttribute(DATA_TOKEN) !== clipboardToken()) return false
   try {
     return JSON.parse(dom.getAttribute(DATA_ATTRS) ?? '{}') as Record<string, unknown>
   } catch {

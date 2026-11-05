@@ -271,7 +271,7 @@ export function DocxToolbar({ editor, state, onRequestLink, onTogglePanel, panel
       <input
         ref={imageInput}
         type="file"
-        accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml,image/bmp"
+        accept="image/png,image/jpeg,image/gif,image/bmp"
         className="hidden"
         onChange={(event) => {
           const file = event.target.files?.[0]

@@ -11,15 +11,18 @@ const DRAWABLE = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/bmp', '
 export class AssetUrls {
   private readonly urls = new Map<string, Promise<string | null>>()
   private readonly created: string[] = []
+  private destroyed = false
 
   constructor(private readonly assets: LiveAssetStore) {}
 
   url(hash: string): Promise<string | null> {
+    if (this.destroyed) return Promise.resolve(null)
     let url = this.urls.get(hash)
     if (!url) {
       url = this.assets.get(hash).then((bytes) => {
         const { mimeType } = sniffImage(bytes)
-        if (!DRAWABLE.has(mimeType) || typeof URL.createObjectURL !== 'function') return null
+        // A fetch that finishes after the editor closed makes no URL nobody would revoke.
+        if (this.destroyed || !DRAWABLE.has(mimeType) || typeof URL.createObjectURL !== 'function') return null
         const objectUrl = URL.createObjectURL(new Blob([bytes as Uint8Array<ArrayBuffer>], { type: mimeType }))
         this.created.push(objectUrl)
         return objectUrl
@@ -30,6 +33,7 @@ export class AssetUrls {
   }
 
   destroy(): void {
+    this.destroyed = true
     for (const url of this.created) URL.revokeObjectURL(url)
     this.created.length = 0
     this.urls.clear()

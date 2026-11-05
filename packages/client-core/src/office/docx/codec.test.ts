@@ -222,6 +222,20 @@ describe('docxCodec', () => {
       await fail(withDocument(`<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${wide}</w:body></w:document>`), 'too_large')
     })
 
+    it('refuses tables made wide by skipped grid columns or grid definitions', async () => {
+      const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
+      // Rows without cells used to skip the column check, and every editor allocated the width per row.
+      const skipped = '<w:tbl>' + '<w:tr><w:trPr><w:gridBefore w:val="2000000"/></w:trPr></w:tr>'.repeat(51) + '</w:tbl>'
+      await fail(withDocument(`<w:document ${W}><w:body>${skipped}</w:body></w:document>`), 'too_large')
+      const after = '<w:tbl><w:tr><w:trPr><w:gridAfter w:val="20000000"/></w:trPr><w:tc><w:p/></w:tc></w:tr></w:tbl>'
+      await fail(withDocument(`<w:document ${W}><w:body>${after}</w:body></w:document>`), 'too_large')
+      const grid = `<w:tbl><w:tblGrid>${'<w:gridCol/>'.repeat(1_001)}</w:tblGrid><w:tr><w:tc><w:p/></w:tc></w:tr></w:tbl>`
+      await fail(withDocument(`<w:document ${W}><w:body>${grid}</w:body></w:document>`), 'too_large')
+      // 1,000 columns are fine, but not on 1,000 rows.
+      const tall = `<w:tbl><w:tblGrid>${'<w:gridCol/>'.repeat(1_000)}</w:tblGrid>${'<w:tr><w:tc><w:p/></w:tc></w:tr>'.repeat(1_000)}</w:tbl>`
+      await fail(withDocument(`<w:document ${W}><w:body>${tall}</w:body></w:document>`), 'too_large')
+    })
+
     it('refuses zip bombs before inflating them', async () => {
       // One entry claiming 2 GB uncompressed; the size limit rejects it from the directory alone.
       const zip = zipSync({ '[Content_Types].xml': strToU8('<Types/>'), 'big.bin': new Uint8Array(1024) })

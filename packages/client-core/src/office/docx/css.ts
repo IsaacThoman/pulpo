@@ -41,6 +41,24 @@ const THEME_COLOR_VARS: Record<string, string> = {
   accent5: 'accent5', accent6: 'accent6', hyperlink: 'hlink', followedHyperlink: 'folHlink',
 }
 
+/** Theme color names `w:themeColor` may use directly; anything else in the file is ignored. */
+const THEME_COLOR_KEYS = new Set(Object.values(THEME_COLOR_VARS))
+
+/**
+ * A CSS string for a name from a document (a font): quotes, backslashes, control characters,
+ * and angle brackets dropped, so it cannot end the string, the declaration, or the style sheet.
+ */
+export function cssString(value: string): string {
+  return `"${value.replace(/[\u0000-\u001f\u007f"\\<>]/g, '').slice(0, 200)}"`
+}
+
+/** The CSS variables theme fonts fall back to when the document has no theme. */
+export const THEME_FONT_VARS = ['var(--docx-font-major)', 'var(--docx-font-minor)'] as const
+
+export function isThemeFontVar(font: string): boolean {
+  return (THEME_FONT_VARS as readonly string[]).includes(font)
+}
+
 function hexColor(value: string | undefined): string | undefined {
   if (!value || value === 'auto') return undefined
   return /^[0-9a-fA-F]{6}$/.test(value) ? `#${value.toLowerCase()}` : undefined
@@ -79,8 +97,8 @@ export function resolveColor(
   shade: string | undefined,
   theme?: ThemeInfo,
 ): string | undefined {
-  if (themeColor) {
-    const key = THEME_COLOR_VARS[themeColor] ?? themeColor
+  const key = themeColor ? THEME_COLOR_VARS[themeColor] ?? (THEME_COLOR_KEYS.has(themeColor) ? themeColor : undefined) : undefined
+  if (key) {
     const base = theme?.colors[key]
     if (base) return tintShade(base, tint, shade)
     const literal = hexColor(value)
@@ -108,7 +126,7 @@ const FONT_FALLBACKS: Record<string, string> = {
 
 export function fontStack(name: string): string {
   const fallback = FONT_FALLBACKS[name.toLowerCase()]
-  const quoted = `"${name.replace(/["\\]/g, '')}"`
+  const quoted = cssString(name)
   return fallback ? `${quoted}, ${fallback}` : `${quoted}, sans-serif`
 }
 
@@ -134,7 +152,7 @@ function themeFont(theme: string, info?: ThemeInfo): string | undefined {
 export function latinFont(rFonts: JmlElement | undefined, theme?: ThemeInfo): string | undefined {
   if (!rFonts) return undefined
   const themed = jmlAttr(rFonts, 'w:asciiTheme') ?? jmlAttr(rFonts, 'w:hAnsiTheme')
-  if (themed) return themeFont(themed, theme) ?? (themed.startsWith('major') ? 'var(--docx-font-major)' : 'var(--docx-font-minor)')
+  if (themed) return themeFont(themed, theme) ?? (themed.startsWith('major') ? THEME_FONT_VARS[0] : THEME_FONT_VARS[1])
   return jmlAttr(rFonts, 'w:ascii') ?? jmlAttr(rFonts, 'w:hAnsi') ?? jmlAttr(rFonts, 'w:eastAsia') ?? jmlAttr(rFonts, 'w:cs')
 }
 
@@ -218,7 +236,7 @@ export function runPropertyCss(element: JmlElement, theme?: ThemeInfo): CssProps
       if (!font) return undefined
       const factor = fontLineFactor(font)
       return {
-        'font-family': font.startsWith('var(') ? font : fontStack(font),
+        'font-family': isThemeFontVar(font) ? font : fontStack(font),
         ...(factor ? { '--docx-flh': String(factor) } : {}),
       }
     }

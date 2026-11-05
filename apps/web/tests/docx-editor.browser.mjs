@@ -155,6 +155,17 @@ try {
     assert.match(await exported(), /\[comment \d+ Ada on "Hanging"\]: Please tighten this\./)
   })
 
+  await step('inserts PNG pictures and refuses SVG, which Word would not show', async () => {
+    await paragraph('Hanging indent.').click()
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64')
+    const before = await flow.locator('.docx-drawing').count()
+    const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>')
+    assert.equal(await page.evaluate(async (bytes) => window.harness.editors[0].insertImage(new Blob([new Uint8Array(bytes)], { type: 'image/svg+xml' })), [...svg]), false)
+    await page.locator('input[type=file][accept^="image/"]').setInputFiles({ name: 'dot.png', mimeType: 'image/png', buffer: png })
+    await page.waitForFunction((count) => document.querySelectorAll('.docx-flow .docx-drawing').length > count, before)
+    assert.match(await page.locator('input[type=file][accept^="image/"]').getAttribute('accept'), /^image\/png,image\/jpeg,image\/gif,image\/bmp$/)
+  })
+
   await step('suggests changes as tracked revisions and accepts them', async () => {
     await page.getByRole('button', { name: 'Editing mode' }).click()
     await page.getByRole('menuitem', { name: /Suggesting/ }).click()
@@ -197,6 +208,16 @@ try {
     await paragraph('A comment range').click()
     await page.keyboard.type('nope')
     assert.doesNotMatch(await text(), /nope/)
+    // Comments write to the shared document too, so they are off as well (but on in Viewing mode).
+    const comments = await page.evaluate(() => {
+      const editor = window.harness.editors[0]
+      const threads = editor.comments().length
+      const added = editor.addComment('nope')
+      for (const thread of editor.comments()) editor.deleteComment(thread.id)
+      return { added, before: threads, after: editor.comments().length, canComment: editor.canComment }
+    })
+    assert.deepEqual(comments, { added: null, before: comments.before, after: comments.before, canComment: false })
+    assert.ok(comments.before > 0)
   })
 
   await step('lays out a 100-page document within budget', async () => {

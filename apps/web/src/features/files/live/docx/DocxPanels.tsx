@@ -77,7 +77,7 @@ function formatDate(value: string | undefined): string {
 
 function CommentCard({ editor, thread, active }: { editor: DocxEditor; thread: CommentThread; active: boolean }) {
   const [reply, setReply] = useState('')
-  const readOnly = editor.readOnly && editor.mode !== 'viewing'
+  const readOnly = !editor.canComment
   return (
     <article
       data-comment={thread.id}
@@ -136,7 +136,7 @@ export function CommentsPanel({ editor, onClose }: { editor: DocxEditor; onClose
   const [draft, setDraft] = useState('')
   const [showResolved, setShowResolved] = useState(false)
   const visible = threads.filter((thread) => showResolved || !thread.meta.done)
-  const canComment = !editor.readOnly || editor.mode === 'viewing'
+  const canComment = editor.canComment
   return (
     <PanelFrame title={ui("Comments")} onClose={onClose}>
       <div className="flex flex-col gap-2 p-3" data-docx-comments>
