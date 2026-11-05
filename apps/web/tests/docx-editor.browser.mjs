@@ -1436,6 +1436,72 @@ try {
     }
   })
 
+  await step('measures inherited stories at section widths and shares configured note labels', async () => {
+    await open('?file=sections-headers.docx')
+    const keys = await page.evaluate(() => {
+      const editor = window.harness.editors[0]
+      const doc = editor.options.doc
+      const schema = editor.view.state.schema
+      const refs = []
+      const p = (text, attrs) => schema.node('paragraph', attrs, schema.text(text))
+      const long = 'A wrapping story with several words for measuring narrow sections. '.repeat(8)
+      for (const kind of ['header', 'footer']) {
+        const [key] = [...doc.getMap('stories')].find(([, json]) => JSON.parse(json).kind === kind)
+        const [id] = [...doc.getMap('rels')].find(([, json]) => JSON.parse(json).type.endsWith(`/${kind}`))
+        for (const type of ['default', 'even']) refs.push([`w:${kind}Reference`, { 'w:type': type, 'r:id': id }])
+        editor.openStoryEditor(key)
+        const view = editor.storyEditor.view
+        view.dispatch(view.state.tr.replaceWith(0, view.state.doc.content.size, p(long)))
+        editor.closeStoryEditor()
+      }
+      const settings = (kind, format, start) => [`w:${kind}Pr`, {}, ['w:numFmt', { 'w:val': format }], ['w:numStart', { 'w:val': String(start) }]]
+      for (const kind of ['footnote', 'endnote']) doc.getMap('settings').set(`w:${kind}Pr`, JSON.stringify([...settings(kind, 'decimal', 6), ['w:numRestart', { 'w:val': 'eachSect' }]]))
+      const keys = []
+      const sections = [[], []]
+      for (let section = 0; section < 2; section++) for (const kind of ['footnote', 'endnote']) for (let index = 0; index < 2; index++) {
+        const id = editor.insertNote(kind, kind === 'footnote' ? long : `Endnote ${section}-${index}`)
+        keys.push(`${kind}:${id}`)
+        editor.closeStoryEditor()
+        sections[section].push(schema.node('noteRef', { kind, id }))
+      }
+      const wide = JSON.stringify(['w:sectPr', {}, ...refs, ['w:pgSz', { 'w:w': '11880', 'w:h': '15840' }], settings('footnote', 'lowerRoman', 3)])
+      doc.getMap('docx').set('sectPr', JSON.stringify(['w:sectPr', {}, ['w:pgSz', { 'w:w': '7380', 'w:h': '15840' }], settings('footnote', 'upperRoman', 5), settings('endnote', 'lowerLetter', 2)]))
+      const view = editor.view
+      view.dispatch(view.state.tr.replaceWith(0, view.state.doc.content.size, [schema.node('paragraph', { sectPr: wide }, sections[0]), schema.node('paragraph', null, sections[1])]))
+      editor.relayout()
+      return keys
+    })
+    const expected = ['iii', 'iv', '6', '7', 'V', 'VI', 'b', 'c']
+    const bodyLabels = () => flow.locator('.docx-noteref').evaluateAll((nodes) => nodes.map((node) => node.dataset.label))
+    assert.deepEqual(await bodyLabels(), expected)
+    const measured = await page.evaluate((keys) => {
+      const editor = window.harness.editors[0]
+      return { top: editor.lastLayout.pages.filter((page) => page.firstOfSection).map((page) => page.setup.top), bottom: editor.lastLayout.pages.filter((page) => page.firstOfSection).map((page) => page.setup.bottom), wide: editor.noteHeights.get(keys[0]), narrow: editor.noteHeights.get(keys[4]), endnoteWidth: parseFloat(editor.notesHost.style.width), endnoteHeight: editor.endnotesHeight, renderedEndnoteHeight: editor.notesHost.getBoundingClientRect().height / editor.zoom }
+    }, keys)
+    assert.ok(measured.top[1] > measured.top[0] + 10, JSON.stringify(measured))
+    assert.ok(measured.bottom[1] > measured.bottom[0] + 10, JSON.stringify(measured))
+    assert.ok(measured.narrow > measured.wide + 10, JSON.stringify(measured))
+    assert.equal(measured.endnoteWidth, 300)
+    assert.ok(Math.abs(measured.endnoteHeight - measured.renderedEndnoteHeight) < 1)
+    for (const layout of ['print', 'web']) {
+      await page.evaluate((layout) => { const editor = window.harness.editors[0]; editor.setLayout(layout); editor.relayout() }, layout)
+      assert.deepEqual(await bodyLabels(), expected)
+      for (const [index, key] of keys.entries()) assert.equal(await page.locator(`[data-story="${key}"] [data-label]`).first().getAttribute('data-label'), expected[index])
+    }
+    await page.evaluate((keys) => {
+      const editor = window.harness.editors[0]
+      const schema = editor.view.state.schema
+      for (const kind of ['footnote', 'endnote']) editor.options.doc.getMap('settings').set(`w:${kind}Pr`, JSON.stringify([`w:${kind}Pr`, {}, ['w:numFmt', { 'w:val': 'decimal' }], ['w:numStart', { 'w:val': '4' }], ['w:numRestart', { 'w:val': 'eachPage' }]]))
+      editor.options.doc.getMap('docx').set('sectPr', JSON.stringify(['w:sectPr', {}]))
+      const refs = (part) => keys.slice(part * 4, part * 4 + 4).map((key) => { const [kind, id] = key.split(':'); return schema.node('noteRef', { kind, id }) })
+      const view = editor.view
+      view.dispatch(view.state.tr.replaceWith(0, view.state.doc.content.size, [schema.node('paragraph', null, refs(0)), schema.node('paragraph', { pageBreakBefore: JSON.stringify(['w:pageBreakBefore', {}]) }, refs(1))]))
+      editor.setLayout('print')
+      editor.relayout()
+    }, keys)
+    assert.deepEqual(await bodyLabels(), ['4', '5', '4', '5', '4', '5', '4', '5'])
+  })
+
   await step('lays out a 100-page document within budget', async () => {
     const started = Date.now()
     await open('?generate=1600')
