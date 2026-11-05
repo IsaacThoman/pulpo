@@ -570,7 +570,7 @@ export function resolveRevisions(state: EditorState, revisions: Revision[], acti
               // A boundary that cannot join stays.
             }
           } else if (kind === 'paragraphInsert' && !after) {
-            // Its text may resolve later in this pass. Remove the empty shell only afterwards.
+            // Resolve text first so deleting it in this pass can remove the shell outright.
             trailing.push(revision.from)
           }
         }
@@ -605,7 +605,12 @@ export function resolveRevisions(state: EditorState, revisions: Revision[], acti
   for (const pos of trailing) {
     const $end = out.doc.resolve(out.mapping.map(pos, -1))
     const node = $end.parent
-    if (node.type.name === 'paragraph' && !node.content.size && out.doc.content.size > node.nodeSize) out.delete($end.before(), $end.after())
+    if (node.type.name !== 'paragraph') continue
+    if (!node.content.size && out.doc.content.size > node.nodeSize) out.delete($end.before(), $end.after())
+    else if (out.doc.resolve($end.before()).nodeBefore?.type.name === 'paragraph') {
+      // A terminal end has no successor; keep the preceding end so later text rejection leaves no shell.
+      out.join($end.before())
+    }
   }
   return out.docChanged ? out : null
 }

@@ -315,11 +315,15 @@ describe('tracked changes', async () => {
     }
   })
 
-  it('rejects a closed paste after the final character without leaving an empty paragraph', () => {
+  it.each([false, true])('rejects a closed paste after the final character without an empty paragraph (last mark first: %s)', (individual) => {
     const original = schema.node('doc', null, [p(run('ABC')), p(run('DEF'))])
     let state = EditorState.create({ schema, doc: original, plugins: [sectionEndsPlugin()] })
     state = state.apply(state.tr.setSelection(TextSelection.create(state.doc, 9)))
     state = state.apply(trackTransaction(state, pasteSelection(state, new Slice(original.content, 0, 0)), reviewer)!)
+    if (individual) {
+      const last = listRevisions(state.doc).filter(({ kind }) => kind === 'paragraphInsert').at(-1)!
+      state = state.apply(resolveRevisions(state, [last], 'reject')!)
+    }
     state = state.apply(resolveRevisions(state, listRevisions(state.doc), 'reject')!)
     expect(state.doc.eq(original)).toBe(true)
     expect(listRevisions(state.doc)).toEqual([])
