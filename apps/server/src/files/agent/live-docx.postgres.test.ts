@@ -45,7 +45,7 @@ async function pull(path: string, dest: string) {
   return ((await files.ok('pull', { path, dest })).data as PullData).files
 }
 
-const paragraph = (text: string, style?: string) => schema.node('paragraph', style ? { pStyle: style } : null, text ? schema.text(text) : null)
+const paragraph = (text: string, style?: string) => schema.node('paragraph', style ? { pStyle: style } : null, text ? schema.text(text) : undefined)
 
 /** Rewrites a document's body as `edit` returns it, as an editor would. */
 function editBody(doc: Y.Doc, edit: (paragraphs: ProseMirrorNode[]) => ProseMirrorNode[]): void {
