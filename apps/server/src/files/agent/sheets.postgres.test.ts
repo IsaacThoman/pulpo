@@ -9,6 +9,7 @@ import { db, queryClient } from '../../database/client.js'
 import { fileChanges, fileNodes } from '../../database/schema.js'
 import { appendDocUpdate, loadYDoc } from '../doc-store.js'
 import { exportStoredDoc } from '../live-docs.js'
+import { updateFileNode } from '../tree-service.js'
 import { reviewFileChange } from './review.js'
 import { filesFixture, requireDisposableDatabase, type FilesFixture } from './test-fixtures.js'
 
@@ -133,7 +134,8 @@ describe.skipIf(!enabled)('agent edits to spreadsheets', () => {
     const [created] = await push([{ local: '/workspace/book.xlsx', remote: 'Projects/Book.xlsx' }])
     const id = created!.nodeId!
     await userEdit(id, (model) => model.sheets()[0]!.setCell(0, 0, { v: 'last saved edit' }))
-    await files.ok('mv', { from: 'Projects/Book.xlsx', to: `Projects/Book.${extension}` })
+    // The user renames it (agents may not move a document out of its format).
+    await updateFileNode(files.userId, id, { name: `Book.${extension}` })
     expect(await files.node(id)).toMatchObject({ kind: 'blob', name: `Book.${extension}` })
     const [node] = await db.select().from(fileNodes).where(eq(fileNodes.id, id))
     const bytes = objects.get(node!.objectKey!)!
