@@ -210,12 +210,14 @@ function stack(ctx: FunctionContext, args: Args, horizontal: boolean): Value {
   if (horizontal) {
     const rows = Math.max(...parts.map((p) => p.rows))
     const cols = parts.reduce((n, p) => n + p.cols, 0)
+    checkArraySize(rows, cols)
     const data: Scalar[] = []
     for (let r = 0; r < rows; r++) for (const p of parts) for (let c = 0; c < p.cols; c++) data.push(r < p.rows ? cell(p, r, c) : Errors.NA)
     return matrix(rows, cols, data)
   }
   const cols = Math.max(...parts.map((p) => p.cols))
   const rows = parts.reduce((n, p) => n + p.rows, 0)
+  checkArraySize(rows, cols)
   const data: Scalar[] = []
   for (const p of parts) for (let r = 0; r < p.rows; r++) for (let c = 0; c < cols; c++) data.push(c < p.cols ? cell(p, r, c) : Errors.NA)
   return matrix(rows, cols, data)
@@ -250,7 +252,9 @@ function choose(ctx: FunctionContext, args: Args, columns: boolean): Value {
   const total = columns ? m.cols : m.rows
   const picks: number[] = []
   for (const arg of args.slice(1)) {
-    for (const v of toMatrix(ctx, arg).data) {
+    const values = toMatrix(ctx, arg).data
+    checkArraySize(picks.length + values.length, columns ? m.rows : m.cols)
+    for (const v of values) {
       const n = int(v, ctx)
       if (n === 0 || Math.abs(n) > total) return fail(Errors.VALUE)
       picks.push(n > 0 ? n - 1 : total + n)

@@ -66,6 +66,8 @@ export class SheetCalc implements SheetValues {
   private cellMaps = new Map<Y.Map<CellData>, SheetModel>()
   private readonly listeners = new Set<() => void>()
   private readonly observer: (events: Y.YEvent<Y.AbstractType<unknown>>[]) => void
+  /** The work allowance was exhausted; unfinished formulas retain their prior values. */
+  stoppedEarly = false
   private dirty = false
   private destroyed = false
 
@@ -78,6 +80,7 @@ export class SheetCalc implements SheetValues {
       live?: boolean
       /** Ignore the values cached in the file and calculate every formula (the formula oracle). */
       ignoreCache?: boolean
+      maxWork?: number
     } = {},
   ) {
     this.rebuild()
@@ -91,22 +94,26 @@ export class SheetCalc implements SheetValues {
     this.listeners.clear()
   }
 
-  /** Loads everything into a fresh engine and calculates what has no cached value. */
+  /** Loads a fresh engine, trusting file caches until a local edit has invalidated them. */
   private rebuild(): void {
     const workbook = this.workbook
     this.engine = new FormulaEngine({
       functions: sheetFunctions(),
+      ...(this.options.maxWork !== undefined ? { maxWork: this.options.maxWork } : {}),
       date1904: workbook.date1904,
       ...(this.options.now ? { now: this.options.now } : {}),
       ...(this.options.random ? { random: this.options.random } : {}),
-      ...(workbook.metaValue('iterate') ? { iterative: { maxIterations: workbook.metaValue('iterateCount') ?? 100, maxChange: workbook.metaValue('iterateDelta') ?? 0.001 } } : {}),
+      ...(workbook.metaValue('iterate') ? { iterative: { maxIterations: Math.min(1_000, Math.max(0, workbook.metaValue('iterateCount') ?? 100)), maxChange: workbook.metaValue('iterateDelta') ?? 0.001 } } : {}),
     })
     const sheets = workbook.sheets()
     this.sheetIndex = new Map(sheets.map((sheet, index) => [sheet.id, index]))
     this.cellMaps = new Map(sheets.map((sheet) => [sheet.cells, sheet]))
     this.engine.setSheets(sheets.map((sheet) => sheet.name))
     sheets.forEach((sheet, index) => {
-      sheet.forEachCell((row, col, data) => this.engine.setCell(index, row, col, engineInput(sheet, data, !this.options.ignoreCache)))
+      const cells: { row: number; col: number; data: CellData }[] = []
+      sheet.forEachCell((row, col, data) => cells.push({ row, col, data }))
+      cells.sort((a, b) => a.row - b.row || a.col - b.col)
+      for (const { row, col, data } of cells) this.engine.setCell(index, row, col, engineInput(sheet, data, !this.options.ignoreCache))
     })
     for (const name of workbook.names.values()) {
       const scope = name.scope ? this.sheetIndex.get(name.scope) : undefined
@@ -124,14 +131,14 @@ export class SheetCalc implements SheetValues {
         }),
       ),
     )
-    // Cached values count as calculated; formulas without one are computed now.
+    // Unedited file caches count as calculated; edited workbooks need a full recalculation.
     this.engine.markClean()
-    this.recalc()
+    this.recalc(workbook.metaValue('calcDirty') === true)
     this.dirty = false
   }
 
-  private recalc(): void {
-    this.engine.recalc({ keepCachedFor: (sheet, row, col) => this.isDataTable(sheet, row, col) })
+  private recalc(full = false): void {
+    this.stoppedEarly = this.engine.recalc({ full, keepCachedFor: (sheet, row, col) => this.isDataTable(sheet, row, col) }).stoppedEarly
   }
 
   private isDataTable(sheetIndex: number, row: number, col: number): boolean {
@@ -152,6 +159,7 @@ export class SheetCalc implements SheetValues {
       // Styles and views don't change values; everything else (rows, columns, sheets, names,
       // tables) moves cells around, which the index-based engine takes as a rebuild.
       const target = event.target
+      if (target === this.workbook.meta && [...(event as Y.YMapEvent<unknown>).keysChanged].every((key) => key === 'calcDirty' || key === 'calcTime')) continue
       if (this.isStyleOrView(target)) continue
       structural = true
     }
@@ -179,7 +187,7 @@ export class SheetCalc implements SheetValues {
 
   /** Recalculates everything, volatile functions included (NOW, RAND). */
   recalculateAll(): void {
-    this.engine.recalc({ full: true, keepCachedFor: (sheet, row, col) => this.isDataTable(sheet, row, col) })
+    this.stoppedEarly = this.engine.recalc({ full: true, keepCachedFor: (sheet, row, col) => this.isDataTable(sheet, row, col) }).stoppedEarly
     for (const listener of this.listeners) listener()
   }
 

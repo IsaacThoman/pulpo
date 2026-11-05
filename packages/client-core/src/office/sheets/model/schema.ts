@@ -451,6 +451,9 @@ export interface WorkbookMeta {
   format: SheetFormat
   date1904: boolean
   activeSheet: string
+  /** Local edits invalidate imported formula caches; calcTime seeds reproducible exports. */
+  calcDirty?: boolean
+  calcTime?: number
   /** calcPr attributes we model. */
   iterate: boolean
   iterateCount: number

@@ -126,7 +126,7 @@ describe('hostile input', () => {
     formulas.forEach((formula, i) => engine.setCell(0, 20 + i, 20, { formula }))
     engine.recalc()
     expect(engine.getValue(0, 20, 20)).toEqual(expect.objectContaining({ code: '#NUM!' }))
-    expect(engine.getValue(0, 21, 20)).toEqual(expect.objectContaining({ code: '#SPILL!' }))
+    expect(engine.getValue(0, 21, 20)).toEqual(expect.objectContaining({ code: '#NUM!' }))
     expect(engine.getValue(0, 23, 20)).toBe(1048576)
     expect(engine.getValue(0, 24, 20)).toEqual(expect.objectContaining({ code: '#NUM!' }))
   })

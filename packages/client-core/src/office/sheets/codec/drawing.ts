@@ -2,6 +2,7 @@ import { MAX_COLS, MAX_ROWS } from '../address.js'
 import { randomId } from '../model/axis.js'
 import type { AnchorPoint, DrawingKind, DrawingObject } from '../model/schema.js'
 import type { SheetModel } from '../model/workbook.js'
+import { orderedEntries } from './order.js'
 import type { ReadContext } from './read-worksheet.js'
 import { attr, child, children, escapeXml, numberAttr, otherAttributes, serializeNode, type XmlElement } from './xml.js'
 
@@ -125,7 +126,10 @@ export function writeDrawing(sheet: SheetModel, skeleton: string, imageRelations
   const prefix = open ? (open[1] ?? '') : 'xdr:'
   let start = open ? open[0] : `<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">`
   if (start.endsWith('/>')) start = `${start.slice(0, -2)}>`
-  const objects = [...sheet.drawings.values()] as DrawingObject[]
+  const objects = orderedEntries(sheet, sheet.drawings, (value) => {
+    const from = (value as DrawingObject).from
+    return from ? { top: from.row, left: from.col } : undefined
+  }).map(([, value]) => value) as DrawingObject[]
   objects.sort((a, b) => a.z - b.z)
   let body = ''
   for (const drawing of objects) {

@@ -1,3 +1,4 @@
+import { epochMsToSerial } from '../dates.js'
 import { columnIntervals, columnIntervalProps } from '../model/column-intervals.js'
 import { MAX_EXPANDED_CELLS } from '../limits.js'
 import { LiveFormatError } from '../../live-format.js'
@@ -341,7 +342,7 @@ function readCell(
     case 'd': {
       // ISO 8601 dates (rare; Strict-flavored writers). Stored as serials like Excel does.
       const ms = raw ? Date.parse(raw.trim().endsWith('Z') || /T.*[+-]\d\d:?\d\d$/.test(raw.trim()) ? raw.trim() : `${raw.trim()}Z`) : NaN
-      if (Number.isFinite(ms)) data.v = (ms - Date.UTC(1899, 11, 30)) / 86_400_000
+      if (Number.isFinite(ms)) data.v = epochMsToSerial(ms, sheet.workbook.date1904)
       break
     }
     default:

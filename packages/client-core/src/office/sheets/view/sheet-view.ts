@@ -17,6 +17,7 @@ import { canInsertReference, formulaReferences, insertReference, type FunctionDo
 import { AxisLayout, columnWidthToPixels, defaultColumnPixels, pixelsToColumnWidth, POINTS_TO_PIXELS } from './layout.js'
 import { DARK_PALETTE, GridRenderer, LIGHT_PALETTE, type RemoteSelection, type Scene } from './renderer.js'
 import { SheetInteractions } from './interactions.js'
+import { trackEdits } from '../model/edits.js'
 import { SheetCalc } from '../calc.js'
 import { parseChart, renderChartSvg } from '../chart/index.js'
 import { errorFromCode } from '../formula/types.js'
@@ -228,6 +229,7 @@ export class SheetView {
 
   constructor(readonly options: SheetViewOptions) {
     this.workbook = new WorkbookModel(options.doc, this.origin)
+    this.disposers.push(trackEdits(options.doc))
     this.labels = { ...DEFAULT_LABELS, ...options.labels }
     this.functions = options.functions ?? FUNCTION_DOCS
     this.readOnlyValue = !!options.readOnly

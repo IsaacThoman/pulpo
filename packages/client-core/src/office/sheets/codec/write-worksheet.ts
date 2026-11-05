@@ -1,3 +1,4 @@
+import { orderedEntries } from './order.js'
 import { columnIntervals, columnIntervalProps } from '../model/column-intervals.js'
 import { parseXml, type XmlDocument } from '../../ooxml/package.js'
 import { cellName, columnName, MAX_COLS, MAX_ROWS, rangeName, type CellRange } from '../address.js'
@@ -141,11 +142,11 @@ export function writeWorksheet(sheet: SheetModel, context: WorksheetWriteContext
       insertInOrder(root, sort)
     }
   }
-  const merges = sheet.mergedRanges()
+  const merges = sheet.mergedRanges().sort((a, b) => a.range.top - b.range.top || a.range.left - b.range.left || a.range.bottom - b.range.bottom || a.range.right - b.range.right)
   if (merges.length) {
     insertInOrder(root, fragment(document, `<mergeCells count="${merges.length}">${merges.map((merge) => `<mergeCell ref="${rangeName(merge.range)}"/>`).join('')}</mergeCells>`))
   }
-  for (const format of [...sheet.cf.values()] as ConditionalFormat[]) {
+  for (const format of orderedEntries(sheet, sheet.cf, (value) => (value as ConditionalFormat).ranges[0]).map(([, value]) => value) as ConditionalFormat[]) {
     const xml = writeConditionalFormat(sheet, format)
     if (xml) insertInOrder(root, fragment(document, xml))
   }
@@ -287,7 +288,7 @@ function writeColumns(sheet: SheetModel, styles: Stylesheet): { xml: string; max
     const attrs = colAttrs(interval.props)
     if (attrs) xml += `<col min="${interval.from + 1}" max="${interval.to + 1}"${attrs}/>`
   }
-  for (const id of owners) {
+  for (const id of [...owners].sort((a, b) => sheet.cols.indexOf(a) - sheet.cols.indexOf(b))) {
     const index = sheet.cols.indexOf(id)
     if (index < 0) continue
     const inherited = columnIntervalProps(sheet, index)
@@ -362,7 +363,7 @@ function writeSheetData(sheet: SheetModel, context: WorksheetWriteContext): { ro
   for (const key of sheet.fmt.keys()) keys.add(key.slice(0, key.lastIndexOf('|')))
   // Results spilled by dynamic arrays are written as plain values (Excel does the same).
   const spilled = new Map<string, CellScalar | { e: string }>()
-  for (const [key, data] of sheet.cells) {
+  for (const [key, data] of orderedEntries(sheet, sheet.cells)) {
     if (!data.f || !(data.dynamic || data.array)) continue
     const position = sheet.position(key)
     if (!position) continue
@@ -381,7 +382,7 @@ function writeSheetData(sheet: SheetModel, context: WorksheetWriteContext): { ro
       }),
     )
   }
-  for (const key of keys) {
+  for (const [key] of orderedEntries(sheet, [...keys].map((key) => [key, null]))) {
     const ids = splitCellKey(key)
     const row = sheet.rows.indexOf(ids.row)
     const col = sheet.cols.indexOf(ids.col)
@@ -399,7 +400,7 @@ function writeSheetData(sheet: SheetModel, context: WorksheetWriteContext): { ro
   for (const key of sheet.rowMeta.keys()) rowOwners.add(key.slice(0, key.lastIndexOf('|')))
   let maxRowLevel = 0
   const rowAttrs = new Map<number, string>()
-  for (const id of rowOwners) {
+  for (const id of [...rowOwners].sort((a, b) => sheet.rows.indexOf(a) - sheet.rows.indexOf(b))) {
     const index = sheet.rows.indexOf(id)
     if (index < 0 || index >= MAX_ROWS) continue
     const props = axisProps(sheet.rowMeta, id)
@@ -589,7 +590,7 @@ function writeConditionalFormat(sheet: SheetModel, format: ConditionalFormat): s
 function writeDataValidations(sheet: SheetModel): string | undefined {
   let xml = ''
   let count = 0
-  for (const validation of [...sheet.dv.values()] as DataValidation[]) {
+  for (const validation of orderedEntries(sheet, sheet.dv, (value) => (value as DataValidation).ranges[0]).map(([, value]) => value) as DataValidation[]) {
     const ref = sqref(sheet, validation.ranges)
     if (!ref) continue
     count++
@@ -619,7 +620,7 @@ function writeDataValidations(sheet: SheetModel): string | undefined {
 
 function writeHyperlinks(sheet: SheetModel, context: WorksheetWriteContext): string | undefined {
   let xml = ''
-  for (const [key, raw] of sheet.links) {
+  for (const [key, raw] of orderedEntries(sheet, sheet.links)) {
     const link = raw as Hyperlink
     const position = sheet.position(key)
     if (!position) continue
