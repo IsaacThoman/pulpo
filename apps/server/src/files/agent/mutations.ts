@@ -160,9 +160,23 @@ async function liveExport(tx: DatabaseTransaction, node: FileNodeRow): Promise<{
 
 /** A new live document (other than Markdown) from the file the agent pushed. */
 export async function createLiveDocChange(reply: ReplyContext, parentId: string | null, name: string, bytes: Uint8Array, mode: ChangeMode) {
+  const writtenKeys: string[] = []
+  try {
+    return await createLiveDocInReply(reply, parentId, name, bytes, mode, writtenKeys)
+  } catch (error) {
+    // Asset objects are stored before their rows; nothing refers to them once the rows roll back.
+    await deleteObjects(writtenKeys)
+    throw error
+  }
+}
+
+function createLiveDocInReply(reply: ReplyContext, parentId: string | null, name: string, bytes: Uint8Array, mode: ChangeMode, writtenKeys: string[]) {
   return mutateReply(reply, async (tx) => {
     const plan = await newItemPlan(tx, reply.userId, parentId, mode)
-    const node = await createDocInTx(tx, reply.userId, { parentId, name, bytes, exactName: true, suggestionChangeId: plan.suggestionChangeId })
+    const node = await createDocInTx(tx, reply.userId, { parentId, name, bytes, exactName: true, suggestionChangeId: plan.suggestionChangeId, writtenKeys })
+    // The reservation covers the pushed bytes; the document's state and any original bytes its
+    // format keeps beside it (mixed line endings, legacy encodings) can need more.
+    await assertWithinStorageAllowance(tx, reply.userId)
     const { version } = await liveExport(tx, node)
     const status = await recordCreation(tx, reply, node, plan.rowId, mode, { live: { checksum: version } })
     return { node, status, version }

@@ -305,6 +305,22 @@ describe.skipIf(!enabled)('agent edits to live documents', () => {
     }
   })
 
+  it('refuses a new live document whose kept original bytes would exceed the storage allowance', async () => {
+    await files.attach({ [projects]: 'write' })
+    // Mixed line endings: the codec keeps the original bytes beside the document, about doubling it.
+    const mixed = Array.from({ length: 2_000 }, (_, index) => `line ${index}${index % 2 ? '\r\n' : '\n'}`).join('')
+    const size = Buffer.byteLength(mixed)
+    await db.update(users).set({ storageLimitBytes: await storageUsedBytes(db, files.userId) + Math.round(size * 1.5) }).where(eq(users.id, files.userId))
+    files.put('/workspace/mixed.txt', mixed)
+    const [refused] = await push([{ local: '/workspace/mixed.txt', remote: 'Projects/mixed.txt' }])
+    expect(refused).toMatchObject({ status: 'error', message: expect.stringMatching(/storage allowance/) })
+    expect(await db.select().from(fileNodes).where(and(eq(fileNodes.ownerUserId, files.userId), eq(fileNodes.name, 'mixed.txt')))).toEqual([])
+    expect([...objects.keys()].filter((key) => key.startsWith(`users/${files.userId}/`))).toEqual([])
+    // The same text with one kind of line break needs no copy, so it fits.
+    files.put('/workspace/plain.txt', mixed.replaceAll('\r\n', '\n'))
+    expect((await push([{ local: '/workspace/plain.txt', remote: 'Projects/plain.txt' }]))[0]).toMatchObject({ status: 'created' })
+  })
+
   it('keeps new files that are too large or not really text as uploaded files', async () => {
     await files.attach({ [projects]: 'write' })
     files.put('/workspace/big.json', Buffer.alloc(4_100_000, 0x20))
