@@ -29,8 +29,8 @@ This page covers the model and the integration steps. [Files](./files.md) descri
 ## Data model
 
 - `file_nodes.format`: the live format of a `doc` node. A check constraint requires it for documents and forbids it for anything else. Migration 0111 set every existing document to `markdown`. A document's name always has its format's extension.
-- `file_docs.schema_version` is the format's schema version. `file_docs.markdown` holds the derived plain text (`codec.toText`): Markdown for Markdown documents, the content for text files. Compaction refreshes it. It feeds previews, `/api/files/:id/markdown`, and agents' `cat` and `grep`.
-- `file_docs.generation`: a UUID stamped into the document's state when it is made (the `pulpoDoc` Y.Map, `DOC_META_MAP`). A file made a document again under the same id gets a new one. Join acknowledgements carry the generation read from the document's state (so it is always the one clients compare against), and the provider refuses (`stale_copy`) to merge a device's cached copy that holds another generation's content. Proposals keep their document's generation too: one whose fork is of another generation is never merged, and a document that becomes an ordinary file rejects its pending proposals. The web then deletes its IndexedDB copy and mobile discards its SQLite copy before joining afresh. Documents from before generations have none and are never refused.
+- `file_docs.schema_version` is the format's schema version. `file_docs.markdown` holds the derived plain text (`codec.toText`): Markdown for Markdown documents, the content for text files. Compaction refreshes it. Storage is charged for state growth when updates are accepted, under the account storage lock; shrinking releases space when compaction discards the earlier snapshot. It feeds previews, `/api/files/:id/markdown`, and agents' `cat` and `grep`.
+- `file_docs.generation`: a UUID stamped into the document's state when it is made (the `pulpoDoc` Y.Map, `DOC_META_MAP`). A file made a document again under the same id gets a new one. Join acknowledgements carry the generation read from the document's state (so it is always the one clients compare against), and the provider refuses (`stale_copy`) to merge a device's cached or previously joined copy that holds another generation's content. Proposals keep their document's generation too: one whose fork is of another generation is never merged, and a document that becomes an ordinary file rejects its pending proposals. The web then deletes its IndexedDB copy and mobile discards its SQLite copy before joining afresh. Documents from before generations have none and are never refused.
 - `file_doc_assets`: a document's binary parts, one row per `(node_id, hash)`, with the object key, MIME type, and size. Each row's object has its own key (`users/<id>/doc-assets/<node>/<hash>-<id>`), so deleting an unused one after commit never removes bytes stored again meanwhile. Objects are stored per document, so copying a document copies its objects and deleting it deletes them. Assets count toward storage, cascade from `file_docs`, and are included in backups (blobs remapped on restore). Account deletion removes them. A document that becomes an ordinary file drops its assets after commit.
 
 ## Sync and schema versions
@@ -52,7 +52,7 @@ This page covers the model and the integration steps. [Files](./files.md) descri
 
 - `GET /api/files/:id/assets/:hash` returns the bytes as `application/octet-stream`, with the stored type in `x-pulpo-asset-type`. It is always a download, never sniffed, and sandboxed, and since a hash always names the same bytes it is cached for good. Editors make object URLs from the bytes; untrusted content is never served inline from the app origin.
 - `PUT /api/files/:id/assets?type=<mime>` (body `application/octet-stream`) stores one. It is checked against the per-file cap (at most 25 MB) and the storage allowance.
-- **Unused assets.** Compaction deletes a document's assets that neither the document nor a pending proposal's fork refers to (`codec.referencedAssets`), once they are an hour old. The grace period lets editors upload an asset before they refer to it. Codecs that don't implement `referencedAssets` keep every asset.
+- **Unused assets.** Compaction deletes a document's assets that neither the document nor a pending proposal's fork refers to (`codec.referencedAssets`), once they are an hour old. The grace period lets editors upload an asset before they refer to it. Uploads and compaction schedule another collection after the grace period, so idle documents release unused assets too. Codecs that don't implement `referencedAssets` keep every asset.
 - On the server, codecs get a `DocAssetStore`. It reads the document's assets, buffers new ones, and writes them with the document's transaction (`flush`). On the web, `ApiLiveAssetStore` fetches and uploads through these routes.
 
 ## Agents
@@ -88,6 +88,8 @@ Review UIs read `FileChangeSummary.contentDiff` and fetch both versions:
    - Give `DocEditorView` its native toolbar items (`textToolbar.ts` shows how; the iOS host draws whatever `items` it gets, and Android's `FormattingBar` takes the same list).
    - Run `npm run build:editor -w @pulpo/mobile`. `editorBundle.test.ts` checks every bundle is fresh and keeps editors out of the Hermes bundle.
 5. **Agents.** Mention the format and how to edit it in `files/agent/prompt.ts` and `packages/workspace-daemon/src/cli-help.ts`.
+
+The OOXML package helper preserves original XML part bytes after read-only inspection (including UTF-16, content types, and relationships); it serializes a cached DOM only when its content changes.
 
 ## The text format
 
