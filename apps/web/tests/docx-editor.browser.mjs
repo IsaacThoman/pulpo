@@ -84,6 +84,36 @@ try {
     assert.deepEqual(errors, [])
   })
 
+  await step('keeps a header focused and positioned while a collaborator repaginates the body', async () => {
+    await open('?file=sections-headers.docx&view=split')
+    await page.locator('.docx-band .docx-story', { hasText: 'First-page header' }).first().dblclick()
+    await page.keyboard.type('Before layout ')
+    const selection = await page.evaluate(() => {
+      const editor = window.harness.editors[0]
+      const view = editor.storyEditor.view
+      window.activeStoryView = view
+      const other = window.harness.editors[1].view
+      other.dispatch(other.state.tr.insertText('Collaborator body edit ', 1))
+      editor.relayout()
+      return { from: view.state.selection.from, to: view.state.selection.to }
+    })
+    await page.waitForTimeout(250)
+    assert.equal(await page.evaluate(({ from, to }) => {
+      const editor = window.harness.editors[0]
+      const view = editor.storyEditor.view
+      const anchor = editor.root.querySelector('[data-story="' + editor.editingStory + '"]')
+      const surface = view.dom.getBoundingClientRect()
+      const target = anchor.getBoundingClientRect()
+      return view === window.activeStoryView && view.dom.isConnected && view.hasFocus() &&
+        view.state.selection.from === from && view.state.selection.to === to &&
+        Math.abs(surface.left - target.left) < 2 && Math.abs(surface.top - target.top) < 2 && Math.abs(surface.width - target.width) < 2
+    }, selection), true)
+    await page.keyboard.type('After layout ')
+    await page.keyboard.press('Escape')
+    assert.match(await exported('header'), /Before layout After layout /)
+    assert.deepEqual(errors, [])
+  })
+
   await step('reviews header suggestions and immediately enforces read-only in an open story', async () => {
     await open('?file=sections-headers.docx')
     await page.evaluate(() => window.harness.editors[0].setMode('suggesting'))

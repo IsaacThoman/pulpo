@@ -86,6 +86,40 @@ describe('story review', () => {
   })
 })
 
+it.each(['header', 'footer', 'footnote', 'endnote'])('keeps the active %s editor connected and focused during remote body repagination', (kind) => {
+  doc.transact(() => {
+    doc.getMap('rels').set('rStory', JSON.stringify({ type: `http://schemas.openxmlformats.org/officeDocument/2006/relationships/${kind}`, target: '/1' }))
+    doc.getMap('docx').set('sectPr', packJml(['w:sectPr', {}, [`w:${kind}Reference`, { 'w:type': 'default', 'r:id': 'rStory' }]]))
+  })
+  if (kind === 'footnote' || kind === 'endnote') editor.view.dispatch(editor.view.state.tr.insert(1, schema.node('noteRef', { kind, id: '1' })))
+  editor.view.dispatch(editor.view.state.tr.insertText('Body', 1))
+  editor.setLayout('print')
+  editor.relayout()
+  const over = document.querySelector<HTMLElement>(`[data-story="${kind}:1"]`)!
+  expect(over).toBeTruthy()
+  editor.openStoryEditor(`${kind}:1`, over)
+  const view = storyView()
+  view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 4)))
+  view.focus()
+  const replica = new Y.Doc()
+  try {
+    Y.applyUpdate(replica, Y.encodeStateAsUpdate(doc))
+    const text = (replica.getXmlFragment('body').get(0) as Y.XmlElement).get(0) as Y.XmlText
+    text.insert(0, 'Remote')
+    Y.applyUpdate(doc, Y.encodeStateAsUpdate(replica), 'remote')
+    editor.relayout()
+    expect(storyView()).toBe(view)
+    expect(view.dom.isConnected).toBe(true)
+    expect(view.hasFocus()).toBe(true)
+    expect(view.state.selection.from).toBe(4)
+    expect(document.querySelector(`[data-story="${kind}:1"]`)?.getAttribute('style')).toContain('visibility: hidden')
+    view.dispatch(view.state.tr.insertText('Typed'))
+    expect(fragmentToNode(doc.getXmlFragment(storyFragmentName(`${kind}:1`))).textContent).toBe('OriTypedginal')
+  } finally {
+    replica.destroy()
+  }
+})
+
 it('refreshes an open story immediately when permissions become read-only', () => {
   editor.openStoryEditor('header:1')
   const view = storyView()

@@ -278,7 +278,7 @@ export class DocxEditor {
   private lastLayoutAt = 0
   private activeCommentId: string | null = null
   private copied: CopiedFormat | null = null
-  private storyEditor: { view: EditorView; element: HTMLElement; storyId: string; stop: () => void } | null = null
+  private storyEditor: { view: EditorView; element: HTMLElement; storyId: string; over?: HTMLElement; occurrence: number; stop: () => void } | null = null
   private readonly unsubscribe: (() => void)[] = []
   private destroyed = false
   private noteHeights = new Map<string, number>()
@@ -1596,6 +1596,7 @@ export class DocxEditor {
       const tabs = this.layoutTabs()
       this.view.dispatch(this.view.state.tr.setMeta(paginationKey, tabs).setMeta('addToHistory', false))
       this.renderWebNotes()
+      this.placeStoryEditor()
       this.lastLayout = null
       this.emit('layout', null)
       return
@@ -1628,6 +1629,7 @@ export class DocxEditor {
     this.lastSections = result.sections
     this.renderPages(result.layout, flowLeft, flowTop, padding)
     this.renderRepeatedHeaders(result.repeats, result.layout, flowLeft, flowTop)
+    this.placeStoryEditor()
     this.emit('layout', result.layout)
     this.emit('update')
   }
@@ -1881,18 +1883,9 @@ export class DocxEditor {
     if (!meta) return false
     const element = document.createElement('div')
     element.className = 'docx-story-editor'
-    const host = over?.parentElement ?? this.canvas
-    if (over) {
-      element.style.cssText = `left:${over.offsetLeft}px;top:${over.offsetTop}px;width:${over.offsetWidth}px;min-height:${over.offsetHeight}px`
-      if (over.style.bottom) {
-        element.style.top = ''
-        element.style.bottom = over.style.bottom
-      }
-      over.style.visibility = 'hidden'
-    }
-    host.appendChild(element)
-    const parentBand = host.closest<HTMLElement>('.docx-band')
-    if (parentBand) parentBand.style.overflow = 'visible'
+    // Keep the live editor outside the page bands and notes host, which pagination rebuilds.
+    // Moving its DOM during layout would interrupt focus and composition.
+    this.canvas.appendChild(element)
     const noteNumber = storyId.startsWith('footnote:') || storyId.startsWith('endnote:') ? countNotes(this.view.state.doc).get(storyId) : undefined
     const dispatch = (view: EditorView, tr: Transaction) => {
       if (view.isDestroyed) return
@@ -1916,18 +1909,45 @@ export class DocxEditor {
       // Toolbars, panels and dialogs outside this root still act on the open story.
       if (this.root.contains(event.target as Node) && !element.contains(event.target as Node)) this.closeStoryEditor()
     }
-    this.storyEditor = { view, element, storyId, stop: () => document.removeEventListener('pointerdown', close, true) }
+    const occurrence = over ? this.storyElements(storyId).indexOf(over) : 0
+    this.storyEditor = { view, element, storyId, over, occurrence: Math.max(0, occurrence), stop: () => document.removeEventListener('pointerdown', close, true) }
     document.addEventListener('pointerdown', close, true)
+    this.placeStoryEditor()
     view.focus()
     this.emit('update')
     return true
   }
 
+  private storyElements(storyId: string): HTMLElement[] {
+    return [...this.canvas.querySelectorAll<HTMLElement>('[data-story]')].filter((element) => element.dataset.story === storyId)
+  }
+
+  /** Anchor the live surface over the same occurrence after the static page content changes. */
+  private placeStoryEditor(): void {
+    if (!this.storyEditor) return
+    const { element, storyId, occurrence } = this.storyEditor
+    const candidates = this.storyElements(storyId)
+    const over = candidates[Math.min(occurrence, candidates.length - 1)]
+    if (this.storyEditor.over !== over && this.storyEditor.over) this.storyEditor.over.style.visibility = ''
+    this.storyEditor.over = over
+    if (!over) return
+    const rect = over.getBoundingClientRect()
+    const canvas = this.canvas.getBoundingClientRect()
+    const scale = this.zoomLevel || 1
+    element.style.cssText = `left:${(rect.left - canvas.left) / scale}px;top:${(rect.top - canvas.top) / scale}px;width:${rect.width / scale}px;min-height:${rect.height / scale}px`
+    if (over.style.bottom) {
+      element.style.top = ''
+      element.style.bottom = `${this.canvas.offsetHeight - (rect.bottom - canvas.top) / scale}px`
+    }
+    over.style.visibility = 'hidden'
+  }
+
   closeStoryEditor(): boolean {
     if (!this.storyEditor) return false
-    const { view, element, stop } = this.storyEditor
+    const { view, element, over, stop } = this.storyEditor
     this.storyEditor = null
     stop()
+    if (over) over.style.visibility = ''
     view.destroy()
     element.remove()
     this.scheduleLayout(true)
