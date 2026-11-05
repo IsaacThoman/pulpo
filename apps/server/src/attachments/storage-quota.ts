@@ -1,6 +1,6 @@
 import { and, eq, inArray, sql } from 'drizzle-orm'
 import { db } from '../database/client.js'
-import { applicationSettings, attachments, fileNodes, fileVersions, users } from '../database/schema.js'
+import { applicationSettings, attachments, fileDocAssets, fileNodes, fileVersions, users } from '../database/schema.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { parseAuthSettings } from '../settings/application-settings.js'
 import { formatAttachmentSizeLimit } from '@pulpo/client-core'
@@ -25,10 +25,11 @@ export function attachmentSizeError(sizeBytes: number, maxAttachmentBytes: numbe
 
 /**
  * Bytes charged to the account: live chat attachments plus every Files item, including trashed
- * ones, and the earlier or proposed contents of uploaded files kept for undo and review.
+ * ones, the earlier or proposed contents kept for undo and review, and live documents' binary
+ * parts (images and other assets kept beside their state).
  */
 export async function storageUsedBytes(executor: typeof db | DatabaseTransaction, userId: string): Promise<number> {
-  const [[attachmentUsage], [fileUsage], [versionUsage]] = await Promise.all([
+  const [[attachmentUsage], [fileUsage], [versionUsage], [assetUsage]] = await Promise.all([
     executor.select({ bytes: sql<string>`coalesce(sum(${attachments.sizeBytes}), 0)::bigint` }).from(attachments)
       .where(and(eq(attachments.userId, userId), inArray(attachments.status, ['pending', 'ready']))),
     // Folders are zero bytes; documents carry their compacted state size.
@@ -36,8 +37,10 @@ export async function storageUsedBytes(executor: typeof db | DatabaseTransaction
       .where(eq(fileNodes.ownerUserId, userId)),
     executor.select({ bytes: sql<string>`coalesce(sum(${fileVersions.sizeBytes}), 0)::bigint` }).from(fileVersions)
       .where(eq(fileVersions.userId, userId)),
+    executor.select({ bytes: sql<string>`coalesce(sum(${fileDocAssets.sizeBytes}), 0)::bigint` }).from(fileDocAssets)
+      .where(eq(fileDocAssets.ownerUserId, userId)),
   ])
-  return Number(attachmentUsage?.bytes ?? 0) + Number(fileUsage?.bytes ?? 0) + Number(versionUsage?.bytes ?? 0)
+  return Number(attachmentUsage?.bytes ?? 0) + Number(fileUsage?.bytes ?? 0) + Number(versionUsage?.bytes ?? 0) + Number(assetUsage?.bytes ?? 0)
 }
 
 export async function getStorageUsage(userId: string): Promise<StorageUsage> {

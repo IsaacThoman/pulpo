@@ -1,11 +1,21 @@
 import SwiftUI
 import UIKit
 
+/** A button a live format puts on the bar (see `DocEditorToolbarState.items`). */
+struct DocEditorToolbarItem: Identifiable, Equatable {
+  let command: String
+  let label: String
+  let systemImage: String
+  var id: String { command }
+}
+
 /** What the formatting bar shows; JavaScript sets it from what the editor reports. */
 final class DocEditorToolbarModel: ObservableObject {
   @Published var active: Set<String> = []
   @Published var disabled: Set<String> = []
   @Published var tint: Color = .accentColor
+  /** Set for formats with their own bar (text and code); empty for the document editor's. */
+  @Published var items: [DocEditorToolbarItem] = []
 }
 
 private struct ToolbarButton: View {
@@ -96,6 +106,14 @@ struct DocEditorToolbar: View {
   var body: some View {
     HStack(spacing: 0) {
       ScrollView(.horizontal, showsIndicators: false) {
+        if !model.items.isEmpty {
+          HStack(spacing: 2) {
+            ForEach(model.items) { item in
+              ToolbarButton(command: item.command, label: item.label, systemImage: item.systemImage, model: model, action: action)
+            }
+          }
+          .padding(.horizontal, 8)
+        } else {
         HStack(spacing: 2) {
           ToolbarButton(command: "undo", label: "Undo", systemImage: "arrow.uturn.backward", model: model, action: action)
           ToolbarButton(command: "redo", label: "Redo", systemImage: "arrow.uturn.forward", model: model, action: action)
@@ -126,6 +144,7 @@ struct DocEditorToolbar: View {
           ToolbarButton(command: "divider", label: "Divider", systemImage: "minus", model: model, action: action)
         }
         .padding(.horizontal, 8)
+        }
       }
       ToolbarSeparator()
       Button {

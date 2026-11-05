@@ -3,12 +3,26 @@ import { useEffect } from 'react'
 import { AppState } from 'react-native'
 import { ApiError, mobileApi } from '../../api/client'
 import { useSessionStore } from '../../store/session'
+import { editorBundleFor } from './editor/bundles'
 import { EDITOR_BUNDLE } from './editor/editorBundle.generated'
 
 /** Files as the instance advertises it; older servers omit it, and then Files stays hidden. */
-export function filesCapability(config: MobileConfig | null | undefined): { enabled: boolean; docSchemaVersion: number | null } {
+export function filesCapability(config: MobileConfig | null | undefined): { enabled: boolean; docSchemaVersion: number | null; liveFormats: Record<string, number> | null } {
   const files = config?.capabilities.files
-  return { enabled: files?.enabled === true, docSchemaVersion: files?.docSchemaVersion ?? null }
+  return { enabled: files?.enabled === true, docSchemaVersion: files?.docSchemaVersion ?? null, liveFormats: files?.liveFormats ?? null }
+}
+
+/**
+ * Whether this app ships an editor for a live format that speaks the server's schema for it.
+ * Servers from before live formats edit Markdown only.
+ */
+export function formatSupported(config: MobileConfig | null | undefined, format: string | null | undefined): boolean {
+  const bundle = editorBundleFor(format)
+  if (!bundle) return false
+  const { docSchemaVersion, liveFormats } = filesCapability(config)
+  const id = format ?? 'markdown'
+  const serverVersion = liveFormats?.[id] ?? (id === 'markdown' ? docSchemaVersion : null)
+  return serverVersion === null ? id === 'markdown' : serverVersion === bundle.schemaVersion
 }
 
 export function useFilesEnabled(): boolean {
@@ -19,8 +33,9 @@ export function useFilesEnabled(): boolean {
  * Whether this app's bundled editor speaks the server's document schema. When it does not, the
  * server would refuse to sync, so documents open read only until the app is updated.
  */
-export function useDocSchemaSupported(): boolean {
+export function useDocSchemaSupported(format?: string | null): boolean {
   return useSessionStore((state) => {
+    if (format && format !== 'markdown') return formatSupported(state.config, format)
     const { docSchemaVersion } = filesCapability(state.config)
     return docSchemaVersion === null || docSchemaVersion === EDITOR_BUNDLE.schemaVersion
   })

@@ -5,6 +5,7 @@ import { getBlobStore } from '../../storage/index.js'
 import type { FileNodeRow } from '../access.js'
 import { formatSize, workspacePath, type CommandContext, type CommandOutput } from './command-context.js'
 import { markdownVersion, readProposedMarkdown } from './docs.js'
+import { agentLiveView, isLiveDoc } from './live.js'
 import { FilesCommandError, locateExisting, modeFor } from './scope.js'
 import { agentBlobView, blobVersion } from './versions.js'
 import { walkTree } from './walk.js'
@@ -33,6 +34,12 @@ async function writeLocal(ctx: CommandContext, local: string, body: Uint8Array |
 
 /** Writes one file as the agent sees it into the workspace and returns its manifest entry. */
 async function pullFile(ctx: CommandContext, node: FileNodeRow, remote: string, local: string): Promise<PulledFile> {
+  if (isLiveDoc(node)) {
+    // The real file, as the document's codec writes it (or this chat's pending proposal).
+    const view = await agentLiveView(db, ctx.chatId, node, () => modeFor(ctx.scope, node.id))
+    await writeLocal(ctx, local, view.bytes, view.bytes.byteLength)
+    return { remote, local, nodeId: node.id, version: view.version, kind: 'doc', sizeBytes: view.bytes.byteLength }
+  }
   if (node.kind === 'doc') {
     const markdown = await readProposedMarkdown(node.id)
     // A text file ends with a newline, so a line the agent appends (echo >>) starts a new one.
@@ -52,8 +59,9 @@ async function pullFile(ctx: CommandContext, node: FileNodeRow, remote: string, 
 }
 
 /**
- * `pull <path> <dest>`: copies a file, or every file in a folder, into the workspace. Documents
- * arrive as Markdown of their proposed view; `data.files` is what the CLI's manifest records.
+ * `pull <path> <dest>`: copies a file, or every file in a folder, into the workspace. Markdown
+ * documents arrive as Markdown of their proposed view, other live documents as the file their
+ * codec exports; `data.files` is what the CLI's manifest records.
  */
 export async function pullCommand(ctx: CommandContext, args: { path: string; dest: string }): Promise<CommandOutput> {
   const destination = workspacePath(args.dest)

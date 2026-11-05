@@ -1,16 +1,17 @@
 import { and, eq, inArray, sql } from 'drizzle-orm'
 import * as Y from 'yjs'
-import { DOC_SCHEMA_VERSION, ydocToMarkdown } from '@pulpo/client-core/doc-schema'
+import { liveFormatCodec } from '@pulpo/client-core/office/codecs'
 import { FILE_TREE_MAX_DEPTH, nextAvailableName, type FileNode } from '@pulpo/contracts'
 import { assertStorageCapacity, lockAccountStorage } from '../attachments/storage-quota.js'
 import { db } from '../database/client.js'
-import { fileDocs, fileNodes } from '../database/schema.js'
+import { fileDocAssets, fileDocs, fileNodes } from '../database/schema.js'
 import { bumpAccountRevisions, publishScopedStateChanges } from '../friends/sync.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { getBlobStore } from '../storage/index.js'
 import type { FileNodeRow } from './access.js'
 import { mergedDocState } from './doc-state.js'
+import { deleteObjects, docAssetKey, docFormat } from './live-docs.js'
 import {
   chainIds,
   destinationDepth,
@@ -44,11 +45,11 @@ async function liveSubtree(tx: DatabaseTransaction, userId: string, rootId: stri
   return nodes.map((node) => ({ ...node, depth: depths.get(node.id)! })).sort((left, right) => left.depth - right.depth)
 }
 
-function docMarkdown(state: Uint8Array): string {
+function docText(node: FileNodeRow, state: Uint8Array): string {
   const doc = new Y.Doc()
   Y.applyUpdate(doc, state)
   try {
-    return ydocToMarkdown(doc)
+    return liveFormatCodec(docFormat(node)).toText(doc)
   } catch {
     return ''
   }
@@ -57,11 +58,14 @@ function docMarkdown(state: Uint8Array): string {
 /**
  * Copies items (with their contents) into `parentId`, keeping both when names clash.
  *
- * Folders and documents are written in one transaction that also reserves storage. Uploaded
- * files are inserted as pending, copied in the object store after commit, then marked ready,
- * so a failed object copy never leaves a visible file without bytes.
+ * Folders and documents are written in one transaction that also reserves storage; documents'
+ * assets are copied in the object store inside it, so a copied document is never visible without
+ * them (and a failed copy deletes the ones already made). Uploaded files are inserted as pending,
+ * copied in the object store after commit, then marked ready, so a failed object copy never
+ * leaves a visible file without bytes.
  */
 export async function copyFileNodes(userId: string, ids: string[], parentId: string | null): Promise<FileNode[]> {
+  const assetCopies: string[] = []
   const planned = await db.transaction(async (tx) => {
     // Storage before tree, matching upload reservations, so the two locks cannot deadlock.
     await lockAccountStorage(tx, userId)
@@ -75,7 +79,9 @@ export async function copyFileNodes(userId: string, ids: string[], parentId: str
       if (ancestors.has(tree[0]!.id)) throw new AppError(400, 'file_move_cycle', 'A folder cannot be copied into itself')
       if (baseDepth + Math.max(...tree.map((node) => node.depth)) > FILE_TREE_MAX_DEPTH) throw treeTooDeep()
     }
-    const bytes = trees.flat().reduce((total, node) => total + node.sizeBytes, 0)
+    const sourceDocIds = trees.flat().filter((node) => node.kind === 'doc').map((node) => node.id)
+    const assets = sourceDocIds.length ? await tx.select().from(fileDocAssets).where(inArray(fileDocAssets.nodeId, sourceDocIds)) : []
+    const bytes = trees.flat().reduce((total, node) => total + node.sizeBytes, 0) + assets.reduce((total, asset) => total + asset.sizeBytes, 0)
     await assertStorageCapacity(tx, userId, bytes, { perFileLimit: false })
 
     const taken = await liveSiblingNames(tx, userId, parentId)
@@ -96,7 +102,7 @@ export async function copyFileNodes(userId: string, ids: string[], parentId: str
         const objectKey = node.kind === 'blob' ? `users/${userId}/files/${id}` : null
         await tx.insert(fileNodes).values({
           id, ownerUserId: userId, parentId: root ? parentId : newIds.get(node.parentId!)!,
-          kind: node.kind, name, mimeType: node.mimeType, sizeBytes: node.sizeBytes,
+          kind: node.kind, format: node.format, name, mimeType: node.mimeType, sizeBytes: node.sizeBytes,
           checksum: node.checksum, objectKey, status: node.kind === 'blob' ? 'pending' : 'ready',
           // A copied shortcut still opens the same item.
           targetNodeId: node.targetNodeId, targetChatId: node.targetChatId,
@@ -106,16 +112,29 @@ export async function copyFileNodes(userId: string, ids: string[], parentId: str
         })
         if (node.kind === 'doc') {
           const state = await mergedDocState(tx, node.id)
+          // The copy's state carries the original's generation, so it keeps it too.
+          const [source] = await tx.select({ generation: fileDocs.generation }).from(fileDocs).where(eq(fileDocs.nodeId, node.id))
           await tx.insert(fileDocs).values({
-            nodeId: id, state, stateBytes: state.byteLength, markdown: docMarkdown(state), schemaVersion: DOC_SCHEMA_VERSION,
+            nodeId: id, state, stateBytes: state.byteLength, markdown: docText(node, state), schemaVersion: docFormat(node).schemaVersion,
+            generation: source?.generation ?? null,
           })
+          for (const asset of assets.filter((item) => item.nodeId === node.id)) {
+            const objectKey = docAssetKey(userId, id, asset.hash)
+            assetCopies.push(objectKey)
+            await getBlobStore().copy(asset.objectKey, objectKey)
+            await tx.insert(fileDocAssets).values({ ...asset, nodeId: id, ownerUserId: userId, objectKey, createdAt: new Date() })
+          }
         }
         if (objectKey) blobCopies.push({ id, source: node.objectKey!, target: objectKey })
       }
     }
     return { rootIds, blobCopies, changes: await bumpAccountRevisions(tx, [userId]) }
+  }).catch(async (error: unknown) => {
+    await deleteObjects(assetCopies)
+    throw error
   })
-  await publishScopedStateChanges(planned.changes, ['files'])
+  // Committed: a failed notification must not stop the uploaded files' copies below.
+  await publishScopedStateChanges(planned.changes, ['files']).catch(() => undefined)
 
   const copied: string[] = []
   const failed: string[] = []

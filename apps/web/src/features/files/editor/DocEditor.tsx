@@ -27,39 +27,12 @@ import { cn } from '@/lib/utils'
 import { DictationKeys, dictationShortcut, useDocDictation, type DocDictation } from './doc-dictation'
 import { DocDictationBar } from './DocDictationBar'
 import { sessionColor, sessionLabel } from './presence'
+import { ToolbarButton } from './ToolbarButton'
 import { revealSuggestion } from './suggestion-layout'
 import { SuggestionReviewKeys, useSuggestionReview } from './suggestion-review'
 import { SuggestionBar, SuggestionCard } from './SuggestionReview'
 import type { DocSession } from './use-doc-session'
 import './doc-editor.css'
-
-function ToolbarButton({ label, shortcut, active, disabled, onClick, children }: {
-  label: string
-  shortcut?: { label: string; aria: string }
-  active?: boolean
-  disabled?: boolean
-  onClick: () => void
-  children: ReactNode
-}) {
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      aria-keyshortcuts={shortcut?.aria}
-      title={shortcut ? `${label} (${shortcut.label})` : label}
-      aria-pressed={active}
-      disabled={disabled}
-      onMouseDown={(event) => event.preventDefault()}
-      onClick={onClick}
-      className={cn(
-        'grid size-8 shrink-0 cursor-pointer place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40',
-        active && 'bg-accent text-foreground',
-      )}
-    >
-      {children}
-    </button>
-  )
-}
 
 /** Toolbar buttons that turn a format on and off, announced as pressed or not. */
 const TOGGLE_COMMANDS = new Set<FormatCommand>([

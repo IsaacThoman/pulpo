@@ -1,5 +1,5 @@
 import type { FileChangeConflict, FileChangesResponse, FileChangeSummary } from '@pulpo/contracts'
-import { diffRows, fileChangeConflictsOf, lineDiff, pendingSuggestion } from '@pulpo/client-core/files'
+import { diffRows, fileChangeConflictsOf, lineDiff, pendingSuggestion, wholeFileProposal } from '@pulpo/client-core/files'
 import { useNavigation } from '@react-navigation/native'
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -11,7 +11,7 @@ import { ApiError } from '../../../api/client'
 import type { RootStackParamList } from '../../../mockup5/src/navigation'
 import { SymbolView } from '../../../platform/SymbolView'
 import { useAppTheme } from '../../../theme'
-import { fetchFileNode, resolveFileChange, updateFileChanges } from '../api'
+import { fetchChangeText, fetchFileNode, resolveFileChange, updateFileChanges } from '../api'
 import { changeLabel, conflictReason } from '../changeLabels'
 import { fileIcon, filesErrorMessage } from '../display'
 import { previewUploadedFile } from '../open'
@@ -23,12 +23,54 @@ const COLLAPSED_ROWS = 4
 function statusLabel(change: FileChangeSummary): string | null {
   if (!change.available) return 'no longer available'
   switch (change.status) {
-    case 'pending': return change.nodeKind === 'doc' && change.kind === 'update' ? 'review in the document' : 'suggested'
+    case 'pending': return change.nodeKind === 'doc' && change.kind === 'update' && !wholeFileProposal(change) ? 'review in the document' : 'suggested'
     case 'accepted': return 'kept'
     case 'rejected': return 'rejected'
     case 'undone': return 'undone'
     case 'applied': return null
   }
+}
+
+/** Lines of a diff, as the conflict sheet and the change sheet show them. */
+function DiffLines({ before, after }: { before: string; after: string }) {
+  const theme = useAppTheme()
+  const rows = lineDiff(before, after)
+  if (!rows) return <Text style={[styles.conflictReason, { color: theme.secondary }]}>This file is too long to show every change.</Text>
+  return <>{diffRows(rows).map((row, index) => row.kind === 'gap' ? (
+    <Text key={index} style={[styles.gap, { color: theme.tertiary }]}>{row.count} unchanged {row.count === 1 ? 'line' : 'lines'}</Text>
+  ) : (
+    <Text key={index} style={[styles.diffLine, { color: row.kind === 'same' ? theme.secondary : theme.text, backgroundColor: row.kind === 'added' ? 'rgba(52,199,89,0.16)' : row.kind === 'removed' ? 'rgba(255,59,48,0.14)' : 'transparent' }]}>
+      {row.kind === 'added' ? '+ ' : row.kind === 'removed' ? '− ' : '  '}{row.text || ' '}
+    </Text>
+  ))}</>
+}
+
+/**
+ * What an agent's new version of a live document changes, as a line diff of the two versions'
+ * text (the server reads them through the format's codec, so this works for every format until
+ * one has a diff of its own).
+ */
+function ChangeSheet({ change, onClose }: { change: FileChangeSummary; onClose: () => void }) {
+  const theme = useAppTheme()
+  const versions = useQuery({ queryKey: ['file-change-text', change.id], queryFn: () => fetchChangeText(change.id), staleTime: Infinity })
+  return (
+    <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+      <SafeAreaView edges={['bottom']} style={[styles.flex, { backgroundColor: theme.isDark ? theme.elevated : theme.background }]}>
+        <View style={[styles.sheetHeader, { borderBottomColor: theme.separator }]}>
+          <Text accessibilityRole="header" numberOfLines={1} style={[styles.sheetTitle, { color: theme.text }]}>{change.name}</Text>
+          <Pressable accessibilityRole="button" hitSlop={10} onPress={onClose} style={styles.sheetDone}><Text style={[styles.sheetDoneLabel, { color: theme.blue }]}>Done</Text></Pressable>
+        </View>
+        <ScrollView contentContainerStyle={styles.sheetContent} testID="file-change-diff">
+          <Text style={[styles.sheetIntro, { color: theme.secondary }]}>
+            {pendingSuggestion(change) ? 'What keeping the agent’s suggestion would change:' : 'What the agent changed:'}
+          </Text>
+          {versions.isPending ? <ActivityIndicator color={theme.secondary} /> : versions.isError ? (
+            <Text style={[styles.conflictReason, { color: theme.red }]}>{filesErrorMessage(versions.error)}</Text>
+          ) : <View style={[styles.conflict, { borderColor: theme.separator }]}><DiffLines before={versions.data.before} after={versions.data.after} /></View>}
+        </ScrollView>
+      </SafeAreaView>
+    </Modal>
+  )
 }
 
 function ConflictSheet({ action, conflicts, onClose }: { action: 'undo' | 'redo'; conflicts: FileChangeConflict[]; onClose: () => void }) {
@@ -78,6 +120,7 @@ export function FileChangesCard({ namespace, responseId }: { namespace: string; 
   const [expanded, setExpanded] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
   const [conflicts, setConflicts] = useState<{ action: 'undo' | 'redo'; items: FileChangeConflict[] } | null>(null)
+  const [diff, setDiff] = useState<FileChangeSummary | null>(null)
   const data = query.data
   const changes = useMemo(() => data?.changes ?? [], [data?.changes])
   const pending = changes.filter(pendingSuggestion)
@@ -138,7 +181,12 @@ export function FileChangesCard({ namespace, responseId }: { namespace: string; 
                 <Text numberOfLines={1} style={[styles.rowDetail, { color: theme.secondary }]}>{[changeLabel(change), status].filter(Boolean).join(' · ')}</Text>
               </View>
             </Pressable>
-            {pendingSuggestion(change) && !(change.nodeKind === 'doc' && change.kind === 'update') ? (
+            {change.contentDiff ? (
+              <Pressable accessibilityLabel={`Show the changes to ${change.name}`} accessibilityRole="button" hitSlop={6} onPress={() => setDiff(change)} style={[styles.roundButton, { backgroundColor: theme.fillStrong }]} testID="file-change-show-diff">
+                <SymbolView name="plus.forwardslash.minus" size={13} tintColor={theme.blue} />
+              </Pressable>
+            ) : null}
+            {pendingSuggestion(change) && (!(change.nodeKind === 'doc' && change.kind === 'update') || wholeFileProposal(change)) ? (
               <View style={styles.rowActions}>
                 {busy === change.id ? <ActivityIndicator size="small" color={theme.secondary} /> : <>
                   <Pressable accessibilityLabel={`Reject ${change.name}`} accessibilityRole="button" hitSlop={6} onPress={() => { void apply(change.id, () => resolveFileChange(change.id, 'reject')) }} style={[styles.roundButton, { backgroundColor: theme.fillStrong }]}><SymbolView name="xmark" size={13} tintColor={theme.red} /></Pressable>
@@ -171,6 +219,7 @@ export function FileChangesCard({ namespace, responseId }: { namespace: string; 
           {data.canRedo ? <FooterButton label="Redo Changes" color={theme.blue} disabled={Boolean(busy)} onPress={() => { void apply('all', () => updateFileChanges(responseId, 'redo'), 'redo') }} /> : null}
         </View>
       ) : null}
+      {diff ? <ChangeSheet change={diff} onClose={() => setDiff(null)} /> : null}
       {conflicts ? <ConflictSheet action={conflicts.action} conflicts={conflicts.items} onClose={() => setConflicts(null)} /> : null}
     </View>
   )
