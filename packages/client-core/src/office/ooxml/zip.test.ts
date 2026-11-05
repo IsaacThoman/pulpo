@@ -254,6 +254,16 @@ describe('bounded, verified OOXML ZIP reads', () => {
   })
 })
 
+/**
+ * Byte equality without walking every element through `toEqual`, which takes seconds on parts of
+ * a few hundred kilobytes and timed out on slower CI runners. The message names what differs.
+ */
+function expectSameBytes(actual: Uint8Array | undefined, expected: Uint8Array | undefined, label: string) {
+  expect(actual, `${label} is missing`).toBeDefined()
+  expect(expected, `${label} is not expected`).toBeDefined()
+  expect(Buffer.from(actual!).equals(Buffer.from(expected!)), `${label} differs (${actual!.byteLength} vs ${expected!.byteLength} bytes)`).toBe(true)
+}
+
 for (const producer of ['office', 'libreoffice', 'python', 'zip64']) {
   describe(`${producer} Office compatibility`, () => {
     it.each(['docx', 'xlsx', 'pptx'])('preserves every part of %s through inspection and round trip', (extension) => {
@@ -264,14 +274,14 @@ for (const producer of ['office', 'libreoffice', 'python', 'zip64']) {
       for (const path of pkg.paths()) {
         pkg.contentType(path)
         if (/\.(xml|rels)$/.test(path)) pkg.xml(path)
-        expect(pkg.get(path)).toEqual(expected[path])
+        expectSameBytes(pkg.get(path), expected[path], path)
       }
       expect(pkg.paths()).toEqual(Object.keys(expected).filter((path) => !path.endsWith('/')))
       const written = pkg.write()
       const roundTrip = OoxmlPackage.read(written)
       expect(roundTrip.paths()[0]).toBe('[Content_Types].xml')
-      for (const path of pkg.paths()) expect(roundTrip.get(path)).toEqual(expected[path])
-      expect(roundTrip.write()).toEqual(written)
+      for (const path of pkg.paths()) expectSameBytes(roundTrip.get(path), expected[path], `${path} after a round trip`)
+      expectSameBytes(roundTrip.write(), written, 'the rewritten package')
     })
   })
 }
