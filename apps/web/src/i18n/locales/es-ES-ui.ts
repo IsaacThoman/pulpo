@@ -2795,6 +2795,7 @@ const esUi: Record<string, string> = {
   "The two versions are the same.": "Las dos versiones son iguales.",
   "A detailed comparison of {{0}} isn't available yet. Download both versions to compare them.": "Aún no hay una comparación detallada de {{0}}. Descarga las dos versiones para compararlas.",
   "New text file": "Nuevo archivo de texto",
+  "New presentation": "Nueva presentación",
   "Text editor": "Editor de texto",
   "Find": "Buscar",
   "next": "siguiente",
