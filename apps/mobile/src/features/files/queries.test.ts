@@ -44,3 +44,21 @@ describe('looking up a Files item', () => {
     expect(mocks.fetchFileNode).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('Files query keys', () => {
+  it('keeps every key under the account prefix that refreshes and realtime invalidate', async () => {
+    const { filesQueryKeys } = await import('./queries')
+    const prefix = filesQueryKeys.all('ns')
+    const keys = [
+      filesQueryKeys.folder('ns', null),
+      filesQueryKeys.node('ns', 'ID'),
+      filesQueryKeys.changes('ns'),
+      filesQueryKeys.responseChanges('ns', 'reply'),
+      filesQueryKeys.changeText('ns', 'reply', 'change'),
+    ]
+    for (const key of keys) expect(key.slice(0, prefix.length)).toEqual([...prefix])
+    // A reply's change list refetches its changes' text with it.
+    const changes = filesQueryKeys.responseChanges('ns', 'reply')
+    expect(filesQueryKeys.changeText('ns', 'reply', 'change').slice(0, changes.length)).toEqual([...changes])
+  })
+})

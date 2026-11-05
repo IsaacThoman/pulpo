@@ -1,13 +1,16 @@
+import { randomUUID } from 'node:crypto'
 import { and, eq } from 'drizzle-orm'
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as Y from 'yjs'
 import { db, queryClient } from '../../database/client.js'
-import { fileChanges, fileDocUpdates, fileNodes, fileVersions } from '../../database/schema.js'
+import { fileChanges, fileDocUpdates, fileNodes, fileVersions, users } from '../../database/schema.js'
+import { storageUsedBytes } from '../../attachments/storage-quota.js'
 import { appendDocUpdate, createDoc, loadYDoc } from '../doc-store.js'
 import { convertBlobToDocInTx } from '../conversion.js'
 import { mutateFileTree, updateFileNode } from '../tree-service.js'
 import { exportStoredDoc } from '../live-docs.js'
 import { listFileChanges } from './changes.js'
+import { mutateAgentFiles } from './commit.js'
 import { FileChangesConflictError, redoFileChanges, undoFileChanges } from './history.js'
 import { reviewFileChange, reviewReplyChanges } from './review.js'
 import { filesFixture, requireDisposableDatabase, type FilesFixture } from './test-fixtures.js'
@@ -285,6 +288,56 @@ describe.skipIf(!enabled)('agent edits to live documents', () => {
     expect(merged[3001]).toBe('line 3001 // agent')
     expect(merged[0]).toBe('line 0')
     expect(merged).toHaveLength(6_001)
+  })
+
+  it('refuses a small push whose kept versions would exceed the storage allowance', async () => {
+    const big = `${'x'.repeat(4_000)}\n`
+    const id = await textDoc('notes.txt', projects, big)
+    // Room for the incoming bytes, but not for keeping the current 4 KB version beside them.
+    await db.update(users).set({ storageLimitBytes: await storageUsedBytes(db, files.userId) + 100 }).where(eq(users.id, files.userId))
+    for (const mode of ['suggest', 'write'] as const) {
+      await files.attach({ [projects]: mode })
+      files.put('/workspace/notes.txt', 'small\n')
+      const [refused] = await push([{ local: '/workspace/notes.txt', remote: 'Projects/notes.txt', force: true }])
+      expect(refused).toMatchObject({ status: 'error', message: expect.stringMatching(/storage allowance/) })
+      expect(await text(id)).toBe(big)
+      expect(await db.select().from(fileChanges).where(eq(fileChanges.nodeId, id))).toEqual([])
+      expect(await db.select().from(fileVersions).where(eq(fileVersions.nodeId, id))).toEqual([])
+      expect([...objects.keys()].filter((key) => key.startsWith(`users/${files.userId}/files/`))).toEqual([])
+    }
+  })
+
+  it('refuses a new live document whose kept original bytes would exceed the storage allowance', async () => {
+    await files.attach({ [projects]: 'write' })
+    // Mixed line endings: the codec keeps the original bytes beside the document, about doubling it.
+    const mixed = Array.from({ length: 2_000 }, (_, index) => `line ${index}${index % 2 ? '\r\n' : '\n'}`).join('')
+    const size = Buffer.byteLength(mixed)
+    await db.update(users).set({ storageLimitBytes: await storageUsedBytes(db, files.userId) + Math.round(size * 1.5) }).where(eq(users.id, files.userId))
+    files.put('/workspace/mixed.txt', mixed)
+    const [refused] = await push([{ local: '/workspace/mixed.txt', remote: 'Projects/mixed.txt' }])
+    expect(refused).toMatchObject({ status: 'error', message: expect.stringMatching(/storage allowance/) })
+    expect(await db.select().from(fileNodes).where(and(eq(fileNodes.ownerUserId, files.userId), eq(fileNodes.name, 'mixed.txt')))).toEqual([])
+    expect([...objects.keys()].filter((key) => key.startsWith(`users/${files.userId}/`))).toEqual([])
+    // The same text with one kind of line break needs no copy, so it fits.
+    files.put('/workspace/plain.txt', mixed.replaceAll('\r\n', '\n'))
+    expect((await push([{ local: '/workspace/plain.txt', remote: 'Projects/plain.txt' }]))[0]).toMatchObject({ status: 'created' })
+  })
+
+  it('deletes the objects an agent transaction stored when it does not commit', async () => {
+    // Assets are stored ahead of their rows (applying a pushed file, a proposal's fork, a new
+    // document), so a transaction that fails after storing them must take them back.
+    const key = `users/${files.userId}/doc-assets/${randomUUID()}`
+    await expect(mutateAgentFiles(files.userId, async (_tx, effects) => {
+      objects.set(key, Buffer.from('original bytes'))
+      effects.writtenKeys.push(key)
+      throw new Error('refused after storing')
+    })).rejects.toThrow('refused after storing')
+    expect(objects.has(key)).toBe(false)
+    await mutateAgentFiles(files.userId, async (_tx, effects) => {
+      objects.set(key, Buffer.from('original bytes'))
+      effects.writtenKeys.push(key)
+    })
+    expect(objects.has(key)).toBe(true)
   })
 
   it('keeps new files that are too large or not really text as uploaded files', async () => {

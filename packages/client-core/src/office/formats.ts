@@ -98,10 +98,14 @@ export function liveFormat(id: string | null | undefined): LiveFormatInfo | null
   return id ? BY_ID.get(id) ?? null : null
 }
 
-/** The live format a file name belongs to, or null for names that stay ordinary files. */
+/**
+ * The live format a file name belongs to, or null for names that stay ordinary files. Special
+ * names keep their format with the ` (2)` Files adds to make names unique (`Dockerfile (2)`,
+ * `.env (2)`), so copies and documents created beside a namesake stay documents.
+ */
 export function liveFormatOfName(name: string): LiveFormatInfo | null {
   const lower = name.toLowerCase()
-  return BY_EXTENSION.get(nameExtension(name)) ?? BY_NAME.get(lower) ?? null
+  return BY_EXTENSION.get(nameExtension(name)) ?? BY_NAME.get(lower) ?? BY_NAME.get(lower.replace(/ \(\d+\)$/, '')) ?? null
 }
 
 /** The MIME type to store and serve for a live document named `name`. */

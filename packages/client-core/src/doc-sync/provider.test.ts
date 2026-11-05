@@ -63,6 +63,65 @@ describe('SocketIOYProvider', () => {
     expect(isStaleCopy(current, undefined)).toBe(false)
   })
 
+  it('joins a fresh copy that changed before the first handshake, keeping those changes', () => {
+    const server = new FakeServer()
+    server.doc.transact(() => {
+      server.doc.getMap(DOC_META_MAP).set(DOC_GENERATION_KEY, 'current')
+      server.doc.getText('t').insert(0, 'server')
+    })
+    server.generation = 'current'
+    // Typed (or set up by an editor) before the server answered: this session's own edits.
+    const typed = new Y.Doc()
+    const typedSocket = new FakeSocket(server)
+    typedSocket.connected = false
+    const typedProvider = new SocketIOYProvider('doc-1', typed)
+    typedProvider.attach(typedSocket as unknown as DocSocket)
+    typed.getText('t').insert(0, 'typed ')
+    typedSocket.reconnect()
+    vi.advanceTimersByTime(100)
+    expect(typedProvider.status.state).toBe('synced')
+    expect(text(server.doc)).toBe('typed server')
+    // An update another session broadcast before this one's handshake finished.
+    const relayed = new Y.Doc()
+    const relayedSocket = new FakeSocket(server)
+    relayedSocket.connected = false
+    const relayedProvider = new SocketIOYProvider('doc-1', relayed)
+    relayedProvider.attach(relayedSocket as unknown as DocSocket)
+    const other = new Y.Doc()
+    Y.applyUpdate(other, Y.encodeStateAsUpdate(server.doc))
+    const vector = Y.encodeStateVector(other)
+    other.getText('t').insert(0, '! ')
+    relayedSocket.deliver('doc.update', { docId: 'doc-1', update: Y.encodeStateAsUpdate(other, vector) })
+    relayedSocket.reconnect()
+    vi.advanceTimersByTime(100)
+    expect(relayedProvider.status.state).toBe('synced')
+  })
+
+  it('still refuses an earlier document that the offline cache loads after the provider starts', () => {
+    const server = new FakeServer()
+    server.doc.transact(() => {
+      server.doc.getMap(DOC_META_MAP).set(DOC_GENERATION_KEY, 'new')
+      server.doc.getText('t').insert(0, 'fresh')
+    })
+    server.generation = 'new'
+    const cache = { name: 'offline cache' }
+    const doc = new Y.Doc()
+    const socket = new FakeSocket(server)
+    socket.connected = false
+    const provider = new SocketIOYProvider('doc-1', doc, { ignoredOrigins: [cache] })
+    provider.attach(socket as unknown as DocSocket)
+    const earlier = new Y.Doc()
+    earlier.transact(() => {
+      earlier.getMap(DOC_META_MAP).set(DOC_GENERATION_KEY, 'old')
+      earlier.getText('t').insert(0, 'stale')
+    })
+    Y.applyUpdate(doc, Y.encodeStateAsUpdate(earlier), cache)
+    socket.reconnect()
+    vi.advanceTimersByTime(100)
+    expect(provider.status).toEqual({ state: 'error', error: 'stale_copy' })
+    expect(text(server.doc)).toBe('fresh')
+  })
+
   it('batches rapid keystrokes into one update', () => {
     const server = new FakeServer()
     const a = open(server)

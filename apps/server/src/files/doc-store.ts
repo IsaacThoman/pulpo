@@ -45,6 +45,8 @@ export async function createDocInTx(tx: DatabaseTransaction, userId: string, inp
   bytes?: Uint8Array
   exactName?: boolean
   suggestionChangeId?: string | null
+  /** Collects asset objects as they are stored, for the caller to delete if the transaction fails. */
+  writtenKeys?: string[]
 }): Promise<FileNodeRow> {
   const desired = input.name ?? DEFAULT_DOC_NAME
   // Only names of a live format are documents; any other name is an ordinary file.
@@ -63,7 +65,8 @@ export async function createDocInTx(tx: DatabaseTransaction, userId: string, inp
     nodeId: node!.id, state: initial.state, stateBytes: initial.state.byteLength,
     markdown: initial.text, schemaVersion: format.schemaVersion, generation: initial.generation,
   })
-  await initial.assets.flush(tx, userId, node!.id)
+  const written = await initial.assets.flush(tx, userId, node!.id)
+  input.writtenKeys?.push(...written)
   return node!
 }
 

@@ -150,7 +150,7 @@ export async function applyLiveFileInTx(tx: DatabaseTransaction, effects: Commit
   const vector = Y.encodeStateVector(doc)
   const { changed } = await codecCall(() => liveFormatCodec(format).applyFile(doc, input.bytes, context, input.origin))
   if (!changed) return null
-  await context.assets.flush(tx, input.node.ownerUserId, input.node.id)
+  effects.writtenKeys.push(...await context.assets.flush(tx, input.node.ownerUserId, input.node.id))
   await logLiveUpdate(tx, effects, input.node.id, Y.encodeStateAsUpdate(doc, vector), input.actorUserId, input.origin)
   return exportLiveDoc(doc, format, context)
 }
@@ -166,7 +166,7 @@ export async function logLiveUpdate(tx: DatabaseTransaction, effects: CommitEffe
  * or else the document as it is now) with the proposed file applied as a minimal diff. Returns
  * null when the proposed file reads the same as that version.
  */
-export async function proposalFork(tx: DatabaseTransaction, node: FileNodeRow, bytes: Uint8Array, previous: LiveSnapshot | null): Promise<{ fork: Uint8Array; current: Uint8Array } | null> {
+export async function proposalFork(tx: DatabaseTransaction, effects: CommitEffects, node: FileNodeRow, bytes: Uint8Array, previous: LiveSnapshot | null): Promise<{ fork: Uint8Array; current: Uint8Array } | null> {
   const { doc, format, context } = await loadLiveDocInTx(tx, node)
   const current = await exportLiveDoc(doc, format, context)
   let base = doc
@@ -179,7 +179,7 @@ export async function proposalFork(tx: DatabaseTransaction, node: FileNodeRow, b
   const { changed } = await codecCall(() => liveFormatCodec(format).applyFile(base, bytes, context, 'agent'))
   if (!changed) return null
   // Parts the proposal adds are kept with the document now, so accepting it later finds them.
-  await context.assets.flush(tx, node.ownerUserId, node.id)
+  effects.writtenKeys.push(...await context.assets.flush(tx, node.ownerUserId, node.id))
   return { fork: Y.encodeStateAsUpdate(base), current }
 }
 

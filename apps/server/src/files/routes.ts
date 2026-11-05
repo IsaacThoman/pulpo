@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { liveFormatOfName } from '@pulpo/client-core/office'
 import { updateFileFolderLayoutSchema, copyFileNodesSchema, createFileDocSchema, createFileFolderSchema, fileNodeIdsSchema, importFileUrlSchema, moveFileNodesSchema, updateFileNodeSchema, type FileChangeConflictBody } from '@pulpo/contracts'
+import { assertWithinStorageAllowance } from '../attachments/storage-quota.js'
 import { db } from '../database/client.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { getBlobStore } from '../storage/index.js'
@@ -9,6 +10,7 @@ import { resolveFileAccess } from './access.js'
 import { convertBlobToDocInTx, previewMarkdownConversion } from './conversion.js'
 import { copyFileNodes } from './copy-service.js'
 import { createDoc, readDocMarkdown } from './doc-store.js'
+import { deleteObjects } from './live-docs.js'
 import { parseFileInput, requireFilesUser } from './request.js'
 import {
   createFolder,
@@ -187,13 +189,20 @@ export async function registerFileRoutes(app: FastifyInstance): Promise<void> {
     // keep beside it) are stored as well, so their size must fit the allowance.
     const found = await resolveFileAccess(db, user.id, id)
     const reserveBytes = found?.node.kind === 'blob' && (liveFormatOfName(found.node.name)?.id ?? 'markdown') !== 'markdown' ? found.node.sizeBytes : undefined
+    const writtenKeys: string[] = []
     const result = await mutateFileTree(user.id, async (tx) => {
       const access = await resolveFileAccess(tx, user.id, id)
       if (!access || access.node.trashedAt) throw notFound('File')
       if (access.node.kind === 'doc') return { node: toFileNode(access.node), objectKey: null }
-      const converted = await convertBlobToDocInTx(tx, access.node)
+      const converted = await convertBlobToDocInTx(tx, access.node, writtenKeys)
+      // What the document holds is known only now; the storage lock is held when reserved.
+      if (reserveBytes !== undefined) await assertWithinStorageAllowance(tx, user.id)
       return { node: toFileNode(converted.row), objectKey: converted.objectKey }
-    }, undefined, { reserveBytes })
+    }, undefined, { reserveBytes }).catch(async (error: unknown) => {
+      // The document's asset objects were stored before its rows, which rolled back.
+      await deleteObjects(writtenKeys)
+      throw error
+    })
     // The uploaded object goes only after the document is committed, so a failure keeps the file.
     if (result.objectKey) await getBlobStore().delete(result.objectKey).catch(() => undefined)
     return result.node

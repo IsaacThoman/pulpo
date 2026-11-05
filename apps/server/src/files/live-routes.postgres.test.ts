@@ -21,7 +21,7 @@ vi.mock('./request.js', () => ({
   requireFilesUser: async (request: { headers: Record<string, string | undefined> }) => ({ id: request.headers['x-test-user'] }),
 }))
 
-const { registerLiveDocRoutes } = await import('./live-routes.js')
+const { registerFileRoutes } = await import('./routes.js')
 const { appendDocUpdate, compactDoc, createDoc, docGeneration, loadYDoc } = await import('./doc-store.js')
 const { convertBlobToDocInTx } = await import('./conversion.js')
 const { mutateFileTree, updateFileNode } = await import('./tree-service.js')
@@ -48,7 +48,8 @@ describe.skipIf(!enabled)('live document routes and lifecycle', () => {
   beforeAll(async () => {
     app = Fastify()
     app.addContentTypeParser('application/octet-stream', (_request, body, done) => done(null, body))
-    await registerLiveDocRoutes(app)
+    // The file routes include the live document routes, plus conversion.
+    await registerFileRoutes(app)
     await app.ready()
   })
   beforeEach(async () => {
@@ -124,6 +125,47 @@ describe.skipIf(!enabled)('live document routes and lifecycle', () => {
     const second = await docGeneration(node.id)
     expect(second).not.toBe(first)
     expect((await loadYDoc(node.id)).getMap(DOC_META_MAP).get(DOC_GENERATION_KEY)).toBe(second)
+  })
+
+  it('refuses to convert an upload whose document would exceed the storage allowance, leaving nothing behind', async () => {
+    // Mixed line endings: the codec keeps the original bytes beside the document, about doubling
+    // it. The upload still counts until it is deleted after commit, so reserving its size covers that.
+    const mixed = Buffer.from(Array.from({ length: 2_000 }, (_, index) => `line ${index}${index % 2 ? '\r\n' : '\n'}`).join(''))
+    const objectKey = `users/${userId}/files/${randomUUID()}`
+    objects.set(objectKey, mixed)
+    const [upload] = await db.insert(fileNodes).values({
+      id: randomUUID(), ownerUserId: userId, parentId: null, kind: 'blob', name: 'mixed.txt', status: 'ready',
+      objectKey, sizeBytes: mixed.byteLength, mimeType: 'text/plain', checksum: createHash('sha256').update(mixed).digest('base64url'),
+    }).returning()
+    await db.update(users).set({ storageLimitBytes: Math.round(mixed.byteLength * 1.5) }).where(eq(users.id, userId))
+    const refused = await app.inject({ method: 'POST', url: `/api/files/${upload!.id}/convert`, headers: { 'x-test-user': userId } })
+    expect(refused.statusCode).toBe(413)
+    expect(await db.select().from(fileNodes).where(eq(fileNodes.id, upload!.id))).toEqual([expect.objectContaining({ kind: 'blob', objectKey })])
+    expect([...objects.keys()].filter((key) => key.startsWith(`users/${userId}/`))).toEqual([objectKey])
+    // With room for both, the same upload converts.
+    await db.update(users).set({ storageLimitBytes: 10_000_000 }).where(eq(users.id, userId))
+    const converted = await app.inject({ method: 'POST', url: `/api/files/${upload!.id}/convert`, headers: { 'x-test-user': userId } })
+    expect(converted.statusCode).toBe(200)
+    expect(converted.json()).toMatchObject({ kind: 'doc', format: 'text' })
+  })
+
+  it('checks the storage a converted document really takes, when decoding grows it', async () => {
+    // Windows-1252: each euro sign is one byte here but three in the document's UTF-8 text, and
+    // the codec keeps the original bytes beside it too.
+    const legacy = Buffer.from(Array.from({ length: 400 }, () => 'Price: \x80 5\n').join(''), 'latin1')
+    const objectKey = `users/${userId}/files/${randomUUID()}`
+    objects.set(objectKey, legacy)
+    const [upload] = await db.insert(fileNodes).values({
+      id: randomUUID(), ownerUserId: userId, parentId: null, kind: 'blob', name: 'prices.txt', status: 'ready',
+      objectKey, sizeBytes: legacy.byteLength, mimeType: 'text/plain', checksum: createHash('sha256').update(legacy).digest('base64url'),
+    }).returning()
+    // Room for the upload twice over (what the reservation checks), but not for what it becomes.
+    await db.update(users).set({ storageLimitBytes: legacy.byteLength * 2 + 100 }).where(eq(users.id, userId))
+    const refused = await app.inject({ method: 'POST', url: `/api/files/${upload!.id}/convert`, headers: { 'x-test-user': userId } })
+    expect(refused.statusCode).toBe(413)
+    expect(await db.select().from(fileNodes).where(eq(fileNodes.id, upload!.id))).toEqual([expect.objectContaining({ kind: 'blob', objectKey })])
+    expect(await db.select().from(fileDocAssets).where(eq(fileDocAssets.nodeId, upload!.id))).toEqual([])
+    expect([...objects.keys()].filter((key) => key.startsWith(`users/${userId}/`))).toEqual([objectKey])
   })
 
   it('collects assets nothing refers to any more, after a grace period', async () => {
