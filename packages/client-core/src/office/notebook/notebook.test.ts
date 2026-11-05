@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { parseAnsi, stripAnsi } from './ansi.js'
 import { ansiHtml, extractMath, renderNotebookHtml } from './html.js'
 import {
@@ -9,6 +9,7 @@ import {
   NotebookError,
   normalizeNotebook,
   outputPlainText,
+  outputText,
   parseNotebook,
   pickOutputMime,
   resolveAttachmentUrl,
@@ -114,6 +115,43 @@ describe('normalizeNotebook', () => {
     expect(code(notebook.cells[0])).toMatchObject({ source: '', executionCount: null, outputs: [] })
     expect(code(notebook.cells[1]).outputs).toEqual([{ type: 'error', ename: 'Error', evalue: '', traceback: ['a', 'b'] }])
     expect(notebook.cells[2]).toMatchObject({ type: 'markdown', source: 'ab', attachments: {} })
+  })
+
+  it('preserves JSON arrays and primitives in v4 and v3 output bundles', () => {
+    for (const value of [[1, 2, { x: 3 }], ['a', 'b'], [], null, false, 42]) {
+      for (const v3 of [false, true]) {
+        const output = v3
+          ? { output_type: 'pyout', json: value }
+          : { output_type: 'display_data', data: { 'application/json': value, 'application/vnd.custom+json': value, 'text/plain': ['a', 'b'] } }
+        const cell = { cell_type: 'code', outputs: [output] }
+        const model = normalizeNotebook(v3 ? { nbformat: 3, worksheets: [{ cells: [cell] }] } : { nbformat: 4, cells: [cell] })
+        const normalized = code(model.cells[0]).outputs[0]!
+        if (normalized.type !== 'display_data' && normalized.type !== 'execute_result') throw new Error('expected data')
+        expect(normalized.data['application/json']).toEqual(value)
+        if (!v3) {
+          expect(normalized.data['application/vnd.custom+json']).toEqual(value)
+          expect(normalized.data['text/plain']).toBe('ab')
+        }
+        expect(JSON.parse(outputText('application/json', normalized.data['application/json']))).toEqual(value)
+      }
+    }
+  })
+
+  it('bounds indentation when rendering deeply nested JSON outputs', () => {
+    const source = '['.repeat(2000) + '0' + ']'.repeat(2000)
+    expect(outputText('application/json', JSON.parse(source))).toBe(source)
+    expect(outputText('application/json', { a: [1, 2] })).toBe(JSON.stringify({ a: [1, 2] }, null, 2))
+  })
+
+  it('does not recurse again when the runtime cannot serialize a deep JSON output', () => {
+    const value = JSON.parse('['.repeat(20_000) + '0' + ']'.repeat(20_000))
+    // Hermes and older V8 versions reach their recursion limit on this input.
+    const stringify = vi.spyOn(JSON, 'stringify').mockImplementation(() => { throw new RangeError('Too deep') })
+    try {
+      expect(outputText('application/json', value)).toBe('[object Array]')
+    } finally {
+      stringify.mockRestore()
+    }
   })
 
   it('drops output data keys that are not MIME types', () => {

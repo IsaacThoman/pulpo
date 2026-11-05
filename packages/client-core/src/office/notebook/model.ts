@@ -1,3 +1,5 @@
+import { formatJson } from '../../files/json-format.js'
+
 /**
  * Jupyter notebooks (`.ipynb`) read into one normalized model, whatever nbformat wrote them: multi-
  * line strings joined, nbformat 3's worksheets and output names mapped to 4's, consecutive stream
@@ -78,7 +80,7 @@ function mimeBundle(value: unknown): MimeBundle {
   for (const [mime, data] of Object.entries(value)) {
     if (!/^[a-z0-9.+-]+\/[a-z0-9.+-]+$/i.test(mime)) continue
     const key = mime.toLowerCase()
-    bundle[key] = isJsonMime(key) && typeof data !== 'string' && !Array.isArray(data) ? data : joinText(data)
+    bundle[key] = isJsonMime(key) ? data : joinText(data)
   }
   return bundle
 }
@@ -126,7 +128,7 @@ const V3_MIME: Record<string, string> = {
 function v3Bundle(output: Json): MimeBundle {
   const bundle: MimeBundle = {}
   for (const [key, mime] of Object.entries(V3_MIME)) {
-    if (key in output) bundle[mime] = mime === 'application/json' && isObject(output[key]) ? output[key] : joinText(output[key])
+    if (key in output) bundle[mime] = isJsonMime(mime) ? output[key] : joinText(output[key])
   }
   return bundle
 }
@@ -324,9 +326,12 @@ export function resolveAttachmentUrl(url: string, cellAttachments: Record<string
 export function outputText(mime: string, data: unknown): string {
   if (typeof data === 'string') return data
   try {
-    return JSON.stringify(data, null, 2) ?? ''
+    // Serialize compactly first: indentation can grow quadratically with nesting.
+    const compact = JSON.stringify(data) ?? ''
+    return formatJson(compact) ?? compact
   } catch {
-    return String(data)
+    // Deep arrays can also overflow in Array.toString; use a non-recursive type label.
+    return Object.prototype.toString.call(data)
   }
 }
 
