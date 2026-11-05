@@ -77,7 +77,8 @@ export function fileIcon(node: IconSubject, fallbackTint = SYSTEM_BLUE): { symbo
   if (source.icon) return { symbol: FILE_ICON_SYMBOLS[source.icon], tint: tint ?? fallbackTint }
   if (kind === 'folder') return { symbol: 'folder.fill', tint: tint ?? fallbackTint }
   if (kind === 'chat') return { symbol: 'bubble.left.fill', tint: tint ?? '#8E8E93' }
-  if (kind === 'doc') return { symbol: 'doc.text.fill', tint: tint ?? SYSTEM_BLUE }
+  // Markdown documents have their own icon; text and code documents look like their files.
+  if (kind === 'doc' && isMarkdownName(source.name)) return { symbol: 'doc.text.fill', tint: tint ?? SYSTEM_BLUE }
   const mime = (source.mimeType ?? '').toLowerCase()
   const extension = fileExtension(source.name)
   if (mime.startsWith('image/')) return { symbol: 'photo.fill', tint: tint ?? '#34C759' }
@@ -95,7 +96,7 @@ export function fileKindLabel(node: Pick<FileNode, 'kind' | 'name' | 'target'>):
   if (node.kind === 'folder') return 'Folder'
   if (node.kind === 'chat') return 'Chat'
   if (node.kind === 'shortcut') return `Shortcut to ${node.target?.name ?? 'an item'}`
-  if (node.kind === 'doc') return 'Document'
+  if (node.kind === 'doc' && isMarkdownName(node.name)) return 'Document'
   if (isMarkdownName(node.name)) return 'Markdown'
   const extension = fileExtension(node.name)
   return extension ? `${extension.toUpperCase()} file` : 'File'
@@ -173,6 +174,11 @@ export function filesErrorMessage(error: unknown, name?: string): string {
       case 'file_too_large_to_edit': return 'This file is too large to edit.'
       case 'file_not_text': return 'This file isn’t plain text, so it can’t be edited.'
       case 'file_not_markdown': return 'Only .md and .markdown files can be edited.'
+      case 'file_not_live': return 'Only Markdown, text, and code files can be edited here.'
+      case 'file_not_editable': return 'This file can’t be edited as text without changing it.'
+      case 'file_unreadable': return 'This file is damaged and can’t be opened for editing.'
+      case 'file_encrypted': return 'This file is encrypted, so it can’t be edited.'
+      case 'file_format_unknown': return 'This document needs a newer version of Pulpo.'
       case 'not_found': return 'This item no longer exists.'
       case 'file_system_folder': return 'Built-in folders can’t be renamed, moved, or trashed.'
       case 'file_chat_copy': return 'Chats can’t be copied here. Duplicate them from the chat menu.'

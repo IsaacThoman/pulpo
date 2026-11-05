@@ -10,7 +10,7 @@ import type {
   UpdateFileNode,
 } from '@pulpo/contracts'
 import { formatAttachmentSizeLimit } from '@pulpo/client-core'
-import { ApiError, apiRequest, authenticatedFetch, downloadApiFile, fetchApiBlob } from '@/lib/api'
+import { ApiError, apiRequest, authenticatedFetch, downloadApiFile, fetchApiBlob, fetchApiBlobResponse } from '@/lib/api'
 import { uit } from '@/i18n/ui'
 import { useAuth } from '@/stores/auth'
 
@@ -73,6 +73,31 @@ export async function downloadDocMarkdown(node: Pick<FileNode, 'id' | 'name'>, s
   anchor.download = /\.(md|markdown)$/i.test(node.name) ? node.name : `${node.name}.md`
   anchor.click()
   window.setTimeout(() => URL.revokeObjectURL(url), 1_000)
+}
+
+/** Saves bytes under a file's name, like a download the browser started itself. */
+function saveBytes(bytes: Uint8Array, name: string, mimeType: string): void {
+  const url = URL.createObjectURL(new Blob([bytes as Uint8Array<ArrayBuffer>], { type: mimeType }))
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = name
+  anchor.click()
+  window.setTimeout(() => URL.revokeObjectURL(url), 1_000)
+}
+
+/**
+ * Downloads a live document as its real file: the open editor's export when given (it includes
+ * offline edits), or the server's.
+ */
+export async function downloadLiveDoc(node: Pick<FileNode, 'id' | 'name' | 'mimeType'>, snapshot?: Uint8Array): Promise<void> {
+  if (snapshot) return saveBytes(snapshot, node.name, node.mimeType ?? 'application/octet-stream')
+  return downloadApiFile(`/api/files/${node.id}/export`, node.name)
+}
+
+/** One side of a live document's agent change, for its review diff. */
+export async function fetchChangeContent(changeId: string, side: 'before' | 'after'): Promise<Uint8Array> {
+  const response = await fetchApiBlobResponse(`/api/file-changes/${changeId}/content/${side}`)
+  return new Uint8Array(await response.arrayBuffer())
 }
 
 export function updateFileNode(id: string, input: UpdateFileNode): Promise<FileNode> {

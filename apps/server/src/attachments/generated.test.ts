@@ -8,6 +8,11 @@ describe('generated attachment metadata', () => {
     })
   })
 
+  it('types audio and video by extension so they can be played', () => {
+    expect(generatedAttachmentMetadata('/workspace/memo.M4A', undefined, Buffer.from('audio')).mimeType).toBe('audio/mp4')
+    expect(generatedAttachmentMetadata('/workspace/clip.mp4', undefined, Buffer.from('video')).mimeType).toBe('video/mp4')
+  })
+
   it('uses a binary MIME type for unknown and extensionless files', () => {
     expect(generatedAttachmentMetadata('/workspace/archive.zip', undefined, Buffer.from('zip'))).toEqual({
       name: 'archive.zip', mimeType: 'application/octet-stream',

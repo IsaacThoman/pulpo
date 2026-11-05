@@ -55,6 +55,7 @@ import { ui, uit } from '@/i18n/ui'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/stores/auth'
 import { useSettings } from '@/stores/settings'
+import { LIVE_WEB_FORMATS } from '@/features/files/live/registry'
 import { createDoc, createFolder, fetchFolder, fetchFolderLayout, folderLayoutQueryKey, folderQueryKey, updateFolderLayout, uploadFile } from '@/features/files/api'
 import { arrangeGrid, GRID_CELL, moveInGrid, readingOrder } from '@/features/files/browser/grid-layout'
 import { dropFolderOf, filesErrorMessage } from '@/features/files/file-display'
@@ -427,10 +428,13 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
     }
   }
 
-  /** Creates a Markdown file and starts renaming it in place, like a desktop file manager. */
-  const newFile = async () => {
+  /**
+   * Creates a file (Markdown unless `name` gives another live format) and starts renaming it in
+   * place, like a desktop file manager.
+   */
+  const newFile = async (name = `${ui("Untitled")}.md`) => {
     try {
-      const node = await createDoc(folderId, uniqueChildName(`${ui("Untitled")}.md`, nodes))
+      const node = await createDoc(folderId, uniqueChildName(name, nodes))
       insertIntoListing(node)
       setSelection(selectOnly(node.id))
       setRenamingId(node.id)
@@ -478,7 +482,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
     useFilesPageRequest.setState({ request: null })
     // Without My files there is nowhere to put it; the page already shows the error.
     if (requestStatus === 'error') return
-    if (request.kind === 'newFile') void newFile()
+    if (request.kind === 'newFile') void newFile(request.name)
     else if (request.kind === 'newFolder') void newFolder()
     else if (request.kind === 'importUrl') setImportingUrl(true)
     else void upload(request.files)
@@ -923,6 +927,9 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
   const backgroundMenu = (
     <>
       <DropdownMenuItem onSelect={() => void newFile()}><FilePlus2 /> {ui("New file")}</DropdownMenuItem>
+      {LIVE_WEB_FORMATS.map((entry) => (
+        <DropdownMenuItem key={entry.format.id} onSelect={() => void newFile(entry.newName())}><entry.icon /> {entry.newLabel()}</DropdownMenuItem>
+      ))}
       <DropdownMenuItem onSelect={() => void newFolder()}><FolderPlus /> {ui("New folder")}<DropdownMenuShortcut>{shortcutLabel('N', { mod: true, shift: true })}</DropdownMenuShortcut></DropdownMenuItem>
       <DropdownMenuSeparator />
       <DropdownMenuItem onSelect={() => fileInput.current?.click()}><Upload /> {ui("Upload files")}</DropdownMenuItem>

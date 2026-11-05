@@ -25,7 +25,7 @@ export type { TableKitOptions } from '@tiptap/extension-table'
 export type { CodeOptions } from '@tiptap/extension-code'
 export type { CodeBlockOptions } from '@tiptap/extension-code-block'
 
-export { DOC_FRAGMENT_NAME, DOC_SCHEMA_VERSION } from './version.js'
+export { DOC_FRAGMENT_NAME, DOC_GENERATION_KEY, DOC_META_MAP, DOC_SCHEMA_VERSION } from './version.js'
 
 /** The schema-defining extensions shared by the web editor and the server. */
 export function createDocExtensions(): AnyExtension[] {

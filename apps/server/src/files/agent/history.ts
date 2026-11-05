@@ -1,15 +1,18 @@
 import { and, asc, eq, inArray, sql } from 'drizzle-orm'
 import { ydocToNode } from '@pulpo/client-core/doc-schema'
+import { liveFormatCodec } from '@pulpo/client-core/office/codecs'
 import { FILE_TREE_MAX_DEPTH, type FileChangeConflict, type FileChangeKind, type FileChangesResponse } from '@pulpo/contracts'
 import { db } from '../../database/client.js'
 import { fileChanges, fileNodes, responses } from '../../database/schema.js'
 import { AppError } from '../../lib/errors.js'
 import { resolveFileAccess, type FileNodeRow } from '../access.js'
+import { exportLiveDoc, loadLiveDocInTx, textOfFile } from '../live-docs.js'
 import { moveNodeInTx, restoreNodeInTx, trashNodeInTx } from '../tree-service.js'
 import { listFileChanges, parsePlace, setChangeStatus, type FileChangeRow } from './changes.js'
 import { mutateAgentFiles, TREE_AND_CHAT_SCOPES, type CommitEffects, type DatabaseTransaction } from './commit.js'
 import { docFromJSON, loadDocInTx, lockDocs, proposedMarkdown, writeDocInTx } from './docs.js'
-import { dropVersion, hasVersion, keepVersion, parseBlobSnapshot, setBlobContent } from './versions.js'
+import { applyLiveFileInTx, isLiveDoc, parseLiveSnapshot, readObject } from './live.js'
+import { contentChecksum, dropVersion, hasVersion, keepVersion, parseBlobSnapshot, setBlobContent } from './versions.js'
 
 type Direction = 'undo' | 'redo'
 
@@ -77,7 +80,11 @@ async function holdsOthersWork(tx: DatabaseTransaction, row: FileChangeRow, fold
 async function undoCreation(step: Step): Promise<FileChangeConflict | null> {
   const { tx, row, node } = step
   if (node.trashedAt) return conflictFor(row, node, 'trashed')
-  const created = (step.from ?? {}) as { doc?: unknown; objectKey?: string }
+  const created = (step.from ?? {}) as { doc?: unknown; live?: { checksum?: unknown }; objectKey?: string }
+  if (isLiveDoc(node) && typeof created.live?.checksum === 'string') {
+    const conflict = await liveEdited(tx, row, node, created.live.checksum, null)
+    if (conflict) return conflict
+  }
   if (node.kind === 'doc' && created.doc) {
     const current = ydocToNode(await loadDocInTx(tx, node.id))
     const expected = docFromJSON(created.doc)
@@ -128,6 +135,32 @@ async function replaceDoc({ tx, effects, userId, row, node, from, to }: Step): P
   return null
 }
 
+/**
+ * A conflict when a live document no longer exports as `checksum` (someone edited it since), with
+ * the text it should have (`expected`, when its bytes are at hand) and the text it has.
+ */
+async function liveEdited(tx: DatabaseTransaction, row: FileChangeRow, node: FileNodeRow, checksum: string, expectedBytes: Uint8Array | null): Promise<FileChangeConflict | null> {
+  const { doc, format, context } = await loadLiveDocInTx(tx, node)
+  if (contentChecksum(await exportLiveDoc(doc, format, context)) === checksum) return null
+  const current = liveFormatCodec(format).toText(doc)
+  const expected = expectedBytes ? await textOfFile(tx, node, expectedBytes).catch(() => undefined) : undefined
+  return conflictFor(row, node, 'edited', expected === undefined ? {} : { expected, current })
+}
+
+/** Puts back one version of a live document, if it is still the version the reply left. */
+async function replaceLive({ tx, effects, userId, row, node, from, to }: Step): Promise<FileChangeConflict | null> {
+  const expected = parseLiveSnapshot(from)
+  const target = parseLiveSnapshot(to)
+  if (node.trashedAt) return conflictFor(row, node, 'trashed')
+  if (!isLiveDoc(node) || !expected) return conflictFor(row, node, 'replaced')
+  if (!target || !await hasVersion(tx, target.objectKey)) return conflictFor(row, node, 'deleted')
+  const expectedBytes = await hasVersion(tx, expected.objectKey) ? await readObject(expected.objectKey).catch(() => null) : null
+  const conflict = await liveEdited(tx, row, node, expected.checksum, expectedBytes)
+  if (conflict) return conflict
+  await applyLiveFileInTx(tx, effects, { node, bytes: await readObject(target.objectKey), actorUserId: userId, origin: 'restore' })
+  return null
+}
+
 async function replaceBlob({ tx, userId, row, node, from, to }: Step): Promise<FileChangeConflict | null> {
   const expected = parseBlobSnapshot(from)
   const target = parseBlobSnapshot(to)
@@ -146,8 +179,8 @@ const STEPS: Record<FileChangeKind, Record<Direction, (step: Step) => Promise<Fi
   trash: { undo: restoreAgain, redo: trashAgain },
   move: { undo: moveBack, redo: moveBack },
   update: {
-    undo: (step) => docSnapshot(step.from) ? replaceDoc(step) : replaceBlob(step),
-    redo: (step) => docSnapshot(step.from) ? replaceDoc(step) : replaceBlob(step),
+    undo: (step) => docSnapshot(step.from) ? replaceDoc(step) : parseLiveSnapshot(step.from) ? replaceLive(step) : replaceBlob(step),
+    redo: (step) => docSnapshot(step.from) ? replaceDoc(step) : parseLiveSnapshot(step.from) ? replaceLive(step) : replaceBlob(step),
   },
 }
 

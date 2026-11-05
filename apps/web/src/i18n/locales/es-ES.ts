@@ -89,6 +89,9 @@ const esES = {
     welcomeBack: 'Te damos la bienvenida',
   },
   chat: {
+    usageLimitReached: 'Has alcanzado tu límite de uso.',
+    usageLimitBillingHint: 'Gestiona tu plan o añade créditos para seguir chateando.',
+    viewBilling: 'Ver facturación',
     addCaption: 'Añade una descripción…',
     addFavorite: 'Añadir a favoritos',
     agent: 'Agente',

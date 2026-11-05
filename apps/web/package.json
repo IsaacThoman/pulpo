@@ -17,7 +17,8 @@
     "test:suggestion-card": "node tests/suggestion-card.browser.mjs",
     "test:doc-dictation": "node tests/doc-dictation.browser.mjs",
     "capture:landing": "node scripts/capture-landing-screenshots.mjs",
-    "test:sheets": "node tests/sheets.browser.mjs"
+    "test:sheets": "node tests/sheets.browser.mjs",
+    "test:live-text": "node tests/live-text.browser.mjs"
   },
   "dependencies": {
     "@pulpo/client-core": "0.1.0",
