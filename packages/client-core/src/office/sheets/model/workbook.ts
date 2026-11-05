@@ -323,12 +323,19 @@ export class SheetModel {
     return { top, left, bottom, right }
   }
 
-  /** Every merged range, resolved. */
+  /**
+   * Every merged range, resolved. Two people merging overlapping ranges at once leaves both
+   * merges stored; Excel can't open overlapping merges, so the one with the smaller id wins
+   * (the same choice on every replica) and the other is ignored.
+   */
   mergedRanges(): { id: string; range: CellRange }[] {
     const merged: { id: string; range: CellRange }[] = []
-    for (const [id, merge] of this.merges) {
+    const entries = [...this.merges.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    for (const [id, merge] of entries) {
       const range = this.resolveRange(merge.range)
-      if (range && (range.bottom > range.top || range.right > range.left)) merged.push({ id, range })
+      if (!range || (range.bottom === range.top && range.right === range.left)) continue
+      if (merged.some((kept) => kept.range.left <= range.right && range.left <= kept.range.right && kept.range.top <= range.bottom && range.top <= kept.range.bottom)) continue
+      merged.push({ id, range })
     }
     return merged
   }

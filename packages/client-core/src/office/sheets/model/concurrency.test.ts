@@ -30,13 +30,13 @@ function snapshot(model: WorkbookModel): string {
         if (position) styles[`${position.row},${position.col}|${key.slice(key.lastIndexOf('|') + 1)}`] = sheet.fmt.get(key)
       }
       const sorted = (record: Record<string, unknown>) => Object.fromEntries(Object.entries(record).sort(([a], [b]) => a.localeCompare(b)))
-      return { name: sheet.name, cells: sorted(cells), styles: sorted(styles), merges: sheet.mergedRanges().map((merge) => merge.range).sort((a, b) => a.top - b.top || a.left - b.left) }
+      return { name: sheet.name, cells: sorted(cells), styles: sorted(styles), merges: sheet.mergedRanges().map((merge) => merge.range) }
     }),
   )
 }
 
 describe('concurrent editing', () => {
-  for (const seed of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]) {
+  for (const seed of Array.from({ length: 30 }, (_, index) => index + 1)) {
     it(`converges and exports the same valid file (seed ${seed})`, async () => {
       const random = generator(seed)
       const pick = <T,>(items: readonly T[]) => items[Math.floor(random() * items.length)]!
