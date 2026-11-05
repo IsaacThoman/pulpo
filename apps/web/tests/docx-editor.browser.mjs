@@ -406,6 +406,63 @@ try {
     assert.deepEqual(await follow('?file=notes-fields.docx', [process.platform === 'darwin' ? 'Meta' : 'Control']), ['https://example.com/'])
   })
 
+  await step('fills destination table cells for HTML and Pulpo table copies', async () => {
+    for (const own of [false, true]) {
+      await open('?layout=web')
+      const result = await page.evaluate((own) => {
+        const editor = window.harness.editors[0], view = editor.view, schema = view.state.schema
+        const p = (text) => schema.node('paragraph', null, schema.text(text))
+        const table = (a, b) => schema.node('table', null, [schema.node('tableRow', null, [schema.node('tableCell', null, [p(a)]), schema.node('tableCell', null, [p(b)])])])
+        view.dispatch(view.state.tr.replaceWith(0, view.state.doc.content.size, [table('xy', 'zz'), table('JKL', 'MNO')]))
+        const Selection = view.state.selection.constructor
+        let html = '<table><tbody><tr><td>xy</td><td>zz</td></tr></tbody></table>'
+        view.focus()
+        if (own) {
+          view.dispatch(view.state.tr.setSelection(Selection.create(view.state.doc, 4, view.state.doc.firstChild.nodeSize - 4)))
+          const copy = new DataTransfer()
+          view.dom.dispatchEvent(new ClipboardEvent('copy', { clipboardData: copy, bubbles: true, cancelable: true }))
+          html = copy.getData('text/html')
+        }
+        view.dispatch(view.state.tr.setSelection(Selection.create(view.state.doc, view.state.doc.firstChild.nodeSize + 4)))
+        const data = new DataTransfer()
+        data.setData('text/html', html)
+        data.setData('text/plain', 'xy\tzz')
+        view.dom.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }))
+        const cells = []
+        let tables = 0
+        view.state.doc.descendants((node) => {
+          if (node.type.name === 'table') tables++
+          if (node.type.name === 'tableCell') cells.push(node.textContent)
+        })
+        return { cells, tables }
+      }, own)
+      assert.deepEqual(result, { cells: ['xy', 'zz', 'xy', 'zz'], tables: 2 })
+    }
+  })
+
+  await step('recalls exact Pulpo copies in header and note editors through normal paste', async () => {
+    for (const kind of ['header', 'footnote']) {
+      await open(kind === 'header' ? '?file=sections-headers.docx' : '?file=notes-fields.docx')
+      const result = await page.evaluate((kind) => {
+        const editor = window.harness.editors[0]
+        const id = [...window.harness.docs[0].getMap('stories').keys()].find((id) => id.startsWith(`${kind}:`))
+        editor.openStoryEditor(id)
+        const view = editor.storyEditor.view, schema = view.state.schema
+        const spacing = schema.mark('spacing', { v: JSON.stringify(['w:spacing', { 'w:val': '40' }]) })
+        view.dispatch(view.state.tr.replaceWith(0, view.state.doc.content.size, schema.node('paragraph', null, schema.text('Copy', [spacing]))))
+        const Selection = view.state.selection.constructor
+        view.focus()
+        view.dispatch(view.state.tr.setSelection(Selection.create(view.state.doc, 1, 5)))
+        const data = new DataTransfer()
+        view.dom.dispatchEvent(new ClipboardEvent('copy', { clipboardData: data, bubbles: true, cancelable: true }))
+        view.dispatch(view.state.tr.setSelection(Selection.create(view.state.doc, 5)))
+        view.dom.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }))
+        return { text: view.state.doc.textContent, spacing: view.state.doc.firstChild.firstChild.marks.some((mark) => mark.type.name === 'spacing') }
+      }, kind)
+      assert.deepEqual(result, { text: 'CopyCopy', spacing: true })
+    }
+  })
+
   await step('keeps its own pictures when offline, and cleans up pastes in Suggesting mode too', async () => {
     await open('?file=objects.docx')
     const pictures = () => page.evaluate(() => {

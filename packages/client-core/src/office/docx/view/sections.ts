@@ -15,7 +15,13 @@ function paragraphEnds(slice: Slice): { pos: number; attrs: Attrs }[] {
 
 /** Fitting a paste inherits the left paragraph's attrs; its new mark belongs to the slice instead. */
 export function pasteSelection(state: EditorState, slice: Slice): Transaction {
-  const tr = state.tr.replaceSelection(slice)
+  return preservePastedMarks(state.tr.replaceSelection(slice), slice)
+}
+
+/** Keep clipboard mark properties without replacing the normal cell-aware paste pipeline. */
+export function preservePastedMarks(tr: Transaction, slice: Slice): Transaction {
+  // Table pastes may replace several cells; their closed paragraphs already carry their own attrs.
+  if (tr.steps.length !== 1) return tr
   const step = tr.steps[0]
   if (!(step instanceof ReplaceStep)) return tr
   const source = paragraphEnds(slice)

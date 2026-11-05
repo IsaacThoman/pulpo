@@ -89,7 +89,7 @@ import { PAGE_GAP, PX_PER_PT, type LayoutResult } from './layout.js'
 import { normalizeAtomMarks, selectionMarks } from './marks.js'
 import { DrawingView, MathView } from './nodeviews.js'
 import { documentSections, paginate, storyReference, type RepeatedHeader, type Section } from './paginate.js'
-import { pasteSelection, sectionEndsPlugin } from './sections.js'
+import { preservePastedMarks, sectionEndsPlugin } from './sections.js'
 import { layoutStaticTabs, renderStory } from './static.js'
 import { layoutTabs, paragraphTabs } from './tabs.js'
 import {
@@ -267,6 +267,7 @@ export class DocxEditor {
   private readonly knownAssets = new Set<string>()
   /** Stories the last paste's references point at. */
   private readonly pastedReferences = new Set<string>()
+  private readonly pastedSlices = new WeakMap<EditorView, Slice>()
   private lastLayout: LayoutResult | null = null
   /** Measured units of the last layout, for diagnostics and tests. */
   private lastUnits: unknown[] = []
@@ -315,15 +316,17 @@ export class DocxEditor {
     this.root.addEventListener('click', (event) => this.followLink(event))
 
     const dispatch = (view: EditorView, tr: Transaction) => this.dispatch(view, tr)
+    const clipboard = this.clipboardProps('body')
     this.view = new EditorView({ mount: this.flowHost }, {
       state: EditorState.create({ schema: docxSchema(), plugins: this.plugins(options.doc.getXmlFragment(BODY_FRAGMENT), 'cursor', undefined) }),
       editable: () => !this.readOnlyValue && this.modeValue !== 'viewing',
       nodeViews: this.nodeViews(),
-      ...this.clipboardProps('body'),
+      ...clipboard,
       attributes: { class: 'docx-flow', spellcheck: 'true', role: 'textbox', 'aria-multiline': 'true' },
       // y-tiptap dispatches while the view is constructed, before `this.view` is set.
       dispatchTransaction: function (this: EditorView, tr: Transaction) { dispatch(this, tr) },
       handleDOMEvents: {
+        ...clipboard.handleDOMEvents,
         click: (_view, event) => this.handleClick(event),
       },
     })
@@ -507,6 +510,7 @@ export class DocxEditor {
 
   private dispatch(view: EditorView, tr: Transaction): void {
     if (this.destroyed) return
+    this.preparePaste(view, tr)
     let transaction = tr
     const fromSync = tr.getMeta(ySyncPluginKey) !== undefined
     if (this.modeValue === 'suggesting' && tr.docChanged && !fromSync && !tr.getMeta('docx-tracked') && !tr.getMeta('docx-untracked')) {
@@ -531,7 +535,25 @@ export class DocxEditor {
     const schema = docxSchema()
     // Where copies come from: content keeps its part's relationships only within the same story.
     const origin = `${this.options.doc.guid}:${storyId}`
+    let recalled: Slice | undefined
     return {
+      handleDOMEvents: {
+        paste: (view, event) => {
+          recalled = undefined
+          this.pastedSlices.delete(view)
+          // DOM handlers run before ProseMirror parses HTML; Shift must keep its plain-text path.
+          const plain = (view as unknown as { input?: { shiftKey?: boolean } }).input?.shiftKey
+          if (!view.editable || plain) return false
+          const copy = recallCopy(event.clipboardData?.getData('text/html'), view.state.schema)
+          if (!copy) return false
+          recalled = limitPastedTables(copy.slice, Math.max(0, DOCX_MAX_TABLE_DEPTH - tableDepth(view)))
+          if (copy.origin !== origin) recalled = withoutForeignParts(recalled)
+          if (copy.origin.split(':', 1)[0] !== this.options.doc.guid) recalled = withoutStoryReferences(recalled)
+          this.notePastedReferences(recalled)
+          this.checkPastedPictures(recalled)
+          return false
+        },
+      },
       clipboardSerializer: clipboardSerializer(schema),
       clipboardParser: clipboardParser(schema),
       transformPastedHTML: sanitizePastedHtml,
@@ -542,26 +564,27 @@ export class DocxEditor {
         for (const src of slicePictures(slice)) if (own.has(src)) this.knownAssets.add(src)
         return rememberCopy(slice, origin)
       },
-      transformPasted: (slice, view) => {
-        const limited = limitPastedTables(slice, Math.max(0, DOCX_MAX_TABLE_DEPTH - tableDepth(view)))
-        this.notePastedReferences(limited)
-        this.checkPastedPictures(limited)
+      transformPasted: (slice, view, plain) => {
+        const copy = view.editable && !plain ? recalled : undefined
+        recalled = undefined
+        const limited = copy ?? limitPastedTables(slice, Math.max(0, DOCX_MAX_TABLE_DEPTH - tableDepth(view)))
+        if (!copy) {
+          this.notePastedReferences(limited)
+          this.checkPastedPictures(limited)
+        }
+        if (view.editable) this.pastedSlices.set(view, limited)
+        else this.pastedSlices.delete(view)
         return limited
       },
-      handlePaste: (view, event, parsed) => {
-        // Shift pastes plain text, which ProseMirror has already made of the clipboard.
-        if (!view.editable) return false
-        const plain = (view as unknown as { input?: { shiftKey?: boolean } }).input?.shiftKey
-        const copy = plain ? undefined : recallCopy(event.clipboardData?.getData('text/html'), view.state.schema)
-        let slice = limitPastedTables(copy?.slice ?? parsed, Math.max(0, DOCX_MAX_TABLE_DEPTH - tableDepth(view)))
-        if (copy && copy.origin !== origin) slice = withoutForeignParts(slice)
-        if (copy && copy.origin.split(':', 1)[0] !== this.options.doc.guid) slice = withoutStoryReferences(slice)
-        this.notePastedReferences(slice)
-        this.checkPastedPictures(slice)
-        view.dispatch(pasteSelection(view.state, slice).scrollIntoView().setMeta('paste', true).setMeta('uiEvent', 'paste'))
-        return true
-      },
     }
+  }
+
+  /** Preserve Word paragraph ends after ProseMirror (or its table plugin) has fitted the paste. */
+  private preparePaste(view: EditorView, tr: Transaction): void {
+    if (tr.getMeta('uiEvent') !== 'paste') return
+    const slice = this.pastedSlices.get(view)
+    this.pastedSlices.delete(view)
+    if (slice) preservePastedMarks(tr, slice)
   }
 
   /**
@@ -1845,6 +1868,7 @@ export class DocxEditor {
     const noteNumber = storyId.startsWith('footnote:') || storyId.startsWith('endnote:') ? countNotes(this.view.state.doc).get(storyId) : undefined
     const dispatch = (view: EditorView, tr: Transaction) => {
       if (view.isDestroyed) return
+      this.preparePaste(view, tr)
       let transaction = tr
       if (this.modeValue === 'suggesting' && tr.docChanged && tr.getMeta(ySyncPluginKey) === undefined && !tr.getMeta('docx-tracked') && !tr.getMeta('docx-untracked')) transaction = trackTransaction(view.state, tr, this.reviewer()) ?? tr
       view.updateState(view.state.apply(transaction))
