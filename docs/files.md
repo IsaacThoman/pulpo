@@ -79,7 +79,7 @@ Jupyter notebooks (`.ipynb`) open in a notebook editor once someone picks **Edit
 
 Text and code files open in CodeMirror (`@pulpo/client-core/office/text/view`). It has syntax highlighting by extension, other sessions' labeled cursors, line numbers, find and replace, line wrapping, and indentation settings. Undo and redo cover the session's own edits. It is read-only for viewers, and colors follow the app's theme. HTML files have a live preview in the opaque-origin sandbox. Mobile runs the same editor in its web view host.
 
-Office engines share the OOXML package reader and writer described in [Live formats](./live-formats.md). ZIP timestamps are fixed so exporting unchanged content keeps the same checksum for agent versions; ambiguous entry names and entries that understate their size are refused.
+Office engines share the OOXML package reader and writer described in [Live formats](./live-formats.md). ZIP timestamps are fixed so exporting unchanged content keeps the same checksum for agent versions; classic ZIP and ZIP64 entries are checked for consistent headers, actual expanded size, and CRC-32. Ambiguous names, encrypted entries, and malformed packages are refused.
 
 ## Viewing files
 
