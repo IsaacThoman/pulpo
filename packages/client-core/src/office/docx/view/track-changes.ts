@@ -297,15 +297,32 @@ export function trackTransaction(state: EditorState, tr: Transaction, reviewer: 
     let insertionStep: number | undefined
     const before = out.steps.length
     if (step instanceof ReplaceStep) {
-      const from = toOut.map(step.from, 1)
-      const to = Math.max(from, toOut.map(step.to, -1))
+      let from = toOut.map(step.from, 1)
+      let to = Math.max(from, toOut.map(step.to, -1))
+      let slice = step.slice
+      let pasteEnds = tr.getMeta('docx-paste-ends') as (Attrs | null)[] | undefined
+      // Fitting a closed paste at a paragraph edge can replace its opening/closing token.
+      // A collapsed selection deletes no boundary: insert the closed blocks beside it instead.
+      if (index === 0 && state.selection.empty && step.to === step.from + 1) {
+        const $caret = state.selection.$from
+        if ($caret.parent.type.name === 'paragraph' && step.from === $caret.pos && $caret.parentOffset === $caret.parent.content.size
+          && slice.openStart === 1 && slice.content.firstChild?.type.name === 'paragraph' && !slice.content.firstChild.content.size) {
+          from = to
+          slice = new Slice(slice.content.cut(slice.content.firstChild.nodeSize), 0, slice.openEnd)
+          pasteEnds = pasteEnds?.slice(1)
+        } else if ($caret.parent.type.name === 'paragraph' && step.to === $caret.pos && !$caret.parentOffset
+          && slice.openEnd === 1 && slice.content.lastChild?.type.name === 'paragraph' && !slice.content.lastChild.content.size) {
+          to = from
+          slice = new Slice(slice.content.cut(0, slice.content.size - slice.content.lastChild.nodeSize), slice.openStart, 0)
+        }
+      }
       const deleted = from < to ? trackDelete(out, from, to, reviewer) : { from, to }
       // deleteSelection may fit an empty, open paragraph shell at the left edge. It is
       // structure for the surviving text, not a paragraph mark the reviewer inserted.
-      const fittingShell = step.from < step.to && step.slice.openStart === 0 && step.slice.openEnd === 1
-        && step.slice.content.childCount === 1 && step.slice.content.firstChild?.type.name === 'paragraph'
-        && !step.slice.content.firstChild.content.size
-      const inserted = trackInsert(out, deleted.to, fittingShell ? Slice.empty : step.slice, reviewer, tr.getMeta('docx-paste-ends'))
+      const fittingShell = step.from < step.to && slice.openStart === 0 && slice.openEnd === 1
+        && slice.content.childCount === 1 && slice.content.firstChild?.type.name === 'paragraph'
+        && !slice.content.firstChild.content.size
+      const inserted = trackInsert(out, deleted.to, fittingShell ? Slice.empty : slice, reviewer, pasteEnds)
       if (inserted) {
         insertEnd = { pos: inserted.end, step: out.steps.length }
         insertionStep = inserted.step
@@ -356,7 +373,10 @@ export function trackTransaction(state: EditorState, tr: Transaction, reviewer: 
   const head = typed ?? toOut.map(tr.selection.head, -1)
   const anchor = tr.selection.empty ? head : toOut.map(tr.selection.anchor, -1)
   try {
-    out.setSelection(TextSelection.create(out.doc, Math.min(anchor, out.doc.content.size), Math.min(head, out.doc.content.size)))
+    const end = Math.min(head, out.doc.content.size)
+    out.setSelection(tr.selection.empty && !out.doc.resolve(end).parent.inlineContent
+      ? TextSelection.near(out.doc.resolve(end), -1)
+      : TextSelection.create(out.doc, Math.min(anchor, out.doc.content.size), end))
   } catch {
     // Keep ProseMirror's mapped selection.
   }

@@ -463,6 +463,41 @@ try {
     }
   })
 
+  await step('keeps original boundaries when accepting or rejecting a whole-document suggested paste', async () => {
+    for (const action of ['accept', 'reject']) {
+      await open('?layout=web')
+      await page.evaluate(() => {
+        const view = window.harness.editors[0].view, schema = view.state.schema
+        const p = (text) => schema.node('paragraph', null, schema.text(text))
+        view.dispatch(view.state.tr.replaceWith(0, view.state.doc.content.size, [p('ABC'), p('DEF')]))
+        window.pasteSelectionType = view.state.selection.constructor
+        view.focus()
+      })
+      await page.keyboard.press(`${mod}+a`)
+      const result = await page.evaluate((action) => {
+        const editor = window.harness.editors[0], view = editor.view
+        const data = new DataTransfer()
+        view.dom.dispatchEvent(new ClipboardEvent('copy', { clipboardData: data, bubbles: true, cancelable: true }))
+        editor.setMode('suggesting')
+        view.dispatch(view.state.tr.setSelection(window.pasteSelectionType.create(view.state.doc, 4)))
+        view.dom.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }))
+        const deleted = editor.revisions().filter(({ kind }) => kind === 'paragraphDelete').length
+        if (action === 'accept') editor.acceptAll()
+        else editor.rejectAll()
+        const paragraphs = []
+        view.state.doc.forEach((node) => paragraphs.push(node.textContent))
+        return { paragraphs, deleted, revisions: editor.revisions().length }
+      }, action)
+      assert.deepEqual(result, { paragraphs: action === 'accept' ? ['ABC', 'ABC', 'DEF', 'DEF'] : ['ABC', 'DEF'], deleted: 0, revisions: 0 })
+      const doc = new Y.Doc()
+      await docxCodec.importFile(doc, new Uint8Array(Buffer.from(await page.evaluate(() => window.harness.exportFile()), 'base64')), { name: 'a.docx', assets: new MemoryAssetStore() })
+      const paragraphs = []
+      readDocxModel(doc).body.forEach((node) => paragraphs.push(node.textContent))
+      assert.deepEqual(paragraphs, result.paragraphs)
+      doc.destroy()
+    }
+  })
+
   await step('keeps its own pictures when offline, and cleans up pastes in Suggesting mode too', async () => {
     await open('?file=objects.docx')
     const pictures = () => page.evaluate(() => {

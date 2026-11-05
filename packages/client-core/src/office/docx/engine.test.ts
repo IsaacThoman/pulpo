@@ -273,6 +273,28 @@ describe('tracked changes', async () => {
     expect(undone.doc.textContent).toBe('Hello  world')
   })
 
+  it.each(['accept', 'reject'] as const)('keeps original paragraph boundaries when resolving a fitted insertion with %s all', (action) => {
+    const markRPr = packJml(['w:rPr', {}, ['w:b', {}]])
+    const original = schema.node('doc', null, [schema.node('paragraph', { markRPr }, schema.text('ABC')), p(run('DEF'))])
+    for (const pos of [1, 2, 4]) for (const clipboard of [false, true]) {
+      let state = EditorState.create({ schema, doc: original, plugins: [sectionEndsPlugin()] })
+      state = state.apply(state.tr.setSelection(TextSelection.create(state.doc, pos)))
+      const slice = new Slice(original.content, 0, 0)
+      const tr = clipboard ? pasteSelection(state, slice) : state.tr.replaceSelection(slice)
+      state = state.apply(trackTransaction(state, tr, reviewer)!)
+      expect(listRevisions(state.doc).some(({ kind }) => kind === 'paragraphDelete')).toBe(false)
+      const originalParagraph = state.doc.child(pos === 1 ? 2 : pos === 2 ? 3 : 0)
+      expect(originalParagraph.attrs.markRPr).toBe(markRPr)
+      state = state.apply(resolveRevisions(state, listRevisions(state.doc), action)!)
+      const paragraphs: string[] = []
+      state.doc.forEach((node) => paragraphs.push(node.textContent))
+      expect(paragraphs).toEqual(action === 'reject' ? ['ABC', 'DEF']
+        : pos === 1 ? ['ABC', 'DEF', 'ABC', 'DEF'] : pos === 2 ? ['A', 'ABC', 'DEF', 'BC', 'DEF'] : ['ABC', 'ABC', 'DEF', 'DEF'])
+      if (action === 'reject') expect(state.doc.eq(original)).toBe(true)
+      expect(listRevisions(state.doc)).toEqual([])
+    }
+  })
+
   it('keeps the caret after each tracked keystroke', () => {
     let current = initial()
     current = current.apply(current.tr.setSelection(TextSelection.create(current.doc, 6)))

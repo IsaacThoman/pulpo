@@ -34,8 +34,12 @@ export function preservePastedMarks(tr: Transaction, slice: Slice): Transaction 
   for (const [index, end] of fitted.entries()) {
     const $end = tr.doc.resolve(step.from + end.pos)
     if ($end.parent.type.name !== 'paragraph' || $end.parentOffset !== $end.parent.content.size) continue
+    const old = tr.before.resolve(step.from)
+    const originalEnd = old.parent.type.name === 'paragraph' && old.parentOffset === old.parent.content.size
+      && step.to === step.from + 1 && index === 0
+    const mark = originalEnd ? old.parent.attrs : attrs[index]
     tr.setNodeMarkup($end.before(), undefined, {
-      ...$end.parent.attrs, sectPr: attrs[index]?.sectPr ?? null, markRPr: attrs[index]?.markRPr ?? null, trail: attrs[index]?.trail ?? null,
+      ...$end.parent.attrs, sectPr: mark?.sectPr ?? null, markRPr: mark?.markRPr ?? null, trail: mark?.trail ?? null,
     })
     cleanup.push(tr.steps.length - 1)
   }
