@@ -115,9 +115,10 @@ function writePoint(prefix: string, name: string, row: number, col: number, poin
 }
 
 /** Rebuilds a drawing part from its skeleton and the sheet's drawing objects, in z-order. */
-export function writeDrawing(sheet: SheetModel, skeleton: string): string {
+export function writeDrawing(sheet: SheetModel, skeleton: string, imageRelationship: (hash: string) => string | undefined = () => undefined): string {
   const open = /^<([\w.-]+:)?wsDr\b[^>]*?(\/?)>/.exec(skeleton)
-  const prefix = open?.[1] ?? 'xdr:'
+  // The skeleton's own prefix (openpyxl writes none); new drawings use Excel's `xdr:`.
+  const prefix = open ? (open[1] ?? '') : 'xdr:'
   let start = open ? open[0] : `<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">`
   if (start.endsWith('/>')) start = `${start.slice(0, -2)}>`
   const objects = [...sheet.drawings.values()] as DrawingObject[]
@@ -127,6 +128,13 @@ export function writeDrawing(sheet: SheetModel, skeleton: string): string {
     if (drawing.verbatim) {
       body += drawing.xml
       continue
+    }
+    let content = drawing.xml
+    if (!content && drawing.image) {
+      // A picture placed in the editor.
+      const relId = imageRelationship(drawing.image.hash)
+      if (!relId) continue
+      content = pictureXml(prefix, drawing, relId)
     }
     const attrs = Object.entries(drawing.keep ?? {})
       .map(([name, value]) => ` ${name}="${escapeXml(value)}"`)
@@ -145,7 +153,21 @@ export function writeDrawing(sheet: SheetModel, skeleton: string): string {
     if (drawing.anchor === 'twoCell' && !point('to', drawing.to)) continue
     if (drawing.anchor === 'absolute' && drawing.pos) anchor += `<${prefix}pos x="${drawing.pos.x}" y="${drawing.pos.y}"/>`
     if (drawing.anchor !== 'twoCell' && drawing.ext) anchor += `<${prefix}ext cx="${drawing.ext.cx}" cy="${drawing.ext.cy}"/>`
-    body += `<${prefix}${element}${attrs}>${anchor}${drawing.xml}</${prefix}${element}>`
+    body += `<${prefix}${element}${attrs}>${anchor}${content}</${prefix}${element}>`
   }
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n${start}${body}</${prefix}wsDr>`
+}
+
+let nextPictureId = 1000
+
+function pictureXml(prefix: string, drawing: DrawingObject, relId: string): string {
+  const id = nextPictureId++
+  const name = escapeXml(drawing.name ?? `Picture ${id}`)
+  const cx = drawing.ext?.cx ?? 0
+  const cy = drawing.ext?.cy ?? 0
+  return (
+    `<${prefix}pic><${prefix}nvPicPr><${prefix}cNvPr id="${id}" name="${name}"/><${prefix}cNvPicPr><a:picLocks xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" noChangeAspect="1"/></${prefix}cNvPicPr></${prefix}nvPicPr>` +
+    `<${prefix}blipFill><a:blip xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:embed="${relId}"/><a:stretch xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:fillRect/></a:stretch></${prefix}blipFill>` +
+    `<${prefix}spPr><a:xfrm xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" prst="rect"><a:avLst/></a:prstGeom></${prefix}spPr></${prefix}pic><${prefix}clientData/>`
+  )
 }

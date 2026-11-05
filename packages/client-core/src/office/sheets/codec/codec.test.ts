@@ -273,6 +273,26 @@ describe('xlsx export', () => {
     expect(Object.keys(files).some((path) => path.endsWith('.vml'))).toBe(true)
   })
 
+  it('writes pictures placed in the editor into a new drawing part', async () => {
+    const codec = new SheetCodec()
+    const assets = new MemoryAssetStore()
+    const doc = new Y.Doc()
+    await codec.createEmpty(doc, { name: 'Pics.xlsx', assets })
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2, 3])
+    const ref = await assets.put(png, 'image/png')
+    const sheet = new WorkbookModel(doc).sheets()[0]!
+    sheet.drawings.set('d1', { kind: 'image', anchor: 'oneCell', from: { row: sheet.rows.idAt(2), col: sheet.cols.idAt(1), rowOff: 0, colOff: 0 }, ext: { cx: 952500, cy: 476250 }, xml: '', image: { hash: ref.hash, mimeType: 'image/png' }, name: 'Logo', z: 1 })
+    const output = await codec.exportFile(doc, { name: 'Pics.xlsx', assets })
+    const files = unzipSync(output)
+    expect(files['xl/media/image1.png']).toEqual(png)
+    expect(strFromU8(files['xl/worksheets/sheet1.xml']!)).toMatch(/<drawing r:id="rId\d+"\/>/)
+    expect(strFromU8(files['xl/drawings/drawing1.xml']!)).toContain('<xdr:from><xdr:col>1</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>2</xdr:row>')
+    expect(strFromU8(files['[Content_Types].xml']!)).toContain('Extension="png"')
+    const reread = (await open(output, 'Pics.xlsx')).model.sheets()[0]!
+    const drawings = [...reread.drawings.values()] as { kind: string; image?: { hash: string }; name?: string }[]
+    expect(drawings).toEqual([expect.objectContaining({ kind: 'image', name: 'Logo', image: expect.objectContaining({ hash: ref.hash }) })])
+  })
+
   it('creates a valid empty workbook', async () => {
     const codec = new SheetCodec()
     const assets = new MemoryAssetStore()

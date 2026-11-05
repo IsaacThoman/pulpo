@@ -38,6 +38,8 @@ const SHEET_REL_TYPES: Record<SheetKind, string> = {
   macrosheet: REL_TYPES.macrosheet,
 }
 
+const MEDIA_EXTENSIONS: Record<string, string> = { 'image/png': 'png', 'image/jpeg': 'jpeg', 'image/gif': 'gif', 'image/webp': 'webp', 'image/bmp': 'bmp', 'image/svg+xml': 'svg' }
+
 const VBA_REL = 'http://schemas.microsoft.com/office/2006/relationships/vbaProject'
 
 const EMPTY_RELS = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="${PACKAGE_RELATIONSHIPS_NS}"/>`
@@ -254,11 +256,33 @@ export async function writeXlsx(doc: Y.Doc, assets: LiveAssetStore, options: Xls
       types.defaultFor('vml', CONTENT_TYPES.vmlDrawing)
       legacyDrawingId = rels.add(REL_TYPES.vmlDrawing, relativeTarget(path, vmlPath))
     }
-    const drawingPath = sheet.raw.get('drawingPart') as string | undefined
+    let drawingPath = sheet.raw.get('drawingPart') as string | undefined
+    let drawingId: string | undefined
+    if (!drawingPath && sheet.drawings.size) {
+      // The first picture placed on a sheet without drawings gets a drawing part of its own.
+      drawingPath = freePath(taken, (n) => `xl/drawings/drawing${n}.xml`)
+      drawingId = rels.add(REL_TYPES.drawing, relativeTarget(path, drawingPath))
+    }
     if (drawingPath) {
-      pkg.set(drawingPath, new TextEncoder().encode(writeDrawing(sheet, sheet.raw.get('drawingXml') as string)))
-      const drawingRels = sheet.raw.get('drawingRels') as string | undefined
-      if (drawingRels) pkg.set(relationshipsPathFor(drawingPath), new TextEncoder().encode(drawingRels))
+      livePaths.add(drawingPath)
+      const drawingRels = new Rels(sheet.raw.get('drawingRels') as string | undefined)
+      const embed = async (image: { hash: string; mimeType: string }) => {
+        const extension = MEDIA_EXTENSIONS[image.mimeType] ?? 'png'
+        const mediaPath = freePath(taken, (n) => `xl/media/image${n}.${extension}`)
+        livePaths.add(mediaPath)
+        pkg.set(mediaPath, await assets.get(image.hash))
+        types.defaultFor(extension, image.mimeType)
+        return drawingRels.add(REL_TYPES.image, relativeTarget(drawingPath!, mediaPath))
+      }
+      const embedded = new Map<string, string>()
+      for (const raw of sheet.drawings.values()) {
+        const drawing = raw as { xml: string; image?: { hash: string; mimeType: string } }
+        if (!drawing.xml && drawing.image && !embedded.has(drawing.image.hash)) embedded.set(drawing.image.hash, await embed(drawing.image))
+      }
+      pkg.set(drawingPath, new TextEncoder().encode(writeDrawing(sheet, (sheet.raw.get('drawingXml') as string | undefined) ?? '', (hash) => embedded.get(hash))))
+      const originalRels = sheet.raw.get('drawingRels') as string | undefined
+      if (!embedded.size && originalRels !== undefined) pkg.set(relationshipsPathFor(drawingPath), new TextEncoder().encode(originalRels))
+      else if (!drawingRels.empty) pkg.set(relationshipsPathFor(drawingPath), new TextEncoder().encode(drawingRels.toXml()))
       types.override(drawingPath, CONTENT_TYPES.drawing)
     }
     const context: WorksheetWriteContext = {
@@ -268,6 +292,7 @@ export async function writeXlsx(doc: Y.Doc, assets: LiveAssetStore, options: Xls
       ...(options.spills ? { spills: options.spills } : {}),
       addRelationship: (type, target, external) => rels.add(type, target, external),
       tableRelationships,
+      ...(drawingId ? { drawingId } : {}),
       ...(legacyDrawingId ? { legacyDrawingId } : {}),
     }
     pkg.set(path, new TextEncoder().encode(writeWorksheet(sheet, context)))

@@ -47,6 +47,8 @@ export interface WorksheetWriteContext {
   addRelationship: (type: string, target: string, external: boolean) => string
   /** Relationship ids of table parts, by table id. */
   tableRelationships: Map<string, string>
+  /** Relationship id of a drawing part created on this export. */
+  drawingId?: string
   /** Relationship id of the legacy drawing (notes), if the sheet has one. */
   legacyDrawingId?: string
   isTemplate?: boolean
@@ -151,6 +153,7 @@ export function writeWorksheet(sheet: SheetModel, context: WorksheetWriteContext
   if (validations) insertInOrder(root, fragment(document, validations))
   const links = writeHyperlinks(sheet, context)
   if (links) insertInOrder(root, fragment(document, links))
+  if (context.drawingId && !child(root, 'drawing')) insertInOrder(root, fragment(document, `<drawing r:id="${context.drawingId}"/>`))
   // The notes drawing's relationship is rebuilt, so its id is new.
   for (const legacy of children(root, 'legacyDrawing')) root.removeChild(legacy)
   if (context.legacyDrawingId) insertInOrder(root, fragment(document, `<legacyDrawing r:id="${context.legacyDrawingId}"/>`))
