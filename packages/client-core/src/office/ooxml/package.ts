@@ -1,7 +1,8 @@
 import { DOMParser, XMLSerializer, type Document as XmlDocument } from '@xmldom/xmldom'
-import { strFromU8, strToU8, Zip, ZipDeflate, ZipPassThrough } from 'fflate'
+import { strFromU8, strToU8 } from 'fflate'
 import { LiveFormatError } from '../live-format.js'
 import { readZip } from './zip.js'
+import { writeZip } from './zip-writer.js'
 
 /**
  * Open Packaging Conventions (the zip container of .docx, .xlsx, and .pptx): parts, content types,
@@ -158,37 +159,13 @@ export class OoxmlPackage {
    */
   write(): Uint8Array {
     this.flushXml()
-    const chunks: Uint8Array[] = []
-    let length = 0
-    const zip = new Zip((error, chunk) => {
-      if (error) throw error
-      chunks.push(chunk)
-      length += chunk.length
-    })
-    // Construct this in the current timezone on every export: a cached Date can become
-    // 1979 when the device changes timezone. DOS timestamps must stay at local 1980-01-01.
-    const mtime = new Date(1980, 0, 1)
-    const add = (path: string, data: Uint8Array): void => {
-      // Media is usually compressed already; storing it saves time without growing the file.
-      const stored = /\.(png|jpe?g|gif|mp4|mp3|m4a|wdp|zip)$/i.test(path)
-      const entry = stored ? new ZipPassThrough(path) : new ZipDeflate(path, { level: 6 })
-      entry.mtime = mtime
-      // Use entries rather than an object: __proto__ is a valid part name, and fflate's
-      // object-based writer interprets it as a prototype, even with a null-prototype input.
-      zip.add(entry)
-      entry.push(data, true)
-    }
+    const entries: [string, Uint8Array][] = []
     const contentTypes = this.parts.get(CONTENT_TYPES_PATH)
-    if (contentTypes) add(CONTENT_TYPES_PATH, contentTypes)
+    if (contentTypes) entries.push([CONTENT_TYPES_PATH, contentTypes])
     for (const [path, data] of this.parts) {
-      if (path === CONTENT_TYPES_PATH) continue
-      add(path, data)
+      if (path !== CONTENT_TYPES_PATH) entries.push([path, data])
     }
-    zip.end()
-    const bytes = new Uint8Array(length)
-    let offset = 0
-    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length }
-    return bytes
+    return writeZip(entries, DEFAULT_PACKAGE_LIMITS)
   }
 
   paths(): string[] {

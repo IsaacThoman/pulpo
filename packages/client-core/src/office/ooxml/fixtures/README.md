@@ -42,3 +42,12 @@ license and notice are included as `POI-LICENSE.txt` and `POI-NOTICE.txt`.
 | `office.docx` | [document/SampleDoc.docx](https://github.com/apache/poi/blob/7f4d36854109efa17152b27a5fb1b2c7d842c314/test-data/document/SampleDoc.docx) |
 | `office.xlsx` | [spreadsheet/45430.xlsx](https://github.com/apache/poi/blob/7f4d36854109efa17152b27a5fb1b2c7d842c314/test-data/spreadsheet/45430.xlsx) |
 | `office.pptx` | [slideshow/SampleShow.pptx](https://github.com/apache/poi/blob/7f4d36854109efa17152b27a5fb1b2c7d842c314/test-data/slideshow/SampleShow.pptx) |
+
+`printerSettings1.bin` and `printerSettings3.bin` are the original 2,452-byte payloads from
+`xl/printerSettings/printerSettings{1,3}.bin` in Apache POI's
+[sample.xlsx](https://github.com/apache/poi/blob/7f4d36854109efa17152b27a5fb1b2c7d842c314/test-data/spreadsheet/sample.xlsx).
+The complete workbook is `poi-sample.xlsx` (12,348 bytes), copied from the sheets branch's
+pinned POI corpus. These fixtures are Apache-2.0, covered by the included POI license and
+notice. Streaming `ZipDeflate` at level 6 generates invalid distances for both binary parts;
+one-shot `deflateSync` at level 6 round-trips them through Python zlib and our bounded reader.
+The writer regressions cover both the isolated payloads and the complete workbook.
