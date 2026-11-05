@@ -28,9 +28,10 @@ import { copyRelatedParts, needsRelatedParts, receiveCopiedParts } from '../copy
 import { fontStack, isThemeFontVar, latinFont } from '../css.js'
 import { DOCX_MAX_TABLE_DEPTH } from '../format.js'
 import { newInlinePicture } from '../drawing.js'
-import { jmlAttr, jmlChild, jmlNumber, jmlOn, packJml, unpackJml, type JmlElement } from '../jsonml.js'
+import { jmlAttr, jmlNumber, jmlOn, packJml, unpackJml, type JmlElement } from '../jsonml.js'
 import { BODY_FRAGMENT, fragmentToNode, parseJson, readDocxMap, storyFragmentName, writeFragment, type StoryMeta } from '../model.js'
-import { effectiveNumPr, formatNumber } from '../numbering.js'
+import { effectiveNumPr } from '../numbering.js'
+import { noteInventory, resolveNoteLabels } from '../notes.js'
 import { docxSchema, packMarks, textAreaWidth } from '../schema.js'
 import { inlineText } from '../text.js'
 import { AssetUrls } from './assets.js'
@@ -87,7 +88,7 @@ import {
   type ToggleProperty,
 } from './commands.js'
 import { DocxViewContext } from './context.js'
-import { computeDecorations, countNotes } from './decorations.js'
+import { computeDecorations } from './decorations.js'
 import { DEFAULT_DOCX_LABELS, type DocxLabels } from './labels.js'
 import { PAGE_GAP, PX_PER_PT, type LayoutResult } from './layout.js'
 import { normalizeAtomMarks, selectionMarks } from './marks.js'
@@ -279,6 +280,9 @@ export class DocxEditor {
   private lastLayout: LayoutResult | null = null
   /** Measured units of the last layout, for diagnostics and tests. */
   private lastUnits: unknown[] = []
+  private notePageDoc: ProseMirrorNode | undefined
+  private notePageIndexes = new Map<string, number>()
+  private measuringNotePages = false
   private lastSections: Section[] = []
   private layoutFrame = 0
   private layoutTimer: ReturnType<typeof setTimeout> | undefined
@@ -481,7 +485,7 @@ export class DocxEditor {
 
   private decorate(doc: ProseMirrorNode, storyId: string | undefined): DecorationSet {
     const body = storyId && this.view ? this.view.state.doc : doc
-    const numbers = countNotes(body)
+    const numbers = this.noteLabels(body)
     const set = computeDecorations(doc, {
       context: this.context,
       noteNumbers: numbers,
@@ -1705,18 +1709,20 @@ export class DocxEditor {
     }
     const scroller = this.scroller()
     const scrollTop = scroller?.scrollTop
+    const previousLabels = this.noteLabels()
     this.view.dispatch(this.view.state.tr.setMeta(paginationKey, null).setMeta('addToHistory', false))
-    const sections = documentSections(this.view.state.doc, this.context.finalSectPr).sections
+    const { sections, sectionOfBlock } = documentSections(this.view.state.doc, this.context.finalSectPr)
     const widest = maxOf(sections.map((section) => section.setup.width - section.setup.left - section.setup.right))
     const maxLeft = maxOf(sections.map((section) => section.setup.left))
     const padding = 24
     const flowTop = padding + (sections[0]?.setup.top ?? 96)
     const flowLeft = padding + maxLeft
     this.flowHost.style.cssText = `left:${flowLeft}px;top:${flowTop}px;width:${widest}px`
-    this.measureNotes(widest)
+    this.measureNotes(sections)
     const tabs = this.layoutTabs()
-    const storyHeight = this.storyHeights(widest)
-    const endnotesHeight = this.renderWebNotes(undefined, widest)
+    const storyHeight = this.storyHeights()
+    const lastSetup = sections[sectionOfBlock.at(-1) ?? 0]!.setup
+    const endnotesHeight = this.renderWebNotes(undefined, lastSetup.width - lastSetup.left - lastSetup.right)
     this.endnotesHeight = endnotesHeight
     const result = paginate(this.view, this.context, (id) => this.noteHeights.get(id) ?? 0, (setup, index, all) => {
       // A header or footer taller than its margin pushes the text away, as in Word.
@@ -1729,6 +1735,22 @@ export class DocxEditor {
     this.lastLayout = result.layout
     this.lastUnits = result.units
     this.lastSections = result.sections
+    this.notePageDoc = this.view.state.doc
+    this.notePageIndexes = new Map()
+    const pageStarts = new Map(result.layout.breaks.map((entry) => [entry.unit, entry.page]))
+    let pageIndex = 0
+    for (const [index, unit] of result.units.entries()) {
+      pageIndex = pageStarts.get(index) ?? pageIndex
+      for (const key of unit.references ?? []) if (!this.notePageIndexes.has(key)) this.notePageIndexes.set(key, pageIndex)
+    }
+    this.refreshDecorations(this.view)
+    if (this.storyEditor) this.refreshDecorations(this.storyEditor.view)
+    // Page restarts can change marker wrapping; measure once more with the resolved labels.
+    if (!this.measuringNotePages && [...this.noteLabels()].some(([key, label]) => previousLabels.get(key) !== label)) {
+      this.measuringNotePages = true
+      try { this.relayout() } finally { this.measuringNotePages = false }
+      return
+    }
     this.renderPages(result.layout, flowLeft, flowTop, padding)
     this.renderRepeatedHeaders(result.repeats, result.layout, flowLeft, flowTop)
     this.placeStoryEditor()
@@ -1761,7 +1783,7 @@ export class DocxEditor {
   }
 
   /** Height of the header or footer a section shows on its default, first, or even pages. */
-  private storyHeights(width: number): (sections: Section[], index: number, kind: 'header' | 'footer', type: 'default' | 'first' | 'even') => number {
+  private storyHeights(): (sections: Section[], index: number, kind: 'header' | 'footer', type: 'default' | 'first' | 'even') => number {
     const cache = new Map<string, number>()
     return (sections, index, kind, type) => {
       const page = { firstOfSection: type === 'first', number: type === 'even' ? 2 : 1 }
@@ -1770,7 +1792,10 @@ export class DocxEditor {
       const reference = storyReference(sections, index, kind, page, this.context.evenAndOddHeaders)
       const storyId = reference ? this.storyByRel(reference.relId) : undefined
       if (!storyId) return 0
-      const known = cache.get(storyId)
+      const setup = sections[index]!.setup
+      const width = setup.width - setup.left - setup.right
+      const cacheKey = `${storyId}:${width}`
+      const known = cache.get(cacheKey)
       if (known !== undefined) return known
       const doc = this.storyDoc(storyId)
       let height = 0
@@ -1783,7 +1808,7 @@ export class DocxEditor {
         height = measure.getBoundingClientRect().height
         measure.remove()
       }
-      cache.set(storyId, height)
+      cache.set(cacheKey, height)
       return height
     }
   }
@@ -1803,16 +1828,22 @@ export class DocxEditor {
     return `${kind}:${part}`
   }
 
-  private measureNotes(width: number): void {
-    const numbers = countNotes(this.view.state.doc)
+  private noteLabels(body = this.view.state.doc): Map<string, string> {
+    return resolveNoteLabels(body, this.context.noteDefaults, this.context.finalSectPr, body === this.notePageDoc ? this.notePageIndexes : undefined)
+  }
+
+  private measureNotes(sections: Section[]): void {
+    const numbers = this.noteLabels()
     const measure = document.createElement('div')
-    measure.style.cssText = `position:absolute;visibility:hidden;left:-10000px;top:0;width:${width}px`
+    measure.style.cssText = 'position:absolute;visibility:hidden;left:-10000px;top:0'
     this.root.appendChild(measure)
     this.noteHeights = new Map()
     for (const [key, number] of numbers) {
       if (!key.startsWith('footnote:')) continue
       const doc = this.storyDoc(key)
       if (!doc) continue
+      const setup = sections[noteInventory(this.view.state.doc).get(key)?.section ?? 0]!.setup
+      measure.style.width = `${setup.width - setup.left - setup.right}px`
       const element = renderStory(doc, { urls: this.urls, labels: this.labels, noteNumber: number, noteNumbers: numbers, context: this.context })
       measure.appendChild(element)
       this.noteHeights.set(key, element.getBoundingClientRect().height)
@@ -1825,7 +1856,7 @@ export class DocxEditor {
     const total = pages.length
     const sectionPages = new Map<number, number>()
     for (const page of pages) sectionPages.set(page.section, (sectionPages.get(page.section) ?? 0) + 1)
-    const numbers = countNotes(this.view.state.doc)
+    const numbers = this.noteLabels()
     this.pagesLayer.replaceChildren()
     this.bandsLayer.replaceChildren()
     let bottom = 0
@@ -1895,7 +1926,8 @@ export class DocxEditor {
     for (const story of this.bandsLayer.querySelectorAll<HTMLElement>('.docx-story')) layoutStaticTabs(story)
     this.canvas.style.width = `${Math.max(maxRight + padding, flowLeft + padding)}px`
     this.canvas.style.height = `${bottom + padding}px`
-    this.renderWebNotes({ left: flowLeft, top: flowTop + layout.height - this.endnotesHeight, width: this.flowHost.offsetWidth })
+    const lastSetup = pages.at(-1)!.setup
+    this.renderWebNotes({ left: flowLeft, top: flowTop + layout.height - this.endnotesHeight, width: lastSetup.width - lastSetup.left - lastSetup.right })
   }
 
   /** Copies of header rows at the top of each page a table continues on, as Word repeats them. */
@@ -1935,7 +1967,7 @@ export class DocxEditor {
   /** Endnotes (and footnotes in web layout) after the text. */
   /** Draws endnotes (and footnotes in web layout) and returns their height. */
   private renderWebNotes(placement?: { left: number; top: number; width: number }, measureWidth?: number): number {
-    const numbers = countNotes(this.view.state.doc)
+    const numbers = this.noteLabels()
     this.notesHost.replaceChildren()
     const kinds = this.layoutMode === 'print' ? ['endnote'] : ['footnote', 'endnote']
     let any = false
@@ -1944,8 +1976,7 @@ export class DocxEditor {
       const doc = this.storyDoc(key)
       if (!doc) continue
       any = true
-      const format = key.startsWith('endnote') ? (jmlAttr(jmlChild(jmlChild(this.context.finalSectPr, 'w:endnotePr'), 'w:numFmt'), 'w:val') ?? 'lowerRoman') : 'decimal'
-      const element = renderStory(doc, { urls: this.urls, labels: this.labels, noteNumber: typeof number === 'number' ? formatNumber(number, format) : number, context: this.context })
+      const element = renderStory(doc, { urls: this.urls, labels: this.labels, noteNumber: number, context: this.context })
       element.dataset.story = key
       element.addEventListener('dblclick', (event) => {
         event.preventDefault()

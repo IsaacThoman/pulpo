@@ -115,6 +115,66 @@ describe('header and footer fields and targets', () => {
 })
 
 describe('custom note rendering and zoom measurements', () => {
+  it('measures inherited stories and footnotes at each destination section width', () => {
+    const rect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      const width = parseFloat(this.style.width || this.parentElement?.style.width || '600')
+      const offscreen = this.style.left === '-10000px' || this.parentElement?.style.left === '-10000px'
+      return new DOMRect(0, 0, width, offscreen ? 36000 / width : 0)
+    })
+    try {
+      const sectPr: JmlElement = ['w:sectPr', {}, ['w:headerReference', { 'r:id': 'header' }], ['w:footerReference', { 'r:id': 'footer' }]]
+      for (const kind of ['header', 'footer']) doc.getMap('rels').set(kind, JSON.stringify({ type: REL[kind as 'header' | 'footer'], target: '/1' }))
+      editor.view.dispatch(editor.view.state.tr.replaceWith(0, editor.view.state.doc.content.size, [
+        schema.node('paragraph', { sectPr: packJml(sectPr) }, schema.node('noteRef', { kind: 'footnote', id: '1' })),
+        schema.node('paragraph', null, schema.node('noteRef', { kind: 'footnote', id: '2' })),
+      ]))
+      doc.getMap('stories').set('footnote:2', JSON.stringify({ kind: 'footnote' }))
+      writeFragment(doc, doc.getXmlFragment(storyFragmentName('footnote:2')), schema.node('doc', null, [schema.node('paragraph', null, schema.text('Second note'))]))
+      const sections: Section[] = [{ sectPr, setup: { ...pageSetup(sectPr), width: 792 } }, { sectPr: undefined, setup: { ...pageSetup(undefined), width: 492 } }]
+      const measured = editor as unknown as { storyHeights(width: number): (sections: Section[], index: number, kind: 'header' | 'footer', type: 'default') => number; measureNotes(sections: Section[]): void; noteHeights: Map<string, number> }
+      const heights = measured.storyHeights(600)
+      for (const kind of ['header', 'footer'] as const) {
+        expect(heights(sections, 0, kind, 'default')).toBe(60)
+        expect(heights(sections, 1, kind, 'default')).toBe(120)
+      }
+      measured.measureNotes(sections)
+      expect(measured.noteHeights.get('footnote:1')).toBe(60)
+      expect(measured.noteHeights.get('footnote:2')).toBe(120)
+    } finally { rect.mockRestore() }
+  })
+
+  it.each(['decimal', 'lowerRoman', 'upperRoman'])('uses %s for endnote references and their story markers', (format) => {
+    doc.getMap('docx').set('sectPr', packJml(['w:sectPr', {}, ['w:endnotePr', {}, ['w:numFmt', { 'w:val': format }]]]))
+    editor.view.dispatch(editor.view.state.tr.insert(1, schema.node('noteRef', { kind: 'endnote', id: '1' })))
+    writeFragment(doc, doc.getXmlFragment(storyFragmentName('endnote:1')), schema.node('doc', null, [schema.node('paragraph', null, [schema.node('inlineXml', { v: packJml(['w:endnoteRef', {}]) }), schema.text('Note')])]))
+    editor.relayout()
+    const expected = format === 'decimal' ? '1' : format === 'upperRoman' ? 'I' : 'i'
+    expect(editor.view.dom.querySelector('.docx-noteref')?.getAttribute('data-label')).toBe(expected)
+    expect(document.querySelector('[data-story="endnote:1"] [data-label]')?.getAttribute('data-label')).toBe(expected)
+    editor.openStoryEditor('endnote:1')
+    expect(storyView().dom.querySelector('[data-label]')?.getAttribute('data-label')).toBe(expected)
+  })
+
+  it.each(['footnote', 'endnote'] as const)('resolves %s starts, section overrides, and per-section restarts together', (kind) => {
+    doc.getMap('settings').set(`w:${kind}Pr`, packJml([`w:${kind}Pr`, {}, ['w:numFmt', { 'w:val': 'upperLetter' }], ['w:numStart', { 'w:val': '4' }], ['w:numRestart', { 'w:val': 'eachSect' }]]))
+    const ref = (id: string) => schema.node('noteRef', { kind, id })
+    editor.view.dispatch(editor.view.state.tr.replaceWith(0, editor.view.state.doc.content.size, [
+      schema.node('paragraph', { sectPr: packJml(['w:sectPr', {}, [`w:${kind}Pr`, {}, ['w:numFmt', { 'w:val': 'lowerRoman' }], ['w:numStart', { 'w:val': '3' }]]]) }, [ref('1'), ref('2')]),
+      schema.node('paragraph', null, [ref('3'), ref('4')]),
+    ]))
+    expect([...editor.view.dom.querySelectorAll('.docx-noteref')].map((node) => node.getAttribute('data-label'))).toEqual(['iii', 'iv', 'D', 'E'])
+  })
+
+  it.each(['footnote', 'endnote'] as const)('restarts %s references at the configured start on each printed page', (kind) => {
+    doc.getMap('settings').set(`w:${kind}Pr`, packJml([`w:${kind}Pr`, {}, ['w:numFmt', { 'w:val': 'decimal' }], ['w:numStart', { 'w:val': '4' }], ['w:numRestart', { 'w:val': 'eachPage' }]]))
+    const ref = (id: string) => schema.node('noteRef', { kind, id })
+    editor.view.dispatch(editor.view.state.tr.replaceWith(0, editor.view.state.doc.content.size, [schema.node('paragraph', null, [ref('1'), ref('2')]), schema.node('paragraph', { pageBreakBefore: packJml(['w:pageBreakBefore', {}]) }, [ref('3'), ref('4')])]))
+    editor.setLayout('print')
+    editor.relayout()
+    expect(editor.pages).toBe(2)
+    expect([...editor.view.dom.querySelectorAll('.docx-noteref')].map((node) => node.getAttribute('data-label'))).toEqual(['4', '5', '4', '5'])
+  })
+
   it.each(['web', 'print'] as const)('keeps custom footnotes and endnotes in the %s inventory', (layout) => {
     const refs = []
     for (const kind of ['footnote', 'endnote'] as const) {
@@ -160,12 +220,12 @@ describe('custom note rendering and zoom measurements', () => {
       editor.setZoom(zoom)
       const measured = editor as unknown as {
         storyHeights(width: number): (sections: Section[], index: number, kind: 'header' | 'footer', type: 'default') => number
-        measureNotes(width: number): void
+        measureNotes(sections: Section[]): void
         noteHeights: Map<string, number>
         renderWebNotes(placement: undefined, width: number): number
       }
       expect(measured.storyHeights(600)(sections, 0, 'header', 'default')).toBe(80)
-      measured.measureNotes(600)
+      measured.measureNotes(sections)
       expect(measured.noteHeights.get('footnote:1')).toBe(80)
       expect(measured.renderWebNotes(undefined, 600)).toBe(80)
     } finally { rect.mockRestore() }
