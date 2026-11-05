@@ -2,6 +2,9 @@ import { DOMParser, XMLSerializer, type Document as XmlDocument } from '@xmldom/
 import { strFromU8, strToU8, unzipSync, zipSync, type Zippable } from 'fflate'
 import { LiveFormatError } from '../live-format.js'
 
+/** The time every written entry carries (local, so the DOS date fields are the same everywhere). */
+const ZIP_TIME = new Date(1980, 0, 1)
+
 /**
  * Open Packaging Conventions (the zip container of .docx, .xlsx, and .pptx): parts, content types,
  * and relationships. Parts nobody touches are written back byte for byte.
@@ -112,6 +115,68 @@ export function decodePartText(bytes: Uint8Array): string {
   return strFromU8(bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf ? bytes.subarray(3) : bytes)
 }
 
+/**
+ * Refuses zips whose central directory and local headers name an entry differently. Readers
+ * disagree on which to trust, so such a file shows one document to Pulpo and another to Word
+ * (or to a virus scanner): a known way to smuggle content.
+ */
+function assertConsistentZip(bytes: Uint8Array): void {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+  let end = -1
+  for (let offset = bytes.length - 22; offset >= Math.max(0, bytes.length - 65_557); offset--) {
+    if (view.getUint32(offset, true) === 0x06054b50) {
+      end = offset
+      break
+    }
+  }
+  if (end < 0) return
+  const count = view.getUint16(end + 10, true)
+  const directory = view.getUint32(end + 16, true)
+  let offset = directory
+  // Zip64 archives keep these in another record; fflate validates those itself.
+  if (count === 0xffff || offset === 0xffffffff) return
+  // Readers that find the directory by its size and readers that follow its offset must agree.
+  if (offset + view.getUint32(end + 12, true) !== end) throw new LiveFormatError('corrupt', 'This zip package has a misplaced directory')
+  const decoder = new TextDecoder()
+  const assertUnicodePath = (start: number, length: number, name: Uint8Array): void => {
+    const end = start + length
+    if (end > bytes.length) throw new LiveFormatError('corrupt', 'This zip package has damaged extra fields')
+    // An Info-ZIP Unicode Path field renames the entry for readers that honor it. Check both
+    // headers: streaming readers may use the local field instead of the directory's field.
+    for (let field = start; field < end;) {
+      if (field + 4 > end) throw new LiveFormatError('corrupt', 'This zip package has damaged extra fields')
+      const id = view.getUint16(field, true)
+      const size = view.getUint16(field + 2, true)
+      if (field + 4 + size > end) throw new LiveFormatError('corrupt', 'This zip package has damaged extra fields')
+      if (id === 0x7075 && size >= 5 && decoder.decode(bytes.subarray(field + 9, field + 4 + size)) !== decoder.decode(name)) {
+        throw new LiveFormatError('corrupt', 'This zip package names its parts inconsistently')
+      }
+      field += 4 + size
+    }
+  }
+  for (let index = 0; index < count; index++) {
+    if (offset + 46 > end || view.getUint32(offset, true) !== 0x02014b50) throw new LiveFormatError('corrupt', 'This zip package has a damaged directory')
+    const nameLength = view.getUint16(offset + 28, true)
+    const extraLength = view.getUint16(offset + 30, true)
+    const commentLength = view.getUint16(offset + 32, true)
+    const local = view.getUint32(offset + 42, true)
+    if (offset + 46 + nameLength + extraLength + commentLength > end) throw new LiveFormatError('corrupt', 'This zip package has a damaged directory')
+    const name = bytes.subarray(offset + 46, offset + 46 + nameLength)
+    assertUnicodePath(offset + 46 + nameLength, extraLength, name)
+    if (local !== 0xffffffff) {
+      if (local + 30 > directory || view.getUint32(local, true) !== 0x04034b50) throw new LiveFormatError('corrupt', 'This zip package has a damaged entry')
+      const localLength = view.getUint16(local + 26, true)
+      const localExtraLength = view.getUint16(local + 28, true)
+      if (local + 30 + localLength + localExtraLength > directory) throw new LiveFormatError('corrupt', 'This zip package has a damaged entry')
+      const localName = bytes.subarray(local + 30, local + 30 + localLength)
+      if (localLength !== nameLength || !localName.every((byte, index) => byte === name[index])) throw new LiveFormatError('corrupt', 'This zip package names its parts inconsistently')
+      assertUnicodePath(local + 30 + localLength, localExtraLength, name)
+    }
+    offset += 46 + nameLength + extraLength + commentLength
+  }
+  if (offset !== end) throw new LiveFormatError('corrupt', 'This zip package has a damaged directory')
+}
+
 export class OoxmlPackage {
   /** Part bytes by normalized path, in the order they were read or added. */
   private readonly parts: Map<string, Uint8Array>
@@ -131,17 +196,33 @@ export class OoxmlPackage {
       throw new LiveFormatError('encrypted', 'This file is password protected or in a legacy binary format')
     }
     if (!startsWith(bytes, ZIP_SIGNATURE)) throw new LiveFormatError('corrupt', 'This is not an Office Open XML package')
+    try {
+      assertConsistentZip(bytes)
+    } catch (error) {
+      if (error instanceof LiveFormatError) throw error
+      throw new LiveFormatError('corrupt', 'This zip package has a damaged directory', { cause: error })
+    }
     let entries = 0
     let declared = 0
+    const names = new Set<string>()
     let files: Record<string, Uint8Array>
     try {
       files = unzipSync(bytes, {
         filter: (file) => {
           entries++
           declared += file.originalSize
+          // Deflate never makes data much bigger, so an entry whose compressed size dwarfs the size
+          // it declares is lying about it (fflate trusts the declared size and skips the CRC).
+          if (file.size > file.originalSize * 1.1 + 1024) throw new LiveFormatError('corrupt', 'This file has a damaged zip entry')
           if (entries > limits.maxEntries) throw new LiveFormatError('too_large', 'This file has too many parts')
           if (declared > limits.maxUncompressedBytes) throw new LiveFormatError('too_large', 'This file expands to too much data')
-          return !file.name.endsWith('/')
+          if (file.name.endsWith('/')) return false
+          // Check before unzipSync collects entries into an object and loses duplicate names.
+          // OPC part names are case-insensitive; path aliases must not overwrite a part either.
+          const name = normalizePartPath(file.name).toLowerCase()
+          if (!name || names.has(name)) throw new LiveFormatError('corrupt', 'This zip package has duplicate part names')
+          names.add(name)
+          return true
         },
       })
     } catch (error) {
@@ -159,19 +240,23 @@ export class OoxmlPackage {
     return new OoxmlPackage(parts)
   }
 
-  /** Writes the package. `[Content_Types].xml` goes first, as some readers expect. */
+  /**
+   * Writes the package. `[Content_Types].xml` goes first, as some readers expect. Entries carry a
+   * fixed time, so the same content always writes the same bytes: versions are checksums of
+   * exports, and an export that changed with the clock would look like an edit.
+   */
   write(): Uint8Array {
     this.flushXml()
     const files: Zippable = {}
     const contentTypes = this.parts.get(CONTENT_TYPES_PATH)
-    if (contentTypes) files[CONTENT_TYPES_PATH] = [contentTypes, { level: 6 }]
+    if (contentTypes) files[CONTENT_TYPES_PATH] = [contentTypes, { level: 6, mtime: ZIP_TIME }]
     for (const [path, data] of this.parts) {
       if (path === CONTENT_TYPES_PATH) continue
       // Media is usually compressed already; storing it saves time without growing the file.
       const stored = /\.(png|jpe?g|gif|mp4|mp3|m4a|wdp|zip)$/i.test(path)
-      files[path] = [data, { level: stored ? 0 : 6 }]
+      files[path] = [data, { level: stored ? 0 : 6, mtime: ZIP_TIME }]
     }
-    return zipSync(files)
+    return zipSync(files, { mtime: ZIP_TIME })
   }
 
   paths(): string[] {
