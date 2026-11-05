@@ -149,18 +149,33 @@ function syncSheets(target: WorkbookModel, incoming: WorkbookModel): [SheetModel
  * A row's (or column's) contents as text that doesn't change when rows or columns are inserted
  * elsewhere: formulas are written with references relative to the cell.
  */
-function lineSignature(sheet: SheetModel, kind: AxisKind, index: number, cross: number, styles: (xf: number | undefined) => number | undefined): string {
-  let signature = ''
-  for (let other = 0; other < cross; other++) {
-    const row = kind === 'row' ? index : other
-    const col = kind === 'row' ? other : index
-    const key = sheet.keyAt(row, col)
-    const data = sheet.cells.get(key)
-    const xf = styles(sheet.xf.get(key))
-    if (!data && xf === undefined) continue
-    signature += `${other}=${data ? cellSignature(sheet, row, col, data) : ''}~${xf ?? ''};`
+/**
+ * Every row's (or column's) contents as one string each, built from the stored cells (not by
+ * probing every position, which is quadratic on big sheets).
+ */
+function lineSignatures(sheet: SheetModel, kind: AxisKind, count: number, styles: (xf: number | undefined) => number | undefined): string[] {
+  const parts: [number, string][][] = Array.from({ length: count }, () => [])
+  const add = (key: string, text: string) => {
+    const position = sheet.position(key)
+    if (!position) return
+    const line = kind === 'row' ? position.row : position.col
+    const other = kind === 'row' ? position.col : position.row
+    if (line < count) parts[line]!.push([other, text])
   }
-  return signature
+  for (const [key, data] of sheet.cells) {
+    const position = sheet.position(key)
+    if (position) add(key, `c${cellSignature(sheet, position.row, position.col, data)}`)
+  }
+  for (const [key, xf] of sheet.xf) {
+    const mapped = styles(xf)
+    if (mapped !== undefined) add(key, `s${mapped}`)
+  }
+  return parts.map((line) =>
+    line
+      .sort((a, b) => a[0] - b[0] || (a[1] < b[1] ? -1 : 1))
+      .map(([other, text]) => `${other}=${text}`)
+      .join(';'),
+  )
 }
 
 function cellSignature(sheet: SheetModel, row: number, col: number, data: CellData): string {
@@ -187,9 +202,8 @@ function alignAxis(own: SheetModel, other: SheetModel, kind: AxisKind, styles: S
   const ownExtent = extentOf(own)
   const otherExtent = extentOf(other)
   const count = (extent: Extent) => (kind === 'row' ? extent.rows : extent.cols)
-  const cross = Math.max(kind === 'row' ? ownExtent.cols : ownExtent.rows, kind === 'row' ? otherExtent.cols : otherExtent.rows)
-  const ownLines = Array.from({ length: count(ownExtent) }, (_, index) => lineSignature(own, kind, index, cross, (xf) => xf))
-  const otherLines = Array.from({ length: count(otherExtent) }, (_, index) => lineSignature(other, kind, index, cross, styles.xf))
+  const ownLines = lineSignatures(own, kind, count(ownExtent), (xf) => xf)
+  const otherLines = lineSignatures(other, kind, count(otherExtent), styles.xf)
   const pairs = matchSequences(ownLines, otherLines)
   if (!pairs) return 0
   const matchedNonEmpty = pairs.filter(([index]) => ownLines[index] !== '').length
@@ -246,9 +260,8 @@ function syncSheet(own: SheetModel, other: SheetModel, styles: StyleMap): void {
 function alignmentScore(own: SheetModel, other: SheetModel, kind: AxisKind, styles: StyleMap): number {
   const ownExtent = extentOf(own)
   const otherExtent = extentOf(other)
-  const cross = Math.max(ownExtent.cols, otherExtent.cols, ownExtent.rows, otherExtent.rows)
   const lines = (sheet: SheetModel, extent: Extent, map: (xf: number | undefined) => number | undefined) =>
-    Array.from({ length: kind === 'row' ? extent.rows : extent.cols }, (_, index) => lineSignature(sheet, kind, index, Math.min(cross, 16_384), map))
+    lineSignatures(sheet, kind, kind === 'row' ? extent.rows : extent.cols, map)
   const ownLines = lines(own, ownExtent, (xf) => xf)
   const otherSet = new Set(lines(other, otherExtent, styles.xf))
   return ownLines.filter((line) => line !== '' && otherSet.has(line)).length / Math.max(1, ownLines.length)
