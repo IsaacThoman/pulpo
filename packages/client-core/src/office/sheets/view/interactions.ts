@@ -1002,7 +1002,7 @@ export class SheetInteractions {
   private updateAssist(): void {
     const view = this.view
     const edit = view.editing
-    const docs = view.options.functions ?? []
+    const docs = view.functions
     if (!edit || !docs.length) return
     const caret = view.input.selectionStart ?? edit.caret
     const partial = partialFunctionName(edit.text, caret)
@@ -1527,7 +1527,7 @@ export class SheetInteractions {
     const cached = this.chartCache.get(id)
     if (cached?.key === key && element.dataset.rendered === key) return
     const render = (xml: string | undefined) => {
-      const svg = xml && view.options.renderChart?.(xml, { width, height }, view.theme, (formula) => this.resolveChartRange(formula))
+      const svg = xml ? view.renderChart(xml, { width, height }, (formula) => this.resolveChartRange(formula)) : undefined
       if (svg) element.innerHTML = svg
       else {
         element.replaceChildren()

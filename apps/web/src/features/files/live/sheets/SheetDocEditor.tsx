@@ -11,7 +11,6 @@ export function SheetDocEditor({ session, editable, toolbarSlot, assets }: LiveE
       readOnly={!editable}
       assets={assets}
       user={{ name: sessionLabel(), color: sessionColor(session.doc.clientID) }}
-      calculate
       toolbarSlot={toolbarSlot}
     />
   )

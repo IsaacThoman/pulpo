@@ -15,6 +15,11 @@ import { canInsertReference, formulaReferences, insertReference, type FunctionDo
 import { AxisLayout, columnWidthToPixels, defaultColumnPixels, pixelsToColumnWidth, POINTS_TO_PIXELS } from './layout.js'
 import { DARK_PALETTE, GridRenderer, LIGHT_PALETTE, type RemoteSelection, type Scene } from './renderer.js'
 import { SheetInteractions } from './interactions.js'
+import { SheetCalc } from '../calc.js'
+import { parseChart, renderChartSvg } from '../chart/index.js'
+import { errorFromCode } from '../formula/types.js'
+import { FUNCTION_DOCS } from '../formula/functions/docs.js'
+import { formatValue } from '../numfmt/index.js'
 
 export interface SheetViewLabels {
   sortAscending: string
@@ -59,12 +64,12 @@ export interface SheetViewOptions {
   assets: LiveAssetStore
   user: SheetViewUser
   labels?: Partial<SheetViewLabels>
-  /** Calculated values; without it, the values cached in the file are shown. */
-  values?: SheetValues
+  /** Values to show: by default formulas are calculated live; 'cached' shows the file's cached values. */
+  values?: SheetValues | 'cached'
   /** Function documentation for formula autocomplete and hints. */
   functions?: readonly FunctionDoc[]
   appearance?: 'light' | 'dark'
-  /** Renders a chart part (DrawingML chart XML) as an SVG string. */
+  /** Renders a chart part (DrawingML chart XML) as an SVG string; the built-in renderer by default. */
   renderChart?: (xml: string, size: { width: number; height: number }, theme: ThemeColors, resolve: (formula: string) => CellValue[][] | undefined) => string | undefined
   /** Opens an external link (never fetched automatically). Default: a new tab without opener. */
   openLink?: (url: string) => void
@@ -167,6 +172,8 @@ export class SheetView {
   private readonly ctx: CanvasRenderingContext2D
   private readonly renderer: GridRenderer
   readonly values: SheetValues
+  /** Function documentation for formula autocomplete and hints. */
+  readonly functions: readonly FunctionDoc[]
   private readonly ownsValues: boolean
   private readonly listeners = new Set<() => void>()
   private readonly disposers: (() => void)[] = []
@@ -189,6 +196,8 @@ export class SheetView {
   private display!: CellDisplay
   private conditional!: ConditionalFormatter
   digitWidth = 7
+  /** The file font's digit width over the drawn font's (see Scene.widthScale). */
+  widthScale = 1
   private frame = 0
   private notifyFrame = 0
   copyRange: CellRange | undefined
@@ -200,9 +209,12 @@ export class SheetView {
   constructor(readonly options: SheetViewOptions) {
     this.workbook = new WorkbookModel(options.doc, this.origin)
     this.labels = { ...DEFAULT_LABELS, ...options.labels }
+    this.functions = options.functions ?? FUNCTION_DOCS
     this.readOnly = !!options.readOnly
-    this.ownsValues = !options.values
-    this.values = options.values ?? new CachedValues(this.workbook)
+    this.ownsValues = !options.values || options.values === 'cached'
+    // Formulas are calculated live unless the host passes its own values ('cached' shows the
+    // values the file had cached, for read-only previews).
+    this.values = options.values === 'cached' ? new CachedValues(this.workbook) : (options.values ?? new SheetCalc(this.workbook))
     this.stylesXml = this.workbook.metaValue('stylesXml')
     this.stylesheet = new Stylesheet(this.stylesXml)
     this.theme = readThemeColors(this.workbook.metaValue('themeXml'))
@@ -292,7 +304,7 @@ export class SheetView {
     cancelAnimationFrame(this.notifyFrame)
     for (const dispose of this.disposers) dispose()
     this.interactions.destroy()
-    if (this.ownsValues) (this.values as CachedValues).destroy()
+    if (this.ownsValues) (this.values as CachedValues | SheetCalc).destroy()
     this.undoManager.destroy()
     this.options.awareness?.setLocalStateField('sheet', null)
     this.root.remove()
@@ -387,12 +399,10 @@ export class SheetView {
     // that holds for its metric-compatible stand-ins, so column widths match Excel exactly.
     const known: Record<string, number> = { 'calibri|11': 7, 'aptos narrow|11': 7, 'aptos|11': 7, 'arial|10': 7, 'arial|11': 8, 'calibri|10': 7, 'calibri|12': 8 }
     const fixed = known[`${font.name.toLowerCase()}|${font.size}`]
-    if (fixed) {
-      this.digitWidth = fixed
-      return
-    }
     this.ctx.font = `${font.size * POINTS_TO_PIXELS}px ${cssFontFamily(font.name)}`
-    this.digitWidth = Math.max(5, Math.round(this.ctx.measureText('0').width))
+    const measured = this.ctx.measureText('0').width || 7
+    this.digitWidth = fixed ?? Math.max(5, Math.round(measured))
+    this.widthScale = Math.min(1, this.digitWidth / measured)
   }
 
   /** Recomputes everything that depends on the current sheet. */
@@ -625,6 +635,7 @@ export class SheetView {
       referenceHighlights: editingRefs.map((ref) => ({ range: ref.range, color: ref.color })),
       fontFamily: cssFontFamily,
       digitWidth: this.digitWidth,
+      widthScale: this.widthScale,
       fillHandle: !this.readOnly && !this.editing && this.selection.ranges.length === 1,
     }
   }
@@ -1575,6 +1586,19 @@ export class SheetView {
     }
     const gridlines = sheet.viewProp('showGridLines') === false ? '' : 'td{outline:0.5px solid #d9d9d9}'
     return `<!doctype html><html><head><meta charset="utf-8"><title>${escape(sheet.name)}</title><style>@page{margin:0.7in 0.7in 0.75in}body{margin:0}table{border-collapse:collapse;table-layout:fixed}td{padding:0 3px;overflow:hidden}${gridlines}</style></head><body><table>${colgroup}${body}</table></body></html>`
+  }
+
+  /** A chart part as SVG: the host's renderer, else the built-in one. */
+  renderChart(xml: string, size: { width: number; height: number }, resolve: (formula: string) => CellValue[][] | undefined): string | undefined {
+    if (this.options.renderChart) return this.options.renderChart(xml, size, this.theme, resolve)
+    const model = parseChart(xml)
+    return renderChartSvg(model, {
+      ...size,
+      theme: this.theme.theme,
+      resolveRange: (formula) => resolve(formula)?.map((row) => row.map((value) => (isErrorValue(value) ? (errorFromCode(value.e) ?? null) : value))),
+      formatNumber: (value, code) => formatValue(value, code, { date1904: this.workbook.date1904 }).text,
+      idPrefix: `chart${Math.random().toString(36).slice(2, 8)}`,
+    })
   }
 
   focus(): void {

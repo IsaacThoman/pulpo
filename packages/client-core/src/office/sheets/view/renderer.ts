@@ -90,6 +90,11 @@ export interface Scene {
   fontFamily: (name: string) => string
   /** Pixels per character of the default font, for General number widths. */
   digitWidth: number
+  /**
+   * How much narrower the file's font is than the one the browser draws with (Calibri is often
+   * missing): numbers that fit in Excel must not turn into ####.
+   */
+  widthScale: number
   fillHandle: boolean
 }
 
@@ -398,13 +403,14 @@ export class GridRenderer {
     const available = rect.width - padding * 2 - indent
     // Numbers that don't fit: General shows fewer digits, other formats show ####.
     if (render.numeric && !style.wrap && typeof render.value === 'number') {
-      if (ctx.measureText(text).width > available) {
+      const fits = (candidate: string) => ctx.measureText(candidate).width * scene.widthScale <= available
+      if (!fits(text)) {
         if (style.numFmt === 'General') {
           const chars = Math.max(1, Math.floor(available / (scene.digitWidth * scene.zoom * (style.fontSize / 11))))
           text = formatValue(render.value, 'General', { generalWidth: chars }).text
         }
-        if (ctx.measureText(text).width > available) {
-          const hashWidth = ctx.measureText('#').width || 1
+        if (!fits(text)) {
+          const hashWidth = (ctx.measureText('#').width || 1) * scene.widthScale
           text = '#'.repeat(Math.max(1, Math.floor(available / hashWidth)))
         }
       }

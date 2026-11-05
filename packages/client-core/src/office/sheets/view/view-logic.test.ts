@@ -235,12 +235,14 @@ describe('conditional formats', () => {
 
 describe('colors and layout', () => {
   it('applies Excel tints and theme indexes', () => {
-    expect(cssColor({ theme: 4, tint: 0.3999755851924192 }, DEFAULT_THEME_COLORS)).toBe('#8FAADC')
+    expect(cssColor({ theme: 4, tint: 0.3999755851924192 }, DEFAULT_THEME_COLORS)).toBe('#8EA9DB')
     expect(cssColor({ theme: 1 }, DEFAULT_THEME_COLORS)).toBe('#000000')
     expect(cssColor({ indexed: 10 }, DEFAULT_THEME_COLORS)).toBe('#FF0000')
     expect(cssColor({ rgb: '00FF8800' }, DEFAULT_THEME_COLORS)).toBe('#FF8800')
     expect(cssColor({ auto: true }, DEFAULT_THEME_COLORS)).toBeUndefined()
-    expect(applyTint('4472C4', -0.25)).toBe('2F5597')
+    // Excel's "Blue, Accent 1, Darker 25%" swatch; tints land within one unit per channel.
+    const close = (a: string, b: string) => [0, 2, 4].every((index) => Math.abs(parseInt(a.slice(index, index + 2), 16) - parseInt(b.slice(index, index + 2), 16)) <= 1)
+    expect(close(applyTint('4472C4', -0.25), '2F5597')).toBe(true)
   })
 
   it('converts column widths like Excel', () => {

@@ -26,13 +26,11 @@ export interface SheetEditorProps {
   readOnly?: boolean
   assets: LiveAssetStore
   user: { name: string; color: string }
-  values?: SheetValues
+  values?: SheetValues | 'cached'
   functions?: readonly FunctionDoc[]
   renderChart?: SheetViewOptions['renderChart']
   /** Called once the view exists (tests and hosts that drive it directly). */
   onView?: (view: SheetView | undefined) => void
-  /** Calculate formulas live (otherwise the values cached in the file show). */
-  calculate?: boolean
   /** Rendered at the end of the toolbar. */
   toolbarSlot?: React.ReactNode
 }
