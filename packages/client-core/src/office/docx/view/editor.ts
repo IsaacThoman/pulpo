@@ -88,6 +88,7 @@ import { PAGE_GAP, PX_PER_PT, type LayoutResult } from './layout.js'
 import { normalizeAtomMarks, selectionMarks } from './marks.js'
 import { DrawingView, MathView } from './nodeviews.js'
 import { documentSections, paginate, storyReference, type RepeatedHeader, type Section } from './paginate.js'
+import { sectionEndsPlugin } from './sections.js'
 import { layoutStaticTabs, renderStory } from './static.js'
 import { layoutTabs, paragraphTabs } from './tabs.js'
 import {
@@ -352,6 +353,7 @@ export class DocxEditor {
       ySyncPlugin(fragment),
       yCursorPlugin(this.options.awareness, {}, cursorField),
       yUndoPlugin(),
+      sectionEndsPlugin(),
       keymap(this.shortcuts()),
       keymap({ Tab: goToNextCell(1), 'Shift-Tab': goToNextCell(-1) }),
       keymap(baseKeymap),

@@ -1,4 +1,7 @@
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
+import { joinBackward, joinForward } from '@tiptap/pm/commands'
+import { history, undo } from '@tiptap/pm/history'
+import { ySyncPluginKey } from '@tiptap/y-tiptap'
 import { EditorState, TextSelection } from '@tiptap/pm/state'
 import { describe, expect, it, vi } from 'vitest'
 import { addRowAfter, addRowBefore, deleteRow, TableMap } from '@tiptap/pm/tables'
@@ -13,6 +16,7 @@ import { docxSchema, inlineMarks } from './schema.js'
 import { StyleSheet, cellConditions, mergeElement, tableLook } from './styles.js'
 import { clearFormatting, freshId, findMatches, insertTable, insertPageBreak, insertParagraphBreak, listDefinition, replaceMatches, setAlignment, setFontSize, toggleList, toggleRunProperty, wordCount } from './view/commands.js'
 import { DocxViewContext } from './view/context.js'
+import { sectionEndsPlugin } from './view/sections.js'
 import { listRevisions, resolveRevisions, trackTransaction } from './view/track-changes.js'
 
 const schema = docxSchema()
@@ -439,6 +443,52 @@ describe('tracked changes', async () => {
     }
   })
 
+  it.each([null, packJml(['w:sectPr', {}, ['w:type', { 'w:val': 'nextPage' }]])])('rejects repeated Enter over an own inserted newline with section end %s', (sectPr) => {
+    const context = new DocxViewContext(doc)
+    try {
+      const original = schema.node('doc', null, [schema.node('paragraph', { sectPr }, schema.text('ABC')), p(run('DEF'))])
+      let state = EditorState.create({ schema, doc: original, plugins: [sectionEndsPlugin()] })
+      for (const [from, to] of [[1, 1], [1, 3]]) {
+        state = state.apply(state.tr.setSelection(TextSelection.create(state.doc, from!, to!)))
+        state = state.apply(trackTransaction(state, insertParagraphBreak(state, context)!, reviewer)!)
+      }
+      state = state.apply(resolveRevisions(state, listRevisions(state.doc), 'reject')!)
+      expect(state.doc.eq(original)).toBe(true)
+    } finally {
+      context.destroy()
+    }
+  })
+
+  it.each([null, 'w:ins', 'w:del'])('keeps original mark properties and %s through a tracked split over multiple paragraphs', (revision) => {
+    const context = new DocxViewContext(doc)
+    const markRPr = packJml(['w:rPr', {}, ['w:b', {}], ...(revision ? [[revision, { 'w:id': '42', 'w:author': 'Grace' }] as JmlElement] : [])])
+    const sectPr = packJml(['w:sectPr', {}, ['w:type', { 'w:val': 'nextPage' }]])
+    const original = schema.node('doc', null, [
+      schema.node('paragraph', { markRPr, sectPr }, schema.text('ABC')),
+      schema.node('paragraph', { markRPr: packJml(['w:rPr', {}, ['w:i', {}]]) }, schema.text('DEF')),
+      p(run('GHI')),
+    ])
+    try {
+      for (const [from, to] of [[1, 1], [2, 3], [2, 7], [2, 12]]) {
+        let state = EditorState.create({ schema, doc: original, plugins: [sectionEndsPlugin()] })
+        state = state.apply(state.tr.setSelection(TextSelection.create(state.doc, from!, to!)))
+        state = state.apply(trackTransaction(state, insertParagraphBreak(state, context)!, reviewer)!)
+        const inserted = listRevisions(state.doc).filter(({ kind, author }) => kind === 'paragraphInsert' && author === reviewer.author)
+        expect(inserted).toHaveLength(1)
+        expect(state.doc.resolve(inserted[0]!.from).parent.attrs.sectPr).toBeNull()
+        const paragraphs: ProseMirrorNode[] = []
+        state.doc.forEach((node) => { if (node.attrs.sectPr) paragraphs.push(node) })
+        expect(paragraphs).toHaveLength(1)
+        expect(paragraphs[0]!.attrs.markRPr).toContain('w:b')
+        const own = listRevisions(state.doc).filter(({ author }) => author === reviewer.author)
+        state = state.apply(resolveRevisions(state, own, 'reject')!)
+        expect(state.doc.eq(original)).toBe(true)
+      }
+    } finally {
+      context.destroy()
+    }
+  })
+
   it('keeps the second inserted paragraph mark when rejecting only the first split', () => {
     let state = initial()
     for (const pos of [6, 10]) state = state.apply(trackTransaction(state, state.tr.split(pos), reviewer)!)
@@ -524,5 +574,96 @@ describe('tracked changes', async () => {
     const xml = OoxmlPackage.read(bytes).text('word/document.xml')!
     expect(xml).toMatch(/<w:ins w:id="\d+" w:author="Ada" w:date="2026-11-04T10:00:00Z"><w:r><w:t xml:space="preserve">New <\/w:t><\/w:r><\/w:ins>/)
     expect(xml).toMatch(/<w:del w:id="\d+" w:author="Ada" w:date="2026-11-04T10:00:00Z"><w:r><w:delText>world<\/w:delText><\/w:r><\/w:del>/)
+  })
+})
+
+describe('section ends', () => {
+  const sectPr = packJml(['w:sectPr', {}, ['w:pgSz', { 'w:w': '15840', 'w:h': '12240', 'w:orient': 'landscape' }]])
+  const paragraph = (text: string, section: string | null = null, pStyle: string | null = null) => schema.node('paragraph', { sectPr: section, pStyle }, schema.text(text))
+
+  it.each([joinBackward, joinForward])('keeps the surviving section end on a keyboard join and in the same undo event', (command) => {
+    const original = schema.node('doc', null, [paragraph('A', null, 'Heading1'), paragraph('B', sectPr, 'Normal'), paragraph('C')])
+    let state = EditorState.create({ schema, doc: original, plugins: [history(), sectionEndsPlugin()] })
+    state = state.apply(state.tr.setSelection(TextSelection.create(state.doc, command === joinBackward ? 4 : 2)))
+    expect(command(state, (tr) => { state = state.apply(tr) })).toBe(true)
+    expect(state.doc.child(0).textContent).toBe('AB')
+    expect(state.doc.child(0).attrs).toMatchObject({ sectPr, pStyle: 'Heading1' })
+    expect(undo(state, (tr) => { state = state.apply(tr) })).toBe(true)
+    expect(state.doc.eq(original)).toBe(true)
+  })
+
+  it('keeps the last paragraph section end when a selection deletes from A into C', () => {
+    const original = schema.node('doc', null, [paragraph('AAA', null, 'Heading1'), paragraph('BBB'), paragraph('CCC', sectPr)])
+    const state = EditorState.create({ schema, doc: original, plugins: [sectionEndsPlugin()] })
+    const next = state.apply(state.tr.delete(2, 13))
+    expect(next.doc.childCount).toBe(1)
+    expect(next.doc.firstChild!.textContent).toBe('AC')
+    expect(next.doc.firstChild!.attrs).toMatchObject({ sectPr, pStyle: 'Heading1' })
+  })
+
+  it('drops a section break when its paragraph end is deleted', () => {
+    const original = schema.node('doc', null, [paragraph('AAA', sectPr), paragraph('BBB'), paragraph('CCC')])
+    const state = EditorState.create({ schema, doc: original, plugins: [sectionEndsPlugin()] })
+    const next = state.apply(state.tr.delete(2, 13))
+    expect(next.doc.firstChild!.textContent).toBe('AC')
+    expect(next.doc.firstChild!.attrs.sectPr).toBeNull()
+  })
+
+  it('replaces an inherited section break with the surviving end’s different break', () => {
+    const other = packJml(['w:sectPr', {}, ['w:type', { 'w:val': 'continuous' }]])
+    const state = EditorState.create({ schema, doc: schema.node('doc', null, [paragraph('A', other), paragraph('B', sectPr)]), plugins: [sectionEndsPlugin()] })
+    const next = state.apply(state.tr.join(3))
+    expect(next.doc.firstChild!.attrs.sectPr).toBe(sectPr)
+  })
+
+  it('leaves new split ends empty and new pasted ends with their own section properties', () => {
+    const doc = new Y.Doc()
+    const context = new DocxViewContext(doc)
+    try {
+      let state = EditorState.create({ schema, doc: schema.node('doc', null, [paragraph('ABC', sectPr)]), plugins: [sectionEndsPlugin()] })
+      state = state.apply(state.tr.setSelection(TextSelection.create(state.doc, 2)))
+      state = state.apply(insertParagraphBreak(state, context)!)
+      expect(state.doc.child(0).attrs.sectPr).toBeNull()
+      expect(state.doc.child(1).attrs.sectPr).toBe(sectPr)
+      const next = state.apply(state.tr.insert(0, paragraph('Pasted', sectPr)))
+      expect(next.doc.child(0).attrs.sectPr).toBe(sectPr)
+      expect(next.doc.child(1).attrs.sectPr).toBeNull()
+      expect(next.doc.child(2).attrs.sectPr).toBe(sectPr)
+    } finally {
+      context.destroy()
+      doc.destroy()
+    }
+  })
+
+  it.each([joinBackward, joinForward])('keeps deleted marks and their sections while suggesting a keyboard join', (command) => {
+    const original = schema.node('doc', null, [paragraph('A', sectPr), paragraph('B')])
+    let state = EditorState.create({ schema, doc: original, plugins: [sectionEndsPlugin()] })
+    state = state.apply(state.tr.setSelection(TextSelection.create(state.doc, command === joinBackward ? 4 : 2)))
+    const reviewer = { author: 'Ada', date: '2026-11-04T10:00:00Z' }
+    expect(command(state, (tr) => { state = state.apply(trackTransaction(state, tr, reviewer)!) })).toBe(true)
+    expect(state.doc.childCount).toBe(2)
+    expect(state.doc.child(0).attrs.sectPr).toBe(sectPr)
+    expect(state.doc.child(1).attrs.sectPr).toBeNull()
+    expect(listRevisions(state.doc).map(({ kind }) => kind)).toEqual(['paragraphDelete'])
+    const accepted = state.apply(resolveRevisions(state, listRevisions(state.doc), 'accept')!)
+    expect(accepted.doc.childCount).toBe(1)
+    expect(accepted.doc.firstChild!.attrs.sectPr).toBeNull()
+    const rejected = state.apply(resolveRevisions(state, listRevisions(state.doc), 'reject')!)
+    expect(rejected.doc.eq(original)).toBe(true)
+  })
+
+  it('retains new pasted paragraph ends in suggesting mode', () => {
+    const state = EditorState.create({ schema, doc: schema.node('doc', null, [paragraph('Original')]), plugins: [sectionEndsPlugin()] })
+    const reviewer = { author: 'Ada', date: '2026-11-04T10:00:00Z' }
+    const next = state.apply(trackTransaction(state, state.tr.insert(0, paragraph('Pasted', sectPr)), reviewer)!)
+    expect(next.doc.child(0).attrs.sectPr).toBe(sectPr)
+    expect(next.doc.child(1).attrs.sectPr).toBeNull()
+    expect(listRevisions(next.doc).map(({ kind }) => kind)).toContain('paragraphInsert')
+  })
+
+  it('does not restore section ends for y-sync transactions', () => {
+    const state = EditorState.create({ schema, doc: schema.node('doc', null, [paragraph('A'), paragraph('B', sectPr)]), plugins: [sectionEndsPlugin()] })
+    const next = state.apply(state.tr.join(3).setMeta(ySyncPluginKey, { isChangeOrigin: true }))
+    expect(next.doc.firstChild!.attrs.sectPr).toBeNull()
   })
 })

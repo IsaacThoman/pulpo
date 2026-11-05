@@ -184,7 +184,12 @@ function trackDelete(out: Transaction, from: number, to: number, reviewer: Revie
 /** Inserts `slice` at `pos` marked as the reviewer's insertion. */
 function trackInsert(out: Transaction, pos: number, slice: Slice, reviewer: Reviewer): { end: number; step: number } | undefined {
   if (!slice.size) return undefined
+  const split = slice.openStart === 1 && slice.openEnd === 1 && slice.content.childCount === 2
+    && slice.content.firstChild?.type.name === 'paragraph' && !slice.content.firstChild.content.size
+    && slice.content.lastChild?.type.name === 'paragraph' && !slice.content.lastChild.content.size
   const before = out.steps.length
+  const $pos = out.doc.resolve(pos)
+  const original = $pos.parent.type.name === 'paragraph' ? { end: $pos.end(), attrs: $pos.parent.attrs } : undefined
   out.replace(pos, pos, slice)
   const map = out.mapping.slice(before)
   const end = map.map(pos, 1)
@@ -197,12 +202,22 @@ function trackInsert(out: Transaction, pos: number, slice: Slice, reviewer: Revi
   })
   const mark = insertionMark(out, start, reviewer)
   changeMarks(out, start, end, (marks) => mark.addToSet(marks.filter((existing) => existing.type.name !== 'del')))
-  // Paragraph marks the insertion created (Enter, pasted paragraphs) are inserted too.
+  // The old mark follows the original content's end, even when Enter replaces a tracked join.
+  if (original) {
+    const $end = out.doc.resolve(map.map(original.end, 1))
+    if ($end.parent.type.name === 'paragraph' && $end.parentOffset === $end.parent.content.size) {
+      out.setNodeMarkup($end.before(), undefined, {
+        ...$end.parent.attrs, markRPr: original.attrs.markRPr, sectPr: original.attrs.sectPr, trail: original.attrs.trail,
+      })
+    }
+  }
+  // Splits create a fresh mark; pasted paragraph ends retain their own properties.
   out.doc.nodesBetween(start, end, (node, nodePos) => {
     if (node.type.name !== 'paragraph') return true
     const endOfParagraph = nodePos + node.nodeSize - 1
-    if (endOfParagraph >= start && endOfParagraph < end && !jmlChild(jml(node.attrs.markRPr), 'w:ins')) {
-      out.setNodeMarkup(nodePos, undefined, withMarkRPrChild(node.attrs, ['w:ins', revisionAttrs(reviewer)], ['w:del']))
+    if (endOfParagraph >= start && endOfParagraph < end && (split || !jmlChild(jml(node.attrs.markRPr), 'w:ins'))) {
+      const attrs = split ? { ...node.attrs, markRPr: null, sectPr: null, trail: null } : node.attrs
+      out.setNodeMarkup(nodePos, undefined, withMarkRPrChild(attrs, ['w:ins', revisionAttrs(reviewer)], ['w:del']))
     }
     return false
   })
@@ -293,7 +308,11 @@ export function trackTransaction(state: EditorState, tr: Transaction, reviewer: 
       if (node && old && node.type === replacement.type) {
         // Apply only changed attributes so Enter's cleanup keeps the tracked paragraph mark.
         const attrs = { ...node.attrs }
-        for (const key of Object.keys(replacement.attrs)) if (replacement.attrs[key] !== old.attrs[key]) attrs[key] = replacement.attrs[key]
+        for (const key of Object.keys(replacement.attrs)) {
+          // Split tracking already assigned each mark to its surviving end; command positions may differ.
+          if (tr.getMeta('docx-paragraph-split') && ['markRPr', 'sectPr', 'trail'].includes(key)) continue
+          if (replacement.attrs[key] !== old.attrs[key]) attrs[key] = replacement.attrs[key]
+        }
         out.setNodeMarkup(pos, undefined, attrs, replacement.marks)
       }
     } else if (step instanceof AddMarkStep || step instanceof RemoveMarkStep) {

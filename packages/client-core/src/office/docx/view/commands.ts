@@ -59,7 +59,8 @@ export function selectedParagraphs(state: EditorState): { node: ProseMirrorNode;
 export const insertParagraphBreak: Command = (state, context) => {
   const paragraph = selectedParagraphs(state)[0]
   if (!paragraph) return null
-  const $from = state.selection.$from
+  const { $from, $to } = state.selection
+  const endAttrs = $to.parent.type.name === 'paragraph' ? $to.parent.attrs : paragraph.node.attrs
   const atEnd = $from.parentOffset === $from.parent.content.size
   let result: Transaction | null = null
   chainCommands(newlineInCode, createParagraphNear, liftEmptyBlock, splitBlock)(state, (tr) => {
@@ -69,9 +70,12 @@ export const insertParagraphBreak: Command = (state, context) => {
     if (first && second?.type.name === 'paragraph') {
       const attrs = paragraph.node.attrs
       const nextStyle = atEnd ? context.styles.get(attrs.pStyle as string | null)?.next : undefined
-      tr.setNodeMarkup(paragraph.pos, undefined, { ...attrs, sectPr: null, trail: null })
+      tr.setNodeMarkup(paragraph.pos, undefined, { ...attrs, markRPr: null, sectPr: null, trail: null })
       tr.setNodeMarkup(secondPos, undefined, {
         ...attrs,
+        markRPr: endAttrs.markRPr,
+        sectPr: endAttrs.sectPr,
+        trail: endAttrs.trail,
         lead: null,
         xmlAttrs: null,
         ...(nextStyle && nextStyle !== attrs.pStyle ? { pStyle: nextStyle, outlineLvl: null } : {}),
@@ -80,7 +84,7 @@ export const insertParagraphBreak: Command = (state, context) => {
       // Typing continues with the formatting at the split.
       tr.setStoredMarks(selectionMarks(state).filter((mark) => mark.type.name !== 'link' && mark.type.name !== 'ins' && mark.type.name !== 'del'))
     }
-    result = tr
+    result = tr.setMeta('docx-paragraph-split', true)
   })
   return result
 }
