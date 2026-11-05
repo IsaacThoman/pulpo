@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, inArray, isNotNull, isNull, lt, ne, or, sql, type SQL } from 'drizzle-orm'
 import { LIVE_FORMATS, liveFormatOfName, liveMimeType, type LiveFormatInfo } from '@pulpo/client-core/office'
 import { FILE_TREE_MAX_DEPTH, nextAvailableName, type FileColor, type FileIcon, type FileListing, type FileNode, type FileNodeKind, type FileSystemRole, type StateInvalidationScope } from '@pulpo/contracts'
-import { assertStorageCapacity } from '../attachments/storage-quota.js'
+import { assertStorageCapacity, lockAccountStorage } from '../attachments/storage-quota.js'
 import { db } from '../database/client.js'
 import { chats, fileNodes, fileVersions, userPreferences } from '../database/schema.js'
 import { bumpAccountRevisions, publishScopedStateChanges, type AccountRevisionChange } from '../friends/sync.js'
@@ -62,7 +62,8 @@ export async function lockFileTree(tx: DatabaseTransaction, userId: string): Pro
 
 /**
  * Runs a tree mutation under the account's Files lock, then tells the account's other sessions to
- * refetch. With `reserveBytes`, the account's storage lock is taken first and the allowance checked.
+ * refetch. Takes storage before tree so document writers can check growth under the same locks.
+ * With `reserveBytes`, the requested allowance is checked before the mutation.
  */
 export async function mutateFileTree<T>(
   userId: string,
@@ -73,6 +74,7 @@ export async function mutateFileTree<T>(
   let changes: AccountRevisionChange[] = []
   const result = await db.transaction(async (tx) => {
     // Storage before tree, matching upload reservations, so the two locks cannot deadlock.
+    await lockAccountStorage(tx, userId)
     if (options.reserveBytes !== undefined) await assertStorageCapacity(tx, userId, options.reserveBytes, { perFileLimit: false })
     await lockFileTree(tx, userId)
     const value = await mutation(tx)
@@ -611,12 +613,22 @@ export async function convertMisnamedDocs(limit = 200): Promise<number> {
     const done = await mutateFileTree(row.userId, async (tx) => {
       const [node] = await tx.select().from(fileNodes).where(eq(fileNodes.id, row.id)).for('update')
       if (!node || node.kind !== 'doc' || liveFormatOfName(node.name)?.id === docFormat(node).id) return null
-      return (await convertDocToBlobInTx(tx, row.userId, node)).releasedKeys
+      try {
+        return { converted: true, releasedKeys: (await convertDocToBlobInTx(tx, row.userId, node)).releasedKeys }
+      } catch (error) {
+        if (!(error instanceof AppError) || error.code !== 'storage_quota_exceeded') throw error
+        // Preserve the live document when its export cannot fit. Repair the name instead so
+        // future maintenance passes no longer select this unaffordable conversion.
+        const extension = docFormat(node).extensions[0]!
+        const name = `${node.name.slice(0, 254 - extension.length)}.${extension}`
+        await moveNodeInTx(tx, row.userId, node, { parentId: node.parentId, name, onConflict: 'rename' })
+        return { converted: false, releasedKeys: [] }
+      }
     }).catch(() => null)
-    if (done) {
+    if (done?.converted) {
       converted += 1
       await publishDocsClosed([row.id], 'converted')
-      await deleteObjects(done)
+      await deleteObjects(done.releasedKeys)
     }
   }
   return converted

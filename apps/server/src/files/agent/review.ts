@@ -40,12 +40,14 @@ async function reviewLive({ tx, effects, userId, row, node, action }: Review): P
   const proposed = parseLiveSnapshot(row.after)
   if (!proposed) return
   const before = parseLiveSnapshot(row.before)
+  // These rows are settled already. Release their quota before applying growth; object deletion
+  // still waits for commit, and any failed acceptance rolls the releases back with the review.
+  await releaseLiveSnapshot(tx, effects, proposed)
+  await releaseLiveSnapshot(tx, effects, before)
   if (action === 'accept') {
     if (!isLiveDoc(node) || node.trashedAt) throw stale(`"${node.name}" is no longer a document that can take the suggested version`)
     await acceptLiveProposal(tx, effects, node, userId, before, proposed)
   }
-  await releaseLiveSnapshot(tx, effects, proposed)
-  await releaseLiveSnapshot(tx, effects, before)
 }
 
 /** The proposed content becomes the file's (the replaced content is not kept), or is dropped. */

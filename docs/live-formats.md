@@ -29,8 +29,8 @@ This page covers the model and the integration steps. [Files](./files.md) descri
 ## Data model
 
 - `file_nodes.format`: the live format of a `doc` node. A check constraint requires it for documents and forbids it for anything else. Migration 0111 set every existing document to `markdown`. A document's name always has its format's extension.
-- `file_docs.schema_version` is the format's schema version. `file_docs.markdown` holds the derived plain text (`codec.toText`): Markdown for Markdown documents, the content for text files. Compaction refreshes it. It feeds previews, `/api/files/:id/markdown`, and agents' `cat` and `grep`.
-- `file_docs.generation`: a UUID stamped into the document's state when it is made (the `pulpoDoc` Y.Map, `DOC_META_MAP`). A file made a document again under the same id gets a new one. Join acknowledgements carry the generation read from the document's state (so it is always the one clients compare against), and the provider refuses (`stale_copy`) to merge a device's cached copy that holds another generation's content. Proposals keep their document's generation too: one whose fork is of another generation is never merged, and a document that becomes an ordinary file rejects its pending proposals. The web then deletes its IndexedDB copy and mobile discards its SQLite copy before joining afresh. Documents from before generations have none and are never refused.
+- `file_docs.schema_version` is the format's schema version. `file_docs.markdown` holds the derived plain text (`codec.toText`): Markdown for Markdown documents, the content for text files. Compaction refreshes it. Storage is charged for state growth when updates are accepted, under the account storage lock; shrinking releases space when compaction discards the earlier snapshot. It feeds previews, `/api/files/:id/markdown`, and agents' `cat` and `grep`.
+- `file_docs.generation`: a UUID stamped into the document's state when it is made (the `pulpoDoc` Y.Map, `DOC_META_MAP`). A file made a document again under the same id gets a new one. Join acknowledgements carry the generation read from the document's state (so it is always the one clients compare against), and the provider refuses (`stale_copy`) to merge a device's cached or previously joined copy that holds another generation's content. Proposals keep their document's generation too: one whose fork is of another generation is never merged, and a document that becomes an ordinary file rejects its pending proposals. The web then deletes its IndexedDB copy and mobile discards its SQLite copy before joining afresh. Documents from before generations have none and are never refused.
 - `file_doc_assets`: a document's binary parts, one row per `(node_id, hash)`, with the object key, MIME type, and size. Each row's object has its own key (`users/<id>/doc-assets/<node>/<hash>-<id>`), so deleting an unused one after commit never removes bytes stored again meanwhile. Objects are stored per document, so copying a document copies its objects and deleting it deletes them. Assets count toward storage, cascade from `file_docs`, and are included in backups (blobs remapped on restore). Account deletion removes them. A document that becomes an ordinary file drops its assets after commit.
 
 ## Sync and schema versions
@@ -44,7 +44,7 @@ This page covers the model and the integration steps. [Files](./files.md) descri
 
 - **Create.** `POST /api/files/docs` takes any name of a live format and makes an empty document (`codec.createEmpty`). Without a name it makes `Untitled.md`. Creation menus on the web and mobile list every registered format.
 - **Edit an upload.** `POST /api/files/:id/convert` imports the uploaded bytes through the codec, then deletes the object after commit. For formats other than Markdown it first checks the storage allowance has room for the upload's size again, since the document (and any original bytes it keeps) exists beside the upload until then. Formats whose codec is lossless (text) convert as soon as the user picks **Edit**. Markdown keeps its preview dialog (`GET /api/files/:id/conversion`).
-- **Rename.** Renaming within a format keeps the document and updates its MIME type (`a.py` → `a.ts`). Renaming to another format, or to no format, exports the document through its codec and makes it an ordinary file (`a.py` → `a.md` or `a.bin`). Open editors get `doc.closed` with reason `converted`. The maintenance job `convertMisnamedDocs` repairs any document whose name left its format.
+- **Rename.** Renaming within a format keeps the document and updates its MIME type (`a.py` → `a.ts`). Renaming to another format, or to no format, exports the document through its codec and makes it an ordinary file (`a.py` → `a.md` or `a.bin`). Open editors get `doc.closed` with reason `converted`. The maintenance job `convertMisnamedDocs` repairs any document whose name left its format. If the export cannot fit the storage allowance, it preserves the document and restores a recognized extension (uniquified as usual), instead of retrying the same unaffordable conversion forever.
 - **Download.** `GET /api/files/:id/export` returns the real file with an attachment disposition, `nosniff`, and a sandbox CSP. Open editors export locally instead, so offline edits are included.
 - **Copy, trash, purge, quota, and backup** carry the format and assets along.
 
@@ -52,7 +52,7 @@ This page covers the model and the integration steps. [Files](./files.md) descri
 
 - `GET /api/files/:id/assets/:hash` returns the bytes as `application/octet-stream`, with the stored type in `x-pulpo-asset-type`. It is always a download, never sniffed, and sandboxed, and since a hash always names the same bytes it is cached for good. Editors make object URLs from the bytes; untrusted content is never served inline from the app origin.
 - `PUT /api/files/:id/assets?type=<mime>` (body `application/octet-stream`) stores one. It is checked against the per-file cap (at most 25 MB) and the storage allowance.
-- **Unused assets.** Compaction deletes a document's assets that neither the document nor a pending proposal's fork refers to (`codec.referencedAssets`), once they are an hour old. The grace period lets editors upload an asset before they refer to it. Codecs that don't implement `referencedAssets` keep every asset.
+- **Unused assets.** Compaction deletes a document's assets that neither the document nor a pending proposal's fork refers to (`codec.referencedAssets`), once they are an hour old. The grace period lets editors upload an asset before they refer to it. Uploads and compaction schedule another collection after the grace period, so idle documents release unused assets too. Codecs that don't implement `referencedAssets` keep every asset.
 - On the server, codecs get a `DocAssetStore`. It reads the document's assets, buffers new ones, and writes them with the document's transaction (`flush`). On the web, `ApiLiveAssetStore` fetches and uploads through these routes.
 
 ## Agents
@@ -89,6 +89,8 @@ Review UIs read `FileChangeSummary.contentDiff` and fetch both versions:
    - Run `npm run build:editor -w @pulpo/mobile`. `editorBundle.test.ts` checks every bundle is fresh and keeps editors out of the Hermes bundle.
 5. **Agents.** Mention the format and how to edit it in `files/agent/prompt.ts` and `packages/workspace-daemon/src/cli-help.ts`.
 
+The OOXML package helper preserves original XML part bytes after read-only inspection (including UTF-16, content types, and relationships); it serializes a cached DOM only when its content changes.
+
 ## The text format
 
 - **Layout** (`office/text/layout.ts`). `text` is one Y.Text holding the content, with every line break as `\n`. `textFile` is a Y.Map holding `encoding`, `lineEnding`, and, for files with mixed line breaks, `original`.
@@ -97,7 +99,7 @@ Review UIs read `FileChangeSummary.contentDiff` and fetch both versions:
   - NUL bytes, or a steady share of control characters;
   - 8-bit text with more than a tenth high bytes (likely Shift-JIS, GBK, or another encoding Windows-1252 would garble);
   - UTF-16 with a broken surrogate pair (documents store UTF-8, which cannot hold one);
-  - files over 4 MB.
+  - external imports and agent pushes over 4 MB. Previously valid snapshots grown in the collaborative editor may be restored and compared past that cap: restore accepts up to 32 MB of encoded file bytes (UTF-16 with CRLF can expand the supported 8 MB state fourfold), and the server still checks the resulting Yjs state limit.
 - **Byte faithful.** Export is byte for byte when nothing changed, BOM, line breaks, and trailing newline included. For a file with mixed line breaks, the original bytes are kept as an asset and returned while the text still hashes the same. Once edited, every line break takes the dominant style, as most editors do.
 - **`applyFile`** diffs line by line, then narrows each changed run to the characters that differ, and applies the result as Y.Text inserts and deletes. The line diff is Myers for up to 4,000 differing lines. Beyond that, lines that occur once on each side anchor the match (patience diff), so even a file changed all over keeps every line it did not change. Concurrent edits elsewhere in the file merge.
 - **Editor** (`office/text/view`). CodeMirror 6 bound with `y-codemirror.next`:

@@ -10,6 +10,7 @@ import { applicationSettings, fileChanges, fileDocAssets } from '../database/sch
 import { AppError, notFound } from '../lib/errors.js'
 import { parseAuthSettings } from '../settings/application-settings.js'
 import { getBlobStore } from '../storage/index.js'
+import { scheduleDocAssetCollection } from './doc-store.js'
 import { resolveFileAccess } from './access.js'
 import { parseLiveSnapshot } from './agent/live.js'
 import { hasVersion } from './agent/versions.js'
@@ -101,7 +102,7 @@ export async function registerLiveDocRoutes(app: FastifyInstance): Promise<void>
     if (!bytes.byteLength) throw new AppError(400, 'validation_error', 'The asset is empty')
     const hash = await liveAssetHash(bytes)
     const mimeType = type?.toLowerCase() ?? 'application/octet-stream'
-    return mutateFileTree(user.id, async (tx) => {
+    const ref = await mutateFileTree(user.id, async (tx) => {
       const access = await resolveFileAccess(tx, user.id, id)
       if (!access || access.node.kind !== 'doc' || access.node.trashedAt || access.node.status !== 'ready') throw notFound('Document')
       // Uploaded again: the editor is about to refer to it, so its grace period starts over.
@@ -113,6 +114,11 @@ export async function registerLiveDocRoutes(app: FastifyInstance): Promise<void>
       await store.flush(tx, user.id, id)
       return ref
     }, ['files'], { reserveBytes: bytes.byteLength })
+    // The upload is committed; failure to enqueue must not tell the editor its asset was lost.
+    await scheduleDocAssetCollection(id).catch((error: unknown) => {
+      request.log.error(error, 'Could not schedule document asset collection')
+    })
+    return ref
   })
 
   // Both sides of a live document's agent change as plain text (`codec.toText`): the diff any

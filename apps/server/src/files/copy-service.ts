@@ -2,7 +2,7 @@ import { and, eq, inArray, sql } from 'drizzle-orm'
 import * as Y from 'yjs'
 import { liveFormatCodec } from '@pulpo/client-core/office/codecs'
 import { FILE_TREE_MAX_DEPTH, nextAvailableName, type FileNode } from '@pulpo/contracts'
-import { assertStorageCapacity, lockAccountStorage } from '../attachments/storage-quota.js'
+import { assertStorageCapacity, assertWithinStorageAllowance, lockAccountStorage } from '../attachments/storage-quota.js'
 import { db } from '../database/client.js'
 import { fileDocAssets, fileDocs, fileNodes } from '../database/schema.js'
 import { bumpAccountRevisions, publishScopedStateChanges } from '../friends/sync.js'
@@ -111,7 +111,13 @@ export async function copyFileNodes(userId: string, ids: string[], parentId: str
           sortOrder: root ? top-- : node.sortOrder,
         })
         if (node.kind === 'doc') {
-          const state = await mergedDocState(tx, node.id)
+          // Drop deleted content from the log before storing a new standalone snapshot. Otherwise
+          // a small live document can copy megabytes of obsolete edits without charging for them.
+          const doc = new Y.Doc()
+          Y.applyUpdate(doc, await mergedDocState(tx, node.id))
+          const state = Y.encodeStateAsUpdate(doc)
+          doc.destroy()
+          await tx.update(fileNodes).set({ sizeBytes: state.byteLength }).where(eq(fileNodes.id, id))
           // The copy's state carries the original's generation, so it keeps it too.
           const [source] = await tx.select({ generation: fileDocs.generation }).from(fileDocs).where(eq(fileDocs.nodeId, node.id))
           await tx.insert(fileDocs).values({
@@ -128,6 +134,7 @@ export async function copyFileNodes(userId: string, ids: string[], parentId: str
         if (objectKey) blobCopies.push({ id, source: node.objectKey!, target: objectKey })
       }
     }
+    await assertWithinStorageAllowance(tx, userId)
     return { rootIds, blobCopies, changes: await bumpAccountRevisions(tx, [userId]) }
   }).catch(async (error: unknown) => {
     await deleteObjects(assetCopies)

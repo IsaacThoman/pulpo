@@ -3,14 +3,15 @@ import { Readable } from 'node:stream'
 import { and, eq } from 'drizzle-orm'
 import { liveMimeType } from '@pulpo/client-core/office'
 import { FILE_DOC_MAX_MARKDOWN_LENGTH, isMarkdownName, type FileConversionPreview } from '@pulpo/contracts'
+import { assertStorageCapacity } from '../attachments/storage-quota.js'
 import { db } from '../database/client.js'
-import { fileChanges, fileDocs, fileNodes } from '../database/schema.js'
+import { fileChanges, fileDocAssets, fileDocs, fileNodes } from '../database/schema.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { getBlobStore } from '../storage/index.js'
 import type { FileNodeRow } from './access.js'
 import { initialDocState } from './doc-state.js'
-import { convertedMimeType, docAssetKeys, exportLiveDoc, formatForName, initialLiveDoc, loadLiveDocInTx } from './live-docs.js'
+import { convertedMimeType, exportLiveDoc, formatForName, initialLiveDoc, loadLiveDocInTx } from './live-docs.js'
 
 type DatabaseTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
 
@@ -103,10 +104,15 @@ export async function convertDocToBlobInTx(tx: DatabaseTransaction, userId: stri
   const { doc, format, context } = await loadLiveDocInTx(tx, node)
   const bytes = Buffer.from(await exportLiveDoc(doc, format, context))
   const mimeType = convertedMimeType(node.name, format)
+  const assets = await tx.select({ objectKey: fileDocAssets.objectKey, sizeBytes: fileDocAssets.sizeBytes }).from(fileDocAssets).where(eq(fileDocAssets.nodeId, node.id))
+  // Tree callers already took storage before tree. Export can grow the state (UTF-16, for
+  // example), but the document's assets are released by this same conversion, not kept twice.
+  const releasedBytes = assets.reduce((sum, asset) => sum + asset.sizeBytes, 0)
+  await assertStorageCapacity(tx, userId, Math.max(0, bytes.byteLength - node.sizeBytes - releasedBytes), { perFileLimit: false })
   // A fresh key: the node's earlier objects may still be kept as versions under their own keys.
   const objectKey = `users/${userId}/files/${newId()}`
   await getBlobStore().put(objectKey, bytes, { contentType: mimeType, contentLength: bytes.byteLength })
-  const releasedKeys = await docAssetKeys(tx, [node.id])
+  const releasedKeys = assets.map((asset) => asset.objectKey)
   // Proposals of new versions of the document cannot apply to a file; maintenance deletes the
   // versions they kept (`deleteUnusedVersions`).
   await tx.update(fileChanges).set({ status: 'rejected', updatedAt: new Date() }).where(and(
