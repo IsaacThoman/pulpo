@@ -1,5 +1,6 @@
 import type { Mark, Node as ProseMirrorNode, Slice } from '@tiptap/pm/model'
 import { TextSelection, type EditorState, type Transaction } from '@tiptap/pm/state'
+import { removeRow, TableMap } from '@tiptap/pm/tables'
 import { AddMarkStep, Mapping, RemoveMarkStep, ReplaceStep, type Step } from '@tiptap/pm/transform'
 import { jmlAttr, jmlChild, jmlElements, packJml, unpackJml, type JmlElement } from '../jsonml.js'
 import { PARAGRAPH_PROPERTY_ATTRS, RUN_MARK_BY_ELEMENT, RUN_PROPERTY_MARKS, inlineMarks } from '../schema.js'
@@ -101,7 +102,11 @@ function deleteRow(out: Transaction, pos: number): void {
   if ($pos.parent.type.name === 'table' && $pos.parent.childCount === 1) {
     const tablePos = $pos.before()
     out.delete(tablePos, tablePos + $pos.parent.nodeSize)
-  } else out.delete(pos, pos + row.nodeSize)
+  } else if ($pos.parent.type.name === 'table') {
+    const table = $pos.parent
+    const map = TableMap.get(table)
+    removeRow(out, { table, map, tableStart: $pos.start(), left: 0, right: map.width, top: 0, bottom: map.height }, $pos.index())
+  }
 }
 
 /** Marks [from, to) of `out` deleted, actually removing the reviewer's own insertions. */
@@ -201,6 +206,42 @@ function trackFormat(out: Transaction, from: number, to: number, reviewer: Revie
   })
 }
 
+/** Row deletion commands adjust merges first; pending deletions must retain the old grid. */
+function restoreDeletedRows(state: EditorState, tr: Transaction, out: Transaction, reviewer: Reviewer): void {
+  const deleted = new Set<number>()
+  tr.steps.forEach((step, index) => {
+    if (!(step instanceof ReplaceStep) || step.from === step.to) return
+    const inverse = new Mapping(tr.mapping.maps.slice(0, index)).invert()
+    tr.docs[index]!.nodesBetween(step.from, step.to, (node, pos) => {
+      if (node.type.name === 'tableRow' && pos >= step.from && pos + node.nodeSize <= step.to) deleted.add(inverse.map(pos, 1))
+      return true
+    })
+  })
+  if (!deleted.size) return
+  const tables: { pos: number; table: ProseMirrorNode; rows: number[] }[] = []
+  state.doc.descendants((table, pos) => {
+    if (table.type.name !== 'table') return true
+    const next = tr.doc.nodeAt(tr.mapping.map(pos, 1))
+    if (next?.type.name !== 'table' || next.childCount >= table.childCount) return true
+    const rows: number[] = []
+    table.forEach((_row, offset) => {
+      if (deleted.has(pos + 1 + offset)) rows.push(offset)
+    })
+    if (rows.length) tables.push({ pos, table, rows })
+    return !rows.length
+  })
+  for (const { pos, table, rows } of tables.reverse()) {
+    const at = out.mapping.map(pos, 1)
+    const current = out.doc.nodeAt(at)
+    if (current?.type.name !== 'table') continue
+    out.replaceWith(at, at + current.nodeSize, table)
+    for (const offset of rows.reverse()) {
+      const from = at + 1 + offset
+      trackDelete(out, from, from + table.nodeAt(offset)!.nodeSize, reviewer)
+    }
+  }
+}
+
 /**
  * Rewrites a user transaction into tracked changes. Returns null when it has nothing to track
  * (selection only, or from collaboration/undo, which callers filter before).
@@ -239,6 +280,7 @@ export function trackTransaction(state: EditorState, tr: Transaction, reviewer: 
     for (let index = before; index < out.steps.length; index++) next.appendMap(out.steps[index]!.getMap())
     toOut = next
   }
+  restoreDeletedRows(state, tr, out, reviewer)
   // Paragraph property changes (setNodeMarkup) get a record of what they replaced.
   recordParagraphChanges(state, out, reviewer)
   const typed = insertEnd && tr.selection.empty ? out.mapping.slice(insertEnd.step).map(insertEnd.pos, 1) : undefined
@@ -280,6 +322,8 @@ export type RevisionKind = 'insert' | 'delete' | 'moveFrom' | 'moveTo' | 'format
 export interface Revision {
   /** Stable within a document version: kind plus Word's revision id (or position for marks without). */
   key: string
+  /** Undefined for the body; otherwise the Y story fragment id. */
+  storyId?: string
   kind: RevisionKind
   author?: string
   date?: string
@@ -291,7 +335,7 @@ export interface Revision {
 const MARK_KINDS: Record<string, RevisionKind> = { ins: 'insert', del: 'delete', moveFrom: 'moveFrom', moveTo: 'moveTo', rPrChange: 'format' }
 
 /** Every revision in a story, merged across adjacent nodes with the same mark. */
-export function listRevisions(doc: ProseMirrorNode): Revision[] {
+export function listRevisions(doc: ProseMirrorNode, storyId?: string): Revision[] {
   const revisions: Revision[] = []
   const open = new Map<string, Revision>()
   doc.descendants((node, pos) => {
@@ -332,6 +376,10 @@ export function listRevisions(doc: ProseMirrorNode): Revision[] {
     }
     return false
   })
+  if (storyId) for (const revision of revisions) {
+    revision.storyId = storyId
+    revision.key = `${storyId}:${revision.key}`
+  }
   return revisions.sort((a, b) => a.from - b.from)
 }
 
@@ -362,8 +410,12 @@ function restoreFormat(out: Transaction, from: number, to: number): void {
 export function resolveRevisions(state: EditorState, revisions: Revision[], action: 'accept' | 'reject'): Transaction | null {
   if (!revisions.length) return null
   const out = state.tr
+  const rowRevisions = revisions.filter(({ kind }) => kind === 'rowInsert' || kind === 'rowDelete')
+  const removedRows = rowRevisions.filter(({ kind }) => (kind === 'rowInsert') === (action === 'reject'))
+  const contentRevisions = revisions.filter((revision) => !rowRevisions.includes(revision) && !removedRows.some((row) => revision.from >= row.from && revision.to <= row.to))
+  // Resolve rows first so cells continuing below a removed row retain their content.
   // Overlapping marks can delete the same range; map every later resolution through those edits.
-  for (const revision of [...revisions].sort((a, b) => b.from - a.from)) {
+  for (const revision of [...rowRevisions.sort((a, b) => b.from - a.from), ...contentRevisions.sort((a, b) => b.from - a.from)]) {
     const { kind } = revision
     const from = out.mapping.map(revision.from, 1)
     const to = Math.max(from, out.mapping.map(revision.to, -1))
@@ -374,8 +426,15 @@ export function resolveRevisions(state: EditorState, revisions: Revision[], acti
       case 'rowDelete': {
         const row = out.doc.nodeAt(from)
         if (row?.type.name !== 'tableRow') break
-        if ((kind === 'rowInsert') === (action === 'reject')) deleteRow(out, from)
-        else out.setNodeMarkup(from, undefined, withRowRevision(row.attrs, undefined, [kind === 'rowInsert' ? 'w:ins' : 'w:del']))
+        if ((kind === 'rowInsert') === (action === 'reject')) {
+          const markName = kind === 'rowInsert' ? 'ins' : 'del'
+          removeMarkType(out, from, to, markName)
+          out.doc.nodesBetween(from, to, (node, pos) => {
+            if (node.type.name === 'paragraph') out.setNodeMarkup(pos, undefined, withMarkRPrChild(node.attrs, undefined, [`w:${markName}`]))
+            return true
+          })
+          deleteRow(out, from)
+        } else out.setNodeMarkup(from, undefined, withRowRevision(row.attrs, undefined, [kind === 'rowInsert' ? 'w:ins' : 'w:del']))
         break
       }
       case 'insert':

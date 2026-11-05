@@ -41,6 +41,7 @@ import {
   effectiveParagraphProperties,
   effectiveRunProperties,
   findMatches,
+  freshId,
   insertInline,
   insertPageBreak,
   insertSectionBreak,
@@ -204,6 +205,7 @@ export interface DocxFormattingState {
   lineSpacing: number | null
   list: ListKind | null
   inTable: boolean
+  tableColumnsEditable: boolean
   link: string | null
   canUndo: boolean
   canRedo: boolean
@@ -620,15 +622,7 @@ export class DocxEditor {
     const edits: MapEdit[] = []
     const numIds = new Map<string, string>()
     const numbering = this.options.doc.getMap('numbering')
-    const fresh = (prefix: string) => {
-      let largest = 0
-      for (const key of [...numbering.keys(), ...edits.map(([, key]) => key)]) {
-        if (!key.startsWith(`${prefix}:`)) continue
-        const id = key.slice(prefix.length + 1)
-        if (/^\d+$/.test(id)) largest = Math.max(largest, Number(id))
-      }
-      return String(largest + 1)
-    }
+    const fresh = (prefix: string) => freshId([...numbering.keys(), ...edits.map(([, key]) => key)], prefix)
     for (const { pos, node, kind, level } of found) {
       let numId = numIds.get(kind)
       if (!numId) {
@@ -841,6 +835,7 @@ export class DocxEditor {
       lineSpacing: line !== undefined && (jmlAttr(spacing, 'w:lineRule') ?? 'auto') === 'auto' ? Math.round((line / 240) * 100) / 100 : null,
       list: list ? (listKind(list.numId, this.context) ?? null) : null,
       inTable: isInTable(state),
+      tableColumnsEditable: !this.readOnly && this.modeValue !== 'suggesting',
       link: (link?.attrs.href as string | null) ?? null,
       canUndo: (undoState?.undoManager?.undoStack.length ?? 0) > 0,
       canRedo: (undoState?.undoManager?.redoStack.length ?? 0) > 0,
@@ -1025,13 +1020,14 @@ export class DocxEditor {
 
   addRowBefore(): boolean { return this.tableCommand(addRowBefore) }
   addRowAfter(): boolean { return this.tableCommand(addRowAfter) }
-  addColumnBefore(): boolean { return this.tableCommand(addColumnBefore) }
-  addColumnAfter(): boolean { return this.tableCommand(addColumnAfter) }
+  /** Row revisions cannot represent column edits or changes to cell merges. */
+  addColumnBefore(): boolean { return this.modeValue !== 'suggesting' && this.tableCommand(addColumnBefore) }
+  addColumnAfter(): boolean { return this.modeValue !== 'suggesting' && this.tableCommand(addColumnAfter) }
   deleteRow(): boolean { return this.tableCommand(deleteRow) }
-  deleteColumn(): boolean { return this.tableCommand(deleteColumn) }
+  deleteColumn(): boolean { return this.modeValue !== 'suggesting' && this.tableCommand(deleteColumn) }
   deleteTable(): boolean { return this.tableCommand(deleteTable) }
-  mergeCells(): boolean { return this.tableCommand(mergeCells) }
-  splitCell(): boolean { return this.tableCommand(splitCell) }
+  mergeCells(): boolean { return this.modeValue !== 'suggesting' && this.tableCommand(mergeCells) }
+  splitCell(): boolean { return this.modeValue !== 'suggesting' && this.tableCommand(splitCell) }
 
   setCellShading(hex: string | null): boolean {
     return this.run(setCellShading(hex))
@@ -1210,6 +1206,7 @@ export class DocxEditor {
     if (this.readOnlyValue && mode !== 'viewing') return
     this.modeValue = mode
     this.view.setProps({ editable: () => !this.readOnly })
+    this.storyEditor?.view.setProps({ editable: () => !this.readOnly })
     this.root.classList.toggle('docx-suggesting', mode === 'suggesting')
     this.emit('update')
   }
@@ -1220,15 +1217,37 @@ export class DocxEditor {
   }
 
   revisions(): Revision[] {
-    return listRevisions(this.view.state.doc)
+    const revisions = listRevisions(this.view.state.doc)
+    for (const [id, json] of readDocxMap(this.options.doc, 'stories')) {
+      const meta = parseJson<StoryMeta>(json)
+      if (!meta || meta.kind === 'comment') continue
+      revisions.push(...listRevisions(fragmentToNode(this.options.doc.getXmlFragment(storyFragmentName(id))), id))
+    }
+    return revisions
   }
 
   resolveRevisions(revisions: Revision[], action: 'accept' | 'reject'): boolean {
     if (this.readOnlyValue) return false
-    const tr = resolveRevisions(this.view.state, revisions, action)
-    if (!tr) return false
-    this.view.dispatch(tr.setMeta('docx-untracked', true))
-    return true
+    const groups = new Map<string | undefined, Revision[]>()
+    for (const revision of revisions) {
+      const group = groups.get(revision.storyId) ?? []
+      group.push(revision)
+      groups.set(revision.storyId, group)
+    }
+    let changed = false
+    for (const [storyId, group] of groups) {
+      const view = storyId ? (this.storyEditor?.storyId === storyId ? this.storyEditor.view : undefined) : this.view
+      const story = storyId && !view ? this.storyDoc(storyId) : undefined
+      if (!view && !story) continue
+      const state = view?.state ?? EditorState.create({ doc: story!, schema: docxSchema() })
+      const tr = resolveRevisions(state, group, action)
+      if (!tr) continue
+      if (view) view.dispatch(tr.setMeta('docx-untracked', true))
+      else this.options.doc.transact(() => writeFragment(this.options.doc, this.options.doc.getXmlFragment(storyFragmentName(storyId!)), tr.doc))
+      changed = true
+    }
+    if (changed) this.emit('update')
+    return changed
   }
 
   acceptAll(): boolean {
@@ -1306,12 +1325,15 @@ export class DocxEditor {
     return documentOutline(this.view.state.doc, this.context, maxLevel)
   }
 
-  goTo(pos: number): void {
-    const $pos = this.view.state.doc.resolve(Math.min(pos + 1, this.view.state.doc.content.size))
-    this.view.dispatch(this.view.state.tr.setSelection(TextSelection.near($pos)).scrollIntoView())
-    this.view.focus()
+  goTo(pos: number, storyId?: string): void {
+    if (storyId && this.storyEditor?.storyId !== storyId && !this.openStoryEditor(storyId)) return
+    if (!storyId) this.closeStoryEditor()
+    const view = storyId ? this.storyEditor!.view : this.view
+    const $pos = view.state.doc.resolve(Math.min(pos + 1, view.state.doc.content.size))
+    view.dispatch(view.state.tr.setSelection(TextSelection.near($pos)).scrollIntoView())
+    view.focus()
     try {
-      const coords = this.view.coordsAtPos($pos.pos)
+      const coords = view.coordsAtPos($pos.pos)
       const scroller = this.scroller()
       if (scroller) scroller.scrollTop += coords.top - scroller.getBoundingClientRect().top - 80
     } catch {
@@ -1452,6 +1474,7 @@ export class DocxEditor {
     if (readOnly) this.modeValue = 'viewing'
     else if (this.modeValue === 'viewing') this.modeValue = 'editing'
     this.view.setProps({ editable: () => !this.readOnly })
+    this.storyEditor?.view.setProps({ editable: () => !this.readOnly })
     this.emit('update')
   }
 

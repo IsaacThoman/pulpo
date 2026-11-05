@@ -1,6 +1,7 @@
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import { EditorState, TextSelection } from '@tiptap/pm/state'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import { addRowAfter, addRowBefore, deleteRow, TableMap } from '@tiptap/pm/tables'
 import * as Y from 'yjs'
 import { docxCodec } from './codec.js'
 import { diffDocxModels, diffWords } from './diff.js'
@@ -10,7 +11,7 @@ import { BODY_FRAGMENT, readDocxModel, writeFragment, type DocxModel } from './m
 import { ListCounter, Numbering, formatNumber } from './numbering.js'
 import { docxSchema, inlineMarks } from './schema.js'
 import { StyleSheet, cellConditions, mergeElement, tableLook } from './styles.js'
-import { clearFormatting, findMatches, insertTable, insertPageBreak, listDefinition, replaceMatches, setAlignment, setFontSize, toggleList, toggleRunProperty, wordCount } from './view/commands.js'
+import { clearFormatting, freshId, findMatches, insertTable, insertPageBreak, listDefinition, replaceMatches, setAlignment, setFontSize, toggleList, toggleRunProperty, wordCount } from './view/commands.js'
 import { DocxViewContext } from './view/context.js'
 import { listRevisions, resolveRevisions, trackTransaction } from './view/track-changes.js'
 
@@ -173,9 +174,61 @@ describe('editing commands', async () => {
       const start = performance.now()
       const result = toggleList('bullet', state, context)!
       expect(performance.now() - start).toBeLessThan(1000)
-      expect(result.maps?.map(([, key]) => key)).toEqual(['abstract:30000', 'num:30000'])
+      for (const [, key] of result.maps!) {
+        expect(doc.getMap('numbering').has(key)).toBe(false)
+        expect(Number(key.split(':')[1])).toBeGreaterThanOrEqual(30000)
+        expect(Number(key.split(':')[1])).toBeLessThan(30000 + 2 ** 20)
+      }
     } finally {
       context.destroy()
+    }
+  })
+
+  it('keeps concurrently created list definitions distinct after replica sync', async () => {
+    const { doc } = await documentWith(p(run('First')), p(run('Second')))
+    const replicas = [new Y.Doc(), new Y.Doc()]
+    const random = vi.spyOn(Math, 'random')
+    try {
+      for (const replica of replicas) Y.applyUpdate(replica, Y.encodeStateAsUpdate(doc))
+      const vector = Y.encodeStateVector(replicas[0]!)
+      replicas.forEach((replica, index) => {
+        random.mockReturnValue(index === 0 ? 0.25 : 0.75)
+        const context = new DocxViewContext(replica)
+        let state = EditorState.create({ schema, doc: readDocxModel(replica).body })
+        state = state.apply(state.tr.setSelection(TextSelection.create(state.doc, index === 0 ? 1 : 8)))
+        const result = toggleList(index === 0 ? 'bullet' : 'decimal', state, context)!
+        replica.transact(() => {
+          for (const [map, key, value] of result.maps!) replica.getMap(map).set(key, value)
+          writeFragment(replica, replica.getXmlFragment(BODY_FRAGMENT), result.tr.doc)
+        })
+        context.destroy()
+      })
+      const updates = replicas.map((replica) => Y.encodeStateAsUpdate(replica, vector))
+      replicas.forEach((replica, index) => Y.applyUpdate(replica, updates[1 - index]!))
+      for (const replica of replicas) {
+        const context = new DocxViewContext(replica)
+        expect([...replica.getMap('numbering').keys()].filter((key) => key.startsWith('num:'))).toHaveLength(2)
+        expect(readDocxModel(replica).body.content.content.map((node) => {
+          const num = JSON.parse(node.attrs.numPr as string) as JmlElement
+          const id = (num[3] as JmlElement)[1]['w:val']!
+          return context.numbering.level(id, 0)?.numFmt
+        })).toEqual(['bullet', 'decimal'])
+        context.destroy()
+      }
+    } finally {
+      random.mockRestore()
+      replicas.forEach((replica) => replica.destroy())
+      doc.destroy()
+    }
+  })
+
+  it('includes pending batch ids and stays bounded with a repeated random value', () => {
+    const random = vi.spyOn(Math, 'random').mockReturnValue(0)
+    try {
+      expect(freshId(['num:4', 'num:5', 'abstract:99'], 'num')).toBe('6')
+      expect(random).toHaveBeenCalledTimes(1)
+    } finally {
+      random.mockRestore()
     }
   })
 
@@ -308,6 +361,47 @@ describe('tracked changes', async () => {
     const { OoxmlPackage } = await import('../ooxml/package.js')
     const xml = OoxmlPackage.read(await docxCodec.exportFile(target, { name: 'a.docx', assets })).text('word/document.xml')!
     expect(xml).toMatch(/<w:trPr><w:ins w:id="\d+" w:author="Ada" w:date="2026-11-04T10:00:00Z"\/><\/w:trPr>/)
+  })
+
+  const mergedTable = () => {
+    const cell = (text: string, rowspan = 1, colspan = 1) => schema.node('tableCell', { rowspan, colspan }, [p(run(text))])
+    const row = (...cells: ProseMirrorNode[]) => schema.node('tableRow', null, cells)
+    return schema.node('table', null, [row(cell('A', 2), cell('B')), row(cell('C')), row(cell('D'), cell('E'))])
+  }
+
+  it.each([addRowBefore, addRowAfter])('rejects a row inserted through a vertical merge', (command) => {
+    let start = EditorState.create({ schema, doc: schema.node('doc', null, [mergedTable(), p(run('After'))]) })
+    const pos = command === addRowBefore ? 1 + start.doc.firstChild!.firstChild!.nodeSize + 3 : 9
+    start = start.apply(start.tr.setSelection(TextSelection.create(start.doc, pos)))
+    let inserted = start
+    command(start, (tr) => { inserted = start.apply(trackTransaction(start, tr, reviewer)!) })
+    expect(inserted.doc.firstChild!.firstChild!.firstChild!.attrs.rowspan).toBe(3)
+    const rejected = inserted.apply(resolveRevisions(inserted, listRevisions(inserted.doc), 'reject')!)
+    expect(rejected.doc.eq(start.doc)).toBe(true)
+    expect(TableMap.get(rejected.doc.firstChild!).width).toBe(2)
+    expect(TableMap.get(rejected.doc.firstChild!).problems).toBeNull()
+  })
+
+  it.each([0, 1])('preserves merge geometry for pending deletion of row %i and resolves it', (rowIndex) => {
+    let start = EditorState.create({ schema, doc: schema.node('doc', null, [mergedTable(), p(run('After'))]) })
+    const pos = rowIndex === 0 ? 9 : 1 + start.doc.firstChild!.firstChild!.nodeSize + 3
+    start = start.apply(start.tr.setSelection(TextSelection.create(start.doc, pos)))
+    let expected = start
+    let deleted = start
+    deleteRow(start, (tr) => {
+      expected = start.apply(tr)
+      deleted = start.apply(trackTransaction(start, tr, reviewer)!)
+    })
+    expect(deleted.doc.firstChild!.firstChild!.firstChild!.attrs.rowspan).toBe(2)
+    expect(TableMap.get(deleted.doc.firstChild!).problems).toBeNull()
+    const rejected = deleted.apply(resolveRevisions(deleted, listRevisions(deleted.doc), 'reject')!)
+    expect(rejected.doc.eq(start.doc)).toBe(true)
+    const accepted = deleted.apply(resolveRevisions(deleted, listRevisions(deleted.doc), 'accept')!)
+    expect(accepted.doc.eq(expected.doc)).toBe(true)
+    expect(accepted.doc.firstChild!.firstChild!.firstChild!.textContent).toBe('A')
+    expect(listRevisions(accepted.doc)).toEqual([])
+    expect(TableMap.get(accepted.doc.firstChild!).width).toBe(2)
+    expect(TableMap.get(accepted.doc.firstChild!).problems).toBeNull()
   })
 
   it('records Enter as an inserted paragraph mark', () => {

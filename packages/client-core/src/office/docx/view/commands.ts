@@ -272,13 +272,18 @@ export function listKind(numId: string, context: DocxViewContext): ListKind | un
   return /%2/.test(context.numbering.level(numId, 1)?.lvlText ?? '') ? 'multilevel' : 'decimal'
 }
 
-/** Advance past imported numbering definitions, including large numbering maps. */
-function freshId(keys: Iterable<string>, prefix: string): string {
+/** Spread replica allocations beyond imported ids without retrying occupied ranges indefinitely. */
+export function freshId(keys: Iterable<string>, prefix: string): string {
+  const used = new Set(keys)
   let largest = 0
-  for (const key of keys) {
+  for (const key of used) {
     if (!key.startsWith(`${prefix}:`)) continue
     const id = key.slice(prefix.length + 1)
     if (/^\d+$/.test(id)) largest = Math.max(largest, Number(id))
+  }
+  for (let attempt = 0; attempt < 16; attempt++) {
+    const candidate = String(largest + 1 + Math.floor(Math.random() * 2 ** 20))
+    if (!used.has(`${prefix}:${candidate}`)) return candidate
   }
   return String(largest + 1)
 }
