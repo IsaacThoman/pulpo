@@ -897,6 +897,49 @@ try {
     assert.equal(await page.evaluate(() => JSON.stringify(window.harness.model())), before)
   })
 
+  await step('brings list numbering into another document in the paste undo step', async () => {
+    await open('?file=lists.docx&layout=web')
+    const copied = await page.evaluate(() => {
+      const view = window.harness.editors[0].view
+      const selection = view.state.selection.constructor
+      const items = []
+      view.state.doc.forEach((node, pos) => { if (node.attrs.numPr) items.push({ pos, size: node.nodeSize, text: node.textContent }) })
+      view.dispatch(view.state.tr.setSelection(selection.create(view.state.doc, items[0].pos + 1, items[1].pos + items[1].size - 1)))
+      const data = new DataTransfer()
+      view.dom.dispatchEvent(new ClipboardEvent('copy', { clipboardData: data, bubbles: true, cancelable: true }))
+      return { html: data.getData('text/html'), text: data.getData('text/plain'), items: items.slice(0, 2).map(({ text }) => text) }
+    })
+    await open('?layout=web')
+    await page.evaluate(({ html, text }) => {
+      const view = window.harness.editors[0].view
+      view.focus()
+      const data = new DataTransfer()
+      data.setData('text/html', html)
+      data.setData('text/plain', text)
+      view.dom.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }))
+    }, copied)
+    const labels = () => page.evaluate(() => [...window.harness.editors[0].view.dom.querySelectorAll('[data-label]')].map((node) => [node.textContent, node.dataset.label]))
+    assert.deepEqual(await labels(), [[copied.items[0], '1.'], [copied.items[1], 'a)']])
+    const exported = Buffer.from(await page.evaluate(() => window.harness.exportFile()), 'base64')
+    const imported = new Y.Doc()
+    await docxCodec.importFile(imported, exported, { name: 'copied-lists.docx', assets: new MemoryAssetStore() })
+    const numbering = imported.getMap('numbering')
+    readDocxModel(imported).body.forEach((node) => {
+      if (!node.attrs.numPr) return
+      const numPr = JSON.parse(node.attrs.numPr)
+      const numId = numPr.slice(2).find((child) => child[0] === 'w:numId')[1]['w:val']
+      const num = JSON.parse(numbering.get(`num:${numId}`))
+      const abstractId = num.slice(2).find((child) => child[0] === 'w:abstractNumId')[1]['w:val']
+      assert.ok(numbering.has(`abstract:${abstractId}`))
+    })
+    imported.destroy()
+    await page.evaluate(() => window.harness.editors[0].undo())
+    assert.equal(await page.evaluate(() => window.harness.editors[0].view.state.doc.textContent), '')
+    assert.equal(await page.evaluate(() => window.harness.docs[0].getMap('numbering').size), 0)
+    await page.evaluate(() => window.harness.editors[0].redo())
+    assert.deepEqual(await labels(), [[copied.items[0], '1.'], [copied.items[1], 'a)']])
+  })
+
   await step('lays out a 100-page document within budget', async () => {
     const started = Date.now()
     await open('?generate=1600')

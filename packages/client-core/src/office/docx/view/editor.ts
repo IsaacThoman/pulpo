@@ -32,7 +32,7 @@ import { effectiveNumPr, formatNumber } from '../numbering.js'
 import { docxSchema, packMarks, textAreaWidth } from '../schema.js'
 import { inlineText } from '../text.js'
 import { AssetUrls } from './assets.js'
-import { clipboardParser, clipboardSerializer, limitPastedTables, recallCopy, rememberCopy, sanitizePastedHtml, withoutForeignParts, withoutStoryReferences } from './clipboard.js'
+import { clipboardParser, clipboardSerializer, importCopiedNumbering, limitPastedTables, recallCopy, rememberCopy, sanitizePastedHtml, withoutForeignParts, withoutStoryReferences } from './clipboard.js'
 import {
   changeIndent,
   clearFormatting,
@@ -268,7 +268,7 @@ export class DocxEditor {
   private readonly knownAssets = new Set<string>()
   /** Stories the last paste's references point at. */
   private readonly pastedReferences = new Set<string>()
-  private readonly pastedSlices = new WeakMap<EditorView, Slice>()
+  private readonly pastedSlices = new WeakMap<EditorView, { slice: Slice; maps?: MapEdit[] }>()
   private lastLayout: LayoutResult | null = null
   /** Measured units of the last layout, for diagnostics and tests. */
   private lastUnits: unknown[] = []
@@ -363,6 +363,7 @@ export class DocxEditor {
       new Plugin({
         state: {
           init: (_config, state) => {
+            yUndoPluginKey.getState(state).undoManager.addToScope(this.options.doc.getMap('numbering'))
             // The final section lives outside the body but must share its undo step.
             if (fragment === this.options.doc.getXmlFragment(BODY_FRAGMENT)) {
               yUndoPluginKey.getState(state).undoManager.addToScope(this.options.doc.getMap('docx'))
@@ -518,7 +519,15 @@ export class DocxEditor {
       transaction = trackTransaction(view.state, tr, this.reviewer()) ?? tr
     }
     const before = view.state
-    view.updateState(view.state.apply(transaction))
+    const maps = tr.getMeta('docx-paste-maps') as MapEdit[] | undefined
+    if (maps?.length) {
+      this.separateUndo(view)
+      this.options.doc.transact(() => {
+        this.applyMapEdits(maps)
+        view.updateState(view.state.apply(transaction))
+      }, ySyncPluginKey)
+      this.separateUndo(view)
+    } else view.updateState(view.state.apply(transaction))
     // Suggesting mode tracks the paste in a new transaction; the original says what it was.
     if (pasted(tr)) {
       this.convertPastedLists(view)
@@ -537,10 +546,12 @@ export class DocxEditor {
     // Where copies come from: content keeps its part's relationships only within the same story.
     const origin = `${this.options.doc.guid}:${storyId}`
     let recalled: Slice | undefined
+    let recalledMaps: MapEdit[] | undefined
     return {
       handleDOMEvents: {
         paste: (view, event) => {
           recalled = undefined
+          recalledMaps = undefined
           this.pastedSlices.delete(view)
           // DOM handlers run before ProseMirror parses HTML; Shift must keep its plain-text path.
           const plain = (view as unknown as { input?: { shiftKey?: boolean } }).input?.shiftKey
@@ -549,7 +560,11 @@ export class DocxEditor {
           if (!copy) return false
           recalled = limitPastedTables(copy.slice, Math.max(0, DOCX_MAX_TABLE_DEPTH - tableDepth(view)))
           if (copy.origin !== origin) recalled = withoutForeignParts(recalled)
-          if (copy.origin.split(':', 1)[0] !== this.options.doc.guid) recalled = withoutStoryReferences(recalled)
+          if (copy.origin.split(':', 1)[0] !== this.options.doc.guid) {
+            const imported = importCopiedNumbering(withoutStoryReferences(recalled), copy.numbering, this.options.doc.getMap('numbering').keys())
+            recalled = imported.slice
+            recalledMaps = imported.maps
+          }
           this.notePastedReferences(recalled)
           this.checkPastedPictures(recalled)
           return false
@@ -563,7 +578,7 @@ export class DocxEditor {
         // after the cut took the last one away.
         const own = documentPictures(this.options.doc)
         for (const src of slicePictures(slice)) if (own.has(src)) this.knownAssets.add(src)
-        return rememberCopy(slice, origin)
+        return rememberCopy(slice, origin, this.options.doc.getMap('numbering'))
       },
       transformPasted: (slice, view, plain) => {
         const copy = view.editable && !plain ? recalled : undefined
@@ -573,8 +588,9 @@ export class DocxEditor {
           this.notePastedReferences(limited)
           this.checkPastedPictures(limited)
         }
-        if (view.editable) this.pastedSlices.set(view, limited)
+        if (view.editable) this.pastedSlices.set(view, { slice: limited, maps: copy ? recalledMaps : undefined })
         else this.pastedSlices.delete(view)
+        recalledMaps = undefined
         return limited
       },
     }
@@ -585,7 +601,18 @@ export class DocxEditor {
     if (tr.getMeta('uiEvent') !== 'paste') return
     const slice = this.pastedSlices.get(view)
     this.pastedSlices.delete(view)
-    if (slice) preservePastedMarks(tr, slice)
+    if (slice) {
+      preservePastedMarks(tr, slice.slice)
+      tr.setMeta('docx-paste-maps', slice.maps)
+      const first = slice.slice.content.firstChild
+      const $from = view.state.selection.$from
+      // Open slices inherit destination properties; an empty destination must keep the copied list.
+      if (slice.maps?.length && first?.type.name === 'paragraph' && first.attrs.numPr
+        && $from.parent.type.name === 'paragraph' && !$from.parent.content.size) {
+        const $start = tr.doc.resolve(tr.mapping.map($from.pos, -1))
+        if ($start.parent.type.name === 'paragraph') tr.setNodeMarkup($start.before(), undefined, { ...$start.parent.attrs, numPr: first.attrs.numPr })
+      }
+    }
   }
 
   /**

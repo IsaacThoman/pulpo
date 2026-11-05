@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import { Fragment, Slice } from '@tiptap/pm/model'
-import { describe, expect, it } from 'vitest'
-import { jmlToXml, packJml } from '../jsonml.js'
+import { describe, expect, it, vi } from 'vitest'
+import { jmlAttr, jmlChild, jmlToXml, packJml, unpackJml, type JmlElement } from '../jsonml.js'
 import { docxSchema } from '../schema.js'
-import { clipboardParser, clipboardSerializer, limitPastedTables, recallCopy, rememberCopy, sanitizePastedHtml, withoutForeignParts, withoutStoryReferences } from './clipboard.js'
+import { clipboardParser, clipboardSerializer, importCopiedNumbering, limitPastedTables, recallCopy, rememberCopy, sanitizePastedHtml, withoutForeignParts, withoutStoryReferences } from './clipboard.js'
 
 const schema = docxSchema()
 
@@ -34,6 +34,63 @@ describe('clipboard', () => {
     // Another tab of this origin finds the latest copy in local storage (where the test environment has one).
     const storage = (globalThis as { localStorage?: Storage }).localStorage
     if (storage?.getItem) expect(JSON.parse(storage.getItem('pulpo-docx-copy')!).json).toContain('INCLUDEPICTURE')
+  })
+
+  it('carries used numbering definitions and imports shared abstracts under fresh ids', () => {
+    const storage = new Map<string, string>()
+    vi.stubGlobal('localStorage', {
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => { storage.set(key, value) },
+      removeItem: (key: string) => { storage.delete(key) },
+    })
+    const source = new Map([
+      ['num:2', packJml(['w:num', { 'w:numId': '2' }, ['w:abstractNumId', { 'w:val': '4' }], ['w:lvlOverride', { 'w:ilvl': '0' }, ['w:startOverride', { 'w:val': '3' }]]])],
+      ['num:3', packJml(['w:num', { 'w:numId': '3' }, ['w:abstractNumId', { 'w:val': '4' }]])],
+      ['abstract:4', packJml(['w:abstractNum', { 'w:abstractNumId': '4' }, ['w:lvl', { 'w:ilvl': '0' }, ['w:numFmt', { 'w:val': 'decimal' }], ['w:lvlText', { 'w:val': '%1.' }]]])],
+      ['num:99', packJml(['w:num', { 'w:numId': '99' }])],
+    ])
+    const paragraph = (id: string) => schema.node('paragraph', { numPr: packJml(['w:numPr', {}, ['w:ilvl', { 'w:val': '0' }], ['w:numId', { 'w:val': id }]]) }, schema.text(id))
+    const slice = new Slice(Fragment.from([paragraph('2'), paragraph('3'), paragraph('2')]), 1, 1)
+    rememberCopy(slice, 'source:body', source)
+    const holder = document.createElement('div')
+    holder.appendChild(clipboardSerializer(schema).serializeFragment(slice.content))
+    const recalled = recallCopy(holder.innerHTML, schema)!
+    expect(recalled.slice.eq(slice)).toBe(true)
+    expect(recalled.numbering).toEqual(Object.fromEntries([...source].filter(([key]) => key !== 'num:99')))
+    // Evict the in-memory copy so another tab's local-storage path is exercised too.
+    const stored = localStorage.getItem('pulpo-docx-copy')!
+    for (let i = 0; i < 9; i++) rememberCopy(Slice.empty, 'other:body')
+    localStorage.setItem('pulpo-docx-copy', stored)
+    expect(recallCopy(holder.innerHTML, schema)?.numbering).toEqual(recalled.numbering)
+    const random = vi.spyOn(Math, 'random').mockReturnValue(0)
+    const imported = importCopiedNumbering(recalled.slice, recalled.numbering, ['num:2', 'num:3', 'abstract:4'])
+    random.mockRestore()
+    expect(imported.slice.openStart).toBe(1)
+    expect(imported.slice.openEnd).toBe(1)
+    expect(imported.maps.map(([, key]) => key)).toEqual(['abstract:5', 'num:4', 'num:5'])
+    const map = new Map(imported.maps.map(([, key, value]) => [key, value!]))
+    const ids: string[] = []
+    imported.slice.content.forEach((node) => {
+      const numId = jmlAttr(jmlChild(unpackJml<JmlElement>(node.attrs.numPr), 'w:numId'), 'w:val')!
+      ids.push(numId)
+      const num = unpackJml<JmlElement>(map.get(`num:${numId}`)!)!
+      expect(num[1]['w:numId']).toBe(numId)
+      const abstractId = jmlAttr(jmlChild(num, 'w:abstractNumId'), 'w:val')!
+      expect(unpackJml<JmlElement>(map.get(`abstract:${abstractId}`)!)?.[1]['w:abstractNumId']).toBe(abstractId)
+    })
+    expect(ids).toEqual(['4', '5', '4'])
+    expect(map.get('num:4')).toContain('w:startOverride')
+    vi.unstubAllGlobals()
+  })
+
+  it('drops unresolved list references from older or incomplete foreign copies', () => {
+    const slice = new Slice(Fragment.from(schema.node('paragraph', { numPr: packJml(['w:numPr', {}, ['w:numId', { 'w:val': '1' }]]) }, schema.text('Item'))), 0, 0)
+    for (const definitions of [undefined, { 'num:1': packJml(['w:num', { 'w:numId': '1' }, ['w:abstractNumId', { 'w:val': '7' }]]) }]) {
+      const imported = importCopiedNumbering(slice, definitions, [])
+      expect(imported.maps).toEqual([])
+      expect(imported.slice.content.firstChild!.attrs.numPr).toBeNull()
+      expect(imported.slice.content.firstChild!.textContent).toBe('Item')
+    }
   })
 
   it('treats anything else as ordinary pasted HTML', () => {

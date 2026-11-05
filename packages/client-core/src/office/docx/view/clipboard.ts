@@ -1,7 +1,8 @@
 import { DOMParser as PMDOMParser, DOMSerializer, Fragment, Slice, type Node as ProseMirrorNode, type ParseRule, type Schema } from '@tiptap/pm/model'
-import { jmlChildren, packJml, unpackJml, type JmlElement, type JmlNode } from '../jsonml.js'
+import { jmlAttr, jmlChild, jmlChildren, packJml, unpackJml, type JmlElement, type JmlNode } from '../jsonml.js'
 import { HIGHLIGHT_COLORS } from '../css.js'
 import { DOCX_MAX_TABLE_DEPTH } from '../format.js'
+import { freshId, type MapEdit } from './commands.js'
 
 /**
  * Copy and paste. Between docx editors everything round-trips exactly: the clipboard carries a
@@ -18,13 +19,16 @@ const COPY_ID = /data-docx-copy="([0-9a-f]{32})"/
 const COPY_LIFETIME_MS = 60 * 60 * 1000
 
 /** Recent copies by id: the slice as JSON and where it came from (document and story). */
-const copies = new Map<string, { json: string; origin: string }>()
+interface StoredCopy { json: string; origin: string; numbering?: Record<string, string> }
+const copies = new Map<string, StoredCopy>()
 let currentCopy: string | null = null
 
 export interface RecalledCopy {
   slice: Slice
   /** `rememberCopy`'s origin: the document and story it was copied from. */
   origin: string
+  /** Raw definitions preserve list levels and overrides in another document. */
+  numbering?: Record<string, string>
 }
 
 /**
@@ -33,13 +37,26 @@ export interface RecalledCopy {
  * for other tabs), so nothing another site or app puts on the clipboard is trusted as a Pulpo copy,
  * and a leaked id can only paste back what the user copied.
  */
-export function rememberCopy(slice: Slice, origin: string): Slice {
+export function rememberCopy(slice: Slice, origin: string, numbering?: { get(key: string): unknown }): Slice {
   const id = Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, '0')).join('')
   const json = JSON.stringify(slice.toJSON())
-  copies.set(id, { json, origin })
+  const definitions: Record<string, string> = {}
+  slice.content.descendants((node) => {
+    if (node.type.name !== 'paragraph') return true
+    const numPr = unpackJml<JmlElement>(node.attrs.numPr as string | null)
+    const numId = jmlAttr(jmlChild(numPr, 'w:numId'), 'w:val')
+    const num = numId ? numbering?.get(`num:${numId}`) : undefined
+    if (typeof num !== 'string') return false
+    definitions[`num:${numId}`] = num
+    const abstractId = jmlAttr(jmlChild(unpackJml<JmlElement>(num), 'w:abstractNumId'), 'w:val')
+    const abstract = abstractId ? numbering?.get(`abstract:${abstractId}`) : undefined
+    if (typeof abstract === 'string') definitions[`abstract:${abstractId}`] = abstract
+    return false
+  })
+  copies.set(id, { json, origin, numbering: definitions })
   if (copies.size > 8) copies.delete(copies.keys().next().value!)
   try {
-    localStorage.setItem(COPY_KEY, JSON.stringify({ id, json, origin, at: Date.now() }))
+    localStorage.setItem(COPY_KEY, JSON.stringify({ id, json, origin, numbering: definitions, at: Date.now() }))
   } catch {
     // Too large or no storage: other tabs paste the HTML instead.
   }
@@ -54,19 +71,66 @@ export function recallCopy(html: string | undefined, schema: Schema): RecalledCo
   let copy = copies.get(id)
   if (!copy) {
     try {
-      const stored = JSON.parse(localStorage.getItem(COPY_KEY) ?? 'null') as { id?: string; json?: string; origin?: string; at?: number } | null
+      const stored = JSON.parse(localStorage.getItem(COPY_KEY) ?? 'null') as { id?: string; json?: string; origin?: string; numbering?: Record<string, string>; at?: number } | null
       if (stored && (typeof stored.at !== 'number' || Date.now() - stored.at > COPY_LIFETIME_MS)) localStorage.removeItem(COPY_KEY)
-      else if (stored?.id === id && typeof stored.json === 'string' && typeof stored.origin === 'string') copy = { json: stored.json, origin: stored.origin }
+      else if (stored?.id === id && typeof stored.json === 'string' && typeof stored.origin === 'string') copy = { json: stored.json, origin: stored.origin, numbering: stored.numbering }
     } catch {
       return null
     }
   }
   if (!copy) return null
   try {
-    return { slice: Slice.fromJSON(schema, JSON.parse(copy.json)), origin: copy.origin }
+    return { slice: Slice.fromJSON(schema, JSON.parse(copy.json)), origin: copy.origin, numbering: copy.numbering }
   } catch {
     return null
   }
+}
+
+/** Lists belong to their document: import only used definitions and give them fresh ids. */
+export function importCopiedNumbering(slice: Slice, definitions: RecalledCopy['numbering'], keys: Iterable<string>): { slice: Slice; maps: MapEdit[] } {
+  const maps: MapEdit[] = []
+  const used = [...keys]
+  const nums = new Map<string, string | null>()
+  const abstracts = new Map<string, string>()
+  const fresh = (prefix: string) => freshId([...used, ...maps.map(([, key]) => key)], prefix)
+  const importNum = (id: string): string | null => {
+    if (nums.has(id)) return nums.get(id)!
+    nums.set(id, null)
+    const raw = definitions?.[`num:${id}`]
+    const num = typeof raw === 'string' ? unpackJml<JmlElement>(raw) : undefined
+    const abstractId = jmlAttr(jmlChild(num, 'w:abstractNumId'), 'w:val')
+    const abstractRaw = abstractId ? definitions?.[`abstract:${abstractId}`] : undefined
+    const abstract = typeof abstractRaw === 'string' ? unpackJml<JmlElement>(abstractRaw) : undefined
+    if (num?.[0] !== 'w:num' || abstract?.[0] !== 'w:abstractNum') return null
+    let newAbstract = abstracts.get(abstractId!)
+    if (!newAbstract) {
+      newAbstract = fresh('abstract')
+      maps.push(['numbering', `abstract:${newAbstract}`, packJml([abstract[0], { ...abstract[1], 'w:abstractNumId': newAbstract }, ...jmlChildren(abstract)])])
+      abstracts.set(abstractId!, newAbstract)
+    }
+    const newNum = fresh('num')
+    maps.push(['numbering', `num:${newNum}`, packJml([num[0], { ...num[1], 'w:numId': newNum }, ...jmlChildren(num).map((child) =>
+      Array.isArray(child) && child[0] === 'w:abstractNumId' ? [child[0], { ...child[1], 'w:val': newAbstract }] as JmlElement : child)])])
+    nums.set(id, newNum)
+    return newNum
+  }
+  const remap = (fragment: Fragment): Fragment => {
+    const children: ProseMirrorNode[] = []
+    fragment.forEach((node) => {
+      let attrs = node.attrs
+      if (node.type.name === 'paragraph' && attrs.numPr) {
+        const numPr = unpackJml<JmlElement>(attrs.numPr as string)
+        const id = jmlAttr(jmlChild(numPr, 'w:numId'), 'w:val')
+        const newId = id ? importNum(id) : null
+        // Older copies have no definitions. Never leave an unresolved foreign numId behind.
+        attrs = { ...attrs, numPr: newId && numPr ? packJml([numPr[0], numPr[1], ...jmlChildren(numPr).map((child) =>
+          Array.isArray(child) && child[0] === 'w:numId' ? [child[0], { ...child[1], 'w:val': newId }] as JmlElement : child)]) : null }
+      }
+      children.push(node.isText ? node : node.type.create(attrs, node.isLeaf ? null : remap(node.content), node.marks))
+    })
+    return Fragment.fromArray(children)
+  }
+  return { slice: new Slice(remap(slice.content), slice.openStart, slice.openEnd), maps }
 }
 
 /** Relationship attributes the exporter rewrites for whichever part content lands in. */
