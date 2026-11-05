@@ -2,7 +2,13 @@
 
 Pulpo opens PowerPoint decks (`.pptx`, `.potx`, `.ppsx`, `.pptm`, and their macro-enabled siblings) as live, collaborative documents. People and agents view, edit, and present them in Pulpo itself; downloads and agent `pull` still produce real `.pptx` files. This page describes the engine in `@pulpo/client-core/office/presentation`: the model, what is editable, what is kept but not edited, and how it is tested.
 
-The engine is not yet reachable from Files routes. It plugs into the live-formats foundation (format registry, document socket, assets, agent push and pull) in a follow-up. Until then it runs in the test harness described under [Testing](#testing).
+Decks are a [live format](./live-formats.md) (`presentation`), so everything Files does for documents works for them:
+
+- **Files.** **New → New presentation** creates `Untitled.pptx` from a blank 16:9 deck. Uploaded decks open read only until **Edit** converts them, keeping every part byte for byte and their pictures and media as document assets. Downloads export a real `.pptx` (or `.potx`, `.ppsx`, `.pptm`, … after the file's extension).
+- **Web and desktop.** The editor (`apps/web/src/features/files/live/presentation`) is the registry entry's lazy `Editor`. `.ppsx` decks open in the slide show. The desktop app wraps the web app, so it gets the same editor.
+- **Mobile.** `apps/mobile/editor/presentation/` is a web view page: the shared view core on a replica of the document, a slide that fills the width, and a strip of thumbnails below it that scrolls sideways. Images come from the app, because the page has no network. A native bar above the keyboard holds undo, redo, new slide, text box, shape, bold, italic, bullets, delete, and present. Insert image, tables, and the format panel are web only for now.
+- **Agents.** `pull` writes the deck as `.pptx`, and `cat` and `grep` read it as text (`toText`: each slide's text, tables, chart data, alt text, and notes). `push` merges the file through `applyFile`. In Suggest mode the push becomes a proposal that people review.
+- **Review.** The web review dialog shows `PresentationDiffView`. On mobile, the review sheet loads the same page in review mode (`presentationDiff` in the bridge protocol), which draws changed slides with before and after thumbnails. If a version cannot be fetched or read, it falls back to the text diff.
 
 ## Design
 
@@ -22,8 +28,10 @@ The engine models what people edit and keeps everything else verbatim:
 - **Untouched slides are byte-identical.** Each slide also keeps its original bytes. On export, the engine re-reads them and compares; if nothing the model covers has changed, the original bytes are written. The same holds for notes slides, relationships parts, `presentation.xml`, and `[Content_Types].xml`.
 - **Relationships are resolved, not copied by id.** Shapes record what each `r:` attribute points at (a part path or URL). On export the slide's relationships are rebuilt, reusing the original ids where the target is the same, so shapes can be copied between slides and decks.
 - **Identifiers are assigned on export.** New slides get the next free `p:sldId` and part name; new shapes the next free `cNvPr/@id` on their slide. Duplicates that concurrent edits can create are repaired the same way. Assignment is deterministic, so `applyFile` can predict which file ids belong to which document keys.
-- **Garbage collection is conservative.** Parts that only a deleted slide used (its chart, its notes) are dropped; parts that were already unreachable in the imported file are kept.
-- **No dangling references.** Links to deleted slides keep their action with an empty relationship id (as PowerPoint leaves them), custom shows drop deleted slides, and animations and connector glue that name deleted shapes are removed. Duplicated slides keep their shape ids, so their animations still apply; comments are not duplicated.
+- **Garbage collection happens on export.** Parts that only a deleted slide used, such as its chart or its notes, are left out of the file. They stay in the document, and so does a part a pushed file no longer has, because undo, a collaborator's in-flight copy, or an earlier clipboard may still use them. Parts that were already unreachable in the imported file are kept.
+- **Parts are written outside undo.** Image parts and parts brought by a paste are written under their own origin, which no undo manager tracks. Undoing an insert therefore never deletes a part that another shape uses. Pasted parts get a random suffix, so two people pasting from different decks never overwrite each other's images. Every part with a content type that its extension's Default does not give gets an Override.
+- **One owner per chart.** When two slides use one chart, diagram, or embedded object, for example after duplicating a slide, export gives each later slide a copy, as PowerPoint does.
+- **No dangling references.** Links to deleted slides keep their action with an empty relationship id, as PowerPoint leaves them. This also applies to links in speaker notes and to links in slides pasted from another deck. Custom shows drop deleted slides. Animations, build entries, and connector glue that name deleted shapes are removed, and so are a slide's timing and build list once they are empty. The part name of a deleted slide is never given to a new slide. Duplicated slides keep their shape ids, so their animations still apply. Comments are not duplicated. New shape ids skip ids used inside kept equations and ink.
 - **Text is valid XML.** Vertical tabs (PowerPoint's soft line breaks) are written as `a:br`; characters XML cannot hold are dropped.
 
 Saving a `.pptm` as `.pptx` drops the VBA project and its content type, because macro-free formats cannot hold it. Macros are never run.
@@ -35,7 +43,8 @@ Everything lives under the root map `presentation` (`ydoc.ts`):
 | Key | Type | Holds |
 | --- | --- | --- |
 | `version`, `mainPart`, `slideWidth`, `slideHeight`, `notesWidth`, `notesHeight` | scalars | Deck settings (EMU) |
-| `parts` | `Y.Map<path, {bytes \| asset, contentType, orphan}>` | Raw parts |
+| `documentId` | string | A random id shared by every replica, so a paste can tell whether it came from this deck |
+| `parts` / `partBytes` | `Y.Map<path, {asset?, contentType, orphan}>` / `Y.Map<path, Uint8Array>` | Raw parts. Bytes are kept apart, because Yjs freezes plain values deeply and cannot freeze typed arrays inside them |
 | `slideOrder` / `slides` | `Y.Array<key>` / `Y.Map<key, Y.Map>` | Slide order and slides |
 | `sectionOrder` / `sections` | `Y.Array<key>` / `Y.Map<key, {name, id}>` | Sections; slides name their section |
 
@@ -43,7 +52,8 @@ A slide map holds scalars (`layout`, `hidden`, `section`, `background`, `rels`, 
 
 Why this shape:
 
-- **Order arrays of keys beside maps of content.** Moving a slide, reordering shapes, or inserting a table row is a small edit to an array of keys; the content's map is untouched, so someone else's edits to the moved item are never lost. Concurrent moves can list a key twice; readers keep the first.
+- **Order arrays of keys beside maps of content.** Moving a slide, reordering shapes, or inserting a table row is a small edit to an array of keys; the content's map is untouched, so someone else's edits to the moved item are never lost. Reorders move only the keys that changed place. Concurrent moves and groupings can list a key twice. Readers keep the first listing, depth first. Grouping, ungrouping, and deleting use that same resolution, and slide indexes count visible slides.
+- **Merged cells are normalized when read**: an anchor spans only cells marked as merged into it, and merged cells that nothing covers become plain cells. Inserting a row or column inside a merge extends it. Deleting a merge's first row or column hands its content to the next covered cell.
 - **One key per property.** Two people moving and recoloring the same shape, or one resizing while another rotates, merge. Same-property conflicts resolve last-writer-wins, as in Google Slides.
 - **Text is a ProseMirror document per text body**, bound with y-prosemirror, so typing in the same shape merges character by character. Paragraph properties are one raw `a:pPr` per paragraph (rarely contended). Run properties are split into one mark per property (`b`, `i`, `u`, `strike`, `sz`, `font`, `fill`, `highlight`, `baseline`, `cap`, `spc`, `link`) plus a mark holding the rest of `a:rPr`, so one person bolding a range while another colors it keeps both. Fields (slide number, date), line breaks, and unknown inline content (equations) are inline nodes; unknown ones are kept verbatim.
 - **Cells keyed by column key**, so inserting a column while someone types in a cell keeps both.
@@ -82,11 +92,11 @@ The web wrapper (`apps/web/src/features/files/live/presentation`) arranges these
 
 ### Review diffs
 
-`diffDocuments`, `diffDocumentWithFile`, and `diffFiles` compare two versions: slides added, removed, moved, and edited; per slide, layout, visibility, background, notes, and transition changes; per shape, added, removed, text (with before and after), formatting, moved, resized, rotated, fill, line, geometry, picture, and table changes; and deck-wide theme, master, media, and size changes. `PresentationDiffView` shows them with before and after thumbnails and line diffs of text. The review UI for agent proposals will use it.
+`diffDocuments`, `diffDocumentWithFile`, and `diffFiles` compare two versions: slides added, removed, moved, and edited; per slide, layout, visibility, background, notes, and transition changes; per shape, added, removed, text (with before and after), formatting, moved, resized, rotated, fill, line, geometry, picture, and table changes; and deck-wide theme, master, media, and size changes. `PresentationDiffView` shows them with before and after thumbnails and line diffs of text. The web review dialog uses it for agent proposals (`PresentationFileDiff`). On mobile, the presentation page's review mode (`apps/mobile/editor/presentation/diff.ts`) draws the same rows.
 
 ### Copy and paste between decks
 
-The clipboard payload (`application/x-pulpo-presentation+json`) carries the copied shapes or slides and every part they reach through relationships (images, charts and their workbooks, SmartArt parts). Pasting into another deck brings those parts along under fresh names and maps slides to the layout with the same name.
+The clipboard payload (`web application/x-pulpo-presentation+json`) carries the copied shapes or slides and every part they reach through relationships: images, charts and their workbooks, and SmartArt parts. Any page can write that type, so pastes are validated. Shapes and slides whose XML or numbers would make an invalid file are dropped, and text is accepted only on `p:sp`. Pasting into another deck brings the parts along under fresh names and maps slides to the layout with the same name. Pasting into the same deck reuses the parts it still has. The canvas and the slide strip both copy and paste.
 
 ## Supported, kept, and not yet supported
 
@@ -110,7 +120,10 @@ Known limitations, most important first:
 - Text layout uses the browser's line breaking and the fonts available; without Calibri, Carlito or system fallbacks change line breaks slightly.
 - Charts do not draw error bars, trendlines, data tables, or leader lines; date axes are spaced evenly; 3-D charts are drawn flat.
 - The Y.Doc keeps templates and each slide's original bytes beside the model, about 4× the uncompressed package for shape-heavy decks.
-- `applyFile` reconciles the document with the pushed file, not with the version the agent pulled: edits other people made between the agent's pull and its push are overwritten where the agent's file differs. Concurrent edits that are still in flight merge. A three-way merge needs the pulled version, which the agent integration can provide later.
+- `applyFile` reconciles the document with the pushed file, not with the version the agent pulled. Edits other people made between the agent's pull and its push are overwritten where the agent's file differs. Concurrent edits that are still in flight merge. A three-way merge needs the pulled version.
+- `applyFile` matches slides by slide id and table rows by their text. Tools such as python-pptx give a new slide the id of a deleted one. That slide is treated as the old one only when its layout and at least one shape (id, kind, and name) agree, so a look-alike slide can still pick up edits meant for the deleted one.
+- Re-applying the document's own export right after a slide was deleted reports a change once, because the stored presentation part is updated. Applying it again changes nothing.
+- Collaborators' carets show in on-canvas text, not in speaker notes. Their selections show on the canvas and in the strip.
 
 ## Limits and hostile files
 
@@ -118,14 +131,33 @@ Every file is untrusted. Reading refuses (with a `LiveFormatError`) packages ove
 
 ## Testing
 
-- **Regressions** (`regressions.test.ts`): cases from review, such as slide links after inserting slides, cleared table cells after a push, non-slide internal hyperlinks, animations on duplicated slides, dangling references, simultaneous first notes, Enter keeping paragraph properties, control characters, hostile clipboard payloads, and slide id limits.
+- **Review regressions** (`review-regressions.test.ts`): one case for each finding of the second review. These include undo after a push, self-including SmartArt, slide keys in SVG ids, concurrent pastes from different decks, part-name reuse, empty timing, fonts with panose, hostile clipboard numbers, text on groups, concurrent group and z-order, ungrouping flipped groups, merged cells, notes links, ids of opaque shapes, shared image parts under undo, row matching, sections, visible indexes, python-pptx slide ids, caret sanitizing, WebP, charts on duplicated slides, hover links, cross-deck slide links, and editors on deleted shapes.
+- **Regressions** (`regressions.test.ts`): cases from the first review, such as slide links after inserting slides, cleared table cells after a push, non-slide internal hyperlinks, animations on duplicated slides, dangling references, simultaneous first notes, Enter keeping paragraph properties, control characters, hostile clipboard payloads, and slide id limits.
 - **Unit and round trip** (`packages/client-core`, `npm test`): every corpus deck exports byte-identical parts after an import through a second replica; edits through commands (text, shapes, images, tables, notes, grouping, layout changes, slide moves, sections) read back correctly; untouched slides stay byte-identical when another slide changes; macros are kept or dropped by format.
 - **`applyFile`**: an agent-style edit merges with a concurrent user edit on another replica; re-applying the document's own export changes nothing; keys of slides and shapes the document created survive the round trip.
 - **Concurrency**: three replicas make random edits (typing, moving, formatting, inserting, deleting, grouping, slide moves, table rows) with random partial syncs, converge to the same state, and export a valid deck with unique ids that exports identically again.
 - **Hostile files**: zip bombs, deep nesting, entities, broken and cyclic references, path traversal, huge values, duplicates, truncated and non-zip files each fail with a typed error, or import and export cleanly, within seconds.
 - **Performance**: a 300-slide deck imports in about 3 s and exports in about 2 s in Node; in the browser it opens in about 1.5 s and switches slides in about 25 ms, with only visible thumbnails drawn.
 - **Fidelity** (opt-in, `PULPO_OFFICE_FIDELITY=1`): python-pptx reads every round-tripped deck the same as the original, LibreOffice opens it with every slide, edits made through commands read back in python-pptx, and a python-pptx edit merges through `applyFile`. `apps/web/tests/presentation-fidelity.browser.mjs` renders 66 slides from 16 decks and scores them against LibreOffice renderings: mean similarity 0.981 and structural similarity 0.990 at the time of writing.
-- **Browser** (`npm run test:presentation-editor -w @pulpo/web`): select, move, resize, rotate, nudge, undo; marquee, group, align, delete; typing and formatting with two collaborators (presence and per-user undo); inserting text boxes, shapes, tables, images, and typing in cells; slide management by dragging; clipboard; the slide show and presenter view; read-only mode; touch; `.ppsx`; fixtures; the review diff; and performance budgets.
+- **Browser** (`npm run test:presentation-editor -w @pulpo/web`) covers:
+  - select, move, resize, rotate, nudge, and undo;
+  - marquee, group, align, and delete;
+  - typing and formatting with two collaborators, with presence and per-user undo;
+  - inserting text boxes, shapes, tables, and images, and typing in cells;
+  - managing slides by dragging, and the clipboard, including from the strip;
+  - the slide show and presenter view, read-only mode, and touch;
+  - `.ppsx` decks, the corpus fixtures, and the review diff;
+  - markup in a collaborator's slide key, cells under vertical merges, switching cells while editing and Tab;
+  - Escape and the show shortcuts in text fields;
+  - performance budgets.
+- **Files, end to end** (`npm run test:presentation-files -w @pulpo/web`, against a real API and PostgreSQL):
+  - **New presentation**, editing, two tabs collaborating, and reloading;
+  - downloading and reading the bytes with python-pptx;
+  - converting an upload with **Edit**, with a byte-identical export;
+  - an agent push merging with an unsent edit from an offline tab;
+  - reviewing and accepting an agent's suggestion.
+- **Server** (`apps/server/src/files/agent/presentation.postgres.test.ts`, `PULPO_FILES_TESTS=true`): creating, converting, exporting, `cat`, a push merging with a concurrent edit, a suggestion merging with a later edit, and refusing bytes that are not a deck.
+- **Mobile** (`presentationBridge.test.ts`): the page's bridge, which covers loading, edits both ways, asset requests, commands, and toolbar state.
 
 The corpus and its sources are listed in `packages/client-core/fixtures/presentation/README.md`; the Python and LibreOffice tools in `packages/client-core/test-tools/presentation/README.md`.
 

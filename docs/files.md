@@ -94,7 +94,7 @@ Web keeps each opened document in IndexedDB (`pulpo-doc:<account>:<doc>`) for in
 
 ## Presentations
 
-PowerPoint decks (`.pptx`, `.potx`, `.ppsx`, `.pptm`) have a collaborative engine in `@pulpo/client-core/office/presentation`: a lossless codec, a Yjs layout built for co-editing, a renderer, an editor view core, and review diffs. It is not wired into Files routes yet; see [Presentations](./presentations.md).
+PowerPoint decks (`.pptx`, `.potx`, `.ppsx`, `.pptm`, and their macro-enabled siblings) are a live format. **New → New presentation** makes one, and uploaded decks become editable with **Edit**. People co-edit and present them on web, desktop, and mobile. Agents pull, push, and suggest real `.pptx` files. The engine in `@pulpo/client-core/office/presentation` provides a lossless codec, a Yjs layout built for co-editing, a renderer, an editor view core, and review diffs. See [Presentations](./presentations.md).
 
 ## Mobile
 
