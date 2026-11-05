@@ -97,6 +97,17 @@ describe('diff', () => {
     ])
   })
 
+  it.each([false, true])('reports replacement picture bytes with unchanged drawing XML (in table: %s)', async (inTable) => {
+    const picture = (src: string) => schema.node('drawing', { src, v: packJml(['w:drawing', {}]) })
+    const block = (src: string) => inTable ? schema.node('table', null, [schema.node('tableRow', null, [schema.node('tableCell', null, [p(picture(src))])])]) : p(picture(src))
+    const before = (await documentWith(block('original-hash'))).model
+    const after = { ...before, body: schema.node('doc', null, [block('replacement-hash')]) }
+    const diff = diffDocxModels(before, after)
+    expect(diff.identical).toBe(false)
+    expect(diff.stats.changedBlocks).toBe(1)
+    expect(diff.blocks[0]).toMatchObject({ kind: 'modify', formats: [{ property: 'picture', text: '[Image]' }] })
+  })
+
   it('pairs changed paragraphs, keeps added and removed ones, and notes formatting', async () => {
     const before = (await documentWith(p(run('Intro stays the same.')), p(run('This sentence will change a little.')), p(run('Removed paragraph entirely.')), p(run('Make me bold.')))).model
     const after = (await documentWith(p(run('Intro stays the same.')), p(run('This sentence will change quite a little.')), p(run('Brand new words here.')), p(run('Make me '), run('bold', 'b'), run('.')))).model

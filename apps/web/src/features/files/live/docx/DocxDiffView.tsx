@@ -25,6 +25,7 @@ function propertyLabel(property: string): string {
     case 'vertAlign': return ui("Superscript or subscript")
     case 'rStyle': return ui("Character style")
     case 'link': return ui("Link")
+    case 'picture': return ui("Picture")
     case 'pStyle': return ui("Style")
     case 'jc': return ui("Alignment")
     case 'ind': return ui("Indentation")

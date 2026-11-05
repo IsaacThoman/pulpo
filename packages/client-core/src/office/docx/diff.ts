@@ -99,15 +99,17 @@ function paragraphSignature(node: ProseMirrorNode): string {
 function styledChars(node: ProseMirrorNode): { text: string; signatures: string[] } {
   let text = ''
   const signatures: string[] = []
-  node.forEach((child) => {
+  node.descendants((child) => {
+    if (!child.isInline) return true
     const marks = inlineMarks(child)
-    if (marks.some((mark) => mark.type.name === 'del')) return
-    const piece = child.isText ? child.text! : child.type.name === 'tab' ? '\t' : child.type.name === 'break' ? '\n' : ''
-    const signature = runSignature(marks)
+    if (marks.some((mark) => mark.type.name === 'del')) return false
+    const piece = child.isText ? child.text! : child.type.name === 'tab' ? '\t' : child.type.name === 'break' ? '\n' : child.type.name === 'drawing' ? inlineText(child.type.schema.nodes.paragraph!.create(null, child)) : ''
+    const signature = runSignature(marks) + (child.type.name === 'drawing' ? `|picture=${encodeURIComponent(JSON.stringify([child.attrs.src, child.attrs.v]))}` : '')
     for (const char of piece) {
       text += char
       signatures.push(signature)
     }
+    return false
   })
   return { text, signatures }
 }
@@ -149,7 +151,7 @@ function collectBlocks(doc: ProseMirrorNode, model: DocxModel): Block[] {
             cells.push(parts.join(' ').trim())
           })
           const text = cells.join(' | ')
-          blocks.push({ summary: { type: 'row', text }, key: `r:${text}`, properties: '' })
+          blocks.push({ summary: { type: 'row', text }, key: `r:${text}\u0001${styledChars(row).signatures.join('\u0002')}`, node: row, properties: '' })
         })
         break
       case 'blockWrapper':
@@ -335,7 +337,7 @@ function pushRunChanges(changes: FormatChange[], text: string, before: string, a
   const b = parseSignature(after)
   for (const key of new Set([...a.keys(), ...b.keys()])) {
     if (a.get(key) === b.get(key)) continue
-    const value = (packed: string | undefined) => (key === 'link' ? packed : packed ? describe(unpackJml<JmlElement>(packed)) : undefined)
+    const value = (packed: string | undefined) => (key === 'picture' ? undefined : key === 'link' ? packed : packed ? describe(unpackJml<JmlElement>(packed)) : undefined)
     changes.push({ property: key, text: text.trim() || text, before: value(a.get(key)), after: value(b.get(key)) })
   }
 }
