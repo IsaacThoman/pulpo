@@ -42,8 +42,9 @@ export function shapeMap(doc: Y.Doc, slideKey: string, shapeKey: string): YMap |
   return (slideMap(doc, slideKey)?.get('shapes') as Y.Map<YMap> | undefined)?.get(shapeKey)
 }
 
-export function partsMap(doc: Y.Doc): Y.Map<PartSnapshot> {
-  return presentationRoot(doc).get('parts') as Y.Map<PartSnapshot>
+/** Part descriptions by path (their bytes are kept apart; see `setPart`). */
+export function partsMap(doc: Y.Doc): Y.Map<Omit<PartSnapshot, 'bytes'>> {
+  return presentationRoot(doc).get('parts') as Y.Map<Omit<PartSnapshot, 'bytes'>>
 }
 
 // ---------------------------------------------------------------------------------------------

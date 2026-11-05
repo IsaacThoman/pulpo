@@ -4,7 +4,7 @@ import { decodePartText, relationshipsPathFor, relativeTarget, resolveTarget } f
 import { cloneShape, cloneSlide, insertShapes, insertSlides, partsMap } from './commands.js'
 import type { PartSnapshot, RelTarget, ShapeSnapshot, SlideSnapshot } from './model.js'
 import { DeckResources } from './render/deck.js'
-import { readSnapshot } from './ydoc.js'
+import { presentationRoot, readSnapshot, setPart } from './ydoc.js'
 import { normalizeText } from './text.js'
 import { buildShapeElement, RelationshipTable } from './write.js'
 import { attr, childElements, parseFragment, parseXmlDocument, REL_TYPES, serializeNode } from './xml.js'
@@ -181,7 +181,7 @@ async function importParts(doc: Y.Doc, assets: LiveAssetStore, clipboard: Presen
     if (relsSource) entries.push([relationshipsPathFor(target), { bytes: rewriteRels(fromBase64(relsSource.data), path, target, mapping) }])
   }
   doc.transact(() => {
-    for (const [path, part] of entries) parts.set(path, part)
+    for (const [path, part] of entries) setPart(presentationRoot(doc), path, part)
   })
   return mapping
 }

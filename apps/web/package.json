@@ -18,7 +18,8 @@
     "test:doc-dictation": "node tests/doc-dictation.browser.mjs",
     "capture:landing": "node scripts/capture-landing-screenshots.mjs",
     "test:presentation-editor": "node tests/presentation-editor.browser.mjs",
-    "test:live-text": "node tests/live-text.browser.mjs"
+    "test:live-text": "node tests/live-text.browser.mjs",
+    "test:presentation-files": "node tests/presentation-files.browser.mjs"
   },
   "dependencies": {
     "@pulpo/client-core": "0.1.0",

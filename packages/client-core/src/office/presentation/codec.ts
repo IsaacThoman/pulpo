@@ -1,13 +1,13 @@
 import type * as Y from 'yjs'
 import { LiveFormatError, type LiveFormatCodec, type LiveFormatContext } from '../live-format.js'
 import { blankPresentation } from './blank.js'
-import type { PartSnapshot, PresentationSnapshot, ShapeSnapshot, TableSnapshot } from './model.js'
+import type { PresentationSnapshot, ShapeSnapshot, TableSnapshot } from './model.js'
 import { transactChanges } from '../assets.js'
 import { PRESENTATION_EXTENSIONS, presentationFormat, presentationMimeType } from './layout.js'
 import { PRESENTATION_SCHEMA_VERSION } from './model.js'
 import { readPresentation } from './read.js'
 import { textToPlain } from './text.js'
-import { presentationRoot, readSnapshot, reconcileSnapshot, writeSnapshot } from './ydoc.js'
+import { presentationRoot, readParts, readSnapshot, reconcileSnapshot, writeSnapshot } from './ydoc.js'
 import { assignIdentifiers, writePresentation } from './write.js'
 import { textSummaryOfChart } from './summary.js'
 
@@ -48,9 +48,8 @@ export const presentationCodec: LiveFormatCodec = {
   },
 
   referencedAssets(doc) {
-    const parts = presentationRoot(doc).get('parts') as Y.Map<PartSnapshot> | undefined
     const hashes = new Set<string>()
-    for (const part of parts?.values() ?? []) if (part.asset) hashes.add(part.asset.hash)
+    for (const part of Object.values(readParts(presentationRoot(doc)))) if (part.asset) hashes.add(part.asset.hash)
     return [...hashes]
   },
 

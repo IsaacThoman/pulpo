@@ -241,3 +241,31 @@ describe('regressions', () => {
     expect(assigned.slides[1]!.sldId).not.toBe(2_147_483_647)
   })
 })
+
+/** Values Yjs stores as plain JSON; its development build deep-freezes them, so they must not nest typed arrays. */
+function nestedTypedArrays(type: unknown, path = "presentation"): string[] {
+  const found: string[] = []
+  const plain = (value: unknown, at: string, depth: number) => {
+    if (depth > 0 && ArrayBuffer.isView(value)) found.push(at)
+    else if (value && typeof value === 'object' && !ArrayBuffer.isView(value)) for (const [key, inner] of Object.entries(value)) plain(inner, `${at}.${key}`, depth + 1)
+  }
+  const visit = (value: unknown, at: string) => {
+    if (value instanceof Y.Map) for (const [key, inner] of value.entries()) visit(inner, `${at}.${key}`)
+    else if (value instanceof Y.Array) value.toArray().forEach((inner, index) => visit(inner, `${at}[${index}]`))
+    else if (!(value instanceof Y.AbstractType)) plain(value, at, 0)
+  }
+  visit(type, path)
+  return found
+}
+
+describe('stored values', () => {
+  it('never nests binary data inside plain values (Yjs development builds freeze them)', async () => {
+    for (const name of ['generated/pictures.pptx', 'poi/SmartArt.pptx', 'poi/EmbeddedVideo.pptx']) {
+      const doc = await open(fixture(name))
+      expect(nestedTypedArrays(doc.getMap('presentation')), name).toEqual([])
+    }
+    const blank = new Y.Doc()
+    await presentationCodec.createEmpty(blank, context)
+    expect(nestedTypedArrays(blank.getMap('presentation'))).toEqual([])
+  })
+})

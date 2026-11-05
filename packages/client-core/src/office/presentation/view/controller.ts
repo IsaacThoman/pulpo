@@ -11,7 +11,7 @@ import { mergeBag, resolveLevel } from '../render/props.js'
 import { assetObjectUrl, DEFAULT_RENDER_LABELS, displayableMediaType, EMU_PER_PX, type RenderLabels } from '../render/env.js'
 import { renderSlide, slideShapeText, slideShapeXfrm, type SlideRenderOptions } from '../render/slide.js'
 import { textToPlain } from '../text.js'
-import { orderedKeys, presentationRoot, readSlideMap } from '../ydoc.js'
+import { orderedKeys, presentationRoot, readPart, readParts, readSlideMap } from '../ydoc.js'
 import type { InlineTextEditor } from './text-editor.js'
 
 /**
@@ -196,12 +196,12 @@ export class PresentationController {
       const path = event.path
       if (path.length === 0) {
         for (const key of (event as Y.YMapEvent<unknown>).keysChanged) {
-          if (key === 'parts' || key === 'slides') change.parts = true
+          if (key === 'parts' || key === 'partBytes' || key === 'slides') change.parts = true
           if (key === 'slideOrder' || key === 'slides' || key === 'sectionOrder' || key === 'sections') change.order = true
         }
         continue
       }
-      if (path[0] === 'parts') change.parts = true
+      if (path[0] === 'parts' || path[0] === 'partBytes') change.parts = true
       else if (path[0] === 'slideOrder' || path[0] === 'sectionOrder' || path[0] === 'sections') change.order = true
       else if (path[0] === 'slides') {
         if (path.length === 1) {
@@ -263,8 +263,7 @@ export class PresentationController {
   }
 
   parts(): Record<string, PartSnapshot> {
-    const parts = presentationRoot(this.doc).get('parts') as Y.Map<PartSnapshot> | undefined
-    return Object.fromEntries(parts ? [...parts.entries()] : [])
+    return readParts(presentationRoot(this.doc))
   }
 
   deck(): DeckResources {
@@ -315,7 +314,7 @@ export class PresentationController {
   assetUrl(partPath: string): string | undefined {
     const cached = this.urls.get(partPath)
     if (cached !== undefined) return cached ?? undefined
-    const part = (presentationRoot(this.doc).get('parts') as Y.Map<PartSnapshot>).get(partPath)
+    const part = readPart(presentationRoot(this.doc), partPath)
     const asset = part?.asset
     if (!asset || !displayableMediaType(asset.mimeType)) {
       this.urls.set(partPath, null)

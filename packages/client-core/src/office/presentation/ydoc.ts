@@ -15,7 +15,7 @@ import type {
 } from './model.js'
 import { PRESENTATION_SCHEMA_VERSION } from './model.js'
 import { EMPTY_TEXT, normalizeText, slideTextSchema, textNode, textToPlain, type TextJSON } from './text.js'
-import { stableStringify } from './xml.js'
+import { bytesEqual, stableStringify } from './xml.js'
 
 /**
  * The collaborative layout of a presentation (see docs/presentations.md).
@@ -52,9 +52,9 @@ export function writeSnapshot(doc: Y.Doc, snapshot: PresentationSnapshot, origin
     const root = presentationRoot(doc)
     root.set('version', PRESENTATION_SCHEMA_VERSION)
     for (const key of META_KEYS) root.set(key, snapshot[key])
-    const parts = new Y.Map<PartSnapshot>()
-    root.set('parts', parts)
-    for (const [partPath, part] of Object.entries(snapshot.parts)) parts.set(partPath, part)
+    root.set('parts', new Y.Map<PartInfo>())
+    root.set('partBytes', new Y.Map<Uint8Array>())
+    for (const [partPath, part] of Object.entries(snapshot.parts)) setPart(root, partPath, part)
     const sectionOrder = new Y.Array<string>()
     const sections = new Y.Map<{ name: string; id: string }>()
     root.set('sectionOrder', sectionOrder)
@@ -219,9 +219,60 @@ export function readText(fragment: unknown): TextJSON {
   }
 }
 
+/** A part as kept in `parts`: everything but its bytes. */
+type PartInfo = Omit<PartSnapshot, 'bytes'>
+
+/**
+ * Stores a part. Bytes go into `partBytes` as a binary value of their own, never inside the part's
+ * object: Yjs's development build deep-freezes plain values, which typed arrays cannot survive,
+ * and binary values are also stored more compactly.
+ */
+export function setPart(root: Y.Map<unknown>, partPath: string, part: PartSnapshot): void {
+  const { bytes, ...info } = part
+  const parts = root.get('parts') as Y.Map<PartInfo>
+  const binaries = partBytesMap(root)
+  if (stableStringify(parts.get(partPath)) !== stableStringify(info) || !parts.has(partPath)) parts.set(partPath, info)
+  if (!bytes) {
+    if (binaries.has(partPath)) binaries.delete(partPath)
+  } else if (!bytesEqual(binaries.get(partPath), bytes)) binaries.set(partPath, bytes)
+}
+
+export function deletePart(root: Y.Map<unknown>, partPath: string): void {
+  ;(root.get('parts') as Y.Map<PartInfo>).delete(partPath)
+  partBytesMap(root).delete(partPath)
+}
+
+function partBytesMap(root: Y.Map<unknown>): Y.Map<Uint8Array> {
+  let binaries = root.get('partBytes') as Y.Map<Uint8Array> | undefined
+  if (!binaries) {
+    binaries = new Y.Map<Uint8Array>()
+    root.set('partBytes', binaries)
+  }
+  return binaries
+}
+
+/** Every part, with its bytes. */
+export function readParts(root: Y.Map<unknown>): Record<string, PartSnapshot> {
+  const parts = root.get('parts') as Y.Map<PartInfo> | undefined
+  const binaries = root.get('partBytes') as Y.Map<Uint8Array> | undefined
+  const result: Record<string, PartSnapshot> = {}
+  for (const [partPath, info] of parts?.entries() ?? []) {
+    const bytes = binaries?.get(partPath)
+    result[partPath] = bytes ? { ...info, bytes } : { ...info }
+  }
+  return result
+}
+
+/** One part, with its bytes. */
+export function readPart(root: Y.Map<unknown>, partPath: string): PartSnapshot | undefined {
+  const info = (root.get('parts') as Y.Map<PartInfo> | undefined)?.get(partPath)
+  if (!info) return undefined
+  const bytes = (root.get('partBytes') as Y.Map<Uint8Array> | undefined)?.get(partPath)
+  return bytes ? { ...info, bytes } : { ...info }
+}
+
 export function readSnapshot(doc: Y.Doc): PresentationSnapshot {
   const root = presentationRoot(doc)
-  const parts = root.get('parts') as Y.Map<PartSnapshot> | undefined
   const slides = root.get('slides') as Y.Map<YSlide> | undefined
   const sections = root.get('sections') as Y.Map<{ name: string; id: string }> | undefined
   return {
@@ -230,7 +281,7 @@ export function readSnapshot(doc: Y.Doc): PresentationSnapshot {
     slideHeight: (root.get('slideHeight') as number | undefined) ?? 6_858_000,
     notesWidth: (root.get('notesWidth') as number | undefined) ?? 6_858_000,
     notesHeight: (root.get('notesHeight') as number | undefined) ?? 9_144_000,
-    parts: Object.fromEntries(parts ? [...parts.entries()] : []),
+    parts: readParts(root),
     slides: orderedKeys(root.get('slideOrder') as Y.Array<string>, slides).map((key) => readSlideMap(key, slides!.get(key)!)),
     sections: orderedKeys(root.get('sectionOrder') as Y.Array<string>, sections).map((key): SectionSnapshot => ({ key, ...sections!.get(key)! })),
   }
@@ -329,9 +380,8 @@ export function reconcileSnapshot(doc: Y.Doc, target: PresentationSnapshot, orig
       return
     }
     for (const key of META_KEYS) setIfChanged(root, key, target[key])
-    const parts = root.get('parts') as Y.Map<PartSnapshot>
-    for (const [partPath, part] of Object.entries(target.parts)) setIfChanged(parts, partPath, part)
-    for (const partPath of [...parts.keys()]) if (!(partPath in target.parts)) parts.delete(partPath)
+    for (const [partPath, part] of Object.entries(target.parts)) setPart(root, partPath, part)
+    for (const partPath of [...(root.get('parts') as Y.Map<PartInfo>).keys()]) if (!(partPath in target.parts)) deletePart(root, partPath)
 
     const sections = root.get('sections') as Y.Map<{ name: string; id: string }>
     for (const section of target.sections) setIfChanged(sections, section.key, { name: section.name, id: section.id })
