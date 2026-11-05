@@ -40,8 +40,10 @@ describe('notebook output frames', () => {
       expect(replacement).toBeTruthy()
       const messages: unknown[] = []
       replacement.contentWindow!.postMessage = (message: unknown) => { messages.push(message) }
-      await act(async () => { window.dispatchEvent(new MessageEvent('message', { source: replacement.contentWindow, data: { type: 'pulpo-sandbox:ready' } })) })
-      expect(messages).toEqual(expect.arrayContaining([expect.objectContaining({ code: expect.stringContaining('new content') })]))
+      await waitFor(() => {
+        window.dispatchEvent(new MessageEvent('message', { source: replacement.contentWindow, data: { type: 'pulpo-sandbox:ready' } }))
+        expect(messages).toEqual(expect.arrayContaining([expect.objectContaining({ code: expect.stringContaining('new content') })]))
+      })
       // An identical output update keeps its running frame.
       await act(async () => { cell.set('outputs', { json: JSON.stringify([output('new content')]), assets: [] }) })
       expect(view.container.querySelector('iframe')).toBe(replacement)
