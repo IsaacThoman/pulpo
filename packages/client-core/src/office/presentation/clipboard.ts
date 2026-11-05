@@ -1,14 +1,14 @@
 import type * as Y from 'yjs'
 import { LiveFormatError, type LiveAssetStore } from '../live-format.js'
 import { decodePartText, relationshipsPathFor, relativeTarget, resolveTarget } from '../ooxml/package.js'
-import { cloneShape, cloneSlide, insertShapes, insertSlides, PARTS_ORIGIN, partsMap, readSlide, slideKeys } from './commands.js'
+import { cloneShape, cloneSlide, insertShapes, insertSlides, PARTS_ORIGIN, readSlide, slideKeys } from './commands.js'
 import type { PartSnapshot, RelTarget, ShapeSnapshot, SlideSnapshot } from './model.js'
 import { DEFAULT_PRESENTATION_LIMITS } from './read.js'
 import { DeckResources } from './render/deck.js'
-import { presentationRoot, randomId, readSnapshot, setPart } from './ydoc.js'
+import { presentationRoot, randomId, readPart, readSnapshot, setPart } from './ydoc.js'
 import { normalizeText, type TextJSON } from './text.js'
 import { buildShapeElement, RelationshipTable } from './write.js'
-import { attr, childElements, parseFragment, parseXmlDocument, REL_TYPES, serializeNode } from './xml.js'
+import { attr, bytesEqual, childElements, parseFragment, parseXmlDocument, REL_TYPES, serializeNode } from './xml.js'
 
 /**
  * Copying shapes and slides, within a deck or to another one. The payload carries the parts the
@@ -227,44 +227,68 @@ function validSlide(slide: SlideSnapshot): boolean {
 
 /**
  * Prepares the clipboard's parts for `doc`; returns old path → new path and a function that writes
- * them. Pasting into the deck the content came from keeps the parts it still has. Anything else gets
- * a name no other paste can pick (a random suffix), so two people pasting from different decks at
+ * them. Pasting into the source deck reuses only parts whose content and dependencies still match.
+ * Anything else gets a name no other paste can pick (a random suffix), so two people pasting at
  * once never overwrite each other's images. The writer runs synchronously right before the shapes
  * are inserted, under `PARTS_ORIGIN`, so undoing the paste never deletes a part someone else uses.
  */
 async function prepareParts(doc: Y.Doc, assets: LiveAssetStore, clipboard: PresentationClipboard): Promise<{ mapping: Map<string, string>; write(): void }> {
   const sameDocument = clipboard.source === documentIdentity(doc)
   const mapping = new Map<string, string>()
-  const parts = partsMap(doc)
-  const contentParts = Object.keys(clipboard.parts).filter((path) => !path.endsWith('.rels') && !(sameDocument && parts.has(path)))
+  const contentParts = Object.keys(clipboard.parts).filter((path) => !path.endsWith('.rels'))
   const suffix = randomId().slice(0, 8)
-  for (const path of contentParts) {
-    if (sameDocument) {
-      mapping.set(path, path)
-      continue
-    }
-    const slash = path.lastIndexOf('/')
-    const dot = path.lastIndexOf('.')
-    const stem = path.slice(slash + 1, dot > slash ? dot : undefined)
-    const extension = dot > slash ? path.slice(dot) : ''
-    mapping.set(path, `${path.slice(0, slash + 1)}${stem}-${suffix}${extension}`)
-  }
-  const entries: [string, PartSnapshot][] = []
+  const copies = new Map<string, PartSnapshot>()
+  const relationships = new Map<string, Uint8Array>()
+  const dependents = new Map<string, Set<string>>()
   for (const path of contentParts) {
     const part = clipboard.parts[path]!
     const bytes = fromBase64(part.data)
-    const target = mapping.get(path)!
-    if (part.mimeType) entries.push([target, { asset: await assets.put(bytes, part.mimeType), ...(part.contentType ? { contentType: part.contentType } : {}) }])
-    else entries.push([target, { bytes, ...(part.contentType ? { contentType: part.contentType } : {}) }])
+    copies.set(path, { ...(part.mimeType ? { asset: await assets.put(bytes, part.mimeType) } : { bytes }), ...(part.contentType ? { contentType: part.contentType } : {}) })
     const relsSource = clipboard.parts[relationshipsPathFor(path)]
-    if (relsSource) entries.push([relationshipsPathFor(target), { bytes: rewriteRels(fromBase64(relsSource.data), path, target, mapping) }])
+    if (!relsSource) continue
+    const relsBytes = fromBase64(relsSource.data)
+    relationships.set(path, relsBytes)
+    for (const element of childElements(parseXmlDocument(decodePartText(relsBytes)).documentElement)) {
+      if (attr(element, 'TargetMode') === 'External') continue
+      const target = attr(element, 'Target')
+      if (target === undefined) continue
+      const dependency = resolveTarget(path, target)
+      const parents = dependents.get(dependency) ?? new Set<string>()
+      parents.add(path)
+      dependents.set(dependency, parents)
+    }
   }
   return {
     mapping,
     write: () => {
-      if (!entries.length) return
+      // Recheck after all asset writes: a collaborator can replace a part while they are pending.
+      const root = presentationRoot(doc)
+      const reusable = new Set(contentParts.filter((path) => {
+        if (!sameDocument) return false
+        const current = readPart(root, path)
+        const copy = copies.get(path)!
+        if (!current || current.contentType !== copy.contentType || current.asset?.hash !== copy.asset?.hash || current.asset?.mimeType !== copy.asset?.mimeType || !bytesEqual(current.bytes, copy.bytes)) return false
+        return bytesEqual(readPart(root, relationshipsPathFor(path))?.bytes, relationships.get(path))
+      }))
+      // An unchanged chart must also be copied when its workbook or another dependency changed.
+      const changed = contentParts.filter((path) => !reusable.has(path))
+      for (let index = 0; index < changed.length; index++) for (const parent of dependents.get(changed[index]!) ?? []) {
+        if (reusable.delete(parent)) changed.push(parent)
+      }
+      for (const path of contentParts) {
+        if (reusable.has(path)) continue
+        const slash = path.lastIndexOf('/')
+        const dot = path.lastIndexOf('.')
+        const stem = path.slice(slash + 1, dot > slash ? dot : undefined)
+        const extension = dot > slash ? path.slice(dot) : ''
+        mapping.set(path, `${path.slice(0, slash + 1)}${stem}-${suffix}${extension}`)
+      }
       doc.transact(() => {
-        for (const [path, part] of entries) if (!sameDocument || !partsMap(doc).has(path)) setPart(presentationRoot(doc), path, part)
+        for (const [path, target] of mapping) {
+          setPart(root, target, copies.get(path)!)
+          const rels = relationships.get(path)
+          if (rels) setPart(root, relationshipsPathFor(target), { bytes: rewriteRels(rels, path, target, mapping) })
+        }
       }, PARTS_ORIGIN)
     },
   }
