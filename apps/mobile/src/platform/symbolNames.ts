@@ -194,7 +194,6 @@ export const materialSymbolNames: Record<string, string> = {
   "tablecells": "table_chart",
   "minus": "horizontal_rule",
   "keyboard.chevron.compact.down": "keyboard_hide",
-  "arrow.turn.down.left": "wrap_text",
   "paintbrush": "format_color_fill",
   "text.alignleft": "format_align_left",
   "text.aligncenter": "format_align_center",

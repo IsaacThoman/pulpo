@@ -157,7 +157,6 @@ const icons: Record<string, ImageSourcePropType> = {
   'add_comment': require('../../assets/material/add_comment.xml'),
   'folder_open': require('../../assets/material/folder_open.xml'),
   'block': require('../../assets/material/block.xml'),
-  'wrap_text': require('../../assets/material/wrap_text.xml'),
   'format_color_fill': require('../../assets/material/format_color_fill.xml'),
   'format_align_left': require('../../assets/material/format_align_left.xml'),
   'format_align_center': require('../../assets/material/format_align_center.xml'),
