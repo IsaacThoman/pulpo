@@ -168,6 +168,7 @@ export class InlineTextEditor {
         dispatchTransaction(this: EditorView, transaction) {
           // y-tiptap flushes deferred updates on a timer, which can land after the editor closed.
           if (this.isDestroyed) return
+          if (options.readOnly && transaction.docChanged && transaction.getMeta(ySyncPluginKey) === undefined) return
           const next = this.state.apply(transaction)
           this.updateState(next)
           if (transaction.docChanged && transaction.getMeta(ySyncPluginKey) === undefined) refreshNumbers()
@@ -223,6 +224,7 @@ export class InlineTextEditor {
   }
 
   run(command: PmCommand): void {
+    if (this.options.readOnly) return
     command(this.view.state, this.view.dispatch, this.view)
     this.view.focus()
   }

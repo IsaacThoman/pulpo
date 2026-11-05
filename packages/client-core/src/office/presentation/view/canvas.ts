@@ -1,5 +1,5 @@
 import * as Y from 'yjs'
-import { cellFragment, ensureNotes, readXfrm, setXfrm, shapeFragment } from '../commands.js'
+import { cellFragment, ensureNotes, shapeFragment, slideMap } from '../commands.js'
 import type { Xfrm } from '../model.js'
 import { EMU_PER_PX } from '../render/env.js'
 import { slideEnvironment } from '../render/slide.js'
@@ -23,6 +23,7 @@ import { InlineTextEditor, type TextEditorStyle } from './text-editor.js'
 type Handle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w' | 'rotate'
 
 interface Gesture {
+  slide: string
   kind: 'move' | 'resize' | 'rotate' | 'marquee'
   pointerId: number
   startX: number
@@ -116,6 +117,7 @@ export class SlideCanvas {
   }
 
   destroy(): void {
+    this.cancelGesture()
     this.stopEditing()
     this.unsubscribe()
     this.resizeObserver?.disconnect()
@@ -158,6 +160,7 @@ export class SlideCanvas {
   private onChange(change: ChangeSet): void {
     this.editor?.setReadOnly(this.controller.readOnly)
     const slide = this.controller.state.slide
+    if (this.gesture && (this.controller.readOnly || this.gesture.slide !== slide)) this.cancelGesture()
     const editing = this.controller.state.editing
     // Moving to another shape or table cell restarts the editor on that text.
     const target = editing ? `${editing.slide}\u0000${editing.shape}\u0000${editing.row ?? ''}\u0000${editing.column ?? ''}` : undefined
@@ -296,6 +299,7 @@ export class SlideCanvas {
     }
     this.element.setPointerCapture?.(event.pointerId)
     this.gesture = {
+      slide,
       kind,
       pointerId: event.pointerId,
       startX: event.clientX,
@@ -324,6 +328,10 @@ export class SlideCanvas {
     }
     const gesture = this.gesture
     if (!gesture || gesture.pointerId !== event.pointerId) return
+    if (this.controller.readOnly || gesture.slide !== this.controller.state.slide) {
+      this.cancelGesture()
+      return
+    }
     const dx = (event.clientX - gesture.startX) / this.zoom
     const dy = (event.clientY - gesture.startY) / this.zoom
     if (!gesture.moved && Math.hypot(dx, dy) * this.zoom < 3) return
@@ -404,12 +412,10 @@ export class SlideCanvas {
     const bottom = Math.max(...boxes.map((xfrm) => xfrm.y + xfrm.cy)) / EMU_PER_PX + dy
     const snapped = this.snap({ x: left, y: top, w: right - left, h: bottom - top }, new Set(gesture.start.keys()))
     this.guides = snapped.guides
-    const slide = this.controller.state.slide!
     this.controller.doc.transact(() => {
       for (const [key, xfrm] of gesture.start) {
         const next = { x: xfrm.x + (dx + snapped.dx) * EMU_PER_PX, y: xfrm.y + (dy + snapped.dy) * EMU_PER_PX }
-        if (readXfrm(this.controller.doc, slide, key)) setXfrm(this.controller.doc, slide, key, next, LOCAL_ORIGIN)
-        else this.controller.setXfrm(key, { ...xfrm, ...next })
+        this.controller.setXfrm(key, next)
       }
     }, LOCAL_ORIGIN)
   }
@@ -470,6 +476,7 @@ export class SlideCanvas {
 
   /** Enters text editing in a shape (or the table cell under the pointer). */
   private beginEditing(key: string, event?: { target: EventTarget | null }): void {
+    if (this.controller.readOnly) return
     const slide = this.controller.state.slide
     if (!slide) return
     const shape = this.controller.shape(slide, key)
@@ -659,6 +666,7 @@ export class SlideCanvas {
     const controller = this.controller
     const mod = event.metaKey || event.ctrlKey
     const key = event.key
+    if (controller.readOnly) return
     if (mod && key.toLowerCase() === 'z') {
       event.preventDefault()
       if (event.shiftKey) controller.redo()
@@ -670,7 +678,6 @@ export class SlideCanvas {
       controller.redo()
       return
     }
-    if (controller.readOnly) return
     const shapes = controller.state.shapes
     if ((key === 'Delete' || key === 'Backspace') && shapes.length) {
       event.preventDefault()
@@ -711,6 +718,7 @@ export class SlideCanvas {
       event.preventDefault()
       this.beginEditing(shapes[0]!)
       queueMicrotask(() => {
+        if (this.controller.readOnly) return
         this.editor?.selectAll()
         this.editor?.view.dispatch(this.editor.view.state.tr.insertText(key))
       })
@@ -756,7 +764,7 @@ export class SlideCanvas {
   private pasteText(text: string): void {
     const key = this.controller.insertTextBox()
     if (!key) return
-    queueMicrotask(() => this.editor?.view.dispatch(this.editor.view.state.tr.insertText(text)))
+    queueMicrotask(() => { if (!this.controller.readOnly) this.editor?.view.dispatch(this.editor.view.state.tr.insertText(text)) })
   }
 
   private readonly onContextMenu = (event: MouseEvent): void => {
@@ -805,6 +813,11 @@ function cssEscape(value: string): string {
 
 /** Notes text fragment for the notes editor. */
 export function notesFragment(controller: PresentationController, slideKey: string): Y.XmlFragment | undefined {
+  if (controller.readOnly) {
+    const notes = slideMap(controller.doc, slideKey)?.get('notes')
+    const text = notes instanceof Y.Map ? notes.get('text') : undefined
+    return text instanceof Y.XmlFragment ? text : undefined
+  }
   return ensureNotes(controller.doc, slideKey, LOCAL_ORIGIN)
 }
 

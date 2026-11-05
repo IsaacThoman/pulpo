@@ -571,6 +571,44 @@ export function readXfrm(doc: Y.Doc, slideKey: string, shapeKey: string): Xfrm |
   return map instanceof Y.Map ? readXfrmMap(map) : undefined
 }
 
+/** Changes a displayed shape's frame and the table grid it contains as one undoable edit. */
+export function transformShape(doc: Y.Doc, slideKey: string, shapeKey: string, xfrm: Partial<Xfrm>, origin?: unknown): void {
+  const table = tableMapOf(doc, slideKey, shapeKey)
+  doc.transact(() => {
+    if (table && xfrm.cx !== undefined) {
+      const columns = table.get('columns') as Y.Map<{ w: number; xml: string }>
+      const keys = orderedKeys(table.get('columnOrder') as Y.Array<string>, columns)
+      const sizes = proportionalSizes(keys.map((key) => columns.get(key)!.w), xfrm.cx)
+      keys.forEach((key, index) => {
+        const column = columns.get(key)!
+        if (column.w !== sizes[index]) columns.set(key, { ...column, w: sizes[index]! })
+      })
+    }
+    if (table && xfrm.cy !== undefined) {
+      const rows = table.get('rows') as Y.Map<YMap>
+      const keys = orderedKeys(table.get('rowOrder') as Y.Array<string>, rows)
+      const sizes = proportionalSizes(keys.map((key) => rows.get(key)!.get('h') as number), xfrm.cy)
+      keys.forEach((key, index) => { rows.get(key)!.set('h', sizes[index]!) })
+    }
+    setXfrm(doc, slideKey, shapeKey, xfrm, origin)
+  }, origin)
+}
+
+/** Round cumulative boundaries so the grid sums exactly to the requested extent, without drift. */
+function proportionalSizes(sizes: number[], extent: number): number[] {
+  const total = sizes.reduce((sum, value) => sum + value, 0)
+  const target = Math.max(0, Math.round(extent))
+  let consumed = 0
+  let previous = 0
+  return sizes.map((size, index) => {
+    consumed += size
+    const boundary = Math.round(target * (total > 0 ? consumed / total : (index + 1) / sizes.length))
+    const value = boundary - previous
+    previous = boundary
+    return value
+  })
+}
+
 export type ShapeProperty = 'fill' | 'line' | 'effects' | 'geom' | 'bodyPr' | 'name' | 'descr' | 'blipFill' | 'hidden'
 
 /** Sets a modeled shape property (XML strings for fill/line/effects/geometry/body). */
@@ -692,7 +730,7 @@ export function ungroupShape(doc: Y.Doc, slideKey: string, groupKey: string, ori
     for (const key of keys) {
       const xfrm = readXfrm(doc, slideKey, key)
       // Zero rotation and cleared flips are written too: setXfrm only touches the fields it gets.
-      if (xfrm && groupXfrm) setXfrm(doc, slideKey, key, { rot: 0, flipH: false, flipV: false, ...mapOutOfGroup(xfrm, groupXfrm) })
+      if (xfrm && groupXfrm) transformShape(doc, slideKey, key, { rot: 0, flipH: false, flipV: false, ...mapOutOfGroup(xfrm, groupXfrm) })
     }
     const index = container.array.toArray().indexOf(groupKey)
     container.array.delete(index, 1)

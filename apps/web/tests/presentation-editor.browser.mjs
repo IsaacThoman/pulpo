@@ -400,6 +400,77 @@ try {
     }
   }
 
+  await check('resizes the table grid with canvas handles and undoes the frame and grid together', async () => {
+    const { page, errors } = await open(context, 'blank=1')
+    const key = await page.evaluate(() => {
+      const controller = window.harness.controllers.a
+      const table = window.harness.commands.tableShape(2, 3, { x: 1_000_000, y: 1_000_000, cx: 3_000_000, cy: 1_600_000 }, 'Resize table')
+      window.harness.commands.insertShapes(window.harness.docA, controller.state.slide, [table])
+      controller.selectShapes([table.key])
+      return table.key
+    })
+    const before = await xfrmOf(page, key)
+    const handle = page.locator('.pp-handle-se')
+    const box = await handle.boundingBox()
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(box.x + 90, box.y + 60, { steps: 8 })
+    await page.mouse.up()
+    const resized = await page.evaluate((key) => {
+      const controller = window.harness.controllers.a
+      const shape = controller.shape(controller.state.slide, key)
+      return { xfrm: shape.xfrm, width: shape.table.columns.reduce((sum, column) => sum + column.w, 0), height: shape.table.rows.reduce((sum, row) => sum + row.h, 0) }
+    }, key)
+    assert.ok(resized.xfrm.cx > before.cx && resized.xfrm.cy > before.cy)
+    assert.equal(resized.width, resized.xfrm.cx)
+    assert.equal(resized.height, resized.xfrm.cy)
+    const frame = page.locator(`.pp-canvas-slide [data-key="${key}"]`)
+    const visible = await frame.locator('table').boundingBox()
+    const outer = await frame.boundingBox()
+    assert.ok(Math.abs(visible.width - outer.width) < 1 && Math.abs(visible.height - outer.height) < 1)
+    await page.keyboard.press('Meta+z')
+    assert.deepEqual(await xfrmOf(page, key), before)
+    await page.keyboard.press('Meta+Shift+z')
+    assert.deepEqual(await xfrmOf(page, key), resized.xfrm)
+    assert.deepEqual(errors, [])
+    await page.close()
+  })
+
+  await check('read-only transitions block undo and redo keyboard shortcuts without losing history', async () => {
+    const { page, errors } = await open(context, 'blank=1')
+    await page.evaluate(() => { window.harness.controllers.a.insertShape('rect'); window.harness.controllers.a.setReadOnly(true) })
+    const snapshot = () => page.evaluate(() => JSON.stringify(window.harness.controllers.a.slide(window.harness.controllers.a.state.slide)))
+    const edited = await snapshot()
+    await page.locator('.pp-canvas').focus()
+    for (const key of ['Meta+z', 'Control+z', 'Meta+Shift+z', 'Control+y']) await page.keyboard.press(key)
+    assert.equal(await snapshot(), edited)
+    await page.evaluate(() => { const controller = window.harness.controllers.a; controller.setReadOnly(false); controller.undo(); controller.setReadOnly(true) })
+    const undone = await snapshot()
+    for (const key of ['Meta+Shift+z', 'Control+Shift+z', 'Meta+y', 'Control+y']) await page.keyboard.press(key)
+    assert.equal(await snapshot(), undone)
+    await page.evaluate(() => { window.harness.controllers.a.setReadOnly(false); window.harness.controllers.a.redo() })
+    assert.equal(await snapshot(), edited)
+    assert.deepEqual(errors, [])
+    await page.close()
+  })
+
+  await check('stops an active drag when access becomes read-only', async () => {
+    const { page, errors } = await open(context, 'deck=generated/autoshapes.pptx')
+    const shape = slideShapes(page).nth(1)
+    const key = await shape.getAttribute('data-key')
+    const box = await shape.boundingBox()
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(box.x + box.width / 2 + 20, box.y + box.height / 2 + 20)
+    const moved = await xfrmOf(page, key)
+    await page.evaluate(() => window.harness.controllers.a.setReadOnly(true))
+    await page.mouse.move(box.x + box.width / 2 + 100, box.y + box.height / 2 + 100)
+    await page.mouse.up()
+    assert.deepEqual(await xfrmOf(page, key), moved)
+    assert.deepEqual(errors, [])
+    await page.close()
+  })
+
   await check('read-only mode shows no handles and blocks edits', async () => {
     const { page, errors } = await open(context, 'deck=generated/autoshapes.pptx&readonly=1')
     await slideShapes(page).first().click()

@@ -156,7 +156,9 @@ export class PresentationController {
   }
 
   destroy(): void {
+    if (this.destroyed) return
     this.destroyed = true
+    this.readOnly = true
     presentationRoot(this.doc).unobserveDeep(this.onModelChange)
     this.awareness?.off('change', this.onAwarenessChange)
     this.awareness?.setLocalStateField('presentation', null)
@@ -455,25 +457,28 @@ export class PresentationController {
   // Undo
 
   undo(): void {
+    if (this.readOnly || this.destroyed) return
     this.undoManager.undo()
   }
 
   redo(): void {
+    if (this.readOnly || this.destroyed) return
     this.undoManager.redo()
   }
 
   canUndo(): boolean {
-    return this.undoManager.undoStack.length > 0
+    return !this.readOnly && !this.destroyed && this.undoManager.undoStack.length > 0
   }
 
   canRedo(): boolean {
-    return this.undoManager.redoStack.length > 0
+    return !this.readOnly && !this.destroyed && this.undoManager.redoStack.length > 0
   }
 
   /** Switches between viewing and editing (access changed, or the connection allows edits again). */
   setReadOnly(readOnly: boolean): void {
     if (this.readOnly === readOnly) return
     this.readOnly = readOnly
+    this.activeEditor?.setReadOnly(readOnly)
     if (readOnly) this.state = { ...this.state, editing: undefined }
     this.globalVersion++
     this.emit({ selection: true, order: true })
@@ -498,7 +503,7 @@ export class PresentationController {
   }
 
   private guard(): boolean {
-    return !this.readOnly && this.slideKey !== undefined
+    return !this.readOnly && !this.destroyed && this.slideKey !== undefined
   }
 
   private nextName(base: string): string {
@@ -534,6 +539,7 @@ export class PresentationController {
     if (!this.guard()) return undefined
     const slide = this.slideKey!
     const asset = await this.assets.put(bytes, mimeType)
+    if (this.readOnly || this.destroyed || !commands.slideMap(this.doc, slide)) return undefined
     const slideSize = this.size()
     const maxWidth = slideSize.width * 0.6
     const maxHeight = slideSize.height * 0.6
@@ -635,11 +641,11 @@ export class PresentationController {
   setXfrm(shapeKey: string, xfrm: Partial<Xfrm>): void {
     if (!this.guard()) return
     const current = commands.readXfrm(this.doc, this.slideKey!, shapeKey)
-    if (current) commands.setXfrm(this.doc, this.slideKey!, shapeKey, xfrm, LOCAL_ORIGIN)
+    if (current) commands.transformShape(this.doc, this.slideKey!, shapeKey, xfrm, LOCAL_ORIGIN)
     else {
       // Placeholders inherit their transform; the first move gives them their own.
       const inherited = this.shapeXfrm(this.slideKey!, shapeKey)
-      commands.setXfrm(this.doc, this.slideKey!, shapeKey, { ...inherited, ...xfrm }, LOCAL_ORIGIN)
+      commands.transformShape(this.doc, this.slideKey!, shapeKey, { ...inherited, ...xfrm }, LOCAL_ORIGIN)
     }
   }
 
@@ -823,18 +829,21 @@ export class PresentationController {
   }
 
   async paste(json: string, target: 'auto' | 'slides' = 'auto'): Promise<boolean> {
-    if (this.readOnly) return false
+    const canApply = () => !this.readOnly && !this.destroyed
+    if (!canApply()) return false
     const clipboard: PresentationClipboard | undefined = parseClipboard(json)
     if (!clipboard) return false
     if (clipboard.kind === 'slides' || target === 'slides') {
       const index = this.slideKey ? this.slideKeys().indexOf(this.slideKey) + 1 : this.slideKeys().length
-      const keys = await pasteSlides(this.doc, this.assets, clipboard, index, LOCAL_ORIGIN)
+      const keys = await pasteSlides(this.doc, this.assets, clipboard, index, LOCAL_ORIGIN, canApply)
+      if (!canApply() || !keys.length) return false
       if (keys[0]) this.setState({ slide: keys[0], slides: keys, shapes: [] })
       return true
     }
     if (!this.slideKey) return false
     const sameSlide = (clipboard.shapes ?? []).every((shape) => commands.shapeMap(this.doc, this.slideKey!, shape.key))
-    const keys = await pasteShapes(this.doc, this.assets, clipboard, this.slideKey, sameSlide ? 182_880 : 0, LOCAL_ORIGIN)
+    const keys = await pasteShapes(this.doc, this.assets, clipboard, this.slideKey, sameSlide ? 182_880 : 0, LOCAL_ORIGIN, canApply)
+    if (!canApply() || !keys.length) return false
     this.selectShapes(keys)
     return true
   }

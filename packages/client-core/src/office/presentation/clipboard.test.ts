@@ -18,6 +18,24 @@ async function open(bytes: Uint8Array, assets = memoryAssets()) {
 }
 
 describe('copy and paste between decks', () => {
+  it('remaps replaced same-document parts when pasting whole slides too', async () => {
+    const { doc, assets } = await open(fixture('generated/pictures.pptx'))
+    const snapshot = readSnapshot(doc)
+    const slide = snapshot.slides[0]!
+    const picture = slide.shapes.find((shape) => shape.kind === 'pic')!
+    const part = Object.values(picture.rels).find((rel) => rel.type === REL_TYPES.image)!.target
+    const clipboard = await copyContent(doc, assets, { slides: [slide] }, '')
+    const original = snapshot.parts[part]!
+    setPart(presentationRoot(doc), part, { ...original, asset: await assets.put(strToU8('replacement'), original.asset!.mimeType) })
+    const [key] = await pasteSlides(doc, assets, clipboard, 1)
+    const after = readSnapshot(doc)
+    const pasted = after.slides.find((slide) => slide.key === key)!.shapes.find((shape) => shape.name === picture.name)!
+    const pastedPart = Object.values(pasted.rels).find((rel) => rel.type === REL_TYPES.image)!.target
+    expect(pastedPart).not.toBe(part)
+    expect(after.parts[pastedPart]!.asset!.hash).toBe(original.asset!.hash)
+    doc.destroy()
+  })
+
   it('rechecks same-document asset contents after asynchronous paste preparation', async () => {
     const { doc, assets } = await open(fixture('generated/pictures.pptx'))
     const slide = readSnapshot(doc).slides[0]!

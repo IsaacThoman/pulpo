@@ -90,6 +90,10 @@ The view core (`@pulpo/client-core/office/presentation/view`) is imperative DOM,
 
 The web wrapper (`apps/web/src/features/files/live/presentation`) arranges these with the app's toolbar buttons, menus, popovers, and `ui()` strings: insert (slide from a layout, text box, shape gallery, image, table), text formatting (font, size, bold, italic, underline, strike, color, alignment, bullets, numbering, list level, line spacing), shape fill, arrange, slide (layout, duplicate, hide, delete), sorter, format panel (size, position, rotation, fill, line, dash, shadow, slide background), export to PDF, and present.
 
+Table frame resizing scales column widths and row heights proportionally in the same undoable transaction. Ungrouping a scaled table preserves its grid size. Group child coordinates stay in their original space while the parent transform scales them.
+
+Read-only access blocks controller commands, undo/redo, keyboard editing, and local text transactions while still accepting remote updates. Pending image insertion and paste operations recheck access before changing the document; active drags stop when access changes or the selected slide changes.
+
 ### Review diffs
 
 `diffDocuments`, `diffDocumentWithFile`, and `diffFiles` compare two versions: slides added, removed, moved, and edited; per slide, layout, visibility, background, notes, and transition changes; per shape, added, removed, text (with before and after), formatting, moved, resized, rotated, fill, line, geometry, picture, and table changes; and deck-wide theme, master, media, and size changes. `PresentationDiffView` shows them with before and after thumbnails and line diffs of text. The web review dialog uses it for agent proposals (`PresentationFileDiff`). On mobile, the presentation page's review mode (`apps/mobile/editor/presentation/diff.ts`) draws the same rows.

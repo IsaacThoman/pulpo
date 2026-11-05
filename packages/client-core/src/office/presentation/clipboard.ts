@@ -353,15 +353,15 @@ function remapShape(shape: ShapeSnapshot, mapping: Map<string, string>, unlinkSl
 }
 
 /** Pastes shapes onto a slide, offset when pasting onto the slide they came from. Returns the new keys. */
-export async function pasteShapes(doc: Y.Doc, assets: LiveAssetStore, clipboard: PresentationClipboard, slideKey: string, offset: number, origin?: unknown): Promise<string[]> {
+export async function pasteShapes(doc: Y.Doc, assets: LiveAssetStore, clipboard: PresentationClipboard, slideKey: string, offset: number, origin?: unknown, canApply: () => boolean = () => true): Promise<string[]> {
   const fits = () => {
     const slide = readSlide(doc, slideKey)
     return slide !== undefined && countShapes(slide.shapes) + countShapes(clipboard.shapes ?? []) <= DEFAULT_PRESENTATION_LIMITS.maxShapesPerSlide
   }
-  if (!fits()) return []
+  if (!canApply() || !fits()) return []
   const { mapping, write } = await prepareParts(doc, assets, clipboard)
   // Checked again after storing the pictures: another paste may have filled the slide meanwhile.
-  if (!fits()) return []
+  if (!canApply() || !fits()) return []
   write()
   const sameDocument = clipboard.source === documentIdentity(doc)
   const shapes = (clipboard.shapes ?? []).map((shape) => {
@@ -373,25 +373,25 @@ export async function pasteShapes(doc: Y.Doc, assets: LiveAssetStore, clipboard:
 }
 
 /** Pastes slides at `index`, mapping layouts by name when they come from another deck. */
-export async function pasteSlides(doc: Y.Doc, assets: LiveAssetStore, clipboard: PresentationClipboard, index: number, origin?: unknown): Promise<string[]> {
+export async function pasteSlides(doc: Y.Doc, assets: LiveAssetStore, clipboard: PresentationClipboard, index: number, origin?: unknown, canApply: () => boolean = () => true): Promise<string[]> {
   const incoming = clipboard.slides ?? []
   if (incoming.some((slide) => countShapes(slide.shapes) > DEFAULT_PRESENTATION_LIMITS.maxShapesPerSlide)) return []
   const fits = () => slideKeys(doc).length + incoming.length <= DEFAULT_PRESENTATION_LIMITS.maxSlides
-  if (!fits()) return []
+  if (!canApply() || !fits()) return []
   const sameDocument = clipboard.source === documentIdentity(doc)
   const { mapping, write } = await prepareParts(doc, assets, clipboard)
   // Checked again after storing the pictures: another paste may have added slides meanwhile.
-  if (!fits()) return []
+  if (!canApply() || !fits()) return []
   write()
   const snapshot = readSnapshot(doc)
   const deck = new DeckResources(snapshot.parts, snapshot.mainPart)
   const layouts = deck.masterPaths().flatMap((master) => deck.master(master)?.layouts ?? [])
   const slides = (clipboard.slides ?? []).map(({ layoutName, ...slide }) => {
     const copy = cloneSlide(slide)
+    copy.rels = remapRels(copy.rels, mapping, !sameDocument)
+    copy.shapes = copy.shapes.map((shape) => remapShape(shape, mapping, !sameDocument))
     if (!sameDocument) {
       copy.layout = layouts.find((layout) => deck.layout(layout)?.name === layoutName) ?? layouts.find((layout) => deck.layout(layout)?.type === 'obj') ?? layouts[0] ?? copy.layout
-      copy.rels = remapRels(copy.rels, mapping, true)
-      copy.shapes = copy.shapes.map((shape) => remapShape(shape, mapping, true))
       delete copy.section
       if (copy.notes) copy.notes = { ...copy.notes, text: unlinkText(copy.notes.text)!, rels: {}, xml: '' }
     }
