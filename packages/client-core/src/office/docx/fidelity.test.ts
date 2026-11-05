@@ -6,6 +6,7 @@ import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import { EditorState, TextSelection, type Transaction } from '@tiptap/pm/state'
 import { describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
+import { OoxmlPackage } from '../ooxml/package.js'
 import { docxCodec } from './codec.js'
 import { exportDocx } from './export.js'
 import { MemoryAssetStore } from './memory-assets.js'
@@ -43,6 +44,16 @@ function fixtureFiles(): string[] {
 
 function runPython(args: string[], input?: string) {
   return spawnSync(python, ['-I', ...args], { encoding: 'utf8', input, timeout: 180_000 })
+}
+
+/**
+ * Every export must read back as a package, by our own reader and by Python's zipfile with a CRC
+ * check of every entry: invalid deflate data or zip framing fails here before any Word reader.
+ */
+function expectReadableZip(file: string): void {
+  expect(() => OoxmlPackage.read(new Uint8Array(readFileSync(file))), file).not.toThrow()
+  const check = runPython(['-c', 'import sys, zipfile\nbad = zipfile.ZipFile(sys.argv[1]).testzip()\nprint(bad or "")\nsys.exit(1 if bad else 0)', file])
+  expect(check.status, `${file}: ${check.stdout}${check.stderr}`).toBe(0)
 }
 
 function libreOffice(file: string, outdir: string) {
@@ -85,6 +96,7 @@ describe.runIf(enabled)('docx fidelity', () => {
       }
       const output = join(work, `rewritten-${name}`)
       writeFileSync(output, await exportDocx(readDocxModel(doc), assets, 'docx', { regenerate: true }))
+      expectReadableZip(output)
       // An original python-docx cannot read is not ours to judge.
       if (runPython([join(scripts, 'compare.py'), file, file]).status !== 0) return
       const result = runPython([join(scripts, 'compare.py'), file, output, '--json'])
@@ -144,6 +156,7 @@ describe.runIf(enabled)('docx fidelity', () => {
     })
     const output = join(work, 'edited.docx')
     writeFileSync(output, await docxCodec.exportFile(doc, { name: 'a.docx', assets }))
+    expectReadableZip(output)
     const check = runPython(['-c', `
 import sys, zipfile, re, docx
 d = docx.Document(sys.argv[1])
@@ -177,6 +190,7 @@ print('ok')
     // The agent pulls the file.
     const pulled = join(work, 'pulled.docx')
     writeFileSync(pulled, await docxCodec.exportFile(server, { name: 'a.docx', assets }))
+    expectReadableZip(pulled)
     // Meanwhile a user edits the first paragraph in their replica.
     const user = new Y.Doc()
     Y.applyUpdate(user, Y.encodeStateAsUpdate(server))
@@ -209,6 +223,7 @@ print('ok')
     expect(docxCodec.toText(user)).toBe(text)
     const merged = join(work, 'merged.docx')
     writeFileSync(merged, await docxCodec.exportFile(server, { name: 'a.docx', assets }))
+    expectReadableZip(merged)
     const check = runPython(['-c', `
 import sys, docx
 t = [p.text for p in docx.Document(sys.argv[1]).paragraphs]
