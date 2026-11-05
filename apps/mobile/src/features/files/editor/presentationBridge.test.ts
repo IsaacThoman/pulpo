@@ -181,6 +181,8 @@ describe('presentation editor bridge with the built page', () => {
       beforeParse: (window) => {
         (window as unknown as { webkit: unknown }).webkit = { messageHandlers: { pulpoEditor: { postMessage: (message: string) => messages.push(message) } } }
         window.URL.createObjectURL = () => `blob:test/${Math.random().toString(36).slice(2)}`
+        // jsdom's window lacks TextDecoder, which every web view has; the package reader uses it.
+        ;(window as unknown as { TextDecoder: typeof TextDecoder }).TextDecoder = TextDecoder
       },
     })
     const before = fixture('generated/text-formatting.pptx')
@@ -231,6 +233,7 @@ describe('presentation editor bridge with the built page', () => {
         (window as unknown as { webkit: unknown }).webkit = { messageHandlers: { pulpoEditor: { postMessage: (message: string) => messages.push(message) } } }
         window.URL.createObjectURL = () => `blob:test/${Math.random().toString(36).slice(2)}`
         window.URL.revokeObjectURL = () => {}
+        ;(window as unknown as { TextDecoder: typeof TextDecoder }).TextDecoder = TextDecoder
       },
     })
     const window = dom.window as unknown as { pulpoEditor: { receive(message: string): void }; document: Document }
