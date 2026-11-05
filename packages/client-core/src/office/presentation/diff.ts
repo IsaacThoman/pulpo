@@ -1,5 +1,6 @@
 import type * as Y from 'yjs'
 import { alignKeys } from './codec.js'
+import { canonicalValue, CanonicalPresentation } from './canonical.js'
 import type { PartSnapshot, PresentationSnapshot, RelTarget, ShapeSnapshot, SlideSnapshot } from './model.js'
 import { readPresentation, relationshipIdsIn } from './read.js'
 import { DeckResources } from './render/deck.js'
@@ -24,7 +25,7 @@ export interface ShapeChange {
   textAfter?: string
 }
 
-export type SlideChangeKind = 'layout' | 'hidden' | 'shown' | 'background' | 'notes' | 'transition' | 'order'
+export type SlideChangeKind = 'layout' | 'hidden' | 'shown' | 'background' | 'notes' | 'transition' | 'order' | 'formatting'
 
 export interface SlideDiff {
   status: 'added' | 'removed' | 'moved' | 'edited' | 'unchanged'
@@ -91,7 +92,7 @@ function flatten(shapes: ShapeSnapshot[], into = new Map<string, ShapeSnapshot>(
   return into
 }
 
-const same = (a: unknown, b: unknown) => stableStringify(a) === stableStringify(b)
+const same = (a: unknown, b: unknown) => stableStringify(canonicalValue(a)) === stableStringify(canonicalValue(b))
 
 function compareShape(before: ShapeSnapshot, after: ShapeSnapshot): ShapeChangeKind[] {
   const kinds: ShapeChangeKind[] = []
@@ -111,7 +112,7 @@ function compareShape(before: ShapeSnapshot, after: ShapeSnapshot): ShapeChangeK
   if (!same(before.blipFill, after.blipFill) || !same(Object.values(before.rels).map((rel) => rel.target).sort(), Object.values(after.rels).map((rel) => rel.target).sort())) kinds.push('image')
   // A group's template excludes its members; their stacking order is modeled separately.
   const childKeys = (shape: ShapeSnapshot) => (shape.children ?? []).map((child) => child.key)
-  if (!kinds.length && (before.xml !== after.xml || !same(before.effects, after.effects) || before.name !== after.name || before.descr !== after.descr || before.hidden !== after.hidden || !same(childKeys(before), childKeys(after)))) kinds.push('other')
+  if (!kinds.length && (!same(before.xml, after.xml) || !same(before.effects, after.effects) || before.name !== after.name || before.descr !== after.descr || before.hidden !== after.hidden || !same(childKeys(before), childKeys(after)))) kinds.push('other')
   return kinds
 }
 
@@ -149,7 +150,9 @@ function backgroundParts(slide: SlideSnapshot, deck: DeckResources): string[] {
   }))].sort()
 }
 
-function compareSlides(before: SlideSnapshot, after: SlideSnapshot, beforeDeck: DeckResources, afterDeck: DeckResources): Pick<SlideDiff, 'slideChanges' | 'shapes' | 'notesBefore' | 'notesAfter'> {
+function compareSlides(before: SlideSnapshot, after: SlideSnapshot, beforeCanonical: CanonicalPresentation, afterCanonical: CanonicalPresentation): Pick<SlideDiff, 'slideChanges' | 'shapes' | 'notesBefore' | 'notesAfter'> {
+  const beforeDeck = beforeCanonical.deck
+  const afterDeck = afterCanonical.deck
   const beforeParts = beforeDeck.parts
   const afterParts = afterDeck.parts
   const slideChanges: SlideChangeKind[] = []
@@ -162,7 +165,7 @@ function compareSlides(before: SlideSnapshot, after: SlideSnapshot, beforeDeck: 
   const notesBefore = before.notes ? textToPlain(before.notes.text) : ''
   const notesAfter = after.notes ? textToPlain(after.notes.text) : ''
   if (notesBefore !== notesAfter) slideChanges.push('notes')
-  if (before.xml !== after.xml) slideChanges.push('transition')
+  if (!same(before.xml, after.xml)) slideChanges.push('transition')
   const beforeShapes = flatten(before.shapes)
   const afterShapes = flatten(after.shapes)
   const shapes: ShapeChange[] = []
@@ -175,7 +178,7 @@ function compareSlides(before: SlideSnapshot, after: SlideSnapshot, beforeDeck: 
     const kinds = compareShape(previous, shape)
     const oldParts = referencedParts(previous, before)
     const newParts = referencedParts(shape, after)
-    if ((!same(oldParts, newParts) || newParts.some((path) => !samePart(beforeParts[path], afterParts[path]))) && !kinds.includes('other')) kinds.push('other')
+    if ((!same(oldParts, newParts) || newParts.some((path) => !same(beforeCanonical.part(path), afterCanonical.part(path)))) && !kinds.includes('other')) kinds.push('other')
     if (kinds.length) shapes.push({ key, name: shape.name ?? previous.name ?? '', kinds, ...(kinds.includes('text') || kinds.includes('table') ? { textBefore: shapeText(previous), textAfter: shapeText(shape) } : {}) })
   }
   for (const [key, shape] of beforeShapes) {
@@ -183,6 +186,8 @@ function compareSlides(before: SlideSnapshot, after: SlideSnapshot, beforeDeck: 
   }
   // Pure reordering of shapes (z-order) shows as "other" on the slide.
   if (!shapes.length && !same(before.shapes.map((shape) => shape.key), after.shapes.map((shape) => shape.key))) slideChanges.push('order')
+  // The specific labels are explanatory; the complete canonical comparison is the safety net.
+  if (!shapes.length && !slideChanges.length && beforeCanonical.slide(before) !== afterCanonical.slide(after)) slideChanges.push('formatting')
   return { slideChanges, shapes, ...(notesBefore !== notesAfter ? { notesBefore, notesAfter } : {}) }
 }
 
@@ -214,8 +219,8 @@ function sectionMembership(snapshot: PresentationSnapshot): Map<string, string |
 export function diffSnapshots(beforeInput: PresentationSnapshot, afterInput: PresentationSnapshot): PresentationDiff {
   const before = beforeInput
   const after = alignKeys(beforeInput, afterInput)
-  const beforeDeck = new DeckResources(before.parts, before.mainPart)
-  const afterDeck = new DeckResources(after.parts, after.mainPart)
+  const beforeCanonical = new CanonicalPresentation(new DeckResources(before.parts, before.mainPart))
+  const afterCanonical = new CanonicalPresentation(new DeckResources(after.parts, after.mainPart))
   const beforeKeys = before.slides.map((slide) => slide.key)
   const afterKeys = after.slides.map((slide) => slide.key)
   const beforeByKey = new Map(before.slides.map((slide, index) => [slide.key, { slide, index }]))
@@ -229,7 +234,7 @@ export function diffSnapshots(beforeInput: PresentationSnapshot, afterInput: Pre
       slides.push({ status: 'added', after: index, afterKey: slide.key, title: titleOf(slide), slideChanges: [], shapes: slide.shapes.map((shape) => ({ key: shape.key, name: shape.name ?? '', kinds: ['added'] as ShapeChangeKind[], ...(shapeText(shape) ? { textAfter: shapeText(shape) } : {}) })) })
       return
     }
-    const comparison = compareSlides(previous.slide, slide, beforeDeck, afterDeck)
+    const comparison = compareSlides(previous.slide, slide, beforeCanonical, afterCanonical)
     const edited = comparison.slideChanges.length > 0 || comparison.shapes.length > 0
     const moved = !stable.has(slide.key)
     slides.push({
@@ -260,7 +265,7 @@ export function diffSnapshots(beforeInput: PresentationSnapshot, afterInput: Pre
   for (const path of new Set([...Object.keys(before.parts), ...Object.keys(after.parts)])) {
     const a = before.parts[path]
     const b = after.parts[path]
-    if (a && b && (a.asset?.hash ?? '') === (b.asset?.hash ?? '') && bytesEqual(a.bytes, b.bytes)) continue
+    if (a && b && same(beforeCanonical.part(path), afterCanonical.part(path))) continue
     if (path.includes('/theme/')) partKinds.add('theme')
     else if (path.includes('slideMaster') || path.includes('slideLayout')) partKinds.add('masters')
     else if (path.includes('/media/')) partKinds.add('media')

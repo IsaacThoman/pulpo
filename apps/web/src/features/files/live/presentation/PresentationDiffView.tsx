@@ -43,6 +43,7 @@ const SLIDE_CHANGE_LABELS: Record<string, () => string> = {
   notes: () => ui("Speaker notes changed"),
   transition: () => ui("Transition or animation changed"),
   order: () => ui("Stacking order changed"),
+  formatting: () => ui("Slide formatting changed"),
 }
 
 /** Loads images of one snapshot as object URLs, for thumbnails. */

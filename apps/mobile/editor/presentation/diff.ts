@@ -45,6 +45,7 @@ const SLIDE_CHANGES: Record<string, string> = {
   notes: 'Speaker notes changed',
   transition: 'Transition or animation changed',
   order: 'Stacking order changed',
+  formatting: 'Slide formatting changed',
 }
 
 const THUMB_WIDTH = 150

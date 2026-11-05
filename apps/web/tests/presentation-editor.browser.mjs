@@ -555,6 +555,20 @@ try {
     await page.close()
   })
 
+  await check('shows a generic review entry for preserved notes formatting', async () => {
+    const { page, errors } = await open(context, 'deck=generated/layouts-notes-sections.pptx')
+    await page.evaluate(() => {
+      const controller = window.harness.controllers.a
+      const notes = window.harness.commands.slideMap(window.harness.docA, controller.state.slide).get('notes')
+      notes.set('xml', notes.get('xml').replace('<p:notes ', '<p:notes showMasterSp="0" '))
+    })
+    await page.getByRole('button', { name: 'Changes', exact: true }).click()
+    await page.getByText('Slide formatting changed', { exact: true }).waitFor()
+    assert.ok(await page.locator('[data-presentation-diff] [data-status="edited"]').count() > 0)
+    assert.deepEqual(errors, [])
+    await page.close()
+  })
+
   await check('shows a review diff of the changes', async () => {
     const { page, errors } = await open(context, 'deck=generated/text-formatting.pptx')
     await page.evaluate(() => {
