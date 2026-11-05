@@ -12,7 +12,7 @@ export function LiveDocxDiff({ name, before, after, className }: LiveDiffProps) 
   useEffect(() => {
     let current = true
     setDiff(null)
-    // Pictures do not affect the redline, so a scratch store holds the parts.
+    // A scratch store holds the parts and picture hashes for comparison.
     diffDocxFiles(before, after, new MemoryLiveAssetStore()).then(
       (result) => { if (current) setDiff(result) },
       () => { if (current) setDiff('failed') },

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { DiffBlock, DiffBlockSummary, DiffSegment, DocxDiff, FormatChange } from '@pulpo/client-core/office/docx'
+import type { DiffBlock, DiffBlockSummary, DiffSegment, DocxDiff, FormatChange, FormatLocation } from '@pulpo/client-core/office/docx'
 import { ui } from '@/i18n/ui'
 import { cn } from '@/lib/utils'
 
@@ -36,7 +36,19 @@ function propertyLabel(property: string): string {
     case 'tabs': return ui("Tab stops")
     case 'caps':
     case 'smallCaps': return ui("Capitalization")
-    default: return property
+    case 'tblW': return ui("Table width")
+    case 'tblGrid': return ui("Column widths")
+    case 'tcW': return ui("Cell width")
+    case 'trHeight': return ui("Row height")
+    case 'tblBorders':
+    case 'tcBorders': return ui("Borders")
+    case 'vAlign': return ui("Vertical alignment")
+    case 'tblLayout': return ui("Table layout")
+    case 'tblStyle': return ui("Table style")
+    case 'tblCellMar':
+    case 'tcMar': return ui("Cell margins")
+    case 'layout': return ui("Layout changed")
+    default: return ui("Formatting changed")
   }
 }
 
@@ -80,19 +92,39 @@ function BlockText({ block, children }: { block: DiffBlockSummary; children: Rea
   )
 }
 
+function locationLabel(location: FormatLocation): string {
+  switch (location.kind) {
+    case 'table': return ui("Table {{number}}", { number: location.index })
+    case 'row': return ui("Row {{number}}", { number: location.index })
+    case 'cell': return ui("Cell {{number}}", { number: location.index })
+    case 'paragraph': return ui("Paragraph {{number}}", { number: location.index })
+  }
+}
+
+function FormatNote({ format }: { format: FormatChange }) {
+  return (
+    <li>
+      <span className="font-medium text-foreground">{propertyLabel(format.property)}</span>
+      {format.location?.length ? <> · {format.location.map(locationLabel).join(' › ')}</> : null}
+      {format.part && <> · {format.part}</>}
+      {format.text && <> · <span className="italic">“{format.text.length > 60 ? `${format.text.slice(0, 60)}…` : format.text}”</span></>}
+      {(format.before || format.after) && <> · {format.before ?? ui("none")} → {format.after ?? ui("none")}</>}
+    </li>
+  )
+}
+
 function FormatNotes({ formats }: { formats: FormatChange[] }) {
   if (!formats.length) return null
   return (
-    <ul className="mt-1 space-y-0.5 text-xs text-muted-foreground">
-      {formats.slice(0, 8).map((format, index) => (
-        <li key={index}>
-          <span className="font-medium text-foreground">{propertyLabel(format.property)}</span>
-          {format.text && <> · <span className="italic">“{format.text.length > 60 ? `${format.text.slice(0, 60)}…` : format.text}”</span></>}
-          {(format.before || format.after) && <> · {format.before ?? ui("none")} → {format.after ?? ui("none")}</>}
-        </li>
-      ))}
-      {formats.length > 8 && <li>{ui("{{count}} more formatting changes", { count: formats.length - 8 })}</li>}
-    </ul>
+    <div className="mt-1 space-y-0.5 text-xs text-muted-foreground">
+      <ul className="space-y-0.5">{formats.slice(0, 8).map((format, index) => <FormatNote key={index} format={format} />)}</ul>
+      {formats.length > 8 && (
+        <details>
+          <summary className="cursor-pointer">{ui("{{count}} more formatting changes", { count: formats.length - 8 })}</summary>
+          <ul className="space-y-0.5">{formats.slice(8).map((format, index) => <FormatNote key={index} format={format} />)}</ul>
+        </details>
+      )}
+    </div>
   )
 }
 
@@ -154,6 +186,7 @@ export function DocxDiffView({ diff, className }: { diff: DocxDiff; className?: 
           )
         })}
       </div>
+      {diff.formats?.length ? <div className="rounded-lg border bg-card p-3" data-diff-document><FormatNotes formats={diff.formats} /></div> : null}
       {diff.stories.length > 0 && (
         <section className="flex flex-col gap-1.5">
           <h3 className="text-xs font-medium text-muted-foreground">{ui("Headers, footers, notes, and comments")}</h3>
@@ -163,6 +196,7 @@ export function DocxDiffView({ diff, className }: { diff: DocxDiff; className?: 
                 {storyLabel(story.kind)}{story.author ? ` · ${story.author}` : ''}
               </div>
               <p className="whitespace-pre-wrap break-words"><Segments segments={story.segments} /></p>
+              {story.formats && <FormatNotes formats={story.formats} />}
             </div>
           ))}
         </section>
