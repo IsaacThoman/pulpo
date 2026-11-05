@@ -18,7 +18,7 @@ function kindLabel(change: NotebookCellChange): string {
       return change.outputsChanged ? ui("Moved, outputs changed") : ui("Moved")
     case 'changed':
       if (change.attachmentsChanged) return ui("Attachments changed")
-      if (change.sourceChanged || change.typeChanged) return change.moved ? ui("Moved and edited") : ui("Edited")
+      if (change.sourceChanged || change.typeChanged || change.metadata.length) return change.moved ? ui("Moved and edited") : ui("Edited")
       return ui("Outputs changed")
     default: return ''
   }
@@ -89,6 +89,7 @@ function ChangedCell({ change, index }: { change: Exclude<NotebookCellChange, { 
             : <Lines key={rowIndex} text={row.text} tone={row.kind} />
         )) : <Lines text={change.after.source} tone="same" />)}
       </div>
+      {(change.kind === 'changed' || change.kind === 'moved') && change.metadata.length > 0 && <p className="border-t px-3 py-1.5 text-xs text-muted-foreground">{uit`Cell settings changed: ${change.metadata.join(', ')}`}</p>}
       <Outputs before={change.kind === 'added' ? null : change.before} after={change.kind === 'removed' ? null : change.after} />
     </section>
   )

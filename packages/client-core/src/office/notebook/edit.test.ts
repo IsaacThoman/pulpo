@@ -264,3 +264,25 @@ describe('third review regressions', () => {
     expect(orderedCells(doc)).toHaveLength(2)
   })
 })
+
+it.each(['code', 'markdown', 'raw'])('reports %s cell metadata-only proposals and preserves them when applied', async (cell_type) => {
+  const cell = { cell_type, id: 'metadata', source: 'same source', metadata: { tags: ['before'], jupyter: { source_hidden: false } },
+    ...cell_type === 'code' ? { execution_count: null, outputs: [] } : {} }
+  const file = (metadata: unknown) => new TextEncoder().encode(JSON.stringify({ cells: [{ ...cell, metadata }], metadata: {}, nbformat: 4, nbformat_minor: 5 }))
+  const before = file(cell.metadata)
+  const after = file({ tags: ['after'], jupyter: { source_hidden: true }, custom: 1 })
+  const diff = diffNotebookFiles(before, after)
+  expect(diff.counts.changed).toBe(1)
+  expect(diff.cells[0]).toMatchObject({ kind: 'changed', metadata: ['custom', 'jupyter', 'tags'], sourceChanged: false })
+  const doc = new Y.Doc()
+  const context = { name: 'metadata.ipynb', assets: new MemoryLiveAssetStore() }
+  try {
+    await notebookCodec.importFile(doc, before, context)
+    expect(await notebookCodec.applyFile(doc, after, context)).toMatchObject({ changed: true })
+    const exported = JSON.parse(new TextDecoder().decode(await notebookCodec.exportFile(doc, context)))
+    expect(exported.cells[0].metadata).toEqual({ tags: ['after'], jupyter: { source_hidden: true }, custom: 1 })
+    expect(await notebookCodec.applyFile(doc, after, context)).toMatchObject({ changed: false })
+  } finally {
+    doc.destroy()
+  }
+})

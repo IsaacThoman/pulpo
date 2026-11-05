@@ -15,7 +15,7 @@ function kindLabel(change: Exclude<NotebookCellChange, { kind: 'unchanged' }>): 
   if (change.kind === 'removed') return 'Removed'
   if (change.attachmentsChanged) return 'Attachments changed'
   if (change.kind === 'moved') return change.outputsChanged ? 'Moved, outputs changed' : 'Moved'
-  if (change.sourceChanged || change.typeChanged) return change.moved ? 'Moved and edited' : 'Edited'
+  if (change.sourceChanged || change.typeChanged || change.metadata.length) return change.moved ? 'Moved and edited' : 'Edited'
   return 'Outputs changed'
 }
 
@@ -66,6 +66,7 @@ function CellCard({ change, index }: { change: Exclude<NotebookCellChange, { kin
             ? <Text key={rowIndex} style={[styles.gap, { color: theme.tertiary }]}>{row.count} unchanged {row.count === 1 ? 'line' : 'lines'}</Text>
             : <Lines key={rowIndex} text={row.text} tone={row.kind} />)
             : <Lines text={change.after.source} tone="same" />}
+      {(change.kind === 'changed' || change.kind === 'moved') && change.metadata.length > 0 ? <Text style={[styles.outputs, { color: theme.secondary }]}>{`Cell settings changed: ${change.metadata.join(', ')}`}</Text> : null}
       {outputsChanged ? (
         <Text style={[styles.outputs, { color: theme.secondary }]} numberOfLines={4}>
           {before && after ? `Outputs: ${outputsLine(before)} → ${outputsLine(after)}` : `Outputs: ${outputsLine(before ?? after)}`}

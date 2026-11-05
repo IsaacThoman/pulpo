@@ -2771,6 +2771,7 @@ const esUi: Record<string, string> = {
   "Outputs{{0}}: {{1}}": "Salidas{{0}}: {{1}}",
   "Cell {{0}}": "Celda {{0}}",
   "Notebook settings changed: {{0}}": "Ajustes del notebook cambiados: {{0}}",
+  "Cell settings changed: {{0}}": "Ajustes de la celda cambiados: {{0}}",
   "⋯ 1 unchanged cell": "⋯ 1 celda sin cambios",
   "⋯ {{0}} unchanged cells": "⋯ {{0}} celdas sin cambios",
   "{{0}} cell": "Celda de {{0}}",

@@ -19,10 +19,12 @@ export type NotebookOutput =
   | { type: 'display_data'; data: MimeBundle; metadata: Record<string, unknown> }
   | { type: 'execute_result'; data: MimeBundle; metadata: Record<string, unknown>; executionCount: number | null }
 
-export type NotebookCell =
+export type NotebookCell = { metadata?: Record<string, unknown> } & (
   | { type: 'markdown'; id: string; source: string; attachments: Record<string, MimeBundle> }
   | { type: 'code'; id: string; source: string; executionCount: number | null; outputs: NotebookOutput[] }
   | { type: 'raw'; id: string; source: string; attachments?: Record<string, MimeBundle> }
+
+)
 
 export interface NotebookModel {
   nbformat: number
@@ -198,25 +200,27 @@ export function normalizeAttachments(value: unknown): Record<string, MimeBundle>
 
 function normalizeCell(raw: unknown, index: number, v3: boolean): NotebookCell | null {
   if (!isObject(raw)) return null
+  const metadata = isObject(raw.metadata) ? raw.metadata : {}
   const id = typeof raw.id === 'string' && raw.id ? raw.id : `cell-${index}`
   switch (raw.cell_type) {
     case 'code':
       return {
         type: 'code',
+        metadata,
         id,
         source: joinText(v3 ? raw.input : raw.source),
         executionCount: integerOrNull(v3 ? raw.prompt_number : raw.execution_count),
         outputs: normalizeOutputs(raw.outputs, v3),
       }
     case 'markdown':
-      return { type: 'markdown', id, source: joinText(raw.source), attachments: normalizeAttachments(raw.attachments) }
+      return { type: 'markdown', metadata, id, source: joinText(raw.source), attachments: normalizeAttachments(raw.attachments) }
     case 'heading': {
       // nbformat 3 kept headings as their own cells.
       const level = Math.min(6, Math.max(1, integerOrNull(raw.level) ?? 1))
-      return { type: 'markdown', id, source: `${'#'.repeat(level)} ${joinText(raw.source)}`, attachments: {} }
+      return { type: 'markdown', metadata, id, source: `${'#'.repeat(level)} ${joinText(raw.source)}`, attachments: {} }
     }
     case 'raw':
-      return { type: 'raw', id, source: joinText(raw.source), attachments: normalizeAttachments(raw.attachments) }
+      return { type: 'raw', metadata, id, source: joinText(raw.source), attachments: normalizeAttachments(raw.attachments) }
     default:
       return null
   }

@@ -39,6 +39,8 @@ export type NotebookCellChange =
     sourceChanged: boolean
     outputsChanged: boolean
     attachmentsChanged: boolean
+    /** Cell metadata keys whose values differ (tags, jupyter visibility, …). */
+    metadata: string[]
   }
 
 export interface NotebookDiff {
@@ -119,6 +121,7 @@ export function diffNotebooks(before: NotebookModel, after: NotebookModel, metad
     const previous = before.cells[Number(key)]!
     const moved = !stays.has(index)
     if (!moved) flushRemoved(Number(key) + 1)
+    const metadata = changedKeys(previous.metadata ?? {}, cell.metadata ?? {})
     const sourceChanged = previous.source !== cell.source
     const typeChanged = previous.type !== cell.type
     const attachmentsChanged = attachmentsKey(previous) !== attachmentsKey(cell)
@@ -132,14 +135,14 @@ export function diffNotebooks(before: NotebookModel, after: NotebookModel, metad
         counts.removed += 1
       }
     }
-    if (!moved && !sourceChanged && !typeChanged && !outputsChanged && !attachmentsChanged) {
+    if (!moved && !sourceChanged && !typeChanged && !outputsChanged && !attachmentsChanged && !metadata.length) {
       cells.push({ kind: 'unchanged', before: summarize(previous), after: summarize(cell), moved: false })
       flushFollowing()
       return
     }
     const diff = sourceChanged ? lineDiff(previous.source, cell.source) : null
     cells.push({
-      kind: sourceChanged || typeChanged || attachmentsChanged ? 'changed' : moved ? 'moved' : 'changed',
+      kind: sourceChanged || typeChanged || attachmentsChanged || metadata.length ? 'changed' : moved ? 'moved' : 'changed',
       before: summarize(previous),
       after: summarize(cell),
       moved,
@@ -148,9 +151,10 @@ export function diffNotebooks(before: NotebookModel, after: NotebookModel, metad
       sourceChanged,
       outputsChanged,
       attachmentsChanged,
+      metadata,
     })
     if (moved) counts.moved += 1
-    if (sourceChanged || typeChanged || attachmentsChanged) counts.changed += 1
+    if (sourceChanged || typeChanged || attachmentsChanged || metadata.length) counts.changed += 1
     else if (outputsChanged) counts.outputs += 1
     flushFollowing()
   })
@@ -160,6 +164,12 @@ export function diffNotebooks(before: NotebookModel, after: NotebookModel, metad
 
 function decode(bytes: Uint8Array): string {
   return new TextDecoder().decode(bytes)
+}
+
+function changedKeys(left: Record<string, unknown>, right: Record<string, unknown>): string[] {
+  return [...new Set([...Object.keys(left), ...Object.keys(right)])]
+    .filter((key) => JSON.stringify(left[key]) !== JSON.stringify(right[key]))
+    .sort()
 }
 
 /** Top-level metadata keys whose values differ. */
@@ -174,9 +184,7 @@ function metadataChanges(before: string, after: string): string[] {
   }
   const left = read(before)
   const right = read(after)
-  return [...new Set([...Object.keys(left), ...Object.keys(right)])]
-    .filter((key) => JSON.stringify(left[key]) !== JSON.stringify(right[key]))
-    .sort()
+  return changedKeys(left, right)
 }
 
 /** The diff of two notebook files. Throws `NotebookError` when either is not a notebook. */
