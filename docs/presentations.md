@@ -123,12 +123,14 @@ Known limitations, most important first:
 - Charts do not draw error bars, trendlines, data tables, or leader lines; date axes are spaced evenly; 3-D charts are drawn flat.
 - The Y.Doc keeps templates and each slide's original bytes beside the model, about 4× the uncompressed package for shape-heavy decks.
 - `applyFile` reconciles the document with the pushed file, not with the version the agent pulled. Edits other people made between the agent's pull and its push are overwritten where the agent's file differs. Concurrent edits that are still in flight merge. A three-way merge needs the pulled version.
-- `applyFile` matches slides by slide id. Tools such as python-pptx give a new slide the id of a deleted one. That slide is treated as the old one only when the two share a shape (id and kind), and either keep their layout or share a shape name, so a look-alike slide can still pick up edits meant for the deleted one.
+- `applyFile` matches slides and shapes by their ids. Tools such as python-pptx give a new slide or shape the id of a deleted one. A shape is treated as the old one only when it keeps its kind and also its name, its text, or its position. A slide is treated as the old one only when one of its shapes continues, and, if its layout changed, keeps its name or text. So a new slide or shape that looks like the deleted one can still pick up edits meant for it.
 - `applyFile` matches table rows and columns in stages:
-  1. PowerPoint's row and column ids (`a16:rowId`, `a16:colId`), which Pulpo gives every table, row, and column it creates;
-  2. otherwise exactly the same cell texts;
-  3. then mostly the same cell texts;
+  1. ids or exact cell texts that are unique on both sides, wherever they moved, so reordering keeps edits. The ids are PowerPoint's row and column ids (`a16:rowId`, `a16:colId`), which Pulpo gives every table, row, and column it creates;
+  2. then, among the rest in order, the same id or text;
+  3. then the most similar cell texts;
   4. then position.
+
+  Rows or columns whose ids differ are never paired.
   
   Rows with identical text and no ids, such as the empty rows of a table python-pptx made, cannot be told apart, so a concurrent edit to one of them can land in another.
 - Re-applying the document's own export right after a slide was deleted reports a change once, because the stored presentation part is updated. Applying it again changes nothing.

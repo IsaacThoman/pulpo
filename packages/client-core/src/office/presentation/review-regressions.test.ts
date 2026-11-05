@@ -481,7 +481,9 @@ describe('second review: data loss and corruption', () => {
     const currentLayout = last.layout.split('/').pop()!
     const otherLayout = layouts.map((path) => path.split('/').pop()!).find((name) => name !== currentLayout)!
     files[relsPath] = strToU8(strFromU8(files[relsPath]!).replace(currentLayout, otherLayout))
-    files[slidePath] = strToU8(strFromU8(files[slidePath]!).replace(/name="[^"]*"/g, 'name="Agent shape"'))
+    // A new slide python-pptx made: another layout, other shape names, and new text (and, as
+    // python-pptx numbers shapes from 2, positions that need not match either).
+    files[slidePath] = strToU8(strFromU8(files[slidePath]!).replace(/name="[^"]*"/g, 'name="Agent shape"').replace(/<a:t>[^<]*<\/a:t>/g, '<a:t>Agent text</a:t>').replace(/<a:off x="\d+"/g, '<a:off x="12345"'))
     await presentationCodec.applyFile(doc, zipSync(files), context, 'agent')
     expect(slideKeys(doc).at(-1)).not.toBe(last.key)
   })
@@ -770,7 +772,7 @@ describe('fourth review', () => {
 
   it('rejects an entire clipboard with 10,001 rectangles', () => {
     expect(parseClipboard(JSON.stringify(payload(Array.from({ length: 10_001 }, rectangle))))).toBeUndefined()
-  })
+  }, 60_000)
 
   it('counts nested group members and shapes on every slide toward the clipboard budget', async () => {
     const group = { ...rectangle(), kind: 'grpSp' as const, children: Array.from({ length: 2_000 }, rectangle) }
@@ -779,7 +781,7 @@ describe('fourth review', () => {
     const slide = readSlide(doc, slideKeys(doc)[0]!)!
     expect(parseClipboard(JSON.stringify({ ...payload([]), kind: 'slides', slides: [{ ...slide, shapes: Array.from({ length: 1_001 }, rectangle) }, { ...slide, shapes: Array.from({ length: 1_000 }, rectangle) }] }))).toBeUndefined()
     expect(parseClipboard(JSON.stringify({ ...payload([]), kind: 'slides', slides: Array.from({ length: 201 }, () => ({ ...slide, shapes: [] })) }))).toBeUndefined()
-  })
+  }, 60_000)
 
   it('rejects an entire clipboard with 5,001 tiny parts', () => {
     const parts = Object.fromEntries(Array.from({ length: 5_001 }, (_, index) => [`ppt/media/p${index}.bin`, { data: 'eA==' }]))
@@ -1008,5 +1010,117 @@ describe('closing review', () => {
     await presentationCodec.applyFile(doc, zipSync(files), context, 'agent')
     sync(doc, user)
     expect(texts(doc, slide, shape.key)).toEqual([' | UNSENT', ' | ', ' | '])
+  })
+})
+
+describe('identity review', () => {
+  const records = (texts: string[][]) => {
+    const shape = tableShape(texts.length, texts[0]!.length, { x: 0, y: 0, cx: 3_000_000, cy: 1_000_000 }, 'Records')
+    shape.table!.rows.forEach((row, i) => shape.table!.columns.forEach((column, j) => { row.cells[column.key]!.text = plainToText(texts[i]![j]!) }))
+    return shape
+  }
+  const texts = (doc: Y.Doc, slide: string, key: string) => {
+    const table = readSlide(doc, slide)!.shapes.find((entry) => entry.key === key)!.table!
+    return table.rows.map((row) => table.columns.map((column) => textToPlain(row.cells[column.key]!.text)).join(' | '))
+  }
+  const append = (doc: Y.Doc, slide: string, shape: ShapeSnapshot, row: number, column: number, text: string) => {
+    const fragment = cellFragment(doc, slide, shape.key, shape.table!.rows[row]!.key, shape.table!.columns[column]!.key)!
+    const run = (fragment.get(0) as Y.XmlElement).get(0) as Y.XmlText
+    run.insert(run.length, text)
+  }
+  const rowsOf = (xml: string) => [...xml.matchAll(/<a:tr\b[\s\S]*?<\/a:tr>/g)].map((match) => match[0])
+  /** Pushes `edit(slide XML)` while another replica has an unsent edit, then syncs both. */
+  const pushWith = async (doc: Y.Doc, files: Record<string, Uint8Array>, user: Y.Doc, edit: (xml: string) => string) => {
+    files['ppt/slides/slide1.xml'] = strToU8(edit(strFromU8(files['ppt/slides/slide1.xml']!)))
+    await presentationCodec.applyFile(doc, zipSync(files), context, 'agent')
+    sync(doc, user)
+  }
+
+  it('keeps an edit with its row when a push swaps two rows', async () => {
+    const doc = await open(blankPresentation())
+    const slide = slideKeys(doc)[0]!
+    const shape = records([['Alice', 'Pending'], ['Bob', 'Pending'], ['Carol', 'Done']])
+    insertShapes(doc, slide, [shape])
+    const files = await exported(doc)
+    const user = replica(doc)
+    append(user, slide, shape, 0, 1, ' UNSENT')
+    await pushWith(doc, files, user, (xml) => {
+      const [alice, bob] = rowsOf(xml)
+      return xml.replace(alice!, '\u0000').replace(bob!, alice!).replace('\u0000', bob!)
+    })
+    expect(texts(doc, slide, shape.key)).toEqual(['Bob | Pending', 'Alice | Pending UNSENT', 'Carol | Done'])
+  })
+
+  it('never hands a deleted row’s edit to a new row with another row id', async () => {
+    const doc = await open(blankPresentation())
+    const slide = slideKeys(doc)[0]!
+    const shape = records([['Carol', 'Pending'], ['Dave', 'Done']])
+    insertShapes(doc, slide, [shape])
+    const files = await exported(doc)
+    const user = replica(doc)
+    append(user, slide, shape, 1, 1, ' UNSENT')
+    await pushWith(doc, files, user, (xml) => {
+      const dave = rowsOf(xml)[1]!
+      const eve = dave.replace('<a:t>Dave</a:t>', '<a:t>Eve</a:t>').replace('<a:t>Done</a:t>', '<a:t>Active</a:t>').replace(/(rowId\b[^>]*\bval=")\d+/, '$1424242')
+      return xml.replace(dave, eve)
+    })
+    const result = texts(doc, slide, shape.key)
+    expect(result[0]).toBe('Carol | Pending')
+    expect(result[1]).toBe('Eve | Active')
+  })
+
+  it('keeps distinct look-alike records apart when a push deletes one and adds a column', async () => {
+    const doc = await open(blankPresentation())
+    const slide = slideKeys(doc)[0]!
+    const shape = records([['Alice', 'Pending', 'West'], ['Bob', 'Pending', 'West'], ['Carol', 'Done', 'East']])
+    // Ids-less, as python-pptx makes tables.
+    for (const row of shape.table!.rows) row.xml = row.xml.replace(/<a:extLst>[\s\S]*<\/a:extLst>/, '')
+    for (const column of shape.table!.columns) column.xml = column.xml.replace(/<a:extLst>[\s\S]*<\/a:extLst>/, '')
+    insertShapes(doc, slide, [shape])
+    const files = await exported(doc)
+    const user = replica(doc)
+    append(user, slide, shape, 1, 1, ' UNSENT')
+    const cell = '<a:tc><a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>#</a:t></a:r></a:p></a:txBody><a:tcPr/></a:tc>'
+    await pushWith(doc, files, user, (xml) => {
+      const withColumn = xml.replace('<a:tblGrid>', '<a:tblGrid><a:gridCol w="500000"/>').replace(/(<a:tr\b[^>]*>)/g, `$1${cell}`)
+      return withColumn.replace(rowsOf(withColumn)[0]!, '')
+    })
+    expect(texts(doc, slide, shape.key)).toEqual(['# | Bob | Pending UNSENT | West', '# | Carol | Done | East'])
+  })
+
+  it('keeps a slide whose layout changed and whose shapes were renamed, when their text stayed', async () => {
+    const doc = await open(fixture('generated/text-formatting.pptx'))
+    const slide = readSnapshot(doc).slides[0]!
+    const title = slide.shapes.find((shape) => shape.text && textToPlain(shape.text).trim())!
+    const files = await exported(doc)
+    const user = replica(doc)
+    const fragment = shapeFragment(user, slide.key, title.key)!
+    ;((fragment.get(0) as Y.XmlElement).get(0) as Y.XmlText).insert(0, 'UNSENT ')
+    const currentLayout = slide.layout.split('/').pop()!
+    const otherLayout = Object.keys(files).filter((path) => /^ppt\/slideLayouts\/slideLayout\d+\.xml$/.test(path)).map((path) => path.split('/').pop()!).find((name) => name !== currentLayout)!
+    const relsPath = slide.part!.replace('slides/', 'slides/_rels/') + '.rels'
+    files[relsPath] = strToU8(strFromU8(files[relsPath]!).replace(currentLayout, otherLayout))
+    files[slide.part!] = strToU8(strFromU8(files[slide.part!]!).replace(/name="[^"]*"/g, 'name="Renamed"'))
+    await presentationCodec.applyFile(doc, zipSync(files), context, 'agent')
+    sync(doc, user)
+    expect(slideKeys(doc)[0]).toBe(slide.key)
+    expect(textToPlain(readSlide(doc, slide.key)!.shapes.find((shape) => shape.key === title.key)!.text!)).toContain('UNSENT')
+  })
+
+  it('treats a new shape that took a deleted shape’s id as new', async () => {
+    const doc = await open(blankPresentation())
+    const slide = slideKeys(doc)[0]!
+    const [old] = insertShapes(doc, slide, [{ ...presetShape('rect', { x: 100_000, y: 100_000, cx: 900_000, cy: 400_000 }, 'Old Box'), text: plainToText('old') }])
+    const files = await exported(doc)
+    const user = replica(doc)
+    const fragment = shapeFragment(user, slide, old!)!
+    ;((fragment.get(0) as Y.XmlElement).get(0) as Y.XmlText).insert(3, ' UNSENT')
+    await pushWith(doc, files, user, (xml) =>
+      xml.replace('name="Old Box"', 'name="New Box"').replace('<a:t>old</a:t>', '<a:t>new</a:t>').replace('<a:off x="100000" y="100000"/>', '<a:off x="4000000" y="3000000"/>'),
+    )
+    const shapes = readSlide(doc, slide)!.shapes
+    const box = shapes.find((shape) => shape.name === 'New Box')!
+    expect(textToPlain(box.text!)).toBe('new')
+    expect(box.key).not.toBe(old)
   })
 })

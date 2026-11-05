@@ -7,6 +7,7 @@ import { PRESENTATION_EXTENSIONS, presentationFormat, presentationMimeType } fro
 import { PRESENTATION_SCHEMA_VERSION } from './model.js'
 import { readPresentation } from './read.js'
 import { textToPlain } from './text.js'
+import { stableStringify } from './xml.js'
 import { presentationRoot, readParts, readSnapshot, reconcileSnapshot, writeSnapshot } from './ydoc.js'
 import { assignIdentifiers, writePresentation } from './write.js'
 import { textSummaryOfChart } from './summary.js'
@@ -109,20 +110,40 @@ export function alignKeys(currentSnapshot: PresentationSnapshot, incoming: Prese
 }
 
 /**
+ * Whether a pushed shape with a current shape's id is still that shape. Tools such as python-pptx
+ * give a new shape the id of a deleted one, so besides the id and kind, something of the old shape
+ * must remain: its name, its text, or its place on the slide. Renaming, rewriting, or moving a
+ * shape keeps it; replacing it with a different one does not.
+ */
+function sameShape(current: ShapeSnapshot, incoming: ShapeSnapshot): boolean {
+  if (current.kind !== incoming.kind) return false
+  if ((current.name ?? '') === (incoming.name ?? '')) return true
+  const text = (shape: ShapeSnapshot) => (shape.text ? textToPlain(shape.text).trim() : '')
+  if (text(current) && text(current) === text(incoming)) return true
+  return stableStringify(current.xfrm ?? null) === stableStringify(incoming.xfrm ?? null)
+}
+
+/**
  * Whether a pushed slide with a current slide's id is that slide. Tools such as python-pptx give a
- * slide added after deleting the last one that slide's id, so the id alone is not enough: the
- * slides must share a shape (id and kind), and either keep their layout or share a shape name.
- * Renaming shapes, or changing only the layout, keeps the slide; a new slide on another layout
- * with other shapes does not.
+ * slide added after deleting the last one that slide's id, so the id alone is not enough: some shape
+ * must continue (see `sameShape`), and if the layout changed, a shape must also keep its name or
+ * its text. Renaming shapes or changing the layout keeps the slide; a new slide on another layout
+ * with other shapes and text does not.
  */
 function sameSlide(current: SlideSnapshot, incoming: SlideSnapshot): boolean {
   if (!current.shapes.length || !incoming.shapes.length) return current.layout === incoming.layout
-  const identity = (shape: ShapeSnapshot) => `${shape.nvId}\u0000${shape.kind}`
-  const shapes = new Set(current.shapes.map(identity))
-  if (!incoming.shapes.some((shape) => shapes.has(identity(shape)))) return false
+  const byId = new Map(current.shapes.map((shape) => [shape.nvId, shape]))
+  const continuing = incoming.shapes.filter((shape) => {
+    const previous = byId.get(shape.nvId)
+    return previous !== undefined && sameShape(previous, shape)
+  })
+  if (!continuing.length) return false
   if (current.layout === incoming.layout) return true
-  const names = new Set(current.shapes.map((shape) => shape.name ?? '').filter(Boolean))
-  return incoming.shapes.some((shape) => shape.name !== undefined && names.has(shape.name))
+  const text = (shape: ShapeSnapshot) => (shape.text ? textToPlain(shape.text).trim() : '')
+  return continuing.some((shape) => {
+    const previous = byId.get(shape.nvId)!
+    return (previous.name ?? '') === (shape.name ?? '') || (text(previous) !== '' && text(previous) === text(shape))
+  })
 }
 
 function alignShapes(current: ShapeSnapshot[], incoming: ShapeSnapshot[]): ShapeSnapshot[] {
@@ -141,7 +162,7 @@ function alignShapes(current: ShapeSnapshot[], incoming: ShapeSnapshot[]): Shape
   const used = new Set<string>()
   const align = (shape: ShapeSnapshot): ShapeSnapshot => {
     const candidate = shape.nvId !== undefined ? byId.get(shape.nvId) : undefined
-    const match = candidate && candidate.kind === shape.kind ? candidate : undefined
+    const match = candidate && sameShape(candidate, shape) ? candidate : undefined
     let key = match ? match.key : shape.key
     while (used.has(key) || (!match && currentKeys.has(key))) key = `${key}-1`
     used.add(key)
@@ -155,14 +176,45 @@ function alignShapes(current: ShapeSnapshot[], incoming: ShapeSnapshot[]): Shape
   return incoming.map(align)
 }
 
+
 /**
- * Whether two rows (or two columns) hold mostly the same cell texts. Comparing cell texts as a
- * multiset, not the whole row, lets a row survive a column inserted or deleted in the same push.
+ * The best monotonic pairing of `current` and `incoming` entries: the pairs `score` accepts
+ * (a number, or undefined for "never"), with the highest total score. Index pairs, in order.
  */
-function similarCells(a: string[], b: string[]): boolean {
-  const left = a.filter(Boolean)
-  const right = b.filter(Boolean)
-  if (!left.length || !right.length) return !left.length && !right.length
+function bestAlignment<T>(current: T[], incoming: T[], score: (a: T, b: T) => number | undefined): [number, number][] {
+  if (!current.length || !incoming.length || current.length * incoming.length > 1_000_000) return []
+  const best: number[][] = Array.from({ length: current.length + 1 }, () => new Array<number>(incoming.length + 1).fill(0))
+  for (let i = current.length - 1; i >= 0; i--) {
+    for (let j = incoming.length - 1; j >= 0; j--) {
+      const value = score(current[i]!, incoming[j]!)
+      best[i]![j] = Math.max(best[i + 1]![j]!, best[i]![j + 1]!, value === undefined ? -Infinity : value + best[i + 1]![j + 1]!)
+    }
+  }
+  const pairs: [number, number][] = []
+  for (let i = 0, j = 0; i < current.length && j < incoming.length; ) {
+    const value = score(current[i]!, incoming[j]!)
+    if (value !== undefined && best[i]![j] === value + best[i + 1]![j + 1]!) pairs.push([i++, j++])
+    else if (best[i + 1]![j]! >= best[i]![j + 1]!) i++
+    else j++
+  }
+  return pairs
+}
+
+/** One table row or column as the matcher sees it: its file id (`a16:rowId`/`colId`), if any, and its cells' texts. */
+interface AxisEntry {
+  id?: string
+  cells: string[]
+}
+
+/** Two entries with different file ids are different records, whatever their text says. */
+const conflicting = (a: AxisEntry, b: AxisEntry) => a.id !== undefined && b.id !== undefined && a.id !== b.id
+
+/** How much of two entries' cell text is shared (0 to 1), or undefined when too little to call them one record. */
+function similarity(a: AxisEntry, b: AxisEntry): number | undefined {
+  if (conflicting(a, b)) return undefined
+  const left = a.cells.filter(Boolean)
+  const right = b.cells.filter(Boolean)
+  if (!left.length || !right.length) return !left.length && !right.length ? 0.5 : undefined
   const counts = new Map<string, number>()
   for (const text of left) counts.set(text, (counts.get(text) ?? 0) + 1)
   let shared = 0
@@ -173,31 +225,8 @@ function similarCells(a: string[], b: string[]): boolean {
       counts.set(text, count - 1)
     }
   }
-  return shared * 2 >= Math.max(left.length, right.length)
-}
-
-/** Longest common subsequence under `same`: index pairs (current, incoming), in order. */
-function commonSubsequence<T>(current: T[], incoming: T[], same: (a: T, b: T) => boolean): [number, number][] {
-  if (current.length * incoming.length > 1_000_000) return []
-  const table: number[][] = Array.from({ length: current.length + 1 }, () => new Array<number>(incoming.length + 1).fill(0))
-  for (let i = current.length - 1; i >= 0; i--) {
-    for (let j = incoming.length - 1; j >= 0; j--) {
-      table[i]![j] = same(current[i]!, incoming[j]!) ? table[i + 1]![j + 1]! + 1 : Math.max(table[i + 1]![j]!, table[i]![j + 1]!)
-    }
-  }
-  const pairs: [number, number][] = []
-  for (let i = 0, j = 0; i < current.length && j < incoming.length; ) {
-    if (same(current[i]!, incoming[j]!) && table[i]![j] === table[i + 1]![j + 1]! + 1) pairs.push([i++, j++])
-    else if (table[i + 1]![j]! >= table[i]![j + 1]!) i++
-    else j++
-  }
-  return pairs
-}
-
-/** One table row or column as the matcher sees it: its file id (`a16:rowId`/`colId`), if any, and its cells' texts. */
-interface AxisEntry {
-  id?: string
-  cells: string[]
+  const score = shared / Math.max(left.length, right.length)
+  return score >= 0.5 ? score : undefined
 }
 
 /** Runs `match` on the stretches between consecutive anchors and returns the anchors with its matches added. */
@@ -213,24 +242,44 @@ function fillGaps(anchors: [number, number][], currentLength: number, incomingLe
   return result
 }
 
+const identity = (entry: AxisEntry) => (entry.id ? `id:${entry.id}` : `text:${entry.cells.join('\t')}`)
+
 /**
- * Matches table rows or columns in stages, each only where the stage before left a gap:
- * 1. the same identity: the file's row or column id where both sides have one, else exactly the
- *    same cell texts, so an untouched record always keeps its own key;
- * 2. mostly the same cell texts, so a record survives a column (or row) inserted or deleted in
- *    the same push;
- * 3. by position, which is what an edited record looks like.
+ * Matches table rows or columns:
+ * 1. entries whose identity (the file's row or column id, else the exact cell texts) is unique on
+ *    both sides, wherever they moved, so reordering never loses an edit;
+ * 2. among the rest, in order: the same identity, then the most similar cell texts (so a record
+ *    survives a column inserted or deleted in the same push), then position, which is what an
+ *    edited record looks like. Entries with different file ids never pair.
  */
 function tablePairs(current: AxisEntry[], incoming: AxisEntry[]): Map<number, number> {
-  const identity = (entry: AxisEntry) => (entry.id ? `id:${entry.id}` : `text:${entry.cells.join('\t')}`)
-  const exact = commonSubsequence(current.map(identity), incoming.map(identity), (a, b) => a === b)
-  const similar = fillGaps(exact, current.length, incoming.length, (cs, ce, is, ie) =>
-    commonSubsequence(current.slice(cs, ce), incoming.slice(is, ie), (a, b) => similarCells(a.cells, b.cells)).map(([a, b]) => [a + cs, b + is] as [number, number]),
+  const pairs = new Map<number, number>()
+  const counts = (list: AxisEntry[]) => {
+    const result = new Map<string, number>()
+    for (const entry of list) result.set(identity(entry), (result.get(identity(entry)) ?? 0) + 1)
+    return result
+  }
+  const currentCounts = counts(current)
+  const incomingCounts = counts(incoming)
+  const currentIndex = new Map(current.map((entry, index) => [identity(entry), index]))
+  incoming.forEach((entry, index) => {
+    const key = identity(entry)
+    if (currentCounts.get(key) === 1 && incomingCounts.get(key) === 1) pairs.set(index, currentIndex.get(key)!)
+  })
+  const matchedCurrent = new Set(pairs.values())
+  const restCurrent = current.map((_, index) => index).filter((index) => !matchedCurrent.has(index))
+  const restIncoming = incoming.map((_, index) => index).filter((index) => !pairs.has(index))
+  const left = restCurrent.map((index) => current[index]!)
+  const right = restIncoming.map((index) => incoming[index]!)
+  const exact = bestAlignment(left, right, (a, b) => (identity(a) === identity(b) ? 1 : undefined))
+  const similar = fillGaps(exact, left.length, right.length, (cs, ce, is, ie) =>
+    bestAlignment(left.slice(cs, ce), right.slice(is, ie), similarity).map(([a, b]) => [a + cs, b + is] as [number, number]),
   )
-  const positional = fillGaps(similar, current.length, incoming.length, (cs, ce, is, ie) =>
-    Array.from({ length: Math.min(ce - cs, ie - is) }, (_, offset) => [cs + offset, is + offset] as [number, number]),
+  const positional = fillGaps(similar, left.length, right.length, (cs, ce, is, ie) =>
+    Array.from({ length: Math.min(ce - cs, ie - is) }, (_, offset) => [cs + offset, is + offset] as [number, number]).filter(([a, b]) => !conflicting(left[a]!, right[b]!)),
   )
-  return new Map(positional.map(([currentIndex, incomingIndex]) => [incomingIndex, currentIndex]))
+  for (const [a, b] of positional) pairs.set(restIncoming[b]!, restCurrent[a]!)
+  return pairs
 }
 
 /** The `val` of an `a16:rowId` or `a16:colId` in a row's or column's XML. */
