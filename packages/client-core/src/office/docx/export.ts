@@ -3,7 +3,7 @@ import { TableMap } from '@tiptap/pm/tables'
 import { strToU8 } from 'fflate'
 import { LiveFormatError, type LiveAssetStore } from '../live-format.js'
 import { CONTENT_TYPES_PATH, OoxmlPackage, relativeTarget, relationshipsPathFor, resolveTarget } from '../ooxml/package.js'
-import { elementToJml, jmlAttr, jmlChild, jmlElements, jmlToXml, openTag, packJml, unpackJml, walkJml, type JmlElement, type JmlNode } from './jsonml.js'
+import { elementToJml, jmlAttr, jmlChild, jmlElements, jmlToXml, openTag, unpackJml, walkJml, type JmlElement, type JmlNode } from './jsonml.js'
 import { mimeTypeForPart } from './import.js'
 import { parseJson, type CommentMeta, type DocxModel, type PartRef, type StoryMeta } from './model.js'
 import {
@@ -906,7 +906,7 @@ export function generateParts(state: DocxExport): void {
       if (root) {
         const children = jmlElements(root)
         const result = children.filter((child) => !model.maps.settings.has(child[0]))
-        for (const [name, value] of model.maps.settings) {
+        for (const [, value] of model.maps.settings) {
           const element = unpackJml<JmlElement>(value)
           if (element) result.push(element)
         }

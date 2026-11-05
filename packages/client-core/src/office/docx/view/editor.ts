@@ -23,7 +23,7 @@ import { redo, undo, yCursorPlugin, ySyncPlugin, ySyncPluginKey, yUndoPlugin, yU
 import type { Awareness } from 'y-protocols/awareness'
 import type * as Y from 'yjs'
 import type { LiveAssetStore } from '../../live-format.js'
-import { fontStack, latinFont, twipsToPt } from '../css.js'
+import { fontStack, latinFont } from '../css.js'
 import { newInlinePicture } from '../drawing.js'
 import { jmlAttr, jmlChild, jmlNumber, jmlOn, packJml, unpackJml, type JmlElement } from '../jsonml.js'
 import { BODY_FRAGMENT, fragmentToNode, parseJson, readDocxMap, storyFragmentName, writeFragment, type StoryMeta } from '../model.js'
@@ -36,7 +36,6 @@ import {
   changeIndent,
   clearFormatting,
   copyFormat,
-  createTable,
   documentOutline,
   effectiveParagraphProperties,
   effectiveRunProperties,
@@ -234,7 +233,7 @@ export class DocxEditor {
     options.container.appendChild(this.root)
     this.renderStylesheet()
 
-    const editor = this
+    const dispatch = (view: EditorView, tr: Transaction) => this.dispatch(view, tr)
     this.view = new EditorView({ mount: this.flowHost }, {
       state: EditorState.create({ schema: docxSchema(), plugins: this.plugins(options.doc.getXmlFragment(BODY_FRAGMENT), 'cursor', undefined) }),
       editable: () => !this.readOnlyValue && this.modeValue !== 'viewing',
@@ -243,7 +242,8 @@ export class DocxEditor {
       clipboardParser: clipboardParser(docxSchema()),
       transformPastedHTML: sanitizePastedHtml,
       attributes: { class: 'docx-flow', spellcheck: 'true', role: 'textbox', 'aria-multiline': 'true' },
-      dispatchTransaction: function (this: EditorView, tr: Transaction) { editor.dispatch(this, tr) },
+      // y-tiptap dispatches while the view is constructed, before `this.view` is set.
+      dispatchTransaction: function (this: EditorView, tr: Transaction) { dispatch(this, tr) },
       handleDOMEvents: {
         click: (_view, event) => this.handleClick(event),
       },
@@ -271,7 +271,6 @@ export class DocxEditor {
   // ── Setup ────────────────────────────────────────────────────────────────
 
   private plugins(fragment: Y.XmlFragment, cursorField: string, noteNumber: number | undefined): Plugin[] {
-    const editor = this
     return [
       ySyncPlugin(fragment),
       yCursorPlugin(this.options.awareness, {}, cursorField),
@@ -285,10 +284,10 @@ export class DocxEditor {
       new Plugin({
         key: decorationsKey,
         state: {
-          init: (_config, state) => ({ set: editor.decorate(state.doc, noteNumber), version: editor.context.version }),
+          init: (_config, state) => ({ set: this.decorate(state.doc, noteNumber), version: this.context.version }),
           apply: (tr, value, _old, state) => {
-            if (!tr.docChanged && !tr.getMeta(decorationsKey) && value.version === editor.context.version) return value
-            return { set: editor.decorate(state.doc, noteNumber), version: editor.context.version }
+            if (!tr.docChanged && !tr.getMeta(decorationsKey) && value.version === this.context.version) return value
+            return { set: this.decorate(state.doc, noteNumber), version: this.context.version }
           },
         },
         props: { decorations: (state) => decorationsKey.getState(state)?.set },

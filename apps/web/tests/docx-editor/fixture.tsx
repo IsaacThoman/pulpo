@@ -29,7 +29,7 @@ function revised(doc: Y.Doc): Y.Doc {
   return copy
 }
 
-function DiffHarness({ doc }: { doc: Y.Doc }) {
+export function DiffHarness({ doc }: { doc: Y.Doc }) {
   const [diff] = useState<DocxDiff>(() => diffDocxDocs(doc, revised(doc)))
   useEffect(() => { window.harness = { editors: [], docs: [doc], exportFile: async () => '', text: () => '', model: () => diff, ready: true } }, [doc, diff])
   return <div className="mx-auto max-w-3xl p-6"><DocxDiffView diff={diff} /></div>
@@ -121,7 +121,7 @@ function toBase64(bytes: Uint8Array): string {
   return btoa(binary)
 }
 
-function Harness() {
+export function Harness() {
   const [loaded, setLoaded] = useState<{ peers: [Peer, Peer]; name: string } | null>(null)
   const [editors, setEditors] = useState<(DocxEditor | null)[]>([null, null])
   useEffect(() => { void load().then(setLoaded) }, [])
