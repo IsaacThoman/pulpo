@@ -889,11 +889,13 @@ export class DocxEditor {
   // ── Commands ─────────────────────────────────────────────────────────────
 
   undo(): boolean {
+    if (this.readOnly) return false
     const view = this.storyEditor?.view ?? this.view
     return undo(view.state)
   }
 
   redo(): boolean {
+    if (this.readOnly) return false
     const view = this.storyEditor?.view ?? this.view
     return redo(view.state)
   }

@@ -70,10 +70,14 @@ function roman(value: number): string {
 }
 
 /** Word's letters: a…z, then aa…zz, then aaa… (the letter repeats rather than counting on). */
+/** Most times a letter or symbol repeats in a counter; larger counters (a hostile `w:start`) show as digits. */
+const MAX_REPEAT = 30
+
 function letters(value: number): string {
   if (value <= 0) return String(value)
   const index = (value - 1) % 26
   const repeat = Math.floor((value - 1) / 26) + 1
+  if (repeat > MAX_REPEAT) return String(value)
   return String.fromCharCode(97 + index).repeat(repeat)
 }
 
@@ -117,7 +121,7 @@ export function formatNumber(value: number, format: string): string {
     case 'cardinalText': return capitalize(cardinal(value))
     case 'ordinalText': return capitalize(ordinalText(value))
     case 'hex': return value.toString(16).toUpperCase()
-    case 'chicago': return ['*', '†', '‡', '§'][(value - 1) % 4]!.repeat(Math.floor((value - 1) / 4) + 1)
+    case 'chicago': return value >= 1 && value <= MAX_REPEAT * 4 ? ['*', '†', '‡', '§'][(value - 1) % 4]!.repeat(Math.floor((value - 1) / 4) + 1) : String(value)
     case 'decimalEnclosedCircle':
     case 'decimalEnclosedCircleChinese': return value >= 1 && value <= 20 ? String.fromCodePoint(0x2460 + value - 1) : String(value)
     case 'decimalEnclosedParen': return value >= 1 && value <= 20 ? String.fromCodePoint(0x2474 + value - 1) : `(${value})`

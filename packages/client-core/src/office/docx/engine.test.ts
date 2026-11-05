@@ -18,6 +18,13 @@ const schema = docxSchema()
 const style = (id: string, type: string, body: JmlElement[] = [], attrs: Record<string, string> = {}): [string, string] => [`style:${id}`, packJml(['w:style', { 'w:type': type, 'w:styleId': id, ...attrs }, ['w:name', { 'w:val': id }], ...body])]
 
 describe('numbering', () => {
+  it('shows huge counters as digits instead of repeating letters or symbols millions of times', () => {
+    expect(formatNumber(28, 'lowerLetter')).toBe('bb')
+    expect(formatNumber(1_000_000_000, 'lowerLetter')).toBe('1000000000')
+    expect(formatNumber(5, 'chicago')).toBe('**')
+    expect(formatNumber(1_000_000_000, 'chicago')).toBe('1000000000')
+  })
+
   it('formats counters the way Word does', () => {
     expect(formatNumber(4, 'upperRoman')).toBe('IV')
     expect(formatNumber(1994, 'lowerRoman')).toBe('mcmxciv')
