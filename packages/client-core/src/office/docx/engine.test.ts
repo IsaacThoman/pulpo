@@ -8,10 +8,10 @@ import { addRowAfter, addRowBefore, deleteRow, TableMap } from '@tiptap/pm/table
 import * as Y from 'yjs'
 import { docxCodec } from './codec.js'
 import { diffDocxModels, diffWords } from './diff.js'
-import { packJml, type JmlElement } from './jsonml.js'
+import { packJml, unpackJml, type JmlElement } from './jsonml.js'
 import { MemoryAssetStore } from './memory-assets.js'
 import { BODY_FRAGMENT, readDocxModel, writeFragment, type DocxModel } from './model.js'
-import { ListCounter, Numbering, formatNumber } from './numbering.js'
+import { ListCounter, Numbering, effectiveNumPr, formatNumber } from './numbering.js'
 import { docxSchema, inlineMarks } from './schema.js'
 import { StyleSheet, cellConditions, mergeElement, tableLook } from './styles.js'
 import { clearFormatting, effectiveRunProperties, freshId, findMatches, insertTable, insertPageBreak, insertParagraphBreak, insertSectionBreak, listDefinition, replaceMatches, setAlignment, setFontSize, toggleList, toggleRunProperty, wordCount } from './view/commands.js'
@@ -91,11 +91,12 @@ describe('styles', () => {
 const run = (text: string, ...marks: string[]) => schema.text(text, marks.map((name) => schema.mark(name, { v: packJml([`w:${name}`, {}]) })))
 const p = (...content: ProseMirrorNode[]) => schema.node('paragraph', null, content)
 
-async function documentWith(...paragraphs: ProseMirrorNode[]): Promise<{ doc: Y.Doc; model: DocxModel }> {
+async function documentWith(...paragraphs: ProseMirrorNode[]): Promise<{ doc: Y.Doc; model: DocxModel; assets: MemoryAssetStore }> {
   const doc = new Y.Doc()
-  await docxCodec.createEmpty(doc, { name: 'a.docx', assets: new MemoryAssetStore() })
+  const assets = new MemoryAssetStore()
+  await docxCodec.createEmpty(doc, { name: 'a.docx', assets })
   doc.transact(() => writeFragment(doc, doc.getXmlFragment(BODY_FRAGMENT), schema.node('doc', null, paragraphs)))
-  return { doc, model: readDocxModel(doc) }
+  return { doc, model: readDocxModel(doc), assets }
 }
 
 describe('diff', () => {
@@ -232,6 +233,41 @@ describe('editing commands', async () => {
     expect(result.maps?.map(([map, key]) => `${map}/${key.split(':')[0]}`)).toEqual(['numbering/abstract', 'numbering/num'])
     expect(listed.doc.child(0).attrs.numPr).toContain('w:numId')
     expect(listed.doc.child(1).attrs.numPr).toBe(listed.doc.child(0).attrs.numPr)
+  })
+
+  it.each(['bullet', 'decimal', 'multilevel'] as const)('turns off direct and inherited %s lists across mixed selections and export', async (kind) => {
+    const numPr = packJml(['w:numPr', {}, ['w:numId', { 'w:val': '2' }]])
+    const { doc, assets } = await documentWith(
+      schema.node('paragraph', { pStyle: 'DerivedList', numPr }, schema.text('Direct and inherited')),
+      schema.node('paragraph', { pStyle: 'DerivedList' }, schema.text('Inherited only')),
+      schema.node('paragraph', { pStyle: 'Normal', numPr }, schema.text('Direct only')),
+    )
+    doc.transact(() => {
+      doc.getMap('styles').set(...style('BaseList', 'paragraph', [['w:pPr', {}, ['w:numPr', {}, ['w:numId', { 'w:val': '1' }]]]]))
+      doc.getMap('styles').set(...style('DerivedList', 'paragraph', [['w:basedOn', { 'w:val': 'BaseList' }]]))
+      doc.getMap('numbering').set('abstract:1', packJml(listDefinition(kind, '1')))
+      for (const id of ['1', '2']) doc.getMap('numbering').set(`num:${id}`, packJml(['w:num', { 'w:numId': id }, ['w:abstractNumId', { 'w:val': '1' }]]))
+    })
+    const context = new DocxViewContext(doc)
+    const reopened = new Y.Doc()
+    try {
+      let state = EditorState.create({ schema, doc: readDocxModel(doc).body })
+      state = state.apply(state.tr.setSelection(TextSelection.create(state.doc, 1, state.doc.content.size - 1)))
+      const result = toggleList(kind, state, context)!
+      const off = state.apply(result.tr)
+      expect(result.maps).toHaveLength(0)
+      for (let index = 0; index < off.doc.childCount; index++) {
+        const node = off.doc.child(index)
+        expect(effectiveNumPr(unpackJml(node.attrs.numPr), node.attrs.pStyle, context.styles)).toBeUndefined()
+        expect(node.attrs.numPr).toBe(index < 2 ? packJml(['w:numPr', {}, ['w:ilvl', { 'w:val': '0' }], ['w:numId', { 'w:val': '0' }]]) : null)
+        expect(node.attrs.pStyle).toBe(state.doc.child(index).attrs.pStyle)
+      }
+      writeFragment(doc, doc.getXmlFragment(BODY_FRAGMENT), off.doc)
+      const bytes = await docxCodec.exportFile(doc, { name: 'lists.docx', assets })
+      await docxCodec.importFile(reopened, bytes, { name: 'lists.docx', assets })
+      expect(docxCodec.toText(reopened)).toBe('Direct and inherited\nInherited only\nDirect only\n')
+      expect(readDocxModel(reopened).body.eq(off.doc)).toBe(true)
+    } finally { context.destroy(); doc.destroy(); reopened.destroy() }
   })
 
   it('allocates past a numbering map containing every former random id', async () => {

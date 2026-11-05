@@ -321,7 +321,7 @@ export function listKind(numId: string, context: DocxViewContext): ListKind | un
   const level = context.numbering.level(numId, 0)
   if (!level) return undefined
   if (level.numFmt === 'bullet') return 'bullet'
-  return /%2/.test(context.numbering.level(numId, 1)?.lvlText ?? '') ? 'multilevel' : 'decimal'
+  return /%1/.test(context.numbering.level(numId, 1)?.lvlText ?? '') ? 'multilevel' : 'decimal'
 }
 
 /** Spread replica allocations beyond imported ids without retrying occupied ranges indefinitely. */
@@ -354,7 +354,7 @@ export function toggleList(kind: ListKind, state: EditorState, context: DocxView
   if (allThisKind) {
     for (const { node, pos } of paragraphs) {
       // A list from the paragraph's style is turned off with numId 0.
-      const fromStyle = !jmlChild(jml(node.attrs.numPr), 'w:numId')
+      const fromStyle = effectiveNumPr(undefined, node.attrs.pStyle as string | null, context.styles)
       tr.setNodeMarkup(pos, undefined, { ...node.attrs, numPr: fromStyle ? packJml(['w:numPr', {}, ['w:ilvl', { 'w:val': '0' }], ['w:numId', { 'w:val': '0' }]]) : null, ind: null })
     }
     return { tr, maps }

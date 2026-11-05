@@ -17,6 +17,7 @@ import { MemoryAssetStore } from '../memory-assets.js'
 import { readDocxModel, fragmentToNode, storyFragmentName, writeFragment } from '../model.js'
 import { docxSchema } from '../schema.js'
 import { clipboardSerializer, rememberCopy } from './clipboard.js'
+import { listDefinition } from './commands.js'
 import { DocxEditor } from './editor.js'
 import { listRevisions } from './track-changes.js'
 
@@ -322,6 +323,34 @@ describe('find matches after edits', () => {
     writeFragment(doc, doc.getXmlFragment('body'), schema.node('doc', null, [schema.node('paragraph', null, schema.text('i i'))]))
     expect(editor.findState().count).toBe(0)
   })
+})
+
+it.each(['toolbar', 'Enter', 'Backspace'])('suppresses inherited list numbering with %s and reports resolved toolbar state', (action) => {
+  doc.transact(() => {
+    doc.getMap('styles').set('style:BaseList', packJml(['w:style', { 'w:type': 'paragraph', 'w:styleId': 'BaseList' }, ['w:pPr', {}, ['w:numPr', {}, ['w:numId', { 'w:val': '1' }]]]]))
+    doc.getMap('styles').set('style:DerivedList', packJml(['w:style', { 'w:type': 'paragraph', 'w:styleId': 'DerivedList' }, ['w:basedOn', { 'w:val': 'BaseList' }]]))
+    doc.getMap('numbering').set('abstract:1', packJml(listDefinition('decimal', '1')))
+    for (const id of ['1', '2']) doc.getMap('numbering').set(`num:${id}`, packJml(['w:num', { 'w:numId': id }, ['w:abstractNumId', { 'w:val': '1' }]]))
+  })
+  const view = editor.view
+  view.dispatch(view.state.tr.setNodeMarkup(0, undefined, { pStyle: 'DerivedList' }))
+  expect(editor.state().list).toBe('decimal')
+  view.dispatch(view.state.tr.setNodeMarkup(0, undefined, { pStyle: 'DerivedList', numPr: packJml(['w:numPr', {}, ['w:numId', { 'w:val': '2' }]]) }))
+  expect(editor.state().list).toBe('decimal')
+  if (action === 'toolbar') expect(editor.toggleList('decimal')).toBe(true)
+  else {
+    const event = new KeyboardEvent('keydown', { key: action, bubbles: true, cancelable: true })
+    view.dom.dispatchEvent(event)
+    expect(event.defaultPrevented).toBe(true)
+  }
+  expect(editor.state().list).toBeNull()
+  expect(view.state.doc.childCount).toBe(1)
+  expect(view.state.doc.firstChild!.attrs.pStyle).toBe('DerivedList')
+  expect(view.state.doc.firstChild!.attrs.numPr).toContain('"w:val":"0"')
+  expect(editor.toggleList('decimal')).toBe(true)
+  expect(editor.state().list).toBe('decimal')
+  expect(editor.toggleList('decimal')).toBe(true)
+  expect(editor.state().list).toBeNull()
 })
 
 it('does not put story numbering changes in the body undo stack', () => {
