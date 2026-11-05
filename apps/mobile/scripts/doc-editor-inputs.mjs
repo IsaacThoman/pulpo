@@ -51,6 +51,20 @@ export const EDITOR_BUNDLES = {
     ],
     packages: new RegExp(`^node_modules/(@codemirror/[^/]+|@lezer/[^/]+|y-codemirror\\.next|${SYNC_PACKAGES}|style-mod|crelt|w3c-keyname|@marijn/find-cluster-break)$`),
   },
+  document: {
+    root: join(editorRoot, 'docx'),
+    entry: 'main.ts',
+    output: generated('docxEditorBundle.generated.ts'),
+    exportName: 'DOCX_EDITOR_BUNDLE',
+    schemaVersion: { file: join(clientCoreSource, 'office/docx/format.ts'), pattern: /DOCX_SCHEMA_VERSION = (\d+)/ },
+    sources: [
+      join(editorRoot, 'docx'),
+      join(clientCoreSource, 'office/docx'), join(clientCoreSource, 'office/ooxml'), join(clientCoreSource, 'office/formats.ts'),
+      join(clientCoreSource, 'office/assets.ts'), join(clientCoreSource, 'office/index.ts'), join(clientCoreSource, 'office/live-format.ts'),
+      join(clientCoreSource, 'doc-schema/version.ts'), join(clientCoreSource, 'office/text/layout.ts'),
+    ],
+    packages: new RegExp(`^node_modules/(@tiptap/(pm|y-tiptap)|prosemirror-[^/]+|${SYNC_PACKAGES}|orderedmap|rope-sequence|w3c-keyname|fflate|@xmldom/xmldom)$`),
+  },
 }
 
 function walk(path) {

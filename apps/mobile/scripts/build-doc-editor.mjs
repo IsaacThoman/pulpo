@@ -25,6 +25,9 @@ export async function buildEditorPage(format) {
         { find: /^@pulpo\/client-core\/doc-schema$/, replacement: join(clientCoreSource, 'doc-schema/index.ts') },
         { find: /^@pulpo\/client-core\/office\/text$/, replacement: join(clientCoreSource, 'office/text/index.ts') },
         { find: /^@pulpo\/client-core\/office\/text\/view$/, replacement: join(clientCoreSource, 'office/text/view/index.ts') },
+        { find: /^@pulpo\/client-core\/office\/docx\/view$/, replacement: join(clientCoreSource, 'office/docx/view/index.ts') },
+        { find: /^@pulpo\/client-core\/office\/docx\/format$/, replacement: join(clientCoreSource, 'office/docx/format.ts') },
+        { find: /^@pulpo\/client-core\/office$/, replacement: join(clientCoreSource, 'office/index.ts') },
       ],
     },
     define: { 'process.env.NODE_ENV': JSON.stringify('production') },
@@ -51,7 +54,8 @@ export async function buildEditorPage(format) {
     "default-src 'none'",
     `script-src 'sha256-${scriptHash}'`,
     "style-src 'unsafe-inline'",
-    'img-src data:',
+    // Pictures in documents are object URLs the page makes from bytes the app hands it.
+    'img-src data: blob:',
     "base-uri 'none'",
     "form-action 'none'",
   ].join('; ')

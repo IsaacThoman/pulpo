@@ -31,6 +31,7 @@ import type { EditorBridgeState } from '../editor/bridge'
 import { editorBundleFor, type MobileEditorFormat } from '../editor/bundles'
 import { docEditorAvailable, DocEditorView, type DocEditorHandle } from '../editor/DocEditorView'
 import { TEXT_TOOLBAR, textToolbarState } from '../editor/textToolbar'
+import { DOCX_TOOLBAR, docxToolbarState } from '../editor/docxToolbar'
 import { deviceSessionLabel } from '../editor/presentation'
 import { fetchDocMarkdown } from '../api'
 import { filesErrorMessage } from '../display'
@@ -100,8 +101,9 @@ export function FileDocumentScreen({ navigation, route }: Props) {
   // The document's live format picks its editor; text and code files have no suggestions inline.
   const formatId = node?.format ?? 'markdown'
   const schemaSupported = useDocSchemaSupported(formatId) && Boolean(editorBundleFor(formatId))
-  const editorFormat: MobileEditorFormat = formatId === 'text' ? 'text' : 'markdown'
+  const editorFormat: MobileEditorFormat = formatId === 'text' ? 'text' : formatId === 'document' ? 'document' : 'markdown'
   const isText = editorFormat === 'text'
+  const isWord = editorFormat === 'document'
   const editor = useRef<DocEditorHandle>(null)
   const [handle, setHandle] = useState<DocHandle | null>(null)
   const [editorState, setEditorState] = useState<EditorBridgeState | null>(null)
@@ -148,11 +150,11 @@ export function FileDocumentScreen({ navigation, route }: Props) {
   // A document just created opens ready to type in, once.
   const focusedNew = useRef(false)
   useEffect(() => {
-    const ready = editorState?.loaded && (isText ? editorState.text && !editorState.text.readOnly : editorState.formatting?.editable)
+    const ready = editorState?.loaded && (isText ? editorState.text && !editorState.text.readOnly : isWord ? Boolean(editorState.docx) : editorState.formatting?.editable)
     if (!route.params.created || focusedNew.current || !ready) return
     focusedNew.current = true
     editor.current?.focus('start')
-  }, [editorState, isText, route.params.created])
+  }, [editorState, isText, isWord, route.params.created])
 
   // A copy of an earlier document under this id was dropped; start over without it.
   useEffect(() => {
@@ -217,6 +219,11 @@ export function FileDocumentScreen({ navigation, route }: Props) {
     if (!node) return
     try {
       // An open editor exports its own copy, which includes edits not yet synced.
+      // Word documents export on the server, which holds their pictures and original parts.
+      if (isWord) {
+        await shareFileItem(node)
+        return
+      }
       if (isText) {
         // A file kept with its original bytes (mixed line breaks, a legacy encoding) is exported
         // exactly by the server, which holds them; while edits wait to sync, this copy has more.
@@ -230,7 +237,7 @@ export function FileDocumentScreen({ navigation, route }: Props) {
     } catch (error) {
       operations.fail(error, node.name)
     }
-  }, [editorState?.loaded, handle, isText, node, operations, status.state, usable])
+  }, [editorState?.loaded, handle, isText, isWord, node, operations, status.state, usable])
   const trash = useCallback(() => {
     if (!node) return
     Alert.alert(`Move “${node.name}” to the trash?`, undefined, [
@@ -343,8 +350,8 @@ export function FileDocumentScreen({ navigation, route }: Props) {
   const body = readOnlyFallback ? (
     fallback.data ? (
       <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={[styles.fallback, { paddingBottom: insets.bottom + 24 }]}>
-        {isText
-          ? <Text selectable style={[styles.code, { color: theme.text }]}>{fallback.data.markdown}</Text>
+        {isText || isWord
+          ? <Text selectable style={[isText ? styles.code : null, { color: theme.text }]}>{fallback.data.markdown}</Text>
           : <SafeMarkdown>{fallback.data.markdown}</SafeMarkdown>}
       </ScrollView>
     ) : fallback.isError || (!fallback.isFetching && !fallback.data) ? (
@@ -361,6 +368,7 @@ export function FileDocumentScreen({ navigation, route }: Props) {
       ref={editor}
       format={editorFormat}
       name={node?.name}
+      docId={fileId}
       acquire={() => accountDocSessions(namespace).acquire(fileId)}
       editable={editable}
       placeholder="Start writing…"
@@ -439,8 +447,8 @@ export function FileDocumentScreen({ navigation, route }: Props) {
       {banner}
       {Platform.OS === 'android' ? <KeyboardAvoidingView behavior="padding" style={styles.flex}>{body}</KeyboardAvoidingView> : body}
       <FormattingBar
-        formatting={isText ? (editorState?.text ? textToolbarState(editorState) : null) : editorState?.formatting ?? null}
-        items={isText ? TEXT_TOOLBAR : undefined}
+        formatting={isText ? (editorState?.text ? textToolbarState(editorState) : null) : isWord ? (editorState?.docx ? docxToolbarState(editorState) : null) : editorState?.formatting ?? null}
+        items={isText ? TEXT_TOOLBAR : isWord ? DOCX_TOOLBAR : undefined}
         visible={formattingBarVisible}
         onCommand={(command) => editor.current?.toolbar(command as never)}
         onDismissKeyboard={() => editor.current?.dismissKeyboard()}

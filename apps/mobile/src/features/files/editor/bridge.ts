@@ -10,6 +10,8 @@ import {
   type EditorMessage,
   type EditorTheme,
   type HostMessage,
+  type DocxCommand,
+  type DocxPhoneState,
   type ReviewAction,
   type TextCommand,
 } from './protocol'
@@ -31,6 +33,8 @@ export interface EditorBridgeState {
   suggestions: { count: number; index: number | null; active: ActiveSuggestion | null }
   /** What a text editor reports (text and code files). */
   text: TextEditorState | null
+  /** What a Word editor reports. */
+  docx?: DocxPhoneState | null
   /** The editor's page reported a protocol or schema this app cannot use. */
   incompatible: boolean
 }
@@ -54,6 +58,8 @@ export interface EditorBridgeOptions {
   /** The owner resolved suggestions in the editor; replies' change counts may be stale. */
   onResolved?: () => void
   onError?: (message: string) => void
+  /** Fetches a document asset by hash, for editors that show pictures (Word). */
+  fetchAsset?: (hash: string) => Promise<Uint8Array>
 }
 
 const INITIAL_STATE: EditorBridgeState = {
@@ -135,6 +141,11 @@ export class EditorBridge {
   /** A text editor's toolbar command. */
   command(command: TextCommand): void {
     this.post({ type: 'command', session: this.session, command })
+  }
+
+  /** A Word editor's toolbar command. */
+  docxCommand(command: DocxCommand, value?: string): void {
+    this.post({ type: 'docxCommand', session: this.session, command, value })
   }
 
   setName(name: string): void {
@@ -230,6 +241,18 @@ export class EditorBridge {
       case 'textState':
         this.setState({ ...this.state, text: message.state, focused: message.state.focused })
         break
+      case 'docxState':
+        this.setState({ ...this.state, docx: message.state, focused: message.state.focused })
+        break
+      case 'asset': {
+        const session = this.session
+        const answer = (reply: { data?: string; error?: string }) => {
+          if (session === this.session) this.post({ type: 'asset', session, requestId: message.requestId, ...reply })
+        }
+        if (!this.options.fetchAsset || !/^[0-9a-f]{64}$/.test(message.hash)) answer({ error: 'Unavailable' })
+        else this.options.fetchAsset(message.hash).then((bytes) => answer({ data: bytesToBase64(bytes) }), (error: unknown) => answer({ error: error instanceof Error ? error.message : String(error) }))
+        break
+      }
       case 'suggestions':
         this.setState({ ...this.state, suggestions: { count: message.count, index: message.index, active: message.active } })
         break

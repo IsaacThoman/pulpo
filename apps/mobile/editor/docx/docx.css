@@ -1,0 +1,6 @@
+html, body { margin: 0; padding: 0; background: var(--desk, #f1f3f4); -webkit-text-size-adjust: 100%; }
+body { min-height: 100vh; }
+#editor { padding-bottom: var(--bottom-padding, 0px); }
+/* Phones show the document pageless and edge to edge, with a little room around the text. */
+.docx-web .docx-flow-host { padding: 20px 16px 48px !important; box-shadow: none; width: auto !important; }
+.docx-flow { -webkit-user-select: text; user-select: text; }

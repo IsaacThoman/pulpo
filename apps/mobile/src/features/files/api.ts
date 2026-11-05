@@ -19,6 +19,14 @@ import { cachedFileUri, recordCachedFile } from './cache'
  * the bearer session; Files routes answer 403 `files_disabled` while an administrator has Files off.
  */
 
+/** A live document's asset (a picture in a Word document) by its SHA-256. */
+export async function fetchDocAsset(docId: string, hash: string): Promise<Uint8Array> {
+  const path = `/api/files/${encodeURIComponent(docId)}/assets/${hash}`
+  const response = await fetch(apiUrl(path), { headers: nativeAuthorizationHeaders(path) })
+  if (!response.ok) throw new ApiError(response.status, 'asset_unavailable', `The picture could not load (${response.status})`)
+  return new Uint8Array(await response.arrayBuffer())
+}
+
 export function fetchFolder(folderId: string | null, signal?: AbortSignal): Promise<FileListing> {
   return apiRequest<FileListing>(folderId ? `/api/files?parentId=${encodeURIComponent(folderId)}` : '/api/files', { signal })
 }

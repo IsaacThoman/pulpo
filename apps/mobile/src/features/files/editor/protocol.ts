@@ -67,8 +67,34 @@ export type HostMessage =
   | { type: 'command'; session: number; command: TextCommand }
   /** The file was renamed; text editors pick their language from the name. */
   | { type: 'name'; session: number; name: string }
+  /** A Word editor command from the app's toolbar; `value` carries a link's address. */
+  | { type: 'docxCommand'; session: number; command: DocxCommand; value?: string }
+  /** The bytes of a document asset the editor asked for (base64), or why there are none. */
+  | { type: 'asset'; session: number; requestId: string; data?: string; error?: string }
 
 export type TextCommand = 'undo' | 'redo' | 'indentMore' | 'indentLess' | 'find' | 'wrap'
+
+export type DocxCommand =
+  | 'undo' | 'redo' | 'bold' | 'italic' | 'underline' | 'strike' | 'bulletList' | 'numberedList'
+  | 'indent' | 'outdent' | 'alignLeft' | 'alignCenter' | 'alignRight' | 'heading1' | 'heading2' | 'normal'
+  | 'link' | 'comment' | 'suggest' | 'layout'
+
+/** What a Word editor's toolbar shows as on or unavailable. */
+export interface DocxPhoneState {
+  bold: boolean
+  italic: boolean
+  underline: boolean
+  strike: boolean
+  list: 'bullet' | 'decimal' | 'multilevel' | null
+  alignment: 'left' | 'center' | 'right' | 'both'
+  styleId: string | null
+  link: string | null
+  canUndo: boolean
+  canRedo: boolean
+  suggesting: boolean
+  layout: 'print' | 'web'
+  focused: boolean
+}
 
 export interface ActiveSuggestion {
   id: string
@@ -89,6 +115,10 @@ export type EditorMessage =
   | { type: 'formatting'; session: number; formatting: FormattingState; focused: boolean }
   /** What a text editor's toolbar shows: undo state, cursor position, wrapping. */
   | { type: 'textState'; session: number; state: TextEditorState }
+  /** What a Word editor's toolbar shows. */
+  | { type: 'docxState'; session: number; state: DocxPhoneState }
+  /** The editor needs a document asset (a picture) the app fetches for it. */
+  | { type: 'asset'; session: number; requestId: string; hash: string }
   | { type: 'suggestions'; session: number; count: number; index: number | null; active: ActiveSuggestion | null }
   /** The editor's own cursor, as Yjs relative positions, for other sessions' awareness. */
   | { type: 'cursor'; session: number; cursor: { anchor: unknown; head: unknown } | null }

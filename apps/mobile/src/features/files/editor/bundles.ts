@@ -1,5 +1,6 @@
 import { EDITOR_BUNDLE } from './editorBundle.generated'
 import { TEXT_EDITOR_BUNDLE } from './textEditorBundle.generated'
+import { DOCX_EDITOR_BUNDLE } from './docxEditorBundle.generated'
 
 /**
  * The editor page this app ships for each live format (built by scripts/build-doc-editor.mjs).
@@ -8,6 +9,7 @@ import { TEXT_EDITOR_BUNDLE } from './textEditorBundle.generated'
 export const EDITOR_BUNDLES = {
   markdown: EDITOR_BUNDLE,
   text: TEXT_EDITOR_BUNDLE,
+  document: DOCX_EDITOR_BUNDLE,
 } as const
 
 export type MobileEditorFormat = keyof typeof EDITOR_BUNDLES
