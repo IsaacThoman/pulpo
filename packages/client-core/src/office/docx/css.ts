@@ -49,6 +49,7 @@ const THEME_COLOR_KEYS = new Set(Object.values(THEME_COLOR_VARS))
  * and angle brackets dropped, so it cannot end the string, the declaration, or the style sheet.
  */
 export function cssString(value: string): string {
+  // eslint-disable-next-line no-control-regex
   return `"${value.replace(/[\u0000-\u001f\u007f"\\<>]/g, '').slice(0, 200)}"`
 }
 
