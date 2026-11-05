@@ -63,5 +63,5 @@ export function docxToolbarState(state: EditorBridgeState): { active: string[]; 
   if (docx.link) active.push('link')
   if (docx.suggesting) active.push('suggest')
   if (docx.layout === 'print') active.push('layout')
-  return { active, disabled: [...!docx.canUndo ? ['undo'] : [], ...!docx.canRedo ? ['redo'] : []] }
+  return { active, disabled: [...!docx.canUndo ? ['undo'] : [], ...!docx.canRedo ? ['redo'] : [], ...docx.suggesting ? ['link'] : []] }
 }

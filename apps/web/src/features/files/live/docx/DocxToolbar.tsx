@@ -265,7 +265,7 @@ export function DocxToolbar({ editor, state, onRequestLink, onTogglePanel, panel
         </>
       )}
       <Separator />
-      {button(ui("Link"), <Link2 className="size-4" />, onRequestLink, { active: Boolean(state.link), shortcut: `${mod}K` })}
+      {button(ui("Link"), <Link2 className="size-4" />, onRequestLink, { active: Boolean(state.link), disabled: !state.untrackedFormattingEditable, shortcut: `${mod}K` })}
       {button(ui("Comment"), <MessageSquarePlus className="size-4" />, () => onTogglePanel('comments'), { active: panels.comments, disabled: false })}
       {button(ui("Image"), <ImagePlus className="size-4" />, () => imageInput.current?.click())}
       <input
@@ -359,7 +359,7 @@ export function DocxToolbar({ editor, state, onRequestLink, onTogglePanel, panel
             <DropdownMenuItem disabled={!state.tableColumnsEditable} onSelect={() => editor.mergeCells()}>{ui("Merge cells")}</DropdownMenuItem>
             <DropdownMenuItem disabled={!state.tableColumnsEditable} onSelect={() => editor.splitCell()}>{ui("Split cell")}</DropdownMenuItem>
             <DropdownMenuSub>
-              <DropdownMenuSubTrigger>{ui("Borders")}</DropdownMenuSubTrigger>
+              <DropdownMenuSubTrigger disabled={!state.untrackedFormattingEditable}>{ui("Borders")}</DropdownMenuSubTrigger>
               <DropdownMenuSubContent>
                 <DropdownMenuItem onSelect={() => editor.setCellBorders('all')}>{ui("All borders")}</DropdownMenuItem>
                 <DropdownMenuItem onSelect={() => editor.setCellBorders('outside')}>{ui("Outside borders")}</DropdownMenuItem>
@@ -368,7 +368,7 @@ export function DocxToolbar({ editor, state, onRequestLink, onTogglePanel, panel
               </DropdownMenuSubContent>
             </DropdownMenuSub>
             <DropdownMenuSub>
-              <DropdownMenuSubTrigger>{ui("Cell shading")}</DropdownMenuSubTrigger>
+              <DropdownMenuSubTrigger disabled={!state.untrackedFormattingEditable}>{ui("Cell shading")}</DropdownMenuSubTrigger>
               <DropdownMenuSubContent className="w-auto">
                 <div className="grid grid-cols-8 gap-1 p-1">
                   {TEXT_COLORS.map((color) => (

@@ -9,7 +9,7 @@ import { Awareness } from 'y-protocols/awareness'
 import * as Y from 'yjs'
 import { EditorBridge } from './bridge'
 import { DOCX_EDITOR_BUNDLE } from './docxEditorBundle.generated'
-import { docxToolbarCommands } from './docxToolbar'
+import { docxToolbarCommands, docxToolbarState } from './docxToolbar'
 import { TEXT_EDITOR_BUNDLE } from './textEditorBundle.generated'
 import type { EditorTheme } from './protocol'
 
@@ -140,6 +140,20 @@ describe('Word editor bridge with the built editor', () => {
     bridge.docxCommand('layout')
     await page.flush()
     expect(bridge.getState().docx?.layout).toBe('print')
+  })
+
+  it('disables and ignores the phone link command while suggesting', async () => {
+    const { doc, bridge, page } = await open('notes-fields.docx')
+    const before = Y.encodeStateAsUpdate(doc)
+    bridge.docxCommand('suggest')
+    await page.flush()
+    expect(docxToolbarState(bridge.getState()).disabled).toContain('link')
+    bridge.docxCommand('link', 'https://different.example')
+    await page.flush()
+    expect(Y.encodeStateAsUpdate(doc)).toEqual(before)
+    bridge.docxCommand('suggest')
+    await page.flush()
+    expect(docxToolbarState(bridge.getState()).disabled).not.toContain('link')
   })
 
   it('runs every command on the bar, menus included, without errors', async () => {

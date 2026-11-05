@@ -637,6 +637,61 @@ try {
     assert.deepEqual(await markers(), before)
   })
 
+  await step('disables unsupported link and cell formatting suggestions', async () => {
+    await open('?file=notes-fields.docx')
+    assert.equal(await page.getByRole('button', { name: 'Link', exact: true }).isEnabled(), true)
+    const link = await page.evaluate(() => {
+      const editor = window.harness.editors[0]
+      const view = editor.view
+      let target
+      view.state.doc.descendants((node, pos) => {
+        const link = node.marks.find((mark) => mark.type.name === 'link')
+        if (!target && link) target = { from: pos, to: pos + node.nodeSize, href: link.attrs.href }
+      })
+      const Selection = view.state.selection.constructor
+      view.focus()
+      view.dispatch(view.state.tr.setSelection(Selection.create(view.state.doc, target.from, target.to)))
+      const before = view.state.doc
+      editor.setMode('suggesting')
+      const changed = editor.setLink('https://different.example')
+      const removed = editor.setLink(null)
+      return { changed, removed, unchanged: before.eq(view.state.doc), href: editor.state().link, original: target.href }
+    })
+    assert.deepEqual(link, { changed: false, removed: false, unchanged: true, href: link.original, original: link.original })
+    assert.equal(await page.getByRole('button', { name: 'Link', exact: true }).isDisabled(), true)
+    let dialogs = 0
+    const dismiss = async (dialog) => { dialogs++; await dialog.dismiss() }
+    page.on('dialog', dismiss)
+    await page.keyboard.press(`${mod}+k`)
+    await page.waitForTimeout(100)
+    page.off('dialog', dismiss)
+    assert.equal(dialogs, 0)
+
+    await open('?file=tables.docx')
+    const cells = await page.evaluate(() => {
+      const editor = window.harness.editors[0]
+      const view = editor.view
+      let at
+      view.state.doc.descendants((node, pos) => { if (at === undefined && node.type.name === 'tableCell') at = pos + 2 })
+      const Selection = view.state.selection.constructor
+      view.focus()
+      view.dispatch(view.state.tr.setSelection(Selection.create(view.state.doc, at)))
+      editor.setMode('suggesting')
+      const before = view.state.doc
+      return { shading: editor.setCellShading('#ff0000'), borders: editor.setCellBorders('none'), unchanged: before.eq(view.state.doc) }
+    })
+    assert.deepEqual(cells, { shading: false, borders: false, unchanged: true })
+    await page.getByRole('button', { name: 'Table', exact: true }).click()
+    for (const name of ['Borders', 'Cell shading']) assert.equal(await page.getByRole('menuitem', { name, exact: true }).getAttribute('aria-disabled'), 'true')
+    await page.keyboard.press('Escape')
+    await page.evaluate(() => window.harness.editors[0].setMode('editing'))
+    await page.locator('button[aria-label="Link"]:enabled').waitFor()
+    assert.equal(await page.getByRole('button', { name: 'Link', exact: true }).isEnabled(), true)
+    await page.getByRole('button', { name: 'Table', exact: true }).click()
+    for (const name of ['Borders', 'Cell shading']) assert.notEqual(await page.getByRole('menuitem', { name, exact: true }).getAttribute('aria-disabled'), 'true')
+    await page.keyboard.press('Escape')
+  })
+
   await step('drops colliding note and comment references only for cross-document copies', async () => {
     await open('?file=notes-fields.docx')
     const result = await page.evaluate(() => {

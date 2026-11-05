@@ -20,7 +20,7 @@ export function DocxEditorView({ className, onEditor, toolbarSlot, ...props }: D
   useEffect(() => { onEditor?.(editor) }, [editor, onEditor])
 
   const requestLink = useCallback(() => {
-    if (!editor) return
+    if (!editor?.state().untrackedFormattingEditable) return
     const href = window.prompt(ui("Link URL"), editor.state().link ?? 'https://')
     if (href === null) return
     const trimmed = href.trim()

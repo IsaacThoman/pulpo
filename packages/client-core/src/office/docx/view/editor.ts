@@ -206,6 +206,7 @@ export interface DocxFormattingState {
   list: ListKind | null
   inTable: boolean
   tableColumnsEditable: boolean
+  untrackedFormattingEditable: boolean
   link: string | null
   canUndo: boolean
   canRedo: boolean
@@ -837,6 +838,7 @@ export class DocxEditor {
       list: list ? (listKind(list.numId, this.context) ?? null) : null,
       inTable: isInTable(state),
       tableColumnsEditable: !this.readOnly && this.modeValue !== 'suggesting',
+      untrackedFormattingEditable: !this.readOnly && this.modeValue !== 'suggesting',
       link: (link?.attrs.href as string | null) ?? null,
       canUndo: (undoState?.undoManager?.undoStack.length ?? 0) > 0,
       canRedo: (undoState?.undoManager?.redoStack.length ?? 0) > 0,
@@ -877,6 +879,7 @@ export class DocxEditor {
   }
 
   private request(kind: DocxRequest): boolean {
+    if (kind === 'link' && (this.readOnly || this.modeValue === 'suggesting')) return false
     if (!this.listeners.request.size) return false
     this.emit('request', kind)
     return true
@@ -1031,15 +1034,15 @@ export class DocxEditor {
   splitCell(): boolean { return this.modeValue !== 'suggesting' && this.tableCommand(splitCell) }
 
   setCellShading(hex: string | null): boolean {
-    return this.run(setCellShading(hex))
+    return this.modeValue !== 'suggesting' && this.run(setCellShading(hex))
   }
 
   setCellBorders(preset: BorderPreset): boolean {
-    return this.run(setCellBorders(preset))
+    return this.modeValue !== 'suggesting' && this.run(setCellBorders(preset))
   }
 
   setLink(href: string | null, text?: string): boolean {
-    return this.run(setLink(href, text))
+    return this.modeValue !== 'suggesting' && this.run(setLink(href, text))
   }
 
   insertPageBreak(): boolean {
