@@ -316,6 +316,13 @@ export function trackTransaction(state: EditorState, tr: Transaction, reviewer: 
           slice = new Slice(slice.content.cut(0, slice.content.size - slice.content.lastChild.nodeSize), slice.openStart, 0)
         }
       }
+      // Replacing an empty paragraph's whole shell also deletes no user content.
+      if (index === 0 && state.selection.empty && state.selection.$from.parent.type.name === 'paragraph'
+        && !state.selection.$from.parent.content.size && step.from === state.selection.from - 1 && step.to === state.selection.from + 1
+        && !slice.openStart && !slice.openEnd && slice.content.firstChild?.type.name === 'paragraph' && slice.content.lastChild?.type.name === 'paragraph') {
+        from = to = toOut.map(state.selection.from, 1)
+        slice = new Slice(slice.content, 1, 1)
+      }
       const deleted = from < to ? trackDelete(out, from, to, reviewer) : { from, to }
       // deleteSelection may fit an empty, open paragraph shell at the left edge. It is
       // structure for the surviving text, not a paragraph mark the reviewer inserted.

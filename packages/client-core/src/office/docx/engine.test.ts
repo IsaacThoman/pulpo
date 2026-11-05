@@ -295,6 +295,20 @@ describe('tracked changes', async () => {
     }
   })
 
+  it.each(['accept', 'reject'] as const)('keeps an empty paragraph’s original mark after a fitted insertion and %s all', (action) => {
+    const markRPr = packJml(['w:rPr', {}, ['w:i', {}]])
+    const original = schema.node('doc', null, [schema.node('paragraph', { markRPr }), p(run('After'))])
+    let state = EditorState.create({ schema, doc: original, plugins: [sectionEndsPlugin()] })
+    state = state.apply(state.tr.setSelection(TextSelection.create(state.doc, 1)))
+    const slice = new Slice(Fragment.fromArray([p(run('ABC')), p(run('DEF'))]), 0, 0)
+    state = state.apply(trackTransaction(state, pasteSelection(state, slice), reviewer)!)
+    expect(listRevisions(state.doc).some(({ kind }) => kind === 'paragraphDelete')).toBe(false)
+    expect(state.doc.child(1).attrs.markRPr).toBe(markRPr)
+    state = state.apply(resolveRevisions(state, listRevisions(state.doc), action)!)
+    if (action === 'reject') expect(state.doc.eq(original)).toBe(true)
+    else expect(state.doc.childCount).toBe(3)
+  })
+
   it('keeps the caret after each tracked keystroke', () => {
     let current = initial()
     current = current.apply(current.tr.setSelection(TextSelection.create(current.doc, 6)))
