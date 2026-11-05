@@ -4,8 +4,8 @@ export const FILES_HELP = `Usage: pulpo files <command> [options]
 Read and change the user's Pulpo Files that are attached to this chat.
 Files paths look like "Projects/Plan.md" (no leading slash; names are
 case-insensitive). Some files are live documents that people may be editing
-in Pulpo while you work: Markdown (.md) and text or code files (.txt, .py,
-.json, .html, …). You still pull and push them as ordinary files, and your
+in Pulpo while you work: Markdown (.md), spreadsheets (.xlsx, .xlsm, .xltx,
+.csv, .tsv), and text or code files (.txt, .py, .json, .html, …). You still pull and push them as ordinary files, and your
 push merges with their edits. Other files are stored as uploaded bytes.
 
 Browse:
@@ -28,7 +28,10 @@ Edit a document or file:
   (edit /workspace/files/Projects/Plan.md with your usual tools)
   pulpo files push
 Office files work the same way: edit a pulled .docx with python-docx, .xlsx
-with openpyxl, or .pptx with python-pptx, save it in place, then push.
+with openpyxl (keep_vba=True for .xlsm), or .pptx with python-pptx, save it in
+place, then push. Edit .csv and .tsv as text. Pulpo recalculates spreadsheet
+formulas after a push; openpyxl leaves formula references alone when you
+insert or delete rows, so fix formulas that point across them yourself.
 
 Create a file: write it under /workspace/files/<folder>/ and run
 \`pulpo files push\`, or push any workspace file to a chosen path:
@@ -60,8 +63,9 @@ Example:
 `,
   cat: `Usage: pulpo files cat <path>...
 
-Print documents or text files: Markdown documents as Markdown, other live
-documents as their plain text. Documents show pending suggestions as if they
+Print documents or text files: Markdown documents as Markdown, spreadsheets as
+each sheet's values in tab-separated lines followed by its formulas, other
+live documents as their plain text. Documents show pending suggestions as if they
 were accepted. Binary or very large files cannot be printed: pull them and
 inspect the local copy instead.
 

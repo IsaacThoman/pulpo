@@ -110,7 +110,9 @@ describe('document socket lifecycle', () => {
     asDoc('markdown')
     expect(await socketFixture().join(docId, { schemaVersions: { text: 1 } })).toMatchObject({ ok: false, error: 'schema_outdated' })
     asDoc('sheet')
-    expect(await socketFixture().join(docId, { schemaVersions: { sheet: 1 } })).toMatchObject({ ok: false, error: 'schema_outdated' })
+    expect(await socketFixture().join(docId, { schemaVersions: { sheet: 1 } })).toMatchObject({ ok: true, format: 'sheet' })
+    asDoc('no-such-format')
+    expect(await socketFixture().join(docId, { schemaVersions: { 'no-such-format': 1 } })).toMatchObject({ ok: false, error: 'schema_outdated' })
   })
 
   it('reports the generation the document state carries', async () => {
