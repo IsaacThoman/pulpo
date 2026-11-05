@@ -300,7 +300,12 @@ export function trackTransaction(state: EditorState, tr: Transaction, reviewer: 
       const from = toOut.map(step.from, 1)
       const to = Math.max(from, toOut.map(step.to, -1))
       const deleted = from < to ? trackDelete(out, from, to, reviewer) : { from, to }
-      const inserted = trackInsert(out, deleted.to, step.slice, reviewer)
+      // deleteSelection may fit an empty, open paragraph shell at the left edge. It is
+      // structure for the surviving text, not a paragraph mark the reviewer inserted.
+      const fittingShell = step.from < step.to && step.slice.openStart === 0 && step.slice.openEnd === 1
+        && step.slice.content.childCount === 1 && step.slice.content.firstChild?.type.name === 'paragraph'
+        && !step.slice.content.firstChild.content.size
+      const inserted = trackInsert(out, deleted.to, fittingShell ? Slice.empty : step.slice, reviewer, tr.getMeta('docx-paste-ends'))
       if (inserted) {
         insertEnd = { pos: inserted.end, step: out.steps.length }
         insertionStep = inserted.step

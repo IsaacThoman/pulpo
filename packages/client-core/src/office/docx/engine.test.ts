@@ -517,6 +517,28 @@ describe('tracked changes', async () => {
     expect(listRevisions(joined.doc).map(({ kind, author }) => ({ kind, author }))).toEqual([{ kind: 'paragraphInsert', author: 'Grace' }])
   })
 
+  it.each(['accept', 'reject'] as const)('resolves cross-paragraph deletions with %s without inserting fitting shells', (action) => {
+    const context = new DocxViewContext(doc)
+    const sectPr = packJml(['w:sectPr', {}, ['w:type', { 'w:val': 'nextPage' }]])
+    const markRPr = packJml(['w:rPr', {}, ['w:i', {}]])
+    const original = schema.node('doc', null, [p(run('ABC')), schema.node('paragraph', { sectPr, markRPr }, schema.text('DEF')), p(run('GHI'))])
+    try {
+      for (const enter of [false, true]) for (const [from, to] of [[1, 7], [2, 7], [1, 12]]) {
+        let state = EditorState.create({ schema, doc: original, plugins: [sectionEndsPlugin()] })
+        state = state.apply(state.tr.setSelection(TextSelection.create(state.doc, from!, to!)))
+        const tr = enter ? insertParagraphBreak(state, context)! : state.tr.deleteSelection()
+        const expected = state.apply(tr).doc
+        state = state.apply(trackTransaction(state, tr, reviewer)!)
+        expect(listRevisions(state.doc).filter(({ kind }) => kind === 'paragraphInsert')).toHaveLength(enter ? 1 : 0)
+        state = state.apply(resolveRevisions(state, listRevisions(state.doc), action)!)
+        expect(state.doc.eq(action === 'accept' ? expected : original)).toBe(true)
+        expect(listRevisions(state.doc)).toEqual([])
+      }
+    } finally {
+      context.destroy()
+    }
+  })
+
   it('records Enter as an inserted paragraph mark', () => {
     const start = initial()
     const split = start.apply(trackTransaction(start, start.tr.split(6), reviewer)!)
