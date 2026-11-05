@@ -1,4 +1,5 @@
 import type * as Y from 'yjs'
+import { transactChanges } from '../../assets.js'
 import { matchSequences } from '../diff/sequence.js'
 import { toA1Form, toIdForm } from '../model/formula-ids.js'
 import { relativeFormula } from '../model/references.js'
@@ -28,8 +29,7 @@ import { Stylesheet } from '../styles/stylesheet.js'
 export function applyWorkbook(doc: Y.Doc, incomingDoc: Y.Doc, origin?: unknown): { changed: boolean } {
   const target = new WorkbookModel(doc, origin ?? null)
   const incoming = new WorkbookModel(incomingDoc)
-  let changed = false
-  doc.transact((transaction) => {
+  const changed = transactChanges(doc, () => {
     if (!target.initialized) WorkbookModel.initialize(doc, {})
     const styleMap = mergeStyles(target, incoming)
     syncMeta(target, incoming)
@@ -40,8 +40,6 @@ export function applyWorkbook(doc: Y.Doc, incomingDoc: Y.Doc, origin?: unknown):
     for (const [targetSheet, incomingSheet] of pairs) syncSheet(targetSheet, incomingSheet, styleMap)
     syncNames(target, incoming)
     syncParts(target, incoming)
-    // Inserts show up as changed types, deletions only in the delete set.
-    changed = transaction.changed.size > 0 || transaction.deleteSet.clients.size > 0
   }, origin ?? null)
   return { changed }
 }

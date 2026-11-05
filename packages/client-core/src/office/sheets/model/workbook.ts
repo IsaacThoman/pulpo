@@ -2,6 +2,7 @@ import * as Y from 'yjs'
 import type { CellRange } from '../address.js'
 import { MAX_COLS, MAX_ROWS } from '../address.js'
 import { Axis, randomId } from './axis.js'
+import { WORKBOOK_MAP } from '../layout.js'
 import {
   SHEETS_SCHEMA_VERSION,
   STYLE_PROPS,
@@ -364,7 +365,7 @@ export class WorkbookModel {
     /** Transaction origin for edits made through this model (undo managers track it). */
     readonly origin: unknown = null,
   ) {
-    this.root = doc.getMap('workbook')
+    this.root = doc.getMap(WORKBOOK_MAP)
   }
 
   /** Lays out an empty workbook. Call on an empty doc. */

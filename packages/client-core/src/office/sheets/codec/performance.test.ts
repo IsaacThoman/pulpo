@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
-import { MemoryAssetStore } from '../../memory-assets.js'
+import { MemoryLiveAssetStore } from '../../assets.js'
 import { toIdForm } from '../model/formula-ids.js'
 import { WorkbookModel } from '../model/workbook.js'
 import { SheetCodec } from './codec.js'
@@ -12,7 +12,7 @@ import { SheetCodec } from './codec.js'
 describe('performance', () => {
   it('imports, exports, and re-applies a 100,000-row workbook within budget', async () => {
     const codec = new SheetCodec()
-    const assets = new MemoryAssetStore()
+    const assets = new MemoryLiveAssetStore()
     const source = new Y.Doc()
     const model = WorkbookModel.initialize(source)
     const sheet = model.addSheet('Big')

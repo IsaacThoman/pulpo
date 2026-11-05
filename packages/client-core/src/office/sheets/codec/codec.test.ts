@@ -2,7 +2,7 @@ import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate'
 import { describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
 import { LiveFormatError } from '../../live-format.js'
-import { MemoryAssetStore } from '../../memory-assets.js'
+import { MemoryLiveAssetStore } from '../../assets.js'
 import { toA1Form, toIdForm } from '../model/formula-ids.js'
 import { deleteAxis, insertAxis } from '../model/structure.js'
 import type { ConditionalFormat, DataValidation, Hyperlink, Note } from '../model/schema.js'
@@ -61,9 +61,9 @@ function worksheet(body: string, before = '', after = ''): string {
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="${MAIN}" xmlns:r="${R}" xmlns:x14ac="http://schemas.microsoft.com/office/spreadsheetml/2009/9/ac" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="x14ac">${before}<sheetData>${body}</sheetData>${after}</worksheet>`
 }
 
-async function open(bytes: Uint8Array, name = 'Book.xlsx'): Promise<{ doc: Y.Doc; model: WorkbookModel; codec: SheetCodec; assets: MemoryAssetStore }> {
+async function open(bytes: Uint8Array, name = 'Book.xlsx'): Promise<{ doc: Y.Doc; model: WorkbookModel; codec: SheetCodec; assets: MemoryLiveAssetStore }> {
   const codec = new SheetCodec()
-  const assets = new MemoryAssetStore()
+  const assets = new MemoryLiveAssetStore()
   const doc = new Y.Doc()
   await codec.importFile(doc, bytes, { name, assets })
   return { doc, model: new WorkbookModel(doc), codec, assets }
@@ -176,7 +176,7 @@ describe('xlsx import', () => {
   it('stops at the cell limit', async () => {
     const rows = Array.from({ length: 50 }, (_, row) => `<row r="${row + 1}">${Array.from({ length: 10 }, (_, col) => `<c r="${String.fromCharCode(65 + col)}${row + 1}"><v>1</v></c>`).join('')}</row>`).join('')
     const codec = new SheetCodec({ read: { maxCells: 100 } })
-    await expect(codec.importFile(new Y.Doc(), buildXlsx({ sheets: [{ name: 'S', xml: worksheet(rows) }] }), { name: 'a.xlsx', assets: new MemoryAssetStore() })).rejects.toMatchObject({ code: 'too_large' })
+    await expect(codec.importFile(new Y.Doc(), buildXlsx({ sheets: [{ name: 'S', xml: worksheet(rows) }] }), { name: 'a.xlsx', assets: new MemoryLiveAssetStore() })).rejects.toMatchObject({ code: 'too_large' })
   })
 
   it('never throws anything but LiveFormatError on damaged packages', async () => {
@@ -275,7 +275,7 @@ describe('xlsx export', () => {
 
   it('writes pictures placed in the editor into a new drawing part', async () => {
     const codec = new SheetCodec()
-    const assets = new MemoryAssetStore()
+    const assets = new MemoryLiveAssetStore()
     const doc = new Y.Doc()
     await codec.createEmpty(doc, { name: 'Pics.xlsx', assets })
     const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2, 3])
@@ -295,7 +295,7 @@ describe('xlsx export', () => {
 
   it('creates a valid empty workbook', async () => {
     const codec = new SheetCodec()
-    const assets = new MemoryAssetStore()
+    const assets = new MemoryLiveAssetStore()
     const doc = new Y.Doc()
     await codec.createEmpty(doc, { name: 'New.xlsx', assets })
     const files = parts(await codec.exportFile(doc, { name: 'New.xlsx', assets }))

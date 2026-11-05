@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
-import { MemoryAssetStore } from '../../memory-assets.js'
+import { MemoryLiveAssetStore } from '../../assets.js'
 import { WorkbookModel } from '../model/workbook.js'
 import { SheetCodec } from './codec.js'
 import { decodeText, encodeText, parseCsv, sniffDelimiter } from './csv.js'
 
 const codec = new SheetCodec()
-const assets = new MemoryAssetStore()
+const assets = new MemoryLiveAssetStore()
 
 async function roundTrip(bytes: Uint8Array, name = 'data.csv'): Promise<{ output: Uint8Array; doc: Y.Doc }> {
   const doc = new Y.Doc()

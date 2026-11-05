@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
-import { MemoryAssetStore } from '../../memory-assets.js'
+import { MemoryLiveAssetStore } from '../../assets.js'
 import { toIdForm } from '../model/formula-ids.js'
 import { deleteAxis, insertAxis } from '../model/structure.js'
 import { WorkbookModel } from '../model/workbook.js'
@@ -107,7 +107,7 @@ describe('diffWorkbooks', () => {
 
   it('compares files and caps very large changes', async () => {
     const codec = new SheetCodec()
-    const assets = new MemoryAssetStore()
+    const assets = new MemoryLiveAssetStore()
     const before = workbook()
     const after = copy(before.doc)
     for (let row = 10; row < 700; row++) after.model.sheets()[0]!.setCell(row, 0, { v: row })

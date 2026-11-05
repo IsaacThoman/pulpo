@@ -1,5 +1,6 @@
 import * as Y from 'yjs'
 import { LiveFormatError, type LiveFormatCodec, type LiveFormatContext } from '../../live-format.js'
+import { SHEET_EXTENSIONS, sheetMimeType } from '../layout.js'
 import { SHEETS_SCHEMA_VERSION, type SheetFormat } from '../model/schema.js'
 import { WorkbookModel } from '../model/workbook.js'
 import { applyWorkbook } from './apply.js'
@@ -8,18 +9,9 @@ import { readXlsx, type XlsxReadOptions } from './read-xlsx.js'
 import { sheetsToText } from './text.js'
 import { writeXlsx, type XlsxWriteOptions } from './write-xlsx.js'
 
-const MIME_TYPES: Record<SheetFormat, string> = {
-  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  xlsm: 'application/vnd.ms-excel.sheet.macroEnabled.12',
-  xltx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.template',
-  xltm: 'application/vnd.ms-excel.template.macroEnabled.12',
-  csv: 'text/csv',
-  tsv: 'text/tab-separated-values',
-}
-
 export function sheetFormatOf(name: string): SheetFormat {
   const extension = name.slice(name.lastIndexOf('.') + 1).toLowerCase()
-  if (extension in MIME_TYPES) return extension as SheetFormat
+  if ((SHEET_EXTENSIONS as readonly string[]).includes(extension)) return extension as SheetFormat
   throw new LiveFormatError('unsupported', `.${extension} files don't open as spreadsheets`)
 }
 
@@ -36,12 +28,12 @@ export interface SheetCodecOptions {
 export class SheetCodec implements LiveFormatCodec {
   readonly id = 'sheet' as const
   readonly schemaVersion = SHEETS_SCHEMA_VERSION
-  readonly extensions = ['xlsx', 'xlsm', 'xltx', 'xltm', 'csv', 'tsv'] as const
+  readonly extensions = SHEET_EXTENSIONS
 
   constructor(private readonly options: SheetCodecOptions = {}) {}
 
   mimeType(extension: string): string {
-    return MIME_TYPES[extension.toLowerCase() as SheetFormat] ?? MIME_TYPES.xlsx
+    return sheetMimeType(extension)
   }
 
   async createEmpty(doc: Y.Doc, context: LiveFormatContext): Promise<void> {
@@ -73,4 +65,22 @@ export class SheetCodec implements LiveFormatCodec {
   toText(doc: Y.Doc): string {
     return sheetsToText(doc)
   }
+
+  /** Hashes of every preserved part and picture, so unused assets can be collected. */
+  referencedAssets(doc: Y.Doc): string[] {
+    const model = new WorkbookModel(doc)
+    if (!model.initialized) return []
+    const hashes = new Set<string>()
+    for (const part of model.parts.values()) hashes.add(part.hash)
+    for (const sheet of model.sheets()) {
+      for (const raw of sheet.drawings.values()) {
+        const image = (raw as { image?: { hash: string } }).image
+        if (image) hashes.add(image.hash)
+      }
+    }
+    return [...hashes]
+  }
 }
+
+/** The codec the format registry uses. */
+export const sheetCodec = new SheetCodec()

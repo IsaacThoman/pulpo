@@ -2,6 +2,7 @@ import { liveFormat, liveFormatOfName, LIVE_FORMATS, type LiveFormatInfo } from 
 import type { LiveFormatCodec, LiveFormatId } from './live-format.js'
 import { markdownCodec } from './markdown/index.js'
 import { textCodec } from './text/codec.js'
+import { sheetCodec } from './sheets/codec/codec.js'
 
 /**
  * The codec of every live format in `LIVE_FORMATS`. This module loads all of them (Markdown pulls
@@ -10,6 +11,7 @@ import { textCodec } from './text/codec.js'
 const CODECS: Partial<Record<LiveFormatId, LiveFormatCodec>> = {
   markdown: markdownCodec,
   text: textCodec,
+  sheet: sheetCodec,
 }
 
 for (const format of LIVE_FORMATS) {

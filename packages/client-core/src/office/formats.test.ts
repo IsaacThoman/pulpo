@@ -28,9 +28,13 @@ describe('live format catalog', () => {
   })
 
   it('leaves formats other workstreams own, and binary files, as ordinary files', () => {
-    for (const name of ['data.csv', 'data.tsv', 'notebook.ipynb', 'logo.svg', 'photo.png', 'Budget.xlsx', 'archive.zip', 'noextension']) {
+    for (const name of ['notebook.ipynb', 'logo.svg', 'photo.png', 'Report.docx', 'archive.zip', 'noextension']) {
       expect(liveFormatOfName(name), name).toBeNull()
     }
+  })
+
+  it('opens spreadsheets and CSV as sheets', () => {
+    for (const name of ['data.csv', 'data.tsv', 'Budget.xlsx', 'Macro.XLSM', 'Template.xltx']) expect(liveFormatOfName(name)?.id, name).toBe('sheet')
   })
 
   it('serves a MIME type per extension', () => {
@@ -38,10 +42,12 @@ describe('live format catalog', () => {
     expect(liveMimeType(liveFormat('text')!, 'a.py')).toBe('text/x-python')
     expect(liveMimeType(liveFormat('text')!, 'Dockerfile')).toBe('text/plain')
     expect(liveMimeType(liveFormat('markdown')!, 'a.md')).toBe('text/markdown')
+    expect(liveMimeType(liveFormat('sheet')!, 'a.csv')).toBe('text/csv')
+    expect(liveMimeType(liveFormat('sheet')!, 'a.xlsx')).toBe('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
   })
 
   it('announces each format schema version, Markdown keeping the document schema version', () => {
-    expect(liveSchemaVersions()).toEqual({ markdown: DOC_SCHEMA_VERSION, text: 1 })
+    expect(liveSchemaVersions()).toEqual({ markdown: DOC_SCHEMA_VERSION, text: 1, sheet: 1 })
   })
 
   it('reads extensions the way file names are split elsewhere', () => {
@@ -59,7 +65,7 @@ describe('live format catalog', () => {
     }
     expect(liveFormatCodecOfName('x.rs')?.id).toBe('text')
     expect(liveFormatCodecOfName('x.bin')).toBeNull()
-    expect(() => liveFormatCodec('sheet')).toThrow(/Unknown live format/)
+    expect(() => liveFormatCodec('presentation')).toThrow(/Unknown live format/)
   })
 
   it('tells whether a document holds content', async () => {
@@ -67,7 +73,9 @@ describe('live format catalog', () => {
       const doc = new Y.Doc()
       expect(format.hasContent(doc)).toBe(false)
       const codec = liveFormatCodec(format.id)
-      await codec.importFile(doc, new TextEncoder().encode('# Title\n\nbody\n'), { name: `a.${format.extensions[0]}`, assets: new MemoryLiveAssetStore() })
+      const context = { name: `a.${format.extensions[0]}`, assets: new MemoryLiveAssetStore() }
+      if (format.id === 'sheet') await codec.createEmpty(doc, context)
+      else await codec.importFile(doc, new TextEncoder().encode('# Title\n\nbody\n'), context)
       expect(format.hasContent(doc)).toBe(true)
     }
   })

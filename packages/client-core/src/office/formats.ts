@@ -2,6 +2,7 @@ import type * as Y from 'yjs'
 import { FILE_DOC_MAX_MARKDOWN_LENGTH } from '@pulpo/contracts'
 import { DOC_FRAGMENT_NAME, DOC_SCHEMA_VERSION } from '../doc-schema/version.js'
 import type { LiveFormatId } from './live-format.js'
+import { SHEET_EXTENSIONS, SHEET_MAX_FILE_BYTES, SHEETS_SCHEMA_VERSION, sheetHasContent, sheetMimeType } from './sheets/layout.js'
 import { TEXT_EXTENSIONS, TEXT_FIELD, TEXT_FILE_NAMES, TEXT_MAX_FILE_BYTES, TEXT_SCHEMA_VERSION, textMimeType } from './text/layout.js'
 
 /**
@@ -56,8 +57,20 @@ export const TEXT_FORMAT: LiveFormatInfo = {
   hasContent: (doc) => doc.getText(TEXT_FIELD).length > 0,
 }
 
+export const SHEET_FORMAT: LiveFormatInfo = {
+  id: 'sheet',
+  schemaVersion: SHEETS_SCHEMA_VERSION,
+  extensions: SHEET_EXTENSIONS,
+  // xlsx files come back with every part the editor doesn't model kept as it was, and CSV files
+  // byte for byte, so an upload converts as soon as someone edits it.
+  lossless: true,
+  maxFileBytes: SHEET_MAX_FILE_BYTES,
+  mimeType: sheetMimeType,
+  hasContent: sheetHasContent,
+}
+
 /** Every live format, in the order creation menus list them. */
-export const LIVE_FORMATS: readonly LiveFormatInfo[] = [MARKDOWN_FORMAT, TEXT_FORMAT]
+export const LIVE_FORMATS: readonly LiveFormatInfo[] = [MARKDOWN_FORMAT, TEXT_FORMAT, SHEET_FORMAT]
 
 const BY_ID = new Map<string, LiveFormatInfo>(LIVE_FORMATS.map((format) => [format.id, format]))
 const BY_EXTENSION = new Map<string, LiveFormatInfo>()

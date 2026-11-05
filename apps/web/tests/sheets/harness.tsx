@@ -6,7 +6,7 @@ import { StrictMode, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import * as Y from 'yjs'
 import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from 'y-protocols/awareness'
-import { MemoryAssetStore } from '@pulpo/client-core/office'
+import { MemoryLiveAssetStore } from '@pulpo/client-core/office'
 import { SheetCodec, diffWorkbooks, type WorkbookDiff } from '@pulpo/client-core/office/sheets'
 import type { SheetView } from '@pulpo/client-core/office/sheets/view'
 import '../../src/index.css'
@@ -24,7 +24,7 @@ if (params.get('dark') === '1') document.documentElement.classList.add('dark')
 if (params.get('lang') === 'es') void i18n.changeLanguage('es-ES')
 
 const codec = new SheetCodec()
-const assets = new MemoryAssetStore()
+const assets = new MemoryLiveAssetStore()
 const docs = [new Y.Doc(), new Y.Doc()]
 /** The workbook as loaded, for the changes panel. */
 const original = new Y.Doc()

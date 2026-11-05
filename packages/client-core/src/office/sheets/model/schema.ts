@@ -30,8 +30,7 @@
  * range, both keep their change.
  */
 
-/** Bumped when the layout changes incompatibly. */
-export const SHEETS_SCHEMA_VERSION = 1
+export { SHEETS_SCHEMA_VERSION } from '../layout.js'
 
 /** What a tab is. Only worksheets are modeled; other sheet kinds are kept as parts. */
 export type SheetKind = 'worksheet' | 'chartsheet' | 'dialogsheet' | 'macrosheet'

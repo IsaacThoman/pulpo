@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
-import { MemoryAssetStore } from '../../memory-assets.js'
+import { MemoryLiveAssetStore } from '../../assets.js'
 import { SheetCodec } from '../codec/codec.js'
 import * as commands from '../view/commands.js'
 import { toA1Form, toIdForm } from './formula-ids.js'
@@ -102,7 +102,7 @@ describe('concurrent editing', () => {
       expect(snapshots[1]).toBe(snapshots[0])
       expect(snapshots[2]).toBe(snapshots[0])
       const codec = new SheetCodec()
-      const assets = new MemoryAssetStore()
+      const assets = new MemoryLiveAssetStore()
       const files = await Promise.all(docs.map((doc) => codec.exportFile(doc, { name: 'Fuzz.xlsx', assets })))
       const texts = await Promise.all(
         files.map(async (bytes) => {
