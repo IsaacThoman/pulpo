@@ -662,7 +662,7 @@ function resolveBatch(state: EditorState, revisions: Revision[], action: 'accept
     }
     return positions.map(pos, assoc)
   }
-  const trailing: number[] = []
+  const trailing: { pos: number; joinPrevious: boolean }[] = []
   const rowRevisions = revisions.filter(({ kind }) => kind === 'rowInsert' || kind === 'rowDelete')
   const removedRows = rowRevisions.filter(({ kind }) => (kind === 'rowInsert') === (action === 'reject'))
   const cells = revisions.filter(({ kind }) => kind === 'cellInsert' || kind === 'cellDelete' || kind === 'cellMerge')
@@ -754,9 +754,9 @@ function resolveBatch(state: EditorState, revisions: Revision[], action: 'accept
             } catch {
               // A boundary that cannot join stays.
             }
-          } else if (!after || !paragraph.content.size) {
+          } else {
             // Resolve text first so deleting it in this pass can remove the shell outright.
-            trailing.push(revision.from)
+            trailing.push({ pos: revision.from, joinPrevious: !after && kind === 'paragraphInsert' })
           }
         }
         break
@@ -787,12 +787,12 @@ function resolveBatch(state: EditorState, revisions: Revision[], action: 'accept
       }
     }
   }
-  for (const pos of trailing) {
+  for (const { pos, joinPrevious } of trailing) {
     const $end = out.doc.resolve(Math.min(out.doc.content.size, sourcePosition(pos, -1)))
     const node = $end.parent
     if (node.type.name !== 'paragraph') continue
     if (!node.content.size && out.doc.content.size > node.nodeSize) out.delete($end.before(), $end.after())
-    else if (out.doc.resolve($end.before()).nodeBefore?.type.name === 'paragraph') {
+    else if (joinPrevious && out.doc.resolve($end.before()).nodeBefore?.type.name === 'paragraph') {
       // A terminal end has no successor; keep the preceding end so later text rejection leaves no shell.
       out.join($end.before())
     }

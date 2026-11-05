@@ -63,6 +63,15 @@ describe('shared semantic revision views', () => {
     check(doc)
   })
 
+  it('removes a fully deleted paragraph before a table without joining unrelated paragraphs', () => {
+    const doc = model(p('kept'), p('gone', { markRPr: packJml(['w:rPr', {}, change('w:del')]) }, ['del']), table(row([cell('value')])))
+    expect(acceptedText(doc)).toBe('kept\n| value |\n')
+    expect(baseText(doc)).toBe('kept\ngone\n| value |\n')
+    const finalMark = model(p('first'), p('last', { markRPr: packJml(['w:rPr', {}, change('w:del')]) }))
+    expect(acceptedText(finalMark)).toBe('first\nlast\n')
+    check(doc)
+  })
+
   it('resolves row and cell insertions/deletions through the same table operations', () => {
     const doc = model(table(row([cell('row delete')], change('w:del')), row([cell('keep'), cell('cell delete', change('w:cellDel')), cell('cell insert', change('w:cellIns'))]), row([cell('row insert')], change('w:ins'))))
     expect(acceptedText(doc)).toBe('| keep | cell insert |\n| row insert |\n')
