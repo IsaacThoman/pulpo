@@ -8,15 +8,17 @@ const FORMAT = 'web application/x-pulpo-presentation+json'
 
 let lastCopied: { json: string; text: string } | undefined
 
-export async function writeClipboard(copied: { json: string; text: string }, data?: DataTransfer | null): Promise<void> {
-  lastCopied = copied
+export async function writeClipboard(copied: { json: string; text: string }): Promise<void> {
   try {
     if (!navigator.clipboard?.write || typeof ClipboardItem === 'undefined') throw new Error('unsupported')
     await navigator.clipboard.write([new ClipboardItem({ 'text/plain': new Blob([copied.text], { type: 'text/plain' }), [FORMAT]: new Blob([copied.json], { type: FORMAT }) })])
   } catch {
-    if (data) data.setData('text/plain', copied.text)
-    else await navigator.clipboard?.writeText?.(copied.text).catch(() => undefined)
+    // Copying can await asset downloads, so the original copy event is no longer writable.
+    // A failed write must reach cut callers before they delete the copied content.
+    if (!navigator.clipboard?.writeText) throw new Error('Clipboard writing is unavailable')
+    await navigator.clipboard.writeText(copied.text)
   }
+  lastCopied = copied
 }
 
 /** Our payload on the clipboard, if any. `text` is the clipboard's plain text, when the caller has it. */

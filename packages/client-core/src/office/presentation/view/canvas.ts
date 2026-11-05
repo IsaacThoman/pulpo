@@ -720,20 +720,20 @@ export class SlideCanvas {
   private readonly onCopy = (event: ClipboardEvent): void => {
     if (this.editor || !event.clipboardData) return
     event.preventDefault()
-    void this.copyTo(event.clipboardData).catch(() => {})
+    void this.copyTo().catch(() => {})
   }
 
-  private async copyTo(data: DataTransfer): Promise<boolean> {
+  private async copyTo(): Promise<boolean> {
     const copied = await this.controller.copy()
     if (!copied) return false
-    await writeClipboard(copied, data)
+    await writeClipboard(copied)
     return true
   }
 
   private readonly onCut = (event: ClipboardEvent): void => {
     if (this.editor || !event.clipboardData || this.controller.readOnly) return
     event.preventDefault()
-    void this.copyTo(event.clipboardData).then((copied) => {
+    void this.copyTo().then((copied) => {
       if (copied) this.controller.deleteSelection()
     }).catch(() => {})
   }

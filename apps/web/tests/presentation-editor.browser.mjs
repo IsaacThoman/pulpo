@@ -283,6 +283,59 @@ try {
     await page.close()
   })
 
+  for (const action of ['copy', 'cut']) {
+    for (const denied of [false, true]) {
+      await check(`delayed picture ${action} with unsupported custom clipboard (write denied: ${denied})`, async () => {
+        const { page, errors } = await open(context, 'deck=generated/pictures.pptx')
+        await page.locator('.pp-canvas-slide image[href^="blob:"]').first().waitFor({ state: 'attached' })
+        const picture = slideShapes(page).filter({ has: page.locator('image') }).first()
+        await picture.click()
+        await page.evaluate((key) => {
+          const controller = window.harness.controllers.a
+          const slide = controller.state.slide
+          const title = controller.slide(slide).shapes.find((shape) => shape.text)
+          window.harness.commands.setShapeText(window.harness.docA, slide, title.key, { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Picture clipboard regression' }] }] })
+          controller.selectShapes([key, title.key])
+        }, await picture.getAttribute('data-key'))
+        const original = await slideShapes(page).count()
+        await page.evaluate(async (denied) => {
+          await navigator.clipboard.writeText('previous clipboard')
+          Object.defineProperty(navigator.clipboard, 'write', { value: async () => {
+            window.clipboardWriteAttempted = true
+            throw new DOMException('Custom formats unsupported', 'NotSupportedError')
+          } })
+          if (denied) Object.defineProperty(navigator.clipboard, 'writeText', { value: async () => {
+            throw new DOMException('Write denied', 'NotAllowedError')
+          } })
+          const assets = window.harness.assets
+          const get = assets.get.bind(assets)
+          assets.get = async (hash) => {
+            window.copyAssetRequested = true
+            await new Promise((resolve) => { window.releaseCopyAsset = resolve })
+            return get(hash)
+          }
+        }, denied)
+        await page.locator('.pp-canvas').focus()
+        await page.keyboard.press(action === 'copy' ? 'Meta+c' : 'Meta+x')
+        await page.waitForFunction(() => window.copyAssetRequested)
+        // The native copy/cut event has returned before the asset becomes available.
+        await page.evaluate(() => window.releaseCopyAsset())
+        await page.waitForFunction(() => window.clipboardWriteAttempted)
+        if (denied) {
+          assert.equal(await page.evaluate(() => navigator.clipboard.readText()), 'previous clipboard')
+          assert.equal(await slideShapes(page).count(), original, 'a failed cut keeps the picture')
+        } else {
+          await page.waitForFunction(async () => await navigator.clipboard.readText() === 'Picture clipboard regression', undefined, { timeout: 5000 })
+          if (action === 'cut') await page.waitForFunction((count) => document.querySelectorAll('.pp-canvas-slide .pp-slide > [data-key]').length === count, original - 2)
+          await page.keyboard.press('Meta+v')
+          await page.waitForFunction((count) => document.querySelectorAll('.pp-canvas-slide .pp-slide > [data-key]').length === count, action === 'copy' ? original + 2 : original)
+        }
+        assert.deepEqual(errors, [])
+        await page.close()
+      })
+    }
+  }
+
   await check('presents with keyboard navigation, skips hidden slides, and shows presenter view', async () => {
     const { page, errors } = await open(context, 'deck=generated/layouts-notes-sections.pptx')
     await page.getByRole('button', { name: 'Present' }).click()
