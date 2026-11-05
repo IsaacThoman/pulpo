@@ -10,7 +10,7 @@ import { BODY_FRAGMENT, readDocxModel, writeFragment, type DocxModel } from './m
 import { ListCounter, Numbering, formatNumber } from './numbering.js'
 import { docxSchema, inlineMarks } from './schema.js'
 import { StyleSheet, cellConditions, mergeElement, tableLook } from './styles.js'
-import { clearFormatting, findMatches, insertPageBreak, listDefinition, replaceMatches, setAlignment, setFontSize, toggleList, toggleRunProperty, wordCount } from './view/commands.js'
+import { clearFormatting, findMatches, insertTable, insertPageBreak, listDefinition, replaceMatches, setAlignment, setFontSize, toggleList, toggleRunProperty, wordCount } from './view/commands.js'
 import { DocxViewContext } from './view/context.js'
 import { listRevisions, resolveRevisions, trackTransaction } from './view/track-changes.js'
 
@@ -212,6 +212,64 @@ describe('tracked changes', async () => {
     expect(centered.doc.child(0).attrs.pPrChange).toContain('w:pPrChange')
     const restored = centered.apply(resolveRevisions(centered, listRevisions(centered.doc), 'reject')!)
     expect(restored.doc.child(0).attrs.jc).toBeNull()
+  })
+
+  it.each(['accept', 'reject'] as const)('resolves overlapping format-then-delete revisions with %s all', (action) => {
+    const start = initial()
+    const bolded = start.apply(trackTransaction(start, start.tr.addMark(1, 12, schema.mark('b', { v: packJml(['w:b', {}]) })), reviewer)!)
+    const deleted = bolded.apply(trackTransaction(bolded, bolded.tr.delete(1, 12), reviewer)!)
+    const resolved = deleted.apply(resolveRevisions(deleted, listRevisions(deleted.doc), action)!)
+    expect(listRevisions(resolved.doc)).toEqual([])
+    expect(resolved.doc.textContent).toBe(action === 'accept' ? '' : 'Hello world')
+    if (action === 'reject') expect(resolved.doc.firstChild!.firstChild!.marks).toEqual([])
+  })
+
+  const table = () => schema.node('table', null, [schema.node('tableRow', null, [schema.node('tableCell', null, [p(run('Cell text'))])])])
+  const tableCount = (doc: ProseMirrorNode) => {
+    let count = 0
+    doc.descendants((node) => { if (node.type.name === 'table') count++ })
+    return count
+  }
+
+  it.each(['accept', 'reject'] as const)('resolves inserted table rows with %s all', (action) => {
+    const start = initial()
+    const context = new DocxViewContext(doc)
+    const inserted = start.apply(trackTransaction(start, insertTable(2, 2)(start, context)!, reviewer)!)
+    context.destroy()
+    expect(listRevisions(inserted.doc).filter((revision) => revision.kind === 'rowInsert')).toHaveLength(2)
+    const resolved = inserted.apply(resolveRevisions(inserted, listRevisions(inserted.doc), action)!)
+    expect(listRevisions(resolved.doc)).toEqual([])
+    expect(tableCount(resolved.doc)).toBe(action === 'accept' ? 1 : 0)
+  })
+
+  it.each(['accept', 'reject'] as const)('resolves deleted table rows with %s all', (action) => {
+    const start = EditorState.create({ schema, doc: schema.node('doc', null, [table(), p(run('After'))]) })
+    const deleted = start.apply(trackTransaction(start, start.tr.delete(0, start.doc.firstChild!.nodeSize), reviewer)!)
+    expect(tableCount(deleted.doc)).toBe(1)
+    expect(listRevisions(deleted.doc).some((revision) => revision.kind === 'rowDelete')).toBe(true)
+    const resolved = deleted.apply(resolveRevisions(deleted, listRevisions(deleted.doc), action)!)
+    expect(listRevisions(resolved.doc)).toEqual([])
+    expect(tableCount(resolved.doc)).toBe(action === 'accept' ? 0 : 1)
+    expect(resolved.doc.textContent).toBe(action === 'accept' ? 'After' : 'Cell textAfter')
+  })
+
+  it('tracks individual row insertion and deletion and exports pending row markup', async () => {
+    const start = EditorState.create({ schema, doc: schema.node('doc', null, [table()]) })
+    const row = table().firstChild!
+    const inserted = start.apply(trackTransaction(start, start.tr.insert(1 + row.nodeSize, row), reviewer)!)
+    expect(listRevisions(inserted.doc).filter((revision) => revision.kind === 'rowInsert')).toHaveLength(1)
+    const rejected = inserted.apply(resolveRevisions(inserted, listRevisions(inserted.doc), 'reject')!)
+    expect(rejected.doc.eq(start.doc)).toBe(true)
+    const deleted = start.apply(trackTransaction(start, start.tr.delete(1, 1 + row.nodeSize), reviewer)!)
+    const restored = deleted.apply(resolveRevisions(deleted, listRevisions(deleted.doc), 'reject')!)
+    expect(restored.doc.eq(start.doc)).toBe(true)
+    const assets = new MemoryAssetStore()
+    const target = new Y.Doc()
+    await docxCodec.createEmpty(target, { name: 'a.docx', assets })
+    target.transact(() => writeFragment(target, target.getXmlFragment(BODY_FRAGMENT), inserted.doc))
+    const { OoxmlPackage } = await import('../ooxml/package.js')
+    const xml = OoxmlPackage.read(await docxCodec.exportFile(target, { name: 'a.docx', assets })).text('word/document.xml')!
+    expect(xml).toMatch(/<w:trPr><w:ins w:id="\d+" w:author="Ada" w:date="2026-11-04T10:00:00Z"\/><\/w:trPr>/)
   })
 
   it('records Enter as an inserted paragraph mark', () => {

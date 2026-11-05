@@ -86,8 +86,42 @@ function withMarkRPrChild(attrs: Record<string, unknown>, child: JmlElement | un
   return { ...attrs, markRPr: children.length || Object.keys(markRPr[1]).length ? packJml([markRPr[0], markRPr[1], ...children]) : null }
 }
 
+/** Row revisions live in trPr, separate from revisions on their cell text. */
+function withRowRevision(attrs: Record<string, unknown>, child: JmlElement | undefined, remove: string[]): Record<string, unknown> {
+  const trPr = jml(attrs.trPr) ?? ['w:trPr', {}]
+  const children = jmlElements(trPr).filter((element) => !remove.includes(element[0]))
+  if (child) children.push(child)
+  return { ...attrs, trPr: children.length || Object.keys(trPr[1]).length ? packJml([trPr[0], trPr[1], ...children]) : null }
+}
+
+function deleteRow(out: Transaction, pos: number): void {
+  const row = out.doc.nodeAt(pos)
+  if (row?.type.name !== 'tableRow') return
+  const $pos = out.doc.resolve(pos)
+  if ($pos.parent.type.name === 'table' && $pos.parent.childCount === 1) {
+    const tablePos = $pos.before()
+    out.delete(tablePos, tablePos + $pos.parent.nodeSize)
+  } else out.delete(pos, pos + row.nodeSize)
+}
+
 /** Marks [from, to) of `out` deleted, actually removing the reviewer's own insertions. */
 function trackDelete(out: Transaction, from: number, to: number, reviewer: Reviewer): { from: number; to: number } {
+  const before = out.steps.length
+  const rows: number[] = []
+  out.doc.nodesBetween(from, to, (node, pos) => {
+    if (node.type.name !== 'tableRow') return true
+    if (pos >= from && pos + node.nodeSize <= to) rows.push(pos)
+    return true
+  })
+  for (const pos of rows.reverse()) {
+    const row = out.doc.nodeAt(pos)!
+    const inserted = jmlChild(jml(row.attrs.trPr), 'w:ins')
+    if (inserted && jmlAttr(inserted, 'w:author') === reviewer.author) deleteRow(out, pos)
+    else if (!jmlChild(jml(row.attrs.trPr), 'w:del')) out.setNodeMarkup(pos, undefined, withRowRevision(row.attrs, ['w:del', revisionAttrs(reviewer)], []))
+  }
+  const rowMapping = out.mapping.slice(before)
+  from = rowMapping.map(from, 1)
+  to = Math.max(from, rowMapping.map(to, -1))
   // Own insertions vanish for real, as in Word.
   const own: { from: number; to: number }[] = []
   out.doc.nodesBetween(from, to, (node, pos) => {
@@ -99,7 +133,7 @@ function trackDelete(out: Transaction, from: number, to: number, reviewer: Revie
     return false
   })
   for (const range of own.reverse()) out.delete(range.from, range.to)
-  const mapping = new Mapping(out.steps.slice(out.steps.length - own.length).map((step) => step.getMap()))
+  const mapping = out.mapping.slice(out.steps.length - own.length)
   const start = mapping.map(from, 1)
   const end = Math.max(start, mapping.map(to, -1))
   const deletion = out.doc.type.schema.marks.del!.create({ v: packJml(['w:del', revisionAttrs(reviewer), '\u0000']) })
@@ -135,6 +169,12 @@ function trackInsert(out: Transaction, pos: number, slice: Slice, reviewer: Revi
   const map = out.mapping.slice(before)
   const end = map.map(pos, 1)
   const start = map.map(pos, -1)
+  out.doc.nodesBetween(start, end, (node, nodePos) => {
+    if (node.type.name === 'tableRow' && nodePos >= start && nodePos + node.nodeSize <= end) {
+      out.setNodeMarkup(nodePos, undefined, withRowRevision(node.attrs, ['w:ins', revisionAttrs(reviewer)], ['w:ins', 'w:del']))
+    }
+    return true
+  })
   const mark = insertionMark(out, start, reviewer)
   changeMarks(out, start, end, (marks) => mark.addToSet(marks.filter((existing) => existing.type.name !== 'del')))
   // Paragraph marks the insertion created (Enter, pasted paragraphs) are inserted too.
@@ -235,7 +275,7 @@ function recordParagraphChanges(state: EditorState, out: Transaction, reviewer: 
   }
 }
 
-export type RevisionKind = 'insert' | 'delete' | 'moveFrom' | 'moveTo' | 'format' | 'paragraphInsert' | 'paragraphDelete' | 'paragraphFormat'
+export type RevisionKind = 'insert' | 'delete' | 'moveFrom' | 'moveTo' | 'format' | 'paragraphInsert' | 'paragraphDelete' | 'paragraphFormat' | 'rowInsert' | 'rowDelete'
 
 export interface Revision {
   /** Stable within a document version: kind plus Word's revision id (or position for marks without). */
@@ -255,6 +295,12 @@ export function listRevisions(doc: ProseMirrorNode): Revision[] {
   const revisions: Revision[] = []
   const open = new Map<string, Revision>()
   doc.descendants((node, pos) => {
+    if (node.type.name === 'tableRow') {
+      for (const [name, kind] of [['w:ins', 'rowInsert'], ['w:del', 'rowDelete']] as const) {
+        const element = jmlChild(jml(node.attrs.trPr), name)
+        if (element) revisions.push({ key: `${kind}:${jmlAttr(element, 'w:id') ?? pos}:${pos}`, kind, author: jmlAttr(element, 'w:author'), date: jmlAttr(element, 'w:date'), from: pos, to: pos + node.nodeSize, text: node.textContent })
+      }
+    }
     if (node.type.name === 'paragraph') {
       const markRPr = jml(node.attrs.markRPr)
       const end = pos + node.nodeSize - 1
@@ -316,11 +362,22 @@ function restoreFormat(out: Transaction, from: number, to: number): void {
 export function resolveRevisions(state: EditorState, revisions: Revision[], action: 'accept' | 'reject'): Transaction | null {
   if (!revisions.length) return null
   const out = state.tr
-  // Last first, so earlier positions stay valid.
+  // Overlapping marks can delete the same range; map every later resolution through those edits.
   for (const revision of [...revisions].sort((a, b) => b.from - a.from)) {
-    const { from, to, kind } = revision
+    const { kind } = revision
+    const from = out.mapping.map(revision.from, 1)
+    const to = Math.max(from, out.mapping.map(revision.to, -1))
+    if (from === to && revision.from !== revision.to) continue
     const remove = (kind === 'insert' || kind === 'moveTo') ? action === 'reject' : (kind === 'delete' || kind === 'moveFrom') ? action === 'accept' : false
     switch (kind) {
+      case 'rowInsert':
+      case 'rowDelete': {
+        const row = out.doc.nodeAt(from)
+        if (row?.type.name !== 'tableRow') break
+        if ((kind === 'rowInsert') === (action === 'reject')) deleteRow(out, from)
+        else out.setNodeMarkup(from, undefined, withRowRevision(row.attrs, undefined, [kind === 'rowInsert' ? 'w:ins' : 'w:del']))
+        break
+      }
       case 'insert':
       case 'delete':
       case 'moveFrom':

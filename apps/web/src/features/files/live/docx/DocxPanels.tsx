@@ -173,6 +173,8 @@ const KIND_LABELS = (): Record<Revision['kind'], string> => ({
   format: ui("Formatted"),
   paragraphInsert: ui("Paragraph inserted"),
   paragraphDelete: ui("Paragraph deleted"),
+  rowInsert: ui("Row inserted"),
+  rowDelete: ui("Row deleted"),
   paragraphFormat: ui("Paragraph formatted"),
 })
 

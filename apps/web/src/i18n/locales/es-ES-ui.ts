@@ -2670,6 +2670,8 @@ const esUi: Record<string, string> = {
   "Moved to": "Movido a",
   "Formatted": "Formato modificado",
   "Paragraph inserted": "Párrafo insertado",
+  "Row inserted": "Fila insertada",
+  "Row deleted": "Fila eliminada",
   "Paragraph deleted": "Párrafo eliminado",
   "Paragraph formatted": "Formato de párrafo modificado",
   "Tracked changes": "Control de cambios",
