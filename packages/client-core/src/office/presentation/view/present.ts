@@ -1,5 +1,6 @@
 import { textToPlain } from '../text.js'
 import type { PresentationController } from './controller.js'
+import { MediaPlayer } from './media.js'
 import { ensureStyles } from './styles.js'
 
 /**
@@ -25,20 +26,21 @@ export class Presenter {
   private touch?: { x: number; y: number; time: number }
   private readonly unsubscribe: () => void
   private numberBuffer = ''
+  private readonly media: MediaPlayer
 
   constructor(
     private readonly controller: PresentationController,
     private readonly options: PresenterOptions,
   ) {
     ensureStyles(document)
+    this.media = new MediaPlayer(controller)
     this.element = document.createElement('div')
     this.element.className = options.presenterView ? 'pp-presenter' : 'pp-present'
     this.element.tabIndex = 0
     this.element.setAttribute('role', 'dialog')
     this.element.setAttribute('aria-modal', 'true')
     document.body.append(this.element)
-    const slides = this.visibleSlides()
-    this.index = Math.max(0, options.startAt ? slides.indexOf(options.startAt) : 0)
+    this.index = options.startAt ? this.visibleIndexFrom(options.startAt) : 0
     // On the document, not the element: menus that opened the show hand focus back to their trigger.
     document.addEventListener('keydown', this.onKeyDown, true)
     this.element.addEventListener('click', this.onClick)
@@ -56,6 +58,24 @@ export class Presenter {
   /** Slides shown in the show: everything but hidden slides. */
   visibleSlides(): string[] {
     return this.controller.slideKeys().filter((key) => !this.controller.slide(key)?.hidden)
+  }
+
+  /** The shown slide at or after `key` in the deck (a hidden slide starts the show at the next one). */
+  private visibleIndexFrom(key: string): number {
+    const all = this.controller.slideKeys()
+    const visible = this.visibleSlides()
+    const start = Math.max(0, all.indexOf(key))
+    for (let index = start; index < all.length; index++) {
+      const at = visible.indexOf(all[index]!)
+      if (at >= 0) return at
+    }
+    return Math.max(0, visible.length - 1)
+  }
+
+  /** Slide number `number` of the deck, counting hidden slides, as PowerPoint's number + Enter does. */
+  goToSlideNumber(number: number): void {
+    const key = this.controller.slideKeys()[Math.max(0, Math.min(this.controller.slideKeys().length - 1, number - 1))]
+    if (key) this.goTo(this.visibleIndexFrom(key))
   }
 
   current(): string | undefined {
@@ -83,6 +103,7 @@ export class Presenter {
 
   exit(): void {
     if (this.timer) clearInterval(this.timer)
+    this.media.stop()
     this.unsubscribe()
     window.removeEventListener('resize', this.draw)
     document.removeEventListener('keydown', this.onKeyDown, true)
@@ -108,6 +129,19 @@ export class Presenter {
     const slides = this.visibleSlides()
     if (this.index >= slides.length) this.index = Math.max(0, slides.length - 1)
     const key = slides[this.index]
+    // Redrawing replaces the slide's DOM: a playing video moves into the new one, or stops on another slide.
+    const playing = this.media.element
+    if (playing && (this.media.slide !== key || this.ended)) this.media.stop()
+    const resume = playing !== undefined && !playing.paused
+    queueMicrotask(() => {
+      const media = this.media.element
+      if (!media || this.media.slide !== key) return
+      const content = this.element.querySelector<HTMLElement>('.pp-present-content')
+      if (!content || media.parentElement === content) return
+      content.append(media)
+      // Taking a media element out of the page pauses it.
+      if (resume) void media.play().catch(() => undefined)
+    })
     if (!this.options.presenterView) {
       if (this.ended || !key) {
         this.element.innerHTML = `<div class="pp-present-end">${escapeHtml(this.controller.labels.endOfShow)}</div>`
@@ -152,7 +186,7 @@ export class Presenter {
       return
     }
     if (key === 'Enter' && this.numberBuffer) {
-      this.goTo(Number(this.numberBuffer) - 1)
+      this.goToSlideNumber(Number(this.numberBuffer))
       this.numberBuffer = ''
       return
     }
@@ -173,7 +207,15 @@ export class Presenter {
   }
 
   private readonly onClick = (event: MouseEvent): void => {
-    if ((event.target as Element).closest('.pp-media')) return
+    const target = event.target as Element
+    if (target.closest('.pp-media-player')) return
+    const button = target.closest<HTMLElement>('.pp-media')
+    if (button) {
+      const content = button.closest<HTMLElement>('.pp-present-content')
+      const key = this.current()
+      if (content && key) void this.media.play(button, content, key)
+      return
+    }
     if (this.options.presenterView) return
     if (this.ended) this.exit()
     else this.next()

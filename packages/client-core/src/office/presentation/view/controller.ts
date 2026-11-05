@@ -3,6 +3,7 @@ import type { Awareness } from 'y-protocols/awareness'
 import * as Y from 'yjs'
 import type { LiveAssetStore } from '../../live-format.js'
 import { copyContent, pasteShapes, pasteSlides, parseClipboard, type PresentationClipboard } from '../clipboard.js'
+import { slideSections } from '../sections.js'
 import * as commands from '../commands.js'
 import { editAllParagraphs, markAll, markValueAt, markValueIn, paragraphAt, paragraphCommand, paragraphEdits, setMarkCommand, type MarkValue, type ParagraphEdit, type RunMark } from '../formatting.js'
 import type { PartSnapshot, ShapeSnapshot, SlideSnapshot, Xfrm } from '../model.js'
@@ -233,7 +234,11 @@ export class PresentationController {
       return
     }
     const shapes = this.state.shapes.filter((key) => commands.shapeMap(this.doc, slide, key))
-    if (shapes.length !== this.state.shapes.length) this.setState({ shapes })
+    // An editor on text someone else deleted would swallow every keystroke: close it.
+    const editing = this.state.editing
+    const editingGone = editing && (editing.row && editing.column ? !commands.cellFragment(this.doc, editing.slide, editing.shape, editing.row, editing.column) : !commands.shapeMap(this.doc, editing.slide, editing.shape))
+    if (editingGone) this.setState({ shapes, editing: undefined })
+    else if (shapes.length !== this.state.shapes.length) this.setState({ shapes })
   }
 
   private lastIndex = 0
@@ -281,7 +286,9 @@ export class PresentationController {
     const root = presentationRoot(this.doc)
     const sections = root.get('sections') as Y.Map<{ name: string; id: string }> | undefined
     const keys = orderedKeys(root.get('sectionOrder') as Y.Array<string>, sections)
-    return keys.map((key) => ({ key, name: sections!.get(key)!.name, firstSlide: this.slideKeys().find((slide) => this.slide(slide)?.section === key) }))
+    const slides = this.slideKeys()
+    const assigned = slideSections(keys, slides.map((slide) => ({ section: this.slide(slide)?.section })))
+    return keys.map((key) => ({ key, name: sections!.get(key)!.name, firstSlide: slides[assigned.indexOf(key)] }))
   }
 
   renderOptions(mode: 'edit' | 'view', idPrefix: string, slideKey: string, hideTextOf?: ReadonlySet<string>): SlideRenderOptions {
@@ -314,25 +321,39 @@ export class PresentationController {
   assetUrl(partPath: string): string | undefined {
     const cached = this.urls.get(partPath)
     if (cached !== undefined) return cached ?? undefined
+    void this.loadAssetUrl(partPath)
+    return undefined
+  }
+
+  /** The object URL for an image or media part, once it has loaded (undefined if it cannot be shown). */
+  loadAssetUrl(partPath: string): Promise<string | undefined> {
+    const cached = this.urls.get(partPath)
+    if (cached) return Promise.resolve(cached)
+    const pending = this.loadingUrls.get(partPath)
+    if (pending) return pending
+    if (cached === null) return Promise.resolve(undefined)
     const part = readPart(presentationRoot(this.doc), partPath)
     const asset = part?.asset
-    if (!asset || !displayableMediaType(asset.mimeType)) {
-      this.urls.set(partPath, null)
-      return undefined
-    }
     this.urls.set(partPath, null)
-    void this.assets
+    if (!asset || !displayableMediaType(asset.mimeType)) return Promise.resolve(undefined)
+    const loading = this.assets
       .get(asset.hash)
       .then((bytes) => {
-        if (this.destroyed) return
-        this.urls.set(partPath, assetObjectUrl(bytes, asset.mimeType) ?? null)
+        if (this.destroyed) return undefined
+        const url = assetObjectUrl(bytes, asset.mimeType)
+        this.urls.set(partPath, url ?? null)
         this.assetVersion++
         this.emit({ assets: true })
+        return url
       })
       // A picture that cannot be loaded stays a gray box.
       .catch(() => undefined)
-    return undefined
+      .finally(() => this.loadingUrls.delete(partPath))
+    this.loadingUrls.set(partPath, loading)
+    return loading
   }
+
+  private readonly loadingUrls = new Map<string, Promise<string | undefined>>()
 
   /** A shape's transform, inherited from its layout placeholder when it has none. */
   shapeXfrm(slideKey: string, shapeKey: string): Xfrm | undefined {
@@ -498,7 +519,7 @@ export class PresentationController {
     const height = size?.height ?? 300
     const scale = Math.min(1, maxWidth / width, maxHeight / height)
     const xfrm = this.centered(Math.round(width * scale * EMU_PER_PX), Math.round(height * scale * EMU_PER_PX))
-    const part = commands.addImagePart(this.doc, asset, LOCAL_ORIGIN)
+    const part = commands.addImagePart(this.doc, asset)
     const [key] = commands.insertShapes(this.doc, slide, [commands.pictureShape(part, xfrm, this.nextName(this.labels.shapeNames.picture), description)], LOCAL_ORIGIN)
     if (key) this.selectShapes([key])
     return key
@@ -762,9 +783,10 @@ export class PresentationController {
 
   // Clipboard
 
-  async copy(): Promise<{ json: string; text: string } | undefined> {
+  /** Copies the selected shapes, or the selected slides (always the slides with `'slides'`). */
+  async copy(what: 'auto' | 'slides' = 'auto'): Promise<{ json: string; text: string } | undefined> {
     if (!this.slideKey) return undefined
-    if (this.state.shapes.length) {
+    if (what === 'auto' && this.state.shapes.length) {
       const shapes = commands.readShapes(this.doc, this.slideKey, this.state.shapes)
       const text = shapes.map((shape) => (shape.text ? textToPlain(shape.text) : '')).filter(Boolean).join('\n')
       return { json: JSON.stringify(await copyContent(this.doc, this.assets, { shapes }, text)), text }

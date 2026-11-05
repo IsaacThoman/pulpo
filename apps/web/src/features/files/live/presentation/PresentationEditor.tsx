@@ -65,6 +65,7 @@ function PresentationEditorView({ controller, startInShow, toolbarSlot, classNam
   const [formatPanel, setFormatPanel] = useState(false)
   const [notesOpen, setNotesOpen] = useState(true)
   const presenter = useRef<Presenter | null>(null)
+  const root = useRef<HTMLDivElement>(null)
   const [stripHost] = useMounted(controller, (element) => new SlideList(element, controller, { layout: 'strip' }))
   const [canvasHost, canvas] = useMounted(controller, (element) => new SlideCanvas(element, controller, { onOpenLink: openLink }))
   const [notesHost] = useMounted(controller, (element) => new NotesEditor(element, controller))
@@ -103,6 +104,11 @@ function PresentationEditorView({ controller, startInShow, toolbarSlot, classNam
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      // Only for this editor, and never from text fields (slide text, notes, or the rest of the page).
+      const target = event.target instanceof Element ? event.target : null
+      const inEditor = !target || target === document.body || root.current?.contains(target) === true
+      const editable = target?.closest('input, textarea, select, [contenteditable=""], [contenteditable="true"]')
+      if (!inEditor || editable) return
       if (event.key === 'F5' || ((event.metaKey || event.ctrlKey) && event.key === 'Enter')) {
         event.preventDefault()
         present(event.shiftKey ? 'current' : 'start')
@@ -113,7 +119,7 @@ function PresentationEditorView({ controller, startInShow, toolbarSlot, classNam
   })
 
   return (
-    <div className={cn('flex h-full min-h-0 flex-col bg-background [--pp-canvas-bg:var(--muted)] [--pp-muted:var(--muted-foreground)]', className)} data-presentation-editor="">
+    <div ref={root} className={cn('flex h-full min-h-0 flex-col bg-background [--pp-canvas-bg:var(--muted)] [--pp-muted:var(--muted-foreground)]', className)} data-presentation-editor="">
       <div className="flex items-center gap-2 border-b px-2 py-1">
         <PresentationToolbar
           controller={controller}

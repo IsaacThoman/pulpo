@@ -228,6 +228,8 @@ const MAX_GROUP_DEPTH = 32
 export function renderShape(element: XmlElement, options: ShapeRenderOptions): string {
   const depth = options.depth ?? 0
   if (depth > MAX_GROUP_DEPTH) return ''
+  const budget = options.env.budget
+  if (budget && budget.shapes-- <= 0) return ''
   switch (element.localName) {
     case 'sp':
     case 'cxnSp':
@@ -578,11 +580,12 @@ function renderDiagram(data: XmlElement, env: RenderEnv, options: ShapeRenderOpt
     const rel = env.rel(drawingId)
     if (rel && !rel.external) drawingPart = rel.target
   }
-  const drawing = drawingPart ? env.deck.xml(drawingPart) : undefined
+  if (!drawingPart || env.drawings?.has(drawingPart)) return ''
+  const drawing = env.deck.xml(drawingPart)
   const tree = drawing ? childElements(drawing).find((entry) => entry.localName === 'spTree') : undefined
-  if (!tree || !drawingPart) return ''
+  if (!tree) return ''
   const drawingRels = env.deck.rels(drawingPart)
-  const drawingEnv: RenderEnv = { ...env, rel: (id) => drawingRels.get(id) }
+  const drawingEnv: RenderEnv = { ...env, rel: (id) => drawingRels.get(id), drawings: new Set([...(env.drawings ?? []), drawingPart]) }
   const frame: Frame = { originX: 0, originY: 0, scaleX: options.frame.scaleX, scaleY: options.frame.scaleY }
   return childElements(tree)
     .filter((entry) => !['nvGrpSpPr', 'grpSpPr'].includes(entry.localName ?? ''))

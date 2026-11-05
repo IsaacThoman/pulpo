@@ -1,4 +1,5 @@
 import type { ChangeSet, PresentationController } from './controller.js'
+import { readClipboard, writeClipboard } from './clipboard-io.js'
 import { ensureStyles } from './styles.js'
 
 /**
@@ -214,8 +215,19 @@ export class SlideList {
       event.preventDefault()
       const next = keys[Math.min(keys.length - 1, Math.max(0, index + delta))]
       if (!next) return
-      if (mod && event.shiftKey && !controller.readOnly) controller.moveSlides(controller.state.slides, Math.max(0, index + delta))
-      else controller.goToSlide(next, event.shiftKey ? 'range' : 'replace')
+      if (mod && event.shiftKey && !controller.readOnly) {
+        // Moves the selection as a block, by `delta` places among the slides not selected.
+        const selected = controller.state.slides.filter((key) => keys.includes(key))
+        const before = (key: string) => keys.slice(0, keys.indexOf(key)).filter((other) => !selected.includes(other)).length
+        const remaining = keys.length - selected.length
+        const toIndex = delta < 0 ? before(selected[0]!) + delta : before(selected[selected.length - 1]!) + delta
+        if (selected.length) controller.moveSlides(selected, Math.max(0, Math.min(remaining, toIndex)))
+      } else controller.goToSlide(next, event.shiftKey ? 'range' : 'replace')
+      return
+    }
+    if (mod && event.key.toLowerCase() === 'c') {
+      event.preventDefault()
+      void controller.copy('slides').then((copied) => copied && writeClipboard(copied))
       return
     }
     if (controller.readOnly) return
@@ -229,8 +241,16 @@ export class SlideList {
       event.preventDefault()
       if (this.options.onOpen && controller.state.slide) this.options.onOpen(controller.state.slide)
       else controller.addSlide()
-    } else if (mod && event.key.toLowerCase() === 'c') {
-      void controller.copy().then((copied) => copied && navigator.clipboard?.writeText?.(copied.json).catch(() => undefined))
+    } else if (mod && event.key.toLowerCase() === 'x') {
+      event.preventDefault()
+      void controller.copy('slides').then(async (copied) => {
+        if (!copied) return
+        await writeClipboard(copied)
+        controller.deleteSlides()
+      })
+    } else if (mod && event.key.toLowerCase() === 'v') {
+      event.preventDefault()
+      void readClipboard().then((payload) => (payload ? controller.paste(payload, 'slides') : false))
     }
   }
 

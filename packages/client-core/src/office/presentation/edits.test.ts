@@ -87,7 +87,7 @@ describe('editing a presentation', () => {
     setXfrm(doc, content, rectangle!, { x: 1000000, rot: 5400000 }, LOCAL)
     insertShapes(doc, content, [textBox({ x: 0, y: 6000000, cx: 3000000, cy: 400000 }, 'TextBox 4', 'Footnote')], LOCAL)
     const asset = await assets.put(PNG, 'image/png')
-    const media = addImagePart(doc, asset, LOCAL)
+    const media = addImagePart(doc, asset)
     insertShapes(doc, content, [pictureShape(media, { x: 6000000, y: 2000000, cx: 914400, cy: 914400 }, 'Picture 5', 'Tiny')], LOCAL)
     const [table] = insertShapes(doc, content, [tableShape(2, 3, { x: 6000000, y: 4000000, cx: 3000000, cy: 800000 }, 'Table 6')], LOCAL)
     insertTableRow(doc, content, table!, 2, LOCAL)

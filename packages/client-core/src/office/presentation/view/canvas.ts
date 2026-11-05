@@ -6,6 +6,8 @@ import { slideEnvironment } from '../render/slide.js'
 import { bodyLayout, textFrameStyles } from '../render/text.js'
 import { serializeNode, parseFragment } from '../xml.js'
 import { LOCAL_ORIGIN, type ChangeSet, type PresentationController } from './controller.js'
+import { readClipboard, writeClipboard } from './clipboard-io.js'
+import { MediaPlayer } from './media.js'
 import { ensureStyles } from './styles.js'
 import { InlineTextEditor, type TextEditorStyle } from './text-editor.js'
 
@@ -59,6 +61,8 @@ export class SlideCanvas {
   private fit = true
   private gesture?: Gesture
   private editor?: InlineTextEditor
+  /** What the open editor edits (slide, shape, row, column), to notice a switch to another cell. */
+  private editorTarget?: string
   private editorFrame?: HTMLElement
   private readonly unsubscribe: () => void
   private readonly resizeObserver?: ResizeObserver
@@ -66,7 +70,7 @@ export class SlideCanvas {
   private pinch?: { distance: number; zoom: number }
   private lastTap = { time: 0, key: '' as string | undefined }
   private renderedKey = ''
-  private media?: HTMLMediaElement
+  private readonly media: MediaPlayer
 
   constructor(
     container: HTMLElement,
@@ -74,6 +78,7 @@ export class SlideCanvas {
     private readonly options: SlideCanvasOptions = {},
   ) {
     ensureStyles(container.ownerDocument)
+    this.media = new MediaPlayer(controller)
     this.element = document.createElement('div')
     this.element.className = 'pp-canvas'
     this.element.tabIndex = 0
@@ -114,7 +119,7 @@ export class SlideCanvas {
     this.stopEditing()
     this.unsubscribe()
     this.resizeObserver?.disconnect()
-    this.media?.pause()
+    this.media.stop()
     this.element.remove()
   }
 
@@ -153,8 +158,13 @@ export class SlideCanvas {
   private onChange(change: ChangeSet): void {
     const slide = this.controller.state.slide
     const editing = this.controller.state.editing
-    if (this.editor && (!editing || editing.slide !== slide)) this.stopEditing()
-    if (editing && !this.editor && !this.controller.readOnly) this.startEditing(editing.shape, editing.row, editing.column)
+    // Moving to another shape or table cell restarts the editor on that text.
+    const target = editing ? `${editing.slide}\u0000${editing.shape}\u0000${editing.row ?? ''}\u0000${editing.column ?? ''}` : undefined
+    if (this.editor && (!editing || editing.slide !== slide || target !== this.editorTarget)) this.stopEditing()
+    if (editing && !this.editor && !this.controller.readOnly) {
+      this.editorTarget = target
+      this.startEditing(editing.shape, editing.row, editing.column)
+    }
     if (change.parts || change.assets || change.order || change.selection || (slide && change.slides.has(slide))) this.render()
     else if (change.presence) this.drawOverlay()
     if (this.editor && this.controller.state.editing && slide && (change.slides.has(slide) || change.parts)) this.refreshEditorFrame()
@@ -166,6 +176,8 @@ export class SlideCanvas {
     const key = slide ? `${slide}|${this.controller.slideVersion(slide)}|${[...(hidden ?? [])].join()}` : ''
     if (key !== this.renderedKey) {
       this.renderedKey = key
+      // Media plays only on its own slide.
+      if (this.media.slide && this.media.slide !== slide) this.media.stop()
       this.slideLayer.innerHTML = slide ? this.controller.slideHtml(slide, this.controller.readOnly ? 'view' : 'edit', 'canvas', hidden) : ''
     }
     this.layout()
@@ -424,11 +436,12 @@ export class SlideCanvas {
     }
     const flipH = cx < 0 ? !start.flipH : start.flipH
     const flipV = cy < 0 ? !start.flipV : start.flipV
-    cx = Math.abs(cx)
-    cy = Math.abs(cy)
     // Keep the opposite edge fixed: move the center by half the growth along the rotated axes.
+    // Signed sizes, so dragging past the opposite edge puts the shape on the pointer's side.
     const shiftX = (west ? -(cx - start.cx) : handle.includes('e') ? cx - start.cx : 0) / 2
     const shiftY = (north ? -(cy - start.cy) : handle.includes('s') ? cy - start.cy : 0) / 2
+    cx = Math.abs(cx)
+    cy = Math.abs(cy)
     const centerX = start.x + start.cx / 2 + shiftX * Math.cos(angle) - shiftY * Math.sin(angle)
     const centerY = start.y + start.cy / 2 + shiftX * Math.sin(angle) + shiftY * Math.cos(angle)
     this.controller.setXfrm(key, { x: centerX - cx / 2, y: centerY - cy / 2, cx, cy, flipH: flipH ?? false, flipV: flipV ?? false })
@@ -464,11 +477,11 @@ export class SlideCanvas {
       const cell = event?.target instanceof Element ? event.target.closest('td') : null
       const table = this.controller.shape(slide, key)!.table!
       if (!cell) return
-      const row = cell.parentElement as HTMLTableRowElement
-      const rowIndex = Array.from(row.parentElement!.children).indexOf(row)
-      // Merged cells are skipped in the HTML; count grid columns covered by earlier cells.
-      let column = 0
-      for (const previous of Array.from(row.children).slice(0, Array.from(row.children).indexOf(cell))) column += Number((previous as HTMLTableCellElement).colSpan || 1)
+      // The renderer writes each cell's grid position: merged-away cells are not in the HTML, so
+      // counting cells (or their spans) misses those a row span from above covers.
+      const rowIndex = Number((cell as HTMLElement).dataset.row)
+      const column = Number((cell as HTMLElement).dataset.col)
+      if (!Number.isInteger(rowIndex) || !Number.isInteger(column)) return
       const rowKey = table.rows[rowIndex]?.key
       const columnKey = table.columns[column]?.key
       if (rowKey && columnKey) this.controller.setState({ shapes: [key], editing: { slide, shape: key, row: rowKey, column: columnKey } })
@@ -491,7 +504,9 @@ export class SlideCanvas {
     }
     const frame = div('pp-editor-frame')
     this.editorFrame = frame
-    this.editorLayer.replaceChildren(frame)
+    // The layer also holds a playing video, which stays.
+    this.editorLayer.querySelectorAll('.pp-editor-frame').forEach((element) => element.remove())
+    this.editorLayer.append(frame)
     const style = rowKey ? this.cellStyle(frame, shapeKey) : this.shapeStyle(frame, shapeKey)
     if (!style) {
       this.controller.setState({ editing: undefined })
@@ -507,6 +522,7 @@ export class SlideCanvas {
       onUndo: () => this.controller.undo(),
       onRedo: () => this.controller.redo(),
       onEscape: () => this.controller.setState({ editing: undefined }),
+      ...(rowKey && columnKey ? { onTab: (backward: boolean) => this.moveToCell(shapeKey, rowKey, columnKey, backward) } : {}),
       onToggleMark: (mark) => this.controller.toggleMark(mark),
       onSelectionChange: () => {
         this.autofit()
@@ -516,6 +532,19 @@ export class SlideCanvas {
     this.controller.activeEditor = this.editor
     this.editor.focus()
     this.autofit()
+  }
+
+  /** Tab in a table cell: the next (or previous) cell that is not merged away, as in PowerPoint. */
+  private moveToCell(shapeKey: string, rowKey: string, columnKey: string, backward: boolean): boolean {
+    const slide = this.controller.state.slide
+    const table = slide ? this.controller.shape(slide, shapeKey)?.table : undefined
+    if (!slide || !table) return false
+    const cells = table.rows.flatMap((row) => table.columns.filter((column) => row.cells[column.key] && !row.cells[column.key]!.hMerge && !row.cells[column.key]!.vMerge).map((column) => ({ row: row.key, column: column.key })))
+    const index = cells.findIndex((cell) => cell.row === rowKey && cell.column === columnKey)
+    const next = cells[index + (backward ? -1 : 1)]
+    if (index < 0 || !next) return true
+    this.controller.setState({ editing: { slide, shape: shapeKey, row: next.row, column: next.column } })
+    return true
   }
 
   /** Lays out the editor frame over a shape exactly where the renderer puts its text. */
@@ -535,13 +564,7 @@ export class SlideCanvas {
     const shapeElement = this.slideLayer.querySelector<HTMLElement>(`.pp-slide > [data-key="${cssEscape(shapeKey)}"]`)
     const rowIndex = table?.rows.findIndex((row) => row.key === editing.row) ?? -1
     const columnIndex = table?.columns.findIndex((column) => column.key === editing.column) ?? -1
-    const row = shapeElement?.querySelectorAll('tr')[rowIndex]
-    let cell: HTMLTableCellElement | undefined
-    let column = 0
-    for (const candidate of Array.from(row?.children ?? []) as HTMLTableCellElement[]) {
-      if (column === columnIndex) cell = candidate
-      column += candidate.colSpan || 1
-    }
+    const cell = shapeElement?.querySelector<HTMLTableCellElement>(`td[data-row="${rowIndex}"][data-col="${columnIndex}"]`) ?? undefined
     const slide = this.controller.slide(editing.slide)
     if (!cell || !shapeElement || !slide) return undefined
     const { env } = slideEnvironment(slide, this.controller.renderOptions('edit', 'editor', editing.slide))
@@ -620,8 +643,8 @@ export class SlideCanvas {
     this.editor.destroy()
     this.editor = undefined
     this.controller.activeEditor = undefined
+    this.editorFrame?.remove()
     this.editorFrame = undefined
-    this.editorLayer.replaceChildren()
     this.focus()
   }
 
@@ -629,6 +652,8 @@ export class SlideCanvas {
   // Keyboard, clipboard, and other events
 
   private readonly onKeyDown = (event: KeyboardEvent): void => {
+    // Handled by the text editor already (Escape closing it must not also deselect the shape).
+    if (event.defaultPrevented) return
     if (this.editor && (event.target as Element).closest?.('.pp-text-editor')) return
     const controller = this.controller
     const mod = event.metaKey || event.ctrlKey
@@ -674,6 +699,10 @@ export class SlideCanvas {
       const index = shapes.length ? all.indexOf(shapes[0]!) : -1
       const next = all[(index + (event.shiftKey ? -1 : 1) + all.length) % Math.max(1, all.length)]
       if (next) controller.selectShapes([next])
+    } else if ((event.isComposing || key === 'Process') && shapes.length === 1 && controller.shape(controller.state.slide ?? '', shapes[0]!)?.kind === 'sp') {
+      // An IME composition starting on a selected shape: open its text so the composition lands there.
+      this.beginEditing(shapes[0]!)
+      queueMicrotask(() => this.editor?.selectAll())
     } else if (key.length === 1 && !mod && !event.altKey && shapes.length === 1) {
       // Typing into a selected shape replaces its text, as in PowerPoint.
       const shape = controller.shape(controller.state.slide ?? '', shapes[0]!)
@@ -695,16 +724,7 @@ export class SlideCanvas {
 
   private async copyTo(data: DataTransfer): Promise<void> {
     const copied = await this.controller.copy()
-    if (!copied) return
-    // Synchronous clipboard events cannot wait; keep a copy for paste within the app as well.
-    lastCopied = copied
-    try {
-      await navigator.clipboard?.write?.([
-        new ClipboardItem({ 'text/plain': new Blob([copied.text], { type: 'text/plain' }), 'web application/x-pulpo-presentation+json': new Blob([copied.json], { type: 'web application/x-pulpo-presentation+json' }) }),
-      ])
-    } catch {
-      data.setData('text/plain', copied.text)
-    }
+    if (copied) await writeClipboard(copied, data)
   }
 
   private readonly onCut = (event: ClipboardEvent): void => {
@@ -722,9 +742,7 @@ export class SlideCanvas {
       return
     }
     const text = event.clipboardData?.getData('text/plain') ?? ''
-    void readPulpoClipboard().then((json) => {
-      // The in-app copy only counts while the system clipboard still holds what we copied.
-      const payload = json ?? (lastCopied && lastCopied.text === text ? lastCopied.json : undefined)
+    void readClipboard(text).then((payload) => {
       if (payload) void this.controller.paste(payload)
       else if (text) this.pasteText(text)
     })
@@ -755,7 +773,8 @@ export class SlideCanvas {
     const media = target.closest<HTMLElement>('.pp-media')
     if (media) {
       event.preventDefault()
-      this.playMedia(media)
+      const slide = this.controller.state.slide
+      if (slide) void this.media.play(media, this.editorLayer, slide)
       return
     }
     const link = target.closest<HTMLElement>('[data-href]')
@@ -763,41 +782,6 @@ export class SlideCanvas {
     if (href && isSafeUrl(href) && (this.controller.readOnly || event.metaKey || event.ctrlKey)) this.options.onOpenLink?.(href)
   }
 
-  /** Plays embedded audio or video in place: only formats browsers play natively, from the asset store. */
-  private playMedia(button: HTMLElement): void {
-    const part = button.dataset.media
-    if (!part) return
-    const url = this.controller.assetUrl(part)
-    if (!url) return
-    this.media?.pause()
-    const kind = button.dataset.mediaKind === 'audio' ? 'audio' : 'video'
-    const media = document.createElement(kind)
-    media.src = url
-    media.controls = true
-    media.autoplay = true
-    media.className = 'pp-media-player'
-    const shape = button.closest<HTMLElement>('[data-key]')
-    if (!shape) return
-    media.setAttribute('style', `position:absolute;left:${shape.offsetLeft}px;top:${shape.offsetTop}px;width:${shape.offsetWidth}px;height:${kind === 'audio' ? 40 : shape.offsetHeight}px;transform:rotate(${shape.dataset.rot ?? 0}deg)`)
-    this.editorLayer.append(media)
-    this.media = media
-    media.addEventListener('ended', () => media.remove())
-  }
-}
-
-let lastCopied: { json: string; text: string } | undefined
-
-async function readPulpoClipboard(): Promise<string | undefined> {
-  try {
-    const items = await navigator.clipboard?.read?.()
-    for (const item of items ?? []) {
-      const type = item.types.find((entry) => entry === 'web application/x-pulpo-presentation+json')
-      if (type) return await (await item.getType(type)).text()
-    }
-  } catch {
-    // Permission denied or unsupported: fall back to the in-app copy.
-  }
-  return undefined
 }
 
 function div(className: string): HTMLDivElement {

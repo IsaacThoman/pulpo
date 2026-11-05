@@ -51,6 +51,7 @@ export function writeSnapshot(doc: Y.Doc, snapshot: PresentationSnapshot, origin
   doc.transact(() => {
     const root = presentationRoot(doc)
     root.set('version', PRESENTATION_SCHEMA_VERSION)
+    root.set('documentId', randomId())
     for (const key of META_KEYS) root.set(key, snapshot[key])
     root.set('parts', new Y.Map<PartInfo>())
     root.set('partBytes', new Y.Map<Uint8Array>())
@@ -69,15 +70,24 @@ export function writeSnapshot(doc: Y.Doc, snapshot: PresentationSnapshot, origin
   }, origin)
 }
 
+/** A random id; `crypto.randomUUID` needs a secure context, which a mobile editor page is not. */
+export function randomId(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(12))
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
 /** Adds a slide at `index` of the slide order. */
 export function insertSlide(doc: Y.Doc, slide: SlideSnapshot, index: number): void {
   const root = presentationRoot(doc)
   const slides = root.get('slides') as Y.Map<YSlide>
   const slideOrder = root.get('slideOrder') as Y.Array<string>
   const map = new Y.Map<unknown>()
+  // `index` counts visible slides; the raw order can list a slide twice after concurrent moves.
+  const visible = orderedKeys(slideOrder, slides)
+  const raw = index >= visible.length ? slideOrder.length : Math.max(0, slideOrder.toArray().indexOf(visible[Math.max(0, index)]!))
   slides.set(slide.key, map)
   fillSlide(map, slide)
-  slideOrder.insert(Math.max(0, Math.min(index, slideOrder.length)), [slide.key])
+  slideOrder.insert(raw, [slide.key])
 }
 
 function fillSlide(map: YSlide, slide: SlideSnapshot): void {
@@ -344,6 +354,74 @@ export function readXfrmMap(map: Y.Map<unknown>): Xfrm {
 }
 
 export function readTableMap(map: Y.Map<unknown>): TableSnapshot {
+  return normalizeMerges(readTableEntries(map))
+}
+
+/**
+ * Makes merged cells agree with the grid: an anchor spans only cells that are marked merged into
+ * it, and merged cells nothing covers become plain cells. Inserting or deleting rows and columns,
+ * alone or concurrently, would otherwise leave spans covering the wrong cells or past the table.
+ */
+export function normalizeMerges(table: TableSnapshot): TableSnapshot {
+  const columns = table.columns.map((column) => column.key)
+  for (const row of table.rows) {
+    let remaining = 0
+    for (let index = 0; index < columns.length; index++) {
+      const cell = row.cells[columns[index]!]
+      if (!cell) {
+        remaining = 0
+        continue
+      }
+      if (cell.hMerge) {
+        if (remaining > 0) {
+          remaining--
+          continue
+        }
+        if (cell.vMerge) continue
+        delete cell.hMerge
+      }
+      const declared = cell.gridSpan && cell.gridSpan > 1 ? cell.gridSpan : 1
+      let covered = 0
+      while (covered < declared - 1 && row.cells[columns[index + 1 + covered] ?? '']?.hMerge) covered++
+      // Only spans that are wrong change (`gridSpan="1"` stays as the file wrote it).
+      if (covered + 1 !== declared) {
+        if (covered) cell.gridSpan = covered + 1
+        else delete cell.gridSpan
+      }
+      remaining = covered
+    }
+  }
+  for (const column of columns) {
+    let remaining = 0
+    for (const row of table.rows) {
+      const cell = row.cells[column]
+      if (!cell) {
+        remaining = 0
+        continue
+      }
+      if (cell.vMerge) {
+        if (remaining > 0) {
+          remaining--
+          continue
+        }
+        if (cell.hMerge) continue
+        delete cell.vMerge
+      }
+      const declared = cell.rowSpan && cell.rowSpan > 1 ? cell.rowSpan : 1
+      const below = table.rows.slice(table.rows.indexOf(row) + 1)
+      let covered = 0
+      while (covered < declared - 1 && below[covered]?.cells[column]?.vMerge) covered++
+      if (covered + 1 !== declared) {
+        if (covered) cell.rowSpan = covered + 1
+        else delete cell.rowSpan
+      }
+      remaining = covered
+    }
+  }
+  return table
+}
+
+function readTableEntries(map: Y.Map<unknown>): TableSnapshot {
   const columns = map.get('columns') as Y.Map<{ w: number; xml: string }>
   const rows = map.get('rows') as Y.Map<Y.Map<unknown>>
   const columnKeys = orderedKeys(map.get('columnOrder') as Y.Array<string>, columns)
@@ -380,8 +458,9 @@ export function reconcileSnapshot(doc: Y.Doc, target: PresentationSnapshot, orig
       return
     }
     for (const key of META_KEYS) setIfChanged(root, key, target[key])
+    // Parts the file no longer has stay: an undone slide deletion, a collaborator's in-flight
+    // duplicate or an earlier copy may still point at them. Export drops the unreachable ones.
     for (const [partPath, part] of Object.entries(target.parts)) setPart(root, partPath, part)
-    for (const partPath of [...(root.get('parts') as Y.Map<PartInfo>).keys()]) if (!(partPath in target.parts)) deletePart(root, partPath)
 
     const sections = root.get('sections') as Y.Map<{ name: string; id: string }>
     for (const section of target.sections) setIfChanged(sections, section.key, { name: section.name, id: section.id })
@@ -551,7 +630,7 @@ export function syncKeys(array: Y.Array<string>, target: string[]): void {
   })
 }
 
-function longestCommonSubsequence(a: string[], b: string[]): { current: Set<number>; target: Set<number> } {
+export function longestCommonSubsequence(a: string[], b: string[]): { current: Set<number>; target: Set<number> } {
   // Decks have at most a few thousand slides or shapes; quadratic is fine but cap it anyway.
   if (a.length * b.length > 4_000_000) {
     const shared = new Set(b)

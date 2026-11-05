@@ -3,7 +3,7 @@ import { RelationshipTable, buildShapeElement } from '../write.js'
 import { child, childElements, namespaceDeclarations, NS, parseXmlDocument, path, type XmlElement } from '../xml.js'
 import { DEFAULT_COLOR_MAP, type ColorContext } from './color.js'
 import { DeckResources, placeholderOf, readColorMap, type LayoutInfo, type MasterInfo } from './deck.js'
-import { DEFAULT_RENDER_LABELS, emuToPx, escapeAttribute, num, px, type RenderEnv, type RenderLabels } from './env.js'
+import { DEFAULT_RENDER_LABELS, emuToPx, escapeAttribute, MAX_SHAPES_PER_SLIDE, num, px, safeIdPrefix, type RenderEnv, type RenderLabels } from './env.js'
 import { paintFill, styleReference, themeFill } from './fill.js'
 import { describeShapeText, effectiveXfrm, inheritanceChain, renderShape, ROOT_FRAME } from './shape.js'
 import { readXfrm } from '../read.js'
@@ -56,6 +56,7 @@ export function slideEnvironment(slide: SlideSnapshot, options: SlideRenderOptio
   const rels = new RelationshipTable()
   for (const [id, rel] of Object.entries(slide.rels)) rels.set(id, rel)
   let counter = 0
+  const idPrefix = safeIdPrefix(options.idPrefix)
   const env: RenderEnv = {
     deck: options.deck,
     theme: master?.theme ?? options.deck.theme(undefined),
@@ -64,7 +65,8 @@ export function slideEnvironment(slide: SlideSnapshot, options: SlideRenderOptio
     ...(master ? { master } : {}),
     rel: (id) => rels.entries.get(id),
     assetUrl: options.assetUrl,
-    nextId: () => `${options.idPrefix}-${(counter++).toString(36)}`,
+    nextId: () => `${idPrefix}-${(counter++).toString(36)}`,
+    budget: { shapes: MAX_SHAPES_PER_SLIDE },
     slideNumber: options.slideNumber,
     mode: options.mode,
     labels: options.labels ?? DEFAULT_RENDER_LABELS,
@@ -119,8 +121,17 @@ function inheritedShapes(root: XmlElement | undefined, partPath: string, level: 
   const env: RenderEnv = { ...environment.env, rel: (id) => rels.get(id), mode: 'view' }
   return childElements(tree)
     .filter((element) => !['nvGrpSpPr', 'grpSpPr', 'extLst'].includes(element.localName ?? '') && !placeholderOf(element))
-    .map((element) => renderShape(element, { env, level, frame: ROOT_FRAME }))
+    .map((element) => renderSafely(() => renderShape(element, { env, level, frame: ROOT_FRAME })))
     .join('')
+}
+
+/** One shape's HTML, or nothing when a damaged shape makes the renderer throw, so the rest still draws. */
+function renderSafely(render: () => string): string {
+  try {
+    return render()
+  } catch {
+    return ''
+  }
 }
 
 export function renderSlide(slide: SlideSnapshot, snapshot: Pick<PresentationSnapshot, 'slideWidth' | 'slideHeight'>, options: SlideRenderOptions): string {
@@ -141,7 +152,7 @@ export function renderSlide(slide: SlideSnapshot, snapshot: Pick<PresentationSna
     } catch {
       continue
     }
-    layers.push(renderShape(element, { env, level: 'slide', frame: ROOT_FRAME, key: shape.key, hideText: options.hideTextOf?.has(shape.key) === true }))
+    layers.push(renderSafely(() => renderShape(element, { env, level: 'slide', frame: ROOT_FRAME, key: shape.key, hideText: options.hideTextOf?.has(shape.key) === true })))
   }
   return `<div class="pp-slide" data-slide-key="${escapeAttribute(slide.key)}" style="position:relative;width:${px(width)};height:${px(height)};overflow:hidden;background:white;contain:layout paint">${layers.join('')}</div>`
 }

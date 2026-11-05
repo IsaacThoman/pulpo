@@ -199,6 +199,6 @@ function renderCell(cell: XmlElement, env: RenderEnv, style: XmlElement | undefi
   // Vertical cell text turns the text block: `vert` reads top to bottom, `vert270` bottom to top.
   const vertical = attr(tcPr, 'vert')
   const turn = vertical === 'vert' || vertical === 'eaVert' ? ';writing-mode:vertical-rl' : vertical === 'vert270' ? ';writing-mode:vertical-rl;transform:rotate(180deg)' : ''
-  return `<td${span('gridSpan', 'colspan')}${span('rowSpan', 'rowspan')} style="${styles.join(';')}"><div style="--pp-fs:1${turn}">${content}</div></td>`
+  return `<td data-row="${position.row}" data-col="${position.column}"${span('gridSpan', 'colspan')}${span('rowSpan', 'rowspan')} style="${styles.join(';')}"><div style="--pp-fs:1${turn}">${content}</div></td>`
 }
 

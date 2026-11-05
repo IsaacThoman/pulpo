@@ -1,11 +1,11 @@
 import type * as Y from 'yjs'
 import type { LiveAssetStore } from '../live-format.js'
 import { decodePartText, relationshipsPathFor, relativeTarget, resolveTarget } from '../ooxml/package.js'
-import { cloneShape, cloneSlide, insertShapes, insertSlides, partsMap } from './commands.js'
+import { cloneShape, cloneSlide, insertShapes, insertSlides, PARTS_ORIGIN, partsMap } from './commands.js'
 import type { PartSnapshot, RelTarget, ShapeSnapshot, SlideSnapshot } from './model.js'
 import { DeckResources } from './render/deck.js'
-import { presentationRoot, readSnapshot, setPart } from './ydoc.js'
-import { normalizeText } from './text.js'
+import { presentationRoot, randomId, readSnapshot, setPart } from './ydoc.js'
+import { normalizeText, type TextJSON } from './text.js'
 import { buildShapeElement, RelationshipTable } from './write.js'
 import { attr, childElements, parseFragment, parseXmlDocument, REL_TYPES, serializeNode } from './xml.js'
 
@@ -36,9 +36,10 @@ export interface PresentationClipboard {
   text: string
 }
 
-/** A stable id for a document, kept in the document so every replica agrees. */
+/** A stable id for a document, kept in the document so every replica (and every reload) agrees. */
 export function documentIdentity(doc: Y.Doc): string {
-  return String(doc.guid)
+  const id = presentationRoot(doc).get('documentId')
+  return typeof id === 'string' ? id : String(doc.guid)
 }
 
 function toBase64(bytes: Uint8Array): string {
@@ -127,9 +128,41 @@ export function parseClipboard(json: string): PresentationClipboard | undefined 
 
 const SHAPE_KINDS = new Set(['sp', 'pic', 'cxnSp', 'grpSp', 'graphicFrame', 'opaque'])
 
+const MAX_INT = 2_147_483_647
+const integer = (value: unknown, min: number, max = MAX_INT) => typeof value === 'number' && Number.isInteger(value) && value >= min && value <= max
+const optionalInteger = (value: unknown, min: number, max = MAX_INT) => value === undefined || integer(value, min, max)
+
+/** Numbers end up in attributes typed as integers in ranges; anything else would break the file. */
+function validNumbers(shape: ShapeSnapshot): boolean {
+  const xfrm = shape.xfrm
+  if (xfrm !== undefined) {
+    if (!xfrm || typeof xfrm !== 'object') return false
+    if (!integer(xfrm.x, -MAX_INT) || !integer(xfrm.y, -MAX_INT) || !integer(xfrm.cx, 0) || !integer(xfrm.cy, 0)) return false
+    if (!optionalInteger(xfrm.rot, -MAX_INT) || !optionalInteger(xfrm.chX, -MAX_INT) || !optionalInteger(xfrm.chY, -MAX_INT) || !optionalInteger(xfrm.chCx, 0) || !optionalInteger(xfrm.chCy, 0)) return false
+    if ((xfrm.flipH !== undefined && typeof xfrm.flipH !== 'boolean') || (xfrm.flipV !== undefined && typeof xfrm.flipV !== 'boolean')) return false
+  }
+  if (!optionalInteger(shape.nvId, 0)) return false
+  const table = shape.table
+  if (table !== undefined) {
+    if (!table || !Array.isArray(table.columns) || !Array.isArray(table.rows)) return false
+    if (!table.columns.every((column) => column && typeof column.key === 'string' && integer(column.w, 0) && typeof column.xml === 'string')) return false
+    for (const row of table.rows) {
+      if (!row || typeof row.key !== 'string' || !integer(row.h, 0) || typeof row.xml !== 'string' || !row.cells || typeof row.cells !== 'object') return false
+      for (const cell of Object.values(row.cells)) {
+        if (!cell || typeof cell.xml !== 'string' || !optionalInteger(cell.gridSpan, 1, 1000) || !optionalInteger(cell.rowSpan, 1, 1000)) return false
+        normalizeText(cell.text)
+      }
+    }
+  }
+  return true
+}
+
 function validShape(shape: ShapeSnapshot): boolean {
   if (!shape || typeof shape !== 'object' || typeof shape.xml !== 'string' || !SHAPE_KINDS.has(shape.kind) || typeof shape.rels !== 'object' || shape.rels === null) return false
+  // Text lives only on `p:sp`; anywhere else it would be written where the schema forbids it.
+  if (shape.text && shape.kind !== 'sp') return false
   try {
+    if (!validNumbers(shape)) return false
     if (shape.text) normalizeText(shape.text)
     if (shape.children && (!Array.isArray(shape.children) || !shape.children.every(validShape))) return false
     // Building the element exercises every XML-valued property and the text writer.
@@ -154,21 +187,29 @@ function validSlide(slide: SlideSnapshot): boolean {
   return typeof slide.rels === 'object' && slide.rels !== null
 }
 
-/** Brings the clipboard's parts into `doc` under fresh names; returns old path → new path. */
-async function importParts(doc: Y.Doc, assets: LiveAssetStore, clipboard: PresentationClipboard): Promise<Map<string, string>> {
+/**
+ * Prepares the clipboard's parts for `doc`; returns old path → new path and a function that writes
+ * them. Pasting into the deck the content came from keeps the parts it still has. Anything else gets
+ * a name no other paste can pick (a random suffix), so two people pasting from different decks at
+ * once never overwrite each other's images. The writer runs synchronously right before the shapes
+ * are inserted, under `PARTS_ORIGIN`, so undoing the paste never deletes a part someone else uses.
+ */
+async function prepareParts(doc: Y.Doc, assets: LiveAssetStore, clipboard: PresentationClipboard): Promise<{ mapping: Map<string, string>; write(): void }> {
+  const sameDocument = clipboard.source === documentIdentity(doc)
   const mapping = new Map<string, string>()
   const parts = partsMap(doc)
-  const used = new Set(parts.keys())
-  const contentParts = Object.keys(clipboard.parts).filter((path) => !path.endsWith('.rels'))
+  const contentParts = Object.keys(clipboard.parts).filter((path) => !path.endsWith('.rels') && !(sameDocument && parts.has(path)))
+  const suffix = randomId().slice(0, 8)
   for (const path of contentParts) {
+    if (sameDocument) {
+      mapping.set(path, path)
+      continue
+    }
     const slash = path.lastIndexOf('/')
     const dot = path.lastIndexOf('.')
     const stem = path.slice(slash + 1, dot > slash ? dot : undefined)
     const extension = dot > slash ? path.slice(dot) : ''
-    let candidate = path
-    for (let index = 1; used.has(candidate); index++) candidate = `${path.slice(0, slash + 1)}pulpo-${stem}-${index}${extension}`
-    used.add(candidate)
-    mapping.set(path, candidate)
+    mapping.set(path, `${path.slice(0, slash + 1)}${stem}-${suffix}${extension}`)
   }
   const entries: [string, PartSnapshot][] = []
   for (const path of contentParts) {
@@ -180,10 +221,15 @@ async function importParts(doc: Y.Doc, assets: LiveAssetStore, clipboard: Presen
     const relsSource = clipboard.parts[relationshipsPathFor(path)]
     if (relsSource) entries.push([relationshipsPathFor(target), { bytes: rewriteRels(fromBase64(relsSource.data), path, target, mapping) }])
   }
-  doc.transact(() => {
-    for (const [path, part] of entries) setPart(presentationRoot(doc), path, part)
-  })
-  return mapping
+  return {
+    mapping,
+    write: () => {
+      if (!entries.length) return
+      doc.transact(() => {
+        for (const [path, part] of entries) if (!sameDocument || !partsMap(doc).has(path)) setPart(presentationRoot(doc), path, part)
+      }, PARTS_ORIGIN)
+    },
+  }
 }
 
 /** Points a copied part's relationships at the copies of their targets. */
@@ -199,20 +245,54 @@ function rewriteRels(bytes: Uint8Array, oldSource: string, newSource: string, ma
   return new TextEncoder().encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n${serializeNode(document.documentElement!)}`)
 }
 
-function remapRels(rels: Record<string, RelTarget>, mapping: Map<string, string>): Record<string, RelTarget> {
-  return Object.fromEntries(Object.entries(rels).map(([id, rel]) => [id, rel.external ? rel : { ...rel, target: mapping.get(rel.target) ?? rel.target }]))
+/**
+ * A slide part name no deck has. Links to slides of the deck content was copied from would point
+ * at whatever slide has the same part name here; they point at this instead, and are cleared on
+ * save the way links to deleted slides are.
+ */
+const UNLINKED_SLIDE = 'ppt/slides/pulpo-unlinked-slide.xml'
+
+function remapRels(rels: Record<string, RelTarget>, mapping: Map<string, string>, unlinkSlides: boolean): Record<string, RelTarget> {
+  return Object.fromEntries(
+    Object.entries(rels).map(([id, rel]) => {
+      if (rel.external) return [id, rel]
+      if (unlinkSlides && rel.type === REL_TYPES.slide) return [id, { ...rel, target: UNLINKED_SLIDE }]
+      return [id, { ...rel, target: mapping.get(rel.target) ?? rel.target }]
+    }),
+  )
 }
 
-function remapShape(shape: ShapeSnapshot, mapping: Map<string, string>): ShapeSnapshot {
-  return { ...shape, rels: remapRels(shape.rels, mapping), ...(shape.children ? { children: shape.children.map((member) => remapShape(member, mapping)) } : {}) }
+/** Text links to slides of another deck, unlinked (see UNLINKED_SLIDE). */
+function unlinkText(text: TextJSON | undefined): TextJSON | undefined {
+  if (!text || !JSON.stringify(text).includes('"link"')) return text
+  const copy = structuredClone(text)
+  for (const paragraph of copy.content ?? []) {
+    for (const inline of paragraph.content ?? []) {
+      for (const mark of inline.marks ?? []) {
+        if (mark.type === 'link' && mark.attrs?.external === false && (mark.attrs.relType ?? REL_TYPES.slide) === REL_TYPES.slide) mark.attrs = { ...mark.attrs, target: UNLINKED_SLIDE }
+      }
+    }
+  }
+  return copy
+}
+
+function remapShape(shape: ShapeSnapshot, mapping: Map<string, string>, unlinkSlides: boolean): ShapeSnapshot {
+  const text = unlinkSlides ? unlinkText(shape.text) : shape.text
+  return {
+    ...shape,
+    rels: remapRels(shape.rels, mapping, unlinkSlides),
+    ...(text ? { text } : {}),
+    ...(shape.children ? { children: shape.children.map((member) => remapShape(member, mapping, unlinkSlides)) } : {}),
+  }
 }
 
 /** Pastes shapes onto a slide, offset when pasting onto the slide they came from. Returns the new keys. */
 export async function pasteShapes(doc: Y.Doc, assets: LiveAssetStore, clipboard: PresentationClipboard, slideKey: string, offset: number, origin?: unknown): Promise<string[]> {
+  const { mapping, write } = await prepareParts(doc, assets, clipboard)
+  write()
   const sameDocument = clipboard.source === documentIdentity(doc)
-  const mapping = sameDocument ? new Map<string, string>() : await importParts(doc, assets, clipboard)
   const shapes = (clipboard.shapes ?? []).map((shape) => {
-    const copy = remapShape(cloneShape(shape), mapping)
+    const copy = remapShape(cloneShape(shape), mapping, !sameDocument)
     if (copy.xfrm && offset) copy.xfrm = { ...copy.xfrm, x: copy.xfrm.x + offset, y: copy.xfrm.y + offset }
     return copy
   })
@@ -222,7 +302,8 @@ export async function pasteShapes(doc: Y.Doc, assets: LiveAssetStore, clipboard:
 /** Pastes slides at `index`, mapping layouts by name when they come from another deck. */
 export async function pasteSlides(doc: Y.Doc, assets: LiveAssetStore, clipboard: PresentationClipboard, index: number, origin?: unknown): Promise<string[]> {
   const sameDocument = clipboard.source === documentIdentity(doc)
-  const mapping = sameDocument ? new Map<string, string>() : await importParts(doc, assets, clipboard)
+  const { mapping, write } = await prepareParts(doc, assets, clipboard)
+  write()
   const snapshot = readSnapshot(doc)
   const deck = new DeckResources(snapshot.parts, snapshot.mainPart)
   const layouts = deck.masterPaths().flatMap((master) => deck.master(master)?.layouts ?? [])
@@ -230,8 +311,8 @@ export async function pasteSlides(doc: Y.Doc, assets: LiveAssetStore, clipboard:
     const copy = cloneSlide(slide)
     if (!sameDocument) {
       copy.layout = layouts.find((layout) => deck.layout(layout)?.name === layoutName) ?? layouts.find((layout) => deck.layout(layout)?.type === 'obj') ?? layouts[0] ?? copy.layout
-      copy.rels = remapRels(copy.rels, mapping)
-      copy.shapes = copy.shapes.map((shape) => remapShape(shape, mapping))
+      copy.rels = remapRels(copy.rels, mapping, true)
+      copy.shapes = copy.shapes.map((shape) => remapShape(shape, mapping, true))
       delete copy.section
       if (copy.notes) copy.notes = { ...copy.notes, rels: {}, xml: '' }
     }

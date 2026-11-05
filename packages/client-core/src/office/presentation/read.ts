@@ -417,7 +417,7 @@ export function readShape(
     }
     const blipFill = child(element, 'blipFill', NS.p)
     if (kind === 'pic' && blipFill) shape.blipFill = serializeNode(blipFill)
-    const txBody = child(element, 'txBody', NS.p)
+    const txBody = kind === 'sp' ? child(element, 'txBody', NS.p) : undefined
     if (txBody) {
       const bodyPr = child(txBody, 'bodyPr', NS.a)
       if (bodyPr) shape.bodyPr = serializeNode(bodyPr)

@@ -4,8 +4,9 @@ import type { LiveAssetRef } from '../live-format.js'
 import type { NotesSnapshot, PartSnapshot, RelTarget, ShapeSnapshot, SlideSnapshot, TableCell, TableRow, Xfrm } from './model.js'
 import { readShape } from './read.js'
 import { DeckResources, placeholderOf, placeholderType } from './render/deck.js'
+import { slideSections } from './sections.js'
 import { EMPTY_TEXT, plainToText, textNode, type TextJSON } from './text.js'
-import { addShape, insertSlide, orderedKeys, presentationRoot, readSlideMap, readXfrmMap, setCell, setNotes, setRow, setText } from './ydoc.js'
+import { addShape, insertSlide, orderedKeys, presentationRoot, readSlideMap, readText, readXfrmMap, setCell, setNotes, setRow, setText, syncKeys } from './ydoc.js'
 import { attr, child, childElements, escapeAttribute, NS, parseFragment, path, REL_TYPES } from './xml.js'
 
 /**
@@ -174,15 +175,36 @@ export function deleteSlides(doc: Y.Doc, keys: readonly string[], origin?: unkno
 
 /** Moves slides (kept in their current relative order) so the first lands at `toIndex` of the remaining order. */
 export function moveSlides(doc: Y.Doc, keys: readonly string[], toIndex: number, origin?: unknown): void {
-  doc.transact(() => moveInArray(slideOrder(doc), keys, toIndex), origin)
+  doc.transact(() => {
+    const order = slideOrder(doc)
+    const visible = slideKeys(doc)
+    const moving = visible.filter((key) => keys.includes(key))
+    if (!moving.length) return
+    const current = order.toArray()
+    for (let index = current.length - 1; index >= 0; index--) if (keys.includes(current[index]!)) order.delete(index, 1)
+    const remaining = slideKeys(doc)
+    const at = Math.max(0, Math.min(toIndex, remaining.length))
+    order.insert(rawSlideIndex(doc, at), moving)
+    // Moved slides join the section they land in (the slide before them, or the first section).
+    const sectionOf = (key: string | undefined) => (key ? (slideMap(doc, key)?.get('section') as string | undefined) : undefined)
+    const sectionKeys = orderedKeys(presentationRoot(doc).get('sectionOrder') as Y.Array<string>, presentationRoot(doc).get('sections') as Y.Map<unknown>)
+    if (!sectionKeys.length) return
+    const neighbors = remaining.map((key) => ({ section: sectionOf(key) }))
+    const assigned = slideSections(sectionKeys, neighbors)
+    const section = at > 0 ? assigned[at - 1] : sectionKeys[0]
+    for (const key of moving) {
+      const map = slideMap(doc, key)
+      if (map && section && map.get('section') !== section) map.set('section', section)
+    }
+  }, origin)
 }
 
-function moveInArray(array: Y.Array<string>, keys: readonly string[], toIndex: number): void {
-  const current = array.toArray()
-  const moving = current.filter((key) => keys.includes(key))
-  if (!moving.length) return
-  for (let index = current.length - 1; index >= 0; index--) if (keys.includes(current[index]!)) array.delete(index, 1)
-  array.insert(Math.max(0, Math.min(toIndex, array.length)), moving)
+/** The position in the raw slide order of visible slide `index`: concurrent moves can list a slide twice. */
+export function rawSlideIndex(doc: Y.Doc, index: number): number {
+  const visible = slideKeys(doc)
+  const order = slideOrder(doc)
+  if (index >= visible.length) return order.length
+  return Math.max(0, order.toArray().indexOf(visible[Math.max(0, index)]!))
 }
 
 export function setSlideHidden(doc: Y.Doc, keys: readonly string[], hidden: boolean, origin?: unknown): void {
@@ -382,14 +404,23 @@ export function textBox(xfrm: Xfrm, name: string, text = ''): ShapeSnapshot {
   return text ? { ...shape, text: plainToText(text) } : shape
 }
 
+/**
+ * Origin of transactions that only add parts. Undo never tracks it: parts are shared (by name,
+ * between pastes and inserts of the same image, and with copies people took), so undoing an
+ * insert must not delete one. Export drops parts nothing links to.
+ */
+export const PARTS_ORIGIN = { source: 'pulpo-presentation-parts' }
+
+const IMAGE_EXTENSIONS: Record<string, string> = { 'image/png': 'png', 'image/jpeg': 'jpeg', 'image/gif': 'gif', 'image/svg+xml': 'svg', 'image/bmp': 'bmp', 'image/webp': 'webp', 'image/tiff': 'tiff' }
+
 /** A picture of an image already in the asset store; adds its media part. */
-export function addImagePart(doc: Y.Doc, asset: LiveAssetRef, origin?: unknown): string {
-  const extension = { 'image/png': 'png', 'image/jpeg': 'jpeg', 'image/gif': 'gif', 'image/svg+xml': 'svg', 'image/bmp': 'bmp', 'image/webp': 'png' }[asset.mimeType] ?? 'png'
+export function addImagePart(doc: Y.Doc, asset: LiveAssetRef): string {
+  const extension = IMAGE_EXTENSIONS[asset.mimeType] ?? 'png'
   // Content-addressed names: two people inserting the same image at once write the same part.
   const partPath = `ppt/media/pulpo-${asset.hash.slice(0, 16)}.${extension}`
   doc.transact(() => {
     if (!partsMap(doc).has(partPath)) partsMap(doc).set(partPath, { asset, contentType: asset.mimeType })
-  }, origin)
+  }, PARTS_ORIGIN)
   return partPath
 }
 
@@ -427,14 +458,55 @@ export function insertShapes(doc: Y.Doc, slideKey: string, shapes: readonly Shap
 }
 
 /** The array a shape is listed in (the slide's order, or its group's members) and its parent group. */
+/** The array a shape is shown from: the top level or the group the reader puts it in. */
 export function containerOf(slide: YMap, shapeKey: string): { array: Y.Array<string>; parent?: string } | undefined {
-  const order = slide.get('shapeOrder') as Y.Array<string>
-  if (order.toArray().includes(shapeKey)) return { array: order }
-  for (const [key, shape] of (slide.get('shapes') as Y.Map<YMap>).entries()) {
-    const members = shape.get('children')
-    if (members instanceof Y.Array && (members.toArray() as string[]).includes(shapeKey)) return { array: members as Y.Array<string>, parent: key }
+  for (const [group, members] of resolvedMembers(slide)) {
+    if (members.includes(shapeKey)) return { array: (slide.get('shapes') as Y.Map<YMap>).get(group)!.get('children') as Y.Array<string>, parent: group }
   }
-  return undefined
+  const order = slide.get('shapeOrder') as Y.Array<string>
+  return order.toArray().includes(shapeKey) ? { array: order } : undefined
+}
+
+/**
+ * Group membership as the reader sees it: concurrent grouping can list one shape in two places,
+ * and the first listing (in drawing order, depth first) wins. Returns each group's members.
+ */
+export function resolvedMembers(slide: YMap): Map<string, string[]> {
+  const store = slide.get('shapes') as Y.Map<YMap>
+  const members = new Map<string, string[]>()
+  const visited = new Set<string>()
+  const visit = (key: string, depth: number) => {
+    if (visited.has(key) || depth > 64 || !store.has(key)) return false
+    visited.add(key)
+    const children = store.get(key)!.get('children')
+    if (children instanceof Y.Array) members.set(key, (children.toArray() as string[]).filter((member) => visit(member, depth + 1)))
+    return true
+  }
+  for (const key of (slide.get('shapeOrder') as Y.Array<string>).toArray()) visit(key, 0)
+  return members
+}
+
+/** Arrays other than `except` that list `key`. */
+function otherListings(slide: YMap, key: string, except: Y.Array<string>): Y.Array<string>[] {
+  const arrays: Y.Array<string>[] = [slide.get('shapeOrder') as Y.Array<string>]
+  for (const shape of (slide.get('shapes') as Y.Map<YMap>).values()) {
+    const children = shape.get('children')
+    if (children instanceof Y.Array) arrays.push(children as Y.Array<string>)
+  }
+  return arrays.filter((array) => array !== except && array.toArray().includes(key))
+}
+
+/** Removes every listing of `key`: at the top level and in any group. */
+function unlist(slide: YMap, key: string): void {
+  const arrays: Y.Array<string>[] = [slide.get('shapeOrder') as Y.Array<string>]
+  for (const shape of (slide.get('shapes') as Y.Map<YMap>).values()) {
+    const children = shape.get('children')
+    if (children instanceof Y.Array) arrays.push(children as Y.Array<string>)
+  }
+  for (const array of arrays) {
+    const items = array.toArray()
+    for (let index = items.length - 1; index >= 0; index--) if (items[index] === key) array.delete(index, 1)
+  }
 }
 
 export function deleteShapes(doc: Y.Doc, slideKey: string, keys: readonly string[], origin?: unknown): void {
@@ -442,20 +514,14 @@ export function deleteShapes(doc: Y.Doc, slideKey: string, keys: readonly string
   if (!map) return
   doc.transact(() => {
     const store = map.get('shapes') as Y.Map<YMap>
+    const members = resolvedMembers(map)
+    // A group takes only the members it really has: one listed in it but shown elsewhere stays.
     const remove = (key: string) => {
-      const shape = store.get(key)
-      const members = shape?.get('children')
-      if (members instanceof Y.Array) for (const member of members.toArray() as string[]) remove(member)
+      for (const member of members.get(key) ?? []) remove(member)
+      unlist(map, key)
       store.delete(key)
     }
-    for (const key of keys) {
-      const container = containerOf(map, key)
-      if (container) {
-        const items = container.array.toArray()
-        for (let index = items.length - 1; index >= 0; index--) if (items[index] === key) container.array.delete(index, 1)
-      }
-      remove(key)
-    }
+    for (const key of keys) remove(key)
   }, origin)
 }
 
@@ -501,7 +567,7 @@ export function setShapeProperty(doc: Y.Doc, slideKey: string, shapeKeys: readon
  */
 export function setShapeText(doc: Y.Doc, slideKey: string, shapeKey: string, text: TextJSON, origin?: unknown): void {
   const shape = shapeMap(doc, slideKey, shapeKey)
-  if (!shape) return
+  if (!shape || shape.get('kind') !== 'sp') return
   doc.transact(() => {
     const fragment = shape.get('text')
     if (fragment instanceof Y.XmlFragment) updateYFragment(doc, fragment, textNode(text), { mapping: new Map(), isOMark: new Map() })
@@ -537,12 +603,9 @@ export function reorderShapes(doc: Y.Doc, slideKey: string, keys: readonly strin
   }, origin)
 }
 
-/** Moves only the items whose position changed. */
+/** Moves only the items whose position changed, so concurrent grouping and reordering merge. */
 function moveToMatch(array: Y.Array<string>, target: string[]): void {
-  const current = array.toArray()
-  if (current.join('\u0000') === target.join('\u0000')) return
-  array.delete(0, array.length)
-  array.insert(0, target)
+  syncKeys(array, target)
 }
 
 /** Bounding box (unrotated) of shapes, in EMU. */
@@ -582,6 +645,11 @@ export function groupShapes(doc: Y.Doc, slideKey: string, keys: readonly string[
     ;(groupMap.get('children') as Y.Array<string>).push(ordered)
     for (let index = items.length - 1; index >= 0; index--) if (keys.includes(items[index]!)) container.array.delete(index, 1)
     container.array.insert(Math.min(topmost - (ordered.length - 1), container.array.length), [group.key])
+    // Stale listings elsewhere (left by concurrent grouping) would otherwise win over the new group.
+    for (const key of keys) for (const array of otherListings(map, key, groupMap.get('children') as Y.Array<string>)) {
+      const listed = array.toArray()
+      for (let index = listed.length - 1; index >= 0; index--) if (listed[index] === key) array.delete(index, 1)
+    }
   }, origin)
   return group.key
 }
@@ -594,15 +662,19 @@ export function ungroupShape(doc: Y.Doc, slideKey: string, groupKey: string, ori
   const members = group?.get('children')
   if (!map || !group || !container || !(members instanceof Y.Array)) return []
   const groupXfrm = readXfrm(doc, slideKey, groupKey)
-  const keys = (members.toArray() as string[]).filter((key) => shapeMap(doc, slideKey, key))
+  // Only the members the group really shows (see resolvedMembers); others stay where they are.
+  const keys = resolvedMembers(map).get(groupKey) ?? []
   doc.transact(() => {
     for (const key of keys) {
       const xfrm = readXfrm(doc, slideKey, key)
-      if (xfrm && groupXfrm) setXfrm(doc, slideKey, key, mapOutOfGroup(xfrm, groupXfrm))
+      // Zero rotation and cleared flips are written too: setXfrm only touches the fields it gets.
+      if (xfrm && groupXfrm) setXfrm(doc, slideKey, key, { rot: 0, flipH: false, flipV: false, ...mapOutOfGroup(xfrm, groupXfrm) })
     }
     const index = container.array.toArray().indexOf(groupKey)
     container.array.delete(index, 1)
     container.array.insert(index, keys)
+    // Listing the members in their new container takes them out of the group for every reader.
+    members.delete(0, members.length)
     ;(map.get('shapes') as Y.Map<YMap>).delete(groupKey)
   }, origin)
   return keys
@@ -676,6 +748,41 @@ function tableMapOf(doc: Y.Doc, slideKey: string, shapeKey: string): YMap | unde
   return table instanceof Y.Map ? table : undefined
 }
 
+/** The nearest cell before a merged one that is not itself merged that way: the merge's anchor. */
+function mergeAnchor(cells: (YMap | undefined)[], flag: 'hMerge' | 'vMerge'): YMap | undefined {
+  for (let index = cells.length - 1; index >= 0; index--) {
+    const cell = cells[index]
+    if (!cell) return undefined
+    if (cell.get(flag) !== true) return cell
+  }
+  return undefined
+}
+
+/**
+ * Before a merge's anchor cell is deleted, the next cell it covers becomes the anchor and takes
+ * its content, so a merged cell's text survives deleting its first row or column.
+ */
+function handOverMerge(cells: Y.Map<YMap> | undefined, key: string, nextCells: Y.Map<YMap> | undefined, nextKey: string, span: 'gridSpan' | 'rowSpan', flag: 'hMerge' | 'vMerge'): void {
+  const anchor = cells?.get(key)
+  const next = nextCells?.get(nextKey)
+  if (!anchor || !next || anchor.get(flag) === true || ((anchor.get(span) as number | undefined) ?? 1) < 2 || next.get(flag) !== true) return
+  const cell: TableCell = { xml: (anchor.get('xml') as string) ?? EMPTY_CELL_XML, text: readText(anchor.get('text')) }
+  for (const field of ['gridSpan', 'rowSpan', 'hMerge', 'vMerge', 'tcPr'] as const) if (anchor.get(field) !== undefined) (cell as unknown as Record<string, unknown>)[field] = anchor.get(field)
+  cell[span] = ((anchor.get(span) as number) ?? 2) - 1
+  if (cell[span]! < 2) delete cell[span]
+  // The new anchor keeps how it was merged the other way (a 2×2 block's lower-left cell stays vMerge).
+  const other = flag === 'hMerge' ? 'vMerge' : 'hMerge'
+  if (next.get(other) === true) cell[other] = true
+  else delete cell[other]
+  delete cell[flag]
+  setCell(nextCells!, nextKey, cell)
+}
+
+/** A row or cell template without its `a:extLst` (row and column ids must stay unique). */
+function withoutExtensions(xml: string): string {
+  return xml.replace(/<a:extLst\b[\s\S]*<\/a:extLst>/, '')
+}
+
 function emptyCell(): TableCell {
   return { xml: EMPTY_CELL_XML, text: EMPTY_TEXT }
 }
@@ -690,13 +797,26 @@ export function insertTableRow(doc: Y.Doc, slideKey: string, shapeKey: string, i
   const rowKeys = orderedKeys(rowOrder, rows)
   const template = rows.get(rowKeys[Math.min(Math.max(index - 1, 0), rowKeys.length - 1)] ?? '')
   const key = newKey('r')
-  const row: TableRow = { key, h: (template?.get('h') as number) ?? 370840, xml: (template?.get('xml') as string) ?? '<a:tr/>', cells: {} }
+  // The copied row's `a16:rowId` would duplicate the template's; PowerPoint wants them unique.
+  const row: TableRow = { key, h: (template?.get('h') as number) ?? 370840, xml: withoutExtensions((template?.get('xml') as string) ?? '<a:tr/>'), cells: {} }
+  const below = index < rowKeys.length ? rows.get(rowKeys[index]!) : undefined
+  const grow: YMap[] = []
   for (const column of columns) {
     const source = (template?.get('cells') as Y.Map<YMap> | undefined)?.get(column)
     const tcPr = source?.get('tcPr') as string | undefined
     row.cells[column] = { ...emptyCell(), ...(tcPr ? { tcPr } : {}) }
+    // Inserted inside a vertical merge: the new cell joins it and the anchor spans one more row.
+    const next = (below?.get('cells') as Y.Map<YMap> | undefined)?.get(column)
+    if (next?.get('vMerge') === true) {
+      const anchor = mergeAnchor(rowKeys.slice(0, index).map((rowKey) => (rows.get(rowKey)?.get('cells') as Y.Map<YMap> | undefined)?.get(column)), 'vMerge')
+      if (anchor) {
+        row.cells[column] = { ...row.cells[column]!, vMerge: true, ...(next.get('hMerge') === true ? { hMerge: true } : {}), ...(next.get('gridSpan') ? { gridSpan: next.get('gridSpan') as number } : {}) }
+        if (!grow.includes(anchor)) grow.push(anchor)
+      }
+    }
   }
   doc.transact(() => {
+    for (const anchor of grow) anchor.set('rowSpan', ((anchor.get('rowSpan') as number | undefined) ?? 1) + 1)
     setRow(rows, row)
     const at = index >= rowKeys.length ? rowOrder.length : rowOrder.toArray().indexOf(rowKeys[index]!)
     rowOrder.insert(Math.max(0, at), [key])
@@ -725,7 +845,17 @@ export function insertTableColumn(doc: Y.Doc, slideKey: string, shapeKey: string
       const cells = row.get('cells') as Y.Map<YMap>
       const source = neighborKey ? cells.get(neighborKey) : undefined
       const tcPr = source?.get('tcPr') as string | undefined
-      setCell(cells, key, { ...emptyCell(), ...(tcPr ? { tcPr } : {}) })
+      let cell: TableCell = { ...emptyCell(), ...(tcPr ? { tcPr } : {}) }
+      // Inserted inside a horizontal merge: the new cell joins it and the anchor spans one more column.
+      const next = index < columnKeys.length ? cells.get(columnKeys[index]!) : undefined
+      if (next?.get('hMerge') === true) {
+        const anchor = mergeAnchor(columnKeys.slice(0, index).map((column) => cells.get(column)), 'hMerge')
+        if (anchor) {
+          anchor.set('gridSpan', ((anchor.get('gridSpan') as number | undefined) ?? 1) + 1)
+          cell = { ...cell, hMerge: true, ...(next.get('vMerge') === true ? { vMerge: true } : {}), ...(next.get('rowSpan') ? { rowSpan: next.get('rowSpan') as number } : {}) }
+        }
+      }
+      setCell(cells, key, cell)
     }
   }, origin)
   return key
@@ -739,6 +869,12 @@ export function deleteTableRows(doc: Y.Doc, slideKey: string, shapeKey: string, 
     const rows = table.get('rows') as Y.Map<YMap>
     let removed = 0
     for (const key of keys) removed += (rows.get(key)?.get('h') as number) ?? 0
+    const columns = orderedKeys(table.get('columnOrder') as Y.Array<string>, table.get('columns') as Y.Map<unknown>)
+    for (const key of keys) {
+      const order = orderedKeys(rowOrder, rows).filter((rowKey) => rowKey === key || !keys.includes(rowKey))
+      const next = rows.get(order[order.indexOf(key) + 1] ?? '')
+      for (const column of columns) handOverMerge((rows.get(key)?.get('cells') as Y.Map<YMap> | undefined), column, (next?.get('cells') as Y.Map<YMap> | undefined), column, 'rowSpan', 'vMerge')
+    }
     const items = rowOrder.toArray()
     for (let index = items.length - 1; index >= 0; index--) if (keys.includes(items[index]!)) rowOrder.delete(index, 1)
     for (const key of keys) rows.delete(key)
@@ -754,6 +890,12 @@ export function deleteTableColumns(doc: Y.Doc, slideKey: string, shapeKey: strin
     const columns = table.get('columns') as Y.Map<{ w: number; xml: string }>
     let removed = 0
     for (const key of keys) removed += columns.get(key)?.w ?? 0
+    for (const key of keys) {
+      const order = orderedKeys(columnOrder, columns).filter((column) => column === key || !keys.includes(column))
+      const next = order[order.indexOf(key) + 1]
+      if (!next) continue
+      for (const row of (table.get('rows') as Y.Map<YMap>).values()) handOverMerge(row.get('cells') as Y.Map<YMap>, key, row.get('cells') as Y.Map<YMap>, next, 'gridSpan', 'hMerge')
+    }
     const items = columnOrder.toArray()
     for (let index = items.length - 1; index >= 0; index--) if (keys.includes(items[index]!)) columnOrder.delete(index, 1)
     for (const key of keys) columns.delete(key)

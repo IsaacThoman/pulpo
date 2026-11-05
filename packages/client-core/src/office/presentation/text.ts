@@ -98,6 +98,8 @@ function markDom(name: string): Pick<MarkSpec, 'toDOM' | 'parseDOM'> {
 }
 
 const valueMark = (name: string, extra: MarkSpec = {}): MarkSpec => ({ attrs: { value: {} }, ...markDom(name), ...extra })
+/** An XML-valued mark; `rels` resolves the relationship ids inside it (a hover link, a picture fill). */
+const xmlMark = (name: string): MarkSpec => ({ attrs: { value: {}, rels: { default: null } }, ...markDom(name) })
 
 const nodes: Record<string, NodeSpec> = {
   doc: { content: 'paragraph+' },
@@ -147,12 +149,12 @@ const marks: Record<string, MarkSpec> = {
   /** Latin typeface (`a:latin/@typeface`). */
   font: valueMark('font'),
   /** The run's fill element (`a:solidFill`, …) as XML. */
-  fill: valueMark('fill'),
-  highlight: valueMark('highlight'),
+  fill: xmlMark('fill'),
+  highlight: xmlMark('highlight'),
   /** `a:hlinkClick` as XML, with its relationship resolved into `target`. */
   link: { attrs: { xml: {}, target: { default: null }, external: { default: true }, relType: { default: null } }, inclusive: false, ...markDom('link') },
   /** Whatever else `a:rPr` holds (lang, effects, east Asian fonts, …), as XML. */
-  rPr: valueMark('rPr'),
+  rPr: xmlMark('rPr'),
 }
 
 let schema: Schema | undefined
@@ -251,6 +253,50 @@ function opaqueText(element: XmlElement): string {
   return texts.join('')
 }
 
+type ResolvedRels = Record<string, { target: string; external: boolean; type: string }>
+
+/** Relationship-valued attributes (`r:id`, `r:embed`, …) of an element and its descendants. */
+type XmlAttribute = NonNullable<ReturnType<XmlElement['attributes']['item']>>
+
+function relationshipAttributes(element: XmlElement): XmlAttribute[] {
+  const found: XmlAttribute[] = []
+  const stack = [element]
+  while (stack.length) {
+    const node = stack.pop()!
+    for (let index = 0; index < node.attributes.length; index++) {
+      const attribute = node.attributes.item(index)!
+      if (attribute.namespaceURI === NS.r) found.push(attribute)
+    }
+    stack.push(...childElements(node))
+  }
+  return found
+}
+
+/** The targets of the relationship ids inside an XML mark value, so the mark can move between parts. */
+function resolveRels(element: XmlElement, rels: RelationshipResolver | undefined): ResolvedRels | null {
+  if (!rels) return null
+  const resolved: ResolvedRels = {}
+  for (const attribute of relationshipAttributes(element)) {
+    const target = attribute.value ? rels.target(attribute.value) : undefined
+    if (target?.type) resolved[attribute.value] = { target: target.target, external: target.external, type: target.type }
+  }
+  return Object.keys(resolved).length ? resolved : null
+}
+
+/** An XML mark value as an element, its relationship ids re-allocated in the part being written. */
+function importXmlMark(document: XmlDocument, mark: NonNullable<TextJSON['marks']>[number], rels: RelationshipAllocator | undefined): XmlElement {
+  const element = importFragment(document, String(mark.attrs!.value))
+  const resolved = mark.attrs?.rels as ResolvedRels | null | undefined
+  if (!rels || !resolved) return element
+  for (const attribute of relationshipAttributes(element)) {
+    const target = resolved[attribute.value]
+    // An id the mark cannot resolve would point at whatever the new part numbers that way.
+    if (!target) (attribute.ownerElement as XmlElement | null)?.removeAttributeNode(attribute as never)
+    else attribute.value = rels.allocate(target.type, target.target, target.external, attribute.value)
+  }
+  return element
+}
+
 function readRunMarks(rPr: XmlElement | undefined, rels?: RelationshipResolver): TextJSON['marks'] {
   if (!rPr) return undefined
   const result: NonNullable<TextJSON['marks']> = []
@@ -264,11 +310,8 @@ function readRunMarks(rPr: XmlElement | undefined, rels?: RelationshipResolver):
   for (const element of childElements(rest)) {
     const name = element.localName ?? ''
     if (element.namespaceURI !== NS.a) continue
-    if (FILL_ELEMENTS.has(name)) {
-      result.push({ type: 'fill', attrs: { value: serializeNode(element) } })
-      rest.removeChild(element)
-    } else if (name === 'highlight') {
-      result.push({ type: 'highlight', attrs: { value: serializeNode(element) } })
+    if (FILL_ELEMENTS.has(name) || name === 'highlight') {
+      result.push({ type: name === 'highlight' ? 'highlight' : 'fill', attrs: { value: serializeNode(element), rels: resolveRels(element, rels) } })
       rest.removeChild(element)
     } else if (name === 'latin') {
       const typeface = attr(element, 'typeface')
@@ -283,7 +326,7 @@ function readRunMarks(rPr: XmlElement | undefined, rels?: RelationshipResolver):
       rest.removeChild(element)
     }
   }
-  if (rest.attributes.length || rest.firstChild) result.push({ type: 'rPr', attrs: { value: serializeNode(rest) } })
+  if (rest.attributes.length || rest.firstChild) result.push({ type: 'rPr', attrs: { value: serializeNode(rest), rels: resolveRels(rest, rels) } })
   return result.length ? result : undefined
 }
 
@@ -398,8 +441,8 @@ function writeRuns(document: XmlDocument, run: TextJSON, rels?: RelationshipAllo
 /** Builds `a:rPr` from marks: the raw remainder first, then each modeled property in schema order. */
 export function buildRunProperties(document: XmlDocument, runMarks: NonNullable<TextJSON['marks']>, rels?: RelationshipAllocator): XmlElement | undefined {
   if (!runMarks.length) return undefined
-  const raw = runMarks.find((mark) => mark.type === 'rPr')?.attrs?.value
-  const rPr = typeof raw === 'string' && raw ? importFragment(document, raw) : createElement(document, 'a:rPr')
+  const rawMark = runMarks.find((mark) => mark.type === 'rPr' && typeof mark.attrs?.value === 'string' && mark.attrs.value)
+  const rPr = rawMark ? importXmlMark(document, rawMark, rels) : createElement(document, 'a:rPr')
   const insertChild = (childElement: XmlElement) => {
     const rank = RPR_CHILD_ORDER.indexOf(childElement.localName ?? '')
     const after = childElements(rPr).find((existing) => RPR_CHILD_ORDER.indexOf(existing.localName ?? '') > rank)
@@ -411,8 +454,10 @@ export function buildRunProperties(document: XmlDocument, runMarks: NonNullable<
       const attribute = VALUE_MARKS[mark.type as keyof typeof VALUE_MARKS]
       rPr.setAttribute(attribute, typeof value === 'boolean' ? (value ? '1' : '0') : String(value))
     } else if ((mark.type === 'fill' || mark.type === 'highlight') && typeof value === 'string') {
-      insertChild(importFragment(document, value))
+      insertChild(importXmlMark(document, mark, rels))
     } else if (mark.type === 'font' && typeof value === 'string') {
+      // A font PowerPoint wrote carries panose and charset in the raw remainder; a new typeface replaces it.
+      for (const existing of childElements(rPr)) if (existing.localName === 'latin') rPr.removeChild(existing)
       const latin = createElement(document, 'a:latin')
       latin.setAttribute('typeface', value)
       insertChild(latin)

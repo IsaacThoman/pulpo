@@ -1,13 +1,13 @@
 import type * as Y from 'yjs'
 import { LiveFormatError, type LiveFormatCodec, type LiveFormatContext } from '../live-format.js'
 import { blankPresentation } from './blank.js'
-import type { PresentationSnapshot, ShapeSnapshot, TableSnapshot } from './model.js'
+import type { PresentationSnapshot, ShapeSnapshot, SlideSnapshot, TableSnapshot } from './model.js'
 import { transactChanges } from '../assets.js'
 import { PRESENTATION_EXTENSIONS, presentationFormat, presentationMimeType } from './layout.js'
 import { PRESENTATION_SCHEMA_VERSION } from './model.js'
 import { readPresentation } from './read.js'
 import { textToPlain } from './text.js'
-import { presentationRoot, readParts, readSnapshot, reconcileSnapshot, writeSnapshot } from './ydoc.js'
+import { longestCommonSubsequence, presentationRoot, readParts, readSnapshot, reconcileSnapshot, writeSnapshot } from './ydoc.js'
 import { assignIdentifiers, writePresentation } from './write.js'
 import { textSummaryOfChart } from './summary.js'
 
@@ -73,15 +73,30 @@ export function alignKeys(currentSnapshot: PresentationSnapshot, incoming: Prese
   const current = assignIdentifiers(currentSnapshot)
   const slideKeyById = new Map(current.slides.map((slide) => [slide.sldId, slide]))
   const usedKeys = new Set<string>()
+  const currentSlideKeys = new Set(current.slides.map((slide) => slide.key))
   const sectionKeyById = new Map(current.sections.map((section) => [section.id, section.key]))
-  const sectionKeys = new Map(incoming.sections.map((section) => [section.key, sectionKeyById.get(section.id) ?? section.key]))
+  // A section the document lacks gets a key no current section has: incoming keys are positional.
+  const takenSectionKeys = new Set(current.sections.map((section) => section.key))
+  const sectionKeys = new Map<string, string>()
+  for (const section of incoming.sections) {
+    let key = sectionKeyById.get(section.id)
+    if (key === undefined || [...sectionKeys.values()].includes(key)) {
+      key = section.key
+      while (takenSectionKeys.has(key) || [...sectionKeys.values()].includes(key)) key = `${key}-new`
+    }
+    sectionKeys.set(section.key, key)
+  }
   return {
     ...incoming,
     sections: incoming.sections.map((section) => ({ ...section, key: sectionKeys.get(section.key)! })),
     slides: incoming.slides.map((slide) => {
-      const match = slideKeyById.get(slide.sldId)
+      const candidate = slideKeyById.get(slide.sldId)
+      // python-pptx gives a slide added after deleting the last one that slide's id; only a slide
+      // that still looks like the old one (same layout, a shape in common) is the same slide.
+      const match = candidate && sameSlide(candidate, slide) ? candidate : undefined
       let key = match?.key ?? slide.key
-      while (usedKeys.has(key)) key = `${key}-1`
+      // A slide that matched nothing must not land on a current slide by having its key.
+      while (usedKeys.has(key) || (!match && currentSlideKeys.has(key))) key = `${key}-1`
       usedKeys.add(key)
       return {
         ...slide,
@@ -93,6 +108,14 @@ export function alignKeys(currentSnapshot: PresentationSnapshot, incoming: Prese
   }
 }
 
+function sameSlide(current: SlideSnapshot, incoming: SlideSnapshot): boolean {
+  if (current.layout !== incoming.layout) return false
+  if (!current.shapes.length || !incoming.shapes.length) return true
+  const signature = (shape: ShapeSnapshot) => `${shape.nvId}\u0000${shape.kind}\u0000${shape.name ?? ''}`
+  const shapes = new Set(current.shapes.map(signature))
+  return incoming.shapes.some((shape) => shapes.has(signature(shape)))
+}
+
 function alignShapes(current: ShapeSnapshot[], incoming: ShapeSnapshot[]): ShapeSnapshot[] {
   const byId = new Map<number, ShapeSnapshot>()
   const collect = (shape: ShapeSnapshot) => {
@@ -100,11 +123,18 @@ function alignShapes(current: ShapeSnapshot[], incoming: ShapeSnapshot[]): Shape
     shape.children?.forEach(collect)
   }
   current.forEach(collect)
+  const currentKeys = new Set<string>()
+  const keys = (shape: ShapeSnapshot) => {
+    currentKeys.add(shape.key)
+    shape.children?.forEach(keys)
+  }
+  current.forEach(keys)
   const used = new Set<string>()
   const align = (shape: ShapeSnapshot): ShapeSnapshot => {
-    const match = shape.nvId !== undefined ? byId.get(shape.nvId) : undefined
-    let key = match && match.kind === shape.kind ? match.key : shape.key
-    while (used.has(key)) key = `${key}-1`
+    const candidate = shape.nvId !== undefined ? byId.get(shape.nvId) : undefined
+    const match = candidate && candidate.kind === shape.kind ? candidate : undefined
+    let key = match ? match.key : shape.key
+    while (used.has(key) || (!match && currentKeys.has(key))) key = `${key}-1`
     used.add(key)
     return {
       ...shape,
@@ -116,7 +146,12 @@ function alignShapes(current: ShapeSnapshot[], incoming: ShapeSnapshot[]): Shape
   return incoming.map(align)
 }
 
-/** Matches rows and columns by position when the counts agree, else rows by their text. */
+/**
+ * Matches columns by position when the counts agree. Rows match by their text first (longest
+ * common subsequence), so a row deleted in one place and added in another does not shift
+ * everyone's typing into the wrong row; rows left between two matches pair up by position, which
+ * is what an edited row looks like.
+ */
 function alignTable(current: TableSnapshot, incoming: TableSnapshot): TableSnapshot {
   const columns =
     current.columns.length === incoming.columns.length
@@ -124,16 +159,24 @@ function alignTable(current: TableSnapshot, incoming: TableSnapshot): TableSnaps
       : incoming.columns
   const columnKey = new Map(incoming.columns.map((column, index) => [column.key, columns[index]!.key]))
   const signature = (row: TableSnapshot['rows'][number], keys: string[]) => keys.map((key) => textToPlain(row.cells[key]?.text ?? { type: 'doc' })).join('\t')
-  const currentSignatures = new Map<string, string[]>()
-  current.rows.forEach((row) => {
-    const text = signature(row, current.columns.map((column) => column.key))
-    currentSignatures.set(text, [...(currentSignatures.get(text) ?? []), row.key])
-  })
+  const currentSignatures = current.rows.map((row) => signature(row, current.columns.map((column) => column.key)))
+  const incomingSignatures = incoming.rows.map((row) => signature(row, incoming.columns.map((column) => column.key)))
+  const common = longestCommonSubsequence(currentSignatures, incomingSignatures)
+  const pairs = new Map<number, number>()
+  const currentMatched = [...common.current].sort((a, b) => a - b)
+  const incomingMatched = [...common.target].sort((a, b) => a - b)
+  currentMatched.forEach((index, at) => pairs.set(incomingMatched[at]!, index))
+  // Between consecutive matches (and before the first, after the last), pair the rest in order.
+  const anchors = [[-1, -1], ...incomingMatched.map((index, at) => [currentMatched[at]!, index]), [current.rows.length, incoming.rows.length]] as [number, number][]
+  for (let at = 0; at < anchors.length - 1; at++) {
+    const [currentStart, incomingStart] = anchors[at]!
+    const [currentEnd, incomingEnd] = anchors[at + 1]!
+    for (let offset = 1; currentStart + offset < currentEnd && incomingStart + offset < incomingEnd; offset++) pairs.set(incomingStart + offset, currentStart + offset)
+  }
   const used = new Set<string>()
   const rows = incoming.rows.map((row, index) => {
-    let key: string | undefined
-    if (current.rows.length === incoming.rows.length) key = current.rows[index]!.key
-    else key = currentSignatures.get(signature(row, incoming.columns.map((column) => column.key)))?.find((candidate) => !used.has(candidate))
+    const paired = pairs.get(index)
+    let key = paired !== undefined ? current.rows[paired]!.key : undefined
     if (!key || used.has(key)) key = `${row.key}-${index}-new`
     used.add(key)
     const cells = Object.fromEntries(Object.entries(row.cells).map(([column, cell]) => [columnKey.get(column) ?? column, cell]))

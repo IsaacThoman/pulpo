@@ -10,6 +10,7 @@ import {
 } from '../ooxml/package.js'
 import type { NotesSnapshot, PresentationFormat, PresentationSnapshot, RelTarget, ShapeSnapshot, SlideSnapshot, TableSnapshot, Xfrm } from './model.js'
 import { notesBody, readShape, readSlide, SECTION_LIST_EXT_URI, mimeTypeFor } from './read.js'
+import { slideSections } from './sections.js'
 import { readTextBody, writeParagraphs, type RelationshipAllocator } from './text.js'
 import {
   attr,
@@ -61,6 +62,9 @@ export function assignIdentifiers(snapshot: PresentationSnapshot): PresentationS
     if (slide.part) usedParts.add(slide.part)
     if (slide.notes?.part) usedParts.add(slide.notes.part)
   }
+  // And names of slides deleted since the file was read: links and custom shows that still name
+  // one are cleared on export, but only while no new slide has taken the name.
+  for (const name of retiredSlideParts(snapshot)) usedParts.add(name)
   const claimedParts = new Set<string>()
   const claim = (part: string | undefined) => {
     if (!part || claimedParts.has(part)) return false
@@ -97,6 +101,40 @@ export function assignIdentifiers(snapshot: PresentationSnapshot): PresentationS
   return { ...snapshot, slides }
 }
 
+/** Slide and notes part names the main part's relationships or any slide link still mention. */
+function retiredSlideParts(snapshot: PresentationSnapshot): Set<string> {
+  const names = new Set<string>()
+  const relsPath = relationshipsPathFor(snapshot.mainPart)
+  const bytes = snapshot.parts[relsPath]?.bytes
+  if (bytes) {
+    try {
+      for (const element of childElements(parseXmlDocument(new TextDecoder().decode(bytes)).documentElement)) {
+        const target = attr(element, 'Target')
+        if (target && attr(element, 'TargetMode') !== 'External') names.add(resolveTarget(snapshot.mainPart, target))
+      }
+    } catch {
+      // A damaged relationships part names nothing.
+    }
+  }
+  const linked = (rels: Record<string, RelTarget>) => {
+    for (const rel of Object.values(rels)) if (rel.type === REL_TYPES.slide && !rel.external) names.add(rel.target)
+  }
+  const walk = (shapes: ShapeSnapshot[]) => {
+    for (const shape of shapes) {
+      linked(shape.rels)
+      if (shape.text && JSON.stringify(shape.text).includes('"link"')) {
+        for (const paragraph of shape.text.content ?? []) for (const inline of paragraph.content ?? []) for (const mark of inline.marks ?? []) if (mark.type === 'link' && mark.attrs?.external === false && typeof mark.attrs.target === 'string') names.add(mark.attrs.target)
+      }
+      walk(shape.children ?? [])
+    }
+  }
+  for (const slide of snapshot.slides) {
+    linked(slide.rels)
+    walk(slide.shapes)
+  }
+  return names
+}
+
 /** `ST_SlideId`: 256 through 2147483647. */
 const MAX_SLIDE_ID = 2_147_483_647
 
@@ -125,18 +163,37 @@ function freePartName(used: Set<string>, prefix: string, suffix: string): string
   }
 }
 
+/** `ST_DrawingElementId`; 0 is what templates for new shapes carry, meaning "not assigned yet". */
+const validShapeId = (id: unknown): id is number => typeof id === 'number' && Number.isInteger(id) && id > 0 && id <= MAX_COORDINATE
+
+/** Shape ids inside XML the model keeps whole (equations, ink, 3-D models in `mc:AlternateContent`). */
+function opaqueShapeIds(xml: string): number[] {
+  return [...xml.matchAll(/<(?:[\w.-]+:)?cNvPr\b[^>]*?\sid="(\d+)"/g)].map((match) => Number(match[1])).filter(validShapeId)
+}
+
 function assignShapeIds(shapes: ShapeSnapshot[]): ShapeSnapshot[] {
   const used = new Set<number>([1])
   let next = 2
   const walk = (shape: ShapeSnapshot) => {
-    if (shape.nvId !== undefined) next = Math.max(next, shape.nvId + 1)
+    if (shape.kind === 'opaque') for (const id of opaqueShapeIds(shape.xml)) {
+      used.add(id)
+      next = Math.max(next, id + 1)
+    }
+    else if (validShapeId(shape.nvId)) next = Math.max(next, shape.nvId + 1)
     shape.children?.forEach(walk)
   }
   shapes.forEach(walk)
+  if (next > MAX_COORDINATE) next = 2
+  const fresh = () => {
+    while (used.has(next)) next = next >= MAX_COORDINATE ? 2 : next + 1
+    return next++
+  }
   const assign = (original: ShapeSnapshot): ShapeSnapshot => {
     const shape = { ...original }
-    if (shape.kind !== 'opaque' && (shape.nvId === undefined || used.has(shape.nvId))) shape.nvId = next++
-    if (shape.nvId !== undefined) used.add(shape.nvId)
+    if (shape.kind !== 'opaque') {
+      if (!validShapeId(shape.nvId) || used.has(shape.nvId)) shape.nvId = fresh()
+      used.add(shape.nvId!)
+    }
     if (shape.children) shape.children = shape.children.map(assign)
     return shape
   }
@@ -261,7 +318,9 @@ function patchShape(element: XmlElement, shape: ShapeSnapshot, local: Relationsh
   if (shape.kind === 'pic' && differs(shape.blipFill, derived.blipFill)) {
     replaceOrInsert(element, child(element, 'blipFill', NS.p), fragment(document, shape.blipFill), ['spPr'])
   }
-  if (differs(shape.bodyPr, derived.bodyPr) || differs(shape.text, derived.text)) {
+  // Only `p:sp` holds a text body; text on a group or picture (a stray command, a crafted paste)
+  // would make the slide invalid, and grow by one body every time the file comes back.
+  if (shape.kind === 'sp' && (differs(shape.bodyPr, derived.bodyPr) || differs(shape.text, derived.text))) {
     let txBody = child(element, 'txBody', NS.p)
     if (!txBody && shape.text) {
       txBody = createElement(document, 'p:txBody')
@@ -279,7 +338,16 @@ function patchShape(element: XmlElement, shape: ShapeSnapshot, local: Relationsh
   }
   if (shape.table && differs(shape.table, derived.table)) {
     const tbl = path(element, 'graphic', 'graphicData', 'tbl')
-    if (tbl) writeTable(tbl, shape.table, derived.table, local)
+    if (tbl) {
+      writeTable(tbl, shape.table, derived.table, local)
+      // The frame is the grid's size, as PowerPoint writes it; concurrent row and column inserts
+      // each grow the stored frame, and only the grid knows their sum.
+      const ext = child(child(element, 'xfrm', NS.p), 'ext', NS.a)
+      if (ext && shape.table.columns.length && shape.table.rows.length) {
+        ext.setAttribute('cx', emuValue(shape.table.columns.reduce((sum, column) => sum + (Number.isFinite(column.w) ? column.w : 0), 0), 0))
+        ext.setAttribute('cy', emuValue(Math.max(Number(ext.getAttribute('cy')) || 0, shape.table.rows.reduce((sum, row) => sum + (Number.isFinite(row.h) ? row.h : 0), 0)), 0))
+      }
+    }
   }
 }
 
@@ -299,21 +367,30 @@ function ensureShapeProperties(element: XmlElement, kind: ShapeSnapshot['kind'])
   return created
 }
 
+/** The largest coordinate written: `ST_PositiveCoordinate32`, which every reader accepts. */
+const MAX_COORDINATE = 2_147_483_647
+
+/** An integer attribute value: finite, rounded, and inside `[min, max]` (0 for anything not a number). */
+export function emuValue(value: unknown, min = -MAX_COORDINATE, max = MAX_COORDINATE): string {
+  const number = typeof value === 'number' && Number.isFinite(value) ? Math.round(value) : 0
+  return String(Math.min(max, Math.max(min, number)))
+}
+
 function xfrmElement(document: XmlDocument, xfrm: Xfrm, name: 'a:xfrm' | 'p:xfrm'): XmlElement {
   const element = createElement(document, name)
-  if (xfrm.rot) element.setAttribute('rot', String(Math.round(xfrm.rot)))
+  if (xfrm.rot && Number.isFinite(xfrm.rot)) element.setAttribute('rot', emuValue(xfrm.rot))
   if (xfrm.flipH) element.setAttribute('flipH', '1')
   if (xfrm.flipV) element.setAttribute('flipV', '1')
-  const point = (tag: string, a: string, b: string, x: number, y: number) => {
+  const point = (tag: string, a: string, b: string, x: number, y: number, min?: number) => {
     const entry = createElement(document, tag)
-    entry.setAttribute(a, String(Math.round(x)))
-    entry.setAttribute(b, String(Math.round(y)))
+    entry.setAttribute(a, emuValue(x, min))
+    entry.setAttribute(b, emuValue(y, min))
     element.appendChild(entry)
   }
   point('a:off', 'x', 'y', xfrm.x, xfrm.y)
-  point('a:ext', 'cx', 'cy', Math.max(0, xfrm.cx), Math.max(0, xfrm.cy))
+  point('a:ext', 'cx', 'cy', xfrm.cx, xfrm.cy, 0)
   if (xfrm.chX !== undefined || xfrm.chY !== undefined) point('a:chOff', 'x', 'y', xfrm.chX ?? 0, xfrm.chY ?? 0)
-  if (xfrm.chCx !== undefined || xfrm.chCy !== undefined) point('a:chExt', 'cx', 'cy', Math.max(0, xfrm.chCx ?? 0), Math.max(0, xfrm.chCy ?? 0))
+  if (xfrm.chCx !== undefined || xfrm.chCy !== undefined) point('a:chExt', 'cx', 'cy', xfrm.chCx ?? 0, xfrm.chCy ?? 0, 0)
   return element
 }
 
@@ -337,14 +414,14 @@ function writeTable(tbl: XmlElement, table: TableSnapshot, derived: TableSnapsho
   for (const column of childElements(grid)) grid.removeChild(column)
   for (const column of table.columns) {
     const element = importFragment(document, column.xml)
-    element.setAttribute('w', String(Math.round(column.w)))
+    element.setAttribute('w', emuValue(column.w, 0))
     grid.appendChild(element)
   }
   const anchor = childElements(tbl).find((element) => element.localName === 'extLst') ?? null
   for (const row of childElements(tbl)) if (row.localName === 'tr') tbl.removeChild(row)
   for (const row of table.rows) {
     const element = importFragment(document, row.xml)
-    element.setAttribute('h', String(Math.round(row.h)))
+    element.setAttribute('h', emuValue(row.h, 0))
     const rowExtLst = child(element, 'extLst', NS.a)
     for (const column of table.columns) {
       const cell = row.cells[column.key]
@@ -371,6 +448,19 @@ function writeTable(tbl: XmlElement, table: TableSnapshot, derived: TableSnapsho
       element.insertBefore(tc, rowExtLst ?? null)
     }
     tbl.insertBefore(element, anchor)
+  }
+  // Row ids (`a16:rowId`) must be unique; copies made by concurrent edits drop theirs.
+  const rowIds = new Set<string>()
+  for (const row of childElements(tbl)) {
+    if (row.localName !== 'tr') continue
+    const extLst = child(row, 'extLst', NS.a)
+    for (const extension of childElements(extLst)) {
+      const id = childElements(extension).find((entry) => entry.localName === 'rowId')?.getAttribute('val')
+      if (id === undefined || id === null) continue
+      if (rowIds.has(id)) extLst!.removeChild(extension)
+      else rowIds.add(id)
+    }
+    if (extLst && !childElements(extLst).length) row.removeChild(extLst)
   }
 }
 
@@ -479,9 +569,39 @@ function pruneShapeReferences(root: XmlElement): void {
     if (!node.parentNode) continue
     const name = node.localName
     if ((name === 'stCxn' || name === 'endCxn') && !ids.has(node.getAttribute('id') ?? '')) node.parentNode.removeChild(node)
-    else if (name === 'bldP' && !ids.has(node.getAttribute('spid') ?? '')) node.parentNode.removeChild(node)
-    else if (name === 'spTgt' && !ids.has(node.getAttribute('spid') ?? '')) removeAnimation(node)
+    else if (BUILD_ELEMENTS.has(name ?? '') && !ids.has(node.getAttribute('spid') ?? '')) node.parentNode.removeChild(node)
+    else if ((name === 'spTgt' || name === 'inkTgt') && !ids.has(node.getAttribute('spid') ?? '')) removeAnimation(node)
   }
+  pruneEmptyTiming(root)
+}
+
+/** `p:bldLst` entries, each naming the shape it builds by `spid`. */
+const BUILD_ELEMENTS = new Set(['bldP', 'bldGraphic', 'bldDgm', 'bldOleChart'])
+
+/**
+ * Sequences and build lists must not be empty. Once the last animation in one is gone, it goes;
+ * with no time nodes left at all, so does the slide's `p:timing`.
+ */
+function pruneEmptyTiming(root: XmlElement): void {
+  const timing = child(root, 'timing', NS.p)
+  if (!timing) return
+  const timeNodes = (container: XmlElement | undefined) => childElements(child(container, 'childTnLst', NS.p))
+  const sequences: XmlElement[] = []
+  const stack = [timing]
+  while (stack.length) {
+    const node = stack.pop()!
+    if (node.localName === 'seq' && node.namespaceURI === NS.p) sequences.push(node)
+    stack.push(...childElements(node))
+  }
+  for (const sequence of sequences) {
+    if (timeNodes(child(sequence, 'cTn', NS.p)).length) continue
+    const list = sequence.parentNode as XmlElement | null
+    list?.removeChild(sequence)
+  }
+  const buildList = child(timing, 'bldLst', NS.p)
+  if (buildList && !childElements(buildList).length) timing.removeChild(buildList)
+  const rootNode = child(child(child(timing, 'tnLst', NS.p), 'par', NS.p), 'cTn', NS.p)
+  if (child(timing, 'tnLst', NS.p) && !timeNodes(rootNode).length) root.removeChild(timing)
 }
 
 /** Removes the effect a target belongs to, then any time nodes it leaves empty (never the timing root). */
@@ -550,13 +670,21 @@ function notesPartFromRels(pkg: OoxmlPackage, part: string): string | undefined 
 const NEW_NOTES_XML =
   '<p:notes xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/><p:sp><p:nvSpPr><p:cNvPr id="2" name="Slide Image Placeholder 1"/><p:cNvSpPr><a:spLocks noGrp="1" noRot="1" noChangeAspect="1"/></p:cNvSpPr><p:nvPr><p:ph type="sldImg"/></p:nvPr></p:nvSpPr><p:spPr/></p:sp><p:sp><p:nvSpPr><p:cNvPr id="3" name="Notes Placeholder 2"/><p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr><p:nvPr><p:ph type="body" idx="1"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:lstStyle/><a:p/></p:txBody></p:sp></p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:notes>'
 
-function writeNotes(notes: NotesSnapshot, slidePart: string, notesMaster: string): WrittenPart {
+function writeNotes(notes: NotesSnapshot, slidePart: string, notesMaster: string, liveParts: ReadonlySet<string>): WrittenPart {
   const part = notes.part!
   const table = new RelationshipTable()
-  for (const [id, rel] of Object.entries(notes.rels)) table.set(id, rel.type === REL_TYPES.slide ? { ...rel, target: slidePart } : rel)
+  // Slide relationships nothing in the notes refers to name the notes' own slide, which may have
+  // been renamed or copied: they point at it. Referenced ones are links, kept while their slide is.
+  const referenced = notesReferences(notes)
+  for (const [id, rel] of Object.entries(notes.rels)) {
+    if (rel.type !== REL_TYPES.slide || rel.external) table.set(id, rel)
+    else if (!referenced.has(id)) table.set(id, { ...rel, target: slidePart })
+    else if (liveParts.has(rel.target)) table.set(id, rel)
+  }
   table.allocate(REL_TYPES.notesMaster, notesMaster, false)
   table.allocate(REL_TYPES.slide, slidePart, false)
-  if (notes.source && notes.xml) {
+  const deadLinks = notesLinkToDeletedSlide(notes, liveParts)
+  if (notes.source && notes.xml && !deadLinks) {
     try {
       const original = parseXmlDocument(new TextDecoder().decode(notes.source)).documentElement!
       const body = notesBody(original)
@@ -577,8 +705,28 @@ function writeNotes(notes: NotesSnapshot, slidePart: string, notesMaster: string
     body = child(shape, 'txBody', NS.p)!
   }
   writeParagraphs(body, notes.text, table)
+  dropDeadSlideLinks(document.documentElement!, table, new Set([...liveParts, slidePart]))
   pruneRedundantNamespaces(document.documentElement!)
   return { xml: strToU8(serializeDocument(document)), rels: strToU8(table.toXml(part)) }
+}
+
+/** Relationship ids the notes page's XML and text refer to. */
+function notesReferences(notes: NotesSnapshot): Set<string> {
+  const ids = new Set<string>()
+  for (const [, id] of notes.xml.matchAll(/\br:(?:id|embed|link|pict)="([^"]*)"/g)) ids.add(id!)
+  for (const paragraph of notes.text.content ?? []) {
+    for (const inline of paragraph.content ?? []) {
+      for (const mark of inline.marks ?? []) {
+        const xml = typeof mark.attrs?.xml === 'string' ? mark.attrs.xml : typeof mark.attrs?.value === 'string' ? mark.attrs.value : ''
+        for (const [, id] of xml.matchAll(/\br:(?:id|embed|link|pict)="([^"]*)"/g)) ids.add(id!)
+      }
+    }
+  }
+  return ids
+}
+
+function notesLinkToDeletedSlide(notes: NotesSnapshot, liveParts: ReadonlySet<string>): boolean {
+  return (notes.text.content ?? []).some((paragraph) => (paragraph.content ?? []).some((inline) => (inline.marks ?? []).some((mark) => mark.type === 'link' && mark.attrs?.external === false && (mark.attrs.relType ?? REL_TYPES.slide) === REL_TYPES.slide && typeof mark.attrs.target === 'string' && !liveParts.has(mark.attrs.target))))
 }
 
 function serializeDocument(document: XmlDocument): string {
@@ -607,12 +755,12 @@ export async function writePresentation(input: PresentationSnapshot, options: Wr
   if (!notesMaster && snapshot.slides.some((slide) => slide.notes)) notesMaster = addNotesMaster(pkg, snapshot.mainPart)
 
   const liveParts = new Set(snapshot.slides.map((slide) => slide.part!))
-  for (const slide of snapshot.slides) {
+  for (const slide of unshareSlideParts(pkg, snapshot.slides)) {
     const written = writeSlide(slide, liveParts)
     pkg.set(slide.part!, written.xml)
     pkg.set(relationshipsPathFor(slide.part!), written.rels)
     if (slide.notes) {
-      const notes = writeNotes(slide.notes, slide.part!, notesMaster!)
+      const notes = writeNotes(slide.notes, slide.part!, notesMaster!, liveParts)
       pkg.set(slide.notes.part!, notes.xml)
       pkg.set(relationshipsPathFor(slide.notes.part!), notes.rels)
     }
@@ -695,14 +843,9 @@ function sectionListElement(presentation: XmlElement): XmlElement | undefined {
 /** Sections as the file lists them: each a run of slides, in slide order. */
 function wantedSections(snapshot: PresentationSnapshot): PresentationLists['sections'] {
   if (!snapshot.sections.length) return []
-  const known = new Map(snapshot.sections.map((section) => [section.key, section]))
   const members = new Map<string, number[]>(snapshot.sections.map((section) => [section.key, []]))
-  let current = snapshot.sections[0]!.key
-  for (const slide of snapshot.slides) {
-    // A slide without a (surviving) section joins the one before it, as PowerPoint does.
-    if (slide.section && known.has(slide.section)) current = slide.section
-    members.get(current)!.push(slide.sldId!)
-  }
+  const assigned = slideSections(snapshot.sections.map((section) => section.key), snapshot.slides)
+  snapshot.slides.forEach((slide, index) => members.get(assigned[index]!)!.push(slide.sldId!))
   return snapshot.sections.map((section) => ({ name: section.name, id: section.id, slides: members.get(section.key)! }))
 }
 
@@ -836,6 +979,86 @@ function collectGarbage(pkg: OoxmlPackage, snapshot: PresentationSnapshot): void
   }
 }
 
+/** Relationship types whose part belongs to one slide: PowerPoint copies them when it duplicates a slide. */
+const PER_SLIDE_TYPES = new Set([
+  REL_TYPES.chart,
+  REL_TYPES.diagramData,
+  REL_TYPES.diagramLayout,
+  REL_TYPES.diagramStyle,
+  REL_TYPES.diagramColors,
+  REL_TYPES.diagramDrawing,
+  'http://schemas.openxmlformats.org/officeDocument/2006/relationships/oleObject',
+  'http://schemas.openxmlformats.org/officeDocument/2006/relationships/package',
+])
+
+/**
+ * A chart, diagram, or embedded object two slides share (a duplicated slide's copy, say) is given
+ * to the first slide; later ones get a copy, with the copy's own embedded workbook and styles.
+ */
+function unshareSlideParts(pkg: OoxmlPackage, slides: SlideSnapshot[]): SlideSnapshot[] {
+  const owners = new Map<string, string>()
+  return slides.map((slide) => {
+    const copies = new Map<string, string>()
+    const remap = (rels: Record<string, RelTarget>): Record<string, RelTarget> => {
+      let changed = false
+      const result: Record<string, RelTarget> = {}
+      for (const [id, rel] of Object.entries(rels)) {
+        if (rel.external || !PER_SLIDE_TYPES.has(rel.type) || !pkg.has(rel.target)) {
+          result[id] = rel
+          continue
+        }
+        const owner = owners.get(rel.target)
+        if (owner === undefined || owner === slide.key) {
+          owners.set(rel.target, slide.key)
+          result[id] = rel
+          continue
+        }
+        let copy = copies.get(rel.target)
+        if (!copy) {
+          copy = copyPartTree(pkg, rel.target, new Map())
+          copies.set(rel.target, copy)
+          owners.set(copy, slide.key)
+        }
+        result[id] = { ...rel, target: copy }
+        changed = true
+      }
+      return changed ? result : rels
+    }
+    const shapes = (list: ShapeSnapshot[]): ShapeSnapshot[] => list.map((shape) => ({ ...shape, rels: remap(shape.rels), ...(shape.children ? { children: shapes(shape.children) } : {}) }))
+    return { ...slide, rels: remap(slide.rels), shapes: shapes(slide.shapes) }
+  })
+}
+
+/** Copies a part under a free name next to it, with what it links to (except media), and returns the copy's name. */
+function copyPartTree(pkg: OoxmlPackage, partPath: string, copied: Map<string, string>): string {
+  const existing = copied.get(partPath)
+  if (existing) return existing
+  const match = /^(.*?)(\d*)(\.[^./]+)$/.exec(partPath)
+  const [, stem, , extension] = match ?? [partPath, partPath, '', '']
+  let index = 1
+  while (pkg.has(`${stem}${index}${extension}`)) index++
+  const target = `${stem}${index}${extension}`
+  copied.set(partPath, target)
+  pkg.set(target, pkg.get(partPath)!)
+  const contentType = pkg.contentType(partPath)
+  if (contentType && contentType !== pkg.contentType(target)) pkg.setContentType(target, contentType)
+  const relsPath = relationshipsPathFor(partPath)
+  if (pkg.has(relsPath)) {
+    const table = new RelationshipTable()
+    for (const rel of safeRelationships(pkg, partPath)) {
+      if (rel.targetMode === 'External') {
+        table.set(rel.id, { type: rel.type, target: rel.target, external: true })
+        continue
+      }
+      const resolved = resolveTarget(partPath, rel.target)
+      const child = pkg.has(resolved) && !resolved.startsWith('ppt/media/') && !/\/(slides|slideLayouts|slideMasters|theme)\//.test(`/${resolved}`) ? copyPartTree(pkg, resolved, copied) : resolved
+      table.set(rel.id, { type: rel.type, target: child })
+    }
+    pkg.set(relationshipsPathFor(target), strToU8(table.toXml(target)))
+  }
+  return target
+}
+
 function relsOwner(partPath: string): string | undefined {
   const match = /^(.*?)_rels\/([^/]+)\.rels$/.exec(partPath)
   return match ? `${match[1]}${match[2]}` : undefined
@@ -872,6 +1095,14 @@ function writeContentTypes(pkg: OoxmlPackage, snapshot: PresentationSnapshot, fo
     if (extension === 'rels') pkg.ensureDefaultContentType('rels', 'application/vnd.openxmlformats-package.relationships+xml')
     else if (extension === 'xml') pkg.ensureDefaultContentType('xml', 'application/xml')
     else pkg.ensureDefaultContentType(extension, snapshot.parts[partPath]?.contentType ?? mimeTypeFor(partPath))
+  }
+  // Parts whose type the extension's Default does not give (a pasted chart is `.xml` but not
+  // `application/xml`, a WebP among PNGs) get an Override. The main part, slides and notes were
+  // set above, from the format being written.
+  const handled = new Set([snapshot.mainPart, ...snapshot.slides.flatMap((slide) => [slide.part!, ...(slide.notes ? [slide.notes.part!] : [])])])
+  for (const partPath of pkg.paths()) {
+    const contentType = snapshot.parts[partPath]?.contentType
+    if (contentType && !handled.has(partPath) && partPath !== CONTENT_TYPES_PATH) want(partPath, contentType)
   }
 }
 

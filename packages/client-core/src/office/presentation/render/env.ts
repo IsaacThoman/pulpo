@@ -43,6 +43,18 @@ export interface RenderEnv {
   mode: 'edit' | 'view'
   labels: RenderLabels
   now: Date
+  /** SmartArt drawing parts being drawn right now, so a drawing that includes itself stops. */
+  drawings?: ReadonlySet<string>
+  /** Shapes left to draw on this page: hostile files can nest drawings to multiply the work. */
+  budget?: { shapes: number }
+}
+
+/** The most shapes one slide draws, counting master, layout, group members and SmartArt. */
+export const MAX_SHAPES_PER_SLIDE = 20_000
+
+/** Characters an SVG id (and `url(#…)`) may contain: anything else, such as a collaborator's slide key, is replaced. */
+export function safeIdPrefix(prefix: string): string {
+  return prefix.replace(/[^A-Za-z0-9_-]/g, (character) => `_${character.codePointAt(0)!.toString(36)}`)
 }
 
 /** A pixel value for CSS: finite and short. */

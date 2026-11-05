@@ -11,7 +11,7 @@ import type { RenderEnv } from '../render/env.js'
 import { emptyBag, mergeInto } from '../render/props.js'
 import { autoNumberLabel, autoNumbers, fieldText, paragraphStyle, runCss, type BodyLayout, type ParagraphStyle, type TextStyleContext } from '../render/text.js'
 import { buildRunProperties, slideTextSchema, type TextJSON } from '../text.js'
-import { parseFragment, parseXmlDocument, type XmlElement } from '../xml.js'
+import { parseFragment, parseXmlDocument, serializeNode, type XmlElement } from '../xml.js'
 
 /**
  * The inline text editor: a ProseMirror view bound to one text body's Y.XmlFragment. Paragraph
@@ -40,6 +40,8 @@ export interface InlineTextEditorOptions {
   onSelectionChange?(state: EditorState): void
   /** Ctrl/Cmd shortcuts the editor does not handle itself (copy shapes, save, …). */
   onKey?(event: KeyboardEvent): boolean
+  /** Tab and Shift+Tab; return true when handled (a table cell moves to the next cell). Else they change the list level. */
+  onTab?(backward: boolean): boolean
   /** Bold, italic, and underline shortcuts; the host knows the inherited formatting to toggle against. */
   onToggleMark?(mark: 'b' | 'i' | 'u'): void
 }
@@ -73,15 +75,62 @@ function styleOfParagraph(node: ProseMirrorNode, style: TextEditorStyle): Paragr
   return paragraphStyle(parsed(node.attrs.pPr), style.context, style.body, firstRun)
 }
 
+// -------------------------------------------------------------------------------------------
+// Collaborators' carets. Awareness comes from other clients, so every field is checked before
+// y-tiptap reads it: a malformed cursor would throw on each awareness change, and a color is put
+// in a style attribute.
+
+const HEX_COLOR = /^#[0-9a-fA-F]{6}$/
+
+function isRelativePosition(value: unknown): boolean {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/** Shows only other clients whose cursor is two relative positions. */
+export function validCursorState(localClientId: number, clientId: number, state: unknown): boolean {
+  if (localClientId === clientId || typeof state !== 'object' || state === null) return false
+  const cursor = (state as { cursor?: unknown }).cursor
+  if (cursor == null) return false
+  return typeof cursor === 'object' && isRelativePosition((cursor as { anchor?: unknown }).anchor) && isRelativePosition((cursor as { head?: unknown }).head)
+}
+
+function safeColor(user: { color?: unknown }): string {
+  return typeof user.color === 'string' && HEX_COLOR.test(user.color) ? user.color : '#888888'
+}
+
+export function remoteCaret(user: { name?: unknown; color?: unknown }): HTMLElement {
+  const color = safeColor(user)
+  const caret = document.createElement('span')
+  caret.className = 'ProseMirror-yjs-cursor pp-remote-caret'
+  caret.style.borderColor = color
+  const label = document.createElement('div')
+  label.style.backgroundColor = color
+  label.textContent = typeof user.name === 'string' ? user.name.slice(0, 80) : ''
+  caret.append('\u2060', label, '\u2060')
+  return caret
+}
+
+export function remoteSelection(user: { color?: unknown }): { style: string; class: string } {
+  return { style: `background-color: ${safeColor(user)}40`, class: 'ProseMirror-yjs-selection' }
+}
+
+/** What a style looks like, to tell whether a refresh changes anything. `env` only feeds fields. */
+function styleKey(style: TextEditorStyle): string {
+  return JSON.stringify({ context: style.context, body: style.body }, (_key, value: unknown) =>
+    value && typeof value === 'object' && 'nodeType' in value && 'ownerDocument' in value ? serializeNode(value as XmlElement) : value,
+  )
+}
+
 export class InlineTextEditor {
   readonly view: EditorView
   private style: TextEditorStyle
 
   constructor(private readonly options: InlineTextEditorOptions) {
     this.style = options.style
+    this.styleKey = styleKey(options.style)
     const plugins = [
       ySyncPlugin(options.fragment),
-      ...(options.awareness ? [yCursorPlugin(options.awareness, {}, 'pptxCursor')] : []),
+      ...(options.awareness ? [yCursorPlugin(options.awareness, { awarenessStateFilter: validCursorState, cursorBuilder: remoteCaret, selectionBuilder: remoteSelection })] : []),
       keymap({
         'Mod-z': () => (options.onUndo(), true),
         'Mod-y': () => (options.onRedo(), true),
@@ -91,8 +140,8 @@ export class InlineTextEditor {
         'Mod-u': () => (options.onToggleMark?.('u'), true),
         'Shift-Enter': insertLineBreak,
         Enter: chainCommands(newlineInCode, createParagraphNear, liftEmptyBlock, splitParagraph),
-        Tab: listLevel(1),
-        'Shift-Tab': listLevel(-1),
+        Tab: (state, dispatch) => options.onTab?.(false) || listLevel(1)(state, dispatch),
+        'Shift-Tab': (state, dispatch) => options.onTab?.(true) || listLevel(-1)(state, dispatch),
         Escape: () => (options.onEscape?.(), true),
       }),
       keymap(baseKeymap),
@@ -111,6 +160,10 @@ export class InlineTextEditor {
         markViews: this.markViews(),
         attributes: { class: 'pp-text-editor', spellcheck: 'true', role: 'textbox', 'aria-multiline': 'true' },
         handleKeyDown: (_view, event) => options.onKey?.(event) ?? false,
+        handleDOMEvents: {
+          // ProseMirror finishes its own composition handling first.
+          compositionend: () => (setTimeout(() => this.applyPendingStyle(), 0), false),
+        },
         // y-tiptap dispatches while the view is still being constructed, before `this.view` is set.
         dispatchTransaction(this: EditorView, transaction) {
           // y-tiptap flushes deferred updates on a timer, which can land after the editor closed.
@@ -124,10 +177,33 @@ export class InlineTextEditor {
     )
   }
 
-  /** Restyles after the shape's inherited formatting changed (layout, theme, list style). */
+  /**
+   * Restyles after the shape's inherited formatting changed (layout, theme, list style). Redrawing
+   * replaces every paragraph's DOM, so it happens only when the style really differs, and never
+   * during an IME composition, which a redraw would break: it waits for the composition to end.
+   */
   setStyle(style: TextEditorStyle): void {
+    const key = styleKey(style)
+    if (key === this.styleKey) {
+      this.style = style
+      return
+    }
+    if (this.view.composing) {
+      this.pendingStyle = style
+      return
+    }
     this.style = style
+    this.styleKey = key
     this.view.setProps({ nodeViews: this.nodeViews(), markViews: this.markViews() })
+  }
+
+  private styleKey = ''
+  private pendingStyle?: TextEditorStyle
+
+  private applyPendingStyle(): void {
+    const pending = this.pendingStyle
+    this.pendingStyle = undefined
+    if (pending && !this.view.isDestroyed) this.setStyle(pending)
   }
 
   focus(atEnd = true): void {
