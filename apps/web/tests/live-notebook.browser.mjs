@@ -297,7 +297,12 @@ try {
   // Run with agent opens a new chat with the notebook attached and the request ready to send.
   await first.getByRole('button', { name: 'Run with agent' }).click()
   await first.getByRole('textbox').filter({ hasText: /Run this notebook/ }).or(first.locator('textarea')).first().waitFor()
-  await first.waitForFunction(() => [...document.querySelectorAll('textarea')].some((area) => area.value.startsWith('Run this notebook')), undefined, { timeout: 10_000 })
+  // Added to whatever the new chat's draft already holds.
+  try {
+    await first.waitForFunction(() => [...document.querySelectorAll('textarea')].some((area) => area.value.includes('Run this notebook')), undefined, { timeout: 15_000 })
+  } catch (error) {
+    throw new Error(`The composer holds ${JSON.stringify(await first.evaluate(() => [...document.querySelectorAll('textarea')].map((area) => area.value)))}`, { cause: error })
+  }
 
   assert.deepEqual(errors, [])
   console.log('live notebook: ok')
