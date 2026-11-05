@@ -2669,6 +2669,7 @@ const esUi: Record<string, string> = {
   "Resize column {{0}}": "Cambiar el ancho de la columna {{0}}",
   "Drag to resize, double-click to fit": "Arrastra para cambiar el ancho; haz doble clic para ajustarlo",
   "Showing the first {{0}} of {{1}} columns": "Se muestran las primeras {{0}} de {{1}} columnas",
+  "Showing the first {{0}} lines; download the file to see the rest.": "Se muestran las primeras {{0}} líneas; descarga el archivo para ver el resto.",
   "Showing the first part of the file": "Se muestra la primera parte del archivo",
   "Show source": "Mostrar código fuente",
   "Show all {{0}} characters": "Mostrar los {{0}} caracteres",

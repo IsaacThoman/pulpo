@@ -177,7 +177,7 @@ export function FileViewerScreen({ navigation, route }: Props) {
   const unavailable = Boolean(fileId) && !filesEnabled
   const status = showGrid && table
     ? `${table.rowCount.toLocaleString()} rows · ${table.columnCount.toLocaleString()} columns${table.columnCount > MAX_NATIVE_GRID_COLUMNS ? ` (first ${MAX_NATIVE_GRID_COLUMNS} shown)` : ''}`
-    : lines ? `${lines.plain.length.toLocaleString()} ${lines.plain.length === 1 ? 'line' : 'lines'}` : ''
+    : lines ? `${lines.truncated ? 'First ' : ''}${lines.plain.length.toLocaleString()} ${lines.plain.length === 1 ? 'line' : 'lines'}${lines.truncated ? ' shown' : ''}` : ''
 
   return (
     // Kept clear of side insets too: on foldables the status bar is a column at the side.

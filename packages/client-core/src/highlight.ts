@@ -76,6 +76,26 @@ function textNode(value: string): Text {
   return { type: 'text', value }
 }
 
+/** Viewers show at most this many lines; each line costs memory before virtualization helps. */
+export const MAX_VIEWER_LINES = 500_000
+
+/**
+ * `text` cut after its first `max` lines, so a file of millions of short lines cannot exhaust
+ * memory building one entry per line. Line breaks may be `\n`, `\r\n`, or `\r`.
+ */
+export function limitLines(text: string, max = MAX_VIEWER_LINES): { text: string; truncated: boolean } {
+  let breaks = 0
+  for (let index = 0; index < text.length; index++) {
+    const code = text.charCodeAt(index)
+    if (code !== 10 && code !== 13) continue
+    const lineEnd = index
+    if (code === 13 && text.charCodeAt(index + 1) === 10) index++
+    // Only a break followed by more text starts another line.
+    if (++breaks === max) return { text: text.slice(0, lineEnd), truncated: index + 1 < text.length }
+  }
+  return { text, truncated: false }
+}
+
 /**
  * Splits highlighted code into lines, re-opening the spans a line break interrupts (a multi-line
  * comment or string), so each line renders on its own and long files can be virtualized.

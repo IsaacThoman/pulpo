@@ -24,6 +24,11 @@ describe('in-app viewers', () => {
     expect(plain).toEqual(['def f():', '    return 1', ''])
     expect(lines).toHaveLength(3)
     expect(viewerLines('a,b', 'x.csv', null, null).highlighted).toBe(false)
+    // Millions of empty lines are cut to what the viewer can hold.
+    const huge = viewerLines('\n'.repeat(2_000_000), 'x.log')
+    expect(huge).toMatchObject({ truncated: true })
+    expect(huge.plain).toHaveLength(500_000)
+    expect(viewerLines('a\nb', 'x.txt').truncated).toBe(false)
   })
 
   it('pretty-prints JSON only when it changes something', () => {

@@ -1,5 +1,5 @@
 import { codeLanguageFor, decodeTextBytes, fileExtension, formatJson, previewKindOf } from '@pulpo/client-core/files'
-import { highlightTree, splitHighlightedLines, type HighlightedLine } from '@pulpo/client-core/highlight'
+import { highlightTree, limitLines, splitHighlightedLines, type HighlightedLine } from '@pulpo/client-core/highlight'
 
 /** How the app shows a file it opens itself rather than handing to the system viewer. */
 export type InAppViewer = 'table' | 'text' | 'notebook'
@@ -25,12 +25,16 @@ export function decodeFileText(bytes: Uint8Array): string {
 /** Highlighting runs on the JS thread; larger files show as plain text. */
 export const MAX_NATIVE_HIGHLIGHT_CHARACTERS = 100_000
 
-/** A file's lines, highlighted by its name (plain text when too large or unknown). */
-export function viewerLines(text: string, name: string, mimeType?: string | null, language?: string | null): { lines: HighlightedLine[]; plain: string[]; highlighted: boolean } {
-  const normalized = text.replace(/\r\n?/g, '\n')
+/**
+ * A file's lines, highlighted by its name (plain text when too large or unknown). Only the first
+ * `MAX_VIEWER_LINES` are kept, since every line costs memory before the list virtualizes them.
+ */
+export function viewerLines(text: string, name: string, mimeType?: string | null, language?: string | null): { lines: HighlightedLine[]; plain: string[]; highlighted: boolean; truncated: boolean } {
+  const limited = limitLines(text)
+  const normalized = limited.text.replace(/\r\n?/g, '\n')
   const grammar = language !== undefined ? language : codeLanguageFor(name, mimeType)
   const tree = grammar === null ? null : highlightTree(normalized, grammar, MAX_NATIVE_HIGHLIGHT_CHARACTERS)
-  return { lines: splitHighlightedLines(normalized, tree), plain: normalized.split('\n'), highlighted: tree !== null }
+  return { lines: splitHighlightedLines(normalized, tree), plain: normalized.split('\n'), highlighted: tree !== null, truncated: limited.truncated }
 }
 
 /** JSON pretty-printed, or null when the file isn't JSON (or already formatted, or too large). */
