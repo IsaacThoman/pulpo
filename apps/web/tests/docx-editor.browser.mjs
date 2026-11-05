@@ -1123,6 +1123,49 @@ try {
     }
   })
 
+  await step('refreshes find results and replacement controls after collaborative text edits', async () => {
+    await open('?view=split')
+    await page.evaluate(() => window.harness.editors[0].view.dispatch(window.harness.editors[0].view.state.tr.insertText('cat', 1)))
+    await flow.click()
+    await page.keyboard.press(`${mod}+h`)
+    await page.getByRole('textbox', { name: 'Find in document' }).fill('cat')
+    await page.waitForFunction(() => window.harness.editors[0].findState().count === 1)
+    await page.evaluate(() => {
+      const view = window.harness.editors[1].view
+      view.dispatch(view.state.tr.insertText('o', 2))
+    })
+    await page.waitForFunction(() => window.harness.editors[0].findState().count === 0)
+    await page.waitForFunction(() => [...document.querySelectorAll('button')].some((button) => button.textContent === 'Replace all' && button.disabled))
+    assert.equal(await text(), 'coat\n')
+    await page.evaluate(() => {
+      const view = window.harness.editors[1].view
+      view.dispatch(view.state.tr.insertText(' cat cat', 5))
+    })
+    await page.waitForFunction(() => window.harness.editors[0].findState().count === 2)
+    await page.getByRole('textbox', { name: 'Replace with' }).fill('dog')
+    await page.getByRole('button', { name: 'Replace all', exact: true }).click()
+    assert.equal(await text(), 'coat dog dog\n')
+    assert.equal(await exported(), 'coat dog dog\n')
+    await page.keyboard.press('Escape')
+  })
+
+  await step('searches and exports accepted table text while preserving deletion markup', async () => {
+    await open('')
+    await page.evaluate(() => {
+      const view = window.harness.editors[0].view
+      const schema = view.state.schema
+      const cell = (text, deleted = false) => schema.node('tableCell', { tcPr: deleted ? JSON.stringify(['w:tcPr', {}, ['w:cellDel', {}]]) : null }, schema.node('paragraph', null, schema.text(text)))
+      const row = (text, revision) => schema.node('tableRow', { trPr: revision ? JSON.stringify(['w:trPr', {}, [revision, {}]]) : null }, [cell(text), cell('deleted cell', true)])
+      const table = schema.node('table', null, [row('deleted row', 'w:del'), row('kept'), row('inserted row', 'w:ins')])
+      view.dispatch(view.state.tr.replaceWith(0, view.state.doc.content.size, table))
+    })
+    assert.equal(await text(), '| kept |\n| inserted row |\n')
+    assert.equal(await exported(), '| kept |\n| inserted row |\n')
+    assert.equal(await page.evaluate(() => window.harness.editors[0].find('deleted')), 0)
+    assert.equal(await page.evaluate(() => window.harness.editors[0].find('inserted row')), 1)
+    assert.equal(await page.evaluate(() => window.harness.editors[0].revisions().filter((revision) => revision.kind === 'rowDelete' || revision.kind === 'rowInsert').length), 2)
+  })
+
   await step('lays out a 100-page document within budget', async () => {
     const started = Date.now()
     await open('?generate=1600')
