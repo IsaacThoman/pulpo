@@ -268,8 +268,12 @@ function alignmentScore(own: SheetModel, other: SheetModel, kind: AxisKind, styl
 /** A cell's content in a form comparable across workbooks (formulas as A1 text). */
 function comparable(sheet: SheetModel, data: CellData | undefined): string {
   if (!data) return ''
-  const { f, ...rest } = data
-  return JSON.stringify({ ...rest, ...(f !== undefined ? { f: toA1Form(f, sheet) } : {}) })
+  if (data.f !== undefined) {
+    // A formula's cached result is derived (exports recalculate it), so only the formula counts.
+    const { f, v: _v, t: _t, spillCache: _cache, ...rest } = data
+    return JSON.stringify({ ...rest, f: toA1Form(f, sheet) })
+  }
+  return JSON.stringify(data)
 }
 
 function syncCells(own: SheetModel, other: SheetModel, styles: StyleMap): void {

@@ -41,7 +41,8 @@ export interface InputOptions {
 export function contentFromInput(sheet: SheetModel, text: string, options: InputOptions = {}): { data: CellData | undefined; numFmt?: string } {
   if (text === '') return { data: undefined }
   if (text.startsWith("'")) return { data: { v: text.slice(1), t: 's' } }
-  if (text.startsWith('=') && text.length > 1 && !options.valuesOnly) return { data: { f: toIdForm(text.slice(1), sheet) } }
+  // Formulas typed here are dynamic-array formulas, as in Excel 365: a range result spills.
+  if (text.startsWith('=') && text.length > 1 && !options.valuesOnly) return { data: { f: toIdForm(text.slice(1), sheet), dynamic: true } }
   if (options.valuesOnly) {
     // CSV keeps exactly what was typed; numbers still count as numbers.
     const n = /^-?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?$/.test(text.trim()) ? Number(text) : NaN

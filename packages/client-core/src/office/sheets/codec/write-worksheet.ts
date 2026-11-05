@@ -52,6 +52,8 @@ export interface WorksheetWriteContext {
   /** Relationship id of the legacy drawing (notes), if the sheet has one. */
   legacyDrawingId?: string
   isTemplate?: boolean
+  /** The `cm` index marking a dynamic-array formula, adding the cell metadata it needs. */
+  dynamicArrayMetadata?: () => string | undefined
 }
 
 function insertInOrder(root: XmlElement, element: XmlElement): void {
@@ -481,16 +483,24 @@ function writeCell(sheet: SheetModel, row: number, col: number, data: CellData, 
     const { v, error } = errorOrValue(cached)
     const fAttrs: Record<string, string> = { ...(data.keep?.f ?? {}) }
     let refAttr = ''
-    if (data.array || data.dynamic) {
-      const spill = context.spills?.(sheet, row, col) ?? data.spillCache
+    let cellAttrs = extraAttrs
+    const spill = data.array || data.dynamic ? (context.spills?.(sheet, row, col) ?? data.spillCache) : undefined
+    // Legacy array formulas always cover their range; a dynamic-array formula is written as an
+    // array (with the dynamic-array cell metadata, `cm`) when it spills or was one in the file.
+    const hadMetadata = data.keep?.c?.cm !== undefined
+    if (data.array || (data.dynamic && (spill || hadMetadata))) {
       const rows = spill?.length ?? data.array?.rows ?? 1
       const cols = spill?.[0]?.length ?? data.array?.cols ?? 1
       refAttr = ` t="array" ref="${rangeName({ top: row, left: col, bottom: Math.min(MAX_ROWS - 1, row + rows - 1), right: Math.min(MAX_COLS - 1, col + cols - 1) })}"`
+      if (data.dynamic && !hadMetadata) {
+        const cm = context.dynamicArrayMetadata?.()
+        if (cm) cellAttrs += ` cm="${cm}"`
+      }
     }
     const fAttrText = Object.entries(fAttrs)
       .map(([name, value]) => ` ${name}="${escapeXml(value)}"`)
       .join('')
-    return `<c r="${ref}"${s}${valueType(v, error, true)}${extraAttrs}><f${refAttr}${fAttrText}>${escapeXml(formula)}</f>${valueXml(v, context, true)}${extra}</c>`
+    return `<c r="${ref}"${s}${valueType(v, error, true)}${cellAttrs}><f${refAttr}${fAttrText}>${escapeXml(formula)}</f>${valueXml(v, context, true)}${extra}</c>`
   }
   if (data.runs?.length || typeof data.v === 'string') {
     if (data.t === 'e') return `<c r="${ref}"${s} t="e"${extraAttrs}><v>${escapeXml(String(data.v))}</v>${extra}</c>`

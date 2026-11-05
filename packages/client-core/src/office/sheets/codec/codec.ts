@@ -3,6 +3,7 @@ import { LiveFormatError, type LiveFormatCodec, type LiveFormatContext } from '.
 import { SHEET_EXTENSIONS, sheetMimeType } from '../layout.js'
 import { SHEETS_SCHEMA_VERSION, type SheetFormat } from '../model/schema.js'
 import { WorkbookModel } from '../model/workbook.js'
+import { SheetCalc } from '../calc.js'
 import { applyWorkbook } from './apply.js'
 import { readCsv, writeCsv } from './csv.js'
 import { readXlsx, type XlsxReadOptions } from './read-xlsx.js'
@@ -18,10 +19,11 @@ export function sheetFormatOf(name: string): SheetFormat {
 export interface SheetCodecOptions {
   read?: XlsxReadOptions
   /**
-   * Fills in current values for formula cells before writing (the calculation engine). Without it
-   * files are written with the values cached when they were read and ask Excel to recalculate.
+   * Fills in current values for formula cells before writing. By default the formula engine
+   * calculates them; `false` writes the values cached when the file was read and asks Excel to
+   * recalculate on open.
    */
-  calculate?: (doc: Y.Doc) => Pick<XlsxWriteOptions, 'values' | 'spills'> | undefined
+  calculate?: false | ((doc: Y.Doc) => Pick<XlsxWriteOptions, 'values' | 'spills'> | undefined)
 }
 
 /** Spreadsheets: xlsx/xlsm/xltx/xltm and csv/tsv, all as one workbook layout. */
@@ -51,7 +53,8 @@ export class SheetCodec implements LiveFormatCodec {
 
   async exportFile(doc: Y.Doc, context: LiveFormatContext): Promise<Uint8Array> {
     const format = sheetFormatOf(context.name)
-    const calculated = this.options.calculate?.(doc)
+    const calculate = this.options.calculate === undefined ? calculateWithEngine : this.options.calculate
+    const calculated = calculate ? calculate(doc) : undefined
     if (format === 'csv' || format === 'tsv') return writeCsv(doc, format, calculated?.values)
     return writeXlsx(doc, context.assets, { format, ...calculated, ...(calculated ? {} : { recalculateOnLoad: true }) })
   }
@@ -63,7 +66,11 @@ export class SheetCodec implements LiveFormatCodec {
   }
 
   toText(doc: Y.Doc): string {
-    return sheetsToText(doc)
+    const model = new WorkbookModel(doc)
+    if (!model.initialized) return ''
+    // Agents read what the sheet shows: formulas calculated, not the values cached in the file.
+    const calc = new SheetCalc(model, { live: false })
+    return sheetsToText(doc, (sheet, row, col) => calc.get(sheet, row, col))
   }
 
   /** Hashes of every preserved part and picture, so unused assets can be collected. */
@@ -79,6 +86,15 @@ export class SheetCodec implements LiveFormatCodec {
       }
     }
     return [...hashes]
+  }
+}
+
+/** Current values from the formula engine, for writing correct cached values. */
+export function calculateWithEngine(doc: Y.Doc): Pick<XlsxWriteOptions, 'values' | 'spills'> {
+  const calc = new SheetCalc(new WorkbookModel(doc), { live: false })
+  return {
+    values: (sheet, row, col) => calc.get(sheet, row, col),
+    spills: (sheet, row, col) => calc.spillValues(sheet, row, col),
   }
 }
 

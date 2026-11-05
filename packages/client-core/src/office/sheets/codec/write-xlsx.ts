@@ -40,6 +40,32 @@ const SHEET_REL_TYPES: Record<SheetKind, string> = {
 
 const MEDIA_EXTENSIONS: Record<string, string> = { 'image/png': 'png', 'image/jpeg': 'jpeg', 'image/gif': 'gif', 'image/webp': 'webp', 'image/bmp': 'bmp', 'image/svg+xml': 'svg' }
 
+const METADATA_REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/sheetMetadata'
+const METADATA_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheetMetadata+xml'
+
+/** The cell metadata Excel 365 writes for dynamic arrays: `cm="1"` marks a formula that spills. */
+const DYNAMIC_ARRAY_METADATA =
+  '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
+  '<metadata xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:xda="http://schemas.microsoft.com/office/spreadsheetml/2017/dynamicarray">' +
+  '<metadataTypes count="1"><metadataType name="XLDAPR" minSupportedVersion="120000" copy="1" pasteAll="1" pasteValues="1" merge="1" splitFirst="1" rowColShift="1" clearFormats="1" clearComments="1" assign="1" coerce="1" cellMeta="1"/></metadataTypes>' +
+  '<futureMetadata name="XLDAPR" count="1"><bk><extLst><ext uri="{bdbb8cdc-fa1e-496e-a857-3c3f30c029c3}"><xda:dynamicArrayProperties fDynamic="1" fCollapsed="0"/></ext></extLst></bk></futureMetadata>' +
+  '<cellMetadata count="1"><bk><rc t="1" v="0"/></bk></cellMetadata></metadata>'
+
+/** The 1-based cell metadata index whose record is the XLDAPR type, in an existing metadata part. */
+function xldaprIndex(xml: string): string | null {
+  try {
+    const root = parseXml(xml).documentElement!
+    const types = children(children(root, 'metadataTypes')[0], 'metadataType')
+    const type = types.findIndex((element) => element.getAttribute('name') === 'XLDAPR') + 1
+    if (!type) return null
+    const blocks = children(children(root, 'cellMetadata')[0], 'bk')
+    const index = blocks.findIndex((block) => children(block, 'rc').some((rc) => rc.getAttribute('t') === String(type))) + 1
+    return index ? String(index) : null
+  } catch {
+    return null
+  }
+}
+
 const VBA_REL = 'http://schemas.microsoft.com/office/2006/relationships/vbaProject'
 
 const EMPTY_RELS = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="${PACKAGE_RELATIONSHIPS_NS}"/>`
@@ -204,6 +230,25 @@ export async function writeXlsx(doc: Y.Doc, assets: LiveAssetStore, options: Xls
   const wanted = new Set(sheets.map((sheet) => sheetPaths.get(sheet.id)))
   workbookRels.remove((rel) => Object.values(SHEET_REL_TYPES).includes(rel.type as never) && !wanted.has(resolveTarget(workbookPath, rel.target)))
 
+  // Dynamic-array formulas need the XLDAPR cell metadata; files written by Excel 365 have it, and
+  // others get the standard part the first time a formula spills.
+  let dynamicCm: string | null | undefined
+  const dynamicArrayMetadata = (): string | undefined => {
+    if (dynamicCm !== undefined) return dynamicCm ?? undefined
+    const rel = workbookRels.list().find((entry) => entry.type === METADATA_REL)
+    if (rel) {
+      const xml = pkg.text(resolveTarget(workbookPath, rel.target))
+      dynamicCm = xml ? xldaprIndex(xml) : null
+    } else {
+      const path = freePath(taken, (n) => (n === 1 ? 'xl/metadata.xml' : `xl/metadata${n}.xml`))
+      livePaths.add(path)
+      pkg.set(path, new TextEncoder().encode(DYNAMIC_ARRAY_METADATA))
+      types.override(path, METADATA_CONTENT_TYPE)
+      workbookRels.add(METADATA_REL, relativeTarget(workbookPath, path))
+      dynamicCm = '1'
+    }
+    return dynamicCm ?? undefined
+  }
   let tableId = 1
   const tableNames = new Set<string>()
   for (const sheet of sheets) {
@@ -292,6 +337,7 @@ export async function writeXlsx(doc: Y.Doc, assets: LiveAssetStore, options: Xls
       ...(options.spills ? { spills: options.spills } : {}),
       addRelationship: (type, target, external) => rels.add(type, target, external),
       tableRelationships,
+      dynamicArrayMetadata,
       ...(drawingId ? { drawingId } : {}),
       ...(legacyDrawingId ? { legacyDrawingId } : {}),
     }
