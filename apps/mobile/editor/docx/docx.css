@@ -5,3 +5,5 @@ body { min-height: 100vh; }
 .docx-web .docx-flow-host { padding: 20px 16px 48px !important; box-shadow: none; width: auto !important; min-height: 100vh; box-sizing: border-box; }
 .docx-flow { -webkit-user-select: text; user-select: text; }
 .docx-empty .docx-flow p:first-of-type:not([data-label])::before { content: var(--docx-placeholder); float: left; height: 0; pointer-events: none; color: #8e8e93; }
+/* Tables wider than the phone shrink their columns to fit, and scroll sideways if they still cannot. */
+.docx-web .docx-flow > table.docx-table { display: block; max-width: 100%; overflow-x: auto; }
