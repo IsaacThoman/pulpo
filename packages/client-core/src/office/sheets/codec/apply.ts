@@ -400,6 +400,8 @@ function syncCollection<T>(ownMap: Y.Map<unknown>, otherMap: Y.Map<unknown>, own
 /** Ranges and formulas as positions and A1 text, so entries compare across workbooks. */
 function positioned(sheet: SheetModel, value: unknown, dxf: (index: number | undefined) => number | undefined = (index) => index): string {
   return JSON.stringify(value, (key, entry: unknown) => {
+    // XML kept as read is written back re-serialized; what the model says is what counts.
+    if (key === 'xml' || key === 'shape' || key === 'sortXml' || key === 'part' || key === 'rPr') return undefined
     if ((key === 'range' || key === 'ranges') && entry) {
       const ranges = Array.isArray(entry) ? (entry as RangeIds[]) : [entry as RangeIds]
       const resolved = ranges.map((range) => sheet.resolveRange(range) ?? null)

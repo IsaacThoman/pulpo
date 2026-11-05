@@ -326,7 +326,7 @@ function colAttrs(props: Partial<AxisProps>): string {
       width,
       style: props.xf || undefined,
       hidden: props.hidden || undefined,
-      customWidth: props.custom || (props.size !== undefined ? true : undefined),
+      customWidth: props.custom || undefined,
       outlineLevel: props.level || undefined,
       collapsed: props.collapsed || undefined,
     }) +

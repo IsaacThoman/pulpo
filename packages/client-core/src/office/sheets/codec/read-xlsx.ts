@@ -175,6 +175,9 @@ export async function readXlsx(doc: Y.Doc, bytes: Uint8Array, assets: LiveAssetS
     for (const view of children(child(workbookRoot, 'bookViews'), 'workbookView')) view.removeAttribute('activeTab')
     // Whether Excel must recalculate on open depends on how the export was made, not the source.
     children(workbookRoot, 'calcPr')[0]?.removeAttribute('fullCalcOnLoad')
+    children(workbookRoot, 'calcPr')[0]?.removeAttribute('iterate')
+    // The date system is the model's.
+    children(workbookRoot, 'workbookPr')[0]?.removeAttribute('date1904')
     model.meta.set('workbookXml', serializeNode(workbookDocument))
   })
 
@@ -201,6 +204,14 @@ function withoutOverrides(xml: string, paths: Set<string>): string {
   const root = document.documentElement!
   const lower = new Set([...paths].map((path) => `/${path}`.toLowerCase()))
   for (const element of children(root, 'Override')) if (lower.has((element.getAttribute('PartName') ?? '').toLowerCase())) root.removeChild(element)
+  // The defaults the export always declares, added the way it adds them.
+  for (const [extension, contentType] of [['rels', CONTENT_TYPES.relationships], ['xml', 'application/xml']] as const) {
+    if (children(root, 'Default').some((element) => element.getAttribute('Extension')?.toLowerCase() === extension)) continue
+    const element = document.createElementNS('http://schemas.openxmlformats.org/package/2006/content-types', 'Default')
+    element.setAttribute('Extension', extension)
+    element.setAttribute('ContentType', contentType)
+    root.insertBefore(element, root.firstChild)
+  }
   return serializeXml(document)
 }
 

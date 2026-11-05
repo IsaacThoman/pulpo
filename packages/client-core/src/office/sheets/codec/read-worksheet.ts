@@ -85,6 +85,13 @@ export function readWorksheet(sheet: SheetModel, path: string, context: ReadCont
   if (vmlPath && !sheet.raw.has('vmlPart') && context.pkg.has(vmlPath)) sheet.raw.set('vmlPart', vmlPath)
 
   for (const name of MODELED_WORKSHEET_ELEMENTS) for (const element of children(root, name)) root.removeChild(element)
+  // Attributes the model owns are rebuilt on export; keeping them would make the skeleton read
+  // back different from what was written.
+  const view = child(child(root, 'sheetViews'), 'sheetView')
+  for (const name of ['showGridLines', 'showRowColHeaders', 'showZeros', 'rightToLeft', 'zoomScale']) view?.removeAttribute(name)
+  // Without panes, the selection is the model's too (with panes it stays with them).
+  if (view && !child(view, 'pane')) for (const selection of children(view, 'selection')) view.removeChild(selection)
+  for (const name of ['outlineLevelRow', 'outlineLevelCol']) child(root, 'sheetFormatPr')?.removeAttribute(name)
   sheet.raw.set('part', path)
   sheet.raw.set('xml', tidyNamespaces(serializeSkeleton(document)))
   const relsPath = path.replace(/([^/]+)$/, '_rels/$1.rels')

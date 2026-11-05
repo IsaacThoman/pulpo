@@ -1544,7 +1544,9 @@ export class SheetView {
   /** The used part of the sheet as a self-contained HTML table, for printing and PDF export. */
   printHtml(): string {
     const sheet = this.sheet
-    const used = sheet.usedRange()
+    const found = sheet.usedRange()
+    // Prints are capped (a stray cell at XFD1048576 must not make a billion-cell table).
+    const used = found && { ...found, bottom: Math.min(found.bottom, found.top + 20_000), right: Math.min(found.right, 255) }
     const escape = (text: string) => text.replace(/[&<>"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[char]!)
     if (!used) return `<!doctype html><title>${escape(sheet.name)}</title><p></p>`
     const merges = sheet.mergedRanges().map((merge) => merge.range)

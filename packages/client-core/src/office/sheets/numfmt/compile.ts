@@ -34,7 +34,12 @@ export interface NumberLayout {
   denominator: Placeholder[]
   /** `?/8`: a written denominator instead of placeholders. */
   fixedDenominator?: number
-  /** Index range of `parts` that make up `num/den`, blanked when the fraction is zero. */
+  /**
+   * Index range of `parts` that make up `num/den`, blanked when the fraction is zero, and where
+   * the literals between the whole number and the numerator start (`separatorStart` to
+   * `fractionStart`), which Excel drops or blanks along with a zero whole number or fraction.
+   */
+  separatorStart: number
   fractionStart: number
   fractionEnd: number
 }
@@ -151,6 +156,7 @@ function compileNumber(tokens: Token[]): NumberLayout {
     exponent: [],
     numerator: [],
     denominator: [],
+    separatorStart: 0,
     fractionStart: 0,
     fractionEnd: 0,
   }
@@ -186,10 +192,12 @@ function compileNumber(tokens: Token[]): NumberLayout {
         break
       case 'comma': {
         // Between integer placeholders a comma groups thousands; right after the number's last
-        // placeholder (or a scaling comma) each comma divides by 1000.
+        // placeholder (or a scaling comma) each comma divides by 1000. Before any placeholder
+        // it's just a comma (`,0` shows `,5`).
         const previous = tokens[i - 1]
         if (i < lastIntDigit && tokens.slice(0, i).some((before) => before.t === 'digit')) layout.grouping = true
         else if (i < mantissaEnd && (previous?.t === 'digit' || previous?.t === 'point' || previous?.t === 'comma') && !tokens.slice(i + 1, intEnd).some((after) => after.t === 'digit')) layout.scale -= 3
+        else if (!tokens.slice(0, i).some((before) => before.t === 'digit')) layout.parts.push({ k: 'lit', v: ',' })
         break
       }
       case 'exp':
@@ -208,26 +216,44 @@ function compileNumber(tokens: Token[]): NumberLayout {
   return layout
 }
 
-/** The slash of a fraction (`# ?/?`, `?/8`), or -1. */
+const isLiteral = (token: Token | undefined): boolean => token?.t === 'lit' || token?.t === 'fill'
+
+/**
+ * The slash of a fraction (`# ?/?`, `?/8`), or -1. Literals may sit between the placeholders and
+ * the slash (`#_#/#`, `# ?=/=?`).
+ */
 function fractionSlash(tokens: Token[]): number {
   for (let i = 1; i < tokens.length - 1; i++) {
-    if (tokens[i]!.t !== 'slash' || tokens[i - 1]!.t !== 'digit') continue
+    if (tokens[i]!.t !== 'slash') continue
+    let before = i - 1
+    while (before > 0 && isLiteral(tokens[before])) before--
+    if (tokens[before]!.t !== 'digit') continue
     const next = tokens[i + 1]!
-    if (next.t === 'digit' || (next.t === 'lit' && /^[1-9]/.test(next.v))) return i
+    if (next.t === 'lit' && /^[1-9]/.test(next.v)) return i
+    let after = i + 1
+    while (after < tokens.length - 1 && isLiteral(tokens[after]) && !/\d/.test((tokens[after] as { v: string }).v)) after++
+    if (tokens[after]!.t === 'digit') return i
   }
   return -1
 }
 
 function compileFraction(tokens: Token[], slash: number, layout: NumberLayout): void {
   layout.mode = 'fraction'
-  let numeratorStart = slash
+  // The numerator is the run of placeholders nearest the slash; placeholders before it (with
+  // whatever sits between them) are the whole number.
+  let numeratorEnd = slash
+  while (numeratorEnd > 0 && tokens[numeratorEnd - 1]!.t !== 'digit') numeratorEnd--
+  let numeratorStart = numeratorEnd
   while (numeratorStart > 0 && tokens[numeratorStart - 1]!.t === 'digit') numeratorStart--
+  let separatorStart = numeratorStart
+  while (separatorStart > 0 && tokens[separatorStart - 1]!.t !== 'digit') separatorStart--
   // A written denominator is literal digits, possibly continued by `0` placeholders (`/100`).
+  let denominatorStart = slash + 1
   let denominatorEnd = slash + 1
   let fixed = ''
   let rest = ''
   const first = tokens[slash + 1]!
-  if (first.t === 'lit') {
+  if (first.t === 'lit' && /^[1-9]/.test(first.v)) {
     fixed = /^\d+/.exec(first.v)![0]
     rest = first.v.slice(fixed.length)
     denominatorEnd = slash + 2
@@ -240,11 +266,15 @@ function compileFraction(tokens: Token[], slash: number, layout: NumberLayout): 
     }
     layout.fixedDenominator = Number(fixed)
   } else {
+    while (denominatorStart < tokens.length && tokens[denominatorStart]!.t !== 'digit') denominatorStart++
+    denominatorEnd = denominatorStart
     while (denominatorEnd < tokens.length && tokens[denominatorEnd]!.t === 'digit') denominatorEnd++
   }
   const mixed = tokens.slice(0, numeratorStart).some((token) => token.t === 'digit')
+  if (!mixed) separatorStart = numeratorStart
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i]!
+    if (i === separatorStart) layout.separatorStart = layout.parts.length
     if (i === numeratorStart) layout.fractionStart = layout.parts.length
     if (i === slash) {
       layout.parts.push({ k: 'lit', v: '/' })
@@ -258,8 +288,8 @@ function compileFraction(tokens: Token[], slash: number, layout: NumberLayout): 
     }
     switch (token.t) {
       case 'digit':
-        if (i >= numeratorStart && i < slash) layout.parts.push({ k: 'num', i: layout.numerator.push(token.v) - 1 })
-        else if (i > slash && i < denominatorEnd) layout.parts.push({ k: 'den', i: layout.denominator.push(token.v) - 1 })
+        if (i >= numeratorStart && i < numeratorEnd) layout.parts.push({ k: 'num', i: layout.numerator.push(token.v) - 1 })
+        else if (i >= denominatorStart && i < denominatorEnd) layout.parts.push({ k: 'den', i: layout.denominator.push(token.v) - 1 })
         else if (mixed && i < numeratorStart) layout.parts.push({ k: 'int', i: layout.int.push(token.v) - 1 })
         else layout.parts.push({ k: 'lit', v: token.v })
         break

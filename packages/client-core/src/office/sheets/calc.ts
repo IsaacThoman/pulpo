@@ -29,13 +29,15 @@ function toScalar(value: CellData['v'] | { e: string } | undefined, error = fals
 }
 
 /** What a stored cell gives the engine. */
-export function engineInput(sheet: SheetModel, data: CellData | undefined): CellInput {
+export function engineInput(sheet: SheetModel, data: CellData | undefined, useCache = true): CellInput {
   if (!data) return undefined
   if (data.f === undefined) {
     if (data.runs?.length) return { value: data.runs.map((run) => run.text).join('') }
     return { value: toScalar(data.v, data.t === 'e') }
   }
-  const cached = data.spillCache
+  const cached = !useCache
+    ? undefined
+    : data.spillCache
     ? matrix(data.spillCache.length, data.spillCache[0]?.length ?? 0, data.spillCache.flat().map((value) => toScalar(value)))
     : data.v === undefined
       ? undefined
@@ -67,7 +69,14 @@ export class SheetCalc implements SheetValues {
 
   constructor(
     readonly workbook: WorkbookModel,
-    private readonly options: { now?: () => number; random?: () => number; live?: boolean } = {},
+    private readonly options: {
+      now?: () => number
+      random?: () => number
+      /** Follow edits to the document (default); false for one-off calculations such as exports. */
+      live?: boolean
+      /** Ignore the values cached in the file and calculate every formula (the formula oracle). */
+      ignoreCache?: boolean
+    } = {},
   ) {
     this.rebuild()
     this.observer = (events) => this.onChange(events)
@@ -95,7 +104,7 @@ export class SheetCalc implements SheetValues {
     this.cellMaps = new Map(sheets.map((sheet) => [sheet.cells, sheet]))
     this.engine.setSheets(sheets.map((sheet) => sheet.name))
     sheets.forEach((sheet, index) => {
-      sheet.forEachCell((row, col, data) => this.engine.setCell(index, row, col, engineInput(sheet, data)))
+      sheet.forEachCell((row, col, data) => this.engine.setCell(index, row, col, engineInput(sheet, data, !this.options.ignoreCache)))
     })
     for (const name of workbook.names.values()) {
       const scope = name.scope ? this.sheetIndex.get(name.scope) : undefined

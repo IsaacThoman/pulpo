@@ -1,5 +1,5 @@
 import { MAX_DATE_SERIAL_1900, MAX_DATE_SERIAL_1904, serialToParts } from '../dates.js'
-import type { DateLayout, NumberLayout, Placeholder } from './compile.js'
+import type { DateLayout, NumberLayout, NumberPart, Placeholder } from './compile.js'
 import { decimalToNumber, fixedParts, shift, toDecimal15 } from './decimal.js'
 import { formatGeneral } from './general.js'
 import type { Token } from './tokenize.js'
@@ -129,19 +129,41 @@ function renderFraction(layout: NumberLayout, value: number): Rendered {
     whole += Math.floor(numerator / denominator)
     numerator %= denominator
   }
-  const blank = mixed && numerator === 0
-  // A zero whole part still shows as 0 when there's no fraction to show either.
-  const intOut = layoutInteger(whole ? String(whole) : blank ? '0' : '', layout.int, false)
-  const numOut = layoutInteger(numerator ? String(numerator) : mixed ? '' : '0', layout.numerator, false)
-  const denDigits = String(denominator)
+  // How Excel shows a zero whole number or a zero fraction, as POI's NumberFormatTests record:
+  // - A zero fraction disappears (to spaces when a `?` is involved) unless the numerator has a
+  //   `0` placeholder, which shows `0/1`.
+  // - A zero whole number shows nothing for `#` (and the literals before the numerator go too),
+  //   blanks for `?`, and 0 for `0`, or when there's no fraction either.
+  const intLast = layout.int[layout.int.length - 1]
+  const zeroNumerator = layout.numerator.includes('0')
+  const blank = mixed && numerator === 0 && !zeroNumerator
+  const spaced = intLast === '?' || layout.numerator.includes('?') || layout.denominator.includes('?')
+  let separator: 'show' | 'space' | 'drop' = 'show'
+  let intDigits = whole ? String(whole) : ''
+  if (blank) {
+    intDigits ||= '0'
+    separator = spaced ? 'space' : 'drop'
+  } else if (mixed && !whole) {
+    if (numerator === 0 && intLast !== '#') intDigits = '0'
+    else if (intLast === '#' && !(numerator !== 0 && layout.numerator[0] === '?')) separator = 'drop'
+    else if (intLast !== '0' && numerator !== 0) separator = 'space'
+  }
+  const intOut = layoutInteger(intDigits, layout.int, false)
+  const numOut = layoutInteger(numerator ? String(numerator) : '0', layout.numerator, false)
+  // Denominators read left to right; `0` placeholders pad with zeros in front (`/000` shows `004`).
+  const zeros = layout.denominator.filter((placeholder) => placeholder === '0').length
+  const denDigits = String(denominator).padStart(zeros, '0')
   const denOut = layout.denominator.map((placeholder, i) => {
     if (i === layout.denominator.length - 1) return denDigits.slice(i) || FILL[placeholder]
     return denDigits[i] ?? FILL[placeholder]
   })
+  const width = (part: NumberPart): number => (part.k === 'lit' ? part.v.length : part.k === 'fill' ? 0 : 1)
   const out = new Output()
   layout.parts.forEach((part, index) => {
-    if (blank && index >= layout.fractionStart && index < layout.fractionEnd) {
-      out.add(' '.repeat(part.k === 'lit' ? part.v.length : part.k === 'fill' ? 0 : 1))
+    const inSeparator = index >= layout.separatorStart && index < layout.fractionStart
+    const inFraction = index >= layout.fractionStart && index < layout.fractionEnd
+    if ((blank && (inSeparator || inFraction)) || (inSeparator && separator !== 'show')) {
+      if (separator === 'space') out.add(' '.repeat(width(part)))
       return
     }
     switch (part.k) {

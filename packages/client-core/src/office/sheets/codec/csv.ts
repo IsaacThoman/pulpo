@@ -69,7 +69,8 @@ export function encodeText(text: string, dialect: Pick<CsvDialect, 'encoding' | 
 }
 
 interface ParsedCsv {
-  rows: { fields: string[]; quoted: boolean[] }[]
+  /** Each field's value, whether it was quoted, and its exact text in the file. */
+  rows: { fields: string[]; quoted: boolean[]; sources: string[] }[]
   lineEnding: CsvDialect['lineEnding']
   trailingNewline: boolean
 }
@@ -79,8 +80,10 @@ export function parseCsv(text: string, delimiter: string, quote = '"'): ParsedCs
   const rows: ParsedCsv['rows'] = []
   let fields: string[] = []
   let quoted: boolean[] = []
+  let sources: string[] = []
   let field = ''
   let isQuoted = false
+  let fieldStart = 0
   let lineEnding: CsvDialect['lineEnding'] | undefined
   let index = 0
   let cells = 0
@@ -88,15 +91,17 @@ export function parseCsv(text: string, delimiter: string, quote = '"'): ParsedCs
     if (field.length > CSV_LIMITS.maxFieldLength) throw new LiveFormatError('too_large', 'A field in this file is too long')
     fields.push(field)
     quoted.push(isQuoted)
+    sources.push(text.slice(fieldStart, index))
     field = ''
     isQuoted = false
     if (++cells > CSV_LIMITS.maxCells) throw new LiveFormatError('too_large', 'This file has too many cells to edit')
   }
   const endRow = () => {
     endField()
-    rows.push({ fields, quoted })
+    rows.push({ fields, quoted, sources })
     fields = []
     quoted = []
+    sources = []
   }
   while (index < text.length) {
     const char = text[index]!
@@ -123,6 +128,7 @@ export function parseCsv(text: string, delimiter: string, quote = '"'): ParsedCs
     if (char === delimiter) {
       endField()
       index++
+      fieldStart = index
       continue
     }
     if (char === '\r' || char === '\n') {
@@ -130,6 +136,7 @@ export function parseCsv(text: string, delimiter: string, quote = '"'): ParsedCs
       lineEnding ??= ending as CsvDialect['lineEnding']
       endRow()
       index += ending.length
+      fieldStart = index
       continue
     }
     field += char
@@ -193,19 +200,21 @@ export function readCsv(doc: Y.Doc, bytes: Uint8Array, format: 'csv' | 'tsv'): v
       // Empty rows too, so trailing ones survive.
       if (row.fields.length !== width || row.fields.every((field) => field === '')) sheet.rowMeta.set(`${rowId}|keep`, { fields: String(row.fields.length) })
       row.fields.forEach((field, colIndex) => {
-        if (field === '') return
-        sheet.cells.set(`${rowId}:${sheet.cols.idAt(colIndex)}`, fieldData(field, row.quoted[colIndex]!))
+        // A quoted empty field ("") keeps its quotes; an unquoted one is just an empty cell.
+        if (field === '' && !row.quoted[colIndex]) return
+        sheet.cells.set(`${rowId}:${sheet.cols.idAt(colIndex)}`, fieldData(field, row.quoted[colIndex]!, row.sources[colIndex]!))
       })
     })
   })
 }
 
-function fieldData(field: string, quoted: boolean): CellData {
+/** A field's cell: its value, and its exact text when writing the value back would differ. */
+function fieldData(field: string, quoted: boolean, source: string): CellData {
   if (NUMBER.test(field)) {
     const n = Number(field)
-    if (Number.isFinite(n)) return String(n) === field && !quoted ? { v: n } : { v: n, raw: quoted ? `"${field}"` : field }
+    if (Number.isFinite(n)) return String(n) === field && !quoted ? { v: n } : { v: n, raw: source }
   }
-  return quoted ? { v: field, raw: `"${field.replace(/"/g, '""')}"` } : { v: field }
+  return quoted ? { v: field, raw: source } : { v: field }
 }
 
 function formatField(value: CellScalar | { e: string }): string {
