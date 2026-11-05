@@ -11,6 +11,8 @@ const MONO = Platform.select({ ios: 'Menlo', default: 'monospace' })
 
 export interface CodeViewHandle {
   scrollToLine(line: number): void
+  /** Scrolls to a find match, sideways too when an unwrapped line runs past the screen. */
+  scrollToMatch(match: Pick<LineMatch, 'line' | 'start' | 'end'>): void
 }
 
 type Ranges = { start: number; end: number; current?: boolean }[]
@@ -77,6 +79,9 @@ export const CodeView = forwardRef<CodeViewHandle, {
 }>(function CodeView({ lines, plain, wrap, matches, current, bottomInset }, ref) {
   const theme = useAppTheme()
   const listRef = useRef<FlatList<number>>(null)
+  const horizontalRef = useRef<ScrollView>(null)
+  // Where the sideways scroll sits and how wide the screen is, to tell whether a match shows.
+  const horizontal = useRef({ x: 0, width: 0 })
   const gutter = Math.max(2, String(lines.length).length) * CHARACTER_WIDTH + 16
   const longest = useMemo(() => plain.reduce((max, line) => Math.max(max, Math.min(line.length, MAX_LINE_DISPLAY)), 0), [plain])
   const width = gutter + longest * CHARACTER_WIDTH + 32
@@ -91,11 +96,24 @@ export const CodeView = forwardRef<CodeViewHandle, {
     return byLine
   }, [current, matches])
 
-  useImperativeHandle(ref, () => ({
-    scrollToLine(line) {
+  useImperativeHandle(ref, () => {
+    const scrollToLine = (line: number) => {
       listRef.current?.scrollToIndex({ index: Math.max(0, Math.min(line, lines.length - 1)), viewPosition: 0.4, animated: true })
-    },
-  }), [lines.length])
+    }
+    return {
+      scrollToLine,
+      scrollToMatch(match) {
+        scrollToLine(match.line)
+        if (wrap || match.start >= MAX_LINE_DISPLAY) return
+        // Monospaced, so a column's position follows from the character width the layout uses.
+        const left = gutter + match.start * CHARACTER_WIDTH
+        const right = gutter + Math.min(match.end, MAX_LINE_DISPLAY) * CHARACTER_WIDTH
+        const { x, width: view } = horizontal.current
+        if (!view || (left >= x && right <= x + view)) return
+        horizontalRef.current?.scrollTo({ x: Math.max(0, left - view * 0.3), animated: true })
+      },
+    }
+  }, [gutter, lines.length, wrap])
 
   const renderItem = useCallback(({ item }: { item: number }) => (
     <CodeLine line={lines[item]!} number={item + 1} gutter={gutter} ranges={rangesByLine.get(item)} wrap={wrap} theme={theme} />
@@ -125,7 +143,16 @@ export const CodeView = forwardRef<CodeViewHandle, {
   )
   if (wrap) return list
   return (
-    <ScrollView horizontal style={styles.flex} contentContainerStyle={styles.horizontal} showsHorizontalScrollIndicator>
+    <ScrollView
+      ref={horizontalRef}
+      horizontal
+      style={styles.flex}
+      contentContainerStyle={styles.horizontal}
+      showsHorizontalScrollIndicator
+      scrollEventThrottle={32}
+      onScroll={(event) => { horizontal.current.x = event.nativeEvent.contentOffset.x }}
+      onLayout={(event) => { horizontal.current.width = event.nativeEvent.layout.width }}
+    >
       {list}
     </ScrollView>
   )

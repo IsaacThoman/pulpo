@@ -137,7 +137,7 @@ export function FileViewerScreen({ navigation, route }: Props) {
       if (row !== undefined) gridRef.current?.scrollToRow(row)
     } else {
       const match = lineMatches[index]
-      if (match) codeRef.current?.scrollToLine(match.line)
+      if (match) codeRef.current?.scrollToMatch(match)
     }
   }
   // A new query (or view) starts again at its first match, which may be off screen.
@@ -147,7 +147,7 @@ export function FileViewerScreen({ navigation, route }: Props) {
       if (row !== undefined) gridRef.current?.scrollToRow(row)
     } else {
       const match = lineMatches[0]
-      if (match) codeRef.current?.scrollToLine(match.line)
+      if (match) codeRef.current?.scrollToMatch(match)
     }
   }, [lineMatches, rowMatches, showGrid])
   const step = (direction: 1 | -1) => {
