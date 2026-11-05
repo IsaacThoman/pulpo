@@ -133,7 +133,7 @@ describe('diff', () => {
     const after = { ...before, maps: { ...before.maps, numbering: new Map(before.maps.numbering).set('abstract:1', definition(start, format)) } }
     const diff = diffDocxModels(before, after)
     expect(diff.identical).toBe(false)
-    expect(diff.stats).toMatchObject({ changedBlocks: 2, formatChanges: 2, insertedWords: 0, deletedWords: 0 })
+    expect(diff.stats).toMatchObject({ changedBlocks: 2, formatChanges: 3, insertedWords: 0, deletedWords: 0 })
     diff.blocks.forEach((block, index) => {
       expect(block).toMatchObject({ kind: 'modify', before: { label: `${index + 1}.` }, after: { label: labels[index] },
         formats: [{ property: 'numPr', text: '', before: `${index + 1}.`, after: labels[index] }] })
@@ -165,7 +165,7 @@ describe('diff', () => {
       packJml(['w:num', { 'w:numId': '1' }, ['w:abstractNumId', { 'w:val': '1' }], ['w:lvlOverride', { 'w:ilvl': '0' }, ['w:startOverride', { 'w:val': '7' }]]])) } }
     const diff = diffDocxModels(before, after)
     expect(diff.identical).toBe(false)
-    expect(diff.stories).toEqual([{ kind, id, change: 'modify', segments: [
+    expect(diff.stories).toEqual([{ kind, id, change: 'modify', formats: [{ property: 'numPr', text: '', before: '1.', after: '7.', location: [{ kind: 'paragraph', index: 1 }] }], segments: [
       { op: 'delete', text: '1' }, { op: 'insert', text: '7' }, { op: 'equal', text: '. Story' },
     ] }])
   })
