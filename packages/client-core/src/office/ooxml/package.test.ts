@@ -32,6 +32,25 @@ function entryHeaders(bytes: Uint8Array, path: string): { local: number; central
 }
 
 describe('OoxmlPackage', () => {
+  it('writes no stored entry with a data descriptor, which LibreOffice refuses', () => {
+    const png = new Uint8Array(4_096).map((_, index) => (index * 7919) % 251)
+    const pkg = OoxmlPackage.read(samplePackage({ 'docProps/thumbnail.jpeg': png, 'word/media/image2.png': png }))
+    const bytes = pkg.write()
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+    let entries = 0
+    for (let offset = 0; offset + 30 <= bytes.byteLength; offset++) {
+      if (view.getUint32(offset, true) !== 0x04034b50) continue
+      const flags = view.getUint16(offset + 6, true)
+      const method = view.getUint16(offset + 8, true)
+      // Bit 3 means sizes follow in a data descriptor; method 0 means stored.
+      if (flags & 0x8) expect(method, `entry at ${offset} is stored but has a data descriptor`).not.toBe(0)
+      entries++
+    }
+    expect(entries).toBeGreaterThanOrEqual(5)
+    // Media is wrapped rather than recompressed, and still reads back byte for byte.
+    expect(OoxmlPackage.read(bytes).get('word/media/image2.png')).toEqual(png)
+  })
+
   it('writes the same bytes for the same content, whenever it writes', () => {
     vi.useFakeTimers()
     try {
@@ -235,13 +254,22 @@ describe('OoxmlPackage.write', () => {
     // Zip writes a signed 16-byte descriptor per entry and zero local CRC/size placeholders.
     // These small parts have identical compressed payloads; larger parts can use different
     // streaming deflate blocks, so matching the previous archive's checksum is not promised.
-    expect(written.length).toBe(previous.length + pkg.paths().length * 16)
+    // Media was stored before and is now deflated at level 0: one 5-byte stored block header.
+    const media = pkg.paths().filter((path) => path.endsWith('.png'))
+    expect(written.length).toBe(previous.length + pkg.paths().length * 16 + media.length * 5)
     expect(Buffer.from(written).equals(Buffer.from(previous))).toBe(false)
     const before = new DataView(previous.buffer, previous.byteOffset, previous.byteLength)
     const after = new DataView(written.buffer, written.byteOffset, written.byteLength)
     for (const path of pkg.paths()) {
       const old = entryHeaders(previous, path)
       const next = entryHeaders(written, path)
+      expect(Buffer.from(OoxmlPackage.read(written).get(path)!).equals(Buffer.from(pkg.get(path)!))).toBe(true)
+      // Media is deflated now, so its method and deflate option flags differ from the stored copy.
+      if (media.includes(path)) {
+        expect(after.getUint16(next.central + 10, true)).toBe(8)
+        expect(after.getUint16(next.local + 6, true) & 8).toBe(8)
+        continue
+      }
       expect(after.getUint16(next.local + 6, true)).toBe(before.getUint16(old.local + 6, true) | 8)
       expect(after.getUint16(next.central + 8, true)).toBe(before.getUint16(old.central + 8, true) | 8)
       for (const at of [14, 18, 22]) expect(after.getUint32(next.local + at, true)).toBe(0)
@@ -251,11 +279,10 @@ describe('OoxmlPackage.write', () => {
       expect(after.getUint32(next.central + 20, true)).toBe(size)
       expect(Buffer.from(written.subarray(newStart, newStart + size)).equals(Buffer.from(previous.subarray(oldStart, oldStart + size)))).toBe(true)
       expect(after.getUint32(newStart + size, true)).toBe(0x08074b50)
-      expect(Buffer.from(OoxmlPackage.read(written).get(path)!).equals(Buffer.from(pkg.get(path)!))).toBe(true)
     }
   })
 
-  it('keeps content types first, XML compressed, media stored, and DOS timestamps fixed', () => {
+  it('keeps content types first, XML compressed, media deflated at level 0, and DOS timestamps fixed', () => {
     const pkg = new OoxmlPackage(new Map([
       ['word/media/image1.png', new Uint8Array([1, 2, 3])],
       ['word/document.xml', strToU8(DOCUMENT)],
@@ -266,7 +293,7 @@ describe('OoxmlPackage.write', () => {
     unzipSync(bytes, { filter: (file) => { entries.push({ name: file.name, compression: file.compression }); return true } })
     expect(entries).toEqual([
       { name: '[Content_Types].xml', compression: 8 },
-      { name: 'word/media/image1.png', compression: 0 },
+      { name: 'word/media/image1.png', compression: 8 },
       { name: 'word/document.xml', compression: 8 },
     ])
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)

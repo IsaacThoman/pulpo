@@ -1,5 +1,5 @@
 import { DOMParser, XMLSerializer, type Document as XmlDocument } from '@xmldom/xmldom'
-import { strFromU8, strToU8, Zip, ZipDeflate, ZipPassThrough } from 'fflate'
+import { strFromU8, strToU8, Zip, ZipDeflate } from 'fflate'
 import { LiveFormatError } from '../live-format.js'
 import { readZip } from './zip.js'
 
@@ -169,9 +169,12 @@ export class OoxmlPackage {
     // 1979 when the device changes timezone. DOS timestamps must stay at local 1980-01-01.
     const mtime = new Date(1980, 0, 1)
     const add = (path: string, data: Uint8Array): void => {
-      // Media is usually compressed already; storing it saves time without growing the file.
-      const stored = /\.(png|jpe?g|gif|mp4|mp3|m4a|wdp|zip)$/i.test(path)
-      const entry = stored ? new ZipPassThrough(path) : new ZipDeflate(path, { level: 6 })
+      // Media is usually compressed already, so it is deflated at level 0 (wrapped, not
+      // recompressed). It is not stored: streamed entries carry data descriptors, and
+      // LibreOffice refuses a stored entry with one, which nearly every package has (its
+      // thumbnail), so it would refuse almost every exported file.
+      const media = /\.(png|jpe?g|gif|mp4|mp3|m4a|wdp|zip)$/i.test(path)
+      const entry = new ZipDeflate(path, { level: media ? 0 : 6 })
       entry.mtime = mtime
       // Use entries rather than an object: __proto__ is a valid part name, and fflate's
       // object-based writer interprets it as a prototype, even with a null-prototype input.
