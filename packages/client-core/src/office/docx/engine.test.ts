@@ -896,6 +896,40 @@ describe('section ends', () => {
     }
   })
 
+  it.each(['blank', 'before another table', 'nonempty'])('places the caret in the inserted table first cell (%s)', async (location) => {
+    const other = schema.node('table', null, [schema.node('tableRow', null, [schema.node('tableCell', null, [p(run('Unrelated'))])])])
+    const blocks = location === 'blank' ? [p()] : location === 'before another table' ? [p(), other, p()] : [p(run('Before')), other, p()]
+    const { doc } = await documentWith(...blocks)
+    const context = new DocxViewContext(doc)
+    try {
+      let state = EditorState.create({ schema, doc: readDocxModel(doc).body })
+      state = state.apply(state.tr.setSelection(TextSelection.create(state.doc, 1)))
+      state = state.apply(insertTable(2, 2)(state, context)!)
+      const tableIndex = location === 'nonempty' ? 1 : 0
+      const tablePos = tableIndex ? state.doc.child(0).nodeSize : 0
+      expect(state.selection.from).toBe(tablePos + 4)
+      expect(state.selection.empty).toBe(true)
+      state = state.apply(state.tr.insertText('Typed immediately'))
+      expect(state.doc.child(tableIndex).firstChild!.firstChild!.textContent).toBe('Typed immediately')
+      if (location !== 'blank') expect(state.doc.child(tableIndex + 2).eq(other)).toBe(true)
+    } finally { context.destroy(); doc.destroy() }
+  })
+
+  it.each(['end', 'paragraph', 'another table'])('places typing after a pasted table before %s', (after) => {
+    const table = (text: string) => schema.node('table', null, [schema.node('tableRow', null, [schema.node('tableCell', null, [p(run(text))])])])
+    const tail = after === 'end' ? [] : after === 'paragraph' ? [p(run('Tail'))] : [table('Unrelated'), p()]
+    const state = EditorState.create({ schema, doc: schema.node('doc', null, [p(), ...tail]), plugins: [sectionEndsPlugin()] })
+    const pasted = table('Pasted')
+    let next = state.apply(pasteSelection(state, new Slice(Fragment.from(pasted), 0, 0)))
+    expect(next.selection.from).toBe(pasted.nodeSize + 1)
+    expect(next.selection.empty).toBe(true)
+    expect(next.selection.$from.parent.type.name).toBe('paragraph')
+    next = next.apply(next.tr.insertText('After paste'))
+    expect(next.doc.firstChild!.eq(pasted)).toBe(true)
+    expect(next.doc.child(1).textContent).toBe(after === 'paragraph' ? 'After pasteTail' : 'After paste')
+    if (after === 'another table') expect(next.doc.child(2).eq(tail[0]!)).toBe(true)
+  })
+
   it('keeps an empty paragraph’s original end after an inserted table', () => {
     const doc = new Y.Doc()
     const context = new DocxViewContext(doc)

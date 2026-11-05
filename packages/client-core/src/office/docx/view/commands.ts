@@ -414,30 +414,16 @@ export const insertTable = (rows: number, cols: number): Command => (state, cont
   let depth = $from.depth
   while (depth > 0 && $from.node(depth).type.name !== 'paragraph') depth--
   const paragraph = depth > 0 ? $from.node(depth) : undefined
-  if (paragraph && paragraph.content.size === 0) {
-    tr.replaceWith($from.before(depth), $from.after(depth), [table, state.schema.node('paragraph', splitParagraphAttrs(paragraph.attrs)[1])])
+  const empty = paragraph?.content.size === 0
+  const tablePos = depth > 0 ? (empty ? $from.before(depth) : $from.after(depth)) : $from.pos
+  if (paragraph && empty) {
+    tr.replaceWith(tablePos, $from.after(depth), [table, state.schema.node('paragraph', splitParagraphAttrs(paragraph.attrs)[1])])
   } else {
-    const at = depth > 0 ? $from.after(depth) : $from.pos
-    tr.insert(at, [table, state.schema.node('paragraph')])
+    tr.insert(tablePos, [table, state.schema.node('paragraph')])
   }
-  const tablePos = tr.mapping.map($from.pos)
-  const $cell = tr.doc.resolve(Math.min(tr.doc.content.size, tablePos))
-  const found = findFirstCell(tr.doc, $cell.pos)
-  if (found !== undefined) tr.setSelection(TextSelection.create(tr.doc, found))
+  // The new table starts with a row, cell, and paragraph; anchor inside that paragraph.
+  tr.setSelection(TextSelection.create(tr.doc, tablePos + 4))
   return tr.scrollIntoView()
-}
-
-function findFirstCell(doc: ProseMirrorNode, from: number): number | undefined {
-  let result: number | undefined
-  doc.nodesBetween(Math.max(0, from - 2), doc.content.size, (node, pos) => {
-    if (result !== undefined) return false
-    if (node.type.name === 'tableCell' && !node.attrs.phantom) {
-      result = pos + 2
-      return false
-    }
-    return true
-  })
-  return result
 }
 
 /** Sets a property on the selected cells' `w:tcPr` (shading, vertical alignment). */

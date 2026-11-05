@@ -1,5 +1,5 @@
 import type { Attrs, Node as ProseMirrorNode, Slice } from '@tiptap/pm/model'
-import { Plugin, type EditorState, type Transaction } from '@tiptap/pm/state'
+import { Plugin, TextSelection, type EditorState, type Transaction } from '@tiptap/pm/state'
 import { Mapping, ReplaceAroundStep, ReplaceStep } from '@tiptap/pm/transform'
 import { ySyncPluginKey } from '@tiptap/y-tiptap'
 import { PARAGRAPH_PROPERTY_ATTRS } from '../schema.js'
@@ -57,6 +57,15 @@ export function preservePastedMarks(tr: Transaction, slice: Slice): Transaction 
     cleanup.push(tr.steps.length - 1)
   }
   tr.setMeta('docx-paragraph-split-cleanup', cleanup)
+  // A closed table ends between blocks. Typing belongs after it, outside either adjacent table.
+  if (!step.slice.openEnd && step.slice.content.lastChild?.type.name === 'table') {
+    const end = step.from + step.slice.size
+    const $end = tr.doc.resolve(end)
+    if ($end.nodeBefore?.type.name === 'table') {
+      if ($end.nodeAfter?.type.name !== 'paragraph') tr.insert(end, tr.doc.type.schema.node('paragraph'))
+      tr.setSelection(TextSelection.create(tr.doc, end + 1))
+    }
+  }
   return tr
 }
 
