@@ -1,7 +1,7 @@
 import { lazy, type ComponentType, type LazyExoticComponent } from 'react'
-import { liveFormat, TEXT_FORMAT, type LiveAssetStore, type LiveFormatInfo } from '@pulpo/client-core/office'
+import { liveFormat, PRESENTATION_FORMAT, TEXT_FORMAT, type LiveAssetStore, type LiveFormatInfo } from '@pulpo/client-core/office'
 import type { FileNode } from '@pulpo/contracts'
-import { FileCode, type LucideIcon } from 'lucide-react'
+import { FileCode, Presentation, type LucideIcon } from 'lucide-react'
 import type * as Y from 'yjs'
 import { ui } from '@/i18n/ui'
 import { FileVersionsSummary } from './FileVersionsSummary'
@@ -37,6 +37,15 @@ export const LIVE_WEB_FORMATS: readonly LiveFormatWeb[] = [
     Editor: lazy(() => import('./text/TextDocEditor')),
     Diff: lazy(() => import('./text/TextDiff')),
     exportFile: async (doc, _name, assets) => (await import('@pulpo/client-core/office/text')).exportTextFile(doc, { assets }),
+  },
+  {
+    format: PRESENTATION_FORMAT,
+    newLabel: () => ui("New presentation"),
+    newName: () => `${ui("Untitled")}.pptx`,
+    icon: Presentation,
+    Editor: lazy(() => import('./presentation/PresentationDocEditor')),
+    Diff: lazy(() => import('./presentation/PresentationFileDiff')),
+    exportFile: async (doc, name, assets) => (await import('@pulpo/client-core/office/presentation')).presentationCodec.exportFile(doc, { name, assets }),
   },
 ]
 

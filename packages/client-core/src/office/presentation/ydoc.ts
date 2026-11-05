@@ -27,7 +27,9 @@ import { stableStringify } from './xml.js'
  * people moving and recoloring a shape, or typing in it, merge instead of overwriting each other.
  */
 
-export const PRESENTATION_ROOT = 'presentation'
+import { PRESENTATION_ROOT } from './layout.js'
+
+export { PRESENTATION_ROOT }
 
 type YShape = Y.Map<unknown>
 type YSlide = Y.Map<unknown>

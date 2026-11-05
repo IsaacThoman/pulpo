@@ -31,7 +31,7 @@ describe('live format catalog', () => {
   })
 
   it('announces each format schema version, Markdown keeping the document schema version', () => {
-    expect(liveSchemaVersions()).toEqual({ markdown: DOC_SCHEMA_VERSION, text: 1 })
+    expect(liveSchemaVersions()).toEqual({ markdown: DOC_SCHEMA_VERSION, text: 1, presentation: 1 })
   })
 
   it('reads extensions the way file names are split elsewhere', () => {
@@ -57,7 +57,9 @@ describe('live format catalog', () => {
       const doc = new Y.Doc()
       expect(format.hasContent(doc)).toBe(false)
       const codec = liveFormatCodec(format.id)
-      await codec.importFile(doc, new TextEncoder().encode('# Title\n\nbody\n'), { name: `a.${format.extensions[0]}`, assets: new MemoryLiveAssetStore() })
+      // Binary formats start from a new empty file; text formats from some text.
+      if (format.id === 'presentation') await codec.createEmpty(doc, { name: 'a.pptx', assets: new MemoryLiveAssetStore() })
+      else await codec.importFile(doc, new TextEncoder().encode('# Title\n\nbody\n'), { name: `a.${format.extensions[0]}`, assets: new MemoryLiveAssetStore() })
       expect(format.hasContent(doc)).toBe(true)
     }
   })

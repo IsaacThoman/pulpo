@@ -1,7 +1,9 @@
 import type * as Y from 'yjs'
 import { LiveFormatError, type LiveFormatCodec, type LiveFormatContext } from '../live-format.js'
 import { blankPresentation } from './blank.js'
-import type { PresentationFormat, PresentationSnapshot, ShapeSnapshot, TableSnapshot } from './model.js'
+import type { PartSnapshot, PresentationSnapshot, ShapeSnapshot, TableSnapshot } from './model.js'
+import { transactChanges } from '../assets.js'
+import { PRESENTATION_EXTENSIONS, presentationFormat, presentationMimeType } from './layout.js'
 import { PRESENTATION_SCHEMA_VERSION } from './model.js'
 import { readPresentation } from './read.js'
 import { textToPlain } from './text.js'
@@ -9,22 +11,7 @@ import { presentationRoot, readSnapshot, reconcileSnapshot, writeSnapshot } from
 import { assignIdentifiers, writePresentation } from './write.js'
 import { textSummaryOfChart } from './summary.js'
 
-export const PRESENTATION_EXTENSIONS = ['pptx', 'potx', 'ppsx', 'pptm', 'potm', 'ppsm'] as const
-
-const MIME_TYPES: Record<PresentationFormat, string> = {
-  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-  potx: 'application/vnd.openxmlformats-officedocument.presentationml.template',
-  ppsx: 'application/vnd.openxmlformats-officedocument.presentationml.slideshow',
-  pptm: 'application/vnd.ms-powerpoint.presentation.macroEnabled.12',
-  potm: 'application/vnd.ms-powerpoint.template.macroEnabled.12',
-  ppsm: 'application/vnd.ms-powerpoint.slideshow.macroEnabled.12',
-}
-
-/** The format a file name asks for; unknown extensions write a plain .pptx. */
-export function presentationFormat(name: string): PresentationFormat {
-  const extension = name.slice(name.lastIndexOf('.') + 1).toLowerCase()
-  return (PRESENTATION_EXTENSIONS as readonly string[]).includes(extension) ? (extension as PresentationFormat) : 'pptx'
-}
+export { PRESENTATION_EXTENSIONS, presentationFormat } from './layout.js'
 
 function assertEmpty(doc: Y.Doc): void {
   if (presentationRoot(doc).size > 0) throw new Error('The document already has content')
@@ -35,9 +22,7 @@ export const presentationCodec: LiveFormatCodec = {
   schemaVersion: PRESENTATION_SCHEMA_VERSION,
   extensions: PRESENTATION_EXTENSIONS,
 
-  mimeType(extension) {
-    return MIME_TYPES[presentationFormat(`.${extension}`)]
-  },
+  mimeType: presentationMimeType,
 
   async createEmpty(doc, context) {
     assertEmpty(doc)
@@ -58,7 +43,15 @@ export const presentationCodec: LiveFormatCodec = {
   async applyFile(doc, bytes, context, origin) {
     const incoming = await readPresentation(bytes, { assets: context.assets })
     const target = presentationRoot(doc).has('slides') ? alignKeys(readSnapshot(doc), incoming) : incoming
-    return { changed: reconcileSnapshot(doc, target, origin) }
+    // Reported from the updates the change makes: state vectors miss deletions.
+    return { changed: transactChanges(doc, () => reconcileSnapshot(doc, target), origin) }
+  },
+
+  referencedAssets(doc) {
+    const parts = presentationRoot(doc).get('parts') as Y.Map<PartSnapshot> | undefined
+    const hashes = new Set<string>()
+    for (const part of parts?.values() ?? []) if (part.asset) hashes.add(part.asset.hash)
+    return [...hashes]
   },
 
   toText(doc) {

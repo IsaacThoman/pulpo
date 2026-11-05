@@ -10,7 +10,7 @@ import type { TextJSON } from './text.js'
  * each slide's frame) or in raw parts, and is written back as it was.
  */
 
-export const PRESENTATION_SCHEMA_VERSION = 1
+export { PRESENTATION_SCHEMA_VERSION } from './layout.js'
 
 /** A package part we keep but do not model: masters, layouts, themes, charts, media, … */
 export interface PartSnapshot {

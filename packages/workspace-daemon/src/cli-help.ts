@@ -4,9 +4,10 @@ export const FILES_HELP = `Usage: pulpo files <command> [options]
 Read and change the user's Pulpo Files that are attached to this chat.
 Files paths look like "Projects/Plan.md" (no leading slash; names are
 case-insensitive). Some files are live documents that people may be editing
-in Pulpo while you work: Markdown (.md) and text or code files (.txt, .py,
-.json, .html, …). You still pull and push them as ordinary files, and your
-push merges with their edits. Other files are stored as uploaded bytes.
+in Pulpo while you work: Markdown (.md), text or code files (.txt, .py,
+.json, .html, …), and PowerPoint decks (.pptx). You still pull and push them
+as ordinary files, and your push merges with their edits. Other files are
+stored as uploaded bytes.
 
 Browse:
   ls [path] [-R]                list a folder (-R: include subfolders)
@@ -28,7 +29,10 @@ Edit a document or file:
   (edit /workspace/files/Projects/Plan.md with your usual tools)
   pulpo files push
 Office files work the same way: edit a pulled .docx with python-docx, .xlsx
-with openpyxl, or .pptx with python-pptx, save it in place, then push.
+with openpyxl, or .pptx with python-pptx, save it in place, then push. For a
+.pptx, change only the slides and shapes you mean to (python-pptx keeps their
+ids, which is how your push merges with people editing other slides); \`cat\`
+prints each slide's text, tables, chart data, and speaker notes.
 
 Create a file: write it under /workspace/files/<folder>/ and run
 \`pulpo files push\`, or push any workspace file to a chosen path:
