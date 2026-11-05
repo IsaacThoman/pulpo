@@ -4,6 +4,7 @@ import { formatNumber } from '../numbering.js'
 import { inlineMarks } from '../schema.js'
 import type { AssetUrls } from './assets.js'
 import type { DocxViewContext } from './context.js'
+import { computeDecorations } from './decorations.js'
 import { layoutTabs, paragraphTabs, type ParagraphTabs } from './tabs.js'
 import type { DocxLabels } from './labels.js'
 import { DrawingView, MathView } from './nodeviews.js'
@@ -130,7 +131,7 @@ const serializers = new WeakMap<object, DOMSerializer>()
 function serializer(doc: ProseMirrorNode, options: StaticOptions): DOMSerializer {
   const base = serializers.get(doc.type.schema) ?? DOMSerializer.fromSchema(doc.type.schema)
   serializers.set(doc.type.schema, base)
-  return new DOMSerializer({
+  const custom = new DOMSerializer({
     ...base.nodes,
     paragraph: (node) => {
       const spec = base.nodes.paragraph!(node)
@@ -155,6 +156,32 @@ function serializer(doc: ProseMirrorNode, options: StaticOptions): DOMSerializer
       return element
     },
   }, base.marks)
+  if (!options.context) return custom
+  const attributes = new Map<number, Record<string, string>>()
+  computeDecorations(doc, { context: options.context, noteNumbers: options.noteNumbers ?? new Map(), noteNumber: options.noteNumber, nodeAttributes: attributes })
+  // A node may occur several times in a fragment; keep its attributes per occurrence.
+  const occurrences = new Map<ProseMirrorNode, { attrs: (Record<string, string> | undefined)[]; next: number }>()
+  doc.descendants((node, pos) => {
+    if (node.isText) return
+    const entry = occurrences.get(node) ?? { attrs: [], next: 0 }
+    entry.attrs.push(attributes.get(pos))
+    occurrences.set(node, entry)
+  })
+  const nodes = Object.fromEntries(Object.entries(custom.nodes).map(([name, render]) => [name, (node: ProseMirrorNode) => {
+    const entry = occurrences.get(node)
+    const attrs = entry?.attrs[entry.next++]
+    const spec = render(node)
+    if (!attrs) return spec
+    const rendered = DOMSerializer.renderSpec(document, spec)
+    if (!(rendered.dom instanceof HTMLElement)) return rendered
+    for (const [key, value] of Object.entries(attrs)) {
+      if (key === 'style') rendered.dom.style.cssText += value
+      else if (key === 'class') rendered.dom.classList.add(...value.split(/\s+/).filter(Boolean))
+      else rendered.dom.setAttribute(key, value)
+    }
+    return rendered
+  }]))
+  return new DOMSerializer(nodes, custom.marks)
 }
 
 /** A story as static DOM inside a `.docx-flow` container, so the document's styles apply. */

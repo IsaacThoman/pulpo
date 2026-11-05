@@ -24,9 +24,22 @@ export interface DecorationInput {
   /** Numbers of notes by `footnote:<id>`/`endnote:<id>`, counted over the body. */
   noteNumbers: Map<string, number>
   /** The note this story is (for its `w:footnoteRef` mark). */
-  noteNumber?: number
+  noteNumber?: number | string
   activeComment?: string | null
   showResolvedComments?: boolean
+  /** Static stories reuse the same computed node attributes as editor decorations. */
+  nodeAttributes?: Map<number, Record<string, string>>
+}
+
+function nodeDecoration(from: number, to: number, attrs: Record<string, string>, input: DecorationInput): Decoration {
+  if (input.nodeAttributes) {
+    const previous = input.nodeAttributes.get(from) ?? {}
+    const merged = { ...previous, ...attrs }
+    if (previous.style && attrs.style) merged.style = `${previous.style}${previous.style.endsWith(';') ? '' : ';'}${attrs.style}`
+    if (previous.class && attrs.class) merged.class = `${previous.class} ${attrs.class}`
+    input.nodeAttributes.set(from, merged)
+  }
+  return Decoration.node(from, to, attrs)
 }
 
 /** Note numbers in reading order of the body. */
@@ -96,7 +109,7 @@ function listDecoration(node: ProseMirrorNode, pos: number, counter: ListCounter
     attrs['data-label'] = label.text
     attrs['data-label-suffix'] = level.suff
   }
-  return Decoration.node(pos, pos + node.nodeSize, attrs)
+  return nodeDecoration(pos, pos + node.nodeSize, attrs, input)
 }
 
 /** Whether a paragraph's own or style's `w:contextualSpacing` is on. */
@@ -123,7 +136,7 @@ function contextualSpacing(doc: ProseMirrorNode, node: ProseMirrorNode, pos: num
   const props: string[] = []
   if (sameStyle(before)) props.push('margin-top:0')
   if (sameStyle(after)) props.push('margin-bottom:0')
-  return props.length ? Decoration.node(pos, pos + node.nodeSize, { style: props.join(';') }) : undefined
+  return props.length ? nodeDecoration(pos, pos + node.nodeSize, { style: props.join(';') }, input) : undefined
 }
 
 function paragraphRevision(node: ProseMirrorNode): Record<string, string> | undefined {
@@ -237,7 +250,7 @@ function tableDecorations(table: ProseMirrorNode, start: number, input: Decorati
     const height = jmlChild(trPr, 'w:trHeight')
     const heightValue = jmlNumber(height, 'w:val')
     if (heightValue) props.height = pt(twipsToPt(heightValue))
-    decorations.push(Decoration.node(start + 1 + cellOffset, start + 1 + cellOffset + cell.nodeSize, { style: cssText(props), class: classes.join(' ') }))
+    decorations.push(nodeDecoration(start + 1 + cellOffset, start + 1 + cellOffset + cell.nodeSize, { style: cssText(props), class: classes.join(' ') }, input))
   }
 }
 
@@ -275,7 +288,7 @@ export function computeDecorations(doc: ProseMirrorNode, input: DecorationInput)
         const contextual = contextualSpacing(doc, node, pos, input)
         if (contextual) decorations.push(contextual)
         const revision = paragraphRevision(node)
-        if (revision) decorations.push(Decoration.node(pos, pos + node.nodeSize, revision))
+        if (revision) decorations.push(nodeDecoration(pos, pos + node.nodeSize, revision, input))
         return true
       }
       case 'table':
@@ -285,13 +298,15 @@ export function computeDecorations(doc: ProseMirrorNode, input: DecorationInput)
         const kind = node.attrs.kind === 'endnote' ? 'endnote' : 'footnote'
         const custom = jmlAttr(jml(node.attrs.v), 'w:customMarkFollows')
         const label = custom ? '' : noteLabel(input.noteNumbers.get(`${kind}:${node.attrs.id}`), kind === 'footnote' ? footnoteFormat : 'lowerRoman')
-        decorations.push(Decoration.node(pos, pos + 1, { 'data-label': label }))
+        decorations.push(nodeDecoration(pos, pos + 1, { 'data-label': label }, input))
         return false
       }
       case 'inlineXml': {
         const name = jml(node.attrs.v)?.[0]
         if ((name === 'w:footnoteRef' || name === 'w:endnoteRef') && input.noteNumber !== undefined) {
-          decorations.push(Decoration.node(pos, pos + 1, { 'data-label': String(input.noteNumber) }))
+          const format = name === 'w:endnoteRef' ? (jmlAttr(jmlChild(jmlChild(input.context.finalSectPr, 'w:endnotePr'), 'w:numFmt'), 'w:val') ?? 'lowerRoman') : footnoteFormat
+          const label = typeof input.noteNumber === 'string' ? input.noteNumber : noteLabel(input.noteNumber, format)
+          decorations.push(nodeDecoration(pos, pos + 1, { 'data-label': label }, input))
         }
         return false
       }
