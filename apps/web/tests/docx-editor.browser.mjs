@@ -175,7 +175,7 @@ try {
     await page.evaluate((id) => {
       const drawing = JSON.stringify(['wp:inline', {}, ['wp:extent', { cx: '952500', cy: '952500' }], ['wp:docPr', { id: '1', name: 'Picture' }]])
       const slice = { content: [{ type: 'paragraph', content: [{ type: 'text', text: 'From another document ' }, { type: 'drawing', attrs: { v: drawing, src: 'f'.repeat(64) } }, { type: 'noteRef', attrs: { kind: 'footnote', id: '999' } }] }], openStart: 1, openEnd: 1 }
-      localStorage.setItem('pulpo-docx-copy', JSON.stringify({ id, json: JSON.stringify(slice) }))
+      localStorage.setItem('pulpo-docx-copy', JSON.stringify({ id, json: JSON.stringify(slice), origin: 'another:body', at: Date.now() }))
     }, id)
     await page.keyboard.press('Enter')
     await pasteHtml(`<p data-docx-copy="${id}">Plain HTML fallback</p>`)
@@ -293,6 +293,69 @@ try {
     assert.deepEqual(await follow('?file=notes-fields.docx&readonly=1'), ['https://example.com/'])
     assert.deepEqual(await follow('?file=notes-fields.docx'), [])
     assert.deepEqual(await follow('?file=notes-fields.docx', [process.platform === 'darwin' ? 'Meta' : 'Control']), ['https://example.com/'])
+  })
+
+  await step('keeps its own pictures when offline, and cleans up pastes in Suggesting mode too', async () => {
+    await open('?file=objects.docx')
+    const pictures = () => page.evaluate(() => {
+      let count = 0
+      window.harness.editors[0].view.state.doc.descendants((node) => { if (node.type.name === 'drawing' && node.attrs.src) count++ })
+      return count
+    })
+    const before = await pictures()
+    assert.ok(before > 0)
+    // Offline: the store cannot load anything. Copying a picture within the document must keep every copy.
+    const html = await page.evaluate(() => {
+      const editor = window.harness.editors[0]
+      editor.options.assets.get = () => Promise.reject(new Error('offline'))
+      const view = editor.view
+      let at
+      view.state.doc.descendants((node, pos) => {
+        if (at === undefined && node.type.name === 'drawing' && node.attrs.src) at = pos
+        return at === undefined
+      })
+      const Selection = view.state.selection.constructor
+      view.focus()
+      view.dispatch(view.state.tr.setSelection(Selection.create(view.state.doc, at, at + 1)))
+      const data = new DataTransfer()
+      view.dom.dispatchEvent(new ClipboardEvent('copy', { clipboardData: data, bubbles: true, cancelable: true }))
+      // Paste after the picture, not over it.
+      view.dispatch(view.state.tr.setSelection(Selection.create(view.state.doc, at + 1)))
+      return data.getData('text/html')
+    })
+    const paste = (markup) => page.evaluate((markup) => {
+      const data = new DataTransfer()
+      data.setData('text/html', markup)
+      data.setData('text/plain', 'pasted')
+      document.querySelector('.docx-flow.ProseMirror').dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }))
+    }, markup)
+    await paste(html)
+    await page.waitForTimeout(300)
+    assert.equal(await pictures(), before + 1)
+
+    // Suggesting: a copy from elsewhere loses its unknown footnote, and pasted lists become Word lists.
+    await page.evaluate(() => window.harness.editors[0].setMode('suggesting'))
+    const id = 'd1'.repeat(16)
+    await page.evaluate((id) => {
+      const slice = { content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Suggested from elsewhere' }, { type: 'noteRef', attrs: { kind: 'footnote', id: '999' } }] }], openStart: 1, openEnd: 1 }
+      localStorage.setItem('pulpo-docx-copy', JSON.stringify({ id, json: JSON.stringify(slice), origin: 'another:body', at: Date.now() }))
+    }, id)
+    await paste(`<p data-docx-copy="${id}">fallback</p>`)
+    await page.keyboard.press('Enter')
+    await paste('<ul><li>First suggested item</li><li>Suggested item</li></ul>')
+    const state = await page.evaluate(() => {
+      let notes = 0
+      let list = null
+      window.harness.editors[0].view.state.doc.descendants((node) => {
+        if (node.type.name === 'noteRef' && node.attrs.id === '999') notes++
+        if (node.type.name === 'paragraph' && node.textContent === 'Suggested item') list = { numPr: Boolean(node.attrs.numPr), xmlAttrs: node.attrs.xmlAttrs }
+      })
+      return { notes, list, text: window.harness.text() }
+    })
+    assert.equal(state.notes, 0)
+    assert.match(state.text, /Suggested from elsewhere/)
+    assert.deepEqual(state.list, { numPr: true, xmlAttrs: null })
+    await page.evaluate(() => window.harness.editors[0].setMode('editing'))
   })
 
   await step('lays out a 100-page document within budget', async () => {

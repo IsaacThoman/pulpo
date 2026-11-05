@@ -74,7 +74,9 @@ function numericIds(ids: Iterable<string>): Map<string, string> {
     result.set(id, id)
     next = Math.max(next, Number(id) + 1)
   }
-  for (const id of all) if (!result.has(id)) result.set(id, String(next++))
+  // New ids are numbered in a fixed order, so the same document always exports the same numbers
+  // whatever order its replicas received them in.
+  for (const id of all.filter((id) => !result.has(id)).sort()) result.set(id, String(next++))
   return result
 }
 

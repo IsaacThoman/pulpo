@@ -197,6 +197,43 @@ describe('docxCodec', () => {
     }
   })
 
+  it('keeps the ids of comments made in Pulpo when a pushed file comes back, whatever order replicas got them in', async () => {
+    const assets = new MemoryAssetStore()
+    const context = { name: 'a.docx', assets }
+    const base = new Y.Doc()
+    await docxCodec.createEmpty(base, context)
+    const comment = (doc: Y.Doc, id: string, text: string, parentId?: string) => doc.transact(() => {
+      doc.getMap('comments').set(id, JSON.stringify({ author: 'Ada', ...(parentId ? { parentId } : {}) }))
+      doc.getMap('stories').set(`comment:${id}`, JSON.stringify({ kind: 'comment' }))
+      writeFragment(doc, doc.getXmlFragment(`story:comment:${id}`), schema.node('doc', null, [schema.node('paragraph', null, schema.text(text))]))
+    })
+    const replica = (clientID: number) => {
+      const doc = new Y.Doc()
+      doc.clientID = clientID
+      Y.applyUpdate(doc, Y.encodeStateAsUpdate(base))
+      return doc
+    }
+    const a = replica(100)
+    const b = replica(5)
+    comment(a, 'nzzz1', 'From A')
+    comment(b, 'naaa2', 'From B', 'nzzz1')
+    const merged = (first: Y.Doc, second: Y.Doc) => {
+      const doc = new Y.Doc()
+      for (const source of [base, first, second]) Y.applyUpdate(doc, Y.encodeStateAsUpdate(source))
+      return doc
+    }
+    const one = merged(a, b)
+    const two = merged(b, a)
+    expect(Buffer.from(await docxCodec.exportFile(one, context)).equals(Buffer.from(await docxCodec.exportFile(two, context)))).toBe(true)
+
+    await docxCodec.applyFile(one, await docxCodec.exportFile(one, context), context, 'agent')
+    const comments = [...one.getMap('stories').keys()].filter((id) => id.startsWith('comment:')).sort()
+    expect(comments).toEqual(['comment:naaa2', 'comment:nzzz1'])
+    expect(JSON.parse(one.getMap<string>('comments').get('naaa2')!).parentId).toBe('nzzz1')
+    expect(one.getXmlFragment('story:comment:nzzz1').toString()).toContain('From A')
+    expect((await docxCodec.applyFile(one, await docxCodec.exportFile(one, context), context, 'agent')).changed).toBe(false)
+  })
+
   describe('hostile files', () => {
     const fail = async (bytes: Uint8Array, code?: string) => {
       const started = Date.now()

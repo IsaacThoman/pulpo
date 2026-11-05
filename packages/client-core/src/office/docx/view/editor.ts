@@ -21,9 +21,10 @@ import {
 import { Decoration, DecorationSet, EditorView, type EditorProps } from '@tiptap/pm/view'
 import { redo, undo, yCursorPlugin, ySyncPlugin, ySyncPluginKey, yUndoPlugin, yUndoPluginKey } from '@tiptap/y-tiptap'
 import type { Awareness } from 'y-protocols/awareness'
-import type * as Y from 'yjs'
+import * as Y from 'yjs'
 import type { LiveAssetStore } from '../../live-format.js'
 import { fontStack, isThemeFontVar, latinFont } from '../css.js'
+import { DOCX_MAX_TABLE_DEPTH } from '../format.js'
 import { newInlinePicture } from '../drawing.js'
 import { jmlAttr, jmlChild, jmlNumber, jmlOn, packJml, unpackJml, type JmlElement } from '../jsonml.js'
 import { BODY_FRAGMENT, fragmentToNode, parseJson, readDocxMap, storyFragmentName, writeFragment, type StoryMeta } from '../model.js'
@@ -31,7 +32,7 @@ import { effectiveNumPr, formatNumber } from '../numbering.js'
 import { docxSchema, packMarks, textAreaWidth } from '../schema.js'
 import { inlineText } from '../text.js'
 import { AssetUrls } from './assets.js'
-import { clipboardParser, clipboardSerializer, limitPastedTables, recallCopy, rememberCopy, sanitizePastedHtml } from './clipboard.js'
+import { clipboardParser, clipboardSerializer, limitPastedTables, recallCopy, rememberCopy, sanitizePastedHtml, withoutForeignParts } from './clipboard.js'
 import {
   changeIndent,
   clearFormatting,
@@ -116,6 +117,32 @@ export function insertablePicture(bytes: Uint8Array): string | null {
   if (starts(0x47, 0x49, 0x46, 0x38)) return 'image/gif'
   if (starts(0x42, 0x4d) && bytes.length > 26) return 'image/bmp'
   return null
+}
+
+/** Tables around the selection: pasted tables nest inside them. */
+function tableDepth(view: EditorView): number {
+  const { $from } = view.state.selection
+  let depth = 0
+  for (let level = $from.depth; level > 0; level--) if ($from.node(level).type.name === 'table') depth++
+  return depth
+}
+
+/** Every picture a document's body and stories show, by asset hash. */
+function documentPictures(doc: Y.Doc): Set<string> {
+  const found = new Set<string>()
+  const visit = (node: Y.XmlElement | Y.XmlFragment) => {
+    for (const child of node.toArray()) {
+      if (!(child instanceof Y.XmlElement)) continue
+      if (child.nodeName === 'drawing') {
+        const src = child.getAttribute('src')
+        if (typeof src === 'string') found.add(src)
+      }
+      visit(child)
+    }
+  }
+  visit(doc.getXmlFragment(BODY_FRAGMENT))
+  for (const id of doc.getMap('stories').keys()) visit(doc.getXmlFragment(storyFragmentName(id)))
+  return found
 }
 
 /** Content that came in from outside: pasted, or dropped from another app. */
@@ -267,7 +294,7 @@ export class DocxEditor {
       state: EditorState.create({ schema: docxSchema(), plugins: this.plugins(options.doc.getXmlFragment(BODY_FRAGMENT), 'cursor', undefined) }),
       editable: () => !this.readOnlyValue && this.modeValue !== 'viewing',
       nodeViews: this.nodeViews(),
-      ...this.clipboardProps(),
+      ...this.clipboardProps('body'),
       attributes: { class: 'docx-flow', spellcheck: 'true', role: 'textbox', 'aria-multiline': 'true' },
       // y-tiptap dispatches while the view is constructed, before `this.view` is set.
       dispatchTransaction: function (this: EditorView, tr: Transaction) { dispatch(this, tr) },
@@ -447,7 +474,8 @@ export class DocxEditor {
     }
     const before = view.state
     view.updateState(view.state.apply(transaction))
-    if (pasted(transaction)) {
+    // Suggesting mode tracks the paste in a new transaction; the original says what it was.
+    if (pasted(tr)) {
       this.convertPastedLists(view)
       this.dropForeignReferences(view)
     }
@@ -459,21 +487,25 @@ export class DocxEditor {
    * Copy and paste for the body and the story editors: Pulpo's own copies come back exactly from
    * memory, everything else as sanitized HTML, with tables kept to a size editors can hold.
    */
-  private clipboardProps(): Partial<EditorProps> {
+  private clipboardProps(storyId: string): Partial<EditorProps> {
     const schema = docxSchema()
+    // Where copies come from: content keeps its part's relationships only within the same story.
+    const origin = `${this.options.doc.guid}:${storyId}`
     return {
       clipboardSerializer: clipboardSerializer(schema),
       clipboardParser: clipboardParser(schema),
       transformPastedHTML: sanitizePastedHtml,
-      transformCopied: (slice) => rememberCopy(slice),
-      transformPasted: (slice) => {
-        const limited = limitPastedTables(slice)
+      transformCopied: (slice) => rememberCopy(slice, origin),
+      transformPasted: (slice, view) => {
+        const limited = limitPastedTables(slice, Math.max(0, DOCX_MAX_TABLE_DEPTH - tableDepth(view)))
         this.checkPastedPictures(limited)
         return limited
       },
       handlePaste: (view, event) => {
-        const slice = recallCopy(event.clipboardData?.getData('text/html'), view.state.schema)
-        if (!slice || !view.editable) return false
+        const copy = recallCopy(event.clipboardData?.getData('text/html'), view.state.schema)
+        if (!copy || !view.editable) return false
+        let slice = limitPastedTables(copy.slice, Math.max(0, DOCX_MAX_TABLE_DEPTH - tableDepth(view)))
+        if (copy.origin !== origin) slice = withoutForeignParts(slice)
         this.checkPastedPictures(slice)
         view.dispatch(view.state.tr.replaceSelection(slice).scrollIntoView().setMeta('paste', true).setMeta('uiEvent', 'paste'))
         return true
@@ -491,8 +523,15 @@ export class DocxEditor {
       if (node.type.name === 'drawing' && typeof node.attrs.src === 'string') sources.add(node.attrs.src)
       return true
     })
+    if (!sources.size) return
+    // Pictures this document already shows are its own; only new ones are checked, and only those
+    // are taken out (all their copies came with pastes) if this document cannot load them.
+    const own = documentPictures(this.options.doc)
     for (const src of sources) {
-      if (this.knownAssets.has(src)) continue
+      if (this.knownAssets.has(src) || own.has(src)) {
+        this.knownAssets.add(src)
+        continue
+      }
       this.options.assets.get(src).then(() => { this.knownAssets.add(src) }, () => {
         if (this.destroyed) return
         for (const view of [this.view, this.storyEditor?.view]) {
@@ -504,7 +543,7 @@ export class DocxEditor {
           if (!ranges.length) continue
           const tr = view.state.tr
           for (const [from, to] of ranges.reverse()) tr.delete(from, to)
-          view.dispatch(tr.setMeta('addToHistory', false))
+          view.dispatch(tr.setMeta('addToHistory', false).setMeta('docx-untracked', true))
         }
       })
     }
@@ -523,7 +562,8 @@ export class DocxEditor {
     if (!ranges.length) return
     const tr = view.state.tr
     for (const [from, to] of ranges.reverse()) tr.delete(from, to)
-    view.dispatch(tr)
+    // Not a suggestion: the references never belonged to this document.
+    view.dispatch(tr.setMeta('docx-untracked', true))
   }
 
   /** Lists pasted from HTML or Word become Word lists: one new list per kind per paste. */
@@ -563,7 +603,8 @@ export class DocxEditor {
       })
     }
     this.applyMapEdits(edits)
-    view.dispatch(tr.setMeta('addToHistory', true))
+    // The pasted paragraphs are already suggested insertions in Suggesting mode; their list format goes with them.
+    view.dispatch(tr.setMeta('addToHistory', true).setMeta('docx-untracked', true))
   }
 
   private reviewer() {
@@ -1726,13 +1767,13 @@ export class DocxEditor {
       state: EditorState.create({ schema: docxSchema(), plugins: this.plugins(this.options.doc.getXmlFragment(storyFragmentName(storyId)), `cursor:${storyId}`, noteNumber) }),
       editable: () => !this.readOnly,
       nodeViews: this.nodeViews(),
-      ...this.clipboardProps(),
+      ...this.clipboardProps(storyId),
       attributes: { class: 'docx-flow', spellcheck: 'true', role: 'textbox', 'aria-label': meta.kind },
       dispatchTransaction: (tr) => {
         let transaction = tr
-        if (this.modeValue === 'suggesting' && tr.docChanged && tr.getMeta(ySyncPluginKey) === undefined && !tr.getMeta('docx-tracked')) transaction = trackTransaction(view.state, tr, this.reviewer()) ?? tr
+        if (this.modeValue === 'suggesting' && tr.docChanged && tr.getMeta(ySyncPluginKey) === undefined && !tr.getMeta('docx-tracked') && !tr.getMeta('docx-untracked')) transaction = trackTransaction(view.state, tr, this.reviewer()) ?? tr
         view.updateState(view.state.apply(transaction))
-        if (pasted(transaction)) {
+        if (pasted(tr)) {
           this.convertPastedLists(view)
           this.dropForeignReferences(view)
         }

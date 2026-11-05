@@ -1,10 +1,11 @@
+import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import * as Y from 'yjs'
 import { transactChanges } from '../assets.js'
 import { LiveFormatError, type LiveFormatCodec, type LiveFormatContext } from '../live-format.js'
 import { blankDocx } from './blank.js'
-import { exportDocx, fingerprintParts } from './export.js'
+import { exportDocx, fingerprintParts, idMaps } from './export.js'
 import { importDocx } from './import.js'
-import { readDocxMap, readDocxModel, writeDocxModel, type DocxModel } from './model.js'
+import { readDocxMap, readDocxModel, writeDocxModel, type CommentMeta, type DocxModel, type StoryMeta } from './model.js'
 import { DOCX_EXTENSIONS, DOCX_SCHEMA_VERSION, docxMimeType } from './format.js'
 import { BODY_FRAGMENT, STORY_PREFIX, parseJson, type PartRef } from './model.js'
 import { docxToText } from './text.js'
@@ -69,7 +70,7 @@ export const docxCodec: LiveFormatCodec = {
     return exportDocx(readDocxModel(doc), context.assets, extensionOf(context.name))
   },
   async applyFile(doc, bytes, context, origin) {
-    const model = await importWithFingerprints(bytes, context)
+    const model = keepCurrentIds(await importWithFingerprints(bytes, context), readDocxModel(doc))
     const changed = transactChanges(doc, () => {
       // The bytes of parts the model regenerates only matter when content changed: a file that
       // reads the same must not count as a change because the earlier export was regenerated.
@@ -105,4 +106,47 @@ export function referencedAssets(doc: Y.Doc): Set<string> {
   visit(doc.getXmlFragment(BODY_FRAGMENT))
   doc.getMap<string>('stories').forEach((_meta, id) => visit(doc.getXmlFragment(STORY_PREFIX + id)))
   return hashes
+}
+
+/**
+ * Comments and notes made in Pulpo have string ids that export numbers. A file pushed back uses
+ * those numbers; mapping them back to the current ids keeps the same stories (and edits in
+ * progress on them) instead of deleting them and creating numbered copies.
+ */
+export function keepCurrentIds(model: DocxModel, current: DocxModel): DocxModel {
+  const numbered = idMaps(current)
+  const back = (map: Map<string, string>) => {
+    const result = new Map<string, string>()
+    for (const [id, number] of map) if (id !== number) result.set(number, id)
+    return result
+  }
+  const comments = back(numbered.comments)
+  const notes = { footnote: back(numbered.footnote), endnote: back(numbered.endnote) }
+  if (!comments.size && !notes.footnote.size && !notes.endnote.size) return model
+  const commentId = (id: string) => comments.get(id) ?? id
+  const noteId = (kind: string, id: string) => (kind === 'footnote' || kind === 'endnote' ? notes[kind].get(id) : undefined) ?? id
+  const storyId = (id: string) => {
+    const [kind, rest] = [id.slice(0, id.indexOf(':')), id.slice(id.indexOf(':') + 1)]
+    if (kind === 'comment') return `comment:${commentId(rest)}`
+    if (kind === 'footnote' || kind === 'endnote') return `${kind}:${noteId(kind, rest)}`
+    return id
+  }
+  const rename = (node: ProseMirrorNode): ProseMirrorNode => {
+    if (node.isText) return node
+    let attrs = node.attrs
+    if (node.type.name === 'commentMark' && typeof attrs.id === 'string') attrs = { ...attrs, id: commentId(attrs.id) }
+    else if (node.type.name === 'noteRef' && typeof attrs.id === 'string') attrs = { ...attrs, id: noteId(String(attrs.kind), attrs.id) }
+    if (node.isLeaf) return attrs === node.attrs ? node : node.type.create(attrs, null, node.marks)
+    const children: ProseMirrorNode[] = []
+    node.forEach((child) => { children.push(rename(child)) })
+    return node.type.create(attrs, children, node.marks)
+  }
+  const stories = new Map<string, { meta: StoryMeta; doc: ProseMirrorNode }>()
+  for (const [id, story] of model.stories) stories.set(storyId(id), { meta: story.meta, doc: rename(story.doc) })
+  const commentMaps = new Map<string, string>()
+  for (const [id, json] of model.maps.comments) {
+    const meta = parseJson<CommentMeta>(json)
+    commentMaps.set(commentId(id), meta?.parentId ? JSON.stringify({ ...meta, parentId: commentId(meta.parentId) }) : json)
+  }
+  return { body: rename(model.body), stories, maps: { ...model.maps, comments: commentMaps } }
 }

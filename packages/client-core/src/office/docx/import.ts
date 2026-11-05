@@ -1,4 +1,5 @@
 import { Mark, type Node as ProseMirrorNode } from '@tiptap/pm/model'
+import { DOCX_MAX_TABLE_DEPTH } from './format.js'
 import { LiveFormatError, type LiveAssetStore } from '../live-format.js'
 import { OoxmlPackage, relationshipsPathFor, resolveTarget, type Relationship } from '../ooxml/package.js'
 import type { ThemeInfo } from './css.js'
@@ -21,7 +22,7 @@ import { PARAGRAPH_PROPERTY_ATTRS, RUN_MARK_BY_ELEMENT, docxSchema, packMarks } 
 /** Limits that keep hostile documents from exhausting memory or time. */
 export const DOCX_LIMITS = {
   /** Most nested tables (tables in cells in tables…). */
-  maxTableDepth: 30,
+  maxTableDepth: DOCX_MAX_TABLE_DEPTH,
   /** Most blocks in one story. */
   maxBlocks: 400_000,
   /** Most columns in one table row (cells, grid columns, and skipped grid columns). */

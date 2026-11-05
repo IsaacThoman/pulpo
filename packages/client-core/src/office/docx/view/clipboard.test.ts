@@ -3,7 +3,7 @@ import { Fragment, Slice } from '@tiptap/pm/model'
 import { describe, expect, it } from 'vitest'
 import { jmlToXml, packJml } from '../jsonml.js'
 import { docxSchema } from '../schema.js'
-import { clipboardParser, clipboardSerializer, limitPastedTables, recallCopy, rememberCopy, sanitizePastedHtml } from './clipboard.js'
+import { clipboardParser, clipboardSerializer, limitPastedTables, recallCopy, rememberCopy, sanitizePastedHtml, withoutForeignParts } from './clipboard.js'
 
 const schema = docxSchema()
 
@@ -13,8 +13,8 @@ function paste(html: string) {
   return limitPastedTables(clipboardParser(schema).parseSlice(container))
 }
 
-function copy(slice: Slice): string {
-  rememberCopy(slice)
+function copy(slice: Slice, origin = 'doc:body'): string {
+  rememberCopy(slice, origin)
   const holder = document.createElement('div')
   holder.appendChild(clipboardSerializer(schema).serializeFragment(slice.content))
   return holder.innerHTML
@@ -28,8 +28,9 @@ describe('clipboard', () => {
     const html = copy(slice)
     expect(html).not.toContain('INCLUDEPICTURE')
     const back = recallCopy(html, schema)
-    expect(back?.content.firstChild?.type.name).toBe('blockXml')
-    expect(back?.content.firstChild?.attrs.v).toBe(raw)
+    expect(back?.origin).toBe('doc:body')
+    expect(back?.slice.content.firstChild?.type.name).toBe('blockXml')
+    expect(back?.slice.content.firstChild?.attrs.v).toBe(raw)
     // Another tab of this origin finds the latest copy in local storage (where the test environment has one).
     const storage = (globalThis as { localStorage?: Storage }).localStorage
     if (storage?.getItem) expect(JSON.parse(storage.getItem('pulpo-docx-copy')!).json).toContain('INCLUDEPICTURE')
@@ -60,6 +61,52 @@ describe('clipboard', () => {
     expect(wide.content.textBetween(0, wide.content.size, '\n')).toBe('x\nx\nx\nx\nx\nafter')
     const tall = paste(`<table>${'<tr><td colspan="63">y</td></tr>'.repeat(4_000)}</table>`)
     expect(tall.content.firstChild!.type.name).toBe('paragraph')
+  })
+})
+
+describe('content from another part', () => {
+  it('keeps pictures and links but leaves out what refers to its old part', () => {
+    const ole = packJml(['w:object', {}, ['o:OLEObject', { ProgID: 'Excel.Sheet.12', 'r:id': 'rId5' }]])
+    const chart = packJml(['wp:inline', {}, ['a:graphic', {}, ['a:graphicData', {}, ['c:chart', { 'r:id': 'rId9' }]]]])
+    const picture = packJml(['wp:inline', {}, ['a:graphic', {}, ['a:graphicData', {}, ['pic:pic', {}, ['pic:blipFill', {}, ['a:blip', { 'r:embed': 'rId3' }]]]]]])
+    const sectPr = packJml(['w:sectPr', {}, ['w:headerReference', { 'w:type': 'default', 'r:id': 'rId7' }]])
+    const link = schema.marks.link!.create({ href: 'https://example.com/', v: packJml(['w:hyperlink', { 'r:id': 'rId2' }, '\u0000']) })
+    const paragraph = schema.nodes.paragraph!.create({ sectPr }, [
+      schema.text('Linked', [link]),
+      schema.nodes.inlineXml!.create({ v: ole }),
+      schema.nodes.drawing!.create({ v: chart }),
+      schema.nodes.drawing!.create({ v: picture, src: 'a'.repeat(64) }),
+    ])
+    const cell = schema.nodes.tableCell!.create(null, [schema.nodes.blockXml!.create({ v: ole })])
+    const table = schema.nodes.table!.create(null, [schema.nodes.tableRow!.create(null, [cell])])
+    const cleaned = withoutForeignParts(new Slice(Fragment.from([paragraph, table]), 0, 0))
+    const kept = cleaned.content.firstChild!
+    expect(kept.attrs.sectPr).toBeNull()
+    const inline: string[] = []
+    kept.forEach((child) => inline.push(child.isText ? `text:${child.marks.map((mark) => mark.type.name).join()}` : child.type.name))
+    expect(inline).toEqual(['text:link', 'drawing'])
+    // The cell lost its only block and got an empty paragraph instead.
+    expect(cleaned.content.lastChild!.firstChild!.firstChild!.firstChild!.type.name).toBe('paragraph')
+  })
+
+  it('nests pasted tables no deeper than a document may', () => {
+    let html = 'x'
+    for (let level = 0; level < 40; level++) html = `<table><tr><td>${html}</td></tr></table>`
+    const depthOf = (slice: Slice) => {
+      let deepest = 0
+      const visit = (node: ReturnType<Slice['content']['child']>, depth: number) => {
+        const here = node.type.name === 'table' ? depth + 1 : depth
+        deepest = Math.max(deepest, here)
+        node.forEach((child) => visit(child, here))
+      }
+      slice.content.forEach((child) => visit(child, 0))
+      return deepest
+    }
+    const container = document.createElement('div')
+    container.innerHTML = html
+    const parsed = clipboardParser(schema).parseSlice(container)
+    expect(depthOf(limitPastedTables(parsed))).toBe(30)
+    expect(depthOf(limitPastedTables(parsed, 5))).toBe(5)
   })
 })
 

@@ -19,3 +19,6 @@ export const DOCX_MAX_FILE_BYTES = 50 * 1024 * 1024
 export function docxMimeType(extension: string): string {
   return MIME_TYPES[extension.toLowerCase() as keyof typeof MIME_TYPES] ?? MIME_TYPES.docx
 }
+
+/** Deepest table nesting a document may have (tables in cells in tables…). */
+export const DOCX_MAX_TABLE_DEPTH = 30

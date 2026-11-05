@@ -1,6 +1,7 @@
 import { DOMParser as PMDOMParser, DOMSerializer, Fragment, Slice, type Node as ProseMirrorNode, type ParseRule, type Schema } from '@tiptap/pm/model'
 import { packJml, type JmlElement } from '../jsonml.js'
 import { HIGHLIGHT_COLORS } from '../css.js'
+import { DOCX_MAX_TABLE_DEPTH } from '../format.js'
 
 /**
  * Copy and paste. Between docx editors everything round-trips exactly: the clipboard carries a
@@ -13,9 +14,18 @@ const COPY_ATTR = 'data-docx-copy'
 const COPY_KEY = 'pulpo-docx-copy'
 const COPY_ID = /data-docx-copy="([0-9a-f]{32})"/
 
-/** Recent copies by id, as slice JSON. */
-const copies = new Map<string, string>()
+/** How long another tab may paste a copy back from local storage. */
+const COPY_LIFETIME_MS = 60 * 60 * 1000
+
+/** Recent copies by id: the slice as JSON and where it came from (document and story). */
+const copies = new Map<string, { json: string; origin: string }>()
 let currentCopy: string | null = null
+
+export interface RecalledCopy {
+  slice: Slice
+  /** `rememberCopy`'s origin: the document and story it was copied from. */
+  origin: string
+}
 
 /**
  * Remembers a slice being copied or dragged, for pasting it back exactly. The clipboard only
@@ -23,13 +33,13 @@ let currentCopy: string | null = null
  * for other tabs), so nothing another site or app puts on the clipboard is trusted as a Pulpo copy,
  * and a leaked id can only paste back what the user copied.
  */
-export function rememberCopy(slice: Slice): Slice {
+export function rememberCopy(slice: Slice, origin: string): Slice {
   const id = Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, '0')).join('')
   const json = JSON.stringify(slice.toJSON())
-  copies.set(id, json)
+  copies.set(id, { json, origin })
   if (copies.size > 8) copies.delete(copies.keys().next().value!)
   try {
-    localStorage.setItem(COPY_KEY, JSON.stringify({ id, json }))
+    localStorage.setItem(COPY_KEY, JSON.stringify({ id, json, origin, at: Date.now() }))
   } catch {
     // Too large or no storage: other tabs paste the HTML instead.
   }
@@ -38,24 +48,76 @@ export function rememberCopy(slice: Slice): Slice {
 }
 
 /** The remembered slice clipboard HTML refers to, if it is one of this origin's copies. */
-export function recallCopy(html: string | undefined, schema: Schema): Slice | null {
+export function recallCopy(html: string | undefined, schema: Schema): RecalledCopy | null {
   const id = html ? COPY_ID.exec(html)?.[1] : undefined
   if (!id) return null
-  let json = copies.get(id)
-  if (!json) {
+  let copy = copies.get(id)
+  if (!copy) {
     try {
-      const stored = JSON.parse(localStorage.getItem(COPY_KEY) ?? 'null') as { id?: string; json?: string } | null
-      if (stored?.id === id) json = stored.json
+      const stored = JSON.parse(localStorage.getItem(COPY_KEY) ?? 'null') as { id?: string; json?: string; origin?: string; at?: number } | null
+      if (stored && (typeof stored.at !== 'number' || Date.now() - stored.at > COPY_LIFETIME_MS)) localStorage.removeItem(COPY_KEY)
+      else if (stored?.id === id && typeof stored.json === 'string' && typeof stored.origin === 'string') copy = { json: stored.json, origin: stored.origin }
     } catch {
       return null
     }
   }
-  if (!json) return null
+  if (!copy) return null
   try {
-    return Slice.fromJSON(schema, JSON.parse(json))
+    return { slice: Slice.fromJSON(schema, JSON.parse(copy.json)), origin: copy.origin }
   } catch {
     return null
   }
+}
+
+/** Relationship attributes the exporter rewrites for whichever part content lands in. */
+const PORTABLE_RELATIONSHIPS: Record<string, string> = { 'a:blip': 'r:embed', 'v:imagedata': 'r:id' }
+
+/** Whether a stored attribute value (JsonML, or JSON of XML attributes) refers to a relationship of its part. */
+function bindsRelationship(value: unknown): boolean {
+  if (typeof value !== 'string' || !/"r:[A-Za-z]+"/.test(value)) return false
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(value)
+  } catch {
+    return true
+  }
+  const visit = (node: unknown): boolean => {
+    if (!Array.isArray(node)) return false
+    const [name, attrs] = node as [unknown, unknown]
+    if (typeof name === 'string' && attrs && typeof attrs === 'object' && !Array.isArray(attrs)) {
+      for (const key of Object.keys(attrs)) if (key.startsWith('r:') && PORTABLE_RELATIONSHIPS[name] !== key) return true
+    }
+    return node.some((child) => Array.isArray(child) && visit(child))
+  }
+  if (Array.isArray(parsed)) return visit(parsed) || parsed.some((child) => visit(child))
+  if (parsed && typeof parsed === 'object') return Object.keys(parsed).some((key) => key.startsWith('r:'))
+  return false
+}
+
+/**
+ * Content copied from another document or story, minus what refers to relationships of the part
+ * it came from (charts, embedded objects, SmartArt, section references): those would point at
+ * nothing, or at the wrong part, here. Pictures and links are rewritten on export, so they stay.
+ */
+export function withoutForeignParts(slice: Slice): Slice {
+  const clean = (fragment: Fragment): Fragment => {
+    const children: ProseMirrorNode[] = []
+    fragment.forEach((child) => {
+      const marks = child.marks.filter((mark) => mark.type.name === 'link' || !Object.values(mark.attrs).some(bindsRelationship))
+      const bound = Object.entries(child.attrs).filter(([, value]) => bindsRelationship(value))
+      if (bound.length && (child.isInline || child.type.name === 'blockXml')) return
+      const attrs: Record<string, unknown> = { ...child.attrs }
+      for (const [key] of bound) attrs[key] = (child.type.spec.attrs?.[key] as { default?: unknown } | undefined)?.default ?? null
+      if (child.isText) children.push(child.mark(marks))
+      else {
+        // Containers left empty (a cell whose only block went) get the content they need.
+        const node = child.type.createAndFill(attrs, child.isLeaf ? null : clean(child.content), marks)
+        if (node) children.push(node)
+      }
+    })
+    return Fragment.fromArray(children)
+  }
+  return new Slice(clean(slice.content), slice.openStart, slice.openEnd)
 }
 
 /** Serializes copies as ordinary HTML for other apps, marked with the copy's id for Pulpo. */
@@ -74,13 +136,15 @@ export function clipboardSerializer(schema: Schema): DOMSerializer {
 const PASTE_MAX_SPAN = { columns: 63, rows: 1_000 }
 /** Most grid positions in one pasted table, as for imported files. */
 const PASTE_MAX_TABLE_CELLS = 250_000
+/** Deepest table nesting, as for imported files. */
+const PASTE_MAX_TABLE_DEPTH = DOCX_MAX_TABLE_DEPTH
 
 /**
- * Pasted tables too large to keep as tables (which editors fill out cell by cell) become their
- * cells' paragraphs.
+ * Pasted tables too large to keep as tables (which editors fill out cell by cell), or nested
+ * deeper than `maxDepth` more levels, become their cells' paragraphs.
  */
-export function limitPastedTables(slice: Slice): Slice {
-  const shrink = (fragment: Fragment): Fragment => {
+export function limitPastedTables(slice: Slice, maxDepth = PASTE_MAX_TABLE_DEPTH): Slice {
+  const shrink = (fragment: Fragment, depth: number): Fragment => {
     const children: ProseMirrorNode[] = []
     fragment.forEach((child) => {
       if (child.type.name === 'table') {
@@ -90,16 +154,18 @@ export function limitPastedTables(slice: Slice): Slice {
           row.forEach((cell) => { span += Math.max(1, Number(cell.attrs.colspan) || 1) })
           width = Math.max(width, span)
         })
-        if (width > PASTE_MAX_SPAN.columns || width * child.childCount > PASTE_MAX_TABLE_CELLS) {
-          child.forEach((row) => row.forEach((cell) => cell.forEach((block) => { children.push(block) })))
+        if (width > PASTE_MAX_SPAN.columns || width * child.childCount > PASTE_MAX_TABLE_CELLS || depth >= maxDepth) {
+          child.forEach((row) => row.forEach((cell) => shrink(cell.content, depth).forEach((block) => { children.push(block) })))
           return
         }
+        children.push(child.copy(shrink(child.content, depth + 1)))
+        return
       }
-      children.push(child.isLeaf ? child : child.copy(shrink(child.content)))
+      children.push(child.isLeaf ? child : child.copy(shrink(child.content, depth)))
     })
     return Fragment.fromArray(children)
   }
-  return new Slice(shrink(slice.content), slice.openStart, slice.openEnd)
+  return new Slice(shrink(slice.content, 0), slice.openStart, slice.openEnd)
 }
 
 const span = (value: string | null, max: number) => Math.min(max, Math.max(1, Number(value) || 1))
