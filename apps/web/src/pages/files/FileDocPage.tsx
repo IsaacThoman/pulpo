@@ -39,7 +39,7 @@ import { revealFileInPlace } from '@/features/files/reveal'
 import { PanelWindowButtons } from '@/features/side-panel/PanelControls'
 import { locationIsCurrent, openBeside, panelContentPath, useMainNavigate } from '@/features/side-panel/use-panel-actions'
 import { SplitViewButton } from '@/features/side-panel/AgentActions'
-import { usePublishFilesView, type AgentItem, type FilesViewPlace } from '@/features/side-panel/agent'
+import { runWithAgent, usePublishFilesView, type AgentItem, type FilesViewPlace } from '@/features/side-panel/agent'
 import { useSidePanel, type PanelContent } from '@/features/side-panel/store'
 
 function statusProblem(status: DocSyncStatus): string | null {
@@ -329,6 +329,7 @@ function OpenLiveDoc({ userId, docId, view, web }: { userId: string; docId: stri
   const [notice, setNotice] = useState<string | null>(null)
   const chatWidth = useSettings((state) => state.chatWidth)
   const assets = useMemo(() => new ApiLiveAssetStore(docId), [docId])
+  const go = useMainNavigate()
   const { Editor } = web
 
   useEffect(() => setEverSynced(false), [docId])
@@ -379,6 +380,8 @@ function OpenLiveDoc({ userId, docId, view, web }: { userId: string; docId: stri
               name={node.name}
               editable={editable}
               width={view.layout === 'panel' ? 'fill' : chatWidth === 'full' ? 'wide' : 'narrow'}
+              assets={assets}
+              onRunWithAgent={web.runsWithAgent && editable ? () => runWithAgent(docId, { layout: view.layout, view: view.panel ?? { kind: 'file', id: docId } }, go) : undefined}
             />
           </Suspense>
         ) : loading}

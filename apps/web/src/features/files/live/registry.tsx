@@ -1,7 +1,7 @@
 import { lazy, type ComponentType, type LazyExoticComponent } from 'react'
-import { liveFormat, TEXT_FORMAT, type LiveAssetStore, type LiveFormatInfo } from '@pulpo/client-core/office'
+import { liveFormat, NOTEBOOK_FORMAT, TEXT_FORMAT, type LiveAssetStore, type LiveFormatInfo } from '@pulpo/client-core/office'
 import type { FileNode } from '@pulpo/contracts'
-import { FileCode, type LucideIcon } from 'lucide-react'
+import { FileCode, NotebookPen, type LucideIcon } from 'lucide-react'
 import type * as Y from 'yjs'
 import { ui } from '@/i18n/ui'
 import { FileVersionsSummary } from './FileVersionsSummary'
@@ -26,6 +26,8 @@ export interface LiveFormatWeb {
   Diff: LazyExoticComponent<ComponentType<LiveDiffProps>> | ComponentType<LiveDiffProps>
   /** The open document as a file, for downloads that include edits not synced yet. */
   exportFile: (doc: Y.Doc, name: string, assets: LiveAssetStore) => Promise<Uint8Array>
+  /** Files of the format run (notebooks): the editor offers to have an agent run them. */
+  runsWithAgent?: boolean
 }
 
 export const LIVE_WEB_FORMATS: readonly LiveFormatWeb[] = [
@@ -37,6 +39,16 @@ export const LIVE_WEB_FORMATS: readonly LiveFormatWeb[] = [
     Editor: lazy(() => import('./text/TextDocEditor')),
     Diff: lazy(() => import('./text/TextDiff')),
     exportFile: async (doc, _name, assets) => (await import('@pulpo/client-core/office/text')).exportTextFile(doc, { assets }),
+  },
+  {
+    format: NOTEBOOK_FORMAT,
+    newLabel: () => ui("New notebook"),
+    newName: () => `${ui("Untitled")}.ipynb`,
+    icon: NotebookPen,
+    Editor: lazy(() => import('./notebook/NotebookDocEditor')),
+    Diff: lazy(() => import('./notebook/NotebookDiff')),
+    exportFile: async (doc, _name, assets) => (await import('@pulpo/client-core/office/notebook')).exportNotebookFile(doc, { assets }),
+    runsWithAgent: true,
   },
 ]
 
