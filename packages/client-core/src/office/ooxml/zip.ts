@@ -31,6 +31,11 @@ function updateCrc(crc: number, bytes: Uint8Array): number {
   return crc
 }
 
+/** ZIP's CRC-32, shared by the bounded reader and the deterministic writer. */
+export function zipCrc32(bytes: Uint8Array): number {
+  return (updateCrc(-1, bytes) ^ -1) >>> 0
+}
+
 function corrupt(message: string): never {
   throw new LiveFormatError('corrupt', `This zip package ${message}`)
 }
