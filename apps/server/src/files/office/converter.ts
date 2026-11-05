@@ -54,16 +54,20 @@ export async function convertOfficeDocument(input: { bytes: Uint8Array; from: st
       },
       signal: input.signal ? AbortSignal.any([input.signal, timeout]) : timeout,
     })
+    if (response.ok) return new Uint8Array(await response.arrayBuffer())
+    const body = await response.json().catch((cause: unknown) => {
+      // Keep aborts distinct from an unreadable error body.
+      if (timeout.aborted || input.signal?.aborted) throw cause
+      return null
+    }) as { error?: { code?: unknown } } | null
+    const failure = typeof body?.error?.code === 'string' && Object.hasOwn(FAILURES, body.error.code) ? FAILURES[body.error.code]! : null
+    if (!failure) throw unavailable(`HTTP ${response.status}${typeof body?.error?.code === 'string' ? ` ${body.error.code}` : ''}`)
+    throw new AppError(failure.status, failure.code, failure.message, failure.status >= 500 ? 'server_error' : 'invalid_request_error')
   } catch (cause) {
     if (timeout.aborted) throw new AppError(504, FAILURES.timeout!.code, FAILURES.timeout!.message, 'server_error')
-    if (input.signal?.aborted) throw cause
+    if (input.signal?.aborted || cause instanceof AppError) throw cause
     throw unavailable(cause)
   }
-  if (response.ok) return new Uint8Array(await response.arrayBuffer())
-  const body = await response.json().catch(() => null) as { error?: { code?: unknown } } | null
-  const failure = typeof body?.error?.code === 'string' && Object.hasOwn(FAILURES, body.error.code) ? FAILURES[body.error.code]! : null
-  if (!failure) throw unavailable(`HTTP ${response.status}${typeof body?.error?.code === 'string' ? ` ${body.error.code}` : ''}`)
-  throw new AppError(failure.status, failure.code, failure.message, failure.status >= 500 ? 'server_error' : 'invalid_request_error')
 }
 
 /**

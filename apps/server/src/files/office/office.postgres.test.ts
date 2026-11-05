@@ -150,6 +150,22 @@ describe.skipIf(!enabled)('office file conversion', () => {
       expect(await files.content(agentCopy!.id)).toBe(PDF.toString())
     })
 
+    it('keeps committed conversion bytes when a push replaces them before notification fails', async () => {
+      const projects = await files.folder('Projects')
+      const doc = await files.blob('Spec.doc', projects, 'doc bytes')
+      await files.attach({ [projects]: 'write' })
+      mocks.publish.mockImplementationOnce(async () => {
+        files.put('/workspace/new.docx', 'updated docx')
+        await files.ok('push', { items: [{ local: '/workspace/new.docx', remote: 'Projects/Spec.docx', base: null, force: true }] })
+        throw new Error('Redis is down')
+      })
+      await expect(convertFileToEditable(files.userId, doc, 'docx')).rejects.toThrow('Redis is down')
+      const [copy] = await nodesNamed('Spec.docx')
+      expect(await files.content(copy!.id)).toBe('updated docx')
+      await undoFileChanges(files.userId, files.responseId)
+      expect(await files.content(copy!.id)).toBe(DOCX.toString())
+    })
+
     it('refuses what it cannot convert without calling the converter', async () => {
       const doc = await files.blob('Letter.doc', null, 'x')
       expect(await appError(convertFileToEditable(files.userId, doc, 'xlsx'))).toEqual({ status: 400, code: 'office_conversion_unsupported' })
@@ -213,7 +229,7 @@ describe.skipIf(!enabled)('office file conversion', () => {
       const ids = await Promise.all(['a', 'b'].map((name) => files.blob(`${name}.odt`, null, name)))
       reply = () => ({ status: 200, body: DOCX, delayMs: 300 })
       const agent = files.relay('convert', { path: 'Projects/agent.odt', to: 'docx' })
-      await new Promise((resolve) => setTimeout(resolve, 50))
+      await vi.waitFor(() => expect(received.some((call) => call.body.toString() === 'agent')).toBe(true))
       const results = await Promise.allSettled(ids.map((id) => convertFileToEditable(files.userId, id, 'docx')))
       expect((await agent).ok).toBe(true)
       expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1)

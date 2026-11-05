@@ -70,6 +70,15 @@ describe('office conversion names', () => {
     expect(canExportOfficePdf('scan.pdf')).toBe(false)
   })
 
+  it('keeps converted names within the code-point length limit', () => {
+    for (const character of ['a', '😀']) {
+      const name = convertedFileName(`${character.repeat(251)}.doc`, 'docx')
+      expect([...name]).toHaveLength(255)
+      expect(name).toBe(`${character.repeat(250)}.docx`)
+      expect(fileNameError(name)).toBeNull()
+    }
+  })
+
   it('swaps the extension of the converted file', () => {
     expect(convertedFileName('Report.doc', 'docx')).toBe('Report.docx')
     expect(convertedFileName('Q3.final.xls', 'xlsx')).toBe('Q3.final.xlsx')

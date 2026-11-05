@@ -70,7 +70,7 @@ export function canExportOfficePdf(name: string): boolean {
 /** "Report.doc" converted to docx is "Report.docx"; the caller still picks a free name. */
 export function convertedFileName(name: string, format: OfficeEditableFormat | 'pdf'): string {
   const dot = name.lastIndexOf('.')
-  return `${dot > 0 ? name.slice(0, dot) : name}.${format}`
+  return `${truncateCodePoints(dot > 0 ? name.slice(0, dot) : name, FILE_NAME_MAX_LENGTH - format.length - 1)}.${format}`
 }
 
 export const convertOfficeFileSchema = z.object({ to: officeEditableFormatSchema })
