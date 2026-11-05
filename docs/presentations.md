@@ -115,6 +115,7 @@ The clipboard payload (`web application/x-pulpo-presentation+json`) carries the 
 Known limitations, most important first:
 
 - Two people making the very first move or resize of the same inherited placeholder at the same moment can lose one of the two changes: the first edit copies the inherited transform into the shape, and the two copies resolve last writer wins.
+- If one person deletes the first row and another the first column of the same merged table cell at the same moment, the merged cell's text can be lost: each deletion hands the text to a cell the other one removes.
 - Group members are selected and edited through their group (ungroup to change one member); grouping is limited to shapes in the same container.
 - Picture crop and adjust handles (the yellow ones) have no on-canvas handles yet; values from files are honored.
 - Animations do not play in the slide show; transitions all play as a fade.
@@ -122,7 +123,7 @@ Known limitations, most important first:
 - Charts do not draw error bars, trendlines, data tables, or leader lines; date axes are spaced evenly; 3-D charts are drawn flat.
 - The Y.Doc keeps templates and each slide's original bytes beside the model, about 4× the uncompressed package for shape-heavy decks.
 - `applyFile` reconciles the document with the pushed file, not with the version the agent pulled. Edits other people made between the agent's pull and its push are overwritten where the agent's file differs. Concurrent edits that are still in flight merge. A three-way merge needs the pulled version.
-- `applyFile` matches slides by slide id and table rows by their text. Tools such as python-pptx give a new slide the id of a deleted one. That slide is treated as the old one only when its layout and at least one shape (id, kind, and name) agree, so a look-alike slide can still pick up edits meant for the deleted one.
+- `applyFile` matches slides by slide id and table rows and columns by their text. Tools such as python-pptx give a new slide the id of a deleted one. That slide is treated as the old one only when at least one shape (id, kind, and name) agrees (or, if either slide has no shapes, their layouts agree), so a look-alike slide can still pick up edits meant for the deleted one.
 - Re-applying the document's own export right after a slide was deleted reports a change once, because the stored presentation part is updated. Applying it again changes nothing.
 - Collaborators' carets show in on-canvas text, not in speaker notes. Their selections show on the canvas and in the strip.
 

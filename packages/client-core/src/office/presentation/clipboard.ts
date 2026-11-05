@@ -3,6 +3,7 @@ import { LiveFormatError, type LiveAssetStore } from '../live-format.js'
 import { decodePartText, relationshipsPathFor, relativeTarget, resolveTarget } from '../ooxml/package.js'
 import { cloneShape, cloneSlide, insertShapes, insertSlides, PARTS_ORIGIN, partsMap } from './commands.js'
 import type { PartSnapshot, RelTarget, ShapeSnapshot, SlideSnapshot } from './model.js'
+import { DEFAULT_PRESENTATION_LIMITS } from './read.js'
 import { DeckResources } from './render/deck.js'
 import { presentationRoot, randomId, readSnapshot, setPart } from './ydoc.js'
 import { normalizeText, type TextJSON } from './text.js'
@@ -130,14 +131,37 @@ export function parseClipboard(json: string): PresentationClipboard | undefined 
     return undefined
   }
   if (value?.version !== 1 || (value.kind !== 'shapes' && value.kind !== 'slides') || typeof value.parts !== 'object' || value.parts === null) return undefined
+  // Check aggregate budgets before validating XML or decoding/storing any parts. Include group
+  // members and all slides, even when a malformed shape would later be filtered out.
+  const slidesInput = Array.isArray(value.slides) ? value.slides : []
+  if (slidesInput.length > 200 || countShapes([...(Array.isArray(value.shapes) ? value.shapes : []), ...slidesInput.flatMap((slide) => Array.isArray(slide?.shapes) ? slide.shapes : [])], 2_000) > 2_000) return undefined
+  const entries = Object.entries(value.parts)
+  if (entries.length > MAX_COPY_PARTS) return undefined
+  let bytes = 0
+  for (const [, part] of entries) {
+    if (typeof part?.data === 'string') bytes += part.data.length * 3 / 4
+    if (bytes > MAX_COPY_BYTES) return undefined
+  }
   const parts: Record<string, ClipboardPart> = {}
-  for (const [path, part] of Object.entries(value.parts)) {
+  for (const [path, part] of entries) {
     if (typeof part?.data !== 'string' || !/^[\w./-]+$/.test(path) || path.includes('..')) continue
     parts[path] = part
   }
   const shapes = Array.isArray(value.shapes) ? value.shapes.filter(validShape) : undefined
   const slides = Array.isArray(value.slides) ? value.slides.filter(validSlide) : undefined
   return { version: 1, source: String(value.source ?? ''), kind: value.kind, ...(shapes ? { shapes } : {}), ...(slides ? { slides } : {}), parts, text: String(value.text ?? '') }
+}
+
+/** Tables count once; group members each count toward the slide and clipboard budgets. */
+function countShapes(shapes: readonly ShapeSnapshot[], limit = DEFAULT_PRESENTATION_LIMITS.maxShapesPerSlide): number {
+  const pending = [...shapes]
+  let count = 0
+  while (pending.length) {
+    const shape = pending.pop()
+    if (++count > limit) return count
+    if (Array.isArray(shape?.children)) for (const member of shape.children) pending.push(member)
+  }
+  return count
 }
 
 const SHAPE_KINDS = new Set(['sp', 'pic', 'cxnSp', 'grpSp', 'graphicFrame', 'opaque'])
@@ -306,6 +330,8 @@ function remapShape(shape: ShapeSnapshot, mapping: Map<string, string>, unlinkSl
 
 /** Pastes shapes onto a slide, offset when pasting onto the slide they came from. Returns the new keys. */
 export async function pasteShapes(doc: Y.Doc, assets: LiveAssetStore, clipboard: PresentationClipboard, slideKey: string, offset: number, origin?: unknown): Promise<string[]> {
+  const slide = readSnapshot(doc).slides.find((slide) => slide.key === slideKey)
+  if (!slide || countShapes(slide.shapes) + countShapes(clipboard.shapes ?? []) > DEFAULT_PRESENTATION_LIMITS.maxShapesPerSlide) return []
   const { mapping, write } = await prepareParts(doc, assets, clipboard)
   write()
   const sameDocument = clipboard.source === documentIdentity(doc)
@@ -319,10 +345,12 @@ export async function pasteShapes(doc: Y.Doc, assets: LiveAssetStore, clipboard:
 
 /** Pastes slides at `index`, mapping layouts by name when they come from another deck. */
 export async function pasteSlides(doc: Y.Doc, assets: LiveAssetStore, clipboard: PresentationClipboard, index: number, origin?: unknown): Promise<string[]> {
+  const snapshot = readSnapshot(doc)
+  const incoming = clipboard.slides ?? []
+  if (snapshot.slides.length + incoming.length > DEFAULT_PRESENTATION_LIMITS.maxSlides || incoming.some((slide) => countShapes(slide.shapes) > DEFAULT_PRESENTATION_LIMITS.maxShapesPerSlide)) return []
   const sameDocument = clipboard.source === documentIdentity(doc)
   const { mapping, write } = await prepareParts(doc, assets, clipboard)
   write()
-  const snapshot = readSnapshot(doc)
   const deck = new DeckResources(snapshot.parts, snapshot.mainPart)
   const layouts = deck.masterPaths().flatMap((master) => deck.master(master)?.layouts ?? [])
   const slides = (clipboard.slides ?? []).map(({ layoutName, ...slide }) => {

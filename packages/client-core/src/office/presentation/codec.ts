@@ -92,7 +92,7 @@ export function alignKeys(currentSnapshot: PresentationSnapshot, incoming: Prese
     slides: incoming.slides.map((slide) => {
       const candidate = slideKeyById.get(slide.sldId)
       // python-pptx gives a slide added after deleting the last one that slide's id; only a slide
-      // that still looks like the old one (same layout, a shape in common) is the same slide.
+      // that still looks like the old one (a shape in common) is the same slide.
       const match = candidate && sameSlide(candidate, slide) ? candidate : undefined
       let key = match?.key ?? slide.key
       // A slide that matched nothing must not land on a current slide by having its key.
@@ -109,8 +109,7 @@ export function alignKeys(currentSnapshot: PresentationSnapshot, incoming: Prese
 }
 
 function sameSlide(current: SlideSnapshot, incoming: SlideSnapshot): boolean {
-  if (current.layout !== incoming.layout) return false
-  if (!current.shapes.length || !incoming.shapes.length) return true
+  if (!current.shapes.length || !incoming.shapes.length) return current.layout === incoming.layout
   const signature = (shape: ShapeSnapshot) => `${shape.nvId}\u0000${shape.kind}\u0000${shape.name ?? ''}`
   const shapes = new Set(current.shapes.map(signature))
   return incoming.shapes.some((shape) => shapes.has(signature(shape)))
@@ -146,42 +145,42 @@ function alignShapes(current: ShapeSnapshot[], incoming: ShapeSnapshot[]): Shape
   return incoming.map(align)
 }
 
-/**
- * Matches columns by position when the counts agree. Rows match by their text first (longest
- * common subsequence), so a row deleted in one place and added in another does not shift
- * everyone's typing into the wrong row; rows left between two matches pair up by position, which
- * is what an edited row looks like.
- */
-function alignTable(current: TableSnapshot, incoming: TableSnapshot): TableSnapshot {
-  const columns =
-    current.columns.length === incoming.columns.length
-      ? incoming.columns.map((column, index) => ({ ...column, key: current.columns[index]!.key }))
-      : incoming.columns
-  const columnKey = new Map(incoming.columns.map((column, index) => [column.key, columns[index]!.key]))
-  const signature = (row: TableSnapshot['rows'][number], keys: string[]) => keys.map((key) => textToPlain(row.cells[key]?.text ?? { type: 'doc' })).join('\t')
-  const currentSignatures = current.rows.map((row) => signature(row, current.columns.map((column) => column.key)))
-  const incomingSignatures = incoming.rows.map((row) => signature(row, incoming.columns.map((column) => column.key)))
-  const common = longestCommonSubsequence(currentSignatures, incomingSignatures)
+/** Matches table axes by text, then pairs edited entries between the matches by position. */
+function tablePairs(current: string[], incoming: string[]): Map<number, number> {
+  const common = longestCommonSubsequence(current, incoming)
   const pairs = new Map<number, number>()
   const currentMatched = [...common.current].sort((a, b) => a - b)
   const incomingMatched = [...common.target].sort((a, b) => a - b)
   currentMatched.forEach((index, at) => pairs.set(incomingMatched[at]!, index))
-  // Between consecutive matches (and before the first, after the last), pair the rest in order.
-  const anchors = [[-1, -1], ...incomingMatched.map((index, at) => [currentMatched[at]!, index]), [current.rows.length, incoming.rows.length]] as [number, number][]
+  const anchors = [[-1, -1], ...incomingMatched.map((index, at) => [currentMatched[at]!, index]), [current.length, incoming.length]] as [number, number][]
   for (let at = 0; at < anchors.length - 1; at++) {
     const [currentStart, incomingStart] = anchors[at]!
     const [currentEnd, incomingEnd] = anchors[at + 1]!
     for (let offset = 1; currentStart + offset < currentEnd && incomingStart + offset < incomingEnd; offset++) pairs.set(incomingStart + offset, currentStart + offset)
   }
-  const used = new Set<string>()
-  const rows = incoming.rows.map((row, index) => {
+  return pairs
+}
+
+/** New entries must not reuse even a deleted entry's key: its edits may still be in flight. */
+function alignTableAxis<T extends { key: string }>(current: T[], incoming: T[], pairs: Map<number, number>): T[] {
+  const taken = new Set(current.map((entry) => entry.key))
+  return incoming.map((entry, index) => {
     const paired = pairs.get(index)
-    let key = paired !== undefined ? current.rows[paired]!.key : undefined
-    if (!key || used.has(key)) key = `${row.key}-${index}-new`
-    used.add(key)
-    const cells = Object.fromEntries(Object.entries(row.cells).map(([column, cell]) => [columnKey.get(column) ?? column, cell]))
-    return { ...row, key, cells }
+    if (paired !== undefined) return { ...entry, key: current[paired]!.key }
+    let key = `${entry.key}-${index}-new`
+    while (taken.has(key)) key += '-new'
+    taken.add(key)
+    return { ...entry, key }
   })
+}
+
+function alignTable(current: TableSnapshot, incoming: TableSnapshot): TableSnapshot {
+  const columnSignatures = (table: TableSnapshot) => table.columns.map((column) => table.rows.map((row) => textToPlain(row.cells[column.key]?.text ?? { type: 'doc' })).join('\t'))
+  const columns = alignTableAxis(current.columns, incoming.columns, tablePairs(columnSignatures(current), columnSignatures(incoming)))
+  const columnKey = new Map(incoming.columns.map((column, index) => [column.key, columns[index]!.key]))
+  const rowSignatures = (table: TableSnapshot) => table.rows.map((row) => table.columns.map((column) => textToPlain(row.cells[column.key]?.text ?? { type: 'doc' })).join('\t'))
+  const rows = alignTableAxis(current.rows, incoming.rows, tablePairs(rowSignatures(current), rowSignatures(incoming)))
+    .map((row) => ({ ...row, cells: Object.fromEntries(Object.entries(row.cells).map(([column, cell]) => [columnKey.get(column) ?? column, cell])) }))
   return { ...incoming, columns, rows }
 }
 

@@ -107,6 +107,7 @@ export function PresentationDiffView({ diff, beforeAssets, afterAssets, showUnch
         {diff.changed ? uit`${diff.added} added · ${diff.removed} removed · ${diff.moved} moved · ${diff.edited} edited` : ui("No changes")}
         {diff.deck.includes('theme') || diff.deck.includes('masters') ? ` · ${ui("Theme or slide masters changed")}` : ''}
         {diff.deck.includes('size') ? ` · ${ui("Slide size changed")}` : ''}
+        {diff.deck.includes('sections') ? ` · ${ui("Sections changed")}` : ''}
       </p>
       {rows.map((row, index) => (
         <article key={`${row.beforeKey ?? ''}-${row.afterKey ?? ''}-${index}`} className="rounded-lg border p-3" data-status={row.status}>

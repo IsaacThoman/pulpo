@@ -2,6 +2,7 @@ import type * as Y from 'yjs'
 import { alignKeys } from './codec.js'
 import type { PartSnapshot, PresentationSnapshot, RelTarget, ShapeSnapshot, SlideSnapshot } from './model.js'
 import { readPresentation } from './read.js'
+import { slideSections } from './sections.js'
 import { textToPlain } from './text.js'
 import { bytesEqual, REL_TYPES, stableStringify } from './xml.js'
 import { readSnapshot } from './ydoc.js'
@@ -48,7 +49,7 @@ export interface PresentationDiff {
   moved: number
   edited: number
   /** Deck-wide changes: slide size, themes and masters, other parts. */
-  deck: ('size' | 'theme' | 'masters' | 'media' | 'other')[]
+  deck: ('size' | 'theme' | 'masters' | 'media' | 'other' | 'sections')[]
   changed: boolean
   /** The snapshots compared (aligned), for drawing before/after thumbnails. */
   beforeSnapshot: PresentationSnapshot
@@ -174,6 +175,13 @@ function stableKeys(a: string[], b: string[]): Set<string> {
   return kept
 }
 
+/** Compare modeled sections, using effective membership as it is shown and saved. */
+function sectionMembership(snapshot: PresentationSnapshot): Map<string, string | undefined> {
+  const names = new Map(snapshot.sections.map((section) => [section.key, section.name]))
+  const memberships = slideSections(snapshot.sections.map((section) => section.key), snapshot.slides)
+  return new Map(snapshot.slides.map((slide, index) => [slide.key, names.get(memberships[index] ?? '')]))
+}
+
 export function diffSnapshots(beforeInput: PresentationSnapshot, afterInput: PresentationSnapshot): PresentationDiff {
   const before = beforeInput
   const after = alignKeys(beforeInput, afterInput)
@@ -212,6 +220,10 @@ export function diffSnapshots(beforeInput: PresentationSnapshot, afterInput: Pre
     else slides.splice(position, 0, entry)
   })
   const deck: PresentationDiff['deck'] = []
+  const beforeSections = sectionMembership(before)
+  const afterSections = sectionMembership(after)
+  if (!same(before.sections.map((section) => section.name), after.sections.map((section) => section.name))
+    || [...new Set([...beforeSections.keys(), ...afterSections.keys()])].some((key) => beforeSections.get(key) !== afterSections.get(key))) deck.push('sections')
   if (before.slideWidth !== after.slideWidth || before.slideHeight !== after.slideHeight) deck.push('size')
   const partKinds = new Set<string>()
   for (const path of new Set([...Object.keys(before.parts), ...Object.keys(after.parts)])) {

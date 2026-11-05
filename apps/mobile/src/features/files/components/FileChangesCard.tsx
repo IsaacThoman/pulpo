@@ -79,7 +79,7 @@ function ChangeSheet({ change, namespace, responseId, onClose }: { change: FileC
             <Text style={[styles.sheetIntro, styles.visualIntro, { color: theme.secondary }]}>
               {pendingSuggestion(change) ? 'What keeping the agent’s suggestion would change:' : 'What the agent changed:'}
             </Text>
-            <PresentationChangeDiff key={change.id} changeId={change.id} onFailed={onVisualFailed} />
+            <PresentationChangeDiff key={change.id} changeId={change.id} namespace={namespace} responseId={responseId} onFailed={onVisualFailed} />
           </View>
         ) : <ScrollView contentContainerStyle={styles.sheetContent} testID="file-change-diff">
           <Text style={[styles.sheetIntro, { color: theme.secondary }]}>

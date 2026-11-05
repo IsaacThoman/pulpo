@@ -2698,6 +2698,7 @@ const esUi: Record<string, string> = {
   "{{0}} added · {{1}} removed · {{2}} moved · {{3}} edited": "{{0}} añadidas · {{1}} eliminadas · {{2}} movidas · {{3}} editadas",
   "No changes": "Sin cambios",
   "Theme or slide masters changed": "Tema o patrones de diapositivas modificados",
+  "Sections changed": "Secciones cambiadas",
   "Slide size changed": "Tamaño de diapositiva modificado",
   "Slide {{0}}": "Diapositiva {{0}}",
   "was {{0}}": "antes {{0}}",

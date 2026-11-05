@@ -129,7 +129,7 @@ function render(diff: PresentationDiff, beforeUrls: Map<string, string>, afterUr
   const container = element('div', 'pd')
   container.dataset.presentationDiff = ''
   const summary = diff.changed ? `${diff.added} added · ${diff.removed} removed · ${diff.moved} moved · ${diff.edited} edited` : 'No changes'
-  const deck = [diff.deck.includes('theme') || diff.deck.includes('masters') ? 'Theme or slide masters changed' : '', diff.deck.includes('size') ? 'Slide size changed' : ''].filter(Boolean)
+  const deck = [diff.deck.includes('theme') || diff.deck.includes('masters') ? 'Theme or slide masters changed' : '', diff.deck.includes('size') ? 'Slide size changed' : '', diff.deck.includes('sections') ? 'Sections changed' : ''].filter(Boolean)
   const status = element('p', 'pd-summary', [summary, ...deck].join(' · '))
   status.setAttribute('role', 'status')
   container.append(status)

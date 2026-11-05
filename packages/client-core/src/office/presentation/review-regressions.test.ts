@@ -8,6 +8,8 @@ import { copyContent, documentIdentity, parseClipboard, pasteShapes, pasteSlides
 import { presentationCodec } from './codec.js'
 import {
   addImagePart,
+  cellFragment,
+  insertSlides,
   deleteShapes,
   deleteSlides,
   deleteTableColumns,
@@ -34,6 +36,7 @@ import {
 } from './commands.js'
 import { diffFiles, diffSnapshots } from './diff.js'
 import type { ShapeSnapshot } from './model.js'
+import { DEFAULT_PRESENTATION_LIMITS } from './read.js'
 import { DeckResources } from './render/deck.js'
 import { renderSlide } from './render/slide.js'
 import { plainToText, textToPlain } from './text.js'
@@ -713,5 +716,136 @@ describe('third review', () => {
       vi.unstubAllGlobals()
       dom.window.close()
     }
+  })
+})
+
+
+describe('fourth review', () => {
+  it('keeps a slide’s identity and unsent title when a push only changes its layout', async () => {
+    const doc = await open(fixture('generated/text-formatting.pptx'))
+    const slide = readSnapshot(doc).slides[0]!
+    const title = slide.shapes.find((shape) => shape.text)!
+    const user = replica(doc)
+    const files = await exported(doc)
+    const currentLayout = slide.layout.split('/').pop()!
+    const otherLayout = Object.keys(files).filter((path) => /^ppt\/slideLayouts\/slideLayout\d+\.xml$/.test(path)).map((path) => path.split('/').pop()!).find((name) => name !== currentLayout)!
+    const relsPath = slide.part!.replace('slides/', 'slides/_rels/') + '.rels'
+    files[relsPath] = strToU8(strFromU8(files[relsPath]!).replace(currentLayout, otherLayout))
+    setShapeText(user, slide.key, title.key, plainToText('UNSENT TITLE'))
+    await presentationCodec.applyFile(doc, zipSync(files), context, 'agent')
+    sync(doc, user)
+    for (const copy of [doc, user]) {
+      expect(slideKeys(copy)[0]).toBe(slide.key)
+      expect(readSlide(copy, slide.key)!.layout).toContain(otherLayout)
+      expect(textToPlain(readSlide(copy, slide.key)!.shapes.find((shape) => shape.key === title.key)!.text!)).toBe('UNSENT TITLE')
+    }
+  })
+
+  it('keeps concurrent typing in its column when a pushed file inserts a leftmost column', async () => {
+    const doc = await open(blankPresentation())
+    const slide = slideKeys(doc)[0]!
+    const shape = tableShape(3, 2, { x: 0, y: 0, cx: 2_000_000, cy: 1_000_000 }, 'Data')
+    const table = shape.table!
+    table.rows.forEach((row, i) => table.columns.forEach((column, j) => { row.cells[column.key]!.text = plainToText(`${j ? 'B' : 'A'}${i}`) }))
+    insertShapes(doc, slide, [shape])
+    const files = await exported(doc)
+    const user = replica(doc)
+    const fragment = cellFragment(user, slide, shape.key, table.rows[0]!.key, table.columns[1]!.key)!
+    ;((fragment.get(0) as Y.XmlElement).get(0) as Y.XmlText).insert(2, ' UNSENT')
+    const xml = strFromU8(files['ppt/slides/slide1.xml']!)
+      .replace('<a:tblGrid>', '<a:tblGrid><a:gridCol w="1000000"/>')
+      .replace(/<a:tr\b[^>]*>/g, (match) => match + '<a:tc><a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>NEW</a:t></a:r></a:p></a:txBody><a:tcPr/></a:tc>')
+    files['ppt/slides/slide1.xml'] = strToU8(xml)
+    await presentationCodec.applyFile(doc, zipSync(files), context, 'agent')
+    sync(doc, user)
+    for (const copy of [doc, user]) {
+      const result = readSlide(copy, slide)!.shapes.find((entry) => entry.key === shape.key)!.table!
+      expect(result.columns.map((column) => textToPlain(result.rows[0]!.cells[column.key]!.text))).toEqual(['NEW', 'A0', 'B0 UNSENT'])
+      expect(new Set(result.columns.map((column) => column.key)).size).toBe(3)
+    }
+  })
+
+  const rectangle = () => presetShape('rect', { x: 0, y: 0, cx: 100, cy: 100 }, 'Rectangle')
+  const payload = (shapes: ShapeSnapshot[]) => ({ version: 1 as const, source: 'other', kind: 'shapes' as const, shapes, parts: {}, text: '' })
+
+  it('rejects an entire clipboard with 10,001 rectangles', () => {
+    expect(parseClipboard(JSON.stringify(payload(Array.from({ length: 10_001 }, rectangle))))).toBeUndefined()
+  })
+
+  it('counts nested group members and shapes on every slide toward the clipboard budget', async () => {
+    const group = { ...rectangle(), kind: 'grpSp' as const, children: Array.from({ length: 2_000 }, rectangle) }
+    expect(parseClipboard(JSON.stringify(payload([group])))).toBeUndefined()
+    const doc = await open(blankPresentation())
+    const slide = readSlide(doc, slideKeys(doc)[0]!)!
+    expect(parseClipboard(JSON.stringify({ ...payload([]), kind: 'slides', slides: [{ ...slide, shapes: Array.from({ length: 1_001 }, rectangle) }, { ...slide, shapes: Array.from({ length: 1_000 }, rectangle) }] }))).toBeUndefined()
+    expect(parseClipboard(JSON.stringify({ ...payload([]), kind: 'slides', slides: Array.from({ length: 201 }, () => ({ ...slide, shapes: [] })) }))).toBeUndefined()
+  })
+
+  it('rejects an entire clipboard with 5,001 tiny parts', () => {
+    const parts = Object.fromEntries(Array.from({ length: 5_001 }, (_, index) => [`ppt/media/p${index}.bin`, { data: 'eA==' }]))
+    expect(parseClipboard(JSON.stringify({ ...payload([rectangle()]), parts }))).toBeUndefined()
+  })
+
+  it('refuses a shape paste beyond the slide limit before storing any assets', async () => {
+    const doc = await open(blankPresentation())
+    const slide = slideKeys(doc)[0]!
+    const count = readSlide(doc, slide)!.shapes.length
+    insertShapes(doc, slide, Array.from({ length: DEFAULT_PRESENTATION_LIMITS.maxShapesPerSlide - count }, rectangle))
+    const before = readSlide(doc, slide)!.shapes.length
+    const put = vi.fn(assets.put)
+    const clipboard = { ...payload(Array.from({ length: 5 }, rectangle)), parts: { 'ppt/media/p.png': { data: 'eA==', mimeType: 'image/png' } } }
+    expect(await pasteShapes(doc, { ...assets, put }, clipboard, slide, 0)).toEqual([])
+    expect(readSlide(doc, slide)!.shapes).toHaveLength(before)
+    expect(put).not.toHaveBeenCalled()
+    expect(readSnapshot(doc).parts['ppt/media/p.png']).toBeUndefined()
+  })
+
+  it('refuses slides with too many nested shapes and pastes beyond the deck limit before storing assets', async () => {
+    const doc = await open(blankPresentation())
+    const slide = readSnapshot(doc).slides[0]!
+    const put = vi.fn(assets.put)
+    const clipboard = { ...payload([]), kind: 'slides' as const, slides: [{ ...slide, shapes: [{ ...rectangle(), kind: 'grpSp' as const, children: Array.from({ length: DEFAULT_PRESENTATION_LIMITS.maxShapesPerSlide }, rectangle) }] }], parts: { 'ppt/media/p.png': { data: 'eA==', mimeType: 'image/png' } } }
+    expect(await pasteSlides(doc, { ...assets, put }, clipboard, 1)).toEqual([])
+    insertSlides(doc, Array.from({ length: DEFAULT_PRESENTATION_LIMITS.maxSlides - 1 }, (_, index) => ({ ...slide, key: `extra-${index}`, shapes: [] })), 1)
+    expect(await pasteSlides(doc, { ...assets, put }, { ...clipboard, slides: [{ ...slide, shapes: [] }] }, 1)).toEqual([])
+    expect(slideKeys(doc)).toHaveLength(DEFAULT_PRESENTATION_LIMITS.maxSlides)
+    expect(put).not.toHaveBeenCalled()
+  })
+
+  it('reports a section-only rename in an exported presentation', async () => {
+    const before = await exportBytes(await open(fixture('generated/layouts-notes-sections.pptx')))
+    const files = unzipSync(before)
+    const xml = strFromU8(files['ppt/presentation.xml']!)
+    const changed = xml.replace(/(<p14:section\b[^>]*name=")[^"]*/, '$1Renamed section')
+    expect(changed).not.toBe(xml)
+    files['ppt/presentation.xml'] = strToU8(changed)
+    const diff = await diffFiles(before, zipSync(files))
+    expect(diff.changed).toBe(true)
+    expect(diff.deck).toContain('sections')
+    expect(diff.added + diff.removed + diff.edited + diff.moved).toBe(0)
+  })
+
+  it('compares section order and effective slide membership with aligned keys', async () => {
+    const before = readSnapshot(await open(fixture('generated/layouts-notes-sections.pptx')))
+    const rekeyed = structuredClone(before)
+    for (const section of rekeyed.sections) {
+      const old = section.key
+      section.key += '-different'
+      for (const slide of rekeyed.slides) if (slide.section === old) slide.section = section.key
+    }
+    expect(diffSnapshots(before, rekeyed).deck).not.toContain('sections')
+    const reordered = structuredClone(before)
+    reordered.sections.reverse()
+    expect(diffSnapshots(before, reordered).deck).toContain('sections')
+    const moved = structuredClone(before)
+    const firstOfSecond = moved.slides.find((slide) => slide.section === moved.sections[1]!.key)!
+    firstOfSecond.section = moved.sections[0]!.key
+    expect(diffSnapshots(before, moved).deck).toContain('sections')
+    const added = structuredClone(before)
+    added.sections.push({ ...added.sections[0]!, key: 'new-section', id: 'new-section', name: 'New section' })
+    expect(diffSnapshots(before, added).deck).toContain('sections')
+    const removed = structuredClone(before)
+    removed.sections.pop()
+    expect(diffSnapshots(before, removed).deck).toContain('sections')
   })
 })
