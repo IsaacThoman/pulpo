@@ -1,6 +1,7 @@
 import type { ImageSourcePropType } from 'react-native';
 import { materialSymbolNames } from './symbolNames';
 const icons: Record<string, ImageSourcePropType> = {
+  'wrap_text': require('../../assets/material/wrap_text.xml'),
   'bot': require('../../assets/material/bot.xml'),
   'bot-off': require('../../assets/material/bot-off.xml'),
   'pulpo_frown': require('../../assets/material/pulpo_frown.xml'),

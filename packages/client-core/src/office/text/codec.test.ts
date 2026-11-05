@@ -139,6 +139,19 @@ describe('textCodec', () => {
     await expect(imported(new Uint8Array(TEXT_MAX_FILE_BYTES + 1).fill(0x41))).rejects.toMatchObject({ code: 'too_large' })
   })
 
+  it('restores previously valid large snapshots while keeping external imports and pushes bounded', async () => {
+    const large = bytesOf('x'.repeat(TEXT_MAX_FILE_BYTES + 100))
+    const { doc, context } = await imported(bytesOf('small'))
+    await expect(textCodec.applyFile(doc, large, context, 'agent')).rejects.toMatchObject({ code: 'too_large' })
+    await expect(imported(large)).rejects.toMatchObject({ code: 'too_large' })
+    expect(await textCodec.applyFile(doc, large, context, 'restore')).toEqual({ changed: true })
+    expect(textCodec.toText(doc).length).toBe(large.length)
+    const wide = utf16('a'.repeat(TEXT_MAX_FILE_BYTES / 2 + 100), true)
+    expect(await textCodec.applyFile(doc, wide, context, 'restore')).toEqual({ changed: true })
+    expect(Array.from((await textCodec.exportFile(doc, context)).subarray(0, 4))).toEqual([0xff, 0xfe, 0x61, 0])
+    await expect(textCodec.applyFile(doc, new Uint8Array(32_000_001), context, 'restore')).rejects.toMatchObject({ code: 'too_large' })
+  })
+
   it('applies a new version as a minimal diff that merges with a concurrent edit', async () => {
     const original = bytesOf('def greet(name):\n    return "hi " + name\n\nprint(greet("you"))\n')
     const { doc, context } = await imported(original)

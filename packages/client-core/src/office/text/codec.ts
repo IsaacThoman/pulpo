@@ -47,8 +47,12 @@ function utf8(text: string): Uint8Array {
   return new TextEncoder().encode(text)
 }
 
-function decode(bytes: Uint8Array): DecodedText {
-  if (bytes.byteLength > TEXT_MAX_FILE_BYTES) throw new LiveFormatError('too_large', 'This file is too large to edit as text')
+// Stored states support 8 MB; their UTF-16 exports with CRLF can need up to four times that.
+// Only restore may read these snapshots. External files keep the catalog's 4 MB import cap.
+const MAX_RESTORE_FILE_BYTES = 32_000_000
+
+function decode(bytes: Uint8Array, maxBytes = TEXT_MAX_FILE_BYTES): DecodedText {
+  if (bytes.byteLength > maxBytes) throw new LiveFormatError('too_large', 'This file is too large to edit as text')
   return decodeTextFile(bytes)
 }
 
@@ -131,7 +135,7 @@ export const textCodec: LiveFormatCodec = {
   exportFile: exportTextFile,
 
   async applyFile(doc, bytes, context, origin) {
-    const decoded = decode(bytes)
+    const decoded = decode(bytes, origin === 'restore' ? MAX_RESTORE_FILE_BYTES : TEXT_MAX_FILE_BYTES)
     const facts = await factsFor(decoded, bytes, context)
     const changed = transactChanges(doc, () => {
       applyTextToYText(textOf(doc), decoded.text)

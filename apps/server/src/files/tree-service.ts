@@ -613,12 +613,22 @@ export async function convertMisnamedDocs(limit = 200): Promise<number> {
     const done = await mutateFileTree(row.userId, async (tx) => {
       const [node] = await tx.select().from(fileNodes).where(eq(fileNodes.id, row.id)).for('update')
       if (!node || node.kind !== 'doc' || liveFormatOfName(node.name)?.id === docFormat(node).id) return null
-      return (await convertDocToBlobInTx(tx, row.userId, node)).releasedKeys
+      try {
+        return { converted: true, releasedKeys: (await convertDocToBlobInTx(tx, row.userId, node)).releasedKeys }
+      } catch (error) {
+        if (!(error instanceof AppError) || error.code !== 'storage_quota_exceeded') throw error
+        // Preserve the live document when its export cannot fit. Repair the name instead so
+        // future maintenance passes no longer select this unaffordable conversion.
+        const extension = docFormat(node).extensions[0]!
+        const name = `${node.name.slice(0, 254 - extension.length)}.${extension}`
+        await moveNodeInTx(tx, row.userId, node, { parentId: node.parentId, name, onConflict: 'rename' })
+        return { converted: false, releasedKeys: [] }
+      }
     }).catch(() => null)
-    if (done) {
+    if (done?.converted) {
       converted += 1
       await publishDocsClosed([row.id], 'converted')
-      await deleteObjects(done)
+      await deleteObjects(done.releasedKeys)
     }
   }
   return converted

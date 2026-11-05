@@ -219,6 +219,12 @@ export async function textOfFile(executor: FileExecutor, node: FileNodeRow, byte
   const format = docFormat(node)
   const codec = liveFormatCodec(format)
   const doc = new Y.Doc()
-  await codecCall(() => codec.importFile(doc, bytes, { name: node.name, assets: new DocAssetStore(executor, node.id) }))
+  const context = { name: node.name, assets: new DocAssetStore(executor, node.id) }
+  await codecCall(async () => {
+    // These are already-kept versions, including snapshots grown in the collaborative editor.
+    // Their text must remain readable for diffs and undo conflicts past the external import cap.
+    if (format.id === 'text') await codec.applyFile(doc, bytes, context, 'restore')
+    else await codec.importFile(doc, bytes, context)
+  })
   return codec.toText(doc)
 }

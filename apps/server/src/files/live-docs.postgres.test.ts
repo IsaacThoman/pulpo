@@ -22,7 +22,7 @@ const { convertBlobToDocInTx } = await import('./conversion.js')
 const { appendDocUpdate, compactDoc, createDoc, loadYDoc, readDocMarkdown } = await import('./doc-store.js')
 const { copyFileNodes } = await import('./copy-service.js')
 const { DocAssetStore, exportStoredDoc } = await import('./live-docs.js')
-const { convertMisnamedDocs, deleteFileNode, mutateFileTree, trashFileNode, updateFileNode } = await import('./tree-service.js')
+const { convertMisnamedDocs, deleteFileNode, moveFileNodes, mutateFileTree, trashFileNode, updateFileNode } = await import('./tree-service.js')
 
 const enabled = process.env.PULPO_FILES_TESTS === 'true'
 let userId: string
@@ -171,6 +171,28 @@ describe.skipIf(!enabled)('live documents in Files', () => {
     const plan = await createDoc(userId, { parentId: null, name: 'Plan.md', markdown: '# Plan' })
     expect(await updateFileNode(userId, plan.id, { name: 'Plan.txt' })).toMatchObject({ kind: 'blob', mimeType: 'text/plain' })
     expect(objects.get((await row(plan.id))!.objectKey!)!.toString()).toBe('# Plan')
+  })
+
+  it('checks quota before exporting larger files on rename and repairs unaffordable maintenance names', async () => {
+    const original = Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from('x'.repeat(5_000), 'utf16le')])
+    const blob = await uploaded('utf16.txt', original)
+    const { row: node } = await convert(blob.id)
+    const usage = await storageUsedBytes(db, userId)
+    expect(original.byteLength).toBeGreaterThan(node.sizeBytes + 1_000)
+    await db.update(users).set({ storageLimitBytes: usage + 100 }).where(eq(users.id, userId))
+    const keys = [...objects.keys()].sort()
+    await expect(updateFileNode(userId, node.id, { name: 'utf16.bin' })).rejects.toMatchObject({ code: 'storage_quota_exceeded' })
+    await expect(moveFileNodes(userId, [{ id: node.id, parentId: null, name: 'utf16.bin' }])).rejects.toMatchObject({ code: 'storage_quota_exceeded' })
+    expect(await row(node.id)).toMatchObject({ kind: 'doc', format: 'text', name: 'utf16.txt' })
+    expect([...objects.keys()].sort()).toEqual(keys)
+    // Maintenance cannot retry an impossible export forever. Keep the doc and repair its name.
+    await db.update(fileNodes).set({ name: 'repair.bin' }).where(eq(fileNodes.id, node.id))
+    expect(await convertMisnamedDocs()).toBe(0)
+    expect(await row(node.id)).toMatchObject({ kind: 'doc', format: 'text', name: 'repair.bin.txt' })
+    expect(await convertMisnamedDocs()).toBe(0)
+    expect(Buffer.from(await exportStoredDoc((await row(node.id))!))).toEqual(original)
+    expect([...objects.keys()].sort()).toEqual(keys)
+    expect(closed).not.toHaveBeenCalled()
   })
 
   it('repairs documents whose names left their format', async () => {
