@@ -414,6 +414,40 @@ describe('tracked changes', async () => {
     expect(rejected.doc.textContent).toBe('Hello world')
   })
 
+  it('removes an own inserted paragraph mark on join without changing the original paragraphs', async () => {
+    const original = schema.node('doc', null, [p(run('Hello world')), p(run('Another paragraph'))])
+    const start = EditorState.create({ schema, doc: original })
+    const split = start.apply(trackTransaction(start, start.tr.split(6), reviewer)!)
+    const joined = split.apply(trackTransaction(split, split.tr.join(7), reviewer)!)
+    expect(listRevisions(joined.doc)).toEqual([])
+    expect(joined.doc.eq(original)).toBe(true)
+    const rejected = resolveRevisions(joined, listRevisions(joined.doc), 'reject')
+    const final = rejected ? joined.apply(rejected) : joined
+    expect(final.doc.eq(original)).toBe(true)
+
+    const target = new Y.Doc()
+    const assets = new MemoryAssetStore()
+    await docxCodec.createEmpty(target, { name: 'a.docx', assets })
+    target.transact(() => writeFragment(target, target.getXmlFragment(BODY_FRAGMENT), final.doc))
+    const imported = new Y.Doc()
+    await docxCodec.importFile(imported, await docxCodec.exportFile(target, { name: 'a.docx', assets }), { name: 'a.docx', assets })
+    const paragraphs: string[] = []
+    readDocxModel(imported).body.forEach((node) => paragraphs.push(node.textContent))
+    expect(paragraphs).toEqual(['Hello world', 'Another paragraph'])
+    target.destroy()
+    imported.destroy()
+  })
+
+  it.each(['w:ins', 'w:del'])('keeps the surviving paragraph mark formatting and %s on an own-insertion join', (revision) => {
+    const markRPr = packJml(['w:rPr', {}, ['w:b', {}], [revision, { 'w:id': '42', 'w:author': 'Grace' }]])
+    const first = schema.node('paragraph', { markRPr: packJml(['w:rPr', {}, ['w:ins', { 'w:id': '41', 'w:author': 'Ada' }]]) }, schema.text('Hello'))
+    const second = schema.node('paragraph', { markRPr }, schema.text(' world'))
+    const start = EditorState.create({ schema, doc: schema.node('doc', null, [first, second, p(run('Another paragraph'))]) })
+    const joined = start.apply(trackTransaction(start, start.tr.join(first.nodeSize), reviewer)!)
+    expect(joined.doc.firstChild!.attrs.markRPr).toBe(markRPr)
+    expect(listRevisions(joined.doc).map(({ kind, author }) => ({ kind, author }))).toEqual([{ kind: revision === 'w:ins' ? 'paragraphInsert' : 'paragraphDelete', author: 'Grace' }])
+  })
+
   it('exports tracked edits as Word revision markup', async () => {
     const start = initial()
     const typed = start.apply(trackTransaction(start, start.tr.insertText('New ', 1), reviewer)!)

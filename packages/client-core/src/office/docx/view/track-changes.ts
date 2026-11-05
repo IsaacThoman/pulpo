@@ -156,14 +156,20 @@ function trackDelete(out: Transaction, from: number, to: number, reviewer: Revie
     }
     return false
   })
+  const beforeJoins = out.steps.length
   for (const at of joins.reverse()) {
     try {
+      const { nodeBefore, nodeAfter } = out.doc.resolve(at)
+      if (nodeBefore?.type.name !== 'paragraph' || nodeAfter?.type.name !== 'paragraph') continue
+      const pos = at - nodeBefore.nodeSize
       out.join(at)
+      // The second paragraph's mark survives; the first mark was the insertion being removed.
+      out.setNodeMarkup(pos, undefined, { ...out.doc.nodeAt(pos)!.attrs, markRPr: nodeAfter.attrs.markRPr })
     } catch {
       // Paragraphs that cannot join (a table between them) keep their boundary.
     }
   }
-  return { from: start, to: out.mapping.slice(out.steps.length - joins.length).map(end) }
+  return { from: start, to: out.mapping.slice(beforeJoins).map(end) }
 }
 
 /** Inserts `slice` at `pos` marked as the reviewer's insertion. */
