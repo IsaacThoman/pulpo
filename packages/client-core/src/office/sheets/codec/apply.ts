@@ -17,7 +17,7 @@ import type {
   SheetTable,
 } from '../model/schema.js'
 import { deleteAxis, insertAxis, type AxisKind } from '../model/structure.js'
-import { WorkbookModel, type SheetModel } from '../model/workbook.js'
+import { definedNameKey, WorkbookModel, type SheetModel } from '../model/workbook.js'
 import { randomId } from '../model/axis.js'
 import { Stylesheet } from '../styles/stylesheet.js'
 
@@ -40,7 +40,7 @@ export function applyWorkbook(doc: Y.Doc, incomingDoc: Y.Doc, origin?: unknown):
     // positions must line up before any content is compared.
     for (const [targetSheet, incomingSheet] of pairs) alignSheet(targetSheet, incomingSheet, styleMap)
     for (const [targetSheet, incomingSheet] of pairs) syncSheet(targetSheet, incomingSheet, styleMap)
-    syncNames(target, incoming)
+    syncNames(target, incoming, pairs)
     syncParts(target, incoming)
   }, origin ?? null)
   return { changed }
@@ -544,25 +544,24 @@ function syncCollections(own: SheetModel, other: SheetModel, styles: StyleMap): 
   }
 }
 
-function syncNames(target: WorkbookModel, incoming: WorkbookModel): void {
-  const scopeName = (model: WorkbookModel, scope: string | undefined) => (scope ? (model.sheet(scope)?.name ?? '') : '')
-  const form = (model: WorkbookModel, name: DefinedName) => JSON.stringify({ ...name, scope: scopeName(model, name.scope), formula: toA1Form(name.formula, name.scope ? model.sheet(name.scope) : undefined, model) })
-  const own = new Map<string, string>()
-  for (const [id, name] of target.names) own.set(form(target, name), id)
+function syncNames(target: WorkbookModel, incoming: WorkbookModel, pairs: [SheetModel, SheetModel][]): void {
+  const form = (name: DefinedName) => JSON.stringify({ ...name, formula: toA1Form(name.formula, name.scope ? target.sheet(name.scope) : undefined, target) })
+  const scopes = new Map(pairs.map(([own, other]) => [other.id, own]))
+  const own = new Map([...target.names].map(([id, name]) => [definedNameKey(name), id]))
   const keep = new Set<string>()
-  const additions: DefinedName[] = []
   for (const name of incoming.names.values()) {
-    const id = own.get(form(incoming, name))
-    if (id) keep.add(id)
-    else additions.push(name)
-  }
-  for (const id of [...target.names.keys()]) if (!keep.has(id)) target.names.delete(id)
-  for (const name of additions) {
-    const scopeSheet = name.scope ? target.sheetByName(scopeName(incoming, name.scope)) : undefined
+    const scopeSheet = name.scope ? scopes.get(name.scope) : undefined
     if (name.scope && !scopeSheet) continue
     const formula = toIdForm(toA1Form(name.formula, name.scope ? incoming.sheet(name.scope) : undefined, incoming), scopeSheet, target)
-    target.names.set(randomId(), { ...name, formula, ...(scopeSheet ? { scope: scopeSheet.id } : {}) })
+    const translated = { ...name, formula, ...(scopeSheet ? { scope: scopeSheet.id } : {}) }
+    const identity = definedNameKey(translated)
+    // Reuse existing keys for edits; new names share an identity across concurrent applications.
+    const id = own.get(identity) ?? identity
+    keep.add(id)
+    const previous = target.names.get(id)
+    if (!previous || form(previous) !== form(translated)) target.names.set(id, translated)
   }
+  for (const id of [...target.names.keys()]) if (!keep.has(id)) target.names.delete(id)
 }
 
 function syncParts(target: WorkbookModel, incoming: WorkbookModel): void {

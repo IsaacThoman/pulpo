@@ -602,7 +602,12 @@ export class WorkbookModel {
   }
 }
 
-/** Defined names keep their storage while names scoped to deleted sheets stay out of readers. */
+/** Stable identity for a name, shared by concurrent file applications and canonical readers. */
+export function definedNameKey(name: Pick<DefinedName, 'name' | 'scope'>): string {
+  return `n:${name.scope ?? ''}:${name.name.toLowerCase()}`
+}
+
+/** Readers expose one definition per scoped name while retaining older duplicate storage. */
 class DefinedNames {
   constructor(private readonly workbook: WorkbookModel) {}
 
@@ -612,7 +617,10 @@ class DefinedNames {
 
   get(id: string): DefinedName | undefined {
     const name = this.map.get(id)
-    return name && (!name.scope || this.workbook.sheet(name.scope)) ? name : undefined
+    if (!name || (name.scope && !this.workbook.sheet(name.scope))) return undefined
+    const identity = definedNameKey(name)
+    for (const [key, candidate] of this.map) if (key < id && definedNameKey(candidate) === identity) return undefined
+    return name
   }
 
   set(id: string, name: DefinedName): void {
@@ -620,11 +628,24 @@ class DefinedNames {
   }
 
   delete(id: string): void {
-    this.map.delete(id)
+    const name = this.map.get(id)
+    if (!name) return
+    // Removing a name must also remove older duplicates so a hidden definition cannot reappear.
+    const identity = definedNameKey(name)
+    for (const [key, candidate] of this.map) if (definedNameKey(candidate) === identity) this.map.delete(key)
   }
 
   *entries(): IterableIterator<[string, DefinedName]> {
-    for (const [id, name] of this.map) if (!name.scope || this.workbook.sheet(name.scope)) yield [id, name]
+    const canonical = new Map<string, string>()
+    // Y.Map iteration follows local insertion order, so only key order can choose the same winner.
+    for (const [id, name] of this.map) {
+      const identity = definedNameKey(name)
+      const previous = canonical.get(identity)
+      if (previous === undefined || id < previous) canonical.set(identity, id)
+    }
+    for (const [id, name] of this.map) {
+      if (canonical.get(definedNameKey(name)) === id && (!name.scope || this.workbook.sheet(name.scope))) yield [id, name]
+    }
   }
 
   *keys(): IterableIterator<string> {

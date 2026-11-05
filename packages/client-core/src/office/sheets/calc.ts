@@ -69,6 +69,7 @@ export class SheetCalc implements SheetValues {
   private readonly observer: (events: Y.YEvent<Y.AbstractType<unknown>>[]) => void
   /** The work allowance was exhausted; unfinished formulas retain their prior values. */
   stoppedEarly = false
+  private trustedCaches = false
   private dirty = false
   private destroyed = false
 
@@ -136,7 +137,9 @@ export class SheetCalc implements SheetValues {
     )
     // Unedited file caches count as calculated; edited workbooks need a full recalculation.
     this.engine.markClean()
-    this.recalc(workbook.metaValue('calcDirty') === true)
+    const full = workbook.metaValue('calcDirty') === true
+    this.recalc(full)
+    this.trustedCaches = !full && !this.options.ignoreCache
     this.dirty = false
   }
 
@@ -154,6 +157,7 @@ export class SheetCalc implements SheetValues {
   private onChange(events: Y.YEvent<Y.AbstractType<unknown>>[]): void {
     if (this.destroyed) return
     let structural = false
+    let becameDirty = false
     const edits: [SheetModel, string][] = []
     for (const event of events) {
       const sheet = this.cellMaps.get(event.target as Y.Map<CellData>)
@@ -164,10 +168,18 @@ export class SheetCalc implements SheetValues {
       // Styles and views don't change values; everything else (rows, columns, sheets, names,
       // tables) moves cells around, which the index-based engine takes as a rebuild.
       const target = event.target
-      if (target === this.workbook.meta && [...(event as Y.YMapEvent<unknown>).keysChanged].every((key) => key === 'calcDirty' || key === 'calcTime' || key === 'calcTimezoneOffset')) continue
+      if (target === this.workbook.meta) {
+        const metaEvent = event as Y.YMapEvent<unknown>
+        const change = metaEvent.changes.keys.get('calcDirty')
+        if (change && change.oldValue !== true && this.workbook.metaValue('calcDirty') === true) becameDirty = true
+        if ([...metaEvent.keysChanged].every((key) => key === 'calcDirty' || key === 'calcTime' || key === 'calcTimezoneOffset')) continue
+      }
       if (this.isStyleOrView(target)) continue
       structural = true
     }
+    // trackEdits can set metadata before its own observer event arrives in the transaction batch.
+    // Invalidate imported caches even when a structural rebuild just trusted them in that batch.
+    const full = becameDirty || (this.trustedCaches && this.workbook.metaValue('calcDirty') === true)
     if (structural) this.rebuild()
     else if (edits.length) {
       for (const [sheet, key] of edits) {
@@ -176,8 +188,12 @@ export class SheetCalc implements SheetValues {
         if (index === undefined || !position) continue
         this.engine.setCell(index, position.row, position.col, engineInput(sheet, sheet.cells.get(key)))
       }
-      this.recalc()
-    } else return
+      if (!full) this.recalc()
+    } else if (!full) return
+    if (full && !structural) {
+      this.recalc(true)
+      this.trustedCaches = false
+    }
     for (const listener of this.listeners) listener()
   }
 

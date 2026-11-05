@@ -199,11 +199,12 @@ export class Axis {
       if (tombstone === undefined) return undefined
       if (typeof tombstone === 'number') return side === 'start' ? tombstone : tombstone - 1
       const neighbor = side === 'start' ? tombstone.n : tombstone.p
-      if (neighbor === undefined) return side === 'start' ? tombstone.i : -1
+      if (neighbor === undefined) return side === 'start' ? undefined : -1
       const found = this.indexOf(neighbor)
       if (found >= 0) return found
+      // A cycle or missing neighbor has no surviving boundary; old indexes could name unrelated rows.
+      if (visited.has(neighbor) || !this.dead.has(neighbor)) return undefined
       // The neighbor was deleted too: continue from its own tombstone.
-      if (visited.has(neighbor) || !this.dead.has(neighbor)) return side === 'start' ? tombstone.i : tombstone.i - 1
       visited.add(current)
       current = neighbor
     }

@@ -165,9 +165,8 @@ export function idTokenToA1(token: IdToken, sheet: SheetModel | undefined, workb
   if (!target) return '#REF!'
   const prefix = token.sheet ? { first: target.name } : undefined
   if (token.name !== undefined) return (prefix ? formatSheetPrefix(prefix) : '') + token.name
-  const isRange = token.to !== undefined
-  const from = resolveEnd(target, token.from, isRange ? 'start' : 'single')
-  const to = token.to && resolveEnd(target, token.to, 'end')
+  const from = resolveEnd(target, token.from, token.to)
+  const to = token.to && resolveEnd(target, token.to, token.from)
   if (!from || (token.to && !to)) return (prefix ? formatSheetPrefix(prefix) : '') + '#REF!'
   if (to && collapsed(target, token)) {
     // A range whose rows or columns were all deleted concurrently.
@@ -176,29 +175,47 @@ export function idTokenToA1(token: IdToken, sheet: SheetModel | undefined, workb
   return formatA1Reference({ ...(prefix ? { sheet: prefix } : {}), from, ...(to ? { to } : {}) })
 }
 
-/** A range whose edges were deleted and resolved past each other (reversed ranges as written are fine). */
+/** A live endpoint guarantees a surviving member, even if moves reverse the resolved boundaries. */
 function collapsed(sheet: SheetModel, token: IdToken): boolean {
-  const gone = (axis: SheetModel['rows'], id: string | undefined) => id !== undefined && axis.indexOf(id) < 0
-  const rowsGone = gone(sheet.rows, token.from.row) || gone(sheet.rows, token.to?.row)
-  const colsGone = gone(sheet.cols, token.from.col) || gone(sheet.cols, token.to?.col)
-  if (!rowsGone && !colsGone) return false
-  const from = resolveEnd(sheet, token.from, 'start')
-  const to = token.to && resolveEnd(sheet, token.to, 'end')
-  if (!from || !to) return true
-  return (rowsGone && from.row !== undefined && to.row !== undefined && to.row < from.row) || (colsGone && from.col !== undefined && to.col !== undefined && to.col < from.col)
+  const empty = (axis: SheetModel['rows'], from: string | undefined, to: string | undefined) => {
+    if (from === undefined || to === undefined || axis.indexOf(from) >= 0 || axis.indexOf(to) >= 0) return false
+    const side = rangeSide(axis, from, to)
+    const start = axis.deletedPosition(from, side)
+    const end = axis.deletedPosition(to, side === 'start' ? 'end' : 'start')
+    return start === undefined || end === undefined || (side === 'start' ? start > end : start < end)
+  }
+  return empty(sheet.rows, token.from.row, token.to?.row) || empty(sheet.cols, token.from.col, token.to?.col)
 }
 
-function resolveEnd(sheet: SheetModel, end: IdEnd, side: 'start' | 'end' | 'single'): RefEnd | undefined {
+/** Chooses the inward neighbor using current positions; old indexes only orient two deleted ends. */
+function rangeSide(axis: SheetModel['rows'], id: string, other: string): 'start' | 'end' {
+  const index = axis.indexOf(id)
+  const otherIndex = axis.indexOf(other)
+  if (index >= 0 && otherIndex >= 0) return index <= otherIndex ? 'start' : 'end'
+  if (index < 0 && otherIndex < 0) return (axis.deletedIndex(id) ?? 0) <= (axis.deletedIndex(other) ?? 0) ? 'start' : 'end'
+  if (index >= 0) return rangeSide(axis, other, id) === 'start' ? 'end' : 'start'
+  const next = axis.deletedPosition(id, 'start')
+  const previous = axis.deletedPosition(id, 'end')
+  // A moved neighbor can pass the live endpoint. Keep the surviving edge rather than treating
+  // the reversed result as an empty range; missing boundaries never become historical indexes.
+  if (next === undefined) return 'end'
+  if (previous === undefined || previous < 0) return 'start'
+  return otherIndex < next && otherIndex <= previous ? 'end' : 'start'
+}
+
+function resolveEnd(sheet: SheetModel, end: IdEnd, other: IdEnd | undefined): RefEnd | undefined {
   const resolved: RefEnd = {}
   if (end.row !== undefined) {
+    const side = other?.row === undefined ? 'single' : rangeSide(sheet.rows, end.row, other.row)
     const row = resolveIndex(sheet.rows.indexOf(end.row), () => sheet.rows.deletedPosition(end.row!, side === 'end' ? 'end' : 'start'), side)
-    if (row === undefined || row >= MAX_ROWS) return undefined
+    if (row === undefined || row < 0 || row >= MAX_ROWS) return undefined
     resolved.row = row
     resolved.rowAbs = !!end.rowAbs
   }
   if (end.col !== undefined) {
+    const side = other?.col === undefined ? 'single' : rangeSide(sheet.cols, end.col, other.col)
     const col = resolveIndex(sheet.cols.indexOf(end.col), () => sheet.cols.deletedPosition(end.col!, side === 'end' ? 'end' : 'start'), side)
-    if (col === undefined || col >= MAX_COLS) return undefined
+    if (col === undefined || col < 0 || col >= MAX_COLS) return undefined
     resolved.col = col
     resolved.colAbs = !!end.colAbs
   }

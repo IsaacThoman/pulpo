@@ -20,7 +20,7 @@ import { MAX_EXPANDED_CELLS } from './limits.js'
 import { columnIntervalProps } from './model/column-intervals.js'
 import type { DrawingObject } from './model/schema.js'
 import { toA1Form, toIdForm } from './model/formula-ids.js'
-import { deleteAxis } from './model/structure.js'
+import { deleteAxis, moveAxis } from './model/structure.js'
 import { WorkbookModel, SheetModel } from './model/workbook.js'
 import { parseHtml } from './view/clipboard.js'
 import { SheetView } from './view/sheet-view.js'
@@ -81,6 +81,81 @@ function replicas(base: Y.Doc, edit: (sheet: SheetModel, client: number) => void
 }
 
 describe('spreadsheet audit regressions', () => {
+  it.each(['structural', 'cell', 'batched', 'remote', 'remote metadata'] as const)('invalidates imported caches on the first %s edit', async (edit) => {
+    const rows = Array.from({ length: 10 }, (_, row) => `<row r="${row + 1}"><c r="A${row + 1}"><v>${row + 1}</v></c></row>`).join('')
+    const { doc, workbook, sheet } = await open(xlsx(`${rows}<row r="20"><c r="B20"><f>SUM(A1:A10)</f><v>55</v></c><c r="C20"><f>2+3</f><v>99</v></c><c r="D20"><f>UNKNOWN()</f><v>77</v></c><c r="E20"><f t="dataTable" ref="E20:E21"/><v>88</v></c></row>`))
+    const stopTracking = trackEdits(doc)
+    const calc = new SheetCalc(workbook)
+    expect(calc.get(sheet, 19, 1)).toBe(55)
+    expect(calc.get(sheet, 19, 2)).toBe(99)
+    let formulaRow = 19
+    if (edit === 'structural' || edit === 'batched') {
+      formulaRow--
+      workbook.transact(() => {
+        deleteAxis(sheet, 'row', 0, 1)
+        if (edit === 'batched') markCalcDirty(doc)
+      })
+      expect(toA1Form(sheet.cell(18, 1)!.f!, sheet)).toBe('SUM(A1:A9)')
+    } else if (edit === 'cell') sheet.setCell(0, 0, { v: 0 })
+    else {
+      const remote = new Y.Doc()
+      Y.applyUpdate(remote, Y.encodeStateAsUpdate(doc))
+      const remoteWorkbook = new WorkbookModel(remote)
+      const stopRemoteTracking = trackEdits(remote)
+      if (edit === 'remote') remoteWorkbook.sheets()[0]!.setCell(0, 0, { v: 0 })
+      else markCalcDirty(remote)
+      Y.applyUpdate(doc, Y.encodeStateAsUpdate(remote))
+      stopRemoteTracking()
+      remote.destroy()
+    }
+    expect(workbook.metaValue('calcDirty')).toBe(true)
+    expect(calc.get(sheet, formulaRow, 1)).toBe(edit === 'remote metadata' ? 55 : 54)
+    expect(calc.get(sheet, formulaRow, 2)).toBe(5)
+    expect(calc.get(sheet, formulaRow, 3)).toBe(77)
+    expect(calc.get(sheet, formulaRow, 4)).toBe(88)
+    calc.destroy()
+    stopTracking()
+    doc.destroy()
+  })
+
+  it.each(['row', 'col'] as const)('shrinks reversed %s ranges toward their surviving interior', (kind) => {
+    const doc = new Y.Doc()
+    const workbook = WorkbookModel.initialize(doc)
+    const sheet = workbook.addSheet('Sheet1')
+    for (let index = 0; index < 10; index++) sheet.setCell(kind === 'row' ? index : 0, kind === 'col' ? index : 0, { v: index + 1 })
+    sheet.setCell(19, 19, { f: toIdForm(kind === 'row' ? 'SUM(A10:A1)' : 'SUM(J1:A1)', sheet) })
+    const calc = new SheetCalc(workbook)
+    expect(calc.get(sheet, 19, 19)).toBe(55)
+    deleteAxis(sheet, kind, 0, 1)
+    const row = kind === 'row' ? 18 : 19
+    const col = kind === 'col' ? 18 : 19
+    expect(toA1Form(sheet.cell(row, col)!.f!, sheet)).toBe(kind === 'row' ? 'SUM(A9:A1)' : 'SUM(I1:A1)')
+    expect(calc.get(sheet, row, col)).toBe(54)
+    deleteAxis(sheet, kind, 8, 1)
+    const finalRow = kind === 'row' ? row - 1 : row
+    const finalCol = kind === 'col' ? col - 1 : col
+    expect(toA1Form(sheet.cell(finalRow, finalCol)!.f!, sheet)).toBe(kind === 'row' ? 'SUM(A8:A1)' : 'SUM(H1:A1)')
+    expect(calc.get(sheet, finalRow, finalCol)).toBe(44)
+    calc.destroy()
+    doc.destroy()
+  })
+
+  it('keeps a range valid when a surviving deleted-edge neighbor moves past the other endpoint', () => {
+    const doc = new Y.Doc()
+    const workbook = WorkbookModel.initialize(doc)
+    const sheet = workbook.addSheet('Sheet1')
+    for (let row = 0; row < 3; row++) sheet.setCell(row, 0, { v: row + 1 })
+    sheet.setCell(19, 1, { f: toIdForm('SUM(A1:A3)', sheet) })
+    const calc = new SheetCalc(workbook)
+    deleteAxis(sheet, 'row', 0, 1)
+    expect(calc.get(sheet, 18, 1)).toBe(5)
+    moveAxis(sheet, 'row', 0, 1, 4)
+    expect(toA1Form(sheet.cell(18, 1)!.f!, sheet)).toBe('SUM(A5:A1)')
+    expect(calc.get(sheet, 18, 1)).toBe(5)
+    calc.destroy()
+    doc.destroy()
+  })
+
   it.each(['row', 'col'] as const)('resolves %s deletions without rewriting formulas and restores references on undo', async (kind) => {
     for (const [start, count] of [[0, 1], [9, 1], [0, 10]] as const) {
       const doc = new Y.Doc()

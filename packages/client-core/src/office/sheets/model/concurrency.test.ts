@@ -349,3 +349,120 @@ describe('concurrent sheet invariants', () => {
     }
   }
 })
+
+describe('defined names and deleted range boundaries', () => {
+  for (const clientIds of [[1, 2, 3], [2, 1, 3]]) for (const reverse of [false, true]) {
+    const label = `clients ${clientIds}, reverse=${reverse}`
+    for (const addition of [false, true]) for (const scoped of [false, true]) {
+      it(`converges concurrent applyFile name ${addition ? 'additions' : 'updates'}, scoped=${scoped} (${label})`, async () => {
+        const base = new Y.Doc()
+        base.clientID = 100
+        const original = WorkbookModel.initialize(base)
+        const sheet = original.addSheet('Sheet1')
+        original.setMeta('calcDirty', true)
+        if (!addition) original.names.set('existing', { name: 'Rate', formula: '0', ...(scoped ? { scope: sheet.id } : {}) })
+        sheet.setCell(0, 0, { f: 'Rate*2' })
+        const { docs, models, sync } = sheetReplicas(base, clientIds)
+        const calcs = models.map((model) => new SheetCalc(model))
+        const codec = new SheetCodec()
+        const context = { name: 'Names.xlsx', assets: new MemoryLiveAssetStore() }
+        for (let index = 0; index < 2; index++) {
+          const incomingDoc = new Y.Doc()
+          Y.applyUpdate(incomingDoc, Y.encodeStateAsUpdate(base))
+          const incoming = new WorkbookModel(incomingDoc)
+          incoming.names.set('existing', { name: 'Rate', formula: String(index + 1), ...(scoped ? { scope: sheet.id } : {}) })
+          await codec.applyFile(docs[index]!, await codec.exportFile(incomingDoc, context), context)
+          incomingDoc.destroy()
+        }
+        sync(reverse)
+        const files = []
+        const expected = clientIds[0]! > clientIds[1]! ? 2 : 4
+        for (const [index, model] of models.entries()) {
+          expect([...model.names.keys()]).toEqual([addition ? `n:${scoped ? sheet.id : ''}:rate` : 'existing'])
+          expect(calcs[index]!.get(model.sheets()[0]!, 0, 0)).toBe(expected)
+          const file = await codec.exportFile(docs[index]!, context)
+          expect(strFromU8(unzipSync(file)['xl/workbook.xml']!).match(/<definedName name="Rate"/g)).toHaveLength(1)
+          files.push(file)
+        }
+        for (const file of files) expect(file).toEqual(files[0])
+        for (const calc of calcs) calc.destroy()
+        for (const doc of docs) doc.destroy()
+        base.destroy()
+      })
+    }
+
+    it(`reads legacy duplicate names canonically for calculation, conversion and export (${label})`, async () => {
+      const base = new Y.Doc()
+      base.clientID = 100
+      const original = WorkbookModel.initialize(base)
+      const sheet = original.addSheet('Sheet1')
+      original.setMeta('calcDirty', true)
+      sheet.setCell(0, 0, { v: 10 })
+      sheet.setCell(1, 0, { v: 20 })
+      sheet.setCell(0, 1, { f: 'Rate*2' })
+      sheet.setCell(1, 1, { f: toIdForm('Sheet1!Local', sheet) })
+      const { docs, models, sync } = sheetReplicas(base, clientIds)
+      for (let index = 0; index < 2; index++) {
+        const model = models[index]!
+        model.names.set(index ? 'a' : 'z', { name: index ? 'Rate' : 'rATE', formula: String(index + 1) })
+        model.names.set(index ? 'local-a' : 'local-z', { name: index ? 'Local' : 'LOCAL', scope: sheet.id, formula: toIdForm(index ? 'A2' : 'A1', model.sheets()[0]!) })
+      }
+      sync(reverse)
+      const files = []
+      const codec = new SheetCodec()
+      const context = { name: 'Legacy.xlsx', assets: new MemoryLiveAssetStore() }
+      for (const model of models) {
+        expect([...model.names.keys()]).toEqual(['a', 'local-a'])
+        expect(model.names.get('z')).toBeUndefined()
+        expect(model.names.get('local-z')).toBeUndefined()
+        const after = model.sheets()[0]!
+        const calc = new SheetCalc(model)
+        expect(calc.get(after, 0, 1)).toBe(4)
+        expect(calc.get(after, 1, 1)).toBe(20)
+        const local = model.names.get('local-a')!
+        expect(toA1Form(local.formula, after)).toBe('A2')
+        expect(toIdForm(toA1Form(local.formula, after), after)).toBe(local.formula)
+        const file = await codec.exportFile(model.doc, context)
+        expect(strFromU8(unzipSync(file)['xl/workbook.xml']!).match(/<definedName /g)).toHaveLength(2)
+        files.push(file)
+        calc.destroy()
+      }
+      for (const file of files) expect(file).toEqual(files[0])
+      for (const model of models) {
+        model.names.delete('a')
+        model.names.delete('local-a')
+        expect([...model.names.values()]).toEqual([])
+      }
+      for (const doc of docs) doc.destroy()
+      base.destroy()
+    })
+
+    it(`rejects tombstone cycles after concurrent moves and deletions (${label})`, async () => {
+      const base = new Y.Doc()
+      base.clientID = 100
+      const sheet = WorkbookModel.initialize(base).addSheet('Sheet1')
+      for (let row = 0; row < 3; row++) sheet.setCell(row, 0, { v: row + 1 })
+      sheet.setCell(9, 1, { f: toIdForm('SUM(A1:A2)', sheet) })
+      const { docs, models, sync } = sheetReplicas(base, clientIds)
+      const calcs = models.map((model) => new SheetCalc(model))
+      const moved = models[0]!.sheets()[0]!
+      moveAxis(moved, 'row', 1, 1, 0)
+      deleteAxis(moved, 'row', 1, 1)
+      deleteAxis(models[1]!.sheets()[0]!, 'row', 1, 1)
+      sync(reverse)
+      const codec = new SheetCodec()
+      const context = { name: 'Cycle.xlsx', assets: new MemoryLiveAssetStore() }
+      const files = []
+      for (const [index, model] of models.entries()) {
+        const after = model.sheets()[0]!
+        expect(toA1Form(after.cell(7, 1)!.f!, after)).toBe('SUM(#REF!)')
+        expect(calcs[index]!.get(after, 7, 1)).toEqual({ e: '#REF!' })
+        files.push(await codec.exportFile(docs[index]!, context))
+      }
+      for (const file of files) expect(file).toEqual(files[0])
+      for (const calc of calcs) calc.destroy()
+      for (const doc of docs) doc.destroy()
+      base.destroy()
+    })
+  }
+})

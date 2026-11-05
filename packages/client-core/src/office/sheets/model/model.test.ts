@@ -38,6 +38,18 @@ function grid(model: WorkbookModel, rows = 6, cols = 3): (string | number | null
 }
 
 describe('axis', () => {
+  it('rejects missing tombstone neighbors and keeps the legacy numeric fallback', () => {
+    const { doc, model } = newWorkbook()
+    const axis = model.sheets()[0]!.rows
+    axis.dead.set('missing', { i: 7, n: 'unknown', p: 'unknown' })
+    expect(axis.deletedPosition('missing', 'start')).toBeUndefined()
+    expect(axis.deletedPosition('missing', 'end')).toBeUndefined()
+    axis.dead.set('legacy', 7)
+    expect(axis.deletedPosition('legacy', 'start')).toBe(7)
+    expect(axis.deletedPosition('legacy', 'end')).toBe(6)
+    doc.destroy()
+  })
+
   it('addresses rows past the stored end with virtual ids that survive materialization', () => {
     const { model } = newWorkbook()
     const sheet = model.sheets()[0]!

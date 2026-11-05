@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as Y from 'yjs'
 import { MemoryLiveAssetStore } from '../../assets.js'
 import { insertAxis, deleteAxis } from '../model/structure.js'
+import { toIdForm } from '../model/formula-ids.js'
 import { WorkbookModel } from '../model/workbook.js'
 import { SheetView, type SheetViewOptions } from './sheet-view.js'
 
@@ -49,6 +50,18 @@ function validation(sheet: ReturnType<typeof setup>['sheet']) {
 }
 
 describe('pending spreadsheet edits', () => {
+  it.each([false, true])('uses the canonical duplicate definition in the name box, reverse=%s', (reverse) => {
+    const { sheet, book, view } = setup()
+    const definitions = [
+      ['a', { name: 'Area', formula: toIdForm('Sheet1!B2', undefined, book) }],
+      ['z', { name: 'AREA', formula: toIdForm('Sheet1!C3', undefined, book) }],
+    ] as const
+    for (const [key, name] of reverse ? [...definitions].reverse() : definitions) book.names.set(key, name)
+    expect(view.goTo('area')).toBe(true)
+    expect(view.getState().selectionLabel).toBe('B2')
+    expect(view.sheetId).toBe(sheet.id)
+  })
+
   it.each(['row', 'col'] as const)('follows stable %s ids through remote insertions', (axis) => {
     const { doc, sheet, view } = setup()
     sheet.setCell(0, 0, { v: 'keep' })
