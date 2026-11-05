@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { yUndoPluginKey } from '@tiptap/y-tiptap'
 import { TextSelection } from '@tiptap/pm/state'
 import type { EditorView } from '@tiptap/pm/view'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -13,6 +14,7 @@ import { DocxEditor } from './editor.js'
 import { listRevisions } from './track-changes.js'
 
 const schema = docxSchema()
+let assets: MemoryAssetStore
 let doc: Y.Doc
 let awareness: Awareness
 let editor: DocxEditor
@@ -24,7 +26,7 @@ beforeEach(async () => {
   Range.prototype.getClientRects = () => [] as unknown as DOMRectList
   Range.prototype.getBoundingClientRect = () => new DOMRect()
   doc = new Y.Doc()
-  const assets = new MemoryAssetStore()
+  assets = new MemoryAssetStore()
   await docxCodec.createEmpty(doc, { name: 'a.docx', assets })
   doc.transact(() => {
     for (const kind of ['header', 'footer', 'footnote', 'endnote', 'comment']) {
@@ -127,4 +129,59 @@ it('preserves the original final paragraph mark when regenerating a table of con
   expect(editor.updateTableOfContents()).toBe(true)
   expect(editor.view.state.doc.firstChild!.attrs).toMatchObject({ sectPr, markRPr })
   expect(editor.view.state.doc.lastChild!.attrs.sectPr).toBe(sectPr)
+})
+
+describe('section undo', () => {
+  it.each(['editing', 'suggesting'] as const)('undoes the final section type and split together in %s mode', async (mode) => {
+    const sectPr = packJml(['w:sectPr', {}, ['w:type', { 'w:val': 'nextPage' }]])
+    const original = schema.node('doc', null, [schema.node('paragraph', null, schema.text('ABC')), schema.node('paragraph', null, schema.text('DEF'))])
+    doc.transact(() => {
+      doc.getMap('docx').set('sectPr', sectPr)
+      writeFragment(doc, doc.getXmlFragment('body'), original)
+    }, 'setup')
+    editor.setMode(mode)
+    editor.view.dispatch(editor.view.state.tr.setSelection(TextSelection.create(editor.view.state.doc, 7)))
+    expect(editor.insertSectionBreak('continuous')).toBe(true)
+    const inserted = editor.view.state.doc
+    expect(inserted.childCount).toBe(3)
+    expect(doc.getMap('docx').get('sectPr')).toContain('continuous')
+    expect(editor.undo()).toBe(true)
+    expect(editor.view.state.doc.toJSON()).toEqual(original.toJSON())
+    expect(doc.getMap('docx').get('sectPr')).toBe(sectPr)
+    const { OoxmlPackage } = await import('../../ooxml/package.js')
+    const xml = OoxmlPackage.read(await docxCodec.exportFile(doc, { name: 'a.docx', assets })).text('word/document.xml')!
+    expect(xml.match(/<w:sectPr[ >]/g)).toHaveLength(1)
+    expect(xml).toContain('<w:type w:val="nextPage"')
+    expect(editor.redo()).toBe(true)
+    expect(editor.view.state.doc.eq(inserted)).toBe(true)
+    expect(doc.getMap('docx').get('sectPr')).toContain('continuous')
+  })
+
+  it('keeps agent applyFile and unrelated map origins outside editor undo', async () => {
+    const incoming = new Y.Doc()
+    const assets = new MemoryAssetStore()
+    try {
+      await docxCodec.createEmpty(incoming, { name: 'a.docx', assets })
+      incoming.getMap('docx').set('sectPr', packJml(['w:sectPr', {}, ['w:type', { 'w:val': 'oddPage' }]]))
+      writeFragment(incoming, incoming.getXmlFragment('body'), schema.node('doc', null, [schema.node('paragraph', null, schema.text('Agent content'))]))
+      const bytes = await docxCodec.exportFile(incoming, { name: 'a.docx', assets })
+      expect((await docxCodec.applyFile(doc, bytes, { name: 'a.docx', assets }, 'agent')).changed).toBe(true)
+      const before = editor.view.state.doc
+      const section = doc.getMap('docx').get('sectPr')
+      const theme = JSON.stringify({ colors: { accent1: '#123456' }, fonts: {} })
+      doc.transact(() => doc.getMap('docx').set('theme', theme), 'import')
+      doc.transact(() => doc.getMap('settings').set('w:trackRevisions', packJml(['w:trackRevisions', {}])), 'import')
+      expect(yUndoPluginKey.getState(editor.view.state).undoManager.undoStack).toHaveLength(0)
+      editor.undo()
+      expect(editor.view.state.doc.eq(before)).toBe(true)
+      expect(doc.getMap('docx').get('sectPr')).toBe(section)
+      expect(doc.getMap('docx').get('theme')).toBe(theme)
+      expect(doc.getMap('settings').get('w:trackRevisions')).toBeTruthy()
+      expect(yUndoPluginKey.getState(editor.view.state).undoManager.redoStack).toHaveLength(0)
+      editor.redo()
+      expect(editor.view.state.doc.eq(before)).toBe(true)
+    } finally {
+      incoming.destroy()
+    }
+  })
 })

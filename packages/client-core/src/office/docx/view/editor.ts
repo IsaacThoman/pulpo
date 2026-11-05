@@ -329,7 +329,9 @@ export class DocxEditor {
     })
     this.unsubscribe.push(this.context.onChange(() => {
       this.renderStylesheet()
-      this.view.dispatch(this.view.state.tr.setMeta(decorationsKey, 'refresh'))
+      // Map observers can run before body observers; refreshing must not write the old body back.
+      const { binding } = ySyncPluginKey.getState(this.view.state)
+      binding.mux(() => this.view.dispatch(this.view.state.tr.setMeta(decorationsKey, 'refresh')))
     }))
     const storiesMap = options.doc.getMap('stories')
     const storyObserver = () => this.scheduleLayout()
@@ -354,6 +356,18 @@ export class DocxEditor {
       ySyncPlugin(fragment),
       yCursorPlugin(this.options.awareness, {}, cursorField),
       yUndoPlugin(),
+      new Plugin({
+        state: {
+          init: (_config, state) => {
+            // The final section lives outside the body but must share its undo step.
+            if (fragment === this.options.doc.getXmlFragment(BODY_FRAGMENT)) {
+              yUndoPluginKey.getState(state).undoManager.addToScope(this.options.doc.getMap('docx'))
+            }
+            return null
+          },
+          apply: () => null,
+        },
+      }),
       sectionEndsPlugin(),
       keymap(this.shortcuts()),
       keymap({ Tab: goToNextCell(1), 'Shift-Tab': goToNextCell(-1) }),
@@ -704,10 +718,12 @@ export class DocxEditor {
 
   private runResult(result: EditResult | null): boolean {
     if (!result || this.readOnly) return false
-    this.applyMapEdits(result.maps)
     const target = this.storyEditor?.view ?? this.view
     this.separateUndo(target)
-    target.dispatch(result.tr)
+    this.options.doc.transact(() => {
+      this.applyMapEdits(result.maps)
+      target.dispatch(result.tr)
+    }, ySyncPluginKey)
     this.separateUndo(target)
     target.focus()
     return true
