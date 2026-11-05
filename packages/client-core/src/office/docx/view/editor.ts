@@ -3,7 +3,7 @@ import { dropCursor } from '@tiptap/pm/dropcursor'
 import { gapCursor } from '@tiptap/pm/gapcursor'
 import { keymap } from '@tiptap/pm/keymap'
 import type { Node as ProseMirrorNode, Slice } from '@tiptap/pm/model'
-import { EditorState, NodeSelection, Plugin, PluginKey, TextSelection, type Transaction } from '@tiptap/pm/state'
+import { EditorState, NodeSelection, Plugin, PluginKey, TextSelection, type Transaction, type SelectionBookmark } from '@tiptap/pm/state'
 import {
   addColumnAfter,
   addColumnBefore,
@@ -23,6 +23,7 @@ import { redo, undo, yCursorPlugin, ySyncPlugin, ySyncPluginKey, yUndoPlugin, yU
 import type { Awareness } from 'y-protocols/awareness'
 import * as Y from 'yjs'
 import type { LiveAssetStore } from '../../live-format.js'
+import { copyRelatedParts, needsRelatedParts, receiveCopiedParts } from '../copy-relationships.js'
 import { fontStack, isThemeFontVar, latinFont } from '../css.js'
 import { DOCX_MAX_TABLE_DEPTH } from '../format.js'
 import { newInlinePicture } from '../drawing.js'
@@ -233,6 +234,7 @@ const decorationsKey = new PluginKey<{ set: DecorationSet; version: number }>('d
 const paginationKey = new PluginKey<DecorationSet>('docx-pagination')
 interface FindState { matches: { from: number; to: number }[]; current: number }
 const findKey = new PluginKey<FindState>('docx-find')
+const pendingPasteKey = new PluginKey<Map<object, SelectionBookmark>>('docx-pending-paste')
 
 let scopeCounter = 0
 
@@ -388,6 +390,19 @@ export class DocxEditor {
             return null
           },
           apply: () => null,
+        },
+      }),
+      new Plugin({
+        key: pendingPasteKey,
+        state: {
+          init: () => new Map<object, SelectionBookmark>(),
+          apply: (tr, bookmarks: Map<object, SelectionBookmark>) => {
+            const next = new Map([...bookmarks].map(([id, bookmark]) => [id, bookmark.map(tr.mapping)]))
+            const meta = tr.getMeta(pendingPasteKey) as { id: object; bookmark?: SelectionBookmark } | undefined
+            if (meta?.bookmark) next.set(meta.id, meta.bookmark)
+            else if (meta) next.delete(meta.id)
+            return next
+          },
         },
       }),
       sectionEndsPlugin(),
@@ -586,15 +601,42 @@ export class DocxEditor {
           const copy = recallCopy(event.clipboardData?.getData('text/html'), view.state.schema)
           if (!copy) return false
           const foreign = copy.origin.split(':', 1)[0] !== this.options.doc.guid
-          recalled = limitPastedTables(foreign ? copy.numberedSlice ?? copy.slice : copy.slice, Math.max(0, DOCX_MAX_TABLE_DEPTH - tableDepth(view)))
-          if (copy.origin !== origin) recalled = withoutForeignParts(recalled)
-          if (foreign) {
-            const imported = importCopiedNumbering(withoutStoryReferences(recalled), copy.numbering, this.options.doc.getMap('numbering').keys())
-            recalled = imported.slice
-            recalledMaps = imported.maps
+          const prepare = (slice: Slice) => {
+            slice = limitPastedTables(slice, Math.max(0, DOCX_MAX_TABLE_DEPTH - tableDepth(view)))
+            if (copy.origin !== origin) slice = withoutForeignParts(slice)
+            if (foreign) {
+              const imported = importCopiedNumbering(withoutStoryReferences(slice), copy.numbering, this.options.doc.getMap('numbering').keys())
+              slice = imported.slice
+              recalledMaps = imported.maps
+            }
+            this.notePastedReferences(slice)
+            this.checkPastedPictures(slice)
+            return slice
           }
-          this.notePastedReferences(recalled)
-          this.checkPastedPictures(recalled)
+          if (copy.origin !== origin && copy.resources) {
+            event.preventDefault()
+            const id = {}
+            view.dispatch(view.state.tr.setMeta(pendingPasteKey, { id, bookmark: view.state.selection.getBookmark() }))
+            void (async () => {
+              const resources = await copy.resources
+              if (this.destroyed || view.isDestroyed || !view.editable) return
+              const source = foreign ? resources?.numberedSlice ?? resources?.slice ?? copy.numberedSlice ?? copy.slice : resources?.slice ?? copy.slice
+              if (resources) await receiveCopiedParts({ slice: source, assets: resources.assets }, this.options.assets)
+              if (this.destroyed || view.isDestroyed || !view.editable) return
+              const bookmark = pendingPasteKey.getState(view.state)?.get(id)
+              if (!bookmark) return
+              const slice = prepare(source)
+              this.pastedSlices.set(view, { slice, maps: recalledMaps })
+              const tr = view.state.tr.setSelection(bookmark.resolve(view.state.doc)).replaceSelection(slice).setMeta('uiEvent', 'paste').setMeta(pendingPasteKey, { id })
+              view.dispatch(tr)
+            })().catch(() => {
+              // Failed asset transfers cannot leave unresolved references in the shared document.
+            }).finally(() => {
+              if (!this.destroyed && !view.isDestroyed && pendingPasteKey.getState(view.state)?.has(id)) view.dispatch(view.state.tr.setMeta(pendingPasteKey, { id }))
+            })
+            return true
+          }
+          recalled = prepare(foreign ? copy.numberedSlice ?? copy.slice : copy.slice)
           return false
         },
       },
@@ -606,7 +648,7 @@ export class DocxEditor {
         // after the cut took the last one away.
         const own = documentPictures(this.options.doc)
         for (const src of slicePictures(slice)) if (own.has(src)) this.knownAssets.add(src)
-        return rememberCopy(slice, origin, this.options.doc.getMap('numbering'), this.context.styles)
+        return rememberCopy(slice, origin, this.options.doc.getMap('numbering'), this.context.styles, needsRelatedParts(slice) ? (slice) => copyRelatedParts(slice, this.options.doc, this.options.assets, storyId) : undefined)
       },
       transformPasted: (slice, view, plain) => {
         const copy = view.editable && !plain ? recalled : undefined

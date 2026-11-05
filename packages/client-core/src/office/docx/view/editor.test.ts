@@ -6,10 +6,14 @@ import type { EditorView } from '@tiptap/pm/view'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Awareness } from 'y-protocols/awareness'
 import * as Y from 'yjs'
+import { OoxmlPackage, resolveTarget } from '../../ooxml/package.js'
+import { blankDocx } from '../blank.js'
+import { NEW_PART_NAMESPACES, REL } from '../names.js'
+import { relationshipReferences } from '../relationships.js'
 import { docxCodec } from '../codec.js'
-import { packJml } from '../jsonml.js'
+import { elementToJml, packJml } from '../jsonml.js'
 import { MemoryAssetStore } from '../memory-assets.js'
-import { fragmentToNode, storyFragmentName, writeFragment } from '../model.js'
+import { readDocxModel, fragmentToNode, storyFragmentName, writeFragment } from '../model.js'
 import { docxSchema } from '../schema.js'
 import { clipboardSerializer, rememberCopy } from './clipboard.js'
 import { DocxEditor } from './editor.js'
@@ -402,9 +406,77 @@ describe('section undo', () => {
 
 /** Exercise the DOM paste handler too: programmatic pasteHTML skips the clipboard event. */
 function pasteHtml(view: EditorView, html: string): void {
-  view.someProp('handleDOMEvents', (handlers) => { handlers.paste?.(view, { clipboardData: { getData: () => html } } as unknown as ClipboardEvent) })
-  view.pasteHTML(html, new Event('paste') as ClipboardEvent)
+  let handled = false
+  view.someProp('handleDOMEvents', (handlers) => { handled = handlers.paste?.(view, { clipboardData: { getData: () => html }, preventDefault: () => {} } as unknown as ClipboardEvent) ?? false })
+  if (!handled) view.pasteHTML(html, new Event('paste') as ClipboardEvent)
 }
+
+/** Copy through the actual editor, while delaying the source image's asset read. */
+async function delayedVmlCopy() {
+  const incoming = new Y.Doc()
+  const incomingAssets = new MemoryAssetStore()
+  const image = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+  const pkg = OoxmlPackage.read(blankDocx())
+  pkg.set('word/media/picture.png', image)
+  pkg.setContentType('word/media/picture.png', 'image/png')
+  const id = pkg.addRelationship('word/document.xml', REL.image, 'media/picture.png')
+  pkg.setXml('word/document.xml', `<w:document ${Object.entries(NEW_PART_NAMESPACES).map(([key, value]) => `${key}="${value}"`).join(' ')}><w:body><w:p><w:r><w:pict><v:shape style="width:72pt;height:72pt"><v:imagedata r:id="${id}"/></v:shape></w:pict></w:r></w:p><w:sectPr/></w:body></w:document>`)
+  await docxCodec.importFile(incoming, pkg.write(), { name: 'incoming.docx', assets: incomingAssets })
+  const hash = readDocxModel(incoming).body.firstChild!.firstChild!.attrs.src as string
+  let release!: () => void
+  const ready = new Promise<void>((resolve) => { release = resolve })
+  const sourceAwareness = new Awareness(incoming)
+  const sourceEditor = new DocxEditor({ container: document.createElement('div'), doc: incoming, awareness: sourceAwareness, assets: {
+    put: (bytes, type) => incomingAssets.put(bytes, type),
+    get: async (src) => { if (src === hash) await ready; return incomingAssets.get(src) },
+  }, user: { name: 'Grace', color: '#0000ff' }, layout: 'web' })
+  const slice = new Slice(sourceEditor.view.state.doc.content, 1, 1)
+  sourceEditor.view.props.transformCopied!(slice, sourceEditor.view)
+  const holder = document.createElement('div')
+  holder.appendChild(clipboardSerializer(schema).serializeFragment(slice.content))
+  return { html: holder.innerHTML, release, hash, destroy: () => { sourceEditor.destroy(); sourceAwareness.destroy(); incoming.destroy() } }
+}
+
+it('transfers a foreign VML picture before inserting it at a mapped paste selection', async () => {
+  const incoming = await delayedVmlCopy()
+  try {
+    const tr = editor.view.state.tr.insertText('AB', 1)
+    editor.view.dispatch(tr.setSelection(TextSelection.create(tr.doc, 2)))
+    pasteHtml(editor.view, incoming.html)
+    expect(editor.view.state.doc.firstChild!.childCount).toBe(1)
+    // Another transaction while the source is loading must move the pending paste's bookmark.
+    editor.view.dispatch(editor.view.state.tr.insertText('X', 1))
+    incoming.release()
+    await vi.waitFor(() => { expect(editor.view.state.doc.firstChild!.childCount).toBe(3) })
+    const paragraph = editor.view.state.doc.firstChild!
+    expect(paragraph.child(0).text).toBe('XA')
+    expect(paragraph.child(1).type.name).toBe('drawing')
+    expect(paragraph.child(2).text).toBe('B')
+    expect(await assets.get(incoming.hash)).toHaveLength(8)
+    const pkg = OoxmlPackage.read(await docxCodec.exportFile(doc, { name: 'pasted.docx', assets }))
+    const refs = relationshipReferences(elementToJml(pkg.xml('word/document.xml')!.documentElement!))
+    for (const ref of refs) {
+      const rel = pkg.relationships('word/document.xml').find((rel) => rel.id === ref.id)!
+      expect(pkg.has(resolveTarget('word/document.xml', rel.target))).toBe(true)
+    }
+  } finally { incoming.destroy() }
+})
+
+it('cancels a delayed paste when its story editor closes', async () => {
+  const incoming = await delayedVmlCopy()
+  try {
+    editor.openStoryEditor('header:1')
+    const view = storyView()
+    pasteHtml(view, incoming.html)
+    editor.closeStoryEditor()
+    incoming.release()
+    // Let asset reads and the pending copy settle, including a possible erroneous paste.
+    await new Promise((resolve) => setTimeout(resolve, 25))
+    expect(editor.view.state.doc.textContent).toBe('')
+    expect(fragmentToNode(doc.getXmlFragment(storyFragmentName('header:1'))).textContent).toBe('Original')
+    expect(fragmentToNode(doc.getXmlFragment(storyFragmentName('header:1'))).firstChild!.childCount).toBe(1)
+  } finally { incoming.destroy() }
+})
 
 it.each(['header', 'footer', 'footnote', 'endnote'])('imports foreign numbering into a %s in the content undo step', (kind) => {
   const numbering = new Map([

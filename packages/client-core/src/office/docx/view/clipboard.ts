@@ -1,3 +1,5 @@
+import type { CopiedParts } from '../copy-relationships.js'
+import { isPictureReference, relationshipReferences } from '../relationships.js'
 import { DOMParser as PMDOMParser, DOMSerializer, Fragment, Slice, type Node as ProseMirrorNode, type ParseRule, type Schema } from '@tiptap/pm/model'
 import { jmlAttr, jmlChild, jmlChildren, packJml, unpackJml, type JmlElement, type JmlNode } from '../jsonml.js'
 import { HIGHLIGHT_COLORS } from '../css.js'
@@ -21,12 +23,14 @@ const COPY_ID = /data-docx-copy="([0-9a-f]{32})"/
 const COPY_LIFETIME_MS = 60 * 60 * 1000
 
 /** Recent copies by id: the slice as JSON and where it came from (document and story). */
-interface StoredCopy { json: string; origin: string; numberedJson?: string; numbering?: Record<string, string> }
+interface CopyResources { json: string; numberedJson?: string; assets: CopiedParts['assets'] }
+interface StoredCopy { json: string; origin: string; numberedJson?: string; numbering?: Record<string, string>; resources?: Promise<CopyResources | undefined> }
 const copies = new Map<string, StoredCopy>()
 let currentCopy: string | null = null
 
 export interface RecalledCopy {
   slice: Slice
+  resources?: Promise<{ slice: Slice; numberedSlice?: Slice; assets: CopiedParts['assets'] } | undefined>
   /** Style numbering made explicit only when crossing document boundaries. */
   numberedSlice?: Slice
   /** `rememberCopy`'s origin: the document and story it was copied from. */
@@ -41,7 +45,7 @@ export interface RecalledCopy {
  * for other tabs), so nothing another site or app puts on the clipboard is trusted as a Pulpo copy,
  * and a leaked id can only paste back what the user copied.
  */
-export function rememberCopy(slice: Slice, origin: string, numbering?: { get(key: string): unknown }, styles?: StyleSheet): Slice {
+export function rememberCopy(slice: Slice, origin: string, numbering?: { get(key: string): unknown }, styles?: StyleSheet, prepare?: (slice: Slice) => Promise<CopiedParts>): Slice {
   const id = Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, '0')).join('')
   const json = JSON.stringify(slice.toJSON())
   const definitions: Record<string, string> = {}
@@ -71,13 +75,25 @@ export function rememberCopy(slice: Slice, origin: string, numbering?: { get(key
     if (typeof abstract === 'string') definitions[`abstract:${abstractId}`] = abstract
     return false
   })
-  copies.set(id, { json, origin, numberedJson, numbering: definitions })
+  const resources = prepare ? (async (): Promise<CopyResources> => {
+    const original = await prepare(slice)
+    const numbered = json === numberedJson ? original : await prepare(numberedSlice)
+    return { json: JSON.stringify(original.slice.toJSON()), numberedJson: JSON.stringify(numbered.slice.toJSON()), assets: { ...original.assets, ...numbered.assets } }
+  })().catch(() => undefined) : undefined
+  copies.set(id, { json, origin, numberedJson, numbering: definitions, resources })
   if (copies.size > 8) copies.delete(copies.keys().next().value!)
   try {
     localStorage.setItem(COPY_KEY, JSON.stringify({ id, json, origin, numberedJson, numbering: definitions, at: Date.now() }))
   } catch {
     // Too large or no storage: other tabs paste the HTML instead.
   }
+  void resources?.then((resources) => {
+    if (!resources) return
+    try {
+      const stored = JSON.parse(localStorage.getItem(COPY_KEY) ?? 'null')
+      if (stored?.id === id) localStorage.setItem(COPY_KEY, JSON.stringify({ ...stored, resources }))
+    } catch { /* Other tabs can still paste the ordinary HTML if storage is full. */ }
+  })
   currentCopy = id
   return slice
 }
@@ -89,16 +105,19 @@ export function recallCopy(html: string | undefined, schema: Schema): RecalledCo
   let copy = copies.get(id)
   if (!copy) {
     try {
-      const stored = JSON.parse(localStorage.getItem(COPY_KEY) ?? 'null') as { id?: string; json?: string; origin?: string; numberedJson?: string; numbering?: Record<string, string>; at?: number } | null
+      const stored = JSON.parse(localStorage.getItem(COPY_KEY) ?? 'null') as { id?: string; json?: string; origin?: string; numberedJson?: string; numbering?: Record<string, string>; at?: number; resources?: CopyResources } | null
       if (stored && (typeof stored.at !== 'number' || Date.now() - stored.at > COPY_LIFETIME_MS)) localStorage.removeItem(COPY_KEY)
-      else if (stored?.id === id && typeof stored.json === 'string' && typeof stored.origin === 'string') copy = { json: stored.json, origin: stored.origin, numberedJson: stored.numberedJson, numbering: stored.numbering }
+      else if (stored?.id === id && typeof stored.json === 'string' && typeof stored.origin === 'string') copy = { json: stored.json, origin: stored.origin, numberedJson: stored.numberedJson, numbering: stored.numbering, resources: stored.resources ? Promise.resolve(stored.resources) : undefined }
     } catch {
       return null
     }
   }
   if (!copy) return null
   try {
-    return { slice: Slice.fromJSON(schema, JSON.parse(copy.json)), numberedSlice: copy.numberedJson ? Slice.fromJSON(schema, JSON.parse(copy.numberedJson)) : undefined, origin: copy.origin, numbering: copy.numbering }
+    return { slice: Slice.fromJSON(schema, JSON.parse(copy.json)), numberedSlice: copy.numberedJson ? Slice.fromJSON(schema, JSON.parse(copy.numberedJson)) : undefined, origin: copy.origin, numbering: copy.numbering, resources: copy.resources?.then((resources) => {
+      if (!resources) return undefined
+      try { return { slice: Slice.fromJSON(schema, JSON.parse(resources.json)), numberedSlice: resources.numberedJson ? Slice.fromJSON(schema, JSON.parse(resources.numberedJson)) : undefined, assets: resources.assets } } catch { return undefined }
+    }) }
   } catch {
     return null
   }
@@ -151,35 +170,17 @@ export function importCopiedNumbering(slice: Slice, definitions: RecalledCopy['n
   return { slice: new Slice(remap(slice.content), slice.openStart, slice.openEnd), maps }
 }
 
-/** Relationship attributes the exporter rewrites for whichever part content lands in. */
-const PORTABLE_RELATIONSHIPS: Record<string, string> = { 'a:blip': 'r:embed', 'v:imagedata': 'r:id' }
-
-/** Whether a stored attribute value (JsonML, or JSON of XML attributes) refers to a relationship of its part. */
+/** Unknown part-bound XML is portable only when its complete relationship scope was captured. */
 function bindsRelationship(value: unknown): boolean {
-  if (typeof value !== 'string' || !/"r:[A-Za-z]+"/.test(value)) return false
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(value)
-  } catch {
-    return true
-  }
-  const visit = (node: unknown): boolean => {
-    if (!Array.isArray(node)) return false
-    const [name, attrs] = node as [unknown, unknown]
-    if (typeof name === 'string' && attrs && typeof attrs === 'object' && !Array.isArray(attrs)) {
-      for (const key of Object.keys(attrs)) if (key.startsWith('r:') && PORTABLE_RELATIONSHIPS[name] !== key) return true
-    }
-    return node.some((child) => Array.isArray(child) && visit(child))
-  }
-  if (Array.isArray(parsed)) return visit(parsed) || parsed.some((child) => visit(child))
-  if (parsed && typeof parsed === 'object') return Object.keys(parsed).some((key) => key.startsWith('r:'))
-  return false
+  const refs = relationshipReferences(value)
+  if (!refs.length) return false
+  return refs.some((ref) => !ref.bound && !isPictureReference(ref))
 }
 
 /**
  * Content copied from another document or story, minus what refers to relationships of the part
- * it came from (charts, embedded objects, SmartArt, section references): those would point at
- * nothing, or at the wrong part, here. Pictures and links are rewritten on export, so they stay.
+ * it came from, unless their relationship graph was captured. Legacy pictures and hyperlinks
+ * can still be rebound from their asset hash or URL at export.
  */
 export function withoutForeignParts(slice: Slice): Slice {
   const clean = (fragment: Fragment): Fragment => {
