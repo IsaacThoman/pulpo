@@ -268,7 +268,8 @@ export const DocEditorView = forwardRef<DocEditorHandle, Props>(function DocEdit
         active: formatting?.active ?? [],
         disabled: formatting?.disabled ?? [],
         tint: theme.blue,
-        items: format === 'text' ? [...TEXT_TOOLBAR] : format === 'document' ? [...DOCX_TOOLBAR] : [],
+        // iOS draws these natively; Android's bar is drawn in JavaScript and its record takes plain strings.
+        items: Platform.OS !== 'ios' ? [] : format === 'text' ? [...TEXT_TOOLBAR] : format === 'document' ? [...DOCX_TOOLBAR] : [],
       }}
       onMessage={({ nativeEvent }) => bridge.receive(nativeEvent.data)}
       onTerminate={() => bridge.reset()}
