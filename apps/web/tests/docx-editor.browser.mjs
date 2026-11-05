@@ -728,6 +728,37 @@ try {
     assert.equal(result.same, result.before + 2)
   })
 
+  await step('keeps toolbar formatting and subsequent typing in the open header', async () => {
+    await open('?file=sections-headers.docx')
+    const body = await text()
+    await page.locator('.docx-band .docx-story', { hasText: 'First-page header' }).first().dblclick()
+    const story = await page.evaluate(() => window.harness.editors[0].editingStory)
+    assert.ok(story)
+    await page.keyboard.type('Before bold ')
+    await page.getByRole('button', { name: 'Bold', exact: true }).click()
+    assert.equal(await page.evaluate(() => window.harness.editors[0].editingStory), story)
+    await page.keyboard.type('AFTERBOLD')
+    assert.equal(await page.evaluate(() => window.harness.editors[0].state().bold), true)
+    assert.match(await page.locator('.docx-story-editor').textContent(), /Before bold AFTERBOLD/)
+    assert.equal(await text(), body)
+    const exported = new Y.Doc()
+    const base64 = await page.evaluate(() => window.harness.exportFile())
+    await docxCodec.importFile(exported, Buffer.from(base64, 'base64'), { name: 'header.docx', assets: new MemoryAssetStore() })
+    const header = readDocxModel(exported).stories.get(story).doc
+    let bold = false
+    header.descendants((node) => { if (node.isText && node.text.includes('AFTERBOLD')) bold = node.marks.some((mark) => mark.type.name === 'b') })
+    assert.equal(bold, true)
+    exported.destroy()
+    // Clicking body content still closes the story, including after a previous explicit close.
+    await page.keyboard.press('Escape')
+    await page.waitForTimeout(300)
+    await page.locator('.docx-band .docx-story', { hasText: 'Before bold AFTERBOLD' }).first().dblclick()
+    await page.locator('.docx-story-editor').dispatchEvent('pointerdown')
+    assert.equal(await page.evaluate(() => window.harness.editors[0].editingStory), story)
+    await flow.locator('p.docx-p').first().click()
+    assert.equal(await page.evaluate(() => window.harness.editors[0].editingStory), null)
+  })
+
   await step('lays out a 100-page document within budget', async () => {
     const started = Date.now()
     await open('?generate=1600')

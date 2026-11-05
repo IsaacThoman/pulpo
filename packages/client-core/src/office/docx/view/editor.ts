@@ -273,7 +273,7 @@ export class DocxEditor {
   private lastLayoutAt = 0
   private activeCommentId: string | null = null
   private copied: CopiedFormat | null = null
-  private storyEditor: { view: EditorView; element: HTMLElement; storyId: string } | null = null
+  private storyEditor: { view: EditorView; element: HTMLElement; storyId: string; stop: () => void } | null = null
   private readonly unsubscribe: (() => void)[] = []
   private destroyed = false
   private noteHeights = new Map<string, number>()
@@ -685,7 +685,7 @@ export class DocxEditor {
     undo?.undoManager?.stopCapturing()
   }
 
-  /** Runs a command against the body; false when it does not apply. */
+  /** Runs a command against the active story; false when it does not apply. */
   run(command: Command): boolean {
     if (this.readOnly) return false
     const target = this.storyEditor?.view ?? this.view
@@ -890,13 +890,17 @@ export class DocxEditor {
   undo(): boolean {
     if (this.readOnly) return false
     const view = this.storyEditor?.view ?? this.view
-    return undo(view.state)
+    const done = undo(view.state)
+    view.focus()
+    return done
   }
 
   redo(): boolean {
     if (this.readOnly) return false
     const view = this.storyEditor?.view ?? this.view
-    return redo(view.state)
+    const done = redo(view.state)
+    view.focus()
+    return done
   }
 
   toggle(property: ToggleProperty): boolean {
@@ -1050,7 +1054,8 @@ export class DocxEditor {
   }
 
   insertSectionBreak(type: 'nextPage' | 'continuous' | 'evenPage' | 'oddPage'): boolean {
-    return this.runResult(insertSectionBreak(type, this.view.state, this.context))
+    const view = this.storyEditor?.view ?? this.view
+    return this.runResult(insertSectionBreak(type, view.state, this.context))
   }
 
   insertSymbol(text: string): boolean {
@@ -1853,23 +1858,22 @@ export class DocxEditor {
       attributes: { class: 'docx-flow', spellcheck: 'true', role: 'textbox', 'aria-label': meta.kind },
       dispatchTransaction: function (this: EditorView, tr: Transaction) { dispatch(this, tr) },
     })
-    this.storyEditor = { view, element, storyId }
-    view.focus()
     const close = (event: PointerEvent) => {
-      if (!element.contains(event.target as Node)) {
-        document.removeEventListener('pointerdown', close, true)
-        this.closeStoryEditor()
-      }
+      // Toolbars, panels and dialogs outside this root still act on the open story.
+      if (this.root.contains(event.target as Node) && !element.contains(event.target as Node)) this.closeStoryEditor()
     }
+    this.storyEditor = { view, element, storyId, stop: () => document.removeEventListener('pointerdown', close, true) }
     document.addEventListener('pointerdown', close, true)
+    view.focus()
     this.emit('update')
     return true
   }
 
   closeStoryEditor(): boolean {
     if (!this.storyEditor) return false
-    const { view, element } = this.storyEditor
+    const { view, element, stop } = this.storyEditor
     this.storyEditor = null
+    stop()
     view.destroy()
     element.remove()
     this.scheduleLayout(true)
