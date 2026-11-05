@@ -104,7 +104,9 @@ export async function registerLiveDocRoutes(app: FastifyInstance): Promise<void>
     return mutateFileTree(user.id, async (tx) => {
       const access = await resolveFileAccess(tx, user.id, id)
       if (!access || access.node.kind !== 'doc' || access.node.trashedAt || access.node.status !== 'ready') throw notFound('Document')
-      const [existing] = await tx.select().from(fileDocAssets).where(and(eq(fileDocAssets.nodeId, id), eq(fileDocAssets.hash, hash))).limit(1)
+      // Uploaded again: the editor is about to refer to it, so its grace period starts over.
+      const [existing] = await tx.update(fileDocAssets).set({ createdAt: new Date() })
+        .where(and(eq(fileDocAssets.nodeId, id), eq(fileDocAssets.hash, hash))).returning()
       if (existing) return { hash, mimeType: existing.mimeType, sizeBytes: existing.sizeBytes }
       const store = new DocAssetStore(tx, id)
       const ref = await store.put(bytes, mimeType)

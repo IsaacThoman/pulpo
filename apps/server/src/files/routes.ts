@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
+import { liveFormatOfName } from '@pulpo/client-core/office'
 import { updateFileFolderLayoutSchema, copyFileNodesSchema, createFileDocSchema, createFileFolderSchema, fileNodeIdsSchema, importFileUrlSchema, moveFileNodesSchema, updateFileNodeSchema, type FileChangeConflictBody } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import { AppError, notFound } from '../lib/errors.js'
@@ -182,13 +183,17 @@ export async function registerFileRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/files/:id/convert', async (request) => {
     const user = await requireFilesUser(request)
     const id = idParams.parse(request.params).id
+    // Until the upload is deleted after commit, the document (and the original bytes some formats
+    // keep beside it) are stored as well, so their size must fit the allowance.
+    const found = await resolveFileAccess(db, user.id, id)
+    const reserveBytes = found?.node.kind === 'blob' && (liveFormatOfName(found.node.name)?.id ?? 'markdown') !== 'markdown' ? found.node.sizeBytes : undefined
     const result = await mutateFileTree(user.id, async (tx) => {
       const access = await resolveFileAccess(tx, user.id, id)
       if (!access || access.node.trashedAt) throw notFound('File')
       if (access.node.kind === 'doc') return { node: toFileNode(access.node), objectKey: null }
       const converted = await convertBlobToDocInTx(tx, access.node)
       return { node: toFileNode(converted.row), objectKey: converted.objectKey }
-    })
+    }, undefined, { reserveBytes })
     // The uploaded object goes only after the document is committed, so a failure keeps the file.
     if (result.objectKey) await getBlobStore().delete(result.objectKey).catch(() => undefined)
     return result.node

@@ -9,6 +9,7 @@ describe('live format catalog', () => {
   it('maps names to formats', () => {
     expect(liveFormatOfName('Notes.md')?.id).toBe('markdown')
     expect(liveFormatOfName('README.MARKDOWN')?.id).toBe('markdown')
+    expect(liveFormatOfName('.md')?.id).toBe('markdown')
     expect(liveFormatOfName('main.py')?.id).toBe('text')
     expect(liveFormatOfName('App.TSX')?.id).toBe('text')
     expect(liveFormatOfName('Dockerfile')?.id).toBe('text')

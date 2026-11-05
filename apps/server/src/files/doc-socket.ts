@@ -1,13 +1,14 @@
 import type { Server, Socket } from 'socket.io'
 import * as Y from 'yjs'
 import { z } from 'zod'
+import { DOC_GENERATION_KEY, DOC_META_MAP } from '@pulpo/client-core/doc-schema'
 import { liveFormat } from '@pulpo/client-core/office'
 import type { ClientToServerEvents, DocClosedEvent, DocSyncError, ServerToClientEvents } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import { AppError } from '../lib/errors.js'
 import type { SocketData } from '../realtime/socket.js'
 import { resolveFileAccess } from './access.js'
-import { appendDocUpdate, docGeneration, loadDocUpdate, MAX_DOC_UPDATE_BYTES } from './doc-store.js'
+import { appendDocUpdate, loadDocUpdate, MAX_DOC_UPDATE_BYTES } from './doc-store.js'
 import { filesFeatureEnabled } from './request.js'
 
 type PulpoServer = Server<ClientToServerEvents, ServerToClientEvents, Record<string, never>, SocketData>
@@ -80,6 +81,18 @@ export function joinsFormat(input: { schemaVersion: number; schemaVersions?: Rec
 }
 
 /**
+ * The generation a document's state says it is (see `DOC_META_MAP`). Read from the state, which
+ * clients compare their copies with, rather than from `file_docs.generation`, so the two can
+ * never disagree.
+ */
+export function stateGeneration(update: Uint8Array): string | undefined {
+  const doc = new Y.Doc()
+  Y.applyUpdate(doc, update)
+  const generation = doc.getMap(DOC_META_MAP).get(DOC_GENERATION_KEY)
+  return typeof generation === 'string' ? generation : undefined
+}
+
+/**
  * Relays Yjs sync and awareness for `doc:<id>` rooms. API instances keep no document in memory:
  * joins are answered from the database, and every update is persisted before it is broadcast.
  */
@@ -127,7 +140,8 @@ export function bindDocSocket(socket: PulpoSocket): void {
       if (!current()) return ack({ ok: false, error: 'not_found' })
       // Join before reading so any update committed after the read still reaches this socket.
       await socket.join(docRoom(input.docId))
-      const [merged, generation] = await Promise.all([loadDocUpdate(input.docId), docGeneration(input.docId)])
+      const merged = await loadDocUpdate(input.docId)
+      const generation = stateGeneration(merged)
       if (!current() || !member(input.docId)) {
         // A leave can race the adapter's asynchronous join. Do not remove a newer join's room.
         if (!joins.has(input.docId)) leave(input.docId)

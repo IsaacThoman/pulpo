@@ -9,6 +9,7 @@ import { mimeTypeFromName } from '../attachments/generated.js'
 import { db } from '../database/client.js'
 import { fileDocAssets } from '../database/schema.js'
 import { AppError } from '../lib/errors.js'
+import { newId } from '../lib/ids.js'
 import { getBlobStore } from '../storage/index.js'
 import type { FileExecutor, FileNodeRow } from './access.js'
 import { docTooLarge, initialDocState, MAX_DOC_STATE_BYTES, mergedDocState } from './doc-state.js'
@@ -63,8 +64,12 @@ export function convertedMimeType(name: string, format: LiveFormatInfo): string 
   return mimeTypeFromName(name) ?? (format.id === 'text' ? 'text/plain' : 'application/octet-stream')
 }
 
+/**
+ * Where one stored copy of an asset lives. Unique per row, so deleting a row's object after commit
+ * can never remove the object of a row that stored the same bytes again meanwhile.
+ */
 export function docAssetKey(userId: string, nodeId: string, hash: string): string {
-  return `users/${userId}/doc-assets/${nodeId}/${hash}`
+  return `users/${userId}/doc-assets/${nodeId}/${hash}-${newId()}`
 }
 
 async function readObject(key: string): Promise<Uint8Array> {
@@ -114,8 +119,10 @@ export class DocAssetStore implements LiveAssetStore {
    */
   async flush(tx: DatabaseTransaction, userId: string, nodeId: string): Promise<string[]> {
     if (!this.pending.size) return []
-    const existing = new Set((await tx.select({ hash: fileDocAssets.hash }).from(fileDocAssets)
-      .where(and(eq(fileDocAssets.nodeId, nodeId), inArray(fileDocAssets.hash, [...this.pending.keys()])))).map((row) => row.hash))
+    // Stored already: written again just now, so unused-asset collection gives it a new grace period.
+    const existing = new Set((await tx.update(fileDocAssets).set({ createdAt: new Date() })
+      .where(and(eq(fileDocAssets.nodeId, nodeId), inArray(fileDocAssets.hash, [...this.pending.keys()])))
+      .returning({ hash: fileDocAssets.hash })).map((row) => row.hash))
     const written: string[] = []
     try {
       for (const [hash, { bytes, ref }] of this.pending) {

@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as Y from 'yjs'
-import { DOC_SCHEMA_VERSION } from '@pulpo/client-core/doc-schema'
+import { DOC_GENERATION_KEY, DOC_META_MAP, DOC_SCHEMA_VERSION } from '@pulpo/client-core/doc-schema'
 
-vi.mock('./doc-store.js', () => ({ appendDocUpdate: vi.fn(), loadDocUpdate: vi.fn(), docGeneration: vi.fn(async () => null), MAX_DOC_UPDATE_BYTES: 1_000_000 }))
+vi.mock('./doc-store.js', () => ({ appendDocUpdate: vi.fn(), loadDocUpdate: vi.fn(), MAX_DOC_UPDATE_BYTES: 1_000_000 }))
 vi.mock('./request.js', () => ({ filesFeatureEnabled: vi.fn() }))
 vi.mock('./access.js', () => ({ resolveFileAccess: vi.fn() }))
 vi.mock('../database/client.js', () => ({ db: {} }))
@@ -111,6 +111,15 @@ describe('document socket lifecycle', () => {
     expect(await socketFixture().join(docId, { schemaVersions: { text: 1 } })).toMatchObject({ ok: false, error: 'schema_outdated' })
     asDoc('sheet')
     expect(await socketFixture().join(docId, { schemaVersions: { sheet: 1 } })).toMatchObject({ ok: false, error: 'schema_outdated' })
+  })
+
+  it('reports the generation the document state carries', async () => {
+    const doc = new Y.Doc()
+    doc.getMap(DOC_META_MAP).set(DOC_GENERATION_KEY, 'generation-1')
+    vi.mocked(loadDocUpdate).mockResolvedValue(Y.encodeStateAsUpdate(doc))
+    expect(await socketFixture().join()).toMatchObject({ ok: true, generation: 'generation-1' })
+    vi.mocked(loadDocUpdate).mockResolvedValue(Y.encodeStateAsUpdate(new Y.Doc()))
+    expect(await socketFixture().join()).not.toHaveProperty('generation')
   })
 
   it('drops room membership after a failed join instead of relaying further document updates', async () => {

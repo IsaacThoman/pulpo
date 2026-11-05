@@ -313,7 +313,7 @@ describe.skipIf(!enabled)('agent edits to live documents', () => {
     expect(await text(id)).toBe('a\n')
   })
 
-  it('refuses to merge a proposal made for an earlier document under the same id', async () => {
+  it('settles proposals when the document becomes a file, and never merges them into the next document', async () => {
     const id = await textDoc('a.txt', projects, 'one\ntwo\n')
     await files.attach({ [projects]: 'suggest' })
     files.put('/workspace/a.txt', 'one\nTWO\n')
@@ -327,8 +327,13 @@ describe.skipIf(!enabled)('agent edits to live documents', () => {
     })
     await clientEdit(id, (content) => content.insert(0, 'zero\n'))
     const [row] = await db.select().from(fileChanges).where(eq(fileChanges.nodeId, id))
-    await expect(reviewFileChange(files.userId, row!.id, 'accept')).rejects.toMatchObject({ code: 'file_suggestion_stale' })
+    // Becoming a file rejected it, so accepting it now changes nothing.
+    expect(row).toMatchObject({ status: 'rejected' })
+    await reviewFileChange(files.userId, row!.id, 'accept')
     expect(await text(id)).toBe('zero\none\ntwo\n')
+    // Its kept versions are no longer needed, and maintenance deletes them.
+    await deleteUnusedVersions()
+    expect(await db.select().from(fileVersions).where(eq(fileVersions.nodeId, id))).toHaveLength(0)
     // A new proposal is built on the document as it is, not on the old fork.
     await files.newReply()
     files.put('/workspace/a.txt', 'zero\none\nTWO\n')

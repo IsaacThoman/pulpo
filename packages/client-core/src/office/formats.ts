@@ -36,6 +36,8 @@ export const MARKDOWN_FORMAT: LiveFormatInfo = {
   id: 'markdown',
   schemaVersion: DOC_SCHEMA_VERSION,
   extensions: ['md', 'markdown'],
+  // Named only by its extension, as `isMarkdownName` counts it.
+  fileNames: ['.md', '.markdown'],
   lossless: false,
   // Characters, which bounds the bytes at four times as many.
   maxFileBytes: FILE_DOC_MAX_MARKDOWN_LENGTH,

@@ -1,6 +1,6 @@
 import type { FileNode } from '@pulpo/contracts'
 import { liveFormat, liveFormatOfName } from '@pulpo/client-core/office'
-import { exportTextFile } from '@pulpo/client-core/office/text'
+import { exportTextFile, textFileFacts } from '@pulpo/client-core/office/text'
 import { describeHunkSummary } from '@pulpo/client-core/doc-editor/summary'
 import { sessionColor, type DocSessionSnapshot, type DocSyncStatus } from '@pulpo/client-core/doc-sync'
 import type { NativeStackHeaderItem, NativeStackScreenProps } from '@react-navigation/native-stack'
@@ -218,7 +218,10 @@ export function FileDocumentScreen({ navigation, route }: Props) {
     try {
       // An open editor exports its own copy, which includes edits not yet synced.
       if (isText) {
-        const bytes = handle && usable ? await exportTextFile(handle.controller.doc, { assets: { put: () => Promise.reject(new Error('Read only')), get: () => Promise.reject(new Error('Not on this device')) } }) : undefined
+        // A file kept with its original bytes (mixed line breaks, a legacy encoding) is exported
+        // exactly by the server, which holds them; while edits wait to sync, this copy has more.
+        const serverExact = handle && textFileFacts(handle.controller.doc).original && status.state === 'synced'
+        const bytes = handle && usable && !serverExact ? await exportTextFile(handle.controller.doc, { assets: { put: () => Promise.reject(new Error('Read only')), get: () => Promise.reject(new Error('Not on this device')) } }) : undefined
         await shareFileItem(node, undefined, bytes)
         return
       }
@@ -227,7 +230,7 @@ export function FileDocumentScreen({ navigation, route }: Props) {
     } catch (error) {
       operations.fail(error, node.name)
     }
-  }, [editorState?.loaded, handle, isText, node, operations, usable])
+  }, [editorState?.loaded, handle, isText, node, operations, status.state, usable])
   const trash = useCallback(() => {
     if (!node) return
     Alert.alert(`Move “${node.name}” to the trash?`, undefined, [

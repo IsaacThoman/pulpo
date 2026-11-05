@@ -1,10 +1,10 @@
 import { createHash } from 'node:crypto'
 import { Readable } from 'node:stream'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { liveMimeType } from '@pulpo/client-core/office'
 import { FILE_DOC_MAX_MARKDOWN_LENGTH, isMarkdownName, type FileConversionPreview } from '@pulpo/contracts'
 import { db } from '../database/client.js'
-import { fileDocs, fileNodes } from '../database/schema.js'
+import { fileChanges, fileDocs, fileNodes } from '../database/schema.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { getBlobStore } from '../storage/index.js'
@@ -106,6 +106,11 @@ export async function convertDocToBlobInTx(tx: DatabaseTransaction, userId: stri
   const objectKey = `users/${userId}/files/${newId()}`
   await getBlobStore().put(objectKey, bytes, { contentType: mimeType, contentLength: bytes.byteLength })
   const releasedKeys = await docAssetKeys(tx, [node.id])
+  // Proposals of new versions of the document cannot apply to a file; maintenance deletes the
+  // versions they kept (`deleteUnusedVersions`).
+  await tx.update(fileChanges).set({ status: 'rejected', updatedAt: new Date() }).where(and(
+    eq(fileChanges.nodeId, node.id), eq(fileChanges.kind, 'update'), eq(fileChanges.mode, 'suggest'), eq(fileChanges.status, 'pending'),
+  ))
   // Assets cascade from the document state.
   await tx.delete(fileDocs).where(eq(fileDocs.nodeId, node.id))
   const [row] = await tx.update(fileNodes).set({
