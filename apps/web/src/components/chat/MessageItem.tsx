@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react'
+import { Link } from 'react-router-dom'
 import { SpeechButton } from '@/features/speech/SpeechButton'
 import { SpeechPlayer } from '@/features/speech/SpeechPlayer'
 import { ActionButton } from './ActionButton'
@@ -661,6 +662,8 @@ export const MessageItem = memo(function MessageItem({
   const showReasoning = useSettings((s) => s.showReasoning)
   const showResponseCost = useSettings((s) => s.showResponseCost)
   const filesEnabled = useAuth((s) => s.filesEnabled)
+  const billingEnabled = useAuth((s) => s.billingEnabled)
+  const insufficientBalance = /insufficient balance/i.test(message.error ?? '')
   const [editing, setEditing] = useState(() => editDrafts?.has(message.id) ?? false)
   const [draft, setDraft] = useState(() => editDrafts?.get(message.id) ?? message.content)
   useEffect(() => {
@@ -930,7 +933,17 @@ export const MessageItem = memo(function MessageItem({
 
           {!editing && message.error && (
             <div role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-              {message.error}
+              {insufficientBalance ? (
+                <div className="space-y-2">
+                  <p>{t('chat.usageLimitReached')}</p>
+                  {billingEnabled && <>
+                    <p>{t('chat.usageLimitBillingHint')}</p>
+                    <Button asChild size="sm" variant="outline">
+                      <Link to="/billing">{t('chat.viewBilling')}</Link>
+                    </Button>
+                  </>}
+                </div>
+              ) : message.error}
             </div>
           )}
         </div>
