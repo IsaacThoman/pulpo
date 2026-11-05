@@ -74,6 +74,7 @@ interface Open {
   strip: SlideList
   presenter?: Presenter
   unsubscribe: () => void
+  report: () => void
 }
 
 let open: Open | null = null
@@ -109,7 +110,7 @@ function close(): void {
   stripRoot.replaceChildren()
 }
 
-function stateOf(controller: PresentationController): PresentationEditorState {
+function stateOf(controller: PresentationController, presenting: boolean): PresentationEditorState {
   const format = controller.formatState()
   return {
     canUndo: controller.canUndo(),
@@ -121,6 +122,7 @@ function stateOf(controller: PresentationController): PresentationEditorState {
     hasSelection: controller.state.shapes.length > 0,
     slideCount: controller.slideKeys().length,
     readOnly: controller.readOnly,
+    presenting,
   }
 }
 
@@ -149,14 +151,14 @@ function start(message: Extract<HostMessage, { type: 'init' }>): void {
   let last = ''
   const report = () => {
     if (open?.session !== session) return
-    const state = stateOf(controller)
+    const state = stateOf(controller, Boolean(open?.presenter))
     const key = JSON.stringify(state)
     if (key === last) return
     last = key
     post({ type: 'presentationState', session, state })
   }
   const unsubscribe = controller.subscribe(report)
-  open = { session, doc, awareness, assets, controller, canvas, strip, unsubscribe }
+  open = { session, doc, awareness, assets, controller, canvas, strip, unsubscribe, report }
   post({ type: 'loaded', session })
   post({ type: 'sync', session, stateVector: bytesToBase64(Y.encodeStateVector(doc)) })
   report()
@@ -209,12 +211,22 @@ function command(current: Open, name: string): void {
       if (controller.state.shapes.length) controller.deleteSelection()
       else controller.deleteSlides()
       break
-    case 'present':
+    case 'present': {
       current.presenter?.exit()
-      current.presenter = new Presenter(controller, {
+      const presenter: Presenter = new Presenter(controller, {
         ...(controller.state.slide ? { startAt: controller.state.slide } : {}),
-        onExit: () => { if (open === current) current.presenter = undefined },
+        onExit: () => {
+          if (open !== current || current.presenter !== presenter) return
+          current.presenter = undefined
+          current.report()
+        },
       })
+      current.presenter = presenter
+      current.report()
+      break
+    }
+    case 'endShow':
+      current.presenter?.exit()
       break
   }
 }

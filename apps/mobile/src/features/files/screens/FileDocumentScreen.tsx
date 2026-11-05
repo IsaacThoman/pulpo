@@ -6,6 +6,7 @@ import { sessionColor, type DocSessionSnapshot, type DocSyncStatus } from '@pulp
 import type { NativeStackHeaderItem, NativeStackScreenProps } from '@react-navigation/native-stack'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as Haptics from 'expo-haptics'
+import { StatusBar } from 'expo-status-bar'
 import * as WebBrowser from 'expo-web-browser'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { ActivityIndicator, Alert, Keyboard, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
@@ -295,7 +296,7 @@ export function FileDocumentScreen({ navigation, route }: Props) {
   useLayoutEffect(() => {
     navigation.setOptions({
       title: shownTitle,
-      headerShown: Platform.OS === 'ios',
+      headerShown: Platform.OS === 'ios' && !presenting,
       headerLargeTitle: false,
       headerBackTitle: 'Back',
       unstable_headerRightItems: Platform.OS === 'ios' && filesEnabled ? () => [
@@ -320,7 +321,9 @@ export function FileDocumentScreen({ navigation, route }: Props) {
   const reviewBarHeight = reviewVisible ? 116 : 0
   // Android draws its formatting bar above the keyboard; the editor keeps the caret clear of it.
   const formattingBarVisible = Platform.OS === 'android' && keyboardVisible && editable && Boolean(editorState?.loaded)
-  const presentationBarVisible = isDeck && editable && Boolean(editorState?.loaded)
+  // A running slide show gets the whole screen: no header, status bar, or deck bar.
+  const presenting = isDeck && editorState?.presentation?.presenting === true
+  const presentationBarVisible = isDeck && editable && Boolean(editorState?.loaded) && !presenting
   const editorBottomPadding = reviewBarHeight + (formattingBarVisible && !isDeck ? FORMATTING_BAR_HEIGHT : 0) + (presentationBarVisible ? PRESENTATION_BAR_HEIGHT + insets.bottom : 0)
   const showAndroidMenu = () => showActions(title, [
     { label: 'Export', icon: 'square.and.arrow.up', onPress: () => { void exportDocument() } },
@@ -448,8 +451,9 @@ export function FileDocumentScreen({ navigation, route }: Props) {
   }
 
   return (
-    <View style={[styles.flex, { backgroundColor: theme.isDark ? theme.background : theme.elevated, paddingTop: Platform.OS === 'android' ? insets.top : 0 }]}>
-      {Platform.OS === 'android' ? (
+    <View style={[styles.flex, { backgroundColor: presenting ? '#000' : theme.isDark ? theme.background : theme.elevated, paddingTop: Platform.OS === 'android' && !presenting ? insets.top : 0 }]}>
+      {presenting ? <StatusBar hidden /> : null}
+      {Platform.OS === 'android' && !presenting ? (
         <PageHeader
           title={shownTitle}
           onBack={() => navigation.goBack()}
@@ -474,6 +478,18 @@ export function FileDocumentScreen({ navigation, route }: Props) {
         visible={presentationBarVisible}
         onCommand={(command) => editor.current?.command(command as PresentationCommand)}
       />
+      {presenting ? (
+        <Pressable
+          accessibilityLabel="End Slide Show"
+          accessibilityRole="button"
+          hitSlop={10}
+          onPress={() => editor.current?.command('endShow')}
+          style={[styles.endShow, { top: insets.top + 8 }]}
+          testID="end-slide-show"
+        >
+          <SymbolView name="xmark" size={14} tintColor="#fff" />
+        </Pressable>
+      ) : null}
       {reviewBar}
       <FilesToastHost bottomOffset={reviewBarHeight} />
       {moving && node ? (
@@ -498,6 +514,7 @@ export function FileDocumentScreen({ navigation, route }: Props) {
 }
 
 const styles = StyleSheet.create({
+  endShow: { position: 'absolute', right: 16, width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.18)' },
   flex: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32, gap: 10 },
   centerTitle: { fontSize: 20, fontWeight: '600', textAlign: 'center' },

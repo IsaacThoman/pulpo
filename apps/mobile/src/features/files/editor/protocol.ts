@@ -78,7 +78,7 @@ export type HostMessage =
 export type TextCommand = 'undo' | 'redo' | 'indentMore' | 'indentLess' | 'find' | 'wrap'
 
 /** The presentation editor's toolbar. */
-export type PresentationCommand = 'undo' | 'redo' | 'newSlide' | 'textBox' | 'shape' | 'bold' | 'italic' | 'bullets' | 'delete' | 'present'
+export type PresentationCommand = 'undo' | 'redo' | 'newSlide' | 'textBox' | 'shape' | 'bold' | 'italic' | 'bullets' | 'delete' | 'present' | 'endShow'
 
 /** What a presentation editor's toolbar shows. */
 export interface PresentationEditorState {
@@ -93,6 +93,8 @@ export interface PresentationEditorState {
   hasSelection: boolean
   slideCount: number
   readOnly: boolean
+  /** The slide show is running: the app gives the page the whole screen. Older pages omit it. */
+  presenting?: boolean
 }
 
 export interface ActiveSuggestion {

@@ -135,6 +135,17 @@ describe('presentation editor bridge with the built page', () => {
     expect(readSnapshot(replica).slides.length).toBe(readSnapshot(doc).slides.length)
   })
 
+  it('tells the app while the slide show runs, and ends it on request', async () => {
+    const { bridge, page } = await open('generated/text-formatting.pptx')
+    expect(bridge.getState().presentation?.presenting).toBe(false)
+    bridge.command('present')
+    await page.flush()
+    expect(bridge.getState().presentation?.presenting).toBe(true)
+    bridge.command('endShow')
+    await page.flush()
+    expect(bridge.getState().presentation?.presenting).toBe(false)
+  })
+
   it('opens read only when the document cannot be edited', async () => {
     const { bridge, page } = await open('generated/autoshapes.pptx', false)
     expect(bridge.getState().presentation?.readOnly).toBe(true)
