@@ -31,12 +31,18 @@ export interface DateParts {
 
 /** Whole days of a date in the 1900 or 1904 system, without the time. */
 export function dateToSerial(year: number, month: number, day: number, date1904 = false): number {
-  // Date.UTC normalizes overflowing months and days the way Excel's DATE does (DATE(2024,14,1)).
-  const ms = Date.UTC(year, month - 1, day)
-  if (date1904) return Math.round((ms - EPOCH_1904) / MS_PER_DAY)
-  const serial = Math.round((ms - EPOCH_1900) / MS_PER_DAY)
+  // Overflowing months normalize the way Excel's DATE does (DATE(2024,14,1) is 2025-02-01).
+  // setUTCFullYear, unlike Date.UTC, keeps years 0–99 literal.
+  const firstOfMonth = new Date(0)
+  firstOfMonth.setUTCFullYear(year, month - 1, 1)
+  const ms = firstOfMonth.getTime()
+  if (date1904) return Math.round((ms - EPOCH_1904) / MS_PER_DAY) + day - 1
+  let serial = Math.round((ms - EPOCH_1900) / MS_PER_DAY)
   // Before 1900-03-01 the 1900 system counts one day less than a real calendar.
-  return serial <= 60 ? serial - 1 : serial
+  if (serial <= 60) serial -= 1
+  // Days count on from the first of the month in Excel's calendar, which has 1900-02-29
+  // (DATE(1900,2,29) and DATE(1900,3,0) are both serial 60).
+  return serial + day - 1
 }
 
 export function timeToFraction(hours: number, minutes: number, seconds: number): number {
@@ -57,6 +63,8 @@ export function serialToParts(serial: number, date1904 = false): DateParts | und
     days += 1
     ms -= MS_PER_DAY
   }
+  if (days > (date1904 ? MAX_DATE_SERIAL_1904 : MAX_DATE_SERIAL_1900)) return undefined
+  const serialDay = days
   const time = splitTime(ms)
   if (!date1904) {
     if (days === 0) return { year: 1900, month: 1, day: 0, ...time, weekday: 6 }
@@ -70,7 +78,7 @@ export function serialToParts(serial: number, date1904 = false): DateParts | und
     day: date.getUTCDate(),
     ...time,
     // Excel's WEEKDAY carries the fake leap day too, so days before it are off by one: serial 1 is a Sunday.
-    weekday: date1904 ? date.getUTCDay() : excelWeekday1900(Math.floor(serial)),
+    weekday: date1904 ? date.getUTCDay() : excelWeekday1900(serialDay),
   }
 }
 
