@@ -768,6 +768,6 @@ export async function importDocx(bytes: Uint8Array, assets: LiveAssetStore): Pro
 }
 
 /** `w:settings` children the model reads (layout) or writes (track changes). */
-export const MODELED_SETTINGS = ['w:trackRevisions', 'w:evenAndOddHeaders', 'w:defaultTabStop', 'w:updateFields', 'w:mirrorMargins', 'w:gutterAtTop'] as const
+export const MODELED_SETTINGS = ['w:trackRevisions', 'w:evenAndOddHeaders', 'w:defaultTabStop', 'w:updateFields', 'w:mirrorMargins', 'w:gutterAtTop', 'w:footnotePr', 'w:endnotePr'] as const
 
 export { relationshipsPathFor }

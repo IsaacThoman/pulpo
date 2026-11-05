@@ -79,6 +79,8 @@ export interface LayoutUnit {
   section: number
   /** Notes referenced in this unit, to be placed on its page. */
   notes?: string[]
+  /** All note references, for page-based numbering without reserving space for endnotes. */
+  references?: string[]
   /** Height a row break must add for repeated header rows. */
   repeatHeader?: number
 }

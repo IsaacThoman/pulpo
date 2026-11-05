@@ -3,7 +3,7 @@ import { TableMap } from '@tiptap/pm/tables'
 import { Decoration } from '@tiptap/pm/view'
 import type { EditorView } from '@tiptap/pm/view'
 import { jmlAttr, jmlChild, jmlOn, unpackJml, type JmlElement } from '../jsonml.js'
-import { noteInventory } from '../notes.js'
+import { noteInventory, sectionProperties } from '../notes.js'
 import { effectiveParagraphProperties } from './commands.js'
 import type { DocxViewContext } from './context.js'
 import { PX_PER_PT, layoutPages, pageSetup, type LayoutResult, type LayoutUnit, type PageSetup } from './layout.js'
@@ -25,20 +25,8 @@ export interface Section {
 
 /** Sections in order: each paragraph with a `w:sectPr` ends one; the document's own ends the last. */
 export function documentSections(doc: ProseMirrorNode, finalSectPr: JmlElement | undefined): { sections: Section[]; sectionOfBlock: number[] } {
-  const sections: Section[] = []
-  const sectionOfBlock: number[] = []
-  doc.forEach((node) => {
-    sectionOfBlock.push(sections.length)
-    let ends: JmlElement | undefined
-    if (node.type.name === 'paragraph') ends = jml(node.attrs.sectPr)
-    else node.descendants((child) => {
-      if (child.type.name === 'paragraph' && child.attrs.sectPr && !ends) ends = jml(child.attrs.sectPr)
-      return !ends
-    })
-    if (ends) sections.push({ sectPr: ends, setup: pageSetup(ends) })
-  })
-  sections.push({ sectPr: finalSectPr, setup: pageSetup(finalSectPr) })
-  return { sections, sectionOfBlock }
+  const { properties, sectionOfBlock } = sectionProperties(doc, finalSectPr)
+  return { sections: properties.map((sectPr) => ({ sectPr, setup: pageSetup(sectPr) })), sectionOfBlock }
 }
 
 /** Where a unit's spacer goes. */
@@ -128,7 +116,7 @@ function measureParagraph(view: EditorView, node: ProseMirrorNode, pos: number, 
   lines[0] = { top: box.top, bottom: lines[0]!.bottom }
   if (lines.length === 1) lines[0] = { top: box.top, bottom: Math.max(lines[0]!.bottom, box.bottom) }
   // A raised note mark sits above its line's top; place it by its middle.
-  const notes = [...dom.querySelectorAll<HTMLElement>('.docx-noteref[data-note^="footnote:"]')].map((element) => {
+  const notes = [...dom.querySelectorAll<HTMLElement>('.docx-noteref[data-note]')].map((element) => {
     const box = rectIn(frame, element.getBoundingClientRect())
     return { id: element.dataset.note!, middle: (box.top + box.bottom) / 2 }
   })
@@ -156,7 +144,8 @@ function measureParagraph(view: EditorView, node: ProseMirrorNode, pos: number, 
       widowControl,
       breakBefore: (index === 0 && pageBreakBefore) || breaks.some((bottom) => bottom <= line.top + 1 && bottom > (lines[index - 1]?.top ?? -Infinity)),
       section,
-      notes: notes.filter((note) => lineOf(note.middle) === index).map((note) => note.id),
+      references: notes.filter((note) => lineOf(note.middle) === index).map((note) => note.id),
+      notes: notes.filter((note) => note.id.startsWith('footnote:') && lineOf(note.middle) === index).map((note) => note.id),
     })
     out.anchors.push(index === 0 ? { kind: 'block', pos } : { kind: 'line', paragraph: dom, paragraphPos: pos, top: line.top })
   })
@@ -179,8 +168,8 @@ function measureTable(view: EditorView, node: ProseMirrorNode, pos: number, bloc
   }
   rows.forEach((row, index) => {
     const box = rectIn(frame, row.getBoundingClientRect())
-    const notes = [...row.querySelectorAll<HTMLElement>('.docx-noteref[data-note^="footnote:"]')].map((element) => element.dataset.note!)
-    out.units.push({ top: box.top, bottom: box.bottom, block, kind: index === 0 ? 'block' : 'row', section, notes, repeatHeader: index >= headerRows ? header : 0 })
+    const references = [...row.querySelectorAll<HTMLElement>('.docx-noteref[data-note]')].map((element) => element.dataset.note!)
+    out.units.push({ top: box.top, bottom: box.bottom, block, kind: index === 0 ? 'block' : 'row', section, references, notes: references.filter((id) => id.startsWith('footnote:')), repeatHeader: index >= headerRows ? header : 0 })
     out.anchors.push(index === 0 ? { kind: 'block', pos } : { kind: 'row', table: node, tablePos: pos, row: index })
   })
 }
@@ -211,7 +200,10 @@ export function measureDocument(view: EditorView, context: DocxViewContext, sect
     top++
   })
   const notes = noteInventory(view.state.doc)
-  for (const unit of out.units) if (unit.notes) unit.notes = unit.notes.filter((id) => notes.has(id))
+  for (const unit of out.units) {
+    if (unit.notes) unit.notes = unit.notes.filter((id) => notes.has(id))
+    if (unit.references) unit.references = unit.references.filter((id) => notes.has(id))
+  }
   return out
 }
 

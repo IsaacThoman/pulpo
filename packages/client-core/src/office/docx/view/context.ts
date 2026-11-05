@@ -4,6 +4,7 @@ import { jmlAttr, jmlNumber, unpackJml, type JmlElement } from '../jsonml.js'
 import { parseJson, readDocxMap, readTheme, type CommentMeta } from '../model.js'
 import { Numbering } from '../numbering.js'
 import { StyleSheet } from '../styles.js'
+import type { NoteDefaults } from '../notes.js'
 
 /**
  * What rendering needs besides a story's own nodes: styles, numbering, theme, settings, the
@@ -19,6 +20,7 @@ export class DocxViewContext {
   evenAndOddHeaders = false
   trackRevisions = false
   finalSectPr: JmlElement | undefined
+  noteDefaults: NoteDefaults = {}
   comments = new Map<string, CommentMeta>()
   /** Bumped on every rebuild; plugins compare it to know when to recompute. */
   version = 0
@@ -45,6 +47,7 @@ export class DocxViewContext {
     this.theme = readTheme(this.doc)
     this.finalSectPr = unpackJml<JmlElement>(meta.get('sectPr'))
     const settings = readDocxMap(this.doc, 'settings')
+    this.noteDefaults = { footnote: unpackJml<JmlElement>(settings.get('w:footnotePr')), endnote: unpackJml<JmlElement>(settings.get('w:endnotePr')) }
     const tab = jmlNumber(unpackJml<JmlElement>(settings.get('w:defaultTabStop')), 'w:val')
     this.defaultTabStop = tab && tab > 0 ? tab / 20 : 36
     const onOff = (name: string) => {

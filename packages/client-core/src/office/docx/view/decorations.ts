@@ -5,6 +5,7 @@ import { borderCss, cssIdent, cssText, fontStack, isThemeFontVar, latinFont, run
 import { jmlAttr, jmlChild, jmlNumber, unpackJml, type JmlElement } from '../jsonml.js'
 import { ListCounter, effectiveNumPr, formatNumber } from '../numbering.js'
 import { inlineMarks } from '../schema.js'
+import { noteProperties } from '../notes.js'
 import { cellConditions, mergeElement, propertyMap, tableLook, type PropertyMap } from '../styles.js'
 import type { DocxViewContext } from './context.js'
 import { tableConditionChain } from './stylesheet.js'
@@ -267,7 +268,6 @@ function commentDecorations(doc: ProseMirrorNode, input: DecorationInput, decora
 export function computeDecorations(doc: ProseMirrorNode, input: DecorationInput): DecorationSet {
   const decorations: Decoration[] = []
   const counter = new ListCounter(input.context.numbering)
-  const footnoteFormat = jmlAttr(jmlChild(jmlChild(input.context.finalSectPr, 'w:footnotePr'), 'w:numFmt'), 'w:val')
   doc.descendants((node, pos) => {
     switch (node.type.name) {
       case 'paragraph': {
@@ -284,14 +284,14 @@ export function computeDecorations(doc: ProseMirrorNode, input: DecorationInput)
         return true
       case 'noteRef': {
         const kind = node.attrs.kind === 'endnote' ? 'endnote' : 'footnote'
-        const label = noteLabel(input.noteNumbers.get(`${kind}:${node.attrs.id}`), kind === 'footnote' ? footnoteFormat : 'lowerRoman')
+        const label = noteLabel(input.noteNumbers.get(`${kind}:${node.attrs.id}`), noteProperties(kind, input.context.noteDefaults, input.context.finalSectPr).format)
         decorations.push(nodeDecoration(pos, pos + 1, { 'data-label': label }, input))
         return false
       }
       case 'inlineXml': {
         const name = jml(node.attrs.v)?.[0]
         if ((name === 'w:footnoteRef' || name === 'w:endnoteRef') && input.noteNumber !== undefined) {
-          const format = name === 'w:endnoteRef' ? (jmlAttr(jmlChild(jmlChild(input.context.finalSectPr, 'w:endnotePr'), 'w:numFmt'), 'w:val') ?? 'lowerRoman') : footnoteFormat
+          const format = noteProperties(name === 'w:endnoteRef' ? 'endnote' : 'footnote', input.context.noteDefaults, input.context.finalSectPr).format
           const label = typeof input.noteNumber === 'string' ? input.noteNumber : noteLabel(input.noteNumber, format)
           decorations.push(nodeDecoration(pos, pos + 1, { 'data-label': label }, input))
         }
