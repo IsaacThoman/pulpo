@@ -39,6 +39,10 @@ const NativeDocEditor = PulpoDocEditor
 /** Whether this binary has the native editor host (older binaries and other platforms do not). */
 export const docEditorAvailable = NativeDocEditor !== null
 
+/** The native web view host itself, for pages that are not a document session (a deck's review diff). */
+export { NativeDocEditor }
+export type { NativeProps as NativeDocEditorProps, NativeRef as NativeDocEditorRef }
+
 /**
  * Sessions whose editor is closing: the native host pulls the page's whole state one last time,
  * and the session is held until it is merged (or a short wait passes).

@@ -4,7 +4,7 @@ import { useNavigation } from '@react-navigation/native'
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as Haptics from 'expo-haptics'
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { ActivityIndicator, Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { ApiError } from '../../../api/client'
@@ -14,6 +14,8 @@ import { useAppTheme } from '../../../theme'
 import { fetchChangeText, fetchFileNode, resolveFileChange, updateFileChanges } from '../api'
 import { changeLabel, conflictReason } from '../changeLabels'
 import { fileIcon, filesErrorMessage } from '../display'
+import { docEditorAvailable } from '../editor/DocEditorView'
+import { PresentationChangeDiff } from '../editor/PresentationChangeDiff'
 import { previewUploadedFile } from '../open'
 import { refreshFiles } from '../operations'
 import { fileChangesQuery, filesQueryKeys } from '../queries'
@@ -52,12 +54,17 @@ function DiffLines({ before, after }: { before: string; after: string }) {
  */
 function ChangeSheet({ change, namespace, responseId, onClose }: { change: FileChangeSummary; namespace: string; responseId: string; onClose: () => void }) {
   const theme = useAppTheme()
+  // Decks compare slide by slide, with thumbnails, in the presentation page; text is the fallback.
+  const [visualFailed, setVisualFailed] = useState(false)
+  const visual = change.format === 'presentation' && change.contentDiff === true && docEditorAvailable && !visualFailed
+  const onVisualFailed = useCallback(() => setVisualFailed(true), [])
   // Under the reply's Files key, so a revised proposal (the same change row, new content)
   // invalidates it with the change list and nobody reviews one version and accepts another.
   const versions = useQuery({
     queryKey: filesQueryKeys.changeText(namespace, responseId, change.id),
     queryFn: () => fetchChangeText(change.id),
     staleTime: Infinity,
+    enabled: !visual,
   })
   return (
     <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
@@ -66,14 +73,21 @@ function ChangeSheet({ change, namespace, responseId, onClose }: { change: FileC
           <Text accessibilityRole="header" numberOfLines={1} style={[styles.sheetTitle, { color: theme.text }]}>{change.name}</Text>
           <Pressable accessibilityRole="button" hitSlop={10} onPress={onClose} style={styles.sheetDone}><Text style={[styles.sheetDoneLabel, { color: theme.blue }]}>Done</Text></Pressable>
         </View>
-        <ScrollView contentContainerStyle={styles.sheetContent} testID="file-change-diff">
+        {visual ? (
+          <View style={styles.flex} testID="file-change-diff">
+            <Text style={[styles.sheetIntro, styles.visualIntro, { color: theme.secondary }]}>
+              {pendingSuggestion(change) ? 'What keeping the agent’s suggestion would change:' : 'What the agent changed:'}
+            </Text>
+            <PresentationChangeDiff key={change.id} changeId={change.id} onFailed={onVisualFailed} />
+          </View>
+        ) : <ScrollView contentContainerStyle={styles.sheetContent} testID="file-change-diff">
           <Text style={[styles.sheetIntro, { color: theme.secondary }]}>
             {pendingSuggestion(change) ? 'What keeping the agent’s suggestion would change:' : 'What the agent changed:'}
           </Text>
           {versions.isPending ? <ActivityIndicator color={theme.secondary} /> : versions.isError ? (
             <Text style={[styles.conflictReason, { color: theme.red }]}>{filesErrorMessage(versions.error)}</Text>
           ) : <View style={[styles.conflict, { borderColor: theme.separator }]}><DiffLines before={versions.data.before} after={versions.data.after} /></View>}
-        </ScrollView>
+        </ScrollView>}
       </SafeAreaView>
     </Modal>
   )
@@ -263,6 +277,7 @@ const styles = StyleSheet.create({
   sheetDoneLabel: { fontSize: 17, fontWeight: '600' },
   sheetContent: { padding: 16, gap: 12 },
   sheetIntro: { fontSize: 15, lineHeight: 21 },
+  visualIntro: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4 },
   conflict: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 12, padding: 12, gap: 4 },
   conflictName: { fontSize: 16, fontWeight: '600' },
   conflictReason: { fontSize: 14 },

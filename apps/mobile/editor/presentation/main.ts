@@ -11,6 +11,7 @@ import { applyAwarenessUpdate, Awareness, removeAwarenessStates } from 'y-protoc
 import * as Y from 'yjs'
 import { base64ToBytes, bytesToBase64 } from '../../src/features/files/editor/base64'
 import { EDITOR_PROTOCOL_VERSION, type EditorMessage, type EditorTheme, type HostMessage, type PresentationEditorState } from '../../src/features/files/editor/protocol'
+import { showPresentationDiff, type ShownDiff } from './diff'
 import './presentation.css'
 
 declare global {
@@ -161,6 +162,38 @@ function start(message: Extract<HostMessage, { type: 'init' }>): void {
   report()
 }
 
+let shownDiff: { session: number; view?: ShownDiff } | null = null
+const diffRoot = document.getElementById('diff')!
+
+function closeDiff(): void {
+  shownDiff?.view?.destroy()
+  shownDiff = null
+  diffRoot.hidden = true
+  document.getElementById('editor')!.hidden = false
+}
+
+/** Review mode: an agent's proposed deck against the current one, instead of the editor. */
+function showDiff(message: Extract<HostMessage, { type: 'presentationDiff' }>): void {
+  close()
+  closeDiff()
+  applyTheme(message.theme)
+  const session = message.session
+  const current: { session: number; view?: ShownDiff } = { session }
+  shownDiff = current
+  document.getElementById('editor')!.hidden = true
+  diffRoot.hidden = false
+  showPresentationDiff(diffRoot, base64ToBytes(message.before), base64ToBytes(message.after)).then(
+    (view) => {
+      if (shownDiff !== current) return view.destroy()
+      current.view = view
+      post({ type: 'loaded', session })
+    },
+    (error: unknown) => {
+      if (shownDiff === current) post({ type: 'error', session, message: error instanceof Error ? error.message : String(error) })
+    },
+  )
+}
+
 function command(current: Open, name: string): void {
   const { controller } = current
   switch (name) {
@@ -194,7 +227,12 @@ function receive(raw: string): void {
     return
   }
   if (message.type === 'init') {
+    closeDiff()
     start(message)
+    return
+  }
+  if (message.type === 'presentationDiff') {
+    showDiff(message)
     return
   }
   const current = open

@@ -69,6 +69,11 @@ export type HostMessage =
   | { type: 'asset'; session: number; requestId: string; data?: string; error?: string }
   /** The file was renamed; text editors pick their language from the name. */
   | { type: 'name'; session: number; name: string }
+  /**
+   * Shows an agent's proposed deck against the current one instead of an editor: both versions
+   * as .pptx bytes (base64). The page answers `loaded`, or `error` when a version cannot be read.
+   */
+  | { type: 'presentationDiff'; session: number; before: string; after: string; theme: EditorTheme }
 
 export type TextCommand = 'undo' | 'redo' | 'indentMore' | 'indentLess' | 'find' | 'wrap'
 

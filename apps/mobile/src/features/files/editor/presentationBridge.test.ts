@@ -143,4 +143,53 @@ describe('presentation editor bridge with the built page', () => {
     await page.flush()
     expect(bridge.getState().presentation?.readOnly).toBe(false)
   })
+
+  it('reviews a proposed deck: changed slides with before and after thumbnails, escaped', async () => {
+    const messages: string[] = []
+    const dom = new JSDOM(PRESENTATION_EDITOR_BUNDLE.html, {
+      runScripts: 'dangerously',
+      pretendToBeVisual: true,
+      beforeParse: (window) => {
+        (window as unknown as { webkit: unknown }).webkit = { messageHandlers: { pulpoEditor: { postMessage: (message: string) => messages.push(message) } } }
+        window.URL.createObjectURL = () => `blob:test/${Math.random().toString(36).slice(2)}`
+      },
+    })
+    const before = fixture('generated/text-formatting.pptx')
+    // The proposal changes one slide's text, with markup that must stay text.
+    const assets = new MemoryLiveAssetStore()
+    const doc = new Y.Doc()
+    await presentationCodec.importFile(doc, before, { name: 'deck.pptx', assets })
+    const { presentationCommands, plainToText } = await import('@pulpo/client-core/office/presentation')
+    const slide = readSnapshot(doc).slides[1]!
+    presentationCommands.setShapeText(doc, slide.key, slide.shapes.find((shape) => shape.text)!.key, plainToText('<img src=x onerror=alert(1)> proposed'))
+    const after = await presentationCodec.exportFile(doc, { name: 'deck.pptx', assets })
+    const window = dom.window as unknown as { pulpoEditor: { receive(message: string): void }; document: Document }
+    window.pulpoEditor.receive(JSON.stringify({ type: 'presentationDiff', session: 7, before: Buffer.from(before).toString('base64'), after: Buffer.from(after).toString('base64'), theme }))
+    for (let round = 0; round < 100 && !messages.some((message) => message.includes('"loaded"')); round++) await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(messages.slice(1).join('\n')).toContain('"loaded"')
+    const cards = window.document.querySelectorAll('[data-presentation-diff] .pd-card')
+    expect(cards).toHaveLength(1)
+    expect(cards[0]!.getAttribute('data-status')).toBe('edited')
+    expect(cards[0]!.querySelectorAll('.pd-thumb .pp-slide')).toHaveLength(2)
+    expect(cards[0]!.querySelector('.pd-added')?.textContent).toContain('proposed')
+    expect(window.document.querySelector('img[src="x"]')).toBeNull()
+    expect(window.document.getElementById('editor')!.hidden).toBe(true)
+    dom.window.close()
+  })
+
+  it('reports an error for a version that is not a deck', async () => {
+    const messages: string[] = []
+    const dom = new JSDOM(PRESENTATION_EDITOR_BUNDLE.html, {
+      runScripts: 'dangerously',
+      pretendToBeVisual: true,
+      beforeParse: (window) => {
+        (window as unknown as { webkit: unknown }).webkit = { messageHandlers: { pulpoEditor: { postMessage: (message: string) => messages.push(message) } } }
+      },
+    })
+    const window = dom.window as unknown as { pulpoEditor: { receive(message: string): void } }
+    window.pulpoEditor.receive(JSON.stringify({ type: 'presentationDiff', session: 3, before: Buffer.from('not a zip').toString('base64'), after: Buffer.from('nope').toString('base64'), theme }))
+    for (let round = 0; round < 100 && !messages.some((message) => message.includes('"error"')); round++) await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(messages.some((message) => { const parsed = JSON.parse(message) as { type: string; session?: number }; return parsed.type === 'error' && parsed.session === 3 })).toBe(true)
+    dom.window.close()
+  })
 })
