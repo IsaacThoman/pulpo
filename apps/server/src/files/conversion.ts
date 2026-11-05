@@ -72,9 +72,10 @@ async function readConvertibleFile(node: FileNodeRow, maxBytes: number): Promise
  * Turns an uploaded file into a live document of the format its name gives it. Markdown converts
  * as it always has; other formats go through their codec, which keeps every byte. The row changes
  * kind in the transaction; the caller deletes the old object only after commit, so a failure
- * keeps the file.
+ * keeps the file. Asset objects it stores are pushed onto `writtenKeys` as they are written, for
+ * the caller to delete if the transaction does not commit.
  */
-export async function convertBlobToDocInTx(tx: DatabaseTransaction, node: FileNodeRow): Promise<{ row: FileNodeRow; objectKey: string }> {
+export async function convertBlobToDocInTx(tx: DatabaseTransaction, node: FileNodeRow, writtenKeys: string[] = []): Promise<{ row: FileNodeRow; objectKey: string }> {
   const format = formatForName(node.name)
   const initial = format.id === 'markdown'
     ? await initialLiveDoc(tx, format, node.name, { markdown: await readMarkdownFile(node) })
@@ -84,7 +85,7 @@ export async function convertBlobToDocInTx(tx: DatabaseTransaction, node: FileNo
     nodeId: node.id, state: initial.state, stateBytes: initial.state.byteLength,
     markdown: initial.text, schemaVersion: format.schemaVersion, generation: initial.generation,
   })
-  await initial.assets.flush(tx, node.ownerUserId, node.id)
+  writtenKeys.push(...await initial.assets.flush(tx, node.ownerUserId, node.id))
   const [row] = await tx.update(fileNodes).set({
     kind: 'doc', format: format.id, objectKey: null, checksum: null, mimeType: liveMimeType(format, node.name),
     sizeBytes: initial.state.byteLength, updatedAt: new Date(),

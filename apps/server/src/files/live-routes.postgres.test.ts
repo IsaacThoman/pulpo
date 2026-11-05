@@ -149,6 +149,25 @@ describe.skipIf(!enabled)('live document routes and lifecycle', () => {
     expect(converted.json()).toMatchObject({ kind: 'doc', format: 'text' })
   })
 
+  it('checks the storage a converted document really takes, when decoding grows it', async () => {
+    // Windows-1252: each euro sign is one byte here but three in the document's UTF-8 text, and
+    // the codec keeps the original bytes beside it too.
+    const legacy = Buffer.from(Array.from({ length: 400 }, () => 'Price: \x80 5\n').join(''), 'latin1')
+    const objectKey = `users/${userId}/files/${randomUUID()}`
+    objects.set(objectKey, legacy)
+    const [upload] = await db.insert(fileNodes).values({
+      id: randomUUID(), ownerUserId: userId, parentId: null, kind: 'blob', name: 'prices.txt', status: 'ready',
+      objectKey, sizeBytes: legacy.byteLength, mimeType: 'text/plain', checksum: createHash('sha256').update(legacy).digest('base64url'),
+    }).returning()
+    // Room for the upload twice over (what the reservation checks), but not for what it becomes.
+    await db.update(users).set({ storageLimitBytes: legacy.byteLength * 2 + 100 }).where(eq(users.id, userId))
+    const refused = await app.inject({ method: 'POST', url: `/api/files/${upload!.id}/convert`, headers: { 'x-test-user': userId } })
+    expect(refused.statusCode).toBe(413)
+    expect(await db.select().from(fileNodes).where(eq(fileNodes.id, upload!.id))).toEqual([expect.objectContaining({ kind: 'blob', objectKey })])
+    expect(await db.select().from(fileDocAssets).where(eq(fileDocAssets.nodeId, upload!.id))).toEqual([])
+    expect([...objects.keys()].filter((key) => key.startsWith(`users/${userId}/`))).toEqual([objectKey])
+  })
+
   it('collects assets nothing refers to any more, after a grace period', async () => {
     const node = await createDoc(userId, { parentId: null, name: 'mixed.txt' })
     const mixed = Buffer.from('a\r\nb\nc\r\n')
