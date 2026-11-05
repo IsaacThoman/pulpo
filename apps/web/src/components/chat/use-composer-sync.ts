@@ -30,7 +30,7 @@ export function useComposerSync(userId: string | undefined, draftId: string, sta
     wasEditing.current = false
     applying.current = false
     hiddenSubmission.current = null
-    void sync.open(draftId, latest.current.state, (checkpoint) => {
+    void sync.open(draftId, () => latest.current.state, (checkpoint) => {
       if (disposed || latest.current.state.temporary || !useComposerSyncPreference.getState().enabled || useComposerSyncPreference.getState().generation !== generation || latest.current.identity !== identity) return
       opened.current = identity
       let remote = { ...checkpoint.snapshot.state, ...checkpoint.pending }
