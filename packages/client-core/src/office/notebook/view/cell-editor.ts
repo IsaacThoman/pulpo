@@ -128,6 +128,9 @@ export function createCellEditor(options: CellEditorOptions): CellEditor {
     state: EditorState.create({
       doc: options.text.toString(),
       extensions: [
+        // yCollab uses LF-based offsets and serialization. Split only on LF so a stored
+        // CR stays a literal character instead of being silently dropped or rewritten.
+        EditorState.lineSeparator.of('\n'),
         highlightSpecialChars(),
         drawSelection(),
         EditorState.allowMultipleSelections.of(true),
