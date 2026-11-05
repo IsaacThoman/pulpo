@@ -20,6 +20,8 @@ import { clipboardSerializer, rememberCopy } from './clipboard.js'
 import { listDefinition } from './commands.js'
 import { DocxEditor } from './editor.js'
 import { listRevisions } from './track-changes.js'
+import { pageSetup } from './layout.js'
+import type { Section } from './paginate.js'
 
 const schema = docxSchema()
 let assets: MemoryAssetStore
@@ -112,7 +114,7 @@ describe('header and footer fields and targets', () => {
   })
 })
 
-describe('custom note rendering', () => {
+describe('custom note rendering and zoom measurements', () => {
   it.each(['web', 'print'] as const)('keeps custom footnotes and endnotes in the %s inventory', (layout) => {
     const refs = []
     for (const kind of ['footnote', 'endnote'] as const) {
@@ -144,6 +146,30 @@ describe('custom note rendering', () => {
     expect(labels).toEqual(['1', '', '2', 'i', '', 'ii'])
   })
 
+  it.each([0.25, 0.5, 1, 2, 4])('measures offscreen stories in layout pixels at zoom %s', (zoom) => {
+    const rect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      const offscreen = this.style.left === '-10000px' || this.parentElement?.style.left === '-10000px'
+      return new DOMRect(0, 0, 600, offscreen ? 80 : 0)
+    })
+    try {
+      editor.view.dispatch(editor.view.state.tr.insert(1, [schema.node('noteRef', { kind: 'footnote', id: '1' }), schema.node('noteRef', { kind: 'endnote', id: '1' })]))
+      doc.getMap('rels').set('header', JSON.stringify({ type: REL.header, target: '/1' }))
+      const sectPr: JmlElement = ['w:sectPr', {}, ['w:headerReference', { 'r:id': 'header' }]]
+      const sections: Section[] = [{ sectPr, setup: pageSetup(sectPr) }]
+      editor.setLayout('print')
+      editor.setZoom(zoom)
+      const measured = editor as unknown as {
+        storyHeights(width: number): (sections: Section[], index: number, kind: 'header' | 'footer', type: 'default') => number
+        measureNotes(width: number): void
+        noteHeights: Map<string, number>
+        renderWebNotes(placement: undefined, width: number): number
+      }
+      expect(measured.storyHeights(600)(sections, 0, 'header', 'default')).toBe(80)
+      measured.measureNotes(600)
+      expect(measured.noteHeights.get('footnote:1')).toBe(80)
+      expect(measured.renderWebNotes(undefined, 600)).toBe(80)
+    } finally { rect.mockRestore() }
+  })
 })
 
 describe('story review', () => {

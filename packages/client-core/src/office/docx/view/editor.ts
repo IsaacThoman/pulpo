@@ -1778,8 +1778,9 @@ export class DocxEditor {
         const measure = document.createElement('div')
         measure.style.cssText = `position:absolute;visibility:hidden;left:-10000px;top:0;width:${width}px`
         measure.appendChild(renderStory(doc, { urls: this.urls, labels: this.labels, fields: { page: 1, pages: 1 }, context: this.context }))
+        // This host is outside the zoomed canvas, so its height is already in layout pixels.
         this.root.appendChild(measure)
-        height = measure.getBoundingClientRect().height / (this.zoomLevel || 1)
+        height = measure.getBoundingClientRect().height
         measure.remove()
       }
       cache.set(storyId, height)
@@ -1814,7 +1815,7 @@ export class DocxEditor {
       if (!doc) continue
       const element = renderStory(doc, { urls: this.urls, labels: this.labels, noteNumber: number, noteNumbers: numbers, context: this.context })
       measure.appendChild(element)
-      this.noteHeights.set(key, element.getBoundingClientRect().height / (this.zoomLevel || 1))
+      this.noteHeights.set(key, element.getBoundingClientRect().height)
     }
     measure.remove()
   }
@@ -1959,7 +1960,7 @@ export class DocxEditor {
     if (measureWidth !== undefined) {
       this.notesHost.style.cssText = `position:absolute;visibility:hidden;left:-10000px;top:0;width:${measureWidth}px`
       this.root.appendChild(this.notesHost)
-      const height = this.notesHost.getBoundingClientRect().height / (this.zoomLevel || 1)
+      const height = this.notesHost.getBoundingClientRect().height
       this.notesHost.remove()
       return height
     }
