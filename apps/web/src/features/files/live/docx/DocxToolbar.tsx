@@ -353,11 +353,11 @@ export function DocxToolbar({ editor, state, onRequestLink, onTogglePanel, panel
           <DropdownMenuContent onCloseAutoFocus={keepEditorFocus} align="start" className="w-56">
             <DropdownMenuItem onSelect={() => editor.addRowBefore()}>{ui("Insert row above")}</DropdownMenuItem>
             <DropdownMenuItem onSelect={() => editor.addRowAfter()}>{ui("Insert row below")}</DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => editor.addColumnBefore()}>{ui("Insert column left")}</DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => editor.addColumnAfter()}>{ui("Insert column right")}</DropdownMenuItem>
+            <DropdownMenuItem disabled={!state.tableColumnsEditable} onSelect={() => editor.addColumnBefore()}>{ui("Insert column left")}</DropdownMenuItem>
+            <DropdownMenuItem disabled={!state.tableColumnsEditable} onSelect={() => editor.addColumnAfter()}>{ui("Insert column right")}</DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={() => editor.mergeCells()}>{ui("Merge cells")}</DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => editor.splitCell()}>{ui("Split cell")}</DropdownMenuItem>
+            <DropdownMenuItem disabled={!state.tableColumnsEditable} onSelect={() => editor.mergeCells()}>{ui("Merge cells")}</DropdownMenuItem>
+            <DropdownMenuItem disabled={!state.tableColumnsEditable} onSelect={() => editor.splitCell()}>{ui("Split cell")}</DropdownMenuItem>
             <DropdownMenuSub>
               <DropdownMenuSubTrigger>{ui("Borders")}</DropdownMenuSubTrigger>
               <DropdownMenuSubContent>
@@ -380,7 +380,7 @@ export function DocxToolbar({ editor, state, onRequestLink, onTogglePanel, panel
             </DropdownMenuSub>
             <DropdownMenuSeparator />
             <DropdownMenuItem variant="destructive" onSelect={() => editor.deleteRow()}>{ui("Delete row")}</DropdownMenuItem>
-            <DropdownMenuItem variant="destructive" onSelect={() => editor.deleteColumn()}>{ui("Delete column")}</DropdownMenuItem>
+            <DropdownMenuItem variant="destructive" disabled={!state.tableColumnsEditable} onSelect={() => editor.deleteColumn()}>{ui("Delete column")}</DropdownMenuItem>
             <DropdownMenuItem variant="destructive" onSelect={() => editor.deleteTable()}>{ui("Delete table")}</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

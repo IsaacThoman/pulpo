@@ -84,6 +84,46 @@ try {
     assert.deepEqual(errors, [])
   })
 
+  await step('reviews header suggestions and immediately enforces read-only in an open story', async () => {
+    await open('?file=sections-headers.docx')
+    await page.evaluate(() => window.harness.editors[0].setMode('suggesting'))
+    await page.locator('.docx-band .docx-story', { hasText: 'First-page header' }).first().dblclick()
+    const story = page.locator('.docx-story-editor')
+    await page.keyboard.type('Header suggestion ')
+    const revisions = await page.evaluate(() => window.harness.editors[0].revisions())
+    assert.ok(revisions.some((revision) => revision.storyId?.startsWith('header:') && revision.text.includes('Header suggestion')))
+    await page.getByRole('button', { name: 'Review changes', exact: true }).click()
+    const card = page.locator('[data-docx-review] article', { hasText: 'Header suggestion' }).first()
+    await card.getByText('Header', { exact: true }).waitFor()
+    await card.locator('button').first().click()
+    await story.waitFor()
+    await page.evaluate(() => window.harness.editors[0].acceptAll())
+    assert.equal(await page.evaluate(() => window.harness.editors[0].revisions().length), 0)
+    const before = await story.textContent()
+    await page.evaluate(() => window.harness.editors[0].setReadOnly(true))
+    assert.equal(await story.getAttribute('contenteditable'), 'false')
+    await page.keyboard.type('Forbidden story edit')
+    assert.equal(await story.textContent(), before)
+    assert.doesNotMatch(await exported('header'), /Forbidden story edit/)
+    assert.match(await exported('header'), /Header suggestion/)
+  })
+
+  await step('disables table column and cell structure changes while suggesting', async () => {
+    await open('?file=tables.docx')
+    await flow.locator('td p').first().click()
+    await page.evaluate(() => window.harness.editors[0].setMode('suggesting'))
+    const result = await page.evaluate(() => {
+      const editor = window.harness.editors[0]
+      return ['addColumnBefore', 'addColumnAfter', 'deleteColumn', 'mergeCells', 'splitCell'].map((command) => editor[command]())
+    })
+    assert.deepEqual(result, [false, false, false, false, false])
+    await page.getByRole('button', { name: 'Table', exact: true }).click()
+    for (const name of ['Insert column left', 'Insert column right', 'Delete column', 'Merge cells', 'Split cell']) {
+      assert.equal(await page.getByRole('menuitem', { name, exact: true }).getAttribute('data-disabled'), '')
+    }
+    await page.keyboard.press('Escape')
+  })
+
   await step('types, formats with shortcuts, and undoes', async () => {
     await open('?file=basic-formatting.docx')
     if (screenshots) await page.screenshot({ path: `${screenshots}/docx-editor-light.png` })

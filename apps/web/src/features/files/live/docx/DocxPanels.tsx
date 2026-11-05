@@ -183,6 +183,7 @@ export function ReviewPanel({ editor, onClose }: { editor: DocxEditor; onClose: 
   const state = useEditorValue(editor, () => editor.state())
   const [showMarkup, setShowMarkup] = useState(true)
   const labels = KIND_LABELS()
+  const stories: Record<string, string> = { header: ui("Header"), footer: ui("Footer"), footnote: ui("Footnote"), endnote: ui("Endnote") }
   const readOnly = state.readOnly
   return (
     <PanelFrame title={ui("Tracked changes")} onClose={onClose}>
@@ -197,9 +198,10 @@ export function ReviewPanel({ editor, onClose }: { editor: DocxEditor; onClose: 
         </label>
         {revisions.map((revision) => (
           <article key={revision.key} className="rounded-lg border bg-card p-2 text-sm" data-revision={revision.kind}>
-            <button type="button" className="block w-full cursor-pointer text-left" onClick={() => editor.goTo(revision.from - 1)}>
+            <button type="button" className="block w-full cursor-pointer text-left" onClick={() => editor.goTo(revision.from - 1, revision.storyId)}>
               <div className="flex items-baseline gap-2">
                 <span className="font-medium">{labels[revision.kind]}</span>
+                {revision.storyId && <span className="text-xs text-muted-foreground">{stories[revision.storyId.split(':')[0]!]}</span>}
                 <span className="truncate text-xs text-muted-foreground">{revision.author}</span>
               </div>
               {revision.text && <p className={cn('mt-1 line-clamp-3 break-words', revision.kind === 'delete' || revision.kind === 'moveFrom' ? 'text-red-700 line-through dark:text-red-400' : 'text-green-700 dark:text-green-400')}>{revision.text}</p>}
