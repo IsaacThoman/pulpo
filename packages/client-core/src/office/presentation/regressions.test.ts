@@ -104,7 +104,7 @@ describe('regressions', () => {
     }
   })
 
-  it('keeps shape ids when duplicating a slide, so its animations still find their shapes', async () => {
+  it('keeps animation targets connected to their shapes when duplicating a slide', async () => {
     const doc = await open(fixture('poi/bug68703.pptx'))
     const [copy] = duplicateSlides(doc, [slideKeys(doc)[0]!])
     const files = await exported(doc)

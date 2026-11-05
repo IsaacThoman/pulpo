@@ -22,6 +22,15 @@ async function open(bytes = blankPresentation()) {
 }
 
 describe('presentation interaction regressions', () => {
+  it('names new shapes by the slide contents after duplication allocates random file IDs', async () => {
+    const { controller, doc } = await open()
+    controller.insertShape('rect')
+    controller.duplicateSelection()
+    const before = readSnapshot(doc).slides[0]!.shapes
+    controller.insertShape('ellipse')
+    expect(readSnapshot(doc).slides[0]!.shapes.at(-1)!.name).toBe(`Shape ${before.length + 1}`)
+  })
+
   it('blocks every controller editing command at the read-only boundary', async () => {
     const { controller, doc } = await open()
     controller.insertShape('rect')

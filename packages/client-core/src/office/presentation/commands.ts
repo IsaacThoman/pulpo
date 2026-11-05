@@ -7,7 +7,7 @@ import { DeckResources, placeholderOf, placeholderType } from './render/deck.js'
 import { slideSections } from './sections.js'
 import { EMPTY_TEXT, plainToText, textNode, type TextJSON } from './text.js'
 import { addShape, insertSlide, orderedKeys, presentationRoot, readSlideMap, readText, readXfrmMap, setCell, setNotes, setRow, setText, syncKeys } from './ydoc.js'
-import { attr, child, childElements, escapeAttribute, NS, parseFragment, path, REL_TYPES } from './xml.js'
+import { attr, child, childElements, escapeAttribute, NS, parseFragment, path, REL_TYPES, serializeNode, type XmlElement } from './xml.js'
 
 /**
  * Edits to a presentation document, shared by the editor, tests, and tools. Each runs in one
@@ -107,9 +107,8 @@ export function cloneSlide(slide: SlideSnapshot): SlideSnapshot {
   const notes = slide.notes ? cloneNotes(slide.notes) : undefined
   // Comments (legacy and modern) belong to one slide; a copy starts without them.
   const rels = Object.fromEntries(Object.entries(slide.rels).filter(([, rel]) => !/\/comments$|\/commentAuthors$/.test(rel.type)))
-  // Shape ids stay: they are unique within the slide already, and the copied animations and
-  // connector glue refer to them.
-  return { ...rest, key: newKey('slide-'), rels, shapes: slide.shapes.map((shape) => cloneShape(shape, true)), ...(notes ? { notes } : {}) }
+  const copy = cloneShapeSet(slide.shapes, { xml: slide.xml, background: slide.background })
+  return { ...rest, key: newKey('slide-'), rels, xml: copy.xml!, ...(copy.background ? { background: copy.background } : {}), shapes: copy.shapes, ...(notes ? { notes } : {}) }
 }
 
 function cloneNotes(notes: NotesSnapshot): NotesSnapshot {
@@ -117,11 +116,114 @@ function cloneNotes(notes: NotesSnapshot): NotesSnapshot {
   return rest
 }
 
-/** A copy of a shape with fresh keys; `keepIds` keeps file shape ids (when the whole slide is copied). */
+/** A copy of a shape with fresh keys; `keepIds` preserves an existing slide's id scope. */
 export function cloneShape(shape: ShapeSnapshot, keepIds = false): ShapeSnapshot {
+  return cloneShapeSet([shape], { sameSlide: true, keepIds }).shapes[0]!
+}
+
+/** Clone a selection together: connections between its members must follow the copies. */
+export function cloneShapes(shapes: readonly ShapeSnapshot[], destination: SlideSnapshot, sameSlide: boolean): ShapeSnapshot[] {
+  return cloneShapeSet(shapes, { destination, sameSlide }).shapes
+}
+
+/** Allocate the complete set before rewriting any references, including opaque XML and groups. */
+function cloneShapeSet(shapes: readonly ShapeSnapshot[], options: { destination?: SlideSnapshot; sameSlide?: boolean; keepIds?: boolean; xml?: string; background?: string }): { shapes: ShapeSnapshot[]; xml?: string; background?: string } {
+  const ids = new Map<number, number>()
+  const used = new Set<number>([1])
+  const roots = new Map<ShapeSnapshot, XmlElement>()
+  const validId = (id: number) => Number.isInteger(id) && id > 0 && id <= 2_147_483_647
+  const visit = (root: XmlElement, fn: (node: XmlElement) => void) => {
+    fn(root)
+    for (const child of childElements(root)) visit(child, fn)
+  }
+  const collect = (list: readonly ShapeSnapshot[], cloned: boolean) => {
+    for (const shape of list) {
+      const root = parseFragment(shape.xml)
+      if (cloned) roots.set(shape, root)
+      if (validId(shape.nvId ?? 0)) {
+        used.add(shape.nvId!)
+        if (cloned) ids.set(shape.nvId!, shape.nvId!)
+      }
+      visit(root, (node) => {
+        if (node.localName !== 'cNvPr') return
+        const id = Number(attr(node, 'id'))
+        if (!validId(id)) return
+        used.add(id)
+        if (cloned) ids.set(id, id)
+      })
+      collect(shape.children ?? [], cloned)
+    }
+  }
+  collect(options.destination?.shapes ?? [], false)
+  const frame = options.xml ?? options.destination?.xml
+  const frameIds = new Set<number>()
+  if (frame) visit(parseFragment(frame), (node) => {
+    if (node.localName === 'cNvPr') { const id = Number(attr(node, 'id')); used.add(id); frameIds.add(id) }
+  })
+  collect(shapes, true)
+  const fresh = () => {
+    // Independent replicas must not pick the same "next" id when they duplicate concurrently.
+    const value = new Uint32Array(1)
+    let id: number
+    do { globalThis.crypto.getRandomValues(value); id = value[0]! & 0x7fff_ffff } while (id < 2 || used.has(id))
+    used.add(id)
+    return id
+  }
+  if (!options.keepIds) for (const id of ids.keys()) ids.set(id, fresh())
+  // A whole-slide clone also carries its shape-tree frame (normally id=1), unchanged.
+  if (options.xml) for (const id of frameIds) if (!ids.has(id)) ids.set(id, id)
+  const rewrite = (root: XmlElement): string => {
+    visit(root, (node) => {
+      const definition = node.localName === 'cNvPr'
+      const endpoint = node.localName === 'stCxn' || node.localName === 'endCxn'
+      for (let index = 0; index < node.attributes.length; index++) {
+        const attribute = node.attributes.item(index)!
+        if (!(attribute.localName === 'spid' || ((definition || endpoint) && attribute.name === 'id'))) continue
+        // OLE's string spid names a VML object in another part, not a numeric in-slide shape id.
+        if (!/^\d+$/.test(attribute.value)) continue
+        const mapped = ids.get(Number(attribute.value))
+        if (mapped !== undefined) attribute.value = String(mapped)
+        else if (!definition && !options.sameSlide) {
+          // Never let an unmatched source id bind to an unrelated shape on the destination slide.
+          // Timing targets keep an invalid id until the writer removes their entire effect.
+          if (node.localName === 'spTgt' || node.localName === 'inkTgt') attribute.value = '0'
+          else node.parentNode?.removeChild(node)
+        }
+      }
+    })
+    return serializeNode(root)
+  }
+  const xml = (source: string) => /\bspid\s*=|<(?:[\w.-]+:)?(?:cNvPr|stCxn|endCxn)\b/.test(source) ? rewrite(parseFragment(source)) : source
+  const text = (value: TextJSON): TextJSON => {
+    const attrs = (attributes: Record<string, unknown>) => Object.fromEntries(Object.entries(attributes).map(([key, value]) => [key, typeof value === 'string' && value.trimStart().startsWith('<') && ['xml', 'pPr', 'rPr', 'endRPr', 'value'].includes(key) ? xml(value) : value]))
+    return { ...value, ...(value.attrs ? { attrs: attrs(value.attrs) } : {}), ...(value.marks ? { marks: value.marks.map((mark) => ({ ...mark, ...(mark.attrs ? { attrs: attrs(mark.attrs) } : {}) })) } : {}), ...(value.content ? { content: value.content.map(text) } : {}) }
+  }
+  const clone = (shape: ShapeSnapshot): ShapeSnapshot => {
+    const copy = cloneShapeKeys(shape)
+    const root = roots.get(shape)!
+    if (shape.kind !== 'opaque') {
+      const nonVisual = childElements(root).find((node) => child(node, 'cNvPr'))
+      copy.nvId = ids.get(shape.nvId ?? Number(attr(child(nonVisual, 'cNvPr'), 'id'))) ?? fresh()
+      // New templates all use id=0; each needs its own definition, not a shared mapping for 0.
+      child(nonVisual, 'cNvPr')?.setAttribute('id', String(copy.nvId))
+    }
+    copy.xml = rewrite(root)
+    // These modeled fragments override their equivalents in the preserved template on export.
+    for (const property of ['geom', 'fill', 'line', 'effects', 'blipFill', 'bodyPr'] as const) if (copy[property]) copy[property] = xml(copy[property]!)
+    if (copy.text) copy.text = text(copy.text)
+    if (copy.table) {
+      if (copy.table.tblPr) copy.table.tblPr = xml(copy.table.tblPr)
+      copy.table.columns = copy.table.columns.map((column) => ({ ...column, xml: xml(column.xml) }))
+      copy.table.rows = copy.table.rows.map((row) => ({ ...row, xml: xml(row.xml), cells: Object.fromEntries(Object.entries(row.cells).map(([key, cell]) => [key, { ...cell, xml: xml(cell.xml), text: text(cell.text), ...(cell.tcPr ? { tcPr: xml(cell.tcPr) } : {}) }])) }))
+    }
+    if (shape.children) copy.children = shape.children.map(clone)
+    return copy
+  }
+  return { shapes: shapes.map(clone), ...(options.xml ? { xml: xml(options.xml) } : {}), ...(options.background ? { background: xml(options.background) } : {}) }
+}
+
+function cloneShapeKeys(shape: ShapeSnapshot): ShapeSnapshot {
   const copy: ShapeSnapshot = { ...shape, key: newKey('s') }
-  if (!keepIds) delete copy.nvId
-  if (shape.children) copy.children = shape.children.map((member) => cloneShape(member, keepIds))
   if (shape.table) {
     const columnKeys = new Map(shape.table.columns.map((column) => [column.key, newKey('c')]))
     copy.table = {
@@ -794,8 +896,9 @@ export function readShapes(doc: Y.Doc, slideKey: string, keys: readonly string[]
 }
 
 export function duplicateShapes(doc: Y.Doc, slideKey: string, keys: readonly string[], offset: number, origin?: unknown): string[] {
-  const copies = readShapes(doc, slideKey, keys).map((shape) => {
-    const copy = cloneShape(shape)
+  const slide = readSlide(doc, slideKey)
+  if (!slide) return []
+  const copies = cloneShapes(readShapes(doc, slideKey, keys), slide, true).map((copy) => {
     if (copy.xfrm) copy.xfrm = { ...copy.xfrm, x: copy.xfrm.x + offset, y: copy.xfrm.y + offset }
     return copy
   })

@@ -509,8 +509,10 @@ export class PresentationController {
   private nextName(base: string): string {
     const slide = this.slideKey ? this.slide(this.slideKey) : undefined
     let count = 1
-    const walk = (shapes: ShapeSnapshot[]) => shapes.forEach((shape) => ((count = Math.max(count, (shape.nvId ?? 0) + 1)), walk(shape.children ?? [])))
+    const names = new Set<string>()
+    const walk = (shapes: ShapeSnapshot[]) => shapes.forEach((shape) => { count++; if (shape.name) names.add(shape.name); walk(shape.children ?? []) })
     walk(slide?.shapes ?? [])
+    while (names.has(`${base} ${count}`)) count++
     return `${base} ${count}`
   }
 

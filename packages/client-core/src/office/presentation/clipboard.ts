@@ -1,7 +1,7 @@
 import type * as Y from 'yjs'
 import { LiveFormatError, type LiveAssetStore } from '../live-format.js'
 import { decodePartText, relationshipsPathFor, relativeTarget, resolveTarget } from '../ooxml/package.js'
-import { cloneShape, cloneSlide, insertShapes, insertSlides, PARTS_ORIGIN, readSlide, slideKeys, slideMap } from './commands.js'
+import { cloneShapes, cloneSlide, insertShapes, insertSlides, PARTS_ORIGIN, readSlide, slideKeys, slideMap } from './commands.js'
 import type { PartSnapshot, RelTarget, ShapeSnapshot, SlideSnapshot } from './model.js'
 import { DEFAULT_PRESENTATION_LIMITS, relationshipIdsIn } from './read.js'
 import { DeckResources } from './render/deck.js'
@@ -31,6 +31,8 @@ export interface PresentationClipboard {
   version: 1
   /** Identifies the source document, so pasting into it can reuse its parts. */
   source: string
+  /** Source slide for shape references; document identity alone cannot distinguish slides. */
+  sourceSlide?: string
   kind: 'shapes' | 'slides'
   shapes?: ShapeSnapshot[]
   slides?: (SlideSnapshot & { layoutName?: string })[]
@@ -143,8 +145,10 @@ export async function copyContent(doc: Y.Doc, assets: LiveAssetStore, content: {
     return { ...shape, rels, ...(shape.children ? { children: shape.children.map((child) => copyShape(child, scope)) } : {}) }
   }
   const contains = (shapes: ShapeSnapshot[], selected: ShapeSnapshot): boolean => shapes.some((shape) => (shape.key === selected.key && shape.xml === selected.xml && stableStringify(shape.rels) === stableStringify(selected.rels)) || contains(shape.children ?? [], selected))
+  const sourceSlides = new Set<string>()
   const shapes = content.shapes?.map((shape) => {
     const owner = content.slideKey ? snapshot.slides.find((slide) => slide.key === content.slideKey) : snapshot.slides.find((slide) => contains(slide.shapes, shape))
+    if (owner) sourceSlides.add(owner.key)
     return copyShape(shape, scopeFor(owner))
   })
   const slides = content.slides?.map((slide) => {
@@ -172,6 +176,7 @@ export async function copyContent(doc: Y.Doc, assets: LiveAssetStore, content: {
   return {
     version: 1,
     source: documentIdentity(doc),
+    ...(sourceSlides.size === 1 ? { sourceSlide: [...sourceSlides][0]! } : {}),
     kind: content.slides ? 'slides' : 'shapes',
     ...(shapes ? { shapes } : {}),
     ...(slides ? { slides } : {}),
@@ -212,7 +217,7 @@ export function parseClipboard(json: string): PresentationClipboard | undefined 
   }
   const shapes = Array.isArray(value.shapes) ? value.shapes.filter(validShape) : undefined
   const slides = Array.isArray(value.slides) ? value.slides.filter(validSlide) : undefined
-  return { version: 1, source: String(value.source ?? ''), kind: value.kind, ...(shapes ? { shapes } : {}), ...(slides ? { slides } : {}), parts, text: String(value.text ?? '') }
+  return { version: 1, source: String(value.source ?? ''), ...(typeof value.sourceSlide === 'string' ? { sourceSlide: value.sourceSlide } : {}), kind: value.kind, ...(shapes ? { shapes } : {}), ...(slides ? { slides } : {}), parts, text: String(value.text ?? '') }
 }
 
 /** Tables count once; group members each count toward the slide and clipboard budgets. */
@@ -473,8 +478,9 @@ export async function pasteShapes(doc: Y.Doc, assets: LiveAssetStore, clipboard:
   if (!canApply() || !fits()) return []
   write()
   const sameDocument = clipboard.source === documentIdentity(doc)
-  const shapes = (clipboard.shapes ?? []).map((shape) => {
-    const copy = remapShape(cloneShape(shape), mapping, !sameDocument)
+  const sameSlide = sameDocument && clipboard.sourceSlide === slideKey
+  const shapes = cloneShapes(clipboard.shapes ?? [], readSlide(doc, slideKey)!, sameSlide).map((shape) => {
+    const copy = remapShape(shape, mapping, !sameDocument)
     if (copy.xfrm && offset) copy.xfrm = { ...copy.xfrm, x: copy.xfrm.x + offset, y: copy.xfrm.y + offset }
     return copy
   })
