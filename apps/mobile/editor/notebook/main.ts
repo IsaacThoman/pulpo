@@ -635,16 +635,21 @@ function start(message: Extract<HostMessage, { type: 'init' }>): void {
   // The controller reports structure; typing in a source changes only rendered Markdown, which
   // must follow collaborators' edits too.
   let pending = false
-  const onSources = (events: Y.YEvent<Y.AbstractType<unknown>>[]) => {
-    if (pending || !events.some((event) => event.target instanceof Y.Text)) return
+  // Undo notifications can arrive inside CodeMirror's Yjs plugin update. Rendering then
+  // would dispatch reconfiguration into the same view and disable its binding.
+  const scheduleRender = () => {
+    if (pending) return
     pending = true
     requestAnimationFrame(() => {
       pending = false
       if (current?.session === session) render()
     })
   }
+  const onSources = (events: Y.YEvent<Y.AbstractType<unknown>>[]) => {
+    if (events.some((event) => event.target instanceof Y.Text)) scheduleRender()
+  }
   cellsMap(doc).observeDeep(onSources)
-  const unsubscribeState = controller.subscribe(() => render())
+  const unsubscribeState = controller.subscribe(scheduleRender)
   const unsubscribe = () => {
     unsubscribeState()
     cellsMap(doc).unobserveDeep(onSources)
