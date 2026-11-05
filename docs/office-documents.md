@@ -77,7 +77,7 @@ The harness (`apps/web/tests/docx-editor/index.html`, dev server only) loads a f
 In rough order of importance:
 
 - Multi-column sections render as one column (the setting is kept). Floating pictures wrap with CSS floats and page-relative positions are approximated against the paragraph. Text boxes, shapes, SmartArt, and charts show their fallback picture or a sized placeholder with their text; they cannot be edited.
-- Table rows taller than a page are not split across pages, and a row broken onto the next page leaves a thin stub of its borders at the foot of the previous one. Column widths cannot be dragged. Inserting columns spreads the grid evenly.
+- Table rows taller than a page are not split across pages. Column widths cannot be dragged. Inserting columns spreads the grid evenly.
 - Content controls show and edit their content but their properties (date pickers, drop-downs, checkboxes) cannot be changed in the editor. Fields other than PAGE/NUMPAGES/SECTIONPAGES and the TOC show their cached result and are not recalculated.
 - No ruler, line numbers, page borders, watermarks, or drop caps (all kept). Endnotes are drawn after the text without pagination of their own. Move revisions are shown and can be accepted or rejected per side, but moving text in Suggesting mode records a deletion and an insertion. Comments' text is plain when edited in Pulpo.
 - Fonts render with the browser's fonts: Calibri, Cambria, and others fall back to metric-compatible open fonts when installed (Carlito, Caladea, Liberation), else to similar system fonts, which can move line and page breaks.
