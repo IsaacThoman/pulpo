@@ -88,7 +88,8 @@ export interface NotebookControllerOptions {
 
 /** What copy and cut keep: the cells, and where their assets live (for pasting into another notebook). */
 interface Clipboard {
-  doc: Y.Doc
+  /** The source notebook's guid: the clipboard must not keep a closed notebook's Y.Doc alive. */
+  docGuid: string
   assets: LiveAssetStore
   cells: CellInit[]
 }
@@ -203,12 +204,13 @@ export class NotebookController {
     })
   }
 
-  /** The cell's source; repaired (in an untracked transaction) if a damaged replica lacks it. */
+  /** The cell's source; repaired (in an untracked transaction) if a damaged replica lacks it and this session edits. */
   sourceOf(key: string): Y.Text | null {
     const cell = cellsMap(this.doc).get(key)
     if (!cell) return null
     const source = cellSource(cell)
     if (source) return source
+    if (this.state.readOnly) return null
     const text = new Y.Text()
     this.doc.transact(() => cell.set('source', text), 'repair')
     return text
@@ -374,6 +376,7 @@ export class NotebookController {
     const position: CellPosition = !active
       ? { before: null }
       : where === 'above' ? { before: selected[0] ?? active } : { after: selected[selected.length - 1] ?? active }
+    this.undoManager.stopCapturing()
     const [key] = insertCells(this.doc, position, [{ type, source: options.source ?? '' }], this.origin)
     this.refresh()
     if (key) this.select(key, { mode: options.edit ? 'edit' : 'command' })
@@ -384,6 +387,7 @@ export class NotebookController {
     if (!this.editable) return
     const keys = this.targets()
     if (!keys.length) return
+    this.undoManager.stopCapturing()
     deleteCells(this.doc, keys, this.origin)
     this.refresh()
   }
@@ -391,7 +395,7 @@ export class NotebookController {
   copy(): string {
     const keys = new Set(this.targets())
     const cells = orderedCells(this.doc).filter((entry) => keys.has(entry.key))
-    clipboard = { doc: this.doc, assets: this.assets, cells: cells.map((entry) => cellInitOf(entry.cell)) }
+    clipboard = { docGuid: this.doc.guid, assets: this.assets, cells: cells.map((entry) => cellInitOf(entry.cell)) }
     this.update({ canPaste: true })
     // Plain text for other apps: the sources, a blank line apart.
     return clipboard.cells.map((cell) => cell.source ?? '').join('\n\n')
@@ -409,7 +413,7 @@ export class NotebookController {
     if (!this.editable || !clipboard) return
     const source = clipboard
     let cells = source.cells
-    if (source.doc !== this.doc) {
+    if (source.docGuid !== this.doc.guid) {
       const copied = new Map<string, Promise<unknown>>()
       cells = await Promise.all(cells.map(async (cell) => {
         try {
@@ -432,6 +436,7 @@ export class NotebookController {
     if (this.destroyed) return
     const selected = this.targets()
     const position: CellPosition = !selected.length ? { before: null } : where === 'above' ? { before: selected[0]! } : { after: selected[selected.length - 1]! }
+    this.undoManager.stopCapturing()
     const keys = insertCells(this.doc, position, cells, this.origin)
     this.refresh()
     if (keys.length) {
@@ -442,6 +447,7 @@ export class NotebookController {
 
   move(direction: 'up' | 'down'): void {
     if (!this.editable) return
+    this.undoManager.stopCapturing()
     shiftCells(this.doc, this.targets(), direction, this.origin)
     this.refresh()
   }
@@ -449,12 +455,14 @@ export class NotebookController {
   /** Moves cells to a place, e.g. where they were dropped. */
   moveTo(keys: readonly string[], position: CellPosition): void {
     if (!this.editable || !keys.length) return
+    this.undoManager.stopCapturing()
     moveCells(this.doc, keys, position, this.origin)
     this.refresh()
   }
 
   setType(type: NotebookCellType): void {
     if (!this.editable) return
+    this.undoManager.stopCapturing()
     setCellType(this.doc, this.targets(), type, this.origin)
     this.refresh()
   }
@@ -465,6 +473,7 @@ export class NotebookController {
     if (!this.editable || !active) return
     const cursor = this.cursorOf?.(active)
     if (cursor === null || cursor === undefined) return
+    this.undoManager.stopCapturing()
     const keys = splitCell(this.doc, active, [cursor], this.origin)
     this.refresh()
     if (keys[1]) this.select(keys[1], { mode: 'edit' })
@@ -480,6 +489,7 @@ export class NotebookController {
       if (!below) return
       keys = [this.state.active!, below.key]
     }
+    this.undoManager.stopCapturing()
     const kept = mergeCells(this.doc, keys, this.origin)
     this.refresh()
     if (kept) this.select(kept)
@@ -487,6 +497,7 @@ export class NotebookController {
 
   clearOutputs(scope: 'selected' | 'all' = 'selected'): void {
     if (!this.editable) return
+    this.undoManager.stopCapturing()
     clearOutputs(this.doc, scope === 'all' ? null : this.targets(), this.origin)
     this.undoManager.stopCapturing()
   }
@@ -496,6 +507,7 @@ export class NotebookController {
     if (!this.editable) return
     const keys = this.targets()
     const cells = this.state.cells.filter((cell) => keys.includes(cell.key))
+    this.undoManager.stopCapturing()
     setOutputsCollapsed(this.doc, keys, !cells.every((cell) => cell.outputsCollapsed), this.origin)
     this.undoManager.stopCapturing()
   }
@@ -504,6 +516,7 @@ export class NotebookController {
     if (!this.editable) return
     const keys = this.targets()
     const cells = this.state.cells.filter((cell) => keys.includes(cell.key))
+    this.undoManager.stopCapturing()
     setSourceCollapsed(this.doc, keys, !cells.every((cell) => cell.sourceCollapsed), this.origin)
     this.undoManager.stopCapturing()
   }

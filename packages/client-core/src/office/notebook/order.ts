@@ -34,7 +34,14 @@ export function orderKeyBetween(before: string | null, after: string | null, ran
   if (high !== null && !(high > low)) high = null
   const pick = (from: number, to: number) => from + Math.floor(random() * (to - from + 1))
   let key = ''
+  let fits = true
   for (let index = 0; ; index += 1) {
+    // Only a malformed `after` (one ending in the lowest digit, written by another client) runs out
+    // while still bounding: nothing fits below it, so the key goes after `before` instead.
+    if (high !== null && index >= high.length) {
+      fits = false
+      break
+    }
     const lowDigit = digit(low, index)
     const highDigit = high === null ? BASE : digit(high, index)
     if (highDigit - lowDigit >= 2) {
@@ -49,7 +56,7 @@ export function orderKeyBetween(before: string | null, after: string | null, ran
   for (let index = 0; index < JITTER_DIGITS; index += 1) jitter += DIGITS[pick(index === JITTER_DIGITS - 1 ? 1 : 0, BASE - 1)]
   key += jitter
   // Keys written by another client may hold other characters; never return one before `before`.
-  if (!(key > low)) return `${low}V${jitter}`
+  if (!fits || !(key > low)) return `${low}V${jitter}`
   return key
 }
 

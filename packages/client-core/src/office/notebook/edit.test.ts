@@ -149,3 +149,12 @@ describe('notebook diff', () => {
     expect(diff.metadata).toEqual(['kernelspec'])
   })
 })
+
+describe('order keys from other clients', () => {
+  it('end even when a neighbour ends in the lowest digit', () => {
+    for (const [before, after] of [[null, '0'], ['1', '10'], ['V', 'V0'], ['', '00']] as const) {
+      const key = orderKeyBetween(before, after)
+      expect(key > (before ?? '')).toBe(true)
+    }
+  })
+})

@@ -512,19 +512,22 @@ export async function blobNode(blob: NotebookBlob, assets: LiveAssetStore, style
     }
     return parseJson(new TextDecoder().decode(bytes))
   }))
-  // `expanding` holds the parts being restored, so a damaged blob that refers to itself fails instead of looping.
-  const restore = (node: JsonNode, expanding: ReadonlySet<number>): JsonNode => {
+  // Each part is used once, as `makeBlob` writes them: a damaged or hostile blob that refers to
+  // one part twice (which could double its size at every level) or to itself fails instead.
+  const used = new Set<number>()
+  const restore = (node: JsonNode): JsonNode => {
     if (node.kind === 'string' && node.value.startsWith(ASSET_MARKER)) {
       const index = Number(node.value.slice(ASSET_MARKER.length))
       const value = values[index]
-      if (!value || expanding.has(index) || expanding.size > 64) throw new LiveFormatError('corrupt', 'A notebook output refers to a missing part')
-      return restore(value, new Set([...expanding, index]))
+      if (!value || used.has(index)) throw new LiveFormatError('corrupt', 'A notebook output refers to a missing part')
+      used.add(index)
+      return restore(value)
     }
-    if (node.kind === 'array') return { kind: 'array', items: node.items.map((item) => restore(item, expanding)) }
-    if (node.kind === 'object') return { kind: 'object', entries: node.entries.map((item) => ({ ...item, value: restore(item.value, expanding) })) }
+    if (node.kind === 'array') return { kind: 'array', items: node.items.map(restore) }
+    if (node.kind === 'object') return { kind: 'object', entries: node.entries.map((item) => ({ ...item, value: restore(item.value) })) }
     return node
   }
-  return restore(root, new Set())
+  return restore(root)
 }
 
 /** Lines as Python's `str.splitlines(keepends=True)` makes them, which nbformat writes sources with. */

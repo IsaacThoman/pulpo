@@ -40,7 +40,7 @@ interface FileFacts {
   style: JsonStyle
   keys: string[]
   metadataKeys: string[]
-  extra: Record<string, string>
+  extra: [string, string][]
   /** The file's bytes (an asset) while the document still exports to `exportHash`. */
   original?: { asset: string; exportHash: string }
 }
@@ -67,9 +67,13 @@ function stringList(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
 }
 
-function stringRecord(value: unknown): Record<string, string> {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return {}
-  return Object.fromEntries(Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === 'string'))
+/**
+ * Unknown keys as stored: pairs of key and compact JSON. Pairs rather than an object, because
+ * plain objects in a Y.Map lose `__proto__` keys on other replicas and Yjs refuses `constructor`.
+ */
+function stringPairs(value: unknown): [string, string][] {
+  if (!Array.isArray(value)) return []
+  return value.filter((pair): pair is [string, string] => Array.isArray(pair) && typeof pair[0] === 'string' && typeof pair[1] === 'string')
 }
 
 function readFacts(doc: Y.Doc): FileFacts {
@@ -79,7 +83,7 @@ function readFacts(doc: Y.Doc): FileFacts {
     style: readStyle(map.get('style')),
     keys: stringList(map.get('keys')),
     metadataKeys: stringList(map.get('metadataKeys')),
-    extra: stringRecord(map.get('extra')),
+    extra: stringPairs(map.get('extra')),
     ...typeof original?.asset === 'string' && typeof original.exportHash === 'string'
       ? { original: { asset: original.asset, exportHash: original.exportHash } }
       : {},
@@ -99,8 +103,8 @@ function setIfChanged(map: Y.Map<unknown>, key: string, value: unknown): void {
   if (!map.has(key) || !sameJson(map.get(key), value)) map.set(key, value)
 }
 
-function entriesRecord(entries: JsonEntry[]): Record<string, string> {
-  return Object.fromEntries(entries.map((item) => [item.key, compactJson(item.value)]))
+function entryPairs(entries: JsonEntry[]): [string, string][] {
+  return entries.map((item) => [item.key, compactJson(item.value)])
 }
 
 /** Makes a Y.Map of compact JSON values match `entries`, key by key. */
@@ -136,7 +140,7 @@ function cellInit(prepared: PreparedCell): CellInit {
     ...parsed.type === 'code' ? { executionCount: parsed.executionCount ?? null, outputs: prepared.outputs } : {},
     ...prepared.attachments ? { attachments: prepared.attachments } : {},
     keys: parsed.keys,
-    extra: entriesRecord(parsed.extra),
+    extra: entryPairs(parsed.extra),
   }
 }
 
@@ -160,7 +164,7 @@ function writeNotebookFacts(doc: Y.Doc, parsed: ParsedNotebook): void {
   setIfChanged(map, 'style', Object.fromEntries(STYLE_KEYS.map((key) => [key, parsed.style[key]])))
   setIfChanged(map, 'keys', parsed.keys)
   setIfChanged(map, 'metadataKeys', parsed.metadata.map((item) => item.key))
-  setIfChanged(map, 'extra', parsed.extra.length ? entriesRecord(parsed.extra) : undefined)
+  setIfChanged(map, 'extra', parsed.extra.length ? entryPairs(parsed.extra) : undefined)
   syncJsonMap(notebookMetadata(doc), parsed.metadata)
 }
 
@@ -193,9 +197,9 @@ function jsonMapNode(map: Y.Map<string> | null, recorded: readonly string[], sty
   return { kind: 'object', entries }
 }
 
-function extraEntries(extra: Record<string, string>, style: JsonStyle): Map<string, JsonNode> {
+function extraEntries(extra: [string, string][], style: JsonStyle): Map<string, JsonNode> {
   const nodes = new Map<string, JsonNode>()
-  for (const [key, raw] of Object.entries(extra)) {
+  for (const [key, raw] of extra) {
     try {
       nodes.set(key, parseJson(raw))
     } catch {
@@ -221,7 +225,7 @@ async function cellNode(cell: Y.Map<unknown>, id: string | undefined, style: Jso
     const attachments = cellAttachments(cell)
     if (attachments) fields.set('attachments', await blobNode(attachments, assets, style))
   }
-  for (const [key, value] of extraEntries(stringRecord(cell.get('extra')), style)) if (!fields.has(key)) fields.set(key, value)
+  for (const [key, value] of extraEntries(stringPairs(cell.get('extra')), style)) if (!fields.has(key)) fields.set(key, value)
   return {
     kind: 'object',
     entries: keyOrder(fields.keys(), stringList(cell.get('keys'))).map((key) => entryNode(key, fields.get(key)!, style)),
@@ -322,9 +326,14 @@ function blobEquals(a: NotebookBlob | null | undefined, b: NotebookBlob | null |
   return sameJson(a ?? null, b ?? null)
 }
 
-function updateCell(cell: Y.Map<unknown>, prepared: PreparedCell): void {
+/**
+ * `keepIds`: the file's ids are not to be trusted over the cell's own, either because nbformat 3's
+ * upgrade makes new random ones each time, or because a 4.5+ file left them out (an older writer).
+ */
+function updateCell(cell: Y.Map<unknown>, prepared: PreparedCell, keepIds: boolean): void {
   const { parsed } = prepared
-  setIfChanged(cell, 'id', parsed.id)
+  const existing = cell.get('id')
+  if (!(keepIds && typeof existing === 'string')) setIfChanged(cell, 'id', parsed.id)
   if (cellType(cell) !== parsed.type) cell.set('cell_type', parsed.type)
   const source = cell.get('source')
   if (source instanceof Y.Text) applyTextToYText(source, parsed.source)
@@ -343,11 +352,12 @@ function updateCell(cell: Y.Map<unknown>, prepared: PreparedCell): void {
     if (cell.has('outputs')) cell.delete('outputs')
   }
   if (!blobEquals(cellAttachments(cell), prepared.attachments)) setIfChanged(cell, 'attachments', prepared.attachments)
-  setIfChanged(cell, 'extra', parsed.extra.length ? entriesRecord(parsed.extra) : undefined)
+  setIfChanged(cell, 'extra', parsed.extra.length ? entryPairs(parsed.extra) : undefined)
 }
 
 function applyNotebook(doc: Y.Doc, parsed: ParsedNotebook, prepared: PreparedCell[]): void {
   writeNotebookFacts(doc, parsed)
+  const keepIds = (cell: PreparedCell) => parsed.upgraded || (cell.parsed.id === undefined && parsed.nbformatMinor >= 5)
   const current = orderedCells(doc)
   const matches = matchCells(
     current.map(({ key, cell }) => ({ key, id: typeof cell.get('id') === 'string' ? cell.get('id') as string : undefined, type: cellType(cell), source: cellSourceText(cell) })),
@@ -366,7 +376,7 @@ function applyNotebook(doc: Y.Doc, parsed: ParsedNotebook, prepared: PreparedCel
     const key = matches[at] ?? null
     if (key !== null && stays.has(at)) {
       const target = map.get(key)!
-      updateCell(target, cell)
+      updateCell(target, cell, keepIds(cell))
       previousOrder = target.get('order') as string
       return
     }
@@ -383,7 +393,7 @@ function applyNotebook(doc: Y.Doc, parsed: ParsedNotebook, prepared: PreparedCel
     if (key !== null) {
       const target = map.get(key)!
       target.set('order', order)
-      updateCell(target, cell)
+      updateCell(target, cell, keepIds(cell))
     } else {
       map.set(newCellKey(), createCellMap(cellInit(cell), order))
     }
@@ -400,7 +410,15 @@ function sizeLabel(bytes: number): string {
   return bytes < 1024 ? `${bytes} B` : bytes < 1024 * 1024 ? `${Math.round(bytes / 1024)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`
 }
 
+const STORED = '(long, kept as an asset; pull the notebook to read it)'
+
+/** Whether a value is a placeholder for a part kept as an asset. */
+function stored(value: unknown): boolean {
+  return typeof value === 'string' && value.startsWith(ASSET_MARKER)
+}
+
 function joined(value: unknown): string | null {
+  if (stored(value)) return null
   if (typeof value === 'string') return value
   if (Array.isArray(value) && value.every((item) => typeof item === 'string')) return value.join('')
   return null
@@ -429,27 +447,30 @@ function outputLines(output: unknown, blob: NotebookBlob): string[] {
   const record = output as Record<string, unknown>
   switch (record.output_type) {
     case 'stream': {
+      const name = record.name === 'stderr' ? 'stderr' : 'stdout'
       const text = joined(record.text)
-      if (text === null) return [`# ${String(record.name ?? 'stdout')}: (${placeholderSize(String(record.text), blob) ?? 'unreadable'})`]
-      return [`# ${record.name === 'stderr' ? 'stderr' : 'stdout'}:`, ...quoted(text)]
+      if (text === null) return [`# ${name}: ${stored(record.text) ? STORED : '(unreadable)'}`]
+      return [`# ${name}:`, ...quoted(text)]
     }
     case 'error':
       return [`# Error: ${String(record.ename ?? 'Error')}: ${String(record.evalue ?? '')}`.trimEnd()]
     case 'execute_result':
     case 'display_data': {
-      const data = typeof record.data === 'object' && record.data !== null ? record.data as Record<string, unknown> : {}
       const label = record.output_type === 'execute_result' && typeof record.execution_count === 'number' ? `# Out [${record.execution_count}]:` : '# Output:'
+      if (stored(record.data)) return [`${label} ${STORED}`]
+      const data = typeof record.data === 'object' && record.data !== null ? record.data as Record<string, unknown> : {}
       const lines = [label]
       const plain = joined(data['text/plain'])
       const markdown = joined(data['text/markdown'])
       for (const [mime, value] of Object.entries(data)) {
         if (mime === 'text/plain' || (mime === 'text/markdown' && markdown !== null)) continue
         const text = joined(value)
-        const stored = typeof value === 'string' ? placeholderSize(value, blob) : null
-        lines.push(`#   [${mime}${stored ? `, ${stored}` : text !== null ? `, ${sizeLabel(text.length)}` : ''}]`)
+        const kept = typeof value === 'string' ? placeholderSize(value, blob) : null
+        lines.push(`#   [${mime}${kept ? `, ${kept}` : text !== null ? `, ${sizeLabel(text.length)}` : ''}]`)
       }
       if (markdown !== null) lines.push(...quoted(markdown))
-      else if (plain !== null && !plain.startsWith(ASSET_MARKER)) lines.push(...quoted(plain))
+      else if (plain !== null) lines.push(...quoted(plain))
+      else if (stored(data['text/plain'])) lines.push(`#   ${STORED}`)
       return lines
     }
     default:
@@ -481,7 +502,8 @@ export function notebookToText(doc: Y.Doc): string {
     } catch {
       outputs = []
     }
-    for (const output of Array.isArray(outputs) ? outputs : []) lines.push(...outputLines(output, blob))
+    if (stored(outputs)) lines.push(`# Outputs: ${STORED}`)
+    for (const output of Array.isArray(outputs) ? outputs : []) lines.push(...(stored(output) ? [`# Output: ${STORED}`] : outputLines(output, blob)))
   })
   return `${lines.join('\n')}\n`
 }

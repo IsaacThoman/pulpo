@@ -12,6 +12,7 @@ import { indentLess, indentMore } from '@codemirror/commands'
 import type { LiveAssetRef, LiveAssetStore } from '@pulpo/client-core/office'
 import {
   ansiHtml,
+  cellsMap,
   imageDataUrl,
   LiveFormatError,
   NOTEBOOK_SCHEMA_VERSION,
@@ -461,7 +462,10 @@ function updateOutputs(open: Open, view: CellView, cell: NotebookCellState): voi
     }
     view.outputs.replaceChildren(...outputs.flatMap((output) => outputElement(output) ?? []))
   }).catch(() => {
-    if (view.outputsKey === key) view.outputs.innerHTML = '<p class="output note">The outputs are not on this device yet.</p>'
+    if (view.outputsKey !== key) return
+    view.outputs.innerHTML = '<p class="output note">The outputs are not on this device yet.</p>'
+    // Tried again on the next render (a reconnect brings updates, and with them one).
+    view.outputsKey = null
   })
 }
 
@@ -533,8 +537,16 @@ function render(): void {
   if (state.mode === 'command' && root.contains(document.activeElement) && document.activeElement instanceof HTMLElement) document.activeElement.blur()
   const active = state.active ? open.views.get(state.active) : null
   if (active && state.mode === 'edit' && active.editor && !active.editor.view.hasFocus) active.editor.focus('keep')
-  post({ type: 'notebookState', session: open.session, state: toolbarState(state) })
+  const toolbar = toolbarState(state)
+  const sent = JSON.stringify(toolbar)
+  if (sent !== lastToolbar) {
+    lastToolbar = sent
+    post({ type: 'notebookState', session: open.session, state: toolbar })
+  }
 }
+
+/** The toolbar state last sent, so typing does not resend an unchanged one every frame. */
+let lastToolbar = ''
 
 function run(command: string): void {
   const open = current
@@ -564,6 +576,7 @@ function run(command: string): void {
 }
 
 function close(): void {
+  lastToolbar = ''
   if (!current) return
   const open = current
   current = null
@@ -610,7 +623,23 @@ function start(message: Extract<HostMessage, { type: 'init' }>): void {
     }
   }, { rootMargin: '400px 0px' })
   controller.setCursorProvider((key) => views.get(key)?.editor?.cursor() ?? null)
-  const unsubscribe = controller.subscribe(() => render())
+  // The controller reports structure; typing in a source changes only rendered Markdown, which
+  // must follow collaborators' edits too.
+  let pending = false
+  const onSources = (events: Y.YEvent<Y.AbstractType<unknown>>[]) => {
+    if (pending || !events.some((event) => event.target instanceof Y.Text)) return
+    pending = true
+    requestAnimationFrame(() => {
+      pending = false
+      if (current?.session === session) render()
+    })
+  }
+  cellsMap(doc).observeDeep(onSources)
+  const unsubscribeState = controller.subscribe(() => render())
+  const unsubscribe = () => {
+    unsubscribeState()
+    cellsMap(doc).unobserveDeep(onSources)
+  }
   current = { session, doc, awareness, controller, assets, views, theme: message.theme, editable: message.editable, observer, unsubscribe }
   render()
   post({ type: 'loaded', session })

@@ -462,3 +462,64 @@ describe('concurrent editing', () => {
     }
   })
 })
+
+describe('audit regressions', () => {
+  it('refuses outputs that use one stored part twice instead of doubling it at every level', async () => {
+    const { doc, assets, context } = await imported(jupyter(notebook([code('a', 'x')])))
+    // A hostile collaborator's blob: part i is [part i+1, part i+1], 40 levels deep.
+    const slots = []
+    for (let level = 0; level < 40; level += 1) {
+      const next = `"\\u0000pulpo-asset:${level + 1}"`
+      const ref = await assets.put(utf8(level === 39 ? '"leaf"' : `[${next},${next}]`), 'application/json')
+      slots.push({ hash: ref.hash, kind: 'json' })
+    }
+    orderedCells(doc)[0]!.cell.set('outputs', { json: '"\\u0000pulpo-asset:0"', assets: slots })
+    const started = Date.now()
+    await expect(notebookCodec.exportFile(doc, context)).rejects.toBeInstanceOf(LiveFormatError)
+    expect(Date.now() - started).toBeLessThan(1_000)
+  })
+
+  it('keeps unknown keys named constructor or __proto__ through other replicas', async () => {
+    const source = JSON.stringify({ cells: [{ ...code('a', 'x'), constructor: 1, __proto__: { b: 2 } }], metadata: {}, nbformat: 4, nbformat_minor: 5, constructor: [3] }, null, 1)
+      .replace('"cells"', '"__proto__": {"c": 4},\n "cells"')
+    const bytes = utf8(source)
+    const { doc, context } = await imported(bytes)
+    const copy = replica(doc)
+    const written = text(await notebookCodec.exportFile(copy, context))
+    expect(written).toContain('"__proto__": {')
+    expect(written).toContain('"constructor": [')
+    expect(written).toContain('"constructor": 1')
+    expect(written).toBe(source)
+  })
+
+  it('summarizes long outputs kept as assets in readable text', async () => {
+    const log = Array.from({ length: 3_000 }, (_, index) => `epoch ${index}\n`)
+    const { doc } = await imported(jupyter(notebook([code('a', 'train()', [{ name: 'stdout', output_type: 'stream', text: log }], 1)])))
+    const textOut = notebookCodec.toText(doc)
+    expect(textOut).not.toContain('\u0000')
+    expect(textOut).toContain('# stdout: (long, kept as an asset; pull the notebook to read it)')
+  })
+
+  it('keeps cell ids when a pushed file leaves them out or comes from nbformat 3', async () => {
+    const { doc, context } = await imported(jupyter(notebook([code('keep-me', 'x = 1'), code('and-me', 'y = 2')])))
+    const withoutIds = JSON.parse(text(jupyter(notebook([code('keep-me', 'x = 10'), code('and-me', 'y = 2')]))))
+    for (const cell of withoutIds.cells) delete cell.id
+    await notebookCodec.applyFile(doc, jupyter(withoutIds), context, 'agent')
+    expect(orderedCells(doc).map(({ cell }) => cell.get('id'))).toEqual(['keep-me', 'and-me'])
+    const v3 = fixture('nbformat-test3.ipynb')
+    const upgraded = await imported(v3)
+    const ids = orderedCells(upgraded.doc).map(({ cell }) => cell.get('id'))
+    await notebookCodec.applyFile(upgraded.doc, v3, upgraded.context, 'agent')
+    expect(orderedCells(upgraded.doc).map(({ cell }) => cell.get('id'))).toEqual(ids)
+  })
+
+  it('applies a large notebook without ids, every cell rewritten, quickly', async () => {
+    const make = (suffix: string) => utf8(`${JSON.stringify({ cells: Array.from({ length: 2_500 }, (_, index) => ({ cell_type: 'code', execution_count: null, metadata: {}, outputs: [], source: [`value_${index} = compute(${index})\n`, `print(value_${index})${suffix}`] })), metadata: {}, nbformat: 4, nbformat_minor: 4 }, null, 1)}\n`)
+    const { doc, context } = await imported(make(''))
+    const keys = orderedCells(doc).map((entry) => entry.key)
+    const started = Date.now()
+    await notebookCodec.applyFile(doc, make(' # checked'), context, 'agent')
+    expect(Date.now() - started).toBeLessThan(5_000)
+    expect(orderedCells(doc).map((entry) => entry.key)).toEqual(keys)
+  })
+})

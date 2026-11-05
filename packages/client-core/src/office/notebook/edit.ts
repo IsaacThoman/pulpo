@@ -34,7 +34,8 @@ export interface CellInit {
   outputs?: NotebookBlob
   attachments?: NotebookBlob
   keys?: string[]
-  extra?: Record<string, string>
+  /** Keys the format doesn't model, with their compact JSON, in order (pairs, so any key name is safe). */
+  extra?: [string, string][]
 }
 
 /** A random cell key: 16 hex digits, so concurrent inserts never collide. */
@@ -69,7 +70,7 @@ export function createCellMap(init: CellInit, order: string): Y.Map<unknown> {
   } else if (init.attachments) {
     cell.set('attachments', init.attachments)
   }
-  if (init.extra && Object.keys(init.extra).length) cell.set('extra', init.extra)
+  if (init.extra?.length) cell.set('extra', init.extra)
   return cell
 }
 

@@ -5,7 +5,7 @@ import { bracketMatching, indentOnInput, indentUnit, syntaxHighlighting } from '
 import { highlightSelectionMatches, searchKeymap } from '@codemirror/search'
 import { Compartment, EditorState, Prec, type Extension } from '@codemirror/state'
 import { drawSelection, EditorView, highlightSpecialChars, keymap, placeholder as placeholderText } from '@codemirror/view'
-import { yCollab } from 'y-codemirror.next'
+import { yCollab, yUndoManagerKeymap } from 'y-codemirror.next'
 import type { Awareness } from 'y-protocols/awareness'
 import type * as Y from 'yjs'
 import { editorHighlight, editorTheme, selectionColor } from '../../text/view/editor.js'
@@ -148,7 +148,8 @@ export function createCellEditor(options: CellEditorOptions): CellEditor {
           { key: 'ArrowUp', run: leave('up') },
           { key: 'ArrowDown', run: leave('down') },
         ])),
-        keymap.of([...closeBracketsKeymap, ...searchKeymap, indentWithTab, ...defaultKeymap]),
+        // Undo and redo go to the notebook's shared undo manager (this session's edits only).
+        keymap.of([...closeBracketsKeymap, ...yUndoManagerKeymap, ...searchKeymap, indentWithTab, ...defaultKeymap]),
         yCollab(options.text, options.awareness, { undoManager: options.undoManager }),
         editorTheme,
         cellTheme,

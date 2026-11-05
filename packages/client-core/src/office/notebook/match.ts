@@ -4,9 +4,30 @@
  * order, and then, between those, by likeness.
  */
 
-/** How alike two sources are, from 0 to 1: the share of lines they have in common. */
+/** How many unpaired cells ahead each new cell is compared with. */
+const LIKENESS_WINDOW = 32
+
+/** How much of the longer text a shared start and end cover, from 0 to 1: alike for small edits within a line. */
+function edgeSimilarity(a: string, b: string): number {
+  const longest = Math.max(a.length, b.length)
+  if (!longest) return 1
+  let start = 0
+  while (start < a.length && start < b.length && a[start] === b[start]) start += 1
+  let end = 0
+  while (end < a.length - start && end < b.length - start && a[a.length - 1 - end] === b[b.length - 1 - end]) end += 1
+  return (start + end) / longest
+}
+
+/**
+ * How alike two sources are, from 0 to 1: the share of lines they have in common, or of
+ * characters at their start and end when that is higher (a one-line cell edited).
+ */
 function similarity(a: string, b: string): number {
   if (a === b) return 1
+  return Math.max(lineSimilarity(a, b), edgeSimilarity(a, b))
+}
+
+function lineSimilarity(a: string, b: string): number {
   const left = a.split('\n')
   const right = b.split('\n')
   const counts = new Map<string, number>()
@@ -72,7 +93,8 @@ export function matchCells(
     for (const index of pending) {
       const cell = incoming[index]!
       let best: { key: string; score: number; at: number } | null = null
-      for (let at = cursor; at < limit; at += 1) {
+      // A bounded look ahead keeps notebooks of thousands of rewritten cells linear.
+      for (let at = cursor; at < Math.min(limit, cursor + LIKENESS_WINDOW); at += 1) {
         const candidate = existing[at]!
         if (used.has(candidate.key)) continue
         const score = similarity(candidate.source, cell.source) + (candidate.type === cell.type ? 0.1 : 0)

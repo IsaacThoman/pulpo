@@ -139,3 +139,18 @@ describe('notebook controller', () => {
     expect(Y.encodeStateAsUpdate(doc)).toEqual(state)
   })
 })
+
+describe('undo steps', () => {
+  it('keeps typing and the next command as separate steps', async () => {
+    const { doc, controller } = await open()
+    const cell = orderedCells(doc)[0]!.cell
+    ;(cell.get('source') as Y.Text).insert(0, 'print(1)')
+    // Typing through a cell editor is tracked by its own origin; here the controller's.
+    doc.transact(() => (cell.get('source') as Y.Text).insert(8, '!'), controller.origin)
+    controller.insert('below')
+    controller.undo()
+    await flush()
+    expect(controller.getState().cells).toHaveLength(1)
+    expect(cellSourceText(orderedCells(doc)[0]!.cell)).toBe('print(1)!')
+  })
+})
