@@ -62,6 +62,9 @@ export function openedKind(node: Pick<FileNode, 'kind' | 'target'>): FileNode['k
 const SYSTEM_BLUE = '#0A84FF'
 
 /** An item's symbol and color, as on the web: custom icon and color first, then its kind's. */
+/** Slide decks, as the web's file icons group them. */
+const PRESENTATION_EXTENSIONS = new Set(['pptx', 'pptm', 'potx', 'potm', 'ppsx', 'ppsm', 'ppt', 'pps', 'pot', 'odp', 'key'])
+
 export function fileIcon(node: IconSubject, fallbackTint = SYSTEM_BLUE): { symbol: string; tint: string } {
   const source = node.kind === 'shortcut' && node.target
     ? { ...node.target, color: node.color ?? node.target.color, icon: node.icon ?? node.target.icon }
@@ -88,6 +91,7 @@ export function fileIcon(node: IconSubject, fallbackTint = SYSTEM_BLUE): { symbo
   if (isMarkdownName(source.name)) return { symbol: 'doc.plaintext.fill', tint: tint ?? '#8E8E93' }
   if (ARCHIVE_EXTENSIONS.has(extension)) return { symbol: 'doc.zipper', tint: tint ?? '#8E8E93' }
   if (SHEET_EXTENSIONS.has(extension)) return { symbol: 'tablecells.fill', tint: tint ?? '#34C759' }
+  if (PRESENTATION_EXTENSIONS.has(extension)) return { symbol: 'rectangle.on.rectangle', tint: tint ?? '#FF9500' }
   if (CODE_EXTENSIONS.has(extension)) return { symbol: 'chevron.left.forwardslash.chevron.right', tint: tint ?? '#5856D6' }
   return { symbol: 'doc.fill', tint: tint ?? '#8E8E93' }
 }

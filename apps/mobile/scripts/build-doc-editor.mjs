@@ -54,7 +54,9 @@ export async function buildEditorPage(format) {
     "default-src 'none'",
     `script-src 'sha256-${scriptHash}'`,
     "style-src 'unsafe-inline'",
-    'img-src data:',
+    // `blob:` URLs come only from bytes the page already holds (a deck's pictures), never the network.
+    spec.blobMedia ? 'img-src data: blob:' : 'img-src data:',
+    ...(spec.blobMedia ? ['media-src blob:'] : []),
     "base-uri 'none'",
     "form-action 'none'",
   ].join('; ')

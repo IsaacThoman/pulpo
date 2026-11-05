@@ -56,6 +56,8 @@ export const EDITOR_BUNDLES = {
     entry: 'main.ts',
     output: generated('presentationEditorBundle.generated.ts'),
     exportName: 'PRESENTATION_EDITOR_BUNDLE',
+    // Deck pictures and media are object URLs the page makes from bytes the app hands it.
+    blobMedia: true,
     schemaVersion: { file: join(clientCoreSource, 'office/presentation/layout.ts'), pattern: /PRESENTATION_SCHEMA_VERSION = (\d+)/ },
     sources: [
       join(editorRoot, 'presentation'),
