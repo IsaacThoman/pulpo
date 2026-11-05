@@ -83,7 +83,20 @@ export interface CellData {
    * Attributes and children of `<c>`/`<f>` we don't model, kept as read: e.g. `cm`, `vm`, `ph`,
    * data-table formula attributes (`f.t="dataTable"`, `r1`, `dt2D`, …), or a cell's `extLst`.
    */
-  keep?: { c?: Record<string, string>; f?: Record<string, string>; fText?: string; extra?: string }
+  keep?: {
+    c?: Record<string, string>
+    f?: Record<string, string>
+    fText?: string
+    extra?: string
+    /** A number's text when it doesn't fit a double (`1.8e308`, kept as ±Number.MAX_VALUE). */
+    v?: string
+    /**
+     * A formula's text as written (`'Last'!B1`) when it differs from how it would be written now
+     * (`Last!B1`, `fc`). It's written back while the formula still reads `fc`.
+     */
+    fa?: string
+    fc?: string
+  }
   /** The exact text a CSV/TSV field had, written back while the cell is unchanged ("007", "1.50"). */
   raw?: string
   /** Phonetic text (`rPh`/`phoneticPr`) of an inline or shared string, kept as XML. */

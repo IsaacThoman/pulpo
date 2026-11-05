@@ -2,7 +2,7 @@ import { LiveFormatError } from '../../live-format.js'
 import { parseXml, type OoxmlPackage, type XmlDocument } from '../../ooxml/package.js'
 import { MAX_COLS, MAX_ROWS, parseCellName, parseRangeList, parseRangeName, type CellRange } from '../address.js'
 import { randomId } from '../model/axis.js'
-import { toIdForm } from '../model/formula-ids.js'
+import { toA1Form, toIdForm } from '../model/formula-ids.js'
 import { shiftFormula } from '../model/references.js'
 import type {
   AxisProps,
@@ -179,7 +179,7 @@ function readColumns(sheet: SheetModel, cols: XmlElement | undefined): void {
     if (keep) props.keep = keep
     if (max - min >= COLUMN_TAIL) {
       // Typically `<col min="5" max="16384" style="3"/>`: the format of every remaining column.
-      sheet.raw.set('colTail', { from: min, props })
+      sheet.raw.set('colTail', { from: min, ...(max < MAX_COLS - 1 ? { to: max } : {}), props })
       continue
     }
     sheet.cols.ensure(max + 1)
@@ -235,6 +235,12 @@ function readSheetData(sheet: SheetModel, text: string, from: number, to: number
     }
     if (formula === undefined) continue
     const data: CellData = { ...entry.data, f: toIdForm(formula, sheet) }
+    // Sheet names quoted without need are the usual difference between a formula's text and how
+    // it's written back; keep the text so an unchanged formula stays as it was.
+    if (formula.includes("'")) {
+      const canonical = toA1Form(data.f!, sheet)
+      if (canonical !== formula) data.keep = { ...data.keep, fa: formula, fc: canonical }
+    }
     sheet.cells.set(sheet.keyAt(entry.row, entry.col), data)
   }
 }
@@ -294,6 +300,7 @@ function readCell(
   const data: CellData = {}
   const type = attrs.t ?? 'n'
   const raw = valueNode?.text
+  let overflow: string | undefined
   switch (type) {
     case 's': {
       if (raw === undefined || raw.trim() === '') break
@@ -338,14 +345,21 @@ function readCell(
     default:
       if (raw !== undefined && raw.trim() !== '') {
         const n = Number(raw)
-        data.v = Number.isFinite(n) ? n : raw
+        if (Number.isFinite(n)) data.v = n
+        else if (Number.isNaN(n)) data.v = raw
+        else {
+          // Past the largest double: the largest double, with the text kept to write back.
+          data.v = n > 0 ? Number.MAX_VALUE : -Number.MAX_VALUE
+          overflow = raw
+        }
       }
   }
   const keepC: Record<string, string> = {}
   for (const [name, value] of Object.entries(attrs)) if (!C_MODELED.includes(name)) keepC[name] = value
   const extra = node.children.filter((entry) => entry.name !== 'v' && entry.name !== 'f' && entry.name !== 'is' && source.startsWith(`<${entry.name}`, entry.start))
+  if (overflow !== undefined) data.keep = { v: overflow }
   if (Object.keys(keepC).length || extra.length) {
-    data.keep = {}
+    data.keep ??= {}
     if (Object.keys(keepC).length) data.keep.c = keepC
     if (extra.length) data.keep.extra = extra.map((entry) => source.slice(entry.start, entry.end)).join('')
   }

@@ -283,7 +283,7 @@ function writeColumns(sheet: SheetModel, styles: Stylesheet): { xml: string; max
   let maxLevel = 0
   const owners = new Set<string>()
   for (const key of sheet.colMeta.keys()) owners.add(key.slice(0, key.lastIndexOf('|')))
-  const tail = sheet.raw.get('colTail') as { from: number; props: Partial<AxisProps> } | undefined
+  const tail = sheet.raw.get('colTail') as { from: number; to?: number; props: Partial<AxisProps> } | undefined
   for (const id of owners) {
     const index = sheet.cols.indexOf(id)
     if (index < 0) continue
@@ -312,7 +312,9 @@ function writeColumns(sheet: SheetModel, styles: Stylesheet): { xml: string; max
     // The tail range starts after the last column written individually.
     const last = sorted.length ? Math.max(sorted[sorted.length - 1]![0] + 1, tail.from) : tail.from
     const attrs = colAttrs(tail.props)
-    if (attrs && last < MAX_COLS) xml += `<col min="${last + 1}" max="${MAX_COLS}"${attrs}/>`
+    // Where it ended in the file (LibreOffice stops at column 1025), unless columns were added since.
+    const max = tail.to !== undefined ? Math.min(MAX_COLS, Math.max(tail.to + 1, last + 1)) : MAX_COLS
+    if (attrs && last < max) xml += `<col min="${last + 1}" max="${max}"${attrs}/>`
     maxLevel = Math.max(maxLevel, tail.props.level ?? 0)
   }
   return { xml: xml ? `<cols>${xml}</cols>` : '', maxLevel }
@@ -477,7 +479,8 @@ function writeCell(sheet: SheetModel, row: number, col: number, data: CellData, 
     return `<c r="${ref}"${s}${valueType(v, error, true)}${extraAttrs}><f${fAttrs}>${escapeXml(data.keep.fText)}</f>${valueXml(v, context, true)}${extra}</c>`
   }
   if (data.f !== undefined) {
-    const formula = toA1Form(data.f, sheet)
+    const current = toA1Form(data.f, sheet)
+    const formula = data.keep?.fa !== undefined && data.keep.fc === current ? data.keep.fa : current
     const computed = context.values?.(sheet, row, col, data)
     const cached = computed !== undefined ? computed : data.t === 'e' ? { e: String(data.v) } : (data.v ?? null)
     const { v, error } = errorOrValue(cached)
@@ -508,7 +511,10 @@ function writeCell(sheet: SheetModel, row: number, col: number, data: CellData, 
     return `<c r="${ref}"${s} t="s"${extraAttrs}><v>${index}</v>${extra}</c>`
   }
   if (typeof data.v === 'boolean') return `<c r="${ref}"${s} t="b"${extraAttrs}><v>${data.v ? 1 : 0}</v>${extra}</c>`
-  if (typeof data.v === 'number') return `<c r="${ref}"${s}${extraAttrs}><v>${numberText(data.v)}</v>${extra}</c>`
+  if (typeof data.v === 'number') {
+    const kept = data.keep?.v !== undefined && Math.abs(data.v) === Number.MAX_VALUE && Math.sign(Number(data.keep.v)) === Math.sign(data.v) ? escapeXml(data.keep.v) : undefined
+    return `<c r="${ref}"${s}${extraAttrs}><v>${kept ?? numberText(data.v)}</v>${extra}</c>`
+  }
   return style || extraAttrs || extra ? `<c r="${ref}"${s}${extraAttrs}>${extra}</c>` : ''
 }
 
@@ -645,7 +651,15 @@ function writeAutoFilter(sheet: SheetModel, filter: AutoFilter): string | undefi
       return column.xml ? column.xml.replace(/colId="\d+"/, `colId="${column.col}"`) : ''
     })
     .join('')
-  return `<autoFilter ref="${rangeName(range)}">${columns}</autoFilter>`
+  // The last sort (and extensions) stay while the filter covers the same cells it was read with.
+  const ref = rangeName(range)
+  const kept = filter.xml && new RegExp(`^<(?:\\w+:)?autoFilter\\b[^>]*\\bref="${ref}"`).test(filter.xml) ? keptFilterChildren(filter.xml) : ''
+  return `<autoFilter ref="${ref}">${columns}${kept}</autoFilter>`
+}
+
+/** An autofilter's `sortState` and `extLst`, as written. */
+function keptFilterChildren(xml: string): string {
+  return [...xml.matchAll(/<((?:\w+:)?(?:sortState|extLst))\b[^>]*?(?:\/>|>[\s\S]*?<\/\1>)/g)].map((match) => match[0]).join('')
 }
 
 /** The table part XML with its range, columns, and autofilter updated. */
@@ -654,11 +668,13 @@ export function writeTablePart(sheet: SheetModel, table: SheetTable, id: number,
   if (!range) return undefined
   const document = parseXml(table.xml || `<table xmlns="${SHEET_NS}" id="${id}" name="${escapeXml(table.name)}" displayName="${escapeXml(table.displayName)}" ref="A1"><autoFilter ref="A1"/><tableColumns count="0"/><tableStyleInfo name="TableStyleMedium2" showFirstColumn="0" showLastColumn="0" showRowStripes="1" showColumnStripes="0"/></table>`)
   const root = document.documentElement!
+  // A table that hasn't moved keeps its autofilter as written (LibreOffice includes the totals row).
+  const moved = root.getAttribute('ref') !== rangeName(range)
   root.setAttribute('ref', rangeName(range))
   root.setAttribute('name', table.name)
   root.setAttribute('displayName', table.displayName)
   const filter = child(root, 'autoFilter')
-  if (filter) filter.setAttribute('ref', rangeName(table.totalsRow ? { ...range, bottom: range.bottom - 1 } : range))
+  if (filter && (moved || !filter.getAttribute('ref'))) filter.setAttribute('ref', rangeName(table.totalsRow ? { ...range, bottom: range.bottom - 1 } : range))
   const width = range.right - range.left + 1
   const columns = child(root, 'tableColumns')
   if (columns) {

@@ -362,6 +362,27 @@ describe('applyFile', () => {
     }
   })
 
+  it('recognizes rows inserted by a tool that leaves references alone (openpyxl)', async () => {
+    const sheet = (rows: string) => worksheet(rows)
+    const row = (r: number, label: string, formula: string) => `<row r="${r}"><c r="A${r}" t="inlineStr"><is><t>${label}</t></is></c><c r="B${r}"><f>${formula}</f></c></row>`
+    const data = sheet('<row r="1"><c r="A1"><v>1</v></c><c r="B1"><v>2</v></c></row>')
+    const rows = ['one', 'two', 'three', 'four'].map((label, index) => [label, `Data!B1*${index + 1}`] as const)
+    const original = buildXlsx({ sheets: [{ name: 'Summary', xml: sheet(rows.map(([label, formula], index) => row(index + 1, label, formula)).join('')) }, { name: 'Data', xml: data }] })
+    // openpyxl's insert_rows moves the cells down but writes every formula as it was.
+    const agentBytes = buildXlsx({ sheets: [{ name: 'Summary', xml: sheet(`<row r="1"><c r="A1" t="inlineStr"><is><t>agent</t></is></c></row>${rows.map(([label, formula], index) => row(index + 2, label, formula)).join('')}`) }, { name: 'Data', xml: data }] })
+    const { doc, codec, assets, model } = await open(original)
+    const peer = new Y.Doc()
+    Y.applyUpdate(peer, Y.encodeStateAsUpdate(doc))
+    new WorkbookModel(peer).sheets()[0]!.setCell(2, 2, { v: 'peer' })
+    await codec.applyFile(doc, agentBytes, { name: 'Book.xlsx', assets }, 'agent')
+    Y.applyUpdate(doc, Y.encodeStateAsUpdate(peer, Y.encodeStateVector(doc)))
+    const summary = model.sheets()[0]!
+    expect(summary.cell(0, 0)!.v).toBe('agent')
+    // The peer's cell stayed with the "three" row, which moved down one.
+    expect(summary.cell(3, 0)!.v).toBe('three')
+    expect(summary.cell(3, 2)!.v).toBe('peer')
+  })
+
   it('reports no change for the same file and keeps ids', async () => {
     const input = fullWorkbook()
     const { doc, codec, assets, model } = await open(input)

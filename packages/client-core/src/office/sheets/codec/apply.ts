@@ -2,7 +2,7 @@ import type * as Y from 'yjs'
 import { transactChanges } from '../../assets.js'
 import { matchSequences } from '../diff/sequence.js'
 import { toA1Form, toIdForm } from '../model/formula-ids.js'
-import { relativeFormula } from '../model/references.js'
+import { rewriteReferences } from '../model/references.js'
 import type {
   AnchorPoint,
   AutoFilter,
@@ -162,7 +162,7 @@ function lineSignatures(sheet: SheetModel, kind: AxisKind, count: number, styles
   }
   for (const [key, data] of sheet.cells) {
     const position = sheet.position(key)
-    if (position) add(key, `c${cellSignature(sheet, position.row, position.col, data)}`)
+    if (position) add(key, `c${cellSignature(sheet, data)}`)
   }
   for (const [key, xf] of sheet.xf) {
     const mapped = styles(xf)
@@ -176,8 +176,14 @@ function lineSignatures(sheet: SheetModel, kind: AxisKind, count: number, styles
   )
 }
 
-function cellSignature(sheet: SheetModel, row: number, col: number, data: CellData): string {
-  if (data.f !== undefined) return `f:${relativeFormula(toA1Form(data.f, sheet), row, col)}`
+/**
+ * What a cell contributes to its row's (or column's) signature. Formulas count by their shape,
+ * with each reference reduced to the sheet it points at: tools differ in whether they adjust
+ * references when they insert rows (Excel and LibreOffice do, openpyxl doesn't), and either way
+ * the moved row should still match its old self.
+ */
+function cellSignature(sheet: SheetModel, data: CellData): string {
+  if (data.f !== undefined) return `f:${rewriteReferences(toA1Form(data.f, sheet), (ref) => (ref.kind === 'ref' ? `${ref.sheet ? `${ref.sheet.first}!` : ''}#` : undefined))}`
   return `v:${JSON.stringify(data.v ?? null)}${data.t ?? ''}`
 }
 

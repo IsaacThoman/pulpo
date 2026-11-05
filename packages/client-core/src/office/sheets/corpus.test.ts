@@ -134,6 +134,15 @@ describe('formula oracle', () => {
 
 const fidelity = fidelityAvailable() && process.env.PULPO_SHEETS_FIDELITY === '1'
 
+/** Where we read a file the way Excel does and openpyxl doesn't, so the two can't agree. */
+const EXPECTED_DIFFERENCES: Record<string, string[]> = {
+  // `_x0041_` in a string is an escape for "A" (ECMA-376 §22.4.2.4), which openpyxl doesn't decode.
+  'generated/gen-values.xlsx': ['sheets/Values/cells/B24', 'sheets/Values/cells/C23'],
+  // openpyxl wrote table column names that don't match the header cells; Excel repairs that by
+  // taking the header text, and so do we.
+  'generated/gen-tables.xlsx': ['sheets/Tables/tables/Sales/columns/*/name'],
+}
+
 describe.skipIf(!fidelity)('fidelity against openpyxl and LibreOffice', () => {
   const xlsxFiles = manifest.files.filter((entry) => entry.expect === 'open' && /\.(xlsx|xlsm|xltx)$/i.test(entry.path))
   const scratch = mkdtempSync(join(tmpdir(), 'pulpo-sheets-fidelity-'))
@@ -147,7 +156,7 @@ describe.skipIf(!fidelity)('fidelity against openpyxl and LibreOffice', () => {
       const original = sheetsFixture(entry.path)
       try {
         // Calculated values may legitimately differ from caches openpyxl never computed.
-        const compared = compareXlsx(original, output, { ignore: ['calc', 'package'] })
+        const compared = compareXlsx(original, output, { ignore: ['calc', 'package', ...(EXPECTED_DIFFERENCES[entry.path] ?? [])] })
         if (!compared.equal) failures.push(`${entry.path}:\n${formatDifferences(compared, 8)}`)
         const parts = xmlPartsDiff(original, output)
         const lost = parts.removed.filter((path) => !/calcChain|sharedStrings/.test(path))
@@ -170,11 +179,11 @@ describe.skipIf(!fidelity)('fidelity against openpyxl and LibreOffice', () => {
     insertAxis(sheet, 'row', 0, 1)
     const output = join(scratch, 'edited.xlsx')
     writeFileSync(output, await codec.exportFile(doc, { name: 'edited.xlsx', assets }))
-    const dump = inspectXlsx(output, { values: true }) as unknown as { sheets: { cells: Record<string, { value: unknown; font?: { bold?: boolean } }> }[] }
-    const cells = dump.sheets[0]!.cells
-    expect(cells.A42?.value).toBe('edited')
+    const dump = inspectXlsx(output, { values: true }) as unknown as { sheets: Record<string, { cells: Record<string, { v: unknown; font?: { bold?: boolean } }> }> }
+    const cells = dump.sheets[sheet.name]!.cells
+    expect(cells.A42?.v).toBe('edited')
     expect(cells.A42?.font?.bold).toBe(true)
-    expect(cells.B42?.value).toBe(2)
+    expect(cells.B42?.v).toBe(2)
   }, 120_000)
 
   it('merges an agent edit made with openpyxl with a concurrent user edit', async () => {
@@ -186,11 +195,11 @@ describe.skipIf(!fidelity)('fidelity against openpyxl and LibreOffice', () => {
     // A user edits a cell further down at the same time.
     const user = new Y.Doc()
     Y.applyUpdate(user, Y.encodeStateAsUpdate(doc))
-    const userSheet = new WorkbookModel(user).sheets()[0]!
+    const userSheet = new WorkbookModel(user).sheetByName('Summary')!
     commands.setCellInput(userSheet, 5, 6, 'user')
     await codec.applyFile(doc, readFileSync(edited), { name, assets }, 'agent')
     Y.applyUpdate(doc, Y.encodeStateAsUpdate(user, Y.encodeStateVector(doc)))
-    const sheet = new WorkbookModel(doc).sheets()[0]!
+    const sheet = new WorkbookModel(doc).sheetByName('Summary')!
     expect(sheet.cell(0, 0)?.v).toBe('agent')
     // openpyxl's insert_rows doesn't adjust anything, but the row moved: the user's cell follows it.
     expect(sheet.cell(6, 6)?.v).toBe('user')
