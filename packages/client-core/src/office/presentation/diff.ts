@@ -1,9 +1,9 @@
 import type * as Y from 'yjs'
 import { alignKeys } from './codec.js'
-import type { PresentationSnapshot, ShapeSnapshot, SlideSnapshot } from './model.js'
+import type { PartSnapshot, PresentationSnapshot, RelTarget, ShapeSnapshot, SlideSnapshot } from './model.js'
 import { readPresentation } from './read.js'
 import { textToPlain } from './text.js'
-import { bytesEqual, stableStringify } from './xml.js'
+import { bytesEqual, REL_TYPES, stableStringify } from './xml.js'
 import { readSnapshot } from './ydoc.js'
 
 /**
@@ -111,7 +111,20 @@ function compareShape(before: ShapeSnapshot, after: ShapeSnapshot): ShapeChangeK
   return kinds
 }
 
-function compareSlides(before: SlideSnapshot, after: SlideSnapshot): Pick<SlideDiff, 'slideChanges' | 'shapes' | 'notesBefore' | 'notesAfter'> {
+/** Relationships keep their paths when an agent changes the chart or diagram's contents. */
+function samePart(before: PartSnapshot | undefined, after: PartSnapshot | undefined): boolean {
+  if (!before || !after) return before === after
+  return before.asset?.hash === after.asset?.hash && bytesEqual(before.bytes, after.bytes)
+}
+
+function referencedParts(shape: ShapeSnapshot, slide: SlideSnapshot): string[] {
+  const rels: RelTarget[] = Object.values(shape.rels)
+  // Diagram drawings can be attached to the slide rather than to the graphic frame.
+  if (rels.some((rel) => rel.type === REL_TYPES.diagramData)) rels.push(...Object.values(slide.rels).filter((rel) => rel.type === REL_TYPES.diagramDrawing))
+  return [...new Set(rels.filter((rel) => !rel.external).map((rel) => rel.target))].sort()
+}
+
+function compareSlides(before: SlideSnapshot, after: SlideSnapshot, beforeParts: PresentationSnapshot['parts'], afterParts: PresentationSnapshot['parts']): Pick<SlideDiff, 'slideChanges' | 'shapes' | 'notesBefore' | 'notesAfter'> {
   const slideChanges: SlideChangeKind[] = []
   if (before.layout !== after.layout) slideChanges.push('layout')
   if (before.hidden !== after.hidden) slideChanges.push(after.hidden ? 'hidden' : 'shown')
@@ -130,6 +143,9 @@ function compareSlides(before: SlideSnapshot, after: SlideSnapshot): Pick<SlideD
       continue
     }
     const kinds = compareShape(previous, shape)
+    const oldParts = referencedParts(previous, before)
+    const newParts = referencedParts(shape, after)
+    if ((!same(oldParts, newParts) || newParts.some((path) => !samePart(beforeParts[path], afterParts[path]))) && !kinds.includes('other')) kinds.push('other')
     if (kinds.length) shapes.push({ key, name: shape.name ?? previous.name ?? '', kinds, ...(kinds.includes('text') || kinds.includes('table') ? { textBefore: shapeText(previous), textAfter: shapeText(shape) } : {}) })
   }
   for (const [key, shape] of beforeShapes) {
@@ -174,7 +190,7 @@ export function diffSnapshots(beforeInput: PresentationSnapshot, afterInput: Pre
       slides.push({ status: 'added', after: index, afterKey: slide.key, title: titleOf(slide), slideChanges: [], shapes: slide.shapes.map((shape) => ({ key: shape.key, name: shape.name ?? '', kinds: ['added'] as ShapeChangeKind[], ...(shapeText(shape) ? { textAfter: shapeText(shape) } : {}) })) })
       return
     }
-    const comparison = compareSlides(previous.slide, slide)
+    const comparison = compareSlides(previous.slide, slide, before.parts, after.parts)
     const edited = comparison.slideChanges.length > 0 || comparison.shapes.length > 0
     const moved = !stable.has(slide.key)
     slides.push({

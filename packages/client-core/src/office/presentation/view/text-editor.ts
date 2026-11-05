@@ -177,6 +177,12 @@ export class InlineTextEditor {
     )
   }
 
+  setReadOnly(readOnly: boolean): void {
+    if (Boolean(this.options.readOnly) === readOnly) return
+    this.options.readOnly = readOnly
+    this.view.setProps({})
+  }
+
   /**
    * Restyles after the shape's inherited formatting changed (layout, theme, list style). Redrawing
    * replaces every paragraph's DOM, so it happens only when the style really differs, and never

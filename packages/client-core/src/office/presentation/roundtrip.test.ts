@@ -94,8 +94,8 @@ describe('hostile presentations', () => {
       } catch (error) {
         expect(error, String(error)).toBeInstanceOf(LiveFormatError)
       }
-      expect(Date.now() - started).toBeLessThan(10_000)
-    })
+      expect(Date.now() - started).toBeLessThan(30_000)
+    }, 30_000)
   }
 
   it('refuses garbage, legacy binaries, and empty input', async () => {

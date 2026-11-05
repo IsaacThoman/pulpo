@@ -95,7 +95,7 @@ export function assignIdentifiers(snapshot: PresentationSnapshot): PresentationS
       usedParts.add(notes.part!)
       slide.notes = notes
     }
-    slide.shapes = assignShapeIds(slide.shapes)
+    slide.shapes = assignShapeIds(slide.shapes, shapeIdsInXml(slide.xml))
     return slide
   })
   return { ...snapshot, slides }
@@ -166,16 +166,16 @@ function freePartName(used: Set<string>, prefix: string, suffix: string): string
 /** `ST_DrawingElementId`; 0 is what templates for new shapes carry, meaning "not assigned yet". */
 const validShapeId = (id: unknown): id is number => typeof id === 'number' && Number.isInteger(id) && id > 0 && id <= MAX_COORDINATE
 
-/** Shape ids inside XML the model keeps whole (equations, ink, 3-D models in `mc:AlternateContent`). */
-function opaqueShapeIds(xml: string): number[] {
-  return [...xml.matchAll(/<(?:[\w.-]+:)?cNvPr\b[^>]*?\sid="(\d+)"/g)].map((match) => Number(match[1])).filter(validShapeId)
+/** Shape ids inside template XML or content the model keeps whole (equations, ink, 3-D models). */
+function shapeIdsInXml(xml: string): number[] {
+  return [...xml.matchAll(/<(?:[\w.-]+:)?cNvPr\b[^>]*?\sid\s*=\s*['"](\d+)['"]/g)].map((match) => Number(match[1])).filter(validShapeId)
 }
 
-function assignShapeIds(shapes: ShapeSnapshot[]): ShapeSnapshot[] {
-  const used = new Set<number>([1])
+function assignShapeIds(shapes: ShapeSnapshot[], reserved: number[]): ShapeSnapshot[] {
+  const used = new Set<number>([1, ...reserved])
   let next = 2
   const walk = (shape: ShapeSnapshot) => {
-    if (shape.kind === 'opaque') for (const id of opaqueShapeIds(shape.xml)) {
+    if (shape.kind === 'opaque') for (const id of shapeIdsInXml(shape.xml)) {
       used.add(id)
       next = Math.max(next, id + 1)
     }

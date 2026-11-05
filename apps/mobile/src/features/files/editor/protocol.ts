@@ -125,7 +125,7 @@ export type EditorMessage =
   | { type: 'asset'; session: number; requestId: string; hash: string }
   | { type: 'suggestions'; session: number; count: number; index: number | null; active: ActiveSuggestion | null }
   /** The editor's own cursor, as Yjs relative positions, for other sessions' awareness. */
-  | { type: 'cursor'; session: number; cursor: { anchor: unknown; head: unknown } | null }
+  | { type: 'cursor'; session: number; cursor: { anchor: unknown; head: unknown } | null; presentation?: { slide: string | null; shapes: string[]; editing?: string | null } | null }
   /** The owner resolved suggestions in the editor (review buttons, undo, or typing). */
   | { type: 'resolved'; session: number }
   | { type: 'link'; session: number; href: string }

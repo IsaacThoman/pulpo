@@ -44,6 +44,7 @@ export class NotesEditor {
   }
 
   private sync(): void {
+    this.editor?.setReadOnly(this.controller.readOnly)
     const slide = this.controller.state.slide
     const fragment = slide ? this.fragment(slide) : undefined
     if (slide === this.slide && (this.editor ? this.editorFragment === fragment : !fragment)) {

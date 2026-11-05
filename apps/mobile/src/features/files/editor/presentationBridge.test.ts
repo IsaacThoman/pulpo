@@ -93,7 +93,7 @@ async function open(name: string, editable = true) {
   page = new Page(bridge)
   pages.push(page)
   await page.flush()
-  return { doc, bridge, page, fetched }
+  return { doc, bridge, page, fetched, awareness }
 }
 
 describe('presentation editor bridge with the built page', () => {
@@ -106,6 +106,24 @@ describe('presentation editor bridge with the built page', () => {
     expect(fetched.length).toBeGreaterThan(0)
     for (const hash of fetched) expect(hash).toMatch(/^[0-9a-f]{64}$/)
     expect(presentationToolbarState(bridge.getState()).disabled).toContain('undo')
+  })
+
+  it('relays slide and shape presence to the host and clears it when closed', async () => {
+    const { doc, bridge, page, awareness } = await open('generated/pictures.pptx')
+    expect(awareness.getLocalState()?.presentation).toMatchObject({ slide: readSnapshot(doc).slides[0]!.key, shapes: [] })
+    const second = readSnapshot(doc).slides[1]!.key
+    const thumb = page.dom.window.document.querySelector<HTMLElement>(`[data-slide="${second}"]`)!
+    thumb.dispatchEvent(new (page.window as unknown as typeof globalThis).MouseEvent('pointerdown', { bubbles: true, button: 0 }))
+    await page.flush()
+    expect(awareness.getLocalState()?.presentation).toMatchObject({ slide: second, shapes: [] })
+    bridge.command('textBox')
+    await page.flush()
+    const shape = readSnapshot(doc).slides[1]!.shapes.find((shape) => shape.name?.startsWith('TextBox'))!
+    expect(awareness.getLocalState()?.presentation).toMatchObject({ slide: second, shapes: [shape.key] })
+    bridge.destroy()
+    expect(awareness.getLocalState()?.presentation).toBeNull()
+    expect(awareness.getLocalState()?.cursor).toBeNull()
+    awareness.destroy()
   })
 
   it('runs toolbar commands as edits that reach the app, and undoes them', async () => {

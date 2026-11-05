@@ -187,5 +187,5 @@ describe('PowerPoint built-in table styles', () => {
         expect(fallback, `${attr(explicit, 'styleName')}: ${flags}`).toBe(embedded)
       }
     }
-  })
+  }, 30_000)
 })

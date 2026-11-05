@@ -156,6 +156,7 @@ export class SlideCanvas {
   }
 
   private onChange(change: ChangeSet): void {
+    this.editor?.setReadOnly(this.controller.readOnly)
     const slide = this.controller.state.slide
     const editing = this.controller.state.editing
     // Moving to another shape or table cell restarts the editor on that text.
@@ -719,18 +720,22 @@ export class SlideCanvas {
   private readonly onCopy = (event: ClipboardEvent): void => {
     if (this.editor || !event.clipboardData) return
     event.preventDefault()
-    void this.copyTo(event.clipboardData)
+    void this.copyTo(event.clipboardData).catch(() => {})
   }
 
-  private async copyTo(data: DataTransfer): Promise<void> {
+  private async copyTo(data: DataTransfer): Promise<boolean> {
     const copied = await this.controller.copy()
-    if (copied) await writeClipboard(copied, data)
+    if (!copied) return false
+    await writeClipboard(copied, data)
+    return true
   }
 
   private readonly onCut = (event: ClipboardEvent): void => {
     if (this.editor || !event.clipboardData || this.controller.readOnly) return
     event.preventDefault()
-    void this.copyTo(event.clipboardData).then(() => this.controller.deleteSelection())
+    void this.copyTo(event.clipboardData).then((copied) => {
+      if (copied) this.controller.deleteSelection()
+    }).catch(() => {})
   }
 
   private readonly onPaste = (event: ClipboardEvent): void => {

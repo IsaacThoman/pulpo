@@ -227,7 +227,7 @@ export class SlideList {
     }
     if (mod && event.key.toLowerCase() === 'c') {
       event.preventDefault()
-      void controller.copy('slides').then((copied) => copied && writeClipboard(copied))
+      void controller.copy('slides').then((copied) => copied && writeClipboard(copied)).catch(() => {})
       return
     }
     if (controller.readOnly) return
@@ -247,7 +247,7 @@ export class SlideList {
         if (!copied) return
         await writeClipboard(copied)
         controller.deleteSlides()
-      })
+      }).catch(() => {})
     } else if (mod && event.key.toLowerCase() === 'v') {
       event.preventDefault()
       void readClipboard().then((payload) => (payload ? controller.paste(payload, 'slides') : false))

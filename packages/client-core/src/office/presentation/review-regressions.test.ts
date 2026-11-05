@@ -1,6 +1,7 @@
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import * as Y from 'yjs'
+import { LiveFormatError } from '../live-format.js'
 import { resolveTarget } from '../ooxml/package.js'
 import { blankPresentation } from './blank.js'
 import { copyContent, documentIdentity, parseClipboard, pasteShapes, pasteSlides } from './clipboard.js'
@@ -28,8 +29,10 @@ import {
   setXfrm,
   shapeFragment,
   slideKeys,
+  tableShape,
   ungroupShape,
 } from './commands.js'
+import { diffFiles, diffSnapshots } from './diff.js'
 import type { ShapeSnapshot } from './model.js'
 import { DeckResources } from './render/deck.js'
 import { renderSlide } from './render/slide.js'
@@ -37,8 +40,9 @@ import { plainToText, textToPlain } from './text.js'
 import { memoryAssets } from './testing/assets.js'
 import { fidelityAvailable, fixture, runPython, scratchDir, writeScratch } from './testing/fixtures.js'
 import { LOCAL_ORIGIN, PresentationController } from './view/controller.js'
+import { NotesEditor } from './view/notes.js'
 import { remoteCaret, remoteSelection, validCursorState } from './view/text-editor.js'
-import { presentationRoot, readSnapshot } from './ydoc.js'
+import { presentationRoot, readSnapshot, setPart } from './ydoc.js'
 import { REL_TYPES } from './xml.js'
 
 /** Regressions from the second review: each case reproduces a reported data-loss, collaboration, or security bug. */
@@ -562,5 +566,152 @@ describe('second review: present mode and the controller', () => {
     sync(doc, other)
     expect(controller.state.editing).toBeUndefined()
     controller.destroy()
+  })
+})
+
+describe('third review', () => {
+  it('copies every picture beyond 200 parts and pastes without dangling relationships', async () => {
+    const source = await open(blankPresentation())
+    const image = Object.entries(unzipSync(fixture('generated/pictures.pptx'))).find(([path]) => path.startsWith('ppt/media/'))![1]
+    const shapes: ShapeSnapshot[] = []
+    source.transact(() => {
+      for (let index = 0; index < 205; index++) {
+        const path = `ppt/media/copy${index}.png`
+        setPart(presentationRoot(source), path, { bytes: image, contentType: 'image/png' })
+        shapes.push(pictureShape(path, { x: 0, y: 0, cx: 100, cy: 100 }, `Picture ${index}`))
+      }
+    })
+    const clipboard = await copyContent(source, assets, { shapes }, '')
+    expect(Object.keys(clipboard.parts)).toHaveLength(205)
+    const target = await open(blankPresentation())
+    await pasteShapes(target, assets, clipboard, slideKeys(target)[0]!, 0)
+    const files = await exported(target)
+    expect(danglingRelationships(files)).toEqual([])
+    expect(Object.keys(files).filter((path) => path.startsWith('ppt/media/copy'))).toHaveLength(205)
+  })
+
+  it('rejects the whole copy when the reachable graph exceeds the part limit, and the controller handles it', async () => {
+    const doc = await open(blankPresentation())
+    const shape = presetShape('rect', { x: 0, y: 0, cx: 10, cy: 10 }, 'Many parts')
+    doc.transact(() => {
+      for (let index = 0; index < 5_001; index++) {
+        const target = `ppt/media/image${index}.png`
+        setPart(presentationRoot(doc), target, { bytes: new Uint8Array([index % 256]) })
+        shape.rels[`rId${index}`] = { type: REL_TYPES.image, target }
+      }
+    })
+    await expect(copyContent(doc, assets, { shapes: [shape] }, '')).rejects.toMatchObject({ code: 'too_large', message: 'Too much to copy at once' })
+    const slide = slideKeys(doc)[0]!
+    const [key] = insertShapes(doc, slide, [shape])
+    const controller = controllerFor(doc)
+    try {
+      controller.setState({ shapes: [key!] })
+      await expect(controller.copy()).resolves.toBeUndefined()
+    } finally {
+      controller.destroy()
+    }
+  })
+
+  it('rejects copying assets over the total byte budget before fetching them', async () => {
+    const doc = await open(blankPresentation())
+    const shape = pictureShape('ppt/media/large.png', { x: 0, y: 0, cx: 100, cy: 100 }, 'Large')
+    setPart(presentationRoot(doc), 'ppt/media/large.png', { asset: { hash: 'large', mimeType: 'image/png', sizeBytes: 256 * 1024 * 1024 + 1 } })
+    const get = vi.fn(assets.get)
+    await expect(copyContent(doc, { ...assets, get }, { shapes: [shape] }, '')).rejects.toMatchObject(new LiveFormatError('too_large', 'Too much to copy at once'))
+    expect(get).not.toHaveBeenCalled()
+  })
+
+  it('reserves the root group id in the slide template when assigning shape ids deterministically', async () => {
+    const files = unzipSync(blankPresentation())
+    files['ppt/slides/slide1.xml'] = strToU8(slideXml(files, 1).replace(/(<p:cNvPr\b[^>]* id=")1"/, '$14"'))
+    const doc = await open(zipSync(files))
+    const slide = slideKeys(doc)[0]!
+    insertShapes(doc, slide, Array.from({ length: 3 }, (_, index) => ({ ...presetShape('rect', { x: 0, y: 0, cx: 100, cy: 100 }, `New ${index}`), nvId: index === 0 ? 4 : 0 })))
+    const xml = slideXml(await exported(doc), 1)
+    const ids = [...xml.matchAll(/<p:cNvPr\b[^>]* id="(\d+)"/g)].map((match) => match[1])
+    expect(ids).toContain('4')
+    expect(new Set(ids).size).toBe(ids.length)
+    expect(slideXml(await exported(doc), 1)).toBe(xml)
+  })
+
+  it('marks a slide edited when only its chart cached values change', async () => {
+    const before = fixture('generated/charts.pptx')
+    const files = unzipSync(before)
+    const chart = Object.keys(files).find((path) => /^ppt\/charts\/chart\d+\.xml$/.test(path))!
+    const xml = strFromU8(files[chart]!)
+    const changed = xml.replace(/<c:v>\d+(?:\.\d+)?<\/c:v>/, '<c:v>987654</c:v>')
+    expect(changed).not.toBe(xml)
+    files[chart] = strToU8(changed)
+    const diff = await diffFiles(before, zipSync(files))
+    expect(diff.changed).toBe(true)
+    expect(diff.edited).toBe(1)
+    expect(diff.slides.find((slide) => slide.status === 'edited')?.shapes.some((shape) => shape.kinds.includes('other'))).toBe(true)
+  })
+
+  it('attributes slide-level diagram drawing changes to their graphic frame', async () => {
+    const doc = await open(fixture('poi/SmartArt.pptx'))
+    const before = readSnapshot(doc)
+    const after = structuredClone(before)
+    const slide = after.slides.find((slide) => Object.values(slide.rels).some((rel) => rel.type === REL_TYPES.diagramDrawing))!
+    const drawing = Object.values(slide.rels).find((rel) => rel.type === REL_TYPES.diagramDrawing)!.target
+    after.parts[drawing] = { ...after.parts[drawing], bytes: strToU8('changed drawing') }
+    const diff = diffSnapshots(before, after)
+    expect(diff.changed).toBe(true)
+    expect(diff.slides.find((entry) => entry.afterKey === slide.key)).toMatchObject({ status: 'edited', shapes: [expect.objectContaining({ kinds: ['other'] })] })
+  })
+
+  it('unlinks table cells inside groups and speaker notes when pasted into another deck', async () => {
+    const source = await open(blankPresentation())
+    const slide = slideKeys(source)[0]!
+    const text = plainToText('Go to slide one')
+    text.content![0]!.content![0]!.marks = [{ type: 'link', attrs: {
+      xml: '<a:hlinkClick xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:id="rId9" action="ppaction://hlinksldjump"/>',
+      external: false, relType: REL_TYPES.slide, target: 'ppt/slides/slide1.xml',
+    } }]
+    const table = tableShape(1, 1, { x: 0, y: 0, cx: 100_000, cy: 100_000 }, 'Linked table')
+    Object.values(table.table!.rows[0]!.cells)[0]!.text = text
+    const keys = insertShapes(source, slide, [table, presetShape('rect', { x: 0, y: 0, cx: 100, cy: 100 }, 'Other')])
+    groupShapes(source, slide, keys, new Map(keys.map((key) => [key, readXfrm(source, slide, key)!])), 'Group')
+    setNotesText(source, slide, text)
+    const clipboard = await copyContent(source, assets, { slides: [readSlide(source, slide)!] }, '')
+    const target = await open(blankPresentation())
+    await pasteSlides(target, assets, clipboard, 1)
+    const bytes = await exportBytes(target)
+    const out = unzipSync(bytes)
+    const pasted = readSnapshot(await open(bytes)).slides[1]!
+    for (const path of [pasted.part!, pasted.notes!.part!]) {
+      const xml = strFromU8(out[path]!)
+      expect(xml).toContain('Go to slide one')
+      expect(xml).toMatch(/<a:hlinkClick\b[^>]*r:id=""/)
+      expect(xml).not.toMatch(/<a:hlinkClick\b[^>]*r:id="[^"]+"/)
+    }
+    expect(danglingRelationships(out)).toEqual([])
+  })
+
+  it('updates an existing notes editor when the controller changes read-only state', async () => {
+    // @ts-expect-error jsdom ships without declarations.
+    const { JSDOM } = await import('jsdom')
+    const dom = new JSDOM('<!doctype html><html><head></head><body></body></html>') as { window: Window & typeof globalThis }
+    for (const name of ['window', 'document', 'navigator', 'MutationObserver', 'getComputedStyle']) vi.stubGlobal(name, (dom.window as unknown as Record<string, unknown>)[name])
+    const doc = await open(blankPresentation())
+    setNotesText(doc, slideKeys(doc)[0]!, plainToText('Notes stay mounted'))
+    const controller = controllerFor(doc)
+    const notes = new NotesEditor(document.body, controller)
+    try {
+      const editor = notes.element.querySelector('.pp-text-editor')!
+      expect(editor.getAttribute('contenteditable')).toBe('true')
+      controller.setReadOnly(true)
+      await Promise.resolve()
+      expect(notes.element.querySelector('.pp-text-editor')).toBe(editor)
+      expect(editor.getAttribute('contenteditable')).toBe('false')
+      controller.setReadOnly(false)
+      await Promise.resolve()
+      expect(editor.getAttribute('contenteditable')).toBe('true')
+    } finally {
+      notes.destroy()
+      controller.destroy()
+      vi.unstubAllGlobals()
+      dom.window.close()
+    }
   })
 })

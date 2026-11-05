@@ -785,15 +785,19 @@ export class PresentationController {
 
   /** Copies the selected shapes, or the selected slides (always the slides with `'slides'`). */
   async copy(what: 'auto' | 'slides' = 'auto'): Promise<{ json: string; text: string } | undefined> {
-    if (!this.slideKey) return undefined
-    if (what === 'auto' && this.state.shapes.length) {
-      const shapes = commands.readShapes(this.doc, this.slideKey, this.state.shapes)
-      const text = shapes.map((shape) => (shape.text ? textToPlain(shape.text) : '')).filter(Boolean).join('\n')
-      return { json: JSON.stringify(await copyContent(this.doc, this.assets, { shapes }, text)), text }
+    try {
+      if (!this.slideKey) return undefined
+      if (what === 'auto' && this.state.shapes.length) {
+        const shapes = commands.readShapes(this.doc, this.slideKey, this.state.shapes)
+        const text = shapes.map((shape) => (shape.text ? textToPlain(shape.text) : '')).filter(Boolean).join('\n')
+        return { json: JSON.stringify(await copyContent(this.doc, this.assets, { shapes }, text)), text }
+      }
+      const slides = this.state.slides.map((key) => this.slide(key)).filter((slide): slide is SlideSnapshot => slide !== undefined)
+      const text = slides.map((slide) => slide.shapes.map((shape) => (shape.text ? textToPlain(shape.text) : '')).filter(Boolean).join('\n')).join('\n\n')
+      return { json: JSON.stringify(await copyContent(this.doc, this.assets, { slides }, text)), text }
+    } catch {
+      return undefined
     }
-    const slides = this.state.slides.map((key) => this.slide(key)).filter((slide): slide is SlideSnapshot => slide !== undefined)
-    const text = slides.map((slide) => slide.shapes.map((shape) => (shape.text ? textToPlain(shape.text) : '')).filter(Boolean).join('\n')).join('\n\n')
-    return { json: JSON.stringify(await copyContent(this.doc, this.assets, { slides }, text)), text }
   }
 
   async paste(json: string, target: 'auto' | 'slides' = 'auto'): Promise<boolean> {

@@ -97,6 +97,7 @@ function applyTheme(theme: EditorTheme): void {
 function close(): void {
   if (!open) return
   const current = open
+  post({ type: 'cursor', session: current.session, cursor: null, presentation: null })
   open = null
   current.presenter?.exit()
   current.unsubscribe()
@@ -143,7 +144,8 @@ function start(message: Extract<HostMessage, { type: 'init' }>): void {
     if (origin === REMOTE || open?.session !== session) return
     if (![...added, ...updated].includes(doc.clientID)) return
     const cursor = (awareness.getLocalState() as { cursor?: { anchor: unknown; head: unknown } | null } | null)?.cursor ?? null
-    post({ type: 'cursor', session, cursor })
+    const presentation = (awareness.getLocalState() as { presentation?: { slide: string | null; shapes: string[]; editing?: string | null } | null } | null)?.presentation ?? null
+    post({ type: 'cursor', session, cursor, presentation })
   })
   const controller = new PresentationController({ doc, awareness, readOnly: !message.editable, assets, user: message.user })
   const canvas = new SlideCanvas(canvasRoot, controller, { onOpenLink: (href) => post({ type: 'link', session, href }) })
@@ -159,6 +161,7 @@ function start(message: Extract<HostMessage, { type: 'init' }>): void {
   }
   const unsubscribe = controller.subscribe(report)
   open = { session, doc, awareness, assets, controller, canvas, strip, unsubscribe, report }
+  post({ type: 'cursor', session, cursor: null, presentation: { slide: controller.state.slide ?? null, shapes: controller.state.shapes } })
   post({ type: 'loaded', session })
   post({ type: 'sync', session, stateVector: bytesToBase64(Y.encodeStateVector(doc)) })
   report()

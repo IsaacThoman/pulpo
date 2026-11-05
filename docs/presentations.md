@@ -114,6 +114,7 @@ The clipboard payload (`web application/x-pulpo-presentation+json`) carries the 
 
 Known limitations, most important first:
 
+- Two people making the very first move or resize of the same inherited placeholder at the same moment can lose one of the two changes: the first edit copies the inherited transform into the shape, and the two copies resolve last writer wins.
 - Group members are selected and edited through their group (ungroup to change one member); grouping is limited to shapes in the same container.
 - Picture crop and adjust handles (the yellow ones) have no on-canvas handles yet; values from files are honored.
 - Animations do not play in the slide show; transitions all play as a fade.

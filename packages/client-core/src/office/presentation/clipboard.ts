@@ -1,5 +1,5 @@
 import type * as Y from 'yjs'
-import type { LiveAssetStore } from '../live-format.js'
+import { LiveFormatError, type LiveAssetStore } from '../live-format.js'
 import { decodePartText, relationshipsPathFor, relativeTarget, resolveTarget } from '../ooxml/package.js'
 import { cloneShape, cloneSlide, insertShapes, insertSlides, PARTS_ORIGIN, partsMap } from './commands.js'
 import type { PartSnapshot, RelTarget, ShapeSnapshot, SlideSnapshot } from './model.js'
@@ -57,18 +57,29 @@ function relTargetsOfShapes(shapes: readonly ShapeSnapshot[]): RelTarget[] {
 }
 
 /** Parts reachable from `roots` through relationships (charts link to workbooks, diagrams to drawings). */
-function partGraph(parts: Record<string, PartSnapshot>, roots: string[], limit = 200): string[] {
+const MAX_COPY_PARTS = 5_000
+const MAX_COPY_BYTES = 256 * 1024 * 1024
+const tooMuchToCopy = () => new LiveFormatError('too_large', 'Too much to copy at once')
+
+function partGraph(parts: Record<string, PartSnapshot>, roots: string[]): string[] {
   const seen = new Set<string>()
   const queue = [...roots]
   const deck = new DeckResources(parts, '')
-  while (queue.length && seen.size < limit) {
-    const part = queue.shift()!
+  let size = 0
+  const add = (path: string) => {
+    if (seen.has(path)) return
+    seen.add(path)
+    size += parts[path]!.bytes?.byteLength ?? parts[path]!.asset?.sizeBytes ?? 0
+    if (seen.size > MAX_COPY_PARTS || size > MAX_COPY_BYTES) throw tooMuchToCopy()
+  }
+  for (let index = 0; index < queue.length; index++) {
+    const part = queue[index]!
     if (seen.has(part) || !parts[part]) continue
     // Never drag a slide layout or another slide along; those are mapped, not copied.
     if (/\/(slideLayouts|slideMasters|slides|notesSlides|notesMasters)\//.test(`/${part}`)) continue
-    seen.add(part)
+    add(part)
     const relsPath = relationshipsPathFor(part)
-    if (parts[relsPath]) seen.add(relsPath)
+    if (parts[relsPath]) add(relsPath)
     for (const rel of deck.rels(part).values()) if (!rel.external) queue.push(rel.target)
   }
   return [...seen]
@@ -86,10 +97,13 @@ export async function copyContent(doc: Y.Doc, assets: LiveAssetStore, content: {
   // SmartArt drawings are linked from the slide, not the shape; take them along with diagram data.
   for (const slide of content.slides ?? []) for (const rel of Object.values(slide.rels)) if (rel.type === REL_TYPES.diagramDrawing) roots.push(rel.target)
   const parts: Record<string, ClipboardPart> = {}
+  let size = 0
   for (const path of partGraph(snapshot.parts, roots)) {
     const part = snapshot.parts[path]!
     const bytes = part.bytes ?? (part.asset ? await assets.get(part.asset.hash) : undefined)
     if (!bytes) continue
+    size += bytes.byteLength
+    if (size > MAX_COPY_BYTES) throw tooMuchToCopy()
     parts[path] = { data: toBase64(bytes), ...(part.contentType ? { contentType: part.contentType } : {}), ...(part.asset ? { mimeType: part.asset.mimeType } : {}) }
   }
   return {
@@ -282,6 +296,10 @@ function remapShape(shape: ShapeSnapshot, mapping: Map<string, string>, unlinkSl
     ...shape,
     rels: remapRels(shape.rels, mapping, unlinkSlides),
     ...(text ? { text } : {}),
+    ...(unlinkSlides && shape.table ? { table: {
+      ...shape.table,
+      rows: shape.table.rows.map((row) => ({ ...row, cells: Object.fromEntries(Object.entries(row.cells).map(([key, cell]) => [key, { ...cell, text: unlinkText(cell.text)! }])) })),
+    } } : {}),
     ...(shape.children ? { children: shape.children.map((member) => remapShape(member, mapping, unlinkSlides)) } : {}),
   }
 }
@@ -314,7 +332,7 @@ export async function pasteSlides(doc: Y.Doc, assets: LiveAssetStore, clipboard:
       copy.rels = remapRels(copy.rels, mapping, true)
       copy.shapes = copy.shapes.map((shape) => remapShape(shape, mapping, true))
       delete copy.section
-      if (copy.notes) copy.notes = { ...copy.notes, rels: {}, xml: '' }
+      if (copy.notes) copy.notes = { ...copy.notes, text: unlinkText(copy.notes.text)!, rels: {}, xml: '' }
     }
     return copy
   })

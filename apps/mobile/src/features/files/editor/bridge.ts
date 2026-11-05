@@ -191,7 +191,10 @@ export class EditorBridge {
     this.options.doc.off('update', this.onDocUpdate)
     this.options.awareness.off('update', this.onAwarenessUpdate)
     // This session's cursor leaves with its editor.
-    if (this.options.awareness.getLocalState()) this.options.awareness.setLocalStateField('cursor', null)
+    if (this.options.awareness.getLocalState()) {
+      this.options.awareness.setLocalStateField('cursor', null)
+      this.options.awareness.setLocalStateField('presentation', null)
+    }
     this.rejectExports(new Error('The editor closed'))
     this.listeners.clear()
   }
@@ -248,6 +251,7 @@ export class EditorBridge {
         break
       case 'cursor':
         this.options.awareness.setLocalStateField('cursor', message.cursor)
+        if (message.presentation !== undefined) this.options.awareness.setLocalStateField('presentation', message.presentation)
         break
       case 'resolved':
         this.options.onResolved?.()
