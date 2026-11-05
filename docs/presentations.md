@@ -123,7 +123,14 @@ Known limitations, most important first:
 - Charts do not draw error bars, trendlines, data tables, or leader lines; date axes are spaced evenly; 3-D charts are drawn flat.
 - The Y.Doc keeps templates and each slide's original bytes beside the model, about 4× the uncompressed package for shape-heavy decks.
 - `applyFile` reconciles the document with the pushed file, not with the version the agent pulled. Edits other people made between the agent's pull and its push are overwritten where the agent's file differs. Concurrent edits that are still in flight merge. A three-way merge needs the pulled version.
-- `applyFile` matches slides by slide id and table rows and columns by their text. Tools such as python-pptx give a new slide the id of a deleted one. That slide is treated as the old one only when at least one shape (id, kind, and name) agrees (or, if either slide has no shapes, their layouts agree), so a look-alike slide can still pick up edits meant for the deleted one.
+- `applyFile` matches slides by slide id. Tools such as python-pptx give a new slide the id of a deleted one. That slide is treated as the old one only when the two share a shape (id and kind), and either keep their layout or share a shape name, so a look-alike slide can still pick up edits meant for the deleted one.
+- `applyFile` matches table rows and columns in stages:
+  1. PowerPoint's row and column ids (`a16:rowId`, `a16:colId`), which Pulpo gives every table, row, and column it creates;
+  2. otherwise exactly the same cell texts;
+  3. then mostly the same cell texts;
+  4. then position.
+  
+  Rows with identical text and no ids, such as the empty rows of a table python-pptx made, cannot be told apart, so a concurrent edit to one of them can land in another.
 - Re-applying the document's own export right after a slide was deleted reports a change once, because the stored presentation part is updated. Applying it again changes nothing.
 - Collaborators' carets show in on-canvas text, not in speaker notes. Their selections show on the canvas and in the strip.
 

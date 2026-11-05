@@ -434,11 +434,35 @@ export function pictureShape(partPath: string, xfrm: Xfrm, name: string, descrip
 const EMPTY_CELL_XML = '<a:tc><a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:endParaRPr lang="en-US"/></a:p></a:txBody><a:tcPr/></a:tc>'
 
 /** A table with the default "Medium Style 2 - Accent 1" look, header row, and banded rows. */
+/**
+ * PowerPoint's row and column ids (`a16:rowId`, `a16:colId`), random like PowerPoint's. Other tools
+ * keep them when they edit a table, so a pushed file's rows and columns can be told apart even when
+ * their text is the same (see `alignTable` in codec.ts).
+ */
+const ROW_ID_EXT = '{0D108BD9-81ED-4DB2-BD59-A6C34878D82A}'
+const COLUMN_ID_EXT = '{9D8B030D-6E8A-4147-A177-3AD203B41FA5}'
+const A16 = 'http://schemas.microsoft.com/office/drawing/2014/main'
+
+function tableId(): number {
+  return crypto.getRandomValues(new Uint32Array(1))[0]! || 1
+}
+
+function columnXml(width: number): string {
+  return `<a:gridCol w="${width}"><a:extLst><a:ext uri="${COLUMN_ID_EXT}"><a16:colId xmlns:a16="${A16}" val="${tableId()}"/></a:ext></a:extLst></a:gridCol>`
+}
+
+/** A row template (`a:tr` without cells) with a fresh row id. */
+function withRowId(xml: string): string {
+  const extension = `<a:extLst><a:ext uri="${ROW_ID_EXT}"><a16:rowId xmlns:a16="${A16}" val="${tableId()}"/></a:ext></a:extLst>`
+  const bare = withoutExtensions(xml)
+  return /\/>\s*$/.test(bare) ? bare.replace(/\/>\s*$/, `>${extension}</a:tr>`) : bare.replace(/<\/a:tr>\s*$/, `${extension}</a:tr>`)
+}
+
 export function tableShape(rows: number, columns: number, xfrm: Xfrm, name: string): ShapeSnapshot {
   const width = Math.floor(xfrm.cx / columns)
   const height = Math.max(370840, Math.floor(xfrm.cy / rows))
-  const grid = Array.from({ length: columns }, () => `<a:gridCol w="${width}"/>`).join('')
-  const body = Array.from({ length: rows }, () => `<a:tr h="${height}">${Array.from({ length: columns }, () => EMPTY_CELL_XML).join('')}</a:tr>`).join('')
+  const grid = Array.from({ length: columns }, () => columnXml(width)).join('')
+  const body = Array.from({ length: rows }, () => withRowId(`<a:tr h="${height}"/>`).replace('<a:extLst>', `${Array.from({ length: columns }, () => EMPTY_CELL_XML).join('')}<a:extLst>`)).join('')
   return shapeFromTemplate(
     `<p:graphicFrame xmlns:p="${NS.p}" xmlns:a="${NS.a}"><p:nvGraphicFramePr><p:cNvPr id="0" name="${escapeAttribute(name)}"/><p:cNvGraphicFramePr><a:graphicFrameLocks noGrp="1"/></p:cNvGraphicFramePr><p:nvPr/></p:nvGraphicFramePr><p:xfrm><a:off x="${Math.round(xfrm.x)}" y="${Math.round(xfrm.y)}"/><a:ext cx="${width * columns}" cy="${height * rows}"/></p:xfrm><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/table"><a:tbl><a:tblPr firstRow="1" bandRow="1"><a:tableStyleId>{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}</a:tableStyleId></a:tblPr><a:tblGrid>${grid}</a:tblGrid>${body}</a:tbl></a:graphicData></a:graphic></p:graphicFrame>`,
   )
@@ -798,7 +822,7 @@ export function insertTableRow(doc: Y.Doc, slideKey: string, shapeKey: string, i
   const template = rows.get(rowKeys[Math.min(Math.max(index - 1, 0), rowKeys.length - 1)] ?? '')
   const key = newKey('r')
   // The copied row's `a16:rowId` would duplicate the template's; PowerPoint wants them unique.
-  const row: TableRow = { key, h: (template?.get('h') as number) ?? 370840, xml: withoutExtensions((template?.get('xml') as string) ?? '<a:tr/>'), cells: {} }
+  const row: TableRow = { key, h: (template?.get('h') as number) ?? 370840, xml: withRowId((template?.get('xml') as string) ?? '<a:tr/>'), cells: {} }
   const below = index < rowKeys.length ? rows.get(rowKeys[index]!) : undefined
   const grow: YMap[] = []
   for (const column of columns) {
@@ -838,7 +862,7 @@ export function insertTableColumn(doc: Y.Doc, slideKey: string, shapeKey: string
   const width = neighbor ? Math.round(neighbor.w / 2) : 914400
   doc.transact(() => {
     if (neighbor && neighborKey) columns.set(neighborKey, { ...neighbor, w: neighbor.w - width })
-    columns.set(key, { w: width, xml: '<a:gridCol w="0"/>' })
+    columns.set(key, { w: width, xml: columnXml(0) })
     const at = index >= columnKeys.length ? columnOrder.length : columnOrder.toArray().indexOf(columnKeys[index]!)
     columnOrder.insert(Math.max(0, at), [key])
     for (const row of (table.get('rows') as Y.Map<YMap>).values()) {

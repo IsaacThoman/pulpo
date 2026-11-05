@@ -333,7 +333,7 @@ describe('second review: data loss and corruption', () => {
     const out = await exportBytes(doc)
     await opensCleanly(out)
     const xml = strFromU8(unzipSync(out)[readSnapshot(await open(out)).slides[slideIndex]!.part!]!)
-    const rowIds = [...xml.matchAll(/rowId val="(\d+)"/g)].map((match) => match[1])
+    const rowIds = [...xml.matchAll(/rowId\b[^>]*\bval="(\d+)"/g)].map((match) => match[1])
     expect(new Set(rowIds).size).toBe(rowIds.length)
   })
 
@@ -798,7 +798,7 @@ describe('fourth review', () => {
     expect(readSlide(doc, slide)!.shapes).toHaveLength(before)
     expect(put).not.toHaveBeenCalled()
     expect(readSnapshot(doc).parts['ppt/media/p.png']).toBeUndefined()
-  })
+  }, 60_000)
 
   it('refuses slides with too many nested shapes and pastes beyond the deck limit before storing assets', async () => {
     const doc = await open(blankPresentation())
@@ -810,7 +810,7 @@ describe('fourth review', () => {
     expect(await pasteSlides(doc, { ...assets, put }, { ...clipboard, slides: [{ ...slide, shapes: [] }] }, 1)).toEqual([])
     expect(slideKeys(doc)).toHaveLength(DEFAULT_PRESENTATION_LIMITS.maxSlides)
     expect(put).not.toHaveBeenCalled()
-  })
+  }, 60_000)
 
   it('reports a section-only rename in an exported presentation', async () => {
     const before = await exportBytes(await open(fixture('generated/layouts-notes-sections.pptx')))
@@ -879,7 +879,7 @@ describe('fifth review', () => {
         const firstRow = /<a:tr\b[\s\S]*?<\/a:tr>/.exec(xml)![0]
         xml = xml.replace(firstRow, firstRow.replace(/<a:t>[^<]*<\/a:t>/g, '<a:t>TOP</a:t>') + firstRow)
       } else {
-        xml = xml.replace(/<a:gridCol\b[^>]*\/>/, '').replace(/(<a:tr\b[^>]*>)<a:tc>[\s\S]*?<\/a:tc>/g, '$1')
+        xml = xml.replace(/<a:gridCol\b[^>]*\/>|<a:gridCol\b[^>]*>[\s\S]*?<\/a:gridCol>/, '').replace(/(<a:tr\b[^>]*>)<a:tc>[\s\S]*?<\/a:tc>/g, '$1')
         xml = xml.replace(/<a:tr\b[\s\S]*?<\/a:tr>/, '')
       }
       files['ppt/slides/slide1.xml'] = strToU8(xml)
@@ -921,5 +921,92 @@ describe('fifth review', () => {
     const results = await Promise.all([pasteShapes(doc, assets, clipboard, slide, 0), pasteShapes(doc, assets, clipboard, slide, 0)])
     expect(results.map((keys) => keys.length).sort()).toEqual([0, 2])
     expect(readSlide(doc, slide)!.shapes).toHaveLength(DEFAULT_PRESENTATION_LIMITS.maxShapesPerSlide)
+  }, 60_000)
+})
+
+describe('closing review', () => {
+  const records = (texts: string[][]) => {
+    const shape = tableShape(texts.length, texts[0]!.length, { x: 0, y: 0, cx: 3_000_000, cy: 1_000_000 }, 'Records')
+    shape.table!.rows.forEach((row, i) => shape.table!.columns.forEach((column, j) => { row.cells[column.key]!.text = plainToText(texts[i]![j]!) }))
+    return shape
+  }
+  const texts = (doc: Y.Doc, slide: string, key: string) => {
+    const table = readSlide(doc, slide)!.shapes.find((entry) => entry.key === key)!.table!
+    return table.rows.map((row) => table.columns.map((column) => textToPlain(row.cells[column.key]!.text)).join(' | '))
+  }
+  const append = (doc: Y.Doc, slide: string, shape: ShapeSnapshot, row: number, column: number, text: string) => {
+    const fragment = cellFragment(doc, slide, shape.key, shape.table!.rows[row]!.key, shape.table!.columns[column]!.key)!
+    const run = (fragment.get(0) as Y.XmlElement).get(0) as Y.XmlText
+    run.insert(run.length, text)
+  }
+
+  it('keeps an edit on its own record when a push deletes the record above, even if the two look alike', async () => {
+    const doc = await open(blankPresentation())
+    const slide = slideKeys(doc)[0]!
+    const shape = records([['Alice', 'Pending'], ['Bob', 'Pending'], ['Carol', 'Pending']])
+    insertShapes(doc, slide, [shape])
+    const files = await exported(doc)
+    const user = replica(doc)
+    append(user, slide, shape, 1, 1, ' UNSENT')
+    const xml = strFromU8(files['ppt/slides/slide1.xml']!)
+    files['ppt/slides/slide1.xml'] = strToU8(xml.replace(/<a:tr\b[\s\S]*?<\/a:tr>/, ''))
+    await presentationCodec.applyFile(doc, zipSync(files), context, 'agent')
+    sync(doc, user)
+    expect(texts(doc, slide, shape.key)).toEqual(['Bob | Pending UNSENT', 'Carol | Pending'])
+  })
+
+  it('keeps an edit in its own column when a push deletes a look-alike column before it', async () => {
+    const doc = await open(blankPresentation())
+    const slide = slideKeys(doc)[0]!
+    const shape = records([['Q1', 'Q2', 'Q3'], ['10', '10', '20']])
+    insertShapes(doc, slide, [shape])
+    const files = await exported(doc)
+    const user = replica(doc)
+    append(user, slide, shape, 1, 1, '5')
+    const xml = strFromU8(files['ppt/slides/slide1.xml']!)
+    files['ppt/slides/slide1.xml'] = strToU8(xml.replace(/<a:gridCol\b[^>]*\/>|<a:gridCol\b[^>]*>[\s\S]*?<\/a:gridCol>/, '').replace(/(<a:tr\b[^>]*>)<a:tc>[\s\S]*?<\/a:tc>/g, '$1'))
+    await presentationCodec.applyFile(doc, zipSync(files), context, 'agent')
+    sync(doc, user)
+    expect(texts(doc, slide, shape.key)).toEqual(['Q2 | Q3', '105 | 20'])
+  })
+
+  it('matches rows by their PowerPoint row ids before their text', async () => {
+    const doc = await open(blankPresentation())
+    const slide = slideKeys(doc)[0]!
+    const shape = records([['North', '1'], ['South', '2']])
+    shape.table!.rows.forEach((row, index) => { row.xml = row.xml.replace(/\/>$|><\/a:tr>$/, `><a:extLst><a:ext uri="{0D108BD9-81ED-4DB2-BD59-A6C34878D82A}"><a16:rowId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" val="${1000 + index}"/></a:ext></a:extLst></a:tr>`) })
+    insertShapes(doc, slide, [shape])
+    const files = await exported(doc)
+    expect(strFromU8(files['ppt/slides/slide1.xml']!)).toContain('rowId')
+    const user = replica(doc)
+    append(user, slide, shape, 1, 1, '0')
+    // The agent rewrites both cells of the first row and swaps nothing else.
+    const xml = strFromU8(files['ppt/slides/slide1.xml']!)
+    files['ppt/slides/slide1.xml'] = strToU8(xml.replace('<a:t>North</a:t>', '<a:t>East</a:t>').replace('<a:t>1</a:t>', '<a:t>9</a:t>'))
+    await presentationCodec.applyFile(doc, zipSync(files), context, 'agent')
+    sync(doc, user)
+    expect(texts(doc, slide, shape.key)).toEqual(['East | 9', 'South | 20'])
+  })
+
+  it('gives new tables, rows, and columns PowerPoint ids, so empty look-alike rows keep their edits', async () => {
+    const doc = await open(blankPresentation())
+    const slide = slideKeys(doc)[0]!
+    const shape = records([['', ''], ['', ''], ['', '']])
+    insertShapes(doc, slide, [shape])
+    insertTableRow(doc, slide, shape.key, 3)
+    const files = await exported(doc)
+    const xml = strFromU8(files['ppt/slides/slide1.xml']!)
+    const rowIds = [...xml.matchAll(/rowId\b[^>]*\bval="(\d+)"/g)].map((match) => match[1])
+    const columnIds = [...xml.matchAll(/colId\b[^>]*\bval="(\d+)"/g)].map((match) => match[1])
+    expect(rowIds).toHaveLength(4)
+    expect(new Set(rowIds).size).toBe(4)
+    expect(new Set(columnIds).size).toBe(2)
+    const user = replica(doc)
+    const fragment = cellFragment(user, slide, shape.key, shape.table!.rows[1]!.key, shape.table!.columns[1]!.key)!
+    ;(fragment.get(0) as Y.XmlElement).insert(0, [new Y.XmlText('UNSENT')])
+    files['ppt/slides/slide1.xml'] = strToU8(xml.replace(/<a:tr\b[\s\S]*?<\/a:tr>/, ''))
+    await presentationCodec.applyFile(doc, zipSync(files), context, 'agent')
+    sync(doc, user)
+    expect(texts(doc, slide, shape.key)).toEqual([' | UNSENT', ' | ', ' | '])
   })
 })

@@ -176,39 +176,66 @@ function similarCells(a: string[], b: string[]): boolean {
   return shared * 2 >= Math.max(left.length, right.length)
 }
 
-/** Longest common subsequence under `similarCells`: index pairs (current, incoming), in order. */
-function similarSubsequence(current: string[][], incoming: string[][]): [number, number][] {
+/** Longest common subsequence under `same`: index pairs (current, incoming), in order. */
+function commonSubsequence<T>(current: T[], incoming: T[], same: (a: T, b: T) => boolean): [number, number][] {
   if (current.length * incoming.length > 1_000_000) return []
   const table: number[][] = Array.from({ length: current.length + 1 }, () => new Array<number>(incoming.length + 1).fill(0))
   for (let i = current.length - 1; i >= 0; i--) {
     for (let j = incoming.length - 1; j >= 0; j--) {
-      table[i]![j] = similarCells(current[i]!, incoming[j]!) ? table[i + 1]![j + 1]! + 1 : Math.max(table[i + 1]![j]!, table[i]![j + 1]!)
+      table[i]![j] = same(current[i]!, incoming[j]!) ? table[i + 1]![j + 1]! + 1 : Math.max(table[i + 1]![j]!, table[i]![j + 1]!)
     }
   }
   const pairs: [number, number][] = []
   for (let i = 0, j = 0; i < current.length && j < incoming.length; ) {
-    if (similarCells(current[i]!, incoming[j]!) && table[i]![j] === table[i + 1]![j + 1]! + 1) pairs.push([i++, j++])
+    if (same(current[i]!, incoming[j]!) && table[i]![j] === table[i + 1]![j + 1]! + 1) pairs.push([i++, j++])
     else if (table[i + 1]![j]! >= table[i]![j + 1]!) i++
     else j++
   }
   return pairs
 }
 
-/**
- * Matches table rows or columns by their cells' texts, then pairs the entries left between two
- * matches by position, which is what an edited row looks like.
- */
-function tablePairs(current: string[][], incoming: string[][]): Map<number, number> {
-  const matched = similarSubsequence(current, incoming)
-  const pairs = new Map<number, number>()
-  for (const [currentIndex, incomingIndex] of matched) pairs.set(incomingIndex, currentIndex)
-  const anchors = [[-1, -1], ...matched, [current.length, incoming.length]] as [number, number][]
-  for (let at = 0; at < anchors.length - 1; at++) {
-    const [currentStart, incomingStart] = anchors[at]!
-    const [currentEnd, incomingEnd] = anchors[at + 1]!
-    for (let offset = 1; currentStart + offset < currentEnd && incomingStart + offset < incomingEnd; offset++) pairs.set(incomingStart + offset, currentStart + offset)
+/** One table row or column as the matcher sees it: its file id (`a16:rowId`/`colId`), if any, and its cells' texts. */
+interface AxisEntry {
+  id?: string
+  cells: string[]
+}
+
+/** Runs `match` on the stretches between consecutive anchors and returns the anchors with its matches added. */
+function fillGaps(anchors: [number, number][], currentLength: number, incomingLength: number, match: (currentStart: number, currentEnd: number, incomingStart: number, incomingEnd: number) => [number, number][]): [number, number][] {
+  const bounds = [[-1, -1] as [number, number], ...anchors, [currentLength, incomingLength] as [number, number]]
+  const result: [number, number][] = []
+  for (let at = 0; at < bounds.length - 1; at++) {
+    if (at > 0) result.push(bounds[at]!)
+    const [currentStart, incomingStart] = bounds[at]!
+    const [currentEnd, incomingEnd] = bounds[at + 1]!
+    if (currentEnd - currentStart > 1 && incomingEnd - incomingStart > 1) result.push(...match(currentStart + 1, currentEnd, incomingStart + 1, incomingEnd))
   }
-  return pairs
+  return result
+}
+
+/**
+ * Matches table rows or columns in stages, each only where the stage before left a gap:
+ * 1. the same identity: the file's row or column id where both sides have one, else exactly the
+ *    same cell texts, so an untouched record always keeps its own key;
+ * 2. mostly the same cell texts, so a record survives a column (or row) inserted or deleted in
+ *    the same push;
+ * 3. by position, which is what an edited record looks like.
+ */
+function tablePairs(current: AxisEntry[], incoming: AxisEntry[]): Map<number, number> {
+  const identity = (entry: AxisEntry) => (entry.id ? `id:${entry.id}` : `text:${entry.cells.join('\t')}`)
+  const exact = commonSubsequence(current.map(identity), incoming.map(identity), (a, b) => a === b)
+  const similar = fillGaps(exact, current.length, incoming.length, (cs, ce, is, ie) =>
+    commonSubsequence(current.slice(cs, ce), incoming.slice(is, ie), (a, b) => similarCells(a.cells, b.cells)).map(([a, b]) => [a + cs, b + is] as [number, number]),
+  )
+  const positional = fillGaps(similar, current.length, incoming.length, (cs, ce, is, ie) =>
+    Array.from({ length: Math.min(ce - cs, ie - is) }, (_, offset) => [cs + offset, is + offset] as [number, number]),
+  )
+  return new Map(positional.map(([currentIndex, incomingIndex]) => [incomingIndex, currentIndex]))
+}
+
+/** The `val` of an `a16:rowId` or `a16:colId` in a row's or column's XML. */
+function axisId(xml: string): string | undefined {
+  return /<(?:[\w-]+:)?(?:rowId|colId)\b[^>]*\bval="([^"]+)"/.exec(xml)?.[1]
 }
 
 /** New entries must not reuse even a deleted entry's key: its edits may still be in flight. */
@@ -226,11 +253,11 @@ function alignTableAxis<T extends { key: string }>(current: T[], incoming: T[], 
 
 function alignTable(current: TableSnapshot, incoming: TableSnapshot): TableSnapshot {
   const text = (table: TableSnapshot, row: TableSnapshot['rows'][number], column: string) => textToPlain(row.cells[column]?.text ?? { type: 'doc' })
-  const columnCells = (table: TableSnapshot) => table.columns.map((column) => table.rows.map((row) => text(table, row, column.key)))
-  const columns = alignTableAxis(current.columns, incoming.columns, tablePairs(columnCells(current), columnCells(incoming)))
+  const columnEntries = (table: TableSnapshot): AxisEntry[] => table.columns.map((column) => ({ id: axisId(column.xml), cells: table.rows.map((row) => text(table, row, column.key)) }))
+  const columns = alignTableAxis(current.columns, incoming.columns, tablePairs(columnEntries(current), columnEntries(incoming)))
   const columnKey = new Map(incoming.columns.map((column, index) => [column.key, columns[index]!.key]))
-  const rowCells = (table: TableSnapshot) => table.rows.map((row) => table.columns.map((column) => text(table, row, column.key)))
-  const rows = alignTableAxis(current.rows, incoming.rows, tablePairs(rowCells(current), rowCells(incoming)))
+  const rowEntries = (table: TableSnapshot): AxisEntry[] => table.rows.map((row) => ({ id: axisId(row.xml), cells: table.columns.map((column) => text(table, row, column.key)) }))
+  const rows = alignTableAxis(current.rows, incoming.rows, tablePairs(rowEntries(current), rowEntries(incoming)))
     .map((row) => ({ ...row, cells: Object.fromEntries(Object.entries(row.cells).map(([column, cell]) => [columnKey.get(column) ?? column, cell])) }))
   return { ...incoming, columns, rows }
 }
