@@ -14,7 +14,7 @@ import { BODY_FRAGMENT, readDocxModel, writeFragment, type DocxModel } from './m
 import { ListCounter, Numbering, formatNumber } from './numbering.js'
 import { docxSchema, inlineMarks } from './schema.js'
 import { StyleSheet, cellConditions, mergeElement, tableLook } from './styles.js'
-import { clearFormatting, freshId, findMatches, insertTable, insertPageBreak, insertParagraphBreak, insertSectionBreak, listDefinition, replaceMatches, setAlignment, setFontSize, toggleList, toggleRunProperty, wordCount } from './view/commands.js'
+import { clearFormatting, effectiveRunProperties, freshId, findMatches, insertTable, insertPageBreak, insertParagraphBreak, insertSectionBreak, listDefinition, replaceMatches, setAlignment, setFontSize, toggleList, toggleRunProperty, wordCount } from './view/commands.js'
 import { DocxViewContext } from './view/context.js'
 import { pasteSelection, sectionEndsPlugin } from './view/sections.js'
 import { listRevisions, resolveRevisions, trackTransaction } from './view/track-changes.js'
@@ -120,6 +120,56 @@ describe('diff', () => {
     expect(diff.blocks[0]).toMatchObject({ kind: 'modify', formats: [{ property: 'picture', text: '[Image]' }] })
   })
 
+  it.each([
+    ['7', 'decimal', ['7.', '8.']],
+    ['1', 'upperRoman', ['I.', 'II.']],
+  ])('reports resolved list labels when only the definition changes (%s, %s)', async (start, format, labels) => {
+    const numPr = packJml(['w:numPr', {}, ['w:numId', { 'w:val': '1' }]])
+    const before = (await documentWith(...['First', 'Second'].map((text) => schema.node('paragraph', { numPr }, schema.text(text))))).model
+    const definition = (start: string, format: string) => packJml(['w:abstractNum', { 'w:abstractNumId': '1' },
+      ['w:lvl', { 'w:ilvl': '0' }, ['w:start', { 'w:val': start }], ['w:numFmt', { 'w:val': format }], ['w:lvlText', { 'w:val': '%1.' }]]])
+    before.maps.numbering.set('num:1', packJml(['w:num', { 'w:numId': '1' }, ['w:abstractNumId', { 'w:val': '1' }]]))
+    before.maps.numbering.set('abstract:1', definition('1', 'decimal'))
+    const after = { ...before, maps: { ...before.maps, numbering: new Map(before.maps.numbering).set('abstract:1', definition(start, format)) } }
+    const diff = diffDocxModels(before, after)
+    expect(diff.identical).toBe(false)
+    expect(diff.stats).toMatchObject({ changedBlocks: 2, formatChanges: 2, insertedWords: 0, deletedWords: 0 })
+    diff.blocks.forEach((block, index) => {
+      expect(block).toMatchObject({ kind: 'modify', before: { label: `${index + 1}.` }, after: { label: labels[index] },
+        formats: [{ property: 'numPr', text: '', before: `${index + 1}.`, after: labels[index] }] })
+    })
+  })
+
+  it('includes table list labels and advances their counters before later body paragraphs', async () => {
+    const numPr = packJml(['w:numPr', {}, ['w:numId', { 'w:val': '1' }]])
+    const item = (text: string) => schema.node('paragraph', { numPr }, schema.text(text))
+    const before = (await documentWith(schema.node('table', null, [schema.node('tableRow', null, [schema.node('tableCell', null, [item('Cell')])])]), item('Body'))).model
+    before.maps.numbering.set('num:1', packJml(['w:num', { 'w:numId': '1' }, ['w:abstractNumId', { 'w:val': '1' }]]))
+    before.maps.numbering.set('abstract:1', packJml(listDefinition('decimal', '1')))
+    const after = { ...before, maps: { ...before.maps, numbering: new Map(before.maps.numbering).set('num:1',
+      packJml(['w:num', { 'w:numId': '1' }, ['w:abstractNumId', { 'w:val': '1' }], ['w:lvlOverride', { 'w:ilvl': '0' }, ['w:startOverride', { 'w:val': '7' }]]])) } }
+    const diff = diffDocxModels(before, after)
+    expect(diff.blocks[0]).toMatchObject({ kind: 'modify', before: { text: '1. Cell' }, after: { text: '7. Cell' },
+      segments: [{ op: 'delete', text: '1' }, { op: 'insert', text: '7' }, { op: 'equal', text: '. Cell' }] })
+    expect(diff.blocks[1]).toMatchObject({ kind: 'modify', before: { label: '2.' }, after: { label: '8.' } })
+  })
+
+  it.each(['header', 'footer', 'footnote', 'endnote'])('reviews numbering-only changes in a %s', async (kind) => {
+    const before = (await documentWith(p(run('Body')))).model
+    const id = `${kind}:1`
+    before.stories.set(id, { meta: { kind: kind as 'header' | 'footer' | 'footnote' | 'endnote' },
+      doc: schema.node('doc', null, [schema.node('paragraph', { numPr: packJml(['w:numPr', {}, ['w:numId', { 'w:val': '1' }]]) }, schema.text('Story'))]) })
+    before.maps.numbering.set('num:1', packJml(['w:num', { 'w:numId': '1' }, ['w:abstractNumId', { 'w:val': '1' }]]))
+    before.maps.numbering.set('abstract:1', packJml(listDefinition('decimal', '1')))
+    const after = { ...before, maps: { ...before.maps, numbering: new Map(before.maps.numbering).set('num:1',
+      packJml(['w:num', { 'w:numId': '1' }, ['w:abstractNumId', { 'w:val': '1' }], ['w:lvlOverride', { 'w:ilvl': '0' }, ['w:startOverride', { 'w:val': '7' }]]])) } }
+    const diff = diffDocxModels(before, after)
+    expect(diff.identical).toBe(false)
+    expect(diff.stories).toEqual([{ kind, id, change: 'modify', segments: [
+      { op: 'delete', text: '1' }, { op: 'insert', text: '7' }, { op: 'equal', text: '. Story' },
+    ] }])
+  })
+
   it('pairs changed paragraphs, keeps added and removed ones, and notes formatting', async () => {
     const before = (await documentWith(p(run('Intro stays the same.')), p(run('This sentence will change a little.')), p(run('Removed paragraph entirely.')), p(run('Make me bold.')))).model
     const after = (await documentWith(p(run('Intro stays the same.')), p(run('This sentence will change quite a little.')), p(run('Brand new words here.')), p(run('Make me '), run('bold', 'b'), run('.')))).model
@@ -154,6 +204,26 @@ describe('editing commands', async () => {
     expect(centered.doc.child(0).attrs.jc).toBe('["w:jc",{"w:val":"center"}]')
     const cleared = sized.apply(clearFormatting(sized.apply(sized.tr.setSelection(TextSelection.create(sized.doc, 1, 12))), context)!)
     expect(cleared.doc.child(0).child(0).marks).toEqual([])
+  })
+
+  it.each(['b', 'i'] as const)('toggles inherited character-style %s off and back on for selections and typing', async (name) => {
+    const charStyle = schema.mark('rStyle', { v: packJml(['w:rStyle', { 'w:val': 'Emphasis' }]) })
+    const { doc } = await documentWith(p(schema.text('Styled text', [charStyle])))
+    doc.getMap('styles').set(...style('Emphasis', 'character', [['w:rPr', {}, [`w:${name}`, {}]]]))
+    const context = new DocxViewContext(doc)
+    try {
+      for (const to of [3, 7]) {
+        let state = EditorState.create({ schema, doc: readDocxModel(doc).body })
+        state = state.apply(state.tr.setSelection(TextSelection.create(state.doc, 3, to)))
+        const off = state.apply(toggleRunProperty(name)(state, context)!)
+        expect(effectiveRunProperties(off, context).get(`w:${name}`)).toEqual([`w:${name}`, { 'w:val': '0' }])
+        const on = off.apply(toggleRunProperty(name)(off, context)!)
+        expect(effectiveRunProperties(on, context).get(`w:${name}`)).toEqual([`w:${name}`, {}])
+      }
+    } finally {
+      context.destroy()
+      doc.destroy()
+    }
   })
 
   it('makes lists with real numbering definitions and turns them off again', () => {

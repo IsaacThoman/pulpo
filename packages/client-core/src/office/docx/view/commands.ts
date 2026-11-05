@@ -103,8 +103,8 @@ export const insertParagraphBreak: Command = (state, context) => {
   return result
 }
 
-/** Effective run properties at the selection: document defaults, styles, then direct formatting. */
-export function effectiveRunProperties(state: EditorState, context: DocxViewContext): PropertyMap {
+/** Run properties inherited at the selection, before direct formatting overrides them. */
+function inheritedRunProperties(state: EditorState, context: DocxViewContext): PropertyMap {
   const { styles } = context
   const paragraph = selectedParagraphs(state)[0]?.node
   let props = new Map(styles.docDefaults.rPr)
@@ -112,7 +112,13 @@ export function effectiveRunProperties(state: EditorState, context: DocxViewCont
   const marks = selectionMarks(state)
   const charStyle = jmlAttr(jml(marks.find((mark) => mark.type.name === 'rStyle')?.attrs.v), 'w:val')
   if (charStyle) props = mergeProperties(props, styles.resolve(charStyle).rPr)
-  for (const mark of marks) {
+  return props
+}
+
+/** Effective run properties at the selection: document defaults, styles, then direct formatting. */
+export function effectiveRunProperties(state: EditorState, context: DocxViewContext): PropertyMap {
+  let props = inheritedRunProperties(state, context)
+  for (const mark of selectionMarks(state)) {
     if (mark.type.name === 'rPrRest') for (const element of unpackJml<JmlElement[]>(mark.attrs.v as string) ?? []) props.set(element[0], element)
     else if (mark.type.name in RUN_PROPERTY_MARKS) {
       const element = jml(mark.attrs.v)
@@ -142,12 +148,7 @@ export const toggleRunProperty = (name: ToggleProperty): Command => (state, cont
   const tr = state.tr
   const markType = state.schema.marks[name]!
   // Turning off what a style turns on needs an explicit `w:val="0"`; otherwise just drop the mark.
-  const styleOn = (() => {
-    const { styles } = context
-    const paragraph = selectedParagraphs(state)[0]?.node
-    const props = mergeProperties(new Map(styles.docDefaults.rPr), styles.resolve(styles.paragraphStyle(paragraph?.attrs.pStyle as string | null)?.id).rPr)
-    return jmlOn(props.get(`w:${name}`)) === true
-  })()
+  const styleOn = jmlOn(inheritedRunProperties(state, context).get(`w:${name}`)) === true
   if (on) {
     if (styleOn) setMark(state, tr, propertyMark(state, name, [`w:${name}`, { 'w:val': '0' }]))
     else clearMark(state, tr, markType)

@@ -118,9 +118,12 @@ function collectBlocks(doc: ProseMirrorNode, model: DocxModel): Block[] {
   const styles = new StyleSheet(model.maps.styles)
   const counter = new ListCounter(new Numbering(model.maps.numbering, styles))
   const blocks: Block[] = []
-  const paragraph = (node: ProseMirrorNode) => {
+  const listLabel = (node: ProseMirrorNode) => {
     const list = effectiveNumPr(jml(node.attrs.numPr), node.attrs.pStyle as string | null, styles)
-    const label = list ? counter.next(list.numId, list.ilvl)?.text : undefined
+    return list ? counter.next(list.numId, list.ilvl)?.text : undefined
+  }
+  const paragraph = (node: ProseMirrorNode) => {
+    const label = listLabel(node)
     const style = styles.paragraphStyle(node.attrs.pStyle as string | null)
     const direct = jmlAttr(jml(node.attrs.outlineLvl), 'w:val')
     const outline = direct !== undefined ? Number(direct) : styles.outlineLevel(node.attrs.pStyle as string | null)
@@ -128,7 +131,7 @@ function collectBlocks(doc: ProseMirrorNode, model: DocxModel): Block[] {
     const text = inlineText(node)
     blocks.push({
       summary: { type: 'paragraph', text, ...(style ? { style: styleDisplayName(style) } : {}), ...(label ? { label } : {}), ...(outline !== undefined && outline < 9 ? { outline } : {}) },
-      key: `p:${text}\u0001${signatures.join('\u0002')}\u0001${paragraphSignature(node)}`,
+      key: `p:${text}\u0001${signatures.join('\u0002')}\u0001${paragraphSignature(node)}\u0001${label ?? ''}`,
       node,
       properties: paragraphSignature(node),
     })
@@ -144,9 +147,11 @@ function collectBlocks(doc: ProseMirrorNode, model: DocxModel): Block[] {
           row.forEach((cell) => {
             if (cell.attrs.phantom) return
             const parts: string[] = []
-            cell.forEach((child) => {
-              if (child.type.name === 'paragraph') parts.push(inlineText(child))
-              else parts.push(child.textContent)
+            cell.descendants((child) => {
+              if (child.type.name !== 'paragraph') return true
+              const label = listLabel(child)
+              parts.push([label, inlineText(child)].filter(Boolean).join(' '))
+              return false
             })
             cells.push(parts.join(' ').trim())
           })
@@ -342,11 +347,15 @@ function pushRunChanges(changes: FormatChange[], text: string, before: string, a
   }
 }
 
-function storyText(doc: ProseMirrorNode): string {
+function storyText(doc: ProseMirrorNode, model: DocxModel): string {
+  const styles = new StyleSheet(model.maps.styles)
+  const counter = new ListCounter(new Numbering(model.maps.numbering, styles))
   const lines: string[] = []
   doc.descendants((node) => {
     if (node.type.name === 'paragraph') {
-      lines.push(inlineText(node))
+      const list = effectiveNumPr(jml(node.attrs.numPr), node.attrs.pStyle as string | null, styles)
+      const label = list ? counter.next(list.numId, list.ilvl)?.text : undefined
+      lines.push([label, inlineText(node)].filter(Boolean).join(' '))
       return false
     }
     return true
@@ -397,6 +406,9 @@ export function diffDocxModels(before: DocxModel, after: DocxModel): DocxDiff {
       insertCursor = match + 1
       const segments = diffWords(removed.summary.text, added.summary.text)
       const formats = formatChanges(removed.node, added.node, sheets)
+      if (removed.summary.label !== added.summary.label) {
+        formats.push({ property: 'numPr', text: '', before: removed.summary.label, after: added.summary.label })
+      }
       for (const segment of segments) {
         if (segment.op === 'insert') stats.insertedWords += words(segment.text)
         else if (segment.op === 'delete') stats.deletedWords += words(segment.text)
@@ -432,8 +444,8 @@ export function diffDocxModels(before: DocxModel, after: DocxModel): DocxDiff {
     const left = before.stories.get(id)
     const right = after.stories.get(id)
     const kind = id.slice(0, id.indexOf(':'))
-    const textA = left ? storyText(left.doc) : ''
-    const textB = right ? storyText(right.doc) : ''
+    const textA = left ? storyText(left.doc, before) : ''
+    const textB = right ? storyText(right.doc, after) : ''
     const author = kind === 'comment' ? parseJson<CommentMeta>((right ? after : before).maps.comments.get(id.slice(8)))?.author : undefined
     if (left && !right) stories.push({ kind, id, change: 'delete', segments: [{ op: 'delete', text: textA }], ...(author ? { author } : {}) })
     else if (!left && right) stories.push({ kind, id, change: 'insert', segments: [{ op: 'insert', text: textB }], ...(author ? { author } : {}) })
