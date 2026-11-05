@@ -238,7 +238,7 @@ export function FileViewerScreen({ navigation, route }: Props) {
               : <MaterialIconButton icon="doc.on.doc" label="Copy" onPress={() => { void Clipboard.setStringAsync(shown) }} />}
           </View>
           {showGrid && table ? (
-            <GridView ref={gridRef} table={table} matchRows={matchRowSet} currentRow={rowMatches[current]} bottomInset={insets.bottom} />
+            <GridView ref={gridRef} query={query} table={table} matchRows={matchRowSet} currentRow={rowMatches[current]} bottomInset={insets.bottom} />
           ) : lines ? (
             <CodeView ref={codeRef} lines={lines.lines} plain={lines.plain} wrap={wrap} matches={lineMatches} current={current} bottomInset={insets.bottom} />
           ) : null}
