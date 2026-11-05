@@ -89,9 +89,10 @@ export interface PresentationToolbarProps {
   onFormatPanelChange(open: boolean): void
   onPresent(mode: 'start' | 'current' | 'presenter'): void
   onPrint(): void
+  printing?: boolean
 }
 
-export function PresentationToolbar({ controller, view, onViewChange, formatPanel, onFormatPanelChange, onPresent, onPrint }: PresentationToolbarProps) {
+export function PresentationToolbar({ controller, view, onViewChange, formatPanel, onFormatPanelChange, onPresent, onPrint, printing }: PresentationToolbarProps) {
   const fileInput = useRef<HTMLInputElement>(null)
   const readOnly = controller.readOnly
   const format = controller.formatState()
@@ -312,7 +313,7 @@ export function PresentationToolbar({ controller, view, onViewChange, formatPane
             <PanelRight className="size-4" />
           </ToolbarButton>
         )}
-        <ToolbarButton label={ui("Export to PDF")} onClick={onPrint}>
+        <ToolbarButton label={ui("Export to PDF")} disabled={printing} onClick={onPrint}>
           <Printer className="size-4" />
         </ToolbarButton>
         <DropdownMenu>

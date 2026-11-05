@@ -22,7 +22,7 @@ export interface PresentationEditor {
   thumbnails: SlideList
   notes?: NotesEditor
   present(options?: { presenterView?: boolean; fromCurrent?: boolean }): Presenter
-  print(): void
+  print(): Promise<void>
   destroy(): void
 }
 

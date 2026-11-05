@@ -10,7 +10,7 @@ import * as Y from 'yjs'
 import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from 'y-protocols/awareness'
 import type { LiveAssetStore } from '@pulpo/client-core/office'
 import { blankPresentation, presentationCodec, presentationCommands } from '@pulpo/client-core/office/presentation'
-import type { PresentationController } from '@pulpo/client-core/office/presentation/view'
+import { printSlides, type PresentationController } from '@pulpo/client-core/office/presentation/view'
 import '../../src/index.css'
 import i18n from '../../src/i18n'
 import { HarnessApp } from './HarnessApp'
@@ -99,6 +99,7 @@ Object.assign(window, {
     controllers,
     commands: presentationCommands,
     codec: presentationCodec,
+    printSlides,
     setOnline(value: boolean) {
       online = value
       if (value) for (const { to, update } of queued.splice(0)) Y.applyUpdate(to, update, 'relay')

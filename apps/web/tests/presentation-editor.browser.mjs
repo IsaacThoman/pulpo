@@ -439,6 +439,51 @@ try {
     await page.close()
   })
 
+  await check('prints pictures on unviewed slides after loading and decoding their assets', async () => {
+    const { page, errors } = await open(context, 'deck=generated/pictures.pptx')
+    const expected = await page.evaluate(() => {
+      const { harness } = window
+      let release
+      const pending = new Promise((resolve) => { release = resolve })
+      window.releasePrintAssets = release
+      // No views subscribe to this controller, so none of its slide assets are cached.
+      const cold = new harness.controllers.a.constructor({ doc: harness.docA, assets: { ...harness.assets, get: async (hash) => { await pending; return harness.assets.get(hash) } }, readOnly: true, user: { name: 'Print', color: '#123456' } })
+      const observer = new MutationObserver(() => {
+        const frame = document.querySelector('iframe')
+        if (!frame) return
+        frame.contentWindow.focus = () => {}
+        frame.contentWindow.print = () => {
+          window.printedPictures = [...frame.contentDocument.querySelectorAll('image')].map((image) => image.getAttribute('href'))
+          window.printedPages = frame.contentDocument.querySelectorAll('.pp-print-page').length
+          frame.contentWindow.dispatchEvent(new Event('afterprint'))
+        }
+      })
+      observer.observe(document.body, { childList: true })
+      window.printFinished = harness.printSlides(cold).finally(() => { observer.disconnect(); cold.destroy() })
+      return { slides: cold.slideKeys().length, pictures: cold.slideKeys().flatMap((key) => cold.slide(key).shapes).filter((shape) => shape.kind === 'pic').length }
+    })
+    assert.equal(await page.locator('iframe').count(), 0, 'does not build print pages with unloaded assets')
+    await page.evaluate(async () => { window.releasePrintAssets(); await window.printFinished })
+    const result = await page.evaluate(() => ({ slides: window.printedPages, pictures: window.printedPictures }))
+    assert.equal(result.slides, expected.slides)
+    assert.ok(result.pictures.length >= expected.pictures, 'includes the slides’ pictures and inherited artwork')
+    assert.ok(result.pictures.every((url) => url?.startsWith('blob:') || url?.startsWith('data:')))
+    assert.equal(await page.locator('iframe').count(), 0, 'print frame cleaned up')
+    assert.deepEqual(errors, [])
+    await page.close()
+  })
+
+  await check('shows a print preparation error and lets the user retry', async () => {
+    const { page, errors } = await open(context, 'deck=generated/pictures.pptx')
+    await page.evaluate(() => { window.harness.controllers.a.loadAssetUrl = async () => undefined })
+    await page.getByRole('button', { name: 'Export to PDF', exact: true }).click()
+    await page.getByRole('alert').filter({ hasText: 'Unable to prepare the presentation for printing' }).waitFor()
+    assert.equal(await page.getByRole('button', { name: 'Export to PDF', exact: true }).isEnabled(), true)
+    assert.equal(await page.locator('iframe').count(), 0)
+    assert.deepEqual(errors, [])
+    await page.close()
+  })
+
   await check('shows a review diff of the changes', async () => {
     const { page, errors } = await open(context, 'deck=generated/text-formatting.pptx')
     await page.evaluate(() => {

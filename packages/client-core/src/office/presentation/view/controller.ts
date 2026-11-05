@@ -317,6 +317,28 @@ export class PresentationController {
     return html
   }
 
+  /** Loads every image the given slides render, including inherited and nested content. */
+  async loadSlideAssets(keys: readonly string[]): Promise<string[]> {
+    const paths = new Set<string>()
+    const root = presentationRoot(this.doc)
+    for (const key of keys) {
+      const slide = this.slide(key)
+      if (!slide) continue
+      // Use the renderer to include inherited backgrounds, picture fills and SmartArt images.
+      renderSlide(slide, { slideWidth: root.get('slideWidth') as number, slideHeight: root.get('slideHeight') as number }, {
+        ...this.renderOptions('view', 'preload', key),
+        assetUrl: (path) => { paths.add(path); return undefined },
+      })
+    }
+    return Promise.all([...paths].map(async (path) => {
+      // Printing can be retried after a transient download failure.
+      if (this.urls.get(path) === null && !this.loadingUrls.has(path)) this.urls.delete(path)
+      const url = await this.loadAssetUrl(path)
+      if (!url) throw new Error('A slide image could not be loaded')
+      return url
+    }))
+  }
+
   /** An object URL for an image or media part; loads it in the background and redraws when ready. */
   assetUrl(partPath: string): string | undefined {
     const cached = this.urls.get(partPath)

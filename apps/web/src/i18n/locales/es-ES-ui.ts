@@ -2843,6 +2843,7 @@ const esUi: Record<string, string> = {
   "This file is damaged and can't be opened for editing": "Este archivo está dañado y no se puede abrir para editarlo",
   "This file is encrypted, so it can't be edited": "Este archivo está cifrado, así que no se puede editar",
   "This document needs a newer version of Pulpo": "Este documento necesita una versión más reciente de Pulpo",
+  "Unable to prepare the presentation for printing. Check that its images are available and try again.": "No se pudo preparar la presentación para imprimir. Comprueba que sus imágenes estén disponibles e inténtalo de nuevo.",
 }
 
 export default esUi

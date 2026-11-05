@@ -252,27 +252,51 @@ function escapeHtml(value: string): string {
  * Prints the deck one slide per page at the slide's own size (the browser's "Save as PDF" makes
  * a PDF of it). Hidden slides are left out, as PowerPoint does by default.
  */
-export function printSlides(controller: PresentationController): void {
-  const size = controller.size()
-  const frame = document.createElement('iframe')
-  frame.setAttribute('aria-hidden', 'true')
-  frame.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0'
-  document.body.append(frame)
-  const pages = controller
-    .slideKeys()
-    .filter((key) => !controller.slide(key)?.hidden)
-    .map((key, index) => `<div class="pp-print-page">${controller.slideHtml(key, 'view', `print-${index}`)}</div>`)
-    .join('')
-  const document_ = frame.contentDocument!
-  document_.open()
-  document_.write(
-    `<!doctype html><html><head><style>@page{size:${size.width}px ${size.height}px;margin:0}html,body{margin:0}.pp-print-page{width:${size.width}px;height:${size.height}px;overflow:hidden;break-after:page;page-break-after:always}.pp-print-page:last-child{break-after:auto}.pp-slide p,.pp-slide .pp-p{margin:0}</style></head><body>${pages}</body></html>`,
-  )
-  document_.close()
-  // Images are object URLs of this page; give them a moment to decode before printing.
-  setTimeout(() => {
-    frame.contentWindow?.focus()
-    frame.contentWindow?.print()
-    setTimeout(() => frame.remove(), 1000)
-  }, 300)
+export async function printSlides(controller: PresentationController, options: { timeoutMs?: number } = {}): Promise<void> {
+  let frame: HTMLIFrameElement | undefined
+  let finished = false
+  let printed = false
+  let timeout: ReturnType<typeof setTimeout> | undefined
+  const prepare = async () => {
+    const keys = controller.slideKeys().filter((key) => !controller.slide(key)?.hidden)
+    const urls = await controller.loadSlideAssets(keys)
+    if (finished) return
+    const size = controller.size()
+    const pages = keys.map((key, index) => `<div class="pp-print-page">${controller.slideHtml(key, 'view', `print-${index}`)}</div>`).join('')
+    frame = document.createElement('iframe')
+    frame.setAttribute('aria-hidden', 'true')
+    frame.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0'
+    document.body.append(frame)
+    const document_ = frame.contentDocument!
+    document_.open()
+    document_.write(
+      `<!doctype html><html><head><style>@page{size:${size.width}px ${size.height}px;margin:0}html,body{margin:0}.pp-print-page{width:${size.width}px;height:${size.height}px;overflow:hidden;break-after:page;page-break-after:always}.pp-print-page:last-child{break-after:auto}.pp-slide p,.pp-slide .pp-p{margin:0}</style></head><body>${pages}</body></html>`,
+    )
+    document_.close()
+    // SVG <image> elements have no decode(): decode their source images explicitly as well.
+    await Promise.all(urls.map(async (url) => {
+      const image = new Image()
+      image.src = url
+      await image.decode()
+    }))
+    await document_.fonts?.ready
+  }
+  try {
+    await Promise.race([prepare(), new Promise<never>((_resolve, reject) => {
+      timeout = setTimeout(() => reject(new Error('Timed out preparing slides for printing')), options.timeoutMs ?? 30_000)
+    })])
+    if (!frame?.contentWindow) throw new Error('The print document is unavailable')
+    const printFrame = frame
+    let cleanup: ReturnType<typeof setTimeout> | undefined
+    const remove = () => { clearTimeout(cleanup); printFrame.remove() }
+    printFrame.contentWindow!.addEventListener('afterprint', remove, { once: true })
+    cleanup = setTimeout(remove, 60_000)
+    printFrame.contentWindow!.focus()
+    printFrame.contentWindow!.print()
+    printed = true
+  } finally {
+    finished = true
+    clearTimeout(timeout)
+    if (!printed) frame?.remove()
+  }
 }

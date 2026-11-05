@@ -64,6 +64,8 @@ function PresentationEditorView({ controller, startInShow, toolbarSlot, classNam
   const [view, setView] = useState<'editor' | 'sorter'>('editor')
   const [formatPanel, setFormatPanel] = useState(false)
   const [notesOpen, setNotesOpen] = useState(true)
+  const [printing, setPrinting] = useState(false)
+  const [printError, setPrintError] = useState(false)
   const presenter = useRef<Presenter | null>(null)
   const root = useRef<HTMLDivElement>(null)
   const [stripHost] = useMounted(controller, (element) => new SlideList(element, controller, { layout: 'strip' }))
@@ -93,6 +95,18 @@ function PresentationEditorView({ controller, startInShow, toolbarSlot, classNam
         canvas.current?.focus()
       },
     })
+  }
+
+  const print = async () => {
+    setPrinting(true)
+    setPrintError(false)
+    try {
+      await printSlides(controller)
+    } catch {
+      setPrintError(true)
+    } finally {
+      setPrinting(false)
+    }
   }
 
   useEffect(() => {
@@ -128,10 +142,12 @@ function PresentationEditorView({ controller, startInShow, toolbarSlot, classNam
           formatPanel={formatPanel}
           onFormatPanelChange={setFormatPanel}
           onPresent={present}
-          onPrint={() => printSlides(controller)}
+          printing={printing}
+          onPrint={() => { void print() }}
         />
         {toolbarSlot}
       </div>
+      {printError && <p role="alert" className="px-3 py-1 text-sm text-destructive">{ui("Unable to prepare the presentation for printing. Check that its images are available and try again.")}</p>}
       <div className={cn('grid min-h-0 flex-1', formatPanel && view === 'editor' ? 'grid-cols-[minmax(7rem,12rem)_1fr_16rem]' : 'grid-cols-[minmax(7rem,12rem)_1fr]', view === 'sorter' && 'hidden')}>
         <nav aria-label={ui("Slides")} className="min-h-0 border-r bg-muted/30" ref={stripHost} />
         <div className="flex min-h-0 min-w-0 flex-col">

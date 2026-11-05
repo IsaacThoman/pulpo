@@ -86,7 +86,7 @@ The view core (`@pulpo/client-core/office/presentation/view`) is imperative DOM,
 - `SlideList`: the thumbnail strip and the slide sorter (lazy thumbnails, sections, hidden slides, collaborators' positions, multi-select, drag to reorder, keyboard).
 - `NotesEditor`: speaker notes. Every slide (and every shape that can hold text) has its text fragment from the start, so two people who start typing notes at once both keep their text; a notes page is written only when there are notes.
 - `Presenter`: full screen, keyboard (arrows, space, Page Up/Down, Home, End, number + Enter, Esc), click, tap, and swipe; hidden slides are skipped; slides with a transition fade in. The presenter view adds the next slide, notes, a timer, and the count. `.ppsx` decks open in the show.
-- `printSlides`: one slide per page at the slide's size, for Save as PDF.
+- `await printSlides(controller)`: one slide per page at the slide's size, for Save as PDF. It loads images for all printable slides before generating pages and waits for image decoding and fonts. Preparation rejects on a load/decoding failure or after 30 seconds; the web editor shows an error and allows retrying. The mounted editor's `print()` also returns a promise.
 
 The web wrapper (`apps/web/src/features/files/live/presentation`) arranges these with the app's toolbar buttons, menus, popovers, and `ui()` strings: insert (slide from a layout, text box, shape gallery, image, table), text formatting (font, size, bold, italic, underline, strike, color, alignment, bullets, numbering, list level, line spacing), shape fill, arrange, slide (layout, duplicate, hide, delete), sorter, format panel (size, position, rotation, fill, line, dash, shadow, slide background), export to PDF, and present.
 
@@ -96,7 +96,7 @@ The web wrapper (`apps/web/src/features/files/live/presentation`) arranges these
 
 ### Copy and paste between decks
 
-The clipboard payload (`web application/x-pulpo-presentation+json`) carries the copied shapes or slides and every part they reach through relationships: images, charts and their workbooks, and SmartArt parts. Any page can write that type, so pastes are validated. Shapes and slides whose XML or numbers would make an invalid file are dropped, and text is accepted only on `p:sp`. Pasting into another deck brings the parts along under fresh names and maps slides to the layout with the same name. Pasting into the same deck reuses the parts it still has. The canvas and the slide strip both copy and paste.
+The clipboard payload (`web application/x-pulpo-presentation+json`) carries the copied shapes or slides and every part they reach through relationships: images, charts and their workbooks, and SmartArt parts. Any page can write that type, so pastes are validated. Shapes and slides whose XML or numbers would make an invalid file are dropped, and text is accepted only on `p:sp`. Pasting into another deck brings the parts along under fresh names and maps slides to the layout with the same name. Pasting into the same deck reuses parts only while their contents and dependencies still match the copied version. Changed pictures, charts, workbooks, and relationship graphs are restored from the clipboard under fresh names, preserving both the copied content and later edits. Reuse is checked after asynchronous asset preparation, immediately before insertion. The canvas and the slide strip both copy and paste.
 
 ## Supported, kept, and not yet supported
 
