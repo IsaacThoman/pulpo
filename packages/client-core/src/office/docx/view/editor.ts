@@ -254,7 +254,11 @@ export class DocxEditor {
     }))
     const storiesMap = options.doc.getMap('stories')
     const storyObserver = () => this.scheduleLayout()
-    const deepObserver = () => this.scheduleLayout()
+    // y-tiptap opens a Y transaction on every dispatch, even one that changes nothing; only real
+    // changes from elsewhere (collaborators editing headers, notes) need new pages.
+    const deepObserver = (transaction: Y.Transaction) => {
+      if (transaction.changed.size && transaction.origin !== ySyncPluginKey) this.scheduleLayout()
+    }
     storiesMap.observe(storyObserver)
     // Edits to headers, footers, and notes by anyone redraw the pages.
     options.doc.on('afterTransaction', deepObserver)

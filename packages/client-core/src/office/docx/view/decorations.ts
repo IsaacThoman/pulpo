@@ -99,6 +99,33 @@ function listDecoration(node: ProseMirrorNode, pos: number, counter: ListCounter
   return Decoration.node(pos, pos + node.nodeSize, attrs)
 }
 
+/** Whether a paragraph's own or style's `w:contextualSpacing` is on. */
+function hasContextualSpacing(node: ProseMirrorNode, input: DecorationInput): boolean {
+  const direct = jml(node.attrs.contextualSpacing)
+  if (direct) return jmlAttr(direct, 'w:val') !== '0' && jmlAttr(direct, 'w:val') !== 'false'
+  const { styles } = input.context
+  const element = styles.resolve(styles.paragraphStyle(node.attrs.pStyle as string | null)?.id).pPr.get('w:contextualSpacing')
+  return element !== undefined && jmlAttr(element, 'w:val') !== '0' && jmlAttr(element, 'w:val') !== 'false'
+}
+
+/**
+ * Contextual spacing: no space between paragraphs of the same style when they ask for it (list
+ * paragraphs do), as Word draws them.
+ */
+function contextualSpacing(doc: ProseMirrorNode, node: ProseMirrorNode, pos: number, input: DecorationInput): Decoration | undefined {
+  if (!hasContextualSpacing(node, input)) return undefined
+  const $pos = doc.resolve(pos)
+  const parent = $pos.parent
+  const index = $pos.index()
+  const sameStyle = (other: ProseMirrorNode | null) => other?.type.name === 'paragraph' && (other.attrs.pStyle ?? null) === (node.attrs.pStyle ?? null)
+  const before = index > 0 ? parent.child(index - 1) : null
+  const after = index + 1 < parent.childCount ? parent.child(index + 1) : null
+  const props: string[] = []
+  if (sameStyle(before)) props.push('margin-top:0')
+  if (sameStyle(after)) props.push('margin-bottom:0')
+  return props.length ? Decoration.node(pos, pos + node.nodeSize, { style: props.join(';') }) : undefined
+}
+
 function paragraphRevision(node: ProseMirrorNode): Record<string, string> | undefined {
   const markRPr = jml(node.attrs.markRPr)
   const attrs: Record<string, string> = {}
@@ -245,6 +272,8 @@ export function computeDecorations(doc: ProseMirrorNode, input: DecorationInput)
       case 'paragraph': {
         const list = listDecoration(node, pos, counter, input)
         if (list) decorations.push(list)
+        const contextual = contextualSpacing(doc, node, pos, input)
+        if (contextual) decorations.push(contextual)
         const revision = paragraphRevision(node)
         if (revision) decorations.push(Decoration.node(pos, pos + node.nodeSize, revision))
         return true

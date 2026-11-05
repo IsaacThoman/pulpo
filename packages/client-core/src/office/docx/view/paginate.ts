@@ -125,7 +125,7 @@ function measureParagraph(view: EditorView, node: ProseMirrorNode, pos: number, 
   if (!lines.length) lines = [box]
   // The first line takes the space before the paragraph; the last its space after.
   lines[0] = { top: box.top, bottom: lines[0]!.bottom }
-  if (lines.length === 1) lines[0] = { top: box.top, bottom: Math.max(lines[0]!.bottom, box.bottom - parseFloat(getComputedStyle(dom).paddingBottom || '0')) }
+  if (lines.length === 1) lines[0] = { top: box.top, bottom: Math.max(lines[0]!.bottom, box.bottom) }
   // A raised note mark sits above its line's top; place it by its middle.
   const notes = [...dom.querySelectorAll<HTMLElement>('.docx-noteref[data-note^="footnote:"]')].map((element) => {
     const box = rectIn(frame, element.getBoundingClientRect())

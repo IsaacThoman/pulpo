@@ -35,30 +35,47 @@ export function themeVariables(theme: ThemeInfo | undefined): string {
 export function documentStylesheet(scope: string, styles: StyleSheet, theme?: ThemeInfo): string {
   const rules: string[] = []
   const root = `.${scope}`
-  rules.push(`${root}{${themeVariables(theme)};${ruleBody(undefined, styles.docDefaults.rPr, theme)}}`)
+  // Document defaults go on every flow (body, headers, notes), above the base rules' fallbacks.
+  rules.push(`${root}{${themeVariables(theme)}}`)
+  rules.push(`${root} .docx-flow{${ruleBody(undefined, styles.docDefaults.rPr, theme)}}`)
   rules.push(`${root} .docx-p{${ruleBody(styles.docDefaults.pPr, undefined, theme)}}`)
+  // Table styles first: Word applies them above the document defaults but below paragraph and
+  // character styles. Run formatting inherits from the cell; paragraph formatting (spacing and
+  // indents, which do not inherit) targets the cell's paragraphs at paragraph-style specificity.
+  for (const style of styles.styles.values()) {
+    if (style.type !== 'table') continue
+    const resolved = styles.resolve(style.id)
+    const id = cssIdent(style.id)
+    const conditions = [['base', resolved.pPr, resolved.rPr] as const, ...TABLE_CONDITIONS.map((condition) => {
+      const set = tableConditionChain(styles, style.id, condition)
+      return [condition, set.pPr, set.rPr] as const
+    })]
+    for (const [name, pPr, rPr] of conditions) {
+      const runs = ruleBody(undefined, rPr, theme)
+      const paragraphs = ruleBody(pPr, undefined, theme)
+      if (runs) rules.push(`${root} .docx-tc-${id}-${name}{${runs}}`)
+      if (paragraphs) rules.push(`${root} :where(.docx-tc-${id}-${name}) .docx-p{${paragraphs}}`)
+    }
+  }
   const defaultParagraph = styles.defaultStyle('paragraph')
   for (const style of styles.styles.values()) {
     const resolved = styles.resolve(style.id)
     const id = cssIdent(style.id)
     if (style.type === 'paragraph') {
-      const body = ruleBody(resolved.pPr, resolved.rPr, theme)
+      // Only what the style chain itself sets, so table styles underneath still show through.
+      const own = style === defaultParagraph ? { pPr: new Map(), rPr: resolved.rPr } : resolved
+      const body = ruleBody(own.pPr, own.rPr, theme)
       const selectors = [`${root} .docx-ps-${id}`]
       if (style === defaultParagraph) selectors.push(`${root} .docx-ps--default`)
       if (body) rules.push(`${selectors.join(',')}{${body}}`)
+      // The default style's paragraph properties sit with the document defaults, below table styles.
+      if (style === defaultParagraph) {
+        const paragraphs = ruleBody(resolved.pPr, undefined, theme)
+        if (paragraphs) rules.splice(3, 0, `${root} .docx-p:where(.docx-ps-${id},.docx-ps--default){${paragraphs}}`)
+      }
     } else if (style.type === 'character') {
       const body = ruleBody(undefined, resolved.rPr, theme)
       if (body) rules.push(`${root} .docx-cs-${id}{${body}}`)
-    } else if (style.type === 'table') {
-      // Run and paragraph formatting of the table style and its conditions; borders and shading
-      // depend on cell positions and come from cell decorations.
-      const body = ruleBody(resolved.pPr, resolved.rPr, theme)
-      if (body) rules.push(`${root} .docx-tc-${id}-base{${body}}`)
-      for (const condition of TABLE_CONDITIONS) {
-        const set = tableConditionChain(styles, style.id, condition)
-        const text = ruleBody(set.pPr, set.rPr, theme)
-        if (text) rules.push(`${root} .docx-tc-${id}-${condition}{${text}}`)
-      }
     }
   }
   return rules.join('\n')
@@ -82,6 +99,9 @@ export function tableConditionChain(styles: StyleSheet, id: string, condition: (
 
 /** Layout rules every document shares. */
 export const DOCX_BASE_CSS = `
+.docx-flow,.docx-flow .docx-wrapper{display:flex;flex-direction:column}
+.docx-flow>*,.docx-flow .docx-wrapper>*{align-self:stretch;flex:none}
+.docx-flow>table.docx-table,.docx-flow .docx-wrapper>table.docx-table{align-self:flex-start}
 .docx-flow{position:relative;white-space:pre-wrap;overflow-wrap:break-word;word-break:normal;color:#000;font-family:Carlito,Calibri,"Liberation Sans",Arial,sans-serif;font-size:11pt;outline:none;font-kerning:normal;text-rendering:optimizeLegibility;caret-color:#000;-webkit-font-smoothing:antialiased}
 .docx-flow .docx-p,.docx-flow .docx-p span{line-height:max(var(--docx-lh-min,0pt),var(--docx-lh-abs,calc(var(--docx-lh,1)*var(--docx-flh,1.17)*1em)))}
 .docx-flow .docx-p{margin:0 calc(var(--docx-ind-r,0pt) + var(--docx-sec-inset,0px)) 0 var(--docx-ind-l,0pt);min-height:1em;position:relative}

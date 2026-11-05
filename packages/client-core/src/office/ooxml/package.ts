@@ -178,7 +178,12 @@ export class OoxmlPackage {
       throw new LiveFormatError('encrypted', 'This file is password protected or in a legacy binary format')
     }
     if (!startsWith(bytes, ZIP_SIGNATURE)) throw new LiveFormatError('corrupt', 'This is not an Office Open XML package')
-    assertConsistentZip(bytes)
+    try {
+      assertConsistentZip(bytes)
+    } catch (error) {
+      if (error instanceof LiveFormatError) throw error
+      throw new LiveFormatError('corrupt', 'This zip package has a damaged directory', { cause: error })
+    }
     let entries = 0
     let declared = 0
     let files: Record<string, Uint8Array>

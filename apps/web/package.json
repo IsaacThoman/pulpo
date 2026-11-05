@@ -17,6 +17,7 @@
     "test:suggestion-card": "node tests/suggestion-card.browser.mjs",
     "test:doc-dictation": "node tests/doc-dictation.browser.mjs",
     "test:docx-editor": "node tests/docx-editor.browser.mjs",
+    "test:docx-fidelity": "node tests/docx-fidelity.browser.mjs",
     "capture:landing": "node scripts/capture-landing-screenshots.mjs"
   },
   "dependencies": {

@@ -315,10 +315,10 @@ export function paragraphPropertyCss(element: JmlElement, theme?: ThemeInfo): Cs
       const before = jmlNumber(element, 'w:before')
       const after = jmlNumber(element, 'w:after')
       if (jmlOn(element) !== false) {
-        if (jmlAttr(element, 'w:beforeAutospacing') === '1' || jmlAttr(element, 'w:beforeAutospacing') === 'true') props['padding-top'] = '14pt'
-        else if (before !== undefined) props['padding-top'] = pt(twipsToPt(before))
-        if (jmlAttr(element, 'w:afterAutospacing') === '1' || jmlAttr(element, 'w:afterAutospacing') === 'true') props['padding-bottom'] = '14pt'
-        else if (after !== undefined) props['padding-bottom'] = pt(twipsToPt(after))
+        if (jmlAttr(element, 'w:beforeAutospacing') === '1' || jmlAttr(element, 'w:beforeAutospacing') === 'true') props['margin-top'] = '14pt'
+        else if (before !== undefined) props['margin-top'] = pt(twipsToPt(before))
+        if (jmlAttr(element, 'w:afterAutospacing') === '1' || jmlAttr(element, 'w:afterAutospacing') === 'true') props['margin-bottom'] = '14pt'
+        else if (after !== undefined) props['margin-bottom'] = pt(twipsToPt(after))
       }
       const line = jmlNumber(element, 'w:line')
       if (line !== undefined) {
@@ -348,8 +348,8 @@ export function paragraphPropertyCss(element: JmlElement, theme?: ThemeInfo): Cs
         const space = jmlNumber(border, 'w:space')
         if (space && css !== 'none') props[`--docx-bdr-space-${side}`] = pt(space)
       }
-      if (props['--docx-bdr-space-left']) props['padding-left'] = props['--docx-bdr-space-left']
-      if (props['--docx-bdr-space-right']) props['padding-right'] = props['--docx-bdr-space-right']
+      // Border spacing sits between the border and the text; paragraph spacing stays outside.
+      for (const side of ['top', 'left', 'bottom', 'right']) if (props[`--docx-bdr-space-${side}`]) props[`padding-${side}`] = props[`--docx-bdr-space-${side}`]!
       return props
     }
     case 'shd': {
