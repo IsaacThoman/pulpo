@@ -105,3 +105,8 @@ export function serialToEpochMs(serial: number, date1904 = false): number {
   if (date1904) return EPOCH_1904 + serial * MS_PER_DAY
   return EPOCH_1900 + (serial < 61 ? serial + 1 : serial) * MS_PER_DAY
 }
+
+/** Cell entry uses the live local year; calculation callers supply their snapshot year explicitly. */
+export function liveCurrentYear(): number {
+  return new Date().getFullYear()
+}

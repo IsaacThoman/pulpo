@@ -20,7 +20,7 @@ import { TEXT_FUNCTIONS } from './text.js'
 
 export { FUNCTION_DOCS, functionDoc, type FunctionArgDoc, type FunctionCategory, type FunctionDoc } from './docs.js'
 export { numberToText } from './coerce.js'
-export { parseCriteria, wildcardMatch, wildcardRegex, type Predicate } from './criteria.js'
+export { parseCriteria, wildcardMatch, wildcardIndex, type Predicate } from './criteria.js'
 export { roundDecimal } from './numeric.js'
 
 export const LIBRARY_FUNCTIONS: FunctionSpec[] = [

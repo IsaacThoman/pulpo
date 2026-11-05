@@ -1,4 +1,4 @@
-import { dateToSerial, MAX_DATE_SERIAL_1900, MAX_DATE_SERIAL_1904 } from '../dates.js'
+import { dateToSerial, liveCurrentYear, MAX_DATE_SERIAL_1900, MAX_DATE_SERIAL_1904 } from '../dates.js'
 import { errorFromCode, type Scalar } from '../formula/types.js'
 
 /**
@@ -209,7 +209,7 @@ function parseTime(text: string): TimePart | undefined {
 }
 
 function parseDate(text: string, options: ParseOptions): DatePart | undefined {
-  const currentYear = options.currentYear ?? new Date().getFullYear()
+  const currentYear = options.currentYear ?? liveCurrentYear()
   const make = (year: number, month: number, day: number, numFmt: string): DatePart | undefined => {
     const serial = validDate(year, month, day, options.date1904 ?? false)
     return serial === undefined ? undefined : { serial, numFmt }

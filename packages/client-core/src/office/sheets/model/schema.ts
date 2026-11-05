@@ -454,6 +454,8 @@ export interface WorkbookMeta {
   /** Local edits invalidate imported formula caches; calcTime seeds reproducible exports. */
   calcDirty?: boolean
   calcTime?: number
+  /** The editing client’s UTC offset in minutes; absent imported snapshots calculate in UTC. */
+  calcTimezoneOffset?: number
   /** calcPr attributes we model. */
   iterate: boolean
   iterateCount: number

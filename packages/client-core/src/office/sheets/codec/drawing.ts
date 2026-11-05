@@ -131,6 +131,11 @@ export function writeDrawing(sheet: SheetModel, skeleton: string, imageRelations
     return from ? { top: from.row, left: from.col } : undefined
   }).map(([, value]) => value) as DrawingObject[]
   objects.sort((a, b) => a.z - b.z)
+  // New picture ids follow every preserved object id in this part, independently of export history.
+  let nextPictureId = 1
+  for (const xml of [skeleton, ...objects.map((drawing) => drawing.xml)]) {
+    for (const match of xml.matchAll(/<(?:[\w.-]+:)?cNvPr\b[^>]*\bid=["'](\d+)["']/g)) nextPictureId = Math.max(nextPictureId, Number(match[1]) + 1)
+  }
   let body = ''
   for (const drawing of objects) {
     if (drawing.verbatim) {
@@ -142,7 +147,7 @@ export function writeDrawing(sheet: SheetModel, skeleton: string, imageRelations
       // A picture placed in the editor.
       const relId = imageRelationship(drawing.image.hash)
       if (!relId) continue
-      content = pictureXml(prefix, drawing, relId)
+      content = pictureXml(prefix, drawing, relId, nextPictureId++)
     }
     const attrs = Object.entries(drawing.keep ?? {})
       .map(([name, value]) => ` ${name}="${escapeXml(value)}"`)
@@ -166,10 +171,7 @@ export function writeDrawing(sheet: SheetModel, skeleton: string, imageRelations
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n${start}${body}</${prefix}wsDr>`
 }
 
-let nextPictureId = 1000
-
-function pictureXml(prefix: string, drawing: DrawingObject, relId: string): string {
-  const id = nextPictureId++
+function pictureXml(prefix: string, drawing: DrawingObject, relId: string, id: number): string {
   const name = escapeXml(drawing.name ?? `Picture ${id}`)
   const cx = drawing.ext?.cx ?? 0
   const cy = drawing.ext?.cy ?? 0

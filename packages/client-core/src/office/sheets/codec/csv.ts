@@ -260,7 +260,9 @@ export function writeCsv(doc: Y.Doc, format: 'csv' | 'tsv', values?: ValueSource
   const sheet = (active ? model.sheet(active) : undefined) ?? model.sheets().find((entry) => entry.state === 'visible') ?? model.sheets()[0]
   const lines = sheet ? sheetLines(sheet, dialect, values) : []
   const text = lines.join('')
-  return encodeText(text, dialect)
+  const bytes = encodeText(text, dialect)
+  if (bytes.byteLength > CSV_LIMITS.maxBytes) throw new LiveFormatError('too_large', 'This file is too large to export')
+  return bytes
 }
 
 function sheetLines(sheet: SheetModel, dialect: CsvDialect, values?: ValueSource): string[] {
@@ -278,28 +280,38 @@ function sheetLines(sheet: SheetModel, dialect: CsvDialect, values?: ValueSource
   // width keep it.
   const fileLast = sheet.raw.get('csvLastCol') as string | undefined
   const width = Math.max(used ? used.right + 1 : 0, fileLast !== undefined ? sheet.cols.indexOf(fileLast) + 1 : 0)
+  // Enumerate stored cells once; a wide row must not turn every ragged row into a wide scan.
+  const rows = new Map<number, { col: number; data: CellData }[]>()
+  sheet.forEachCell((row, col, data) => {
+    let cells = rows.get(row)
+    if (!cells) rows.set(row, cells = [])
+    cells.push({ col, data })
+  })
   const lines: string[] = []
+  let outputLength = 0
   for (let row = 0; row <= lastRow; row++) {
     const keep = sheet.rowProp(row, 'keep') as { last?: string; ending?: string } | undefined
     const declared = keep?.last !== undefined ? sheet.cols.indexOf(keep.last) + 1 : width
-    const fields: string[] = []
-    let last = -1
-    for (let col = 0; col < Math.max(width, declared); col++) {
-      const data = sheet.cell(row, col)
-      if (!data) {
-        fields.push(dialect.quoting === 'always' ? dialect.quote + dialect.quote : '')
-        continue
+    const cells = rows.get(row) ?? []
+    let rowWidth = declared
+    for (const { col } of cells) rowWidth = Math.max(rowWidth, col + 1)
+    // Padding is string work only, including for newly inserted rows without a preserved shape.
+    const empty = dialect.quoting === 'always' ? dialect.quote + dialect.quote : ''
+    outputLength += Math.max(0, rowWidth - 1) * dialect.delimiter.length + rowWidth * empty.length
+    if (outputLength > CSV_LIMITS.maxBytes) throw new LiveFormatError('too_large', 'This file is too large to export')
+    const fields: string[] = new Array(rowWidth).fill(empty)
+    for (const { col, data } of cells) {
+      if (data.raw !== undefined) fields[col] = data.raw
+      else {
+        const value = data.f !== undefined ? (values?.(sheet, row, col, data) ?? (data.t === 'e' ? { e: String(data.v) } : (data.v ?? null))) : data.t === 'e' ? { e: String(data.v) } : (data.v ?? null)
+        fields[col] = quoteField(formatField(value), dialect)
       }
-      last = col
-      if (data.raw !== undefined) {
-        fields.push(data.raw)
-        continue
-      }
-      const value = data.f !== undefined ? (values?.(sheet, row, col, data) ?? (data.t === 'e' ? { e: String(data.v) } : (data.v ?? null))) : data.t === 'e' ? { e: String(data.v) } : (data.v ?? null)
-      fields.push(quoteField(formatField(value), dialect))
+      outputLength += fields[col]!.length - empty.length
+      if (outputLength > CSV_LIMITS.maxBytes) throw new LiveFormatError('too_large', 'This file is too large to export')
     }
     const ending = row < lastRow ? (keep?.ending || dialect.lineEnding) : dialect.trailingNewline ? (keep?.ending || dialect.lineEnding) : ''
-    lines.push(fields.slice(0, Math.max(declared, last + 1)).join(dialect.delimiter) + ending)
+    outputLength += ending.length
+    lines.push(fields.join(dialect.delimiter) + ending)
   }
   return lines
 }

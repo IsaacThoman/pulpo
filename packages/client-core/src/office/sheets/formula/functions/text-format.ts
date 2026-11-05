@@ -1,6 +1,7 @@
 import { formatValue, numberToText, roundNumber } from '../../numfmt/index.js'
 import { parseNumberDetailed, parseNumberText } from '../../numfmt/parse.js'
-import { Errors, type FormulaError, type FunctionSpec, isError, type Scalar, type Value } from '../types.js'
+import { dateParseOptions } from './coerce.js'
+import { Errors, type FunctionContext, type FormulaError, type FunctionSpec, isError, type Scalar, type Value } from '../types.js'
 
 /**
  * Functions that turn numbers into formatted text and text back into numbers: TEXT, VALUE,
@@ -16,13 +17,13 @@ function scalar(value: Value | undefined): Scalar | undefined {
   return typeof value === 'object' && !isError(value) ? Errors.VALUE : value
 }
 
-function toNumber(value: Value | undefined, date1904 = false): number | FormulaError {
+function toNumber(value: Value | undefined, ctx?: Pick<FunctionContext, 'date1904' | 'now'>): number | FormulaError {
   const v = scalar(value)
   if (v === undefined || v === null) return 0
   if (typeof v === 'number') return v
   if (typeof v === 'boolean') return v ? 1 : 0
   if (isError(v)) return v
-  return parseNumberText(v, { date1904 }) ?? Errors.VALUE
+  return parseNumberText(v, dateParseOptions(ctx)) ?? Errors.VALUE
 }
 
 function toText(value: Value | undefined): string | FormulaError {
@@ -46,21 +47,21 @@ function toBoolean(value: Value | undefined): boolean | FormulaError {
 }
 
 /** Decimals for DOLLAR/FIXED: truncated toward zero, at most 127. */
-function toDecimals(value: Value | undefined, fallback: number): number | FormulaError {
+function toDecimals(value: Value | undefined, fallback: number, ctx: Pick<FunctionContext, 'date1904' | 'now'>): number | FormulaError {
   if (value === undefined) return fallback
-  const n = toNumber(value)
+  const n = toNumber(value, ctx)
   if (isError(n)) return n
   const decimals = Math.trunc(n)
   return decimals > MAX_DECIMALS ? Errors.VALUE : Math.max(decimals, -308)
 }
 
-function TEXT(ctx: { date1904: boolean }, args: (Value | undefined)[]): Value {
+function TEXT(ctx: Pick<FunctionContext, 'date1904' | 'now'>, args: (Value | undefined)[]): Value {
   const raw = scalar(args[0])
   if (isError(raw)) return raw
   const code = toText(args[1])
   if (isError(code)) return code
   let value: Scalar = raw ?? 0
-  if (typeof value === 'string') value = parseNumberText(value, { date1904: ctx.date1904 }) ?? value
+  if (typeof value === 'string') value = parseNumberText(value, dateParseOptions(ctx)) ?? value
   if (code === '') return ''
   if (typeof value === 'number' && code === '@') return numberToText(value)
   const result = formatValue(value, code, { date1904: ctx.date1904 })
@@ -68,12 +69,12 @@ function TEXT(ctx: { date1904: boolean }, args: (Value | undefined)[]): Value {
   return result.text
 }
 
-function VALUE(ctx: { date1904: boolean }, args: (Value | undefined)[]): Value {
+function VALUE(ctx: Pick<FunctionContext, 'date1904' | 'now'>, args: (Value | undefined)[]): Value {
   const v = scalar(args[0])
   if (v === undefined || v === null) return 0
   if (typeof v === 'number' || isError(v)) return v
   if (typeof v === 'boolean') return Errors.VALUE
-  return parseNumberText(v, { date1904: ctx.date1904 }) ?? Errors.VALUE
+  return parseNumberText(v, dateParseOptions(ctx)) ?? Errors.VALUE
 }
 
 /** First character of a separator argument, or #VALUE! for an empty one. */
@@ -116,20 +117,20 @@ function NUMBERVALUE(_ctx: unknown, args: (Value | undefined)[]): Value {
   return Number.isFinite(value) ? value : Errors.NUM
 }
 
-function DATEVALUE(ctx: { date1904: boolean }, args: (Value | undefined)[]): Value {
+function DATEVALUE(ctx: Pick<FunctionContext, 'date1904' | 'now'>, args: (Value | undefined)[]): Value {
   const v = scalar(args[0])
   if (isError(v)) return v
   if (typeof v !== 'string') return Errors.VALUE
-  const parsed = parseNumberDetailed(v, { date1904: ctx.date1904 })
+  const parsed = parseNumberDetailed(v, dateParseOptions(ctx))
   if (!parsed || (parsed.kind !== 'date' && parsed.kind !== 'datetime')) return Errors.VALUE
   return Math.floor(parsed.value)
 }
 
-function TIMEVALUE(ctx: { date1904: boolean }, args: (Value | undefined)[]): Value {
+function TIMEVALUE(ctx: Pick<FunctionContext, 'date1904' | 'now'>, args: (Value | undefined)[]): Value {
   const v = scalar(args[0])
   if (isError(v)) return v
   if (typeof v !== 'string') return Errors.VALUE
-  const parsed = parseNumberDetailed(v, { date1904: ctx.date1904 })
+  const parsed = parseNumberDetailed(v, dateParseOptions(ctx))
   if (!parsed || (parsed.kind !== 'time' && parsed.kind !== 'datetime' && parsed.kind !== 'date')) return Errors.VALUE
   return parsed.value - Math.floor(parsed.value)
 }
@@ -139,27 +140,27 @@ function numberCode(decimals: number, grouping: boolean): string {
   return (grouping ? '#,##0' : '0') + (decimals > 0 ? '.' + '0'.repeat(decimals) : '')
 }
 
-function DOLLAR(ctx: { date1904: boolean }, args: (Value | undefined)[]): Value {
-  const n = toNumber(args[0], ctx.date1904)
+function DOLLAR(ctx: Pick<FunctionContext, 'date1904' | 'now'>, args: (Value | undefined)[]): Value {
+  const n = toNumber(args[0], ctx)
   if (isError(n)) return n
-  const decimals = toDecimals(args[1], 2)
+  const decimals = toDecimals(args[1], 2, ctx)
   if (isError(decimals)) return decimals
   const code = `"$"${numberCode(decimals, true)}`
   return formatValue(roundNumber(n, decimals), `${code};(${code})`).text
 }
 
-function FIXED(ctx: { date1904: boolean }, args: (Value | undefined)[]): Value {
-  const n = toNumber(args[0], ctx.date1904)
+function FIXED(ctx: Pick<FunctionContext, 'date1904' | 'now'>, args: (Value | undefined)[]): Value {
+  const n = toNumber(args[0], ctx)
   if (isError(n)) return n
-  const decimals = toDecimals(args[1], 2)
+  const decimals = toDecimals(args[1], 2, ctx)
   if (isError(decimals)) return decimals
   const noCommas = toBoolean(args[2])
   if (isError(noCommas)) return noCommas
   return formatValue(roundNumber(n, decimals), numberCode(decimals, !noCommas)).text
 }
 
-function VALUETOTEXT(_ctx: unknown, args: (Value | undefined)[]): Value {
-  const format = args[1] === undefined ? 0 : toNumber(args[1])
+function VALUETOTEXT(ctx: Pick<FunctionContext, 'date1904' | 'now'>, args: (Value | undefined)[]): Value {
+  const format = args[1] === undefined ? 0 : toNumber(args[1], ctx)
   if (isError(format)) return format
   const strict = Math.trunc(format)
   if (strict !== 0 && strict !== 1) return Errors.VALUE

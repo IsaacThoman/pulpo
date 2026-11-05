@@ -122,6 +122,7 @@ function exportCalculationOptions(model: WorkbookModel) {
   return {
     live: false,
     now: () => time,
+    timezoneOffset: model.metaValue('calcTimezoneOffset') ?? 0,
     random: () => {
       seed = (Math.imul(seed, 1_664_525) + 1_013_904_223) >>> 0
       return seed / 0x1_0000_0000

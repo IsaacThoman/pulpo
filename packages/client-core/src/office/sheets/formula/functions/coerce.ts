@@ -5,7 +5,8 @@
  */
 
 import { consumeWork } from '../budget.js'
-import { parseNumberText } from '../../numfmt/parse.js'
+import { serialToParts } from '../../dates.js'
+import { parseNumberText, type ParseOptions } from '../../numfmt/parse.js'
 import {
   Errors,
   checkArraySize,
@@ -149,9 +150,14 @@ export function scalarOf(value: Value | undefined, ctx?: FunctionContext): Scala
   return value
 }
 
+/** Yearless formula dates use the same local calendar year as NOW, never the parsing host’s year. */
+export function dateParseOptions(ctx?: Pick<FunctionContext, 'date1904' | 'now'>): ParseOptions {
+  return { date1904: ctx?.date1904 ?? false, currentYear: ctx ? serialToParts(ctx.now(), ctx.date1904)?.year ?? 2000 : 2000 }
+}
+
 /** Excel's text → number coercion (`"1,000"`, `"50%"`, `"1/2/2024"`), or undefined. */
 export function parseNumber(text: string, ctx?: FunctionContext): number | undefined {
-  return parseNumberText(text, { date1904: ctx?.date1904 ?? false })
+  return parseNumberText(text, dateParseOptions(ctx))
 }
 
 /** Coerces to a number: blanks are 0, booleans 1/0, numeric text parses, other text is #VALUE!. */

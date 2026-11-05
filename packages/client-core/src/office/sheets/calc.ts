@@ -75,6 +75,7 @@ export class SheetCalc implements SheetValues {
     readonly workbook: WorkbookModel,
     private readonly options: {
       now?: () => number
+      timezoneOffset?: number
       random?: () => number
       /** Follow edits to the document (default); false for one-off calculations such as exports. */
       live?: boolean
@@ -101,6 +102,7 @@ export class SheetCalc implements SheetValues {
       functions: sheetFunctions(),
       ...(this.options.maxWork !== undefined ? { maxWork: this.options.maxWork } : {}),
       date1904: workbook.date1904,
+      timezoneOffset: this.options.timezoneOffset,
       ...(this.options.now ? { now: this.options.now } : {}),
       ...(this.options.random ? { random: this.options.random } : {}),
       ...(workbook.metaValue('iterate') ? { iterative: { maxIterations: Math.min(1_000, Math.max(0, workbook.metaValue('iterateCount') ?? 100)), maxChange: workbook.metaValue('iterateDelta') ?? 0.001 } } : {}),
@@ -138,7 +140,9 @@ export class SheetCalc implements SheetValues {
   }
 
   private recalc(full = false): void {
-    this.stoppedEarly = this.engine.recalc({ full, keepCachedFor: (sheet, row, col) => this.isDataTable(sheet, row, col) }).stoppedEarly
+    // A fresh import has no author timezone. Its unedited caches still describe the saved snapshot.
+    const keepSnapshot = !full && this.options.live === false && !this.options.ignoreCache
+    this.stoppedEarly = this.engine.recalc({ full, keepCachedFor: (sheet, row, col) => keepSnapshot || this.isDataTable(sheet, row, col) }).stoppedEarly
   }
 
   private isDataTable(sheetIndex: number, row: number, col: number): boolean {
@@ -159,7 +163,7 @@ export class SheetCalc implements SheetValues {
       // Styles and views don't change values; everything else (rows, columns, sheets, names,
       // tables) moves cells around, which the index-based engine takes as a rebuild.
       const target = event.target
-      if (target === this.workbook.meta && [...(event as Y.YMapEvent<unknown>).keysChanged].every((key) => key === 'calcDirty' || key === 'calcTime')) continue
+      if (target === this.workbook.meta && [...(event as Y.YMapEvent<unknown>).keysChanged].every((key) => key === 'calcDirty' || key === 'calcTime' || key === 'calcTimezoneOffset')) continue
       if (this.isStyleOrView(target)) continue
       structural = true
     }

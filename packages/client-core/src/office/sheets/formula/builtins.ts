@@ -67,8 +67,8 @@ function liftAll(values: Liftable[], fn: (row: Scalar[]) => Scalar): Matrix {
   return matrix(rows, cols, data)
 }
 
-function integer(value: Scalar, date1904: boolean): number | FormulaError {
-  const n = toNumber(value, date1904)
+function integer(value: Scalar, date1904: boolean, currentYear: number): number | FormulaError {
+  const n = toNumber(value, date1904, currentYear)
   return isError(n) ? n : Math.trunc(n)
 }
 
@@ -188,12 +188,12 @@ const CHOOSE: OwnedFunction = (it, args, scope) => {
     const values: Liftable[] = [index]
     for (let k = 1; k < args.length; k++) values.push(liftable(it, args[k], scope, 0))
     return liftAll(values, (row) => {
-      const n = integer(row[0]!, it.host.date1904)
+      const n = integer(row[0]!, it.host.date1904, it.currentYear())
       if (isError(n)) return n
       return n >= 1 && n <= choices ? row[n]! : Errors.VALUE
     })
   }
-  const n = integer(index, it.host.date1904)
+  const n = integer(index, it.host.date1904, it.currentYear())
   if (isError(n)) return n
   if (n < 1 || n > choices) return Errors.VALUE
   const choice = args[n]
@@ -363,9 +363,9 @@ function byLine(rows: boolean): OwnedFunction {
 
 const MAKEARRAY: OwnedFunction = (it, args, scope) => {
   if (args.length !== 3) return Errors.VALUE
-  const rows = integer(it.toScalar(it.arg(args[0], scope)), it.host.date1904)
+  const rows = integer(it.toScalar(it.arg(args[0], scope)), it.host.date1904, it.currentYear())
   if (isError(rows)) return rows
-  const cols = integer(it.toScalar(it.arg(args[1], scope)), it.host.date1904)
+  const cols = integer(it.toScalar(it.arg(args[1], scope)), it.host.date1904, it.currentYear())
   if (isError(cols)) return cols
   if (rows < 1 || cols < 1) return Errors.VALUE
   checkArraySize(rows, cols)
@@ -439,7 +439,7 @@ const OFFSET: OwnedFunction = (it, args, scope) => {
       numbers.push(i === 3 ? areaRows(base) : areaCols(base))
       continue
     }
-    const n = integer(it.toScalar(it.arg(node, scope) ?? 0), it.host.date1904)
+    const n = integer(it.toScalar(it.arg(node, scope) ?? 0), it.host.date1904, it.currentYear())
     if (isError(n)) return n
     numbers.push(n)
   }
@@ -484,11 +484,11 @@ const INDIRECT: OwnedFunction = (it, args, scope) => {
 /** INDEX on one area or array, with one-based row/column (0 = all). */
 function indexOne(it: Interpreter, source: Value, rowArg: Scalar, colArg: Scalar | undefined, areaArg: Scalar): Value {
   const date1904 = it.host.date1904
-  let row = integer(rowArg, date1904)
+  let row = integer(rowArg, date1904, it.currentYear())
   if (isError(row)) return row
-  let col: number | FormulaError | undefined = colArg === undefined ? undefined : integer(colArg, date1904)
+  let col: number | FormulaError | undefined = colArg === undefined ? undefined : integer(colArg, date1904, it.currentYear())
   if (isError(col)) return col
-  const areaNumber = integer(areaArg, date1904)
+  const areaNumber = integer(areaArg, date1904, it.currentYear())
   if (isError(areaNumber)) return areaNumber
   if (row < 0 || (col !== undefined && col < 0)) return Errors.VALUE
   let rows: number

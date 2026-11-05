@@ -35,6 +35,8 @@ export interface FormulaEngineOptions {
   date1904?: boolean
   /** Current time in ms since the Unix epoch; NOW() shows it in the runtime's local time zone. */
   now?: () => number
+  /** Fixed snapshots supply their author’s offset; live calculations use the host timezone. */
+  timezoneOffset?: number
   /** Random numbers in [0, 1) for RAND and friends. */
   random?: () => number
   /** Iterative calculation for circular references (Excel's File → Options → Formulas). */
@@ -1581,7 +1583,7 @@ export class FormulaEngine {
 
   private nowSerial(): number {
     const ms = this.options.now?.() ?? Date.now()
-    return epochMsToSerial(ms - new Date(ms).getTimezoneOffset() * 60_000, this.date1904)
+    return epochMsToSerial(ms - (this.options.timezoneOffset ?? new Date(ms).getTimezoneOffset()) * 60_000, this.date1904)
   }
 
   private createHost(): EvalHost {

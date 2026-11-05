@@ -2,7 +2,7 @@
 
 import { Errors, isError, matrix, type FunctionContext, type FunctionSpec, type Scalar, type Value } from '../types.js'
 import { MAX_TEXT_LENGTH, bool, check, checkArraySize, defBool, defInt, define, fail, int, omitted, optInt, scalarOf, text, toMatrix, type Args } from './coerce.js'
-import { wildcardRegex } from './criteria.js'
+import { wildcardIndex } from './criteria.js'
 
 /** Windows-1252 for 0x80–0x9F, which Excel's CHAR/CODE use on Windows; the rest matches Latin-1. */
 const CP1252_HIGH: Record<number, number> = {
@@ -310,9 +310,9 @@ export const TEXT_FUNCTIONS: FunctionSpec[] = [
         check(start >= 1 && start <= haystack.length + 1, Errors.VALUE)
         if (!needle) return start
         const rest = haystack.slice(start - 1).join('')
-        const match = wildcardRegex(needle, 'none').exec(rest)
-        if (!match) return fail(Errors.VALUE)
-        return start + match.index
+        const index = wildcardIndex(needle, rest)
+        if (index < 0) return fail(Errors.VALUE)
+        return start + index
       },
     }),
   ),

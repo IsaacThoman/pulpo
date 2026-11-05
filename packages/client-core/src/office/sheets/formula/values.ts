@@ -38,11 +38,11 @@ export function numberToText(value: number): string {
 }
 
 /** Arithmetic coercion: booleans are 1/0, blanks 0, numeric text is parsed, other text is #VALUE!. */
-export function toNumber(value: Scalar, date1904 = false): number | FormulaError {
+export function toNumber(value: Scalar, date1904 = false, currentYear = 2000): number | FormulaError {
   if (typeof value === 'number') return value
   if (typeof value === 'boolean') return value ? 1 : 0
   if (value === null) return 0
-  if (typeof value === 'string') return parseNumberText(value, { date1904 }) ?? Errors.VALUE
+  if (typeof value === 'string') return parseNumberText(value, { date1904, currentYear }) ?? Errors.VALUE
   return value
 }
 
@@ -129,7 +129,7 @@ export type ScalarOp = '+' | '-' | '*' | '/' | '^' | '&' | '=' | '<>' | '<' | '>
  * `+`/`-` of a formula: a result that is zero to within 15 digits of the operands becomes 0, so
  * `=0.5-0.4-0.1` shows 0 while `=(0.5-0.4-0.1)*1` shows -2.78E-17.
  */
-export function binaryScalar(op: ScalarOp, a: Scalar, b: Scalar, date1904 = false, snapToZero = false): Scalar {
+export function binaryScalar(op: ScalarOp, a: Scalar, b: Scalar, date1904 = false, snapToZero = false, currentYear = 2000): Scalar {
   consumeWork()
   switch (op) {
     case '&': {
@@ -165,9 +165,9 @@ export function binaryScalar(op: ScalarOp, a: Scalar, b: Scalar, date1904 = fals
       }
     }
   }
-  const x = toNumber(a, date1904)
+  const x = toNumber(a, date1904, currentYear)
   if (isError(x)) return x
-  const y = toNumber(b, date1904)
+  const y = toNumber(b, date1904, currentYear)
   if (isError(y)) return y
   switch (op) {
     case '+':
@@ -196,15 +196,15 @@ export function power(base: number, exponent: number): number | FormulaError {
   return finite(result)
 }
 
-export function negate(value: Scalar, date1904 = false): Scalar {
+export function negate(value: Scalar, date1904 = false, currentYear = 2000): Scalar {
   consumeWork()
-  const x = toNumber(value, date1904)
+  const x = toNumber(value, date1904, currentYear)
   return isError(x) ? x : x === 0 ? 0 : -x
 }
 
-export function percent(value: Scalar, date1904 = false): Scalar {
+export function percent(value: Scalar, date1904 = false, currentYear = 2000): Scalar {
   consumeWork()
-  const x = toNumber(value, date1904)
+  const x = toNumber(value, date1904, currentYear)
   return isError(x) ? x : x / 100
 }
 

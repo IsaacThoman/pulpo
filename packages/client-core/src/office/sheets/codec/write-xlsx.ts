@@ -253,7 +253,8 @@ export async function writeXlsx(doc: Y.Doc, assets: LiveAssetStore, options: Xls
     return dynamicCm ?? undefined
   }
   let tableId = 1
-  const tableNames = new Set<string>()
+  const tableNames = new Set([...model.names.values()].map((name) => name.name.toLowerCase()))
+  const reservedNames = new Set([...tableNames, ...sheets.flatMap((sheet) => [...sheet.tables.values()].map((raw) => (raw as SheetTable).name.toLowerCase()))])
   for (const sheet of sheets) {
     const path = sheetPaths.get(sheet.id)!
     const kind = (sheet.map.get('kind') as SheetKind | undefined) ?? 'worksheet'
@@ -277,7 +278,11 @@ export async function writeXlsx(doc: Y.Doc, assets: LiveAssetStore, options: Xls
     for (const [id, raw] of orderedEntries(sheet, sheet.tables, (value) => (value as SheetTable).range)) {
       const table = raw as SheetTable
       let name = table.name
-      while (tableNames.has(name.toLowerCase())) name = `${table.name}_${tableNames.size + 1}`
+      if (tableNames.has(name.toLowerCase())) {
+        let suffix = 2
+        do { name = `${table.name}_${suffix++}` } while (reservedNames.has(name.toLowerCase()))
+      }
+      reservedNames.add(name.toLowerCase())
       tableNames.add(name.toLowerCase())
       const tablePath = table.part && !livePaths.has(table.part) ? table.part : freePath(taken, (n) => `xl/tables/table${n}.xml`)
       const xml = writeTablePart(sheet, { ...table, name, displayName: name === table.name ? table.displayName : name }, tableId++, headerNames(sheet, table))

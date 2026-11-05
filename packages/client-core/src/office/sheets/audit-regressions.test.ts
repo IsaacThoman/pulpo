@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { strToU8, strFromU8, zipSync, unzipSync } from 'fflate'
 import { createRequire } from 'node:module'
@@ -8,10 +9,16 @@ import { MAX_COLS, MAX_ROWS } from './address.js'
 import { SheetCalc } from './calc.js'
 import { applyWorkbook } from './codec/apply.js'
 import { SheetCodec } from './codec/codec.js'
+import { readCsv, writeCsv } from './codec/csv.js'
+import { writeDrawing } from './codec/drawing.js'
+import { calculationBudget, CalculationStopped } from './formula/budget.js'
+import { wildcardIndex, wildcardMatch } from './formula/functions/criteria.js'
+import { markCalcDirty, trackEdits } from './model/edits.js'
+import { dateToSerial } from './dates.js'
 import { MAX_EXPANDED_CELLS } from './limits.js'
 import { columnIntervalProps } from './model/column-intervals.js'
 import type { DrawingObject } from './model/schema.js'
-import { WorkbookModel, type SheetModel } from './model/workbook.js'
+import { WorkbookModel, SheetModel } from './model/workbook.js'
 import { parseHtml } from './view/clipboard.js'
 import { SheetView } from './view/sheet-view.js'
 
@@ -50,6 +57,24 @@ function print(sheet: SheetModel, font = 'Calibri', color = '#000') {
     rowLayout: { size: () => 20, isHidden: () => false },
     display: { render: () => ({ text: 'x', color, hAlign: 'left', borders: {}, style: { fontName: font, fontSize: 11 } }) },
   } as unknown as SheetView)
+}
+
+/** Merges both delivery orders into three explicit client ids, keeping the source snapshot fixed. */
+function replicas(base: Y.Doc, edit: (sheet: SheetModel, client: number) => void): Y.Doc[] {
+  const result: Y.Doc[] = []
+  for (const reverse of [false, true]) {
+    const docs = [1, 2, 3].map((id) => {
+      const doc = new Y.Doc()
+      doc.clientID = id
+      Y.applyUpdate(doc, Y.encodeStateAsUpdate(base))
+      return doc
+    })
+    for (let index = 0; index < 2; index++) edit(new WorkbookModel(docs[index]!).sheets()[0]!, index + 1)
+    const updates = docs.slice(0, 2).map((doc) => Y.encodeStateAsUpdate(doc))
+    for (const doc of docs) for (const update of reverse ? [...updates].reverse() : updates) Y.applyUpdate(doc, update)
+    result.push(...docs)
+  }
+  return result
 }
 
 describe('spreadsheet audit regressions', () => {
@@ -184,4 +209,238 @@ describe('spreadsheet audit regressions', () => {
     expect(calc.evaluate(sheet, 0, 1, 'MATCH(0,A:A,0)')).toEqual(calc.evaluate(sheet, 0, 1, 'MATCH(0,A1:A100,0)'))
     calc.destroy()
   })
+  it.each([
+    ['hello', 'HeLLo', true], ['hello', 'hell', false], ['', '', true], ['', 'x', false],
+    ['*', '', true], ['?', '', false], ['?', 'A', true], ['?', 'AB', false],
+    ['a*b', 'ab', true], ['a*b', 'aXYZb', true], ['*ab', 'XAB', true], ['ab*', 'ABX', true],
+    ['a?c', 'AbC', true], ['a?c', 'ac', false], ['~*', '*', true], ['~?', '?', true],
+    ['~~', '~', true], ['~a', '~A', true], ['~', '~', true], ['*~**', 'a*b', true],
+    ['a.b', 'axb', false], ['*?*', '\n', true],
+  ] as const)('matches bounded Excel wildcards %j against %j', (pattern, text, expected) => {
+    expect(wildcardMatch(pattern, text)).toBe(expected)
+  })
+
+  it.each([
+    ['a?c', 'xxAbCyy', 2], ['*ab', 'xxab', 0], ['ab*', 'xxab', 2],
+    ['a*b', 'xxaccb', 2], ['~*', 'x*y', 1], ['', 'abc', 0], ['?', '', -1],
+    ['ab', 'aaab', 2], ['a*b?c', 'xa123bxc', 1],
+  ] as const)('finds wildcard substrings %j in %j', (pattern, text, expected) => {
+    expect(wildcardIndex(pattern, text)).toBe(expected)
+  })
+
+  it('finishes the exponential wildcard reproduction in milliseconds and charges every caller', () => {
+    const pattern = '*a'.repeat(14) + 'b'
+    const text = 'a'.repeat(28) + 'c'
+    const start = performance.now()
+    expect(wildcardMatch(pattern, text)).toBe(false)
+    expect(wildcardIndex(pattern, text)).toBe(-1)
+    expect(performance.now() - start).toBeLessThan(100)
+    const restore = calculationBudget(100)
+    try {
+      expect(() => wildcardMatch(pattern, text)).toThrow(CalculationStopped)
+      expect(() => wildcardIndex(pattern, text)).toThrow(CalculationStopped)
+    } finally { restore() }
+    const workbook = WorkbookModel.initialize(new Y.Doc())
+    const sheet = workbook.addSheet('Sheet1')
+    sheet.setCell(0, 0, { v: 'Header' })
+    sheet.setCell(1, 0, { v: 'a*b' })
+    sheet.setCell(2, 0, { v: 'other' })
+    sheet.setCell(1, 1, { v: 7 })
+    sheet.setCell(2, 1, { v: 3 })
+    sheet.setCell(0, 3, { v: 'Header' })
+    sheet.setCell(1, 3, { v: '=a~*b' })
+    const calc = new SheetCalc(workbook)
+    for (const [formula, expected] of [
+      ['COUNTIF(A2:A3,"a~*b")', 1], ['COUNTIFS(A2:A3,"a~*b")', 1],
+      ['SUMIF(A2:A3,"a~*b",B2:B3)', 7], ['SUMIFS(B2:B3,A2:A3,"a~*b")', 7],
+      ['AVERAGEIF(A2:A3,"a~*b",B2:B3)', 7], ['AVERAGEIFS(B2:B3,A2:A3,"a~*b")', 7],
+      ['MAXIFS(B2:B3,A2:A3,"a~*b")', 7], ['MINIFS(B2:B3,A2:A3,"a~*b")', 7],
+      ['MATCH("a~*b",A2:A3,0)', 1], ['XLOOKUP("a~*b",A2:A3,B2:B3,,2)', 7],
+      ['VLOOKUP("a~*b",A2:B3,2,FALSE)', 7], ['HLOOKUP("a~*b",A2:B3,1,FALSE)', 'a*b'],
+      ['SEARCH("~*",A2)', 2], ['DCOUNTA(A1:A3,"Header",D1:D2)', 1],
+    ] as const) expect(calc.evaluate(sheet, 0, 5, formula), formula).toBe(expected)
+    calc.destroy()
+    sheet.setCell(1, 0, { v: text })
+    const bounded = new SheetCalc(workbook, { maxWork: 100, live: false })
+    const before = performance.now()
+    bounded.evaluate(sheet, 0, 5, `COUNTIF(A2,"${pattern}")`)
+    expect(performance.now() - before).toBeLessThan(100)
+    bounded.destroy()
+  })
+
+  it.each([false, true])('exports colliding tables across three replicas and both orders, defined names=%s', async (definedNames) => {
+    const base = new Y.Doc()
+    base.clientID = 100
+    const workbook = WorkbookModel.initialize(base)
+    const sheet = workbook.addSheet('Sheet1')
+    const add = (sheet: SheetModel, id: string, name: string, row: number) => {
+      sheet.tables.set(id, { name, displayName: name, range: sheet.rangeIds({ top: row, left: 0, bottom: row + 1, right: 0 }), headerRow: true, totalsRow: false, columns: [{ name: 'Header' }] })
+    }
+    add(sheet, 'existing', 'Foo_3', 0)
+    if (definedNames) {
+      workbook.names.set('reserved2', { name: 'fOO_2', formula: '1' })
+      workbook.names.set('reserved4', { name: 'FOO_4', formula: '1' })
+    }
+    const docs = replicas(base, (sheet, client) => add(sheet, `new${client}`, 'Foo', client * 2))
+    const codec = new SheetCodec()
+    const context = { name: 'Tables.xlsx', assets: new MemoryLiveAssetStore() }
+    const exports = await Promise.all(docs.map((doc) => codec.exportFile(doc, context)))
+    for (const bytes of exports) expect(Buffer.from(bytes).equals(Buffer.from(exports[0]!))).toBe(true)
+    const parts = unzipSync(exports[0]!)
+    const names = Object.entries(parts).filter(([path]) => /^xl\/tables\/table.*xml$/.test(path)).map(([, bytes]) => / name="([^"]+)"/.exec(strFromU8(bytes))![1])
+    expect(names).toEqual(['Foo_3', 'Foo', definedNames ? 'Foo_5' : 'Foo_2'])
+    for (const doc of docs) doc.destroy()
+    base.destroy()
+  })
+
+  it('exports ragged CSV with stored-cell work instead of rectangular lookups', () => {
+    const text = Array(100).fill('x').join(',') + '\n' + 'x\n'.repeat(9)
+    const doc = new Y.Doc()
+    readCsv(doc, strToU8(text), 'csv')
+    const cell = vi.spyOn(SheetModel.prototype, 'cell')
+    try {
+      expect(strFromU8(writeCsv(doc, 'csv'))).toBe(text)
+      expect(cell.mock.calls.length).toBeLessThanOrEqual(109)
+    } finally { cell.mockRestore() }
+    doc.destroy()
+  })
+
+  it('exports a 16,384-column row and 50,000 one-field rows within a few seconds', () => {
+    const text = Array(MAX_COLS).fill('x').join(',') + '\n' + 'x\n'.repeat(50_000)
+    const doc = new Y.Doc()
+    readCsv(doc, strToU8(text), 'csv')
+    const start = performance.now()
+    const bytes = writeCsv(doc, 'csv')
+    const elapsed = performance.now() - start
+    expect(strFromU8(bytes)).toBe(text)
+    expect(elapsed).toBeLessThan(3000)
+    doc.destroy()
+  }, 15_000)
+
+  it('assigns stable picture ids after preserved objects in canonical order', async () => {
+    const base = new Y.Doc()
+    base.clientID = 100
+    const workbook = WorkbookModel.initialize(base)
+    const sheet = workbook.addSheet('Sheet1')
+    const assets = new MemoryLiveAssetStore()
+    const image = await assets.put(new Uint8Array(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jL1sAAAAASUVORK5CYII=', 'base64')), 'image/png')
+    sheet.drawings.set('preserved', { kind: 'shape', anchor: 'absolute', xml: '<xdr:sp><xdr:cNvPr name="Old" id="42"/></xdr:sp>', z: 0 } satisfies DrawingObject)
+    const docs = replicas(base, (sheet, client) => {
+      sheet.drawings.set(`pic${client}`, { kind: 'image', anchor: 'oneCell', from: { row: sheet.rows.idAt(client), col: sheet.cols.idAt(0), rowOff: 0, colOff: 0 }, ext: { cx: 100, cy: 100 }, z: 1, xml: '', image: { hash: image.hash, mimeType: 'image/png' } } satisfies DrawingObject)
+    })
+    const codec = new SheetCodec()
+    const context = { name: 'Pictures.xlsx', assets }
+    const exports = await Promise.all(docs.flatMap((doc) => [codec.exportFile(doc, context), codec.exportFile(doc, context)]))
+    for (const bytes of exports) expect(Buffer.from(bytes).equals(Buffer.from(exports[0]!))).toBe(true)
+    const xml = strFromU8(unzipSync(exports[0]!)['xl/drawings/drawing1.xml']!)
+    const ids = [...xml.matchAll(/cNvPr[^>]* id="(\d+)"/g)].map((match) => Number(match[1]))
+    expect(ids).toEqual([42, 43, 44])
+    expect(new Set(ids).size).toBe(ids.length)
+    const other = new WorkbookModel(docs[0]!).sheets()[0]!
+    const withSkeleton = writeDrawing(other, '<xdr:wsDr><xdr:cNvPr id="99"/></xdr:wsDr>', () => 'rId1')
+    expect(withSkeleton).toContain('id="100"')
+    expect(withSkeleton).toContain('id="101"')
+    for (const doc of docs) doc.destroy()
+    base.destroy()
+  })
+
+  it.each([undefined, 300, -60])('exports fixed-clock formulas identically across host timezones with stored offset %s', async (offset) => {
+    const doc = new Y.Doc()
+    const workbook = WorkbookModel.initialize(doc)
+    const sheet = workbook.addSheet('Sheet1')
+    expect(workbook.metaValue('calcTimezoneOffset')).toBeUndefined()
+    workbook.setMeta('calcTime', Date.UTC(2024, 0, 1, 1))
+    workbook.setMeta('calcDirty', true)
+    if (offset !== undefined) workbook.setMeta('calcTimezoneOffset', offset)
+    sheet.setCell(0, 0, { f: 'NOW()' })
+    sheet.setCell(0, 1, { f: 'TODAY()' })
+    sheet.setCell(0, 2, { f: 'DATEVALUE("1/2")' })
+    const script = `
+      import * as Y from 'yjs';
+      import { SheetCodec } from './src/office/sheets/codec/codec.ts';
+      import { MemoryLiveAssetStore } from './src/office/assets.ts';
+      const doc = new Y.Doc();
+      Y.applyUpdate(doc, Buffer.from(process.env.SHEET_SNAPSHOT, 'base64'));
+      const bytes = await new SheetCodec().exportFile(doc, { name: 'Clock.xlsx', assets: new MemoryLiveAssetStore() });
+      process.stdout.write(Buffer.from(bytes).toString('base64'));
+    `
+    const outputs = ['UTC', 'America/New_York'].map((TZ) => {
+      const child = spawnSync(process.execPath, ['--import', 'tsx', '--input-type=module', '-e', script], {
+        cwd: new URL('../../../', import.meta.url),
+        env: { ...process.env, TZ, SHEET_SNAPSHOT: Buffer.from(Y.encodeStateAsUpdate(doc)).toString('base64') }, encoding: 'utf8', timeout: 15_000,
+      })
+      expect(child.status, child.stderr).toBe(0)
+      return Buffer.from(child.stdout, 'base64')
+    })
+    expect(outputs[0]!.equals(outputs[1]!)).toBe(true)
+    const xml = strFromU8(unzipSync(outputs[0]!)['xl/worksheets/sheet1.xml']!)
+    const values = [...xml.matchAll(/<v>([^<]+)<\/v>/g)].map((match) => Number(match[1]))
+    const now = 45292 + (60 - (offset ?? 0)) / 1440
+    expect(values[0]).toBeCloseTo(now, 8)
+    expect(values[1]).toBe(Math.floor(now))
+    expect(values[2]).toBe(dateToSerial(offset === 300 ? 2023 : 2024, 1, 2))
+    doc.destroy()
+  }, 30_000)
+
+  it('records the editing timezone with each new calculation clock and ignores snapshot-only edits', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(Date.UTC(2024, 0, 1))
+    const doc = new Y.Doc()
+    const workbook = WorkbookModel.initialize(doc)
+    const sheet = workbook.addSheet('Sheet1')
+    // A recently imported clock still needs the editing client's offset on the first local edit.
+    workbook.setMeta('calcTime', Date.now())
+    const stop = trackEdits(doc)
+    try {
+      sheet.setCell(0, 0, { v: 1 })
+      expect(workbook.metaValue('calcTime')).toBe(Date.now())
+      expect(workbook.metaValue('calcTimezoneOffset')).toBe(new Date(Date.now()).getTimezoneOffset())
+      vi.setSystemTime(Date.now() + 60_001)
+      workbook.setMeta('calcTimezoneOffset', 123)
+      expect(workbook.metaValue('calcTime')).not.toBe(Date.now())
+      markCalcDirty(doc)
+      expect(workbook.metaValue('calcTime')).toBe(Date.now())
+      expect(workbook.metaValue('calcTimezoneOffset')).toBe(new Date(Date.now()).getTimezoneOffset())
+      const calc = new SheetCalc(workbook)
+      const engine = (calc as unknown as { engine: unknown }).engine
+      workbook.setMeta('calcTimezoneOffset', 456)
+      expect((calc as unknown as { engine: unknown }).engine).toBe(engine)
+      calc.destroy()
+    } finally {
+      stop()
+      doc.destroy()
+      vi.useRealTimers()
+    }
+  })
+
+  it.each([false, true])('uses the snapshot year for date functions and arithmetic across New Year, date1904=%s', async (date1904) => {
+    const { codec, context, doc, workbook, sheet } = await open(xlsx(''))
+    workbook.setMeta('date1904', date1904)
+    workbook.setMeta('calcDirty', true)
+    workbook.setMeta('calcTime', Date.UTC(2024, 0, 1, 1))
+    workbook.setMeta('calcTimezoneOffset', 300)
+    const formulas = ['DATEVALUE("1/2")', 'VALUE("1/2")', 'TIMEVALUE("1/2 12:00")', '"1/2"+0', '-"1/2"', '"1/2"%', 'TEXT("1/2","yyyy-mm-dd")', 'SUM("1/2")', 'DATEVALUE("Jan 2")']
+    formulas.forEach((f, col) => sheet.setCell(0, col, { f }))
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(Date.UTC(2024, 11, 31))
+      const before = await codec.exportFile(doc, context)
+      const text = codec.toText(doc)
+      vi.setSystemTime(Date.UTC(2025, 0, 1, 12))
+      expect(Buffer.from(await codec.exportFile(doc, context)).equals(Buffer.from(before))).toBe(true)
+      expect(codec.toText(doc)).toBe(text)
+      const reopened = await open(before)
+      const day = dateToSerial(2023, 1, 2, date1904)
+      const expected = [day, day, 0.5, day, -day, day / 100, '2023-01-02', day, day]
+      expected.forEach((value, col) => expect(reopened.sheet.cell(0, col)?.v, formulas[col]).toEqual(value))
+      const live = new SheetCalc(workbook)
+      expect(live.evaluate(sheet, 1, 0, 'DATEVALUE("1/2")')).toBe(dateToSerial(2025, 1, 2, date1904))
+      live.destroy()
+      reopened.doc.destroy()
+    } finally {
+      vi.useRealTimers()
+      doc.destroy()
+    }
+  })
+
 })

@@ -13,49 +13,66 @@
  *   non-blank cell. `<>` with any operand matches everything the operand does not, blanks included.
  */
 
+import { consumeWork } from '../budget.js'
 import { errorFromCode, isError, type FunctionContext, type Scalar } from '../types.js'
 import { compareText, parseNumber } from './coerce.js'
 
 export type Predicate = (value: Scalar) => boolean
-
-const wildcardCache = new Map<string, RegExp>()
 
 /** True when the pattern has an unescaped `*` or `?`, or a `~` escape. */
 export function hasWildcards(pattern: string): boolean {
   return /[*?~]/.test(pattern)
 }
 
-/** Compiles an Excel wildcard pattern (`*`, `?`, `~*`, `~?`, `~~`) to an anchored, case-insensitive regex. */
-export function wildcardRegex(pattern: string, anchored: 'full' | 'start' | 'none' = 'full'): RegExp {
-  const key = `${anchored}:${pattern}`
-  const cached = wildcardCache.get(key)
-  if (cached) return cached
-  let source = ''
-  for (let i = 0; i < pattern.length; i++) {
-    const char = pattern[i]!
-    if (char === '~' && i + 1 < pattern.length && '*?~'.includes(pattern[i + 1]!)) {
-      source += escapeRegex(pattern[i + 1]!)
-      i++
-    } else if (char === '*') source += '[\\s\\S]*'
-    else if (char === '?') source += '[\\s\\S]'
-    else source += escapeRegex(char)
+/** Matches UTF-16 code units with one backtrack point, so wildcard work is never exponential. */
+function matchWildcard(pattern: string, text: string, search: boolean): number {
+  consumeWork(pattern.length + text.length)
+  // An implicit leading star lets SEARCH find the earliest substring with the same bounded scan.
+  const tokens: { char: string; wildcard: boolean }[] = search ? [{ char: '*', wildcard: true }] : []
+  for (let index = 0; index < pattern.length; index++) {
+    let char = pattern[index]!
+    const escaped = char === '~' && index + 1 < pattern.length && '*?~'.includes(pattern[index + 1]!)
+    if (escaped) char = pattern[++index]!
+    tokens.push({ char: char.toLowerCase(), wildcard: !escaped && (char === '*' || char === '?') })
   }
-  const full = anchored === 'full' ? `^${source}$` : anchored === 'start' ? `^${source}` : source
-  // No `u` flag: like Excel, `?` matches one UTF-16 code unit.
-  const regex = new RegExp(full, 'i')
-  if (wildcardCache.size > 500) wildcardCache.clear()
-  wildcardCache.set(key, regex)
-  return regex
-}
-
-function escapeRegex(text: string): string {
-  return text.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')
+  let position = 0
+  let token = 0
+  let star = -1
+  let retry = 0
+  let start = 0
+  while (position < text.length) {
+    consumeWork()
+    const next = tokens[token]
+    if (!next && search) return start
+    if (next?.wildcard && next.char === '*') {
+      star = token++
+      retry = position
+    } else if (next && (next.wildcard || next.char === text[position]!.toLowerCase())) {
+      if (search && star === 0 && token === 1) start = position
+      token++
+      position++
+    } else if (star >= 0) {
+      token = star + 1
+      position = ++retry
+    } else return -1
+  }
+  while (tokens[token]?.wildcard && tokens[token]?.char === '*') {
+    consumeWork()
+    token++
+  }
+  // An empty search match after the last failed candidate starts at the end of the text.
+  if (search && star === 0 && token === 1) start = position
+  return token === tokens.length ? start : -1
 }
 
 /** Case-insensitive whole-text match of `text` against an Excel wildcard pattern. */
 export function wildcardMatch(pattern: string, text: string): boolean {
-  if (!hasWildcards(pattern)) return compareText(pattern, text) === 0
-  return wildcardRegex(pattern).test(text)
+  return matchWildcard(pattern, text, false) >= 0
+}
+
+/** The first substring matching an Excel wildcard pattern, or -1 when none matches. */
+export function wildcardIndex(pattern: string, text: string): number {
+  return matchWildcard(pattern, text, true)
 }
 
 type Op = '=' | '<>' | '<' | '<=' | '>' | '>='

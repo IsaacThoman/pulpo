@@ -7,6 +7,7 @@
  * evaluated iteratively, and LAMBDA/name recursion is capped at `MAX_CALL_DEPTH` (#NUM! beyond).
  */
 
+import { serialToParts } from '../dates.js'
 import { CalculationStopped, consumeWork } from './budget.js'
 import { OWNED_FUNCTIONS } from './builtins.js'
 import type { Node } from './parse.js'
@@ -93,6 +94,11 @@ export function refRect(ref: RefParts): { top: number; left: number; bottom: num
 }
 
 export class Interpreter {
+  /** Date coercion shares NOW's clock and local date, including fixed export snapshots. */
+  currentYear(): number {
+    return serialToParts(this.host.now(), this.host.date1904)?.year ?? 2000
+  }
+
   /** The cell being calculated. */
   sheet = 0
   row = 0
@@ -157,11 +163,11 @@ export class Interpreter {
         const value = this.eval(node.operand, scope)
         if (node.op === '+') return value
         if (node.op === '@') return this.implicitIntersection(value)
-        return mapValue(this.operand(value), (x) => negate(x, this.host.date1904))
+        return mapValue(this.operand(value), (x) => negate(x, this.host.date1904, this.currentYear()))
       }
       case 'postfix': {
         const value = this.eval(node.operand, scope)
-        if (node.op === '%') return mapValue(this.operand(value), (x) => percent(x, this.host.date1904))
+        if (node.op === '%') return mapValue(this.operand(value), (x) => percent(x, this.host.date1904, this.currentYear()))
         return this.spill(value)
       }
       case 'binary':
@@ -350,7 +356,7 @@ export class Interpreter {
     const x = this.operand(a)
     const y = this.operand(b)
     const date1904 = this.host.date1904
-    return elementwise(x, y, (p, q) => binaryScalar(op as ScalarOp, p, q, date1904, snap))
+    return elementwise(x, y, (p, q) => binaryScalar(op as ScalarOp, p, q, date1904, snap, this.currentYear()))
   }
 
   private referenceOp(op: ':' | ' ' | ',', a: Value, b: Value): Value {

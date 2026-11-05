@@ -13,7 +13,10 @@ export function markCalcDirty(doc: Y.Doc): void {
   const previous = meta.get('calcTime')
   doc.transact(() => {
     if (meta.get('calcDirty') !== true) meta.set('calcDirty', true)
-    if (typeof previous !== 'number' || now - previous > 60_000) meta.set('calcTime', now)
+    if (typeof previous !== 'number' || typeof meta.get('calcTimezoneOffset') !== 'number' || now - previous > 60_000) {
+      meta.set('calcTime', now)
+      meta.set('calcTimezoneOffset', new Date(now).getTimezoneOffset())
+    }
   }, EDIT_ORIGIN)
 }
 
@@ -24,7 +27,7 @@ export function trackEdits(doc: Y.Doc): () => void {
     if (!transaction.local || transaction.origin === IMPORT_ORIGIN || transaction.origin === EDIT_ORIGIN) return
     const meta = root.get('meta')
     const events = [...transaction.changedParentTypes].find(([type]) => (type as unknown) === root)?.[1] ?? []
-    const edited = events.some((event) => event.target !== meta || [...(event as Y.YMapEvent<unknown>).keysChanged].some((key) => key !== 'calcDirty' && key !== 'calcTime'))
+    const edited = events.some((event) => event.target !== meta || [...(event as Y.YMapEvent<unknown>).keysChanged].some((key) => key !== 'calcDirty' && key !== 'calcTime' && key !== 'calcTimezoneOffset'))
     if (edited) markCalcDirty(doc)
   }
   doc.on('afterTransaction', afterTransaction)
