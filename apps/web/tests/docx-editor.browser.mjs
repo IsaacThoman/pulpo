@@ -1376,6 +1376,66 @@ try {
     assert.deepEqual(await blocks(), [{ type: 'table', text: 'Pasted APasted B' }, { type: 'paragraph', text: 'After paste' }, { type: 'table', text: 'Unrelated table' }, { type: 'paragraph', text: '' }])
   })
 
+  await step('keeps custom notes visible and pagination geometry stable across zoom levels', async () => {
+    await open('?file=sections-headers.docx')
+    const keys = await page.evaluate(() => {
+      const editor = window.harness.editors[0]
+      const doc = editor.options.doc
+      const schema = editor.view.state.schema
+      const spacing = JSON.stringify(['w:spacing', { 'w:before': '0', 'w:after': '0', 'w:line': '480', 'w:lineRule': 'exact' }])
+      const p = (text, content) => schema.node('paragraph', { spacing }, content ?? schema.text(text))
+      const refs = []
+      for (const kind of ['header', 'footer']) {
+        const [key] = [...doc.getMap('stories')].find(([, json]) => JSON.parse(json).kind === kind)
+        const [id] = [...doc.getMap('rels')].find(([, json]) => JSON.parse(json).type.endsWith(`/${kind}`))
+        for (const type of ['default', 'even']) refs.push([`w:${kind}Reference`, { 'w:type': type, 'r:id': id }])
+        editor.openStoryEditor(key)
+        const view = editor.storyEditor.view
+        view.dispatch(view.state.tr.replaceWith(0, view.state.doc.content.size, Array.from({ length: kind === 'header' ? 10 : 6 }, (_, index) => p(`Tall ${kind} line ${index}`))))
+        editor.closeStoryEditor()
+      }
+      doc.getMap('docx').set('sectPr', JSON.stringify(['w:sectPr', {}, ...refs]))
+      const keys = []
+      const noteRefs = []
+      for (const kind of ['footnote', 'endnote']) {
+        const id = editor.insertNote(kind)
+        const key = `${kind}:${id}`
+        keys.push(key)
+        const view = editor.storyEditor.view
+        const mark = view.state.doc.firstChild.firstChild
+        view.dispatch(view.state.tr.replaceWith(0, view.state.doc.content.size, Array.from({ length: 3 }, (_, index) => p('', index ? [schema.text(`Custom ${kind} line ${index}`)] : [mark, schema.text(`* Custom ${kind} line 0`)]))))
+        editor.closeStoryEditor()
+        noteRefs.push(schema.node('noteRef', { kind, id, v: JSON.stringify([`w:${kind}Reference`, { 'w:id': id, 'w:customMarkFollows': '1' }]) }), schema.text('*'))
+      }
+      const row = (index) => schema.node('tableRow', { trPr: index === 0 ? JSON.stringify(['w:trPr', {}, ['w:tblHeader', {}]]) : null }, [schema.node('tableCell', null, [p(`Table row ${index}`)])])
+      const table = schema.node('table', null, Array.from({ length: 12 }, (_, index) => row(index)))
+      const view = editor.view
+      view.dispatch(view.state.tr.replaceWith(0, view.state.doc.content.size, [p('', [schema.text('References '), ...noteRefs, schema.node('tab', { v: JSON.stringify(['w:tab', {}]) }), schema.text('Tabbed suffix')]), ...Array.from({ length: 8 }, (_, index) => p(`Body line ${index}`)), table]))
+      editor.relayout()
+      return keys
+    })
+    const metrics = () => page.evaluate(() => {
+      const editor = window.harness.editors[0]
+      return { pages: editor.pages, top: editor.lastLayout.pages[0].setup.top, bottom: editor.lastLayout.pages[0].setup.bottom, footnote: [...editor.noteHeights.values()][0], endnote: editor.endnotesHeight, tabs: [...editor.view.dom.querySelectorAll('.docx-tab')].map((element) => parseFloat(element.style.width)), repeatedRows: editor.root.querySelectorAll('.docx-repeated-header').length }
+    })
+    const baseline = await metrics()
+    assert.ok(baseline.top > 200 && baseline.bottom > 100 && baseline.footnote > 60 && baseline.endnote > 60 && baseline.repeatedRows > 0 && baseline.tabs.length > 0, JSON.stringify(baseline))
+    for (const zoom of [0.25, 0.5, 2, 4, 1.1, 1]) {
+      await page.evaluate((zoom) => { const editor = window.harness.editors[0]; editor.setZoom(zoom); editor.relayout() }, zoom)
+      const next = await metrics()
+      assert.equal(next.pages, baseline.pages, `pages at zoom ${zoom}`)
+      assert.equal(next.repeatedRows, baseline.repeatedRows, `repeated rows at zoom ${zoom}`)
+      assert.equal(next.tabs.length, baseline.tabs.length)
+      next.tabs.forEach((width, index) => assert.ok(Math.abs(width - baseline.tabs[index]) < 2, `tab width at zoom ${zoom}`))
+      for (const value of ['top', 'bottom', 'footnote', 'endnote']) assert.ok(Math.abs(next[value] - baseline[value]) < 1, `${value} at zoom ${zoom}: ${next[value]} vs ${baseline[value]}`)
+      for (const key of keys) assert.match(await page.locator(`[data-story="${key}"]`).innerText(), /Custom (footnote|endnote) line 0/)
+    }
+    for (const layout of ['web', 'print']) {
+      await page.evaluate((layout) => { const editor = window.harness.editors[0]; editor.setLayout(layout); editor.relayout() }, layout)
+      for (const key of keys) assert.match(await page.locator(`[data-story="${key}"]`).innerText(), /Custom (footnote|endnote) line 0/)
+    }
+  })
+
   await step('lays out a 100-page document within budget', async () => {
     const started = Date.now()
     await open('?generate=1600')
