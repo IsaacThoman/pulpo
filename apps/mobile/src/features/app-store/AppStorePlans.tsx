@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import type { UsageLimits } from '@pulpo/contracts'
 import { useAppTheme, type AppTheme } from '../../mockup5/src/theme'
 import { UsageLimitCard } from '../usage-limits/UsageLimitsSettings'
@@ -24,6 +25,7 @@ export function AppStorePlans({ kit, offer, limits, onChanged }: {
   onChanged: () => Promise<unknown>
 }) {
   const theme = useAppTheme()
+  const insets = useSafeAreaInsets()
   const subscription = limits.subscription
   const { products, product } = useAppStoreProducts(kit, offer)
   const { busy, buy, restore, manage } = useAppStoreActions({ kit, offer, current: subscription?.plan ?? null, onChanged })
@@ -81,7 +83,8 @@ export function AppStorePlans({ kit, offer, limits, onChanged }: {
 
   return <ScrollView
     style={{ backgroundColor: theme.isDark ? theme.background : '#F2F2F7' }}
-    contentContainerStyle={styles.scroll}
+    // Automatic content adjustment covers only the top and bottom; iPhone Duo's vertical bar takes a side.
+    contentContainerStyle={[styles.scroll, { paddingLeft: 20 + insets.left, paddingRight: 20 + insets.right }]}
     contentInsetAdjustmentBehavior="automatic"
   >
     {rows.length ? <View style={styles.group}>
