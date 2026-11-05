@@ -8,7 +8,8 @@ import { parseJson, readDocxModel, type CommentMeta, type DocxModel } from './mo
 import { ListCounter, Numbering, effectiveNumPr } from './numbering.js'
 import { PARAGRAPH_PROPERTY_ATTRS, RUN_PROPERTY_MARKS, inlineMarks } from './schema.js'
 import { StyleSheet, styleDisplayName } from './styles.js'
-import { inlineText, tablePartDeleted } from './text.js'
+import { listRevisions, revisionModel } from './revisions.js'
+import { inlineText } from './text.js'
 import { canonicalMarks, canonicalNode, canonicalValue, reviewAttrs } from './review-canonical.js'
 
 /**
@@ -111,7 +112,6 @@ function styledChars(node: ProseMirrorNode): { text: string; signatures: string[
   node.descendants((child) => {
     if (!child.isInline) return true
     const marks = inlineMarks(child)
-    if (marks.some((mark) => mark.type.name === 'del' || mark.type.name === 'moveFrom')) return false
     const piece = child.isText ? child.text! : child.type.name === 'tab' ? '\t' : child.type.name === 'break' ? '\n' : child.type.name === 'drawing' ? inlineText(child.type.schema.nodes.paragraph!.create(null, child)) : ''
     const signature = runSignature(marks)
     for (const char of piece) {
@@ -152,13 +152,12 @@ function collectBlocks(doc: ProseMirrorNode, model: DocxModel, contextOf: (ances
       case 'table': {
         const parents = [...ancestors, node]
         node.forEach((row, _offset, index) => {
-          if (tablePartDeleted(row)) return
           const cells: string[] = []
           row.forEach((cell) => {
-            if (cell.attrs.phantom || tablePartDeleted(cell)) return
+            if (cell.attrs.phantom) return
             const parts: string[] = []
             cell.descendants((child) => {
-              if (tablePartDeleted(child) || (child.type.name === 'tableCell' && child.attrs.phantom)) return false
+              if (child.type.name === 'tableCell' && child.attrs.phantom) return false
               if (child.type.name !== 'paragraph') return true
               const label = listLabel(child)
               parts.push([label, inlineText(child)].filter(Boolean).join(' '))
@@ -502,7 +501,7 @@ function storyText(doc: ProseMirrorNode, model: DocxModel): string {
   const counter = new ListCounter(new Numbering(model.maps.numbering, styles))
   const lines: string[] = []
   doc.descendants((node) => {
-    if (tablePartDeleted(node) || (node.type.name === 'tableCell' && node.attrs.phantom)) return false
+    if (node.type.name === 'tableCell' && node.attrs.phantom) return false
     if (node.type.name === 'paragraph') {
       const list = effectiveNumPr(jml(node.attrs.numPr), node.attrs.pStyle as string | null, styles)
       const label = list ? counter.next(list.numId, list.ilvl)?.text : undefined
@@ -512,38 +511,6 @@ function storyText(doc: ProseMirrorNode, model: DocxModel): string {
     return true
   })
   return lines.join('\n').trim()
-}
-
-/** Hidden revisions still carry preserved content worth reviewing, outside accepted text. */
-function hiddenTableChanges(before: ProseMirrorNode, after: ProseMirrorNode): FormatChange[] {
-  const collect = (doc: ProseMirrorNode) => {
-    const entries = new Map<string, { node: ProseMirrorNode; location: FormatLocation[] }>()
-    const visit = (node: ProseMirrorNode, path: string, location: FormatLocation[]) => {
-      if (node.type.name === 'table') {
-        let visible = false
-        node.forEach((row) => {
-          if (!tablePartDeleted(row)) row.forEach((cell) => { if (!cell.attrs.phantom && !tablePartDeleted(cell)) visible = true })
-        })
-        // With no accepted rows there is no block to carry the table's own properties.
-        if (!visible) { entries.set(path, { node, location }); return }
-      }
-      if (tablePartDeleted(node)) { entries.set(path, { node, location }); return }
-      if (node.isTextblock) return
-      node.forEach((child, _offset, index) => visit(child, `${path}/${index}`, childLocation(child, index, location)))
-    }
-    visit(doc, '', [])
-    return entries
-  }
-  const a = collect(before)
-  const b = collect(after)
-  const changes: FormatChange[] = []
-  for (const key of new Set([...a.keys(), ...b.keys()])) {
-    const left = a.get(key)
-    const right = b.get(key)
-    if (left && right && canonicalNode(left.node) === canonicalNode(right.node)) continue
-    changes.push({ property: 'layout', text: '', location: (right ?? left)!.location })
-  }
-  return changes
 }
 
 /** The redline from `before` to `after`. */
@@ -659,12 +626,29 @@ function diffBody(before: DocxModel, after: DocxModel): Pick<DocxDiff, 'blocks' 
   }
   flush()
 
-  return { blocks, stats, formats: hiddenTableChanges(before.body, after.body) }
+  return { blocks, stats }
 }
 
 /** The redline from `before` to `after`, with canonical equality independent of descriptions. */
 export function diffDocxModels(before: DocxModel, after: DocxModel): DocxDiff {
-  const { blocks, stats, formats: tableRevisions } = diffBody(before, after)
+  const originalBefore = before
+  const originalAfter = after
+  before = revisionModel(before)
+  after = revisionModel(after)
+  const { blocks, stats } = diffBody(before, after)
+  const revisionChanges = (a: ProseMirrorNode, b: ProseMirrorNode, resolvedA: ProseMirrorNode, resolvedB: ProseMirrorNode): FormatChange[] => {
+    if (a === resolvedA && b === resolvedB) return []
+    if (canonicalNode(a) === canonicalNode(b)) return []
+    const changes: FormatChange[] = []
+    for (let index = 0; index < Math.max(a.childCount, b.childCount); index++) {
+      const left = index < a.childCount ? a.child(index) : undefined
+      const right = index < b.childCount ? b.child(index) : undefined
+      if (left && right && canonicalNode(left) === canonicalNode(right)) continue
+      const revised = [left, right].some((node) => node && listRevisions(node.type.schema.node('doc', null, [node])).length)
+      if (revised) changes.push({ property: 'layout', text: '', location: childLocation((right ?? left)!, index, []) })
+    }
+    return changes.length ? changes : [{ property: 'layout', text: '' }]
+  }
   const sheets = { before: new StyleSheet(before.maps.styles), after: new StyleSheet(after.maps.styles) }
   const stories: StoryDiff[] = []
   const ids = new Set([...before.stories.keys(), ...after.stories.keys()])
@@ -679,7 +663,7 @@ export function diffDocxModels(before: DocxModel, after: DocxModel): DocxDiff {
     else if (!left && right) stories.push({ kind, id, change: 'insert', segments: [{ op: 'insert', text: textB }], ...(author ? { author } : {}) })
     else if (left && right) {
       const compared = diffBody({ ...before, body: left.doc }, { ...after, body: right.doc })
-      const formats = [...(compared.formats ?? []), ...compared.blocks.flatMap((block, index) => block.kind === 'modify' ? block.formats.map((format) => format.location?.length || block.after.type !== 'paragraph' ? format : { ...format, location: [{ kind: 'paragraph' as const, index: index + 1 }] }) : [])]
+      const formats = [...revisionChanges(originalBefore.stories.get(id)!.doc, originalAfter.stories.get(id)!.doc, left.doc, right.doc), ...compared.blocks.flatMap((block, index) => block.kind === 'modify' ? block.formats.map((format) => format.location?.length || block.after.type !== 'paragraph' ? format : { ...format, location: [{ kind: 'paragraph' as const, index: index + 1 }] }) : [])]
       const metaChanged = canonicalValue(left.meta) !== canonicalValue(right.meta) || (kind === 'comment' && canonicalValue(before.maps.comments.get(id.slice(8))) !== canonicalValue(after.maps.comments.get(id.slice(8))))
       if (metaChanged) formats.push({ property: 'formatting', text: '' })
       if (textA !== textB || compared.blocks.some((block) => block.kind !== 'equal') || metaChanged || formats.length) {
@@ -702,7 +686,7 @@ export function diffDocxModels(before: DocxModel, after: DocxModel): DocxDiff {
   }
   styles.sort((x, y) => x.name.localeCompare(y.name))
 
-  const formats = [...documentChanges(before, after), ...(tableRevisions ?? [])]
+  const formats = [...documentChanges(before, after), ...revisionChanges(originalBefore.body, originalAfter.body, before.body, after.body)]
   stats.formatChanges += formats.length
   const identical = blocks.every((block) => block.kind === 'equal') && !stories.length && !styles.length && !formats.length
   return { blocks, stories, styles, stats, identical, ...(formats.length ? { formats } : {}) }

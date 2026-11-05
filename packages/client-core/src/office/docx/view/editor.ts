@@ -108,7 +108,7 @@ import {
   type StoryResult,
 } from './stories.js'
 import { DOCX_BASE_CSS, documentStylesheet } from './stylesheet.js'
-import { listRevisions, resolveRevisions, revisionDate, trackTransaction, type Revision } from './track-changes.js'
+import { listRevisions, resolveAllRevisions, resolveRevisions, revisionDate, trackTransaction, type Revision } from './track-changes.js'
 
 export type DocxLayout = 'print' | 'web'
 export type DocxMode = 'editing' | 'suggesting' | 'viewing'
@@ -1361,13 +1361,17 @@ export class DocxEditor {
     const revisions = listRevisions(this.view.state.doc)
     for (const [id, json] of readDocxMap(this.options.doc, 'stories')) {
       const meta = parseJson<StoryMeta>(json)
-      if (!meta || meta.kind === 'comment') continue
+      if (!meta) continue
       revisions.push(...listRevisions(fragmentToNode(this.options.doc.getXmlFragment(storyFragmentName(id))), id))
     }
     return revisions
   }
 
   resolveRevisions(revisions: Revision[], action: 'accept' | 'reject'): boolean {
+    return this.resolveStories(revisions, action, false)
+  }
+
+  private resolveStories(revisions: Revision[], action: 'accept' | 'reject', all: boolean): boolean {
     if (this.readOnlyValue) return false
     const groups = new Map<string | undefined, Revision[]>()
     for (const revision of revisions) {
@@ -1381,7 +1385,7 @@ export class DocxEditor {
       const story = storyId && !view ? this.storyDoc(storyId) : undefined
       if (!view && !story) continue
       const state = view?.state ?? EditorState.create({ doc: story!, schema: docxSchema() })
-      const tr = resolveRevisions(state, group, action)
+      const tr = all ? resolveAllRevisions(state, action) : resolveRevisions(state, group, action)
       if (!tr) continue
       if (view) view.dispatch(tr.setMeta('docx-untracked', true))
       else this.options.doc.transact(() => writeFragment(this.options.doc, this.options.doc.getXmlFragment(storyFragmentName(storyId!)), tr.doc))
@@ -1392,11 +1396,11 @@ export class DocxEditor {
   }
 
   acceptAll(): boolean {
-    return this.resolveRevisions(this.revisions(), 'accept')
+    return this.resolveStories(this.revisions(), 'accept', true)
   }
 
   rejectAll(): boolean {
-    return this.resolveRevisions(this.revisions(), 'reject')
+    return this.resolveStories(this.revisions(), 'reject', true)
   }
 
   /** Shows the document as if every change were accepted, without changing it. */

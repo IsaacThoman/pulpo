@@ -8,7 +8,8 @@ import { jmlAttr, jmlChild, jmlElements, jmlNumber, jmlOn, packJml, unpackJml, t
 import { effectiveNumPr } from '../numbering.js'
 import { PARAGRAPH_PROPERTY_ATTRS, RUN_PROPERTY_MARKS, inlineMarks, packMarks, textAreaWidth, type ParagraphPropertyAttr } from '../schema.js'
 import { mergeProperties, styleDisplayName, type PropertyMap } from '../styles.js'
-import { inlineText, tablePartDeleted } from '../text.js'
+import { revisionProjection } from '../revisions.js'
+import { inlineText } from '../text.js'
 import type { DocxViewContext } from './context.js'
 import { changeMarks, clearMark, propertyMark, selectionMarks, setMark } from './marks.js'
 
@@ -598,8 +599,7 @@ function textblockMatches(node: ProseMirrorNode, pos: number, needle: string, op
   // Preserve ProseMirror's UTF-16 footprint without a per-character offset array.
   const pieces: string[] = []
   node.forEach((child) => {
-    const deleted = child.marks.some((mark) => mark.type.name === 'del' || mark.type.name === 'moveFrom')
-    pieces.push(child.isText && !deleted ? child.text! : '\u0000'.repeat(child.nodeSize))
+    pieces.push(child.isText ? child.text! : '\u0000'.repeat(child.nodeSize))
   })
   const text = pieces.join('')
   const haystack = options.matchCase ? text : text.toLowerCase()
@@ -619,39 +619,22 @@ function textblockMatches(node: ProseMirrorNode, pos: number, needle: string, op
 
 export function findMatches(doc: ProseMirrorNode, query: string, options: FindOptions = {}): FindMatch[] {
   if (!query) return []
+  const projection = revisionProjection(doc)
   const results: FindMatch[] = []
   const needle = options.matchCase ? query : query.toLowerCase()
-  doc.descendants((node, pos) => {
-    if (tablePartDeleted(node) || (node.type.name === 'tableCell' && node.attrs.phantom)) return false
+  projection.doc.descendants((node, pos) => {
+    if (node.type.name === 'tableCell' && node.attrs.phantom) return false
     if (!node.isTextblock) return true
     if (results.length < 10_000) results.push(...textblockMatches(node, pos, needle, options, 10_000 - results.length))
     return false
   })
-  return results
+  return results.map(({ from, to }) => ({ from: projection.sourcePosition(from, 1), to: projection.sourcePosition(to, -1) })).filter(({ from, to }) => from < to)
 }
 
 /** Validate source ranges with the same Unicode and boundary rules used to find them. */
 export function validFindMatches(doc: ProseMirrorNode, matches: FindMatch[], query: string, options: FindOptions = {}): FindMatch[] {
-  if (!query) return []
-  const needle = options.matchCase ? query : query.toLowerCase()
-  const paragraphs = new Map<number, Set<string>>()
-  return matches.filter(({ from, to }) => {
-    if (from < 0 || to <= from || to > doc.content.size) return false
-    const $from = doc.resolve(from)
-    const $to = doc.resolve(to)
-    if (!$from.parent.isTextblock || !$from.sameParent($to)) return false
-    for (let depth = 1; depth < $from.depth; depth++) {
-      const node = $from.node(depth)
-      if (tablePartDeleted(node) || (node.type.name === 'tableCell' && node.attrs.phantom)) return false
-    }
-    const pos = $from.start() - 1
-    let ranges = paragraphs.get(pos)
-    if (!ranges) {
-      ranges = new Set(textblockMatches($from.parent, pos, needle, options).map(({ from, to }) => `${from}:${to}`))
-      paragraphs.set(pos, ranges)
-    }
-    return ranges.has(`${from}:${to}`)
-  })
+  const ranges = new Set(findMatches(doc, query, options).map(({ from, to }) => `${from}:${to}`))
+  return matches.filter(({ from, to }) => ranges.has(`${from}:${to}`))
 }
 
 /** Replaces matches (all, or the one at `only`) keeping the formatting of each match's start. */
@@ -672,8 +655,8 @@ export function wordCount(doc: ProseMirrorNode): { words: number; characters: nu
   let characters = 0
   let withSpaces = 0
   let paragraphs = 0
-  doc.descendants((node) => {
-    if (tablePartDeleted(node) || (node.type.name === 'tableCell' && node.attrs.phantom)) return false
+  revisionProjection(doc).doc.descendants((node) => {
+    if (node.type.name === 'tableCell' && node.attrs.phantom) return false
     if (node.type.name !== 'paragraph') return true
     const text = inlineText(node)
     if (text.trim()) paragraphs++

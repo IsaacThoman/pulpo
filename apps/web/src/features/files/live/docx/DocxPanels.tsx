@@ -175,6 +175,9 @@ const KIND_LABELS = (): Record<Revision['kind'], string> => ({
   paragraphDelete: ui("Paragraph deleted"),
   rowInsert: ui("Row inserted"),
   rowDelete: ui("Row deleted"),
+  cellInsert: ui("Inserted"),
+  cellDelete: ui("Deleted"),
+  cellMerge: ui("Formatted"),
   paragraphFormat: ui("Paragraph formatted"),
 })
 

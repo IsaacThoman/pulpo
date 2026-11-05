@@ -22,6 +22,24 @@ const table = (...rows: ReturnType<typeof row>[]) => schema.node('table', null, 
 const model = (...content: ReturnType<typeof p>[]): DocxModel => ({ body: schema.node('doc', null, content), maps: emptyMaps(), stories: new Map() })
 const changedTexts = (diff: ReturnType<typeof diffDocxModels>) => diff.blocks.flatMap((block) => block.kind === 'modify' ? [block.before.text, block.after.text] : [block.block.text]).join('\n')
 
+describe('semantic paragraph boundaries', () => {
+  it('extracts deleted paragraph marks exactly as Accept all joins them', () => {
+    const first = schema.node('paragraph', { markRPr: packJml(['w:rPr', {}, marker('w:del')]) }, schema.text('foo'))
+    const original = model(first, p('bar'))
+    const state = EditorState.create({ schema, doc: original.body })
+    const accepted = state.apply(resolveRevisions(state, listRevisions(state.doc), 'accept')!).doc
+    expect(docxToText(original)).toBe('foobar\n')
+    expect(docxToText(original)).toBe(docxToText({ ...original, body: accepted }))
+    expect(findMatches(original.body, 'foobar')).toHaveLength(1)
+  })
+
+  it('does not leave a blank line for a fully deleted paragraph and its mark', () => {
+    const mark = schema.mark('del', { v: packJml(['w:del', { 'w:id': '2' }, '\u0000']) })
+    const original = model(schema.node('paragraph', { markRPr: packJml(['w:rPr', {}, marker('w:del')]) }, schema.text('gone', [mark])), p('kept'))
+    expect(docxToText(original)).toBe('kept\n')
+  })
+})
+
 describe('accepted table revision text', () => {
   it('excludes row/cell deletions, includes insertions, and skips nested deleted content in all text consumers', () => {
     const nested = schema.node('tableCell', null, [p('hidden parent'), table(row('hidden nested'))])

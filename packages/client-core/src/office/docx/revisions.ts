@@ -1,10 +1,13 @@
 import { Slice, type Attrs, type Mark, type Node as ProseMirrorNode } from '@tiptap/pm/model'
-import { TextSelection, type EditorState, type Transaction } from '@tiptap/pm/state'
+import { EditorState, TextSelection, type Transaction } from '@tiptap/pm/state'
 import { removeRow, TableMap } from '@tiptap/pm/tables'
 import { AddMarkStep, Mapping, RemoveMarkStep, ReplaceAroundStep, ReplaceStep, StepMap, type Step } from '@tiptap/pm/transform'
+import { preserveCell } from './export.js'
+import { preservedBlocks } from './import.js'
 import { jmlAttr, jmlChild, jmlElements, packJml, unpackJml, type JmlElement } from './jsonml.js'
 import { PARAGRAPH_PROPERTY_ATTRS, RUN_MARK_BY_ELEMENT, RUN_PROPERTY_MARKS, inlineMarks } from './schema.js'
 import { RPR_ORDER, PPR_ORDER, sortByOrder } from './names.js'
+import type { DocxModel } from './model.js'
 import { changeMarks } from './view/marks.js'
 
 /**
@@ -105,7 +108,44 @@ function deleteRow(out: Transaction, pos: number): void {
   } else if ($pos.parent.type.name === 'table') {
     const table = $pos.parent
     const map = TableMap.get(table)
-    removeRow(out, { table, map, tableStart: $pos.start(), left: 0, right: map.width, top: 0, bottom: map.height }, $pos.index())
+    const rowIndex = $pos.index()
+    const sourceStep = out.steps.length
+    const candidates: { node: ProseMirrorNode; from: number }[] = []
+    const keptOwners: { pos: number; index: number }[] = []
+    const seen = new Set<number>()
+    for (let col = 0; col < map.width; col++) {
+      const offset = map.map[rowIndex * map.width + col]!
+      if (seen.has(offset)) continue
+      seen.add(offset)
+      const rect = map.findCell(offset)
+      if (rect.top < rowIndex) keptOwners.push({ pos: $pos.start() + offset, index: rowIndex - rect.top - 1 })
+      if (rowIndex + 1 < map.height && map.map[(rowIndex + 1) * map.width + col] === offset && map.findCell(offset).top === rowIndex) candidates.push({ node: table.nodeAt(offset)!, from: $pos.start() + offset })
+    }
+    removeRow(out, { table, map, tableStart: $pos.start(), left: 0, right: map.width, top: 0, bottom: map.height }, rowIndex)
+    const moved: MovedContent[] = [...out.getMeta(MOVED_CONTENT) ?? []]
+    for (let index = sourceStep; index < out.steps.length; index++) {
+      const step = out.steps[index]
+      if (!(step instanceof ReplaceStep) || step.from !== step.to) continue
+      const inserted = step.slice.content.firstChild
+      const candidate = candidates.findIndex(({ node }) => node.content === inserted?.content)
+      if (candidate < 0 || !inserted) continue
+      const source = candidates.splice(candidate, 1)[0]!
+      moved.push({ sourceFrom: source.from + 1, sourceTo: source.from + source.node.nodeSize - 1, sourceStep, targetFrom: step.from + 1, targetTo: step.from + inserted.nodeSize - 1, targetStep: index + 1 })
+      const at = out.mapping.slice(index + 1).map(step.from)
+      const current = out.doc.nodeAt(at)
+      const kept = unpackJml<JmlElement[]>(current?.attrs.vMergeCells as string | null)
+      if (current && kept?.length) out.setNodeMarkup(at, undefined, { ...current.attrs, vMergeCells: kept.length > 1 ? packJml(kept.slice(1)) : null })
+    }
+    for (const owner of keptOwners) {
+      const at = out.mapping.slice(sourceStep).map(owner.pos)
+      const current = out.doc.nodeAt(at)
+      const kept = unpackJml<JmlElement[]>(current?.attrs.vMergeCells as string | null)
+      if (current && kept?.length) {
+        const remaining = kept.filter((_cell, index) => index !== owner.index)
+        out.setNodeMarkup(at, undefined, { ...current.attrs, vMergeCells: remaining.length ? packJml(remaining) : null })
+      }
+    }
+    if (moved.length) out.setMeta(MOVED_CONTENT, moved)
   }
 }
 
@@ -417,7 +457,7 @@ function recordParagraphChanges(state: EditorState, out: Transaction, reviewer: 
   }
 }
 
-export type RevisionKind = 'insert' | 'delete' | 'moveFrom' | 'moveTo' | 'format' | 'paragraphInsert' | 'paragraphDelete' | 'paragraphFormat' | 'rowInsert' | 'rowDelete'
+export type RevisionKind = 'insert' | 'delete' | 'moveFrom' | 'moveTo' | 'format' | 'paragraphInsert' | 'paragraphDelete' | 'paragraphFormat' | 'rowInsert' | 'rowDelete' | 'cellInsert' | 'cellDelete' | 'cellMerge'
 
 export interface Revision {
   /** Stable within a document version: kind plus Word's revision id (or position for marks without). */
@@ -444,6 +484,15 @@ export function listRevisions(doc: ProseMirrorNode, storyId?: string): Revision[
         const element = jmlChild(jml(node.attrs.trPr), name)
         if (element) revisions.push({ key: `${kind}:${jmlAttr(element, 'w:id') ?? pos}:${pos}`, kind, author: jmlAttr(element, 'w:author'), date: jmlAttr(element, 'w:date'), from: pos, to: pos + node.nodeSize, text: node.textContent })
       }
+    }
+    if (node.type.name === 'tableCell') {
+      const pr = jml(node.attrs.tcPr)
+      for (const [name, kind] of [['w:cellIns', 'cellInsert'], ['w:cellDel', 'cellDelete'], ['w:del', 'cellDelete'], ['w:cellMerge', 'cellMerge']] as const) {
+        const element = jmlChild(pr, name)
+        if (element) revisions.push({ key: `${kind}:${jmlAttr(element, 'w:id') ?? pos}:${pos}`, kind, author: jmlAttr(element, 'w:author'), date: jmlAttr(element, 'w:date'), from: pos, to: pos + node.nodeSize, text: node.textContent })
+      }
+      const continuations = unpackJml<JmlElement[]>(node.attrs.vMergeCells as string | null) ?? []
+      if (continuations.some((cell) => jmlChild(jmlChild(cell, 'w:tcPr'), 'w:cellMerge'))) revisions.push({ key: `cellMerge:continuations:${pos}`, kind: 'cellMerge', from: pos, to: pos + node.nodeSize, text: node.textContent })
     }
     if (node.type.name === 'paragraph') {
       const markRPr = jml(node.attrs.markRPr)
@@ -506,20 +555,125 @@ function restoreFormat(out: Transaction, from: number, to: number): void {
   })
 }
 
+function mergeProperties(cell: ProseMirrorNode, value: string | undefined): Record<string, unknown> {
+  const pr = jml(cell.attrs.tcPr) ?? ['w:tcPr', {}]
+  const children = jmlElements(pr).filter((element) => element[0] !== 'w:cellMerge' && element[0] !== 'w:vMerge')
+  if (value === 'cont' || value === 'continue') children.push(['w:vMerge', {}])
+  else if (value === 'rest' || value === 'restart') children.push(['w:vMerge', { 'w:val': 'restart' }])
+  return { ...cell.attrs, tcPr: children.length || Object.keys(pr[1]).length ? packJml([pr[0], pr[1], ...children]) : null }
+}
+
+function splitVertical(out: Transaction, pos: number): number[] {
+  const cell = out.doc.nodeAt(pos)!
+  const span = Number(cell.attrs.rowspan) || 1
+  if (span <= 1) return [pos]
+  const $pos = out.doc.resolve(pos)
+  const table = $pos.node($pos.depth - 1)
+  const tableStart = $pos.start($pos.depth - 1)
+  const map = TableMap.get(table)
+  const rect = map.findCell(pos - tableStart)
+  const kept = unpackJml<JmlElement[]>(cell.attrs.vMergeCells as string | null) ?? []
+  const step = out.steps.length
+  const properties = jml(cell.attrs.tcPr) ?? ['w:tcPr', {}]
+  const children = jmlElements(properties).filter((element) => element[0] !== 'w:vMerge')
+  children.push(['w:vMerge', { 'w:val': 'restart' }])
+  out.setNodeMarkup(pos, undefined, { ...cell.attrs, tcPr: packJml([properties[0], properties[1], ...children]), rowspan: 1, vMergeCells: null })
+  const added: { pos: number; step: number }[] = []
+  for (let row = rect.bottom - 1; row > rect.top; row--) {
+    const raw = kept[row - rect.top - 1]
+    const attrs = raw ? { tcPr: packJml(jmlChild(raw, 'w:tcPr') ?? ['w:tcPr', {}]), xmlAttrs: JSON.stringify(raw[1]) } : { tcPr: packJml(['w:tcPr', {}, ['w:vMerge', {}]]) }
+    const content = raw ? preservedBlocks(jmlElements(raw).filter((child) => child[0] !== 'w:tcPr')) : []
+    const continuation = cell.type.create({ ...attrs, colspan: cell.attrs.colspan, rowspan: 1 }, content.length ? content : cell.type.schema.nodes.paragraph!.create())
+    const at = out.mapping.slice(step).map(tableStart + map.positionAt(row, rect.left, table))
+    out.insert(at, continuation)
+    added.push({ pos: at, step: out.steps.length })
+  }
+  return [out.mapping.slice(step).map(pos), ...added.reverse().map((entry) => out.mapping.slice(entry.step).map(entry.pos))]
+}
+
+/** Normalize current vMerge geometry through model edits; preserved XML makes rejection lossless. */
+function normalizeVertical(out: Transaction): void {
+  const tables: number[] = []
+  out.doc.descendants((node, pos) => { if (node.type.name === 'table') tables.push(pos); return true })
+  for (const tablePos of tables.reverse()) {
+    const table = out.doc.nodeAt(tablePos)
+    if (table?.type.name !== 'table') continue
+    const map = TableMap.get(table)
+    interface Owner { node: ProseMirrorNode; pos: number; end: number; span: number; kept: JmlElement[]; merged: number }
+    let open = new Map<number, Owner>()
+    const owners = new Set<Owner>()
+    const removed: number[] = []
+    table.forEach((row, rowOffset, rowIndex) => {
+      const next = new Map([...open].filter(([, owner]) => owner.end >= rowIndex))
+      row.forEach((cell, cellOffset) => {
+        const relative = rowOffset + 1 + cellOffset
+        const col = map.colCount(relative)
+        const value = jmlChild(jml(cell.attrs.tcPr), 'w:vMerge')
+        const continuing = value && jmlAttr(value, 'w:val') !== 'restart'
+        const above = open.get(col)
+        const pos = tablePos + 1 + relative
+        if (continuing && above && above.span === cell.attrs.colspan && above.end === rowIndex - 1) {
+          above.end = rowIndex + Number(cell.attrs.rowspan) - 1
+          above.merged += Number(cell.attrs.rowspan)
+          above.kept.push(preserveCell(cell), ...unpackJml<JmlElement[]>(cell.attrs.vMergeCells as string | null) ?? [])
+          owners.add(above)
+          next.set(col, above)
+          removed.push(pos)
+        } else next.set(col, { node: cell, pos, end: rowIndex + Number(cell.attrs.rowspan) - 1, span: Number(cell.attrs.colspan), kept: [...unpackJml<JmlElement[]>(cell.attrs.vMergeCells as string | null) ?? []], merged: 0 })
+      })
+      open = next
+    })
+    const step = out.steps.length
+    for (const owner of owners) out.setNodeMarkup(out.mapping.slice(step).map(owner.pos), undefined, { ...owner.node.attrs, rowspan: Number(owner.node.attrs.rowspan) + owner.merged, vMergeCells: packJml(owner.kept) })
+    for (const pos of removed.reverse()) {
+      const at = out.mapping.slice(step).map(pos)
+      const cell = out.doc.nodeAt(at)
+      if (cell?.type.name === 'tableCell') out.delete(at, at + cell.nodeSize)
+    }
+  }
+}
+
+function padMissingCells(out: Transaction): void {
+  const missing: { pos: number; count: number }[] = []
+  out.doc.descendants((table, pos) => {
+    if (table.type.name !== 'table') return true
+    const map = TableMap.get(table)
+    for (const issue of map.problems ?? []) if (issue.type === 'missing') {
+      let offset = 0
+      for (let row = 0; row < issue.row; row++) offset += table.child(row).nodeSize
+      missing.push({ pos: pos + 1 + offset + table.child(issue.row).nodeSize - 1, count: issue.n })
+    }
+    return true
+  })
+  for (const entry of missing.reverse()) out.insert(entry.pos, out.doc.type.schema.nodes.tableCell!.create({ phantom: 'pad', colspan: entry.count }, out.doc.type.schema.nodes.paragraph!.create()))
+}
+
 /** Accepts or rejects revisions; returns the transaction, or null if none applied. */
-export function resolveRevisions(state: EditorState, revisions: Revision[], action: 'accept' | 'reject'): Transaction | null {
+function resolveBatch(state: EditorState, revisions: Revision[], action: 'accept' | 'reject'): Transaction | null {
   if (!revisions.length) return null
   const out = state.tr
+  const positions = new Mapping()
+  let mappedSteps = 0
+  const sourcePosition = (pos: number, assoc: number) => {
+    // Mark steps have empty maps. Do not revisit thousands of them for each revision.
+    while (mappedSteps < out.mapping.maps.length) {
+      const map = out.mapping.maps[mappedSteps++]!
+      if (map.ranges.length) positions.appendMap(map)
+    }
+    return positions.map(pos, assoc)
+  }
   const trailing: number[] = []
   const rowRevisions = revisions.filter(({ kind }) => kind === 'rowInsert' || kind === 'rowDelete')
   const removedRows = rowRevisions.filter(({ kind }) => (kind === 'rowInsert') === (action === 'reject'))
-  const contentRevisions = revisions.filter((revision) => !rowRevisions.includes(revision) && !removedRows.some((row) => revision.from >= row.from && revision.to <= row.to))
+  const cells = revisions.filter(({ kind }) => kind === 'cellInsert' || kind === 'cellDelete' || kind === 'cellMerge')
+  const removedCells = cells.filter(({ kind }) => (kind === 'cellInsert' && action === 'reject') || (kind === 'cellDelete' && action === 'accept'))
+  const contentRevisions = revisions.filter((revision) => !rowRevisions.includes(revision) && !cells.includes(revision) && ![...removedRows, ...removedCells].some((parent) => revision.from >= parent.from && revision.to <= parent.to))
   // Resolve rows first so cells continuing below a removed row retain their content.
   // Overlapping marks can delete the same range; map every later resolution through those edits.
-  for (const revision of [...rowRevisions.sort((a, b) => b.from - a.from), ...contentRevisions.sort((a, b) => b.from - a.from)]) {
+  for (const revision of [...rowRevisions.sort((a, b) => b.from - a.from), ...cells.sort((a, b) => b.from - a.from), ...contentRevisions.sort((a, b) => b.from - a.from)]) {
     const { kind } = revision
-    const from = out.mapping.map(revision.from, 1)
-    const to = Math.max(from, out.mapping.map(revision.to, -1))
+    const from = sourcePosition(revision.from, 1)
+    const to = Math.max(from, sourcePosition(revision.to, -1))
     if (from === to && revision.from !== revision.to) continue
     const remove = (kind === 'insert' || kind === 'moveTo') ? action === 'reject' : (kind === 'delete' || kind === 'moveFrom') ? action === 'accept' : false
     switch (kind) {
@@ -536,6 +690,32 @@ export function resolveRevisions(state: EditorState, revisions: Revision[], acti
           })
           deleteRow(out, from)
         } else out.setNodeMarkup(from, undefined, withRowRevision(row.attrs, undefined, [kind === 'rowInsert' ? 'w:ins' : 'w:del']))
+        break
+      }
+      case 'cellInsert':
+      case 'cellDelete':
+      case 'cellMerge': {
+        const cell = out.doc.nodeAt(from)
+        if (cell?.type.name !== 'tableCell') break
+        const pr = jml(cell.attrs.tcPr) ?? ['w:tcPr', {}]
+        const remove = (kind === 'cellInsert' && action === 'reject') || (kind === 'cellDelete' && action === 'accept')
+        if (remove) {
+          const $cell = out.doc.resolve(from)
+          if ($cell.parent.childCount === 1) deleteRow(out, $cell.before())
+          else out.delete(from, from + cell.nodeSize)
+        } else {
+          const names = kind === 'cellInsert' ? ['w:cellIns'] : kind === 'cellDelete' ? ['w:cellDel', 'w:del'] : ['w:cellMerge']
+          const children = jmlElements(pr).filter((element) => !names.includes(element[0]))
+          if (kind === 'cellMerge') {
+            // Expand imported rowspans first: merge revisions can live only in preserved XML.
+            const positions = splitVertical(out, from)
+            for (const pos of positions) {
+              const current = out.doc.nodeAt(pos)!
+              const merge = jmlChild(jml(current.attrs.tcPr), 'w:cellMerge')
+              if (merge) out.setNodeMarkup(pos, undefined, mergeProperties(current, jmlAttr(merge, action === 'accept' ? 'w:vMerge' : 'w:vMergeOrig')))
+            }
+          } else out.setNodeMarkup(from, undefined, { ...cell.attrs, tcPr: children.length || Object.keys(pr[1]).length ? packJml([pr[0], pr[1], ...children]) : null })
+        }
         break
       }
       case 'insert':
@@ -569,7 +749,7 @@ export function resolveRevisions(state: EditorState, revisions: Revision[], acti
             } catch {
               // A boundary that cannot join stays.
             }
-          } else if (kind === 'paragraphInsert' && !after) {
+          } else if (!after || !paragraph.content.size) {
             // Resolve text first so deleting it in this pass can remove the shell outright.
             trailing.push(revision.from)
           }
@@ -603,7 +783,7 @@ export function resolveRevisions(state: EditorState, revisions: Revision[], acti
     }
   }
   for (const pos of trailing) {
-    const $end = out.doc.resolve(out.mapping.map(pos, -1))
+    const $end = out.doc.resolve(Math.min(out.doc.content.size, sourcePosition(pos, -1)))
     const node = $end.parent
     if (node.type.name !== 'paragraph') continue
     if (!node.content.size && out.doc.content.size > node.nodeSize) out.delete($end.before(), $end.after())
@@ -612,6 +792,8 @@ export function resolveRevisions(state: EditorState, revisions: Revision[], acti
       out.join($end.before())
     }
   }
+  if (cells.some(({ kind }) => kind === 'cellMerge')) normalizeVertical(out)
+  if (cells.length) padMissingCells(out)
   return out.docChanged ? out : null
 }
 
@@ -623,6 +805,102 @@ function deleteMarked(out: Transaction, from: number, to: number, markName: stri
     return false
   })
   for (const range of ranges.reverse()) out.delete(range.from, range.to)
+}
+
+export type RevisionAction = 'accept' | 'reject'
+
+export interface RevisionProjection {
+  doc: ProseMirrorNode
+  mapping: Mapping
+  /** Translate a projected text boundary back into the editable source. */
+  sourcePosition(position: number, assoc?: number): number
+}
+
+interface MovedContent { sourceFrom: number; sourceTo: number; sourceStep: number; targetFrom: number; targetTo: number; targetStep: number }
+const MOVED_CONTENT = 'docx-resolved-moves'
+const projections = new WeakMap<ProseMirrorNode, Partial<Record<RevisionAction, RevisionProjection>>>()
+
+/** Selected review actions and full-document actions use the same structural ordering. */
+export function resolveRevisions(state: EditorState, revisions: Revision[], action: RevisionAction): Transaction | null {
+  const all = listRevisions(state.doc)
+  const keys = new Set(revisions.map((revision) => revision.key))
+  return all.length === keys.size && all.every((revision) => keys.has(revision.key)) ? resolveAllRevisions(state, action) : resolveBatch(state, revisions, action)
+}
+
+/** The one accept/reject-all path for the editor and read-only document views. */
+export function resolveAllRevisions(state: EditorState, action: RevisionAction): Transaction | null {
+  const out = state.tr
+  const apply = (revisions: Revision[]) => {
+    const offset = out.steps.length
+    const tr = resolveBatch(EditorState.create({ doc: out.doc, schema: state.schema }), revisions, action)
+    if (!tr) return
+    for (const step of tr.steps) out.step(step)
+    const moves = tr.getMeta(MOVED_CONTENT) as MovedContent[] | undefined
+    if (moves?.length) out.setMeta(MOVED_CONTENT, [...out.getMeta(MOVED_CONTENT) ?? [], ...moves.map((move) => ({ ...move, sourceStep: move.sourceStep + offset, targetStep: move.targetStep + offset }))])
+  }
+  for (let pass = 0; pass < 100; pass++) {
+    const revisions = listRevisions(out.doc)
+    const rows = revisions.filter(({ kind }) => kind === 'rowInsert' || kind === 'rowDelete')
+    const cells = revisions.filter(({ kind }) => kind === 'cellInsert' || kind === 'cellDelete' || kind === 'cellMerge')
+    if (!rows.length && !cells.length) break
+    if (cells.length) apply(cells)
+    else apply(rows)
+    if (pass === 99) throw new Error('Too many nested structural revisions')
+  }
+  apply(listRevisions(out.doc))
+  return out.docChanged ? out : null
+}
+
+/** Immutable semantic view, with original positions retained for Find/Replace. */
+export function revisionProjection(doc: ProseMirrorNode, action: RevisionAction = 'accept'): RevisionProjection {
+  const cached = projections.get(doc) ?? {}
+  if (cached[action]) return cached[action]!
+  const revisions = listRevisions(doc)
+  const tr = revisions.length ? resolveAllRevisions(EditorState.create({ doc, schema: doc.type.schema }), action) : null
+  const mapping = tr?.mapping ?? new Mapping()
+  const moved = tr?.getMeta(MOVED_CONTENT) as MovedContent[] | undefined
+  const inverse = new Mapping(mapping.maps.filter((map) => map.ranges.length)).invert()
+  const inverseSteps = moved?.length ? mapping.maps.map((step) => step.invert()) : []
+  const movesAt = new Map<number, MovedContent[]>()
+  for (const move of moved ?? []) movesAt.set(move.targetStep, [...movesAt.get(move.targetStep) ?? [], move])
+  const value: RevisionProjection = {
+    doc: tr?.doc ?? doc,
+    mapping,
+    sourcePosition(position, assoc = 1) {
+      if (!moved?.length) return inverse.map(position, assoc)
+      let at = position
+      for (let index = inverseSteps.length - 1; index >= 0; index--) {
+        const move = movesAt.get(index + 1)?.find((move) => at > move.targetFrom && at < move.targetTo || (at === move.targetFrom && assoc > 0) || (at === move.targetTo && assoc < 0))
+        if (move) {
+          at = move.sourceFrom + at - move.targetFrom
+          index = move.sourceStep
+        } else at = inverseSteps[index]!.map(at, assoc)
+      }
+      return at
+    },
+  }
+  cached[action] = value
+  projections.set(doc, cached)
+  return value
+}
+
+/** Project a story or a container's blocks without mutating their shared nodes. */
+export function revisionContent(node: ProseMirrorNode, action: RevisionAction = 'accept'): ProseMirrorNode {
+  if (node.type.name === 'doc') return revisionProjection(node, action).doc
+  const schema = node.type.schema
+  const content = node.isTextblock || node.type.isInGroup('block') ? [node] : node.content
+  return revisionProjection(schema.node('doc', null, content), action).doc
+}
+
+export function revisionModel(model: DocxModel, action: RevisionAction = 'accept'): DocxModel {
+  const body = revisionProjection(model.body, action).doc
+  let changed = body !== model.body
+  const stories = new Map([...model.stories].map(([id, story]) => {
+    const doc = revisionProjection(story.doc, action).doc
+    changed ||= doc !== story.doc
+    return [id, doc === story.doc ? story : { ...story, doc }] as const
+  }))
+  return changed ? { ...model, body, stories } : model
 }
 
 /** Marks pasted or typed content as inserted by the reviewer (for content added outside steps). */

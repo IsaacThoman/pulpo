@@ -1,8 +1,9 @@
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
-import { jmlAttr, jmlChild, jmlText, unpackJml, walkJml, type JmlElement } from './jsonml.js'
+import { jmlAttr, jmlText, unpackJml, walkJml, type JmlElement } from './jsonml.js'
 import { parseJson, type CommentMeta, type DocxModel } from './model.js'
 import { ListCounter, Numbering, effectiveNumPr } from './numbering.js'
-import { inlineMarks, symbolText } from './schema.js'
+import { symbolText } from './schema.js'
+import { revisionContent, revisionModel, type RevisionAction } from './revisions.js'
 import { StyleSheet } from './styles.js'
 
 /**
@@ -15,16 +16,6 @@ import { StyleSheet } from './styles.js'
 
 function jml(value: unknown): JmlElement | undefined {
   return typeof value === 'string' ? unpackJml<JmlElement>(value) : undefined
-}
-
-/** Current row/cell revisions control the accepted view; old property snapshots do not. */
-export function tablePartDeleted(node: ProseMirrorNode): boolean {
-  if (node.type.name === 'tableRow') return !!jmlChild(jml(node.attrs.trPr), 'w:del')
-  if (node.type.name === 'tableCell') {
-    const properties = jml(node.attrs.tcPr)
-    return !!(jmlChild(properties, 'w:cellDel') || jmlChild(properties, 'w:del'))
-  }
-  return false
 }
 
 export interface TextContext {
@@ -71,13 +62,11 @@ function drawingText(element: JmlElement | undefined): string {
 }
 
 /** A paragraph's inline text; `context` numbers notes as they appear. */
-export function inlineText(paragraph: ProseMirrorNode, context?: TextContext): string {
+function resolvedInlineText(paragraph: ProseMirrorNode, context?: TextContext): string {
   let text = ''
   let fieldDepth = 0
   let inCode = false
   paragraph.forEach((child) => {
-    const deleted = inlineMarks(child).some((mark) => mark.type.name === 'del' || mark.type.name === 'moveFrom')
-    if (deleted) return
     switch (child.type.name) {
       case 'text':
         if (!inCode) text += child.text
@@ -129,6 +118,13 @@ export function inlineText(paragraph: ProseMirrorNode, context?: TextContext): s
   return text
 }
 
+export function inlineText(paragraph: ProseMirrorNode, context?: TextContext): string {
+  const projected = revisionContent(paragraph)
+  let text = ''
+  projected.forEach((node) => { if (node.isTextblock) text += resolvedInlineText(node, context) })
+  return text
+}
+
 function paragraphText(node: ProseMirrorNode, context: TextContext): string {
   let prefix = ''
   const list = effectiveNumPr(jml(node.attrs.numPr), node.attrs.pStyle as string | null, context.styles)
@@ -137,11 +133,11 @@ function paragraphText(node: ProseMirrorNode, context: TextContext): string {
   const outline = jmlAttr(jml(node.attrs.outlineLvl), 'w:val')
   const level = outline !== undefined ? Number(outline) : context.styles.outlineLevel(node.attrs.pStyle as string | null)
   if (level !== undefined && level >= 0 && level < 6) prefix = `${'#'.repeat(level + 1)} ${prefix}`
-  return prefix + inlineText(node, context)
+  return prefix + resolvedInlineText(node, context)
 }
 
 /** Lines of a story's blocks. */
-export function blocksText(node: ProseMirrorNode, context: TextContext): string[] {
+function resolvedBlocksText(node: ProseMirrorNode, context: TextContext): string[] {
   const lines: string[] = []
   node.forEach((child) => {
     switch (child.type.name) {
@@ -150,17 +146,16 @@ export function blocksText(node: ProseMirrorNode, context: TextContext): string[
         break
       case 'table':
         child.forEach((row) => {
-          if (tablePartDeleted(row)) return
           const cells: string[] = []
           row.forEach((cell) => {
-            if (cell.attrs.phantom || tablePartDeleted(cell)) return
-            cells.push(blocksText(cell, context).join(' ').replace(/\|/g, '\\|').trim())
+            if (cell.attrs.phantom) return
+            cells.push(resolvedBlocksText(cell, context).join(' ').replace(/\|/g, '\\|').trim())
           })
           if (cells.length) lines.push(`| ${cells.join(' | ')} |`)
         })
         break
       case 'blockWrapper':
-        lines.push(...blocksText(child, context))
+        lines.push(...resolvedBlocksText(child, context))
         break
       default:
         break
@@ -169,25 +164,26 @@ export function blocksText(node: ProseMirrorNode, context: TextContext): string[
   return lines
 }
 
-export function docxToText(model: DocxModel): string {
+export function docxToText(model: DocxModel, view: 'accepted' | 'base' | 'raw' = 'accepted'): string {
+  if (view !== 'raw') model = revisionModel(model, view === 'base' ? 'reject' : 'accept')
   const context = textContext(model)
-  const sections: string[] = [blocksText(model.body, context).join('\n')]
+  const sections: string[] = [resolvedBlocksText(model.body, context).join('\n')]
 
   const notes: string[] = []
   for (const [key, number] of [...context.notes].sort((a, b) => a[1] - b[1])) {
     const story = model.stories.get(key)
     if (!story) continue
-    const text = blocksText(story.doc, context).join(' ').trim()
+    const text = resolvedBlocksText(story.doc, context).join(' ').trim()
     notes.push(`${key.startsWith('endnote') ? `[^e${number}]` : `[^${number}]`}: ${text}`)
   }
   if (notes.length) sections.push(notes.join('\n'))
 
   const comments: string[] = []
-  const anchors = commentAnchors(model.body)
+  const anchors = resolvedCommentAnchors(model.body)
   for (const [id, json] of model.maps.comments) {
     const meta = parseJson<CommentMeta>(json) ?? {}
     const story = model.stories.get(`comment:${id}`)
-    const text = story ? blocksText(story.doc, context).join(' ').trim() : ''
+    const text = story ? resolvedBlocksText(story.doc, context).join(' ').trim() : ''
     const anchor = anchors.get(id)
     const who = meta.author ? ` ${meta.author}` : ''
     const state = meta.done ? ' (resolved)' : ''
@@ -199,11 +195,11 @@ export function docxToText(model: DocxModel): string {
 }
 
 /** The text each comment covers, for listing comments with their context. */
-export function commentAnchors(doc: ProseMirrorNode): Map<string, string> {
+function resolvedCommentAnchors(doc: ProseMirrorNode): Map<string, string> {
   const open = new Map<string, string>()
   const done = new Map<string, string>()
   doc.descendants((node) => {
-    if (tablePartDeleted(node) || (node.type.name === 'tableCell' && node.attrs.phantom)) return false
+    if (node.type.name === 'tableCell' && node.attrs.phantom) return false
     if (node.type.name === 'commentMark') {
       const id = String(node.attrs.id)
       if (node.attrs.edge === 'start') open.set(id, '')
@@ -213,7 +209,7 @@ export function commentAnchors(doc: ProseMirrorNode): Map<string, string> {
       }
       return false
     }
-    if (node.isText && open.size && !node.marks.some((mark) => mark.type.name === 'del')) {
+    if (node.isText && open.size) {
       for (const [id, text] of open) if (text.length < 200) open.set(id, text + node.text)
     }
     if (node.type.name === 'paragraph' && open.size) for (const [id, text] of open) if (text) open.set(id, `${text} `)
@@ -222,3 +218,14 @@ export function commentAnchors(doc: ProseMirrorNode): Map<string, string> {
   for (const [id, text] of done) done.set(id, text.trim().replace(/\s+/g, ' ').slice(0, 120))
   return done
 }
+
+export function blocksText(node: ProseMirrorNode, context: TextContext, action: RevisionAction = 'accept'): string[] {
+  return resolvedBlocksText(revisionContent(node, action), context)
+}
+
+export function commentAnchors(doc: ProseMirrorNode): Map<string, string> {
+  return resolvedCommentAnchors(revisionContent(doc))
+}
+
+export const acceptedText = (model: DocxModel): string => docxToText(model, 'accepted')
+export const baseText = (model: DocxModel): string => docxToText(model, 'base')

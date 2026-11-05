@@ -10,6 +10,7 @@ import { OoxmlPackage, resolveTarget } from '../../ooxml/package.js'
 import { blankDocx } from '../blank.js'
 import { NEW_PART_NAMESPACES, REL } from '../names.js'
 import { relationshipReferences } from '../relationships.js'
+import { acceptedText, baseText, docxToText } from '../text.js'
 import { docxCodec } from '../codec.js'
 import { elementToJml, packJml } from '../jsonml.js'
 import { MemoryAssetStore } from '../memory-assets.js'
@@ -53,7 +54,7 @@ afterEach(() => {
 })
 
 describe('story review', () => {
-  it.each(['accept', 'reject'] as const)('includes all non-comment stories and can %s open and closed stories', (action) => {
+  it.each(['accept', 'reject'] as const)('includes all stories and can %s open and closed stories', (action) => {
     editor.setMode('suggesting')
     editor.view.dispatch(editor.view.state.tr.insertText('Body', 1))
     for (const kind of ['header', 'footer', 'footnote', 'endnote', 'comment']) {
@@ -62,17 +63,17 @@ describe('story review', () => {
     }
     editor.openStoryEditor('header:1')
     const revisions = editor.revisions()
-    expect(revisions.map(({ storyId }) => storyId)).toEqual([undefined, 'header:1', 'footer:1', 'footnote:1', 'endnote:1'])
-    expect(new Set(revisions.map(({ key }) => key)).size).toBe(5)
+    expect(revisions.map(({ storyId }) => storyId)).toEqual([undefined, 'header:1', 'footer:1', 'footnote:1', 'endnote:1', 'comment:1'])
+    expect(new Set(revisions.map(({ key }) => key)).size).toBe(6)
     expect(action === 'accept' ? editor.acceptAll() : editor.rejectAll()).toBe(true)
     expect(editor.revisions()).toEqual([])
-    for (const kind of ['header', 'footer', 'footnote', 'endnote']) {
+    for (const kind of ['header', 'footer', 'footnote', 'endnote', 'comment']) {
       const node = fragmentToNode(doc.getXmlFragment(storyFragmentName(`${kind}:1`)))
       expect(node.textContent).toBe(action === 'accept' ? 'New Original' : 'Original')
       expect(listRevisions(node)).toEqual([])
     }
     expect(listRevisions(storyView().state.doc)).toEqual([])
-    expect(listRevisions(fragmentToNode(doc.getXmlFragment(storyFragmentName('comment:1'))))).toHaveLength(1)
+    expect(listRevisions(fragmentToNode(doc.getXmlFragment(storyFragmentName('comment:1'))))).toHaveLength(0)
   })
 
   it('resolves a single closed story without changing another and can jump into it', () => {
@@ -224,6 +225,23 @@ it('notifies find panels when a story search has no matches or is cleared', () =
   update.mockClear()
   editor.clearFind()
   expect(update).toHaveBeenCalled()
+})
+
+it.each(['accept', 'reject'] as const)('uses the shared %s-all semantic view for body and note paragraph boundaries', (action) => {
+  const kind = action === 'accept' ? 'del' : 'ins'
+  const paragraph = (text: string, boundary = false) => schema.node('paragraph', { markRPr: boundary ? packJml(['w:rPr', {}, [`w:${kind}`, { 'w:id': '70' }]]) : null }, schema.text(text))
+  const body = schema.node('doc', null, [paragraph('foo', true), schema.node('paragraph', null, [schema.text('bar'), schema.node('noteRef', { id: '1', kind: 'footnote' })])])
+  writeFragment(doc, doc.getXmlFragment('body'), body)
+  writeFragment(doc, doc.getXmlFragment(storyFragmentName('footnote:1')), schema.node('doc', null, [paragraph('note A', true), paragraph('note B')]))
+  doc.getMap('comments').set('1', JSON.stringify({ author: 'Ada' }))
+  writeFragment(doc, doc.getXmlFragment(storyFragmentName('comment:1')), schema.node('doc', null, [paragraph('comment A', true), paragraph('comment B')]))
+  const before = Y.encodeStateAsUpdate(doc)
+  const expected = action === 'accept' ? acceptedText(readDocxModel(doc)) : baseText(readDocxModel(doc))
+  expect(Buffer.from(Y.encodeStateAsUpdate(doc)).equals(Buffer.from(before))).toBe(true)
+  expect(action === 'accept' ? editor.acceptAll() : editor.rejectAll()).toBe(true)
+  expect(docxToText(readDocxModel(doc), 'raw')).toBe(expected)
+  expect(editor.view.state.doc.firstChild!.textContent).toBe('foobar')
+  expect(fragmentToNode(doc.getXmlFragment(storyFragmentName('footnote:1'))).firstChild!.textContent).toBe('note Anote B')
 })
 
 describe('find matches after edits', () => {
