@@ -294,16 +294,40 @@ export function findInLines(lines: readonly string[], query: string, limit = 10_
   if (!needle) return []
   const matches: LineMatch[] = []
   for (let line = 0; line < lines.length && matches.length < limit; line += 1) {
-    const lowered = lines[line]!.toLowerCase()
-    // Lower-casing can change length (İ); such lines are searched as written.
-    const text = lowered.length === lines[line]!.length ? lowered : lines[line]!
+    const original = lines[line]!
+    const lowered = original.toLowerCase()
+    // Lower-casing can change length (İ becomes two code units); such lines are lowered character
+    // by character, with each lowered unit mapped back to the character it came from.
+    const folded = lowered.length === original.length ? null : foldWithOffsets(original)
+    const text = folded ? folded.text : lowered
     let from = 0
     while (matches.length < limit) {
       const found = text.indexOf(needle, from)
       if (found < 0) break
-      matches.push({ line, start: found, end: found + needle.length })
+      const last = found + needle.length - 1
+      matches.push(folded
+        ? { line, start: folded.start[found]!, end: folded.end[last]! }
+        : { line, start: found, end: found + needle.length })
       from = found + needle.length
     }
   }
   return matches
+}
+
+/** `text` lower-cased per character, with where each of its code units came from in `text`. */
+function foldWithOffsets(text: string): { text: string; start: number[]; end: number[] } {
+  let folded = ''
+  const start: number[] = []
+  const end: number[] = []
+  let index = 0
+  for (const char of text) {
+    const lower = char.toLowerCase()
+    folded += lower
+    for (let unit = 0; unit < lower.length; unit++) {
+      start.push(index)
+      end.push(index + char.length)
+    }
+    index += char.length
+  }
+  return { text: folded, start, end }
 }

@@ -87,4 +87,14 @@ describe('findInLines', () => {
     expect(findInLines(['aaaa'], 'a', 3)).toHaveLength(3)
     expect(findInLines(['x'], '')).toEqual([])
   })
+
+  it('stays case-insensitive on lines whose lower case is longer, with offsets in the original', () => {
+    const line = 'İ ERROR: connection refused'
+    expect(findInLines([line], 'error')).toEqual([{ line: 0, start: 2, end: 7 }])
+    expect(line.slice(2, 7)).toBe('ERROR')
+    // A match that includes the expanding character covers all of it.
+    expect(findInLines(['xİy'], 'i̇y')).toEqual([{ line: 0, start: 1, end: 3 }])
+    // Characters outside the BMP keep their two code units.
+    expect(findInLines(['😀İ AB'], 'ab')).toEqual([{ line: 0, start: 4, end: 6 }])
+  })
 })
