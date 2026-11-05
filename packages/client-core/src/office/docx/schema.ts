@@ -411,6 +411,12 @@ let schema: Schema | undefined
 
 const markCache = new Map<string, readonly Mark[]>()
 
+/** Custom note marks are supplied as following text, outside automatic numbering. */
+export function hasCustomNoteMark(node: ProseMirrorNode): boolean {
+  const value = jmlAttr(unpackJml<JmlElement>(node.attrs.v), 'w:customMarkFollows')
+  return value !== undefined && !['0', 'false', 'off'].includes(value)
+}
+
 /** The marks of an inline node: a text node's own, or an atom's from its `marks` attribute. */
 export function inlineMarks(node: ProseMirrorNode): readonly Mark[] {
   if (node.isText || node.marks.length) return node.marks

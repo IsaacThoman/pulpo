@@ -2,7 +2,7 @@ import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import { jmlAttr, jmlText, unpackJml, walkJml, type JmlElement } from './jsonml.js'
 import { parseJson, type CommentMeta, type DocxModel } from './model.js'
 import { ListCounter, Numbering, effectiveNumPr } from './numbering.js'
-import { symbolText } from './schema.js'
+import { hasCustomNoteMark, symbolText } from './schema.js'
 import { revisionContent, revisionModel, type RevisionAction } from './revisions.js'
 import { StyleSheet } from './styles.js'
 
@@ -22,8 +22,9 @@ export interface TextContext {
   styles: StyleSheet
   numbering: Numbering
   counter: ListCounter
-  notes: Map<string, number>
+  notes: Map<string, number | string>
   noteCount: { footnote: number; endnote: number }
+  customNoteCount?: { footnote: number; endnote: number }
 }
 
 export function textContext(model: Pick<DocxModel, 'maps'>): TextContext {
@@ -84,10 +85,11 @@ function resolvedInlineText(paragraph: ProseMirrorNode, context?: TextContext): 
       }
       case 'noteRef': {
         const kind = child.attrs.kind === 'endnote' ? 'endnote' : 'footnote'
-        if (jmlAttr(jml(child.attrs.v), 'w:customMarkFollows')) break
         let number = context?.notes.get(`${kind}:${child.attrs.id}`)
         if (context && number === undefined) {
-          number = ++context.noteCount[kind]
+          const custom = hasCustomNoteMark(child)
+          const counts = custom ? (context.customNoteCount ??= { footnote: 0, endnote: 0 }) : context.noteCount
+          number = custom ? `custom-${++counts[kind]}` : ++counts[kind]
           context.notes.set(`${kind}:${child.attrs.id}`, number)
         }
         text += kind === 'footnote' ? `[^${number ?? ''}]` : `[^e${number ?? ''}]`
@@ -170,7 +172,8 @@ export function docxToText(model: DocxModel, view: 'accepted' | 'base' | 'raw' =
   const sections: string[] = [resolvedBlocksText(model.body, context).join('\n')]
 
   const notes: string[] = []
-  for (const [key, number] of [...context.notes].sort((a, b) => a[1] - b[1])) {
+  const order = (label: number | string) => typeof label === 'number' ? label : Infinity
+  for (const [key, number] of [...context.notes].sort((a, b) => order(a[1]) - order(b[1]))) {
     const story = model.stories.get(key)
     if (!story) continue
     const text = resolvedBlocksText(story.doc, context).join(' ').trim()

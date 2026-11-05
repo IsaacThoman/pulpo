@@ -4,7 +4,7 @@ import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import { borderCss, cssIdent, cssText, fontStack, isThemeFontVar, latinFont, runPropertiesCss, shadingColor, twipsToPt, type CssProps } from '../css.js'
 import { jmlAttr, jmlChild, jmlNumber, unpackJml, type JmlElement } from '../jsonml.js'
 import { ListCounter, effectiveNumPr, formatNumber } from '../numbering.js'
-import { inlineMarks } from '../schema.js'
+import { hasCustomNoteMark, inlineMarks } from '../schema.js'
 import { cellConditions, mergeElement, propertyMap, tableLook, type PropertyMap } from '../styles.js'
 import type { DocxViewContext } from './context.js'
 import { tableConditionChain } from './stylesheet.js'
@@ -50,7 +50,7 @@ export function countNotes(body: ProseMirrorNode): Map<string, number> {
     if (node.type.name !== 'noteRef') return true
     const kind = node.attrs.kind === 'endnote' ? 'endnote' : 'footnote'
     const key = `${kind}:${node.attrs.id}`
-    if (!numbers.has(key) && !jmlAttr(jml(node.attrs.v), 'w:customMarkFollows')) numbers.set(key, ++counts[kind])
+    if (!numbers.has(key) && !hasCustomNoteMark(node)) numbers.set(key, ++counts[kind])
     return false
   })
   return numbers
@@ -296,7 +296,7 @@ export function computeDecorations(doc: ProseMirrorNode, input: DecorationInput)
         return true
       case 'noteRef': {
         const kind = node.attrs.kind === 'endnote' ? 'endnote' : 'footnote'
-        const custom = jmlAttr(jml(node.attrs.v), 'w:customMarkFollows')
+        const custom = hasCustomNoteMark(node)
         const label = custom ? '' : noteLabel(input.noteNumbers.get(`${kind}:${node.attrs.id}`), kind === 'footnote' ? footnoteFormat : 'lowerRoman')
         decorations.push(nodeDecoration(pos, pos + 1, { 'data-label': label }, input))
         return false

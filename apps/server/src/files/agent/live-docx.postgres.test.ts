@@ -115,6 +115,30 @@ describe.skipIf(!enabled)('agent edits to Word documents', () => {
     expect(Buffer.from(await exportStoredDoc(node!)).subarray(0, 2).toString()).toBe('PK')
   })
 
+  it('includes custom-marked footnotes and endnotes in agent cat and grep', async () => {
+    const id = await wordDoc('Notes.docx', projects, [['Body']])
+    const doc = await loadYDoc(id)
+    const vector = Y.encodeStateVector(doc)
+    doc.transact(() => {
+      const content: ProseMirrorNode[] = [schema.text('Body')]
+      for (const kind of ['footnote', 'endnote'] as const) {
+        const key = `${kind}:custom`
+        content.push(schema.node('noteRef', { kind, id: 'custom', v: packJml([`w:${kind}Reference`, { 'w:id': 'custom', 'w:customMarkFollows': '1' }]) }), schema.text(kind === 'footnote' ? '*' : '†'))
+        doc.getMap('stories').set(key, JSON.stringify({ kind }))
+        writeFragment(doc, doc.getXmlFragment(`story:${key}`), schema.node('doc', null, [paragraph(`${kind} custom evidence`)]))
+      }
+      writeFragment(doc, doc.getXmlFragment(BODY_FRAGMENT), schema.node('doc', null, [schema.node('paragraph', null, content)]))
+    })
+    await appendDocUpdate({ nodeId: id, ownerUserId: files.userId, actorUserId: files.userId, update: Y.encodeStateAsUpdate(doc, vector), origin: 'client' })
+    await files.attach({ [projects]: 'read' })
+    const text = (await files.ok('cat', { path: 'Projects/Notes.docx' })).output
+    expect(text).toContain('[^custom-1]: footnote custom evidence')
+    expect(text).toContain('[^ecustom-1]: endnote custom evidence')
+    const found = (await files.ok('grep', { pattern: 'custom evidence' })).output
+    expect(found).toContain('footnote custom evidence')
+    expect(found).toContain('endnote custom evidence')
+  })
+
   it('merges a pushed version with a user edit the server has not seen yet', async () => {
     const id = await wordDoc('Plan.docx', projects, [['One'], ['Two'], ['Three']])
     await files.attach({ [projects]: 'write' })

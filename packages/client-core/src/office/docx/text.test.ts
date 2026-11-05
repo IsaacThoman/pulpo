@@ -12,6 +12,8 @@ import { docxSchema } from './schema.js'
 import { blocksText, commentAnchors, docxToText, textContext } from './text.js'
 import { findMatches, validFindMatches, wordCount } from './view/commands.js'
 import { listRevisions, resolveRevisions } from './view/track-changes.js'
+import { countNotes } from './view/decorations.js'
+import { CONTENT_TYPE, REL, W_NS } from './names.js'
 
 const schema = docxSchema()
 const p = (text: string) => schema.node('paragraph', null, text ? schema.text(text) : undefined)
@@ -21,6 +23,32 @@ const row = (text: string, revision?: string) => schema.node('tableRow', { trPr:
 const table = (...rows: ReturnType<typeof row>[]) => schema.node('table', null, rows)
 const model = (...content: ReturnType<typeof p>[]): DocxModel => ({ body: schema.node('doc', null, content), maps: emptyMaps(), stories: new Map() })
 const changedTexts = (diff: ReturnType<typeof diffDocxModels>) => diff.blocks.flatMap((block) => block.kind === 'modify' ? [block.before.text, block.after.text] : [block.block.text]).join('\n')
+
+describe('custom-marked note text', () => {
+  it.each(['footnote', 'endnote'] as const)('includes imported custom %ss without advancing automatic numbers', async (kind) => {
+    const pkg = OoxmlPackage.read(blankDocx())
+    const part = `word/${kind}s.xml`
+    pkg.addRelationship('word/document.xml', kind === 'footnote' ? REL.footnotes : REL.endnotes, `${kind}s.xml`)
+    pkg.setContentType(part, kind === 'footnote' ? CONTENT_TYPE.footnotes : CONTENT_TYPE.endnotes)
+    const ref = (id: number, flag?: string) => `<w:r><w:${kind}Reference w:id="${id}"${flag === undefined ? '' : ` w:customMarkFollows="${flag}"`}/></w:r>`
+    const text = (value: string) => `<w:r><w:t>${value}</w:t></w:r>`
+    pkg.setXml('word/document.xml', `<w:document xmlns:w="${W_NS}"><w:body><w:p>${text('Before')}${ref(1)}${ref(2, '1')}${text('*')}${ref(3, 'true')}${text('†')}${ref(4, '0')}${ref(2, '1')}${text('*')}</w:p><w:sectPr/></w:body></w:document>`)
+    pkg.setXml(part, `<w:${kind}s xmlns:w="${W_NS}">${['Automatic one', 'Custom asterisk', 'Custom dagger', 'Automatic two'].map((value, index) => `<w:${kind} w:id="${index + 1}"><w:p>${text(value)}</w:p></w:${kind}>`).join('')}</w:${kind}s>`)
+    const doc = new Y.Doc()
+    const reopened = new Y.Doc()
+    const assets = new MemoryAssetStore()
+    const prefix = kind === 'endnote' ? 'e' : ''
+    const expected = `Before[^${prefix}1][^${prefix}custom-1]*[^${prefix}custom-2]†[^${prefix}2][^${prefix}custom-1]*\n\n[^${prefix}1]: Automatic one\n[^${prefix}2]: Automatic two\n[^${prefix}custom-1]: Custom asterisk\n[^${prefix}custom-2]: Custom dagger\n`
+    try {
+      await docxCodec.importFile(doc, pkg.write(), { name: 'custom.docx', assets })
+      expect(docxCodec.toText(doc)).toBe(expected)
+      expect([...countNotes(readDocxModel(doc).body)]).toEqual([[`${kind}:1`, 1], [`${kind}:4`, 2]])
+      const bytes = await docxCodec.exportFile(doc, { name: 'custom.docx', assets })
+      await docxCodec.importFile(reopened, bytes, { name: 'custom.docx', assets })
+      expect(docxCodec.toText(reopened)).toBe(expected)
+    } finally { doc.destroy(); reopened.destroy() }
+  })
+})
 
 describe('semantic paragraph boundaries', () => {
   it('extracts deleted paragraph marks exactly as Accept all joins them', () => {
