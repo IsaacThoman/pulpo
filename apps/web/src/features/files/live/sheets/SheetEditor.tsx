@@ -43,6 +43,9 @@ function useAppearance(): 'light' | 'dark' {
   return dark ? 'dark' : 'light'
 }
 
+/** The platform's shortcut modifier as menus show it. */
+const MOD_KEY = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+'
+
 const formatNumber = (value: number) => Number(value.toPrecision(10)).toLocaleString(undefined, { maximumFractionDigits: 10 })
 
 function Summary({ state }: { state: SheetViewState }) {
@@ -216,9 +219,9 @@ export function SheetEditor({ doc, awareness, readOnly, assets, user, values, fu
               <span aria-hidden style={{ position: 'fixed', left: menu?.x ?? 0, top: menu?.y ?? 0, width: 1, height: 1 }} />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" onCloseAutoFocus={(event) => { event.preventDefault(); view.focus() }}>
-              <DropdownMenuItem disabled={!editable} onSelect={() => void writeClipboard(view, true)}>{ui("Cut")}<DropdownMenuShortcut>⌘X</DropdownMenuShortcut></DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => void writeClipboard(view, false)}>{ui("Copy")}<DropdownMenuShortcut>⌘C</DropdownMenuShortcut></DropdownMenuItem>
-              <DropdownMenuItem disabled={!editable} onSelect={() => void readClipboard().then((data) => view.clipboard.paste(data))}>{ui("Paste")}<DropdownMenuShortcut>⌘V</DropdownMenuShortcut></DropdownMenuItem>
+              <DropdownMenuItem disabled={!editable} onSelect={() => void writeClipboard(view, true)}>{ui("Cut")}<DropdownMenuShortcut>{`${MOD_KEY}X`}</DropdownMenuShortcut></DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => void writeClipboard(view, false)}>{ui("Copy")}<DropdownMenuShortcut>{`${MOD_KEY}C`}</DropdownMenuShortcut></DropdownMenuItem>
+              <DropdownMenuItem disabled={!editable} onSelect={() => void readClipboard().then((data) => view.clipboard.paste(data))}>{ui("Paste")}<DropdownMenuShortcut>{`${MOD_KEY}V`}</DropdownMenuShortcut></DropdownMenuItem>
               <DropdownMenuItem disabled={!editable} onSelect={() => void readClipboard().then((data) => view.clipboard.paste(data, { values: true }))}>{ui("Paste values only")}</DropdownMenuItem>
               <DropdownMenuItem disabled={!editable} onSelect={() => void readClipboard().then((data) => view.clipboard.paste(data, { formats: true }))}>{ui("Paste formatting only")}</DropdownMenuItem>
               <DropdownMenuSeparator />

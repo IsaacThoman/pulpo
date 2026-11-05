@@ -82,7 +82,7 @@ export function FormulaBar({ view, state }: { view: SheetView; state: SheetViewS
         }}
         className="w-28 shrink-0 border-r border-border bg-transparent px-2 font-mono text-xs outline-none focus:bg-accent/40"
       />
-      <span aria-hidden className="grid w-8 shrink-0 place-items-center border-r border-border font-serif text-sm italic text-muted-foreground">fx</span>
+      <span aria-hidden className="grid w-8 shrink-0 place-items-center border-r border-border font-serif text-sm italic text-muted-foreground">{ui("fx")}</span>
       <div className="relative min-w-0 flex-1">
         {/* Colored references under a transparent textarea, so typing and selection stay native. */}
         <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre px-2 py-1.5 font-mono text-xs leading-5">
