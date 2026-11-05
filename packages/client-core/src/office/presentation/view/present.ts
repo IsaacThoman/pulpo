@@ -213,7 +213,7 @@ export class Presenter {
     if (button) {
       const content = button.closest<HTMLElement>('.pp-present-content')
       const key = this.current()
-      if (content && key) void this.media.play(button, content, key)
+      if (content && key) void this.media.play(button, () => this.current() === key && !this.ended ? this.element.querySelector<HTMLElement>('.pp-present-content') ?? undefined : undefined, key)
       return
     }
     if (this.options.presenterView) return

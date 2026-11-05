@@ -59,7 +59,7 @@ const CSS = `
 .pp-notes{height:100%;overflow:auto;position:relative}
 .pp-notes .pp-p{color:inherit!important;font-family:inherit!important}
 .pp-notes-empty::before{content:attr(data-placeholder);position:absolute;left:12px;top:8px;opacity:.5;pointer-events:none;font:14px/1.5 system-ui,sans-serif}
-.pp-media-player{background:#000}
+.pp-media-player{background:#000;max-width:none}
 @media print{.pp-print-page{page-break-after:always;break-after:page}}
 `
 

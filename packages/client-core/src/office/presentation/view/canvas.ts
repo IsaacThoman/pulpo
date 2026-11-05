@@ -779,7 +779,7 @@ export class SlideCanvas {
     if (media) {
       event.preventDefault()
       const slide = this.controller.state.slide
-      if (slide) void this.media.play(media, this.editorLayer, slide)
+      if (slide) void this.media.play(media, () => this.controller.state.slide === slide ? this.editorLayer : undefined, slide)
       return
     }
     const link = target.closest<HTMLElement>('[data-href]')

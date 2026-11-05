@@ -17,21 +17,26 @@ export class MediaPlayer {
     return this.media
   }
 
-  async play(button: HTMLElement, layer: HTMLElement, slide: string): Promise<void> {
+  async play(button: HTMLElement, currentLayer: () => HTMLElement | undefined, slide: string): Promise<void> {
     const part = button.dataset.media
     const shape = button.closest<HTMLElement>('[data-key]')
     if (!part || !shape) return
     this.stop()
     const token = this.token
+    const kind = button.dataset.mediaKind === 'audio' ? 'audio' : 'video'
+    // Loading an asset redraws the slide before the await resumes, detaching its shape.
+    const style = `position:absolute;left:${shape.offsetLeft}px;top:${shape.offsetTop}px;width:${shape.offsetWidth}px;height:${kind === 'audio' ? 40 : shape.offsetHeight}px;transform:rotate(${Number(shape.dataset.rot) || 0}deg);z-index:1`
     const url = await this.controller.loadAssetUrl(part)
     if (!url || token !== this.token) return
-    const kind = button.dataset.mediaKind === 'audio' ? 'audio' : 'video'
+    // Present mode also replaces the layer; the view resolves it only while this slide is active.
+    const layer = currentLayer()
+    if (!layer?.isConnected) return
     const media = document.createElement(kind)
     media.src = url
     media.controls = true
     media.autoplay = true
     media.className = 'pp-media-player'
-    media.setAttribute('style', `position:absolute;left:${shape.offsetLeft}px;top:${shape.offsetTop}px;width:${shape.offsetWidth}px;height:${kind === 'audio' ? 40 : shape.offsetHeight}px;transform:rotate(${Number(shape.dataset.rot) || 0}deg);z-index:1`)
+    media.setAttribute('style', style)
     media.addEventListener('ended', () => {
       if (this.media === media) this.stop()
     })

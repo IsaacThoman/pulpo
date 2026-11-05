@@ -36,6 +36,36 @@ const slideShapes = (page) => page.locator('.pp-canvas-slide .pp-slide > [data-k
 const state = (page) => page.evaluate(() => window.harness.controllers.a.state)
 const xfrmOf = (page, key) => page.evaluate((shape) => window.harness.controllers.a.shapeXfrm(window.harness.controllers.a.state.slide, shape), key)
 
+async function openVideo(context, mode, twoSlides = false) {
+  const { page, errors } = await open(context, 'deck=poi/EmbeddedVideo.pptx')
+  if (twoSlides) await page.evaluate(() => window.harness.commands.duplicateSlides(window.harness.docA, window.harness.controllers.a.slideKeys()))
+  if (mode !== 'canvas') {
+    await page.getByRole('button', { name: 'Present', exact: true }).click()
+    await page.getByRole('menuitem', { name: mode === 'show' ? 'From beginning' : 'Presenter view', exact: true }).click()
+  }
+  const root = mode === 'canvas' ? '.pp-canvas' : mode === 'show' ? '.pp-present' : '.pp-presenter-current-wrap'
+  const button = page.locator(`${root} .pp-media`).first()
+  await button.waitFor()
+  return { page, errors, root, button }
+}
+
+async function delayVideo(button) {
+  return button.evaluate((button) => {
+    const shape = button.closest('[data-key]')
+    const { offsetLeft: left, offsetTop: top, offsetWidth: width, offsetHeight: height } = shape
+    // Delay the asset store, as the mobile bridge or a download would, until after the click.
+    const assets = window.harness.assets
+    const get = assets.get.bind(assets)
+    assets.get = (hash) => {
+      window.mediaRequested = true
+      window.mediaLoadFinished = new Promise((resolve) => { window.releaseMedia = resolve }).then(() => get(hash))
+      return window.mediaLoadFinished
+    }
+    window.mediaShape = shape
+    return { left, top, width, height }
+  })
+}
+
 try {
   server = await createServer({ root, logLevel: 'error', server: { host: '127.0.0.1', port: 0 } })
   await server.listen()
@@ -278,6 +308,44 @@ try {
     assert.deepEqual(errors, [])
     await page.close()
   })
+
+  for (const mode of ['canvas', 'show', 'presenter']) {
+    await check(`plays unloaded video on the first click in ${mode}`, async () => {
+      const { page, errors, root, button } = await openVideo(context, mode)
+      const geometry = await delayVideo(button)
+      assert.ok(geometry.width > 0 && geometry.height > 0)
+      await button.click()
+      await page.waitForFunction(() => window.mediaRequested)
+      await page.evaluate(() => window.releaseMedia())
+      const video = page.locator(`${root} video.pp-media-player`)
+      await video.waitFor({ state: 'attached' })
+      assert.equal(await page.evaluate(() => window.mediaShape.isConnected), false, 'loading redraws the original shape')
+      assert.deepEqual(await video.evaluate((video) => ({ left: video.offsetLeft, top: video.offsetTop, width: video.offsetWidth, height: video.offsetHeight })), geometry)
+      await page.waitForFunction((selector) => document.querySelector(`${selector} video.pp-media-player`)?.currentTime > 0, root)
+      assert.deepEqual(errors, [])
+      await page.close()
+    })
+
+    for (const action of ['advance', 'close']) {
+      await check(`cancels unloaded video when leaving ${mode} (${action})`, async () => {
+        const { page, errors, button } = await openVideo(context, mode, true)
+        await delayVideo(button)
+        await button.click()
+        await page.waitForFunction(() => window.mediaRequested)
+        if (mode === 'canvas') {
+          await page.evaluate((action) => {
+            const controller = window.harness.controllers.a
+            if (action === 'advance') controller.goToSlide(controller.slideKeys()[1])
+            else window.harness.commands.deleteSlides(window.harness.docA, controller.slideKeys())
+          }, action)
+        } else await page.keyboard.press(action === 'advance' ? 'ArrowRight' : 'Escape')
+        await page.evaluate(async () => { window.releaseMedia(); await window.mediaLoadFinished })
+        assert.equal(await page.locator('.pp-media-player').count(), 0, 'no player appears after leaving the original slide')
+        assert.deepEqual(errors, [])
+        await page.close()
+      })
+    }
+  }
 
   await check('read-only mode shows no handles and blocks edits', async () => {
     const { page, errors } = await open(context, 'deck=generated/autoshapes.pptx&readonly=1')
