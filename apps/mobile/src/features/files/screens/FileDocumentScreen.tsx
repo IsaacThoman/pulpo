@@ -326,6 +326,7 @@ export function FileDocumentScreen({ navigation, route }: Props) {
   const presentationBarVisible = isDeck && editable && Boolean(editorState?.loaded) && !presenting
   const editorBottomPadding = reviewBarHeight + (formattingBarVisible && !isDeck ? FORMATTING_BAR_HEIGHT : 0) + (presentationBarVisible ? PRESENTATION_BAR_HEIGHT + insets.bottom : 0)
   const showAndroidMenu = () => showActions(title, [
+    ...(isDeck ? [{ label: 'Present', icon: 'play.rectangle', onPress: () => editor.current?.command('present') }] : []),
     { label: 'Export', icon: 'square.and.arrow.up', onPress: () => { void exportDocument() } },
     { label: 'Rename', icon: 'pencil', onPress: rename },
     { label: 'Move', icon: 'folder', onPress: () => setMoving(true) },
