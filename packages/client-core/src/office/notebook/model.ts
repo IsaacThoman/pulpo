@@ -20,7 +20,7 @@ export type NotebookOutput =
 export type NotebookCell =
   | { type: 'markdown'; id: string; source: string; attachments: Record<string, MimeBundle> }
   | { type: 'code'; id: string; source: string; executionCount: number | null; outputs: NotebookOutput[] }
-  | { type: 'raw'; id: string; source: string }
+  | { type: 'raw'; id: string; source: string; attachments?: Record<string, MimeBundle> }
 
 export interface NotebookModel {
   nbformat: number
@@ -202,7 +202,7 @@ function normalizeCell(raw: unknown, index: number, v3: boolean): NotebookCell |
       return { type: 'markdown', id, source: `${'#'.repeat(level)} ${joinText(raw.source)}`, attachments: {} }
     }
     case 'raw':
-      return { type: 'raw', id, source: joinText(raw.source) }
+      return { type: 'raw', id, source: joinText(raw.source), attachments: normalizeAttachments(raw.attachments) }
     default:
       return null
   }

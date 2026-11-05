@@ -123,9 +123,12 @@ function sanitize(html: string, attachments: Record<string, MimeBundle>): Docume
       if (!ALLOWED_TAGS.has(tag)) {
         // Unknown elements keep their text; scripts, styles, and frames go entirely.
         if (['script', 'style', 'iframe', 'object', 'embed', 'svg', 'math', 'template', 'form', 'input', 'button', 'textarea', 'select', 'link', 'meta'].includes(tag)) element.remove()
-        else element.replaceWith(...element.childNodes)
-        walk(parent)
-        return
+        else {
+          walk(element)
+          while (element.firstChild) element.before(element.firstChild)
+          element.remove()
+        }
+        continue
       }
       for (const attribute of [...element.attributes]) {
         const name = attribute.name.toLowerCase()

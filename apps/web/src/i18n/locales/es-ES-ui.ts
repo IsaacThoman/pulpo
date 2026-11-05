@@ -2754,6 +2754,7 @@ const esUi: Record<string, string> = {
   "Moved": "Movida",
   "Moved and edited": "Movida y editada",
   "Edited": "Editada",
+  "Attachments changed": "Adjuntos cambiados",
   "Outputs changed": "Salidas nuevas",
   "1 cell added": "1 celda añadida",
   "{{0}} cells added": "{{0}} celdas añadidas",

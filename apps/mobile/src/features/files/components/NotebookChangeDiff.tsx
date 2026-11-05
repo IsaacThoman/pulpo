@@ -13,6 +13,7 @@ function typeLabel(type: NotebookCellSummary['type']): string {
 function kindLabel(change: Exclude<NotebookCellChange, { kind: 'unchanged' }>): string {
   if (change.kind === 'added') return 'Added'
   if (change.kind === 'removed') return 'Removed'
+  if (change.attachmentsChanged) return 'Attachments changed'
   if (change.kind === 'moved') return change.outputsChanged ? 'Moved, outputs changed' : 'Moved'
   if (change.sourceChanged || change.typeChanged) return change.moved ? 'Moved and edited' : 'Edited'
   return 'Outputs changed'

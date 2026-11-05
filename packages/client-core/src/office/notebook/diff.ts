@@ -38,6 +38,7 @@ export type NotebookCellChange =
     source: DiffRow[] | null
     sourceChanged: boolean
     outputsChanged: boolean
+    attachmentsChanged: boolean
   }
 
 export interface NotebookDiff {
@@ -81,6 +82,10 @@ function outputsKey(cell: NotebookCell): string {
   return cell.type === 'code' ? JSON.stringify(cell.outputs) : ''
 }
 
+function attachmentsKey(cell: NotebookCell): string {
+  return JSON.stringify(cell.type === 'code' ? {} : cell.attachments ?? {})
+}
+
 export function diffNotebooks(before: NotebookModel, after: NotebookModel, metadata: string[] = []): NotebookDiff {
   const fileIds = (model: NotebookModel) => model.cells.map((cell) => (/^cell-\d+$/.test(cell.id) ? undefined : cell.id))
   const beforeIds = fileIds(before)
@@ -116,6 +121,7 @@ export function diffNotebooks(before: NotebookModel, after: NotebookModel, metad
     if (!moved) flushRemoved(Number(key) + 1)
     const sourceChanged = previous.source !== cell.source
     const typeChanged = previous.type !== cell.type
+    const attachmentsChanged = attachmentsKey(previous) !== attachmentsKey(cell)
     const outputsChanged = outputsKey(previous) !== outputsKey(cell)
       || (previous.type === 'code' && cell.type === 'code' && previous.executionCount !== cell.executionCount)
     // Removed cells that followed this one in place show right after it.
@@ -126,14 +132,14 @@ export function diffNotebooks(before: NotebookModel, after: NotebookModel, metad
         counts.removed += 1
       }
     }
-    if (!moved && !sourceChanged && !typeChanged && !outputsChanged) {
+    if (!moved && !sourceChanged && !typeChanged && !outputsChanged && !attachmentsChanged) {
       cells.push({ kind: 'unchanged', before: summarize(previous), after: summarize(cell), moved: false })
       flushFollowing()
       return
     }
     const diff = sourceChanged ? lineDiff(previous.source, cell.source) : null
     cells.push({
-      kind: sourceChanged || typeChanged ? 'changed' : moved ? 'moved' : 'changed',
+      kind: sourceChanged || typeChanged || attachmentsChanged ? 'changed' : moved ? 'moved' : 'changed',
       before: summarize(previous),
       after: summarize(cell),
       moved,
@@ -141,9 +147,10 @@ export function diffNotebooks(before: NotebookModel, after: NotebookModel, metad
       source: diff ? diffRows(diff) : null,
       sourceChanged,
       outputsChanged,
+      attachmentsChanged,
     })
     if (moved) counts.moved += 1
-    if (sourceChanged || typeChanged) counts.changed += 1
+    if (sourceChanged || typeChanged || attachmentsChanged) counts.changed += 1
     else if (outputsChanged) counts.outputs += 1
     flushFollowing()
   })

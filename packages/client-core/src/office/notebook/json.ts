@@ -371,7 +371,7 @@ function allSorted(root: JsonNode): boolean {
     if (node.kind === 'object') {
       if (!isSorted(node.entries)) return false
       for (const entry of node.entries) stack.push(entry.value)
-    } else if (node.kind === 'array') stack.push(...node.items)
+    } else if (node.kind === 'array') for (const item of node.items) stack.push(item)
   }
   return true
 }

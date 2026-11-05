@@ -6,7 +6,7 @@ import { MemoryLiveAssetStore } from '../assets.js'
 import { LiveFormatError } from '../live-format.js'
 import { notebookCodec } from './codec.js'
 import { clearOutputs, deleteCells, insertCells, moveCells, setCellType, shiftCells } from './edit.js'
-import { cellOutputs, cellSourceText, cellType, notebookMap, orderedCells } from './layout.js'
+import { ASSET_MARKER, NOTEBOOK_MAX_FILE_BYTES, cellOutputs, cellSourceText, cellType, notebookMap, orderedCells } from './layout.js'
 
 const FIXTURES = join(import.meta.dirname, 'fixtures')
 const fixture = (name: string) => new Uint8Array(readFileSync(join(FIXTURES, name)))
@@ -562,5 +562,66 @@ describe('second review regressions', () => {
     const long = 'x'.repeat(20_000)
     const { doc } = await imported(jupyter(notebook([code('a', 'run()', [{ name: 'stdout', output_type: 'stream', text: ['hi ', `${long}\n`, 'bye'] }], 1)])))
     expect(notebookCodec.toText(doc)).not.toContain('\u0000')
+  })
+})
+
+describe('bounded notebook blob restoration', () => {
+  it('fetches repeated asset hashes once while restoring every slot', async () => {
+    const { doc, assets, context } = await imported(jupyter(notebook([code('a', 'run()')])))
+    const ref = await assets.put(utf8(JSON.stringify('plot')), 'application/json')
+    const slots = Array.from({ length: 2 }, () => ({ hash: ref.hash, kind: 'json' }))
+    orderedCells(doc)[0]!.cell.set('outputs', {
+      json: JSON.stringify(slots.map((_, index) => ({ output_type: 'stream', name: 'stdout', text: `${ASSET_MARKER}${index}` }))),
+      assets: slots,
+    })
+    let reads = 0
+    const traced = { put: assets.put.bind(assets), get: (hash: string) => { reads += 1; return assets.get(hash) } }
+    const result = JSON.parse(text(await notebookCodec.exportFile(doc, { ...context, assets: traced })))
+    expect(result.cells[0].outputs.map((output: { text: string }) => output.text)).toEqual(['plot', 'plot'])
+    expect(reads).toBe(1)
+    doc.destroy()
+  })
+
+  it('caps repeated substitutions even when their shared asset fits in the limit', async () => {
+    const { doc, assets, context } = await imported(jupyter(notebook([code('a', 'run()')])))
+    const payload = JSON.stringify('é'.repeat(16_384))
+    const ref = await assets.put(utf8(payload), 'application/json')
+    const count = Math.ceil(NOTEBOOK_MAX_FILE_BYTES / utf8(payload).byteLength)
+    orderedCells(doc)[0]!.cell.set('outputs', {
+      json: JSON.stringify(Array.from({ length: count }, (_, index) => ({ output_type: 'stream', name: 'stdout', text: `${ASSET_MARKER}${index}` }))),
+      assets: Array.from({ length: count }, () => ({ hash: ref.hash, kind: 'json' })),
+    })
+    let reads = 0
+    const traced = { put: assets.put.bind(assets), get: (hash: string) => { reads += 1; return assets.get(hash) } }
+    await expect(notebookCodec.exportFile(doc, { ...context, assets: traced })).rejects.toMatchObject({ name: 'LiveFormatError', code: 'too_large' })
+    expect(reads).toBe(1)
+    doc.destroy()
+  })
+
+  it('counts fetched bytes as well as the substituted JSON', async () => {
+    const { doc, assets, context } = await imported(jupyter(notebook([code('a', 'run()')])))
+    const ref = await assets.put(utf8(JSON.stringify('x'.repeat(NOTEBOOK_MAX_FILE_BYTES / 2))), 'application/json')
+    orderedCells(doc)[0]!.cell.set('outputs', { json: JSON.stringify(`${ASSET_MARKER}0`), assets: [{ hash: ref.hash, kind: 'json' }] })
+    await expect(notebookCodec.exportFile(doc, context)).rejects.toMatchObject({ code: 'too_large' })
+    doc.destroy()
+  })
+
+  it('imports a wide JSON output without spreading its items onto the call stack', async () => {
+    const data = { 'application/json': new Array(200_000).fill(0) }
+    // Sorted keys make style detection walk the wide array too.
+    const bytes = utf8(pyDumps(notebook([code('a', 'run()', [{ output_type: 'display_data', metadata: {}, data }])]), 0, 0).replace(/\n/g, ''))
+    const { doc, context } = await imported(bytes)
+    expect(await notebookCodec.exportFile(doc, context)).toEqual(bytes)
+    doc.destroy()
+  })
+
+  it('round trips twenty levels of valid nested asset parts byte for byte', async () => {
+    let value: unknown = []
+    for (let level = 0; level < 20; level += 1) value = [value, 'a'.repeat(8_000), 'b'.repeat(8_000), 'c'.repeat(1_000)]
+    const bytes = jupyter(notebook([code('a', 'run()', [{ output_type: 'display_data', metadata: {}, data: { 'application/json': value } }])]))
+    const { doc, context } = await imported(bytes)
+    expect(notebookMap(doc).get('original')).toBeUndefined()
+    expect(await notebookCodec.exportFile(doc, context)).toEqual(bytes)
+    doc.destroy()
   })
 })

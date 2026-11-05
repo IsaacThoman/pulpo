@@ -1,5 +1,7 @@
 import * as Y from 'yjs'
+import { compactJson, jsonNode, parseJson, type JsonNode } from './json.js'
 import {
+  ASSET_MARKER,
   cellAttachments,
   cellExecutionCount,
   cellMetadata,
@@ -255,9 +257,38 @@ export function splitCell(doc: Y.Doc, key: string, offsets: readonly number[], o
     const source = cell.get('source')
     if (source instanceof Y.Text && source.length > pieces[0]!.length) source.delete(pieces[0]!.length, source.length - pieces[0]!.length)
     const type = cellType(cell)
-    keys = [key, ...insertCells(doc, { after: key }, pieces.slice(1).map((piece) => ({ type, source: piece })), origin)]
+    keys = [key, ...insertCells(doc, { after: key }, pieces.slice(1).map((piece) => ({ type, source: piece, attachments: type === 'code' ? undefined : cellAttachments(cell) ?? undefined })), origin)]
   }, origin)
   return keys
+}
+
+function offsetAssetMarkers(node: JsonNode, offset: number): JsonNode {
+  if (node.kind === 'string' && node.value.startsWith(ASSET_MARKER)) return jsonNode(`${ASSET_MARKER}${Number(node.value.slice(ASSET_MARKER.length)) + offset}`)
+  if (node.kind === 'array') return { ...node, items: node.items.map((item) => offsetAssetMarkers(item, offset)) }
+  if (node.kind === 'object') return { ...node, entries: node.entries.map((entry) => ({ ...entry, value: offsetAssetMarkers(entry.value, offset) })) }
+  return node
+}
+
+function mergedAttachments(cells: Y.Map<unknown>[]): NotebookBlob | null {
+  const merged: Extract<JsonNode, { kind: 'object' }> = { kind: 'object', entries: [] }
+  const assets: NotebookBlob['assets'] = []
+  const names = new Set<string>()
+  let present = false
+  for (const cell of cells) {
+    const blob = cellType(cell) === 'code' ? null : cellAttachments(cell)
+    if (!blob) continue
+    present = true
+    const node = parseJson(blob.json)
+    if (node.kind !== 'object') continue
+    const offset = assets.length
+    for (const slot of blob.assets) assets.push(slot)
+    for (const entry of node.entries) {
+      if (names.has(entry.key)) continue
+      names.add(entry.key)
+      merged.entries.push({ ...entry, value: offsetAssetMarkers(entry.value, offset) })
+    }
+  }
+  return present ? { json: compactJson(merged), assets } : null
 }
 
 /** Joins cells into the first of them (in notebook order); the others are deleted. */
@@ -274,6 +305,9 @@ export function mergeCells(doc: Y.Doc, keys: readonly string[], origin?: unknown
     if (cellType(first!.cell) === 'code') {
       first!.cell.set('outputs', EMPTY_OUTPUTS)
       first!.cell.set('execution_count', null)
+    } else {
+      const attachments = mergedAttachments(cells.map((entry) => entry.cell))
+      if (attachments) first!.cell.set('attachments', attachments)
     }
     for (const entry of rest) cellsMap(doc).delete(entry.key)
   }, origin)

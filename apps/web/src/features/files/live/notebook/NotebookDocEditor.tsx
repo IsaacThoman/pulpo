@@ -203,8 +203,17 @@ function RenderedMarkdown({ controller, cell, assets }: { controller: NotebookCo
   return <div className="min-w-0 px-2.5 py-1 text-sm"><NotebookMarkdown source={source} attachments={attachments} /></div>
 }
 
+function outputKey(output: NotebookOutput, index: number): string {
+  const content = JSON.stringify(output)
+  let hash = 0x811c9dc5
+  for (let index = 0; index < content.length; index += 1) hash = Math.imul(hash ^ content.charCodeAt(index), 0x01000193)
+  return `${index}:${hash >>> 0}`
+}
+
 function CellOutputs({ cell, assets, dark, controller, editable }: { cell: NotebookCellState; assets: LiveAssetStore; dark: boolean; controller: NotebookController; editable: boolean }) {
   const outputs = useResolved<NotebookOutput[]>(() => (cell.outputs ? readOutputs(cell.outputs, assets) : Promise.resolve([])), [cell.outputs, assets], [])
+  // Sandboxed outputs render once per mount, so changed content needs a new frame.
+  const keys = useMemo(() => outputs.map(outputKey), [outputs])
   if (!outputs.length) return null
   if (cell.outputsCollapsed) {
     return (
@@ -224,7 +233,7 @@ function CellOutputs({ cell, assets, dark, controller, editable }: { cell: Noteb
   return (
     <div className="flex flex-col gap-1.5" data-cell-outputs>
       {outputs.map((output, index) => (
-        <div key={index} className="flex min-w-0 gap-2">
+        <div key={keys[index]} className="flex min-w-0 gap-2">
           <Prompt kind="out" count={output.type === 'execute_result' ? output.executionCount : null} />
           <div className="min-w-0 flex-1 overflow-x-auto">
             <OutputBody output={output} dark={dark} />

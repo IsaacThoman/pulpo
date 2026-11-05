@@ -125,7 +125,7 @@ async function prepareCells(parsed: ParsedNotebook, assets: LiveAssetStore): Pro
   return Promise.all(parsed.cells.map(async (cell) => ({
     parsed: cell,
     outputs: cell.type === 'code' ? await makeBlob(cell.outputs ?? { kind: 'array', items: [] }, assets) : undefined,
-    attachments: cell.attachments ? await makeBlob(cell.attachments, assets) : undefined,
+    attachments: cell.attachments ? await makeBlob(cell.attachments, assets, true) : undefined,
   })))
 }
 
@@ -475,8 +475,8 @@ function outputLines(output: unknown, blob: NotebookBlob): string[] {
         const kept = typeof value === 'string' ? placeholderSize(value, blob) : null
         lines.push(`#   [${mime}${kept ? `, ${kept}` : text !== null ? `, ${sizeLabel(text.length)}` : ''}]`)
       }
-      if (markdown !== null) lines.push(...quoted(markdown))
-      else if (plain !== null) lines.push(...quoted(plain))
+      if (markdown !== null) for (const line of quoted(markdown)) lines.push(line)
+      else if (plain !== null) for (const line of quoted(plain)) lines.push(line)
       else if (stored(data['text/plain'])) lines.push(`#   ${STORED}`)
       return lines
     }
@@ -510,7 +510,9 @@ export function notebookToText(doc: Y.Doc): string {
       outputs = []
     }
     if (stored(outputs)) lines.push(`# Outputs: ${STORED}`)
-    for (const output of Array.isArray(outputs) ? outputs : []) lines.push(...(stored(output) ? [`# Output: ${STORED}`] : outputLines(output, blob)))
+    for (const output of Array.isArray(outputs) ? outputs : []) {
+      for (const line of stored(output) ? [`# Output: ${STORED}`] : outputLines(output, blob)) lines.push(line)
+    }
   })
   // Placeholders inside joined text (one long line of a list) never reach agents as NUL bytes.
   // oxlint-disable-next-line no-control-regex -- the placeholder starts with NUL

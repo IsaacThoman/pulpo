@@ -229,12 +229,12 @@ export class NotebookController {
   }
 
   private onAwareness = () => {
-    const peers: Record<string, NotebookPeer[]> = {}
+    const peers: Record<string, NotebookPeer[]> = Object.create(null)
     this.awareness.getStates().forEach((state, clientId) => {
       if (clientId === this.doc.clientID) return
       const where = (state as { notebook?: { cell?: unknown; mode?: unknown } }).notebook
       const user = (state as { user?: { name?: unknown; color?: unknown } }).user
-      if (typeof where?.cell !== 'string') return
+      if (typeof where?.cell !== 'string' || !cellsMap(this.doc).has(where.cell)) return
       ;(peers[where.cell] ??= []).push({
         clientId,
         name: typeof user?.name === 'string' ? user.name : 'Anonymous',

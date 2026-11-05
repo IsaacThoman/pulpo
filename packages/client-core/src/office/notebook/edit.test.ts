@@ -16,7 +16,7 @@ import {
   shiftCells,
   splitCell,
 } from './edit.js'
-import { cellSourceText, metadataValue, cellMetadata, orderedCells, outputsCollapsed, sourceCollapsed } from './layout.js'
+import { cellAttachments, cellSourceText, metadataValue, cellMetadata, orderedCells, outputsCollapsed, sourceCollapsed } from './layout.js'
 import { initialOrderKeys, isOrderKey, orderKeyBetween, orderKeysBetween } from './order.js'
 
 describe('order keys', () => {
@@ -77,6 +77,60 @@ describe('cell edits', () => {
     expect(sources(doc)).toEqual(['a = 1\n\nb = 2\n\nc = 3'])
   })
 
+  it.each(['markdown', 'raw'] as const)('preserves %s attachments when splitting and merging', async (type) => {
+    const { doc, assets } = await notebookDoc([{ type, source: 'intro\n![plot](attachment:plot.svg)\nend' }])
+    const first = orderedCells(doc)[0]!
+    const attachments = { json: '{"plot.svg":{"image/svg+xml":"<svg/>"}}', assets: [] }
+    first.cell.set('attachments', attachments)
+    const pieces = splitCell(doc, first.key, [6, 34])
+    expect(orderedCells(doc).map(({ cell }) => cellAttachments(cell))).toEqual(pieces.map(() => attachments))
+    mergeCells(doc, pieces)
+    const file = JSON.parse(new TextDecoder().decode(await notebookCodec.exportFile(doc, { name: 'a.ipynb', assets })))
+    expect(file.cells[0].attachments).toEqual(JSON.parse(attachments.json))
+    doc.destroy()
+  })
+
+  it.each(['markdown', 'raw'] as const)('merges %s attachments with first names winning and slots renumbered', async (type) => {
+    const { doc, assets } = await notebookDoc(Array.from({ length: 3 }, () => ({ type, source: '![plot](attachment:plot.svg)' })))
+    const cells = orderedCells(doc)
+    const hash = (await assets.put(new TextEncoder().encode('"<svg/>"'), 'application/json')).hash
+    for (let index = 0; index < cells.length; index += 1) {
+      cells[index]!.cell.set('attachments', {
+        json: `{"plot.svg":{"text/plain":${index}.0},"image${index}.svg":{"image/svg+xml":"\\u0000pulpo-asset:0","application/json":1e-05}}`,
+        assets: [{ hash, kind: 'json' }],
+      })
+    }
+    mergeCells(doc, cells.map(({ key }) => key))
+    const blob = cellAttachments(orderedCells(doc)[0]!.cell)!
+    expect(blob.assets).toHaveLength(3)
+    expect(blob.json).toContain('"text/plain":0.0')
+    expect(blob.json.match(/1e-05/g)).toHaveLength(3)
+    const file = JSON.parse(new TextDecoder().decode(await notebookCodec.exportFile(doc, { name: 'a.ipynb', assets })))
+    expect(file.cells[0].attachments['plot.svg']['text/plain']).toBe(0)
+    for (let index = 0; index < 3; index += 1) expect(file.cells[0].attachments[`image${index}.svg`]['image/svg+xml']).toBe('<svg/>')
+    doc.destroy()
+  })
+
+  it('merges large imported attachment bundles while keeping their names and nested assets', async () => {
+    const doc = new Y.Doc()
+    const assets = new MemoryLiveAssetStore()
+    const context = { name: 'a.ipynb', assets }
+    const attachment = (letter: string) => ({ 'application/json': [letter.repeat(20_000), ...new Array(10_000).fill(0)] })
+    const attachments = [{ first: attachment('a') }, { second: attachment('b') }]
+    await notebookCodec.importFile(doc, new TextEncoder().encode(JSON.stringify({ nbformat: 4, nbformat_minor: 5, metadata: {}, cells: attachments.map((value, index) => ({ id: String(index), cell_type: 'markdown', source: '', metadata: {}, attachments: value })) })), context)
+    mergeCells(doc, orderedCells(doc).map(({ key }) => key))
+    const result = JSON.parse(new TextDecoder().decode(await notebookCodec.exportFile(doc, context)))
+    expect(result.cells[0].attachments).toEqual({ ...attachments[0], ...attachments[1] })
+    doc.destroy()
+  })
+
+  it('does not add attachments when merged text cells had none', async () => {
+    const { doc } = await notebookDoc([{ type: 'markdown', source: 'a' }, { type: 'raw', source: 'b' }])
+    mergeCells(doc, orderedCells(doc).map(({ key }) => key))
+    expect(orderedCells(doc)[0]!.cell.has('attachments')).toBe(false)
+    doc.destroy()
+  })
+
   it('moves cells up, down, and to a place', async () => {
     const { doc } = await notebookDoc(['1', '2', '3', '4'].map((source) => ({ type: 'code' as const, source })))
     const keys = orderedCells(doc).map((entry) => entry.key)
@@ -135,6 +189,20 @@ describe('notebook diff', () => {
     expect(changed.kind === 'changed' && changed.source).toEqual([{ kind: 'removed', text: 'x = 1' }, { kind: 'added', text: 'x = 10' }])
     const added = diff.cells[4]!
     expect(added.kind === 'added' && added.after.outputs).toEqual([{ kind: 'stdout', text: 'hello' }])
+  })
+
+  it.each(['markdown', 'raw'] as const)('counts attachment-only edits in %s cells, including moved cells', (cell_type) => {
+    const cell = (image: string) => ({ id: 'image', cell_type, source: '![plot](attachment:plot.svg)', metadata: {}, attachments: { 'plot.svg': { 'image/svg+xml': image } } })
+    const before = file([cell('<svg>old</svg>'), md('b', 'b'), md('c', 'c')])
+    expect(diffNotebookFiles(before, before).cells[0]!.kind).toBe('unchanged')
+    const changed = diffNotebookFiles(before, file([cell('<svg>new</svg>'), md('b', 'b'), md('c', 'c')]))
+    expect(changed.cells[0]).toMatchObject({ kind: 'changed', sourceChanged: false, outputsChanged: false, attachmentsChanged: true })
+    expect(changed.counts.changed).toBe(1)
+    const moved = diffNotebookFiles(before, file([md('b', 'b'), md('c', 'c'), cell('<svg>new</svg>')]))
+    expect(moved.cells[2]).toMatchObject({ moved: true, attachmentsChanged: true })
+    expect(moved.counts).toMatchObject({ changed: 1, moved: 1, outputs: 0 })
+    const removed = diffNotebookFiles(file([cell('<svg/>')]), file([{ ...cell('<svg/>'), attachments: undefined }]))
+    expect(removed.cells[0]).toMatchObject({ kind: 'changed', attachmentsChanged: true })
   })
 
   it('summarizes output changes and metadata', () => {

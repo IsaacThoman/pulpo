@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { Awareness } from 'y-protocols/awareness'
+import { applyAwarenessUpdate, Awareness, encodeAwarenessUpdate } from 'y-protocols/awareness'
 import * as Y from 'yjs'
 import { MemoryLiveAssetStore } from '../../assets.js'
 import { notebookCodec } from '../codec.js'
@@ -125,6 +125,30 @@ describe('notebook controller', () => {
     const { encodeAwarenessUpdate, applyAwarenessUpdate } = await import('y-protocols/awareness')
     applyAwarenessUpdate(awareness, encodeAwarenessUpdate(peer, [peer.clientID]), 'remote')
     expect(controller.getState().peers[first!]).toEqual([{ clientId: peer.clientID, name: 'Bo', color: '#ff0000', mode: 'edit' }])
+  })
+
+  it('ignores unknown awareness cell keys, including object prototype names', async () => {
+    const { doc, awareness, controller } = await open()
+    const peerDoc = new Y.Doc()
+    const peer = new Awareness(peerDoc)
+    try {
+      for (const cell of ['__proto__', 'constructor', 'missing-cell']) {
+        peer.setLocalState({ user: { name: 'Bo' }, notebook: { cell, mode: 'edit' } })
+        expect(() => applyAwarenessUpdate(awareness, encodeAwarenessUpdate(peer, [peer.clientID]), 'remote')).not.toThrow()
+        expect(Object.keys(controller.getState().peers)).toEqual([])
+      }
+      const key = controller.getState().cells[0]!.key
+      peer.setLocalState({ notebook: { cell: key, mode: 'edit' } })
+      applyAwarenessUpdate(awareness, encodeAwarenessUpdate(peer, [peer.clientID]), 'remote')
+      expect(controller.getState().peers[key]).toHaveLength(1)
+      expect(Object.getPrototypeOf(controller.getState().peers)).toBeNull()
+    } finally {
+      controller.destroy()
+      awareness.destroy()
+      peer.destroy()
+      peerDoc.destroy()
+      doc.destroy()
+    }
   })
 
   it('changes nothing when read only', async () => {

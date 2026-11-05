@@ -13,8 +13,11 @@ function kindLabel(change: NotebookCellChange): string {
   switch (change.kind) {
     case 'added': return ui("Added")
     case 'removed': return ui("Removed")
-    case 'moved': return change.outputsChanged ? ui("Moved, outputs changed") : ui("Moved")
+    case 'moved':
+      if (change.attachmentsChanged) return ui("Attachments changed")
+      return change.outputsChanged ? ui("Moved, outputs changed") : ui("Moved")
     case 'changed':
+      if (change.attachmentsChanged) return ui("Attachments changed")
       if (change.sourceChanged || change.typeChanged) return change.moved ? ui("Moved and edited") : ui("Edited")
       return ui("Outputs changed")
     default: return ''

@@ -348,7 +348,6 @@ function dedupe(entries: JsonEntry[]): JsonEntry[] {
 // Outputs and attachments: their large parts move to assets.
 
 const MAX_RESTORE_DEPTH = MAX_JSON_DEPTH * 2
-const MAX_PART_NESTING = 16
 
 /** Strings and lists of at least this many characters of JSON become assets. */
 export const BLOB_ASSET_THRESHOLD = 16_384
@@ -447,7 +446,7 @@ function containsMarker(node: JsonNode): boolean {
   while (stack.length) {
     const current = stack.pop()!
     if (current.kind === 'string' && current.value.startsWith(ASSET_MARKER)) return true
-    if (current.kind === 'array') stack.push(...current.items)
+    if (current.kind === 'array') for (const item of current.items) stack.push(item)
     if (current.kind === 'object') for (const item of current.entries) stack.push(item.value)
   }
   return false
@@ -458,7 +457,7 @@ function containsMarker(node: JsonNode): boolean {
  * type) and long values are replaced by placeholders for assets, so a notebook full of plots syncs
  * as text. Placeholders are put back by {@link blobNode}.
  */
-export async function makeBlob(node: JsonNode, assets: LiveAssetStore): Promise<NotebookBlob> {
+export async function makeBlob(node: JsonNode, assets: LiveAssetStore, inlineStructure = false): Promise<NotebookBlob> {
   // A notebook that already holds the placeholder text keeps everything inline, so it reads back as written.
   if (containsMarker(node)) return { json: compactJson(node), assets: [] }
   const slots: NotebookAssetSlot[] = []
@@ -495,6 +494,8 @@ export async function makeBlob(node: JsonNode, assets: LiveAssetStore): Promise<
       const entries = current.entries.map((item) => ({ ...item, value: visit(item.value, /^[a-z0-9.+-]+\/[a-z0-9.+-]+$/i.test(item.key) ? item.key : null) }))
       next = entries.some((item, index) => item.value !== current.entries[index]!.value) ? { kind: 'object', entries } : current
     }
+    // Attachment edits merge keys synchronously, so their objects and slot references stay inline.
+    if (inlineStructure && (next.kind === 'object' || containsMarker(next))) return next
     // Many small values (a long log split into lines, a large JSON output) still add up: they become one asset.
     return sizeOf(next, sizes) < BLOB_ASSET_THRESHOLD ? next : asJson(next)
   }
@@ -506,35 +507,59 @@ export async function makeBlob(node: JsonNode, assets: LiveAssetStore): Promise<
 
 /** Outputs or attachments as JSON nodes, their assets read back. */
 export async function blobNode(blob: NotebookBlob, assets: LiveAssetStore, style: JsonStyle): Promise<JsonNode> {
+  let total = 0
+  const count = (bytes: number) => {
+    total += bytes
+    if (total > NOTEBOOK_MAX_FILE_BYTES) throw new LiveFormatError('too_large', 'This notebook output is too large to restore')
+  }
+  const encoder = new TextEncoder()
+  count(encoder.encode(blob.json).byteLength)
   const root = parseJson(blob.json)
   if (!blob.assets.length) return root
-  const values = await Promise.all(blob.assets.map(async (slot): Promise<JsonNode> => {
-    const bytes = await assets.get(slot.hash)
-    if (slot.kind === 'base64') {
-      const value = layBase64(encodeBase64(bytes), slot.wrap, slot.trail)
-      return { kind: 'string', raw: quote(value, style.ensureAscii), value }
+  const fetched = new Map<string, Uint8Array>()
+  const values = new Map<string, JsonNode>()
+  const sizes = new Map<JsonNode, number>()
+  for (const slot of blob.assets) {
+    let bytes = fetched.get(slot.hash)
+    if (!bytes) {
+      bytes = await assets.get(slot.hash)
+      count(bytes.byteLength)
+      fetched.set(slot.hash, bytes)
     }
-    return parseJson(new TextDecoder().decode(bytes))
-  }))
-  // Each part is used once, as `makeBlob` writes them: a damaged or hostile blob that refers to
-  // one part twice (which could double its size at every level) or to itself fails instead.
-  // Parts nest only a few levels (makeBlob moves a value out after its children); a deeper chain
-  // is damage, refused before it could exhaust the stack.
+  }
+  const part = (index: number): JsonNode | undefined => {
+    const slot = blob.assets[index]
+    if (!slot) return undefined
+    const bytes = fetched.get(slot.hash)!
+    const key = slot.kind === 'json' ? slot.hash : JSON.stringify(slot)
+    let value = values.get(key)
+    if (!value) {
+      value = slot.kind === 'base64'
+        ? stringNode(layBase64(encodeBase64(bytes), slot.wrap, slot.trail), style)
+        : parseJson(new TextDecoder().decode(bytes))
+      values.set(key, value)
+      sizes.set(value, encoder.encode(compactJson(value)).byteLength)
+    }
+    return value
+  }
+  // Slots can share a hash, but cycles or repeated references to one slot are corrupt.
+  // Count each substitution as well as fetched bytes: shared assets can expand many times.
   const used = new Set<number>()
-  const restore = (node: JsonNode, depth: number, nesting: number): JsonNode => {
+  const restore = (node: JsonNode, depth: number): JsonNode => {
     if (depth > MAX_RESTORE_DEPTH) throw new LiveFormatError('corrupt', 'A notebook output is nested too deeply')
     if (node.kind === 'string' && node.value.startsWith(ASSET_MARKER)) {
       const index = Number(node.value.slice(ASSET_MARKER.length))
-      const value = values[index]
-      if (!value || used.has(index) || nesting >= MAX_PART_NESTING) throw new LiveFormatError('corrupt', 'A notebook output refers to a missing part')
+      const value = part(index)
+      if (!value || used.has(index)) throw new LiveFormatError('corrupt', 'A notebook output refers to a missing part')
       used.add(index)
-      return restore(value, depth + 1, nesting + 1)
+      count(sizes.get(value)!)
+      return restore(value, depth + 1)
     }
-    if (node.kind === 'array') return { kind: 'array', items: node.items.map((item) => restore(item, depth + 1, nesting)) }
-    if (node.kind === 'object') return { kind: 'object', entries: node.entries.map((item) => ({ ...item, value: restore(item.value, depth + 1, nesting) })) }
+    if (node.kind === 'array') return { kind: 'array', items: node.items.map((item) => restore(item, depth + 1)) }
+    if (node.kind === 'object') return { kind: 'object', entries: node.entries.map((item) => ({ ...item, value: restore(item.value, depth + 1) })) }
     return node
   }
-  return restore(root, 0, 0)
+  return restore(root, 0)
 }
 
 /** Lines as Python's `str.splitlines(keepends=True)` makes them, which nbformat writes sources with. */
