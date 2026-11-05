@@ -23,7 +23,11 @@ export function codeFileExtension(language: string | null | undefined): string {
 }
 
 export function downloadCode(code: string, fileName: string, mimeType = 'text/plain'): void {
-  const url = URL.createObjectURL(new Blob([code], { type: mimeType }))
+  downloadBlob(new Blob([code], { type: mimeType }), fileName)
+}
+
+export function downloadBlob(blob: Blob, fileName: string): void {
+  const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')
   anchor.href = url
   anchor.download = fileName
