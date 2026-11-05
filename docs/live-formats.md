@@ -90,6 +90,8 @@ Review UIs read `FileChangeSummary.contentDiff` and fetch both versions:
 
 The OOXML package helper preserves original XML part bytes after read-only inspection (including UTF-16, content types, and relationships); it serializes a cached DOM only when its content changes.
 
+All Office engines use the same package checks. The reader refuses duplicate names (including case and normalized-path collisions), inconsistent directory/local-header names, Unicode Path fields that rename entries, malformed directories, and compressed sizes that dwarf their declared uncompressed sizes. Existing entry-count and total expansion limits still apply. The writer fixes every entry's timestamp to local midnight on 1980-01-01 so export checksums stay stable over time. It keeps `[Content_Types].xml` first, compresses XML at level 6, and stores already-compressed media without recompressing it. These checks do not change the codec or package APIs.
+
 ## The text format
 
 - **Layout** (`office/text/layout.ts`). `text` is one Y.Text holding the content, with every line break as `\n`. `textFile` is a Y.Map holding `encoding`, `lineEnding`, and, for files with mixed line breaks, `original`.
