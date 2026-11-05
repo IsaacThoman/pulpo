@@ -89,7 +89,7 @@ import { PAGE_GAP, PX_PER_PT, type LayoutResult } from './layout.js'
 import { normalizeAtomMarks, selectionMarks } from './marks.js'
 import { DrawingView, MathView } from './nodeviews.js'
 import { documentSections, paginate, storyReference, type RepeatedHeader, type Section } from './paginate.js'
-import { sectionEndsPlugin } from './sections.js'
+import { pasteSelection, sectionEndsPlugin } from './sections.js'
 import { layoutStaticTabs, renderStory } from './static.js'
 import { layoutTabs, paragraphTabs } from './tabs.js'
 import {
@@ -534,17 +534,17 @@ export class DocxEditor {
         this.checkPastedPictures(limited)
         return limited
       },
-      handlePaste: (view, event) => {
+      handlePaste: (view, event, parsed) => {
         // Shift pastes plain text, which ProseMirror has already made of the clipboard.
-        if ((view as unknown as { input?: { shiftKey?: boolean } }).input?.shiftKey) return false
-        const copy = recallCopy(event.clipboardData?.getData('text/html'), view.state.schema)
-        if (!copy || !view.editable) return false
-        let slice = limitPastedTables(copy.slice, Math.max(0, DOCX_MAX_TABLE_DEPTH - tableDepth(view)))
-        if (copy.origin !== origin) slice = withoutForeignParts(slice)
-        if (copy.origin.split(':', 1)[0] !== this.options.doc.guid) slice = withoutStoryReferences(slice)
+        if (!view.editable) return false
+        const plain = (view as unknown as { input?: { shiftKey?: boolean } }).input?.shiftKey
+        const copy = plain ? undefined : recallCopy(event.clipboardData?.getData('text/html'), view.state.schema)
+        let slice = limitPastedTables(copy?.slice ?? parsed, Math.max(0, DOCX_MAX_TABLE_DEPTH - tableDepth(view)))
+        if (copy && copy.origin !== origin) slice = withoutForeignParts(slice)
+        if (copy && copy.origin.split(':', 1)[0] !== this.options.doc.guid) slice = withoutStoryReferences(slice)
         this.notePastedReferences(slice)
         this.checkPastedPictures(slice)
-        view.dispatch(view.state.tr.replaceSelection(slice).scrollIntoView().setMeta('paste', true).setMeta('uiEvent', 'paste'))
+        view.dispatch(pasteSelection(view.state, slice).scrollIntoView().setMeta('paste', true).setMeta('uiEvent', 'paste'))
         return true
       },
     }

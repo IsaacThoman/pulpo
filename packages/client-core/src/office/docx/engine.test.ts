@@ -1,4 +1,4 @@
-import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
+import { Fragment, Slice, type Node as ProseMirrorNode } from '@tiptap/pm/model'
 import { joinBackward, joinForward } from '@tiptap/pm/commands'
 import { history, undo } from '@tiptap/pm/history'
 import { ySyncPluginKey } from '@tiptap/y-tiptap'
@@ -16,7 +16,7 @@ import { docxSchema, inlineMarks } from './schema.js'
 import { StyleSheet, cellConditions, mergeElement, tableLook } from './styles.js'
 import { clearFormatting, freshId, findMatches, insertTable, insertPageBreak, insertParagraphBreak, insertSectionBreak, listDefinition, replaceMatches, setAlignment, setFontSize, toggleList, toggleRunProperty, wordCount } from './view/commands.js'
 import { DocxViewContext } from './view/context.js'
-import { sectionEndsPlugin } from './view/sections.js'
+import { pasteSelection, sectionEndsPlugin } from './view/sections.js'
 import { listRevisions, resolveRevisions, trackTransaction } from './view/track-changes.js'
 
 const schema = docxSchema()
@@ -726,6 +726,63 @@ describe('section ends', () => {
       context.destroy()
       doc.destroy()
     }
+  })
+
+  it.each(['editing', 'suggesting'] as const)('assigns pasted marks to new ends and preserves the original end in %s mode', async (mode) => {
+    const markRPr = packJml(['w:rPr', {}, ['w:b', {}], ['w:ins', { 'w:id': '42', 'w:author': 'Grace' }]])
+    const reviewer = { author: 'Ada', date: '2026-11-04T10:00:00Z' }
+    const original = schema.node('doc', null, [schema.node('paragraph', { sectPr, markRPr }, schema.text('ABC'))])
+    for (const closed of [false, true]) for (const own of [false, true]) for (const pos of closed ? [2] : [1, 2, 4]) {
+      let state = EditorState.create({ schema, doc: original, plugins: [history(), sectionEndsPlugin()] })
+      state = state.apply(state.tr.setSelection(TextSelection.create(state.doc, pos)))
+      const attrs = own ? { sectPr, markRPr } : null
+      const slice = new Slice(Fragment.fromArray([schema.node('paragraph', attrs, schema.text('xy')), paragraph('zz')]), closed ? 0 : 1, closed ? 0 : 1)
+      const tr = pasteSelection(state, slice)
+      state = state.apply(mode === 'suggesting' ? trackTransaction(state, tr, reviewer)! : tr)
+      const paragraphs: ProseMirrorNode[] = []
+      state.doc.forEach((node) => { paragraphs.push(node) })
+      const surviving = state.doc.resolve(tr.mapping.map(4)).parent
+      expect(surviving.attrs).toMatchObject({ sectPr, markRPr })
+      for (const node of paragraphs.filter((node) => node !== surviving)) {
+        const copied = own && node.textContent.endsWith('xy')
+        expect(node.attrs.sectPr).toBe(copied ? sectPr : null)
+        if (copied) expect(node.attrs.markRPr).toBe(markRPr)
+        else if (mode === 'editing') expect(node.attrs.markRPr).toBeNull()
+        else {
+          expect(node.attrs.markRPr).toContain('Ada')
+          expect(node.attrs.markRPr).not.toContain('Grace')
+        }
+      }
+      if (!closed && !own && pos === 2) {
+        expect(paragraphs.map((node) => node.textContent)).toEqual(['Axy', 'zzBC'])
+        const target = new Y.Doc()
+        const assets = new MemoryAssetStore()
+        try {
+          await docxCodec.createEmpty(target, { name: 'a.docx', assets })
+          target.transact(() => writeFragment(target, target.getXmlFragment(BODY_FRAGMENT), state.doc))
+          const { OoxmlPackage } = await import('../ooxml/package.js')
+          const xml = OoxmlPackage.read(await docxCodec.exportFile(target, { name: 'a.docx', assets })).text('word/document.xml')!
+          expect(xml.match(/<w:sectPr[ >]/g)).toHaveLength(2)
+        } finally {
+          target.destroy()
+        }
+      }
+      if (mode === 'editing') {
+        expect(undo(state, (tr) => { state = state.apply(tr) })).toBe(true)
+        expect(state.doc.eq(original)).toBe(true)
+      }
+    }
+  })
+
+  it.each(['editing', 'suggesting'] as const)('keeps a copied empty paragraph mark in %s mode', (mode) => {
+    const markRPr = packJml(['w:rPr', {}, ['w:ins', { 'w:id': '42', 'w:author': 'Grace' }]])
+    let state = EditorState.create({ schema, doc: schema.node('doc', null, [paragraph('ABC', sectPr)]), plugins: [sectionEndsPlugin()] })
+    state = state.apply(state.tr.setSelection(TextSelection.create(state.doc, 2)))
+    const slice = new Slice(Fragment.fromArray([schema.node('paragraph', { sectPr, markRPr }), schema.node('paragraph')]), 1, 1)
+    const tr = pasteSelection(state, slice)
+    state = state.apply(mode === 'suggesting' ? trackTransaction(state, tr, { author: 'Ada', date: '2026-11-04T10:00:00Z' })! : tr)
+    expect(state.doc.firstChild!.attrs).toMatchObject({ sectPr, markRPr })
+    expect(state.doc.lastChild!.attrs).toMatchObject({ sectPr, markRPr: null })
   })
 
   it.each([joinBackward, joinForward])('keeps deleted marks and their sections while suggesting a keyboard join', (command) => {

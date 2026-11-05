@@ -1,7 +1,41 @@
-import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
-import { Plugin } from '@tiptap/pm/state'
+import type { Attrs, Node as ProseMirrorNode, Slice } from '@tiptap/pm/model'
+import { Plugin, type EditorState, type Transaction } from '@tiptap/pm/state'
 import { Mapping, ReplaceAroundStep, ReplaceStep } from '@tiptap/pm/transform'
 import { ySyncPluginKey } from '@tiptap/y-tiptap'
+
+/** Only closed paragraph ends belong to the clipboard; an open tail has no mark. */
+function paragraphEnds(slice: Slice): { pos: number; attrs: Attrs }[] {
+  const ends: { pos: number; attrs: Attrs }[] = []
+  slice.content.descendants((node, pos) => {
+    const end = pos + node.nodeSize - 1
+    if (node.type.name === 'paragraph' && end < slice.content.size - slice.openEnd) ends.push({ pos: end - slice.openStart, attrs: node.attrs })
+  })
+  return ends
+}
+
+/** Fitting a paste inherits the left paragraph's attrs; its new mark belongs to the slice instead. */
+export function pasteSelection(state: EditorState, slice: Slice): Transaction {
+  const tr = state.tr.replaceSelection(slice)
+  const step = tr.steps[0]
+  if (!(step instanceof ReplaceStep)) return tr
+  const source = paragraphEnds(slice)
+  const fitted = paragraphEnds(step.slice)
+  // A closed slice can also split off a prefix paragraph. That extra end has no clipboard mark.
+  const extra = fitted.length - source.length
+  const attrs = fitted.map((_, index) => source[index - extra]?.attrs ?? null)
+  tr.setMeta('docx-paste-ends', attrs)
+  const cleanup: number[] = []
+  for (const [index, end] of fitted.entries()) {
+    const $end = tr.doc.resolve(step.from + end.pos)
+    if ($end.parent.type.name !== 'paragraph' || $end.parentOffset !== $end.parent.content.size) continue
+    tr.setNodeMarkup($end.before(), undefined, {
+      ...$end.parent.attrs, sectPr: attrs[index]?.sectPr ?? null, markRPr: attrs[index]?.markRPr ?? null, trail: attrs[index]?.trail ?? null,
+    })
+    cleanup.push(tr.steps.length - 1)
+  }
+  tr.setMeta('docx-paragraph-split-cleanup', cleanup)
+  return tr
+}
 
 /** Inline typing cannot change which paragraph mark owns an end. */
 function isInlineEdit(step: ReplaceStep, doc: ProseMirrorNode): boolean {

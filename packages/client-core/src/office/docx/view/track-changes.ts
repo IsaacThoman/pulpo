@@ -1,4 +1,4 @@
-import type { Mark, Node as ProseMirrorNode, Slice } from '@tiptap/pm/model'
+import { Slice, type Attrs, type Mark, type Node as ProseMirrorNode } from '@tiptap/pm/model'
 import { TextSelection, type EditorState, type Transaction } from '@tiptap/pm/state'
 import { removeRow, TableMap } from '@tiptap/pm/tables'
 import { AddMarkStep, Mapping, RemoveMarkStep, ReplaceAroundStep, ReplaceStep, StepMap, type Step } from '@tiptap/pm/transform'
@@ -182,9 +182,9 @@ function trackDelete(out: Transaction, from: number, to: number, reviewer: Revie
 }
 
 /** Inserts `slice` at `pos` marked as the reviewer's insertion. */
-function trackInsert(out: Transaction, pos: number, slice: Slice, reviewer: Reviewer): { end: number; step: number } | undefined {
+function trackInsert(out: Transaction, pos: number, slice: Slice, reviewer: Reviewer, pasteEnds?: (Attrs | null)[]): { end: number; step: number } | undefined {
   if (!slice.size) return undefined
-  const split = slice.openStart === 1 && slice.openEnd === 1 && slice.content.childCount === 2
+  const split = !pasteEnds && slice.openStart === 1 && slice.openEnd === 1 && slice.content.childCount === 2
     && slice.content.firstChild?.type.name === 'paragraph' && !slice.content.firstChild.content.size
     && slice.content.lastChild?.type.name === 'paragraph' && !slice.content.lastChild.content.size
   const before = out.steps.length
@@ -212,12 +212,17 @@ function trackInsert(out: Transaction, pos: number, slice: Slice, reviewer: Revi
     }
   }
   // Splits create a fresh mark; pasted paragraph ends retain their own properties.
+  let endIndex = 0
   out.doc.nodesBetween(start, end, (node, nodePos) => {
     if (node.type.name !== 'paragraph') return true
     const endOfParagraph = nodePos + node.nodeSize - 1
-    if (endOfParagraph >= start && endOfParagraph < end && (split || !jmlChild(jml(node.attrs.markRPr), 'w:ins'))) {
-      const attrs = split ? { ...node.attrs, markRPr: null, sectPr: null, trail: null } : node.attrs
-      out.setNodeMarkup(nodePos, undefined, withMarkRPrChild(attrs, ['w:ins', revisionAttrs(reviewer)], ['w:del']))
+    if (endOfParagraph >= start && endOfParagraph < end) {
+      const pasted = pasteEnds?.[endIndex++]
+      const attrs = pasteEnds ? { ...node.attrs, markRPr: pasted?.markRPr ?? null, sectPr: pasted?.sectPr ?? null, trail: pasted?.trail ?? null }
+        : split ? { ...node.attrs, markRPr: null, sectPr: null, trail: null } : node.attrs
+      if (split || !jmlChild(jml(attrs.markRPr), 'w:ins')) {
+        out.setNodeMarkup(nodePos, undefined, withMarkRPrChild(attrs, ['w:ins', revisionAttrs(reviewer)], ['w:del']))
+      } else if (pasteEnds) out.setNodeMarkup(nodePos, undefined, attrs)
     }
     return false
   })
