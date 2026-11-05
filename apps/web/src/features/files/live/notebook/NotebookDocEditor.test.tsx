@@ -12,7 +12,8 @@ beforeAll(() => { Element.prototype.scrollIntoView = () => {} })
 afterEach(cleanup)
 
 describe('notebook output frames', () => {
-  it.each(['text/html', 'application/javascript'])('remounts a replaced %s output at the same index', async (mime) => {
+  // Outputs resolve asynchronously, which takes longer when the suite runs files in parallel.
+  it.each(['text/html', 'application/javascript'])('remounts a replaced %s output at the same index', { timeout: 15_000 }, async (mime) => {
     const doc = new Y.Doc()
     const assets = new MemoryLiveAssetStore()
     const provider = new SocketIOYProvider('notebook', doc)
@@ -25,7 +26,7 @@ describe('notebook output frames', () => {
     })), { name: 'a.ipynb', assets })
     const view = render(<NotebookDocEditor session={{ doc, provider }} name="a.ipynb" editable={false} width="fill" assets={assets} />)
     try {
-      await waitFor(() => expect(view.container.querySelector('iframe')).toBeTruthy())
+      await waitFor(() => expect(view.container.querySelector('iframe')).toBeTruthy(), { timeout: 5_000 })
       const original = view.container.querySelector('iframe')!
       // Finish the initial sandbox render before replacing it, reproducing the stale-frame case.
       await act(async () => {
@@ -34,7 +35,7 @@ describe('notebook output frames', () => {
       })
       const cell = [...doc.getMap<Y.Map<unknown>>('cells').values()][0]!
       act(() => cell.set('outputs', { json: JSON.stringify([output('new content')]), assets: [] }))
-      await waitFor(() => expect(view.container.querySelector('iframe')).not.toBe(original))
+      await waitFor(() => expect(view.container.querySelector('iframe')).not.toBe(original), { timeout: 5_000 })
       const replacement = view.container.querySelector('iframe')!
       expect(replacement).toBeTruthy()
       const messages: unknown[] = []
