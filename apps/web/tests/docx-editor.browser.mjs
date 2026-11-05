@@ -5,7 +5,7 @@ import assert from 'node:assert/strict'
 import { chromium } from 'playwright'
 import { createServer } from 'vite'
 import * as Y from 'yjs'
-import { docxCodec, MemoryAssetStore } from '@pulpo/client-core/office/docx'
+import { docxCodec, readDocxModel, MemoryAssetStore } from '@pulpo/client-core/office/docx'
 
 const root = new URL('..', import.meta.url).pathname
 const screenshots = process.env.SCREENSHOT_DIR
@@ -59,11 +59,11 @@ try {
       view.dispatch(view.state.tr.setSelection(Selection.create(view.state.doc, target - back, target)))
     }, { contains, editorIndex, back })
   }
-  const exported = async () => {
+  const exported = async (kind) => {
     const base64 = await page.evaluate(() => window.harness.exportFile())
     const doc = new Y.Doc()
     await docxCodec.importFile(doc, new Uint8Array(Buffer.from(base64, 'base64')), { name: 'a.docx', assets: new MemoryAssetStore() })
-    return docxCodec.toText(doc)
+    return kind ? [...readDocxModel(doc).stories.values()].filter((story) => story.meta.kind === kind).map((story) => story.doc.textContent).join("\n") : docxCodec.toText(doc)
   }
 
   await step('loads a document into pages with headers and fields', async () => {
@@ -71,6 +71,17 @@ try {
     assert.ok(await page.locator('.docx-page').count() >= 2)
     await page.locator('.docx-story', { hasText: 'First-page header' }).waitFor()
     await page.locator('.docx-story', { hasText: /page i of \d/ }).first().waitFor()
+  })
+
+  await step('edits a populated header in place and exports it', async () => {
+    await page.locator('.docx-band .docx-story', { hasText: 'First-page header' }).first().dblclick()
+    const story = page.locator('.docx-story-editor')
+    await story.waitFor()
+    await page.keyboard.type('Header edit regression ')
+    await page.keyboard.press('Escape')
+    await story.waitFor({ state: 'detached' })
+    assert.match(await exported('header'), /Header edit regression/)
+    assert.deepEqual(errors, [])
   })
 
   await step('types, formats with shortcuts, and undoes', async () => {
@@ -213,6 +224,28 @@ try {
     assert.match(await exported(), /\[comment \d+ Ada on "Hanging"\]: Please tighten this\./)
   })
 
+  await step('keeps comment creation and deletion outside text undo', async () => {
+    const result = await page.evaluate(() => {
+      const editor = window.harness.editors[0]
+      const view = editor.view
+      const markers = (id) => {
+        let count = 0
+        view.state.doc.descendants((node) => { if (node.type.name === 'commentMark' && node.attrs.id === id) count++ })
+        return count
+      }
+      const id = editor.addComment('Undo-safe comment')
+      editor.undo()
+      const added = { exists: editor.comments().some((thread) => thread.id === id), markers: markers(id) }
+      editor.redo()
+      editor.deleteComment(id)
+      editor.undo()
+      const deleted = { exists: editor.comments().some((thread) => thread.id === id), markers: markers(id) }
+      editor.redo()
+      return { added, deleted }
+    })
+    assert.deepEqual(result, { added: { exists: true, markers: 3 }, deleted: { exists: false, markers: 0 } })
+  })
+
   await step('inserts PNG pictures and refuses SVG, which Word would not show', async () => {
     await paragraph('Hanging indent.').click()
     const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64')
@@ -247,6 +280,44 @@ try {
     await page.waitForFunction(() => document.querySelectorAll('.docx-page').length > 0)
     await page.getByRole('button', { name: 'Zoom in' }).click()
     await page.locator('[data-docx-zoom]', { hasText: '110%' }).waitFor()
+  })
+
+  await step('rejects inserted tables and accepts or rejects deleted tables in Suggesting mode', async () => {
+    await open('?file=basic-formatting.docx')
+    const inserted = await page.evaluate(() => {
+      const editor = window.harness.editors[0]
+      editor.setMode('suggesting')
+      editor.insertTable(2, 2)
+      const revisions = editor.revisions()
+      editor.rejectAll()
+      return { rows: revisions.filter((revision) => revision.kind === 'rowInsert').length, tables: editor.view.dom.querySelectorAll('table').length, remaining: editor.revisions().length }
+    })
+    assert.deepEqual(inserted, { rows: 2, tables: 0, remaining: 0 })
+    for (const action of ['acceptAll', 'rejectAll']) {
+      await open('?file=tables.docx')
+      const result = await page.evaluate((action) => {
+        const editor = window.harness.editors[0]
+        const view = editor.view
+        let table
+        view.state.doc.descendants((node, pos) => {
+          if (!table && node.type.name === 'table') table = { pos, size: node.nodeSize }
+          return !table
+        })
+        const before = view.state.doc.textContent
+        const count = () => view.dom.querySelectorAll('table').length
+        const beforeTables = count()
+        editor.setMode('suggesting')
+        const Selection = view.state.selection.constructor
+        view.dispatch(view.state.tr.setSelection(Selection.create(view.state.doc, table.pos, table.pos + table.size)).deleteSelection())
+        const pendingTables = count()
+        editor[action]()
+        return { before, after: view.state.doc.textContent, beforeTables, pendingTables, afterTables: count(), remaining: editor.revisions().length }
+      }, action)
+      assert.equal(result.pendingTables, result.beforeTables)
+      assert.equal(result.remaining, 0)
+      assert.equal(result.afterTables, result.beforeTables - (action === 'acceptAll' ? 1 : 0))
+      if (action === 'rejectAll') assert.equal(result.after, result.before)
+    }
   })
 
   await step('syncs two collaborators with named carets', async () => {

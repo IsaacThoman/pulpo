@@ -621,10 +621,13 @@ export class DocxEditor {
     const numIds = new Map<string, string>()
     const numbering = this.options.doc.getMap('numbering')
     const fresh = (prefix: string) => {
-      for (;;) {
-        const id = String(1000 + Math.floor(Math.random() * 29_000))
-        if (!numbering.has(`${prefix}:${id}`) && !edits.some(([, key]) => key === `${prefix}:${id}`)) return id
+      let largest = 0
+      for (const key of [...numbering.keys(), ...edits.map(([, key]) => key)]) {
+        if (!key.startsWith(`${prefix}:`)) continue
+        const id = key.slice(prefix.length + 1)
+        if (/^\d+$/.test(id)) largest = Math.max(largest, Number(id))
       }
+      return String(largest + 1)
     }
     for (const { pos, node, kind, level } of found) {
       let numId = numIds.get(kind)
@@ -1802,22 +1805,24 @@ export class DocxEditor {
     const parentBand = host.closest<HTMLElement>('.docx-band')
     if (parentBand) parentBand.style.overflow = 'visible'
     const noteNumber = storyId.startsWith('footnote:') || storyId.startsWith('endnote:') ? countNotes(this.view.state.doc).get(storyId) : undefined
+    const dispatch = (view: EditorView, tr: Transaction) => {
+      if (view.isDestroyed) return
+      let transaction = tr
+      if (this.modeValue === 'suggesting' && tr.docChanged && tr.getMeta(ySyncPluginKey) === undefined && !tr.getMeta('docx-tracked') && !tr.getMeta('docx-untracked')) transaction = trackTransaction(view.state, tr, this.reviewer()) ?? tr
+      view.updateState(view.state.apply(transaction))
+      if (pasted(tr)) {
+        this.convertPastedLists(view)
+        this.dropForeignReferences(view)
+      }
+      this.emit('update')
+    }
     const view = new EditorView({ mount: element }, {
       state: EditorState.create({ schema: docxSchema(), plugins: this.plugins(this.options.doc.getXmlFragment(storyFragmentName(storyId)), `cursor:${storyId}`, noteNumber) }),
       editable: () => !this.readOnly,
       nodeViews: this.nodeViews(),
       ...this.clipboardProps(storyId),
       attributes: { class: 'docx-flow', spellcheck: 'true', role: 'textbox', 'aria-label': meta.kind },
-      dispatchTransaction: (tr) => {
-        let transaction = tr
-        if (this.modeValue === 'suggesting' && tr.docChanged && tr.getMeta(ySyncPluginKey) === undefined && !tr.getMeta('docx-tracked') && !tr.getMeta('docx-untracked')) transaction = trackTransaction(view.state, tr, this.reviewer()) ?? tr
-        view.updateState(view.state.apply(transaction))
-        if (pasted(tr)) {
-          this.convertPastedLists(view)
-          this.dropForeignReferences(view)
-        }
-        this.emit('update')
-      },
+      dispatchTransaction: function (this: EditorView, tr: Transaction) { dispatch(this, tr) },
     })
     this.storyEditor = { view, element, storyId }
     view.focus()

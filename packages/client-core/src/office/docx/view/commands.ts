@@ -272,12 +272,15 @@ export function listKind(numId: string, context: DocxViewContext): ListKind | un
   return /%2/.test(context.numbering.level(numId, 1)?.lvlText ?? '') ? 'multilevel' : 'decimal'
 }
 
-/** Random ids keep two people creating lists at once from taking the same number. */
-function freshId(taken: (id: string) => boolean): string {
-  for (;;) {
-    const id = String(1000 + Math.floor(Math.random() * 29_000))
-    if (!taken(id)) return id
+/** Advance past imported numbering definitions, including large numbering maps. */
+function freshId(keys: Iterable<string>, prefix: string): string {
+  let largest = 0
+  for (const key of keys) {
+    if (!key.startsWith(`${prefix}:`)) continue
+    const id = key.slice(prefix.length + 1)
+    if (/^\d+$/.test(id)) largest = Math.max(largest, Number(id))
   }
+  return String(largest + 1)
 }
 
 /**
@@ -308,8 +311,8 @@ export function toggleList(kind: ListKind, state: EditorState, context: DocxView
     if (previous && listKind(previous.numId, context) === kind) numId = previous.numId
   }
   if (!numId) {
-    const abstractId = freshId((id) => context.doc.getMap('numbering').has(`abstract:${id}`))
-    numId = freshId((id) => context.doc.getMap('numbering').has(`num:${id}`))
+    const abstractId = freshId(context.doc.getMap('numbering').keys(), 'abstract')
+    numId = freshId(context.doc.getMap('numbering').keys(), 'num')
     maps.push(['numbering', `abstract:${abstractId}`, packJml(listDefinition(kind, abstractId))])
     maps.push(['numbering', `num:${numId}`, packJml(['w:num', { 'w:numId': numId }, ['w:abstractNumId', { 'w:val': abstractId }]])])
   }

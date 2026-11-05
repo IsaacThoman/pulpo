@@ -64,7 +64,7 @@ function initialsOf(name: string): string {
 export function addComment(state: EditorState, context: DocxViewContext, author: CommentAuthor, text: string): StoryResult & { id: string } {
   const { schema } = state
   const id = newStoryId()
-  const tr = state.tr
+  const tr = state.tr.setMeta('addToHistory', false).setMeta('docx-untracked', true)
   let { from, to } = state.selection
   if (from === to) {
     // Word comments the word at the cursor.
@@ -105,7 +105,7 @@ export function replyToComment(state: EditorState, context: DocxViewContext, par
   })
   if (startPos === undefined || endPos === undefined) return null
   const id = newStoryId()
-  const tr = state.tr
+  const tr = state.tr.setMeta('addToHistory', false).setMeta('docx-untracked', true)
   tr.insert(endPos, [
     schema.node('commentMark', { edge: 'end', id, v: packJml(['w:commentRangeEnd', { 'w:id': id }]) }),
     schema.node('commentMark', { edge: 'ref', id, v: packJml(['w:commentReference', { 'w:id': id }]), marks: packMarks(styleMarks(schema, context, 'CommentReference')) }),
@@ -127,7 +127,7 @@ export function setCommentResolved(context: DocxViewContext, id: string, done: b
 /** Deletes a comment, its replies, and their markers. */
 export function deleteComment(state: EditorState, context: DocxViewContext, id: string): StoryResult {
   const ids = new Set([id, ...[...context.comments].filter(([, meta]) => meta.parentId === id).map(([commentId]) => commentId)])
-  const tr = state.tr
+  const tr = state.tr.setMeta('addToHistory', false).setMeta('docx-untracked', true)
   const positions: number[] = []
   state.doc.descendants((node, pos) => {
     if (node.type.name === 'commentMark' && ids.has(String(node.attrs.id))) positions.push(pos)

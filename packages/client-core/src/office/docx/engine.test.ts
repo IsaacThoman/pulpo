@@ -141,6 +141,26 @@ describe('editing commands', async () => {
     expect(listed.doc.child(1).attrs.numPr).toBe(listed.doc.child(0).attrs.numPr)
   })
 
+  it('allocates past a numbering map containing every former random id', async () => {
+    const { doc } = await documentWith(p(run('List item')))
+    doc.transact(() => {
+      for (let id = 1000; id < 30000; id++) {
+        doc.getMap('numbering').set(`abstract:${id}`, packJml(['w:abstractNum', { 'w:abstractNumId': String(id) }]))
+        doc.getMap('numbering').set(`num:${id}`, packJml(['w:num', { 'w:numId': String(id) }]))
+      }
+    })
+    const context = new DocxViewContext(doc)
+    try {
+      const state = EditorState.create({ schema, doc: readDocxModel(doc).body })
+      const start = performance.now()
+      const result = toggleList('bullet', state, context)!
+      expect(performance.now() - start).toBeLessThan(1000)
+      expect(result.maps?.map(([, key]) => key)).toEqual(['abstract:30000', 'num:30000'])
+    } finally {
+      context.destroy()
+    }
+  })
+
   it('inserts page breaks and finds and replaces text', () => {
     const broken = state(6).apply(insertPageBreak(state(6), context)!)
     expect(broken.doc.childCount).toBe(3)
