@@ -2,13 +2,15 @@ import { LiveFormatError } from '../live-format.js'
 import type { JmlElement } from './jsonml.js'
 
 /** Internal copy metadata lives in preserved XML attributes, never in exported XML. */
+export const PRESERVED_LINK = 'pulpo:href'
+export const PRESERVED_IMAGE = 'pulpo:src'
 export const COPY_RELATIONSHIPS = 'pulpo:relationships'
 export const MAX_COPY_PARTS = 5_000
 export const MAX_COPY_BYTES = 256 * 1024 * 1024
 export interface CopyRelationship { type: string; target: string; targetMode?: 'External' }
 export interface CopyPart { hash: string; size: number; contentType: string; rels: Record<string, CopyRelationship> }
 export interface CopyManifest { version: 1; rels: Record<string, CopyRelationship>; parts: Record<string, CopyPart> }
-export interface RelationshipReference { element?: string; attribute: string; id: string; bound?: boolean }
+export interface RelationshipReference { element?: string; attribute: string; id: string; bound?: boolean; src?: string }
 export const isRelationshipAttribute = (name: string) => name.startsWith('r:') || name === 'o:relid'
 
 function parsed(value: unknown): unknown {
@@ -44,9 +46,18 @@ function visitStoredXml(value: unknown, visit: (attrs: Record<string, unknown>, 
 export function relationshipReferences(value: unknown): RelationshipReference[] {
   const refs: RelationshipReference[] = []
   visitStoredXml(value, (attrs, element, scope) => {
-    for (const [attribute, id] of Object.entries(attrs)) if (isRelationshipAttribute(attribute) && typeof id === 'string' && id) refs.push({ element, attribute, id, ...(scope && Object.hasOwn(scope.rels, id) ? { bound: true } : {}) })
+    for (const [attribute, id] of Object.entries(attrs)) if (isRelationshipAttribute(attribute) && typeof id === 'string' && id) refs.push({ element, attribute, id, ...(typeof attrs[PRESERVED_IMAGE] === 'string' ? { src: attrs[PRESERVED_IMAGE] } : {}), ...(scope && Object.hasOwn(scope.rels, id) ? { bound: true } : {}) })
   })
   return refs
+}
+
+export function preservedImageHashes(value: unknown): string[] {
+  const hashes: string[] = []
+  visitStoredXml(value, (attrs) => {
+    const hash = attrs[PRESERVED_IMAGE]
+    if (typeof hash === 'string' && /^[0-9a-f]{64}$/.test(hash)) hashes.push(hash)
+  })
+  return hashes
 }
 
 export function isPictureReference(ref: RelationshipReference): boolean {

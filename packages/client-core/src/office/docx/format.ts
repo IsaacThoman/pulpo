@@ -6,7 +6,7 @@ import { MIME_TYPES } from './names.js'
  */
 
 /** Bump when the Y.Doc layout or the schema changes in a way older clients would misread. */
-export const DOCX_SCHEMA_VERSION = 2
+export const DOCX_SCHEMA_VERSION = 3
 
 export const DOCX_EXTENSIONS = ['docx', 'dotx', 'docm', 'dotm'] as const
 

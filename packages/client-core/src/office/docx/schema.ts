@@ -258,7 +258,7 @@ const nodes: Record<string, NodeSpec> = {
     parseDOM: [{ tag: 'table' }],
   },
   tableRow: {
-    content: 'tableCell+',
+    content: 'tableCell*',
     tableRole: 'row',
     attrs: { trPr: { default: null }, tblPrEx: { default: null }, xmlAttrs: { default: null }, wrap: { default: null }, lead: { default: null }, cellTrail: { default: null } },
     toDOM: () => ['tr', { class: 'docx-row' }, 0],

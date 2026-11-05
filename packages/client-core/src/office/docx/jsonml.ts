@@ -139,24 +139,24 @@ export function writableXmlName(name: string): boolean {
   return XML_NAME.test(name) && !name.startsWith('pulpo:')
 }
 
-export function openTag(name: string, attrs: Record<string, string> | undefined, selfClose = false): string {
+export function openTag(name: string, attrs: Record<string, string> | undefined, selfClose = false, internal = false): string {
   let tag = `<${name}`
-  if (attrs) for (const key in attrs) if (writableXmlName(key) && typeof attrs[key] === 'string') tag += ` ${key}="${escapeXmlAttr(stripInvalidXmlChars(attrs[key]!))}"`
+  if (attrs) for (const key in attrs) if ((internal ? XML_NAME.test(key) : writableXmlName(key)) && typeof attrs[key] === 'string') tag += ` ${key}="${escapeXmlAttr(stripInvalidXmlChars(attrs[key]!))}"`
   return tag + (selfClose ? '/>' : '>')
 }
 
 /**
  * Writes JsonML as XML. `slot` fills the content slot of a wrapper (see CONTENT_SLOT).
  */
-export function jmlToXml(node: JmlNode, slot?: string): string {
+export function jmlToXml(node: JmlNode, slot?: string, internal = false): string {
   if (typeof node === 'string') return node === CONTENT_SLOT ? (slot ?? '') : escapeXmlText(stripInvalidXmlChars(node))
   const [name, attrs] = node
   // An element that cannot be named is left out, with its content.
-  if (typeof name !== 'string' || !writableXmlName(name)) return ''
-  if (node.length <= 2) return openTag(name, attrs, true)
+  if (typeof name !== 'string' || !(internal ? XML_NAME.test(name) : writableXmlName(name))) return ''
+  if (node.length <= 2) return openTag(name, attrs, true, internal)
   let body = ''
-  for (let index = 2; index < node.length; index++) body += jmlToXml(node[index] as JmlNode, slot)
-  return `${openTag(name, attrs)}${body}</${name}>`
+  for (let index = 2; index < node.length; index++) body += jmlToXml(node[index] as JmlNode, slot, internal)
+  return `${openTag(name, attrs, false, internal)}${body}</${name}>`
 }
 
 /** JsonML as the string stored in node and mark attributes. */

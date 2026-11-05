@@ -6,7 +6,7 @@ import { sha256Hex, sniffImage } from './export.js'
 import { elementToJml } from './jsonml.js'
 import { parseJson, readDocxMap, type PartRef } from './model.js'
 import { REL } from './names.js'
-import { COPY_RELATIONSHIPS, MAX_COPY_BYTES, MAX_COPY_PARTS, copyManifest, isJmlElement, isPictureReference, manifestsIn, relationshipReferences, type CopyManifest, type CopyPart, type CopyRelationship } from './relationships.js'
+import { COPY_RELATIONSHIPS, MAX_COPY_BYTES, MAX_COPY_PARTS, copyManifest, isJmlElement, isPictureReference, manifestsIn, preservedImageHashes, relationshipReferences, type CopyManifest, type CopyPart, type CopyRelationship } from './relationships.js'
 
 /** Ordinary text copies keep their immediate, synchronous paste path. */
 export function needsRelatedParts(slice: Slice): boolean {
@@ -123,16 +123,17 @@ export async function copyRelatedParts(slice: Slice, doc: Y.Doc, assets: LiveAss
     if (!refs.length) return undefined
     const rels: Record<string, CopyRelationship> = Object.create(null)
     for (const ref of refs) {
+      const imageSrc = ref.src ?? src
       const rel = rootRels[ref.id]
-      if (rel) {
+      if (rel && !ref.src) {
         rels[ref.id] = rel
         if (rel.targetMode !== 'External') await collect(rel.target)
-      } else if (src && isPictureReference(ref)) {
-        const bytes = await readAsset(src)
+      } else if (imageSrc && isPictureReference(ref)) {
+        const bytes = await readAsset(imageSrc)
         const image = sniffImage(bytes)
-        output[src]!.contentType = image.mimeType
-        const target = `word/media/pulpo-${src}.${image.extension}`
-        graph.set(target, { hash: src, size: bytes.length, contentType: image.mimeType, rels: {} })
+        output[imageSrc]!.contentType = image.mimeType
+        const target = `word/media/pulpo-${imageSrc}.${image.extension}`
+        graph.set(target, { hash: imageSrc, size: bytes.length, contentType: image.mimeType, rels: {} })
         if (graph.size > MAX_COPY_PARTS) throw tooLarge()
         rels[ref.id] = { type: REL.image, target }
       } else throw new LiveFormatError('corrupt', `A copied relationship is missing: ${ref.id}`)
@@ -160,6 +161,7 @@ export async function copyRelatedParts(slice: Slice, doc: Y.Doc, assets: LiveAss
       if (isJmlElement(data)) {
         const existing = copyManifest(data[1][COPY_RELATIONSHIPS])
         if (existing) {
+          for (const hash of preservedImageHashes(data)) await readAsset(hash)
           for (const entry of Object.values(existing.parts)) await readAsset(entry.hash, entry.contentType)
           return data
         }
@@ -221,6 +223,7 @@ export async function copyRelatedParts(slice: Slice, doc: Y.Doc, assets: LiveAss
   for (let i = 0; i < slice.content.childCount; i++) children.push(await node(slice.content.child(i)))
   // Relationship XML and content types were read to build the graph, but aren't copied assets.
   const used = new Set<string>()
+  for (const child of children) for (const hash of preservedImageHashes(child.toJSON())) used.add(hash)
   for (const child of children) {
     child.descendants((node) => {
       if (node.type.name === 'drawing' && typeof node.attrs.src === 'string') used.add(node.attrs.src)

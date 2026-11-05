@@ -2,10 +2,10 @@ import type { Mark, Node as ProseMirrorNode } from '@tiptap/pm/model'
 import { TableMap } from '@tiptap/pm/tables'
 import { strToU8 } from 'fflate'
 import { LiveFormatError, type LiveAssetStore } from '../live-format.js'
-import { CONTENT_TYPES_PATH, OoxmlPackage, relativeTarget, relationshipsPathFor, resolveTarget } from '../ooxml/package.js'
+import { CONTENT_TYPES_PATH, OoxmlPackage, parseXml, relativeTarget, relationshipsPathFor, resolveTarget } from '../ooxml/package.js'
 import { elementToJml, jmlAttr, jmlChild, jmlElements, jmlToXml, openTag, unpackJml, walkJml, type JmlElement, type JmlNode } from './jsonml.js'
 import { mimeTypeForPart } from './import.js'
-import { parseJson, type CommentMeta, type DocxModel, type PartRef, type StoryMeta } from './model.js'
+import { parseJson, type CommentMeta, type DocxModel, type PartRef, type StoryMeta, emptyMaps } from './model.js'
 import {
   CONTENT_TYPE,
   KNOWN_NAMESPACES,
@@ -18,7 +18,7 @@ import {
   TRPR_ORDER,
   sortByOrder,
 } from './names.js'
-import { MAX_COPY_BYTES, MAX_COPY_PARTS, isPictureReference, manifestsIn, relationshipReferences, remapStoredXml, type CopyPart, type CopyRelationship } from './relationships.js'
+import { PRESERVED_IMAGE, PRESERVED_LINK, MAX_COPY_BYTES, MAX_COPY_PARTS, isPictureReference, manifestsIn, relationshipReferences, remapStoredXml, type CopyPart, type CopyRelationship } from './relationships.js'
 import { PARAGRAPH_PROPERTY_ATTRS, RUN_PROPERTY_MARKS, WRAPPER_MARKS, inlineMarks, type ParagraphPropertyAttr } from './schema.js'
 
 const XML_DECLARATION = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n'
@@ -168,15 +168,42 @@ export class StoryWriter {
   constructor(
     readonly writer: PartWriter,
     readonly ids: IdMaps,
+    readonly preserveRelationships = false,
   ) {}
 
   private remap(value: unknown): unknown {
-    return remapStoredXml(value, (rel) => this.writer.copiedRel(rel))
+    if (this.preserveRelationships) return value
+    const mapped = remapStoredXml(value, (rel) => this.writer.copiedRel(rel))
+    if (typeof mapped !== 'string' || !mapped.includes(PRESERVED_IMAGE) && !mapped.includes(PRESERVED_LINK) && !/w:(?:footnoteReference|endnoteReference|comment(?:RangeStart|RangeEnd|Reference))/.test(mapped)) return mapped
+    const data = parseJson<JmlElement | JmlElement[]>(mapped)
+    if (!data || !Array.isArray(data)) return mapped
+    const roots = typeof data[0] === 'string' ? [data as JmlElement] : data as JmlElement[]
+    for (const root of roots) walkJml(root, (element) => {
+      const hash = element[1][PRESERVED_IMAGE]
+      if (hash) {
+        for (const ref of relationshipReferences([element[0], element[1]])) if (isPictureReference(ref)) element[1][ref.attribute] = this.writer.imageRel(hash, ref.id)
+        delete element[1][PRESERVED_IMAGE]
+      }
+      const href = element[1][PRESERVED_LINK]
+      if (href && element[0] === 'w:hyperlink') {
+        element[1]['r:id'] = this.writer.linkRel(href, element[1]['r:id'])
+        delete element[1][PRESERVED_LINK]
+      }
+      const id = element[1]['w:id']
+      const kind = element[0] === 'w:footnoteReference' ? 'footnote' : element[0] === 'w:endnoteReference' ? 'endnote' : /^w:comment(RangeStart|RangeEnd|Reference)$/.test(element[0]) ? 'comments' : undefined
+      if (id && kind) element[1]['w:id'] = this.ids[kind].get(id) ?? id
+    })
+    return JSON.stringify(data)
   }
 
   private jml(value: unknown): JmlElement | undefined { return jml(this.remap(value)) }
   private jmlList(value: unknown): JmlElement[] { return jmlList(this.remap(value)) }
   private attrsOf(value: unknown): Record<string, string> | undefined { return attrsOf(this.remap(value)) }
+
+  private xml(node: JmlNode, slot?: string): string { return jmlToXml(node, slot, this.preserveRelationships) }
+  private open(name: string, attrs?: Record<string, string>, close = false): string { return openTag(name, attrs, close, this.preserveRelationships) }
+
+  preservedCell(node: ProseMirrorNode): string { return this.cell(node, Number(node.attrs.colspan) || 1) }
 
   blocks(content: ProseMirrorNode | readonly ProseMirrorNode[]): string {
     let xml = ''
@@ -188,7 +215,7 @@ export class StoryWriter {
   }
 
   private markers(value: unknown): string {
-    return this.jmlList(value).map((element) => jmlToXml(this.mapIds(element, undefined))).join('')
+    return this.jmlList(value).map((element) => this.xml(this.mapIds(element, undefined))).join('')
   }
 
   block(node: ProseMirrorNode): string {
@@ -202,11 +229,11 @@ export class StoryWriter {
       case 'blockWrapper': {
         const shell = this.jml(node.attrs.v)
         const inner = this.blocks(node)
-        return lead + (shell ? jmlToXml(shell, inner) : inner) + trail
+        return lead + (shell ? this.xml(shell, inner) : inner) + trail
       }
       case 'blockXml': {
         const element = this.jml(node.attrs.v)
-        return lead + (element ? jmlToXml(element) : '') + trail
+        return lead + (element ? this.xml(element) : '') + trail
       }
       default:
         return lead + trail
@@ -246,8 +273,8 @@ export class StoryWriter {
   paragraph(node: ProseMirrorNode, extraAttrs?: Record<string, string>): string {
     const attrs = { ...this.paragraphAttrs(node), ...extraAttrs }
     const properties = this.paragraphProperties(node)
-    let xml = openTag('w:p', attrs)
-    if (properties.length) xml += `<w:pPr>${properties.map((element) => jmlToXml(element)).join('')}</w:pPr>`
+    let xml = this.open('w:p', attrs)
+    if (properties.length) xml += `<w:pPr>${properties.map((element) => this.xml(element)).join('')}</w:pPr>`
     xml += this.inline(node)
     return `${xml}</w:p>`
   }
@@ -308,12 +335,13 @@ export class StoryWriter {
     }
     if (mark.type.name === 'link') {
       const href = mark.attrs.href as string | null
-      if (href) {
+      if (href && this.preserveRelationships) shell = [shell[0], { ...shell[1], [PRESERVED_LINK]: href }, ...(shell.slice(2) as JmlNode[])]
+      if (href && !this.preserveRelationships) {
         const relId = this.writer.linkRel(href, jmlAttr(shell, 'r:id'))
         if (relId !== jmlAttr(shell, 'r:id')) shell = [shell[0], { ...shell[1], 'r:id': relId }, ...(shell.slice(2) as JmlNode[])]
       }
     }
-    return jmlToXml(shell, inner)
+    return this.xml(shell, inner)
   }
 
   runProperties(marks: readonly Mark[]): JmlElement[] {
@@ -332,7 +360,7 @@ export class StoryWriter {
     const deleted = isDeleted(items[0]!)
     const properties = this.runProperties(items[0]!.run)
     let xml = '<w:r>'
-    if (properties.length) xml += `<w:rPr>${properties.map((element) => jmlToXml(element)).join('')}</w:rPr>`
+    if (properties.length) xml += `<w:rPr>${properties.map((element) => this.xml(element)).join('')}</w:rPr>`
     for (const item of items) xml += this.runContent(item.node, deleted)
     return `${xml}</w:r>`
   }
@@ -344,32 +372,44 @@ export class StoryWriter {
         const text = node.text ?? ''
         const tag = deleted ? 'w:delText' : 'w:t'
         const preserve = /^\s|\s$|\s\s|\t/.test(text) ? ' xml:space="preserve"' : ''
-        return `<${tag}${preserve}>${jmlToXml(text)}</${tag}>`
+        return `<${tag}${preserve}>${this.xml(text)}</${tag}>`
       }
       case 'tab':
-        return element ? jmlToXml(element) : '<w:tab/>'
+        return element ? this.xml(element) : '<w:tab/>'
       case 'break': {
-        if (element) return jmlToXml(element)
+        if (element) return this.xml(element)
         const type = node.attrs.type as string
         return type === 'textWrapping' ? '<w:br/>' : `<w:br w:type="${type}"/>`
       }
       case 'drawing':
-        return element ? jmlToXml(manifestsIn(node.attrs.v).length ? element : this.drawingElement(element, node.attrs.src as string | null)) : ''
+        if (!element) return ''
+        if (this.preserveRelationships && node.attrs.src) {
+          const copy = structuredClone(element)
+          const primary = relationshipReferences(copy).find((ref) => isPictureReference(ref) && ref.attribute !== 'r:link')
+          if (primary) walkJml(copy, (child) => {
+            for (const ref of relationshipReferences([child[0], child[1]])) if (isPictureReference(ref) && ref.id === primary.id) {
+              child[1][PRESERVED_IMAGE] = String(node.attrs.src)
+              if (!manifestsIn(node.attrs.v).length) child[1][ref.attribute] = `rPulpo${String(node.attrs.src)}`
+            }
+          })
+          return this.xml(copy)
+        }
+        return this.xml(manifestsIn(node.attrs.v).length ? element : this.drawingElement(element, node.attrs.src as string | null))
       case 'noteRef': {
         const kind = node.attrs.kind === 'endnote' ? 'endnote' : 'footnote'
         const id = this.ids[kind].get(String(node.attrs.id)) ?? String(node.attrs.id)
         const base: JmlElement = element ?? [`w:${kind}Reference`, {}]
-        return jmlToXml([base[0], { ...base[1], 'w:id': id }, ...(base.slice(2) as JmlNode[])])
+        return this.xml([base[0], { ...base[1], 'w:id': id }, ...(base.slice(2) as JmlNode[])])
       }
       case 'commentMark':
-        return jmlToXml(this.mapIds(element ?? ['w:commentReference', {}], node.attrs.id))
+        return this.xml(this.mapIds(element ?? ['w:commentReference', {}], node.attrs.id))
       case 'fieldCode': {
         const base: JmlElement = element ?? ['w:instrText', {}]
         const name = deleted ? 'w:delInstrText' : 'w:instrText'
-        return jmlToXml([name, base[1], ...(base.slice(2) as JmlNode[])])
+        return this.xml([name, base[1], ...(base.slice(2) as JmlNode[])])
       }
       default:
-        return element ? jmlToXml(element) : ''
+        return element ? this.xml(element) : ''
     }
   }
 
@@ -414,28 +454,28 @@ export class StoryWriter {
     const element = this.jml(item.node.attrs?.v)
     if (item.node.type.name === 'commentMark') {
       const edge = item.node.attrs.edge === 'end' ? 'End' : 'Start'
-      return jmlToXml(this.mapIds(element ?? [`w:commentRange${edge}`, {}], item.node.attrs.id))
+      return this.xml(this.mapIds(element ?? [`w:commentRange${edge}`, {}], item.node.attrs.id))
     }
     if (item.node.type.name === 'bookmark' && !element) {
       return item.node.attrs.edge === 'end'
-        ? openTag('w:bookmarkEnd', { 'w:id': String(item.node.attrs.id) }, true)
-        : openTag('w:bookmarkStart', { 'w:id': String(item.node.attrs.id), 'w:name': String(item.node.attrs.name ?? '') }, true)
+        ? this.open('w:bookmarkEnd', { 'w:id': String(item.node.attrs.id) }, true)
+        : this.open('w:bookmarkStart', { 'w:id': String(item.node.attrs.id), 'w:name': String(item.node.attrs.name ?? '') }, true)
     }
-    return element ? jmlToXml(element) : ''
+    return element ? this.xml(element) : ''
   }
 
   private table(node: ProseMirrorNode): string {
     const map = TableMap.get(node)
     const tblPr = this.jml(node.attrs.tblPr)
-    let xml = openTag('w:tbl', this.attrsOf(node.attrs.xmlAttrs))
-    if (tblPr) xml += jmlToXml(tblPr)
+    let xml = this.open('w:tbl', this.attrsOf(node.attrs.xmlAttrs))
+    if (tblPr) xml += this.xml(tblPr)
     xml += this.grid(this.jml(node.attrs.tblGrid), map.width)
     let pendingWrap: string | null = null
     let wrapped = ''
     const flushWrap = () => {
       if (pendingWrap === null) return
       const shell = this.jml(pendingWrap)
-      xml += shell ? jmlToXml(shell, wrapped) : wrapped
+      xml += shell ? this.xml(shell, wrapped) : wrapped
       pendingWrap = null
       wrapped = ''
     }
@@ -459,12 +499,12 @@ export class StoryWriter {
   /** The table grid, kept as written unless the editor changed the number of columns. */
   private grid(tblGrid: JmlElement | undefined, width: number): string {
     const cols = tblGrid ? jmlElements(tblGrid).filter((col) => col[0] === 'w:gridCol') : []
-    if (tblGrid && cols.length === width) return jmlToXml(tblGrid)
+    if (tblGrid && cols.length === width) return this.xml(tblGrid)
     const total = cols.reduce((sum, col) => sum + (Number(jmlAttr(col, 'w:w')) || 0), 0) || 9360
     const each = Math.max(1, Math.round(total / Math.max(1, width)))
     const rest = tblGrid ? jmlElements(tblGrid).filter((child) => child[0] !== 'w:gridCol') : []
     const grid: JmlElement = ['w:tblGrid', tblGrid?.[1] ?? {}, ...Array.from({ length: width }, (): JmlElement => ['w:gridCol', { 'w:w': String(each) }]), ...rest]
-    return jmlToXml(grid)
+    return this.xml(grid)
   }
 
   private row(table: ProseMirrorNode, rowNode: ProseMirrorNode, row: number, map: TableMap): string {
@@ -476,7 +516,7 @@ export class StoryWriter {
     const flushWrap = () => {
       if (pendingWrap === null) return
       const shell = this.jml(pendingWrap)
-      cells += shell ? jmlToXml(shell, wrapped) : wrapped
+      cells += shell ? this.xml(shell, wrapped) : wrapped
       pendingWrap = null
       wrapped = ''
     }
@@ -520,10 +560,10 @@ export class StoryWriter {
     const trPrChildren = (trPr ? jmlElements(trPr) : []).filter((child) => child[0] !== 'w:gridBefore' && child[0] !== 'w:gridAfter')
     if (before) trPrChildren.push(['w:gridBefore', { 'w:val': String(before) }])
     if (after) trPrChildren.push(['w:gridAfter', { 'w:val': String(after) }])
-    let xml = openTag('w:tr', this.attrsOf(rowNode.attrs.xmlAttrs))
+    let xml = this.open('w:tr', this.attrsOf(rowNode.attrs.xmlAttrs))
     const tblPrEx = this.jml(rowNode.attrs.tblPrEx)
-    if (tblPrEx) xml += jmlToXml(tblPrEx)
-    if (trPr || trPrChildren.length) xml += jmlToXml(['w:trPr', trPr?.[1] ?? {}, ...sortByOrder(trPrChildren, TRPR_ORDER)])
+    if (tblPrEx) xml += this.xml(tblPrEx)
+    if (trPr || trPrChildren.length) xml += this.xml(['w:trPr', trPr?.[1] ?? {}, ...sortByOrder(trPrChildren, TRPR_ORDER)])
     // Word refuses rows without cells.
     if (!cells) cells = '<w:tc><w:p/></w:tc>'
     return `${xml}${cells}</w:tr>`
@@ -534,7 +574,7 @@ export class StoryWriter {
     if (span > 1) children.push(['w:gridSpan', { 'w:val': String(span) }])
     if (vMerge !== undefined) children.push(['w:vMerge', vMerge ? { 'w:val': vMerge } : {}])
     if (!children.length && !base) return ''
-    return jmlToXml(['w:tcPr', base?.[1] ?? {}, ...sortByOrder(children, TCPR_ORDER)])
+    return this.xml(['w:tcPr', base?.[1] ?? {}, ...sortByOrder(children, TCPR_ORDER)])
   }
 
   private cell(cell: ProseMirrorNode, span: number): string {
@@ -542,7 +582,7 @@ export class StoryWriter {
     const tcPr = this.jml(cell.attrs.tcPr)
     const properties = this.cellProperties(tcPr, span, rowspan > 1 ? 'restart' : undefined, rowspan <= 1)
     const content = this.blocks(cell)
-    return `${openTag('w:tc', this.attrsOf(cell.attrs.xmlAttrs))}${properties}${content || '<w:p/>'}</w:tc>`
+    return `${this.open('w:tc', this.attrsOf(cell.attrs.xmlAttrs))}${properties}${content || '<w:p/>'}</w:tc>`
   }
 
   /** A cell hidden under a vertical merge: the original one, or a new one like its restart cell. */
@@ -551,13 +591,29 @@ export class StoryWriter {
     if (kept) {
       const tcPr = jmlChild(kept, 'w:tcPr')
       const content = jmlElements(kept).filter((child) => child[0] !== 'w:tcPr')
-      return `${openTag('w:tc', kept[1])}${this.cellProperties(tcPr, span, '', false)}${content.map((child) => jmlToXml(child)).join('') || '<w:p/>'}</w:tc>`
+      return `${this.open('w:tc', kept[1])}${this.cellProperties(tcPr, span, '', false)}${content.map((child) => this.xml(child)).join('') || '<w:p/>'}</w:tc>`
     }
     const restart = this.jml(cell.attrs.tcPr)
     const width = jmlChild(restart, 'w:tcW')
     const base: JmlElement = ['w:tcPr', {}, ...(width ? [width] : [])]
     return `<w:tc>${this.cellProperties(base, span, '', false)}<w:p/></w:tc>`
   }
+}
+
+/** Keep a hidden continuation as ordinary JsonML, including private asset/copy hints. */
+export function preserveCell(node: ProseMirrorNode): JmlElement {
+  const schema = node.type.schema
+  const model: DocxModel = { body: schema.node('doc', null, [schema.node('paragraph')]), maps: emptyMaps(), stories: new Map() }
+  const state = new DocxExport(new OoxmlPackage(new Map()), model)
+  const xml = new StoryWriter(state.writer('word/document.xml'), { comments: new Map(), footnote: new Map(), endnote: new Map() }, true).preservedCell(node)
+  const namespaces: Record<string, string> = { ...KNOWN_NAMESPACES, pulpo: 'urn:pulpo:internal' }
+  // The wrapper is discarded. JsonML keeps qualified names, so unknown source prefixes need
+  // temporary bindings only to parse; their actual bindings remain on the document/element.
+  for (const match of xml.matchAll(/[<\s]([A-Za-z][\w-]*):[A-Za-z]/g)) namespaces[match[1]!] ??= `urn:pulpo:preserved:${match[1]}`
+  const attrs = Object.fromEntries(Object.entries(namespaces).map(([key, value]) => [`xmlns:${key}`, value]))
+  const root = parseXml(`${openTag('pulpo:root', attrs, false, true)}${xml}</pulpo:root>`).documentElement!
+  for (let child = root.firstChild; child; child = child.nextSibling) if (child.nodeType === 1) return elementToJml(child as Parameters<typeof elementToJml>[0])
+  throw new LiveFormatError('corrupt', 'Cannot preserve a table cell')
 }
 
 /** Prefixes used in `xml` that `attrs` does not declare but Word's namespaces define. */

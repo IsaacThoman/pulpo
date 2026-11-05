@@ -1,5 +1,5 @@
 import { Mark, type Node as ProseMirrorNode } from '@tiptap/pm/model'
-import { COPY_RELATIONSHIPS, isPictureReference, relationshipReferences } from './relationships.js'
+import { COPY_RELATIONSHIPS, PRESERVED_IMAGE, PRESERVED_LINK, isPictureReference, relationshipReferences } from './relationships.js'
 import { DOCX_MAX_TABLE_DEPTH } from './format.js'
 import { LiveFormatError, type LiveAssetStore } from '../live-format.js'
 import { OoxmlPackage, relationshipsPathFor, resolveTarget, type Relationship } from '../ooxml/package.js'
@@ -112,7 +112,7 @@ function readXml(pkg: OoxmlPackage, path: string): JmlElement | undefined {
   if (!root) return undefined
   const value = elementToJml(root)
   // A file cannot forge the private relationship metadata used by our clipboard.
-  walkJml(value, (child) => { delete child[1][COPY_RELATIONSHIPS] })
+  walkJml(value, (child) => { delete child[1][COPY_RELATIONSHIPS]; delete child[1][PRESERVED_IMAGE]; delete child[1][PRESERVED_LINK] })
   return value
 }
 
@@ -123,6 +123,7 @@ function relationshipMap(pkg: OoxmlPackage, part: string): Map<string, Relations
 /** The asset hash of the image a drawing or VML object shows, if its part is in the package. */
 function imageHash(element: JmlElement, context: PartContext): string | null {
   for (const ref of relationshipReferences(element).filter(isPictureReference)) {
+    if (ref.src && /^[0-9a-f]{64}$/.test(ref.src)) return ref.src
     const rel = context.rels.get(ref.id)
     if (!rel || rel.type !== REL.image || rel.targetMode === 'External') continue
     const hash = context.hashes.get(resolveTarget(context.part, rel.target))
@@ -237,7 +238,7 @@ class InlineBuilder {
       if (wrapperMark === 'link') {
         const relId = jmlAttr(element, 'r:id')
         const rel = relId ? this.context.rels.get(relId) : undefined
-        attrs.href = rel?.target ?? null
+        attrs.href = jmlAttr(element, PRESERVED_LINK) ?? rel?.target ?? null
       }
       if (wrapperMark === 'wrap' || wrapperMark === 'sdt') attrs.level = wrappers.filter((mark) => mark.type.name === wrapperMark).length
       this.content(content, this.schema.mark(wrapperMark, attrs).addToSet(wrappers))
@@ -319,6 +320,11 @@ class InlineBuilder {
       }
     }
   }
+}
+
+/** Rehydrate preserved table continuations through the same lossless block importer. */
+export function preservedBlocks(children: JmlNode[]): ProseMirrorNode[] {
+  return new BlockBuilder({ pkg: new OoxmlPackage(new Map()), part: '', rels: new Map(), hashes: new Map(), blocks: 0 }).blocks(children, 0)
 }
 
 function attrsOrNull(attrs: Record<string, string>): string | null {
@@ -488,12 +494,6 @@ class BlockBuilder {
       }
       for (const col of [...open.keys()]) if (!seen.has(col)) open.delete(col)
     }
-    const keepsAll = rows.some((row) => row.cells.length > 0 && row.cells.every((cell) => merged.has(cell)))
-    if (keepsAll) {
-      merged.clear()
-      rowSpans.clear()
-      continuations.clear()
-    }
 
     // Columns each row has covered by rowspans that start above it.
     const covered = rows.map(() => 0)
@@ -535,7 +535,7 @@ class BlockBuilder {
       }
       // Rows short of the grid are padded so prosemirror-tables sees a rectangle.
       const missing = width - own - covered[index]!
-      if (missing > 0 || !cellNodes.length) cellNodes.push(phantom('pad', Math.max(1, missing)))
+      if (missing > 0 || (!cellNodes.length && !covered[index])) cellNodes.push(phantom('pad', Math.max(1, missing)))
       const trPr = jmlChild(row.tr, 'w:trPr')
       const tblPrEx = jmlChild(row.tr, 'w:tblPrEx')
       return this.schema.node('tableRow', {
