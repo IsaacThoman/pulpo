@@ -1226,6 +1226,10 @@ export class DocxEditor {
     if (this.readOnly || this.storyEditor) return null
     const result = addNote(this.view.state, this.context, kind, text)
     this.applyStoryEdits(result)
+    if (this.openStoryEditor(`${kind}:${result.id}`)) {
+      const view = this.activeView
+      view.dispatch(view.state.tr.setSelection(TextSelection.atEnd(view.state.doc)).scrollIntoView())
+    }
     return result.id
   }
 
@@ -1522,7 +1526,8 @@ export class DocxEditor {
     if (!paragraph) return false
     const { tr, paragraphs } = this.tocParagraphs(state)
     tr.insert(tr.mapping.map(paragraph.pos), paragraphs)
-    this.view.dispatch(tr)
+    this.view.dispatch(tr.scrollIntoView())
+    this.view.focus()
     return true
   }
 

@@ -426,6 +426,22 @@ it('refreshes an open story immediately when permissions become read-only', () =
   expect(view.editable).toBe(true)
 })
 
+it.each(['footnote', 'endnote'] as const)('focuses a newly inserted %s after its note marker and text', (kind) => {
+  editor.view.dispatch(editor.view.state.tr.insertText('Body', 1))
+  const id = editor.insertNote(kind, 'Initial')!
+  expect(editor.editingStory).toBe(`${kind}:${id}`)
+  const view = storyView()
+  expect(view.hasFocus()).toBe(true)
+  expect(view.state.selection.from).toBe(view.state.doc.content.size - 1)
+  view.dispatch(view.state.tr.insertText(' continued'))
+  expect(view.state.doc.firstChild!.firstChild!.type.name).toBe('inlineXml')
+  expect(view.state.doc.textContent).toBe(' Initial continued')
+  expect(editor.view.state.doc.textContent).toBe('Body')
+  expect(editor.closeStoryEditor()).toBe(true)
+  editor.view.dispatch(editor.view.state.tr.insertText(' resumed'))
+  expect(editor.view.state.doc.textContent).toBe('Body resumed')
+})
+
 it('disables column and cell structure commands in Suggesting mode', () => {
   editor.insertTable(2, 2)
   let cell = 0
@@ -440,6 +456,18 @@ it('disables column and cell structure commands in Suggesting mode', () => {
   for (const command of ['addColumnBefore', 'addColumnAfter', 'deleteColumn', 'mergeCells', 'splitCell'] as const) expect(editor[command]()).toBe(false)
   expect(editor.view.state.doc.eq(before)).toBe(true)
   expect(editor.revisions()).toEqual([])
+})
+
+it('focuses the paragraph following an inserted table of contents for typing', () => {
+  editor.view.dom.blur()
+  expect(editor.insertTableOfContents()).toBe(true)
+  expect(editor.view.hasFocus()).toBe(true)
+  const toc = editor.view.state.doc.firstChild!
+  expect(toc.lastChild!.attrs.charType).toBe('end')
+  expect(editor.view.state.selection.from).toBe(toc.nodeSize + 1)
+  editor.view.dispatch(editor.view.state.tr.insertText('After TOC'))
+  expect(editor.view.state.doc.child(1).textContent).toBe('After TOC')
+  expect(editor.view.state.doc.firstChild!.eq(toc)).toBe(true)
 })
 
 it('preserves the original final paragraph mark when regenerating a table of contents', () => {
