@@ -1013,3 +1013,24 @@ describe('eighth review regressions', () => {
     doc.destroy()
   }, 30_000)
 })
+
+describe('final review regressions', () => {
+  it.each(['row', 'col'] as const)('keeps a rule on a deleted single %s gone when its neighbors move concurrently', (kind) => {
+    const base = new Y.Doc()
+    base.clientID = 100
+    const workbook = WorkbookModel.initialize(base)
+    const sheet = workbook.addSheet('Sheet1')
+    const at = (index: number, other: number) => (kind === 'row' ? { top: index, bottom: index, left: other, right: other } : { top: other, bottom: other, left: index, right: index })
+    sheet.cf.set('cf', { ranges: [sheet.rangeIds(at(1, 1))], rules: [{ type: 'expression', priority: 1, formulas: ['TRUE'] }] })
+    for (const swap of [false, true]) {
+      for (const docs of replicas(base, (replica, client) => {
+        if ((client === 1) !== swap) deleteAxis(replica, kind, 1, 1)
+        else moveAxis(replica, kind, 0, 1, 3)
+      })) {
+        const after = new WorkbookModel(docs).sheets()[0]!
+        const format = after.cf.get('cf') as { ranges: Parameters<SheetModel['resolveRange']>[0][] }
+        expect(format.ranges.map((range) => after.resolveRange(range)).filter(Boolean)).toEqual([])
+      }
+    }
+  })
+})

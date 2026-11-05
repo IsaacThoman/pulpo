@@ -213,6 +213,9 @@ function resolveAxisRange(axis: SheetModel['rows'], first: string, second: strin
   const a = axis.indexOf(first)
   const b = axis.indexOf(second)
   if (a >= 0 && b >= 0) return [a, b]
+  // A range of one deleted row or column (`A5:B5` with row 5 gone) has nothing left, even if
+  // moves since then put its neighbors in the other order.
+  if (first === second) return undefined
   if (a >= 0) return [a, inward(axis, second, a)]
   if (b >= 0) return [inward(axis, first, b), b]
   // Both ends deleted: what survives is strictly between them. Written top to bottom, that runs

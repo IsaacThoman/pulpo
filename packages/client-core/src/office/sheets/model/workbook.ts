@@ -316,6 +316,10 @@ export class SheetModel {
    * to where it was (the range shrinks); undefined when nothing of the range is left.
    */
   resolveRange(ids: RangeIds): CellRange | undefined {
+    // A single row or column that was deleted leaves nothing between its edges, whatever its
+    // neighbors did since: moves can make the neighbors on either side look like a range.
+    const gone = (axis: Axis, first: string | undefined, last: string | undefined) => first !== undefined && first === last && axis.indexOf(first) < 0
+    if (gone(this.rows, ids.top, ids.bottom) || gone(this.cols, ids.left, ids.right)) return undefined
     const top = ids.top === undefined ? 0 : edgeIndex(this.rows, ids.top, 'start')
     const bottom = ids.bottom === undefined ? MAX_ROWS - 1 : edgeIndex(this.rows, ids.bottom, 'end')
     const left = ids.left === undefined ? 0 : edgeIndex(this.cols, ids.left, 'start')
