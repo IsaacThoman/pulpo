@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm'
-import { BODY_FRAGMENT, docxCodec, docxSchema, readDocxModel, writeFragment } from '@pulpo/client-core/office/docx'
+import { BODY_FRAGMENT, packJml, docxCodec, docxSchema, readDocxModel, writeFragment } from '@pulpo/client-core/office/docx'
 import { MemoryLiveAssetStore } from '@pulpo/client-core/office'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -157,6 +157,32 @@ describe.skipIf(!enabled)('agent edits to Word documents', () => {
     await userEdit(id, replace(0, 'Intro, by the user'))
     await reviewFileChange(files.userId, row!.id, 'accept')
     expect(await texts(id)).toEqual(['Intro, by the user', 'Body, rewritten by the agent', 'Outro', 'A closing line.'])
+  })
+
+  it('excludes tracked table deletions from base and proposed cat/grep views', async () => {
+    const table = (prefix: string) => {
+      const cell = (text: string, revision?: string) => schema.node('tableCell', { tcPr: revision ? packJml(['w:tcPr', {}, [revision, {}]]) : null }, [paragraph(text)])
+      const row = (text: string, revision?: string) => schema.node('tableRow', { trPr: revision ? packJml(['w:trPr', {}, [revision, {}]]) : null }, [cell(text), cell(`${prefix}-deleted-cell`, 'w:cellDel')])
+      return schema.node('table', null, [row(`${prefix}-deleted-row`, 'w:del'), row(`${prefix}-kept`), row(`${prefix}-inserted`, 'w:ins')])
+    }
+    const id = await wordDoc('Tracked.docx', projects, [['Initial']])
+    await userEdit(id, () => [table('base')])
+    await files.attach({ [projects]: 'suggest' })
+    const expected = (prefix: string) => `| ${prefix}-kept |\n| ${prefix}-inserted |\n`
+    expect((await files.ok('cat', { path: 'Projects/Tracked.docx' })).output).toBe(expected('base'))
+    expect((await files.ok('grep', { pattern: 'deleted' })).output).toBe('No matches')
+    const path = '/workspace/files/Projects/Tracked.docx'
+    const [pulled] = await pull('Projects/Tracked.docx', path)
+    files.put(path, await agentEdit(files.workspace.files.get(path)!, () => [table('proposal')]))
+    expect((await push([{ local: path, remote: 'Projects/Tracked.docx', base: { nodeId: id, version: pulled!.version } }]))[0]).toMatchObject({ status: 'suggested' })
+    expect((await files.ok('cat', { path: 'Projects/Tracked.docx' })).output).toBe(expected('proposal'))
+    expect((await files.ok('grep', { pattern: 'deleted' })).output).toBe('No matches')
+    expect((await files.ok('grep', { pattern: 'proposal-kept' })).output).toContain('proposal-kept')
+    // The stored base is unchanged while this chat reads its pending proposal.
+    expect(docxCodec.toText(await loadYDoc(id))).toBe(expected('base'))
+    const [change] = await db.select().from(fileChanges).where(eq(fileChanges.nodeId, id))
+    await reviewFileChange(files.userId, change!.id, 'reject')
+    expect((await files.ok('cat', { path: 'Projects/Tracked.docx' })).output).toBe(expected('base'))
   })
 
   it('keeps pictures an agent adds as document assets', async () => {

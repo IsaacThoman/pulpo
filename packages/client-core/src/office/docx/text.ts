@@ -150,12 +150,13 @@ export function blocksText(node: ProseMirrorNode, context: TextContext): string[
         break
       case 'table':
         child.forEach((row) => {
+          if (tablePartDeleted(row)) return
           const cells: string[] = []
           row.forEach((cell) => {
-            if (cell.attrs.phantom) return
+            if (cell.attrs.phantom || tablePartDeleted(cell)) return
             cells.push(blocksText(cell, context).join(' ').replace(/\|/g, '\\|').trim())
           })
-          lines.push(`| ${cells.join(' | ')} |`)
+          if (cells.length) lines.push(`| ${cells.join(' | ')} |`)
         })
         break
       case 'blockWrapper':
@@ -202,6 +203,7 @@ export function commentAnchors(doc: ProseMirrorNode): Map<string, string> {
   const open = new Map<string, string>()
   const done = new Map<string, string>()
   doc.descendants((node) => {
+    if (tablePartDeleted(node) || (node.type.name === 'tableCell' && node.attrs.phantom)) return false
     if (node.type.name === 'commentMark') {
       const id = String(node.attrs.id)
       if (node.attrs.edge === 'start') open.set(id, '')
