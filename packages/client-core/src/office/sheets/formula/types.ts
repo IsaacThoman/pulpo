@@ -69,6 +69,11 @@ export interface Matrix {
   cols: number
   /** `rows * cols` values, row-major. */
   data: Scalar[]
+  /** Logical bounds of a reference whose blank tail was not materialized. */
+  logicalRows?: number
+  logicalCols?: number
+  /** Operators can turn the omitted blanks into a different uniform value. */
+  omittedValue?: Scalar
 }
 
 /** One rectangular area of one sheet, zero-based and inclusive. */
@@ -130,6 +135,7 @@ export function matrixFromRows(rows: Scalar[][]): Matrix {
 }
 
 export function matrixGet(value: Matrix, row: number, col: number): Scalar {
+  if (row >= value.rows || col >= value.cols) return value.omittedValue ?? null
   return value.data[row * value.cols + col] ?? null
 }
 
@@ -184,4 +190,14 @@ export interface FunctionSpec {
    * Excel treats it as 0, "" or FALSE for most functions and as "use the default" for some.
    */
   fn: (ctx: FunctionContext, args: (Value | undefined)[]) => Value
+}
+
+/** Dimensions before the engine trimmed a reference to the used rectangle. */
+export function logicalSize(value: Matrix): { rows: number; cols: number } {
+  return { rows: value.logicalRows ?? value.rows, cols: value.logicalCols ?? value.cols }
+}
+
+export function omittedCells(value: Matrix): number {
+  const size = logicalSize(value)
+  return size.rows * size.cols - value.rows * value.cols
 }

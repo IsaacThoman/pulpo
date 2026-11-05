@@ -61,7 +61,7 @@ export function sheetsToText(doc: Y.Doc, valueOf?: (sheet: SheetModel, row: numb
             lines.push('')
             continue
           }
-          const last = Math.max(...(cols ?? [0]))
+          const last = (cols ?? []).reduce((max, col) => Math.max(max, col), 0)
           // Spilled results can reach past the stored cells of a row.
           const end = valueOf ? width - 1 : last
           const fields: string[] = []

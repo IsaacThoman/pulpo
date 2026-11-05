@@ -1,3 +1,4 @@
+import { columnIntervals, columnIntervalProps } from '../model/column-intervals.js'
 import { parseXml, type XmlDocument } from '../../ooxml/package.js'
 import { cellName, columnName, MAX_COLS, MAX_ROWS, rangeName, type CellRange } from '../address.js'
 import { toA1Form } from '../model/formula-ids.js'
@@ -102,10 +103,7 @@ export function cellStyleIndex(sheet: SheetModel, styles: Stylesheet, rowId: str
 }
 
 function columnTailXf(sheet: SheetModel, colId: string): number | undefined {
-  const tail = sheet.raw.get('colTail') as { from: number; props: Partial<AxisProps> } | undefined
-  if (!tail?.props.xf) return undefined
-  const index = sheet.cols.indexOf(colId)
-  return index >= tail.from ? tail.props.xf : undefined
+  return columnIntervalProps(sheet, sheet.cols.indexOf(colId)).xf
 }
 
 export function writeWorksheet(sheet: SheetModel, context: WorksheetWriteContext): string {
@@ -283,20 +281,25 @@ function writeColumns(sheet: SheetModel, styles: Stylesheet): { xml: string; max
   let maxLevel = 0
   const owners = new Set<string>()
   for (const key of sheet.colMeta.keys()) owners.add(key.slice(0, key.lastIndexOf('|')))
-  const tail = sheet.raw.get('colTail') as { from: number; to?: number; props: Partial<AxisProps> } | undefined
+  let xml = ''
+  for (const interval of columnIntervals(sheet)) {
+    maxLevel = Math.max(maxLevel, interval.props.level ?? 0)
+    const attrs = colAttrs(interval.props)
+    if (attrs) xml += `<col min="${interval.from + 1}" max="${interval.to + 1}"${attrs}/>`
+  }
   for (const id of owners) {
     const index = sheet.cols.indexOf(id)
     if (index < 0) continue
+    const inherited = columnIntervalProps(sheet, index)
     const props = axisProps(sheet.colMeta, id)
     const overrides = sheet.axisOverrides('col', id)
-    const xf = Object.keys(overrides).length ? styles.intern(props.xf ?? (tail && index >= tail.from ? tail.props.xf : undefined), overrides) : props.xf
-    const attrs = colAttrs({ ...(tail && index >= tail.from ? tail.props : {}), ...props, ...(xf !== undefined ? { xf } : {}) })
+    const xf = Object.keys(overrides).length ? styles.intern(props.xf ?? inherited.xf, overrides) : props.xf
+    const attrs = colAttrs({ ...inherited, ...props, ...(xf !== undefined ? { xf } : {}) })
     if (!attrs) continue
     maxLevel = Math.max(maxLevel, props.level ?? 0)
     columns.set(index, attrs)
   }
   const sorted = [...columns.entries()].sort((a, b) => a[0] - b[0])
-  let xml = ''
   for (let index = 0; index < sorted.length; ) {
     const [start, attrs] = sorted[index]!
     let end = start
@@ -307,15 +310,6 @@ function writeColumns(sheet: SheetModel, styles: Stylesheet): { xml: string; max
     }
     xml += `<col min="${start + 1}" max="${end + 1}"${attrs}/>`
     index++
-  }
-  if (tail) {
-    // The tail range starts after the last column written individually.
-    const last = sorted.length ? Math.max(sorted[sorted.length - 1]![0] + 1, tail.from) : tail.from
-    const attrs = colAttrs(tail.props)
-    // Where it ended in the file (LibreOffice stops at column 1025), unless columns were added since.
-    const max = tail.to !== undefined ? Math.min(MAX_COLS, Math.max(tail.to + 1, last + 1)) : MAX_COLS
-    if (attrs && last < max) xml += `<col min="${last + 1}" max="${max}"${attrs}/>`
-    maxLevel = Math.max(maxLevel, tail.props.level ?? 0)
   }
   return { xml: xml ? `<cols>${xml}</cols>` : '', maxLevel }
 }
@@ -491,7 +485,8 @@ function writeCell(sheet: SheetModel, row: number, col: number, data: CellData, 
     // Legacy array formulas always cover their range; a dynamic-array formula is written as an
     // array (with the dynamic-array cell metadata, `cm`) when it spills or was one in the file.
     const hadMetadata = data.keep?.c?.cm !== undefined
-    if (data.array || (data.dynamic && (spill || hadMetadata))) {
+    // Oversized arrays keep their original attributes without constructing a spill.
+    if (!data.oversizedArray && (data.array || (data.dynamic && (spill || hadMetadata)))) {
       const rows = spill?.length ?? data.array?.rows ?? 1
       const cols = spill?.[0]?.length ?? data.array?.cols ?? 1
       refAttr = ` t="array" ref="${rangeName({ top: row, left: col, bottom: Math.min(MAX_ROWS - 1, row + rows - 1), right: Math.min(MAX_COLS - 1, col + cols - 1) })}"`
@@ -682,7 +677,8 @@ export function writeTablePart(sheet: SheetModel, table: SheetTable, id: number,
     for (const node of existing) columns.removeChild(node)
     const names = table.columns.slice(0, width).map((column, index) => ({ ...column, name: headerNames?.[index] || column.name }))
     while (names.length < width) names.push({ name: headerNames?.[names.length] || `Column${names.length + 1}` })
-    let nextId = Math.max(0, ...existing.map((node) => Number(node.getAttribute('id')) || 0)) + 1
+    let nextId = 1
+    for (const node of existing) nextId = Math.max(nextId, (Number(node.getAttribute('id')) || 0) + 1)
     for (const column of names) {
       const element = column.xml ? (document.importNode(parseXml(column.xml).documentElement!, true) as XmlElement) : document.createElementNS(SHEET_NS, 'tableColumn')
       if (!element.getAttribute('id')) element.setAttribute('id', String(nextId++))

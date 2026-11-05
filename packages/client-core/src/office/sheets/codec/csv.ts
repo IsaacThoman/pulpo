@@ -70,7 +70,7 @@ export function encodeText(text: string, dialect: Pick<CsvDialect, 'encoding' | 
 
 interface ParsedCsv {
   /** Each field's value, whether it was quoted, and its exact text in the file. */
-  rows: { fields: string[]; quoted: boolean[]; sources: string[] }[]
+  rows: { fields: string[]; quoted: boolean[]; sources: string[]; ending: string }[]
   lineEnding: CsvDialect['lineEnding']
   trailingNewline: boolean
 }
@@ -85,6 +85,7 @@ export function parseCsv(text: string, delimiter: string, quote = '"'): ParsedCs
   let isQuoted = false
   let fieldStart = 0
   let lineEnding: CsvDialect['lineEnding'] | undefined
+  const endings = new Map<string, number>()
   let index = 0
   let cells = 0
   const endField = () => {
@@ -96,9 +97,9 @@ export function parseCsv(text: string, delimiter: string, quote = '"'): ParsedCs
     isQuoted = false
     if (++cells > CSV_LIMITS.maxCells) throw new LiveFormatError('too_large', 'This file has too many cells to edit')
   }
-  const endRow = () => {
+  const endRow = (ending = '') => {
     endField()
-    rows.push({ fields, quoted, sources })
+    rows.push({ fields, quoted, sources, ending })
     fields = []
     quoted = []
     sources = []
@@ -133,8 +134,8 @@ export function parseCsv(text: string, delimiter: string, quote = '"'): ParsedCs
     }
     if (char === '\r' || char === '\n') {
       const ending = char === '\r' && text[index + 1] === '\n' ? '\r\n' : char
-      lineEnding ??= ending as CsvDialect['lineEnding']
-      endRow()
+      endings.set(ending, (endings.get(ending) ?? 0) + 1)
+      endRow(ending)
       index += ending.length
       fieldStart = index
       continue
@@ -144,6 +145,7 @@ export function parseCsv(text: string, delimiter: string, quote = '"'): ParsedCs
   }
   const trailingNewline = text.length > 0 && (text.endsWith('\n') || text.endsWith('\r'))
   if (!trailingNewline && (text.length > 0 || fields.length)) endRow()
+  for (const [ending, count] of endings) if (!lineEnding || count > endings.get(lineEnding)!) lineEnding = ending as CsvDialect['lineEnding']
   return { rows, lineEnding: lineEnding ?? '\r\n', trailingNewline }
 }
 
@@ -196,9 +198,8 @@ export function readCsv(doc: Y.Doc, bytes: Uint8Array, format: 'csv' | 'tsv'): v
     sheet.cols.ensure(width)
     parsed.rows.forEach((row, rowIndex) => {
       const rowId = sheet.rows.idAt(rowIndex)
-      // Rows shorter than the widest keep their field count, so ragged files come back ragged.
-      // Empty rows too, so trailing ones survive.
-      if (row.fields.length !== width || row.fields.every((field) => field === '')) sheet.rowMeta.set(`${rowId}|keep`, { fields: String(row.fields.length) })
+      // Every row keeps its width and separator, including trailing empty fields.
+      sheet.rowMeta.set(`${rowId}|keep`, { fields: String(row.fields.length), ending: row.ending })
       row.fields.forEach((field, colIndex) => {
         // A quoted empty field ("") keeps its quotes; an unquoted one is just an empty cell.
         if (field === '' && !row.quoted[colIndex]) return
@@ -246,11 +247,10 @@ export function writeCsv(doc: Y.Doc, format: 'csv' | 'tsv', values?: ValueSource
   }
   // The extension decides between tabs and the delimiter the file was read with.
   if (format === 'tsv') dialect.delimiter = '\t'
-  else if (dialect.delimiter === '\t') dialect.delimiter = ','
+  else if (model.metaValue('format') !== format && dialect.delimiter === '\t') dialect.delimiter = ','
   const sheet = model.sheets().find((entry) => entry.state === 'visible') ?? model.sheets()[0]
   const lines = sheet ? sheetLines(sheet, dialect, values) : []
-  let text = lines.join(dialect.lineEnding)
-  if (dialect.trailingNewline && lines.length) text += dialect.lineEnding
+  const text = lines.join('')
   return encodeText(text, dialect)
 }
 
@@ -265,7 +265,7 @@ function sheetLines(sheet: SheetModel, dialect: CsvDialect, values?: ValueSource
   const width = used ? used.right + 1 : 0
   const lines: string[] = []
   for (let row = 0; row <= lastRow; row++) {
-    const keep = sheet.rowProp(row, 'keep') as { fields?: string } | undefined
+    const keep = sheet.rowProp(row, 'keep') as { fields?: string; ending?: string } | undefined
     const declared = keep?.fields !== undefined ? Number(keep.fields) : width
     const fields: string[] = []
     let last = -1
@@ -283,7 +283,8 @@ function sheetLines(sheet: SheetModel, dialect: CsvDialect, values?: ValueSource
       const value = data.f !== undefined ? (values?.(sheet, row, col, data) ?? (data.t === 'e' ? { e: String(data.v) } : (data.v ?? null))) : data.t === 'e' ? { e: String(data.v) } : (data.v ?? null)
       fields.push(quoteField(formatField(value), dialect))
     }
-    lines.push(fields.slice(0, Math.max(declared, last + 1)).join(dialect.delimiter))
+    const ending = row < lastRow ? (keep?.ending || dialect.lineEnding) : dialect.trailingNewline ? (keep?.ending || dialect.lineEnding) : ''
+    lines.push(fields.slice(0, Math.max(declared, last + 1)).join(dialect.delimiter) + ending)
   }
   return lines
 }

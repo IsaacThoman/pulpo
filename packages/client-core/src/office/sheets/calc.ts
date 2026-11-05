@@ -1,4 +1,5 @@
 import * as Y from 'yjs'
+import { MAX_EXPANDED_CELLS } from './limits.js'
 import { FormulaEngine, type CellInput } from './formula/engine.js'
 import { functionRegistry } from './formula/functions/index.js'
 import { TEXT_FORMAT_FUNCTIONS } from './formula/functions/text-format.js'
@@ -35,15 +36,16 @@ export function engineInput(sheet: SheetModel, data: CellData | undefined, useCa
     if (data.runs?.length) return { value: data.runs.map((run) => run.text).join('') }
     return { value: toScalar(data.v, data.t === 'e') }
   }
-  const cached = !useCache
+  const cached = !useCache && !data.oversizedArray
     ? undefined
-    : data.spillCache
+    : data.spillCache && data.spillCache.length * (data.spillCache[0]?.length ?? 0) <= MAX_EXPANDED_CELLS
     ? matrix(data.spillCache.length, data.spillCache[0]?.length ?? 0, data.spillCache.flat().map((value) => toScalar(value)))
     : data.v === undefined
       ? undefined
       : toScalar(data.v, data.t === 'e')
   return {
     formula: toA1Form(data.f, sheet),
+    ...(data.oversizedArray ? { unsupported: true } : {}),
     ...(data.array ? { array: data.array } : {}),
     ...(cached !== undefined ? { cached } : {}),
     // Formulas read from a file without the dynamic-array flag keep pre-365 semantics (implicit

@@ -1,5 +1,5 @@
 import { parseXml } from '../../ooxml/package.js'
-import { parseCellName } from '../address.js'
+import { MAX_COLS, MAX_ROWS, parseCellName } from '../address.js'
 import type { Note } from '../model/schema.js'
 import type { SheetModel } from '../model/workbook.js'
 import { parseFragment } from './light-xml.js'
@@ -61,7 +61,7 @@ function readVml(sheet: SheetModel, path: string, context: ReadContext): void {
     if (data?.getAttribute('ObjectType') !== 'Note') continue
     const row = Number(children(data, 'Row')[0]?.textContent)
     const col = Number(children(data, 'Column')[0]?.textContent)
-    if (!Number.isInteger(row) || !Number.isInteger(col)) continue
+    if (!Number.isInteger(row) || !Number.isInteger(col) || row < 0 || col < 0 || row >= MAX_ROWS || col >= MAX_COLS) continue
     const key = sheet.keyAt(row, col)
     const note = sheet.notes.get(key) as Note | undefined
     if (note) {

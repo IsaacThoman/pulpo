@@ -1,4 +1,6 @@
 import type * as Y from 'yjs'
+import { parseXml } from '../../ooxml/package.js'
+import { attributes, children, type XmlElement } from './xml.js'
 import { transactChanges } from '../../assets.js'
 import { matchSequences } from '../diff/sequence.js'
 import { toA1Form, toIdForm } from '../model/formula-ids.js'
@@ -333,15 +335,17 @@ function syncAxisMeta(own: SheetModel, other: SheetModel, kind: AxisKind, styles
   const ownAxis = kind === 'row' ? own.rows : own.cols
   const otherAxis = kind === 'row' ? other.rows : other.cols
   const wanted = new Map<string, unknown>()
+  let last = -1
   for (const [key, value] of otherMeta) {
     const bar = key.lastIndexOf('|')
     const index = otherAxis.indexOf(key.slice(0, bar))
     if (index < 0) continue
     const prop = key.slice(bar + 1)
+    last = Math.max(last, index)
     wanted.set(`${ownAxis.idAt(index)}|${prop}`, prop === 'xf' ? styles.xf(value as number) : value)
   }
   for (const key of [...ownMeta.keys()]) if (!wanted.has(key)) ownMeta.delete(key)
-  if (wanted.size) ownAxis.ensure(Math.max(...[...wanted.keys()].map((key) => ownAxis.indexOf(key.slice(0, key.lastIndexOf('|'))))) + 1)
+  if (last >= 0) ownAxis.ensure(last + 1)
   for (const [key, value] of wanted) setIfDifferent(ownMeta, key, value)
 }
 
@@ -424,6 +428,28 @@ function positioned(sheet: SheetModel, value: unknown, dxf: (index: number | und
   })
 }
 
+/** Compares drawing content by expanded XML names, independent of serializer prefixes. */
+function drawingForm(sheet: SheetModel, drawing: DrawingObject): string {
+  const document = parseXml(`<root xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">${drawing.xml}</root>`)
+  const normalize = (element: XmlElement): unknown => {
+    const attrs: [string, string][] = []
+    for (const name of Object.keys(attributes(element))) {
+      const attribute = element.getAttributeNode(name)!
+      if (name === 'xmlns' || name.startsWith('xmlns:') || element.localName === 'cNvPr' && name === 'id') continue
+      const value = attribute.namespaceURI === 'http://schemas.openxmlformats.org/officeDocument/2006/relationships' ? drawing.links?.[attribute.value] ?? attribute.value : attribute.value
+      attrs.push([`${attribute.namespaceURI ?? ''}:${attribute.localName}`, value])
+    }
+    attrs.sort(([a], [b]) => a.localeCompare(b))
+    const content: unknown[] = []
+    for (let node = element.firstChild; node; node = node.nextSibling) {
+      if (node.nodeType === 1) content.push(normalize(node as XmlElement))
+      else if (node.nodeType === 3 || node.nodeType === 4) content.push(node.nodeValue)
+    }
+    return [element.namespaceURI, element.localName, attrs, content]
+  }
+  return positioned(sheet, { ...drawing, xml: undefined, links: drawing.links ? Object.values(drawing.links).sort() : undefined }) + JSON.stringify(children(document.documentElement).map(normalize))
+}
+
 function syncCollections(own: SheetModel, other: SheetModel, styles: StyleMap): void {
   const ownForm = (value: unknown) => positioned(own, value)
   const otherForm = (value: unknown) => positioned(other, value, styles.dxf)
@@ -462,7 +488,7 @@ function syncCollections(own: SheetModel, other: SheetModel, styles: StyleMap): 
     const range = translateRange(own, other, value.range)
     return range && { ...value, range }
   })
-  syncCollection<DrawingObject>(own.drawings, other.drawings, ownForm, otherForm, (value) => {
+  syncCollection<DrawingObject>(own.drawings, other.drawings, (value) => drawingForm(own, value), (value) => drawingForm(other, value), (value) => {
     const from = translatePoint(own, other, value.from)
     const to = translatePoint(own, other, value.to)
     return { ...value, ...(from ? { from } : {}), ...(to ? { to } : {}) }

@@ -4,7 +4,7 @@
  */
 
 import { parseNumberText } from '../numfmt/parse.js'
-import { Errors, FormulaError, isError, matrix, type Matrix, type Scalar } from './types.js'
+import { Errors, FormulaError, isError, logicalSize, matrix, matrixGet, type Matrix, type Scalar } from './types.js'
 
 /** Longest text a cell can hold. */
 export const MAX_TEXT_LENGTH = 32_767
@@ -220,13 +220,23 @@ export function elementwise(a: Scalar | Matrix, b: Scalar | Matrix, fn: (x: Scal
       data[r * cols + c] = x === undefined || y === undefined ? Errors.NA : fn(x, y)
     }
   }
-  return matrix(rows, cols, data)
+  const result = matrix(rows, cols, data)
+  const sizeA = isMatrixValue(a) ? logicalSize(a) : { rows: 1, cols: 1 }
+  const sizeB = isMatrixValue(b) ? logicalSize(b) : { rows: 1, cols: 1 }
+  const logicalRows = Math.max(sizeA.rows, sizeB.rows)
+  const logicalCols = Math.max(sizeA.cols, sizeB.cols)
+  if (logicalRows !== rows || logicalCols !== cols) {
+    result.logicalRows = logicalRows
+    result.logicalCols = logicalCols
+    result.omittedValue = fn(isMatrixValue(a) ? a.omittedValue ?? null : a, isMatrixValue(b) ? b.omittedValue ?? null : b)
+  }
+  return result
 }
 
 /** Maps a scalar function over an operand. */
 export function mapValue(a: Scalar | Matrix, fn: (x: Scalar) => Scalar): Scalar | Matrix {
   if (!isMatrixValue(a)) return fn(a)
-  return matrix(a.rows, a.cols, a.data.map(fn))
+  return { ...a, data: a.data.map(fn), ...(a.logicalRows !== undefined || a.logicalCols !== undefined ? { omittedValue: fn(a.omittedValue ?? null) } : {}) }
 }
 
 function isMatrixValue(value: Scalar | Matrix): value is Matrix {
@@ -236,8 +246,9 @@ function isMatrixValue(value: Scalar | Matrix): value is Matrix {
 /** The element of a broadcast operand at (row, col); undefined past the edge of a smaller array. */
 export function broadcastAt(value: Scalar | Matrix, row: number, col: number): Scalar | undefined {
   if (!isMatrixValue(value)) return value
-  const r = value.rows === 1 ? 0 : row
-  const c = value.cols === 1 ? 0 : col
-  if (r >= value.rows || c >= value.cols) return undefined
-  return value.data[r * value.cols + c] ?? null
+  const size = logicalSize(value)
+  const r = size.rows === 1 ? 0 : row
+  const c = size.cols === 1 ? 0 : col
+  if (r >= size.rows || c >= size.cols) return undefined
+  return matrixGet(value, r, c)
 }

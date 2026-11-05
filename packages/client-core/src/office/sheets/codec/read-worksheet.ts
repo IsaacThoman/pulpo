@@ -1,3 +1,5 @@
+import { columnIntervals, columnIntervalProps } from '../model/column-intervals.js'
+import { MAX_EXPANDED_CELLS } from '../limits.js'
 import { LiveFormatError } from '../../live-format.js'
 import { parseXml, type OoxmlPackage, type XmlDocument } from '../../ooxml/package.js'
 import { MAX_COLS, MAX_ROWS, parseCellName, parseRangeList, parseRangeName, type CellRange } from '../address.js'
@@ -164,7 +166,7 @@ function readColumns(sheet: SheetModel, cols: XmlElement | undefined): void {
   for (const col of children(cols, 'col')) {
     const min = (numberAttr(col, 'min') ?? 1) - 1
     const max = Math.min((numberAttr(col, 'max') ?? min + 1) - 1, MAX_COLS - 1)
-    if (min < 0 || max < min) continue
+    if (!Number.isInteger(min) || !Number.isInteger(max) || min < 0 || min >= MAX_COLS || max < min) continue
     const props: Partial<AxisProps> = {}
     const width = numberAttr(col, 'width')
     if (width !== undefined) props.size = width
@@ -179,7 +181,7 @@ function readColumns(sheet: SheetModel, cols: XmlElement | undefined): void {
     if (keep) props.keep = keep
     if (max - min >= COLUMN_TAIL) {
       // Typically `<col min="5" max="16384" style="3"/>`: the format of every remaining column.
-      sheet.raw.set('colTail', { from: min, ...(max < MAX_COLS - 1 ? { to: max } : {}), props })
+      sheet.raw.set('colTail', [...columnIntervals(sheet), { from: min, to: max, props }])
       continue
     }
     sheet.cols.ensure(max + 1)
@@ -387,6 +389,10 @@ function readCell(
         if (attrs.cm !== undefined) data.dynamic = true
         else if (range) data.array = { rows: range.bottom - range.top + 1, cols: range.right - range.left + 1 }
         else data.array = { rows: 1, cols: 1 }
+        if (range && (range.bottom - range.top + 1) * (range.right - range.left + 1) > MAX_EXPANDED_CELLS) {
+          data.oversizedArray = true
+          data.keep = { ...data.keep, f: { ...data.keep?.f, t: 'array', ref: formulaNode.attrs.ref! } }
+        }
         if (range && (range.bottom > range.top || range.right > range.left)) markArrayMembers(sheet, row, col, range, data, state)
       }
       sheet.ensure(row, col)
@@ -420,15 +426,14 @@ function readCell(
 function inheritsStyle(sheet: SheetModel, row: number, col: number): boolean {
   if (sheet.rowMeta.get(`${sheet.rows.idAt(row)}|xf`) !== undefined) return true
   if (sheet.colMeta.get(`${sheet.cols.idAt(col)}|xf`) !== undefined) return true
-  const tail = sheet.raw.get('colTail') as { from: number; props: Partial<AxisProps> } | undefined
-  return !!tail?.props.xf && col >= tail.from
+  return !!columnIntervalProps(sheet, col).xf
 }
 
 /** Array formula results live on the anchor (spillCache), not in member cells. */
 function markArrayMembers(sheet: SheetModel, row: number, col: number, range: CellRange, data: CellData, state: SheetDataState): void {
   const rows = range.bottom - range.top + 1
   const cols = range.right - range.left + 1
-  if (rows * cols > 1_000_000) return
+  if (rows * cols > MAX_EXPANDED_CELLS) return
   data.spillCache = Array.from({ length: rows }, () => Array.from({ length: cols }, () => null))
   data.spillCache[0]![0] = data.t === 'e' ? { e: String(data.v) } : (data.v ?? null)
   sheet.ensure(range.bottom, range.right)

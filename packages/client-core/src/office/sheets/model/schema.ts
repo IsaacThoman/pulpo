@@ -70,6 +70,8 @@ export interface CellData {
   f?: string
   /** Legacy (Ctrl+Shift+Enter) array formula covering this many rows and columns from this cell. */
   array?: { rows: number; cols: number }
+  /** An imported array range exceeds the expansion budget; keep its formula and cache opaque. */
+  oversizedArray?: true
   /** A dynamic-array formula (spills). */
   dynamic?: true
   /**

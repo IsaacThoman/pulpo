@@ -1,5 +1,6 @@
 /** Statistical functions: aggregates, ranks, regressions, and probability distributions. */
 
+import { omittedCells } from '../types.js'
 import { Errors, isError, matrix, type FunctionContext, type FunctionSpec, type Scalar, type Value } from '../types.js'
 import { bool, check, defNum, define, fail, int, num, optNum, scalarOf, toMatrix, type Args } from './coerce.js'
 import { parseCriteria } from './criteria.js'
@@ -547,7 +548,7 @@ function skew(values: number[], population: boolean): number {
 function ifCount(ctx: FunctionContext, args: Args): number {
   const range = criteriaRange(ctx, args[0])
   const predicate = parseCriteria(scalarOf(args[1]), ctx)
-  let count = 0
+  let count = predicate(range.omittedValue ?? null) ? omittedCells(range) : 0
   for (const v of range.data) if (predicate(v)) count++
   return count
 }
@@ -600,7 +601,9 @@ export const STATISTICAL_FUNCTIONS: FunctionSpec[] = [
           count++
           continue
         }
-        for (const v of toMatrix(ctx, arg).data) if (v !== null) count++
+        const range = toMatrix(ctx, arg)
+        for (const v of range.data) if (v !== null) count++
+        if (range.omittedValue !== undefined && range.omittedValue !== null) count += omittedCells(range)
       }
       return count
     },
@@ -610,7 +613,11 @@ export const STATISTICAL_FUNCTIONS: FunctionSpec[] = [
     min: 1,
     max: 1,
     args: ['any'],
-    fn: (ctx, args) => toMatrix(ctx, args[0]).data.filter((v) => v === null || v === '').length,
+    fn: (ctx, args) => {
+      const range = toMatrix(ctx, args[0])
+      const tail = range.omittedValue ?? null
+      return range.data.filter((v) => v === null || v === '').length + (tail === null || tail === '' ? omittedCells(range) : 0)
+    },
   }),
   define({ name: 'COUNTIF', min: 2, max: 2, args: ['any', 'scalar'], fn: ifCount }),
   define({ name: 'COUNTIFS', min: 2, max: 255, args: ['any'], fn: (ctx, args) => ifsAggregate(ctx, undefined, args, (_, count) => count) }),
