@@ -8,7 +8,7 @@ import { jmlAttr, jmlChild, jmlElements, jmlNumber, jmlOn, packJml, unpackJml, t
 import { effectiveNumPr } from '../numbering.js'
 import { PARAGRAPH_PROPERTY_ATTRS, RUN_PROPERTY_MARKS, inlineMarks, packMarks, textAreaWidth, type ParagraphPropertyAttr } from '../schema.js'
 import { mergeProperties, styleDisplayName, type PropertyMap } from '../styles.js'
-import { inlineText } from '../text.js'
+import { inlineText, tablePartDeleted } from '../text.js'
 import type { DocxViewContext } from './context.js'
 import { changeMarks, clearMark, propertyMark, selectionMarks, setMark } from './marks.js'
 
@@ -592,42 +592,73 @@ export interface FindOptions {
   wholeWord?: boolean
 }
 
-export function findMatches(doc: ProseMirrorNode, query: string, options: FindOptions = {}): { from: number; to: number }[] {
+export interface FindMatch { from: number; to: number }
+
+function textblockMatches(node: ProseMirrorNode, pos: number, needle: string, options: FindOptions, limit = 10_000): FindMatch[] {
+  // Preserve ProseMirror's UTF-16 footprint without a per-character offset array.
+  const pieces: string[] = []
+  node.forEach((child) => {
+    const deleted = child.marks.some((mark) => mark.type.name === 'del' || mark.type.name === 'moveFrom')
+    pieces.push(child.isText && !deleted ? child.text! : '\u0000'.repeat(child.nodeSize))
+  })
+  const text = pieces.join('')
+  const haystack = options.matchCase ? text : text.toLowerCase()
+  const originalOffset = haystack.length === text.length ? null : originalCaseOffsets(text)
+  const results: FindMatch[] = []
+  let index = haystack.indexOf(needle)
+  while (index >= 0 && results.length < limit) {
+    const end = index + needle.length
+    const from = originalOffset ? originalOffset(index, false) : index
+    const to = originalOffset ? originalOffset(end - 1, true) : end
+    const boundary = !options.wholeWord || (!/[\p{L}\p{N}_]$/u.test(text.slice(Math.max(0, from - 2), from)) && !/^[\p{L}\p{N}_]/u.test(text.slice(to, to + 2)))
+    if (boundary) results.push({ from: pos + 1 + from, to: pos + 1 + to })
+    index = haystack.indexOf(needle, index + Math.max(1, needle.length))
+  }
+  return results
+}
+
+export function findMatches(doc: ProseMirrorNode, query: string, options: FindOptions = {}): FindMatch[] {
   if (!query) return []
-  const results: { from: number; to: number }[] = []
+  const results: FindMatch[] = []
   const needle = options.matchCase ? query : query.toLowerCase()
   doc.descendants((node, pos) => {
+    if (tablePartDeleted(node) || (node.type.name === 'tableCell' && node.attrs.phantom)) return false
     if (!node.isTextblock) return true
-    if (results.length >= 10_000) return false
-    // Preserve the paragraph's UTF-16 footprint: text is contiguous in ProseMirror,
-    // and atoms/deletions occupy masked code units rather than a per-character offset array.
-    const pieces: string[] = []
-    node.forEach((child) => {
-      const deleted = child.marks.some((mark) => mark.type.name === 'del')
-      pieces.push(child.isText && !deleted ? child.text! : '\u0000'.repeat(child.nodeSize))
-    })
-    const text = pieces.join('')
-    const haystack = options.matchCase ? text : text.toLowerCase()
-    const originalOffset = haystack.length === text.length ? null : originalCaseOffsets(text)
-    let index = haystack.indexOf(needle)
-    while (index >= 0 && results.length < 10_000) {
-      const end = index + needle.length
-      const from = originalOffset ? originalOffset(index, false) : index
-      const to = originalOffset ? originalOffset(end - 1, true) : end
-      // Check source boundaries after rounding matches inside expanded characters outward.
-      const boundary = !options.wholeWord || (!/[\p{L}\p{N}_]$/u.test(text.slice(Math.max(0, from - 2), from)) && !/^[\p{L}\p{N}_]/u.test(text.slice(to, to + 2)))
-      if (boundary) results.push({ from: pos + 1 + from, to: pos + 1 + to })
-      index = haystack.indexOf(needle, index + Math.max(1, needle.length))
-    }
+    if (results.length < 10_000) results.push(...textblockMatches(node, pos, needle, options, 10_000 - results.length))
     return false
   })
   return results
 }
 
+/** Validate source ranges with the same Unicode and boundary rules used to find them. */
+export function validFindMatches(doc: ProseMirrorNode, matches: FindMatch[], query: string, options: FindOptions = {}): FindMatch[] {
+  if (!query) return []
+  const needle = options.matchCase ? query : query.toLowerCase()
+  const paragraphs = new Map<number, Set<string>>()
+  return matches.filter(({ from, to }) => {
+    if (from < 0 || to <= from || to > doc.content.size) return false
+    const $from = doc.resolve(from)
+    const $to = doc.resolve(to)
+    if (!$from.parent.isTextblock || !$from.sameParent($to)) return false
+    for (let depth = 1; depth < $from.depth; depth++) {
+      const node = $from.node(depth)
+      if (tablePartDeleted(node) || (node.type.name === 'tableCell' && node.attrs.phantom)) return false
+    }
+    const pos = $from.start() - 1
+    let ranges = paragraphs.get(pos)
+    if (!ranges) {
+      ranges = new Set(textblockMatches($from.parent, pos, needle, options).map(({ from, to }) => `${from}:${to}`))
+      paragraphs.set(pos, ranges)
+    }
+    return ranges.has(`${from}:${to}`)
+  })
+}
+
 /** Replaces matches (all, or the one at `only`) keeping the formatting of each match's start. */
-export function replaceMatches(state: EditorState, matches: { from: number; to: number }[], replacement: string): Transaction {
+export function replaceMatches(state: EditorState, matches: { from: number; to: number }[], replacement: string, query?: string, options: FindOptions = {}): Transaction {
   const tr = state.tr
-  for (const match of [...matches].reverse()) {
+  const valid = query === undefined ? matches : validFindMatches(state.doc, matches, query, options)
+  for (const match of [...valid].reverse()) {
     const marks = [...inlineMarks(state.doc.nodeAt(match.from) ?? state.schema.text(' '))]
     if (replacement) tr.replaceWith(match.from, match.to, state.schema.text(replacement, marks))
     else tr.delete(match.from, match.to)
@@ -642,6 +673,7 @@ export function wordCount(doc: ProseMirrorNode): { words: number; characters: nu
   let withSpaces = 0
   let paragraphs = 0
   doc.descendants((node) => {
+    if (tablePartDeleted(node) || (node.type.name === 'tableCell' && node.attrs.phantom)) return false
     if (node.type.name !== 'paragraph') return true
     const text = inlineText(node)
     if (text.trim()) paragraphs++

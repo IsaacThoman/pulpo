@@ -334,6 +334,15 @@ describe('editing commands', async () => {
     expect(performance.now() - start).toBeLessThan(2_000)
   })
 
+  it('validates supplied ranges again immediately before replacement', () => {
+    const doc = schema.node('doc', null, [p(run('cat'))])
+    const initial = EditorState.create({ schema, doc })
+    const matches = findMatches(doc, 'cat')
+    const changed = initial.apply(initial.tr.insertText('o', 2))
+    const mapped = matches.map(({ from, to }) => ({ from, to: to + 1 }))
+    expect(changed.apply(replaceMatches(changed, mapped, 'dog', 'cat')).doc.textContent).toBe('coat')
+  })
+
   it('keeps original offsets across marked runs, atoms, and deleted text', () => {
     const doc = schema.node('doc', null, [p(run('İ '), run('foo', 'b'), schema.node('tab'), run('İ ', 'del'), run('foo'))])
     const state = EditorState.create({ schema, doc })

@@ -42,6 +42,7 @@ import {
   effectiveParagraphProperties,
   effectiveRunProperties,
   findMatches,
+  validFindMatches,
   freshId,
   insertInline,
   insertPageBreak,
@@ -78,6 +79,7 @@ import {
   type CopiedFormat,
   type EditResult,
   type FindOptions,
+  type FindMatch,
   type ListKind,
   type MapEdit,
   type OutlineEntry,
@@ -232,7 +234,7 @@ type Listener<T> = (value: T) => void
 
 const decorationsKey = new PluginKey<{ set: DecorationSet; version: number }>('docx-decorations')
 const paginationKey = new PluginKey<DecorationSet>('docx-pagination')
-interface FindState { matches: { from: number; to: number }[]; current: number }
+interface FindState { query: string; options: FindOptions; matches: FindMatch[]; current: number }
 const findKey = new PluginKey<FindState>('docx-find')
 const pendingPasteKey = new PluginKey<Map<object, SelectionBookmark>>('docx-pending-paste')
 
@@ -438,12 +440,21 @@ export class DocxEditor {
       new Plugin<FindState>({
         key: findKey,
         state: {
-          init: (): FindState => ({ matches: [], current: -1 }),
+          init: (): FindState => ({ query: '', options: {}, matches: [], current: -1 }),
           apply: (tr, value) => {
-            const meta = tr.getMeta(findKey) as { matches: { from: number; to: number }[]; current: number } | undefined
+            const meta = tr.getMeta(findKey) as FindState | undefined
             if (meta) return meta
-            if (!tr.docChanged || !value.matches.length) return value
-            return { matches: value.matches.map((match) => ({ from: tr.mapping.map(match.from), to: tr.mapping.map(match.to) })).filter((match) => match.from < match.to), current: value.current }
+            if (!tr.docChanged || !value.query) return value
+            const mapped = value.matches.map((match) => ({ from: tr.mapping.map(match.from, 1), to: tr.mapping.map(match.to, -1) }))
+            const active = mapped[value.current]
+            // Remote edits can introduce matches anywhere, including when the old result set
+            // was empty. Local edits retain only mapped ranges that still satisfy the query.
+            const matches = tr.getMeta(ySyncPluginKey) !== undefined
+              ? findMatches(tr.doc, value.query, value.options)
+              : validFindMatches(tr.doc, mapped, value.query, value.options)
+            let current = active ? matches.findIndex((match) => match.from === active.from && match.to === active.to) : -1
+            if (current < 0 && matches.length) current = Math.max(0, matches.findIndex((match) => match.from >= (active?.from ?? tr.selection.from)))
+            return { ...value, matches, current }
           },
         },
         props: {
@@ -1401,7 +1412,7 @@ export class DocxEditor {
     const matches = findMatches(this.activeView.state.doc, query, options)
     const head = this.activeView.state.selection.from
     const current = matches.length ? Math.max(0, matches.findIndex((match) => match.from >= head)) : -1
-    this.activeView.dispatch(this.activeView.state.tr.setMeta(findKey, { matches, current }))
+    this.activeView.dispatch(this.activeView.state.tr.setMeta(findKey, { query, options: { ...options }, matches, current }))
     if (current >= 0) this.revealMatch(current)
     return matches.length
   }
@@ -1431,8 +1442,12 @@ export class DocxEditor {
     const find = findKey.getState(this.activeView.state)
     const match = find?.matches[find.current]
     if (!match) return false
+    if (!validFindMatches(this.activeView.state.doc, [match], query, options).length) {
+      this.find(query, options)
+      return false
+    }
     this.separateUndo(this.activeView)
-    this.activeView.dispatch(replaceMatches(this.activeView.state, [match], replacement))
+    this.activeView.dispatch(replaceMatches(this.activeView.state, [match], replacement, query, options))
     this.separateUndo(this.activeView)
     this.find(query, options)
     return true
@@ -1443,14 +1458,14 @@ export class DocxEditor {
     const matches = findMatches(this.activeView.state.doc, query, options)
     if (!matches.length) return 0
     this.separateUndo(this.activeView)
-    this.activeView.dispatch(replaceMatches(this.activeView.state, matches, replacement))
+    this.activeView.dispatch(replaceMatches(this.activeView.state, matches, replacement, query, options))
     this.separateUndo(this.activeView)
     this.clearFind()
     return matches.length
   }
 
   clearFind(): void {
-    this.activeView.dispatch(this.activeView.state.tr.setMeta(findKey, { matches: [], current: -1 }))
+    this.activeView.dispatch(this.activeView.state.tr.setMeta(findKey, { query: '', options: {}, matches: [], current: -1 }))
   }
 
   wordCount() {

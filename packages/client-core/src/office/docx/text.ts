@@ -1,5 +1,5 @@
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
-import { jmlAttr, jmlText, unpackJml, walkJml, type JmlElement } from './jsonml.js'
+import { jmlAttr, jmlChild, jmlText, unpackJml, walkJml, type JmlElement } from './jsonml.js'
 import { parseJson, type CommentMeta, type DocxModel } from './model.js'
 import { ListCounter, Numbering, effectiveNumPr } from './numbering.js'
 import { inlineMarks, symbolText } from './schema.js'
@@ -15,6 +15,16 @@ import { StyleSheet } from './styles.js'
 
 function jml(value: unknown): JmlElement | undefined {
   return typeof value === 'string' ? unpackJml<JmlElement>(value) : undefined
+}
+
+/** Current row/cell revisions control the accepted view; old property snapshots do not. */
+export function tablePartDeleted(node: ProseMirrorNode): boolean {
+  if (node.type.name === 'tableRow') return !!jmlChild(jml(node.attrs.trPr), 'w:del')
+  if (node.type.name === 'tableCell') {
+    const properties = jml(node.attrs.tcPr)
+    return !!(jmlChild(properties, 'w:cellDel') || jmlChild(properties, 'w:del'))
+  }
+  return false
 }
 
 export interface TextContext {

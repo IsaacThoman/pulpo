@@ -226,6 +226,86 @@ it('notifies find panels when a story search has no matches or is cleared', () =
   expect(update).toHaveBeenCalled()
 })
 
+describe('find matches after edits', () => {
+  it.each(['body', 'header:1'])('drops a changed match in %s before replacing', (storyId) => {
+    if (storyId !== 'body') editor.openStoryEditor(storyId)
+    const view = storyId === 'body' ? editor.view : storyView()
+    view.dispatch(view.state.tr.replaceWith(1, view.state.doc.content.size - 1, schema.text('cat')))
+    expect(editor.find('cat')).toBe(1)
+    view.dispatch(view.state.tr.insertText('o', 2))
+    expect(editor.findState()).toEqual({ index: -1, count: 0 })
+    expect(editor.replace('dog', 'cat')).toBe(false)
+    expect(view.state.doc.textContent).toBe('coat')
+  })
+
+  it('maps matches through a transaction with several steps and preserves the active result', () => {
+    editor.view.dispatch(editor.view.state.tr.insertText('cat cat cat', 1))
+    editor.view.dispatch(editor.view.state.tr.setSelection(TextSelection.create(editor.view.state.doc, 1)))
+    editor.find('cat')
+    editor.findStep(1)
+    const tr = editor.view.state.tr.insertText('o', 2).insertText('Prefix ', 1)
+    editor.view.dispatch(tr)
+    expect(editor.findState()).toEqual({ index: 0, count: 2 })
+    expect(editor.replace('dog', 'cat')).toBe(true)
+    expect(editor.view.state.doc.textContent).toBe('Prefix coat dog cat')
+  })
+
+  it.each([
+    ['cat cat', 'cat', { wholeWord: true }, 4, 's', 'cats cat'],
+    ['Cat cat', 'Cat', { matchCase: true }, 1, 's', 'sCat cat'],
+  ])('rechecks case and word boundaries for %s', (text, query, options, position, insertion, expected) => {
+    editor.view.dispatch(editor.view.state.tr.insertText(text, 1))
+    editor.view.dispatch(editor.view.state.tr.setSelection(TextSelection.create(editor.view.state.doc, 1)))
+    editor.find(query, options)
+    editor.view.dispatch(editor.view.state.tr.insertText(insertion, position))
+    expect(editor.view.state.doc.textContent).toBe(expected)
+    if ('wholeWord' in options && options.wholeWord) expect(editor.findState().count).toBe(1)
+    else {
+      expect(editor.replace('dog', 'cat', options)).toBe(false)
+      expect(editor.view.state.doc.textContent).toBe(expected)
+    }
+  })
+
+  it.each(['body', 'header:1'])('refreshes an active %s search, including zero results, after remote Yjs changes', (storyId) => {
+    if (storyId !== 'body') editor.openStoryEditor(storyId)
+    const view = storyId === 'body' ? editor.view : storyView()
+    const fragment = storyId === 'body' ? 'body' : storyFragmentName(storyId)
+    view.dispatch(view.state.tr.replaceWith(1, view.state.doc.content.size - 1, schema.text('cat')))
+    editor.find('cat')
+    const remote = new Y.Doc()
+    try {
+      Y.applyUpdate(remote, Y.encodeStateAsUpdate(doc))
+      const vector = Y.encodeStateVector(remote)
+      writeFragment(remote, remote.getXmlFragment(fragment), schema.node('doc', null, [schema.node('paragraph', null, schema.text('coat cat'))]))
+      Y.applyUpdate(doc, Y.encodeStateAsUpdate(remote, vector), 'remote-test')
+      expect(editor.findState().count).toBe(1)
+      expect(view.dom.querySelector('.docx-find-match')?.textContent).toBe('cat')
+      expect(editor.replace('dog', 'cat')).toBe(true)
+      expect(view.state.doc.textContent).toBe('coat dog')
+      editor.find('absent')
+      const later = Y.encodeStateVector(remote)
+      Y.applyUpdate(remote, Y.encodeStateAsUpdate(doc))
+      writeFragment(remote, remote.getXmlFragment(fragment), schema.node('doc', null, [schema.node('paragraph', null, schema.text('absent absent'))]))
+      Y.applyUpdate(doc, Y.encodeStateAsUpdate(remote, later), 'remote-test')
+      expect(editor.findState().count).toBe(2)
+      expect(editor.replaceAll('present', 'absent')).toBe(2)
+      expect(view.state.doc.textContent).toBe('present present')
+    } finally { remote.destroy() }
+  })
+
+  it('does not search again after clearing, and validates dotted-I ranges before replacement', () => {
+    editor.view.dispatch(editor.view.state.tr.insertText('İ cat', 1))
+    editor.view.dispatch(editor.view.state.tr.setSelection(TextSelection.create(editor.view.state.doc, 1)))
+    editor.find('i')
+    editor.view.dispatch(editor.view.state.tr.insertText('Prefix ', 1))
+    expect(editor.replace('X', 'i')).toBe(true)
+    expect(editor.view.state.doc.textContent).toBe('Prefix X cat')
+    editor.clearFind()
+    writeFragment(doc, doc.getXmlFragment('body'), schema.node('doc', null, [schema.node('paragraph', null, schema.text('i i'))]))
+    expect(editor.findState().count).toBe(0)
+  })
+})
+
 it('does not put story numbering changes in the body undo stack', () => {
   editor.openStoryEditor('header:1')
   editor.toggleList('decimal')
