@@ -6,7 +6,7 @@ import { liveAssetHash } from '@pulpo/client-core/office'
 import { textCodec } from '@pulpo/client-core/office/text'
 import { storageUsedBytes } from '../attachments/storage-quota.js'
 import { db, queryClient } from '../database/client.js'
-import { fileDocAssets, fileDocs, fileNodes, users } from '../database/schema.js'
+import { fileDocAssets, fileDocs, fileDocUpdates, fileNodes, users } from '../database/schema.js'
 
 const objects = vi.hoisted(() => new Map<string, Buffer>())
 const closed = vi.hoisted(() => vi.fn())
@@ -105,6 +105,46 @@ describe.skipIf(!enabled)('live documents in Files', () => {
     expect(compacted!.markdown).toBe('def main():\n    print("hi")\nmain()\n')
   })
 
+  it('refuses document creation when its initial state exceeds the allowance', async () => {
+    await db.update(users).set({ storageLimitBytes: 0 }).where(eq(users.id, userId))
+    for (const name of ['new.txt', 'new.md']) {
+      await expect(createDoc(userId, { parentId: null, name })).rejects.toMatchObject({ code: 'storage_quota_exceeded' })
+    }
+    expect(await db.select().from(fileNodes).where(eq(fileNodes.ownerUserId, userId))).toEqual([])
+  })
+
+  it('charges live edits before compaction and rejects growth beyond quota atomically', async () => {
+    const node = await createDoc(userId, { parentId: null, name: 'quota.txt' })
+    const initial = await storageUsedBytes(db, userId)
+    await db.update(users).set({ storageLimitBytes: initial + 2_000 }).where(eq(users.id, userId))
+    await clientEdit(node.id, (text) => text.insert(0, 'a'.repeat(1_000)))
+    const charged = await storageUsedBytes(db, userId)
+    expect(charged).toBeGreaterThan(initial + 900)
+    const updates = await db.select().from(fileDocUpdates).where(eq(fileDocUpdates.nodeId, node.id))
+    await expect(clientEdit(node.id, (text) => text.insert(text.length, 'b'.repeat(1_500))))
+      .rejects.toMatchObject({ code: 'storage_quota_exceeded' })
+    expect(await db.select().from(fileDocUpdates).where(eq(fileDocUpdates.nodeId, node.id))).toHaveLength(updates.length)
+    expect((await loadYDoc(node.id)).getText('text').toString()).toBe('a'.repeat(1_000))
+    await compactDoc(node.id)
+    expect(await storageUsedBytes(db, userId)).toBe(charged)
+    // Deleting content can free space even when the owner reduced the allowance.
+    await db.update(users).set({ storageLimitBytes: charged - 1 }).where(eq(users.id, userId))
+    await clientEdit(node.id, (text) => text.delete(0, text.length))
+    await compactDoc(node.id)
+    expect(await storageUsedBytes(db, userId)).toBeLessThan(initial + 100)
+  })
+
+  it('serializes competing live edits against the same storage allowance', async () => {
+    const first = await createDoc(userId, { parentId: null, name: 'first.txt' })
+    const second = await createDoc(userId, { parentId: null, name: 'second.txt' })
+    const initial = await storageUsedBytes(db, userId)
+    await db.update(users).set({ storageLimitBytes: initial + 1_500 }).where(eq(users.id, userId))
+    const results = await Promise.allSettled([first, second].map((node) => clientEdit(node.id, (text) => text.insert(0, 'x'.repeat(1_000)))))
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1)
+    expect(results.filter((result) => result.status === 'rejected')).toMatchObject([{ reason: { code: 'storage_quota_exceeded' } }])
+    expect(await storageUsedBytes(db, userId)).toBeLessThanOrEqual(initial + 1_500)
+  })
+
   it('refuses to convert binary, oversized, and unknown files', async () => {
     const binary = await uploaded('data.txt', Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 0, 1, 2]))
     await expect(convert(binary.id)).rejects.toMatchObject({ statusCode: 422, code: 'file_not_editable' })
@@ -168,6 +208,17 @@ describe.skipIf(!enabled)('live documents in Files', () => {
     expect(objects.get(copiedAsset!.objectKey)?.equals(image)).toBe(true)
     const store = new DocAssetStore(db, copy!.id)
     expect(Buffer.from(await store.get(ref.hash)).equals(image)).toBe(true)
+  })
+
+  it('copies compacted state rather than retaining deleted text from the update log', async () => {
+    const node = await createDoc(userId, { parentId: null, name: 'history.txt' })
+    await clientEdit(node.id, (text) => text.insert(0, 'temporary'.repeat(1_000)))
+    await clientEdit(node.id, (text) => text.delete(0, text.length))
+    const [copy] = await copyFileNodes(userId, [node.id], null)
+    const [stored] = await db.select().from(fileDocs).where(eq(fileDocs.nodeId, copy!.id))
+    expect(stored!.stateBytes).toBeLessThan(500)
+    expect(copy!.sizeBytes).toBe(stored!.stateBytes)
+    expect((await loadYDoc(copy!.id)).getText('text').toString()).toBe('')
   })
 
   it('deletes assets with their document, and keeps them through the trash', async () => {
