@@ -90,6 +90,7 @@ interface Block {
   key: string
   node?: ProseMirrorNode
   ancestors: ProseMirrorNode[]
+  context: number
   location: FormatLocation[]
 }
 
@@ -122,7 +123,7 @@ function styledChars(node: ProseMirrorNode): { text: string; signatures: string[
   return { text, signatures }
 }
 
-function collectBlocks(doc: ProseMirrorNode, model: DocxModel): Block[] {
+function collectBlocks(doc: ProseMirrorNode, model: DocxModel, contextOf: (ancestors: ProseMirrorNode[]) => number): Block[] {
   const styles = new StyleSheet(model.maps.styles)
   const counter = new ListCounter(new Numbering(model.maps.numbering, styles))
   const blocks: Block[] = []
@@ -138,9 +139,9 @@ function collectBlocks(doc: ProseMirrorNode, model: DocxModel): Block[] {
     const text = inlineText(node)
     blocks.push({
       summary: { type: 'paragraph', text, ...(style ? { style: styleDisplayName(style) } : {}), ...(label ? { label } : {}), ...(outline !== undefined && outline < 9 ? { outline } : {}) },
-      key: canonicalValue([canonicalNode(node), ancestors.map((node) => reviewAttrs(node.attrs)), label]),
+      key: canonicalValue([canonicalNode(node), label]),
       node,
-      ancestors, location,
+      ancestors, context: contextOf(ancestors), location,
     })
   }
   const visit = (node: ProseMirrorNode, ancestors: ProseMirrorNode[] = [], location: FormatLocation[] = []) => {
@@ -148,7 +149,8 @@ function collectBlocks(doc: ProseMirrorNode, model: DocxModel): Block[] {
       case 'paragraph':
         paragraph(node, ancestors, location)
         break
-      case 'table':
+      case 'table': {
+        const parents = [...ancestors, node]
         node.forEach((row, _offset, index) => {
           const cells: string[] = []
           row.forEach((cell) => {
@@ -163,17 +165,21 @@ function collectBlocks(doc: ProseMirrorNode, model: DocxModel): Block[] {
             cells.push(parts.join(' ').trim())
           })
           const text = cells.join(' | ')
-          blocks.push({ summary: { type: 'row', text }, key: canonicalValue([canonicalNode(row), [...ancestors, node].map((node) => reviewAttrs(node.attrs)), text]), node: row, ancestors: [...ancestors, node], location: [...location, { kind: 'row', index: index + 1 }] })
+          blocks.push({ summary: { type: 'row', text }, key: canonicalValue([canonicalNode(row), text]), node: row, ancestors: parents, context: contextOf(parents), location: [...location, { kind: 'row', index: index + 1 }] })
         })
         break
-      case 'blockWrapper':
-        node.forEach((child, _offset, index) => visit(child, [...ancestors, node], childLocation(child, index, location)))
+      }
+      case 'blockWrapper': {
+        const parents = [...ancestors, node]
+        node.forEach((child, _offset, index) => visit(child, parents, childLocation(child, index, location)))
         break
+      }
       default:
-        blocks.push({ summary: { type: 'other', text: node.textContent }, key: canonicalValue([canonicalNode(node), ancestors.map((node) => reviewAttrs(node.attrs))]), node, ancestors, location })
+        blocks.push({ summary: { type: 'other', text: node.textContent }, key: canonicalNode(node), node, ancestors, context: contextOf(ancestors), location })
     }
   }
-  doc.forEach((child, _offset, index) => visit(child, [], child.type.name === 'table' ? [{ kind: 'table', index: index + 1 }] : []))
+  const root: ProseMirrorNode[] = []
+  doc.forEach((child, _offset, index) => visit(child, root, child.type.name === 'table' ? [{ kind: 'table', index: index + 1 }] : []))
   return blocks
 }
 
@@ -506,14 +512,36 @@ function storyText(doc: ProseMirrorNode, model: DocxModel): string {
 
 /** The redline from `before` to `after`. */
 function diffBody(before: DocxModel, after: DocxModel): Pick<DocxDiff, 'blocks' | 'stats'> {
-  const a = collectBlocks(before.body, before)
-  const b = collectBlocks(after.body, after)
+  // Many paragraphs can share one content control or table. Intern its canonical metadata
+  // once, rather than copying (and parsing) a potentially large XML payload into every key.
+  const contexts = new Map<string, number>()
+  const cached = new WeakMap<ProseMirrorNode[], number>()
+  const attrs = new WeakMap<ProseMirrorNode, string>()
+  const contextOf = (ancestors: ProseMirrorNode[]): number => {
+    const known = cached.get(ancestors)
+    if (known !== undefined) return known
+    const key = JSON.stringify(ancestors.map((node) => {
+      let key = attrs.get(node)
+      if (key === undefined) {
+        key = canonicalValue([node.type.name, reviewAttrs(node.attrs)])
+        attrs.set(node, key)
+      }
+      return key
+    }))
+    let id = contexts.get(key)
+    if (id === undefined) { id = contexts.size; contexts.set(key, id) }
+    cached.set(ancestors, id)
+    return id
+  }
+  const a = collectBlocks(before.body, before, contextOf)
+  const b = collectBlocks(after.body, after, contextOf)
   const sheets = { before: new StyleSheet(before.maps.styles), after: new StyleSheet(after.maps.styles) }
-  const ops = alignSequences(a, b, (x, y) => x.key === y.key)
+  const ops = alignSequences(a, b, (x, y) => x.context === y.context && x.key === y.key)
   const blocks: DiffBlock[] = []
   const stats = { insertedWords: 0, deletedWords: 0, changedBlocks: 0, insertedBlocks: 0, deletedBlocks: 0, formatChanges: 0 }
   let i = 0
   let j = 0
+  const ancestorChanges = new Map<ProseMirrorNode | undefined, Map<ProseMirrorNode | undefined, FormatChange[]>>()
   let pendingDeletes: Block[] = []
   let pendingInserts: Block[] = []
   const flush = () => {
@@ -547,8 +575,20 @@ function diffBody(before: DocxModel, after: DocxModel): Pick<DocxDiff, 'blocks' 
       insertCursor = match + 1
       const segments = diffWords(removed.summary.text, added.summary.text)
       const formats = structuralChanges(removed.node, added.node, sheets, added.location)
-      for (let index = 0; index < Math.max(removed.ancestors.length, added.ancestors.length); index++) {
-        formats.push(...ownChanges(removed.ancestors[index], added.ancestors[index], sheets, added.location.slice(0, index + 1)))
+      if (removed.context !== added.context) {
+        for (let index = 0; index < Math.max(removed.ancestors.length, added.ancestors.length); index++) {
+          const left = removed.ancestors[index]
+          const right = added.ancestors[index]
+          const byRight = ancestorChanges.get(left) ?? new Map<ProseMirrorNode | undefined, FormatChange[]>()
+          let changes = byRight.get(right)
+          if (!changes) {
+            changes = ownChanges(left, right, sheets, [])
+            byRight.set(right, changes)
+            ancestorChanges.set(left, byRight)
+          }
+          const location = added.location.slice(0, index + 1)
+          formats.push(...changes.map((change) => location.length ? { ...change, location } : change))
+        }
       }
       if (removed.summary.label !== added.summary.label) {
         formats.push({ property: 'numPr', text: '', before: removed.summary.label, after: added.summary.label })

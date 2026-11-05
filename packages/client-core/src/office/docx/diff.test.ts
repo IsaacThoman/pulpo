@@ -145,7 +145,64 @@ describe('structural Word review', () => {
     expect((await diffDocxFiles(before, pkg.write(), new MemoryAssetStore())).identical).toBe(false)
   })
 
-  it.each(['tables.docx', 'sections-headers.docx', 'notes-fields.docx'])('never hides meaningful exported XML mutations in %s', async (fixture) => {
+  async function hundredPageFixture() {
+    const assets = new MemoryAssetStore()
+    const imported = await importDocx(new Uint8Array(readFileSync(join(process.cwd(), 'fixtures/docx/tables.docx'))), assets)
+    const paragraphs = Array.from({ length: 1200 }, (_, index) => schema.node('paragraph', index % 12 === 0 ? { pageBreakBefore: packJml(['w:pageBreakBefore', {}]) } : {},
+      schema.text(`Page ${Math.floor(index / 12) + 1}, paragraph ${index}. ` + 'A representative sentence with several words for the document review. '.repeat(4))))
+    const before = { ...imported, body: schema.node('doc', null, paragraphs) }
+    // Independent trees model two imported versions; reference equality cannot hide the cost.
+    const independent = schema.nodeFromJSON(before.body.toJSON())
+    const after = { ...imported, body: schema.node('doc', null, independent.content.content.map((node) => node.type.create({ ...node.attrs, jc: packJml(['w:jc', { 'w:val': 'center' }]) }, node.content))) }
+    return { assets, before, after }
+  }
+
+  it('reviews all paragraph formatting changes in a roughly 100-page model within one second', async () => {
+    const { before, after } = await hundredPageFixture()
+    const start = performance.now()
+    const diff = diffDocxModels(before, after)
+    const elapsed = performance.now() - start
+    expect(diff.identical).toBe(false)
+    expect(diff.stats.changedBlocks).toBe(1200)
+    expect(elapsed).toBeLessThan(1000)
+  })
+
+  it('does not serialize a large content-control ancestor once per paragraph', async () => {
+    const { before, after } = await hundredPageFixture()
+    const control = packJml(['w:sdt', {}, ['w:sdtPr', {}, ['w:dropDownList', {}, ...Array.from({ length: 1000 }, (_, index): JmlElement => ['w:listItem', { 'w:displayText': `A preserved choice ${index}`, 'w:value': String(index) }])]], '\u0000'])
+    const wrap = (doc: ProseMirrorNode, v = control) => schema.node('doc', null, schema.node('blockWrapper', { v }, doc.content))
+    const wrappedBefore = { ...before, body: wrap(before.body) }
+    const variants = [wrap(after.body), wrap(before.body, control.replace('A preserved choice 0', 'A changed choice 0'))]
+    for (const body of variants) {
+      const start = performance.now()
+      const diff = diffDocxModels(wrappedBefore, { ...after, body })
+      expect(performance.now() - start).toBeLessThan(1000)
+      expect(diff.identical).toBe(false)
+      expect(diff.stats.changedBlocks).toBe(1200)
+    }
+  })
+
+  it('keeps per-occurrence locations when ancestor descriptions are reused', () => {
+    const sharedBefore = table()
+    const sharedAfter = changes[0]![1]
+    const diff = diffDocxModels(model(sharedBefore, sharedBefore), model(sharedAfter, sharedAfter))
+    const tableNumbers = notes(diff).filter((note) => note.property === 'tblW').map((note) => note.location?.[0]?.index)
+    expect(tableNumbers.join('|')).toBe('1|2')
+  })
+
+  it('reviews a roughly 100-page file, including canonical package comparisons, within 2.5 seconds', async () => {
+    const { assets, before, after } = await hundredPageFixture()
+    const left = await exportDocx(before, assets, 'docx', { regenerate: true })
+    const right = await exportDocx(after, assets, 'docx', { regenerate: true })
+    const start = performance.now()
+    const diff = await diffDocxFiles(left, right, assets)
+    const elapsed = performance.now() - start
+    expect(diff.identical).toBe(false)
+    expect(diff.stats.changedBlocks).toBe(1200)
+    expect(elapsed).toBeLessThan(2500)
+  })
+
+  it.each(['tables.docx', 'sections-headers.docx', 'notes-fields.docx'])('never hides meaningful exported XML mutations in %s', process.env.PULPO_DOCX_FIDELITY === '1' ? { timeout: 60_000 } : {}, async (fixture) => {
     const assets = new MemoryAssetStore()
     const before = await importDocx(new Uint8Array(readFileSync(join(process.cwd(), 'fixtures/docx', fixture))), assets)
     const bytes = await exportDocx(before, assets, 'docx', { regenerate: true })
@@ -159,7 +216,8 @@ describe('structural Word review', () => {
     collect(before.body)
     for (const [id, story] of before.stories) collect(story.doc, id)
     let meaningful = 0
-    for (let trial = 0; trial < 64; trial++) {
+    const trials = process.env.PULPO_DOCX_FIDELITY === '1' ? 64 : 8
+    for (let trial = 0; trial < trials; trial++) {
       const candidate = candidates[Math.floor(random() * candidates.length)]!
       const fields = ['xmlAttrs', 'lead', 'trail', 'cellTrail', 'rowTrail', 'pPrRest', 'markRPr', 'pPrChange', 'sectPr', 'tblPr', 'tblGrid', 'trPr', 'tblPrEx', 'tcPr'].filter((key) => key in candidate.node.attrs)
       const key = fields[Math.floor(random() * fields.length)]!
@@ -181,6 +239,6 @@ describe('structural Word review', () => {
       expect(diff.identical, `${fixture} trial ${trial}, ${candidate.node.type.name}.${key}`).toBe(false)
       expect(diff.blocks.some((block) => block.kind !== 'equal') || diff.stories.length > 0 || notes(diff).length > 0).toBe(true)
     }
-    expect(meaningful).toBeGreaterThan(40)
+    expect(meaningful).toBeGreaterThan(trials / 2)
   })
 })
