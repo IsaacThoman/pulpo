@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { and, eq } from 'drizzle-orm'
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as Y from 'yjs'
@@ -9,6 +10,7 @@ import { convertBlobToDocInTx } from '../conversion.js'
 import { mutateFileTree, updateFileNode } from '../tree-service.js'
 import { exportStoredDoc } from '../live-docs.js'
 import { listFileChanges } from './changes.js'
+import { mutateAgentFiles } from './commit.js'
 import { FileChangesConflictError, redoFileChanges, undoFileChanges } from './history.js'
 import { reviewFileChange, reviewReplyChanges } from './review.js'
 import { filesFixture, requireDisposableDatabase, type FilesFixture } from './test-fixtures.js'
@@ -303,6 +305,39 @@ describe.skipIf(!enabled)('agent edits to live documents', () => {
       expect(await db.select().from(fileVersions).where(eq(fileVersions.nodeId, id))).toEqual([])
       expect([...objects.keys()].filter((key) => key.startsWith(`users/${files.userId}/files/`))).toEqual([])
     }
+  })
+
+  it('refuses a new live document whose kept original bytes would exceed the storage allowance', async () => {
+    await files.attach({ [projects]: 'write' })
+    // Mixed line endings: the codec keeps the original bytes beside the document, about doubling it.
+    const mixed = Array.from({ length: 2_000 }, (_, index) => `line ${index}${index % 2 ? '\r\n' : '\n'}`).join('')
+    const size = Buffer.byteLength(mixed)
+    await db.update(users).set({ storageLimitBytes: await storageUsedBytes(db, files.userId) + Math.round(size * 1.5) }).where(eq(users.id, files.userId))
+    files.put('/workspace/mixed.txt', mixed)
+    const [refused] = await push([{ local: '/workspace/mixed.txt', remote: 'Projects/mixed.txt' }])
+    expect(refused).toMatchObject({ status: 'error', message: expect.stringMatching(/storage allowance/) })
+    expect(await db.select().from(fileNodes).where(and(eq(fileNodes.ownerUserId, files.userId), eq(fileNodes.name, 'mixed.txt')))).toEqual([])
+    expect([...objects.keys()].filter((key) => key.startsWith(`users/${files.userId}/`))).toEqual([])
+    // The same text with one kind of line break needs no copy, so it fits.
+    files.put('/workspace/plain.txt', mixed.replaceAll('\r\n', '\n'))
+    expect((await push([{ local: '/workspace/plain.txt', remote: 'Projects/plain.txt' }]))[0]).toMatchObject({ status: 'created' })
+  })
+
+  it('deletes the objects an agent transaction stored when it does not commit', async () => {
+    // Assets are stored ahead of their rows (applying a pushed file, a proposal's fork, a new
+    // document), so a transaction that fails after storing them must take them back.
+    const key = `users/${files.userId}/doc-assets/${randomUUID()}`
+    await expect(mutateAgentFiles(files.userId, async (_tx, effects) => {
+      objects.set(key, Buffer.from('original bytes'))
+      effects.writtenKeys.push(key)
+      throw new Error('refused after storing')
+    })).rejects.toThrow('refused after storing')
+    expect(objects.has(key)).toBe(false)
+    await mutateAgentFiles(files.userId, async (_tx, effects) => {
+      objects.set(key, Buffer.from('original bytes'))
+      effects.writtenKeys.push(key)
+    })
+    expect(objects.has(key)).toBe(true)
   })
 
   it('keeps new files that are too large or not really text as uploaded files', async () => {
