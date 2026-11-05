@@ -301,18 +301,21 @@ export function trackTransaction(state: EditorState, tr: Transaction, reviewer: 
       let to = Math.max(from, toOut.map(step.to, -1))
       let slice = step.slice
       let pasteEnds = tr.getMeta('docx-paste-ends') as (Attrs | null)[] | undefined
-      // Fitting a closed paste at a paragraph edge can replace its opening/closing token.
-      // A collapsed selection deletes no boundary: insert the closed blocks beside it instead.
-      if (index === 0 && state.selection.empty && step.to === step.from + 1) {
-        const $caret = state.selection.$from
-        if ($caret.parent.type.name === 'paragraph' && step.from === $caret.pos && $caret.parentOffset === $caret.parent.content.size
+      // Fitting can consume an original edge token outside the selection. Keep that mark
+      // original and insert the closed blocks beside it, deleting only selected content.
+      let insertAt: number | undefined
+      if (index === 0) {
+        const { $from, $to } = state.selection
+        if ($to.parent.type.name === 'paragraph' && step.from === $from.pos && step.to === $to.pos + 1 && $to.parentOffset === $to.parent.content.size
           && slice.openStart === 1 && slice.content.firstChild?.type.name === 'paragraph' && !slice.content.firstChild.content.size) {
-          from = to
+          insertAt = to
+          to = toOut.map($to.pos, -1)
           slice = new Slice(slice.content.cut(slice.content.firstChild.nodeSize), 0, slice.openEnd)
           pasteEnds = pasteEnds?.slice(1)
-        } else if ($caret.parent.type.name === 'paragraph' && step.to === $caret.pos && !$caret.parentOffset
+        } else if ($from.parent.type.name === 'paragraph' && step.to === $to.pos && step.from === $from.pos - 1 && !$from.parentOffset
           && slice.openEnd === 1 && slice.content.lastChild?.type.name === 'paragraph' && !slice.content.lastChild.content.size) {
-          to = from
+          insertAt = from
+          from = toOut.map($from.pos, 1)
           slice = new Slice(slice.content.cut(0, slice.content.size - slice.content.lastChild.nodeSize), slice.openStart, 0)
         }
       }
@@ -323,13 +326,14 @@ export function trackTransaction(state: EditorState, tr: Transaction, reviewer: 
         from = to = toOut.map(state.selection.from, 1)
         slice = new Slice(slice.content, 1, 1)
       }
+      const beforeDelete = out.steps.length
       const deleted = from < to ? trackDelete(out, from, to, reviewer) : { from, to }
       // deleteSelection may fit an empty, open paragraph shell at the left edge. It is
       // structure for the surviving text, not a paragraph mark the reviewer inserted.
       const fittingShell = step.from < step.to && slice.openStart === 0 && slice.openEnd === 1
         && slice.content.childCount === 1 && slice.content.firstChild?.type.name === 'paragraph'
         && !slice.content.firstChild.content.size
-      const inserted = trackInsert(out, deleted.to, fittingShell ? Slice.empty : slice, reviewer, pasteEnds)
+      const inserted = trackInsert(out, insertAt === undefined ? deleted.to : out.mapping.slice(beforeDelete).map(insertAt, 1), fittingShell ? Slice.empty : slice, reviewer, pasteEnds)
       if (inserted) {
         insertEnd = { pos: inserted.end, step: out.steps.length }
         insertionStep = inserted.step
@@ -506,6 +510,7 @@ function restoreFormat(out: Transaction, from: number, to: number): void {
 export function resolveRevisions(state: EditorState, revisions: Revision[], action: 'accept' | 'reject'): Transaction | null {
   if (!revisions.length) return null
   const out = state.tr
+  const trailing: number[] = []
   const rowRevisions = revisions.filter(({ kind }) => kind === 'rowInsert' || kind === 'rowDelete')
   const removedRows = rowRevisions.filter(({ kind }) => (kind === 'rowInsert') === (action === 'reject'))
   const contentRevisions = revisions.filter((revision) => !rowRevisions.includes(revision) && !removedRows.some((row) => revision.from >= row.from && revision.to <= row.to))
@@ -564,6 +569,9 @@ export function resolveRevisions(state: EditorState, revisions: Revision[], acti
             } catch {
               // A boundary that cannot join stays.
             }
+          } else if (kind === 'paragraphInsert' && !after) {
+            // Its text may resolve later in this pass. Remove the empty shell only afterwards.
+            trailing.push(revision.from)
           }
         }
         break
@@ -593,6 +601,11 @@ export function resolveRevisions(state: EditorState, revisions: Revision[], acti
         break
       }
     }
+  }
+  for (const pos of trailing) {
+    const $end = out.doc.resolve(out.mapping.map(pos, -1))
+    const node = $end.parent
+    if (node.type.name === 'paragraph' && !node.content.size && out.doc.content.size > node.nodeSize) out.delete($end.before(), $end.after())
   }
   return out.docChanged ? out : null
 }

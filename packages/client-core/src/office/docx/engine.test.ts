@@ -295,6 +295,36 @@ describe('tracked changes', async () => {
     }
   })
 
+  it.each(['accept', 'reject'] as const)('preserves unselected paragraph marks in a fitted replacement with %s all', (action) => {
+    const original = schema.node('doc', null, [p(run('ABC')), p(run('DEF'))])
+    // Cover both fitted edges, whole paragraphs, and selections spanning an original mark.
+    for (const [from, to] of [[2, 4], [1, 2], [1, 4], [2, 9], [1, 7]]) {
+      let state = EditorState.create({ schema, doc: original, plugins: [sectionEndsPlugin()] })
+      state = state.apply(state.tr.setSelection(TextSelection.create(state.doc, from!, to!)))
+      const tr = pasteSelection(state, new Slice(original.content, 0, 0))
+      const editing = state.apply(tr)
+      state = state.apply(trackTransaction(state, tr, reviewer)!)
+      if (from === 2 && to === 4) {
+        expect(listRevisions(state.doc).filter(({ kind }) => kind === 'delete').map(({ text }) => text)).toEqual(['BC'])
+        expect(listRevisions(state.doc).some(({ kind }) => kind === 'paragraphDelete')).toBe(false)
+      }
+      state = state.apply(resolveRevisions(state, listRevisions(state.doc), action)!)
+      const paragraphs = (doc: ProseMirrorNode) => Array.from({ length: doc.childCount }, (_, index) => doc.child(index).textContent)
+      expect(paragraphs(state.doc)).toEqual(paragraphs(action === 'accept' ? editing.doc : original))
+      expect(listRevisions(state.doc)).toEqual([])
+    }
+  })
+
+  it('rejects a closed paste after the final character without leaving an empty paragraph', () => {
+    const original = schema.node('doc', null, [p(run('ABC')), p(run('DEF'))])
+    let state = EditorState.create({ schema, doc: original, plugins: [sectionEndsPlugin()] })
+    state = state.apply(state.tr.setSelection(TextSelection.create(state.doc, 9)))
+    state = state.apply(trackTransaction(state, pasteSelection(state, new Slice(original.content, 0, 0)), reviewer)!)
+    state = state.apply(resolveRevisions(state, listRevisions(state.doc), 'reject')!)
+    expect(state.doc.eq(original)).toBe(true)
+    expect(listRevisions(state.doc)).toEqual([])
+  })
+
   it.each(['accept', 'reject'] as const)('keeps an empty paragraph’s original mark after a fitted insertion and %s all', (action) => {
     const markRPr = packJml(['w:rPr', {}, ['w:i', {}]])
     const original = schema.node('doc', null, [schema.node('paragraph', { markRPr }), p(run('After'))])
