@@ -929,7 +929,9 @@ export class SheetView {
     }
     let range = sheet ? parseRangeName(target) : undefined
     if (!range) {
-      const name = [...this.workbook.names.values()].find((entry) => entry.name.toLowerCase() === text.toLowerCase() && (!entry.scope || entry.scope === this.sheetIdValue))
+      // A name scoped to the active sheet takes precedence over a workbook name, as in Excel.
+      const matches = [...this.workbook.names.values()].filter((entry) => entry.name.toLowerCase() === text.toLowerCase() && (!entry.scope || entry.scope === this.sheetIdValue))
+      const name = matches.find((entry) => entry.scope === this.sheetIdValue) ?? matches.find((entry) => !entry.scope)
       if (name) {
         const formula = toA1Form(name.formula, name.scope ? this.workbook.sheet(name.scope) : undefined, this.workbook)
         const resolved = formula.lastIndexOf('!')

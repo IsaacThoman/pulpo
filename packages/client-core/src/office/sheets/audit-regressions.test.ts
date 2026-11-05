@@ -709,3 +709,91 @@ describe('spreadsheet audit regressions', () => {
   })
 
 })
+
+describe('sixth review regressions', () => {
+  /** Two replicas edit a copy of `base`, with each assignment of edits to client ids. */
+  function converged(base: Y.Doc, edits: [(model: WorkbookModel) => void, (model: WorkbookModel) => void]): WorkbookModel[] {
+    const models: WorkbookModel[] = []
+    for (const swap of [false, true]) {
+      for (const docs of replicas(base, (sheet, client) => edits[(client - 1 + (swap ? 1 : 0)) % 2]!(sheet.workbook))) models.push(new WorkbookModel(docs))
+    }
+    return models
+  }
+
+  it('resolves both deleted ends of a range from their neighbors, not from indexes recorded on different replicas', () => {
+    const base = new Y.Doc()
+    base.clientID = 100
+    const workbook = WorkbookModel.initialize(base)
+    const sheet = workbook.addSheet('Sheet1')
+    for (let row = 0; row < 12; row++) sheet.setCell(row, 0, { v: row + 1 })
+    sheet.setCell(19, 1, { f: toIdForm('SUM(A5:A10)', sheet) })
+    const models = converged(base, [
+      (model) => deleteAxis(model.sheets()[0]!, 'row', 4, 1),
+      (model) => {
+        const other = model.sheets()[0]!
+        deleteAxis(other, 'row', 0, 4)
+        deleteAxis(other, 'row', 1, 1)
+        deleteAxis(other, 'row', 4, 1)
+      },
+    ])
+    for (const model of models) {
+      const after = model.sheets()[0]!
+      // Rows 7, 8, and 9 are what survives of A5:A10; row 11 must stay out.
+      expect(toA1Form(after.cell(12, 1)!.f!, after)).toBe('SUM(A1:A3)')
+      const calc = new SheetCalc(model, { live: false })
+      expect(calc.get(after, 12, 1)).toBe(24)
+      calc.destroy()
+    }
+  })
+
+  it('shrinks a reversed range in a defined name when its edge row is deleted', () => {
+    for (const scoped of [false, true]) {
+      const doc = new Y.Doc()
+      const workbook = WorkbookModel.initialize(doc)
+      const sheet = workbook.addSheet('Sheet1')
+      for (let row = 0; row < 10; row++) sheet.setCell(row, 0, { v: row + 1 })
+      workbook.names.set('n:backwards', { name: 'Backwards', formula: toIdForm('SUM(Sheet1!A10:A1)', sheet), ...(scoped ? { scope: sheet.id } : {}) })
+      sheet.setCell(19, 1, { f: toIdForm('Backwards', sheet) })
+      deleteAxis(sheet, 'row', 0, 1)
+      const name = workbook.names.get('n:backwards')!
+      expect(toA1Form(name.formula, scoped ? sheet : undefined, workbook)).toBe('SUM(Sheet1!A9:A1)')
+      const calc = new SheetCalc(workbook, { live: false })
+      expect(calc.get(sheet, 18, 1)).toBe(54)
+      calc.destroy()
+    }
+  })
+
+  it('applies a file to a workbook with thousands of names in linear time', () => {
+    const doc = new Y.Doc()
+    const workbook = WorkbookModel.initialize(doc)
+    const sheet = workbook.addSheet('Sheet1')
+    sheet.setCell(0, 0, { v: 1 })
+    doc.transact(() => {
+      for (let index = 0; index < 20_000; index++) workbook.names.set(`name${index}`, { name: `Name_${index}`, formula: '1' })
+    })
+    const clone = new Y.Doc()
+    Y.applyUpdate(clone, Y.encodeStateAsUpdate(doc))
+    new WorkbookModel(clone).sheets()[0]!.setCell(0, 0, { v: 2 })
+    const started = performance.now()
+    applyWorkbook(doc, clone)
+    expect(performance.now() - started).toBeLessThan(4_000)
+    expect(sheet.cell(0, 0)?.v).toBe(2)
+  }, 30_000)
+
+  it('goes to the active sheet\'s definition of a name before the workbook\'s, on every replica', () => {
+    const base = new Y.Doc()
+    base.clientID = 100
+    WorkbookModel.initialize(base).addSheet('Sheet1')
+    const models = converged(base, [
+      (model) => model.names.set('n:workbook', { name: 'Target', formula: toIdForm('Sheet1!B2', model.sheets()[0]!) }),
+      (model) => model.names.set('n:sheet', { name: 'Target', formula: toIdForm('Sheet1!D4', model.sheets()[0]!), scope: model.sheets()[0]!.id }),
+    ])
+    for (const model of models) {
+      const sheet = model.sheets()[0]!
+      let selected: unknown
+      const view = { workbook: model, sheet, sheetIdValue: sheet.id, setActiveSheet() {}, select(range: unknown) { selected = range } }
+      expect(SheetView.prototype.goTo.call(view as unknown as SheetView, 'Target')).toBe(true)
+      expect(selected).toEqual({ top: 3, left: 3, bottom: 3, right: 3 })
+    }
+  })
+})

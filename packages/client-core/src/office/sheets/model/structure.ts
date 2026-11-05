@@ -1,8 +1,6 @@
 import * as Y from 'yjs'
-import { formatIdToken, mapIdTokens, type IdEnd, type IdToken } from './formula-ids.js'
 import type { Axis } from './axis.js'
-import type { AnchorPoint, ConditionalFormat, DataValidation, DefinedName, DrawingObject, RangeIds } from './schema.js'
-import { quoteSheetName } from '../address.js'
+import type { AnchorPoint, ConditionalFormat, DataValidation, DrawingObject, RangeIds } from './schema.js'
 import { splitCellKey, type SheetModel } from './workbook.js'
 
 /**
@@ -69,11 +67,9 @@ export function deleteAxis(sheet: SheetModel, kind: AxisKind, position: number, 
 
     const edges = new EdgeMover(axis, deleted, position)
     adjustRanges(sheet, kind, edges)
-    for (const [id, name] of [...workbook.names.entries()]) {
-      // Names have no sheet of their own; unqualified references in them can't name rows.
-      const formula = rewriteFormula(name.formula, undefined, sheet, kind, edges)
-      if (formula !== name.formula) workbook.names.set(id, { ...name, formula } satisfies DefinedName)
-    }
+    // Formulas (in cells, names, conditional formats, and validations) aren't rewritten: their
+    // references to deleted rows resolve through the tombstones when read, so a concurrent edit of
+    // the same formula is never overwritten and reversed ranges shrink like any other.
   })
 }
 
@@ -161,15 +157,8 @@ function adjustRanges(sheet: SheetModel, kind: AxisKind, edges: EdgeMover): void
       if (JSON.stringify(next) !== JSON.stringify(value)) map.set(id, next)
     }
   }
-  adjustList<ConditionalFormat>(sheet.cf, (format) => ({
-    ...format,
-    rules: format.rules.map((rule) => (rule.formulas ? { ...rule, formulas: rule.formulas.map((f) => rewriteFormula(f, sheet, sheet, kind, edges)) } : rule)),
-  }))
-  adjustList<DataValidation>(sheet.dv, (validation) => ({
-    ...validation,
-    ...(validation.formula1 ? { formula1: rewriteFormula(validation.formula1, sheet, sheet, kind, edges) } : {}),
-    ...(validation.formula2 ? { formula2: rewriteFormula(validation.formula2, sheet, sheet, kind, edges) } : {}),
-  }))
+  adjustList<ConditionalFormat>(sheet.cf)
+  adjustList<DataValidation>(sheet.dv)
   for (const [id, raw] of [...sheet.tables.entries()]) {
     const table = raw as { range: RangeIds }
     const range = moveRangeIds(table.range, kind, edges)
@@ -190,34 +179,3 @@ function adjustRanges(sheet: SheetModel, kind: AxisKind, edges: EdgeMover): void
   }
 }
 
-/**
- * Moves deleted edges in the id tokens of a formula stored in `owner` that point into `changed`.
- * Single-cell references to deleted cells become `#REF!`.
- */
-function rewriteFormula(formula: string, owner: SheetModel | undefined, changed: SheetModel, kind: AxisKind, edges: EdgeMover): string {
-  return mapIdTokens(formula, (token, text) => {
-    const target = token.sheet ?? owner?.id
-    if (target !== changed.id || token.name !== undefined) return text
-    const key = kind === 'row' ? 'row' : 'col'
-    const from = token.from[key]
-    const to = token.to?.[key]
-    if (!token.to) {
-      if (from !== undefined && edges.deleted.has(from)) return token.sheet ? `${sheetRefPrefix(changed)}#REF!` : '#REF!'
-      return text
-    }
-    const moved = edges.range(from, to)
-    if (!moved) return token.sheet ? `${sheetRefPrefix(changed)}#REF!` : '#REF!'
-    if (moved[0] === from && moved[1] === to) return text
-    const next: IdToken = { ...token, from: withEdge(token.from, key, moved[0]), to: withEdge(token.to, key, moved[1]) }
-    return formatIdToken(next)
-  })
-}
-
-function withEdge(end: IdEnd, key: 'row' | 'col', id: string | undefined): IdEnd {
-  return id === undefined ? end : { ...end, [key]: id }
-}
-
-/** `#REF!` in a formula keeps the sheet it pointed at, as Excel writes `Sheet2!#REF!`. */
-function sheetRefPrefix(sheet: SheetModel): string {
-  return `${quoteSheetName(sheet.name)}!`
-}

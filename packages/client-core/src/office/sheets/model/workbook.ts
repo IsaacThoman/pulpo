@@ -608,6 +608,12 @@ export function definedNameKey(name: Pick<DefinedName, 'name' | 'scope'>): strin
 }
 
 /** Readers expose one definition per scoped name while retaining older duplicate storage. */
+/**
+ * Per names map, identity → the key of its winning definition, rebuilt after the names change.
+ * Shared by every model of the document, so models made for one call add no observers.
+ */
+const CANONICAL_NAMES = new WeakMap<Y.Map<DefinedName>, { keys: Map<string, string> | undefined }>()
+
 class DefinedNames {
   constructor(private readonly workbook: WorkbookModel) {}
 
@@ -615,16 +621,44 @@ class DefinedNames {
     return this.workbook.root.get('names') as Y.Map<DefinedName>
   }
 
+  /** Built once per change, so looking names up stays linear in the number of names. */
+  private cache(): { keys: Map<string, string> | undefined } {
+    const map = this.map
+    let cache = CANONICAL_NAMES.get(map)
+    if (!cache) {
+      const created: { keys: Map<string, string> | undefined } = { keys: undefined }
+      map.observe(() => (created.keys = undefined))
+      CANONICAL_NAMES.set(map, created)
+      cache = created
+    }
+    return cache
+  }
+
+  private canonical(): Map<string, string> {
+    const map = this.map
+    const cache = this.cache()
+    if (cache.keys) return cache.keys
+    const canonical = new Map<string, string>()
+    // Y.Map iteration follows local insertion order, so only key order can choose the same winner.
+    for (const [id, name] of map) {
+      const identity = definedNameKey(name)
+      const previous = canonical.get(identity)
+      if (previous === undefined || id < previous) canonical.set(identity, id)
+    }
+    cache.keys = canonical
+    return canonical
+  }
+
   get(id: string): DefinedName | undefined {
     const name = this.map.get(id)
     if (!name || (name.scope && !this.workbook.sheet(name.scope))) return undefined
-    const identity = definedNameKey(name)
-    for (const [key, candidate] of this.map) if (key < id && definedNameKey(candidate) === identity) return undefined
-    return name
+    return this.canonical().get(definedNameKey(name)) === id ? name : undefined
   }
 
   set(id: string, name: DefinedName): void {
     this.map.set(id, name)
+    // Observers run when the transaction ends; lookups inside it must see the change now.
+    this.cache().keys = undefined
   }
 
   delete(id: string): void {
@@ -632,17 +666,12 @@ class DefinedNames {
     if (!name) return
     // Removing a name must also remove older duplicates so a hidden definition cannot reappear.
     const identity = definedNameKey(name)
-    for (const [key, candidate] of this.map) if (definedNameKey(candidate) === identity) this.map.delete(key)
+    for (const [key, candidate] of [...this.map.entries()]) if (definedNameKey(candidate) === identity) this.map.delete(key)
+    this.cache().keys = undefined
   }
 
   *entries(): IterableIterator<[string, DefinedName]> {
-    const canonical = new Map<string, string>()
-    // Y.Map iteration follows local insertion order, so only key order can choose the same winner.
-    for (const [id, name] of this.map) {
-      const identity = definedNameKey(name)
-      const previous = canonical.get(identity)
-      if (previous === undefined || id < previous) canonical.set(identity, id)
-    }
+    const canonical = this.canonical()
     for (const [id, name] of this.map) {
       if (canonical.get(definedNameKey(name)) === id && (!name.scope || this.workbook.sheet(name.scope))) yield [id, name]
     }
