@@ -142,7 +142,9 @@ function tableToDOM(node: ProseMirrorNode): DOMOutputSpec {
   }
   if (jmlAttr(jmlChild(tblPr, 'w:tblLayout'), 'w:type') === 'fixed') props['table-layout'] = 'fixed'
   const styleId = jmlAttr(jmlChild(tblPr, 'w:tblStyle'), 'w:val')
-  const cols: DOMOutputSpec[] = widths.map((value) => ['col', { style: `width:${twipsToPt(value)}pt` }])
+  // The grid describes column proportions. Absolute col widths would force percentage tables
+  // back to their source section's width when laid out in a narrower destination section.
+  const cols: DOMOutputSpec[] = widths.map((value) => ['col', { style: `width:${total ? `${value / total * 100}%` : '0pt'}` }])
   return ['table', { class: `docx-table${styleId ? ` docx-ts-${cssIdent(styleId)}` : ''}`, style: cssText(props) }, ['colgroup', {}, ...cols] as DOMOutputSpec, ['tbody', 0]]
 }
 

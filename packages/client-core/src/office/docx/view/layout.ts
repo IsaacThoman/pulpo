@@ -32,6 +32,11 @@ export interface PageSetup {
   columns: number
 }
 
+/** Text width in unzoomed CSS pixels, shared by body and story layout. */
+export function sectionContentWidth(setup: PageSetup): number {
+  return Math.max(1, setup.width - setup.left - setup.right)
+}
+
 export function pageSetup(sectPr: JmlElement | undefined): PageSetup {
   const pgSz = jmlChild(sectPr, 'w:pgSz')
   const pgMar = jmlChild(sectPr, 'w:pgMar')

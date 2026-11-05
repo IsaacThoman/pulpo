@@ -28,7 +28,7 @@ import { copyRelatedParts, needsRelatedParts, receiveCopiedParts } from '../copy
 import { fontStack, isThemeFontVar, latinFont } from '../css.js'
 import { DOCX_MAX_TABLE_DEPTH } from '../format.js'
 import { newInlinePicture } from '../drawing.js'
-import { jmlAttr, jmlNumber, jmlOn, packJml, unpackJml, type JmlElement } from '../jsonml.js'
+import { jmlAttr, jmlChild, jmlNumber, jmlOn, packJml, unpackJml, type JmlElement } from '../jsonml.js'
 import { BODY_FRAGMENT, fragmentToNode, parseJson, readDocxMap, storyFragmentName, writeFragment, type StoryMeta } from '../model.js'
 import { effectiveNumPr } from '../numbering.js'
 import { noteInventory, resolveNoteLabels } from '../notes.js'
@@ -90,7 +90,7 @@ import {
 import { DocxViewContext } from './context.js'
 import { computeDecorations } from './decorations.js'
 import { DEFAULT_DOCX_LABELS, type DocxLabels } from './labels.js'
-import { PAGE_GAP, PX_PER_PT, type LayoutResult } from './layout.js'
+import { PAGE_GAP, PX_PER_PT, sectionContentWidth, type LayoutResult } from './layout.js'
 import { normalizeAtomMarks, selectionMarks } from './marks.js'
 import { DrawingView, MathView } from './nodeviews.js'
 import { documentSections, paginate, storyReference, type RepeatedHeader, type Section } from './paginate.js'
@@ -493,16 +493,33 @@ export class DocxEditor {
       activeComment: this.activeCommentId,
     })
     if (storyId !== undefined || this.layoutMode !== 'print') return set
-    // Sections narrower than the widest are inset on the right.
+    // Constrain the actual DOM before pagination measures it. Wrappers establish their own
+    // containing width; only top-level paragraphs need an inset in the shared flow column.
     const { sections, sectionOfBlock } = documentSections(doc, this.context.finalSectPr)
-    const widths = sections.map((section) => section.setup.width - section.setup.left - section.setup.right)
+    const widths = sections.map((section) => sectionContentWidth(section.setup))
     const widest = maxOf(widths)
-    if (widths.every((width) => Math.abs(width - widest) < 1)) return set
     const extra: Decoration[] = []
     let index = 0
     doc.forEach((node, offset) => {
-      const inset = widest - (widths[sectionOfBlock[index++] ?? 0] ?? widest)
-      if (inset > 1 && node.type.name !== 'table') extra.push(Decoration.node(offset, offset + node.nodeSize, { style: `--docx-sec-inset:${inset}px` }))
+      const width = widths[sectionOfBlock[index++] ?? 0] ?? widest
+      const inset = widest - width
+      let style = node.type.name === 'paragraph'
+        ? `--docx-sec-inset:${inset}px`
+        : `max-width:${width}px;box-sizing:border-box;--docx-sec-inset:0px`
+      if (node.type.name === 'table') {
+        const props = jml(node.attrs.tblPr)
+        const preferred = jmlChild(props, 'w:tblW')
+        if (jmlAttr(preferred, 'w:type') === 'pct') {
+          const raw = jmlAttr(preferred, 'w:w') ?? ''
+          const fraction = raw.endsWith('%') ? Number(raw.slice(0, -1)) / 100 : (jmlNumber(preferred, 'w:w') ?? 5000) / 5000
+          if (Number.isFinite(fraction)) style += `;width:${Math.max(0, width * fraction)}px`
+        }
+        // Auto margins align in the widest flow column; move the table into its section.
+        const align = jmlAttr(jmlChild(props, 'w:jc'), 'w:val')
+        if (align === 'center') style += `;left:${-inset / 2}px`
+        else if (align === 'right' || align === 'end') style += `;left:${-inset}px`
+      }
+      extra.push(Decoration.node(offset, offset + node.nodeSize, { style }))
     })
     return set.add(doc, extra)
   }
@@ -1710,9 +1727,9 @@ export class DocxEditor {
     const scroller = this.scroller()
     const scrollTop = scroller?.scrollTop
     const previousLabels = this.noteLabels()
-    this.view.dispatch(this.view.state.tr.setMeta(paginationKey, null).setMeta('addToHistory', false))
+    this.view.dispatch(this.view.state.tr.setMeta(paginationKey, null).setMeta(decorationsKey, 'refresh').setMeta('addToHistory', false))
     const { sections, sectionOfBlock } = documentSections(this.view.state.doc, this.context.finalSectPr)
-    const widest = maxOf(sections.map((section) => section.setup.width - section.setup.left - section.setup.right))
+    const widest = maxOf(sections.map((section) => sectionContentWidth(section.setup)))
     const maxLeft = maxOf(sections.map((section) => section.setup.left))
     const padding = 24
     const flowTop = padding + (sections[0]?.setup.top ?? 96)
@@ -1722,7 +1739,7 @@ export class DocxEditor {
     const tabs = this.layoutTabs()
     const storyHeight = this.storyHeights()
     const lastSetup = sections[sectionOfBlock.at(-1) ?? 0]!.setup
-    const endnotesHeight = this.renderWebNotes(undefined, lastSetup.width - lastSetup.left - lastSetup.right)
+    const endnotesHeight = this.renderWebNotes(undefined, sectionContentWidth(lastSetup))
     this.endnotesHeight = endnotesHeight
     const result = paginate(this.view, this.context, (id) => this.noteHeights.get(id) ?? 0, (setup, index, all) => {
       // A header or footer taller than its margin pushes the text away, as in Word.
@@ -1793,7 +1810,7 @@ export class DocxEditor {
       const storyId = reference ? this.storyByRel(reference.relId) : undefined
       if (!storyId) return 0
       const setup = sections[index]!.setup
-      const width = setup.width - setup.left - setup.right
+      const width = sectionContentWidth(setup)
       const cacheKey = `${storyId}:${width}`
       const known = cache.get(cacheKey)
       if (known !== undefined) return known
@@ -1843,7 +1860,7 @@ export class DocxEditor {
       const doc = this.storyDoc(key)
       if (!doc) continue
       const setup = sections[noteInventory(this.view.state.doc).get(key)?.section ?? 0]!.setup
-      measure.style.width = `${setup.width - setup.left - setup.right}px`
+      measure.style.width = `${sectionContentWidth(setup)}px`
       const element = renderStory(doc, { urls: this.urls, labels: this.labels, noteNumber: number, noteNumbers: numbers, context: this.context })
       measure.appendChild(element)
       this.noteHeights.set(key, element.getBoundingClientRect().height)
@@ -1890,7 +1907,7 @@ export class DocxEditor {
         element.dataset.story = storyId
         element.title = `${kind === 'header' ? this.labels.header : this.labels.footer} · ${this.labels.editStoryHint}`
         element.style.left = `${setup.left}px`
-        element.style.width = `${setup.width - setup.left - setup.right}px`
+        element.style.width = `${sectionContentWidth(setup)}px`
         if (kind === 'header') {
           element.style.top = `${setup.header}px`
           topBand.style.overflow = 'visible'
@@ -1907,7 +1924,7 @@ export class DocxEditor {
       if (page.notes.length) {
         const notes = document.createElement('div')
         notes.className = 'docx-footnotes docx-flow'
-        notes.style.cssText = `left:${setup.left}px;width:${setup.width - setup.left - setup.right}px;top:0`
+        notes.style.cssText = `left:${setup.left}px;width:${sectionContentWidth(setup)}px;top:0`
         for (const id of page.notes) {
           const doc = this.storyDoc(id)
           if (!doc) continue
@@ -1927,7 +1944,7 @@ export class DocxEditor {
     this.canvas.style.width = `${Math.max(maxRight + padding, flowLeft + padding)}px`
     this.canvas.style.height = `${bottom + padding}px`
     const lastSetup = pages.at(-1)!.setup
-    this.renderWebNotes({ left: flowLeft, top: flowTop + layout.height - this.endnotesHeight, width: lastSetup.width - lastSetup.left - lastSetup.right })
+    this.renderWebNotes({ left: flowLeft, top: flowTop + layout.height - this.endnotesHeight, width: sectionContentWidth(lastSetup) })
   }
 
   /** Copies of header rows at the top of each page a table continues on, as Word repeats them. */
@@ -1952,6 +1969,7 @@ export class DocxEditor {
       const left = (table.getBoundingClientRect().left - flowRect.left) / scale
       holder.style.cssText = `position:absolute;left:${flowLeft + left}px;top:${flowTop + page.contentTop}px;width:${table.offsetWidth}px;pointer-events:none`
       copy.style.margin = '0'
+      copy.style.left = '0'
       holder.appendChild(copy)
       this.bandsLayer.appendChild(holder)
     }

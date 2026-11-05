@@ -1502,6 +1502,73 @@ try {
     assert.deepEqual(await bodyLabels(), ['4', '5', '4', '5', '4', '5', '4', '5'])
   })
 
+  await step('constrains body paragraphs, tables, and wrappers before pagination', async () => {
+    await open('')
+    await page.evaluate(() => {
+      const editor = window.harness.editors[0]
+      const schema = editor.view.state.schema
+      const section = (width) => JSON.stringify(['w:sectPr', {}, ['w:pgSz', { 'w:w': String(width), 'w:h': '15840' }]])
+      const long = 'The same paragraph wraps within the section text area. '.repeat(35)
+      const p = (text, attrs) => schema.node('paragraph', attrs, schema.text(text))
+      const table = (percent, align = 'left') => schema.node('table', {
+        tblPr: JSON.stringify(['w:tblPr', {}, ['w:tblW', { 'w:type': 'pct', 'w:w': String(percent * 50) }], ['w:jc', { 'w:val': align }], ['w:tblLayout', { 'w:type': 'fixed' }]]),
+        tblGrid: JSON.stringify(['w:tblGrid', {}, ['w:gridCol', { 'w:w': '2250' }], ['w:gridCol', { 'w:w': '6750' }]]),
+      }, Array.from({ length: align === 'center' ? 12 : 1 }, (_, index) => schema.node('tableRow', index === 0 ? { trPr: JSON.stringify(['w:trPr', {}, ['w:tblHeader', {}]]) } : null, (index === 0 ? ['Head', 'Header'] : ['Small words fit within the cell. '.repeat(3), 'Another cell with short words. '.repeat(3)]).map((text) => schema.node('tableCell', null, p(text))))))
+      const wrapper = schema.node('blockWrapper', { v: JSON.stringify(['w:sdt', {}, '\u0000']) }, [p(long), schema.node('blockWrapper', { v: JSON.stringify(['w:sdt', {}, '\u0000']) }, [table(50)])])
+      editor.options.doc.getMap('docx').set('sectPr', section(7380))
+      const view = editor.view
+      view.dispatch(view.state.tr.replaceWith(0, view.state.doc.content.size, [p(long, { sectPr: section(11880) }), p(long, { ind: JSON.stringify(['w:ind', { 'w:left': '240', 'w:right': '120' }]) }), table(100), table(50, 'center'), table(50, 'right'), wrapper, p('End')]))
+      editor.relayout()
+    })
+    const metrics = () => page.evaluate(() => {
+      const editor = window.harness.editors[0]
+      const flow = editor.view.dom
+      const scale = flow.getBoundingClientRect().width / flow.offsetWidth
+      const width = (element) => element.getBoundingClientRect().width / scale
+      const blocks = [...flow.children].filter((node) => !node.classList.contains('docx-page-spacer'))
+      const tables = [...flow.querySelectorAll(':scope > table')]
+      const root = flow.getBoundingClientRect()
+      const wrapper = flow.querySelector(':scope > .docx-wrapper')
+      const range = document.createRange()
+      const text = document.createTreeWalker(blocks[1], NodeFilter.SHOW_TEXT)
+      const lines = new Set()
+      for (let node = text.nextNode(); node; node = text.nextNode()) {
+        range.selectNodeContents(node)
+        for (const rect of range.getClientRects()) if (rect.height > 0) lines.add(Math.round(rect.top / scale * 10))
+      }
+      const repeated = [...editor.root.querySelectorAll('.docx-repeated-header table')].map((table) => ({ width: width(table), left: (table.getBoundingClientRect().left - root.left) / scale }))
+      return { pages: editor.pages, wide: width(blocks[0]), narrow: width(blocks[1]), tables: tables.map(width), centers: tables.map((table) => (table.getBoundingClientRect().left - root.left) / scale), wrapper: width(wrapper), nestedParagraph: width(wrapper.querySelector('p')), nestedTable: width(wrapper.querySelector('table')), measuredLines: editor.lastUnits.find((unit) => unit.block === 1 && unit.kind === 'line').lines, renderedLines: lines.size, repeated }
+    })
+    const baseline = await metrics()
+    assert.ok(Math.abs(baseline.wide - 600) < 1, JSON.stringify(baseline))
+    assert.ok(Math.abs(baseline.narrow - 276) < 1, JSON.stringify(baseline))
+    assert.deepEqual(baseline.tables.map(Math.round), [300, 150, 150])
+    assert.deepEqual(baseline.centers.map(Math.round), [0, 75, 150])
+    assert.equal(Math.round(baseline.wrapper), 300)
+    assert.equal(Math.round(baseline.nestedParagraph), 300)
+    assert.equal(Math.round(baseline.nestedTable), 150)
+    assert.equal(baseline.measuredLines, baseline.renderedLines)
+    assert.ok(baseline.repeated.length > 0)
+    for (const repeat of baseline.repeated) assert.deepEqual([Math.round(repeat.width), Math.round(repeat.left)], [150, 75])
+    for (const zoom of [0.5, 2, 1]) {
+      await page.evaluate((zoom) => { const editor = window.harness.editors[0]; editor.setZoom(zoom); editor.relayout() }, zoom)
+      const next = await metrics()
+      assert.equal(next.pages, baseline.pages)
+      assert.deepEqual(next.tables.map(Math.round), [300, 150, 150])
+      assert.equal(next.measuredLines, next.renderedLines)
+      for (const repeat of next.repeated) assert.deepEqual([Math.round(repeat.width), Math.round(repeat.left)], [150, 75])
+    }
+    await page.emulateMedia({ media: 'print' })
+    assert.deepEqual((await metrics()).tables.map(Math.round), [300, 150, 150])
+    await page.emulateMedia({ media: 'screen' })
+    await page.evaluate(() => {
+      const editor = window.harness.editors[0]
+      editor.options.doc.getMap('docx').set('sectPr', JSON.stringify(['w:sectPr', {}, ['w:pgSz', { 'w:w': '11880', 'w:h': '15840' }]]))
+      editor.relayout()
+    })
+    assert.ok((await metrics()).pages < baseline.pages, JSON.stringify(baseline))
+  })
+
   await step('lays out a 100-page document within budget', async () => {
     const started = Date.now()
     await open('?generate=1600')
