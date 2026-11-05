@@ -5,7 +5,7 @@
  * structure commands. Like the other pages, it has no network access and talks only through the
  * bridge (src/features/files/editor/protocol.ts).
  */
-import { SHEETS_SCHEMA_VERSION } from '@pulpo/client-core/office/sheets'
+import { SHEETS_SCHEMA_VERSION, sheetFormatOf } from '@pulpo/client-core/office/sheets'
 import { SheetView, type SheetViewState } from '@pulpo/client-core/office/sheets/view'
 import { applyAwarenessUpdate, Awareness, removeAwarenessStates } from 'y-protocols/awareness'
 import * as Y from 'yjs'
@@ -197,6 +197,7 @@ formula.addEventListener('select', () => {
 formula.addEventListener('focus', () => report())
 formula.addEventListener('blur', () => report())
 formula.addEventListener('keydown', (event) => {
+  if (event.isComposing || event.keyCode === 229) return
   const view = open?.view
   if (!view) return
   if (event.key === 'Enter') {
@@ -405,6 +406,7 @@ function start(message: Extract<HostMessage, { type: 'init' }>): void {
     doc,
     awareness,
     readOnly: !message.editable,
+    fileFormat: message.name ? sheetFormatOf(message.name) : undefined,
     assets: ASSETS,
     user: message.user,
     appearance: dark ? 'dark' : 'light',
@@ -441,8 +443,10 @@ function receive(raw: string): void {
     case 'awareness':
       applyAwarenessUpdate(current.awareness, base64ToBytes(message.update), REMOTE)
       break
+    case 'name':
+      current.view.setFileFormat(sheetFormatOf(message.name))
+      break
     case 'editable':
-      if (!message.editable) current.view.cancelEdit()
       current.view.readOnly = !message.editable
       current.view.scheduleRender()
       current.view.notify()
@@ -482,6 +486,10 @@ window.addEventListener('error', (event) => {
 })
 
 /** The whole replica, for the app to merge when it tears the web view down (see the native host). */
-;(window as unknown as { pulpoEditorState: () => string | null }).pulpoEditorState = () => open ? bytesToBase64(Y.encodeStateAsUpdate(open.doc)) : null
+;(window as unknown as { pulpoEditorState: () => string | null }).pulpoEditorState = () => {
+  if (!open) return null
+  open.view.settleEdit()
+  return bytesToBase64(Y.encodeStateAsUpdate(open.doc))
+}
 
 post({ type: 'ready', protocolVersion: EDITOR_PROTOCOL_VERSION, schemaVersion: SHEETS_SCHEMA_VERSION, format: 'sheet' })

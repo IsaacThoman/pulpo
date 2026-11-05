@@ -231,7 +231,7 @@ function quoteField(text: string, dialect: CsvDialect): string {
   return dialect.quote + text.split(dialect.quote).join(dialect.quote + dialect.quote) + dialect.quote
 }
 
-/** Writes the first sheet as CSV/TSV, in the dialect it was read with. */
+/** Writes the active or first visible sheet as CSV/TSV, in the dialect it was read with. */
 export function writeCsv(doc: Y.Doc, format: 'csv' | 'tsv', values?: ValueSource): Uint8Array {
   const model = new WorkbookModel(doc)
   const dialect: CsvDialect = {
@@ -247,7 +247,8 @@ export function writeCsv(doc: Y.Doc, format: 'csv' | 'tsv', values?: ValueSource
   // The extension decides between tabs and the delimiter the file was read with.
   if (format === 'tsv') dialect.delimiter = '\t'
   else if (dialect.delimiter === '\t') dialect.delimiter = ','
-  const sheet = model.sheets().find((entry) => entry.state === 'visible') ?? model.sheets()[0]
+  const active = model.metaValue('activeSheet')
+  const sheet = (active ? model.sheet(active) : undefined) ?? model.sheets().find((entry) => entry.state === 'visible') ?? model.sheets()[0]
   const lines = sheet ? sheetLines(sheet, dialect, values) : []
   let text = lines.join(dialect.lineEnding)
   if (dialect.trailingNewline && lines.length) text += dialect.lineEnding

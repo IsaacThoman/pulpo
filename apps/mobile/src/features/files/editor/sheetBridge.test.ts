@@ -11,7 +11,7 @@ import { SHEET_EDITOR_BUNDLE } from './sheetEditorBundle.generated'
 import { SHEET_TOOLBAR, sheetToolbarMenu, sheetToolbarState } from './sheetToolbar'
 import { TEXT_EDITOR_BUNDLE } from './textEditorBundle.generated'
 
-interface PageWindow extends Window { close(): void; Event: typeof Event; MouseEvent: typeof MouseEvent }
+interface PageWindow extends Window { close(): void; Event: typeof Event; MouseEvent: typeof MouseEvent; KeyboardEvent: typeof KeyboardEvent }
 const JSDOM = UntypedJSDOM as new (html: string, options: {
   runScripts: 'dangerously'
   pretendToBeVisual: boolean
@@ -115,7 +115,7 @@ function sheetOf(doc: Y.Doc, index = 0): SheetModel {
   return new WorkbookModel(doc, 'test').sheets()[index]!
 }
 
-async function open(doc: Y.Doc, options: { html?: string; format?: string; editable?: boolean } = {}) {
+async function open(doc: Y.Doc, options: { html?: string; format?: string; editable?: boolean; name?: string } = {}) {
   const awareness = new Awareness(doc)
   let page!: Page
   const bridge = new EditorBridge({
@@ -128,7 +128,7 @@ async function open(doc: Y.Doc, options: { html?: string; format?: string; edita
     theme,
     schemaVersion: SHEET_EDITOR_BUNDLE.schemaVersion,
     format: options.format ?? 'sheet',
-    name: 'Budget.xlsx',
+    name: options.name ?? 'Budget.xlsx',
     onError: (message) => { throw new Error(`editor error: ${message}`) },
   })
   page = new Page(bridge, options.html ?? SHEET_EDITOR_BUNDLE.html)
@@ -255,7 +255,7 @@ describe('spreadsheet editor bridge with the built editor', () => {
   it('opens CSV files without formats or more sheets, and read only when not editable', async () => {
     const csv = new Y.Doc()
     await sheetCodec.importFile(csv, new TextEncoder().encode('a,b\n1,2\n'), { name: 'people.csv', assets: { get: () => Promise.reject(new Error('none')), put: () => Promise.reject(new Error('none')) } })
-    const { bridge, page } = await open(csv)
+    const { bridge, page } = await open(csv, { name: 'people.csv' })
     expect(bridge.getState().sheet?.valuesOnly).toBe(true)
     expect(sheetToolbarState(bridge.getState()).disabled).toEqual(expect.arrayContaining(['bold', 'fill', 'fillYellow', 'numberFormat', 'wrap']))
     expect(page.element('add-sheet').hidden).toBe(true)
@@ -271,9 +271,68 @@ describe('spreadsheet editor bridge with the built editor', () => {
 
   it('hands over its whole state when the native host closes it', async () => {
     const { page } = await open(workbook((sheet) => sheet.setCell(0, 0, { v: 'kept' })))
+    page.type('pending last edit')
     const copy = new Y.Doc()
     Y.applyUpdate(copy, Uint8Array.from(Buffer.from(page.window.pulpoEditorState()!, 'base64')))
-    expect(sheetOf(copy).cell(0, 0)?.v).toBe('kept')
+    expect(sheetOf(copy).cell(0, 0)?.v).toBe('pending last edit')
+  })
+
+  it.each(['Enter', 'Escape', 'Tab'])('keeps the formula bar draft open during IME %s', async (key) => {
+    const { doc, page, bridge } = await open(workbook((sheet) => sheet.setCell(0, 0, { v: 'kept' })))
+    page.type('にほん')
+    const input = page.element<HTMLInputElement>('formula')
+    for (const flags of [{ isComposing: true }, { keyCode: 229 }]) {
+      const event = new page.dom.window.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...flags })
+      input.dispatchEvent(event)
+      expect(event.defaultPrevented).toBe(false)
+      page.flush()
+      await page.settle()
+      expect(sheetOf(doc).cell(0, 0)?.v).toBe('kept')
+      expect(bridge.getState().sheet?.editing).toBe(true)
+    }
+    page.press('commit-edit')
+    page.flush()
+    expect(sheetOf(doc).cell(0, 0)?.v).toBe('にほん')
+  })
+
+  it('updates CSV mode from the file name at init and after renaming', async () => {
+    const csv = new Y.Doc()
+    await sheetCodec.importFile(csv, new TextEncoder().encode('a,b\n1,2\n'), { name: 'data.csv', assets: { get: () => Promise.reject(new Error('none')), put: () => Promise.reject(new Error('none')) } })
+    const { bridge, page } = await open(csv, { name: 'data.xlsx' })
+    expect(bridge.getState().sheet?.valuesOnly).toBe(false)
+    expect(page.element('add-sheet').hidden).toBe(false)
+    page.type('=1+1')
+    page.press('commit-edit')
+    page.flush()
+    expect(sheetOf(csv).cell(0, 0)?.f).toBeDefined()
+    bridge.setName('data.csv')
+    page.flush()
+    await page.settle()
+    expect(bridge.getState().sheet?.valuesOnly).toBe(true)
+    expect(page.element('add-sheet').hidden).toBe(true)
+    page.type('=2+2')
+    page.press('commit-edit')
+    page.flush()
+    expect(sheetOf(csv).cell(1, 0)).toEqual({ v: '=2+2' })
+  })
+
+  it('cancels the draft and disables undo when editability is revoked', async () => {
+    const { doc, bridge, page } = await open(workbook((sheet) => sheet.setCell(0, 0, { v: 'kept' })))
+    page.type('saved')
+    page.press('commit-edit')
+    page.flush()
+    page.type('pending')
+    bridge.setEditable(false)
+    page.flush()
+    await page.settle()
+    bridge.command('undo')
+    bridge.command('redo')
+    page.flush()
+    const copy = new Y.Doc()
+    Y.applyUpdate(copy, Uint8Array.from(Buffer.from(page.window.pulpoEditorState()!, 'base64')))
+    expect(sheetOf(doc).cell(0, 0)?.v).toBe('saved')
+    expect(sheetOf(copy).cell(1, 0)?.v).toBeUndefined()
+    expect(bridge.getState().sheet?.editing).toBe(false)
   })
 
   it('refuses a page built for another format', async () => {

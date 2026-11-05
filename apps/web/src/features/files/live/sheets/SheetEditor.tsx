@@ -13,6 +13,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { ui } from '@/i18n/ui'
+import { registerSheetEditor } from './calculation'
 import { FormulaBar } from './FormulaBar'
 import { sheetViewLabels } from './labels'
 import { FindDialog, NoteDialog } from './SheetDialogs'
@@ -24,6 +25,7 @@ export interface SheetEditorProps {
   doc: Y.Doc
   awareness?: Awareness
   readOnly?: boolean
+  fileFormat?: SheetViewOptions['fileFormat']
   assets: LiveAssetStore
   user: { name: string; color: string }
   values?: SheetValues | 'cached'
@@ -108,7 +110,7 @@ function printSheet(view: SheetView): void {
 }
 
 /** A spreadsheet editor: toolbar, formula bar, the canvas grid, and sheet tabs. */
-export function SheetEditor({ doc, awareness, readOnly, assets, user, values, functions, renderChart, onView, toolbarSlot }: SheetEditorProps) {
+export function SheetEditor({ doc, awareness, readOnly, fileFormat, assets, user, values, functions, renderChart, onView, toolbarSlot }: SheetEditorProps) {
   const container = useRef<HTMLDivElement>(null)
   const imageInput = useRef<HTMLInputElement>(null)
   const [view, setView] = useState<SheetView>()
@@ -124,6 +126,7 @@ export function SheetEditor({ doc, awareness, readOnly, assets, user, values, fu
       doc,
       ...(awareness ? { awareness } : {}),
       readOnly: !!readOnly,
+      fileFormat,
       assets,
       user,
       labels: sheetViewLabels(),
@@ -132,11 +135,13 @@ export function SheetEditor({ doc, awareness, readOnly, assets, user, values, fu
       ...(renderChart ? { renderChart } : {}),
       appearance,
     })
+    const unregister = registerSheetEditor(doc, created)
     setView(created)
     onView?.(created)
     return () => {
       onView?.(undefined)
       created.destroy()
+      unregister()
     }
     // The view is rebuilt only for a different document; appearance and read-only update in place.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -149,6 +154,10 @@ export function SheetEditor({ doc, awareness, readOnly, assets, user, values, fu
     view.scheduleRender()
     view.notify()
   }, [view, appearance, readOnly])
+
+  useEffect(() => {
+    view?.setFileFormat(fileFormat)
+  }, [view, fileFormat])
 
   useEffect(() => {
     const element = container.current

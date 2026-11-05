@@ -44,6 +44,7 @@ export function FormulaBar({ view, state }: { view: SheetView; state: SheetViewS
   }
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return
     if (event.key === 'Enter' && !event.altKey) {
       event.preventDefault()
       if (view.commitEdit({ fill: event.ctrlKey || event.metaKey })) {

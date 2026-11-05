@@ -39,6 +39,8 @@ export class SheetInteractions {
   private noteTimer: ReturnType<typeof setTimeout> | undefined
   private readonly drawingElements = new Map<string, HTMLElement>()
   private readonly imageUrls = new Map<string, string>()
+  private readonly imageLoads = new Map<string, Promise<string | undefined>>()
+  private disposed = false
   private selectedDrawing: string | undefined
   private fillOutline: HTMLDivElement | undefined
   private handles: HTMLDivElement[] = []
@@ -88,8 +90,11 @@ export class SheetInteractions {
   }
 
   destroy(): void {
+    this.disposed = true
     for (const dispose of this.disposers) dispose()
     for (const url of this.imageUrls.values()) URL.revokeObjectURL(url)
+    this.imageUrls.clear()
+    this.imageLoads.clear()
     clearTimeout(this.noteTimer)
   }
 
@@ -413,7 +418,7 @@ export class SheetInteractions {
   // ── Keyboard ─────────────────────────────────────────────────────────────
 
   private onKeyDown(event: KeyboardEvent): void {
-    if (this.composing || event.isComposing) return
+    if (this.composing || event.isComposing || event.keyCode === 229) return
     const view = this.view
     const mod = event.ctrlKey || event.metaKey
     if (view.editing) {
@@ -1167,6 +1172,7 @@ export class SheetInteractions {
       option.textContent = item
       option.style.cssText = `padding:6px 12px;cursor:pointer;${item === current ? 'background:rgba(26,115,232,0.12);' : ''}`
       option.addEventListener('click', () => {
+        if (view.readOnly) return
         this.closePopup()
         commands.setCellInput(view.sheet, row, col, item, { valuesOnly: view.valuesOnly, currentFormat: view.styleAt(row, col).numFmt })
         view.focus()
@@ -1192,6 +1198,7 @@ export class SheetInteractions {
       button.textContent = text
       button.style.cssText = 'display:block;width:100%;text-align:left;padding:6px 12px;background:none;border:0;color:inherit;font:inherit;cursor:pointer;'
       button.addEventListener('click', () => {
+        if (view.readOnly) return
         this.closePopup()
         run()
         view.focus()
@@ -1275,6 +1282,7 @@ export class SheetInteractions {
     })
     if (!view.readOnly) {
       button(labels.ok, true, () => {
+        if (view.readOnly) return
         this.closePopup()
         const everything = sorted.every((value) => chosen.has(value))
         commands.filterColumn(sheet, offset, everything ? undefined : [...chosen], (r, c) => view.displayText(r, c))
@@ -1443,17 +1451,23 @@ export class SheetInteractions {
         const cached = this.imageUrls.get(drawing.image.hash)
         if (cached) image.src = cached
         else {
-          void view.options.assets
-            .get(drawing.image.hash)
-            .then((bytes) => {
-              // Only raster images and SVG as an <img> (scripts in SVG don't run there).
-              const url = URL.createObjectURL(new Blob([bytes as Uint8Array<ArrayBuffer>], { type: drawing.image!.mimeType }))
-              this.imageUrls.set(drawing.image!.hash, url)
-              image.src = url
-            })
-            .catch(() => {
-              element.textContent = view.labels.imageUnavailable
-            })
+          const ref = drawing.image
+          let loading = this.imageLoads.get(ref.hash)
+          if (!loading) {
+            loading = view.options.assets.get(ref.hash).then((bytes) => {
+              // Teardown owns URL cleanup, so late requests must never allocate one.
+              if (this.disposed) return undefined
+              const url = URL.createObjectURL(new Blob([bytes as Uint8Array<ArrayBuffer>], { type: ref.mimeType }))
+              this.imageUrls.set(ref.hash, url)
+              return url
+            }).finally(() => this.imageLoads.delete(ref.hash))
+            this.imageLoads.set(ref.hash, loading)
+          }
+          void loading.then((url) => {
+            if (!this.disposed && url) image.src = url
+          }).catch(() => {
+            if (!this.disposed) element.textContent = view.labels.imageUnavailable
+          })
         }
       }
     }
@@ -1484,7 +1498,7 @@ export class SheetInteractions {
     const sheet = view.sheet
     const drawing = sheet.drawings.get(drag.id) as DrawingObject | undefined
     drag.element.style.transform = ''
-    if (!drawing) return
+    if (!drawing || view.readOnly) return
     const dx = (event.clientX - drag.startX) / view.zoom
     const dy = (event.clientY - drag.startY) / view.zoom
     if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return
@@ -1522,11 +1536,12 @@ export class SheetInteractions {
     const part = path ? view.workbook.parts.get(path) : undefined
     const width = Math.round(rect.width)
     const height = Math.round(rect.height)
-    const key = `${part?.hash}|${width}x${height}|${view.zoom}`
+    const key = `${part?.hash}|${width}x${height}|${view.zoom}|${view.valuesRevision}|${JSON.stringify(view.theme)}|${view.options.appearance}`
     const id = element.dataset.drawingId!
     const cached = this.chartCache.get(id)
     if (cached?.key === key && element.dataset.rendered === key) return
     const render = (xml: string | undefined) => {
+      if (this.disposed) return
       const svg = xml ? view.renderChart(xml, { width, height }, (formula) => this.resolveChartRange(formula)) : undefined
       if (svg) element.innerHTML = svg
       else {
@@ -1548,6 +1563,7 @@ export class SheetInteractions {
     void view.options.assets
       .get(part.hash)
       .then((bytes) => {
+        if (this.disposed) return
         const xml = new TextDecoder().decode(bytes)
         this.chartCache.set(id, { key, xml })
         render(xml)

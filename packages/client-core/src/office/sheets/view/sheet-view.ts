@@ -3,7 +3,7 @@ import type { Awareness } from 'y-protocols/awareness'
 import type { LiveAssetStore } from '../../live-format.js'
 import { cellName, MAX_COLS, MAX_ROWS, parseCellName, parseRangeName, rangeContains, rangeName, type CellRange } from '../address.js'
 import { toA1Form } from '../model/formula-ids.js'
-import type { AutoFilter, DrawingObject, Hyperlink, Note, SheetColor, StyleProps } from '../model/schema.js'
+import type { AutoFilter, DrawingObject, Hyperlink, Note, RangeIds, SheetColor, SheetFormat, StyleProps } from '../model/schema.js'
 import { WorkbookModel, type SheetModel } from '../model/workbook.js'
 import { Stylesheet, type ResolvedStyle } from '../styles/stylesheet.js'
 import { CachedValues, isErrorValue, type CellValue, type SheetValues } from '../values.js'
@@ -61,6 +61,8 @@ export interface SheetViewOptions {
   doc: Y.Doc
   awareness?: Awareness
   readOnly?: boolean
+  /** The current file extension takes precedence over the imported workbook format. */
+  fileFormat?: SheetFormat
   assets: LiveAssetStore
   user: SheetViewUser
   labels?: Partial<SheetViewLabels>
@@ -83,6 +85,10 @@ export interface Selection {
 }
 
 export interface EditState {
+  sheetId: string
+  rowId: string
+  colId: string
+  ranges: RangeIds[]
   row: number
   col: number
   text: string
@@ -203,21 +209,25 @@ export class SheetView {
   copyRange: CellRange | undefined
   /** A reference being inserted by pointing while editing a formula. */
   pointing: { start: number; end: number; anchor: { row: number; col: number }; corner: { row: number; col: number } } | undefined
-  readOnly: boolean
+  private readOnlyValue = false
+  /** Invalidates chart output when cells or calculated values change. */
+  valuesRevision = 0
+  private themeXml: string | undefined
   private destroyed = false
 
   constructor(readonly options: SheetViewOptions) {
     this.workbook = new WorkbookModel(options.doc, this.origin)
     this.labels = { ...DEFAULT_LABELS, ...options.labels }
     this.functions = options.functions ?? FUNCTION_DOCS
-    this.readOnly = !!options.readOnly
+    this.readOnlyValue = !!options.readOnly
     this.ownsValues = !options.values || options.values === 'cached'
     // Formulas are calculated live unless the host passes its own values ('cached' shows the
     // values the file had cached, for read-only previews).
     this.values = options.values === 'cached' ? new CachedValues(this.workbook) : (options.values ?? new SheetCalc(this.workbook))
     this.stylesXml = this.workbook.metaValue('stylesXml')
     this.stylesheet = new Stylesheet(this.stylesXml)
-    this.theme = readThemeColors(this.workbook.metaValue('themeXml'))
+    this.themeXml = this.workbook.metaValue('themeXml')
+    this.theme = readThemeColors(this.themeXml)
     this.undoManager = new Y.UndoManager(this.workbook.root, { trackedOrigins: new Set([this.origin]), captureTimeout: 0 })
     this.undoManager.on('stack-item-added', (event: { stackItem: { meta: Map<string, unknown> } }) => {
       event.stackItem.meta.set('selection', this.selection)
@@ -299,6 +309,7 @@ export class SheetView {
 
   destroy(): void {
     if (this.destroyed) return
+    this.settleEdit()
     this.destroyed = true
     cancelAnimationFrame(this.frame)
     cancelAnimationFrame(this.notifyFrame)
@@ -329,8 +340,27 @@ export class SheetView {
     return this.colLayout
   }
 
+  get readOnly(): boolean {
+    return this.readOnlyValue
+  }
+
+  set readOnly(value: boolean) {
+    this.readOnlyValue = value
+    if (value) this.cancelEdit()
+    this.scheduleRender()
+    this.notify()
+  }
+
+  setFileFormat(format: SheetFormat | undefined): void {
+    if (format === this.options.fileFormat) return
+    this.settleEdit()
+    this.options.fileFormat = format
+    this.scheduleRender()
+    this.notify()
+  }
+
   get valuesOnly(): boolean {
-    const format = this.workbook.metaValue('format')
+    const format = this.options.fileFormat ?? this.workbook.metaValue('format')
     return format === 'csv' || format === 'tsv'
   }
 
@@ -500,17 +530,21 @@ export class SheetView {
   }
 
   private onDocChange(events: Y.YEvent<Y.AbstractType<unknown>>[], transaction: Y.Transaction): void {
+    this.valuesRevision++
     if (!this.workbook.sheet(this.sheetIdValue)) {
+      this.cancelEdit()
       // The sheet was deleted (here or by someone else): show another.
       this.sheetIdValue = this.workbook.sheets().find((sheet) => sheet.state === 'visible')?.id ?? this.workbook.sheetIds()[0] ?? ''
       this.selection = { ranges: [{ top: 0, left: 0, bottom: 0, right: 0 }], active: { row: 0, col: 0 }, anchor: { row: 0, col: 0 } }
       this.rebuildSheet()
     }
     const stylesXml = this.workbook.metaValue('stylesXml')
-    if (stylesXml !== this.stylesXml) {
+    const themeXml = this.workbook.metaValue('themeXml')
+    if (stylesXml !== this.stylesXml || themeXml !== this.themeXml) {
       this.stylesXml = stylesXml
       this.stylesheet = new Stylesheet(stylesXml)
-      this.theme = readThemeColors(this.workbook.metaValue('themeXml'))
+      this.themeXml = themeXml
+      this.theme = readThemeColors(themeXml)
       this.rebuildSheet()
     }
     let layout = false
@@ -532,12 +566,20 @@ export class SheetView {
     this.conditional.invalidate()
     // Remote edits may have deleted the rows under the selection.
     if (transaction.origin !== this.origin) this.clampSelection()
+    if (this.editing) {
+      const sheet = this.workbook.sheet(this.editing.sheetId)
+      const row = sheet?.rows.indexOf(this.editing.rowId) ?? -1
+      const col = sheet?.cols.indexOf(this.editing.colId) ?? -1
+      if (row < 0 || col < 0) this.cancelEdit()
+      else this.editing = { ...this.editing, row, col }
+    }
     this.interactions.onDocChange()
     this.scheduleRender()
     this.notify()
   }
 
   private invalidateValues(): void {
+    this.valuesRevision++
     this.conditional.invalidate()
     this.interactions.onDocChange()
     this.scheduleRender()
@@ -784,7 +826,7 @@ export class SheetView {
 
   setActiveSheet(id: string): void {
     if (!this.workbook.sheet(id) || id === this.sheetIdValue) return
-    this.commitEdit()
+    if (!this.commitEdit()) return
     this.saveViewState()
     this.sheetIdValue = id
     this.copyRange = undefined
@@ -1012,7 +1054,17 @@ export class SheetView {
     const merge = this.sheet.mergedRanges().find((entry) => rangeContains(entry.range, row, col))?.range
     const target = merge ? { row: merge.top, col: merge.left } : { row, col }
     const initial = text ?? this.inputText(target.row, target.col)
-    this.editing = { ...target, text: initial, caret: initial.length, enterMode }
+    this.editing = {
+      ...target, text: initial, caret: initial.length, enterMode,
+      sheetId: this.sheet.id,
+      rowId: this.sheet.rows.idAt(target.row),
+      colId: this.sheet.cols.idAt(target.col),
+      // Capture without materializing axes: opening an edit must not write to the document.
+      ranges: this.selection.ranges.map((range) => ({
+        top: this.sheet.rows.idAt(range.top), bottom: this.sheet.rows.idAt(range.bottom),
+        left: this.sheet.cols.idAt(range.left), right: this.sheet.cols.idAt(range.right),
+      })),
+    }
     this.pointing = undefined
     this.interactions.onEditStart()
     this.publishAwareness()
@@ -1034,10 +1086,22 @@ export class SheetView {
 
   /** Commits the edit; returns false when validation rejected it (the edit stays open). */
   commitEdit(options: { fill?: boolean } = {}): boolean {
+    if (this.readOnly) {
+      this.cancelEdit()
+      return true
+    }
     const edit = this.editing
     if (!edit) return true
-    const sheet = this.sheet
-    const validation = commands.validationAt(sheet, edit.row, edit.col)
+    const sheet = this.workbook.sheet(edit.sheetId)
+    const row = sheet?.rows.indexOf(edit.rowId) ?? -1
+    const col = sheet?.cols.indexOf(edit.colId) ?? -1
+    if (!sheet || row < 0 || col < 0) {
+      this.cancelEdit()
+      return true
+    }
+    edit.row = row
+    edit.col = col
+    const validation = commands.validationAt(sheet, row, col)
     if (validation && validation.showErrorMessage !== false && validation.errorStyle !== 'warning' && validation.errorStyle !== 'information' && !this.passesValidation(validation, edit.text)) {
       this.interactions.showMessage(validation.error || this.labels.invalidValue, edit.row, edit.col)
       return false
@@ -1045,13 +1109,20 @@ export class SheetView {
     this.editing = undefined
     this.pointing = undefined
     const options2 = { valuesOnly: this.valuesOnly, date1904: this.workbook.date1904, currentFormat: this.display.style(edit.row, edit.col).numFmt }
-    if (options.fill) commands.fillInput(sheet, this.selection.ranges, { row: edit.row, col: edit.col }, edit.text, options2)
+    if (options.fill) commands.fillInput(sheet, edit.ranges.map((range) => sheet.resolveRange(range)).filter((range): range is CellRange => !!range), { row, col }, edit.text, options2)
     else if (edit.text !== this.inputText(edit.row, edit.col)) commands.setCellInput(sheet, edit.row, edit.col, edit.text, options2)
     this.interactions.onEditEnd()
     this.publishAwareness()
     this.scheduleRender()
     this.notify()
     return true
+  }
+
+  /** Commits before serialization or teardown; rejected drafts are cancelled. */
+  settleEdit(): boolean {
+    if (this.commitEdit()) return true
+    this.cancelEdit()
+    return false
   }
 
   cancelEdit(): void {
@@ -1151,7 +1222,7 @@ export class SheetView {
   /** Runs a model change as one undo step, unless read-only. */
   private run(change: () => void): void {
     if (this.readOnly) return
-    this.commitEdit()
+    if (!this.commitEdit()) return
     change()
     this.scheduleRender()
     this.notify()
@@ -1378,19 +1449,19 @@ export class SheetView {
   }
 
   undo(): void {
-    this.commitEdit()
+    if (this.readOnly || !this.commitEdit()) return
     this.undoManager.undo()
   }
 
   redo(): void {
-    this.commitEdit()
+    if (this.readOnly || !this.commitEdit()) return
     this.undoManager.redo()
   }
 
   // ── Sheets ───────────────────────────────────────────────────────────────
 
   addSheet(): string | undefined {
-    if (this.readOnly) return undefined
+    if (this.readOnly || !this.commitEdit()) return undefined
     const sheets = this.workbook.sheetIds()
     const sheet = this.workbook.addSheet(this.workbook.nextSheetName(), sheets.indexOf(this.sheetIdValue) + 1)
     this.setActiveSheet(sheet.id)
@@ -1404,7 +1475,7 @@ export class SheetView {
   }
 
   deleteSheet(id: string): void {
-    if (this.readOnly) return
+    if (this.readOnly || (id === this.sheetIdValue && !this.commitEdit())) return
     this.workbook.deleteSheet(id)
   }
 
@@ -1415,7 +1486,7 @@ export class SheetView {
   }
 
   setSheetHidden(id: string, hidden: boolean): void {
-    if (this.readOnly) return
+    if (this.readOnly || (id === this.sheetIdValue && !this.commitEdit())) return
     this.workbook.setSheetState(id, hidden ? 'hidden' : 'visible')
     if (hidden && id === this.sheetIdValue) {
       const next = this.workbook.sheets().find((sheet) => sheet.state === 'visible')
@@ -1432,7 +1503,7 @@ export class SheetView {
 
   /** Copies a sheet (cells, formats, merges, rules, view) after itself. */
   duplicateSheet(id: string): string | undefined {
-    if (this.readOnly) return undefined
+    if (this.readOnly || !this.commitEdit()) return undefined
     const source = this.workbook.sheet(id)
     if (!source) return undefined
     let copyId = ''
@@ -1468,6 +1539,7 @@ export class SheetView {
   async insertImage(bytes: Uint8Array, mimeType: string, size: { width: number; height: number }): Promise<void> {
     if (this.readOnly) return
     const ref = await this.options.assets.put(bytes, mimeType)
+    if (this.readOnly || this.destroyed) return
     const { row, col } = this.selection.active
     const sheet = this.sheet
     const maxWidth = Math.min(size.width, 640)
@@ -1521,7 +1593,7 @@ export class SheetView {
     const targets = only ? [only] : this.find(query, { ...options, formulas: true })
     const pattern = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), options.matchCase ? 'g' : 'gi')
     let changed = 0
-    this.commitEdit()
+    if (!this.commitEdit()) return 0
     this.workbook.transact(() => {
       for (const target of targets) {
         const sheet = this.workbook.sheet(target.sheetId)
@@ -1543,6 +1615,7 @@ export class SheetView {
 
   /** The used part of the sheet as a self-contained HTML table, for printing and PDF export. */
   printHtml(): string {
+    this.settleEdit()
     const sheet = this.sheet
     const found = sheet.usedRange()
     // Prints are capped (a stray cell at XFD1048576 must not make a billion-cell table).

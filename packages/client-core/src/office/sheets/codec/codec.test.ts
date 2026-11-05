@@ -415,3 +415,48 @@ describe('toText', () => {
     expect(text).toContain('## Secret (hidden)')
   })
 })
+
+describe('export after a file rename', () => {
+  it.each(['Book.bin', 'Book.md'])('falls back to the stored workbook format for %s, while import still refuses it', async (name) => {
+    const { doc, codec, assets } = await open(buildXlsx({ sheets: [{ name: 'Budget', xml: worksheet('<row r="1"><c r="A1"><v>42</v></c></row>') }] }))
+    const bytes = await codec.exportFile(doc, { name, assets })
+    expect((await open(bytes)).model.sheets()[0]!.cell(0, 0)?.v).toBe(42)
+    await expect(codec.importFile(new Y.Doc(), bytes, { name, assets })).rejects.toMatchObject({ code: 'unsupported' })
+  })
+
+  it('falls back to xlsx for a new workbook and retains CSV for CSV-born files', async () => {
+    const codec = new SheetCodec()
+    const assets = new MemoryLiveAssetStore()
+    const doc = new Y.Doc()
+    WorkbookModel.initialize(doc).addSheet('Budget').setCell(0, 0, { v: 7 })
+    expect((await open(await codec.exportFile(doc, { name: 'Book.bin', assets }))).model.sheets()[0]!.cell(0, 0)?.v).toBe(7)
+    const csv = new Y.Doc()
+    await codec.importFile(csv, strToU8('name;amount\nitem;007\n'), { name: 'data.csv', assets })
+    expect(strFromU8(await codec.exportFile(csv, { name: 'data.bin', assets }))).toBe('name;amount\nitem;007\n')
+  })
+
+  it('exports a CSV-born document as a valid xlsx workbook', async () => {
+    const codec = new SheetCodec()
+    const assets = new MemoryLiveAssetStore()
+    const doc = new Y.Doc()
+    await codec.importFile(doc, strToU8('name,amount\nitem,7\n'), { name: 'data.csv', assets })
+    const out = await open(await codec.exportFile(doc, { name: 'data.xlsx', assets }))
+    expect(out.model.metaValue('format')).toBe('xlsx')
+    expect(out.model.sheets()[0]!.cell(1, 1)?.v).toBe(7)
+  })
+
+  it('exports an xlsx document as CSV using calculated values from the active sheet', async () => {
+    const { doc, codec, assets, model } = await open(buildXlsx({ sheets: [
+      { name: 'First', xml: worksheet('<row r="1"><c r="A1"><v>99</v></c></row>') },
+      { name: 'Active', xml: worksheet('<row r="1"><c r="A1"><v>7</v></c><c r="B1"><f>A1*2</f><v>0</v></c></row>') },
+    ] }))
+    const active = model.sheets()[1]!
+    active.setCell(0, 1, { f: toIdForm('A1*2', active) })
+    model.setMeta('activeSheet', active.id)
+    const bytes = await codec.exportFile(doc, { name: 'data.csv', assets })
+    expect(strFromU8(bytes)).toBe('7,14\r\n')
+    const csv = new Y.Doc()
+    await codec.importFile(csv, bytes, { name: 'data.csv', assets })
+    expect(new WorkbookModel(csv).sheets()[0]!.cell(0, 1)).toEqual({ v: 14 })
+  })
+})

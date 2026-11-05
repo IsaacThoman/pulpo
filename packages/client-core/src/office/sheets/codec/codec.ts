@@ -52,7 +52,9 @@ export class SheetCodec implements LiveFormatCodec {
   }
 
   async exportFile(doc: Y.Doc, context: LiveFormatContext): Promise<Uint8Array> {
-    const format = sheetFormatOf(context.name)
+    // Renaming out of the live format exports the original workbook under its new name.
+    const extension = context.name.slice(context.name.lastIndexOf('.') + 1).toLowerCase()
+    const format = (SHEET_EXTENSIONS as readonly string[]).includes(extension) ? extension as SheetFormat : new WorkbookModel(doc).metaValue('format') ?? 'xlsx'
     const calculate = this.options.calculate === undefined ? calculateWithEngine : this.options.calculate
     const calculated = calculate ? calculate(doc) : undefined
     if (format === 'csv' || format === 'tsv') return writeCsv(doc, format, calculated?.values)

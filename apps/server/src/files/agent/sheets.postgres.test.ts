@@ -127,6 +127,19 @@ describe.skipIf(!enabled)('agent edits to spreadsheets', () => {
     expect(out.model.sheetByName('Summary')!.cell(6, 6)?.v).toBe('user')
   })
 
+  it.each(['bin', 'md'])('renames a live workbook to .%s as a plain file containing its export', async (extension) => {
+    await files.attach({ [projects]: 'write' })
+    files.put('/workspace/book.xlsx', fixture('generated/gen-multisheet.xlsx'))
+    const [created] = await push([{ local: '/workspace/book.xlsx', remote: 'Projects/Book.xlsx' }])
+    const id = created!.nodeId!
+    await userEdit(id, (model) => model.sheets()[0]!.setCell(0, 0, { v: 'last saved edit' }))
+    await files.ok('mv', { from: 'Projects/Book.xlsx', to: `Projects/Book.${extension}` })
+    expect(await files.node(id)).toMatchObject({ kind: 'blob', name: `Book.${extension}` })
+    const [node] = await db.select().from(fileNodes).where(eq(fileNodes.id, id))
+    const bytes = objects.get(node!.objectKey!)!
+    expect((await open(bytes)).model.sheets()[0]!.cell(0, 0)?.v).toBe('last saved edit')
+  })
+
   it('keeps a CSV byte for byte, and its delimiter when the agent edits it', async () => {
     await files.attach({ [projects]: 'write' })
     const csv = 'name;amount\r\n"Smith; J.";1,5\r\nDoe;007\r\n'
