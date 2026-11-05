@@ -50,9 +50,15 @@ function DiffLines({ before, after }: { before: string; after: string }) {
  * text (the server reads them through the format's codec, so this works for every format until
  * one has a diff of its own).
  */
-function ChangeSheet({ change, onClose }: { change: FileChangeSummary; onClose: () => void }) {
+function ChangeSheet({ change, namespace, responseId, onClose }: { change: FileChangeSummary; namespace: string; responseId: string; onClose: () => void }) {
   const theme = useAppTheme()
-  const versions = useQuery({ queryKey: ['file-change-text', change.id], queryFn: () => fetchChangeText(change.id), staleTime: Infinity })
+  // Under the reply's Files key, so a revised proposal (the same change row, new content)
+  // invalidates it with the change list and nobody reviews one version and accepts another.
+  const versions = useQuery({
+    queryKey: filesQueryKeys.changeText(namespace, responseId, change.id),
+    queryFn: () => fetchChangeText(change.id),
+    staleTime: Infinity,
+  })
   return (
     <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <SafeAreaView edges={['bottom']} style={[styles.flex, { backgroundColor: theme.isDark ? theme.elevated : theme.background }]}>
@@ -219,7 +225,7 @@ export function FileChangesCard({ namespace, responseId }: { namespace: string; 
           {data.canRedo ? <FooterButton label="Redo Changes" color={theme.blue} disabled={Boolean(busy)} onPress={() => { void apply('all', () => updateFileChanges(responseId, 'redo'), 'redo') }} /> : null}
         </View>
       ) : null}
-      {diff ? <ChangeSheet change={diff} onClose={() => setDiff(null)} /> : null}
+      {diff ? <ChangeSheet change={diff} namespace={namespace} responseId={responseId} onClose={() => setDiff(null)} /> : null}
       {conflicts ? <ConflictSheet action={conflicts.action} conflicts={conflicts.items} onClose={() => setConflicts(null)} /> : null}
     </View>
   )

@@ -74,6 +74,13 @@ export class SocketIOYProvider {
   readonly docId: string
   readonly doc: Y.Doc
   private readonly ignoredOrigins: unknown[]
+  /**
+   * Whether the document holds state from before this session: what it held when the provider
+   * started, or what the offline cache loaded into it since. Only such state can be a stale copy
+   * of an earlier document; edits made before the first handshake, and updates other sessions
+   * relayed meanwhile, belong to the document the server has.
+   */
+  private hasPriorState: boolean
   private readonly schemaVersion: number
   private readonly schemaVersions: Record<string, number> | undefined
 
@@ -81,6 +88,7 @@ export class SocketIOYProvider {
     this.docId = docId.toLowerCase()
     this.doc = doc
     this.ignoredOrigins = ignoredOrigins
+    this.hasPriorState = doc.store.clients.size > 0
     this.schemaVersion = schemaVersions?.markdown ?? schemaVersion
     this.schemaVersions = schemaVersions
     this.awareness = new Awareness(doc)
@@ -220,7 +228,7 @@ export class SocketIOYProvider {
       }
       // A copy (from this device's cache) of an earlier document made under the same id would
       // merge its content into this one. Nothing is exchanged; the owner drops the copy.
-      if (isStaleCopy(this.doc, result.generation)) {
+      if (this.hasPriorState && isStaleCopy(this.doc, result.generation)) {
         this.setStatus({ state: 'error', error: 'stale_copy' })
         return
       }
@@ -237,7 +245,11 @@ export class SocketIOYProvider {
   }
 
   private readonly onDocUpdate = (update: Uint8Array, origin: unknown) => {
-    if (origin === this || this.ignoredOrigins.includes(origin)) return
+    if (origin === this) return
+    if (this.ignoredOrigins.includes(origin)) {
+      this.hasPriorState = true
+      return
+    }
     // Offline and joining edits live in the Y.Doc; the next handshake includes them all.
     if (!this.joined || this.isFinal()) return
     this.pending.push(update)

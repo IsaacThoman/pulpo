@@ -160,20 +160,9 @@ async function liveExport(tx: DatabaseTransaction, node: FileNodeRow): Promise<{
 
 /** A new live document (other than Markdown) from the file the agent pushed. */
 export async function createLiveDocChange(reply: ReplyContext, parentId: string | null, name: string, bytes: Uint8Array, mode: ChangeMode) {
-  const writtenKeys: string[] = []
-  try {
-    return await createLiveDocInReply(reply, parentId, name, bytes, mode, writtenKeys)
-  } catch (error) {
-    // Asset objects are stored before their rows; nothing refers to them once the rows roll back.
-    await deleteObjects(writtenKeys)
-    throw error
-  }
-}
-
-function createLiveDocInReply(reply: ReplyContext, parentId: string | null, name: string, bytes: Uint8Array, mode: ChangeMode, writtenKeys: string[]) {
-  return mutateReply(reply, async (tx) => {
+  return mutateReply(reply, async (tx, effects) => {
     const plan = await newItemPlan(tx, reply.userId, parentId, mode)
-    const node = await createDocInTx(tx, reply.userId, { parentId, name, bytes, exactName: true, suggestionChangeId: plan.suggestionChangeId, writtenKeys })
+    const node = await createDocInTx(tx, reply.userId, { parentId, name, bytes, exactName: true, suggestionChangeId: plan.suggestionChangeId, writtenKeys: effects.writtenKeys })
     // The reservation covers the pushed bytes; the document's state and any original bytes its
     // format keeps beside it (mixed line endings, legacy encodings) can need more.
     await assertWithinStorageAllowance(tx, reply.userId)
@@ -227,7 +216,7 @@ export async function updateLiveDocChange(reply: ReplyContext, nodeId: string, b
       assertRowMode(existing, 'suggest')
       // A proposal that revises this chat's pending one builds on what the agent saw: that one's
       // fork, and the version it was proposed against, so users' edits since are never taken back.
-      const proposed = await proposalFork(tx, node, bytes, proposal?.after ?? null)
+      const proposed = await proposalFork(tx, effects, node, bytes, proposal?.after ?? null)
       if (!proposed) return { status: 'unchanged', version }
       const after = await storeLiveSnapshot(tx, written, reply.userId, node, bytes)
       const forkKey = await written.put(reply.userId, proposed.fork, 'application/octet-stream')

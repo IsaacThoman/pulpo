@@ -11,6 +11,8 @@ export const filesQueryKeys = {
   node: (namespace: string, id: string) => ['files', namespace, 'node', id.toLowerCase()] as const,
   changes: (namespace: string) => ['files', namespace, 'changes'] as const,
   responseChanges: (namespace: string, responseId: string) => ['files', namespace, 'changes', responseId] as const,
+  /** Both versions of a change as text, refetched with its reply's changes (a revised proposal keeps its id). */
+  changeText: (namespace: string, responseId: string, changeId: string) => ['files', namespace, 'changes', responseId, 'text', changeId] as const,
 }
 
 /** A listing, from the server when reachable; offline, the last one seen on this device. */
