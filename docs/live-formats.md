@@ -186,7 +186,9 @@ Fields the editor doesn't model are kept: unknown keys anywhere, metadata, and w
   - Markdown is rendered with marked and sanitized to a short allowlist.
   - Outputs are drawn in the page, or in iframes sandboxed without scripts. Images come from the app, which fetches assets over the bridge (`asset` messages).
   - The keyboard bar has undo, redo, indent, insert, code/Markdown, move, and hide outputs; the screen menu clears all outputs.
-- **Review**. `diffNotebookFiles` compares two files cell by cell: added, removed, moved, and edited cells (with a line diff), output changes summarized, and changed metadata keys. The web's review dialog and the mobile change sheet show it.
+- **Review**. `diffNotebookFiles` compares two files cell by cell: added, removed, moved, and edited cells (with a line diff), output changes summarized, and changed notebook and cell metadata keys. Output comparison covers the complete data even when the displayed summary is capped at 1,000 outputs. The web's review dialog and the mobile change sheet show it.
+
+Serialization is checked before indentation is allocated: generated JSON is capped at 25 million characters and four times its compact representation (with a 1 MB floor). Expansive layouts are refused with `LiveFormatError('too_large')` before import changes the document; collaborative states are checked again on export. Files that exceed these limits remain uploads.
 
 ### Known limitations
 

@@ -81,7 +81,7 @@ function summarize(cell: NotebookCell): NotebookCellSummary {
 
 /** Outputs compared by what they hold (normalized), not by how the file spelled them. */
 function outputsKey(cell: NotebookCell): string {
-  return cell.type === 'code' ? JSON.stringify(cell.outputs) : ''
+  return cell.type === 'code' ? cell.outputsKey ?? JSON.stringify(cell.outputs) : ''
 }
 
 function attachmentsKey(cell: NotebookCell): string {
@@ -191,5 +191,5 @@ function metadataChanges(before: string, after: string): string[] {
 export function diffNotebookFiles(before: Uint8Array, after: Uint8Array): NotebookDiff {
   const left = decode(before)
   const right = decode(after)
-  return diffNotebooks(parseNotebook(left), parseNotebook(right), metadataChanges(left, right))
+  return diffNotebooks(parseNotebook(left, { compareAllOutputs: true }), parseNotebook(right, { compareAllOutputs: true }), metadataChanges(left, right))
 }

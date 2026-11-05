@@ -21,7 +21,7 @@ export type NotebookOutput =
 
 export type NotebookCell = { metadata?: Record<string, unknown> } & (
   | { type: 'markdown'; id: string; source: string; attachments: Record<string, MimeBundle> }
-  | { type: 'code'; id: string; source: string; executionCount: number | null; outputs: NotebookOutput[] }
+  | { type: 'code'; id: string; source: string; executionCount: number | null; outputs: NotebookOutput[]; outputsKey?: string }
   | { type: 'raw'; id: string; source: string; attachments?: Record<string, MimeBundle> }
 
 )
@@ -198,7 +198,7 @@ export function normalizeAttachments(value: unknown): Record<string, MimeBundle>
   return result
 }
 
-function normalizeCell(raw: unknown, index: number, v3: boolean): NotebookCell | null {
+function normalizeCell(raw: unknown, index: number, v3: boolean, compareAllOutputs: boolean): NotebookCell | null {
   if (!isObject(raw)) return null
   const metadata = isObject(raw.metadata) ? raw.metadata : {}
   const id = typeof raw.id === 'string' && raw.id ? raw.id : `cell-${index}`
@@ -211,6 +211,8 @@ function normalizeCell(raw: unknown, index: number, v3: boolean): NotebookCell |
         source: joinText(v3 ? raw.input : raw.source),
         executionCount: integerOrNull(v3 ? raw.prompt_number : raw.execution_count),
         outputs: normalizeOutputs(raw.outputs, v3),
+        // Review compares the complete data; viewers keep their bounded, normalized list.
+        ...compareAllOutputs ? { outputsKey: JSON.stringify(raw.outputs ?? []) } : {},
       }
     case 'markdown':
       return { type: 'markdown', metadata, id, source: joinText(raw.source), attachments: normalizeAttachments(raw.attachments) }
@@ -230,18 +232,18 @@ function normalizeCell(raw: unknown, index: number, v3: boolean): NotebookCell |
  * Reads a notebook from its JSON text. Throws `NotebookError` for text that is not JSON, JSON
  * that is not a notebook, and nbformat versions before 3.
  */
-export function parseNotebook(text: string): NotebookModel {
+export function parseNotebook(text: string, options: { compareAllOutputs?: boolean } = {}): NotebookModel {
   let raw: unknown
   try {
     raw = JSON.parse(text.charCodeAt(0) === 0xfeff ? text.slice(1) : text)
   } catch {
     throw new NotebookError('invalid_json', 'This notebook is not valid JSON.')
   }
-  return normalizeNotebook(raw)
+  return normalizeNotebook(raw, options)
 }
 
 /** Normalizes an already parsed notebook. */
-export function normalizeNotebook(raw: unknown): NotebookModel {
+export function normalizeNotebook(raw: unknown, options: { compareAllOutputs?: boolean } = {}): NotebookModel {
   if (!isObject(raw)) throw new NotebookError('not_a_notebook', 'This file is not a Jupyter notebook.')
   const nbformat = integerOrNull(raw.nbformat)
   const v3Cells = Array.isArray(raw.worksheets) ? (raw.worksheets as unknown[]).flatMap((sheet) => isObject(sheet) && Array.isArray(sheet.cells) ? sheet.cells as unknown[] : []) : null
@@ -258,7 +260,7 @@ export function normalizeNotebook(raw: unknown): NotebookModel {
   const cells: NotebookCell[] = []
   const ids = new Set<string>()
   cellsSource.forEach((cell, index) => {
-    const normalized = normalizeCell(cell, index, v3)
+    const normalized = normalizeCell(cell, index, v3, options.compareAllOutputs ?? false)
     if (!normalized) return
     // Ids are unique in valid notebooks, but views key cells by them, so copies get their position.
     let suffix = index

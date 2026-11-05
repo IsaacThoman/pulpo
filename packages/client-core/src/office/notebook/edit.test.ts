@@ -286,3 +286,28 @@ it.each(['code', 'markdown', 'raw'])('reports %s cell metadata-only proposals an
     doc.destroy()
   }
 })
+
+it.each(['replace', 'append', 'remove'])('detects %s of outputs past the display limit and applies the complete data', async (operation) => {
+  const outputs = Array.from({ length: 1_001 }, (_, index) => ({ output_type: 'display_data', metadata: {}, data: { 'text/plain': String(index) } }))
+  const file = (outputs: unknown[]) => new TextEncoder().encode(JSON.stringify({ cells: [{ cell_type: 'code', id: 'a', source: '', metadata: {}, execution_count: null, outputs }], metadata: {}, nbformat: 4, nbformat_minor: 5 }))
+  const changed = outputs.slice()
+  if (operation === 'replace') changed[1_000] = { ...outputs[1_000]!, data: { 'text/plain': 'replacement' } }
+  else if (operation === 'append') changed.push({ ...outputs[1_000]!, data: { 'text/plain': 'appended' } })
+  else changed.pop()
+  const before = file(outputs), after = file(changed)
+  const diff = diffNotebookFiles(before, after)
+  expect(diff.counts.outputs).toBe(1)
+  expect(diff.cells[0]).toMatchObject({ kind: 'changed', outputsChanged: true })
+  if (diff.cells[0]!.kind !== 'removed') expect(diff.cells[0]!.after.outputs.length).toBeLessThanOrEqual(1_000)
+  const doc = new Y.Doc()
+  const context = { name: 'outputs.ipynb', assets: new MemoryLiveAssetStore() }
+  try {
+    await notebookCodec.importFile(doc, before, context)
+    expect(await notebookCodec.applyFile(doc, after, context)).toMatchObject({ changed: true })
+    const exported = JSON.parse(new TextDecoder().decode(await notebookCodec.exportFile(doc, context)))
+    expect(exported.cells[0].outputs).toEqual(changed)
+    expect(await notebookCodec.applyFile(doc, after, context)).toMatchObject({ changed: false })
+  } finally {
+    doc.destroy()
+  }
+})
