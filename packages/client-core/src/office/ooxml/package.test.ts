@@ -1,4 +1,5 @@
-import { strToU8, unzipSync, zipSync } from 'fflate'
+import { strToU8, unzipSync, zipSync, type Zippable } from 'fflate'
+import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
 import { LiveFormatError } from '../live-format.js'
 import { OoxmlPackage, relationshipsPathFor, relativeTarget, resolveTarget } from './package.js'
@@ -190,6 +191,70 @@ describe('OoxmlPackage', () => {
 })
 
 describe('OoxmlPackage.write', () => {
+  it('keeps a __proto__ main part and other object-property names without introducing entries', () => {
+    const bytes = readFileSync(new URL('../../../src/office/ooxml/fixtures/proto-main.docx', import.meta.url))
+    const pkg = OoxmlPackage.read(bytes)
+    expect(pkg.mainPart()).toBe('__proto__')
+    const main = pkg.get('__proto__')!
+    for (const path of ['constructor', 'toString', '__proto__.png', 'media/__proto__', '0']) pkg.set(path, strToU8(path))
+    const written = pkg.write()
+    const reread = OoxmlPackage.read(written)
+    expect(reread.mainPart()).toBe('__proto__')
+    expect(Buffer.from(reread.get('__proto__')!).equals(Buffer.from(main))).toBe(true)
+    expect(reread.paths()).toEqual(pkg.paths())
+    for (const path of pkg.paths()) expect(Buffer.from(reread.get(path)!).equals(Buffer.from(pkg.get(path)!))).toBe(true)
+    expect(Buffer.from(reread.write()).equals(Buffer.from(written))).toBe(true)
+  })
+
+  it('constructs the fixed local timestamp for every write, including after timezone changes', () => {
+    const previous = process.env.TZ
+    const pkg = OoxmlPackage.read(readFileSync(new URL('../../../src/office/ooxml/fixtures/tz-change.docx', import.meta.url)))
+    try {
+      process.env.TZ = 'UTC'
+      const first = pkg.write()
+      for (const timezone of ['America/Los_Angeles', 'Pacific/Auckland', 'UTC']) {
+        process.env.TZ = timezone
+        expect(Buffer.from(pkg.write()).equals(Buffer.from(first))).toBe(true)
+      }
+    } finally {
+      if (previous === undefined) delete process.env.TZ
+      else process.env.TZ = previous
+    }
+  })
+
+  it('documents the ZIP layout change from zipSync while keeping normal parts and compression', () => {
+    const pkg = OoxmlPackage.read(samplePackage())
+    // Reproduce the previous writer for a normal package with no object-property part names.
+    const mtime = new Date(1980, 0, 1)
+    const files: Zippable = {}
+    for (const path of pkg.paths()) {
+      files[path] = [pkg.get(path)!, { level: path.endsWith('.png') ? 0 : 6, mtime }]
+    }
+    const previous = zipSync(files, { mtime })
+    const written = pkg.write()
+    // Zip writes a signed 16-byte descriptor per entry and zero local CRC/size placeholders.
+    // These small parts have identical compressed payloads; larger parts can use different
+    // streaming deflate blocks, so matching the previous archive's checksum is not promised.
+    expect(written.length).toBe(previous.length + pkg.paths().length * 16)
+    expect(Buffer.from(written).equals(Buffer.from(previous))).toBe(false)
+    const before = new DataView(previous.buffer, previous.byteOffset, previous.byteLength)
+    const after = new DataView(written.buffer, written.byteOffset, written.byteLength)
+    for (const path of pkg.paths()) {
+      const old = entryHeaders(previous, path)
+      const next = entryHeaders(written, path)
+      expect(after.getUint16(next.local + 6, true)).toBe(before.getUint16(old.local + 6, true) | 8)
+      expect(after.getUint16(next.central + 8, true)).toBe(before.getUint16(old.central + 8, true) | 8)
+      for (const at of [14, 18, 22]) expect(after.getUint32(next.local + at, true)).toBe(0)
+      const oldStart = old.local + 30 + before.getUint16(old.local + 26, true) + before.getUint16(old.local + 28, true)
+      const newStart = next.local + 30 + after.getUint16(next.local + 26, true) + after.getUint16(next.local + 28, true)
+      const size = before.getUint32(old.central + 20, true)
+      expect(after.getUint32(next.central + 20, true)).toBe(size)
+      expect(Buffer.from(written.subarray(newStart, newStart + size)).equals(Buffer.from(previous.subarray(oldStart, oldStart + size)))).toBe(true)
+      expect(after.getUint32(newStart + size, true)).toBe(0x08074b50)
+      expect(Buffer.from(OoxmlPackage.read(written).get(path)!).equals(Buffer.from(pkg.get(path)!))).toBe(true)
+    }
+  })
+
   it('keeps content types first, XML compressed, media stored, and DOS timestamps fixed', () => {
     const pkg = new OoxmlPackage(new Map([
       ['word/media/image1.png', new Uint8Array([1, 2, 3])],
