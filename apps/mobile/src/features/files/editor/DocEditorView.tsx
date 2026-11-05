@@ -10,7 +10,8 @@ import type { DocHandle } from '../doc/sessions'
 import { EditorBridge, type EditorBridgeState } from './bridge'
 import { EDITOR_BUNDLES, type MobileEditorFormat } from './bundles'
 import { editorTheme, normalizeHref } from './presentation'
-import type { ReviewAction, TextCommand } from './protocol'
+import { notebookToolbarState, NOTEBOOK_TOOLBAR } from './notebookToolbar'
+import type { NotebookCommand, ReviewAction, TextCommand } from './protocol'
 import { TEXT_TOOLBAR, textToolbarState, type NativeToolbarItem } from './textToolbar'
 
 type NativeToolbar = { visible: boolean; active: string[]; disabled: string[]; tint: string; items: NativeToolbarItem[] }
@@ -61,13 +62,13 @@ PulpoDocEditor?.addListener('onFinalState', ({ instanceId, state }) => {
 })
 
 const noSubscription = () => () => {}
-const INITIAL: EditorBridgeState = { loaded: false, formatting: null, focused: false, suggestions: { count: 0, index: null, active: null }, text: null, incompatible: false }
+const INITIAL: EditorBridgeState = { loaded: false, formatting: null, focused: false, suggestions: { count: 0, index: null, active: null }, text: null, notebook: null, incompatible: false }
 const initialState = () => INITIAL
 
 export interface DocEditorHandle {
   format(command: FormatCommand, href?: string): void
-  /** A text editor's command (text and code files). */
-  command(command: TextCommand): void
+  /** A text or notebook editor's command. */
+  command(command: TextCommand | NotebookCommand): void
   /** A formatting bar's command, asking for a link's address where needed. */
   toolbar(command: FormatCommand): void
   review(action: ReviewAction): void
@@ -82,6 +83,8 @@ interface Props {
   format?: MobileEditorFormat
   /** The file name, for editors that depend on it (a code file's language). */
   name?: string
+  /** Fetches the document's assets for the page (a notebook's images). */
+  fetchAsset?: (hash: string) => Promise<Uint8Array>
   /** The document's session; the editor takes its own hold on it while it closes. */
   acquire: () => DocHandle
   editable: boolean
@@ -99,6 +102,7 @@ interface Props {
 export const DocEditorView = forwardRef<DocEditorHandle, Props>(function DocEditorView({
   format = 'markdown',
   name,
+  fetchAsset,
   acquire,
   editable,
   placeholder,
@@ -113,8 +117,8 @@ export const DocEditorView = forwardRef<DocEditorHandle, Props>(function DocEdit
   const native = useRef<NativeRef>(null)
   const theme = useAppTheme()
   const bundle = EDITOR_BUNDLES[format]
-  const latest = useRef({ acquire, editable, placeholder, sessionLabel, sessionColor, theme, bottomPadding, onLink, onResolved, bundle, name })
-  latest.current = { acquire, editable, placeholder, sessionLabel, sessionColor, theme, bottomPadding, onLink, onResolved, bundle, name }
+  const latest = useRef({ acquire, editable, placeholder, sessionLabel, sessionColor, theme, bottomPadding, onLink, onResolved, bundle, name, fetchAsset })
+  latest.current = { acquire, editable, placeholder, sessionLabel, sessionColor, theme, bottomPadding, onLink, onResolved, bundle, name, fetchAsset }
   const [instance, setInstance] = useState<{ id: string; bridge: EditorBridge; handle: DocHandle } | null>(null)
 
   // The session and page are made once per mounted editor, in an effect so that a discarded
@@ -136,6 +140,7 @@ export const DocEditorView = forwardRef<DocEditorHandle, Props>(function DocEdit
       format: props.bundle.format,
       name: props.name,
       onLink: (href) => latest.current.onLink?.(href),
+      fetchAsset: (hash) => latest.current.fetchAsset?.(hash) ?? Promise.reject(new Error('No assets here')),
       onResolved: () => latest.current.onResolved?.(),
     })
     // This session's caret is labeled for other devices viewing the document.
@@ -175,8 +180,8 @@ export const DocEditorView = forwardRef<DocEditorHandle, Props>(function DocEdit
 
   const runToolbar = (command: string) => {
     if (!bridge) return
-    if (format === 'text') {
-      bridge.command(command as TextCommand)
+    if (format === 'text' || format === 'notebook') {
+      bridge.command(command as TextCommand | NotebookCommand)
       return
     }
     if (command !== 'link') {
@@ -217,7 +222,7 @@ export const DocEditorView = forwardRef<DocEditorHandle, Props>(function DocEdit
   }), [bridge])
 
   if (!NativeDocEditor || !instance || !bridge) return null
-  const formatting = format === 'text' ? textToolbarState(state) : state.formatting
+  const formatting = format === 'text' ? textToolbarState(state) : format === 'notebook' ? notebookToolbarState(state) : state.formatting
   return (
     <NativeDocEditor
       ref={native}
@@ -230,7 +235,7 @@ export const DocEditorView = forwardRef<DocEditorHandle, Props>(function DocEdit
         active: formatting?.active ?? [],
         disabled: formatting?.disabled ?? [],
         tint: theme.blue,
-        items: format === 'text' ? [...TEXT_TOOLBAR] : [],
+        items: format === 'text' ? [...TEXT_TOOLBAR] : format === 'notebook' ? [...NOTEBOOK_TOOLBAR] : [],
       }}
       onMessage={({ nativeEvent }) => bridge.receive(nativeEvent.data)}
       onTerminate={() => bridge.reset()}

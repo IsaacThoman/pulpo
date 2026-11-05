@@ -290,6 +290,24 @@ export function fetchChangeText(changeId: string): Promise<{ name: string; forma
   return apiRequest(`/api/file-changes/${changeId}/text`)
 }
 
+/** Bytes from an API path, with this device's credentials. */
+async function fetchApiBytes(path: string): Promise<Uint8Array> {
+  const url = apiUrl(path)
+  const response = await fetch(url, { headers: nativeAuthorizationHeaders(url) })
+  if (!response.ok) throw new ApiError(response.status, 'request_failed', `Request failed (${response.status})`)
+  return new Uint8Array(await response.arrayBuffer())
+}
+
+/** One of a live document's assets (a notebook's image), by its SHA-256. */
+export function fetchFileAsset(fileId: string, hash: string): Promise<Uint8Array> {
+  return fetchApiBytes(`/api/files/${fileId}/assets/${hash}`)
+}
+
+/** One side of a live document's agent change as the file's bytes, for format diffs. */
+export function fetchChangeContent(changeId: string, side: 'before' | 'after'): Promise<Uint8Array> {
+  return fetchApiBytes(`/api/file-changes/${changeId}/content/${side}`)
+}
+
 /** Writes text to a shareable temporary file with the given name. */
 export function textExportFile(name: string, text: string): File {
   return exportFile(name, text)

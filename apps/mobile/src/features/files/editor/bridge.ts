@@ -55,6 +55,8 @@ export interface EditorBridgeOptions {
   /** The file name, for editors that depend on it (a code file's language). */
   name?: string
   onLink?: (href: string) => void
+  /** Fetches a document asset for the page (notebook images); without it the page shows none. */
+  fetchAsset?: (hash: string) => Promise<Uint8Array>
   /** The owner resolved suggestions in the editor; replies' change counts may be stale. */
   onResolved?: () => void
   onError?: (message: string) => void
@@ -189,7 +191,10 @@ export class EditorBridge {
     this.options.doc.off('update', this.onDocUpdate)
     this.options.awareness.off('update', this.onAwarenessUpdate)
     // This session's cursor leaves with its editor.
-    if (this.options.awareness.getLocalState()) this.options.awareness.setLocalStateField('cursor', null)
+    if (this.options.awareness.getLocalState()) {
+      this.options.awareness.setLocalStateField('cursor', null)
+      if (this.options.format === 'notebook') this.options.awareness.setLocalStateField('notebook', null)
+    }
     this.rejectExports(new Error('The editor closed'))
     this.listeners.clear()
   }
@@ -243,7 +248,21 @@ export class EditorBridge {
         break
       case 'cursor':
         this.options.awareness.setLocalStateField('cursor', message.cursor)
+        if (message.notebook !== undefined) this.options.awareness.setLocalStateField('notebook', message.notebook)
         break
+      case 'asset': {
+        const { session } = this
+        const hash = message.hash
+        const fetchAsset = this.options.fetchAsset
+        if (!fetchAsset || !/^[0-9a-f]{64}$/.test(hash)) {
+          this.post({ type: 'asset', session, hash, data: null })
+          break
+        }
+        void fetchAsset(hash).then((bytes) => bytesToBase64(bytes), () => null).then((data) => {
+          if (this.session === session) this.post({ type: 'asset', session, hash, data })
+        })
+        break
+      }
       case 'resolved':
         this.options.onResolved?.()
         break

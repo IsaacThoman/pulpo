@@ -17,6 +17,7 @@ import { fileIcon, filesErrorMessage } from '../display'
 import { previewUploadedFile } from '../open'
 import { refreshFiles } from '../operations'
 import { fileChangesQuery, filesQueryKeys } from '../queries'
+import { NotebookChangeDiff } from './NotebookChangeDiff'
 
 const COLLAPSED_ROWS = 4
 
@@ -54,10 +55,12 @@ function ChangeSheet({ change, namespace, responseId, onClose }: { change: FileC
   const theme = useAppTheme()
   // Under the reply's Files key, so a revised proposal (the same change row, new content)
   // invalidates it with the change list and nobody reviews one version and accepts another.
+  const notebook = change.format === 'notebook'
   const versions = useQuery({
     queryKey: filesQueryKeys.changeText(namespace, responseId, change.id),
     queryFn: () => fetchChangeText(change.id),
     staleTime: Infinity,
+    enabled: !notebook,
   })
   return (
     <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
@@ -70,7 +73,7 @@ function ChangeSheet({ change, namespace, responseId, onClose }: { change: FileC
           <Text style={[styles.sheetIntro, { color: theme.secondary }]}>
             {pendingSuggestion(change) ? 'What keeping the agent’s suggestion would change:' : 'What the agent changed:'}
           </Text>
-          {versions.isPending ? <ActivityIndicator color={theme.secondary} /> : versions.isError ? (
+          {notebook ? <NotebookChangeDiff change={change} queryKey={[...filesQueryKeys.changeText(namespace, responseId, change.id), 'notebook']} /> : versions.isPending ? <ActivityIndicator color={theme.secondary} /> : versions.isError ? (
             <Text style={[styles.conflictReason, { color: theme.red }]}>{filesErrorMessage(versions.error)}</Text>
           ) : <View style={[styles.conflict, { borderColor: theme.separator }]}><DiffLines before={versions.data.before} after={versions.data.after} /></View>}
         </ScrollView>
