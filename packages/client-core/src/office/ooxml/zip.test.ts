@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { Inflate, strToU8, unzipSync, zipSync } from 'fflate'
 import { describe, expect, it, vi } from 'vitest'
 import { OoxmlPackage } from './package.js'
+import { zipDescriptorEnd } from './zip.js'
 
 // tsc emits test modules into dist too; their binary fixture data stays in src.
 const fixture = (name: string) => new Uint8Array(readFileSync(new URL(`../../../src/office/ooxml/fixtures/${name}`, import.meta.url)))
@@ -180,6 +181,20 @@ describe('bounded, verified OOXML ZIP reads', () => {
       modified.setBigUint64(withoutSignature.length - 22 - 20 + 8, BigInt(zipEnd - 4), true)
     }
     expect(OoxmlPackage.read(withoutSignature).text('[Content_Types].xml')).toContain('<Types')
+  })
+
+  it('tries the unsigned ZIP64 layout when the CRC and compressed size equal the descriptor signature', () => {
+    // Exact descriptor and following local-header signature from the 134 MiB review input.
+    // Test the production parser with this 24-byte slice so every suite run need not allocate
+    // hundreds of MiB for a stored payload just to reach these ambiguous descriptor bytes.
+    const bytes = fixture('unsigned-zip64-crc-signature.bin')
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+    const signature = 0x08074b50
+    expect(view.getBigUint64(16, true)).toBeGreaterThan(BigInt(Number.MAX_SAFE_INTEGER))
+    expect(zipDescriptorEnd(view, 0, bytes.length, true, signature, signature, signature)).toBe(20)
+    // A mismatch in the valid unsigned candidate must still be refused after both attempts.
+    view.setUint32(12, signature + 1, true)
+    expect(() => zipDescriptorEnd(view, 0, bytes.length, true, signature, signature, signature)).toThrow(corrupt)
   })
 
   it('accepts a local ZIP64 field without ZIP64 end records', () => {
