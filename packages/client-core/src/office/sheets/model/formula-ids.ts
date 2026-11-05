@@ -191,13 +191,13 @@ function collapsed(sheet: SheetModel, token: IdToken): boolean {
 function resolveEnd(sheet: SheetModel, end: IdEnd, side: 'start' | 'end' | 'single'): RefEnd | undefined {
   const resolved: RefEnd = {}
   if (end.row !== undefined) {
-    const row = resolveIndex(sheet.rows.indexOf(end.row), sheet.rows.deletedIndex(end.row), side)
+    const row = resolveIndex(sheet.rows.indexOf(end.row), () => sheet.rows.deletedPosition(end.row!, side === 'end' ? 'end' : 'start'), side)
     if (row === undefined || row >= MAX_ROWS) return undefined
     resolved.row = row
     resolved.rowAbs = !!end.rowAbs
   }
   if (end.col !== undefined) {
-    const col = resolveIndex(sheet.cols.indexOf(end.col), sheet.cols.deletedIndex(end.col), side)
+    const col = resolveIndex(sheet.cols.indexOf(end.col), () => sheet.cols.deletedPosition(end.col!, side === 'end' ? 'end' : 'start'), side)
     if (col === undefined || col >= MAX_COLS) return undefined
     resolved.col = col
     resolved.colAbs = !!end.colAbs
@@ -205,10 +205,10 @@ function resolveEnd(sheet: SheetModel, end: IdEnd, side: 'start' | 'end' | 'sing
   return resolved
 }
 
-function resolveIndex(index: number, deleted: number | undefined, side: 'start' | 'end' | 'single'): number | undefined {
+function resolveIndex(index: number, deleted: () => number | undefined, side: 'start' | 'end' | 'single'): number | undefined {
   if (index >= 0) return index
   // A range edge deleted by someone else while this formula was written: Excel shrinks the
   // range, so take the neighbor that moved into its place.
-  if (deleted === undefined || side === 'single') return undefined
-  return side === 'start' ? deleted : deleted - 1
+  if (side === 'single') return undefined
+  return deleted()
 }

@@ -11,13 +11,21 @@ import * as Y from 'yjs'
  * virtual id ever used. Materializing the axis appends exactly those ids, so a reference to a row
  * past the end (a formula pointing at A5000 in a 100-row sheet) can name it before it exists, and
  * still finds it after someone else materializes it. Two replicas materializing the same rows at
- * once both append the same ids; the first occurrence wins and later duplicates are ignored.
+ * once both append the same ids; the first occurrence wins and later duplicates are ignored. A row
+ * one of them inserted next to its copy is moved to the same place beside the winning copy (see
+ * `rebuild`), so the insertion lands where it was made.
  *
  * Inserted rows get random ids (never all digits). Deleted ids are tombstoned with the index they
- * had, both so they never come back (a concurrent materialization can re-append a deleted virtual
- * id) and so references to them can be resolved approximately (a range whose last row was deleted
- * concurrently shrinks instead of breaking).
+ * had and their surviving neighbors, both so they never come back (a concurrent materialization
+ * can re-append a deleted virtual id) and so references to them can be resolved (a range whose
+ * last row was deleted concurrently shrinks to the row before it, wherever that row is now).
  */
+
+/**
+ * A deleted id: the index it had, and the ids of the nearest entries that survived the deletion
+ * before (`p`) and after (`n`) it. Older documents stored just the index.
+ */
+export type Tombstone = number | { i: number; p?: string; n?: string }
 
 const ID_ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789'
 
@@ -38,6 +46,8 @@ function virtualNumber(id: string): number {
 export interface AxisSnapshot {
   /** Ids in display order, without duplicates or tombstoned ids. */
   readonly ids: readonly string[]
+  /** For each of `ids`, its position in the Y.Array. */
+  readonly stored: readonly number[]
   /** Next virtual id: the axis continues with `next`, `next + 1`, … past `ids`. */
   readonly next: number
   /** Index of each live id. */
@@ -46,6 +56,7 @@ export interface AxisSnapshot {
 
 interface MutableSnapshot {
   ids: string[]
+  stored: number[]
   next: number
   index: Map<string, number>
 }
@@ -55,8 +66,8 @@ export class Axis {
 
   constructor(
     readonly order: Y.Array<string>,
-    /** Tombstones: deleted id → the index it had when it was deleted. */
-    readonly dead: Y.Map<number>,
+    /** Tombstones: deleted id → where it was when it was deleted. */
+    readonly dead: Y.Map<Tombstone>,
     /**
      * Stores entries in chunks of this many. Two replicas storing the same virtual ids at once
      * keep both copies until one is ignored, and a row inserted next to a copy that loses can end
@@ -75,18 +86,67 @@ export class Axis {
     return this.rebuild()
   }
 
+  /**
+   * Resolves the stored order. Duplicate copies after the first are dropped, but an entry that
+   * was inserted right before a losing copy (and the run of inserted entries before it) belonged
+   * before that row: it moves to just before the winning copy. Otherwise a row inserted at the
+   * start of a chunk two replicas materialized at once would land a whole chunk further down.
+   */
   private rebuild(): MutableSnapshot {
-    const ids: string[] = []
-    const index = new Map<string, number>()
+    const order = this.order.toArray()
     let next = 0
     for (const [id] of this.dead) next = Math.max(next, virtualNumber(id) + 1)
-    for (const id of this.order) {
+    // Which copies lose, and which ids have more than one copy.
+    const seen = new Set<string>()
+    const duplicated = new Set<string>()
+    const losing: boolean[] = new Array(order.length).fill(false)
+    order.forEach((id, position) => {
       next = Math.max(next, virtualNumber(id) + 1)
-      if (index.has(id) || this.dead.has(id)) continue
-      index.set(id, ids.length)
-      ids.push(id)
+      if (this.dead.has(id)) return
+      if (seen.has(id)) {
+        losing[position] = true
+        duplicated.add(id)
+      } else seen.add(id)
+    })
+    // Entries to move: going backwards, a losing copy anchors the inserted entries right before it.
+    let moved: Map<string, number[]> | undefined
+    const movedPositions = new Set<number>()
+    if (duplicated.size) {
+      moved = new Map()
+      const anchorOf: (string | undefined)[] = new Array(order.length)
+      let anchor: string | undefined
+      for (let position = order.length - 1; position >= 0; position--) {
+        const id = order[position]!
+        if (this.dead.has(id)) continue
+        if (losing[position]) anchor = id
+        else if (anchor !== undefined && !duplicated.has(id) && virtualNumber(id) < 0) anchorOf[position] = anchor
+        else anchor = undefined
+      }
+      anchorOf.forEach((target, position) => {
+        if (target === undefined) return
+        movedPositions.add(position)
+        const list = moved!.get(target)
+        if (list) list.push(position)
+        else moved!.set(target, [position])
+      })
     }
-    this.snapshot = { ids, next, index }
+    const ids: string[] = []
+    const stored: number[] = []
+    const index = new Map<string, number>()
+    const add = (position: number) => {
+      index.set(order[position]!, ids.length)
+      ids.push(order[position]!)
+      stored.push(position)
+    }
+    const placed = new Set<string>()
+    order.forEach((id, position) => {
+      if (this.dead.has(id) || losing[position] || placed.has(id)) return
+      if (movedPositions.has(position)) return
+      for (const before of moved?.get(id) ?? []) add(before)
+      placed.add(id)
+      add(position)
+    })
+    this.snapshot = { ids, stored, next, index }
     return this.snapshot
   }
 
@@ -118,9 +178,34 @@ export class Axis {
     return -1
   }
 
-  /** Where a deleted id was when it was deleted, for approximate resolution; undefined if unknown. */
+  /** Where a deleted id was when it was deleted; undefined if it wasn't deleted. */
   deletedIndex(id: string): number | undefined {
-    return this.dead.get(id)
+    const tombstone = this.dead.get(id)
+    return typeof tombstone === 'number' ? tombstone : tombstone?.i
+  }
+
+  /**
+   * Where a deleted range edge resolves to now: for a start edge the entry that followed it, for
+   * an end edge the one before it (Excel shrinks a range whose edge is deleted). Found through the
+   * neighbors recorded when it was deleted, so deletions made elsewhere since then (even of those
+   * neighbors) don't shift it. Undefined if the id wasn't deleted; -1 if nothing precedes an end.
+   */
+  deletedPosition(id: string, side: 'start' | 'end'): number | undefined {
+    const visited = new Set<string>()
+    let current = id
+    for (;;) {
+      const tombstone = this.dead.get(current)
+      if (tombstone === undefined) return undefined
+      if (typeof tombstone === 'number') return side === 'start' ? tombstone : tombstone - 1
+      const neighbor = side === 'start' ? tombstone.n : tombstone.p
+      if (neighbor === undefined) return side === 'start' ? tombstone.i : -1
+      const found = this.indexOf(neighbor)
+      if (found >= 0) return found
+      // The neighbor was deleted too: continue from its own tombstone.
+      if (visited.has(neighbor) || !this.dead.has(neighbor)) return side === 'start' ? tombstone.i : tombstone.i - 1
+      visited.add(current)
+      current = neighbor
+    }
   }
 
   /** Stores entries until at least `count` are materialized. Call inside a transaction. */
@@ -131,14 +216,16 @@ export class Axis {
     const target = Math.ceil(count / this.chunk) * this.chunk
     const added: string[] = []
     for (let n = ids.length; n < target; n++) added.push(String(next + n - ids.length))
+    const start = this.order.length
     this.order.push(added)
     // Appending virtual ids extends the snapshot as it is; no need to rebuild it (imports call
     // this for every row they touch).
     const snapshot = this.snapshot!
-    for (const id of added) {
+    added.forEach((id, offset) => {
       snapshot.index.set(id, snapshot.ids.length)
       snapshot.ids.push(id)
-    }
+      snapshot.stored.push(start + offset)
+    })
     snapshot.next += added.length
   }
 
@@ -164,7 +251,9 @@ export class Axis {
     this.ensure(position + count + 1)
     const { ids } = this.resolve()
     const removed = ids.slice(position, position + count)
-    removed.forEach((id, offset) => this.dead.set(id, position + offset))
+    const before = position > 0 ? ids[position - 1] : undefined
+    const after = this.idAt(position + count)
+    removed.forEach((id, offset) => this.dead.set(id, { i: position + offset, ...(before !== undefined ? { p: before } : {}), n: after }))
     this.removeFromOrder(new Set(removed))
     this.invalidate()
     return removed
@@ -182,20 +271,10 @@ export class Axis {
     this.invalidate()
   }
 
-  /** The Y.Array index of the `position`th live entry (skipping duplicates and tombstones). */
+  /** The Y.Array index of the `position`th live entry, or the end. */
   private storedIndex(position: number): number {
-    const seen = new Set<string>()
-    let live = 0
-    let stored = 0
-    for (const id of this.order) {
-      if (!seen.has(id) && !this.dead.has(id)) {
-        if (live === position) return stored
-        live++
-      }
-      seen.add(id)
-      stored++
-    }
-    return stored
+    const { stored } = this.resolve()
+    return position < stored.length ? stored[position]! : this.order.length
   }
 
   private removeFromOrder(ids: Set<string>): void {

@@ -117,3 +117,56 @@ describe('concurrent editing', () => {
     })
   }
 })
+
+describe('concurrent structure, whichever replica wins', () => {
+  /** Two replicas of `base` with the given client ids, edited by `edit`, then synced. */
+  function race(base: Y.Doc, clientIds: [number, number], edit: (a: WorkbookModel, b: WorkbookModel) => void): [WorkbookModel, WorkbookModel] {
+    const a = new Y.Doc()
+    const b = new Y.Doc()
+    a.clientID = clientIds[0]
+    b.clientID = clientIds[1]
+    Y.applyUpdate(a, Y.encodeStateAsUpdate(base))
+    Y.applyUpdate(b, Y.encodeStateAsUpdate(base))
+    const models: [WorkbookModel, WorkbookModel] = [new WorkbookModel(a), new WorkbookModel(b)]
+    edit(...models)
+    Y.applyUpdate(a, Y.encodeStateAsUpdate(b))
+    Y.applyUpdate(b, Y.encodeStateAsUpdate(a))
+    return models
+  }
+
+  for (const clientIds of [[1, 2], [2, 1]] as [number, number][]) {
+    it(`shrinks a range from both ends when its edge rows are deleted at once (clients ${clientIds})`, () => {
+      const base = new Y.Doc()
+      const sheet = WorkbookModel.initialize(base).addSheet('Sheet1')
+      for (let row = 0; row < 12; row++) sheet.setCell(row, 0, { v: row + 1 })
+      sheet.setCell(19, 1, { f: toIdForm('SUM(A1:A10)', sheet) })
+      // Each deletion rewrites the formula, and only one rewrite survives; the deleted edge of the
+      // other must still resolve to its neighbor, not to an index the other deletion shifted.
+      const models = race(base, clientIds, (a, b) => {
+        deleteAxis(a.sheets()[0]!, 'row', 0, 1)
+        deleteAxis(b.sheets()[0]!, 'row', 9, 1)
+      })
+      for (const model of models) {
+        const after = model.sheets()[0]!
+        expect(toA1Form(after.cell(17, 1)!.f!, after)).toBe('SUM(A1:A8)')
+      }
+    })
+
+    it(`keeps a row inserted where another replica stored new rows at the same time (clients ${clientIds})`, () => {
+      const base = new Y.Doc()
+      const sheet = WorkbookModel.initialize(base).addSheet('Sheet1')
+      sheet.setCell(1024, 0, { v: 'original' })
+      // Both replicas store the chunk starting at row 2049; the insertion sits beside one copy.
+      const models = race(base, clientIds, (a, b) => {
+        const left = a.sheets()[0]!
+        insertAxis(left, 'row', 2048, 1)
+        left.setCell(2048, 0, { v: 'inserted' })
+        b.sheets()[0]!.setCell(2048, 0, { v: 'typed' })
+      })
+      for (const model of models) {
+        const after = model.sheets()[0]!
+        expect([after.cell(1024, 0)?.v, after.cell(2048, 0)?.v, after.cell(2049, 0)?.v]).toEqual(['original', 'inserted', 'typed'])
+      }
+    })
+  }
+})

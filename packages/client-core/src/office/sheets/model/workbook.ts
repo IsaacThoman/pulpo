@@ -1,7 +1,7 @@
 import * as Y from 'yjs'
 import type { CellRange } from '../address.js'
 import { MAX_COLS, MAX_ROWS } from '../address.js'
-import { Axis, randomId } from './axis.js'
+import { Axis, randomId, type Tombstone } from './axis.js'
 import { WORKBOOK_MAP } from '../layout.js'
 import {
   SHEETS_SCHEMA_VERSION,
@@ -68,8 +68,8 @@ export class SheetModel {
     readonly id: string,
     readonly map: Y.Map<unknown>,
   ) {
-    this.rows = new Axis(map.get('rows') as Y.Array<string>, map.get('deadRows') as Y.Map<number>, ROW_CHUNK)
-    this.cols = new Axis(map.get('cols') as Y.Array<string>, map.get('deadCols') as Y.Map<number>, COL_CHUNK)
+    this.rows = new Axis(map.get('rows') as Y.Array<string>, map.get('deadRows') as Y.Map<Tombstone>, ROW_CHUNK)
+    this.cols = new Axis(map.get('cols') as Y.Array<string>, map.get('deadCols') as Y.Map<Tombstone>, COL_CHUNK)
     this.cells = map.get('cells') as Y.Map<CellData>
     this.xf = map.get('xf') as Y.Map<number>
     this.fmt = map.get('fmt') as Y.Map<unknown>
@@ -345,10 +345,8 @@ export class SheetModel {
 function edgeIndex(axis: Axis, id: string, side: 'start' | 'end'): number {
   const index = axis.indexOf(id)
   if (index >= 0) return index
-  const deleted = axis.deletedIndex(id)
-  if (deleted === undefined) return -1
   // The row that took a deleted start's place is the next one; a deleted end's is the previous.
-  return side === 'start' ? deleted : deleted - 1
+  return axis.deletedPosition(id, side) ?? -1
 }
 
 export function isEmptyCell(data: CellData): boolean {
