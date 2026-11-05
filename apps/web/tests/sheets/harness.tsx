@@ -91,7 +91,7 @@ const USERS = [
 ]
 
 /** What changed since the file was loaded, as a reviewer would see an agent's proposal. */
-function ChangesPanel() {
+export function ChangesPanel() {
   const [diff, setDiff] = useState<WorkbookDiff>(() => diffWorkbooks(original, docs[0]!))
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined
@@ -109,7 +109,7 @@ function ChangesPanel() {
   )
 }
 
-function Harness() {
+export function Harness() {
   const [ready, setReady] = useState(false)
   const [error, setError] = useState<string>()
   useEffect(() => {

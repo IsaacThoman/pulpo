@@ -137,8 +137,8 @@ export function encodeSheetText(text: string): string {
   return escapeXml(
     text
       .replace(/_x([0-9A-Fa-f]{4})_/g, '_x005F_x$1_')
-      // eslint-disable-next-line no-control-regex
       // Carriage returns too: XML parsers turn a literal one into a line feed.
+      // eslint-disable-next-line no-control-regex
       .replace(/[\u0000-\u0008\u000B\u000C\u000D\u000E-\u001F\uFFFE\uFFFF]/g, (char) => `_x${char.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')}_`),
   )
 }

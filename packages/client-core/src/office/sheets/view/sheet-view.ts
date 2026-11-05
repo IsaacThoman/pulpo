@@ -1323,21 +1323,20 @@ export class SheetView {
   /** The block of filled cells around a cell (Ctrl+A, sort and filter on a single cell). */
   currentRegion(row: number, col: number): CellRange {
     const filled = (r: number, c: number) => r >= 0 && c >= 0 && this.values.get(this.sheet, r, c) !== null
-    let range = { top: row, left: col, bottom: row, right: col }
-    let changed = true
-    let guard = 0
-    while (changed && guard++ < 10_000) {
-      changed = false
-      const grow = (test: () => boolean, apply: () => void) => {
-        if (test()) {
-          apply()
-          changed = true
-        }
-      }
-      grow(() => [...span(range.left - 1, range.right + 1)].some((c) => filled(range.top - 1, c)), () => (range = { ...range, top: range.top - 1 }))
-      grow(() => [...span(range.left - 1, range.right + 1)].some((c) => filled(range.bottom + 1, c)), () => (range = { ...range, bottom: range.bottom + 1 }))
-      grow(() => [...span(range.top - 1, range.bottom + 1)].some((r) => filled(r, range.left - 1)), () => (range = { ...range, left: range.left - 1 }))
-      grow(() => [...span(range.top - 1, range.bottom + 1)].some((r) => filled(r, range.right + 1)), () => (range = { ...range, right: range.right + 1 }))
+    const range = { top: row, left: col, bottom: row, right: col }
+    const anyFilled = (cells: Iterable<[number, number]>) => {
+      for (const [r, c] of cells) if (filled(r, c)) return true
+      return false
+    }
+    const rowCells = (r: number) => [...span(range.left - 1, range.right + 1)].map((c) => [r, c] as [number, number])
+    const colCells = (c: number) => [...span(range.top - 1, range.bottom + 1)].map((r) => [r, c] as [number, number])
+    // Grow while any cell bordering the block (diagonals included) is filled.
+    for (let guard = 0; guard < 10_000; guard++) {
+      if (anyFilled(rowCells(range.top - 1))) range.top--
+      else if (anyFilled(rowCells(range.bottom + 1))) range.bottom++
+      else if (anyFilled(colCells(range.left - 1))) range.left--
+      else if (anyFilled(colCells(range.right + 1))) range.right++
+      else break
     }
     return range
   }
