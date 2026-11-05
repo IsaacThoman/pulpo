@@ -83,20 +83,24 @@ function contentKey(bytes: Uint8Array): string {
 }
 
 export interface ShownDiff {
+  /** The comparison, not yet in the page: the caller mounts it if it is still the one wanted. */
+  element: HTMLElement
   destroy(): void
 }
 
-/** Reads both versions and draws the comparison into `root`. Throws when a version is not a deck. */
-export async function showPresentationDiff(root: HTMLElement, before: Uint8Array, after: Uint8Array): Promise<ShownDiff> {
+/** Reads both versions and draws the comparison. Throws when a version is not a deck. */
+export async function showPresentationDiff(before: Uint8Array, after: Uint8Array): Promise<ShownDiff> {
   const stores = { before: new ScratchAssets(), after: new ScratchAssets() }
   const [left, right] = await Promise.all([readPresentation(before, { assets: stores.before }), readPresentation(after, { assets: stores.after })])
   const diff = diffSnapshots(left, right)
   const urls: string[] = []
   const [beforeUrls, afterUrls] = await Promise.all([imageUrls(diff.beforeSnapshot, stores.before, urls), imageUrls(diff.afterSnapshot, stores.after, urls)])
-  root.replaceChildren(render(diff, beforeUrls, afterUrls))
+  // Each comparison owns its element, so a slow, superseded one cannot clear the current one.
+  const element = render(diff, beforeUrls, afterUrls)
   return {
+    element,
     destroy() {
-      root.replaceChildren()
+      element.remove()
       for (const url of urls) if (url.startsWith('blob:')) URL.revokeObjectURL(url)
     },
   }

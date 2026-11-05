@@ -7,7 +7,7 @@ import { PRESENTATION_EXTENSIONS, presentationFormat, presentationMimeType } fro
 import { PRESENTATION_SCHEMA_VERSION } from './model.js'
 import { readPresentation } from './read.js'
 import { textToPlain } from './text.js'
-import { longestCommonSubsequence, presentationRoot, readParts, readSnapshot, reconcileSnapshot, writeSnapshot } from './ydoc.js'
+import { presentationRoot, readParts, readSnapshot, reconcileSnapshot, writeSnapshot } from './ydoc.js'
 import { assignIdentifiers, writePresentation } from './write.js'
 import { textSummaryOfChart } from './summary.js'
 
@@ -108,11 +108,21 @@ export function alignKeys(currentSnapshot: PresentationSnapshot, incoming: Prese
   }
 }
 
+/**
+ * Whether a pushed slide with a current slide's id is that slide. Tools such as python-pptx give a
+ * slide added after deleting the last one that slide's id, so the id alone is not enough: the
+ * slides must share a shape (id and kind), and either keep their layout or share a shape name.
+ * Renaming shapes, or changing only the layout, keeps the slide; a new slide on another layout
+ * with other shapes does not.
+ */
 function sameSlide(current: SlideSnapshot, incoming: SlideSnapshot): boolean {
   if (!current.shapes.length || !incoming.shapes.length) return current.layout === incoming.layout
-  const signature = (shape: ShapeSnapshot) => `${shape.nvId}\u0000${shape.kind}\u0000${shape.name ?? ''}`
-  const shapes = new Set(current.shapes.map(signature))
-  return incoming.shapes.some((shape) => shapes.has(signature(shape)))
+  const identity = (shape: ShapeSnapshot) => `${shape.nvId}\u0000${shape.kind}`
+  const shapes = new Set(current.shapes.map(identity))
+  if (!incoming.shapes.some((shape) => shapes.has(identity(shape)))) return false
+  if (current.layout === incoming.layout) return true
+  const names = new Set(current.shapes.map((shape) => shape.name ?? '').filter(Boolean))
+  return incoming.shapes.some((shape) => shape.name !== undefined && names.has(shape.name))
 }
 
 function alignShapes(current: ShapeSnapshot[], incoming: ShapeSnapshot[]): ShapeSnapshot[] {
@@ -145,14 +155,54 @@ function alignShapes(current: ShapeSnapshot[], incoming: ShapeSnapshot[]): Shape
   return incoming.map(align)
 }
 
-/** Matches table axes by text, then pairs edited entries between the matches by position. */
-function tablePairs(current: string[], incoming: string[]): Map<number, number> {
-  const common = longestCommonSubsequence(current, incoming)
+/**
+ * Whether two rows (or two columns) hold mostly the same cell texts. Comparing cell texts as a
+ * multiset, not the whole row, lets a row survive a column inserted or deleted in the same push.
+ */
+function similarCells(a: string[], b: string[]): boolean {
+  const left = a.filter(Boolean)
+  const right = b.filter(Boolean)
+  if (!left.length || !right.length) return !left.length && !right.length
+  const counts = new Map<string, number>()
+  for (const text of left) counts.set(text, (counts.get(text) ?? 0) + 1)
+  let shared = 0
+  for (const text of right) {
+    const count = counts.get(text) ?? 0
+    if (count > 0) {
+      shared++
+      counts.set(text, count - 1)
+    }
+  }
+  return shared * 2 >= Math.max(left.length, right.length)
+}
+
+/** Longest common subsequence under `similarCells`: index pairs (current, incoming), in order. */
+function similarSubsequence(current: string[][], incoming: string[][]): [number, number][] {
+  if (current.length * incoming.length > 1_000_000) return []
+  const table: number[][] = Array.from({ length: current.length + 1 }, () => new Array<number>(incoming.length + 1).fill(0))
+  for (let i = current.length - 1; i >= 0; i--) {
+    for (let j = incoming.length - 1; j >= 0; j--) {
+      table[i]![j] = similarCells(current[i]!, incoming[j]!) ? table[i + 1]![j + 1]! + 1 : Math.max(table[i + 1]![j]!, table[i]![j + 1]!)
+    }
+  }
+  const pairs: [number, number][] = []
+  for (let i = 0, j = 0; i < current.length && j < incoming.length; ) {
+    if (similarCells(current[i]!, incoming[j]!) && table[i]![j] === table[i + 1]![j + 1]! + 1) pairs.push([i++, j++])
+    else if (table[i + 1]![j]! >= table[i]![j + 1]!) i++
+    else j++
+  }
+  return pairs
+}
+
+/**
+ * Matches table rows or columns by their cells' texts, then pairs the entries left between two
+ * matches by position, which is what an edited row looks like.
+ */
+function tablePairs(current: string[][], incoming: string[][]): Map<number, number> {
+  const matched = similarSubsequence(current, incoming)
   const pairs = new Map<number, number>()
-  const currentMatched = [...common.current].sort((a, b) => a - b)
-  const incomingMatched = [...common.target].sort((a, b) => a - b)
-  currentMatched.forEach((index, at) => pairs.set(incomingMatched[at]!, index))
-  const anchors = [[-1, -1], ...incomingMatched.map((index, at) => [currentMatched[at]!, index]), [current.length, incoming.length]] as [number, number][]
+  for (const [currentIndex, incomingIndex] of matched) pairs.set(incomingIndex, currentIndex)
+  const anchors = [[-1, -1], ...matched, [current.length, incoming.length]] as [number, number][]
   for (let at = 0; at < anchors.length - 1; at++) {
     const [currentStart, incomingStart] = anchors[at]!
     const [currentEnd, incomingEnd] = anchors[at + 1]!
@@ -175,11 +225,12 @@ function alignTableAxis<T extends { key: string }>(current: T[], incoming: T[], 
 }
 
 function alignTable(current: TableSnapshot, incoming: TableSnapshot): TableSnapshot {
-  const columnSignatures = (table: TableSnapshot) => table.columns.map((column) => table.rows.map((row) => textToPlain(row.cells[column.key]?.text ?? { type: 'doc' })).join('\t'))
-  const columns = alignTableAxis(current.columns, incoming.columns, tablePairs(columnSignatures(current), columnSignatures(incoming)))
+  const text = (table: TableSnapshot, row: TableSnapshot['rows'][number], column: string) => textToPlain(row.cells[column]?.text ?? { type: 'doc' })
+  const columnCells = (table: TableSnapshot) => table.columns.map((column) => table.rows.map((row) => text(table, row, column.key)))
+  const columns = alignTableAxis(current.columns, incoming.columns, tablePairs(columnCells(current), columnCells(incoming)))
   const columnKey = new Map(incoming.columns.map((column, index) => [column.key, columns[index]!.key]))
-  const rowSignatures = (table: TableSnapshot) => table.rows.map((row) => table.columns.map((column) => textToPlain(row.cells[column.key]?.text ?? { type: 'doc' })).join('\t'))
-  const rows = alignTableAxis(current.rows, incoming.rows, tablePairs(rowSignatures(current), rowSignatures(incoming)))
+  const rowCells = (table: TableSnapshot) => table.rows.map((row) => table.columns.map((column) => text(table, row, column.key)))
+  const rows = alignTableAxis(current.rows, incoming.rows, tablePairs(rowCells(current), rowCells(incoming)))
     .map((row) => ({ ...row, cells: Object.fromEntries(Object.entries(row.cells).map(([column, cell]) => [columnKey.get(column) ?? column, cell])) }))
   return { ...incoming, columns, rows }
 }

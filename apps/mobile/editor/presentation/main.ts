@@ -187,10 +187,11 @@ function showDiff(message: Extract<HostMessage, { type: 'presentationDiff' }>): 
   shownDiff = current
   document.getElementById('editor')!.hidden = true
   diffRoot.hidden = false
-  showPresentationDiff(diffRoot, base64ToBytes(message.before), base64ToBytes(message.after)).then(
+  showPresentationDiff(base64ToBytes(message.before), base64ToBytes(message.after)).then(
     (view) => {
       if (shownDiff !== current) return view.destroy()
       current.view = view
+      diffRoot.replaceChildren(view.element)
       post({ type: 'loaded', session })
     },
     (error: unknown) => {

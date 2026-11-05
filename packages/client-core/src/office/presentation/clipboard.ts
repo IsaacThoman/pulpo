@@ -1,7 +1,7 @@
 import type * as Y from 'yjs'
 import { LiveFormatError, type LiveAssetStore } from '../live-format.js'
 import { decodePartText, relationshipsPathFor, relativeTarget, resolveTarget } from '../ooxml/package.js'
-import { cloneShape, cloneSlide, insertShapes, insertSlides, PARTS_ORIGIN, partsMap } from './commands.js'
+import { cloneShape, cloneSlide, insertShapes, insertSlides, PARTS_ORIGIN, partsMap, readSlide, slideKeys } from './commands.js'
 import type { PartSnapshot, RelTarget, ShapeSnapshot, SlideSnapshot } from './model.js'
 import { DEFAULT_PRESENTATION_LIMITS } from './read.js'
 import { DeckResources } from './render/deck.js'
@@ -330,9 +330,14 @@ function remapShape(shape: ShapeSnapshot, mapping: Map<string, string>, unlinkSl
 
 /** Pastes shapes onto a slide, offset when pasting onto the slide they came from. Returns the new keys. */
 export async function pasteShapes(doc: Y.Doc, assets: LiveAssetStore, clipboard: PresentationClipboard, slideKey: string, offset: number, origin?: unknown): Promise<string[]> {
-  const slide = readSnapshot(doc).slides.find((slide) => slide.key === slideKey)
-  if (!slide || countShapes(slide.shapes) + countShapes(clipboard.shapes ?? []) > DEFAULT_PRESENTATION_LIMITS.maxShapesPerSlide) return []
+  const fits = () => {
+    const slide = readSlide(doc, slideKey)
+    return slide !== undefined && countShapes(slide.shapes) + countShapes(clipboard.shapes ?? []) <= DEFAULT_PRESENTATION_LIMITS.maxShapesPerSlide
+  }
+  if (!fits()) return []
   const { mapping, write } = await prepareParts(doc, assets, clipboard)
+  // Checked again after storing the pictures: another paste may have filled the slide meanwhile.
+  if (!fits()) return []
   write()
   const sameDocument = clipboard.source === documentIdentity(doc)
   const shapes = (clipboard.shapes ?? []).map((shape) => {
@@ -345,12 +350,16 @@ export async function pasteShapes(doc: Y.Doc, assets: LiveAssetStore, clipboard:
 
 /** Pastes slides at `index`, mapping layouts by name when they come from another deck. */
 export async function pasteSlides(doc: Y.Doc, assets: LiveAssetStore, clipboard: PresentationClipboard, index: number, origin?: unknown): Promise<string[]> {
-  const snapshot = readSnapshot(doc)
   const incoming = clipboard.slides ?? []
-  if (snapshot.slides.length + incoming.length > DEFAULT_PRESENTATION_LIMITS.maxSlides || incoming.some((slide) => countShapes(slide.shapes) > DEFAULT_PRESENTATION_LIMITS.maxShapesPerSlide)) return []
+  if (incoming.some((slide) => countShapes(slide.shapes) > DEFAULT_PRESENTATION_LIMITS.maxShapesPerSlide)) return []
+  const fits = () => slideKeys(doc).length + incoming.length <= DEFAULT_PRESENTATION_LIMITS.maxSlides
+  if (!fits()) return []
   const sameDocument = clipboard.source === documentIdentity(doc)
   const { mapping, write } = await prepareParts(doc, assets, clipboard)
+  // Checked again after storing the pictures: another paste may have added slides meanwhile.
+  if (!fits()) return []
   write()
+  const snapshot = readSnapshot(doc)
   const deck = new DeckResources(snapshot.parts, snapshot.mainPart)
   const layouts = deck.masterPaths().flatMap((master) => deck.master(master)?.layouts ?? [])
   const slides = (clipboard.slides ?? []).map(({ layoutName, ...slide }) => {

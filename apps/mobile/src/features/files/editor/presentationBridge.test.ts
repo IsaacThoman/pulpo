@@ -221,4 +221,36 @@ describe('presentation editor bridge with the built page', () => {
     expect(messages.some((message) => { const parsed = JSON.parse(message) as { type: string; session?: number }; return parsed.type === 'error' && parsed.session === 3 })).toBe(true)
     dom.window.close()
   })
+
+  it('keeps the latest review when an earlier, slower comparison finishes after it', async () => {
+    const messages: string[] = []
+    const dom = new JSDOM(PRESENTATION_EDITOR_BUNDLE.html, {
+      runScripts: 'dangerously',
+      pretendToBeVisual: true,
+      beforeParse: (window) => {
+        (window as unknown as { webkit: unknown }).webkit = { messageHandlers: { pulpoEditor: { postMessage: (message: string) => messages.push(message) } } }
+        window.URL.createObjectURL = () => `blob:test/${Math.random().toString(36).slice(2)}`
+        window.URL.revokeObjectURL = () => {}
+      },
+    })
+    const window = dom.window as unknown as { pulpoEditor: { receive(message: string): void }; document: Document }
+    const send = (before: Uint8Array, after: Uint8Array) => window.pulpoEditor.receive(JSON.stringify({ type: 'presentationDiff', session: 9, before: Buffer.from(before).toString('base64'), after: Buffer.from(after).toString('base64'), theme }))
+    // A picture-heavy first proposal (slow to read), then a small revision sent right after it.
+    const pictures = fixture('generated/pictures.pptx')
+    const small = fixture('generated/text-formatting.pptx')
+    const assets = new MemoryLiveAssetStore()
+    const doc = new Y.Doc()
+    await presentationCodec.importFile(doc, small, { name: 'deck.pptx', assets })
+    const { presentationCommands, plainToText } = await import('@pulpo/client-core/office/presentation')
+    const slide = readSnapshot(doc).slides[0]!
+    presentationCommands.setShapeText(doc, slide.key, slide.shapes.find((shape) => shape.text)!.key, plainToText('Revised proposal'))
+    const revised = await presentationCodec.exportFile(doc, { name: 'deck.pptx', assets })
+    send(small, pictures)
+    send(small, revised)
+    for (let round = 0; round < 300; round++) await new Promise((resolve) => setTimeout(resolve, 10))
+    const shown = window.document.querySelectorAll('#diff [data-presentation-diff]')
+    expect(shown).toHaveLength(1)
+    expect(shown[0]!.textContent).toContain('Revised proposal')
+    dom.window.close()
+  })
 })

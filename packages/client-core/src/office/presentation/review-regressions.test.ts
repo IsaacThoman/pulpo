@@ -849,3 +849,77 @@ describe('fourth review', () => {
     expect(diffSnapshots(before, removed).deck).toContain('sections')
   })
 })
+
+describe('fifth review', () => {
+  const grid = (size: number) => {
+    const shape = tableShape(size, size, { x: 0, y: 0, cx: 3_000_000, cy: 1_000_000 }, 'Grid')
+    shape.table!.rows.forEach((row, i) => shape.table!.columns.forEach((column, j) => { row.cells[column.key]!.text = plainToText(`R${i}C${j}`) }))
+    return shape
+  }
+  const cellTexts = (doc: Y.Doc, slide: string, key: string) => {
+    const table = readSlide(doc, slide)!.shapes.find((entry) => entry.key === key)!.table!
+    return table.rows.map((row) => table.columns.map((column) => textToPlain(row.cells[column.key]!.text)))
+  }
+
+  for (const change of ['insert', 'delete'] as const) {
+    it(`keeps concurrent typing in its cell when a push ${change}s a leading row and column together`, async () => {
+      const doc = await open(blankPresentation())
+      const slide = slideKeys(doc)[0]!
+      const shape = grid(3)
+      insertShapes(doc, slide, [shape])
+      const files = await exported(doc)
+      const user = replica(doc)
+      const table = shape.table!
+      const fragment = cellFragment(user, slide, shape.key, table.rows[1]!.key, table.columns[1]!.key)!
+      ;((fragment.get(0) as Y.XmlElement).get(0) as Y.XmlText).insert(4, ' UNSENT')
+      let xml = strFromU8(files['ppt/slides/slide1.xml']!)
+      const cell = (text: string) => `<a:tc><a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>${text}</a:t></a:r></a:p></a:txBody><a:tcPr/></a:tc>`
+      if (change === 'insert') {
+        xml = xml.replace('<a:tblGrid>', '<a:tblGrid><a:gridCol w="1000000"/>').replace(/(<a:tr\b[^>]*>)/g, `$1${cell('NEW')}`)
+        const firstRow = /<a:tr\b[\s\S]*?<\/a:tr>/.exec(xml)![0]
+        xml = xml.replace(firstRow, firstRow.replace(/<a:t>[^<]*<\/a:t>/g, '<a:t>TOP</a:t>') + firstRow)
+      } else {
+        xml = xml.replace(/<a:gridCol\b[^>]*\/>/, '').replace(/(<a:tr\b[^>]*>)<a:tc>[\s\S]*?<\/a:tc>/g, '$1')
+        xml = xml.replace(/<a:tr\b[\s\S]*?<\/a:tr>/, '')
+      }
+      files['ppt/slides/slide1.xml'] = strToU8(xml)
+      await presentationCodec.applyFile(doc, zipSync(files), context, 'agent')
+      sync(doc, user)
+      const texts = cellTexts(doc, slide, shape.key).flat()
+      expect(texts).toContain('R1C1 UNSENT')
+      expect(texts.filter((text) => text.includes('UNSENT'))).toHaveLength(1)
+      expect(cellTexts(user, slide, shape.key)).toEqual(cellTexts(doc, slide, shape.key))
+    })
+  }
+
+  it('keeps a slide and its unsent text when a push only renames a shape', async () => {
+    const doc = await open(blankPresentation())
+    const slide = readSnapshot(doc).slides[0]!
+    const box = slide.shapes.find((shape) => shape.text)!
+    setShapeText(doc, slide.key, box.key, plainToText('BASE'))
+    const files = await exported(doc)
+    const user = replica(doc)
+    const fragment = shapeFragment(user, slide.key, box.key)!
+    ;((fragment.get(0) as Y.XmlElement).get(0) as Y.XmlText).insert(4, ' UNSENT')
+    const xml = strFromU8(files['ppt/slides/slide1.xml']!)
+    files['ppt/slides/slide1.xml'] = strToU8(xml.replace(`name="${box.name}"`, 'name="Renamed"'))
+    await presentationCodec.applyFile(doc, zipSync(files), context, 'agent')
+    sync(doc, user)
+    expect(slideKeys(doc)[0]).toBe(slide.key)
+    const shape = readSlide(doc, slide.key)!.shapes.find((entry) => entry.key === box.key)!
+    expect(shape.name).toBe('Renamed')
+    expect(textToPlain(shape.text!)).toBe('BASE UNSENT')
+  })
+
+  it('refuses the second of two overlapping pastes that would overfill a slide', async () => {
+    const doc = await open(blankPresentation())
+    const slide = slideKeys(doc)[0]!
+    const count = readSlide(doc, slide)!.shapes.length
+    const rectangle = () => presetShape('rect', { x: 0, y: 0, cx: 100, cy: 100 }, 'Rectangle')
+    insertShapes(doc, slide, Array.from({ length: DEFAULT_PRESENTATION_LIMITS.maxShapesPerSlide - count - 2 }, rectangle))
+    const clipboard = parseClipboard(JSON.stringify({ version: 1, source: 'other', kind: 'shapes', shapes: [rectangle(), rectangle()], parts: { 'ppt/media/p.png': { data: 'eA==', mimeType: 'image/png' } }, text: '' }))!
+    const results = await Promise.all([pasteShapes(doc, assets, clipboard, slide, 0), pasteShapes(doc, assets, clipboard, slide, 0)])
+    expect(results.map((keys) => keys.length).sort()).toEqual([0, 2])
+    expect(readSlide(doc, slide)!.shapes).toHaveLength(DEFAULT_PRESENTATION_LIMITS.maxShapesPerSlide)
+  })
+})
