@@ -4,6 +4,8 @@ import * as Y from 'yjs'
 import { db, queryClient } from '../../database/client.js'
 import { fileChanges, fileDocUpdates, fileNodes, fileVersions } from '../../database/schema.js'
 import { appendDocUpdate, createDoc, loadYDoc } from '../doc-store.js'
+import { convertBlobToDocInTx } from '../conversion.js'
+import { mutateFileTree, updateFileNode } from '../tree-service.js'
 import { exportStoredDoc } from '../live-docs.js'
 import { listFileChanges } from './changes.js'
 import { FileChangesConflictError, redoFileChanges, undoFileChanges } from './history.js'
@@ -309,5 +311,29 @@ describe.skipIf(!enabled)('agent edits to live documents', () => {
     for (const version of kept) expect(objects.has(version.objectKey)).toBe(true)
     await undoFileChanges(files.userId, files.responseId)
     expect(await text(id)).toBe('a\n')
+  })
+
+  it('refuses to merge a proposal made for an earlier document under the same id', async () => {
+    const id = await textDoc('a.txt', projects, 'one\ntwo\n')
+    await files.attach({ [projects]: 'suggest' })
+    files.put('/workspace/a.txt', 'one\nTWO\n')
+    await push([{ local: '/workspace/a.txt', remote: 'Projects/a.txt', force: true }])
+    // Out of the format and back, then Edit again: a new document under the same id.
+    await updateFileNode(files.userId, id, { name: 'a.bin' })
+    await updateFileNode(files.userId, id, { name: 'a.txt' })
+    await mutateFileTree(files.userId, async (tx) => {
+      const [row] = await tx.select().from(fileNodes).where(eq(fileNodes.id, id))
+      return convertBlobToDocInTx(tx, row!)
+    })
+    await clientEdit(id, (content) => content.insert(0, 'zero\n'))
+    const [row] = await db.select().from(fileChanges).where(eq(fileChanges.nodeId, id))
+    await expect(reviewFileChange(files.userId, row!.id, 'accept')).rejects.toMatchObject({ code: 'file_suggestion_stale' })
+    expect(await text(id)).toBe('zero\none\ntwo\n')
+    // A new proposal is built on the document as it is, not on the old fork.
+    await files.newReply()
+    files.put('/workspace/a.txt', 'zero\none\nTWO\n')
+    await push([{ local: '/workspace/a.txt', remote: 'Projects/a.txt', force: true }])
+    await reviewReplyChanges(files.userId, files.responseId, 'accept')
+    expect(await text(id)).toBe('zero\none\nTWO\n')
   })
 })

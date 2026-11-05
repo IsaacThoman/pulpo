@@ -2,9 +2,11 @@ import type { Readable } from 'node:stream'
 import { and, desc, eq, ne } from 'drizzle-orm'
 import * as Y from 'yjs'
 import { z } from 'zod'
+import { DOC_GENERATION_KEY, DOC_META_MAP } from '@pulpo/client-core/doc-schema'
 import { liveFormatCodec } from '@pulpo/client-core/office/codecs'
 import type { FileAccessMode } from '@pulpo/contracts'
 import { fileChanges, fileDocs } from '../../database/schema.js'
+import { AppError } from '../../lib/errors.js'
 import { newId } from '../../lib/ids.js'
 import { getBlobStore } from '../../storage/index.js'
 import type { FileExecutor, FileNodeRow } from '../access.js'
@@ -167,8 +169,13 @@ export async function logLiveUpdate(tx: DatabaseTransaction, effects: CommitEffe
 export async function proposalFork(tx: DatabaseTransaction, node: FileNodeRow, bytes: Uint8Array, previous: LiveSnapshot | null): Promise<{ fork: Uint8Array; current: Uint8Array } | null> {
   const { doc, format, context } = await loadLiveDocInTx(tx, node)
   const current = await exportLiveDoc(doc, format, context)
-  const base = previous?.forkKey ? new Y.Doc() : doc
-  if (previous?.forkKey) Y.applyUpdate(base, await readObject(previous.forkKey))
+  let base = doc
+  if (previous?.forkKey) {
+    const fork = new Y.Doc()
+    Y.applyUpdate(fork, await readObject(previous.forkKey))
+    // A fork of an earlier document under this id (one made again from its file) is no base.
+    if (sameGeneration(fork, doc)) base = fork
+  }
   const { changed } = await codecCall(() => liveFormatCodec(format).applyFile(base, bytes, context, 'agent'))
   if (!changed) return null
   // Parts the proposal adds are kept with the document now, so accepting it later finds them.
@@ -191,11 +198,22 @@ export async function acceptLiveProposal(tx: DatabaseTransaction, effects: Commi
     await applyLiveFileInTx(tx, effects, { node, bytes: await readObject(after.objectKey), actorUserId: userId, origin: 'agent' })
     return
   }
+  const forkState = await readObject(after.forkKey)
+  const fork = new Y.Doc()
+  Y.applyUpdate(fork, forkState)
+  // Proposed for an earlier document under this id: merging its fork would add that document's
+  // content to this one.
+  if (!sameGeneration(fork, doc)) throw new AppError(409, 'file_suggestion_stale', `"${node.name}" was replaced since this was suggested; ask the agent to suggest it again`)
   const vector = Y.encodeStateVector(doc)
   // The fork shares the document's history up to the proposal, so this merges as concurrent edits.
-  Y.applyUpdate(doc, await readObject(after.forkKey), 'agent')
+  Y.applyUpdate(doc, forkState, 'agent')
   const update = Y.encodeStateAsUpdate(doc, vector)
   if (update.byteLength > 2) await logLiveUpdate(tx, effects, node.id, update, userId, 'agent')
+}
+
+/** Whether two replicas are of the same document generation (see `DOC_META_MAP`). */
+function sameGeneration(left: Y.Doc, right: Y.Doc): boolean {
+  return left.getMap(DOC_META_MAP).get(DOC_GENERATION_KEY) === right.getMap(DOC_META_MAP).get(DOC_GENERATION_KEY)
 }
 
 /** A newer proposal for a document replaces this chat's earlier ones from other replies. */
