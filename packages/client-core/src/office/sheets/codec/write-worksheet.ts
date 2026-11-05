@@ -530,7 +530,7 @@ function valueXml(value: CellScalar, context: WorksheetWriteContext, formula: bo
 }
 
 function cfValueXml(value: CfValue, sheet: SheetModel): string {
-  const val = value.value === undefined ? undefined : value.type === 'formula' ? toA1Form(value.value, sheet) : value.value
+  const val = value.value === undefined ? undefined : value.type === 'formula' ? toA1Form(value.value, sheet, sheet.workbook, { followDeletedRelative: true }) : value.value
   return `<cfvo${xmlAttrs({ type: value.type, val, gte: value.gte === false ? false : undefined })}/>`
 }
 
@@ -542,7 +542,7 @@ function ruleXml(sheet: SheetModel, rule: ConditionalRule): string {
     const formulas = children(element, 'formula')
     formulas.forEach((formula, index) => {
       const text = rule.formulas?.[index]
-      if (text !== undefined) formula.textContent = toA1Form(text, sheet)
+      if (text !== undefined) formula.textContent = toA1Form(text, sheet, sheet.workbook, { followDeletedRelative: true })
     })
     for (const cfvos of ['colorScale', 'dataBar', 'iconSet']) {
       const container = child(element, cfvos)
@@ -550,7 +550,7 @@ function ruleXml(sheet: SheetModel, rule: ConditionalRule): string {
       if (!container || !values) continue
       children(container, 'cfvo').forEach((cfvo, index) => {
         const value = values[index]
-        if (value?.type === 'formula' && value.value !== undefined) cfvo.setAttribute('val', toA1Form(value.value, sheet))
+        if (value?.type === 'formula' && value.value !== undefined) cfvo.setAttribute('val', toA1Form(value.value, sheet, sheet.workbook, { followDeletedRelative: true }))
       })
     }
     return serializeNode(element)
@@ -574,7 +574,7 @@ function ruleXml(sheet: SheetModel, rule: ConditionalRule): string {
   if (rule.colorScale) body += `<colorScale>${rule.colorScale.values.map((value) => cfValueXml(value, sheet)).join('')}${rule.colorScale.colors.map((color) => `<color${xmlAttrs(colorAttrs(color))}/>`).join('')}</colorScale>`
   if (rule.dataBar) body += `<dataBar${xmlAttrs({ minLength: rule.dataBar.minLength, maxLength: rule.dataBar.maxLength, showValue: rule.dataBar.showValue === false ? false : undefined })}>${rule.dataBar.values.map((value) => cfValueXml(value, sheet)).join('')}<color${xmlAttrs(colorAttrs(rule.dataBar.color))}/></dataBar>`
   if (rule.iconSet) body += `<iconSet${xmlAttrs({ iconSet: rule.iconSet.set, reverse: rule.iconSet.reverse || undefined, showValue: rule.iconSet.showValue === false ? false : undefined })}>${rule.iconSet.values.map((value) => cfValueXml(value, sheet)).join('')}</iconSet>`
-  for (const formula of rule.formulas ?? []) body += `<formula>${escapeXml(toA1Form(formula, sheet))}</formula>`
+  for (const formula of rule.formulas ?? []) body += `<formula>${escapeXml(toA1Form(formula, sheet, sheet.workbook, { followDeletedRelative: true }))}</formula>`
   return `<cfRule${attrs}>${body}</cfRule>`
 }
 
@@ -611,8 +611,8 @@ function writeDataValidations(sheet: SheetModel): string | undefined {
       Object.entries(validation.keep ?? {})
         .map(([name, value]) => ` ${name}="${escapeXml(value)}"`)
         .join('')
-    const formula1 = validation.formula1 !== undefined ? `<formula1>${escapeXml(toA1Form(validation.formula1, sheet))}</formula1>` : ''
-    const formula2 = validation.formula2 !== undefined ? `<formula2>${escapeXml(toA1Form(validation.formula2, sheet))}</formula2>` : ''
+    const formula1 = validation.formula1 !== undefined ? `<formula1>${escapeXml(toA1Form(validation.formula1, sheet, sheet.workbook, { followDeletedRelative: true }))}</formula1>` : ''
+    const formula2 = validation.formula2 !== undefined ? `<formula2>${escapeXml(toA1Form(validation.formula2, sheet, sheet.workbook, { followDeletedRelative: true }))}</formula2>` : ''
     xml += `<dataValidation${attrs}>${formula1}${formula2}</dataValidation>`
   }
   return count ? `<dataValidations count="${count}">${xml}</dataValidations>` : undefined

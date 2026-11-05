@@ -637,7 +637,10 @@ class DefinedNames {
   private canonical(): Map<string, string> {
     const map = this.map
     const cache = this.cache()
-    if (cache.keys) return cache.keys
+    // Remote updates inside an outer transaction are visible before observers invalidate caches.
+    const transaction = map.doc?._transaction
+    const changed = (transaction?.changed as ReadonlyMap<unknown, unknown> | undefined)?.has(map)
+    if (!changed && cache.keys) return cache.keys
     const canonical = new Map<string, string>()
     // Y.Map iteration follows local insertion order, so only key order can choose the same winner.
     for (const [id, name] of map) {
@@ -645,7 +648,7 @@ class DefinedNames {
       const previous = canonical.get(identity)
       if (previous === undefined || id < previous) canonical.set(identity, id)
     }
-    cache.keys = canonical
+    if (!changed) cache.keys = canonical
     return canonical
   }
 

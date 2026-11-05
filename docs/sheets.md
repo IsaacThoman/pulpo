@@ -92,3 +92,5 @@ The app runs the same core in its locked-down web view (`apps/mobile/editor/shee
 ## Not supported yet
 
 What's kept but not editable: pivot tables, slicers, sparklines, form controls, OLE objects, threaded comments (their legacy-note fallback shows), x14 conditional formats and validations in `extLst` (kept, not moved by structural edits), chart sheets and dialog sheets (kept as tabs), external links (references keep their cached values), and the print area of sheets whose rows move. Structural edits don't yet update references inside chart series and table column formulas. Copying a sheet copies cells, formats, merges, rules, and notes, but not pictures, charts, or tables. See the pull request for the full list in order of importance.
+
+A range whose both edges are deleted after its surviving rows were moved past each other may resolve to `#REF!`. 3D references (`Sheet1:Sheet3!A1`) keep their sheet names as text, so renaming or deleting an end sheet breaks them.

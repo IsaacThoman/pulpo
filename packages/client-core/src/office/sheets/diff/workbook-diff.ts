@@ -3,7 +3,7 @@ import type { LiveAssetStore } from '../../live-format.js'
 import { cellName, columnName } from '../address.js'
 import { SheetCodec } from '../codec/codec.js'
 import { toA1Form } from '../model/formula-ids.js'
-import type { CellData, StyleProps } from '../model/schema.js'
+import type { CellData, RangeIds, StyleProps } from '../model/schema.js'
 import { WorkbookModel, type SheetModel } from '../model/workbook.js'
 import { formatValue } from '../numfmt/index.js'
 import { Stylesheet, type ResolvedStyle } from '../styles/stylesheet.js'
@@ -297,9 +297,11 @@ function diffSheet(before: SheetModel | undefined, after: SheetModel | undefined
     const b = after.viewProp(prop) ?? 0
     if (a !== b) other.push({ kind: prop, before: a, after: b })
   }
+  const ruleCount = (sheet: SheetModel, map: Y.Map<unknown>) => [...map.values()].filter((value) =>
+    (value as { ranges: RangeIds[] }).ranges.some((range) => sheet.resolveRange(range))).length
   const counts = [
-    ['conditionalFormats', before.cf.size, after.cf.size],
-    ['validations', before.dv.size, after.dv.size],
+    ['conditionalFormats', ruleCount(before, before.cf), ruleCount(after, after.cf)],
+    ['validations', ruleCount(before, before.dv), ruleCount(after, after.dv)],
     ['drawings', before.drawings.size, after.drawings.size],
     ['notes', before.notes.size, after.notes.size],
   ] as const

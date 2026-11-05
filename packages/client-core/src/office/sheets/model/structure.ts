@@ -1,6 +1,6 @@
 import * as Y from 'yjs'
 import type { Axis } from './axis.js'
-import type { AnchorPoint, ConditionalFormat, DataValidation, DrawingObject, RangeIds } from './schema.js'
+import type { AnchorPoint, DrawingObject, RangeIds } from './schema.js'
 import { splitCellKey, type SheetModel } from './workbook.js'
 
 /**
@@ -145,20 +145,8 @@ function adjustRanges(sheet: SheetModel, kind: AxisKind, edges: EdgeMover): void
     if (!range) sheet.merges.delete(id)
     else if (range !== merge.range) sheet.merges.set(id, { ...merge, range })
   }
-  const adjustList = <T extends { ranges: RangeIds[] }>(map: Y.Map<unknown>, rewrite?: (value: T) => T) => {
-    for (const [id, raw] of [...map.entries()]) {
-      const value = raw as T
-      const ranges = value.ranges.map((range) => moveRangeIds(range, kind, edges)).filter((range): range is RangeIds => !!range)
-      if (!ranges.length) {
-        map.delete(id)
-        continue
-      }
-      const next = rewrite ? rewrite({ ...value, ranges }) : { ...value, ranges }
-      if (JSON.stringify(next) !== JSON.stringify(value)) map.set(id, next)
-    }
-  }
-  adjustList<ConditionalFormat>(sheet.cf)
-  adjustList<DataValidation>(sheet.dv)
+  // Rule ranges resolve through tombstones on read, so deleting an axis cannot resurrect a
+  // rule that another client concurrently replaced or removed.
   for (const [id, raw] of [...sheet.tables.entries()]) {
     const table = raw as { range: RangeIds }
     const range = moveRangeIds(table.range, kind, edges)

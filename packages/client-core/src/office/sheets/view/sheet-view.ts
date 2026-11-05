@@ -1157,9 +1157,9 @@ export class SheetView {
     const parsed = commands.contentFromInput(this.sheet, text, { date1904: this.workbook.date1904 }).data?.v
     const bound = (formula: string | undefined) => {
       if (formula === undefined) return undefined
-      const result = this.values.evaluate?.(this.sheet, this.editing?.row ?? 0, this.editing?.col ?? 0, toA1Form(formula, this.sheet))
+      const result = this.values.evaluate?.(this.sheet, this.editing?.row ?? 0, this.editing?.col ?? 0, toA1Form(formula, this.sheet, this.workbook, { followDeletedRelative: true }))
       const value = Array.isArray(result) ? result[0]?.[0] : result
-      return typeof value === 'number' ? value : Number(toA1Form(formula, this.sheet))
+      return typeof value === 'number' ? value : Number(toA1Form(formula, this.sheet, this.workbook, { followDeletedRelative: true }))
     }
     const number = validation.type === 'textLength' ? text.length : typeof parsed === 'number' ? parsed : NaN
     if (validation.type === 'custom') return true
@@ -1191,10 +1191,10 @@ export class SheetView {
 
   /** The choices of a list validation: literal items, or the values of its range. */
   listItems(validation: { formula1?: string }): string[] | undefined {
-    const literal = commands.literalListItems(validation.formula1 && toA1Form(validation.formula1, this.sheet))
+    const literal = commands.literalListItems(validation.formula1 && toA1Form(validation.formula1, this.sheet, this.workbook, { followDeletedRelative: true }))
     if (literal) return literal
     if (!validation.formula1) return undefined
-    const formula = toA1Form(validation.formula1, this.sheet)
+    const formula = toA1Form(validation.formula1, this.sheet, this.workbook, { followDeletedRelative: true })
     const evaluated = this.values.evaluate?.(this.sheet, this.selection.active.row, this.selection.active.col, formula)
     if (Array.isArray(evaluated)) return evaluated.flat().filter((value) => value !== null && value !== '').map((value) => (isErrorValue(value) ? value.e : String(value)))
     // Without an engine: read a plain range reference directly.

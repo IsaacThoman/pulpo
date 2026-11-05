@@ -158,7 +158,7 @@ export class ConditionalFormatter {
 
   /** Evaluates a rule formula for a cell: written for the block's top-left, moved to the cell. */
   private formula(formula: string, block: Block, row: number, col: number): CellValue | CellValue[][] | undefined {
-    const text = shiftFormula(toA1Form(formula, this.sheet), row - block.origin.row, col - block.origin.col)
+    const text = shiftFormula(toA1Form(formula, this.sheet, this.sheet.workbook, { followDeletedRelative: true }), row - block.origin.row, col - block.origin.col)
     const literal = literalValue(text)
     if (literal !== undefined) return literal
     return this.values.evaluate?.(this.sheet, row, col, text)

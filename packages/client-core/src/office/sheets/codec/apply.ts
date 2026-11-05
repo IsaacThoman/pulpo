@@ -9,6 +9,7 @@ import type {
   AnchorPoint,
   AutoFilter,
   CellData,
+  CfValue,
   ConditionalFormat,
   DataValidation,
   DefinedName,
@@ -404,20 +405,26 @@ function translatePoint(own: SheetModel, other: SheetModel, point: AnchorPoint |
 }
 
 function translateFormula(own: SheetModel, other: SheetModel, formula: string): string {
-  return toIdForm(toA1Form(formula, other), own)
+  return toIdForm(toA1Form(formula, other, other.workbook, { followDeletedRelative: true }), own)
 }
 
 /** Replaces a collection's entries with the incoming ones where their positioned form differs. */
-function syncCollection<T>(ownMap: Y.Map<unknown>, otherMap: Y.Map<unknown>, ownForm: (value: T) => string, otherForm: (value: T) => string, translate: (value: T) => T | undefined): void {
+function syncCollection<T>(ownMap: Y.Map<unknown>, otherMap: Y.Map<unknown>, ownForm: (value: T) => string | undefined, otherForm: (value: T) => string | undefined, translate: (value: T) => T | undefined): void {
   const ownByForm = new Map<string, string[]>()
+  const keep = new Set<string>()
   for (const [id, value] of ownMap) {
     const form = ownForm(value as T)
+    if (form === undefined) {
+      // Inactive rules are absent from comparisons, so applying an export need not erase them.
+      keep.add(id)
+      continue
+    }
     ownByForm.set(form, [...(ownByForm.get(form) ?? []), id])
   }
-  const keep = new Set<string>()
   const additions: T[] = []
   for (const value of otherMap.values()) {
     const form = otherForm(value as T)
+    if (form === undefined) continue
     const ids = ownByForm.get(form)
     const id = ids?.shift()
     if (id !== undefined) keep.add(id)
@@ -437,15 +444,18 @@ function positioned(sheet: SheetModel, value: unknown, dxf: (index: number | und
     if (key === 'xml' || key === 'shape' || key === 'sortXml' || key === 'part' || key === 'rPr') return undefined
     if ((key === 'range' || key === 'ranges') && entry) {
       const ranges = Array.isArray(entry) ? (entry as RangeIds[]) : [entry as RangeIds]
-      const resolved = ranges.map((range) => sheet.resolveRange(range) ?? null)
-      return Array.isArray(entry) ? resolved : resolved[0]
+      const resolved = ranges.map((range) => sheet.resolveRange(range)).filter((range) => !!range)
+      return Array.isArray(entry) ? resolved : resolved[0] ?? null
     }
     if ((key === 'from' || key === 'to') && entry && typeof entry === 'object' && 'row' in entry) {
       const point = entry as AnchorPoint
       return { ...point, row: sheet.rows.indexOf(point.row), col: sheet.cols.indexOf(point.col) }
     }
-    if (key === 'formulas' && Array.isArray(entry)) return (entry as string[]).map((formula) => toA1Form(formula, sheet))
-    if ((key === 'formula1' || key === 'formula2') && typeof entry === 'string') return toA1Form(entry, sheet)
+    if (key === 'formulas' && Array.isArray(entry)) return (entry as string[]).map((formula) => toA1Form(formula, sheet, sheet.workbook, { followDeletedRelative: true }))
+    if ((key === 'formula1' || key === 'formula2') && typeof entry === 'string') return toA1Form(entry, sheet, sheet.workbook, { followDeletedRelative: true })
+    if (entry && typeof entry === 'object' && 'type' in entry && entry.type === 'formula' && 'value' in entry && typeof entry.value === 'string') {
+      return { ...entry, value: toA1Form(entry.value, sheet, sheet.workbook, { followDeletedRelative: true }) }
+    }
     if (key === 'dxfId' && typeof entry === 'number') return dxf(entry)
     return entry
   })
@@ -484,7 +494,11 @@ function syncCollections(own: SheetModel, other: SheetModel, styles: StyleMap): 
     const range = translateRange(own, other, value.range)
     return range && { range }
   })
-  syncCollection<ConditionalFormat>(own.cf, other.cf, ownForm, otherForm, (value) => {
+  const ruleForm = (sheet: SheetModel, value: { ranges: RangeIds[] }, dxf?: StyleMap['dxf']) =>
+    value.ranges.some((range) => sheet.resolveRange(range)) ? positioned(sheet, value, dxf) : undefined
+  const ruleValues = (values: CfValue[]) => values.map((value) =>
+    value.type === 'formula' && value.value !== undefined ? { ...value, value: translateFormula(own, other, value.value) } : value)
+  syncCollection<ConditionalFormat>(own.cf, other.cf, (value) => ruleForm(own, value), (value) => ruleForm(other, value, styles.dxf), (value) => {
     const translated = ranges(value)
     if (!translated) return undefined
     return {
@@ -494,10 +508,13 @@ function syncCollections(own: SheetModel, other: SheetModel, styles: StyleMap): 
         ...rule,
         ...(rule.dxfId !== undefined ? { dxfId: styles.dxf(rule.dxfId)! } : {}),
         ...(rule.formulas ? { formulas: rule.formulas.map((formula) => translateFormula(own, other, formula)) } : {}),
+        ...(rule.colorScale ? { colorScale: { ...rule.colorScale, values: ruleValues(rule.colorScale.values) } } : {}),
+        ...(rule.dataBar ? { dataBar: { ...rule.dataBar, values: ruleValues(rule.dataBar.values) } } : {}),
+        ...(rule.iconSet ? { iconSet: { ...rule.iconSet, values: ruleValues(rule.iconSet.values) } } : {}),
       })),
     }
   })
-  syncCollection<DataValidation>(own.dv, other.dv, ownForm, otherForm, (value) => {
+  syncCollection<DataValidation>(own.dv, other.dv, (value) => ruleForm(own, value), (value) => ruleForm(other, value, styles.dxf), (value) => {
     const translated = ranges(value)
     if (!translated) return undefined
     return {
@@ -547,7 +564,8 @@ function syncCollections(own: SheetModel, other: SheetModel, styles: StyleMap): 
 function syncNames(target: WorkbookModel, incoming: WorkbookModel, pairs: [SheetModel, SheetModel][]): void {
   const form = (name: DefinedName) => JSON.stringify({ ...name, formula: toA1Form(name.formula, name.scope ? target.sheet(name.scope) : undefined, target) })
   const scopes = new Map(pairs.map(([own, other]) => [other.id, own]))
-  const own = new Map([...target.names].map(([id, name]) => [definedNameKey(name), id]))
+  // Snapshot canonical definitions before writes invalidate the shared names index.
+  const own = new Map([...target.names.entries()].map(([id, name]) => [definedNameKey(name), [id, name] as const]))
   const keep = new Set<string>()
   for (const name of incoming.names.values()) {
     const scopeSheet = name.scope ? scopes.get(name.scope) : undefined
@@ -556,12 +574,13 @@ function syncNames(target: WorkbookModel, incoming: WorkbookModel, pairs: [Sheet
     const translated = { ...name, formula, ...(scopeSheet ? { scope: scopeSheet.id } : {}) }
     const identity = definedNameKey(translated)
     // Reuse existing keys for edits; new names share an identity across concurrent applications.
-    const id = own.get(identity) ?? identity
+    const existing = own.get(identity)
+    const id = existing?.[0] ?? identity
     keep.add(id)
-    const previous = target.names.get(id)
+    const previous = existing?.[1]
     if (!previous || form(previous) !== form(translated)) target.names.set(id, translated)
   }
-  for (const id of [...target.names.keys()]) if (!keep.has(id)) target.names.delete(id)
+  for (const [id] of own.values()) if (!keep.has(id)) target.names.delete(id)
 }
 
 function syncParts(target: WorkbookModel, incoming: WorkbookModel): void {

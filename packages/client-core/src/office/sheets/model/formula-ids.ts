@@ -155,17 +155,22 @@ export function toIdForm(formula: string, sheet: SheetModel | undefined, workboo
   })
 }
 
-/** Converts an id-form formula stored in `sheet` back to A1 text. */
-export function toA1Form(formula: string, sheet: SheetModel | undefined, workbook: WorkbookModel = sheet!.workbook): string {
-  return mapIdTokens(formula, (token) => idTokenToA1(token, sheet, workbook))
+export interface A1FormOptions {
+  /** Rule formulas follow a deleted relative origin to its next surviving neighbor. */
+  followDeletedRelative?: boolean
 }
 
-export function idTokenToA1(token: IdToken, sheet: SheetModel | undefined, workbook: WorkbookModel = sheet!.workbook): string {
+/** Converts an id-form formula stored in `sheet` back to A1 text. */
+export function toA1Form(formula: string, sheet: SheetModel | undefined, workbook: WorkbookModel = sheet!.workbook, options: A1FormOptions = {}): string {
+  return mapIdTokens(formula, (token) => idTokenToA1(token, sheet, workbook, options))
+}
+
+export function idTokenToA1(token: IdToken, sheet: SheetModel | undefined, workbook: WorkbookModel = sheet!.workbook, options: A1FormOptions = {}): string {
   const target = token.sheet ? workbook.sheet(token.sheet) : sheet
   if (!target) return '#REF!'
   const prefix = token.sheet ? { first: target.name } : undefined
   if (token.name !== undefined) return (prefix ? formatSheetPrefix(prefix) : '') + token.name
-  const resolved = resolveToken(target, token)
+  const resolved = resolveToken(target, token, options)
   if (!resolved) return (prefix ? formatSheetPrefix(prefix) : '') + '#REF!'
   return formatA1Reference({ ...(prefix ? { sheet: prefix } : {}), ...resolved })
 }
@@ -176,7 +181,7 @@ export function idTokenToA1(token: IdToken, sheet: SheetModel | undefined, workb
  * through the neighbors its tombstone recorded, and never through indexes recorded when it was
  * deleted (deletions elsewhere since then make those meaningless).
  */
-function resolveToken(sheet: SheetModel, token: IdToken): { from: RefEnd; to?: RefEnd } | undefined {
+function resolveToken(sheet: SheetModel, token: IdToken, options: A1FormOptions): { from: RefEnd; to?: RefEnd } | undefined {
   const from: RefEnd = {}
   const to: RefEnd | undefined = token.to ? {} : undefined
   for (const kind of ['row', 'col'] as const) {
@@ -187,7 +192,11 @@ function resolveToken(sheet: SheetModel, token: IdToken): { from: RefEnd; to?: R
     if (first === undefined) continue
     let positions: [number, number] | undefined
     if (second === undefined) {
-      const index = axis.indexOf(first)
+      let index = axis.indexOf(first)
+      const absolute = kind === 'row' ? token.from.rowAbs : token.from.colAbs
+      // Only rule single-cell references rebase relative axes; cell formulas and ranges retain
+      // their usual deleted-reference behavior, and absolute axes must still become #REF!.
+      if (index < 0 && !token.to && options.followDeletedRelative && !absolute) index = axis.deletedPosition(first, 'start') ?? -1
       if (index < 0) return undefined
       positions = [index, index]
     } else positions = resolveAxisRange(axis, first, second)

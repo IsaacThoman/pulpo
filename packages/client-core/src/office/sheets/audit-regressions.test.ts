@@ -6,6 +6,11 @@ import { describe, expect, it, vi } from 'vitest'
 import * as Y from 'yjs'
 import { MemoryLiveAssetStore } from '../assets.js'
 import { columnName, MAX_COLS, MAX_ROWS } from './address.js'
+import { diffWorkbooks } from './diff/workbook-diff.js'
+import { Stylesheet } from './styles/stylesheet.js'
+import { validationAt } from './view/commands.js'
+import { ConditionalFormatter } from './view/conditional.js'
+import { DEFAULT_THEME_COLORS } from './view/colors.js'
 import { SheetCalc, sheetFunctions } from './calc.js'
 import { applyWorkbook } from './codec/apply.js'
 import { SheetCodec } from './codec/codec.js'
@@ -18,7 +23,7 @@ import { markCalcDirty, trackEdits } from './model/edits.js'
 import { dateToSerial } from './dates.js'
 import { MAX_EXPANDED_CELLS } from './limits.js'
 import { columnIntervalProps } from './model/column-intervals.js'
-import type { DrawingObject } from './model/schema.js'
+import type { ConditionalFormat, DataValidation, DrawingObject } from './model/schema.js'
 import { toA1Form, toIdForm } from './model/formula-ids.js'
 import { deleteAxis, moveAxis } from './model/structure.js'
 import { WorkbookModel, SheetModel } from './model/workbook.js'
@@ -796,4 +801,215 @@ describe('sixth review regressions', () => {
       expect(selected).toEqual({ top: 3, left: 3, bottom: 3, right: 3 })
     }
   })
+})
+
+describe('eighth review regressions', () => {
+  function passes(sheet: SheetModel, values: SheetCalc, row: number, col: number, text: string): boolean {
+    const view = { sheet, workbook: sheet.workbook, values, editing: { row, col } }
+    const method = (SheetView.prototype as unknown as { passesValidation: (validation: DataValidation, text: string) => boolean }).passesValidation
+    return method.call(view, validationAt(sheet, row, col)!, text)
+  }
+
+  function applyWithoutRuleChanges(doc: Y.Doc, incoming: Y.Doc): void {
+    const sheet = new WorkbookModel(doc).sheets()[0]!
+    const changed = vi.fn()
+    sheet.cf.observe(changed)
+    sheet.dv.observe(changed)
+    try {
+      applyWorkbook(doc, incoming)
+      expect(changed).not.toHaveBeenCalled()
+    } finally {
+      sheet.cf.unobserve(changed)
+      sheet.dv.unobserve(changed)
+    }
+  }
+
+  it.each([false, true])('keeps only replacement rules after applyFile races a deletion, swap=%s', async (swap) => {
+    const base = new Y.Doc()
+    base.clientID = 100
+    const workbook = WorkbookModel.initialize(base)
+    const sheet = workbook.addSheet('Sheet1')
+    for (let row = 0; row < 10; row++) sheet.setCell(row, 0, { v: row })
+    const ranges = [sheet.rangeIds({ top: 0, left: 1, bottom: 9, right: 1 })]
+    sheet.cf.set('cf', { ranges, rules: [{ type: 'expression', priority: 1, formulas: [toIdForm('$A$10>0', sheet)] }] } satisfies ConditionalFormat)
+    sheet.dv.set('dv', { ranges, type: 'whole', operator: 'greaterThan', formula1: toIdForm('$A$10', sheet) } satisfies DataValidation)
+    const incoming = new Y.Doc()
+    Y.applyUpdate(incoming, Y.encodeStateAsUpdate(base))
+    const changed = new WorkbookModel(incoming).sheets()[0]!
+    changed.cf.set('cf', { ranges, rules: [{ type: 'expression', priority: 1, formulas: [toIdForm('$A$10>5', changed)] }] } satisfies ConditionalFormat)
+    changed.dv.set('dv', { ranges, type: 'whole', operator: 'greaterThan', formula1: toIdForm('$A$10+5', changed) } satisfies DataValidation)
+    const codec = new SheetCodec()
+    const context = { name: 'Rules.xlsx', assets: new MemoryLiveAssetStore() }
+    const file = await codec.exportFile(incoming, context)
+    for (const reverse of [false, true]) {
+      const docs = [1, 2, 3].map((id) => {
+        const doc = new Y.Doc()
+        doc.clientID = id
+        Y.applyUpdate(doc, Y.encodeStateAsUpdate(base))
+        return doc
+      })
+      await codec.applyFile(docs[swap ? 1 : 0]!, file, context)
+      deleteAxis(new WorkbookModel(docs[swap ? 0 : 1]!).sheets()[0]!, 'row', 0, 1)
+      const updates = docs.slice(0, 2).map((doc) => Y.encodeStateAsUpdate(doc))
+      for (const doc of docs) for (const update of reverse ? [...updates].reverse() : updates) Y.applyUpdate(doc, update)
+      const exports: Uint8Array[] = []
+      for (const doc of docs) {
+        const model = new WorkbookModel(doc)
+        const after = model.sheets()[0]!
+        expect(after.cf.size).toBe(1)
+        expect(after.dv.size).toBe(1)
+        const format = [...after.cf.values()][0] as ConditionalFormat
+        expect(toA1Form(format.rules[0]!.formulas![0]!, after)).toBe('$A$9>5')
+        expect(toA1Form(validationAt(after, 0, 1)!.formula1!, after)).toBe('$A$9+5')
+        const calc = new SheetCalc(model, { live: false })
+        expect(passes(after, calc, 0, 1, '10')).toBe(false)
+        expect(passes(after, calc, 0, 1, '15')).toBe(true)
+        calc.destroy()
+        exports.push(await codec.exportFile(doc, context))
+      }
+      for (const bytes of exports) expect(bytes).toEqual(exports[0])
+      for (const doc of docs) doc.destroy()
+    }
+    incoming.destroy()
+    base.destroy()
+  })
+
+  it('ignores dead rule ranges in evaluation, validation, export, diff, and file comparisons', async () => {
+    const doc = new Y.Doc()
+    const workbook = WorkbookModel.initialize(doc)
+    const sheet = workbook.addSheet('Sheet1')
+    for (let row = 0; row < 3; row++) sheet.setCell(row, 0, { v: row + 1 })
+    const dead = sheet.rangeIds({ top: 0, left: 1, bottom: 0, right: 1 })
+    const live = sheet.rangeIds({ top: 2, left: 1, bottom: 2, right: 1 })
+    const cf = { ranges: [dead], rules: [{ type: 'expression', priority: 1, formulas: ['TRUE'] }] } satisfies ConditionalFormat
+    const dv = { ranges: [dead], type: 'whole', operator: 'greaterThan', formula1: '99' } satisfies DataValidation
+    sheet.cf.set('dead', cf)
+    sheet.cf.set('mixed', { ...cf, ranges: [dead, live] })
+    sheet.dv.set('dead', dv)
+    sheet.dv.set('mixed', { ...dv, ranges: [dead, live], formula1: '1' })
+    deleteAxis(sheet, 'row', 0, 1)
+    expect(sheet.cf.get('dead')).toBe(cf)
+    expect(sheet.dv.get('dead')).toBe(dv)
+    expect(validationAt(sheet, 0, 1)).toBeUndefined()
+    expect(validationAt(sheet, 1, 1)!.formula1).toBe('1')
+    const calc = new SheetCalc(workbook, { live: false })
+    const formatter = new ConditionalFormatter(sheet, calc, new Stylesheet(), DEFAULT_THEME_COLORS)
+    expect(formatter.overlay(0, 1)).toBeUndefined()
+    expect(formatter.overlay(1, 1)).toEqual({})
+    calc.destroy()
+    const codec = new SheetCodec()
+    const context = { name: 'Dead.xlsx', assets: new MemoryLiveAssetStore() }
+    const bytes = await codec.exportFile(doc, context)
+    const xml = strFromU8(unzipSync(bytes)['xl/worksheets/sheet1.xml']!)
+    expect(xml.match(/<conditionalFormatting /g)).toHaveLength(1)
+    expect(xml.match(/<dataValidation /g)).toHaveLength(1)
+    expect(xml).toContain('sqref="B2"')
+    expect(xml).not.toContain('99')
+    const imported = new Y.Doc()
+    await codec.importFile(imported, bytes, context)
+    const diff = diffWorkbooks(doc, imported)
+    expect(diff.sheets[0]!.other.filter((change) => change.kind === 'conditionalFormats' || change.kind === 'validations')).toEqual([])
+    applyWithoutRuleChanges(doc, imported)
+    applyWithoutRuleChanges(imported, doc)
+    expect((await codec.applyFile(doc, bytes, context)).changed).toBe(false)
+    imported.destroy()
+    doc.destroy()
+  })
+
+  it('rebases relative CF and validation origins after deleting their first row', async () => {
+    const rows = [1, 2, 3].map((value) => `<row r="${value}"><c r="A${value}"><v>${value}</v></c></row>`).join('')
+    const { doc, sheet, workbook, codec, context } = await open(xlsx(rows,
+      '<conditionalFormatting sqref="B1:B3"><cfRule type="expression" priority="1"><formula>A1&gt;0</formula></cfRule></conditionalFormatting>' +
+      '<dataValidations count="1"><dataValidation sqref="B1:B3" type="whole" operator="greaterThan"><formula1>A1</formula1></dataValidation></dataValidations>'))
+    deleteAxis(sheet, 'row', 0, 1)
+    const values = new SheetCalc(workbook, { live: false })
+    const formatter = new ConditionalFormatter(sheet, values, new Stylesheet(), DEFAULT_THEME_COLORS)
+    expect(formatter.overlay(0, 1)).toEqual({})
+    expect(formatter.overlay(1, 1)).toEqual({})
+    expect(passes(sheet, values, 0, 1, '2')).toBe(false)
+    expect(passes(sheet, values, 0, 1, '3')).toBe(true)
+    const xml = strFromU8(unzipSync(await codec.exportFile(doc, context))['xl/worksheets/sheet1.xml']!)
+    expect(xml).toContain('sqref="B1:B2"')
+    expect(xml).toContain('<formula>A1&gt;0</formula>')
+    expect(xml).toContain('<formula1>A1</formula1>')
+    expect(xml).not.toContain('#REF!')
+    const incoming = new Y.Doc()
+    await codec.importFile(incoming, await codec.exportFile(doc, context), context)
+    applyWithoutRuleChanges(doc, incoming)
+    applyWithoutRuleChanges(incoming, doc)
+    values.destroy()
+    incoming.destroy()
+    doc.destroy()
+  })
+
+  it.each(['row', 'col'] as const)('follows only deleted relative single-cell axes in rule formulas, %s', async (kind) => {
+    const doc = new Y.Doc()
+    const workbook = WorkbookModel.initialize(doc)
+    const sheet = workbook.addSheet('Sheet1')
+    const formulas = ['A1', '$A$1', '$A1', 'A$1', 'A1:A3'].map((formula) => toIdForm(formula, sheet))
+    const ranges = [sheet.rangeIds({ top: 1, left: 1, bottom: 2, right: 2 })]
+    sheet.cf.set('absolute', { ranges, rules: [{ type: 'expression', priority: 1, formulas: [formulas[1]!] }] } satisfies ConditionalFormat)
+    sheet.dv.set('absolute', { ranges, type: 'whole', formula1: formulas[1]! } satisfies DataValidation)
+    deleteAxis(sheet, kind, 0, 1)
+    const resolved = formulas.map((formula) => toA1Form(formula, sheet, workbook, { followDeletedRelative: true }))
+    expect(resolved).toEqual(kind === 'row' ? ['A1', '#REF!', '$A1', '#REF!', 'A1:A2'] : ['A1', '#REF!', '#REF!', 'A$1', '#REF!'])
+    expect(toA1Form(formulas[0]!, sheet)).toBe('#REF!')
+    const bytes = await new SheetCodec().exportFile(doc, { name: 'Absolute.xlsx', assets: new MemoryLiveAssetStore() })
+    const xml = strFromU8(unzipSync(bytes)['xl/worksheets/sheet1.xml']!)
+    expect(xml).toContain('<formula>#REF!</formula>')
+    expect(xml).toContain('<formula1>#REF!</formula1>')
+    doc.destroy()
+  })
+
+  it('reads and exports the new canonical name inside an outer transaction', async () => {
+    const doc = new Y.Doc()
+    const workbook = WorkbookModel.initialize(doc)
+    workbook.addSheet('Sheet1')
+    workbook.names.set('z', { name: 'Rate', formula: '1' })
+    expect([...workbook.names.keys()]).toEqual(['z'])
+    const remote = new Y.Doc()
+    Y.applyUpdate(remote, Y.encodeStateAsUpdate(doc))
+    new WorkbookModel(remote).names.set('a', { name: 'Rate', formula: '2' })
+    const codec = new SheetCodec()
+    const context = { name: 'Names.xlsx', assets: new MemoryLiveAssetStore() }
+    let exported: Promise<Uint8Array> | undefined
+    doc.transact(() => {
+      Y.applyUpdate(doc, Y.encodeStateAsUpdate(remote))
+      expect([...workbook.names.keys()]).toEqual(['a'])
+      expect(workbook.names.get('z')).toBeUndefined()
+      expect([...workbook.names.values()]).toEqual([{ name: 'Rate', formula: '2' }])
+      exported = codec.exportFile(doc, context)
+    })
+    const xml = strFromU8(unzipSync(await exported!)['xl/workbook.xml']!)
+    expect(xml).toContain('<definedName name="Rate">2</definedName>')
+    expect([...workbook.names.keys()]).toEqual(['a'])
+    remote.destroy()
+    doc.destroy()
+  })
+
+  it('applies 16,000 changed name formulas from one canonical snapshot within five seconds', () => {
+    const doc = new Y.Doc()
+    const workbook = WorkbookModel.initialize(doc)
+    workbook.addSheet('Sheet1')
+    doc.transact(() => {
+      for (let index = 0; index < 16_000; index++) workbook.names.set(`key${index}`, { name: `Name_${index}`, formula: '1' })
+    })
+    const incoming = new Y.Doc()
+    Y.applyUpdate(incoming, Y.encodeStateAsUpdate(doc))
+    const other = new WorkbookModel(incoming)
+    incoming.transact(() => {
+      for (let index = 0; index < 16_000; index++) other.names.set(`key${index}`, { name: `Name_${index}`, formula: '2' })
+    })
+    const started = performance.now()
+    expect(applyWorkbook(doc, incoming).changed).toBe(true)
+    expect(performance.now() - started).toBeLessThan(5_000)
+    const names = [...workbook.names.entries()]
+    expect(names).toHaveLength(16_000)
+    for (const [key, name] of names) {
+      expect(key).toBe(`key${name.name.slice(5)}`)
+      expect(name.formula).toBe('2')
+    }
+    incoming.destroy()
+    doc.destroy()
+  }, 30_000)
 })
