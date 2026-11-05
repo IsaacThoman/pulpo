@@ -78,7 +78,8 @@ function mimeBundle(value: unknown): MimeBundle {
   for (const [mime, data] of Object.entries(value)) {
     if (!/^[a-z0-9.+-]+\/[a-z0-9.+-]+$/i.test(mime)) continue
     const key = mime.toLowerCase()
-    bundle[key] = isJsonMime(key) && typeof data !== 'string' && !Array.isArray(data) ? data : joinText(data)
+    // JSON types hold a JSON value (an array too); nbformat never splits them into lines.
+    bundle[key] = isJsonMime(key) && typeof data !== 'string' ? data : joinText(data)
   }
   return bundle
 }

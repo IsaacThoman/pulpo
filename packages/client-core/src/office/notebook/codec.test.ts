@@ -6,7 +6,7 @@ import { MemoryLiveAssetStore } from '../assets.js'
 import { LiveFormatError } from '../live-format.js'
 import { notebookCodec } from './codec.js'
 import { clearOutputs, deleteCells, insertCells, moveCells, setCellType, shiftCells } from './edit.js'
-import { ASSET_MARKER, NOTEBOOK_MAX_FILE_BYTES, cellOutputs, cellSourceText, cellType, notebookMap, orderedCells } from './layout.js'
+import { ASSET_MARKER, NOTEBOOK_MAX_FILE_BYTES, cellOutputs, cellsMap, cellSourceText, cellType, notebookMap, orderedCells } from './layout.js'
 
 const FIXTURES = join(import.meta.dirname, 'fixtures')
 const fixture = (name: string) => new Uint8Array(readFileSync(join(FIXTURES, name)))
@@ -598,11 +598,11 @@ describe('bounded notebook blob restoration', () => {
     doc.destroy()
   })
 
-  it('counts fetched bytes as well as the substituted JSON', async () => {
+  it('counts what is written out once, so an output of half the limit still exports', async () => {
     const { doc, assets, context } = await imported(jupyter(notebook([code('a', 'run()')])))
     const ref = await assets.put(utf8(JSON.stringify('x'.repeat(NOTEBOOK_MAX_FILE_BYTES / 2))), 'application/json')
     orderedCells(doc)[0]!.cell.set('outputs', { json: JSON.stringify(`${ASSET_MARKER}0`), assets: [{ hash: ref.hash, kind: 'json' }] })
-    await expect(notebookCodec.exportFile(doc, context)).rejects.toMatchObject({ code: 'too_large' })
+    expect((await notebookCodec.exportFile(doc, context)).byteLength).toBeGreaterThan(NOTEBOOK_MAX_FILE_BYTES / 2)
     doc.destroy()
   })
 
@@ -623,5 +623,22 @@ describe('bounded notebook blob restoration', () => {
     expect(notebookMap(doc).get('original')).toBeUndefined()
     expect(await notebookCodec.exportFile(doc, context)).toEqual(bytes)
     doc.destroy()
+  })
+})
+
+describe('export budget', () => {
+  it('stops one asset repeated across many cells from growing the file past the limit', async () => {
+    const { doc, assets, context } = await imported(jupyter(notebook([code('a', 'x')])))
+    const ref = await assets.put(utf8(JSON.stringify('y'.repeat(1_000_000))), 'application/json')
+    const blob = { json: '["\\u0000pulpo-asset:0"]', assets: [{ hash: ref.hash, kind: 'json' }] }
+    const keys = insertCells(doc, { before: null }, Array.from({ length: 30 }, () => ({ type: 'code' as const, source: 'x' })))
+    for (const key of keys) cellsMap(doc).get(key)!.set('outputs', blob)
+    await expect(notebookCodec.exportFile(doc, context)).rejects.toMatchObject({ code: 'too_large' })
+  })
+
+  it('imports and exports a valid 13 MB notebook', async () => {
+    const big = jupyter(notebook([code('a', 'run()', [{ name: 'stdout', output_type: 'stream', text: 'z'.repeat(13_000_000) }], 1)]))
+    const { doc, context } = await imported(big)
+    expect((await notebookCodec.exportFile(doc, context)).byteLength).toBe(big.byteLength)
   })
 })

@@ -1,4 +1,5 @@
 import * as Y from 'yjs'
+import { containsMarker } from './file.js'
 import { compactJson, jsonNode, parseJson, type JsonNode } from './json.js'
 import {
   ASSET_MARKER,
@@ -269,23 +270,36 @@ function offsetAssetMarkers(node: JsonNode, offset: number): JsonNode {
   return node
 }
 
+/**
+ * The attachments of merged cells as one blob: names from the first cell that has them win, and
+ * later cells' placeholders are renumbered after the earlier cells' slots. A blob without slots
+ * may hold placeholder-like text literally (a file that did, kept inline as written); it never
+ * shares a result with blobs that have slots, where that text would read as a placeholder, so
+ * whichever kind comes first decides which cells' attachments are merged.
+ */
 function mergedAttachments(cells: Y.Map<unknown>[]): NotebookBlob | null {
   const merged: Extract<JsonNode, { kind: 'object' }> = { kind: 'object', entries: [] }
   const assets: NotebookBlob['assets'] = []
   const names = new Set<string>()
   let present = false
+  let mode: 'slots' | 'literal' | null = null
   for (const cell of cells) {
     const blob = cellType(cell) === 'code' ? null : cellAttachments(cell)
     if (!blob) continue
     present = true
     const node = parseJson(blob.json)
     if (node.kind !== 'object') continue
+    const kind = blob.assets.length ? 'slots' : containsMarker(node) ? 'literal' : null
+    if (kind) {
+      mode ??= kind
+      if (kind !== mode) continue
+    }
     const offset = assets.length
     for (const slot of blob.assets) assets.push(slot)
     for (const entry of node.entries) {
       if (names.has(entry.key)) continue
       names.add(entry.key)
-      merged.entries.push({ ...entry, value: offsetAssetMarkers(entry.value, offset) })
+      merged.entries.push({ ...entry, value: kind === 'slots' ? offsetAssetMarkers(entry.value, offset) : entry.value })
     }
   }
   return present ? { json: compactJson(merged), assets } : null

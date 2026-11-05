@@ -7,6 +7,8 @@ import {
   blobNode,
   CELL_ID_PATTERN,
   makeBlob,
+  restoreBudget,
+  type RestoreBudget,
   readNotebookFile,
   textNode,
   type ParsedCell,
@@ -210,7 +212,7 @@ function extraEntries(extra: [string, string][], style: JsonStyle): Map<string, 
   return nodes
 }
 
-async function cellNode(cell: Y.Map<unknown>, id: string | undefined, style: JsonStyle, assets: LiveAssetStore): Promise<JsonNode> {
+async function cellNode(cell: Y.Map<unknown>, id: string | undefined, style: JsonStyle, assets: LiveAssetStore, budget: RestoreBudget): Promise<JsonNode> {
   const type = cellType(cell)
   const fields = new Map<string, JsonNode>()
   if (id !== undefined) fields.set('id', { kind: 'string', raw: quote(id, style.ensureAscii), value: id })
@@ -220,10 +222,10 @@ async function cellNode(cell: Y.Map<unknown>, id: string | undefined, style: Jso
   if (type === 'code') {
     const count = cellExecutionCount(cell)
     fields.set('execution_count', count === null ? { kind: 'literal', raw: 'null' } : { kind: 'number', raw: String(count) })
-    fields.set('outputs', await blobNode(cellOutputs(cell), assets, style))
+    fields.set('outputs', await blobNode(cellOutputs(cell), assets, style, budget))
   } else {
     const attachments = cellAttachments(cell)
-    if (attachments) fields.set('attachments', await blobNode(attachments, assets, style))
+    if (attachments) fields.set('attachments', await blobNode(attachments, assets, style, budget))
   }
   for (const [key, value] of extraEntries(stringPairs(cell.get('extra')), style)) if (!fields.has(key)) fields.set(key, value)
   return {
@@ -254,7 +256,9 @@ async function notebookText(doc: Y.Doc, facts: FileFacts, assets: LiveAssetStore
   const map = notebookMap(doc)
   const cells = orderedCells(doc)
   const ids = exportIds(doc, cells)
-  const cellNodes = await Promise.all(cells.map((entry, index) => cellNode(entry.cell, ids[index], style, assets)))
+  // One budget for the whole file: see `RestoreBudget`.
+  const budget = restoreBudget()
+  const cellNodes = await Promise.all(cells.map((entry, index) => cellNode(entry.cell, ids[index], style, assets, budget)))
   const nbformat = map.get('nbformat')
   const minor = map.get('nbformat_minor')
   const fields = new Map<string, JsonNode>([

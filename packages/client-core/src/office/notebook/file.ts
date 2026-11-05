@@ -441,7 +441,8 @@ function sizeOf(node: JsonNode, sizes: Map<JsonNode, number>): number {
   return sizes.get(node)!
 }
 
-function containsMarker(node: JsonNode): boolean {
+/** Whether any string in the value starts like a placeholder. */
+export function containsMarker(node: JsonNode): boolean {
   const stack = [node]
   while (stack.length) {
     const current = stack.pop()!
@@ -505,45 +506,58 @@ export async function makeBlob(node: JsonNode, assets: LiveAssetStore, inlineStr
   return { json: compactJson(kept), assets: slots }
 }
 
+/**
+ * What restoring blobs has cost so far. One export shares one budget, so a value repeated across
+ * many cells (a hostile replica can point every cell at one large asset) cannot grow the file past
+ * what the format edits; assets are read once each.
+ */
+export interface RestoreBudget {
+  total: number
+  fetched: Map<string, Promise<Uint8Array>>
+}
+
+export function restoreBudget(): RestoreBudget {
+  return { total: 0, fetched: new Map() }
+}
+
 /** Outputs or attachments as JSON nodes, their assets read back. */
-export async function blobNode(blob: NotebookBlob, assets: LiveAssetStore, style: JsonStyle): Promise<JsonNode> {
-  let total = 0
+export async function blobNode(blob: NotebookBlob, assets: LiveAssetStore, style: JsonStyle, budget: RestoreBudget = restoreBudget()): Promise<JsonNode> {
+  // Counted as written out: the blob's own JSON and each substituted part (not the reads, which
+  // the substitutions already account for).
   const count = (bytes: number) => {
-    total += bytes
-    if (total > NOTEBOOK_MAX_FILE_BYTES) throw new LiveFormatError('too_large', 'This notebook output is too large to restore')
+    budget.total += bytes
+    if (budget.total > NOTEBOOK_MAX_FILE_BYTES) throw new LiveFormatError('too_large', 'This notebook is too large to write out')
   }
-  const encoder = new TextEncoder()
-  count(encoder.encode(blob.json).byteLength)
+  count(blob.json.length)
   const root = parseJson(blob.json)
   if (!blob.assets.length) return root
   const fetched = new Map<string, Uint8Array>()
-  const values = new Map<string, JsonNode>()
-  const sizes = new Map<JsonNode, number>()
   for (const slot of blob.assets) {
-    let bytes = fetched.get(slot.hash)
-    if (!bytes) {
-      bytes = await assets.get(slot.hash)
-      count(bytes.byteLength)
-      fetched.set(slot.hash, bytes)
+    if (fetched.has(slot.hash)) continue
+    let pending = budget.fetched.get(slot.hash)
+    if (!pending) {
+      pending = assets.get(slot.hash)
+      budget.fetched.set(slot.hash, pending)
     }
+    fetched.set(slot.hash, await pending)
   }
-  const part = (index: number): JsonNode | undefined => {
+  const values = new Map<string, { node: JsonNode; size: number }>()
+  const part = (index: number): { node: JsonNode; size: number } | undefined => {
     const slot = blob.assets[index]
     if (!slot) return undefined
-    const bytes = fetched.get(slot.hash)!
     const key = slot.kind === 'json' ? slot.hash : JSON.stringify(slot)
     let value = values.get(key)
     if (!value) {
-      value = slot.kind === 'base64'
+      const bytes = fetched.get(slot.hash)!
+      const node = slot.kind === 'base64'
         ? stringNode(layBase64(encodeBase64(bytes), slot.wrap, slot.trail), style)
         : parseJson(new TextDecoder().decode(bytes))
+      value = { node, size: slot.kind === 'base64' ? (node as Extract<JsonNode, { kind: 'string' }>).raw.length : bytes.byteLength }
       values.set(key, value)
-      sizes.set(value, encoder.encode(compactJson(value)).byteLength)
     }
     return value
   }
   // Slots can share a hash, but cycles or repeated references to one slot are corrupt.
-  // Count each substitution as well as fetched bytes: shared assets can expand many times.
   const used = new Set<number>()
   const restore = (node: JsonNode, depth: number): JsonNode => {
     if (depth > MAX_RESTORE_DEPTH) throw new LiveFormatError('corrupt', 'A notebook output is nested too deeply')
@@ -552,8 +566,8 @@ export async function blobNode(blob: NotebookBlob, assets: LiveAssetStore, style
       const value = part(index)
       if (!value || used.has(index)) throw new LiveFormatError('corrupt', 'A notebook output refers to a missing part')
       used.add(index)
-      count(sizes.get(value)!)
-      return restore(value, depth + 1)
+      count(value.size)
+      return restore(value.node, depth + 1)
     }
     if (node.kind === 'array') return { kind: 'array', items: node.items.map((item) => restore(item, depth + 1)) }
     if (node.kind === 'object') return { kind: 'object', entries: node.entries.map((item) => ({ ...item, value: restore(item.value, depth + 1) })) }

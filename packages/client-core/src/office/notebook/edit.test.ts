@@ -238,3 +238,21 @@ describe('order keys when appending', () => {
     expect(last!.length).toBeLessThan(60)
   })
 })
+
+describe('third review regressions', () => {
+  it('keeps placeholder-like text in attachments literal when merging', async () => {
+    const { doc } = await notebookDoc([{ type: 'markdown', source: 'a' }, { type: 'markdown', source: 'b' }])
+    const [first, second] = orderedCells(doc)
+    first!.cell.set('attachments', { json: '{"note.txt":{"text/plain":"\\u0000pulpo-asset:not-a-slot"}}', assets: [] })
+    second!.cell.set('attachments', { json: '{"x.txt":{"text/plain":"plain"}}', assets: [] })
+    mergeCells(doc, [first!.key, second!.key])
+    const merged = orderedCells(doc)[0]!.cell.get('attachments') as { json: string }
+    expect(merged.json).toContain('\\u0000pulpo-asset:not-a-slot')
+    expect(merged.json).toContain('x.txt')
+  })
+
+  it('reports changed JSON arrays in attachments', () => {
+    const file = (value: unknown) => new TextEncoder().encode(JSON.stringify({ cells: [{ cell_type: 'markdown', id: 'm', metadata: {}, source: 'x', attachments: { 'd.json': { 'application/json': value } } }], metadata: {}, nbformat: 4, nbformat_minor: 5 }))
+    expect(diffNotebookFiles(file([1]), file([2])).counts.changed).toBe(1)
+  })
+})
