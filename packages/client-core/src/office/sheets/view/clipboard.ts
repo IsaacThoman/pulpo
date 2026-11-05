@@ -1,3 +1,5 @@
+import { MAX_COLS, MAX_ROWS } from '../address.js'
+import { MAX_EXPANDED_CELLS } from '../limits.js'
 import type { CellRange } from '../address.js'
 import type { StyleProps } from '../model/schema.js'
 import type { CellSnapshot } from './commands.js'
@@ -158,12 +160,25 @@ export function parseHtml(html: string): { cells: PastedCell[][]; internal?: Cli
     for (const match of (style.textContent ?? '').matchAll(/\.([\w-]+)\s*\{([^}]*)\}/g)) classStyles.set(match[1]!, match[2]!)
   }
   const cells: PastedCell[][] = []
-  const occupied = new Set<string>()
-  Array.from(table.querySelectorAll('tr')).forEach((tr, rowIndex) => {
+  const occupied: { top: number; bottom: number; left: number; right: number }[] = []
+  let width = 1
+  let height = 1
+  const span = (value: string | null, max: number) => {
+    const number = Number(value)
+    return Number.isInteger(number) && number > 0 ? Math.min(number, max) : 1
+  }
+  for (const [rowIndex, tr] of Array.from(table.querySelectorAll('tr')).entries()) {
+    if (rowIndex >= MAX_ROWS || (rowIndex + 1) * width > MAX_EXPANDED_CELLS) break
+    height = Math.max(height, rowIndex + 1)
     const row: PastedCell[] = (cells[rowIndex] ??= [])
     let col = 0
     for (const td of Array.from(tr.children).filter((element) => element.tagName === 'TD' || element.tagName === 'TH')) {
-      while (occupied.has(`${rowIndex},${col}`)) col++
+      for (;;) {
+        const covering = occupied.find((rect) => rowIndex >= rect.top && rowIndex <= rect.bottom && col >= rect.left && col <= rect.right)
+        if (!covering) break
+        col = covering.right + 1
+      }
+      if (col >= MAX_COLS || (col + 1) * height > MAX_EXPANDED_CELLS) break
       const css = [...(td.getAttribute('class') ?? '').split(/\s+/).map((name) => classStyles.get(name) ?? ''), td.getAttribute('style') ?? ''].join(';')
       const cell: PastedCell = { text: cellText(td) }
       const style = styleFromCss(css, td)
@@ -171,12 +186,14 @@ export function parseHtml(html: string): { cells: PastedCell[][]; internal?: Cli
       if (style.color) cell.color = style.color
       if (style.background) cell.background = style.background
       row[col] = cell
-      const rowSpan = Number(td.getAttribute('rowspan')) || 1
-      const colSpan = Number(td.getAttribute('colspan')) || 1
-      for (let r = 0; r < rowSpan; r++) for (let c = 0; c < colSpan; c++) if (r || c) occupied.add(`${rowIndex + r},${col + c}`)
+      const colSpan = span(td.getAttribute('colspan'), Math.min(MAX_COLS - col, Math.floor(MAX_EXPANDED_CELLS / height) - col))
+      width = Math.max(width, col + colSpan)
+      const rowSpan = span(td.getAttribute('rowspan'), Math.min(MAX_ROWS - rowIndex, Math.floor(MAX_EXPANDED_CELLS / width) - rowIndex))
+      height = Math.max(height, rowIndex + rowSpan)
+      if (rowSpan > 1 || colSpan > 1) occupied.push({ top: rowIndex, bottom: rowIndex + rowSpan - 1, left: col, right: col + colSpan - 1 })
       col += colSpan
     }
-  })
+  }
   for (const row of cells) for (let index = 0; index < row.length; index++) row[index] ??= { text: '' }
   return { cells, ...(internal ? { internal } : {}) }
 }

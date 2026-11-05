@@ -1,5 +1,6 @@
 /** Math and trigonometry functions. */
 
+import { logicalSize, matrixGet } from '../types.js'
 import { Errors, isError, isReference, matrix, type FunctionContext, type FunctionSpec, type Matrix, type Reference, type Scalar, type Value } from '../types.js'
 import {
   check,
@@ -96,7 +97,22 @@ export function ifsAggregate(
     ranges.push(criteriaRange(ctx, pairs[i]))
     criteriaArgs.push(pairs[i + 1])
   }
-  const targetMatrix = target === undefined ? undefined : toMatrix(ctx, target)
+  if (target === undefined) {
+    return liftOver(ctx, criteriaArgs, (criteria) => {
+      const first = logicalSize(ranges[0]!)
+      for (const range of ranges) {
+        const size = logicalSize(range)
+        if (size.rows !== first.rows || size.cols !== first.cols) fail(Errors.VALUE)
+      }
+      const rows = ranges.reduce((max, range) => Math.max(max, range.rows), 0)
+      const cols = ranges.reduce((max, range) => Math.max(max, range.cols), 0)
+      const predicates = criteria.map((criterion) => parseCriteria(criterion, ctx))
+      let count = predicates.every((predicate, i) => predicate(ranges[i]!.omittedValue ?? null)) ? first.rows * first.cols - rows * cols : 0
+      for (let row = 0; row < rows; row++) for (let col = 0; col < cols; col++) if (predicates.every((predicate, i) => predicate(matrixGet(ranges[i]!, row, col)))) count++
+      return reduce([], count)
+    })
+  }
+  const targetMatrix = toMatrix(ctx, target)
   if (targetMatrix && (targetMatrix.rows !== ranges[0]!.rows || targetMatrix.cols !== ranges[0]!.cols)) fail(Errors.VALUE)
   return liftOver(ctx, criteriaArgs, (criteria) => {
     const { indexes } = matchingIndexes(ctx, ranges, criteria)
@@ -384,17 +400,26 @@ export const MATH_FUNCTIONS: FunctionSpec[] = [
     fn: (ctx, args) => {
       const mats = args.map((a) => toMatrix(ctx, a))
       const first = mats[0]!
-      for (const m of mats) if (m.rows !== first.rows || m.cols !== first.cols) return fail(Errors.VALUE)
+      const size = logicalSize(first)
+      for (const m of mats) {
+        const other = logicalSize(m)
+        if (other.rows !== size.rows || other.cols !== size.cols) return fail(Errors.VALUE)
+      }
       let total = 0
-      for (let i = 0; i < first.data.length; i++) {
+      const rows = mats.reduce((max, m) => Math.max(max, m.rows), 0)
+      const cols = mats.reduce((max, m) => Math.max(max, m.cols), 0)
+      const productAt = (row: number, col: number) => {
         let product = 1
         for (const m of mats) {
-          const v = m.data[i] ?? null
+          const v = matrixGet(m, row, col)
           if (isError(v)) return fail(v)
           product *= typeof v === 'number' ? v : 0
         }
-        total += product
+        return product
       }
+      for (let row = 0; row < rows; row++) for (let col = 0; col < cols; col++) total += productAt(row, col)
+      const omitted = size.rows * size.cols - rows * cols
+      if (omitted) total += omitted * productAt(rows, cols)
       return total
     },
   }),

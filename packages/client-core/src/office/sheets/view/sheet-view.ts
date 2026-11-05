@@ -1,6 +1,8 @@
 import * as Y from 'yjs'
 import type { Awareness } from 'y-protocols/awareness'
 import type { LiveAssetStore } from '../../live-format.js'
+import { MAX_EXPANDED_CELLS } from '../limits.js'
+import { columnIntervalProps } from '../model/column-intervals.js'
 import { cellName, MAX_COLS, MAX_ROWS, parseCellName, parseRangeName, rangeContains, rangeName, type CellRange } from '../address.js'
 import { toA1Form } from '../model/formula-ids.js'
 import type { AutoFilter, DrawingObject, Hyperlink, Note, RangeIds, SheetColor, SheetFormat, StyleProps } from '../model/schema.js'
@@ -152,8 +154,17 @@ const FONT_FALLBACKS: Record<string, string> = {
   georgia: 'Georgia, serif',
 }
 
+/** Quotes a CSS string without allowing file text to introduce declarations. */
+function cssString(value: string): string {
+  return '"' + value.replace(/[\\"\n\r\f]/g, (char) => char === '\\' || char === '"' ? '\\' + char : '\\' + char.charCodeAt(0).toString(16) + ' ') + '"'
+}
+
+function printColor(value: string | undefined): string {
+  return value && (/^#[0-9a-f]{3,8}$/i.test(value) || /^(?:black|white|red|green|blue|yellow|cyan|magenta|gray|grey|silver|maroon|olive|lime|aqua|teal|navy|fuchsia|purple|orange|transparent|currentColor)$/i.test(value)) ? value : ''
+}
+
 export function cssFontFamily(name: string): string {
-  return FONT_FALLBACKS[name.toLowerCase()] ?? `"${name.replace(/"/g, '')}", system-ui, sans-serif`
+  return FONT_FALLBACKS[name.toLowerCase()] ?? `${cssString(name)}, system-ui, sans-serif`
 }
 
 /** EMUs per CSS pixel. */
@@ -474,7 +485,6 @@ export class SheetView {
       if (prop === 'hidden' && value) rowSizes.set(index, 0)
       else if (prop === 'size' && rowSizes.get(index) !== 0) rowSizes.set(index, Math.round((value as number) * POINTS_TO_PIXELS))
     }
-    const tail = sheet.raw.get('colTail') as { from: number; props: { size?: number; hidden?: boolean } } | undefined
     for (const [key, value] of sheet.colMeta) {
       const bar = key.lastIndexOf('|')
       const prop = key.slice(bar + 1)
@@ -484,10 +494,9 @@ export class SheetView {
       if (prop === 'hidden' && value) colSizes.set(index, 0)
       else if (prop === 'size' && colSizes.get(index) !== 0) colSizes.set(index, columnWidthToPixels(value as number, this.digitWidth))
     }
-    if (tail && (tail.props.size !== undefined || tail.props.hidden)) {
-      for (let col = tail.from; col < this.colCount; col++) {
-        if (!colSizes.has(col)) colSizes.set(col, tail.props.hidden ? 0 : columnWidthToPixels(tail.props.size!, this.digitWidth))
-      }
+    for (let col = 0; col < Math.min(this.colCount, MAX_COLS); col++) {
+      const props = columnIntervalProps(sheet, col)
+      if (!colSizes.has(col) && (props.size !== undefined || props.hidden)) colSizes.set(col, props.hidden ? 0 : columnWidthToPixels(props.size!, this.digitWidth))
     }
     this.rowLayout = new AxisLayout(defaultRow, rowSizes, this.rowCount)
     this.colLayout = new AxisLayout(defaultCol, colSizes, this.colCount)
@@ -1619,13 +1628,12 @@ export class SheetView {
     const sheet = this.sheet
     const found = sheet.usedRange()
     // Prints are capped (a stray cell at XFD1048576 must not make a billion-cell table).
-    const used = found && { ...found, bottom: Math.min(found.bottom, found.top + 20_000), right: Math.min(found.right, 255) }
+    const right = Math.min(found?.right ?? 0, 255)
+    const used = found && { ...found, bottom: Math.min(found.bottom, 20_000, Math.floor(MAX_EXPANDED_CELLS / (right + 1)) - 1), right }
     const escape = (text: string) => text.replace(/[&<>"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[char]!)
     if (!used) return `<!doctype html><title>${escape(sheet.name)}</title><p></p>`
-    const merges = sheet.mergedRanges().map((merge) => merge.range)
-    const covered = new Set<string>()
-    for (const merge of merges) for (let row = merge.top; row <= merge.bottom; row++) for (let col = merge.left; col <= merge.right; col++) if (row !== merge.top || col !== merge.left) covered.add(`${row},${col}`)
-    const border = (edge: { style: string; color: string } | undefined) => (edge ? `${edge.style === 'thick' ? 3 : edge.style.startsWith('medium') ? 2 : 1}px ${edge.style === 'double' ? 'double' : /dash|dot|hair/i.test(edge.style) ? 'dashed' : 'solid'} ${edge.color}` : '')
+    const merges = sheet.mergedRanges().map(({ range }) => ({ ...range, bottom: Math.min(range.bottom, used.bottom), right: Math.min(range.right, used.right) })).filter((range) => range.top <= range.bottom && range.left <= range.right)
+    const border = (edge: { style: string; color: string } | undefined) => (edge && printColor(edge.color) ? `${edge.style === 'thick' ? 3 : edge.style.startsWith('medium') ? 2 : 1}px ${edge.style === 'double' ? 'double' : /dash|dot|hair/i.test(edge.style) ? 'dashed' : 'solid'} ${edge.color}` : '')
     let colgroup = '<colgroup>'
     for (let col = 0; col <= used.right; col++) colgroup += `<col style="width:${this.colLayout.size(col)}px">`
     colgroup += '</colgroup>'
@@ -1634,19 +1642,19 @@ export class SheetView {
       if (this.rowLayout.isHidden(row)) continue
       body += `<tr style="height:${this.rowLayout.size(row)}px">`
       for (let col = 0; col <= used.right; col++) {
-        if (covered.has(`${row},${col}`) || this.colLayout.isHidden(col)) continue
+        if (merges.some((range) => rangeContains(range, row, col) && (row !== range.top || col !== range.left)) || this.colLayout.isHidden(col)) continue
         const merge = merges.find((entry) => entry.top === row && entry.left === col)
         const render = this.display.render(row, col)
         const style = render.style
         const css = [
-          `font-family:${cssFontFamily(style.fontName).replace(/"/g, "'")}`,
-          `font-size:${style.fontSize}pt`,
+          `font-family:${cssFontFamily(style.fontName)}`,
+          Number.isFinite(style.fontSize) ? `font-size:${style.fontSize}pt` : '',
           style.bold ? 'font-weight:bold' : '',
           style.italic ? 'font-style:italic' : '',
           style.underline || style.strike ? `text-decoration:${style.underline ? 'underline' : ''} ${style.strike ? 'line-through' : ''}` : '',
-          `color:${render.color}`,
-          render.fill ? `background:${render.fill}` : '',
-          `text-align:${render.hAlign === 'centerContinuous' ? 'center' : render.hAlign === 'fill' || render.hAlign === 'distributed' ? 'left' : render.hAlign}`,
+          printColor(render.color) ? `color:${printColor(render.color)}` : '',
+          printColor(render.fill) ? `background:${printColor(render.fill)}` : '',
+          `text-align:${render.hAlign === 'centerContinuous' ? 'center' : ['left', 'right', 'center', 'justify'].includes(render.hAlign) ? render.hAlign : 'left'}`,
           `vertical-align:${style.vAlign === 'center' ? 'middle' : style.vAlign === 'top' ? 'top' : 'bottom'}`,
           style.wrap ? 'white-space:pre-wrap' : 'white-space:pre',
           render.borders.top ? `border-top:${border(render.borders.top)}` : '',

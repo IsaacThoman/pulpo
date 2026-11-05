@@ -8,6 +8,7 @@
  * such as `LOOKUP(2, 1/(A:A="x"), B:B)` return the last match.
  */
 
+import { omittedCells } from '../types.js'
 import { MAX_COLS, MAX_ROWS, columnName, quoteSheetName } from '../../address.js'
 import { Errors, isError, isReference, matrix, type FunctionContext, type FunctionSpec, type Scalar, type Value } from '../types.js'
 import { bool, cell, check, compareText, defInt, define, fail, int, matrixCol, matrixRow, num, omitted, scalarOf, text, toMatrix, type Args } from './coerce.js'
@@ -143,7 +144,9 @@ function vhlookup(ctx: FunctionContext, args: Args, horizontal: boolean): Value 
 function vector(ctx: FunctionContext, value: Value | undefined, error = Errors.NA): { values: Scalar[]; vertical: boolean } {
   const m = toMatrix(ctx, value)
   if (m.rows > 1 && m.cols > 1) return fail(error)
-  return { values: m.data.slice(), vertical: m.cols === 1 && m.rows > 1 }
+  const values = m.data.slice()
+  if (omittedCells(m)) values.push(m.omittedValue ?? null)
+  return { values, vertical: m.cols === 1 && (m.logicalRows ?? m.rows) > 1 }
 }
 
 function lookupFn(ctx: FunctionContext, args: Args): Value {

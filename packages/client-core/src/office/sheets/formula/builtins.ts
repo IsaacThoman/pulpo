@@ -411,7 +411,7 @@ function dimension(rows: boolean): OwnedFunction {
       if (value.areas.length !== 1) return Errors.REF
       return rows ? areaRows(value.areas[0]!) : areaCols(value.areas[0]!)
     }
-    if (isMatrix(value)) return rows ? value.rows : value.cols
+    if (isMatrix(value)) return rows ? value.logicalRows ?? value.rows : value.logicalCols ?? value.cols
     if (isLambda(value)) return Errors.VALUE
     return 1
   }

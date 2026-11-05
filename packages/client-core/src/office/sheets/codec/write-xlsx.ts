@@ -211,7 +211,8 @@ export async function writeXlsx(doc: Y.Doc, assets: LiveAssetStore, options: Xls
   const sheets = model.sheets()
   const sheetEntries: string[] = []
   const usedSheetIds = new Set(sheets.map((sheet) => sheet.raw.get('sheetId') as number | undefined).filter((id): id is number => id !== undefined))
-  let nextSheetId = Math.max(0, ...usedSheetIds) + 1
+  let nextSheetId = 1
+  for (const id of usedSheetIds) nextSheetId = Math.max(nextSheetId, id + 1)
   const livePaths = new Set<string>()
   const taken = (path: string) => pkg.has(path) || livePaths.has(path)
   const sheetPaths = new Map<string, string>()

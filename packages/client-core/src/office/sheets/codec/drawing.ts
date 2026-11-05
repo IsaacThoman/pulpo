@@ -1,3 +1,4 @@
+import { MAX_COLS, MAX_ROWS } from '../address.js'
 import { randomId } from '../model/axis.js'
 import type { AnchorPoint, DrawingKind, DrawingObject } from '../model/schema.js'
 import type { SheetModel } from '../model/workbook.js'
@@ -14,11 +15,13 @@ const ANCHORS = ['twoCellAnchor', 'oneCellAnchor', 'absoluteAnchor']
 
 function readPoint(sheet: SheetModel, element: XmlElement | undefined): AnchorPoint | undefined {
   if (!element) return undefined
-  const value = (name: string) => Math.max(0, Math.floor(Number(child(element, name)?.textContent ?? 0)) || 0)
+  const value = (name: string) => Number(child(element, name)?.textContent ?? 0)
   const row = value('row')
   const col = value('col')
+  if (!Number.isInteger(row) || !Number.isInteger(col) || row < 0 || col < 0 || row >= MAX_ROWS || col >= MAX_COLS) return undefined
+  const offset = (name: string) => Number.isFinite(value(name)) ? Math.max(0, Math.floor(value(name))) : 0
   sheet.ensure(row, col)
-  return { row: sheet.rows.idAt(row), col: sheet.cols.idAt(col), rowOff: value('rowOff'), colOff: value('colOff') }
+  return { row: sheet.rows.idAt(row), col: sheet.cols.idAt(col), rowOff: offset('rowOff'), colOff: offset('colOff') }
 }
 
 function kindOf(element: XmlElement): DrawingKind {
@@ -61,6 +64,7 @@ export function readDrawing(sheet: SheetModel, path: string, context: ReadContex
     }
     const from = readPoint(sheet, child(node, 'from'))
     const to = readPoint(sheet, child(node, 'to'))
+    if (drawing.anchor !== 'absolute' && !from || drawing.anchor === 'twoCell' && !to) continue
     if (from) drawing.from = from
     if (to) drawing.to = to
     const ext = child(node, 'ext')

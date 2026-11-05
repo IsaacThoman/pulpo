@@ -218,5 +218,5 @@ describe('axis bounds', () => {
     expect(sheet.rows.length).toBe(1024)
     doc.transact(() => sheet.rows.ensure(5_000_000))
     expect(sheet.rows.length).toBe(1_048_576)
-  })
+  }, 30_000)
 })

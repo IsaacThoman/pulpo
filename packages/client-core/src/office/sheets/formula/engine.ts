@@ -17,6 +17,7 @@
  */
 
 import { MAX_COLS, MAX_ROWS } from '../address.js'
+import { MAX_EXPANDED_CELLS } from '../limits.js'
 import { epochMsToSerial } from '../dates.js'
 import { OWNED_FUNCTIONS, VOLATILE_EVALUATOR_FUNCTIONS } from './builtins.js'
 import { Interpreter, refRect, type EvalHost } from './evaluate.js'
@@ -46,6 +47,8 @@ export type CellInput =
       formula: string
       /** A legacy (Ctrl+Shift+Enter) array formula filling this many rows and columns from this cell. */
       array?: { rows: number; cols: number }
+      /** The imported formula must retain its cached result without evaluation. */
+      unsupported?: boolean
       /**
        * The value Excel saved for this formula. The cell counts as already calculated: it keeps this
        * value until something it depends on changes, it is volatile, or a full recalc runs, and
@@ -107,6 +110,7 @@ interface FormulaInfo {
   legacy: boolean
   array: { rows: number; cols: number } | undefined
   volatile: boolean
+  unsupported?: boolean
   unknownFunction: boolean
   externalRef: boolean
   usesTables: boolean
@@ -454,6 +458,7 @@ export class FormulaEngine {
     const array = input.array
     cell.formula = {
       text,
+      unsupported: input.unsupported,
       ast: parsed.ok ? parsed.ast : undefined,
       parseError: parsed.ok ? undefined : parsed.error,
       legacy: input.legacy === true,
@@ -916,6 +921,7 @@ export class FormulaEngine {
   }
 
   private evaluate(cell: Cell, formula: FormulaInfo): Finalized {
+    if (formula.unsupported || formula.array && formula.array.rows * formula.array.cols > MAX_EXPANDED_CELLS) return { value: cell.value }
     if (!formula.ast) return { value: Errors.NAME }
     const raw = this.interpreter.run(formula.ast, cell.sheet.index, cell.row, cell.col, formula.legacy && !formula.array)
     return this.finalize(cell, formula, raw)
@@ -1263,6 +1269,10 @@ export class FormulaEngine {
   private seedCached(cell: Cell, cached: Scalar | Matrix): void {
     const formula = cell.formula!
     cell.cached = true
+    if (formula.unsupported || formula.array && formula.array.rows * formula.array.cols > MAX_EXPANDED_CELLS) {
+      cell.value = isMatrix(cached) ? cached.data[0] ?? null : cached
+      return
+    }
     if (!isMatrix(cached)) {
       cell.value = cached
       if (formula.array) this.replaceSpill(cell, { rows: formula.array.rows, cols: formula.array.cols, data: this.fill(cached, formula.array), fixed: true }, false)
@@ -1283,7 +1293,7 @@ export class FormulaEngine {
   }
 
   private unsupported(formula: FormulaInfo): boolean {
-    return formula.unknownFunction || formula.externalRef || !formula.ast
+    return !!formula.unsupported || !!formula.array && formula.array.rows * formula.array.cols > MAX_EXPANDED_CELLS || formula.unknownFunction || formula.externalRef || !formula.ast
   }
 
   /** Static analysis: references, names, flags. Iterative, with LET/LAMBDA scoping. */
@@ -1490,7 +1500,7 @@ export class FormulaEngine {
     const cols = used.right - used.left + 1
     const calc = this.calc
     const cacheable = calc !== undefined && !calc.iterating && rows * cols >= AREA_CACHE_MIN_CELLS
-    const key = cacheable ? `${sheet.id}:${used.top},${used.left},${used.bottom},${used.right}` : ''
+    const key = cacheable ? `${sheet.id}:${area.top},${area.left},${area.bottom},${area.right}` : ''
     if (cacheable) {
       const hit = calc.areas.get(key)
       if (hit) return hit
@@ -1529,6 +1539,10 @@ export class FormulaEngine {
       }
     }
     const result = matrix(rows, cols, data)
+    if (used !== area) {
+      result.logicalRows = area.bottom - area.top + 1
+      result.logicalCols = area.right - area.left + 1
+    }
     if (cacheable && calc.needs.length === needsBefore) {
       // Shared between formulas: freeze so a function that mutates its arguments fails loudly.
       Object.freeze(data)
