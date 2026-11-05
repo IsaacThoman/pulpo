@@ -1184,6 +1184,52 @@ try {
     assert.equal(await page.evaluate(() => window.harness.editors[0].revisions().length), 0)
   })
 
+  await step('replaces matches in source order when accepted rows relocate spanning cells', async () => {
+    await open('')
+    await page.evaluate(() => {
+      const view = window.harness.editors[0].view
+      const schema = view.state.schema
+      const p = (text) => schema.node('paragraph', null, schema.text(text))
+      const cell = (text, rowspan = 1) => schema.node('tableCell', { rowspan }, p(text))
+      const row = (cells, kind) => schema.node('tableRow', { trPr: JSON.stringify(['w:trPr', {}, [kind, { 'w:id': kind, 'w:author': 'Ada' }]]) }, cells)
+      const table = schema.node('table', null, [row([cell('hidden cat'), cell('cat', 2)], 'w:del'), row([cell('cat')], 'w:ins')])
+      view.dispatch(view.state.tr.replaceWith(0, view.state.doc.content.size, [table, p('cat')]))
+    })
+    assert.equal(await page.evaluate(() => window.harness.editors[0].find('cat')), 3)
+    assert.equal(await page.evaluate(() => window.harness.editors[0].replaceAll('x', 'cat')), 3)
+    assert.equal(await text(), '| x | x |\nx\n')
+    assert.equal(await exported(), '| x | x |\nx\n')
+    assert.equal(await page.evaluate(() => window.harness.editors[0].view.state.doc.firstChild.firstChild.firstChild.textContent), 'hidden cat')
+  })
+
+  await step('exits direct and inherited lists with Enter and Backspace and updates toolbar state', async () => {
+    await open('')
+    assert.equal(await page.evaluate(() => {
+      const editor = window.harness.editors[0]
+      const doc = editor.options.doc
+      doc.transact(() => {
+        doc.getMap('styles').set('style:InheritedList', JSON.stringify(['w:style', { 'w:type': 'paragraph', 'w:styleId': 'InheritedList' }, ['w:pPr', {}, ['w:numPr', {}, ['w:numId', { 'w:val': '901' }]]]]))
+        doc.getMap('numbering').set('abstract:901', JSON.stringify(['w:abstractNum', { 'w:abstractNumId': '901' },
+          ['w:lvl', { 'w:ilvl': '0' }, ['w:numFmt', { 'w:val': 'decimal' }], ['w:lvlText', { 'w:val': '%1.' }]],
+          ['w:lvl', { 'w:ilvl': '1' }, ['w:numFmt', { 'w:val': 'lowerLetter' }], ['w:lvlText', { 'w:val': '%2.' }]]]))
+        for (const id of ['901', '902']) doc.getMap('numbering').set(`num:${id}`, JSON.stringify(['w:num', { 'w:numId': id }, ['w:abstractNumId', { 'w:val': '901' }]]))
+      })
+      const view = editor.view
+      const p = view.state.schema.node('paragraph', { pStyle: 'InheritedList', numPr: JSON.stringify(['w:numPr', {}, ['w:numId', { 'w:val': '902' }]]) })
+      view.dispatch(view.state.tr.replaceWith(0, view.state.doc.content.size, p))
+      view.focus()
+      return editor.state().list
+    }), 'decimal')
+    await page.keyboard.press('Enter')
+    assert.equal(await page.evaluate(() => window.harness.editors[0].state().list), null)
+    assert.equal(await page.evaluate(() => window.harness.editors[0].view.state.doc.childCount), 1)
+    await page.evaluate(() => window.harness.editors[0].toggleList('decimal'))
+    assert.equal(await page.evaluate(() => window.harness.editors[0].state().list), 'decimal')
+    await page.keyboard.press('Backspace')
+    assert.equal(await page.evaluate(() => window.harness.editors[0].state().list), null)
+    assert.equal(await exported(), '\n')
+  })
+
   await step('lays out a 100-page document within budget', async () => {
     const started = Date.now()
     await open('?generate=1600')
