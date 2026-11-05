@@ -332,6 +332,113 @@ try {
     await page.close()
   })
 
+  await check('a collaborator’s slide key cannot put markup into the thumbnails', async () => {
+    const { page, errors } = await open(context, 'deck=generated/pictures.pptx&split=1')
+    const result = await page.evaluate(async () => {
+      const harness = window.harness
+      const slide = harness.commands.readSlide(harness.docB, harness.commands.slideKeys(harness.docB)[0])
+      const evil = 'k"/><img src=x onerror="window.__injected=(window.__injected||0)+1">'
+      harness.commands.insertSlides(harness.docB, [{ ...harness.commands.cloneSlide(slide), key: evil }], 0)
+      await new Promise((resolve) => setTimeout(resolve, 1000))
+      return { injected: window.__injected ?? 0, images: document.querySelectorAll('img[src="x"]').length }
+    })
+    assert.deepEqual(result, { injected: 0, images: 0 })
+    assert.deepEqual(errors, [])
+    await page.close()
+  })
+
+  await check('table cells: rows under a vertical merge, switching cells while editing, and Tab', async () => {
+    const { page, errors } = await open(context, 'deck=generated/tables.pptx')
+    const table = page.locator('.pp-canvas-slide .pp-slide > [data-kind="graphicFrame"]').nth(1)
+    const tableKey = await table.getAttribute('data-key')
+    const cellText = (row, column) => page.evaluate(([key, r, c]) => {
+      const controller = window.harness.controllers.a
+      const model = controller.shape(controller.state.slide, key).table
+      const flat = (node) => (node?.text ?? '') + (node?.content ?? []).map(flat).join('')
+      return flat(model.rows[r].cells[model.columns[c].key].text)
+    }, [tableKey, row, column])
+    // A cell in a row a rowspan from above covers: the edit lands in that cell, not a merged-away one.
+    const target = table.locator('td[data-row="3"][data-col="1"]')
+    const before = await cellText(3, 1)
+    let box = await target.boundingBox()
+    await page.mouse.dblclick(box.x + box.width / 2, box.y + 8)
+    await page.keyboard.type('ZZ')
+    await page.keyboard.press('Escape')
+    assert.ok((await cellText(3, 1)).includes('ZZ'), 'typed into the visible cell')
+    assert.notEqual(await cellText(3, 1), before)
+    // Double-clicking another cell while editing moves the editor there; Backspace edits text.
+    box = await table.locator('td').nth(0).boundingBox()
+    await page.mouse.dblclick(box.x + box.width / 2, box.y + 8)
+    const second = table.locator('td').nth(1)
+    box = await second.boundingBox()
+    await page.mouse.dblclick(box.x + box.width / 2, box.y + 8)
+    const editing = await state(page)
+    assert.equal(editing.editing?.column, await page.evaluate(([key, col]) => {
+      const controller = window.harness.controllers.a
+      return controller.shape(controller.state.slide, key).table.columns[col].key
+    }, [tableKey, Number(await second.getAttribute('data-col'))]))
+    await page.keyboard.press('Backspace')
+    assert.ok(await page.evaluate((key) => Boolean(window.harness.controllers.a.shape(window.harness.controllers.a.state.slide, key)), tableKey), 'the table is still there')
+    // Tab moves to the next cell.
+    const column = editing.editing.column
+    await page.keyboard.press('Tab')
+    assert.notEqual((await state(page)).editing?.column, column)
+    await page.keyboard.press('Escape')
+    assert.deepEqual(errors, [])
+    await page.close()
+  })
+
+  await check('Escape leaves text editing and keeps the shape selected; show shortcuts ignore text fields', async () => {
+    const { page, errors } = await open(context, 'deck=generated/text-formatting.pptx')
+    const shape = slideShapes(page).nth(1)
+    const key = await shape.getAttribute('data-key')
+    const box = await shape.boundingBox()
+    await page.mouse.dblclick(box.x + box.width / 2, box.y + box.height / 2)
+    assert.ok((await state(page)).editing)
+    await page.keyboard.press('Escape')
+    const after = await state(page)
+    assert.equal(after.editing, undefined)
+    assert.deepEqual(after.shapes, [key])
+    const inShow = () => page.evaluate(() => Boolean(document.querySelector('.pp-present, .pp-presenter')))
+    await page.evaluate(() => {
+      const field = document.createElement('textarea')
+      field.id = 'elsewhere'
+      document.body.prepend(field)
+    })
+    await page.focus('#elsewhere')
+    await page.keyboard.press('Meta+Enter')
+    assert.equal(await inShow(), false, 'Cmd+Enter in another text field')
+    await page.mouse.dblclick(box.x + box.width / 2, box.y + box.height / 2)
+    await page.keyboard.press('Control+Enter')
+    assert.equal(await inShow(), false, 'Ctrl+Enter in slide text')
+    assert.deepEqual(errors, [])
+    await page.close()
+  })
+
+  await check('the slide strip copies and pastes slides through the clipboard', async () => {
+    const { page, errors } = await open(context, 'deck=generated/layouts-notes-sections.pptx')
+    const count = () => page.evaluate(() => window.harness.controllers.a.slideKeys().length)
+    const before = await count()
+    await page.locator('.pp-thumbs .pp-thumb').nth(1).click()
+    await page.keyboard.press('Meta+c')
+    await page.waitForTimeout(300)
+    await page.keyboard.press('Meta+v')
+    await page.waitForFunction((expected) => window.harness.controllers.a.slideKeys().length === expected, before + 1)
+    // Pasting on the canvas brings slides too, never the payload as text.
+    await page.locator('.pp-canvas').focus()
+    await page.keyboard.press('Meta+v')
+    await page.waitForFunction((expected) => window.harness.controllers.a.slideKeys().length === expected, before + 2)
+    const texts = await page.evaluate(() => {
+      const controller = window.harness.controllers.a
+      const flat = (node) => (node?.text ?? '') + (node?.content ?? []).map(flat).join('')
+      return controller.slide(controller.state.slide).shapes.map((shape) => flat(shape.text))
+    })
+    assert.ok(!texts.some((text) => text.includes('"version"')), 'no JSON pasted as text')
+    assert.equal(await count(), before + 2)
+    assert.deepEqual(errors, [])
+    await page.close()
+  })
+
   await check('performance: a 300-slide deck opens, switches slides, and scrolls thumbnails within budget', async () => {
     const page = await context.newPage()
     const errors = []

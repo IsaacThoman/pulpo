@@ -207,12 +207,13 @@ function lineDiff(before: string, after: string): HTMLElement {
       box.append(element('div', 'pd-same', `  ${a[i]}`))
       i++
       j++
-    } else if (j < b.length && (i >= a.length || table[i]![j + 1]! >= table[i + 1]![j]!)) {
-      box.append(element('div', 'pd-added', `+ ${b[j]}`))
-      j++
-    } else {
+    } else if (i < a.length && (j >= b.length || table[i + 1]![j]! >= table[i]![j + 1]!)) {
+      // Removed lines first, then what replaces them.
       box.append(element('div', 'pd-removed', `− ${a[i]}`))
       i++
+    } else {
+      box.append(element('div', 'pd-added', `+ ${b[j]}`))
+      j++
     }
   }
   return box

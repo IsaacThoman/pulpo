@@ -15,6 +15,7 @@ import { fetchChangeText, fetchFileNode, resolveFileChange, updateFileChanges } 
 import { changeLabel, conflictReason } from '../changeLabels'
 import { fileIcon, filesErrorMessage } from '../display'
 import { docEditorAvailable } from '../editor/DocEditorView'
+import { editorTheme } from '../editor/presentation'
 import { PresentationChangeDiff } from '../editor/PresentationChangeDiff'
 import { previewUploadedFile } from '../open'
 import { refreshFiles } from '../operations'
@@ -74,7 +75,7 @@ function ChangeSheet({ change, namespace, responseId, onClose }: { change: FileC
           <Pressable accessibilityRole="button" hitSlop={10} onPress={onClose} style={styles.sheetDone}><Text style={[styles.sheetDoneLabel, { color: theme.blue }]}>Done</Text></Pressable>
         </View>
         {visual ? (
-          <View style={styles.flex} testID="file-change-diff">
+          <View style={[styles.flex, { backgroundColor: editorTheme(theme).background }]} testID="file-change-diff">
             <Text style={[styles.sheetIntro, styles.visualIntro, { color: theme.secondary }]}>
               {pendingSuggestion(change) ? 'What keeping the agent’s suggestion would change:' : 'What the agent changed:'}
             </Text>
