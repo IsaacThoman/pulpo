@@ -541,6 +541,7 @@ export * from "./shelf.js"
 export * from './dictation.js'
 
 export * from "./speech.js"
+export * from "./speech-file.js"
 
 export * from './model-warnings.js'
 

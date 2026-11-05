@@ -1,11 +1,13 @@
 import { and, eq, ne, sql } from 'drizzle-orm'
 import { listSuggestions, mergeMarkdown, ydocToNode } from '@pulpo/client-core/doc-schema'
-import { FILE_TREE_MAX_DEPTH, isMarkdownName } from '@pulpo/contracts'
+import { liveFormatOfName } from '@pulpo/client-core/office'
+import { FILE_TREE_MAX_DEPTH } from '@pulpo/contracts'
 import { fileChanges, fileNodes } from '../../database/schema.js'
 import { AppError, notFound } from '../../lib/errors.js'
 import { newId } from '../../lib/ids.js'
 import { resolveFileAccess, type FileNodeRow } from '../access.js'
 import { createDocInTx } from '../doc-store.js'
+import { docFormat, exportLiveDoc, loadLiveDocInTx } from '../live-docs.js'
 import { topSortOrder } from '../order.js'
 import {
   assertDestination,
@@ -21,10 +23,12 @@ import {
 import { deleteChange, findChange, parsePlace, recordChange, setChangeStatus, updateCreation, type FileChangeRow, type Place, type ReplyContext } from './changes.js'
 import { deleteObjects, mutateAgentFiles, TREE_AND_CHAT_SCOPES, type CommitEffects, type DatabaseTransaction } from './commit.js'
 import { baseMarkdown, loadDocInTx, lockDocs, markdownVersion, proposedMarkdown, writeDocInTx } from './docs.js'
+import { applyLiveFileInTx, isLiveDoc, parseLiveSnapshot, pendingLiveProposal, proposalFork, releaseLiveSnapshot, storeLiveSnapshot, supersedeLiveProposals, WrittenObjects } from './live.js'
 import { FilesCommandError } from './scope.js'
 import {
   blobSnapshot,
   blobVersion,
+  contentChecksum,
   keepVersion,
   parseBlobSnapshot,
   pendingBlobProposal,
@@ -34,8 +38,11 @@ import {
 } from './versions.js'
 
 export type ChangeMode = 'write' | 'suggest'
-/** What a reply put into an item it created: a document's JSON, or an uploaded file's object key. */
-type CreatedContent = { doc?: unknown; objectKey?: string }
+/**
+ * What a reply put into an item it created: a Markdown document's JSON, a live document's
+ * checksum (of its export), or an uploaded file's object key.
+ */
+type CreatedContent = { doc?: unknown; live?: { checksum: string }; objectKey?: string }
 export type CreateStatus = 'created' | 'suggested'
 
 export interface ContentResult {
@@ -143,6 +150,83 @@ export async function createBlobChange(reply: ReplyContext, parentId: string | n
   }
 }
 
+/** A locked live document's export and its checksum, the version agents see. */
+async function liveExport(tx: DatabaseTransaction, node: FileNodeRow): Promise<{ bytes: Uint8Array; version: string }> {
+  const { doc, format, context } = await loadLiveDocInTx(tx, node)
+  const bytes = await exportLiveDoc(doc, format, context)
+  return { bytes, version: contentChecksum(bytes) }
+}
+
+/** A new live document (other than Markdown) from the file the agent pushed. */
+export async function createLiveDocChange(reply: ReplyContext, parentId: string | null, name: string, bytes: Uint8Array, mode: ChangeMode) {
+  return mutateReply(reply, async (tx) => {
+    const plan = await newItemPlan(tx, reply.userId, parentId, mode)
+    const node = await createDocInTx(tx, reply.userId, { parentId, name, bytes, exactName: true, suggestionChangeId: plan.suggestionChangeId })
+    const { version } = await liveExport(tx, node)
+    const status = await recordCreation(tx, reply, node, plan.rowId, mode, { live: { checksum: version } })
+    return { node, status, version }
+  }, { reserveBytes: bytes.byteLength })
+}
+
+/**
+ * Applies the agent's new version of a live document. In Write mode (and for items the agent is
+ * still suggesting) it applies at once through the codec, as a minimal diff that keeps what users
+ * write meanwhile, with the versions before and after kept for undo. In Suggest mode it becomes a
+ * whole-file proposal. `expectedVersion` (null: forced) must still match what the agent pulled.
+ */
+export async function updateLiveDocChange(reply: ReplyContext, nodeId: string, bytes: Uint8Array, mode: ChangeMode, expectedVersion: string | null): Promise<ContentResult> {
+  const written = new WrittenObjects()
+  let kept = false
+  try {
+    const result = await mutateReply(reply, async (tx, effects): Promise<ContentResult> => {
+      await lockDocs(tx, [nodeId])
+      const node = await liveNodeInTx(tx, reply.userId, nodeId)
+      if (!isLiveDoc(node)) throw new FilesCommandError('This item is no longer the same kind of document; pull it again')
+      const current = await liveExport(tx, node)
+      // The chat's pending proposal is what the agent works from only while it may only suggest.
+      const proposal = mode === 'suggest' ? await pendingLiveProposal(tx, reply.chatId, node.id) : null
+      const version = proposal?.after.checksum ?? current.version
+      if (expectedVersion !== null && version !== expectedVersion) return { status: 'conflict', version }
+      if (contentChecksum(bytes) === version) return { status: 'unchanged', version }
+      const folded = await foldedInto(tx, reply, node)
+      const existing = folded ? undefined : await findChange(tx, reply.responseId, node.id, 'update')
+      if (folded || mode === 'write') {
+        assertRowMode(existing, 'write')
+        const after = await applyLiveFileInTx(tx, effects, { node, bytes, actorUserId: reply.userId, origin: 'agent' })
+        if (!after) return { status: 'unchanged', version: current.version }
+        const afterVersion = contentChecksum(after)
+        if (folded === 'creation') await updateCreation(tx, reply, node.id, { live: { checksum: afterVersion } })
+        if (!folded) {
+          // A repeated push in the same reply keeps the row's first `before`.
+          const before = existing ? undefined : await storeLiveSnapshot(tx, written, reply.userId, node, current.bytes)
+          await recordChange(tx, reply, { nodeId: node.id, mode: 'write', kind: 'update', before: before ?? parseLiveSnapshot(existing?.before), after: await storeLiveSnapshot(tx, written, reply.userId, node, after) })
+          await releaseLiveSnapshot(tx, effects, parseLiveSnapshot(existing?.after))
+        }
+        await supersedeLiveProposals(tx, effects, reply, node.id)
+        return { status: folded === 'suggestion' ? 'suggested' : 'updated', version: afterVersion }
+      }
+      assertRowMode(existing, 'suggest')
+      // A proposal that revises this chat's pending one builds on what the agent saw: that one's
+      // fork, and the version it was proposed against, so users' edits since are never taken back.
+      const proposed = await proposalFork(tx, node, bytes, proposal?.after ?? null)
+      if (!proposed) return { status: 'unchanged', version }
+      const after = await storeLiveSnapshot(tx, written, reply.userId, node, bytes)
+      const forkKey = await written.put(reply.userId, proposed.fork, 'application/octet-stream')
+      await keepVersion(tx, reply.userId, node.id, { objectKey: forkKey, sizeBytes: proposed.fork.byteLength, checksum: contentChecksum(proposed.fork), mimeType: 'application/octet-stream' })
+      const before = proposal?.before ?? await storeLiveSnapshot(tx, written, reply.userId, node, proposed.current)
+      await recordChange(tx, reply, { nodeId: node.id, mode: 'suggest', kind: 'update', before, after: { ...after, forkKey } })
+      // Released after the new row holds what it shares with them (the base version).
+      await supersedeLiveProposals(tx, effects, reply, node.id)
+      if (existing?.status === 'pending') await releaseLiveSnapshot(tx, effects, parseLiveSnapshot(existing.after))
+      return { status: 'suggested', version: after.checksum }
+    }, { reserveBytes: bytes.byteLength * 3 })
+    kept = true
+    return result
+  } finally {
+    if (!kept) await written.discard()
+  }
+}
+
 /**
  * Merges the agent's Markdown into a document: as inline suggestions tagged with the reply's
  * change id (Suggest mode), or directly with the document before and after kept for undo.
@@ -245,8 +329,9 @@ export async function moveChange(reply: ReplyContext, nodeId: string, target: Pl
   return mutateReply(reply, async (tx) => {
     const node = await liveNodeInTx(tx, reply.userId, nodeId)
     if (node.systemRole) throw systemFolderLocked()
-    if (node.kind === 'doc' && !isMarkdownName(target.name)) {
-      throw new FilesCommandError('Documents keep a .md name: another extension would turn this one into an ordinary file')
+    if (node.kind === 'doc' && liveFormatOfName(target.name)?.id !== docFormat(node).id) {
+      const extension = docFormat(node).extensions[0]
+      throw new FilesCommandError(`Documents keep a name of their format (such as .${extension}): another extension would turn this one into an ordinary file`)
     }
     if (node.parentId === target.parentId && node.name === target.name) return 'unchanged'
     const folded = await foldedInto(tx, reply, node)

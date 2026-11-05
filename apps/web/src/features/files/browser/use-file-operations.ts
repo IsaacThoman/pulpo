@@ -7,6 +7,7 @@ import {
   copyFileNodes,
   deleteFileNodes,
   downloadDocMarkdown,
+  downloadLiveDoc,
   downloadFile,
   filesQueryKey,
   moveFileNodes,
@@ -131,7 +132,9 @@ export function useFileOperations() {
     for (const node of nodes) {
       if (node.kind === 'folder' || node.kind === 'chat' || node.kind === 'shortcut') continue
       try {
-        if (node.kind === 'doc') await downloadDocMarkdown(node)
+        // Other live formats download as their real file, exported by the server.
+        if (node.kind === 'doc' && node.format && node.format !== 'markdown') await downloadLiveDoc(node)
+        else if (node.kind === 'doc') await downloadDocMarkdown(node)
         else await downloadFile(node)
       } catch (cause) {
         show({ message: filesErrorMessage(cause, node.name), tone: 'error' })

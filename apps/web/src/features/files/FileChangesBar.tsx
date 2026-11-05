@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { FileChangeConflict, FileChangeSummary, FileChangesResponse } from '@pulpo/contracts'
-import { Check, FilePenLine, Loader2, Redo2, Undo2, X } from 'lucide-react'
+import { Check, FileDiff, FilePenLine, Loader2, Redo2, Undo2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -14,6 +14,7 @@ import { fileChangeConflicts, fileChangeDescription, fileChangeLabel, fileConfli
 import { filesErrorMessage } from './file-display'
 import { FileNodeIcon } from './FileNodeIcon'
 import { MarkdownDiff } from './MarkdownDiff'
+import { ChangeDiffDialog } from './live/ChangeDiffDialog'
 
 /** Items listed before "Show more"; one more is listed rather than hidden behind it. */
 const COLLAPSED_ITEMS = 4
@@ -57,7 +58,7 @@ function IconAction({ label, busy, disabled, onClick, children }: { label: strin
   )
 }
 
-function ChangeRow({ change, busy, onResolve }: { change: FileChangeSummary; busy: string | null; onResolve: (action: 'accept' | 'reject') => void }) {
+function ChangeRow({ change, busy, onResolve, onShowDiff }: { change: FileChangeSummary; busy: string | null; onResolve: (action: 'accept' | 'reject') => void; onShowDiff: () => void }) {
   const openBeside = useOpenBeside()
   const pending = pendingSuggestion(change)
   const struck = change.status === 'rejected' || change.status === 'undone'
@@ -81,6 +82,11 @@ function ChangeRow({ change, busy, onResolve }: { change: FileChangeSummary; bus
         {fileChangeLabel(change)}
       </span>
       {status && <span className="shrink-0 text-[11px] text-muted-foreground">{status}</span>}
+      {change.contentDiff && (
+        <IconAction label={uit`Show the changes to ${change.name}`} onClick={onShowDiff}>
+          <FileDiff className="size-3.5" />
+        </IconAction>
+      )}
       {pending && change.available && (
         <span className="flex shrink-0 items-center">
           <IconAction label={uit`Accept the change to ${change.name}`} busy={busy === `accept:${change.id}`} disabled={Boolean(busy)} onClick={() => onResolve('accept')}>
@@ -165,6 +171,7 @@ export function FileChangesBar({ responseId }: { responseId: string }) {
   const [error, setError] = useState<string | null>(null)
   const [conflict, setConflict] = useState<{ action: 'undo' | 'redo'; conflicts: FileChangeConflict[] } | null>(null)
   const [expanded, setExpanded] = useState(false)
+  const [diff, setDiff] = useState<FileChangeSummary | null>(null)
   const changes = query.data?.changes ?? []
   if (!changes.length) return null
 
@@ -211,6 +218,7 @@ export function FileChangesBar({ responseId }: { responseId: string }) {
             change={change}
             busy={busy}
             onResolve={(action) => void run(`${action}:${change.id}`, () => resolveFileChange(change.id, action), action)}
+            onShowDiff={() => setDiff(change)}
           />
         ))}
       </ul>
@@ -220,6 +228,7 @@ export function FileChangesBar({ responseId }: { responseId: string }) {
         </button>
       )}
       {error && <p role="alert" className="mt-1 text-destructive">{error}</p>}
+      {diff && <ChangeDiffDialog change={diff} responseId={responseId} onClose={() => setDiff(null)} />}
       {conflict && <ConflictDialog action={conflict.action} conflicts={conflict.conflicts} changes={changes} onClose={() => setConflict(null)} />}
     </div>
   )

@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 
 import { renderToStaticMarkup } from 'react-dom/server'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import type { Chat, Message } from '@/lib/types'
 import i18n from '@/i18n'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -85,6 +85,54 @@ describe('user message actions', () => {
     const editButton = markup.match(/<button[^>]*aria-label="Edit"[^>]*>/)?.[0]
     expect(editButton).toBeDefined()
     expect(editButton).not.toContain(' disabled=""')
+  })
+})
+
+describe('insufficient balance notice', () => {
+  const balanceErrors = [
+    'Insufficient balance for the request',
+    'Insufficient balance for metered usage',
+    'Insufficient balance for input and the minimum output allowance',
+    'Insufficient balance for the maximum request cost',
+  ]
+
+  beforeEach(async () => {
+    const { useAuth } = await import('@/stores/auth')
+    const previous = useAuth.getState().billingEnabled
+    useAuth.setState({ billingEnabled: true })
+    onTestFinished(() => useAuth.setState({ billingEnabled: previous }))
+  })
+
+  it.each(balanceErrors)('links to billing for %s', async (error) => {
+    const { MessageItem } = await import('./MessageItem')
+    const view = render(<MemoryRouter initialEntries={['/chat']}><Routes>
+      <Route path="/chat" element={<MessageItem chat={chat} message={assistant({ error })} streaming={false} onRegenerate={() => undefined} />} />
+      <Route path="/billing" element={<p>Billing destination</p>} />
+    </Routes></MemoryRouter>)
+
+    expect(view.getByRole('alert').textContent).toContain('You’ve reached your usage limit.')
+    expect(view.getByRole('alert').textContent).toContain('Manage your plan or add credits to keep chatting.')
+    expect(view.getByRole('alert').textContent).not.toContain(error)
+    fireEvent.click(view.getByRole('link', { name: 'View billing' }))
+    expect(view.getByText('Billing destination')).toBeDefined()
+  })
+
+  it('omits billing guidance when billing is disabled', async () => {
+    const { useAuth } = await import('@/stores/auth')
+    useAuth.setState({ billingEnabled: false })
+    const { MessageItem } = await import('./MessageItem')
+    const view = render(<MessageItem chat={chat} message={assistant({ error: balanceErrors[0] })} streaming={false} onRegenerate={() => undefined} />)
+
+    expect(view.getByRole('alert').textContent).toBe('You’ve reached your usage limit.')
+    expect(view.queryByRole('link')).toBeNull()
+  })
+
+  it('preserves unrelated errors without billing guidance', async () => {
+    const { MessageItem } = await import('./MessageItem')
+    const view = render(<MessageItem chat={chat} message={assistant({ error: 'Provider unavailable' })} streaming={false} onRegenerate={() => undefined} />)
+
+    expect(view.getByRole('alert').textContent).toBe('Provider unavailable')
+    expect(view.queryByRole('link')).toBeNull()
   })
 })
 

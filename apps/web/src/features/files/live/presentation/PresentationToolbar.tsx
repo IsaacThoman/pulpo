@@ -45,7 +45,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { ToolbarButton } from '@/features/files/editor/DocEditor'
+import { ToolbarButton } from '@/features/files/editor/ToolbarButton'
 import { ui } from '@/i18n/ui'
 import { cn } from '@/lib/utils'
 import { ColorPicker, ShapeGallery, TablePicker } from './pickers'

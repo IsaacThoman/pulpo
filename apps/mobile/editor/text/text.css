@@ -1,0 +1,8 @@
+html, body { margin: 0; height: 100%; background: var(--background); color: var(--foreground); -webkit-text-size-adjust: 100%; }
+body { font-family: -apple-system, system-ui, sans-serif; }
+#editor { height: 100%; }
+/* Space under the text for the review bar or keyboard accessory, as in the document editor. */
+#editor .cm-content { padding-bottom: calc(var(--bottom-padding, 0px) + 24px); }
+/* Line numbers take less room on a phone. */
+#editor .cm-lineNumbers .cm-gutterElement { padding: 0 6px 0 8px; min-width: 24px; }
+#editor .cm-line { padding: 0 12px 0 6px; }

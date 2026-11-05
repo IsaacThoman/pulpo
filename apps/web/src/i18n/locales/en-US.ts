@@ -83,6 +83,9 @@ const enUS = {
     welcomeBack: 'Welcome back',
   },
   chat: {
+    usageLimitReached: 'You’ve reached your usage limit.',
+    usageLimitBillingHint: 'Manage your plan or add credits to keep chatting.',
+    viewBilling: 'View billing',
     addCaption: 'Add a caption…',
     addFavorite: 'Add to favorites',
     agent: 'Agent',

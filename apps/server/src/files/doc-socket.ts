@@ -1,7 +1,8 @@
 import type { Server, Socket } from 'socket.io'
 import * as Y from 'yjs'
 import { z } from 'zod'
-import { DOC_SCHEMA_VERSION } from '@pulpo/client-core/doc-schema'
+import { DOC_GENERATION_KEY, DOC_META_MAP } from '@pulpo/client-core/doc-schema'
+import { liveFormat } from '@pulpo/client-core/office'
 import type { ClientToServerEvents, DocClosedEvent, DocSyncError, ServerToClientEvents } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import { AppError } from '../lib/errors.js'
@@ -23,6 +24,7 @@ const joinSchema = z.object({
   stateVector: bytes,
   awarenessClientId: z.number().int().nonnegative().max(0xffffffff),
   schemaVersion: z.number().int(),
+  schemaVersions: z.record(z.string().max(32), z.number().int()).refine((versions) => Object.keys(versions).length <= 32).optional(),
 })
 const messageSchema = z.object({ docId: docIdSchema, update: bytes })
 const leaveSchema = z.object({ docId: docIdSchema })
@@ -68,6 +70,29 @@ function syncError(error: unknown): DocSyncError {
 }
 
 /**
+ * Whether a client that announced these schema versions can edit a document of `format`. Clients
+ * from before live formats send only `schemaVersion`, the Markdown schema they edit.
+ */
+export function joinsFormat(input: { schemaVersion: number; schemaVersions?: Record<string, number> }, format: string): boolean {
+  const known = liveFormat(format)
+  if (!known) return false
+  const versions = input.schemaVersions ?? { markdown: input.schemaVersion }
+  return Object.hasOwn(versions, format) && versions[format] === known.schemaVersion
+}
+
+/**
+ * The generation a document's state says it is (see `DOC_META_MAP`). Read from the state, which
+ * clients compare their copies with, rather than from `file_docs.generation`, so the two can
+ * never disagree.
+ */
+export function stateGeneration(update: Uint8Array): string | undefined {
+  const doc = new Y.Doc()
+  Y.applyUpdate(doc, update)
+  const generation = doc.getMap(DOC_META_MAP).get(DOC_GENERATION_KEY)
+  return typeof generation === 'string' ? generation : undefined
+}
+
+/**
  * Relays Yjs sync and awareness for `doc:<id>` rooms. API instances keep no document in memory:
  * joins are answered from the database, and every update is persisted before it is broadcast.
  */
@@ -107,13 +132,16 @@ export function bindDocSocket(socket: PulpoSocket): void {
         ack({ ok: false, error })
       }
       if (adminChatAccess || !await filesFeatureEnabled()) return deny('unauthorized')
-      if (input.schemaVersion !== DOC_SCHEMA_VERSION) return deny('schema_outdated')
       const access = await resolveFileAccess(db, userId, input.docId)
       if (!access || access.node.kind !== 'doc' || access.node.trashedAt) return deny('not_found')
+      const format = access.node.format ?? 'markdown'
+      // An editor of another schema (or format) would misread the document and could drop content.
+      if (!joinsFormat(input, format)) return deny('schema_outdated')
       if (!current()) return ack({ ok: false, error: 'not_found' })
       // Join before reading so any update committed after the read still reaches this socket.
       await socket.join(docRoom(input.docId))
       const merged = await loadDocUpdate(input.docId)
+      const generation = stateGeneration(merged)
       if (!current() || !member(input.docId)) {
         // A leave can race the adapter's asynchronous join. Do not remove a newer join's room.
         if (!joins.has(input.docId)) leave(input.docId)
@@ -126,7 +154,7 @@ export function bindDocSocket(socket: PulpoSocket): void {
         update = merged
       }
       awarenessIds.set(input.docId, input.awarenessClientId)
-      ack({ ok: true, update, stateVector: Y.encodeStateVectorFromUpdate(merged) })
+      ack({ ok: true, update, stateVector: Y.encodeStateVectorFromUpdate(merged), format, ...generation ? { generation } : {} })
       socket.to(docRoom(input.docId)).emit('doc.awareness-query', { docId: input.docId })
     })().catch((error: unknown) => {
       if (requestedDocId && joins.get(requestedDocId) === request) leave(requestedDocId)

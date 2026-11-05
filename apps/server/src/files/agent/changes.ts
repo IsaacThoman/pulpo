@@ -11,6 +11,7 @@ import { baseMarkdown } from './docs.js'
 import type { DatabaseTransaction } from './commit.js'
 import { filesPathOf } from './scope.js'
 import { deleteUnusedVersions, parseBlobSnapshot } from './versions.js'
+import { isLiveDoc, parseLiveSnapshot } from './live.js'
 
 export type FileChangeRow = typeof fileChanges.$inferSelect
 
@@ -130,6 +131,23 @@ function blobSummary(change: FileChangeRow, node: FileNodeRow, keptKeys: Set<str
   return { fromSizeBytes: before?.sizeBytes, toSizeBytes: after?.sizeBytes, available }
 }
 
+/**
+ * A live document's new version: its sizes, and whether both versions are still kept, so the
+ * change can be undone (Write mode) or compared (`contentDiff`).
+ */
+function liveSummary(change: FileChangeRow, keptKeys: Set<string>): Partial<FileChangeSummary> {
+  const before = parseLiveSnapshot(change.before)
+  const after = parseLiveSnapshot(change.after)
+  const kept = (snapshot: typeof before) => Boolean(snapshot && keptKeys.has(snapshot.objectKey))
+  const needed = change.mode === 'write' ? [before, after] : change.status === 'pending' ? [after] : []
+  return {
+    fromSizeBytes: before?.sizeBytes,
+    toSizeBytes: after?.sizeBytes,
+    available: needed.every((snapshot) => !snapshot || kept(snapshot)),
+    contentDiff: kept(before) && kept(after),
+  }
+}
+
 async function summarize(userId: string, { change, node }: ChangeWithNode, keptKeys: Set<string>): Promise<FileChangeSummary & { resolvedAs?: FileChangeStatus }> {
   const summary: FileChangeSummary = {
     id: change.id,
@@ -144,7 +162,9 @@ async function summarize(userId: string, { change, node }: ChangeWithNode, keptK
   }
   if (change.kind === 'move') Object.assign(summary, await movePaths(userId, change))
   if (change.kind === 'update' && node.kind === 'blob') Object.assign(summary, blobSummary(change, node, keptKeys))
-  if (change.kind === 'update' && node.kind === 'doc' && change.mode === 'suggest') {
+  if (node.kind === 'doc') summary.format = node.format ?? 'markdown'
+  if (change.kind === 'update' && isLiveDoc(node)) Object.assign(summary, liveSummary(change, keptKeys))
+  if (change.kind === 'update' && node.kind === 'doc' && !isLiveDoc(node) && change.mode === 'suggest') {
     const state = await docSuggestionState(node.id, change)
     if (state) return { ...summary, pendingSuggestions: state.hunks, resolvedAs: state.resolvedAs }
   }

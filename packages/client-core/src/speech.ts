@@ -1,5 +1,6 @@
 import { Lexer, type Token } from 'marked'
 import { SPEECH_REQUEST_MAX_INPUT_LENGTH, type PublicSpeechModel } from '@pulpo/contracts'
+import { SPEECH_MIME_TYPES, joinSpeechAudio, speechFileName, type SpeechAudioFile, type SpeechAudioFormat } from './speech-file.js'
 
 /** Only visible message markdown enters speech; callers never pass reasoning or tools. */
 export function speechText(markdown: string): string {
@@ -54,6 +55,9 @@ export interface SpeechAudio {
   currentTime?(): number
   duration?(): number
   setRate?(rate: number): void
+  /** The encoded audio and its format, for saving the generated speech. */
+  format?: SpeechAudioFormat
+  bytes?(): Uint8Array | Promise<Uint8Array>
 }
 export const SPEECH_PLAYBACK_RATES = [0.75, 1, 1.25, 1.5, 2] as const
 export const SPEECH_SEEK_SECONDS = 10
@@ -79,8 +83,12 @@ export type SpeechPlaybackState = { key: string | null; phase: 'idle' | 'loading
  * `buffered` is how far from the start audio has been generated, and so how far `seekTo` can reach.
  */
 export type SpeechProgress = { elapsed: number; total: number | null; estimated: boolean; buffered: number; fraction: number }
+type SpeechLoad = { audio: SpeechAudio } | { error: unknown }
 type SpeechSession = {
+  chunks: string[]
   weights: number[]
+  /** Generates a chunk once, in order after the chunks before it; set once the chunks are known. */
+  load?: (index: number) => Promise<SpeechLoad>
   ready: SpeechAudio[]
   index: number
   audio?: SpeechAudio
@@ -168,6 +176,27 @@ export class SpeechPlayback {
     const total = sum(lengths.map((length, index) => length ?? session.weights[index]! * knownSeconds / knownCharacters))
     return { elapsed, total, estimated, buffered, fraction: Math.min(1, elapsed / total) }
   }
+  /**
+   * Generates every chunk not yet generated, in order, and joins all of the speech into one file.
+   * Playback carries on meanwhile and reuses the audio. Rejects if the playback stops first.
+   */
+  audioFile = async (): Promise<SpeechAudioFile> => {
+    const session = this.session
+    if (!session?.load) throw new Error('Speech is still preparing. Try again in a moment.')
+    const parts: Uint8Array[] = []
+    let format: SpeechAudioFormat | undefined
+    for (let index = 0; index < session.chunks.length; index++) {
+      const result = await session.load(index)
+      if (this.session !== session) throw new Error('Reading stopped before the audio could be saved')
+      if ('error' in result) throw result.error
+      const { audio } = result
+      if (!audio.bytes || !audio.format || (format && audio.format !== format)) throw new Error('This speech audio cannot be saved')
+      format = audio.format
+      parts.push(await audio.bytes())
+    }
+    if (!format) throw new Error('There is no audio to save')
+    return { bytes: joinSpeechAudio(parts, format), format, mimeType: SPEECH_MIME_TYPES[format], name: speechFileName(session.chunks.join(' '), format) }
+  }
   private jump(session: SpeechSession, index: number, at: number) {
     session.jump = { index, at }
     session.interrupt?.abort()
@@ -179,14 +208,14 @@ export class SpeechPlayback {
     this.stop()
     const active = new AbortController(); this.active = active
     const { signal } = active
-    const session: SpeechSession = { weights: [], ready: [], index: 0, started: false, ended: false }
+    const session: SpeechSession = { chunks: [], weights: [], ready: [], index: 0, started: false, ended: false }
     this.session = session
     this.update({ key, phase: 'loading', paused: false, error: null })
     const owned = new Set<SpeechAudio>(), played = new Set<SpeechAudio>()
-    const loads: Array<Promise<{ audio: SpeechAudio } | { error: unknown }>> = []
+    const loads: Array<Promise<SpeechLoad>> = []
     let list: string[] = []
     let offsetSeconds = 0
-    // Chunks are generated strictly in order (one prefetched), so offsets follow the audio actually heard.
+    // Chunks are generated strictly in order (one prefetched, or all of them when saving), so offsets follow the audio heard.
     const load = (index: number) => loads[index] ??= generate(list[index]!, signal, offsetSeconds).then(audio => {
       if (seconds(audio.durationSeconds)) offsetSeconds += audio.durationSeconds!
       if (signal.aborted) { audio.dispose(); throw new Error('Cancelled') }
@@ -196,7 +225,9 @@ export class SpeechPlayback {
     try {
       list = typeof chunks === 'function' ? await chunks(signal) : chunks
       if (signal.aborted) return
+      session.chunks = list
       session.weights = list.map(chunk => chunk.length)
+      session.load = load
       let startAt = 0
       while (!signal.aborted) {
         if (session.index >= list.length) {

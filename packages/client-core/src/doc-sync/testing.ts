@@ -8,6 +8,8 @@ export class FakeServer {
   readonly doc = new Y.Doc()
   readonly sockets = new Set<FakeSocket>()
   received = 0
+  /** Sent in join acknowledgements when set, like a server's document generation. */
+  generation: string | undefined
 
   broadcast(from: FakeSocket, event: string, payload: unknown) {
     for (const socket of this.sockets) if (socket !== from && socket.connected) socket.deliver(event, payload)
@@ -41,7 +43,10 @@ export class FakeSocket {
   emit(event: string, input: { docId: string; update?: Uint8Array; stateVector?: Uint8Array }, ack?: (result: unknown) => void) {
     if (!this.connected) return this
     if (event === 'doc.join') {
-      ack?.({ ok: true, update: Y.encodeStateAsUpdate(this.server.doc, input.stateVector), stateVector: Y.encodeStateVector(this.server.doc) })
+      ack?.({
+        ok: true, update: Y.encodeStateAsUpdate(this.server.doc, input.stateVector), stateVector: Y.encodeStateVector(this.server.doc),
+        ...this.server.generation ? { generation: this.server.generation } : {},
+      })
     } else if (event === 'doc.update') {
       this.server.received += 1
       Y.applyUpdate(this.server.doc, input.update!)

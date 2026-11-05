@@ -46,6 +46,12 @@ describe('native speech lifecycle', () => {
     speechPlayback.stop(); await run
     expect(mocks.remove).toHaveBeenCalledOnce(); expect(mocks.deleteFile).toHaveBeenCalledOnce()
   })
+  it('keeps the generated audio and its format for saving', async () => {
+    mocks.request.mockResolvedValue({ data: [{ id: 'speech', voices: [{ id: 'coral', label: 'Coral' }], defaultVoice: 'coral', responseFormat: 'mp3', supportsInstructions: false, supportsSpeed: false, maxInputCharacters: 4096, maxInputTokens: null }] })
+    const run = readAloud('chat:message', 'Hello **there**'); await tick()
+    expect(await speechPlayback.audioFile()).toEqual({ bytes: new Uint8Array([1, 2, 3]), format: 'mp3', mimeType: 'audio/mpeg', name: 'Hello there.mp3' })
+    speechPlayback.stop(); await run
+  })
   it('carries generated duration into the prefetched watermark offset', async () => {
     mocks.request.mockResolvedValue({ data: [{ id: 'speech', voices: [{ id: 'coral', label: 'Coral' }], defaultVoice: 'coral', supportsInstructions: false, supportsSpeed: false, maxInputCharacters: 6, maxInputTokens: null }] })
     vi.mocked(fetch).mockImplementation(async () => new Response(new Uint8Array([1, 2, 3]), { headers: { 'x-speech-duration-seconds': '2.75' } }))

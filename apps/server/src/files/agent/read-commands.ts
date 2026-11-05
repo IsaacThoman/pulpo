@@ -8,6 +8,7 @@ import type { FileNodeRow } from '../access.js'
 import { parsePlace } from './changes.js'
 import { formatSize, joinPath, type CommandContext, type CommandOutput } from './command-context.js'
 import { readProposedMarkdown } from './docs.js'
+import { agentLiveText, isLiveDoc } from './live.js'
 import { createLineMatcher } from './matcher.js'
 import { MODE_LABELS } from './prompt.js'
 import { FilesCommandError, isAllFiles, locateExisting, modeFor, scopePathOf, type Located } from './scope.js'
@@ -46,7 +47,7 @@ async function pendingNotes(ctx: CommandContext, nodes: FileNodeRow[]): Promise<
 
 function describeNode(ctx: CommandContext, node: FileNodeRow, notes: Map<string, string[]>): string {
   const parts = node.kind === 'folder' ? ['folder'] : [
-    node.kind === 'doc' ? 'Markdown document' : node.mimeType ?? 'file',
+    node.kind === 'doc' ? docLabel(node) : node.mimeType ?? 'file',
     formatSize(node.sizeBytes),
     `updated ${node.updatedAt.toISOString().slice(0, 10)}`,
   ]
@@ -56,6 +57,11 @@ function describeNode(ctx: CommandContext, node: FileNodeRow, notes: Map<string,
 
 function itemLine(ctx: CommandContext, item: { node: FileNodeRow; path: string }, notes: Map<string, string[]>): string {
   return `${item.path}${item.node.kind === 'folder' ? '/' : ''}  (${describeNode(ctx, item.node, notes)})`
+}
+
+/** How a live document is described to the agent. */
+export function docLabel(node: FileNodeRow): string {
+  return isLiveDoc(node) ? `live ${node.format} document (${node.mimeType ?? 'text/plain'})` : 'Markdown document'
 }
 
 /** `ls [path] [-R]`: the attached items, or what a folder holds. */
@@ -112,6 +118,13 @@ async function readBlobText(key: string): Promise<string> {
  * this chat's proposed content), or null when it is not readable text of a reasonable size.
  */
 async function agentText(ctx: CommandContext, node: FileNodeRow): Promise<string | null> {
+  if (isLiveDoc(node)) {
+    try {
+      return await agentLiveText(db, ctx.chatId, node, () => modeFor(ctx.scope, node.id))
+    } catch {
+      return null
+    }
+  }
   if (node.kind === 'doc') return readProposedMarkdown(node.id)
   const view = await agentBlobView(db, ctx.chatId, node, () => modeFor(ctx.scope, node.id))
   if (!readsAsText(node.name, view.mimeType) || view.sizeBytes > TEXT_READ_LIMIT_BYTES) return null
