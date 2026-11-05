@@ -1,10 +1,11 @@
 import type * as Y from 'yjs'
 import { alignKeys } from './codec.js'
 import type { PartSnapshot, PresentationSnapshot, RelTarget, ShapeSnapshot, SlideSnapshot } from './model.js'
-import { readPresentation } from './read.js'
+import { readPresentation, relationshipIdsIn } from './read.js'
+import { DeckResources } from './render/deck.js'
 import { slideSections } from './sections.js'
 import { textToPlain } from './text.js'
-import { bytesEqual, REL_TYPES, stableStringify } from './xml.js'
+import { bytesEqual, parseFragment, path, REL_TYPES, stableStringify } from './xml.js'
 import { readSnapshot } from './ydoc.js'
 
 /**
@@ -127,11 +128,37 @@ function referencedParts(shape: ShapeSnapshot, slide: SlideSnapshot): string[] {
   return [...new Set(rels.filter((rel) => !rel.external).map((rel) => rel.target))].sort()
 }
 
-function compareSlides(before: SlideSnapshot, after: SlideSnapshot, beforeParts: PresentationSnapshot['parts'], afterParts: PresentationSnapshot['parts']): Pick<SlideDiff, 'slideChanges' | 'shapes' | 'notesBefore' | 'notesAfter'> {
+/** Resolve the background the renderer uses, including layout/master inheritance. */
+function backgroundParts(slide: SlideSnapshot, deck: DeckResources): string[] {
+  let background = slide.background ? parseFragment(slide.background) : undefined
+  let rels = slide.rels
+  if (!background) {
+    const master = deck.related(slide.layout, REL_TYPES.slideMaster)
+    for (const source of [slide.layout, master]) {
+      if (!source) continue
+      background = path(deck.xml(source), 'cSld', 'bg')
+      if (!background) continue
+      rels = Object.fromEntries(deck.rels(source))
+      break
+    }
+  }
+  if (!background) return []
+  return [...new Set(relationshipIdsIn(background).flatMap((id) => {
+    const rel = rels[id]
+    return rel && !rel.external ? [rel.target] : []
+  }))].sort()
+}
+
+function compareSlides(before: SlideSnapshot, after: SlideSnapshot, beforeDeck: DeckResources, afterDeck: DeckResources): Pick<SlideDiff, 'slideChanges' | 'shapes' | 'notesBefore' | 'notesAfter'> {
+  const beforeParts = beforeDeck.parts
+  const afterParts = afterDeck.parts
   const slideChanges: SlideChangeKind[] = []
   if (before.layout !== after.layout) slideChanges.push('layout')
   if (before.hidden !== after.hidden) slideChanges.push(after.hidden ? 'hidden' : 'shown')
-  if (!same(before.background, after.background)) slideChanges.push('background')
+  const oldBackgroundParts = backgroundParts(before, beforeDeck)
+  const newBackgroundParts = backgroundParts(after, afterDeck)
+  if (!same(before.background, after.background) || !same(oldBackgroundParts, newBackgroundParts)
+    || newBackgroundParts.some((part) => !samePart(beforeParts[part], afterParts[part]))) slideChanges.push('background')
   const notesBefore = before.notes ? textToPlain(before.notes.text) : ''
   const notesAfter = after.notes ? textToPlain(after.notes.text) : ''
   if (notesBefore !== notesAfter) slideChanges.push('notes')
@@ -187,6 +214,8 @@ function sectionMembership(snapshot: PresentationSnapshot): Map<string, string |
 export function diffSnapshots(beforeInput: PresentationSnapshot, afterInput: PresentationSnapshot): PresentationDiff {
   const before = beforeInput
   const after = alignKeys(beforeInput, afterInput)
+  const beforeDeck = new DeckResources(before.parts, before.mainPart)
+  const afterDeck = new DeckResources(after.parts, after.mainPart)
   const beforeKeys = before.slides.map((slide) => slide.key)
   const afterKeys = after.slides.map((slide) => slide.key)
   const beforeByKey = new Map(before.slides.map((slide, index) => [slide.key, { slide, index }]))
@@ -200,7 +229,7 @@ export function diffSnapshots(beforeInput: PresentationSnapshot, afterInput: Pre
       slides.push({ status: 'added', after: index, afterKey: slide.key, title: titleOf(slide), slideChanges: [], shapes: slide.shapes.map((shape) => ({ key: shape.key, name: shape.name ?? '', kinds: ['added'] as ShapeChangeKind[], ...(shapeText(shape) ? { textAfter: shapeText(shape) } : {}) })) })
       return
     }
-    const comparison = compareSlides(previous.slide, slide, before.parts, after.parts)
+    const comparison = compareSlides(previous.slide, slide, beforeDeck, afterDeck)
     const edited = comparison.slideChanges.length > 0 || comparison.shapes.length > 0
     const moved = !stable.has(slide.key)
     slides.push({

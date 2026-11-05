@@ -1,14 +1,16 @@
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate'
 import { describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
+import { relationshipsPathFor } from '../ooxml/package.js'
 import { blankPresentation } from './blank.js'
 import { presentationCodec } from './codec.js'
-import { deleteSlides, duplicateSlides, groupShapes, insertShapes, moveSlides, presetShape, reorderShapes, setShapeText, setSlideHidden, setXfrm, slideKeys } from './commands.js'
+import { deleteSlides, duplicateSlides, groupShapes, insertShapes, moveSlides, presetShape, reorderShapes, setShapeText, setSlideHidden, setXfrm, slideKeys, tableShape } from './commands.js'
 import { diffDocuments, diffDocumentWithFile, diffFiles } from './diff.js'
 import { plainToText } from './text.js'
 import { memoryAssets } from './testing/assets.js'
 import { fixture } from './testing/fixtures.js'
 import { readSnapshot } from './ydoc.js'
+import { REL_TYPES } from './xml.js'
 
 const assets = memoryAssets()
 
@@ -25,6 +27,59 @@ function fork(doc: Y.Doc): Y.Doc {
 }
 
 describe('presentation diff', () => {
+  it.each(['slide', 'layout', 'master'].flatMap((owner) => ['bytes', 'target'].map((change) => ({ owner, change }))))('reports replacement background media on the $owner when its $change changes', async ({ owner, change }) => {
+    const files = unzipSync(blankPresentation())
+    const source = owner === 'slide' ? 'ppt/slides/slide1.xml' : owner === 'layout' ? 'ppt/slideLayouts/slideLayout1.xml' : 'ppt/slideMasters/slideMaster1.xml'
+    const background = '<p:bg><p:bgPr><a:blipFill><a:blip r:embed="rIdBackground"/><a:stretch><a:fillRect/></a:stretch></a:blipFill></p:bgPr></p:bg>'
+    const xml = strFromU8(files[source]!).replace(/<p:bg>[\s\S]*?<\/p:bg>/, '')
+    files[source] = strToU8(xml.replace(/(<p:cSld\b[^>]*>)/, `$1${background}`))
+    const rels = relationshipsPathFor(source)
+    files[rels] = strToU8(strFromU8(files[rels]!).replace('</Relationships>', `<Relationship Id="rIdBackground" Type="${REL_TYPES.image}" Target="../media/background.png"/></Relationships>`))
+    files['[Content_Types].xml'] = strToU8(strFromU8(files['[Content_Types].xml']!).replace('</Types>', '<Default Extension="png" ContentType="image/png"/></Types>'))
+    const pictures = unzipSync(fixture('generated/pictures.pptx'))
+    files['ppt/media/background.png'] = pictures['ppt/media/image1.png']!
+    const beforeBytes = zipSync(files)
+    if (change === 'bytes') files['ppt/media/background.png'] = pictures['ppt/media/image3.png']!
+    else {
+      files['ppt/media/replacement.png'] = pictures['ppt/media/image3.png']!
+      files[rels] = strToU8(strFromU8(files[rels]!).replace('../media/background.png', '../media/replacement.png'))
+    }
+    const afterBytes = zipSync(files)
+    expect((await diffFiles(beforeBytes, beforeBytes)).edited).toBe(0)
+    const diff = await diffFiles(beforeBytes, afterBytes)
+    expect(diff.slides[0]).toMatchObject({ status: 'edited', slideChanges: ['background'] })
+    expect(diff.edited).toBe(1)
+    const before = await open(beforeBytes)
+    const after = await open(afterBytes)
+    expect(diffDocuments(before, after).slides[0]).toMatchObject({ status: 'edited', slideChanges: ['background'] })
+    before.destroy()
+    after.destroy()
+  })
+
+  it('keeps detecting replaced media in shape, group, and table picture fills', async () => {
+    const seed = await open(blankPresentation())
+    const slide = slideKeys(seed)[0]!
+    const box = { x: 0, y: 0, cx: 1_000_000, cy: 1_000_000 }
+    const keys = insertShapes(seed, slide, [presetShape('rect', box, 'Filled shape'), presetShape('rect', box, 'Group member'), tableShape(1, 1, box, 'Filled table')])
+    groupShapes(seed, slide, keys.slice(0, 2), new Map(keys.map((key) => [key, box])), 'Filled group')
+    const files = unzipSync(await presentationCodec.exportFile(seed, { name: 'deck.pptx', assets }))
+    // Shapes, their group, and a table cell use the same picture part.
+    const fill = '<a:blipFill><a:blip r:embed="rIdFill"/><a:stretch><a:fillRect/></a:stretch></a:blipFill>'
+    files['ppt/slides/slide1.xml'] = strToU8(strFromU8(files['ppt/slides/slide1.xml']!).replace(/<a:solidFill>[\s\S]*?<\/a:solidFill>/g, '').replace(/(<p:(?:spPr|grpSpPr)>)/g, `$1${fill}`).replace('<a:tcPr/>', `<a:tcPr>${fill}</a:tcPr>`))
+    const rels = 'ppt/slides/_rels/slide1.xml.rels'
+    files[rels] = strToU8(strFromU8(files[rels]!).replace('</Relationships>', `<Relationship Id="rIdFill" Type="${REL_TYPES.image}" Target="../media/fill.png"/></Relationships>`))
+    files['[Content_Types].xml'] = strToU8(strFromU8(files['[Content_Types].xml']!).replace('</Types>', '<Default Extension="png" ContentType="image/png"/></Types>'))
+    const pictures = unzipSync(fixture('generated/pictures.pptx'))
+    files['ppt/media/fill.png'] = pictures['ppt/media/image1.png']!
+    const before = zipSync(files)
+    files['ppt/media/fill.png'] = pictures['ppt/media/image3.png']!
+    const diff = await diffFiles(before, zipSync(files))
+    expect(diff.edited).toBe(1)
+    expect(diff.slides[0]!.shapes).toHaveLength(4)
+    expect(diff.slides[0]!.shapes.every((shape) => shape.kinds.includes('other'))).toBe(true)
+    seed.destroy()
+  })
+
   it.each([false, true])('reports a proposal that only reorders overlapping group members (nested: %s)', async (nested) => {
     const seed = await open(blankPresentation())
     const slide = slideKeys(seed)[0]!
