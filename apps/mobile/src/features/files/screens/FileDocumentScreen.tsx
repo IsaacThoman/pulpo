@@ -306,7 +306,9 @@ export function FileDocumentScreen({ navigation, route }: Props) {
   const reviewBarHeight = reviewVisible ? 116 : 0
   // Android draws its formatting bar above the keyboard; the editor keeps the caret clear of it.
   const formattingBarVisible = Platform.OS === 'android' && keyboardVisible && editable && Boolean(editorState?.loaded)
-  const editorBottomPadding = reviewBarHeight + (formattingBarVisible ? FORMATTING_BAR_HEIGHT : 0)
+  // Android's web view runs under the navigation bar; a spreadsheet's sheet tabs stay above it.
+  const navigationBarPadding = Platform.OS === 'android' && isSheet && !keyboardVisible ? insets.bottom : 0
+  const editorBottomPadding = reviewBarHeight + (formattingBarVisible ? FORMATTING_BAR_HEIGHT : 0) + navigationBarPadding
   const showAndroidMenu = () => showActions(title, [
     { label: 'Export', icon: 'square.and.arrow.up', onPress: () => { void exportDocument() } },
     { label: 'Rename', icon: 'pencil', onPress: rename },

@@ -36,11 +36,11 @@ body { font-family: -apple-system, system-ui, sans-serif; -webkit-tap-highlight-
 .text-button { padding: 0 8px; font-size: 16px; font-weight: 600; }
 .icon-button:active, .text-button:active { opacity: 0.5; }
 
-/* Sheet tabs: a strip above the home indicator (and above Android's formatting bar). */
+/* Sheet tabs: a strip above Android's formatting bar (the host already keeps the web view clear of the home indicator). */
 #tabs {
   display: flex; align-items: stretch; flex-shrink: 0; height: 44px; box-sizing: content-box;
-  padding-bottom: max(var(--bottom-padding, 0px), env(safe-area-inset-bottom));
-  border-top: 1px solid var(--border); background: var(--muted-background, var(--background));
+  padding-bottom: var(--bottom-padding, 0px);
+  border-top: 1px solid var(--border); background: var(--background);
 }
 #tab-list { display: flex; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
 #tab-list::-webkit-scrollbar { display: none; }
@@ -49,7 +49,7 @@ body { font-family: -apple-system, system-ui, sans-serif; -webkit-tap-highlight-
   background: transparent; color: var(--muted-foreground); font: 500 15px -apple-system, system-ui, sans-serif;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.tab[aria-selected="true"] { color: var(--foreground); font-weight: 600; background: var(--background); }
+.tab[aria-selected="true"] { color: var(--foreground); font-weight: 600; }
 .tab[aria-selected="true"]::after { content: ''; position: absolute; left: 10px; right: 10px; top: 0; height: 3px; border-radius: 0 0 3px 3px; background: var(--tab-color, var(--ring)); }
 .tab .swatch { display: inline-block; width: 8px; height: 8px; margin-right: 6px; border-radius: 50%; vertical-align: 1px; }
 #add-sheet { width: 48px; border-left: 1px solid var(--border); color: var(--muted-foreground); }

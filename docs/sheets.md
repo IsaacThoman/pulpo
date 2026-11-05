@@ -40,6 +40,14 @@ The editor core (`view/sheet-view.ts` and its helpers) is framework-free: web an
 - **Touch**: tap selects, double-tap edits, handles extend the selection, pinch and Ctrl+wheel zoom.
 - **Printing**: `printHtml()` renders the used range as a table for the browser's print dialog (which also saves PDFs).
 
+## On mobile
+
+The app runs the same core in its locked-down web view (`apps/mobile/editor/sheet/`, about 0.7 MB inlined), on the replica of the document the app owns, as the text editor does (see [Live formats](./live-formats.md)):
+
+- **The page** adds a phone formula bar (the selection's address, the cell's contents, and Cancel and Done while editing; Done commits and moves down, as Return does), a find bar (all sheets, with previous and next), and a strip of sheet tabs with Add sheet. It follows the app's light and dark appearance, opens read only when the document isn't editable, and shares the user's selection with their name and color through the bridge's `selection` message.
+- **The keyboard bar** (`src/features/files/editor/sheetToolbar.ts`): undo, redo, bold, italic, and menus for fill color, alignment and wrapping, number format, and rows and columns (insert above, below, left, and right; delete), then freeze first row, sort, filter, and find. iOS draws the menus natively; Android's bar opens them as action sheets. The page reports which are on for the active cell (`sheetState`), and CSV files grey out formats.
+- **Not yet on mobile**: pictures and charts show their placeholders, since the bridge carries no asset requests and the page loads nothing from the network; inserting pictures, notes, links, the context menu (cut, copy, paste, hide, resize), sheet rename and reorder, replace, and other freeze options are web only. Downloads come from the server's export, so edits not yet synced aren't in them.
+
 ## Review diff
 
 `diffWorkbooks(before, after)` and `diffSheetFiles(beforeBytes, afterBytes)` (`diff/workbook-diff.ts`) describe a change the way a person would: sheets added, removed, or renamed (renames are recognized by content); rows and columns inserted or deleted; and cells whose value, formula, or format changed, by address, with shown values. Formulas that only moved with their row aren't reported. The web component `SheetDiff` renders it for agent Suggest-mode review.

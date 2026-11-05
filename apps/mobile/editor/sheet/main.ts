@@ -96,7 +96,6 @@ function applyTheme(theme: EditorTheme): void {
   style.setProperty('--foreground', theme.foreground)
   style.setProperty('--muted', theme.muted)
   style.setProperty('--muted-foreground', theme.mutedForeground)
-  style.setProperty('--muted-background', theme.code)
   style.setProperty('--border', theme.border)
   style.setProperty('--ring', theme.primary)
   style.setProperty('--bottom-padding', `${theme.bottomPadding}px`)
