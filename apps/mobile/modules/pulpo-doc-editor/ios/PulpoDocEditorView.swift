@@ -233,7 +233,12 @@ public final class PulpoDocEditorView: ExpoView, WKNavigationDelegate, WKUIDeleg
   ) {
     // The page itself; links are opened by the app (the editor reports taps on them).
     let url = navigationAction.request.url
-    decisionHandler(url?.scheme == editorScheme && url?.host == editorURL.host && navigationAction.targetFrame?.isMainFrame == true ? .allow : .cancel)
+    let isPage = url?.scheme == editorScheme && url?.host == editorURL.host && navigationAction.targetFrame?.isMainFrame == true
+    // A notebook's HTML outputs: iframes the page fills with `srcdoc`, sandboxed without scripts.
+    // They load as about:srcdoc (or about:blank first); nothing else may load in a frame.
+    let isOutputFrame = navigationAction.targetFrame.map { !$0.isMainFrame } == true
+      && (url?.absoluteString == "about:srcdoc" || url?.absoluteString == "about:blank")
+    decisionHandler(isPage || isOutputFrame ? .allow : .cancel)
   }
 
   public func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {

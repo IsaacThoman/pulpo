@@ -72,7 +72,10 @@ class PulpoDocEditorView(context: Context, appContext: AppContext) : ExpoView(co
     view.overScrollMode = OVER_SCROLL_IF_CONTENT_SCROLLS
     view.webViewClient = object : WebViewClient() {
       // The page itself only; links are opened by the app (the editor reports taps on them).
-      override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean = true
+      // Nothing navigates but a notebook's HTML outputs: iframes the page fills with `srcdoc`,
+      // sandboxed without scripts (they load as about:srcdoc, or about:blank first).
+      override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
+        request.isForMainFrame || request.url.toString() !in setOf("about:srcdoc", "about:blank")
 
       override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
         main.post { replaceWebView() }
