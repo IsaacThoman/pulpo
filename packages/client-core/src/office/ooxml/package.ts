@@ -160,15 +160,18 @@ export class OoxmlPackage {
   write(): Uint8Array {
     this.flushXml()
     const files: Zippable = {}
+    // Entries carry a fixed time (1980-01-01, the earliest a zip can hold, as Office writes), so
+    // the same content always gives the same bytes: version checks compare checksums of exports.
+    const mtime = new Date(1980, 0, 1)
     const contentTypes = this.parts.get(CONTENT_TYPES_PATH)
-    if (contentTypes) files[CONTENT_TYPES_PATH] = [contentTypes, { level: 6 }]
+    if (contentTypes) files[CONTENT_TYPES_PATH] = [contentTypes, { level: 6, mtime }]
     for (const [path, data] of this.parts) {
       if (path === CONTENT_TYPES_PATH) continue
       // Media is usually compressed already; storing it saves time without growing the file.
       const stored = /\.(png|jpe?g|gif|mp4|mp3|m4a|wdp|zip)$/i.test(path)
-      files[path] = [data, { level: stored ? 0 : 6 }]
+      files[path] = [data, { level: stored ? 0 : 6, mtime }]
     }
-    return zipSync(files)
+    return zipSync(files, { mtime })
   }
 
   paths(): string[] {

@@ -1,5 +1,5 @@
 import { strToU8, zipSync } from 'fflate'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { LiveFormatError } from '../live-format.js'
 import { OoxmlPackage, relationshipsPathFor, relativeTarget, resolveTarget } from './package.js'
 
@@ -69,5 +69,20 @@ describe('OoxmlPackage', () => {
     expect(() => OoxmlPackage.read(samplePackage(), { maxEntries: 100, maxUncompressedBytes: 100 })).toThrow(expect.objectContaining({ code: 'too_large' }))
     const pkg = OoxmlPackage.read(samplePackage({ 'word/bad.xml': strToU8('<a><b></a>') }))
     expect(() => pkg.xml('word/bad.xml')).toThrow(expect.objectContaining({ code: 'corrupt' }))
+  })
+})
+
+describe('OoxmlPackage.write', () => {
+  it('writes the same bytes for the same parts at any time, since versions compare checksums', () => {
+    vi.useFakeTimers()
+    try {
+      const write = () => new OoxmlPackage(new Map([['[Content_Types].xml', strToU8('<Types/>')], ['xl/workbook.xml', strToU8('<workbook/>')]])).write()
+      vi.setSystemTime(new Date(2026, 10, 5, 10, 0, 0))
+      const first = write()
+      vi.setSystemTime(new Date(2026, 10, 5, 10, 0, 7))
+      expect(Buffer.from(write()).equals(Buffer.from(first))).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
