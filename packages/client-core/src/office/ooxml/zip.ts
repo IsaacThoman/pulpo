@@ -35,6 +35,23 @@ function corrupt(message: string): never {
   throw new LiveFormatError('corrupt', `This zip package ${message}`)
 }
 
+/** Internal descriptor parser, shared by the reader and small ambiguous-layout regressions. */
+export function zipDescriptorEnd(view: DataView, offset: number, boundary: number, zip64: boolean, crc: number, compressed: number, size: number): number {
+  // The signature is optional, and a CRC can itself equal the signature. A speculative
+  // signed layout can decode an enormous uint64 from the unsigned layout's sizes and the
+  // following header. Compare as BigInt; a mismatch must not prevent trying the other layout.
+  for (const signature of [true, false]) {
+    const start = offset + (signature ? 4 : 0)
+    const length = 4 + (zip64 ? 16 : 8)
+    if (start + length > boundary || (signature && view.getUint32(offset, true) !== 0x08074b50)) continue
+    if (view.getUint32(start, true) !== crc) continue
+    const compressedSize = zip64 ? view.getBigUint64(start + 4, true) : BigInt(view.getUint32(start + 4, true))
+    const originalSize = zip64 ? view.getBigUint64(start + 12, true) : BigInt(view.getUint32(start + 8, true))
+    if (compressedSize === BigInt(compressed) && originalSize === BigInt(size)) return start + length
+  }
+  return corrupt('has an inconsistent data descriptor')
+}
+
 class ZipReader {
   private readonly view: DataView
 
@@ -176,20 +193,6 @@ class ZipReader {
     return [original, packed]
   }
 
-  private descriptor(offset: number, boundary: number, zip64: boolean, crc: number, compressed: number, size: number): number {
-    // The signature is optional, and a CRC can itself equal the signature. Try both layouts.
-    for (const signature of [true, false]) {
-      const start = offset + (signature ? 4 : 0)
-      const length = 4 + (zip64 ? 16 : 8)
-      if (start + length > boundary || (signature && this.u32(offset) !== 0x08074b50)) continue
-      if (this.u32(start) !== crc) continue
-      const compressedSize = zip64 ? this.u64(start + 4) : this.u32(start + 4)
-      const originalSize = zip64 ? this.u64(start + 12) : this.u32(start + 8)
-      if (compressedSize === compressed && originalSize === size) return start + length
-    }
-    return corrupt('has an inconsistent data descriptor')
-  }
-
   entries(limits: ZipLimits): ZipEntry[] {
     const directory = this.directory()
     if (directory.count > limits.maxEntries) throw new LiveFormatError('too_large', 'This file has too many parts')
@@ -242,7 +245,7 @@ class ZipReader {
       }
       this.range(start, compressed, directory.start)
       const end = start + compressed
-      const recordEnd = descriptor ? this.descriptor(end, directory.start,
+      const recordEnd = descriptor ? zipDescriptorEnd(this.view, end, directory.start,
         rawSize === 0xffffffff || rawCompressed === 0xffffffff || localFields.has(1), crc, compressed, size) : end
       entries.push({ name, local, start, end, recordEnd, size, crc, method })
       offset += length

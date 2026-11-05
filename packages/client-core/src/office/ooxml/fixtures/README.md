@@ -18,6 +18,16 @@ no fixture content is executed. Tests need neither Python nor an Office installa
   exports to a non-seekable stream. `python-local-zip64.zip` uses `force_zip64=True`
   without forcing ZIP64 end records. Each contains only `[Content_Types].xml`.
 
+The subsequent #941 re-review supplied `proto-main.docx` (an extensionless main part
+named `__proto__`) and `tz-change.docx` (the review's `fresh.docx`, a synthetic python-docx
+example). The writer tests use these directly. `unsigned-zip64-crc-signature.bin` is an
+exact 24-byte slice from its valid `unsigned-zip64-crc-signature.zip`: the unsigned ZIP64
+descriptor and the next local-header signature. Its CRC, compressed size and original size
+are all `0x08074b50`. The full stored input is 134,696,034 bytes; only this slice is committed
+so the ambiguous-layout regression exercises the production descriptor parser without
+allocating hundreds of MiB on every run. The complete input was also verified through
+`OoxmlPackage.read` during the fix.
+
 Run `python3 -I generate.py` in this directory to regenerate the ZIP64 repacks and the
 small descriptor/local-ZIP64 fixtures, using only the standard library. Fixed timestamps
 make these generated variants reproducible.
