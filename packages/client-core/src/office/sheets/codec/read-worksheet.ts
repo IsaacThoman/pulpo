@@ -35,6 +35,8 @@ export interface ReadContext {
   sharedStrings: SheetString[]
   /** Cells read so far in the whole workbook, against the limit. */
   cellCount: { value: number; limit: number }
+  /** Array cache positions and member-map entries reserved across all worksheets. */
+  arrayEntries: { value: number; limit: number }
   /** Parts regenerated on export (not preserved as-is). */
   regenerated: Set<string>
   /** The asset of an image or other binary part, already in the asset store. */
@@ -390,11 +392,17 @@ function readCell(
         if (attrs.cm !== undefined) data.dynamic = true
         else if (range) data.array = { rows: range.bottom - range.top + 1, cols: range.right - range.left + 1 }
         else data.array = { rows: 1, cols: 1 }
-        if (range && (range.bottom - range.top + 1) * (range.right - range.left + 1) > MAX_EXPANDED_CELLS) {
+        const size = range ? (range.bottom - range.top + 1) * (range.right - range.left + 1) : 1
+        const entries = size > 1 ? size * 2 - 1 : 0
+        if (range && (size > MAX_EXPANDED_CELLS || entries > context.arrayEntries.limit - context.arrayEntries.value)) {
           data.oversizedArray = true
           data.keep = { ...data.keep, f: { ...data.keep?.f, t: 'array', ref: formulaNode.attrs.ref! } }
         }
-        if (range && (range.bottom > range.top || range.right > range.left)) markArrayMembers(sheet, row, col, range, data, state)
+        if (range && size > 1 && !data.oversizedArray) {
+          // Reserve both allocations before expanding, so many small arrays cannot bypass the limit.
+          context.arrayEntries.value += entries
+          markArrayMembers(sheet, row, col, range, data, state)
+        }
       }
       sheet.ensure(row, col)
       if (formulaType === 'shared' && formulaNode.attrs.si !== undefined) {

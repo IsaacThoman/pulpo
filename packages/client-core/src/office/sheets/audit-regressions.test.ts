@@ -5,12 +5,13 @@ import { createRequire } from 'node:module'
 import { describe, expect, it, vi } from 'vitest'
 import * as Y from 'yjs'
 import { MemoryLiveAssetStore } from '../assets.js'
-import { MAX_COLS, MAX_ROWS } from './address.js'
-import { SheetCalc } from './calc.js'
+import { columnName, MAX_COLS, MAX_ROWS } from './address.js'
+import { SheetCalc, sheetFunctions } from './calc.js'
 import { applyWorkbook } from './codec/apply.js'
 import { SheetCodec } from './codec/codec.js'
 import { readCsv, writeCsv } from './codec/csv.js'
 import { writeDrawing } from './codec/drawing.js'
+import { FormulaEngine } from './formula/engine.js'
 import { calculationBudget, CalculationStopped } from './formula/budget.js'
 import { wildcardIndex, wildcardMatch } from './formula/functions/criteria.js'
 import { markCalcDirty, trackEdits } from './model/edits.js'
@@ -18,6 +19,8 @@ import { dateToSerial } from './dates.js'
 import { MAX_EXPANDED_CELLS } from './limits.js'
 import { columnIntervalProps } from './model/column-intervals.js'
 import type { DrawingObject } from './model/schema.js'
+import { toA1Form, toIdForm } from './model/formula-ids.js'
+import { deleteAxis } from './model/structure.js'
 import { WorkbookModel, SheetModel } from './model/workbook.js'
 import { parseHtml } from './view/clipboard.js'
 import { SheetView } from './view/sheet-view.js'
@@ -78,6 +81,193 @@ function replicas(base: Y.Doc, edit: (sheet: SheetModel, client: number) => void
 }
 
 describe('spreadsheet audit regressions', () => {
+  it.each(['row', 'col'] as const)('resolves %s deletions without rewriting formulas and restores references on undo', async (kind) => {
+    for (const [start, count] of [[0, 1], [9, 1], [0, 10]] as const) {
+      const doc = new Y.Doc()
+      const workbook = WorkbookModel.initialize(doc)
+      const sheet = workbook.addSheet('Sheet1')
+      const other = workbook.addSheet('Other')
+      const row = kind === 'row'
+      for (let index = 0; index < 10; index++) sheet.setCell(row ? index : 0, row ? 0 : index, { v: index + 1 })
+      const range = row ? 'A1:A10' : 'A1:J1'
+      const single = row ? `A${start + 1}` : `${start === 9 ? 'J' : 'A'}1`
+      const formulas = [`SUM(${range})`, single]
+      for (const [index, formula] of formulas.entries()) {
+        sheet.setCell(19, 19 + index, { f: toIdForm(formula, sheet) })
+        other.setCell(0, index, { f: toIdForm(formula.replace(/([A-J]\d+)/, 'Sheet1!$1'), other) })
+      }
+      const stored = [...sheet.cells.values(), ...other.cells.values()].filter((data) => data.f).map((data) => data.f)
+      const calc = new SheetCalc(workbook)
+      const undo = new Y.UndoManager(workbook.root)
+      deleteAxis(sheet, kind, start, count)
+      const formulaRow = row ? 19 - count : 19
+      const formulaCol = row ? 19 : 19 - count
+      const remaining = row ? 'A1:A9' : 'A1:I1'
+      const expectedRange = count === 10 ? 'SUM(#REF!)' : `SUM(${remaining})`
+      expect(toA1Form(sheet.cell(formulaRow, formulaCol)!.f!, sheet)).toBe(expectedRange)
+      expect(toA1Form(sheet.cell(formulaRow, formulaCol + 1)!.f!, sheet)).toBe('#REF!')
+      expect(toA1Form(other.cell(0, 0)!.f!, other)).toBe(expectedRange.replace(/(A1:[AI]\d+|#REF!)/, 'Sheet1!$1'))
+      expect(toA1Form(other.cell(0, 1)!.f!, other)).toBe('Sheet1!#REF!')
+      const sum = count === 10 ? { e: '#REF!' } : 55 - (start + 1)
+      expect(calc.get(sheet, formulaRow, formulaCol)).toEqual(sum)
+      expect(calc.get(other, 0, 0)).toEqual(sum)
+      expect(calc.get(sheet, formulaRow, formulaCol + 1)).toEqual({ e: '#REF!' })
+      expect(calc.get(other, 0, 1)).toEqual({ e: '#REF!' })
+      expect([...sheet.cells.values(), ...other.cells.values()].filter((data) => data.f).map((data) => data.f)).toEqual(stored)
+      const codec = new SheetCodec()
+      const context = { name: 'Deleted.xlsx', assets: new MemoryLiveAssetStore() }
+      const bytes = await codec.exportFile(doc, context)
+      const xml = strFromU8(unzipSync(bytes)['xl/worksheets/sheet1.xml']!)
+      expect(xml).toContain(`<f>${expectedRange}</f>`)
+      expect(xml).toContain('<f>#REF!</f><v>#REF!</v>')
+      expect(await codec.applyFile(doc, bytes, context)).toEqual({ changed: false })
+      undo.undo()
+      for (const [index, formula] of formulas.entries()) expect(toA1Form(sheet.cell(19, 19 + index)!.f!, sheet)).toBe(formula)
+      expect(calc.get(sheet, 19, 19)).toBe(55)
+      expect(calc.get(sheet, 19, 20)).toBe(start + 1)
+      undo.destroy()
+      calc.destroy()
+      doc.destroy()
+    }
+  })
+
+  it.each([false, true])('calculates colliding table names in canonical order across replicas, swap=%s', async (swap) => {
+    const base = new Y.Doc()
+    base.clientID = 100
+    const workbook = WorkbookModel.initialize(base)
+    workbook.setMeta('calcDirty', true)
+    const sheet = workbook.addSheet('Sheet1')
+    sheet.setCell(0, 0, { v: 'Header' })
+    sheet.setCell(1, 0, { v: 10 })
+    sheet.setCell(3, 0, { v: 'Header' })
+    sheet.setCell(4, 0, { v: 20 })
+    sheet.setCell(0, 2, { f: toIdForm('SUM(Foo[Header])', sheet) })
+    sheet.setCell(1, 2, { f: toIdForm('SUM(Foo_2[Header])', sheet) })
+    const docs = replicas(base, (sheet, client) => {
+      const first = swap ? client === 2 : client === 1
+      const row = first ? 0 : 3
+      sheet.tables.set(first ? 'table0' : 'table1', { name: 'Foo', displayName: 'Foo', range: sheet.rangeIds({ top: row, left: 0, bottom: row + 1, right: 0 }), headerRow: true, totalsRow: false, columns: [{ name: 'Header' }] })
+    })
+    const codec = new SheetCodec()
+    const context = { name: 'Tables.xlsx', assets: new MemoryLiveAssetStore() }
+    const files = []
+    for (const doc of docs) {
+      const model = new WorkbookModel(doc)
+      const sheet = model.sheets()[0]!
+      const calc = new SheetCalc(model)
+      expect(calc.get(sheet, 0, 2)).toBe(10)
+      expect(calc.get(sheet, 1, 2)).toBe(20)
+      expect(calc.evaluate(sheet, 0, 2, 'SUM(Foo[Header])')).toBe(10)
+      expect(calc.evaluate(sheet, 0, 2, 'SUM(Foo_2[Header])')).toBe(20)
+      // Structured-reference dependencies must bind to the same resolved table as evaluation.
+      sheet.setCell(1, 0, { v: 11 })
+      expect(calc.get(sheet, 0, 2)).toBe(11)
+      expect(calc.get(sheet, 1, 2)).toBe(20)
+      files.push(await codec.exportFile(doc, context))
+      calc.destroy()
+    }
+    for (const bytes of files) expect(bytes).toEqual(files[0])
+    for (const doc of docs) doc.destroy()
+    base.destroy()
+  })
+
+  it.each([1, 10_000])('bounds dependency discovery and traversal for 2,000 overlapping formulas with maxWork=%s', (maxWork) => {
+    const engine = new FormulaEngine({ functions: sheetFunctions(), maxWork })
+    engine.setSheets(['Sheet1'])
+    for (let row = 0; row < 2000; row++) engine.setCell(0, row, 0, { formula: 'SUM(A1:A2000)', cached: row + 1 })
+    expect(engine.dependencyStats().rangeEntries).toBe(1)
+    const before = performance.now()
+    expect(engine.recalc({ full: true }).stoppedEarly).toBe(true)
+    expect(performance.now() - before).toBeLessThan(1000)
+    for (let row = 0; row < 2000; row++) expect(engine.getValue(0, row, 0)).toBe(row + 1)
+    // Interrupted graph construction must leave the pending work available for another recalc.
+    expect(engine.recalc().stoppedEarly).toBe(true)
+  })
+
+  it('retains cached values after dependency discovery stops and retries the unfinished work', () => {
+    const options = { functions: sheetFunctions(), maxWork: 1 }
+    const engine = new FormulaEngine(options)
+    engine.setSheets(['Sheet1'])
+    engine.setCell(0, 0, 0, { value: 1 })
+    for (let row = 0; row < 50; row++) engine.setCell(0, row, 1, { formula: 'A1*2', cached: 2 })
+    engine.markClean()
+    engine.setCell(0, 0, 0, { value: 3 })
+    expect(engine.recalc().stoppedEarly).toBe(true)
+    for (let row = 0; row < 50; row++) expect(engine.getValue(0, row, 1)).toBe(2)
+    options.maxWork = 100_000
+    expect(engine.recalc().stoppedEarly).toBe(false)
+    for (let row = 0; row < 50; row++) expect(engine.getValue(0, row, 1)).toBe(6)
+  })
+
+  it('retries dependency invalidation interrupted while committing a spill', () => {
+    for (let maxWork = 1; maxWork <= 80; maxWork++) {
+      const options = { functions: sheetFunctions(), maxWork }
+      const engine = new FormulaEngine(options)
+      engine.setSheets(['Sheet1'])
+      engine.setCell(0, 0, 0, { formula: 'SEQUENCE(2)', cached: 9 })
+      engine.setCell(0, 0, 1, { formula: 'A2*2', cached: 18 })
+      engine.markClean()
+      engine.recalc({ full: true })
+      options.maxWork = 10_000
+      expect(engine.recalc().stoppedEarly).toBe(false)
+      expect(engine.getValue(0, 0, 0), `anchor after maxWork=${maxWork}`).toBe(1)
+      expect(engine.getValue(0, 1, 0), `spill after maxWork=${maxWork}`).toBe(2)
+      expect(engine.getValue(0, 0, 1), `dependent after maxWork=${maxWork}`).toBe(4)
+    }
+  })
+
+  it.each([[39_998, 100, 2], [undefined, 100, 20], [undefined, 1000, 5]] as const)('bounds cumulative array import allocations across twenty arrays, limit=%s, columns=%s', async (maxArrayEntries, cols, materialized) => {
+    const body = Array.from({ length: 20 }, (_, index) => {
+      const row = index * 100 + 1
+      return `<row r="${row}"><c r="A${row}"><f t="array" ref="A${row}:${columnName(cols - 1)}${row + 99}">1</f><v>1</v></c></row>`
+    }).join('')
+    const codec = new SheetCodec({ read: { maxCells: 20, maxArrayEntries } })
+    const context = { name: 'Arrays.xlsx', assets: new MemoryLiveAssetStore() }
+    const doc = new Y.Doc()
+    await codec.importFile(doc, xlsx(body), context)
+    const workbook = new WorkbookModel(doc)
+    const sheet = workbook.sheets()[0]!
+    expect(sheet.cells.size).toBe(20)
+    const calc = new SheetCalc(workbook)
+    for (let index = 0; index < 20; index++) {
+      const data = sheet.cell(index * 100, 0)!
+      expect(data.spillCache?.flat().length ?? 0).toBe(index < materialized ? 100 * cols : 0)
+      expect(calc.isUnsupported(sheet, index * 100, 0)).toBe(index >= materialized)
+      expect(calc.get(sheet, index * 100, 0)).toBe(1)
+    }
+    const output = await codec.exportFile(doc, context)
+    const xml = strFromU8(unzipSync(output)['xl/worksheets/sheet1.xml']!)
+    expect(xml).toContain(`t="array" ref="A1901:${columnName(cols - 1)}2000"`)
+    const again = new Y.Doc()
+    await codec.importFile(again, output, context)
+    expect(new WorkbookModel(again).sheets()[0]!.cell(1900, 0)?.oversizedArray).toBe(materialized === 20 ? undefined : true)
+    calc.destroy()
+    again.destroy()
+    doc.destroy()
+  }, 15_000)
+
+  it('shares the array import allowance between worksheets and preserves unmaterialized member values', async () => {
+    const parts = unzipSync(xlsx('<row r="1"><c r="A1"><f t="array" ref="A1:A2">1</f><v>1</v></c></row><row r="2"><c r="A2"><v>2</v></c></row>'))
+    parts['xl/workbook.xml'] = strToU8(strFromU8(parts['xl/workbook.xml']!).replace('</sheets>', '<sheet name="Sheet2" sheetId="2" r:id="rId2"/></sheets>'))
+    parts['xl/_rels/workbook.xml.rels'] = strToU8(strFromU8(parts['xl/_rels/workbook.xml.rels']!).replace('</Relationships>', `<Relationship Id="rId2" Type="${R}/worksheet" Target="worksheets/sheet2.xml"/></Relationships>`))
+    parts['xl/worksheets/sheet2.xml'] = parts['xl/worksheets/sheet1.xml']!
+    const codec = new SheetCodec({ read: { maxArrayEntries: 3 } })
+    const context = { name: 'Arrays.xlsx', assets: new MemoryLiveAssetStore() }
+    const doc = new Y.Doc()
+    await codec.importFile(doc, zipSync(parts), context)
+    const workbook = new WorkbookModel(doc)
+    expect(workbook.sheets()[0]!.cell(0, 0)?.spillCache).toEqual([[1], [2]])
+    expect(workbook.sheets()[1]!.cell(0, 0)?.oversizedArray).toBe(true)
+    expect(workbook.sheets()[1]!.cell(0, 0)?.spillCache).toBeUndefined()
+    expect(workbook.sheets()[1]!.cell(1, 0)?.v).toBe(2)
+    const output = await codec.exportFile(doc, context)
+    const again = new Y.Doc()
+    await codec.importFile(again, output, context)
+    expect(new WorkbookModel(again).sheets()[1]!.cell(1, 0)?.v).toBe(2)
+    again.destroy()
+    doc.destroy()
+  })
+
   it.each(['Infinity', 'NaN', '-1', '1.5', String(MAX_ROWS)])('drops drawing anchors with invalid row %s (finding 1)', async (row) => {
     const parts = unzipSync(readFileSync(new URL('../../../test-fixtures/sheets/generated/gen-image.xlsx', import.meta.url)))
     const baseline = await open(zipSync(parts))

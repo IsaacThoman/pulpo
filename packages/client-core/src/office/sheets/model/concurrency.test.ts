@@ -138,13 +138,54 @@ describe('concurrent structure, whichever replica wins', () => {
   }
 
   for (const clientIds of [[1, 2], [2, 1]] as [number, number][]) {
+    for (const reverse of [false, true]) {
+      it(`keeps a concurrent formula edit when deleting its range start (clients ${clientIds}, reverse=${reverse})`, async () => {
+        const base = new Y.Doc()
+        base.clientID = 100
+        const sheet = WorkbookModel.initialize(base).addSheet('Sheet1')
+        for (let row = 0; row < 10; row++) sheet.setCell(row, 0, { v: row + 1 })
+        sheet.setCell(19, 1, { f: toIdForm('SUM(A1:A10)', sheet) })
+        const docs = [...clientIds, 3].map((id) => {
+          const doc = new Y.Doc()
+          doc.clientID = id
+          Y.applyUpdate(doc, Y.encodeStateAsUpdate(base))
+          return doc
+        })
+        const editing = new WorkbookModel(docs[0]!).sheets()[0]!
+        editing.setCell(19, 1, { f: toIdForm('SUM(A1:A10)*2', editing) })
+        deleteAxis(new WorkbookModel(docs[1]!).sheets()[0]!, 'row', 0, 1)
+        const updates = docs.slice(0, 2).map((doc) => Y.encodeStateAsUpdate(doc))
+        if (reverse) updates.reverse()
+        for (const doc of docs) for (const update of updates) Y.applyUpdate(doc, update)
+        const codec = new SheetCodec()
+        const context = { name: 'Concurrent.xlsx', assets: new MemoryLiveAssetStore() }
+        const files = []
+        for (const doc of docs) {
+          const model = new WorkbookModel(doc)
+          const after = model.sheets()[0]!
+          expect(toA1Form(after.cell(18, 1)!.f!, after)).toBe('SUM(A1:A9)*2')
+          const calc = new SheetCalc(model)
+          expect(calc.get(after, 18, 1)).toBe(108)
+          calc.destroy()
+          const bytes = await codec.exportFile(doc, context)
+          expect(strFromU8(unzipSync(bytes)['xl/worksheets/sheet1.xml']!)).toContain('<f>SUM(A1:A9)*2</f>')
+          expect(await codec.applyFile(doc, bytes, context)).toEqual({ changed: false })
+          files.push(bytes)
+        }
+        for (const bytes of files) expect(bytes).toEqual(files[0])
+        for (const doc of docs) doc.destroy()
+        base.destroy()
+      })
+    }
+  }
+
+  for (const clientIds of [[1, 2], [2, 1]] as [number, number][]) {
     it(`shrinks a range from both ends when its edge rows are deleted at once (clients ${clientIds})`, () => {
       const base = new Y.Doc()
       const sheet = WorkbookModel.initialize(base).addSheet('Sheet1')
       for (let row = 0; row < 12; row++) sheet.setCell(row, 0, { v: row + 1 })
       sheet.setCell(19, 1, { f: toIdForm('SUM(A1:A10)', sheet) })
-      // Each deletion rewrites the formula, and only one rewrite survives; the deleted edge of the
-      // other must still resolve to its neighbor, not to an index the other deletion shifted.
+      // Each deleted edge resolves through its tombstone, even after the other deletion shifts it.
       const models = race(base, clientIds, (a, b) => {
         deleteAxis(a.sheets()[0]!, 'row', 0, 1)
         deleteAxis(b.sheets()[0]!, 'row', 9, 1)

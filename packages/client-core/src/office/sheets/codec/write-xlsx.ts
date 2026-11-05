@@ -6,7 +6,7 @@ import type { DefinedName, DrawingObject, SheetFormat, SheetKind, SheetTable } f
 import { WorkbookModel, type SheetModel } from '../model/workbook.js'
 import { DEFAULT_STYLES_XML, Stylesheet } from '../styles/stylesheet.js'
 import { writeDrawing } from './drawing.js'
-import { orderedEntries } from './order.js'
+import { orderedEntries, resolvedTables } from './order.js'
 import { writeComments, writeNotesVml } from './notes.js'
 import { readSharedStrings, SharedStringTable } from './strings.js'
 import { writeTablePart, writeWorksheet, type ValueSource, type WorksheetWriteContext } from './write-worksheet.js'
@@ -253,8 +253,7 @@ export async function writeXlsx(doc: Y.Doc, assets: LiveAssetStore, options: Xls
     return dynamicCm ?? undefined
   }
   let tableId = 1
-  const tableNames = new Set([...model.names.values()].map((name) => name.name.toLowerCase()))
-  const reservedNames = new Set([...tableNames, ...sheets.flatMap((sheet) => [...sheet.tables.values()].map((raw) => (raw as SheetTable).name.toLowerCase()))])
+  const tables = resolvedTables(model)
   for (const sheet of sheets) {
     const path = sheetPaths.get(sheet.id)!
     const kind = (sheet.map.get('kind') as SheetKind | undefined) ?? 'worksheet'
@@ -275,17 +274,9 @@ export async function writeXlsx(doc: Y.Doc, assets: LiveAssetStore, options: Xls
     // Rebuilt below from the model.
     rels.remove((rel) => rel.type === REL_TYPES.hyperlink || rel.type === REL_TYPES.table || rel.type === REL_TYPES.comments || rel.type === REL_TYPES.vmlDrawing)
     const tableRelationships = new Map<string, string>()
-    for (const [id, raw] of orderedEntries(sheet, sheet.tables, (value) => (value as SheetTable).range)) {
-      const table = raw as SheetTable
-      let name = table.name
-      if (tableNames.has(name.toLowerCase())) {
-        let suffix = 2
-        do { name = `${table.name}_${suffix++}` } while (reservedNames.has(name.toLowerCase()))
-      }
-      reservedNames.add(name.toLowerCase())
-      tableNames.add(name.toLowerCase())
+    for (const [id, table] of tables.get(sheet.id) ?? []) {
       const tablePath = table.part && !livePaths.has(table.part) ? table.part : freePath(taken, (n) => `xl/tables/table${n}.xml`)
-      const xml = writeTablePart(sheet, { ...table, name, displayName: name === table.name ? table.displayName : name }, tableId++, headerNames(sheet, table))
+      const xml = writeTablePart(sheet, table, tableId++, headerNames(sheet, table))
       if (!xml) continue
       livePaths.add(tablePath)
       pkg.set(tablePath, new TextEncoder().encode(xml))

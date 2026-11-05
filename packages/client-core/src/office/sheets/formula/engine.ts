@@ -215,9 +215,10 @@ class SpillIndex {
     return undefined
   }
 
-  intersecting(rect: Rect): Cell[] {
+  intersecting(rect: Rect, budgeted = false): Cell[] {
     const out = new Set<Cell>()
     const test = (cell: Cell, other: Rect) => {
+      if (budgeted) consumeWork()
       if (other.left <= rect.right && other.right >= rect.left && other.top <= rect.bottom && other.bottom >= rect.top) out.add(cell)
     }
     const first = rect.top >> 6
@@ -735,47 +736,61 @@ export class FormulaEngine {
   private closure(queue: Dep[], schedule: boolean): void {
     const calc = this.calc!
     const token = newQueryToken()
-    for (let i = 0; i < queue.length; i++) {
-      this.dependentsOf(queue[i]!, token, (cell) => {
-        if (cell.state !== CLEAN || !cell.formula) return
-        if (cell.epoch === calc.epoch && cell.commits > MAX_REEVALUATIONS) return
-        this.pend(cell)
-        if (schedule) {
-          calc.worklist.push(cell)
-          calc.areas.clear()
-        }
-        queue.push(positionOf(cell))
-        if (cell.spill) queue.push({ sheet: cell.sheet, ...spillRect(cell, cell.spill) })
-      })
+    try {
+      for (let i = 0; i < queue.length; i++) {
+        consumeWork()
+        this.dependentsOf(queue[i]!, token, (cell) => {
+          if (cell.state !== CLEAN || !cell.formula) return
+          if (cell.epoch === calc.epoch && cell.commits > MAX_REEVALUATIONS) return
+          this.pend(cell)
+          if (schedule) {
+            calc.worklist.push(cell)
+            calc.areas.clear()
+          }
+          queue.push(positionOf(cell))
+          if (cell.spill) queue.push({ sheet: cell.sheet, ...spillRect(cell, cell.spill) })
+        })
+      }
+    } catch (error) {
+      // A spill may already be committed; retain its invalidation roots for the next recalculation.
+      if (schedule && error instanceof CalculationStopped) this.changedRects = queue
+      throw error
     }
   }
 
   private dependentsOf(rect: Dep, token: number, visit: (cell: Cell) => void): void {
     const { sheet } = rect
     const { cellDeps } = sheet
+    const onCell = (cell: Cell) => {
+      consumeWork()
+      visit(cell)
+    }
     if (cellDeps.size) {
       const area = (rect.bottom - rect.top + 1) * (rect.right - rect.left + 1)
       if (area <= cellDeps.size) {
         for (let row = rect.top; row <= rect.bottom; row++) {
           for (let col = rect.left; col <= rect.right; col++) {
+            consumeWork()
             const set = cellDeps.get(cellKey(row, col))
-            if (set) for (const cell of set) visit(cell)
+            if (set) for (const cell of set) onCell(cell)
           }
         }
       } else {
         for (const [key, set] of cellDeps) {
+          consumeWork()
           const row = Math.floor(key / MAX_COLS)
           const col = key - row * MAX_COLS
-          if (row >= rect.top && row <= rect.bottom && col >= rect.left && col <= rect.right) for (const cell of set) visit(cell)
+          if (row >= rect.top && row <= rect.bottom && col >= rect.left && col <= rect.right) for (const cell of set) onCell(cell)
         }
       }
     }
-    sheet.ranges.query(rect, visit, token)
+    sheet.ranges.query(rect, onCell, token)
   }
 
   /** Tarjan's strongly connected components over pending cells, emitted in evaluation order. */
   private order(pending: Cell[]): Cell[][] {
     for (const cell of pending) {
+      consumeWork()
       const sheet = cell.sheet
       sheet.pendingIndex ??= new Map()
       let list = sheet.pendingIndex.get(cell.col)
@@ -790,15 +805,17 @@ export class FormulaEngine {
       cell.tIndex = cell.tLow = index++
       cell.tOn = true
       stack.push(cell)
-      return { cell, next: this.pendingPrecedents(cell), i: 0 }
+      return { cell, next: this.pendingPrecedents(cell) }
     }
     for (const root of pending) {
       if (root.tIndex >= 0 || root.state !== PENDING) continue
       const frames = [open(root)]
       while (frames.length) {
+        consumeWork()
         const frame = frames[frames.length - 1]!
-        if (frame.i < frame.next.length) {
-          const next = frame.next[frame.i++]!
+        const step = frame.next.next()
+        if (!step.done) {
+          const next = step.value
           if (next === frame.cell) frame.cell.selfLoop = true
           else if (next.tIndex < 0) frames.push(open(next))
           else if (next.tOn) frame.cell.tLow = Math.min(frame.cell.tLow, next.tIndex)
@@ -812,6 +829,7 @@ export class FormulaEngine {
           const group: Cell[] = []
           let member: Cell
           do {
+            consumeWork()
             member = stack.pop()!
             member.tOn = false
             group.push(member)
@@ -823,52 +841,68 @@ export class FormulaEngine {
     return groups
   }
 
-  /** Pending cells a formula is known to read (static and last-seen dynamic dependencies). */
-  private pendingPrecedents(cell: Cell): Cell[] {
-    const out: Cell[] = []
+  /** Lazy predecessors keep overlapping ranges from retaining quadratic lists in DFS frames. */
+  private *pendingPrecedents(cell: Cell): Generator<Cell> {
     const formula = cell.formula
-    if (!formula) return out
-    const visit = (deps: Dep[]) => {
+    if (!formula) return
+    for (const deps of [formula.deps, formula.dynamicDeps]) {
       for (const dep of deps) {
+        consumeWork()
         const { sheet } = dep
         if (isSingle(dep)) {
           const other = sheet.get(dep.top, dep.left)
-          if (other?.state === PENDING) out.push(other)
+          if (other?.state === PENDING) {
+            consumeWork()
+            yield other
+          }
           if (sheet.spills.size) {
             const owner = sheet.spills.ownerAt(dep.top, dep.left)
-            if (owner && owner !== other && owner.state === PENDING) out.push(owner)
+            if (owner && owner !== other && owner.state === PENDING) {
+              consumeWork()
+              yield owner
+            }
           }
           continue
         }
-        this.pendingIn(sheet, dep, out)
-        if (sheet.spills.size) for (const owner of sheet.spills.intersecting(dep)) if (owner.state === PENDING) out.push(owner)
+        yield* this.pendingIn(sheet, dep)
+        if (sheet.spills.size) {
+          for (const owner of sheet.spills.intersecting(dep, true)) {
+            consumeWork()
+            if (owner.state === PENDING) yield owner
+          }
+        }
       }
     }
-    visit(formula.deps)
-    visit(formula.dynamicDeps)
-    return out
   }
 
-  private pendingIn(sheet: SheetData, rect: Rect, out: Cell[]): void {
+  private *pendingIn(sheet: SheetData, rect: Rect): Generator<Cell> {
     const index = sheet.pendingIndex
     if (!index) return
-    const scan = (cells: Cell[]) => {
+    function *scan(cells: Cell[]): Generator<Cell> {
       let lo = 0
       let hi = cells.length
       while (lo < hi) {
+        consumeWork()
         const mid = (lo + hi) >> 1
         if (cells[mid]!.row < rect.top) lo = mid + 1
         else hi = mid
       }
-      for (let k = lo; k < cells.length && cells[k]!.row <= rect.bottom; k++) if (cells[k]!.state === PENDING) out.push(cells[k]!)
+      for (let k = lo; k < cells.length && cells[k]!.row <= rect.bottom; k++) {
+        consumeWork()
+        if (cells[k]!.state === PENDING) yield cells[k]!
+      }
     }
     if (rect.right - rect.left + 1 <= index.size) {
       for (let col = rect.left; col <= rect.right; col++) {
+        consumeWork()
         const cells = index.get(col)
-        if (cells) scan(cells)
+        if (cells) yield* scan(cells)
       }
     } else {
-      for (const [col, cells] of index) if (col >= rect.left && col <= rect.right) scan(cells)
+      for (const [col, cells] of index) {
+        consumeWork()
+        if (col >= rect.left && col <= rect.right) yield* scan(cells)
+      }
     }
   }
 
@@ -1019,10 +1053,18 @@ export class FormulaEngine {
       cell.blocked = undefined
       sheet.blocked.delete(cell)
     }
-    this.replaceSpill(cell, spill, true)
+    let stopped: CalculationStopped | undefined
+    try {
+      this.replaceSpill(cell, spill, true)
+    } catch (error) {
+      if (!(error instanceof CalculationStopped)) throw error
+      stopped = error
+    }
+    // Invalidation can stop after installing the spill, so finish the computed anchor consistently.
     if (!sameScalar(cell.value, value)) this.recordChange(sheet, cell.row, cell.col)
     cell.value = value
     if (reads) this.updateDynamicDeps(cell, formula, reads)
+    if (stopped) throw stopped
   }
 
   private recordChange(sheet: SheetData, row: number, col: number): void {
@@ -1090,12 +1132,12 @@ export class FormulaEngine {
       }
     }
     const rects = [before, after].filter((rect): rect is Rect => rect !== undefined).map((rect) => ({ sheet, ...rect }))
+    if (before && (!after || !contains(after, before))) this.wakeBlocked(sheet, before, cell)
     if (this.calc) {
       this.calc.areas.clear()
       this.closure(rects, true)
     }
     else this.changedRects.push(...rects)
-    if (before && (!after || !contains(after, before))) this.wakeBlocked(sheet, before, cell)
   }
 
   private updateDynamicDeps(cell: Cell, formula: FormulaInfo, reads: Dep[]): void {
@@ -1499,7 +1541,10 @@ export class FormulaEngine {
   }
 
   private need(cell: Cell): void {
-    if (this.calc?.current && cell.state === PENDING) this.calc.needs.push(cell)
+    if (this.calc?.current && cell.state === PENDING) {
+      consumeWork()
+      this.calc.needs.push(cell)
+    }
   }
 
   private recordRead(sheet: SheetData, area: Rect): void {

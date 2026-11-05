@@ -1,11 +1,12 @@
 import * as Y from 'yjs'
+import { resolvedTables } from './codec/order.js'
 import { MAX_EXPANDED_CELLS } from './limits.js'
 import { FormulaEngine, type CellInput } from './formula/engine.js'
 import { functionRegistry } from './formula/functions/index.js'
 import { TEXT_FORMAT_FUNCTIONS } from './formula/functions/text-format.js'
 import { errorFromCode, isError, isMatrix, matrix, type FunctionSpec, type Matrix, type Scalar } from './formula/types.js'
 import { toA1Form } from './model/formula-ids.js'
-import type { CellData, SheetTable } from './model/schema.js'
+import type { CellData } from './model/schema.js'
 import type { SheetModel, WorkbookModel } from './model/workbook.js'
 import type { CellValue, SheetValues } from './values.js'
 
@@ -122,10 +123,10 @@ export class SheetCalc implements SheetValues {
       if (name.scope && scope === undefined) continue
       this.engine.setName(name.name, toA1Form(name.formula, name.scope ? workbook.sheet(name.scope) : undefined, workbook), scope)
     }
+    const tables = resolvedTables(workbook)
     this.engine.setTables(
       sheets.flatMap((sheet, index) =>
-        [...sheet.tables.values()].flatMap((raw) => {
-          const table = raw as SheetTable
+        (tables.get(sheet.id) ?? []).flatMap(([, table]) => {
           const range = sheet.resolveRange(table.range)
           if (!range) return []
           const columns = table.columns.map((column, offset) => (table.headerRow ? String(sheet.cell(range.top, range.left + offset)?.v ?? column.name) : column.name))

@@ -1,6 +1,7 @@
 import type * as Y from 'yjs'
 import { LiveFormatError, type LiveAssetStore } from '../../live-format.js'
 import { OoxmlPackage, parseXml, relationshipsPathFor, serializeXml, type PackageLimits } from '../../ooxml/package.js'
+import { MAX_IMPORTED_ARRAY_ENTRIES } from '../limits.js'
 import { IMPORT_ORIGIN } from '../model/edits.js'
 import { randomId } from '../model/axis.js'
 import { toIdForm } from '../model/formula-ids.js'
@@ -14,6 +15,8 @@ import { attr, boolAttr, child, children, CONTENT_TYPES, numberAttr, otherAttrib
 export interface XlsxReadOptions {
   /** Most cells a workbook may have to open for editing. */
   maxCells?: number
+  /** Maximum total array cache positions and member-map entries to materialize. */
+  maxArrayEntries?: number
   limits?: PackageLimits
 }
 
@@ -121,6 +124,7 @@ export async function readXlsx(doc: Y.Doc, bytes: Uint8Array, assets: LiveAssetS
     pkg,
     sharedStrings,
     cellCount,
+    arrayEntries: { value: 0, limit: Math.min(options.maxArrayEntries ?? MAX_IMPORTED_ARRAY_ENTRIES, MAX_IMPORTED_ARRAY_ENTRIES) },
     regenerated,
     asset: (path) => {
       const found = uploaded.get(path)

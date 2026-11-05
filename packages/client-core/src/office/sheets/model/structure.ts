@@ -1,15 +1,15 @@
 import * as Y from 'yjs'
 import { formatIdToken, mapIdTokens, type IdEnd, type IdToken } from './formula-ids.js'
 import type { Axis } from './axis.js'
-import type { AnchorPoint, CellData, ConditionalFormat, DataValidation, DefinedName, DrawingObject, RangeIds } from './schema.js'
+import type { AnchorPoint, ConditionalFormat, DataValidation, DefinedName, DrawingObject, RangeIds } from './schema.js'
 import { quoteSheetName } from '../address.js'
 import { splitCellKey, type SheetModel } from './workbook.js'
 
 /**
  * Inserting, deleting, and moving rows and columns. Because cells, formulas, and every anchored
  * object refer to rows and columns by id, inserting and moving only touch the axis. Deleting also
- * removes what lived in the deleted rows and moves the edges of ranges and formulas that ended in
- * them to their neighbors, the way Excel shrinks `SUM(A1:A10)` when row 10 goes.
+ * removes what lived in the deleted rows and moves anchored objects to surviving neighbors. Cell
+ * formulas resolve deleted references through axis tombstones without overwriting concurrent edits.
  */
 
 export type AxisKind = 'row' | 'col'
@@ -69,7 +69,6 @@ export function deleteAxis(sheet: SheetModel, kind: AxisKind, position: number, 
 
     const edges = new EdgeMover(axis, deleted, position)
     adjustRanges(sheet, kind, edges)
-    for (const other of workbook.sheets()) adjustFormulas(other, sheet, kind, edges)
     for (const [id, name] of [...workbook.names.entries()]) {
       // Names have no sheet of their own; unqualified references in them can't name rows.
       const formula = rewriteFormula(name.formula, undefined, sheet, kind, edges)
@@ -188,14 +187,6 @@ function adjustRanges(sheet: SheetModel, kind: AxisKind, edges: EdgeMover): void
     const from = moveAnchor(drawing.from, kind, edges)
     const to = moveAnchor(drawing.to, kind, edges)
     if (from !== drawing.from || to !== drawing.to) sheet.drawings.set(id, { ...drawing, ...(from ? { from } : {}), ...(to ? { to } : {}) })
-  }
-}
-
-function adjustFormulas(owner: SheetModel, changed: SheetModel, kind: AxisKind, edges: EdgeMover): void {
-  for (const [key, data] of [...owner.cells.entries()]) {
-    if (!data.f) continue
-    const formula = rewriteFormula(data.f, owner, changed, kind, edges)
-    if (formula !== data.f) owner.cells.set(key, { ...data, f: formula } satisfies CellData)
   }
 }
 
