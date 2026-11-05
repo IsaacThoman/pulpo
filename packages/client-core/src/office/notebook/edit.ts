@@ -270,36 +270,36 @@ function offsetAssetMarkers(node: JsonNode, offset: number): JsonNode {
   return node
 }
 
+/** How a cell's attachments hold placeholder-like text: as slots, literally, or not at all. */
+function attachmentMode(cell: Y.Map<unknown>): 'slots' | 'literal' | null {
+  const blob = cellType(cell) === 'code' ? null : cellAttachments(cell)
+  if (!blob) return null
+  if (blob.assets.length) return 'slots'
+  return containsMarker(parseJson(blob.json)) ? 'literal' : null
+}
+
 /**
  * The attachments of merged cells as one blob: names from the first cell that has them win, and
- * later cells' placeholders are renumbered after the earlier cells' slots. A blob without slots
- * may hold placeholder-like text literally (a file that did, kept inline as written); it never
- * shares a result with blobs that have slots, where that text would read as a placeholder, so
- * whichever kind comes first decides which cells' attachments are merged.
+ * later cells' placeholders are renumbered after the earlier cells' slots. (Cells whose blobs hold
+ * placeholder-like text literally are never merged with cells that have slots; see `mergeCells`.)
  */
 function mergedAttachments(cells: Y.Map<unknown>[]): NotebookBlob | null {
   const merged: Extract<JsonNode, { kind: 'object' }> = { kind: 'object', entries: [] }
   const assets: NotebookBlob['assets'] = []
   const names = new Set<string>()
   let present = false
-  let mode: 'slots' | 'literal' | null = null
   for (const cell of cells) {
     const blob = cellType(cell) === 'code' ? null : cellAttachments(cell)
     if (!blob) continue
     present = true
     const node = parseJson(blob.json)
     if (node.kind !== 'object') continue
-    const kind = blob.assets.length ? 'slots' : containsMarker(node) ? 'literal' : null
-    if (kind) {
-      mode ??= kind
-      if (kind !== mode) continue
-    }
     const offset = assets.length
     for (const slot of blob.assets) assets.push(slot)
     for (const entry of node.entries) {
       if (names.has(entry.key)) continue
       names.add(entry.key)
-      merged.entries.push({ ...entry, value: kind === 'slots' ? offsetAssetMarkers(entry.value, offset) : entry.value })
+      merged.entries.push({ ...entry, value: blob.assets.length ? offsetAssetMarkers(entry.value, offset) : entry.value })
     }
   }
   return present ? { json: compactJson(merged), assets } : null
@@ -311,6 +311,10 @@ export function mergeCells(doc: Y.Doc, keys: readonly string[], origin?: unknown
   const cells = orderedCells(doc).filter((entry) => wanted.has(entry.key))
   if (cells.length < 2) return cells[0]?.key ?? null
   const [first, ...rest] = cells
+  // Literal placeholder-like text would read as a placeholder beside real slots; such rare cells
+  // stay apart rather than lose an attachment.
+  const modes = new Set(cells.map((entry) => attachmentMode(entry.cell)))
+  if (modes.has('slots') && modes.has('literal')) return null
   doc.transact(() => {
     const source = first!.cell.get('source')
     const addition = rest.map((entry) => cellSourceText(entry.cell)).join('\n\n')

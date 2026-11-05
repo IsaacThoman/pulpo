@@ -255,4 +255,12 @@ describe('third review regressions', () => {
     const file = (value: unknown) => new TextEncoder().encode(JSON.stringify({ cells: [{ cell_type: 'markdown', id: 'm', metadata: {}, source: 'x', attachments: { 'd.json': { 'application/json': value } } }], metadata: {}, nbformat: 4, nbformat_minor: 5 }))
     expect(diffNotebookFiles(file([1]), file([2])).counts.changed).toBe(1)
   })
+  it('leaves cells apart rather than mix literal placeholder text with real attachment slots', async () => {
+    const { doc } = await notebookDoc([{ type: 'markdown', source: 'a' }, { type: 'markdown', source: 'b' }])
+    const [first, second] = orderedCells(doc)
+    first!.cell.set('attachments', { json: '{"note.txt":{"text/plain":"\\u0000pulpo-asset:0"}}', assets: [] })
+    second!.cell.set('attachments', { json: '{"p.png":{"image/png":"\\u0000pulpo-asset:0"}}', assets: [{ hash: 'a'.repeat(64), kind: 'base64', mimeType: 'image/png', trail: '', wrap: 0 }] })
+    expect(mergeCells(doc, [first!.key, second!.key])).toBeNull()
+    expect(orderedCells(doc)).toHaveLength(2)
+  })
 })

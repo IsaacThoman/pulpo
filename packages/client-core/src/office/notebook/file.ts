@@ -508,25 +508,31 @@ export async function makeBlob(node: JsonNode, assets: LiveAssetStore, inlineStr
 
 /**
  * What restoring blobs has cost so far. One export shares one budget, so a value repeated across
- * many cells (a hostile replica can point every cell at one large asset) cannot grow the file past
- * what the format edits; assets are read once each.
+ * many cells (a hostile replica can point every cell at one large asset) cannot grow an export
+ * without bound; assets are read once each.
  */
+/** How much one export may restore before it is refused as amplified (see `RestoreBudget`). */
+export const MAX_RESTORED_BYTES = NOTEBOOK_MAX_FILE_BYTES * 4
+
 export interface RestoreBudget {
   total: number
   fetched: Map<string, Promise<Uint8Array>>
+  /** Parts already decoded, shared by every blob of the export (they are never changed). */
+  parts: Map<string, { node: JsonNode; size: number }>
 }
 
 export function restoreBudget(): RestoreBudget {
-  return { total: 0, fetched: new Map() }
+  return { total: 0, fetched: new Map(), parts: new Map() }
 }
 
 /** Outputs or attachments as JSON nodes, their assets read back. */
 export async function blobNode(blob: NotebookBlob, assets: LiveAssetStore, style: JsonStyle, budget: RestoreBudget = restoreBudget()): Promise<JsonNode> {
-  // Counted as written out: the blob's own JSON and each substituted part (not the reads, which
-  // the substitutions already account for).
+  // A memory guard, not the format's size limit: each blob's JSON and each substituted part count
+  // (roughly what is written out; placeholders inside parts count twice), and only a document many
+  // times larger than any notebook the format imports is refused.
   const count = (bytes: number) => {
     budget.total += bytes
-    if (budget.total > NOTEBOOK_MAX_FILE_BYTES) throw new LiveFormatError('too_large', 'This notebook is too large to write out')
+    if (budget.total > MAX_RESTORED_BYTES) throw new LiveFormatError('too_large', 'This notebook is too large to write out')
   }
   count(blob.json.length)
   const root = parseJson(blob.json)
@@ -541,10 +547,11 @@ export async function blobNode(blob: NotebookBlob, assets: LiveAssetStore, style
     }
     fetched.set(slot.hash, await pending)
   }
-  const values = new Map<string, { node: JsonNode; size: number }>()
+  const values = budget.parts
   const part = (index: number): { node: JsonNode; size: number } | undefined => {
     const slot = blob.assets[index]
     if (!slot) return undefined
+    // Base64 parts are spelled by the export's style; one export has one style.
     const key = slot.kind === 'json' ? slot.hash : JSON.stringify(slot)
     let value = values.get(key)
     if (!value) {

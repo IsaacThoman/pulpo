@@ -21,6 +21,8 @@ export function useComposerSync(userId: string | undefined, draftId: string, sta
   const sync = enabled && !state.temporary && userId ? webComposerSync(userId) : null
   useEffect(() => {
     if (!sync || !hydrated) return
+    // A new open (another draft, or sync turned back on) is not ready until it resolves.
+    setOpenedIdentity(null)
     let disposed = false
     let close: (() => void) | undefined
     baseline.current = latest.current.state

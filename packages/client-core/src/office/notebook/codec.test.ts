@@ -5,6 +5,7 @@ import * as Y from 'yjs'
 import { MemoryLiveAssetStore } from '../assets.js'
 import { LiveFormatError } from '../live-format.js'
 import { notebookCodec } from './codec.js'
+import { MAX_RESTORED_BYTES } from './file.js'
 import { clearOutputs, deleteCells, insertCells, moveCells, setCellType, shiftCells } from './edit.js'
 import { ASSET_MARKER, NOTEBOOK_MAX_FILE_BYTES, cellOutputs, cellsMap, cellSourceText, cellType, notebookMap, orderedCells } from './layout.js'
 
@@ -586,7 +587,7 @@ describe('bounded notebook blob restoration', () => {
     const { doc, assets, context } = await imported(jupyter(notebook([code('a', 'run()')])))
     const payload = JSON.stringify('é'.repeat(16_384))
     const ref = await assets.put(utf8(payload), 'application/json')
-    const count = Math.ceil(NOTEBOOK_MAX_FILE_BYTES / utf8(payload).byteLength)
+    const count = Math.ceil(MAX_RESTORED_BYTES / utf8(payload).byteLength) + 1
     orderedCells(doc)[0]!.cell.set('outputs', {
       json: JSON.stringify(Array.from({ length: count }, (_, index) => ({ output_type: 'stream', name: 'stdout', text: `${ASSET_MARKER}${index}` }))),
       assets: Array.from({ length: count }, () => ({ hash: ref.hash, kind: 'json' })),
@@ -627,11 +628,11 @@ describe('bounded notebook blob restoration', () => {
 })
 
 describe('export budget', () => {
-  it('stops one asset repeated across many cells from growing the file past the limit', async () => {
+  it('stops one asset repeated across many cells from growing an export without bound', async () => {
     const { doc, assets, context } = await imported(jupyter(notebook([code('a', 'x')])))
     const ref = await assets.put(utf8(JSON.stringify('y'.repeat(1_000_000))), 'application/json')
     const blob = { json: '["\\u0000pulpo-asset:0"]', assets: [{ hash: ref.hash, kind: 'json' }] }
-    const keys = insertCells(doc, { before: null }, Array.from({ length: 30 }, () => ({ type: 'code' as const, source: 'x' })))
+    const keys = insertCells(doc, { before: null }, Array.from({ length: 110 }, () => ({ type: 'code' as const, source: 'x' })))
     for (const key of keys) cellsMap(doc).get(key)!.set('outputs', blob)
     await expect(notebookCodec.exportFile(doc, context)).rejects.toMatchObject({ code: 'too_large' })
   })
