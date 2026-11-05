@@ -73,6 +73,56 @@ try {
     await page.locator('.docx-story', { hasText: /page i of \d/ }).first().waitFor()
   })
 
+  await step('renders normalized header/footer targets and section page fields in screen and print layouts', async () => {
+    await open('?file=sections-headers.docx')
+    const keys = await page.evaluate(() => {
+      const editor = window.harness.editors[0]
+      const doc = editor.options.doc
+      const schema = editor.view.state.schema
+      const refs = []
+      const keys = []
+      const simple = (code) => schema.text('999', [schema.mark('fldSimple', { v: JSON.stringify(['w:fldSimple', { 'w:instr': code }, '\u0000']) })])
+      const field = (type) => schema.node('fieldChar', { charType: type, v: JSON.stringify(['w:fldChar', { 'w:fldCharType': type }]) })
+      const content = [simple('PAGE'), schema.text('/'), simple('NUMPAGES'), schema.text('/'),
+        field('begin'), schema.node('fieldCode', { v: JSON.stringify(['w:instrText', {}, ' SECTIONPAGES ']) }), field('separate'), schema.text('999'), field('end'),
+        schema.text('/'), simple('SECTIONPAGES \\* ROMAN')]
+      for (const kind of ['header', 'footer']) {
+        const [key, json] = [...doc.getMap('stories')].find(([, json]) => JSON.parse(json).kind === kind)
+        const [id, relJson] = [...doc.getMap('rels')].find(([, json]) => JSON.parse(json).type.endsWith(`/${kind}`))
+        doc.getMap('rels').set(id, JSON.stringify({ ...JSON.parse(relJson), target: `../${JSON.parse(json).part}` }))
+        for (const type of ['default', 'even']) refs.push([`w:${kind}Reference`, { 'w:type': type, 'r:id': id }])
+        keys.push(key)
+        editor.openStoryEditor(key)
+        const view = editor.storyEditor.view
+        view.dispatch(view.state.tr.replaceWith(0, view.state.doc.content.size, schema.node('paragraph', null, content)))
+        editor.closeStoryEditor()
+      }
+      const first = JSON.stringify(['w:sectPr', {}, ...refs, ['w:pgNumType', { 'w:start': '1', 'w:fmt': 'lowerRoman' }]])
+      doc.getMap('docx').set('sectPr', JSON.stringify(['w:sectPr', {}, ['w:pgNumType', { 'w:start': '5' }]]))
+      const p = (text, attrs) => schema.node('paragraph', attrs, schema.text(text))
+      const view = editor.view
+      view.dispatch(view.state.tr.replaceWith(0, view.state.doc.content.size, [p('First page'), p('Second page', { pageBreakBefore: JSON.stringify(['w:pageBreakBefore', {}]), sectPr: first }), p('New section')]))
+      editor.relayout()
+      return keys
+    })
+    assert.equal(await page.evaluate(() => window.harness.editors[0].pages), 3)
+    const expected = ['i/3/2/II', 'ii/3/2/II', '5/3/1/I']
+    const texts = (key) => page.locator(`[data-story="${key}"]`).allInnerTexts()
+    for (const key of keys) assert.deepEqual((await texts(key)).map((text) => text.trim()), expected)
+    await page.emulateMedia({ media: 'print' })
+    for (const key of keys) assert.deepEqual((await texts(key)).map((text) => text.trim()), expected)
+    await page.emulateMedia({ media: 'screen' })
+    for (const key of keys) {
+      await page.locator(`[data-story="${key}"]`).last().dblclick()
+      await page.keyboard.type('Edited ')
+      assert.equal(await page.evaluate(() => window.harness.editors[0].editingStory), key)
+      await page.keyboard.press('Escape')
+    }
+    assert.match(await exported('header'), /Edited /)
+    assert.match(await exported('footer'), /Edited /)
+    await open('?file=sections-headers.docx')
+  })
+
   await step('edits a populated header in place and exports it', async () => {
     await page.locator('.docx-band .docx-story', { hasText: 'First-page header' }).first().dblclick()
     const story = page.locator('.docx-story-editor')
