@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { Schema } from '@tiptap/pm/model'
 import { EditorState, TextSelection, type Transaction } from '@tiptap/pm/state'
 import { EditorView } from '@tiptap/pm/view'
 import { ySyncPlugin, ySyncPluginKey } from '@tiptap/y-tiptap'
@@ -9,7 +10,7 @@ import * as Y from 'yjs'
 import { docxCodec } from './codec.js'
 import { packJml } from './jsonml.js'
 import { MemoryAssetStore } from './memory-assets.js'
-import { BODY_FRAGMENT, readDocxModel } from './model.js'
+import { BODY_FRAGMENT, readDocxModel, writeFragment } from './model.js'
 import { docxSchema } from './schema.js'
 
 /**
@@ -132,6 +133,45 @@ async function run(fixture: string | undefined, seed: number, steps: number) {
 }
 
 describe('concurrent editing', () => {
+  it.each(['docx', 'minimal'])('reproduces the shared-binding split limitation with a %s schema', async (kind) => {
+    const splitSchema = kind === 'docx' ? schema : new Schema({ nodes: { doc: { content: 'paragraph+' }, paragraph: { content: 'text*', toDOM: () => ['p', 0] }, text: {} } })
+    for (const [left, right, expected] of [[4, 4, ['abc', 'def', 'def']], [3, 5, ['ab', 'cdef', 'ef']]] as const) {
+      const origin = new Y.Doc()
+      origin.clientID = 3
+      const original = splitSchema.node('doc', null, [splitSchema.node('paragraph', null, splitSchema.text('abcdef'))])
+      writeFragment(origin, origin.getXmlFragment(BODY_FRAGMENT), original)
+      const clients = [left, right].map((at, index) => {
+        const doc = new Y.Doc()
+        doc.clientID = index + 1
+        Y.applyUpdate(doc, Y.encodeStateAsUpdate(origin))
+        const view = new EditorView(document.createElement('div'), {
+          state: EditorState.create({ schema: splitSchema, plugins: [ySyncPlugin(doc.getXmlFragment(BODY_FRAGMENT))] }),
+        })
+        return { doc, view, at }
+      })
+      try {
+        for (const { doc } of clients) expect(readDocxModel(doc).body.textContent).toBe('abcdef')
+        const before = clients.map(({ doc }) => Y.encodeStateVector(doc))
+        for (const { view, at } of clients) {
+          view.dispatch(view.state.tr.split(at))
+          expect(view.state.doc.childCount).toBe(2)
+          expect(view.state.doc.textContent).toBe('abcdef')
+        }
+        const updates = clients.map(({ doc }, i) => Y.encodeStateAsUpdate(doc, before[i]))
+        clients.forEach(({ doc }, i) => Y.applyUpdate(doc, updates[1 - i]!, 'remote'))
+        const merged = clients.map(({ doc }) => readDocxModel(doc).body)
+        expect(merged[0]!.toJSON()).toEqual(merged[1]!.toJSON())
+        // An ideal split would preserve each character once. Keep the exact observed result
+        // here to make this known shared-binding limitation reproducible without a flaky race.
+        expect(merged[0]!.content.content.map((node) => node.textContent)).toEqual(expected)
+        for (const { view } of clients) expect(view.state.doc.content.content.map((node) => node.textContent)).toEqual(expected)
+      } finally {
+        for (const { view, doc } of clients) { view.destroy(); doc.destroy() }
+        origin.destroy()
+      }
+    }
+  })
+
   it('converges from a blank document', { timeout: 60_000 }, () => run(undefined, 1, 300))
   it('converges on lists and formatting', { timeout: 60_000 }, () => run('lists.docx', 2, 300))
   it('converges on tables, sections, and tracked changes', { timeout: 60_000 }, async () => {
