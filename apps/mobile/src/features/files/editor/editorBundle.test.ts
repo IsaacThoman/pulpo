@@ -4,16 +4,19 @@ import { createHash } from 'node:crypto'
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { SHEETS_SCHEMA_VERSION } from '@pulpo/client-core/office/sheets'
 import { TEXT_SCHEMA_VERSION } from '@pulpo/client-core/office/text'
 import { buildEditorPage } from '../../../../scripts/build-doc-editor.mjs'
 import { editorInputHash } from '../../../../scripts/doc-editor-inputs.mjs'
 import { EDITOR_BUNDLE } from './editorBundle.generated'
 import { EDITOR_PROTOCOL_VERSION } from './protocol'
+import { SHEET_EDITOR_BUNDLE } from './sheetEditorBundle.generated'
 import { TEXT_EDITOR_BUNDLE } from './textEditorBundle.generated'
 
 const BUNDLES = [
   { format: 'markdown', bundle: EDITOR_BUNDLE, schemaVersion: DOC_SCHEMA_VERSION },
   { format: 'text', bundle: TEXT_EDITOR_BUNDLE, schemaVersion: TEXT_SCHEMA_VERSION },
+  { format: 'sheet', bundle: SHEET_EDITOR_BUNDLE, schemaVersion: SHEETS_SCHEMA_VERSION },
 ] as const
 
 describe.each(BUNDLES)('the bundled $format editor', ({ format, bundle, schemaVersion }) => {
@@ -43,7 +46,7 @@ describe.each(BUNDLES)('the bundled $format editor', ({ format, bundle, schemaVe
 })
 
 describe('the app bundle', () => {
-  it('leaves TipTap, ProseMirror, and CodeMirror to the editor pages', () => {
+  it('leaves TipTap, ProseMirror, CodeMirror, and the spreadsheet grid to the editor pages', () => {
     // The app's JavaScript only needs Yjs; the editor (and the schema behind it) runs in the web view.
     const sources = (directory: string): string[] => readdirSync(directory).flatMap((name) => {
       const path = join(directory, name)
@@ -51,7 +54,7 @@ describe('the app bundle', () => {
       return /\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name) ? [path] : []
     })
     const offenders = sources(join(__dirname, '../../../../src')).filter((path) => (
-      /^import (?!type )[^;]*from '(@pulpo\/client-core\/(doc-editor|doc-schema|office\/text\/view|office\/codecs|office\/markdown)|@tiptap\/[^']+|prosemirror-[^']+|@codemirror\/[^']+|y-codemirror\.next)'/m.test(readFileSync(path, 'utf8'))
+      /^import (?!type )[^;]*from '(@pulpo\/client-core\/(doc-editor|doc-schema|office\/text\/view|office\/sheets(\/view)?|office\/codecs|office\/markdown)|@tiptap\/[^']+|prosemirror-[^']+|@codemirror\/[^']+|y-codemirror\.next)'/m.test(readFileSync(path, 'utf8'))
     ))
     expect(offenders).toEqual([])
   })

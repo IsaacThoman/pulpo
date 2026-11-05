@@ -163,7 +163,14 @@ public final class PulpoDocEditorView: ExpoView, WKNavigationDelegate, WKUIDeleg
     toolbarModel.active = Set(state.active)
     toolbarModel.disabled = Set(state.disabled)
     toolbarModel.tint = UIColor(hexString: state.tint).map { Color(uiColor: $0) } ?? .accentColor
-    let items = state.items.map { DocEditorToolbarItem(command: $0.command, label: $0.label, systemImage: $0.systemImage) }
+    let items = state.items.map { item in
+      DocEditorToolbarItem(
+        command: item.command,
+        label: item.label,
+        systemImage: item.systemImage,
+        options: item.options.map { DocEditorToolbarOption(command: $0.command, label: $0.label, systemImage: $0.systemImage) }
+      )
+    }
     if items != toolbarModel.items { toolbarModel.items = items }
     let visible = state.visible
     if visible != accessoryInstalled {

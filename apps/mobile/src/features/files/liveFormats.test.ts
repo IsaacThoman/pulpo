@@ -17,11 +17,16 @@ const node = (name: string, extra: Partial<FileNode> = {}) => ({
 }) as FileNode
 
 describe('live formats on mobile', () => {
-  it('ships an editor for Markdown and text, and announces both schemas', () => {
+  it('ships an editor for Markdown, text, and spreadsheets, and announces their schemas', () => {
     expect(editorBundleFor(null)?.format).toBe('markdown')
     expect(editorBundleFor('text')?.format).toBe('text')
-    expect(editorBundleFor('sheet')).toBeNull()
-    expect(MOBILE_SCHEMA_VERSIONS).toEqual({ markdown: editorBundleFor('markdown')!.schemaVersion, text: editorBundleFor('text')!.schemaVersion })
+    expect(editorBundleFor('sheet')?.format).toBe('sheet')
+    expect(editorBundleFor('notebook')).toBeNull()
+    expect(MOBILE_SCHEMA_VERSIONS).toEqual({
+      markdown: editorBundleFor('markdown')!.schemaVersion,
+      text: editorBundleFor('text')!.schemaVersion,
+      sheet: editorBundleFor('sheet')!.schemaVersion,
+    })
   })
 
   it('edits a format only where the server speaks the same schema', () => {
@@ -33,10 +38,15 @@ describe('live formats on mobile', () => {
     expect(formatSupported(config({ enabled: true, docSchemaVersion: markdown }), 'markdown')).toBe(true)
     expect(newLiveFiles(config({ enabled: true, docSchemaVersion: markdown }))).toEqual([])
     expect(newLiveFiles(config({ enabled: true, docSchemaVersion: markdown, liveFormats: { markdown, text: 1 } })).map((entry) => entry.name)).toEqual(['Untitled.txt'])
+    const sheet = editorBundleFor('sheet')!.schemaVersion
+    expect(newLiveFiles(config({ enabled: true, docSchemaVersion: markdown, liveFormats: { markdown, text: 1, sheet } })).map((entry) => entry.name)).toEqual(['Untitled.txt', 'Untitled.xlsx'])
+    expect(formatSupported(config({ enabled: true, docSchemaVersion: markdown, liveFormats: { markdown, text: 1, sheet: sheet + 1 } }), 'sheet')).toBe(false)
   })
 
   it('offers Edit for uploaded text and code files, not Markdown, binaries, or oversized files', () => {
     expect(editableUpload(node('main.py'))).toBe(true)
+    expect(editableUpload(node('budget.xlsx'))).toBe(true)
+    expect(editableUpload(node('people.csv'))).toBe(true)
     expect(editableUpload(node('notes.md'))).toBe(false)
     expect(editableUpload(node('photo.png'))).toBe(false)
     expect(editableUpload(node('main.py', { sizeBytes: 50_000_000 }))).toBe(false)

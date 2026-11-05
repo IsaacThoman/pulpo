@@ -3,14 +3,15 @@ import * as Crypto from 'expo-crypto'
 import { requireNativeViewManager } from 'expo-modules-core'
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState, useSyncExternalStore, type Ref } from 'react'
 import { Alert, Platform, type StyleProp, type ViewStyle } from 'react-native'
-import { promptText } from '../../../platform/materialActions'
+import { promptText, showActions } from '../../../platform/materialActions'
 import PulpoDocEditor from '../../../../modules/pulpo-doc-editor'
 import { useAppTheme } from '../../../theme'
 import type { DocHandle } from '../doc/sessions'
 import { EditorBridge, type EditorBridgeState } from './bridge'
 import { EDITOR_BUNDLES, type MobileEditorFormat } from './bundles'
 import { editorTheme, normalizeHref } from './presentation'
-import type { ReviewAction, TextCommand } from './protocol'
+import type { ReviewAction, SheetCommand, TextCommand } from './protocol'
+import { SHEET_TOOLBAR, sheetToolbarMenu, sheetToolbarState } from './sheetToolbar'
 import { TEXT_TOOLBAR, textToolbarState, type NativeToolbarItem } from './textToolbar'
 
 type NativeToolbar = { visible: boolean; active: string[]; disabled: string[]; tint: string; items: NativeToolbarItem[] }
@@ -61,13 +62,20 @@ PulpoDocEditor?.addListener('onFinalState', ({ instanceId, state }) => {
 })
 
 const noSubscription = () => () => {}
-const INITIAL: EditorBridgeState = { loaded: false, formatting: null, focused: false, suggestions: { count: 0, index: null, active: null }, text: null, incompatible: false }
+const INITIAL: EditorBridgeState = { loaded: false, formatting: null, focused: false, suggestions: { count: 0, index: null, active: null }, text: null, sheet: null, incompatible: false }
+
+/** The native bar's buttons for formats with their own (empty: the document editor's bar). */
+function toolbarItemsFor(format: MobileEditorFormat): NativeToolbarItem[] {
+  if (format === 'text') return [...TEXT_TOOLBAR]
+  if (format === 'sheet') return [...SHEET_TOOLBAR]
+  return []
+}
 const initialState = () => INITIAL
 
 export interface DocEditorHandle {
   format(command: FormatCommand, href?: string): void
-  /** A text editor's command (text and code files). */
-  command(command: TextCommand): void
+  /** A text or spreadsheet editor's command. */
+  command(command: TextCommand | SheetCommand): void
   /** A formatting bar's command, asking for a link's address where needed. */
   toolbar(command: FormatCommand): void
   review(action: ReviewAction): void
@@ -179,6 +187,15 @@ export const DocEditorView = forwardRef<DocEditorHandle, Props>(function DocEdit
       bridge.command(command as TextCommand)
       return
     }
+    if (format === 'sheet') {
+      // A menu's own command arrives where the bar can't show menus itself: offer its choices.
+      const menu = sheetToolbarMenu(command)
+      if (menu) {
+        const active = new Set(sheetToolbarState(state).active)
+        showActions(menu.label, menu.options.map((option) => ({ label: option.label, icon: option.systemImage, selected: active.has(option.command), onPress: () => bridge.command(option.command) })))
+      } else bridge.command(command as SheetCommand)
+      return
+    }
     if (command !== 'link') {
       bridge.format(command as FormatCommand)
       return
@@ -217,7 +234,7 @@ export const DocEditorView = forwardRef<DocEditorHandle, Props>(function DocEdit
   }), [bridge])
 
   if (!NativeDocEditor || !instance || !bridge) return null
-  const formatting = format === 'text' ? textToolbarState(state) : state.formatting
+  const formatting = format === 'text' ? textToolbarState(state) : format === 'sheet' ? sheetToolbarState(state) : state.formatting
   return (
     <NativeDocEditor
       ref={native}
@@ -230,7 +247,7 @@ export const DocEditorView = forwardRef<DocEditorHandle, Props>(function DocEdit
         active: formatting?.active ?? [],
         disabled: formatting?.disabled ?? [],
         tint: theme.blue,
-        items: format === 'text' ? [...TEXT_TOOLBAR] : [],
+        items: toolbarItemsFor(format),
       }}
       onMessage={({ nativeEvent }) => bridge.receive(nativeEvent.data)}
       onTerminate={() => bridge.reset()}
