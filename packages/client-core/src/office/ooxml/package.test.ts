@@ -1,5 +1,5 @@
-import { strToU8, zipSync } from 'fflate'
-import { describe, expect, it } from 'vitest'
+import { strToU8, unzipSync, zipSync } from 'fflate'
+import { describe, expect, it, vi } from 'vitest'
 import { LiveFormatError } from '../live-format.js'
 import { OoxmlPackage, relationshipsPathFor, relativeTarget, resolveTarget } from './package.js'
 
@@ -17,7 +17,33 @@ function samplePackage(extra: Record<string, Uint8Array> = {}): Uint8Array {
   })
 }
 
+function entryHeaders(bytes: Uint8Array, path: string): { local: number; central: number } {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+  let central = view.getUint32(bytes.length - 6, true)
+  while (view.getUint32(central, true) === 0x02014b50) {
+    const length = view.getUint16(central + 28, true)
+    if (new TextDecoder().decode(bytes.subarray(central + 46, central + 46 + length)) === path) {
+      return { local: view.getUint32(central + 42, true), central }
+    }
+    central += 46 + length + view.getUint16(central + 30, true) + view.getUint16(central + 32, true)
+  }
+  throw new Error(`No zip entry for ${path}`)
+}
+
 describe('OoxmlPackage', () => {
+  it('writes the same bytes for the same content, whenever it writes', () => {
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(new Date('2026-01-01T10:00:00Z'))
+      const first = OoxmlPackage.read(samplePackage()).write()
+      vi.setSystemTime(new Date('2026-06-30T23:59:58Z'))
+      const second = OoxmlPackage.read(samplePackage()).write()
+      expect(Buffer.from(second).equals(Buffer.from(first))).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('reads parts, content types, and relationships', () => {
     const pkg = OoxmlPackage.read(samplePackage())
     expect(pkg.mainPart()).toBe('word/document.xml')
@@ -99,5 +125,106 @@ describe('OoxmlPackage', () => {
     expect(() => OoxmlPackage.read(understated)).toThrow(expect.objectContaining({ code: 'corrupt' }))
     const pkg = OoxmlPackage.read(samplePackage({ 'word/bad.xml': strToU8('<a><b></a>') }))
     expect(() => pkg.xml('word/bad.xml')).toThrow(expect.objectContaining({ code: 'corrupt' }))
+  })
+
+  it('refuses zips whose directory and entries disagree on names', () => {
+    const bytes = samplePackage()
+    // Rename one local header so it no longer matches the central directory.
+    const local = bytes.findIndex((_, index) => bytes[index] === 0x50 && bytes[index + 1] === 0x4b && bytes[index + 2] === 3 && bytes[index + 3] === 4 && new TextDecoder().decode(bytes.subarray(index + 30, index + 30 + 17)) === 'word/document.xml')
+    const tampered = bytes.slice()
+    tampered[local + 30 + 5] = 'X'.charCodeAt(0)
+    expect(() => OoxmlPackage.read(tampered)).toThrow(expect.objectContaining({ code: 'corrupt' }))
+  })
+
+  it('refuses Unicode Path fields that rename an entry', () => {
+    const renamed = new Uint8Array([1, 0, 0, 0, 0, ...strToU8('word/other.xml')])
+    const bytes = zipSync({
+      '[Content_Types].xml': strToU8(CONTENT_TYPES),
+      '_rels/.rels': strToU8(ROOT_RELS),
+      'word/document.xml': [strToU8(DOCUMENT), { extra: { 0x7075: renamed } }],
+    })
+    expect(() => OoxmlPackage.read(bytes)).toThrow(expect.objectContaining({ code: 'corrupt' }))
+  })
+
+  it('refuses duplicate entries before unzip can overwrite them', () => {
+    const bytes = samplePackage({ 'word/duplicat.xml': strToU8('<other/>') })
+    const { local, central } = entryHeaders(bytes, 'word/duplicat.xml')
+    bytes.set(strToU8('word/document.xml'), local + 30)
+    bytes.set(strToU8('word/document.xml'), central + 46)
+    expect(() => OoxmlPackage.read(bytes)).toThrow(expect.objectContaining({ code: 'corrupt' }))
+  })
+
+  it.each(['word/Document.xml', 'word/./document.xml', 'word/nested/../document.xml', 'word\\document.xml'])(
+    'refuses colliding part names: %s', (name) => {
+      expect(() => OoxmlPackage.read(samplePackage({ [name]: strToU8('<other/>') })))
+        .toThrow(expect.objectContaining({ code: 'corrupt' }))
+    },
+  )
+
+  it('checks Unicode Path fields in local headers as well as the directory', () => {
+    const name = 'word/document.xml'
+    const unicodePath = new Uint8Array([1, 0, 0, 0, 0, ...strToU8(name)])
+    const bytes = zipSync({
+      '[Content_Types].xml': strToU8(CONTENT_TYPES),
+      [name]: [strToU8(DOCUMENT), { extra: { 0x7075: unicodePath } }],
+    })
+    expect(OoxmlPackage.read(bytes).text(name)).toBe(DOCUMENT)
+    const { local } = entryHeaders(bytes, name)
+    bytes[local + 30 + name.length + 9] = 'X'.charCodeAt(0)
+    expect(() => OoxmlPackage.read(bytes)).toThrow(expect.objectContaining({ code: 'corrupt' }))
+  })
+
+  it.each(['directory offset', 'entry count', 'local offset', 'extra length'])(
+    'refuses a damaged %s with a format error', (field) => {
+      const bytes = samplePackage()
+      const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+      const end = bytes.length - 22
+      const { central } = entryHeaders(bytes, 'word/document.xml')
+      if (field === 'directory offset') view.setUint32(end + 16, view.getUint32(end + 16, true) + 1, true)
+      if (field === 'entry count') view.setUint16(end + 10, 1, true)
+      if (field === 'local offset') view.setUint32(central + 42, bytes.length - 1, true)
+      if (field === 'extra length') view.setUint16(central + 30, 0xffff, true)
+      expect(() => OoxmlPackage.read(bytes)).toThrow(expect.objectContaining({ code: 'corrupt' }))
+    },
+  )
+})
+
+describe('OoxmlPackage.write', () => {
+  it('keeps content types first, XML compressed, media stored, and DOS timestamps fixed', () => {
+    const pkg = new OoxmlPackage(new Map([
+      ['word/media/image1.png', new Uint8Array([1, 2, 3])],
+      ['word/document.xml', strToU8(DOCUMENT)],
+      ['[Content_Types].xml', strToU8(CONTENT_TYPES)],
+    ]))
+    const bytes = pkg.write()
+    const entries: { name: string; compression: number }[] = []
+    unzipSync(bytes, { filter: (file) => { entries.push({ name: file.name, compression: file.compression }); return true } })
+    expect(entries).toEqual([
+      { name: '[Content_Types].xml', compression: 8 },
+      { name: 'word/media/image1.png', compression: 0 },
+      { name: 'word/document.xml', compression: 8 },
+    ])
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+    for (const { name } of entries) {
+      const { local, central } = entryHeaders(bytes, name)
+      // DOS date 33 is 1980-01-01; DOS time 0 is midnight in the writer's local time.
+      expect(view.getUint16(local + 10, true)).toBe(0)
+      expect(view.getUint16(local + 12, true)).toBe(33)
+      expect(view.getUint16(central + 12, true)).toBe(0)
+      expect(view.getUint16(central + 14, true)).toBe(33)
+    }
+  })
+
+  it('writes the same bytes for the same parts at any time, since versions compare checksums', () => {
+    vi.useFakeTimers()
+    try {
+      const write = () => new OoxmlPackage(new Map([['[Content_Types].xml', strToU8('<Types/>')], ['xl/workbook.xml', strToU8('<workbook/>')]])).write()
+      vi.setSystemTime(new Date(2026, 10, 5, 10, 0, 0))
+      const first = write()
+      vi.setSystemTime(new Date(2026, 10, 5, 10, 0, 7))
+      expect(Buffer.from(write()).equals(Buffer.from(first))).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
