@@ -101,6 +101,8 @@ interface Props {
   onResolved?: () => void
   /** Fetches the document's assets (a deck's images) for the page, which has no network. */
   fetchAsset?: (hash: string) => Promise<Uint8Array>
+  /** Overrides the web view's background (black while a deck's slide show runs). */
+  pageBackground?: string
 }
 
 export const DocEditorView = forwardRef<DocEditorHandle, Props>(function DocEditorView({
@@ -117,6 +119,7 @@ export const DocEditorView = forwardRef<DocEditorHandle, Props>(function DocEdit
   onLink,
   onResolved,
   fetchAsset,
+  pageBackground,
 }, ref) {
   const native = useRef<NativeRef>(null)
   const theme = useAppTheme()
@@ -233,7 +236,7 @@ export const DocEditorView = forwardRef<DocEditorHandle, Props>(function DocEdit
       style={style}
       instanceId={instance.id}
       html={bundle.html}
-      pageBackground={editorTheme(theme).background}
+      pageBackground={pageBackground ?? editorTheme(theme).background}
       toolbar={{
         // Decks have an always-on bar of their own (PresentationBar), not a keyboard accessory.
         visible: editable && state.loaded && format !== 'presentation',

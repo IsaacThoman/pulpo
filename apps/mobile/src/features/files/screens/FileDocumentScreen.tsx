@@ -392,6 +392,7 @@ export function FileDocumentScreen({ navigation, route }: Props) {
       sessionLabel={deviceSessionLabel()}
       sessionColor={sessionColor(handle.controller.doc.clientID)}
       bottomPadding={editorBottomPadding}
+      pageBackground={presenting ? '#000000' : undefined}
       style={styles.flex}
       onStateChange={setEditorState}
       onResolved={onResolved}
@@ -452,7 +453,7 @@ export function FileDocumentScreen({ navigation, route }: Props) {
 
   return (
     <View style={[styles.flex, { backgroundColor: presenting ? '#000' : theme.isDark ? theme.background : theme.elevated, paddingTop: Platform.OS === 'android' && !presenting ? insets.top : 0 }]}>
-      {presenting ? <StatusBar hidden /> : null}
+      {presenting ? <StatusBar hidden style="light" /> : null}
       {Platform.OS === 'android' && !presenting ? (
         <PageHeader
           title={shownTitle}

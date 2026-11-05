@@ -1,5 +1,6 @@
 /* The presentation editor on phones: the slide fills the width, the slide strip scrolls sideways below it. */
 html, body { margin: 0; height: 100%; background: var(--background); color: var(--foreground); -webkit-text-size-adjust: 100%; overscroll-behavior: none; }
+html.presenting, html.presenting body { background: #000; }
 #editor { display: flex; flex-direction: column; height: 100%; }
 #canvas { position: relative; flex: 1; min-height: 0; }
 #strip { flex: none; height: 108px; padding-bottom: var(--bottom-padding, 0px); border-top: 1px solid var(--border); background: var(--background); }

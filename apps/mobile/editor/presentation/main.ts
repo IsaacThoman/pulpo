@@ -218,10 +218,13 @@ function command(current: Open, name: string): void {
         onExit: () => {
           if (open !== current || current.presenter !== presenter) return
           current.presenter = undefined
+          document.documentElement.classList.remove('presenting')
           current.report()
         },
       })
       current.presenter = presenter
+      // Black under the safe areas too, where the app hides its chrome.
+      document.documentElement.classList.add('presenting')
       current.report()
       break
     }
