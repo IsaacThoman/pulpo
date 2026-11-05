@@ -1,3 +1,4 @@
+import { NOTEBOOK_MAX_FILE_BYTES } from './layout.js'
 import { LiveFormatError } from '../live-format.js'
 
 /**
@@ -291,11 +292,43 @@ function sortedEntries(entries: JsonEntry[]): JsonEntry[] {
   return [...entries].sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))
 }
 
+/** Check the complete size before allocating indentation or collecting output fragments. */
+export function assertJsonSize(node: JsonNode, style: JsonStyle, depth = 0, trailer = ''): void {
+  let size = trailer.length
+  let compact = 0
+  const stack = [{ node, level: depth }]
+  const lineSize = (level: number) => style.indent === null ? 0 : style.newline.length + style.indent.length * level
+  while (stack.length) {
+    const { node: current, level } = stack.pop()!
+    if (current.kind === 'object' || current.kind === 'array') {
+      if (level >= MAX_JSON_DEPTH) throw new LiveFormatError('too_large', 'The notebook JSON is nested too deeply to export')
+      const count = current.kind === 'object' ? current.entries.length : current.items.length
+      size += 2 + (count ? (count - 1) * style.comma.length + count * lineSize(level + 1) + lineSize(level) : 0)
+      compact += 2 + Math.max(0, count - 1)
+      if (current.kind === 'object') {
+        for (const entry of current.entries) {
+          size += entry.raw.length + style.colon.length
+          compact += entry.raw.length + 1
+          stack.push({ node: entry.value, level: level + 1 })
+        }
+      } else for (const item of current.items) stack.push({ node: item, level: level + 1 })
+    } else {
+      size += current.raw.length
+      compact += current.raw.length
+    }
+    if (size > NOTEBOOK_MAX_FILE_BYTES) throw new LiveFormatError('too_large', 'The notebook JSON is too large to export')
+  }
+  // A small compact file must not turn into megabytes of indentation. Ordinary Jupyter
+  // layouts fit comfortably in this allowance; unusually expansive files remain uploads.
+  if (size > Math.max(1_000_000, compact * 4)) throw new LiveFormatError('too_large', 'The notebook JSON expands too much to edit')
+}
+
 /**
  * Writes nodes as JSON text in `style`, starting at `depth` levels of indent (for a value placed
  * inside a larger document). Iterative, like the parser.
  */
 export function writeJson(node: JsonNode, style: JsonStyle, depth = 0): string {
+  assertJsonSize(node, style, depth)
   const parts: string[] = []
   const indented = style.indent !== null
   const breakAt = (level: number) => (indented ? style.newline + style.indent!.repeat(level) : '')
@@ -405,5 +438,6 @@ export function detectStyle(text: string, root: JsonNode, separators: JsonSepara
 
 /** The text of a whole document in `style`, trailer included. */
 export function writeDocument(node: JsonNode, style: JsonStyle): string {
+  assertJsonSize(node, style, 0, style.trailer)
   return writeJson(node, style) + style.trailer
 }

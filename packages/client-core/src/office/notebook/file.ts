@@ -1,6 +1,7 @@
 import type { LiveAssetStore } from '../live-format.js'
 import { LiveFormatError } from '../live-format.js'
 import {
+  assertJsonSize,
   compactJson,
   MAX_JSON_DEPTH,
   detectStyle,
@@ -319,6 +320,7 @@ export function readNotebookFile(bytes: Uint8Array): ParsedNotebook {
   } else if (nbformat !== 4) {
     throw new LiveFormatError('unsupported', `Notebook format ${nbformat} is not supported`)
   }
+  assertJsonSize(root, style, 0, style.trailer)
   const minorNode = entry(root, 'nbformat_minor')
   if (!isInteger(minorNode)) throw corrupt('The notebook has no nbformat_minor version')
   const cellsNode = entry(root, 'cells')

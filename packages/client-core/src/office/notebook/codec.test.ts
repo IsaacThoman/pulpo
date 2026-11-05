@@ -643,3 +643,27 @@ describe('export budget', () => {
     expect((await notebookCodec.exportFile(doc, context)).byteLength).toBe(big.byteLength)
   })
 })
+
+it('refuses indentation expansion before importing or applying a notebook', async () => {
+  const nested = '['.repeat(200) + Array(10_000).fill('0').join(',') + ']'.repeat(200)
+  const hostile = utf8(`{\n "cells":[],"metadata":{"deep":${nested}},"nbformat":4,"nbformat_minor":5}`)
+  const doc = new Y.Doc()
+  const context = { name: 'hostile.ipynb', assets: new MemoryLiveAssetStore() }
+  const before = Y.encodeStateAsUpdate(doc)
+  await expect(notebookCodec.importFile(doc, hostile, context)).rejects.toMatchObject({ code: 'too_large' })
+  expect(Y.encodeStateAsUpdate(doc)).toEqual(before)
+  await notebookCodec.createEmpty(doc, context)
+  const populated = Y.encodeStateAsUpdate(doc)
+  await expect(notebookCodec.applyFile(doc, hostile, context)).rejects.toMatchObject({ code: 'too_large' })
+  expect(Y.encodeStateAsUpdate(doc)).toEqual(populated)
+  doc.destroy()
+})
+
+it('bounds indentation when exporting metadata received over collaboration', async () => {
+  const { doc, context } = await imported(utf8('{"cells":[],"metadata":{},"nbformat":4,"nbformat_minor":5}'))
+  const nested = '['.repeat(200) + Array(10_000).fill('0').join(',') + ']'.repeat(200)
+  doc.getMap('metadata').set('deep', nested)
+  notebookMap(doc).set('style', { indent: ' ', newline: '\n', colon: ': ', comma: ',', ensureAscii: false, sortKeys: true, trailer: '\n', bom: false })
+  await expect(notebookCodec.exportFile(doc, context)).rejects.toMatchObject({ code: 'too_large' })
+  doc.destroy()
+})

@@ -567,9 +567,18 @@ export const notebookCodec: LiveFormatCodec = {
   async importFile(doc, bytes, context) {
     const parsed = readNotebookFile(bytes)
     const cells = uniqueIds(await prepareCells(parsed, context.assets))
-    doc.transact(() => fillNotebook(doc, parsed, cells), 'import')
-    const original = await keepOriginal(doc, bytes, context.assets)
-    if (original) doc.transact(() => setOriginal(doc, original), 'import')
+    // Validate the normalized export too, before changing the caller's document.
+    const scratch = new Y.Doc()
+    try {
+      fillNotebook(scratch, parsed, cells)
+      const original = await keepOriginal(scratch, bytes, context.assets)
+      doc.transact(() => {
+        fillNotebook(doc, parsed, cells)
+        setOriginal(doc, original)
+      }, 'import')
+    } finally {
+      scratch.destroy()
+    }
   },
 
   exportFile: exportNotebookFile,
@@ -581,10 +590,14 @@ export const notebookCodec: LiveFormatCodec = {
     const seed = globalThis.crypto.getRandomValues(new Uint32Array(1))[0]!
     const scratch = new Y.Doc()
     Y.applyUpdate(scratch, Y.encodeStateAsUpdate(doc))
-    applyNotebook(scratch, parsed, cells, seededRandom(seed))
-    setOriginal(scratch, undefined)
-    const original = await keepOriginal(scratch, bytes, context.assets)
-    scratch.destroy()
+    let original: FileFacts['original']
+    try {
+      applyNotebook(scratch, parsed, cells, seededRandom(seed))
+      setOriginal(scratch, undefined)
+      original = await keepOriginal(scratch, bytes, context.assets)
+    } finally {
+      scratch.destroy()
+    }
     const changed = transactChanges(doc, () => {
       applyNotebook(doc, parsed, cells, seededRandom(seed))
       setOriginal(doc, original)
