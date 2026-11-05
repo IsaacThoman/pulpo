@@ -2,6 +2,7 @@ import { and, eq, ne, sql } from 'drizzle-orm'
 import { listSuggestions, mergeMarkdown, ydocToNode } from '@pulpo/client-core/doc-schema'
 import { liveFormatOfName } from '@pulpo/client-core/office'
 import { FILE_TREE_MAX_DEPTH } from '@pulpo/contracts'
+import { assertWithinStorageAllowance } from '../../attachments/storage-quota.js'
 import { fileChanges, fileNodes } from '../../database/schema.js'
 import { AppError, notFound } from '../../lib/errors.js'
 import { newId } from '../../lib/ids.js'
@@ -159,9 +160,23 @@ async function liveExport(tx: DatabaseTransaction, node: FileNodeRow): Promise<{
 
 /** A new live document (other than Markdown) from the file the agent pushed. */
 export async function createLiveDocChange(reply: ReplyContext, parentId: string | null, name: string, bytes: Uint8Array, mode: ChangeMode) {
+  const writtenKeys: string[] = []
+  try {
+    return await createLiveDocInReply(reply, parentId, name, bytes, mode, writtenKeys)
+  } catch (error) {
+    // Asset objects are stored before their rows; nothing refers to them once the rows roll back.
+    await deleteObjects(writtenKeys)
+    throw error
+  }
+}
+
+function createLiveDocInReply(reply: ReplyContext, parentId: string | null, name: string, bytes: Uint8Array, mode: ChangeMode, writtenKeys: string[]) {
   return mutateReply(reply, async (tx) => {
     const plan = await newItemPlan(tx, reply.userId, parentId, mode)
-    const node = await createDocInTx(tx, reply.userId, { parentId, name, bytes, exactName: true, suggestionChangeId: plan.suggestionChangeId })
+    const node = await createDocInTx(tx, reply.userId, { parentId, name, bytes, exactName: true, suggestionChangeId: plan.suggestionChangeId, writtenKeys })
+    // The reservation covers the pushed bytes; the document's state and any original bytes its
+    // format keeps beside it (mixed line endings, legacy encodings) can need more.
+    await assertWithinStorageAllowance(tx, reply.userId)
     const { version } = await liveExport(tx, node)
     const status = await recordCreation(tx, reply, node, plan.rowId, mode, { live: { checksum: version } })
     return { node, status, version }
@@ -178,6 +193,9 @@ export async function updateLiveDocChange(reply: ReplyContext, nodeId: string, b
   const written = new WrittenObjects()
   let kept = false
   try {
+    // The reservation only covers the incoming bytes; the versions kept for undo and review (the
+    // current export, the proposal's fork) depend on the document, so both paths check the
+    // allowance again once they are stored.
     const result = await mutateReply(reply, async (tx, effects): Promise<ContentResult> => {
       await lockDocs(tx, [nodeId])
       const node = await liveNodeInTx(tx, reply.userId, nodeId)
@@ -203,6 +221,7 @@ export async function updateLiveDocChange(reply: ReplyContext, nodeId: string, b
           await releaseLiveSnapshot(tx, effects, parseLiveSnapshot(existing?.after))
         }
         await supersedeLiveProposals(tx, effects, reply, node.id)
+        await assertWithinStorageAllowance(tx, reply.userId)
         return { status: folded === 'suggestion' ? 'suggested' : 'updated', version: afterVersion }
       }
       assertRowMode(existing, 'suggest')
@@ -218,6 +237,7 @@ export async function updateLiveDocChange(reply: ReplyContext, nodeId: string, b
       // Released after the new row holds what it shares with them (the base version).
       await supersedeLiveProposals(tx, effects, reply, node.id)
       if (existing?.status === 'pending') await releaseLiveSnapshot(tx, effects, parseLiveSnapshot(existing.after))
+      await assertWithinStorageAllowance(tx, reply.userId)
       return { status: 'suggested', version: after.checksum }
     }, { reserveBytes: bytes.byteLength * 3 })
     kept = true

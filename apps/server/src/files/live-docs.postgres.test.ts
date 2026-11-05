@@ -142,6 +142,16 @@ describe.skipIf(!enabled)('live documents in Files', () => {
     expect(await row(dockerfile.id)).toMatchObject({ kind: 'doc', format: 'text' })
   })
 
+  it('keeps special names documents when Files makes them unique', async () => {
+    const first = await createDoc(userId, { parentId: null, name: 'Dockerfile' })
+    const second = await createDoc(userId, { parentId: null, name: 'Dockerfile' })
+    expect(second).toMatchObject({ kind: 'doc', name: 'Dockerfile (2)' })
+    const [copy] = await copyFileNodes(userId, [first.id], null)
+    expect(copy).toMatchObject({ kind: 'doc', format: 'text', name: 'Dockerfile (3)' })
+    await convertMisnamedDocs()
+    for (const id of [first.id, second.id, copy!.id]) expect(await row(id)).toMatchObject({ kind: 'doc', format: 'text' })
+  })
+
   it('copies documents with their format and assets, and charges the assets to storage', async () => {
     const node = await createDoc(userId, { parentId: null, name: 'page.html' })
     await clientEdit(node.id, (text) => text.insert(0, '<p>hi</p>\n'))
