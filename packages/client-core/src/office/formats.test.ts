@@ -1,3 +1,4 @@
+import { nextAvailableName } from '@pulpo/contracts'
 import { describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
 import { DOC_SCHEMA_VERSION } from '../doc-schema/version.js'
@@ -15,6 +16,15 @@ describe('live format catalog', () => {
     expect(liveFormatOfName('Dockerfile')?.id).toBe('text')
     expect(liveFormatOfName('.gitignore')?.id).toBe('text')
     expect(liveFormatOfName('notes.txt')?.id).toBe('text')
+  })
+
+  it('keeps special names in their format with the suffix that makes names unique', () => {
+    expect(nextAvailableName('Dockerfile', new Set(['dockerfile']))).toBe('Dockerfile (2)')
+    expect(nextAvailableName('.gitignore', new Set(['.gitignore']))).toBe('.gitignore (2)')
+    expect(liveFormatOfName('Dockerfile (2)')?.id).toBe('text')
+    expect(liveFormatOfName('.gitignore (12)')?.id).toBe('text')
+    expect(liveFormatOfName('Dockerfile (draft)')).toBeNull()
+    expect(liveFormatOfName('Notes (2)')).toBeNull()
   })
 
   it('leaves formats other workstreams own, and binary files, as ordinary files', () => {

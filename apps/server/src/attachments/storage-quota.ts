@@ -77,6 +77,20 @@ export async function assertStorageCapacity(
   }
 }
 
+/**
+ * Takes the account's storage lock (already held after a reservation) and fails unless what the
+ * transaction has stored so far still fits the allowance. For writes whose size is only known
+ * once they are done, such as versions kept beside a change.
+ */
+export async function assertWithinStorageAllowance(tx: DatabaseTransaction, userId: string): Promise<void> {
+  await lockAccountStorage(tx, userId)
+  const [user] = await tx.select({ storageLimitBytes: users.storageLimitBytes }).from(users).where(eq(users.id, userId)).limit(1)
+  if (!user) throw notFound('User')
+  if (await storageUsedBytes(tx, userId) > user.storageLimitBytes) {
+    throw new AppError(413, 'storage_quota_exceeded', 'This file would exceed your storage allowance', 'invalid_request_error')
+  }
+}
+
 /** Serializes storage reservations per account. Take it before any Files tree lock. */
 export async function lockAccountStorage(tx: DatabaseTransaction, userId: string): Promise<void> {
   await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`pulpo-storage:${userId}`}))`)
