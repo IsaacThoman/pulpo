@@ -1944,7 +1944,7 @@ export class DocxEditor {
       if (!doc) continue
       any = true
       const format = key.startsWith('endnote') ? (jmlAttr(jmlChild(jmlChild(this.context.finalSectPr, 'w:endnotePr'), 'w:numFmt'), 'w:val') ?? 'lowerRoman') : 'decimal'
-      const element = renderStory(doc, { urls: this.urls, labels: this.labels, noteNumber: formatNumber(number, format), context: this.context })
+      const element = renderStory(doc, { urls: this.urls, labels: this.labels, noteNumber: typeof number === 'number' ? formatNumber(number, format) : number, context: this.context })
       element.dataset.story = key
       element.addEventListener('dblclick', (event) => {
         event.preventDefault()

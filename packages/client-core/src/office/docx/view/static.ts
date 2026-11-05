@@ -121,7 +121,7 @@ export interface StaticOptions {
   fields?: FieldValues
   /** The number a note's own mark shows. */
   noteNumber?: number | string
-  noteNumbers?: Map<string, number>
+  noteNumbers?: Map<string, number | string>
   /** For tab stops, which `layoutStaticTabs` reads back from the paragraphs. */
   context?: DocxViewContext
 }

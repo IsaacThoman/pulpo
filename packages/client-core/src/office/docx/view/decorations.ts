@@ -4,7 +4,7 @@ import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import { borderCss, cssIdent, cssText, fontStack, isThemeFontVar, latinFont, runPropertiesCss, shadingColor, twipsToPt, type CssProps } from '../css.js'
 import { jmlAttr, jmlChild, jmlNumber, unpackJml, type JmlElement } from '../jsonml.js'
 import { ListCounter, effectiveNumPr, formatNumber } from '../numbering.js'
-import { hasCustomNoteMark, inlineMarks } from '../schema.js'
+import { inlineMarks } from '../schema.js'
 import { cellConditions, mergeElement, propertyMap, tableLook, type PropertyMap } from '../styles.js'
 import type { DocxViewContext } from './context.js'
 import { tableConditionChain } from './stylesheet.js'
@@ -21,8 +21,8 @@ function jml(value: unknown): JmlElement | undefined {
 
 export interface DecorationInput {
   context: DocxViewContext
-  /** Numbers of notes by `footnote:<id>`/`endnote:<id>`, counted over the body. */
-  noteNumbers: Map<string, number>
+  /** All notes by key; custom marks have an empty automatic-number label. */
+  noteNumbers: Map<string, number | string>
   /** The note this story is (for its `w:footnoteRef` mark). */
   noteNumber?: number | string
   activeComment?: string | null
@@ -42,22 +42,10 @@ function nodeDecoration(from: number, to: number, attrs: Record<string, string>,
   return Decoration.node(from, to, attrs)
 }
 
-/** Note numbers in reading order of the body. */
-export function countNotes(body: ProseMirrorNode): Map<string, number> {
-  const numbers = new Map<string, number>()
-  const counts = { footnote: 0, endnote: 0 }
-  body.descendants((node) => {
-    if (node.type.name !== 'noteRef') return true
-    const kind = node.attrs.kind === 'endnote' ? 'endnote' : 'footnote'
-    const key = `${kind}:${node.attrs.id}`
-    if (!numbers.has(key) && !hasCustomNoteMark(node)) numbers.set(key, ++counts[kind])
-    return false
-  })
-  return numbers
-}
+export { noteNumbers as countNotes } from '../notes.js'
 
-function noteLabel(number: number | undefined, format: string | undefined): string {
-  return number === undefined ? '' : formatNumber(number, format ?? 'decimal')
+function noteLabel(number: number | string | undefined, format: string | undefined): string {
+  return typeof number === 'string' ? number : number === undefined ? '' : formatNumber(number, format ?? 'decimal')
 }
 
 function pt(value: number): string {
@@ -296,8 +284,7 @@ export function computeDecorations(doc: ProseMirrorNode, input: DecorationInput)
         return true
       case 'noteRef': {
         const kind = node.attrs.kind === 'endnote' ? 'endnote' : 'footnote'
-        const custom = hasCustomNoteMark(node)
-        const label = custom ? '' : noteLabel(input.noteNumbers.get(`${kind}:${node.attrs.id}`), kind === 'footnote' ? footnoteFormat : 'lowerRoman')
+        const label = noteLabel(input.noteNumbers.get(`${kind}:${node.attrs.id}`), kind === 'footnote' ? footnoteFormat : 'lowerRoman')
         decorations.push(nodeDecoration(pos, pos + 1, { 'data-label': label }, input))
         return false
       }

@@ -42,7 +42,7 @@ describe('custom-marked note text', () => {
     try {
       await docxCodec.importFile(doc, pkg.write(), { name: 'custom.docx', assets })
       expect(docxCodec.toText(doc)).toBe(expected)
-      expect([...countNotes(readDocxModel(doc).body)]).toEqual([[`${kind}:1`, 1], [`${kind}:4`, 2]])
+      expect([...countNotes(readDocxModel(doc).body)]).toEqual([[`${kind}:1`, 1], [`${kind}:2`, ''], [`${kind}:3`, ''], [`${kind}:4`, 2]])
       const bytes = await docxCodec.exportFile(doc, { name: 'custom.docx', assets })
       await docxCodec.importFile(reopened, bytes, { name: 'custom.docx', assets })
       expect(docxCodec.toText(reopened)).toBe(expected)

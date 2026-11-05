@@ -5,6 +5,7 @@ import { parseJson, type CommentMeta, type StoryMeta } from '../model.js'
 import { packMarks } from '../schema.js'
 import { ListCounter } from '../numbering.js'
 import { blocksText } from '../text.js'
+import { NoteInventory } from '../notes.js'
 import type { DocxViewContext } from './context.js'
 import type { MapEdit } from './commands.js'
 import { revisionDate } from './track-changes.js'
@@ -167,7 +168,7 @@ export function commentThreads(body: ProseMirrorNode, context: DocxViewContext, 
   const text = (id: string) => {
     const doc = storyDocOf(`comment:${id}`)
     if (!doc) return ''
-    return blocksText(doc, { styles: context.styles, numbering: context.numbering, counter: new ListCounter(context.numbering), notes: new Map(), noteCount: { footnote: 0, endnote: 0 } }).join('\n').trim()
+    return blocksText(doc, { styles: context.styles, numbering: context.numbering, counter: new ListCounter(context.numbering), notes: new NoteInventory() }).join('\n').trim()
   }
   const threads = new Map<string, CommentThread>()
   for (const [id, meta] of context.comments) {

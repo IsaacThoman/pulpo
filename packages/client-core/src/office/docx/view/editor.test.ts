@@ -112,6 +112,40 @@ describe('header and footer fields and targets', () => {
   })
 })
 
+describe('custom note rendering', () => {
+  it.each(['web', 'print'] as const)('keeps custom footnotes and endnotes in the %s inventory', (layout) => {
+    const refs = []
+    for (const kind of ['footnote', 'endnote'] as const) {
+      for (const id of ['1', 'custom', '2']) {
+        const custom = id === 'custom'
+        refs.push(schema.node('noteRef', { kind, id, v: packJml([`w:${kind}Reference`, { 'w:id': id, ...(custom ? { 'w:customMarkFollows': '1' } : {}) }]) }))
+        const key = `${kind}:${id}`
+        doc.getMap('stories').set(key, JSON.stringify({ kind }))
+        writeFragment(doc, doc.getXmlFragment(storyFragmentName(key)), schema.node('doc', null, [schema.node('paragraph', null, [schema.node('inlineXml', { v: packJml([`w:${kind}Ref`, {}]) }), schema.text(custom ? `* Custom ${kind}` : `Automatic ${id}`)])]))
+      }
+    }
+    const deleted = 'footnote:deleted'
+    refs.push(schema.node('noteRef', { kind: 'footnote', id: 'deleted', marks: JSON.stringify([{ type: 'del', attrs: { v: packJml(['w:del', { 'w:id': 'deleted' }, '\u0000']) } }]) }))
+    doc.getMap('stories').set(deleted, JSON.stringify({ kind: 'footnote' }))
+    writeFragment(doc, doc.getXmlFragment(storyFragmentName(deleted)), schema.node('doc', null, [schema.node('paragraph', null, schema.text('Deleted note'))]))
+    editor.view.dispatch(editor.view.state.tr.replaceWith(0, editor.view.state.doc.content.size, schema.node('paragraph', null, refs)))
+    editor.setLayout(layout)
+    editor.relayout()
+    for (const kind of ['footnote', 'endnote']) {
+      expect(document.querySelector(`[data-story="${kind}:custom"]`)?.textContent).toBe(`* Custom ${kind}`)
+      editor.openStoryEditor(`${kind}:custom`)
+      expect(storyView().dom.querySelector('[data-label]')?.getAttribute('data-label')).toBe('')
+      editor.closeStoryEditor()
+    }
+    if (layout === 'print') expect((editor as unknown as { noteHeights: Map<string, number> }).noteHeights.has('footnote:custom')).toBe(true)
+    expect(document.querySelector(`[data-story="${deleted}"]`)).toBeNull()
+    if (layout === 'print') expect((editor as unknown as { lastUnits: { notes?: string[] }[] }).lastUnits.flatMap((unit) => unit.notes ?? [])).not.toContain(deleted)
+    const labels = [...editor.view.dom.querySelectorAll('.docx-noteref')].filter((element) => element.getAttribute('data-note') !== deleted).map((element) => element.getAttribute('data-label'))
+    expect(labels).toEqual(['1', '', '2', 'i', '', 'ii'])
+  })
+
+})
+
 describe('story review', () => {
   it.each(['accept', 'reject'] as const)('includes all stories and can %s open and closed stories', (action) => {
     editor.setMode('suggesting')

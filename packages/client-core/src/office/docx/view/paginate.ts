@@ -3,6 +3,7 @@ import { TableMap } from '@tiptap/pm/tables'
 import { Decoration } from '@tiptap/pm/view'
 import type { EditorView } from '@tiptap/pm/view'
 import { jmlAttr, jmlChild, jmlOn, unpackJml, type JmlElement } from '../jsonml.js'
+import { noteInventory } from '../notes.js'
 import { effectiveParagraphProperties } from './commands.js'
 import type { DocxViewContext } from './context.js'
 import { PX_PER_PT, layoutPages, pageSetup, type LayoutResult, type LayoutUnit, type PageSetup } from './layout.js'
@@ -209,6 +210,8 @@ export function measureDocument(view: EditorView, context: DocxViewContext, sect
     visit(node, offset, sectionOfBlock[top] ?? 0)
     top++
   })
+  const notes = noteInventory(view.state.doc)
+  for (const unit of out.units) if (unit.notes) unit.notes = unit.notes.filter((id) => notes.has(id))
   return out
 }
 

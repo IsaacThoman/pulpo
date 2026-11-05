@@ -2,7 +2,8 @@ import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import { jmlAttr, jmlText, unpackJml, walkJml, type JmlElement } from './jsonml.js'
 import { parseJson, type CommentMeta, type DocxModel } from './model.js'
 import { ListCounter, Numbering, effectiveNumPr } from './numbering.js'
-import { hasCustomNoteMark, symbolText } from './schema.js'
+import { symbolText } from './schema.js'
+import { NoteInventory, type NoteReference } from './notes.js'
 import { revisionContent, revisionModel, type RevisionAction } from './revisions.js'
 import { StyleSheet } from './styles.js'
 
@@ -22,15 +23,13 @@ export interface TextContext {
   styles: StyleSheet
   numbering: Numbering
   counter: ListCounter
-  notes: Map<string, number | string>
-  noteCount: { footnote: number; endnote: number }
-  customNoteCount?: { footnote: number; endnote: number }
+  notes: NoteInventory
 }
 
 export function textContext(model: Pick<DocxModel, 'maps'>): TextContext {
   const styles = new StyleSheet(model.maps.styles)
   const numbering = new Numbering(model.maps.numbering, styles)
-  return { styles, numbering, counter: new ListCounter(numbering), notes: new Map(), noteCount: { footnote: 0, endnote: 0 } }
+  return { styles, numbering, counter: new ListCounter(numbering), notes: new NoteInventory() }
 }
 
 /** Text of math: its runs' text, which reads well enough for search and agents. */
@@ -84,15 +83,8 @@ function resolvedInlineText(paragraph: ProseMirrorNode, context?: TextContext): 
         break
       }
       case 'noteRef': {
-        const kind = child.attrs.kind === 'endnote' ? 'endnote' : 'footnote'
-        let number = context?.notes.get(`${kind}:${child.attrs.id}`)
-        if (context && number === undefined) {
-          const custom = hasCustomNoteMark(child)
-          const counts = custom ? (context.customNoteCount ??= { footnote: 0, endnote: 0 }) : context.noteCount
-          number = custom ? `custom-${++counts[kind]}` : ++counts[kind]
-          context.notes.set(`${kind}:${child.attrs.id}`, number)
-        }
-        text += kind === 'footnote' ? `[^${number ?? ''}]` : `[^e${number ?? ''}]`
+        const reference = context?.notes.reference(child)
+        text += `[^${reference?.textLabel ?? (child.attrs.kind === 'endnote' ? 'e' : '')}]`
         break
       }
       case 'fieldChar': {
@@ -172,12 +164,12 @@ export function docxToText(model: DocxModel, view: 'accepted' | 'base' | 'raw' =
   const sections: string[] = [resolvedBlocksText(model.body, context).join('\n')]
 
   const notes: string[] = []
-  const order = (label: number | string) => typeof label === 'number' ? label : Infinity
-  for (const [key, number] of [...context.notes].sort((a, b) => order(a[1]) - order(b[1]))) {
+  const order = (reference: NoteReference) => reference.number ?? Infinity
+  for (const [key, reference] of [...context.notes].sort((a, b) => order(a[1]) - order(b[1]))) {
     const story = model.stories.get(key)
     if (!story) continue
     const text = resolvedBlocksText(story.doc, context).join(' ').trim()
-    notes.push(`${key.startsWith('endnote') ? `[^e${number}]` : `[^${number}]`}: ${text}`)
+    notes.push(`[^${reference.textLabel}]: ${text}`)
   }
   if (notes.length) sections.push(notes.join('\n'))
 
