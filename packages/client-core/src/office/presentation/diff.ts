@@ -108,7 +108,9 @@ function compareShape(before: ShapeSnapshot, after: ShapeSnapshot): ShapeChangeK
   if (!same(before.line, after.line)) kinds.push('line')
   if (!same(before.geom, after.geom)) kinds.push('geometry')
   if (!same(before.blipFill, after.blipFill) || !same(Object.values(before.rels).map((rel) => rel.target).sort(), Object.values(after.rels).map((rel) => rel.target).sort())) kinds.push('image')
-  if (!kinds.length && (before.xml !== after.xml || !same(before.effects, after.effects) || before.name !== after.name || before.descr !== after.descr || before.hidden !== after.hidden)) kinds.push('other')
+  // A group's template excludes its members; their stacking order is modeled separately.
+  const childKeys = (shape: ShapeSnapshot) => (shape.children ?? []).map((child) => child.key)
+  if (!kinds.length && (before.xml !== after.xml || !same(before.effects, after.effects) || before.name !== after.name || before.descr !== after.descr || before.hidden !== after.hidden || !same(childKeys(before), childKeys(after)))) kinds.push('other')
   return kinds
 }
 

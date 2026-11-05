@@ -1,8 +1,9 @@
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate'
 import { describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
+import { blankPresentation } from './blank.js'
 import { presentationCodec } from './codec.js'
-import { deleteSlides, duplicateSlides, insertShapes, moveSlides, presetShape, setShapeText, setSlideHidden, setXfrm, slideKeys } from './commands.js'
+import { deleteSlides, duplicateSlides, groupShapes, insertShapes, moveSlides, presetShape, reorderShapes, setShapeText, setSlideHidden, setXfrm, slideKeys } from './commands.js'
 import { diffDocuments, diffDocumentWithFile, diffFiles } from './diff.js'
 import { plainToText } from './text.js'
 import { memoryAssets } from './testing/assets.js'
@@ -24,6 +25,38 @@ function fork(doc: Y.Doc): Y.Doc {
 }
 
 describe('presentation diff', () => {
+  it.each([false, true])('reports a proposal that only reorders overlapping group members (nested: %s)', async (nested) => {
+    const seed = await open(blankPresentation())
+    const slide = slideKeys(seed)[0]!
+    const box = { x: 100_000, y: 100_000, cx: 1_000_000, cy: 1_000_000 }
+    const keys = insertShapes(seed, slide, ['FF0000', '0000FF', '00FF00'].map((color) => ({
+      ...presetShape('rect', box, color),
+      fill: `<a:solidFill xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:srgbClr val="${color}"/></a:solidFill>`,
+    })))
+    const groupKey = groupShapes(seed, slide, keys.slice(0, 2), new Map(keys.map((key) => [key, box])), 'Group')!
+    if (nested) groupShapes(seed, slide, [groupKey, keys[2]!], new Map([[groupKey, box], [keys[2]!, box]]), 'Outer group')
+    // Compare imported documents so the templates and parts are identical; only modeled order changes.
+    const before = await open(await presentationCodec.exportFile(seed, { name: 'deck.pptx', assets }))
+    const importedSlide = readSnapshot(before).slides[0]!
+    const outer = importedSlide.shapes.find((shape) => shape.kind === 'grpSp')!
+    const group = nested ? outer.children![0]! : outer
+    const after = fork(before)
+    expect(diffDocuments(before, after).changed).toBe(false)
+    reorderShapes(after, importedSlide.key, [group.children![0]!.key], 'front')
+    const diff = diffDocuments(before, after)
+    expect(diff.changed).toBe(true)
+    expect(diff.edited).toBe(1)
+    expect(diff.slides[0]).toMatchObject({ status: 'edited', shapes: [{ key: group.key, kinds: ['other'] }] })
+    // The same edit must appear when reviewing an agent's whole-file proposal.
+    const proposal = await presentationCodec.exportFile(after, { name: 'deck.pptx', assets })
+    const fileDiff = await diffDocumentWithFile(before, proposal)
+    expect(fileDiff.slides[0]!.status).toBe('edited')
+    expect(fileDiff.slides[0]!.shapes).toContainEqual(expect.objectContaining({ key: group.key, kinds: ['other'] }))
+    seed.destroy()
+    before.destroy()
+    after.destroy()
+  })
+
   it('reports nothing for identical decks', async () => {
     const bytes = fixture('generated/layouts-notes-sections.pptx')
     const diff = await diffFiles(bytes, bytes)
