@@ -50,6 +50,26 @@ describe('OoxmlPackage', () => {
     expect(reread.paths()[0]).toBe('[Content_Types].xml')
   })
 
+  it('preserves XML bytes after read-only inspection, including UTF-16 and package metadata', () => {
+    const original = new Uint8Array(Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(DOCUMENT.replace('UTF-8', 'UTF-16'), 'utf16le')]))
+    const pkg = OoxmlPackage.read(samplePackage({ 'word/document.xml': original }))
+    pkg.mainPart()
+    pkg.contentType('word/document.xml')
+    const document = pkg.xml('word/document.xml')!
+    expect(document.documentElement?.localName).toBe('document')
+    expect(pkg.get('word/document.xml')).toEqual(original)
+    const reread = OoxmlPackage.read(pkg.write())
+    expect(reread.get('word/document.xml')).toEqual(original)
+    expect(reread.text('_rels/.rels')).toBe(ROOT_RELS)
+    expect(reread.text('[Content_Types].xml')).toBe(CONTENT_TYPES)
+    // A later mutation of that same cached DOM must still be written, including after get().
+    document.getElementsByTagName('w:t').item(0)!.textContent = 'Edited'
+    expect(OoxmlPackage.read(pkg.write()).text('word/document.xml')).toContain('<w:t>Edited</w:t>')
+    pkg.get('word/document.xml')
+    document.getElementsByTagName('w:t').item(0)!.textContent = 'Edited again'
+    expect(OoxmlPackage.read(pkg.write()).text('word/document.xml')).toContain('<w:t>Edited again</w:t>')
+  })
+
   it('adds relationships with fresh ids and content type overrides', () => {
     const pkg = OoxmlPackage.read(samplePackage())
     const id = pkg.addRelationship('word/document.xml', 'urn:image', 'media/image1.png')

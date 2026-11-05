@@ -25,6 +25,7 @@ const { registerFileRoutes } = await import('./routes.js')
 const { appendDocUpdate, compactDoc, createDoc, docGeneration, loadYDoc } = await import('./doc-store.js')
 const { convertBlobToDocInTx } = await import('./conversion.js')
 const { mutateFileTree, updateFileNode } = await import('./tree-service.js')
+const { fileDocQueue } = await import('../jobs.js')
 const { ASSET_GRACE_MS } = await import('./asset-gc.js')
 
 const enabled = process.env.PULPO_FILES_TESTS === 'true'
@@ -188,16 +189,18 @@ describe.skipIf(!enabled)('live document routes and lifecycle', () => {
     await appendDocUpdate({ nodeId: node.id, ownerUserId: userId, actorUserId: userId, update: Y.encodeStateAsUpdate(doc, vector), origin: 'client' })
     expect(await db.select().from(fileDocAssets).where(eq(fileDocAssets.nodeId, node.id))).toHaveLength(2)
     // Within the grace period nothing goes.
+    vi.mocked(fileDocQueue.add).mockClear()
     await compactDoc(node.id)
+    expect(fileDocQueue.add).toHaveBeenCalledWith('compact', { nodeId: node.id }, expect.objectContaining({ delay: expect.any(Number), deduplication: { id: `assets:${node.id}`, ttl: 1_000 } }))
     expect(await db.select().from(fileDocAssets).where(eq(fileDocAssets.nodeId, node.id))).toHaveLength(2)
     const later = new Date(Date.now() + ASSET_GRACE_MS + 60_000)
-    await edit(node.id, (text) => text.insert(0, 'z'))
+    // No new edits: the delayed collection must still run on an idle document.
     await compactDoc(node.id, later)
     const left = await db.select().from(fileDocAssets).where(eq(fileDocAssets.nodeId, node.id))
     // The original is kept while the text refers to it; the orphan is gone, object included.
     expect(left.map((row) => row.hash)).toEqual([createHash('sha256').update(mixed).digest('hex')])
     expect([...objects.keys()].filter((key) => key.includes(`/doc-assets/${node.id}/`))).toHaveLength(1)
     const [state] = await db.select({ markdown: fileDocs.markdown }).from(fileDocs).where(eq(fileDocs.nodeId, node.id))
-    expect(state!.markdown).toBe('za\nb\nc\n')
+    expect(state!.markdown).toBe('a\nb\nc\n')
   })
 })

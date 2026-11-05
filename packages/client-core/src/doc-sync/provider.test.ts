@@ -80,7 +80,10 @@ describe('SocketIOYProvider', () => {
     typedSocket.reconnect()
     vi.advanceTimersByTime(100)
     expect(typedProvider.status.state).toBe('synced')
-    expect(text(server.doc)).toBe('typed server')
+    // Independent pre-handshake insertions have CRDT order, not a fixed textual order.
+    expect(text(server.doc)).toContain('typed ')
+    expect(text(server.doc)).toContain('server')
+    expect(text(server.doc)).toBe(text(typed))
     // An update another session broadcast before this one's handshake finished.
     const relayed = new Y.Doc()
     const relayedSocket = new FakeSocket(server)
@@ -95,6 +98,27 @@ describe('SocketIOYProvider', () => {
     relayedSocket.reconnect()
     vi.advanceTimersByTime(100)
     expect(relayedProvider.status.state).toBe('synced')
+  })
+
+  it('refuses an earlier generation on reconnect even when the first join had no cache', () => {
+    const server = new FakeServer()
+    server.doc.getMap(DOC_META_MAP).set(DOC_GENERATION_KEY, 'original')
+    server.doc.getText('t').insert(0, 'old content')
+    server.generation = 'original'
+    const client = open(server)
+    expect(client.provider.status.state).toBe('synced')
+    client.socket.disconnect()
+    // A document made again from its file under the same node id has independent Yjs history.
+    const recreated = new Y.Doc()
+    recreated.getMap(DOC_META_MAP).set(DOC_GENERATION_KEY, 'replacement')
+    recreated.getText('t').insert(0, 'replacement content')
+    Object.defineProperty(server, 'doc', { value: recreated })
+    server.generation = 'replacement'
+    client.socket.reconnect()
+    vi.advanceTimersByTime(100)
+    expect(client.provider.status).toEqual({ state: 'error', error: 'stale_copy' })
+    expect(text(server.doc)).toBe('replacement content')
+    expect(server.received).toBe(0)
   })
 
   it('still refuses an earlier document that the offline cache loads after the provider starts', () => {
