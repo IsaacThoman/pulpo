@@ -152,7 +152,16 @@ describe.skipIf(!fidelity)('fidelity against openpyxl and LibreOffice', () => {
     for (const entry of xlsxFiles) {
       const { doc, assets, name } = await load(entry.path)
       const output = join(scratch, name)
-      writeFileSync(output, await codec.exportFile(doc, { name, assets }))
+      const exported = await codec.exportFile(doc, { name, assets })
+      writeFileSync(output, exported)
+      // openpyxl skips parts it doesn't read (printer settings, media), so it can't vouch for the
+      // package itself: our own reader, which checks every entry, must open the export too.
+      try {
+        await codec.importFile(new Y.Doc(), exported, { name, assets })
+      } catch (error) {
+        failures.push(`${entry.path}: our export doesn't open again: ${String(error)}`)
+        continue
+      }
       const original = sheetsFixture(entry.path)
       try {
         // Calculated values may legitimately differ from caches openpyxl never computed.
