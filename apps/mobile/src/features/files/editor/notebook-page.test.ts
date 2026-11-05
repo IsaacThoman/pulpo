@@ -110,3 +110,65 @@ it('refreshes a Markdown image when only its attachment asset changes', async ()
     doc.destroy()
   }
 })
+
+it.each([['markdown', false], ['output', false], ['markdown', true], ['output', true]] as const)('retries a transient %s image failure while its cell remains (removed: %s)', async (kind, removed) => {
+  const doc = new Y.Doc()
+  const assets = new MemoryLiveAssetStore()
+  const imageData = 'AAAA'.repeat(300)
+  const cell = kind === 'markdown'
+    ? { id: 'a', cell_type: 'markdown', source: '![plot](attachment:plot.png)', metadata: {}, attachments: { 'plot.png': { 'image/png': imageData } } }
+    : { id: 'a', cell_type: 'code', source: '', metadata: {}, execution_count: null, outputs: [{ output_type: 'display_data', metadata: {}, data: { 'image/png': imageData } }] }
+  await notebookCodec.importFile(doc, new TextEncoder().encode(JSON.stringify({ nbformat: 4, nbformat_minor: 5, metadata: {}, cells: [cell] })), { name: 'a.ipynb', assets })
+  const retries: Array<() => void> = []
+  let requests = 0
+  let dom!: { window: PageWindow }
+  dom = new JSDOM(NOTEBOOK_EDITOR_BUNDLE.html, {
+    runScripts: 'dangerously',
+    beforeParse: (window) => {
+      const setTimeout = window.setTimeout.bind(window)
+      window.setTimeout = ((callback: () => void, delay?: number) => {
+        if (delay === 15_000) { retries.push(callback); return 0 }
+        return setTimeout(callback, delay)
+      }) as typeof window.setTimeout
+      Object.assign(window, {
+        webkit: { messageHandlers: { pulpoEditor: { postMessage: (raw: string) => {
+          const message = JSON.parse(raw) as EditorMessage
+          if (message.type !== 'asset') return
+          const attempt = ++requests
+          void assets.get(message.hash).then((bytes) => {
+            dom.window.pulpoEditor.receive(JSON.stringify({ type: 'asset', session: message.session, hash: message.hash, data: attempt === 1 ? null : Buffer.from(bytes).toString('base64') }))
+          })
+        } } } },
+        IntersectionObserver: class { observe() {} unobserve() {} disconnect() {} },
+        requestAnimationFrame: (callback: FrameRequestCallback) => setTimeout(callback, 0),
+      })
+      window.Element.prototype.scrollIntoView = () => {}
+    },
+  })
+  try {
+    dom.window.pulpoEditor.receive(JSON.stringify({ type: 'init', session: 1, update: Buffer.from(Y.encodeStateAsUpdate(doc)).toString('base64'), editable: false, placeholder: '', user: { name: 'Ana', color: '#3366ff' }, theme }))
+    await expect.poll(() => requests).toBe(1)
+    await expect.poll(() => retries.length).toBe(1)
+    expect(dom.window.document.querySelector('img[src]')).toBeNull()
+    const original = dom.window.document.querySelector('[data-cell-key]')
+    if (removed) {
+      const vector = Y.encodeStateVector(doc)
+      cellsMap(doc).clear()
+      dom.window.pulpoEditor.receive(JSON.stringify({ type: 'update', session: 1, update: Buffer.from(Y.encodeStateAsUpdate(doc, vector)).toString('base64') }))
+      await expect.poll(() => dom.window.document.querySelector('[data-cell-key]')).toBeNull()
+      retries.shift()!()
+      await Promise.resolve()
+      expect(requests).toBe(1)
+      expect(dom.window.document.querySelector('img')).toBeNull()
+      return
+    }
+    retries.shift()!()
+    await expect.poll(() => dom.window.document.querySelector('img')?.getAttribute('src')).toBe(`data:image/png;base64,${imageData}`)
+    expect(requests).toBe(2)
+    expect(dom.window.document.querySelector('[data-cell-key]')).toBe(original)
+    expect(retries).toHaveLength(0)
+  } finally {
+    dom.window.close()
+    doc.destroy()
+  }
+})

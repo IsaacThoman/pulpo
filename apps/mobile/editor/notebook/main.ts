@@ -52,8 +52,8 @@ const HOST = 'host'
 const REMOTE = 'remote'
 /** Outputs longer than this show their start; the full text is in the file. */
 const MAX_OUTPUT_CHARACTERS = 20_000
-/** Waits this long before asking the app for outputs' images again after they failed. */
-const OUTPUT_RETRY_MS = 15_000
+/** Waits this long before asking the app for unavailable output or attachment assets again. */
+const ASSET_RETRY_MS = 15_000
 
 function post(message: EditorMessage): void {
   const data = JSON.stringify(message)
@@ -433,12 +433,22 @@ function updateBody(open: Open, view: CellView, cell: NotebookCellState, editing
     view.body.innerHTML = '<p class="empty">Empty Markdown cell. Tap twice to edit.</p>'
     return
   }
-  void readAttachments(cell.attachments, open.assets).catch(() => ({})).then((attachments) => {
-    if (view.rendered !== signature) return
+  const show = (attachments: Record<string, MimeBundle>) => {
+    if (view.rendered !== signature || current?.views.get(view.key) !== view) return
     const content = document.createElement('div')
     content.className = 'markdown'
     content.append(renderMarkdown(source, attachments))
     view.body.replaceChildren(content)
+  }
+  void readAttachments(cell.attachments, open.assets).then(show).catch(() => {
+    if (view.rendered !== signature || current?.views.get(view.key) !== view) return
+    show({})
+    // Keep the signature during the cooldown so typing doesn't cause a request storm.
+    setTimeout(() => {
+      if (view.rendered !== signature || current?.views.get(view.key) !== view) return
+      view.rendered = null
+      render()
+    }, ASSET_RETRY_MS)
   })
 }
 
@@ -474,7 +484,7 @@ function updateOutputs(open: Open, view: CellView, cell: NotebookCellState): voi
       if (view.outputsKey !== key || current?.views.get(view.key) !== view) return
       view.outputsKey = null
       render()
-    }, OUTPUT_RETRY_MS)
+    }, ASSET_RETRY_MS)
   })
 }
 
