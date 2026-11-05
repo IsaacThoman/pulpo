@@ -1230,6 +1230,102 @@ try {
     assert.equal(await exported(), '\n')
   })
 
+  await step('places the typing cursor after insert commands and table pastes', async () => {
+    await open('')
+    const p = (text = '', attrs) => ({ type: 'paragraph', attrs, ...(text ? { content: [{ type: 'text', text }] } : {}) })
+    const unrelated = { type: 'table', content: [{ type: 'tableRow', content: [{ type: 'tableCell', content: [p('Unrelated table')] }] }] }
+    const reset = async (content = [p('LeftRight')], from = 5) => {
+      await page.evaluate(({ content, from }) => {
+        const editor = window.harness.editors[0]
+        editor.closeStoryEditor()
+        const view = editor.view
+        view.dispatch(view.state.tr.replaceWith(0, view.state.doc.content.size, content.map((node) => view.state.schema.nodeFromJSON(node))))
+        view.dispatch(view.state.tr.setSelection(view.state.selection.constructor.create(view.state.doc, from)))
+        view.focus()
+      }, { content, from })
+    }
+    const insert = async (name, submenu) => {
+      await page.getByRole('button', { name: 'Insert', exact: true }).click()
+      if (submenu) await page.getByRole('menuitem', { name: submenu, exact: true }).hover()
+      await page.getByRole('menuitem', { name, exact: true }).click()
+    }
+    const typeText = async (text) => {
+      await page.waitForFunction(() => window.harness.editors[0].hasFocus)
+      await page.keyboard.type(text)
+    }
+    const blocks = () => page.evaluate(() => {
+      const nodes = []
+      window.harness.editors[0].view.state.doc.forEach((node) => nodes.push({ type: node.type.name, text: node.textContent }))
+      return nodes
+    })
+
+    for (const content of [[p()], [p(), unrelated, p()]]) {
+      await reset(content, 1)
+      await page.getByRole('button', { name: 'Insert', exact: true }).click()
+      await page.getByRole('menuitem', { name: 'Table', exact: true }).hover()
+      await page.getByRole('button', { name: '2 by 2 table' }).click()
+      await typeText('New cell')
+      assert.equal(await page.evaluate(() => window.harness.editors[0].view.state.doc.firstChild.firstChild.firstChild.textContent), 'New cell', 'new table first cell')
+      if (content.length > 1) assert.equal((await blocks())[2].text, 'Unrelated table')
+    }
+
+    await reset()
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64')
+    await page.locator('input[type=file][accept^="image/"]').setInputFiles({ name: 'caret.png', mimeType: 'image/png', buffer: png })
+    await page.waitForFunction(() => window.harness.editors[0].view.state.doc.firstChild.maybeChild(1)?.type.name === 'drawing')
+    await typeText('Image tail')
+    assert.deepEqual(await page.evaluate(() => window.harness.editors[0].view.state.doc.firstChild.content.content.map((node) => node.isText ? node.text : node.type.name)), ['Left', 'drawing', 'Image tailRight'])
+
+    await reset()
+    await insert('Page break')
+    await typeText('Page tail')
+    assert.deepEqual(await blocks(), [{ type: 'paragraph', text: 'Left' }, { type: 'paragraph', text: 'Page tailRight' }])
+    assert.equal(await page.evaluate(() => window.harness.editors[0].view.state.doc.firstChild.lastChild.type.name), 'break')
+
+    for (const type of ['Next page', 'Continuous', 'Even page', 'Odd page']) {
+      await reset()
+      await insert(type, 'Section break')
+      await typeText('Section tail')
+      assert.deepEqual(await blocks(), [{ type: 'paragraph', text: 'Left' }, { type: 'paragraph', text: 'Section tailRight' }], type)
+      assert.ok(await page.evaluate(() => Boolean(window.harness.editors[0].view.state.doc.firstChild.attrs.sectPr)))
+    }
+
+    await reset([p(), p('Heading', { outlineLvl: JSON.stringify(['w:outlineLvl', { 'w:val': '0' }]) })], 1)
+    await insert('Table of contents')
+    await typeText('After TOC')
+    assert.equal((await blocks())[1].text, 'After TOC')
+    assert.equal(await page.evaluate(() => window.harness.editors[0].view.state.doc.firstChild.lastChild.attrs.charType), 'end')
+
+    for (const kind of ['Footnote', 'Endnote']) {
+      await reset()
+      await insert(kind)
+      await typeText('Note text')
+      assert.ok(await page.evaluate((kind) => window.harness.editors[0].editingStory?.startsWith(`${kind}:`), kind.toLowerCase()), kind)
+      assert.equal((await exported(kind.toLowerCase())).trim(), 'Note text')
+      assert.equal((await blocks())[0].text, 'LeftRight')
+      await page.keyboard.press('Escape')
+      await typeText('Body tail')
+      assert.equal((await blocks())[0].text, 'LeftBody tailRight')
+    }
+
+    await reset()
+    await page.getByRole('button', { name: 'Insert', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Symbol', exact: true }).hover()
+    await page.getByRole('button', { name: '©', exact: true }).click()
+    await typeText('Symbol tail')
+    assert.equal((await blocks())[0].text, 'Left©Symbol tailRight')
+
+    await reset([p(), unrelated, p()], 1)
+    await page.evaluate(() => {
+      const data = new DataTransfer()
+      data.setData('text/html', '<table><tr><td>Pasted A</td><td>Pasted B</td></tr></table>')
+      data.setData('text/plain', 'Pasted A\tPasted B')
+      window.harness.editors[0].view.dom.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }))
+    })
+    await typeText('After paste')
+    assert.deepEqual(await blocks(), [{ type: 'table', text: 'Pasted APasted B' }, { type: 'paragraph', text: 'After paste' }, { type: 'table', text: 'Unrelated table' }, { type: 'paragraph', text: '' }])
+  })
+
   await step('lays out a 100-page document within budget', async () => {
     const started = Date.now()
     await open('?generate=1600')
