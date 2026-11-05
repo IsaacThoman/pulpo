@@ -260,6 +260,10 @@ import { fileChangesItem } from '@pulpo/client-core/files';
 import { FileDocumentScreen } from '../features/files/screens/FileDocumentScreen';
 import { FileMarkdownScreen } from '../features/files/screens/FileMarkdownScreen';
 import { FileQuizScreen } from '../features/files/screens/FileQuizScreen';
+import { FileViewerScreen } from '../features/files/screens/FileViewerScreen';
+import { decodeFileText, inAppViewer, MAX_IN_APP_VIEWER_BYTES } from '../features/files/viewers/content';
+import { openNotebook } from '../features/files/viewers/notebook';
+import { File as LocalFile } from 'expo-file-system';
 import { FilesFolderScreen } from '../features/files/screens/FilesFolderScreen';
 import { FriendsScreen } from '../features/friends/FriendsScreen';
 import { timeAgo } from '../features/chat/format';
@@ -1746,6 +1750,7 @@ function PrototypeRoot() {
         <RootStack.Screen name="FileDocument" component={FileDocumentScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Document' }} />
         <RootStack.Screen name="FileMarkdown" component={FileMarkdownScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Markdown' }} />
         <RootStack.Screen name="FileQuiz" component={FileQuizScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Quiz' }} />
+        <RootStack.Screen name="FileViewer" component={FileViewerScreen} options={{ headerShown: Platform.OS === 'ios', title: 'File' }} />
       </RootStack.Navigator>
     </NavigationContainer>
   );
@@ -5483,8 +5488,14 @@ function ChatView({
   const openFilePreview = useCallback((attachment: Attachment) => {
     void (async () => {
       const uri = attachment.uri || (await downloadAttachment(attachment.id, attachment.name)).uri;
-      // Quizzes open in the app, where they can be taken.
+      // Quizzes open in the app, where they can be taken; tables, code, and notebooks in its viewers.
+      const fits = (attachment.size ?? new LocalFile(uri).size ?? 0) <= MAX_IN_APP_VIEWER_BYTES;
+      const viewer = fits ? inAppViewer(attachment.name, attachment.mimeType) : null;
       if (isQuizFileName(attachment.name)) navigation.push('FileQuiz', { uri, name: attachment.name });
+      else if (viewer === 'notebook') {
+        const fallback = await openNotebook(decodeFileText(await new LocalFile(uri).bytes()), attachment.name);
+        if (fallback) navigation.push('FileViewer', { uri, name: attachment.name, mimeType: attachment.mimeType, notice: fallback.notice });
+      } else if (viewer) navigation.push('FileViewer', { uri, name: attachment.name, mimeType: attachment.mimeType });
       else await openAttachmentFile(uri, attachment.name, attachment.mimeType);
     })().catch((error) => {
       const message = error instanceof AttachmentPreviewError

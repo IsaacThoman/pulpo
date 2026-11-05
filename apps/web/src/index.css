@@ -553,6 +553,40 @@ html[data-desktop="true"] .desktop-sidebar-collapsed .chat-header::before {
   background-color: var(--code-deletion-background);
 }
 
+/* File viewers: find matches in code, and terminal colors in notebook output (GitHub Light / Dark). */
+.find-match {
+  border-radius: 2px;
+  background-color: color-mix(in oklab, #facc15 45%, transparent);
+  color: inherit;
+}
+.find-match-current {
+  background-color: color-mix(in oklab, #f97316 70%, transparent);
+}
+.ansi-fg-black, .ansi-fg-bright-black { color: #57606a; }
+.ansi-fg-red, .ansi-fg-bright-red { color: #cf222e; }
+.ansi-fg-green, .ansi-fg-bright-green { color: #116329; }
+.ansi-fg-yellow, .ansi-fg-bright-yellow { color: #9a6700; }
+.ansi-fg-blue, .ansi-fg-bright-blue { color: #0550ae; }
+.ansi-fg-magenta, .ansi-fg-bright-magenta { color: #8250df; }
+.ansi-fg-cyan, .ansi-fg-bright-cyan { color: #1b7c83; }
+.ansi-fg-white, .ansi-fg-bright-white { color: #6e7781; }
+.ansi-bg-black, .ansi-bg-bright-black { background-color: color-mix(in oklab, #57606a 25%, transparent); }
+.ansi-bg-red, .ansi-bg-bright-red { background-color: color-mix(in oklab, #cf222e 20%, transparent); }
+.ansi-bg-green, .ansi-bg-bright-green { background-color: color-mix(in oklab, #116329 20%, transparent); }
+.ansi-bg-yellow, .ansi-bg-bright-yellow { background-color: color-mix(in oklab, #9a6700 20%, transparent); }
+.ansi-bg-blue, .ansi-bg-bright-blue { background-color: color-mix(in oklab, #0550ae 20%, transparent); }
+.ansi-bg-magenta, .ansi-bg-bright-magenta { background-color: color-mix(in oklab, #8250df 20%, transparent); }
+.ansi-bg-cyan, .ansi-bg-bright-cyan { background-color: color-mix(in oklab, #1b7c83 20%, transparent); }
+.ansi-bg-white, .ansi-bg-bright-white { background-color: color-mix(in oklab, #6e7781 20%, transparent); }
+.dark .ansi-fg-black, .dark .ansi-fg-bright-black { color: #8b949e; }
+.dark .ansi-fg-red, .dark .ansi-fg-bright-red { color: #ff7b72; }
+.dark .ansi-fg-green, .dark .ansi-fg-bright-green { color: #7ee787; }
+.dark .ansi-fg-yellow, .dark .ansi-fg-bright-yellow { color: #f2cc60; }
+.dark .ansi-fg-blue, .dark .ansi-fg-bright-blue { color: #79c0ff; }
+.dark .ansi-fg-magenta, .dark .ansi-fg-bright-magenta { color: #d2a8ff; }
+.dark .ansi-fg-cyan, .dark .ansi-fg-bright-cyan { color: #76e3ea; }
+.dark .ansi-fg-white, .dark .ansi-fg-bright-white { color: #e6edf3; }
+
 /* KaTeX */
 .katex {
   font-size: 1.1em;

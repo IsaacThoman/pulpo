@@ -13,7 +13,17 @@ export {
   SHEET_EXTENSIONS,
   type FilePreviewKind,
 } from '@pulpo/client-core/files'
-import { fileExtension } from '@pulpo/client-core/files'
+import { fileExtension, type FilePreviewKind } from '@pulpo/client-core/files'
+
+/** Previews read as text (decoded with an encoding fallback) rather than shown from a URL. */
+export function isTextPreview(kind: FilePreviewKind): boolean {
+  return kind === 'markdown' || kind === 'quiz' || kind === 'text' || kind === 'table' || kind === 'html' || kind === 'svg' || kind === 'notebook'
+}
+
+/** Viewers that fill the file view edge to edge and scroll themselves, with their own toolbar. */
+export function previewFillsView(kind: FilePreviewKind): boolean {
+  return kind === 'text' || kind === 'table' || kind === 'html' || kind === 'svg' || kind === 'notebook'
+}
 
 /** The folder items dropped on `node` go into: the folder itself, or the folder a shortcut opens. */
 export function dropFolderOf(node: FileNode): string | undefined {

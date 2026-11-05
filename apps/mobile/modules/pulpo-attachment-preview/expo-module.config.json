@@ -1,6 +1,9 @@
 {
-  "platforms": ["apple"],
+  "platforms": ["apple", "android"],
   "apple": {
     "modules": ["PulpoAttachmentPreviewModule"]
+  },
+  "android": {
+    "modules": ["expo.modules.pulpoattachmentpreview.PulpoAttachmentPreviewModule"]
   }
 }

@@ -7,6 +7,7 @@ import { isTrashFolder } from '../trash/folder'
 import { appearanceActionTitle, hasAppearance } from './appearance'
 import { isBuiltIn, openedKind } from './display'
 import { editorBundleFor } from './editor/bundles'
+import { inAppViewer, MAX_IN_APP_VIEWER_BYTES } from './viewers/content'
 
 export type FileItemActionId =
   | 'open'
@@ -105,6 +106,10 @@ export type FileOpenTarget =
   | { type: 'markdown'; id: string; name: string }
   /** A `.quiz` file, taken in the app. */
   | { type: 'quiz'; id: string; name: string }
+  /** CSV/TSV, code, or text, read in the app's viewer. */
+  | { type: 'viewer'; id: string; name: string }
+  /** A Jupyter notebook, shown in the sandboxed web preview. */
+  | { type: 'notebook'; id: string; name: string }
   /** An uploaded file; `node` is missing behind a shortcut, whose target's details load first. */
   | { type: 'file'; id: string; node?: FileNode }
   | { type: 'chat'; id: string }
@@ -119,7 +124,8 @@ export function fileOpenTarget(node: FileNode): FileOpenTarget {
     if (target.kind === 'chat') return { type: 'chat', id: target.id }
     if (target.kind === 'doc') return { type: 'document', id: target.id, name: target.name }
     if (isMarkdownName(target.name)) return { type: 'markdown', id: target.id, name: target.name }
-    return isQuizFileName(target.name) ? { type: 'quiz', id: target.id, name: target.name } : { type: 'file', id: target.id }
+    if (isQuizFileName(target.name)) return { type: 'quiz', id: target.id, name: target.name }
+    return inAppTarget(target.id, target.name, target.mimeType) ?? { type: 'file', id: target.id }
   }
   if (node.status === 'pending') return { type: 'unavailable', reason: `“${node.name}” is still uploading.` }
   if (node.kind === 'folder') return { type: 'folder', id: node.id, name: node.name }
@@ -127,5 +133,13 @@ export function fileOpenTarget(node: FileNode): FileOpenTarget {
   if (node.kind === 'doc') return { type: 'document', id: node.id, name: node.name }
   if (isMarkdownName(node.name)) return { type: 'markdown', id: node.id, name: node.name }
   if (isQuizFileName(node.name)) return { type: 'quiz', id: node.id, name: node.name }
-  return { type: 'file', id: node.id, node }
+  return inAppTarget(node.id, node.name, node.mimeType, node.sizeBytes) ?? { type: 'file', id: node.id, node }
+}
+
+/** Files the app reads itself; anything larger than its viewers take goes to the system viewer. */
+function inAppTarget(id: string, name: string, mimeType: string | null | undefined, sizeBytes = 0): FileOpenTarget | null {
+  if (sizeBytes > MAX_IN_APP_VIEWER_BYTES) return null
+  const viewer = inAppViewer(name, mimeType)
+  if (viewer === 'notebook') return { type: 'notebook', id, name }
+  return viewer ? { type: 'viewer', id, name } : null
 }
