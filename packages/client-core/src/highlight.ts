@@ -316,17 +316,15 @@ export function findInLines(lines: readonly string[], query: string, limit = 10_
   for (let line = 0; line < lines.length && matches.length < limit; line += 1) {
     const original = lines[line]!
     const lowered = original.toLowerCase()
-    // Lower-casing can change length (İ becomes two code units); such lines are lowered character
-    // by character, with each lowered unit mapped back to the character it came from.
-    const folded = lowered.length === original.length ? null : foldWithOffsets(original)
-    const text = folded ? folded.text : lowered
+    // Map only actual matches, scanning forward once with no per-character offset arrays.
+    const originalOffset = lowered.length === original.length ? null : originalCaseOffsets(original)
     let from = 0
     while (matches.length < limit) {
-      const found = text.indexOf(needle, from)
+      const found = lowered.indexOf(needle, from)
       if (found < 0) break
       const last = found + needle.length - 1
-      matches.push(folded
-        ? { line, start: folded.start[found]!, end: folded.end[last]! }
+      matches.push(originalOffset
+        ? { line, start: originalOffset(found, false), end: originalOffset(last, true) }
         : { line, start: found, end: found + needle.length })
       from = found + needle.length
     }
@@ -334,20 +332,30 @@ export function findInLines(lines: readonly string[], query: string, limit = 10_
   return matches
 }
 
-/** `text` lower-cased per character, with where each of its code units came from in `text`. */
-function foldWithOffsets(text: string): { text: string; start: number[]; end: number[] } {
-  let folded = ''
-  const start: number[] = []
-  const end: number[] = []
-  let index = 0
-  for (const char of text) {
-    const lower = char.toLowerCase()
-    folded += lower
-    for (let unit = 0; unit < lower.length; unit++) {
-      start.push(index)
-      end.push(index + char.length)
+/**
+ * Maps increasing offsets in lower-cased text back to the original, rounding a match's boundaries
+ * outward when they fall inside an expanded character. ASCII runs need no mapping and are skipped
+ * by the regex. Only the current non-ASCII character and accumulated length change are retained,
+ * even if every character expands. No matches means no scan; a capped search stops scanning early.
+ */
+function originalCaseOffsets(text: string): (offset: number, end: boolean) => number {
+  // Iterate by code point so surrogate pairs keep their original width.
+  // eslint-disable-next-line no-control-regex
+  const characters = text.matchAll(/[^\x00-\x7f]/gu)
+  let current: ReturnType<typeof characters.next> | undefined
+  let shift = 0
+  return (offset, end) => {
+    current ??= characters.next()
+    while (!current.done) {
+      const character = current.value[0]
+      const index = current.value.index
+      const foldedStart = index + shift
+      if (foldedStart > offset) break
+      const foldedLength = character.toLowerCase().length
+      if (offset < foldedStart + foldedLength) return index + (end ? character.length : 0)
+      shift += foldedLength - character.length
+      current = characters.next()
     }
-    index += char.length
+    return offset - shift + (end ? 1 : 0)
   }
-  return { text: folded, start, end }
 }
