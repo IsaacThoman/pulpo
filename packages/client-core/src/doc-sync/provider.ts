@@ -233,6 +233,9 @@ export class SocketIOYProvider {
         return
       }
       Y.applyUpdate(this.doc, bytes(result.update), this)
+      // This server state belongs to a generation too; future joins must check it, even when
+      // the first join started without a cached copy.
+      this.hasPriorState = true
       this.joined = true
       this.inflight = false
       // Everything the server lacks, including edits made offline, in one update.
