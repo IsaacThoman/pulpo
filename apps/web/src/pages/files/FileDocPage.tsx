@@ -378,6 +378,7 @@ function OpenLiveDoc({ userId, docId, view, web }: { userId: string; docId: stri
               session={session}
               name={node.name}
               editable={editable}
+              assets={assets}
               width={view.layout === 'panel' ? 'fill' : chatWidth === 'full' ? 'wide' : 'narrow'}
             />
           </Suspense>

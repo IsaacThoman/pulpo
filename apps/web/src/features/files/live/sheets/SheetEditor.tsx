@@ -31,6 +31,10 @@ export interface SheetEditorProps {
   renderChart?: SheetViewOptions['renderChart']
   /** Called once the view exists (tests and hosts that drive it directly). */
   onView?: (view: SheetView | undefined) => void
+  /** Calculate formulas live (otherwise the values cached in the file show). */
+  calculate?: boolean
+  /** Rendered at the end of the toolbar. */
+  toolbarSlot?: React.ReactNode
 }
 
 function useAppearance(): 'light' | 'dark' {
@@ -106,7 +110,7 @@ function printSheet(view: SheetView): void {
 }
 
 /** A spreadsheet editor: toolbar, formula bar, the canvas grid, and sheet tabs. */
-export function SheetEditor({ doc, awareness, readOnly, assets, user, values, functions, renderChart, onView }: SheetEditorProps) {
+export function SheetEditor({ doc, awareness, readOnly, assets, user, values, functions, renderChart, onView, toolbarSlot }: SheetEditorProps) {
   const container = useRef<HTMLDivElement>(null)
   const imageInput = useRef<HTMLInputElement>(null)
   const [view, setView] = useState<SheetView>()
@@ -184,7 +188,7 @@ export function SheetEditor({ doc, awareness, readOnly, assets, user, values, fu
     <div className="pulpo-sheet-editor flex h-full min-h-0 w-full flex-col bg-background text-foreground" data-testid="sheet-editor">
       {view && state && (
         <>
-          <SheetToolbar view={view} state={state} onFind={() => setFindOpen(true)} onNote={() => setNoteOpen(true)} onInsertImage={() => imageInput.current?.click()} onPrint={() => printSheet(view)} />
+          <SheetToolbar view={view} state={state} onFind={() => setFindOpen(true)} onNote={() => setNoteOpen(true)} onInsertImage={() => imageInput.current?.click()} onPrint={() => printSheet(view)} slot={toolbarSlot} />
           <FormulaBar view={view} state={state} />
         </>
       )}

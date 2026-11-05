@@ -2712,6 +2712,8 @@ const esUi: Record<string, string> = {
   "This document needs a newer version of Pulpo": "Este documento necesita una versión más reciente de Pulpo",
 
   // Spreadsheet editor
+  "New spreadsheet": "Nueva hoja de cálculo",
+  "Untitled spreadsheet": "Hoja de cálculo sin título",
   "Theme colors": "Colores del tema",
   "Theme color {{n}}": "Color del tema {{n}}",
   "Theme color {{n}}, {{percent}}%": "Color del tema {{n}}, {{percent}} %",

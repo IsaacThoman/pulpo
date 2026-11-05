@@ -1,7 +1,7 @@
 import { lazy, type ComponentType, type LazyExoticComponent } from 'react'
-import { liveFormat, TEXT_FORMAT, type LiveAssetStore, type LiveFormatInfo } from '@pulpo/client-core/office'
+import { liveFormat, SHEET_FORMAT, TEXT_FORMAT, type LiveAssetStore, type LiveFormatInfo } from '@pulpo/client-core/office'
 import type { FileNode } from '@pulpo/contracts'
-import { FileCode, type LucideIcon } from 'lucide-react'
+import { FileCode, FileSpreadsheet, type LucideIcon } from 'lucide-react'
 import type * as Y from 'yjs'
 import { ui } from '@/i18n/ui'
 import { FileVersionsSummary } from './FileVersionsSummary'
@@ -37,6 +37,15 @@ export const LIVE_WEB_FORMATS: readonly LiveFormatWeb[] = [
     Editor: lazy(() => import('./text/TextDocEditor')),
     Diff: lazy(() => import('./text/TextDiff')),
     exportFile: async (doc, _name, assets) => (await import('@pulpo/client-core/office/text')).exportTextFile(doc, { assets }),
+  },
+  {
+    format: SHEET_FORMAT,
+    newLabel: () => ui("New spreadsheet"),
+    newName: () => `${ui("Untitled spreadsheet")}.xlsx`,
+    icon: FileSpreadsheet,
+    Editor: lazy(() => import('./sheets/SheetDocEditor')),
+    Diff: lazy(() => import('./sheets/SheetFileDiff')),
+    exportFile: async (doc, name, assets) => (await import('./sheets/calculation')).exportSheetFile(doc, name, assets),
   },
 ]
 

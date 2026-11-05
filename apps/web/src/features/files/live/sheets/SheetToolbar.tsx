@@ -39,35 +39,9 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { ui } from '@/i18n/ui'
 import { cn } from '@/lib/utils'
+import { ToolbarButton } from '../../editor/ToolbarButton'
 import { ColorBar, ColorPicker } from './ColorPicker'
 import { NUMBER_FORMATS } from './number-formats'
-
-function ToolbarButton({ label, shortcut, active, disabled, onClick, children }: {
-  label: string
-  shortcut?: string
-  active?: boolean
-  disabled?: boolean
-  onClick: () => void
-  children: ReactNode
-}) {
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      title={shortcut ? `${label} (${shortcut})` : label}
-      aria-pressed={active}
-      disabled={disabled}
-      onMouseDown={(event) => event.preventDefault()}
-      onClick={onClick}
-      className={cn(
-        'relative grid size-8 shrink-0 cursor-pointer place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40',
-        active && 'bg-accent text-foreground',
-      )}
-    >
-      {children}
-    </button>
-  )
-}
 
 function Divider() {
   return <span aria-hidden className="mx-1 h-5 w-px shrink-0 bg-border" />
@@ -115,15 +89,19 @@ const BORDER_PRESETS: { preset: BorderPreset; label: () => string }[] = [
   { preset: 'none', label: () => ui("No borders") },
 ]
 
-const mod = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+'
+const mac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
+/** A shortcut as the toolbar shows and announces it. */
+const keys = (key: string) => ({ label: mac ? `⌘${key.toUpperCase()}` : `Ctrl+${key.toUpperCase()}`, aria: `${mac ? 'Meta' : 'Control'}+${key}` })
 
-export function SheetToolbar({ view, state, onFind, onNote, onInsertImage, onPrint }: {
+export function SheetToolbar({ view, state, onFind, onNote, onInsertImage, onPrint, slot }: {
   view: SheetView
   state: SheetViewState
   onFind: () => void
   onNote: () => void
   onInsertImage: () => void
   onPrint: () => void
+  /** Rendered at the end of the toolbar (Files puts its own controls there). */
+  slot?: ReactNode
 }) {
   const style = state.activeStyle
   const disabled = state.readOnly
@@ -148,10 +126,10 @@ export function SheetToolbar({ view, state, onFind, onNote, onInsertImage, onPri
 
   return (
     <div role="toolbar" aria-label={ui("Spreadsheet formatting")} className="flex min-h-10 shrink-0 flex-wrap items-center gap-0.5 border-b border-border bg-background px-2 py-1">
-      <ToolbarButton label={ui("Undo")} shortcut={`${mod}Z`} disabled={disabled || !state.canUndo} onClick={() => view.undo()}>
+      <ToolbarButton label={ui("Undo")} shortcut={keys('z')} disabled={disabled || !state.canUndo} onClick={() => view.undo()}>
         <Undo2 className="size-4" />
       </ToolbarButton>
-      <ToolbarButton label={ui("Redo")} shortcut={`${mod}Y`} disabled={disabled || !state.canRedo} onClick={() => view.redo()}>
+      <ToolbarButton label={ui("Redo")} shortcut={keys('y')} disabled={disabled || !state.canRedo} onClick={() => view.redo()}>
         <Redo2 className="size-4" />
       </ToolbarButton>
       <ToolbarButton label={ui("Print")} onClick={onPrint}>
@@ -197,13 +175,13 @@ export function SheetToolbar({ view, state, onFind, onNote, onInsertImage, onPri
         ))}
       </Menu>
       <Divider />
-      <ToolbarButton label={ui("Bold")} shortcut={`${mod}B`} active={style.bold} disabled={formatDisabled} onClick={() => view.toggleStyle('bold')}>
+      <ToolbarButton label={ui("Bold")} shortcut={keys('b')} active={style.bold} disabled={formatDisabled} onClick={() => view.toggleStyle('bold')}>
         <Bold className="size-4" />
       </ToolbarButton>
-      <ToolbarButton label={ui("Italic")} shortcut={`${mod}I`} active={style.italic} disabled={formatDisabled} onClick={() => view.toggleStyle('italic')}>
+      <ToolbarButton label={ui("Italic")} shortcut={keys('i')} active={style.italic} disabled={formatDisabled} onClick={() => view.toggleStyle('italic')}>
         <Italic className="size-4" />
       </ToolbarButton>
-      <ToolbarButton label={ui("Underline")} shortcut={`${mod}U`} active={!!style.underline} disabled={formatDisabled} onClick={() => view.toggleUnderline()}>
+      <ToolbarButton label={ui("Underline")} shortcut={keys('u')} active={!!style.underline} disabled={formatDisabled} onClick={() => view.toggleUnderline()}>
         <Underline className="size-4" />
       </ToolbarButton>
       <ToolbarButton label={ui("Strikethrough")} active={style.strike} disabled={formatDisabled} onClick={() => view.toggleStyle('strike')}>
@@ -278,9 +256,10 @@ export function SheetToolbar({ view, state, onFind, onNote, onInsertImage, onPri
       <ToolbarButton label={ui("Insert image")} disabled={formatDisabled} onClick={onInsertImage}>
         <ImagePlus className="size-4" />
       </ToolbarButton>
-      <ToolbarButton label={ui("Find and replace")} shortcut={`${mod}F`} onClick={onFind}>
+      <ToolbarButton label={ui("Find and replace")} shortcut={keys('f')} onClick={onFind}>
         <Search className="size-4" />
       </ToolbarButton>
+      {slot && <div className="ml-auto flex items-center gap-1">{slot}</div>}
     </div>
   )
 }
