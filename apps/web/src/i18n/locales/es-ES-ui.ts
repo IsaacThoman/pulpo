@@ -2774,6 +2774,7 @@ const esUi: Record<string, string> = {
   "Endnotes": "Notas al final",
   "Double-click to edit": "Haz doble clic para editar",
   "New document": "Nuevo documento",
+  "1 page": "1 página",
   "Untitled document": "Documento sin título",
   "Superscript or subscript": "Superíndice o subíndice",
   "Character style": "Estilo de carácter",

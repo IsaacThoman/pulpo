@@ -18,7 +18,7 @@
     "test:doc-dictation": "node tests/doc-dictation.browser.mjs",
     "test:docx-editor": "node tests/docx-editor.browser.mjs",
     "test:docx-fidelity": "node tests/docx-fidelity.browser.mjs",
-    "capture:landing": "node scripts/capture-landing-screenshots.mjs",
+    "test:docx-files": "node tests/docx-files.e2e.mjs",
     "capture:landing": "node scripts/capture-landing-screenshots.mjs",
     "test:live-text": "node tests/live-text.browser.mjs"
   },

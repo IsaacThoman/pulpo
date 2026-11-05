@@ -277,7 +277,7 @@ export function StatusBar({ editor }: { editor: DocxEditor }) {
   const words = useEditorValue(editor, () => editor.wordCount())
   return (
     <footer className="flex h-8 shrink-0 items-center gap-3 border-t bg-background px-3 text-xs text-muted-foreground" data-docx-status>
-      {state.layout === 'print' && <span data-docx-pages>{ui("{{count}} pages", { count: state.pages })}</span>}
+      {state.layout === 'print' && <span data-docx-pages>{state.pages === 1 ? ui("1 page") : ui("{{count}} pages", { count: state.pages })}</span>}
       <span data-docx-words>{ui("{{count}} words", { count: words.words.toLocaleString() })}</span>
       <span>{ui("{{count}} characters", { count: words.charactersWithSpaces.toLocaleString() })}</span>
       <div className="ml-auto flex items-center gap-1">

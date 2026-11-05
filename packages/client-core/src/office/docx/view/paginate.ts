@@ -243,6 +243,7 @@ export function breakDecorations(view: EditorView, measured: Measured, layout: L
   const rect = flow.getBoundingClientRect()
   const frame: Frame = { top: rect.top, scale: flow.offsetWidth ? rect.width / flow.offsetWidth : 1 }
   for (const { unit, height } of layout.breaks) {
+    const unitIndex = unit
     const anchor = measured.anchors[unit]
     if (!anchor || height <= 0) continue
     if (anchor.kind === 'block') {
@@ -265,7 +266,10 @@ export function breakDecorations(view: EditorView, measured: Measured, layout: L
         if (map.findCell(offset).top !== anchor.row) continue
         const cell = anchor.table.nodeAt(offset)!
         const from = anchor.tablePos + 1 + offset
-        decorations.push(Decoration.node(from, from + cell.nodeSize, { class: 'docx-row-spacer', style: `--docx-row-spacer:${height}px` }))
+        // The row grows by exactly the spacer: a minimum row height would otherwise absorb part of it.
+        const unit = measured.units[unitIndex]
+        const rowHeight = unit ? unit.bottom - unit.top : 0
+        decorations.push(Decoration.node(from, from + cell.nodeSize, { class: 'docx-row-spacer', style: `--docx-row-spacer:${height}px;height:${rowHeight + height}px` }))
       }
     }
   }
