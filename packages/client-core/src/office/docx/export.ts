@@ -606,10 +606,10 @@ export function preserveCell(node: ProseMirrorNode): JmlElement {
   const model: DocxModel = { body: schema.node('doc', null, [schema.node('paragraph')]), maps: emptyMaps(), stories: new Map() }
   const state = new DocxExport(new OoxmlPackage(new Map()), model)
   const xml = new StoryWriter(state.writer('word/document.xml'), { comments: new Map(), footnote: new Map(), endnote: new Map() }, true).preservedCell(node)
-  const namespaces: Record<string, string> = { ...KNOWN_NAMESPACES, pulpo: 'urn:pulpo:internal' }
+  const namespaces: Record<string, string> = { ...KNOWN_NAMESPACES, pulpo: 'urn:pulpo:internal', xml: 'http://www.w3.org/XML/1998/namespace' }
   // The wrapper is discarded. JsonML keeps qualified names, so unknown source prefixes need
   // temporary bindings only to parse; their actual bindings remain on the document/element.
-  for (const match of xml.matchAll(/[<\s]([A-Za-z][\w-]*):[A-Za-z]/g)) namespaces[match[1]!] ??= `urn:pulpo:preserved:${match[1]}`
+  for (const match of xml.matchAll(/[<\s]([A-Za-z][\w-]*):[A-Za-z]/g)) if (match[1] !== 'xmlns') namespaces[match[1]!] ??= `urn:pulpo:preserved:${match[1]}`
   const attrs = Object.fromEntries(Object.entries(namespaces).map(([key, value]) => [`xmlns:${key}`, value]))
   const root = parseXml(`${openTag('pulpo:root', attrs, false, true)}${xml}</pulpo:root>`).documentElement!
   for (let child = root.firstChild; child; child = child.nextSibling) if (child.nodeType === 1) return elementToJml(child as Parameters<typeof elementToJml>[0])

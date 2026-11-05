@@ -658,7 +658,7 @@ function resolveBatch(state: EditorState, revisions: Revision[], action: 'accept
     // Mark steps have empty maps. Do not revisit thousands of them for each revision.
     while (mappedSteps < out.mapping.maps.length) {
       const map = out.mapping.maps[mappedSteps++]!
-      if (map.ranges.length) positions.appendMap(map)
+      if (map !== StepMap.empty) positions.appendMap(map)
     }
     return positions.map(pos, assoc)
   }
@@ -864,7 +864,7 @@ export function revisionProjection(doc: ProseMirrorNode, action: RevisionAction 
   const tr = revisions.length ? resolveAllRevisions(EditorState.create({ doc, schema: doc.type.schema }), action) : null
   const mapping = tr?.mapping ?? new Mapping()
   const moved = tr?.getMeta(MOVED_CONTENT) as MovedContent[] | undefined
-  const inverse = new Mapping(mapping.maps.filter((map) => map.ranges.length)).invert()
+  const inverse = new Mapping(mapping.maps.filter((map) => map !== StepMap.empty)).invert()
   const inverseSteps = moved?.length ? mapping.maps.map((step) => step.invert()) : []
   const movesAt = new Map<number, MovedContent[]>()
   for (const move of moved ?? []) movesAt.set(move.targetStep, [...movesAt.get(move.targetStep) ?? [], move])
