@@ -23,7 +23,7 @@ import {
   filesQueryKey,
   updateFileNode,
 } from '@/features/files/api'
-import { filesErrorMessage } from '@/features/files/file-display'
+import { filePreviewKind, filesErrorMessage, previewFillsView } from '@/features/files/file-display'
 import { DocEditor } from '@/features/files/editor/DocEditor'
 import type { DocSyncStatus } from '@pulpo/client-core/doc-sync'
 import { useDocSession, type PresencePeer } from '@/features/files/editor/use-doc-session'
@@ -416,7 +416,7 @@ function BlobFileView({ node, ancestors, view }: { node: FileNode; ancestors: Fi
       </FileHeader>
       <SuggestionBanner node={node} ancestors={ancestors} view={view} />
       {notice && <p role="alert" className="border-b bg-destructive/5 px-4 py-2 text-sm text-destructive sm:px-6">{notice}</p>}
-      <div className="min-h-0 flex-1 overflow-auto bg-muted/20 p-4">
+      <div className={previewFillsView(filePreviewKind(node)) ? 'min-h-0 flex-1 overflow-hidden' : 'min-h-0 flex-1 overflow-auto bg-muted/20 p-4'}>
         <FilePreviewBody node={node} />
       </div>
     </div>

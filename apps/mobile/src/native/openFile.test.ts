@@ -41,6 +41,16 @@ describe('Android file opening', () => {
     await expect(openAttachmentFile('content://pulpo/report', 'Report')).rejects.toThrow('No viewer')
     expect(mocks.contentUri).not.toHaveBeenCalled()
   })
+  it('runs pages in the sandboxed web preview instead of another app', async () => {
+    await openAttachmentFile('file:///cache/page.html', 'page.html', 'text/html')
+    expect(mocks.previewWebDocument).toHaveBeenCalledWith('file:///cache/page.html', 'page.html')
+    expect(mocks.launch).not.toHaveBeenCalled()
+  })
+  it('hands pages too large to run to the system viewer', async () => {
+    mocks.previewWebDocument.mockRejectedValueOnce(new AttachmentPreviewError('Too large', 'ERR_ATTACHMENT_PREVIEW_UNSUPPORTED'))
+    await openAttachmentFile('file:///cache/page.html', 'page.html', 'text/html')
+    expect(mocks.launch).toHaveBeenCalledWith('android.intent.action.VIEW', expect.objectContaining({ type: 'text/html' }))
+  })
   it('does not send remote URLs or session credentials to another app', async () => {
     await expect(openAttachmentFile('https://pulpo.example/api/attachments/1', 'Report')).rejects.toThrow('Download')
     expect(mocks.launch).not.toHaveBeenCalled()

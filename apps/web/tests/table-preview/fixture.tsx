@@ -14,7 +14,7 @@ for (let row = 1; row <= rows; row++) {
 const text = lines.join('\n')
 const file = new File([text], 'big.csv', { type: 'text/csv' })
 
-// StrictMode double-invokes state initializers; the first batch must still start at row 1.
+// StrictMode double-invokes state initializers and effects; the grid must still start at row 1.
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <AttachmentPreviewDialog

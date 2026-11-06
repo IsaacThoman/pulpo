@@ -10,6 +10,8 @@ import { openAttachmentFile } from '../../native/openFile'
 import { downloadFile, fetchDocMarkdown, fetchFileNode, markdownExportFile } from './api'
 import { filesErrorMessage } from './display'
 import { fileOpenTarget } from './itemActions'
+import { decodeFileText, MAX_IN_APP_VIEWER_BYTES } from './viewers/content'
+import { openNotebook } from './viewers/notebook'
 
 /** Uploaded files being fetched to open or share, so their rows can show progress. */
 export const useFileDownloads = create<{ active: Record<string, true>; set: (id: string, active: boolean) => void }>((set) => ({
@@ -50,7 +52,10 @@ export async function shareFileItem(node: FileNode, markdown?: string): Promise<
   await Sharing.shareAsync(file.uri, { mimeType: node.mimeType ?? undefined, dialogTitle: node.name })
 }
 
-/** Opens any Files item the way the web does: folders and documents in their screens, files in a viewer. */
+/**
+ * Opens any Files item the way the web does: folders and documents in their screens, CSV, code, and
+ * text in the app's viewer, notebooks in the sandboxed web preview, other files in the system viewer.
+ */
 export function useOpenFileItem() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>()
   return useCallback(async (node: FileNode) => {
@@ -61,6 +66,19 @@ export function useOpenFileItem() {
         case 'document': navigation.push('FileDocument', { fileId: target.id, name: target.name }); return
         case 'markdown': navigation.push('FileMarkdown', { fileId: target.id, name: target.name }); return
         case 'quiz': navigation.push('FileQuiz', { fileId: target.id, name: target.name }); return
+        case 'viewer': navigation.push('FileViewer', { fileId: target.id, name: target.name }); return
+        case 'notebook': {
+          const notebook = node.id === target.id ? node : (await fetchFileNode(target.id)).node
+          // Behind a shortcut the size is only known now; huge notebooks go to the system viewer.
+          if (notebook.sizeBytes > MAX_IN_APP_VIEWER_BYTES) {
+            await previewUploadedFile(notebook)
+            return
+          }
+          const file = await withDownload(target.id, () => downloadFile(notebook))
+          const fallback = await openNotebook(decodeFileText(await file.bytes()), target.name)
+          if (fallback) navigation.push('FileViewer', { fileId: target.id, name: target.name, notice: fallback.notice })
+          return
+        }
         // Back to the one chat screen, which opens the chat (pushing would stack a second one).
         case 'chat': navigation.popTo('Chat', { chatId: target.id }); return
         case 'unavailable': Alert.alert('Can’t open this item', target.reason); return

@@ -4,10 +4,11 @@ import { apiRequest, fetchApiBlob } from '@/lib/api'
 import { getCachedAttachment } from '@/lib/local-first/attachment-cache'
 import { useAuth } from '@/stores/auth'
 import { formatBytes } from '@/lib/attachments'
+import { decodeTextBytes } from '@pulpo/client-core/files'
 import {
-  formatTextPreview,
   isTextPreviewKind,
   previewSizeLimit,
+  truncateTextPreview,
   type AttachmentPreviewKind,
 } from '@/lib/attachment-previews'
 import { ui } from '@/i18n/ui'
@@ -26,6 +27,7 @@ function previewLabel(kind: AttachmentPreviewKind): string {
   if (kind === 'quiz') return ui("Quiz")
   if (kind === 'text') return ui("Text preview")
   if (kind === 'sandbox') return ui("Live preview")
+  if (kind === 'notebook') return ui("Notebook")
   return `${kind[0]!.toUpperCase()}${kind.slice(1)} preview`
 }
 
@@ -81,14 +83,11 @@ export function usePreviewContent(
           throw new Error(`This file is too large to preview (${formatBytes(blob.size)}).`)
         }
 
-        if (kind === 'table') {
-          // Tables keep the whole file: rows are parsed and rendered on demand as the reader scrolls.
-          const text = await blob.text()
-          if (!cancelled) setContent({ status: 'ready', url: null, text, textTruncated: false })
-          return
-        }
         if (isTextPreviewKind(kind)) {
-          const result = formatTextPreview(attachment.name, attachment.mimeType, await blob.text())
+          // Decoded with a fallback, so files saved as Windows-1252 or UTF-16 read correctly. Viewers
+          // virtualize what they show, so only Markdown (rendered whole) is cut short.
+          const { text } = decodeTextBytes(new Uint8Array(await blob.arrayBuffer()))
+          const result = kind === 'markdown' ? truncateTextPreview(text) : { text, truncated: false }
           if (!cancelled) setContent({ status: 'ready', url: null, text: result.text, textTruncated: result.truncated })
           return
         }
