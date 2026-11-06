@@ -35,6 +35,47 @@ export function isMarkdownName(name: string): boolean {
   return /\.(md|markdown)$/i.test(name)
 }
 
+/** The Office Open XML formats Pulpo's editors open, which other office files convert to. */
+export const officeEditableFormatSchema = z.enum(['docx', 'xlsx', 'pptx'])
+export type OfficeEditableFormat = z.infer<typeof officeEditableFormatSchema>
+
+/**
+ * Office files the server's conversion service (OFFICE_CONVERTER_URL) turns into an editable
+ * format: legacy Microsoft Office, OpenDocument, RTF, WordPerfect, Apple iWork, and Office
+ * templates. Keep in step with `packages/office-converter/src/formats.ts`.
+ */
+const OFFICE_CONVERSIONS: Record<string, OfficeEditableFormat> = {
+  doc: 'docx', rtf: 'docx', odt: 'docx', ott: 'docx', wpd: 'docx', pages: 'docx', dotx: 'docx',
+  xls: 'xlsx', ods: 'xlsx', ots: 'xlsx', numbers: 'xlsx', xltx: 'xlsx',
+  ppt: 'pptx', pps: 'pptx', odp: 'pptx', otp: 'pptx', key: 'pptx', potx: 'pptx',
+}
+
+/** A file name's extension, lowercased, or '' when it has none. */
+export function fileExtension(name: string): string {
+  const dot = name.lastIndexOf('.')
+  return dot > 0 ? name.slice(dot + 1).toLowerCase() : ''
+}
+
+/** The editable format an office file converts to, or null when it is not one (or already is). */
+export function officeConversionTarget(name: string): OfficeEditableFormat | null {
+  const extension = fileExtension(name)
+  return Object.hasOwn(OFFICE_CONVERSIONS, extension) ? OFFICE_CONVERSIONS[extension]! : null
+}
+
+/** Whether an office file can be exported as PDF: anything convertible, and the editable formats themselves. */
+export function canExportOfficePdf(name: string): boolean {
+  return officeConversionTarget(name) !== null || officeEditableFormatSchema.safeParse(fileExtension(name)).success
+}
+
+/** "Report.doc" converted to docx is "Report.docx"; the caller still picks a free name. */
+export function convertedFileName(name: string, format: OfficeEditableFormat | 'pdf'): string {
+  const dot = name.lastIndexOf('.')
+  return `${truncateCodePoints(dot > 0 ? name.slice(0, dot) : name, FILE_NAME_MAX_LENGTH - format.length - 1)}.${format}`
+}
+
+export const convertOfficeFileSchema = z.object({ to: officeEditableFormatSchema })
+export type ConvertOfficeFile = z.infer<typeof convertOfficeFileSchema>
+
 function splitExtension(name: string): [base: string, extension: string] {
   const dot = name.lastIndexOf('.')
   // Dotfiles such as ".env" have no extension to preserve, and a very long "extension" is just text.

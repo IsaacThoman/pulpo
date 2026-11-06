@@ -29,6 +29,7 @@ import { hashToken, randomToken } from '../lib/crypto.js'
 import { sendPasswordReset } from '../lib/mail.js'
 import { parseAuthSettings, parseCodexSettings, parseDictationSettings, parseWebToolsSettings } from '../settings/application-settings.js'
 import { webExtractAvailable } from '../agent/web-tools.js'
+import { officeConversionAvailable } from '../files/office/converter.js'
 import { newUserStorageLimit } from '../billing/storage-entitlements.js'
 import { insertNewAccountPreferences } from '../settings/new-account-defaults.js'
 import { publishStateChange } from '../responses/events.js'
@@ -118,6 +119,8 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
       messageReportsEnabled,
       dictationEnabled: dictation.enabled && Boolean(dictation.encryptedGroqApiKey),
       urlImportEnabled: filesEnabled && webExtractAvailable(parseWebToolsSettings(byKey.get('webTools'))),
+      // Converting office files and exporting them as PDF needs the office converter service.
+      officeConversionEnabled: filesEnabled && officeConversionAvailable(),
     }
   })
 

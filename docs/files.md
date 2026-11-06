@@ -39,7 +39,7 @@ Files views offer their items to the chat in the main view, which `ChatPage` pub
 
 ### The `pulpo files` command
 
-The agent has no Files tools of its own. In its workspace it runs `pulpo files ls|tree|cat|grep|pull|status|push|mkdir|mv|rm` in bash; the CLI (`packages/workspace-daemon`) hands each command to the workspace daemon, which holds it until the server, already polling the running bash operation, answers (see `infra/workspace-image/README.md`). No Pulpo credential enters the sandbox, and the sandbox is the agent's to control, so the server (`apps/server/src/files/agent/relay.ts`) is the only trust boundary:
+The agent has no Files tools of its own. In its workspace it runs `pulpo files ls|tree|cat|grep|pull|status|push|mkdir|mv|rm|convert` in bash; the CLI (`packages/workspace-daemon`) hands each command to the workspace daemon, which holds it until the server, already polling the running bash operation, answers (see `infra/workspace-image/README.md`). No Pulpo credential enters the sandbox, and the sandbox is the agent's to control, so the server (`apps/server/src/files/agent/relay.ts`) is the only trust boundary:
 
 - Every command's arguments are validated with zod. Paths are walked one child at a time from the chat's scope, re-read for every command, so nothing outside it can be named; `.` and `..` segments are refused and shortcuts are invisible. The only id the sandbox sends is a push's `base.nodeId`, which must match the item its path resolves to. Local paths must be normalized absolute paths under `/workspace/`.
 - Paths start with an attached item's name (made unique as `Name (2)`), or at the top of My files for a `root` scope. New items must go inside an attached folder. The system prompt (`files/agent/prompt.ts`) lists every attached item with its access and explains the command.
@@ -99,6 +99,27 @@ The pieces live in `@pulpo/client-core` so editors, agents, and mobile reuse the
 - `highlight`: the lowlight highlighter, line splitting that keeps multi-line tokens, find marks, and the token colors.
 
 On iOS and Android, CSV/TSV open in a native grid (Table and Text, find, and tapping a cell shows and copies its full value), and code and text in a native viewer with line numbers, wrap, find, and copy; JSON is pretty-printed. Tabs display at four-column stops in the native text viewer, while copying keeps the original tabs. Notebooks render to one page (`renderNotebookHtml`, math as MathML) shown in the sandboxed web preview, as are HTML files: on iOS the existing `WKWebView` preview, and on Android a new one (`PulpoWebPreviewActivity`) that serves the page from an address only it answers, with the sandbox Content-Security-Policy as a response header, so the page has an opaque origin, no JavaScript bridge, no file access, and no storage, and links open in the browser. Chat attachments of these types open in the same viewers. Files over 25 MB open in the system viewer.
+
+## Office files
+
+With the office converter configured (`OFFICE_CONVERTER_URL`; see `infra/office-converter/README.md`), Files converts legacy, OpenDocument, and iWork office files into the Office Open XML formats Pulpo's editors work with (docx, xlsx, pptx), and exports any office file as PDF. `/api/auth/settings` reports `officeConversionEnabled` and `/api/mobile/config` reports `capabilities.files.officeConversion`; without the converter, clients hide all of it.
+
+| From | Converts to |
+| --- | --- |
+| `.doc`, `.rtf`, `.odt`, `.ott`, `.wpd`, `.pages`, `.dotx` | `.docx` |
+| `.xls`, `.ods`, `.ots`, `.numbers`, `.xltx` | `.xlsx` |
+| `.ppt`, `.pps`, `.odp`, `.otp`, `.key`, `.potx` | `.pptx` |
+
+These, and `.docx`, `.xlsx`, and `.pptx`, export as PDF. The table lives in `@pulpo/contracts` (`officeConversionTarget`, `canExportOfficePdf`) and must match the converter's (`packages/office-converter/src/formats.ts`; a test checks).
+
+- `POST /api/files/:id/conversions` with `{ to }` adds the converted file beside the original, which is kept, under the next free name (`Report.docx`, else `Report (2).docx`). Generated names are truncated by Unicode code points to fit the 255-character name limit, keeping the target extension. It lands where the original is when the conversion finishes, and nothing is created if the original was trashed meanwhile. The bytes are stored first and deleted again unless the new file commits; the file counts toward storage and must fit the per-file cap.
+- `GET /api/files/:id/pdf` (`?inline=1` for previews) returns the file as PDF; nothing is stored.
+
+Both run while the client waits rather than as a queued job: conversions take a few seconds, the person is waiting for the result, and the converter service already limits and queues work for the whole instance (answering busy when full). Each account may run two conversions at a time (previews, exports, and its agents' conversions included) per server process, fewer than the converter runs at once, both routes are rate limited (20 a minute), and a client that disconnects cancels its conversion. Failures have their own codes: `office_file_encrypted` (password-protected), `office_conversion_failed` (damaged), `office_file_unreadable` (the content is not what the extension says), `office_file_too_large`, `office_conversion_timeout`, `office_converter_busy`, `office_converter_unavailable`, `office_conversion_unsupported`, and `office_conversion_rate_limited`.
+
+On the web, an office file the browser cannot show opens read only with a PDF preview rendered by the server (files over 50 MB skip it), a note that converting makes a copy, **Convert to .docx** (or .xlsx, .pptx) and **Download as PDF** in its header; the Files menu offers both too. The button shows progress, and the result's toast opens the copy. On mobile, office files already open in Quick Look (or the Android viewer); their item menus add **Export as PDF…** (the share sheet) and **Convert to .docx**, with progress on the row.
+
+Agents run `pulpo files convert <path> --to docx|xlsx|pptx|pdf [--output <path>]`. The copy is created like a pushed file, in the mode its folder allows (so in Suggest mode it waits for the user), recorded for undo and review, from the content the agent sees (its chat's pending proposal, if any). Without `--output` it goes beside the original under a free name, which must be inside an attached folder. Without the converter the command says so and suggests converting in the workspace, whose image has LibreOffice (and Jupyter for notebooks); the system prompt tells the agent to render documents and slides to PDF and PNG there to check how they look.
 
 ## Documents
 

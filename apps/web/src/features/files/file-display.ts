@@ -85,6 +85,16 @@ export function filesErrorMessage(error: unknown, name?: string): string {
       case 'url_import_failed': return ui("This page could not be imported. Check the link and try again.")
       case 'url_import_unavailable': return ui("Importing from a URL is not available")
       case 'file_shortcut_to_shortcut': return ui("Create a shortcut to the item this shortcut opens instead")
+      case 'office_file_encrypted': return ui("Password-protected files can't be converted")
+      case 'office_conversion_failed': return ui("This file couldn't be converted. It may be damaged.")
+      case 'office_file_unreadable': return ui("This file's contents don't match its name")
+      case 'office_file_too_large': return ui("This file is too large to convert")
+      case 'office_conversion_timeout': return ui("Converting took too long. Try again later.")
+      case 'office_converter_busy': return ui("The converter is busy. Try again in a moment.")
+      case 'office_converter_unavailable': return ui("The converter isn't available. Try again later.")
+      case 'office_conversion_unavailable': return ui("This server can't convert office files")
+      case 'office_conversion_unsupported': return ui("This file can't be converted to that format")
+      case 'office_conversion_rate_limited': return ui("Wait for your other conversions to finish")
       default: return error.message
     }
   }

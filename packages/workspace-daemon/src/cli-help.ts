@@ -22,6 +22,8 @@ Change:
   mkdir [-p] <path>...          create folders
   mv <from> <to>                move or rename
   rm [-r] <path>...             move to the trash (-r for folders)
+  convert <path> --to <format> [--output <path>]
+                                converted copy of an office file (docx, xlsx, pptx, pdf)
 
 Edit a document or file:
   pulpo files pull Projects/Plan.md
@@ -137,6 +139,28 @@ new path to keep working on it.
 Examples:
   pulpo files mv Projects/Draft.md Projects/Plan.md
   pulpo files mv Notes.md Archive
+`,
+  convert: `Usage: pulpo files convert <path> --to <format> [--output <path>]
+
+Make a converted copy of an office file in Files. The original stays as it is.
+  -t, --to <format>     docx, xlsx, pptx, or pdf
+  -o, --output <path>   Files path for the copy (must not exist yet); by default
+                        it goes beside the original as "<name>.<format>", or
+                        "<name> (2).<format>" when that is taken
+
+Converts legacy Microsoft Office (.doc, .xls, .ppt, .pps), OpenDocument (.odt,
+.ods, .odp and templates), RTF, WordPerfect (.wpd), Apple iWork (.pages,
+.numbers, .key) and Office templates (.dotx, .xltx, .potx) to the matching
+docx/xlsx/pptx, and any of those or docx/xlsx/pptx to PDF. The copy is created
+like a pushed file: in suggest mode it waits for the user to accept it.
+Password-protected files cannot be converted.
+
+To convert files in your workspace instead, use LibreOffice directly:
+  soffice --headless --convert-to docx --outdir /workspace/out file.doc
+
+Examples:
+  pulpo files convert Projects/Budget.xls --to xlsx
+  pulpo files convert Projects/Deck.pptx --to pdf --output Projects/Deck.pdf
 `,
   rm: `Usage: pulpo files rm [-r] <path>...
 

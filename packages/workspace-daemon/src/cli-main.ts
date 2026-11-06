@@ -67,6 +67,10 @@ export async function runCli(argv: string[], context: CliContext): Promise<numbe
         await forget(context, from, to)
         return 0
       }
+      case 'convert': return await single(context, 'convert', {
+        path: remotePath(invocation.path, context.mirrorRoot), to: invocation.to,
+        ...(invocation.output === undefined ? {} : { output: remotePath(invocation.output, context.mirrorRoot) }),
+      })
       case 'ls': return await single(context, 'ls', { ...optionalPath(context, invocation.path), ...(invocation.recursive ? { recursive: true } : {}) })
       case 'tree': return await single(context, 'tree', { ...optionalPath(context, invocation.path), ...(invocation.depth ? { depth: invocation.depth } : {}) })
       case 'grep': return await single(context, 'grep', {

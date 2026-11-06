@@ -62,12 +62,16 @@ describe('pulpo files over the relay socket', () => {
     await run('tree', '--depth', '2')
     await run('grep', '-i', 'budget', 'Projects')
     await run('mkdir', '-p', 'A/B')
+    await run('convert', '/Projects/Budget.xls', '--to', 'xlsx')
+    await run('convert', 'Projects/Deck.key', '--to', 'pdf', '--output', '/Projects/Out/Deck.pdf')
 
     expect(calls).toEqual([
       { operationId: 'op-1', command: 'ls', args: { path: 'Projects', recursive: true } },
       { operationId: 'op-1', command: 'tree', args: { depth: 2 } },
       { operationId: 'op-1', command: 'grep', args: { pattern: 'budget', path: 'Projects', ignoreCase: true } },
       { operationId: 'op-1', command: 'mkdir', args: { path: 'A/B', parents: true } },
+      { operationId: 'op-1', command: 'convert', args: { path: 'Projects/Budget.xls', to: 'xlsx' } },
+      { operationId: 'op-1', command: 'convert', args: { path: 'Projects/Deck.key', to: 'pdf', output: 'Projects/Out/Deck.pdf' } },
     ])
   })
 

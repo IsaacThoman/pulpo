@@ -155,8 +155,24 @@ export function fileNameErrorMessage(error: FileNameError): string {
   return FILE_NAME_ERRORS[error]
 }
 
+/** Office conversion failures (files/office on the server); several are 5xx, which are not "offline". */
+const OFFICE_ERRORS: Record<string, string> = {
+  office_file_encrypted: 'Password-protected files can’t be converted. Remove the password and upload it again.',
+  office_conversion_failed: 'This file couldn’t be converted. It may be damaged.',
+  office_file_unreadable: 'This file’s contents don’t match its name, so it can’t be converted.',
+  office_file_too_large: 'This file is too large to convert.',
+  office_conversion_timeout: 'Converting took too long. Try again later.',
+  office_converter_busy: 'The converter is busy. Try again in a moment.',
+  office_converter_unavailable: 'The converter isn’t available right now. Try again later.',
+  office_conversion_unavailable: 'This server can’t convert office files.',
+  office_conversion_unsupported: 'This file can’t be converted to that format.',
+  office_conversion_rate_limited: 'Wait for your other conversions to finish, then try again.',
+  office_pdf_export_failed: 'This file couldn’t be exported as PDF. Try again later.',
+}
+
 /** The Files API's known failures in words; anything else keeps the server's message. */
 export function filesErrorMessage(error: unknown, name?: string): string {
+  if (error instanceof ApiError && error.code.startsWith('office_')) return OFFICE_ERRORS[error.code] ?? error.message
   if (isNetworkError(error)) return 'You’re offline. Try again when you’re connected.'
   if (error instanceof ApiError) {
     switch (error.code) {

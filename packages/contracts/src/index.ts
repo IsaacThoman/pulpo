@@ -186,6 +186,9 @@ export const mobileConfigSchema = z.object({
      * bundled editor speaks another version can open documents read only instead of failing to join.
      * `urlImport` is whether Files can save a web page as a document (POST /api/files/import-url),
      * which needs a page extraction provider; older servers omit it, and clients then hide it.
+     * `officeConversion` is whether office files can be converted to docx/xlsx/pptx and exported
+     * as PDF (POST /api/files/:id/conversions, GET /api/files/:id/pdf), which needs the office
+     * converter service; older servers omit it, and clients then hide it.
      */
     files: z.object({
       enabled: z.boolean(),
@@ -196,6 +199,7 @@ export const mobileConfigSchema = z.object({
        * `docSchemaVersion`). Older servers omit it and edit Markdown only.
        */
       liveFormats: z.record(z.string(), z.number().int().positive()).optional(),
+      officeConversion: z.boolean().optional().default(false),
     }).optional(),
     /**
      * App Store subscriptions, with the StoreKit environments whose purchases this server accepts.

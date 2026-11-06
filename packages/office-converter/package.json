@@ -1,0 +1,23 @@
+{
+  "name": "@pulpo/office-converter",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./formats": {
+      "types": "./src/formats.ts",
+      "default": "./src/formats.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "test": "vitest run --exclude \"**/dist/**\""
+  },
+  "devDependencies": {
+    "@types/node": "^24.2.1",
+    "fflate": "^0.8.3",
+    "typescript": "~6.0.2",
+    "vitest": "^4.1.11"
+  }
+}

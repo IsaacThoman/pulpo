@@ -28,7 +28,7 @@ import { FilesToastHost } from '../components/FilesToastHost'
 import { FolderPickerSheet } from '../components/FolderPickerSheet'
 import { UrlImportRows } from '../components/UrlImportRows'
 import { filesErrorMessage, isBuiltIn } from '../display'
-import { fileItemActions, trashItemActions, type FileItemActionId, type TrashItemActionId } from '../itemActions'
+import { fileItemActions, officeActions, trashItemActions, type FileItemActionId, type TrashItemActionId } from '../itemActions'
 import { shareFileItem, useFileDownloads, useOpenFileItem } from '../open'
 import { refreshFiles, useFileOperations } from '../operations'
 import { useItemAppearance } from '../itemAppearance'
@@ -39,6 +39,7 @@ import { folderQuery } from '../queries'
 import { cancelUpload, enqueueUploads, pickUploads, resumeUploads, retryUpload, useFileUploads, type QueuedUpload } from '../uploads'
 import { useFilesNamespace } from '../useFilesNamespace'
 import { promptUrlImport, usePendingUrlImports, useUrlImportEnabled } from '../urlImport'
+import { convertOfficeFile, shareOfficePdf, useOfficeConversionEnabled } from '../officeConversion'
 
 type Props = NativeStackScreenProps<RootStackParamList, 'FilesFolder'>
 
@@ -105,6 +106,7 @@ export function FilesFolderScreen({ navigation, route }: Props) {
   const legacyView = useMemo(() => legacyChats ? legacyTrashView(legacyChats, retention) : null, [legacyChats, retention])
   const trashView = !inTrash ? undefined : legacyView ?? trashListing.data ?? undefined
   const operations = useFileOperations(namespace)
+  const officeConversion = useOfficeConversionEnabled()
   const trashOperations = useTrashOperations(namespace, legacyTrash)
   const setAppearance = useItemAppearance(namespace)
   const trashColor = usePreferencesStore((state) => state.trashColor)
@@ -309,6 +311,18 @@ export function FilesFolderScreen({ navigation, route }: Props) {
     }
   }, [confirmDeleteForever, openNode, startSelection, trashOperations])
 
+  /** Runs an office action with the row's progress spinner, reporting failures in a toast. */
+  const officeTask = useCallback(async (node: FileNode, task: () => Promise<void>) => {
+    useFileDownloads.getState().set(node.id, true)
+    try {
+      await task()
+    } catch (error) {
+      operations.fail(error, node.name)
+    } finally {
+      useFileDownloads.getState().set(node.id, false)
+    }
+  }, [operations])
+
   const runFileAction = useCallback((node: FileNode, action: string) => {
     const id = action as FileItemActionId
     switch (id) {
@@ -331,6 +345,19 @@ export function FilesFolderScreen({ navigation, route }: Props) {
           })
           .catch((error: unknown) => operations.fail(error, node.name))
         return
+      case 'export-pdf': void officeTask(node, () => shareOfficePdf(node)); return
+      case 'convert-office': {
+        const target = officeActions(node, true).target
+        if (!target) return
+        operations.notify(`Converting “${node.name}”…`)
+        void officeTask(node, async () => {
+          // The copy appears beside the original once the folder refreshes.
+          const created = await convertOfficeFile(node.id, target)
+          await operations.refresh()
+          operations.notify(`Converted to “${created.name}”`)
+        })
+        return
+      }
       case 'accept-suggestion': void operations.resolveSuggestion(node, 'accept'); return
       case 'reject-suggestion':
         Alert.alert(`Remove “${node.name}”?`, 'The agent suggested this item. Removing it deletes it, and anything you added inside moves up a level.', [
@@ -343,14 +370,14 @@ export function FilesFolderScreen({ navigation, route }: Props) {
       case 'open-in-new-chat':
         return
     }
-  }, [namespace, navigation, openNode, operations, queryClient, startSelection, trashItems])
+  }, [namespace, navigation, officeTask, openNode, operations, queryClient, startSelection, trashItems])
   const runAction = inTrash ? runTrashAction : runFileAction
 
   // Trashed items are restored into a chosen folder only while Files is on.
   const restoreTo = Boolean(trashView?.files && filesEnabled)
   const actionsFor = useCallback((node: FileNode) => inTrash
     ? trashItemActions(node, { files: restoreTo, selectable: true })
-    : fileItemActions(node, { agent: 'none', selectable: true }), [inTrash, restoreTo])
+    : fileItemActions(node, { agent: 'none', selectable: true, officeConversion }), [inTrash, officeConversion, restoreTo])
   const press = useCallback((node: FileNode) => {
     if (!selecting) {
       openNode(node)

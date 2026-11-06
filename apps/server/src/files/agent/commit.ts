@@ -1,5 +1,7 @@
 import type { DocClosedEvent, StateInvalidationScope } from '@pulpo/contracts'
-import type { db } from '../../database/client.js'
+import { eq } from 'drizzle-orm'
+import { db } from '../../database/client.js'
+import { fileNodes, fileVersions } from '../../database/schema.js'
 import { getBlobStore } from '../../storage/index.js'
 import { publishDocsClosed, publishDocUpdate } from '../doc-events.js'
 import { scheduleCompactionAfterUpdate } from '../doc-store.js'
@@ -78,4 +80,22 @@ async function runCommitEffects(effects: CommitEffects): Promise<void> {
 
 export async function deleteObjects(keys: string[]): Promise<void> {
   for (const key of keys) await getBlobStore().delete(key).catch(() => undefined)
+}
+
+/**
+ * Deletes newly stored bytes after a failed change, unless a file or kept version uses them.
+ * Announcing a change happens after commit and can fail on its own. When the lookup itself fails (the commit may
+ * have landed), the object is kept; an orphan only costs storage.
+ */
+export async function deleteUnlessCommitted(key: string): Promise<void> {
+  let used: boolean
+  try {
+    // One snapshot covers content moving between the current file and its kept versions.
+    used = (await db.select({ key: fileNodes.objectKey }).from(fileNodes).where(eq(fileNodes.objectKey, key))
+      .unionAll(db.select({ key: fileVersions.objectKey }).from(fileVersions).where(eq(fileVersions.objectKey, key)))
+      .limit(1)).length > 0
+  } catch {
+    return
+  }
+  if (!used) await deleteObjects([key])
 }

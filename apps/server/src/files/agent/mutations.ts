@@ -22,7 +22,7 @@ import {
   trashNodeInTx,
 } from '../tree-service.js'
 import { deleteChange, findChange, parsePlace, recordChange, setChangeStatus, updateCreation, type FileChangeRow, type Place, type ReplyContext } from './changes.js'
-import { deleteObjects, mutateAgentFiles, TREE_AND_CHAT_SCOPES, type CommitEffects, type DatabaseTransaction } from './commit.js'
+import { deleteObjects, deleteUnlessCommitted, mutateAgentFiles, TREE_AND_CHAT_SCOPES, type CommitEffects, type DatabaseTransaction } from './commit.js'
 import { baseMarkdown, loadDocInTx, lockDocs, markdownVersion, proposedMarkdown, writeDocInTx } from './docs.js'
 import { applyLiveFileInTx, isLiveDoc, parseLiveSnapshot, pendingLiveProposal, proposalFork, releaseLiveSnapshot, storeLiveSnapshot, supersedeLiveProposals, WrittenObjects } from './live.js'
 import { FilesCommandError } from './scope.js'
@@ -131,22 +131,26 @@ export async function createDocChange(reply: ReplyContext, parentId: string | nu
   })
 }
 
-/** Stores the bytes first; the object is deleted again unless the new file commits. */
-export async function createBlobChange(reply: ReplyContext, parentId: string | null, name: string, bytes: Uint8Array, mode: ChangeMode) {
+/**
+ * Stores the bytes first; the object is deleted again unless the new file commits. With
+ * `pickFreeName`, a taken name becomes the next free one ("Name (2).ext") instead of failing.
+ */
+export async function createBlobChange(reply: ReplyContext, parentId: string | null, name: string, bytes: Uint8Array, mode: ChangeMode, options: { pickFreeName?: boolean } = {}) {
   const content = await storeBlob(reply.userId, name, bytes)
   try {
     return await mutateReply(reply, async (tx) => {
       const plan = await newItemPlan(tx, reply.userId, parentId, mode)
       await assertDestination(tx, reply.userId, parentId)
-      await assertNameAvailable(tx, reply.userId, parentId, name)
+      const finalName = options.pickFreeName ? await availableName(tx, reply.userId, parentId, name) : name
+      if (!options.pickFreeName) await assertNameAvailable(tx, reply.userId, parentId, name)
       const [node] = await tx.insert(fileNodes).values({
-        id: newId(), ownerUserId: reply.userId, parentId, kind: 'blob', name, ...content,
+        id: newId(), ownerUserId: reply.userId, parentId, kind: 'blob', name: finalName, ...content,
         sortOrder: await topSortOrder(tx, reply.userId, parentId), suggestionChangeId: plan.suggestionChangeId,
       }).returning()
       return { node: node!, status: await recordCreation(tx, reply, node!, plan.rowId, mode, { objectKey: content.objectKey }), version: blobVersion(content) }
     }, { reserveBytes: bytes.byteLength })
   } catch (error) {
-    await deleteObjects([content.objectKey])
+    await deleteUnlessCommitted(content.objectKey)
     throw error
   }
 }

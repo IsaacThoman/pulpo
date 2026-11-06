@@ -21,6 +21,7 @@ import { AppError, unauthorized } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { parseAuthSettings, parseDictationSettings, parseWebToolsSettings } from '../settings/application-settings.js'
 import { webExtractAvailable } from '../agent/web-tools.js'
+import { officeConversionAvailable } from '../files/office/converter.js'
 import { newUserStorageLimit } from '../billing/storage-entitlements.js'
 import { insertNewAccountPreferences } from '../settings/new-account-defaults.js'
 import {
@@ -90,6 +91,8 @@ export async function registerMobileRoutes(app: FastifyInstance): Promise<void> 
           liveFormats: liveSchemaVersions(),
           // As /api/auth/settings tells the web client (urlImportEnabled).
           urlImport: auth.filesEnabled && webExtractAvailable(parseWebToolsSettings(webToolsSetting?.value)),
+          // As /api/auth/settings tells the web client (officeConversionEnabled).
+          officeConversion: auth.filesEnabled && officeConversionAvailable(),
         },
         appStoreBilling: acceptedAppStoreEnvironments(config).length
           ? {
