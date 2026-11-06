@@ -5,7 +5,7 @@ import { db, queryClient } from '../database/client.js'
 import { agentRuns, apiKeys, applicationSettings, billingAccounts, billingOrders, dailyUsagePeriods, budgetReservationAllowanceFunders, budgetReservations, fiveHourUsagePeriods, sharedAllowancePeriods, sharedFiveHourUsagePeriods, creditLedger, budgetReservationFunders, chats, generationAttempts, models, modelPricingVersions, pools, poolMembers, providerConnections, requestLogs, responses, toolExecutions, users, usageEvents, weeklyUsagePeriods } from '../database/schema.js'
 import { utcDayStart } from '../billing/plans.js'
 import { assertDailySpendAvailable, loadDailySpend } from '../billing/usage-tiers.js'
-import { chargeMeteredUsage, extendBudgetReservationFixedCost, releaseBudget, releaseBudgetReservationFixedCost, reserveBudget, resizeBudgetReservation, retainBudgetReservation, settleBudget } from './service.js'
+import { chargeMeteredUsage, closeAbandonedReservation, extendBudgetReservationFixedCost, releaseBudget, releaseBudgetReservationFixedCost, reserveBudget, resizeBudgetReservation, retainBudgetReservation, settleBudget } from './service.js'
 
 vi.mock('../responses/events.js', () => ({ publishStateChange: vi.fn() }))
 vi.mock('../config.js', async original => {
@@ -292,6 +292,56 @@ describe.skipIf(!enabled)('budget-aware reservations in PostgreSQL', () => {
     expect(user!.balanceMicros).toBe(6_000_000 - 21_047)
     expect(await settleBudget({ responseId: input.responseId, usage, latencyMs: 1, costMicrosOverride: 20_110, additionalCostMicros: 937 })).toBe(21_047)
     expect((await db.select().from(users).where(eq(users.id, userId)))[0]!.balanceMicros).toBe(6_000_000 - 21_047)
+  })
+
+  describe('abandoned reservations', () => {
+    const balance = async (userId: string) => (await db.select().from(users).where(eq(users.id, userId)))[0]!.balanceMicros
+
+    it('releases a hold with nothing recorded against it', async () => {
+      const userId = await account(20_000), input = await request(userId, 32_000)
+      await reserveBudget(input)
+      expect(await closeAbandonedReservation(input.responseId)).toBe('released')
+      expect(await reservation(input.responseId)).toMatchObject({ status: 'released', settledAmountMicros: 0 })
+      expect(await balance(userId)).toBe(20_000)
+      expect((await reserveBudget(await request(userId, 32_000))).maxOutputTokens).toBe(19_999)
+    })
+
+    it('charges recorded model calls and tool runs', async () => {
+      const userId = await account(6_000_000), input = await request(userId, 32_000)
+      await reserveBudget(input)
+      const requestLogId = randomUUID(), runId = randomUUID()
+      await db.insert(requestLogs).values({ id: requestLogId, responseId: input.responseId, userId, requestedModelId: modelId })
+      await db.insert(generationAttempts).values([
+        { id: randomUUID(), requestLogId, modelId, source: 'web', purpose: 'generation', costMicros: 4_000 },
+        { id: randomUUID(), requestLogId, modelId, source: 'tool', purpose: 'title', costMicros: 300 },
+      ])
+      await db.insert(agentRuns).values({ id: runId, responseId: input.responseId })
+      await db.insert(toolExecutions).values({ id: randomUUID(), agentRunId: runId, operationId: randomUUID(), toolName: 'web_search', billedCostMicros: 1_000 })
+      expect(await closeAbandonedReservation(input.responseId)).toBe('settled')
+      expect(await reservation(input.responseId)).toMatchObject({ status: 'settled', settledAmountMicros: 5_300 })
+      expect(await balance(userId)).toBe(6_000_000 - 5_300)
+    })
+
+    it('prices recorded usage when no attempt cost was recorded', async () => {
+      const userId = await account(6_000_000), input = await request(userId, 32_000)
+      await reserveBudget(input)
+      await db.update(responses).set({ usage }).where(eq(responses.id, input.responseId))
+      expect(await closeAbandonedReservation(input.responseId)).toBe('settled')
+      expect(await reservation(input.responseId)).toMatchObject({ status: 'settled', settledAmountMicros: 101 })
+    })
+
+    it('leaves settled, released, and missing reservations alone', async () => {
+      const userId = await account(20_000), settled = await request(userId, 32_000), released = await request(userId, 32_000)
+      await reserveBudget(settled)
+      await settleBudget({ responseId: settled.responseId, usage, latencyMs: 1 })
+      const before = await reservation(settled.responseId)
+      await reserveBudget(released)
+      await releaseBudget(released.responseId)
+      expect(await closeAbandonedReservation(settled.responseId)).toBeUndefined()
+      expect(await closeAbandonedReservation(released.responseId)).toBeUndefined()
+      expect(await closeAbandonedReservation(randomUUID())).toBeUndefined()
+      expect(await reservation(settled.responseId)).toEqual(before)
+    })
   })
 
   it('snapshots an itemized cost breakdown on the usage event', async () => {

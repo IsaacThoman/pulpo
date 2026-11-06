@@ -850,3 +850,46 @@ export async function releaseBudget(responseId: string): Promise<void> {
     .set({ status: 'released', settledAmountMicros: 0, settledAt: new Date() })
     .where(and(eq(budgetReservations.responseId, responseId), eq(budgetReservations.status, 'pending')))
 }
+
+const NO_USAGE: ResponseUsage = { inputTokens: 0, cachedInputTokens: 0, cacheWriteTokens: 0, outputTokens: 0, reasoningTokens: 0, totalTokens: 0 }
+
+/**
+ * Closes the pending reservation of a response whose generation ended without settling
+ * it, for example after a cancel before the job started or a worker crash. Recorded
+ * usage, model calls and tool runs are charged; the rest of the hold is released.
+ * Callers must make sure no generation job still owns the reservation.
+ */
+export async function closeAbandonedReservation(responseId: string): Promise<'settled' | 'released' | undefined> {
+  const [row] = await db.select({ status: budgetReservations.status, usage: responses.usage, pricingVersionId: responses.pricingVersionId, createdAt: responses.createdAt, completedAt: responses.completedAt })
+    .from(budgetReservations).innerJoin(responses, eq(responses.id, budgetReservations.responseId))
+    .where(eq(budgetReservations.responseId, responseId)).limit(1)
+  if (row?.status !== 'pending') return undefined
+  const [[attempts], [tools]] = await Promise.all([
+    db.select({
+      generation: sql<string>`coalesce(sum(${generationAttempts.costMicros}) filter (where ${generationAttempts.source} <> 'tool'), 0)::bigint`,
+      tasks: sql<string>`coalesce(sum(${generationAttempts.costMicros}) filter (where ${generationAttempts.source} = 'tool'), 0)::bigint`,
+    }).from(generationAttempts).innerJoin(requestLogs, eq(requestLogs.id, generationAttempts.requestLogId))
+      .where(eq(requestLogs.responseId, responseId)),
+    db.select({ total: sql<string>`coalesce(sum(${toolExecutions.billedCostMicros}), 0)::bigint` })
+      .from(toolExecutions).innerJoin(agentRuns, eq(agentRuns.id, toolExecutions.agentRunId))
+      .where(eq(agentRuns.responseId, responseId)),
+  ])
+  const generationMicros = Number(attempts?.generation ?? 0)
+  const extraMicros = Number(attempts?.tasks ?? 0) + Number(tools?.total ?? 0)
+  const usage = row.usage as ResponseUsage | null
+  const hasUsage = Boolean(usage && usage.totalTokens > 0)
+  if (!row.pricingVersionId || (generationMicros <= 0 && extraMicros <= 0 && !hasUsage)) {
+    await releaseBudget(responseId)
+    return 'released'
+  }
+  await settleBudget({
+    responseId,
+    usage: hasUsage ? usage! : NO_USAGE,
+    latencyMs: Math.max(0, (row.completedAt ?? new Date()).getTime() - row.createdAt.getTime()),
+    // Attempts carry the provider's cost once generation got that far; otherwise the
+    // response's recorded usage is priced.
+    costMicrosOverride: generationMicros > 0 ? generationMicros : undefined,
+    additionalCostMicros: extraMicros,
+  })
+  return 'settled'
+}

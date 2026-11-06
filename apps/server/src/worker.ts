@@ -18,6 +18,8 @@ import { compactDoc } from './files/doc-store.js'
 import { cleanupFiles } from './files/tree-service.js'
 import { purgeExpiredDetailedPayloads } from './logging/detailed-payload-retention.js'
 import { processGeneration } from './responses/worker.js'
+import { sweepAbandonedReservations } from './responses/abandoned-reservations.js'
+import { closeAbandonedReservation } from './accounting/service.js'
 import { createExport, rebuildDailyRollups, runCleanup, scrubPersistedResponseBinaryContext } from './maintenance.js'
 import { createFullBackup, restoreFullBackup } from './admin/backup.js'
 import { expireNormalChat, expireTemporaryChat, markExpiredChatsForPurge, purgePendingChats } from './chats/trash.js'
@@ -46,6 +48,9 @@ const readGenerationConcurrency = async (): Promise<number> => {
 }
 
 const initialGenerationConcurrency = await readGenerationConcurrency()
+const LIVE_GENERATION_JOB_STATES = new Set(['active', 'waiting', 'delayed', 'prioritized', 'waiting-children'])
+const generationIsLive = async (responseId: string): Promise<boolean> =>
+  LIVE_GENERATION_JOB_STATES.has(await generationQueue.getJobState(responseId))
 console.info(JSON.stringify({
   level: 'info', service: 'pulpo-worker', event: 'worker.started',
   environment: config.NODE_ENV, generationConcurrency: initialGenerationConcurrency,
@@ -58,6 +63,14 @@ const generationWorker = new Worker<GenerationJob>('generation', async (job) => 
     const [response] = await db.select({ chatId: responses.chatId, userId: responses.userId, status: responses.status })
       .from(responses).where(eq(responses.id, job.data.responseId)).limit(1)
     if (response && isTerminalResponseStatus(response.status)) {
+      // This job owns the reservation, and some endings (a cancel before the job
+      // started, an unexpected error) skip settlement.
+      await closeAbandonedReservation(job.data.responseId).catch((error: unknown) => {
+        console.error(JSON.stringify({
+          level: 'error', service: 'pulpo-worker', event: 'reservation.close_failed',
+          responseId: job.data.responseId, error: safeErrorMessage(error),
+        }))
+      })
       await advanceMessageQueue(response.chatId)
       if (response.status === 'completed') await scheduleChatIndex(response.chatId, response.userId, 'response-completed')
     }
@@ -149,6 +162,7 @@ const maintenanceWorker = new Worker<MaintenanceJob>('maintenance', async (job) 
   if (job.data.type === 'app-store-sandbox-sync') await reconcileAppStoreBilling({ sandboxRenewals: true })
   if (job.data.type === 'auto-top-up' && typeof job.data.payload?.userId === 'string') await runAutoTopUp(job.data.payload.userId)
   if (job.data.type === 'auto-top-up-sweep') await sweepAutoTopUps()
+  if (job.data.type === 'abandoned-reservations') await sweepAbandonedReservations({ generationIsLive })
 }, { connection: { url: config.REDIS_URL }, concurrency: 1 })
 
 const analyticsWorker = new Worker<AnalyticsJob>('analytics', async (job) => {
@@ -176,6 +190,7 @@ const codexLoginWorker = new Worker<CodexLoginJob>('codex-login', async (job) =>
 
 await payloadRetentionQueue.upsertJobScheduler('expire-payloads', { every: 60 * 1_000 }, { name: 'expire-payloads' })
 await payloadRetentionQueue.add('startup-expiry', {})
+await maintenanceQueue.upsertJobScheduler('abandoned-reservations', { every: 5 * 60 * 1_000 }, { name: 'abandoned-reservations', data: { type: 'abandoned-reservations' } })
 await maintenanceQueue.upsertJobScheduler('payload-cleanup', { every: 15 * 60 * 1_000 }, { name: 'cleanup', data: { type: 'cleanup' } })
 await maintenanceQueue.upsertJobScheduler('offsite-backup-schedule', { every: 60 * 1_000 }, { name: 'backup-schedule', data: { type: 'backup-schedule' } })
 await maintenanceQueue.upsertJobScheduler('daily-rollup', { pattern: '15 2 * * *' }, { name: 'rollup', data: { type: 'rollup' } })
