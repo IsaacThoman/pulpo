@@ -314,6 +314,8 @@ export interface ConditionalRule {
 }
 
 export interface ConditionalFormat {
+  /** File order breaks ties between rules at the same coordinates, independent of Yjs keys. */
+  fileOrder?: number
   ranges: RangeIds[]
   rules: ConditionalRule[]
   /** `pivot` and other `<conditionalFormatting>` attributes. */
@@ -323,6 +325,8 @@ export interface ConditionalFormat {
 }
 
 export interface DataValidation {
+  /** File order breaks ties between validations at the same coordinates. */
+  fileOrder?: number
   ranges: RangeIds[]
   type: 'none' | 'whole' | 'decimal' | 'list' | 'date' | 'time' | 'textLength' | 'custom'
   operator?: string

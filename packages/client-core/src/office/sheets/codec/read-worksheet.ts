@@ -521,7 +521,7 @@ function readConditionalFormatting(sheet: SheetModel, element: XmlElement): void
   const format: ConditionalFormat = { ranges: ranges.map((range) => sheet.rangeIds(range)), rules }
   const keep = otherAttributes(element, ['sqref'])
   if (keep) format.keep = keep
-  sheet.cf.set(randomId(), format)
+  sheet.cf.set(randomId(), { ...format, fileOrder: sheet.cf.size })
 }
 
 function readDataValidations(sheet: SheetModel, element: XmlElement | undefined): void {
@@ -548,7 +548,7 @@ function readDataValidations(sheet: SheetModel, element: XmlElement | undefined)
     }
     const keep = otherAttributes(entry, ['sqref', 'type', 'operator', 'allowBlank', 'showDropDown', 'showInputMessage', 'showErrorMessage', 'errorStyle', 'errorTitle', 'error', 'promptTitle', 'prompt'])
     if (keep) validation.keep = keep
-    sheet.dv.set(randomId(), validation)
+    sheet.dv.set(randomId(), { ...validation, fileOrder: sheet.dv.size })
   }
 }
 

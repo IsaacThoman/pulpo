@@ -82,7 +82,9 @@ export interface LiveFormatCodec {
    * an agent pushes a new version or a review accepts one: replacing the state wholesale would let
    * replicas that still hold the old content merge it back, and would discard concurrent edits.
    * The `restore` origin replays an exported snapshot for undo/redo: preserve its saved metadata
-   * and formula caches rather than recording a fresh edit, so its export keeps the same checksum.
+   * and formula caches rather than recording a fresh edit. Restore replaces snapshot-owned style
+   * tables, indexes, metadata, and package parts instead of merging them; exporting the restored
+   * document must reproduce the snapshot byte for byte, including after synchronization.
    */
   applyFile(doc: Y.Doc, bytes: Uint8Array, context: LiveFormatContext, origin?: unknown): Promise<{ changed: boolean }>
   /** Plain text of the document, for search, grep, `cat`, and previews. */

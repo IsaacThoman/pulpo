@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { eq } from 'drizzle-orm'
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate'
 import { MemoryLiveAssetStore } from '@pulpo/client-core/office'
-import { SheetCodec, WorkbookModel } from '@pulpo/client-core/office/sheets'
+import { SheetCodec, Stylesheet, WorkbookModel } from '@pulpo/client-core/office/sheets'
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as Y from 'yjs'
 import { db, queryClient } from '../../database/client.js'
@@ -68,6 +68,15 @@ function agentEdit(bytes: Uint8Array, extension: string): Buffer {
   const edited = xml.replace(pattern, '$1after')
   expect(edited).not.toBe(xml)
   parts[path] = strToU8(edited)
+  if (extension === 'xlsx') {
+    const styles = new Stylesheet(strFromU8(parts['xl/styles.xml']!))
+    const index = styles.intern(0, { bold: true, numFmt: '0.000" units"' })
+    parts['xl/styles.xml'] = strToU8(styles.toXml())
+    const worksheet = strFromU8(parts['xl/worksheets/sheet1.xml']!)
+    const styled = worksheet.replace(/<c r="A1"[^>]*>/, `<c r="A1" s="${index}" t="s">`)
+    expect(styled).not.toBe(worksheet)
+    parts['xl/worksheets/sheet1.xml'] = strToU8(styled)
+  }
   return Buffer.from(zipSync(parts))
 }
 
@@ -91,6 +100,8 @@ describe.skipIf(process.env.PULPO_FILES_TESTS !== 'true')('live snapshot restora
   })
   afterAll(async () => { await queryClient.end() })
 
+  // These cases include imports/exports, object storage, DB writes, and four history replays.
+  // On the two-core CI runner DOCX exceeds Vitest's five-second unit-test default.
   it.each(['xlsx', 'docx', 'pptx', 'ipynb'])('restores %s snapshot bytes and permits repeated undo/redo', async (extension) => {
     const name = `Clock.${extension}`
     const created = await push(await initial(extension), name)
@@ -107,11 +118,16 @@ describe.skipIf(process.env.PULPO_FILES_TESTS !== 'true')('live snapshot restora
     expect(Buffer.from(after)).toEqual(objects.get(afterSnapshot.objectKey))
     expect(contentChecksum(before)).toBe(beforeSnapshot.checksum)
     expect(contentChecksum(after)).toBe(afterSnapshot.checksum)
+    expect(Buffer.from(before).equals(Buffer.from(after))).toBe(false)
     for (let repeat = 0; repeat < 2; repeat++) {
       await undoFileChanges(files.userId, files.responseId)
-      expect.soft(contentChecksum(await exported(id))).toBe(beforeSnapshot.checksum)
+      const undone = await exported(id)
+      expect(Buffer.from(undone).equals(Buffer.from(before))).toBe(true)
+      expect(contentChecksum(undone)).toBe(beforeSnapshot.checksum)
       await redoFileChanges(files.userId, files.responseId)
-      expect(contentChecksum(await exported(id))).toBe(afterSnapshot.checksum)
+      const redone = await exported(id)
+      expect(Buffer.from(redone).equals(Buffer.from(after))).toBe(true)
+      expect(contentChecksum(redone)).toBe(afterSnapshot.checksum)
     }
-  })
+  }, 30_000)
 })

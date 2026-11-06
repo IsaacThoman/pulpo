@@ -45,7 +45,7 @@ export const presentationCodec: LiveFormatCodec = {
     const incoming = await readPresentation(bytes, { assets: context.assets })
     const target = presentationRoot(doc).has('slides') ? alignKeys(readSnapshot(doc), incoming) : incoming
     // Reported from the updates the change makes: state vectors miss deletions.
-    return { changed: transactChanges(doc, () => reconcileSnapshot(doc, target), origin) }
+    return { changed: transactChanges(doc, () => reconcileSnapshot(doc, target, origin), origin) }
   },
 
   referencedAssets(doc) {

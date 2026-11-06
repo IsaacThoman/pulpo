@@ -146,7 +146,7 @@ export function writeWorksheet(sheet: SheetModel, context: WorksheetWriteContext
   if (merges.length) {
     insertInOrder(root, fragment(document, `<mergeCells count="${merges.length}">${merges.map((merge) => `<mergeCell ref="${rangeName(merge.range)}"/>`).join('')}</mergeCells>`))
   }
-  for (const format of orderedEntries(sheet, sheet.cf, (value) => (value as ConditionalFormat).ranges[0]).map(([, value]) => value) as ConditionalFormat[]) {
+  for (const format of orderedEntries(sheet, sheet.cf, (value) => (value as ConditionalFormat).ranges[0], (value) => (value as ConditionalFormat).fileOrder).map(([, value]) => value) as ConditionalFormat[]) {
     const xml = writeConditionalFormat(sheet, format)
     if (xml) insertInOrder(root, fragment(document, xml))
   }
@@ -590,7 +590,7 @@ function writeConditionalFormat(sheet: SheetModel, format: ConditionalFormat): s
 function writeDataValidations(sheet: SheetModel): string | undefined {
   let xml = ''
   let count = 0
-  for (const validation of orderedEntries(sheet, sheet.dv, (value) => (value as DataValidation).ranges[0]).map(([, value]) => value) as DataValidation[]) {
+  for (const validation of orderedEntries(sheet, sheet.dv, (value) => (value as DataValidation).ranges[0], (value) => (value as DataValidation).fileOrder).map(([, value]) => value) as DataValidation[]) {
     const ref = sqref(sheet, validation.ranges)
     if (!ref) continue
     count++

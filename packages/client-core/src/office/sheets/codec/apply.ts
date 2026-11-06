@@ -34,7 +34,7 @@ export function applyWorkbook(doc: Y.Doc, incomingDoc: Y.Doc, origin?: unknown):
   const incoming = new WorkbookModel(incomingDoc)
   const changed = transactChanges(doc, () => {
     if (!target.initialized) WorkbookModel.initialize(doc, {})
-    const styleMap = mergeStyles(target, incoming)
+    const styleMap = origin === 'restore' ? restoreStyles(target, incoming) : mergeStyles(target, incoming)
     syncMeta(target, incoming, origin === 'restore')
     const pairs = syncSheets(target, incoming)
     // Rows and columns first, everywhere: formulas in one sheet refer to rows of others, so their
@@ -59,6 +59,13 @@ interface StyleMap {
   xf: (index: number | undefined) => number | undefined
   dxf: (index: number | undefined) => number | undefined
   stylesheet: Stylesheet
+}
+
+/** A saved snapshot owns its style table and every index into it, including unused formats. */
+function restoreStyles(target: WorkbookModel, incoming: WorkbookModel): StyleMap {
+  const xml = incoming.metaValue('stylesXml')
+  setIfDifferent(target.meta, 'stylesXml', xml)
+  return { xf: (index) => index, dxf: (index) => index, stylesheet: new Stylesheet(xml) }
 }
 
 function mergeStyles(target: WorkbookModel, incoming: WorkbookModel): StyleMap {
@@ -86,7 +93,11 @@ function syncMeta(target: WorkbookModel, incoming: WorkbookModel, restore: boole
   // Undo/redo restores a saved calculation snapshot, including the absence of a clock. Ordinary
   // pushes keep the current clock until the edit tracker records a new calculation snapshot.
   if (restore) {
-    for (const key of ['calcTime', 'calcTimezoneOffset', 'calcDirty'] as const) setIfDifferent(target.meta, key, incoming.metaValue(key))
+    // Restore all file facts, including part paths and future codec metadata. Only activeSheet
+    // needs id translation, which syncSheets performs after pairing the sheets.
+    for (const key of new Set([...target.meta.keys(), ...incoming.meta.keys()])) {
+      if (key !== 'activeSheet') setIfDifferent(target.meta, key, incoming.meta.get(key))
+    }
   }
 }
 
@@ -269,7 +280,7 @@ function syncSheet(own: SheetModel, other: SheetModel, styles: StyleMap, restore
   syncAxisMeta(own, other, 'row', styles)
   syncAxisMeta(own, other, 'col', styles)
   syncView(own, other)
-  syncCollections(own, other, styles)
+  syncCollections(own, other, styles, restore)
   for (const key of new Set([...own.raw.keys(), ...other.raw.keys()])) {
     let value = other.raw.get(key)
     if (key === 'csvLastRow') value = translateAxisId(own.rows, other.rows, value as string | undefined)
@@ -333,7 +344,7 @@ function syncCells(own: SheetModel, other: SheetModel, styles: StyleMap, restore
     const overrides = own.cellOverrides(ownKey)
     const hasOverrides = Object.keys(overrides).length > 0
     if (ownXf === otherXf && !hasOverrides) continue
-    if (hasOverrides || ownXf !== undefined) {
+    if (!restore && (hasOverrides || ownXf !== undefined)) {
       const effective = styles.stylesheet.intern(ownXf, overrides)
       if (effective === (otherXf ?? 0) || sameResolved(styles.stylesheet, effective, otherXf ?? 0)) continue
     }
@@ -446,10 +457,10 @@ function syncCollection<T>(ownMap: Y.Map<unknown>, otherMap: Y.Map<unknown>, own
 }
 
 /** Ranges and formulas as positions and A1 text, so entries compare across workbooks. */
-function positioned(sheet: SheetModel, value: unknown, dxf: (index: number | undefined) => number | undefined = (index) => index): string {
+function positioned(sheet: SheetModel, value: unknown, dxf: (index: number | undefined) => number | undefined = (index) => index, restore = false): string {
   return JSON.stringify(value, (key, entry: unknown) => {
     // XML kept as read is written back re-serialized; what the model says is what counts.
-    if (key === 'xml' || key === 'shape' || key === 'sortXml' || key === 'part' || key === 'rPr') return undefined
+    if (!restore && (key === 'xml' || key === 'shape' || key === 'sortXml' || key === 'part' || key === 'rPr' || key === 'fileOrder')) return undefined
     if ((key === 'range' || key === 'ranges') && entry) {
       const ranges = Array.isArray(entry) ? (entry as RangeIds[]) : [entry as RangeIds]
       const resolved = ranges.map((range) => sheet.resolveRange(range)).filter((range) => !!range)
@@ -491,9 +502,9 @@ function drawingForm(sheet: SheetModel, drawing: DrawingObject): string {
   return positioned(sheet, { ...drawing, xml: undefined, links: drawing.links ? Object.values(drawing.links).sort() : undefined }) + JSON.stringify(children(document.documentElement).map(normalize))
 }
 
-function syncCollections(own: SheetModel, other: SheetModel, styles: StyleMap): void {
-  const ownForm = (value: unknown) => positioned(own, value)
-  const otherForm = (value: unknown) => positioned(other, value, styles.dxf)
+function syncCollections(own: SheetModel, other: SheetModel, styles: StyleMap, restore: boolean): void {
+  const ownForm = (value: unknown) => positioned(own, value, undefined, restore)
+  const otherForm = (value: unknown) => positioned(other, value, styles.dxf, restore)
   const ranges = (value: { ranges: RangeIds[] }) => {
     const translated = value.ranges.map((range) => translateRange(own, other, range)).filter((range): range is RangeIds => !!range)
     return translated.length ? translated : undefined
@@ -503,7 +514,7 @@ function syncCollections(own: SheetModel, other: SheetModel, styles: StyleMap): 
     return range && { range }
   })
   const ruleForm = (sheet: SheetModel, value: { ranges: RangeIds[] }, dxf?: StyleMap['dxf']) =>
-    value.ranges.some((range) => sheet.resolveRange(range)) ? positioned(sheet, value, dxf) : undefined
+    value.ranges.some((range) => sheet.resolveRange(range)) ? positioned(sheet, value, dxf, restore) : undefined
   const ruleValues = (values: CfValue[]) => values.map((value) =>
     value.type === 'formula' && value.value !== undefined ? { ...value, value: translateFormula(own, other, value.value) } : value)
   syncCollection<ConditionalFormat>(own.cf, other.cf, (value) => ruleForm(own, value), (value) => ruleForm(other, value, styles.dxf), (value) => {
@@ -536,7 +547,7 @@ function syncCollections(own: SheetModel, other: SheetModel, styles: StyleMap): 
     const range = translateRange(own, other, value.range)
     return range && { ...value, range }
   })
-  syncCollection<DrawingObject>(own.drawings, other.drawings, (value) => drawingForm(own, value), (value) => drawingForm(other, value), (value) => {
+  syncCollection<DrawingObject>(own.drawings, other.drawings, (value) => restore ? ownForm(value) : drawingForm(own, value), (value) => restore ? otherForm(value) : drawingForm(other, value), (value) => {
     const from = translatePoint(own, other, value.from)
     const to = translatePoint(own, other, value.to)
     return { ...value, ...(from ? { from } : {}), ...(to ? { to } : {}) }
@@ -556,14 +567,14 @@ function syncCollections(own: SheetModel, other: SheetModel, styles: StyleMap): 
     }
     for (const key of [...ownMap.keys()]) if (!wanted.has(key)) ownMap.delete(key)
     for (const [key, value] of wanted) {
-      if (positioned(own, ownMap.get(key)) !== positioned(own, value)) ownMap.set(key, value)
+      if (ownForm(ownMap.get(key)) !== ownForm(value)) ownMap.set(key, value)
     }
   }
   const otherFilter = other.filter.get('value') as AutoFilter | undefined
   const ownFilter = own.filter.get('value') as AutoFilter | undefined
   if (!otherFilter) {
     if (ownFilter) own.filter.delete('value')
-  } else if (positioned(own, ownFilter) !== positioned(other, otherFilter)) {
+  } else if (ownForm(ownFilter) !== otherForm(otherFilter)) {
     const range = translateRange(own, other, otherFilter.range)
     if (range) own.filter.set('value', { ...otherFilter, range })
   }

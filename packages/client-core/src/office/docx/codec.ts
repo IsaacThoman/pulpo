@@ -75,7 +75,8 @@ export const docxCodec: LiveFormatCodec = {
     const changed = transactChanges(doc, () => {
       // The bytes of parts the model regenerates only matter when content changed: a file that
       // reads the same must not count as a change because the earlier export was regenerated.
-      if (writeDocxModel(doc, withCurrentRegeneratedParts(doc, model))) writeDocxModel(doc, model)
+      if (origin === 'restore') writeDocxModel(doc, model)
+      else if (writeDocxModel(doc, withCurrentRegeneratedParts(doc, model))) writeDocxModel(doc, model)
     }, origin)
     return { changed }
   },

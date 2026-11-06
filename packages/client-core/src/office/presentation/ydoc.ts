@@ -458,6 +458,11 @@ export function reconcileSnapshot(doc: Y.Doc, target: PresentationSnapshot, orig
       return
     }
     for (const key of META_KEYS) setIfChanged(root, key, target[key])
+    // A restore owns the complete saved package, including imported orphan parts. Keeping
+    // parts from the undone version can change both export bytes and allocated part paths.
+    if (origin === 'restore') {
+      for (const path of Object.keys(readParts(root))) if (!(path in target.parts)) deletePart(root, path)
+    }
     // Parts the file no longer has stay: an undone slide deletion, a collaborator's in-flight
     // duplicate or an earlier copy may still point at them. Export drops the unreachable ones.
     for (const [partPath, part] of Object.entries(target.parts)) setPart(root, partPath, part)
