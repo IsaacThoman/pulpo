@@ -141,13 +141,13 @@ const NO_ATTACHMENTS: Record<string, MimeBundle> = {}
 /** Markdown longer than this shows as plain text; real prose is far shorter, and parsers slow down. */
 const MAX_MARKDOWN_CHARACTERS = 100_000
 
-function NotebookMarkdown({ source, attachments = NO_ATTACHMENTS }: { source: string; attachments?: Record<string, MimeBundle> }) {
+export function NotebookMarkdown({ source, attachments = NO_ATTACHMENTS }: { source: string; attachments?: Record<string, MimeBundle> }) {
   const transform = useMemo(() => notebookUrlTransform(attachments), [attachments])
   if (source.length > MAX_MARKDOWN_CHARACTERS) return <pre className="font-mono text-xs whitespace-pre-wrap break-words">{source}</pre>
   return <Markdown content={source} components={NOTEBOOK_MARKDOWN_COMPONENTS} urlTransform={transform} html />
 }
 
-function Prompt({ kind, count }: { kind: 'in' | 'out'; count: number | null }) {
+export function Prompt({ kind, count }: { kind: 'in' | 'out'; count: number | null }) {
   if (count === null && kind === 'out') return <div className="w-10 shrink-0 sm:w-14" />
   return (
     <div className={cn('w-10 shrink-0 pt-2 text-right font-mono text-[11px] tabular-nums sm:w-14', kind === 'in' ? 'text-muted-foreground' : 'text-primary/80')}>
@@ -156,7 +156,7 @@ function Prompt({ kind, count }: { kind: 'in' | 'out'; count: number | null }) {
   )
 }
 
-function OutputBody({ output, dark }: { output: NotebookOutput; dark: boolean }) {
+export function OutputBody({ output, dark }: { output: NotebookOutput; dark: boolean }) {
   if (output.type === 'stream') {
     return (
       <pre className={cn('overflow-x-auto rounded-md px-3 py-2 font-mono text-xs leading-5 whitespace-pre-wrap break-words', output.name === 'stderr' ? 'bg-destructive/10' : '')} data-output="stream">

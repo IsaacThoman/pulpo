@@ -1,6 +1,6 @@
 # Live formats
 
-A live format is a file type that opens as a collaborative document. Its content lives in a Y.Doc synced over the document socket, the same way Markdown documents work, and a codec converts it to and from the file's bytes. Downloads, agent `pull`, and agent `push` therefore still deal in real files. Markdown and text/code are live today. The sheet, document, and presentation engines plug in the same way.
+A live format is a file type that opens as a collaborative document. Its content lives in a Y.Doc synced over the document socket, the same way Markdown documents work, and a codec converts it to and from the file's bytes. Downloads, agent `pull`, and agent `push` therefore still deal in real files. Markdown, text/code, and Jupyter notebooks are live today. The sheet, document, and presentation engines plug in the same way.
 
 This page covers the model and the integration steps. [Files](./files.md) describes the user-facing behavior.
 
@@ -22,6 +22,7 @@ This page covers the model and the integration steps. [Files](./files.md) descri
 | --- | --- | --- | --- | --- |
 | `markdown` | `md`, `markdown` | `DOC_SCHEMA_VERSION` | after a preview | TipTap schema in `doc-schema`, unchanged. The codec is an adapter (`office/markdown`). |
 | `text` | most text and code extensions (`office/text/layout.ts`), plus names such as `Dockerfile` and `.gitignore` | 1 | at once | `csv`/`tsv` (sheets), `ipynb` (notebooks), and `svg` (previews as an image) are excluded. |
+| `notebook` | `ipynb` | 1 | at once | nbformat 4 (any minor version); nbformat 3 is upgraded to 4.5. See [The notebook format](#the-notebook-format). |
 
 `liveFormatOfName(name)` decides a name's format, and nothing else does: the server, web, and mobile all call it. This list duplicates the text extension lists in `agent/versions.ts`, `files/display.ts`, `lib/attachment-previews.ts`, and mobile `attachmentExperience.ts`, which decide how an uploaded file previews. Once the shared file-type module lands, those should read the catalog.
 
@@ -111,3 +112,91 @@ All Office engines use the same package checks. The reader walks classic ZIP and
   - read-only mode, and colors from the host's CSS variables in light and dark.
 - **On the web**, `TextDocEditor` adds a toolbar and a status bar (cursor, language, encoding, line breaks). HTML files get a live preview in the opaque-origin sandbox.
 - **On mobile**, the same core runs in `editor/text/` (about 1.4 MB with every grammar inlined), with undo, redo, indent, outdent, find, and wrap on the keyboard bar.
+
+## The notebook format
+
+Jupyter notebooks (`.ipynb`) are edited cell by cell, by several people at once, and by agents that run them in their sandbox. The code is in `office/notebook` (codec, layout, edits, diff) and `office/notebook/view` (the editor core).
+
+### Layout
+
+`office/notebook/layout.ts` documents it in full. In short:
+
+- `notebook` (Y.Map) holds `nbformat` and `nbformat_minor`, plus what the codec keeps to write the file back as it was: its JSON `style`, the order of its top-level `keys` and `metadataKeys`, unknown top-level keys (`extra`), and `original` (see below).
+- `metadata` (Y.Map) holds the notebook's metadata, one entry per key (`kernelspec`, `language_info`, …). Each value is compact JSON in the file's own spelling, so concurrent changes to different keys merge.
+- `cells` (Y.Map of Y.Maps, keyed by a random cell key) holds the cells. Each has:
+  - `order`: a fractional key; cells sort by it, then by key.
+  - `cell_type`, the nbformat `id`, and `source` (a Y.Text). The editor binds CodeMirror to it.
+  - `metadata` (like the notebook's), and the cell's key order.
+  - `execution_count` and `outputs` for code cells, `attachments` for Markdown and raw cells.
+
+Why it is shaped this way:
+
+- **Moves keep concurrent edits.** Moving a cell rewrites only its `order`. Moving it in a Y.Array would delete it and insert a copy, and a collaborator's typing in the old copy would be lost. Keys end in random digits, so two people inserting at the same place get distinct, deterministic positions.
+- **Outputs are one value per cell.** Outputs are replaced, never edited in place: an agent runs the notebook, or someone clears them. So `outputs` is one JSON value, last writer wins.
+- **Large parts are assets.** Images (base64 under an `image/*` type) and any value of 16 KB or more go to the document's assets. The JSON keeps a `\u0000pulpo-asset:<n>` placeholder in their place, so a notebook full of plots syncs as text. `referencedAssets` lists the assets, so unused ones are collected.
+
+### Writing the file back
+
+- **Unedited notebooks are byte-faithful.** `office/notebook/json.ts` parses JSON into nodes that keep key order, number spellings (`1e-05`, `1.0`), and string escapes. Export writes them back in the file's detected layout: indent (Jupyter's one space, two, none, or `indent=0`), separators (including Python 2's `, `), `ensure_ascii`, sorted or file-order keys, CRLF, a byte order mark, and the trailing newline.
+- **What the serializer can't rebuild is kept.** At import the codec writes the document back and compares. When the bytes differ (a hand-edited layout, an upgraded nbformat 3 file, a source split oddly), it keeps the file as an asset. It returns that file until the export changes.
+- **Edits stay small in git.** Once edited, every cell is written in the file's layout, and sources are split into lines the way nbformat does (Python's `splitlines`). A one-line edit is a one-line diff.
+- **Ids are made valid on export.** Missing ids in 4.5+ notebooks are filled in, and repeated ids get a suffix. New cells get 8-hex ids in 4.5+ notebooks and none in older ones.
+
+### applyFile and the agent flow
+
+`applyFile` pairs each cell of the new file with an existing cell (`match.ts`):
+
+1. by nbformat id,
+2. then cells with identical type and source, in order,
+3. then, between two paired cells, cells whose lines are at least 40% alike.
+
+Paired cells are updated field by field, and sources by the text format's minimal text diff, so someone typing in the same cell keeps their edit. Unpaired cells are added or deleted. Paired cells outside the longest run that kept its order get new `order` keys, which is a move.
+
+A notebook written by `nbformat.write` or run by `nbconvert --execute` then exports to exactly the pushed bytes, as the Python-backed tests check. `toText` (what `cat` and `grep` read) shows each cell under a `# %% [type] cell N · In [n] · id …` line, with outputs summarized as comments.
+
+### Validation
+
+These are refused with `LiveFormatError`:
+
+- text that isn't JSON or isn't UTF-8;
+- JSON nested more than 256 levels;
+- nbformat other than 3 or 4, or a missing `nbformat_minor`;
+- `cells` that isn't a list, an unknown `cell_type`, or a source that isn't text;
+- an output with an unknown `output_type` or missing required fields;
+- more than 10,000 cells, or files over 25 MB.
+
+Fields the editor doesn't model are kept: unknown keys anywhere, metadata, and widget state.
+
+### Editors
+
+- **The core** (`office/notebook/view`). `NotebookController` holds:
+  - the active cell, the selection, and Jupyter's command and edit modes, with their keys (A, B, D D, X/C/V, Y/M/R, Shift+M, O, Z, arrows and J/K, Shift+Enter);
+  - a page-wide clipboard (cells pasted into another notebook bring their images);
+  - one undo manager for this session's structural changes and every cell's typing;
+  - which cell each collaborator is on, from awareness.
+
+  `createCellEditor` binds CodeMirror to one cell's Y.Text, with the text editor's theme and the kernel's language. Cells don't run in the browser, so Shift+Enter moves to the next cell.
+- **On the web** (`features/files/live/notebook`):
+  - Code cells are CodeMirror editors, mounted as they scroll near the screen.
+  - Markdown cells render with the app's Markdown component until edited.
+  - Outputs use the notebook viewer's renderers; HTML and JavaScript run only in the sandbox.
+  - The toolbar has undo and redo, insert, cut, copy, paste, move, delete, cell type, split, merge, hide outputs, clear outputs, and the keyboard shortcuts.
+  - Cells can be dragged to move them, and collaborators' cursors and cells show.
+  - **Run with agent** opens a new chat with the notebook attached for direct edits and asks the agent to run it.
+- **On mobile** (`editor/notebook`). The same core is drawn for phones:
+  - Cells are cards; the active one has a type picker and move and delete buttons.
+  - Markdown is rendered with marked and sanitized to a short allowlist.
+  - Outputs are drawn in the page, or in iframes sandboxed without scripts. Images come from the app, which fetches assets over the bridge (`asset` messages).
+  - The keyboard bar has undo, redo, indent, insert, code/Markdown, move, and hide outputs; the screen menu clears all outputs.
+- **Review**. `diffNotebookFiles` compares two files cell by cell: added, removed, moved, and edited cells (with a line diff), output changes summarized, and changed notebook and cell metadata keys. Output comparison covers the complete data even when the displayed summary is capped at 1,000 outputs. The web's review dialog and the mobile change sheet show it.
+
+Serialization is checked before indentation is allocated: generated JSON is capped at 25 million characters and four times its compact representation (with a 1 MB floor). Expansive layouts are refused with `LiveFormatError('too_large')` before import changes the document; collaborative states are checked again on export. Files that exceed these limits remain uploads.
+
+### Known limitations
+
+- Cells can't be run in Pulpo; agents run notebooks in their sandbox.
+- Widget state is kept, but widgets don't render.
+- Mobile shows LaTeX in Markdown cells as written.
+- Attachments can't be added to Markdown cells from the editor; existing ones are kept and shown.
+- Cell metadata other than collapsed outputs and sources (tags, slideshow) is kept but can't be edited.
+

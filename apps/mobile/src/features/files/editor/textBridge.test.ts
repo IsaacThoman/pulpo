@@ -2,6 +2,9 @@
 // @ts-expect-error jsdom ships without type declarations; the test needs only its constructor.
 import { JSDOM as UntypedJSDOM } from 'jsdom'
 import { afterEach, describe, expect, it } from 'vitest'
+import { notebookCodec, orderedCells, cellSourceText } from '@pulpo/client-core/office/notebook'
+import { MemoryLiveAssetStore } from '@pulpo/client-core/office'
+import { NOTEBOOK_EDITOR_BUNDLE } from './notebookEditorBundle.generated'
 import { Awareness } from 'y-protocols/awareness'
 import * as Y from 'yjs'
 import { EditorBridge } from './bridge'
@@ -36,6 +39,7 @@ class Page {
           messageHandlers: { pulpoEditor: { postMessage: (message: string) => this.toHost.push(message) } },
         }
         // jsdom has no layout; CodeMirror measures lines and the caret.
+        Object.assign(window, { IntersectionObserver: class { observe() {} unobserve() {} disconnect() {} } })
         window.Element.prototype.scrollIntoView = () => {}
         window.document.elementFromPoint = () => null
         const rects = () => ({ length: 0, item: () => null, [Symbol.iterator]: [][Symbol.iterator] }) as unknown as DOMRectList
@@ -149,4 +153,47 @@ describe('text editor bridge with the built editor', () => {
     const wrongSchema = open('x', { schemaVersion: TEXT_EDITOR_BUNDLE.schemaVersion + 1 })
     expect(wrongSchema.bridge.getState().incompatible).toBe(true)
   })
+})
+
+
+it('keeps the notebook binding alive across typing, toolbar updates, and remote edits', async () => {
+  const doc = new Y.Doc()
+  const assets = new MemoryLiveAssetStore()
+  await notebookCodec.importFile(doc, new TextEncoder().encode(JSON.stringify({
+    nbformat: 4, nbformat_minor: 5, metadata: {}, cells: [{ id: 'a', cell_type: 'code', source: 'a', metadata: {}, execution_count: null, outputs: [] }],
+  })), { name: 'a.ipynb', assets })
+  const awareness = new Awareness(doc)
+  let page!: Page
+  const bridge = new EditorBridge({
+    doc, awareness, send: (message) => page.send(message), editable: true, placeholder: '',
+    user: { name: 'Phone', color: '#123456' }, theme,
+    schemaVersion: NOTEBOOK_EDITOR_BUNDLE.schemaVersion, format: 'notebook', name: 'a.ipynb',
+  })
+  page = new Page(bridge, NOTEBOOK_EDITOR_BUNDLE.html)
+  pages.push(page)
+  const source = () => orderedCells(doc)[0]!.cell.get('source') as Y.Text
+  try {
+    page.flush()
+    bridge.focus('start')
+    page.flush()
+    await expect.poll(() => page.text).toBe('a')
+    page.type('b')
+    page.flush()
+    expect(cellSourceText(orderedCells(doc)[0]!.cell)).toBe('ab')
+    // Updating the Undo toolbar must not re-enter CodeMirror and crash its Yjs plugin.
+    await expect.poll(() => { page.flush(); return bridge.getState().notebook?.canUndo }).toBe(true)
+    page.type('c')
+    page.flush()
+    expect(source().toString()).toBe('abc')
+    source().insert(0, 'remote ')
+    page.flush()
+    expect(page.text).toBe('remote abc')
+    bridge.command('indentMore')
+    page.flush()
+    expect(source().toString()).toBe('    remote abc')
+  } finally {
+    bridge.destroy()
+    awareness.destroy()
+    doc.destroy()
+  }
 })

@@ -1,0 +1,616 @@
+import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type DragEvent, type KeyboardEvent } from 'react'
+import { MemoryLiveAssetStore, type LiveAssetStore } from '@pulpo/client-core/office'
+import type { MimeBundle, NotebookCellType, NotebookOutput } from '@pulpo/client-core/office/notebook'
+import {
+  createCellEditor,
+  NotebookController,
+  readAttachments,
+  readOutputs,
+  type CellEditor,
+  type NotebookCellState,
+  type NotebookEditorState,
+  type NotebookPeer,
+} from '@pulpo/client-core/office/notebook/view'
+import {
+  ArrowDown,
+  ArrowUp,
+  ChevronDown,
+  ChevronsDownUp,
+  ClipboardPaste,
+  Copy,
+  Eraser,
+  GripVertical,
+  Keyboard,
+  Merge,
+  Play,
+  Plus,
+  Redo2,
+  Scissors,
+  SplitSquareVertical,
+  Trash2,
+  Undo2,
+} from 'lucide-react'
+import { HighlightedCode } from '@/components/chat/HighlightedCode'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { NotebookMarkdown, OutputBody, Prompt } from '@/components/viewers/NotebookViewer'
+import { useDarkTheme } from '@/components/viewers/use-dark-theme'
+import { activeLocale, ui, uit } from '@/i18n/ui'
+import { cn } from '@/lib/utils'
+import { sessionColor, sessionLabel } from '../../editor/presence'
+import { ToolbarButton } from '../../editor/ToolbarButton'
+import type { LiveEditorProps } from '../types'
+
+/** The phrases CodeMirror shows in cells, in the app's language. */
+function editorLabels(): Record<string, string> {
+  return {
+    Find: ui("Find"),
+    Replace: ui("Replace"),
+    next: ui("next"),
+    previous: ui("previous"),
+    all: ui("all"),
+    'match case': ui("match case"),
+    regexp: ui("regexp"),
+    'by word': ui("by word"),
+    replace: ui("replace"),
+    'replace all': ui("replace all"),
+    close: ui("close"),
+    'Control character': ui("Control character"),
+  }
+}
+
+function typeLabel(type: NotebookCellType): string {
+  return type === 'code' ? ui("Code") : type === 'markdown' ? ui("Markdown") : ui("Raw")
+}
+
+const mac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
+const mod = mac ? '⌘' : 'Ctrl+'
+
+/** Outputs (or attachments) with their assets read back, as the viewer's renderers take them. */
+/** Waits this long before reading outputs again after their images failed to load (offline, say). */
+const RETRY_MS = 15_000
+
+function useResolved<T>(read: () => Promise<T>, deps: unknown[], empty: T): T {
+  const [value, setValue] = useState<T>(empty)
+  const [attempt, setAttempt] = useState(0)
+  useEffect(() => {
+    let cancelled = false
+    let timer: number | undefined
+    read().then((next) => { if (!cancelled) setValue(next) }).catch(() => {
+      if (cancelled) return
+      setValue(empty)
+      timer = window.setTimeout(() => setAttempt((current) => current + 1), RETRY_MS)
+    })
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+    // oxlint-disable-next-line react/exhaustive-deps -- `deps` names what the read depends on
+  }, [...deps, attempt])
+  return value
+}
+
+/** Mounts its children once they come near the viewport, so long notebooks start CodeMirror only where people look. */
+function useNearViewport(ref: React.RefObject<HTMLElement | null>, force: boolean): boolean {
+  const [near, setNear] = useState(() => typeof IntersectionObserver !== 'function')
+  // A cell mounted to be edited keeps its editor, so leaving edit mode does not drop focus.
+  useEffect(() => { if (force) setNear(true) }, [force])
+  useEffect(() => {
+    if (near || force || !ref.current) return
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) setNear(true)
+    }, { rootMargin: '600px 0px' })
+    observer.observe(ref.current)
+    return () => observer.disconnect()
+  }, [near, force, ref])
+  return near || force
+}
+
+interface CellProps {
+  controller: NotebookController
+  cell: NotebookCellState
+  index: number
+  active: boolean
+  selected: boolean
+  mode: NotebookEditorState['mode']
+  peers: readonly NotebookPeer[]
+  language: string
+  editable: boolean
+  dark: boolean
+  assets: LiveAssetStore
+  registerEditor: (key: string, editor: CellEditor | null) => void
+  onDragStart: (key: string, event: DragEvent) => void
+  onDrop: (key: string, edge: 'before' | 'after') => void
+  dropEdge: 'before' | 'after' | null
+  onDragOverCell: (key: string, edge: 'before' | 'after' | null) => void
+}
+
+/** A cell's source in CodeMirror, bound to its Y.Text. */
+function CellSource({ controller, cell, language, editable, dark, registerEditor, autoFocus }: Pick<CellProps, 'controller' | 'cell' | 'language' | 'editable' | 'dark' | 'registerEditor'> & { autoFocus: boolean }) {
+  const container = useRef<HTMLDivElement>(null)
+  const editor = useRef<CellEditor | null>(null)
+  const latest = useRef({ cell, language, editable, dark, autoFocus })
+  latest.current = { cell, language, editable, dark, autoFocus }
+  const { key } = cell
+
+  useEffect(() => {
+    const text = controller.sourceOf(key)
+    if (!text || !container.current) return
+    const initial = latest.current
+    const created = createCellEditor({
+      container: container.current,
+      text,
+      awareness: controller.awareness,
+      undoManager: controller.undoManager,
+      type: initial.cell.type,
+      language: initial.language,
+      readOnly: !initial.editable,
+      dark: initial.dark,
+      labels: editorLabels(),
+      label: uit`${typeLabel(initial.cell.type)} cell`,
+      placeholder: initial.cell.type === 'markdown' ? ui("Write Markdown") : initial.cell.type === 'code' ? ui("Write code") : undefined,
+      onFocus: () => controller.select(key, { mode: 'edit' }),
+      onShiftEnter: () => controller.advance(),
+      onModEnter: () => controller.setMode('command'),
+      onAltEnter: () => controller.insert('below', 'code', { edit: true }),
+      onEscape: () => controller.setMode('command'),
+      onSplit: () => controller.split(),
+      onLeave: (direction) => { controller.step(direction, { mode: 'edit' }) },
+    })
+    editor.current = created
+    registerEditor(key, created)
+    if (initial.autoFocus) created.focus('keep')
+    return () => {
+      registerEditor(key, null)
+      created.destroy()
+      editor.current = null
+    }
+  }, [controller, key, registerEditor])
+
+  useEffect(() => { editor.current?.setReadOnly(!editable) }, [editable])
+  useEffect(() => { editor.current?.setDark(dark) }, [dark])
+  useEffect(() => { editor.current?.setType(cell.type, language) }, [cell.type, language])
+
+  return <div ref={container} className="min-w-0 flex-1" data-cell-source />
+}
+
+/** The source as highlighted text, until the cell comes into view. */
+function StaticSource({ controller, cellKey, language }: { controller: NotebookController; cellKey: string; language: string | null }) {
+  const text = controller.sourceOf(cellKey)?.toString() ?? ''
+  return (
+    <pre className="code-highlight min-w-0 flex-1 overflow-hidden px-2.5 py-1.5 font-mono text-[13px] leading-[1.6]">
+      <HighlightedCode code={text} language={language} />
+    </pre>
+  )
+}
+
+function useSourceText(controller: NotebookController, key: string): string {
+  const text = controller.sourceOf(key)
+  return useSyncExternalStore(
+    (listener) => {
+      text?.observe(listener)
+      return () => text?.unobserve(listener)
+    },
+    () => text?.toString() ?? '',
+  )
+}
+
+function RenderedMarkdown({ controller, cell, assets }: { controller: NotebookController; cell: NotebookCellState; assets: LiveAssetStore }) {
+  const source = useSourceText(controller, cell.key)
+  const attachments = useResolved<Record<string, MimeBundle>>(() => readAttachments(cell.attachments, assets), [cell.attachments, assets], {})
+  if (!source.trim()) return <p className="px-2.5 py-2 text-sm text-muted-foreground italic">{ui("Empty Markdown cell. Double-click to edit.")}</p>
+  return <div className="min-w-0 px-2.5 py-1 text-sm"><NotebookMarkdown source={source} attachments={attachments} /></div>
+}
+
+function outputKey(output: NotebookOutput, index: number): string {
+  const content = JSON.stringify(output)
+  let hash = 0x811c9dc5
+  for (let index = 0; index < content.length; index += 1) hash = Math.imul(hash ^ content.charCodeAt(index), 0x01000193)
+  return `${index}:${hash >>> 0}`
+}
+
+function CellOutputs({ cell, assets, dark, controller, editable }: { cell: NotebookCellState; assets: LiveAssetStore; dark: boolean; controller: NotebookController; editable: boolean }) {
+  const outputs = useResolved<NotebookOutput[]>(() => (cell.outputs ? readOutputs(cell.outputs, assets) : Promise.resolve([])), [cell.outputs, assets], [])
+  // Sandboxed outputs render once per mount, so changed content needs a new frame.
+  const keys = useMemo(() => outputs.map(outputKey), [outputs])
+  if (!outputs.length) return null
+  if (cell.outputsCollapsed) {
+    return (
+      <div className="flex min-w-0 gap-2">
+        <div className="w-10 shrink-0 sm:w-14" />
+        <button
+          type="button"
+          disabled={!editable}
+          onClick={() => { controller.select(cell.key); controller.toggleOutputs() }}
+          className="h-6 flex-1 cursor-pointer rounded border border-dashed text-left text-xs text-muted-foreground hover:bg-accent disabled:cursor-default"
+        >
+          <span className="px-2">{outputs.length === 1 ? ui("1 output hidden") : uit`${outputs.length} outputs hidden`}</span>
+        </button>
+      </div>
+    )
+  }
+  return (
+    <div className="flex flex-col gap-1.5" data-cell-outputs>
+      {outputs.map((output, index) => (
+        <div key={keys[index]} className="flex min-w-0 gap-2">
+          <Prompt kind="out" count={output.type === 'execute_result' ? output.executionCount : null} />
+          <div className="min-w-0 flex-1 overflow-x-auto">
+            <OutputBody output={output} dark={dark} />
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function PeerBadges({ peers }: { peers: readonly NotebookPeer[] }) {
+  if (!peers.length) return null
+  return (
+    <div className="pointer-events-none absolute -top-2.5 right-2 z-10 flex gap-1">
+      {peers.map((peer) => (
+        <span key={peer.clientId} className="rounded px-1.5 py-px text-[10px] leading-4 font-semibold text-white shadow-sm" style={{ backgroundColor: peer.color }}>
+          {peer.name}
+        </span>
+      ))}
+    </div>
+  )
+}
+
+const NotebookCell = memo(function NotebookCell(props: CellProps) {
+  const { controller, cell, index, active, selected, mode, peers, language, editable, dark, assets, registerEditor, dropEdge } = props
+  const ref = useRef<HTMLElement>(null)
+  const editing = active && mode === 'edit'
+  const near = useNearViewport(ref, editing)
+  const showEditor = cell.type !== 'markdown' || editing
+  const highlight = cell.type === 'code' ? language : cell.type === 'markdown' ? 'markdown' : null
+
+  useEffect(() => {
+    if (active) ref.current?.scrollIntoView({ block: 'nearest' })
+  }, [active])
+
+  return (
+    <section
+      ref={ref}
+      aria-label={uit`Cell ${index + 1}, ${typeLabel(cell.type)}`}
+      aria-current={active ? 'true' : undefined}
+      data-cell={cell.type}
+      data-cell-key={cell.key}
+      data-active={active || undefined}
+      data-selected={selected || undefined}
+      data-mode={active ? mode : undefined}
+      className={cn('group/cell relative flex flex-col gap-1.5 rounded-lg py-1.5 pr-2', selected && !editing && 'bg-primary/[0.06]')}
+      onMouseDown={(event) => {
+        // Clicking a cell selects it (Shift extends); clicks inside its editor enter edit mode on focus.
+        if ((event.target as HTMLElement).closest('[data-cell-source], button, a, iframe')) return
+        controller.select(cell.key, { extend: event.shiftKey })
+      }}
+      onDoubleClick={(event) => {
+        if (cell.type === 'markdown' && editable && !(event.target as HTMLElement).closest('a, button')) controller.select(cell.key, { mode: 'edit' })
+      }}
+      onDragOver={(event) => {
+        if (!event.dataTransfer.types.includes('application/x-pulpo-notebook-cell')) return
+        event.preventDefault()
+        const box = event.currentTarget.getBoundingClientRect()
+        props.onDragOverCell(cell.key, event.clientY < box.top + box.height / 2 ? 'before' : 'after')
+      }}
+      onDragLeave={() => props.onDragOverCell(cell.key, null)}
+      onDrop={(event) => {
+        event.preventDefault()
+        if (dropEdge) props.onDrop(cell.key, dropEdge)
+      }}
+    >
+      {dropEdge && <div className={cn('pointer-events-none absolute inset-x-2 z-10 h-0.5 rounded bg-primary', dropEdge === 'before' ? '-top-1' : '-bottom-1')} />}
+      <div className={cn('absolute inset-y-1 left-0 w-1 rounded-full', active ? (editing ? 'bg-emerald-500' : 'bg-primary') : peers[0] ? '' : 'bg-transparent')} style={!active && peers[0] ? { backgroundColor: peers[0].color } : undefined} />
+      <PeerBadges peers={peers} />
+      <div className="flex min-w-0 gap-2 pl-2">
+        <div className="relative flex w-10 shrink-0 flex-col items-end sm:w-12">
+          {cell.type === 'code' ? <Prompt kind="in" count={cell.executionCount} /> : <div className="pt-2 text-[11px] text-muted-foreground/0">·</div>}
+          {editable && (
+            <span
+              draggable
+              role="button"
+              tabIndex={-1}
+              aria-label={ui("Drag to move")}
+              title={ui("Drag to move")}
+              onDragStart={(event) => props.onDragStart(cell.key, event)}
+              className="mt-1 cursor-grab text-muted-foreground opacity-0 group-hover/cell:opacity-60 hover:opacity-100 active:cursor-grabbing"
+            >
+              <GripVertical className="size-4" />
+            </span>
+          )}
+        </div>
+        <div className={cn('flex min-w-0 flex-1 flex-col rounded-md', cell.type !== 'markdown' || editing ? 'border bg-code' : '', editing && 'ring-1 ring-emerald-500/50')}>
+          {cell.sourceCollapsed && !editing ? (
+            <button type="button" onClick={() => editable && (controller.select(cell.key), controller.toggleSource())} className="h-7 cursor-pointer px-2.5 text-left text-xs text-muted-foreground">
+              {ui("Source hidden")}
+            </button>
+          ) : showEditor ? (
+            near
+              ? <CellSource controller={controller} cell={cell} language={language} editable={editable} dark={dark} registerEditor={registerEditor} autoFocus={editing} />
+              : <StaticSource controller={controller} cellKey={cell.key} language={highlight} />
+          ) : (
+            <RenderedMarkdown controller={controller} cell={cell} assets={assets} />
+          )}
+        </div>
+        {active && editable && (
+          <div className="absolute -top-3 right-2 z-10 hidden items-center gap-0.5 rounded-md border bg-background px-0.5 shadow-sm group-hover/cell:flex group-focus-within/cell:flex">
+            <ToolbarButton label={ui("Move cell up")} onClick={() => controller.move('up')}><ArrowUp className="size-3.5" /></ToolbarButton>
+            <ToolbarButton label={ui("Move cell down")} onClick={() => controller.move('down')}><ArrowDown className="size-3.5" /></ToolbarButton>
+            <ToolbarButton label={ui("Delete cell")} onClick={() => controller.deleteSelected()}><Trash2 className="size-3.5" /></ToolbarButton>
+          </div>
+        )}
+      </div>
+      {cell.type === 'code' && <CellOutputs cell={cell} assets={assets} dark={dark} controller={controller} editable={editable} />}
+    </section>
+  )
+})
+
+/** "+ Code" and "+ Markdown" between cells, as Colab offers them. */
+function InsertBar({ onInsert, always }: { onInsert: (type: NotebookCellType) => void; always?: boolean }) {
+  return (
+    <div className={cn('group/insert flex h-4 items-center justify-center gap-2', always && 'h-auto py-3')}>
+      <div className={cn('flex gap-2 transition-opacity', always ? 'opacity-100' : 'opacity-0 group-hover/insert:opacity-100 focus-within:opacity-100')}>
+        <Button type="button" variant="outline" size="sm" className="h-6 gap-1 px-2 text-xs" onClick={() => onInsert('code')}><Plus className="size-3" /> {ui("Code")}</Button>
+        <Button type="button" variant="outline" size="sm" className="h-6 gap-1 px-2 text-xs" onClick={() => onInsert('markdown')}><Plus className="size-3" /> {ui("Markdown")}</Button>
+      </div>
+    </div>
+  )
+}
+
+const SHORTCUTS: [string, () => string][] = [
+  ['Enter', () => ui("Edit the cell")],
+  ['Esc', () => ui("Stop editing (command mode)")],
+  ['Shift+Enter', () => ui("Go to the next cell")],
+  ['↑ / ↓  K / J', () => ui("Select the cell above or below")],
+  ['Shift+↑ / Shift+↓', () => ui("Extend the selection")],
+  ['A / B', () => ui("Insert a cell above or below")],
+  ['D, D', () => ui("Delete the selected cells")],
+  ['X / C / V', () => ui("Cut, copy, or paste cells")],
+  ['Shift+V', () => ui("Paste cells above")],
+  ['Z', () => ui("Undo")],
+  ['Y / M / R', () => ui("Make code, Markdown, or raw")],
+  ['Shift+M', () => ui("Merge the selected cells, or with the cell below")],
+  [`${mod}Shift+-`, () => ui("Split the cell at the cursor")],
+  ['O', () => ui("Hide or show outputs")],
+  [`${mod}A`, () => ui("Select every cell")],
+]
+
+function ShortcutsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  return (
+    <Dialog open={open} onOpenChange={(next) => { if (!next) onClose() }}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{ui("Notebook shortcuts")}</DialogTitle>
+          <DialogDescription>{ui("Press Esc to leave a cell; these keys then work on the selected cells, as in Jupyter.")}</DialogDescription>
+        </DialogHeader>
+        <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
+          {SHORTCUTS.map(([keys, label]) => (
+            <div key={keys} className="contents">
+              <dt><kbd className="rounded border bg-muted px-1.5 py-0.5 font-mono text-xs">{keys}</kbd></dt>
+              <dd className="text-muted-foreground">{label()}</dd>
+            </div>
+          ))}
+        </dl>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function writeClipboard(text: string) {
+  if (text) void navigator.clipboard?.writeText(text).catch(() => undefined)
+}
+
+/**
+ * Jupyter notebooks, edited collaboratively: cells in CodeMirror (code highlighted in the kernel's
+ * language, Markdown rendered when not editing), outputs as the notebook viewer shows them (HTML
+ * and scripts only in the sandbox), Jupyter's command and edit modes and keys, and other sessions'
+ * cursors and cells. Cells don't run in the browser; agents run notebooks in their sandbox.
+ */
+export function NotebookDocEditor({ session, editable, width, toolbarSlot, assets: givenAssets, onRunWithAgent }: LiveEditorProps) {
+  const [fallbackAssets] = useState(() => new MemoryLiveAssetStore())
+  const assets = givenAssets ?? fallbackAssets
+  const [controller, setController] = useState<NotebookController | null>(null)
+  const editors = useRef(new Map<string, CellEditor>())
+  const root = useRef<HTMLDivElement>(null)
+  const dark = useDarkTheme()
+  const [shortcuts, setShortcuts] = useState(false)
+  const [drag, setDrag] = useState<{ keys: string[]; over: { key: string; edge: 'before' | 'after' } | null } | null>(null)
+  const latestEditable = useRef(editable)
+  latestEditable.current = editable
+
+  useEffect(() => {
+    const created = new NotebookController({
+      doc: session.doc,
+      awareness: session.provider.awareness,
+      assets,
+      readOnly: !latestEditable.current,
+      user: { name: sessionLabel(), color: sessionColor(session.doc.clientID) },
+    })
+    created.setCursorProvider((key) => editors.current.get(key)?.cursor() ?? null)
+    setController(created)
+    return () => created.destroy()
+  }, [session, assets])
+
+  useEffect(() => { controller?.setReadOnly(!editable) }, [controller, editable])
+
+  const noState = useMemo(() => () => () => {}, [])
+  const state = useSyncExternalStore(controller?.subscribe ?? noState, () => controller?.getState() ?? null)
+  const registerEditor = useCallback((key: string, editor: CellEditor | null) => {
+    if (editor) editors.current.set(key, editor)
+    else editors.current.delete(key)
+  }, [])
+
+  // When the active cell or mode changes (never on others' edits, which must not pull focus back
+  // from the chat or a menu), edit mode focuses the cell's editor and command mode keeps keys on
+  // the notebook. A cell mounted to be edited focuses itself (CellSource's autoFocus).
+  const active = state?.active ?? null
+  const mode = state?.mode ?? 'command'
+  useEffect(() => {
+    if (!active) return
+    if (mode === 'edit') {
+      const editor = editors.current.get(active)
+      if (editor && !editor.view.hasFocus) editor.focus('keep')
+    } else if (root.current && document.activeElement !== root.current && (root.current.contains(document.activeElement) || document.activeElement === document.body)) {
+      // A rendered Markdown cell's editor is gone, which leaves focus on the page: keys stay with the notebook.
+      root.current.focus({ preventScroll: true })
+    }
+  }, [active, mode])
+
+  if (!controller || !state) return null
+  const selected = new Set(state.selected)
+  const canEdit = editable && !state.readOnly
+  const run = (action: () => void) => () => {
+    action()
+    if (state.mode === 'command') root.current?.focus({ preventScroll: true })
+  }
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (state.mode !== 'command' || event.target !== root.current) return
+    const key = event.key.length === 1 ? event.key.toLowerCase() : event.key
+    if (!event.metaKey && !event.ctrlKey && !event.altKey && (key === 'c' || key === 'x')) {
+      event.preventDefault()
+      writeClipboard(key === 'c' ? controller.copy() : controller.cut())
+      return
+    }
+    if (controller.handleCommandKey(event)) event.preventDefault()
+  }
+  const activeCell = state.cells.find((cell) => cell.key === state.active)
+  const locale = activeLocale()
+
+  return (
+    <div className="flex h-full min-h-0 flex-col" data-notebook-editor>
+      <div className="flex flex-wrap items-center gap-2 border-b bg-background/95 px-4 py-1.5 sm:px-6">
+        <div role="toolbar" aria-label={ui("Notebook")} className="flex min-w-0 flex-1 flex-wrap items-center gap-0.5">
+          <ToolbarButton label={ui("Undo")} shortcut={{ label: `${mod}Z`, aria: `${mac ? 'Meta' : 'Control'}+z` }} disabled={!canEdit || !state.canUndo} onClick={run(() => controller.undo())}><Undo2 className="size-4" /></ToolbarButton>
+          <ToolbarButton label={ui("Redo")} disabled={!canEdit || !state.canRedo} onClick={run(() => controller.redo())}><Redo2 className="size-4" /></ToolbarButton>
+          <span className="mx-1 h-5 w-px bg-border" />
+          <ToolbarButton label={ui("Insert cell below")} shortcut={{ label: 'B', aria: 'b' }} disabled={!canEdit} onClick={() => controller.insert('below', 'code', { edit: true })}><Plus className="size-4" /></ToolbarButton>
+          <ToolbarButton label={ui("Cut cells")} shortcut={{ label: 'X', aria: 'x' }} disabled={!canEdit || !state.active} onClick={run(() => writeClipboard(controller.cut()))}><Scissors className="size-4" /></ToolbarButton>
+          <ToolbarButton label={ui("Copy cells")} shortcut={{ label: 'C', aria: 'c' }} disabled={!state.active} onClick={run(() => writeClipboard(controller.copy()))}><Copy className="size-4" /></ToolbarButton>
+          <ToolbarButton label={ui("Paste cells below")} shortcut={{ label: 'V', aria: 'v' }} disabled={!canEdit || !state.canPaste} onClick={run(() => void controller.paste('below'))}><ClipboardPaste className="size-4" /></ToolbarButton>
+          <span className="mx-1 h-5 w-px bg-border" />
+          <ToolbarButton label={ui("Move cell up")} disabled={!canEdit || !state.active} onClick={run(() => controller.move('up'))}><ArrowUp className="size-4" /></ToolbarButton>
+          <ToolbarButton label={ui("Move cell down")} disabled={!canEdit || !state.active} onClick={run(() => controller.move('down'))}><ArrowDown className="size-4" /></ToolbarButton>
+          <ToolbarButton label={ui("Delete cells")} shortcut={{ label: 'D, D', aria: 'd' }} disabled={!canEdit || !state.active} onClick={run(() => controller.deleteSelected())}><Trash2 className="size-4" /></ToolbarButton>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                disabled={!canEdit || !activeCell}
+                aria-label={ui("Cell type")}
+                className="flex h-8 cursor-pointer items-center gap-1 rounded-md px-2 text-xs text-muted-foreground hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {activeCell ? typeLabel(activeCell.type) : ui("Code")}
+                <ChevronDown className="size-3" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              {(['code', 'markdown', 'raw'] as const).map((type) => (
+                <DropdownMenuItem key={type} onSelect={() => controller.setType(type)}>
+                  {typeLabel(type)}
+                  <span className="ml-auto pl-4 text-xs text-muted-foreground">{type === 'code' ? 'Y' : type === 'markdown' ? 'M' : 'R'}</span>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <span className="mx-1 h-5 w-px bg-border" />
+          <ToolbarButton label={ui("Split cell at the cursor")} disabled={!canEdit || state.mode !== 'edit'} onClick={() => controller.split()}><SplitSquareVertical className="size-4" /></ToolbarButton>
+          <ToolbarButton label={ui("Merge cells")} shortcut={{ label: 'Shift+M', aria: 'Shift+m' }} disabled={!canEdit || !state.active} onClick={run(() => controller.merge())}><Merge className="size-4" /></ToolbarButton>
+          <ToolbarButton label={ui("Hide or show outputs")} shortcut={{ label: 'O', aria: 'o' }} disabled={!canEdit || !state.active} onClick={run(() => controller.toggleOutputs())}><ChevronsDownUp className="size-4" /></ToolbarButton>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button type="button" disabled={!canEdit} aria-label={ui("Clear outputs")} title={ui("Clear outputs")} className="grid size-8 cursor-pointer place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40">
+                <Eraser className="size-4" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              <DropdownMenuItem disabled={!state.active} onSelect={() => controller.clearOutputs('selected')}>{ui("Clear outputs of selected cells")}</DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={() => controller.clearOutputs('all')}>{ui("Clear all outputs")}</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <ToolbarButton label={ui("Keyboard shortcuts")} onClick={() => setShortcuts(true)}><Keyboard className="size-4" /></ToolbarButton>
+          {onRunWithAgent && (
+            <>
+              <span className="mx-1 h-5 w-px bg-border" />
+              <Button type="button" variant="ghost" size="sm" className="h-8 gap-1.5 px-2 text-xs" onClick={onRunWithAgent} title={ui("Open a chat that asks an agent to run this notebook and save its outputs")}>
+                <Play className="size-3.5" /> {ui("Run with agent")}
+              </Button>
+            </>
+          )}
+        </div>
+        {toolbarSlot}
+      </div>
+      <div
+        ref={root}
+        tabIndex={0}
+        role="list"
+        aria-label={ui("Notebook cells")}
+        onKeyDown={onKeyDown}
+        className="min-h-0 flex-1 overflow-y-auto outline-none"
+        onDragEnd={() => setDrag(null)}
+      >
+        <div className={cn('mx-auto flex w-full flex-col py-4 pr-3 pl-1 sm:pr-6', width === 'narrow' ? 'max-w-4xl' : width === 'wide' ? 'max-w-6xl' : '')}>
+          {!state.cells.length && <p className="p-8 text-center text-sm text-muted-foreground">{ui("This notebook has no cells.")}</p>}
+          {state.cells.map((cell, index) => (
+            <div key={cell.key} role="listitem">
+              {index > 0 && canEdit && (
+                <InsertBar onInsert={(type) => {
+                  controller.select(state.cells[index - 1]!.key)
+                  controller.insert('below', type, { edit: true })
+                }} />
+              )}
+              <NotebookCell
+                controller={controller}
+                cell={cell}
+                index={index}
+                active={cell.key === state.active}
+                selected={selected.has(cell.key)}
+                mode={state.mode}
+                peers={state.peers[cell.key] ?? NO_PEERS}
+                language={state.language}
+                editable={canEdit}
+                dark={dark}
+                assets={assets}
+                registerEditor={registerEditor}
+                dropEdge={drag?.over?.key === cell.key ? drag.over.edge : null}
+                onDragStart={(key, event) => {
+                  const keys = selected.has(key) ? state.selected : [key]
+                  event.dataTransfer.setData('application/x-pulpo-notebook-cell', keys.join(','))
+                  event.dataTransfer.effectAllowed = 'move'
+                  const section = (event.target as HTMLElement).closest('section')
+                  if (section) event.dataTransfer.setDragImage(section, 20, 20)
+                  setDrag({ keys, over: null })
+                }}
+                onDragOverCell={(key, edge) => setDrag((current) => current && (edge ? { ...current, over: { key, edge } } : current.over?.key === key ? { ...current, over: null } : current))}
+                onDrop={(key, edge) => {
+                  if (drag && !drag.keys.includes(key)) controller.moveTo(drag.keys, edge === 'before' ? { before: key } : { after: key })
+                  setDrag(null)
+                }}
+              />
+            </div>
+          ))}
+          {canEdit && <InsertBar always onInsert={(type) => {
+            const last = state.cells[state.cells.length - 1]
+            if (last) controller.select(last.key)
+            controller.insert('below', type, { edit: true })
+          }} />}
+        </div>
+      </div>
+      <div className="flex shrink-0 items-center gap-3 border-t px-4 py-1 text-[11px] text-muted-foreground tabular-nums sm:px-6" aria-live="off">
+        <span>{state.mode === 'edit' ? ui("Edit mode") : ui("Command mode")}</span>
+        {state.selected.length > 1 && <span>{uit`${state.selected.length} cells selected`}</span>}
+        <span className="flex-1" />
+        {!editable && <span>{ui("Read-only")}</span>}
+        <span>{state.kernel ?? state.language}</span>
+        <span>{state.cells.length === 1 ? ui("1 cell") : uit`${state.cells.length.toLocaleString(locale)} cells`}</span>
+      </div>
+      <ShortcutsDialog open={shortcuts} onClose={() => setShortcuts(false)} />
+    </div>
+  )
+}
+
+const NO_PEERS: readonly NotebookPeer[] = []
+
+export default NotebookDocEditor
+

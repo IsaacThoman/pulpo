@@ -1,4 +1,5 @@
 import type { DocSession } from '@pulpo/client-core/doc-sync'
+import type { LiveAssetStore } from '@pulpo/client-core/office'
 
 /** What Files hands a live format's editor. */
 export interface LiveEditorProps {
@@ -10,6 +11,10 @@ export interface LiveEditorProps {
   width: 'narrow' | 'wide' | 'fill'
   /** Rendered at the end of the editor's toolbar. */
   toolbarSlot?: React.ReactNode
+  /** The document's binary parts (images in notebooks), fetched and uploaded by hash. */
+  assets?: LiveAssetStore
+  /** Opens a chat with this file attached (with edit access) and a request to run it, for formats that run. */
+  onRunWithAgent?: () => void
 }
 
 /** Two versions of a file for a review diff: before and after an agent's change. */

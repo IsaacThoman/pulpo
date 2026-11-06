@@ -1,4 +1,5 @@
 import { EDITOR_BUNDLE } from './editorBundle.generated'
+import { NOTEBOOK_EDITOR_BUNDLE } from './notebookEditorBundle.generated'
 import { TEXT_EDITOR_BUNDLE } from './textEditorBundle.generated'
 
 /**
@@ -8,6 +9,7 @@ import { TEXT_EDITOR_BUNDLE } from './textEditorBundle.generated'
 export const EDITOR_BUNDLES = {
   markdown: EDITOR_BUNDLE,
   text: TEXT_EDITOR_BUNDLE,
+  notebook: NOTEBOOK_EDITOR_BUNDLE,
 } as const
 
 export type MobileEditorFormat = keyof typeof EDITOR_BUNDLES

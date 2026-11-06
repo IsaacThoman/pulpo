@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { create } from 'zustand'
-import { focusComposer } from '@/components/chat/composer-focus'
+import { focusComposer, insertIntoComposer, subscribeComposerInsert } from '@/components/chat/composer-focus'
+import { ui } from '@/i18n/ui'
 import { addFileScope, NO_FILE_ACCESS, type FileScopeAccess } from '@pulpo/client-core/files'
 import { useChat } from '@/stores/chat'
 import { useSidePanel, type PanelContent } from './store'
@@ -94,6 +95,32 @@ export function openInNewChat(ids: string[], place: FilesViewPlace | null, go: G
   go('/')
   // Already on the new-chat page, nothing remounts to take focus.
   requestAnimationFrame(() => focusComposer())
+}
+
+/** How long to wait for the new chat's composer to load its draft and take the request. */
+const COMPOSER_WAIT_MS = 10_000
+
+/**
+ * Asks an agent to run a notebook, since cells don't run in the browser: a new chat with the file
+ * attached for direct edits and the request added to the composer's draft, ready to send or change.
+ */
+export function runWithAgent(id: string, place: FilesViewPlace | null, go: Go): void {
+  const request = ui("Run this notebook from top to bottom, save the outputs into it, and tell me what it found.")
+  // The composer on screen is the new chat's only when the main view already shows it.
+  const alreadyNew = useChatTarget.getState().target?.kind === 'new'
+  openInNewChat([id], place, go)
+  useNewChatScope.setState((state) => ({ access: { ...state.access, [id]: 'write' } }))
+  if (alreadyNew && insertIntoComposer(request)) return
+  // Otherwise the new chat's composer takes it once mounted with its draft loaded (it registers
+  // then); another chat's composer, still on screen during the navigation, must not.
+  const stop = subscribeComposerInsert(() => {
+    if (insertIntoComposer(request)) done()
+  })
+  const timer = window.setTimeout(() => done(), COMPOSER_WAIT_MS)
+  function done() {
+    stop()
+    window.clearTimeout(timer)
+  }
 }
 
 /** Adds items to the chat in the main view. */

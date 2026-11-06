@@ -124,7 +124,8 @@ export function detectIndent(text: string): TextEditorIndent {
   return { size: spaced ? size : 2, tabs: false }
 }
 
-const highlight = HighlightStyle.define([
+/** Token classes, colored by the theme below; shared with editors built on this one (notebook cells). */
+export const editorHighlight = HighlightStyle.define([
   { tag: [tags.keyword, tags.controlKeyword, tags.moduleKeyword, tags.operatorKeyword, tags.definitionKeyword, tags.modifier, tags.self], class: 'pulpo-tk-keyword' },
   { tag: [tags.string, tags.special(tags.string), tags.character, tags.attributeValue, tags.docString], class: 'pulpo-tk-string' },
   { tag: [tags.regexp, tags.escape], class: 'pulpo-tk-regexp' },
@@ -161,7 +162,8 @@ function palette(prefix: '&light' | '&dark', colors: typeof light): Record<strin
   return Object.fromEntries(Object.entries(colors).map(([name, color]) => [`${prefix} .pulpo-tk-${name}`, { color }]))
 }
 
-const theme = EditorView.baseTheme({
+/** Colors from the host's CSS variables, light and dark; shared with notebook cell editors. */
+export const editorTheme = EditorView.baseTheme({
   '&': {
     height: '100%',
     color: 'var(--foreground, #111)',
@@ -232,7 +234,7 @@ function readOnlyExtensions(readOnly: boolean): Extension {
 }
 
 /** A lighter tint of a caret color, for other sessions' selections. */
-function selectionColor(color: string): string {
+export function selectionColor(color: string): string {
   return /^#[0-9a-f]{6}$/i.test(color) ? `${color}33` : color
 }
 
@@ -275,7 +277,7 @@ export function createTextEditor(options: TextEditorOptions): TextEditor {
         dropCursor(),
         EditorState.allowMultipleSelections.of(true),
         indentOnInput(),
-        syntaxHighlighting(highlight),
+        syntaxHighlighting(editorHighlight),
         bracketMatching(),
         closeBrackets(),
         rectangularSelection(),
@@ -285,7 +287,7 @@ export function createTextEditor(options: TextEditorOptions): TextEditor {
         search({ top: true }),
         keymap.of([...closeBracketsKeymap, ...yUndoManagerKeymap, ...searchKeymap, ...foldKeymap, indentWithTab, ...defaultKeymap]),
         yCollab(ytext, options.awareness, { undoManager }),
-        theme,
+        editorTheme,
         language.of([]),
         readOnly.of(readOnlyExtensions(current.readOnly)),
         wrap.of(current.wrap ? EditorView.lineWrapping : []),

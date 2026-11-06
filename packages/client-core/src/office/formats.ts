@@ -2,6 +2,7 @@ import type * as Y from 'yjs'
 import { FILE_DOC_MAX_MARKDOWN_LENGTH } from '@pulpo/contracts'
 import { DOC_FRAGMENT_NAME, DOC_SCHEMA_VERSION } from '../doc-schema/version.js'
 import type { LiveFormatId } from './live-format.js'
+import { NOTEBOOK_EXTENSIONS, NOTEBOOK_FIELD, NOTEBOOK_MAX_FILE_BYTES, NOTEBOOK_MIME_TYPE, NOTEBOOK_SCHEMA_VERSION } from './notebook/layout.js'
 import { TEXT_EXTENSIONS, TEXT_FIELD, TEXT_FILE_NAMES, TEXT_MAX_FILE_BYTES, TEXT_SCHEMA_VERSION, textMimeType } from './text/layout.js'
 
 /**
@@ -56,8 +57,20 @@ export const TEXT_FORMAT: LiveFormatInfo = {
   hasContent: (doc) => doc.getText(TEXT_FIELD).length > 0,
 }
 
+export const NOTEBOOK_FORMAT: LiveFormatInfo = {
+  id: 'notebook',
+  schemaVersion: NOTEBOOK_SCHEMA_VERSION,
+  extensions: NOTEBOOK_EXTENSIONS,
+  // Unedited notebooks export byte for byte (see `office/notebook/codec.ts`).
+  lossless: true,
+  maxFileBytes: NOTEBOOK_MAX_FILE_BYTES,
+  mimeType: () => NOTEBOOK_MIME_TYPE,
+  // An imported notebook may have no cells, but always has its version.
+  hasContent: (doc) => doc.getMap(NOTEBOOK_FIELD).has('nbformat'),
+}
+
 /** Every live format, in the order creation menus list them. */
-export const LIVE_FORMATS: readonly LiveFormatInfo[] = [MARKDOWN_FORMAT, TEXT_FORMAT]
+export const LIVE_FORMATS: readonly LiveFormatInfo[] = [MARKDOWN_FORMAT, TEXT_FORMAT, NOTEBOOK_FORMAT]
 
 const BY_ID = new Map<string, LiveFormatInfo>(LIVE_FORMATS.map((format) => [format.id, format]))
 const BY_EXTENSION = new Map<string, LiveFormatInfo>()

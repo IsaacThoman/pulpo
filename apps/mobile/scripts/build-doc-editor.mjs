@@ -20,11 +20,17 @@ export async function buildEditorPage(format) {
     logLevel: 'warn',
     // Built from client-core's sources, so the bundle never depends on a stale dist/.
     resolve: {
+      // Production exports always: under a test runner NODE_ENV is `test`, which would pick packages'
+      // development builds (devlop's assertions) and make the page differ from `npm run build:editor`.
+      conditions: ['module', 'browser', 'production'],
       alias: [
         { find: /^@pulpo\/client-core\/doc-editor$/, replacement: join(clientCoreSource, 'doc-editor/index.ts') },
         { find: /^@pulpo\/client-core\/doc-schema$/, replacement: join(clientCoreSource, 'doc-schema/index.ts') },
         { find: /^@pulpo\/client-core\/office\/text$/, replacement: join(clientCoreSource, 'office/text/index.ts') },
         { find: /^@pulpo\/client-core\/office\/text\/view$/, replacement: join(clientCoreSource, 'office/text/view/index.ts') },
+        { find: /^@pulpo\/client-core\/office$/, replacement: join(clientCoreSource, 'office/index.ts') },
+        { find: /^@pulpo\/client-core\/office\/notebook$/, replacement: join(clientCoreSource, 'office/notebook/index.ts') },
+        { find: /^@pulpo\/client-core\/office\/notebook\/view$/, replacement: join(clientCoreSource, 'office/notebook/view/index.ts') },
       ],
     },
     define: { 'process.env.NODE_ENV': JSON.stringify('production') },

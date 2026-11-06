@@ -63,12 +63,30 @@ export type HostMessage =
   | { type: 'blur'; session: number }
   /** Asks for the document's Markdown, without pending suggestions (the base view). */
   | { type: 'export'; session: number; requestId: string }
-  /** A text editor command from the app's toolbar. */
-  | { type: 'command'; session: number; command: TextCommand }
+  /** A text or notebook editor command from the app's toolbar or menu. */
+  | { type: 'command'; session: number; command: TextCommand | NotebookCommand }
   /** The file was renamed; text editors pick their language from the name. */
   | { type: 'name'; session: number; name: string }
+  /** An asset the page asked for (base64), or null when it can't be had (offline, missing). */
+  | { type: 'asset'; session: number; hash: string; data: string | null }
 
 export type TextCommand = 'undo' | 'redo' | 'indentMore' | 'indentLess' | 'find' | 'wrap'
+
+/** A notebook editor's commands: the keyboard bar's, and the screen menu's (clearing outputs). */
+export type NotebookCommand = 'undo' | 'redo' | 'indentMore' | 'indentLess' | 'insertBelow' | 'moveUp' | 'moveDown' | 'toggleType' | 'delete' | 'toggleOutputs' | 'clearAllOutputs'
+
+/** What a notebook editor's toolbar shows. */
+export interface NotebookToolbarState {
+  canUndo: boolean
+  canRedo: boolean
+  /** The active cell's type, or null without one. */
+  cellType: 'code' | 'markdown' | 'raw' | null
+  /** A cell is being edited (the keyboard is up). */
+  editing: boolean
+  outputsCollapsed: boolean
+  readOnly: boolean
+  cells: number
+}
 
 export interface ActiveSuggestion {
   id: string
@@ -89,9 +107,13 @@ export type EditorMessage =
   | { type: 'formatting'; session: number; formatting: FormattingState; focused: boolean }
   /** What a text editor's toolbar shows: undo state, cursor position, wrapping. */
   | { type: 'textState'; session: number; state: TextEditorState }
+  /** What a notebook editor's toolbar shows. */
+  | { type: 'notebookState'; session: number; state: NotebookToolbarState }
   | { type: 'suggestions'; session: number; count: number; index: number | null; active: ActiveSuggestion | null }
-  /** The editor's own cursor, as Yjs relative positions, for other sessions' awareness. */
-  | { type: 'cursor'; session: number; cursor: { anchor: unknown; head: unknown } | null }
+  /** The editor's own cursor, as Yjs relative positions, for other sessions' awareness; notebooks add the cell it is on. */
+  | { type: 'cursor'; session: number; cursor: { anchor: unknown; head: unknown } | null; notebook?: unknown }
+  /** Asks the app for a document asset (an image in a notebook's outputs) by hash. */
+  | { type: 'asset'; session: number; hash: string }
   /** The owner resolved suggestions in the editor (review buttons, undo, or typing). */
   | { type: 'resolved'; session: number }
   | { type: 'link'; session: number; href: string }

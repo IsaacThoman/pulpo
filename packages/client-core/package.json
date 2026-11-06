@@ -81,6 +81,10 @@
     "./office/text/view": {
       "types": "./dist/office/text/view/index.d.ts",
       "import": "./dist/office/text/view/index.js"
+    },
+    "./office/notebook/view": {
+      "types": "./dist/office/notebook/view/index.d.ts",
+      "import": "./dist/office/notebook/view/index.js"
     }
   },
   "scripts": {

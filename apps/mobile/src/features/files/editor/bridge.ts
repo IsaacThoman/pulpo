@@ -10,6 +10,8 @@ import {
   type EditorMessage,
   type EditorTheme,
   type HostMessage,
+  type NotebookCommand,
+  type NotebookToolbarState,
   type ReviewAction,
   type TextCommand,
 } from './protocol'
@@ -31,6 +33,8 @@ export interface EditorBridgeState {
   suggestions: { count: number; index: number | null; active: ActiveSuggestion | null }
   /** What a text editor reports (text and code files). */
   text: TextEditorState | null
+  /** What a notebook editor reports. */
+  notebook: NotebookToolbarState | null
   /** The editor's page reported a protocol or schema this app cannot use. */
   incompatible: boolean
 }
@@ -51,6 +55,8 @@ export interface EditorBridgeOptions {
   /** The file name, for editors that depend on it (a code file's language). */
   name?: string
   onLink?: (href: string) => void
+  /** Fetches a document asset for the page (notebook images); without it the page shows none. */
+  fetchAsset?: (hash: string) => Promise<Uint8Array>
   /** The owner resolved suggestions in the editor; replies' change counts may be stale. */
   onResolved?: () => void
   onError?: (message: string) => void
@@ -62,6 +68,7 @@ const INITIAL_STATE: EditorBridgeState = {
   focused: false,
   suggestions: { count: 0, index: null, active: null },
   text: null,
+  notebook: null,
   incompatible: false,
 }
 
@@ -133,7 +140,7 @@ export class EditorBridge {
   }
 
   /** A text editor's toolbar command. */
-  command(command: TextCommand): void {
+  command(command: TextCommand | NotebookCommand): void {
     this.post({ type: 'command', session: this.session, command })
   }
 
@@ -184,7 +191,10 @@ export class EditorBridge {
     this.options.doc.off('update', this.onDocUpdate)
     this.options.awareness.off('update', this.onAwarenessUpdate)
     // This session's cursor leaves with its editor.
-    if (this.options.awareness.getLocalState()) this.options.awareness.setLocalStateField('cursor', null)
+    if (this.options.awareness.getLocalState()) {
+      this.options.awareness.setLocalStateField('cursor', null)
+      if (this.options.format === 'notebook') this.options.awareness.setLocalStateField('notebook', null)
+    }
     this.rejectExports(new Error('The editor closed'))
     this.listeners.clear()
   }
@@ -230,12 +240,29 @@ export class EditorBridge {
       case 'textState':
         this.setState({ ...this.state, text: message.state, focused: message.state.focused })
         break
+      case 'notebookState':
+        this.setState({ ...this.state, notebook: message.state, focused: message.state.editing })
+        break
       case 'suggestions':
         this.setState({ ...this.state, suggestions: { count: message.count, index: message.index, active: message.active } })
         break
       case 'cursor':
         this.options.awareness.setLocalStateField('cursor', message.cursor)
+        if (message.notebook !== undefined) this.options.awareness.setLocalStateField('notebook', message.notebook)
         break
+      case 'asset': {
+        const { session } = this
+        const hash = message.hash
+        const fetchAsset = this.options.fetchAsset
+        if (!fetchAsset || !/^[0-9a-f]{64}$/.test(hash)) {
+          this.post({ type: 'asset', session, hash, data: null })
+          break
+        }
+        void fetchAsset(hash).then((bytes) => bytesToBase64(bytes), () => null).then((data) => {
+          if (this.session === session) this.post({ type: 'asset', session, hash, data })
+        })
+        break
+      }
       case 'resolved':
         this.options.onResolved?.()
         break

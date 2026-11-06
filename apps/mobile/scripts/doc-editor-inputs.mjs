@@ -51,6 +51,21 @@ export const EDITOR_BUNDLES = {
     ],
     packages: new RegExp(`^node_modules/(@codemirror/[^/]+|@lezer/[^/]+|y-codemirror\\.next|${SYNC_PACKAGES}|style-mod|crelt|w3c-keyname|@marijn/find-cluster-break)$`),
   },
+  notebook: {
+    root: join(editorRoot, 'notebook'),
+    entry: 'main.ts',
+    output: generated('notebookEditorBundle.generated.ts'),
+    exportName: 'NOTEBOOK_EDITOR_BUNDLE',
+    schemaVersion: { file: join(clientCoreSource, 'office/notebook/layout.ts'), pattern: /NOTEBOOK_SCHEMA_VERSION = (\d+)/ },
+    sources: [
+      join(editorRoot, 'notebook'),
+      join(clientCoreSource, 'office/notebook'), join(clientCoreSource, 'office/text'), join(clientCoreSource, 'office/formats.ts'),
+      join(clientCoreSource, 'office/assets.ts'), join(clientCoreSource, 'office/live-format.ts'), join(clientCoreSource, 'office/index.ts'),
+      join(clientCoreSource, 'office/markdown'), join(clientCoreSource, 'highlight.ts'), join(clientCoreSource, 'markdown.ts'),
+      join(clientCoreSource, 'files/markdown-diff.ts'), join(clientCoreSource, 'doc-schema/version.ts'),
+    ],
+    packages: new RegExp(`^node_modules/(@codemirror/[^/]+|@lezer/[^/]+|y-codemirror\\.next|${SYNC_PACKAGES}|style-mod|crelt|w3c-keyname|@marijn/find-cluster-break|marked|lowlight|highlight\\.js)$`),
+  },
 }
 
 function walk(path) {

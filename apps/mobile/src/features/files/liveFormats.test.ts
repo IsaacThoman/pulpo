@@ -20,11 +20,16 @@ const node = (name: string, extra: Partial<FileNode> = {}) => ({
 }) as FileNode
 
 describe('live formats on mobile', () => {
-  it('ships an editor for Markdown and text, and announces both schemas', () => {
+  it('ships an editor for Markdown, text, and notebooks, and announces their schemas', () => {
     expect(editorBundleFor(null)?.format).toBe('markdown')
     expect(editorBundleFor('text')?.format).toBe('text')
+    expect(editorBundleFor('notebook')?.format).toBe('notebook')
     expect(editorBundleFor('sheet')).toBeNull()
-    expect(MOBILE_SCHEMA_VERSIONS).toEqual({ markdown: editorBundleFor('markdown')!.schemaVersion, text: editorBundleFor('text')!.schemaVersion })
+    expect(MOBILE_SCHEMA_VERSIONS).toEqual({
+      markdown: editorBundleFor('markdown')!.schemaVersion,
+      text: editorBundleFor('text')!.schemaVersion,
+      notebook: editorBundleFor('notebook')!.schemaVersion,
+    })
   })
 
   it('edits a format only where the server speaks the same schema', () => {
